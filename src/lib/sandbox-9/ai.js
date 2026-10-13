@@ -87,6 +87,9 @@ export function aiMorning(w) {
 	const pE = w.pbar[ENERGY], lam = w.cfg.law5, rateR = w.c.rateR, P = w.P;
 	const owners = ownersOf(w);
 	w.aiOwners = owners;
+	// the first morning: the camp's rack is equipped before the settlers move in (part of the founding bill, advanced
+	// by the bank like every accelerator), so their Avens run from the first day
+	if (w.day === 0 && !w.aiEquipped) (w.aiEquipped = true), buyAccelerators(w, owners);
 	const chipR = w.c.chipKwh * importFactorAi(w) * pE;
 	const hrs = w.c.chipHoursDay;
 	let capAll = 0;
@@ -371,6 +374,12 @@ export function aiEvening(w) {
 			p.chipsN -= x;
 			t.chipsUsed = (t.chipsUsed ?? 0) + x;
 		}
+	buyAccelerators(w, owners);
+}
+
+/** the owners buy accelerators through the border for the inference they expect (aiEvening) */
+function buyAccelerators(w, owners) {
+	const t = w.today;
 	if (w.cfg.chipImport === false || !w.border || !owners.length) return;
 	const perH = ahPerAvenH(w);
 	let asked = 0;

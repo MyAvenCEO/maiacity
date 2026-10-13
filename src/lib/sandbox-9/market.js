@@ -264,10 +264,12 @@ export function peopleOrders(w) {
 			extraEnergy[i] = q[2];
 		}
 		// the Aven's work for the COOPs (round 4): it offers up to workCapH hours a day when a work hour pays its skill
-		// more than an hour of Aven service costs (an owner-only person's Aven delivers nothing and offers none), and as
-		// far as its person can pay for the hours after the basics
+		// more than an hour of Aven service costs (an owner-only person's Aven delivers nothing and offers none), as far
+		// as its person can pay for the hours. The hours come first, before the basics (./engine.js affordPeople): the
+		// work items pay them back tonight, many times over, so a newcomer who holds only today's HEARTS half is not
+		// kept from the work that pays its basics tomorrow (the trap of round 4's brief)
 		offer[i] = 0;
-		if (w.aven[i] > 0 && pC > 0 && w.aven[i] * payH >= pC) offer[i] = Math.min(c.workCapH, Math.max(0, W - Cb * fB) / pC);
+		if (w.aven[i] > 0 && pC > 0 && w.aven[i] * payH >= pC) offer[i] = Math.min(c.workCapH, Math.max(0, W) / pC);
 		offerAll += offer[i];
 		for (const g of CONSUMER) tot[g] += w.order[o + g];
 	}

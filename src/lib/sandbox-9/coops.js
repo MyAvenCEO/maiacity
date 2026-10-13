@@ -569,6 +569,11 @@ export function runHours(w, pl) {
 /** the standby part of a plant's running hours today */
 export function standbyHours(w, pl) {
 	const u = Math.min(1, Math.max(0, pl.utilEma ?? 0.8));
+	// (round 4, the settlers' first months) on the build-out, the homes the plan finished ahead of their people are
+	// kept by the build crews until people move in, within the plan's hours and its running bill (advanced by the
+	// bank): the settlement COOP keeps ready only the part in use and half again, so the first settlers do not pay for
+	// keeping a dome of empty homes
+	if (pl.def.kind === 'home' && w.ramp && !w.ramp.over) return fullHours(w, pl) * STANDBY * Math.min(1, 1.5 * u);
 	return fullHours(w, pl) * STANDBY * Math.min(1, 0.05 + 1.5 * u);
 }
 

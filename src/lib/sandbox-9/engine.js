@@ -655,8 +655,8 @@ function affordPeople(w) {
 			basicC += qb * pe[b];
 			extraC += (q - qb) * pe[b];
 		}
-		// the Aven's work hours for the COOPs (bought as Aven service, paid back by the work items tonight) come right
-		// after the basics, before the extras
+		// the Aven's work hours for the COOPs (bought as Aven service, paid back by the work items tonight, many times
+		// over) come first, then the basics, then the extras
 		const wk = w.workH ? w.workH[i] : 0;
 		const workC = wk * pe[COMPUTE];
 		extraC += w.q[o + GOODS_] * pe[GOODS_] + w.q[o + SPRING] * pe[SPRING] + (w.q[o + COMPUTE] - wk) * pe[COMPUTE];
@@ -667,8 +667,8 @@ function affordPeople(w) {
 		if (basicC + workC + extraC <= room) continue;
 		let fb = 1, fx = 0, fw = 1;
 		if (basicC + workC <= room) fx = extraC > 0 ? (room - basicC - workC) / extraC : 0;
-		else if (basicC <= room) (fw = workC > 0 ? (room - basicC) / workC : 0), (fx = 0);
-		else (fb = basicC > 0 ? room / basicC : 0), (fw = 0);
+		else if (workC <= room) fb = basicC > 0 ? (room - workC) / basicC : 0;
+		else (fw = workC > 0 ? room / workC : 0), (fb = 0);
 		for (let b = 0; b < 4; b++) {
 			if (b === ENERGY) continue;
 			const q = w.q[o + b];
