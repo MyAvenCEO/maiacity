@@ -17,6 +17,7 @@
 	that never yields can freeze the tab; that is why a code view runs only when someone presses Run.
 -->
 <script>
+	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { LIBS, LIMITS, METHODS, PROTOCOL } from '../../../game/genui/views.js';
 	import { native } from '$lib/native';

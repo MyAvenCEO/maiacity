@@ -4,6 +4,7 @@
 	nothing more; what it does is the view's logic, in QuickJS.
 -->
 <script>
+	// @ts-nocheck — plain JS
 	import Node from './Node.svelte';
 
 	let { id, byId, data, onevent, depth = 0 } = $props();

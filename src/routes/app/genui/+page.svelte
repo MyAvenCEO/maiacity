@@ -5,6 +5,7 @@
 	New and changed views come in as they are written (the page asks every few seconds).
 -->
 <script>
+	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { apiCall } from '$lib/auth/client';
 	import Frame from '$lib/genui/Frame.svelte';
