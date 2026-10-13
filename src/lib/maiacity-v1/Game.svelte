@@ -13,7 +13,7 @@
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
 	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
-	import { loadGame, resetGame, sendMove } from './store.js';
+	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
 	import { AT_HOME, story } from './tour.js';
@@ -138,7 +138,14 @@
 			onLabels: (l) => (labels = l),
 			onCaption: (c) => (caption = c)
 		});
-		refresh().then(() => {
+		refresh().then(async () => {
+			// claim a seat (or keep mine) and bring its name up to the profile's: the Mac app reads the game with its app key,
+			// which the server never seats on a read, so the page asks for the seat itself
+			if (me && game && (mySeat || SEATS.some((s) => !game.players[s].founder))) {
+				try {
+					take(await takeSeat(mySeat ?? 'A'));
+				} catch {}
+			}
 			if (mySeat) seat = mySeat;
 		});
 		const t = setInterval(() => (tick = Date.now()), 1000);
@@ -244,16 +251,22 @@
 	/** the first-run story ($lib/maiacity-v1/tour.js): one idea a step, for each player at their own seat. The steps
 	 *  that only tell remember "Next" in this browser; the moves (mint, invest) are read off the game. */
 	let seen = $state({});
+	let seenOf = $state(0); // the game start the remembered steps were read for: no story before they are
 	const steps = $derived(view && player && mine ? story(view, seat, seen[seat] ?? {}) : []);
 	const tourAt = $derived(steps.findIndex((x) => !x.done));
-	const tour = $derived(tourAt >= 0 && !seen[seat]?.off ? { ...steps[tourAt], n: tourAt + 1, steps: steps.length } : null);
+	const tour = $derived(tourAt >= 0 && seenOf && seenOf === started && !seen[seat]?.off ? { ...steps[tourAt], n: tourAt + 1, steps: steps.length } : null);
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
-		try { localStorage.setItem(`v1-story-${seat}`, JSON.stringify(seen[seat])); } catch {}
+		try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
 		if (id === 'payday') panel = 'you';
 	};
+	// remembered per game: a fresh game (a reset) starts every story from its first step again
+	const started = $derived(game?.started ?? 0);
+	const storyKey = (s) => `v1-story-${started}-${s}`;
 	$effect(() => {
-		try { seen = Object.fromEntries(SEATS.map((s) => [s, JSON.parse(localStorage.getItem(`v1-story-${s}`) ?? '{}')])); } catch {}
+		if (!started) return;
+		try { seen = Object.fromEntries(SEATS.map((s) => [s, JSON.parse(localStorage.getItem(storyKey(s)) ?? '{}')])); } catch {}
+		seenOf = started;
 	});
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
