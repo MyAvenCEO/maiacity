@@ -22,7 +22,7 @@ use avendb::lab::Lab;
 use avendb::sign::{Ceremony, PRF_SALT, Passkey, device_salt};
 use avendb_browser::{Device, Fresh, Start, Unlock};
 use avendb_device::{ASIDE, Config, META, SHEET, STORE, serve};
-use avendb_net::{Admission, Authenticator, Node, Options, Step};
+use avendb_net::{Admission, Authenticator, Node, Options, Progress, Step};
 use avendb_server::Relay;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -188,6 +188,16 @@ async fn server() -> (Relay, RelayUrl, Node) {
     (relay, url, node)
 }
 
+/// The steps of the device's last start, by name, as the page shows them (`steps`), once it is over: each with how
+/// long it took.
+async fn steps(app: &mut App) -> Vec<String> {
+    let shown = app.call("steps", json!([])).await.expect("its steps");
+    assert_eq!(shown["over"], true, "over: {shown}");
+    let steps = shown["steps"].as_array().expect("its steps");
+    assert!(steps.iter().all(|s| s["took"].is_u64() && s["at"].is_u64()), "each with its times: {shown}");
+    steps.iter().map(|s| s["step"].as_str().expect("a name").to_string()).collect()
+}
+
 /// Waits until `check` holds, 60 seconds at most.
 async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
     let end = Instant::now() + Duration::from_secs(60);
@@ -253,16 +263,20 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(app.call("status", json!([])).await, Ok(json!({ "meta": null, "open": false, "device": null })));
     assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()));
     assert_eq!(app.call("world", json!([])).await, Err("avenDB isn't open here: unlock it first".into()));
+    assert_eq!(app.call("steps", json!([])).await, Ok(Value::Null), "no start yet");
     // she closes the first sheet: nothing is founded, and nothing kept
     app.cancel = true;
     let offer = server.offer().to_text();
     let found = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await;
     assert_eq!(found, Err("You closed the sign-in sheet.".into()));
     assert_eq!(app.asked(), ["unlock"]);
+    assert_eq!(steps(&mut app).await, ["unlock"], "it stopped at the unlock");
     assert!(!dir.join(META).exists(), "nothing to open");
     // she founds her vault from the Mac in two sheets: the unlock, which is her passkey's pass for it, and her vault
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
     assert_eq!(app.asked(), ["unlock", "found"]);
+    let founding = ["unlock", "keys", "node", "server", "draft", "sign", "settle"];
+    assert_eq!(steps(&mut app).await, founding, "each step the page showed, the server Alice's vault's already");
     assert_eq!(device["passkey"], hex(&Passkey::from_seed([5; 32]).public()), "her passkey's key");
     assert!(!device["sockets"].as_array().expect("its sockets").is_empty(), "UDP sockets of its own");
     let status = app.call("status", json!([])).await.expect("its status");
@@ -327,6 +341,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!((&status["open"], &status["meta"]["name"]), (&json!(false), &json!("Eve's MacBook")));
     let opened = app.call("open", json!([])).await.expect("it opens again");
     assert_eq!(app.asked(), ["unlock"]);
+    assert_eq!(steps(&mut app).await, ["unlock", "keys", "restore", "node", "check"]);
     assert_eq!((&opened["id"], &opened["endpoint"]), (&device["id"], &device["endpoint"]), "the same device");
     assert_eq!(app.call("open", json!([])).await, Ok(opened), "open already");
     assert!(app.asked().is_empty());
@@ -360,6 +375,7 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
         now: SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs(),
         direct: false,
         store: None,
+        progress: Progress::new(),
     };
     let unlock = browser.unlock(nonce, old.challenge(start.now));
     let page = Device::found(start, &server.offer(), None, old, unlock, &browser, true).await.expect("her vault");
@@ -388,6 +404,7 @@ async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_i
     let keys: Vec<_> = keys.iter().map(|k| BASE64.encode(k)).collect();
     let adopted = app.call("adopt", json!([meta, edits, keys])).await.expect("it moves in");
     assert_eq!(app.asked(), ["unlock"]);
+    assert_eq!(steps(&mut app).await, ["unlock", "keys", "restore", "node", "check"]);
     assert_eq!(adopted["id"], hex(&device.0), "the same device");
     assert!(adopted["sockets"].as_array().expect("its sockets").is_empty(), "on its relay alone, as asked");
     let read = note(&mut app, &entry).await;

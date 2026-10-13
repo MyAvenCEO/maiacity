@@ -26,6 +26,8 @@
 //!   of reach, up to a minute, or at once when the peer connects to it.
 //! - **Store** (P8b): with `Options::store`, a node keeps what its device holds in a folder (`Disk`), saved as it
 //!   changes, and starts again from it.
+//! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
+//!   how long it took, for its person to watch while they wait (`Progress`).
 //! - **The server** (P8b, `server`): a node whose device keeps a secret of its own beside its store, and which hands
 //!   its contact card, avenCEO's log, to whoever asks (`Node::contact`), so that a vault can give avenCEO relay on its
 //!   entries. Devices reach each other and the server through its relay, which lets in only the devices the server
@@ -65,6 +67,7 @@
 mod blobs;
 mod disk;
 pub mod kx;
+mod progress;
 pub mod server;
 mod session;
 
@@ -100,6 +103,7 @@ use n0_future::time::{self, Instant};
 use tokio::sync::{Notify, watch};
 
 pub use disk::Disk;
+pub use progress::{Ending, Progress, Stage, Steps};
 pub use session::exporter;
 
 /// avenDB's own ALPN: its sync protocol, version 1.
@@ -180,6 +184,9 @@ pub struct Options {
     /// The most bytes of edits it answers a request with, but at least one edit: a peer asks on for the rest
     /// (`Lab::reply`).
     pub page: usize,
+    /// Where it marks the steps of its start, its own (`node`, once its store is replayed) and those of founding its
+    /// person's vault or linking to it (`Node::found_with`, `Node::link_with`), for its person to watch.
+    pub progress: Progress,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -199,6 +206,7 @@ impl Options {
             admission: None,
             relay_pass: None,
             page: PAGE,
+            progress: Progress::new(),
         }
     }
 }
@@ -344,6 +352,7 @@ impl Node {
         // a page has no folders, nor threads to spare
         #[cfg(target_arch = "wasm32")]
         let (lab, disk) = reopen(lab, me, store)?;
+        opts.progress.step("node");
         if let Some(admission) = &opts.admission {
             let own = SecretKey::from_bytes(&secret).public();
             let endpoints = endpoints(&lab.peers(me)).chain([own]).collect();
@@ -484,12 +493,16 @@ impl Node {
         pass: &RelayPass,
         joins: Joins<'_, A>,
     ) -> Result<(SignerId, VaultId)> {
+        let progress = &self.shared.opts.progress;
+        progress.step("server");
         let peer = self.offered(offer).await?;
+        progress.step("pass");
         let card = session::exchange(&peer.conn, session::LINK, &pass.to_wire(), session::REPLY_LIMIT).await?;
         let Reply { mut edits, .. } = Reply::from_wire(&card)?;
         // a card carries vault logs, and nothing else
         edits.retain(of_a_vault);
         let passkeys = pass.candidates();
+        progress.step("vault");
         let joining = self.shared.lab(move |lab, me| {
             lab.receive(me, edits, Vec::new());
             let at_hand = |p: &SignerId| lab.keys_of(*p).is_some();
@@ -499,6 +512,7 @@ impl Node {
         let id = match joining {
             (_, Some(id)) => id,
             (vault, None) => {
+                progress.step("join");
                 let add = move |lab: &mut Lab, me| {
                     lab.draft(me, &[passkey, me], Action::AddDevice { vault, device: me, seal_to: None })
                 };
@@ -519,6 +533,7 @@ impl Node {
         let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
         sent.context("the peer refuses the join")?;
         self.shared.changed.notify_one();
+        progress.step("sync");
         self.shared.ask(peer.endpoint).await?;
         Ok((passkey, vault))
     }
@@ -556,6 +571,8 @@ impl Node {
             None => self.claim_key(offer).await.ok(),
         };
         let (server, claiming, passkeys) = (offer.device, key.is_some(), passkeys.to_vec());
+        let progress = &self.shared.opts.progress;
+        progress.step("draft");
         let draft = move |lab: &mut Lab, me| {
             let found = |drafting: &mut Drafting<'_>, passkey| {
                 let (owners, root) = (vec![Principal::Signer(passkey)], Some(passkey));
@@ -573,12 +590,16 @@ impl Node {
             lab.drafting_for(me, &passkeys, found)
         };
         let sets = self.shared.lab(draft).await.map_err(|why| anyhow!("the vault is refused: {why:?}"))?;
+        progress.step("sign");
         let (passkey, vault, claim) = self.sign(sets, claiming, Step::Found, authenticator).await?;
         let refused = match (claim, named) {
-            (Some(claim), _) => match self.send_claim(offer, claim).await {
-                Ok(avenceo) => return Ok((passkey, vault, avenceo)),
-                Err(e) => e,
-            },
+            (Some(claim), _) => {
+                progress.step("claim");
+                match self.send_claim(offer, claim).await {
+                    Ok(avenceo) => return Ok((passkey, vault, avenceo)),
+                    Err(e) => e,
+                }
+            }
             (None, Some(avenceo)) => return Ok((passkey, vault, avenceo)),
             (None, None) => anyhow!("the server takes no claim"),
         };

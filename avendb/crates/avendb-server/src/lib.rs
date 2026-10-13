@@ -118,6 +118,8 @@ pub async fn start(config: &Config) -> Result<Running> {
         admission: Some(admission),
         relay_pass: None,
         page: avendb_net::PAGE,
+        // its start is nobody's to watch
+        progress: avendb_net::Progress::new(),
     };
     let node = server::open(&config.data, opts).await?;
     let mut offer = node.offer();

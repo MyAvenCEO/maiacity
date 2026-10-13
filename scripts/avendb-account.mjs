@@ -81,6 +81,8 @@ cdp.on('Fetch.requestPaused', (r) => {
 /** the words of `selector`, as written (not as styled) */
 const text = (selector = 'main.avendb') =>
 	page.evaluate((s) => document.querySelector(s)?.textContent?.replace(/\s+/g, ' ').trim() ?? '', selector);
+/** the sheet that shows a start's steps closed, as it does by itself a little after one that went through */
+const settled = () => page.waitForSelector('.signing', { hidden: true, timeout: 15000 }).then(() => true, () => false);
 /** Whether `holds` comes true within `ms`. @param {() => Promise<unknown>} holds */
 async function until(holds, ms = 60000) {
 	const end = Date.now() + ms;
@@ -313,6 +315,22 @@ try {
 	const open = await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
 	check(`the vault is founded, in ${((Date.now() - t) / 1000).toFixed(1)} s`, open, await problem());
 	check('in two ceremonies', (await ceremonies()) - before === 2, `${(await ceremonies()) - before}`);
+	// the sheet showed every step of the start as the device and the page took it, each with its seconds
+	const allDone = () => text('.signing header').then((h) => h.includes('All done'));
+	check('the sheet says it is all done', await until(allDone, 5000), await text('.signing header'));
+	const took = await page.$$eval('.signing .steps li', (els) =>
+		els.map((e) => {
+			const [state, title, time] = [e.classList[0], e.querySelector('b'), e.querySelector('.time')];
+			return `${state} ${title?.textContent} ${time?.textContent?.trim()}`;
+		})
+	);
+	check(
+		'it shows the nine steps of the start, each done with its seconds, the claim and saving among them',
+		took.length === 9 && took.every((s) => /^done .+ \d+\.\d s$/.test(s)) && took.some((s) => s.includes('claim')),
+		took.join(' | ')
+	);
+	await shot('2a-sheet');
+	check('it closes by itself', await settled());
 	check('its vault and avenCEO named, in the bar', await until(() => hasAll(['Samuel', 'avenCEO'])), (await bar()).join(', '));
 	check('naming them took no ceremony', (await ceremonies()) - before === 2, `${(await ceremonies()) - before}`);
 	check('the person’s own vault first', (await bar())[0] === 'Samuel', (await bar()).join(', '));
@@ -692,7 +710,8 @@ try {
 	check('after a reload, it asks to unlock', await waitText('Unlock your account'));
 	const unlocking = await ceremonies();
 	await click('Unlock', '.account button');
-	check('it opens again', await page.waitForSelector('.shell', { timeout: 120000 }).then(() => true, () => false), await problem());
+	const opens = await page.waitForSelector('.shell', { timeout: 120000 }).then(settled, () => false);
+	check('it opens again', opens, await problem());
 	check('in one ceremony', (await ceremonies()) - unlocking === 1, `${(await ceremonies()) - unlocking}`);
 	check('every vault there', await until(() => hasAll(SIX)), (await bar()).join(', '));
 	await actAs('avenALICE');
@@ -709,7 +728,7 @@ try {
 	check('forgotten, it offers to sign in', await waitText('Sign in with my passkey'));
 	const signing = await ceremonies();
 	await click('Sign in with my passkey', '.account button');
-	const signedIn = await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false);
+	const signedIn = await page.waitForSelector('.shell', { timeout: 180000 }).then(settled, () => false);
 	check('signed in again, through the server', signedIn, await problem());
 	check('in one ceremony', (await ceremonies()) - signing === 1, `${(await ceremonies()) - signing}`);
 	check('every vault came back', await until(() => hasAll(SIX), 120000), (await bar()).join(', '));
