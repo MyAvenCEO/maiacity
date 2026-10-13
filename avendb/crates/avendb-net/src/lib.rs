@@ -26,6 +26,11 @@
 //!   of reach, up to a minute, or at once when the peer connects to it.
 //! - **Store** (P8b): with `Options::store`, a node keeps what its device holds in a folder (`Disk`), saved as it
 //!   changes, and starts again from it.
+//! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, on a machine on disk beside its store. It brings
+//!   a file sealed as it reads it (`Node::store_file`), reads any range of a file its device opens, fetching only the
+//!   sealed segments that hold it (`Node::read_file`), and, if it keeps files (`Options::keep`), as the server does,
+//!   keeps whole every file the edits it holds bring. Its blob gate hands a file's root or pieces only to a device
+//!   that may fetch the file (T27).
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
 //!   how long it took, for its person to watch while they wait (`Progress`).
 //! - **The server** (P8b, `server`): a node whose device keeps a secret of its own beside its store, and which hands
@@ -66,12 +71,13 @@
 
 mod blobs;
 mod disk;
+mod files;
 pub mod kx;
 mod progress;
 pub mod server;
 mod session;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -96,6 +102,9 @@ use iroh::endpoint::{Connection, presets};
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey};
 use iroh_blobs::BlobsProtocol;
+use iroh_blobs::api::Store;
+#[cfg(not(target_arch = "wasm32"))]
+use iroh_blobs::store::fs::FsStore;
 use iroh_blobs::store::mem::MemStore;
 use rustls::crypto::CryptoProvider;
 use n0_future::task::{self, JoinHandle};
@@ -171,8 +180,12 @@ pub struct Options {
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
-    /// The folder it keeps its store in (`Disk`), if any: it starts again from what it holds there.
+    /// The folder it keeps its store in (`Disk`), if any: it starts again from what it holds there. Its blob store is
+    /// in that folder's `blobs/` too, on a machine; else, and in a browser, in memory.
     pub store: Option<PathBuf>,
+    /// It keeps whole every file the edits its device holds bring, fetched from its peers as soon as it learns of them
+    /// (`files`): the server's backup.
+    pub keep: bool,
     /// It is a server: it hands its contact card to whoever asks (`Node::contact`), and, while its device belongs to no
     /// vault, its key to seal to, for the first human vault to claim it (`Node::claim`).
     pub card: bool,
@@ -202,6 +215,7 @@ impl Options {
             relay: None,
             retry: Duration::from_secs(1),
             store: None,
+            keep: false,
             card: false,
             admission: None,
             relay_pass: None,
@@ -387,7 +401,13 @@ impl Node {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(config)));
         }
         let endpoint = builder.bind().await?;
-        let store = MemStore::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        let store: Store = match &opts.store {
+            Some(dir) => FsStore::load(dir.join(files::BLOBS)).await?.into(),
+            None => MemStore::new().into(),
+        };
+        #[cfg(target_arch = "wasm32")]
+        let store: Store = MemStore::new().into();
         let (events, gate) = blobs::events();
         let shared = Arc::new(Shared {
             me,
@@ -407,6 +427,8 @@ impl Node {
             owed: Mutex::default(),
             offered: Mutex::default(),
             blob_peers: Mutex::default(),
+            pieces: Mutex::default(),
+            blob_conns: Mutex::default(),
             changed: Notify::new(),
             size: watch::Sender::new(size),
             sent: Sent::default(),
@@ -415,7 +437,11 @@ impl Node {
             .accept(ALPN, session::Protocol(shared.clone()))
             .accept(iroh_blobs::ALPN, BlobsProtocol::new(&store, Some(events)))
             .spawn();
-        let tasks = vec![task::spawn(blobs::gate(shared.clone(), gate)), task::spawn(shared.clone().announcer())];
+        let tasks = vec![
+            task::spawn(blobs::gate(shared.clone(), gate)),
+            task::spawn(shared.clone().announcer()),
+            task::spawn(shared.clone().keeper()),
+        ];
         Ok(Node { shared, router, tasks })
     }
 
@@ -817,7 +843,7 @@ impl Node {
         self.shared.sent.dials.load(Ordering::Relaxed)
     }
 
-    /// Close its connections and its endpoint.
+    /// Close its connections, its endpoint and its blob store, which the router closes with the blob protocol.
     pub async fn shutdown(&self) -> Result<()> {
         self.tasks.iter().for_each(JoinHandle::abort);
         self.router.shutdown().await?;
@@ -965,7 +991,8 @@ struct Shared {
     disk: Option<Mutex<Disk>>,
     endpoint: Endpoint,
     lookup: MemoryLookup,
-    store: MemStore,
+    /// Its blob store: the McEliece keys it offers, and the sealed pieces of files (`files`).
+    store: Store,
     opts: Options,
     /// The live connection to each peer.
     peers: Mutex<HashMap<EndpointId, Peer>>,
@@ -987,6 +1014,11 @@ struct Shared {
     offered: Mutex<blobs::Offered>,
     /// The blob connections the gate let in, each with its device.
     blob_peers: Mutex<HashMap<u64, SignerId>>,
+    /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
+    /// as those files.
+    pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
+    /// The blob connection it dialed to each peer, for the files it fetches.
+    blob_conns: Mutex<HashMap<EndpointId, Connection>>,
     /// Woken whenever the node's logs may have changed.
     changed: Notify,
     /// How many edits and McEliece keys its device holds (`Node::changes`).

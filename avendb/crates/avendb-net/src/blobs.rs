@@ -1,11 +1,13 @@
-//! The McEliece keys in iroh-blobs. A node offers the keys its replies name, by BLAKE3 hash, and its gate hands each
-//! out only to a device a hello proved that may fetch it by the node's view; the asker checks each key it fetches
-//! against its id, a cSHAKE256 hash, so a peer can serve no other bytes for it.
+//! The McEliece keys in iroh-blobs, and the gate of a node's blob store. A node offers the keys its replies name, by
+//! BLAKE3 hash, and its gate hands each out only to a device a hello proved that may fetch it by the node's view; the
+//! asker checks each key it fetches against its id, a cSHAKE256 hash, so a peer can serve no other bytes for it. The
+//! sealed pieces of files are in the same store (`files`), and the gate hands those out by the same rule (T27).
 //!
 //! A blob connection says no hello of its own: the gate knows its device by its TLS endpoint key, the ed25519 key a
 //! hello proved on a sync connection. So one who could forge that key, as a quantum computer could, might fetch the
-//! keys that device may; but a McEliece key is a public key: the gate keeps others from learning whom a node seals
-//! to, and keeps nothing secret.
+//! keys and sealed files that device may; but a McEliece key is a public key, and a sealed file opens only under the
+//! key in the write that brings it: the gate keeps others from learning whom a node seals to and what it keeps, and
+//! keeps nothing secret.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +15,8 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use avendb::id::BlobId;
+use avendb::lab::Lab;
+use avendb::sealed::FileRoot;
 use iroh::EndpointId;
 use iroh::endpoint::VarInt;
 use iroh_blobs::Hash;
@@ -90,16 +94,27 @@ impl Shared {
         keys
     }
 
-    /// The device of blob connection `connection` may fetch each of `hashes`: McEliece keys this node offered, each
-    /// named by an edit it may receive by this node's view.
+    /// The device of blob connection `connection` may fetch each of `hashes`: a McEliece key this node offered, named
+    /// by an edit it may receive by this node's view (`Lab::may_fetch`); or else a file's root, or one of its pieces,
+    /// brought by such an edit (`Lab::may_fetch_file`, T27).
     async fn may_fetch(self: &Arc<Self>, connection: u64, hashes: Vec<Hash>) -> bool {
         let Some(device) = self.blob_peers.lock().expect("blob peers").get(&connection).copied() else { return false };
-        let ids: Option<Vec<BlobId>> = {
-            let offered = self.offered.lock().expect("offered");
-            hashes.iter().map(|h| offered.ids.get(h).copied()).collect()
+        let asked: Vec<([u8; 32], Option<BlobId>, Vec<FileRoot>)> = {
+            let (offered, pieces) = (self.offered.lock().expect("offered"), self.pieces.lock().expect("pieces"));
+            let of = |h: &Hash| pieces.get(h).map(|roots| roots.iter().copied().collect()).unwrap_or_default();
+            hashes.iter().map(|h| (*h.as_bytes(), offered.ids.get(h).copied(), of(h))).collect()
         };
-        let Some(ids) = ids else { return false };
-        self.lab(move |lab, me| ids.iter().all(|&b| lab.may_fetch(me, device, b))).await
+        let may = move |lab: &mut Lab, me| {
+            let files = lab.files(me);
+            asked.iter().all(|(hash, key, pieced)| match key {
+                Some(b) => lab.may_fetch(me, device, *b),
+                None => {
+                    let mut roots = files.iter().filter(|f| f.hash == *hash).chain(pieced);
+                    roots.any(|f| lab.may_fetch_file(me, device, f))
+                }
+            })
+        };
+        self.lab(may).await
     }
 }
 
@@ -122,7 +137,8 @@ fn verdict(allowed: bool) -> EventResult {
 }
 
 /// The blob provider's gate: it lets in a connection only from an endpoint whose hello proved its device, and a
-/// request only for McEliece keys that device may fetch, each whole.
+/// request only for blobs that device may fetch, McEliece keys and the sealed pieces of files, any ranges of each
+/// blob alone: a request for a HashSeq with its children is refused, as the gate would not weigh the children.
 pub(crate) async fn gate(shared: Arc<Shared>, mut events: mpsc::Receiver<ProviderMessage>) {
     while let Some(event) = events.recv().await {
         match event {

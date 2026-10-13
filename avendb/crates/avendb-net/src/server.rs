@@ -22,13 +22,14 @@ pub const SECRET: &str = "device.key";
 
 /// The server's node in folder `dir`, made if there is none, with `opts` for its network: its device's secret read
 /// from the folder, or made at its first start and written there, readable by its owner alone; and its store beside
-/// it. It hands its contact card to whoever asks, and the first human vault to claim it owns it.
+/// it, where it keeps whole every file the edits it holds bring (`Options::keep`). It hands its contact card to
+/// whoever asks, and the first human vault to claim it owns it.
 pub async fn open(dir: &Path, opts: Options) -> Result<Node> {
     fs::create_dir_all(dir).with_context(|| format!("the server's folder, {}", dir.display()))?;
     let secret = secret(&dir.join(SECRET))?;
     let mut lab = Lab::with_entropy(*random()?);
     let me = lab.device_with("the server", *secret);
-    Node::spawn(lab, me, Options { store: Some(dir.to_path_buf()), card: true, ..opts }).await
+    Node::spawn(lab, me, Options { store: Some(dir.to_path_buf()), keep: true, card: true, ..opts }).await
 }
 
 /// The vault the node's device belongs to, as its view has it: avenCEO, once a device claimed the server.
