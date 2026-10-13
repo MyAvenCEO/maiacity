@@ -327,6 +327,12 @@
 						</ul>
 					</details>
 				{/each}
+				<details>
+					<summary><b>Sources</b> <small>{catalog.sources.length}</small></summary>
+					<ul class="sources">
+						{#each catalog.sources as s (s.url)}<li><a href={s.url} target="_blank" rel="noreferrer">{s.label} ↗</a></li>{/each}
+					</ul>
+				</details>
 			</div>
 		{/if}
 		{#if cast && holding && !catalog}
@@ -365,7 +371,7 @@
 						{#each card.specs as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 					</dl>
 				{/if}
-				<small>Build step {card.step}: {catalog.steps[card.step - 1]}{#if card.source} · source: {#each catalog.sources.filter((s) => s.label === card.source) as s (s.url)}<a href={s.url} target="_blank" rel="noreferrer">{s.label}</a>{:else}{card.source}{/each}{/if}</small>
+				<small>Build step {card.step}: {catalog.steps[card.step - 1]}{#if card.source} · source: {#each catalog.sources.filter((s) => s.label === card.source) as s (s.url)}<a href={s.url} target="_blank" rel="noreferrer">{s.label} ↗</a>{:else}{card.source}{/each}{/if}</small>
 				<div class="row">
 					<button class="chip" onclick={() => lookAt?.(card.id)}>Look at it</button>
 					<button class="chip" class:on={alone} onclick={() => (alone = !alone)}>Alone</button>
@@ -437,6 +443,12 @@
 		color: #fff;
 	}
 
+	.parts .sources a {
+		display: block;
+		padding: 0.3rem 0.4rem;
+		font-size: 0.8rem;
+		color: inherit;
+	}
 	.parts li i {
 		margin-left: auto;
 		font-style: normal;

@@ -146,7 +146,7 @@ const SRC = {
 	ctl: 'v25 controller BOM',
 	sa: 'v25 structural analysis',
 	uwu: 'Universal Wheel Unit',
-	lt6: 'LifeTrac 6 (OSE wiki)'
+	lt6: 'LifeTrac Genealogy (OSE wiki)'
 };
 
 /** @type {import('./parts.js').Assembly[]} */
@@ -165,7 +165,7 @@ const ASSEMBLIES = [
 const STEPS = [
 	'Bolt the frame: floor plate and its angle runs, back and front walls, motor plates, inner and outer side panels, cross tubes',
 	'Mount the four wheel units: motors on the motor plates, shafts through the bearings, hubs, wheels',
-	'Lift the Power Cube onto its cradle and pin it: engine, pump, tanks, cooler and battery come in one piece',
+	'Lift in the Power Cube, already built on its own, and pin it to its cradle: engine, pump, tanks, cooler and battery come in one piece',
 	'Plumb the hydraulics: the flow valve and the valve manifold on the cube, the pressure and return lines to its couplers, hoses out to the motors',
 	'Hang the loader arms on their pivot pins and bolt in the cross beam',
 	'Pin in the lift and bucket cylinders',
@@ -390,7 +390,7 @@ export function lifetrac() {
 	}
 
 	/* ── 3. the Power Cube ────────────────────────────────────────────────── */
-	powerCubeParts(kit, { at: P(...CUBE_AT), base: 'base', joints: { flywheel: 'flywheel', coupling: 'coupling', fan: 'coolerFan' }, assembly: () => 'powercube', step: () => 3 });
+	powerCubeParts(kit, { at: P(...CUBE_AT), base: 'base', joints: { flywheel: 'flywheel', coupling: 'coupling', fan: 'coolerFan' }, assembly: () => 'powercube', step: () => 3, unit: 'powercube' });
 
 	/* ── 4. the hydraulic circuit ─────────────────────────────────────────── */
 	// the cube's couplers, on its back: pressure and return
@@ -991,7 +991,7 @@ export function lifetrac() {
 				{ label: SRC.ctl, url: 'https://github.com/OpenSourceEcology/LifeTrac/blob/main/LifeTrac-v25/DESIGN-CONTROLLER/HARDWARE_BOM.md' },
 				{ label: SRC.sa, url: 'https://github.com/OpenSourceEcology/LifeTrac/blob/main/LifeTrac-v25/DESIGN-STRUCTURAL/STRUCTURAL_ANALYSIS_LOG.md' },
 				{ label: SRC.uwu, url: 'https://github.com/OpenSourceEcology/LifeTrac/tree/main/UWU' },
-				{ label: SRC.lt6, url: 'https://wiki.opensourceecology.org/wiki/LifeTrac_6' },
+				{ label: SRC.lt6, url: 'https://wiki.opensourceecology.org/wiki/LifeTrac_Genealogy' },
 				...POWERCUBE_SOURCES
 			]
 		}
