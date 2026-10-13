@@ -67,6 +67,6 @@ if (!isMainThread) {
 	mkdirSync(dirname(OUT), { recursive: true });
 	writeFileSync(OUT, JSON.stringify({ ...(prev.suite ? { suite: prev.suite } : {}), ...proof }, null, '\t') + '\n');
 	if (!suite) console.log(prev.suite ? 'the saved suite summary is from another engine: run scripts/sandbox-9-proof.mjs, then this again' : 'no suite summary yet: run scripts/sandbox-9-proof.mjs, then this again');
-	console.log(`${proof.pass ? 'PASS' : 'FAIL'}: ${proof.parts.map((p) => `${p.id} ${p.pass ? 'pass' : 'FAIL'}`).join(', ')}; ${proof.experiments.map((e) => `${e.id} ${e.pass ? 'pass' : 'FAIL'}`).join(', ')}`);
+	console.log(`${proof.pass ? 'PASS' : 'FAIL'}: ${proof.parts.map((p) => `${p.id} ${p.pass ? 'pass' : 'FAIL'}`).join(', ')}; ${proof.experiments.map((e) => `${e.id} ${e.pass == null ? 'comparison' : e.pass ? 'pass' : 'FAIL'}`).join(', ')}`);
 	console.log(`wrote ${OUT} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
 }

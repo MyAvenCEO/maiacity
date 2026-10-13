@@ -21,7 +21,7 @@ export const SEEDS = [20261012, 1, 2, 3, 4];
  * the Proof tab hashes the same files as the page was built with and says so when the saved proof is older than the
  * engine.
  */
-export const ENGINE_FILES = ['border.js', 'consts.js', 'coops.js', 'dmath.js', 'energy.js', 'engine.js', 'experiments.js', 'food.js', 'genesis.js', 'guesses.js', 'market.js', 'pools.js', 'primitives.js', 'proofRun.js', 'prop3.js', 'records.js', 'rng.js', 'scenarios.js', 'village.js'];
+export const ENGINE_FILES = ['border.js', 'consts.js', 'coops.js', 'dmath.js', 'energy.js', 'engine.js', 'experiments.js', 'food.js', 'genesis.js', 'guesses.js', 'market.js', 'pools.js', 'primitives.js', 'proofRun.js', 'prop3.js', 'ramp.js', 'records.js', 'rng.js', 'scenarios.js', 'village.js'];
 /** FNV-1a (32 bits) over each file's name and text, in ENGINE_FILES order: { name: text } → 8 hex digits */
 export function engineHash(texts) {
 	let h = 0x811c9dc5;

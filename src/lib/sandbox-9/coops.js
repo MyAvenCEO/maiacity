@@ -467,10 +467,19 @@ export function costs(w, full) {
 		// takes, weighed by what the COOP has bought a day lately; never less than its own plants' unit cost (the village's
 		// own food first: an import bought with scarce euros does not undercut the forests and domes, or a seller that
 		// imports more would sell cheaper, take the other sellers' buyers and leave their food on the trees)
+		// The floor is the own plants' unit cost over the year (a 365-day average), not today's: a dark month's unit
+		// cost (the domes' heat over that month's small harvest) is that month's, and valuing every kilogram bought
+		// abroad at it priced the imports at it too, when most of the food was bought (in the build-out's winters food
+		// then cost several times its yearly cost, and newcomers who held nothing yet could not pay for their basics)
 		const fin = co.good === FOOD ? 'food' : co.good === WOOD ? 'glulam' : co.good === STEEL ? 'steel' : co.good === GLASS ? 'glazing' : co.good === PANEL ? 'panels' : null;
-		if (fin && co.importEma > 1e-9) {
+		if (fin) {
 			const own = n > 0 ? varR / n : 0;
-			const v = Math.max(own, (w.c.eur[fin] / w.c.eurPerKwh) * pE + (co.good === FOOD ? 0.1 * pE : 0));
+			if (w.day === 0 || co.ownVarEma == null) co.ownVarEma = own;
+			else if (co.ownVarDay !== w.day) co.ownVarEma += (own - co.ownVarEma) / 365;
+			co.ownVarDay = w.day;
+		}
+		if (fin && co.importEma > 1e-9) {
+			const v = Math.max(co.ownVarEma, (w.c.eur[fin] / w.c.eurPerKwh) * pE + (co.good === FOOD ? 0.1 * pE : 0));
 			varR += v * co.importEma;
 			n += co.importEma;
 		}
