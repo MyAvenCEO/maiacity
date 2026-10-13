@@ -23,6 +23,7 @@ import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, batteryPack, pickup, powercube, solarPanel } from './village.js';
 import { powerCube } from '$lib/actors/powercube.js';
+import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
@@ -157,6 +158,7 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'powercube', label: 'Power Cube', note: 'Open Source Ecology’s Power Cube VII / 7s, the hydraulic heart of their Global Village Construction Set: a 28 hp V-twin on a gear pump, 15 gpm at 3,000 psi, with its 7-gallon tanks, relief, gauge, six-tube cooler, battery and two quick couplers in a 27" cube of 181 kg, lifted from one machine to the next. Running; every part its own in the Actors', usedIn: 'The LifeTrac', make: () => working(powerCube(), 'run') },
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
 	{ id: 'battery-pack', label: 'Big battery pack', note: `${VILLAGE_INFO.battery.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => batteryPack() },
+	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() },
 	{
 		id: 'excavator',
 		label: 'Excavator',
@@ -180,3 +182,13 @@ const CONTAINER_LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'container-sanitary', label: 'Sanitary container', note: 'washing machines and dryers, three washbasins, three showers and three toilets in cubicles, the hot-water heat pump; a rainwater tank outside. Walk in', usedIn: 'Sandbox 1', make: () => sanitaryContainer() },
 ];
 export const CONTAINERS: Model[] = versioned(CONTAINER_LIST, 'make', HISTORY);
+
+/** the wayside of MaiaCity V1: buildings on the dusty highway and at the village centre, and the places they make together */
+const WAYSIDE_LIST: (Omit<Model, 'versions' | 'version'> & { group: string })[] = [
+	{ id: 'bus-stop', label: 'Bus stop', group: 'Wayside', note: `${WAYSIDE_INFO.busStop.note}. Where every newcomer steps off`, usedIn: 'MaiaCity V1', make: () => busStop() },
+	{ id: 'gas-station', label: 'Abandoned gas station', group: 'Wayside', note: `${WAYSIDE_INFO.gasStation.note}. The old world, left behind at the city's centre`, usedIn: 'MaiaCity V1', make: () => gasStation() },
+	{ id: 'old-shed', label: 'Old shed', group: 'Wayside', note: WAYSIDE_INFO.shed.note, usedIn: 'MaiaCity V1', make: () => oldShed() },
+	{ id: 'maia-centre', label: 'MaiaCity centre', group: 'Places', note: 'the centre of the city plot today: the bus stop on the sand highway, the abandoned gas station behind it, the travel van pulling in. Where the story starts', usedIn: 'MaiaCity V1', make: () => maiaCentre() },
+	{ id: 'village-store', label: 'Village store', group: 'Places', note: "the village centre's future storage area: the broken shed with the powercube inside, the solar row and the battery beside it. All the Village COOP's", usedIn: 'MaiaCity V1', make: () => villageStore() }
+];
+export const WAYSIDE: Model[] = versioned(WAYSIDE_LIST, 'make', HISTORY);

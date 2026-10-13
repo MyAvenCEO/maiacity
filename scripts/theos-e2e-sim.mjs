@@ -5,9 +5,10 @@
  * macro thesis and its MIND concept hold when people actually live under the rules.
  *
  * Fixed rules (the author's): only HEARTS and MINDs; 24 personal HEARTS a person a day, invest-only; 1 HEART → 1 MIND
- * of that COOP, half to the investor, half to the COOP's treasury; COOPs never hold HEARTS; treasuries hold own and
- * other MINDs as working capital; 10 % of treasury MIND flows into protocol-owned, never-withdrawable, equal-weight G3M
- * baskets of 4–8 MINDs with a 0.3 % fee kept in the pool, and all MIND↔MIND trades go through them; a COOP bootstraps
+ * of that COOP: 0.5 to the investor, 0.4 to the COOP's treasury, 0.1 to the city's liquidity pools; COOPs never hold
+ * HEARTS; treasuries hold own and other MINDs as working capital; the pools are equal-weight G3M baskets of 4–8 MINDs
+ * with a 0.3 % fee kept in the pool, whose LP tokens the City COOP holds (no redemptions here), and all MIND↔MIND
+ * trades go through them; Law 5 pays 20 % of every sale at once to the holders of the seller's MIND; a COOP bootstraps
  * from HEARTS plus ≥ 3 basket partners; HEARTS and MINDs melt at 7 %/yr; all land belongs to the City COOP (one equal
  * share per citizen), which also runs what citizens share (here: water, streets, parks), is never sold and is leased
  * for ground rent paid in MIND to the City COOP; a failed COOP's physical assets go to the City COOP, which leases them
@@ -34,11 +35,18 @@
  * drifting tastes; weak COOPs fail (their plant goes to the City, which leases it to a successor; the failed MIND leaves
  * the pools and is retired) and small ones that lost their market exit; every tenth person is a zero-Aven test group.
  * The report starts with the per-person proof checks of the dynamic main (no one starves, no one has to work to
- * survive, living standards rise for everyone), then the dynamic sections D1–D8 and ladders, then the static sections.
+ * survive, living standards rise for everyone), then the dynamic sections D1–D8 and ladders, then the same runs valued
+ * in HEARTS, the paper's unit of account (H1–H8), then the static sections.
  *
  * Run:   node scripts/theos-e2e-sim.mjs              all tables (markdown) on stdout, about 4 minutes
  *        node scripts/theos-e2e-sim.mjs --quick      fewer people, shorter runs (smoke test, about a minute)
- *        node scripts/theos-e2e-sim.mjs --csv FILE   also write yearly series of every run to FILE
+ *        node scripts/theos-e2e-sim.mjs --csv FILE   also write yearly series of every run to FILE (with HEART columns)
+ *        node scripts/theos-e2e-sim.mjs --json FILE  also write the numbers of H1–H8 to FILE
+ *        node scripts/theos-e2e-sim.mjs --seeds 20261012-20261019 [--set key=value,…]   the dynamic main on each seed:
+ *                                                    μ, σ, the margin below the melt and Proposition 3's checks
+ *                                                    (keys of the dynamic world, e.g. poolShare=0.05, turnDiv=0.1,
+ *                                                    capDays=365)
+ *        node scripts/theos-e2e-sim.mjs … --melt 0.09  a research run with another melt (the protocol's is 0.07)
  *        node scripts/theos-e2e-sim.mjs --debug d 60 [--empty 0.25 | --grow]   one static run, a line a year
  *        node scripts/theos-e2e-sim.mjs --dyn 60 [--set key=value,…]          one dynamic run, a line a year
  */
@@ -47,13 +55,19 @@ import { writeFileSync } from 'node:fs';
 const ARGS = process.argv.slice(2);
 const QUICK = ARGS.includes('--quick');
 const CSV = ARGS.includes('--csv') ? ARGS[ARGS.indexOf('--csv') + 1] : null;
+const JSON_OUT = ARGS.includes('--json') ? ARGS[ARGS.indexOf('--json') + 1] : null;
 const T0 = Date.now();
 
 // ── protocol constants ───────────────────────────────────────────────────────────────────────────────────────────────
-const RATE = 0.07; // demurrage on HEARTS and MINDs, a year
+// demurrage on HEARTS and MINDs, a year. `--melt R` changes it for a research run only (the melt tests of the paper's
+// Section 9.3); the protocol's rate is 0.07
+const RATE = ARGS.includes('--melt') ? +ARGS[ARGS.indexOf('--melt') + 1] : 0.07;
 const HEARTS_DAY = 24;
 const U = HEARTS_DAY * 365; // 8,760 HEARTS a person a year
-const POOL_SHARE = 0.1; // the liquidity rule: a tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools
+// the liquidity rule: each HEART invested into a COOP makes 1 MIND: 0.5 to the investor, 0.4 to the COOP's treasury and
+// 0.1 to the city's pools (the pools' part is taken out of the treasury's half). Sales are not levied. The old pool rule
+// sent 0.05 of each HEART (a tenth of the treasury's half); it is kept as a variation (DLADDER 'pool05').
+const POOL_SHARE = 0.1;
 const FEE = 0.003;
 const GAM = 1 - FEE;
 const W_STAR = U / 2 / RATE; // the paper's resting MIND holding of a person, 62,571
@@ -352,7 +366,7 @@ function init(sc) {
 		// the worst person-day over the whole run: on any day, and from day 8 on (after the genesis week, when nobody
 		// holds MIND yet and the pools are empty); the zero-Aven group's first day on which Law 5 dividends alone covered
 		// a day's basic bundle for every one of them, and the last day they did not
-		S.proof = { covMin: Infinity, covMinT: 0, covMinLate: Infinity, covMinLateT: 0, weekPd: 0, weekShort: 0, zCovMinLate: Infinity, zShortLate: 0, zStrictFrom: null, zStrictLastFail: null, zStrictLastFailR: null };
+		S.proof = { covMin: Infinity, covMinT: 0, covMinLate: Infinity, covMinLateT: 0, weekPd: 0, weekShort: 0, weekMin: Infinity, weekMinT: 0, zCovMinLate: Infinity, zShortLate: 0, zStrictFrom: null, zStrictLastFail: null, zStrictLastFailR: null };
 		S.prevNames = null;
 	}
 	buildGraph(S);
@@ -371,14 +385,14 @@ function newBucket() {
 		routeFee: 0, hopsIn: 0, insolv: new Float64Array(M), steps: 0, days: 0, arbR: 0, hearts: new Float64Array(M),
 		burned: 0, retired: 0, issued: 0, payR: 0, cpiSum: 0, cpiN: 0, rentR: 0, wagesR: 0, divR: 0, propR: 0, pFail: 0,
 		divK: new Float64Array(M), eligK: new Float64Array(M), treInR: 0, heartInR: 0, salesHHR: 0, b2bR: 0,
-		// the round trip (R): own half to wallets, the tenth to the pools, dividends to people and to treasuries, melt by place
+		// the round trip (R): the investor's half to wallets, the pools' part to the pools, dividends to people and to treasuries, melt by place
 		walHeartR: 0, poolHeartR: 0, divHHR: 0, divTR: 0, meltWR: 0, meltTR: 0, meltPR: 0, meltAR: 0,
 		// dynamic world: failures (liquidation to holders, what holders and pools lost), stock that rotted, events, MIND count
 		// melted, Aven work demand, and the per-person proof checks
 		liqHHR: 0, liqTR: 0, lossWalR: 0, lossTreR: 0, lossPoolR: 0, burnTreR: 0, rotR: 0, failN: 0, exitN: 0, foundN: 0, shockN: 0,
 		meltCnt: 0, workU: 0, wageSum: 0, avenUSum: 0, covMin: Infinity, zPd: 0, zStrictOk: 0, zStrictMin: Infinity, zStrictSum: 0,
 		zCovMin: Infinity, zShort: 0, watchPd: 0, watchShort: 0, watchCov: Infinity, watchFPd: 0, watchFShort: 0, watchFCov: Infinity,
-		zWminStep: Infinity, basicMindSum: 0, revalW: 0, revalT: 0, revalP: 0, revalA: 0, madeN: {}, revN: {}, prodN: {}, sellD: new Float64Array(NPROD), spreadSum: new Float64Array(NPROD), spreadD: new Float64Array(NPROD)
+		zWminStep: Infinity, hFlows: {}, hRevW: 0, hRevT: 0, hRevP: 0, hRevA: 0, hZWmin: Infinity, basicMindSum: 0, revalW: 0, revalT: 0, revalP: 0, revalA: 0, madeN: {}, revN: {}, prodN: {}, sellD: new Float64Array(NPROD), spreadSum: new Float64Array(NPROD), spreadD: new Float64Array(NPROD)
 	};
 }
 
@@ -585,12 +599,14 @@ function updatePrices(S, dt) {
 }
 
 // ── one step of dt days ──────────────────────────────────────────────────────────────────────────────────────────────
-/** credit a treasury in its own MIND; only the treasury half of each HEART pays a tenth into the pools (sales are not levied) */
+/** the pools' part of the treasury's half of each HEART: poolShare of the HEART is 2·poolShare of that half */
+const poolLevy = (S) => 2 * S.sc.poolShare;
+/** credit a treasury in its own MIND; only the treasury's half of each HEART pays the pools their part (sales are not levied) */
 function treasuryIn(S, k, amt, levy = false) {
 	if (!(amt > 0)) return;
 	const co = S.c[k];
 	if (levy) {
-		const d = POOL_SHARE * amt;
+		const d = poolLevy(S) * amt;
 		co.poolDue += d;
 		amt -= d;
 	}
@@ -645,10 +661,10 @@ function invest(S, dt) {
 		S.inc[i] = inc;
 		S.cur.walHeartR += inc;
 	}
-	const ea = Math.min(1, dt / 90);
+	const ea = Math.min(1, dt / 90), lev = poolLevy(S);
 	for (let k = 0; k < M; k++) {
 		const co = S.c[k];
-		if (to[k] > 0) treasuryIn(S, k, to[k], true), (S.cur.treInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.heartInR += to[k] * (1 - POOL_SHARE) * S.P[k]), (S.cur.poolHeartR += to[k] * POOL_SHARE * S.P[k]), (co.inR += to[k] * (1 - POOL_SHARE) * S.P[k]);
+		if (to[k] > 0) treasuryIn(S, k, to[k], true), (S.cur.treInR += to[k] * (1 - lev) * S.P[k]), (S.cur.heartInR += to[k] * (1 - lev) * S.P[k]), (S.cur.poolHeartR += to[k] * lev * S.P[k]), (co.inR += to[k] * (1 - lev) * S.P[k]);
 		co.heartsEma += ea * ((2 * to[k]) / dt - co.heartsEma);
 		S.cur.hearts[k] += 2 * to[k];
 	}
@@ -1728,7 +1744,7 @@ function proofStep(S, dt, T, B) {
 		if (cov < B.covMin) B.covMin = cov;
 		if (cov < pr.covMin) (pr.covMin = cov), (pr.covMinT = S.t);
 		if (S.t >= 7 && cov < pr.covMinLate) (pr.covMinLate = cov), (pr.covMinLateT = S.t);
-		if (S.t < 7) (pr.weekPd += dt), cov < 0.98 && (pr.weekShort += dt);
+		if (S.t < 7) (pr.weekPd += dt), cov < 0.98 && (pr.weekShort += dt), cov < pr.weekMin && ((pr.weekMin = cov), (pr.weekMinT = S.t));
 		if (watching) (B.watchPd += dt), cov < 0.98 && (B.watchShort += dt), (B.watchCov = Math.min(B.watchCov, cov));
 		if (watchingF) (B.watchFPd += dt), cov < 0.98 && (B.watchFShort += dt), (B.watchFCov = Math.min(B.watchFCov, cov));
 		if (S.zeroAven[i]) {
@@ -1745,6 +1761,9 @@ function proofStep(S, dt, T, B) {
 			let w = 0;
 			for (let k = 0; k < M; k++) w += S.hold[i * M + k] * P[k];
 			if (w < B.zWminStep) B.zWminStep = w;
+			let wh = 0;
+			for (let k = 0; k < M; k++) wh += S.hold[i * M + k] * S.vH[k];
+			if (wh < B.hZWmin) B.hZWmin = wh;
 		}
 		S.divI[i] = 0;
 	}
@@ -2070,6 +2089,12 @@ function lifecycle(S, dt, B) {
 
 function step(S, dt) {
 	const B = S.cur;
+	if (!S.vH) {
+		const hi0 = heartIndex(S);
+		S.vH = hi0.v;
+		S.hpH = hi0.hp;
+	}
+	let hSnap = HKEYS.map((k) => B[k] || 0);
 	if (S.sc.popGrowth) grow(S, dt);
 	meltAll(S, Math.exp((-RATE * dt) / 365));
 	if (S.sc.dynamic) world(S, dt, B);
@@ -2092,6 +2117,8 @@ function step(S, dt) {
 	capacity(S, dt);
 	deposits(S, dt);
 	arbitrage(S);
+	heartFlows(B, hSnap, S.hpH);
+	hSnap = HKEYS.map((k) => B[k] || 0);
 	const Pold = S.sc.dynamic ? Float64Array.from(S.P) : null;
 	updatePrices(S, dt);
 	if (Pold) revalue(S, Pold, B);
@@ -2101,6 +2128,19 @@ function step(S, dt) {
 	S._rentPrev = rentNow;
 	updateAlloc(S, dt);
 	if (S.sc.dynamic) lifecycle(S, dt, B);
+	{
+		const hiE = heartIndex(S);
+		heartFlows(B, hSnap, hiE.hp);
+		const dv = new Float64Array(M);
+		for (let k = 0; k < M; k++) dv[k] = hiE.v[k] - S.vH[k];
+		const rv = heartPlaces(S, dv);
+		B.hRevW += rv.w;
+		B.hRevT += rv.t;
+		B.hRevP += rv.p;
+		B.hRevA += rv.a;
+		S.vH = hiE.v;
+		S.hpH = hiE.hp;
+	}
 	B.steps++;
 	B.days += dt;
 	S.t += dt;
@@ -2204,6 +2244,115 @@ function dynYear(S, B, W, split, yk) {
 	};
 }
 
+// ── HEARTS as the unit of account (the paper's unit, Section 6.3; display only) ─────────────────────────────────────
+// Every MIND is minted 1:1 from HEARTS, so the average MIND in existence is worth 1 HEART. The pools set only how each
+// MIND stands against the others. So the MINDs the pools price are scaled together until their supply-weighted average
+// is 1 HEART (Σ supply·value = Σ supply), and a MIND the pools cannot price yet counts at 1 HEART (the game's rule).
+// Nothing in the simulation reads these values, so every move, price and trade stays the same. Flows are valued at the
+// HEART values of the step in which they happen; price moves are what the change of HEART values from one step to the
+// next did to what each place holds. The report's sections H1–H8 print them.
+const HKEYS = ['payR', 'cpiSum', 'rentR', 'wagesR', 'divR', 'propR', 'treInR', 'heartInR', 'salesHHR', 'b2bR', 'walHeartR', 'poolHeartR', 'divHHR', 'divTR', 'meltWR', 'meltTR', 'meltPR', 'meltAR', 'liqHHR', 'liqTR', 'lossWalR', 'lossTreR', 'lossPoolR', 'burnTreR', 'rotR', 'arbR', 'routeCost', 'routeFee', 'routeIn', 'wageSum'];
+function heartIndex(S) {
+	const N = S.N, P = S.P, c = S.c, s = new Float64Array(M);
+	for (let i = 0; i < N; i++) for (let k = 0; k < M; k++) s[k] += S.hold[i * M + k];
+	for (let j = 0; j < M; j++) {
+		if (!c[j].active && !c[j].failed) continue;
+		for (let k = 0; k < M; k++) s[k] += c[j].tre[k];
+		s[j] += c[j].poolDue;
+	}
+	for (const p of S.pools) for (let i = 0; i < p.m.length; i++) s[p.m[i]] += p.x[i];
+	for (let k = 0; k < M; k++) s[k] += S.arb[k];
+	let units = 0, worth = 0, all = 0, allR = 0, n = 0;
+	for (let k = 0; k < M; k++) {
+		all += s[k];
+		allR += s[k] * P[k];
+		if (S.live && S.live[k] && s[k] > 0 && P[k] > 0) (units += s[k]), (worth += s[k] * P[k]), n++;
+	}
+	const hp = n >= 2 && units > 0 && worth > 0 ? worth / units : null;
+	const v = new Float64Array(M);
+	for (let k = 0; k < M; k++) v[k] = hp !== null && S.live[k] && P[k] > 0 ? P[k] / hp : 1;
+	return { v, hp: hp ?? 1, priced: hp !== null, unpriced: all > 0 ? 1 - (hp !== null ? units : 0) / all : 1, hU: all > 0 ? allR / all : 1, all };
+}
+/** what wallets, treasuries (with what waits for the pools), pools and the arbitrage bot hold, at the values v */
+function heartPlaces(S, v) {
+	const N = S.N, c = S.c;
+	let w = 0, t = 0, p = 0, a = 0;
+	for (let i = 0; i < N; i++) for (let k = 0; k < M; k++) w += S.hold[i * M + k] * v[k];
+	for (let j = 0; j < M; j++) {
+		if (!c[j].active && !c[j].failed) continue;
+		for (let k = 0; k < M; k++) t += c[j].tre[k] * v[k];
+		t += c[j].poolDue * v[j];
+	}
+	for (const pl of S.pools) for (let i = 0; i < pl.m.length; i++) p += pl.x[i] * v[pl.m[i]];
+	for (let k = 0; k < M; k++) a += S.arb[k] * v[k];
+	return { w, t, p, a };
+}
+function heartFlows(B, snap, hp) {
+	for (let i = 0; i < HKEYS.length; i++) {
+		const k = HKEYS[i], d = (B[k] || 0) - snap[i];
+		if (d) B.hFlows[k] = (B.hFlows[k] || 0) + d / hp;
+	}
+}
+/** the year in HEARTS: called at the start of closeYear, while S.prevHold and S.prevNames still hold last year's */
+function heartYear(S, B) {
+	if (!S.HY) S.HY = [];
+	const N = S.N, c = S.c, v = S.vH, hi = heartIndex(S), pl = heartPlaces(S, v);
+	const yk = new Float64Array(M);
+	for (let k = 0; k < M; k++) if (B.eligK[k] > 0) yk[k] = B.divK[k] / (B.eligK[k] / B.days);
+	const vr = S.sc.dynamic && S.prevNames ? Array.from(v, (x, k) => (S.prevNames[k] === null || S.prevNames[k] === NAMES[k] ? x : 0)) : Array.from(v);
+	let muH = null, sgH = null, muPH = null;
+	if (S.prevHold && S.prevVH && S.prevN <= N) {
+		const lr = [], lp = [];
+		for (let i = 0; i < S.prevN; i++) {
+			let a = 0, b = 0, d = 0;
+			for (let k = 0; k < M; k++) {
+				const h = S.prevHold[i * M + k];
+				a += h * S.prevVH[k];
+				b += h * vr[k];
+				d += h * vr[k] * yk[k];
+			}
+			if (a > 0 && b > 0 && isFinite(d)) lr.push(Math.log((b + d) / a)), lp.push(Math.log(b / a));
+		}
+		if (lr.length > 10) {
+			muH = lr.reduce((x, y) => x + y, 0) / lr.length;
+			muPH = lp.reduce((x, y) => x + y, 0) / lp.length;
+			sgH = Math.sqrt(lr.reduce((x, y) => x + (y - muH) * (y - muH), 0) / (lr.length - 1));
+		}
+	}
+	const rnH = {};
+	if (S.sc.dynamic && S.prevVH && S.prevNames)
+		for (let k = 0; k < M; k++) {
+			const pn = S.prevNames;
+			if (pn[k] === null) continue;
+			if (pn[k] === NAMES[k] && c[k].active && S.prevVH[k] > 0 && v[k] > 0) rnH[NAMES[k]] = { r: (v[k] * (1 + yk[k])) / S.prevVH[k] - 1, y: yk[k], p: v[k] / S.prevVH[k] - 1, prod: SPECS[k].product };
+			else if (pn[k] !== NAMES[k] || !c[k].active) rnH[pn[k]] = { r: -1, y: 0, p: -1, prod: null, ended: true };
+		}
+	let zW = 0, zn = 0;
+	if (S.zeroAven) for (let i = 0; i < N; i++) if (S.zeroAven[i]) {
+		let w = 0;
+		for (let k = 0; k < M; k++) w += S.hold[i * M + k] * v[k];
+		zW += w;
+		zn++;
+	}
+	const lv = [];
+	for (let k = 0; k < M; k++) if (c[k].active && S.live[k] && S.P[k] > 0) lv.push(v[k]);
+	const baseV = Array.from(v).slice(0, BASE_COOPS);
+	S.HY.push({
+		year: S.Y.length + 1, N, days: B.days, pd: B.pd, hp: S.hpH, hpCheck: hi.hp, hU: hi.hU, unpriced: hi.unpriced, count: hi.all,
+		v: Array.from(v), yk: Array.from(yk), pl, flows: { ...B.hFlows }, rev: { W: B.hRevW, T: B.hRevT, P: B.hRevP, A: B.hRevA },
+		zWmin: B.hZWmin, zW: zn ? zW / zn : null, muH, sgH, muPH, rnH, vMin: lv.length ? Math.min(...lv) : null, vMax: lv.length ? Math.max(...lv) : null,
+		vMinBase: Math.min(...baseV.filter((x) => x > 0)), vMaxBase: Math.max(...baseV),
+		cpi: B.cpiN ? (B.hFlows.cpiSum || 0) / B.cpiN : null, L: B.pd > 0 ? (B.hFlows.salesHHR || 0) / B.pd : null,
+		giniH: (() => {
+			// the Gini of what people hold, valued in HEARTS at the year's end
+			const Wh = new Float64Array(N);
+			for (let i = 0; i < N; i++) for (let k = 0; k < M; k++) Wh[i] += S.hold[i * M + k] * v[k];
+			return gini(Wh, N);
+		})()
+	});
+	S.prevVH = Float64Array.from(v);
+}
+
 // ── yearly snapshot ──────────────────────────────────────────────────────────────────────────────────────────────────
 function moneySplit(S) {
 	const N = S.N, P = S.P, c = S.c;
@@ -2227,6 +2376,7 @@ function moneySplit(S) {
 
 function closeYear(S) {
 	const B = S.cur, N = S.N, P = S.P, c = S.c;
+	heartYear(S, B);
 	const W = new Float64Array(N), C = new Float64Array(N);
 	for (let i = 0; i < N; i++) {
 		let w = 0;
@@ -2332,7 +2482,7 @@ function closeYear(S) {
 
 // ── scenarios ────────────────────────────────────────────────────────────────────────────────────────────────────────
 const N0 = QUICK ? 120 : 250;
-const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', turnDiv: 0.2, payout: 12, divShare: 0, wageR: WAGE_R, capDays: 60, arbTo: 'bot', avenRule: 'price', popGrowth: 0, years: 60 };
+const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', turnDiv: 0.2, poolShare: POOL_SHARE, payout: 12, divShare: 0, wageR: WAGE_R, capDays: 60, arbTo: 'bot', avenRule: 'price', popGrowth: 0, years: 60 };
 // the dynamic world (the new main): free prices, rivals in every good, experiences, reserves of 9 months, productivity
 // growth, shocks, foundings and failures, a zero-Aven test group (every tenth person)
 const DYN = {
@@ -2509,6 +2659,57 @@ const avg = (S, a, b, fn) => {
 };
 const at = (S, y) => S.Y[Math.min(S.Y.length, y) - 1];
 
+// ── the seed check: the dynamic main on several seeds (--seeds 20261012-20261019 [--set key=value,…]) ────────────────
+// One seed is one history. Each seed runs in its own process (--seed-run SEED: the same run as the full script's dynamic
+// main), four at a time; the table gives μ and σ at rest in HEARTS, the margin below the melt, both Ginis and the proof
+// checks of Proposition 3.
+const SET = {};
+if (ARGS.includes('--set')) for (const kv of ARGS[ARGS.indexOf('--set') + 1].split(',')) SET[kv.split('=')[0]] = +kv.split('=')[1];
+const SEED_RUN = ARGS.includes('--seed-run') ? { ...SET, seed: +ARGS[ARGS.indexOf('--seed-run') + 1] } : null;
+if (ARGS.includes('--seeds')) {
+	const arg = ARGS[ARGS.indexOf('--seeds') + 1];
+	const seeds = arg.includes('-') ? Array.from({ length: +arg.split('-')[1] - +arg.split('-')[0] + 1 }, (_, i) => +arg.split('-')[0] + i) : arg.split(',').map(Number);
+	const { spawn } = await import('node:child_process');
+	const { fileURLToPath } = await import('node:url');
+	const self = fileURLToPath(import.meta.url);
+	const one = (seed) =>
+		new Promise((ok, no) => {
+			const args = [self, '--seed-run', String(seed), ...(QUICK ? ['--quick'] : []), ...(ARGS.includes('--set') ? ['--set', ARGS[ARGS.indexOf('--set') + 1]] : []), ...(ARGS.includes('--melt') ? ['--melt', String(RATE)] : [])];
+			const ch = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'inherit'] });
+			let o = '';
+			ch.stdout.on('data', (b) => (o += b));
+			ch.on('close', (code) => (code ? no(new Error(`seed ${seed}: exit ${code}`)) : ok(JSON.parse(o))));
+		});
+	const res = new Array(seeds.length);
+	let next = 0;
+	await Promise.all(
+		Array.from({ length: Math.min(4, seeds.length) }, async () => {
+			while (next < seeds.length) {
+				const i = next++;
+				res[i] = await one(seeds[i]);
+				process.stderr.write(`  seed ${seeds[i]} done (${((Date.now() - T0) / 1000).toFixed(1)} s)\n`);
+			}
+		})
+	);
+	const ok = (b) => (b ? '✓' : '✗');
+	const set = [...Object.entries(SET).map(([k, v]) => `${k} = ${v}`), ...(ARGS.includes('--melt') ? [`melt ${pct(RATE, 0)}`] : [])].join(', ');
+	const L = [];
+	L.push(`# The seed check: the dynamic main on ${seeds.length} seeds${set ? ` (${set})` : ''}`, '');
+	L.push(`Each row is the dynamic main of the full report on one seed: ${res[0].N} people, ${res[0].years} years, the pools' part ${f(res[0].poolShare, 2)} of each HEART, Law 5 at ${pct(res[0].turnDiv, 0)}. μ and σ: the mean and the spread across people of each person's yearly return in HEARTS (dividends plus price change, before the melt), at rest (the last 10 years). The margin is the ${pct(RATE, 0)} melt less μ. Proposition 3's checks are the report's proof checks 1–3 (check 2 normal, with the bundle under 12 MIND); "every tenth" is check 3 for the ten tenths alone.`, '');
+	L.push('| Seed | μ at rest | margin (melt − μ) | σ | Prop. 2 Gini | measured Gini (HEARTS): last year; trend / 10 y | dividend yield | pools\' share of MIND | 1. no one starves (person-days short from day 8) | 2. no one has to work | 3. living standards rise | every tenth higher | all three |');
+	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: | :---: | :---: | :---: |');
+	for (const r of res) L.push(`| ${r.seed} | ${pct(r.muH, 2)} | ${f(r.marginH * 100, 2)} pt | ${pct(r.sgH, 2)} | ${r.gini2H === null ? '–' : f(r.gini2H, 2)} | ${f(r.giniH.y60, 3)}; ${r.giniH.trend >= 0 ? '+' : ''}${f(r.giniH.trend, 3)} | ${pct(r.yield, 1)} | ${pct(r.pools, 1)} | ${ok(r.ok1)} ${f(r.shLate)} | ${ok(r.ok2)} | ${ok(r.ok3)} | ${ok(r.tenths)} | ${ok(r.all)} |`);
+	L.push('');
+	const mus = res.map((r) => r.muH), mg = res.map((r) => r.marginH);
+	const sorted = [...mus].sort((a, b) => a - b), med = (sorted[(sorted.length - 1) >> 1] + sorted[sorted.length >> 1]) / 2;
+	L.push(`μ at rest: ${pct(Math.min(...mus), 2)} to ${pct(Math.max(...mus), 2)} (median ${pct(med, 2)}); below the melt on ${mus.filter((m) => m < RATE).length} of ${res.length} seeds; smallest margin ${f(Math.min(...mg) * 100, 2)} pt (seed ${res[mg.indexOf(Math.min(...mg))].seed}). All three checks of Proposition 3 pass on ${res.filter((r) => r.all).length} of ${res.length} seeds (check 1 on ${res.filter((r) => r.ok1).length}, check 2 on ${res.filter((r) => r.ok2).length}, check 3 on ${res.filter((r) => r.ok3).length}; every tenth higher at each mark on ${res.filter((r) => r.tenths).length}). Measured Gini of holdings in the last year: ${f(Math.min(...res.map((r) => r.giniH.y60)), 2)}–${f(Math.max(...res.map((r) => r.giniH.y60)), 2)}.`, '');
+	for (const r of res.filter((x) => !x.all)) L.push(`- ${r.seed}: ${r.why}.`);
+	L.push('', `_Runtime ${((Date.now() - T0) / 1000).toFixed(1)} s._`);
+	console.log(L.join('\n'));
+	if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify(res, null, 1));
+	process.exit(0);
+}
+
 // ── run everything ───────────────────────────────────────────────────────────────────────────────────────────────────
 const YRS = QUICK ? 20 : 60;
 const BR = QUICK ? 10 : 30; // branch year
@@ -2584,10 +2785,17 @@ function measure(name, S) {
 function record(name, S) {
 	results[name] = S;
 	measure(name, S);
-	if (CSV) for (const y of S.Y) csvRows.push([name, y.year, y.N, y.short, y.newShort ?? '', y.route ?? '', y.cpi ?? '', y.mPer, y.split.wal / y.N, (y.split.treOwn + y.split.treOther) / y.N, y.split.pool / y.N, y.peopleShareR ?? '', y.gini, y.yield, y.muRet ?? '', y.sigma ?? '', y.divR / y.N, y.propR / y.N, ...y.P.slice(0, BASE_COOPS), ...new Array(NDYNCOL).fill('')].join(','));
+	if (CSV) for (const y of S.Y) csvRows.push([name, y.year, y.N, y.short, y.newShort ?? '', y.route ?? '', y.cpi ?? '', y.mPer, y.split.wal / y.N, (y.split.treOwn + y.split.treOther) / y.N, y.split.pool / y.N, y.peopleShareR ?? '', y.gini, y.yield, y.muRet ?? '', y.sigma ?? '', y.divR / y.N, y.propR / y.N, ...y.P.slice(0, BASE_COOPS), ...new Array(NDYNCOL).fill(''), ...heartCols(S, y.year)].map((x) => (x === null || x === undefined || (typeof x === 'number' && !isFinite(x)) ? '' : x)).join(','));
 }
 
 const NDYNCOL = 30;
+/** the HEART columns of a year (see heartIndex): R a HEART, μ and σ in HEARTS, the Gini of what people hold in HEARTS,
+ *  a day of living and a day's basic bundle in HEARTS, and the pools' share of all MIND by HEART value */
+const HEARTCOLS = 'R_per_HEART,mean_return_H,sigma_returns_H,gini_owned_H,days_of_living_H,basic_bundle_H,pool_share_H';
+function heartCols(S, year) {
+	const h = S.HY[year - 1], t = h.pl.w + h.pl.t + h.pl.p + h.pl.a;
+	return [h.hp, h.muH, h.sgH, h.giniH, h.L, h.cpi, t > 0 ? h.pl.p / t : null];
+}
 function recordDyn(name, S) {
 	results[name] = S;
 	if (!CSV) return;
@@ -2596,7 +2804,7 @@ function recordDyn(name, S) {
 		const base = [name, y.year, y.N, y.short, y.newShort ?? '', y.route ?? '', y.cpi ?? '', y.mPer, y.split.wal / y.N, (y.split.treOwn + y.split.treOther) / y.N, y.split.pool / y.N, y.peopleShareR ?? '', y.gini, y.yield, y.muRet ?? '', y.sigma ?? '', y.divR / y.N, y.propR / y.N];
 		const pb = BASE_NAMES.slice(0, BASE_COOPS).map((n, k) => (d.coops[k] && d.coops[k].name === n && d.coops[k].active ? y.P[k] : ''));
 		const dz = [d.L, d.inc, d.spend, d.spendShare, d.meltWshare, d.treShareR, d.poolShareR, d.pMin, d.pMax, d.sdLog, d.nLive, d.covMin, d.shortPd, d.pd, d.zStrictShare, d.zStrictMin, d.zCovMin, d.zW, d.zWmin, d.basicMind, d.realMean, d.dec[0], d.dec[4], d.dec[9], d.zReal, d.failN, d.exitN, d.foundN, d.shockN, d.meanA];
-		csvRows.push([...base, ...pb, ...dz].map((x) => (x === null || x === undefined || (typeof x === 'number' && !isFinite(x)) ? '' : x)).join(','));
+		csvRows.push([...base, ...pb, ...dz, ...heartCols(S, y.year)].map((x) => (x === null || x === undefined || (typeof x === 'number' && !isFinite(x)) ? '' : x)).join(','));
 	}
 }
 
@@ -2615,10 +2823,11 @@ const DLADDER = [
 	['wide', 'productivity growth twice as uneven', { prodSd: 0.03 }],
 	['wants', 'wants do not grow (no experiences)', { wantsGrow: false }],
 	['aven', 'Avens with fixed capacity, their rate floats', { avenMarket: true }],
-	['pop', 'population grows 2 % a year (newcomers)', { popGrowth: 0.02 }]
+	['pop', 'population grows 2 % a year (newcomers)', { popGrowth: 0.02 }],
+	['pool05', 'the old pool rule: 0.05 of each HEART to the pools', { poolShare: 0.05 }]
 ];
 const dynYears = (key) => (QUICK ? (key === 'main' ? YRS : 12) : key === 'pop' ? 40 : YRS);
-for (const [key, , extra] of DLADDER) {
+for (const [key, , extra] of SEED_RUN ? [['main', 'seed', SEED_RUN]] : DLADDER) {
 	const yrs = dynYears(key);
 	const S = init({ ...DYN, ...extra, years: yrs });
 	advance(S, yrs * 365);
@@ -2626,6 +2835,8 @@ for (const [key, , extra] of DLADDER) {
 	if (key === 'main') tick('dynamic main');
 }
 tick('dynamic ladder');
+// the static world (the previous main) and its branches, side runs and ladder; not in a seed run
+if (!SEED_RUN) {
 // main scenario: 60 years, shocks branched off in year BR
 {
 	const S = init({ ...BASE, years: YRS });
@@ -2672,6 +2883,7 @@ for (const [key, , extra] of LADDER) {
 	record(`lad:${key}`, S);
 }
 tick('fairness ladder');
+}
 
 // ── report ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 const out = [];
@@ -2798,6 +3010,72 @@ function ss(S) {
 	};
 }
 
+// ── a run in HEARTS: the helpers of the H sections and of the seed check ───────────────────────────────────────────
+const hmean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
+const hy = (S, y) => S.HY[y - 1];
+const yy = (S, y) => S.Y[y - 1];
+const restYears = (S) => Array.from({ length: 10 }, (_, i) => S.Y.length - 9 + i);
+const g2 = (mu, sg) => (mu === null || sg === null ? null : giniRest(1 + (2 * (RATE - mu)) / (sg * sg)));
+const hfl = (h, k) => h.flows[k] || 0;
+const hPerPD = (S, fn) => hmean(restYears(S).map((y) => fn(hy(S, y)) / hy(S, y).N / Math.max(1, hy(S, y).days)));
+const rPD = (S, fn) => hmean(restYears(S).map((y) => fn(yy(S, y).rt) / yy(S, y).N / Math.max(1, yy(S, y).rt.days)));
+const incH = (h) => hfl(h, 'walHeartR') + hfl(h, 'wagesR') + hfl(h, 'propR') + hfl(h, 'divHHR') + hfl(h, 'liqHHR');
+/** the least-squares trend of fn(year) over years a..b, per 10 years */
+const trend10 = (fn, a, b) => {
+	const xs = [], ys = [];
+	for (let y = a; y <= b; y++) xs.push(y), ys.push(fn(y));
+	const mx = hmean(xs), my = hmean(ys);
+	let num = 0, den = 0;
+	for (let i = 0; i < xs.length; i++) (num += (xs[i] - mx) * (ys[i] - my)), (den += (xs[i] - mx) ** 2);
+	return (num / den) * 10;
+};
+/** the summary of one run in HEARTS (and the same in R from the script's own records, as a check) */
+function heartSummary(S) {
+	const ys = restYears(S), all = S.HY.map((h) => h.year), L = S.Y.length;
+	const muH = hmean(ys.map((y) => hy(S, y).muH).filter((x) => x !== null));
+	const sgH = hmean(ys.map((y) => hy(S, y).sgH).filter((x) => x !== null));
+	const muR = hmean(ys.map((y) => yy(S, y).muRet).filter((x) => x !== null));
+	const sgR = hmean(ys.map((y) => yy(S, y).sigma).filter((x) => x !== null));
+	const runH = all.map((y) => hy(S, y).muH).filter((x) => x !== null), runR = all.map((y) => yy(S, y).muRet).filter((x) => x !== null);
+	const shares = { people: [], treasuries: [], pools: [], arb: [] };
+	for (const y of ys) {
+		const p = hy(S, y).pl, t = p.w + p.t + p.p + p.a;
+		shares.people.push(p.w / t), shares.treasuries.push(p.t / t), shares.pools.push(p.p / t), shares.arb.push(p.a / t);
+	}
+	const maxBy = (from, fn) => S.HY.reduce((b, h) => (h.year >= from && fn(h) !== null && fn(h) > b.v ? { v: fn(h), year: h.year } : b), { v: 0, year: 0 });
+	return {
+		years: L,
+		muH, sgH, muR, sgR, gini2H: g2(muH, sgH), gini2R: g2(muR, sgR), marginH: muH === null ? null : RATE - muH,
+		muPH: hmean(ys.map((y) => hy(S, y).muPH).filter((x) => x !== null)), muPR: hmean(ys.map((y) => yy(S, y).muPrice).filter((x) => x !== null)),
+		muRunH: hmean(runH), muRunR: hmean(runR), aboveH: runH.filter((x) => x >= RATE).length, aboveR: runR.filter((x) => x >= RATE).length, ofYears: runH.length,
+		yield: hmean(ys.map((y) => yy(S, y).yield)),
+		incomeH: hPerPD(S, incH), buyH: hPerPD(S, (h) => hfl(h, 'salesHHR')), meltWH: hPerPD(S, (h) => hfl(h, 'meltWR')),
+		incomeR: rPD(S, (r) => r.walHeart + r.ops + r.prop + r.divHH + (r.liqHH || 0)),
+		hpRest: hmean(ys.map((y) => hy(S, y).hp)),
+		// the most a day's basic bundle cost in a year: valued at each step's HEART values, and as the script values it
+		// (the year's mean cost in R ÷ R a MIND on average at the year's end)
+		bundleMax: maxBy(1, (h) => h.cpi), bundleMaxFrom2: maxBy(2, (h) => h.cpi),
+		bundleMaxScript: S.Y.reduce((b, y) => (y.dyn && y.dyn.basicMind !== null && y.dyn.basicMind > b.v ? { v: y.dyn.basicMind, year: y.year } : b), { v: 0, year: 0 }),
+		// who holds the MIND, by HEART value, at rest: wallets, treasuries (with what waits for the pools), pools, the arbitrage bot
+		shares: { people: hmean(shares.people), treasuries: hmean(shares.treasuries), pools: hmean(shares.pools), arb: hmean(shares.arb) },
+		// the measured Gini of what people hold, in HEARTS: years L−20, L−10, L, its mean at rest, and its trend over the last 20 years
+		giniH: { y40: hy(S, L - 20)?.giniH ?? null, y50: hy(S, L - 10).giniH, y60: hy(S, L).giniH, rest: hmean(ys.map((y) => hy(S, y).giniH)), trend: L > 20 ? trend10((y) => hy(S, y).giniH, L - 19, L) : null }
+	};
+}
+
+if (SEED_RUN) {
+	// one seed of the seed check (see --seeds): its measures as JSON on stdout
+	const S = results['dyn:main'], pf = proof(S), h = heartSummary(S);
+	const tenths = pf.falls.every((x) => !x.startsWith('decile'));
+	const why = [
+		!pf.ok1 && `short of basics from day 8: ${f(pf.shLate)} person-days, worst ${pct(pf.pr.covMinLate, 0)} (${dayOf(pf.pr.covMinLateT)})`,
+		!pf.okN && `the zero-Aven people fell to ${pct(pf.pr.zCovMinLate, 0)} of a basic need`,
+		!pf.okB && `a day's basic bundle cost ${f(pf.bm.v, 2)} MIND (year ${pf.bm.year})`,
+		!pf.ok3 && `not higher at every 10-year mark: ${pf.falls.slice(0, 3).join('; ')}${pf.falls.length > 3 ? `; and ${pf.falls.length - 3} more` : ''}`
+	].filter(Boolean).join('; ');
+	console.log(JSON.stringify({ seed: S.sc.seed, N: S.sc.N0, years: S.Y.length, poolShare: S.sc.poolShare, turnDiv: S.sc.turnDiv, muH: h.muH, sgH: h.sgH, marginH: h.marginH, gini2H: h.gini2H, muR: h.muR, giniH: h.giniH, yield: h.yield, pools: h.shares.pools, people: h.shares.people, ok1: pf.ok1, shLate: pf.shLate, okN: pf.okN, okB: pf.okB, ok2: pf.ok2, ok3: pf.ok3, tenths, all: pf.all, why }));
+	process.exit(0);
+}
 const PD = proof(D), SD = ss(D), S0s = ss(results['main:base']);
 const fCount = (S) => `${S.events.filter((e) => e.type === 'fail').length} / ${S.events.filter((e) => e.type === 'exit' && !/called off/.test(e.note)).length} / ${S.events.filter((e) => e.type === 'found').length}`;
 
@@ -2805,13 +3083,13 @@ P('# theOS end-to-end simulation — the dynamic world (new main), and the stati
 P('');
 P(`${N0} people from a cold start with goods (seed capacities ${f(DYN.seedCap * 100)} % of the starting need, nobody holds MIND on day 1), seed ${BASE.seed}, ${dL} years. Daily steps in the first year, weekly steps (traded as 3 batches) after. Steady state = the last 10 years (years ${dA + 1}–${dB}). R = the geometric mean of the reference MIND prices (SOLAR, HABITAT, CITY; chain-linked, so R does not jump when a reference COOP ends and its successor takes its place). A day of living = what an average person's daily consumption costs in R that year. Every tenth person (${zN(D)} people) is the zero-Aven test group: their Avens deliver nothing and they start with nothing; they live only from what they own.`);
 P('');
-P(`The dynamic world: prices move freely with demand in both directions (no cap, no price control, no protected price for basics; a COOP\'s floor is its own variable cost grossed up for Law 5, and it goes below that to clear stock that would rot); every household good starts with two rivals (water stays with the City), a seventh good (experiences, new products) has no satiation; a product whose margin over full cost stays above 30 % for 90 days gets a new rival under Law 3 (founders, 3 basket partners); treasuries keep ${f(DYN.capDays / 30)} months of running costs plus planned building, grow first, then pay out for Aven work proposals; Law 5 pays 20 % of every sale to the holders of the seller\'s MIND; productivity rises about 2 % a year, unevenly; random capacity shocks (30–50 % for 2–8 months) and drifting tastes; a COOP whose treasury stays dry while it keeps losing fails (its plant goes to the City, which leases it to a successor with a new MIND; the failed MIND leaves the pools and is retired), a small COOP that lost its market exits. People spend about half of what they own a year (basics first).`);
+P(`The dynamic world: prices move freely with demand in both directions (no cap, no price control, no protected price for basics; a COOP\'s floor is its own variable cost grossed up for Law 5, and it goes below that to clear stock that would rot); every household good starts with two rivals (water stays with the City), a seventh good (experiences, new products) has no satiation; a product whose margin over full cost stays above 30 % for 90 days gets a new rival under Law 3 (founders, 3 basket partners); treasuries keep ${f(DYN.capDays / 30)} months of running costs plus planned building, grow first, then pay out for Aven work proposals; each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - DYN.poolShare, 1)} to the COOP\'s treasury, ${f(DYN.poolShare, 1)} to the pools; Law 5 pays ${pct(DYN.turnDiv, 0)} of every sale to the holders of the seller\'s MIND; productivity rises about 2 % a year, unevenly; random capacity shocks (30–50 % for 2–8 months) and drifting tastes; a COOP whose treasury stays dry while it keeps losing fails (its plant goes to the City, which leases it to a successor with a new MIND; the failed MIND leaves the pools and is retired), a small COOP that lost its market exits. People spend about half of what they own a year (basics first).`);
 P('');
 P('## Proof checks (dynamic main, per person, every day)');
 P('');
 {
 	const pr = PD.pr;
-	P(`1. ${ok(PD.ok1)} **No one starves** (from day 8 on): the worst person on the worst day had ${pct(pr.covMinLate, 0)} of every basic need (${dayOf(pr.covMinLateT)}); person-days below 98 % of the basics: ${f(PD.shLate)} of ${f(PD.pdLate)}. In the 30 days after each of ${PD.shocks} capacity shocks: ${f(PD.wSh)} of ${f(PD.wPd)} person-days short (worst ${pct(PD.wCov.v, 0)}); in the 180 days after each of ${PD.fails} failures and ${PD.exits} exits: ${f(PD.fSh)} of ${f(PD.fPd)} (worst ${pct(PD.fCov.v, 0)}). ${ok(PD.okWeek)} The genesis week (days 1–7, before anyone holds MIND and while the pools are still empty): worst ${pct(pr.covMin, 0)} on ${dayOf(pr.covMinT)}, ${f(pr.weekShort)} of ${f(pr.weekPd)} person-days short.`);
+	P(`1. ${ok(PD.ok1)} **No one starves** (from day 8 on): the worst person on the worst day had ${pct(pr.covMinLate, 0)} of every basic need (${dayOf(pr.covMinLateT)}); person-days below 98 % of the basics: ${f(PD.shLate)} of ${f(PD.pdLate)}. In the 30 days after each of ${PD.shocks} capacity shocks: ${f(PD.wSh)} of ${f(PD.wPd)} person-days short (worst ${pct(PD.wCov.v, 0)}); in the 180 days after each of ${PD.fails} failures and ${PD.exits} exits: ${f(PD.fSh)} of ${f(PD.fPd)} (worst ${pct(PD.fCov.v, 0)}). ${ok(PD.okWeek)} The genesis week (days 1–7, before anyone holds MIND and while the pools are still empty): worst ${pct(pr.weekMin, 0)} on ${dayOf(pr.weekMinT)}, ${f(pr.weekShort)} of ${f(pr.weekPd)} person-days short.`);
 	P(`2. ${ok(PD.okN)} normal · ${ok(PD.okS)} strict · ${ok(PD.okB)} bundle — **No one has to work to survive** (the ${zN(D)} zero-Aven people). Normal: Law 5 dividends plus spending some of the MIND they hold covered their basics every day from day 8 (worst ${pct(pr.zCovMinLate, 0)}), and what they hold stayed positive (lowest from year 2 on: ${f(PD.zWmin.v)} R, in year ${PD.zWmin.year}). Strict: Law 5 dividends alone covered a day's basic bundle for every one of them first on ${pr.zStrictFrom === null ? 'no day' : dayOf(pr.zStrictFrom)}; ${pr.zStrictLastFail === null ? 'and on every day after' : `but not on every day after (last miss ${dayOf(pr.zStrictLastFail)}, that day's worst person got ${f(pr.zStrictLastFailR, 2)}× the bundle)`}; after year 10 on ${pct(PD.sLate, 2)} of their person-days (worst ${f(PD.sMinLate.v, 2)}× the bundle, year ${PD.sMinLate.year}). A day's basic bundle cost at most ${f(PD.bm.v, 3)} MIND (year ${PD.bm.year}) against the 12 MIND of ownership their investing creates a day (their half of the new MIND): margin ×${f(12 / PD.bm.v, 0)}.`);
 	const m = PD.marks, d = (k) => m.map((y) => f(at(D, y).dyn.dec[k], 1)).join(' → ');
 	P(`3. ${ok(PD.ok3)} **Living standards rise for everyone**: real consumption at base-year prices (R a person a day), years ${m.join(', ')}: poorest decile ${d(0)}; middle (5th) ${d(4)}; richest ${d(9)}; the zero-Aven group ${m.map((y) => f(at(D, y).dyn.zReal, 1)).join(' → ')}; the poorest person ${m.map((y) => f(at(D, y).dyn.realMin, 1)).join(' → ')}. ${PD.ok3 ? 'Every decile, the zero-Aven group and the poorest person are higher at every 10-year mark.' : `Not higher at every 10-year mark: ${PD.falls.join('; ')}.`} COOPs: ${PD.fails} failed, ${PD.exits} exited, ${PD.founds} founded in ${dL} years; no person lost basics after a failure: ${ok(PD.fSh < 1e-9)}.`);
@@ -2908,7 +3186,7 @@ P('');
 	const g = (fn) => avg(D, dA, dB, (y) => fn(y.flows) / y.N);
 	const inn = g((x) => x.heartIn + x.salesHH + x.b2b + x.rent);
 	const melt = avg(D, dA, dB, (y) => (y.split.treR * RATE) / y.N);
-	table(['R a person a year, steady state', 'in: treasury half of the new MIND (after the tenth)', 'in: sales to people', 'in: sales to COOPs and rent', 'in: total', 'out: inputs, building, rent', 'out: Aven work items', 'out: Aven work proposals (share of in)', 'out: Law 5 dividends (share of in)', 'melt on treasuries'], [['dynamic main', f(g((x) => x.heartIn)), f(g((x) => x.salesHH)), f(g((x) => x.b2b + x.rent)), f(inn), f(g((x) => x.b2b + x.rent)), f(g((x) => x.wages)), `${f(g((x) => x.prop))} (${pct(g((x) => x.prop) / inn, 0)})`, `${f(g((x) => x.div))} (${pct(g((x) => x.div) / inn, 0)})`, f(melt)]]);
+	table(['R a person a year, steady state', `in: the treasury's part of the new MIND (${f(0.5 - DYN.poolShare, 2)} of each HEART)`, 'in: sales to people', 'in: sales to COOPs and rent', 'in: total', 'out: inputs, building, rent', 'out: Aven work items', 'out: Aven work proposals (share of in)', 'out: Law 5 dividends (share of in)', 'melt on treasuries'], [['dynamic main', f(g((x) => x.heartIn)), f(g((x) => x.salesHH)), f(g((x) => x.b2b + x.rent)), f(inn), f(g((x) => x.b2b + x.rent)), f(g((x) => x.wages)), `${f(g((x) => x.prop))} (${pct(g((x) => x.prop) / inn, 0)})`, `${f(g((x) => x.div))} (${pct(g((x) => x.div) / inn, 0)})`, f(melt)]]);
 	const cov = at(D, dL).dyn.coops.filter((c) => c.active && c.product >= 0 && c.cover !== null && c.K > 0).map((c) => c.cover).sort((a, b) => a - b);
 	P(`Reserves at the end (days of running costs a treasury holds, COOPs with a plant): lowest ${f(cov[0])}, median ${f(cov[Math.floor(cov.length / 2)])}, highest ${f(cov[cov.length - 1])}; the target is ${DYN.capDays} days plus planned building. Treasuries hold ${pct(SD.tre, 0)} of all MIND by value (static: ${pct(S0s.tre, 0)}). A COOP grows its plant first (where it sells out or earns a margin), and pays out only what it holds above the target.`);
 	P('');
@@ -3032,10 +3310,10 @@ P('');
 		[['ownership created by their investing (their half of the new MIND)', pd((r) => r.walHeart)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['Law 5 dividends', pd((r) => r.divHH)], ['paid out by COOPs that ended', pd((r) => r.liqHH)]],
 		[['buying from COOPs', pd((r) => r.buy)], ['melt', pd((r) => r.meltW)], ['retired with a COOP that ended', pd((r) => r.lossWal)]], pd((r) => r.revalW), 'walR');
 	const tre = row('COOP treasuries',
-		[['the COOP\'s half of the new MIND (after the tenth)', pd((r) => r.treHeart)], ['sales to people', pd((r) => r.buy)]],
+		[[`the treasury's part of the new MIND (${f(0.5 - DYN.poolShare, 2)} of each HEART)`, pd((r) => r.treHeart)], ['sales to people', pd((r) => r.buy)]],
 		[['Law 5 dividends to people', pd((r) => r.divHH)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['melt', pd((r) => r.meltT)], ['paid out to people by COOPs that ended', pd((r) => r.liqHH)], ['retired with a COOP that ended', pd((r) => r.lossTre + r.burnTre)]], pd((r) => r.revalT), 'treR');
 	const pool = row('Pools',
-		[['the tenth of the COOP\'s half', pd((r) => r.poolHeart)], ['routing costs', pd((r) => r.routeCost)]],
+		[[`the pools' part of the new MIND (${f(DYN.poolShare, 2)} of each HEART)`, pd((r) => r.poolHeart)], ['routing costs', pd((r) => r.routeCost)]],
 		[['melt', pd((r) => r.meltP)], ['retired with a COOP that ended', pd((r) => r.lossPool)]], pd((r) => r.revalP), 'poolR');
 	table(['Place', 'in (R a person a day)', 'out', 'in − out', 'price moves', 'change of what it holds', 'not explained: routing, timing'], [wal.r, tre.r, pool.r]);
 	P(`Between treasuries (these cancel out, so they are not in the table): sales to other COOPs ${f(pd((r) => r.b2b), 2)}, ground rent to the City COOP ${f(pd((r) => r.rent), 2)}, Law 5 dividends to treasuries that hold other MINDs ${f(pd((r) => r.divT), 2)}, paid out to other treasuries by COOPs that ended ${f(pd((r) => r.liqT), 2)} R a person a day. People pay routing costs on the share of their payments that the pools convert. Price moves: what the year's MIND price changes (in R) did to the value of what each place holds.`);
@@ -3069,6 +3347,182 @@ P('');
 	P('');
 }
 
+// ── report: the same runs in HEARTS (the paper's unit, Section 6.3) ─────────────────────────────────────────────────
+// Every value that the sections above report in R, valued in HEARTS (see heartIndex). H1–H8; with --json FILE, the
+// same numbers as JSON.
+const HJ = {};
+{
+	const mean = hmean, HY = hy, YY = yy, rest = restYears, fl = hfl, hPD = hPerPD;
+	const summary = heartSummary;
+	// ── the dynamic main ──
+	const D = results['dyn:main'];
+	const sD = summary(D);
+	HJ.main = sD;
+	HJ.index = D.HY.map((h, i) => ({ year: h.year, hp: h.hp, hU: h.hU, unpriced: h.unpriced, mindR: D.Y[i].dyn.mindR, totalH: h.pl.w + h.pl.t + h.pl.p + h.pl.a, count: h.count }));
+	HJ.byYear = D.HY.map((h, i) => ({ year: h.year, hp: h.hp, L: h.L, bundle: h.cpi, bundleScript: D.Y[i].dyn.basicMind, LR: D.Y[i].dyn.L, bundleR: D.Y[i].dyn.basicR, vMin: h.vMin, vMax: h.vMax, muH: h.muH, sgH: h.sgH, muR: D.Y[i].muRet, giniH: h.giniH, giniR: D.Y[i].gini, zW: h.zW, zWmin: h.zWmin, income: incH(h) / h.N / Math.max(1, h.days), people: h.pl.w / (h.pl.w + h.pl.t + h.pl.p + h.pl.a), pools: h.pl.p / (h.pl.w + h.pl.t + h.pl.p + h.pl.a) }));
+	const L = D.Y.length, a = L - 10, b = L;
+	HJ.pricesByYear = Object.fromEntries(marksOf(D, [1, 10, 30, 40]).map((y) => [y, { living: HY(D, y).L, bundle: HY(D, y).cpi, share: HY(D, y).cpi / HY(D, y).L, vMin: HY(D, y).vMin, vMax: HY(D, y).vMax }]));
+	HJ.dayLiving = { y1: HY(D, 1).L, y10: HY(D, 10).L, y60: HY(D, L).L };
+	HJ.pricesRest = { min: mean(rest(D).map((y) => HY(D, y).vMin)), max: mean(rest(D).map((y) => HY(D, y).vMax)) };
+	HJ.bundleDrift = Math.pow(HY(D, b).cpi / HY(D, a).cpi, 1 / (b - a)) - 1;
+	HJ.livingDrift = Math.pow(HY(D, b).L / HY(D, a).L, 1 / (b - a)) - 1;
+	HJ.bundleDriftR = Math.pow(YY(D, b).dyn.basicR / YY(D, a).dyn.basicR, 1 / (b - a)) - 1;
+	HJ.bundleRest = mean(rest(D).map((y) => HY(D, y).cpi));
+	{
+		let m = Infinity, yr = null;
+		for (const h of D.HY) if (h.year > 1 && h.zWmin < m) (m = h.zWmin), (yr = h.year);
+		HJ.lowestHolding = { v: m, year: yr, livingThen: HY(D, yr).L, bundleThen: HY(D, yr).cpi };
+	}
+	HJ.ownerOnly = { holding40: HY(D, Math.min(40, L)).zW, holding60: HY(D, L).zW };
+	{
+		const g = (k) => mean(rest(D).map((y) => fl(HY(D, y), k) / HY(D, y).N));
+		HJ.reserves = { inflow: g('heartInR') + g('salesHHR') + g('b2bR') + g('rentR'), items: g('wagesR'), proposals: g('propR'), dividends: g('divR'), heartIn: g('heartInR'), sales: g('salesHHR') };
+	}
+	// the round trip at rest, in HEARTS a person a day
+	{
+		const S = D, pd = (fn) => hPD(S, fn);
+		const ch = (key) => mean(rest(S).map((y) => (HY(S, y).pl[key] - HY(S, y - 1).pl[key]) / HY(S, y).N / 365));
+		const rv = (key) => hPD(S, (h) => h.rev[key]);
+		const place = (ins, outs, rev, key) => {
+			const inT = Object.values(ins).reduce((x, v) => x + v, 0), outT = Object.values(outs).reduce((x, v) => x + v, 0), c = ch(key);
+			return { in: ins, out: outs, net: inT - outT, moves: rev, change: c, rest: c - (inT - outT) - rev, gap: (c - (inT - outT) - rev) / inT };
+		};
+		const k = (n) => pd((h) => fl(h, n));
+		const people = place({ own: k('walHeartR'), items: k('wagesR'), proposals: k('propR'), dividends: k('divHHR'), liquidation: k('liqHHR') }, { buying: k('salesHHR'), melt: k('meltWR'), retired: k('lossWalR') }, rv('W'), 'w');
+		const treasuries = place({ own: k('heartInR'), sales: k('salesHHR') }, { dividends: k('divHHR'), items: k('wagesR'), proposals: k('propR'), melt: k('meltTR'), liquidation: k('liqHHR'), retired: k('lossTreR') + k('burnTreR') }, rv('T'), 't');
+		const pools = place({ pool: k('poolHeartR'), routing: k('routeCost') }, { melt: k('meltPR'), retired: k('lossPoolR') }, rv('P'), 'p');
+		HJ.roundTrip = {
+			people, treasuries, pools, between: { sales: k('b2bR'), rent: k('rentR'), divT: k('divTR'), liqT: k('liqTR') },
+			issued: k('walHeartR') + k('heartInR') + k('poolHeartR'), melted: k('meltWR') + k('meltTR') + k('meltPR') + k('meltAR'),
+			unexplainedMax: Math.max(Math.abs(people.gap), Math.abs(treasuries.gap), Math.abs(pools.gap)),
+			movesAll: rv('W') + rv('T') + rv('P') + rv('A')
+		};
+	}
+	// every MIND over its life, in HEARTS
+	{
+		const per = new Map();
+		for (const h of D.HY)
+			for (const [nm, r] of Object.entries(h.rnH)) {
+				let o = per.get(nm);
+				if (!o) per.set(nm, (o = { nm, n: 0, sy: 0, sp: 0, sr: 0, nr: 0, g: 1, first: h.year, ended: false }));
+				o.sr += r.r;
+				o.g *= 1 + r.r;
+				o.nr++;
+				if (r.ended) o.ended = true;
+				else (o.n++, (o.sy += r.y), (o.sp += r.p));
+			}
+		const list = [...per.values()];
+		const three = list.filter((o) => o.nr >= 3), beat = three.filter((o) => o.sr / o.nr > RATE);
+		const arts = per.get('ARTS');
+		HJ.mindReturns = {
+			minds: list.length, ended: list.filter((o) => o.ended).length, withThreeYears: three.length, aboveMelt: beat.length, aboveMeltEnded: beat.filter((o) => o.ended).length,
+			arts: arts ? { compounded: Math.pow(Math.max(0, arts.g), 1 / arts.nr) - 1, years: arts.nr, mean: arts.sr / arts.nr } : null,
+			list: list.map((o) => ({ nm: o.nm, years: o.nr, mean: o.sr / o.nr, priceChange: o.n ? o.sp / o.n : null, compounded: Math.pow(Math.max(0, o.g), 1 / o.nr) - 1, ended: o.ended }))
+		};
+	}
+	// the variations
+	HJ.variations = Object.fromEntries(DLADDER.map(([k]) => [k, summary(results[`dyn:${k}`])]));
+	// the static world
+	{
+		const S = results['main:base'];
+		const s = summary(S);
+		const Ls = (y) => fl(HY(S, y), 'salesHHR') / HY(S, y).N / HY(S, y).days;
+		const k = (n) => hPD(S, (h) => fl(h, n));
+		const ch = (key) => mean(rest(S).map((y) => (HY(S, y).pl[key] - HY(S, y - 1).pl[key]) / HY(S, y).N / 365));
+		HJ.static = {
+			...s, dayLiving: { y1: Ls(1), y10: Ls(10), y60: Ls(YRS) },
+			pricesRest: { min: mean(rest(S).map((y) => HY(S, y).vMinBase)), max: mean(rest(S).map((y) => HY(S, y).vMaxBase)) },
+			roundTrip: {
+				people: { in: { own: k('walHeartR'), items: k('wagesR'), proposals: k('propR'), dividends: k('divHHR') }, out: { buying: k('salesHHR'), melt: k('meltWR') }, change: ch('w') },
+				treasuries: { in: { own: k('heartInR'), sales: k('salesHHR') }, out: { dividends: k('divHHR'), items: k('wagesR'), proposals: k('propR'), melt: k('meltTR') }, change: ch('t') },
+				pools: { in: { pool: k('poolHeartR'), routing: k('routeCost') }, out: { melt: k('meltPR') }, change: ch('p') },
+				issued: k('walHeartR') + k('heartInR') + k('poolHeartR'), melted: k('meltWR') + k('meltTR') + k('meltPR') + k('meltAR')
+			}
+		};
+	}
+	// the long-lived plant of S6.6, in HEARTS
+	{
+		const S = results['main:geo'];
+		const claim = (k, val) => {
+			let n = 1;
+			for (let y = BR + 1; y <= BR + 20; y++) n *= 1 + (S.Y[y - 1].yk[k] || 0);
+			return (n * Math.exp(-RATE * 20) * val(BR + 20, k)) / val(BR + 1, k);
+		};
+		const vH = (y, k) => HY(S, y).v[k], vR = (y, k) => S.Y[y - 1].P[k];
+		HJ.geo = { geo: claim(GEO, vH), solar: claim(SOLAR, vH), geoR: claim(GEO, vR), solarR: claim(SOLAR, vR) };
+	}
+
+	// ── the markdown ──
+	P('# The same runs in HEARTS (the paper\'s unit of account)');
+	P('');
+	P('Every MIND is minted 1:1 from HEARTS, so the average MIND in existence is worth 1 HEART. The pools set only how each MIND stands against the others. At every step the MINDs that the pools price are scaled together until their supply-weighted average is 1 HEART (Σ supply·value = Σ supply, over wallets, treasuries, what waits for the pools, the pools and the arbitrage bot); a MIND that the pools cannot price yet counts at 1 HEART. Nothing in the simulation reads these values, so every move, price and trade is the one reported above. Flows are valued at the HEART values of the step in which they happen; price moves are what the change of HEART values from one step to the next did to what each place holds.');
+	P('');
+	P('## H1. The index (dynamic main)');
+	P('');
+	table(['Year', 'R a HEART (the index)', 'R a MIND on average (script)', 'share of MIND unpriced', 'HEART value of all MIND ÷ MIND count'], marksOf(D, [1, 2, 5, 10, 20, 30, 40, 50, 51, 55, 60]).map((y) => {
+		const x = HJ.index[y - 1];
+		return [y, f(x.hp, 4), f(x.mindR, 4), pct(x.unpriced, 2), f(x.totalH / x.count, 4)];
+	}));
+	P('## H2. Dynamic main against the static world, in HEARTS (steady state: the last 10 years)');
+	P('');
+	const st = HJ.static;
+	table(['Measure', 'Dynamic main, HEARTS', 'same, R (script)', 'Static, HEARTS', 'Static, R (script)'], [
+		['A day of living: year 1 / 10 / last', `${f(HJ.dayLiving.y1, 1)} / ${f(HJ.dayLiving.y10, 1)} / ${f(HJ.dayLiving.y60, 1)}`, `${f(YY(D, 1).dyn.L, 1)} / ${f(YY(D, 10).dyn.L, 1)} / ${f(YY(D, L).dyn.L, 1)}`, `${f(st.dayLiving.y1, 1)} / ${f(st.dayLiving.y10, 1)} / ${f(st.dayLiving.y60, 1)}`, '–'],
+		['Income a person a day', f(sD.incomeH, 1), f(sD.incomeR, 1), f(st.incomeH, 1), f(st.incomeR, 1)],
+		['MIND prices at rest: lowest – highest', `${f(HJ.pricesRest.min, 2)} – ${f(HJ.pricesRest.max, 2)}`, '–', `${f(st.pricesRest.min, 2)} – ${f(st.pricesRest.max, 2)}`, '–'],
+		['μ: mean yearly return a person (dividends + price change)', pct(sD.muH, 2), pct(sD.muR, 2), pct(st.muH, 2), pct(st.muR, 2)],
+		[`… its margin below the ${pct(RATE, 0)} melt (melt − μ)`, `${f(sD.marginH * 100, 2)} pt`, `${f((RATE - sD.muR) * 100, 2)} pt`, `${f(st.marginH * 100, 2)} pt`, `${f((RATE - st.muR) * 100, 2)} pt`],
+		['… of it price change', pct(sD.muPH, 2), pct(sD.muPR, 2), pct(st.muPH, 2), pct(st.muPR, 2)],
+		['σ: spread across people', pct(sD.sgH, 2), pct(sD.sgR, 2), pct(st.sgH, 2), pct(st.sgR, 2)],
+		['Proposition 2 Gini from μ and σ', sD.gini2H === null ? '–' : f(sD.gini2H, 2), sD.gini2R === null ? '–' : f(sD.gini2R, 2), st.gini2H === null ? '–' : f(st.gini2H, 2), st.gini2R === null ? '–' : f(st.gini2R, 2)],
+		['Measured Gini of what people hold: at rest; years L−20 / L−10 / L; trend over the last 20 years (per 10 years)', `${f(sD.giniH.rest, 3)}; ${f(sD.giniH.y40, 3)} / ${f(sD.giniH.y50, 3)} / ${f(sD.giniH.y60, 3)}; ${sD.giniH.trend >= 0 ? '+' : ''}${f(sD.giniH.trend, 3)}`, f(SD.gini, 3), `${f(st.giniH.rest, 3)}; ${f(st.giniH.y40, 3)} / ${f(st.giniH.y50, 3)} / ${f(st.giniH.y60, 3)}; ${st.giniH.trend >= 0 ? '+' : ''}${f(st.giniH.trend, 3)}`, f(S0s.gini, 3)],
+		[`μ over the whole run; years at or above the ${pct(RATE, 0)} melt`, `${pct(sD.muRunH, 2)}; ${sD.aboveH} of ${sD.ofYears}`, `${pct(sD.muRunR, 2)}; ${sD.aboveR} of ${sD.ofYears}`, '–', '–'],
+		['Dividend yield (unit-free)', pct(sD.yield, 1), pct(sD.yield, 1), pct(st.yield, 1), pct(st.yield, 1)],
+		['A day\'s basic bundle: change a year at rest', pct(HJ.bundleDrift, 2), pct(HJ.bundleDriftR, 2), '–', '–'],
+		['A day\'s basic bundle: most in a year (year)', `${f(sD.bundleMax.v, 3)} (${sD.bundleMax.year}); from year 2: ${f(sD.bundleMaxFrom2.v, 3)} (${sD.bundleMaxFrom2.year})`, `script "in MIND": ${f(sD.bundleMaxScript.v, 3)} (${sD.bundleMaxScript.year})`, '–', '–'],
+		['Share of all MIND by HEART value: people / treasuries / pools / bot', `${pct(sD.shares.people, 1)} / ${pct(sD.shares.treasuries, 1)} / ${pct(sD.shares.pools, 1)} / ${pct(sD.shares.arb, 1)}`, '–', `${pct(st.shares.people, 1)} / ${pct(st.shares.treasuries, 1)} / ${pct(st.shares.pools, 1)} / ${pct(st.shares.arb, 1)}`, '–']
+	]);
+	P('## H3. Prices by year (dynamic main, HEARTS)');
+	P('');
+	table(['Year', 'a day of living', 'a day\'s basic bundle', 'basic bundle, script\'s "in MIND"', 'basics, share of a day of living', 'lowest MIND', 'highest MIND', 'μ that year'], marksOf(D, [1, 2, 5, 10, 20, 30, 40, 50, 60]).map((y) => {
+		const x = HJ.byYear[y - 1];
+		return [y, f(x.L, 2), f(x.bundle, 4), f(x.bundleScript, 4), pct(x.bundle / x.L, 2), f(x.vMin, 2), f(x.vMax, 2), x.muH === null ? '–' : pct(x.muH, 1)];
+	}));
+	P(`Lowest holding of an owner-only (zero-Aven) person from year 2 on: ${f(HJ.lowestHolding.v)} HEARTS (year ${HJ.lowestHolding.year}), ${f(HJ.lowestHolding.v / HJ.lowestHolding.livingThen)} days of living; a day of living that year ${f(HJ.lowestHolding.livingThen, 3)} HEARTS. Owner-only mean holding: ${f(HJ.ownerOnly.holding40)} HEARTS in year ${Math.min(40, L)}, ${f(HJ.ownerOnly.holding60)} in year ${L}. A day's basic bundle at rest: ${f(HJ.bundleRest, 4)} HEARTS. Treasuries at rest, HEARTS a person a year (booked as D4 books them): in ${f(HJ.reserves.inflow)}, Aven work items ${f(HJ.reserves.items)}, proposals ${f(HJ.reserves.proposals)}, Law 5 dividends ${f(HJ.reserves.dividends)}.`);
+	P('');
+	P('## H4. The round trip at rest (dynamic main, HEARTS a person a day)');
+	P('');
+	const rt = HJ.roundTrip, fr = (o) => Object.entries(o).map(([k, v]) => `${k} ${f(v, 2)}`).join('; ');
+	table(['Place', 'in', 'out', 'in − out', 'price moves', 'change of what it holds', 'not explained'], [['People', fr(rt.people.in), fr(rt.people.out), f(rt.people.net, 2), f(rt.people.moves, 2), f(rt.people.change, 2), f(rt.people.rest, 3)], ['Treasuries', fr(rt.treasuries.in), fr(rt.treasuries.out), f(rt.treasuries.net, 2), f(rt.treasuries.moves, 2), f(rt.treasuries.change, 2), f(rt.treasuries.rest, 3)], ['Pools', fr(rt.pools.in), fr(rt.pools.out), f(rt.pools.net, 2), f(rt.pools.moves, 2), f(rt.pools.change, 2), f(rt.pools.rest, 3)]]);
+	P(`"own" is the investor's or the treasury's part of each HEART invested; "pool" is the pools' part (${f(DYN.poolShare, 2)} of each HEART). Between treasuries: ${fr(rt.between)}. Issued ${f(rt.issued, 2)}, melted ${f(rt.melted, 2)} HEARTS a person a day. Largest unexplained rest: ${pct(rt.unexplainedMax, 3)} of a place's inflow. Price moves of all places together (with the arbitrage bot): ${f(rt.movesAll, 3)}.`);
+	P('');
+	P('## H5. Every MIND over its life, in HEARTS (dynamic main)');
+	P('');
+	const mr = HJ.mindReturns;
+	P(`${mr.minds} MINDs, ${mr.ended} ended. ${mr.aboveMelt} of the ${mr.withThreeYears} with at least 3 years returned more than the ${pct(RATE, 0)} melt on average; ${mr.aboveMeltEnded} of those ended. ARTS: ${mr.arts ? `${pct(mr.arts.compounded, 1)} a year compounded over ${mr.arts.years} years` : '–'}.`);
+	P('');
+	table(['MIND', 'years', 'mean return a year', 'price change a year', 'compounded', 'ended'], mr.list.map((o) => [o.nm, o.years, pct(o.mean, 1), o.priceChange === null ? '–' : pct(o.priceChange, 1), pct(o.compounded, 1), o.ended ? 'yes' : 'no']));
+	P('## H6. Variations (each its own run; steady state = its last 10 years)');
+	P('');
+	table(['Run', 'μ, HEARTS', 'margin (melt − μ)', 'μ, R (script)', 'σ, HEARTS', 'Prop. 2 Gini, HEARTS', 'measured Gini (HEARTS): last year; trend / 10 y', 'dividend yield', 'pools\' share of MIND (HEARTS)', 'R a HEART at rest', 'basic bundle, most in a year (year)', 'same, script "in MIND"'], DLADDER.map(([k, label]) => {
+		const x = HJ.variations[k];
+		return [label, pct(x.muH, 2), `${f(x.marginH * 100, 2)} pt`, pct(x.muR, 2), pct(x.sgH, 2), x.gini2H === null ? '–' : f(x.gini2H, 2), `${f(x.giniH.y60, 3)}; ${x.giniH.trend === null ? '–' : (x.giniH.trend >= 0 ? '+' : '') + f(x.giniH.trend, 3)}`, pct(x.yield, 1), pct(x.shares.pools, 1), f(x.hpRest, 3), `${f(x.bundleMax.v, 3)} (${x.bundleMax.year})`, `${f(x.bundleMaxScript.v, 3)} (${x.bundleMaxScript.year})`];
+	}));
+	P('## H7. The static world (main:base) and the long-lived plant (main:geo), in HEARTS');
+	P('');
+	const srt = st.roundTrip;
+	P(`Round trip at rest: people in ${fr(srt.people.in)}, out ${fr(srt.people.out)}, change ${f(srt.people.change, 2)}; treasuries in ${fr(srt.treasuries.in)}, out ${fr(srt.treasuries.out)}, change ${f(srt.treasuries.change, 2)}; pools in ${fr(srt.pools.in)}, out ${fr(srt.pools.out)}, change ${f(srt.pools.change, 2)}. Issued ${f(srt.issued, 2)}, melted ${f(srt.melted, 2)}. R a HEART at rest: ${f(st.hpRest, 4)}.`);
+	P('');
+	P(`1 GEOmind of the year after founding, 20 years on (dividends kept, after the melt): ${f(HJ.geo.geo, 2)} in HEARTS (${f(HJ.geo.geoR, 2)} in R); 1 SOLARmind: ${f(HJ.geo.solar, 2)} (${f(HJ.geo.solarR, 2)} in R).`);
+	P('');
+	P('## H8. Every year of the dynamic main, in HEARTS');
+	P('');
+	P(`μ and σ: each person's yearly return on what they held at the start of the year (dividends plus price change, before the melt), its mean and its spread across people. The measured Gini values what people hold at the year's end; Proposition 2's Gini counts only the spread that returns make. The Gini of what people hold in HEARTS rose ${sD.giniH.trend >= 0 ? '+' : ''}${f(sD.giniH.trend, 3)} per 10 years over years ${L - 19}–${L} (least squares).`);
+	P('');
+	table(['Year', 'R a HEART', 'μ', 'σ', 'measured Gini of holdings (HEARTS)', 'same in R (script)', 'a day of living', 'a day\'s basic bundle', 'people / pools, share of MIND'], HJ.byYear.map((x) => [x.year, f(x.hp, 3), x.muH === null ? '–' : pct(x.muH, 2), x.sgH === null ? '–' : pct(x.sgH, 2), f(x.giniH, 3), f(x.giniR, 3), f(x.L, 2), f(x.bundle, 4), `${pct(x.people, 1)} / ${pct(x.pools, 1)}`]));
+}
+if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify(HJ, null, 1));
+
 // ── report: the static previous main ────────────────────────────────────────────────────────────────────────────────
 bind(results['main:base']);
 P('# Static (previous main)');
@@ -3078,7 +3532,7 @@ P('');
 const S0 = results['main:base'];
 P(`Land: ${f(S0.landTotal / N0)} m² a person (${f(S0.landLeasable / N0)} leasable, the rest streets and parks), all of it the City COOP's. Seed capacities: 115 % of the starting need (goods exist, money does not) or 25 % (empty city).`);
 P('');
-P('Main scenario: a person pays for what a COOP makes in that COOP\'s MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). A tenth of the treasury half of each HEART (5 % of the HEART) goes to the pools; sales are not levied. No human labour is paid: every human has one Aven, and the Avens do and propose all work items. A treasury pays for inputs and building from other COOPs, for operating work items (2 R a unit, in its prices; paid to the human whose Aven does them) and ground rent; Law 5, every sale pays its owners: 20 % of every sale goes at once, as a dividend in the seller\'s own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the humans whose Avens propose and deliver the work, by what each Aven delivers). No rent payout, no basic income.');
+P(`Main scenario: a person pays for what a COOP makes in that COOP's MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). Each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - BASE.poolShare, 1)} to the COOP's treasury and ${f(BASE.poolShare, 1)} to the pools; sales are not levied. No human labour is paid: every human has one Aven, and the Avens do and propose all work items. A treasury pays for inputs and building from other COOPs, for operating work items (2 R a unit, in its prices; paid to the human whose Aven does them) and ground rent; Law 5, every sale pays its owners: 20 % of every sale goes at once, as a dividend in the seller's own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the humans whose Avens propose and deliver the work, by what each Aven delivers). No rent payout, no basic income.`);
 P('');
 
 P('## S1. Static main against the side comparisons (60 years from a cold start with goods)');
@@ -3145,7 +3599,7 @@ P('');
 		const melt = avg(S, ssA, ssB, (y) => (y.split.treR * RATE) / y.N);
 		return [RUNS[k].label, f(g((x) => x.heartIn)), f(g((x) => x.salesHH)), f(g((x) => x.b2b + x.rent)), f(inn), f(g((x) => x.b2b + x.rent)), f(g((x) => x.wages)), `${f(g((x) => x.prop))} (${pct(g((x) => x.prop) / inn, 0)})`, `${f(g((x) => x.div))} (${pct(g((x) => x.div) / inn, 0)})`, f(melt), f(avg(S, ssA, ssB, (y) => (y.retired || 0) / y.N))];
 	});
-	table(['Run', 'in: treasury half of HEARTS', 'in: sales to people', 'in: sales to COOPs and rent', 'in: total', 'out: inputs, building, rent', 'out: Aven work items, operating', 'out: Aven work proposals (share of in)', 'out: dividends (share of in)', 'melt on treasuries', 'retired (MIND)'], rows);
+	table(['Run', `in: the treasury's part of the new MIND (${f(0.5 - BASE.poolShare, 2)} of each HEART)`, 'in: sales to people', 'in: sales to COOPs and rent', 'in: total', 'out: inputs, building, rent', 'out: Aven work items, operating', 'out: Aven work proposals (share of in)', 'out: dividends (share of in)', 'melt on treasuries', 'retired (MIND)'], rows);
 	const S = results['main:base'];
 	P(`Days of running costs a treasury holds (main, year ${YRS}): ${NAMES.slice(0, BASE_COOPS).map((n) => `${n} ${f(at(S, YRS).cover[n])}`).join(', ')}. A person\'s Aven earns ${f(avg(S, ssA, ssB, (y) => y.wagesR / y.N))} R a year for operating items and ${f(avg(S, ssA, ssB, (y) => y.propR / y.N))} R for work proposals; the person also gets ${f(avg(S, ssA, ssB, (y) => y.rt.divHH / y.N))} R of dividends.`);
 	P('');
@@ -3259,10 +3713,10 @@ P('');
 		[['own half of the HEARTS they invest', pd((r) => r.walHeart)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['dividends', pd((r) => r.divHH)]],
 		[['buying from COOPs', pd((r) => r.buy)], ['melt', pd((r) => r.meltW)]], 'walR');
 	const tre = row('COOP treasuries',
-		[['treasury half of HEARTS (after the tenth)', pd((r) => r.treHeart)], ['sales to people', pd((r) => r.buy)]],
+		[[`the treasury's part of the new MIND (${f(0.5 - BASE.poolShare, 2)} of each HEART)`, pd((r) => r.treHeart)], ['sales to people', pd((r) => r.buy)]],
 		[['dividends to people', pd((r) => r.divHH)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['melt', pd((r) => r.meltT)]], 'treR');
 	const pool = row('Pools',
-		[['the tenth of the treasury half', pd((r) => r.poolHeart)], ['routing costs', pd((r) => r.routeCost)]],
+		[[`the pools' part of the new MIND (${f(BASE.poolShare, 2)} of each HEART)`, pd((r) => r.poolHeart)], ['routing costs', pd((r) => r.routeCost)]],
 		[['melt', pd((r) => r.meltP)]], 'poolR');
 	table(['Place', 'in (R a person a day)', 'out', 'in − out', 'change of what it holds', 'not explained: routing, price moves'], [wal, tre, pool]);
 	P(`Between treasuries (these cancel out, so they are not in the table): sales to other COOPs ${f(pd((r) => r.b2b), 2)}, ground rent to the City COOP ${f(pd((r) => r.rent), 2)}, dividends to treasuries that hold other MINDs ${f(pd((r) => r.divT), 2)} R a person a day. People pay routing costs only on the share of their payments that the pools convert.`);
@@ -3291,4 +3745,4 @@ P('');
 P(`_Runtime ${((Date.now() - T0) / 1000).toFixed(1)} s._`);
 console.log(out.join('\n'));
 const DYNCOLS = 'days_of_living_R,income_R_pd,spent_R_pd,share_of_income_spent,wallet_melt_share_of_income,treasury_share_value,pool_share_value,P_min,P_max,sd_log_P,live_MINDs,worst_basic_coverage,person_days_short,person_days,zero_aven_strict_share_of_days,zero_aven_strict_worst_ratio,zero_aven_worst_coverage,zero_aven_holding_mean_R,zero_aven_holding_min_R,basic_bundle_in_MIND,real_consumption_mean,real_consumption_decile1,real_consumption_decile5,real_consumption_decile10,real_consumption_zero_aven,failures,exits,foundings,shocks,mean_productivity';
-if (CSV) writeFileSync(CSV, ['run,year,N,shortfall,newcomer_shortfall,routing_cost,basic_bundle_R,money_per_person,wallets_pp,treasuries_pp,pools_pp,people_share_value,gini_owned,dividend_yield,mean_return,sigma_returns,dividends_pp,work_proposals_pp,' + BASE_NAMES.slice(0, BASE_COOPS).map((n) => `P_${n}`).join(',') + ',' + DYNCOLS].concat(csvRows).join('\n') + '\n');
+if (CSV) writeFileSync(CSV, ['run,year,N,shortfall,newcomer_shortfall,routing_cost,basic_bundle_R,money_per_person,wallets_pp,treasuries_pp,pools_pp,people_share_value,gini_owned,dividend_yield,mean_return,sigma_returns,dividends_pp,work_proposals_pp,' + BASE_NAMES.slice(0, BASE_COOPS).map((n) => `P_${n}`).join(',') + ',' + DYNCOLS + ',' + HEARTCOLS].concat(csvRows).join('\n') + '\n');

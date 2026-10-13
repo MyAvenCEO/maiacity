@@ -11,11 +11,12 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
+	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
 	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
-	import { story } from './tour.js';
+	import { AT_HOME, story } from './tour.js';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
@@ -33,7 +34,7 @@
 	let tools = $state(false); // the phone's tools, behind the action button
 	let amount = $state(12);
 	let swapToken = $state('MAIA');
-	let swapTo = $state('SETTLEMENT');
+	let swapTo = $state('TRIBE');
 	let swapAmount = $state(1);
 	let ledgerOfWho = $state('');
 	let draft = $state(null);
@@ -63,8 +64,32 @@
 	const decidedMips = $derived(mips.filter((m) => m.status !== 'open').reverse());
 
 	$effect(() => world?.update(view, hour));
-	// the land still to unlock shows as the welcome story reaches it (all of it once the story is done or skipped)
+	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
 	$effect(() => void (view && world?.reveal(tour ? Math.max(0, ...steps.slice(0, tourAt + 1).map((x) => x.reveal ?? 0)) : 2)));
+	// where the story stands in the world: the pickup, the powercube and the players, and what the camera looks at
+	const where = $derived(tour ?? AT_HOME);
+	const otherSeat = $derived(seat === 'A' ? 'B' : 'A');
+	$effect(() => {
+		if (!view || !world) return;
+		const other = view.players[otherSeat]?.founder ? otherSeat : null;
+		world.set({ at: where.at, cube: where.cube, me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village' });
+		world.touring(!!tour);
+		if (where.place) world.focus(where.place);
+	});
+	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
+	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
+	$effect(() => {
+		if (tour?.kind !== 'intro' || !world || playing) return;
+		playing = 'intro';
+		world.intro().then(() => ((playing = ''), mark('arrive')));
+	});
+	async function act(step) {
+		if (playing) return;
+		playing = step.kind;
+		await (step.kind === 'load' ? world.load() : world.drive(step.leg, { fetch: !!step.fetch }));
+		playing = '';
+		mark(step.id);
+	}
 
 	function take(res) {
 		game = res.game;
@@ -212,7 +237,7 @@
 	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
 	const isAssetPanel = (x) => typeof x === 'string' && x.startsWith('asset:');
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
-	/** the rent the Settlement COOP pays for an asset, if it rents it */
+	/** the rent the Tribe COOP pays for an asset, if it rents it */
 	const rentOf = (id) => RENTED.find((r) => r.asset === id);
 	/** the first-run story ($lib/maiacity-v1/tour.js): one idea a step, for each player at their own seat. The steps
 	 *  that only tell remember "Next" in this browser; the moves (mint, invest) are read off the game. */
@@ -231,7 +256,7 @@
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
 
-<div class="v1">
+<div class="v1" class:cinema={playing === 'intro'}>
 	<canvas class="stage" bind:this={canvas}></canvas>
 
 	{#if view}
@@ -276,7 +301,14 @@
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
-		{#if tour}
+		{#if tour && (tour.kind === 'intro' || playing === 'intro')}
+			<!-- the arrival: a caption over the ride in the van -->
+			<div class="caption panel" role="status">
+				<p class="eyebrow">{tour.chapter}</p>
+				<p>{tour.text}</p>
+				<button class="link" onclick={() => world?.skip()}>Skip</button>
+			</div>
+		{:else if tour && !playing}
 			<!-- the first-run story: one idea a step, over the Mint button, pointing at what it talks about -->
 			<div class="tour panel" class:down={tour.hint === 'mintbar'} role="dialog" aria-label="Getting started">
 				<p class="eyebrow">{tour.chapter} · {tour.n} of {tour.steps}</p>
@@ -287,18 +319,22 @@
 					<p class="small">{f(tour.have, 0)} of {f(tour.goal, 0)} ❤︎ invested · you hold {f(player.wallet.HEARTS, 0)} ❤︎</p>
 				{/if}
 				<div class="dots">{#each steps as x, i (x.id)}<i class:on={x.done} class:now={i === tourAt}></i>{/each}</div>
+				<!-- Skip on the left, the step's own button on the right (Samuel 2026-10-13) -->
 				<div class="buttons">
+					{#if tour.kind !== 'done'}<button class="link" onclick={() => mark('off')}>Skip the story</button>{/if}
+					<span class="grow"></span>
 					{#if tour.kind === 'invest'}
 						{@const left = Math.min(Math.ceil(tour.goal - tour.have), Math.floor(player.wallet.HEARTS))}
 						<button class="primary" disabled={busy || left < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: left })}>Invest {f(left, 0)} ❤︎</button>
 					{:else if tour.kind === 'mint'}
 						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount, 0)} ❤︎</button>
+					{:else if tour.kind === 'drive' || tour.kind === 'load'}
+						<button class="primary" onclick={() => act(tour)}>{tour.action}</button>
 					{:else if tour.kind === 'done'}
 						<button class="primary" onclick={() => mark('done')}>Start playing</button>
 					{:else}
 						<button class="primary" onclick={() => mark(tour.id)}>Next</button>
 					{/if}
-					{#if tour.kind !== 'done'}<button class="link" onclick={() => mark('off')}>Skip the story</button>{/if}
 				</div>
 			</div>
 		{/if}
@@ -335,7 +371,7 @@
 					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
 				</ul>
 				<LedgerView {view} who={`player:${seat}`} show="cash" />
-				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} settlementMIND tent rent owed</p>{/if}
+				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} tribeMIND tent rent owed</p>{/if}
 				{#if canMove}
 					<div class="buttons">
 						<button class="primary" onclick={() => open('invest')}>Invest</button>
@@ -400,13 +436,13 @@
 				{@const id = panel.slice(6)}
 				{@const owner = ownerOf(id)}
 				{@const a = owner?.[1].assets.find((x) => x.id === id)}
-				{@const info = VILLAGE_INFO[id]}
-				<p class="eyebrow">Asset · {a?.kind ?? 'Machine'}</p>
-				<h2>{a?.name ?? info?.model}</h2>
+				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id]}
+				<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
+				<h2>{a?.name ?? info?.name ?? info?.model}</h2>
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
 				<dl>
 					{#if owner}<dt>Owner</dt><dd>{owner[1].name}</dd><dt>Ownership</dt><dd>{TOKEN_LABEL[owner[1].mind]} holders</dd>{/if}
-					{#if owner && rentOf(id) && owner[0] !== 'settlement'}<dt>Rented to</dt><dd>Settlement COOP</dd><dt>Rent</dt><dd>{f(view.settings[rentOf(id).setting] ?? 0)} {TOKEN_LABEL[owner[1].mind]} a month</dd>{/if}
+					{#if owner && rentOf(id) && owner[0] !== 'tribe'}<dt>Rented to</dt><dd>Tribe COOP</dd><dt>Rent</dt><dd>{f(view.settings[rentOf(id).setting] ?? 0)} {TOKEN_LABEL[owner[1].mind]} a month</dd>{/if}
 					{#each info?.specs ?? [] as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 				</dl>
 				{#if owner}<div class="buttons"><button onclick={() => (panel = `coop:${owner[0]}`)}>Open the {owner[1].name}</button></div>{/if}
@@ -427,11 +463,11 @@
 								</dl>
 								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
 							{:else if a.id === 'hex'}
-								<small>Rented to the Settlement COOP for {f(view.settings.hexRent)} maiaMIND a month, paid a quarter each weekly pay day.</small>
+								<small>Rented to the Tribe COOP for {f(view.settings.hexRent)} maiaMIND a month, paid a quarter each weekly pay day.</small>
 							{:else if a.id === 'tent'}
-								<small>Rented to both players for {f(view.settings.tentRent)} settlementMIND a month each, paid a quarter each weekly pay day.</small>
-							{:else if rentOf(a.id) && c.id !== 'settlement'}
-								<small>Rented to the Settlement COOP for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a month, paid a quarter each weekly pay day.</small>
+								<small>Rented to both players for {f(view.settings.tentRent)} tribeMIND a month each, paid a quarter each weekly pay day.</small>
+							{:else if rentOf(a.id) && c.id !== 'tribe'}
+								<small>Rented to the Tribe COOP for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a month, paid a quarter each weekly pay day.</small>
 							{/if}
 						</li>
 					{/each}
@@ -439,15 +475,15 @@
 				<p class="eyebrow">Treasury</p>
 				<dl>
 					{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
-					{#if c.id === 'settlement'}
-						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 settlementMIND</dd>
+					{#if c.id === 'tribe'}
+						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 tribeMIND</dd>
 						<dt>Pays hex rent</dt><dd>{f(view.settings.hexRent)} maiaMIND</dd>
-						{#each RENTED.filter((r) => ownerOf(r.asset) && ownerOf(r.asset)[0] !== 'settlement') as r (r.asset)}<dt>Pays {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
+						{#each RENTED.filter((r) => ownerOf(r.asset) && ownerOf(r.asset)[0] !== 'tribe') as r (r.asset)}<dt>Pays {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
 					{:else if c.id === 'maia'}
 						<dt>Gets hex rent</dt><dd>{f(view.settings.hexRent)} maiaMIND</dd>
 					{/if}
-					{#if c.id !== 'settlement'}{#each RENTED.filter((r) => c.assets.some((a) => a.id === r.asset)) as r (r.asset)}<dt>Gets {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}{/if}
-					{#if c.id === 'settlement'}{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}{/if}
+					{#if c.id !== 'tribe'}{#each RENTED.filter((r) => c.assets.some((a) => a.id === r.asset)) as r (r.asset)}<dt>Gets {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}{/if}
+					{#if c.id === 'tribe'}{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}{/if}
 					{#if c.arrears > 0.001}<dt>Owed for the hex</dt><dd class="bad">{f(c.arrears)} maiaMIND</dd>{/if}
 				</dl>
 				<div class="buttons">
@@ -783,6 +819,33 @@
 	.tour .buttons {
 		margin: 0;
 		align-items: center;
+		display: flex;
+		gap: 0.5rem;
+	}
+	.tour .buttons .grow {
+		flex: 1;
+	}
+	/* the arrival plays without the game's controls round it */
+	.cinema :is(.tools, .topstats, .topright, .card, .mintbar, .tag, .fab, .brand) {
+		display: none !important;
+	}
+	.caption {
+		position: absolute;
+		z-index: 8;
+		left: 50%;
+		top: 4.2rem;
+		transform: translateX(-50%);
+		width: min(26rem, calc(100vw - 32px));
+		padding: 0.7rem 1rem;
+		border-radius: 16px;
+		font-size: 0.88rem;
+		line-height: 1.4;
+	}
+	.caption p {
+		margin: 0 0 0.3rem;
+	}
+	.caption .link {
+		float: right;
 	}
 	.hint {
 		animation: hint 1.6s ease-in-out infinite;

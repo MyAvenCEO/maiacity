@@ -8,8 +8,15 @@ export const UIA_DAY = 24;
 export const RATE = 0.07;
 /** Law 5, every sale pays its owners: the default share of every sale that goes at once to the seller's holders */
 export const DIVIDEND_SHARE = 0.2;
-/** a tenth of each treasury half flows into the city's pools (their LP tokens go to the City COOP). source: the liquidity rule (Section 6); scripts/theos-e2e-sim.mjs header ("10 % of treasury MIND flows into … baskets") */
-export const POOL_DRIP = 0.1;
+/** the liquidity rule (Law 4, Section 6): each HEART invested into a COOP makes 1 MIND of that COOP: 0.5 to the
+ *  investor, 0.4 to the COOP's treasury, 0.1 to the city's pools (the City COOP holds their LP tokens).
+ *  source: scripts/theos-e2e-sim.mjs POOL_SHARE and its header */
+export const INVESTOR_SHARE = 0.5;
+export const POOL_SHARE = 0.1;
+export const TREASURY_SHARE = 1 - INVESTOR_SHARE - POOL_SHARE;
+/** the old pool rule of the paper's earlier version: 0.05 of each HEART to the pools (a tenth of the treasury's half);
+ *  the simulation keeps it as a variation (LADDER 'pool05') */
+export const OLD_POOL_SHARE = 0.05;
 export const SECONDS_YEAR = 31_536_000;
 
 /** a balance after t years of continuous demurrage at rate r */
@@ -43,10 +50,10 @@ export const yearsToReach = (f, r = RATE) => -Math.log(1 - f) / r;
 /** the rate u / m(t) at which a member's relative balance moves, in a city that started with nothing */
 export const relativeRate = (t, r = RATE) => r / (1 - Math.exp(-r * t));
 
-/** MIND a day that a founder controls when he invests all his HEARTS into his own COOP: both halves, less the tenth
- *  of the treasury half that drips into the pools; an honest investor keeps only the investor half */
-export const selfDealDay = (pool = POOL_DRIP) => UIA_DAY * (0.5 + 0.5 * (1 - pool));
-export const honestDay = () => UIA_DAY / 2;
+/** MIND a day that a founder controls when he invests all his HEARTS into his own COOP: the investor's part and the
+ *  treasury's part, everything but the pools' part; an honest investor keeps only the investor's half */
+export const selfDealDay = (pool = POOL_SHARE) => UIA_DAY * (1 - pool);
+export const honestDay = () => UIA_DAY * INVESTOR_SHARE;
 
 /** what is left of an equal-weight pool of n MINDs when one MIND's price falls to the share p: p^(1/n) */
 export const poolAfterCrash = (p, n) => Math.pow(p, 1 / n);
@@ -244,13 +251,12 @@ export const dialSeries = (rates = [0.03, RATE, 0.1], mu = null) => {
 };
 
 // ── The dynamic world (Sections 6.3, 8.2, 9, 10, 12) ─────────────────────────────────────────────────────────────────
-// Source: sim-dynamic.md (research/e2e), run dyn:main of scripts/theos-e2e-sim.mjs, seed 20261012, 250 people × 60 years.
-// Steady state = years 51–60. Every constant names its table; every ratio that the prose prints is a function below.
-// The unit is the HEART (Section 6.3): every value is valued at the HEART index of the step in which it happens, from
-// sim-dynamic-hearts.md (research/e2e), the same runs with every value the script reports in R also valued in HEARTS
-// (hearts-report.mjs; display only, so every move, price and trade is the script's own). "H1" … "H7" name its tables.
-// The script itself still counts in R, the old basket of three MINDs; R a HEART drifted from 1.21 (year 1) to 2.52
-// (year 40) and 1.68 (year 60), so numbers in R and in HEARTS differ (OLD_R).
+// Source: sim-dynamic.md, the output of scripts/theos-e2e-sim.mjs (run dyn:main, seed 20261012, 250 people × 60 years,
+// the liquidity rule 0.5 / 0.4 / 0.1). Steady state = years 51–60. Every constant names its table; every ratio that the
+// prose prints is a function below. The unit is the HEART (Section 6.3): the script values every flow at the HEART
+// index of the step in which it happens and prints these values in its tables H1 to H8 ("H2" … name them); the tables
+// D1 to D8 and S1 to S7 count in R, the old basket of three MINDs. R a HEART drifted from 1.15 (year 1) to 1.11
+// (year 40) and 1.65 (year 60), so numbers in R and in HEARTS differ (OLD_R).
 
 /** the simulated city. source: sim-dynamic.md header; D5 (shocks) */
 export const SIM = {
@@ -269,9 +275,9 @@ export const SIM = {
 	prodRange: [-0.005, 0.06], // each COOP's yearly rate is drawn around it, between these (scripts/theos-e2e-sim.mjs drawGrowth)
 	shockDepth: [0.3, 0.5], // capacity shocks of 30–50 % …
 	shockMonths: [2, 8], // … for 2–8 months
-	shocks: 56, // D5
+	shocks: 77, // D5
 	restFrom: 51, // years 51–60: the run's rest, the years that the steady-state columns average
-	runSeconds: 225, // the whole script's run time, s (sim-dynamic.md footer: "Runtime 225.1 s")
+	runSeconds: 242, // the whole script's run time, s (sim-dynamic.md footer: "Runtime 241.5 s")
 	seedCapacity: 1.15, // on day 1 the plants can make 115 % of the first needs, but nobody holds MIND
 	shockAfterDays: 30, // proof check 1 looks at the 30 days after each shock …
 	endAfterDays: 180 // … and the 180 days after each failure or exit
@@ -280,33 +286,43 @@ export const SIM = {
 /** one day of basics for one person. source: scripts/theos-e2e-sim.mjs `BASIC`; proof check 1 (tolerance 98 %) */
 export const BASIC_BUNDLE = { kcal: 2000, kWh: 3, m2: 20, L: 100, tolerance: 0.98 };
 
-/** Proposition 3, checked per person on every day. source: sim-dynamic.md proof checks 1–2; D6.1; D6.2 */
+/** Proposition 3, checked per person on every day. source: sim-dynamic.md proof checks 1–2; D6.1; D6.2; D7 notes */
 export const PROOF = {
 	fromDay: 8,
 	personDays: 5_473_250,
-	short: 0,
-	worst: 1.0,
-	shocks: 56,
-	shockPersonDays: 2_055_250, // the 30 days after each shock
-	shockWorst: 1.12,
-	failures: 1,
-	exits: 21,
-	endedPersonDays: 777_000, // the 180 days after each failure or exit
-	endedWorst: 1.4,
-	shockShort: 0, // person-days short in the 30 days after the shocks (proof check 1)
-	endedShort: 0, // … and in the 180 days after the ends
-	genesis: { days: 7, worst: 0.12, short: 621, personDays: 1_750 },
-	normal: { worst: 1.0, lowestHolding: 3_438, lowestYear: 2, livingThen: 9.978 }, // the lowest owner-only holding from year 2 on, HEARTS, and a day of living that year, HEARTS (H3 note; hearts.json lowestHolding)
+	short: 9_975, // person-days below 98 % of the basics, from day 8 (check 1 fails)
+	worst: 0.0, // the worst person-day from day 8: none of one basic …
+	worstYear: 17, // … in year 17, day 217
+	worstDay: 217,
+	// the two years with basics short (D7 notes: the share of that year's person-days, and the goods short)
+	shortYears: [
+		{ year: 17, share: 0.096, goods: ['water', 'food'] },
+		{ year: 48, share: 0.013, goods: ['food'] }
+	],
+	shocks: 77,
+	shockPersonDays: 2_678_250, // the 30 days after each shock
+	shockWorst: 0.0,
+	failures: 14,
+	exits: 16,
+	endedPersonDays: 1_022_000, // the 180 days after each failure or exit
+	endedWorst: 0.3,
+	shockShort: 9_975, // person-days short in the 30 days after the shocks (proof check 1)
+	endedShort: 1_225, // … and in the 180 days after the ends
+	genesis: { days: 7, worst: 0.12, short: 517, personDays: 1_750 },
+	// the normal test (check 2) fails: the owner-only people were short too, when the basics ran short (D7 note: worst
+	// 0 %, 1,050 person-days below 98 %). Their lowest holding from year 2 on, HEARTS, and a day of living that year,
+	// HEARTS (H3 note)
+	normal: { worst: 0.0, short: 1_050, lowestHolding: 3_518, lowestYear: 2, livingThen: 10.239 },
 	strict: {
-		firstDay: 196, lastMissYear: 53, lastMissDay: 83, lastMissRatio: 0.96, shareAfter10: 0.9986, worst: 0.73, worstYear: 53,
+		firstDay: 182, lastMissYear: 46, lastMissDay: 279, lastMissRatio: 0.99, shareAfter10: 0.9773, worst: 0.45, worstYear: 41,
 		// the share of owner-only person-days that dividends alone covered, by year. source: D6.2 (years 1, 5, 10) and
-		// sim-dynamic.csv, dyn:main, zero_aven_strict_share_of_days (years 3, 4, 6, 7, 8)
-		byYear: { 1: 0.602, 3: 0.92, 4: 0.777, 5: 0.698, 6: 0.748, 7: 0.877, 8: 0.991, 10: 1.0 },
-		lastShortYear: 8, // the last of the early years in which they missed on more than a few days (CSV)
-		lateMissYears: [52, 53], // after year 10, the only years with a miss (CSV: 0.9946 and 0.9338; every other year 1)
-		endRatio: 1.04 // the worst owner-only day in year 60: dividends ÷ basic bundle (D6.2)
+		// sim-dynamic.csv, dyn:main, zero_aven_strict_share_of_days (years 2, 3, 4, 6, 7, 8, 9)
+		byYear: { 1: 0.614, 2: 0.989, 3: 0.883, 4: 0.861, 5: 0.777, 6: 0.721, 7: 0.94, 8: 0.999, 9: 0.999, 10: 1.0 },
+		lastShortYear: 7, // the last of the early years in which they missed on more than a few days (CSV)
+		lateMiss: { from: 39, to: 46 }, // after year 10, the only years with a miss (CSV: 0.96 down to 0.76; every other year 1)
+		endRatio: 36.36 // the worst owner-only day in year 60: dividends ÷ basic bundle (D6.2)
 	},
-	bundleMax: 0.862, // the most a day's basic bundle cost in a year, HEARTS … (H2; the script's year-end "in MIND" gives 0.575 in year 3)
+	bundleMax: 0.864, // the most a day's basic bundle cost in a year, HEARTS … (H2; the script's year-end "in MIND" gives 0.601 in year 3)
 	bundleMaxYear: 1 // … in this year
 };
 
@@ -326,117 +342,121 @@ export const bundleMargin = (max = PROOF.bundleMax) => UIA_DAY / 2 / max;
  *  values at day-1 prices are the same in both units */
 export const DECILES = {
 	years: [1, 5, 10, 20, 30, 40, 50, 60],
-	d1: [12.6, 17.3, 28.5, 54.9, 84.8, 167.2, 206.7, 215.8],
-	d5: [14.4, 26.4, 43.6, 226.7, 456.0, 1_057.5, 1_421.5, 1_984.4],
-	d10: [18.8, 40.6, 72.5, 541.7, 1_223.8, 3_113.8, 4_767.9, 7_214.9],
-	mean: [15.0, 28.0, 46.9, 255.1, 539.5, 1_279.7, 1_789.4, 2_564.8],
-	gini: [0.06, 0.14, 0.14, 0.29, 0.32, 0.34, 0.36, 0.38] // the Gini index of real consumption
+	d1: [12.8, 16.5, 24.8, 41.8, 73.0, 62.1, 258.7, 222.2],
+	d5: [14.4, 24.7, 44.0, 163.6, 319.1, 467.1, 877.8, 1_485.0],
+	d10: [18.5, 41.0, 79.1, 379.1, 789.3, 1_138.6, 2_302.7, 4_279.4],
+	mean: [14.9, 26.8, 47.9, 183.1, 366.6, 521.7, 1_043.5, 1_814.2],
+	gini: [0.06, 0.14, 0.17, 0.27, 0.3, 0.31, 0.29, 0.34] // the Gini index of real consumption
 };
 
 /** the same, every year (years 1–60), and the cost of a day's basic bundle in HEARTS.
- *  source: sim-dynamic.csv, run dyn:main, columns real_consumption_decile1/5/10; bundle: hearts.json byYear[].bundle
- *  (each step's cost at that step's HEART values, averaged over the year) */
+ *  source: sim-dynamic.csv, run dyn:main, columns real_consumption_decile1/5/10 and basic_bundle_H (each step's cost
+ *  at that step's HEART values, averaged over the year; H8) */
 export const LIVING = {
-	d1: [12.6, 15.7, 16.0, 16.5, 17.3, 17.6, 18.9, 20.4, 26.2, 28.5, 28.4, 30.2, 31.8, 33.6, 36.4, 39.5, 49.7, 53.5, 55.1, 54.9, 60.7, 61.9, 62.3, 67.1, 70.1, 74.6, 78.8, 79.7, 83.9, 84.8, 83.2, 85.5, 88.7, 92.4, 98.2, 107.4, 120.0, 131.8, 147.4, 167.2, 187.3, 199.6, 214.6, 216.5, 223.9, 227.0, 226.3, 216.8, 211.4, 206.7, 200.5, 185.6, 183.2, 180.9, 188.7, 193.1, 196.9, 202.1, 205.9, 215.8],
-	d5: [14.4, 19.2, 20.8, 23.4, 26.4, 29.7, 33.8, 37.5, 39.8, 43.6, 48.6, 56.9, 67.5, 83.0, 102.7, 123.1, 190.0, 218.9, 228.5, 226.7, 254.8, 257.6, 275.7, 302.8, 337.7, 358.6, 378.5, 401.2, 426.7, 456.0, 459.6, 492.6, 529.4, 569.5, 611.2, 682.3, 770.6, 850.3, 939.5, 1057.5, 1174.0, 1235.1, 1316.6, 1327.0, 1391.4, 1439.4, 1422.0, 1411.0, 1432.6, 1421.5, 1453.6, 1441.4, 1423.8, 1550.8, 1666.0, 1662.8, 1692.2, 1786.5, 1874.1, 1984.4],
-	d10: [18.8, 27.9, 30.7, 35.8, 40.6, 45.6, 51.0, 60.4, 64.4, 72.5, 87.7, 108.3, 134.8, 174.2, 225.3, 278.0, 438.8, 520.4, 540.0, 541.7, 603.7, 621.6, 662.2, 717.0, 816.1, 898.7, 972.4, 1046.1, 1129.2, 1223.8, 1263.3, 1353.8, 1461.2, 1576.0, 1709.9, 1927.2, 2203.5, 2459.0, 2748.0, 3113.8, 3488.0, 3749.3, 4033.8, 4155.6, 4377.6, 4546.3, 4627.2, 4598.6, 4672.4, 4767.9, 4884.7, 4750.1, 5114.4, 5250.5, 5832.0, 6033.6, 6181.6, 6401.9, 6815.9, 7214.9],
-	bundle: [0.8619, 0.4290, 0.6028, 0.3722, 0.4032, 0.2950, 0.2694, 0.2367, 0.2175, 0.1835, 0.1685, 0.1541, 0.1402, 0.1614, 0.1356, 0.1301, 0.1217, 0.1191, 0.1146, 0.2059, 0.1225, 0.1120, 0.1097, 0.1050, 0.0988, 0.0890, 0.0850, 0.0843, 0.0832, 0.0813, 0.0845, 0.0813, 0.0789, 0.0764, 0.0749, 0.0705, 0.0667, 0.0634, 0.0605, 0.0565, 0.0530, 0.0527, 0.0513, 0.0535, 0.0531, 0.0785, 0.0556, 0.0589, 0.0602, 0.0635, 0.0644, 0.0783, 0.1136, 0.0670, 0.0606, 0.0603, 0.0604, 0.0596, 0.0582, 0.0570]
+	d1: [12.8, 14.8, 15.6, 16.7, 16.5, 17.5, 18.3, 18.6, 20.0, 24.8, 27.4, 29.0, 31.2, 33.1, 37.1, 39.4, 35.6, 37.2, 40.8, 41.8, 44.5, 47.9, 49.7, 54.8, 58.0, 61.6, 67.3, 71.2, 72.9, 73.0, 72.5, 70.0, 71.9, 71.7, 68.5, 64.2, 62.8, 61.8, 61.5, 62.1, 63.4, 64.0, 63.9, 64.3, 64.2, 71.4, 114.0, 194.0, 248.2, 258.7, 261.9, 268.9, 274.9, 284.4, 291.9, 278.3, 259.9, 252.3, 246.5, 222.2],
+	d5: [14.4, 17.7, 19.6, 23.0, 24.7, 28.0, 32.3, 35.5, 38.7, 44.0, 50.5, 59.4, 71.8, 85.7, 115.5, 132.5, 119.0, 130.3, 151.4, 163.6, 178.9, 192.1, 206.2, 221.0, 232.0, 250.9, 273.2, 292.2, 309.7, 319.1, 333.9, 344.3, 372.9, 392.2, 403.4, 399.6, 412.2, 424.8, 437.5, 467.1, 502.9, 519.1, 518.9, 550.0, 549.8, 568.6, 628.0, 729.7, 827.5, 877.8, 956.4, 1086.0, 1242.0, 1408.4, 1482.4, 1421.0, 1418.7, 1508.2, 1578.3, 1485.0],
+	d10: [18.5, 25.7, 29.3, 37.1, 41.0, 46.6, 56.3, 60.4, 66.5, 79.1, 95.7, 117.7, 150.6, 188.0, 272.5, 319.1, 285.6, 300.9, 345.4, 379.1, 415.2, 452.6, 489.0, 519.2, 570.5, 614.1, 661.1, 711.7, 754.7, 789.3, 823.6, 857.1, 924.9, 983.3, 1025.1, 1045.7, 1057.6, 1069.6, 1084.1, 1138.6, 1216.3, 1258.9, 1278.3, 1340.3, 1330.0, 1432.1, 1764.6, 2133.5, 2332.8, 2302.7, 2315.6, 2534.5, 2895.4, 3358.7, 3766.2, 3889.2, 3948.9, 4217.6, 4474.6, 4279.4],
+	bundle: [0.8637, 0.4933, 0.6023, 0.4664, 0.5574, 0.5631, 0.3919, 0.3527, 0.3025, 0.2016, 0.1955, 0.1912, 0.1876, 0.1838, 0.1751, 0.1725, 0.4182, 0.54, 0.1863, 0.2421, 0.167, 0.2064, 0.1586, 0.1521, 0.1398, 0.1346, 0.1265, 0.1211, 0.1319, 0.1166, 0.1154, 0.115, 0.1177, 0.1075, 0.1104, 0.1168, 0.1206, 0.1243, 0.126, 0.1216, 0.1144, 0.1143, 0.11, 0.0877, 0.0849, 0.0828, 0.0801, 0.0669, 0.0653, 0.0596, 0.0556, 0.0497, 0.0438, 0.0386, 0.0361, 0.0368, 0.0359, 0.0343, 0.0331, 0.0341]
 };
 
 /** the owner-only people (every tenth person: their Avens deliver nothing, and they start with nothing).
- *  source: sim-dynamic.md D6.2 and its note (the mix at the end, and each MIND's dividend yield in year 60) */
+ *  source: H3 note (holdings, HEARTS), D6.2 (the group's average of dividends ÷ basic bundle) and its note (the mix at
+ *  the end, and each MIND's dividend yield in year 60) */
 export const OWNER_ONLY = {
 	count: 25,
-	holding40: 10_221, // mean holding, HEARTS, year 40 (H3 note)
-	holding60: 7_704, // year 60
-	strictAvg40: 91.98, // dividends ÷ basic bundle, the group's average, year 40
-	strictAvg60: 1.48, // year 60
-	mix: { CITY: { share: 0.5, yield: 0.0 }, ARTS: { share: 0.11, yield: 0.015 }, WIND: { share: 0.06, yield: 0.0 } }
+	holding40: 8_524, // mean holding, HEARTS, year 40 (H3 note)
+	holding60: 10_361, // year 60
+	strictAvg40: 7.71, // dividends ÷ basic bundle, the group's average, year 40
+	strictAvg60: 75.8, // year 60
+	mix: { EXP6: { share: 0.35, yield: 0.219 }, CITY: { share: 0.27, yield: 0.0 }, PANEL4: { share: 0.18, yield: 0.0 } }
 };
 
 /** the dynamic world at rest (years 51–60), against the earlier static world. source: sim-dynamic.md D1, D8, and for
- *  every value in HEARTS sim-dynamic-hearts.md H2. mu and sigma are the rest means of each year's mean return and its
- *  spread across people, in HEARTS (H2). In R the script printed mu 5.9 % (D1); the gap is R's drift (Section 6.3) */
+ *  every value in HEARTS H2. mu and sigma are the rest means of each year's mean return and its spread across people,
+ *  in HEARTS (H2). In R the script printed mu 11.9 % (D1); the gap is R's drift (Section 6.3) */
 export const DYN = {
-	dayLiving: { y1: 4.8, y10: 53.6, y60: 124.0 }, // a day of living, HEARTS (H2)
-	income: 139.8, // HEARTS a person a day (H2)
-	spent: 0.87, // share of income spent (bought from COOPs) (D1)
+	dayLiving: { y1: 4.5, y10: 51.4, y60: 107.4 }, // a day of living, HEARTS (H2)
+	income: 130.9, // HEARTS a person a day (H2)
+	spent: 0.86, // share of income spent (bought from COOPs) (D1)
 	walletMelt: 0.12, // share of income that melts in wallets (D1)
-	people: 0.747, // share of all MIND by HEART value (H2)
-	treasuries: 0.201,
-	pools: 0.052,
-	yield: 0.099, // dividend yield a year, all MIND by value (D1)
-	mu: 0.075, // lasting return in HEARTS: dividends plus price change, at rest (H2: 7.50 %; in R 5.86 %)
-	muRun: 0.0853, // the same over the whole run, years 2–60 (H2: 8.53 %; in R 8.57 %)
-	muYearsAbove: { years: 50, of: 59 }, // years 2–60 in which it was at or above the 7 % melt (H2; in R 39 of 59)
-	priceChange: 0.0023, // the price part of mu at rest, in HEARTS (H2: +0.23 %; in R -1.42 %)
-	sigma: 0.0663, // its spread across people (H2: 6.63 %; in R 6.62 %)
-	giniOwned: 0.37, // Gini of what people hold, years 51–60 (D1)
-	giniOwnedBy: { y20: 0.3, y40: 0.34, y60: 0.38 }, // … by year, still rising at the end (D3)
-	pricesMin: 0.18, // MIND values at rest, HEARTS: lowest … (H2)
-	pricesMax: 1.43, // … highest
-	sdLog: 0.77,
+	people: 0.712, // share of all MIND by HEART value (H2)
+	treasuries: 0.193,
+	pools: 0.095,
+	yield: 0.1, // dividend yield a year, all MIND by value (D1, H2)
+	mu: 0.0944, // lasting return in HEARTS: dividends plus price change, at rest (H2: 9.44 %; in R 11.93 %)
+	muRun: 0.0935, // the same over the whole run, years 2–60 (H2: 9.35 %; in R 9.45 %)
+	muYearsAbove: { years: 52, of: 59 }, // years 2–60 in which it was at or above the 7 % melt (H2; in R 45 of 59)
+	priceChange: -0.0067, // the price part of mu at rest, in HEARTS (H2: −0.67 %; in R +1.76 %)
+	sigma: 0.0541, // its spread across people (H2: 5.41 %; in R 4.95 %)
+	gini2: 1.0, // Proposition 2's Gini from mu and sigma (H2): 1 when mu is at or above the melt
+	giniOwned: 0.31, // Gini of what people hold, years 51–60 (D1; H2: 0.314)
+	giniOwnedBy: { y20: 0.29, y40: 0.32, y50: 0.29, y60: 0.35 }, // … by year (D3; H8)
+	giniTrend: 0.006, // its least-squares trend over years 41–60, a 10 years (H2, H8: +0.006)
+	pricesMin: 0.14, // MIND values at rest, HEARTS: lowest … (H2)
+	pricesMax: 1.66, // … highest
+	sdLog: 0.7,
 	mindsAlive: 23, // (D1)
-	outputPerPlant: 15.19, // output per unit of plant at the end, sales-weighted (D1); 1 on day 1
-	failures: 1, // whole run (D1, D5)
-	exits: 21,
-	foundings: 29,
-	money: 119_338, // MIND count a person (D1, D8)
-	bundleChange: -0.0106, // the basic bundle's yearly change in HEARTS, years 51–60 (H2; in R -2.9 %, D8)
-	coopDaysShort: 1_436, // COOP-days short of working capital in 60 years (D8)
-	coopDaysShortAfter10: 1_246, // … of them after year 10 (D8)
-	topBottom: 2.9 // mean holding: top half of Aven pay ÷ bottom half (D8)
+	outputPerPlant: 9.42, // output per unit of plant at the end, sales-weighted (D1); 1 on day 1
+	failures: 14, // whole run (D1, D5)
+	exits: 16,
+	foundings: 25,
+	money: 115_698, // MIND count a person (D1, D8)
+	bundleChange: -0.0544, // the basic bundle's yearly change in HEARTS, years 51–60 (H2; in R −1.9 %, D8)
+	coopDaysShort: 3_892, // COOP-days short of working capital in 60 years (D8)
+	coopDaysShortAfter10: 3_647, // … of them after year 10 (D8)
+	topBottom: 2.5 // mean holding: top half of Aven pay ÷ bottom half (D8)
 };
 
 /** the earlier static world: one COOP per good (two for food), fixed tastes, prices capped at twice full cost, short
- *  reserves, no growth. source: sim-dynamic.md D1 (static column), S1, S5, S6.2, S6.3, S6.5, S6.6, S7; land: model.md §7.4 */
+ *  reserves, no growth. source: sim-dynamic.md D1 (static column), S1, S5, S6.2, S6.3, S6.5, S6.6, S7, and in HEARTS
+ *  H2 (static column) and H7; land: model.md §7.4 */
 export const STATIC = {
-	dayLiving: { y1: 10.2, y60: 11.8 }, // HEARTS (H2)
-	income: 34.4, // HEARTS a person a day (H2)
-	spent: 0.34,
-	walletMelt: 0.64,
-	people: 0.94, // by HEART value (H2)
-	treasuries: 0.01,
-	pools: 0.05,
+	dayLiving: { y1: 11.3, y60: 11.9 }, // HEARTS (H2)
+	income: 33.3, // HEARTS a person a day (H2)
+	spent: 0.36,
+	walletMelt: 0.63,
+	people: 0.891, // by HEART value (H2)
+	treasuries: 0.009,
+	pools: 0.1,
 	yield: 0.008,
-	mu: 0.006, // HEARTS (H2: 0.56 %)
-	giniOwned: 0.33,
-	pricesMin: 0.96, // HEARTS (H2)
-	pricesMax: 1.05,
+	mu: 0.0057, // HEARTS (H2: 0.57 %)
+	giniOwned: 0.34,
+	pricesMin: 0.98, // HEARTS (H2)
+	pricesMax: 1.04,
 	mindsAlive: 9,
 	failures: 0,
 	exits: 0,
 	foundings: 0,
-	topBottom: 2.6, // (S1)
-	keepSurplus: 0.3, // people's share of MIND when treasuries keep their surplus (S1)
-	routing: 0.0038, // routing cost of a payment at rest … (S1)
-	routingFees: 0.0034, // … of it pool fees
-	germany: [0.73, 0.44, 0.36], // Gini: made as unequal as Germany, then +10 and +20 years (S6.5)
-	avenEven: 0.04, // Gini owned with all Avens alike (S5)
-	avenDouble: 0.56, // with Avens that differ twice as much (S5)
-	geo: { geo: 3.9, solar: 0.25 }, // 1 MIND after 20 years, with dividends, after the melt, HEARTS (S6.6; H7: 3.88 and 0.25)
+	topBottom: 2.7, // (S1)
+	keepSurplus: 0.29, // people's share of MIND when treasuries keep their surplus (S1)
+	routing: 0.0039, // routing cost of a payment at rest … (S1)
+	routingFees: 0.0035, // … of it pool fees
+	germany: [0.72, 0.45, 0.36], // Gini: made as unequal as Germany, then +10 and +20 years (S6.5)
+	avenEven: 0.05, // Gini owned with all Avens alike (S5)
+	avenDouble: 0.59, // with Avens that differ twice as much (S5)
+	geo: { geo: 1.62, solar: 0.25 }, // 1 MIND after 20 years, with dividends, after the melt, HEARTS (S6.6; H7: 1.62 and 0.25)
 	foodFailure: { withRule: 0.09, without: 1.0 }, // food shortfall the year after the main food COOP fails (S6.2)
-	ring: { hearts: 0.0384, people: 0.016, income: 1.6, wealth: 1.5, years: 10 }, // a founder ring: share of HEARTS and of people, income and wealth (after 10 years) against others (S6.3)
-	coldStart: { day1: 0.944, days1to30: 0.113, year1: 0.009 }, // shortfall without the bootstrap (S1)
+	ring: { hearts: 0.0365, people: 0.016, income: 1.6, wealth: 1.4, years: 10 }, // a founder ring: share of HEARTS and of people, income and wealth (after 10 years) against others (S6.3)
+	coldStart: { day1: 0.944, days1to30: 0.14, year1: 0.011 }, // shortfall without the bootstrap (S1)
 	land: { private: 0.5, city: 0.29 }, // Gini after 40 years, private land against all land in the City COOP (model.md §7.4)
-	coopDaysShort: 42 // COOP-days short of working capital in 60 years (S1)
+	coopDaysShort: 40 // COOP-days short of working capital in 60 years (S1)
 };
 
 /** Proposition 2 checked by simulating the process: an SDE run of 4,000 people against (11) at σ = 0.2.
  *  source: research/e2e/model.md, verification table ("SDE run (4,000 people): 0.287 against 0.291") */
 export const SDE_CHECK = { sim: 0.287, formula: 0.291 };
 
-/** treasuries at rest. source: sim-dynamic.md D4 (reserves at the end in days of running costs) and hearts.json
- *  reserves (HEARTS a person a year, booked as D4 books them) */
+/** treasuries at rest. source: sim-dynamic.md D4 (reserves at the end in days of running costs) and H3 note
+ *  (HEARTS a person a year, booked as D4 books them) */
 export const RESERVES = {
 	months: 9,
 	days: 270,
-	minDays: 225,
-	medianDays: 538,
-	inflow: 48_347,
-	items: 35_347,
-	proposals: 2_401,
-	dividends: 8_877
+	minDays: 62,
+	medianDays: 445,
+	inflow: 45_176,
+	items: 32_931,
+	proposals: 1_713,
+	dividends: 8_247
 };
 /** a share of all that flows into the treasuries at rest, as D4 books it (sales gross): 'items', 'proposals' or 'dividends' */
 export const reserveShare = (k) => RESERVES[k] / RESERVES.inflow;
@@ -445,26 +465,32 @@ export const reserveShare = (k) => RESERVES[k] / RESERVES.inflow;
 export const treasuryShare = (k) => RESERVES[k] / (RESERVES.inflow - RESERVES.dividends);
 
 /** one run per variation of the main run. checks = [no one starves, no one has to work (normal), everyone gains];
- *  short = the basics short in the worst years; mu = the lasting return at rest, HEARTS (H6); bundleMax = the most a
- *  day's basic bundle cost in a year, HEARTS (H6); shortYears / worstYear / worstYearShare = the years with basics
- *  short, and the worst of them (D7 notes). source: sim-dynamic.md D7 (both tables and the notes) and
- *  sim-dynamic-hearts.md H6 (mu, sigma, bundleMax) */
+ *  short = the basics short in the worst years; mu = the lasting return at rest, HEARTS (H6); sigma its spread (H6);
+ *  bundleMax = the most a day's basic bundle cost in a year, HEARTS (H6); shortYears / worstYear / worstYearShare =
+ *  the years with basics short, and the worst of them (D7 notes). source: sim-dynamic.md D7 (both tables and the
+ *  notes) and H6 (mu, sigma, bundleMax) */
 export const LADDER = [
-	{ id: 'main', bundleMax: 0.862, label: 'Main: Law 5 at 20 %, reserves 9 months', share: 0.2, months: 9, checks: [1, 1, 1], shortfall: 0, yield: 0.099, mu: 0.075, failures: 1, exits: 21, foundings: 29, short: [], broke: 'Nothing in checks 1 to 3. Dividends alone missed often in years 1 to 8' },
-	{ id: 'law35', bundleMax: 163.351, label: 'Law 5 at 35 %', share: 0.35, checks: [0, 0, 0], shortfall: 0.0282, yield: 0.206, mu: -0.04, sigma: 0.293, failures: 34, exits: 48, foundings: 70, short: ['food', 'energy', 'housing', 'water'], broke: 'Every basic ran short, worst in year 57; 34 COOPs failed' },
-	{ id: 'law50', bundleMax: 2.444, label: 'Law 5 at 50 %', share: 0.5, checks: [0, 0, 0], shortfall: 0.0011, yield: 0.244, mu: 0.182, failures: 9, exits: 44, foundings: 64, short: ['food'], broke: 'Food ran short in years 1, 5 and 32' },
-	{ id: 'res6', bundleMax: 0.864, label: 'Reserves 6 months', months: 6, checks: [0, 0, 0], shortfall: 0.0006, yield: 0.1, mu: 0.068, failures: 9, exits: 16, foundings: 20, short: ['food'], foodYear: 16, broke: 'Food ran short in year 16' },
-	{ id: 'res12', bundleMax: 0.853, label: 'Reserves 12 months', months: 12, checks: [0, 0, 0], shortfall: 0.0003, yield: 0.1, mu: 0.056, failures: 4, exits: 17, foundings: 24, short: ['food'], foodYear: 3, broke: 'Food ran short in year 3' },
-	{ id: 'prod0', bundleMax: 6.189, shortYears: 12, worstYear: 4, worstYearShare: 0.192, label: 'No productivity growth', checks: [0, 0, 0], shortfall: 0.0123, yield: 0.1, mu: 0.101, failures: 11, exits: 25, foundings: 36, short: ['food', 'housing'], broke: 'Basics ran short in 12 years, food worst; the poorest tenth stalled' },
+	{ id: 'main', bundleMax: 0.864, label: 'Main: Law 5 at 20 %, reserves 9 months', share: 0.2, months: 9, checks: [0, 0, 0], shortfall: 0.0018, yield: 0.1, mu: 0.0944, sigma: 0.0541, failures: 14, exits: 16, foundings: 25, short: ['food', 'water'], broke: 'Water and food ran short in year 17, food in year 48; all 14 failures were food COOPs' },
+	// crash: the run fell in years 38–40 (μ −3.4 % in year 39, in HEARTS) and boomed again, so its μ at rest is not a
+	// resting state (sim-dynamic.csv, dyn:law35, mean_return_H)
+	{ id: 'law35', bundleMax: 1.038, label: 'Law 5 at 35 %', share: 0.35, checks: [0, 0, 0], shortfall: 0.0003, yield: 0.173, mu: 0.1199, sigma: 0.0888, failures: 7, exits: 33, foundings: 54, short: ['food'], crash: { from: 38, to: 40, low: -0.0344 }, broke: 'Food ran short in year 31; the run fell in years 38 to 40 and boomed again' },
+	{ id: 'law50', bundleMax: 2.031, label: 'Law 5 at 50 %', share: 0.5, checks: [0, 0, 0], strict: 1, shortfall: 0.0045, yield: 0.249, mu: 0.1446, sigma: 0.1258, failures: 18, exits: 43, foundings: 65, short: ['food', 'energy', 'housing', 'water'], broke: 'Nine COOPs failed in year 34; every basic ran short in year 38' },
+	{ id: 'res6', bundleMax: 0.877, label: 'Reserves 6 months', months: 6, checks: [0, 0, 0], shortfall: 0.0006, yield: 0.1, mu: 0.0622, sigma: 0.0719, failures: 4, exits: 15, foundings: 22, short: ['food'], foodYears: [2, 34], broke: 'Food ran short in years 2 and 34' },
+	{ id: 'res12', bundleMax: 1.35, label: 'Reserves 12 months', months: 12, checks: [1, 1, 1], shortfall: 0, yield: 0.1, mu: 0.058, sigma: 0.0603, failures: 9, exits: 13, foundings: 20, short: [], broke: 'Nothing in checks 1 to 3. Dividends alone missed on 5.7 % of owner-only days after year 10' },
+	{ id: 'prod0', bundleMax: 7.268, shortYears: 4, worstYear: 29, worstYearShare: 0.212, label: 'No productivity growth', checks: [0, 0, 0], shortfall: 0.0076, yield: 0.1, mu: 0.1047, sigma: 0.0633, failures: 9, exits: 24, foundings: 29, short: ['food', 'energy', 'housing'], broke: 'Basics ran short in 4 years, food worst; the poorest tenth stalled' },
 	// plant: output per unit of plant in year 60 (sim-dynamic.csv, dyn:even, mean_productivity)
-	{ id: 'even', bundleMax: 0.855, label: 'Even growth, 2 % for every COOP', checks: [1, 1, 0], shortfall: 0, yield: 0.101, mu: 0.081, failures: 0, exits: 9, foundings: 18, short: [], plant: 3.35, broke: 'The poorest tenth fell from year 30 to year 50' },
-	{ id: 'wide', bundleMax: 0.856, label: 'Growth twice as uneven', checks: [0, 0, 1], shortfall: 0.001, yield: 0.1, mu: 0.075, failures: 3, exits: 17, foundings: 27, short: ['food'], broke: 'Food ran short in year 18, for owner-only people too' },
-	{ id: 'wants', bundleMax: 0.93, label: 'Wants do not grow', checks: [0, 0, 0], shortfall: 0.0003, yield: 0.002, mu: 0.001, failures: 5, exits: 14, foundings: 19, short: ['food'], spent: 0.11, broke: 'People spent 11 % of income; dividends fell to almost nothing' },
-	{ id: 'aven', bundleMax: 4.413, label: 'Fixed Aven capacity', checks: [0, 0, 0], shortfall: 0.0049, yield: 0.1, mu: 0.093, failures: 14, exits: 13, foundings: 18, short: ['food'], worst: 0.02, broke: 'Basics ran short in 13 years, food worst; the worst person-day had 2 %' },
+	{ id: 'even', bundleMax: 0.863, label: 'Even growth, 2 % for every COOP', checks: [1, 1, 0], shortfall: 0, yield: 0.1, mu: 0.1079, sigma: 0.0497, failures: 0, exits: 12, foundings: 19, short: [], plant: 3.56, broke: 'The poorest tenth fell from year 30 to year 40, and from year 50 to year 60' },
+	{ id: 'wide', bundleMax: 0.87, label: 'Growth twice as uneven', checks: [1, 1, 0], shortfall: 0, yield: 0.1, mu: 0.0627, sigma: 0.049, failures: 0, exits: 13, foundings: 19, short: [], broke: 'The poorest person fell from year 20 to year 30' },
+	{ id: 'wants', bundleMax: 0.918, label: 'Wants do not grow', checks: [1, 1, 0], shortfall: 0, yield: 0.001, mu: 0.0006, sigma: 0.0004, failures: 1, exits: 9, foundings: 14, short: [], spent: 0.05, broke: 'People spent 5 % of income; dividends fell to almost nothing, and consumption stopped rising' },
+	{ id: 'aven', bundleMax: 2.196, label: 'Fixed Aven capacity', checks: [0, 0, 0], shortfall: 0.0023, yield: 0.1, mu: 0.0966, sigma: 0.0486, failures: 14, exits: 9, foundings: 14, short: ['food'], worst: 0.13, broke: 'Food ran short in 8 years; the worst person-day had 13 %' },
 	// ownerWorst: the worst owner-only person-day; poorOwner: the poorest owner-only person's real consumption, years 10 and 20
-	{ id: 'pop', bundleMax: 0.95, label: 'Population grows 2 % a year (40 years)', checks: [0, 0, 0], shortfall: 0.0003, yield: 0.1, mu: 0.086, failures: 0, exits: 14, foundings: 21, short: ['food', 'energy', 'housing'], ownerWorst: 0.6, poorOwner: [13.7, 6.4], broke: 'Newcomers went short in their first weeks, and owner-only people too (worst 60 %)' }
+	{ id: 'pop', bundleMax: 0.895, label: 'Population grows 2 % a year (40 years)', checks: [0, 0, 0], shortfall: 0.0005, yield: 0.1, mu: 0.0803, sigma: 0.0798, failures: 3, exits: 15, foundings: 20, short: ['food', 'energy', 'housing', 'water'], ownerWorst: 0.64, poorOwner: [10.9, 6.0], broke: 'Newcomers went short in their first weeks, and owner-only people too (worst 64 %)' },
+	// the old pool rule (0.05 of each HEART to the pools, a tenth of the treasury's half): the main run of the paper's
+	// earlier version, run again; H6 gives μ 7.50 % and σ 6.63 %, as before
+	{ id: 'pool05', bundleMax: 0.862, label: 'The old pool rule: 0.05 of each HEART to the pools', pool: 0.05, checks: [1, 1, 1], shortfall: 0, yield: 0.099, mu: 0.075, sigma: 0.0663, failures: 1, exits: 21, foundings: 29, short: [], broke: 'Nothing in checks 1 to 3. Dividends alone missed often in years 1 to 8' }
 ];
-/** the ten variations, without the main run */
+/** strict: 1 marks the one run whose strict test passed (D7: "(✓)") */
+/** the variations, without the main run */
 export const variations = () => LADDER.filter((v) => v.id !== 'main');
 /** how many variations reached a lasting return μ at or above the melt */
 export const variationsMuAbove = (r = RATE) => variations().filter((v) => v.mu >= r).length;
@@ -473,80 +499,120 @@ export const foodShort = () => variations().filter((v) => v.short.includes('food
 export const foodOnlyShort = () => variations().filter((v) => v.short.length === 1 && v.short[0] === 'food').length;
 /** how many variations left someone short of basics (check 1 failed) */
 export const starveFail = () => variations().filter((v) => !v.checks[0]).length;
-/** how many runs passed all three checks */
+/** how many runs passed all three checks, and their labels */
 export const allPass = () => LADDER.filter((v) => v.checks.every(Boolean)).length;
+export const passing = () => LADDER.filter((v) => v.checks.every(Boolean));
+/** true when every run whose owner-only people went short (check 2) also had the basics run short (check 1) */
+export const ownerShortOnlyWithBasics = () => LADDER.every((v) => v.checks[1] || !v.checks[0]);
 /** the variation with this id */
 export const variation = (id) => LADDER.find((v) => v.id === id);
 
+/** the dynamic main on eight seeds (20261012–20261019): the same run, eight histories. new = the liquidity rule
+ *  0.5 / 0.4 / 0.1; old = the old pool rule (0.05 to the pools). mu in HEARTS at rest; margin = the melt less mu, the
+ *  smallest of the eight and its seed; below = seeds with mu below the melt; pass = seeds on which all three checks of
+ *  Proposition 3 pass; gini = the measured Gini of holdings in HEARTS in year 60, lowest and highest; rising = seeds
+ *  whose Gini still rose over years 41–60. source: scripts/theos-e2e-sim.mjs --seeds 20261012-20261019 (new) and the
+ *  same with --set poolShare=0.05 (old); research/e2e/pool-10 seeds-new.md and seeds-old.md */
+export const SEEDS = {
+	from: 20261012,
+	to: 20261019,
+	n: 8,
+	new: { muMin: 0.0661, muMax: 0.1008, muMedian: 0.0756, below: 2, marginMin: -0.0308, marginMinSeed: 20261016, pass: 3, check1: 4, check2: 4, check3: 3, gini: [0.27, 0.39], rising: 7 },
+	old: { muMin: 0.0626, muMax: 0.0963, muMedian: 0.0692, below: 5, marginMin: -0.0263, marginMinSeed: 20261016, pass: 2, check1: 2, check2: 2, check3: 6, gini: [0.31, 0.41], rising: 8 }
+};
+
+/** the melt tests (Section 9.3): the dynamic main on the same eight seeds, with one lever changed at a time. new: under
+ *  the liquidity rule of this paper, from scripts/theos-e2e-sim.mjs --seeds 20261012-20261019 with --set turnDiv=0.1,
+ *  --set turnDiv=0.15, --set capDays=365, --melt 0.08 or --melt 0.09 (research/e2e/pool-10, melt-*.md); old: the same
+ *  levers under the old pool rule, from fixes.md (Appendix G); the script with --set poolShare=0.05 reruns each of
+ *  these rows and gives the same numbers (research/e2e/pool-10, melt-old-*.md). melt = the run's melt; mu = μ at rest in HEARTS, lowest and highest of the eight seeds; below =
+ *  seeds with μ below that run's melt; marginMin = the smallest margin (melt − μ); pass = seeds on which all three
+ *  checks of Proposition 3 pass; yieldMid = the median dividend yield */
+export const MELT_TESTS = {
+	law10: { share: 0.1, melt: 0.07, new: { mu: [0.0312, 0.0482], below: 8, marginMin: 0.0218, pass: 3, yieldMid: 0.05 }, old: { mu: [0.0343, 0.0438], below: 8, marginMin: 0.0262, pass: 4, yieldMid: 0.05 } },
+	law15: { share: 0.15, melt: 0.07, new: { mu: [0.044, 0.0688], below: 8, marginMin: 0.0012, pass: 2, yieldMid: 0.075 }, old: { mu: [0.052, 0.0793], below: 6, marginMin: -0.0093, pass: 2, yieldMid: 0.075 } },
+	res12: { months: 12, melt: 0.07, new: { mu: [0.058, 0.102], below: 5, marginMin: -0.032, pass: 4 }, old: { mu: [0.0559, 0.0886], below: 4, marginMin: -0.0186, pass: 0 } },
+	melt8: { melt: 0.08, new: { mu: [0.0598, 0.0979], below: 7, marginMin: -0.0179, pass: 2 }, old: { mu: [0.0654, 0.0786], below: 8, marginMin: 0.0014, pass: 1 } },
+	melt9: { melt: 0.09, new: { mu: [0.0595, 0.0957], below: 7, marginMin: -0.0057, pass: 0 }, old: { mu: [0.0631, 0.0895], below: 8, marginMin: 0.0005, pass: 0 } }
+};
+
 /** values in HEARTS and in days of living: a day of living, a day's basic bundle, and the lowest and highest MIND value
- *  that year. source: sim-dynamic-hearts.md H3 */
+ *  that year. source: sim-dynamic.md H3 */
 export const PRICES_BY_YEAR = {
-	1: { living: 4.8, bundle: 0.862, vMin: 0.32, vMax: 2.06 },
-	10: { living: 53.61, bundle: 0.184, vMin: 0.26, vMax: 3.77 },
-	30: { living: 97.3, bundle: 0.081, vMin: 0.07, vMax: 1.4 },
-	40: { living: 111.43, bundle: 0.0565, vMin: 0.05, vMax: 1.36 },
-	60: { living: 123.99, bundle: 0.057, vMin: 0.4, vMax: 1.44 }
+	1: { living: 4.54, bundle: 0.864, vMin: 0.35, vMax: 1.98 },
+	10: { living: 51.35, bundle: 0.2016, vMin: 0.07, vMax: 3.12 },
+	30: { living: 96.54, bundle: 0.1166, vMin: 0.13, vMax: 1.37 },
+	40: { living: 110.86, bundle: 0.1216, vMin: 0.28, vMax: 1.38 },
+	60: { living: 107.42, bundle: 0.0341, vMin: 0.01, vMax: 1.48 }
 };
 /** a day's basic bundle as a share of a day of living, in year y */
 export const bundleShareOfLiving = (y) => PRICES_BY_YEAR[y].bundle / PRICES_BY_YEAR[y].living;
 
 /** the retired yardstick R (the geometric mean of the prices of SOLAR, HABITAT and CITY), in R a HEART: how far it
- *  drifted against the average MIND. source: sim-dynamic-hearts.md H1 and H6 ("R a HEART at rest") */
-export const OLD_R = { y1: 1.21, y40: 2.52, y60: 1.68, rest: 1.76, law35: 6.88, mainMu: 0.0586, law35Mu: 0.082 }; // and the lasting return at rest that the script printed in R (D1, D7)
+ *  drifted against the average MIND, and the lasting return at rest that the script prints in R (D1, D7).
+ *  source: sim-dynamic.md H1, H2 and H6 ("R a HEART at rest", "μ, R") */
+export const OLD_R = { y1: 1.15, y40: 1.11, y60: 1.65, rest: 1.67, mainMu: 0.1193 };
 
 /** competition by good: the largest seller's share of what was made in year 1 and year 60 (null: none made that year),
- *  and the COOPs founded and ended over 60 years. source: sim-dynamic.md D5 (tables and lists) */
+ *  and the COOPs founded and ended over 60 years (a successor that leases a failed plant is not counted as founded).
+ *  source: sim-dynamic.md D5 (tables and lists) */
 export const COMPETITION = [
-	{ good: 'food', y1: 0.67, y60: 0.93, founded: 2, ended: 3 },
-	{ good: 'energy', y1: 0.62, y60: 1.0, founded: 3, ended: 3 },
-	{ good: 'housing', y1: 0.63, y60: 1.0, founded: 2, ended: 2 },
+	{ good: 'food', y1: 0.68, y60: 1.0, founded: 4, ended: 16 },
+	{ good: 'energy', y1: 0.62, y60: 1.0, founded: 2, ended: 2 },
+	{ good: 'housing', y1: 0.64, y60: 1.0, founded: 1, ended: 1 },
 	{ good: 'water', y1: 1.0, y60: 1.0, founded: 0, ended: 0 },
-	{ good: 'goods', y1: 0.59, y60: 0.94, founded: 4, ended: 2 },
-	{ good: 'care', y1: 0.55, y60: 0.97, founded: 3, ended: 2 },
-	{ good: 'experiences', y1: 0.55, y60: 0.97, founded: 5, ended: 5 },
-	{ good: 'panels', y1: 1.0, y60: null, founded: 5, ended: 3 },
-	{ good: 'materials', y1: 1.0, y60: 0.49, founded: 5, ended: 2 }
+	{ good: 'goods', y1: 0.64, y60: 0.85, founded: 2, ended: 1 },
+	{ good: 'care', y1: 0.52, y60: 0.92, founded: 2, ended: 2 },
+	{ good: 'experiences', y1: 0.56, y60: 0.75, founded: 7, ended: 6 },
+	{ good: 'panels', y1: 1.0, y60: 0.5, founded: 3, ended: 0 },
+	{ good: 'materials', y1: 1.0, y60: 0.97, founded: 4, ended: 2 }
 ];
-/** the one failure: the first food COOP, AGRI, in year 18 (D5) */
-export const FAILURE = { coop: 'AGRI', good: 'food', year: 18 };
-/** the three energy COOPs founded later, each of which exited within this many years (D5: y4→y7, y20→y23, y52→y55) */
-export const ENERGY_ENTRANTS = { count: 3, years: 3 };
+/** the goods (water aside) that one COOP made alone in year 60 */
+export const soleMakers = () => COMPETITION.filter((g) => g.good !== 'water' && g.y60 === 1).map((g) => g.good);
+/** the failures: every one was a food COOP. FOOD3, founded in year 7, failed first, in year 11; the City COOP leased its
+ *  plant to one successor after another, and most of them failed too; FOOD4's line went the same way. source: D5 */
+export const FAILURE = { coop: 'FOOD3', good: 'food', year: 11, count: 14, food: 14 };
+/** the energy COOPs founded later, each of which exited within this many years (D5: y5→y8, y17→y20) */
+export const ENERGY_ENTRANTS = { count: 2, years: 3 };
 
-/** every MIND over its life. source: sim-dynamic.md D2, second table, valued in HEARTS in sim-dynamic-hearts.md H5 */
-export const MIND_RETURNS = { minds: 45, ended: 22, withThreeYears: 44, aboveMelt: 19, aboveMeltEnded: 12, arts: { compounded: 0.181, years: 59 } }; // in HEARTS (H5)
+/** every MIND over its life. source: sim-dynamic.md D2, second table, valued in HEARTS in H5 */
+export const MIND_RETURNS = { minds: 52, ended: 30, withThreeYears: 44, aboveMelt: 15, aboveMeltEnded: 9, arts: { compounded: 0.233, years: 59 } }; // in HEARTS (H5)
 
 /** the round trip at rest (years 51–60), in HEARTS a person a day. Places: people's wallets, COOP treasuries, pools;
  *  each with what flows in and out, what price moves did to what it holds, and the change of what it holds. Flows are
  *  valued at the HEART values of their step; price moves are what the change of HEART values from one step to the next
- *  did to what each place holds. source: sim-dynamic-hearts.md H4 (the same books as D8, which counts in R).
+ *  did to what each place holds. source: sim-dynamic.md H4 (the same books as D8, which counts in R).
  *  No human labour is paid: every human's Aven delivers the work items. */
 // net and rest: H4's own "in − out" and "not explained" columns, printed as H4 prints them (the sums of the rounded
-// flows above can differ from them by 0.01). Liquidations were 0.00 at rest and are left out
+// flows above can differ from them by 0.01). Liquidations were 0.00 at rest and are left out. own: the investor's part
+// (people) or the treasury's part (treasuries) of each HEART invested; pool: the pools' part
 export const ROUND_TRIP = {
-	people: { in: { own: 12.02, items: 96.85, proposals: 6.58, dividends: 24.32 }, out: { buying: 121.55, melt: 17.03, retired: 0.01 }, net: 1.17, moves: 0.22, change: 1.37, rest: -0.02 },
-	treasuries: { in: { own: 10.81, sales: 121.55 }, out: { dividends: 24.32, items: 96.85, proposals: 6.58, melt: 4.63 }, net: -0.01, moves: -0.53, change: -0.54, rest: 0.0 },
-	pools: { in: { tenth: 1.2, routing: 0.02 }, out: { melt: 1.19, retired: 0.01 }, net: 0.03, moves: 0.13, change: 0.15, rest: 0.0 },
-	issuedMind: 24.0, // MIND a person a day (24 HEARTS converted); in HEARTS 24.03 (H4)
-	meltedMind: 22.84, // MIND a person a day; in HEARTS the same 22.84, because by (7) all MIND is worth as many HEARTS as there are MINDs
-	retiredMind: 0.17, // MIND that left with COOPs that ended (D8)
-	stockGrowth: 0.99, // the MIND stock still grew by this much a person a day (D8)
-	unexplainedMax: 0.00064, // the largest unexplained rest, as a share of a place's inflow (H4)
-	between: { sales: 0.06, rent: 0.03 } // flows between treasuries, which cancel out (H4)
+	people: { in: { own: 13.44, items: 90.21, proposals: 4.7, dividends: 22.59 }, out: { buying: 112.93, melt: 15.86, retired: 0.37 }, net: 1.78, moves: -3.06, change: -1.34, rest: -0.06 },
+	treasuries: { in: { own: 10.75, sales: 112.93 }, out: { dividends: 22.59, items: 90.21, proposals: 4.7, melt: 4.22, retired: 0.01 }, net: 1.95, moves: -0.43, change: 1.54, rest: 0.01 },
+	pools: { in: { pool: 2.69, routing: 0.04 }, out: { melt: 2.12, retired: 0.03 }, net: 0.58, moves: -0.91, change: -0.33, rest: -0.01 },
+	issuedMind: 24.0, // MIND a person a day (24 HEARTS converted); in HEARTS 26.88 (H4)
+	meltedMind: 22.21, // MIND a person a day; in HEARTS the same 22.21, because by (7) all MIND is worth as many HEARTS as there are MINDs
+	retiredMind: 1.94, // MIND that left with COOPs that ended (D8)
+	stockGrowth: -0.14, // the MIND stock changed by this much a person a day (D8): it shrank a little
+	unexplainedMax: 0.00216, // the largest unexplained rest, as a share of a place's inflow (H4)
+	between: { sales: 0.02, rent: 0.05 } // flows between treasuries, which cancel out (H4)
 };
+/** what new MIND, the melt and the MIND retired with COOPs that ended leave over, as a share of new MIND (D8: −0.6 %) */
+export const issueGap = (rt = ROUND_TRIP) => (rt.issuedMind - rt.meltedMind - rt.retiredMind) / rt.issuedMind;
 
-/** the same in the earlier static world, in HEARTS a person a day. source: sim-dynamic-hearts.md H7 (S7 in R) */
+/** the same in the earlier static world, in HEARTS a person a day. source: sim-dynamic.md H7 (S7 in R) */
 export const ROUND_TRIP_STATIC = {
-	people: { in: { own: 12.0, items: 3.85, proposals: 16.11, dividends: 2.4 }, out: { buying: 11.78, melt: 22.08 } },
-	treasuries: { in: { own: 10.8, sales: 11.78 }, out: { dividends: 2.4, items: 3.85, proposals: 16.11, melt: 0.22 } },
-	pools: { in: { tenth: 1.2 }, out: { melt: 1.18 } },
+	people: { in: { own: 12.0, items: 3.9, proposals: 14.98, dividends: 2.43 }, out: { buying: 11.92, melt: 20.91 } },
+	treasuries: { in: { own: 9.6, sales: 11.92 }, out: { dividends: 2.43, items: 3.9, proposals: 14.98, melt: 0.22 } },
+	pools: { in: { pool: 2.4 }, out: { melt: 2.35 } },
 	issued: 24.0,
 	melted: 23.48,
 	money: 122_603 // MIND a person (S7)
 };
 
-/** the mean cost of a day's basic bundle at rest, HEARTS, over the same years as H4. source: sim-dynamic-hearts.md H3
+/** the mean cost of a day's basic bundle at rest, HEARTS, over the same years as H4. source: sim-dynamic.md H3
  *  note ("a day's basic bundle at rest") */
-export const BUNDLE_REST = 0.0679;
+export const BUNDLE_REST = 0.0398;
 
 /** what the treasuries keep of people's purchases: sales less the Law 5 share, which each sale pays at once to the
  *  holders (D8 books sales gross and the dividends as a treasury outflow; this is the same flow, netted at the sale) */
@@ -617,7 +683,7 @@ export const growthRate = (key, y0 = 1, y1 = 60) => Math.pow(growth(key, y0, y1)
 /** output per unit of plant as a yearly rate (1 on day 1, DYN.outputPerPlant in year 60) */
 export const plantGrowthRate = (end = DYN.outputPerPlant, years = SIM.years - 1) => Math.pow(end, 1 / years) - 1;
 
-/** the ten-year windows in which the poorest tenth fell: [from, to] pairs over the yearly series */
+/** the ten-year windows in which the poorest tenth fell: [from, to] pairs over the yearly series (50 windows in 60 years) */
 export const tenYearFalls = (s = LIVING.d1) => s.flatMap((v, i) => (i + 10 < s.length && s[i + 10] < v ? [[i + 1, i + 11]] : []));
 
 /** the poorest tenth's deepest fall: its peak, the low after it, and the fall as a share */

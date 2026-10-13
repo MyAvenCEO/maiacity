@@ -6,16 +6,16 @@
  *   The right to mint expires after 24 h, not the HEARTS: growth older than 24 h is lost. HEARTS buy nothing: they are
  *   only invested.
  * - Investing 1 HEART into a COOP makes 1 MIND of that COOP: half to the player's wallet, half to the COOP's treasury.
- * - Three COOPs, each with its own MIND: the MaiaCity COOP (maiaMIND) owns the settlement hex and the AMM pool; the
- *   Settlement COOP (settlementMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (villageMIND)
+ * - Three COOPs, each with its own MIND: the MaiaCity COOP (maiaMIND) owns the tribe hex and the AMM pool; the
+ *   Tribe COOP (tribeMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (villageMIND)
  *   owns the pickup, the powercube (a diesel generator), a solar panel and a big battery pack.
  * - A tenth of every treasury half (5 % of each invested HEART's MIND) goes into the MaiaCity COOP's pool: a Balancer weighted pool, one
  *   basket of all three MINDs with equal weights (1/3 each, settings a MIP may change). Its invariant is
  *   V = Π Bᵢ^wᵢ; any MIND swaps for any other by Balancer's maths (out = Bₒ·(1 − (Bᵢ/(Bᵢ + Aᵢ·(1 − fee)))^(wᵢ/wₒ))),
  *   so V never falls. It is never paid out; anyone can swap through it (the 0.3 % fee stays in the pool).
  * - Rent, on the pay day that ends every game week (4 a month, each a quarter of the month's rent): each player pays
- *   the Settlement COOP for the tent in settlementMIND; the Settlement COOP pays the MaiaCity COOP for the hex in
- *   maiaMIND; the Settlement COOP rents the Village COOP's pickup, powercube and battery pack, paid to whichever COOP
+ *   the Tribe COOP for the tent in tribeMIND; the Tribe COOP pays the MaiaCity COOP for the hex in
+ *   maiaMIND; the Tribe COOP rents the Village COOP's pickup, powercube and battery pack, paid to whichever COOP
  *   owns each in that COOP's MIND (villageMIND). A payer who lacks the MIND swaps its others through the pool on its own; what is still missing is owed
  *   (arrears) and paid first next pay day.
  * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
@@ -34,17 +34,17 @@ import { SLOTS, SLOT_NAMES } from './views.js';
 export const DAY_MS = 86_400_000;
 /** one virtual month per real day */
 export const MONTH_MS = DAY_MS;
-export const TOKENS = ['HEARTS', 'MAIA', 'SETTLEMENT', 'VILLAGE'];
+export const TOKENS = ['HEARTS', 'MAIA', 'TRIBE', 'VILLAGE'];
 /** the MINDs, one a COOP */
-export const MINDS = ['MAIA', 'SETTLEMENT', 'VILLAGE'];
-export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', SETTLEMENT: 'settlementMIND', VILLAGE: 'villageMIND' };
-export const TOKEN_COLOUR = { MAIA: '#5f8f6e', SETTLEMENT: '#c87a4f', VILLAGE: '#4f7fa8' };
+export const MINDS = ['MAIA', 'TRIBE', 'VILLAGE'];
+export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', TRIBE: 'tribeMIND', VILLAGE: 'villageMIND' };
+export const TOKEN_COLOUR = { MAIA: '#5f8f6e', TRIBE: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 6;
+export const VERSION = 7;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
-	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The settlement hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, settlementMIND, villageMIND' }] },
-	settlement: { name: 'Settlement COOP', mind: 'SETTLEMENT', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
+	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The tribe hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, tribeMIND, villageMIND' }] },
+	tribe: { name: 'Tribe COOP', mind: 'TRIBE', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
 	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The powercube', kind: 'Diesel generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'A big battery pack', kind: 'Storage' }] }
 };
 const MAX_LEDGER = 3000;
@@ -71,21 +71,21 @@ export const DEFAULT_SETTINGS = {
 	dividendShare: 0.2,
 	/** the pool's weights, one per MIND (taken as shares of their sum: 1, 1, 1 is 1/3 each) */
 	weightMAIA: 1,
-	weightSETTLEMENT: 1,
+	weightTRIBE: 1,
 	weightVILLAGE: 1,
 	/** the pool's swap fee, kept in the pool */
 	swapFee: 0.003,
-	/** each player, each virtual month, to the Settlement COOP, in settlementMIND */
+	/** each player, each virtual month, to the Tribe COOP, in tribeMIND */
 	tentRent: 10,
-	/** the Settlement COOP, each virtual month, to the MaiaCity COOP, in maiaMIND */
+	/** the Tribe COOP, each virtual month, to the MaiaCity COOP, in maiaMIND */
 	hexRent: 10,
-	/** the Settlement COOP, each virtual month, for the Village COOP's machines it uses, in the owner's MIND (villageMIND) */
+	/** the Tribe COOP, each virtual month, for the Village COOP's machines it uses, in the owner's MIND (villageMIND) */
 	pickupRent: 4,
 	powercubeRent: 3,
 	batteryRent: 3
 };
 
-/** the machines the Settlement COOP rents, each with the setting of its monthly rent; paid to the COOP that owns it */
+/** the machines the Tribe COOP rents, each with the setting of its monthly rent; paid to the COOP that owns it */
 export const RENTED = [
 	{ asset: 'pickup', setting: 'pickupRent', label: 'pickup' },
 	{ asset: 'powercube', setting: 'powercubeRent', label: 'powercube' },
@@ -93,7 +93,7 @@ export const RENTED = [
 ];
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightSETTLEMENT: 'Pool weight of settlementMIND', weightVILLAGE: 'Pool weight of villageMIND', tentRent: 'Tent rent, each player a month (settlementMIND)', hexRent: 'Hex rent, Settlement COOP a month (maiaMIND)', pickupRent: 'Pickup rent, Settlement COOP a month (villageMIND)', powercubeRent: 'Powercube rent, Settlement COOP a month (villageMIND)', batteryRent: 'Battery pack rent, Settlement COOP a month (villageMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightTRIBE: 'Pool weight of tribeMIND', weightVILLAGE: 'Pool weight of villageMIND', tentRent: 'Tent rent, each player a month (tribeMIND)', hexRent: 'Hex rent, Tribe COOP a month (maiaMIND)', pickupRent: 'Pickup rent, Tribe COOP a month (villageMIND)', powercubeRent: 'Powercube rent, Tribe COOP a month (villageMIND)', batteryRent: 'Battery pack rent, Tribe COOP a month (villageMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -106,7 +106,7 @@ export const SETTING_LIMITS = {
 	poolShare: [0, 0.5],
 	dividendShare: [0, 1],
 	weightMAIA: [0.1, 10],
-	weightSETTLEMENT: [0.1, 10],
+	weightTRIBE: [0.1, 10],
 	weightVILLAGE: [0.1, 10],
 	swapFee: [0, 0.1],
 	tentRent: [0, 10000],
@@ -116,7 +116,7 @@ export const SETTING_LIMITS = {
 	batteryRent: [0, 10000]
 };
 
-const wallet = () => ({ HEARTS: 0, MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 });
+const wallet = () => ({ HEARTS: 0, MAIA: 0, TRIBE: 0, VILLAGE: 0 });
 
 /** a new game, its virtual year 0 starting now */
 export function newGame(now = Date.now(), settings = {}) {
@@ -129,7 +129,7 @@ export function newGame(now = Date.now(), settings = {}) {
 		settings: { ...DEFAULT_SETTINGS, ...settings },
 		players: Object.fromEntries(SEATS.map((s) => [s, { seat: s, name: `Player ${s}`, founder: null, wallet: wallet(), lastMint: null, arrears: 0 }])),
 		coops: Object.fromEntries(Object.entries(COOPS).map(([id, c]) => [id, { id, ...c, treasury: wallet(), arrears: 0 }])),
-		pool: { MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 },
+		pool: { MAIA: 0, TRIBE: 0, VILLAGE: 0 },
 		melt: {},
 		ledger: [],
 		mips: [],
@@ -242,7 +242,7 @@ export function invariant(s) {
 
 /** Balancer's spot price of one `tok` in `inTok` (maiaMIND by default), fee left out: (B_in/w_in)/(B_tok/w_tok);
  * null while either side is empty */
-export function price(s, tok = 'SETTLEMENT', inTok = 'MAIA') {
+export function price(s, tok = 'TRIBE', inTok = 'MAIA') {
 	const w = weights(s);
 	if (!(s.pool[inTok] > DUST && s.pool[tok] > DUST)) return null;
 	return s.pool[inTok] / w[inTok] / (s.pool[tok] / w[tok]);
@@ -329,32 +329,32 @@ function payDay(s, at) {
 	s.month = Math.floor(s.week / WEEKS_A_MONTH);
 	const when = `week ${s.week}`;
 	bookMelt(s, at);
-	const st = s.coops.settlement;
+	const st = s.coops.tribe;
 	const m = s.coops.maia;
 	for (const seat of SEATS) {
 		const p = s.players[seat];
 		const had = p.arrears > DUST;
 		const due = s.settings.tentRent / WEEKS_A_MONTH + p.arrears;
 		if (due <= DUST) continue;
-		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:settlement', st.treasury, 'SETTLEMENT', due, `tent rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
-		if (p.arrears > DUST) log(s, at, { kind: 'arrears', from: `player:${seat}`, to: 'coop:settlement', token: 'SETTLEMENT', amount: p.arrears, note: 'tent rent still owed' });
+		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:tribe', st.treasury, 'TRIBE', due, `tent rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
+		if (p.arrears > DUST) log(s, at, { kind: 'arrears', from: `player:${seat}`, to: 'coop:tribe', token: 'TRIBE', amount: p.arrears, note: 'tent rent still owed' });
 	}
 	const had = st.arrears > DUST;
 	const due = s.settings.hexRent / WEEKS_A_MONTH + st.arrears;
 	if (due > DUST) {
-		st.arrears = payRent(s, at, 'coop:settlement', st.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
-		if (st.arrears > DUST) log(s, at, { kind: 'arrears', from: 'coop:settlement', to: 'coop:maia', token: 'MAIA', amount: st.arrears, note: 'hex rent still owed' });
+		st.arrears = payRent(s, at, 'coop:tribe', st.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
+		if (st.arrears > DUST) log(s, at, { kind: 'arrears', from: 'coop:tribe', to: 'coop:maia', token: 'MAIA', amount: st.arrears, note: 'hex rent still owed' });
 	}
 	// the machines it rents, each to the COOP that owns it now (a MIP may move an asset), in that COOP's MIND
 	st.owed ??= {};
 	for (const r of RENTED) {
 		const owner = Object.values(s.coops).find((c) => c.assets.some((a) => a.id === r.asset));
-		if (!owner || owner.id === 'settlement') continue;
+		if (!owner || owner.id === 'tribe') continue;
 		const had = (st.owed[r.asset] ?? 0) > DUST;
 		const due = (s.settings[r.setting] ?? 0) / WEEKS_A_MONTH + (st.owed[r.asset] ?? 0);
 		if (due <= DUST) continue;
-		st.owed[r.asset] = payRent(s, at, 'coop:settlement', st.treasury, `coop:${owner.id}`, owner.treasury, owner.mind, due, `${r.label} rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
-		if (st.owed[r.asset] > DUST) log(s, at, { kind: 'arrears', from: 'coop:settlement', to: `coop:${owner.id}`, token: owner.mind, amount: st.owed[r.asset], note: `${r.label} rent still owed` });
+		st.owed[r.asset] = payRent(s, at, 'coop:tribe', st.treasury, `coop:${owner.id}`, owner.treasury, owner.mind, due, `${r.label} rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
+		if (st.owed[r.asset] > DUST) log(s, at, { kind: 'arrears', from: 'coop:tribe', to: `coop:${owner.id}`, token: owner.mind, amount: st.owed[r.asset], note: `${r.label} rent still owed` });
 	}
 }
 
@@ -650,14 +650,14 @@ export const ledgerOf = (s, who) => s.ledger.filter((e) => e.from === who || e.t
 /** every rent running now, as the pay day pays it: who pays whom, in which MIND, a month and each weekly pay day, and
  * what is still owed on it */
 export function rents(s) {
-	const st = s.coops.settlement;
+	const st = s.coops.tribe;
 	const set = { ...DEFAULT_SETTINGS, ...s.settings };
-	const out = SEATS.map((seat) => ({ what: 'Tent rent', from: `player:${seat}`, to: 'coop:settlement', token: 'SETTLEMENT', monthly: set.tentRent, owed: s.players[seat].arrears ?? 0 }));
-	out.push({ what: 'Hex rent', from: 'coop:settlement', to: 'coop:maia', token: 'MAIA', monthly: set.hexRent, owed: st.arrears ?? 0 });
+	const out = SEATS.map((seat) => ({ what: 'Tent rent', from: `player:${seat}`, to: 'coop:tribe', token: 'TRIBE', monthly: set.tentRent, owed: s.players[seat].arrears ?? 0 }));
+	out.push({ what: 'Hex rent', from: 'coop:tribe', to: 'coop:maia', token: 'MAIA', monthly: set.hexRent, owed: st.arrears ?? 0 });
 	for (const r of RENTED) {
 		const owner = Object.values(s.coops).find((c) => c.assets.some((a) => a.id === r.asset));
-		if (!owner || owner.id === 'settlement') continue;
-		out.push({ what: `${r.label[0].toUpperCase()}${r.label.slice(1)} rent`, from: 'coop:settlement', to: `coop:${owner.id}`, token: owner.mind, monthly: set[r.setting] ?? 0, owed: st.owed?.[r.asset] ?? 0 });
+		if (!owner || owner.id === 'tribe') continue;
+		out.push({ what: `${r.label[0].toUpperCase()}${r.label.slice(1)} rent`, from: 'coop:tribe', to: `coop:${owner.id}`, token: owner.mind, monthly: set[r.setting] ?? 0, owed: st.owed?.[r.asset] ?? 0 });
 	}
 	return out.filter((r) => r.monthly > DUST || r.owed > DUST).map((r) => ({ ...r, weekly: r.monthly / WEEKS_A_MONTH }));
 }
@@ -708,7 +708,7 @@ export function payDaysOf(s, who, n = 8) {
 
 /** every MIND in the game, by token: wallets, treasuries and the pool */
 export function supply(s) {
-	const out = { HEARTS: 0, MAIA: 0, SETTLEMENT: 0, VILLAGE: 0 };
+	const out = { HEARTS: 0, MAIA: 0, TRIBE: 0, VILLAGE: 0 };
 	for (const [, bal] of holders(s)) for (const k of TOKENS) out[k] += bal[k] ?? 0;
 	return out;
 }
@@ -719,7 +719,7 @@ export function supply(s) {
  * until their supply-weighted average is 1 HEART (Σ supplyᵢ·valueᵢ = Σ supplyᵢ), and a MIND the pool cannot price yet
  * counts at its mint price, 1 HEART. HEARTS count as 1. */
 export function heartsValue(s) {
-	const out = { HEARTS: 1, MAIA: 1, SETTLEMENT: 1, VILLAGE: 1 };
+	const out = { HEARTS: 1, MAIA: 1, TRIBE: 1, VILLAGE: 1 };
 	const rel = Object.fromEntries(MINDS.map((t) => [t, t === 'MAIA' ? (s.pool.MAIA > DUST ? 1 : null) : price(s, t, 'MAIA')]));
 	const priced = MINDS.filter((t) => rel[t] != null);
 	if (priced.length < 2) return out;
