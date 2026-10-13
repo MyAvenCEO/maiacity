@@ -13,8 +13,8 @@ import AvenDB.Schemas
 What must always hold, stated over the executable model. T9 (lenses) and T10 (proposals) are proven in their own files.
 The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, audiences, keep shares, removals and
 replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean`
-(blind relays), `KeyLemmas.lean` (keys) and `SyncLemmas.lean` (convergence and sync); the predicates the statements use
-are in `Props.lean`.
+(blind relays), `KeyLemmas.lean` (keys) and `SyncLemmas.lean` (convergence, sync and holdings); the predicates the
+statements use are in `Props.lean`, and the model of holdings and connections in `Logs.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed, wrapped or encrypted data reveals nothing without its
@@ -604,5 +604,105 @@ theorem T20_link_shares_only_vault_logs (edits : List Edit) (p : SignerId) {o : 
 theorem T20_stranger_gets_nothing (edits : List Edit) (p : SignerId) (h : ownedBy (view edits) p = []) :
     linkCard edits p = [] :=
   Syncing.T20_stranger_gets_nothing edits p h
+
+/-! ## Holdings
+
+What each device states it holds for good (`Logs.lean`, section "Holdings") routes a node's asks and fetches and shows
+where each entry and file is synced to; it authorizes nothing (H1, and T27 extended). The model: a node holds edits, of
+which its shelf holds the first `held` for good, and files; it hears announcements, each on the connection it came on,
+whose hello proved one device; it keeps what each device announced as that device's record, announces its own holdings
+on each connection, and hands blobs out through its gate. -/
+
+/-- H1 (holdings come only from their proving connection): a node keeps of device `d` a frontier of a log, or what it
+    holds of a file, only as an announcement said it on a connection whose hello proved `d`. An announcement names no
+    device, so no device speaks for another. -/
+theorem H1_heard_on_their_connection (n : Node) (d : SignerId) :
+    (∀ l F, (n.record d).log? l = some F → ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (l, F) ∈ a.logs) ∧
+    (∀ f x, (n.record d).file? f = some x → ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (f, some x) ∈ a.files) :=
+  ⟨fun l F h => (Syncing.record_sound n d).1 l F (Syncing.mem_of_log? h),
+   fun f x h => (Syncing.record_sound n d).2 f x (Syncing.mem_of_file? h)⟩
+
+/-- H1, a third party: whatever is said on a connection that proved another device, wherever it falls among what the
+    node heard, changes nothing of what it keeps of `d`. -/
+theorem H1_third_party_ignored (n : Node) (d : SignerId) (before after : List (Conn × Announce)) (c : Conn)
+    (a : Announce) (hc : c.device ≠ d) :
+    { n with heard := before ++ (c, a) :: after }.record d = { n with heard := before ++ after }.record d := by
+  simp [Node.record, List.filter_append, hc]
+
+/-- H1, nothing passed on: what a node announces on a connection is the same whatever it heard, from anyone. -/
+theorem H1_passes_nothing_on (n : Node) (heard : List (Conn × Announce)) (c : Conn) (told : Option Holdings) :
+    { n with heard }.announce c told = n.announce c told :=
+  rfl
+
+/-- H1, a device states what it holds for good: each frontier a node announces on a connection is what its shelf holds
+    of the log, a log the device that connection proved may know by the node's view; and each file it says it holds, its
+    shelf holds so, a file that device may know of. -/
+theorem H1_states_its_shelf (n : Node) (c : Conn) (told : Option Holdings) {a : Announce}
+    (h : n.announce c told = some a) :
+    (∀ l F, (l, F) ∈ a.logs → F = holdOf n.shelf l ∧ l ∈ logsOf n.shelf ∧ l ∈ reachLogs n.edits c.device) ∧
+    (∀ f x, (f, some x) ∈ a.files → (f, x) ∈ n.files ∧ f ∈ reachFiles n.edits c.device) := by
+  obtain ⟨hl, hf, -⟩ := Syncing.since_sound h
+  exact ⟨fun l F hm => Syncing.tells_sound.1 l F (hl l F hm), fun f x hm => Syncing.tells_sound.2 f x (hf f x hm)⟩
+
+/-- H1, synced to: a node lists a device other than its own as synced to entry `e` only if that device may hold the
+    entry's log by the node's view, and stated itself, on a connection whose hello proved it, a frontier of the log that
+    covers every edit of it the node holds (`covers`). -/
+theorem H1_synced_to (n : Node) (me d : SignerId) (e : EntryId) (h : d ∈ n.syncedTo me e) (hne : d ≠ me) :
+    LogId.entry e ∈ reachLogs n.edits d ∧ ∃ c a F, (c, a) ∈ n.heard ∧ c.device = d ∧ (LogId.entry e, F) ∈ a.logs ∧
+      covers n.edits (.entry e) F = true :=
+  Syncing.syncedTo_sound h hne
+
+/-- H1, what synced to means: if each announcement a node heard on a connection that proved device `d` was made by a
+    node of `d`'s whose shelf is part of `S`, `d`'s shelf now (a shelf holds for good), then a node that lists `d` as
+    synced to entry `e` holds no edit of the entry's log that `S` doesn't hold. Assumes ids don't collide. -/
+theorem H1_synced_to_held (n : Node) (me d : SignerId) (e : EntryId) (S : List Edit) (h : d ∈ n.syncedTo me e)
+    (hne : d ≠ me)
+    (honest : ∀ c a, (c, a) ∈ n.heard → c.device = d →
+      ∃ nd : Node, (∀ x ∈ nd.shelf, x ∈ S) ∧ ∃ c' told, nd.announce c' told = some a)
+    (hid : ∀ a ∈ S, ∀ b ∈ n.edits, a.id = b.id → a = b) (hu : ∀ a ∈ n.edits, ∀ b ∈ n.edits, a.id = b.id → a = b)
+    {x : Edit} (hx : x ∈ n.edits) (hl : x.log? = some (.entry e)) : x ∈ S := by
+  obtain ⟨-, c, a, F, hca, hd, hm, hcov⟩ := H1_synced_to n me d e h hne
+  obtain ⟨nd, hsub, c', told, hann⟩ := honest c a hca hd
+  -- what `d` stated is what the shelf of the node that announced it held of the log
+  obtain ⟨rfl, -⟩ := (H1_states_its_shelf nd c' told hann).1 _ _ hm
+  exact hsub x (Syncing.covered_held (fun a ha b hb => hid a (hsub a ha) b hb) hu hcov
+    (List.mem_filter.mpr ⟨hx, by simp [hl]⟩))
+
+/-- H1, files: a node lists a device other than its own as synced to file `f` only if that device may fetch it by the
+    node's view (T27), and stated itself, on a connection whose hello proved it, that it holds the file whole. -/
+theorem H1_synced_to_file (n : Node) (me d : SignerId) (f : FileId) (h : d ∈ n.syncedToFile me f) (hne : d ≠ me) :
+    mayFetch n.edits d f = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (f, some .whole) ∈ a.files :=
+  Syncing.syncedToFile_sound h hne
+
+/-- T27, holdings never authorize: a node's blob gate hands a blob of a file, its root or one of its pieces, over a blob
+    connection from an endpoint only while a sync connection from that endpoint is open, and only to the device its
+    hello proved, if a write the node holds brings the file, of an entry that device may receive by the node's view. -/
+theorem T27_holdings_never_authorize (n : Node) (ep : EndpointId) (b : FileBlob) (fl : List VaultId)
+    (h : n.hands ep b fl = true) :
+    ∃ c ∈ n.conns, c.endpoint = ep ∧ ∃ o ∈ n.edits, b.file ∈ o.filesOf ∧ ∃ e, o.log? = some (.entry e) ∧
+      mayReceive (view n.edits) c.device e fl = true := by
+  unfold Node.hands at h
+  split at h
+  · rename_i c hc
+    exact ⟨c, List.mem_of_find?_eq_some hc, by simpa using List.find?_some hc,
+      T27_files_follow_their_edits n.edits c.device b.file fl h⟩
+  · cases h
+
+/-- T27, whatever holdings say: the gate answers the same whatever anyone, the node itself included, says it holds. -/
+theorem T27_gate_reads_no_holdings (n : Node) (heard : List (Conn × Announce)) (files : List (FileId × FileHold))
+    (ep : EndpointId) (b : FileBlob) (fl : List VaultId) : { n with heard, files }.hands ep b fl = n.hands ep b fl :=
+  rfl
+
+/-- T27, holdings name only files that may be fetched: a file a node says on a connection that it holds is one the
+    device that connection proved may fetch by the node's view (T27); a file it says it no longer holds is one it named
+    in what it last told on that connection (`told`). -/
+theorem T27_holdings_name_only_fetchable_files (n : Node) (c : Conn) (told : Option Holdings) {a : Announce}
+    (h : n.announce c told = some a) :
+    (∀ f x, (f, some x) ∈ a.files → ∃ o ∈ n.edits, f ∈ o.filesOf ∧ ∃ e, o.log? = some (.entry e) ∧
+      mayReceive (view n.edits) c.device e = true) ∧
+    (∀ f, (f, none) ∈ a.files → ∃ t ∈ told, ∃ x, (f, x) ∈ t.files) := by
+  refine ⟨fun f x hf => ?_, (Syncing.since_sound h).2.2⟩
+  exact T27_files_follow_their_edits n.edits c.device f []
+    (Syncing.reachFiles_fetch ((H1_states_its_shelf n c told h).2 f x hf).2)
 
 end AvenDB

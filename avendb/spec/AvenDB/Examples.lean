@@ -1098,4 +1098,109 @@ def vouched : List Edit := s15 ++ chain 200 [
 #guard (respond vouched macC).any (·.action == .checkpoint door [100])
 #guard (respond vouched stranger).all (entryLog? · == none)
 
+/-! ## Holdings: they come from their own connection, and authorize nothing
+
+Alice's Mac holds the coop's Handbook, where her line in Welcome brings a photo and Bob's Mac wrote a line after it.
+Each device tells it, on the connection whose hello proved that device, what it holds for good, and it tells each its
+own holdings (H1). Carol's Mac and Dave's, outside the coop, claim Welcome and the photo: Alice's Mac keeps each claim
+as that device's word alone, and lists as "Synced to" only devices that may hold what they claim by its view. It names
+to each device only the logs it may know and the files it may fetch, and hands the photo to Bob's Mac while its
+connection is open, to nobody else, whatever they claim (T27). -/
+
+def photo : FileId := 1
+
+/-- `edits` as their devices make them: each building on the frontier of its own log among the edits before it. -/
+def built (edits : List Edit) : List Edit :=
+  edits.foldl (fun acc o => acc ++ [{ o with parents := match o.log? with
+    | some l => frontiers acc l
+    | none => [] }]) []
+
+/-- Write `id` to Welcome by device `d`, for the coop through vault `via`, building on `deps` and bringing `files`. -/
+def welcomeLine (id : EditId) (d : SignerId) (via : VaultId) (deps : List EditId) (files : List FileId := []) : Edit :=
+  { id, depth := id, author := d, cosigners := [], files,
+    action := .write coop welcome coop none 0 deps (via := [via]) }
+
+def sH : List Edit := built (s4 ++ [welcomeLine 40 macA alice [30] [photo], welcomeLine 41 macB bob [40]])
+#guard refused sH == [] && (frontiers sH (.entry welcome)) == [41]
+
+-- the sync connections of Alice's Mac, each from an endpoint, to the device its hello proved
+def toBob : Conn := ⟨50, macB⟩
+def toCarol : Conn := ⟨70, macC⟩
+def toDave : Conn := ⟨90, macD⟩
+
+/-- Bob's Mac, which holds all of it for good and the photo whole, and what it tells Alice's Mac on their new
+    connection. -/
+def bobsMac : Node := { edits := sH, held := sH.length, files := [(photo, .whole)] }
+def bobSays : Announce := (bobsMac.announce ⟨20, macA⟩ none).getD {}
+
+/-- Carol's Mac by hand: it claims Welcome as Alice's Mac holds it and the photo whole. Dave's: the photo whole. -/
+def carolClaims : Announce :=
+  { full := true, logs := [(.entry welcome, holdOf sH (.entry welcome))], files := [(photo, some .whole)] }
+def daveClaims : Announce := { full := true, files := [(photo, some .whole)] }
+
+def alicesMac : Node :=
+  { edits := sH, held := sH.length, files := [(photo, .whole)], conns := [toBob, toCarol, toDave],
+    heard := [(toBob, bobSays), (toCarol, carolClaims), (toDave, daveClaims)] }
+
+-- Bob's Mac tells all it holds that Alice's Mac may know, Welcome's log and the photo among it, and Alice's Mac keeps
+-- exactly that as Bob's Mac's holdings
+#guard bobSays.full && bobSays.logs.contains (.entry welcome, holdOf sH (.entry welcome)) &&
+  bobSays.files.contains (photo, some .whole)
+#guard alicesMac.record macB == bobsMac.tells macA
+-- it keeps Carol's claims as hers alone and Dave's as his, and nothing of a device that told it nothing
+#guard (alicesMac.record macC).log? (.entry welcome) == some (holdOf sH (.entry welcome))
+#guard (alicesMac.record macD).file? photo == some .whole && alicesMac.record macA == ({} : Holdings)
+-- Synced to lists Alice's Mac and Bob's, never Carol's or Dave's, which may not hold Welcome or fetch the photo
+#guard alicesMac.syncedTo macA welcome == [macA, macB] && alicesMac.syncedToFile macA photo == [macA, macB]
+#guard { alicesMac with heard := alicesMac.heard.drop 1 }.syncedTo macA welcome == [macA]
+-- what Carol's Mac says on its own connection changes nothing of Bob's Mac's record, and a full announcement of nothing
+-- stands in for all it said before
+#guard let more := alicesMac.heard ++ [(toCarol, { full := true })]
+  { alicesMac with heard := more }.record macB == alicesMac.record macB &&
+    { alicesMac with heard := more }.record macC == ({} : Holdings)
+-- Alice's Mac names to Carol's Mac and Dave's no file and nothing of Welcome, all of it on their new connections
+#guard [toCarol, toDave].all fun c => (alicesMac.announce c none).all fun a =>
+  a.full && a.files.isEmpty && !a.logs.any (·.1 == .entry welcome)
+#guard (alicesMac.tells macB).file? photo == some .whole
+-- its gate hands the photo, its root or a piece, to Bob's Mac, never to Carol's or Dave's whatever they claim, nor to
+-- an endpoint with no sync connection, and not to Bob's Mac once its connection is closed
+#guard alicesMac.hands 50 (.root photo) && alicesMac.hands 50 (.piece photo 0)
+#guard [70, 90, 99].all fun ep => !alicesMac.hands ep (.root photo) && !alicesMac.hands ep (.piece photo 0)
+#guard !{ alicesMac with conns := [toCarol, toDave] }.hands 50 (.root photo)
+
+-- nothing changed, nothing to tell; once Alice's Mac takes a new line of Welcome, it tells Welcome's log alone
+def sH2 : List Edit := built (s4 ++ [welcomeLine 40 macA alice [30] [photo], welcomeLine 41 macB bob [40],
+  welcomeLine 42 macA alice [41]])
+#guard (alicesMac.tells macB).since (some (alicesMac.tells macB)) == none
+#guard (({ alicesMac with edits := sH2, held := sH2.length }.tells macB).since (some (alicesMac.tells macB))).map
+  (fun a : Announce => (a.full, a.logs.map Prod.fst, a.files)) == some (false, [LogId.entry welcome], [])
+
+-- the bucket first: with nothing on its shelf yet Bob's Mac states no log; before its shelf took Welcome's lines, it
+-- states Welcome's creation alone and no photo, which doesn't cover Welcome as Alice's Mac holds it; once its shelf
+-- holds them, it tells what changed, and Alice's Mac lists it
+def bobsShelfBehind : Node := { bobsMac with held := s4.length, files := [] }
+#guard ({ bobsMac with held := 0 }.tells macA).logs == []
+#guard (bobsShelfBehind.tells macA).log? (.entry welcome) == some ⟨[30], []⟩ && (bobsShelfBehind.tells macA).files == []
+#guard let first := (bobsShelfBehind.announce ⟨20, macA⟩ none).getD {}
+  let next := (bobsMac.announce ⟨20, macA⟩ (some (bobsShelfBehind.tells macA))).getD {}
+  !next.full && { alicesMac with heard := [(toBob, first)] }.syncedTo macA welcome == [macA] &&
+    { alicesMac with heard := [(toBob, first), (toBob, next)] }.syncedTo macA welcome == [macA, macB]
+
+-- an edit waiting for its past: Bob's Mac holding Welcome's last line without the one before states it waiting, which
+-- covers Welcome as a peer with the same gap holds it, not as Alice's Mac holds it
+#guard let gap := sH.filter (·.id != 40)
+  let says := ({ bobsMac with edits := gap, held := gap.length }.announce ⟨20, macA⟩ none).getD {}
+  holdOf gap (.entry welcome) == ⟨[30], [41]⟩ &&
+    { alicesMac with heard := [(toBob, says)] }.syncedTo macA welcome == [macA] &&
+    { alicesMac with edits := gap, held := gap.length, heard := [(toBob, says)] }.syncedTo macA welcome == [macA, macB]
+
+-- a peer ahead: Bob's Mac holds a line of Welcome Alice's Mac lacks, so its frontier names a head she can't walk back
+-- from; it is listed once she holds that line too
+def sAhead : List Edit := built (s4 ++ [welcomeLine 40 macA alice [30] [photo], welcomeLine 41 macB bob [40],
+  welcomeLine 42 macB bob [41]])
+#guard let ahead := ({ bobsMac with edits := sAhead, held := sAhead.length }.announce ⟨20, macA⟩ none).getD {}
+  { alicesMac with heard := [(toBob, ahead)] }.syncedTo macA welcome == [macA] &&
+    { alicesMac with edits := sAhead, held := sAhead.length, heard := [(toBob, ahead)] }.syncedTo macA welcome ==
+      [macA, macB]
+
 end AvenDB.Examples

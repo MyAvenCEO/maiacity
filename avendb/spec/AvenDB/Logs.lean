@@ -146,4 +146,191 @@ def devicesIn (edits : List Edit) (s : SignerId) : Bool := (view edits).vaults.a
 def allForks (edits : List Edit) : List (EditId × EditId) :=
   (logsOf edits).flatMap (forks Edit.log? (devicesIn edits) edits)
 
+/-! ## Holdings
+
+Each device tells each peer, on their connection, what it holds for good (`Announce`): of each log the peer may know by
+the device's view, the frontier of the part whose whole past it holds and the edits of it it holds waiting for their
+past (`holdOf`); of each file the peer may fetch, all of it or the pieces it holds whole. For good means on its shelf:
+the first `held` of its edits, those its shelf has taken (on the server, those its bucket accepted). On a new connection
+it tells them all (`full`), and after that what changed (`Holdings.since`).
+
+A connection proves the device at its other end by the hello on it, and an announcement names no device: a node keeps
+what it hears as the holdings of the device the connection proved (`Node.record`), so no device speaks for another, and
+it tells each peer its own holdings alone, never what it heard (H1). Holdings route and never authorize: a node asks a
+peer for the logs where the peer holds what it lacks, fetches a file first from those that hold it, and lists the
+devices each entry and file is synced to (`Node.syncedTo`); its blob gate hands a file out by T27 alone, to the device a
+sync connection still open proves (`Node.hands`), and it names to a device only the files that device may fetch (T27).
+-/
+
+/-- The edits of log `l` outside its closed part, smallest first: those waiting for their past. -/
+def waitingIn (edits : List Edit) (l : LogId) : List EditId :=
+  let cp := closedPart Edit.log? edits l
+  (((inLog Edit.log? edits l).filter fun o => !cp.any (·.id == o.id)).map Edit.id).eraseDups.mergeSort
+    fun a b => decide (a ≤ b)
+
+/-- What a device states it holds of a log (`wire::Frontier`): the frontier of the part whose whole past it holds, and
+    the edits it holds outside that part, waiting for their past. -/
+structure Frontier where
+  heads   : List EditId := []
+  waiting : List EditId := []
+  deriving DecidableEq, Repr
+
+/-- What a device holding `edits` holds of log `l`, cut as sync cuts it. -/
+def holdOf (edits : List Edit) (l : LogId) : Frontier := ⟨frontiers edits l, waitingIn edits l⟩
+
+/-- What a device states it holds of a file (`wire::FileHold`): every sealed byte of it, or some of its pieces whole. -/
+inductive FileHold where
+  | whole
+  | pieces (ps : List Nat)
+  deriving DecidableEq, Repr
+
+/-- A device's holdings: what it holds of each log and of each file. -/
+structure Holdings where
+  logs  : List (LogId × Frontier) := []
+  files : List (FileId × FileHold) := []
+  deriving DecidableEq, Repr
+
+/-- What holdings `h` say of log `l`. -/
+def Holdings.log? (h : Holdings) (l : LogId) : Option Frontier := (h.logs.find? (·.1 == l)).map (·.2)
+
+/-- What holdings `h` say of file `f`. -/
+def Holdings.file? (h : Holdings) (f : FileId) : Option FileHold := (h.files.find? (·.1 == f)).map (·.2)
+
+/-- What a device tells a peer of its holdings (`wire::Announce`): all of them (`full`), which stand in for whatever it
+    told the peer before, or what changed since, a file it no longer holds with `none`. It names no device. -/
+structure Announce where
+  full  : Bool := false
+  logs  : List (LogId × Frontier) := []
+  files : List (FileId × Option FileHold) := []
+  deriving DecidableEq, Repr
+
+/-- What a device holding `h` tells a peer it last told `told` on their connection (`Holdings::since`): all of it on a
+    new connection (`none`), even nothing; else what changed since, a file it no longer holds with `none`, if anything
+    did. -/
+def Holdings.since (h : Holdings) : Option Holdings → Option Announce
+  | none => some ⟨true, h.logs, h.files.map fun (f, x) => (f, some x)⟩
+  | some t =>
+    let logs := h.logs.filter fun (l, F) => t.log? l != some F
+    let files := (h.files.filter fun (f, x) => t.file? f != some x).map (fun (f, x) => (f, some x)) ++
+      (t.files.filter fun (f, _) => (h.file? f).isNone).map fun (f, _) => (f, none)
+    if logs.isEmpty && files.isEmpty then none else some ⟨false, logs, files⟩
+
+/-- What a device holds once it told `a` (`Holdings::take`): `a` alone if it tells all, else `a` over what it told
+    before. -/
+def Holdings.take (h : Holdings) (a : Announce) : Holdings :=
+  let h := if a.full then ({} : Holdings) else h
+  { logs := a.logs ++ h.logs.filter fun x => !a.logs.any (·.1 == x.1),
+    files := a.files.filterMap (fun (f, x) => x.map (f, ·)) ++ h.files.filter fun x => !a.files.any (·.1 == x.1) }
+
+/-- The most logs and files a node keeps of what one device holds (`MOST`): far more than any device holds. -/
+def most : Nat := 2 ^ 18
+
+/-- What a node keeps of a device's holdings `h` once the device told it `a` (`Shared::hear`): a device that claims to
+    hold more than `most` logs or files claims nothing. -/
+def hear (h : Holdings) (a : Announce) : Holdings :=
+  let h := h.take a
+  if most < h.logs.length || most < h.files.length then {} else h
+
+/-- An endpoint: the iroh key a connection comes from, a sync connection and a blob connection alike. -/
+abbrev EndpointId := Nat
+
+/-- A sync connection, as the node at one end holds it: the endpoint at the other end, and the device whose hello proved
+    itself on it. The hello signs the connection's own keying material with the device's key, so whatever comes on the
+    connection comes from that device. -/
+structure Conn where
+  endpoint : EndpointId
+  device   : SignerId
+  deriving DecidableEq, Repr
+
+/-- A node, as far as holdings go: the edits it holds, in the order it took them; how many of them its shelf holds for
+    good, the first `held` (on the server, those its bucket accepted; with no shelf, all of them); what its shelf holds
+    of each file; its open sync connections; and each announcement it heard, oldest first, with the connection it came
+    on. -/
+structure Node where
+  edits : List Edit
+  held  : Nat
+  files : List (FileId × FileHold) := []
+  conns : List Conn := []
+  heard : List (Conn × Announce) := []
+
+/-- The edits a node's shelf holds for good. -/
+def Node.shelf (n : Node) : List Edit := n.edits.take n.held
+
+/-- What a node holds for good (`Own`): of each log of its shelf, what its shelf holds of it, and of each file what its
+    shelf holds of it. -/
+def Node.own (n : Node) : Holdings :=
+  { logs := (logsOf n.shelf).map fun l => (l, holdOf n.shelf l), files := n.files }
+
+/-- The logs device `d` may know of a node holding `edits` (`Reach`): those of what the node would send `d` (`respond`,
+    `Lab::announce`), which are whole logs. -/
+def reachLogs (edits : List Edit) (d : SignerId) : List LogId := logsOf (respond edits d)
+
+/-- The files device `d` may know of (`Reach`): those the edits of those logs bring, which it may fetch (T27). -/
+def reachFiles (edits : List Edit) (d : SignerId) : List FileId :=
+  (edits.filter fun o => match o.log? with
+    | some l => (reachLogs edits d).contains l
+    | none => false).flatMap Edit.filesOf
+
+/-- What a node tells device `d` it holds (`Holdings::only`): of its own holdings, those of the logs and the files `d`
+    may know of, and nothing anyone told it. (The Rust node tells only the devices it knows, `Lab::peers`.) -/
+def Node.tells (n : Node) (d : SignerId) : Holdings :=
+  { logs := n.own.logs.filter fun x => (reachLogs n.edits d).contains x.1,
+    files := n.own.files.filter fun x => (reachFiles n.edits d).contains x.1 }
+
+/-- What a node announces on connection `c`, having last told `told` on it (`Shared::tell`): what it tells the device
+    the connection proved, all of it on a new connection, else what changed. -/
+def Node.announce (n : Node) (c : Conn) (told : Option Holdings) : Option Announce := (n.tells c.device).since told
+
+/-- What a node keeps of device `d`'s holdings: what the announcements it heard on connections whose hello proved `d`
+    add up to, in order, and nothing said on any other connection. (The Rust node also drops the record of a device it
+    doesn't know once its connection closes, `Shared::gone`, which only takes away.) -/
+def Node.record (n : Node) (d : SignerId) : Holdings :=
+  (n.heard.filter (·.1.device == d)).foldl (fun h x => hear h x.2) {}
+
+/-- A device that states `F` of log `l` holds every edit of it a node holding `edits` holds, as far as the node's edits
+    show (`Logs::covered`): each head of the node's frontier of the log is one of `F`'s heads or one they build on,
+    walking the node's own edits of it, and so is each edit of it the node holds waiting, unless `F` states it waiting
+    too. -/
+def covers (edits : List Edit) (l : LogId) (F : Frontier) : Bool :=
+  let anc := ancestors Edit.log? edits l F.heads
+  (frontiers edits l).all anc.contains && (waitingIn edits l).all fun w => anc.contains w || F.waiting.contains w
+
+/-- The devices a node whose device is `me` lists as "Synced to" for entry `e` (`Node::synced_to`), smallest first: if
+    it holds any of the entry's log, `me` if what it holds for good covers the log, and each device whose record covers
+    it and that may hold it by the node's view. (The Rust node lists only devices it knows, `Lab::peers`, which only
+    narrows.) -/
+def Node.syncedTo (n : Node) (me : SignerId) (e : EntryId) : List SignerId :=
+  let l := LogId.entry e
+  let holds (h : Holdings) : Bool := (h.log? l).any (covers n.edits l)
+  if (inLog Edit.log? n.edits l).isEmpty then [] else
+    ((if holds n.own then [me] else []) ++ (n.heard.map (·.1.device)).eraseDups.filter fun d =>
+      (reachLogs n.edits d).contains l && holds (n.record d)).mergeSort fun a b => decide (a ≤ b)
+
+/-- The devices it lists as "Synced to" for file `f`, smallest first: if an edit it holds brings the file, `me` if its
+    shelf holds the file whole, and each device whose record holds it whole and that may fetch it by the node's view. -/
+def Node.syncedToFile (n : Node) (me : SignerId) (f : FileId) : List SignerId :=
+  let holds (h : Holdings) : Bool := h.file? f == some .whole
+  if !n.edits.any (·.filesOf.contains f) then [] else
+    ((if holds n.own then [me] else []) ++ (n.heard.map (·.1.device)).eraseDups.filter fun d =>
+      (reachFiles n.edits d).contains f && holds (n.record d)).mergeSort fun a b => decide (a ≤ b)
+
+/-- A blob of a file: its root (the HashSeq of a file of several pieces, or a small file's one piece) or one of its
+    pieces. -/
+inductive FileBlob where
+  | root  (f : FileId)
+  | piece (f : FileId) (i : Nat)
+  deriving DecidableEq, Repr
+
+/-- The file a blob is of. -/
+def FileBlob.file : FileBlob → FileId
+  | .root f | .piece f _ => f
+
+/-- A node's blob gate (S2, T27): a blob connection from endpoint `ep` gets blob `b` only while a sync connection from
+    `ep` is open, and only if the device its hello proved, following `fl`, may fetch the file by the node's view
+    (`mayFetch`). It reads no holdings, the node's own or anyone's. -/
+def Node.hands (n : Node) (ep : EndpointId) (b : FileBlob) (fl : List VaultId := []) : Bool :=
+  match n.conns.find? (·.endpoint == ep) with
+  | some c => mayFetch n.edits c.device b.file fl
+  | none   => false
+
 end AvenDB
