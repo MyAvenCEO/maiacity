@@ -1,6 +1,6 @@
 <!--
 	A line icon of avenDB's screens, drawn in the text's colour on a 24-unit grid (in the manner of Lucide's): the
-	nav's pages, a note's proposals and variants, and the studio's tables.
+	nav's pages, a note's proposals and variants, the studio's tables, and the Library's kinds of file.
 -->
 <script>
 	/** @type {{ name: keyof typeof PATHS, size?: number }} */
@@ -51,7 +51,35 @@
 		close: ['M18 6 6 18', 'm6 6 12 12'],
 		search: ['m21 21-4.34-4.34', 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z'],
 		check: ['M20 6 9 17l-5-5'],
-		trash: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M10 11v6', 'M14 11v6']
+		trash: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M10 11v6', 'M14 11v6'],
+		library: ['m16 6 4 14', 'M12 6v14', 'M8 8v12', 'M4 4v16'],
+		film: [
+			'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+			'M7 3v18',
+			'M17 3v18',
+			'M3 12h18',
+			'M3 7.5h4',
+			'M3 16.5h4',
+			'M17 7.5h4',
+			'M17 16.5h4'
+		],
+		image: [
+			'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+			'M7 9a2 2 0 1 0 4 0 2 2 0 1 0-4 0',
+			'm21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21'
+		],
+		svg: [
+			'M15.71 21.29a1 1 0 0 1-1.42 0l-1.58-1.58a1 1 0 0 1 0-1.42l5.58-5.58a1 1 0 0 1 1.42 0l1.58 1.58a1 1 0 0 1 0 1.42z',
+			'm18 13-1.38-6.87a1 1 0 0 0-.74-.78L3.24 2.03a1 1 0 0 0-1.21 1.21l3.32 12.64a1 1 0 0 0 .78.74L13 18',
+			'm2.3 2.3 7.29 7.29',
+			'M9 11a2 2 0 1 0 4 0 2 2 0 1 0-4 0'
+		],
+		pdf: ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'M14 2v4a2 2 0 0 0 2 2h4', 'M8 13h8', 'M8 17h5'],
+		audio: ['M9 18V5l12-2v13', 'M3 18a3 3 0 1 0 6 0 3 3 0 1 0-6 0', 'M15 16a3 3 0 1 0 6 0 3 3 0 1 0-6 0'],
+		file: ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'M14 2v4a2 2 0 0 0 2 2h4'],
+		upload: ['M12 3v12', 'm17 8-5-5-5 5', 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'],
+		download: ['M12 15V3', 'm7 10 5 5 5-5', 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'],
+		play: ['M6 3.5v17a1 1 0 0 0 1.5.86l14-8.5a1 1 0 0 0 0-1.72l-14-8.5A1 1 0 0 0 6 3.5z']
 	});
 </script>
 

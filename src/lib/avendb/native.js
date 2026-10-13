@@ -39,6 +39,17 @@ export function base64(bytes) {
 	return btoa(text);
 }
 
+/** Base64 as bytes, as the app's device hands a file's over. @param {string} text */
+export function unbase64(text) {
+	const raw = atob(text);
+	const bytes = new Uint8Array(raw.length);
+	for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+	return bytes;
+}
+
+/** How many bytes of a file the page hands the app's device at a time. */
+const CHUNK = 1 << 20;
+
 /** The app's device, once open, as the page's own device answers it. */
 export class NativeDevice {
 	/** @param {{ id: string, endpoint: string, passkey: string, offer: string, sockets: string[] }} info */
@@ -160,6 +171,37 @@ export class NativeDevice {
 	/** New vaults its person's vault owns, in one ceremony, in the app's sheet. @param {{ name: string, kind: string }[]} vaults */
 	foundVaults(vaults) {
 		return call('foundVaults', vaults);
+	}
+
+	/**
+	 * Brings file `file`, `{ name, media, tags, len }`, into vault `vault`, acting for `actor`, as the page's device
+	 * does: `read(at, n)` hands over its bytes, a megabyte at a time, each in base64 to the app's device, which seals
+	 * them into its store as they come. The new entry.
+	 * @param {string} actor @param {string} vault @param {{ name: string, media: string, tags: string[], len: number }} file
+	 * @param {(at: number, n: number) => Promise<Uint8Array>} read
+	 */
+	async addFile(actor, vault, file, read) {
+		const n = await call('fileStart', actor, vault, file);
+		try {
+			for (let at = 0; at < file.len; ) {
+				const bytes = await read(at, Math.min(CHUNK, file.len - at));
+				if (!bytes.length) throw new Error('the file ends early');
+				await call('fileChunk', n, at, base64(bytes));
+				at += bytes.length;
+			}
+			return await call('fileEnd', n);
+		} catch (e) {
+			await call('fileDrop', n).catch(() => {});
+			throw e;
+		}
+	}
+
+	/**
+	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, cut to the file.
+	 * @param {string} root @param {number} size @param {number} from @param {number} to
+	 */
+	async readFile(root, size, from, to) {
+		return unbase64(await call('readFile', root, size, from, to));
 	}
 
 	/** This page lets go of it: the device runs on in the app, syncing, and opens here again without a ceremony. */

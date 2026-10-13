@@ -69,6 +69,8 @@
 //! where a virtual authenticator holds the passkey.
 
 use std::collections::BTreeMap;
+use std::io;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -84,13 +86,16 @@ use avendb::lens::{DocV2, Status};
 use avendb::policy::{Action, Cap, Grantee, Issued, Kind, Principal, Refusal, Role, State, Vault};
 use avendb::recovery::{self, RecoveryKey};
 use avendb::rules;
+use avendb::sealed::{Brought, FileRoot};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, Signed, SignerKeys, pass_challenge};
 use avendb::slice::{Selector, Slice};
 use avendb::wire::Wire as _;
 use avendb_net::{Authenticator, Node, Offer, Options, Progress, Stage, Step, Steps};
+use bytes::Bytes;
 use iroh::RelayUrl;
 use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
 use n0_future::future::or;
+use n0_future::{Stream, stream};
 use n0_future::time::{Duration, SystemTime, sleep};
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -116,6 +121,40 @@ pub const NOTE: &str = "note";
 
 /// The type of a todo.
 pub const TODO: &str = "todo";
+
+/// The type of a file: a document titled with the file's name, whose first write brings the file, sealed
+/// (`Device::add_file`); the file's media type rides among the document's own tags (`MEDIA`).
+pub const FILE: &str = "file";
+
+/// A file on its way into a vault (`Device::add_file`): its name and media type, as the entry that brings it shows
+/// them, the tags that entry carries, and its length in bytes.
+#[derive(Clone, Debug, Default)]
+pub struct NewFile {
+    pub name: String,
+    pub media: String,
+    pub tags: Vec<String>,
+    pub len: u64,
+}
+
+impl NewFile {
+    /// From the page's `{name, media, tags, len}`.
+    pub fn from_json(v: &Value) -> Result<NewFile> {
+        let text = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+        let name = text("name").filter(|n| !n.trim().is_empty()).context("a file has a name")?;
+        let media = text("media").unwrap_or_else(|| "application/octet-stream".into());
+        let tags = v.get("tags").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        let tags = tags.iter().map(|t| t.as_str().map(str::to_string).context("a tag is text")).collect::<Result<_>>()?;
+        let len = v.get("len").and_then(Value::as_u64).context("a file's length is a whole number of bytes")?;
+        Ok(NewFile { name, media, tags, len })
+    }
+}
+
+/// The start of the mark that carries a file's media type among its document's own tags, inside its record:
+/// `avendb:media:video/mp4`, what the page shows and plays it as.
+pub const MEDIA: &str = "avendb:media:";
+
+/// How many bytes of a file the page hands its device at a time (`PageDevice::add_file`).
+const CHUNK: u64 = 1 << 20;
 
 /// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
 /// one line of another shows (`Device::variant`), marked with that note's entry in hex.
@@ -612,6 +651,40 @@ impl Device {
         self.node.act(move |lab, me| engine::run(lab, me, &op)).await
     }
 
+    /// Brings file `file`, read from `data`, into vault `vault`, acting for `actor`: sealed under a key of its own into
+    /// the node's blob store as it is read (`Node::store_file`), then a new entry of type `file` (`FILE`) that brings it
+    /// (`file_entry`). The entry. Fails if `data` holds more or fewer bytes than the file's length, or the rules refuse
+    /// the entry.
+    pub async fn add_file<S>(&self, actor: VaultId, vault: VaultId, file: NewFile, data: S) -> Result<EntryId>
+    where
+        S: Stream<Item = io::Result<Bytes>> + Unpin,
+    {
+        let brought = self.node.store_file(file.len, data).await?;
+        self.file_entry(actor, vault, file, brought).await
+    }
+
+    /// A new entry of type `file` (`FILE`) in vault `vault`, tagged as `file` asks, acting for `actor`, whose first
+    /// write brings file `brought`, already in the node's blob store: a document titled with the file's name, its media
+    /// type among the document's own tags (`MEDIA`). Whoever may receive the write may fetch the file's sealed bytes,
+    /// and who reads the entry opens them (T27). The entry.
+    pub async fn file_entry(&self, actor: VaultId, vault: VaultId, file: NewFile, brought: Brought) -> Result<EntryId> {
+        let write = move |lab: &mut Lab, me| {
+            let mut item = named(&file.name, me);
+            item.edit_document(|d| d.tags.push(format!("{MEDIA}{}", file.media)));
+            let tags: Vec<&str> = file.tags.iter().map(String::as_str).collect();
+            let entry = lab.create(me, actor, vault, FILE, &tags, item)?;
+            lab.bring(me, actor, entry, vec![brought], |_| {})?;
+            Ok(entry)
+        };
+        self.node.act(write).await.map_err(|why: Refusal| anyhow!("the file is refused: {why:?}"))
+    }
+
+    /// The plaintext bytes `range` of file `root`, cut to the file, which the device opens: from its own blob store,
+    /// or else fetched from a peer that may hand them over (`Node::read_file`).
+    pub async fn read_file(&self, root: FileRoot, range: Range<u64>) -> Result<Vec<u8>> {
+        self.node.read_file(root, range).await
+    }
+
     /// Vault `vault`'s database as the device holds it, for the page's database studio (`data::database`).
     pub async fn database(&self, vault: VaultId) -> Value {
         self.node.read(move |lab, me| data::database(lab, me, vault)).await
@@ -790,6 +863,9 @@ pub enum What {
     /// the device counts, and how many proposals it has.
     Note { title: String, text: String, variant_of: Option<EntryId>, deleted: bool, edits: usize, proposals: usize },
     Todo { title: String, status: Status },
+    /// A file (`FILE`): its name, its media type (`MEDIA`), whether it is deleted (`DELETED`), and the files its writes
+    /// bring, each with its plaintext length where the device opens it.
+    File { title: String, media: String, deleted: bool, files: Vec<(FileRoot, Option<u64>)> },
     /// What the device holds but can't open.
     Sealed,
 }
@@ -855,13 +931,24 @@ impl World {
             let (kind, title, text, status) = match &i.what {
                 What::Note { title, text, .. } => ("note", Some(title), Some(text), None),
                 What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
+                What::File { title, .. } => ("file", Some(title), None, None),
                 What::Sealed => ("sealed", None, None, None),
             };
             let (variant_of, deleted, edits, proposals) = match &i.what {
                 What::Note { variant_of, deleted, edits, proposals, .. } => {
                     (variant_of.map(|e| hex(&e.0)), *deleted, *edits, *proposals)
                 }
+                What::File { deleted, .. } => (None, *deleted, 0, 0),
                 _ => (None, false, 0, 0),
+            };
+            let (media, files) = match &i.what {
+                What::File { media, files, .. } => {
+                    let file = |(f, len): &(FileRoot, Option<u64>)| {
+                        json!({ "root": hex(&f.hash), "size": f.size, "len": len })
+                    };
+                    (Some(media), files.iter().map(file).collect())
+                }
+                _ => (None, vec![]),
             };
             let roles: serde_json::Map<String, Value> =
                 i.roles.iter().map(|(v, r)| (hex(&v.0), Value::from(role_name(*r)))).collect();
@@ -883,6 +970,8 @@ impl World {
                 "deleted": deleted,
                 "edits": edits,
                 "proposals": proposals,
+                "media": media,
+                "files": files,
             })
         };
         json!({
@@ -949,9 +1038,16 @@ fn world(lab: &Lab, me: SignerId) -> Option<World> {
 
 /// Entry `en` as device `me` shows it.
 fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
+    let meaning = lab.meaning(me, en.id);
+    let file = meaning.as_ref().is_some_and(|m| m.attrs.ty.as_str() == FILE);
     let what = match lab.item(me, en.id) {
         None => What::Sealed,
         Some(item) => match (item.as_document(), item.as_todo()) {
+            (Some(doc), _) if file => {
+                let media = doc.tags.iter().find_map(|t| t.strip_prefix(MEDIA)).unwrap_or_default().to_string();
+                let deleted = doc.tags.iter().any(|t| t == DELETED);
+                What::File { title: doc.title.clone(), media, deleted, files: lab.entry_files(me, en.id) }
+            }
             (Some(doc), _) => {
                 let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
                 let history = lab.history(me, en.id);
@@ -965,7 +1061,6 @@ fn entry(lab: &Lab, me: SignerId, en: &avendb::policy::Entry) -> EntryView {
         },
     };
     let st = lab.state(me);
-    let meaning = lab.meaning(me, en.id);
     let (ty, tags, created) = match &meaning {
         Some(m) => {
             let tags = m.attrs.tags.iter().map(|t| t.0.clone()).collect();
@@ -1350,6 +1445,49 @@ impl PageDevice {
             let op = String::from(js_sys::JSON::stringify(&op)?);
             let op = serde_json::from_str(&op).map_err(|e| JsError::new(&format!("no op: {e}")))?;
             js_sys::JSON::parse(&device.run(op).await.to_string())
+        })
+    }
+
+    /// Brings file `file`, `{name, media, tags, len}` (`NewFile`), into vault `vault`, acting for `actor` (ids in hex;
+    /// `Device::add_file`): `read(at, n)` hands over its bytes from `at` on, `n` of them, as a promise of a
+    /// `Uint8Array`, a megabyte at a time, so that a file of any size passes through a little memory. A promise of the
+    /// new entry's id.
+    #[wasm_bindgen(js_name = addFile)]
+    pub fn add_file(&self, actor: String, vault: String, file: JsValue, read: Function) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let (actor, vault) = (VaultId(id(&actor)?), VaultId(id(&vault)?));
+            let file = serde_json::from_str(&String::from(js_sys::JSON::stringify(&file)?));
+            let file: Value = file.map_err(|e| js_value(e.into()))?;
+            let file = NewFile::from_json(&file).map_err(js_value)?;
+            let len = file.len;
+            let chunks = Box::pin(stream::unfold((0, read), move |(at, read)| async move {
+                if at >= len {
+                    return None;
+                }
+                let n = (len - at).min(CHUNK);
+                let got = match pull(&read, at, n).await {
+                    Ok(bytes) if bytes.len() as u64 == n => Ok(Bytes::from(bytes)),
+                    Ok(bytes) => Err(io::Error::other(format!("{} bytes read at {at}, not {n}", bytes.len()))),
+                    Err(e) => Err(io::Error::other(format!("reading the file failed: {e:?}"))),
+                };
+                let next = if got.is_ok() { at + n } else { len };
+                Some((got, (next, read)))
+            }));
+            let entry = device.add_file(actor, vault, file, chunks).await.map_err(js_value)?;
+            Ok(hex(&entry.0).into())
+        })
+    }
+
+    /// The plaintext bytes from `from` to `to` of the file whose root is `root` (in hex) and whose sealed size is
+    /// `size`, cut to the file (`Device::read_file`): a promise of a `Uint8Array`.
+    #[wasm_bindgen(js_name = readFile)]
+    pub fn read_file(&self, root: String, size: f64, from: f64, to: f64) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let root = FileRoot { hash: id(&root)?, size: size as u64 };
+            let bytes = device.read_file(root, from as u64..to as u64).await.map_err(js_value)?;
+            Ok(Uint8Array::from(&bytes[..]).into())
         })
     }
 
@@ -1763,6 +1901,13 @@ fn hex_bytes(s: &str) -> Option<Vec<u8>> {
     let digit = |c: u8| (c as char).to_digit(16).filter(|_| !c.is_ascii_uppercase()).map(|d| d as u8);
     let pair = |p: &[u8]| Some(digit(p[0])? << 4 | digit(p[1])?);
     s.len().is_multiple_of(2).then(|| s.as_bytes().chunks(2).map(pair).collect()).flatten()
+}
+
+/// `n` bytes of a file from `at` on, as the page's `read(at, n)` hands them over (`PageDevice::add_file`).
+async fn pull(read: &Function, at: u64, n: u64) -> Result<Vec<u8>, JsValue> {
+    let asked = read.call2(&JsValue::NULL, &JsValue::from_f64(at as f64), &JsValue::from_f64(n as f64))?;
+    let bytes = JsFuture::from(Promise::resolve(&asked)).await?;
+    Ok(Uint8Array::new(&bytes).to_vec())
 }
 
 /// An id from its 64 lowercase hex digits.

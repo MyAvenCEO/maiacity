@@ -23,6 +23,7 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
+	import { sized, WHOLE } from './files.js';
 	import { answer } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { count, levelOf, plain } from './vaults.js';
@@ -509,6 +510,33 @@
 		history: () => device.history(),
 		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
 		note: (entry) => device.note(entry),
+		/**
+		 * Brings file `file` into vault `vault`, tagged `tags`, acting for `actor`: sealed into this browser's store a
+		 * megabyte at a time, then an entry that brings it, which syncs as any edit does. The new entry, or `null`.
+		 * @param {string} actor @param {string} vault @param {File} file @param {string} media @param {string[]} tags
+		 */
+		addFile: async (actor, vault, file, media, tags) => {
+			const what = `Adding ${file.name}`;
+			let entry = null;
+			const ok = await act(what, async () => {
+				// a page holds what it adds in its memory until it keeps file pieces in OPFS too (B2d)
+				if (!mac && file.size > WHOLE) throw new Error(`${file.name} is over ${sized(WHOLE)}: add it from the Mac app`);
+				/** @param {number} at @param {number} n */
+				const read = async (at, n) => {
+					if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
+					return new Uint8Array(await file.slice(at, at + n).arrayBuffer());
+				};
+				entry = await device.addFile(actor, vault, { name: file.name, media, tags, len: file.size }, read);
+			});
+			return ok ? entry : null;
+		},
+		/**
+		 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this browser's
+		 * store or fetched from a peer that may hand them over.
+		 * @param {string} root @param {number} size @param {number} from @param {number} to
+		 * @returns {Promise<Uint8Array>}
+		 */
+		readFile: (root, size, from, to) => device.readFile(root, size, from, to),
 		/**
 		 * A cap: the named group of ops `spec` names on what its `where` picks of vault `over` (`{name, where, ops}`),
 		 * to vault `grantee` or `"everyone"`, acting for vault `issuer`; one whose ops share it on takes the passkey.

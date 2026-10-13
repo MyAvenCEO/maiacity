@@ -43,6 +43,12 @@ impl Offered {
         self.ids.insert(hash, id);
         self.hashes.insert(id, hash);
     }
+
+    /// The hash of every McEliece key in the store.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn hashes(&self) -> impl Iterator<Item = Hash> + '_ {
+        self.hashes.values().copied()
+    }
 }
 
 impl Shared {

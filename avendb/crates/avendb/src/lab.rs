@@ -2408,6 +2408,15 @@ impl Lab {
         files.into_iter().collect()
     }
 
+    /// The files the writes of entry `entry` bring, as device `d` holds them, in the order it took them, each once:
+    /// each with its plaintext length where `d` opens it (`file`), else `None`.
+    pub fn entry_files(&self, d: SignerId, entry: EntryId) -> Vec<(FileRoot, Option<u64>)> {
+        let mut seen = BTreeSet::new();
+        let edits = self.held(d).log.edits().iter().filter(|e| e.entry() == Some(entry));
+        let files = edits.flat_map(|e| e.files().iter().copied()).filter(|f| seen.insert(*f));
+        files.map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
+    }
+
     /// The key and length of file `root`, from a write device `d` opened that brings it, if any: what it opens the file
     /// with. Only a write that names the file in the clear counts, and only with the length its sealed size says.
     pub fn file(&self, d: SignerId, root: &FileRoot) -> Option<Brought> {

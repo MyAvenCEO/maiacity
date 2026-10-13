@@ -694,6 +694,12 @@
 			and other devices need it to back the file up and to know who may fetch it. The file's key sits inside the edit's
 			encrypted body.
 		</p>
+		<p class="prose-col">
+			Every vault has a Library that lists its files by kind: films, images, SVGs, PDFs and audio. A file is an ordinary
+			entry of type <code>file</code>, a document named after the file whose first edit brings it, so caps, sync and
+			deletion work on it as on a note. A film plays as it streams: the player asks for byte ranges, and the device fetches
+			only the 64 KiB segments those ranges need, verified by iroh-blobs, and opens them.
+		</p>
 		<figure>
 			<div class="frame">
 				<svg class="fig" viewBox="0 0 960 470" role="img" aria-label="How a file becomes blobs">

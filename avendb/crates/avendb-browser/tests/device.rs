@@ -6,11 +6,13 @@
 //! code her Mac shows and edits Welcome. The first person to found their vault through a new server claims it from
 //! their first browser, in the same ceremony (P8f), and her vault founds four more vaults it owns in one more ceremony:
 //! her browser acts as each of them, and what each shares, a note by its id, its todos by their type, or the whole of
-//! it, decides what the others may read and write. Every device, the server too, trusts no curve: only the writes a
-//! checkpoint covers count.
+//! it, decides what the others may read and write. Her browser brings a film into her vault, a megabyte at a time, and
+//! her Mac reads any range of it. Every device, the server too, trusts no curve: only the writes a checkpoint covers
+//! count.
 //! `tests/page.rs` runs the same in Chromium, the passkey in its virtual authenticator.
 
 use std::future::Future;
+use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -24,14 +26,19 @@ use avendb::policy::{Grantee, Kind, Principal, Role};
 use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
 use avendb::sign::{Ceremony, Passkey, device_salt};
-use avendb_browser::{Device, EntryView, Fresh, PROFILE, Start, Unlock, What, World as Seen, backup};
+use avendb_browser::{DELETED, Device, EntryView, Fresh, NewFile, PROFILE, Start, Unlock, What, World as Seen, backup};
 use avendb_net::{Admission, Authenticator, Node, Offer, Options, Progress, Step};
 use avendb_server::Relay;
+use bytes::Bytes;
 use iroh::RelayUrl;
+use n0_future::stream;
 use serde_json::{Value, json};
 
 /// A socket of the system's choosing on this machine.
 const LOOPBACK: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
+
+/// A megabyte.
+const MB: u64 = 1 << 20;
 
 /// A browser's authenticator, holding its person's passkey: each ceremony it made, and what for.
 struct Browser(Mutex<(Passkey, Vec<Step>)>);
@@ -811,6 +818,61 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let sealed = move |lab: &Lab, me| lab.fetched(me, variant) > 0 && lab.item(me, note).is_none();
     until("the server keeps her entries, sealed", || server.read(sealed)).await;
     for n in [first.node(), &server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_browser_brings_a_film_into_her_vault_and_her_mac_reads_any_range_of_it() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    let mut w = world();
+    let secret = w.lab.passkey_secret(w.passkey_a).expect("Alice's passkey, a software passkey");
+    let (mac_a, server_d, alice) = (w.mac_a, w.server, w.alice);
+    let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
+    let server = node(&mut w, server_d, &[], 2, opts).await;
+    let mac = node(&mut w, mac_a, &[], 1, Options { relay: Some(url.clone()), ..Options::local() }).await;
+    mac.know(server.addr());
+    until("the relay serves Alice's Mac", || async { relay.serves(&mac.id()) }).await;
+    let alices = Browser::new(Passkey::from_seed(*secret));
+    let browser = link(start("Alice's browser", &url, 7), &mac.offer(), &alices, [1; 32]).await.expect("it links");
+    // a film of three megabytes and a bit, handed over as the page hands it, a megabyte at a time
+    let film: Vec<u8> = (0..3 * MB + 123).map(|i| (i * 31 % 251) as u8).collect();
+    let chunks = film.chunks(MB as usize).map(|c| Ok(Bytes::copy_from_slice(c))).collect::<Vec<io::Result<Bytes>>>();
+    let (name, media, len) = ("Harvest.mp4".to_string(), "video/mp4".to_string(), film.len() as u64);
+    let e = browser.add_file(alice, alice, NewFile { name, media, tags: vec![], len }, stream::iter(chunks)).await;
+    let e = e.expect("it adds the film");
+    // her browser shows it as a file: its name, its media type, its one file and that file's length
+    let seen = browser.world().await.expect("her world");
+    let shown = seen.entries.iter().find(|i| i.entry == e).expect("the film's entry");
+    let What::File { title, media, deleted, files } = &shown.what else { panic!("the film is a file") };
+    assert_eq!((title.as_str(), media.as_str(), *deleted), ("Harvest.mp4", "video/mp4", false));
+    assert_eq!(files.iter().map(|(_, len)| *len).collect::<Vec<_>>(), [Some(film.len() as u64)]);
+    let root = files[0].0;
+    let json = seen.to_json(browser.node().device());
+    let row = json["entries"].as_array().and_then(|es| es.iter().find(|i| i["entry"] == hex_of(&e.0)));
+    let row = row.expect("its row");
+    let (kind, media, len) = (&row["kind"], &row["media"], &row["files"][0]["len"]);
+    assert_eq!((kind, media, len), (&json!("file"), &json!("video/mp4"), &json!(film.len())));
+    // her Mac reads any range of it, fetched from the browser and opened with the key in the write
+    let opens = move |lab: &Lab, me| lab.file(me, &root).is_some();
+    until("the Mac takes the write that brings it", || mac.read(opens)).await;
+    for range in [0..10, MB - 5..MB + 5, film.len() as u64 - 100..film.len() as u64 + 50] {
+        let read = mac.read_file(root, range.clone()).await.expect("the Mac reads it");
+        let end = range.end.min(film.len() as u64);
+        assert_eq!(read, film[range.start as usize..end as usize], "bytes {range:?}");
+    }
+    assert_eq!(browser.read_file(root, 0..film.len() as u64).await.expect("the whole film"), film);
+    // deleted as the page deletes it, a mark among its document's tags; and back
+    let (alice_hex, e_hex) = (alice.to_hex(), e.to_hex());
+    let mark = |op: &str| json!({ "op": op, "as": alice_hex, "entry": e_hex, "path": ["tags"], "value": DELETED });
+    run(&browser, mark("insert")).await.expect("deleted");
+    let gone = |w: Option<Seen>| w.and_then(|w| w.entries.into_iter().find(|i| i.entry == e)).map(|i| i.what);
+    assert!(matches!(gone(browser.world().await), Some(What::File { deleted: true, .. })));
+    run(&browser, mark("remove")).await.expect("back");
+    assert!(matches!(gone(browser.world().await), Some(What::File { deleted: false, .. })));
+    for n in [browser.node(), &mac, &server] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

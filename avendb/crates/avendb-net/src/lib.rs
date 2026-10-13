@@ -112,6 +112,7 @@ use iroh_blobs::BlobsProtocol;
 use iroh_blobs::api::Store;
 #[cfg(not(target_arch = "wasm32"))]
 use iroh_blobs::store::fs::FsStore;
+#[cfg(not(target_arch = "wasm32"))]
 use iroh_blobs::store::mem::MemStore;
 use rustls::crypto::CryptoProvider;
 use n0_future::task::{self, JoinHandle};
@@ -434,8 +435,9 @@ impl Node {
             Some(dir) => FsStore::load(dir.join(files::BLOBS)).await?.into(),
             None => MemStore::new().into(),
         };
+        let (pins, offered) = (files::Pins::default(), Arc::new(Mutex::new(blobs::Offered::default())));
         #[cfg(target_arch = "wasm32")]
-        let store: Store = MemStore::new().into();
+        let store: Store = files::forgetful(pins.clone(), offered.clone());
         let (events, gate) = blobs::events();
         let shared = Arc::new(Shared {
             me,
@@ -455,7 +457,8 @@ impl Node {
             unreached: Mutex::default(),
             asking: Mutex::default(),
             owed: Mutex::default(),
-            offered: Mutex::default(),
+            offered,
+            pins,
             blob_peers: Mutex::default(),
             pieces: Mutex::default(),
             blob_conns: Mutex::default(),
@@ -1073,7 +1076,9 @@ struct Shared {
     /// The peers whose asking failed, and when to ask each again.
     owed: Mutex<Backoff<EndpointId>>,
     /// The McEliece keys in the blob store, by hash and by id.
-    offered: Mutex<blobs::Offered>,
+    offered: Arc<Mutex<blobs::Offered>>,
+    /// The blobs it uses now, which a page's store keeps while they are held (`files::forgetful`).
+    pins: files::Pins,
     /// The blob connections the gate let in, each with its device.
     blob_peers: Mutex<HashMap<u64, SignerId>>,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out

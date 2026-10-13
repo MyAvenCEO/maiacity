@@ -1,9 +1,10 @@
 <!--
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its pages, as a database studio lists them: its notes and its todos; its database (the query
-	console, the table editor, its cells, schemas and lenses, and its history, every signed edit); then its settings
-	(About, Owners and devices, Access, Sync); and the page picked in the middle. Each page has an address of its own
+	vault's name and its pages, as a database studio lists them: its notes, its todos and its Library of files, films,
+	pictures, PDFs and songs; its database (the query console, the table editor, its cells, schemas and lenses, and its
+	history, every signed edit); then its settings (About, Owners and devices, Access, Sync); and the page picked in
+	the middle. Each page has an address of its own
 	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
 	screen. The page picks who the person acts as in each vault, with no switch to flip: in a vault their vault owns,
 	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
@@ -15,6 +16,7 @@
 	import { enter } from '$lib/app/immersive.svelte';
 	import Database from './Database.svelte';
 	import Icon from './Icon.svelte';
+	import Library from './Library.svelte';
 	import Mark from './Mark.svelte';
 	import NewVaults from './NewVaults.svelte';
 	import Note from './Note.svelte';
@@ -39,7 +41,8 @@
 			'',
 			[
 				['notes', 'Notes', 'note'],
-				['todos', 'Todos', 'todo']
+				['todos', 'Todos', 'todo'],
+				['library', 'Library', 'library']
 			]
 		],
 		[
@@ -187,6 +190,8 @@
 			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} onopen={open} />
 		{:else if tab === 'todos'}
 			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} />
+		{:else if tab === 'library'}
+			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('access')} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'access' || tab === 'sync'}
 			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} />
 		{:else}
