@@ -13,11 +13,12 @@ import { batteryPack, pickup, powercube, solarPanel } from '$lib/models/village.
 const HEX_R = 34;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
 /** the Village COOP's assets (engine COOPS.village, by id) and where each stands on the hex: x, z, turned; the panel faces the sun at −z.
- *  The pickup and the solar panel stand at twice their size, beside the players (Samuel 2026-10-13); the Assets viewer keeps them real. */
+ *  The pickup stands at twice its size, beside the players, the solar panel twice as high and six times as wide, a long
+ *  row (Samuel 2026-10-13); a scale is one number or [x, y, z]. The Assets viewer keeps them real. */
 const ASSETS = [
 	{ id: 'pickup', make: pickup, at: [-16, 10, 2.2], clear: 9, scale: 2 },
 	{ id: 'powercube', make: powercube, at: [12, -6, -0.5], clear: 5 },
-	{ id: 'solar', make: solarPanel, at: [-3, -13, Math.PI], clear: 6, scale: 2 },
+	{ id: 'solar', make: solarPanel, at: [-3, -13, Math.PI], clear: 9, scale: [6, 2, 2] },
 	{ id: 'battery', make: batteryPack, at: [13, 6, -0.9], clear: 5 }
 ];
 
@@ -156,7 +157,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {} } =
 	// the Village COOP's machines; tapping one names it
 	for (const { id, make, at, scale = 1 } of ASSETS) {
 		const a = make();
-		a.scale.setScalar(scale);
+		if (Array.isArray(scale)) a.scale.set(...scale);
+		else a.scale.setScalar(scale);
 		a.position.set(at[0], 0, at[1]);
 		a.rotation.y = at[2];
 		a.traverse((o) => {
