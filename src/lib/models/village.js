@@ -9,6 +9,30 @@ import * as THREE from 'three';
 import { bar, part, shared, soft, std, v3 } from './parts';
 import { pvPanel } from './containers.js';
 
+/** What each machine is, by the engine's asset id (COOPS.village): the Assets viewer's note, and the facts the game's asset card lists. */
+export const VILLAGE_INFO = {
+	pickup: {
+		model: 'pickup',
+		note: 'a double-cab pickup, 5.33 × 1.86 m, 1.82 m high, a 3.1 m wheelbase: four doors, an open 1.55 m bed with a tool box and a jerrycan in it',
+		specs: [['Size', '5.33 × 1.86 × 1.82 m'], ['Seats', '5, a double cab'], ['Payload', 'about 1 t'], ['Bed', '1.55 × 1.52 m, open'], ['Fuel', 'diesel, about 9 l per 100 km'], ['Weight', 'about 2.1 t']]
+	},
+	powercube: {
+		model: 'powercube',
+		note: 'a diesel generator in a silenced cube, 2.2 m each way, about 60 kVA: a 500-litre tank in its skid, louvres each side, the control panel behind its front door, the exhaust up through its roof',
+		specs: [['Size', '2.2 m each way'], ['Power', 'about 60 kVA (48 kW)'], ['Fuel tank', '500 l of diesel, in its skid'], ['Burn', 'about 13 l an hour at full load'], ['Runtime', 'about 38 h at full load'], ['Noise', 'about 65 dB(A) at 7 m']]
+	},
+	solar: {
+		model: 'solar-panel',
+		note: 'one 1.72 × 1.13 m monocrystalline panel, about 410 W, on a galvanised ground rack tilted 30° to the sun, on ballast blocks',
+		specs: [['Size', '1.72 × 1.13 m'], ['Peak power', 'about 410 W'], ['Cells', '60 monocrystalline'], ['Tilt', '30°, facing the sun'], ['Yield', 'about 1.4 kWh on a sunny day'], ['Weight', 'about 21 kg, on 4 ballast blocks']]
+	},
+	battery: {
+		model: 'battery-pack',
+		note: 'an outdoor lithium iron phosphate cabinet, 1.3 × 1.1 m, 2.3 m high, about 230 kWh: two doors, vents, its status lights and screen, on a concrete plinth',
+		specs: [['Size', '1.3 × 1.1 × 2.3 m'], ['Capacity', 'about 230 kWh'], ['Chemistry', 'lithium iron phosphate (LFP)'], ['Power', 'about 100 kW in or out'], ['Cycles', 'about 6,000'], ['Weight', 'about 2.5 t']]
+	}
+};
+
 const m = {
 	paint: shared(() => new THREE.MeshStandardMaterial({ color: '#3d6a8f', roughness: 0.35, metalness: 0.35 })),
 	glass: shared(() => new THREE.MeshStandardMaterial({ color: '#1c2630', roughness: 0.08, metalness: 0.5 })),

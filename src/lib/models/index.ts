@@ -21,7 +21,7 @@ import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer }
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
-import { batteryPack, pickup, powercube, solarPanel } from './village.js';
+import { VILLAGE_INFO, batteryPack, pickup, powercube, solarPanel } from './village.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
@@ -148,10 +148,10 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'chicken-coop', label: 'Chicken coop', note: 'a mini geodesic dome of timber struts, 5.6 m across and 2.3 m high: wire round its foot, clear panels over the run, a cedar-shingled back where the hens roost; a ladder of perches, three nesting boxes on hay with the day’s eggs, a feeder and a water trough', usedIn: 'Sandbox 4', make: () => henDome().group },
 	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 4', make: () => rabbitDome().group },
 	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 4', make: () => playDome().group },
-	{ id: 'pickup', label: 'Pickup', note: 'a double-cab pickup, 5.33 × 1.86 m, 1.82 m high, a 3.1 m wheelbase: four doors, an open 1.55 m bed with a tool box and a jerrycan in it. The Village COOP’s', usedIn: 'MaiaCity V1', make: () => pickup() },
-	{ id: 'powercube', label: 'Powercube', note: 'a diesel generator in a silenced cube, 2.2 m each way, about 60 kVA: a 500-litre tank in its skid, louvres each side, the control panel behind its front door, the exhaust up through its roof. The Village COOP’s', usedIn: 'MaiaCity V1', make: () => powercube() },
-	{ id: 'solar-panel', label: 'Solar panel', note: 'one 1.72 × 1.13 m monocrystalline panel, about 410 W, on a galvanised ground rack tilted 30° to the sun, on ballast blocks. The Village COOP’s', usedIn: 'MaiaCity V1', make: () => solarPanel() },
-	{ id: 'battery-pack', label: 'Big battery pack', note: 'an outdoor lithium iron phosphate cabinet, 1.3 × 1.1 m, 2.3 m high, about 230 kWh: two doors, vents, its status lights and screen, on a concrete plinth. The Village COOP’s', usedIn: 'MaiaCity V1', make: () => batteryPack() },
+	{ id: 'pickup', label: 'Pickup', note: `${VILLAGE_INFO.pickup.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => pickup() },
+	{ id: 'powercube', label: 'Powercube', note: `${VILLAGE_INFO.powercube.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => powercube() },
+	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
+	{ id: 'battery-pack', label: 'Big battery pack', note: `${VILLAGE_INFO.battery.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => batteryPack() },
 	{
 		id: 'excavator',
 		label: 'Excavator',

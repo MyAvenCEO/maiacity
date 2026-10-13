@@ -10,6 +10,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
+	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, ledgerOf, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
@@ -96,8 +97,8 @@
 	onMount(() => {
 		world = createWorld(canvas, {
 			onPick: (name) => {
-				// a Village COOP machine opens its COOP
-				if (name?.startsWith('asset:')) return void (panel = 'coop:village');
+				// a Village COOP machine opens its own card
+				if (name?.startsWith('asset:')) return void (panel = name);
 				if (!name?.startsWith('player:')) return;
 				seat = name.slice(7);
 				open('you');
@@ -167,6 +168,9 @@
 		['rules', '⚙', 'Rules']
 	];
 	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
+	const isAssetPanel = (x) => typeof x === 'string' && x.startsWith('asset:');
+	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
+	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
 
 <div class="v1">
@@ -300,6 +304,19 @@
 						<span class="treasury">Treasury {MINDS.filter((t) => t === c.mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`).join(' · ')}</span>
 					</button>
 				{/each}
+			{:else if isAssetPanel(panel)}
+				{@const id = panel.slice(6)}
+				{@const owner = ownerOf(id)}
+				{@const a = owner?.[1].assets.find((x) => x.id === id)}
+				{@const info = VILLAGE_INFO[id]}
+				<p class="eyebrow">Asset · {a?.kind ?? 'Machine'}</p>
+				<h2>{a?.name ?? info?.model}</h2>
+				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
+				<dl>
+					{#if owner}<dt>Owner</dt><dd>{owner[1].name}</dd><dt>Ownership</dt><dd>{TOKEN_LABEL[owner[1].mind]} holders</dd>{/if}
+					{#each info?.specs ?? [] as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
+				</dl>
+				{#if owner}<div class="buttons"><button onclick={() => (panel = `coop:${owner[0]}`)}>Open the {owner[1].name}</button></div>{/if}
 			{:else if isCoopPanel(panel)}
 				{@const c = view.coops[panel.slice(5)]}
 				<button class="link back" onclick={() => (panel = 'coops')}>← All COOPs</button>
