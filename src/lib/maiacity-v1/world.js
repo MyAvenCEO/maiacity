@@ -85,6 +85,8 @@ const BATT_AT = V(STORE.x + 3.4, 0, STORE.z + 0.6);
 const PANEL_AT = V(STORE.x + 6, 0, STORE.z - 1.2);
 /** the bench of seedlings beside the shed's door, its pots in a row along it (+x), facing the track */
 const BENCH = V(STORE.x - 4.4, 0, STORE.z + 3.2);
+/** where a newcomer stands at the bench, facing its pots (-z) */
+const AT_BENCH = V(BENCH.x + 0.25, 0, BENCH.z + 0.62);
 /** where each player plants their first tree at home, off the tent and the players' places */
 const TREE_AT = { A: V(-6.5, 0, -3.5), B: V(7, 0, 9.5) };
 /** a tree spot's own frame (x across, y up, z on toward the tent at the hex's middle): a shot from behind it (-z) has
@@ -616,7 +618,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// the second player is fetched: until then the pickup stands at home with the first
 		const fetched = me === 'B';
 		if ((at === 'stop' || at === 'arrive' || at === 'pickup' || at === 'cab') && !fetched) putTruck(U_START);
-		else if (at === 'village') putTruck(U_STORE);
+		else if (at === 'village' || at === 'bench') putTruck(U_STORE);
 		else (putTruck(1), (truck.rotation.y = 2.2));
 		truck.updateMatrixWorld(true);
 		placeCube(stage.cube);
@@ -636,6 +638,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// the jerrycans loaded: at the pickup's tailgate; then sitting in it at the wheel
 			else if (at === 'pickup') (p.position.copy(truck.localToWorld(V(0.5, 0, -3.3)).setY(0)), (p.rotation.y = truck.rotation.y));
 			else if (at === 'cab') p.visible = false;
+			// at the seedlings' bench, choosing one
+			else if (at === 'bench' && s === me) (p.position.copy(AT_BENCH), (p.rotation.y = Math.PI));
 			else p.position.copy(beside(truck, 1, s === me ? 1 : -1.6));
 		}
 		van.visible = at === 'van';
@@ -876,7 +880,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		tribe: { target: V(2, 1, 3), offset: V(30, 22, 40) },
 		// close on the seedlings' bench, the player standing at it; each player's spot for their first tree beside the
 		// tent, the seedling waiting in its pot; and the tree in the ground (its shots: one a line, in order)
-		bench: { target: V(BENCH.x, 0.85, BENCH.z), offset: V(1.6, 1.1, 2.6), stand: V(BENCH.x + 0.25, 0, BENCH.z + 0.62), face: Math.PI, shots: benchShots() },
+		bench: { target: V(BENCH.x - 0.1, 1.05, BENCH.z + 0.3), offset: V(-2.6, 0.55, -1.75), stand: AT_BENCH, face: Math.PI, still: true, shots: benchShots() },
 		...Object.fromEntries(['A', 'B'].flatMap((s) => {
 			const L = spotAt(TREE_AT[s]), stand = L(-0.95, 0, 0.55), target = TREE_AT[s].clone().setY(0.25);
 			const face = Math.atan2(TREE_AT[s].x - stand.x, TREE_AT[s].z - stand.z);
@@ -886,15 +890,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			];
 		}))
 	};
-	/** the shots at the bench: close along the five pots; from the side at the player reaching for them; across the
-	 *  bench at the player's face looking down at them; along the row once more, slower */
+	/** the shots at the bench while the player chooses (Samuel 2026-10-13: the choice made inside the loading at the
+	 *  shed): close along the row of seedlings, then from the bench's open end, the player behind them looking down at
+	 *  them, held while they choose */
 	function benchShots() {
 		const B = BENCH, at = (x, y, z) => V(B.x + x, y, B.z + z);
 		return [
-			(k) => [at(-0.9 + 0.5 * k, 1.12, 0.62), at(-0.35 + 0.5 * k, 0.82, 0)],
-			(k) => [at(1.55 - 0.1 * k, 1.85 - 0.1 * k, 1.0), at(-0.15, 0.82, 0)],
-			(k) => [at(0.05 + 0.1 * k, 1.25, -0.85), at(0.25, 1.45, 0.62)],
-			(k) => [at(0.95 - 1.7 * k, 0.98, 0.5), at(0.75 - 1.6 * k, 0.8, 0)]
+			(k) => [at(-1.15 + 0.55 * k, 1.0, -0.32), at(-0.55 + 0.55 * k, 0.86, 0.02)],
+			(k) => [at(-3.1 + 0.4 * k, 1.7 - 0.1 * k, -1.65 + 0.2 * k), at(-0.1, 1.05, 0.3)]
 		];
 	}
 	/** before planting (L: the spot's own frame, the tent ahead): the seedling waiting in its pot with the tent behind
@@ -926,7 +929,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const offset = p.offset.clone().multiplyScalar(camera.aspect < 0.8 ? 1.65 : 1);
 		controls.minDistance = Math.min(controls.minDistance, nearest(offset)); // the seedlings and the trees are seen close
 		goal = { target: p.target.clone(), offset };
-		drift = true;
+		drift = !p.still;
 		if (now) {
 			controls.target.copy(goal.target);
 			camera.position.copy(goal.target).add(offset);
@@ -1076,13 +1079,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const st = { dur: min, shot: true, start, run: (k) => run(k * st.dur, k, st.dur) };
 		return st;
 	}
-	/** the voice-over: one line a shot, in order (more lines than shots: the last carries them all); each shot holds
-	 *  as long as its line takes to tell */
+	/** the voice-over: one line a shot, in order (more lines than shots: the last carries them all; a null line is a
+	 *  shot without words, the picture telling it alone); each shot holds as long as its line takes to tell */
 	function told(steps, lines = []) {
 		const shots = steps.filter((x) => x.shot);
 		lines.forEach((line, i) => {
 			const st = shots[Math.min(i, shots.length - 1)];
-			if (st) st.caption = st.caption ? { title: `${st.caption.title} ${line}` } : { title: line };
+			if (st && line) st.caption = st.caption ? { title: `${st.caption.title} ${line}` } : { title: line };
 		});
 		for (const st of shots) if (st.caption) (st.dur = Math.max(st.dur, lineDur(st.caption.title))), (st.caption.dur = st.dur);
 		return steps;
@@ -1362,7 +1365,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const carry = cansIntoBed(me);
 			const done = { dur: 0.1, start: () => placeFuel('bed') };
 			steps.push(fill, carry, done);
-		}
+		} else if (leg === 'tribe' && stage.at === 'bench' && stage.pick) steps.push(potIntoBed(me), { dur: 0.05, start: () => placePots('bed', stage.pick) });
 		if (!seated) steps.push(getIn());
 		else steps.push({ dur: 0.05, start: () => ((me.visible = false), placeFuel('bed')) }); // already at the wheel
 		steps.push(shotOf(leg === 'village' ? go(U_START, U_STORE, 13) : go(U_STORE, 1, 9)));
@@ -1399,6 +1402,23 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			toTail = [me.position.clone(), atTruck(...TAIL)];
 			eye = atTruck(4.5, -7).setY(1.8);
 			camera.position.copy(eye);
+		});
+	}
+	/** the seedling chosen at the bench, carried in both hands to the pickup and set in its bed by the cab */
+	function potIntoBed(me) {
+		const g = pots[stage.pick];
+		const path = [me.position.clone(), atTruck(2.3, -2.6), atTruck(1.5, -0.9)];
+		let eye = V(0, 0, 0);
+		return beat(walkTime(path) + 0.9, (s) => {
+			const there = walkOn(me, path, s, 'carry');
+			const k = there ? Math.min(1, (s - walkTime(path)) / 0.7) : 0;
+			if (g) g.position.lerpVectors(me.localToWorld(V(0, 0.95, 0.4)), truck.localToWorld(POT_ON_BED.clone()), ease(k));
+			still(eye, head(me));
+		}, () => {
+			if (g) (world.attach(g), sprout(stage.pick));
+			eye = atTruck(7, -6).setY(2.6);
+			camera.position.copy(eye);
+			controls.target.copy(head(me));
 		});
 	}
 	/** off the bus stop and over to the gas station (Samuel 2026-10-13: not standing at the stop for long): the
@@ -1485,6 +1505,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const tail = atTruck(0, -3.9);
 		const front = (o, d) => o.clone().add(V(Math.sin(me.rotation.y), 0, Math.cos(me.rotation.y)).multiplyScalar(d));
 		let toShed = [], toCarry = [], back = [];
+		// and then on to the seedlings' bench, to choose one (the eye from the bench's open end, away from the shed)
+		const toBench = [atTruck(0.6, -3.3), AT_BENCH.clone().add(V(0.4, 0, 1.4)), AT_BENCH.clone()];
+		const benchEye = V(BENCH.x - 3.2, 1.7, BENCH.z + 0.9);
 		return play(told([
 			beat(3.5, (s) => (walkOn(me, toShed, s), still(eye, head(me))), () => {
 				P.setup();
@@ -1528,7 +1551,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				back = [toCarry[1], atTruck(0.6, -3.3)];
 			}),
 			{ dur: 0.1, start: () => P.end() },
-			beat(2.5, (s) => (walkOn(me, [atTruck(0.6, -3.3), atTruck(2.4, -2), atTruck(...BESIDE)], s), still(eye, head(me))))
+			beat(walkTime(toBench) + 0.8, (s) => {
+				if (walkOn(me, toBench, s)) (act(me, 'idle'), (me.rotation.y = Math.PI));
+				still(benchEye, head(me, 1.1));
+			}, () => (camera.position.copy(benchEye), placePots('bench')))
 		], lines));
 	}
 

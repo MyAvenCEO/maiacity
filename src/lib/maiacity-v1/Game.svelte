@@ -79,7 +79,7 @@
 	$effect(() => {
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village', pot: where.pot ?? (player?.tree ? 'planted' : 'bench'), pick: player?.tree?.plant ?? player?.seedling ?? '' });
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'bench'), pot: where.pot ?? (player?.tree ? 'planted' : 'bench'), pick: player?.tree?.plant ?? player?.seedling ?? '' });
 		world.touring(!!tour);
 		if (where.place) world.focus(where.place);
 	});
@@ -453,7 +453,7 @@
 				{#if tour.kind === 'pick'}
 					<div class="picks">
 						{#each SEEDLINGS as x (x.id)}
-							<button disabled={busy} onclick={() => doMove({ type: 'seedling', plant: x.id })}>{x.label}<small>{x.fruit}</small></button>
+							<button disabled={busy} title="Bears {x.fruit}" onclick={() => doMove({ type: 'seedling', plant: x.id })}>{x.label}</button>
 						{/each}
 					</div>
 				{/if}
@@ -1189,30 +1189,25 @@
 		color: #2f5a36;
 		pointer-events: none;
 	}
+	/* the five seedlings as one row of small pills (Samuel 2026-10-13: the big grid looked broken) */
 	.tour .picks {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(6.2rem, 1fr));
-		gap: 0.4rem;
-		margin: 0.35rem 0 0.6rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin: 0.4rem 0 0.55rem;
 	}
 	.tour .picks button {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		padding: 0.45rem 0.65rem;
-		border: 1px solid rgb(31 42 35 / 0.15);
-		border-radius: 12px;
+		padding: 0.3rem 0.7rem;
+		border: 1px solid rgb(31 42 35 / 0.18);
+		border-radius: 999px;
 		background: #fff;
+		font-size: 0.8rem;
 		font-weight: 600;
-		text-align: left;
+		white-space: nowrap;
 	}
 	.tour .picks button:hover:not(:disabled) {
 		border-color: #24452f;
-	}
-	.tour .picks small {
-		font-weight: 400;
-		font-size: 0.68rem;
-		opacity: 0.7;
+		background: #eef3ec;
 	}
 	.card {
 		position: absolute;

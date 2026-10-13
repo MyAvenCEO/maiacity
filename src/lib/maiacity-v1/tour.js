@@ -73,54 +73,66 @@ export function story(view, seat, seen) {
 	const o = other.founder ? other.name : 'the first settler';
 	const pct = (x) => `${f(x * 100)} %`;
 	// each step's words are its voice-over, one line a shot (lines); the moments the world plays (drive, load, build)
-	// cut one shot a line, and a line holds its shot as long as it takes to tell
-	const say = (step, ...lines) => ({ ...step, lines, text: lines.join(' ') });
+	// cut one shot a line, and a line holds its shot as long as it takes to tell. A null line is a shot without words:
+	// the picture tells it (Samuel 2026-10-13: tell less of what the newcomer does, show it, and narrate what matters)
+	const say = (step, ...lines) => ({ ...step, lines, text: lines.filter(Boolean).join(' ') });
+	// the story as a film (the storyteller's, director's and editor's skills, .claude/skills): one transformation, from
+	// renting everything to owning a part of all of it; one question, opened in the first line (can no one have to work
+	// to survive?) and answered on pay day; the pain before the promise; every scene a step; the action shown, the voice
+	// on what it means; breath beats where the picture speaks; setups paid off (the petrol runs the ElectroCube, the
+	// seedling grows into a tree that feeds those who come after); the last image, one tent on one hex, mirrors the
+	// first, one van on one road
 	return [
-		// one story from the first shot: the road, the van and its people, what lies ahead, the HEARTS as she tells of them,
-		// the first mint, the end of the road, stepping out, MaiaCity
+		// Act I, the road: the promise and the pain, the vision, the HEARTS as she tells of them, the first mint
 		say({ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', part: 'road', done: !!seen.arrive, ...inVan },
-			'Dawn over the endless steppe. One sand highway, and on it, one old van.',
-			'Inside, packed to the roof: strangers, their bags, everything they own. And you.',
+			'At the end of this road, they say, no one has to work to survive.',
+			'Where you come from, others own the land, the homes and the tools, and you pay them all your life.',
 			'No one here is running away. Everyone is going towards something.'),
-		say({ id: 'vision', chapter: 'The road', title: 'Imagine a world', hint: '', ...next('vision'), ...inVan, shots: ['seat', 'window', 'faces', 'aerial', 'profile'] },
-			'They say that at the end of this road, people have begun a new way of living.',
+		say({ id: 'vision', chapter: 'The road', title: 'Imagine a world', hint: '', ...next('vision'), ...inVan, shots: ['seat', 'window', 'faces', 'aerial'] },
 			'Villages that grow their own food, make their own power and build their own homes.',
-			'An economy rebuilt from the ground up, owned by the people who use it.',
-			'Perhaps the most important civilisation-building project of our time: the blueprint for a new generation of cities.',
-			'And everyone who arrives helps to draw it, so that life gets better every year, for everyone.'),
+			'An economy owned by the people who use it.',
+			null,
+			'Perhaps the most important civilisation-building project of our time: the blueprint for a new generation of cities.'),
 		say({ id: 'hearts', chapter: 'The road', title: 'Every hour, you receive a HEART', hint: '', ...next('hearts'), ...inVan, shots: ['two', 'over', 'listen'], talk: true },
-			'The woman beside you turns to you with a warm smile.',
+			null,
 			`“There, everyone receives ${f(st.heartsPerDay)} HEARTS a day, one every hour, for life. Yours will be ${hearts}.”`,
 			'“A HEART is not money. It is your right to become an owner.”'),
 		say({ id: 'mint', chapter: 'The road', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan, shots: ['her', 'close'], hold: 'close', talk: true },
 			'“They ripen like fruit. Mint them, and they are yours.”',
-			`“Your first mint is a whole year: ${f(st.starterPack ?? year)} HEARTS. Go on, while the road rolls by.”`),
+			`“Your first mint is a whole year: ${f(st.starterPack ?? year)} HEARTS.”`),
+		// Act II, owning together: the end of the road, the COOPs, the land, the pool, the village and its machines
 		say({ id: 'arrival', chapter: 'The road', title: 'The end of the road', kind: 'intro', part: 'arrive', done: !!seen.arrival, ...inVan },
-			'The van slows down. Ahead, the old road simply ends.',
-			'You step down into the dust.',
-			'A bus stop, an abandoned gas station, and beyond them, green land.',
-			'Welcome to MaiaCity.'),
-		say({ id: 'welcome', chapter: 'MaiaCity', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop, act: 'look up', close: true },
 			'The old world passed this place by and left it behind.',
-			`${other.founder && !first ? `${other.name} came before you. You are` : 'You are'} among its very first people.`),
-		// the first player does not wait at the stop (Samuel 2026-10-13): they walk over to the gas station and load the
-		// jerrycans into the village's pickup while the city is told, and get in while the COOPs are; the ElectroCube is
-		// not named until it waits in the shed
+			null,
+			null,
+			'Welcome to MaiaCity.'),
+		// the second waits at the stop to be fetched; the first does not wait (Samuel 2026-10-13): they walk over to the
+		// gas station and load the jerrycans into the village's pickup while the city is told, and get in while the COOPs
+		// are; the ElectroCube is not named until it waits in the shed
+		...(first
+			? []
+			: [say({ id: 'welcome', chapter: 'MaiaCity', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop, act: 'look up', close: true },
+				`${other.founder ? `${other.name} came before you. You are` : 'You are'} among its very first people.`)]),
 		first
 			? say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', kind: 'fuel', done: !!seen.station, ...atStop },
+				'You are among its very first people.',
 				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
-				`At the gas station waits the ${c.village.name}'s pickup, the key in it.`,
-				'Two jerrycans of petrol go in the back.',
+				null,
 				'Here no single owner can leave and take it all. It belongs to the people who live here.')
 			: say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop, act: 'point' },
 				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
 				'Here no single owner can leave and take it all. It belongs to the people who live here.'),
-		say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...(first ? { kind: 'board', done: !!seen.coops, ...atStop, at: 'pickup' } : { ...next('coops'), ...atStop, act: 'think', close: true }) },
-			...(first ? ['The pickup belongs to the COOP. Today it serves you.'] : []),
-			'Everything here belongs to a COOP, a company its people own together.',
-			'Invest 1 HEART into a COOP, and it becomes 1 MIND: a share of that COOP.',
-			`Half the MIND is yours, four tenths stay in the COOP's treasury, and ${pct(st.poolShare ?? 0.1)} go to the city pool.`,
-			'COOPs never hold HEARTS. Only people do.'),
+		first
+			? say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', kind: 'board', done: !!seen.coops, ...atStop, at: 'pickup' },
+				`The pickup belongs to the ${c.village.name}: a COOP, a company its people own together.`,
+				'Invest 1 HEART into a COOP, and it becomes 1 MIND: a share of that COOP.',
+				`Half the MIND is yours, four tenths stay in the COOP's treasury, and ${pct(st.poolShare ?? 0.1)} go to the city pool.`,
+				'COOPs never hold HEARTS. Only people do.')
+			: say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...next('coops'), ...atStop, act: 'think', close: true },
+				'Everything here belongs to a COOP, a company its people own together.',
+				'Invest 1 HEART into a COOP, and it becomes 1 MIND: a share of that COOP.',
+				`Half the MIND is yours, four tenths stay in the COOP's treasury, and ${pct(st.poolShare ?? 0.1)} go to the city pool.`,
+				'COOPs never hold HEARTS. Only people do.'),
 		// the land, without its rent: the ground rent is told where the tribe pays it (Samuel 2026-10-13); the city
 		// grows far beyond the first plot, so no count of hexes
 		say({ id: 'maia', chapter: 'The city', title: `The ${c.maia.name}: the ground beneath your feet`, hint: 'invest', reveal: 2, ...invest('maia', 5000), ...inCab, place: 'city' },
@@ -131,54 +143,53 @@ export function story(view, seat, seen) {
 			'Anyone can swap one MIND for another there, at a fair price, at any time.'),
 		first
 			? say({ id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', done: !!seen.ride, ...inCab },
-				'A narrow track leaves the road and winds east, towards the green.',
+				null,
 				'The centre of your village.')
 			: say({ id: 'ride', chapter: 'The track', title: `${other.founder ? other.name : 'Someone'} comes to fetch you`, kind: 'drive', leg: 'village', fetch: true, done: !!seen.ride, ...atStop },
-				`A cloud of dust on the track: ${o} comes to fetch you in the ${c.village.name}'s pickup.`,
-				'You wave, and climb in.',
-				'The village lies on the way home.',
+				`${o} comes to fetch you in the ${c.village.name}'s pickup.`,
+				null,
+				null,
 				'The centre of your village.'),
 		say({ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000), ...atStore },
-			`The pickup and every machine at the old shed belong to the ${c.village.name}.`,
+			`Every machine at the old shed belongs to the ${c.village.name} too.`,
 			`Whoever uses a machine pays its rent, and ${pct(st.dividendShare ?? 0.2)} of every sale goes to its owners.`,
 			'Invest 2,000 HEARTS, and every machine here works a little for you.'),
+		// the loading at the shed ends at the bench of seedlings, where the choice is made (Samuel 2026-10-13: the pick
+		// belongs inside the loading, not after it)
 		first
 			? say({ id: 'cube', chapter: 'The village', title: 'Load the ElectroCube and the tent', kind: 'load', done: !!seen.cube, ...atStore },
-				'You step out at the old shed, the village store to be.',
-				'Inside waits the ElectroCube, open hardware anyone can build. Up the ramp it goes.',
-				'Then the little dome tent, packed in its canvas.',
-				'Power and a roof: all your tribe needs to begin.')
+				null,
+				'The ElectroCube: open hardware anyone can build. Your petrol runs it.',
+				null,
+				'And every newcomer takes one more thing home: a tree of their own.')
 			: say({ id: 'cube', chapter: 'The village', title: 'Load the BatteryCube and the solar panel', kind: 'load', what: 'power', done: !!seen.cube, ...atStore },
-				`You step out at the old shed. ${o} took the ElectroCube and the tent home on the first day.`,
-				'Beside the shed waits the BatteryCube: four BatteryPacks in the same open frame. Up the ramp it goes.',
-				'Then the solar panel on its rack.',
-				'Sun by day, stored for the night: no more petrol for the lights.'),
+				`${o} took the ElectroCube and the tent home on the first day.`,
+				'Yours is the BatteryCube: four BatteryPacks in the same open frame.',
+				null,
+				'And every newcomer takes one more thing home: a tree of their own.'),
 		// a seedling for each newcomer, from the bench beside the shed (Samuel 2026-10-13): five food trees and bushes
-		// that grow outdoors here, a few centimetres high; the player picks one
-		say({ id: 'seedling', chapter: 'The village', title: 'Pick your first tree', kind: 'pick', done: !!(me.seedling || me.tree), ...atStore, ...loaded, place: 'bench' },
-			'Beside the shed stands a bench of seedlings in little clay pots, each a few centimetres high.',
-			'Every newcomer takes one home: the first tree of their own, to plant in their village.',
-			'An apple, a pear, a sweet cherry, a hazel or a blackcurrant. Which one will be yours?'),
-		say({ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed', pot: inBed },
-			'Back in, and on.',
-			'The track bends through the grass to the edge of the village.',
-			'Your hex. Nothing stands here yet.'),
+		// that grow outdoors here, a few centimetres high; the player picks one, standing at the bench
+		say({ id: 'seedling', chapter: 'The village', title: 'Pick your first tree', kind: 'pick', done: !!(me.seedling || me.tree), ...atStore, ...loaded, at: 'bench', place: 'bench' }, null, null),
+		say({ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, at: 'bench', cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed', pot: inBed },
+			null,
+			null,
+			'Home: one hex of land at the edge of the village.',
+			'Nothing stands here yet.'),
+		// Act III, your home: the tent and the power, the first tree, the Tribe COOP, pay day (the question answered)
 		...(first
 			? [say({ id: 'pitch', chapter: 'Your home', title: 'Pitch your tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed', pot: inBed },
-				'You carry the canvas to the middle of the clearing and unroll it.',
-				'Strut by strut, the little dome rises.',
-				'Then the ElectroCube to its yard. It starts, and the light comes on.')]
+				null,
+				'A home you raised with your own hands.',
+				'Power and a roof: all your tribe needs to begin.')]
 			: [say({ id: 'pitch', chapter: 'Your home', title: 'Set up the sun', kind: 'build', what: 'power', done: !!seen.pitch, ...home, battery: 'bed', pot: inBed },
-				'Down the ramp comes the BatteryCube, beside the ElectroCube.',
-				'The solar panel goes up, facing the sun.',
+				null,
+				'Sun by day, stored for the night.',
 				'One cable, and the tent runs on sunlight. The ElectroCube can rest.')]),
 		// and now the first tree, in the ground beside the tent, named after the player, growing on the game clock
 		say({ id: 'plant', chapter: 'Your home', title: `Plant your ${kind.label.toLowerCase()}`, kind: 'plant', done: !!me.tree, ...home, pot: me.tree ? 'planted' : 'home', place: `plot${seat}` },
-			'Your home stands. Now plant your first tree.',
-			`Your ${kind.label.toLowerCase()} seedling waits beside the tent, in the open grass where it will have room to grow.`),
+			'Your home stands. Now plant your first tree.'),
 		say({ id: 'tree', chapter: 'Your home', title: `${me.tree?.name ?? me.name}, your first tree`, hint: '', ...next('tree'), ...home, place: `tree${seat}` },
-			`Your ${kind.label.toLowerCase()} is in the ground, and it carries your name now: ${me.tree?.name ?? me.name}.`,
-			`It grows on the game's own clock: a sapling in ${span(grows.sapling)}, a young tree in ${span(grows.young)}.`,
+			`It carries your name now: ${me.tree?.name ?? me.name}.`,
 			`Its first ${kind.fruit} come in ${span(grows.fruit)}: ${real(grows.fruit)} from today.`,
 			'Look after it, and one day it feeds the people who come after you.'),
 		say({ id: 'tribe', chapter: 'Your home', title: `The ${c.tribe.name}: your home`, hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home },
