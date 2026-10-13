@@ -5,7 +5,7 @@
  * and the energy it makes and uses; and the whole village's, its seven hexes added up (`villageStats`). Pure
  * functions: the same plan gives the same numbers, in the browser or in node.
  */
-import { capHeight, capOf, northCut, NORTH_TILT, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET, FOREST, GROWN, LAND_PERSON, KINDS, PRICES, RAW, ASSEMBLY, BATTERY_KWH, HALLS, HALL_PRICES, INSIDES, hallOf, shellOf, siteHall, towerFloors, towerShell } from './specs.js';
+import { capHeight, capOf, northCut, NORTH_TILT, ENERGY, EQUIPMENT, FACTORIES, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, DENSITY, DIET, FOREST, GROWN, LAND_PERSON, KINDS, PRICES, RAW, ASSEMBLY, BATTERY_KWH, HALLS, HALL_PRICES, INSIDES, DF, DF_PARTS, domeImports, hallOf, shellOf, siteHall, towerFloors, towerShell } from './specs.js';
 import { HEX_AREA, USES, USE_IDS, landOf, zonesOf } from './layout.js';
 
 /** what each factory makes in a year and the power it takes (estimates: sized to build out a village of ~2,000
@@ -244,7 +244,9 @@ export function hexStats(plan, land = landOf(plan)) {
 		for (const f of floors) uses2.push({ label: `Tower: ${f.label.toLowerCase()}`, kwh: f.m2 * (/** @type {Record<string, number>} */ (ENERGY.tower)[f.use] ?? 100) });
 		for (const fa of FACTORIES) {
 			const r = /** @type {Record<string, any>} */ (FACTORY_RUN)[fa.id];
-			uses2.push({ label: `${fa.label}: ${r.t.toLocaleString('en-US')} ${r.unit} a year × ${r.kwh} kWh`, kwh: r.t * r.kwh });
+			// the dome factory: its lines at full output on two shifts (./specs.js DF)
+			if (fa.dome) uses2.push({ label: `${fa.label}: its lines at full output on two shifts`, kwh: DF.power.kwhFull });
+			else uses2.push({ label: `${fa.label}: ${r.t.toLocaleString('en-US')} ${r.unit} a year × ${r.kwh} kWh`, kwh: r.t * r.kwh });
 		}
 	}
 	const made = makes.reduce((a, m) => a + m.kwh, 0), used = uses2.reduce((a, m) => a + m.kwh, 0);
@@ -340,6 +342,27 @@ function hempFoot(/** @type {import('./specs.js').Cap} */ c) {
 }
 
 /**
+ * The dome factory's card (./specs.js DF): its lines with their machines, floor and output, what it buys at the border,
+ * and what a dome takes from the border with it and without it.
+ */
+function domeFactoryCard() {
+	const SHORT = { glulam: 'of struts', hubs: 'of hubs', glazing: 'of glazing', solar: 'of solar panes', cassettes: 'of cassettes' };
+	const lines = DF.lines.map((l) => ({
+		id: l.id,
+		label: l.label,
+		color: l.color,
+		cap: l.cap ?? 0,
+		unit: l.unit ?? '',
+		short: /** @type {Record<string, string>} */ (SHORT)[l.id] ?? '',
+		part: l.part ? DF_PARTS[l.part] : null,
+		machines: l.machines,
+		eur: l.machines.reduce((a, x) => a + x.eur, 0) * (1 + DF.setting),
+		m2: l.floor.reduce((a, x) => a + x.m2, 0)
+	}));
+	return { lines, imports: Object.entries(DF.imports).map(([id, x]) => ({ id, ...x })), domes: [40, 80, 120].map((D) => domeImports(D)), machines: DF.machines, floor: DF.floor, power: DF.power };
+}
+
+/**
  * One building's card: its size, its geodesic grid, what its floor is used for, what it is built of and costs.
  * @param {import('./layout.js').HexPlan} plan @param {string} id
  */
@@ -399,10 +422,12 @@ export function siteCard(plan, id) {
 	const sh = shellOf(K.D);
 	const c = sh.cap;
 	const geo = sh.geodesic;
+	const df = fa?.dome ? domeFactoryCard() : null;
 	return {
 		kind: site.kind,
 		title: fa ? fa.label : K.label,
 		note: fa ? fa.makes : K.note,
+		df,
 		facts: [
 			['Across', `${K.D} m`],
 			['Height', `${c.h.toFixed(1)} m (a cap of a ${c.R.toFixed(1)} m sphere)`],
@@ -412,7 +437,18 @@ export function siteCard(plan, id) {
 			['Geodesic grid', `frequency ${c.freq}: ${n(geo.struts)} struts, ${geo.lengths.length} lengths from ${geo.lengths[0].m.toFixed(2)} to ${geo.lengths[geo.lengths.length - 1].m.toFixed(2)} m (${geo.trimmed} trimmed at the foot), ${n(geo.hubs)} steel hubs (${geo.ringHubs} on the foot ring)`],
 			['Air inside', `${Math.round(c.volume).toLocaleString('en-US')} m³`],
 			...(K.people ? [['People', `${K.people}, ${Math.round(K.gfa / K.people)} m² of home each (${n(K.gfa)} m² on ${K.storeys} storeys)`], ['The block', `${K.block.depth} m deep, its front ${K.block.front} m north of the middle; ${K.levels.map((/** @type {any} */ l) => `${Math.round(2 * l.half)} m`).join(', ')} long from the ground up; ${n(K.balconies)} m² of small balconies on the south face; ${K.block.height} m to the top roof`]] : []),
-			...(run ? [['Makes', `${run.t.toLocaleString('en-US')} ${run.unit} a year, ${run.kwh} kWh a t (${run.note})`]] : [])
+			...(df
+				? [
+						['Owner', 'The Village COOP'],
+						['Makes a year', df.lines.filter((/** @type {any} */ l) => l.cap).map((/** @type {any} */ l) => `${n(l.cap)} ${l.unit} ${l.short}`).join(', ') + ' (two shifts)'],
+						['Machines', `${(DF.machines / 1e6).toFixed(2)} M€ with ${Math.round(DF.setting * 100)} % to set and wire them, used where it makes sense`],
+						['Floor plan', `${n(DF.floor)} m² of lines and stores, ${n(c.floor - DF.floor)} m² of aisles, testing and loading`],
+						['Power', `${(DF.power.connectedKw / 1000).toFixed(2)} MW connected, ~${(DF.power.peakKw / 1000).toFixed(1)} MW at a shift’s peak, ${(DF.power.kwhFull / 1e6).toFixed(1)} GWh a year at full output; its own cells ${(sh.solar / 1e6).toFixed(2)} GWh; a ${(DF.power.gridKva / 1000).toFixed(1)} MVA grid line until the geothermal plant runs`],
+						['Crew', 'villagers and their Avens, no wages: ' + Object.values(DF_PARTS).filter((p) => p.h).map((p) => `${p.h} crew-h a ${p.unit} of ${p.line}`).join(', ') + `, and ${n(DF.baseH)} a month for stores, testing and upkeep`]
+					]
+				: run
+					? [['Makes', `${run.t.toLocaleString('en-US')} ${run.unit} a year, ${run.kwh} kWh a t (${run.note})`]]
+					: [])
 		],
 		zones: zonesOf(site, plan).map((/** @type {any} */ z) => ({ use: z.use, label: z.label, m2: z.m2 })),
 		block: K.block ? { ...K.block, levels: K.levels } : null,

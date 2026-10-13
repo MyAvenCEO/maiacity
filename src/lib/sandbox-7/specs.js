@@ -78,6 +78,19 @@ export const INSIDES = PACKAGE.insides;
 /** the works in plain halls (packages 3–4) */
 export const HALLS = PACKAGE.halls;
 /**
+ * THE DOME FACTORY SWITCH (Samuel, 2026-10-13 10:55): true, the village makes the parts of every dome itself in one
+ * Dome120 at the centre, the dome factory (DF below), from bought lamellas, plate, float glass and cells; false, it buys
+ * them finished as before. A script can flip it without editing: S7_DOME_FACTORY=0 node script.mjs. It is built for
+ * the 'insides' package (hubs welded from plate, the works in Dome120s): under 'prices' (cast hubs) and 'halls' (the
+ * works in halls) it stays off.
+ */
+const DOME_FACTORY_DEFAULT = true;
+export const DOME_FACTORY = (() => {
+	const env = typeof process !== 'undefined' ? process.env?.S7_DOME_FACTORY : undefined;
+	const on = env === undefined || env === '' ? DOME_FACTORY_DEFAULT : !/^(0|false|off|no)$/i.test(env);
+	return on && INSIDES && !HALLS;
+})();
+/**
  * The village's batteries, kWh: each utilities dome's and the centre's (the centre dome's, or the tower's). Package 1:
  * 100 MWh, ~67 kWh a person; packages 2–4: 30 MWh (the cost audit's menu: less night storage, the geothermal plant
  * carries the base load). The engine (sandbox-9 village.js and ramp.js) should read these instead of its own 10,000 and 40,000.
@@ -424,17 +437,247 @@ export const KINDS = {
  * under glass.
  */
 export const FACTORIES = [
-	{ id: 'timber', label: 'Timber works', makes: 'Sawmill, kiln, glulam press and CNC: the domes’ struts and the CLT for floors', from: 'woodland' },
+	DOME_FACTORY
+		? { id: 'timber', label: 'Timber works', makes: 'Sawmill and drying kilns on the geothermal heat: saws logs into lamellas and boards and presses the CLT for floors; its spare lamellas go to the dome factory (all of them once the village’s woods yield)', from: 'woodland' }
+		: { id: 'timber', label: 'Timber works', makes: 'Sawmill, kiln, glulam press and CNC: the domes’ struts and the CLT for floors', from: 'woodland' },
 	{ id: 'hemp', label: 'Hemp works', makes: 'Decorticator: fibre for insulation batts, hurds for hempcrete, seed oil', from: 'hemp' },
 	{ id: 'bamboo', label: 'Bamboo works', makes: 'Strand-woven bamboo (scrimber) beams and boards', from: 'bamboo' },
-	INSIDES
-		? { id: 'steel', label: 'Steelworks', makes: 'Cuts bought plate on a CNC plasma table and welds the domes’ hubs, ring pieces and connectors (a galvaniser near by galvanises them)', from: 'plate' }
-		: { id: 'steel', label: 'Steelworks', makes: 'Electric arc furnace on scrap: cast hubs, ring pieces, screws', from: 'scrap' },
+	DOME_FACTORY
+		? { id: 'steel', label: 'Steelworks', makes: 'Metal recycling and the steel that is not a dome part: brackets, rails, frames, machine repairs (the dome factory welds the domes’ hubs)', from: 'scrap and plate' }
+		: INSIDES
+			? { id: 'steel', label: 'Steelworks', makes: 'Cuts bought plate on a CNC plasma table and welds the domes’ hubs, ring pieces and connectors (a galvaniser near by galvanises them)', from: 'plate' }
+			: { id: 'steel', label: 'Steelworks', makes: 'Electric arc furnace on scrap: cast hubs, ring pieces, screws', from: 'scrap' },
 	{ id: 'lime', label: 'Lime works', makes: 'Electric kiln: quicklime and lime-pozzolan mortars for footings', from: 'quarry' },
 	{ id: 'clay', label: 'Clay works', makes: 'Electric tunnel kiln: fired clay voussoirs for the trade routes', from: 'clay' },
-	{ id: 'glass', label: 'Glass & solar works', makes: 'Laminates the glazing and lays the see-through solar cells in it', from: 'imported glass' },
+	// with the dome factory on, the glass & solar works' site and Dome120 become the dome factory; its id stays 'glass' so
+	// the engine's reads (sandbox-9 village.js and ramp.js key on 'timber', 'bamboo', 'steel', 'glass') keep working
+	DOME_FACTORY
+		? { id: 'glass', label: 'Dome factory', dome: true, makes: 'Makes the parts of every dome from bought lamellas, plate, float glass and cells: glulam struts, welded hubs and ring pieces, laminated glazing, solar panes, hemp cassettes, gaskets and caps', from: 'lamellas, plate, float glass and cells from the border' }
+		: { id: 'glass', label: 'Glass & solar works', makes: 'Laminates the glazing and lays the see-through solar cells in it', from: 'imported glass' },
 	{ id: 'recycling', label: 'Recycling works', makes: 'Sorts the village’s waste: compost, biogas, metals and glass back to the works', from: 'waste' }
 ];
+
+// ── the dome factory (DOME_FACTORY) ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What the dome factory buys through the euro border, € a unit delivered, net of VAT, 2025/26 prices: `url` where the
+ * price was read, `est` where it is worked out, `why` how. No labour is in any of them: the villagers and their Avens
+ * make the parts (buildout.js counts their crew-hours).
+ * @type {Record<string, { label: string, unit: string, eur: number, range?: string, url?: string, est?: boolean, why: string }>}
+ */
+export const DF_IMPORTS = {
+	lamella: { label: 'Spruce lamellas, kiln-dried and strength-graded, for glulam', unit: 'm³', eur: 350, range: '305–330 ex works', url: 'https://www.holzkurier.com/content/dam/holz/holzkurier/de/web/2025/49/Holzkurier-Preisbilder_11-2025.pdf', est: true, why: 'glulam lamellas 315–330 €/m³ on the Holzkurier price board (Nov 2025; visible grade 305–325 in April 2025, timber-online.net), and ~30 €/m³ for the haul at 40 m³ a truck (estimate)' },
+	adhesive: { label: 'MUF glue for the glue lines and finger joints', unit: 'm³ of glulam', eur: 20, url: 'https://www.hasslacher.com/data/_dateimanager/zertifikate/en/Glued_laminated_timber/EPD_GLT_GST_BGG_SC_ISO_14025_EN_15804_A2_HASSLACHER_Holding_GmbH_en.pdf', est: true, why: 'the glue is ~1.5 % of glulam’s mass, ~7 kg a m³ (Hasslacher EPD), at ~2.5–3 €/kg (estimate)' },
+	kvh: { label: 'Spruce structural timber C24 (KVH) for the cassettes’ frames', unit: 'm³', eur: 450, range: '410–430 ex works', url: 'https://www.holzkurier.com/content/dam/holz/holzkurier/de/web/2025/49/Holzkurier-Preisbilder_11-2025.pdf', est: true, why: 'KVH 410–430 €/m³ (Holzkurier, Nov 2025) and the haul' },
+	plate: { label: 'S355 heavy plate', unit: 't', eur: 800, range: '670–790 ex works', url: 'https://eurometal.net/eu-plate-offers-move-up-supported-by-upcoming-trade-regulations/', est: true, why: 'S355 plate offers 670–700 €/t ex works in north-west Europe in Q1 2026, a German maker 750–790 (eurometal.net); ~800 delivered in small lots. 22 % is cut away and goes back as scrap at ~300 €/t' },
+	galvanising: { label: 'Hot-dip galvanising by a galvaniser near by, and the haul there and back', unit: 't', eur: 430, range: '200–530', url: 'https://zincherie.com/en/what-is-the-cost-of-galvanized-steel/', est: true, why: 'heavy pieces over 20 mm ~300 €/t (Bordignon); 200–300 €/t at 2020’s zinc (feuerverzinken.com) and zinc ~3,450 €/t in 2026 (drweb.de); ~350 €/t, and ~80 for the haul. A bath of our own does not pay: a kettle galvanises ~1.5 t a metre of its length a year and small kettles are “very problematic” (finishing.com)' },
+	bolts: { label: 'Galvanised high-strength bolt sets and pins', unit: 't of hubs', eur: 600, est: true, why: '~12 % of the hubs’ mass at ~5 €/kg (HUBS_WELDED, estimate)' },
+	weld: { label: 'Welding wire, shielding gas, plasma tips and abrasives', unit: 't of hubs', eur: 200, est: true, why: '~40 kg of wire a t at ~2 €/kg, the gas and the wear (HUBS_WELDED, estimate)' },
+	float: { label: 'Float glass in jumbo sheets, 6.0 × 3.21 m', unit: 't', eur: 650, range: '663–678 $/t', url: 'https://www.imarcgroup.com/float-glass-price-trend', est: true, why: 'float glass in Germany 663 $/t in December 2025 and 678 $/t in Q2 2026 (IMARC), ~600 €/t, and the haul' },
+	lowIron: { label: 'Low-iron float instead of clear, for the outer sheets', unit: 'm² of sheet', eur: 5, url: 'https://www.bdcnetwork.com/true-clarity-ambitious-design', est: true, why: 'low-iron glass adds 1–2 $/ft² to an installed unit (BD+C); ~5 €/m² on a 4 mm sheet (estimate)' },
+	lowE: { label: 'Soft-coat low-E float for one inner sheet', unit: 'm² of sheet', eur: 4, est: true, why: 'a coated sheet costs a few € a m² over clear float (estimate)' },
+	pvb: { label: 'PVB interlayer, 0.76 mm', unit: 'm²', eur: 3.5, range: '1–5.25 $ FOB', url: 'https://www.tradewheel.com/p/competitive-architectural-grade-pvb-film-for-697634/', est: true, why: 'architectural PVB 1–5.25 $/m² FOB (tradewheel.com); Kuraray raised its prices 10 % from May 2026 (kuraray.com): ~3.5 €/m² delivered (estimate)' },
+	edge: { label: 'Insulating-glass edge: warm spacer, butyl, secondary seal, argon', unit: 'm² of glazing', eur: 7.5, url: 'https://www.reflectwindow.com/products/edgetech-super-spacer-3-8-black-window-spacer-900-roll-for-insulated-glass-units', est: true, why: 'Super Spacer at ~2.45 $/m (900 ft for 673.53 $); ~1.9 m of edge a m² of our half-triangle panes, its seals and gas: ~7.5 €/m² (estimate)' },
+	gaskets: { label: 'EPDM gaskets and aluminium cover caps on the struts', unit: 'm² of glazing', eur: 12, est: true, why: 'the profiles bought by the metre, cut and joined in the dome factory (estimate)' },
+	cells: { label: 'TOPCon solar cells (M10)', unit: 'Wp', eur: 0.045, range: '0.044 $/W FOB', url: 'https://www.pv-magazine-india.com/2026/06/29/china-topcon-cell-prices-fall-for-fourth-week-as-inventory-pressure-builds/', est: true, why: 'TOPCon M10 cells 0.044 $/W FOB in late June 2026 (OPIS); 0.26–0.45 RMB/W through 2026 (InfoLink via taiyangnews.info); ~0.045 €/Wp delivered. A solar pane takes ~210 Wp a m² (the 227 kWh/m² a year the model counts) and 3 % breakage' },
+	stringing: { label: 'Ribbons, busbars, junction boxes and cables of a solar pane', unit: 'm²', eur: 5, est: true, why: 'estimate; the cells lie in a second PVB layer of the outer laminate, so no EVA and no backsheet' },
+	hemp: { label: 'Hemp-fibre batts', unit: 'm³', eur: PRICES.hemp.eur, url: 'https://www.baustoffshop.de/thermo-hanf-combi-jute-dammplatte-1200x625-mm-trockenbau-universaldammplatte.html', est: true, why: 'as PRICES.hemp: bought by the truck until the hemp works runs; the same with or without the dome factory' }
+};
+/**
+ * A m² of the domes' laminated double glazing, as the dome factory makes it: an outer laminate of 2 × 4 mm low-iron
+ * float with PVB, an inner one of 2 × 6 mm clear float (one sheet low-E) with PVB, sealed into an insulating unit. 20 mm
+ * of glass, 50 kg a m² (DENSITY.glass). 15 % of the float is cut away: the triangles are cut from rectangular jumbo
+ * sheets, two panes a triangle on the Dome80s and Dome120s (estimate). No tempering furnace: both panes are laminated.
+ */
+export const DF_GLAZING = { kg: 50, waste: 0.15, lowIron: 2, lowE: 1, pvb: 2 };
+/** glulam from lamellas: 1.14–1.22 m³ of lamellas a m³ of finished glulam (CORRIM), 1.2 used */
+export const DF_LAMELLAS = 1.2;
+/** lamellas from the village's own timber works, € a m³: spruce sawlogs ~100 €/m³ (BUILD_SOURCES.raw) at ~0.5 m³ of dry lamellas a m³ of logs, the kilns and wear ~20 (estimate) */
+export const DF_OWN_LAMELLA = 100 / 0.5 + 20;
+/** the Munich year's solar by month, January first (PVGIS shape, rounded; estimate): the dome factory's own cells by month */
+export const SOLAR_MONTHS = [0.03, 0.05, 0.08, 0.11, 0.12, 0.13, 0.13, 0.12, 0.09, 0.07, 0.04, 0.03];
+/**
+ * The parts the dome factory makes, each a unit: what it takes from the border (`eur`, from DF_IMPORTS), what the same
+ * part costs bought finished (`bought`, PRICES), the crew-hours (`h`) and the power (`kwh`) it takes, and its line.
+ * Estimates for `h` and `kwh`: glulam takes 71–99 kWh a m³ to make (CORRIM); a fabricator puts ~40 shop hours into a t
+ * of welded hubs (HUBS_WELDED), robots cut that; laminating takes ~2–3 kWh a m² of laminate in the autoclave and ~1–2
+ * in the pre-press, the insulating line and the clean room a little more; an insulating-glass line makes ~500 m² a
+ * shift with ~8 people (asset-trade.de, Radeburg). The cassettes' hours stay with the site's (RATES.hemp: the cassettes
+ * are framed, filled and sealed as they go up), so the factory adds none.
+ * @type {Record<string, { short: string, label: string, unit: string, line: string, eur: number, bought: number, h: number, kwh: number, input: string }>}
+ */
+export const DF_PARTS = (() => {
+	const I = DF_IMPORTS, G = DF_GLAZING;
+	return {
+		strut: { short: 'Struts', label: 'Glulam struts, finger-jointed, pressed, cut and coated', unit: 'm³', line: 'glulam', eur: DF_LAMELLAS * I.lamella.eur + I.adhesive.eur, bought: PRICES.glulam.eur, h: 3, kwh: 80, input: `${DF_LAMELLAS} m³ of lamellas and ~7 kg of glue a m³` },
+		hub: { short: 'Hubs, ring pieces, connectors', label: 'Steel hubs, ring pieces and connectors, cut, welded, drilled and galvanised', unit: 't', line: 'hubs', eur: 1.22 * I.plate.eur - 0.22 * 300 + I.galvanising.eur + I.bolts.eur + I.weld.eur, bought: PRICES.hubs.eur, h: 30, kwh: 250, input: '1.22 t of plate (0.22 back as scrap), galvanising, bolts, wire and gas a t' },
+		glazing: { short: 'Glazing', label: 'Laminated low-iron double glazing, low-E, with its edge, gaskets and caps', unit: 'm²', line: 'glazing', eur: ((G.kg / 1000) * I.float.eur + G.lowIron * I.lowIron.eur + G.lowE * I.lowE.eur + G.pvb * I.pvb.eur) * (1 + G.waste) + I.edge.eur + I.gaskets.eur, bought: PRICES.glass.eur, h: 0.5, kwh: 10, input: '57.5 kg of float (two sheets low-iron, one low-E), 2.3 m² of PVB, the edge and the gaskets a m²' },
+		solar: { short: 'Solar panes', label: 'Solar cells laid into the outer laminate (on top of its glazing)', unit: 'm²', line: 'solar', eur: 210 * I.cells.eur * 1.03 + I.pvb.eur * (1 + G.waste) + I.stringing.eur, bought: PRICES.pv.eur, h: 0.2, kwh: 5, input: '216 Wp of cells, one more PVB layer, ribbons and a junction box a m²' },
+		cassette: { short: 'Hemp cassettes', label: 'Hemp cassettes: C24 frames for the north shell (the batts bought as before)', unit: 'm² of north shell', line: 'cassettes', eur: CASSETTE_M * I.kvh.eur, bought: CASSETTE_M * PRICES.cassette.eur, h: 0, kwh: 2, input: `${CASSETTE_M} m³ of C24 a m²` }
+	};
+})();
+/**
+ * The dome factory's lines: the machines (used where it makes sense; `est` an estimate from listings, `url` a listing),
+ * the floor each needs, and what it makes a year on two shifts (`cap`, in its part's unit; estimates checked against
+ * the machines: a used finger-jointing line runs ~10 m of lamella a minute, Ziegler's glulam works makes 15,000 m³ a
+ * year on one shift; an insulating-glass line ~500 m² a shift).
+ * @type {{ id: string, label: string, part?: string, cap?: number, unit?: string, color: string, machines: { label: string, eur: number, used?: boolean, url?: string, est?: boolean }[], floor: { label: string, m2: number }[] }[]}
+ */
+export const DF_LINES = [
+	{
+		id: 'glulam', label: 'Glulam struts', part: 'strut', cap: 12000, unit: 'm³', color: '#c8955a',
+		machines: [
+			{ label: 'Finger-jointing line (used Grecon Compact)', eur: 135000, used: true, url: 'https://www.machineseeker.com/Finger-jointing-lines/ci-169' },
+			{ label: 'Two four-sided planers, lamellas and finished beams (used)', eur: 150000, used: true, est: true },
+			{ label: 'Glulam press for 18 m beams, glue spreader and mixer', eur: 250000, url: 'https://www.machineseeker.ie/mss/hydraulic+press', est: true },
+			{ label: 'A second beam joinery centre (used Hundegger), beside the kit’s one, which moves in', eur: 200000, used: true, url: 'https://www.maschinensucher.de/mss/hundegger+abbundanlage' },
+			{ label: 'Coating booth and drying racks for the struts', eur: 60000, est: true }
+		],
+		floor: [
+			{ label: 'Lamella store', m2: 500 },
+			{ label: 'Finger-jointing', m2: 450 },
+			{ label: 'Planing and the glulam press', m2: 900 },
+			{ label: 'Curing and the final planer', m2: 400 },
+			{ label: 'Beam joinery: the struts cut', m2: 500 },
+			{ label: 'Coating and the strut store', m2: 500 }
+		]
+	},
+	{
+		id: 'hubs', label: 'Hubs and connectors', part: 'hub', cap: 3000, unit: 't', color: '#6d7782',
+		machines: [
+			{ label: 'CNC plasma and oxy-fuel table for plate to 60 mm (used)', eur: 120000, used: true, url: 'https://surplusrecord.com/listing/lincoln-torchmate-x-series-cnc-plasma-cutting-table-5-x-10-cutting-area-7-8-pierce-8-scfm-90-psi-572-ipm-749651/', est: true },
+			{ label: 'Six robot welding cells with 2-axis positioners (used, 42,000 € each)', eur: 6 * 42000, used: true, url: 'https://www.machineseeker.com/mss/welding+robot+cell' },
+			{ label: 'Ten manual welding bays: inverters, fume extraction, positioners', eur: 120000, est: true },
+			{ label: 'CNC drilling and machining centre (used)', eur: 120000, used: true, est: true },
+			{ label: 'Press brake, band saw and a 10 t hall crane (used)', eur: 150000, used: true, est: true }
+		],
+		floor: [
+			{ label: 'Plate store under the crane', m2: 300 },
+			{ label: 'Plasma table and its fume extraction', m2: 250 },
+			{ label: 'Robot cells and welding bays', m2: 900 },
+			{ label: 'Drilling and machining', m2: 250 },
+			{ label: 'Finished hubs, to and from the galvaniser', m2: 400 }
+		]
+	},
+	{
+		id: 'glazing', label: 'Glazing', part: 'glazing', cap: 200000, unit: 'm²', color: '#9fd0dc',
+		machines: [
+			{ label: 'Jumbo cutting table with its loader (used Lisec or Bottero)', eur: 115000, used: true, url: 'https://www.machinio.com/cat/glass-breaking-table-jumbo' },
+			{ label: 'Edge seamer and glass washer (used)', eur: 80000, used: true, est: true },
+			{ label: 'Laminating clean room, lay-up tables and pre-press', eur: 200000, est: true },
+			{ label: 'Two laminating autoclaves (used)', eur: 500000, used: true, url: 'https://www.surplusrecord.com/listing/terruzzi-tr-2650-composite-autoclave-102-x-196-180-psi-400-deg-c-j-type-thermocouples-1995-326232/', est: true },
+			{ label: 'Insulating-glass line with gas press (used)', eur: 320000, used: true, url: 'https://www.machineseeker.com/boza-m/i-22878415' },
+			{ label: 'A-frame racks, vacuum lifters and carts', eur: 100000, est: true }
+		],
+		floor: [
+			{ label: 'Float jumbo sheets in racks', m2: 400 },
+			{ label: 'Cutting, edging and washing', m2: 500 },
+			{ label: 'Clean room: lay-up and pre-press', m2: 450 },
+			{ label: 'Autoclaves', m2: 300 },
+			{ label: 'Insulating-glass line', m2: 450 },
+			{ label: 'Finished panes in racks', m2: 600 }
+		]
+	},
+	{
+		id: 'solar', label: 'Solar panes', part: 'solar', cap: 120000, unit: 'm²', color: '#1f3a5c',
+		machines: [
+			{ label: 'Two cell stringers (used)', eur: 70000, used: true, url: 'https://www.made-in-china.com/manufacturers/solar-cell-stringer.html', est: true },
+			{ label: 'Lay-up and bussing tables, an EL tester', eur: 40000, est: true }
+		],
+		floor: [{ label: 'Stringing and laying the cells into the laminate', m2: 350 }]
+	},
+	{
+		id: 'cassettes', label: 'Hemp cassettes', part: 'cassette', cap: 60000, unit: 'm²', color: '#b8b06a',
+		machines: [{ label: 'Two framing tables with a nailing bridge, a saw and a batt cutter', eur: 150000, est: true }],
+		floor: [{ label: 'Framing, filling and the cassette store', m2: 800 }]
+	},
+	{
+		id: 'small', label: 'Gaskets, caps and small parts', color: '#e0b23a',
+		machines: [{ label: 'Profile saws, a gasket-joining press, small tools', eur: 60000, est: true }],
+		floor: [{ label: 'Gaskets, caps and small parts', m2: 200 }]
+	},
+	{
+		id: 'shared', label: 'Testing, stores and handling', color: '#a8a196',
+		machines: [
+			{ label: 'Test lab: glue-line delamination and shear (EN 14080), weld tests (EN 1090), gas fill (EN 1279)', eur: 50000, est: true },
+			{ label: 'Four forklifts (used)', eur: 80000, used: true, est: true }
+		],
+		floor: []
+	}
+];
+/**
+ * The dome factory: one Dome120 at the centre, the Village COOP's, on the glass & solar works' site. Its lines, the
+ * machines with ~15 % to move, set and wire them (compressed air, dust and fume extraction), its floor, power and
+ * upkeep. Power (estimates): ~2.25 MW connected (the glazing line ~0.9 MW with two autoclaves' heaters, the glulam
+ * line ~0.6, the hub shop ~0.5, the rest ~0.25), ~1.5 MW at the peak of a shift, ~1.1 MW on average at full output
+ * (`kwhFull` a year over two shifts); before the geothermal plant it runs on a medium-voltage grid line (a 2.5 MVA connection: fees 88–131 €/kW on Stadtwerke price sheets, a station and the line,
+ * ~0.5 M€, estimate) at 0.18 €/kWh (BDEW 2025), less its own cells; the camp's 280 kWp, 500 kWh and 150 kVA genset
+ * cannot run it. Upkeep 6 % of the machines a year; the certificates for glulam (EN 14080), welded hubs (EN 1090 EXC3)
+ * and laminated and insulating glass (EN 14449, EN 1279) ~0.25 M€ (estimate). `baseH`: crew-hours a month for the
+ * stores, testing and upkeep, besides the parts' own; `baseKwh`: kWh a month for its light, air and extraction.
+ * `ramp`: months for its lines to reach full output; `stock`: months of each line's output it keeps in store, made
+ * ahead of the domes (it plans each month by what the domes took the month before); `crewShare`: the most of the
+ * village's building crew it takes in a month (estimates).
+ */
+export const DF = (() => {
+	const machines = DF_LINES.reduce((a, l) => a + l.machines.reduce((b, x) => b + x.eur, 0), 0);
+	const setting = 0.15;
+	const floor = DF_LINES.reduce((a, l) => a + l.floor.reduce((b, x) => b + x.m2, 0), 0);
+	const kwhFull = DF_LINES.filter((l) => l.part).reduce((a, l) => a + (l.cap ?? 0) * DF_PARTS[l.part ?? ''].kwh, 0) + 12 * 30000;
+	return {
+		label: 'Dome factory',
+		lines: DF_LINES,
+		parts: DF_PARTS,
+		imports: DF_IMPORTS,
+		machines: machines * (1 + setting),
+		machinesBare: machines,
+		setting,
+		floor,
+		power: { connectedKw: 2250, peakKw: 1500, gridKva: 2500, gridEur: 0.5e6, eurKwh: 0.18, kwhFull },
+		certify: 0.25e6,
+		upkeep: 0.06,
+		ramp: 6,
+		stock: 1,
+		crewShare: 0.5,
+		baseH: 6 * 140,
+		baseKwh: 30000,
+		est: true
+	};
+})();
+/**
+ * What a dome takes from the border for its shell's parts (struts, hubs, glazing, solar, cassettes, hemp), € and in
+ * goods, bought finished (`before`) and made in the dome factory (`after`); the footing is the same either way.
+ * @param {number} D 40 | 80 | 120
+ */
+export function domeImports(D) {
+	const sh = shellOf(D);
+	const P = DF_PARTS, I = DF_IMPORTS;
+	const struts = sh.m.timber - sh.north * CASSETTE_M;
+	const q = { strut: struts, hub: sh.t.steel, glazing: sh.glazed, solar: sh.m.pv, cassette: sh.north };
+	const row = (/** @type {string} */ k, /** @type {number} */ unitEur) => q[/** @type {keyof typeof q} */ (k)] * unitEur;
+	const before = { struts: row('strut', P.strut.bought), hubs: row('hub', P.hub.bought), glazing: row('glazing', P.glazing.bought), solar: row('solar', P.solar.bought), cassettes: row('cassette', P.cassette.bought), hemp: sh.m.hemp * I.hemp.eur };
+	const after = { struts: row('strut', P.strut.eur), hubs: row('hub', P.hub.eur), glazing: row('glazing', P.glazing.eur), solar: row('solar', P.solar.eur), cassettes: row('cassette', P.cassette.eur), hemp: sh.m.hemp * I.hemp.eur };
+	const sum = (/** @type {Record<string, number>} */ o) => Object.values(o).reduce((a, b) => a + b, 0);
+	const G = DF_GLAZING;
+	return {
+		D,
+		q,
+		before,
+		after,
+		beforeEur: sum(before),
+		afterEur: sum(after),
+		goods: {
+			lamellasM3: struts * DF_LAMELLAS,
+			plateT: sh.t.steel * 1.22,
+			galvanisedT: sh.t.steel,
+			floatT: (sh.glazed * G.kg * (1 + G.waste)) / 1000,
+			pvbM2: (sh.glazed * G.pvb + sh.m.pv) * (1 + G.waste),
+			cellsKwp: (sh.m.pv * 210 * 1.03) / 1000,
+			kvhM3: sh.north * CASSETTE_M,
+			hempM3: sh.m.hemp
+		}
+	};
+}
 
 // ── the tower ───────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -672,11 +915,17 @@ export const EQUIPMENT = [
  */
 export const WORKS_MACHINES = {
 	// packages 2–4 weld the hubs: no furnace or moulds, so the steel works needs no geothermal power (buildout.js NEEDS_GEO)
-	steel: INSIDES
-		? { eur: 1.5e6, range: [0.8e6, 3.0e6], est: true, note: 'a CNC plasma table for plate to 60 mm, six to eight welding stations with positioners, a CNC drilling and machining centre, a press brake and a 10 t hall crane, used where it can be; certified welders (ISO 9606-1), a welding coordinator and the EN 1090 EXC3 certificate; galvanising bought' }
-		: { eur: 1.5e6, range: [0.8e6, 3.0e6], est: true, note: 'a 1–2 t induction furnace (30–80 k$ FOB), sand moulding, a CNC machining centre, a galvanising bath and a press brake, used where it can be' },
-	glass: { eur: 2.5e6, range: [1.2e6, 4.0e6], est: true, note: 'a used insulating-glass line 315–325 k€ (machineseeker), a laminating oven (~60 k$) or autoclave (to 3 M$), cutting tables and a cell stringer' },
-	timber: { eur: 3.0e6, range: [1.5e6, 5.0e6], est: true, note: 'a sawmill line, a drying kiln on the geothermal heat, a finger-jointing line and a glulam press' },
+	steel: DOME_FACTORY
+		? { eur: 0.8e6, range: [0.4e6, 1.5e6], est: true, note: 'a metal workshop for what is not a dome part (saws, a small press brake, welding bays, a lathe) and a scrap baler and shear for the village’s metal, used where it can be (estimate); the dome factory welds the hubs' }
+		: INSIDES
+			? { eur: 1.5e6, range: [0.8e6, 3.0e6], est: true, note: 'a CNC plasma table for plate to 60 mm, six to eight welding stations with positioners, a CNC drilling and machining centre, a press brake and a 10 t hall crane, used where it can be; certified welders (ISO 9606-1), a welding coordinator and the EN 1090 EXC3 certificate; galvanising bought' }
+			: { eur: 1.5e6, range: [0.8e6, 3.0e6], est: true, note: 'a 1–2 t induction furnace (30–80 k$ FOB), sand moulding, a CNC machining centre, a galvanising bath and a press brake, used where it can be' },
+	glass: DOME_FACTORY
+		? { eur: DF.machines, range: [DF.machines * 0.7, DF.machines * 1.6], est: true, note: `the dome factory’s seven lines (DF_LINES), used where it makes sense, and ${Math.round(DF.setting * 100)} % to move, set and wire them` }
+		: { eur: 2.5e6, range: [1.2e6, 4.0e6], est: true, note: 'a used insulating-glass line 315–325 k€ (machineseeker), a laminating oven (~60 k$) or autoclave (to 3 M$), cutting tables and a cell stringer' },
+	timber: DOME_FACTORY
+		? { eur: 3.0e6, range: [1.5e6, 5.0e6], est: true, note: 'a sawmill line, drying kilns on the geothermal heat, a planer and a CLT press (the finger-jointing and the struts’ press are in the dome factory)' }
+		: { eur: 3.0e6, range: [1.5e6, 5.0e6], est: true, note: 'a sawmill line, a drying kiln on the geothermal heat, a finger-jointing line and a glulam press' },
 	hemp: { eur: 2.0e6, range: [1.0e6, 3.5e6], est: true, note: 'a 1 t/h decortication line 1.5–2 M€ (Messe Frankfurt exhibitor, 2024), a 2 t/h decorticator ~330 k$ (HempToday), and a batt line' },
 	lime: { eur: 2.0e6, range: [1.0e6, 4.0e6], est: true, note: 'a small electric shaft kiln for ~2,000 t a year, a crusher, a slaker and a mixing plant' },
 	clay: { eur: 2.5e6, range: [1.5e6, 5.0e6], est: true, note: 'a block press and extruder, dryers and an electric tunnel kiln for ~3,000 t a year' },
@@ -919,6 +1168,7 @@ export const SOURCES = {
 	buildings: { label: 'Building costs', url: 'https://www.aksachsen.org/fileadmin/Image_Archive/Berufspolitik/BKI/BKI_Flyer_2025.pdf', note: 'Timber multi-family homes 1,635–2,580 €/m² gross floor, mean 2,190 (BKI 2025, KG 300+400, with 19 % VAT); offices 3,300–5,800. A self-builder’s finishing materials 400–700 €/m² (fertighaus.de, Ausbauhaus). Living space in Germany 49.2 m² a person (Destatis 2024). Offices 14 m² a desk, co-working 12–14.' },
 	equipment: { label: 'Machines', url: 'https://www.energy-storage.news/battery-storage-system-prices-continue-to-fall-sharply-bnef-and-ember-reports-find/', note: 'LFP storage turnkey 177 $/kWh in Europe (BNEF 2025) ≈ 155 €/kWh. Modular data centers 4.4–4.6 M$ a MW of IT (amcompute.com 2025); a hyperscale building in Frankfurt 11.6 $/W (Turner & Townsend 2025). Electrolysers outside China 1,900–2,500 $/kW (IEA via Argus 2025), PEM ~2,365 €/kW (ACER); fuel cells 1,000–2,000 $/kW. Small water works 150–3,000 € a person. Works machines: used IG lines 315–325 k€ (machineseeker.com), 1 t/h hemp lines 1.5–2 M€ (Messe Frankfurt 2024), 1–2 t induction furnaces 30–80 k$ (made-in-china.com). EUR/USD 1.13 (2025 average, Bank of Finland).' },
 	hubs: { label: 'Hubs welded from plate (packages 2–4)', url: 'https://www.steelconstruction.info/Cost_planning_through_design_stages', note: 'A steelwork contractor’s cost is driven as much by fabrication time as by tonnage: about 20 hours of fabrication cost as much as a tonne of raw steel (SteelConstruction.info, Steel Insight); a frame is 30–40 % material, 30–40 % fabrication, 10–15 % erection. A welded hub is all cuts and welds: ~40 shop hours a t (estimate). S355 heavy plate 750–850 €/t (eurometal.net 2025); hot-dip galvanising 200–500 €/t (feuerverzinken.com). Hubs welded in the village ~2,400 €/t of bought content (plate, galvanising, bolts, wire and gas, power, upkeep: 1,800–3,000, estimate); bought from a fabricator ~4,300 €/t (3,500–6,000, estimate), against cast hubs at 6,000. Welding to EN 1090 execution class 3 needs welders certified to ISO 9606-1, a welding coordinator (ISO 14731) and a certified factory production control.' },
+	domeFactory: { label: 'The dome factory (DOME_FACTORY)', url: 'https://corrim.org/wp-content/uploads/2018/03/glued-laminated-timbers-pnw-and-se.pdf', note: 'Each import’s price and its source are in DF_IMPORTS, each machine’s in DF_LINES. Glulam takes 1.14–1.22 m³ of lamellas and 71–99 kWh a m³ (CORRIM); Ziegler’s glulam works makes 15,000 m³ a year on one shift (scantec.de). Used machines: finger-jointing lines 58–400 k€ (machineseeker.com, hoechsmann.com), glass autoclaves from ~137 k$ (surplusrecord.com), jumbo cutting tables 45–133 k$ (machinio.com), insulating-glass lines 109–370 k€ (machineseeker.com, machinio.com), robot welding stations with a positioner ~42 k€ (machineseeker.com), cell stringers 20–55 k$ (made-in-china.com). An insulating-glass plant makes ~500 m² a shift a line (asset-trade.de, Radeburg). A galvanising bath of our own does not pay at ~2,000 t a year (finishing.com); the hubs go to a galvaniser near by.' },
 	halls: { label: 'Works halls (packages 3–4)', url: 'https://www.hornbach.at/c/baustoffe/bedachung/sandwichpaneele/S31913/', note: 'Sandwich panels, 100 mm PIR, ~69 € a running metre of 1 m width with VAT in a DIY shop (Hornbach); by the truck net of VAT ~35–60 €/m² for roofs, 30–55 for walls (estimate). Simple system halls cost 80–200 €/m² without foundations and fit-out (hausjournal.net); an insulated production hall with offices over 1,000 €/m² built by a contractor (industrie-fachwissen.de 2026). Ready-mix C25/30 117–172 €/m³ (Kies Krieger 2025). Glulam halls of 20–40 m span are timber engineering’s main use, duo-pitch beams the commonest (KIT). Floor a works needs: a 1 t/h hemp line stands in a 50 × 10 m hall (its maker, Messe Frankfurt 2024); Mayr-Melnhof’s glulam works in Wismar makes 130,000 m³ a year in 43,000 m² of halls (mm-holz.com). Solar: Munich’s roofs give ~994 kWh a kWp a year (reduco.ai); glass-glass modules 0.16–0.22 €/Wp (ema-energiewelt.de 2026); with inverters, rails and cables ~320 €/kWp (estimate; Fraunhofer ISE: 700–2,000 €/kWp built). A hall built of these parts, with its slab, doors and services, costs ~280 €/m² in materials and ~30 more for its solar (estimate; the cost audit took 200–350).' },
 	yields: { label: 'Yields', url: 'https://www.tfz.bayern.de', note: 'Hemp straw 5–12 t/ha (TFZ trial 11.2); Douglas fir 18.9 m³/ha a year (BWI); poplar coppice 8–15 t/ha; apples 26–35 t/ha (Destatis); bananas under cover 35–72 t/ha, papaya 30–80; food forests: see FOREST in specs.js (crop yields from orchards and fields, the layers stacked 1.3×: an estimate); bamboo in central Europe is an estimate. Diet: EAT-Lancet Commission 2019, DGE 2024.' },
 	power: { label: 'Power price', url: 'https://euenergy.live', note: 'German day-ahead wholesale averaged ~90 €/MWh in 2025; small and mid industry paid ~183 €/MWh (BDEW 2025).' }

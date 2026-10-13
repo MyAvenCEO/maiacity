@@ -16,7 +16,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { BATTERY_KWH, capOf, CORE_R, FACADE, INSIDES, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, siteHall, towerGridOf, towerLevels, towerRadius } from './specs.js';
+import { BATTERY_KWH, capOf, CORE_R, DF, FACADE, FACTORIES, INSIDES, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, siteHall, towerGridOf, towerLevels, towerRadius } from './specs.js';
 import { CELL, HEX_S, HEX_W, USES, USE_IDS, corners, landOf } from './layout.js';
 
 /** @type {Map<string, THREE.MeshStandardMaterial>} */
@@ -244,6 +244,100 @@ function factoryInside(/** @type {string} */ id, /** @type {THREE.Group} */ insi
 	for (const s of [-1, 1]) for (let k = 0; k < 2; k++) inside.add(box(10, 6 + k * 3, 10, col, -18 + k * 30, -6 + s * 18, 0.6));
 	if (id === 'lime' || id === 'clay' || id === 'steel' || id === 'glass') inside.add(part(new THREE.CylinderGeometry(3.5, 4, 22, 16), mat(col, 0.6), 22, 11, 14));
 	for (let k = 0; k < 6; k++) inside.add(box(4, 2 + (k % 3), 6, col, -12 + k * 5, 26));
+}
+
+/**
+ * What stands in each of the dome factory's lines, west to east (drawn only: ./specs.js DF_LINES has the machines and
+ * their prices): [kind, length along the line, height]. m a machine in the line's colour, b a light machine, s stacks of
+ * stock, r glass racks, a an autoclave lying on its side, c a robot welding cell, k the clean room.
+ * @type {Record<string, [string, number, number][]>}
+ */
+const DF_DRAW = {
+	glulam: [['s', 8, 2], ['m', 8, 2.4], ['b', 5, 2], ['m', 18, 2.6], ['s', 5, 1.6], ['b', 5, 2], ['m', 12, 3.2], ['m', 12, 3.2], ['b', 7, 5], ['s', 8, 2.2]],
+	hubs: [['s', 8, 1.2], ['m', 12, 1.4], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['b', 4, 2], ['b', 4, 2], ['m', 7, 3], ['b', 5, 2.5], ['s', 8, 1.5]],
+	glazing: [['r', 6, 3.4], ['m', 7, 1], ['b', 5, 2], ['k', 12, 4], ['a', 10, 3.2], ['a', 10, 3.2], ['m', 30, 3], ['r', 8, 3]],
+	solar: [['m', 6, 2], ['m', 6, 2], ['b', 10, 1], ['b', 10, 1], ['r', 5, 2.6]],
+	cassettes: [['b', 10, 1], ['b', 10, 1], ['s', 8, 2.5], ['s', 8, 2]],
+	small: [['b', 6, 1.5], ['b', 6, 1.5], ['m', 8, 3]]
+};
+
+/**
+ * The dome factory (./specs.js DF): its lines laid across the floor in bands from north to south, each band as deep as
+ * its share of the floor (DF_LINES' m²) and painted in the line's colour, its machines along it from west to east: the
+ * glulam line (lamellas, finger-jointing, the press, the beam joinery, coating), the hub shop under its hall crane (the
+ * plasma table, six robot cells, the welding bays), the glazing (racks of float, cutting, the clean room, two
+ * autoclaves, the insulating-glass line), the solar panes, the cassettes, the small parts and the test lab.
+ */
+function dfInside(/** @type {THREE.Group} */ inside) {
+	const c = capOf(120);
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#a49d90', 1), 0, FLOOR_Y, 0, false));
+	const R = 56;
+	const lines = DF.lines.filter((l) => l.floor.length);
+	const weight = lines.map((l) => Math.max(600, l.floor.reduce((a, x) => a + x.m2, 0)));
+	const total = weight.reduce((a, b) => a + b, 0);
+	// the area of the floor's circle north of z (z grows to the south)
+	const seg = (/** @type {number} */ z) => {
+		const t = Math.max(-R, Math.min(R, z));
+		return t * Math.sqrt(R * R - t * t) + R * R * Math.asin(t / R) + (Math.PI * R * R) / 2;
+	};
+	let z0 = -R;
+	for (const [i, l] of lines.entries()) {
+		// the band's south edge: where the floor north of it holds this line's share
+		const want = seg(z0) + (Math.PI * R * R * weight[i]) / total;
+		let lo = z0, hi = R;
+		for (let k = 0; k < 40; k++) {
+			const mid = (lo + hi) / 2;
+			if (seg(mid) < want) lo = mid;
+			else hi = mid;
+		}
+		const z1 = i === lines.length - 1 ? R : lo;
+		const depth = z1 - z0;
+		// the band painted on the floor in the line's colour: the circle between its edges, a metre in from each
+		const a0 = z0 + 1, a1 = z1 - 1, Rin = R - 1;
+		const band = new THREE.Shape();
+		const N = 16;
+		for (let j = 0; j <= N; j++) {
+			const z = a0 + ((a1 - a0) * j) / N;
+			band[j ? 'lineTo' : 'moveTo'](-Math.sqrt(Math.max(0, Rin * Rin - z * z)), -z);
+		}
+		for (let j = N; j >= 0; j--) {
+			const z = a0 + ((a1 - a0) * j) / N;
+			band.lineTo(Math.sqrt(Math.max(0, Rin * Rin - z * z)), -z);
+		}
+		inside.add(part(new THREE.ShapeGeometry(band).rotateX(-Math.PI / 2), mat(l.color, 1), 0, FLOOR_Y + 0.03, 0, false));
+		// the machines in a row along the band's middle (in the widest part of the outermost bands), as long as the
+		// circle leaves room at the row's outer edge
+		const d = Math.max(2, Math.min(8, depth * 0.5));
+		const zm = z0 <= -R + 1e-6 ? Math.max(z0 + d / 2 + 1.5, z1 - d / 2 - 2) : z1 >= R - 1e-6 ? Math.min(z1 - d / 2 - 1.5, z0 + d / 2 + 2) : (z0 + z1) / 2;
+		const half = Math.sqrt(Math.max(0, Rin * Rin - (Math.abs(zm) + d / 2) ** 2));
+		const items = DF_DRAW[l.id] ?? [];
+		const need = items.reduce((a, [, w]) => a + w + 1.5, -1.5);
+		const k = Math.min(1, (2 * half - 6) / Math.max(1, need));
+		let x = -half + 3;
+		const y0 = FLOOR_Y;
+		for (const [kind, w0, h] of items) {
+			const w = w0 * k, mx = x + w / 2;
+			if (kind === 's') {
+				const n = Math.max(1, Math.floor(w / 2.2));
+				for (let j = 0; j < n; j++) inside.add(box(1.8, h * (0.6 + ((j * 7) % 5) * 0.1), d, j % 2 ? '#cfc6b4' : l.color, x + 1.1 + j * 2.2, zm, 0.9).translateY(y0));
+			} else if (kind === 'r') {
+				const n = Math.max(1, Math.floor(w / 1.4));
+				for (let j = 0; j < n; j++) inside.add(box(0.5, h, d, l.color, x + 0.7 + j * 1.4, zm, 0.4).translateY(y0));
+			} else if (kind === 'a') {
+				const tank = new THREE.CylinderGeometry(h / 2, h / 2, w, 20).rotateZ(Math.PI / 2);
+				inside.add(part(tank, mat('#b8bec4', 0.35), mx, y0 + h / 2 + 0.3, zm));
+			} else if (kind === 'c') {
+				// a robot cell: its fence and the robot in it
+				inside.add(box(w - 0.4, 2, d, '#e0b23a', mx, zm, 0.6).translateY(y0));
+				inside.add(box(0.8, h, 0.8, l.color, mx, zm, 0.5).translateY(y0));
+			} else if (kind === 'k') inside.add(box(w, h, d + 1, '#e6eef0', mx, zm, 0.5).translateY(y0));
+			else inside.add(box(w, h, d, kind === 'm' ? l.color : '#d8d2c6', mx, zm, 0.6).translateY(y0));
+			x += w + 1.5 * k;
+		}
+		// the hub shop's hall crane: a girder across its band, under the shell
+		if (l.id === 'hubs') inside.add(part(new THREE.BoxGeometry(0.8, 1, depth - 1), mat('#e0b23a', 0.5), -half * 0.4, y0 + 9, zm));
+		z0 = z1;
+	}
 }
 
 // ── the works halls (design packages 3–4) ──────────────────────────────────────────────────────────────────────
@@ -797,6 +891,7 @@ function buildHex(plan, /** @type {number} */ seed) {
 		else if (site.kind === 'util120') utilInside(b.inside, BATTERY_KWH.util);
 		else if (site.kind === 'food120') foodInside(b.inside);
 		else if (hall) hallInside(hall, site.factory ?? '', b.inside);
+		else if (site.kind === 'factory120' && FACTORIES.find((f) => f.id === site.factory)?.dome) dfInside(b.inside);
 		else if (site.kind === 'factory120') factoryInside(site.factory ?? '', b.inside);
 		if (site.kind !== 'tower') bake(b.inside);
 		group.add(b.root);

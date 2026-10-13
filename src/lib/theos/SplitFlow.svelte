@@ -1,10 +1,10 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 7: one HEART, invested into a COOP: the MIND it creates goes half to the investor, half to the treasury as working capital. Band widths are to scale.
+	// Figure 6: one HEART, invested into a COOP: the MIND it creates goes half to the investor, half to the treasury as working capital. Band widths are to scale.
 </script>
 
 <div class="scroll">
-<svg viewBox="0 0 680 300" role="img" aria-label="One HEART invested into a COOP converts into one MIND and is gone. Half goes to the investor's wallet, half to the COOP's treasury as working capital. A tenth of the treasury half flows into the protocol's pools, baskets of 4 to 8 MINDs.">
+<svg viewBox="0 0 680 300" role="img" aria-label="One HEART invested into a COOP converts into one MIND and is gone. Half goes to the investor's wallet, half to the COOP's treasury as working capital. A tenth of the treasury half flows into the city's pools, baskets of 4 to 8 MINDs whose LP tokens the City COOP holds.">
 	<defs>
 		<linearGradient id="split-heart" x1="0" x2="1">
 			<stop offset="0" stop-color="#c8744f" stop-opacity="0.85" />
@@ -27,7 +27,7 @@
 	<rect x="512" y="196" width="160" height="80" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5" />
 	<text x="592" y="222" text-anchor="middle" class="node">COOP treasury</text>
 	<text x="592" y="240" text-anchor="middle" class="sub">working capital; a tenth flows</text>
-	<text x="592" y="256" text-anchor="middle" class="sub">into the protocol pools</text>
+	<text x="592" y="256" text-anchor="middle" class="sub">into the city's pools</text>
 
 	<rect x="512" y="22" width="160" height="76" rx="10" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5" />
 	<text x="592" y="52" text-anchor="middle" class="node">Your wallet</text>

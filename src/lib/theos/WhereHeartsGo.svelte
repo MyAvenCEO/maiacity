@@ -81,7 +81,7 @@
 		<circle cy="-14" r="11" fill="#26382c" />
 		<path d="M-17 22 C-17 0 17 0 17 22 Z" fill="#26382c" />
 		<text y="44" text-anchor="middle" class="node">Anna</text>
-		<text y="60" text-anchor="middle" class="sub">her AnnaHEARTS</text>
+		<text y="60" text-anchor="middle" class="sub">her annaHEARTS</text>
 	</g>
 
 	<!-- the COOPs -->

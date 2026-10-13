@@ -23,6 +23,15 @@
  * The design package (./specs.js DESIGN) sets the struts' timber, how the hubs are made, the utilities' machines and
  * whether the eight works stand in Dome120s or in plain halls (./specs.js hallOf, built here by `hallWork`).
  *
+ * The dome factory (./specs.js DOME_FACTORY, Samuel 2026-10-13 10:55): the village makes the parts of its domes itself
+ * in one Dome120 at the centre, on the glass & solar works' site, from lamellas, plate, float glass and cells bought at
+ * the border. It is the first dome built, right after the starter camp; its own shell is bought finished. From the
+ * month after its machines are in, every dome's struts, hubs, glazing, solar panes and cassettes come from it, as far
+ * as its lines and its store of a month's parts reach (the rest are still bought finished); its crew-hours come out of
+ * the month's building crew, its power from the grid line (less its own cells) until the geothermal plant runs, its
+ * upkeep with the kit's running.
+ * With it off the plan is the one before: the parts bought finished until the steel, glass and timber works stand.
+ *
  * The scheduler is a month-by-month resource model: each month the crew's hours, the cranes' and the telehandlers'
  * days are handed out to the steps under way in priority order; a step runs through its phases (footing, frame, shell,
  * inside) and finishes when its last phase does. Frost slows outdoor work from December to February; the food forest
@@ -32,7 +41,7 @@
  * Pure and deterministic: the same options give the same plan, in node or the browser. `buildPlan()` is cached.
  */
 import { LIVING, TOWER_HEX, VILLAGE, HEX_AREA, landOf } from './layout.js';
-import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, WORKS_MACHINES, DESIGN, PACKAGE, INSIDES, HALLS, HUBS_WELDED, HALL_PRICES, shellOf, towerShell, towerFloors, geodesicOf, hallOf } from './specs.js';
+import { KINDS, PRICES, DENSITY, EQUIPMENT, FITOUT, FITOUT_HOME, FLOOR_MATERIALS, ENERGY, FACTORIES, WORKS_MACHINES, DESIGN, PACKAGE, INSIDES, HALLS, HUBS_WELDED, HALL_PRICES, DOME_FACTORY, DF, DF_PARTS, DF_IMPORTS, DF_LAMELLAS, DF_OWN_LAMELLA, SOLAR_MONTHS, shellOf, towerShell, towerFloors, geodesicOf, hallOf } from './specs.js';
 import { FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from './stats.js';
 
 // ── sources ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -187,8 +196,9 @@ const WORKS_RAMP = 6;
 /** works whose furnace or kiln needs the geothermal plant's power to run; a steel works that welds the hubs from plate
  * (packages 2–4) has no furnace: it runs on the grid as soon as it stands */
 const NEEDS_GEO = new Set(INSIDES ? ['lime', 'clay'] : ['steel', 'lime', 'clay']);
-/** the works that make what the build-out buys most of; the others are built but staffed after the build-out */
-const MAKERS = new Set(['steel', 'glass', 'timber']);
+/** the works that make what the build-out buys most of; the others are built but staffed after the build-out. With the
+ * dome factory on, it makes the domes' parts (its crew counted by the part, below) and the timber works the CLT */
+const MAKERS = new Set(DOME_FACTORY ? ['timber'] : ['steel', 'glass', 'timber']);
 
 // ── the village, piece by piece ─────────────────────────────────────────────────────────────────────────────────
 
@@ -196,8 +206,13 @@ const MAKERS = new Set(['steel', 'glass', 'timber']);
 const LIVING_ORDER = ['living-e', 'living-se', 'living-sw', 'living-w', 'living-nw', 'living-ne'];
 /** the order of a living hex's domes: the first homes and a food dome, the utilities, then the rest, small homes first */
 const LIVING_SITES = ['h40-0', 'h40-1', 'foodW', 'h40-2', 'util', 'h80-1', 'h40-3', 'foodE', 'h80-0', 'h40-4', 'h80-2', 'h40-5', 'h80-3', 'h40-6', 'h40-7', 'h80-4', 'h40-8'];
-/** the works in the order they are built: what saves the most first */
-const WORKS_ORDER = ['steel', 'glass', 'timber', 'hemp', 'lime', 'recycling', 'bamboo', 'clay'];
+/** the works in the order they are built: what saves the most first. With the dome factory on, it is built first of
+ * all, right after the camp (makeSteps), and the others follow */
+const WORKS_ORDER = DOME_FACTORY ? ['timber', 'hemp', 'lime', 'recycling', 'steel', 'bamboo', 'clay'] : ['steel', 'glass', 'timber', 'hemp', 'lime', 'recycling', 'bamboo', 'clay'];
+/** which works are built after each settlement (by its place in LIVING_ORDER): [from, to) of WORKS_ORDER */
+const WORKS_AFTER = DOME_FACTORY ? [[0, 1], [1, 2], [2, 4], [4, 5], [5, 7]] : [[0, 2], [2, 3], [3, 5], [5, 6], [6, 8]];
+/** the dome factory's site: the glass & solar works' (./layout.js TOWER_HEX) */
+const DF_ID = 'glass';
 const HEX_LABEL = Object.fromEntries(VILLAGE.map((h) => [h.key, h.key === 'tower' ? 'Centre hex' : h.label]));
 const SHORT = (/** @type {string} */ key) => (HEX_LABEL[key] ?? key).replace(' hex', '');
 /** a settlement's COOP: each living hex's own settlement COOP; the centre hex's is the Village COOP (Samuel, 2026-10-13
@@ -240,12 +255,12 @@ function domeWork(kind, factory) {
 		{ id: 'footing', label: 'footing', h: sh.m.lime * R.footing.v, lifts: 0, pool: null, outdoor: true, eur: sh.eur.lime, t: { lime: sh.t.lime } },
 		{
 			id: 'frame', label: 'frame', h: liftsFrame * R.lift.v + g.struts * R.strut.v + g.hubs * R.hub.v, lifts: liftsFrame, set: big ? R.craneSet.v : 0, pool, outdoor: true,
-			eur: struts * PRICES.glulam.eur + sh.eur.steel, t: { glulam: struts * DENSITY.glulam, steel: sh.t.steel }, own: { timberM3: struts, steelT: sh.t.steel, timberEur: struts * PRICES.glulam.eur }
+			eur: struts * PRICES.glulam.eur + sh.eur.steel, t: { glulam: struts * DENSITY.glulam, steel: sh.t.steel }, own: { timberM3: struts, steelT: sh.t.steel, timberEur: struts * PRICES.glulam.eur, strutM3: struts }
 		},
 		{
 			id: 'shell', label: 'glass and hemp', h: (glazedPanels + g.count.hemp) * R.lift.v + sh.glazed * R.glazing.v + sh.north * R.hemp.v, lifts: glazedPanels + g.count.hemp, pool, outdoor: true,
 			eur: sh.eur.glass + sh.eur.pv + sh.eur.hemp + cassette * PRICES.cassette.eur, t: { glass: sh.t.glass, hemp: sh.t.hemp, glulam: cassette * DENSITY.glulam }, pvM2: sh.m.pv,
-			own: { glassM2: sh.glazed, pvM2: sh.m.pv, timberM3: cassette, timberEur: cassette * PRICES.cassette.eur }
+			own: { glassM2: sh.glazed, pvM2: sh.m.pv, timberM3: cassette, timberEur: cassette * PRICES.cassette.eur, northM2: sh.north }
 		}
 	];
 	// inside: what each kind of dome holds
@@ -254,7 +269,7 @@ function domeWork(kind, factory) {
 	if (kind === 'dome40' || kind === 'dome80') {
 		const clt = K.gfa * 0.28;
 		const lifts = Math.ceil((K.gfa * 2) / 20);
-		inside = { id: 'inside', label: 'homes inside', h: K.gfa * R.homes.v + gardenM2(K.zones) * R.garden.v + lifts * R.lift.v, lifts, pool: 'handler', eur: K.gfa * FITOUT_HOME * 0.5 + gardenM2(K.zones) * 40, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur } };
+		inside = { id: 'inside', label: 'homes inside', h: K.gfa * R.homes.v + gardenM2(K.zones) * R.garden.v + lifts * R.lift.v, lifts, pool: 'handler', eur: K.gfa * FITOUT_HOME * 0.5 + gardenM2(K.zones) * 40, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur, cltM3: clt } };
 		beds = K.people;
 		check = big ? 15000 : 8000;
 		use += beds * ENERGY.person + beds * ENERGY.water;
@@ -265,7 +280,7 @@ function domeWork(kind, factory) {
 		label = 'Dome120 food forest';
 	} else if (kind === 'util120' || kind === 'centre') {
 		const clt = UTIL_BUILT * 0.25;
-		inside = { id: 'inside', label: kind === 'centre' ? 'halls and utilities' : 'utilities and workshops', h: UTIL_BUILT * R.halls.v + UTIL_WATER * R.water.v, lifts: 15 * R.liftsPerDay.v, pool: 'mobile', eur: UTIL_BUILT * FITOUT.utilities * 0.5, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur } };
+		inside = { id: 'inside', label: kind === 'centre' ? 'halls and utilities' : 'utilities and workshops', h: UTIL_BUILT * R.halls.v + UTIL_WATER * R.water.v, lifts: 15 * R.liftsPerDay.v, pool: 'mobile', eur: UTIL_BUILT * FITOUT.utilities * 0.5, t: { glulam: clt * DENSITY.clt }, own: { timberM3: clt, timberEur: clt * PRICES.clt.eur, cltM3: clt } };
 		// the centre keeps the village's 40 MWh of batteries (village.js: the tower's data centre and water works go)
 		machines = kind === 'centre' ? TOWER_EQUIPMENT.filter((e) => /Batteries/.test(e.label)).reduce((a, e) => a + e.eur, 0) : EQUIPMENT.reduce((a, e) => a + e.eur, 0);
 		check = 30000;
@@ -279,8 +294,11 @@ function domeWork(kind, factory) {
 		machines = WORKS_MACHINES[factory]?.eur ?? 2e6;
 		check = 30000;
 		const run = FACTORY_RUN[factory];
-		use += run ? run.t * run.kwh : 0;
-		label = FACTORIES.find((f) => f.id === factory)?.label ?? 'Works';
+		const fa = FACTORIES.find((f) => f.id === factory);
+		// the dome factory at full output on two shifts (./specs.js DF), the other works at their FACTORY_RUN
+		use += fa?.dome ? DF.power.kwhFull : run ? run.t * run.kwh : 0;
+		label = fa?.label ?? 'Works';
+		if (fa?.dome) inside.label = 'its lines and machines going in';
 	}
 	phases.push(inside);
 	return { phases, beds, machines, check, label, energy: { solarKwhYear: sh.solar, useKwhYear: use, heatKwhYear: sh.heat } };
@@ -388,11 +406,20 @@ function makeSteps(o) {
 		const launched = prev ? (st) => st.allStarted(prev) : null;
 		const land = landM2(LIVING);
 		add({ id: `${key}/land`, hex: key, site: 'land', kind: 'land', label: `Land, ${(HEX_AREA / 1e4).toFixed(1)} ha`, phases: [{ id: 'buy', h: 0 }], land: LAND_EUR, maxCrew: 1, gate: launched });
-		add({
+		const campStep = add({
 			id: `${key}/camp`, hex: key, site: 'camp', kind: 'camp', label: i ? 'Moving the camp' : 'The starter camp',
 			phases: [{ id: 'set', label: i ? 'moving the containers' : 'setting up the containers', h: i ? containers * R.move.v : containers * R.container.v + 200, lifts: i ? containers * 2 : 0, pool: i ? 'mobile' : null }],
 			camp: true, maxCrew: 20, gate: launched
 		});
+		if (i === 0 && DOME_FACTORY) {
+			// the dome factory: the first dome, begun as soon as the starter camp stands, on the centre's land (bought at day
+			// 0); its own struts, hubs and glass are bought finished: it cannot make its parts before it stands
+			add({ id: 'tower/land', hex: 'tower', site: 'land', kind: 'land', label: `Land, ${(HEX_AREA / 1e4).toFixed(1)} ha`, phases: [{ id: 'buy', h: 0 }], land: LAND_EUR, maxCrew: 1 });
+			const site = TOWER_HEX.sites.find((x) => x.factory === DF_ID);
+			const df = dome('tower', site.id, 'factory120', DF_ID, () => campStep.state === 'done');
+			df.domeFactory = true;
+			df.dfServices = DF.power.gridEur + DF.certify;
+		}
 		const roadM2 = land.road ?? 0;
 		add({
 			id: `${key}/roads`, hex: key, site: 'roads', kind: 'roads', label: 'Roads, paths, heat and power lines',
@@ -406,7 +433,7 @@ function makeSteps(o) {
 		// the centre's pieces, after the first settlement
 		if (i === 0) {
 			const after1 = (st) => st.hexDone[LIVING_ORDER[0]] && st.m >= 12;
-			add({ id: 'tower/land', hex: 'tower', site: 'land', kind: 'land', label: `Land, ${(HEX_AREA / 1e4).toFixed(1)} ha`, phases: [{ id: 'buy', h: 0 }], land: LAND_EUR, maxCrew: 1, gate: after1 });
+			if (!DOME_FACTORY) add({ id: 'tower/land', hex: 'tower', site: 'land', kind: 'land', label: `Land, ${(HEX_AREA / 1e4).toFixed(1)} ha`, phases: [{ id: 'buy', h: 0 }], land: LAND_EUR, maxCrew: 1, gate: after1 });
 			add({
 				id: 'tower/geothermal', hex: 'tower', site: 'geothermal', kind: 'geothermal', label: 'Geothermal: three wells ~7 km each, the ORC plant and the heat loop',
 				phases: [{ id: 'drill', label: 'drilling the wells', h: 2000, fixed: 12, outdoor: true }, { id: 'plant', label: 'stimulating the rock, building the ORC', h: 1500, fixed: 6 }],
@@ -424,7 +451,7 @@ function makeSteps(o) {
 		}
 		// a works after each settlement from the first on, the steelworks first; the halls in the middle at 600 people
 		if (i >= 0) {
-			const ids = i === 0 ? WORKS_ORDER.slice(0, 2) : i === 1 ? WORKS_ORDER.slice(2, 3) : i === 2 ? WORKS_ORDER.slice(3, 5) : i === 3 ? WORKS_ORDER.slice(5, 6) : i === 4 ? WORKS_ORDER.slice(6) : [];
+			const ids = WORKS_AFTER[i] ? WORKS_ORDER.slice(...WORKS_AFTER[i]) : [];
 			for (const id of ids) {
 				const s = TOWER_HEX.sites.find((x) => x.factory === id);
 				const k = WORKS_ORDER.indexOf(id);
@@ -446,7 +473,7 @@ function makeSteps(o) {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const KINDS_EUR = ['kit', 'running', 'materials', 'machines', 'services', 'land'];
 /** the euro kinds, for the page */
-export const EUR_KINDS = { kit: 'Starter kit', running: 'Running the kit', materials: 'Materials', machines: 'Machines', services: 'Services', land: 'Land' };
+export const EUR_KINDS = { kit: 'Starter kit', running: DOME_FACTORY ? 'Running the kit and the dome factory' : 'Running the kit', materials: 'Materials', machines: 'Machines', services: 'Services', land: 'Land' };
 
 /**
  * Runs the month-by-month build: hands out the crew's hours and the lifts to the steps under way, starts the next
@@ -482,6 +509,8 @@ function schedule(o) {
 		s.t = {};
 		s.pvM2 = 0;
 		s.hubsOwnT = 0;
+		// the dome parts it takes, at their bought price, and how much of that the dome factory made
+		s.df = { parts: 0, made: 0 };
 	}
 	const st = {
 		m: 0,
@@ -496,6 +525,16 @@ function schedule(o) {
 	const works = {}; // id -> month it stood
 	let geoOn = null, peopleFull = null, end = null;
 	const maxM = o.maxMonths;
+	// the dome factory: the month its machines are in, and its tally
+	let dfOn = null;
+	const dfStep = steps.find((s) => s.domeFactory) ?? null;
+	const DF_KEYS = ['strut', 'hub', 'glazing', 'solar', 'cassette'];
+	const zeroParts = () => Object.fromEntries(DF_KEYS.map((k) => [k, 0]));
+	/** its parts in store, and what the domes took last month (what it plans this month's work by) */
+	const dfStock = zeroParts();
+	let dfLastDemand = zeroParts();
+	const dfTot = { made: zeroParts(), used: zeroParts(), bought: zeroParts(), importsEur: zeroParts(), boughtEur: zeroParts(), demandRun: zeroParts(), h: 0, kwh: 0, solarKwh: 0, gridKwh: 0, eurPower: 0, eurUpkeep: 0, lamellasOwnM3: 0, lamellaSaved: 0, cltSaved: 0, crewBound: 0 };
+	const dfCapMonth = Object.fromEntries(DF.lines.filter((l) => l.part).map((l) => [l.part, (l.cap ?? 0) / 12]));
 	for (let m = 0; m <= maxM; m++) {
 		st.m = m;
 		const cal = (o.startMonth - 1 + m) % 12; // 0 = January
@@ -514,7 +553,25 @@ function schedule(o) {
 		const human = pioneers * L.pioneer.v + Math.max(0, builders - pioneers) * L.hours.v;
 		const running = Object.keys(works).filter((id) => MAKERS.has(id) && m > works[id] && (!NEEDS_GEO.has(id) || (geoOn !== null && m > geoOn)));
 		const worksH = running.length * L.jobs.v * 140;
-		let pool = Math.max(0, human - worksH) + people * o.avenH;
+		// the dome factory runs from the month after its machines are in, its lines up to full output over DF.ramp months.
+		// It plans the month by what the domes took last month and keeps DF.stock months of each line's output in store;
+		// its crew (villagers and their Avens) comes out of the month's pool first, never more than DF.crewShare of it
+		const dfRun = dfOn !== null && m > dfOn && o.ownWorks;
+		const dfAge = dfRun ? Math.min(1, (m - dfOn) / DF.ramp) : 0;
+		const gross = Math.max(0, human - worksH) + people * o.avenH;
+		const dfMake = zeroParts();
+		let dfH = 0;
+		if (dfRun) {
+			for (const k of DF_KEYS) dfMake[k] = Math.min(dfCapMonth[k] * dfAge, Math.max(0, dfLastDemand[k] + dfCapMonth[k] * DF.stock - dfStock[k]));
+			const partsH = DF_KEYS.reduce((a, k) => a + dfMake[k] * DF_PARTS[k].h, 0);
+			const room = Math.max(0, gross * DF.crewShare - DF.baseH);
+			if (partsH > room) {
+				for (const k of DF_KEYS) dfMake[k] *= room / partsH;
+				dfTot.crewBound++;
+			}
+			dfH = Math.min(partsH, room) + DF.baseH;
+		}
+		let pool = Math.max(0, gross - dfH);
 		const poolStart = pool;
 		const lifts = { mobile: mobiles * LIFTS_MONTH, handler: handlers * LIFTS_MONTH };
 		const liftsStart = { ...lifts };
@@ -621,17 +678,58 @@ function schedule(o) {
 			const age = m - works[id];
 			supply[id] = Math.min(1, age / WORKS_RAMP);
 		}
-		const demand = { steelT: 0, glassM2: 0, timberM3: 0 };
-		for (const { p, dp } of want) if (p.own) for (const k of Object.keys(demand)) demand[k] += (p.own[k] ?? 0) * dp;
+		const demand = { steelT: 0, glassM2: 0, timberM3: 0, strutM3: 0, pvM2: 0, northM2: 0, cltM3: 0 };
+		for (const { s, p, dp } of want) if (p.own && !s.domeFactory) for (const k of Object.keys(demand)) demand[k] += (p.own[k] ?? 0) * dp;
 		const cover = {
 			steelT: supply.steel ? Math.min(1, (WORKS_OUT.steel.t * supply.steel) / Math.max(1e-9, demand.steelT)) : 0,
 			glassM2: supply.glass ? Math.min(1, (WORKS_OUT.glass.m2 * supply.glass) / Math.max(1e-9, demand.glassM2)) : 0,
 			timberM3: supply.timber ? Math.min(1, (WORKS_OUT.timber.t / DENSITY.glulam) * supply.timber / Math.max(1e-9, demand.timberM3)) : 0
 		};
+		// the dome parts this month's domes take (the dome factory's own shell apart: it is bought finished)
+		const dfDemand = { strut: demand.strutM3, hub: demand.steelT, glazing: demand.glassM2, solar: demand.pvM2, cassette: demand.northM2 };
+		// what the domes take from the store and this month's work; the rest is bought finished
+		const dfUsed = zeroParts(), dfCover = zeroParts();
+		if (dfRun)
+			for (const k of DF_KEYS) {
+				const have = dfStock[k] + dfMake[k];
+				dfUsed[k] = Math.min(have, dfDemand[k]);
+				dfCover[k] = dfDemand[k] > 1e-9 ? dfUsed[k] / dfDemand[k] : 0;
+				dfStock[k] = have - dfUsed[k];
+				dfTot.demandRun[k] += dfDemand[k];
+			}
+		dfLastDemand = dfDemand;
+		const timberCap = DOME_FACTORY && supply.timber ? (WORKS_OUT.timber.t / DENSITY.glulam) * supply.timber : 0;
+		const coverClt = timberCap ? Math.min(1, timberCap / Math.max(1e-9, demand.cltM3)) : 0;
+		// lamellas the timber works has left after the CLT, for this month's struts (bought lamellas make up the rest)
+		const lamOwnM3 = Math.min(Math.max(0, timberCap - coverClt * demand.cltM3), DF_LAMELLAS * dfMake.strut);
+		const dfUnit = Object.fromEntries(DF_KEYS.map((k) => [k, DF_PARTS[k].eur]));
 		for (const { s, p, dp } of want) {
 			const fin = (p.eur ?? 0) * dp;
 			let saved = 0;
-			if (p.own) {
+			if (p.own && DOME_FACTORY) {
+				// what this step takes from the dome factory's store, each part at its border content instead of its bought price
+				const ow = p.own;
+				const q = { strut: ow.strutM3 ?? 0, hub: ow.steelT ?? 0, glazing: ow.glassM2 ?? 0, solar: ow.pvM2 ?? 0, cassette: ow.northM2 ?? 0 };
+				for (const k of DF_KEYS) {
+					if (!q[k]) continue;
+					const qty = q[k] * dp, P = DF_PARTS[k];
+					// the step pays for the parts it takes at their border content (the Village COOP's dome factory hands
+					// them on at cost)
+					const used = s.domeFactory ? 0 : dfCover[k] * qty;
+					s.df.parts += qty * P.bought;
+					s.df.made += used * P.bought;
+					saved += used * (P.bought - dfUnit[k]);
+					dfTot.used[k] += used;
+					dfTot.bought[k] += qty - used;
+					dfTot.boughtEur[k] += (qty - used) * P.bought;
+					if (k === 'hub') s.hubsOwnT += used;
+				}
+				if (ow.cltM3) {
+					const c = coverClt * dp * Math.max(0, ow.timberEur - ow.cltM3 * OWN.timberM3);
+					saved += c;
+					dfTot.cltSaved += c;
+				}
+			} else if (p.own) {
 				const ow = p.own;
 				if (ow.steelT) saved += cover.steelT * ow.steelT * dp * (PRICES.hubs.eur - OWN.steelT);
 				if (ow.steelT && o.ownWorks) s.hubsOwnT += cover.steelT * ow.steelT * dp;
@@ -646,6 +744,43 @@ function schedule(o) {
 			hexM[s.hex] += fin - saved;
 			for (const [k, v] of Object.entries(p.t ?? {})) s.t[k] = (s.t[k] ?? 0) + v * dp;
 			s.pvM2 += (p.pvM2 ?? 0) * dp;
+		}
+		// the dome factory's month: the parts it made (their crew-hours came out of the pool at the month's start), its power
+		// from the grid line less its own cells until the geothermal plant runs, its upkeep; on the Village COOP's bill
+		let dfMonth = null;
+		if (dfRun) {
+			const kwh = DF_KEYS.reduce((a, k) => a + dfMake[k] * DF_PARTS[k].kwh, 0) + DF.baseKwh;
+			const solar = (dfStep?.energy?.solarKwhYear ?? 0) * SOLAR_MONTHS[cal];
+			const geo = geoOn !== null && m > geoOn;
+			const grid = geo ? 0 : Math.max(0, kwh - solar);
+			const eurPower = grid * DF.power.eurKwh;
+			const eurUpkeep = (DF.machines * DF.upkeep) / 12;
+			// what it bought at the border for this month's parts, less what the domes paid for the parts they took: the
+			// store's change, on the dome factory's (the Village COOP's) bill; the timber works' lamellas cost less
+			const lamSave = lamOwnM3 * (DF_IMPORTS.lamella.eur - DF_OWN_LAMELLA);
+			const stockEur = DF_KEYS.reduce((a, k) => a + (dfMake[k] - dfUsed[k]) * dfUnit[k], 0) - lamSave;
+			for (const k of DF_KEYS) {
+				dfTot.made[k] += dfMake[k];
+				dfTot.importsEur[k] += dfMake[k] * dfUnit[k];
+			}
+			dfTot.h += dfH;
+			dfTot.kwh += kwh;
+			dfTot.solarKwh += Math.min(kwh, solar);
+			dfTot.gridKwh += grid;
+			dfTot.eurPower += eurPower;
+			dfTot.eurUpkeep += eurUpkeep;
+			dfTot.lamellasOwnM3 += lamOwnM3;
+			dfTot.lamellaSaved += lamSave;
+			if (dfStep) {
+				dfStep.eur.materials += stockEur;
+				eurM.materials += stockEur;
+				hexM[dfStep.hex] += stockEur;
+			}
+			if (end === null) {
+				eurM.running += eurPower + eurUpkeep;
+				hexM.tower += eurPower + eurUpkeep;
+			}
+			dfMonth = { made: dfMake, used: dfUsed, demand: dfDemand, cover: dfCover, stock: { ...dfStock }, age: dfAge, h: dfH, kwh, grid, eur: eurPower + eurUpkeep };
 		}
 		// running the kit, shared by the settlements by the hours they took
 		const usedH = poolStart - pool;
@@ -665,8 +800,12 @@ function schedule(o) {
 				s.state = 'done';
 				s.end = m;
 				s.prog[s.prog.length - 1] = 1;
-				const svc = (s.check ?? 0) + (s.kind === 'geothermal' ? s.services + (s.grid ?? 0) : 0) + (s.kind === 'tower' ? s.services ?? 0 : 0);
+				let svc = (s.check ?? 0) + (s.kind === 'geothermal' ? s.services + (s.grid ?? 0) : 0) + (s.kind === 'tower' ? s.services ?? 0 : 0);
 				if (s.kind === 'geothermal') geoOn = m;
+				if (s.domeFactory) {
+					dfOn = m;
+					svc += s.dfServices ?? 0;
+				}
 				s.eur.machines += s.machines ?? 0;
 				s.eur.services += svc;
 				eurM.machines += s.machines ?? 0;
@@ -700,6 +839,8 @@ function schedule(o) {
 		const standing = steps.filter((s) => s.state === 'done' && !s.hall && s.phases.some((p) => p.id === 'shell')).length;
 		const hallsUp = steps.filter((s) => s.state === 'done' && s.hall).length;
 		const framing = steps.filter((s) => s.state === 'run' && s.phases.some((p) => p.id === 'shell')).length;
+		// the domes standing that the dome factory made most of (by the value of their parts; the factory itself apart)
+		const fromDF = DOME_FACTORY ? steps.filter((s) => s.state === 'done' && !s.hall && !s.domeFactory && s.df.parts > 0 && s.df.made >= 0.5 * s.df.parts).length : 0;
 		months.push({
 			m,
 			year: Math.floor(m / 12) + 1,
@@ -717,9 +858,13 @@ function schedule(o) {
 			cum: { ...cum },
 			cumTotal: KINDS_EUR.reduce((a, k) => a + cum[k], 0),
 			hexCum: { ...hexCum },
-			hours: { pool: poolStart, used: usedH, avens: people * o.avenH, worksJobs: running.length * L.jobs.v },
+			hours: { pool: poolStart, used: usedH, avens: people * o.avenH, worksJobs: running.length * L.jobs.v, domeFactory: dfH },
 			lifts: { crane: (slots.reduce((a, x) => a + x.used, 0) + liftsStart.mobile - lifts.mobile) / RATES.liftsPerDay.v, craneCap: cranes * 21, handler: (liftsStart.handler - lifts.handler) / RATES.liftsPerDay.v, handlerCap: handlers * 21 },
-			works: running,
+			// the works running for the engine (sandbox-9 ramp.js): with the dome factory on, it stands for the glass and the
+			// steel plants (it lays the glass and welds the hubs) and the timber works for the timber
+			works: DOME_FACTORY && dfRun ? [...running, 'glass', 'steel'] : running,
+			domeFactory: DOME_FACTORY ? { stands: dfOn !== null && m >= dfOn, runs: dfRun, ...(dfMonth ?? {}) } : null,
+			domesFromDF: fromDF,
 			geothermal: geoOn !== null && m >= geoOn,
 			forestHa: steps.filter((s) => s.forestHa && s.state !== 'wait').reduce((a, s) => a + s.forestHa * Math.min(1, s.prog[s.prog.length - 1] ?? 0), 0),
 			solarKwhYear: steps.filter((s) => s.state === 'done' && s.energy).reduce((a, s) => a + s.energy.solarKwhYear, 0) + (campOn ? kit.filter((k) => k.kwp).reduce((a, k) => a + k.n * k.kwp * 1000, 0) : 0)
@@ -732,7 +877,7 @@ function schedule(o) {
 			break;
 		}
 	}
-	return { steps, months, end, peopleFull, geoOn, campGone, works, kitEur, runEurMonth, cranes, towers, handlers, campBeds };
+	return { steps, months, end, peopleFull, geoOn, campGone, works, kitEur, runEurMonth, cranes, towers, handlers, campBeds, dfOn, dfTot, dfStep };
 }
 
 // ── the plan ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -895,6 +1040,9 @@ function planFor(opts = {}) {
 			t: Object.fromEntries(Object.entries(s.t).map(([k, v]) => [k, Math.round(v * 10) / 10])),
 			pvM2: Math.round(s.pvM2),
 			hubsOwnT: Math.round(s.hubsOwnT * 10) / 10,
+			domeFactory: !!s.domeFactory,
+			// the share of its dome parts (by their bought price) the dome factory made
+			fromDF: s.df.parts > 0 ? Math.round((1000 * s.df.made) / s.df.parts) / 1000 : 0,
 			eur: Object.fromEntries(Object.entries(eur).map(([k, v]) => [k, Math.round(v)])),
 			beds: s.beds ?? 0,
 			energy: s.energy ?? null,
@@ -960,7 +1108,8 @@ function planFor(opts = {}) {
 	// cast in package 1, welded by a fabricator in packages 2–4)
 	const hubsT = outSteps.filter((s) => !s.hall && s.kind !== 'tower' && s.phases.some((p) => p.id === 'frame')).reduce((a, s) => a + (s.t.steel ?? 0), 0);
 	const ownT = outSteps.reduce((a, s) => a + s.hubsOwnT, 0);
-	totals.hubs = { how: INSIDES ? 'welded from plate' : 'cast', t: hubsT, ownT, boughtT: hubsT - ownT, ownFrom: months.find((x) => x.works.includes('steel'))?.m ?? null, boughtEur: PRICES.hubs.eur, ownEur: OWN.steelT };
+	totals.hubs = { how: INSIDES ? 'welded from plate' : 'cast', t: hubsT, ownT, boughtT: hubsT - ownT, ownFrom: months.find((x) => x.works.includes('steel'))?.m ?? null, boughtEur: PRICES.hubs.eur, ownEur: DOME_FACTORY ? DF_PARTS.hub.eur : OWN.steelT, by: DOME_FACTORY ? 'the dome factory' : 'the steel works' };
+	totals.domeFactory = DOME_FACTORY ? dfTotals(r, outSteps, months) : null;
 
 	// what held the build back: the months the crew's hours ran out, and the months the tower cranes were all busy
 	const binds = { hours: months.filter((x) => x.hours.used >= x.hours.pool * 0.98).length, cranes: months.filter((x) => x.lifts.crane >= x.lifts.craneCap * 0.66).length, months: months.length };
@@ -991,6 +1140,74 @@ function planFor(opts = {}) {
 	};
 	cache.set(key, plan);
 	return plan;
+}
+
+/**
+ * The dome factory over the build-out: when it stood and ran, what it made and what was still bought finished, its
+ * crew-hours, power and euros, how many domes it made most of, and how hard its lines ran (the busiest twelve months
+ * against what each line makes a year).
+ */
+function dfTotals(r, outSteps, months) {
+	const T = r.dfTot;
+	const step = outSteps.find((s) => s.domeFactory) ?? null;
+	const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+	const keys = Object.keys(T.made);
+	const run = months.filter((x) => x.domeFactory?.runs);
+	// the busiest twelve months of what the domes took of each part while it ran, against what its line makes a year
+	const peak = {};
+	for (const k of keys) {
+		let best = 0, at = null;
+		for (let i = 0; i < run.length; i++) {
+			let s = 0;
+			for (let j = i; j < Math.min(run.length, i + 12); j++) s += run[j].domeFactory.demand?.[k] ?? 0;
+			if (s > best) (best = s), (at = run[i].m);
+		}
+		const line = DF.lines.find((l) => l.part === k);
+		peak[k] = { demand: best, from: at, cap: line?.cap ?? 0, share: line?.cap ? best / line.cap : 0, unit: DF_PARTS[k].unit, line: line?.label };
+	}
+	// the months the domes took more than it had of a part (the rest bought finished)
+	const short = Object.fromEntries(keys.map((k) => [k, run.filter((x) => (x.domeFactory.cover?.[k] ?? 1) < 0.999 && (x.domeFactory.demand?.[k] ?? 0) > 1e-6).length]));
+	const domes = outSteps.filter((s) => !s.hall && !s.domeFactory && s.phases.some((p) => p.id === 'shell'));
+	const last = months[months.length - 1];
+	const unit = Object.fromEntries(keys.map((k) => [k, DF_PARTS[k].eur]));
+	const leftover = Object.fromEntries(keys.map((k) => [k, T.made[k] - T.used[k]]));
+	return {
+		label: DF.label,
+		site: step ? step.site : null,
+		start: step?.start ?? null,
+		stands: r.dfOn,
+		runsFrom: r.dfOn === null ? null : r.dfOn + 1,
+		machines: DF.machines,
+		services: DF.power.gridEur + DF.certify,
+		ownShellEur: step ? step.eur.materialsFinished : 0,
+		made: T.made,
+		used: T.used,
+		bought: T.bought,
+		leftover,
+		leftoverEur: keys.reduce((a, k) => a + leftover[k] * unit[k], 0),
+		demandRun: T.demandRun,
+		importsEur: T.importsEur,
+		boughtEur: T.boughtEur,
+		imports: sum(T.importsEur) - T.lamellaSaved,
+		boughtFinished: sum(T.boughtEur),
+		boughtBefore: keys.reduce((a, k) => a + (T.bought[k] - (T.demandRun[k] - T.used[k])) * DF_PARTS[k].bought, 0),
+		savedParts: keys.reduce((a, k) => a + T.used[k] * DF_PARTS[k].bought, 0) - (sum(T.importsEur) - T.lamellaSaved),
+		cltSaved: T.cltSaved,
+		hours: T.h,
+		kwh: T.kwh,
+		solarKwh: T.solarKwh,
+		gridKwh: T.gridKwh,
+		eurPower: T.eurPower,
+		eurUpkeep: T.eurUpkeep,
+		lamellasOwnM3: T.lamellasOwnM3,
+		crewBound: T.crewBound,
+		peak,
+		short,
+		months: run.length,
+		domes: domes.length,
+		domesFromDF: last.domesFromDF,
+		domesPartly: domes.filter((s) => s.fromDF > 0 && s.fromDF < 0.5).length
+	};
 }
 
 /** what prefabrication changes: on-site hours and lifts down, bought elements up (estimates) */

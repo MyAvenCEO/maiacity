@@ -21,7 +21,7 @@
 	import { LIVING, TOWER_HEX, USES, VILLAGE, landOf } from './layout.js';
 	import { hexStats, siteCard, villageStats } from './stats.js';
 	import { DAYS, placeAll, sunShares } from './light.js';
-	import { DAY, DIET, ENERGY, GROWN, HALLS, KINDS, LAND_PERSON, NORTH, PRICES, SOURCES, TOWER, worksCompare } from './specs.js';
+	import { DAY, DF, DF_PARTS, DIET, DOME_FACTORY, ENERGY, FACTORIES, GROWN, HALLS, KINDS, LAND_PERSON, NORTH, PRICES, SOURCES, TOWER, worksCompare } from './specs.js';
 	import { FLOOR_COLOURS } from './scene.js';
 	import { BUILD_SOURCES, EUR_KINDS, KIT_GROUPS, LABOUR, RATES, buildPlan, monthAt, nowLine, phaseAt } from './buildout.js';
 
@@ -105,6 +105,25 @@
 	/** @type {any} */
 	const mo = $derived(plan ? monthAt(plan, month) : null);
 	const now = $derived(plan ? nowLine(plan, month) : '');
+	/** the dome factory at the month shown: what it is doing, and the share of the month's dome parts it made (by their bought price) */
+	const dfNow = $derived.by(() => {
+		const T = plan?.totals.domeFactory;
+		if (!T || !mo) return null;
+		const d = mo.domeFactory;
+		if (T.start === null || mo.m < T.start) return { text: 'Dome factory: begun once the camp stands' };
+		if (!d?.stands) {
+			const st = plan.steps.find((/** @type {any} */ x) => x.domeFactory);
+			const ph = st ? phaseAt(st, month) : null;
+			return { text: ph?.phase === 'inside' ? 'Dome factory: its lines and machines going in' : `Dome factory going up${ph && ph.phase !== 'none' ? ` (${st.phases.find((/** @type {any} */ x) => x.id === ph.phase)?.label ?? ph.phase})` : ''}` };
+		}
+		if (!d.runs) return { text: 'Dome factory: its lines start next month' };
+		const keys = /** @type {(keyof typeof DF_PARTS)[]} */ (Object.keys(DF_PARTS));
+		const want = keys.reduce((a, k) => a + (d.demand?.[k] ?? 0) * DF_PARTS[k].bought, 0);
+		const got = keys.reduce((a, k) => a + (d.used?.[k] ?? 0) * DF_PARTS[k].bought, 0);
+		return { text: want > 0 ? `Dome factory makes ${n0((100 * got) / want)}% of this month’s dome parts` : 'Dome factory running', pct: want > 0 ? got / want : null };
+	});
+	/** the dome factory's site, to fly to it */
+	const dfSite = DOME_FACTORY ? TOWER_HEX.sites.find((s) => FACTORIES.find((f) => f.id === s.factory)?.dome) : null;
 	const CAL = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 	/** the calendar month of month m from day 0 */
 	const calOf = (/** @type {number} */ m) => {
@@ -284,7 +303,8 @@
 				<dt>Crew</dt><dd>{n1(s.crew)} full-time on average, up to {s.crewMax}; {n0(s.hours)} crew-hours</dd>
 				<dt>Lifting</dt><dd>{n1(s.craneDays)} crane-days{s.handlerDays ? `, ${n1(s.handlerDays)} telehandler-days` : ''}</dd>
 				<dt>Materials</dt><dd>{Object.entries(s.t).filter(([, v]) => /** @type {number} */ (v) > 0).map(([k, v]) => `${k} ${tonnes(/** @type {number} */ (v))} t`).join(' · ')}{s.pvM2 ? ` · solar glass ${n0(s.pvM2)} m²` : ''}</dd>
-				<dt>Bought</dt><dd>{eur(s.eur.total)}: materials {eur(s.eur.materials)}{s.eur.worksSaved ? ` (${eur(s.eur.worksSaved)} saved by the village’s own works)` : ''}{s.eur.machines ? `, machines ${eur(s.eur.machines)}` : ''}{s.eur.services ? `, services ${eur(s.eur.services)}` : ''}</dd>
+				<dt>Bought</dt><dd>{eur(s.eur.total)}: materials {eur(s.eur.materials)}{s.eur.worksSaved ? ` (${eur(s.eur.worksSaved)} saved by the village’s own ${plan.totals.domeFactory ? 'dome factory and works' : 'works'})` : ''}{s.eur.machines ? `, machines ${eur(s.eur.machines)}` : ''}{s.eur.services ? `, services ${eur(s.eur.services)}` : ''}</dd>
+				{#if plan.totals.domeFactory && s.domeFactory}<dt>Its own parts</dt><dd>bought finished ({eur(plan.totals.domeFactory.ownShellEur)}): it cannot make them before it stands; its materials also carry its parts store ({eur(plan.totals.domeFactory.leftoverEur)} of parts left at the end, spares for repairs)</dd>{:else if plan.totals.domeFactory && s.phases.some((/** @type {any} */ p) => p.id === 'shell')}<dt>Its parts</dt><dd>{s.fromDF > 0 ? `${n0(100 * s.fromDF)}% from our dome factory (by their bought price), the rest bought finished` : 'bought finished: the dome factory was not running yet'}</dd>{/if}
 				{#if s.beds}<dt>Beds</dt><dd>{s.beds}</dd>{/if}
 			</dl>
 		</section>
@@ -312,7 +332,20 @@
 					<tr><td>A resident’s share</td><td></td><td class="num">{eur(T.perPerson)}</td></tr>
 				</tbody>
 			</table>
-			<p class="small">Materials are bought finished at Sandbox 6’s prices until the village’s own works make them ({eur(T.worksSaved)} saved); the kit is bought once and moves on to each settlement; running it is {eur(plan.kit.running.eurYear)} a year (estimate).</p>
+			<p class="small">Materials are bought finished at Sandbox 6’s prices until the village’s own {T.domeFactory ? 'dome factory and works make' : 'works make'} them ({eur(T.worksSaved)} saved); the kit is bought once and moves on to each settlement; running it is {eur(plan.kit.running.eurYear)} a year (estimate).</p>
+			{#if T.domeFactory}
+				{@const D = T.domeFactory}
+				{@const P = /** @type {Record<string, any>} */ (DF_PARTS)}
+				<h3>The dome factory <span class="sub">the Village COOP’s, at the centre</span></h3>
+				<p class="small">Begun {calOf(D.start)} as soon as the camp stood, its machines in by {calOf(D.stands)}; it makes parts from {calOf(D.runsFrom)}. <b>{D.domesFromDF} of the other {D.domes} domes</b> are built mostly from its parts{D.domesPartly ? ` (${D.domesPartly} more in part)` : ''}; the ones before it, and what its lines could not make in the busiest months, are bought finished.{mo?.domeFactory?.runs && dfNow ? ` In ${calOf(month)} ${dfNow.text.replace('Dome factory makes', 'it makes')}.` : ''}</p>
+				<table>
+					<thead><tr><th>Part</th><th class="num">made</th><th class="num">bought finished</th><th class="num">busiest year / line</th></tr></thead>
+					<tbody>
+						{#each Object.keys(D.made) as k (k)}<tr><td>{P[k].short}<small>{P[k].unit} · {n0(P[k].eur)} € from the border against {n0(P[k].bought)} € bought finished</small></td><td class="num">{n0(D.used[k])}</td><td class="num">{n0(D.bought[k])}</td><td class="num">{n0(100 * D.peak[k].share)}%</td></tr>{/each}
+					</tbody>
+				</table>
+				<p class="small">Imports for its parts {eur(D.imports)} instead of {eur(D.imports + D.savedParts)} bought finished; {n0(D.hours / 1000)}k crew-hours of villagers and their Avens (no wages), taken from the building crew; {gwh(D.kwh)} of power ({gwh(D.gridKwh)} from the grid line before the geothermal plant, {eur(D.eurPower)}), upkeep {eur(D.eurUpkeep)}; machines {eur(D.machines)}, the grid line and certificates {eur(D.services)}. {#if Object.values(D.peak).some((/** @type {any} */ x) => x.share > 1)}In the busiest twelve months the domes take more than two shifts make on the {Object.values(D.peak).filter((/** @type {any} */ x) => x.share > 1).map((/** @type {any} */ x) => `${x.line.toLowerCase()} line (${n0(100 * x.share)}%)`).join(' and ')}: that much is bought finished, or a third shift there makes it.{:else}One dome factory keeps up: in the busiest twelve months no line needs more than its two shifts.{/if}</p>
+			{/if}
 			<table>
 				<thead><tr><th>Year</th><th class="num">materials</th><th class="num">machines</th><th class="num">all</th></tr></thead>
 				<tbody>
@@ -373,6 +406,35 @@
 				{#each card.facts as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 				{#if cardSun}<dt>{card.hall ? 'Sun on its south roof' : 'Sun on its south glass'}</dt><dd>{n0(100 * cardSun.winter)}% of the sunny day on {DAYS.winter.label} ({n1(cardSun.winter * sun.dayHours.winter)} of {n1(sun.dayHours.winter)} h), {n0(100 * cardSun.equinox)}% on {DAYS.equinox.label}</dd>{/if}
 			</dl>
+			{#if card.df}
+				{@const F = card.df}
+				<h3>Its lines <span class="sub">two shifts, villagers and their Avens</span></h3>
+				<table>
+					<thead><tr><th></th><th class="num">a year</th><th class="num">floor</th><th class="num">machines</th></tr></thead>
+					<tbody>
+						{#each F.lines as l (l.id)}<tr><td><i style:background={l.color}></i>{l.label}{#if l.part}<small>{l.part.h ? `${l.part.h} crew-h and ` : ''}{l.part.kwh} kWh a {l.part.unit}</small>{/if}</td><td class="num">{l.cap ? `${n0(l.cap)} ${l.unit}` : ''}</td><td class="num">{l.m2 ? `${n0(l.m2)} m²` : ''}</td><td class="num">{eur(l.eur)}</td></tr>{/each}
+						<tr class="total"><td>The dome factory</td><td></td><td class="num">{n0(F.floor)} m²</td><td class="num">{eur(F.machines)}</td></tr>
+					</tbody>
+				</table>
+				<details>
+					<summary>The machines</summary>
+					<ul class="plain">{#each F.lines as l (l.id)}{#each l.machines as x (x.label)}<li>{#if x.url}<a href={x.url} target="_blank" rel="noreferrer">{x.label}</a>{:else}{x.label}{/if}: <b>{eur(x.eur)}</b>{x.est ? ' (estimate)' : ''}</li>{/each}{/each}</ul>
+				</details>
+				<h3>What it buys at the border</h3>
+				<table>
+					<tbody>
+						{#each F.imports as x (x.id)}<tr><td>{#if x.url}<a href={x.url} target="_blank" rel="noreferrer">{x.label}</a>{:else}{x.label}{/if}<small>{x.why}</small></td><td class="num">{x.eur < 1 ? x.eur.toFixed(3) : n1(x.eur)} €/{x.unit}{x.est ? '*' : ''}</td></tr>{/each}
+					</tbody>
+				</table>
+				<h3>What a dome takes from the border</h3>
+				<table>
+					<thead><tr><th></th><th class="num">bought finished</th><th class="num">with the dome factory</th></tr></thead>
+					<tbody>
+						{#each F.domes as d (d.D)}<tr><td>Dome{d.D}<small>{n0(d.goods.lamellasM3)} m³ of lamellas, {n0(d.goods.plateT)} t of plate, {n0(d.goods.floatT)} t of float glass, {n0(d.goods.pvbM2)} m² of PVB, {n0(d.goods.cellsKwp)} kWp of cells, {n0(d.goods.kvhM3)} m³ of C24, {n0(d.goods.hempM3)} m³ of hemp batts</small></td><td class="num">{eur(d.beforeEur)}</td><td class="num">{eur(d.afterEur)}</td></tr>{/each}
+					</tbody>
+				</table>
+				<p class="small">The shell’s parts only (the footing is the same either way). * an estimate from the sources; no labour is in any price.</p>
+			{/if}
 			{#if card.block && card.cap}
 				{@const B = card.block}
 				{@const c = /** @type {import("./specs.js").Cap} */ (card.cap)}
@@ -405,7 +467,7 @@
 				<tbody>
 					{#each card.zones.filter((/** @type {any} */ z) => z.m2 > 0) as z, k (k)}
 						<tr>
-							<td><i style:background={card.kind === 'tower' ? FLOOR_COLOURS[/** @type {keyof typeof FLOOR_COLOURS} */ (z.use)] : USES[z.use]?.map}></i>{z.label}{#if z.note}<small>{z.note}</small>{/if}</td>
+							<td><i style:background={z.color ?? (card.kind === 'tower' ? FLOOR_COLOURS[/** @type {keyof typeof FLOOR_COLOURS} */ (z.use)] : USES[z.use]?.map)}></i>{z.label}{#if z.note}<small>{z.note}</small>{/if}</td>
 							<td class="num">{n0(z.m2)} m²</td>
 						</tr>
 					{/each}
@@ -651,7 +713,8 @@
 			<ul class="plain">
 				{#each TOWER_HEX.sites.filter((s) => s.kind === 'factory120') as s (s.id)}
 					{@const run = stats.factoryRun[s.factory ?? '']}
-					<li><b>{s.name}</b>: {run.t.toLocaleString('en-US')} {run.unit} a year <small>{run.note}</small></li>
+					{#if FACTORIES.find((f) => f.id === s.factory)?.dome}<li><b>{s.name}</b>: {DF.lines.filter((l) => l.cap).map((l) => `${n0(l.cap ?? 0)} ${l.unit} ${l.label.toLowerCase()}`).join(', ')} a year <small>every dome’s parts, from bought lamellas, plate, float glass and cells</small></li>
+					{:else}<li><b>{s.name}</b>: {run.t.toLocaleString('en-US')} {run.unit} a year <small>{run.note}</small></li>{/if}
 				{/each}
 			</ul>
 			<p class="small">The hex’s own fields give a part of what the works use; the rest comes from the farms and forests round the village.</p>
@@ -704,8 +767,9 @@
 			<div class="counts">
 				<span><b>{n0(mo.people)}</b> people</span>
 				<span><b>{n0(mo.beds)}</b> beds{mo.campBeds ? ` (${mo.campBeds} in the camp)` : ''}</span>
-				<span><b>{mo.domes}</b> of {plan.totals.domes} domes{plan.totals.halls ? ` · ${mo.halls} of ${plan.totals.halls} halls` : ''}{mo.framing ? `, ${mo.framing} going up` : ''}</span>
+				<span><b>{mo.domes}</b> of {plan.totals.domes} domes{plan.totals.halls ? ` · ${mo.halls} of ${plan.totals.halls} halls` : ''}{plan.totals.domeFactory ? ` · ${mo.domesFromDF} from our dome factory` : ''}{mo.framing ? `, ${mo.framing} going up` : ''}</span>
 				<span><b>{eur(mo.cumTotal)}</b> spent</span>
+				{#if dfNow}<button class="dfchip" class:on={mo.domeFactory?.runs} onclick={() => { if (dfSite) { world?.pick(dfSite.id, 'tower'); world?.focusSite(dfSite.id, 'tower'); } }}>{dfNow.text}</button>{/if}
 			</div>
 			<div class="kinds">
 				{#each Object.entries(EUR_KINDS) as [k, label] (k)}<span>{label} <b>{eur(mo.cum[k])}</b></span>{/each}
@@ -1107,6 +1171,19 @@
 		flex-wrap: wrap;
 		gap: 0.1rem 0.9rem;
 		font-variant-numeric: tabular-nums;
+	}
+	.dfchip {
+		border: 1px solid rgb(31 42 35 / 0.18);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.6);
+		padding: 0.05rem 0.55rem;
+		font-size: 0.72rem;
+		max-width: 100%;
+		text-align: left;
+	}
+	.dfchip.on {
+		background: #9fd0dc;
+		border-color: #6d9aa6;
 	}
 	.kinds {
 		font-size: 0.68rem;
