@@ -1,39 +1,189 @@
 <script>
 	import { base } from '$app/paths';
 	import Sequence from '$lib/docs/Sequence.svelte';
-	import { CHANGES, TRIPS } from '$lib/docs/avendb.js';
-
-	const PR = 'https://github.com/MyAvenCEO/maiacity/pull/';
+	import { TRIPS } from '$lib/docs/avendb.js';
 
 	const answers = [
 		{
+			short: 'Yes',
 			q: 'Is it one backend for data and blobs?',
 			a: 'Yes. An edit is a small blob and a film is a big one. Both are named by their BLAKE3 hash, kept in the same iroh store, moved by the same protocol and backed up to the same bucket.'
 		},
 		{
+			short: 'No',
+			q: 'Can two edits conflict?',
+			a: 'No. Every entry is a CRDT: edits made at the same time on different devices merge the same way everywhere, whatever order they arrive in, and nothing waits for a server to order them.'
+		},
+		{
+			short: 'Yes',
 			q: 'Is the server only relay, sync and backup?',
 			a: 'Yes. Every write is signed and stored on a device first and counts from that moment. The server never orders or approves writes, so it needs no fast write path: what it needs is upload bandwidth for big files, and durable storage.'
 		},
 		{
-			q: 'Can it stream terabytes and replace Studio’s backend?',
-			a: 'Yes. Files are cut into 1 GiB pieces that are verified every 16 KiB, resume where they stopped and seek to any byte. Studio moves over later. The legacy media vault stays untouched.'
+			short: 'Yes',
+			q: 'Can it stream terabytes?',
+			a: 'Yes. Files are cut into 1 GiB pieces that are verified every 16 KiB, resume where they stopped and seek to any byte. The store that holds a note’s edits holds a 4 TB film the same way.'
 		},
 		{
+			short: 'Yes',
 			q: 'Is OPFS the browser’s one source of truth?',
-			a: 'Yes, built. Edits and keys live in OPFS, in a Web Worker where it has fast file access, and file pieces will join them. IndexedDB’s data moved over once and IndexedDB is gone. Of a big film, a browser keeps only what you watched or pinned.'
+			a: 'Yes. Edits, keys and file pieces live in OPFS, in a Web Worker where it has fast file access. Of a big film, a browser keeps only what you watched or pinned.'
 		},
 		{
+			short: 'Yes',
 			q: 'Is the bucket the server’s truth, its disk only a cache?',
 			a: 'Yes, and only the bucket counts. The server announces an edit, or says it keeps a file, only once the bucket holds it. Until then the device that wrote it sees the server lacks it, keeps it, and announces it again. Wipe the disk and the server rebuilds from the bucket.'
 		},
 		{
+			short: 'Yes',
 			q: 'Are caps and sync rules one concept?',
-			a: 'Yes, built. A cap says which vault may have what. A sync rule says what one of its devices wants of that, by the same selector, for any kind of data: kept whole, or fetched as it is read. A rule grants nothing. Proxies and originals are just the types or tags your app gives them: your phone keeps proxies, the SSD Mac keeps originals, the server keeps all.'
+			a: 'Yes. A cap says which vault may have what. A sync rule says what one of its devices wants of that, by the same selector, for any kind of data: kept whole, or fetched as it is read. A rule grants nothing. Proxies and originals are just the types or tags your app gives them: your phone keeps proxies, your desktop keeps originals, the server keeps all.'
 		},
 		{
+			short: 'Recovery',
 			q: 'What if every passkey is lost?',
 			a: 'The master recovery key is among the owners of every human vault from its founding. Its secret is kept offline by its person, and it adds a new device or passkey like any owner would. It is added and removed in Settings like any owner.'
 		}
+	];
+
+	// the page's own contents, one link per section
+	const contents = [
+		['local-first', 'Local first'],
+		['vaults', 'Vaults'],
+		['crdt', 'Entries and the CRDT'],
+		['history', 'History'],
+		['schemas', 'Schemas and lenses'],
+		['caps', 'Caps and cells'],
+		['ops', 'JSON ops'],
+		['system', 'The whole system'],
+		['node', 'Inside one node'],
+		['sync', 'Sync'],
+		['files', 'Files'],
+		['roundtrips', 'Roundtrips'],
+		['storage', 'Storage'],
+		['trust', 'Trust'],
+		['post-quantum', 'Post-quantum']
+	];
+
+	// Ink & Switch's seven ideals of local-first software, and how avenDB meets each
+	const ideals = [
+		['Fast', 'Reads and writes run on the device’s own store. No round trip to a server sits between you and your data.'],
+		[
+			'Multi-device',
+			'Your desktop, phone and browser each hold what their sync rules want of your vaults, and keep each other up to date.'
+		],
+		['Offline', 'An edit counts the moment it is saved. Offline, edits pile up and go out when a peer is reachable again.'],
+		[
+			'Collaboration',
+			'Every entry is a CRDT: edits made at the same time merge the same way on every device, with no server to order them.'
+		],
+		[
+			'Longevity',
+			'Your data is a log of signed edits in open formats (Loro documents, JSON Schema), kept on your devices. No service has to stay online for you to read it.'
+		],
+		[
+			'Privacy',
+			'End to end encrypted. The server and the bucket hold ciphertext only; keys stay on the devices of the people a vault shares with.'
+		],
+		[
+			'User control',
+			'A vault is owned by its passkeys. Caps say who may do what, and every device enforces them, the server too.'
+		]
+	];
+
+	const merges = [
+		['Text', 'Character by character: both insertions stay, in the same order on every device.'],
+		[
+			'A list of records (a note’s blocks, a checklist)',
+			'Rows are matched by their id: rows added on two devices both stay, and a row moved or removed is that row and no other.'
+		],
+		['Any other field', 'One value wins, and it is the same one on every device.']
+	];
+
+	const lines = [
+		['Propose from here', 'Starts a proposal from the version you are looking at, main or an older one.'],
+		['Accept into main', 'A merge write on main that builds on both lines: Loro combines them, nothing is lost.'],
+		['Make main match it', 'Accepts the proposal and makes main read exactly like it.'],
+		['Update from main', 'Brings what main gained since into the proposal.'],
+		['Restore', 'Puts back any older version, as a new write.'],
+		['Undo', 'Takes out one older edit by a three-way merge, keeping every change made after it.'],
+		['Make a variant', 'A new note with the line’s content and tags, and none of its history.']
+	];
+
+	const TODO_V1 = `{ "title": "Water the figs",
+  "done": false }`;
+
+	const TODO_V2 = `{ "title": "Water the figs",
+  "status": "doing" }`;
+
+	const TODO_LENS = `{ "lens": "Todo, v1 to v2",
+  "from": "307636b7…", "to": "9e9b2af2…",
+  "steps": [{ "convert": {
+    "from": ["done"], "to": ["status"],
+    "forward": [[{ "done": true },  { "status": "done" }],
+                [{ "done": false }, { "status": "open" }]],
+    "backward": [[{ "status": "done" },  { "done": true }],
+                 [{ "status": "open" },  { "done": false }],
+                 [{ "status": "doing" }, { "done": false }]]
+  } }] }`;
+
+	const CAP = `{ "name": "Tick work",
+  "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] },
+  "ops": [{ "op": "read" },
+          { "op": "set", "path": ["status"], "to": ["doing", "done"] }] }`;
+
+	const groups = [
+		['Owner', 'Everything, and share', 'The vault’s owners'],
+		['Editor', 'Read, create, set, tag, propose, merge', 'Someone who works on the entries'],
+		['Suggester', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor accepts'],
+		['Viewer', 'Read', 'A reader'],
+		['Public', 'Read, for everyone', 'Anything published: its key goes out in the clear'],
+		['Backup', 'Keep the ciphertext, read nothing', 'The server, by default'],
+		['Relay', 'Find the vault’s devices, keep nothing', 'The server, with backups off']
+	];
+
+	const QUERY = `{ "op": "query",
+  "where": { "all": [{ "type": ["todo"] }, { "tag": "garden" },
+                     { "path": ["status"], "ne": "done" }] },
+  "order": [["created", "desc"]], "limit": 20 }`;
+
+	const ANSWER = `{ "ok": { "rows": [{ "entry": "…", "type": "todo", "tags": ["garden"],
+                    "record": { "title": "Water the figs", "status": "doing" } }],
+          "count": 1 } }
+
+{ "refused": "NotAllowed",
+  "why": "the ops of the caps the vault acts through don't allow what it does" }`;
+
+	const reads = ['query', 'get', 'history', 'schemas', 'groups'];
+	const changes = [
+		'create',
+		'set',
+		'unset',
+		'insert',
+		'remove',
+		'move',
+		'tag',
+		'propose',
+		'merge',
+		'restore',
+		'undo',
+		'variant',
+		'batch'
+	];
+
+	const quantum = [
+		['Connections', 'TLS 1.3 with X25519MLKEM768 as the only key exchange, on every link between nodes.'],
+		[
+			'Signatures',
+			'ed25519 for devices or P-256 for passkeys, each beside SLH-DSA-SHA2-128f. A write counts only once its author’s SLH-DSA checkpoint covers it.'
+		],
+		['Keys sent to devices', 'Sealed boxes of X-Wing and Classic McEliece 6688128f together.'],
+		[
+			'Edits and files',
+			'XChaCha20-Poly1305 for edits and keys, ChaCha20-Poly1305 per 64 KiB segment for files, all with 256-bit keys.'
+		],
+		['Hashes', 'SHA-3 (cSHAKE256) for ids and what signatures sign, BLAKE3 for storage and transport.'],
+		['The bucket', 'Every object sealed again with a 256-bit key of the server’s, since the link to it is classical.']
 	];
 </script>
 
@@ -41,7 +191,7 @@
 	<title>avenDB architecture · Docs · maiaCITY</title>
 	<meta
 		name="description"
-		content="avenDB's storage architecture: one content-addressed backend for database edits and terabytes of media, synced device to device, backed up to a sealed bucket."
+		content="avenDB's architecture: a user-owned, local-first, post-quantum database. Vaults, CRDT entries with history, schemas and lenses, caps, sync between your devices, and terabytes of media backed up to a sealed bucket."
 	/>
 </svelte:head>
 
@@ -50,35 +200,18 @@
 
 	<header class="intro">
 		<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 13 October 2026</p>
-		<h1>avenDB Storage Architecture</h1>
+		<h1>avenDB Architecture</h1>
 		<p class="lede">
-			One content-addressed backend for database edits and multi-terabyte media, built the way iroh intends it. Every
-			write happens on a device first. The server relays, stays online for sync and keeps an encrypted backup on object
-			storage, without ever holding a key.
+			A user-owned, local-first database with post-quantum security. Every write happens on your device first and merges
+			with everyone else’s without a server deciding anything. The server relays, stays online for sync and keeps an
+			encrypted backup, without ever holding a key.
 		</p>
-		<p class="status">
-			<span>B1 and B2 built</span><span>B3 under way: the bucket is made</span><span>B4 and B5 next</span>
-		</p>
-	</header>
-
-	<section>
-		<p class="eyebrow">Latest</p>
-		<h2>What changed lately</h2>
-		<ol class="changes">
-			{#each CHANGES as c, i (i)}
-				<li>
-					<span class="when">{c.when}</span>
-					<p>
-						{c.what}
-						<span class="prs"
-							>{#each c.prs as n, j (n)}{j ? ', ' : ''}<a href="{PR}{n}" target="_blank" rel="noopener noreferrer">#{n}</a
-								>{/each}</span
-						>
-					</p>
-				</li>
+		<nav class="toc" aria-label="On this page">
+			{#each contents as [id, name] (id)}
+				<a href="#{id}">{name}</a>
 			{/each}
-		</ol>
-	</section>
+		</nav>
+	</header>
 
 	<section>
 		<p class="eyebrow">Short answers</p>
@@ -86,7 +219,7 @@
 		<div class="answers">
 			{#each answers as x (x.q)}
 				<div>
-					<span class="yes">Yes</span>
+					<span class="short">{x.short}</span>
 					<b>{x.q}</b>
 					<p>{x.a}</p>
 				</div>
@@ -94,29 +227,301 @@
 		</div>
 	</section>
 
-	<section>
-		<p class="eyebrow">The whole system</p>
-		<h2>Four kinds of place, one protocol stack</h2>
+	<section id="local-first">
+		<p class="eyebrow">Local first</p>
+		<h2>Your devices hold the data, the server only helps</h2>
 		<p class="prose-col">
-			Every device is a full avenDB node with its own store; in a browser it is kept in OPFS. The server is the same kind
-			of node, its bucket its source of truth and its disk only a cache. Devices talk to each other directly whenever the
-			network allows it, and through the relay when it does not. Browsers always go through the relay.
+			Every change happens on your device first: it is signed, encrypted, saved, and counts at once, online or not.
+			Devices then sync with each other, directly when they can and through the server when they can’t. The server is one
+			more peer: an always-online device of the avenCEO vault that relays, syncs and keeps an encrypted backup, under the
+			same rules as every other device and with no say over them.
+		</p>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Ideal</th><th>How avenDB meets it</th></tr>
+				</thead>
+				<tbody>
+					{#each ideals as [ideal, how] (ideal)}
+						<tr><td><b>{ideal}</b></td><td>{how}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="note prose-col">
+			The seven ideals are from Ink &amp; Switch’s essay <i>Local-first software</i> (2019).
+		</p>
+	</section>
+
+	<section id="vaults">
+		<p class="eyebrow">Identity</p>
+		<h2>A vault is an identity</h2>
+		<p class="prose-col">
+			Everything belongs to a vault, the way an account belongs to a person: a vault owns its entries, holds caps in other
+			vaults and has owners who may change it. There are three kinds.
+		</p>
+		<div class="cards">
+			<div>
+				<h3>Human vault</h3>
+				<p>
+					Yours. Owned by your passkeys. Its devices, your desktop, phone and browser, act for it, and each one unlocks
+					its keys with your passkey at every start. Nothing else can unlock them.
+				</p>
+			</div>
+			<div>
+				<h3>COOP vault</h3>
+				<p>
+					Owned by human vaults and other COOP vaults, with no devices of its own. Its owners act for it from their
+					devices.
+				</p>
+			</div>
+			<div>
+				<h3>Aven vault</h3>
+				<p>An agent, such as avenCEO. Owned like a COOP; its servers act for it but never govern it.</p>
+			</div>
+		</div>
+		<p class="prose-col">
+			The passkey is the root. A new device joins by a QR code and one passkey approval on a device you already have, or
+			by signing in with the passkey alone. The master recovery key, a software passkey kept offline, is among the owners
+			of every new human vault, so a vault whose passkeys are all lost can still add a new one; it is removed like any
+			owner. The first human vault founded through a new server owns avenCEO, and so the server.
+		</p>
+	</section>
+
+	<section id="crdt">
+		<p class="eyebrow">Entries and the CRDT</p>
+		<h2>Every entry merges, every log is a chain of hashes</h2>
+		<p class="prose-col">
+			An entry is one note, todo, card or profile. Its type and tags travel encrypted inside its writes. Each entry is a
+			Loro document, a CRDT: any device changes its own copy at any time, and two devices that hold the same edits read
+			the same entry, whatever order the edits arrived in.
+		</p>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Changed at the same time</th><th>How it merges</th></tr>
+				</thead>
+				<tbody>
+					{#each merges as [what, how] (what)}
+						<tr><td>{what}</td><td>{how}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="prose-col">
+			An edit’s id is the SHA-3 hash of the whole edit, and its signatures sign that id. Each edit names its log’s latest
+			edits, the frontier, as its parents, so every log is a small graph of hashes: no edit can be changed, dropped or
+			put in another order without every device noticing.
+		</p>
+		<figure>
+			<div class="frame">
+				<svg class="fig" viewBox="0 0 960 290" role="img" aria-label="Two devices edit one note at the same time">
+					<rect class="edit" x="30" y="115" width="210" height="60" rx="10" />
+					<text class="h" x="48" y="140">e1 · on both</text>
+					<text class="s" x="48" y="162">Buy milk</text>
+					<rect class="node" x="330" y="25" width="250" height="60" rx="10" />
+					<text class="h" x="348" y="50">e2 · desktop</text>
+					<text class="s" x="348" y="72">inserts “oat ”: Buy oat milk</text>
+					<rect class="node" x="330" y="205" width="250" height="60" rx="10" />
+					<text class="h" x="348" y="230">e3 · phone, offline</text>
+					<text class="s" x="348" y="252">appends “ and bread”</text>
+					<rect class="edit" x="680" y="115" width="260" height="60" rx="10" />
+					<text class="h" x="698" y="140">e4 · its parents: e2 and e3</text>
+					<text class="s" x="698" y="162">Buy oat milk and bread</text>
+					<path class="ctl" d="M240 145 C 285 145, 285 55, 322 55" />
+					<polygon class="arrow" points="320,49 330,55 320,61" />
+					<path class="ctl" d="M240 145 C 285 145, 285 235, 322 235" />
+					<polygon class="arrow" points="320,229 330,235 320,241" />
+					<path class="ctl" d="M580 55 C 630 55, 630 145, 672 145" />
+					<polygon class="arrow" points="670,139 680,145 670,151" />
+					<path class="ctl" d="M580 235 C 630 235, 630 145, 672 145" />
+					<text class="s" x="640" y="215">the phone comes back online:</text>
+					<text class="s" x="640" y="233">both hold e2 and e3</text>
+				</svg>
+			</div>
+			<figcaption>
+				The desktop and the phone change the same note at the same time. Once each holds both edits, both read “Buy oat
+				milk and bread”, whichever came first. The next edit, on either device, names both as its parents.
+			</figcaption>
+		</figure>
+	</section>
+
+	<section id="history">
+		<p class="eyebrow">History</p>
+		<h2>Main, proposals and variants</h2>
+		<p class="prose-col">
+			Nothing is overwritten: every write extends a line. Main is what everyone reads. A proposal is a line of its own
+			that starts from any version, so a change can be tried and reviewed without touching main.
+		</p>
+		<figure>
+			<div class="frame">
+				<svg class="fig" viewBox="0 0 960 230" role="img" aria-label="Main, a proposal and a variant">
+					<text class="h" x="40" y="46">main</text>
+					<line class="hl-main" x1="40" y1="70" x2="920" y2="70" />
+					<path class="hl-prop" d="M240 70 C 290 70, 290 160, 340 160 H 540 C 590 160, 590 70, 640 70" />
+					<path class="hl-var" d="M820 70 C 850 70, 872 120, 880 160" />
+					<circle class="dot" cx="100" cy="70" r="9" />
+					<circle class="dot" cx="240" cy="70" r="9" />
+					<circle class="dot" cx="440" cy="70" r="9" />
+					<circle class="dot" cx="640" cy="70" r="9" />
+					<circle class="dot" cx="820" cy="70" r="9" />
+					<circle class="dot-p" cx="380" cy="160" r="9" />
+					<circle class="dot-p" cx="500" cy="160" r="9" />
+					<circle class="dot-v" cx="880" cy="160" r="9" />
+					<text class="s" x="112" y="104">Propose from here</text>
+					<text class="s" x="330" y="196">a proposal: its own line, from any version</text>
+					<text class="s" x="652" y="104">Accept into main:</text>
+					<text class="s" x="652" y="122">a merge write</text>
+					<text class="s" x="600" y="40">Restore and Undo are new writes too</text>
+					<text class="s" x="760" y="196">a variant: a new note,</text>
+					<text class="s" x="760" y="214">with none of this history</text>
+				</svg>
+			</div>
+		</figure>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Action</th><th>What it does</th></tr>
+				</thead>
+				<tbody>
+					{#each lines as [action, what] (action)}
+						<tr><td><b>{action}</b></td><td>{what}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="note prose-col">
+			None of them asks for the passkey: the device’s own keys, unlocked at start, sign them.
+		</p>
+	</section>
+
+	<section id="schemas">
+		<p class="eyebrow">Schemas and lenses</p>
+		<h2>Change the shape, migrate nothing</h2>
+		<p class="prose-col">
+			Every record has a schema: a JSON Schema, named by its hash. When a schema changes, a lens says how a record of one
+			version reads as the other, both ways. No record is ever migrated: an edit stays in the version it was written in,
+			each app reads through the lens in its own version, and its edits go back as only what changed. So an old app and
+			a new one edit the same todo side by side.
+		</p>
+		<div class="codes">
+			<figure>
+				<pre><code>{TODO_V1}</code></pre>
+				<figcaption>Todo, version 1, as an old app reads it</figcaption>
+			</figure>
+			<figure>
+				<pre><code>{TODO_V2}</code></pre>
+				<figcaption>The same todo in version 2</figcaption>
+			</figure>
+			<figure class="wide">
+				<pre><code>{TODO_LENS}</code></pre>
+				<figcaption>The lens between them: “doing” has no word in version 1, so it reads as not done there.</figcaption>
+			</figure>
+		</div>
+		<ul class="prose-col">
+			<li>
+				<b>Public by default.</b> Schemas and lenses carry no data, so a vault publishes them in the clear, in its own log:
+				every device that syncs the vault reads them, with no key.
+			</li>
+			<li><b>Only the vault’s owners publish them</b>, so no one else can change what its entries mean.</li>
+			<li>
+				<b>Readers count only writes that fit.</b> A write whose result breaks its schema stays in the log and changes
+				nothing anyone sees, so a patched app can’t slip in a value its schema forbids.
+			</li>
+			<li><b>Documents and todos ship with every app</b>, two versions each, with a lens between them.</li>
+		</ul>
+	</section>
+
+	<section id="caps">
+		<p class="eyebrow">Caps and cells</p>
+		<h2>Caps say who may do what</h2>
+		<p class="prose-col">
+			A cap is a named group of JSON ops over a selector: which entries, by type, tag, author, entry or creation time, and
+			what may be done to them. A vault gives caps to other vaults, or to everyone. Every device checks every write
+			against its author’s caps, so a write no cap allows counts for no one.
+		</p>
+		<figure>
+			<pre><code>{CAP}</code></pre>
+			<figcaption>Bob may read the todos tagged work, and set their status to doing or done.</figcaption>
+		</figure>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Group</th><th>May</th><th>Typical for</th></tr>
+				</thead>
+				<tbody>
+					{#each groups as [name, may, who] (name)}
+						<tr><td><b>{name}</b></td><td>{may}</td><td>{who}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<h3>Cells: one key for what the same caps reach</h3>
+		<p class="prose-col">
+			Entries are not encrypted with one key each, nor with one key for the whole vault. A cell is all the entries the
+			same caps reach, and it has one key per generation. Share the todos tagged garden with Bob as an Editor, and that
+			cap makes one cell: every todo tagged garden. Bob gets its key once. Tag another todo garden and it moves into the
+			cell by a signed move, and Bob reads it. Revoke Bob’s cap and the cell moves to a new generation, with a key only
+			the remaining caps get: what Bob read before stays his, and nothing new reaches him. Entries no other cap reaches
+			stay in the vault’s own cell.
+		</p>
+	</section>
+
+	<section id="ops">
+		<p class="eyebrow">JSON ops</p>
+		<h2>One JSON op for every read and change</h2>
+		<p class="prose-col">
+			The page, the desktop app and agents all speak one language: a JSON op, run on the device, which answers with what
+			it read or did, or with why it refused. A query picks entries by the same selector caps use, then by their values.
+		</p>
+		<div class="codes">
+			<figure class="wide">
+				<pre><code>{QUERY}</code></pre>
+				<figcaption>The open todos tagged garden, newest first</figcaption>
+			</figure>
+			<figure class="wide">
+				<pre><code>{ANSWER}</code></pre>
+				<figcaption>What comes back: what it found, or a refusal and why</figcaption>
+			</figure>
+		</div>
+		<div class="chips">
+			<span class="kind">Reads</span>
+			{#each reads as op (op)}<code>{op}</code>{/each}
+		</div>
+		<div class="chips">
+			<span class="kind">Changes</span>
+			{#each changes as op (op)}<code>{op}</code>{/each}
+		</div>
+		<p class="prose-col">
+			Before it shows a button, the page asks <code>may</code>: would this device be allowed to make the op, on what it
+			holds now? So a button you see is a change you may make. A <code>batch</code> runs several ops as one.
+		</p>
+	</section>
+
+	<section id="system">
+		<p class="eyebrow">The whole system</p>
+		<h2>Desktop, phone, browser and server: one protocol stack</h2>
+		<p class="prose-col">
+			Every device is a full avenDB node with its own store: on disk on a desktop or a phone, in OPFS in a browser. The
+			server is the same kind of node, its bucket its source of truth and its disk only a cache. Devices talk to each
+			other directly whenever the network allows it, and through the relay when it does not. Browsers always go through
+			the relay.
 		</p>
 		<figure>
 			<div class="frame">
 				<svg class="fig" viewBox="0 0 960 560" role="img" aria-label="System map">
 					<rect class="node" x="20" y="30" width="290" height="180" rx="16" />
-					<text class="h" x="40" y="62">Mac · maiaCITY Studio</text>
+					<text class="h" x="40" y="62">Desktop</text>
 					<text class="s" x="40" y="88">avenDB device, native</text>
-					<text class="s" x="40" y="110">iroh FsStore on disk:</text>
-					<text class="s" x="40" y="130">edits in its store,</text>
+					<text class="s" x="40" y="110">one store on disk:</text>
+					<text class="s" x="40" y="130">edits and keys in it,</text>
 					<text class="s" x="40" y="150">file pieces as files</text>
 					<text class="s" x="40" y="180">keeps what its sync rules want</text>
 					<rect class="node" x="20" y="350" width="290" height="180" rx="16" />
 					<text class="h" x="40" y="382">Phone or browser</text>
-					<text class="s" x="40" y="408">avenDB device in the page (wasm)</text>
-					<text class="s" x="40" y="430">one store in OPFS, in a worker:</text>
-					<text class="s" x="40" y="450">its source of truth</text>
+					<text class="s" x="40" y="408">avenDB device, in the app or the page</text>
+					<text class="s" x="40" y="430">one store on the device,</text>
+					<text class="s" x="40" y="450">in OPFS in a browser</text>
 					<text class="s" x="40" y="480">streams files when they play,</text>
 					<text class="s" x="40" y="500">keeps what you pin</text>
 					<rect class="srv" x="390" y="150" width="300" height="250" rx="16" />
@@ -135,7 +540,7 @@
 					<text class="s" x="850" y="236" text-anchor="middle">maiacity-avendb, hel1</text>
 					<text class="m" x="850" y="272" text-anchor="middle">edits/</text>
 					<text class="m" x="850" y="294" text-anchor="middle">keys/</text>
-					<text class="m" x="850" y="316" text-anchor="middle">pieces/ (B3b)</text>
+					<text class="m" x="850" y="316" text-anchor="middle">pieces/</text>
 					<text class="s" x="850" y="348" text-anchor="middle">sealed, locked 7 days</text>
 					<text class="s" x="850" y="370" text-anchor="middle">the server's truth</text>
 					<line class="ctl" x1="120" y1="210" x2="120" y2="350" />
@@ -169,13 +574,13 @@
 		</figure>
 	</section>
 
-	<section>
+	<section id="node">
 		<p class="eyebrow">Inside one node</p>
 		<h2>The layering n0 intends, and what avenDB adds</h2>
 		<p class="prose-col">
-			iroh's own guidance: an endpoint, a router that hands each connection to a protocol by its ALPN, the app's own
-			protocol for app logic, and iroh-blobs for every byte. avenDB has all four: iroh-blobs carries McEliece keys and
-			files today, and will carry edits too.
+			iroh’s own guidance: an endpoint, a router that hands each connection to a protocol by its ALPN, the app’s own
+			protocol for app logic, and iroh-blobs for every byte. avenDB has all four: its sync protocol decides what moves,
+			and iroh-blobs carries the bytes of keys, files and edits.
 		</p>
 		<figure>
 			<div class="frame">
@@ -185,10 +590,10 @@
 					<text class="s" x="40" y="65">decides what counts, decrypts what this device may read, names the blobs each edit needs</text>
 					<rect class="band-n0" x="20" y="86" width="372" height="56" rx="10" />
 					<text class="h" x="40" y="111">Store: one iroh-blobs store per node</text>
-					<text class="s" x="40" y="131">FsStore on Mac and server, memory in browsers</text>
+					<text class="s" x="40" y="131">on disk on desktop, phone and server; in OPFS in a browser</text>
 					<rect class="band-av" x="408" y="86" width="372" height="56" rx="10" />
-					<text class="h" x="428" y="111">Around it</text>
-					<text class="s" x="428" y="131">OPFS in browsers, the sealed bucket on the server</text>
+					<text class="h" x="428" y="111">Behind it on the server</text>
+					<text class="s" x="428" y="131">the sealed bucket, its source of truth</text>
 					<rect class="band-av" x="20" y="152" width="372" height="66" rx="10" />
 					<text class="h" x="40" y="178">avendb/sync/1</text>
 					<text class="s" x="40" y="200">hellos, frontiers, announcements, holdings</text>
@@ -214,8 +619,41 @@
 		</figure>
 	</section>
 
-	<section>
-		<p class="eyebrow">What a blob is</p>
+	<section id="sync">
+		<p class="eyebrow">Sync</p>
+		<h2>Devices exchange only what differs</h2>
+		<p class="prose-col">
+			When a log changes, a node announces its digest to every peer that may hold it. A peer whose digest differs asks
+			with its frontier, the latest edits it has, and gets only what it lacks, in pages of about 4 MiB. Order never
+			matters, so any device can sync with any other, in any order, any number of times.
+		</p>
+		<div class="split">
+			<div>
+				<h3>Caps: what a device may have</h3>
+				<p>
+					A device receives an edit only if its vault may read it, or keep it as a backup. No peer sends what the
+					receiver’s caps don’t allow.
+				</p>
+			</div>
+			<div>
+				<h3>Sync rules: what it wants</h3>
+				<p>
+					A sync rule uses the same selector as a cap, for any data, and grants nothing: keep these whole, fetch those as
+					they are read. Your phone keeps proxies, your desktop keeps originals.
+				</p>
+			</div>
+			<div>
+				<h3>The server: Backup or Relay</h3>
+				<p>
+					By default the server keeps the ciphertext of every vault it backs up. With backups off it only relays: it
+					finds your devices and keeps nothing.
+				</p>
+			</div>
+		</div>
+	</section>
+
+	<section id="files">
+		<p class="eyebrow">Files</p>
 		<h2>An edit is a small blob, a file is a list of big ones</h2>
 		<div class="table">
 			<table>
@@ -322,7 +760,7 @@
 		</figure>
 	</section>
 
-	<section>
+	<section id="roundtrips">
 		<p class="eyebrow">Roundtrips</p>
 		<h2>Six journeys through the system</h2>
 		<p class="swipe">Swipe a diagram sideways to see all of it.</p>
@@ -337,7 +775,57 @@
 		{/each}
 	</section>
 
-	<section>
+	<section id="storage">
+		<p class="eyebrow">Where the bytes live</p>
+		<h2>Storage on each kind of place</h2>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Place</th><th>Small blobs (edits)</th><th>Big blobs (pieces)</th><th>Kept until</th></tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td>Desktop</td>
+						<td>Its store on disk</td>
+						<td>iroh files, with their outboards</td>
+						<td>No sync rule wants them, then garbage collection</td>
+					</tr>
+					<tr>
+						<td>Phone</td>
+						<td>Its store on the phone</td>
+						<td>What you watched or pinned</td>
+						<td>Played and not pinned, oldest first</td>
+					</tr>
+					<tr>
+						<td>Browser</td>
+						<td>OPFS, its one store, in a worker</td>
+						<td>OPFS, what you watched or pinned</td>
+						<td>Played and not pinned, oldest first</td>
+					</tr>
+					<tr>
+						<td>Server disk</td>
+						<td>A copy of what the bucket holds</td>
+						<td>A cache of recent pieces and their outboards</td>
+						<td>A cache: wiped any time, rebuilt from the bucket</td>
+					</tr>
+					<tr>
+						<td>Bucket</td>
+						<td><code>edits/</code> packs and <code>keys/</code>, each sealed</td>
+						<td><code>pieces/</code>, one object per piece</td>
+						<td>The source of truth: every version locked 7 days, replaced ones gone 7 days later</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<p class="prose-col">
+			Packing is what makes object storage work for a database. Hetzner bills every object as at least 64 KB and allows
+			750 requests a second per bucket. A million edits stored one per object would take 22 minutes of a fully busy
+			bucket to write or restore. Packed, they are a few hundred objects. Every object version is locked for 7 days in
+			compliance mode, so not even a compromised server can wipe the backup.
+		</p>
+	</section>
+
+	<section id="trust">
 		<p class="eyebrow">Trust</p>
 		<h2>What the server and the bucket can and cannot see</h2>
 		<div class="split">
@@ -348,6 +836,7 @@
 					<li>Vault and cap ids, and which device belongs to which vault</li>
 					<li>Sizes and BLAKE3 hashes of ciphertext</li>
 					<li>Which pieces get read, which hints at what plays</li>
+					<li>The vault’s schemas and lenses, which are public</li>
 				</ul>
 			</div>
 			<div class="no">
@@ -373,177 +862,31 @@
 		</p>
 	</section>
 
-	<section>
-		<p class="eyebrow">Where the bytes live</p>
-		<h2>Storage on each kind of place</h2>
-		<div class="table">
-			<table>
-				<thead>
-					<tr><th>Place</th><th>Small blobs (edits)</th><th>Big blobs (pieces)</th><th>Kept until</th></tr>
-				</thead>
-				<tbody>
-					<tr>
-						<td>Mac</td>
-						<td>Its store on disk</td>
-						<td>iroh FsStore files, with their outboards</td>
-						<td>No sync rule wants them, then garbage collection</td>
-					</tr>
-					<tr>
-						<td>Phone or browser</td>
-						<td>OPFS, its one store (IndexedDB moved over and gone)</td>
-						<td>OPFS, what you watched or pinned</td>
-						<td>Played and not pinned, oldest first</td>
-					</tr>
-					<tr>
-						<td>Server disk</td>
-						<td>A copy of what the bucket holds</td>
-						<td>A cache of recent pieces and their outboards</td>
-						<td>A cache: wiped any time, rebuilt from the bucket</td>
-					</tr>
-					<tr>
-						<td>Bucket</td>
-						<td><code>edits/</code> packs and <code>keys/</code>, each sealed</td>
-						<td><code>pieces/</code>, one object per piece (B3b)</td>
-						<td>The source of truth: every version locked 7 days, replaced ones gone 7 days later</td>
-					</tr>
-				</tbody>
-			</table>
-		</div>
+	<section id="post-quantum">
+		<p class="eyebrow">Post-quantum</p>
+		<h2>Quantum-proof, everywhere</h2>
 		<p class="prose-col">
-			Packing is what makes object storage work for a database. Hetzner bills every object as at least 64 KB and allows
-			750 requests a second per bucket. A million edits stored one per object would take 22 minutes of a fully busy
-			bucket to write or restore. Packed, they are a few hundred objects.
+			Every node runs in post-quantum-only mode: no classical-only path is left. Where a classical algorithm still
+			appears, a post-quantum one stands beside it, and a write counts only once the post-quantum half holds.
 		</p>
-	</section>
-
-	<section>
-		<p class="eyebrow">Numbers</p>
-		<h2>What it costs, in bytes and euros</h2>
 		<div class="table">
 			<table>
 				<thead>
-					<tr><th>Item</th><th>Value</th><th>Why it matters</th></tr>
+					<tr><th>Where</th><th>How</th></tr>
 				</thead>
 				<tbody>
-					<tr>
-						<td>Verification data (outboard)</td>
-						<td class="num">0.39 %</td>
-						<td>64 bytes per 16 KiB: 195 MB for a 50 GB file, 19.5 GB for 5 TB</td>
-					</tr>
-					<tr>
-						<td>Encryption overhead</td>
-						<td class="num">0.024 %</td>
-						<td>16 bytes per 64 KiB segment: 1.2 GB for 5 TB</td>
-					</tr>
-					<tr>
-						<td>Pieces in a 4 TB film</td>
-						<td class="num">3,727</td>
-						<td>Its HashSeq root is 119 KB; each piece is one bucket object of 64 parts</td>
-					</tr>
-					<tr>
-						<td>Largest object at Hetzner</td>
-						<td class="num">5 TB</td>
-						<td>1 GiB pieces stay far below it, and below the 10,000-part limit</td>
-					</tr>
-					<tr>
-						<td>5 TB of film in the bucket</td>
-						<td class="num">≈ €32.5 a month</td>
-						<td>Base €6.49 with 1 TB included, then about €6.47 per TB; requests are free</td>
-					</tr>
-					<tr>
-						<td>Upload from home at 54 Mbit/s</td>
-						<td class="num">≈ 41 h per TB</td>
-						<td>The real bottleneck for big media, not the server or the bucket</td>
-					</tr>
+					{#each quantum as [where, how] (where)}
+						<tr><td><b>{where}</b></td><td>{how}</td></tr>
+					{/each}
 				</tbody>
 			</table>
-		</div>
-	</section>
-
-	<section>
-		<p class="eyebrow">Building it</p>
-		<h2>Five steps, each one shippable</h2>
-		<ol class="phases">
-			<li class="done">
-				<span class="tag">B1 · blob core · built (<a href="{PR}530">#530</a>, <a href="{PR}532">#532</a>)</span>
-				<h3>Sealed blob v1 and edits that name files</h3>
-				<p>
-					Seekable encryption in the core crate with test vectors. Writes name the files they bring, their keys sealed in
-					the body, in the Lean model and the wire format, and T27 proves that files follow their edits: whoever may
-					receive the write may fetch the file, only its readers open it.
-				</p>
-			</li>
-			<li class="done">
-				<span class="tag"
-					>B2 · stores and sync rules · built (<a href="{PR}537">#537</a>, <a href="{PR}539">#539</a>,
-					<a href="{PR}541">#541</a>)</span
-				>
-				<h3>One iroh store per node, and what each peer wants</h3>
-				<p>
-					One blob store per node, on disk on the Mac and the server: a file is sealed as it is read, any byte range is
-					fetched through the cap gate, and the server keeps every file whole. Sync rules: the cap selector per device for
-					any data, sealed, marked on each entry by the vault's stewards and applied by every peer from the marks (T28,
-					T29). The browser's store in OPFS, in a worker of its own. The browser's file pieces in OPFS move to B4, with
-					the page's file API.
-				</p>
-			</li>
-			<li class="now">
-				<span class="tag">B3 · bucket · under way (<a href="{PR}557">#557</a>)</span>
-				<h3>The server on object storage</h3>
-				<p>
-					The bucket is made, locked and sealed. Next, B3a: the server writes every edit and key it takes to the bucket
-					first, and only then counts it; its disk becomes a cache it rebuilds from the bucket. Then B3b: one object per
-					file piece, and read-ahead range serving.
-				</p>
-			</li>
-			<li>
-				<span class="tag">B4 · streaming</span>
-				<h3>Play anything, anywhere</h3>
-				<p>
-					A decrypting reader for the Mac's player, a service worker that decrypts ranges in the browser, the browser's
-					file pieces in OPFS, and a Files page in each vault: drop a file, watch it sync, play it.
-				</p>
-			</li>
-			<li>
-				<span class="tag">B5 · Studio</span>
-				<h3>Studio on avenDB</h3>
-				<p>
-					Media, story and transcript entries, sync rules per device, ingest from cards and the watch folder. New work
-					goes to avenDB; the legacy media vault keeps running untouched beside it.
-				</p>
-			</li>
-		</ol>
-	</section>
-
-	<section>
-		<p class="eyebrow">Decided</p>
-		<h2>Two choices, made</h2>
-		<div class="decided">
-			<div>
-				<h3>A new bucket, locked</h3>
-				<p>
-					avenDB has a bucket of its own, <code>maiacity-avendb</code> in Helsinki, beside the media vault's. Every
-					object version is locked for 7 days in compliance mode: no key, not even the project's, deletes or overwrites
-					it before then, so even a compromised server can't wipe the backup. A replaced or deleted version goes 7 days
-					later.
-				</p>
-			</div>
-			<div>
-				<h3>Sealed, since the link is classical</h3>
-				<p>
-					Hetzner's endpoint refuses post-quantum key exchange; it speaks classical X25519 only. So the server seals
-					every object with a 256-bit key of its own before upload: what crosses the link, and what the bucket keeps, is
-					safe against a quantum computer, and Hetzner sees only noise. The key lives in the deploy's secrets, with a
-					copy kept offline.
-				</p>
-			</div>
 		</div>
 	</section>
 
 	<footer class="note">
-		Sources: iroh-blobs 0.103.1 and bao-tree 0.16.1 source, n0's blog and docs, n0's iroh-s3-bao-store experiment,
-		Hetzner Object Storage documentation and the bucket's own answers, and avenDB's and Studio's code as of 13 October
-		2026.
+		Sources: Ink &amp; Switch’s <i>Local-first software</i> (2019), Loro 1.16, iroh 1.3, iroh-blobs 0.103.1 and bao-tree
+		0.16.1 source, n0’s blog and docs, Hetzner Object Storage documentation, and avenDB’s code and Lean model as of 13
+		October 2026.
 	</footer>
 </main>
 
@@ -586,32 +929,34 @@
 		font-size: 1.15rem;
 		color: var(--ink-soft);
 	}
-	.status {
+	section {
+		display: grid;
+		gap: 1.25rem;
+		min-width: 0;
+		scroll-margin-top: 5rem;
+	}
+	section > h3 {
+		margin-top: 1rem;
+	}
+
+	/* the page's contents */
+	.toc {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
-		margin: 0;
 	}
-	.status span {
+	.toc a {
 		padding: 0.3rem 0.85rem;
 		border-radius: 999px;
 		background: var(--paper);
 		border: 1px solid var(--line);
 		font-size: 0.85rem;
 		font-weight: 500;
+		color: var(--ink);
+		text-decoration: none;
 	}
-	.status span:first-child {
-		background: color-mix(in srgb, var(--sage) 45%, var(--paper));
-		border-color: transparent;
-	}
-	.status span:nth-child(2) {
-		background: color-mix(in srgb, var(--mustard) 45%, var(--paper));
-		border-color: transparent;
-	}
-	section {
-		display: grid;
-		gap: 1.25rem;
-		min-width: 0;
+	.toc a:hover {
+		border-color: var(--ink);
 	}
 	section > .eyebrow {
 		margin-bottom: -0.5rem;
@@ -627,44 +972,6 @@
 	}
 	a {
 		text-underline-offset: 0.2em;
-	}
-
-	/* what changed lately */
-	.changes {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		border-radius: var(--radius);
-		background: var(--paper);
-		overflow: hidden;
-	}
-	.changes li {
-		display: grid;
-		grid-template-columns: 4.5rem 1fr;
-		gap: 1rem;
-		padding: 1rem 1.4rem;
-		border-bottom: 1px solid var(--line);
-	}
-	.changes li:last-child {
-		border-bottom: 0;
-	}
-	.changes .when {
-		font-size: 0.8rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--terracotta);
-		padding-top: 0.2rem;
-	}
-	.changes p {
-		margin: 0;
-		max-width: 60rem;
-	}
-	.prs {
-		margin-left: 0.35rem;
-		font-size: 0.9rem;
-		color: var(--ink-soft);
 	}
 
 	/* the short answers */
@@ -688,7 +995,7 @@
 		letter-spacing: -0.02em;
 		line-height: 1.15;
 	}
-	.answers .yes {
+	.answers .short {
 		font-size: 0.72rem;
 		font-weight: 600;
 		letter-spacing: 0.18em;
@@ -821,9 +1128,85 @@
 		fill: color-mix(in srgb, var(--mustard) 22%, var(--paper));
 		stroke: var(--line);
 	}
+	.fig .arrow {
+		fill: var(--ink);
+	}
+	.fig .hl-main {
+		stroke: var(--ink);
+		stroke-width: 3;
+		fill: none;
+	}
+	.fig .hl-prop {
+		stroke: var(--terracotta);
+		stroke-width: 3;
+		fill: none;
+	}
+	.fig .hl-var {
+		stroke: var(--muted);
+		stroke-width: 2;
+		stroke-dasharray: 6 5;
+		fill: none;
+	}
+	.fig .dot {
+		fill: var(--ink);
+	}
+	.fig .dot-p {
+		fill: var(--terracotta);
+	}
+	.fig .dot-v {
+		fill: var(--paper);
+		stroke: var(--muted);
+		stroke-width: 2;
+	}
 	.fig .band-av {
 		fill: color-mix(in srgb, var(--sage) 32%, var(--paper));
 		stroke: var(--line);
+	}
+
+	/* code: JSON as the engine reads it */
+	pre {
+		margin: 0;
+		padding: 1rem 1.25rem;
+		border-radius: var(--radius);
+		background: var(--paper);
+		overflow-x: auto;
+		font-family: var(--mono);
+		font-size: 0.82rem;
+		line-height: 1.5;
+	}
+	pre code {
+		font-size: inherit;
+	}
+	.codes {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+		gap: 1rem;
+	}
+	.codes .wide {
+		grid-column: 1 / -1;
+	}
+	.codes figure + figure {
+		margin-top: 0;
+	}
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.4rem;
+	}
+	.chips .kind {
+		min-width: 5.5rem;
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--ink-soft);
+	}
+	.chips code {
+		padding: 0.15rem 0.55rem;
+		border-radius: 6px;
+		background: var(--paper);
+		border: 1px solid var(--line);
 	}
 
 	/* tables */
@@ -878,6 +1261,10 @@
 	.split > div.no {
 		border-top-color: var(--terracotta);
 	}
+	.split p {
+		margin: 0;
+		color: var(--ink-soft);
+	}
 	ul {
 		margin: 0;
 		padding-left: 1.2rem;
@@ -889,58 +1276,13 @@
 		color: var(--ink-soft);
 	}
 
-	/* the phases */
-	ol.phases {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		border-left: 2px solid var(--line);
-		margin-left: 0.4rem;
-	}
-	ol.phases li {
-		position: relative;
-		padding: 0 0 1.75rem 1.6rem;
-		display: grid;
-		gap: 0.4rem;
-	}
-	ol.phases li::before {
-		content: '';
-		position: absolute;
-		left: -8px;
-		top: 0.3rem;
-		width: 14px;
-		height: 14px;
-		border-radius: 50%;
-		background: var(--cream);
-		border: 2px solid var(--ink);
-	}
-	ol.phases li.done::before {
-		background: var(--sage);
-	}
-	ol.phases li.now::before {
-		background: var(--mustard);
-	}
-	ol.phases .tag {
-		font-size: 0.8rem;
-		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--terracotta);
-	}
-	ol.phases p {
-		margin: 0;
-		color: var(--ink-soft);
-		max-width: 46rem;
-	}
-
-	/* the choices made */
-	.decided {
+	/* cards side by side */
+	.cards {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
 		gap: 1rem;
 	}
-	.decided > div {
+	.cards > div {
 		display: grid;
 		gap: 0.6rem;
 		align-content: start;
@@ -948,7 +1290,7 @@
 		border-radius: var(--radius);
 		background: color-mix(in srgb, var(--sage) 22%, var(--paper));
 	}
-	.decided p {
+	.cards p {
 		margin: 0;
 		color: var(--ink-soft);
 	}
@@ -956,10 +1298,6 @@
 	@media (max-width: 640px) {
 		main {
 			gap: 3rem;
-		}
-		.changes li {
-			grid-template-columns: 1fr;
-			gap: 0.25rem;
 		}
 	}
 </style>
