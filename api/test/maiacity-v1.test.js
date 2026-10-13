@@ -1,6 +1,6 @@
 // MaiaCity V1's rules (game/maiacity-v1/engine.js): HEARTS, the 50/50 MIND split, the pool, rent and the melt.
 import { expect, test } from "bun:test";
-import { DAY_MS, act, advance, ledgerOf, monthsAt, newGame, price, supply } from "../../game/maiacity-v1/engine.js";
+import { DAY_MS, act, advance, invariant, ledgerOf, monthsAt, newGame, price, quote, supply, weights } from "../../game/maiacity-v1/engine.js";
 
 const T0 = Date.UTC(2026, 9, 13);
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
@@ -95,6 +95,29 @@ test("a MIP may change every setting and every COOP: the clock speed, the mint w
   s = act(s, "A", { type: "propose", mip: { title: "Cheap", settings: { tentRent: 1 } } }, T0 + 3 * DAY_MS);
   expect(s.mips[2].status).toBe("accepted");
   expect(() => act(s, "A", { type: "propose", mip: { title: "Bad", coops: { nowhere: { name: "x" } } } }, T0 + 3 * DAY_MS)).toThrow();
+});
+
+test("the pool is a Balancer weighted basket of all three MINDs: equal weights, the invariant never falls", () => {
+  let s = grown(newGame(T0, { demurrage: 0, poolShare: 0.5 }));
+  for (const seat of ["A", "B"]) s = act(s, seat, { type: "mint" }, T0);
+  s = act(s, "A", { type: "invest", coop: "maia", amount: 14 }, T0);
+  s = act(s, "A", { type: "invest", coop: "settlement", amount: 10 }, T0);
+  s = act(s, "B", { type: "invest", coop: "village", amount: 16 }, T0);
+  expect(weights(s)).toEqual({ MAIA: 1 / 3, SETTLEMENT: 1 / 3, VILLAGE: 1 / 3 });
+  expect(price(s, "SETTLEMENT")).toBeCloseTo(3.5 / 2.5, 9);
+  const v0 = invariant(s);
+  // equal weights: Balancer's out-given-in is the pair's x·y = k, the fee taken from what goes in
+  const q = quote(s, "VILLAGE", "SETTLEMENT", 1);
+  expect(q).toBeCloseTo((2.5 * 0.997) / (4 + 0.997), 9);
+  s = act(s, "B", { type: "swap", token: "VILLAGE", to: "SETTLEMENT", amount: 1 }, T0);
+  expect(invariant(s)).toBeGreaterThan(v0);
+  // weights a MIP may change: MaiaMIND at 1/2 makes it dearer against the others at once
+  s = act(s, "A", { type: "propose", mip: { title: "Heavier MaiaMIND", settings: { weightMAIA: 2 } } }, T0);
+  s = act(s, "B", { type: "sign", number: 1 }, T0);
+  expect(weights(s).MAIA).toBeCloseTo(0.5, 9);
+  const out = quote(s, "SETTLEMENT", "MAIA", 1);
+  const bi = s.pool.SETTLEMENT, bo = s.pool.MAIA;
+  expect(out).toBeCloseTo(bo * (1 - Math.pow(bi / (bi + 0.997), 0.25 / 0.5)), 9);
 });
 
 // the shared game in the database (PGlite): seats, moves, locks
