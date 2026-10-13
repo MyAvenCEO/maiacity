@@ -11,6 +11,9 @@
 
 	/** @type {{ s: import('./db.js').Studio }} */
 	let { s } = $props();
+
+	// why it is shown as public
+	const PUBLIC = 'Public: a lens holds no data, so it goes in the clear to every device that syncs the vault';
 </script>
 
 {#snippet rules(/** @type {[any, any][]} */ rows, /** @type {string} */ from, /** @type {string} */ to)}
@@ -48,7 +51,8 @@
 
 <p class="lead soft">
 	Migrations that never rewrite a record: a lens joins two versions of a schema, both ways. A record stays as it was
-	written; an app on either version reads it through the lens, and its edits go back through it.
+	written; an app on either version reads it through the lens, and its edits go back through it. Lenses are public,
+	like schemas: every device that syncs the vault reads them, no key needed.
 </p>
 
 <div class="lenses">
@@ -60,6 +64,7 @@
 				<Icon name="lens" size={15} />
 				<b>{l.title}</b>
 				<span class="mono soft" title={l.id}>{short(l.id)}</span>
+				<span class="chip ok" title={PUBLIC}>Public</span>
 			</header>
 			<p class="joins">
 				<span class="chip">{s.schemaName(l.from)}</span>
