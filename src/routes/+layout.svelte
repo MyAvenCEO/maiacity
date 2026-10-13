@@ -19,7 +19,8 @@
 		{ href: `${base}/blog`, label: 'Blog' },
 		// the theOS paper keeps its own spelling, not the nav's capitals
 		{ href: `${base}/theos`, label: 'theOS', asIs: true },
-		{ href: `${base}/universe`, label: 'Universe' }
+		{ href: `${base}/universe`, label: 'Universe' },
+		{ href: `${base}/docs`, label: 'Docs' }
 	];
 
 	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public
@@ -202,6 +203,13 @@
 
 	.burger {
 		display: none;
+	}
+
+	/* a narrow desktop: the page links sit closer so the pill still holds them all */
+	@media (max-width: 900px) {
+		.pages a {
+			padding: 0.6rem 0.75rem;
+		}
 	}
 
 	/* Phone: logo · channels in the middle · menu button. The page links fold
