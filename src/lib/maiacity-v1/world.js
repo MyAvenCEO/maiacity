@@ -19,7 +19,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { pickup, solarPanel } from '$lib/models/village.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
-import { human } from '$lib/actors/human.ts';
+import { human, skinAt } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_EYES, ME_SEAT, packedVan } from './van.js';
@@ -431,13 +431,13 @@ export function person(seat) {
 		teeth.position.set(0, -0.0028, 0.0004);
 		const lip = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0026, 6, 20, Math.PI).rotateZ(Math.PI).scale(1, 0.62, 1), new THREE.MeshStandardMaterial({ color: 0xa8665a, roughness: 0.6 }));
 		smile.add(mouth, teeth, lip);
-		smile.position.copy(at(0, 1.6585, 0.1125));
+		smile.position.copy(at(0, 1.6585, skinAt(0, 1.6585) + 0.003));
 		const shine = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3c4, emissiveIntensity: 1.2 });
 		for (const x of [-1, 1]) {
 			const glint = new THREE.Mesh(new THREE.OctahedronGeometry(0.0035, 0), shine);
-			glint.position.copy(at(x * 0.032, 1.7145, 0.1145));
+			glint.position.copy(at(x * 0.032, 1.7145, skinAt(x * 0.032, 1.7145) + 0.0045));
 			const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.011, 0).scale(0.35, 1, 0.2), shine);
-			star.position.copy(at(x * 0.066, 1.744, 0.1));
+			star.position.copy(at(x * 0.066, 1.744, skinAt(x * 0.066, 1.744) + 0.017));
 			star.userData.twinkle = glint.userData.twinkle = true;
 			joyFace.add(glint, star);
 		}
