@@ -69,6 +69,10 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 		{ ...FIRST, build: () => batteryPack() },
 		{ v: 2, date: '2026-10-13', note: 'The BatteryCube: the Power Cube’s 27" frame with four BatteryPacks (~20.7 kWh) and a 6 kW inverter to 230 V, in place of the 2.3 m cabinet' }
 	],
+	batterypack: [
+		{ ...FIRST, date: '2026-10-13', build: () => working(batteryModule(5), 'explode') },
+		{ v: 2, date: '2026-10-13', note: 'Serviceable from the front: a closed shell and one L-shaped service drawer carrying every inner part; it plays its service move, the two side buttons pressed and the drawer pulled out and pushed home' }
+	],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
 		{ v: 2, date: '2026-10-06', note: 'A climbing dome of round logs with a platform and a slide at its middle; the swing on an arch of logs' }
@@ -167,7 +171,7 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
 	{ id: 'electrocube', label: 'ElectroCube', note: `${VILLAGE_INFO.powercube.note}. The Village COOP’s; every part its own in the Actors`, usedIn: 'MaiaCity V1', make: () => working(electroCube(), 'run') },
 	{ id: 'battery-pack', label: 'BatteryCube', note: `${VILLAGE_INFO.battery.note}. The Village COOP’s; every part its own in the Actors`, usedIn: 'MaiaCity V1', make: () => working(batteryCube(), 'off') },
-	{ id: 'batterypack', label: 'BatteryPack', note: 'our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holders, joined by copper contact plates the lid presses on, no welds; 460 × 480 × 125 mm, ~26 kg. Four fill a BatteryCube; drawn apart here', usedIn: 'The BatteryCube', make: () => working(batteryModule(), 'explode') },
+	{ id: 'batterypack', label: 'BatteryPack', note: 'our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holders, joined by copper contact plates pressed on by a clamp, no welds, all on one L-shaped service drawer that slides out of its shell when the two side buttons are pressed; 460 × 480 × 125 mm, ~26 kg. Four fill a BatteryCube; shown being serviced here', usedIn: 'The BatteryCube', make: () => working(batteryModule(), 'service') },
 	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() },
 	{
 		id: 'excavator',
