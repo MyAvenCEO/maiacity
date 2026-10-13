@@ -54,7 +54,7 @@ export const WORLDS: Place[] = withVersions([
 
 // MaiaCity itself, as games of its own, apart from the sandboxes: two players, HEARTS, COOPs and their MINDs
 export const CITY: Place[] = [
-	{ href: `${base}/app/maiacity-v1/`, label: 'MaiaCity V1', icon: 'coops', note: 'Two players, two COOPs, one hex, one tent, one pool' }
+	{ href: `${base}/app/maiacity-v1/`, label: 'MaiaCity V1', icon: 'coops', note: 'Two players, three COOPs, one hex, one tent, one Balancer pool', cover: `${base}/maiacity-v1/cover.jpg` }
 ];
 
 export const READ: Place[] = [
