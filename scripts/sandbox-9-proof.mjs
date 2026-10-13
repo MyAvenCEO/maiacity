@@ -23,6 +23,10 @@
  *   --out <dir>                                   write proof.md and proof.csv elsewhere (proof.json only on a full run)
  *   --save <file>, --load <file>                  keep the runs' results; report from them again without running
  *                                                  (refused when the engine's files changed since)
+ *   --only S00 --page                              the five base worlds only, and their summary written to proof.json's
+ *                                                  "suite" as a partial suite (`partial`: no other scenario and no
+ *                                                  experiment), so the page shows this engine's base world while the
+ *                                                  whole suite still runs
  *
  * Every number in the report is computed by the run; nothing is typed in.
  */
@@ -80,6 +84,7 @@ if (!isMainThread) {
 async function main() {
 	const args = process.argv.slice(2);
 	const quick = args.includes('--quick');
+	const page = args.includes('--page');
 	const oi = args.indexOf('--only');
 	const only = oi >= 0 ? args[oi + 1].split(',') : null;
 	const di = args.indexOf('--out');
@@ -153,10 +158,13 @@ async function main() {
 	const bases = BASE_KEYS_SEEDS.filter((sd) => detail[sd]).map((sd) => ({ seed: sd, ...detail[sd] }));
 	const now = new Date().toISOString();
 	printTable(exps, scen, wall);
-	const { catalogList, STARTING_CAPITAL, BORDER, CHIPS } = await import(join(LIB, 'primitives.js'));
+	const { catalogList, STARTING_CAPITAL, BORDER, CHIPS, DF_ENGINE } = await import(join(LIB, 'primitives.js'));
 	const { ENGINE_FILES, engineHash } = await import(join(LIB, 'proofRun.js'));
 	const hash = engineHash(Object.fromEntries(ENGINE_FILES.map((fl) => [fl, readFileSync(join(LIB, fl), 'utf8')])));
 	const prices = { foodEur: BORDER.foodEur.v, glulamEur: BORDER.glulamEur.v, steelEur: BORDER.steelEur.v, glazingEur: BORDER.glazingEur.v, floatEur: BORDER.floatEur.v, logsEur: BORDER.logsEur.v, cellsEur: BORDER.cellsEur.v, panelsEur: BORDER.panelsEur.v, gridEurKwh: BORDER.gridEurKwh.v, chipEur: CHIPS.eurPerChip.v, spotEurMwh: CHIPS.spotEurMwh.v, solarEurMwh: CHIPS.solarEurMwh.v, lineKw: CHIPS.lineKw.v };
+	// (round 5) every border price by its key, and the dome factory's lines (their units and kits, ./primitives.js DF_ENGINE)
+	prices.all = Object.fromEntries(Object.entries(BORDER).map(([k, x]) => [k, x.v]));
+	prices.df = DF_ENGINE ? { rho: DF_ENGINE.rho, gs: DF_ENGINE.gs, plateT: DF_ENGINE.plateT, glazM2T: DF_ENGINE.glazM2T, cellsM2: DF_ENGINE.cellsM2, pvM2Kwp: DF_ENGINE.pvM2Kwp, cap: DF_ENGINE.cap, floor: DF_ENGINE.floor, unit: DF_ENGINE.unit } : null;
 	prices.src = { ...Object.fromEntries(Object.keys(BORDER).map((k) => [k, BORDER[k].src])), chipEur: CHIPS.eurPerChip.src, spotEurMwh: CHIPS.spotEurMwh.src, solarEurMwh: CHIPS.solarEurMwh.src, lineKw: CHIPS.lineKw.src };
 	const meta = { wall, set, now, only, quick, hash, threads: par, totalCpu: results.reduce((a, r) => a + r.ms, 0), catalog: catalogList(), start: STARTING_CAPITAL, prices };
 	if (!OUT) {
@@ -168,7 +176,8 @@ async function main() {
 	const suffix = (only ? '-' + only.join('-') : '') + (Object.keys(set).length ? '-set' : '') + (quick ? '-quick' : '');
 	writeFileSync(join(OUT, `proof${suffix}.md`), md);
 	writeFileSync(join(OUT, `proof${suffix}.csv`), toCsv(exps, scen, bases, R));
-	if (!only && !Object.keys(set).length && !quick) {
+	const partial = page && only?.length === 1 && only[0] === 'S00';
+	if ((!only || partial) && !Object.keys(set).length && !quick) {
 		const dir = join(ROOT, 'static', 'sandbox-9');
 		mkdirSync(dir, { recursive: true });
 		// The page's Proof view reads the top-level keys of this file (scripts/sandbox-9-proof-json.mjs writes them).
@@ -180,7 +189,10 @@ async function main() {
 		} catch {
 			prev = {};
 		}
-		writeFileSync(file, JSON.stringify({ ...prev, suite: toJson(exps, scen, bases, NOT_COVERED, meta) }, null, '\t'));
+		const suite = toJson(exps, scen, bases, NOT_COVERED, meta);
+		// a partial suite (--only S00 --page) says so: the page reads its base world, and no other scenario's verdict
+		if (partial) suite.partial = { only, note: 'the five base worlds only (S00); the other scenarios and the experiments are not in this summary' };
+		writeFileSync(file, JSON.stringify({ ...prev, suite }, null, '\t'));
 		console.log(`wrote ${file} (key "suite")`);
 	}
 	console.log(`wrote ${join(OUT, `proof${suffix}.md`)} and .csv (${(wall / 1000).toFixed(1)} s)`);
@@ -586,11 +598,77 @@ function foundingAndBorder(L, bases, scen) {
 	if (f01) L.push(`**If the founding euros run out (F01).** ${f01.takeaway}`, '');
 }
 
+/**
+ * (round 5) the border section opens with the bank: the bootstrap number, whether exports beat imports and from when,
+ * and whether the bank is ever repaid (in euros, and in MIND)
+ */
+function bankLead(L, bases, B, full) {
+	if (!B.length) return;
+	const low = Math.min(...B.map((x) => x.bank?.lowestEur ?? 0));
+	const lowYear = B.find((x) => (x.bank?.lowestEur ?? 0) <= low + 1e-6)?.year;
+	const beat = (x) => x.exportEur >= x.importEur;
+	const cross = full.find(beat)?.year ?? null;
+	let from = null;
+	for (let j = full.length - 1; j >= 0 && beat(full[j]); j--) from = full[j].year;
+	const after = cross ? full.filter((x) => x.year >= cross) : [];
+	const last = full.slice(-10);
+	const mean = (a, fn) => a.reduce((s, x) => s + fn(x), 0) / Math.max(1, a.length);
+	const expL = mean(last, (x) => x.exportEur), impL = mean(last, (x) => x.importEur), net = expL - impL;
+	const runOnly = last.every((x) => !(x.buildEur > 0)) ? ' (all of them running imports: the build-out was done)' : '';
+	const cumEnd = B.at(-1)?.bank?.cumulativeEur ?? NaN, cumYear = full.find((x) => (x.bank?.cumulativeEur ?? -1) >= 0)?.year ?? null;
+	const adv = B.reduce((a, x) => a + (x.bank?.advancedEur ?? 0), 0), owed = B.at(-1)?.bank?.owedEur ?? NaN;
+	const n = full.length;
+	const exp =
+		cross == null
+			? `Exports never earned more than the year’s imports in ${n} years: over the last ten they earned ${eurM(expL)} a year against ${eurM(impL)} of imports${runOnly}.`
+			: from != null && from === cross
+				? `Exports earned more than the year’s imports in year **${cross}** for the first time, and every year from then on: over the last ten years ${eurM(expL)} a year against ${eurM(impL)} of imports.`
+				: `Exports first earned more than the year’s imports in year **${cross}**, ${from != null ? `and every year from year **${from}**` : `but not every year after: in ${after.filter(beat).length} of the ${after.length} years from then, and not in the last year`}; over the last ten years they earned ${eurM(expL)} a year against ${eurM(impL)} of imports.`;
+	const rep = cumYear
+		? `The bank is repaid in euros: the cumulative balance (all exports less all imports since day 0) turned positive in year **${cumYear}**.`
+		: `**The bank is never repaid in euros within the ${n} years:** the cumulative balance (all exports less all imports since day 0) stood at ${eurM(cumEnd)} at the end, ${net > 0 ? `and closed by ${eurM(net)} a year over the last ten years, so at that pace it would take about ${k0(-cumEnd / net)} more years` : `and ${net < 0 ? `went on falling by ${eurM(-net)} a year over the last ten years` : 'stood still over the last ten years'}: at that pace it is never repaid`}.`;
+	const seeds = bases.map((b) => -Math.min(...(b.s.border ?? []).map((x) => x.bank?.lowestEur ?? 0)));
+	L.push(`**The bank first.** The bootstrap number, the most the village owed the outside in euros at any moment (the MaiaCity COOP’s lowest cumulative balance), is **${eurM(-low)}**, reached in year ${lowYear ?? '–'}${bases.length > 1 ? ` (${eurM(Math.min(...seeds))} to ${eurM(Math.max(...seeds))} over the ${bases.length} base seeds)` : ''}. ${exp} ${rep} In MIND, the COOPs drew ${eurM(adv)} of advances and had paid back ${eurM(adv - owed)} of it in their own MIND by the end (${eurM(owed)} still owed); that MIND never turns back into euros.`, '');
+}
+
+/**
+ * (round 5) the dome factory: what it made for the plan's domes over the build-out (sandbox-7 buildout.js, its parts in
+ * their own units) and what its lines made in the engine, for upkeep and building, year by year
+ */
+function domeFactorySection(L, bases) {
+	const s0 = bases[0].s, T = s0.domeFactory, Ms = s0.materials ?? [];
+	if (!T || !Ms.length) return;
+	const parts = ['strut', 'hub', 'glazing', 'solar', 'cassette'], units = { strut: 'm³', hub: 't', glazing: 'm²', solar: 'm²', cassette: 'm²' };
+	const names = { strut: 'glulam struts', hub: 'hubs', glazing: 'glazing', solar: 'solar panes', cassette: 'cassettes' };
+	L.push('### The dome factory: what it made', '');
+	L.push(`The build-out plan’s dome factory stands from month ${T.stands ?? '–'} and runs from month ${T.runsFrom ?? '–'}. Over the build-out its lines made ${parts.map((k) => `${k0(T.made?.[k])} ${units[k]} of ${names[k]}`).join(', ')}; the domes used ${parts.map((k) => `${k0(T.used?.[k])} ${units[k]}`).join(', ')} of it, and the plan still bought ${parts.map((k) => `${k0(T.bought?.[k])} ${units[k]}`).join(', ')} finished (before the factory ran, or beyond its lines). Its raw inputs cost ${eurM(T.imports)}, the parts bought finished ${eurM(T.boughtFinished)}; ${k0(T.domesFromDF)} of the ${k0(T.domes)} domes got most of their parts from it.`, '');
+	L.push('In the engine the lines make glulam (struts and cassette frames) and hubs in t, glazing in t (20 m² a t) and solar panes in kWp. While the build-out runs they get only what the plan’s domes leave of each line; the plan’s own output is in the first columns.', '');
+	L.push(`| year | plan: ${parts.map((k) => `${names[k]} ${units[k]}`).join(' | plan: ')} | lines: struts and frames t | lines: hubs t | lines: glazing t | lines: solar kWp | bought finished: glulam t | hubs t | glazing t | panels kWp |`, '|---|' + '---|'.repeat(parts.length + 8));
+	for (const m of Ms.filter((x) => x.year <= 6)) {
+		const p = m.plan?.made ?? {};
+		L.push(`| ${m.year} | ${parts.map((k) => k0(p[k] ?? 0)).join(' | ')} | ${k0(m.df.struts)} | ${k0(m.df.steel)} | ${k0(m.df.glass)} | ${k0(m.df.panel)} | ${k0(m.imported.wood)} | ${k0(m.imported.steel)} | ${k0(m.imported.glass)} | ${k0(m.imported.panel)} |`);
+	}
+	L.push('');
+	const ys = [];
+	for (let y = 7; y <= Ms.length; y += y < 10 ? 1 : 5) ys.push(y);
+	if (Ms.length > 10 && Ms.length % 5 !== 0) ys.push(Ms.length);
+	if (!ys.length) return;
+	L.push('After the build-out the lines make what the village keeps up and builds. Upkeep is what the worn domes, halls and works took; all building includes it; the works’ inputs are the glulam, steel and glass the works themselves use.', '');
+	L.push('| year | lines: struts and frames t | lines: hubs t | lines: glazing t | lines: solar kWp | made in all: glulam t (with the timber works) | upkeep: glulam t | steel t | glass t | panels kWp | all building: glulam t | steel t | glass t | panels kWp | works’ inputs: glulam t | steel t | glass t | bought finished: glulam t | hubs t | glazing t | panels kWp |', '|---|' + '---|'.repeat(20));
+	for (const y of ys) {
+		const m = Ms[y - 1];
+		if (!m) continue;
+		L.push(`| ${y} | ${k0(m.df.struts)} | ${k0(m.df.steel)} | ${k0(m.df.glass)} | ${k0(m.df.panel)} | ${k0(m.made.wood)} | ${k0(m.upkeep.wood)} | ${k0(m.upkeep.steel)} | ${k0(m.upkeep.glass)} | ${k0(m.upkeep.panel)} | ${k0(m.built.wood)} | ${k0(m.built.steel)} | ${k0(m.built.glass)} | ${k0(m.built.panel)} | ${k0(m.input.wood)} | ${k0(m.input.steel)} | ${k0(m.input.glass)} | ${k0(m.imported.wood)} | ${k0(m.imported.steel)} | ${k0(m.imported.glass)} | ${k0(m.imported.panel)} |`);
+	}
+	L.push('');
+}
+
 /** the build-out (the ramp), the MaiaCity COOP's bank, rents and the border, for a world that starts with two settlers */
 function buildoutAndBank(L, bases, scen) {
 	const b0 = bases[0], s0 = b0.s, F = s0.founding, B = s0.border ?? [], Ls = s0.living ?? [], Vs = s0.village ?? [];
 	const full = B.filter((x) => x.days >= 365);
 	L.push('## The build-out, the bank and the border', '');
+	bankLead(L, bases, B, full);
 	L.push(`Day 0 is the first settlers’ first day. Two settlers arrive with the starter kit and launch the East settlement; the village is built settlement by settlement by the build-out plan (\`src/lib/sandbox-7/buildout.js\`, launched in January), and people move in as beds are finished. The villagers build it themselves (no wages); what the village cannot yet make is bought at the euro border. ${F.feasibility ?? ''} In this run 1,500 people live there from month ${F.peopleMonth} and every dome stands from month ${F.doneMonth}.`, '');
 	// people, year by year
 	const yp = Ls.slice(0, Math.min(Ls.length, 8));
@@ -599,7 +677,7 @@ function buildoutAndBank(L, bases, scen) {
 	L.push('| at the year’s end | ' + yp.map((r) => k0(r.people)).join(' | ') + ' |');
 	L.push('| the year’s mean | ' + yp.map((r) => k0(r.peopleMean)).join(' | ') + ' |', '');
 	// who owns what
-	L.push('**Who owns what.** Each living hex has one settlement COOP (East, South-east, South-west, West, North-west, North-east). It builds and owns every dome in its hex with euro advances from the bank: the homes, the two food domes and the utilities dome. It rents beds to the people (the bed good, priced in its own MIND, so Law 5 pays its holders a fifth of every bed-day) and dome floor to the business COOPs that work in its domes (the food COOPs under glass, the data centres, workshops and stores), in its own MIND, so Law 5 applies to the rent too. The centre hex’s settlement COOP is the **Village COOP**: it owns the eight factory domes, the centre dome and the geothermal plant, rents the factory domes to the works (timber, steel, glass, panels), and sells electricity and heat; its advances paid for the drilling. The **MaiaCity COOP** (the City COOP) is separate: it owns the land, leases it, and runs the bank. Ground rent: each landlord pays the MaiaCity COOP the ground rent for the land under its domes and passes it on in its rate a m², so a tenant pays no ground rent for floor under a dome.', '');
+	L.push(`**Who owns what.** Each living hex has one settlement COOP (East, South-east, South-west, West, North-west, North-east). It builds and owns every dome in its hex with euro advances from the bank: the homes, the two food domes and the utilities dome. It rents beds to the people (the bed good, priced in its own MIND, so Law 5 pays its holders a fifth of every bed-day) and dome floor to the business COOPs that work in its domes (the food COOPs under glass, the data centres, workshops and stores), in its own MIND, so Law 5 applies to the rent too. The centre hex’s settlement COOP is the **Village COOP**: it owns the factory domes, the centre dome and the geothermal plant, rents the factory domes to the works, and sells electricity and heat; its advances paid for the drilling.${s0.domeFactory ? ` One factory dome is the **dome factory** (sandbox-7 DF): the Village COOP builds it in month ${s0.domeFactory.stands ?? '–'} and rents its floor to four lines, which make the domes’ parts from bought raw inputs: the timber COOPs run its struts line (glulam struts and cassette frames, beside their timber works), the steel COOPs its hub line, the glass COOPs its glazing line, the panel COOPs its solar line. While the build-out runs, the plan’s domes take what the lines make first and the COOPs get what is left; from then on the lines make what the village keeps up and builds, and the COOPs buy the parts finished only when the lines cannot keep up. The steelworks no longer melts scrap: its dome is one of the centre’s halls.` : ''} The **MaiaCity COOP** (the City COOP) is separate: it owns the land, leases it, and runs the bank. Ground rent: each landlord pays the MaiaCity COOP the ground rent for the land under its domes and passes it on in its rate a m², so a tenant pays no ground rent for floor under a dome.`, '');
 	// the bill
 	L.push('### The build-out bill', '');
 	L.push('| item | € |', '|---|---|');
@@ -627,7 +705,7 @@ function buildoutAndBank(L, bases, scen) {
 	L.push(`The MaiaCity COOP is the village’s bank. Every euro the village spends abroad goes through it: the founding euros from outside are its starting balance, and here it is open (its founders lend whatever the village draws), so its lowest cumulative balance is the **bootstrap number**: the euros the village needs from outside to be built. A COOP that builds or buys abroad draws an advance and pays it back in its own MIND to the MaiaCity COOP, with no interest: each week a 26th of what it owes (at least €1), but never more than 5 % of its own MIND in its treasury that week, at the bank’s rate (a euro is worth the kWh it takes to earn it, at today’s electricity price). The MIND it pays back earns the MaiaCity COOP Law 5 dividends; it does not turn back into euros. Only exports bring euros in.`, '');
 	const bestNet = Math.max(...full.map((x) => x.exportEur - x.importEur));
 	L.push(`**Bootstrap number: ${eurM(-low)}** (the lowest cumulative balance, reached in year ${lowYear ?? '–'}). Exports first earned more than the year’s imports in year **${crossYear ?? 'never'}**; the cumulative balance (all exports less all imports since day 0) ${cumYear ? `turned positive in year ${cumYear}` : `never turned positive in ${B.length} years: it stood at ${eurM(B.at(-1)?.bank?.cumulativeEur)} at the end`}. Over the run the village bought ${eurM(impTot)} abroad and sold ${eurM(expTot)}.`, '');
-	if (!cumYear) L.push(`**Exports never repay the bootstrap in euros.** The line sells at most what a 10 MW connection carries, hour by hour, at German market prices; in its best year exports beat imports by ${eurM(bestNet)}${bestNet > 0 ? `, so paying back ${eurM(-low)} would take about ${k0(-low / bestNet)} years` : ''}. The euros the village needs to be built come from outside and stay owed to the founders in euros. **The COOPs repay the bank in MIND, not euros:** they drew ${eurM(advTot)} in advances, paid back the equivalent of ${eurM(advTot - owedEnd)} in their own MIND to the MaiaCity COOP by the end, and still owed ${eurM(owedEnd)}. That MIND earns the MaiaCity COOP its Law 5 dividends inside the village; it never turns back into euros.`, '');
+	if (!cumYear) L.push(`**Exports never repay the bootstrap in euros.** The line sells at most what a 10 MW connection carries, hour by hour, at German market prices; ${bestNet > 0 ? `in its best year exports beat imports by ${eurM(bestNet)}, so paying back ${eurM(-low)} would take about ${k0(-low / bestNet)} years` : `exports never beat the year’s imports (the closest year fell ${eurM(-bestNet)} short)`}. The euros the village needs to be built come from outside and stay owed to the founders in euros. **The COOPs repay the bank in MIND, not euros:** they drew ${eurM(advTot)} in advances, paid back the equivalent of ${eurM(advTot - owedEnd)} in their own MIND to the MaiaCity COOP by the end, and still owed ${eurM(owedEnd)}. That MIND earns the MaiaCity COOP its Law 5 dividends inside the village; it never turns back into euros.`, '');
 	else L.push(`The COOPs drew ${eurM(advTot)} in advances and still owed ${eurM(owedEnd)} at the end; they repay the bank in their own MIND (paid back: ${eurM(advTot - owedEnd)}), never in euros.`, '');
 	L.push('| year | people | build-out € | running imports € | all imports € | exports € | the year’s balance € | cumulative € | lowest so far € | advanced € | owed at the year’s end € |', '|---|---|---|---|---|---|---|---|---|---|---|');
 	for (let y = 1; y <= B.length; y += y < 10 ? 1 : 5) {
@@ -647,13 +725,28 @@ function buildoutAndBank(L, bases, scen) {
 	L.push('');
 	// the running imports, year by year
 	L.push('### What the village buys abroad to run, year by year', '');
-	L.push('From day 0 the COOPs buy abroad only what the village cannot yet make or grow: the food COOPs buy food in the diet’s mix, the works buy logs, scrap, float glass and cells (and finished glulam, steel, glazing and panels when their works cannot keep up), the hardware owners (the settlement COOPs and the Village COOP) buy accelerators, and while the village is being built its first solar COOP buys grid electricity when the village’s own falls short. The line sells electricity (the geothermal plant’s and the battery’s at the German day-ahead average, the sun’s at the month’s solar market value). No person holds euros, no MIND is made from euros, HEARTS never buy anything.', '');
-	L.push('| year | food bought (kcal a person a day) | food € | logs t | float glass t | cells kWp | glulam t | steel t | glazing t | panels kWp | accelerators | grid MWh | grid € | running imports € | exports € | exported € a MWh |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
-	for (let y = 1; y <= B.length; y += y < 10 ? 1 : 5) {
+	L.push(`From day 0 the COOPs buy abroad only what the village cannot yet make or grow: the food COOPs buy food in the diet’s mix, ${s0.domeFactory ? 'the timber works buy logs, the dome factory’s lines their raw inputs (lamellas, glue and C24 for the struts and frames; S355 plate, galvanising and bolts for the hubs; float glass with its coatings, PVB, edge seals and gaskets for the glazing; cells and their stringing for the solar panes) and the finished parts only when the lines cannot keep up' : 'the works buy logs, scrap, float glass and cells (and finished glulam, steel, glazing and panels when their works cannot keep up)'}, the hardware owners (the settlement COOPs and the Village COOP) buy accelerators, and while the village is being built its first solar COOP buys grid electricity when the village’s own falls short. The line sells electricity (the geothermal plant’s and the battery’s at the German day-ahead average, the sun’s at the month’s solar market value). No person holds euros, no MIND is made from euros, HEARTS never buy anything.`, '');
+	const yrs = [];
+	for (let y = 1; y <= B.length; y += y < 10 ? 1 : 5) yrs.push(y);
+	if (B.length > 10 && B.length % 5 !== 0) yrs.push(B.length);
+	L.push('| year | food bought (kcal a person a day) | food € | logs t | lamellas and C24 m³ | plate t | float glass t | cells kWp | glulam t | hubs (steel) t | glazing t | panels kWp | accelerators | grid MWh | grid € | running imports € | exports € | exported € a MWh |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+	for (const y of yrs) {
 		const b = B[y - 1], i = b.imports;
-		L.push(`| ${y} | ${k0(Vs[y - 1]?.food.imported)} | ${eurM(i.food.eur)} | ${k0(i.logs.t)} | ${k0(i.float.t)} | ${k0(i.cells.kwp)} | ${k0(i.glulam.t)} | ${k0(i.steel.t)} | ${k0(i.glazing.t)} | ${k0(i.panels.kwp)} | ${k0(i.accelerators.n)} | ${k0((i.grid?.kwh ?? 0) / 1000)} | ${eurM(i.grid?.eur)} | ${eurM(b.runEur)} | ${eurM(b.exportEur)} | ${k1(b.exportEurMwh)} |`);
+		L.push(`| ${y} | ${k0(Vs[y - 1]?.food.imported)} | ${eurM(i.food.eur)} | ${k0(i.logs.t)} | ${k0(i.lamellas?.m3)} | ${k0(i.plate?.t)} | ${k0(i.float.t)} | ${k0(i.cells.kwp)} | ${k0(i.glulam.t)} | ${k0(i.steel.t)} | ${k0(i.glazing.t)} | ${k0(i.panels.kwp)} | ${k0(i.accelerators.n)} | ${k0((i.grid?.kwh ?? 0) / 1000)} | ${eurM(i.grid?.eur)} | ${eurM(b.runEur)} | ${eurM(b.exportEur)} | ${k1(b.exportEurMwh)} |`);
 	}
 	L.push('');
+	// what the running imports are, in €
+	L.push('The running imports in €, by what they buy: the works’ raw inputs (logs, lamellas and C24, plate and the hub kit, float glass and the glazing kit, cells and their stringing), the finished parts bought when the works and the lines could not keep up, food, accelerators and grid electricity.', '');
+	L.push('| year | raw inputs for the works € | of it: the dome factory’s lines € | finished parts € | food € | accelerators € | grid € | running imports € | exports € |', '|---|---|---|---|---|---|---|---|---|');
+	for (const y of yrs) {
+		const b = B[y - 1], i = b.imports, e = (k) => i[k]?.eur ?? 0;
+		const dfRaw = e('lamellas') + e('plate') + (s0.domeFactory ? e('float') + e('cells') : 0);
+		const raw = e('logs') + e('scrap') + e('lamellas') + e('plate') + e('float') + e('cells');
+		const fin = e('glulam') + e('steel') + e('glazing') + e('panels');
+		L.push(`| ${y} | ${eurM(raw)} | ${eurM(dfRaw)} | ${eurM(fin)} | ${eurM(e('food'))} | ${eurM(e('accelerators'))} | ${eurM(e('grid'))} | ${eurM(b.runEur)} | ${eurM(b.exportEur)} |`);
+	}
+	L.push('');
+	domeFactorySection(L, bases);
 	L.push('| seed | first year the village grew all it needs (2,240 kcal a person a day) | last year it bought food (over 1 % of what it ate) | days a COOP could not pay for its imports |', '|---|---|---|---|');
 	for (const b of bases) L.push(`| ${b.seed} | ${b.s.food?.firstFedYear ?? 'never'} | ${b.s.food?.lastImportYear ?? '–'} | ${k0((b.s.border ?? []).reduce((a, x) => a + (x.importShortDays ?? 0), 0))} |`);
 	L.push('');
@@ -684,22 +777,41 @@ function priceTable(L, meta, bases) {
 	const foodDay = (P.foodEur * kcalDay) / 1000;
 	const solarYear = P.solarEurMwh.reduce((a, x) => a + x, 0) / 12;
 	const lineMwhDay = (P.lineKw * 6 * 24) / 1000;
+	// (round 5) with the dome factory its four lines buy their kits (sandbox-7 DF_IMPORTS) and the finished parts are the
+	// overflow; without it, the old works' raw inputs
+	const A = P.all ?? {}, D = P.df, U = D?.unit;
+	const e2 = (x) => (Number.isFinite(x) ? `€${x.toFixed(2)}` : '–');
+	const materials = D
+		? [
+				['Glulam blanks, finished (when the struts line and the timber works cannot keep up)', `€${k0(P.glulamEur)} a t`, P.src.glulamEur, `= €${k0(P.glulamEur * D.rho)} a m³ at ${D.rho} t a m³ (the engine’s glulam is struts and cassette frames, ${pc(D.gs, 0)} glulam by volume). Glulam beams cost €700–1,000 a m³ at a builders’ merchant (estimate): wholesale below retail.`],
+				['Lamellas, glue and C24 (the struts line’s raw input)', `lamellas €${k0(A.lamellaEur)} a m³, glue €${k0(A.adhesiveEur)} a m³ of glulam, C24 €${k0(A.kvhEur)} a m³: €${k0(A.lamellasKitEur)} a m³ of raw timber as bought`, `${P.src.lamellaEur}; ${P.src.adhesiveEur}; ${P.src.kvhEur}`, `${k1(U.struts.raw)} m³ of raw timber make a t of struts and frames for €${k0(U.struts.eur)}, against €${k0(U.struts.bought)} bought finished. Spruce sawlogs cost €84–120 a m³; graded, kiln-dried lamellas three times that.`],
+				['Hubs, ring and connectors, finished (when the hub line cannot keep up)', `€${k0(P.steelEur)} a t`, P.src.steelEur, `Five times the plate they are cut from: the cutting, welding, galvanising and bolts are most of a hub’s price.`],
+				['S355 plate and the hub kit (the hub line’s raw input)', `plate €${k0(A.plateEur)} a t; galvanising €${k0(A.galvanisingEur)}, bolts €${k0(A.boltsEur)}, wire and gas €${k0(A.weldEur)} a t of hubs: €${k0(A.plateKitEur)} a t of plate as bought`, `${P.src.plateEur}; ${P.src.galvanisingEur}`, `${f(D.plateT)} t of plate make a t of hubs for €${k0(U.steel.eur)} (the offcuts sold back as scrap), against €${k0(U.steel.bought)} bought finished. EU hot-rolled coil traded around €600–700 a t in 2025; plate a little more.`],
+				['Laminated double glazing, finished (when the glazing line cannot keep up)', `€${k0(P.glazingEur)} a t`, P.src.glazingEur, `At ${k0(1000 / D.glazM2T)} kg a m², €${k0(P.glazingEur / D.glazM2T)} a m² for low-iron, low-E laminated double glazing with its gaskets and caps.`],
+				['Float glass and the glazing kit (the glazing line’s raw input)', `float €${k0(A.floatEur)} a t; low-iron €${f(A.lowIronEur, 1)}, low-E €${f(A.lowEEur, 1)}, PVB €${f(A.pvbEur, 1)}, edge seal €${f(A.edgeEur, 1)}, gaskets and caps €${k0(A.gasketsEur)} a m² of glazing: €${k0(A.floatKitEur)} a t of float as bought`, `${P.src.floatEur}; ${P.src.pvbEur}; ${P.src.edgeEur}; ${P.src.gasketsEur}`, `A 4 mm pane weighs 10 kg a m², so €${f(A.floatEur / 100)} a m² of raw float; a m² of glazing takes ${f(U.glass.raw / D.glazM2T, 3)} t of float and its kit costs ${e2(U.glass.eur / D.glazM2T)} a m², against €${k0(P.glazingEur / D.glazM2T)} bought finished.`],
+				['Logs (the timber works’ raw input)', `€${k0(P.logsEur)} a dry t`, P.src.logsEur, `€105 a solid m³ at 0.45 dry t a m³.`],
+				['Solar cells and their stringing (the solar line’s raw input)', `cells €${k0(P.cellsEur)} a kWp; ribbons, busbars and junction boxes €${k0(A.stringingEur)} a m² of pane: €${k0(A.cellsKitEur)} a kWp of cells as bought`, `${P.src.cellsEur}; ${P.src.stringingEur}`, `TOPCon cells at 4–5 US cents a W FOB. A m² of solar pane holds ${f(D.cellsM2, 3)} kWp of cells and its kit costs ${e2(U.panel.eur / D.pvM2Kwp)} a m² (the pane’s glass is the glazing line’s), against €${k0(P.panelsEur / D.pvM2Kwp)} a m² bought finished. A kWp gives about 980 kWh a year in Munich.`],
+				['See-through solar glass, finished (when the solar line cannot keep up)', `€${k0(P.panelsEur)} a kWp`, P.src.panelsEur, `Glass-glass modules €0.16–0.22 a Wp; cells laid into a pane cost more.`]
+			]
+		: [
+				['Glulam (when the timber works cannot keep up)', `€${k0(P.glulamEur)} a t`, P.src.glulamEur, `Glulam beams cost more at a builders’ merchant (estimate €700–1,000 a m³): wholesale below retail, as it should be.`],
+				['Steel (when the steelworks cannot keep up)', `€${k0(P.steelEur)} a t`, P.src.steelEur, `EU hot-rolled coil traded around €600–700 a t in 2025 (estimate); plate costs a little more.`],
+				['Laminated double glazing (when the glassworks cannot keep up)', `€${k0(P.glazingEur)} a t`, P.src.glazingEur, `At 50 kg a m², €${k0(P.glazingEur / 20)} a m².`],
+				['Float glass (the glassworks’ raw input)', `€${k0(P.floatEur)} a t`, P.src.floatEur, `A 4 mm pane weighs 10 kg a m², so €${f(P.floatEur / 100)} a m² of raw glass, far below finished glazing.`],
+				['Logs (the timber works’ raw input)', `€${k0(P.logsEur)} a dry t`, P.src.logsEur, `€105 a solid m³ at 0.45 dry t a m³.`],
+				['Solar cells for the glass', `€${k0(P.cellsEur)} a kWp`, P.src.cellsEur, `A kWp gives about 980 kWh a year in Munich.`],
+				['See-through solar glass (when the panel works cannot keep up)', `€${k0(P.panelsEur)} a kWp`, P.src.panelsEur, `Glass-glass modules €0.16–0.22 a Wp; cells laid into a pane cost more.`]
+			];
 	const rows = [
 		['Food, wholesale, the diet’s mix', `€${P.foodEur.toFixed(2)} a 1,000 kcal`, P.src.foodEur, `€${foodDay.toFixed(2)} a person a day, €${k0(foodDay * 365 / 12)} a month. A German spends about €200 a month on food and soft drinks at retail (Destatis household budget survey, estimate): wholesale at about half of retail is the usual gap.`],
-		['Glulam (when the timber works cannot keep up)', `€${k0(P.glulamEur)} a t`, P.src.glulamEur, `= €565 a m³ at 0.55 t a m³. Glulam beams cost more at a builders’ merchant (estimate €700–1,000 a m³): wholesale below retail, as it should be.`],
-		['Steel (when the steelworks cannot keep up)', `€${k0(P.steelEur)} a t`, P.src.steelEur, `EU hot-rolled coil traded around €600–700 a t in 2025 (estimate); plate costs a little more.`],
-		['Laminated double glazing (when the glassworks cannot keep up)', `€${k0(P.glazingEur)} a t`, P.src.glazingEur, `At 50 kg a m², €100 a m²: inside the €95–140 a m² quoted for double glazing.`],
-		['Float glass (the glassworks’ raw input)', `€${k0(P.floatEur)} a t`, P.src.floatEur, `A 4 mm pane weighs 10 kg a m², so €6.50 a m² of raw glass, far below finished glazing.`],
-		['Logs (the timber works’ raw input)', `€${k0(P.logsEur)} a dry t`, P.src.logsEur, `€105 a solid m³ at 0.45 dry t a m³.`],
-		['Solar cells for the glass', `€${k0(P.cellsEur)} a kWp`, P.src.cellsEur, `Plain modules sell at about €100 a kWp; cells for laminating into glass at three times that. A kWp gives about 980 kWh a year in Munich.`],
-		['See-through solar glass (when the panel works cannot keep up)', `€${k0(P.panelsEur)} a kWp`, P.src.panelsEur, `Semi-transparent glass modules are quoted at €1.0–1.6 a Wp; the low end.`],
+		...materials,
 		['Accelerators (Aven services)', `€${k0(P.chipEur)} each`, P.src.chipEur, `H100-class list prices €30,000–40,000. One accelerator costs ${k0(P.chipEur / P.spotEurMwh)} MWh of exports at the day-ahead average.`],
 		['Geothermal drilling and plant (the Village COOP)', F.geothermal ? eurM(F.geothermal.eur) : '–', 'src/lib/sandbox-7/buildout.js (BUILD_SOURCES.geothermal): three wells about 7 km deep and the ORC plant, 30–45 M€ by the village energy research; a Bavarian deep well “quickly costs over 10 M€” (BUND Naturschutz 2023)', `Three wells at more than €10M each plus the plant: about €38M is at the low end of the range.`],
 		['Grid electricity bought during the build-out', `€${P.gridEurKwh.toFixed(2)} a kWh`, P.src.gridEurKwh, `German industrial customers pay 17–18 ct a kWh with charges and taxes, households about 40 ct.`],
 		['Electricity sold: baseload (geothermal, battery)', `€${P.spotEurMwh.toFixed(2)} a MWh`, P.src.spotEurMwh, `The German day-ahead average for 2025.`],
 		['Electricity sold: what the sun makes', `€${k1(Math.min(...P.solarEurMwh))}–${k1(Math.max(...P.solarEurMwh))} a MWh by month (year ${k1(solarYear)})`, P.src.solarEurMwh, `About half the baseload price over a year, and a fifth of it in June: sunny noons flood the market, so solar sold at noon fetches far less.`],
 		['The line to the grid', `${k0(P.lineKw * 6 / 1000)} MW`, P.src.lineKw, `At most ${k0(lineMwhDay)} MWh a day and ${k1(lineMwhDay * 365 / 1000)} GWh a year: at the baseload price that caps exports at about ${eurM(lineMwhDay * 365 * P.spotEurMwh)} a year.`],
-		['Goods sold abroad', 'none', 'this model sells only electricity across the border', 'The works make for the village; nothing else is exported.'],
+		['Goods sold abroad', 'none', 'the base world sells only electricity across the border (Aven hours sold abroad are tested in AIX)', 'The works make for the village; nothing else is exported.'],
 		['Land', F.rows ? eurM(F.rows.find((r) => r.id === 'land')?.eur) : '–', 'src/lib/sandbox-7 specs.js PRICES (farmland at Sandbox 6’s price), in the build-out plan', 'The MaiaCity COOP’s, leased to the COOPs.']
 	];
 	L.push('### Every euro price, with its source', '');
@@ -809,7 +921,7 @@ function baseEvidence(L, bases, exps, meta) {
 	L.push('| seed | strict: first day | holds every day from | days failing after the first | worst ratio after the first (day) | lowest ratio by year (1–5, last) | normal: failures | lowest holding (days of the bundle), year 1 → last |', '|---|---|---|---|---|---|---|---|');
 	for (const b of bases) {
 		const s = b.p.P2.strict, n = b.p.P2.normal, lr = s.lowestRatioByYear, hd = n.lowestHoldingDaysByYear;
-		L.push(`| ${b.seed} | ${s.firstDay} | ${s.holdsEveryDayFrom} | ${s.failDaysAfterFirst} | ${s.worstAfterFirst ? `${f(s.worstAfterFirst.ratio)} (d${s.worstAfterFirst.day})` : '–'} | ${lr.slice(1, 6).map((x) => f(x)).join(', ')}, … ${f(lr[lr.length - 1])} | ${n.failures} | ${f(hd[1], 0)} → ${f(hd[hd.length - 1], 0)} |`);
+		L.push(`| ${b.seed} | ${s.firstDay} | ${s.holdsEveryDayFrom >= 0 ? s.holdsEveryDayFrom : 'never'} | ${s.failDaysAfterFirst} | ${s.worstAfterFirst ? `${f(s.worstAfterFirst.ratio)} (d${s.worstAfterFirst.day})` : '–'} | ${lr.slice(1, 6).map((x) => f(x)).join(', ')}, … ${f(lr[lr.length - 1])} | ${n.failures} | ${f(hd[1], 0)} → ${f(hd[hd.length - 1], 0)} |`);
 	}
 	L.push('');
 	L.push('### P3 — every decile, by holdings and by Aven output', '');

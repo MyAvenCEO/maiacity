@@ -59,6 +59,8 @@
 	/** the saved proof (or its suite summary) was computed by another version of the engine than this page runs */
 	const stale = $derived(!live && !!saved && !!hashNow && saved.engineHash !== hashNow);
 	const suiteNow = $derived(saved?.suite && hashNow && saved.suite.engineHash === hashNow ? saved.suite : null);
+	/** the base world (proof.json `suite`) was computed by another version of the engine than this page runs */
+	const baseStale = $derived(!!saved?.suite && !!hashNow && saved.suite.engineHash !== hashNow);
 
 	function stop() {
 		for (const w of workers) w.terminate();
@@ -157,7 +159,7 @@
 	{#if baseWorld && (baseWorld.living || baseWorld.imports || baseWorld.params)}
 		<section class="world">
 			<h3 class="sub">The base world: how people live</h3>
-			<p class="fine">{baseWorld.people ? `${baseWorld.people.toLocaleString('en-GB')} people, ` : ''}seed {baseWorld.seed}, {baseWorld.years} years from the founding (day 0 is move-in day), from the saved full run{saved?.suite?.generated ? ` of ${when(saved.suite.generated)}` : ''}.{stale ? ' This page’s engine is newer than that run, so its numbers can differ.' : ''}</p>
+			<p class="fine">{baseWorld.people ? `${baseWorld.people.toLocaleString('en-GB')} people, ` : ''}seed {baseWorld.seed}, {baseWorld.years} years from the founding (day 0 is move-in day), from the saved {saved?.suite?.partial ? 'run of the five base worlds' : 'full run'}{saved?.suite?.generated ? ` of ${when(saved.suite.generated)}` : ''}.{baseStale ? ' This page’s engine is newer than that run, so its numbers can differ.' : ''}</p>
 			<LivingView worlds={[baseWorld.living]} names={['Base']} indoor={baseWorld.indoor} />
 			<h3 class="sub">What the village imports</h3>
 			<ImportsView worlds={[baseWorld.imports]} names={['Base']} />
@@ -186,7 +188,7 @@
 		</div>
 
 		{#if stale}
-			<p class="bad">This saved proof was computed by an older version of the engine than this page runs (engine {saved.engineHash ?? 'unknown'}, page {hashNow}). Its numbers can differ from what the page shows; run it again below.</p>
+			<p class="bad">This saved proof was computed by an older version of the engine than this page runs (engine {saved.engineHash ?? 'unknown'}, page {hashNow}). Its numbers can differ from what the page shows; run it again below.{baseWorld && !baseStale ? ' The base world above is already from this engine; the verdicts below are not yet.' : ''}</p>
 		{/if}
 		{#if !shown.suiteUsed}
 			<p class="fine">The parts below read the base worlds and the experiments only{saved?.suite ? '; the full proof suite’s scenarios were run with another engine, so their verdicts are left out' : ''}. The full suite (node scripts/sandbox-9-proof.mjs) adds the longer scenarios.</p>

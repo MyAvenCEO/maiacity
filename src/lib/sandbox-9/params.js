@@ -197,7 +197,8 @@ export const CATALOG = {
 	protImp: { g: 'food', label: 'Protein in 1,000 kcal imported', unit: 'g' },
 	ghClimateM2: { g: 'food', label: 'Food domes: climate electricity a m² a day', unit: 'kWh' },
 	eurMwh: { g: 'border', label: 'Exported electricity sells at', f: (v) => `€${num(v)} a MWh` },
-	eur: { g: 'border', label: 'Border prices', f: (o) => (o && typeof o === 'object' ? Object.entries(o).map(([k, x]) => `${{ food: 'food', logs: 'logs', scrap: 'steel scrap', float: 'float glass', cells: 'solar cells', glulam: 'glulam' }[k] ?? k} €${num(x)} ${{ food: 'a 1,000 kcal', cells: 'a kWp' }[k] ?? 'a t'}`).join(' · ') : plain(o)) },
+	// (round 5) with the dome factory, float glass, cells, lamellas and plate are priced with the rest of their line's kit
+	eur: { g: 'border', label: 'Border prices', f: (o) => (o && typeof o === 'object' ? Object.entries(o).map(([k, x]) => `${{ food: 'food', logs: 'logs', scrap: 'steel scrap', float: 'float glass', cells: 'solar cells', glulam: 'glulam', lamellas: 'lamellas and C24', plate: 'S355 plate', steel: 'hubs', panels: 'solar panes' }[k] ?? k}${'lamellas' in o && ['float', 'cells', 'lamellas', 'plate'].includes(k) ? ' (with its kit)' : ''} €${num(x)} ${{ food: 'a 1,000 kcal', cells: 'a kWp', panels: 'a kWp', lamellas: 'a m³' }[k] ?? 'a t'}`).join(' · ') : plain(o)) },
 	reserveYears: { g: 'border', label: 'Euros left in the reserve at the founding', unit: 'years of the village’s food at wholesale' },
 	accountDays: { g: 'border', label: 'A COOP keeps in its euro account', unit: 'days of its imports' },
 	importAhead: { g: 'border', label: 'A COOP buys at the border ahead', unit: 'days of supply' },
@@ -431,15 +432,20 @@ export function livingOf(L, V, catalog = {}, fallbackNeed = {}) {
 /** what a border line is: its label and its unit */
 export const BORDER_ITEMS = {
 	food: { label: 'Food', unit: 'kcal', q: 'kcal' },
-	glulam: { label: 'Glulam', unit: 't', q: 't' },
+	// (round 5) the finished parts, bought only when the village's works and the dome factory's lines cannot keep up
+	glulam: { label: 'Glulam, bought finished', unit: 't', q: 't' },
 	logs: { label: 'Logs', unit: 't', q: 't' },
-	steel: { label: 'Steel', unit: 't', q: 't' },
+	steel: { label: 'Hubs and steel, bought finished', unit: 't', q: 't' },
 	scrap: { label: 'Steel scrap', unit: 't', q: 't' },
 	float: { label: 'Float glass', unit: 't', q: 't' },
 	glass: { label: 'Glass', unit: 't', q: 't' },
+	glazing: { label: 'Glazing, bought finished', unit: 't', q: 't' },
 	soda: { label: 'Soda ash', unit: 't', q: 't' },
-	panels: { label: 'Solar panels', unit: 'kWp', q: 'kwp' },
+	panels: { label: 'Solar panes, bought finished', unit: 'kWp', q: 'kwp' },
 	cells: { label: 'Solar cells for the glass', unit: 'kWp', q: 'kwp' },
+	// the dome factory's struts and hub lines (./primitives.js DF_ENGINE)
+	lamellas: { label: 'Lamellas, glue and C24 (struts and frames)', unit: 'm³', q: 'm3' },
+	plate: { label: 'Steel plate (hubs)', unit: 't', q: 't' },
 	accelerators: { label: 'Accelerators', unit: '', q: 'n' }
 };
 /**

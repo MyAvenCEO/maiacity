@@ -23,7 +23,7 @@
  */
 import { LIVING, TOWER_HEX, HEX_AREA } from '../sandbox-7/layout.js';
 import { hexStats, FACTORY_RUN, GEOTHERMAL, TOWER_EQUIPMENT } from '../sandbox-7/stats.js';
-import { KINDS, shellOf, towerShell, towerFloors, DENSITY, PRICES, EQUIPMENT, ENERGY as E7, DAY, LAND_PERSON, SOURCES, FLOOR_MATERIALS, ASSEMBLY, BATTERY_KWH, DESIGN, PACKAGE, siteHall } from '../sandbox-7/specs.js';
+import { KINDS, shellOf, towerShell, towerFloors, DENSITY, PRICES, EQUIPMENT, ENERGY as E7, DAY, LAND_PERSON, SOURCES, FLOOR_MATERIALS, ASSEMBLY, BATTERY_KWH, DESIGN, PACKAGE, siteHall, DOME_FACTORY, DF, DF_LINES } from '../sandbox-7/specs.js';
 import { buildPlan } from '../sandbox-7/buildout.js';
 
 const cache = new Map();
@@ -61,7 +61,13 @@ function siteParts(site, plan) {
 	return out;
 }
 const PARTS = ['n', 'wood', 'steel', 'glass', 'hemp', 'lime', 'concrete', 'pvM2', 'climate', 'heat', 'solar', 'gfa', 'floor'];
-const TRADED = ['timber', 'bamboo', 'steel', 'glass'];
+/**
+ * the works whose domes the engine's works COOPs rent: the timber and bamboo domes, the steelworks and the glass & solar
+ * works. With Sandbox 6's dome factory (sandbox-7 specs.js DOME_FACTORY) the glass & solar works' dome is the dome
+ * factory (its id stays 'glass') and the steelworks only recycles and makes the steel that is not a dome part, which the
+ * engine does not trade: its dome is one of the centre's halls
+ */
+export const TRADED = DOME_FACTORY ? ['timber', 'bamboo', 'glass'] : ['timber', 'bamboo', 'steel', 'glass'];
 const addParts = (a, b, k = 1) => {
 	for (const p of PARTS) a[p] = (a[p] ?? 0) + (b[p] ?? 0) * k;
 	return a;
@@ -249,7 +255,7 @@ export function villageRecords(f) {
 			homesT: r({ glulam: Math.round(f.homes.wood), steel: Math.round(f.homes.steel), glass: Math.round(f.homes.glass) }, 't', `${S7} shellOf: the home domes’ shells and their CLT floors`),
 			foodDomesT: r({ glulam: Math.round(f.foodDomes.wood), steel: Math.round(f.foodDomes.steel), glass: Math.round(f.foodDomes.glass) }, 't', `${S7} shellOf(120) × ${f.foodDomes.n}`),
 			hallsT: r({ glulam: Math.round(f.halls.wood), steel: Math.round(f.halls.steel), glass: Math.round(f.halls.glass) }, 't', `${S7}: utilities domes, the hemp, recycling, clay and lime factories, ${f.tower ? 'the tower' : 'the centre’s Dome120'}: kept up with the homes`),
-			worksT: r(Object.fromEntries(Object.entries(f.works).map(([k, w]) => [k, { glulam: Math.round(w.wood), steel: Math.round(w.steel), glass: Math.round(w.glass) }])), 't', f.design.halls ? `${S7} hallOf: one plain portal-frame hall each (design package ${f.design.id}); glass = its solar modules, steel with its sandwich panels` : `${S7}: one Dome120 factory each`)
+			worksT: r(Object.fromEntries(Object.entries(f.works).map(([k, w]) => [k, { glulam: Math.round(w.wood), steel: Math.round(w.steel), glass: Math.round(w.glass) }])), 't', f.design.halls ? `${S7} hallOf: one plain portal-frame hall each (design package ${f.design.id}); glass = its solar modules, steel with its sandwich panels` : `${S7}: one Dome120 factory each${DOME_FACTORY ? ' (glass: the dome factory)' : ''}`)
 		},
 		energy: {
 			solarGWh: r(f.solarKwh / 1e6, 'GWh a year', `${S7} shellOf: see-through cells in every second glass panel, 227 kWh a m² a year${f.design.halls ? '; the works halls’ south roofs (hallOf)' : ''}`),
@@ -264,10 +270,16 @@ export function villageRecords(f) {
 			hexCardEur: r(Math.round(f.hexCardEur), '€', `${S7} stats.js hex cards: shells, putting them up (paid, at half the shells' materials), fit-out by the m², machines and land${f.droppedEur ? `; without the tower’s 1 MW data centre and water works (−€${(f.droppedEur / 1e6).toFixed(1)}M)` : ''}. Not the engine's bill: the build-out plan above is`),
 			...Object.fromEntries(f.cost.map((c, k) => [`row${k + 1}`, r(Math.round(c.eur), '€', c.label)]))
 		},
-		works: {
-			timber: r(FACTORY_RUN.timber.t + FACTORY_RUN.bamboo.t, 't glulam, CLT and scrimber a year', `${S7} FACTORY_RUN: timber ${FACTORY_RUN.timber.t} + bamboo ${FACTORY_RUN.bamboo.t}`),
-			steel: r(FACTORY_RUN.steel.t, 't steel a year', `${S7} FACTORY_RUN: ${FACTORY_RUN.steel.note}`),
-			glass: r(FACTORY_RUN.glass.t, 't glazing a year', `${S7} FACTORY_RUN: ${FACTORY_RUN.glass.note}`)
-		}
+		works: DOME_FACTORY
+			? {
+					timber: r(FACTORY_RUN.timber.t + FACTORY_RUN.bamboo.t, 't glulam, CLT and scrimber a year', `${S7} FACTORY_RUN: timber ${FACTORY_RUN.timber.t} + bamboo ${FACTORY_RUN.bamboo.t}`),
+					domeFactory: r(Object.fromEntries(DF_LINES.filter((l) => l.cap).map((l) => [l.id, l.cap])), 'a year on two shifts (glulam m³, hubs t, glazing, solar and cassettes m²)', `${S7} specs.js DF_LINES: the dome factory on the glass & solar works' site, €${(DF.machines / 1e6).toFixed(2)} M of machines, ${DF.floor.toLocaleString('en-US')} m² of lines (./primitives.js DF_ENGINE turns them into the engine's units)`, true),
+					steel: r(0, 't of dome steel a year', `${S7} FACTORY_RUN: with the dome factory the steelworks recycles metal and makes the steel that is not a dome part (the engine does not trade it); the dome factory welds the hubs`)
+				}
+			: {
+					timber: r(FACTORY_RUN.timber.t + FACTORY_RUN.bamboo.t, 't glulam, CLT and scrimber a year', `${S7} FACTORY_RUN: timber ${FACTORY_RUN.timber.t} + bamboo ${FACTORY_RUN.bamboo.t}`),
+					steel: r(FACTORY_RUN.steel.t, 't steel a year', `${S7} FACTORY_RUN: ${FACTORY_RUN.steel.note}`),
+					glass: r(FACTORY_RUN.glass.t, 't glazing a year', `${S7} FACTORY_RUN: ${FACTORY_RUN.glass.note}`)
+				}
 	};
 }

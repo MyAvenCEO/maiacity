@@ -921,6 +921,7 @@ function deliver(w, fill) {
 
 /** materials between COOPs: orders split by price, shortages shared in proportion to orders */
 function clearMaterials(w) {
+	for (const co of w.coops) if (co.projIn) co.projIn.fill(0);
 	if (!w.mGot || w.mGot.length !== G * M) w.mGot = new Float64Array(G * M);
 	w.mGot.fill(0);
 	if (!w.mSh || w.mSh.length !== G * M) w.mSh = new Float64Array(G * M);
@@ -987,6 +988,8 @@ function clearMaterials(w) {
 			if (x > 0) {
 				w.mGot[base + k] = x;
 				const b = w.coops[k];
+				// (round 5) what came for its building project today is the project's (./coops.js produce)
+				(b.projIn ??= new Float64Array(G))[g] = Math.max(0, w.b2b[base + k] - run) * fj;
 				const had = Math.max(0, b.inStock[g]);
 				b.inCostR = b.inCostR ?? Float64Array.from(w.pbar);
 				b.inCostR[g] = (b.inCostR[g] * had + pg * x) / (had + x);

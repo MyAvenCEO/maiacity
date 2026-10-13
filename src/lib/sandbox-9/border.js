@@ -25,12 +25,12 @@
  */
 import { CLASS, ENERGY, FOOD, MAX_COOPS, WOOD, STEEL, GLASS, PANEL } from './consts.js';
 import { rawOf, plantCapDay, capDayOf } from './genesis.js';
-import { supplyAhead, logsGrowth, foodIn, unitEurOf } from './coops.js';
+import { supplyAhead, logsGrowth, foodIn, unitEurOf, TOP_UP } from './coops.js';
 import { peopleAhead } from './ramp.js';
 
 const M = MAX_COOPS;
 /** the import kinds of the ledger, in order */
-export const IMPORT_KINDS = ['food', 'logs', 'scrap', 'float', 'cells', 'glulam', 'steel', 'glazing', 'panels', 'chips', 'grid', 'buildKit', 'buildRunning', 'buildMaterials', 'buildMachines', 'buildServices', 'land'];
+export const IMPORT_KINDS = ['food', 'logs', 'scrap', 'float', 'cells', 'lamellas', 'plate', 'glulam', 'steel', 'glazing', 'panels', 'chips', 'grid', 'buildKit', 'buildRunning', 'buildMaterials', 'buildMachines', 'buildServices', 'land'];
 /** the finished goods a works COOP buys when its works cannot keep up (by good index: glulam, steel, glass, panels) */
 const FINISHED = { [WOOD]: 'glulam', [STEEL]: 'steel', [GLASS]: 'glazing', [PANEL]: 'panels' };
 
@@ -138,13 +138,21 @@ export function importsDay(w) {
 			// first the raw inputs its works will use (cheaper than the finished good), then the finished good for what
 			// its works still cannot make
 			const cap = capDayOf(w, co, w.day);
+			// a timber COOP with its half of the dome factory's struts line runs its timber works first: the works buy
+			// logs for their share of what its buyers ask, the line its lamellas for the rest (./coops.js plan)
+			let capBase = 0, hasTop = false;
+			for (const pl of co.plants) if (TOP_UP.has(pl.tech)) hasTop = true;
+			else if (rawOf(pl)) capBase += Math.max(0, plantCapDay(w, pl, w.day));
+			const need = Math.max(co.demandEma ?? 0, co.madeEma ?? 0);
 			for (const pl of co.plants) {
 				const ro = rawOf(pl);
 				if (!ro) continue;
 				const [kind, a] = ro;
 				// what its works will use a day: what its buyers ask, at least what it made lately, by this plant's share
-				const share = cap > 0 ? Math.max(0, plantCapDay(w, pl, w.day)) / cap : 1;
-				const useDay = Math.min(Math.max(0, plantCapDay(w, pl, w.day)), Math.max(co.demandEma ?? 0, co.madeEma ?? 0) * Math.min(1, share)) * a;
+				const capPl = Math.max(0, plantCapDay(w, pl, w.day));
+				const top = hasTop && TOP_UP.has(pl.tech);
+				const share = hasTop && !top ? (capBase > 0 ? capPl / capBase : 1) : cap > 0 ? capPl / cap : 1;
+				const useDay = (top ? Math.min(capPl, Math.max(0, need - (co.baseOutEma ?? 0))) : Math.min(capPl, need * Math.min(1, share))) * a;
 				const local = kind === 'logs' ? logsGrowth(w, pl, w.day) : 0;
 				pl.rawTarget = useDay * (H + 15);
 				const gap = pl.rawTarget - pl.raw - local * H;
@@ -170,7 +178,14 @@ export function importsDay(w) {
 			const fin = FINISHED[co.good];
 			if (fin && w.cfg.border !== false) {
 				const ahead = supplyAhead(w, co, H);
-				const gap = Math.max(0, co.demandEma) * (H + 10) - co.stock - ahead[ahead.length - 1];
+				let gap = Math.max(0, co.demandEma) * (H + 10) - co.stock - ahead[ahead.length - 1];
+				// (round 5) the village's own works first: what the good's other sellers can make over the month ahead and
+				// hold beyond what their own buyers ask covers this COOP's buyers when it runs out (./engine.js
+				// clearMaterials passes their orders on to the sellers with stock), so it buys the finished good abroad only
+				// for what the village's works together cannot make. A steel COOP that had stood its half of the hub line
+				// down, and leased it to the other, bought hubs at twice the line's cost for its tenth of the buyers while
+				// the line stood three-quarters idle
+				if (gap > 1e-9) gap -= spareOf(w, co, H);
 				if (gap > 1e-9) {
 					const want = gap / 5;
 					const paid = payEur(w, co, want * E[fin]);
@@ -187,6 +202,17 @@ export function importsDay(w) {
 			}
 		}
 	}
+}
+
+/** what the other village sellers of a COOP's good can make over the next H days and hold, beyond their own buyers' ask */
+function spareOf(w, co, H) {
+	let spare = 0;
+	for (const o of w.sellers[co.good] ?? []) {
+		if (o === co || !o.alive) continue;
+		const a = supplyAhead(w, o, H);
+		spare += Math.max(0, a[a.length - 1] + Math.max(0, o.stock) - Math.max(0, o.demandEma ?? 0) * (H + 10));
+	}
+	return spare;
 }
 
 /**

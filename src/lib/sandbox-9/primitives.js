@@ -19,7 +19,7 @@
  * household goods in kg, hot-spring time in hours. Money inside the village is never in here: prices are found by
  * the COOPs each day. Euro prices appear only at the border (BORDER), where COOPs buy what the village cannot make.
  */
-import { DAY, DIET, PRICES, DENSITY, DESIGN } from '../sandbox-7/specs.js';
+import { DAY, DIET, PRICES, DENSITY, DESIGN, KINDS, CELLS, DOME_FACTORY, DF, DF_PARTS, DF_IMPORTS, DF_LINES, DF_GLAZING, DF_LAMELLAS, domeImports } from '../sandbox-7/specs.js';
 
 /** a number with its unit and source; est marks an estimate nobody has checked yet */
 const n = (v, u, src, est = false) => ({ v, u, src, est });
@@ -209,6 +209,99 @@ export const LEARNING = {
 		compute: n({ doing: 0.2, search: 0.126 }, 'per doubling', 'energy per computation halves every ~1.6 years (Koomey et al. 2011, IEEE Annals 33: 46); search: Klaassen et al. 2005 (estimate)', true)
 	}
 };
+
+/**
+ * THE DOME FACTORY (Samuel, 2026-10-13 10:55; Sandbox 6's switch sandbox-7 specs.js DOME_FACTORY, on by default under
+ * its 'insides' package, off with S7_DOME_FACTORY=0). The glass & solar works' Dome120 at the centre is the dome factory,
+ * the Village COOP's: it makes every dome part from raw inputs bought at the border. The engine reads its lines, parts
+ * and imports (DF_LINES, DF_PARTS, DF_IMPORTS) and turns them into four technologies in its own units (TECH below):
+ *   - struts: glulam struts from lamellas and the north cassettes' frames from C24, in t of WOOD (the timber COOPs run
+ *     it beside their timber works, which keeps making the CLT from the village's logs and runs first);
+ *   - steel: the hubs, ring pieces and connectors, welded from plate and galvanised by a galvaniser near by, t of STEEL;
+ *   - glass: the laminated double glazing from float glass, t of GLASS (20 m² a t);
+ *   - panel: the solar panes, cells laid into the glazing's outer laminate, kWp of PANEL (a rating: kWh a year ÷ 980).
+ * Each line's raw input is bought at the border at the price of its whole kit (DF_PARTS `eur`: the lamellas with the
+ * glue, the plate with the galvanising, bolts and weld consumables less the offcuts sold back as scrap, the float with
+ * the low-iron and low-E sheets, PVB, edge and gaskets, the cells with their PVB and ribbons). The steelworks no longer
+ * makes the domes' steel: it recycles and makes what is not a dome part, which the engine does not trade (its dome is
+ * one of the centre's halls). The dome's base load and hours (DF.baseKwh, DF.baseH) are spread over each line's full
+ * output by its floor. `null` with the switch off.
+ */
+export const DF_ON = DOME_FACTORY;
+export const DF_ENGINE = (() => {
+	if (!DOME_FACTORY) return null;
+	const line = (id) => DF_LINES.find((l) => l.id === id);
+	const m2Of = (ids) => ids.reduce((a, id) => a + line(id).floor.reduce((b, x) => b + x.m2, 0), 0);
+	// a Dome120's parts made in the dome factory (sandbox-7 domeImports): the plate a t of hubs takes, the cells a m² of
+	// solar pane
+	const g = domeImports(120);
+	const plateT = g.goods.plateT / g.goods.galvanisedT;
+	const cellsM2 = g.goods.cellsKwp / g.q.solar;
+	const cassM = DF_PARTS.cassette.eur / DF_IMPORTS.kvh.eur; // m³ of C24 a m² of cassette (its kit is the C24 alone)
+	const glazM2T = 1000 / DF_GLAZING.kg; // m² of glazing a t
+	const pvM2Kwp = ENERGY_SOURCES.fieldSolar.kwhPerKwpYear.v / CELLS.flatKwh; // m² of solar pane a kWp of rating
+	const rho = DENSITY.glulam;
+	const strutM3 = line('glulam').cap, cassM3 = line('cassettes').cap * cassM;
+	// the struts line's mix: glulam and the cassettes' C24 by volume, as the two lines' capacities
+	const gs = strutM3 / (strutM3 + cassM3), cs = 1 - gs;
+	const lines = { struts: ['glulam', 'cassettes'], steel: ['hubs'], glass: ['glazing', 'small'], panel: ['solar'] };
+	const floor = Object.fromEntries(Object.entries(lines).map(([k, ids]) => [k, m2Of(ids)]));
+	const cap = { struts: (strutM3 + cassM3) * rho, steel: line('hubs').cap, glass: line('glazing').cap / glazM2T, panel: line('solar').cap / pvM2Kwp };
+	const P = DF_PARTS;
+	// a unit (t or kWp): its raw input, its kit € (from the border), kWh and crew-hours
+	const unit = {
+		struts: { raw: (gs * DF_LAMELLAS + cs) / rho, eur: (gs * P.strut.eur + cs * (P.cassette.eur / cassM)) / rho, kwh: (gs * P.strut.kwh + (cs * P.cassette.kwh) / cassM) / rho, h: (gs * P.strut.h + (cs * P.cassette.h) / cassM) / rho, bought: (gs * P.strut.bought + (cs * P.cassette.bought) / cassM) / rho },
+		steel: { raw: plateT, eur: P.hub.eur, kwh: P.hub.kwh, h: P.hub.h, bought: P.hub.bought },
+		glass: { raw: 1 + DF_GLAZING.waste, eur: P.glazing.eur * glazM2T, kwh: P.glazing.kwh * glazM2T, h: P.glazing.h * glazM2T, bought: P.glazing.bought * glazM2T },
+		panel: { raw: cellsM2 * pvM2Kwp, eur: P.solar.eur * pvM2Kwp, kwh: P.solar.kwh * pvM2Kwp, h: P.solar.h * pvM2Kwp, bought: P.solar.bought * pvM2Kwp }
+	};
+	for (const k of Object.keys(unit)) {
+		const f = floor[k] / DF.floor;
+		unit[k].baseKwh = (DF.baseKwh * 12 * f) / cap[k];
+		unit[k].baseH = (DF.baseH * 12 * f) / cap[k];
+		unit[k].kitEur = unit[k].eur / unit[k].raw;
+	}
+	const domeM2 = Math.PI * (KINDS.factory120.D / 2) ** 2;
+	return { lines, floor, cap, unit, gs, cassM, plateT, cellsM2, glazM2T, pvM2Kwp, rho, floorAll: DF.floor, domeM2, machines: DF.machines };
+})();
+
+/** a dome-factory technology's record set (DF_ENGINE): the same shape as every TECH entry */
+function dfTech(k, label, good, capUnit, rawKind, rawUnit, rawSrc, learn) {
+	const X = DF_ENGINE, u = X.unit[k], P = DF_PARTS;
+	const lineIds = X.lines[k].join(' + ');
+	const parts = { struts: `struts ${P.strut.kwh} kWh and ${P.strut.h} crew-hours a m³, cassette frames ${P.cassette.kwh} kWh a m² (their hours are the site's, sandbox-7 RATES.hemp); ${Math.round(100 * X.gs)} % glulam by volume`, steel: `${P.hub.kwh} kWh and ${P.hub.h} crew-hours a t of hubs`, glass: `${P.glazing.kwh} kWh and ${P.glazing.h} crew-hours a m², ${X.glazM2T} m² a t`, panel: `${P.solar.kwh} kWh and ${P.solar.h} crew-hours a m² of solar pane, ${X.pvM2Kwp.toFixed(2)} m² a kWp (${CELLS.flatKwh} kWh a m² a year)` }[k];
+	const base = `the dome's base ${DF.baseKwh / 1000} MWh and ${DF.baseH} crew-hours a month (light, air, extraction; stores, testing, upkeep), ${Math.round((100 * X.floor[k]) / X.floorAll)} % of it by the line's floor, over its full output`;
+	return {
+		label,
+		good,
+		kind: 'works',
+		capUnit,
+		capYear: n(X.cap[k], `${capUnit} on two shifts`, `sandbox-7 DF_LINES ${lineIds}: ${X.lines[k].map((id) => { const l = DF_LINES.find((x) => x.id === id); return l.cap ? `${l.cap.toLocaleString('en-US')} ${l.unit}` : `${l.label.toLowerCase()} (no capacity of its own)`; }).join(', ')} a year`, true),
+		floorM2: n(X.floor[k], 'm² of the dome factory’s floor', `sandbox-7 DF_LINES ${lineIds} (of ${X.floorAll.toLocaleString('en-US')} m²; the aisles and loading stay the Village COOP’s)`),
+		inputs: { [rawKind]: n(u.raw, rawUnit, rawSrc, true) },
+		kwh: n(u.kwh + u.baseKwh, 'kWh per unit', `sandbox-7 DF_PARTS: ${parts}; and ${base}`, true),
+		runH: n((u.h + u.baseH) / 365, 'Aven hours a day per unit a year of capacity', `sandbox-7 DF_PARTS crew-hours (villagers and their Avens, no wages): ${(u.h + u.baseH).toFixed(2)} a unit at full use, with ${base}`, true),
+		build: {
+			wood: n(0, 't glulam per unit a year (the dome factory’s Dome120 by the line’s floor: ./genesis.js villageTech)', 'sandbox-7 shellOf(120)'),
+			steel: n(0, 't steel per unit a year (the same)', 'sandbox-7 shellOf(120)'),
+			glass: n(0, 't glass per unit a year (the same)', 'sandbox-7 shellOf(120)'),
+			mwhPerT: n(0.1, 'MWh per t built', 'rules.js BUILD_MWH_T')
+		},
+		buildDays: n(120, 'days', 'estimate', true),
+		land: n((X.domeM2 * X.floor[k]) / X.floorAll / X.cap[k], 'm² per unit a year', `the dome factory’s Dome120 (${Math.round(X.domeM2).toLocaleString('en-US')} m²) by the line’s floor`),
+		life: n(30, 'years (the machines)', 'estimate; the machines are kept up at 6 % a year in the build-out (sandbox-7 DF.upkeep)', true),
+		learn
+	};
+}
+/** the dome factory's four lines as technologies (replacing the steel, glass and panel works; struts is new) */
+const DF_TECH = DF_ENGINE
+	? {
+			steel: dfTech('steel', 'Dome factory: hubs, ring pieces and connectors, welded from bought plate (galvanised by a galvaniser near by)', 'steel', 't of hubs a year', 'plate', 't of S355 plate per t of hubs', `sandbox-7 domeImports: ${DF_ENGINE.plateT.toFixed(2)} t of plate a t (${(DF_ENGINE.plateT - 1).toFixed(2)} cut away and sold back as scrap)`, { group: 'materials', coef: { kwh: n(0.6, 'kWh per t at the floor', 'cutting and welding with less power (estimate)', true) } }),
+			glass: dfTech('glass', 'Dome factory: laminated double glazing, from bought float glass', 'glass', 't of glazing a year', 'float', 't of float glass per t of glazing', `sandbox-7 DF_GLAZING: ${DF_GLAZING.kg} kg of glass a m², ${Math.round(100 * DF_GLAZING.waste)} % of the float cut away`, { group: 'materials', coef: { kwh: n(0.5, 'kWh per t at the floor', 'lamination at half today’s energy (estimate)', true) } }),
+			panel: dfTech('panel', 'Dome factory: solar panes, bought cells laid into the glazing’s outer laminate', 'panel', 'kWp of solar panes a year', 'cells', 'kWp of solar cells per kWp of pane', `sandbox-7 DF_PARTS.solar: ${(DF_ENGINE.cellsM2 * 1000).toFixed(0)} Wp of cells a m² (210 Wp and 3 % breakage) at ${DF_ENGINE.pvM2Kwp.toFixed(2)} m² a kWp; the pane’s glass is its glazing's (on top of it)`, { group: 'solar', coef: { kwh: n(0.5, 'kWh per kWp at the floor', 'estimate', true) } }),
+			struts: dfTech('struts', 'Dome factory: glulam struts and the north cassettes’ frames, from bought lamellas and C24', 'wood', 't of struts and cassette frames a year', 'lamellas', 'm³ of lamellas and C24 per t', `sandbox-7 DF_LAMELLAS: ${DF_LAMELLAS} m³ of lamellas a m³ of glulam, a m³ of C24 a m³ of cassette frame (${DF_ENGINE.cassM} m³ a m²), ${Math.round(100 * DF_ENGINE.gs)} % glulam by volume as the lines' capacities, at ${DENSITY.glulam} t a m³`, { group: 'materials', coef: { kwh: n(0.5, 'kWh per t at the floor', 'estimate', true) } })
+		}
+	: {};
 
 /**
  * The technologies: what each kind of COOP makes, from what, with how much energy, on how much land, what a unit of
@@ -464,7 +557,10 @@ export const TECH = {
 		buildDays: n(0, 'days', 'cannot be built: fixed by nature'),
 		land: n(500 / 150, 'm² per bather-hour/day', 'a pond site of 0.05 ha (estimate)', true),
 		life: n(0, 'years', 'no wear')
-	}
+	},
+	// with the dome factory, its lines replace the steel, glass and panel works above (same keys, same place) and add the
+	// struts line (DF_TECH)
+	...DF_TECH
 };
 
 /**
@@ -521,19 +617,49 @@ export const FOOD = {
  */
 const DIET_EUR_KG = { legumes: 1.5, nuts: 7, chestnuts: 3, roots: 0.4, vegetables: 1.2, fruit: 1.25, eggs: 3, chicken: 4.5 };
 const dietEurDay = Object.entries(DIET).reduce((a, [k, d]) => a + (d.g / 1000) * DIET_EUR_KG[k], 0);
+/** a dome-factory import as a BORDER record (sandbox-7 specs.js DF_IMPORTS: its price, source and how it was worked out) */
+const dfImport = (k, u) => {
+	const x = DF_IMPORTS[k];
+	return n(x.eur, u, `sandbox-7 DF_IMPORTS.${k}: ${x.label}${x.range ? ` (${x.range})` : ''}: ${x.why}${x.url ? ` (${x.url})` : ''}`, !!x.est);
+};
 export const BORDER = {
 	foodEur: n((dietEurDay / DAY.kcal) * 1000, '€ per 1,000 kcal of the diet, wholesale, delivered', `the diet's day at wholesale, €${dietEurDay.toFixed(2)} for ${Math.round(DAY.kcal)} kcal: € a kg ${Object.entries(DIET_EUR_KG).map(([k, v]) => k + ' ' + v).join(', ')}. Apples wholesale €1.22–1.29 a kg (AgrarMarkt Austria, June and October 2025); the rest estimates from German wholesale and producer prices`, true),
 	foodProtein: n((DAY.protein / DAY.kcal) * 1000, 'g of protein per 1,000 kcal of food bought', 'bought in the diet’s own mix (src/lib/sandbox-7/specs.js DAY)'),
 	logsEur: n(105 / 0.45, '€ a t of logs (dry)', 'spruce sawlogs B/C 2b €84–120 a solid m³ (LWK Niedersachsen, May 2025), ~€98 in Bavaria; €105 a m³ at ~0.45 dry t a m³', true),
 	scrapEur: n(300, '€ a t of steel scrap', 'sandbox-7 SOURCES.steel: scrap ~300 €/t (EU 2025)'),
 	floatEur: n(650, '€ a t of float glass', 'float glass ~USD 680 a t in Germany (IMARC price trend, 2026 edition); EU import unit values ~€2,000 a t include worked glass (estimate)', true),
-	cellsEur: n(60, '€ per kWp of solar cells', 'TOPCon cells $0.036–0.040 a W (pv magazine, 9 May 2025) at $1.13 a € (Bank of Finland, 2025 average): ~€0.035 a W, €60 a kWp with the see-through cells’ premium (range 40–100; cost audit 2026-10-13, was 300)', true),
+	cellsEur: DF_ENGINE
+		? n(DF_IMPORTS.cells.eur * 1000, '€ per kWp of solar cells', `sandbox-7 DF_IMPORTS.cells: ${DF_IMPORTS.cells.label}, ${DF_IMPORTS.cells.range} (${DF_IMPORTS.cells.url}): ${DF_IMPORTS.cells.why} (was €60 a kWp with a see-through premium before the dome factory)`, true)
+		: n(60, '€ per kWp of solar cells', 'TOPCon cells $0.036–0.040 a W (pv magazine, 9 May 2025) at $1.13 a € (Bank of Finland, 2025 average): ~€0.035 a W, €60 a kWp with the see-through cells’ premium (range 40–100; cost audit 2026-10-13, was 300)', true),
+	// the dome factory's raw inputs (sandbox-7 specs.js DF_IMPORTS, 2025/26 prices, read from there), and what a raw unit
+	// costs with the rest of its line's kit: the price the engine's dome-factory COOPs pay at the border
+	...(DF_ENGINE
+		? {
+				lamellaEur: dfImport('lamella', '€ a m³ of spruce lamellas'),
+				adhesiveEur: dfImport('adhesive', '€ of MUF glue a m³ of glulam'),
+				kvhEur: dfImport('kvh', '€ a m³ of C24 structural timber (the cassettes’ frames)'),
+				plateEur: dfImport('plate', '€ a t of S355 plate'),
+				galvanisingEur: dfImport('galvanising', '€ a t of hubs galvanised, with the haul'),
+				boltsEur: dfImport('bolts', '€ of bolt sets and pins a t of hubs'),
+				weldEur: dfImport('weld', '€ of wire, gas, tips and abrasives a t of hubs'),
+				lowIronEur: dfImport('lowIron', '€ a m² of sheet, low-iron over clear float'),
+				lowEEur: dfImport('lowE', '€ a m² of sheet, low-E over clear float'),
+				pvbEur: dfImport('pvb', '€ a m² of PVB interlayer'),
+				edgeEur: dfImport('edge', '€ of insulating-glass edge a m² of glazing'),
+				gasketsEur: dfImport('gaskets', '€ of gaskets and cover caps a m² of glazing'),
+				stringingEur: dfImport('stringing', '€ of ribbons, busbars and junction boxes a m² of solar pane'),
+				lamellasKitEur: n(DF_ENGINE.unit.struts.kitEur, '€ a m³ of lamellas and C24 with their glue (the struts line’s kit)', `sandbox-7 DF_PARTS: struts €${DF_PARTS.strut.eur} a m³ (${DF_LAMELLAS} m³ of lamellas and the glue), cassette frames €${DF_PARTS.cassette.eur} a m² (C24), mixed ${Math.round(100 * DF_ENGINE.gs)} % glulam by volume: €${Math.round(DF_ENGINE.unit.struts.eur)} a t of struts and frames at ${DF_ENGINE.unit.struts.raw.toFixed(2)} m³ a t (bought finished €${Math.round(DF_ENGINE.unit.struts.bought)})`, true),
+				plateKitEur: n(DF_ENGINE.unit.steel.kitEur, '€ a t of plate with its galvanising, bolts and weld consumables, less the offcuts', `sandbox-7 DF_PARTS.hub: €${Math.round(DF_PARTS.hub.eur)} a t of hubs (plate, galvanising, bolts, wire and gas, the offcuts back at €300 a t) over ${DF_ENGINE.plateT.toFixed(2)} t of plate (bought finished €${DF_PARTS.hub.bought})`, true),
+				floatKitEur: n(DF_ENGINE.unit.glass.kitEur, '€ a t of float glass with its low-iron and low-E sheets, PVB, edge and gaskets', `sandbox-7 DF_PARTS.glazing: €${DF_PARTS.glazing.eur.toFixed(2)} a m² of glazing over ${((DF_GLAZING.kg * (1 + DF_GLAZING.waste)) / 1000).toFixed(4)} t of float a m² (bought finished €${DF_PARTS.glazing.bought} a m²)`, true),
+				cellsKitEur: n(DF_ENGINE.unit.panel.kitEur, '€ a kWp of cells with their PVB layer, ribbons and junction box', `sandbox-7 DF_PARTS.solar: €${DF_PARTS.solar.eur.toFixed(2)} a m² of solar pane over ${(DF_ENGINE.cellsM2).toFixed(4)} kWp of cells a m² (bought finished €${DF_PARTS.solar.bought} a m²)`, true)
+			}
+		: {}),
 	// the materials bought when the village's works cannot keep up are Sandbox 6's own, at its design package's prices
 	// (sandbox-7 specs.js DESIGN, PRICES, DENSITY): read from there, never copied
-	glulamEur: n(PRICES.glulam.eur / DENSITY.glulam, '€ a t of glulam, bought when the timber works cannot keep up', `sandbox-7 PRICES.glulam (design package ${DESIGN}): ${PRICES.glulam.label}, €${PRICES.glulam.eur} a m³ (range ${PRICES.glulam.range}) at ${DENSITY.glulam} t a m³ (cost audit 2026-10-13)`, true),
-	steelEur: n(PRICES.hubs.eur, '€ a t of steel, bought when the steelworks cannot keep up', `what the village’s steelworks makes is the domes’ hubs, ring and connectors, so what it buys stands for finished hubs: sandbox-7 PRICES.hubs (design package ${DESIGN}): ${PRICES.hubs.label}, €${PRICES.hubs.eur} a t (range ${PRICES.hubs.range}; cost audit 2026-10-13)`, true),
-	glazingEur: n(PRICES.glass.eur / DENSITY.glass, '€ a t of laminated glazing, bought when the glassworks cannot keep up', `sandbox-7 PRICES.glass: ${PRICES.glass.label}, €${PRICES.glass.eur} a m² (range ${PRICES.glass.range}) at ~${DENSITY.glass} t a m² (cost audit 2026-10-13)`, true),
-	panelsEur: n(440, '€ per kWp of see-through solar glass, bought when the panel works cannot keep up', 'glass-glass modules €0.16–0.22 a Wp (ema-energiewelt.de, 2026); cells laid into a pane at ~€100 a m² and ~1,000 kWh a kWp: €440 a kWp (range 200–700; cost audit 2026-10-13, was 1,000)', true),
+	glulamEur: n(PRICES.glulam.eur / DENSITY.glulam, DF_ENGINE ? '€ a t of glulam, bought finished when the timber works and the dome factory’s struts line cannot keep up' : '€ a t of glulam, bought when the timber works cannot keep up', `sandbox-7 PRICES.glulam (design package ${DESIGN}): ${PRICES.glulam.label}, €${PRICES.glulam.eur} a m³ (range ${PRICES.glulam.range}) at ${DENSITY.glulam} t a m³ (cost audit 2026-10-13)`, true),
+	steelEur: n(PRICES.hubs.eur, DF_ENGINE ? '€ a t of hubs, bought finished when the dome factory’s hub line cannot keep up' : '€ a t of steel, bought when the steelworks cannot keep up', `what the village’s ${DF_ENGINE ? 'dome factory' : 'steelworks'} makes is the domes’ hubs, ring and connectors, so what it buys stands for finished hubs: sandbox-7 PRICES.hubs (design package ${DESIGN}): ${PRICES.hubs.label}, €${PRICES.hubs.eur} a t (range ${PRICES.hubs.range}; cost audit 2026-10-13)`, true),
+	glazingEur: n(PRICES.glass.eur / DENSITY.glass, DF_ENGINE ? '€ a t of laminated glazing, bought finished when the dome factory’s glazing line cannot keep up' : '€ a t of laminated glazing, bought when the glassworks cannot keep up', `sandbox-7 PRICES.glass: ${PRICES.glass.label}, €${PRICES.glass.eur} a m² (range ${PRICES.glass.range}) at ~${DENSITY.glass} t a m² (cost audit 2026-10-13)`, true),
+	panelsEur: n(440, DF_ENGINE ? '€ per kWp of solar panes, bought finished when the dome factory’s solar line cannot keep up' : '€ per kWp of see-through solar glass, bought when the panel works cannot keep up', 'glass-glass modules €0.16–0.22 a Wp (ema-energiewelt.de, 2026); cells laid into a pane at ~€100 a m² and ~1,000 kWh a kWp: €440 a kWp (range 200–700; cost audit 2026-10-13, was 1,000)', true),
 	accountDays: n(60, 'days of its imports a COOP keeps in its euro account', 'what a COOP exports ahead, so a dark week does not stop its imports (estimate)', true),
 	importAhead: n(30, 'days of supply a COOP looks ahead when it buys at the border', 'estimate', true),
 	foodStoreDays: n(90, 'days of food in the stores at founding (bought before day 0)', 'round 3 brief: "a few months of imported food" (estimate)', true),
@@ -581,6 +707,8 @@ export const AVEN_RATE_R = n(2, 'R per Aven hour at 24 HEARTS a day', 'the Aven 
  * cells, batteries and geothermal from Sandbox 6's design). The numbers here are what the design leaves open, a living
  * hex's share (scaled by people ÷ 250, ./genesis.js seedPlants).
  */
+/** the utilities dome's floor the solar COOPs rent (sandbox-7 KINDS.util120: batteries, and a hydrogen store where the design package has one) */
+const UTIL_SOLAR_M2 = Object.fromEntries(['battery', 'hydrogen'].map((b) => [b, KINDS.util120.zones.filter((z) => z.block === b).reduce((a, z) => a + z.m2, 0)]));
 export const STARTING_CAPITAL = n(
 	{
 		forestAgeYears: 0,
@@ -594,17 +722,21 @@ export const STARTING_CAPITAL = n(
 		steelSplit: [0.5, 0.5],
 		glassSplit: [0.5, 0.5],
 		panelWorksKwpYear: [500, 500],
+		// the dome factory's lines (DF_ENGINE), each shared by two COOPs, half each
+		dfSplit: [0.5, 0.5],
 		goodsWorksKgDay: [250, 250],
 		springHours: [150, 150],
 		homesSplit: 'one settlement COOP a hex (Samuel, 2026-10-13 06:50): each living hex’s owns its 290 beds and its food and utilities domes; the centre hex’s, the Village COOP (07:00), owns the centre dome, the eight factory domes and the geothermal plant',
 		rentedM2: {
 			food: 'the whole of each food dome (11,310 m² of floor) and the gardens in the utilities dome: the food COOPs',
 			water: '1,200 m² of each utilities dome (membrane bioreactor and wetland): the City COOP’s water works',
-			solar: '700 m² of each utilities dome (batteries 250 m², hydrogen 450 m²): the solar COOPs',
+			solar: `${UTIL_SOLAR_M2.battery + UTIL_SOLAR_M2.hydrogen} m² of each utilities dome (${UTIL_SOLAR_M2.hydrogen ? `batteries ${UTIL_SOLAR_M2.battery} m², hydrogen ${UTIL_SOLAR_M2.hydrogen} m²` : 'the batteries; no hydrogen store in this design package'}): the solar COOPs`,
 			compute: '700 m² of each utilities dome (the data centre): the settlement COOP’s own accelerators (and the Village COOP’s in the centre dome), not rented',
 			goods: '1,600 m² of each utilities dome (the workshops): the goods works',
-			works: 'the timber and bamboo domes (timber works), the steelworks dome, the glass & solar dome (glass works 70 %, panel works 30 %, estimate)',
-			halls: 'the centre dome (community halls) and the hemp, lime, clay and recycling domes, whose works the engine does not trade: rented by the six living settlement COOPs for their residents, a sixth each'
+			works: DF_ENGINE
+				? `the timber and bamboo domes (timber works); the dome factory (the glass & solar works' site) by its lines' floor: the struts line ${DF_ENGINE.floor.struts.toLocaleString('en-US')} m² (the timber COOPs), hubs ${DF_ENGINE.floor.steel.toLocaleString('en-US')} m² (the steel COOPs), glazing ${DF_ENGINE.floor.glass.toLocaleString('en-US')} m² (the glass COOPs), solar ${DF_ENGINE.floor.panel.toLocaleString('en-US')} m² (the panel COOPs); its aisles and loading (${(Math.round(DF_ENGINE.domeM2) - DF_ENGINE.floorAll).toLocaleString('en-US')} m²) the Village COOP's own`
+				: 'the timber and bamboo domes (timber works), the steelworks dome, the glass & solar dome (glass works 70 %, panel works 30 %, estimate)',
+			halls: `the centre dome (community halls) and the hemp, lime, clay${DF_ENGINE ? ', steel' : ''} and recycling domes, whose works the engine does not trade${DF_ENGINE ? ' (the steelworks recycles and makes the steel that is not a dome part)' : ''}: rented by the six living settlement COOPs for their residents, a sixth each`
 		},
 		accelerators: 'none at founding: the hardware owners buy them as the avenCEO COOP’s inference demand grows (./ai.js), the camp’s first server on day 0'
 	},

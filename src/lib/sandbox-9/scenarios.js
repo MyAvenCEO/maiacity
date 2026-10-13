@@ -65,7 +65,7 @@ function causeOf(s) {
 	}
 	if (!p.P2.pass) {
 		const hold = p.P2.normal.lowestHoldingDaysByYear ?? [];
-		out.push(`P2 fails: strict ${p.P2.strict.holdsEveryDayFrom > 0 ? `from day ${p.P2.strict.holdsEveryDayFrom}` : 'never held to the end'}, normal ${p.P2.normal.pass ? 'pass' : `fail (${p.P2.normal.failures} person-days)`}, the owner-only cohort’s lowest holding ${f2(Math.min(...hold))} days of the bundle`);
+		out.push(`P2 fails: strict ${p.P2.strict.holdsEveryDayFrom >= 0 ? `from day ${p.P2.strict.holdsEveryDayFrom}` : 'never held to the end'}, normal ${p.P2.normal.pass ? 'pass' : `fail (${p.P2.normal.failures} person-days)`}, the owner-only cohort’s lowest holding ${f2(Math.min(...hold))} days of the bundle`);
 	}
 	if (!p.P3.pass) out.push(`P3 fails: ${p.P3.failed.length} deciles (worst fall ${pct(Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)))}), without Aven services ${p.P3.withoutCompute.pass ? 'pass' : `${p.P3.withoutCompute.failed.length} fail`}${p.P3.coops.pass ? '' : ', COOP part fails'}`);
 	if (!p.abundance.pass) out.push(`MIND bound a basic on ${p.abundance.mindBindsBasics} day-goods (a day and a basic)`);
@@ -306,7 +306,7 @@ export const SCENARIOS = [
 				pass,
 				numbers: { newcomers: nc, cohortStrictFrom: s.prop3.P2.strict.holdsEveryDayFrom },
 				takeaway: nc.strictFrom >= 0 ? `Owner-only newcomers to a settled city lived on dividends alone from day ${f0(nc.strictFrom)} after joining, and were short on ${f0(nc.short)} person-days.` : `Owner-only newcomers to a settled city never lived on dividends alone in their ${nc.ratioByYear.length} years here; they were short on ${f0(nc.short)} person-days.`,
-				evidence: `the newcomers’ lowest dividends ÷ basic bundle, by year after joining: ${nc.ratioByYear.map((r) => f2(r)).join(', ')}; the genesis cohort (a cold start) held the strict test from day ${s.prop3.P2.strict.holdsEveryDayFrom}. A newcomer’s dividends grow only as its own HEARTS half builds a holding; the laws give it nothing else, so the strict test is a test of a cold start, not of a newcomer.`
+				evidence: `the newcomers’ lowest dividends ÷ basic bundle, by year after joining: ${nc.ratioByYear.map((r) => f2(r)).join(', ')}; the genesis cohort (a cold start) ${s.prop3.P2.strict.holdsEveryDayFrom >= 0 ? `held the strict test from day ${s.prop3.P2.strict.holdsEveryDayFrom}` : 'never held the strict test to the end'}. A newcomer’s dividends grow only as its own HEARTS half builds a holding; the laws give it nothing else, so the strict test is a test of a cold start, not of a newcomer.`
 			};
 		}
 	},
@@ -365,7 +365,7 @@ export const SCENARIOS = [
 			return {
 				pass,
 				numbers: { rows },
-				takeaway: rows.map((r) => `At ${pct(r.share, 0)}, the yield was ${pct(r.yield1)} in year 1 and ${pct(r.yieldLast)} in year 30. It stayed under 7 % from year ${r.belowMeltFromYear}.`).join(' ') + ` The strict test held from day ${rows.map((r) => r.strictFrom).join(', ')}.`,
+				takeaway: rows.map((r) => `At ${pct(r.share, 0)}, the yield was ${pct(r.yield1)} in year 1 and ${pct(r.yieldLast)} in year 30. It stayed under 7 % from year ${r.belowMeltFromYear}.`).join(' ') + ` The strict test (dividends alone pay every member’s bundle every day to the end) ${rows.map((r) => `${r.strictFrom >= 0 ? `held from day ${r.strictFrom}` : 'never held to the end'} at ${pct(r.share, 0)}`).join(', ')}.`,
 				evidence: rows.map((r) => `${pct(r.share, 0)}: max yield after year 2 ${pct(r.maxYieldAfter2, 2)}, Prop 3 ${r.prop3 ? 'pass' : 'fail'}, poorest holdings decile ${f2(r.poorH)}`).join('; ')
 			};
 		}
@@ -854,7 +854,7 @@ export const SCENARIOS = [
 				pass: null,
 				comparison: true,
 				numbers: { rows },
-				takeaway: rows.map((r) => `${r.label}: dividends alone pay the bundle ${r.strictFrom > 0 ? `every day from day ${f0(r.strictFrom)}` : 'on some days only'}; the cohort lives at ${f2(r.ownerL5)} over its first five years and ${f2(r.ownerLLast)} in the last year; ${r.P3failed} deciles fail P3.`).join(' ') + ` (One seed, ${a.seed}; P3 is not judged here, and how many deciles fail under each rule can change with the seed.)`,
+				takeaway: rows.map((r) => `${r.label}: dividends alone pay the bundle ${r.strictFrom >= 0 ? `every day from day ${f0(r.strictFrom)}` : 'on some days only'}; the cohort lives at ${f2(r.ownerL5)} over its first five years and ${f2(r.ownerLLast)} in the last year; ${r.P3failed} deciles fail P3.`).join(' ') + ` (One seed, ${a.seed}; P3 is not judged here, and how many deciles fail under each rule can change with the seed.)`,
 				evidence: rows.map((r) => `${r.label}: P2 strict ${r.strict ? 'pass' : 'fail'}, normal ${r.normal ? 'pass' : 'fail'}; poorest holdings decile ${f2(r.poorH)}, poorest Aven decile ${f2(r.poorA)} in the last year`).join('; ')
 			};
 		}
