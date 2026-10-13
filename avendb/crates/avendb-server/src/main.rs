@@ -26,6 +26,10 @@ async fn main() -> Result<()> {
     tracing::info!("avenDB server: offer {}", running.offer.to_text());
     let (data, bind, relay) = (config.data.display(), config.bind, config.relay_bind);
     tracing::info!("avenDB server: data in {data}, iroh on {bind}, relay on {relay}");
+    match &config.bucket {
+        Some(b) => tracing::info!("avenDB server: its store lives in bucket {} at {}, sealed", b.name, b.endpoint),
+        None => tracing::info!("avenDB server: no bucket, its store lives in {data} alone"),
+    }
     stopped().await?;
     tracing::info!("avenDB server: stopping");
     running.shutdown().await

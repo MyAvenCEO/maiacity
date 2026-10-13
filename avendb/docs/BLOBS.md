@@ -212,6 +212,38 @@ space. `tests/page.rs` runs it in Chromium: Eve's first browser's store goes bac
 into OPFS as the browser opens again, holding every edit and key it kept, and leaves IndexedDB; a second page can't load
 it while the browser runs.
 
+## The bucket (B3a)
+
+The server's store lives in its bucket (`avendb-net`, `bucket.rs`; the S3 client in `avendb-server`, `bucket.rs`), and
+its folder on disk is only a cache of it and a short queue of what goes up next. Hetzner's endpoint agrees no
+post-quantum key exchange, so, as Samuel chose, the server seals every object before it uploads it: XChaCha20-Poly1305
+under a 256-bit key derived from its seal (`AVENDB_BUCKET_SEAL`, a GitHub secret with a copy kept offline), bound to the
+object's name, so an object read back under another name doesn't open. Its TLS to the bucket offers X25519MLKEM768
+first and X25519 after it; what crosses it is sealed either way.
+
+- `edits/<from>-<n>`: a pack of the device's edits, those of its log from place `from` on, each a record as on disk
+  after a header of its own (`avenDB edits 1`). A pack from place 0 holds the whole log and replaces every pack before
+  it: the first after each start is one, and so is the next once the bucket holds 64 packs.
+- `keys/<id>`: each McEliece key, under its id, checked against it when it comes back.
+- `device.key`: the server's device's secret, so a server whose folder is lost is the same device again; a folder and
+  a bucket that hold two secrets are two servers', and the server doesn't start.
+
+The node saves what its device takes on disk first, then puts in the bucket what the disk holds and the bucket
+doesn't, the keys before the edits that name them; an upload that fails is tried again after `retry`, then twice as
+long each time, up to a minute, and once more as the node stops. Nothing counts until the bucket has it: until the
+bucket holds everything the device holds, the node tells its peers nothing new (`Node::behind`), so a device that wrote
+an edit keeps it as its own until the server announces it. As a node starts, it first takes back what the bucket holds
+and its folder doesn't: every key its folder lacks, and the edits of every pack its folder's `packs` doesn't list. An
+object that doesn't open under the seal stops the start. Nothing ever writes a name twice, and with Object Lock a pack
+replaced is deleted only as a mark: its bytes go 7 days later.
+
+`tests/bucket.rs` runs it over a bucket in a folder: Alice's Mac writes Welcome, every object in the bucket is sealed
+(no pack header, no Welcome text), its folder is lost, and it starts again from the bucket alone showing Welcome, the
+whole log in one pack that replaced the ones before it; a bucket sealed under another seal is refused; a server whose
+folder is lost is the same device again; and while the server's bucket is down, it takes Welcome from Alice's Mac but
+announces nothing, so Bob's Mac reads Welcome only once the bucket is up again. The server's files (`blobs/`) stay on
+its disk until B3b.
+
 ## Phases
 
 | Phase | What | State |
@@ -222,13 +254,13 @@ it while the browser runs.
 | B2c | Sync rules: per device, by the cap selector, for any data, marked by the stewards and applied by every peer (T28, T29); the keeper keeps what the rules say | built |
 | B2b | The page's store in OPFS, in its worker: its edits, McEliece keys and what opens it again; one tab at a time; IndexedDB moved over once and gone | built |
 | B2d | The page's file pieces in OPFS beside its edits: the files its rules keep whole, and the pieces it read | in B4 |
-| B3 | The server's bucket as its source of truth: packs of small blobs, one object per piece, outboards and roots, read-ahead in ranges; its disk a cache it can lose | |
+| B3a | The server's edits, McEliece keys and device secret in its bucket, sealed; nothing announced before the bucket has it; its disk a cache it rebuilds from the bucket | built |
+| B3b | The server's files in its bucket: one object per piece, outboards and roots, read-ahead in ranges | |
 | B4 | Streaming: the Mac reads a range as a file, a page through a service worker; a Files page | |
 | B5 | Studio's media on avenDB, beside the legacy vault, which stays as it is | |
 
 The bucket is `maiacity-avendb` in hel1, beside the media vault's, made by the avenDB workflow
 (`.github/workflows/avendb.yml`) with the project's S3 keys and Object Lock, as Samuel chose: every object version is
 locked in compliance mode for 7 days, so no key deletes or overwrites it before then; a replaced or deleted version goes
-7 days later, an unfinished upload after 2. One choice still waits at B3: whether the server reaches the bucket over
-post-quantum TLS only (Hetzner may not offer it, which the workflow checks; what would travel is ciphertext either
-way).
+7 days later, an unfinished upload after 2. Hetzner's endpoint agrees no post-quantum key exchange, which the workflow
+checks, so the server seals every object itself (above).

@@ -16,8 +16,15 @@
 //! The relay serves plain HTTP. TLS ends in front of it, at a proxy that must offer X25519MLKEM768, as every device's
 //! TLS offers nothing else (`avendb_net::pq_provider`); and as iroh's relay path is `/relay`, the relay wants a host
 //! name of its own. Where it is deployed is said in `README.md`, under "Deploying the server".
+//!
+//! With a bucket (blobs B3a, `Config::bucket`), the node's store lives in it, every object sealed under the server's
+//! seal (`avendb_net::bucket`), its folder only a cache: the server tells its peers of an edit only once the bucket
+//! has it, and a server whose folder is lost starts again from the bucket alone, as the same device.
+
+pub mod bucket;
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -25,13 +32,16 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result, anyhow};
 use avendb::id::SignerId;
+use avendb_net::bucket::Sealed;
 use avendb_net::{Admission, Node, Offer, Options, server, token_pass};
+use data_encoding::HEXLOWER_PERMISSIVE;
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use iroh_relay::server::{
     Access, AccessControl, ClientRequest, ConnectionId, RelayConfig, RelayService, Server, ServerConfig,
 };
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
+use zeroize::Zeroizing;
 
 /// How the server runs, as its environment says.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +63,34 @@ pub struct Config {
     /// whose pass any passkey signed (`avendb_net::Admission::open`), not only one whose passkey roots a vault the
     /// server knows. A device on UDP reaches the server without the relay anyway.
     pub signup: bool,
+    /// The bucket its store lives in (`AVENDB_BUCKET` and the rest of `BucketConfig`), if any; else its folder alone
+    /// holds it.
+    pub bucket: Option<BucketConfig>,
+}
+
+/// The bucket the server's store lives in (blobs B3a), its folder only a cache of it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BucketConfig {
+    /// Its name (`AVENDB_BUCKET`).
+    pub name: String,
+    /// Its S3 endpoint (`AVENDB_BUCKET_ENDPOINT`, such as `https://hel1.your-objectstorage.com`).
+    pub endpoint: String,
+    /// Its region (`AVENDB_BUCKET_REGION`, such as `hel1`).
+    pub region: String,
+    /// The S3 key the server signs its requests with (`AVENDB_BUCKET_ACCESS_KEY` and `AVENDB_BUCKET_SECRET_KEY`).
+    pub access_key: String,
+    pub secret_key: String,
+    /// The seal every object is sealed under (`AVENDB_BUCKET_SEAL`, 64 hex digits): without it, nothing in the bucket
+    /// opens, and with another, the server doesn't start.
+    pub seal: Zeroizing<[u8; 32]>,
+}
+
+impl fmt::Debug for BucketConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut config = f.debug_struct("BucketConfig");
+        config.field("name", &self.name).field("endpoint", &self.endpoint).field("region", &self.region);
+        config.finish_non_exhaustive()
+    }
 }
 
 impl Config {
@@ -80,8 +118,26 @@ impl Config {
                 Some("closed") => false,
                 Some(v) => return Err(anyhow!("AVENDB_SIGNUP: {v} is neither open nor closed")),
             },
+            bucket: var("AVENDB_BUCKET").map(|name| bucket_config(name, &var)).transpose()?,
         })
     }
+}
+
+/// The bucket named `name`, as `var` says the rest of it is: every part must be said.
+fn bucket_config(name: String, var: &impl Fn(&str) -> Option<String>) -> Result<BucketConfig> {
+    let said = |n: &str| var(n).with_context(|| format!("{n}: unsaid, with AVENDB_BUCKET said"));
+    let seal = Zeroizing::new(said("AVENDB_BUCKET_SEAL")?);
+    let seal = HEXLOWER_PERMISSIVE.decode(seal.trim().as_bytes()).map(Zeroizing::new).ok();
+    let seal = seal.and_then(|bytes| <[u8; 32]>::try_from(&bytes[..]).ok());
+    let seal = seal.context("AVENDB_BUCKET_SEAL: no 64 hex digits")?;
+    Ok(BucketConfig {
+        name,
+        endpoint: said("AVENDB_BUCKET_ENDPOINT")?,
+        region: said("AVENDB_BUCKET_REGION")?,
+        access_key: said("AVENDB_BUCKET_ACCESS_KEY")?,
+        secret_key: said("AVENDB_BUCKET_SECRET_KEY")?,
+        seal: Zeroizing::new(seal),
+    })
 }
 
 /// The server running: its node, its relay, and its offer.
@@ -121,6 +177,10 @@ pub async fn start(config: &Config) -> Result<Running> {
         page: avendb_net::PAGE,
         // its start is nobody's to watch
         progress: avendb_net::Progress::new(),
+        bucket: match &config.bucket {
+            Some(b) => Some(Sealed::new(bucket::S3::new(b)?, &b.seal)),
+            None => None,
+        },
     };
     let node = server::open(&config.data, opts).await?;
     let mut offer = node.offer();
