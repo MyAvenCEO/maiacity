@@ -1,11 +1,11 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Laws 4 and 5, told as a story in five steps: Anna invests one HEART into the solar COOP; it converts and is gone;
-	// one new solarMIND appears, half in Anna's wallet (her ownership) and half in the treasury (working capital); Anna
-	// pays for her lamp's power in solarMIND, and at that moment a fifth of the sale goes to every solarMIND holder as a
-	// dividend (Law 5), the rest to the treasury; the treasury pays it out again, through proposals: a tenth of its half
-	// drips into the pool, the panel COOP gets its own panelMIND through the pool, and Mia gets solarMIND for her Aven's
-	// work proposal. Coin areas are to scale.
+	// one new solarMIND appears: 0.5 to the investor (Anna's wallet, her ownership), 0.4 to the treasury (working
+	// capital), 0.1 to the pool (the liquidity rule); Anna pays for her lamp's power in solarMIND, and at that moment a
+	// fifth of the sale goes to every solarMIND holder as a dividend (Law 5), the rest to the treasury; the treasury pays
+	// it out again, through proposals: the panel COOP gets its own panelMIND through the pool, and Mia gets solarMIND for
+	// her Aven's work proposal. Coin areas are to scale.
 	import { onMount } from 'svelte';
 	import { runClock, watchNarrow, HEART, ease, arc } from './anim.js';
 
@@ -20,11 +20,13 @@
 	const STEPS = [
 		'Anna invests one annaHEART into the solar COOP.',
 		'The HEART converts and is gone for good. One new solarMIND appears.',
-		'Half goes to Anna’s wallet: she now owns part of the COOP. Half goes to the treasury: the COOP’s working capital. It is the same solarMIND.',
+		'It goes 0.5 to the investor, 0.4 to the treasury, 0.1 to the pool. Anna’s 0.5 is her ownership of the COOP. The treasury’s 0.4 is the COOP’s working capital. The pool’s 0.1 lets people trade MINDs. It is the same solarMIND.',
 		'Anna switches on her lamp and pays 0.10 solarMIND for the power. At that moment a fifth of it, 0.02, goes to everyone who holds solarMIND, as a dividend (Law 5). Anna holds some too, so a little comes back to her. The other 0.08 goes to the treasury.',
-		'The treasury pays it out again. A tenth of its half drips into the pool. The panel COOP gets 0.20 through the pool, as its own panelMIND. Mia gets 0.15 for her Aven’s work proposal.'
+		'The treasury pays it out again. The panel COOP gets 0.20 through the pool, as its own panelMIND. Mia gets 0.15 for her Aven’s work proposal.'
 	];
-	const USE = 0.1, DIV = 0.02, DRIP = 0.05, PAY = 0.2, WORK = 0.15;
+	// the liquidity rule: each HEART invested makes 1 MIND: 0.5 to the investor, 0.4 to the treasury, 0.1 to the pool
+	const MINE = 0.5, TREAS = 0.4, POOL = 0.1;
+	const USE = 0.1, DIV = 0.02, PAY = 0.2, WORK = 0.15;
 	const GOLD = '#d9a520', STEEL = '#7d97ad';
 
 	let box, still = false;
@@ -45,8 +47,10 @@
 	const out = $derived(step === 4 ? k2 : 0);
 	const lit = $derived(step >= 3 ? (step === 3 ? k1 : 1) : 0);
 
-	const wallet = $derived(0.5 * done(2) - USE * done(3));
-	const treasury = $derived(0.5 * done(2) + (USE - DIV) * done(3) - (DRIP + PAY + WORK) * (into >= 1 ? 1 : 0));
+	const wallet = $derived(MINE * done(2) - USE * done(3));
+	const treasury = $derived(TREAS * done(2) + (USE - DIV) * done(3) - (PAY + WORK) * (into >= 1 ? 1 : 0));
+	// the pool's solarMIND: its part of the new MIND, then the panel COOP's 0.20 swapped in for panelMIND
+	const pooled = $derived(POOL * done(2) + PAY * (into >= 1 ? 1 : 0));
 	const held = $derived(DIV * done(3));
 	const panel = $derived(step === 4 && raw >= 1 ? PAY : 0);
 	const mia = $derived(WORK * (into >= 1 ? 1 : 0));
@@ -68,7 +72,7 @@
 
 <div bind:this={box}>
 <div class="scroll">
-<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Follow one HEART in five steps. Anna invests one annaHEART into the solar COOP. It converts and is gone, and one new solarMIND appears. Half goes to Anna's wallet as her ownership, and half to the COOP's treasury as working capital. Anna pays for her lamp's power with a little solarMIND. At that moment a fifth of the payment goes to everyone who holds solarMIND as a dividend, and the rest goes to the treasury. The treasury pays it out again: a tenth of its half drips into the pool, the panel COOP receives its own panelMIND through the pool, and Mia receives solarMIND for her Aven's work proposal.">
+<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Follow one HEART in five steps. Anna invests one annaHEART into the solar COOP. It converts and is gone, and one new solarMIND appears. It goes 0.5 to the investor, 0.4 to the treasury, 0.1 to the pool: 0.5 to Anna's wallet as her ownership, 0.4 to the COOP's treasury as working capital, and 0.1 to the city's pool, so that people can trade MINDs. Anna pays for her lamp's power with a little solarMIND. At that moment a fifth of the payment goes to everyone who holds solarMIND as a dividend, and the rest goes to the treasury. The treasury pays it out again: the panel COOP receives its own panelMIND through the pool, and Mia receives solarMIND for her Aven's work proposal.">
 	<!-- steps 4 and 5: the power that Anna pays for, from the COOP to her lamp -->
 	{#if lit > 0}
 		<line x1={L.COOP[0]} y1={L.COOP[1]} x2={L.LAMP[0]} y2={L.LAMP[1]} stroke="#e0b030" stroke-width="3" stroke-dasharray="7 6" stroke-dashoffset={-t * 24} opacity={lit * 0.9} />
@@ -129,6 +133,10 @@
 	<g transform="translate({L.POOL[0]} {L.POOL[1]})">
 		<circle r="30" fill="var(--paper)" stroke="#5b8fa8" stroke-width="1.6" />
 		<path d="M-18 -2 q6 -6 12 0 t12 0 t12 0 M-18 8 q6 -6 12 0 t12 0 t12 0" fill="none" stroke="#5b8fa8" stroke-width="1.6" stroke-linecap="round" />
+		{#if pooled > 0.001}
+			<circle cx="-14" cy="-44" r={r(pooled)} fill={GOLD} opacity="0.88" />
+			<text x={-14 + r(pooled) + 5} y="-40" class="amt">{pooled.toFixed(2)}</text>
+		{/if}
 		<text y="48" text-anchor="middle" class="node">pool</text>
 		<text y="63" text-anchor="middle" class="sub">{panel > 0 ? 'solarMIND in,' : 'a basket of MINDs'}</text>
 		{#if panel > 0}<text y="77" text-anchor="middle" class="sub">panelMIND out</text>{/if}
@@ -159,8 +167,10 @@
 	{:else if step === 2 && raw < 1}
 		{@const [ax, ay] = arc(L.COOP, SPOT(L.WALLET), k, narrow ? 20 : -10)}
 		{@const [bx, by] = lerp(L.COOP, SPOT(L.TREASURY), k)}
-		<circle cx={ax} cy={ay} r={r(0.5)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
-		<circle cx={bx} cy={by} r={r(0.5)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
+		{@const [cx, cy] = arc(L.COOP, [L.POOL[0] - 14, L.POOL[1] - 44], k, narrow ? -30 : 30)}
+		<circle cx={ax} cy={ay} r={r(MINE)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
+		<circle cx={bx} cy={by} r={r(TREAS)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
+		<circle cx={cx} cy={cy} r={r(POOL)} fill={GOLD} stroke="var(--paper)" stroke-width="1.5" />
 	{:else if step === 3 && raw < 1}
 		{#if k1 < 1}
 			{@const [x, y] = arc(SPOT(L.WALLET), SPOT(L.TREASURY), k1, 40)}
@@ -171,10 +181,8 @@
 		{/if}
 	{:else if step === 4 && raw < 1}
 		{#if into < 1}
-			{@const [dx, dy] = lerp(SPOT(L.TREASURY), L.POOL, into)}
 			{@const [px, py] = arc(SPOT(L.TREASURY), L.POOL, into, narrow ? 30 : -30)}
 			{@const [mx, my] = arc(L.TREASURY, [L.MIA[0] + 34, L.MIA[1]], into, narrow ? -40 : -30)}
-			<circle cx={dx} cy={dy} r={r(DRIP)} fill={GOLD} stroke="var(--paper)" stroke-width="1.5" />
 			<circle cx={px} cy={py} r={r(PAY)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
 			<circle cx={mx} cy={my} r={r(WORK)} fill={GOLD} stroke="var(--paper)" stroke-width="2" />
 		{:else}

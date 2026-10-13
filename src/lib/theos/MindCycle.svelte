@@ -1,12 +1,13 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 13: MIND goes round. New MIND (24 HEARTS a day convert) reaches people and treasuries; treasuries pay people
+	// Figure 13: MIND goes round. New MIND (24 HEARTS a day convert) reaches people, treasuries and the pools (0.5 to the
+	// investor, 0.4 to the treasury, 0.1 to the pool; the COOP adds the pools' part to its baskets); treasuries pay people
 	// for their Avens' work items; people spend at the COOPs, so the MIND comes back. At each sale, Law 5's share branches
 	// off at once to the holders, and only the rest reaches the treasury. A little melts in each place. Arrow widths are shares of a person's income, and gold MIND coins travel along each arrow at a
 	// rate in proportion to its flow. Two worlds: the dynamic world (wants that keep growing) and the earlier static one.
 	import { onMount } from 'svelte';
 	import { runClock, watchNarrow, HEART } from './anim.js';
-	import { ROUND_TRIP, ROUND_TRIP_STATIC, ofIncome, flowSum, fmt, RATE, UIA_DAY } from './model.js';
+	import { ROUND_TRIP, ROUND_TRIP_STATIC, ofIncome, flowSum, fmt, RATE, UIA_DAY, TREASURY_SHARE, POOL_SHARE, INVESTOR_SHARE } from './model.js';
 
 	const GOLD = '#d9a520', MELT = '#8a8578';
 	// wide: new MIND on top, people left, treasuries right, the pools at the bottom right, the melt as a band below.
@@ -15,19 +16,20 @@
 	const LAYOUT = {
 		wide: { w: 680, h: 420, NEW: [340, 78], nr: 24, PEOPLE: [130, 210], TREAS: [550, 210], R: 46, POOLS: [612, 322], pr: 20, band: 386, poolsLabel: [640, 326, 'start'],
 			SALE: [340, 150], divName: 'dividends, at each sale',
-			bend: { own: 34, coop: -34, buy: -18, keep: -18, work: -50, div: -10 }, at: { buy: [-38, -142], work: [158, 24], div: -2, meltP: 100, meltT: 80, tenth: 38 },
-			lab: { own: [214, 112, 'end'], coop: [466, 112, 'start'], buy: [340, 126, 'middle'], work: [340, 278, 'middle'], div: [300, 214, 'middle'], meltP: [132, 352, 'start'], meltT: [546, 352, 'end'] } },
+			bend: { own: 34, coop: -34, buy: -18, keep: -18, work: -50, div: -10 }, at: { buy: [-38, -142], work: [158, 24], div: -2, meltP: 100, meltT: 80, pool: 38 },
+			lab: { own: [214, 112, 'end'], coop: [496, 106, 'start'], buy: [340, 126, 'middle'], work: [340, 278, 'middle'], div: [300, 214, 'middle'], meltP: [132, 352, 'start'], meltT: [546, 352, 'end'] } },
 		narrow: { w: 360, h: 620, NEW: [180, 84], nr: 22, PEOPLE: [78, 270], TREAS: [282, 270], R: 42, POOLS: [326, 432], pr: 17, band: 570, poolsLabel: [358, 472, 'end'],
 			SALE: [180, 205], divName: 'dividends',
-			bend: { own: 40, coop: -40, buy: -12, keep: -12, work: -56, div: -8 }, at: { buy: [-50, -130], work: [160, 30], div: -5, meltP: 100, meltT: 80, tenth: 40 },
+			bend: { own: 40, coop: -40, buy: -12, keep: -12, work: -56, div: -8 }, at: { buy: [-50, -130], work: [160, 30], div: -5, meltP: 100, meltT: 80, pool: 40 },
 			lab: { own: [8, 140, 'start'], coop: [354, 140, 'end'], buy: [180, 178, 'middle'], work: [180, 344, 'middle'], div: [204, 242, 'middle'], meltP: [84, 520, 'start'], meltT: [276, 520, 'end'] } }
 	};
 
-	// the flows of one world, HEARTS a person a day
+	// the flows of one world, HEARTS a person a day. coop: the treasury's part and the pools' part of the new MIND; the
+	// COOP adds the pools' part to its baskets (pool)
 	const flowsOf = (rt) => ({
 		own: rt.people.in.own,
-		coop: rt.treasuries.in.own + rt.pools.in.tenth,
-		tenth: rt.pools.in.tenth,
+		coop: rt.treasuries.in.own + rt.pools.in.pool,
+		pool: rt.pools.in.pool,
 		work: rt.people.in.items + rt.people.in.proposals,
 		div: rt.people.in.dividends,
 		buy: rt.people.out.buying,
@@ -42,7 +44,7 @@
 	};
 	const pctOf = (v, rt) => `${fmt(ofIncome(v, rt) * 100)} %`;
 	const D = flowsOf(ROUND_TRIP), S = flowsOf(ROUND_TRIP_STATIC);
-	const aria = `MIND goes round. New MIND from the HEARTS that people invest reaches their wallets and the COOP treasuries. Treasuries pay people for their Avens' work items. People spend at the COOPs, so the MIND comes back. At each sale, the Law 5 share goes at once to the holders, and only the rest reaches the treasury. A little melts in each place. In the dynamic world, people spend ${pctOf(D.buy, ROUND_TRIP)} of their income and ${pctOf(D.meltP, ROUND_TRIP)} melts in their wallets. In the static world, they spend ${pctOf(S.buy, ROUND_TRIP_STATIC)} and ${pctOf(S.meltP, ROUND_TRIP_STATIC)} melts.`;
+	const aria = `MIND goes round. New MIND from the HEARTS that people invest reaches their wallets, the COOP treasuries and the pools: ${fmt(INVESTOR_SHARE, 1)} to the investor, ${fmt(TREASURY_SHARE, 1)} to the treasury, ${fmt(POOL_SHARE, 1)} to the pool. Treasuries pay people for their Avens' work items. People spend at the COOPs, so the MIND comes back. At each sale, the Law 5 share goes at once to the holders, and only the rest reaches the treasury. A little melts in each place. In the dynamic world, people spend ${pctOf(D.buy, ROUND_TRIP)} of their income and ${pctOf(D.meltP, ROUND_TRIP)} melts in their wallets. In the static world, they spend ${pctOf(S.buy, ROUND_TRIP_STATIC)} and ${pctOf(S.meltP, ROUND_TRIP_STATIC)} melts.`;
 
 	let box;
 	let narrow = $state(false);
@@ -90,7 +92,7 @@
 			keep: arrow(SALE, rim(TREAS, R + 4, at.buy[1]), bend.keep, F.keep),
 			div: arrow(SALE, rim(PEOPLE, R + 4, at.div), bend.div, F.div),
 			work: arrow(rim(TREAS, R + 3, at.work[0]), rim(PEOPLE, R + 4, at.work[1]), bend.work, F.work),
-			tenth: arrow(rim(TREAS, R + 3, at.tenth), rim(POOLS, pr + 4, -90), 0, F.tenth),
+			pool: arrow(rim(TREAS, R + 3, at.pool), rim(POOLS, pr + 4, -90), 0, F.pool),
 			meltP: arrow(rim(PEOPLE, R + 3, at.meltP), [rim(PEOPLE, R, at.meltP)[0], band - 2], 0, F.meltP, true),
 			meltT: arrow(rim(TREAS, R + 3, at.meltT), [rim(TREAS, R, at.meltT)[0], band - 2], 0, F.meltT, true),
 			meltX: arrow(rim(POOLS, pr + 3, 90), [POOLS[0], band - 2], 0, F.meltX, true)
@@ -107,7 +109,7 @@
 
 	const LABELS = $derived([
 		['own', 'ownership', pctOf(F.own, rt)],
-		['coop', 'the COOP’s half', ''],
+		['coop', `${fmt(TREASURY_SHARE, 1)} to the treasury,`, '', `${fmt(POOL_SHARE, 1)} to the pools`],
 		['buy', 'spent at COOPs', pctOf(F.buy, rt)],
 		['work', 'Aven work items', pctOf(F.work, rt)],
 		['div', L.divName, pctOf(F.div, rt)],
@@ -165,9 +167,9 @@
 	<text x={L.poolsLabel[0]} y={L.poolsLabel[1]} text-anchor={L.poolsLabel[2]} class="sub">pools</text>
 
 	<!-- what each arrow carries, as a share of a person's income -->
-	{#each LABELS as [k, name, v] (k)}
+	{#each LABELS as [k, name, v, line2] (k)}
 		{@const [x, y, anchor] = L.lab[k]}
-		<text {x} {y} text-anchor={anchor} class="lab">{name}{#if v}<tspan class="amt" dx="4">{v}</tspan>{/if}</text>
+		<text {x} {y} text-anchor={anchor} class="lab">{name}{#if v}<tspan class="amt" dx="4">{v}</tspan>{/if}{#if line2}<tspan {x} dy="14">{line2}</tspan>{/if}</text>
 	{/each}
 </svg>
 <div class="controls">
