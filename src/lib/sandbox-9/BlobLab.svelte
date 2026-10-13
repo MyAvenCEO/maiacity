@@ -23,6 +23,10 @@
 	import LabCharts from './LabCharts.svelte';
 	import RuleCards from './RuleCards.svelte';
 	import ProofView from './ProofView.svelte';
+	import WorldParams from './WorldParams.svelte';
+	import LivingView from './LivingView.svelte';
+	import ImportsView from './ImportsView.svelte';
+	import { SETTINGS, plain, words } from './params.js';
 
 	const LIST = Object.values(EXPERIMENTS);
 	const SPEEDS = [
@@ -59,19 +63,38 @@
 		melt: (v) => `melt ${Math.round(v * 100)} %`,
 		reserveDays: (v) => `reserve ${v} days`,
 		coopsOf: (v) => (v ? Object.entries(v).map(([g, n]) => `${n} ${g} COOP${n > 1 ? 's' : ''}`).join(', ') : 'two COOPs of each good'),
-		allocBy: (v) => (v === 'price' ? 'HEARTS follow pool prices' : 'HEARTS follow delivered output')
+		allocBy: (v) => (v === 'price' ? 'HEARTS follow pool prices' : 'HEARTS follow delivered output'),
+		tower: (v) => (v ? 'with the Tower180' : 'no tower'),
+		peoplePerHex: (v) => `${v} people a living hex`,
+		forestYield: (v) => `food forest yield × ${v}`,
+		chipImport: (v) => (v === false ? 'closed border' : 'accelerators imported')
+	};
+	/** a setting with no words of its own above: its label and value from ./params.js */
+	const settingText = (k, v) => {
+		if (SETTING[k]) return SETTING[k](v);
+		const label = SETTINGS[k]?.label ?? words(k);
+		return `${label.charAt(0).toLowerCase() + label.slice(1)} ${SETTINGS[k]?.f ? SETTINGS[k].f(v) : plain(v)}${SETTINGS[k]?.unit ? ` ${SETTINGS[k].unit}` : ''}`;
 	};
 	/** settings that only size or label a run, never a rule */
 	const QUIET = new Set(['maxYears', 'fieldPeople', 'label', 'testMode']);
 	/** the one rule an experiment changes, in a few words, for each side */
 	function sides(exp) {
 		const keys = [...new Set([...Object.keys(exp.base ?? {}), ...Object.keys(exp.changed ?? {})])].filter((k) => !QUIET.has(k) && JSON.stringify(exp.base?.[k]) !== JSON.stringify(exp.changed?.[k]));
-		const say = (cfg) => keys.map((k) => (SETTING[k] ? SETTING[k](cfg?.[k]) : `${k} ${JSON.stringify(cfg?.[k])}`)).join(', ');
+		const say = (cfg) => keys.map((k) => settingText(k, cfg?.[k])).join(', ');
 		return { base: say(exp.base) || 'as it is', changed: say(exp.changed) || 'changed' };
 	}
 
+	/** the run view's sub-tabs: the live charts, the living standards per tenth, the import bill, every parameter */
+	const VIEWS = [
+		['charts', 'Charts'],
+		['living', 'Living'],
+		['imports', 'Imports'],
+		['world', 'World']
+	];
+
 	// ── where we are ──
 	let tab = $state(/** @type {'experiments' | 'rules' | 'proof'} */ ('experiments'));
+	let view = $state(/** @type {'charts' | 'living' | 'imports' | 'world'} */ ('charts'));
 	let expId = $state(/** @type {string | null} */ (null));
 	const exp = $derived(expId ? EXPERIMENTS[expId] : null);
 	const side = $derived(exp ? sides(exp) : { base: '', changed: '' });
@@ -93,6 +116,8 @@
 	let result = $state.raw(/** @type {any} */ (null));
 	let version = $state(0);
 	let pts = $state.raw({ base: /** @type {any[]} */ ([]), changed: /** @type {any[]} */ ([]) });
+	/** the yearly living standards and import ledger of each world, read off the running worlds as the years pass */
+	let stats = $state.raw(/** @type {{ base: any, changed: any } | null} */ (null));
 	let perf = $state({ msPerYear: 0, fps: 0 });
 	/** @type {Worker | null} */
 	let worker = null;
@@ -131,6 +156,7 @@
 		panel = null;
 		latest = null;
 		meta = null;
+		stats = null;
 		error = '';
 		day = 0;
 		pts = { base: [], changed: [] };
@@ -157,6 +183,7 @@
 		if (m.type === 'meta') {
 			meta = m;
 			days = m.days;
+			if (m.stats) stats = m.stats;
 		} else if (m.type === 'frame') {
 			fieldA?.setFrame(m.base);
 			fieldB?.setFrame(m.changed);
@@ -168,6 +195,7 @@
 			if (m.msPerYear) perf.msPerYear = m.msPerYear;
 			const now = performance.now();
 			if (m.panel) panel = m.panel;
+			if (m.stats) stats = m.stats;
 			if (now - lastUi > 250 || m.panel) {
 				latest = { base: m.base, changed: m.changed };
 				version++;
@@ -175,6 +203,7 @@
 			}
 		} else if (m.type === 'done') {
 			result = m.result;
+			if (m.stats) stats = m.stats;
 			perf.msPerYear = m.result.msPerYear;
 			stage = 'end';
 			playing = false;
@@ -416,9 +445,25 @@
 	{#if stage === 'end'}{@render endBlock()}{/if}
 	{@render pickedBlock()}
 	{#if mode !== 'wide'}{@render controls()}{/if}
-	{@render scores()}
-	<LabCharts {pts} {panel} xMax={days} {bands} names={{ base: 'Base', changed: 'Changed' }} {version} />
-	<p class="fine perf">This browser: {perf.msPerYear ? `${(perf.msPerYear / 1000).toFixed(2)} s a simulated year for both worlds` : '…'} · {perf.fps} frames a second.</p>
+	<div class="viewbar">
+		<div class="views" role="tablist" aria-label="What to show">
+			{#each VIEWS as [id, label]}
+				<button role="tab" aria-selected={view === id} class:on={view === id} onclick={() => (view = /** @type {any} */ (id))}>{label}</button>
+			{/each}
+		</div>
+	</div>
+	{#if view === 'charts'}
+		{@render scores()}
+		<LabCharts {pts} {panel} xMax={days} {bands} names={{ base: 'Base', changed: 'Changed' }} {version} />
+		<p class="fine perf">This browser: {perf.msPerYear ? `${(perf.msPerYear / 1000).toFixed(2)} s a simulated year for both worlds` : '…'} · {perf.fps} frames a second.</p>
+	{:else if view === 'living'}
+		<LivingView worlds={[stats?.base?.living, stats?.changed?.living]} names={['Base', 'Changed']} sub={[side.base, side.changed]} running={stage !== 'end'} />
+	{:else if view === 'imports'}
+		<ImportsView worlds={[stats?.base?.imports, stats?.changed?.imports]} names={['Base', 'Changed']} sub={[side.base, side.changed]} running={stage !== 'end'} />
+	{:else}
+		<p class="fine sides"><span class="pair"><i class="b"></i>Base: {side.base}</span> <span class="pair"><i class="c"></i>Changed: {side.changed}</span></p>
+		<WorldParams sets={[meta?.params?.base, meta?.params?.changed]} names={['Base', 'Changed']} defaults={meta?.params?.defaults} />
+	{/if}
 {/snippet}
 
 <div class="lab-root mode-{mode}" class:open={!!expId} class:aside={sheetOpen}>
@@ -480,7 +525,7 @@
 				<div class="sheet" class:up={sheetOpen}>
 					<button class="handle" onclick={() => (sheetOpen = !sheetOpen)} aria-expanded={sheetOpen}>
 						<i></i>
-						<span>{stage === 'guess' ? 'What do you expect?' : stage === 'end' ? 'What happened' : 'Charts and controls'}</span>
+						<span>{stage === 'guess' ? 'What do you expect?' : stage === 'end' ? 'What happened' : (VIEWS.find((v) => v[0] === view)?.[1] ?? 'Charts')}</span>
 						<small>{sheetOpen ? 'Hide' : 'Show'}</small>
 					</button>
 					<div class="body">{@render panelBody()}</div>
@@ -1102,5 +1147,70 @@
 	}
 	.perf {
 		margin-bottom: 0.5rem;
+	}
+
+	/* the run view's sub-tabs: a segmented bar that stays at the top while its view scrolls under it */
+	.viewbar {
+		position: sticky;
+		top: 0;
+		z-index: 3;
+		background: var(--cream);
+		padding: 0.3rem 0;
+		margin: -0.3rem 0;
+	}
+	.sheet .viewbar {
+		background: var(--paper);
+		top: -0.2rem;
+		padding-top: 0.4rem;
+	}
+	.views {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 2px;
+		padding: 3px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--cream);
+		max-width: 30rem;
+		width: 100%;
+		box-shadow: 0 2px 6px rgb(38 56 44 / 0.06);
+	}
+	.views button {
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 600;
+		padding: 0.3rem 0.4rem;
+		border-radius: 999px;
+		cursor: pointer;
+		color: var(--ink-soft);
+		min-width: 0;
+	}
+	.views button.on {
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.sides {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.2rem 0.8rem;
+		margin: 0;
+	}
+	.sides .pair {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.sides i {
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		display: inline-block;
+		background: #2a78d6;
+		flex: none;
+	}
+	.sides i.c {
+		background: #eb6834;
 	}
 </style>

@@ -9,15 +9,17 @@
  * Energy is the master primitive (Samuel, 16:59): every recipe below carries its kWh or MWh, so the engine can say
  * where every unit of energy went, and only energy left over after basics, running and building pays for innovation.
  *
- * The field is one living hex of our village design (`sandbox-6/numbers.md`, `energy/village-energy.md`,
- * `dome-research/dome-sizes.md`): a great dome of 248 beds and a dome of 32, the food forest round them, 10 ha of
- * hemp, bamboo and woods, see-through solar cells on the dome glass, and this hex's sixth of the village centre's
- * geothermal plant. The hex's share of the village's iron and sand ground gives its ore and sand.
+ * The world is Sandbox 6's village of 1,500 (round 3, Samuel 2026-10-13): six living hexes round a centre hex, read
+ * from src/lib/sandbox-7 by ./village.js (beds, domes, land, solar cells, geothermal, works, the founding bill). Many
+ * records below are still a living hex's share ("a hex", "per hex"): the engine scales them by `w.c.scale` (people
+ * the village is built for ÷ 250, so 6 for the village of 1,500).
  *
- * Units, everywhere in Sandbox 8: food in kg, water in L, energy in kWh (electricity; heat is kWh_th), a bed in
- * bed-days, building materials in tonnes, solar panels in kWp, household goods in kg, hot-spring time in hours.
- * Money is never in here: prices are found by the COOPs each day.
+ * Units, everywhere in Sandbox 8: food in units of 1,000 kcal of the village diet (with its protein), water in L,
+ * energy in kWh (electricity; heat is kWh_th), a bed in bed-days, building materials in tonnes, solar panels in kWp,
+ * household goods in kg, hot-spring time in hours. Money inside the village is never in here: prices are found by
+ * the COOPs each day. Euro prices appear only at the border (BORDER), where COOPs buy what the village cannot make.
  */
+import { DAY, DIET } from '../sandbox-7/specs.js';
 
 /** a number with its unit and source; est marks an estimate nobody has checked yet */
 const n = (v, u, src, est = false) => ({ v, u, src, est });
@@ -55,12 +57,13 @@ export const WEATHER = {
 // ── people ───────────────────────────────────────────────────────────────────────────────────────────────────────
 /** what a person needs a day (the basic bundle) and the most they will use (satiation); Stone–Geary extras shares */
 export const PERSON = {
-	food: n(9.87 / 7, 'kg a day', 'src/lib/sandbox-6/food.js DIET: 9.87 kg a week (European land-use table)'),
+	food: n(DAY.kcal / 1000, 'units of 1,000 kcal a day', 'src/lib/sandbox-7/specs.js DAY: the village diet, 2,240 kcal a day (EAT-Lancet with chestnuts, roots and legumes for grains and dairy)'),
+	protein: n(DAY.protein, 'g of protein a day', 'src/lib/sandbox-7/specs.js DAY: 73 g a day'),
 	water: n(100, 'L a day', 'src/lib/sandbox-6/food.js: 150 L used, 50 L of it greywater for crops, so 100 L fresh'),
 	energy: n(900 / 365, 'kWh a day', 'sandbox-6/numbers.md: 900 kWh a year at home in a shared dome'),
 	bed: n(1, 'bed', 'one bed a person'),
 	satiation: {
-		food: n((9.87 / 7) * 1.25, 'kg a day', 'a quarter more than need: better and more varied food (estimate)', true),
+		food: n((DAY.kcal / 1000) * 1.25, 'units of 1,000 kcal a day', 'a quarter more than need: better and more varied food (estimate)', true),
 		water: n(150, 'L a day', 'src/lib/sandbox-6/food.js WATER_L: everything a person uses (estimate as a ceiling)', true),
 		energy: n((900 / 365) * 3, 'kWh a day', 'three times home use: devices, cooking, e-bikes (estimate)', true),
 		goods: n(3, 'kg a day', 'household goods, tools, clothes, devices: about 1.1 t a year (estimate)', true),
@@ -144,34 +147,29 @@ export const RESOURCES = {
 		hardLimit: n('recharge', '', 'pumping above the recharge empties the aquifer: the well is capped at the recharge')
 	},
 	foodForest: {
-		kgYearAt100: n(126000 / 260000, 'kg per m² a year at year 10 (100 % of 248 people)', 'sandbox-6/numbers.md: 26 ha give 126 t at year 10, 189 t from year 15'),
-		ramp: n('10 % a year of age, 150 % from year 15', '', 'src/lib/sandbox-6/food.js forestShare'),
-		kwhPerKg: n(0.3, 'kWh per kg (cold store, processing, pumping)', 'world model 5.3: ~0.3–1 kWh/kg (estimate, low end)', true),
+		// the food forest's yields, ramp and weather are in FOOD below (food-research.md); these are its other numbers
+		kwhPerUnit: n(0.5, 'kWh per 1,000 kcal (cold store, processing, pumping)', 'physics audit (2026-10-13): processing takes 0.5–1.5 kWh a kg of food, ~0.3–0.95 a 1,000 kcal of this diet; the low end (estimate)', true),
 		rotPerDay: n(0.0005, 'share of the store a day', 'preserved food: nuts, grain, roots, dried and bottled fruit (estimate)', true),
 		maxKgM2Year: n(3, 'kg per m² a year (physical floor of land per kg)', 'photosynthesis: ≤ 4.6 % of sunlight for C3, field peaks ~3.5 % (Zhu, Long, Ort 2008); intensive mixed systems 2–5 kg/m² (estimate)', true),
-		peters2016: n('0.13–1.08 ha a person a year for ten US diets', '', 'Peters et al. 2016, Elementa: our 0.07–0.105 ha is below the lowest; the riskiest number (test ±50 %)')
+		peters2016: n('0.13–1.08 ha a person a year for ten US diets', '', 'Peters et al. 2016, Elementa')
 	},
 	greenhouse: {
-		kgM2Year: n(4.5, 'kg per m² a year under glass', 'src/lib/sandbox-7/specs.js FOREST indoor: vegetables 45 t/ha, fruit 35, roots 30, layers stacked 1.3× (estimate)', true),
-		maxKgM2Year: n(15, 'kg per m² a year (light-limited)', 'estimate', true),
-		kwhPerKg: n(0.5, 'kWh per kg (fans, pumps, processing)', 'estimate', true),
-		heatKwhPerM2Year: n(430000 / 17671, 'kWh heat per m² of floor a year', 'energy/village-energy.md: 0.43 GWh a year for a great dome of 17,671 m² floor'),
-		lifeYears: n(50, 'years', 'as a dome: 2 % a year upkeep (sandbox-6/numbers.md)')
+		lifeYears: n(50, 'years (the frame; the glazing 30, TECH)', 'as a dome: 2 % a year upkeep (sandbox-6/numbers.md)')
 	},
 	timberLand: {
-		tHaYear: n(15, 't of logs per ha a year', 'src/lib/sandbox-6/rules.js FIELD_T: 10 ha of hemp, bamboo, woods give 150 t; German forests grow 9.4 m³/ha (Thünen BWI 2022): needs fast hemp and bamboo (flag)'),
+		tHaYear: n(10.4 * 0.45, 't of logs per ha a year (dry)', 'physics audit (2026-10-13): Bavarian forests grow 10.4 m³ a ha a year (BWI 2022), ~0.45 t a m³ dry: 4.7 t of logs, 2.3 t of glulam at 2 t of logs a t (1–2.5 t of glulam a ha). Was 15 t, three times too much'),
 		maxTHaYear: n(40, 't per ha a year (physical ceiling)', 'record biomass of bamboo and miscanthus, a part of photosynthesis limits (estimate)', true),
-		ramp: n([0.2, 0.5, 0.8, 1], 'share of yield in years 1–4 of new land', 'hemp is annual, bamboo takes 3–5 years (estimate)', true),
+		ramp: n([0, 0, 0, 0, 0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 1], 'share of yield by year of new land (year 1 first)', 'planted at founding: bamboo gives from year 6–8 (sandbox-7 RAW), Douglas fir and larch first thinnings after ~10–15 years (estimate)', true),
 		standingYears: n(2, 'years of growth that can stand uncut', 'beyond it the stand stops adding wood (estimate)', true)
 	},
 	ore: {
-		tYearPerPit: n(250, 't of iron ore a year per pit', 'src/lib/sandbox-6/rules.js ironmine: 10 rounds of 25 t a year'),
-		pitsMax: n(2, 'pits', "the hex's share of the village's iron ground (estimate)", true),
+		tYearPerPit: n(250, 't of iron ore a year per pit (not used: the village’s steelworks melts scrap)', 'src/lib/sandbox-6/rules.js ironmine: 10 rounds of 25 t a year. The physics audit: bog iron at 30–50 % Fe needs 2.1–3.5 t of ore a t of steel, not 1.67; Sandbox 6’s village (sandbox-7 FACTORY_RUN) runs an electric arc furnace on scrap instead'),
+		pitsMax: n(0, 'pits', 'none: the village digs clay, lime and gravel, not ore (sandbox-7 layout)'),
 		tPerPit: n(20000, 't of ore in a pit', 'a small bog-iron or ironstone working: about 80 years at 250 t a year (estimate); a pit worked out gives nothing more', true)
 	},
 	sand: {
-		tYearPerPit: n(600, 't of glass sand a year per pit', 'src/lib/sandbox-6/rules.js glassworks: 100 rounds of 12 t a sand hex, halved for a pit (estimate)', true),
-		pitsMax: n(2, 'pits', "the hex's share of the village's sand ground (estimate)", true),
+		tYearPerPit: n(600, 't of glass sand a year per pit (not used: the glassworks laminates bought float glass)', 'src/lib/sandbox-6/rules.js glassworks; the physics audit: glass from pit sand alone made soda ash from nothing. Sandbox 6’s village buys float glass (sandbox-7 FACTORY_RUN)', true),
+		pitsMax: n(0, 'pits', 'none: the village buys float glass'),
 		tPerPit: n(50000, 't of glass sand in a pit', 'about 80 years at 600 t a year (estimate); a pit worked out gives nothing more', true)
 	},
 	spring: {
@@ -227,31 +225,32 @@ export const TECH = {
 		good: 'food',
 		kind: 'forest',
 		capUnit: 'm² of food forest',
-		kwh: n(0.3, 'kWh per kg', 'RESOURCES.foodForest.kwhPerKg', true),
+		kwh: n(0.5, 'kWh per 1,000 kcal', 'RESOURCES.foodForest.kwhPerUnit', true),
 		runH: n(0.8 / 1e4, 'Aven hours a day per m² (0.8 h a ha)', 'care, picking robots, cold store (estimate)', true),
 		build: { mwh: n(0.5 / 1e4, 'MWh per m² planted', 'planting and irrigation (estimate)', true) },
 		buildDays: n(60, 'days to plant', 'estimate', true),
 		land: n(1, 'm² per m²', ''),
 		life: n(0, 'years', 'perennial: no wear modelled'),
-		learn: { group: 'food', coef: { yield: n(0.243, 'land per kg, share of today at the floor', '0.727 → 3 kg/m² a year (RESOURCES.foodForest.maxKgM2Year)', true) } }
+		learn: { group: 'food', coef: { yield: n(0.5, 'land per 1,000 kcal, share of today at the floor', 'better varieties and layers: at most twice the mature yield (estimate)', true) } }
 	},
 	greenhouse: {
-		label: 'Growing dome (indoor food forest under glass)',
+		label: 'Food domes (the food forest under glass, two Dome120 a living hex)',
 		good: 'food',
 		kind: 'greenhouse',
-		capUnit: 'm² of floor under glass',
-		kwh: n(0.5, 'kWh per kg', 'RESOURCES.greenhouse.kwhPerKg', true),
+		capUnit: 'm² of food forest under glass',
+		kwh: n(0.5, 'kWh per 1,000 kcal (packing, cold store)', 'as the forest outdoors (estimate)', true),
 		runH: n(5 / 3000, 'Aven hours a day per m²', 'estimate', true),
 		build: {
-			wood: n(1500 / 17671, 't glulam per m² of floor', 'great dome: 1,500 t of glulam over 17,671 m² (sandbox-6/numbers.md, dome-sizes.md)'),
-			steel: n(200 / 17671, 't steel per m²', 'great dome: 200 t of joints'),
-			glass: n(1000 / 17671, 't glass per m²', 'great dome: 1,000 t of glazing'),
+			wood: n(1500 / 17671, 't glulam per m² (replaced by the village’s food domes: ./village.js)', 'sandbox-7 shellOf(120): two food domes a living hex over its food forest under glass'),
+			steel: n(200 / 17671, 't steel per m² (replaced by the village’s food domes)', 'sandbox-7 shellOf(120)'),
+			glass: n(1000 / 17671, 't glass per m² (replaced by the village’s food domes)', 'sandbox-7 shellOf(120)'),
 			mwhPerT: n(0.1, 'MWh per t built', 'src/lib/sandbox-6/rules.js BUILD_MWH_T')
 		},
 		buildDays: n(120, 'days', 'estimate', true),
 		land: n(1, 'm² per m²', ''),
-		life: n(50, 'years', 'RESOURCES.greenhouse.lifeYears'),
-		learn: { group: 'food', coef: { yield: n(0.3, 'land per kg at the floor', '4.5 → 15 kg/m² a year (estimate)', true), kwh: n(0.4, 'kWh per kg at the floor', '0.5 → 0.2 (estimate)', true) } }
+		life: n(50, 'years (the frame)', 'RESOURCES.greenhouse.lifeYears'),
+		glassLife: n(30, 'years (the glazing)', 'physics audit (2026-10-13): laminated glazing and its seals last 25–35 years, not 50: upkeep replaces the glass of a dome every 30 years'),
+		learn: { group: 'food', coef: { yield: n(0.5, 'land per 1,000 kcal at the floor', 'at most twice the mature yield (estimate)', true), kwh: n(0.4, 'kWh per 1,000 kcal at the floor', '0.5 → 0.2 (estimate)', true) } }
 	},
 	rain: {
 		label: 'Roof tanks: rain off the dome roofs',
@@ -311,22 +310,23 @@ export const TECH = {
 		learn: { group: 'energy', coef: { orc: n(0.8, 'heat per kWh at the floor', 'ORC 12 % → 15 % gross: about 60 % of the exergy limit of 23.8 % at these temperatures, which good ORCs reach (estimate)', true) } }
 	},
 	home: {
-		label: 'Dome homes',
+		label: 'Dome homes (Dome80 of 40 and Dome40 of 10), with the halls kept up with them',
 		good: 'bed',
 		kind: 'home',
 		capUnit: 'bed',
-		kwh: n(160000 / 248 / 365, 'kWh per bed-day (climate: fans, pumps, vents)', 'dome-research/dome-sizes.md v2, Dome150: climate power 0.16 GWh a year'),
-		heat: n(410000 / 248 / 365, 'kWh heat per bed-day on average (by month)', 'dome-research/dome-sizes.md v2, Dome150: 1.75 GWh heat need, 1.34 of it from the pond, 0.41 GWh from outside'),
+		kwh: n(160000 / 248 / 365, 'kWh per bed-day (climate: fans, pumps, vents; replaced by the village’s: ./village.js)', 'sandbox-7 shellOf: the home domes’ and the halls’ climate power a bed'),
+		heat: n(410000 / 248 / 365, 'kWh heat per bed-day on average (by month; replaced by the village’s)', 'sandbox-7 shellOf: the home domes’ and the halls’ heat beyond their ponds, a bed'),
 		runH: n(0.08, 'Aven hours a day per bed', 'estimate', true),
 		build: {
-			wood: n(1500 / 248, 't glulam per bed', 'sandbox-6/numbers.md: great dome 1,500 t of glulam struts'),
-			steel: n(465 / 248, 't steel per bed', 'dome-research/dome-sizes.md v2, Dome150: hub steel 220–590 t and ring steel 60 t, so 280–650 t; the middle, 465 t (estimate)', true),
-			glass: n(1036 / 248, 't glass per bed', 'dome-research/dome-sizes.md v2, Dome150: 1,036 t of glass'),
+			wood: n(1500 / 248, 't glulam and CLT per bed (replaced by the village’s: ./village.js)', 'sandbox-7: the home domes’ struts and CLT floors, and the halls’, a bed'),
+			steel: n(465 / 248, 't steel per bed (replaced by the village’s)', 'sandbox-7 shellOf: hubs, ring and connectors', true),
+			glass: n(1036 / 248, 't glass per bed (replaced by the village’s)', 'sandbox-7 shellOf: laminated double glazing'),
 			mwhPerT: n(0.1, 'MWh per t built', 'rules.js BUILD_MWH_T')
 		},
 		buildDays: n(180, 'days', 'estimate', true),
-		land: n((Math.PI * 75 * 75) / 248, 'm² of dome floor a bed', 'dome-sizes.md: Dome150 floor 17,671 m² over 248 beds'),
-		life: n(50, 'years', 'sandbox-6/numbers.md: upkeep 2 % a year'),
+		land: n((Math.PI * 75 * 75) / 248, 'm² of land a bed (replaced by the home domes’ footprint a bed)', 'sandbox-7: Dome80 and Dome40 footprints over their beds'),
+		life: n(50, 'years (the frame)', 'sandbox-6/numbers.md: upkeep 2 % a year'),
+		glassLife: n(30, 'years (the glazing)', 'physics audit (2026-10-13): laminated glazing and its seals last 25–35 years, not 50'),
 		learn: { group: 'homes', coef: { wood: n(0.5, 'materials per bed at the floor', 'lighter frames (estimate)', true), heat: n(0.3, 'heat per bed at the floor', 'better glazing (estimate)', true) } }
 	},
 	timber: {
@@ -334,8 +334,8 @@ export const TECH = {
 		good: 'wood',
 		kind: 'timber',
 		capUnit: 't of glulam a year (works)',
-		inputs: { logs: n(2, 't of logs per t of glulam', 'sawmill and glulam recovery is about 30–60 % of the log (bark, slabs, kerf, drying shrinkage, planing): 50 % (estimate). The residue goes to heat or compost. rules.js (15 t of logs → 15 t of planks, 100 %) is generous', true) },
-		kwh: n(500, 'kWh per t', 'rules.js timber works: 7.5 MWh per 15 t (0.5 MWh/t)'),
+		inputs: { logs: n(2, 't of logs per t of glulam', 'sawmill and glulam recovery is about 30–60 % of the log (bark, slabs, kerf, drying shrinkage, planing): 50 % (estimate; physics audit: 45 % of roundwood ends as glulam). The residue goes to heat or compost', true) },
+		kwh: n((1000 * 350 + 500 * 600) / 1500, 'kWh per t', 'sandbox-7 FACTORY_RUN: timber 1,000 t at 350 kWh/t (sawing, pressing, CNC; drying on geothermal heat), bamboo scrimber 500 t at 600'),
 		runH: n(4 / 100, 'Aven hours a day per t/yr of works', 'estimate', true),
 		runLandH: n(0.5 / 1e4, 'Aven hours a day per m² of timber land', 'estimate', true),
 		build: {
@@ -349,48 +349,46 @@ export const TECH = {
 		learn: { group: 'materials', coef: { yield: n(0.375, 'land per t at the floor', '15 → 40 t/ha a year (RESOURCES.timberLand.maxTHaYear)', true), kwh: n(0.3, 'kWh per t at the floor', '0.5 → 0.15 MWh/t (estimate)', true) } }
 	},
 	steel: {
-		label: 'Steelworks (electric furnace on the pit ore)',
+		label: 'Steelworks (electric arc furnace on scrap)',
 		good: 'steel',
 		kind: 'works',
-		deposit: 'ore',
 		capUnit: 't of steel a year',
-		inputs: { ore: n(25 / 15, 't of ore per t of steel', 'rules.js steelworks: 25 t of ore → 15 t of steel') },
-		kwh: n(3600, 'kWh per t', 'rules.js steelworks: 54 MWh per 15 t (3.6 MWh/t)'),
+		inputs: { scrap: n(1.1, 't of scrap per t of steel', 'EAF yield ~90 % of the scrap charged (estimate); the scrap is the village’s worn steel (90 % recovered) and scrap bought at the border') },
+		kwh: n(650, 'kWh per t', 'sandbox-7 FACTORY_RUN: electric arc furnace on scrap ~400–600 kWh/t and casting the hubs: 650'),
 		runH: n(7.5 / 150, 'Aven hours a day per t/yr', 'estimate', true),
 		build: { wood: n(70 / 150, 't glulam per t/yr', 'sandbox-6/numbers.md: steelworks 70 t planks + 25 t steel'), steel: n(25 / 150, 't steel per t/yr', 'sandbox-6/numbers.md'), mwhPerT: n(0.1, 'MWh per t built', 'rules.js') },
 		buildDays: n(120, 'days', 'estimate', true),
 		land: n(1000 / 150, 'm² per t/yr', 'a factory dome of 0.1 ha (estimate)', true),
 		life: n(30, 'years', 'estimate', true),
-		learn: { group: 'materials', coef: { kwh: n(2.9 / 3.6, 'kWh per t at the floor', 'LIMITS.steelMinMwhT') } }
+		learn: { group: 'materials', coef: { kwh: n(0.4 / 0.65, 'kWh per t at the floor', 'melting scrap takes ~0.4 MWh/t in theory (estimate)', true) } }
 	},
 	glass: {
-		label: 'Glassworks (electric furnace on the pit sand)',
+		label: 'Glassworks (laminating and tempering bought float glass)',
 		good: 'glass',
 		kind: 'works',
-		deposit: 'sand',
-		capUnit: 't of glass a year',
-		inputs: { sand: n(1.2, 't of sand per t of glass', 'rules.js glassworks: 12 t of sand, soda and lime → 10 t') },
-		kwh: n(1300, 'kWh per t', 'rules.js glassworks: 13 MWh per 10 t (1.3 MWh/t)'),
+		capUnit: 't of glazing a year',
+		inputs: { float: n(1.02, 't of float glass per t of glazing', 'cutting loss ~2 % (estimate)', true) },
+		kwh: n(300, 'kWh per t', 'sandbox-7 FACTORY_RUN: laminating and laying the cells, 300 kWh a t; float glass is bought (melting it from sand would need soda ash the village cannot make)'),
 		runH: n(6 / 500, 'Aven hours a day per t/yr', 'estimate', true),
 		build: { wood: n(50 / 1000, 't glulam per t/yr', 'sandbox-6/numbers.md: glassworks 50 t planks + 15 t steel for 1,000 t a year'), steel: n(15 / 1000, 't steel per t/yr', 'sandbox-6/numbers.md'), mwhPerT: n(0.1, 'MWh per t built', 'rules.js') },
 		buildDays: n(120, 'days', 'estimate', true),
 		land: n(1000 / 500, 'm² per t/yr', 'a factory dome of 0.1 ha (estimate)', true),
 		life: n(30, 'years', 'estimate', true),
-		learn: { group: 'materials', coef: { kwh: n(0.69 / 1.3, 'kWh per t at the floor', 'LIMITS.glassMinMwhT') } }
+		learn: { group: 'materials', coef: { kwh: n(0.5, 'kWh per t at the floor', 'lamination at half today’s energy (estimate)', true) } }
 	},
 	panel: {
-		label: 'Panel works (cells laid into glass)',
+		label: 'Panel works (bought cells laid into glass)',
 		good: 'panel',
 		kind: 'works',
 		capUnit: 'kWp a year',
-		inputs: { glass: n(0.06, 't of glass per kWp', 'scripts/theos-e2e-sim.mjs SPECS PANEL: 70 kg of materials a kWp'), steel: n(0.01, 't of steel per kWp (frames, boxes)', 'same, split (estimate)', true) },
-		kwh: n(1200, 'kWh per kWp', 'scripts/theos-e2e-sim.mjs SPECS PANEL: 1,200 kWh a kWp; Fraunhofer ISE payback ~1.1 years'),
+		inputs: { glass: n(0.06, 't of glass per kWp', 'scripts/theos-e2e-sim.mjs SPECS PANEL: 70 kg of materials a kWp'), steel: n(0.01, 't of steel per kWp (frames, boxes)', 'same, split (estimate)', true), cells: n(1, 'kWp of solar cells per kWp', 'the physics audit: a panel needs silicon and silver the village cannot make, so the cells are bought at the border') },
+		kwh: n(100, 'kWh per kWp', 'laminating cells into glass (the 1,200 kWh a kWp of making the cells is spent where they are made) (estimate)', true),
 		runH: n(5 / 500, 'Aven hours a day per kWp/yr', 'estimate', true),
 		build: { wood: n(30 / 500, 't glulam per kWp/yr', 'a works of 500 kWp a year: 30 t planks + 15 t steel (estimate; sandbox-6: 65 t + 40 t for 1,500 t a year)', true), steel: n(15 / 500, 't steel per kWp/yr', 'estimate', true), mwhPerT: n(0.1, 'MWh per t built', 'rules.js') },
 		buildDays: n(120, 'days', 'estimate', true),
 		land: n(1000 / 500, 'm² per kWp/yr', 'a factory dome of 0.1 ha (estimate)', true),
 		life: n(25, 'years', 'estimate', true),
-		learn: { group: 'solar', coef: { kwh: n(0.33, 'kWh per kWp at the floor', '1.2 → 0.4 MWh/kWp: thin film, tandems (estimate)', true), glass: n(0.67, 'glass per kWp at the floor', 'higher efficiency, less glass a kWp (estimate)', true) } }
+		learn: { group: 'solar', coef: { kwh: n(0.5, 'kWh per kWp at the floor', 'estimate', true), glass: n(0.67, 'glass per kWp at the floor', 'higher efficiency, less glass a kWp (estimate)', true) } }
 	},
 	goods: {
 		label: 'Goods works (household goods, tools, devices)',
@@ -415,15 +413,15 @@ export const TECH = {
 		good: 'compute',
 		kind: 'service',
 		capUnit: 'service-hours a day',
-		kwh: n(0.2, 'kWh per service-hour', 'a 700 W accelerator (NVIDIA H100 SXM datasheet) serving ~4 sessions, with cooling (PUE ~1.2) (estimate)', true),
+		kwh: n((1.3 * 1.2) / 16, 'kWh per service-hour', 'physics audit (2026-10-13): an H100-class accelerator draws ~1.3 kW at the wall with its share of the server, PUE 1.2, serving 16 sessions at once (realistic 17–130; the audit’s cautious 16–50)', true),
 		runH: n(1, 'Aven hours a day per service-hour a day', 'the service is an Aven at work: one Aven hour per hour delivered, at the rate card'),
 		build: {
-			chips: n(1 / 96, 'accelerators per service-hour a day', 'one accelerator serves ~4 sessions around the clock: 96 service-hours a day (estimate)', true),
-			steel: n(0.03 / 96, 't of steel per service-hour a day', 'a ~30 kg server slot per accelerator, 96 service-hours a day each (estimate)', true),
-			mwh: n(0.2 / 96, 'MWh per service-hour a day', 'racks, cooling and installation in the hall (estimate); the accelerator itself is made outside', true)
+			chips: n(1 / 384, 'accelerators per service-hour a day', 'physics audit: one accelerator serves 16 sessions around the clock, 384 service-hours a day (was 4 sessions, 96)', true),
+			steel: n(0.03 / 384, 't of steel per service-hour a day', 'a ~30 kg server slot per accelerator (estimate)', true),
+			mwh: n(0.2 / 384, 'MWh per service-hour a day', 'racks, cooling and installation in the hall (estimate); the accelerator itself is made outside', true)
 		},
 		buildDays: n(60, 'days', 'estimate', true),
-		land: n(2 / 96, 'm² per service-hour a day', 'a compute hall: ~2 m² per accelerator with cooling (estimate)', true),
+		land: n(2 / 384, 'm² per service-hour a day', 'a compute hall: ~2 m² per accelerator with cooling (estimate)', true),
 		life: n(5, 'years', 'accelerators are replaced after ~5 years (estimate)', true),
 		learn: {
 			group: 'compute',
@@ -465,13 +463,48 @@ export const CHIPS = {
 	eurPerMwh: n(MWH_EUR, '€ per MWh of exported electricity', 'EU wholesale power ~€80–100 per MWh (2024–25 day-ahead averages); the middle (estimate)', true),
 	// derived from the two above, never typed in (./genesis.js computes the engine's chipKwh the same way)
 	kwhPerChip: n((CHIP_EUR / MWH_EUR) * 1000, 'kWh of exported electricity per accelerator (derived: eurPerChip ÷ eurPerMwh)', 'eurPerChip ÷ eurPerMwh (derived)', true),
-	lineKw: n(1000, 'kW export line', 'a medium-voltage line from the hex to the grid (estimate)', true),
+	lineKw: n(10000 / 6, 'kW export line, a living hex’s share', 'a 20 kV line from the village to the grid carries ~10 MW (estimate)', true),
 	spare: n(2, 'accelerators in each COMPUTE COOP’s store at genesis', 'a spare or two per hall (estimate)', true)
+};
+
+/**
+ * Food, in units of 1,000 kcal of the village diet (src/lib/sandbox-7/specs.js DIET: legumes, nuts, chestnuts, roots,
+ * vegetables, fruit, eggs and chicken). Yields, the maturity ramp, the weather factor, the indoor yields and the
+ * energy for light come from /mnt/project-files/theos/sandbox-8/food-research.md (./food.js reads FOOD).
+ */
+export const FOOD = {
+	unitKcal: n(1000, 'kcal a unit', 'round 3 brief: 1 unit = 1,000 kcal of the village diet mix'),
+	kcalNeed: n(DAY.kcal, 'kcal a person a day', 'src/lib/sandbox-7/specs.js DAY'),
+	proteinNeed: n(DAY.protein, 'g of protein a person a day', 'src/lib/sandbox-7/specs.js DAY'),
+	dietProtein: n((DAY.protein / DAY.kcal) * 1000, 'g of protein per 1,000 kcal of the diet', 'src/lib/sandbox-7/specs.js DAY')
+};
+
+/**
+ * The euro border (paper §11.4, §12.4): what the village cannot make, its COOPs buy outside with euros from the shared
+ * euro reserve, filled by the founding euros left over and by exports (electricity a COOP buys in MIND and sells across
+ * the line). Food COOPs buy food, the works buy their raw inputs, the COMPUTE COOPs accelerators. No person holds euros,
+ * no MIND is made from euros, HEARTS never buy anything.
+ */
+const DIET_EUR_KG = { legumes: 1.5, nuts: 7, chestnuts: 3, roots: 0.4, vegetables: 1.2, fruit: 1.25, eggs: 3, chicken: 4.5 };
+const dietEurDay = Object.entries(DIET).reduce((a, [k, d]) => a + (d.g / 1000) * DIET_EUR_KG[k], 0);
+export const BORDER = {
+	foodEur: n((dietEurDay / DAY.kcal) * 1000, '€ per 1,000 kcal of the diet, wholesale, delivered', `the diet's day at wholesale, €${dietEurDay.toFixed(2)} for ${Math.round(DAY.kcal)} kcal: € a kg ${Object.entries(DIET_EUR_KG).map(([k, v]) => k + ' ' + v).join(', ')}. Apples wholesale €1.22–1.29 a kg (AgrarMarkt Austria, June and October 2025); the rest estimates from German wholesale and producer prices`, true),
+	foodProtein: n((DAY.protein / DAY.kcal) * 1000, 'g of protein per 1,000 kcal of food bought', 'bought in the diet’s own mix (src/lib/sandbox-7/specs.js DAY)'),
+	logsEur: n(105 / 0.45, '€ a t of logs (dry)', 'spruce sawlogs B/C 2b €84–120 a solid m³ (LWK Niedersachsen, May 2025), ~€98 in Bavaria; €105 a m³ at ~0.45 dry t a m³', true),
+	scrapEur: n(300, '€ a t of steel scrap', 'sandbox-7 SOURCES.steel: scrap ~300 €/t (EU 2025)'),
+	floatEur: n(650, '€ a t of float glass', 'float glass ~USD 680 a t in Germany (IMARC price trend, 2026 edition); EU import unit values ~€2,000 a t include worked glass (estimate)', true),
+	cellsEur: n(300, '€ per kWp of solar cells', 'TOPCon modules €0.10 a Wp delivered in Europe (pv magazine, May 2025); see-through cells for glass cost more: semi-transparent BIPV glass 1.0–1.6 €/Wp as a module (sandbox-7 SOURCES.pv); cells alone €0.3 a Wp (estimate)', true),
+	glulamEur: n(565 / 0.55, '€ a t of glulam (not bought: logs are, and the timber works makes the glulam)', 'spruce glulam 555–575 €/m³ wholesale (Holzkurier, Nov 2025; sandbox-7 SOURCES.glulam) at 0.55 t a m³'),
+	accountDays: n(60, 'days of its imports a COOP keeps in its euro account', 'what a COOP exports ahead, so a dark week does not stop its imports (estimate)', true),
+	importAhead: n(30, 'days of supply a COOP looks ahead when it buys at the border', 'estimate', true),
+	foodStoreDays: n(90, 'days of food in the stores at founding (bought before day 0)', 'round 3 brief: "a few months of imported food" (estimate)', true),
+	storesDays: n(30, 'days of materials and goods in the stores at founding', 'estimate', true),
+	reserveYears: n(1, 'years of the village’s food at wholesale left in the euro reserve at founding', 'round 3 brief: the founding euros left over (estimate; scenario F01 tests none and three years)', true)
 };
 
 /** the goods of the world, in order; basics first */
 export const GOODS = [
-	{ id: 'food', label: 'Food', unit: 'kg', basic: true, store: true, horizon: 30 },
+	{ id: 'food', label: 'Food', unit: '1,000 kcal', basic: true, store: true, horizon: 30 },
 	{ id: 'water', label: 'Water', unit: 'L', basic: true, store: true, horizon: 28 },
 	{ id: 'energy', label: 'Energy', unit: 'kWh', basic: true, store: false, horizon: 7 },
 	{ id: 'bed', label: 'A bed', unit: 'bed-day', basic: true, store: false, horizon: 60 },
@@ -493,7 +526,7 @@ export const GOODS = [
  * make a day.
  */
 export const GENESIS_PRICE_R = n(
-	{ food: 0.3, water: 0.002, energy: 0.05, bed: 0.5, wood: 400, steel: 800, glass: 300, panel: 100, goods: 1, spring: 1, compute: 2.5 },
+	{ food: 0.2, water: 0.002, energy: 0.05, bed: 0.5, wood: 400, steel: 800, glass: 300, panel: 100, goods: 1, spring: 1, compute: 2.5 },
 	'R a unit',
 	'calibration guesses for day 0 (estimate): the world moves them from there',
 	true
@@ -502,35 +535,32 @@ export const GENESIS_PRICE_R = n(
 /** the Aven rate card: R per Aven work hour, scaled with the HEARTS a day setting so that money stays a veil */
 export const AVEN_RATE_R = n(2, 'R per Aven hour at 24 HEARTS a day', 'the Aven rate anchor of scripts/theos-e2e-sim.mjs (2 R an Aven hour). It is a rate card, not a wage: it prices Aven work items, and no human is paid. By default it is indexed to the HEARTS issued a day (scaled by HEARTS a day ÷ 24, setting rateIndexed), so doubling HEARTS doubles it: X9 and B28 show neutrality under that rule, and B28 reports the world with the card fixed in R (estimate)', true);
 
-/** the starting state of the base world: a village settled ten years before day 0 (see genesis.js) */
+/**
+ * The village at founding (day 0 = move-in): built from imports before day 0 (./village.js gives the domes, land,
+ * cells, batteries and geothermal from Sandbox 6's design). The numbers here are what the design leaves open, a living
+ * hex's share (scaled by people ÷ 250, ./genesis.js seedPlants).
+ */
 export const STARTING_CAPITAL = n(
 	{
-		forestAgeYears: 10,
-		forestM2: 260000,
-		greenhouseM2: 3000,
-		beds: [248, 32],
-		tankM3: 2.8 * 280,
+		forestAgeYears: 0,
+		indoorAgeDays: 0,
+		tankPerBed: 2.8,
 		tankFill: 0.6,
 		wellM3Day: 20,
-		domeCells: 'both domes (1.3 GWh a year for 248 beds, in step for 32)',
-		battery: 2000,
 		geoStages: 1,
-		timberHa: [5, 5],
-		timberWorksTYear: [110, 110],
-		steelWorksTYear: [150, 150],
-		orePits: [1, 1],
-		glassWorksTYear: [500, 500],
-		sandPits: [1, 1],
+		woodlandAgeYears: 0,
+		timberSplit: [0.5, 0.5],
+		steelSplit: [0.5, 0.5],
+		glassSplit: [0.5, 0.5],
 		panelWorksKwpYear: [500, 500],
 		goodsWorksKgDay: [250, 250],
 		springHours: [150, 150],
 		computeHoursDay: [1000, 1000],
-		foodStoreKg: 45000,
-		storesDays: 30,
-		computeChips: 'one accelerator per 96 service-hours a day of capacity, plus CHIPS.spare in store'
+		homesSplit: 'HOME-A the Dome80 homes, HOME-B the Dome40 homes',
+		computeChips: 'one accelerator per 384 service-hours a day of capacity, plus CHIPS.spare in store'
 	},
 	'',
-	'a village founded ten years before day 0 (forest at year 10, sandbox-6/numbers.md); stores after a normal autumn (estimate)',
+	'round 3: the village is founded on day 0 (outdoor food forest and woodland planted, food domes planted, stores bought). Works sizes from sandbox-7 FACTORY_RUN; the panel and goods works, the warm ponds and the Aven-service halls a living hex’s share as in round 2 (estimate)',
 	true
 );
 
@@ -541,6 +571,6 @@ export function catalogList() {
 		if (o && typeof o === 'object' && 'v' in o && 'src' in o) return void out.push([path, o]);
 		if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) walk(v, path ? path + '.' + k : k);
 	};
-	walk({ MONTHLY, WEATHER, PERSON, ENERGY_SOURCES, RESOURCES, LIMITS, LEARNING, STANDING_MWH_T, TECH, CHIPS, GENESIS_PRICE_R, AVEN_RATE_R, STARTING_CAPITAL }, '');
+	walk({ MONTHLY, WEATHER, PERSON, ENERGY_SOURCES, RESOURCES, LIMITS, LEARNING, STANDING_MWH_T, TECH, CHIPS, FOOD, BORDER, GENESIS_PRICE_R, AVEN_RATE_R, STARTING_CAPITAL }, '');
 	return out;
 }
