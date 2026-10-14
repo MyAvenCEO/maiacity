@@ -79,24 +79,6 @@
 	let carding = false;
 	let profiling = false;
 
-	/** @param {string} key */
-	function remembered(key) {
-		try {
-			return localStorage.getItem(`avendb.${key}`) ?? '';
-		} catch {
-			return '';
-		}
-	}
-
-	/** @param {string} key @param {string} value */
-	function remember(key, value) {
-		try {
-			localStorage.setItem(`avendb.${key}`, value);
-		} catch {
-			// a private window keeps nothing: the fields stay empty next time
-		}
-	}
-
 	const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 	const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
 
@@ -137,8 +119,10 @@
 
 	onMount(async () => {
 		const q = new URLSearchParams(location.search);
-		relay = q.get('relay') ?? (remembered('relay') || RELAY);
-		server = q.get('server') ?? (remembered('server') || SERVER);
+		// the built-in server, or a test server's for this visit only: an offer kept from an earlier server would
+		// lead a new device to an endpoint that is gone
+		relay = q.get('relay') ?? RELAY;
+		server = q.get('server') ?? SERVER;
 		code = q.get('link') ?? '';
 		arrived = !!code;
 		name = deviceName();
@@ -308,8 +292,6 @@
 		signs('Setting up your account', plan('found', { mac: !!mac, make: fresh }), async ({ step, device }) => {
 			if (mac) {
 				await macOpened(await watching(device(), 'found', name.trim(), relay, server, backup));
-				remember('relay', relay);
-				remember('server', server);
 				return;
 			}
 			const { passkey, unlock, sign, held } = await ceremonies(undefined);
@@ -332,8 +314,6 @@
 		signs(what, plan('link', { mac: !!mac }), async ({ step, device }) => {
 			if (mac) {
 				await macOpened(await watching(device(), 'link', name.trim(), relay, through.trim()).catch(noAccount));
-				remember('relay', relay);
-				remember('server', server);
 				return;
 			}
 			const { unlock, held } = await ceremonies(undefined);
@@ -375,8 +355,6 @@
 	async function started(d, nonce, credential) {
 		meta = { name: name.trim(), relay };
 		running(d);
-		remember('relay', relay);
-		remember('server', server);
 		meta = await d.keep(hex(nonce), credential);
 	}
 
