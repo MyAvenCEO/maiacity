@@ -35,6 +35,7 @@
 	// what the card shows; a phone opens on the world, the card closed
 	let panel = $state(typeof matchMedia !== 'undefined' && matchMedia('(max-width: 720px), (max-height: 500px)').matches ? null : 'you');
 	let tools = $state(false); // the phone's tools, behind the action button
+	let walking = $state(false); // walking freely through the world, once the story is told
 	let amount = $state(12);
 	let swapToken = $state('MAIA');
 	let swapTo = $state('TRIBE');
@@ -158,6 +159,10 @@
 	}
 	// the film fades in from black at its very start and out to black at its very end; everything between is a cut
 	// (the editor's rule, the script 2026-10-14: a fade means time passing or an ending, so it is kept for those)
+	// a moment of the story ends the free walk (the world ends it itself as it plays one)
+	$effect(() => {
+		if ((tour || playing) && walking) walking = false;
+	});
 	let fadeIn = $state(true);
 	let ended = $state(false); // the end faded out: the world fades back in under the player's own page
 	$effect(() => {
@@ -494,6 +499,11 @@
 			<button class="mintbar" class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
+		{/if}
+		{#if canMove && !tour && !playing}
+			<!-- walking freely, once the story is told (Samuel 2026-10-14): tap the ground to walk there -->
+			<button class="walkbtn" class:on={walking} onclick={() => (walking = !!world?.walk(!walking))}>{walking ? 'Stop walking' : 'Walk'}</button>
+			{#if walking}<p class="walkhint">Tap the ground to walk there, or use the arrow keys</p>{/if}
 		{/if}
 		{#if canMove && !tour && !playing && myTree?.due}
 			<!-- the first tree waits for its water: once a game month (a real day), a month of its growth each time -->
@@ -1133,6 +1143,40 @@
 	.growth small {
 		margin-left: 0.2rem;
 		color: #6b7a6f;
+	}
+	.walkbtn {
+		position: absolute;
+		z-index: 7;
+		left: max(1rem, env(safe-area-inset-left, 0px));
+		bottom: calc(var(--nav-room, 4rem) + 0.4rem);
+		padding: 0.7rem 1.2rem;
+		border: 1px solid rgb(255 255 255 / 0.5);
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.94);
+		color: #24452f;
+		font: inherit;
+		font-weight: 600;
+		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+		cursor: pointer;
+	}
+	.walkbtn.on {
+		background: #24452f;
+		color: #f4f1e8;
+	}
+	.walkhint {
+		position: absolute;
+		z-index: 7;
+		left: 50%;
+		top: 4.5rem;
+		transform: translateX(-50%);
+		margin: 0;
+		padding: 0.4rem 0.9rem;
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.9);
+		color: #3a4a3f;
+		font-size: 0.85rem;
+		white-space: nowrap;
+		pointer-events: none;
 	}
 	.mintbar.waterbar {
 		bottom: calc(var(--nav-room, 4rem) + 4.2rem);
