@@ -24,9 +24,10 @@
 //! a sealed selector, beside the commitment to its ops, salted with its number; a write's proof and touches go into the
 //! readings, its proof opening the ops of every share of its share's chain. The core's built-in groups of ops are the
 //! model's. A keys edit of the model names only where its boxes go; the core's carries the boxes too, which no rule
-//! opens, so here they are empty. A publish names its blob by a number: here the blob is the bytes `blob <number>`. A
-//! type or a tag is a number in the model, and its digits here, but for the types of schema and lens entries, which
-//! are the core's (`slice::SCHEMA_TYPE`, `slice::LENS_TYPE`). A keep share is a share like any other, with no ops.
+//! opens, so here they are empty. A creation's header names the blob it holds by a number, which only a schema or lens
+//! entry's readers read: here its content is the bytes `blob <number>`, and the lane names it by their hash. A type or
+//! a tag is a number in the model, and its digits here, but for the types of schema and lens entries, which are the
+//! core's (`slice::SCHEMA_TYPE`, `slice::LENS_TYPE`). A keep share is a share like any other, with no ops.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
@@ -420,12 +421,6 @@ impl Names {
                 boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
                 clear: x["public"].as_bool().unwrap().then_some([0; 32]),
             },
-            "publish" => Action::Publish {
-                vault: vault(),
-                actor: self.vault(&x["actor"]),
-                via: self.via(&x["via"]),
-                blob: blob(&x["blob"]),
-            },
             "checkpoint" => Action::Checkpoint { entry: entry(&x["entry"]), covers: self.edits(&x["covers"]) },
             other => panic!("no action {other}"),
         }
@@ -461,7 +456,11 @@ impl Names {
             }
             ("write", x) => {
                 if !x["create"].is_null() {
-                    self.readings.headers.insert(id, header(&x["create"]["header"]));
+                    let h = header(&x["create"]["header"]);
+                    if h.ty.of_lane() {
+                        self.readings.blobs.insert(id, blob(&x["create"]["header"]["blob"]).into());
+                    }
+                    self.readings.headers.insert(id, h);
                 }
                 self.readings.tags.insert(id, tag_delta(&x["tags"]));
                 if let Some(c) = x.get("proof") {
@@ -628,7 +627,8 @@ impl Names {
         same_set(st.published().iter().copied(), published, &format!("{name}: published"));
         let lane: Vec<(VaultId, BlobId)> =
             list(&case["lane"]).iter().map(|v| (self.vault(&v["vault"]), BlobId::of(&blob(&v["blob"])))).collect();
-        let ours: Vec<(VaultId, BlobId)> = st.lane().iter().map(|p| (p.vault, p.blob)).collect();
+        let lane_of = |v: VaultId| st.lane_of(v, &self.readings).into_iter().map(move |b| (v, BlobId::of(b)));
+        let ours: Vec<(VaultId, BlobId)> = st.vaults().iter().flat_map(|v| lane_of(v.id)).collect();
         assert_eq!(ours, lane, "{name}: lane");
         // the writes the entries' readers don't count, of those the state holds
         let uncounted: HashSet<EditId> =
@@ -867,7 +867,8 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             let (d, held) = (signer(&a["device"]), at(&a["held"]));
             let peer = if a["peer"].is_null() { all.clone() } else { at(&a["peer"]) };
             let what = format!("{name}: device {} holding {}", a["device"], a["held"]);
-            let asked = asks(&held);
+            let follow: Vec<VaultId> = list(&a["follow"]).iter().map(|v| names.vault(v)).collect();
+            let asked = asks(&held, &follow);
             let fronts = frontiers(&held);
             let sent: Vec<LogId> = list(&a["logs"]).iter().map(|l| names.log(&l["log"])).collect();
             let mut sorted = sent.clone();
@@ -879,10 +880,10 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             }
             assert_eq!(asked.loose, names.edit_set(&a["loose"]), "{what}: loose");
             let ids = |edits: Vec<Edit>| edits.iter().map(Edit::id).collect::<Vec<_>>();
-            assert_eq!(ids(respond(&peer, d)), names.edits(&a["respond"]), "{what}: sent whole");
+            assert_eq!(ids(respond(&peer, d, &follow)), names.edits(&a["respond"]), "{what}: sent whole");
             assert_eq!(ids(respond_since(&peer, d, &asked)), names.edits(&a["since"]), "{what}: sent");
             // the files it may fetch: those an edit it is sent brings (T27)
-            let fetch: Vec<&Value> = files.iter().filter(|f| may_fetch(&peer, d, &file(f))).collect();
+            let fetch: Vec<&Value> = files.iter().filter(|f| may_fetch(&peer, d, &file(f), &follow)).collect();
             assert_eq!(fetch, list(&a["fetch"]).iter().collect::<Vec<_>>(), "{what}: files it may fetch");
             fetched += fetch.len();
         }

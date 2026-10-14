@@ -8,7 +8,7 @@ mod common;
 
 use std::collections::HashMap;
 
-use avendb::id::{AudienceId, EditId, SignerId, VaultId};
+use avendb::id::{AudienceId, BlobId, EditId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Revoking};
@@ -30,7 +30,8 @@ fn ask_page(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId), after: Option<
     let (edits, ids, more) = from.reply(f, t, &request, page);
     let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
     let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
-    let keys = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
+    let may = |b: &BlobId| from.may_fetch(f, t, *b, &request.ask.follow);
+    let keys = reply.blobs.iter().filter(|(b, _)| may(b)).filter_map(|(b, _)| from.blob(f, *b));
     let new = to.receive(t, reply.edits.clone(), keys.collect());
     (reply, new)
 }
@@ -127,9 +128,9 @@ fn mceliece_keys_go_only_within_reach() {
     let new: Vec<_> = mac.blob_ids(w.mac_a).into_iter().filter(|b| server.blob(w.server, *b).is_none()).collect();
     assert!(!new.is_empty(), "the new seeds bring McEliece keys");
     for &b in &new {
-        assert!(mac.may_fetch(w.mac_a, w.server, b), "the server, relaying the coop's entries, may fetch it");
-        assert!(mac.may_fetch(w.mac_a, w.mac_b, b), "so may Bob's Mac, acting for the coop");
-        let outside = !mac.may_fetch(w.mac_a, w.mac_c, b) && !mac.may_fetch(w.mac_a, w.stranger, b);
+        assert!(mac.may_fetch(w.mac_a, w.server, b, &[]), "the server, relaying the coop's entries, may fetch it");
+        assert!(mac.may_fetch(w.mac_a, w.mac_b, b, &[]), "so may Bob's Mac, acting for the coop");
+        let outside = [w.mac_c, w.stranger].iter().all(|&d| !mac.may_fetch(w.mac_a, d, b, &[]));
         assert!(outside, "not Carol, nor a stranger");
     }
     ask((&mut server, w.server), (&mut mac, w.mac_a));

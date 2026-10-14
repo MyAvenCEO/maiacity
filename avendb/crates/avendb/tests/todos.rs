@@ -70,7 +70,7 @@ fn todo_shared_per_item_levels() {
     assert!(v.reads_vault(c.carol, key(DOOR)) && !v.reads_vault(c.carol, key(SEEDS)));
     // neither of them receives the other two todos
     for d in [MAC_B, MAC_C] {
-        assert_eq!(entries_in(&respond(c.log.edits(), d)), [DOOR]);
+        assert_eq!(entries_in(&respond(c.log.edits(), d, &[])), [DOOR]);
     }
     // every coop owner's device can share it further, acting for the coop: Bob's Mac, Alice's iPhone
     for d in [MAC_B, PHONE_A] {
@@ -111,7 +111,7 @@ fn access_through_coop_survives_direct_revoke() {
     assert!(!v.live(t.bob_write) && !v.may_write(c.bob, DOOR));
     assert!(v.acts_for(MAC_B, coop) && v.may_write(coop, DOOR));
     assert!(c.log.check(MAC_B, &[], write_now(&c.log, DOOR, coop)).is_ok());
-    assert!(entries_in(&respond(c.log.edits(), MAC_B)).contains(&DOOR));
+    assert!(entries_in(&respond(c.log.edits(), MAC_B, &[])).contains(&DOOR));
     // so the audience it was in when Alice took Bob's write away never moved on: everyone who read it still did
     let before = AudienceId::of(alice, &mk_audience(&[t.bob_write, t.carol_read, t.coop_owner]));
     assert_eq!(v.epoch(KeyFam::Audience(alice, before)), 0);
@@ -119,7 +119,7 @@ fn access_through_coop_survives_direct_revoke() {
     let now = AudienceId::of(alice, &mk_audience(&[t.carol_read, t.coop_owner, dave_read, carol_write]));
     assert_eq!(audience_of(&c.log, DOOR), Some(now));
     assert!(v.reads_vault(c.dave, KeyFam::Audience(alice, now)));
-    assert!(entries_in(&respond(c.log.edits(), MAC_D)).contains(&DOOR));
+    assert!(entries_in(&respond(c.log.edits(), MAC_D, &[])).contains(&DOOR));
     assert!(c.log.check(MAC_C, &[], write_now(&c.log, DOOR, c.carol)).is_ok());
     // what Bob's Mac wrote offline, unseen by the revocation and the move: for Bob, it is cut; for the coop, it stands
     let for_coop = bobs.append(MAC_B, &[], write_now(&bobs, DOOR, coop)).unwrap();
@@ -145,7 +145,7 @@ fn cascade_ends_shares_resting_on_it() {
     assert!(!v.live(t.coop_owner) && !v.live(dave_read));
     assert!(!v.reads_vault(coop, key) && !v.reads_vault(c.dave, key) && !v.may_write(coop, DOOR));
     for d in [MAC_B, MAC_D] {
-        assert!(!entries_in(&respond(c.log.edits(), d)).contains(&DOOR));
+        assert!(!entries_in(&respond(c.log.edits(), d, &[])).contains(&DOOR));
     }
     assert_eq!(c.log.check(MAC_B, &[], write_now(&c.log, DOOR, coop)).err(), Some(Refusal::NoCap));
     // the todo stays in its audience, whose key moves on: a revocation moves no entry
@@ -154,7 +154,7 @@ fn cascade_ends_shares_resting_on_it() {
     assert_eq!(v.epoch(key), before + 1);
     // Carol's write came from Alice, not the coop, so it stays
     assert!(v.live(carol_write) && v.may_write(c.carol, DOOR) && v.reads_vault(c.carol, key));
-    assert!(entries_in(&respond(c.log.edits(), MAC_C)).contains(&DOOR));
+    assert!(entries_in(&respond(c.log.edits(), MAC_C, &[])).contains(&DOOR));
 }
 
 #[test]
@@ -162,21 +162,21 @@ fn sync_sends_only_what_shares_reach() {
     let t = social_todo();
     let edits = t.c.log.edits();
     // Alice's Mac answers Carol's Mac with the door todo's writes and its move, and nothing of the other two
-    let to_carol = respond(edits, MAC_C);
+    let to_carol = respond(edits, MAC_C, &[]);
     assert_eq!(entries_in(&to_carol), [DOOR]);
     // and with the shares of every audience the door todo was in, so Carol's Mac can check them
     let grants = to_carol.iter().filter(|o| matches!(o.action, Action::Share(Sharing::Grant(..))));
     let shares: Vec<ShareId> = grants.map(|o| ShareId::from(o.id())).collect();
     assert!([t.bob_write, t.carol_read, t.coop_owner].iter().all(|share| shares.contains(share)));
     // a device without a share gets no entry at all
-    assert!(entries_in(&respond(edits, STRANGER)).is_empty());
+    assert!(entries_in(&respond(edits, STRANGER, &[])).is_empty());
     // after the coop lost the todo, Dave's Mac gets nothing of it either, only the revocation that ended its read
     let mut gone = social_todo();
     change_levels(&mut gone);
     let (share, actor) = (gone.coop_owner, gone.c.alice);
     let revoke = Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
     let revoked = gone.c.log.append(PASSKEY_A, &[], revoke).unwrap();
-    let to_dave = respond(gone.c.log.edits(), MAC_D);
+    let to_dave = respond(gone.c.log.edits(), MAC_D, &[]);
     assert!(entries_in(&to_dave).is_empty() && to_dave.iter().any(|o| o.id() == revoked));
 }
 
@@ -188,14 +188,14 @@ fn entry_syncs_peer_to_peer_without_server() {
     let own = |v: VaultId| -> Vec<Edit> {
         edits.iter().filter(|o| log_of(o, o.id()) == Some(LogId::Vault(v))).cloned().collect()
     };
-    let mut bob_mac = Log::from_edits(receive(&own(t.c.bob), &respond(edits, MAC_B)));
-    let carol_mac = Log::from_edits(receive(&own(t.c.carol), &respond(edits, MAC_C)));
+    let mut bob_mac = Log::from_edits(receive(&own(t.c.bob), &respond(edits, MAC_B, &[])));
+    let carol_mac = Log::from_edits(receive(&own(t.c.carol), &respond(edits, MAC_C, &[])));
     assert_eq!(entry_writes(carol_mac.edits(), DOOR).len(), 1);
     // Alice and the server go offline; Bob edits the door todo on his Mac
     bob_mac.append(MAC_B, &[], write_now(&bob_mac, DOOR, t.c.bob)).unwrap();
     // Bob's Mac and Carol's Mac answer each other once, directly
-    let bob_after = receive(bob_mac.edits(), &respond(carol_mac.edits(), MAC_B));
-    let carol_after = receive(carol_mac.edits(), &respond(bob_mac.edits(), MAC_C));
+    let bob_after = receive(bob_mac.edits(), &respond(carol_mac.edits(), MAC_B, &[]));
+    let carol_after = receive(carol_mac.edits(), &respond(bob_mac.edits(), MAC_C, &[]));
     // both hold Alice's and Bob's edits of the door todo, and Carol's Mac accepts Bob's
     assert_eq!(entry_writes(&carol_after, DOOR).len(), 2);
     assert_eq!(entry_writes(&carol_after, DOOR), entry_writes(&bob_after, DOOR));

@@ -239,10 +239,10 @@ impl Revoking {
 /// Every change is one of these, signed. Governance (a vault's settings, its owners and devices, owner grants) needs
 /// the vault's approval: its root, or its threshold of owners; everything else needs one device acting for the vault.
 /// Every removal names the edits it had seen and keeps (`keep`); what it hadn't seen and relied on what it takes away
-/// is cut (`view`). An edit that acts for a vault (issues or revokes a grant, writes, marks, publishes) names the
-/// owners `via` its author acts through (`State::acts_via`): none when its author is a member of the vault, else from
-/// an owner of the vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's
-/// coop through `[bob]`.
+/// is cut (`view`). An edit that acts for a vault (issues or revokes a grant, writes, marks) names the owners `via`
+/// its author acts through (`State::acts_via`): none when its author is a member of the vault, else from an owner of
+/// the vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop
+/// through `[bob]`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
     /// A new vault; its id is this edit's id. Every first owner signs, and so does the root, the passkey of a human
@@ -301,9 +301,6 @@ pub enum Action {
     /// `clear`. The schedule already says who may open what, so this changes nothing in it: a peer accepts it only
     /// from a signer that may open the key, and only if every box goes where the schedule seals the key.
     Keys { name: KeyName, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
-    /// A schema or a lens, published into the vault's schema lane by the vault (T17): a blob that holds no data, named
-    /// by its hash (`BlobId::of`).
-    Publish { vault: VaultId, actor: VaultId, via: Vec<VaultId>, blob: Vec<u8> },
     /// A device vouches for its own accepted writes of one entry, named in `covers`, with both halves of its signature,
     /// where the writes carry only the classical half (`sign`). It changes nothing; a peer that no longer trusts the
     /// curves counts only the writes a checkpoint covers (`checkpointed`).
@@ -339,8 +336,7 @@ impl Action {
             Action::Share(Sharing::Grant(_, via))
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
-            | Action::Mark { via, .. }
-            | Action::Publish { via, .. } => Some(via),
+            | Action::Mark { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -350,8 +346,7 @@ impl Action {
             Action::Share(Sharing::Grant(_, via))
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
-            | Action::Mark { via, .. }
-            | Action::Publish { via, .. } => Some(via),
+            | Action::Mark { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -385,14 +380,11 @@ impl Edit {
         std::iter::once(self.author).chain(self.cosigners.iter().copied())
     }
 
-    /// The vault an edit acts for: a grant's issuer, a revoker of a grant, a writer, a marker (the vault itself), a
-    /// publisher.
+    /// The vault an edit acts for: a grant's issuer, a revoker of a grant, a writer, a marker (the vault itself).
     pub fn actor(&self) -> Option<VaultId> {
         match &self.action {
             Action::Share(Sharing::Grant(c, _)) => Some(c.issuer),
-            Action::Revoke(Revoking::Grant { actor, .. })
-            | Action::Write { actor, .. }
-            | Action::Publish { actor, .. } => Some(*actor),
+            Action::Revoke(Revoking::Grant { actor, .. }) | Action::Write { actor, .. } => Some(*actor),
             Action::Mark { vault, .. } => Some(*vault),
             _ => None,
         }
@@ -588,7 +580,7 @@ pub enum Refusal {
     NotActing,
     /// The vault holds no share that allows this: no live share with the level it needs that reaches the entry, no
     /// share whose intake is the audience it creates in, no right to revoke the share (a keep share only its issuer
-    /// revokes), no right to the vault's lane, no share over the vault a keep share is over, backup or more.
+    /// revokes), no share over the vault a keep share is over, backup or more.
     NoCap,
     /// Not a rule of the edits but of a device: no share the vault writes through names ops that allow what the write
     /// does (`rules`), so its readers wouldn't count it, and the device doesn't make it.
@@ -645,8 +637,6 @@ pub enum Refusal {
     Unsealed,
     /// A key in the clear of a family that isn't public.
     NotPublic,
-    /// The blob is in the vault's lane already.
-    AlreadyPublished,
     /// A checkpoint covers nothing, or something other than its own author's accepted writes of its entry.
     NotOwnWrite,
     /// A keep share names a signer that isn't a device of the vault that issues it.
@@ -773,17 +763,9 @@ impl Seals {
     }
 }
 
-/// A blob in a vault's schema lane.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Published {
-    pub vault: VaultId,
-    pub blob: BlobId,
-    pub bytes: Arc<[u8]>,
-}
-
-/// What a peer knows after replaying its edits: vaults, shares, entries and their audiences, accepted writes, the key
-/// schedule and the schema lanes. Every collection is shared, so a copy of a state costs a few counts, and grows in
-/// place while nothing else holds it.
+/// What a peer knows after replaying its edits: vaults, shares, entries and their audiences, accepted writes and the
+/// key schedule. No schema lane: its readers read it off the entries (`lane_of`), which no relay can (T25). Every
+/// collection is shared, so a copy of a state costs a few counts, and grows in place while nothing else holds it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
     /// In the order they were created, with each one's place.
@@ -818,8 +800,6 @@ pub struct State {
     published: Arc<Listed<KeyName>>,
     /// The key each signer has keys sealed to, as it last brought it.
     seal_keys: Arc<HashMap<SignerId, PublicKey>>,
-    /// Each vault's schema lane: the schemas and lenses published into it, in the order they came.
-    lane: Arc<Vec<Published>>,
     /// Only while checking an edit that a mark after it hadn't seen (`hide`): each entry such a mark took to an
     /// audience, and that audience's shares. A write must be allowed there too.
     narrow: Vec<(EntryId, Arc<[ShareId]>)>,
@@ -848,7 +828,6 @@ enum Change {
     /// A mark of the entry at `at`, by edit `stay`: the audience it takes the entry to, with that audience's shares,
     /// where it begins a stay there, and the wants it marks the entry with.
     Mark { at: usize, stay: EditId, to: Option<(AudienceId, Arc<[ShareId]>)>, wants: Option<Arc<[ShareId]>> },
-    Publish(Published),
 }
 
 impl Change {
@@ -969,16 +948,6 @@ impl State {
     /// Every audience an entry was ever in or created in, with its shares.
     pub fn audiences(&self) -> impl Iterator<Item = (AudienceId, &[ShareId])> {
         self.audiences.iter().map(|(x, shares)| (*x, &shares[..]))
-    }
-
-    /// What was published into every vault's schema lane, in the order it came.
-    pub fn lane(&self) -> &[Published] {
-        &self.lane
-    }
-
-    /// The blobs of vault `v`'s schema lane, in the order they came.
-    pub fn lane_of(&self, v: VaultId) -> impl Iterator<Item = &[u8]> {
-        self.lane.iter().filter(move |p| p.vault == v).map(|p| &p.bytes[..])
     }
 
     pub fn write(&self, w: EditId) -> Option<&Write> {
@@ -1184,12 +1153,6 @@ impl State {
             && self
                 .entry(w.entry)
                 .is_some_and(|en| self.may_write_in(w.actor, en.id, en.vault, self.shares_of(w.audience)))
-    }
-
-    /// Vault `a` publishes into vault `v`'s schema lane: it is `v`, or holds a wide owner share over it, as the model's
-    /// `ownsLane` says, though no grant makes one any more (`Refusal::WideOwner`).
-    pub fn owns_lane(&self, a: VaultId, v: VaultId) -> bool {
-        a == v || self.shares_held(a).any(|cp| cp.share.over == v && cp.share.wide && self.holds(a, cp, Level::Owner))
     }
 
     /// A share's parent is a live owner share over the same vault that its issuer holds, and a wide share rests only on
@@ -1415,6 +1378,27 @@ impl State {
             }
         }
         out
+    }
+
+    /// Vault `v`'s schema lane, as a reader holding `r` reads it off the entries (`State.lean`'s `laneOf`, T17): of
+    /// each entry of `v` whose type is schema or lens and whose creation acted for `v` itself and counts, the content
+    /// of that creation (`Readings::blobs`), in the order the entries were created, each blob once (`BlobId::of`). A
+    /// creation that acts for its own vault relies on no share, so it counts where it fits. Nothing else adds to it:
+    /// not an entry another vault created through a share, which acts for its creator, nor any later write or tag; and
+    /// when a removal cuts a creation, its blob leaves with its entry.
+    pub fn lane_of<'a>(&'a self, v: VaultId, r: &'a Readings) -> Vec<&'a [u8]> {
+        let mut seen = HashSet::new();
+        let counts = |en: &&Entry| {
+            self.write(en.creation).is_some_and(|w| w.first && w.actor == v && !r.unfit.contains(&w.edit))
+        };
+        self.entries
+            .iter()
+            .filter(|en| en.vault == v && r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane()))
+            .filter(counts)
+            .filter_map(|en| r.blobs.get(&en.creation))
+            .filter(|b| seen.insert(BlobId::of(b)))
+            .map(|b| &b[..])
+            .collect()
     }
 
     /// The write rule by meaning: vault `a` is the entry's vault, or holds a live share with write or more over it that
@@ -2113,23 +2097,6 @@ impl State {
                 }
                 Ok(Change::Nothing)
             }
-            Action::Publish { vault, actor, via, blob } => {
-                let (v, actor, b) = (*vault, *actor, BlobId::of(blob));
-                if self.vault(v).is_none() {
-                    return Err(Refusal::UnknownVault);
-                }
-                if self.lane.iter().any(|p| p.vault == v && p.blob == b) {
-                    return Err(Refusal::AlreadyPublished);
-                }
-                // only the vault publishes into its lane, as no grant makes another vault owner of all of it
-                if !self.acts_via(edit.author, via, actor) {
-                    return Err(Refusal::NotActing);
-                }
-                if !self.owns_lane(actor, v) {
-                    return Err(Refusal::NoCap);
-                }
-                Ok(Change::Publish(Published { vault: v, blob: b, bytes: blob.as_slice().into() }))
-            }
             Action::Checkpoint { entry, covers } => {
                 // a device vouches for its own accepted writes of the entry, and changes nothing
                 let own = |c: &EditId| self.write(*c).is_some_and(|w| w.author == edit.author && w.entry == *entry);
@@ -2249,10 +2216,6 @@ impl State {
                 let fresh = self.enter(v, to);
                 Arc::make_mut(&mut self.entries)[at].stays.push((Some(stay), to));
                 Touch::Moved { entry: at, fresh }
-            }
-            Change::Publish(p) => {
-                Arc::make_mut(&mut self.lane).push(p);
-                Touch::Nothing
             }
         }
     }
@@ -2526,14 +2489,18 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
 }
 
 /// What an entry's readers and its vault's stewards read where no relay can: each share's selector, a keep share's too,
-/// opened from its sealed `select`; each entry's header and each write's tags and proof, from inside the writes'
-/// bodies; and what each write touches, and whether it fits the schemas its entry was written under, read off its
-/// update on the version it builds on (`history::History::reading`).
+/// opened from its sealed `select`; each entry's header, the schema or lens a schema or lens entry's creation holds,
+/// and each write's tags and proof, from inside the writes' bodies; and what each write touches, and whether it fits
+/// the schemas its entry was written under, read off its update on the version it builds on
+/// (`history::History::reading`).
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
     pub selectors: HashMap<ShareId, Selector>,
     /// By the edit that created the entry.
     pub headers: HashMap<EditId, Header>,
+    /// By the edit that created a schema or lens entry (`slice::Sym::of_lane`): the content it holds, the schema or the
+    /// lens, which its vault's lane names by its hash (`State::lane_of`).
+    pub blobs: HashMap<EditId, Arc<[u8]>>,
     /// By the write.
     pub tags: HashMap<EditId, TagDelta>,
     pub proofs: HashMap<EditId, Proof>,

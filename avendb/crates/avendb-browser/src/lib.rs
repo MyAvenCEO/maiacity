@@ -63,8 +63,8 @@
 //! line, retitle, propose, merge, promote, restore, undo or make a variant (a new note with what a line shows, marked
 //! with the note it came from), each an op. And each vault's database shows as the device holds it, every entry with
 //! its record, its type, its tags, its audience and its edits, and the schemas and lenses the app ships and the vault
-//! publishes (`Device::database`, `data`); and the database's history, every signed edit the device holds (the core's
-//! edits), each with what it does, who signed it and how, and the vaults it concerns (`Device::history`).
+//! holds as entries (`Device::database`, `data`); and the database's history, every signed edit the device holds (the
+//! core's edits), each with what it does, who signed it and how, and the vaults it concerns (`Device::history`).
 //!
 //! The same device runs natively in the Mac app (`avendb-device`, beside maiaCITY Studio): there its node binds UDP
 //! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it

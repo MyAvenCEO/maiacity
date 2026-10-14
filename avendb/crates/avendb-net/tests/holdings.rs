@@ -1,8 +1,9 @@
 //! Holdings (v8 phase H): each device tells each peer what it holds for good of what the peer may know, all of it on
 //! a new connection and then what changed alone; a node keeps what a device told it on the connection whose hello
 //! proved that device, and nothing anyone says of another; it asks a peer for the logs where the peer holds what it
-//! lacks, and those alone; holdings let nobody fetch a file T27 refuses; and Synced to lists the devices that hold
-//! each entry and file, exactly. Some peers are by hand, their keys in the Lab, reading what a node sends them.
+//! lacks, of those the peer may hold, and those alone; holdings let nobody fetch a file T27 refuses, and a device
+//! fetches the files of what it follows while its requests say so; and Synced to lists the devices that hold each
+//! entry and file, exactly. Some peers are by hand, their keys in the Lab, reading what a node sends them.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -11,8 +12,9 @@ use std::time::{Duration, Instant};
 use avendb::cast::*;
 use avendb::id::{EntryId, SignerId};
 use avendb::lab::Lab;
+use avendb::policy::{Level, Who};
 use avendb::sealed::FileRoot;
-use avendb::sync::{LogId, frontiers, log_of};
+use avendb::sync::{LogId, asks, frontiers, log_of};
 use avendb::wire::{Announce, FileHold, Frontier, Reply, Request, Wire};
 use avendb_net::{ALPN, Node, Options, exporter, pq_provider};
 use bytes::Bytes;
@@ -23,6 +25,8 @@ use iroh_blobs::protocol::GetRequest;
 use iroh_blobs::store::mem::MemStore;
 use n0_future::stream;
 
+/// A request, as a node sends it (`session::REQUEST`).
+const REQUEST: u8 = 0;
 /// An announcement, as a node sends it (`session::ANNOUNCE`).
 const ANNOUNCE: u8 = 1;
 /// A request for the logs it names alone (`session::ASK_LOGS`).
@@ -67,7 +71,7 @@ async fn say(conn: &Connection, kind: u8, body: &[u8]) {
     let (mut send, mut recv) = conn.open_bi().await.expect("a stream");
     send.write_all(&[&[kind][..], body].concat()).await.expect("the message goes out");
     send.finish().expect("and ends");
-    recv.read_to_end(1 << 20).await.expect("its answer");
+    recv.read_to_end(16 << 20).await.expect("its answer");
 }
 
 /// The next message the node sends on `conn` other than an announcement, answered by `answer`; and the
@@ -173,8 +177,8 @@ async fn holdings_come_only_from_the_connection_that_proved_their_device() {
 
 /// Carol's Mac, outside the coop, by hand, tells Alice's Mac it holds Welcome as she does and its photo whole: Alice's
 /// Mac keeps that as Carol's Mac's word alone, of no other device, and shows Welcome and the photo synced to nobody but
-/// itself. Told of an edit of Welcome it lacks, it asks Carol's Mac for Welcome's log alone, naming nothing it holds of
-/// it.
+/// itself. Told of an edit of Welcome it lacks, it asks Carol's Mac nothing: Welcome's log is beyond what her Mac may
+/// hold by its view, so her claim steers nothing, and learns nothing of what it holds.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_forged_holding_from_a_third_party_is_ignored() {
     let mut w = world();
@@ -197,14 +201,12 @@ async fn a_forged_holding_from_a_third_party_is_ignored() {
     let synced = mac.synced_to().await;
     assert_eq!(synced.entries[&welcome], [mac_a], "but shows Welcome synced to itself alone");
     assert_eq!(synced.files[&root], [mac_a], "and the photo");
-    // an edit of Welcome Alice's Mac lacks: it asks for Welcome's log alone, and tells nothing of what it holds of it
+    // an edit of Welcome Alice's Mac lacks, of a log beyond Carol's Mac's reach: it asks nothing of it
     let lacking = Frontier { heads: vec![avendb::id::EditId([9; 32])], waiting: vec![] };
     let forged = Announce { full: false, logs: vec![(log, lacking)], files: vec![] };
     say(&conn, ANNOUNCE, &forged.to_wire()).await;
-    let (asked, _) = next(&conn, ASK_LOGS, |_| Reply::default().to_wire()).await;
-    let asked = Request::from_wire(&asked).expect("a request");
-    assert_eq!(asked.ask.haves.keys().collect::<Vec<_>>(), [&log], "for Welcome's log alone");
-    assert!(asked.ask.haves[&log].is_empty() && asked.ask.loose.is_empty(), "naming nothing it holds of it");
+    let asked = tokio::time::timeout(Duration::from_secs(2), next(&conn, ASK_LOGS, |_| Reply::default().to_wire()));
+    assert!(asked.await.is_err(), "Alice's Mac asks Carol's Mac nothing of Welcome");
     assert!(mac.read(move |lab, me| lab.fetched(me, welcome) > 0).await, "and it holds Welcome as before");
     mac.shutdown().await.expect("the node shuts down");
 }
@@ -242,6 +244,33 @@ async fn holdings_never_let_a_peer_get_a_file_t27_refuses() {
     assert_eq!(got.len() as u64, root.size, "all of it");
     conn.close(0u32.into(), b"done");
     until("and not once it closed", || async { fetch(&raw, &mac, hash).await.is_none() }).await;
+    mac.shutdown().await.expect("the node shuts down");
+}
+
+/// The coop makes Welcome public, with its photo. Dave's Mac, outside the coop, by hand, may fetch the photo only while
+/// its last request on its sync connection follows the coop (`sync::Ask::follow`): not before, and not once a request
+/// follows nothing again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_follower_fetches_the_files_of_what_it_follows() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (mac_a, passkey_a, mac_d) = (w.mac_a, w.passkey_a, w.mac_d);
+    let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
+    let write = move |lab: &mut Lab, me| lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me));
+    let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
+    let root = photo(&mac, coop, welcome, 300_000).await;
+    let public = share(coop, Who::Everyone, Level::Read, by_id(welcome));
+    mac.act(move |lab, me| lab.issue(me, &[me], public)).await.expect("the coop makes Welcome public");
+    let hash = Hash::from_bytes(root.hash);
+    let raw = by_hand(&w.lab, mac_d).await;
+    let conn = hello(&w.lab, mac_d, &raw, &mac).await;
+    assert_eq!(fetch(&raw, &mac, hash).await, None, "Dave's Mac, which follows nothing, may not fetch the photo");
+    let ask = |follow: Vec<_>| Request { ask: asks(&[], &follow), wants: vec![], after: None }.to_wire();
+    say(&conn, REQUEST, &ask(vec![coop])).await;
+    let got = fetch(&raw, &mac, hash).await.expect("once it asks following the coop, it fetches the photo");
+    assert_eq!(got.len() as u64, root.size, "all of it");
+    say(&conn, REQUEST, &ask(vec![])).await;
+    assert_eq!(fetch(&raw, &mac, hash).await, None, "and not once it asks following nothing again");
     mac.shutdown().await.expect("the node shuts down");
 }
 

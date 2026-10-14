@@ -62,8 +62,14 @@
 //! blob. Before it syncs, a device vouches for the writes it made since its last checkpoint
 //! (`policy::Action::Checkpoint`). No device trusts the curves: each counts only the writes a checkpoint by their
 //! author covers (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
-//! Devices sync by what each holds of each log, gossip one digest per log in random orders, and go offline and come
-//! back; a device restored from a backup forks from what it made since (`forks`).
+//! Devices sync by what each holds of each log and the vaults each follows (`follow`), gossip one digest per log in
+//! random orders, and go offline and come back; a device restored from a backup forks from what it made since
+//! (`forks`), and follows what it followed.
+//!
+//! A vault's schemas and lenses are entries of its own, of the types schema and lens, each holding its JSON alone
+//! (`add_schema`); the vault shares them with everyone, by a read share it issues before its first. Its lane is what a
+//! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
+//! the vault's entries by.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
@@ -76,10 +82,10 @@ use zeroize::Zeroizing;
 use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, share_context, share_select_info, write_context};
 use crate::hash::{Hasher, Reader};
-use crate::history::{Change, Draft, History, MAIN};
+use crate::history::{Change, Draft, History, Reading, MAIN};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, SeededRng, Secret};
-use crate::lens::{Lane, Schema};
+use crate::lens::{Lane, Lens, Schema};
 use crate::policy::{
     checkpointed, mk_audience, replay, Action, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
     Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
@@ -88,7 +94,7 @@ use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
-use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
+use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
     answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
 };
@@ -346,6 +352,9 @@ struct Store {
     unvouched: Vec<EditId>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
+    /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
+    /// everyone may read of them. Its own, never an edit's.
+    follow: Vec<VaultId>,
 }
 
 impl Default for Store {
@@ -366,6 +375,7 @@ impl Default for Store {
             shown: BTreeMap::new(),
             unvouched: vec![],
             digests: None,
+            follow: vec![],
         }
     }
 }
@@ -1408,7 +1418,8 @@ impl Lab {
         w: &Write,
         (content, asks): (&[u8], &TagDelta),
     ) -> Result<Option<Proof>, Refusal> {
-        let read = h.reading(w, Some(content), on, &Lane::with_built_ins(view.lane_of(vault)));
+        let lane = Lane::with_built_ins(view.lane_of(vault, &self.held(on).readings));
+        let read = h.reading(w, Some(content), on, &lane);
         let proof = self.prove(on, view, w, read.touches.as_deref(), asks)?;
         if !(read.fits || self.lawless) {
             return Err(Refusal::NotAView);
@@ -1485,8 +1496,7 @@ impl Lab {
         self.create_as(on, actor, vault, entry, audience, header, tags, item)
     }
 
-    /// The first write of entry `entry`, in the audience of the shares `audience`, under the epoch the audience is at,
-    /// or the one it moves to as the entry brings it back into use (`policy::State::reenters`).
+    /// The first write of entry `entry`, holding `item` (`create_with`).
     #[allow(clippy::too_many_arguments)]
     fn create_as(
         &mut self,
@@ -1498,6 +1508,25 @@ impl Lab {
         header: Header,
         tags: Vec<Sym>,
         item: Item,
+    ) -> Result<EntryId, Refusal> {
+        let content = item.export(&Version::default());
+        self.create_with(on, actor, vault, (entry, audience), header, tags, content)
+    }
+
+    /// The first write of entry `entry`, holding `content`, in the audience of the shares `audience`, under the epoch
+    /// the audience is at, or the one it moves to as the entry brings it back into use (`policy::State::reenters`). A
+    /// schema or lens entry's content is its schema or lens, and nothing else (`add_schema`): `NotAView` where it
+    /// isn't one, unless the device is a patched app's.
+    #[allow(clippy::too_many_arguments)]
+    fn create_with(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        (entry, audience): (EntryId, Vec<ShareId>),
+        header: Header,
+        tags: Vec<Sym>,
+        content: Vec<u8>,
     ) -> Result<EntryId, Refusal> {
         let view = self.full_view(on).into_owned();
         let x = AudienceId::of(vault, &audience);
@@ -1516,10 +1545,71 @@ impl Lab {
             body: vec![],
         };
         let (edit, w) = self.check_write(on, &view, action)?;
-        let (tags, content) = (TagDelta { add: tags, remove: vec![] }, item.export(&Version::default()));
-        let proof = self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags))?;
+        let tags = TagDelta { add: tags, remove: vec![] };
+        let proof = match header.ty.of_lane() {
+            true if !(lane_fits(&header.ty, &content) || self.lawless) => return Err(Refusal::NotAView),
+            true => self.prove(on, &view, &w, Some(&[Touch::Create]), &tags)?,
+            false => self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags))?,
+        };
         self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof, files: vec![] }, x)?;
         Ok(entry)
+    }
+
+    /// Create a schema or lens entry of vault `vault` holding `blob`, on device `on`, acting for `actor`: of the type
+    /// the blob reads as, a lens or else a schema (`lens::Lane::new`), its content the blob and nothing else. What the
+    /// vault itself creates so joins its lane (`policy::State::lane_of`), which its readers read its entries through.
+    /// The vault first shares its schemas and lenses with everyone, unless a share of its own does already
+    /// (`schemas_share`), and the entry goes in the audience a steward puts it in, which that share is in. What anyone
+    /// else creates goes where `create` puts it, and joins no lane. `NotAView` if the blob is neither, unless the
+    /// device is a patched app's: its blob makes a schema entry, which no reader counts.
+    pub fn add_schema(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        blob: &[u8],
+    ) -> Result<EntryId, Refusal> {
+        self.unlocked(on)?;
+        let ty = match (Lens::parse(blob), Schema::parse(blob)) {
+            (Some(_), _) => LENS_TYPE,
+            (None, Some(_)) => SCHEMA_TYPE,
+            (None, None) if self.lawless => SCHEMA_TYPE,
+            (None, None) => return Err(Refusal::NotAView),
+        };
+        let entry = self.new_entry_id();
+        let header = Header { ty: Sym::new(ty), created: self.now };
+        let shared = match actor == vault {
+            true => self.schemas_share(on, vault)?,
+            false => None,
+        };
+        let audience = match self.intake(on, actor, vault, entry, &header, &[])? {
+            x if x.is_empty() => shared.into_iter().collect(),
+            x => x,
+        };
+        self.create_with(on, actor, vault, (entry, audience), header, vec![], blob.to_vec())
+    }
+
+    /// The share vault `vault` shares its schemas and lenses with everyone by, as device `on` holds it: a live one the
+    /// vault issued itself, to read, picking every schema and lens entry and nothing else; else one `on` issues for it
+    /// now. In a dry run, none is issued.
+    fn schemas_share(&mut self, on: SignerId, vault: VaultId) -> Result<Option<ShareId>, Refusal> {
+        let select = Selector::lane();
+        let (store, st) = (self.held(on), self.full_view(on));
+        let ours = |cp: &&Issued| {
+            let s = &cp.share;
+            let read = (s.who, s.level, s.wide, s.parent) == (Who::Everyone, Level::Read, false, None);
+            st.live(cp.id) && s.over == vault && s.issuer == vault && read
+                && store.slices.get(&cp.id).is_some_and(|sl| sl.select == select)
+        };
+        let found = st.shares().iter().find(ours).map(|cp| cp.id);
+        if found.is_some() || self.dry {
+            return Ok(found);
+        }
+        let name = "Schemas and lenses".to_string();
+        let ops = Level::Read.ops();
+        let share =
+            NewShare { over: vault, who: Who::Everyone, name, select, ops, parent: None, issuer: vault, keep: None };
+        self.issue(on, &[on], share).map(Some)
     }
 
     /// The audience a new entry goes in (`create`).
@@ -1839,9 +1929,17 @@ impl Lab {
         made
     }
 
-    /// The schemas and lenses published into vault `v`'s lane, as device `d` holds them.
+    /// The schemas and lenses in vault `v`'s lane, as device `d` reads them off the schema and lens entries it holds
+    /// (`policy::State::lane_of`).
     pub fn lane(&self, d: SignerId, v: VaultId) -> Lane {
-        Lane::new(self.held(d).view().lane_of(v))
+        Lane::new(self.lane_of(d, v))
+    }
+
+    /// The blobs of vault `v`'s lane, as device `d` reads them off the schema and lens entries it holds, in the order
+    /// the entries were created (`policy::State::lane_of`): each a schema or a lens.
+    pub fn lane_of(&self, d: SignerId, v: VaultId) -> Vec<&[u8]> {
+        let store = self.held(d);
+        store.view().lane_of(v, &store.readings)
     }
 
     /// The vault entry `entry` is of, by device `d`'s view.
@@ -2031,19 +2129,34 @@ impl Lab {
         !self.offline.contains(&d)
     }
 
-    /// Device `to` asks device `from` once, with what it holds of each log (`sync::asks`), and `from` answers with what
-    /// `to` may receive by `from`'s view, of each log only what lies beyond what `to` holds of it. `from` vouches for
-    /// its new writes first. How many edits `from` sent: none while either is offline.
+    /// Device `d` follows the vaults `vaults` from now on, and no others: it names them in each request, and is sent
+    /// what everyone reads of them (`sync::Ask::follow`). Any device may follow any vault: it needs no share.
+    pub fn follow(&mut self, d: SignerId, vaults: &[VaultId]) {
+        let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        let mut follow = vaults.to_vec();
+        follow.sort();
+        follow.dedup();
+        store.follow = follow;
+    }
+
+    /// The vaults device `d` follows, smallest first (`follow`).
+    pub fn follows(&self, d: SignerId) -> &[VaultId] {
+        &self.held(d).follow
+    }
+
+    /// Device `to` asks device `from` once, with what it holds of each log and the vaults it follows (`sync::asks`),
+    /// and `from` answers with what `to` may receive by `from`'s view, of each log only what lies beyond what `to`
+    /// holds of it. `from` vouches for its new writes first. How many edits `from` sent: none while either is offline.
     pub fn sync(&mut self, from: SignerId, to: SignerId) -> usize {
         if !self.online(from) || !self.online(to) {
             return 0;
         }
         self.checkpoint(from);
         let to_store = self.held(to);
-        let asked = asks_ids(to_store.log.edits(), to_store.log.ids());
+        let asked = asks_ids(to_store.log.edits(), to_store.log.ids(), &to_store.follow);
         let store = self.held(from);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, &self.full_view(from), to);
+        let places = answer(edits, &self.full_view(from), to, &asked.follow);
         let sent: Vec<EditId> =
             beyond(edits, ids, &logs_of(edits, ids), &places, &asked).into_iter().map(|i| ids[i]).collect();
         let (signed, blobs) = self.outgoing(from, &sent);
@@ -2066,7 +2179,7 @@ impl Lab {
         let (edits, ids) = (theirs.log.edits(), theirs.log.ids());
         let logs = logs_of(edits, ids);
         let (df, dt) = (theirs.digests.as_ref().expect("worked out"), mine.digests.as_ref().expect("worked out"));
-        answer(edits, &self.full_view(from), to).into_iter().any(|i| match logs[i] {
+        answer(edits, &self.full_view(from), to, &mine.follow).into_iter().any(|i| match logs[i] {
             Some(l) => df.get(&l) != dt.get(&l),
             None => !mine.signed.contains_key(&ids[i]),
         })
@@ -2278,17 +2391,18 @@ impl Lab {
     }
 
     /// What device `d` asks `peer` when it syncs with it on the network (`wire::Request`): its frontier of each log and
-    /// a few edits further back (`sync::asks`), and the McEliece keys it lacks that the edits of those logs name, but
-    /// only of the logs `peer` may hold by `d`'s view: `d` tells a peer nothing about the rest. A log it names nothing
-    /// of comes whole, if the peer may send it.
+    /// a few edits further back, and the vaults it follows (`sync::asks`), and the McEliece keys it lacks that the
+    /// edits of those logs name, but only of the logs `peer` may hold by `d`'s view, following nothing: `d` tells a
+    /// peer nothing about the rest. A log it names nothing of comes whole, if the peer may send it, so one `peer` holds
+    /// only through what it follows comes whole: that costs bytes, and loses nothing.
     pub fn request(&self, d: SignerId, peer: SignerId) -> Request {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, &self.full_view(d), peer);
+        let places = answer(edits, &self.full_view(d), peer, &[]);
         let logs = logs_of(edits, ids);
         let shared: HashSet<LogId> = places.iter().filter_map(|&i| logs[i]).collect();
         let theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
-        let mut ask = asks_ids(edits, ids);
+        let mut ask = asks_ids(edits, ids, &store.follow);
         ask.haves.retain(|l, _| shared.contains(l));
         ask.loose.retain(|id| theirs.contains(id));
         let wants: BTreeSet<BlobId> =
@@ -2311,7 +2425,7 @@ impl Lab {
         self.checkpoint(d);
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, &self.full_view(d), asker);
+        let places = answer(edits, &self.full_view(d), asker, &request.ask.follow);
         let sent: BTreeSet<Place> = beyond(edits, ids, &logs_of(edits, ids), &places, &request.ask)
             .into_iter()
             .map(|i| (edits[i].depth, ids[i]))
@@ -2334,20 +2448,20 @@ impl Lab {
         (signed, blobs.into_iter().collect(), more)
     }
 
-    /// Device `d` may hand `asker` the McEliece key `blob`: it holds it, and an edit `asker` may receive by `d`'s view
-    /// names it.
-    pub fn may_fetch(&self, d: SignerId, asker: SignerId, blob: BlobId) -> bool {
+    /// Device `d` may hand `asker`, which follows the vaults `follow`, the McEliece key `blob`: it holds it, and an
+    /// edit `asker` may receive by `d`'s view names it.
+    pub fn may_fetch(&self, d: SignerId, asker: SignerId, blob: BlobId, follow: &[VaultId]) -> bool {
         let store = self.held(d);
         let edits = store.log.edits();
         store.blobs.contains_key(&blob)
-            && answer(edits, &self.full_view(d), asker).into_iter().any(|i| edits[i].blobs().contains(&blob))
+            && answer(edits, &self.full_view(d), asker, follow).into_iter().any(|i| edits[i].blobs().contains(&blob))
     }
 
-    /// Device `d` may hand `asker` the sealed bytes of file `file`: an edit `asker` may receive by `d`'s view brings it
-    /// (T27). Whether `d` holds them is its store's to say.
-    pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot) -> bool {
+    /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
+    /// may receive by `d`'s view brings it (T27). Whether `d` holds them is its store's to say.
+    pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
         let edits = self.held(d).log.edits();
-        answer(edits, &self.full_view(d), asker).into_iter().any(|i| edits[i].files().contains(file))
+        answer(edits, &self.full_view(d), asker, follow).into_iter().any(|i| edits[i].files().contains(file))
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -2440,7 +2554,7 @@ impl Lab {
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let logs = logs_of(edits, ids);
         let shared: BTreeSet<LogId> =
-            answer(edits, &self.full_view(d), peer).into_iter().filter_map(|i| logs[i]).collect();
+            answer(edits, &self.full_view(d), peer, &[]).into_iter().filter_map(|i| logs[i]).collect();
         let digests = store.digests.as_ref().expect("worked out");
         shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
     }
@@ -2464,7 +2578,8 @@ impl Lab {
     /// It vouches as before for the writes of its own that no checkpoint of its own covers. A node starting again
     /// from its store on disk restores the same way.
     pub fn restore_backup(&mut self, d: SignerId, backup: &Backup) {
-        self.stores.insert(d, Store::default());
+        let follow = self.held(d).follow.clone();
+        self.stores.insert(d, Store { follow, ..Store::default() });
         self.keep(d, backup.signed.clone(), &backup.blobs);
         let store = self.stores.get_mut(&d).expect("restored");
         let edits = store.log.edits().iter().zip(store.log.ids());
@@ -2686,6 +2801,14 @@ fn read(d: SignerId, store: &mut Store) {
     for (id, b) in &store.bodies {
         if let Some(h) = &b.header {
             r.headers.insert(*id, h.clone());
+            // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
+            // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
+            if h.ty.of_lane() {
+                r.blobs.insert(*id, b.content.as_slice().into());
+                if !lane_fits(&h.ty, &b.content) {
+                    r.unfit.insert(*id);
+                }
+            }
         }
         r.tags.insert(*id, b.tags.clone());
         if let Some(p) = &b.proof {
@@ -2693,6 +2816,16 @@ fn read(d: SignerId, store: &mut Store) {
         }
     }
     store.readings = r;
+}
+
+/// What a schema or lens entry of type `ty` holds, `blob`, is one of its type: a schema (`lens::Schema`) for a schema
+/// entry, a lens (`lens::Lens`) for a lens entry. Only then does its creation fit, and put it in its vault's lane.
+fn lane_fits(ty: &Sym, blob: &[u8]) -> bool {
+    match ty.as_str() {
+        SCHEMA_TYPE => Schema::parse(blob).is_some(),
+        LENS_TYPE => Lens::parse(blob).is_some(),
+        _ => false,
+    }
 }
 
 /// The slice share `of`'s selector holds (`slice::Select`), opened with the keys `keys`: `Ok(None)` while none of its
@@ -2946,17 +3079,28 @@ fn key_box(
 /// write of its view with the content of its body where the device opened it, in replay order, and the item of each
 /// line.
 fn show_items(d: SignerId, store: &mut Store) {
-    let st = &store.replay.state;
+    let (st, r) = (&store.replay.state, &store.readings);
     let mut old = std::mem::take(&mut store.shown);
-    let (mut shown, mut lanes, none) = (BTreeMap::new(), HashMap::new(), TagDelta::default());
+    let (mut shown, none) = (BTreeMap::new(), TagDelta::default());
+    // each vault's lane as the device reads it off the vault's schema and lens entries (`State::lane_of`), its hash,
+    // and what judges the writes of the vault's entries, made once one of them is shown anew
+    let mut lanes: HashMap<VaultId, (Vec<&[u8]>, [u8; 32], Option<Lane>)> = HashMap::new();
     for en in st.entries() {
         let ws: Vec<&Write> = st.entry_writes(en.id).collect();
         let mut h = Hasher::new("lab shown");
         for w in &ws {
             h.update(&w.edit.0).update(&[store.bodies.contains_key(&w.edit) as u8]);
         }
-        // the lane it judges the writes by: it only grows
-        h.update(&(st.lane_of(en.vault).count() as u64).to_be_bytes());
+        let (blobs, lane_print, lane) = lanes.entry(en.vault).or_insert_with(|| {
+            let blobs = st.lane_of(en.vault, r);
+            let mut h = Hasher::new("lab lane");
+            for b in &blobs {
+                h.update(&BlobId::of(b).0);
+            }
+            (blobs, h.finalize(), None)
+        });
+        // the lane it judges the writes by
+        h.update(lane_print);
         let print = h.finalize();
         if let Some(s) = old.remove(&en.id).filter(|s| s.print == print) {
             shown.insert(en.id, s);
@@ -2964,15 +3108,20 @@ fn show_items(d: SignerId, store: &mut Store) {
         }
         // each write counted where what it builds on counts, it fits the schemas the entry was written under, and its
         // shares let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`): the
-        // first two read off it on one scratch item (`History::reading_on`)
-        let lane = lanes.entry(en.vault).or_insert_with(|| Lane::with_built_ins(st.lane_of(en.vault)));
+        // first two read off it on one scratch item (`History::reading_on`); but a schema or lens entry's creation
+        // holds the schema or the lens itself, no update, and fits where it is one of its type (`lane_fits`)
+        let lane = lane.get_or_insert_with(|| Lane::with_built_ins(blobs.iter().copied()));
+        let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
         let (mut history, mut scratch) = (History::default(), None);
         for w in ws {
             let body = store.bodies.get(&w.edit);
             let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
             let asks = body.map(|b| &b.tags).unwrap_or(&none);
             let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
-            let read = w.deps.iter().all(counts).then(|| history.reading_on(&mut scratch, w, content, d, lane));
+            let read = w.deps.iter().all(counts).then(|| match of_lane && w.first {
+                true => Reading { touches: Some(vec![Touch::Create]), fits: !r.unfit.contains(&w.edit) },
+                false => history.reading_on(&mut scratch, w, content, d, lane),
+            });
             let fits = read.as_ref().is_none_or(|r| r.fits);
             let counted = read.is_some_and(|r| r.fits && st.lets(w, proof, r.touches.as_deref(), asks));
             let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, counted };

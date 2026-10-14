@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use avendb::doc::Item;
 use avendb::engine::{SHOWN, Wrote, line_name, wrote};
 use avendb::history::{Change, History};
-use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
+use avendb::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
 use avendb::lens::{self, DocV2, Lens, Schema};
@@ -27,7 +27,7 @@ use crate::{hex, kind_name, level_name, levels, who_name};
 
 /// Vault `vault`'s database as device `me` holds it, for the page's database studio: how many edits and McEliece keys
 /// the device holds in all; the schemas and lenses the app ships (`lens::blobs`); its seed's epoch; the edits the
-/// device holds on it by kind; the schemas and lenses its lane publishes; each audience its entries are in, the first
+/// device holds on it by kind; the schemas and lenses of its lane; each audience its entries are in, the first
 /// first, with the shares that reach it beside the vault's shares on the whole of it, its key's epoch and how many
 /// entries it holds; and every entry, cards and profiles too, in the order they were created (`row`).
 pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
@@ -108,7 +108,7 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
 
 /// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves (marks that take an entry to
 /// an audience) and checkpoints of its entries, the keys edits of its keys and its entries', the shares over it and the
-/// revocations of those, and what was published into its lane.
+/// revocations of those; and how many schemas and lenses its lane holds (`published`), its schema and lens entries'.
 fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let (log, st) = (lab.log(me), lab.state(me));
     let edits = || log.edits().iter().zip(log.ids());
@@ -117,8 +117,7 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         .filter(|(edit, _)| matches!(&edit.action, Action::Share(Sharing::Grant(c, _)) if c.over == vault))
         .map(|(_, id)| ShareId::from(*id))
         .collect();
-    let (mut founded, mut writes, mut moves, mut checkpoints, mut keys, mut revokes, mut published) =
-        (0, 0, 0, 0, 0, 0, 0);
+    let (mut founded, mut writes, mut moves, mut checkpoints, mut keys, mut revokes) = (0, 0, 0, 0, 0, 0);
     for (edit, id) in edits() {
         match &edit.action {
             Action::Genesis { .. } if VaultId::from(*id) == vault => founded += 1,
@@ -128,7 +127,6 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
             Action::Keys { name: KeyName::Scoped(k, _), .. } if k.vault() == vault => keys += 1,
             Action::Keys { name: KeyName::Entry(e, ..), .. } if of(e) => keys += 1,
             Action::Revoke(Revoking::Grant { share, .. }) if shares.contains(share) => revokes += 1,
-            Action::Publish { vault: v, .. } if *v == vault => published += 1,
             _ => {}
         }
     }
@@ -140,16 +138,16 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         "keys": keys,
         "caps": shares.len(),
         "revokes": revokes,
-        "published": published,
+        "published": lab.lane_of(me, vault).len(),
     })
 }
 
-/// A schema as the tab shows it: its id, its title and its JSON, as published.
+/// A schema as the tab shows it: its id, its title and its JSON, as its entry holds it.
 fn schema(s: &Schema) -> Value {
     json!({ "id": s.id().to_hex(), "title": s.title(), "json": String::from_utf8_lossy(s.bytes()) })
 }
 
-/// A lens as the tab shows it: its id, its title, the schemas it joins, and its JSON, as published.
+/// A lens as the tab shows it: its id, its title, the schemas it joins, and its JSON, as its entry holds it.
 fn lens(l: &Lens) -> Value {
     let (from, to) = (l.from().to_hex(), l.to().to_hex());
     json!({ "id": l.id().to_hex(), "title": l.title(), "from": from, "to": to, "json": String::from_utf8_lossy(l.bytes()) })
@@ -310,22 +308,6 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "clear": clear.is_some(),
             }),
         ),
-        Action::Publish { vault, actor, via, blob } => {
-            let title = Schema::parse(blob)
-                .map(|s| s.title().to_string())
-                .or_else(|| Lens::parse(blob).map(|l| l.title().to_string()));
-            (
-                "publish",
-                json!({
-                    "vault": hex(&vault.0),
-                    "actor": hex(&actor.0),
-                    "via": vias(via),
-                    "blob": BlobId::of(blob).to_hex(),
-                    "title": title,
-                    "bytes": blob.len(),
-                }),
-            )
-        }
         Action::Checkpoint { entry, covers } => {
             ("checkpoint", json!({ "entry": hex(&entry.0), "covers": ids(covers) }))
         }
@@ -379,7 +361,7 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
         Action::Revoke(Revoking::Grant { share, actor, .. }) => {
             [Some(*actor), shares.get(share).copied()].into_iter().flatten().collect()
         }
-        Action::Write { vault, actor, .. } | Action::Publish { vault, actor, .. } => vec![*actor, *vault],
+        Action::Write { vault, actor, .. } => vec![*actor, *vault],
         Action::Keys { name, .. } => match *name {
             KeyName::Signer(_) => vec![],
             KeyName::Scoped(k, _) => vec![k.vault()],

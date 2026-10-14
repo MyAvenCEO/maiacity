@@ -482,6 +482,7 @@ impl Node {
             offered: Mutex::default(),
             shelf,
             blob_peers: Mutex::default(),
+            follows: Mutex::default(),
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
@@ -1108,6 +1109,9 @@ struct Shared {
     /// The blob connections the gate let in, each with the device and endpoint of the live sync connection that let
     /// it in.
     blob_peers: Mutex<HashMap<u64, (SignerId, EndpointId)>>,
+    /// The vaults the device of each sync connection follows, by the connection (`Connection::stable_id`): as its last
+    /// request named them (`sync::Ask::follow`), which the gate lets its blob connections fetch by.
+    follows: Mutex<HashMap<usize, Vec<VaultId>>>,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
     /// as those files.
     pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
@@ -1510,6 +1514,12 @@ impl Shared {
         Ok(())
     }
 
+    /// The device of `peer`'s connection asked `request` on it: it follows the vaults the request names, until it asks
+    /// again or the connection closes.
+    fn follows(&self, peer: &Peer, request: &Request) {
+        self.follows.lock().expect("follows").insert(peer.conn.stable_id(), request.ask.follow.clone());
+    }
+
     /// `device` told the node `announce` of its holdings, on a connection whose hello proved it: what it holds from
     /// now on, as `Holdings::take` says. A device that claims to hold more than `MOST` logs or files claims nothing.
     fn hear(&self, device: SignerId, announce: Announce) {
@@ -1522,22 +1532,37 @@ impl Shared {
     }
 
     /// The connection of `peer` closed: what its device told the node it holds is kept, unless the node's device
-    /// doesn't know that device (`Lab::peers`) and it isn't connected any more.
+    /// doesn't know that device (`Lab::peers`) and it isn't connected any more. What it follows goes.
     fn gone(&self, peer: &Peer) {
+        self.follows.lock().expect("follows").remove(&peer.conn.stable_id());
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         if !known && self.live(peer.endpoint).is_none() {
             self.held.lock().expect("held").remove(&peer.device);
         }
     }
 
-    /// The logs where `device` holds an edit this node's device lacks, by what it told (`Logs::lacks`).
+    /// The logs where `device` holds an edit this node's device lacks, by what it told (`Logs::lacks`). Of the logs the
+    /// node holds, only those the device may hold by the node's view (`Reach`, worked out again where it may have grown
+    /// since), as `synced_to` reads them: a claim to any other steers nothing, and learns nothing of what the node
+    /// holds of it. A log the node holds nothing of, which its view can't place, it asks for naming nothing of it
+    /// (`session::only`), as its request on a new connection does: else it would never learn of a new entry.
     async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
         let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
             return BTreeSet::new();
         };
-        let shared = self.clone();
-        let mine = self.lab(move |lab, me| shared.logs_of(lab, me)).await;
-        theirs.into_iter().filter(|(_, f)| mine.lacks(f)).map(|(l, _)| l).collect()
+        let (shared, known) = (self.clone(), self.reach.lock().expect("reach").clone());
+        self.lab(move |lab, me| {
+            let mine = shared.logs_of(lab, me);
+            let mut now: Option<BTreeSet<LogId>> = None;
+            let mut within = |l: &LogId| {
+                let reach = |lab: &mut Lab| lab.announce(me, device).into_iter().map(|(l, _)| l).collect();
+                known.get(&device).is_some_and(|r| r.logs.contains(l))
+                    || now.get_or_insert_with(|| reach(lab)).contains(l)
+            };
+            let lacking = theirs.into_iter().filter(|(_, f)| mine.lacks(f)).map(|(l, _)| l);
+            lacking.filter(|l| !mine.of.contains_key(l) || within(l)).collect()
+        })
+        .await
     }
 
     /// Asks `endpoint` for the logs where the device there holds what this one lacks (`differ`), and those alone, if

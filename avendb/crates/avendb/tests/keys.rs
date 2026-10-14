@@ -148,7 +148,7 @@ fn t27_files_follow_their_edits() {
     w.lab.bring(w.mac_a, h.coop, h.onboarding, vec![scan], |_| {}).unwrap();
     w.lab.sync_all(2);
     // Carol may fetch the photo and not the scan; the server both; Dave and the stranger neither
-    let may = |asker, root| w.lab.may_fetch_file(w.mac_a, asker, root);
+    let may = |asker, root| w.lab.may_fetch_file(w.mac_a, asker, root, &[]);
     assert!(may(w.mac_c, &photo_root) && !may(w.mac_c, &scan_root));
     assert!(may(w.server, &photo_root) && may(w.server, &scan_root));
     for nobody in [w.mac_d, w.stranger] {
@@ -232,6 +232,8 @@ fn a_device_writes_under_the_newest_key_it_knows() {
 /// Each device opens the current key of a family exactly when, by every edit the Lab holds, it may: it acts for a vault
 /// that reads the family, or the family is public (T6, and every device that may read gets the key); and it holds the
 /// key of each entry in its stay now, at its audience's epoch now, exactly when it may open that audience's key (T24).
+/// A public key, though, reaches only a device with an interest in its vault or that follows it, which is all it is
+/// sent of what everyone reads (T12): one that has neither opens it only if it had one before.
 fn keys_follow_shares(w: &World, step: &str) {
     let devices = [w.mac_a, w.phone_a, w.mac_b, w.mac_c, w.mac_d, w.server, w.stranger];
     let (mut all, mut seen): (Vec<Edit>, HashSet<_>) = (vec![], HashSet::new());
@@ -244,15 +246,23 @@ fn keys_follow_shares(w: &World, step: &str) {
         }
     }
     let st = view(&all);
-    let may = |d, k| st.entitled(d, k) || st.public_key(k);
+    let named = |d, cp: &avendb::policy::Issued| matches!(cp.share.who, Who::Vault(g) if st.acts_for(d, g));
+    let interested = |d, v| {
+        st.acts_for(d, v) || w.lab.follows(d).contains(&v) || st.shares_over(v).any(|cp| st.live(cp.id) && named(d, cp))
+    };
+    let may = |d, k: KeyFam| st.entitled(d, k) || st.public_key(k);
+    let must = |d, k: KeyFam| st.entitled(d, k) || (st.public_key(k) && interested(d, k.vault()));
+    let check = |opens: bool, d, k, what: &dyn std::fmt::Debug| {
+        assert!(!opens || may(d, k), "{step}: {d:?} opens {what:?}, which it may not");
+        assert!(opens || !must(d, k), "{step}: {d:?} doesn't open {what:?}");
+    };
     for d in devices {
         for k in st.key_fams() {
-            assert_eq!(w.lab.opens(d, k), may(d, k), "{step}: {d:?} and {k:?}");
+            check(w.lab.opens(d, k), d, k, &k);
         }
         for en in st.entries() {
             let key = st.entry_key(en.id).expect("an entry's key");
-            let audience = KeyFam::Audience(en.vault, en.audience());
-            assert_eq!(w.lab.holds_key(d, key), may(d, audience), "{step}: {d:?} and {key:?}");
+            check(w.lab.holds_key(d, key), d, KeyFam::Audience(en.vault, en.audience()), &key);
         }
     }
 }
@@ -268,6 +278,7 @@ fn every_device_opens_exactly_what_it_may() {
     w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
     let read = share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome));
     let carol_read = w.lab.issue(mac, &[mac], read).unwrap();
+    w.lab.follow(w.stranger, &[h.coop]);
     w.lab.sync_all(3);
     keys_follow_shares(&w, "public charter, Carol reads Welcome");
     // the key of the charter's audience is published: the stranger opens it, and reads the charter

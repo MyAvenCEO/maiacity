@@ -81,6 +81,7 @@ Line      = null or left out: the main line; a proposal, by the id of the write 
 
 ```
 {"op": "create",  "vault": VaultId, "type": Sym, "tags": [Sym]?, "schema": SchemaRef?, "value": Record}
+{"op": "create",  "vault": VaultId, "type": "schema" | "lens", "value": JSON | "JSON text"}
 {"op": "set",     "entry": EntryId, "path": Path, "value": v,               "line": Line?, "schema": SchemaRef?}
 {"op": "unset",   "entry": EntryId, "path": Path,                           "line": Line?, "schema": SchemaRef?}
 {"op": "insert",  "entry": EntryId, "path": [Field], "value": v, "at": n?,  "line": Line?, "schema": SchemaRef?}
@@ -109,9 +110,13 @@ it doesn't take is refused, never half read.
   to `Item::write`, whose lens and Loro diff make the smallest change. So ops are schema-generic: a new schema needs
   no new code. A record op that changes nothing writes nothing (its `edit` is `null`).
 - **The rest map onto what exists.** `create` onto `Lab::create` (with no `schema`, the one its value's `kind`
-  names; fields it leaves out take their defaults), `tag` onto `Lab::tag`, `propose` (from the main line's heads,
-  left out), `merge` (with `promote`, a merge that brings `into` to exactly what `from` shows), `restore` and `undo`
-  onto `History`'s lines, and
+  names; fields it leaves out take their defaults), and of a schema or lens onto `Lab::add_schema`: an entry of type
+  `schema` or `lens` that holds the JSON alone, as the text given or the object written compactly, and takes no tags
+  and no `schema` (`BadOp` where the JSON isn't a schema or a lens of that type); created by the vault itself, it
+  joins the vault's lane, and the vault shares its schemas and lenses with everyone before its first. It answers
+  `{"entry", "blob"}`, the blob's id the lane names (`BlobId::of`). `tag` onto `Lab::tag`, `propose` (from the main
+  line's heads, left out), `merge` (with `promote`, a merge that brings `into` to exactly what `from` shows),
+  `restore` and `undo` onto `History`'s lines, and
   `variant`, a new entry of vault `into` that starts from the line's record, onto `Lab::variant_with`, with the record
   ops (`ops`, which name no entry, line or schema) the copy runs before it is written, as the page's variant mark.
   Promote, restore, undo and variant need no schema: they put back records the item's own changes wrote, each field
@@ -304,14 +309,14 @@ counts for no reader, as one the ops of its caps don't allow.
   fitting through writes that fit, from the first on (S2), so an app's edits always fit (`tests/properties.rs`).
 - **Readers, not relays.** Whether a write fits is read off its sealed body, so only its readers can tell; relays
   accept or refuse it alike (S4). Its readers all reach one verdict: the schemas it names travel in its body, and the
-  lane is in the vault's log.
+  lane is the vault's own schema and lens entries, which every reader of the vault receives.
 - **Counted like the ops.** A write that doesn't fit is read as one nobody can open (S3): it stays in the log, no
   record shows it, nor anything built on it, and devices build on the writes they count, so every device keeps the
   last record that fit. A device refuses to make one (`NotAView`), and an app patched to skip that check
   (`Lab::patched`) writes it all the same, which no reader counts, its own device neither. The `history` op says why a
   write doesn't count (`why`: `unfit`, `ops`, `builds-on` or `sealed`), and so do the note page and the studio.
-- **A lane that grows.** A write under a schema the lane doesn't hold yet counts once its vault publishes it, for every
-  reader. A lane only grows, so a verdict changes at most once, from not counted to counted.
+- **A lane that grows.** A write under a schema the lane doesn't hold yet counts once its vault creates it as a schema
+  entry, for every reader. A lane only grows, so a verdict changes at most once, from not counted to counted.
 
 Old data keeps its meaning: apps only ever wrote views of their schemas, which fit.
 
@@ -370,7 +375,7 @@ allows and what builds on it counted by no reader, chains of caps (C1), suggesti
 Public cap; the vectors replay `Vectors.lean`'s caps. `tests/schemas.rs` walks random writes over two versions of a schema (S1, S2);
 `tests/properties.rs` edits random stored records through every app's view, which always fit; `tests/engine.rs` runs
 a patched app's writes that break their schema, a proposal built on one, and a write that counts once its vault
-publishes its schema (S3); the vectors replay `Vectors.lean`'s writes that don't fit.
+creates its schema as an entry (S3); the vectors replay `Vectors.lean`'s writes that don't fit.
 
 ## Phases
 

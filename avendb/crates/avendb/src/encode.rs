@@ -619,10 +619,10 @@ impl Encode for Revoking {
     }
 }
 
-/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys, 7 checkpoint, then the
-/// kind that goes in a later v8 phase, 8 publish. 9, a sync rule, and 10, its end, went into the share and the revoke,
-/// as a keep share and its revocation; 11, a pick, went into the mark. A settings, share or revoke edit's sub-kind
-/// follows in a byte of its own.
+/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys, 7 checkpoint. 8, a publish
+/// into a vault's schema lane, went into the write, as a schema or lens entry; 9, a sync rule, and 10, its end, into
+/// the share and the revoke, as a keep share and its revocation; 11, a pick, into the mark. No tag is used again. A
+/// settings, share or revoke edit's sub-kind follows in a byte of its own.
 impl Encode for Action {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -685,13 +685,6 @@ impl Encode for Action {
                 out.push(7);
                 entry.encode(out);
                 covers.encode(out);
-            }
-            Action::Publish { vault, actor, via, blob } => {
-                out.push(8);
-                vault.encode(out);
-                actor.encode(out);
-                via.encode(out);
-                blob.encode(out);
             }
         }
     }
@@ -837,7 +830,6 @@ mod tests {
             (Action::Mark { vault: v, entry: e, caps: None, wants: Some(vec![]), keep: vec![], via: vec![] }, &[5]),
             (keys, &[6]),
             (Action::Checkpoint { entry: e, covers: vec![] }, &[7]),
-            (Action::Publish { vault: v, actor: v, via: vec![], blob: vec![] }, &[8]),
         ];
         for (action, tag) in kinds {
             assert!(tagged(action.clone()).starts_with(tag), "{action:?}");

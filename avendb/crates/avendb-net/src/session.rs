@@ -166,12 +166,14 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     match kind {
         REQUEST => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
+            shared.follows(peer, &request);
             let (edits, ids, more) = shared.lab(move |lab, me| lab.reply(me, device, &request, page)).await;
             let blobs = shared.offer(ids).await?;
             Ok(Reply { edits, blobs, more }.to_wire())
         }
         ASK_LOGS => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
+            shared.follows(peer, &request);
             let reply = move |lab: &mut Lab, me| {
                 let request = scoped(lab, me, request);
                 lab.reply(me, device, &request, page)

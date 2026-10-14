@@ -147,6 +147,12 @@ pub const MAX_TESTS: usize = 16;
 pub const MAX_IDS: usize = 1000;
 
 impl Selector {
+    /// Every schema and lens entry, and nothing else: what a vault's share of its schemas and lenses with everyone
+    /// picks (`Examples.lean`'s `schemas`; `lab::Lab::add_schema`).
+    pub fn lane() -> Selector {
+        Selector::AnyOf(vec![vec![Atom::TypeIn(vec![Sym::new(SCHEMA_TYPE), Sym::new(LENS_TYPE)])]])
+    }
+
     pub fn matches(&self, a: &Attrs) -> bool {
         match self {
             Selector::All => true,

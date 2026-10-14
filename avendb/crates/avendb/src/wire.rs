@@ -98,9 +98,9 @@ fn versioned(r: &mut Reader<'_>) -> Result<Edit, WireError> {
     Edit::decode(r)
 }
 
-/// What a device sends a peer to sync with it: what it holds of each log the peer may hold, by its own view (`Ask`),
-/// and the McEliece keys it lacks that edits of those logs name. Asking on for the next page of a reply, the place of
-/// the last edit it got.
+/// What a device sends a peer to sync with it: what it holds of each log the peer may hold, by its own view, and the
+/// vaults it follows (`Ask`), and the McEliece keys it lacks that edits of those logs name. Asking on for the next page
+/// of a reply, the place of the last edit it got.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Request {
     pub ask: Ask,
@@ -723,12 +723,6 @@ impl Decode for Action {
                 clear: r.option()?,
             },
             7 => Action::Checkpoint { entry: EntryId::decode(r)?, covers: r.seq(32)? },
-            8 => Action::Publish {
-                vault: VaultId::decode(r)?,
-                actor: VaultId::decode(r)?,
-                via: r.seq(32)?,
-                blob: r.bytes()?,
-            },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -906,9 +900,12 @@ impl Encode for Ask {
             ids.encode(out);
         }
         self.loose.encode(out);
+        self.follow.encode(out);
     }
 }
 
+/// Its logs smallest first, each once, with the edits it names of each as a set; its loose edits as a set; then the
+/// vaults it follows as a set.
 impl Decode for Ask {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let n = r.count(37)?;
@@ -922,7 +919,7 @@ impl Decode for Ask {
             last = Some(log);
             haves.insert(log, r.set(32)?);
         }
-        Ok(Ask { haves, loose: r.set(32)? })
+        Ok(Ask { haves, loose: r.set(32)?, follow: r.set(32)? })
     }
 }
 
@@ -1139,7 +1136,7 @@ mod tests {
             }
         }
         assert!(kinds.len() >= 6, "genesis, devices, keys, grants and writes all crossed: {}", kinds.len());
-        let ask = crate::sync::asks(w.lab.log(w.mac_b).edits());
+        let ask = crate::sync::asks(w.lab.log(w.mac_b).edits(), &[]);
         assert!(!ask.haves.is_empty());
         assert_eq!(Ask::from_wire(&ask.to_wire()), Ok(ask.clone()));
         let frontier = |(l, heads): (LogId, Vec<EditId>)| (l, Frontier { heads, waiting: vec![] });
@@ -1216,6 +1213,22 @@ mod tests {
         let mut bytes = edit.to_wire();
         bytes[0] = VERSION + 1;
         assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
+    }
+
+    #[test]
+    fn a_request_names_the_vaults_it_follows_as_a_set_after_its_loose_edits() {
+        let (a, b) = (VaultId([1; 32]), VaultId([2; 32]));
+        let ask = Ask { loose: vec![EditId([3; 32])], follow: vec![a, b], ..Ask::default() };
+        let bytes = Request { ask: ask.clone(), ..Request::default() }.to_wire();
+        let n = |x: u32| x.to_be_bytes();
+        let want = [&n(0)[..], &n(1), &[3; 32], &n(2), &a.0, &b.0, &n(0), &[0]].concat();
+        assert_eq!(bytes, want);
+        assert_eq!(Request::from_wire(&bytes).map(|r| r.ask), Ok(ask));
+        // out of order, or one vault twice
+        for follow in [vec![b, a], vec![a, a]] {
+            let bytes = Ask { follow, ..Ask::default() }.to_wire();
+            assert_eq!(Ask::from_wire(&bytes), Err(WireError::Unordered));
+        }
     }
 
     #[test]
@@ -1339,8 +1352,9 @@ mod tests {
             bytes[level + 1] = b;
             assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown), "mode byte {b}");
         }
-        // three sub-kinds of share and of revocation, two of settings; eight kinds and no more, as a sync rule's tag,
-        // 9, and its end's, 10, went into the share's and the revocation's, and a pick's, 11, into the mark's
+        // three sub-kinds of share and of revocation, two of settings; eight kinds and no more, as a publish's tag, 8,
+        // went into the write's, a sync rule's, 9, and its end's, 10, into the share's and the revocation's, and a
+        // pick's, 11, into the mark's
         assert_eq!(with(at + 1, 3), Err(WireError::Unknown));
         let revoke = edit(Action::Revoke(Revoking::Grant { share: ShareId(g.0), actor: v, keep: vec![], via: vec![] }));
         let mut bytes = revoke.to_wire();
@@ -1349,7 +1363,7 @@ mod tests {
         let mut bytes = edit(Action::Settings { vault: v, set: Setting::Threshold(1) }).to_wire();
         bytes[at + 1 + 32] = 2;
         assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
-        for tag in [9, 10, 11, 12] {
+        for tag in [8, 9, 10, 11, 12] {
             assert_eq!(with(at, tag), Err(WireError::Unknown), "tag {tag}");
         }
     }

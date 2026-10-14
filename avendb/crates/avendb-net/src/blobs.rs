@@ -110,15 +110,17 @@ impl Shared {
 
     /// The device of blob connection `connection` may fetch each of `hashes`: the sync connection that let it in still
     /// lives, and each is a McEliece key this node offered, named by an edit that device may receive by this node's
-    /// view (`Lab::may_fetch`); or else a file's root, or one of its pieces, brought by such an edit
-    /// (`Lab::may_fetch_file`, T27). Whatever anyone's holdings say.
+    /// view, following the vaults its last request on that connection named (`Lab::may_fetch`); or else a file's
+    /// root, or one of its pieces, brought by such an edit (`Lab::may_fetch_file`, T27). Whatever anyone's holdings
+    /// say.
     async fn may_fetch(self: &Arc<Self>, connection: u64, hashes: Vec<Hash>) -> bool {
         let Some((device, endpoint)) = self.blob_peers.lock().expect("blob peers").get(&connection).copied() else {
             return false;
         };
-        if self.live(endpoint).is_none_or(|p| p.device != device) {
+        let Some(sync) = self.live(endpoint).filter(|p| p.device == device) else {
             return false;
-        }
+        };
+        let follow = self.follows.lock().expect("follows").get(&sync.conn.stable_id()).cloned().unwrap_or_default();
         let asked: Vec<([u8; 32], Option<BlobId>, Vec<FileRoot>)> = {
             let (offered, pieces) = (self.offered.lock().expect("offered"), self.pieces.lock().expect("pieces"));
             let of = |h: &Hash| pieces.get(h).map(|roots| roots.iter().copied().collect()).unwrap_or_default();
@@ -127,10 +129,10 @@ impl Shared {
         let may = move |lab: &mut Lab, me| {
             let files = lab.files(me);
             asked.iter().all(|(hash, key, pieced)| match key {
-                Some(b) => lab.may_fetch(me, device, *b),
+                Some(b) => lab.may_fetch(me, device, *b, &follow),
                 None => {
                     let mut roots = files.iter().filter(|f| f.hash == *hash).chain(pieced);
-                    roots.any(|f| lab.may_fetch_file(me, device, f))
+                    roots.any(|f| lab.may_fetch_file(me, device, f, &follow))
                 }
             })
         };

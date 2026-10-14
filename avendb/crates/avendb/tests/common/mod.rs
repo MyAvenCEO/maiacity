@@ -105,6 +105,24 @@ impl Cast {
         Ok(id)
     }
 
+    /// `create`, of a schema or lens entry of type `ty` holding `blob`: its readers read the blob too, which its
+    /// vault's lane names where the vault itself creates it (`State::lane_of`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_holding(
+        &mut self,
+        signer: SignerId,
+        vault: VaultId,
+        entry: EntryId,
+        actor: VaultId,
+        audience: &[ShareId],
+        ty: &str,
+        blob: &[u8],
+    ) -> Result<EditId, Refusal> {
+        let id = self.create(signer, vault, entry, actor, audience, ty, &[])?;
+        self.readings.blobs.insert(id, blob.into());
+        Ok(id)
+    }
+
     /// `signer`, with `cosigners`, issues a root share over vault `over` to `who` with `level` on what `select`
     /// selects; its readers read the selector.
     pub fn issue(

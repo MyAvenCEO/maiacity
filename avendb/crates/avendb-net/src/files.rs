@@ -249,8 +249,9 @@ impl Shared {
     }
 
     /// The peers to fetch piece `piece` of file `root` from, or its HashSeq: first those connected now whose holdings
-    /// hold it, then the others connected now, then those whose holdings hold it that it would have to reach.
-    /// Holdings only order them: a peer hands the piece over by its own blob gate (T27).
+    /// hold it, then the others connected now, then those whose holdings hold it that it would have to reach. Only
+    /// holdings of a file within the holder's reach count, as `Node::synced_to` reads them: a claim to anything else
+    /// steers nothing. Holdings only order them: a peer hands the piece over by its own blob gate (T27).
     fn providers(&self, root: FileRoot, piece: Option<u64>) -> Vec<EndpointId> {
         let live: Vec<(EndpointId, SignerId)> = {
             let peers = self.peers.lock().expect("peers");
@@ -265,7 +266,7 @@ impl Shared {
                 Some(FileHold::Pieces(pieces)) => piece.is_none_or(|p| pieces.iter().any(|&q| u64::from(q) == p)),
                 None => false,
             })
-            .filter_map(|(d, _)| Some((reach.get(d)?.endpoint, *d)))
+            .filter_map(|(d, _)| reach.get(d).filter(|r| r.files.contains(&root)).map(|r| (r.endpoint, *d)))
             .collect();
         drop(held);
         let holds = |x: &(EndpointId, SignerId)| holders.contains(x);

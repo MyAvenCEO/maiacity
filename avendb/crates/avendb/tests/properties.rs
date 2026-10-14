@@ -32,7 +32,7 @@ use avendb::policy::{
     Sharing, State, Vault, Who, Write,
 };
 use avendb::rules::Grant;
-use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
+use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
 use avendb::sync::{asks, digests, frontiers, log_of, receive, respond, respond_since, Ask, LogId};
 use avendb::wire::Wire;
 
@@ -185,6 +185,8 @@ enum Said {
     Nothing,
     Selector(Selector),
     Created(Header, TagDelta),
+    /// A schema or lens entry's header and first tags, the blob it holds, and whether its readers find it fits.
+    Lane(Header, TagDelta, Vec<u8>, bool),
     Tags(TagDelta),
 }
 
@@ -231,6 +233,14 @@ fn keep(h: &mut History, st: &State, a: Attempt, depth: Option<u64>) -> bool {
             h.readings.headers.insert(id, header);
             h.readings.tags.insert(id, tags);
         }
+        Said::Lane(header, tags, blob, fits) => {
+            h.readings.headers.insert(id, header);
+            h.readings.tags.insert(id, tags);
+            h.readings.blobs.insert(id, blob.into());
+            if !fits {
+                h.readings.unfit.insert(id);
+            }
+        }
         Said::Tags(tags) => {
             h.readings.tags.insert(id, tags);
         }
@@ -257,7 +267,7 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
             Some(Attempt { author, cosigners, action: vault_action(rng, &h.vaults), said: Said::Nothing })
         }
         17 => some_keys(rng, st),
-        18 | 19 => Some(a_publish(rng, h, st)),
+        18 | 19 => Some(a_lane_entry(rng, h, st)),
         20 | 21 => Some(a_keep(rng, h, st)),
         22 => a_keep_revocation(rng, h, st),
         _ => a_mark(rng, h, st, false),
@@ -268,8 +278,7 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
             Action::Share(Sharing::Grant(_, via))
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
-            | Action::Mark { via, .. }
-            | Action::Publish { via, .. } => *via = chain,
+            | Action::Mark { via, .. } => *via = chain,
             _ => {}
         }
     }
@@ -669,12 +678,16 @@ fn some_keys(rng: &mut Rng, st: &State) -> Option<Attempt> {
     Some(Attempt { author: author_for(rng, st, v), cosigners: vec![], action, said: Said::Nothing })
 }
 
-/// A schema or a lens published into a random vault's lane, for the vault or for any vault.
-fn a_publish(rng: &mut Rng, h: &History, st: &State) -> Attempt {
-    let vault = rng.pick(&h.vaults);
-    let actor = if rng.below(2) == 0 { vault } else { rng.pick(&h.vaults) };
-    let action = Action::Publish { vault, actor, via: vec![], blob: rng.pick(&BLOBS).to_vec() };
-    Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Nothing }
+/// A schema or lens entry of a random vault holding a random blob, created as `a_creation` creates one, for the vault
+/// or through a share: now and then one its readers find doesn't fit.
+fn a_lane_entry(rng: &mut Rng, h: &History, st: &State) -> Attempt {
+    let mut a = a_creation(rng, h, st);
+    let ty = Sym::new(if rng.below(2) == 0 { SCHEMA_TYPE } else { LENS_TYPE });
+    let (blob, fits) = (rng.pick(&BLOBS).to_vec(), rng.below(6) > 0);
+    if let Said::Created(header, tags) = a.said {
+        a.said = Said::Lane(Header { ty, ..header }, tags, blob, fits);
+    }
+    a
 }
 
 /// A random vault edit on `vaults`.
@@ -1242,14 +1255,20 @@ fn ids(edits: &[Edit]) -> HashSet<EditId> {
     edits.iter().map(Edit::id).collect()
 }
 
-/// Device `d` may receive the edits of the audience of the shares `shares` of vault `v` by `st` (`mayReceiveAudience`):
-/// it acts for the vault, or for the grantee of a live share over it, backup or more, that is in the audience or wide,
-/// or such a share is public.
-fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId]) -> bool {
+/// Device `d` has an interest in vault `v` by `st` (`interested`): it acts for the vault, or for the grantee of a live
+/// share over it, of any level.
+fn interested(st: &State, d: SignerId, v: VaultId) -> bool {
+    st.acts_for(d, v) || st.shares_over(v).any(|cp| st.live(cp.id) && who_vault(cp).is_some_and(|g| st.acts_for(d, g)))
+}
+
+/// Device `d`, which follows the vaults `follow`, may receive the edits of the audience of the shares `shares` of vault
+/// `v` by `st` (`mayReceiveAudience`): it acts for the vault, or for the grantee of a live share over it, backup or
+/// more, that is in the audience or wide, or such a share is public and `d` has an interest in the vault or follows it.
+fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId], follow: &[VaultId]) -> bool {
     let names = |g: Who| match g {
         Who::Vault(g) => st.acts_for(d, g),
         Who::Device(_) => false,
-        Who::Everyone => true,
+        Who::Everyone => follow.contains(&v) || interested(st, d, v),
     };
     let keeps = |cp: &Issued| cp.share.level.allows(Level::Backup);
     st.acts_for(d, v)
@@ -1258,47 +1277,56 @@ fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId])
         })
 }
 
-/// Device `d` may receive the edits of entry `e` by `st` (`mayReceive`): it may receive the entry's audience.
-fn may_receive(st: &State, d: SignerId, e: EntryId) -> bool {
+/// Device `d`, which follows the vaults `follow`, may receive the edits of entry `e` by `st` (`mayReceive`): it may
+/// receive the entry's audience.
+fn may_receive(st: &State, d: SignerId, e: EntryId, follow: &[VaultId]) -> bool {
     st.entry(e).is_some_and(|en| {
-        may_receive_audience(st, d, en.vault, st.audience_shares(en.audience()).unwrap_or_default())
+        may_receive_audience(st, d, en.vault, st.audience_shares(en.audience()).unwrap_or_default(), follow)
     })
 }
 
 /// Device `d` needs share `cp` by `st` (`seesShare`): it acts for the vault the share is over, for the vault it names
 /// or for its issuer, or the share is wide, was ever in the audience of an entry of its vault that `d` may receive, or
 /// is among the wants of one.
-fn sees_share(st: &State, d: SignerId, cp: &Issued) -> bool {
+fn sees_share(st: &State, d: SignerId, cp: &Issued, follow: &[VaultId]) -> bool {
     let stayed = |en: &Entry| en.stays.iter().any(|(_, x)| st.audience_shares(*x).unwrap_or_default().contains(&cp.id));
     let wanted = |en: &Entry| st.wants_of(en.id).contains(&cp.id);
     st.acts_for(d, cp.share.over)
         || who_vault(cp).is_some_and(|g| st.acts_for(d, g))
         || st.acts_for(d, cp.share.issuer)
         || st.entries().iter().any(|en| {
-            en.vault == cp.share.over && may_receive(st, d, en.id) && (cp.share.wide || stayed(en) || wanted(en))
+            en.vault == cp.share.over
+                && may_receive(st, d, en.id, follow)
+                && (cp.share.wide || stayed(en) || wanted(en))
         })
 }
 
 /// Device `d` may receive log `l` by `st` (`mayReceiveLog`): the log of an entry or an audience it may receive, or of a
 /// share it needs or that a share it needs rests on. An audience `st` never met has no shares.
-fn may_receive_log(st: &State, d: SignerId, l: LogId) -> bool {
+fn may_receive_log(st: &State, d: SignerId, l: LogId, follow: &[VaultId]) -> bool {
     match l {
-        LogId::Entry(e) => may_receive(st, d, e),
-        LogId::Audience(v, x) => may_receive_audience(st, d, v, st.audience_shares(x).unwrap_or_default()),
-        LogId::Share(c) => st.shares().iter().any(|x| x.chain.contains(&c) && sees_share(st, d, x)),
+        LogId::Entry(e) => may_receive(st, d, e, follow),
+        LogId::Audience(v, x) => may_receive_audience(st, d, v, st.audience_shares(x).unwrap_or_default(), follow),
+        LogId::Share(c) => st.shares().iter().any(|x| x.chain.contains(&c) && sees_share(st, d, x, follow)),
         LogId::Vault(_) => false,
     }
 }
 
-/// Device `d` syncs entry `e` by `st` (`syncs`): it may receive it, and its keep shares want it.
-fn syncs(st: &State, d: SignerId, e: EntryId) -> bool {
-    may_receive(st, d, e) && st.entry(e).is_some_and(|en| st.wants(d, en))
+/// Device `d`, which follows the vaults `follow`, syncs entry `e` by `st` (`syncs`): it may receive it, and its keep
+/// shares want it.
+fn syncs(st: &State, d: SignerId, e: EntryId, follow: &[VaultId]) -> bool {
+    may_receive(st, d, e, follow) && st.entry(e).is_some_and(|en| st.wants(d, en))
+}
+
+/// Some of the vaults of history `h`, each with even odds: what a device follows.
+fn some_follow(rng: &mut Rng, h: &History) -> Vec<VaultId> {
+    h.vaults.iter().copied().filter(|_| rng.below(2) == 0).collect()
 }
 
 #[test]
 fn t12_sync_sends_only_what_shares_reach() {
     // a peer sends a device only edits it holds, of the entries, audiences and shares the device may receive by the
-    // peer's view, and of vaults' logs; whatever the device says it holds
+    // peer's view, following what it follows, and of vaults' logs; whatever the device says it holds
     let (mut entries, mut audiences, mut shares) = (0, 0, 0);
     for (seed, h) in every_history() {
         let (edits, st) = (h.log.edits(), h.log.view());
@@ -1306,11 +1334,13 @@ fn t12_sync_sends_only_what_shares_reach() {
         let mut rng = Rng(seed);
         for d in SIGNERS {
             let mut may: HashMap<LogId, bool> = HashMap::new();
-            let asked = asks(&part(&mut rng, edits));
-            for edit in respond(edits, d).iter().chain(&respond_since(edits, d, &asked)) {
+            let follow = some_follow(&mut rng, &h);
+            let asked = asks(&part(&mut rng, edits), &follow);
+            for edit in respond(edits, d, &follow).iter().chain(&respond_since(edits, d, &asked)) {
                 assert!(held.contains(&edit.id()), "seed {seed}: {d:?} was sent an edit the peer doesn't hold");
                 let l = log_of(edit, edit.id()).expect("an edit of a log");
-                let ok = matches!(l, LogId::Vault(_)) || *may.entry(l).or_insert_with(|| may_receive_log(&st, d, l));
+                let may = may.entry(l).or_insert_with(|| may_receive_log(&st, d, l, &follow));
+                let ok = matches!(l, LogId::Vault(_)) || *may;
                 let wanted = |e| st.entry(e).is_some_and(|en| st.wants(d, en));
                 assert!(!matches!(l, LogId::Entry(e) if !wanted(e)), "seed {seed}: {d:?} was sent {edit:?} unwanted");
                 assert!(ok, "seed {seed}: {d:?} was sent {edit:?} of {l:?}");
@@ -1342,10 +1372,10 @@ fn t19_frontier_sync_loses_nothing() {
         for _ in 0..3 {
             let a = part(&mut rng, edits);
             let r = if rng.below(2) == 0 { edits.to_vec() } else { part(&mut rng, edits) };
-            let (held, asked) = (ids(&a), asks(&a));
-            let alone = Ask { haves: frontiers(&a), loose: vec![] };
+            let (held, asked) = (ids(&a), asks(&a, &[]));
+            let alone = Ask { haves: frontiers(&a), loose: vec![], follow: vec![] };
             for d in SIGNERS {
-                let whole = respond(&r, d);
+                let whole = respond(&r, d, &[]);
                 for sent in [respond_since(&r, d, &asked), respond_since(&r, d, &alone)] {
                     let lacks = whole.iter().find(|edit| !held.contains(&edit.id()) && !sent.contains(edit));
                     assert!(lacks.is_none(), "seed {seed}: {d:?} lacks {lacks:?}");
@@ -1370,7 +1400,7 @@ fn t19_partial_delivery() {
         let d = rng.pick(&[MAC_A, PHONE_A, MAC_B, MAC_C, MAC_D]);
         let mut held: Vec<Edit> = vec![];
         for round in 0.. {
-            let sent = respond_since(edits, d, &asks(&held));
+            let sent = respond_since(edits, d, &asks(&held, &[]));
             if sent.is_empty() {
                 break;
             }
@@ -1380,14 +1410,14 @@ fn t19_partial_delivery() {
             held = receive(&held, &got);
         }
         let held = ids(&held);
-        assert!(respond(edits, d).iter().all(|edit| held.contains(&edit.id())), "seed {seed}");
+        assert!(respond(edits, d, &[]).iter().all(|edit| held.contains(&edit.id())), "seed {seed}");
     }
 }
 
 #[test]
 fn t13_sync_converges() {
-    // two devices holding parts of the edits each ask the other once: for every entry each syncs by the other's view,
-    // both then hold the same edits of its log
+    // two devices holding parts of the edits, each following vaults of its own, each ask the other once: for every
+    // entry each syncs by the other's view, both then hold the same edits of its log
     let mut checked = 0;
     let devices = [MAC_A, PHONE_A, MAC_B, MAC_C];
     for (seed, h) in forked_histories() {
@@ -1403,13 +1433,14 @@ fn t13_sync_converges() {
         let mut rng = Rng(seed);
         for _ in 0..3 {
             let (p, q) = (part_after_start(&mut rng, h), part_after_start(&mut rng, h));
-            let (vp, vq, ap, aq) = (view(&p), view(&q), asks(&p), asks(&q));
+            let (flp, flq) = (some_follow(&mut rng, h), some_follow(&mut rng, h));
+            let (vp, vq, ap, aq) = (view(&p), view(&q), asks(&p, &flp), asks(&q, &flq));
             let got_p: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&p, &respond_since(&q, d, &ap)))).into();
             let got_q: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&q, &respond_since(&p, d, &aq)))).into();
             for (i, &dp) in devices.iter().enumerate() {
                 for (j, &dq) in devices.iter().enumerate().filter(|&(j, _)| j != i) {
                     for &(e, id) in &entry_logs {
-                        if syncs(&vq, dp, e) && syncs(&vp, dq, e) {
+                        if syncs(&vq, dp, e, &flp) && syncs(&vp, dq, e, &flq) {
                             let (a, b) = (got_p[i].contains(&id), got_q[j].contains(&id));
                             assert_eq!(a, b, "seed {seed}: {dp:?} and {dq:?} on {e:?}");
                             checked += 1;
@@ -1438,13 +1469,13 @@ fn t28_sync_follows_keeps() {
     for (seed, h) in every_history() {
         let (edits, st) = (h.log.edits(), h.log.view());
         for d in SIGNERS {
-            let sent = ids(&respond(edits, d));
+            let sent = ids(&respond(edits, d, &[]));
             for edit in edits {
                 let Some(LogId::Entry(e)) = log_of(edit, edit.id()) else { continue };
                 let Some(en) = st.entry(e) else { continue };
-                let want = syncs(&st, d, e);
+                let want = syncs(&st, d, e, &[]);
                 assert_eq!(sent.contains(&edit.id()), want, "seed {seed}: {d:?} and {edit:?}");
-                if may_receive(&st, d, e) {
+                if may_receive(&st, d, e, &[]) {
                     *(if want { &mut wanted } else { &mut unwanted }) += 1;
                 }
                 let ks: Vec<&Issued> = st.keeps_of(d, en.vault).collect();
@@ -1991,9 +2022,6 @@ impl Twin {
                 let boxes = boxes.into_iter().map(|b| KeyBox { to: to(b.to), bytes: b.bytes }).collect();
                 Action::Keys { name: self.key(name), id, public, boxes, clear }
             }
-            Action::Publish { vault, actor, via, blob } => {
-                Action::Publish { vault: self.vault(vault), actor: self.vault(actor), via: self.vaults(&via), blob }
-            }
             Action::Checkpoint { entry, covers } => Action::Checkpoint { entry, covers: self.edits(&covers) },
         }
     }
@@ -2013,7 +2041,6 @@ struct Ops {
     epochs: BTreeMap<KeyFam, Vec<Option<EditId>>>,
     seals: BTreeSet<(KeyName, KeyName)>,
     published: Vec<KeyName>,
-    lane: Vec<(VaultId, BlobId)>,
     wants: Vec<(EntryId, Vec<ShareId>)>,
 }
 
@@ -2068,7 +2095,6 @@ fn ops(st: &State, t: &Twin) -> Ops {
         epochs: st.epochs().map(|(k, e)| (t.fam(k), moved(k, e))).collect(),
         seals: st.seals().iter().map(|s| (t.key(s.secret), t.key(s.to))).collect(),
         published: st.published().iter().map(|&n| t.key(n)).collect(),
-        lane: st.lane().iter().map(|p| (t.vault(p.vault), p.blob)).collect(),
         wants: st.entries().iter().map(|en| (en.id, t.shares(st.wants_of(en.id)))).collect(),
     }
 }

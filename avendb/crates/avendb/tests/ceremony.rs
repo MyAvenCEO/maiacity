@@ -11,7 +11,7 @@
 mod common;
 
 use common::*;
-use avendb::id::{AudienceId, EditId, SignerId};
+use avendb::id::{AudienceId, BlobId, EditId, SignerId};
 use avendb::keys::{self, KeyFam};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
@@ -51,7 +51,8 @@ fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     let (edits, ids, more) = from.reply(f, t, &request, usize::MAX);
     let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
     let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
-    let blobs = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
+    let may = |b: &BlobId| from.may_fetch(f, t, *b, &request.ask.follow);
+    let blobs = reply.blobs.iter().filter(|(b, _)| may(b)).filter_map(|(b, _)| from.blob(f, *b));
     to.receive(t, reply.edits, blobs.collect())
 }
 

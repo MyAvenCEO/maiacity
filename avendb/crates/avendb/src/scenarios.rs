@@ -371,7 +371,9 @@ fn public(run: &mut Run) -> Done {
     let public = share(h.coop, Who::Everyone, Level::Read, by_id(charter));
     run.ok("and makes it public", w.lab.issue(w.mac_a, &[w.mac_a], public))?;
     w.lab.sync_all(7);
-    w.lab.sync(w.server, w.stranger);
+    run.same("a stranger that follows nothing is sent nothing", w.lab.sync(w.server, w.stranger), 0);
+    w.lab.follow(w.stranger, &[h.coop]);
+    run.check("one that follows the coop is sent what is public of it", w.lab.sync(w.server, w.stranger) > 0);
     for d in [w.stranger, w.server] {
         let who = named(&w.lab, d);
         let shown = text(&w.lab, d, charter, 2);
@@ -381,8 +383,13 @@ fn public(run: &mut Run) -> Done {
     let stranger = w.lab.edit(w.stranger, h.coop, charter, |i| i.set_text(2, "defaced"));
     run.same("the stranger can't edit it", stranger.err(), Some(Refusal::NotActing));
     let carol = w.carol;
+    run.same("Carol, outside the coop and following nothing, holds nothing of it", w.lab.fetched(w.mac_c, charter), 0);
+    w.lab.follow(w.mac_c, &[h.coop]);
+    w.lab.sync_all(7);
+    let shown = text(&w.lab, w.mac_c, charter, 2);
+    run.same("once she follows the coop, she reads it", shown.as_deref(), Some(CHARTER_TEXT));
     let edit = w.lab.edit(w.mac_c, carol, charter, |i| i.set_text(2, "defaced"));
-    run.same("nor can Carol, outside the coop", edit.err(), Some(Refusal::NoCap));
+    run.same("but can't edit it either", edit.err(), Some(Refusal::NoCap));
     Ok(())
 }
 
@@ -490,9 +497,13 @@ fn schema_v2(run: &mut Run) -> Done {
     let mut w = world();
     let h = handbook(&mut w);
     let (coop, welcome) = (h.coop, h.welcome);
-    let publish = |blob: &[u8]| Action::Publish { vault: coop, actor: coop, via: vec![], blob: blob.to_vec() };
-    let v1 = w.lab.submit(w.mac_a, &[w.mac_a], publish(DOCUMENT_V1.bytes()));
-    run.ok("Alice publishes v1, the schema Welcome was written under, into the coop's lane", v1)?;
+    let v1 = w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_V1.bytes());
+    run.ok("Alice adds v1, the schema Welcome was written under, to the coop's lane: an entry of the coop", v1)?;
+    let public = |lab: &Lab, d| {
+        let st = lab.state(d);
+        st.shares().iter().filter(|cp| cp.share.over == coop && cp.share.who == Who::Everyone && st.live(cp.id)).count()
+    };
+    run.same("with its first schema, the coop shares its schemas and lenses with everyone", public(&w.lab, w.mac_a), 1);
     w.lab.sync_all(9);
     let opened = w.lab.open(w.mac_b, welcome, &DOCUMENT_V2);
     let (seen, read_only) = run.some("a v2 app on Bob's Mac opens Welcome", opened)?;
@@ -500,8 +511,9 @@ fn schema_v2(run: &mut Run) -> Done {
     run.same("and shows what it can", (&seen["title"], &seen["blocks"]), (&json!("Welcome"), &json!([])));
     let tag = |d: &mut Value| d["tags"] = json!(["greenhouse"]);
     run.same("so it can't edit it", w.lab.edit_as(w.mac_b, coop, welcome, &DOCUMENT_V2, tag), Err(Refusal::ReadOnly));
-    run.ok("Alice publishes v2", w.lab.submit(w.mac_a, &[w.mac_a], publish(DOCUMENT_V2.bytes())))?;
-    run.ok("and the lens from v1 to v2", w.lab.submit(w.mac_a, &[w.mac_a], publish(DOCUMENT_LENS.bytes())))?;
+    run.ok("Alice adds v2", w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_V2.bytes()))?;
+    run.ok("and the lens from v1 to v2", w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_LENS.bytes()))?;
+    run.same("through the same share", public(&w.lab, w.mac_a), 1);
     w.lab.sync_all(9);
     let (seen, read_only) = run.some("Bob's v2 app opens Welcome again", w.lab.open(w.mac_b, welcome, &DOCUMENT_V2))?;
     run.check("and now may edit it", !read_only);
@@ -1112,6 +1124,7 @@ fn wide_shares(run: &mut Run) -> Done {
     run.check("the server, through avenCEO's wide relay cap, holds every entry and reads none", relayed);
     let public = share(alice, Who::Everyone, Level::Read, by_id(lib.plan));
     run.ok("Alice makes her plan public", w.lab.issue(mac, &[mac], public))?;
+    w.lab.follow(w.stranger, &[alice]);
     w.lab.sync_all(25);
     w.lab.sync(w.server, w.stranger);
     for d in [w.stranger, w.server] {

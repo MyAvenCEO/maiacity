@@ -10,10 +10,10 @@
 
 use avendb::cast::{self, World};
 use avendb::engine;
-use avendb::id::{EntryId, SignerId, VaultId};
+use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
-use avendb::lens::{Schema, Status, TypeV2, View};
+use avendb::lens::{self, Schema, Status, TypeV2, View};
 use avendb::policy::{Action, Level, Refusal};
 use avendb::rules::{self, Op};
 use serde_json::{json, Value};
@@ -542,8 +542,8 @@ const TODO_V3: &str = r#"{ "title": "Todo, v3", "type": "object", "properties": 
   "required": ["kind"] }"#;
 
 /// A write is judged under the schemas of its vault's lane and the built-in ones: one a patched app writes through a
-/// schema the lane doesn't hold counts for no reader until the vault publishes it, and from then on, as a lane only
-/// grows, for every reader.
+/// schema the lane doesn't hold counts for no reader until the vault creates it as a schema entry, and from then on, as
+/// a lane only grows, for every reader. Its JSON is the entry's whole content, as written.
 #[test]
 fn a_write_counts_once_the_lane_holds_its_schema() {
     let mut w = cast::world();
@@ -569,9 +569,19 @@ fn a_write_counts_once_the_lane_holds_its_schema() {
     let stored = |w: &World| w.lab.item(mac, l.door).expect("the door").record()["status"].clone();
     assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(patched.clone(), false)));
     assert_eq!(stored(&w), Value::Null);
-    // once Alice publishes v3 into her lane, the write fits the schemas it was written under, and counts
-    let publish = Action::Publish { vault: alice, actor: alice, via: vec![], blob: TODO_V3.as_bytes().to_vec() };
-    w.lab.submit(mac, &[mac], publish).expect("Alice publishes v3");
+    // a schema entry holds a schema and nothing else, of the type it says
+    let add = |ty: &str, value: Value| json!({ "op": "create", "vault": alice.to_hex(), "type": ty, "value": value });
+    assert_eq!(refused(&run(&mut w, mac, add("schema", json!("no schema")))), "BadOp");
+    assert_eq!(refused(&run(&mut w, mac, add("lens", json!(TODO_V3)))), "BadOp");
+    assert_eq!(refused(&run(&mut w, mac, add("schema", json!(lens::blobs::TODO_LENS)))), "BadOp");
+    let tagged = json!({ "op": "create", "vault": alice.to_hex(), "type": "schema", "tags": [], "value": TODO_V3 });
+    assert_eq!(refused(&run(&mut w, mac, tagged)), "BadOp");
+    // once Alice adds v3 to her lane, the write fits the schemas it was written under, and counts
+    let made = ok(run(&mut w, mac, add("schema", json!(TODO_V3))));
+    assert_eq!(made["blob"], BlobId::of(TODO_V3.as_bytes()).to_hex());
+    let entry = EntryId::from_hex(made["entry"].as_str().expect("its id")).expect("an entry");
+    assert_eq!(w.lab.lane_of(mac, alice), [TODO_V3.as_bytes()], "its JSON, as written");
+    assert!(w.lab.meaning(mac, entry).is_some_and(|m| m.attrs.ty.of_lane()), "of a schema entry");
     assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(patched, true)));
     assert_eq!(stored(&w), "blocked");
     // an app on v3 reads it, read-only: no lens joins v3 to v2, which the todo was written under too

@@ -2,8 +2,10 @@
 //! each other with what they hold of each log, gossip one digest per log and ask only where one differs, go offline and
 //! come back, and come back from old backups, which forks what they sign next. A peer sends a device the logs of the
 //! entries and audiences it reaches, and nothing about the others (T12): an entry a steward moves out of a device's
-//! reach stops syncing to it, and the device never hears of the move. Since blobs B2c, of those a device syncs the
-//! entries its keep shares want (T28), by the stewards' marks, which a relay applies without reading a selector (T23).
+//! reach stops syncing to it, and the device never hears of the move; what everyone reads reaches a device only where
+//! it has an interest in the vault or follows it, so a stranger gets nothing. Since blobs B2c, of those a device syncs
+//! the entries its keep shares want (T28), by the stewards' marks, which a relay applies without reading a selector
+//! (T23).
 
 mod common;
 
@@ -12,11 +14,11 @@ use std::collections::BTreeSet;
 use avendb::doc::Item;
 use avendb::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
-use avendb::lens::Status;
-use avendb::policy::{Action, KeepMode, Level, Refusal, Revoking};
+use avendb::lens::{Status, DOCUMENT_V2};
+use avendb::policy::{Action, KeepMode, Level, Refusal, Revoking, Who};
 use avendb::sealed::{seal, Brought, FileKey, FileRoot};
 use avendb::slice::{Atom, Selector, Sym, SCHEMA_TYPE};
-use avendb::sync::{log_of, LogId};
+use avendb::sync::{log_of, respond, LogId};
 use common::*;
 
 /// Every ordered pair of `ds`.
@@ -231,6 +233,56 @@ fn an_entry_that_leaves_a_devices_reach_stops_syncing_to_it() {
     }
 }
 
+/// The coop's Charter is public, and Carol reads Welcome. What everyone reads goes only to a device that has an
+/// interest in its vault, acting for the grantee of a share over it, or follows it (T12, `T12_interest`): Carol's Mac
+/// receives the Charter; Dave's Mac, with no share over the coop, receives nothing of it until it follows the coop, and
+/// then nothing of the coop that isn't public; following a vault with nothing public brings nothing.
+#[test]
+fn t12_what_everyone_reads_goes_only_to_whoever_has_an_interest() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac, mac_d) = (w.mac_a, w.mac_d);
+    let charter = w.lab.create(mac, h.coop, h.coop, "doc", &[], document("Charter", CHARTER_TEXT, mac)).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome))).unwrap();
+    w.lab.sync_all(12);
+    let reads = |lab: &Lab, d| text(lab, d, charter, 2).as_deref() == Some(CHARTER_TEXT);
+    assert!(reads(&w.lab, w.mac_c), "Carol's Mac, through her share over the coop, reads the Charter");
+    assert_eq!(w.lab.fetched(mac_d, charter), 0, "Dave's Mac, with none, holds nothing of it");
+    let held = w.lab.size(mac_d);
+    w.lab.follow(mac_d, &[w.alice]);
+    w.lab.sync_all(12);
+    assert_eq!(w.lab.size(mac_d), held, "following Alice's vault, with nothing public, brings nothing");
+    w.lab.follow(mac_d, &[h.coop, w.alice]);
+    assert_eq!(w.lab.request(mac_d, mac).ask.follow, w.lab.follows(mac_d), "its requests name what it follows");
+    w.lab.sync_all(12);
+    assert!(reads(&w.lab, mac_d), "following the coop, it reads the Charter");
+    assert_eq!(w.lab.fetched(mac_d, h.welcome), 0, "and holds nothing of Welcome, which isn't public");
+}
+
+/// A device that acts for no vault and follows none is sent nothing at all, however public what its peers hold
+/// (`T12_stranger_gets_nothing`): not the coop's public Charter, nor its schema, nor any vault's log. Once it follows
+/// the coop it receives both, and nothing else of the coop.
+#[test]
+fn t12_a_stranger_gets_nothing() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac, stranger) = (w.mac_a, w.stranger);
+    let charter = w.lab.create(mac, h.coop, h.coop, "doc", &[], document("Charter", CHARTER_TEXT, mac)).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
+    let schema = w.lab.add_schema(mac, h.coop, h.coop, DOCUMENT_V2.bytes()).unwrap();
+    w.lab.sync_all(12);
+    assert!(respond(w.lab.log(mac).edits(), stranger, &[]).is_empty(), "Alice's Mac would send it nothing");
+    for d in devices(&w) {
+        assert_eq!(w.lab.sync(d, stranger), 0, "{d:?} sends it nothing");
+    }
+    assert!(w.lab.entries(stranger).is_empty());
+    w.lab.follow(stranger, &[h.coop]);
+    w.lab.sync_all(12);
+    assert_eq!(set(w.lab.entries(stranger)), set([charter, schema]), "following the coop, its public entries alone");
+    assert_eq!(w.lab.lane_of(stranger, h.coop), [DOCUMENT_V2.bytes()], "whose lane it reads");
+}
+
 /// The entries tagged `tag`, of any type.
 fn tagged_with(tag: &str) -> Selector {
     Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new(tag))]])
@@ -306,8 +358,8 @@ fn t28_each_device_syncs_what_its_keep_shares_pick() {
     assert_eq!(roots(w.lab.kept_files(mac, true)), every_file);
     // files follow their edits (T27): the iPhone may fetch a proxy's file and not an original's
     let original_files: BTreeSet<FileRoot> = originals.iter().flat_map(|&e| files_of(&w.lab, mac, e)).collect();
-    assert!(proxy_files.iter().all(|f| w.lab.may_fetch_file(mac, phone, f)));
-    assert!(original_files.iter().all(|f| !w.lab.may_fetch_file(mac, phone, f)));
+    assert!(proxy_files.iter().all(|f| w.lab.may_fetch_file(mac, phone, f, &[])));
+    assert!(original_files.iter().all(|f| !w.lab.may_fetch_file(mac, phone, f, &[])));
     // the server reads no selector of Alice's, and still sends the iPhone only what its keep share picks, by the marks
     // (T23): a new proxy reaches the iPhone through the server alone, while the Mac is away
     assert!(w.lab.slice(server, phone_keep).is_none());
@@ -366,8 +418,7 @@ fn keep_modes_choose_what_and_how_a_device_syncs() {
         clip_tagged(&mut w, "Dawn", &["original", "dawn"], 3),
         clip_tagged(&mut w, "Dusk", &["original", "dusk"], 4),
     ];
-    let schema = document("Clip", "A clip's title and film.", mac);
-    let schema = w.lab.create(mac, alice, alice, SCHEMA_TYPE, &[], schema).unwrap();
+    let schema = w.lab.add_schema(mac, alice, alice, DOCUMENT_V2.bytes()).unwrap();
     w.lab.sync_all(2);
     assert_eq!(set(w.lab.entries(phone)), set([proxies[0], schema]), "the dawn proxy and the schema");
     assert_eq!(set(w.lab.entries(server)), set([proxies[0], proxies[1], schema]), "all but the originals");

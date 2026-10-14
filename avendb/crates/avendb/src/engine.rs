@@ -3,8 +3,8 @@
 //!
 //! - **Records through schemas.** An op sees an entry's record as an app on a schema sees it (`lens::View`): the schema
 //!   it names (`"schema"`: `"document"` or `"todo"`, a built-in's name, or a schema's id in hex), or else the one the
-//!   record's own `kind` names, read through the lens to the version that wrote it. The lane an op reads through is
-//!   the app's own schemas and lenses and what the entry's vault publishes. `"stored"` names the record as the item
+//!   record's own `kind` names, read through the lens to the version that wrote it. The lane an op reads through is the
+//!   app's own schemas and lenses and those the entry's vault holds as entries. `"stored"` names the record as the item
 //!   stores it, which ops read and never change. A change runs on the app's view and goes back through the view
 //!   (`View::put`), so the lens writes only what changed, in the representation the item already uses: a new schema
 //!   needs no new code.
@@ -14,12 +14,12 @@
 //!   with the changes it made to the entry's stored record (`ops::diff`), as every reader sees them alike. `schemas`:
 //!   the schemas and lenses a vault's entries are read through. `groups`: the built-in groups of ops a share names
 //!   (`rules::groups`), which the page offers when it shares.
-//! - **Changes** (`run`). `create`; the record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`;
-//!   `tag`; `propose`, `merge`, `restore`, `undo`, `variant`; and `batch`, whose record ops in a row on one entry's
-//!   line make one write. Each acts for a vault (`"as"`, the device's own by default), as every edit does, and the
-//!   rules judge it as they judge any peer's. A write through a share carries the proof that the ops of the shares of
-//!   its chain allow what it touches and the tags it asks for, and is refused (`NotAllowed`) where they don't: its
-//!   readers wouldn't count it (`rules`).
+//! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
+//!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `restore`,
+//!   `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make one write. Each acts for a
+//!   vault (`"as"`, the device's own by default), as every edit does, and the rules judge it as they judge any peer's.
+//!   A write through a share carries the proof that the ops of the shares of its chain allow what it touches and the
+//!   tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`).
 //! - **Asking** (`may`). Whether each of some change ops would be made, by a dry run of each that checks, proves and
 //!   refuses as `run` does and makes nothing: what a page asks before it offers a button.
 //!
@@ -36,11 +36,11 @@ use crate::doc::Item;
 use crate::history::{self, History, MAIN};
 use crate::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lab::Lab;
-use crate::lens::{self, Lane, Schema, View};
+use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::ops::{self, Path, Record, RecordOp, Where};
 use crate::policy::{Line, Proposal, Refusal};
 use crate::rules;
-use crate::slice::Attrs;
+use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
 
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
 /// updates it holds.
@@ -264,10 +264,10 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
     })
 }
 
-/// The schemas and lenses device `me` reads vault `v`'s entries through: the app's own, then what the vault's lane
-/// publishes.
+/// The schemas and lenses device `me` reads vault `v`'s entries through: the app's own, then those of the vault's lane,
+/// its schema and lens entries (`Lab::lane_of`).
 fn lane(lab: &Lab, me: SignerId, v: VaultId) -> Lane {
-    Lane::with_built_ins(lab.state(me).lane_of(v))
+    Lane::with_built_ins(lab.lane_of(me, v))
 }
 
 /// The schema a record's kind names: of those in the lane whose `kind` is that constant, the newest, the one no lens
@@ -592,8 +592,8 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
 }
 
 /// `{"op": "schemas", "vault"}`: the schemas and lenses vault `vault`'s entries are read through, the app's own first
-/// (`builtIn`), then what its lane publishes: each schema's id, title, the kind its records name and its JSON, each
-/// lens's id, title, the schemas it joins and its JSON.
+/// (`builtIn`), then those of its lane, its schema and lens entries: each schema's id, title, the kind its records name
+/// and its JSON, each lens's id, title, the schemas it joins and its JSON.
 fn schemas(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let vault = vault_of(o, "vault")?;
     let built_in: Vec<BlobId> = lens::blobs::ALL.iter().map(|b| BlobId::of(b.as_bytes())).collect();
@@ -638,6 +638,8 @@ struct Act {
 
 enum Step {
     Create { vault: VaultId, ty: String, tags: Vec<String>, schema: Named, value: Value },
+    /// A schema or lens entry holding `blob`, a schema or lens of type `ty` (`Lab::add_schema`).
+    AddSchema { vault: VaultId, ty: String, blob: Vec<u8> },
     /// Record ops on one entry's line, through one schema: one write.
     Edits { entry: EntryId, line: Line, schema: Named, ops: Vec<RecordOp> },
     Tag { entry: EntryId, add: Vec<String>, remove: Vec<String> },
@@ -689,6 +691,17 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
         text.ok_or_else(|| bad(format!("{name} takes a text {field}")))
     };
     let step = match name {
+        "create" if o.get("type").and_then(Value::as_str).is_some_and(|t| Sym::new(t).of_lane()) => {
+            if let Some(k) = ["tags", "schema"].iter().find(|k| o.contains_key(**k)) {
+                return Err(bad(format!("a schema or lens entry takes no {k:?}: it holds its JSON and nothing else")));
+            }
+            let blob = match o.get("value") {
+                Some(Value::String(text)) => text.as_bytes().to_vec(),
+                Some(v @ Value::Object(_)) => v.to_string().into_bytes(),
+                _ => return Err(bad("create of a schema or lens takes its JSON: value, an object or its text")),
+            };
+            Step::AddSchema { vault: vault_of(o, "vault")?, ty: text("type")?, blob }
+        }
         "create" => {
             let value = o.get("value").filter(|v| v.is_object()).ok_or_else(|| bad("create takes a record: value"))?;
             let (tags, schema) = (texts_of(o, "tags")?, named(o)?);
@@ -800,6 +813,19 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let item = Item::made(&View::plain(&app), &full(&app, &value)?, me).ok_or(Refusal::NotAView)?;
             let entry = lab.create(me, actor, vault, &ty, &strs(&tags), item)?;
             Ok(json!({ "entry": entry.to_hex() }))
+        }
+        Step::AddSchema { vault, ty, blob } => {
+            // the type its JSON reads as, as `Lab::add_schema` reads it, which must be the one asked for
+            let is = match (Lens::parse(&blob), Schema::parse(&blob)) {
+                (Some(_), _) => LENS_TYPE,
+                (None, Some(_)) => SCHEMA_TYPE,
+                (None, None) => return Err(bad(format!("value is no {ty}: neither a schema nor a lens"))),
+            };
+            if ty != is {
+                return Err(bad(format!("value is a {is}, not a {ty}")));
+            }
+            let entry = lab.add_schema(me, actor, vault, &blob)?;
+            Ok(json!({ "entry": entry.to_hex(), "blob": BlobId::of(&blob).to_hex() }))
         }
         Step::Edits { entry, line, schema, ops } => edits(lab, me, actor, (entry, line), &schema, &ops),
         Step::Tag { entry, add, remove } => {

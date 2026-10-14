@@ -680,6 +680,7 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     ask.haves.insert(audience, vec![EditId::from_u64(4)]);
     ask.haves.insert(LogId::Entry(DOOR), vec![EditId::from_u64(5), EditId::from_u64(6)]);
     ask.loose = vec![EditId::from_u64(7), EditId::from_u64(9)];
+    ask.follow = vec![ALICE.min(BOB), ALICE.max(BOB)];
     wire_mutations(&mut g, &ask, 3000, |_| {});
     let (wants, after) = (vec![BlobId::from_u64(3), BlobId::from_u64(4)], Some((9, EditId::from_u64(8))));
     let request = Request { ask, wants, after };
