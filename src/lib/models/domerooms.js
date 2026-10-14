@@ -1,5 +1,5 @@
 /*
- * THE DOME ROOMS' MODELS — what furnishes the inside of the village's domes, as the 3D models viewer lists it: the
+ * THE DOME ROOMS' MODELS — what furnishes the inside of the village's domes, as the Things viewer lists it: the
  * private rooms in the master dome's galleries (../sandbox-2/interior/rooms.ts) and the house plants in them, the
  * terraces' furniture and their balcony doors, the workshops round the master's ground floor and the café squares
  * outside it (../sandbox-2/interior/spaces.ts), and the plain furniture they share (../sandbox-2/interior/interior.ts).

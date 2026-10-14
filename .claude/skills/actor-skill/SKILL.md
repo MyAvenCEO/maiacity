@@ -23,6 +23,8 @@ skill is what the people and animals taught us since.
   chosen from the eye alone so a shot draws the same frame every time (`world-skill`).
 - A move is a clip (`walk`, `graze`, `wave`) and a held state is a pose (`sit`, `kneel`); the gallery and a game play
   the same ones. The stand-in's joints can be turned by hand in the gallery and the pose copied out as data.
+- Samuel wants actors combinable (said when the forklift went into the goods pod's rig, 2026-10-07): how the
+  machines do it, a builder that also adds its parts to another rig, is in `machine-skill`'s `ours.md`.
 
 ## Versions
 

@@ -1,6 +1,6 @@
 ---
 name: asset-producer
-description: The maiaCITY asset producer — the meta skill over every asset we build. It holds the asset laws (real measure in metres, real numbers from real physics, built in its parts, every upgrade its own frozen version, look at it like a critic), the order of work, how we check (checking.md) and which sub skill to load, one per asset group, in the dashboard's order — factory-skill (Factories: a whole production line as a live 3D discrete event simulation, AirSup's original), machine-skill (Machines: one machine as a photoreal physics simulation, AirSup's original, with our notes on the Machines library in its ours.md), actor-skill (Actors: people and animals, the stand-in and its face), world-skill (Worlds: worlds, sandboxes, real places), building-skill (Buildings: tents, domes, containers, towers), thing-skill (Things: the still props, vehicles, tents and furniture), biome-skill (Biomes: the floor a world stands on) and plant-skill (Plants: grown from a seed). Use it whenever any asset is built, simulated, upgraded or shown, or when it is unclear which asset skill a task needs.
+description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real measure in metres, real numbers from real physics, built in its parts, every upgrade its own frozen version, look at it like a critic), the order of work, how we check (checking.md) and which sub skill to load, one per asset group in the dashboard's order — factory-skill (Factories: a production line as a live 3D discrete event simulation, AirSup's original), machine-skill (Machines: AirSup's original, our notes on the Machines library in its ours.md), actor-skill (Actors: people and animals, the stand-in's face), world-skill (Worlds: sandboxes, real places), building-skill (Buildings: tents, domes, containers), thing-skill (Things: still props, vehicles, furniture), biome-skill (Biomes: the floor) and plant-skill (Plants: grown from a seed). Use it whenever any asset is built, simulated, upgraded or shown, or when it is unclear which asset skill a task needs.
 ---
 
 # Asset producer
@@ -49,11 +49,12 @@ The asset groups are the dashboard's Game Assets (`src/lib/app/places.ts`), one 
 | Biomes | `biome-skill` | `src/lib/biomes`, `/app/biomes` | the floor a world stands on: surfaces, cover in colonies, streamed round the eye |
 | Plants | `plant-skill` | `src/lib/plants`, `/app/plants` | a plant, a tree, a crop, a herb or a fungus grown from its seed through its stages to fruit |
 
-`factory-skill` and `machine-skill` are AirSup's text word for word (only their `name` changed), not installed: their
-tools stay in AirSup's repositories and are cloned into the scratchpad when a step needs them (`SOURCE.md` in each
-says how). Keep their `SKILL.md` and `references/` original. What we learn goes into our own sub skills, and for
-machines into `machine-skill/ours.md` beside AirSup's text (a factory's into a `factory-skill/ours.md` once we build
-one into our app). Where they and ours differ, our laws win for anything that joins our libraries (real size without a
+`factory-skill` and `machine-skill` are AirSup's text word for word, every text file of their repositories (`SKILL.md`
+with only its `name` changed, `references/`, `README.md`, `CONTRIBUTING.md`, their evals and the rest, listed in each
+`SOURCE.md`). They are not installed: their tools stay in AirSup's repositories and are cloned into the scratchpad
+when a step needs them (`SOURCE.md` says how). Keep every one of their files original. What we learn goes into our own
+sub skills, and for machines into `machine-skill/ours.md` beside AirSup's text (a factory's into a
+`factory-skill/ours.md` once we build one into our app). Where they and ours differ, our laws win for anything that joins our libraries (real size without a
 scale, frozen versions, JS modules); a standalone AirSup page follows its skill as written.
 
 For films, `production-designer` (worlds and sets as a film sees them, art direction) works beside these.

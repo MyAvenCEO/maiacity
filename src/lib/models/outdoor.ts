@@ -4,7 +4,7 @@
  * block and the bridge's bronze rider. Each is seeded: the same tree every time, so a film renders the same pixels.
  *
  * A world plants many trees, so a tree is two geometries — its wood and its leaves — for instancing (`treeParts`);
- * `tree()` puts them together for the 3D models viewer. Leaves are cards cut from a drawn cluster of leaves, their
+ * `tree()` puts them together for the Things viewer. Leaves are cards cut from a drawn cluster of leaves, their
  * normals pointing out from the crown, so a crown is lit as one soft mass and not as a thousand flat cards.
  */
 import * as THREE from 'three';
@@ -353,7 +353,7 @@ export function leafDepthMaterial(kind: 'broad' | 'narrow') {
 	return new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: leafAtlas(kind), alphaTest: 0.42 });
 }
 
-/** A whole tree, for the 3D models viewer. */
+/** A whole tree, for the Things viewer. */
 export function tree(kind: TreeKind = 'broadleaf', seed = 1): THREE.Group {
 	const g = new THREE.Group();
 	g.name = `tree, ${kind}`;
