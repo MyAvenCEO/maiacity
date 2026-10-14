@@ -16,7 +16,8 @@ import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer }
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
-import { VILLAGE_INFO, pickup, solarPanel } from './village.js';
+import { VILLAGE_INFO, loadingRamp, pickup, solarPanel } from './village.js';
+import { SEED_PACKETS, backpack, dugEarth, markerSticks, seedPacket, waterBottle } from './planting.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
@@ -37,6 +38,10 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	'rabbit-hutch': [
 		{ ...FIRST, build: timberHutch },
 		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome of wire on grass, a little shingled dome inside to sleep in' }
+	],
+	pickup: [
+		{ ...FIRST, date: '2026-10-13', build: () => pickup({ v: 1 }) },
+		{ v: 2, date: '2026-10-14', note: 'Clear glass all round and the cab inside it, seen from inside: two front seats and a bench for three behind, the dash with two gauges under their hood, a screen and four vents, the steering wheel on its column on the left, three pedals, a gear stick and the handbrake on the console, door cards with their pulls, sun visors and the mirror; and a tailgate that opens down flat, level with the bed' }
 	],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
@@ -132,6 +137,19 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 4', make: () => rabbitDome().group },
 	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 4', make: () => playDome().group },
 	{ id: 'pickup', label: 'Pickup', note: `${VILLAGE_INFO.pickup.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => pickup() },
+	{ id: 'loading-ramp', label: 'Loading ramp', note: 'one folding aluminium ramp, 0.86 m wide between its rails, grip bars every 10 cm, a lip to lie on the bed: up 1.16 m over 2 m, from the ground to the pickup’s bed', usedIn: 'MaiaCity V1', make: () => loadingRamp() },
+	{ id: 'backpack', label: 'Backpack', note: 'a hiker’s pack of about 35 l, 32 × 22 cm and 46 cm to its rim: a drawstring collar, a lid pocket thrown back, a front pocket, mesh bottle pockets, padded back, curved shoulder straps and a hip belt; open, a 1 l water bottle and five seed packets in it', usedIn: 'MaiaCity V1', make: () => backpack() },
+	{ id: 'water-bottle', label: 'Water bottle', note: '1 l, refillable, powder-coated steel, 7.7 cm across and 30 cm to its cap’s loop; its open mouth at the top to pour from', usedIn: 'MaiaCity V1', make: () => waterBottle() },
+	{
+		id: 'seed-packet',
+		label: 'Seed packet',
+		note: 'a paper envelope of 7 × 10 cm, a few seeds in it, its fruit printed on the front with its name: one for each of V1’s seeds',
+		usedIn: 'MaiaCity V1',
+		make: () => seedPacket('apple'),
+		variants: Object.entries(SEED_PACKETS).map(([id, p]) => ({ id: `seed-packet-${id}`, label: p.label, note: `${p.label}, ${p.latin}`, make: () => seedPacket(id) }))
+	},
+	{ id: 'marker-sticks', label: 'Marker sticks', note: 'two sticks of square pine, 35 cm long and 12 mm across, pointed, their tops painted orange, pushed into the ground half a metre apart', usedIn: 'MaiaCity V1', make: () => markerSticks() },
+	{ id: 'dug-earth', label: 'Dug earth', note: 'a patch of turned soil 60 cm across, heaped a little, crumbs and clods on it, a hollow for the seed; it darkens and shines as it is watered', usedIn: 'MaiaCity V1', make: () => dugEarth() },
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
 	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() }
 ];
