@@ -8,12 +8,20 @@
  * what it was), then change the builder and add the new version to the history — the latest version is the asset's
  * own builder. The explorer lists every version, newest first, and shows any of them; a world asks for the version it
  * was built on (`at`).
+ *
+ * One way for every group (the things, the machines, the actors, the plants, the biomes, the buildings, the worlds):
+ * the same history, the same frozen builders, the same list in every explorer, and one way to name an asset at a
+ * version, `group/id@v` (`machines/powercube@3`, `plants/apple@1`), which `$lib/assets` turns back into its builder
+ * (`assetAt`). A version whose builder was not kept says so (`kept: false`): it is listed for its note, never shown as
+ * something it was not. Every older version of an asset keeps its builder (src/lib/assets/versions.test.js); only a
+ * world's older versions are notes alone, since a world is a page.
  */
 
 /** @typedef {{ v: number, date: string, note: string }} Change one version: its number, when, what changed */
 /**
  * @template B
- * @typedef {Change & { build: B }} Version a version and what builds it
+ * @typedef {Change & { build: B, kept: boolean }} Version a version and what builds it; `kept`: its own builder (the
+ *   latest's, or a frozen one), not the latest's standing in for one that was not kept
  */
 
 /** The first version of everything: what every asset was when versions began. */
@@ -29,7 +37,10 @@ export const FIRST = /** @type {Change} */ ({ v: 1, date: '2026-10-05', note: 'F
  */
 export function versionsOf(current, history = [FIRST]) {
 	const sorted = [...history].sort((a, b) => a.v - b.v);
-	return sorted.map((c, i) => ({ v: c.v, date: c.date, note: c.note, build: i === sorted.length - 1 ? current : /** @type {B} */ (c.build ?? current) }));
+	return sorted.map((c, i) => {
+		const latest = i === sorted.length - 1;
+		return { v: c.v, date: c.date, note: c.note, build: latest ? current : /** @type {B} */ (c.build ?? current), kept: latest || c.build !== undefined };
+	});
 }
 
 /**
