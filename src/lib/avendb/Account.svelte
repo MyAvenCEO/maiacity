@@ -250,7 +250,9 @@
 		};
 		const device = () => {
 			over((s.t0 = performance.now()));
-			return (/** @type {any} */ report) => (s.report = report);
+			return (/** @type {any} */ report) => {
+				s.report = report;
+			};
 		};
 		try {
 			await work({ step, device });
