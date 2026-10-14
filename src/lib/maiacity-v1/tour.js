@@ -156,7 +156,8 @@ export function story(view, seat, seen) {
 		// the seed from home (Samuel 2026-10-14): the backpack opened, a spot chosen outside the core circle and walked to,
 		// marked with a plant stake; the seed picked, pressed in and watered from the bottle; nothing showing yet
 		say({ id: 'begin', chapter: 'Home', title: 'How it begins', hint: '', ...next('begin'), ...home, place: 'pack', hour: 16.9 },
-			'And this is how everything begins: with a seed you brought from home.'),
+			'And this is how everything begins: with a seed you brought from home.',
+			'Everyone who comes here plants their own tree.'),
 		say({ id: 'spot', chapter: 'Home', title: 'Choose where it grows', kind: 'spot', done: !!spot, ...home, place: 'plot', hour: 16.9 },
 			'Choose where it grows, out beyond the homes.'),
 		say({ id: 'seed', chapter: 'Home', title: 'Pick your seed', kind: 'pick', done: !!(me.seedling || me.tree), ...atSpot, place: 'seeds', hour: 17 }, null),

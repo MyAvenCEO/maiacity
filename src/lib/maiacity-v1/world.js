@@ -1124,6 +1124,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				for (const p of Object.values(packets)) p.position.y = p.userData.y0 + 0.04 * out;
 				if (k > 0.6) act(people[stage.me], 'kneel');
 			}
+		}, {
+			// and down into it: the five seed packets, one for every tree (everyone here plants their own)
+			fov: 36,
+			near: 0.05,
+			cam: (k) => [V(PACK_AT.x + 0.12, 1.05 - 0.06 * k, PACK_AT.z - 0.06), V(PACK_AT.x, 0.33, PACK_AT.z + 0.02)],
+			run: () => {
+				const pk = packs[stage.me], { bottle, bottleAt, packets } = pk.userData;
+				pk.userData.setOpen(1);
+				bottle.position.y = bottleAt.p.y + 0.08;
+				for (const p of Object.values(packets)) p.position.y = p.userData.y0 + 0.04;
+			}
 		}],
 		// high behind you, the core circle drawn on the ground: choose where it grows, out beyond the homes
 		plot: () => [{
