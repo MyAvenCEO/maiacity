@@ -205,7 +205,7 @@ export function selectionStats(learn = 0.05, at = 5, years = 30) {
 	return { lead: i < 0 ? null : C[i][0], share: C[k][1] };
 }
 
-// ── Fair ownership (Sections 9.2 and 10.6) ─────────────────────────────────────────────────────────────────────────────────────
+// ── Fair ownership (Sections 9.2 and 11.2.5) ─────────────────────────────────────────────────────────────────────────────────────
 
 /** Germany's wealth Gini today (Bundesbank PHF 2023), the start and the capitalism baseline of Figure 10 */
 export const GINI_DE = 0.72;
@@ -536,7 +536,7 @@ const LADDER_ROWS = [
 	{ id: 'prod0', bundleMax: 1.174, shortYears: 3, worstYear: 31, worstYearShare: 0.019, checks: [0, 0, 0], shortfall: 0.0008, yield: 0.101, mu: 0.0937, sigma: 0.0763, failures: 13, exits: 20, foundings: 32, short: ['food'], falls: [['the poorer tenths', 40, 50]] },
 	// plant: output per unit of plant in year 60 (sim-dynamic.csv, dyn:even, mean_productivity)
 	{ id: 'even', bundleMax: 0.863, growth: 0.02, checks: [1, 1, 0], shortfall: 0, yield: 0.1, mu: 0.1079, sigma: 0.0497, failures: 0, exits: 12, foundings: 19, short: [], plant: 3.56, falls: [['the poorest tenth', 30, 40], ['the poorest tenth', 50, 60]] },
-	// part 3 is a claim about every tenth (Section 10.1): in this run no tenth fell, only the poorest person (D7 notes)
+	// part 3 is a claim about every tenth (Section 10.3): in this run no tenth fell, only the poorest person (D7 notes)
 	{ id: 'wide', bundleMax: 0.87, checks: [1, 1, 1], shortfall: 0, yield: 0.1, mu: 0.0627, sigma: 0.049, failures: 0, exits: 13, foundings: 19, short: [], falls: [], personFall: [20, 30] },
 	{ id: 'wants', bundleMax: 0.918, checks: [1, 1, 0], shortfall: 0, yield: 0.001, mu: 0.0006, sigma: 0.0004, failures: 1, exits: 9, foundings: 14, short: [], spent: 0.05 },
 	{ id: 'aven', bundleMax: 2.196, checks: [0, 0, 0], shortfall: 0.0023, yield: 0.1, mu: 0.0966, sigma: 0.0486, failures: 14, exits: 9, foundings: 14, short: ['food'], shortYears: 8, worst: 0.13 },
@@ -619,7 +619,7 @@ export const SEEDS = {
 	noFix: { muMin: 0.0661, muMax: 0.1008, muMedian: 0.0756, below: 2, pass: 3, check1: 4, check2: 4, check3: 3, fails: 34, food: 32, successors: 18, short: 27_113, main: { food: 14, successors: 11, short: 9_975, mu: 0.0944 } }
 };
 
-/** the melt tests (Section 10.6): the dynamic main on the same eight seeds, with one lever changed at a time, all with
+/** the melt tests (Section 11.2.5): the dynamic main on the same eight seeds, with one lever changed at a time, all with
  *  the idle-plant rule. new: under Law 4 of this paper (the pools' part 0.1), from scripts/theos-e2e-sim.mjs --seeds
  *  20261012-20261019 with --set turnDiv=0.1, --set turnDiv=0.15, --set capDays=365, --melt 0.08 or --melt 0.09
  *  (research/e2e/pool-10, melt-*.md); old: the same levers under the old pool rule, the same commands with
@@ -676,7 +676,7 @@ export const SAME_SHOCK = {
 	collapse: { seed: 20261028, short: 2_323_749, year: 19 }
 };
 
-/** one seed, one history (Section 10.7): the main seed, with the pools' part of each HEART moved by a hair. pool = the
+/** one seed, one history (Section 11.2.6): the main seed, with the pools' part of each HEART moved by a hair. pool = the
  *  pools' part; mu = μ in the last ten years in HEARTS; short = person-days short from day 8; food = food COOP failures; pass = all
  *  three checks of Proposition 3 pass. source: scripts/theos-e2e-sim.mjs --seed-run 20261012 --set poolShare=…
  *  (research/e2e/pool-10, chaos/pool-*.json); 0.1 is the main run and 0.05 the old pool rule (LADDER) */
@@ -760,7 +760,7 @@ export const mindRange = (key, ids = INFRA_MINDS) => {
 	return [Math.min(...v), Math.max(...v)];
 };
 
-/** how the simulation's Avens invest (Section 10.3; scripts/theos-e2e-sim.mjs updateAlloc, BASE.avenRule 'price'):
+/** how the simulation's Avens invest (Sections 7 and 11.2.1; scripts/theos-e2e-sim.mjs updateAlloc, BASE.avenRule 'price'):
  *  each Aven puts `share` of its person's HEARTS into the `top` MINDs with the highest time-averaged pool price ×
  *  (1 + yieldWeight × Law 5 dividend yield), the yield smoothed over smoothDays, each weighted by (score ÷ best
  *  score)^sharpness; the rest goes by its person's own values. A newly founded COOP gets other people's HEARTS only
@@ -789,7 +789,7 @@ export const ROUND_TRIP = {
 };
 /** the share of what people hold that leaves a year with the MIND of COOPs that ended: what is retired from people's
  *  wallets a year (H4) over what people hold (DYN.people × DYN.money; the average MIND is worth 1 HEART). With the
- *  dividends and the price change, it closes the lasting return μ (Section 10.6) */
+ *  dividends and the price change, it closes the lasting return μ (Section 11.2.5) */
 export const retiredShare = (rt = ROUND_TRIP, d = DYN) => (rt.people.out.retired * 365) / (d.people * d.money);
 
 /** what new MIND, the melt and the MIND retired with COOPs that ended leave over, as a share of new MIND (D8: −3.6 %) */
@@ -934,7 +934,7 @@ export const bedsFromEnergy = (d = ENERGY.dome) => d.people / domeYears(d);
 /** December's energy deficit, MWh: at least the use, less the harvest */
 export const decemberGap = (d = ENERGY.dome) => d.decUse - d.decHarvest;
 
-// ── The test city (Section 11.2) ──────────────────────────────────────────────────────────────────────────────────
+// ── The test city (Section 11.3.3) ──────────────────────────────────────────────────────────────────────────────────
 // Source: the test city, round 5, engine 20dd2478 (its proof report and engine notes, run 2026-10-13). A village of
 // 1,500 residents over 60 years, built from day 0 with euro loans from the City COOP; Law 5 at 20 %, the 7 % melt, 24 HEARTS a day.
 
@@ -1059,7 +1059,7 @@ export const MODEL_VERSIONS = [
 	{ id: 'pools', pr: [], date: '2026-10-14', unit: 'HEARTS', poolShare: POOL_SHARE, checks: null, running: true, seeds: null }
 ];
 
-/** the test city's rounds, in order (Section 11.3). Each round ran the five seeds 20261012, 1, 2, 3 and 4 for 60
+/** the test city's rounds, in order (Section 11.3.2). Each round ran the five seeds 20261012, 1, 2, 3 and 4 for 60
  *  years; Avens follow fixed rules. Per seed: p1, person-days short; p2strict, the lowest owner-only dividends ÷ the
  *  basic bundle in the last year (1 or more passes) and strictFrom, the day from which dividends alone paid the bundle
  *  every day (null: never); p2normal, owner-only person-days failing the normal test, and normalSeeds, the seeds on
