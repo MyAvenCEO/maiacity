@@ -1,7 +1,7 @@
 /*
  * THE MODELS — every reusable still model, as the Models viewer (/app/models/) lists it (the containers are the Buildings', below): its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js; a machine that works or has moving parts is an actor, ./actors, and never listed here too). A world places
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js, ./belltent.js; a machine that works or has moving parts is an actor, ./actors, and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
@@ -19,6 +19,7 @@ import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, loadingRamp, pickup, solarPanel } from './village.js';
 import { ALL_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
 import { domeTent, packedTent } from './tent.js';
+import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
@@ -49,6 +50,9 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 		{ v: 2, date: '2026-10-14', note: 'Clear glass all round and the cab inside it, seen from inside: two front seats and a bench for three behind, the dash with two gauges under their hood, a screen and four vents, the steering wheel on its column on the left, three pedals, a gear stick and the handbrake on the console, door cards with their pulls, sun visors and the mirror; and a tailgate that opens down flat, level with the bed', build: () => pickup({ v: 2 }) },
 		{ v: 3, date: '2026-10-14', note: 'Four doors that open to get in: each hinged at its front edge and swinging out to about 70°, its window in its frame, its card, armrest and handles going with it; the outside mirrors on the front doors; sills under them' }
 	],
+	'bell-tent': [{ ...FIRST, date: '2026-10-14', note: 'The Buildings’ bell tent made a model in its 20 parts, pitched step by step: the groundsheet, the canvas spread, the pole walked up, the wall poles and pegs, the guy ropes, the door rolled back, the things brought in and the lantern lit' }],
+	'fire-place': [{ ...FIRST, date: '2026-10-14', note: 'The bell tent’s fire place in its parts, built step by step and lit' }],
+	'bell-tent-bag': [{ ...FIRST, date: '2026-10-14', note: 'The bell tent packed in its bag' }],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
 		{ v: 2, date: '2026-10-06', note: 'A climbing dome of round logs with a platform and a slide at its middle; the swing on an arch of logs' }
@@ -180,6 +184,46 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 		variants: [
 			{ id: 'tent-bag-rolled', label: 'Rolled', note: 'rolled up and strapped', make: () => packedTent() },
 			{ id: 'tent-bag-open', label: 'Unrolled', note: 'its straps undone and the canvas laid out flat', make: () => packedTent({ open: 1 }) }
+		]
+	},
+	{
+		id: 'bell-tent',
+		label: 'Bell tent',
+		note: 'our bell tent: cotton canvas 4.2 m across on one centre pole 3 m high, a wall of 75 cm all round, a door 1.1 × 1.8 m whose flaps roll back to either side; ten wall poles under its eave, ten guy ropes out to pegs 1.5 m from the wall, a bathtub groundsheet zipped in. Inside two mats and sleeping bags, a crate for a table, two packs, a hurricane lantern on the pole. It is in its 20 parts: pick one for its card, show it alone, explode the tent, pitch it step by step; step inside',
+		usedIn: 'MaiaCity V1',
+		make: () => bellTent(),
+		variants: [
+			{ id: 'bell-tent-pitched', label: 'Pitched', note: 'standing, its door rolled back, the things in and the lantern lit', make: () => bellTent() },
+			{ id: 'bell-tent-groundsheet', label: 'Groundsheet', note: 'the groundsheet unfolded and pegged down', make: () => bellTent({ pitch: 0.12 }) },
+			{ id: 'bell-tent-canvas', label: 'Canvas spread', note: 'the canvas spread out over it, the door at the front', make: () => bellTent({ pitch: 0.2 }) },
+			{ id: 'bell-tent-pole', label: 'Pole going up', note: 'the centre pole being walked upright under the canvas', make: () => bellTent({ pitch: 0.31 }) },
+			{ id: 'bell-tent-pole-up', label: 'Pole up', note: 'the pole standing, the eave still hanging, the wall loose', make: () => bellTent({ pitch: 0.42 }) },
+			{ id: 'bell-tent-wall', label: 'Wall pegged', note: 'the wall poles under the eave and the wall’s foot pegged out', make: () => bellTent({ pitch: 0.56 }) },
+			{ id: 'bell-tent-guys', label: 'Guys out', note: 'the guy ropes run out to their pegs and tight, the door still closed', make: () => bellTent({ pitch: 0.78 }) },
+			{ id: 'bell-tent-door', label: 'Door open', note: 'the door’s flaps rolled back and tied, nothing in it yet', make: () => bellTent({ pitch: 0.86 }) }
+		]
+	},
+	{
+		id: 'fire-place',
+		label: 'Fire place',
+		note: 'the bell tent’s fire place, in front of its door: a ring of field stones 1.2 m across round a bed of ash, four logs in a tepee, the flames and their light, two green folding camp chairs facing the fire, a woodpile of nine split logs on two bearers. In its parts, built step by step, lit or put out',
+		usedIn: 'MaiaCity V1',
+		make: () => firePlace(),
+		variants: [
+			{ id: 'fire-place-lit', label: 'Burning', note: 'built and lit', make: () => firePlace() },
+			{ id: 'fire-place-laid', label: 'Laid', note: 'built, the logs over the kindling, not lit', make: () => firePlace({ lit: 0 }) },
+			{ id: 'fire-place-ring', label: 'Ring of stones', note: 'the ring of stones set, nothing else yet', make: () => firePlace({ built: 0.28 }) }
+		]
+	},
+	{
+		id: 'bell-tent-bag',
+		label: 'Bell tent bag',
+		note: 'the bell tent packed: a roll of canvas 1.1 m long and 0.5 m thick, two straps buckled round it and a handle on top; unrolled, what is in it lies on it: the canvas folded and tied, the groundsheet rolled, the centre pole in three sections, the ten wall poles in a bundle, the pegs in a sack',
+		usedIn: 'MaiaCity V1',
+		make: () => bellTentBag(),
+		variants: [
+			{ id: 'bell-tent-bag-rolled', label: 'Rolled', note: 'rolled up and strapped', make: () => bellTentBag() },
+			{ id: 'bell-tent-bag-open', label: 'Unrolled', note: 'its straps undone and the canvas laid out flat', make: () => bellTentBag({ open: 1 }) }
 		]
 	},
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },

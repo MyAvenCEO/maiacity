@@ -11,6 +11,7 @@ globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContex
 import { batteryPack, loadingRamp, pickup, powercube, solarPanel } from './village.js';
 import { backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
 import { domeTent, packedTent } from './tent.js';
+import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { busStop, gasStation, oldShed, travelVan } from './wayside.js';
 import { person, tent } from '../maiacity-v1/world.js';
 import { powerCube } from '../actors/powercube.js';
@@ -22,7 +23,7 @@ import { batteryPack as packModule } from '../actors/batterypack.js';
 const bare = (o) => (o.remove(o.userData.glow), o);
 const still = (c) => (c.rig.pose(c.clips.off(0)), c.rig.object);
 const ose = () => still(powerCube());
-const BUILD = { pickup, powerCube: () => ose(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent, loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent };
+const BUILD = { pickup, powerCube: () => ose(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent, loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, bellTent, firePlace, bellTentBag };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {
