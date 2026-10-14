@@ -28,16 +28,16 @@
 		holderSeries, INFRA_MINDS, mindRange
 	} from '$lib/theos/model.js';
 
-	// Figure 11's simulation, run at build time (+page.server.js)
+	// Figure 10's simulation, run at build time (+page.server.js)
 	let { data } = $props();
 
 	// the four series colours, validated together for colour-blind separation on the paper's surface
 	const C = ['#c8744f', '#2f6fbf', '#1f7a52', '#8a5fb0'];
 
 	// one map for the numbers of figures, tables and equations, so that a new one never leaves a stale reference behind
-	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, pools: 6, lvr: 7, holder: 8, selection: 9, machine: 10, gini: 11, dial: 12, cycle: 13, deciles: 14 };
-	const TAB = { speeds: 1, prices: 2, binds: 3, rivals: 4, parts: 5, twoWorlds: 6, roundTrip: 7, prop3: 8, variations: 9, sameShock: 10, cityParts: 11, conditions: 12, notation: 13, threats: 14, physics: 15, prop2: 16, testCity: 17, scenarios: 18 };
-	const EQ = { unit: 7, select: 8, level: 9, gini: 10, normal: 11, strict: 12, abundance: 13 };
+	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, pools: 6, lvr: 7, holder: 8, selection: 9, gini: 10, dial: 11, machine: 12, cycle: 13, deciles: 14 };
+	const TAB = { speeds: 1, binds: 2, rivals: 3, parts: 4, conditions: 5, twoWorlds: 6, roundTrip: 7, prices: 8, prop3: 9, prop2: 10, variations: 11, cityParts: 12, testCity: 13, scenarios: 14, notation: 15, threats: 16, sameShock: 17, physics: 18 };
+	const EQ = { melt: 1, half: 2, money: 3, rtm: 4, pool: 5, lvr: 6, unit: 7, select: 8, level: 9, gini: 10, normal: 11, strict: 12, abundance: 13 };
 
 	// the slider under Figure 5 sets the rate, so a reader can feel what the 7 % does
 	let rate = $state(RATE);
@@ -52,7 +52,8 @@
 	const lvr = lvrSeries().map((s, i) => ({ ...s, color: [C[2], C[0], C[1]][i] }));
 	const sel = selectionSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
 	const gin = $derived(data.gini.map((s, i) => ({ ...s, color: ['#8a8578', C[0], C[2], C[1]][i] })));
-	// the simulation's lasting return at rest is above the melt, where (11) has no resting state, so no line draws it
+	// the simulation's lasting return in the last ten years is above the melt, where (EQ.gini) has no resting state, so
+	// no line draws it
 	const dial = dialSeries().map((s, i) => ({ ...s, color: [C[1], C[0], C[3]][i] }));
 	// Figure 14: real consumption of the richest, the middle and the poorest tenth, every year, on a log scale
 	const living = livingSeries().map((s, i) => ({ ...s, color: [C[3], C[1], C[0]][i] }));
@@ -94,7 +95,7 @@
 	const markFalls = MARKS.slice(1).map((y, i) => [MARKS[i], y]).filter(([a, b]) => livingAt('d1', b) < livingAt('d1', a));
 	// Section 10.5: the years with basics short in the main run
 	const shortYears = PROOF.shortYears.map((y) => y.year);
-	// the eight seeds, and the melt tests (Section 9.3)
+	// the eight seeds, and the melt tests (Section 10.6)
 	const SN = SEEDS.new, SO = SEEDS.old, MT = MELT_TESTS;
 	const law35 = variation('law35');
 	// the ten-year windows in which the poorest tenth fell, by their first year, in words: '27 to 35, 49 and 50'
@@ -138,13 +139,13 @@
 	};
 	// the variations that passed parts 1 and 2 but failed part 3, on the main seed
 	const only3Fails = variations().filter((v) => v.checks[0] && v.checks[1] && !v.checks[2]);
-	// the run whose day of basics cost the most, so the margin of (12) was smallest
+	// the run whose day of basics cost the most, so the margin of (EQ.normal) was smallest
 	const tightest = LADDER.reduce((a, v) => (v.bundleMax > a.bundleMax ? v : a));
-	// the same-shock comparison of the two pool rules (Section 10.6), and its sign tests
+	// the same-shock comparison of the two pool rules (Appendix G), and its sign tests
 	const SS = SAME_SHOCK, ST = SAME_SHOCK.tests;
 	// a p value of a sign test
 	const pv = (t) => fmt(t.p, 3);
-	// the main seed, with the pools' part moved by a hair (Section 10.6)
+	// the main seed, with the pools' part moved by a hair (Section 10.7)
 	const hair = (pool) => CHAOS.find((c) => c.pool === pool);
 	const hairLow = hair(0.0999), hairHigh = hair(0.1001), oldLow = hair(0.0499), oldHigh = hair(0.0501);
 	// person-days short, in words
@@ -403,8 +404,8 @@
 			city, anyone may still take a job for euros. Inside it, there are only work proposals (Section 4). A
 			person gains MIND, the money of ownership and use of Section 4, and Section 10.4 shows where it comes from. The
 			promise is concrete. No one starves, no one has to work to survive, and the living standard of every tenth of the people
-			rises. theOS aims for a city where only physics limits how far. Section 10 states this as Proposition 3 and checks
-			it in a simulation, person by person. To get there, we must
+			rises. theOS aims for a city where only physics limits how far. Section 10.1 states this as Proposition 3, and Section 10.5
+			checks it in a simulation, person by person. To get there, we must
 			first look at the tool that both questions pass through: money. What is it, who creates it, and why does it behave
 			the way it does?
 		</p>
@@ -693,7 +694,7 @@
 			demurrage continuously: it updates a balance each time it reads or changes that balance. There is no fixed date
 			for the fee, so nobody gains by moving money just before a deadline. The rule is:
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} B_{\text{now}} = B_{\text{last}}\; e^{-r\,\Delta t} \\ \Delta t = \frac{\text{seconds elapsed}}{31\,536\,000} \end{gathered} \tag{1}`} />
+		<Tex display tex={String.raw`\begin{gathered} B_{\text{now}} = B_{\text{last}}\; e^{-r\,\Delta t} \\ \Delta t = \frac{\text{seconds elapsed}}{31\,536\,000} \end{gathered} \tag{${EQ.melt}}`} />
 		<p>
 			Here <Tex tex="B" /> is any balance of HEARTS or of a MIND: in a person's wallet, in a COOP's treasury or in a
 			pool. The time
@@ -701,7 +702,7 @@
 			<Tex tex={String.raw`1 - e^{-r/365} \approx ${fmt(dailyLoss() * 100, 4)}\,\%`} /> of a balance. An idle balance
 			loses half of its value in a time called its half-life:
 		</p>
-		<Tex display tex={String.raw`t_{1/2} = \frac{\ln 2}{r} \approx ${fmt(halfLife(), 1)}\ \text{years}. \tag{2}`} />
+		<Tex display tex={String.raw`t_{1/2} = \frac{\ln 2}{r} \approx ${fmt(halfLife(), 1)}\ \text{years}. \tag{${EQ.half}}`} />
 		<p>
 			On money that people use, the cost is too small to notice. But it is large enough that nobody keeps a fortune idle.
 			In Fisher's terms, the melt fixes the amount <Tex tex="M" /> (Section 5.2), and it is meant to raise the velocity
@@ -742,7 +743,7 @@
 			result, <Tex tex="m" />, is an average count of tokens per person. With a constant population, it gains
 			<Tex tex="u" /> a year and melts at the rate <Tex tex="r" />:
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} \frac{dm}{dt} = u - r\,m, \qquad m^{*} = \frac{u}{r} \\ m(t) = m^{*} + \left(m_0 - m^{*}\right) e^{-rt} \end{gathered} \tag{3}`} />
+		<Tex display tex={String.raw`\begin{gathered} \frac{dm}{dt} = u - r\,m, \qquad m^{*} = \frac{u}{r} \\ m(t) = m^{*} + \left(m_0 - m^{*}\right) e^{-rt} \end{gathered} \tag{${EQ.money}}`} />
 		<p>
 			At <Tex tex="r = 0.07" />, the steady state is <Tex tex={String.raw`m^{*} \approx ${tn(steadyState())}`} /> per
 			person. At this level, the new HEARTS of each year equal the money that melts in that year. However people
@@ -813,11 +814,11 @@
 		</figure>
 		<h3>5.3 Laborde's rule, arrived at from the other side</h3>
 		<p>
-			Section 3 introduced Stéphane Laborde's universal dividend: money created equally for every member. With (3), we
+			Section 3 introduced Stéphane Laborde's universal dividend: money created equally for every member. With ({EQ.money}), we
 			can now compare the two systems closely. Laborde derives the rate of the dividend from one requirement: each
 			generation must co-create the same share of money over a life of <Tex tex={String.raw`e_v`} /> years:
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} c = \frac{\ln(e_v/2)}{e_v/2} \\ e_v = 80 \;\Rightarrow\; c \approx ${fmt(rtmRate(80) * 100, 1)}\,\% \end{gathered} \tag{4}`} />
+		<Tex display tex={String.raw`\begin{gathered} c = \frac{\ln(e_v/2)}{e_v/2} \\ e_v = 80 \;\Rightarrow\; c \approx ${fmt(rtmRate(80) * 100, 1)}\,\% \end{gathered} \tag{${EQ.rtm}}`} />
 		<p>
 			In Laborde's system, the money supply <Tex tex="M" /> of <Tex tex="N" /> members grows, and each member gets
 			<Tex tex={String.raw`c\,M/N`} /> a year. Measure a member's balance relative to the average,
@@ -832,7 +833,7 @@
 			<Tex tex="r" />.</em> Take a member who keeps their half of the MIND that their own investing creates, so that
 			<Tex tex={String.raw`\dot B_i = u/2 - r\,B_i`} />. If every member does the same, the members hold half of all
 			money, <Tex tex="m/2" /> per person. Measure the member relative to that average,
-			<Tex tex={String.raw`b_i = B_i / (m/2)`} />. With (3), <Tex tex={String.raw`\dot b_i = \frac{u}{m(t)}\,(1 - b_i)`} />.
+			<Tex tex={String.raw`b_i = B_i / (m/2)`} />. With ({EQ.money}), <Tex tex={String.raw`\dot b_i = \frac{u}{m(t)}\,(1 - b_i)`} />.
 			At the steady state, <Tex tex={String.raw`u/m^{*} = r`} />, so <Tex tex={String.raw`\dot b_i = r\,(1 - b_i)`} />:
 			Laborde's law with <Tex tex="c = r" />. ∎
 		</p>
@@ -856,9 +857,9 @@
 			in year 30, counted in the average MIND (Section 6.3).
 		</p>
 		<p>
-			theOS does not take its rate from (4). The pair of {CIRCLES.day} a day and {pc(CIRCLES.rate)} a year comes from
+			theOS does not take its rate from ({EQ.rtm}). The pair of {CIRCLES.day} a day and {pc(CIRCLES.rate)} a year comes from
 			Circles v2 (Section 3) <Cite k="circles2" />. Circles takes its {pc(CIRCLES.rate)} as a yearly rate, applied day by day. theOS melts continuously, so 7 %
-			a year takes {pct(yearlyLoss() * 100, 1)} of an idle balance in a year. Read through (4), 7 % matches a life of
+			a year takes {pct(yearlyLoss() * 100, 1)} of an idle balance in a year. Read through ({EQ.rtm}), 7 % matches a life of
 			<Tex tex={String.raw`e_v \approx ${tn(ev)}`} /> years, so it is gentler than Laborde's
 			{pct(rtmRate(80) * 100, 1)} for an 80-year life. 7 % also has reasons of its own. It sets the half-life of any
 			idle holding, and of any advantage, at {fmt(halfLife(), 1)} years: a fortune fades within a lifetime, while a
@@ -960,7 +961,7 @@
 			Every pool holds <Tex tex="n" /> = {POOL.min} to {POOL.max} MINDs in equal shares, <Tex tex={String.raw`w_i = 1/n`} />. With
 			<Tex tex={String.raw`x_i`} /> of MIND <Tex tex="i" /> in the pool, it keeps
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} \prod_{i=1}^{n} x_i^{\,1/n} = K \\ p_{ij} = \frac{x_i}{x_j}, \qquad \text{fee } \varphi = ${tn(POOL.fee * 100, 1)}\,\% \end{gathered} \tag{5}`} />
+		<Tex display tex={String.raw`\begin{gathered} \prod_{i=1}^{n} x_i^{\,1/n} = K \\ p_{ij} = \frac{x_i}{x_j}, \qquad \text{fee } \varphi = ${tn(POOL.fee * 100, 1)}\,\% \end{gathered} \tag{${EQ.pool}}`} />
 		<p>
 			Every trade keeps the geometric mean of the reserves constant. Only fees and inflows raise it, and only the melt
 			lowers it. The price of MIND <Tex tex="j" /> in MIND
@@ -994,7 +995,7 @@
 		</ul>
 		<p>
 			One property fits theOS especially well. Every MIND in a basket melts at the same {pc(RATE)} a year. So demurrage shrinks
-			every reserve by the same factor, and every price in (5) stays the same. Melting creates no trading opportunity
+			every reserve by the same factor, and every price in ({EQ.pool}) stays the same. Melting creates no trading opportunity
 			inside a basket.
 		</p>
 		<h3>6.2 The cost of liquidity, and who carries it</h3>
@@ -1009,10 +1010,10 @@
 			the covariance <Tex tex={String.raw`\Sigma`} /> of their price moves: how the prices move together. Then the
 			yearly cost <Tex tex={String.raw`\ell`} />, as a share of the pool's value <Tex tex="V" />, is
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} \frac{\ell}{V} = \tfrac12\Big(\sum_i w_i \sigma_i^2 - w^{\top}\Sigma\,w\Big) \\ \overset{w_i = 1/n}{=}\; \tfrac12\,\sigma^2 (1-\rho)\Big(1 - \frac1n\Big) \end{gathered} \tag{6}`} />
+		<Tex display tex={String.raw`\begin{gathered} \frac{\ell}{V} = \tfrac12\Big(\sum_i w_i \sigma_i^2 - w^{\top}\Sigma\,w\Big) \\ \overset{w_i = 1/n}{=}\; \tfrac12\,\sigma^2 (1-\rho)\Big(1 - \frac1n\Big) \end{gathered} \tag{${EQ.lvr}}`} />
 		<p>
 			The right-hand side holds for equal weights, one common volatility <Tex tex={String.raw`\sigma`} /> and one common
-			correlation <Tex tex={String.raw`\rho`} />: how closely prices move together. Equation (6) assumes random-walk prices
+			correlation <Tex tex={String.raw`\rho`} />: how closely prices move together. Equation ({EQ.lvr}) assumes random-walk prices
 			and arbitrage without fees <Cite k="lvr" />. The cost grows with how much MINDs move against one another, and the
 			{pct(POOL.fee * 100, 1)} fee wins part of it back <Cite k="lvrfees" />.
 		</p>
@@ -1033,7 +1034,7 @@
 				refs={[{ axis: 'x', at: POOL.min, label: 'minimum basket' }]}
 			/>
 			<figcaption>
-				<strong>Figure {FIG.lvr}.</strong> The cost (6) of keeping a basket liquid, before the fee wins part of it back. It
+				<strong>Figure {FIG.lvr}.</strong> The cost ({EQ.lvr}) of keeping a basket liquid, before the fee wins part of it back. It
 				assumes prices that move as a random walk, at volatilities like those of large company shares. In a basket of
 				{LVR_CASES.n[0]}, calm MINDs ({pc(LVR_CASES.calm)} volatility) cost
 				{pct(basketLvr(LVR_CASES.n[0], LVR_CASES.calm) * 100, 1)} of the pool a year. Wild MINDs ({pc(LVR_CASES.wild)})
@@ -1400,7 +1401,7 @@
 			village's basics. It limits how fast the village builds and learns.
 		</p>
 		<p>
-			Some of these design numbers are estimates. The simulation of Section 10 counts energy as an input to every recipe, and it limits
+			Some of these design numbers are estimates. The simulation of Section 10.3 counts energy as an input to every recipe, and it limits
 			how fast each COOP can grow its plant in a year. But it assumes productivity growth and models no energy limit
 			(Section 10.3). In the test city's world model, only surplus energy pays for growth (Section 11.1). Money cannot
 			make a city richer. In the test city, twice the HEARTS raised prices {fmt(TEST_CITY.scenarios.money.prices, 1)}-fold
@@ -1691,7 +1692,7 @@
 		</div>
 		<p>
 			Section 5.2 gave the monetary policy that connects these parts: money is issued as HEARTS, converted into MINDs,
-			circulated as MINDs, and melted. Figure {FIG.machine} shows the machine at work.
+			circulated as MINDs, and goes out of existence when it melts or when a failed COOP's MIND is retired. Figure {FIG.machine} shows the machine at work.
 		</p>
 		<figure class="wide">
 		<Circulation />
@@ -2032,7 +2033,7 @@
 				COOPs that ended ({fmt(RT.retiredMind, 2)}), to within {pc(Math.abs(issueGap()), 1)}. So the stock of money
 				{RT.stockGrowth < 0 ? 'shrank' : 'grew'} a little: {sg(RT.stockGrowth)} MIND a person a day, about
 				{pc((Math.abs(RT.stockGrowth) * 365) / DYN.money, 1)} of it a year. It stands at {fmt(DYN.money)} MIND a person,
-				{pc(-moneyGap(), 1)} below <Tex tex={String.raw`u/r = ${tn(steadyState())}`} />. At that level, (3) predicts
+				{pc(-moneyGap(), 1)} below <Tex tex={String.raw`u/r = ${tn(steadyState())}`} />. At that level, ({EQ.money}) predicts
 				growth of {fmt(stockGrowthDay(), 2)} MIND a person a day, and the retired MIND takes
 				{RT.retiredMind > stockGrowthDay() ? 'all of it and a little more' : 'it'}. In HEARTS the melt is
 				the same number, because by ({EQ.unit}) all MIND is worth as many HEARTS as there are MINDs.
@@ -2495,7 +2496,7 @@
 			</table>
 		</div>
 		<p>
-			The basics held better than in the simulation of Section 10: part 1 held on {holdsOn(TC.p1)} of the
+			The basics held better than in the simulation of Section 10.5: part 1 held on {holdsOn(TC.p1)} of the
 			{TC.seeds.length} base seeds and missed on the others by {list(p1Missed.map((v) => fmt(v)))} person-days, and the
 			normal test failed only on {normalFails.length === 1 ? 'seed' : 'seeds'}
 			{list(normalFails.map(([s, v]) => `${s}, on ${fmt(v)} owner-only person-days`))}. Part 3 failed in real units on
@@ -2546,7 +2547,7 @@
 		<h3 id="roadmap">11.3 A roadmap in three steps</h3>
 		<ol>
 			<li>
-				<strong>The world model.</strong> Play every example of this paper as a seeded scenario, with (1), many COOPs
+				<strong>The world model.</strong> Play every example of this paper as a seeded scenario, with ({EQ.melt}), many COOPs
 				and their pools. Check Proposition 3 for every person, on every day, on many seeds.
 			</li>
 			<li><strong>Human intents.</strong> Let people make the two daily choices of Section 7 and leave the rest to their Aven. Then humans and AI agents share one economy.</li>
@@ -2654,7 +2655,7 @@
 				that a MIND joins a basket only after verified output and with the consent of the COOPs already in it. Its
 				founders also post a bond that they lose on fraud. A breaker stops a pool from taking in a failing MIND, while
 				the pool still sells it. The breaker reacts to events, such as failed deliveries, not to prices. The failing
-				COOP's inflow stops too. Once the COOP has failed, its MIND leaves the baskets. The main run of Section 10 assumes
+				COOP's inflow stops too. Once the COOP has failed, its MIND leaves the baskets. The main run of Section 10.3 assumes
 				this rule: a failed COOP's MIND leaves the pools and is retired, and its holders lose it. In the earlier static world, a failed
 				COOP's MIND kept a pool price, and its holders could still swap it for their partners' MIND. The healthy
 				reserves could then move into a successor pool, by a redemption that the City COOP's members vote for (Section
@@ -2742,7 +2743,7 @@
 		<h3>12.5 What the models still lack</h3>
 		<p>
 			Section 5.3 gives the reasons for the rate of {pc(RATE)}. The test city runs Proposition 3 on a grid of melt rates
-			(Section 11.1), and measures how behaviour changes with the rate.
+			(Section 11.2), and measures how behaviour changes with the rate.
 		</p>
 		<p>
 			Section 10.1 lists the conditions of Proposition 3 and what the simulation found for each, and Section 10.6 those
@@ -2791,7 +2792,7 @@
 			(Sections 10.6 and 10.7). In the test city, part 3 held on {noneOr(TEST_CITY.headline.p3 + TEST_CITY.more.p3)}
 			of its {TEST_CITY.seeds.length + TEST_CITY.more.seeds.length} seeds (Section 11.2). One seed can make a rule look
 			sound, and the next seed can break it, so two rules must be compared on the same shocks. <em>Test:</em> many
-			seeds, the same shocks for each pair of rules, and the grid of Section 11.1.
+			seeds, the same shocks for each pair of rules, and the grid of Section 11.2.
 		</p>
 	</section>
 
@@ -2846,7 +2847,7 @@
 		<h3>The world</h3>
 		<ul class="assume">
 			<li id="a1"><strong>A1 A closed city.</strong> The models leave out euros, imports, exports and taxes (Section 8.3). <span class="status">Status: —</span></li>
-			<li id="a2"><strong>A2 A constant population,</strong> except where Section 5.2 adds growth. Equation (3) holds only then. <span class="status">Status: —</span></li>
+			<li id="a2"><strong>A2 A constant population,</strong> except where Section 5.2 adds growth. Equation ({EQ.money}) holds only then. <span class="status">Status: —</span></li>
 			<li id="a3"><strong>A3 Enough output and net energy</strong> = C1 (Section 10.1). <span class="status">Status: —</span></li>
 			<li id="a4"><strong>A4 Productivity growth.</strong> Each COOP's productivity rises about {pc(SIM.prodGrowth)} a year on average, unevenly. This is assumed. It stands in for growth that surplus energy pays for (Sections 8.4 and 10.3). <span class="status">Status: —</span></li>
 			<li id="a5"><strong>A5 Land in the City COOP.</strong> All land belongs to the City COOP and is only leased (Section 8.2). <span class="status">Status: —</span></li>
@@ -2960,7 +2961,7 @@
 			<dt>Pool, basket, LP token</dt>
 			<dd>A pool is a basket of {POOL.min} to {POOL.max} MINDs in equal value shares, which anyone can trade against. Together the city's pools are the city's liquidity pool. A pool issues an LP token (liquidity-provider token), a share of the pool, for each deposit, and the City COOP holds them all (Section 6).</dd>
 			<dt>G3M</dt>
-			<dd>Geometric mean market maker: the pool formula (5), which keeps the geometric mean of the reserves constant in every trade.</dd>
+			<dd>Geometric mean market maker: the pool formula ({EQ.pool}), which keeps the geometric mean of the reserves constant in every trade.</dd>
 			<dt>LVR</dt>
 			<dd>Loss-versus-rebalancing: what a pool loses to arbitrageurs when prices move, against a perfect rebalancer.</dd>
 			<dt>Aven</dt>
@@ -2993,7 +2994,7 @@
 			<dt>Decile, tenth</dt>
 			<dd>One of ten equal groups of people, sorted by real consumption each year.</dd>
 			<dt>Proposition 3</dt>
-			<dd>The central claim of Section 10: no one starves, no one has to work to survive, and the living standard of every tenth rises. Part 2 claims the normal test, which lets an owner-only person spend some of what they hold. The strict test, dividends alone, is a stronger target that the main run does not meet.</dd>
+			<dd>The central claim of Section 10.1: no one starves, no one has to work to survive, and the living standard of every tenth rises. Part 2 claims the normal test, which lets an owner-only person spend some of what they hold. The strict test, dividends alone, is a stronger target that the main run does not meet.</dd>
 			<dt>Rival COOP</dt>
 			<dd>A COOP that makes the same good as another and competes for the same buyers (Section 9.1).</dd>
 			<dt>Founding, exit, failure</dt>
@@ -3029,7 +3030,7 @@
 			<dt>Dynamic and static world</dt>
 			<dd>The two simulations of Section 10.3. The dynamic world has rivals, free prices, growth and shocks, and this paper uses it. The earlier static world had fixed tastes, no growth and capped prices; "static" marks its numbers.</dd>
 			<dt>Test city</dt>
-			<dd>The first step of Section 11, where simulated residents live, trade and invest under the rules of this paper before the real city.</dd>
+			<dd>The first step of Section 11.1, where simulated residents live, trade and invest under the rules of this paper before the real city.</dd>
 		</dl>
 	</section>
 
@@ -3054,7 +3055,7 @@
 			<strong>Agent-based and stock-flow consistent models.</strong> Mark-0 <Cite k="gualdi" /> and the model of Dosi
 			and others <Cite k="dosi" /> let many firms and households act by simple rules. Godley and Lavoie
 			<Cite k="godley" />, and Caiani and others <Cite k="caiani" />, keep the books so that every flow lands somewhere.
-			The simulation of Section 10 keeps stock-flow consistent books, and Section 11.1 says what the test city borrows
+			The simulation of Section 10.3 keeps stock-flow consistent books, and Section 11.1 says what the test city borrows
 			from these models and where theOS differs.
 		</p>
 		<p>
@@ -3068,7 +3069,7 @@
 		<h2><span>E</span>Threat model</h2>
 		<p>
 			theOS creates prizes that attackers will want. Table {TAB.threats} lists the main attacks, what they gain, the
-			defences that Section 12 proposes, and how the test city tests them.
+			defences that Sections 12.1 to 12.5 propose, and how the test city tests them.
 		</p>
 		<div class="table-wrap">
 			<table class="narrow">
@@ -3153,7 +3154,7 @@
 			<code>--melt R</code> sets the melt. With <code>--set reletUse=0</code>, the City COOP leases every failed plant,
 			as in the last version of this paper. The melt tests of Section 10.6 use these flags, and with
 			<code>--set poolShare={OLD_POOL_SHARE}</code> they run under the old pool rule. <code>--pair A-B --vs key=value</code>
-			runs the same-shock comparison of Section 10.7. It runs the main run and the same run with one setting changed, on
+			runs the same-shock comparison of Table {TAB.sameShock}. It runs the main run and the same run with one setting changed, on
 			every seed from A to B, both with common random numbers (<code>crn=1</code>). It prints the paired results and a
 			sign test.
 		</p>
@@ -3181,7 +3182,7 @@
 					<tr><td>Person-days short from day {PROOF.fromDay}, all seeds</td><td class="num">{fmt(SS.new.short)}</td><td class="num">{fmt(SS.old.short)}</td><td class="num">{ST.short.better} · {ST.short.worse} · {ST.short.same}</td><td class="num">{pv(ST.short)}</td></tr>
 					<tr><td>Food COOP failures, all seeds</td><td class="num">{SS.new.food}</td><td class="num">{SS.old.food}</td><td class="num">{ST.food.better} · {ST.food.worse} · {ST.food.same}</td><td class="num">{pv(ST.food)}</td></tr>
 					<tr><td>All COOP failures, all seeds</td><td class="num">{SS.new.fails}</td><td class="num">{SS.old.fails}</td><td class="num">{ST.fails.better} · {ST.fails.worse} · {ST.fails.same}</td><td class="num">{pv(ST.fails)}</td></tr>
-					<tr><td>μ at rest, median seed</td><td class="num">{pc(SS.new.muMedian, 1)}</td><td class="num">{pc(SS.old.muMedian, 1)}</td><td class="num">{ST.mu.better} · {ST.mu.worse} · {ST.mu.same}</td><td class="num">{pv(ST.mu)}</td></tr>
+					<tr><td>μ in the last ten years, median seed</td><td class="num">{pc(SS.new.muMedian, 1)}</td><td class="num">{pc(SS.old.muMedian, 1)}</td><td class="num">{ST.mu.better} · {ST.mu.worse} · {ST.mu.same}</td><td class="num">{pv(ST.mu)}</td></tr>
 					<tr><td>Seeds on which all three checks pass</td><td class="num">{SS.new.pass}</td><td class="num">{SS.old.pass}</td><td class="num">{ST.pass.better} · {ST.pass.worse} · {ST.pass.same}</td><td class="num">{pv(ST.pass)}</td></tr>
 				</tbody>
 			</table>

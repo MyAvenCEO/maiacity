@@ -11,7 +11,7 @@
 
 	const GOLD = '#d9a520', MELT = '#8a8578';
 	// wide: new MIND on top, people left, treasuries right, the pools at the bottom right, the melt as a band below.
-	// SALE is the point where each payment splits: Law 5's share back to the holders, the rest on to the treasury.
+	// SALE is the point where each payment branches: Law 5's share back to the holders, the rest on to the treasury.
 	// narrow: the same, taller, so that it reads on a phone held upright
 	const LAYOUT = {
 		wide: { w: 680, h: 420, NEW: [340, 78], nr: 24, PEOPLE: [130, 210], TREAS: [550, 210], R: 46, POOLS: [612, 322], pr: 20, band: 386, poolsLabel: [640, 326, 'start'],
@@ -143,7 +143,7 @@
 		{/each}
 	{/each}
 
-	<!-- each sale: the payment splits here, Law 5's share back to the holders, the rest on to the treasury -->
+	<!-- each sale: the payment branches here, Law 5's share back to the holders, the rest on to the treasury -->
 	<circle cx={L.SALE[0]} cy={L.SALE[1]} r="5.5" fill={GOLD} stroke="var(--ink)" stroke-width="1.2" />
 
 	<!-- the places -->

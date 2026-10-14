@@ -2,7 +2,7 @@
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Laws 4 and 5, told as a story in five steps: Anna invests one HEART into the solar COOP; it converts and is gone;
 	// one new solarMIND appears: 0.5 to the investor (Anna's wallet, her ownership), 0.4 to the treasury (working
-	// capital), 0.1 to the pool (the liquidity rule); Anna pays for her lamp's power in solarMIND, and at that moment a
+	// capital), 0.1 to the pool (the pools' part, Law 4); Anna pays for her lamp's power in solarMIND, and at that moment a
 	// fifth of the sale goes to every solarMIND holder as a dividend (Law 5), the rest to the treasury; the treasury pays
 	// it out again, through proposals: the panel COOP gets its own panelMIND through the pool, and Mia gets solarMIND for
 	// her Aven's work proposal. Coin areas are to scale.
@@ -24,7 +24,7 @@
 		'Anna switches on her lamp and pays 0.10 solarMIND for the power. At that moment a fifth of it, 0.02, goes to everyone who holds solarMIND, as a dividend (Law 5). Anna holds some too, so a little comes back to her. The other 0.08 goes to the treasury.',
 		'The treasury pays it out again. The panel COOP gets 0.20 through the pool, as its own panelMIND. Mia gets 0.15 for her Aven’s work proposal.'
 	];
-	// the liquidity rule: each HEART invested makes 1 MIND: 0.5 to the investor, 0.4 to the treasury, 0.1 to the pool
+	// Law 4: each HEART invested makes 1 MIND: 0.5 to the investor, 0.4 to the treasury, 0.1 to the pool
 	const MINE = 0.5, TREAS = 0.4, POOL = 0.1;
 	const USE = 0.1, DIV = 0.02, PAY = 0.2, WORK = 0.15;
 	const GOLD = '#d9a520', STEEL = '#7d97ad';
