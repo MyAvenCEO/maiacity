@@ -35,6 +35,7 @@
 	const hv = $derived(view ? heartsValue(view) : null);
 	/** the chosen wallet's whole worth in HEARTS; the MaiaCity COOP's counts the pool basket it owns */
 	const total = $derived(view && balance ? inHearts(view, balance, hv) + (who === 'coop:maia' ? inHearts(view, view.pool, hv) : 0) : 0);
+	const pad = (n) => String(n).padStart(2, '0');
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: Math.min(d, 2) }));
 </script>
 
@@ -48,16 +49,18 @@
 	{:else if !view}
 		<p class="dim">{g.error || 'Your ledger opens once you are signed in.'}</p>
 	{:else}
+		{#if cal}
+			<!-- the game clock, as the game shows it in its top right corner -->
+			<span class="clock" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year}; 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(cal.hour))}:{pad(Math.floor((cal.hour % 1) * 60))}</span>
+		{/if}
 		<section class="wallet">
 			<div>
-				<p class="eyebrow">{me ? `${me.name} · all you hold, in ❤︎` : 'MaiaCity V1'}</p>
-				{#if me}
-					<p class="balance">{f(inHearts(view, me.wallet, hv))} <small>❤︎</small></p>
-				{:else}
-					<p class="balance small">No seat yet</p>
+				<p class="eyebrow">{who === `player:${seat}` ? `${me.name} · all you hold` : `${nameOf(view, who)} · all it holds${who === 'coop:maia' ? ', treasury and pool basket' : ''}`}, in ❤︎</p>
+				<p class="balance">{f(total)} <small>❤︎</small></p>
+				{#if !me}
 					<p class="dim">Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> to mint and invest. Every wallet below is open to read.</p>
 				{/if}
-				<p class="dim">{cal ? `${cal.weekday} ${cal.day} ${cal.name} · year ${cal.year} (${dateText(cal)})` : ''}</p>
+				<p class="dim small" title="The average MIND is worth 1 HEART; the pool says how each stands against it">1 MIND in ❤︎: {MINDS.map((t) => `${TOKEN_LABEL[t]} ${f(hv[t])}`).join(' · ')}</p>
 			</div>
 		</section>
 		{#if me && mint}
@@ -79,12 +82,6 @@
 			</nav>
 
 			<div class="side">
-				<header class="whose">
-					<small>{who.startsWith('player:') ? 'Player' : who === 'pool' ? 'AMM pool · owned by the MaiaCity COOP' : 'COOP'}</small>
-					<h2>{nameOf(view, who)}</h2>
-					<p class="worth">{f(total)} <span>❤︎{who === 'coop:maia' ? ', treasury and pool basket' : ''}</span></p>
-					<p class="dim small" title="The average MIND is worth 1 HEART; the pool says how each stands against it">1 MIND in ❤︎: {MINDS.map((t) => `${TOKEN_LABEL[t]} ${f(hv[t])}`).join(' · ')}</p>
-				</header>
 				<div class="tabs" role="tablist">
 					{#each TABS as [id, label] (id)}
 						<button role="tab" aria-selected={tab === id} class:on={tab === id} onclick={() => (tab = id)}>{label}</button>
@@ -116,7 +113,6 @@
 						<LedgerView {view} {who} show="tx" tall />
 					</section>
 				</div>
-				<p class="dim small">The one game is the source of every number here: <a href="{base}/app/maiacity-v1/">MaiaCity V1</a>.</p>
 			</div>
 		</div>
 	{/if}
@@ -126,7 +122,7 @@
 	.app-page {
 		max-width: 60rem;
 		margin: 0 auto;
-		padding: 1.6rem clamp(1rem, 4vw, 2rem) 10rem;
+		padding: calc(4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 4vw, 2rem) 10rem;
 	}
 	.dim {
 		color: var(--muted);
@@ -173,9 +169,6 @@
 		font-size: clamp(2.4rem, 6vw, 3.6rem);
 		line-height: 1;
 	}
-	.balance.small {
-		font-size: 2rem;
-	}
 	.balance small {
 		font-family: var(--font-body);
 		font-size: 0.9rem;
@@ -185,6 +178,26 @@
 		flex: 1 1 20rem;
 		min-width: 0;
 		text-align: center;
+	}
+	.clock {
+		position: fixed;
+		z-index: 20;
+		top: calc(1rem + env(safe-area-inset-top, 0px));
+		right: calc(1rem + env(safe-area-inset-right, 0px));
+		padding: 0.5rem 0.8rem;
+		border: 1px solid rgb(255 255 255 / 0.5);
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.86);
+		-webkit-backdrop-filter: blur(14px) saturate(1.2);
+		backdrop-filter: blur(14px) saturate(1.2);
+		box-shadow: 0 4px 18px rgb(0 0 0 / 0.12);
+		font-size: 0.9rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.clock small {
+		margin-right: 0.3rem;
+		color: var(--muted);
 	}
 	.mintbar {
 		position: fixed;
@@ -284,34 +297,12 @@
 	.slot:hover :global(.mark) {
 		transform: scale(1.06);
 	}
-	.whose small {
-		font-size: 0.72rem;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--muted);
-	}
-	.worth {
-		margin: 0 0 0.3rem;
-		font-family: var(--font-display);
-		font-size: 1.6rem;
-		font-variant-numeric: tabular-nums;
-	}
-	.worth span {
-		font-family: var(--font-body);
-		font-size: 0.85rem;
-		color: var(--muted);
-	}
 	.holdings strong small {
 		display: block;
 		text-align: right;
 		font-size: 0.75rem;
 		font-weight: 400;
 		color: var(--muted);
-	}
-	.whose h2 {
-		margin: 0.1rem 0 0.8rem;
-		font-family: var(--font-display);
-		font-size: 1.7rem;
 	}
 	.tabs {
 		display: none;
