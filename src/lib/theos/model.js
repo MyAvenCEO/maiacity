@@ -1048,7 +1048,21 @@ export const ENERGY = {
 	wood: { t: 150, ha: 10, tPerBed: 6, beds: 25 }, // t a year from 10 ha; t a bed; beds a year (§5.5)
 	compute: [9, 37], // kWh a person a year, estimate (§5.3)
 	geo: { el: 3.4, heat: 12.6, carnot: 0.36, eroiHeat: [15, 35] }, // MW a plant; Carnot limit; EROI with heat, estimate (§5.2)
-	foodStockDays: 5 // days of food in hand (§2.2, §4.4)
+	foodStockDays: 5, // days of food in hand (§2.2, §4.4)
+	// the test city's physics audit (2026-10-13), of round 5's engine (20dd2478): what the engine used, what measured
+	// systems give, and the verdict (ok, estimate, wrong). forest: the food forest, kg/m² a year at year 10 and from
+	// fromYear on (150 %); measured food forests (the Netherlands and Belgium, plots); intensive farming for this diet,
+	// before losses; the audit's proposed value at maturity, with no 150 % stage; person-days short in the base world at a
+	// mature yield of short.at. wood: t of logs a ha a year in the engine and t of glued timber from them; a realistic
+	// yield, t of glued timber a ha; at collapse.logs t of logs a ha the base world collapses from collapse.year, with
+	// collapse.personDays short of every basic. compute: kWh an Aven service-hour; service-hours a person a day (the
+	// ceiling of taste); MWh of exported electricity that pays for one imported accelerator (a euro price), against the
+	// MWh that making one takes; the share of the living-standard index that Aven services make up
+	audit: {
+		forest: { verdict: 'wrong', engine: [0.485, 0.727], fromYear: 14, measured: 0.1, plots: 22, farm: [0.55, 0.65], proposed: [0.45, 0.55], short: { at: [0.58, 0.5], personDays: [38_500, 414_000] } },
+		wood: { verdict: 'wrong', logs: 15, glulam: 7.5, realistic: [1, 2.5], collapse: { logs: 5, year: 9, personDays: 476_000 } },
+		compute: { verdict: 'estimate', kwhHour: 0.2, hours: 24, chipMwh: 400, chipMake: [0.3, 0.5], index: 0.82 }
+	}
 };
 
 /** average power a person, kW, from GWh a year for n people */
