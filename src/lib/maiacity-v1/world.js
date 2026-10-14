@@ -1185,6 +1185,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		else camera.clearViewOffset();
 	}
 	const touring = (on) => {
+		if (!on) held = false; // no story, no shot held for it: the camera is the player's again
 		if (on === tourOn) return;
 		tourOn = on;
 		frameView();
@@ -2579,6 +2580,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const me = people[stage.me];
 		if (!me || (on && (busy || riding || stage.at === 'cruise'))) return false;
 		roam = !!on;
+		if (roam) held = false; // walking takes the camera back from a shot the story held
 		roamTo = [];
 		if (inTent) lensOut();
 		inTent = false;
@@ -3022,7 +3024,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (moment) runMoment(performance.now() / 1000);
 		else if (riding) ride(step);
 		else if (stage.at === 'cruise' && cruising) cruise();
-		else if (held) controls.enabled = false;
+		else if (held && !roam) controls.enabled = false;
 		else {
 			controls.enabled = true;
 			if (roam) boarding ? boardingStep() : driving ? drivingStep(step) : roaming(step);
