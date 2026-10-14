@@ -279,67 +279,74 @@
 		</p>
 		<p>
 			This paper proposes a different answer: an economic operating system that we call theOS. Every person gets a
-			personal currency every day, simply for being alive: {UIA_DAY} HEARTS, one for each hour. Samuel's are
-			samuelHEARTS, Anna's are annaHEARTS. HEARTS buy nothing and pay for nothing, not even food. They are a voice.
-			People can only invest them into cooperatives, or COOPs: shared enterprises that make what a city needs, such as
-			energy, food or housing.
+			personal currency every day, simply for being alive: {UIA_DAY} HEARTS, one for each hour. This is the universal
+			intent allocation (Law 1): the right to invest, never a handout. Samuel's are samuelHEARTS, Anna's are
+			annaHEARTS. HEARTS buy nothing and pay for nothing, not even food (Law 2). They are a voice. People can only
+			invest them into cooperatives, or COOPs: shared enterprises that make what a city needs, such as energy, food or
+			housing.
 		</p>
 		<p>
-			Each HEART that a person invests converts into one unit of that COOP's MIND. A MIND is one currency of ownership
-			and utility: to hold it is to own part of the COOP, and to spend it is to use what the COOP makes. The new MIND
-			goes {RULE}. So half goes to the investor. The treasury is the money that the COOP works with. The city's pools,
-			baskets of MINDs whose LP tokens the City COOP holds, let anyone trade one MIND for another. A treasury
-			keeps about {SIM.reserveMonths} months of reserves and pays out the rest. Every value is shown in HEARTS, the unit of
-			account: the average MIND is worth 1 HEART.
+			Each HEART that a person invests converts into one new MIND of that COOP: {RULE} (Law 4). So half goes to the
+			investor. A MIND is one currency of ownership and utility: to hold it is to own part of the COOP, and to spend it
+			is to use what the COOP makes. The treasury is the money that the COOP works with. The city's pools, baskets of
+			MINDs whose LP tokens the City COOP holds, let anyone trade one MIND for another. Every value is shown in HEARTS,
+			the unit of account: the average MIND is worth 1 HEART.
 		</p>
 		<p>
-			Every sale pays the COOP's owners. {pc(DIVIDEND_SHARE)} of every sale goes at once to
-			everyone who holds the COOP's MIND. So a COOP pays its owners best by selling a lot to many people. Ownership
-			pays: holding MIND brings more MIND.
+			Every sale pays the COOP's owners (Law 5). {pc(DIVIDEND_SHARE)} of every sale goes at once, in the COOP's own
+			MIND, to everyone who holds it: people, other COOPs and the city's pools, in proportion to what each holds. The
+			COOP's own treasury gets none, because paying itself would only move its MIND in a circle. Only real deliveries
+			count as sales. Ownership pays: each holder gets a share of every sale, in more MIND.
 		</p>
 		<p>
-			All money melts slowly, just as food spoils and machines wear out: {pct(RATE * 100)} a year, which takes
-			{pct(yearlyLoss() * 100, 1)} of an idle balance in a year. So money per person settles at a fixed level, and each
+			All money melts slowly, just as food spoils and machines wear out: {pct(RATE * 100)} a year. A holding grows
+			after the melt only while its COOP sells well (Section 8.1). Money per person settles at a fixed level, and each
 			person's relative position then moves as in Stéphane Laborde's Relative Theory of Money.
 		</p>
 		<p>
 			In this economy, no human labour is paid. Each person has a personal AI agent, called an Aven, which proposes and
 			delivers all work with the COOPs' machines. A person's MIND comes from three places: their own half of the
-			HEARTS they invest, the work proposals their Aven delivers, and dividends.
-		</p>
-		<p>
-			COOPs that make the same good compete, and anyone can found a rival. Prices move freely with demand, with no caps.
-			Everything the city makes costs energy. theOS aims for a city where only physics limits abundance, never a lack of
-			money.
+			HEARTS they invest, the work proposals their Aven delivers, and Law 5 dividends. COOPs that make the same good
+			compete, and anyone can found a rival. Prices move freely with demand, with no caps. Everything the city makes
+			costs energy, and theOS aims for a city where only physics limits abundance, never a lack of MIND.
 		</p>
 		<p>
 			The paper separates what theOS is from what we expect it to achieve. Part II gives its rules, the policies that
 			the city sets, and its concepts. Part III states what it should achieve as hypotheses, each with a status that
-			the evidence sets. The central one is Proposition 3. Take a city that can make enough, whose output per person
-			grows, and whose sellers compete. Then, from the end of the founding, when every person holds MIND, no one
-			starves, and no one has to work to survive. And the real consumption of every tenth of the people is higher at
-			every ten-year mark than ten years before. People whose Avens deliver nothing are meant to live from what they
-			own: the ownership that each day's investing creates, and its dividends.
+			the evidence sets. Our central claim is Proposition 3, a hypothesis. Take a city that can make enough, whose
+			output per person grows, and whose sellers compete. Proposition 3 says that then no one starves and no one has to
+			work to survive. And the real consumption of every tenth of the people is higher at every ten-year mark than ten
+			years before. People whose Avens deliver nothing, whom we call owner-only, are meant to live from what they own.
+			That is the ownership that each day's investing creates, and its dividends. We claim all this from the end of the
+			founding: the city's first days, in which every person comes to hold MIND. The founding is reported on its own.
 		</p>
 		<p>
-			Part IV tests the hypotheses in two simulations, checked for every person: {SIM_NAMES.model}, with
-			{SIM.people} people over {SIM.years} years, and {SIM_NAMES.testCity}, a village of {fmt(TC.people)} residents
-			with land, energy and a euro border. Each new version and each new round should come closer. The main run of
-			{SIM_NAMES.model} {checkWords(V('main'))} of Proposition 3; on {SEEDS.n} seeds, all three held on
-			{SN.pass}, and the lasting return on holdings stayed below the melt on {SN.below}. In
-			{SIM_NAMES.round(TC.round)}, part 1 held on {holdsOn(TC.p1)} of {TC.seeds.length} base seeds, the normal test on
-			{holdsOn(TC.p2normal)} and part 3 on {holdsOn(TC.p3.failing)}, and its exports
-			{TC.bank.repaid ? 'repaid' : 'did not repay'} the euros the village owed outside. The
-			{Object.keys(HYP).length} hypotheses stand at {list(statusCounts())}, and Proposition 3 is {HYP.H3.status}. {cap(SIM_NAMES.model)}
-			assumes that productivity grows about {pc(SIM.prodGrowth)} a year in each COOP, and it has no energy limit yet.
-			We propose a fix for each failure, and Section 11.5 lists the next simulations.
+			Part IV tests the hypotheses in two simulations, checked for every person. {cap(SIM_NAMES.model)} has
+			{SIM.people} people over {SIM.years} years. {cap(SIM_NAMES.testCity)} is a village of {fmt(TC.people)} residents
+			with land, energy and a euro border. The main run of {SIM_NAMES.model} {checkWords(V('main'))} of Proposition 3,
+			and all three parts held on {SN.pass} of {SEEDS.n} seeds. One seed is one random history. So we also ran
+			{SS.n} seeds on which rival rules meet the same shocks: all three parts held on {SS.new.pass}. The lasting return
+			on holdings (dividends plus any lasting price rise, a year) depends on the seed. It is below the melt on
+			{SN.below} of {SEEDS.n} seeds and on {SS.new.below === SS.n ? `all ${SS.n}` : `${SS.new.below} of ${SS.n}`}
+			seeds with the same shocks (median {pc(SS.new.muMedian, 2)}).{#if SN.below < SEEDS.n}{' '}{SEEDS.n - SN.below === 1 ? (V('main').mu >= RATE ? 'It is above only on the main seed.' : `It is above only on seed ${SN.marginMinSeed}.`) : `It is above on ${SEEDS.n - SN.below} seeds${V('main').mu >= RATE ? ', the main seed among them' : ''}.`}
+				Where it is above, nothing bounds how unequal ownership can grow.{/if}
+		</p>
+		<p>
+			In {SIM_NAMES.round(TC.round)}, all three parts held on {TC.headline.all} of {TC.headline.of} base seeds, and
+			part 3, judged in real units, on {noneOr(holdsOn(TC.p3.failing))}. Its exports
+			{TC.bank.repaid ? 'repaid' : 'did not repay'} the euros that the village owed outside. It still runs an older
+			pools' part, and its next round runs this paper's rules. {cap(SIM_NAMES.model)} has no founding rule, and
+			{PROOF.genesis.short ? 'people went short' : 'no one went short'} in its founding; {SIM_NAMES.testCity} has one,
+			and {TS.founding.shortWith ? 'people went short there too' : 'no one did'}. The {Object.keys(HYP).length} hypotheses
+			stand at {list(statusCounts())}, and Proposition 3 is {HYP.H3.status}. We propose a fix for each failure. Most
+			are not tested yet, and Section 11.5 lists the simulations that test them.
 		</p>
 		<p>
 			We will prove theOS first in a game, then in the real city. The rules that survive {SIM_NAMES.testCity} become
 			the economy of maiaCITY, the city we are building. Part V names the limits and the open problems.
 		</p>
 		<p class="keywords">
-			<strong>Keywords:</strong> demurrage · personal currencies · universal dividend · Relative Theory of Money · post-labour economics ·
+			<strong>Keywords:</strong> demurrage · personal currencies · universal intent allocation · Relative Theory of Money · post-labour economics ·
 			cooperatives · automated market makers · city-owned liquidity · unit of account · mechanism design · agent-based model ·
 			stock-flow consistency · energy return on investment
 		</p>
@@ -371,7 +378,7 @@
 		</p>
 		<p>
 			That need may be ending. In 1930, Keynes saw that within a century humanity could solve the “economic problem” of
-			scarcity. The hard question would then be what to do with the freedom <Cite k="keynes30" />. Ninety-six years
+			scarcity. The hard question would then be what to do with the freedom <Cite k="keynes30" />. Nearly a century
 			later, part of his forecast is coming true, by a road he did not expect: machines that learn. How fast it comes
 			is still open, and the estimates differ widely.
 		</p>
@@ -415,13 +422,15 @@
 			spreads ownership "at the beginning of each period" a property-owning democracy <Cite k="rawls" />. Meade
 			proposed such an economy for an age of automation in 1964 <Cite k="meade" />, and Roemer designed shares that
 			every citizen gets in equal number <Cite k="roemer" />. None of these proposals gives every person an equal flow
-			of new ownership, every day, that the person directs and that cannot pile up without limit while no holding
-			earns more than the melt (Section 5.4).
+			of new ownership, every day, that the person directs. theOS does. That ownership melts like every other balance,
+			so it piles up only while its COOPs sell well (Section 5.4).
 		</p>
 		<p>
 			This argument does not need the fastest path. It needs only the trend: output moves from wages to ownership, and
-			ownership is concentrated. Korinek and Suh compare paths of different speed <Cite k="korinek" />. Table
-			{TAB.speeds} shows three of them, and what theOS does in each.
+			ownership is concentrated. Korinek and Suh compare paths of different speed <Cite k="korinek" />. In theOS, every
+			person gets {UIA_DAY} HEARTS a day, a currency that can only be invested into cooperatives (COOPs). Each
+			investment creates ownership in that COOP (Section 4). Table {TAB.speeds} shows three speeds of automation, and
+			what theOS does in each.
 		</p>
 		<div class="table-wrap">
 			<table class="narrow">
@@ -430,7 +439,7 @@
 					<tr><th>Speed</th><th>What machines do</th><th>Wages</th><th>What theOS does</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>Slow</td><td>Take over tasks one by one, as in recent decades; new kinds of work keep appearing</td><td>Keep rising; the share of income that goes to work falls slowly</td><td>Runs beside the euro. Outside the city, anyone may still take a job for euros. Inside it, there are only work proposals, and HEARTS add a growing stake of ownership</td></tr>
+					<tr><td>Slow</td><td>Take over tasks one by one, as in recent decades; new kinds of work keep appearing</td><td>Keep rising; the share of income that goes to work falls slowly</td><td>Runs beside the euro economy. Outside the city, anyone may still take a job for euros. Inside it, no human labour is paid: there are only work proposals, and HEARTS build a stake of ownership</td></tr>
 					<tr><td>Medium</td><td>Can do most tasks in about 20 years</td><td>Rise at first, then fall in more and more jobs</td><td>The ownership that investing creates, work proposals and dividends carry a growing share of each person's income</td></tr>
 					<tr><td>Fast</td><td>Can do most tasks in about 5 years</td><td>Can collapse once machines spread faster than new capital is built</td><td>HEARTS become the main way to gain ownership. How plentiful the basics are depends on what the COOPs' machines make, and on the energy they harvest</td></tr>
 				</tbody>
@@ -440,9 +449,12 @@
 			The usual answer is a universal basic income: a fixed sum that everyone gets without conditions
 			<Cite k="parijs" />. It would feed people, but it keeps the structure as it is. People would get consumption,
 			never direction: they could spend, but they could not decide what the automated economy builds next. theOS is
-			meant to feed people through ownership: the ownership that each day's investing creates, and its dividends
-			(Section 10.4). HEARTS
-			themselves never pay for anything (Law 2, Section 4).
+			meant to secure the basics through ownership. The ownership that each day's investing creates, and its
+			dividends, should pay for the basics without work (Hypothesis H3, Section 10.3). Most income still comes from
+			the work that each person's AI agent delivers. In the last ten years of {SIM_NAMES.model}, these work proposals
+			brought {pc(incomeShare('items') + incomeShare('proposals'))} of people's income (Section 11.2.2). HEARTS themselves pay for nothing
+			(Law 2, Section 4). And the MIND that a person's investing creates is not a basic income. It is ownership in
+			COOPs that the person chose: its value follows their success, and it melts.
 		</p>
 		<p class="thesis">
 			This paper describes a way out. It keeps what markets do well and changes the base they stand on. We call the
@@ -452,9 +464,10 @@
 			city, anyone may still take a job for euros. Inside it, there are only work proposals (Section 4). A
 			person gains MIND, the money of ownership and use of Section 4, and Section 11.2.2 shows where it comes from. The
 			aim is concrete. No one starves, no one has to work to survive, and the living standard of every tenth of the
-			people rises. theOS aims for a city where only physics limits how far. Section 10.3 states this as Proposition 3,
-			a hypothesis, and Section 11 tests it in two simulations, person by person. To get there, we must
-			first look at the tool that both questions pass through: money. What is it, who creates it, and why does it behave
+			people rises. theOS aims for a city where only physics limits how far (Section 8.4). Section 10.3 states this as
+			Proposition 3, a hypothesis. We test every rule first in two simulations, {SIM_NAMES.model} and
+			{SIM_NAMES.testCity}, where simulated people live under these rules (Section 11). Both check every person. Then
+			we test the rules in the real city. To get there, we must first look at the tool that both questions pass through: money. What is it, who creates it, and why does it behave
 			the way it does?
 		</p>
 	</section>
@@ -465,7 +478,7 @@
 			Money works like a shared memory of who gave what to whom. Kocherlakota showed that money can do the same job as a
 			complete record of past trades <Cite k="kocherlakota" />. A note in your pocket says that you once gave something
 			of value, and that you can now claim something back. Irving Fisher wrote down how this memory moves through an
-			economy, in his equation of exchange <Cite k="fisher11" />. Fisher counted all trades; the common form today counts
+			economy, in his equation of exchange <Cite k="fisher11" />. Fisher counted all trades; the usual form today counts
 			the goods and services produced: <Tex tex="MV = PQ" />. The amount of money, <Tex tex="M" />, times how often it
 			changes owner, <Tex tex="V" />, equals the prices, <Tex tex="P" />, times the goods, <Tex tex="Q" />. Money does
 			its job only while it moves.
@@ -485,8 +498,10 @@
 		<p>
 			Silvio Gesell proposed the fix more than a century ago. In 1916 he argued that money should carry a small holding
 			cost, like every good it competes with. Money would then circulate and not wait for a higher interest rate
-			<Cite k="gesell" />. Section 8 shows what a safe return does to long-lived projects. The name for a fee on holding money is <em>demurrage</em>: the charge that a ship pays for
-			each day it lies idle in port. Demurrage is the central idea of this paper, and people tested it in practice:
+			<Cite k="gesell" />. Section 8 shows what a safe return does to long-lived projects. The name for a fee on holding
+			money is <em>demurrage</em>: the charge that a ship pays for each day it lies idle in port. In theOS, nobody
+			collects it: the money simply melts, and what melts is gone (Section 5). This paper calls it <em>the melt</em>
+			(demurrage). Demurrage is one of the two ideas that this paper builds on, and people tested it in practice:
 		</p>
 		<ul>
 			<li>
@@ -508,10 +523,13 @@
 			</li>
 		</ul>
 		<p>
-			Melting money alone is not enough. Gesell paired his <em>Freigeld</em> (free money) with <em>Freiland</em>, land
-			that the community owns and leases out, and never sells <Cite k="gesell" />. Keynes later named the weakness in plain terms. When money carries a cost,
-			wealth escapes into substitutes that do not melt, above all land <Cite k="keynes36" />. We return to that warning
-			in Sections 8.2 and 8.3. Demurrage tells us how money should behave. It does not yet tell us where new money should
+			Melting money alone is not enough. Gesell paired his <em>Freigeld</em> (free money) with <em>Freiland</em> (free
+			land): land that the community owns and leases out, and never sells <Cite k="gesell" />. theOS keeps both ideas
+			(Section 8.2). Keynes named the weakness. If money carries a cost, wealth moves into other stores that do not
+			melt: bank money, debts at call, foreign money, jewellery and precious metals. At times, he added, the craving to
+			own land had done the same, but Gesell's Freiland would end it <Cite k="keynes36" />. theOS closes both doors: land
+			in Section 8.2 and the euro in Section 8.3. Other stores stay open (Section 12.4). Demurrage tells us how money
+			should behave. It does not yet tell us where new money should
 			come from, and that is the next question.
 		</p>
 	</section>
@@ -526,14 +544,16 @@
 			Stéphane Laborde developed this idea in his <em>Relative Theory of Money</em> (Théorie Relative de la Monnaie). He
 			asked which way of creating money treats every generation the same: the people alive now and those not yet born.
 			His answer is a <em>universal dividend</em>: new money paid to every member alike, at a rate that depends on how
-			long people live <Cite k="laborie" />. The Ğ1 currency started in 2017 and uses this rule
-			<Cite k="duniter" />. Remember his rule. Section 5.3 shows that theOS reaches the same rule by another road, once
-			its money has settled.
+			long people live <Cite k="laborie" />. (This paper keeps the word <em>dividend</em> for Law 5's share of each
+			sale, Section 4.) His rule sets the yearly rate from the life expectancy: for a life of 80 years, about
+			{pct(rtmRate(80) * 100, 1)}. The Ğ1 currency started in 2017 and uses this rule <Cite k="duniter" />. Remember
+			his rule. Section 5.3 shows that theOS reaches the same rule by another road, once its money has settled
+			(Proposition 1).
 		</p>
 		<p>
 			Circles UBI took the idea one step further. In Circles, every person gets their own currency, so money starts with
 			people and not with banks <Cite k="circles" />. Its second version uses the two numbers that theOS adopts. These
-			are 24 tokens a day, one an hour, and a demurrage of 7 % a year <Cite k="circles2" />. Because every person's coin
+			are {CIRCLES.day} tokens a day, one an hour, and a demurrage of {pc(CIRCLES.rate)} a year <Cite k="circles2" />. Because every person's coin
 			is different, Circles needs a web of trust to move value between people: I accept your coin because I trust you.
 		</p>
 		<p>
@@ -3263,17 +3283,12 @@
 			with wages and ownership, and automation begins to remove that answer. theOS answers them differently: everyone
 			gets an equal, daily share of direction and of ownership. That share can only build things. What it builds belongs
 			to those who hold its MIND, on land that the City COOP holds, in which every citizen has one equal share. Every
-			sale pays those owners a share (Law 5), so owners gain when their COOP sells, and it sells when people find it
-			useful. All money melts like the world it
-			measures, so nobody can keep wealth idle and out of reach. theOS aims for a city whose output has no limit but
-			physics, above all net energy. The whole architecture fits in one line:
-		</p>
-		<Tex display tex={String.raw`\begin{gathered} \left(\mathrm{HEARTS} + \mathrm{MINDS}\right) \cdot \mathrm{ACTION} \\ = \mathrm{ABUNDANCE} \end{gathered} \tag{${EQ.abundance}}`} />
-		<p>
-			<strong>HEARTS</strong> are human intent, issued equally to everyone, every day. <strong>MINDS</strong> are what
-			that intent becomes: the shared intelligence of the COOPs, ownership and utility in one. <strong>ACTION</strong>
-			is the conscious act that converts the one into the other. Neither intent without capacity nor capacity without
-			intent builds anything. Only the product does, within the limits of one planet <Cite k="raworth" />.
+			sale pays those owners a share (Law 5), so owners gain when their COOP sells what people use. All money melts
+			like the world it measures, so nobody can keep wealth idle and out of reach. theOS aims for a city whose output
+			has no limit but physics, above all net energy. Two hypotheses follow from these rules by mathematics (Section
+			10.2). Once money has settled, each balance moves toward the average at the rate of the melt, as in Laborde's
+			rule (Proposition 1). And while the lasting return on holdings stays below the melt, inequality stays bounded
+			(Proposition 2).
 		</p>
 		<p>
 			In capitalism, people sold their time so that they could survive. In Abundism, no human labour is paid.
@@ -3285,15 +3300,40 @@
 		</p>
 		<p>
 			Proposition 3 says what this should give: no one starves, no one has to work to survive, and the living standard
-			of every tenth of the people rises. It is a hypothesis, and today it is {HYP.H3.status}. The main run of
-			{SIM_NAMES.model} {checkWords(V('main'))}; on {SEEDS.n} seeds, all three parts held on {SN.pass}, and
-			in {SIM_NAMES.round(TC.round)} on {TC.headline.all} of {TC.headline.of} base seeds. The lasting return on holdings
-			stayed below the melt on {SN.below} of the {SEEDS.n} seeds, which is what Proposition 2 needs (H4,
-			{HYP.H4.status}). One seed is one random history, so we compare rules on the same shocks. Each new version of
-			the model and each new round of {SIM_NAMES.testCity} should come closer (Section 11.4), and each proposed fix
-			must show that it works (Section 11.5). Human action becomes steering: deciding,
-			every day and together, what the city builds next. maiaCITY will prove it first in a game, then in the real
-			city.
+			of every tenth of the people rises. It is a hypothesis, and today it is {HYP.H3.status}. From the end of the
+			founding, the main run of {SIM_NAMES.model} {checkWords(V('main'))}. All three parts held on {SN.pass} of
+			{SEEDS.n} seeds.{#if PROOF.genesis.short}{' '}People went short in the founding, which {SIM_NAMES.model} runs without
+				a founding rule.{/if}{#if PROOF.strict.shareAfter10 < 1}{' '}Dividends alone did not always pay the owner-only people's
+				basics, a stricter test that the proposition does not claim.{/if} Section 11.2.6 lists what failed, and the
+			fixes. In {SIM_NAMES.round(TC.round)}, all three parts held on {TC.headline.all} of {TC.headline.of} base seeds.
+			Part 3, judged in real units, failed on {TC.seeds.length - holdsOn(TC.p3.failing)} of
+			them{TC.p3.basics.every((v) => v === 0) ? ', but only because extras such as floor space fell' : ''}
+			(Section 11.3.3). For the basics, part 1 held on {holdsOn(TC.p1)} of {TC.seeds.length} base seeds, and the
+			normal test on {holdsOn(TC.p2normal)}.
+		</p>
+		<p>
+			Proposition 2 needs the lasting return on holdings below the melt (H4, {HYP.H4.status}). That return depends on
+			the seed: it is below the melt on {SN.below} of {SEEDS.n} seeds and on {SS.new.below === SS.n ? `all ${SS.n}` : `${SS.new.below} of ${SS.n}`} seeds with the same shocks
+			(median {pc(SS.new.muMedian, 2)}).{#if SN.below < SEEDS.n || SS.new.below < SS.n}{' '}Where
+				it is above{V('main').mu >= RATE ? ', as on the main seed' : ''}, nothing bounds how unequal ownership can
+				grow (Section 11.2.5).{/if}
+		</p>
+		<p>
+			So the work is not done. Part V names the limits and the open problems, and Section 11.5 the simulations that
+			test the proposed fixes. Each new version of {SIM_NAMES.model} and each new round of {SIM_NAMES.testCity} must
+			come closer to the hypotheses than the last. Table {TAB.progress} is how we check it (Section 11.4).
+			{cap(SIM_NAMES.testCity)} must then decide what this paper leaves open, such as the estate rule and how the City
+			COOP sets ground rent (Section 12).
+		</p>
+		<p>The whole architecture fits in one line:</p>
+		<Tex display tex={String.raw`\begin{gathered} \left(\mathrm{HEARTS} + \mathrm{MINDs}\right) \cdot \mathrm{ACTION} \\ = \mathrm{ABUNDANCE} \end{gathered} \tag{${EQ.abundance}}`} />
+		<p>
+			<strong>HEARTS</strong> are human intent, issued equally to everyone, every day. <strong>MINDs</strong> are what
+			that intent becomes: the shared intelligence of the COOPs, ownership and utility in one. <strong>ACTION</strong>
+			is the conscious act that converts the one into the other. Neither intent without capacity nor capacity without
+			intent builds anything. Only the product does, within the limits of one planet <Cite k="raworth" />. Human
+			action becomes steering: deciding, every day and together, what the city builds next. maiaCITY will prove it
+			first in a game, then in the real city.
 		</p>
 	</section>
 
