@@ -7,7 +7,7 @@
  * line, a catchlight in each — a toned skin (warm cheeks, lips, the nose's tip), a warm smile, a shorter chin, fuller
  * hair; v6: a sculpted head — MakeHuman's head and neck (CC0) for a man or a woman, smoothed, its skin toned by where
  * it is, eyes in its lids, lash lines, teeth, brows of single hairs, hair grown over its scalp, and a smile to blend
- * into, `joy`: ./head.js), a T-shirt, jeans, trainers —
+ * into, `joy`: ./head.js; v7: that smile warm and closed, the cheeks lifted), a T-shirt, jeans, trainers —
  * rigged head to toe so it takes any pose and any move: 17 bones (the hips, the spine, the chest, the neck, the head;
  * each arm's upper arm, forearm and hand; each leg's thigh, shin and foot), one skinned mesh over them, every joint
  * bending smoothly.
@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { blend, limb, loft, loop, rig, skin, type BoneSpec, type Cast, type Clip, type Piece, type Pose, type V3 } from './rig';
-import { crownOf, headPieces, type Face } from './head.js';
+import { SMILE, crownOf, headPieces, type Face } from './head.js';
 
 /** how tall it is (m) */
 export const HEIGHT = 1.7;
@@ -54,7 +54,7 @@ const BONES: BoneSpec[] = [
 	])
 ];
 
-function parts(k: Look): Piece[] {
+function parts(k: Look, smile: number): Piece[] {
 	const box = (w: number, h: number, d: number, r: number, at: V3) => {
 		const g = new RoundedBoxGeometry(w, h, d, 3, r);
 		g.translate(...at);
@@ -83,7 +83,7 @@ function parts(k: Look): Piece[] {
 			chain: { bones: ['hips', 'spine', 'chest', 'neck'], soft: 0.07 }
 		},
 		// the head and neck: a sculpted one (./head.js), its face and hair
-		...headPieces(k),
+		...headPieces(k, smile),
 		// each arm: the sleeve over the top of it, the bare forearm, a hand with its thumb
 		...sides.flatMap(([s, x]): Piece[] => [
 			{ geo: limb([x * 0.185, 1.43, -0.01], [x * 0.2, 1.17, -0.02], 0.047, 0.04), color: (p) => (p.y > 1.32 ? k.shirt : k.skin), chain: { bones: [`upperArm${s}`, `forearm${s}`], soft: 0.06 } },
@@ -100,11 +100,11 @@ function parts(k: Look): Piece[] {
 }
 
 /** the bones and the parts, measured for 1.80 m, scaled by s */
-function scaled(s: number, k: Look): { bones: BoneSpec[]; parts: Piece[] } {
+function scaled(s: number, k: Look, smile: number): { bones: BoneSpec[]; parts: Piece[] } {
 	const m = (v: V3): V3 => [v[0] * s, v[1] * s, v[2] * s];
 	return {
 		bones: BONES.map((b) => ({ ...b, at: m(b.at) })),
-		parts: parts(k).map((p) => ({
+		parts: parts(k, smile).map((p) => ({
 			...p,
 			geo: p.geo.scale(s, s, s),
 			// a colour (and weights) by where a vertex is: asked where it would be at 1.80 m
@@ -200,11 +200,11 @@ function clipsFor(s: number, poses: Record<string, Pose>): Record<string, Clip> 
 }
 
 /** A stand-in, rigged: its moves, its poses, and its smile (the morph `joy`). `look`: what it wears and its face;
- *  `height`: how tall it is (m). */
-export function human(look: Partial<Look> = {}, height = HEIGHT): Cast {
+ *  `height`: how tall it is (m); `smile`: the version whose smile it wears (./head.js SMILES: 7 closed and warm, 6 open). */
+export function human(look: Partial<Look> = {}, height = HEIGHT, smile = SMILE): Cast {
 	const k = { ...LOOK, ...look };
 	const s = height / crownOf(k.face);
-	const { bones, parts: body } = scaled(s, k);
+	const { bones, parts: body } = scaled(s, k, smile);
 	const r = rig(bones, body, [skin(0.74), skin(0.12), skin(0.85, { side: THREE.DoubleSide })]);
 	r.object.name = 'stand-in';
 	r.pose(relaxed);

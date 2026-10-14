@@ -3,7 +3,8 @@
  * (CC0, ./head.data.js) for a young man or a young woman, smoothed once (./subdivide.js), with a skin toned by where it
  * is (the lips, warm cheeks, a nose's tip and ears, every hollow a little darker, the inside of the mouth), eyes, lash
  * lines, teeth and a tongue, brows of single hairs, and hair grown over the scalp. One smile, `joy`, rides it as a morph:
- * the mouth's corners up and back, the lips parted on the teeth, the eyes narrowed by the cheeks.
+ * v7 (2026-10-14) a warm one with the lips closed — the mouth's corners up and back, the cheeks lifted, the eyes
+ * narrowed by them; v6's (kept: `smile` 6) broad and open, the lips parted on the teeth.
  *
  * All of it in the stand-in's measure (./human.ts: a person of 1.80 m, metres, facing +z, its left +x); the stand-in
  * scales it to its height.
@@ -23,11 +24,19 @@ const bytes = (/** @type {string} */ s) => {
 const i16 = (/** @type {string} */ s) => new Int16Array(bytes(s).buffer);
 const u16 = (/** @type {string} */ s) => new Uint16Array(bytes(s).buffer);
 const KEY = /** @type {Record<Face, 'm' | 'f'>} */ ({ man: 'm', woman: 'f' });
-/** the expressions a head blends into, each MakeHuman's units at their weights: `joy` a broad smile — the mouth's
- *  corners up and back, the upper lip lifted off the teeth, the cheeks narrowing the eyes */
-export const EXPRESSIONS = /** @type {Record<string, Record<string, number>>} */ ({
-	joy: { 'mouth-corner-puller': 0.85, 'mouth-upward-retraction': 1, 'mouth-parling': 0.5, 'mouth-elevation': 0.4, 'eye-left-slit': 0.3, 'eye-right-slit': 0.3, 'eye-left-opened-up': -0.3, 'eye-right-opened-up': -0.3 }
+/** the smile `joy` by the stand-in's version, as MakeHuman's units at their weights and a lift of the cheeks (m up and
+ *  forward at the middle of each cheek's apple, fading over `r`): v7 a warm closed smile — the corners up and drawn
+ *  wide, the lips kept together and turned out a little so they stay full, the cheeks lifted, the lower lids raised
+ *  with them; v6 a broad open one — the upper lip lifted off the teeth, the lips parted */
+export const SMILES = /** @type {Record<number, { units: Record<string, number>, cheeks?: { up: number, out: number, r: number } }>} */ ({
+	6: { units: { 'mouth-corner-puller': 0.85, 'mouth-upward-retraction': 1, 'mouth-parling': 0.5, 'mouth-elevation': 0.4, 'eye-left-slit': 0.3, 'eye-right-slit': 0.3, 'eye-left-opened-up': -0.3, 'eye-right-opened-up': -0.3 } },
+	7: {
+		units: { 'mouth-corner-puller': 0.5, 'mouth-retraction': 0.5, 'mouth-compression': 0.45, 'mouth-eversion': 0.35, 'nose-left-elevation': 0.12, 'nose-right-elevation': 0.12, 'eye-left-slit': 0.3, 'eye-right-slit': 0.3, 'eye-left-opened-up': -0.2, 'eye-right-opened-up': -0.2 },
+		cheeks: { up: 0.004, out: 0.0025, r: 0.022 }
+	}
 });
+/** the stand-in's version the head is built at by default */
+export const SMILE = 7;
 const smooth = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ x) => {
 	const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
 	return t * t * (3 - 2 * t);
@@ -65,24 +74,38 @@ function piece(name, pos, joy, levels, extra, dim = 1) {
 	return { geo, quads, joy: J, extra: X, n, ids };
 }
 
-/** each face's head, built once */
-const BUILT = /** @type {Partial<Record<Face, ReturnType<typeof build>>>} */ ({});
+/** each face's head at each smile, built once */
+const BUILT = /** @type {Record<string, ReturnType<typeof build>>} */ ({});
 
-/** @param {Face} face */
-function build(face) {
+/** @param {Face} face @param {number} smile */
+function build(face, smile) {
 	const who = HEAD_PEOPLE[KEY[face]];
 	const raw = i16(who.pos), n = HEAD_MESH.n;
 	const pos = Float32Array.from(raw, (x, k) => x * HEAD_Q + HEAD_MID[k % 3]);
+	const region = bytes(HEAD_REGION);
 	// the smile: its units' offsets added up
+	const recipe = SMILES[smile] ?? SMILES[SMILE];
 	const joy = new Float32Array(n * 3);
-	for (const [unit, wt] of Object.entries(EXPRESSIONS.joy)) {
+	for (const [unit, wt] of Object.entries(recipe.units)) {
 		const u = HEAD_UNITS[/** @type {keyof typeof HEAD_UNITS} */ (unit)], ids = u16(u.ids), d = i16(u.d);
 		ids.forEach((j, k) => {
 			for (let c = 0; c < 3; c++) joy[j * 3 + c] += d[k * 3 + c] * HEAD_Q * wt;
 		});
 	}
+	// and the cheeks lifted: up and forward round each cheek's apple, under the eye and out from the nose's wing, on
+	// the face's front only
+	const ch = recipe.cheeks;
+	if (ch) {
+		const [ex, ey, ez] = who.eyes.l.at;
+		for (let i = 0; i < n; i++) {
+			if (region[i] !== 0) continue;
+			const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+			const w = smooth(ez - 0.04, ez - 0.02, z) * [-1, 1].reduce((sum, sx) => sum + Math.exp(-((x - sx * Math.abs(ex) * 1.2) ** 2 + (y - ey + 0.03) ** 2) / (ch.r * ch.r)), 0);
+			joy[i * 3 + 1] += ch.up * w;
+			joy[i * 3 + 2] += ch.out * w;
+		}
+	}
 	// per vertex: inside the mouth, in an eye's socket
-	const region = bytes(HEAD_REGION);
 	const marks = new Float32Array(n * 3);
 	for (let i = 0; i < n; i++) ((marks[i * 3] = region[i] === 1 ? 1 : 0), (marks[i * 3 + 1] = region[i] === 2 ? 1 : 0), (marks[i * 3 + 2] = region[i] === 4 ? 1 : 0));
 	const skin = piece('skin', pos, joy, 1, marks, 3);
@@ -214,8 +237,8 @@ function build(face) {
 	return { skin, hollow, dist, inside, socket, ears, mouth: { y: my, z: mz, w: mw }, tip: T, crown, eyes, E, hairW, hairF, surface, parts };
 }
 
-/** a face's head, built once @param {Face} face */
-export const headOf = (face = 'man') => (BUILT[face] ??= build(face));
+/** a face's head with a version's smile, built once @param {Face} face @param {number} [smile] */
+export const headOf = (face = 'man', smile = SMILE) => (BUILT[`${face}:${smile}`] ??= build(face, smile));
 
 /** how high the top of a face's head is, in the stand-in's measure @param {Face} face */
 export const crownOf = (face = 'man') => HEAD_PEOPLE[KEY[face]].crown;
@@ -257,10 +280,11 @@ function strand(pos, idx, root, dir, curl, face, len, wid, segs = 3) {
  * The head's pieces for a look: the skin (its neck weighted onto the stand-in's neck and chest, and its smile as the
  * morph `joy`), its eyes, lashes, teeth, tongue, brows and hair.
  * @param {{ skin: string, lips: string, brows: string, iris: string, hair: string, hairColour: string, face?: Face }} k
+ * @param {number} [smile] the stand-in's version whose smile it wears (SMILES)
  * @returns {Piece[]}
  */
-export function headPieces(k) {
-	const h = headOf(k.face ?? 'man');
+export function headPieces(k, smile = SMILE) {
+	const h = headOf(k.face ?? 'man', smile);
 	const { skin, E } = h;
 	const P = skin.geo.attributes.position, m = skin.n;
 	const base = new THREE.Color(k.skin), lips = new THREE.Color(k.lips), warm = base.clone().multiply(new THREE.Color(1.0, 0.82, 0.78));
