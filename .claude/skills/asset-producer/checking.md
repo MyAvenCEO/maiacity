@@ -19,8 +19,9 @@ every asset group.
 - **Fingerprint frozen versions.** Before a refactor, hash every older version's geometry (each attribute's bytes,
   each blend shape's, the groups) in a throwaway test; after it, the hashes must match. (The stand-in v6 man is not
   deterministic between calls; its other versions are.)
-- Composed assets: build the host and check that the guest's parts are in its catalog under the prefix, and that the
-  host's outer box still matches its real size with the guest in it.
+- `bun test src/lib/assets/compose.test.js`: an asset built by its ref, carried, its parts naming it, a host carried
+  in turn, an older object carried whole. For a new host, check that the guest's parts are in its catalog under the
+  prefix with their ref, and that the host's outer box still matches its real size with the guest in it.
 
 ## Pictures
 

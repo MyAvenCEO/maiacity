@@ -7,7 +7,8 @@
  *   group/id              its latest version
  *
  * `assetAt(ref)` gives back the version and its builder, the one the group's explorer shows for it ($lib/app/versions.js:
- * a version's own frozen builder, or `kept: false` when only its note is left). A world, a building or a film names
+ * a version's own frozen builder, or `kept: false` when only its note is left); `objectAt(ref, …)` builds it, as the
+ * object to put into a scene or to carry in another asset ($lib/assets/parts.js). A world, a building or a film names
  * what it puts in by such a ref and so stays anchored to the asset as it was when it was made. Each group is loaded
  * only when it is asked for.
  */
@@ -70,4 +71,25 @@ export async function assetAt(ref) {
 		if (!build) return undefined;
 	} else if (variant) return undefined;
 	return { group, item, version, build, kept: version.kept };
+}
+
+/**
+ * An asset at a version, built: the object a thing's builder, a plant's `grow`, or a machine's or an actor's variant
+ * makes, its ref on it (`userData.ref`) so `carry` names it on every part it brings. The arguments go to the builder
+ * (a thing's options, a plant's stage and seed). Throws when the version was not kept, or when the group's versions
+ * are not built as one object (a biome's recipe, a dome's interior, a world's page).
+ * @param {string} ref
+ * @param {...any} args
+ * @returns {Promise<import('three').Object3D>}
+ */
+export async function objectAt(ref, ...args) {
+	const got = await assetAt(ref);
+	if (!got) throw new Error(`no asset ${ref}`);
+	if (!got.kept) throw new Error(`${ref}: only its note was kept, not its builder`);
+	if (typeof got.build !== 'function') throw new Error(`${ref}: ${got.group} are not built as one object`);
+	const made = got.build(...args);
+	const obj = made?.isObject3D ? made : made?.rig?.object;
+	if (!obj?.isObject3D) throw new Error(`${ref}: its builder made no object`);
+	obj.userData.ref = refOf(got.group, got.item.id, got.version.v, parseRef(ref).variant);
+	return obj;
 }

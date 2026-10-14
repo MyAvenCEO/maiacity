@@ -65,8 +65,9 @@ materials, seeded randomness, handles in `userData`) are in `production-designer
 ## Composable
 
 - A thing goes into everything bigger: a machine's load (jerrycans in a pickup's bed, a pallet on forks), a
-  building's furniture, a world's props. A host built with the kit carries a sealed thing (`carry`); a world or a
-  building names it by its ref (`things/bell-tent@2`) and so keeps it as it was.
+  building's furniture, a world's props. A host built with the kit carries it (`carry`): a thing built with the kit
+  brings its parts, an older one comes whole as one part with its card. A world or a building names it by its ref
+  (`things/bell-tent@2`, built by `objectAt`) and so keeps it as it was.
 - A piece used by several things (a hinge, a zip, a tent pole) is one builder function every thing imports, with its
   own measures, never copied.
 - A still thing that starts to move by itself — a vehicle that drives, a door on a motor — becomes a machine; the old

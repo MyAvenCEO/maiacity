@@ -180,7 +180,7 @@ film takes it from there. How to build it into the library is in `ours.md` besid
 - **Composable:** a sealed machine goes whole into another asset with `carry` (its parts, labels, x-ray shells and
   solver join the host's: a Power Cube in a pickup's bed); a piece several machines share (a wheel, a door, a
   ClickLock) is one builder they all import; a building, a factory or a world names it by its ref,
-  `machines/<id>@<v>`, and builds it through `assetAt` (`$lib/assets/index.js`).
+  `machines/<id>@<v>`, and builds it with `objectAt` (`$lib/assets/index.js`).
 - **Its versions:** every upgrade is a new version with a dated note in `HISTORY`; the old builder stays frozen and
   keeps building exactly what it built (`bun test src/lib/assets/versions.test.js` holds every version to it).
 - **What you hand over:** the shots, this skill's page and its film go to `/mnt/project-files/machines/<machine>/`,

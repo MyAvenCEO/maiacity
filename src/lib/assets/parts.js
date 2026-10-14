@@ -12,10 +12,12 @@
  *   root.userData.parts    { id: Object3D }, root.userData.catalog, root.userData.explode(k), root.userData.setBuild(u):
  *                          the Things' handles (src/lib/models), so the Things viewer shows it too
  *
- * Composable: `carry(guest, …)` puts another sealed asset into this one (a Power Cube on a tractor's cradle, a pallet
- * on a forklift's forks, a machine in a building): it hangs where it is put, and its parts, labels, x-ray shells and
- * solver join the host's, so the host's catalog, explode and cutaway reach into it. Any part of one asset is reusable
- * in another this way, as the whole asset it belongs to or through the builder's own part functions.
+ * Composable: `carry(guest, …)` puts another asset into this one (a Power Cube on a tractor's cradle, a pallet on a
+ * forklift's forks, a machine in a building): it hangs where it is put, and a sealed guest's parts, labels, x-ray
+ * shells and solver join the host's, so the host's catalog, explode and cutaway reach into it; any other object (a
+ * thing, a rigged kind, a plant) comes whole, as one part. Each carried part names the asset it came with by its ref
+ * (`machines/powercube@3`, ./index.js), so a host's version says which versions it carries. Any part of one asset is
+ * reusable in another this way, as the whole asset it belongs to or through the builder's own part functions.
  */
 import * as THREE from 'three';
 import { clamp, ease } from './kit.js';
@@ -154,28 +156,45 @@ export function assetKit(root, { assemblies = [], steps = [], sources = [] } = {
 			else obj.position.set(...at);
 		},
 		/**
-		 * Carry another asset (sealed by its own kit): it hangs from `parent` at `at`, turned by `rot`, and its parts,
-		 * labels, shells and solver become this asset's. Its parts keep their cards under `prefix`; they go into the
-		 * host's assembly `assembly` (made from `asm` if the host has none of that id), else keep the guest's own
-		 * assemblies (prefixed). In the exploded view the whole guest first moves out by `explode`, then its parts apart.
+		 * Carry another asset: it hangs from `parent` at `at`, turned by `rot`. A guest sealed by its own kit brings
+		 * its parts, labels, shells and solver, which become this asset's: its parts keep their cards under `prefix`;
+		 * they go into the host's assembly `assembly` (made from `asm` if the host has none of that id), else keep the
+		 * guest's own assemblies (prefixed). In the exploded view the whole guest first moves out by `explode`, then its
+		 * parts apart. Any other object (a thing, a rigged kind, a plant) is carried whole, as one part with its own
+		 * `card`. `ref` names the asset at its version (`machines/powercube@3`; an object made by `objectAt` knows its
+		 * own): every part that came with it says so on its card.
 		 * @param {THREE.Object3D} guest
-		 * @param {{ at?: V3, rot?: V3, parent?: THREE.Object3D, prefix?: string, assembly?: string, asm?: Assembly, step?: number, explode?: V3, unit?: string }} [o]
+		 * @param {{ at?: V3, rot?: V3, parent?: THREE.Object3D, prefix?: string, assembly?: string, asm?: Assembly, step?: number, explode?: V3, unit?: string, ref?: string, card?: Partial<PartInfo> }} [o]
 		 */
-		carry(guest, { at = [0, 0, 0], rot, parent = root, prefix = `${guest.name || 'guest'}-`, assembly, asm, step, explode, unit } = {}) {
+		carry(guest, { at = [0, 0, 0], rot, parent = root, prefix = `${guest.name || 'guest'}-`, assembly, asm, step, explode, unit, ref = guest.userData.ref, card = {} } = {}) {
 			const g = /** @type {SealedAsset | undefined} */ (guest.userData.asset);
-			if (!g) throw new Error('carry: the guest is not a sealed asset');
 			guest.position.set(...at);
 			if (rot) guest.rotation.set(...rot);
 			parent.add(guest);
+			const from = ref ? { ref } : {};
+			if (!g) {
+				// not built with this kit: carried whole, one part with one card
+				const id = card.id ?? prefix.replace(/-$/, '');
+				if (ids.has(id)) throw new Error(`part ${id} twice`);
+				const a = assembly ?? id;
+				if (!asms.some((x) => x.id === a)) asms.push({ label: guest.name || id, note: '', out: explode ?? [0, 0.4, 0], ...asm, id: a });
+				ids.add(id);
+				guest.traverse((m) => {
+					if (/** @type {THREE.Mesh} */ (m).isMesh) m.castShadow = m.receiveShadow = true;
+				});
+				keep(guest, { label: guest.name || id, what: '', ...card, ...from, id, assembly: a, step: step ?? card.step ?? asms.findIndex((x) => x.id === a) + 1 }, { explode, delay: 0 });
+				return guest;
+			}
 			if (assembly && asm && !asms.some((a) => a.id === assembly)) asms.push({ ...asm, id: assembly });
 			if (!assembly) for (const a of g.catalog.assemblies) asms.push({ ...a, id: prefix + a.id, label: `${guest.name}: ${a.label}` });
-			if (explode) keep(guest, /** @type {PartInfo} */ ({ id: `${prefix}unit`, label: guest.name, assembly: assembly ?? '', what: '', step: step ?? 1 }), { explode, delay: 0 }, true);
+			if (explode) keep(guest, /** @type {PartInfo} */ ({ id: `${prefix}unit`, label: guest.name, assembly: assembly ?? '', what: '', step: step ?? 1, ...from }), { explode, delay: 0 }, true);
 			for (const p of g.parts) {
 				if (p.unit) continue;
 				const id = prefix + p.info.id;
 				ids.add(id);
 				p.obj.userData.part = id;
-				parts.push({ ...p, info: { ...p.info, id, assembly: assembly ?? prefix + p.info.assembly, step: step ?? p.info.step, ...(unit ? { unit } : {}) }, order: parts.length });
+				// a part carried in by the guest's own guest keeps the ref it came with
+				parts.push({ ...p, info: { ...from, ...p.info, id, assembly: assembly ?? prefix + p.info.assembly, step: step ?? p.info.step, ...(unit ? { unit } : {}) }, order: parts.length });
 			}
 			labels.push(...g.labels);
 			shells.push(...g.shells);

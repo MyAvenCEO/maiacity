@@ -68,7 +68,8 @@ file has the same shape as every other sub skill.
   assembly, step })`, `forkliftParts`, `clickLockPieces()`): the LifeTrac carries a Power Cube, a goods pod four
   forklifts.
 - **By ref:** a building, a factory or a world names a machine at its version (`machines/powercube@3`) and builds it
-  through `assetAt`.
+  with `objectAt`; carried, every part it brings says "Part of machines/powercube@3" on its card. An older rigged
+  machine or a thing carried into a new one comes whole, as one part (`carry(obj, { card })`).
 - A hydraulic ram is two joints, the barrel and the rod, kept on the line between their two pins every frame
   (`excavator-rig.js`). A bigger machine is a different kind, never a smaller one scaled up.
 

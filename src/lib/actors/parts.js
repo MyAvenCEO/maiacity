@@ -35,6 +35,8 @@ import * as THREE from 'three';
  * @property {string} [source] where its numbers come from (a source's label in the catalog)
  * @property {string} [unit] a unit it comes in with, already built (the Power Cube in the LifeTrac): in the build,
  *   all of a unit's parts arrive together, as one
+ * @property {string} [ref] the asset it came with, at its version, when it was carried in from another
+ *   (`machines/powercube@3`, $lib/assets)
  */
 /**
  * @typedef {object} Catalog a machine's parts: its assemblies, its parts' cards, its build steps and its sources
