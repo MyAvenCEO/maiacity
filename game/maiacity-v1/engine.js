@@ -7,7 +7,7 @@
  *   only invested.
  * - Investing 1 HEART into a COOP makes 1 MIND of that COOP: half to the player's wallet, half to the COOP's treasury.
  * - Three COOPs, each with its own MIND: the MaiaCity COOP (maiaMIND) owns the tribe hex and the AMM pool; the
- *   Tribe COOP (tribeMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (villageMIND)
+ *   Tribe COOP (tribeMIND) owns the homes on its hex, the 2-person bell tent; the Village COOP (villageMIND)
  *   owns the pickup, the powercube (the ElectroCube: OSE's Power Cube frame with an alternator), a solar panel and the
  *   battery (the BatteryCube: four BatteryPacks and an inverter in the same frame).
  * - A tenth of every treasury half (5 % of each invested HEART's MIND) goes into the MaiaCity COOP's pool: a Balancer weighted pool, one
@@ -24,6 +24,9 @@
  *   melts by 7 % a year of virtual time, continuously.
  * - Every decision (the settings, and payouts of MIND from a COOP's treasury to any wallet) is a MIP, as in Sandbox 7.
  *   It needs two signatures, and applies at once in this same game (no new world).
+ * - The euro border (Samuel 2026-10-14): each player's first mint, the starter pack of a year of HEARTS, also brings as
+ *   many €uro into the MaiaCity COOP, minted by the system as an invest of its own (the euro ingest); later mints bring
+ *   none. Euros make no MIND and do not melt: the MaiaCity COOP holds them for the city (its treasury's EURO).
  *
  * The same code runs on the server (which holds the one true game) and in the page (which ticks the numbers between
  * reloads). Every function here is pure: it takes a state and returns a new one.
@@ -38,14 +41,16 @@ export const MONTH_MS = DAY_MS;
 export const TOKENS = ['HEARTS', 'MAIA', 'TRIBE', 'VILLAGE'];
 /** the MINDs, one a COOP */
 export const MINDS = ['MAIA', 'TRIBE', 'VILLAGE'];
-export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', TRIBE: 'tribeMIND', VILLAGE: 'villageMIND' };
+export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', TRIBE: 'tribeMIND', VILLAGE: 'villageMIND', EURO: '€uro' };
+/** the euro the city holds, in the MaiaCity COOP's treasury: no MIND, never melting (the euro ingest, act 'mint') */
+export const EURO = 'EURO';
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', TRIBE: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
 export const VERSION = 14;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The tribe hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, tribeMIND, villageMIND' }] },
-	tribe: { name: 'Tribe COOP', mind: 'TRIBE', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
+	tribe: { name: 'Tribe COOP', mind: 'TRIBE', assets: [{ id: 'tent', name: 'The 2-person bell tent', kind: 'Bell tent · home for 2' }] },
 	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The ElectroCube', kind: 'Generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'The BatteryCube', kind: 'Storage' }] }
 };
 /** the seeds every newcomer brings from home in their backpack, one to plant as their first tree (Samuel 2026-10-13,
@@ -229,7 +234,7 @@ function melt(s, ms) {
 	const f = Math.pow(1 - s.settings.demurrage, ms / monthMs(s) / MONTHS_A_YEAR);
 	for (const [who, bal] of holders(s)) {
 		for (const k of Object.keys(bal)) {
-			if (!bal[k]) continue;
+			if (!bal[k] || k === EURO) continue; // euros do not melt
 			const lost = bal[k] * (1 - f);
 			bal[k] -= lost;
 			const key = `${who}|${k}`;
@@ -593,6 +598,11 @@ export function act(state, seat, action, now = Date.now()) {
 			if (m.starter) {
 				p.starter = true;
 				log(s, now, { kind: 'mint', from: 'mint', to: me, token: 'HEARTS', amount: m.starter, note: 'the starter pack' });
+				// the euro ingest: a newcomer's first year of HEARTS brings as many €uro into the MaiaCity COOP, minted by
+				// the system as its own invest (Samuel 2026-10-14); later mints bring none
+				const bank = s.coops.maia;
+				bank.treasury[EURO] = (bank.treasury[EURO] ?? 0) + m.starter;
+				log(s, now, { kind: 'invest', from: 'mint', to: 'coop:maia', token: EURO, amount: m.starter, note: `system minted: the €uro ingest for ${p.name}'s first year of HEARTS` });
 			}
 			if (m.grown > 1e-6) log(s, now, { kind: 'mint', from: 'mint', to: me, token: 'HEARTS', amount: m.grown, note: m.lost > 0.001 ? `grew since the last mint (${m.lost.toFixed(2)} older than 24 h lost)` : 'grew since the last mint' });
 			break;

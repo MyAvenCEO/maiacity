@@ -4,7 +4,7 @@
  * highway through its centre hex, and the journey of a newcomer across it. At the city's centre the bus stop and the
  * abandoned gas station (the MaiaCity centre, $lib/models/wayside.js); a meandering gravel track leaves the highway
  * there and runs through the village's centre hex, where the Village COOP's old shed keeps the powercube beside the
- * solar row and the battery (the village store), on to our tribe's hex: grass, a few bushes, the 2-person dome tent
+ * solar row and the battery (the village store), on to our tribe's hex: grass, a few bushes, the 2-person bell tent
  * and the pickup's round lot. The city's own hexes are steppe and prairie, the villages' hexes grass.
  *
  * The page tells the world where the story is (set: where the pickup, the powercube and the players are, the story's
@@ -566,7 +566,7 @@ function acting(p, t) {
 const VAN_SEAT = V(0.2, 1.8, 0.26);
 const VAN_LOOK = V(0.0, 1.45, 14);
 
-export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {}, onGround = () => {} } = {}) {
+export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {}, onGround = () => {}, onRoam = () => {} } = {}) {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 	renderer.shadowMap.enabled = true;
@@ -761,11 +761,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** in the cab as the story has them: the first player at the wheel; the second beside the first, who fetched them
 	 *  (alone, at the wheel themselves). Whoever is in already stays as they sit, so every drive can ask it: the pickup
 	 *  never drives with no one at its wheel */
-	function inCab() {
+	function inCab(roaming = false) {
 		const me = people[stage.me], other = stage.other ? people[stage.other] : null;
 		const sit = (p, where) => p.parent !== truck && seatIn(p, where);
-		if (stage.me === 'A' || !other) return sit(me, 'driver');
-		sit(me, 'passenger');
+		// walking freely, the player is not sat back in it
+		if (stage.me === 'A' || !other) return roaming || sit(me, 'driver');
+		if (!roaming) sit(me, 'passenger');
 		sit(other, 'driver');
 	}
 	/** the pickup rolling slowly on towards the shed or home while an invest waits (Samuel 2026-10-14): from just short
@@ -776,12 +777,16 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function place() {
 		seatMe(false);
 		const { at, me, other, rides } = stage;
-		const keepMe = (held || roam) && people[me].parent === world; // a held shot keeps the player as it put them, and so does walking freely
-		for (const s of ['A', 'B']) if (!(keepMe && s === me)) seatOut(people[s]);
+		// a held shot keeps the player as it put them, and so does walking or driving freely; the pickup driven freely
+		// stays where it was left, and whoever sits in it
+		const keepMe = (held || roam) && (people[me].parent === world || driving || !!boarding);
+		for (const s of ['A', 'B']) if (!(keepMe && s === me) && !(freeTruck && people[s].parent === truck)) seatOut(people[s]);
 		// the second player is fetched: until then the pickup stands at home with the first
 		const fetched = me === 'B';
 		if (at !== 'cruise') cruising = null;
-		if ((at === 'stop' || at === 'van' || at === 'cab') && !fetched) putTruck(U_START);
+		if (freeTruck) {
+			// left where they drove it
+		} else if ((at === 'stop' || at === 'van' || at === 'cab') && !fetched) putTruck(U_START);
 		else if (at === 'village') putTruck(U_STORE);
 		else if (at === 'cruise') {
 			if (cruising?.to !== stage.cruise) cruising = { to: stage.cruise, u0: U_NEAR[stage.cruise] ?? U_STORE, t0: performance.now() / 1000 };
@@ -795,6 +800,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		for (const s of ['A', 'B']) {
 			const p = people[s];
 			if (keepMe && s === me) continue;
+			if (freeTruck && p.parent === truck) continue;
 			p.visible = true;
 			act(p, 'idle');
 			p.userData.pack.visible = true;
@@ -807,7 +813,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			else if (at === 'stop') (p.position.copy(STOP), (p.rotation.y = -Math.PI / 2 - 0.5));
 			else p.position.copy(beside(truck, 1, s === me ? 1 : -1.6));
 		}
-		if (at === 'cab' || at === 'cruise') inCab();
+		if (!freeTruck && (at === 'cab' || at === 'cruise')) inCab(keepMe);
 		placeKit();
 		van.visible = at === 'van';
 		riding = at === 'van';
@@ -823,7 +829,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			lensFor(DRIVE_SHOTS[cruiseHold] ?? DRIVE_SHOTS.ots);
 		} else if (!busy && !held) {
 			controls.enabled = true;
-			if (camera.near < 0.5) lensOut();
+			if (camera.near < 0.5 && !(roam && inTent)) lensOut(); // in the tent the walk keeps its near lens
 		}
 	}
 	/** standing at the first tree's spot, facing it, the tent beyond */
@@ -1190,10 +1196,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  ends, while a prompt waits on the player */
 	function play(steps, { hour: at, keep = false } = {}) {
 		return new Promise((done) => {
+			if (roam || freeTruck) walk(false); // a moment ends the free walk and drive, everyone back where the story has them
 			busy = true;
 			held = false;
 			errand = null;
-			roam = false; // a moment ends the free walk
+			roam = false;
 			controls.enabled = false;
 			goal = null;
 			fore.visible = false;
@@ -2128,11 +2135,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			{ from: tOf(0.001) - 0.3, len: 3.6, fov: 46, cam: () => ({ eye: L(3.4, 3.4, 5.6), at: L(0, 0, 0.2) }) },
 			{ from: tOf(S.canvas[0]) - 0.4, len: 2.2, fov: 44, cam: () => ({ eye: L(2.8, 1.8, 5.4), at: L(0, 0.2, 1.1) }) },
 			{ from: tOf(S.pole[0]), len: 3.4, fov: 44, cam: () => ({ eye: L(4.8, 1.2, 6.4), at: L(0, 1.4, 0.4) }) },
-			{ from: tOf(S.wall[0]), len: 3.2, fov: 42, cam: (f) => beside(f, 2.6, 1.7, 1.3, 0.55) },
+			{ from: tOf(S.wall[0]), len: 3.2, fov: 46, cam: (f) => beside(f, 4.4, 2.2, 1.7, 0.6) },
 			{ from: tOf(S.guys[0]) - 0.3, len: 3.2, fov: 44, cam: (f) => beside(f, 3, -2, 1.6, 0.9) },
 			{ from: tOf(S.door[0]) - 0.2, len: 1.6, fov: 42, cam: () => ({ eye: L(1.7, 1.5, R + 3.4), at: L(0, 1.1, R) }) },
-			// in the tent with them, under the canvas, the lantern lighting up at the end
-			{ from: T - 3.6, len: 3.6, fov: 58, near: 0.05, cam: () => ({ eye: L(-1.05, 1.4, 0.35), at: L(0.5, 0.75, 0.75) }) }
+			// in the tent with them, from its back under the canvas, the pole aside and the door's light beyond them, the
+			// lantern lighting up at the end
+			{ from: T - 3.6, len: 3.6, fov: 66, near: 0.05, cam: () => ({ eye: L(0.75, 1.45, -1), at: L(0.2, 1.2, 1) }) }
 		];
 		let start = OPEN;
 		for (const w of WINDOWS) ((w.from = Math.max(0, Math.min(T - w.len, w.from))), (w.at = start), (start += w.len));
@@ -2229,10 +2237,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				if (shown !== 'look') {
 					shown = 'look';
 					lensFor({ fov: 42 });
-					camera.position.copy(V(6.5, 2.2, 11.5));
-					controls.target.copy(V(0, 1.3, 0.8));
+					camera.position.copy(V(5, 1.9, 9.6));
+					controls.target.copy(V(0.2, 1.2, 1.2));
 				}
-				still(V(6.2, 2.1, 11), V(0, 1.3, 0.8));
+				still(V(4.8, 1.85, 9.3), V(0.2, 1.2, 1.2));
 			}, () => {
 				world.attach(bundle);
 				bundle.position.copy(BAG_AT);
@@ -2562,22 +2570,24 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const onKey = (e) => {
 		if (!roam || !KEYS[e.code] || typing(e)) return;
 		e.preventDefault();
-		if (e.type === 'keydown') (keys.add(e.code), (roamTo = []));
+		if (e.type === 'keydown') (keys.add(e.code), (roamTo = []), (boardNext = false));
 		else keys.delete(e.code);
 	};
 	window.addEventListener('keydown', onKey);
 	window.addEventListener('keyup', onKey);
 	function walk(on) {
 		const me = people[stage.me];
-		if (!me || (on && busy)) return false;
+		if (!me || (on && (busy || riding || stage.at === 'cruise'))) return false;
 		roam = !!on;
 		roamTo = [];
-		if (inTent) ((camera.near = 0.5), camera.updateProjectionMatrix());
+		if (inTent) lensOut();
 		inTent = false;
 		keys.clear();
 		errand = null;
 		if (roam) {
+			const sat = me.parent === truck ? me.userData.seat : null;
 			seatOut(me);
+			if (sat) me.position.copy(atTruck(...(sat === 'driver' ? DRIVER : PASSENGER))); // out at their door
 			me.visible = true;
 			me.userData.pack.visible = true;
 			me.position.setY(0);
@@ -2588,11 +2598,144 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const back = V(-Math.sin(me.rotation.y), 0, -Math.cos(me.rotation.y));
 			goal = { target: head(me, 1.2), offset: back.multiplyScalar(7.5).setY(3.4) };
 		} else {
+			if (me.parent === truck) seatOut(me);
+			driving = boardNext = false;
+			boarding = driveTo = null;
+			speed = steer = 0;
+			freeTruck = false;
 			me.userData.glow.visible = true;
 			act(me, 'idle');
 			controls.minDistance = 12;
+			// back to where the story has everyone, the camera gliding back to its place
+			place();
+			const was = placeNow;
+			placeNow = null;
+			focus(was);
 		}
 		return roam;
+	}
+	/** driving the pickup freely (Samuel 2026-10-14: everyone may get in and drive it anywhere, any time, to the gas
+	 *  station too): walked to its driver's door and in; at its wheel the arrow keys (or WASD) are the throttle and the
+	 *  steering, and a tap on the ground drives there; at its real pace off the track, stopping short of whatever stands
+	 *  in its way; the camera behind it, swinging round as it turns. Out again at its door. While they roam it stays
+	 *  where it was left (place keeps it); a story's moment puts it back */
+	let driving = false, boarding = null, boardNext = false, freeTruck = false, speed = 0, steer = 0, driveTo = null;
+	const WHEELBASE = 3.2, TOP = SPEED.track * 1.3, REVERSE = 2.5;
+	const doorAt = () => atTruck(...DRIVER);
+	/** whether they stand by the pickup, near enough to get in */
+	const byPickup = () => {
+		const me = people[stage.me];
+		return roam && !driving && !boarding && me?.parent === world && truck.visible && truck.parent === world && me.position.distanceTo(doorAt()) < 4;
+	};
+	/** get in (walking to its door first) or out */
+	function board(on) {
+		const me = people[stage.me];
+		if (!roam || boarding || !me || on === driving) return false;
+		if (on) {
+			if (me.position.distanceTo(doorAt()) > 1.2) return ((roamTo = wayTo(me, doorAt())), (boardNext = true));
+			// whoever sits at the wheel already moves over
+			const other = stage.other ? people[stage.other] : null;
+			if (other?.parent === truck && other.userData.seat === 'driver') seatIn(other, 'passenger');
+		}
+		roamTo = [];
+		boardNext = false;
+		driveTo = null;
+		speed = 0;
+		boarding = { into: on, t0: performance.now() / 1000 };
+		return true;
+	}
+	function boardingStep() {
+		const me = people[stage.me];
+		const k = Math.min(1, (performance.now() / 1000 - boarding.t0) / GET_IN);
+		if (boarding.into) climbIn(me, 'driver', k);
+		else climbOut(me, 'driver', k);
+		if (k < 1) return;
+		driving = boarding.into;
+		boarding = null;
+		if (driving) {
+			freeTruck = true;
+			const back = V(-Math.sin(truck.rotation.y), 0, -Math.cos(truck.rotation.y));
+			goal = { target: truck.position.clone().setY(1.6), offset: back.multiplyScalar(11).setY(4.4) };
+			controls.minDistance = 4;
+		} else {
+			act(me, 'idle');
+			// the camera out beside them, away from the pickup's side, so both are in view (not behind its cab)
+			const out = me.position.clone().sub(truck.position).setY(0).normalize();
+			goal = { target: head(me, 1.2), offset: out.multiplyScalar(7.5).setY(3.4) };
+			controls.minDistance = 1.5;
+		}
+	}
+	/** the MaiaCity centre's solid things, from its middle (x, z, radius): the bus stop; the gas station's kiosk, its
+	 *  pump island, its canopy's four posts, its sign pole and its oil drums (wayside.js: the station 10 m on, turned) */
+	const STATION = [
+		[-14, -6.5, 2.6],
+		[14.5, -3, 2.6], [14.5, 0, 2.6], [14.5, 3, 2.6],
+		[6, -1.8, 0.8], [6, 0, 0.8], [6, 1.8, 0.8],
+		[8.5, -4.5, 0.3], [8.5, 4.5, 0.3], [3.5, -4.5, 0.3], [3.5, 4.5, 0.3],
+		[3.5, 9.5, 0.3], [12, 5.9, 0.9]
+	];
+	/** what the pickup stops short of, as circles on the ground (centre, radius): the tent and its fire place, the
+	 *  shed, the bus stop and the gas station, the machines and the people standing about, the first trees */
+	function obstacles() {
+		const list = [[V(STORE.x, 0, STORE.z), 3.3], ...STATION.map(([x, z, r]) => [V(CENTRE.x + x, 0, CENTRE.z + z), r])];
+		if (home.visible) list.push([home.position, 3.7]);
+		if (fire.visible) list.push([fire.position, 1.9]);
+		for (const o of [cube, battery, solar]) if (o.parent === world && o.visible) list.push([o.position, 1]);
+		for (const s of ['A', 'B']) if (people[s].parent === world && people[s].visible) list.push([people[s].position, 0.5]);
+		for (const t of Object.values(trees)) if (t?.position) list.push([t.position, 0.6]);
+		return list;
+	}
+	/** whether a move of the pickup's (from `was` to `next`, heading `yaw`) runs into any of them: its front, middle and
+	 *  back each a circle of a metre; only a move nearer is stopped, so a way out is never blocked */
+	function blocked(was, next, yaw) {
+		const f = V(Math.sin(yaw), 0, Math.cos(yaw));
+		for (const [c, r] of obstacles()) {
+			for (const a of [1.5, 0, -1.5]) {
+				const q = next.clone().addScaledVector(f, a), d = Math.hypot(q.x - c.x, q.z - c.z);
+				if (d >= r + 1) continue;
+				const q0 = was.clone().addScaledVector(f, a);
+				if (d < Math.hypot(q0.x - c.x, q0.z - c.z)) return true;
+			}
+		}
+		return false;
+	}
+	/** the free drive, a frame of it: on along the keys, or on to where they tapped, slowing as it comes and as it turns */
+	function drivingStep(step) {
+		let throttle = 0, turn = 0;
+		if (keys.size) {
+			const k = [...keys].reduce((a, c) => [a[0] + KEYS[c][0], a[1] + KEYS[c][1]], [0, 0]);
+			throttle = Math.sign(k[1]);
+			turn = -Math.sign(k[0]); // left (+x, the driver's side) turns it left
+			driveTo = null;
+		} else if (driveTo) {
+			const dx = driveTo.x - truck.position.x, dz = driveTo.z - truck.position.z, dist = Math.hypot(dx, dz);
+			if (dist < 2.5) driveTo = null;
+			else {
+				const a = Math.atan2(dx, dz) - truck.rotation.y, off = Math.atan2(Math.sin(a), Math.cos(a));
+				turn = Math.max(-1, Math.min(1, off * 2));
+				throttle = Math.min(1, Math.max(0.3, Math.sqrt(dist) / 6)) * (1 - 0.55 * Math.abs(turn));
+			}
+		}
+		const want = throttle > 0 ? TOP * throttle : throttle < 0 ? -REVERSE : 0;
+		speed += Math.max(-7 * step, Math.min(3 * step, want - speed)); // it brakes harder than it pulls away
+		steer += Math.max(-1.2 * step, Math.min(1.2 * step, turn * 0.6 - steer));
+		const was = truck.position.clone();
+		const yaw = truck.rotation.y + (speed / WHEELBASE) * Math.tan(steer) * step;
+		const next = was.clone().add(V(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(speed * step));
+		if (blocked(was, next, yaw)) speed = 0;
+		else (truck.position.copy(next), (truck.rotation.y = yaw));
+		if (Math.abs(speed) > 1.5) dust(truck, -2.6);
+		// the camera carried along with it, swinging round behind it as it goes
+		const moved = truck.position.clone().sub(was);
+		camera.position.add(moved);
+		controls.target.add(moved);
+		if (goal) goal.target.add(moved);
+		if (Math.abs(speed) > 0.5 && !goal) {
+			const off = camera.position.clone().sub(controls.target);
+			const behind = Math.atan2(-Math.sin(truck.rotation.y), -Math.cos(truck.rotation.y)), now = Math.atan2(off.x, off.z);
+			off.applyAxisAngle(V(0, 1, 0), Math.atan2(Math.sin(behind - now), Math.cos(behind - now)) * Math.min(1, step * 1.5));
+			camera.position.copy(controls.target).add(off);
+		}
 	}
 	/** the tent walked into (Samuel 2026-10-14): its wall a ring crossed only at its door (+z), the things in it and
 	 *  round it stood clear of (the fire place's too); upright under the bell only as far out as its headroom (the bell
@@ -2656,20 +2799,51 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const out = home.localToWorld(V(0, 0, w.r + 0.8)), inn = home.localToWorld(V(0, 0, Math.min(w.r - 0.8, upright(w) - 0.1)));
 		return fromIn ? [inn, out, ...round(out, at), at] : [...round(me.position, out), out, inn, at];
 	}
-	/** the camera in the tent with them: close behind them, under the canvas; back out to the walk's view outside */
-	let inTent = false, stuck = 0;
+	/** the camera in the tent with them: under the canvas, a third of the way round the pole from them, so it looks
+	 *  across the tent at them with the pole beside the view, not in it; it moves on round only when they come too near
+	 *  it or the pole comes between. Cut to on the way in, and on the way out cut to high behind them, over the tent */
+	let inTent = false, stuck = 0, tentEye = null;
+	const EYE_Y = 1.7;
 	function tentCamera(me) {
 		const w = tentWalk();
-		const now = !!w && inside(w, home.worldToLocal(me.position.clone()));
-		if (now === inTent) return;
-		inTent = now;
-		const back = V(-Math.sin(me.rotation.y), 0, -Math.cos(me.rotation.y));
-		// a near lens under the canvas, the camera close behind them
-		camera.near = now ? 0.08 : 0.5;
-		camera.updateProjectionMatrix();
-		if (!now) return void ((goal = { target: head(me, 1.2), offset: back.multiplyScalar(7.5).setY(3.4) }), (controls.minDistance = 1.5));
-		const target = head(me, 1.35);
-		goal = { target, offset: inTentAt(target.clone().addScaledVector(back, 1.5).setY(1.7)).sub(target) };
+		home.updateMatrixWorld(true);
+		const p = w ? home.worldToLocal(me.position.clone()) : null;
+		const now = !!w && inside(w, p), cut = now && !inTent;
+		if (now !== inTent) {
+			inTent = now;
+			// a near, wide lens under the canvas (the tent is 4.2 m across), the walk's own lens again outside
+			if (now) ((camera.near = 0.08), (camera.fov = camera.aspect < 0.8 ? 84 : 72), camera.updateProjectionMatrix());
+			else lensOut();
+			tentEye = null;
+			if (!now) {
+				// out by the door: from high behind them, over the bell, so the way on is still away from the camera
+				const back = V(-Math.sin(me.rotation.y), 0, -Math.cos(me.rotation.y));
+				const target = head(me, 1.2), offset = back.multiplyScalar(7.5).setY(6);
+				controls.target.copy(target);
+				camera.position.copy(target).add(offset);
+				goal = null;
+				controls.minDistance = 1.5;
+				return;
+			}
+		}
+		if (!now) return;
+		const R = upright(w) - 0.05;
+		const spot = (b) => V(Math.sin(b) * R, EYE_Y, Math.cos(b) * R);
+		const pole = (e) => {
+			// how near the pole (the tent's middle) the line from the camera to them passes
+			const dx = p.x - e.x, dz = p.z - e.z, n = dx * dx + dz * dz || 1, t = Math.min(1, Math.max(0, -(e.x * dx + e.z * dz) / n));
+			return Math.hypot(e.x + dx * t, e.z + dz * t);
+		};
+		if (!tentEye || Math.hypot(p.x - tentEye.x, p.z - tentEye.z) < 1 || pole(tentEye) < 0.3) {
+			// a third of the way round from them, on the side nearer where the camera is (no swing across)
+			const a = Math.hypot(p.x, p.z) > 0.3 ? Math.atan2(p.x, p.z) : me.rotation.y - home.rotation.y + Math.PI;
+			const [l, r] = [spot(a + 2.1), spot(a - 2.1)];
+			const was = tentEye ?? home.worldToLocal(camera.position.clone());
+			tentEye = l.distanceTo(was) <= r.distanceTo(was) ? l : r;
+		}
+		const target = head(me, 1.2), eye = home.localToWorld(tentEye.clone());
+		if (cut) (camera.position.copy(eye), controls.target.copy(target)); // the cut in
+		goal = { target, offset: eye.sub(target) };
 		controls.minDistance = 0.4;
 	}
 	/** a point pulled in under the canvas, if it is out beyond it */
@@ -2702,12 +2876,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			act(me, on ? 'walk' : 'idle');
 			// against a wall or a thing for a moment, where they were going is given up
 			stuck = on ? 0 : stuck + step;
-			if (stuck > 0.6) ((roamTo = []), (stuck = 0));
+			if (stuck > 0.6) ((roamTo = []), (stuck = 0), (boardNext = false));
 		} else if (roamTo.length > 1) roamTo.shift();
-		else ((roamTo = []), act(me, 'idle'));
-		const moved = me.position.clone().sub(was);
-		camera.position.add(moved);
-		controls.target.add(moved);
+		else {
+			roamTo = [];
+			act(me, 'idle');
+			if (boardNext) board(true); // at the pickup's door: in
+		}
+		if (!inTent) {
+			// the camera carried along with them (in the tent it keeps its place, turning to them)
+			const moved = me.position.clone().sub(was);
+			camera.position.add(moved);
+			controls.target.add(moved);
+		}
 		tentCamera(me);
 	}
 
@@ -2751,8 +2932,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// with it (the bell tent's own night glow); and the fire in front of it lit at dusk, flickering
 		const glow = (lit ? Math.min(1, Math.max(0, (0.8 - up) / 0.55)) : 0) * (cold ? 0.35 : 1);
 		const { canvas: cloth, lamp } = home.userData;
-		cloth.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow);
-		cloth.emissiveIntensity = 0.35 + 0.2 * glow;
+		// seen from inside, the canvas is lit by the lantern only, not glowing as it does to whoever is outside
+		const within = roam && inTent ? 0.3 : 1;
+		cloth.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow * within);
+		cloth.emissiveIntensity = (0.35 + 0.2 * glow) * within;
 		if (home.userData.pitch >= 1) lamp.intensity = LANTERN * (1 + 3 * glow); // while it is pitched, its own
 		const flame = fire.visible && fire.userData.built >= 1 ? Math.min(1, Math.max(0, (0.62 - up) / 0.3)) : 0;
 		if (Math.abs(flame - fire.userData.fire.lit) > 0.005) fire.userData.fire.setLit(flame);
@@ -2792,8 +2975,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const r = canvas.getBoundingClientRect();
 		ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
 		if (roam) {
-			// walking freely: the point on the ground under the tap is where they walk to
+			// walking freely: the point on the ground under the tap is where they walk to (at the wheel, drive to); the
+			// pickup tapped, they walk to it and get in
+			if (boarding) return;
 			const at = ray.ray.intersectPlane(new THREE.Plane(V(0, 1, 0), 0), V(0, 0, 0));
+			if (driving) return void (at && (driveTo = at));
+			if (truck.visible && ray.intersectObject(truck, true).length) return void board(true);
+			boardNext = false;
 			if (at) roamTo = wayTo(people[stage.me], at);
 			return;
 		}
@@ -2810,6 +2998,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 
 	let frame = 0;
 	let raf = 0;
+	let roamSeen = { near: false, driving: false };
 	const clock = new THREE.Clock();
 	let lastT = null;
 	function loop() {
@@ -2836,7 +3025,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		else if (held) controls.enabled = false;
 		else {
 			controls.enabled = true;
-			if (roam) roaming(step);
+			if (roam) boarding ? boardingStep() : driving ? drivingStep(step) : roaming(step);
 			if (goal) {
 				const at = goal.target.clone().add(goal.offset);
 				const ease = 1 - Math.exp(-3.7 * step); // the same glide at any frame rate
@@ -2869,6 +3058,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}
 			}
 			onLabels(out);
+			const r = { near: byPickup(), driving: driving || !!boarding?.into };
+			if (r.near !== roamSeen.near || r.driving !== roamSeen.driving) ((roamSeen = r), onRoam(r));
 		}
 	}
 	loop();
@@ -2890,6 +3081,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		choose,
 		walkTo,
 		walk,
+		board,
 		sticks: markIt,
 		sow,
 		water: waterTree,
