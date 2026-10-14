@@ -2727,7 +2727,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  in its way; the camera behind it, swinging round as it turns. Out again at its door. While they roam it stays
 	 *  where it was left (place keeps it); a story's moment puts it back */
 	let driving = false, boarding = null, boardNext = false, freeTruck = false, speed = 0, steer = 0, driveTo = null;
-	const WHEELBASE = 3.2, TOP = SPEED.track * 1.3, REVERSE = 2.5;
+	/** four times its real pace off the track, pulling away and braking four times as hard (Samuel 2026-10-14) */
+	const FAST = 4;
+	const WHEELBASE = 3.2, TOP = SPEED.track * 1.3 * FAST, REVERSE = 2.5 * FAST;
 	const doorAt = () => atTruck(...DRIVER);
 	/** whether they stand by the pickup, near enough to get in */
 	const byPickup = () => {
@@ -2824,10 +2826,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			}
 		}
 		const want = throttle > 0 ? TOP * throttle : throttle < 0 ? -REVERSE : 0;
-		speed += Math.max(-7 * step, Math.min(3 * step, want - speed)); // it brakes harder than it pulls away
+		speed += Math.max(-7 * FAST * step, Math.min(3 * FAST * step, want - speed)); // it brakes harder than it pulls away
 		steer += Math.max(-1.2 * step, Math.min(1.2 * step, turn * 0.6 - steer));
 		const was = truck.position.clone();
-		const yaw = truck.rotation.y + (speed / WHEELBASE) * Math.tan(steer) * step;
+		// above its real top speed it turns no faster than it did there, so it never spins on the spot
+		const grip = Math.min(1, TOP / FAST / Math.max(1e-3, Math.abs(speed)));
+		const yaw = truck.rotation.y + (speed / WHEELBASE) * Math.tan(steer) * grip * step;
 		const next = was.clone().add(V(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(speed * step));
 		if (blocked(was, next, yaw)) speed = 0;
 		else (truck.position.copy(next), (truck.rotation.y = yaw));
