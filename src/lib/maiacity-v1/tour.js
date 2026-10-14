@@ -119,7 +119,7 @@ export function story(view, seat, seen) {
 				'The village keeps everything it shares in here.',
 				'Every machine here belongs to the Village COOP: the COOP of everyone in the village.',
 				'The ElectroCube: open hardware anyone can build. It will power your home.',
-				'And your first roof: a tent for two.')
+				'And your first roof: one tent, shared by two.')
 			: say({ id: 'cube', chapter: 'The end of the road', title: 'The shed', kind: 'load', what: 'power', done: !!seen.cube, ...atStore },
 				'The village keeps everything it shares in here.',
 				'Every machine here belongs to the Village COOP: the COOP of everyone in the village.',
@@ -130,24 +130,24 @@ export function story(view, seat, seen) {
 			'Invest 2,000 HEARTS, and every machine of the village works a little for you.'),
 		say({ id: 'home', chapter: 'The end of the road', title: 'Your new home', kind: 'drive', leg: 'home', done: !!seen.home, ...toHome },
 			'This is your new home.',
-			first ? 'One hex of grass at the edge of the village. Nothing stands here yet.' : `One hex of grass at the edge of the village, and ${o}'s tent already on it.`),
+			first ? 'One hex of grass at the edge of the village. Nothing stands here yet.' : `One hex of grass at the edge of the village, and the tent you share with ${o} already on it.`),
 		// Act III, home: the tent and the power, the roof never yours (the low), owning a part of it (the answer), the seed
 		first
-			? say({ id: 'pitch', chapter: 'Home', title: 'Pitch your tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed', hour: 14.2 },
+			? say({ id: 'pitch', chapter: 'Home', title: 'Pitch the tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed', hour: 14.2 },
 				'Everything you need for a first home fits in one bag.',
 				'No builder, no loan, no waiting.',
 				'A home you raised with your own hands.',
 				'Room for two, and canvas that stands for years.',
 				'And a fire to gather round when the sun goes down.',
 				'The ElectroCube comes home with you.',
-				'And by nightfall, your tent has light.')
+				'And by nightfall, the tent has light.')
 			: say({ id: 'pitch', chapter: 'Home', title: 'Set up the sun', kind: 'build', what: 'power', done: !!seen.pitch, ...home, battery: 'bed', hour: 14.2 },
 				'The BatteryCube comes home with you.',
 				'It stands beside the ElectroCube, by the tent.',
 				'Sun by day, stored for the night.',
 				'One cable, and the tent runs on sunlight.'),
 		say({ id: 'tribe', chapter: 'Home', title: 'Invest into the Tribe COOP', hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home, place: 'tent' },
-			first ? 'Even your tent belongs to a COOP: the Tribe COOP, the COOP of the people on this hex.' : `Even the tent ${o} raised belongs to a COOP: the Tribe COOP, the COOP of the people on this hex.`,
+			'Even the tent you share belongs to a COOP: the Tribe COOP, the COOP of the people on this hex.',
 			'Where you come from, the roof over your head belonged to someone else.',
 			null,
 			'Here, you can own it. Invest 1,000 HEARTS, and part of your own home is yours.'),
