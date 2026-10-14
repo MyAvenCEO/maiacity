@@ -59,8 +59,8 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 
 Everything in avenDB is one of three things, one per layer.
 
-1. **Entry: what.** All data is an entry in a vault. Notes, todos, files, a device's card, a vault's profile, and also
-   schemas and lenses. An entry changes only by writes.
+1. **Entry: what.** All data is an entry in a vault. Notes, todos, articles, files, a device's card, a vault's
+   profile, and also schemas and lenses. An entry changes only by writes.
 2. **Share: who may.** A share says who, at which level, on what. People, Everyone, servers and a device's keep shares
    are shares. A vault's owners and its devices are shares too. A revocation ends any of them. A vault has two
    settings beside them: how many owners must approve (its threshold), and its root passkey.
@@ -164,8 +164,8 @@ person lost every passkey and device, and that device opens the vault, as its ke
 every owner. So only the `.pub` file is handed on. The tool is `cargo run -p avendb --bin master-key`
 (`crates/avendb/src/bin/master-key.rs`).
 
-**avenCEO and the server.** The server is a device of the CEO Aven, an aven vault. A new server belongs to no vault.
-The first person to found a human vault through it claims it in the same ceremony, and founds the seed
+**The CEO Aven and the server.** The server is a device of the CEO Aven, an aven vault. A new server belongs to no
+vault. The first person to found a human vault through it claims it in the same ceremony, and founds the seed
 (`world::SEED`), each vault owned by the one before alone:
 
 | Vault | Kind | Owned by |
@@ -177,7 +177,7 @@ The first person to found a human vault through it claims it in the same ceremon
 So the server acts for the CEO Aven on its own, and every edit it makes traces back through avenCEO GmbH and Maia
 Holding GmbH to the person's passkey. The claim:
 
-1. The device takes the server's card (`Lab::card`). If it names no avenCEO, nobody has claimed the server, and the
+1. The device takes the server's card (`Lab::card`). If it names no CEO Aven, nobody has claimed the server, and the
    device asks it for its key to seal to (`Lab::claim_key`).
 2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, the
    seed's three geneses, and the edit that adds the server as the CEO Aven's device, sealed to that key
@@ -327,11 +327,11 @@ follow it by name (section 12, interest and follow).
 
 ### Servers: Relay or Backup
 
-A vault gives avenCEO, the server's vault, a wide Backup share at founding, so the server keeps the ciphertext of all
-its entries and opens none. With backups off it gives Relay instead: the server learns the vault's devices from its
-log, to let them through its relay, and keeps nothing of its entries (T26). The person switches between the two with
-the `back_up` op, for their vault and the vaults it acts for at once (`world::server_level`). A vault that a person's
-vault founds gives avenCEO the same level as the person's vault has.
+A vault gives the CEO Aven, the server's vault, a wide Backup share at founding, so the server keeps the ciphertext of
+all its entries and opens none. With backups off it gives Relay instead: the server learns the vault's devices from its
+log, to let them through its relay, and keeps nothing of its entries (T26). The person switches between the two with the
+`back_up` op, for their vault and the vaults it acts for at once (`world::server_level`). A vault that a person's vault
+founds gives the CEO Aven the same level as the person's vault has.
 
 ### Keep shares
 
@@ -499,9 +499,18 @@ the start cuts the whole proposal (`spec/AvenDB/Proposals.lean`).
 | Merge | A write on the target that builds on both lines' heads: the union of both histories (T10g), reading as the three-way merge of both lines from their base (T10h) |
 | Restore | A new write that puts back an older version |
 | Undo | A new write that takes out one older write, by a three-way merge of records |
-| Variant | A new entry with what a line reads now and its tags, and none of its history |
+| Variant | A new entry with what a line reads now and its tags, linked to that version of the original |
 
 A write on one line changes no other line (T10f). Nothing is ever overwritten: restore and undo are writes too.
+
+**Variants keep their link.** A write carries only its own signer's changes to an entry's Loro document, so a variant
+can't copy the original's history into itself: those edits stay signed by whoever made them, in the original. It
+links to it instead. Its first write puts a mark in its own tags, `avendb:variant:<entry>@<edit>,<edit>`: the
+original entry and the heads of the version it copied, by hash (`world::variant_mark`). A variant of a variant names
+its own original and drops the older mark. The world gives each note's `variantOf` and `variantAt`, and the page walks
+the original's edits back from those heads, so the variant's history goes on into the original's, up to that version.
+The original lists its variants, each with the version it was made from. Anyone who reads the variant but not the
+original sees that it came from a note they can't read, and nothing of it.
 
 **Merge, as git merges.** A merge works as a pull request merges a branch, and loses nothing
 (`crates/avendb/src/merge.rs`, `Doc.lean`'s `mergeInto`). Its base is what both lines' histories hold in common. A
@@ -594,11 +603,11 @@ group, what it reaches (`"everything"`, or its `where` where the device reads th
 knows, with its kind, owners, devices, threshold and root, and as which vault the person acts in it (`acting`); every
 share in force, with its group, whether it is on the whole vault, whether its grantee reads (`reads`) and receives
 (`gets`) what it reaches, and who may revoke it; every audience with the devices that sync it; every entry with its
-type, tags, readers, writers and sharers, and the files its writes bring, each with how many pieces it is in and
-where it is synced to (`syncedTo`, as for the entry); whether the person's vault owns avenCEO
-(`ownsAven`) and whether avenCEO backs it up (`backsUp`). Its JSON keeps older key names: the shares are `caps`, the
-audiences `cells`, a share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and
-an audience's epoch `generation`.
+type, tags, readers, writers and sharers, and the files its writes bring, each with how many pieces it is in and where
+it is synced to (`syncedTo`, as for the entry); whether the person's vault owns the CEO Aven (`ownsAven`) and whether
+the CEO Aven backs it up (`backsUp`). Its JSON keeps older key names: the shares are `caps`, the audiences `cells`, a
+share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and an audience's epoch
+`generation`.
 
 ### Changes
 
@@ -616,9 +625,9 @@ schema or a lens is created as an entry of its type (section 9).
 | `keep {over, mode, what, device, as}` | A keep share to one of the acting vault's devices, this one unless named; `mode` is `"whole"`, `"opened"` or `"never"`. `{"share"}` | Never |
 | `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
-| `found {vaults: [{kind, name}]}` or `{kind, name}` | New aven or coop vaults the person's vault founds and owns, in one ceremony; then avenCEO's share and a profile on each. `{"vaults"}` | Always |
+| `found {vaults: [{kind, name}]}` or `{kind, name}` | New aven or coop vaults the person's vault founds and owns, in one ceremony; then the CEO Aven's share and a profile on each. `{"vaults"}` | Always |
 | `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}` | Never |
-| `back_up {on}` | avenCEO's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
+| `back_up {on}` | The CEO Aven's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
 | `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
 | `card {name}`, `profile {vault, name}` | The device's card in its person's vault; a vault's profile. `{"wrote"}` | Never |
 | `follow {vault, on}` | The vaults the device follows (section 12), kept in its shelf's meta. `{"follow"}` | Never |
@@ -829,11 +838,11 @@ on the same stream. Every value has exactly one encoding, fuzzed and checked aga
 |---|---|---|
 | 0 | Request: haves per log, loose edits, wanted keys, the vaults it follows | A page of edits and the keys they name |
 | 1 | Announce: the sender's holdings | Nothing |
-| 2 | Card: the server's contact card | avenCEO's vault logs |
+| 2 | Card: the server's contact card | The CEO Aven's vault logs |
 | 3 | Link: a passkey's pass for this connection's device | The link card |
 | 4 | Join: the edit that adds the new device | Nothing, once taken |
 | 5 | Claim key | The unclaimed server's key to seal to |
-| 6 | Claim: the edit that adds the server to avenCEO | It, signed by the server too |
+| 6 | Claim: the edit that adds the server to the CEO Aven | It, signed by the server too |
 | 7 | Ask logs: a request for some logs alone | A page of edits of those logs |
 
 ### Frontiers per log
@@ -911,9 +920,13 @@ The model defines these in `Logs.lean` (`Holdings`, `Node.record`, `Node.syncedT
 ### The relay and linking
 
 The server runs iroh's relay beside its node (`crates/avendb-server`). It lets in only the devices the server knows:
-those of the vaults it relays or backs up, of avenCEO's owners, and itself. A device it doesn't know yet comes in by
-its passkey's pass for ten minutes. While sign-up is open, or the server is unclaimed, any passkey's pass does. It
+those of the vaults it relays or backs up, of the CEO Aven's owners, and itself. A device it doesn't know yet comes in
+by its passkey's pass for ten minutes. While sign-up is open, or the server is unclaimed, any passkey's pass does. It
 forwards only encrypted QUIC.
+
+A page has no socket of its own: it reaches nobody until its relay has let it in, and a dial it sends sooner is lost
+and sent again ever later. So a node without a socket waits for its relay first, up to 20 s, as its `relay` step, then
+dials (`Node::on_relay`). A node with a socket of its own dials at once.
 
 A new device links by its passkey alone:
 

@@ -85,7 +85,8 @@
  *   created: number | null, cell: string, public: boolean, roles: Record<string, Role>,
  *   readers: string[], writers: string[], sharers: string[], syncedTo: Holder[],
  *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'sealed', title: string | null, text: string | null,
- *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, deleted: boolean, edits: number,
+ *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, variantAt: string[] | null,
+ *   deleted: boolean, edits: number,
  *   proposals: number, media: string | null, files: import('./files.js').FileView[] }} EntryView
  */
 /**

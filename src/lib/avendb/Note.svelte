@@ -1,25 +1,27 @@
 <!--
 	One note as a docs app shows a document, the whole screen: at the top its title, its vault, its tags, its edits, the
-	line being edited, who it is shared with and Share (this note alone, or a rule its tags match); on the left its
-	main line and its proposals, each a line of its own to switch to, and its variants, the notes made from it; in the
-	middle the note on the line picked, as a page, to edit there, and what a proposal changes since it started, to merge
-	it into main, as a pull request merges, or bring main's changes in: a merge keeps every change of both lines, and
-	where both changed the same words, main keeps its own unless the person takes the proposal's there; every edit of
-	both stays in the history. On the right its history, every edit of that line, newest first,
-	each with what it changed, word by word, who made it, and the version it made, to view, restore, undo or propose
-	from. A variant is a new note with what a line reads now, and none of its history. Delete marks the note deleted, so
-	Notes lists it apart, and its page offers to bring it back; every edit of it stays. All of it acts for the acting
-	vault, whose caps the device checks as any peer does: a note it only reads, it reads, every version of it; and a
-	button offers what the ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a
-	vault that may only suggest changes proposes them, for one whose cap allows it to merge. An edit no rule allows,
-	no reader counts, nor anything built on it: the note says how many there are, and shows none of them.
+	line being edited, who it is shared with and Share (this note alone, or a rule its tags match); on the left its main
+	line and its proposals, each a line of its own to switch to, and its variants, the notes made from it; in the middle
+	the note on the line picked, as a page, to edit there, and what a proposal changes since it started, to merge it
+	into main, as a pull request merges, or bring main's changes in: a merge keeps every change of both lines, and where
+	both changed the same words, main keeps its own unless the person takes the proposal's there; every edit of both
+	stays in the history. On the right its history, every edit of that line, newest first, each with what it changed,
+	word by word, who made it, and the version it made, to view, restore, undo or propose from. A variant is a new note
+	with what a line reads now, whose first edit names that note and that version by the hashes of its edits (avendb's
+	`variant_mark`): its history goes on into the original's edits up to that version, for whoever reads both, and the
+	original lists its variants by the version each came from. Delete marks the note deleted, so Notes lists it apart,
+	and its page offers to bring it back; every edit of it stays. All of it acts for the acting vault, whose caps the
+	device checks as any peer does: a note it only reads, it reads, every version of it; and a button offers what the
+	ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a vault that may only
+	suggest changes proposes them, for one whose cap allows it to merge. An edit no rule allows, no reader counts, nor
+	anything built on it: the note says how many there are, and shows none of them.
 -->
 <script>
 	import { untrack } from 'svelte';
 	import { diff } from './diff.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { allowed, blockText, deleting, may, variantMark } from './ops.js';
+	import { allowed, blockText, deleting, may } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import { actingWords, chainSteps, count, hue, nameOf, sharedWith, sharedWords, sharerWords, short } from './vaults.js';
@@ -89,6 +91,31 @@
 		};
 	});
 
+	/** the note this one is a variant of, as its page reads it, where this browser reads it */
+	let original = $state(/** @type {NoteData | null} */ (null));
+
+	// and the original's history, which this one's goes on into
+	$effect(() => {
+		void world;
+		const from = item?.variantOf;
+		if (!from || !world.entries.some((e) => e.entry === from)) {
+			original = null;
+			return;
+		}
+		let gone = false;
+		api.note(from).then(
+			(/** @type {NoteData | undefined} */ n) => {
+				if (!gone) original = n ?? null;
+			},
+			() => {
+				if (!gone) original = null;
+			}
+		);
+		return () => {
+			gone = true;
+		};
+	});
+
 	const key = (/** @type {string | null} */ l) => l ?? '';
 	const lines = $derived(note?.lines ?? []);
 	const here = $derived(lines.find((l) => l.line === line) ?? lines[0]);
@@ -120,6 +147,29 @@
 	const notes = $derived(new Map(world.entries.filter((e) => e.type === 'note').map((e) => [e.entry, e])));
 	const origin = $derived(item?.variantOf ? notes.get(item.variantOf) : undefined);
 	const variants = $derived([...notes.values()].filter((n) => n.variantOf === entry));
+	/**
+	 * The original's edits this note's history goes on into, newest first: those of the version it was made from and
+	 * every edit they build on, numbered as the original numbers them.
+	 */
+	const inherited = $derived.by(() => {
+		const edits = (original?.edits ?? []).filter((e) => e.counted !== false);
+		const byEdit = new Map(edits.map((e, i) => [e.id, { ...e, n: i + 1 }]));
+		const held = new Set();
+		const todo = [...(item?.variantAt ?? [])];
+		while (todo.length) {
+			const id = /** @type {string} */ (todo.pop());
+			const e = byEdit.get(id);
+			if (!e || held.has(id)) continue;
+			held.add(id);
+			todo.push(...e.deps);
+		}
+		return [...byEdit.values()].filter((e) => held.has(e.id)).reverse();
+	});
+	/** The version of this note variant `v` was made from, in words: its number, as the history numbers it. */
+	const madeAt = (/** @type {import('./vaults.js').EntryView} */ v) => {
+		const n = (v.variantAt ?? []).map((id) => numbered.find((e) => e.id === id)?.n).filter((n) => n !== undefined);
+		return n.length ? `from version #${Math.max(.../** @type {number[]} */ (n))}` : '';
+	};
 	const unsaved = $derived(!!here && writes && !seen && (drafts[k] ?? '') !== (here.text ?? ''));
 	/** who the note is shared with: its vault first, then the strongest */
 	const shared = $derived(item ? sharedWith(world, item.vault, entry) : { who: [], gone: 0 });
@@ -222,6 +272,22 @@
 				const renamed = e.text === e.before && before && e.title !== null && before.title !== null && e.title !== before.title;
 				return renamed ? `Renamed it “${e.title}”${elsewhere}` : `Edited${elsewhere}`;
 			}
+		}
+	}
+
+	/** What edit `e` of the original did, in words, its lines named as the original names them. @param {Numbered} e */
+	function theirs(e) {
+		const name = (/** @type {string | null} */ l) =>
+			`“${lineName(original?.lines.find((x) => x.line === l) ?? { line: l, name: null })}”`;
+		switch (e.kind) {
+			case 'propose':
+				return `Proposed “${e.name ?? '…'}”`;
+			case 'merge':
+				return e.line === null ? `Merged ${name(e.from?.line ?? null)} into main` : `Updated ${name(e.line)} from main`;
+			case 'sealed':
+				return 'An edit this browser can’t open';
+			default:
+				return e.deps.length ? `Edited${e.line === null ? '' : ` on ${name(e.line)}`}` : 'Wrote the note';
 		}
 	}
 
@@ -333,16 +399,12 @@
 		if (await api.run('Undoing', { op: 'undo', as: actor, entry, line: here.line, edit: id })) viewing = '';
 	}
 
-	/** The op that makes a variant of the line shown in vault `target`. @param {string} target */
-	function varying(target) {
-		// the copy names the note it came from, in place of the note this one came from, if any, in its first write
-		const from = item?.variantOf;
-		const mark = [
-			...(from ? [{ op: 'remove', path: ['tags'], value: variantMark(from) }] : []),
-			{ op: 'insert', path: ['tags'], value: variantMark(entry) }
-		];
-		return { op: 'variant', entry, line: here?.line ?? null, into: target, ops: mark };
-	}
+	/**
+	 * The op that makes a variant of the line shown in vault `target`: the device marks the copy, in its first write,
+	 * with this note and the version it copies.
+	 * @param {string} target
+	 */
+	const varying = (target) => ({ op: 'variant', entry, line: here?.line ?? null, into: target });
 
 	async function variant() {
 		const target = targets.some((v) => v.id === into) ? into : targets[0]?.id;
@@ -564,7 +626,8 @@
 					{/if}
 					{#each variants as v (v.entry)}
 						<a class="variant" href="#notes/{v.entry}">
-							<Icon name="variant" size={13} /> <span><b>“{v.title}”</b> <small>in {vaultName(v.vault)}</small></span>
+							<Icon name="variant" size={13} />
+							<span><b>“{v.title}”</b> <small>in {vaultName(v.vault)} {madeAt(v)}</small></span>
 						</a>
 					{/each}
 					{#if targets.length}
@@ -578,7 +641,7 @@
 						</button>
 						<p class="hint soft">
 							A new note{targets.length === 1 ? ` in ${nameOf(targets[0])}` : ''}, with its tags, of what {at(here.line)} reads
-							now, and none of its history.
+							now. Its history goes on into this note's, up to this version.
 						</p>
 						{#if made}
 							<p class="made">Made a variant. <a href="#notes/{made}">Open it</a></p>
@@ -761,6 +824,33 @@
 						</li>
 					{/each}
 				</ol>
+				{#if item?.variantOf}
+					<section class="origin" aria-label="The history it goes on into">
+						{#if origin}
+							<p class="from">
+								<Icon name="variant" size={13} />
+								<span>
+									Made from <a href="#notes/{origin.entry}">“{origin.title}”</a>{inherited.length
+										? ` at version #${inherited[0].n}`
+										: ''}: its history goes on there
+								</span>
+							</p>
+							<ol>
+								{#each inherited as e (e.id)}
+									<li class={e.kind}>
+										<span class="what"><b>{theirs(e)}</b> <span class="n mono">#{e.n}</span></span>
+										<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
+										{#if (e.kind === 'edit' || e.kind === 'merge') && e.text !== null && (e.before ?? '') !== e.text}
+											<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
+										{/if}
+									</li>
+								{/each}
+							</ol>
+						{:else}
+							<p class="hint soft">Made from a note {nameOf(as)} doesn’t read: its history goes on there.</p>
+						{/if}
+					</section>
+				{/if}
 			</aside>
 		</div>
 	{/if}
@@ -1244,6 +1334,30 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	/* the original's history, below the variant's own, which goes on into it */
+	.origin {
+		margin-top: 0.9rem;
+		padding-top: 0.7rem;
+		border-top: 1px dashed rgb(0 0 0 / 0.18);
+	}
+
+	.origin .from {
+		display: flex;
+		gap: 0.4rem;
+		align-items: baseline;
+		margin: 0 0 0.6rem;
+		font-size: 0.8rem;
+	}
+
+	.origin li {
+		opacity: 0.8;
+	}
+
+	.origin .what {
+		display: block;
+		font-size: 0.82rem;
 	}
 
 	.history li {

@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 
 use crate::doc::Item;
-use crate::id::{AudienceId, BlobId, EntryId, ShareId, SignerId, VaultId};
+use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
 use crate::lens::{DocV2, Lens, Schema, Status};
@@ -47,8 +47,16 @@ pub const FILE: &str = "file";
 pub const MEDIA: &str = "avendb:media:";
 
 /// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
-/// one line of another shows (the ops engine's `variant`), marked with that note's entry in hex.
+/// one line of another shows (the ops engine's `variant`), marked with that note's entry and the version it copied, the
+/// hashes of that version's edits, in hex (`variant_mark`). So a variant's history goes on into its original's, up to
+/// that version, for whoever reads both; the original's edits stay its own, signed by whoever made them.
 pub const VARIANT: &str = "avendb:variant:";
+
+/// The mark of a variant of entry `entry` made from its version `at`: `avendb:variant:<entry>@<edit>,<edit>`.
+pub fn variant_mark(entry: EntryId, at: &[EditId]) -> String {
+    let at: Vec<String> = at.iter().map(|e| hex(&e.0)).collect();
+    format!("{VARIANT}{}@{}", hex(&entry.0), at.join(","))
+}
 
 /// The mark a deleted note carries among its document's own tags, inside its record: the page lists it apart, under
 /// Deleted, and taking the mark out brings it back. Its edits stay in the vault's history, as every edit does.
@@ -189,9 +197,16 @@ pub struct EntryView {
 /// What an entry holds, as a device reads it.
 pub enum What {
     /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
-    /// it is a variant of, if it is one (`VARIANT`); whether it is deleted (`DELETED`); how many edits of it the device
-    /// counts, and how many proposals it has.
-    Note { title: String, text: String, variant_of: Option<EntryId>, deleted: bool, edits: usize, proposals: usize },
+    /// it is a variant of and the version of it it copied, if it is one (`VARIANT`); whether it is deleted (`DELETED`);
+    /// how many edits of it the device counts, and how many proposals it has.
+    Note {
+        title: String,
+        text: String,
+        variant_of: Option<(EntryId, Vec<EditId>)>,
+        deleted: bool,
+        edits: usize,
+        proposals: usize,
+    },
     Todo { title: String, status: Status },
     /// A file (`FILE`): its name, its media type (`MEDIA`), and whether it is deleted (`DELETED`).
     File { title: String, media: String, deleted: bool },
@@ -308,11 +323,12 @@ impl World {
             };
             let (variant_of, deleted, edits, proposals, media) = match &i.what {
                 What::Note { variant_of, deleted, edits, proposals, .. } => {
-                    (variant_of.map(|e| hex(&e.0)), *deleted, *edits, *proposals, None)
+                    (variant_of.as_ref(), *deleted, *edits, *proposals, None)
                 }
                 What::File { deleted, media, .. } => (None, *deleted, 0, 0, Some(media)),
                 _ => (None, false, 0, 0, None),
             };
+            let variant_at = variant_of.map(|(_, at)| at.iter().map(|e| hex(&e.0)).collect::<Vec<_>>());
             let levels: Map<String, Value> =
                 i.levels.iter().map(|(v, r)| (hex(&v.0), Value::from(level_name(*r)))).collect();
             let with = |need: Level| i.levels.iter().filter(|(_, r)| r.allows(need)).map(|(v, _)| v.0).collect();
@@ -337,7 +353,8 @@ impl World {
                 "title": title,
                 "text": text,
                 "status": status,
-                "variantOf": variant_of,
+                "variantOf": variant_of.map(|(e, _)| hex(&e.0)),
+                "variantAt": variant_at,
                 "deleted": deleted,
                 "edits": edits,
                 "proposals": proposals,
@@ -522,10 +539,12 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
     }
 }
 
-/// The note a document is a variant of, by its mark (`VARIANT`), if it is one.
-fn variant_of(doc: &DocV2) -> Option<EntryId> {
-    let of = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT)).and_then(BlobId::from_hex);
-    of.map(|b| EntryId(b.0))
+/// The note a document is a variant of and the version of it it copied, by its mark (`variant_mark`), if it is one.
+fn variant_of(doc: &DocV2) -> Option<(EntryId, Vec<EditId>)> {
+    let mark = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT))?;
+    let (entry, at) = mark.split_once('@')?;
+    let at: Option<Vec<EditId>> = at.split(',').filter(|e| !e.is_empty()).map(EditId::from_hex).collect();
+    Some((EntryId::from_hex(entry)?, at?))
 }
 
 /// Share `share` is one of the shares of audience `x`.
