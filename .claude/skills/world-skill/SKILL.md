@@ -65,8 +65,9 @@ for the studio's film camera. A world chooses only its size (how far shadows and
   people and animals (`actor-skill`), plants (`plant-skill`), the floor (`biome-skill`), buildings
   (`building-skill`), factories (`factory-skill`'s "Our library").
 - It names each by its ref at the version it was built with (`plants/apple@1`, `machines/powercube@3`,
-  `buildings/dome-grand@2`) and builds it through `assetAt` (`$lib/assets`), or imports a frozen builder by name; a
-  plan file lists what stands where by ref, so the world's `anchors` line can be read off it.
+  `things/bell-tent@2`) and builds it with `objectAt` (`$lib/assets`; a recipe such as a biome, or a dome's interior,
+  through `assetAt`), or imports a frozen builder by name; a plan file lists what stands where by ref, so the world's
+  `anchors` line can be read off it.
 - A world never draws its own copy of a library asset; what it needs that no library has is built in the library
   first.
 

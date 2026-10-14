@@ -54,7 +54,7 @@ to the asset, never the asset to the studio.
 - `stage.js`: AirSup's Lab studio and post (softbox environment, key shadow, contact shadow, a floor fading into the
   paper, GTAO, bloom, neutral tone mapping, grade) and its modes: Explode, Cut away, X-ray, Labels, Slow and the
   break.
-- `index.js`: every group behind one name, `GROUPS`, `parseRef`, `refOf`, `assetAt` (below).
+- `index.js`: every group behind one name, `GROUPS`, `parseRef`, `refOf`, `assetAt`, `objectAt` (below).
 
 ### One contract: an asset in its parts
 
@@ -73,12 +73,16 @@ to the asset, never the asset to the studio.
 
 1. **By ref, anchored.** Any asset at any version has one name: `group/id@v`, with a variant after a colon
    (`machines/powercube@3`, `plants/apple@1`, `machines/powercube@1:powercube-electric`, `things/pickup` for the
-   latest). `await assetAt(ref)` gives back its version and its builder, the one the explorer shows. A world, a
-   building, a factory or a film names what it puts in by ref and so stays anchored to it as it was.
+   latest). `await assetAt(ref)` gives back its version and its builder, the one the explorer shows; `await
+   objectAt(ref, …args)` builds it as one object with its ref on it (`userData.ref`). A world, a building, a factory
+   or a film names what it puts in by ref and so stays anchored to it as it was.
 2. **Carried, whole.** Inside a host built with the kit, `carry(guest, { at, rot, prefix, assembly, step, explode,
-   unit })` hangs a sealed asset where it is put; its parts (ids under the prefix), labels, x-ray shells and solver
-   join the host's, so the host's catalog, explode, x-ray and cutaway reach into it (a Power Cube in a pickup's bed,
-   a pallet on a forklift's forks, a machine in a building). With `explode` it first moves out as one unit.
+   ref, card })` hangs an asset where it is put. A sealed guest's parts (ids under the prefix), labels, x-ray shells
+   and solver join the host's, so the host's catalog, explode, x-ray and cutaway reach into it (a Power Cube in a
+   pickup's bed, a pallet on a forklift's forks, a machine in a building); with `explode` it first moves out as one
+   unit. Any other object (an older thing, a rigged kind, a plant) comes whole, as one part with its `card`. Every
+   part that came with a guest names it by its ref on its card (the turntable shows "Part of machines/powercube@3"),
+   and a part keeps the ref it came with when its host is carried in turn. `src/lib/assets/compose.test.js` holds it.
 3. **A piece, shared.** A part smaller than an asset (a wheel, a door, a ClickLock, a hydraulic ram) is a builder
    function in one file that every asset needing it imports, each with its own measures. The older rigged machines
    do this by functions that add their parts to another rig (`powerCubeParts`, `forkliftParts`, `clickLockPieces`).

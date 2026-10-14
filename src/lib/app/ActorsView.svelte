@@ -495,6 +495,8 @@
 				<p>{card.what}</p>
 				{#if card.moves}<p><span class="tag">Moves</span> {card.moves}</p>{/if}
 				{#if card.drive}<p><span class="tag">Driven by</span> {card.drive}</p>{/if}
+				<!-- a part carried in with another asset names it at its version ($lib/assets) -->
+				{#if card.ref}<p><span class="tag">Part of</span> {card.ref}</p>{/if}
 				{#if card.specs?.length}
 					<dl>
 						{#each card.specs as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
