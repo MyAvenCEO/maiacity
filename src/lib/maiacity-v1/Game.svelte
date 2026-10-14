@@ -36,7 +36,7 @@
 	let panel = $state(typeof matchMedia !== 'undefined' && matchMedia('(max-width: 720px), (max-height: 500px)').matches ? null : 'you');
 	let tools = $state(false); // the phone's tools, behind the action button
 	let walking = $state(false); // walking (or driving the pickup) freely through the world, any time no film plays
-	let roamNow = $state({ near: false, driving: false }); // by the pickup, or at its wheel
+	let roamNow = $state({ on: false, near: false, driving: false }); // walking, by the pickup, or at its wheel
 	let amount = $state(12);
 	let swapToken = $state('MAIA');
 	let swapTo = $state('TRIBE');
@@ -165,6 +165,12 @@
 	// a moment of the story ends the free walk (the world ends it itself as it plays one)
 	$effect(() => {
 		if (playing && walking) walking = false;
+	});
+	// one mode (Samuel 2026-10-14: no walk button): once the story is told, the player walks the world whenever no film
+	// plays; in the story an arrow key walks them on too (the world says when they walk, onRoam)
+	$effect(() => {
+		const free = canMove && !tour; // read first: the world comes after the first run
+		if (view) world?.freeWalk(free);
 	});
 	let fadeIn = $state(true);
 	let ended = $state(false); // the end faded out: the world fades back in under the player's own page
@@ -298,7 +304,7 @@
 			onLabels: (l) => (labels = l),
 			onCaption: (c) => (caption = c),
 			onGround: (at) => onGround(at),
-			onRoam: (r) => (roamNow = r)
+			onRoam: (r) => ((roamNow = r), (walking = r.on))
 		});
 		refresh().then(async () => {
 			// claim a seat (or keep mine) and bring its name up to the profile's: the Mac app reads the game with its app key,
@@ -522,7 +528,6 @@
 			<!-- walking freely, any time no film plays (Samuel 2026-10-14): tap the ground to walk there; by the pickup, get
 			     in and drive it anywhere -->
 			<div class="walkbar">
-				<button class="walkbtn" class:on={walking} onclick={() => (walking = !!world?.walk(!walking))}>{walking ? 'Stop walking' : 'Walk'}</button>
 				{#if walking && (roamNow.near || roamNow.driving)}<button class="walkbtn" onclick={() => world?.board(!roamNow.driving)}>{roamNow.driving ? 'Get out' : 'Get in the pickup'}</button>{/if}
 			</div>
 			{#if walking}<p class="walkhint">Tap the ground to {roamNow.driving ? 'drive' : 'walk'} there, or use the arrow keys</p>{/if}
@@ -1180,10 +1185,6 @@
 		font-weight: 600;
 		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 		cursor: pointer;
-	}
-	.walkbtn.on {
-		background: #24452f;
-		color: #f4f1e8;
 	}
 	.walkhint {
 		position: absolute;

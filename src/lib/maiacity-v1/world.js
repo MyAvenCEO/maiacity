@@ -2661,11 +2661,20 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** walking freely, once the story is told (Samuel 2026-10-14): the camera behind the player, following them; a tap
 	 *  on the ground walks them there, the arrow keys (or WASD) walk them on, a drag still turns the view round them */
 	let roam = false, roamTo = [];
+	/** one mode (Samuel 2026-10-14: no walk button): once the story is told the player walks the world whenever no
+	 *  film plays (freeWalk) */
+	let wantRoam = false;
+	function freeWalk(on) {
+		wantRoam = !!on;
+		if (!on && roam) walk(false);
+	}
 	const keys = new Set();
 	const KEYS = { ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
 	const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '') || e.target?.isContentEditable;
 	const onKey = (e) => {
-		if (!roam || !KEYS[e.code] || typing(e)) return;
+		if (!KEYS[e.code] || typing(e)) return;
+		// one mode (Samuel 2026-10-14: no walk button): an arrow key walks them on whenever no film plays
+		if (!roam && !(e.type === 'keydown' && walk(true))) return;
 		e.preventDefault();
 		if (e.type === 'keydown') (keys.add(e.code), (roamTo = []), (boardNext = false));
 		else keys.delete(e.code);
@@ -2952,8 +2961,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (rc > max) (c.x *= max / rc), (c.z *= max / rc);
 		return home.localToWorld(c);
 	}
+	/** walking freely: three times the story's real pace (Samuel 2026-10-14) */
+	const ROAM = WALK * 3;
 	/** the free walk, a frame of it: on along the keys (ahead is away from the camera) or along the way to where they
-	 *  tapped, at their walking pace, never through the tent's canvas; the camera carried along with them */
+	 *  tapped, at their walking pace (ROAM), never through the tent's canvas; the camera carried along with them */
 	function roaming(step) {
 		const me = people[stage.me];
 		if (!me || me.parent !== world) return;
@@ -2966,7 +2977,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		} else if (roamTo.length) dir = roamTo[0].clone().sub(me.position).setY(0);
 		const left = dir?.length() ?? 0;
 		if (left > 0.05) {
-			const d = Math.min(keys.size ? Infinity : left, WALK * step);
+			const d = Math.min(keys.size ? Infinity : left, ROAM * step);
 			dir.normalize();
 			me.position.copy(walkable(was, me.position.clone().addScaledVector(dir, d)));
 			me.rotation.y = Math.atan2(dir.x, dir.z);
@@ -3079,6 +3090,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const at = ray.ray.intersectPlane(new THREE.Plane(V(0, 1, 0), 0), V(0, 0, 0));
 			if (driving) return void (at && (driveTo = at));
 			if (truck.visible && ray.intersectObject(truck, true).length) return void board(true);
+			// a machine, a thing or a tree tapped shows what it is, as before; the ground, the tent and the buildings are
+			// walked to
+			const thing = ray.intersectObjects(world.children, true).find((h) => h.object.visible && /^(asset|tree):/.test(h.object.name) && !/^asset:(tent|busStop|gasStation|shed)$/.test(h.object.name));
+			if (thing) return void onPick(thing.object.name);
 			boardNext = false;
 			if (at) roamTo = wayTo(people[stage.me], at);
 			return;
@@ -3096,7 +3111,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 
 	let frame = 0;
 	let raf = 0;
-	let roamSeen = { near: false, driving: false };
+	let roamSeen = { on: false, near: false, driving: false };
 	const clock = new THREE.Clock();
 	let lastT = null;
 	function loop() {
@@ -3117,6 +3132,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			g.plant.scale.setScalar(g.from + (1 - g.from) * easeOut(k));
 			if (k >= 1) grows.splice(i, 1);
 		}
+		// once the story is told the player simply walks: back on their feet as soon as no film plays
+		if (wantRoam && !roam && !moment && !riding && stage.at !== 'cruise' && !choosing && !errand) walk(true);
 		if (moment) runMoment(performance.now() / 1000);
 		else if (riding) ride(step);
 		else if (stage.at === 'cruise' && cruising) cruise();
@@ -3159,14 +3176,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}
 			}
 			onLabels(out);
-			const r = { near: byPickup(), driving: driving || !!boarding?.into };
-			if (r.near !== roamSeen.near || r.driving !== roamSeen.driving) ((roamSeen = r), onRoam(r));
+			const r = { on: roam, near: byPickup(), driving: driving || !!boarding?.into };
+			if (r.on !== roamSeen.on || r.near !== roamSeen.near || r.driving !== roamSeen.driving) ((roamSeen = r), onRoam(r));
 		}
 	}
 	loop();
 
 	return {
 		update,
+		freeWalk,
 		reveal,
 		set,
 		focus,
