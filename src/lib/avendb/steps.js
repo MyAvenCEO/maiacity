@@ -27,6 +27,10 @@ export function stepWords(here) {
 		keys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret your passkey unmasks' },
 		restore: { title: 'Replaying your vault', does: 'Every edit checked again and applied in order' },
 		node: { title: `Starting ${here}’s node`, does: 'Its own endpoint, quantum-proof TLS on every connection' },
+		relay: {
+			title: 'Joining avenDB’s relay',
+			does: `The server’s connection server lets ${here} in, so it can reach the server`
+		},
 		server: {
 			title: 'Reaching avenDB’s server',
 			does: 'Through its connection server; its hello proves it is the server'
@@ -60,11 +64,11 @@ export function plan(start, { mac, make = false }) {
 	if (start === 'found')
 		return [
 			...(make ? ['make'] : []),
-			...['unlock', 'keys', 'node', 'server', 'draft', 'sign', 'claim', 'settle'],
+			...['unlock', 'keys', 'node', 'relay', 'server', 'draft', 'sign', 'claim', 'settle'],
 			...own(['save'])
 		];
 	if (start === 'link')
-		return ['unlock', 'keys', 'node', 'server', 'pass', 'vault', 'join', 'sync', ...own(['save'])];
+		return ['unlock', 'keys', 'node', 'relay', 'server', 'pass', 'vault', 'join', 'sync', ...own(['save'])];
 	return ['unlock', 'keys', 'restore', 'node', 'check'];
 }
 
@@ -80,6 +84,9 @@ export function reported(report, t0) {
 	}));
 }
 
+/** The steps that found a vault, which a setup skips when its passkey's vault is on the server already. */
+const FOUNDING = ['draft', 'sign', 'claim', 'settle'];
+
 /**
  * The rows the sheet shows: every step begun, in order, each done but the last while the start goes on, then those
  * of `planned` still to come. A step left open once a later one began ended as that one began. `now` is the page's
@@ -91,7 +98,11 @@ export function reported(report, t0) {
 export function rows(stages, planned, words, { now, ended, failed }) {
 	const begun = [...stages].sort((a, b) => a.start - b.start);
 	const last = Math.max(-1, ...begun.map((s) => planned.indexOf(s.step)));
-	const next = planned.slice(last + 1).filter((step) => !begun.some((s) => s.step === step));
+	// a setup whose passkey has a vault already signs in to it, as a link does, and founds nothing
+	const joins = begun.some((s) => s.step === 'pass');
+	const next = planned
+		.slice(last + 1)
+		.filter((step) => !begun.some((s) => s.step === step) && !(joins && FOUNDING.includes(step)));
 	/** @param {string} step @param {Row['state']} state @param {number} ms @returns {Row} */
 	const row = (step, state, ms) => {
 		const w = words[step];

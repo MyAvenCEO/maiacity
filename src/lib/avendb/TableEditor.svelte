@@ -6,21 +6,20 @@
 	(who it is shared with, the devices it is synced to, the tags shares select it by, which its record's own fields
 	don't hold, its schemas, edits, proposals and who wrote it first, and with the studio's internals shown its key's
 	generation and size); sorted by a column, searched, and each row opened in a drawer, its record field by field, and
-	with the internals shown, its mark to run now (the `mark` op). Beside the tables, its files: every file its entries
-	bring, by its root, with its size and the devices it is synced to, as for every entry, as the device's world says.
+	with the internals shown, its mark to run now (the `mark` op). Files are entries too: the files table is the vault's
+	file entries, shared, synced and searched as every table's rows are, with the file each brings beside its fields (its
+	root, its length, its sealed size and its pieces).
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import Panel from './Panel.svelte';
 	import { cell, families, familyOf, hint, parsed, pgType, tables, typeOf } from './db.js';
 	import { allowed, may } from './ops.js';
-	import { count, list, nameOf, sharerWords, short, size, syncedWords } from './vaults.js';
+	import { count, nameOf, sharerWords, short, size, syncedWords } from './vaults.js';
 
 	/**
 	 * @typedef {import('./db.js').RowView} Row
 	 * @typedef {{ name: string, type: string, hint: string, pk?: boolean, sys?: boolean, get: (r: Row) => unknown }} Column
-	 * @typedef {{ root: string, size: number, len: number | null, entries: string[], pieces: number,
-	 *   syncedTo: import('./vaults.js').Holder[] }} FileRow
 	 */
 
 	/**
@@ -37,46 +36,14 @@
 	let open = $state('');
 
 	const all = $derived(tables(s, within));
-	/** whether the files show, in place of a table */
-	const filing = $derived(picked === 'files');
-	const table = $derived(filing ? undefined : (all.find((t) => t.id === picked) ?? all[0]));
+	const table = $derived(all.find((t) => t.id === picked) ?? all[0]);
 
 	/** Where entry `id` is synced to, in words, as the device's world says: `null` for none. @param {string} id */
 	const synced = (id) => syncedWords(s.known.get(id)?.syncedTo, s.signer);
 
-	/**
-	 * Every file the vault's entries bring (of one cell, or of all of them), once each by its root: its sizes, the
-	 * entries that bring it, and the devices it is synced to, as the device's world says.
-	 */
-	const files = $derived.by(() => {
-		/** @type {Map<string, FileRow>} */
-		const by = new Map();
-		for (const e of s.world.entries) {
-			if (e.vault !== s.here?.id || (within && e.cell !== within)) continue;
-			for (const f of e.files ?? []) {
-				const had = by.get(f.root);
-				if (had) had.entries.push(e.entry);
-				else
-					by.set(f.root, {
-						root: f.root,
-						size: f.size,
-						len: f.len,
-						entries: [e.entry],
-						pieces: f.pieces ?? 1,
-						syncedTo: f.syncedTo ?? []
-					});
-			}
-		}
-		return [...by.values()];
-	});
-	/** The files as shown: searched. */
-	const shownFiles = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		/** @param {FileRow} f */
-		const text = (f) =>
-			[f.root, ...f.entries.map(s.entry), ...f.syncedTo.map((h) => s.signer(h.device))].join(' ').toLowerCase();
-		return files.filter((f) => !q || text(f).includes(q));
-	});
+	/** The file row `r` brings, as the device's world says, if it brings one. @param {Row} r */
+	const fileOf = (r) => s.known.get(r.entry)?.files?.[0];
+
 	const family = $derived(table?.family ? familyOf(families(s.schemas, s.lenses), table.family) : undefined);
 
 	/** The table's columns: its key, its schema's fields, newest version first, then what avenDB keeps of each row. */
@@ -106,6 +73,14 @@
 						seen.add(name);
 						cols.push({ name, type: typeOf(v), hint: 'A field no schema here names', get: (x) => x.record?.[name] });
 					}
+		}
+		if (table.id === 'files') {
+			cols.push(
+				{ name: 'file_root', type: 'bytea', hint: 'The root of the file it brings: the hash its pieces are checked by', get: (r) => short(fileOf(r)?.root ?? '') || null },
+				{ name: 'bytes', type: 'int8', hint: 'The file’s length, where this browser opens it', get: (r) => fileOf(r)?.len ?? null },
+				{ name: 'sealed_bytes', type: 'int8', hint: 'The file’s sealed size', get: (r) => fileOf(r)?.size ?? null },
+				{ name: 'pieces', type: 'int4', hint: 'How many pieces it is sealed in, of up to a GiB each', get: (r) => fileOf(r)?.pieces ?? null }
+			);
 		}
 		/** @type {Column[]} */
 		const kept = [
@@ -213,77 +188,11 @@
 					</button>
 				</li>
 			{/each}
-			<li>
-				<button
-					class="t"
-					class:on={filing}
-					class:none={!files.length}
-					data-table="files"
-					title="Every file its entries bring, and the devices that hold it whole or in pieces"
-					onclick={() => ([picked, open, sort] = ['files', '', { by: '', down: false }])}
-				>
-					<Icon name="file" size={14} />
-					<span class="mono">files</span>
-					<small>{files.length}</small>
-				</button>
-			</li>
 		</ul>
 	</aside>
 
 	<section class="area">
-		{#if filing}
-			<header class="bar">
-				<h3 class="mono">files</h3>
-				<span class="soft hint">
-					Every file its entries bring, sealed in pieces of up to a GiB, and the devices it is synced to, as every
-					entry.
-				</span>
-				<label class="search">
-					<Icon name="search" size={14} />
-					<input class="field" placeholder="Search files" bind:value={query} aria-label="Search files" />
-				</label>
-			</header>
-			<div class="grid" role="region" aria-label="files" tabindex="-1">
-				<table>
-					<thead>
-						<tr>
-							<th class="pk plain" title="Its root: the hash its pieces are checked by">root</th>
-							<th class="plain" title="The entries that bring it">entry</th>
-							<th class="plain" title="Its length, where this browser opens it">bytes</th>
-							<th class="plain" title="Its sealed size">sealed</th>
-							<th class="plain" title="How many pieces it is sealed in">pieces</th>
-							<th
-								class="plain sys"
-								title="The devices that hold it, and how many of its pieces where only some, as this browser last heard"
-							>
-								synced_to
-							</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each shownFiles as f (f.root)}
-							<tr>
-								<td class="pk mono" title={f.root}>{short(f.root)}</td>
-								<td class="text">{list(f.entries.map(s.entry))}</td>
-								<td class={f.len === null ? 'null' : 'num'}>
-									{f.len === null ? 'SEALED' : size(f.len)}
-								</td>
-								<td class="num">{size(f.size)}</td>
-								<td class="num">{f.pieces}</td>
-								<td class={f.syncedTo.length ? 'sys' : 'null'}>{syncedWords(f.syncedTo, s.signer) ?? 'NULL'}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-				{#if !shownFiles.length}
-					<p class="nothing">{query ? 'No file matches.' : 'No files.'}</p>
-				{/if}
-			</div>
-			<footer class="foot">
-				<span>{count(shownFiles.length, 'file')}{query ? ` of ${files.length}` : ''}</span>
-				<span class="soft">{within ? `Shared with ${s.sharedIn(within)}` : 'Every entry'} · {nameOf(s.here)}</span>
-			</footer>
-		{:else if table}
+		{#if table}
 			<header class="bar">
 				<h3 class="mono">{table.label}</h3>
 				{#if family}<span class="chip accent" title="The schema family its rows are written under">{family.name}</span>{/if}
@@ -588,11 +497,6 @@
 		padding: 0;
 		background: #f6f5f1;
 		font-weight: 500;
-	}
-
-	th.plain {
-		padding: 0 0.6rem;
-		font-weight: 600;
 	}
 
 	th button {

@@ -56,11 +56,6 @@
 			a: 'Online or not. Edits made at the same time on two devices merge the same way everywhere, and no server orders or approves them.'
 		},
 		{
-			short: 'Recovery',
-			q: 'Losing every passkey is not the end.',
-			a: 'The master recovery key, kept offline, is an owner of every human vault from its founding, so a new passkey can still be added. It shows among your owners, and you can remove it like any owner.'
-		},
-		{
 			short: 'Strangers',
 			q: 'Connecting tells a stranger nothing.',
 			a: 'A device that acts for no vault and follows none is sent nothing at all. Even what you share with Everyone goes only to devices with a reason to ask for it.'
@@ -120,10 +115,6 @@
 		[
 			'You lose every device',
 			'Sign in on a new one with your passkey. The server hands it your vault’s log, the new device adds itself, and your entries come back from the encrypted backup. With backups off the server kept nothing, so what only your devices held is gone with them.'
-		],
-		[
-			'You lose every passkey',
-			'The master recovery key, an owner of your vault, adds a new passkey.'
 		],
 		[
 			'The server’s disk dies',
@@ -187,9 +178,11 @@
 
 	const lines = [
 		['Propose from here', 'Starts a proposal from the version you are looking at, main or an older one.'],
-		['Accept into main', 'A merge write on main that builds on both lines: Loro combines them, nothing is lost.'],
-		['Make main match it', 'Accepts the proposal and makes main read exactly like it.'],
-		['Update from main', 'Brings what main gained since into the proposal.'],
+		[
+			'Merge into main',
+			'As a pull request merges: what only the proposal changed lands, and nothing main changed is lost. Where both changed the same place, you pick which value main keeps.'
+		],
+		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
 		['Undo', 'Takes out one older edit by a three-way merge, keeping every change made after it.'],
 		['Make a variant', 'A new note with the line’s content and tags, and none of its history.']
@@ -204,7 +197,7 @@
 	const groups = [
 		['Owner', 'Owner', 'Everything, and share on', 'Co-owners, on the whole vault; anyone, on a slice'],
 		['Editor', 'Write', 'Read, create, set, tag, propose, merge', 'Someone who works on the entries'],
-		['Suggester', 'Write', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor accepts'],
+		['Suggester', 'Write', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor merges'],
 		['Viewer', 'Read', 'Read', 'A reader'],
 		['Public', 'Read', 'Read, for Everyone', 'Anything published: its key goes out in the clear'],
 		['Backup', 'Backup', 'Keep the ciphertext, read nothing', 'The server, by default'],
@@ -563,9 +556,7 @@
 			A vault has two settings: how many owners must approve a change, and its root passkey, which approves anything on
 			its own. Adding or removing an owner or a device takes the vault’s approval and the newcomer’s consent; devices
 			approve nothing. A new device joins with your passkey alone, through a QR code on a device you have or by signing
-			in through the server. The master recovery key, a software passkey kept offline, is among the owners of every new
-			human vault, so a vault whose passkeys are all lost can still add a new one; it is removed like any owner. The
-			first human vault founded through a new server owns avenCEO, and so the server.
+			in through the server. The first human vault founded through a new server owns avenCEO, and so the server.
 		</p>
 	</section>
 
@@ -675,8 +666,8 @@
 					<circle class="dot-v" cx="880" cy="160" r="9" />
 					<text class="s" x="112" y="104">Propose from here</text>
 					<text class="s" x="330" y="196">a proposal: its own line, from any version</text>
-					<text class="s" x="652" y="104">Accept into main:</text>
-					<text class="s" x="652" y="122">a merge write</text>
+					<text class="s" x="652" y="104">Merge into main:</text>
+					<text class="s" x="652" y="122">nothing is lost</text>
 					<text class="s" x="600" y="40">Restore and Undo are new writes too</text>
 					<text class="s" x="760" y="196">a variant: a new note,</text>
 					<text class="s" x="760" y="214">with none of this history</text>
@@ -750,9 +741,9 @@
 		</p>
 		<h3>Owners and devices</h3>
 		<p class="prose-col">
-			An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only a human vault’s passkeys,
-			and the master recovery key, own it. An Owner share on a slice, one todo or one tag, is something else: its holder
-			may share that slice on. A device “acts for” its vault: it writes as the vault and approves nothing.
+			An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only a human vault’s passkeys own
+			it. An Owner share on a slice, one todo or one tag, is something else: its holder may share that slice on. A device
+			“acts for” its vault: it writes as the vault and approves nothing.
 		</p>
 		<h3>Keep shares: what each of your devices syncs</h3>
 		<p class="prose-col">

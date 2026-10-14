@@ -623,6 +623,25 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
 /// avenCEO GmbH, two coops, and the CEO Aven, the aven vault the server becomes a device of.
 pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::Aven];
 
+/// The names of the seed's vaults, in `SEED`'s order, which their profiles read from the start
+/// (`avendb_browser::Device::found`); the page names a seed that has none yet the same (vaults.js's `SEED`).
+pub const SEED_NAMES: [&str; 3] = ["Maia Holding GmbH", "avenCEO GmbH", "CEO Aven"];
+
+/// The seed device `me`'s person's claim of the server founded, by its view, in `SEED`'s order: Maia Holding GmbH,
+/// avenCEO GmbH and the CEO Aven (`seeded`). None if it founded none.
+pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
+    let Some(mine) = lab.vault_of(me) else { return vec![] };
+    let st = lab.state(me);
+    let avens = st.vaults().iter().filter(|v| v.kind == Kind::Aven && !v.devices.is_empty());
+    let Some(aven) = avens.map(|v| v.id).find(|&aven| seeded(st, mine, aven)) else { return vec![] };
+    let mut chain = vec![aven];
+    while chain.len() < SEED.len() {
+        let Some([Principal::Vault(owner)]) = st.vault(chain[0]).map(|v| &v.owners[..]) else { return vec![] };
+        chain.insert(0, *owner);
+    }
+    chain
+}
+
 /// Whether vault `aven` ends a seed founded from vault `mine`, by view `st` (`SEED`): its kind, its owner's and its
 /// owner's owner's are the seed's, each owned by the one before alone, the first by `mine`.
 pub fn seeded(st: &State, mine: VaultId, aven: VaultId) -> bool {

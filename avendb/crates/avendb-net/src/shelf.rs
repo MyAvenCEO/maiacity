@@ -127,8 +127,9 @@ fn listable(prefix: &str) -> bool {
 /// whatever else an earlier avenDB kept there (`kept`). So do the server's bucket (`bucket::shelf`, `bucket::clear`),
 /// the Mac's folder (`disk::open`, `disk::clear`) and a page's OPFS (avendb-browser's `store.worker.js`, whose `FLOOR`
 /// is this). 2 since 2026-10-14, as the claim of a server founds the seed of Maia Holding GmbH, avenCEO GmbH and the
-/// CEO Aven (`avendb::world::SEED`).
-pub const FLOOR: u64 = 2;
+/// CEO Aven (`avendb::world::SEED`); 3 since later that day, as one passkey founds one human vault and the seed is
+/// named as it is founded.
+pub const FLOOR: u64 = 3;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.
