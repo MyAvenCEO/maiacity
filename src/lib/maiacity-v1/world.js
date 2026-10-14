@@ -2961,8 +2961,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (rc > max) (c.x *= max / rc), (c.z *= max / rc);
 		return home.localToWorld(c);
 	}
-	/** walking freely: three times the story's real pace (Samuel 2026-10-14) */
-	const ROAM = WALK * 3;
+	/** walking freely: four times the story's real pace (Samuel 2026-10-14) */
+	const ROAM = WALK * 4;
 	/** the free walk, a frame of it: on along the keys (ahead is away from the camera) or along the way to where they
 	 *  tapped, at their walking pace (ROAM), never through the tent's canvas; the camera carried along with them */
 	function roaming(step) {
