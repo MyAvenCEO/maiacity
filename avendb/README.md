@@ -181,10 +181,9 @@ signs the edit's id as the ceremony's challenge, and the device keeps the edit (
 unlocks the device also brings the PRF output on the device's own salt, which ends in 32 random bytes kept on the
 device. A new device makes the secret its keys come from itself (`Fresh`) and keeps it masked by that output, so its
 keys are known before its first ceremony, whose challenge names them: that unlock is its passkey's pass for it. Every
-unlock after brings the output that unmasks the secret again; a device made before 2026-10-10 keeps no mask, as the
-output is its secret. The Lab holds no secret of the passkey: it lends the seal secret from
-the ceremony for that edit alone, and forgets the McEliece pair it made from it once the device locks. Edits drafted
-together (`Lab::drafting`) are signed in one ceremony, over their batch: its challenge is the hash of their ids,
+unlock after brings the output that unmasks the secret again. The Lab holds no secret of the passkey: it lends the seal
+secret from the ceremony for that edit alone, and forgets the McEliece pair it made from it once the device locks. Edits
+drafted together (`Lab::drafting`) are signed in one ceremony, over their batch: its challenge is the hash of their ids,
 smallest first (`sign::batch_challenge`), and each edit's signature carries those ids, so it counts for those edits
 alone; the SLH-DSA half still signs each edit's own id. So a person is asked once where a device would otherwise ask
 once for each edit.
@@ -209,7 +208,7 @@ once for each edit.
   its own (`js/store.js`, `js/store.worker.js`; B2b), its edits in the order it took them and its McEliece keys, as a
   node keeps them on disk, saved after each change (`Node::changes`). It opens again in one ceremony, the unlock; the
   relay knows it, so it needs no pass. While it runs, its worker holds its edits, so it never runs in two tabs at once.
-  A store IndexedDB kept before B2b moves over the first time it opens, and is deleted.
+  What an earlier avenDB kept, in OPFS or in IndexedDB, it never reads and never deletes.
 - **Steps** (`avendb_net::Progress`): each start marks its steps as it takes them, by name, with when each began and how
   long it took: the unlock, the keys, the node, the server, the draft, the ceremony that signs it, the claim, and so
   on (`progress.rs` lists them). The page watches them through the function it hands `found`, `link` or `open`, the
@@ -309,17 +308,15 @@ each call a line of JSON on the device's stdin, each answer one on its stdout.
 - **Direct.** Its node binds UDP sockets of its own on every interface, IPv4 and IPv6, and maps a port on the router
   where one lets it (UPnP, NAT-PMP, PCP: `Options::direct`), so it reaches the person's other devices directly wherever
   it can, and through the relay only where it must. Its TLS is aws-lc-rs, X25519MLKEM768 only, like the server's.
-- **On disk.** It keeps what it holds in a folder (`~/Library/Application Support/city.maia.studio/avendb/`), as the
-  server does (`Disk`): its store, and `meta.json`, what opens it again (its name, its relay, its salt's own bytes, its
-  mask and its passkey's credential and P-256 key), as the page keeps them. No secret: its keys come back from the
-  mask and the passkey's PRF output at every unlock, and either alone tells nothing. It runs on while the app does,
-  whichever page is open, and opens again in the unlock alone. A store of an earlier format is put aside, as the
-  server's is, and the page then offers to forget it and sign in again.
+- **On disk.** It keeps what it holds on a shelf in a folder (`~/Library/Application Support/city.maia.studio/avendb/`,
+  `avendb_net::disk`), laid out as the page's in OPFS: its edits, its McEliece keys, and what opens it again (`Meta`:
+  its name, its relay, its salt's own bytes, its mask and its passkey's credential and P-256 key). No secret: its keys
+  come back from the mask and the passkey's PRF output at every unlock, and either alone tells nothing. It runs on
+  while the app does, whichever page is open, and opens again in the unlock alone. A shelf no device opens any more is
+  put aside, a new generation made beside it, never deleted; what an earlier avenDB kept in the folder stays as it is,
+  never read.
 - **Its ceremonies** run in the same sign-in sheet, which the app shows for it: the device makes the one-time X-Wing
   key itself, names it in the sheet's URL, and opens what the sheet page sealed to it; the page sees none of it.
-- **Moving in.** A device a page in the app made before moves into the folder as it unlocks (`adopt`): the edits and
-  keys the page kept become the folder's store, the same device; then the page lets go of its copy, so the device never
-  runs twice. A store no device opens any more is put aside in the folder (`aside/`), never deleted.
 - If the device didn't build with the app, the app's debug build gets a stand-in that says so, and the page runs the
   device itself, as before.
 
@@ -360,12 +357,13 @@ a prompt.
 that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium, Playwright's or
 `$AVENDB_CHROMIUM`) and runs `tests/page.rs`: a relay open to sign-up and a new server, nobody's yet, on this machine,
 and one headless Chromium driven over its DevTools protocol, whose virtual authenticator, with PRF, holds Eve's passkey.
-Each of her browsers is a frame of one tab, with a store of its own in OPFS: the first makes her passkey, founds
-her vault, claims the server and writes a note (7.3 s, two ceremonies after the one that makes the passkey, the
-server's claim and avenCEO's keys among the work); the second links through the first one's code and edits the note
-(3.7 s, one ceremony); the first closes, its store goes back into IndexedDB as pages kept it before B2b, and it opens
-again (0.9 s, one ceremony), moving the store into OPFS with every edit and key, reads the edit and edits it once more;
-while it runs, no other page loads its store. `tests/device.rs` runs the same natively, with a software passkey in the
+Each of her browsers is a frame of one tab, with a store of its own in OPFS, the first's beside what an earlier avenDB
+kept there and in IndexedDB, which nothing reads: the first makes her passkey, founds her vault, claims the server and
+writes a note (7.3 s, two ceremonies after the one that makes the passkey, the server's claim and avenCEO's keys among
+the work); the second links through the first one's code and edits the note (3.7 s, one ceremony); the first closes
+and opens again from its shelf (0.9 s, one ceremony) with every edit and key, reads the edit and edits it once more;
+while it runs, no other page loads its store; forgotten there, its shelf is put aside beside a new one, and what the
+earlier avenDB kept is as it was. `tests/device.rs` runs the same natively, with a software passkey in the
 authenticator's place, and Alice's browsers linking through her Mac.
 
 ## The device's secure boundary
@@ -399,9 +397,8 @@ ciphertext and opens nothing but what is public.
   until a human vault claims it (see [avenCEO](#avenceo)). It logs its offer (`AVENDB1…`): its device, its endpoint, its
   public address and its relay. The app keeps it, so that devices reach the server, and a new device links through it
   with its person's passkey alone.
-- A store of an earlier format, as when avenDB started fresh with flat vaults, is put aside whole in its folder's
-  `aside/`, never deleted, and the server starts on an empty store, nobody's until a human vault claims it again; its
-  device's secret stays, and with it its offer.
+- What an earlier avenDB kept in its bucket or its folder stays as it is, never read and never deleted: its first start
+  makes a new shelf beside it (`g1/`), with a new device's secret, nobody's until a human vault claims it.
 - A device takes the server's contact card, avenCEO's log, and can then give avenCEO backup on its vault, a cap on the
   whole of it with no key. The server keeps the vault's edits and McEliece keys and serves them to the devices that may
   hold them, also while the device that wrote them is away. With relay instead (backups off, at setup or later in a
