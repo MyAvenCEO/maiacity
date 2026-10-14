@@ -92,7 +92,7 @@
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
 		const spot = player?.tree ?? player?.spot ?? null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'cruise'), hour: where.hour, cruise: where.cruise ?? '', spot: spot && { x: spot.x, z: spot.z }, marked: !!spot, by: where.by ?? '', pick: player?.tree?.plant ?? player?.seedling ?? '' });
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'cruise'), hour: where.hour, cruise: where.cruise ?? '', spot: spot && { x: spot.x, z: spot.z }, marked: !!spot, by: where.by ?? '', pick: player?.tree?.plant ?? player?.seedling ?? '', name: player?.tree?.name ?? player?.name ?? '' });
 		world.touring(!!tour);
 		if (where.place) world.focus(growth != null && !tour ? `tree:${seat}` : where.place);
 	});
@@ -111,7 +111,7 @@
 		world.joy().then(() => (playing = ''));
 	}
 	// the first tree (Samuel 2026-10-14): the spot tapped on the ground, outside the core circle (chosen; the rules say
-	// where it may not be), the player walking to it; marked there with two sticks; the seed sown and watered by the
+	// where it may not be), the player walking to it; marked there with a plant stake; the seed sown and watered by the
 	// moment, the move going to the game as it ends; after the story, watered once a game month
 	let chosen = $state(null);
 	const spotWhy = (at) => {
@@ -534,7 +534,7 @@
 			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
 				<b>{tour.title}</b>
 				{#if tour.kind === 'spot'}
-					<p class="small">{chosen ? chosenWhy || 'Here. Mark it with your two sticks.' : 'Tap the ground outside the circle, where the homes will not be built.'}</p>
+					<p class="small">{chosen ? chosenWhy || 'Here. Mark it with your plant stake.' : 'Tap the ground outside the circle, where the homes will not be built.'}</p>
 				{:else if tour.kind === 'pick'}
 					<div class="picks">
 						{#each SEEDLINGS as x (x.id)}

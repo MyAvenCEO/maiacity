@@ -10,8 +10,8 @@
  * way to the shed, into the Village COOP on the way home; only the Tribe COOP's is at home, at the tent. At the shed
  * the first loads the ElectroCube and the tent and pitches the tent at home; the second loads the BatteryCube and the
  * panel and sets them up beside it. Last, each plants the seed they brought from home: they walk to a spot outside the
- * core circle, mark it with two sticks, pick the seed from their backpack, plant it and water it from the 1 l bottle:
- * their first tree, named after them, growing a game month for each day it is watered (./trees.js).
+ * core circle, mark it with a plant stake, pick the seed from their backpack, plant it and water it from the 1 l
+ * bottle: their first tree, named after them, growing a game month for each day it is watered (./trees.js).
  *
  * The story plays as a film: each step's words are its voice-over, a line a shot (lines), and each line's shot shows
  * what it says (shots: in the van, the views of the ride; talk: the woman beside you turned to you, telling you; hold:
@@ -149,7 +149,7 @@ export function story(view, seat, seen) {
 		say({ id: 'answer', chapter: 'Home', title: 'What you live on', hint: '', ...next('answer'), ...home, place: 'rise', hour: 16.8 },
 			'The land, the machines, your home: a part of each is yours. That is what you live on here, not your time.'),
 		// the seed from home (Samuel 2026-10-14): the backpack opened, a spot chosen outside the core circle and walked to,
-		// marked with two sticks; the seed picked, pressed in and watered from the bottle; nothing showing yet
+		// marked with a plant stake; the seed picked, pressed in and watered from the bottle; nothing showing yet
 		say({ id: 'begin', chapter: 'Home', title: 'How it begins', hint: '', ...next('begin'), ...home, place: 'pack', hour: 16.9 },
 			'And this is how everything begins: with a seed you brought from home.'),
 		say({ id: 'spot', chapter: 'Home', title: 'Choose where it grows', kind: 'spot', done: !!spot, ...home, place: 'plot', hour: 16.9 },

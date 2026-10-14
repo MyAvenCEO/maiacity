@@ -13,14 +13,14 @@
  * braking at the bus stop, the player stepping out), the walk to the pickup at the station (station), the drives in
  * the pickup (drive; while an invest waits it rolls slowly on, the camera held in it), loading at the shed (load),
  * pitching the tent (pitch), and the first tree: the spot chosen on the ground (choose, walkTo), the earth dug and a
- * stick pressed in beside it (sticks), the seed sown and watered (sow), and watered each game month after (water). The sun follows the story's
- * hour, or else the virtual day. Tapping a player names them (onPick), a tap on the ground while a spot is chosen goes
- * to onGround, and every frame the players' labels' places go to onLabels.
+ * plant stake pressed in beside it (sticks), the seed sown and watered (sow), and watered each game month after
+ * (water). The sun follows the story's hour, or else the virtual day. Tapping a player names them (onPick), a tap on
+ * the ground while a spot is chosen goes to onGround, and every frame the players' labels' places go to onLabels.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PICKUP, RAMP, loadingRamp, pickup, solarPanel } from '$lib/models/village.js';
-import { backpack, dugEarth, markerStick } from '$lib/models/planting.js';
+import { backpack, dugEarth, plantStake } from '$lib/models/planting.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
 import { human } from '$lib/actors/human.ts';
@@ -434,18 +434,32 @@ const SLOPE = Math.atan2(RAMP.rise, RAMP.run);
 const rampY = (z) => RAMP.rise * Math.min(1, Math.max(0, (z - FOOT_Z) / RAMP.run));
 const rampTip = (z) => Math.min(1, Math.max(0, (Math.min(z - FOOT_Z, LIP_Z - z) + 0.35) / 0.7));
 
-/** the first tree's spot once it is marked (Samuel 2026-10-14): the earth dug, the seed's hollow in its middle, one
- *  stick pushed in beside it. Until the plant stake with its little flag comes from the assets: one marker stick */
-const STAKE = V(0.12, -0.05, 0);
-function spotKit() {
+/** the first tree's spot once it is marked (Samuel 2026-10-14): the earth dug, the seed's hollow in its middle, and
+ *  the plant stake the tree will grow by pushed in beside it, 75 cm of it standing; its little flag printed with the
+ *  tree's name and its plant, tied on once the seed is picked */
+const STAKE_AT = V(0.15, -0.25, 0);
+function spotKit({ name = '', seed = '' } = {}) {
 	const g = new THREE.Group();
 	const earth = dugEarth();
-	const stake = markerStick();
-	stake.position.copy(STAKE);
-	stake.rotation.set(0.03, 0, -0.05);
-	g.add(earth, stake);
-	g.userData = { earth, stake };
+	g.add(earth);
+	g.userData = { earth, stake: null };
+	labelKit(g, name, seed);
 	return g;
+}
+/** the stake of a kit for a tree of that name and seed: a new one when either changes (its print is made with it),
+ *  its flag shown once there is a seed */
+function labelKit(kit, name, seed) {
+	let stake = kit.userData.stake;
+	if (!stake || stake.userData.seed !== (seed || 'apple') || stake.userData.name !== name) {
+		if (stake) kit.remove(stake);
+		stake = plantStake({ name, seed: seed || 'apple' });
+		stake.position.copy(STAKE_AT);
+		stake.rotation.set(0.03, 0, -0.04);
+		kit.add(stake);
+		kit.userData.stake = stake;
+	}
+	stake.userData.flag.visible = !!seed;
+	return stake;
 }
 /** the backpack off the back and open (Samuel 2026-10-14: the five seeds and a 1 l bottle in it), with where the
  *  bottle and each seed's packet sit in it, so they go back there */
@@ -453,7 +467,8 @@ function openPack() {
 	const g = backpack({ open: 1 });
 	const { bottle, packets } = g.userData;
 	g.userData.bottleAt = { p: bottle.position.clone(), r: bottle.rotation.clone() };
-	for (const p of Object.values(packets)) p.userData.y0 = p.position.y;
+	// the packets leaned back against the clothes, their fronts up to whoever looks in
+	for (const p of Object.values(packets)) ((p.rotation.x -= 0.6), (p.userData.y0 = p.position.y));
 	return g;
 }
 /** the bottle back in its pack, its cap on */
@@ -504,9 +519,9 @@ export function person(seat) {
 	if (chest) {
 		chest.add(pack);
 		chest.updateWorldMatrix(true, false);
-		pack.position.copy(chest.worldToLocal(V(0, 0.88, -0.28)));
+		pack.position.copy(chest.worldToLocal(V(0, 0.88, -0.25)));
 		pack.quaternion.copy(chest.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(turned));
-	} else (pack.position.set(0, 0.88, -0.28), pack.quaternion.copy(turned), g.add(pack));
+	} else (pack.position.set(0, 0.88, -0.25), pack.quaternion.copy(turned), g.add(pack));
 	g.add(cast.rig.object, glow);
 	g.userData = { glow, cast, pack, act: 'idle', t: Math.random() * 9 };
 	return g;
@@ -659,8 +674,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 	/** a machine on its way up or down the ramp: turned on the pickup (yaw, from its own) and tipped to its slope (k) */
 	const tipOn = (o, yaw, k) => o.quaternion.copy(truck.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-SLOPE * k, yaw, 0)));
-	// each player's backpack off their back and open, the seeds and the bottle in it; the dug earth and the stick at the
-	// spot marked
+	// each player's backpack off their back and open, the seeds and the bottle in it; the dug earth and the stake at
+	// the spot marked
 	const packs = { A: openPack(), B: openPack() };
 	for (const k of ['A', 'B']) (packs[k].visible = false), world.add(named(packs[k], `asset:pack:${k}`));
 	const myKit = spotKit();
@@ -714,7 +729,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  it, whether the other rides along (they came to fetch me), the story's hour, where the pickup rolls on to while an
 	 *  invest waits (cruise: 'shed' or 'home'), the first tree's spot (spot, marked; by: 'spot' while the player stands at
 	 *  it) and the seed picked (pick) */
-	let stage = { at: 'home', cube: 'home', tent: 'up', battery: 'store', me: 'A', other: 'B', rides: false, hour: null, cruise: '', spot: null, marked: false, by: '', pick: '' };
+	let stage = { at: 'home', cube: 'home', tent: 'up', battery: 'store', me: 'A', other: 'B', rides: false, hour: null, cruise: '', spot: null, marked: false, by: '', pick: '', name: '' };
 	let busy = false; // an intro, a drive or a load is playing
 	function set(next) {
 		stage = { ...stage, ...next };
@@ -807,15 +822,16 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		p.rotation.y = spotYaw(S);
 	}
 	/** the backpack off and open beside the spot while the seed is chosen and sown, the seed picked lifted a little out
-	 *  of it; the dug earth and its stick at the spot once it is marked, until the tree stands there with its own */
+	 *  of it; the dug earth and its stake at the spot once it is marked, until the tree stands there with its own */
 	function placeKit() {
 		for (const k of ['A', 'B']) if (packs[k].parent !== world) world.attach(packs[k]);
 		for (const k of ['A', 'B']) packs[k].visible = false;
 		const S = stage.spot, me = stage.me;
 		myKit.visible = !!(S && stage.marked && !trees[me]);
 		if (myKit.visible) (myKit.position.set(S.x, 0, S.z), (myKit.rotation.y = spotYaw(S)));
-		myKit.userData.stake.position.copy(STAKE);
-		myKit.userData.stake.visible = true;
+		const stake = labelKit(myKit, stage.name, stage.pick);
+		stake.position.copy(STAKE_AT);
+		stake.visible = true;
 		const pk = packs[me];
 		pk.userData.setOpen(1);
 		for (const [id, p] of Object.entries(pk.userData.packets)) p.position.y = p.userData.y0 + (id === stage.pick ? 0.05 : 0);
@@ -966,7 +982,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  as the light goes */
 	let lit = false;
 
-	// the first trees, each named after the player who planted it, where they planted it, beside its stick, as
+	// the first trees, each named after the player who planted it, where they planted it, beside its stake, as
 	// it stands on its watered months now; a watering grows it in place (grows)
 	const trees = {};
 	const grows = [];
@@ -975,13 +991,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		for (const seat of ['A', 'B']) {
 			const t = list.find((x) => x.seat === seat);
 			const had = trees[seat];
-			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}` : '';
+			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}:${t.name}` : '';
 			if (had?.userData.key === key) continue;
 			if (had) (world.remove(had), had.traverse((o) => o.geometry?.dispose?.()), delete trees[seat]);
 			if (!t) continue;
 			const g = new THREE.Group();
 			const plant = t.plant.grow(t.stage, t.seed);
-			const kit = spotKit();
+			const kit = spotKit({ name: t.name ?? '', seed: t.plant.id });
 			kit.userData.earth.userData.setWet(0.6);
 			g.add(plant, kit);
 			g.position.set(t.x, 0, t.z);
@@ -1076,9 +1092,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// top-down into the backpack beside the spot: the five seed packets
 		seeds: () => {
 			const L = spotAt(stage.spot);
-			return [{ fov: 38, near: 0.05, cam: (k) => [L(0.62, 0.98 - 0.05 * k, -0.33), L(0.62, 0.38, -0.29)], put: (p) => (standAt(p, stage.spot), act(p, 'kneel')) }];
+			return [{ fov: 38, near: 0.05, cam: (k) => [L(0.62, 1.2 - 0.05 * k, -0.34), L(0.62, 0.38, -0.29)], put: (p) => (standAt(p, stage.spot), act(p, 'kneel')) }];
 		},
-		// crane up from the stick to you and the tent beyond
+		// crane up from the stake to you and the tent beyond
 		tend: () => {
 			const L = spotAt(stage.spot);
 			return [{ fov: 44, near: 0.1, cam: (k) => [L(0.35, 0.25, 0.45).lerp(L(1.1, 3.4, -4.6), ease(k)), L(0, 0.1, 0).lerp(L(0, 0.9, 7), ease(k))], put: (p) => standAt(p, stage.spot) }];
@@ -1526,7 +1542,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  shoulder of the newcomer in it, out through the windscreen to the land ahead (ots); through the windscreen at them
 	 *  (screen); from its bed forward through the rear window, the load in front of us (bed) */
 	const DRIVE_SHOTS = {
-		ots: { inside: true, fov: 54, cam: (k) => truck.localToWorld(V(stage.me === 'A' ? 0.16 : -0.16, 1.6, 0.1 + 0.04 * k)), at: () => truck.localToWorld(V(stage.me === 'A' ? 0.36 : -0.36, 1.25, 14)) },
+		ots: { inside: true, fov: 54, cam: (k) => truck.localToWorld(V(stage.me === 'A' ? 0.12 : -0.12, 1.62, -0.22 + 0.04 * k)), at: () => truck.localToWorld(V(stage.me === 'A' ? 0.36 : -0.36, 1.25, 14)) },
 		screen: { fov: 38, near: 0.1, cam: (k) => truck.localToWorld(V(0.16, 1.72, 5.4 - 0.3 * k)), at: () => truck.localToWorld(V(0.3, 1.52, 0.66)) },
 		bed: { inside: true, fov: 58, cam: (k) => truck.localToWorld(V(0.66 - 0.04 * k, 2.3, -2.85)), at: () => truck.localToWorld(V(0.35, 1.45, 3)) }
 	};
@@ -1989,8 +2005,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		], lines), { hour: h0 });
 	}
 
-	/** the earth dug where the first tree will grow and a stick pressed in beside it (Samuel 2026-10-14), kneeling at the
-	 *  spot, close */
+	/** the earth dug where the first tree will grow and its plant stake pressed in beside it (Samuel 2026-10-14),
+	 *  kneeling at the spot, close */
 	function markIt({ x, z }) {
 		const me = people[stage.me];
 		const S = { x, z }, L = spotAt(S);
@@ -1998,13 +2014,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			beat(3.4, (s, k) => {
 				const { stake } = myKit.userData;
 				stake.visible = k > 0.2;
-				stake.position.y = STAKE.y + 0.32 * (1 - ease(Math.min(1, Math.max(0, (k - 0.25) / 0.4))));
-				camera.position.copy(L(0.8 - 0.06 * k, 0.36, 0.52 - 0.05 * k));
-				camera.lookAt(L(0, 0.16, -0.06));
+				stake.position.y = STAKE_AT.y + 0.32 * (1 - ease(Math.min(1, Math.max(0, (k - 0.25) / 0.4))));
+				camera.position.copy(L(0.95 - 0.06 * k, 0.55, 1.0 - 0.05 * k));
+				camera.lookAt(L(0.08, 0.32, -0.05));
 			}, () => {
 				lensFor({ fov: 40, near: 0.05 });
 				myKit.position.set(x, 0, z);
 				myKit.rotation.y = spotYaw(S);
+				labelKit(myKit, stage.name, '');
 				myKit.userData.earth.userData.setWet(0);
 				myKit.visible = true;
 				seatOut(me);
@@ -2014,11 +2031,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				act(me, 'press');
 				core.visible = marker.visible = false;
 			}),
-			{ dur: 0.05, start: () => ((myKit.userData.stake.visible = true), myKit.userData.stake.position.copy(STAKE), act(me, 'kneel')) }
+			{ dur: 0.05, start: () => ((myKit.userData.stake.visible = true), myKit.userData.stake.position.copy(STAKE_AT), act(me, 'kneel')) }
 		], { keep: true });
 	}
-	/** the seed into the dug earth beside the stick, watered from the bottle (Samuel 2026-10-14): kneeling to press it
-	 *  in; the bottle pouring, the earth darkening; close on the wet earth, nothing showing yet */
+	/** the seed into the dug earth beside the stake, its flag tied on with the tree's name and its plant, watered from
+	 *  the bottle (Samuel 2026-10-14): kneeling to press it in; the bottle pouring, the earth darkening; close on the wet
+	 *  earth, nothing showing yet */
 	function sow({ lines } = {}) {
 		const me = people[stage.me];
 		const S = stage.spot;
