@@ -3,11 +3,13 @@
 	mark, and when, both from its first signed edit, whether everyone may read it, and its text as Markdown, its
 	pictures read from the vault's Library by their content hashes (./article.js). Edit opens it as a note opens
 	(Note), to edit, propose, merge, make a variant of and go back through its history; the text shown is its main
-	line's.
+	line's. Above it, the stages of its flow (./flows.js), the one it is in marked, and for whoever may change it the
+	stages it goes on to: publishing it makes it public and puts a post about it on the Maia Universe stream.
 -->
 <script>
 	import { fileNamed, pictures, render } from './article.js';
 	import { mediaOf, whole } from './files.js';
+	import { flowsFor, moving, stageOf } from './flows.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import { count, nameOf, sharedWith, sharedWords } from './vaults.js';
@@ -20,6 +22,31 @@
 	const author = $derived(item && byId.get(item.by));
 	/** whether the acting vault may change it: its own vault, or a cap that lets it write */
 	const writes = $derived(!!item && (item.writers ?? []).includes(actor));
+
+	/** its flow, the first its vault and its type have (./flows.js), and the stage of it it is in */
+	const flow = $derived(item ? flowsFor(world, item.vault, item.type ?? '')[0] : undefined);
+	const stage = $derived(item && flow ? stageOf(item, flow) : null);
+	/** the stages it may go on to: those its stage names, or any while it is in none */
+	const onward = $derived(
+		flow ? (stage ? flow.stages.filter((s) => stage.next.includes(s.key)) : flow.stages) : []
+	);
+	/** what a function of the flow couldn't ask for, as the last move ran it */
+	let problem = $state('');
+
+	/** Moves it to stage `to` of its flow: the ops its flow and its functions take (./flows.js). @param {string} to */
+	async function move(to) {
+		if (!item || !flow) return;
+		const { ops, errors } = await moving(world, actor, item, flow, to);
+		problem = errors.join(' · ');
+		await api.runAll(`Moving it to ${flow.stages.find((s) => s.key === to)?.name ?? to}`, ops);
+	}
+
+	/** What the button that moves it to stage `s` says. @param {import('./flows.js').Stage} s */
+	function label(s) {
+		if (s.public) return 'Publish';
+		const back = stage && flow && flow.stages.indexOf(s) < flow.stages.indexOf(stage);
+		return back ? `Back to ${s.name}` : `Move to ${s.name}`;
+	}
 
 	/** Bytes `from` to `to` of a file, as the device reads them. @type {import('./files.js').Read} */
 	const read = (root, size, from, to) => api.readFile(root, size, from, to);
@@ -78,6 +105,24 @@
 					</span>
 					{#if item.public}<span class="chip">Public</span>{/if}
 				</p>
+				{#if flow}
+					<nav class="flow" aria-label="{flow.name}: its stages">
+						{#each flow.stages as s, i (s.id)}
+							{#if i}<span class="soft" aria-hidden="true">→</span>{/if}
+							<span class="stage" class:on={stage?.key === s.key} title={s.public ? 'Public' : 'Private'}>
+								{s.name}
+							</span>
+						{/each}
+						{#if writes}
+							<span class="moves">
+								{#each onward as s (s.id)}
+									<button class="btn" class:primary={s.public} onclick={() => move(s.key)}>{label(s)}</button>
+								{/each}
+							</span>
+						{/if}
+					</nav>
+					{#if problem}<p class="bad">A function of {flow.name} asked for nothing: {problem}.</p>{/if}
+				{/if}
 				{#if missing}
 					<p class="soft">
 						{count(missing, 'picture')} it names {missing === 1 ? 'isn’t' : 'aren’t'} in the Library this device reads.
@@ -171,6 +216,35 @@
 
 	.byline small {
 		font-size: 0.76rem;
+	}
+
+	.flow {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.45rem;
+		margin: -0.6rem 0 1.6rem;
+		font-size: 0.84rem;
+	}
+
+	.stage {
+		padding: 0.2rem 0.65rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		color: var(--soft);
+	}
+
+	.stage.on {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: #fff;
+	}
+
+	.moves {
+		display: flex;
+		gap: 0.4rem;
+		margin-left: auto;
 	}
 
 	.text {

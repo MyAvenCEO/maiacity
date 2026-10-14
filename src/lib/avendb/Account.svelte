@@ -25,9 +25,10 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { allowed, answer, reads } from './ops.js';
+	import { CONTENT, FLOW, FUNCTION, FUNCTIONS } from './flows.js';
+	import { allowed, answer, reads, refs } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { plain, seeded } from './vaults.js';
+	import { EVERYONE, plain, seeded } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
@@ -419,11 +420,12 @@
 				.finally(() => (profiling = false));
 		}
 		// avenDB's standard schemas and lenses, each an entry of the seed's company, avenCEO GmbH, shared with everyone
-		// as it adds them, their JSON as avenDB has it, so the same ids: written once, by whichever device comes first
+		// as it adds them, their JSON as avenDB has it, so the same ids; and the content flow and its functions, Public
+		// too: written once, by whichever device comes first
 		const company = seeded(w)[1]?.[0];
 		if (company && !standardizing && !standardized.has(company.id)) {
 			standardizing = true;
-			standardize(company.id)
+			standardize(w, company.id)
 				.then(() => standardized.add(company.id))
 				.catch((/** @type {Error} */ e) => (error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
 				.finally(() => (standardizing = false));
@@ -432,10 +434,12 @@
 
 	/**
 	 * Each of avenDB's standard schemas and lenses that vault `company` doesn't hold an entry of yet, added as its own:
-	 * the schemas first, so each lens joins two it holds.
-	 * @param {string} company
+	 * the schemas first, so each lens joins two it holds. Then the flows and functions every app knows (./flows.js)
+	 * that it doesn't hold yet, by their key and their name, and a Public share of its flows and functions, where it
+	 * gives none yet, so every app may read them as they read its schemas.
+	 * @param {import('./vaults.js').WorldView} w @param {string} company
 	 */
-	async function standardize(company) {
+	async function standardize(w, company) {
 		/** @type {import('./db.js').Db} */
 		const db = answer(await send({ op: 'database', vault: company }));
 		const held = new Set([...db.schemas, ...db.lenses].map((x) => x.id));
@@ -446,7 +450,24 @@
 		for (const [type, json] of missing) {
 			answer(await send({ op: 'create', vault: company, type, value: json, as: company }));
 		}
+		const own = (/** @type {string} */ type) =>
+			w.entries.filter((e) => e.vault === company && e.type === type && e.kind === 'record').map((e) => e.record);
+		const [flows, fns] = [own(FLOW).map((f) => f?.key), own(FUNCTION).map((f) => `${f?.flow}\n${f?.name}`)];
+		const made = [
+			...[CONTENT].filter((f) => !flows.includes(f.key)).map((f) => [FLOW, f]),
+			...FUNCTIONS.filter((f) => !fns.includes(`${f.flow}\n${f.name}`)).map((f) => [FUNCTION, f])
+		];
+		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));
+		const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
+		const open = w.caps.some((c) => c.over === company && c.grantee === EVERYONE && types(c) === SHARED.join());
+		if (!open) {
+			const share = { op: 'share', over: company, who: EVERYONE, level: 'Public', what: { type: SHARED }, as: company };
+			answer(await send(share));
+		}
 	}
+
+	/** The types of avenCEO GmbH's entries every app reads, as it reads their schemas. */
+	const SHARED = [FLOW, FUNCTION];
 
 	/** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
 	 *  new vaults (avendb/docs/ARCHITECTURE.md §8). */
@@ -491,6 +512,19 @@
 		run: async (what, op) => {
 			let done = null;
 			const ok = await act(what, async () => (done = answer(await send(op))));
+			return ok ? done : null;
+		},
+		/**
+		 * Runs change ops `ops` one after another as `what`, each `"$n"` in one the entry op n created (./ops.js
+		 * `refs`), then shows what changed once: their answers, or `null` where one didn't go through, the rest not run.
+		 * @param {string} what @param {object[]} ops
+		 */
+		runAll: async (what, ops) => {
+			/** @type {any[]} */
+			const done = [];
+			const ok = await act(what, async () => {
+				for (const op of ops) done.push(answer(await send(refs(op, done))));
+			});
 			return ok ? done : null;
 		},
 		/**

@@ -748,6 +748,18 @@ A write counts once its reader holds its schema: the lane only grows, so a verdi
 counted to counted. Readers agree on the lane because every reader of V syncs V's schema entries: a keep share always
 picks them (section 5), and the Everyone share sends them to every device with an interest in V or that follows it.
 
+**Flows and functions.** A flow is a recipe of stages any entry can be in (`src/lib/avendb/flows.js`): the content
+flow takes an article from idea to draft to published. An entry is in a stage while it carries the entry tag
+`<flow>:<stage>`, so moving it is one `tag` op. A public stage is one Public share of the vault picking that tag
+(`{"tag": "content:published"}`), which reaches each entry tagged so, now and later, and lets go of one untagged:
+nothing is shared or revoked entry by entry. A function names a flow, a stage and whether it runs as an entry enters
+or leaves it; its code, a JS module exporting `run(event)`, runs in QuickJS on the device that moves the entry, with no
+page, network or keys, and hands back the ops it asks for (`src/lib/avendb/functions.js`). The device makes them as
+the acting vault, on the entry's vault alone, a share among them only a Public one: caps still decide. Publishing
+makes a `post` entry about the article that carries the stage's tag, so the same share makes it public. Every app
+knows the content flow and its two functions; avenCEO GmbH holds them as entries, Public by their type, and a vault's
+own flows and functions, then avenCEO GmbH's, come before the app's, never anyone else's.
+
 ## 10. Post-quantum only
 
 Every node trusts no elliptic curve alone, and there is no switch back.

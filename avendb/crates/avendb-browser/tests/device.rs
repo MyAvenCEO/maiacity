@@ -522,6 +522,70 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     until("and knows her browser", || async { admission.admits(&first.node().id()) }).await;
     let stranger = Passkey::from_seed([9; 32]).id();
     assert!(!admission.honours(&stranger), "claimed, its relay honours no stranger's pass");
+    // avenCEO GmbH holds the content flow and a function of it, as her page adds them, and shares its flows and
+    // functions with Everyone by their type, no ceremony
+    let stage = |id: u64, key: &str, public: bool, next: &[&str]| {
+        json!({ "id": id, "key": key, "name": key, "public": public, "next": next, "x": id - 1, "y": 0 })
+    };
+    let stages = [
+        stage(1, "idea", false, &["draft"]),
+        stage(2, "draft", false, &["published"]),
+        stage(3, "published", true, &[]),
+    ];
+    let flow = json!({ "kind": "flow", "key": "content", "name": "Content", "about": "", "types": ["article"],
+        "stages": stages, "tags": [] });
+    let code = "export function run(event) { return []; }";
+    let function = json!({ "kind": "function", "name": "Publish to Maia Universe", "about": "", "on": "enter",
+        "flow": "content", "stage": "published", "code": code, "enabled": true, "tags": [] });
+    for (ty, value) in [("flow", flow), ("function", function)] {
+        let op = json!({ "op": "create", "vault": company, "type": ty, "value": value, "as": company });
+        run(&first, op).await.expect("an entry of avenCEO GmbH's");
+    }
+    let types = json!({ "type": ["flow", "function"] });
+    let open = json!({ "op": "share", "over": company, "who": "everyone", "level": "Public", "what": types,
+        "as": company });
+    run(&first, open).await.expect("its flows and functions Public, no ceremony");
+    let seen = world_of(&first).await;
+    let records = seen["entries"].as_array().expect("its entries").iter().filter(|e| e["vault"] == company.as_str());
+    let records: Vec<&Value> = records.filter(|e| e["kind"] == "record").collect();
+    let fields = |e: &Value| (e["type"].clone(), e["public"].clone(), e["record"]["stages"][2]["public"].clone());
+    let fields: Vec<_> = records.iter().map(|e| fields(e)).collect();
+    let both = [(json!("flow"), json!(true), json!(true)), (json!("function"), json!(true), Value::Null)];
+    assert_eq!(fields, both, "{records:?}");
+    // her article goes from idea to published, as the content flow moves it: the Public share of her vault on the
+    // stage's tag, the tag swapped, and the post its function asks for, carrying that tag too; the server keeps the
+    // post and opens it, as everyone may
+    let her = vault.to_hex();
+    let value = json!({ "kind": "article", "title": "Seeds", "text": "Tomatoes in **March**.", "tags": [] });
+    let tags = json!(["content:idea"]);
+    let op = json!({ "op": "create", "vault": her, "type": "article", "tags": tags, "value": value, "as": her });
+    let article = entry(run(&first, op).await.expect("her article"));
+    assert_eq!(item(&world_of(&first).await, article)["public"], false, "an idea is hers alone");
+    let tag = json!({ "tag": "content:published" });
+    let public = json!({ "op": "share", "over": her, "who": "everyone", "level": "Public", "what": tag, "as": her });
+    run(&first, public).await.expect("published is everyone's");
+    let (add, remove) = (json!(["content:published"]), json!(["content:idea"]));
+    let moved = json!({ "op": "tag", "entry": article.to_hex(), "add": add, "remove": remove, "as": her });
+    run(&first, moved).await.expect("moved to published");
+    let value = json!({ "kind": "post", "title": "Seeds", "text": "Tomatoes in **March**.", "channel": "Devlog",
+        "about": article.to_hex(), "tags": [] });
+    let tags = json!(["content:published"]);
+    let op = json!({ "op": "create", "vault": her, "type": "post", "tags": tags, "value": value, "as": her });
+    let post = entry(run(&first, op).await.expect("its post"));
+    let seen = world_of(&first).await;
+    let (a, p) = (item(&seen, article), item(&seen, post));
+    let looks = |e: &Value, what: &Value| (e["public"].clone(), e["kind"].clone(), what.clone());
+    let published = (json!(true), json!("note"), json!(["content:published"]));
+    assert_eq!(looks(a, &a["tags"]), published, "published, public");
+    let about = (json!(true), json!("record"), json!(article.to_hex()));
+    assert_eq!(looks(p, &p["record"]["about"]), about, "its post, a record about it, public too");
+    let opens = move |lab: &Lab, me| lab.item(me, post).is_some_and(|i| i.record()["channel"] == "Devlog");
+    until("the server keeps her post and opens it", || server.read(opens)).await;
+    // back to a draft: untagged, it is hers alone again
+    let (add, remove) = (json!(["content:draft"]), json!(["content:published"]));
+    let back = json!({ "op": "tag", "entry": article.to_hex(), "add": add, "remove": remove, "as": her });
+    run(&first, back).await.expect("back to a draft");
+    assert_eq!(item(&world_of(&first).await, article)["public"], false, "a draft is hers alone");
     for n in [first.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }
