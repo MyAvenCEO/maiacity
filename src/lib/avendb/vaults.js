@@ -73,11 +73,17 @@
  *   public: boolean, syncs: Syncing[] }} CellView
  */
 /**
+ * A device Synced to lists for an entry or a file: how much of it it holds, `has`, of how much this device holds,
+ * `of`: of an entry, edits of its log; of a file, its sealed pieces. All of it when they are equal.
+ * @typedef {{ device: string, has: number, of: number }} Holder
+ */
+/**
  * An entry as the device shows it: `readers`, `writers` and `sharers` the vaults that read it, change it and may share
- * it on, its own vault first; `syncedTo` the devices that hold it; `title` a schema's title or a lens's name for those.
+ * it on, its own vault first; `syncedTo` the devices that hold some of it, each with how many of its edits; `title` a
+ * schema's title or a lens's name for those.
  * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
  *   created: number | null, cell: string, public: boolean, roles: Record<string, Role>,
- *   readers: string[], writers: string[], sharers: string[], syncedTo: string[],
+ *   readers: string[], writers: string[], sharers: string[], syncedTo: Holder[],
  *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'sealed', title: string | null, text: string | null,
  *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, deleted: boolean, edits: number,
  *   proposals: number, media: string | null, files: import('./files.js').FileView[] }} EntryView
@@ -174,6 +180,15 @@ export function size(n) {
 /** Names as a person lists them: "a, b and c". @param {string[]} names @param {string} [and] */
 export const list = (names, and = 'and') =>
 	names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} ${and} ${names.at(-1)}`;
+
+/**
+ * Where an entry or a file is synced to, in words, one wording for both: each device by name, with how much of it it
+ * holds where that is only some, as "this browser, the server (3 of 8)". `null` for none.
+ * @param {Holder[] | undefined} holders @param {(device: string) => string} name
+ */
+export const syncedWords = (holders, name) =>
+	list((holders ?? []).map((h) => (h.has >= h.of ? name(h.device) : `${name(h.device)} (${h.has} of ${h.of})`))) ||
+	null;
 
 /** A tag or a title in quotes. @param {string} t */
 const quote = (t) => `“${t}”`;

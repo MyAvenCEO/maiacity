@@ -54,15 +54,30 @@ pub const VARIANT: &str = "avendb:variant:";
 /// Deleted, and taking the mark out brings it back. Its edits stay in the vault's history, as every edit does.
 pub const DELETED: &str = "avendb:deleted";
 
-/// Where each entry and each file a device holds is synced to, by holdings (`avendb_net`'s `Node::synced_to`): the
-/// devices that hold every edit of the entry's log the device holds, or every sealed byte of the file, by their own
-/// word and the device's own shelf, among those that may hold it by the device's view; and the devices that hold some
-/// of a file's pieces but not all, each with the pieces it holds. Each list smallest first.
+/// Where each entry and each file a device holds is synced to, by holdings (`avendb_net`'s `Node::synced_to`): one
+/// list for entries and files alike, of the devices that hold some of it by their own word and the device's own shelf,
+/// among those that may hold it by the device's view, each with how much it holds (`Holder`), smallest first.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SyncedTo {
-    pub entries: BTreeMap<EntryId, Vec<SignerId>>,
-    pub files: BTreeMap<FileRoot, Vec<SignerId>>,
-    pub partly: BTreeMap<FileRoot, Vec<(SignerId, Vec<u32>)>>,
+    pub entries: BTreeMap<EntryId, Vec<Holder>>,
+    pub files: BTreeMap<FileRoot, Vec<Holder>>,
+}
+
+/// A device Synced to lists for an entry or a file: how much of it the device holds, `has`, of how much this device
+/// holds, `of`. Of an entry, the edits of its log this device holds, as far as its edits show those the device's
+/// frontier covers; of a file, its sealed pieces. It holds all of it when `has` is `of`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Holder {
+    pub device: SignerId,
+    pub has: u64,
+    pub of: u64,
+}
+
+impl Holder {
+    /// It holds all of it.
+    pub fn all(&self) -> bool {
+        self.has >= self.of
+    }
 }
 
 /// A device's world by its view (`world`): every vault it knows, in the order they were founded; every share in force,
@@ -204,16 +219,19 @@ impl World {
     /// - each entry's `readers`, `writers` and `sharers`: the vaults whose level on it allows read, write, or is owner,
     ///   its own vault first (everyone besides reads it where it is `public`);
     /// - each entry's `files`, every file its writes bring, `len` `null` where the device doesn't open it, with
-    ///   `pieces`, how many pieces it is sealed in, `syncedTo`, the devices that hold it whole, and `partly`, those
-    ///   that hold some of its pieces, each with them.
+    ///   `pieces`, how many pieces it is sealed in.
     ///
-    /// Each entry lists the devices it is synced to, `syncedTo`, by their ids, smallest first: this device among them
-    /// once its shelf holds it. The page's keys keep their older names: the shares are `caps`, the audiences `cells`, a
+    /// Each entry and each file lists the devices it is synced to, `syncedTo`, smallest first, each `{device, has, of}`
+    /// (`Holder`): of an entry, edits of its log; of a file, its pieces. This device is among them once its shelf
+    /// holds some of it. The page's keys keep their older names: the shares are `caps`, the audiences `cells`, a
     /// share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and an audience's
     /// epoch `generation`.
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
-        let devices = |ds: Option<&Vec<SignerId>>| ds.into_iter().flatten().map(|d| hex(&d.0)).collect::<Vec<_>>();
+        let holders = |hs: Option<&Vec<Holder>>| {
+            let holder = |h: &Holder| json!({ "device": hex(&h.device.0), "has": h.has, "of": h.of });
+            hs.into_iter().flatten().map(holder).collect::<Vec<_>>()
+        };
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
             Principal::Signer(s) => json!({ "signer": hex(&s.0), "recovery": Some(*s) == self.recovery }),
@@ -272,15 +290,12 @@ impl World {
         };
         let synced = &self.synced_to;
         let file = |(f, len): &(FileRoot, Option<u64>)| {
-            let partly = synced.partly.get(f).into_iter().flatten();
-            let partly = partly.map(|(d, pieces)| json!({ "device": hex(&d.0), "pieces": pieces }));
             json!({
                 "root": hex(&f.hash),
                 "size": f.size,
                 "len": len,
-                "syncedTo": devices(synced.files.get(f)),
                 "pieces": f.size.div_ceil(PIECE).max(1),
-                "partly": partly.collect::<Vec<_>>(),
+                "syncedTo": holders(synced.files.get(f)),
             })
         };
         let entry = |i: &EntryView| {
@@ -328,7 +343,7 @@ impl World {
                 "proposals": proposals,
                 "media": media,
                 "files": i.files.iter().map(file).collect::<Vec<_>>(),
-                "syncedTo": devices(synced.entries.get(&i.entry)),
+                "syncedTo": holders(synced.entries.get(&i.entry)),
             })
         };
         json!({

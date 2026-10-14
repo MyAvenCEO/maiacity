@@ -296,7 +296,9 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     // where her note is synced to (v8 phase H): her Mac, once its folder holds it, and the server, and no other
     let (mac, keeper) = (device["id"].clone(), json!(hex(&server.device().0)));
     let synced = |n: &Value| {
-        n["syncedTo"].as_array().is_some_and(|d| d.len() == 2 && d.contains(&mac) && d.contains(&keeper))
+        let all: Vec<&Value> = n["syncedTo"].as_array().into_iter().flatten().filter(|h| h["has"] == h["of"]).collect();
+        let on = |d: &Value| all.iter().any(|h| h["device"] == *d);
+        all.len() == 2 && on(&mac) && on(&keeper)
     };
     shown(&mut app, &entry, "her note, synced to her Mac and the server", synced).await;
     // a todo for her work, which she shares with everyone to read, and then no longer

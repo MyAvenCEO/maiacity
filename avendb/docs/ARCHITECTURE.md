@@ -557,7 +557,7 @@ knows, with its kind, owners, devices, threshold and root, and as which vault th
 share in force, with its group, whether it is on the whole vault, whether its grantee reads (`reads`) and receives
 (`gets`) what it reaches, and who may revoke it; every audience with the devices that sync it; every entry with its
 type, tags, readers, writers and sharers, and the files its writes bring, each with how many pieces it is in and
-where it is synced to, whole (`syncedTo`) or in some pieces (`partly`); whether the person's vault owns avenCEO
+where it is synced to (`syncedTo`, as for the entry); whether the person's vault owns avenCEO
 (`ownsAven`) and whether avenCEO backs it up (`backsUp`). Its JSON keeps older key names: the shares are `caps`, the
 audiences `cells`, a share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and
 an audience's epoch `generation`.
@@ -847,10 +847,12 @@ Announce { full: bool, logs: [(LogId, Frontier { heads, waiting })], files: [(Fi
 - **Asking.** A node that hears of a head it lacks, in a log the claimant may hold by the node's view, asks for those
   logs alone (Ask logs), naming of them only what it may name to that peer. A claim to any other log the node holds
   steers nothing. A log the node holds nothing of is still asked for, naming nothing.
-- **Synced to.** Each entry and file shows the devices that hold it (`Node::synced_to`): this device by its own shelf,
-  and others only by what they said on their own proven connection, and only if they may hold it by the node's view.
-  A device is synced to an entry when its stated frontier covers every edit of the entry's log the node holds, and to
-  a file when it holds it whole; it is listed `partly` with the pieces it holds. "Backed up" is synced to the server.
+- **Synced to.** One list for entries and files alike (`Node::synced_to`, `Holder`): the devices that hold some of
+  it, this device by its own shelf, and others only by what they said on their own proven connection, and only if
+  they may hold it by the node's view; each with how much it holds, `has` of `of`: of an entry, the edits of its log
+  the node holds, of a file, its pieces. A device holds all of an entry when its stated frontier covers every edit of
+  the entry's log the node holds, and all of a file when it holds it whole. A device that holds none of it as far as
+  the node's edits show isn't listed. "Backed up" is synced to all of it on the server.
 - **Routing, never permission.** Holdings choose which logs to ask for and which peers to fetch from first. The blob
   gate still hands out a file by T27 alone.
 

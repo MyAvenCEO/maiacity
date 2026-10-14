@@ -21,7 +21,7 @@ use avendb::lab::Lab;
 use avendb::sync::LogId;
 use avendb::wire::FileHold;
 use avendb_net::bucket::{self, Bucket, Fut, Sealed};
-use avendb_net::{Node, Options, server};
+use avendb_net::{Holder, Node, Options, server};
 use bytes::Bytes;
 use common::Folder;
 use iroh_blobs::Hash;
@@ -219,7 +219,8 @@ async fn a_server_states_a_holding_only_once_its_bucket_has_it() {
     let told = bob.holdings_of(server_d).expect("what the server told Bob's Mac");
     assert!(!told.logs.contains_key(&log) && !told.files.contains_key(&root), "nor tells Bob's Mac it does");
     let synced = mac.synced_to().await;
-    assert_eq!(synced.entries[&welcome], [mac_a], "Alice's Mac shows Welcome synced to itself alone");
+    let devices: Vec<SignerId> = synced.entries[&welcome].iter().map(|h| h.device).collect();
+    assert_eq!(devices, [mac_a], "Alice's Mac shows Welcome synced to itself alone");
     let reads = || bob.read(move |lab, me| text(lab, me, welcome, 2).as_deref() == Some(WELCOME_TEXT));
     assert!(!reads().await, "and Bob's Mac doesn't read Welcome through it");
     assert!(outboards(objects.path()).is_empty(), "the bucket holds no blob");
@@ -241,7 +242,9 @@ async fn a_server_states_a_holding_only_once_its_bucket_has_it() {
     until("then Bob's Mac reads Welcome through the server", reads).await;
     let synced = || async {
         let synced = mac.synced_to().await;
-        let both = |d: &Vec<SignerId>| d.contains(&mac_a) && d.contains(&server_d);
+        let both = |hs: &Vec<Holder>| {
+            [mac_a, server_d].iter().all(|d| hs.iter().any(|h| h.device == *d && h.all()))
+        };
         synced.entries.get(&welcome).is_some_and(both) && synced.files.get(&root).is_some_and(both)
     };
     until("and Alice's Mac shows Welcome and the photo synced to the server", synced).await;

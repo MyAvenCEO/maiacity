@@ -158,7 +158,7 @@ A connection proves the device at its other end by the hello on it, and an annou
 what it hears as the holdings of the device the connection proved (`Node.record`), so no device speaks for another, and
 it tells each peer its own holdings alone, never what it heard (H1). Holdings route and never authorize: a node asks a
 peer for the logs where the peer holds what it lacks, fetches a file first from those that hold it, and lists the
-devices each entry and file is synced to (`Node.syncedTo`); its blob gate hands a file out by T27 alone, to the device a
+devices each entry and file is synced to, with whether each holds all of it (`Node.syncedTo`); its blob gate hands a file out by T27 alone, to the device a
 sync connection still open proves (`Node.hands`), and it names to a device only the files that device may fetch (T27).
 -/
 
@@ -295,24 +295,40 @@ def covers (edits : List Edit) (l : LogId) (F : Frontier) : Bool :=
   let anc := ancestors Edit.log? edits l F.heads
   (frontiers edits l).all anc.contains && (waitingIn edits l).all fun w => anc.contains w || F.waiting.contains w
 
-/-- The devices a node whose device is `me` lists as "Synced to" for entry `e` (`Node::synced_to`), smallest first: if
-    it holds any of the entry's log, `me` if what it holds for good covers the log, and each device whose record covers
-    it and that may hold it by the node's view. (The Rust node lists only devices it knows, `Lab::peers`, which only
-    narrows.) -/
-def Node.syncedTo (n : Node) (me : SignerId) (e : EntryId) : List SignerId :=
-  let l := LogId.entry e
-  let holds (h : Holdings) : Bool := (h.log? l).any (covers n.edits l)
-  if (inLog Edit.log? n.edits l).isEmpty then [] else
-    ((if holds n.own then [me] else []) ++ (n.heard.map (·.1.device)).eraseDups.filter fun d =>
-      (reachLogs n.edits d).contains l && holds (n.record d)).mergeSort fun a b => decide (a ≤ b)
+/-- What "Synced to" lists devices for: an entry, by its log, or a file. -/
+inductive Synced where
+  | entry (e : EntryId)
+  | file  (f : FileId)
+  deriving DecidableEq, Repr
 
-/-- The devices it lists as "Synced to" for file `f`, smallest first: if an edit it holds brings the file, `me` if its
-    shelf holds the file whole, and each device whose record holds it whole and that may fetch it by the node's view. -/
-def Node.syncedToFile (n : Node) (me : SignerId) (f : FileId) : List SignerId :=
-  let holds (h : Holdings) : Bool := h.file? f == some .whole
-  if !n.edits.any (·.filesOf.contains f) then [] else
-    ((if holds n.own then [me] else []) ++ (n.heard.map (·.1.device)).eraseDups.filter fun d =>
-      (reachFiles n.edits d).contains f && holds (n.record d)).mergeSort fun a b => decide (a ≤ b)
+/-- A node holding `edits` holds some of `t`: an edit of the entry's log, or an edit that brings the file. -/
+def Synced.held (edits : List Edit) : Synced → Bool
+  | .entry e => !(inLog Edit.log? edits (.entry e)).isEmpty
+  | .file f  => edits.any (·.filesOf.contains f)
+
+/-- Device `d` may hold `t` by the view of a node holding `edits`: the entry's log, or the file, it may know of. -/
+def Synced.reaches (edits : List Edit) (d : SignerId) : Synced → Bool
+  | .entry e => (reachLogs edits d).contains (.entry e)
+  | .file f  => (reachFiles edits d).contains f
+
+/-- What holdings `h` state of `t`, if anything, and whether that is all of it a node holding `edits` holds: of an
+    entry, a frontier of its log, all of it when it covers the log as the node holds it (`covers`); of a file, all of it
+    or some of its pieces. -/
+def Holdings.of? (h : Holdings) (edits : List Edit) : Synced → Option Bool
+  | .entry e => (h.log? (.entry e)).map (covers edits (.entry e))
+  | .file f  => (h.file? f).map (· == .whole)
+
+/-- "Synced to" for `t` on a node whose device is `me` (`Node::synced_to`), smallest first: if it holds some of `t`,
+    `me` if what it holds for good states some of it, and each device whose record states some of it and that may hold
+    it by the node's view; each with whether it holds all of it. One list for entries and files alike. (The Rust node
+    lists only devices it knows, `Lab::peers`, and leaves out a device that holds none of it as far as its own edits
+    show, which only narrows; and it says how much each holds: of an entry, the node's edits of its log; of a file,
+    its pieces.) -/
+def Node.syncedTo (n : Node) (me : SignerId) (t : Synced) : List (SignerId × Bool) :=
+  if !t.held n.edits then [] else
+    (((n.own.of? n.edits t).toList.map (me, ·)) ++ (n.heard.map (·.1.device)).eraseDups.filterMap fun d =>
+      if t.reaches n.edits d then ((n.record d).of? n.edits t).map (d, ·) else none).mergeSort
+      fun a b => decide (a.1 ≤ b.1)
 
 /-- A blob of a file: its root (the HashSeq of a file of several pieces, or a small file's one piece) or one of its
     pieces. -/

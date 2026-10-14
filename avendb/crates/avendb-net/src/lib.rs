@@ -115,7 +115,7 @@ use avendb::id::{BlobId, EditId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Drafting, Lab, Unsigned};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
-use avendb::sealed::FileRoot;
+use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
 use avendb::sync::{log_of, place, LogId};
 use avendb::wire::{Announce, Claim, FileHold, Join, Reply, Request, Wire};
@@ -139,7 +139,7 @@ use tokio::sync::{Notify, watch};
 
 use holdings::{Logs, MOST};
 
-pub use holdings::{Holdings, SyncedTo};
+pub use holdings::{Holder, Holdings, SyncedTo};
 pub use progress::{Ending, Progress, Stage, Steps};
 pub use run::{NoBytes, NoCeremony};
 pub use session::exporter;
@@ -1618,35 +1618,32 @@ impl Shared {
             let mut holders: Vec<(SignerId, &Holdings, Option<&Reach>)> = vec![(me, &own, None)];
             holders.extend(held.iter().filter_map(|(d, h)| Some((*d, h, Some(reach.get(d)?)))));
             holders.sort_by_key(|(d, _, _)| *d);
+            // each with how much it holds, among those that hold some of it as far as this device's edits show
+            let list = |has: &dyn Fn(&Holdings, Option<&Reach>) -> Option<(u64, u64)>| {
+                let holder = |(device, h, r): &(SignerId, &Holdings, Option<&Reach>)| {
+                    let (has, of) = has(h, *r)?;
+                    (has > 0).then_some(Holder { device: *device, has, of })
+                };
+                holders.iter().filter_map(holder).collect::<Vec<_>>()
+            };
             let mut synced = SyncedTo::default();
             for l in all.of.keys() {
                 let LogId::Entry(entry) = *l else { continue };
-                let holds = |h: &Holdings, r: Option<&Reach>| {
-                    r.is_none_or(|r| r.logs.contains(l)) && h.logs.get(l).is_some_and(|f| all.covered(edits, l, f))
+                let of = |h: &Holdings, r: Option<&Reach>| {
+                    let f = h.logs.get(l).filter(|_| r.is_none_or(|r| r.logs.contains(l)))?;
+                    Some(all.held(edits, l, f))
                 };
-                let devices = holders.iter().filter(|(_, h, r)| holds(h, *r)).map(|(d, _, _)| *d).collect();
-                synced.entries.insert(entry, devices);
+                synced.entries.insert(entry, list(&of));
             }
             for f in lab.files(me) {
-                let holds = |h: &Holdings, r: Option<&Reach>| {
-                    r.is_none_or(|r| r.files.contains(&f)) && h.files.get(&f) == Some(&FileHold::Whole)
+                let pieces = f.size.div_ceil(PIECE).max(1);
+                let of = |h: &Holdings, r: Option<&Reach>| match h.files.get(&f) {
+                    _ if r.is_some_and(|r| !r.files.contains(&f)) => None,
+                    Some(FileHold::Whole) => Some((pieces, pieces)),
+                    Some(FileHold::Pieces(p)) => Some((p.iter().collect::<BTreeSet<_>>().len() as u64, pieces)),
+                    None => None,
                 };
-                let devices = holders.iter().filter(|(_, h, r)| holds(h, *r)).map(|(d, _, _)| *d).collect();
-                synced.files.insert(f, devices);
-                // and those that hold some of its pieces, each with them
-                let pieces = |h: &Holdings, r: Option<&Reach>| match h.files.get(&f) {
-                    Some(FileHold::Pieces(p)) if r.is_none_or(|r| r.files.contains(&f)) => {
-                        let mut p = p.clone();
-                        p.sort_unstable();
-                        Some(p)
-                    }
-                    _ => None,
-                };
-                let partly: Vec<(SignerId, Vec<u32>)> =
-                    holders.iter().filter_map(|(d, h, r)| Some((*d, pieces(h, *r)?))).collect();
-                if !partly.is_empty() {
-                    synced.partly.insert(f, partly);
-                }
+                synced.files.insert(f, list(&of));
             }
             synced
         })
