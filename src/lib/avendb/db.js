@@ -73,6 +73,8 @@ export function studio(world, db, vault, actor) {
 	const opens = (r) => (r.public || readable(r.entry)) && r.record !== null;
 	const schemas = byIds([...(db?.builtIn.schemas ?? []), ...(held?.schemas ?? [])]);
 	const lenses = byIds([...(db?.builtIn.lenses ?? []), ...(held?.lenses ?? [])]);
+	/** the ids of avenDB's own schemas and lenses: every app knows them, and avenCEO GmbH holds each as its entry */
+	const standard = new Set([...(db?.builtIn.schemas ?? []), ...(db?.builtIn.lenses ?? [])].map((x) => x.id));
 	/** the rows the acting vault opens, by the schemas they were written under */
 	const uses = new Map();
 	for (const r of rows.filter(opens)) for (const id of r.authored) uses.set(id, (uses.get(id) ?? 0) + 1);
@@ -125,6 +127,7 @@ export function studio(world, db, vault, actor) {
 		opens,
 		schemas,
 		lenses,
+		standard,
 		uses,
 		world,
 		known,
@@ -154,10 +157,13 @@ function byIds(all) {
 const TABLES = /** @type {const} */ ([
 	['notes', 'Notes: Markdown documents', 'document'],
 	['todos', 'Todos', 'todo'],
-	['articles', 'Articles: Markdown documents as notes are, their pictures files of the vault by content hash', 'document'],
+	['articles', 'Articles: a title and one Markdown text each, their pictures files of the vault by content hash', 'article'],
 	['files', 'Files: each a document of the Library naming the file it brings, sealed in pieces of up to a GiB', 'document'],
 	['device_cards', 'Each device’s card: a document of its vault, named for the device', 'document'],
 	['vault_profiles', 'The vault’s profile: a document of it, titled with its name', 'document'],
+	['flows', 'Flows: the stages an item of any type moves through, each with the stages it leads on to', 'flow'],
+	['functions', 'Functions: code that runs as an item enters or leaves a stage of a flow', 'function'],
+	['posts', 'Posts of the Maia Universe stream', 'post'],
 	['lane', 'The vault’s schemas and lenses: shared with Everyone, as every device that follows it reads them', null],
 	['records', 'Entries of any other type', null],
 	['sealed', 'What the acting vault doesn’t open: no share it holds opens it, or its key hasn’t come here yet', null]
@@ -171,13 +177,20 @@ const BY_TYPE = /** @type {Record<string, string>} */ ({
 	file: 'files',
 	card: 'device_cards',
 	profile: 'vault_profiles',
+	flow: 'flows',
+	function: 'functions',
+	post: 'posts',
 	schema: 'lane',
 	lens: 'lane'
 });
 
+/** The tables shown only when they have rows. */
+const SPARSE = ['flows', 'functions', 'posts', 'lane', 'records'];
+
 /**
  * The tables of the vault's entries, of one cell (the entries shared with the same vaults alike) or of all of them,
- * each with its rows, as `s.opens` says the acting vault opens them: `lane` and `records` only when they have any.
+ * each with its rows, as `s.opens` says the acting vault opens them: flows, functions, posts, `lane` and `records`
+ * only when they have any.
  * @param {Studio} s @param {string} only a cell's id, or '' for every cell
  * @returns {Table[]}
  */
@@ -186,7 +199,7 @@ export function tables(s, only) {
 	/** @param {RowView} r */
 	const table = (r) => (!s.opens(r) ? 'sealed' : (BY_TYPE[r.type ?? ''] ?? 'records'));
 	return TABLES.map(([id, hint, family]) => ({ id, label: id, hint, family, rows: rows.filter((r) => table(r) === id) })).filter(
-		(t) => (t.id !== 'records' && t.id !== 'lane') || t.rows.length
+		(t) => !SPARSE.includes(t.id) || t.rows.length
 	);
 }
 

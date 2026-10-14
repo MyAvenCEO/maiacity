@@ -80,14 +80,15 @@
 /**
  * An entry as the device shows it: `readers`, `writers` and `sharers` the vaults that read it, change it and may share
  * it on, its own vault first; `syncedTo` the devices that hold some of it, each with how many of its edits; `title` a
- * schema's title or a lens's name for those.
+ * schema's title or a lens's name for those; `record` the record of a flow, a function or a post (kind `record`), each
+ * field it leaves out at its default.
  * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
  *   created: number | null, cell: string, public: boolean, roles: Record<string, Role>,
  *   readers: string[], writers: string[], sharers: string[], syncedTo: Holder[],
- *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'sealed', title: string | null, text: string | null,
- *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, variantAt: string[] | null,
- *   deleted: boolean, edits: number,
- *   proposals: number, media: string | null, files: import('./files.js').FileView[] }} EntryView
+ *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'record' | 'sealed', title: string | null,
+ *   text: string | null, status: 'open' | 'doing' | 'done' | null, variantOf: string | null,
+ *   variantAt: string[] | null, deleted: boolean, edits: number, proposals: number, media: string | null,
+ *   record: Record<string, any> | null, files: import('./files.js').FileView[] }} EntryView
  */
 /**
  * The device's world (avendb-browser's `World::to_json`): `ownsAven` whether the person's vault owns an aven,
@@ -529,7 +530,7 @@ export const shareWhat = (c, world) => (c.whole ? 'Everything' : whereWords(c.sl
 const KIND_OF = /** @type {Record<string, string>} */ ({
 	note: 'document',
 	todo: 'todo',
-	article: 'document',
+	article: 'article',
 	file: 'document'
 });
 

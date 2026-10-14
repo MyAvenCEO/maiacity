@@ -380,13 +380,20 @@ enum Named {
 }
 
 fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
-    let bad = || bad("schema is \"document\", \"todo\", \"stored\" or a schema's id, 64 hex digits");
+    let bad = || {
+        let kinds = "\"document\", \"todo\", \"article\", \"flow\", \"function\" or \"post\"";
+        bad(format!("schema is a built-in kind ({kinds}), \"stored\" or a schema's id, 64 hex digits"))
+    };
     Ok(match o.get("schema") {
         None | Some(Value::Null) => Named::Own,
         Some(Value::String(s)) => match s.as_str() {
             "stored" => Named::Stored,
             "document" => Named::Id(lens::DOCUMENT_V2.id()),
             "todo" => Named::Id(lens::TODO_V2.id()),
+            "article" => Named::Id(lens::ARTICLE_V1.id()),
+            "flow" => Named::Id(lens::FLOW_V1.id()),
+            "function" => Named::Id(lens::FUNCTION_V1.id()),
+            "post" => Named::Id(lens::POST_V1.id()),
             s => Named::Id(BlobId::from_hex(s).ok_or_else(bad)?),
         },
         Some(_) => return Err(bad()),
@@ -1005,7 +1012,7 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             // of that version's edits, in place of the mark of the note its original was made from, if it was
             let at = lab.history(me, entry).map(|h| h.heads(line)).unwrap_or_default();
             let mark = |copy: &mut Item| -> Result<(), Refused> {
-                let tags = copy.as_document().map(|d| d.tags);
+                let tags = copy.as_markdown().map(|d| d.tags);
                 let older = tags.iter().flatten().filter(|t| t.starts_with(VARIANT));
                 let mut all: Vec<RecordOp> = older.map(|t| RecordOp::Drop("tags".into(), t.as_str().into())).collect();
                 if tags.is_some() {

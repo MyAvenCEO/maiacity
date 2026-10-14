@@ -14,6 +14,10 @@
 
 	// why it is shown as public
 	const PUBLIC = 'Public: a lens holds no data, so every device that follows the vault reads it';
+	// whose avenDB's own lenses are
+	const STANDARD =
+		'One of avenDB’s own: every app knows it, and avenCEO GmbH holds it as an entry of its own, ' +
+		'the same bytes so the same id, shared with Everyone';
 </script>
 
 {#snippet rules(/** @type {[any, any][]} */ rows, /** @type {string} */ from, /** @type {string} */ to)}
@@ -65,6 +69,7 @@
 				<b>{l.title}</b>
 				<span class="mono soft" title={l.id}>{short(l.id)}</span>
 				<span class="chip ok" title={PUBLIC}>Public</span>
+				{#if s.standard.has(l.id)}<span class="chip" title={STANDARD}>avenCEO GmbH</span>{/if}
 			</header>
 			<p class="joins">
 				<span class="chip">{s.schemaName(l.from)}</span>

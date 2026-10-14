@@ -8,7 +8,10 @@
 	(mountInterior with a host, $lib/sandbox-2/interior), and stepped inside the same way. With `round` (the
 	Buildings) every building stands on the same round ground ($lib/buildings/ground.js) instead of the square grid;
 	with `enter` picking one steps inside it at once; with `inPlace` (the Buildings) it is walked where it stands, the
-	list kept beside it, never full screen. A building being built says how far it is over the canvas.
+	list kept beside it, never full screen. A building being built says how far it is over the canvas. A model in its
+	parts (`userData.catalog`: the bell tent, its fire place) has every part to pick, on it or from its list, each with
+	its card, shown alone if asked (the rest a ghost round it), as the Actors' machines have theirs; it is taken apart
+	(`userData.explode`) and put up step by step (`userData.setPitch` or `setBuild`), played or scrubbed.
 -->
 <script>
 	import { onDestroy, onMount, untrack } from 'svelte';
@@ -82,6 +85,35 @@
 	let stick = null;
 	/** @type {(() => void) | null} */
 	let dispose = null;
+	/**
+	 * A model in its parts: its catalog, the part picked (by its id), whether it is shown alone (the rest a ghost) or
+	 * taken apart, and how far it is put up (0 … 1), played up to `playTo`
+	 * @type {{ assemblies: { id: string, label: string, note: string }[], parts: { id: string, label: string, assembly: string, what: string, moves?: string, specs?: [string, string][], count?: number, step: number }[], steps: string[], ranges: [number, number][], sources: { label: string, url: string }[], play: string, seconds?: number } | null}
+	 */
+	let catalog = $state(null);
+	/** @type {string | null} */
+	let picked = $state(null);
+	let alone = $state(false);
+	let apart = $state(false);
+	let stage = $state(1);
+	let playing = $state(false);
+	let playTo = 1;
+	const card = $derived.by(() => (catalog && picked ? (catalog.parts.find((p) => p.id === picked) ?? null) : null));
+	const stepNow = $derived.by(() => {
+		if (!catalog) return 0;
+		const i = catalog.ranges.findIndex(([, b]) => stage < b);
+		return i < 0 ? catalog.ranges.length - 1 : i;
+	});
+	/** @type {((k: number) => void) | null} */
+	let putUp = null;
+	/** @type {((id: string) => void) | null} */
+	let lookAt = null;
+	/** @type {() => void} */
+	let paint = () => {};
+	$effect(() => {
+		void [picked, alone, catalog];
+		paint();
+	});
 
 	onMount(async () => {
 		const THREE = await import('three');
@@ -116,6 +148,109 @@
 		/** @type {InstanceType<typeof THREE.Object3D> | null} */
 		let current = null;
 
+		// a model's parts: lit up when picked, the rest a ghost when it is shown alone (copies of each mesh's own
+		// materials, made once)
+		/** @type {Map<any, any>} */
+		const lits = new Map();
+		/** @type {Map<any, any>} */
+		const ghosts = new Map();
+		/** @param {any} mat */
+		const litOf = (mat) => {
+			let c = lits.get(mat);
+			if (!c) {
+				c = mat.clone();
+				if (c.emissive) {
+					c.emissive.set('#ff7a1a');
+					c.emissiveIntensity = 0.55;
+				}
+				lits.set(mat, c);
+			}
+			return c;
+		};
+		/** @param {any} mat */
+		const ghostOf = (mat) => {
+			let c = ghosts.get(mat);
+			if (!c) {
+				c = mat.clone();
+				c.transparent = true;
+				c.opacity = 0.07;
+				c.depthWrite = false;
+				ghosts.set(mat, c);
+			}
+			return c;
+		};
+		/** each mesh's own material, and the part it belongs to */
+		const own = new WeakMap();
+		const partIds = new WeakMap();
+		/** @param {any} o @returns {string | null} */
+		const partOf = (o) => {
+			if (partIds.has(o)) return partIds.get(o);
+			let id = null;
+			for (let p = o; p && p !== current; p = p.parent)
+				if (p.userData.part) {
+					id = p.userData.part;
+					break;
+				}
+			partIds.set(o, id);
+			return id;
+		};
+		paint = () => {
+			if (!current || !catalog) return;
+			current.traverse((o) => {
+				const mesh = /** @type {any} */ (o);
+				if (!mesh.isMesh) return;
+				if (!own.has(mesh)) own.set(mesh, mesh.material);
+				const mine = own.get(mesh);
+				const id = partOf(mesh);
+				const f = picked && id === picked ? litOf : picked && alone ? ghostOf : null;
+				mesh.material = f ? (Array.isArray(mine) ? mine.map(f) : f(mine)) : mine;
+			});
+		};
+		const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+		/** @param {any} o */
+		const seen = (o) => {
+			for (let p = o; p; p = p.parent) if (!p.visible) return false;
+			return true;
+		};
+		/** the part under a point of the canvas, if any @param {PointerEvent} e */
+		const partAt = (e) => {
+			if (!current || !catalog) return null;
+			const r = renderer.domElement.getBoundingClientRect();
+			ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+			ray.setFromCamera(ndc, camera);
+			for (const hit of ray.intersectObject(current, true)) {
+				if (!seen(hit.object)) continue;
+				const id = partOf(hit.object);
+				// shown alone, the ghosts are looked through
+				if (id && (!alone || !picked || id === picked)) return id;
+			}
+			return null;
+		};
+		/** @type {{ x: number, y: number } | null} */
+		let down = null;
+		renderer.domElement.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
+		renderer.domElement.addEventListener('pointerup', (e) => {
+			const was = down;
+			down = null;
+			// a tap, not a drag round it, picks the part under it (or, on nothing, lets go)
+			if (!was || walker || !catalog || Math.hypot(e.clientX - was.x, e.clientY - was.y) > 6) return;
+			const id = partAt(e);
+			picked = id;
+			if (id) lookAt?.(id);
+			else alone = false;
+		});
+		/** where the camera's aim is moving over to (a part looked at) @type {InstanceType<typeof THREE.Vector3> | null} */
+		let aim = null;
+		lookAt = (id) => {
+			const p = current?.userData.parts?.[id];
+			if (!p) return;
+			const b = new THREE.Box3().setFromObject(p);
+			if (!b.isEmpty()) aim = b.getCenter(new THREE.Vector3());
+		};
+		/** how far it is taken apart now, easing to 1 or 0 */
+		let apartK = 0;
+		putUp = (k) => (current?.userData.setPitch ?? current?.userData.setBuild)?.(k);
+
 		/** @type {ReturnType<typeof createWalker> | null} */
 		let walker = null;
 		/** @type {InstanceType<typeof THREE.PointLight>[]} */
@@ -141,10 +276,16 @@
 			clear();
 			walkable = roofed = roofOff = false;
 			size = null;
+			catalog = picked = null;
+			alone = apart = playing = false;
+			apartK = 0;
+			aim = null;
 			if (isDome(m)) return void raise(m, atOrLatest(m.versions, v).build);
 			current = kind && v === m.version ? kind.make() : atOrLatest(m.versions, v).build();
 			walkable = !!current.userData.walk;
 			roofed = !!current.userData.roof;
+			catalog = current.userData.catalog ?? null;
+			stage = current.userData.pitch ?? current.userData.built ?? 1;
 			current.traverse((o) => {
 				if (/** @type {InstanceType<typeof THREE.Mesh>} */ (o).isMesh) o.castShadow = true;
 			});
@@ -351,7 +492,24 @@
 		let frames = 0;
 		const tick = () => {
 			const now = performance.now();
-			if (walker) walker.update(Math.min(0.1, (now - last) / 1000));
+			const dt = Math.min(0.1, (now - last) / 1000);
+			// a model in its parts put up as it plays, and taken apart or put back together
+			if (playing && catalog) {
+				stage = Math.min(playTo, stage + dt / (catalog.seconds ?? 20));
+				putUp?.(stage);
+				if (stage >= playTo) playing = false;
+			}
+			const apartTo = apart ? 1 : 0;
+			if (current?.userData.explode && apartK !== apartTo) {
+				apartK += (apartTo - apartK) * Math.min(1, dt * 5);
+				if (Math.abs(apartK - apartTo) < 2e-3) apartK = apartTo;
+				current.userData.explode(apartK);
+			}
+			if (aim && !walker) {
+				controls.target.lerp(aim, 0.12);
+				if (controls.target.distanceTo(aim) < 0.002) aim = null;
+			}
+			if (walker) walker.update(dt);
 			else controls.update();
 			current?.userData.tick?.((now - start) / 1000); // a rigged machine at work
 			if (landless && ++frames % 20 === 0) scene.children.forEach(landless);
@@ -396,6 +554,36 @@
 		roofOff = !roofOff;
 		liftRoof?.(roofOff);
 	};
+	/** @param {string} id */
+	const choose = (id) => {
+		picked = picked === id ? null : id;
+		if (picked) lookAt?.(picked);
+		else alone = false;
+	};
+	/** put it up from where it is (from the start, once it stands), or stop */
+	const play = () => {
+		if (playing) return void (playing = false);
+		playTo = 1;
+		if (stage >= 1) {
+			stage = 0;
+			putUp?.(0);
+		}
+		playing = true;
+	};
+	/** play one step, from its start to its end @param {number} n the step (1 first) */
+	const playStep = (n) => {
+		const [a, b] = catalog?.ranges[n - 1] ?? [0, 1];
+		stage = a;
+		putUp?.(a);
+		playTo = b;
+		playing = true;
+	};
+	/** @param {number} k */
+	const scrub = (k) => {
+		playing = false;
+		stage = k;
+		putUp?.(k);
+	};
 </script>
 
 <svelte:head>
@@ -426,8 +614,63 @@
 				{/each}
 			</nav>
 		{/if}
+		{#if catalog}
+			<div class="parts" class:after={variants.length > 1}>
+				<div class="row head">
+					<span class="label">{catalog.parts.length} parts</span>
+					<span class="row">
+						<button class="chip" class:on={alone} disabled={!picked} onclick={() => (alone = !alone)}>Alone</button>
+						<button class="chip" class:on={apart} onclick={() => (apart = !apart)}>Explode</button>
+					</span>
+				</div>
+				<div class="row build">
+					<button class="chip" class:on={playing} onclick={play}>{playing ? 'Pause' : stage >= 1 ? catalog.play : 'Go on'}</button>
+					<input type="range" min="0" max="1" step="0.001" value={stage} oninput={(e) => scrub(+e.currentTarget.value)} aria-label="How far it is put up" />
+				</div>
+				<p class="note">Step {stepNow + 1} of {catalog.steps.length}: {catalog.steps[stepNow]}</p>
+				{#each catalog.assemblies as a (a.id)}
+					{@const list = catalog.parts.filter((p) => p.assembly === a.id)}
+					<details open={!!picked && list.some((p) => p.id === picked)}>
+						<summary><b>{a.label}</b> <small>{list.length}</small></summary>
+						<p class="note">{a.note}</p>
+						<ul>
+							{#each list as p (p.id)}
+								<li><button class:on={picked === p.id} onclick={() => choose(p.id)}>{p.label}{#if p.count && p.count > 1}<small> ×{p.count}</small>{/if}{#if p.moves}<i title="moves">↻</i>{/if}</button></li>
+							{/each}
+						</ul>
+					</details>
+				{/each}
+				<details>
+					<summary><b>Sources</b> <small>{catalog.sources.length}</small></summary>
+					<ul class="sources">
+						{#each catalog.sources as s (s.url)}<li><a href={s.url} target="_blank" rel="noreferrer">{s.label} ↗</a></li>{/each}
+					</ul>
+				</details>
+			</div>
+		{/if}
 	{/snippet}
 	{#snippet readout()}
+		{#if card && catalog}
+			{@const a = catalog.assemblies.find((x) => x.id === card.assembly)}
+			<div class="part-card">
+				<span class="label">{a?.label} · step {card.step} of {catalog.steps.length}</span>
+				<b>{card.label}{#if card.count && card.count > 1}<small> ×{card.count}</small>{/if}</b>
+				<p>{card.what}</p>
+				{#if card.moves}<p><span class="tag">Moves</span> {card.moves}</p>{/if}
+				{#if card.specs?.length}
+					<dl>
+						{#each card.specs as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
+					</dl>
+				{/if}
+				<small>Step {card.step}: {catalog.steps[card.step - 1]}</small>
+				<div class="row">
+					<button class="chip" onclick={() => lookAt?.(card.id)}>Look at it</button>
+					<button class="chip" class:on={alone} onclick={() => (alone = !alone)}>Alone</button>
+					<button class="chip" onclick={() => playStep(card.step)}>Its step</button>
+					<button class="chip" onclick={() => ((picked = null), (alone = false))}>Close</button>
+				</div>
+			</div>
+		{:else}
 		<b>{variants.length > 1 && variant ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
 		{#if variants.length > 1 && variant}<small>{variant.note}</small>{/if}
 		{#if isDome(chosen)}<span>{chosen.size}</span>{/if}
@@ -436,7 +679,8 @@
 		{:else if size}
 			<span>{metres(size[0])} × {metres(size[2])} × {metres(size[1])} <small>(width × depth × height)</small></span>
 		{/if}
-		{#if !walking}<small>Drag to turn round it · pinch or scroll to come closer · the grid is {round ? '1 m' : '10 cm'}</small>{/if}
+		{#if !walking}<small>Drag to turn round it · pinch or scroll to come closer · the grid is {round ? '1 m' : '10 cm'}{catalog ? ' · tap any part for its card' : ''}</small>{/if}
+		{/if}
 	{/snippet}
 	{#if building}
 		<div class="loading" role="status" aria-live="polite">
@@ -502,6 +746,114 @@
 		height: 100%;
 		background: #c8744f;
 		transition: width 400ms ease;
+	}
+	.parts.after {
+		margin-top: 0.8rem;
+	}
+	.parts details {
+		border-top: 1px solid rgb(0 0 0 / 0.08);
+		padding: 0.3rem 0;
+	}
+	.parts summary {
+		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		gap: 0.4rem;
+	}
+	.parts summary small,
+	.parts li small {
+		opacity: 0.55;
+	}
+	.parts .note {
+		margin: 0.25rem 0 0.35rem;
+		font-size: 0.75rem;
+		opacity: 0.7;
+	}
+	.parts ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.parts li button {
+		display: flex;
+		width: 100%;
+		gap: 0.3rem;
+		align-items: baseline;
+		text-align: left;
+		padding: 0.18rem 0.4rem;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+	}
+	.parts li button:hover {
+		background: rgb(0 0 0 / 0.05);
+	}
+	.parts li button.on {
+		background: #ff7a1a;
+		color: #fff;
+	}
+	.parts .sources a {
+		display: block;
+		padding: 0.3rem 0.4rem;
+		font-size: 0.8rem;
+		color: inherit;
+	}
+	.parts li i {
+		margin-left: auto;
+		font-style: normal;
+		opacity: 0.45;
+	}
+	.parts .row {
+		display: flex;
+		gap: 0.35rem;
+		align-items: center;
+	}
+	.parts .head {
+		justify-content: space-between;
+		margin-bottom: 0.3rem;
+	}
+	.parts .build input {
+		flex: 1;
+		min-width: 0;
+		accent-color: #c8744f;
+	}
+	.parts .chip:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+	.part-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.part-card p {
+		margin: 0;
+		line-height: 1.4;
+	}
+	.part-card .tag {
+		font-size: 0.68rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		opacity: 0.55;
+	}
+	.part-card dl {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 0.1rem 0.8rem;
+		margin: 0.15rem 0;
+		font-size: 0.8rem;
+	}
+	.part-card dt {
+		opacity: 0.6;
+	}
+	.part-card dd {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.part-card .row {
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
 	}
 	.chip.dark {
 		padding: 0.5rem 0.9rem;

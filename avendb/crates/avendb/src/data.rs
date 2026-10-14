@@ -53,7 +53,17 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
             "entries": entries.iter().filter(|en| en.audience() == *x).count(),
         })
     };
-    let schemas = [&*lens::DOCUMENT_V1, &*lens::DOCUMENT_V2, &*lens::TODO_V1, &*lens::TODO_V2].map(schema);
+    let schemas = [
+        &*lens::DOCUMENT_V1,
+        &*lens::DOCUMENT_V2,
+        &*lens::TODO_V1,
+        &*lens::TODO_V2,
+        &*lens::ARTICLE_V1,
+        &*lens::FLOW_V1,
+        &*lens::FUNCTION_V1,
+        &*lens::POST_V1,
+    ]
+    .map(schema);
     json!({
         "vault": hex(&vault.0),
         "held": { "edits": edits, "keys": keys },
@@ -425,21 +435,22 @@ fn recipient(r: &Recipient) -> Value {
     key_name(r.name())
 }
 
-/// Note `entry` as device `me` holds it, for the page's note page: its lines, the main line first, then each proposal
-/// in the order it started, each with its name (`named`), the version it started from, its heads, its history (its own
-/// edits and every edit they build on, oldest first), and the note it shows there; for a proposal, as a pull request
-/// shows one, the note at its base with main, what both lines hold in common (`base`), and where a merge into main
-/// would find both changed one place differently (`conflicts`, `merge::Conflict`); and every edit of it the device
-/// counts, in the order the device took them (`edit`). `None` if it counts none.
+/// Note `entry` as device `me` holds it, for the page's note page, an article alike (`Item::as_markdown`): the kind its
+/// record names on the main line (`"document"`, `"article"`); its lines, the main line first, then each proposal in the
+/// order it started, each with its name (`named`), the version it started from, its heads, its history (its own edits
+/// and every edit they build on, oldest first), and the note it shows there; for a proposal, as a pull request shows
+/// one, the note at its base with main, what both lines hold in common (`base`), and where a merge into main would find
+/// both changed one place differently (`conflicts`, `merge::Conflict`); and every edit of it the device counts, in the
+/// order the device took them (`edit`). `None` if it counts none.
 pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
     let h = lab.history(me, entry)?;
     let line = |line: Line| {
-        let doc = lab.item_on(me, entry, line).and_then(Item::as_document);
+        let doc = lab.item_on(me, entry, line).and_then(Item::as_markdown);
         let start = line.and_then(|b| h.get(b));
         let (base, conflicts) = match line {
             None => (Value::Null, Value::Null),
             Some(_) => {
-                let base = h.item_at(&h.base(line, MAIN), me, line).as_document();
+                let base = h.item_at(&h.base(line, MAIN), me, line).as_markdown();
                 let base = base.map_or(Value::Null, |d| json!({ "title": d.title.clone(), "text": body(&d) }));
                 let conflicts = h.merged(line, MAIN, me, &BTreeSet::new()).conflicts;
                 (base, conflicts.iter().map(Conflict::to_json).collect())
@@ -463,7 +474,8 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
     let audit = Audit::new(lab, me);
     let edits: Vec<Value> = h.changes().iter().enumerate().map(|(i, c)| edit(h, me, &audit, c, i >= shown)).collect();
     let vault = lab.vault_of_entry(me, entry).map(|v| hex(&v.0));
-    Some(json!({ "entry": hex(&entry.0), "vault": vault, "lines": lines, "edits": edits }))
+    let kind = lab.item_on(me, entry, None).and_then(|i| i.record().get("kind")?.as_str().map(String::from));
+    Some(json!({ "entry": hex(&entry.0), "vault": vault, "kind": kind, "lines": lines, "edits": edits }))
 }
 
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the owners it acted through
@@ -476,7 +488,7 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
 fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, shown: bool) -> Value {
     let (w, Wrote { kind, from, base, why }) = (&c.write, wrote(h, c));
     let line = w.line();
-    let at = |version: &[EditId]| h.item_at(version, me, line).as_document();
+    let at = |version: &[EditId]| h.item_at(version, me, line).as_markdown();
     let (after, before) =
         if shown && matches!(kind, "edit" | "merge") { (at(&[w.edit]), at(&base)) } else { (None, None) };
     json!({
