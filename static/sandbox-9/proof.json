@@ -55437,7 +55437,7 @@
 				}
 			]
 		},
-		"generated": "2026-10-14T16:28:57.228Z",
+		"generated": "2026-10-14T17:58:21.153Z",
 		"command": "node scripts/sandbox-9-proof.mjs",
 		"engineHash": "e27378ed",
 		"wallSeconds": 8185,
@@ -55478,10 +55478,10 @@
 				]
 			},
 			{
-				"part": "P3 — living standards rise for every tenth (real units)",
+				"part": "P3 — living standards rise for every tenth (real units, judged taste-adjusted)",
 				"holds": true,
-				"base": "tenths failing in real units (of 20: ten by holdings, ten by Aven output) 0, 0, 0, 0, 0; items failing: basics 0, 0, 0, 0, 0, extras’ falls 0, 0, 0, 0, 0, baskets not rising 0, 0, 0, 0, 0. Old money index (comparison): worst 5-year fall 1.6 %, 2.2 %, 1.3 %, 1.8 %, 1.3 %; deciles failing 0, 0, 0, 0, 0; without Aven services in the index, deciles failing 18, 18, 18, 18, 18; Aven services’ share of the index in the last year 29 %, 29 %, 29 %, 29 %, 29 %; COOP part PASS, PASS, PASS, PASS, PASS",
-				"founding": "tenths failing in real units 6, 5, 6, 5, 7; extras’ falls 6, 8, 8, 6, 7; COOP-days unable to pay (30 days or more) over the whole run 0, 0, 0, 0, 0, receiverships in the founding 0, 0, 0, 0, 0",
+				"base": "tenths failing taste-adjusted (of 20: ten by holdings, ten by Aven output) 0, 0, 0, 0, 0 (beside it: (a) each extra 0, 0, 0, 0, 0; (b) taste-adjusted, no cap excuse 11, 12, 12, 12, 12; (c) one basket 0, 0, 0, 0, 0); items failing: basics 0, 0, 0, 0, 0, extras’ falls that count 0, 0, 0, 0, 0 (each extra: 0, 0, 0, 0, 0), baskets not rising 0, 0, 0, 0, 0. Old money index (comparison): worst 5-year fall 1.6 %, 2.2 %, 1.3 %, 1.8 %, 1.3 %; deciles failing 0, 0, 0, 0, 0; without Aven services in the index, deciles failing 18, 18, 18, 18, 18; Aven services’ share of the index in the last year 29 %, 29 %, 29 %, 29 %, 29 %; COOP part PASS, PASS, PASS, PASS, PASS",
+				"founding": "tenths failing taste-adjusted 6, 5, 6, 5, 7 (beside it: (a) each extra 6, 5, 6, 5, 7; (b) taste-adjusted, no cap excuse 6 (floor), 5 (floor), 6 (floor), 5 (floor), 7 (floor); (c) one basket 1, 0, 0, 0, 0); extras’ falls that count 6, 8, 8, 6, 7 (each extra: 6, 8, 8, 6, 7); COOP-days unable to pay (30 days or more) over the whole run 0, 0, 0, 0, 0, receiverships in the founding 0, 0, 0, 0, 0",
 				"breaks": [
 					"SH",
 					"B22",
@@ -83687,6 +83687,7 @@
 				"P2normal": true,
 				"P3": true,
 				"P3failed": [],
+				"P3yardstick": "taste-adjusted",
 				"P3real": true,
 				"P3realFailed": [],
 				"P3oldIndex": false,
@@ -83727,103 +83728,305 @@
 				"mindBindsBasicsInFounding": 0,
 				"gini": 0.2545,
 				"yardsticks": {
+					"verdict": "taste",
 					"after": {
 						"years": [
 							6,
 							60
 						],
-						"aEachExtra": 0,
-						"bTasteAdjusted": 11,
-						"bComplete": true,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": true,
+						"failing": {
+							"taste": 0,
+							"each": 0,
+							"tasteNoCap": 11,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 25,
+											"to": 30,
+											"fall": 0.06852,
+											"before": 7.901,
+											"after": 7.36,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.05009,
+											"before": 8.848,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1388,
+											"before": 9.759,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1825,
+											"before": 10.28,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1832,
+											"before": 10.29,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 25,
+											"to": 30,
+											"fall": 0.06852,
+											"before": 7.901,
+											"after": 7.36,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.03685,
+											"before": 8.726,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1247,
+											"before": 9.602,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1564,
+											"before": 9.962,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1731,
+											"before": 10.16,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1824,
+											"before": 10.28,
+											"after": 8.405,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					},
@@ -83832,78 +84035,340 @@
 							1,
 							5
 						],
-						"aEachExtra": 6,
-						"bTasteAdjusted": 6,
-						"bComplete": false,
-						"cOneBasket": 1,
-						"failing": [
+						"complete": false,
+						"failing": {
+							"taste": 6,
+							"each": 6,
+							"tasteNoCap": 6,
+							"basket": 1
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 2",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap",
+									"basket"
 								],
-								"b": [
-									"goods"
-								],
-								"c": {
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.3744,
+											"before": 236.5,
+											"after": 148,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.3744,
+											"before": 236.5,
+											"after": 148,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.3744,
+											"before": 236.5,
+											"after": 148,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": {
 									"from": 2,
 									"to": 3,
 									"fall": 0.04777,
 									"fell": [
-										"goods -37 %",
-										"warm ponds -5 %"
+										{
+											"item": "goods",
+											"change": -0.3744
+										},
+										{
+											"item": "warm ponds",
+											"change": -0.05364
+										}
 									]
-								}
+								},
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 3",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.198,
+											"before": 232.3,
+											"after": 186.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.198,
+											"before": 232.3,
+											"after": 186.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.198,
+											"before": 232.3,
+											"after": 186.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 4",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1046,
+											"before": 279.7,
+											"after": 250.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1046,
+											"before": 279.7,
+											"after": 250.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1046,
+											"before": 279.7,
+											"after": 250.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1626,
+											"before": 271.1,
+											"after": 227,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1626,
+											"before": 271.1,
+											"after": 227,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1626,
+											"before": 271.1,
+											"after": 227,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 2",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06343,
+											"before": 236.7,
+											"after": 221.6,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06343,
+											"before": 236.7,
+											"after": 221.6,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06343,
+											"before": 236.7,
+											"after": 221.6,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 3",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04901,
+											"before": 268.5,
+											"after": 255.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04901,
+											"before": 268.5,
+											"after": 255.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04901,
+											"before": 268.5,
+											"after": 255.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					}
@@ -112250,6 +112715,7 @@
 				"P2normal": true,
 				"P3": true,
 				"P3failed": [],
+				"P3yardstick": "taste-adjusted",
 				"P3real": true,
 				"P3realFailed": [],
 				"P3oldIndex": false,
@@ -112289,111 +112755,331 @@
 				"mindBindsBasicsInFounding": 2,
 				"gini": 0.2517,
 				"yardsticks": {
+					"verdict": "taste",
 					"after": {
 						"years": [
 							6,
 							60
 						],
-						"aEachExtra": 0,
-						"bTasteAdjusted": 12,
-						"bComplete": true,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": true,
+						"failing": {
+							"taste": 0,
+							"each": 0,
+							"tasteNoCap": 12,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 24,
+											"to": 29,
+											"fall": 0.06368,
+											"before": 8.307,
+											"after": 7.778,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.03079,
+											"before": 8.668,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.06968,
+											"before": 9.03,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.0881,
+											"before": 9.213,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.09953,
+											"before": 9.329,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.09966,
+											"before": 9.331,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 24,
+											"to": 29,
+											"fall": 0.06368,
+											"before": 8.307,
+											"after": 7.778,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.04806,
+											"before": 8.825,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.0751,
+											"before": 9.083,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.08477,
+											"before": 9.179,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.09613,
+											"before": 9.294,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.09913,
+											"before": 9.325,
+											"after": 8.401,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					},
@@ -112402,62 +113088,306 @@
 							1,
 							5
 						],
-						"aEachExtra": 5,
-						"bTasteAdjusted": 5,
-						"bComplete": false,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": false,
+						"failing": {
+							"taste": 5,
+							"each": 5,
+							"tasteNoCap": 5,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [
-									"goods",
-									"Aven help"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods",
-									"Aven help"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.114,
+											"before": 165.7,
+											"after": 146.8,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										},
+										{
+											"item": "Aven help",
+											"from": 1,
+											"to": 2,
+											"fall": 0.09566,
+											"before": 19.44,
+											"after": 17.58,
+											"bind": "MIND",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.114,
+											"before": 165.7,
+											"after": 146.8,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										},
+										{
+											"item": "Aven help",
+											"from": 1,
+											"to": 2,
+											"fall": 0.09566,
+											"before": 19.44,
+											"after": 17.58,
+											"bind": "MIND",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.114,
+											"before": 165.7,
+											"after": 146.8,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										},
+										{
+											"item": "Aven help",
+											"from": 1,
+											"to": 2,
+											"fall": 0.09566,
+											"before": 19.44,
+											"after": 17.58,
+											"bind": "MIND",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 2",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2545,
+											"before": 173.7,
+											"after": 129.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2545,
+											"before": 173.7,
+											"after": 129.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2545,
+											"before": 173.7,
+											"after": 129.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 3",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.03134,
+											"before": 186.1,
+											"after": 180.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.03134,
+											"before": 186.1,
+											"after": 180.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.03134,
+											"before": 186.1,
+											"after": 180.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2669,
+											"before": 275.6,
+											"after": 202.1,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2669,
+											"before": 275.6,
+											"after": 202.1,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2669,
+											"before": 275.6,
+											"after": 202.1,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.03434,
+											"before": 569.8,
+											"after": 550.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.03434,
+											"before": 569.8,
+											"after": 550.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.03434,
+											"before": 569.8,
+											"after": 550.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					}
@@ -140787,6 +141717,7 @@
 				"P2normal": true,
 				"P3": true,
 				"P3failed": [],
+				"P3yardstick": "taste-adjusted",
 				"P3real": true,
 				"P3realFailed": [],
 				"P3oldIndex": false,
@@ -140827,111 +141758,331 @@
 				"mindBindsBasicsInFounding": 0,
 				"gini": 0.2544,
 				"yardsticks": {
+					"verdict": "taste",
 					"after": {
 						"years": [
 							6,
 							60
 						],
-						"aEachExtra": 0,
-						"bTasteAdjusted": 12,
-						"bComplete": true,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": true,
+						"failing": {
+							"taste": 0,
+							"each": 0,
+							"tasteNoCap": 12,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 37,
+											"to": 42,
+											"fall": 0.06468,
+											"before": 7.327,
+											"after": 6.853,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.03038,
+											"before": 8.666,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.06085,
+											"before": 8.948,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1085,
+											"before": 9.425,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1194,
+											"before": 9.543,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1194,
+											"before": 9.543,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 37,
+											"to": 42,
+											"fall": 0.06468,
+											"before": 7.327,
+											"after": 6.853,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.0533,
+											"before": 8.876,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.0864,
+											"before": 9.198,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1029,
+											"before": 9.367,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1154,
+											"before": 9.499,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1193,
+											"before": 9.542,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					},
@@ -140940,70 +142091,325 @@
 							1,
 							5
 						],
-						"aEachExtra": 6,
-						"bTasteAdjusted": 6,
-						"bComplete": false,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": false,
+						"failing": {
+							"taste": 6,
+							"each": 6,
+							"tasteNoCap": 6,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1853,
+											"before": 168.4,
+											"after": 137.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1853,
+											"before": 168.4,
+											"after": 137.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1853,
+											"before": 168.4,
+											"after": 137.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 2",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2337,
+											"before": 189.5,
+											"after": 145.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2337,
+											"before": 189.5,
+											"after": 145.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2337,
+											"before": 189.5,
+											"after": 145.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 3",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06359,
+											"before": 202.5,
+											"after": 189.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06359,
+											"before": 202.5,
+											"after": 189.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06359,
+											"before": 202.5,
+											"after": 189.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 10",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06209,
+											"before": 614.6,
+											"after": 576.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06209,
+											"before": 614.6,
+											"after": 576.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.06209,
+											"before": 614.6,
+											"after": 576.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.3144,
+											"before": 288,
+											"after": 197.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.3144,
+											"before": 288,
+											"after": 197.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.3144,
+											"before": 288,
+											"after": 197.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.08828,
+											"before": 560.5,
+											"after": 511.1,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.08828,
+											"before": 560.5,
+											"after": 511.1,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.08828,
+											"before": 560.5,
+											"after": 511.1,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					}
@@ -169333,6 +170739,7 @@
 				"P2normal": true,
 				"P3": true,
 				"P3failed": [],
+				"P3yardstick": "taste-adjusted",
 				"P3real": true,
 				"P3realFailed": [],
 				"P3oldIndex": false,
@@ -169372,111 +170779,331 @@
 				"mindBindsBasicsInFounding": 0,
 				"gini": 0.252,
 				"yardsticks": {
+					"verdict": "taste",
 					"after": {
 						"years": [
 							6,
 							60
 						],
-						"aEachExtra": 0,
-						"bTasteAdjusted": 12,
-						"bComplete": true,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": true,
+						"failing": {
+							"taste": 0,
+							"each": 0,
+							"tasteNoCap": 12,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 22,
+											"to": 27,
+											"fall": 0.06748,
+											"before": 8.243,
+											"after": 7.687,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.04136,
+											"before": 8.765,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.05294,
+											"before": 8.872,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1292,
+											"before": 9.65,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1621,
+											"before": 10.03,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1625,
+											"before": 10.03,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 22,
+											"to": 27,
+											"fall": 0.06748,
+											"before": 8.243,
+											"after": 7.687,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.06378,
+											"before": 8.975,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1027,
+											"before": 9.365,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.143,
+											"before": 9.804,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1516,
+											"before": 9.904,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 8,
+											"fall": 0.1621,
+											"before": 10.03,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					},
@@ -169485,60 +171112,273 @@
 							1,
 							5
 						],
-						"aEachExtra": 5,
-						"bTasteAdjusted": 5,
-						"bComplete": false,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": false,
+						"failing": {
+							"taste": 5,
+							"each": 5,
+							"tasteNoCap": 5,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.07594,
+											"before": 157.3,
+											"after": 145.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.07594,
+											"before": 157.3,
+											"after": 145.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.07594,
+											"before": 157.3,
+											"after": 145.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 2",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.252,
+											"before": 206.5,
+											"after": 154.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.252,
+											"before": 206.5,
+											"after": 154.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.252,
+											"before": 206.5,
+											"after": 154.4,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 3",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04893,
+											"before": 200.5,
+											"after": 190.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04893,
+											"before": 200.5,
+											"after": 190.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04893,
+											"before": 200.5,
+											"after": 190.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2634,
+											"before": 274.8,
+											"after": 202.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2634,
+											"before": 274.8,
+											"after": 202.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2634,
+											"before": 274.8,
+											"after": 202.5,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04542,
+											"before": 538.4,
+											"after": 514,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04542,
+											"before": 538.4,
+											"after": 514,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.04542,
+											"before": 538.4,
+											"after": 514,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					}
@@ -197882,6 +199722,7 @@
 				"P2normal": true,
 				"P3": true,
 				"P3failed": [],
+				"P3yardstick": "taste-adjusted",
 				"P3real": true,
 				"P3realFailed": [],
 				"P3oldIndex": false,
@@ -197923,111 +199764,331 @@
 				"mindBindsBasicsInFounding": 0,
 				"gini": 0.2482,
 				"yardsticks": {
+					"verdict": "taste",
 					"after": {
 						"years": [
 							6,
 							60
 						],
-						"aEachExtra": 0,
-						"bTasteAdjusted": 12,
-						"bComplete": true,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": true,
+						"failing": {
+							"taste": 0,
+							"each": 0,
+							"tasteNoCap": 12,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 26,
+											"to": 31,
+											"fall": 0.0561,
+											"before": 7.83,
+											"after": 7.39,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.03353,
+											"before": 8.694,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.064,
+											"before": 8.977,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.1466,
+											"before": 9.846,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.1797,
+											"before": 10.24,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.1797,
+											"before": 10.24,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 26,
+											"to": 31,
+											"fall": 0.0561,
+											"before": 7.83,
+											"after": 7.39,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 6",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.07608,
+											"before": 9.095,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 7",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.1253,
+											"before": 9.607,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 8",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.153,
+											"before": 9.921,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 9",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.1735,
+											"before": 10.17,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [],
-								"b": [
-									"warm ponds"
+								"fails": [
+									"tasteNoCap"
 								],
-								"c": null
+								"falls": {
+									"each": [],
+									"taste": [],
+									"tasteNoCap": [
+										{
+											"item": "warm ponds",
+											"from": 6,
+											"to": 9,
+											"fall": 0.1795,
+											"before": 10.24,
+											"after": 8.403,
+											"bind": "nature (sun, rain, spring)",
+											"filled": false,
+											"atCap": true
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					},
@@ -198036,80 +200097,377 @@
 							1,
 							5
 						],
-						"aEachExtra": 7,
-						"bTasteAdjusted": 7,
-						"bComplete": false,
-						"cOneBasket": 0,
-						"failing": [
+						"complete": false,
+						"failing": {
+							"taste": 7,
+							"each": 7,
+							"tasteNoCap": 7,
+							"basket": 0
+						},
+						"tenths": [
 							{
 								"tenth": "holdings 1",
-								"a": [
-									"Aven help"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"Aven help"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "Aven help",
+											"from": 1,
+											"to": 2,
+											"fall": 0.0421,
+											"before": 19.99,
+											"after": 19.15,
+											"bind": "MIND",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "Aven help",
+											"from": 1,
+											"to": 2,
+											"fall": 0.0421,
+											"before": 19.99,
+											"after": 19.15,
+											"bind": "MIND",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "Aven help",
+											"from": 1,
+											"to": 2,
+											"fall": 0.0421,
+											"before": 19.99,
+											"after": 19.15,
+											"bind": "MIND",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 2",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2173,
+											"before": 195.1,
+											"after": 152.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2173,
+											"before": 195.1,
+											"after": 152.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2173,
+											"before": 195.1,
+											"after": 152.7,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 3",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.02994,
+											"before": 200.8,
+											"after": 194.8,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.02994,
+											"before": 200.8,
+											"after": 194.8,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.02994,
+											"before": 200.8,
+											"after": 194.8,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "holdings 10",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1552,
+											"before": 594.5,
+											"after": 502.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1552,
+											"before": 594.5,
+											"after": 502.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1552,
+											"before": 594.5,
+											"after": 502.2,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 1",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2109,
+											"before": 279.5,
+											"after": 220.6,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2109,
+											"before": 279.5,
+											"after": 220.6,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.2109,
+											"before": 279.5,
+											"after": 220.6,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 9",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.0317,
+											"before": 436.8,
+											"after": 422.9,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.0317,
+											"before": 436.8,
+											"after": 422.9,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.0317,
+											"before": 436.8,
+											"after": 422.9,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							},
 							{
 								"tenth": "aven 10",
-								"a": [
-									"goods"
+								"fails": [
+									"taste",
+									"each",
+									"tasteNoCap"
 								],
-								"b": [
-									"goods"
-								],
-								"c": null
+								"falls": {
+									"each": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1885,
+											"before": 567.3,
+											"after": 460.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"taste": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1885,
+											"before": 567.3,
+											"after": 460.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									],
+									"tasteNoCap": [
+										{
+											"item": "goods",
+											"from": 2,
+											"to": 3,
+											"fall": 0.1885,
+											"before": 567.3,
+											"after": 460.3,
+											"bind": "not built (free land, no project)",
+											"filled": false,
+											"atCap": false
+										}
+									]
+								},
+								"basket": null,
+								"basics": 0,
+								"rise": false
 							}
 						]
 					}
@@ -198268,6 +200626,124 @@
 				}
 			}
 		],
+		"p3": {
+			"verdict": "taste",
+			"label": "taste-adjusted",
+			"decided": "Samuel, 2026-10-14 17:31",
+			"rule": "an extra’s fall counts only when the tenth got less of it than it ordered (a fall in what people ask for is not a fall in living standards), and never while the good is at its natural or physical limit that year (the warm ponds, which nature rations) or the tenth is at satiation",
+			"claim": "In real units, every tenth by holdings and by Aven output, from the end of the founding: the basics (kcal, protein, water, home kWh, a bed) at or above need every year; no extra (home m², goods, Aven hours, warm-pond hours) falls more than 2 % in any 5 years, judged taste-adjusted: an extra’s fall counts only when the tenth got less of it than it ordered (a fall in what people ask for is not a fall in living standards), and never while the good is at its natural or physical limit that year (the warm ponds, which nature rations) or the tenth is at satiation; each tenth’s basket rises over the run; COOPs stay solvent or leave through receivership with no basic short.",
+			"pass": true,
+			"source": "the proof suite’s 5 base worlds, 60 years, engine e27378ed",
+			"side": [
+				{
+					"key": "each",
+					"mark": "(a)",
+					"label": "each extra",
+					"rule": "every fall of an extra counts unless the extra is at satiation or a natural or physical limit binds that year (canon #19 as round 6 ran it)"
+				},
+				{
+					"key": "tasteNoCap",
+					"mark": "(b)",
+					"label": "taste-adjusted, no cap excuse",
+					"rule": "a fall counts when the tenth got less of the extra than it ordered, at a natural or physical limit or not"
+				},
+				{
+					"key": "basket",
+					"mark": "(c)",
+					"label": "one basket",
+					"rule": "the four extras together (home m², goods, Aven help, warm ponds), valued at fixed day-1 prices, never fall more than 2 % in any five years"
+				}
+			],
+			"evidence": [
+				"Seed 20261012: 20/20 tenths pass after the founding (years 6–60), judged taste-adjusted; the COOP part passes. In the founding (years 1–5), 14/20 pass (failing: holdings tenths 2, 3, 4 and aven tenths 1, 2, 3; what counts: goods in years 2→3: sold out (not built (free land, no project)), orders not filled). Beside it, tenths failing after the founding: (a) each extra 0, (b) taste-adjusted, no cap excuse 11, (c) one basket 0.",
+				"Seed 1: 20/20 tenths pass after the founding (years 6–60), judged taste-adjusted; the COOP part passes. In the founding (years 1–5), 15/20 pass (failing: holdings tenths 1, 2, 3 and aven tenths 1, 10; what counts: goods in years 2→3, 2→4: sold out (not built (free land, no project)), orders not filled; Aven help in years 1→2: not sold out, budgets bound). Beside it, tenths failing after the founding: (a) each extra 0, (b) taste-adjusted, no cap excuse 12, (c) one basket 0.",
+				"Seed 2: 20/20 tenths pass after the founding (years 6–60), judged taste-adjusted; the COOP part passes. In the founding (years 1–5), 14/20 pass (failing: holdings tenths 1, 2, 3, 10 and aven tenths 1, 10; what counts: goods in years 2→3, 2→4: sold out (not built (free land, no project)), orders not filled). Beside it, tenths failing after the founding: (a) each extra 0, (b) taste-adjusted, no cap excuse 12, (c) one basket 0.",
+				"Seed 3: 20/20 tenths pass after the founding (years 6–60), judged taste-adjusted; the COOP part passes. In the founding (years 1–5), 15/20 pass (failing: holdings tenths 1, 2, 3 and aven tenths 1, 10; what counts: goods in years 2→3, 2→4: sold out (not built (free land, no project)), orders not filled). Beside it, tenths failing after the founding: (a) each extra 0, (b) taste-adjusted, no cap excuse 12, (c) one basket 0.",
+				"Seed 4: 20/20 tenths pass after the founding (years 6–60), judged taste-adjusted; the COOP part passes. In the founding (years 1–5), 13/20 pass (failing: holdings tenths 1, 2, 3, 10 and aven tenths 1, 9, 10; what counts: Aven help in years 1→2: not sold out, budgets bound; goods in years 2→3: sold out (not built (free land, no project)), orders not filled). Beside it, tenths failing after the founding: (a) each extra 0, (b) taste-adjusted, no cap excuse 12, (c) one basket 0."
+			],
+			"seeds": [
+				{
+					"seed": 20261012,
+					"pass": true,
+					"after": {
+						"taste": 0,
+						"each": 0,
+						"tasteNoCap": 11,
+						"basket": 0
+					},
+					"founding": {
+						"taste": 6,
+						"each": 6,
+						"tasteNoCap": 6,
+						"basket": 1
+					}
+				},
+				{
+					"seed": 1,
+					"pass": true,
+					"after": {
+						"taste": 0,
+						"each": 0,
+						"tasteNoCap": 12,
+						"basket": 0
+					},
+					"founding": {
+						"taste": 5,
+						"each": 5,
+						"tasteNoCap": 5,
+						"basket": 0
+					}
+				},
+				{
+					"seed": 2,
+					"pass": true,
+					"after": {
+						"taste": 0,
+						"each": 0,
+						"tasteNoCap": 12,
+						"basket": 0
+					},
+					"founding": {
+						"taste": 6,
+						"each": 6,
+						"tasteNoCap": 6,
+						"basket": 0
+					}
+				},
+				{
+					"seed": 3,
+					"pass": true,
+					"after": {
+						"taste": 0,
+						"each": 0,
+						"tasteNoCap": 12,
+						"basket": 0
+					},
+					"founding": {
+						"taste": 5,
+						"each": 5,
+						"tasteNoCap": 5,
+						"basket": 0
+					}
+				},
+				{
+					"seed": 4,
+					"pass": true,
+					"after": {
+						"taste": 0,
+						"each": 0,
+						"tasteNoCap": 12,
+						"basket": 0
+					},
+					"founding": {
+						"taste": 7,
+						"each": 7,
+						"tasteNoCap": 7,
+						"basket": 0
+					}
+				}
+			]
+		},
 		"experiments": [
 			{
 				"id": "X1",
