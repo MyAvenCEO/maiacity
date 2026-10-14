@@ -40,7 +40,8 @@
  * failed MIND leaves the pools and is retired) and small ones that lost their market exit; every tenth person is a
  * zero-Aven test group. Since round-next the main also keeps a preserved food store of 54 days (foodStore), lets
  * rivals copy the market leader's productivity after 2 years (techCopy), invests days 1–7 directly in the sellers of
- * the four basics (founding=2) and judges part 3 of Proposition 3 by canon #19 (p3); each one's old rule is key = 0.
+ * the four basics (founding=2) and judges part 3 of Proposition 3 by tenths (p3; since 2026-10-14 by canon #19 with
+ * the taste and cap excuses); each one's old rule is key = 0.
  * The report starts with the per-person proof checks of the dynamic main (no one starves, no one has to work to
  * survive, living standards rise for everyone), then the dynamic sections D1–D8 and ladders, then the same runs valued
  * in HEARTS, the paper's unit of account (H1–H8), then the static sections.
@@ -64,9 +65,14 @@
  *                                                    the new Law 5 against the old one); --jobs N runs N at a time,
  *                                                    --cache DIR keeps each run's JSON for the next comparison
  *        Switches of the next round (--set key=… turns one on, --vs key=… compares it; off by default except the four
- *        the new main keeps on: p3=1, foodStore=54, founding=2, techCopy=1, whose old rules are key = 0):
- *          p3=1           Proposition 3's part 3 judged by canon #19 (tenths by holdings and by Aven output, real units,
- *                         basics at need, extras not down over 2 % in any 5 years) instead of the 10-year marks
+ *        the new main keeps on: p3=2, foodStore=54, founding=2, techCopy=1, whose old rules are key = 0):
+ *          p3=2           Proposition 3's part 3 judged by tenths (by holdings and by Aven output, real units) instead
+ *                         of the 10-year marks, by the verdict chosen on 2026-10-14: canon #19 (basics at need, extras
+ *                         not down over 2 % in any 5 years, each tenth's basket rising) with two excuses: a fall of an
+ *                         extra counts only by what a fall in the tenth's taste share for it does not explain (it got
+ *                         less than it wanted with its taste as it moved), and never while the tenth is at the good's
+ *                         satiation (its natural limit, the cap excuse of canon #19 here)
+ *          p3=1           the same by tenths, by canon #19 with the cap excuse only (round-next's verdict)
  *          daily=1 | 2    daily steps for all 60 years | also daily while a plant is under a shock and 30 days after
  *          crnDay=1       (with crn=1) the shocks and taste drift drawn a day at a time, the same with any step size
  *          floorFull=1    a main food seller's floor (≥ 20 % of food) includes rot and the rent and lease on idle plant
@@ -84,6 +90,16 @@
  *          foundSignal=1  a founding is also signalled by unmet need or an audited cost far below the price
  *          techCopy=1     rivals copy the market leader's productivity after 2 years
  *          avenRule=output  Avens invest by delivered output, not by price
+ *        Switches of round-next-2 (new main 2 keeps on reroute=1, rentShort=1, waterStock=90; the others are off):
+ *          reroute=1      what a sold-out seller cannot deliver passes at once to the other sellers of the good that still
+ *                         have stock or capacity, at their own price (the buyer's MIND goes through the pools)
+ *          founding=3     days 1–7: only what pays the day's basic needs goes to the sellers of the four basics (split as
+ *                         buyers split their orders, at today's prices); the rest goes by the Avens' normal rule
+ *          rentShort=1    ground rent rises only while someone asks for land the City cannot give (not merely while
+ *                         over 90 % of the land is let)
+ *          waterStock=90  the City COOP keeps a stock of water of 90 days of what it is asked for, filled from spare
+ *                         capacity, and serves from it when its plant cannot
+ *          reletUsed=1    a failed plant's successor leases only the part that was in use; the idle part is scrapped
  *          trace=1        (--seed-run) each year's lowest tenth and zero-Aven group: income by source, holdings, prices
  *        node scripts/theos-e2e-sim.mjs … --melt 0.09  a research run with another melt (the protocol's is 0.07)
  *        node scripts/theos-e2e-sim.mjs --debug d 60 [--empty 0.25 | --grow]   one static run, a line a year
@@ -431,6 +447,17 @@ function init(sc) {
 		S.tenH = new Float64Array(10 * NHH);
 		S.tenA = new Float64Array(10 * NHH);
 		S.tenDays = 0;
+		// (round-next-2, the three yardsticks and the drops' causes: what each person wanted of every good this step (their
+		// demand, units a day) and what they paid for it (R a day), and the same for each tenth over the year)
+		S.wantC = new Float64Array(Nmax * NHH);
+		S.spendC = new Float64Array(Nmax * NHH);
+		S.tenHw = new Float64Array(10 * NHH);
+		S.tenAw = new Float64Array(10 * NHH);
+		S.tenHs = new Float64Array(10 * NHH);
+		S.tenAs = new Float64Array(10 * NHH);
+		// (the verdict's trace: what each tenth holds, R a person, over the year)
+		S.tenHW = new Float64Array(10);
+		S.tenAW = new Float64Array(10);
 		S.spendH = new Float64Array(Nmax); // what each person bought this year, in HEARTS (θ, the share of holdings spent)
 		S.cityCoverMin = Infinity; // the City COOP's reserve at its lowest from day 8, in days of its running costs
 		// trace = 1 (audit B1): each person's year in HEARTS (income by source, spending, melt) and real consumption by good
@@ -473,7 +500,12 @@ function newBucket() {
 		// or its work items in full (from day 8); the zero-Aven group's dividends (R) and their share of the MIND Law 5 pays on
 		sgLate: [0, 0, 0, 0], cityDry: 0, cityWage: 0, zDivR: 0,
 		// what ended COOPs' treasuries passed to the City COOP (endToCity, R), technology copies (techCopy)
-		toCityR: 0, copyN: 0
+		toCityR: 0, copyN: 0,
+		// what reroute passed on to other sellers (R); price flips by product
+		rrR: 0, flips: new Float64Array(NPROD),
+		// days on which a seller of each good asked for land the City could not give (all leasable land let): the one
+		// physical limit this model has (a record only; part 3's verdict reads it)
+		landBind: new Float64Array(NPROD)
 	};
 }
 
@@ -736,6 +768,17 @@ function grow(S, dt) {
  */
 function foundingMix(S) {
 	if (!S.sc.dynamic || !S.sc.founding || S.t >= 7) return null;
+	// founding = 3 (round-next-2): only what pays the day's basic needs (BASIC) goes to the sellers of the four basics, each
+	// seller's part as buyers split their orders between them, at today's prices; the rest of the day's HEARTS goes by
+	// the Avens' normal rule (MIND of each seller a person a day)
+	if (S.sc.founding === 3) {
+		const T = sellerTable(S), need = new Float64Array(M);
+		for (const g of [FOOD, ENERGY, HOUSING, WATER]) {
+			const t = T[g];
+			for (let z = 0; z < t.s.length; z++) need[t.s[z]] += BASIC[g] * t.sh[z] * S.c[t.s[z]].price;
+		}
+		return { need };
+	}
 	const goods = S.sc.founding === 2 ? [FOOD, ENERGY, HOUSING, WATER] : [FOOD, ENERGY, WATER], fw = new Float64Array(M);
 	for (const g of goods) {
 		let K = 0;
@@ -744,22 +787,31 @@ function foundingMix(S) {
 	}
 	let fs = 0;
 	for (let k = 0; k < M; k++) fs += fw[k];
-	return fs > 0 ? fw.map((x) => x / fs) : null;
+	return fs > 0 ? { mix: fw.map((x) => x / fs) } : null;
 }
 
 function invest(S, dt) {
 	const half = (HEARTS_DAY * dt) / 2, N = S.N, to = new Float64Array(M);
-	const fw = foundingMix(S);
+	const fm = foundingMix(S), fw = fm && fm.mix, fn = fm && fm.need;
 	let nIn = 0;
 	for (let i = 0; i < N; i++) {
 		const b = i * M;
-		let inc = 0, sum = 0;
+		let inc = 0, sum = 0, left = half;
 		for (let k = 0; k < M; k++) sum += S.alloc[b + k];
 		if (sum > 0) nIn++;
+		if (fn && sum > 0)
+			for (let k = 0; k < M; k++) {
+				const m = Math.min(left, fn[k] * dt);
+				if (!(m > 0)) continue;
+				S.hold[b + k] += m;
+				to[k] += m;
+				inc += m * S.P[k];
+				left -= m;
+			}
 		for (let k = 0; k < M; k++) {
 			const a = fw && sum > 0 ? fw[k] : sum > 0 ? S.alloc[b + k] / sum : 0;
 			if (a > 0) {
-				const m = half * a;
+				const m = left * a;
 				S.hold[b + k] += m;
 				to[k] += m;
 				inc += m * S.P[k];
@@ -866,6 +918,7 @@ function plan(S, dt, T) {
 	for (let k = 0; k < M; k++) if (S.c[k].active) leased += S.c[k].land;
 	let free = S.landLeasable - leased;
 	S.leaseUnmet = 0;
+	(S.landUnmetG ||= new Uint8Array(NPROD)).fill(0);
 	// foodStore (days of the city's food): each food seller keeps a preserved store, its share of the city's food by its
 	// plant's size (shocks aside), sized for a dark winter: the test city's dark winter takes 60 % of the sun for 90 days,
 	// so 54 days of food. Preserved food rots slowly (STORE_ROT, the test city's food store)
@@ -886,7 +939,7 @@ function plan(S, dt, T) {
 		co.Keff = effCap(S, k);
 		if (sp.product < 0) continue;
 		// foodStore: a food seller also makes what its preserved store lacks, over about 90 days
-		const plannedDay = Math.min(co.Keff, co.reqEma * 1.05 + (co.storeT > co.store ? (co.storeT - co.store) / 90 : 0));
+		const plannedDay = Math.min(co.Keff, co.reqEma * 1.05 + (co.storeT > co.store ? (co.storeT - co.store) / 90 : 0) + (S.sc.waterStock > 0 && k === CITY ? Math.max(0, S.sc.waterStock * co.reqEma - (co.wst || 0)) / 90 : 0));
 		const want = new Float64Array(NPROD), wantCap = new Float64Array(NPROD);
 		// inputs: replace this step's use and close 30 % of the gap to a 14-day stock
 		const useDay = new Float64Array(NPROD);
@@ -928,6 +981,7 @@ function plan(S, dt, T) {
 				co.land += grant;
 				free -= grant;
 				S.leaseUnmet += wantLand - grant;
+				if (grant < wantLand && sp.product >= 0) S.landUnmetG[sp.product] = 1;
 				if (grant < wantLand) dK = Math.max(0, co.land / sp.land - co.K);
 			}
 		}
@@ -1045,6 +1099,7 @@ function trade(S, dt, T, B) {
 			const bud = Math.min(W, dt * bd);
 			for (let g = 0; g < NHH; g++) bb[g] = S.beta[i * NHH + g] * S.tasteG[g];
 			demand(bud / dt, pi, bb, 0, x);
+			for (let g = 0; g < NHH; g++) S.wantC[i * NHH + g] = x[g];
 		} else if (mech !== 'a') {
 			const y = S.ybar[i];
 			const bud = Math.min(W, dt * Math.max(0, y + (W - 3 * y) / 15));
@@ -1388,8 +1443,115 @@ function eligible(S, dt, B) {
 	for (let k = 0; k < M; k++) if (S.c[k].active && k !== JUNK) B.eligK[k] += holders(S, k) * dt;
 }
 
+/**
+ * reroute (round-next-2): what a sold-out seller cannot deliver passes at once to the other sellers of the same good that
+ * still have stock or capacity, at their own price. The buyer's MIND of the first seller, held for the part it could not
+ * deliver, goes through the pools into the MIND of the seller that delivers; the buyer then pays that seller's price
+ * with it, and keeps what is left. Running orders only (people's and other COOPs' inputs); orders for new capacity keep
+ * their queue. Each seller's spare is shared out in proportion to what it has spare. Returns what each person got this
+ * way (units this step, by good)
+ */
+function reroute(S, dt, T, fl, fi, fc, pay, B) {
+	const N = S.N, c = S.c, P = S.P;
+	const got = new Float64Array(N * NHH), ex = new Float64Array(M);
+	for (let g = 0; g < NPROD; g++) {
+		const t = T[g];
+		if (t.s.length < 2) continue;
+		// what each seller that delivered in full still has: stock and store, and capacity it has not used
+		const spare = [];
+		let spareAll = 0;
+		for (const z of t.s) {
+			const co = c[z];
+			if (!(fl[z] >= 1) || !(P[z] > 0)) continue;
+			const avail = co._Ycap + (co._prod >= 0 ? co.stock + co.store : 0) + (z === CITY && S.sc.waterStock > 0 ? co.wst || 0 : 0);
+			const x = Math.max(0, avail - (co._run || 0));
+			if (x > 0) spare.push([z, x]), (spareAll += x);
+		}
+		if (!(spareAll > 0)) continue;
+		// what the sellers that ran out could not deliver: each buyer's part
+		const short = [];
+		let U = 0;
+		for (const s of t.s) {
+			if (!(fl[s] < 1) || !(P[s] > 0)) continue;
+			const miss = 1 - fl[s], buyers = [];
+			if (g < NHH)
+				for (let i = 0; i < N; i++) {
+					const r = S.reqU[i * M + s];
+					if (r > 0) buyers.push([-1, i, r * miss]), (U += r * miss);
+				}
+			for (let k = 0; k < M; k++) {
+				const co = c[k];
+				if (k === s || !co.active || !co._in || !(co._in[s] > 0)) continue;
+				const u = co._in[s] * miss;
+				buyers.push([k, -1, u]), (U += u);
+			}
+			if (buyers.length) short.push([s, buyers]);
+		}
+		if (!(U > 0)) continue;
+		const rho = Math.min(1, spareAll / U);
+		for (const [s, buyers] of short)
+			for (const [z, x] of spare) {
+				const w = (rho * x) / spareAll;
+				// the MIND of s each buyer sends: what pays this part at z's price (5 % over, for fees and slippage), at most
+				// the MIND of s it holds for it
+				const vs = buyers.map(([k, i, u]) => Math.min(u * w * c[s].price, ((u * w * c[z].price * P[z]) / P[s]) * 1.05));
+				let Q = 0;
+				for (const v of vs) Q += v;
+				if (!(Q > 0)) continue;
+				const { out, fail } = execOrder(S, s, z, Q, B);
+				buyers.forEach(([k, i, u], b) => {
+					const v = vs[b];
+					if (!(v > 0)) return;
+					const sh = v / Q, zIn = out * sh, back = fail * sh;
+					const d = Math.min(u * w, zIn / c[z].price), pm = d * c[z].price;
+					if (k < 0) {
+						const h = i * M;
+						S.hold[h + s] += back - v;
+						S.hold[h + z] += zIn - pm;
+						if (S.spendI) S.spendI[i] += pm * P[z];
+						if (S.spendH) S.spendH[i] += (pm * P[z]) / S.hpH;
+						if (S.tr) S.tr.spend[i] += (pm * P[z]) / S.hpH;
+						if (S.spendC) S.spendC[i * NHH + g] += (pm * P[z]) / dt;
+						B.salesHHR += pm * P[z];
+						got[i * NHH + g] += d;
+					} else {
+						const co = c[k];
+						co.tre[s] += back - v;
+						co.tre[z] += zIn - pm;
+						co.inv[g] += d;
+						co.outR += pm * P[z];
+						B.b2bR += pm * P[z];
+					}
+					pay[z] += pm;
+					ex[z] += d;
+					B.rrR += pm * P[z];
+				});
+			}
+	}
+	// the sellers that delivered more: they make what their stock and store do not cover, and capacity orders get what
+	// is left
+	for (let z = 0; z < M; z++) {
+		if (!(ex[z] > 0)) continue;
+		const co = c[z];
+		const run = (co._run || 0) + ex[z];
+		if (co._prod >= 0) {
+			const have = co._prod + co.stock + co.store;
+			if (run > have) co._prod = Math.min(co._Ycap, co._prod + run - have);
+		}
+		const avail = co._prod >= 0 ? co._prod + co.stock + co.store : co._Ycap + (z === CITY && S.sc.waterStock > 0 ? co.wst || 0 : 0);
+		const self0 = co._self;
+		fc[z] = co._capAll > 0 ? Math.min(1, Math.max(0, avail - run) / co._capAll) : 0;
+		co._self = co.selfIn * fi[z] + co.selfCap * fc[z];
+		co._made += co._self - self0 + ex[z];
+		// (what it is asked for, its price signal and its plan, stay as they were: the sold-out seller is still the one
+		// asked, and it still raises its price; counting the passed-on orders at both would count that demand twice)
+	}
+	return got;
+}
+
 function deliver(S, dt, T, B) {
 	const mech = S.sc.mech, N = S.N, c = S.c, P = S.P;
+	if (S.spendC) S.spendC.fill(0);
 	const tot = new Float64Array(M), totE = new Float64Array(M), totU = new Float64Array(M), totH = new Float64Array(M);
 	// requests: what each buyer can pay for (b, c, d) or wants to use (a)
 	for (let k = 0; k < M; k++) {
@@ -1451,6 +1613,7 @@ function deliver(S, dt, T, B) {
 		if (!co.active || sp.product < 0) continue;
 		let Y = co.Keff * dt;
 		for (const [j, a] of sp.inputs) if (a > 0) Y = Math.min(Y, co.inv[j] / (a / co.A));
+		co._Ycap = Y; // (what its plant can make this step, short of inputs or not)
 		// dynamic world: food and goods are made ahead into a stock (STOCK_DAYS of demand) and sold from it; unsold stock
 		// rots; everything else is made to order
 		co._prod = -1;
@@ -1462,7 +1625,11 @@ function deliver(S, dt, T, B) {
 			co._fill = fill;
 			Y = co._prod + co.stock + co.store;
 		}
+		// waterStock (audit B5's reserve as stock, not as money): the City COOP also serves from a stock of water when its plant
+		// cannot (the stock is filled from spare capacity after delivery)
+		if (S.sc.dynamic && S.sc.waterStock > 0 && s === CITY) Y += co.wst || 0;
 		const capAll = totC[s] + co.selfCap;
+		co._capAll = capAll;
 		const all = tot[s] + totH[s] + co.selfIn + capAll;
 		co.zNow = co.Keff > 0 ? all / (co.Keff * dt) : all > 0 ? 9 : 0;
 		let spare;
@@ -1478,6 +1645,7 @@ function deliver(S, dt, T, B) {
 			// dynamic world: a sold-out COOP serves running orders (households and other COOPs' inputs) pro rata, with no
 			// priority for anyone, and new capacity from what is left; its price does the rest
 			const run = tot[s] + co.selfIn + totH[s];
+			co._run = run;
 			fi[s] = fl[s] = run > 0 ? Math.min(1, Y / run) : 0;
 			// what it was asked for over what it could deliver (short of inputs, a COOP rations below its capacity)
 			co.zDel = run > 0 ? run / Math.max(Y, 1e-9 * run) : 0;
@@ -1498,6 +1666,7 @@ function deliver(S, dt, T, B) {
 	// deliver to people: consume, pay, count shortfalls
 	const cap = S.sc.capDays;
 	const pay = new Float64Array(M);
+	const rr = S.sc.dynamic && S.sc.reroute && mech === 'b' ? reroute(S, dt, T, fl, fi, fc, pay, B) : null;
 	const cons = new Float64Array(NHH);
 	const B4 = [0, 0, 0, 0];
 	let pd = 0, sAny = 0, newPd = 0, newS = 0, cpi = 0;
@@ -1521,11 +1690,14 @@ function deliver(S, dt, T, B) {
 				if (S.tr) S.tr.spend[i] += (pm * P[s]) / S.hpH;
 				pay[s] += pm;
 				B.salesHHR += pm * P[s];
+				if (S.spendC) S.spendC[i * NHH + SPECS[s].product] += (pm * P[s]) / dt;
 			}
 			c[s]._made += d;
 			cons[SPECS[s].product] += d / dt;
 			S.reqU[b + s] = 0;
 		}
+		// (reroute: what other sellers delivered in place of a sold-out one)
+		if (rr) for (let g = 0; g < NHH; g++) cons[g] += rr[i * NHH + g] / dt;
 		let short = false;
 		for (let g = 0; g < 4; g++) if (cons[g] < 0.98 * BASIC[g]) (short = true), (B4[g] += dt);
 		pd += dt;
@@ -1609,7 +1781,15 @@ function deliver(S, dt, T, B) {
 		if (sp.product >= 0) {
 			const made = co._made || 0;
 			// what it produced: its deliveries, or, for goods made ahead, this step's production (the rest went to stock)
-			const prodQ = co._prod >= 0 ? co._prod : made;
+			let prodQ = co._prod >= 0 ? co._prod : made;
+			// waterStock: what the plant could not make came from the stock; the stock is refilled from what the plant has
+			// left, over about 90 days, toward waterStock days of what the City is asked for (no tank costs or losses here)
+			if (S.sc.dynamic && S.sc.waterStock > 0 && s === CITY) {
+				const fromStock = Math.max(0, made - co._Ycap), w0 = Math.max(0, (co.wst || 0) - fromStock);
+				const fill = Math.max(0, Math.min(co._Ycap - (made - fromStock), ((S.sc.waterStock * co.reqEma - w0) / 90) * dt));
+				co.wst = w0 + fill;
+				prodQ = made - fromStock + fill;
+			}
 			if (co._prod >= 0 && (co.store > 0 || co.storeT > 0)) {
 				// foodStore: sales came from fresh stock first, then the store; what fresh stock holds above its target goes
 				// into the store while the store lacks it; fresh food rots at ROT, preserved food at STORE_ROT
@@ -1773,6 +1953,10 @@ function adjust(S, dt) {
 				clear = sr > 2;
 			}
 			step = Math.max(-0.25, Math.min(0.25, step));
+			// (round-next-2: a price flip, a full step up after a full step down or the reverse, the cobweb of a seller
+			// whose step is too big for its market)
+			if (Math.abs(step) >= 0.25 - 1e-9 && Math.abs(co._step || 0) >= 0.25 - 1e-9 && step * co._step < 0 && S.cur.flips) S.cur.flips[sp.product]++;
+			co._step = step;
 			if (S.sc.fwdPrice && sp.product === FOOD) co.priceR = fwdPriceR(S, s, st, pPrev);
 			else co.priceR *= Math.exp(step);
 			// what a unit costs the treasury: its variable cost, of which the treasury keeps only 1 − Law 5's share of the price
@@ -1809,7 +1993,11 @@ function adjust(S, dt) {
 	let leased = 0;
 	for (let k = 0; k < M; k++) if (c[k].active) leased += c[k].land;
 	const occ = (leased + S.leaseUnmet) / S.landLeasable;
-	S.rho *= Math.exp(Math.max(-0.1, Math.min(0.1, 0.03 * st * (occ - 0.9) * 10)));
+	// (rentShort, round-next-2: the rent rises only while someone asks for land the City cannot give; while the land is
+	// over 90 % let but nobody asks for more, it holds. Without it the rent keeps rising for as long as the tenants hold
+	// their land, and a plant cannot give land back faster than it wears out)
+	const occR = S.sc.dynamic && S.sc.rentShort && !(S.leaseUnmet > 0) ? Math.min(occ, 0.9) : occ;
+	S.rho *= Math.exp(Math.max(-0.1, Math.min(0.1, 0.03 * st * (occR - 0.9) * 10)));
 	if (P[CITY] > 0) S.rho = Math.max(S.rho, 0.0001 / P[CITY]);
 	// rentCover: ground rent is at least what pays for what the City COOP runs besides water (the upkeep of streets, parks
 	// and the water network, per citizen), over the land the other COOPs lease (with rentLaw5, before Law 5's share)
@@ -2012,7 +2200,7 @@ function world(S, dt, B) {
 			co.prodF = 1 - (0.3 + 0.2 * (crn ? a : rnd(S)));
 			co.shockUntil = S.t + day + 60 + 180 * (crn ? b : rnd(S));
 			B.shockN++;
-			S.events.push({ t: S.t, type: 'shock', k, name: NAMES[k], product: sp.product, note: `−${Math.round((1 - co.prodF) * 100)} % capacity for ${Math.round(co.shockUntil - S.t)} days` });
+			S.events.push({ t: S.t, type: 'shock', k, name: NAMES[k], product: sp.product, until: co.shockUntil, cut: 1 - co.prodF, note: `−${Math.round((1 - co.prodF) * 100)} % capacity for ${Math.round(co.shockUntil - S.t)} days` });
 			S.watch.push(co.shockUntil + 30);
 		}
 		// demand shifts between rivals: each seller's taste shifter drifts (mean-reverting over about 5 years)
@@ -2096,10 +2284,18 @@ function tenthStep(S, dt) {
 	}
 	const byH = Array.from({ length: N }, (_, i) => i).sort((a, b) => W[a] - W[b] || a - b);
 	const byA = Array.from({ length: N }, (_, i) => i).sort((a, b) => S.workH[a] - S.workH[b] || a - b);
-	for (const [ord, acc] of [[byH, S.tenH], [byA, S.tenA]])
+	for (const [ord, acc, accW, accS, accH] of [[byH, S.tenH, S.tenHw, S.tenHs, S.tenHW], [byA, S.tenA, S.tenAw, S.tenAs, S.tenAW]])
 		for (let d = 0; d < 10; d++) {
 			const a = Math.floor((d * N) / 10), b = Math.floor(((d + 1) * N) / 10), n = Math.max(1, b - a);
-			for (let x = a; x < b; x++) for (let g = 0; g < NHH; g++) acc[d * NHH + g] += (S.cons[ord[x] * NHH + g] * dt) / n;
+			for (let x = a; x < b; x++) {
+				accH[d] += (W[ord[x]] * dt) / n;
+				for (let g = 0; g < NHH; g++) {
+					const j = ord[x] * NHH + g;
+					acc[d * NHH + g] += (S.cons[j] * dt) / n;
+					accW[d * NHH + g] += (S.wantC[j] * dt) / n;
+					accS[d * NHH + g] += (S.spendC[j] * dt) / n;
+				}
+			}
 		}
 	S.tenDays += dt;
 }
@@ -2233,8 +2429,12 @@ function successor(S, fk, B) {
 	const b = S.c[kk];
 	b.heirOf = -1;
 	a.heir = -1;
-	b.K = a.K;
-	b.land = a.land;
+	// (reletUsed, round-next-2: the City leases the successor only the part of the plant that was in use, by what the
+	// failed COOP was asked for against its capacity over its last weeks; the idle part is scrapped and its land comes
+	// back to the City. Without it the successor takes the whole plant, idle part, rent and lease included)
+	const use = S.sc.dynamic && S.sc.reletUsed ? Math.min(1, Math.max(S.sc.reletUse ?? 0, a.zEma)) : 1;
+	b.K = a.K * use;
+	b.land = a.land * use;
 	for (let j = 0; j < NPROD; j++) (b.capInv[j] += a.capInv[j]), (b.inv[j] += a.inv[j]);
 	b.stock = a.stock;
 	b.store = a.store;
@@ -2243,7 +2443,7 @@ function successor(S, fk, B) {
 	b.priceR = a.priceR;
 	b.price = b.priceR / Math.max(1e-9, S.Ptw[kk]);
 	b.graceUntil = S.t + 180;
-	b.leaseFee = S.P[CITY] > 0 ? (capCostR(S, fk) * a.K * 0.06) / 365 / S.P[CITY] : 0; // 6 %/yr of the plant's value, in CITYmind
+	b.leaseFee = S.P[CITY] > 0 ? (capCostR(S, fk) * b.K * 0.06) / 365 / S.P[CITY] : 0; // 6 %/yr of the plant's value, in CITYmind
 	let As = 0, n = 0;
 	for (let k = 0; k < M; k++) if (k !== fk && S.c[k].active && SPECS[k].product === g) (As += S.c[k].A), n++;
 	b.A = Math.max(a.A, n ? As / n : a.A); // new management brings the rivals' average practice
@@ -2257,6 +2457,24 @@ function successor(S, fk, B) {
 	return kk;
 }
 
+/** (round-next-2) a failing COOP at its end, for the failures' trace: its age, ground rent and lease against its running
+ * costs, its land and the city's, the rent against a year earlier, how much of its plant it used, its share of its
+ * product, its margin over full cost and its price against its cheapest rival */
+function failInfo(S, k) {
+	const co = S.c[k], g = SPECS[k].product, P = S.P;
+	let out = 0, lo = Infinity;
+	for (let x = 0; x < M; x++) if (S.c[x].active && SPECS[x].product === g && S.c[x].Keff > 0) (out += S.c[x].made), x !== k && (lo = Math.min(lo, S.c[x].priceR));
+	const rentR = (co.land * S.rho + (co.leaseFee || 0)) * P[CITY];
+	const yr = S.Y.length >= 2 ? S.Y[S.Y.length - 2] : S.Y[0];
+	const fc = fullCostR(S, k);
+	const r3 = (x) => (x === null || !isFinite(x) ? null : Math.round(x * 1000) / 1000);
+	return {
+		age: r3((S.t - co.bornT) / 365), rentShare: r3(co.costEma > 0 ? rentR / co.costEma : null), landShare: r3(co.land / S.landLeasable),
+		occ: r3(S.occ), rhoX: r3(yr && yr.rhoM > 0 ? S.rho / yr.rhoM : null), util: r3(co.Keff > 0 ? co.made / co.Keff : null),
+		share: r3(out > 0 ? co.made / out : null), margin: r3(fc > 0 ? co.priceR / fc - 1 : null), vsRival: r3(isFinite(lo) && lo > 0 ? co.priceR / lo - 1 : null)
+	};
+}
+
 /**
  * a COOP ends (failure: treasury dry and losing; exit: it lost its market): its MIND leaves the pools (the pools' reserve
  * of it is retired), what its treasury holds of other MINDs goes to the holders of its MIND pro rata, and all of its MIND
@@ -2264,6 +2482,7 @@ function successor(S, fk, B) {
  */
 function endCoop(S, k, type, why, B) {
 	const co = S.c[k], P = S.P, N = S.N;
+	const diag = type === 'fail' && S.sc.dynamic ? failInfo(S, k) : null;
 	// the City re-lets the plant only while it is in use: an idle plant (demand under a quarter of its capacity) is
 	// scrapped, and its land goes back to the City
 	const inUse = !S.sc.dynamic || co.zEma >= (S.sc.reletUse ?? 0);
@@ -2357,7 +2576,7 @@ function endCoop(S, k, type, why, B) {
 	}
 	if (type === 'fail') B.failN++;
 	else B.exitN++;
-	S.events.push({ t: S.t, type, k, name: NAMES[k], product: SPECS[k].product, scrapped, note: why + (kk >= 0 ? `; the City leases its plant to ${NAMES[kk]}` : scrapped ? '; its plant was idle, so the City scraps it and takes the land back' : '') });
+	S.events.push({ t: S.t, type, k, name: NAMES[k], product: SPECS[k].product, scrapped, ...(diag ? { diag } : {}), note: why + (kk >= 0 ? `; the City leases its plant to ${NAMES[kk]}` : scrapped ? '; its plant was idle, so the City scraps it and takes the land back' : '') });
 	S.watchF.push(S.t + 180);
 	buildGraph(S);
 }
@@ -2464,6 +2683,7 @@ function lifecycle(S, dt, B) {
  */
 function takeOver(S, k, B) {
 	const co = S.c[k], g = SPECS[k].product;
+	const diag = failInfo(S, k);
 	let As = 0, n = 0;
 	for (let x = 0; x < M; x++) if (x !== k && S.c[x].active && SPECS[x].product === g) (As += S.c[x].A), n++;
 	co.A = Math.max(co.A, n ? As / n : co.A);
@@ -2474,7 +2694,7 @@ function takeOver(S, k, B) {
 	co.zEma = 1;
 	co.relets = (co.relets || 0) + 1;
 	B.failN++;
-	S.events.push({ t: S.t, type: 'fail', k, name: NAMES[k], product: g, scrapped: false, relet: true, again: co.relets > 1, note: 'treasury dry and losing MIND for 180 days; the City takes its plant and leases it to a successor that carries on its MIND' });
+	S.events.push({ t: S.t, type: 'fail', k, name: NAMES[k], product: g, scrapped: false, relet: true, again: co.relets > 1, diag, note: 'treasury dry and losing MIND for 180 days; the City takes its plant and leases it to a successor that carries on its MIND' });
 	S.watchF.push(S.t + 180);
 }
 
@@ -2494,6 +2714,7 @@ function step(S, dt) {
 	if (S.sc.mech === 'a') quotas(S);
 	let T = sellerTable(S);
 	plan(S, dt, T);
+	for (let g = 0; g < NPROD; g++) if (S.landUnmetG[g]) B.landBind[g] += dt;
 	T = sellerTable(S);
 	const r0 = B.routeIn, c0 = B.routeCost;
 	trade(S, dt, T, B);
@@ -2644,7 +2865,9 @@ function dynYear(S, B, W, split, yk) {
 	const mindR = split.total > 0 ? split.totalR / split.total : 1; // R a MIND, on average over all MIND
 	// canon #19's yardstick: each tenth's consumption of every good this year, real units a person a day (from day 8)
 	const td = Math.max(1e-9, S.tenDays), tenH = Array.from(S.tenH, (x) => x / td), tenA = Array.from(S.tenA, (x) => x / td);
-	S.tenH.fill(0), S.tenA.fill(0), (S.tenDays = 0);
+	const tenHw = Array.from(S.tenHw, (x) => x / td), tenAw = Array.from(S.tenAw, (x) => x / td), tenHs = Array.from(S.tenHs, (x) => x / td), tenAs = Array.from(S.tenAs, (x) => x / td);
+	const tenHW = Array.from(S.tenHW, (x) => x / td), tenAW = Array.from(S.tenAW, (x) => x / td);
+	S.tenH.fill(0), S.tenA.fill(0), S.tenHw.fill(0), S.tenAw.fill(0), S.tenHs.fill(0), S.tenAs.fill(0), S.tenHW.fill(0), S.tenAW.fill(0), (S.tenDays = 0);
 	// the strict test's bound (audit point 11): Law 5 pays 20 % of all sales, so a person's dividends ÷ bundle is at most
 	// 0.2 × (their share of the MIND Law 5 pays on) × all sales ÷ their basics spend. The zero-Aven group's shares, at the
 	// year's end
@@ -2669,7 +2892,7 @@ function dynYear(S, B, W, split, yk) {
 		dec, realMean: real.reduce((a, b) => a + b, 0) / N, giniReal: gini(real, N), realMin: sorted[0], newPd: B.newPd, newS: B.newS,
 		basicR: cpi, basicMind: cpi !== null ? cpi / mindR : null, mindR,
 		failN: B.failN, exitN: B.exitN, foundN: B.foundN, shockN: B.shockN, rotR: B.rotR, meltCnt: B.meltCnt, burned: B.burned,
-		tenH, tenA, sgLate: B.sgLate.slice(), cityDry: B.cityDry, cityWage: B.cityWage, salesR: B.payR, rentR: B.rentR, zDivR: B.zDivR,
+		tenH, tenA, tenHw, tenAw, tenHs, tenAs, tenHW, tenAW, rrR: B.rrR, flips: Array.from(B.flips), landBind: Array.from(B.landBind), sgLate: B.sgLate.slice(), cityDry: B.cityDry, cityWage: B.cityWage, salesR: B.payR, rentR: B.rentR, zDivR: B.zDivR,
 		zShareMed: zs.length ? zs[zs.length >> 1] : null, zShareMin: zs.length ? zs[0] : null, lvr, tasteG: Array.from(S.tasteG),
 		trace, toCityR: B.toCityR, copyN: B.copyN, store: (() => {
 			let st = 0, need = 0;
@@ -2850,6 +3073,7 @@ function closeYear(S) {
 	// conservation: everything ever issued is held somewhere, melted or burned
 	const leak = (split.total - (S.tot.issued - S.tot.melted - S.tot.burned)) / Math.max(1, S.tot.issued);
 	if (Math.abs(leak) > 1e-6) throw new Error(`MIND not conserved in year ${S.Y.length + 1}: ${leak}`);
+	S.leakMax = Math.max(S.leakMax || 0, Math.abs(leak));
 	const cover = {}, Kd = {};
 	for (let k = 0; k < M; k++) {
 		const co = c[k];
@@ -2922,7 +3146,7 @@ function closeYear(S) {
 		hops: B.routeIn > 0 ? B.hopsIn / B.routeIn : null, routeShare: B.payR > 0 ? B.routeIn / B.payR : null,
 		P: Array.from(P), cpi: B.cpiN ? B.cpiSum / B.cpiN : null, split, mPer: split.total / N,
 		gini: gini(W, N), giniC: gini(C, N), meanW, cover, Kd, insolv: Array.from(B.insolv),
-		arbR: B.arbR, hearts: Array.from(B.hearts), burned: B.burned, retired: B.retired, issued: B.issued, rho: S.rho * P[CITY], occ: S.occ,
+		arbR: B.arbR, hearts: Array.from(B.hearts), burned: B.burned, retired: B.retired, issued: B.issued, rho: S.rho * P[CITY], rhoM: S.rho, occ: S.occ,
 		rentR: B.rentR, wagesR: B.wagesR, divR: B.divR, payR: B.payR, pFail: B.pFail, prices: c.map((co) => co.price), q: c.map((co) => co.q),
 		sigma, muRet, muPrice, ringY, ringW, poolMem, yield: eligAll > 0 ? divAll / eligAll : 0, propR: B.propR, treInR: B.treInR,
 		workRatio: nW && nO && wO > 0 ? wW / nW / (wO / nO) : null, peopleShareR: split.totalR > 0 ? split.walR / split.totalR : null,
@@ -2953,13 +3177,20 @@ const DYN = {
 	avenMarket: false,
 	// round-next: the upgrades that helped their target with no check worse on the 24 same-shock seeds (each one's old
 	// rule is key = 0): a 54-day food store, the leader's technology open to rivals after 2 years, the founding week
-	// invested in the sellers of the four basics; part 3 judged by canon #19
-	p3: 1, foodStore: 54, techCopy: 1, founding: 2
+	// invested in the sellers of the four basics; part 3 judged by tenths, now by the verdict chosen on 2026-10-14
+	// (canon #19 with the taste and cap excuses: p3=2; p3=1 judges by canon #19 with the cap excuse only, as round-next did)
+	p3: 2, foodStore: 54, techCopy: 1, founding: 2,
+	// round-next-2 (new main 2): the changes that helped their target with no check worse on the 24 same-shock seeds:
+	// unmet orders rerouted to the other sellers, ground rent that rises only while land is asked for and cannot be
+	// given, the City COOP's water stock of 90 days
+	reroute: 1, rentShort: 1, waterStock: 90
 };
-// the base of round-next (law5-all, commit ab8ed86): the new main with the round's kept switches off
-const ROUND_OFF = { p3: 0, foodStore: 0, techCopy: 0, founding: 0 };
+// the new main of round-next (commit 91057fb): new main 2 with round-next-2's kept switches off
+const ROUND2_OFF = { reroute: 0, rentShort: 0, waterStock: 0 };
+// the base of round-next (law5-all, commit ab8ed86): the new main with both rounds' kept switches off
+const ROUND_OFF = { p3: 0, foodStore: 0, techCopy: 0, founding: 0, ...ROUND2_OFF };
 // the next round's switches (audit B1–B16; see the usage note at the top): each key's old rule is key = 0
-const ROUND_KEYS = ['p3', 'daily', 'crnDay', 'floorFull', 'foodStore', 'fwdPrice', 'waterFloor', 'waterReserve', 'rentCover', 'rentLaw5', 'holdFloor', 'payLeast', 'founding', 'heirMind', 'endToCity', 'foundSignal', 'techCopy', 'avenRule'];
+const ROUND_KEYS = ['p3', 'daily', 'crnDay', 'floorFull', 'foodStore', 'fwdPrice', 'waterFloor', 'waterReserve', 'rentCover', 'rentLaw5', 'holdFloor', 'payLeast', 'founding', 'heirMind', 'endToCity', 'foundSignal', 'techCopy', 'avenRule', 'reroute', 'rentShort', 'waterStock', 'reletUsed'];
 const DAILY_YEARS = 1;
 const DAILY_AFTER = 90; // days of daily steps after a branch point
 
@@ -3203,9 +3434,9 @@ if (ARGS.includes('--seeds')) {
 	const L = [];
 	L.push(`# The seed check: the dynamic main on ${seeds.length} seeds${set ? ` (${set})` : ''}`, '');
 	L.push(`Each row is the dynamic main of the full report on one seed: ${res[0].N} people, ${res[0].years} years, the pools' part ${f(res[0].poolShare, 2)} of each HEART, Law 5 at ${pct(res[0].turnDiv, 0)} ${lawWho(res[0])}. μ and σ: the mean and the spread across people of each person's yearly return in HEARTS (dividends plus price change, before the melt), at rest (the last 10 years). The margin is the ${pct(RATE, 0)} melt less μ. COOP failures: all, with the food COOPs among them in brackets. Proposition 3's checks are the report's proof checks 1–3 (check 2 normal, with the bundle under 12 MIND); "every tenth" is check 3 for the ten tenths alone.`, '');
-	L.push('| Seed | μ at rest | margin (melt − μ) | σ | Prop. 2 Gini | measured Gini (HEARTS): last year; trend / 10 y | dividend yield | pools\' share of MIND | COOP failures (food) | founding (days 1–7): person-days short | 1. no one starves (person-days short from day 8) | 2. no one has to work: normal · strict | 3. old yardstick (every decile higher at each mark) | 3. by tenths (canon #19): tenths failing | all three: old yardstick · by tenths |');
-	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: | :---: | :---: | :---: |');
-	for (const r of res) L.push(`| ${r.seed} | ${pct(r.muH, 2)} | ${f(r.marginH * 100, 2)} pt | ${pct(r.sgH, 2)} | ${r.gini2H === null ? '–' : f(r.gini2H, 2)} | ${f(r.giniH.y60, 3)}; ${r.giniH.trend >= 0 ? '+' : ''}${f(r.giniH.trend, 3)} | ${pct(r.yield, 1)} | ${pct(r.pools, 1)} | ${r.fails} (${r.foodFails}) | ${f(r.weekShort)} | ${ok(r.ok1)} ${f(r.shLate)} | ${ok(r.ok2)} · ${ok(r.okS)} | ${ok(r.ok3old)} | ${ok(r.ok3t)} ${r.p3.failed} | ${ok(r.allOld)} · ${ok(r.allT)} |`);
+	L.push('| Seed | μ at rest | margin (melt − μ) | σ | Prop. 2 Gini | measured Gini (HEARTS): last year; trend / 10 y | dividend yield | pools\' share of MIND | COOP failures (food) | founding (days 1–7): person-days short | 1. no one starves (person-days short from day 8) | 2. no one has to work: normal · strict | 3. old yardstick (every decile higher at each mark) | 3. by tenths (the verdict: canon #19 with the taste and cap excuses): tenths failing | tenths failing (a) canon #19 · (b) taste-adjusted without the cap · (c) one basket | all three: old yardstick · by tenths |');
+	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: | :---: | :---: | ---: | :---: |');
+	for (const r of res) L.push(`| ${r.seed} | ${pct(r.muH, 2)} | ${f(r.marginH * 100, 2)} pt | ${pct(r.sgH, 2)} | ${r.gini2H === null ? '–' : f(r.gini2H, 2)} | ${f(r.giniH.y60, 3)}; ${r.giniH.trend >= 0 ? '+' : ''}${f(r.giniH.trend, 3)} | ${pct(r.yield, 1)} | ${pct(r.pools, 1)} | ${r.fails} (${r.foodFails}) | ${f(r.weekShort)} | ${ok(r.ok1)} ${f(r.shLate)} | ${ok(r.ok2)} · ${ok(r.okS)} | ${ok(r.ok3old)} | ${ok(r.ok3t)} ${r.p3.failed} | ${r.p3.failedA ?? '–'} · ${r.p3.failedTasteAdjNoCap ?? '–'} · ${r.p3.failedBasket ?? '–'} | ${ok(r.allOld)} · ${ok(r.allT)} |`);
 	L.push('');
 	const mus = res.map((r) => r.muH), mg = res.map((r) => r.marginH), sum = (k) => res.reduce((a, r) => a + r[k], 0);
 	L.push(`μ at rest: ${pct(Math.min(...mus), 2)} to ${pct(Math.max(...mus), 2)} (median ${pct(median(mus), 2)}); below the melt on ${mus.filter((m) => m < RATE).length} of ${res.length} seeds; smallest margin ${f(Math.min(...mg) * 100, 2)} pt (seed ${res[mg.indexOf(Math.min(...mg))].seed}). All three checks of Proposition 3 pass on ${res.filter((r) => r.allOld).length} of ${res.length} seeds by the old yardstick and on ${res.filter((r) => r.allT).length} by tenths (check 1 on ${res.filter((r) => r.ok1).length}, check 2 normal on ${res.filter((r) => r.ok2).length}, strict on ${res.filter((r) => r.okS).length}, check 3 on ${res.filter((r) => r.ok3old).length} by the old yardstick and on ${res.filter((r) => r.ok3t).length} by tenths; every decile higher at each mark on ${res.filter((r) => r.tenths).length}). The founding (days 1–7): ${f(sum('weekShort'))} person-days short, on ${res.filter((r) => r.weekShort > 0).length} seeds. Measured Gini of holdings in the last year: ${f(Math.min(...res.map((r) => r.giniH.y60)), 2)}–${f(Math.max(...res.map((r) => r.giniH.y60)), 2)}. COOP failures: ${sum('fails')} (${sum('foodFails')} food COOPs; ${sum('chainFails')} of all were successors on a failed plant; ${sum('scrapped')} idle plants scrapped). Person-days short from day 8: ${f(sum('shLate'))}.`, '');
@@ -3240,7 +3471,7 @@ if (ARGS.includes('--pair')) {
 	const ok = okMark;
 	const L = [];
 	L.push(`# The same-shock comparison: ${nA} against ${nB} on ${n} seeds, with common random numbers`, '');
-	L.push(`${nA}: the dynamic main${Object.keys(SET).length ? ` with ${setText(SET)}` : ''} (the pools' part ${f(A[0].poolShare, 2)} of each HEART, Law 5 at ${pct(A[0].turnDiv, 0)} ${lawWho(A[0])}). ${nB}: the same with ${setText(VS)} (the pools' part ${f(B[0].poolShare, 2)}, Law 5 at ${pct(B[0].turnDiv, 0)} ${lawWho(B[0])}). Both run with common random numbers (crn = 1): a second random stream gives every COOP slot its capacity shocks and taste drift on every step, so on one seed both rules meet the same shocks. ${A[0].N} people, ${A[0].years} years. Person-days short: below 98 % of the basics, from day 8. COOP failures: all, food COOPs, and successors (COOPs that took over a failed plant) that failed too. μ: the lasting return at rest in HEARTS. "All three": all three checks of Proposition 3 pass, every check counted from day 8 (the founding, days 1–7, is reported apart); part 3 by the old yardstick (every decile, the zero-Aven group and the poorest person consume more, at day-1 prices, at every 10-year mark) and by tenths (canon #19, as the test city judges it: basics at need every year, extras not down more than 2 % in any 5 years unless at satiation, each tenth's basket rising; ten tenths by holdings and ten by Aven output, in real units).`, '');
+	L.push(`${nA}: the dynamic main${Object.keys(SET).length ? ` with ${setText(SET)}` : ''} (the pools' part ${f(A[0].poolShare, 2)} of each HEART, Law 5 at ${pct(A[0].turnDiv, 0)} ${lawWho(A[0])}). ${nB}: the same with ${setText(VS)} (the pools' part ${f(B[0].poolShare, 2)}, Law 5 at ${pct(B[0].turnDiv, 0)} ${lawWho(B[0])}). Both run with common random numbers (crn = 1): a second random stream gives every COOP slot its capacity shocks and taste drift on every step, so on one seed both rules meet the same shocks. ${A[0].N} people, ${A[0].years} years. Person-days short: below 98 % of the basics, from day 8. COOP failures: all, food COOPs, and successors (COOPs that took over a failed plant) that failed too. μ: the lasting return at rest in HEARTS. "All three": all three checks of Proposition 3 pass, every check counted from day 8 (the founding, days 1–7, is reported apart); part 3 by the old yardstick (every decile, the zero-Aven group and the poorest person consume more, at day-1 prices, at every 10-year mark) and by tenths (the verdict chosen on 2026-10-14: canon #19, basics at need every year, extras not down more than 2 % in any 5 years, each tenth's basket rising, with two excuses: a fall counts only by what a fall in the tenth's taste share for the good does not explain, and never while the tenth is at the good's satiation; ten tenths by holdings and ten by Aven output, in real units).`, '');
 	L.push(`| Seed | person-days short: ${nA} | ${nB} | food COOP failures: ${nA} | ${nB} | all COOP failures: ${nA} | ${nB} | μ at rest: ${nA} | ${nB} | all three (old yardstick): ${nA} | ${nB} | all three (by tenths): ${nA} | ${nB} |`);
 	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: | :---: | :---: |');
 	for (let i = 0; i < n; i++) {
@@ -3275,8 +3506,12 @@ if (ARGS.includes('--pair')) {
 		['all COOP failures', 'fails', M_((r) => r.fails)],
 		['City COOP dry days (inputs or work items not paid in full)', 'cityDry', M_((r) => r.cityDry + r.cityWage)],
 		['μ at rest (median over seeds)', 'muH', M_((r) => r.muH, 'median')],
-		['tenths failing part 3 (of 20, canon #19)', 'p3', M_((r) => r.p3.failed)],
-		['… of them with the falls where tastes moved away left out', 'p3nt', M_((r) => r.p3.failedNoTaste)],
+		['tenths failing part 3 (of 20, the verdict: canon #19 with the taste and cap excuses)', 'p3', M_((r) => r.p3.failed)],
+		['tenths failing part 3 by canon #19 with the cap excuse only (a)', 'p3a', M_((r) => r.p3.failedA ?? r.p3.failed)],
+		['… (a) with the falls where tastes moved away left out', 'p3nt', M_((r) => r.p3.failedNoTaste)],
+		['tenths failing part 3, taste-adjusted without the cap excuse (b)', 'p3b0', M_((r) => r.p3.failedTasteAdjNoCap ?? 0)],
+		['tenths failing part 3, one basket (c): the extras at the day-1 prices, not down more than 2 % in 5 years', 'p3c', M_((r) => r.p3.failedBasket ?? 0)],
+		['price flips of food sellers from year 2 (a full ±25 % step one way after one the other way)', 'flipsF', M_((r) => (r.flips ? r.flips[FOOD] : 0))],
 		['strict test: zero-Aven person-days dividends alone paid the bundle, after year 10 (mean)', 'sLate', M_((r) => r.sLate, 'mean')],
 		['… from day 8 (mean)', 'sShare8', M_((r) => r.sShare8, 'mean')],
 		['decile 1 higher at every 10-year mark (seeds)', 'dec1Up', M_((r) => (r.dec1.every((v, i) => i === 0 || v > r.dec1[i - 1]) ? 1 : 0))],
@@ -3408,7 +3643,8 @@ const tick = (what) => process.stderr.write(`  ran ${what} (${((Date.now() - T0)
 // the Avens' rate, a growing population), each from a cold start with goods; 60 years (the population row 40)
 const DLADDER = [
 	['main', 'dynamic main: Law 5 at 20 %, reserves 9 months', {}],
-	['base', 'the base before round-next (no food store, no technology copying, no founding week; part 3 by the old yardstick)', ROUND_OFF],
+	['main1', 'the new main of round-next (unmet orders not rerouted, ground rent by how much land is let, no water stock)', ROUND2_OFF],
+	['base', 'the base before round-next (no food store, no technology copying, no founding week, and none of round-next-2; part 3 by the old yardstick)', ROUND_OFF],
 	['law35', 'Law 5 at 35 % of every sale', { turnDiv: 0.35 }],
 	['law50', 'Law 5 at 50 % of every sale', { turnDiv: 0.5 }],
 	['res6', 'reserves 6 months', { capDays: 180 }],
@@ -3602,49 +3838,200 @@ function proof(S) {
  * experiences, a composite whose unit is worth 1 R at the day-1 prices. The poorest person is reported apart.
  */
 const P3_BASIC = [FOOD, ENERGY, HOUSING, WATER], P3_EXTRA = [HOUSING, GOODS, CARE, EXPER];
+/**
+ * (round-next-2) the three yardsticks side by side, per tenth: (a) each extra (canon #19 as above); (b) taste-adjusted: a
+ * fall of (a) counts only when the tenth got less of the good than it wanted with its taste as it moved, that is, when
+ * the fall is still over 2 % once the part a fall in the taste share explains is taken out (Stone–Geary: what a tenth
+ * buys of a good above its basic need is its budget share of the good times its budget above the basics, over the
+ * price; the share moves with the city's tastes, so when it fell the later quantity is scaled back up by the share's
+ * fall); (c) one basket: the extras together at the day-1 prices. Basics at need and the basket rising over the run are
+ * the same in all three. (b) keeps (a)'s cap excuse (no fall counts while the tenth is at satiation at its end): that is
+ * the verdict chosen on 2026-10-14 (p3=2); (b) without the cap excuse is reported beside it, with (a) and (c). Each fall
+ * the verdict counts is kept with the parts below and the days land bound the good that year (the one physical limit
+ * this model has: a seller of the good asked for land the City could not give). And each fall of (a) split into its causes: the taste share, the tenth's budget for the goods
+ * not at satiation (real), the good's price against the tenth's other prices, supply (what it got against what it
+ * asked for) and the rest (the mix of people in the tenth, each with tastes of their own, and single people at
+ * satiation)
+ */
+const tasteShare = (tg, row, g) => {
+	let den = 0;
+	for (let h = 0; h < NHH; h++) if (h === g || !(row[h] >= SAT[h] * 0.98)) den += tg[h] * BETA[h];
+	return den > 0 ? (tg[g] * BETA[g]) / den : null;
+};
 function p3Tenths(S) {
 	const Y = S.Y.filter((y) => y.dyn && y.dyn.tenH && y.t - (y.year - 1) * 365 >= 365 - 1e-6);
-	const failures = [], excused = [], basicsFail = [], riseFail = [], failed = [], failedNoTaste = [], failedBasket = [];
+	const failures = [], excused = [], basicsFail = [], riseFail = [], failed = [], failedNoTaste = [], failedBasket = [], failedTasteAdj = [], failedTasteAdjNoCap = [], tenths = [];
+	const fails = S.events.filter((e) => e.type === 'fail'), shocks = S.events.filter((e) => e.type === 'shock');
+	const causes = ['taste', 'income', 'price', 'supply', 'other'], drops = { n: 0, by: {}, byNoTaste: {}, failNear: 0, failNearBy: {}, nNoTaste: 0, byGood: {}, partsNoTaste: {} };
+	for (const c of causes) (drops.by[c] = 0), (drops.byNoTaste[c] = 0), (drops.failNearBy[c] = 0), (drops.partsNoTaste[c] = 0);
+	// the verdict's falls (each a tenth, an extra and a year whose fall still counts once taste and the cap are excused),
+	// with why the tenth got less than it wanted: the largest of the parts other than taste
+	const vCauses = ['income', 'price', 'supply', 'other'], vDrops = { n: 0, by: {}, byGood: {}, byBy: { holdings: 0, aven: 0 }, gotLess: 0, landBound: 0, failNear: 0, list: [] }, riseFailV = [];
+	for (const c of vCauses) vDrops.by[c] = 0;
 	for (const [by, key] of [['holdings', 'tenH'], ['aven', 'tenA']])
 		for (let x = 0; x < 10; x++) {
-			const rows = Y.map((y) => y.dyn[key].slice(x * NHH, (x + 1) * NHH)), yr = Y.map((y) => y.year), tg = Y.map((y) => y.dyn.tasteG);
-			let ok = rows.length > 0, okNT = ok;
+			const sl = (y, k) => (y.dyn[k] ? y.dyn[k].slice(x * NHH, (x + 1) * NHH) : null);
+			const rows = Y.map((y) => sl(y, key)), want = Y.map((y) => sl(y, key + 'w')), spend = Y.map((y) => sl(y, key + 's'));
+			const yr = Y.map((y) => y.year), tg = Y.map((y) => y.dyn.tasteG);
+			const held = Y.map((y) => (y.dyn[key + 'W'] ? y.dyn[key + 'W'][x] : null)); // what the tenth holds, R a person
+			let ok = rows.length > 0, okNT = ok, okT = ok, okT0 = ok;
 			rows.forEach((r, i) => {
-				for (const g of P3_BASIC) if (r[g] < BASIC[g] * 0.99) (ok = okNT = false), basicsFail.push({ by, tenth: x + 1, good: PNAME[g], year: yr[i], v: r[g], need: BASIC[g] });
+				for (const g of P3_BASIC) if (r[g] < BASIC[g] * 0.99) (ok = okNT = okT = okT0 = false), basicsFail.push({ by, tenth: x + 1, good: PNAME[g], year: yr[i], v: r[g], need: BASIC[g] });
 			});
+			// (b): the quantity at b with the taste share of a; (the causes) what the tenth paid a unit, its budget above the basics
+			const price = (i, h) => (spend[i] && rows[i][h] > 0 && spend[i][h] > 0 ? spend[i][h] / rows[i][h] : null);
+			// (the budget left for the goods not at satiation, as in the taste share: what a satiated good takes is fixed)
+			const budget = (i, g) => {
+				if (!want[i]) return null;
+				let X = 0;
+				for (let h = 0; h < NHH; h++) {
+					const p = price(i, h);
+					if (p === null || (h !== g && rows[i][h] >= SAT[h] * 0.98)) continue;
+					X += Math.max(0, want[i][h] - BASIC[h]) * p;
+				}
+				return X > 0 ? X : null;
+			};
+			// a fall's causes (log changes of the quantity above the basic need, a → b): supply is what the tenth got
+			// against what it asked for; the rest is the change in what it asked for, split into the taste share, its
+			// budget for the goods not at satiation (real), the good's price against its other prices, and the rest (the
+			// mix of people in the tenth, each with tastes of their own, and single people at satiation). A tenth that
+			// asked for the satiation level both times asked for no less: all of its fall is supply
+			const split = (ia, ib, g) => {
+				const za = rows[ia][g] - BASIC[g], zb = rows[ib][g] - BASIC[g];
+				const wa = want[ia] ? want[ia][g] : null, wb2 = want[ib] ? want[ib][g] : null;
+				const zwa = wa !== null ? wa - BASIC[g] : null, zwb = wb2 !== null ? wb2 - BASIC[g] : null;
+				if (!(za > 0 && zb > 0)) return null;
+				const tot = Math.log(zb / za);
+				const hasW = zwa > 0 && zwb > 0;
+				const cS = hasW ? Math.log(zb / zwb) - Math.log(za / zwa) : 0;
+				const W = hasW ? Math.log(zwb / zwa) : tot;
+				let cT = 0, cP = 0, cI = 0, nb = null, pi = null;
+				if (!(hasW && wa >= SAT[g] * 0.98 && wb2 >= SAT[g] * 0.98)) {
+					const sa = tasteShare(tg[ia], rows[ia], g), sb = tasteShare(tg[ib], rows[ib], g);
+					cT = sa > 0 && sb > 0 ? Math.log(sb / sa) : 0;
+					let num = 0, den = 0;
+					for (let h = 0; h < NHH; h++) {
+						const pa = price(ia, h), pb = price(ib, h);
+						if (pa !== null && pb !== null) (num += rows[ia][h] * pb), (den += rows[ia][h] * pa);
+					}
+					const lPI = num > 0 && den > 0 ? Math.log(num / den) : 0;
+					const pga = price(ia, g), pgb = price(ib, g), Xa = budget(ia, g), Xb = budget(ib, g);
+					cP = pga !== null && pgb !== null ? -(Math.log(pgb / pga) - lPI) : 0;
+					cI = Xa !== null && Xb !== null ? Math.log(Xb / Xa) - lPI : 0;
+					// (the income part's two halves: the budget in R, and the tenth's own price index)
+					nb = Xa !== null && Xb !== null ? Math.log(Xb / Xa) : null;
+					pi = lPI;
+				}
+				// (vpart, for the verdict's falls: as the verdict, a rise in the taste share asks for no more, so only a fall of
+				// it is taken out; the rest of the change in what the tenth asked for is income, price or the rest)
+				const cTv = Math.min(0, cT);
+				return { part: { taste: cT, income: cI, price: cP, supply: cS, other: W - cT - cP - cI }, vpart: { taste: cTv, income: cI, price: cP, supply: cS, other: W - cTv - cP - cI }, nb, pi, atSat: hasW && wa >= SAT[g] * 0.98 };
+			};
+			const r3 = (v) => (v === null || v === undefined ? null : Math.round(v * 1000) / 1000);
+			const failNear = (g, ia, ib) => fails.some((e) => e.product === g && yrOf(e.t) > yr[ia] && yrOf(e.t) <= yr[ib]);
+			// days of year y a capacity shock held a seller of good g back (summed over its sellers), and the deepest cut
+			const shockIn = (g, y) => {
+				let days = 0, cut = 0;
+				for (const e of shocks) {
+					if (e.product !== g) continue;
+					const d = Math.min(e.until, y * 365) - Math.max(e.t, (y - 1) * 365);
+					if (d > 0) (days += d), (cut = Math.max(cut, e.cut));
+				}
+				return { days: Math.round(days), cut: r3(cut) };
+			};
 			for (const g of P3_EXTRA)
 				for (let b = 1; b < rows.length; b++) {
-					let wb = null;
+					let wb = null, wt = null;
 					for (let a = Math.max(0, b - 5); a < b; a++) {
 						const va = rows[a][g], vb = rows[b][g];
 						if (!(va > 0)) continue;
 						const fall = 1 - vb / va;
 						// (diagnostic: did the city's taste for the good fall over the window? Tastes drift in this model)
-						if (fall > 0.02 && (!wb || fall > wb.fall)) wb = { fall, from: yr[a], to: yr[b], taste: tg[b][g] / tg[a][g] - 1 };
+						if (fall > 0.02 && (!wb || fall > wb.fall)) wb = { fall, from: yr[a], to: yr[b], taste: tg[b][g] / tg[a][g] - 1, ia: a, ib: b };
+						const sa = tasteShare(tg[a], rows[a], g), sb = tasteShare(tg[b], rows[b], g);
+						// only a fall counts, and only by what a fall in the taste share does not explain (a rise in taste
+						// makes no fall out of a steady quantity)
+						const adj = sa > 0 && sb > 0 && sb < sa && vb > BASIC[g] ? BASIC[g] + ((vb - BASIC[g]) * sa) / sb : vb;
+						const fT = 1 - adj / va;
+						if (fall > 0.02 && fT > 0.02 && (wt === null || fT > wt.fT)) wt = { fT, fall, ia: a };
+					}
+					const sat = rows[b][g] >= SAT[g] * 0.98;
+					// (b) without the cap excuse: any taste-adjusted fall counts
+					if (wt !== null) okT0 = false;
+					// the verdict: a taste-adjusted fall counts unless the tenth is at the good's satiation (its natural
+					// limit, the cap excuse of (a)); each counted fall is kept with why the tenth got less than it wanted
+					if (wt !== null && !sat) {
+						okT = false;
+						const sp = split(wt.ia, b, g), land = Y[b].dyn.landBind ? Y[b].dyn.landBind[g] : 0;
+						const cause = sp ? vCauses.reduce((m, c) => (sp.vpart[c] < sp.vpart[m] ? c : m), 'income') : 'other';
+						const askA = want[wt.ia] ? want[wt.ia][g] : null, askB = want[b] ? want[b][g] : null;
+						const rv = { by, tenth: x + 1, good: PNAME[g], from: yr[wt.ia], to: yr[b], fall: r3(wt.fall), fallT: r3(wt.fT), got: [r3(rows[wt.ia][g]), r3(rows[b][g])], asked: [r3(askA), r3(askB)], cause, parts: sp ? Object.fromEntries(causes.map((c) => [c, r3(sp.vpart[c])])) : null, land: Math.round(land), failNear: failNear(g, wt.ia, b), shock: shockIn(g, yr[b]), budgetR: sp ? r3(sp.nb) : null, priceIdx: sp ? r3(sp.pi) : null, held: [r3(held[wt.ia]), r3(held[b])] };
+						vDrops.n++, vDrops.by[cause]++, (vDrops.byGood[PNAME[g]] = (vDrops.byGood[PNAME[g]] || 0) + 1), vDrops.byBy[by]++;
+						if (askB !== null && rows[b][g] < askB * 0.98) vDrops.gotLess++;
+						if (land >= 365 / 2) vDrops.landBound++;
+						if (rv.failNear) vDrops.failNear++;
+						vDrops.list.push(rv);
 					}
 					if (!wb) continue;
-					const rec = { by, tenth: x + 1, good: PNAME[g], ...wb };
-					if (rows[b][g] >= SAT[g] * 0.98) excused.push(rec);
-					else (ok = false), wb.taste >= 0 && (okNT = false), failures.push(rec);
+					const { ia, ib, ...w0 } = wb;
+					const rec = { by, tenth: x + 1, good: PNAME[g], ...w0 };
+					if (sat) {
+						excused.push(rec);
+						continue;
+					}
+					(ok = false), wb.taste >= 0 && (okNT = false), failures.push(rec);
+					const sp = split(ia, ib, g);
+					let cause = 'other';
+					if (sp) {
+						cause = causes.reduce((m, c) => (sp.part[c] < sp.part[m] ? c : m), 'taste');
+						rec.parts = Object.fromEntries(causes.map((c) => [c, r3(sp.part[c])]));
+						rec.atSat = sp.atSat;
+					}
+					rec.cause = cause;
+					rec.failNear = failNear(g, ia, ib);
+					drops.n++, drops.by[cause]++, (drops.byGood[PNAME[g]] = (drops.byGood[PNAME[g]] || 0) + 1), rec.atSat && (drops.fromSat = (drops.fromSat || 0) + 1);
+					if (wb.taste >= 0) {
+						drops.nNoTaste++, drops.byNoTaste[cause]++;
+						if (rec.parts) for (const c of causes) drops.partsNoTaste[c] += rec.parts[c];
+					}
+					if (rec.failNear) drops.failNear++, drops.failNearBy[cause]++;
 				}
 			if (rows.length >= 2) {
 				const f0 = rows[0], f1 = rows[rows.length - 1], ch = (g) => (f0[g] > 0 ? f1[g] / f0[g] - 1 : f1[g] > 0 ? Infinity : 0);
-				const up = P3_EXTRA.filter((g) => ch(g) >= 0.05), down = P3_EXTRA.filter((g) => ch(g) < -0.02 && !(f1[g] >= SAT[g] * 0.98));
+				const up = P3_EXTRA.filter((g) => ch(g) >= 0.05), downAll = P3_EXTRA.filter((g) => ch(g) < -0.02), down = downAll.filter((g) => !(f1[g] >= SAT[g] * 0.98));
+				// (b) and the verdict: a fall from the first year to the last counts only by what a fall in the taste share
+				// does not explain; the verdict also excuses an extra at satiation in the last year, (b) without the cap does not
+				const L = rows.length - 1, tAdj = (g) => {
+					const sa = tasteShare(tg[0], f0, g), sb = tasteShare(tg[L], f1, g);
+					const adj = sa > 0 && sb > 0 && sb < sa && f1[g] > BASIC[g] ? BASIC[g] + ((f1[g] - BASIC[g]) * sa) / sb : f1[g];
+					return 1 - adj / f0[g] > 0.02;
+				};
+				const downT = down.filter(tAdj), downT0 = downAll.filter(tAdj);
 				if (!up.length || down.length) (ok = okNT = false), riseFail.push({ by, tenth: x + 1, up: up.map((g) => PNAME[g]), down: down.map((g) => PNAME[g]) });
+				if (!up.length || downT.length) (okT = false), riseFailV.push({ by, tenth: x + 1, up: up.map((g) => PNAME[g]), down: downT.map((g) => PNAME[g]), change: Object.fromEntries(downT.map((g) => [PNAME[g], r3(ch(g))])) });
+				if (!up.length || downT0.length) okT0 = false;
 			}
 			if (!ok) failed.push(`${by} ${x + 1}`);
 			if (!okNT) failedNoTaste.push(`${by} ${x + 1}`);
-			// (diagnostic, not the verdict: the extras judged as one basket at the day-1 prices; basics as above)
+			if (!okT) failedTasteAdj.push(`${by} ${x + 1}`);
+			if (!okT0) failedTasteAdjNoCap.push(`${by} ${x + 1}`);
+			// (c): the extras judged as one basket at the day-1 prices; basics as above
 			const bk = rows.map((r) => P3_EXTRA.reduce((a, g) => a + r[g] * P0[g], 0));
 			let okB = rows.length > 0 && rows.every((r) => P3_BASIC.every((g) => r[g] >= BASIC[g] * 0.99));
 			for (let b = 1; b < bk.length; b++) for (let a = Math.max(0, b - 5); a < b; a++) if (bk[a] > 0 && 1 - bk[b] / bk[a] > 0.02) okB = false;
 			if (bk.length >= 2 && !(bk[bk.length - 1] >= bk[0] * 1.05)) okB = false;
 			if (!okB) failedBasket.push(`${by} ${x + 1}`);
+			// v: the verdict; a: canon #19 with only the cap excuse; b: the taste-adjusted reading with the cap excuse (the
+			// verdict itself); b0: the same without the cap excuse; c: one basket
+			tenths.push({ by, tenth: x + 1, v: okT, a: ok, b: okT, b0: okT0, c: okB });
 		}
 	// the poorest person, apart: real consumption at the 10-year marks, and whether it rose at each
 	const marks = marksOf(S, [1, 10, 20, 30, 40, 50, 60]);
 	const poorest = marks.map((y) => at(S, y).dyn.realMin);
-	return { pass: failed.length === 0, failed, failedNoTaste, failedBasket, fallsTaste: failures.filter((x) => x.taste < 0).length, basicsFail, failures, excused, riseFail, years: Y.length, poorest, marks, poorestRises: poorest.every((v, i) => i === 0 || v > poorest[i - 1]) };
+	// which reading judges part 3 by tenths: p3=1 canon #19 with the cap excuse only, as in round-next; otherwise the
+	// verdict (canon #19 with the taste and cap excuses, chosen 2026-10-14)
+	const asA = S.sc.p3 === 1, pick = asA ? failed : failedTasteAdj;
+	return { pass: pick.length === 0, failed: pick, verdict: asA ? 'canon #19 (a)' : 'canon #19 with the taste and cap excuses', failedA: failed, failedNoTaste, failedBasket, failedTasteAdj, failedTasteAdjNoCap, countedFalls: asA ? failures.length : vDrops.n, countedRise: asA ? riseFail.length : riseFailV.length, tenths, drops, vDrops, riseFailV, fallsTaste: failures.filter((x) => x.taste < 0).length, basicsFail, failures, excused, riseFail, years: Y.length, poorest, marks, poorestRises: poorest.every((v, i) => i === 0 || v > poorest[i - 1]) };
 }
 
 /** a run's steady state (its last 10 years): the measures of the comparisons */
@@ -3725,12 +4112,12 @@ function heartSummary(S) {
 	};
 }
 
-/** why a run fails Proposition 3 with part 3 judged by tenths (canon #19) */
+/** why a run fails Proposition 3 with part 3 judged by tenths (the verdict p3 picks) */
 const whyT = (pf) => [
 	!pf.ok1 && `short of basics from day 8: ${f(pf.shLate)} person-days, worst ${pct(pf.pr.covMinLate, 0)} (${dayOf(pf.pr.covMinLateT)})`,
 	!pf.okN && `the zero-Aven people fell to ${pct(pf.pr.zCovMinLate, 0)} of a basic need`,
 	!pf.okB && `a day's basic bundle cost ${f(pf.bm.v, 2)} MIND (year ${pf.bm.year})`,
-	!pf.ok3t && `part 3 fails in ${pf.p3.failed.length} of 20 tenths (${pf.p3.basicsFail.length} basics below need, ${pf.p3.failures.length} falls of an extra over 2 % in 5 years, ${pf.p3.riseFail.length} baskets not rising)`
+	!pf.ok3t && `part 3 fails in ${pf.p3.failed.length} of 20 tenths (${pf.p3.basicsFail.length} basics below need, ${pf.p3.countedFalls} falls of an extra over 2 % in 5 years that count, ${pf.p3.countedRise} baskets not rising)`
 ].filter(Boolean).join('; ');
 
 /** the next round's measures of one run (audit B1–B16 and points 1–11 of the brief), for the seed check's JSON */
@@ -3772,7 +4159,7 @@ function nextRound(S, pf, h, why) {
 		cityDry: pf.cityDry, cityWage: pf.cityWage, cityCoverMin: isFinite(S.cityCoverMin) ? S.cityCoverMin : null,
 		okS: pf.okS, okS8: pf.okS8, sLate: pf.sLate, sSS: pf.sSS, sShare8: pf.sShare8, sMinLate: pf.sMinLate.v,
 		ok3old: pf.ok3, allOld: pf.all, whyOld: why, ok3t: pf.ok3t, allT: pf.allT, whyT: whyT(pf),
-		p3: { failed: pf.p3.failed.length, holdFail: pf.p3.failed.filter((x) => x.startsWith('holdings')).length, avenFail: pf.p3.failed.filter((x) => x.startsWith('aven')).length, basicsFail: pf.p3.basicsFail.length, falls: pf.p3.failures.length, fallsTaste: pf.p3.fallsTaste, failedNoTaste: pf.p3.failedNoTaste.length, failedBasket: pf.p3.failedBasket.length, riseFail: pf.p3.riseFail.length, excused: pf.p3.excused.length, list: pf.p3.failed, fallsTop: pf.p3.failures.slice(0, 6), basicsTop: pf.p3.basicsFail.slice(0, 4), riseTop: pf.p3.riseFail.slice(0, 4), poorest: pf.p3.poorest, poorestRises: pf.p3.poorestRises },
+		p3: { failed: pf.p3.failed.length, holdFail: pf.p3.failed.filter((x) => x.startsWith('holdings')).length, avenFail: pf.p3.failed.filter((x) => x.startsWith('aven')).length, basicsFail: pf.p3.basicsFail.length, falls: pf.p3.failures.length, fallsTaste: pf.p3.fallsTaste, failedNoTaste: pf.p3.failedNoTaste.length, failedBasket: pf.p3.failedBasket.length, failedTasteAdj: pf.p3.failedTasteAdj.length, verdict: pf.p3.verdict, failedA: pf.p3.failedA.length, failedTasteAdjNoCap: pf.p3.failedTasteAdjNoCap.length, fallsV: pf.p3.vDrops.n, riseFailV: pf.p3.riseFailV.length, tenths: pf.p3.tenths, drops: pf.p3.drops, vDrops: pf.p3.vDrops, riseTopV: pf.p3.riseFailV.slice(0, 20), riseFail: pf.p3.riseFail.length, excused: pf.p3.excused.length, list: pf.p3.failed, fallsTop: pf.p3.failures.slice(0, 6), basicsTop: pf.p3.basicsFail.slice(0, 4), riseTop: pf.p3.riseFail.slice(0, 4), poorest: pf.p3.poorest, poorestRises: pf.p3.poorestRises },
 		marks, dec1: marks.map((y) => at(S, y).dyn.dec[0]), zReal: marks.map((y) => at(S, y).dyn.zReal), realMin: marks.map((y) => at(S, y).dyn.realMin),
 		city: { ret: cr.length ? hmean(cr.map((x) => x.r)) : null, retRest: cityRest.length ? hmean(cityRest.map((x) => x.r)) : null, yieldRest: cityRest.length ? hmean(cityRest.map((x) => x.y)) : null },
 		rho: { u, rho, m, mStar: (u - rho) / RATE, gap: m / ((u - rho) / RATE) - 1, mEnd: at(S, L).mPer, mDyn, gapDyn: mDyn / at(S, L).mPer - 1 },
@@ -3781,7 +4168,15 @@ function nextRound(S, pf, h, why) {
 		split: { div: rest((y, x) => x.split?.div ?? null), price: rest((y, x) => x.split?.price ?? null), retired: rest((y, x) => x.split?.retired ?? null), arb: rest((y, x) => hfl(x, 'arbR') / (x.pl.w + x.pl.t + x.pl.p + x.pl.a)) },
 		lvr: { fee: feeAll, lvr: lvrAll, ratio: feeAll > 0 ? lvrAll / feeAll : null, over: live.filter((p) => p.lvr > p.fee).length, pools: live.length, top: live.sort((a, b) => b.lvr / Math.max(1e-12, b.fee) - a.lvr / Math.max(1e-12, a.fee)).slice(0, 3).map((p) => ({ m: p.m.join('/'), ratio: p.fee > 0 ? p.lvr / p.fee : null })) },
 		bound: { salesRatio, needRatio, boundMed, zGot },
-		failList: fl.map((e) => ({ y: yrOf(e.t), name: e.name, product: PNAME[e.product], scrapped: !!e.scrapped }))
+		failList: fl.map((e) => ({ y: yrOf(e.t), name: e.name, product: PNAME[e.product], scrapped: !!e.scrapped, ...(e.diag ? { diag: e.diag } : {}) })),
+		// (round-next-2) the land each year: share let (with what was asked for and not given) and the ground rent in
+		// cityMIND a m² a day; and what reroute passed on (R a year)
+		landPath: S.Y.map((y) => [Math.round((y.occ || 0) * 1000) / 1000, y.rhoM ? +y.rhoM.toPrecision(4) : null]),
+		rerouteR: S.Y.map((y) => (y.dyn && y.dyn.rrR ? Math.round(y.dyn.rrR) : 0)),
+		// the largest yearly gap of the MIND conservation check (what is held, melted and burned against what was issued)
+		leakMax: S.leakMax || 0,
+		// price flips of each product's sellers from year 2 (a full step one way after a full step the other way)
+		flips: Array.from({ length: NPROD }, (_, g) => S.Y.slice(1).reduce((a, y) => a + (y.dyn && y.dyn.flips ? y.dyn.flips[g] : 0), 0))
 	};
 }
 
@@ -3818,18 +4213,20 @@ P('');
 	P(`1. ${ok(PD.ok1)} **No one starves** (from day 8 on): the worst person on the worst day had ${pct(pr.covMinLate, 0)} of every basic need (${dayOf(pr.covMinLateT)}); person-days below 98 % of the basics: ${f(PD.shLate)} of ${f(PD.pdLate)}. In the 30 days after each of ${PD.shocks} capacity shocks: ${f(PD.wSh)} of ${f(PD.wPd)} person-days short (worst ${pct(PD.wCov.v, 0)}); in the 180 days after each of ${PD.fails} failures and ${PD.exits} exits: ${f(PD.fSh)} of ${f(PD.fPd)} (worst ${pct(PD.fCov.v, 0)}). ${ok(PD.okWeek)} The genesis week (days 1–7, before anyone holds MIND and while the pools are still empty): worst ${pct(pr.weekMin, 0)} on ${dayOf(pr.weekMinT)}, ${f(pr.weekShort)} of ${f(pr.weekPd)} person-days short.`);
 	P(`2. ${ok(PD.okN)} normal · ${ok(PD.okS)} strict · ${ok(PD.okB)} bundle — **No one has to work to survive** (the ${zN(D)} zero-Aven people). Normal: Law 5 dividends plus spending some of the MIND they hold covered their basics every day from day 8 (worst ${pct(pr.zCovMinLate, 0)}), and what they hold stayed positive (lowest from year 2 on: ${f(PD.zWmin.v)} R, in year ${PD.zWmin.year}). Strict: Law 5 dividends alone covered a day's basic bundle for every one of them first on ${pr.zStrictFrom === null ? 'no day' : dayOf(pr.zStrictFrom)}; ${pr.zStrictLastFail === null ? 'and on every day after' : `but not on every day after (last miss ${dayOf(pr.zStrictLastFail)}, that day's worst person got ${f(pr.zStrictLastFailR, 2)}× the bundle)`}; after year 10 on ${pct(PD.sLate, 2)} of their person-days (worst ${f(PD.sMinLate.v, 2)}× the bundle, year ${PD.sMinLate.year}). A day's basic bundle cost at most ${f(PD.bm.v, 3)} MIND (year ${PD.bm.year}) against the 12 MIND of ownership their investing creates a day (their half of the new MIND): margin ×${f(12 / PD.bm.v, 0)}.`);
 	const m = PD.marks, d = (k) => m.map((y) => f(at(D, y).dyn.dec[k], 1)).join(' → ');
-	P(`3. ${ok(DYN.p3 ? PD.ok3t : PD.ok3)} **Living standards rise for everyone**${DYN.p3 ? ` (the verdict by canon #19, by tenths: ${PD.ok3t ? 'every tenth passes' : `${PD.p3.failed.length} of 20 tenths fail`}, see the section on canon #19 below; by the old yardstick ${ok(PD.ok3)})` : ''}: real consumption at base-year prices (R a person a day), years ${m.join(', ')}: poorest decile ${d(0)}; middle (5th) ${d(4)}; richest ${d(9)}; the zero-Aven group ${m.map((y) => f(at(D, y).dyn.zReal, 1)).join(' → ')}; the poorest person ${m.map((y) => f(at(D, y).dyn.realMin, 1)).join(' → ')}. ${PD.ok3 ? 'Every decile, the zero-Aven group and the poorest person are higher at every 10-year mark.' : `Not higher at every 10-year mark: ${PD.falls.join('; ')}.`} COOPs: ${PD.fails} failed, ${PD.exits} exited, ${PD.founds} founded in ${dL} years; no person lost basics after a failure: ${ok(PD.fSh < 1e-9)}.`);
+	P(`3. ${ok(DYN.p3 ? PD.ok3t : PD.ok3)} **Living standards rise for everyone**${DYN.p3 ? ` (the verdict, by tenths: ${PD.p3.verdict}: ${PD.ok3t ? 'every tenth passes' : `${PD.p3.failed.length} of 20 tenths fail`}, see the section on part 3 below; by the old yardstick ${ok(PD.ok3)})` : ''}: real consumption at base-year prices (R a person a day), years ${m.join(', ')}: poorest decile ${d(0)}; middle (5th) ${d(4)}; richest ${d(9)}; the zero-Aven group ${m.map((y) => f(at(D, y).dyn.zReal, 1)).join(' → ')}; the poorest person ${m.map((y) => f(at(D, y).dyn.realMin, 1)).join(' → ')}. ${PD.ok3 ? 'Every decile, the zero-Aven group and the poorest person are higher at every 10-year mark.' : `Not higher at every 10-year mark: ${PD.falls.join('; ')}.`} COOPs: ${PD.fails} failed, ${PD.exits} exited, ${PD.founds} founded in ${dL} years; no person lost basics after a failure: ${ok(PD.fSh < 1e-9)}.`);
 }
 P('');
 // the next round: canon #19's yardstick, the founding apart, and the round's measures (audit B1–B16)
 {
 	const NR = nextRound(D, PD, heartSummary(D), ''), p3 = PD.p3, pr = PD.pr, GN4 = ['food', 'energy', 'housing', 'water'];
 	const on = ROUND_KEYS.filter((k) => DYN[k] && DYN[k] !== 'price');
-	P('## Proposition 3 by canon #19, the founding apart, and the round\'s measures (dynamic main)');
+	P('## Proposition 3 by tenths, the founding apart, and the round\'s measures (dynamic main)');
 	P('');
-	P(`The round's switches on in this run: ${on.length ? on.map((k) => `${k} = ${DYN[k]}`).join(', ') : 'none'}${on.length ? ' (each one\'s old rule: the same key = 0; see the usage note at the top of the script)' : ''}. Part 3 is judged by canon #19 ${DYN.p3 ? '(the verdict of this run)' : '(reported beside the old yardstick)'}; every check counts from day 8, and the founding (days 1–7) is reported apart.`);
+	P(`The round's switches on in this run: ${on.length ? on.map((k) => `${k} = ${DYN[k]}`).join(', ') : 'none'}${on.length ? ' (each one\'s old rule: the same key = 0; see the usage note at the top of the script)' : ''}. Part 3 is judged by tenths, ${DYN.p3 ? `by the verdict of this run: ${p3.verdict}` : 'reported beside the old yardstick'}; every check counts from day 8, and the founding (days 1–7) is reported apart.`);
 	P('');
-	P(`- ${ok(PD.ok3t)} **Part 3 by tenths** (canon #19, as the test city judges it: basics at need every year, extras not down more than 2 % in any five years unless at satiation, each tenth's basket rising; ten tenths by holdings and ten by Aven output, yearly means a person from day 8): ${p3.failed.length} of 20 tenths fail (${NR.p3.holdFail} by holdings, ${NR.p3.avenFail} by Aven output): ${p3.basicsFail.length} tenth-years with a basic below need, ${p3.failures.length} falls of an extra by more than 2 % in five years (${p3.fallsTaste} of them while the city's taste for that good fell; with those left out, ${NR.p3.failedNoTaste} tenths fail), ${p3.riseFail.length} baskets not rising. The old yardstick (every decile, the zero-Aven group and the poorest person at every 10-year mark): ${ok(PD.ok3)}. All three checks: ${ok(PD.allT)} by tenths, ${ok(PD.all)} by the old yardstick. Units: food kcal, energy kWh, housing m², water litres, goods kg, care hours; experiences have no physical unit in this model and are valued at the day-1 prices.${p3.failures.length ? ` Largest falls: ${p3.failures.slice().sort((a, b) => b.fall - a.fall).slice(0, 4).map((x) => `${x.by} tenth ${x.tenth}, ${x.good} −${f(x.fall * 100, 1)} % (years ${x.from} → ${x.to})`).join('; ')}.` : ''}`);
+	const vd = NR.p3.vDrops, isV = p3.verdict !== 'canon #19 (a)';
+	P(`- ${ok(PD.ok3t)} **Part 3 by tenths, the verdict** (${isV ? 'canon #19 with the two excuses chosen on 2026-10-14: a fall of an extra counts only when the tenth got less of it than it wanted with its taste as it moved, that is, only by what a fall in its taste share for the good does not explain; and no fall counts while the tenth is at the good\'s satiation, its natural limit (canon #19\'s cap excuse in this model)' : 'canon #19 with the cap excuse only (p3=1)'}; canon #19: basics at need every year, extras not down more than 2 % in any five years, each tenth's basket rising; ten tenths by holdings and ten by Aven output, yearly means a person from day 8): ${p3.failed.length} of 20 tenths fail (${NR.p3.holdFail} by holdings, ${NR.p3.avenFail} by Aven output): ${p3.basicsFail.length} tenth-years with a basic below need, ${p3.countedFalls} tenth-years with a fall of an extra that counts, ${p3.countedRise} baskets not rising.${isV && vd.n ? ` The falls that count, by why the tenth got less than it wanted (the largest part other than taste): ${['income', 'price', 'supply', 'other'].map((c) => `${c} ${vd.by[c]}`).join(', ')}; by good: ${Object.entries(vd.byGood).map(([g, k]) => `${g} ${k}`).join(', ')}; it got less than it asked for in the year of ${vd.gotLess}; land bound the good for half that year or more in ${vd.landBound}; a COOP of that good failed in the window of ${vd.failNear}. Largest: ${vd.list.slice().sort((a, b) => b.fallT - a.fallT).slice(0, 4).map((x) => `${x.by} tenth ${x.tenth}, ${x.good} −${f(x.fallT * 100, 1)} % once taste is taken out (years ${x.from} → ${x.to}; ${x.cause})`).join('; ')}.` : ''} Beside it: (a) canon #19 with the cap excuse only: ${NR.p3.failedA} of 20 tenths fail (${p3.failures.length} falls of an extra by more than 2 % in five years, ${p3.fallsTaste} of them while the city's taste for that good fell, ${p3.riseFail.length} baskets not rising); (b) taste-adjusted without the cap excuse: ${NR.p3.failedTasteAdjNoCap}; (c) one basket, the extras together at the day-1 prices, not down more than 2 % in any five years: ${NR.p3.failedBasket}. The old yardstick (every decile, the zero-Aven group and the poorest person at every 10-year mark): ${ok(PD.ok3)}. All three checks: ${ok(PD.allT)} by tenths, ${ok(PD.all)} by the old yardstick. Units: food kcal, energy kWh, housing m², water litres, goods kg, care hours; experiences have no physical unit in this model and are valued at the day-1 prices.`);
+	P(`- **The falls of (a), by cause**: ${NR.p3.drops.n} falls of an extra (${NR.p3.drops.nNoTaste} while the city's taste for it did not fall) by their largest part: ${['taste', 'income', 'price', 'supply', 'other'].map((c) => `${c} ${NR.p3.drops.by[c]}`).join(', ')}; with a COOP of that good failing in the window: ${NR.p3.drops.failNear}.${p3.failures.length ? ` Largest: ${p3.failures.slice().sort((a, b) => b.fall - a.fall).slice(0, 4).map((x) => `${x.by} tenth ${x.tenth}, ${x.good} −${f(x.fall * 100, 1)} % (years ${x.from} → ${x.to})`).join('; ')}.` : ''}`);
 	P(`- **The poorest person** (apart): real consumption at the marks ${p3.marks.join(', ')}: ${p3.poorest.map((v) => f(v, 1)).join(' → ')} (${p3.poorestRises ? 'higher at every mark' : 'not higher at every mark'}).`);
 	P(`- **The founding** (days 1–7, apart): ${f(pr.weekShort)} of ${f(pr.weekPd)} person-days short (${GN4.map((g, i) => `${g} ${f(pr.weekSg[i])}`).join(', ')}), worst ${pct(pr.weekMin, 0)} (${dayOf(pr.weekMinT)}). From day 8, person-days short by basic: ${GN4.map((g, i) => `${g} ${f(PD.sgLate[i])}`).join(', ')}.`);
 	P(`- **The strict test** from day 8: Law 5 dividends alone paid the zero-Aven people's basic bundle on ${pct(PD.sShare8, 1)} of their person-days (after year 10: ${pct(PD.sLate, 1)}). Its bound: Law 5 pays 20 % of all sales, so a person's dividends ÷ bundle ≤ 0.2 × their share of the MIND Law 5 pays on × all sales ÷ their basics spend. At rest all sales a person-day are ${f(NR.bound.salesRatio, 0)} times a day's basic bundle; the median zero-Aven person (holding ${f(1 / (NR.bound.needRatio * 0.2), 3)} of an equal share) needs ${f(NR.bound.needRatio, 0)}, so the bound allows ${f(NR.bound.boundMed, 1)} bundles a day, while dividends paid the group ${f(NR.bound.zGot, 2)}. The bound does not stop the strict test${NR.bound.salesRatio > NR.bound.needRatio ? '' : ' (here it does: sales are too small)'}; what they hold does: most of it is MIND that pays little.`);
