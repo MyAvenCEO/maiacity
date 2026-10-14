@@ -24,6 +24,7 @@ export const SPEED = {
 /** the real outer size of each asset, width (x) × height (y) × length (z), in metres, as its model must measure */
 export const REAL_SIZES = {
 	pickup: { size: [1.86, 1.82, 5.33], what: 'a double-cab pickup' },
+	pickupMachine: { size: [2.22, 1.84, 5.37], what: 'the double-cab pickup as a Machine at AirSup’s realism: 1.86 m body, its mirrors out of it, 1.82 m to its roof, 5.35 m over its bumpers (machines/pickup.js)' },
 	powerCube: { size: [0.74, 0.75, 0.76], what: 'Open Source Ecology’s Power Cube VII, a 27" (0.69 m) frame, its couplers, caps and handles out of it (actors/powercube.js)' },
 	powerCubeV3: { size: [0.7, 0.74, 0.78], what: 'the Power Cube at v3, built at AirSup’s realism: the same 27" frame, its lifting eyes over it, its couplers and receiver out of its back (machines/powercube.js)' },
 	electroCube: { size: [0.74, 0.75, 0.76], what: 'our ElectroCube: the Power Cube’s 27" frame and size, a flat axial-flux generator in it (actors/electrocube.js)' },
@@ -33,6 +34,7 @@ export const REAL_SIZES = {
 	solarPanel: { size: [1.72, 1.08, 1.4], what: 'one 410 W panel on its 30° ground rack, ballast blocks and cable' },
 	batteryCabinet: { size: [1.6, 2.51, 1.6], what: 'a 230 kWh outdoor battery cabinet on its plinth, its cable out the back' },
 	travelVan: { size: [1.95, 2.8, 5.0], what: 'an old travel van, bags tied on its roof' },
+	vanMachine: { size: [2.27, 2.84, 5.31], what: 'the travel van as a Machine at AirSup’s realism: 1.9 m body, its mirrors out of it, 2.13 m to its roof and 2.84 m to its bags (machines/van.js)' },
 	busStop: { size: [5, 2.9, 2.2], what: 'a bus shelter with its sign' },
 	gasStation: { size: [24, 8.2, 16], what: 'a forecourt with its canopy and price sign' },
 	oldShed: { size: [6.2, 2.9, 5], what: 'a small half-roofed shed' },

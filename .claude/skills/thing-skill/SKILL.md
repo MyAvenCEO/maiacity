@@ -71,8 +71,8 @@ materials, seeded randomness, handles in `userData`) are in `production-designer
 - A piece used by several things (a hinge, a zip, a tent pole) is one builder function every thing imports, with its
   own measures, never copied.
 - A still thing that starts to move by itself — a vehicle that drives, a door on a motor — becomes a machine; the old
-  still thing stays as it was for the games that use it (the V1 travel van and the pickup stay Things while they are
-  built again as machines).
+  still thing stays as it was for the games that use it (the V1 travel van and the pickup stay Things; the machines
+  `machines/van` and `machines/pickup` are built anew).
 
 ## Versions
 

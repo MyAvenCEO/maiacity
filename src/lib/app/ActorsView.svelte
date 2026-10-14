@@ -88,6 +88,25 @@
 
 	const holding = $derived(doing.kind === 'pose' && cast?.poses ? { ...cast.poses[doing.name], ...edits } : null);
 
+	/**
+	 * The part of the canvas no card covers, in its own px: the bar above, the panel on the right, the readout below,
+	 * so the labels' text stays in view.
+	 * @param {HTMLElement} box
+	 */
+	function safeArea(box) {
+		const b = box.getBoundingClientRect();
+		const safe = { left: 0, right: b.width, top: 0, bottom: b.height };
+		for (const el of (box.closest('.view') ?? box.parentElement)?.querySelectorAll('.card') ?? []) {
+			const r = el.getBoundingClientRect();
+			if (!r.width || !r.height) continue;
+			const l = r.left - b.left, t = r.top - b.top;
+			if (r.width > b.width * 0.6) safe.top = Math.max(safe.top, t + r.height);
+			else if (l > b.width / 2) safe.right = Math.min(safe.right, l);
+			else if (t > b.height / 2) safe.bottom = Math.min(safe.bottom, t);
+		}
+		return safe;
+	}
+
 	onMount(async () => {
 		const THREE = await import('three');
 		const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
@@ -281,7 +300,7 @@
 				}
 				controls.update();
 				stage.render();
-				if (stage.state.labels > 0.01 || tags.length) tags = stage.labels(box.clientWidth, box.clientHeight);
+				if (stage.state.labels > 0.01 || tags.length) tags = stage.labels(box.clientWidth, box.clientHeight, safeArea(box));
 				if ((slow += dt) > 0.12 && lab) {
 					slow = 0;
 					reading = { ...lab.read };

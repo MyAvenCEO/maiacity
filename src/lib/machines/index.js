@@ -20,6 +20,8 @@ import { forklift } from '$lib/actors/forklift.js';
 import { lifetrac } from '$lib/actors/lifetrac.js';
 import { powerCube as powerCubeV2 } from '$lib/actors/powercube.js';
 import { powerCube } from './powercube.js';
+import { van } from './van.js';
+import { pickup } from './pickup.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
 import { batteryCube as batteryCubeV1 } from '$lib/actors/batterycube.v1.js';
@@ -74,6 +76,8 @@ const HISTORY = {
 	],
 	forklift: [{ ...FIRST, date: '2026-10-07' }],
 	lifetrac: [{ ...FIRST, date: '2026-10-13' }],
+	van: [{ ...FIRST, date: '2026-10-14' }],
+	pickup: [{ ...FIRST, date: '2026-10-14' }],
 	powercube: [
 		{
 			...FIRST,
@@ -162,6 +166,23 @@ const LIST = [
 		note: 'Open Source Ecology’s open-source tractor, its newest design (v25): a compact loader driven by radio, every part of it its own — tap one for its card, show it alone, watch it go on step by step or the whole machine drawn apart',
 		from: 'Open Source Ecology: the Global Village Construction Set',
 		variants: [{ id: 'lifetrac-v25', label: 'v25', note: 'LifeTrac v25 (2025–26): bolted plate frame, four direct-drive hydraulic wheels, loader arms, LoRa remote control, a Power Cube for its heart', make: () => lifetrac() }]
+	},
+	{
+		id: 'van',
+		label: 'Travel van',
+		note: 'the old minibus of the MaiaCity intro, built at AirSup’s realism: every part its own in measured materials (a ladder frame, wishbones and leaf springs, a 2.4 L diesel under the cover between the front seats with its pistons, crank, camshaft and gears to cut open, a 5-speed gearbox and a live axle), its doors open, and a solver drives it: the power at its wheels to hold a speed on a grade with a load, its gear, revs and fuel, its springs sinking; overloaded up a steep hill it lugs and stalls',
+		from: 'MaiaCity V1: the intro’s travel van',
+		variants: [{ id: 'van', label: 'Travel van', note: '5.3 × 1.9 m, 2.13 m to its roof and 2.84 m to its bags; two-tone, faded and rusting; a sliding door and two front doors; eleven seats; 1,950 kg with its roof load', make: () => castOf(van()) }]
+	},
+	{
+		id: 'pickup',
+		label: 'Pickup',
+		note: 'the double-cab pickup of the MaiaCity world, built at AirSup’s realism: every part its own in measured materials (a ladder frame kicked up over the axle, wishbones and coil-overs, leaf springs, a 2.5 L turbo-diesel under the bonnet with its pistons, crank, camshaft and gears to cut open, a 5-speed gearbox and a live axle), its four doors and its tailgate open, its bed a real floor, and a solver drives it: the power at its wheels to hold a speed on a grade with a load, its gear, revs and fuel, its springs sinking; overloaded up a steep hill it lugs and stalls. It carries a Power Cube as one of its own',
+		from: 'MaiaCity V1: the world’s pickup',
+		variants: [
+			{ id: 'pickup', label: 'Pickup', note: '5.35 × 1.86 m, 1.82 m to its roof; a double cab, four doors and five seats; a 1.78 m bed with a tailgate; 1,750 kg, 950 kg payload', make: () => castOf(pickup()) },
+			{ id: 'pickup-cube', label: 'With a Power Cube', note: 'the Power Cube (v3) carried whole on its bed and strapped down, every part of it its own here too; its 181 kg on the springs and in the solver', make: () => castOf(pickup({ cube: true })) }
+		]
 	},
 	{
 		id: 'powercube',

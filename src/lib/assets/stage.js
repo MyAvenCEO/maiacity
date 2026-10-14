@@ -44,6 +44,8 @@ export class Stage {
 		this.broken = false;
 		this.time = 0;
 		this.built = 1;
+		/** @type {THREE.Box3 | null} the asset's world box as shown, for the labels' columns */
+		this.box = null;
 		/** the part picked, and whether it is shown alone */
 		this.picked = null;
 		this.alone = false;
@@ -143,6 +145,7 @@ export class Stage {
 		this.scene.add(root);
 		root.updateMatrixWorld(true);
 		const box = new THREE.Box3().setFromObject(root);
+		this.box = box;
 		const centre = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
 		const s = this.s, paper = this.theme === 'paper';
 		this.groundY = box.min.y;
@@ -211,7 +214,7 @@ export class Stage {
 			this.contact.rtB.dispose();
 		}
 		this._unpick();
-		this.root = this.asset = this.floor = this.contact = null;
+		this.root = this.asset = this.floor = this.contact = this.box = null;
 	}
 
 	/** turn a mode on or off (`on` left out: toggle) @param {'run' | 'break' | typeof MODES[number]} k @param {boolean} [on] */
@@ -409,28 +412,54 @@ export class Stage {
 
 	/**
 	 * The labels as they fall on a canvas `w` × `h` px: each pinned point, where its text goes (spread per side so
-	 * none overlap), its text and live reading, and how far faded in (AirSup's `_updateLabels`).
-	 * @param {number} w @param {number} h
+	 * none overlap), its text and live reading, and how far faded in (AirSup's `_updateLabels`). `safe` is the part of
+	 * the canvas no panel covers (px), where the columns of text must stay.
+	 * @param {number} w @param {number} h @param {{ left?: number, right?: number, top?: number, bottom?: number }} [safe]
 	 */
-	labels(w, h) {
+	labels(w, h, safe = {}) {
 		const on = this.state.labels;
 		if (!this.asset || on < 0.01) return [];
-		const ctr = new THREE.Vector3().setFromMatrixPosition(this.root.matrixWorld).project(this.camera);
+		// the asset's outline on the canvas, so the labels' columns stand clear of it (a long vehicle as much as a cube)
+		let x0 = Infinity, x1 = -Infinity;
+		if (this.box) {
+			const b = this.box, c = new THREE.Vector3();
+			for (let i = 0; i < 8; i++) {
+				c.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(this.camera);
+				const x = (c.x * 0.5 + 0.5) * w;
+				x0 = Math.min(x0, x);
+				x1 = Math.max(x1, x);
+			}
+		}
+		const mid = Number.isFinite(x0) ? (x0 + x1) / 2 : (new THREE.Vector3().setFromMatrixPosition(this.root.matrixWorld).project(this.camera).x * 0.5 + 0.5) * w;
 		const items = [];
 		for (const L of this.asset.labels) {
 			L.obj.updateWorldMatrix(true, false);
 			const p = L.at.clone().applyMatrix4(L.obj.matrixWorld).project(this.camera);
 			if (p.z >= 1 || !L.obj.visible) continue;
 			const x = (p.x * 0.5 + 0.5) * w, y = (-p.y * 0.5 + 0.5) * h;
-			items.push({ x, y, side: L.side ?? (p.x < ctr.x ? 'left' : 'right'), text: L.text, value: L.value?.() ?? '', lx: 0, ly: 0, on });
+			items.push({ x, y, side: L.side ?? (x < mid ? 'left' : 'right'), text: L.text, value: L.value?.() ?? '', lx: 0, ly: 0, on });
+		}
+		// room for a label's text beside its column (px), so a column pushed outward never runs off the canvas or under
+		// a panel; and the rows kept between the panels above and below
+		const L0 = safe.left ?? 0, R0 = safe.right ?? w, T0 = safe.top ?? 0, B0 = safe.bottom ?? h;
+		const room = Math.min(170, (R0 - L0) * 0.2);
+		const gap = Math.max(30, h * 0.05);
+		// a side with no room beside the outline (a big asset by a panel) hands its labels to the other, if that has room
+		if (Number.isFinite(x0)) {
+			const fits = { left: x0 - w * 0.03 >= L0 + room, right: x1 + w * 0.03 <= R0 - room };
+			for (const [from, to] of /** @type {const} */ ([['left', 'right'], ['right', 'left']]))
+				if (!fits[from] && fits[to]) for (const it of items) if (it.side === from) it.side = to;
 		}
 		for (const side of ['left', 'right']) {
 			const list = items.filter((i) => i.side === side).sort((a, b) => a.y - b.y);
-			const gap = Math.max(30, h * 0.05);
+			if (!list.length) continue;
 			let last = -1e9;
-			for (const it of list) last = it.ly = Math.max(it.y, last + gap);
-			const xs = side === 'left' ? Math.min(...list.map((i) => i.x)) - w * 0.06 : Math.max(...list.map((i) => i.x)) + w * 0.06;
-			for (const it of list) it.lx = clamp(xs, w * 0.04, w * 0.96);
+			for (const it of list) last = it.ly = Math.max(it.y, T0 + gap * 0.6, last + gap);
+			// a column running below the lowest safe row moves up as a whole (never above the highest)
+			const over = list[list.length - 1].ly - (B0 - gap * 0.5);
+			if (over > 0) for (const it of list) it.ly = Math.max(T0 + gap * 0.6, it.ly - over);
+			const xs = side === 'left' ? Math.min(x0, ...list.map((i) => i.x)) - w * 0.03 : Math.max(x1, ...list.map((i) => i.x)) + w * 0.03;
+			for (const it of list) it.lx = clamp(xs, L0 + room, R0 - room);
 		}
 		return items;
 	}
