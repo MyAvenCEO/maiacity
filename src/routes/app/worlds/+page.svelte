@@ -25,7 +25,7 @@
 			{#if w.versions?.length}
 				<ol class="history" aria-label="{w.label}: history">
 					{#each [...w.versions].reverse() as ver (ver.v)}
-						<li><a href={ver.build}><b>{tag(ver.v)}</b> {ver.note} <small>{day(ver.date)}</small></a></li>
+						<li>{#if ver.kept}<a href={ver.build}><b>{tag(ver.v)}</b> {ver.note} <small>{day(ver.date)}</small></a>{:else}<span class="gone"><b>{tag(ver.v)}</b> {ver.note} <small>{day(ver.date)} · not kept</small></span>{/if}</li>
 					{/each}
 				</ol>
 			{/if}
@@ -126,6 +126,10 @@
 
 	.history small {
 		opacity: 0.5;
+	}
+
+	.history .gone {
+		opacity: 0.6;
 	}
 
 	.credits {

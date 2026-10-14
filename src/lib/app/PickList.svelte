@@ -66,8 +66,8 @@
 						{#each [...item.versions].reverse() as ver (ver.v)}
 							{@const shown = (version ?? item.version) === ver.v}
 							<li>
-								<button class="ver" class:shown aria-pressed={shown} onclick={() => pickVersion(ver.v)} disabled={!onversion}>
-									<b>{tag(ver.v)}</b><span>{ver.note}</span><small>{day(ver.date)}{ver.v === item.version ? ' · latest' : ''}</small>
+								<button class="ver" class:shown aria-pressed={shown} onclick={() => pickVersion(ver.v)} disabled={!onversion || ver.kept === false} title={ver.kept === false ? 'Not kept: only its note is left' : undefined}>
+									<b>{tag(ver.v)}</b><span>{ver.note}</span><small>{day(ver.date)}{ver.v === item.version ? ' · latest' : ''}{ver.kept === false ? ' · not kept' : ''}</small>
 								</button>
 							</li>
 						{/each}
