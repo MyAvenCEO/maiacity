@@ -1,6 +1,6 @@
 /*
  * REUSABLE 3D MODELS — furniture and things, each built to its real measure (metres) by one function, to be placed in
- * any world (the room, a dome, a set) and shown on their own in the 3D models viewer (/app/models/).
+ * any world (the room, a dome, a set) and shown on their own in the Things viewer (/app/models/).
  *
  * Every model stands on the floor at its origin (y 0 is the floor), its middle over x = 0, z = 0; its back (a bed's
  * head, a crate's back boards, a chair's backrest) towards −z, its front towards +z. A thing that hangs (the bulb)

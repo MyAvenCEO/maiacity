@@ -13,6 +13,8 @@ BatteryPack. The laws over both are the asset producer's (`asset-producer`).
 - Built in `src/lib/actors/*.js`, beside the people and animals: a machine is rigged the same way (`rig.ts`), and the
   games import its builder from there (`$lib/actors/batterypack.js`). A new machine is a builder there and a kind in
   the machines' `LIST`; it never also goes into the Things (`thing-skill`).
+- How the rig works, and the excavators' (`excavator-rig.js`), are in `production-designer`'s `models.md` ("The
+  actors").
 - Its real size in `REAL_SIZES` (`src/lib/models/units.js`) and the `BUILD` map of `src/lib/models/sizes.test.js`,
   at rest (`still(...)`), like the cubes and the pack.
 
@@ -24,7 +26,8 @@ BatteryPack. The laws over both are the asset producer's (`asset-producer`).
 - Build from the shared kit (`machineKit` in `src/lib/actors/parts.js`) and make every machine **combinable**: it is
   also a function that adds its parts to any other rig (`powerCubeParts(kit, { at, joints, assembly, step })`,
   `forkliftParts` and `forkliftPose`, `clickLockPieces()`), so the LifeTrac carries a Power Cube on its cradle and a
-  goods pod carries four forklifts. Samuel wants every machine combinable.
+  goods pod carries four forklifts. Samuel wants actors combinable (said when the forklift went into the goods pod,
+  2026-10-07), and every machine is built so.
 - A hydraulic ram is two joints, the barrel and the rod, kept on the line between their two pins every frame
   (`excavator-rig.js`).
 - A bigger machine is a different kind, never a smaller one scaled up.

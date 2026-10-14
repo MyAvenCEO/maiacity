@@ -15,7 +15,7 @@
  * and unrolled (setOpen), it lies flat with what is in it: the groundsheet rolled, the cover rolled, the frame's tubes
  * in a bundle and the hubs in a sack.
  *
- * THE STORAGE TENT (storageTent, v2 of the Models' tent, Samuel 2026-10-14) is the same dome twice the size, to keep
+ * THE STORAGE TENT (storageTent, v2 of the Things' tent, Samuel 2026-10-14) is the same dome twice the size, to keep
  * things in (and later taken to the tribe camp): 8 m across and 4 m high, its tubes 40 mm and 1.02 – 1.3 m long
  * (each in two halves joined by a sleeve, so they still pack), a door 1.8 m wide and 3.1 m high to carry things in,
  * on a deck 11.2 m across and as high as the dome tent's; pitched in the same steps. Its bag (storageTentBag) is 1 m

@@ -1,0 +1,13 @@
+{
+  "skill": "factory",
+  "cases": [
+    { "prompt": "a line that makes 2,000 e-bike motors a day", "expect": ["branches for stator, rotor and housing joined at assembly", "sizing formula shown per station", "forecast within 10 % of target or a named bottleneck"] },
+    { "prompt": "a bakery that bakes 10,000 croissants an hour", "expect": ["tokens are trays", "proofer, tunnel oven and spiral cooler modelled as continuous dwell (perMachine)", "oven or proofer is the constraint"] },
+    { "prompt": "a battery cell gigafactory", "expect": ["states its assumed capacity in GWh and cells per day", "3 shifts", "formation dwell in hours"] },
+    { "prompt": "a drone assembly line", "expect": ["flight controller sub line joined at wiring", "calibration and flight test with yield"] },
+    { "prompt": "a bottling plant that fills 24,000 bottles an hour", "expect": ["token = case", "filler as the designed constraint", "pasteurizer or labeller modelled"] },
+    { "prompt": "a factory that builds 4 satellites a day", "expect": ["cleanroom bays", "thermal vacuum as a batch", "lead time in days"] },
+    { "prompt": "how many CNC machines do I need for 600 gearbox housings a week at 42 minutes each", "expect": ["answers the count with the sizing rule", "builds the page", "shows utilization"] },
+    { "prompt": "a sneaker factory, 3,000 pairs a day, show me where it jams", "expect": ["stitching or lasting manual stations with cv >= 0.12", "bottleneck named with busy and blocked fractions"] }
+  ]
+}

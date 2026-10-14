@@ -14,7 +14,7 @@
  * the canvas rising on it; the wall poles stood under the eave and the wall's foot pegged out; the guy ropes run out
  * one by one to their pegs and tensioned; the door flaps rolled back and tied; the things brought in, the lantern
  * hung and lit. Every piece is a part of its own (userData.parts by id, userData.catalog its cards and steps, as the
- * Power Cube actors have them): the Models viewer picks it, shows it alone, takes the tent apart (userData.explode)
+ * Power Cube machines have them): the Things viewer picks it, shows it alone, takes the tent apart (userData.explode)
  * and pitches it.
  *
  * The fire place (firePlace) goes in front of it (BELL_TENT.fire): a ring of stones round a bed of ash, four logs in a
@@ -202,7 +202,7 @@ const SOURCES = [
  * - setPitch(k), pitch; work(k): where the work is at k (the tent's frame), for a worker to stand by
  * - lamp: the lantern's PointLight; canvas: the canvas's material (its emissive is the glow at night)
  * - walk: { r, door, headroom, colliders: [{ x, z, r }] } (the wall's radius at the ground, the door's half width at
- *   +z, how far from the pole a grown-up stands upright under the bell, what is in the way), with the Models viewer's
+ *   +z, how far from the pole a grown-up stands upright under the bell, what is in the way), with the Things viewer's
  *   walk (x, z, yaw, canStand, floorAt, lamps) in it too
  * - parts (each part's group by id), catalog, explode(k)
  */
@@ -897,7 +897,7 @@ const FIRE_PARTS = [
  * The fire place, built as far as `built` (0 … 1, its last step lighting it) and lit as much as `lit`. Its ring is at
  * its origin; the chairs on its +z side, the woodpile on its −x side. userData:
  * - setBuild(k), built; fire: { light, setLit(k), update(t) } (the flames and their flicker); tick(t) = fire.update
- * - walk: { colliders: [{ x, z, r }] } (the ring, the chairs, the woodpile) with the Models viewer's walk in it
+ * - walk: { colliders: [{ x, z, r }] } (the ring, the chairs, the woodpile) with the Things viewer's walk in it
  * - parts, catalog, explode(k)
  */
 export function firePlace({ built = 1, lit = 1 } = {}) {
