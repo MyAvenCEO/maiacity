@@ -4,7 +4,8 @@
  * is (the lips, warm cheeks, a nose's tip and ears, every hollow a little darker, the inside of the mouth), eyes, lash
  * lines, teeth and a tongue, brows of single hairs, and hair grown over the scalp. One smile, `joy`, rides it as a morph:
  * v7 (2026-10-14) a warm one with the lips closed — the mouth's corners up and back, the cheeks lifted, the eyes
- * narrowed by them; v6's (kept: `smile` 6) broad and open, the lips parted on the teeth.
+ * narrowed by them; v6's (kept: version 6) broad and open, the lips parted on the teeth. v8: the whole jaw and chin
+ * ride the head bone (headWeights), the neck blending in below them.
  *
  * All of it in the stand-in's measure (./human.ts: a person of 1.80 m, metres, facing +z, its left +x); the stand-in
  * scales it to its height.
@@ -35,8 +36,10 @@ export const SMILES = /** @type {Record<number, { units: Record<string, number>,
 		cheeks: { up: 0.004, out: 0.0025, r: 0.022 }
 	}
 });
-/** the stand-in's version the head is built at by default */
-export const SMILE = 7;
+/** the stand-in's version the head is built at by default (v8: the jaw on the head bone, see headWeights) */
+export const HEAD_V = 8;
+/** a version's smile: v7's from v7 on */
+const smileOf = (/** @type {number} */ v) => (v >= 7 ? 7 : 6);
 const smooth = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ x) => {
 	const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
 	return t * t * (3 - 2 * t);
@@ -84,7 +87,7 @@ function build(face, smile) {
 	const pos = Float32Array.from(raw, (x, k) => x * HEAD_Q + HEAD_MID[k % 3]);
 	const region = bytes(HEAD_REGION);
 	// the smile: its units' offsets added up
-	const recipe = SMILES[smile] ?? SMILES[SMILE];
+	const recipe = SMILES[smileOf(smile)];
 	const joy = new Float32Array(n * 3);
 	for (const [unit, wt] of Object.entries(recipe.units)) {
 		const u = HEAD_UNITS[/** @type {keyof typeof HEAD_UNITS} */ (unit)], ids = u16(u.ids), d = i16(u.d);
@@ -237,17 +240,29 @@ function build(face, smile) {
 	return { skin, hollow, dist, inside, socket, ears, mouth: { y: my, z: mz, w: mw }, tip: T, crown, eyes, E, hairW, hairF, surface, parts };
 }
 
-/** a face's head with a version's smile, built once @param {Face} face @param {number} [smile] */
-export const headOf = (face = 'man', smile = SMILE) => (BUILT[`${face}:${smile}`] ??= build(face, smile));
+/** a face's head at a version (its smile), built once @param {Face} face @param {number} [v] */
+export const headOf = (face = 'man', v = HEAD_V) => (BUILT[`${face}:${smileOf(v)}`] ??= build(face, smileOf(v)));
 
 /** how high the top of a face's head is, in the stand-in's measure @param {Face} face */
 export const crownOf = (face = 'man') => HEAD_PEOPLE[KEY[face]].crown;
 
-/** its weights on the stand-in's bones by where a point is: the head from a line under the jaw to the skull's foot,
- *  the chest where the neck goes into the shirt, the neck between @param {THREE.Vector3} p @returns {[string, number][]} */
-export function headWeights(p) {
-	const line = 1.606 - 0.36 * p.z; // under the chin at the front, the skull's foot at the back
-	const head = smooth(line - 0.016, line + 0.018, p.y), chest = smooth(1.53, 1.49, p.y);
+/** where the head ends, by depth (z, y; m, in the stand-in's measure): under the chin and the jaw, up under the ear
+ *  to the jaw's angle, the skull's foot behind it */
+const JAW = [[-0.12, 1.565], [-0.03, 1.565], [-0.015, 1.59], [0.01, 1.595], [0.03, 1.572], [0.05, 1.553], [0.15, 1.55]];
+const jawAt = (/** @type {number} */ z) => {
+	if (z <= JAW[0][0]) return JAW[0][1];
+	for (let k = 1; k < JAW.length; k++) if (z <= JAW[k][0]) return JAW[k - 1][1] + ((z - JAW[k - 1][0]) / (JAW[k][0] - JAW[k - 1][0])) * (JAW[k][1] - JAW[k - 1][1]);
+	return JAW[JAW.length - 1][1];
+};
+
+/** its weights on the stand-in's bones by where a point is: the head wholly down to the line under the jaw and the
+ *  chin (JAW), so the jaw turns with the face; below it the neck takes over within 5 cm; the chest where the neck goes
+ *  into the shirt. Before v8 the line ran straight from under the chin to the skull's foot, and the jaw's underside
+ *  hung on the neck, sheared from the face when the head turned. @param {THREE.Vector3} p @param {number} [v]
+ *  @returns {[string, number][]} */
+export function headWeights(p, v = HEAD_V) {
+	const line = v >= 8 ? jawAt(p.z) : 1.606 - 0.36 * p.z;
+	const head = v >= 8 ? smooth(line - 0.05, line, p.y) : smooth(line - 0.016, line + 0.018, p.y), chest = smooth(1.53, 1.49, p.y);
 	const neck = Math.max(0, 1 - head - chest);
 	return /** @type {[string, number][]} */ ([['head', head], ['neck', neck], ['chest', chest]]).filter(([, x]) => x > 0);
 }
@@ -280,11 +295,12 @@ function strand(pos, idx, root, dir, curl, face, len, wid, segs = 3) {
  * The head's pieces for a look: the skin (its neck weighted onto the stand-in's neck and chest, and its smile as the
  * morph `joy`), its eyes, lashes, teeth, tongue, brows and hair.
  * @param {{ skin: string, lips: string, brows: string, iris: string, hair: string, hairColour: string, face?: Face }} k
- * @param {number} [smile] the stand-in's version whose smile it wears (SMILES)
+ * @param {number} [ver] the stand-in's version it is built at (its smile, SMILES; its weights, headWeights)
  * @returns {Piece[]}
  */
-export function headPieces(k, smile = SMILE) {
-	const h = headOf(k.face ?? 'man', smile);
+export function headPieces(k, ver = HEAD_V) {
+	const h = headOf(k.face ?? 'man', ver);
+	const weights = (/** @type {THREE.Vector3} */ p) => headWeights(p, ver);
 	const { skin, E } = h;
 	const P = skin.geo.attributes.position, m = skin.n;
 	const base = new THREE.Color(k.skin), lips = new THREE.Color(k.lips), warm = base.clone().multiply(new THREE.Color(1.0, 0.82, 0.78));
@@ -321,7 +337,7 @@ export function headPieces(k, smile = SMILE) {
 		return c;
 	});
 	/** @type {Piece[]} */
-	const out = [{ geo: skin.geo.clone(), color: (_p, i = 0) => colours[i], weights: headWeights, morph: { joy: skin.joy } }];
+	const out = [{ geo: skin.geo.clone(), color: (_p, i = 0) => colours[i], weights, morph: { joy: skin.joy } }];
 	// the eyes: a glossy ball each — its white, an iris with a darker rim, a pupil, a catchlight — in the lids' opening
 	const iris = new THREE.Color(k.iris), rim = iris.clone().multiplyScalar(0.5), inner = iris.clone().lerp(new THREE.Color('#c9a25a'), 0.25);
 	const white = new THREE.Color('#f2eee8'), edge = new THREE.Color('#d9c4bc');
@@ -349,9 +365,9 @@ export function headPieces(k, smile = SMILE) {
 		const t = h.parts[upper ? 'teeth-upper' : 'teeth-lower'];
 		t.geo.computeBoundingBox();
 		const box = /** @type {THREE.Box3} */ (t.geo.boundingBox), front = box.max.z;
-		out.push({ geo: t.geo.clone(), color: (p) => teeth(p, upper, upper ? box.min.y : box.max.y, front), weights: headWeights, morph: { joy: t.joy }, mat: 1 });
+		out.push({ geo: t.geo.clone(), color: (p) => teeth(p, upper, upper ? box.min.y : box.max.y, front), weights, morph: { joy: t.joy }, mat: 1 });
 	}
-	out.push({ geo: h.parts.tongue.geo.clone().translate(0, -0.009, -0.008), color: '#6c3036', weights: headWeights, morph: { joy: h.parts.tongue.joy } });
+	out.push({ geo: h.parts.tongue.geo.clone().translate(0, -0.009, -0.008), color: '#6c3036', weights, morph: { joy: h.parts.tongue.joy } });
 	return out;
 }
 
