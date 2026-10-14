@@ -7,8 +7,13 @@
 //! shares that select it, named on the wire by the hash of its vault and those shares (`AudienceId::of`); a share
 //! reaches an entry when it is in the entry's audience or is wide. The semantic layer, what a share's selector picks
 //! and what an entry's header and tags say, is known only to an entry's readers and the vault's own devices, the
-//! stewards, who keep every entry in the audience its meaning asks for, and marked with the sync rules that want it,
+//! stewards, who keep every entry in the audience its meaning asks for, and marked with the keep shares that pick it,
 //! by marking it (`Action::Mark`, `Meaning`, T23).
+//!
+//! A keep share names one device of its issuer, with level `Keep` and a mode (`KeepMode`): it grants nothing, and says
+//! which entries of the vault it is over that device syncs, and how (`State::wants`, `State::keeps`, T28). Nothing
+//! rests on one, no audience holds one, and no mark asks whether the keep shares it names are live, so its revocation,
+//! by its issuer alone, cuts nothing (`removes`, K1).
 //!
 //! A share is a name and the ops its grantee may make (`rules`): its ops travel sealed in its slice, and only the
 //! commitment to them is in the clear, in its `select`, with its level, their class. So no rule here reads them: a
@@ -70,12 +75,24 @@ pub enum Principal {
     Vault(VaultId),
 }
 
-/// What a share allows; each level includes the ones before it, in the order of their rank. Relay only knows the
-/// vault's devices, so that its holder, a server, lets them through its relay and helps them find each other: it
-/// receives none of the entries. Backup also stores and forwards the ciphertext of the entries a share reaches, and
-/// gets no key: the server's level by default. Owner also issues shares on its slice and is governance.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// How a device keeps what a keep share picks: it syncs the entries and keeps the files they bring whole (`Whole`),
+/// syncs them and fetches a file's pieces as it reads them (`Opened`), or doesn't sync them at all (`Never`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum KeepMode {
+    Whole,
+    Opened,
+    Never,
+}
+
+/// What a share allows; each level includes the ones before it, in the order of their rank. Keep grants nothing: a keep
+/// share only says what one device of its issuer syncs, and how (`KeepMode`), and every mode has rank 0, so levels
+/// compare by their rank alone. Relay only knows the vault's devices, so that its holder, a server, lets them through
+/// its relay and helps them find each other: it receives none of the entries. Backup also stores and forwards the
+/// ciphertext of the entries a share reaches, and gets no key: the server's level by default. Owner also issues shares
+/// on its slice and is governance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Level {
+    Keep(KeepMode),
     Relay,
     Backup,
     Read,
@@ -84,14 +101,17 @@ pub enum Level {
 }
 
 impl Level {
+    /// A share with this level allows what `need` allows: `need` ranks no higher. Keep allows nothing, and every
+    /// level allows it, which no rule asks.
     pub fn allows(self, need: Level) -> bool {
-        need <= self
+        need.rank() <= self.rank()
     }
 
-    /// Its rank (`Level.rank`), which is also its byte on the wire: relay 1 to owner 5. Rank 0 is kept for the level
-    /// below relay, which grants nothing.
+    /// Its rank (`Level.rank`), which is also its byte on the wire: keep 0, of any mode (its mode's byte follows it
+    /// there), relay 1 to owner 5.
     pub fn rank(self) -> u8 {
         match self {
+            Level::Keep(_) => 0,
             Level::Relay => 1,
             Level::Backup => 2,
             Level::Read => 3,
@@ -99,10 +119,23 @@ impl Level {
             Level::Owner => 5,
         }
     }
+
+    /// The level of a keep share, of any mode.
+    pub fn is_keep(self) -> bool {
+        matches!(self, Level::Keep(_))
+    }
+
+    /// A keep share's mode, `None` for any other level.
+    pub fn mode(self) -> Option<KeepMode> {
+        match self {
+            Level::Keep(m) => Some(m),
+            _ => None,
+        }
+    }
 }
 
-/// Whom a share names: a vault, everyone (read only, T8), or a device. A grant never names a device (T4): the type
-/// allows one only so that a peer can receive such a share and refuse it.
+/// Whom a share names: a vault, everyone (read only, T8), or a device, which only a keep share names, one of its
+/// issuer's (T4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Who {
     Vault(VaultId),
@@ -117,7 +150,8 @@ pub struct Share {
     pub over: VaultId,
     pub who: Who,
     /// The class of its ops (`rules::level_of`), in the clear: what relays and every rule here read of them. Its
-    /// readers count a write through it only where it is the class of its ops (`State::chain_allows`).
+    /// readers count a write through it only where it is the class of its ops (`State::chain_allows`). A keep share's
+    /// is `Keep` of its mode, and it has no ops.
     pub level: Level,
     /// It selects the whole vault, in the clear, so a peer that reads no selector knows it reaches every audience.
     pub wide: bool,
@@ -129,27 +163,6 @@ pub struct Share {
     pub parent: Option<ShareId>,
     pub issuer: VaultId,
     /// Keeps two shares that say the same apart.
-    pub nonce: u64,
-}
-
-/// A sync rule (`State.lean`): device `device` of vault `issuer` syncs the entries of vault `over` its selector picks,
-/// or all of them (`wide`), and keeps whole the files they bring (`keep`) rather than fetching a file's pieces as it
-/// reads them. It grants nothing: a device syncs what it may receive and its rules want (`State::wants`, T28). Its id
-/// is the id of the edit that set it, from the same hashes as a share's, and the stewards mark entries with it (the
-/// wants of a `Mark`) as they place them in the audiences of shares, so a peer that reads no selector applies it too
-/// (T23).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct SyncRule {
-    pub issuer: VaultId,
-    pub device: SignerId,
-    pub over: VaultId,
-    /// It picks every entry of `over`, in the clear, as a wide share selects them all.
-    pub wide: bool,
-    /// Its name and selector (`slice::Slice`, granting no op), sealed as a share's are, to `over`'s vault key and
-    /// `issuer`'s (`slice::Select`): no rule here reads it; the vault's stewards and the issuer's devices do.
-    pub select: Vec<u8>,
-    pub keep: bool,
-    /// Keeps two rules that say the same apart.
     pub nonce: u64,
 }
 
@@ -181,7 +194,8 @@ pub enum Setting {
 /// What a share edit gives: a grant, or a place in a vault, as an owner or as a device. To a person they are all shares
 /// (an owner is owner on everything, a device acts for the vault), but each keeps rules of its own, under its own
 /// sub-kind on the wire, where the stateless functions read it (`Edit::rank`, `sync::log_of`, `sign::standing`). Owner
-/// of a whole vault is an owner of it, which no grant makes (`Refusal::WideOwner`).
+/// of a whole vault is an owner of it, which no grant makes (`Refusal::WideOwner`). A keep share is a grant that grants
+/// nothing and names one of its issuer's devices.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Sharing {
     /// A grant, issued by its issuer through the owners `via`; its id is this edit's id.
@@ -198,7 +212,8 @@ pub enum Sharing {
 /// names the edits it had seen and keeps.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Revoking {
-    /// Ends grant `share` and every grant resting on it, revoked by vault `actor` through the owners `via`.
+    /// Ends grant `share` and every grant resting on it, revoked by vault `actor` through the owners `via`: a keep
+    /// share only by its issuer, and nothing rests on one.
     Grant { share: ShareId, actor: VaultId, keep: Vec<EditId>, via: Vec<VaultId> },
     /// By the vault's approval, or the owner leaving on its own.
     Owner { vault: VaultId, owner: Principal, keep: Vec<EditId> },
@@ -269,8 +284,8 @@ pub enum Action {
         body: Vec<u8>,
     },
     /// A steward, acting for vault `vault`, marks its entry `entry`: with the audience of the shares `caps` (canonical
-    /// order), which moves the entry there, begins a stay and keeps the writes it had seen (`keep`); with the sync
-    /// rules that want it (`wants`, in canonical order), so a peer that reads no selector knows which devices want it;
+    /// order), which moves the entry there, begins a stay and keeps the writes it had seen (`keep`); with the keep
+    /// shares that pick it (`wants`, in canonical order), so a peer that reads no selector knows which devices want it;
     /// or with both. A part left out (`None`) stays as it is, so a mark of the wants alone never puts back an audience
     /// another steward changed meanwhile; only a mark with `caps` is a removal, and only it keeps anything.
     Mark {
@@ -293,10 +308,6 @@ pub enum Action {
     /// where the writes carry only the classical half (`sign`). It changes nothing; a peer that no longer trusts the
     /// curves counts only the writes a checkpoint covers (`checkpointed`).
     Checkpoint { entry: EntryId, covers: Vec<EditId> },
-    /// A sync rule, set by its issuer for one of its own devices through the owners `via`; its id is this edit's id.
-    SyncRule(SyncRule, Vec<VaultId>),
-    /// Sync rule `rule` of vault `issuer` ends.
-    EndSyncRule { rule: ShareId, issuer: VaultId, via: Vec<VaultId> },
 }
 
 impl Action {
@@ -329,9 +340,7 @@ impl Action {
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
             | Action::Mark { via, .. }
-            | Action::Publish { via, .. }
-            | Action::SyncRule(_, via)
-            | Action::EndSyncRule { via, .. } => Some(via),
+            | Action::Publish { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -342,9 +351,7 @@ impl Action {
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
             | Action::Mark { via, .. }
-            | Action::Publish { via, .. }
-            | Action::SyncRule(_, via)
-            | Action::EndSyncRule { via, .. } => Some(via),
+            | Action::Publish { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -387,8 +394,6 @@ impl Edit {
             | Action::Write { actor, .. }
             | Action::Publish { actor, .. } => Some(*actor),
             Action::Mark { vault, .. } => Some(*vault),
-            Action::SyncRule(r, _) => Some(r.issuer),
-            Action::EndSyncRule { issuer, .. } => Some(*issuer),
             _ => None,
         }
     }
@@ -582,7 +587,8 @@ pub enum Refusal {
     /// The edit's author doesn't act for the vault it claims to act for through the owners it names.
     NotActing,
     /// The vault holds no share that allows this: no live share with the level it needs that reaches the entry, no
-    /// share whose intake is the audience it creates in, no right to revoke the share, no right to the vault's lane.
+    /// share whose intake is the audience it creates in, no right to revoke the share (a keep share only its issuer
+    /// revokes), no right to the vault's lane, no share over the vault a keep share is over, backup or more.
     NoCap,
     /// Not a rule of the edits but of a device: no share the vault writes through names ops that allow what the write
     /// does (`rules`), so its readers wouldn't count it, and the device doesn't make it.
@@ -591,7 +597,10 @@ pub enum Refusal {
     /// long name, a selector beyond the bounds a peer accepts, or rests on a chain too long to prove
     /// (`rules::normalize`, `rules::name_ok`, `rules::MAX_GRANTS`).
     BadCap,
-    /// Grants name vaults or everyone, never a device (T4): a device only ever keeps what its vault may hold.
+    /// A keep share names a device, one of its issuer's (T4): a keep share to a vault or to everyone is none.
+    KeepNeedsDevice,
+    /// Only a keep share names a device (T4): any other share names a vault or everyone, as a device only ever keeps
+    /// what its vault may hold.
     DeviceOnlyKeeps,
     /// A share never names the vault it is over: that vault holds every right over itself already.
     CapToItself,
@@ -601,7 +610,8 @@ pub enum Refusal {
     /// slice.
     WideOwner,
     /// The parent share isn't a live owner share over the same vault held by the issuer, or a wide share rests on one
-    /// that isn't, or a root share is issued by another vault than the one it is over.
+    /// that isn't, or a root share is issued by another vault than the one it is over, or a keep share rests on a
+    /// share.
     BadParent,
     /// The share was revoked already.
     Revoked,
@@ -639,13 +649,10 @@ pub enum Refusal {
     AlreadyPublished,
     /// A checkpoint covers nothing, or something other than its own author's accepted writes of its entry.
     NotOwnWrite,
-    /// A sync rule names a signer that isn't a device of the vault that sets it.
+    /// A keep share names a signer that isn't a device of the vault that issues it.
     NotDevice,
-    UnknownRule,
-    /// The sync rule ended already.
-    Ended,
-    /// A mark's wants aren't in canonical order, or one isn't a sync rule over the vault, or is wide; live or ended,
-    /// as readers leave out an ended one.
+    /// A mark's wants aren't in canonical order, or one isn't a keep share over the vault, or is wide; live or
+    /// revoked, as readers leave out a revoked one.
     BadWants,
     /// A mark of the wants alone marks an entry with the wants it has already.
     SameWants,
@@ -816,11 +823,7 @@ pub struct State {
     /// Only while checking an edit that a mark after it hadn't seen (`hide`): each entry such a mark took to an
     /// audience, and that audience's shares. A write must be allowed there too.
     narrow: Vec<(EntryId, Arc<[ShareId]>)>,
-    /// Every sync rule set, live or ended, in the order set, with its id and each one's place; the rules that ended, in
-    /// the order they did; and the wants the stewards last marked each entry with.
-    rules: Arc<Vec<(ShareId, SyncRule)>>,
-    rule_at: Arc<HashMap<ShareId, usize>>,
-    ended: Arc<Listed<ShareId>>,
+    /// The keep shares that pick each entry, as its vault's stewards last marked them: its wants.
     marks: Arc<HashMap<EntryId, Arc<[ShareId]>>>,
 }
 
@@ -846,8 +849,6 @@ enum Change {
     /// where it begins a stay there, and the wants it marks the entry with.
     Mark { at: usize, stay: EditId, to: Option<(AudienceId, Arc<[ShareId]>)>, wants: Option<Arc<[ShareId]>> },
     Publish(Published),
-    SyncRule(ShareId, SyncRule),
-    EndSyncRule(ShareId),
 }
 
 impl Change {
@@ -1207,34 +1208,19 @@ impl State {
     }
 
     /// Vault `a` may revoke share `cp`: it issued it, the share is over it, it holds the share (and gives it up), or it
-    /// may revoke a share `cp` rests on.
+    /// may revoke a share `cp` rests on. A keep share only its issuer revokes, through a device or an owner: the vault
+    /// it is over could otherwise have a device sync all of that vault, by revoking its last keep share that adds
+    /// entries.
     pub fn may_revoke(&self, a: VaultId, cp: &Issued) -> bool {
+        if cp.share.level.is_keep() {
+            return cp.share.issuer == a;
+        }
         cp.chain.iter().filter_map(|&c| self.share(c)).any(|x| {
             x.share.issuer == a || x.share.over == a || x.share.who == Who::Vault(a)
         })
     }
 
-    /// Sync rule `r`, live or ended.
-    pub fn rule(&self, r: ShareId) -> Option<&SyncRule> {
-        self.rule_at.get(&r).map(|&i| &self.rules[i].1)
-    }
-
-    /// Every sync rule set, live or ended, in the order set, with its id.
-    pub fn rules(&self) -> &[(ShareId, SyncRule)] {
-        &self.rules
-    }
-
-    /// The sync rules that ended, in the order they did.
-    pub fn ended(&self) -> &[ShareId] {
-        self.ended.as_slice()
-    }
-
-    /// Sync rule `r` was set and hasn't ended.
-    pub fn rule_live(&self, r: ShareId) -> bool {
-        self.rule_at.contains_key(&r) && !self.ended.contains(&r)
-    }
-
-    /// The wants the stewards last marked entry `e` with: sync rules, live or ended.
+    /// The wants the stewards last marked entry `e` with: keep shares, live or revoked.
     pub fn wants_of(&self, e: EntryId) -> &[ShareId] {
         self.marks.get(&e).map(|p| &p[..]).unwrap_or_default()
     }
@@ -1244,41 +1230,54 @@ impl State {
         self.vault(v).is_some_and(|vt| vt.devices.contains(&d))
     }
 
-    /// Vault `a` may hold entries of vault `v`: it is `v`, or holds a share over it, backup or more. A vault sets sync
-    /// rules only over such a vault, so no stranger has a vault's stewards mark entries for it.
+    /// Vault `a` may hold entries of vault `v`: it is `v`, or holds a share over it, backup or more. A vault issues
+    /// keep shares only over such a vault, so no stranger has a vault's stewards mark entries for it.
     pub fn may_hold(&self, a: VaultId, v: VaultId) -> bool {
         a == v || self.shares_over(v).any(|cp| self.holds(a, cp, Level::Backup))
     }
 
-    /// The live sync rules device `d` syncs vault `v` by, with their ids: those over `v` naming `d`, set by a vault `d`
-    /// is still a device of.
-    pub fn rules_of(&self, d: SignerId, v: VaultId) -> impl Iterator<Item = (ShareId, &SyncRule)> {
-        let live = move |(id, r): &&(ShareId, SyncRule)| {
-            r.device == d && r.over == v && self.rule_live(*id) && self.is_device(d, r.issuer)
-        };
-        self.rules.iter().filter(live).map(|(id, r)| (*id, r))
+    /// The live keep shares device `d` syncs vault `v` by (`keepsOf`): those over `v` naming `d`, issued by a vault `d`
+    /// is still a device of. A device that leaves its vault drops them, with no revocation.
+    pub fn keeps_of(&self, d: SignerId, v: VaultId) -> impl Iterator<Item = &Issued> {
+        self.shares_over(v).filter(move |k| {
+            k.share.level.is_keep()
+                && k.share.who == Who::Device(d)
+                && self.live(k.id)
+                && self.is_device(d, k.share.issuer)
+        })
     }
 
-    /// Device `d` wants entry `en`: it has no rule over the entry's vault, and so wants all of it, or one of its rules
-    /// there is wide or marks the entry (T28).
+    /// Keep share `k` picks entry `en`, by the entry's marks (`marked`): it is wide, or among the entry's wants.
+    fn marked(&self, en: &Entry, k: &Issued) -> bool {
+        k.share.wide || self.wants_of(en.id).contains(&k.id)
+    }
+
+    /// Device `d` wants entry `en`, by its keep shares over the entry's vault and the entry's marks (`wantsWith`, T28):
+    /// with none, or only never ones, it wants all of the vault but what a never share picks; else what a whole or an
+    /// opened one picks and no never one does.
     pub fn wants(&self, d: SignerId, en: &Entry) -> bool {
-        let wants = self.wants_of(en.id);
-        let mut rules = self.rules_of(d, en.vault).peekable();
-        rules.peek().is_none() || rules.any(|(id, r)| r.wide || wants.contains(&id))
+        let ks: Vec<&Issued> = self.keeps_of(d, en.vault).collect();
+        let never = |k: &&Issued| k.share.level == Level::Keep(KeepMode::Never);
+        let adds = ks.iter().all(never) || ks.iter().any(|k| !never(k) && self.marked(en, k));
+        adds && !ks.iter().any(|k| never(k) && self.marked(en, k))
     }
 
-    /// Whether device `d` keeps whole the files entry `en` brings, by its rules: one of them that wants the entry says
-    /// so. `None` with no rule over the entry's vault, where the device's own setting says.
+    /// Whether device `d` keeps whole the files entry `en` brings (`keepsWith`): a whole keep share of it over the
+    /// entry's vault picks the entry. `None` where it has no whole or opened keep share there, only never ones or none:
+    /// the device's own setting says.
     pub fn keeps(&self, d: SignerId, en: &Entry) -> Option<bool> {
-        let wants = self.wants_of(en.id);
-        let mut rules = self.rules_of(d, en.vault).peekable();
-        rules.peek()?;
-        Some(rules.any(|(id, r)| r.keep && (r.wide || wants.contains(&id))))
+        let ks: Vec<&Issued> = self.keeps_of(d, en.vault).collect();
+        if ks.iter().all(|k| k.share.level == Level::Keep(KeepMode::Never)) {
+            return None;
+        }
+        Some(ks.iter().any(|k| k.share.level == Level::Keep(KeepMode::Whole) && self.marked(en, k)))
     }
 
-    /// Audience `x` is an audience of vault `v`: in canonical form, each of its shares one over `v` that isn't wide.
+    /// Audience `x` is an audience of vault `v`: in canonical form, each of its shares one over `v` that isn't wide,
+    /// nor a keep share.
     pub fn audience_ok(&self, v: VaultId, x: &[ShareId]) -> bool {
-        canonical(x) && x.iter().all(|&c| self.share(c).is_some_and(|cp| cp.share.over == v && !cp.share.wide))
+        let fits = |cp: &Issued| cp.share.over == v && !cp.share.wide && !cp.share.level.is_keep();
+        canonical(x) && x.iter().all(|&c| self.share(c).is_some_and(fits))
     }
 
     /// How far below the human vaults vault `v` sits: a human vault at 0, a coop or an aven vault one below its lowest
@@ -1318,7 +1317,7 @@ impl State {
     }
 
     /// What entry `e` means to whoever reads it, by the selectors, headers and tags `r` holds: its attributes, whether
-    /// its creation was let in, its semantic audience, the sync rules that want it, and what a steward would mark it
+    /// its creation was let in, its semantic audience, the keep shares that pick it, and what a steward would mark it
     /// with. `None` for an entry that doesn't exist, or whose header `r` doesn't hold.
     pub fn meaning(&self, e: EntryId, r: &Readings) -> Option<Meaning> {
         let en = self.entry(e)?;
@@ -1341,24 +1340,22 @@ impl State {
             }
         }
         let audience: Vec<ShareId> = if admitted {
-            let selects =
-                |cp: &&Issued| self.live(cp.id) && !cp.share.wide && self.eff_selects(cp, &attrs, r);
+            let selects = |cp: &&Issued| {
+                self.live(cp.id) && !cp.share.wide && !cp.share.level.is_keep() && self.eff_selects(cp, &attrs, r)
+            };
             mk_audience(&self.shares_over(en.vault).filter(selects).map(|cp| cp.id).collect::<Vec<_>>())
         } else {
             vec![]
         };
         let live: Vec<ShareId> = self.shares_of(en.audience()).iter().copied().filter(|&c| self.live(c)).collect();
         let desired = (live != audience).then(|| audience.clone());
-        // the sync rules that want it, read as its shares are, and the wants a steward marks it with
-        let wants: Vec<ShareId> = self
-            .rules
-            .iter()
-            .filter(|(id, x)| x.over == en.vault && !x.wide && self.rule_live(*id))
-            .filter(|(id, _)| r.selectors.get(id).is_some_and(|s| s.matches(&attrs)))
-            .map(|(id, _)| *id)
-            .collect();
-        let wants = mk_audience(&wants);
-        let marked: Vec<ShareId> = self.wants_of(e).iter().copied().filter(|&x| self.rule_live(x)).collect();
+        // the keep shares that pick it, read as its shares are, and the wants a steward marks it with
+        let picks = |k: &&Issued| {
+            let mode = k.share.level.mode();
+            mode.is_some_and(|m| self.live(k.id) && !k.share.wide && keep_picks(m, r.selectors.get(&k.id), &attrs))
+        };
+        let wants = mk_audience(&self.shares_over(en.vault).filter(picks).map(|k| k.id).collect::<Vec<_>>());
+        let marked: Vec<ShareId> = self.wants_of(e).iter().copied().filter(|&x| self.live(x)).collect();
         let rewants = (marked != wants).then(|| wants.clone());
         // one mark of both, where either is due
         let mark = (desired.is_some() || rewants.is_some()).then(|| (desired.clone(), rewants));
@@ -1877,9 +1874,14 @@ impl State {
                 if self.vault(c.over).is_none() {
                     return Err(Refusal::UnknownVault);
                 }
-                // grants name vaults or everyone, never devices (T4), nor the vault they are over; everyone only reads
+                // a share names a device exactly when it is a keep share (T4)
+                match (c.level.is_keep(), c.who) {
+                    (true, Who::Vault(_) | Who::Everyone) => return Err(Refusal::KeepNeedsDevice),
+                    (false, Who::Device(_)) => return Err(Refusal::DeviceOnlyKeeps),
+                    _ => {}
+                }
+                // grants name vaults or everyone, nor the vault they are over; everyone only reads
                 match c.who {
-                    Who::Device(_) => return Err(Refusal::DeviceOnlyKeeps),
                     Who::Vault(x) if self.vault(x).is_none() => {
                         return Err(Refusal::UnknownVault);
                     }
@@ -1892,10 +1894,25 @@ impl State {
                 if c.level == Level::Owner && c.wide {
                     return Err(Refusal::WideOwner);
                 }
+                // a vault keeps entries on its own devices only
+                if let Who::Device(d) = c.who
+                    && !self.is_device(d, c.issuer)
+                {
+                    return Err(Refusal::NotDevice);
+                }
                 if !self.acts_via(edit.author, via, c.issuer) {
                     return Err(Refusal::NotActing);
                 }
-                if !self.share_parent_ok(c) {
+                // a keep share rests on nothing, over a vault whose entries its issuer may hold, so no stranger has a
+                // vault's stewards mark entries for it; any other share where its parent lets it
+                if c.level.is_keep() {
+                    if c.parent.is_some() {
+                        return Err(Refusal::BadParent);
+                    }
+                    if !self.may_hold(c.issuer, c.over) {
+                        return Err(Refusal::NoCap);
+                    }
+                } else if !self.share_parent_ok(c) {
                     return Err(Refusal::BadParent);
                 }
                 // making someone owner is governance
@@ -2042,8 +2059,8 @@ impl State {
                 if !self.acts_via(edit.author, via, v) {
                     return Err(Refusal::NotActing);
                 }
-                // it marks an audience, the sync rules that want the entry, or both; only a new audience is a removal,
-                // which keeps what it had seen
+                // it marks an audience, the keep shares that pick the entry, or both; only a new audience is a
+                // removal, which keeps what it had seen
                 if caps.is_none() && (wants.is_none() || !keep.is_empty()) {
                     return Err(Refusal::BadMark);
                 }
@@ -2064,20 +2081,23 @@ impl State {
                         Some((audience, to.as_slice().into()))
                     }
                 };
-                // wants of the vault, other than the entry's but where the mark takes it to a new audience. Neither
-                // list asks whether what it names is live: a revocation or an ended rule that sorts before the mark
-                // mustn't refuse it, and readers leave out what isn't live
+                // wants of the vault, other than the entry's but where the mark takes it to a new audience: keep shares
+                // over the vault that aren't wide, as a wide one picks by being wide. Neither list asks whether what it
+                // names is live: a revocation of a share or a keep share that sorts before the mark mustn't refuse it,
+                // and readers leave out what isn't live
                 let wants = match wants {
                     None => None,
-                    Some(rules) => {
-                        let fits = |&r: &ShareId| self.rule(r).is_some_and(|x| x.over == v && !x.wide);
-                        if !canonical(rules) || !rules.iter().all(fits) {
+                    Some(ks) => {
+                        let fits = |&k: &ShareId| {
+                            self.share(k).is_some_and(|x| x.share.level.is_keep() && x.share.over == v && !x.share.wide)
+                        };
+                        if !canonical(ks) || !ks.iter().all(fits) {
                             return Err(Refusal::BadWants);
                         }
-                        if caps.is_none() && rules[..] == *self.wants_of(e) {
+                        if caps.is_none() && ks[..] == *self.wants_of(e) {
                             return Err(Refusal::SameWants);
                         }
-                        Some(rules.as_slice().into())
+                        Some(ks.as_slice().into())
                     }
                 };
                 Ok(Change::Mark { at, stay: id, to, wants })
@@ -2117,39 +2137,6 @@ impl State {
                     return Err(Refusal::NotOwnWrite);
                 }
                 Ok(Change::Nothing)
-            }
-            Action::SyncRule(r, via) => {
-                let rid = ShareId::from(id);
-                if self.rule(rid).is_some() {
-                    return Err(Refusal::Duplicate);
-                }
-                if self.vault(r.over).is_none() {
-                    return Err(Refusal::UnknownVault);
-                }
-                // a vault sets the rules of its own devices, over a vault whose entries it may hold
-                if !self.is_device(r.device, r.issuer) {
-                    return Err(Refusal::NotDevice);
-                }
-                if !self.acts_via(edit.author, via, r.issuer) {
-                    return Err(Refusal::NotActing);
-                }
-                if !self.may_hold(r.issuer, r.over) {
-                    return Err(Refusal::NoCap);
-                }
-                Ok(Change::SyncRule(rid, r.clone()))
-            }
-            &Action::EndSyncRule { rule, issuer, ref via } => {
-                let r = self.rule(rule).ok_or(Refusal::UnknownRule)?;
-                if r.issuer != issuer {
-                    return Err(Refusal::WrongVault);
-                }
-                if !self.rule_live(rule) {
-                    return Err(Refusal::Ended);
-                }
-                if !self.acts_via(edit.author, via, issuer) {
-                    return Err(Refusal::NotActing);
-                }
-                Ok(Change::EndSyncRule(rule))
             }
         }
     }
@@ -2265,15 +2252,6 @@ impl State {
             }
             Change::Publish(p) => {
                 Arc::make_mut(&mut self.lane).push(p);
-                Touch::Nothing
-            }
-            Change::SyncRule(id, r) => {
-                Arc::make_mut(&mut self.rule_at).insert(id, self.rules.len());
-                Arc::make_mut(&mut self.rules).push((id, r));
-                Touch::Nothing
-            }
-            Change::EndSyncRule(id) => {
-                Arc::make_mut(&mut self.ended).push(id);
                 Touch::Nothing
             }
         }
@@ -2547,11 +2525,10 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
     }
 }
 
-/// What an entry's readers and its vault's stewards read where no relay can: each share's and each sync rule's
-/// selector, opened from its sealed `select` (a rule's id is an edit's id, as a share's is, so the two never meet);
-/// each entry's header and each write's tags and proof, from inside the writes' bodies; and what each write touches,
-/// and whether it fits the schemas its entry was written under, read off its update on the version it builds on
-/// (`history::History::reading`).
+/// What an entry's readers and its vault's stewards read where no relay can: each share's selector, a keep share's too,
+/// opened from its sealed `select`; each entry's header and each write's tags and proof, from inside the writes'
+/// bodies; and what each write touches, and whether it fits the schemas its entry was written under, read off its
+/// update on the version it builds on (`history::History::reading`).
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
     pub selectors: HashMap<ShareId, Selector>,
@@ -2573,21 +2550,34 @@ pub struct Meaning {
     /// Its creator was the vault itself, or created it inside the slice of a share it created it through, whose ops let
     /// a creation through.
     pub admitted: bool,
-    /// Its semantic audience: the live shares over its vault that aren't wide and whose slice holds it, in canonical
-    /// order; none for an entry its creator made outside its own slice.
+    /// Its semantic audience: the live shares over its vault that aren't wide nor keep shares and whose slice holds
+    /// it, in canonical order; none for an entry its creator made outside its own slice.
     pub audience: Vec<ShareId>,
     /// Where a steward's mark takes it: nowhere while the live part of its audience is its semantic audience (a
     /// revoked share left in it is ignored, so a revocation moves no entry), else to its semantic audience.
     pub desired: Option<Vec<ShareId>>,
-    /// The sync rules that want it: the live ones over its vault that aren't wide and whose selector holds it, in
-    /// canonical order (`semWants`), whether or not its creation was let in.
+    /// The keep shares that pick it: the live ones over its vault that aren't wide and pick it (`keep_picks`), in
+    /// canonical order (`semWants`), whether or not its creation was let in, and whether or not the device each names
+    /// still acts for its issuer.
     pub wants: Vec<ShareId>,
     /// What a steward marks it with, in one mark (`desiredMark`): the audience it takes it to (`desired`), and the
-    /// wants, none while the live part of the wants it is marked with is `wants` (an ended rule left in them is
-    /// ignored, so ending a rule marks no entry), else `wants`. A part left out stays as it is, so a steward that marks
+    /// wants, none while the live part of the wants it is marked with is `wants` (a revoked keep share left in them is
+    /// ignored, so revoking one marks no entry), else `wants`. A part left out stays as it is, so a steward that marks
     /// only the wants never puts back an audience another steward changed meanwhile. `None` while both are as they
     /// should be.
     pub mark: Option<(Option<Vec<ShareId>>, Option<Vec<ShareId>>)>,
+}
+
+/// A keep share of mode `mode` picks attributes `a`, as a steward reads its selector `select` (`keepPicks`): a whole
+/// or an opened one picks what its selector matches and every schema and lens entry too (`slice::Sym::of_lane`), so
+/// that every device that syncs part of a vault syncs its lane; a never one picks what its selector matches but schema
+/// and lens entries. A selector the reader doesn't hold matches nothing.
+pub fn keep_picks(mode: KeepMode, select: Option<&Selector>, a: &Attrs) -> bool {
+    let matches = select.is_some_and(|s| s.matches(a));
+    match mode {
+        KeepMode::Never => matches && !a.ty.of_lane(),
+        KeepMode::Whole | KeepMode::Opened => matches || a.ty.of_lane(),
+    }
 }
 
 /// The edits a peer counts, as it trusts neither ed25519 nor P-256 alone: every edit but a write, as each carries the
@@ -2691,11 +2681,14 @@ fn order_ids(edits: &[Edit], ids: &[EditId]) -> (Vec<Edit>, Vec<EditId>) {
     out.into_iter().map(|(.., id, edit)| (edit.clone(), id)).unzip()
 }
 
-/// The grants the edits issue, each with its parent, among edits paired with their ids.
-fn shares_issued<'a>(edits: impl Iterator<Item = (&'a Edit, EditId)>) -> Vec<(ShareId, Option<ShareId>)> {
+/// A grant some edit issues: its id, its parent, and whether it is a keep share.
+type Issue = (ShareId, Option<ShareId>, bool);
+
+/// The grants the edits issue, each with its parent and whether it is a keep share, among edits paired with their ids.
+fn shares_issued<'a>(edits: impl Iterator<Item = (&'a Edit, EditId)>) -> Vec<Issue> {
     edits
         .filter_map(|(o, id)| match &o.action {
-            Action::Share(Sharing::Grant(c, _)) => Some((ShareId::from(id), c.parent)),
+            Action::Share(Sharing::Grant(c, _)) => Some((ShareId::from(id), c.parent, c.level.is_keep())),
             _ => None,
         })
         .collect()
@@ -2703,20 +2696,25 @@ fn shares_issued<'a>(edits: impl Iterator<Item = (&'a Edit, EditId)>) -> Vec<(Sh
 
 /// What removal `r` takes away: the owner, the device, the root, among the grants the edits `edits` issue the grant and
 /// every grant resting on it, or for a mark that takes an entry to an audience the audience the entry no longer is in.
-/// A mark of the wants alone is no removal, and takes nothing.
+/// A mark of the wants alone is no removal, and takes nothing; nor does revoking a keep share take anything (K1):
+/// nothing rests on one, no audience holds one, and no mark asks whether the keep shares it names are live.
 pub fn removes(edits: &[Edit], r: &Edit) -> Vec<Fact> {
     removes_among(r, || shares_issued(edits.iter().map(|o| (o, o.id()))))
 }
 
 /// `removes`, the shares issued (`shares_issued`) worked out only for a revocation.
-fn removes_among(r: &Edit, shares: impl FnOnce() -> Vec<(ShareId, Option<ShareId>)>) -> Vec<Fact> {
+fn removes_among(r: &Edit, shares: impl FnOnce() -> Vec<Issue>) -> Vec<Fact> {
     match &r.action {
         Action::Revoke(Revoking::Owner { vault, owner, .. }) => vec![Fact::Owner(*vault, *owner)],
         Action::Revoke(Revoking::Device { vault, device, .. }) => vec![Fact::Device(*vault, *device)],
         Action::Settings { vault, set: Setting::Root { .. } } => vec![Fact::Root(*vault)],
         Action::Revoke(Revoking::Grant { share, .. }) => {
             let cs = shares();
-            let parent: HashMap<ShareId, Option<ShareId>> = cs.iter().rev().copied().collect();
+            // the first grant of that id, as the model finds it
+            if cs.iter().find(|x| x.0 == *share).is_some_and(|x| x.2) {
+                return vec![];
+            }
+            let parent: HashMap<ShareId, Option<ShareId>> = cs.iter().rev().map(|x| (x.0, x.1)).collect();
             let rests_on = |x: ShareId| {
                 let mut x = x;
                 for _ in 0..=cs.len() {
@@ -2730,7 +2728,7 @@ fn removes_among(r: &Edit, shares: impl FnOnce() -> Vec<(ShareId, Option<ShareId
                 }
                 false
             };
-            cs.iter().filter(|(id, _)| rests_on(*id)).map(|(id, _)| Fact::Share(*id)).collect()
+            cs.iter().filter(|x| rests_on(x.0)).map(|x| Fact::Share(x.0)).collect()
         }
         Action::Mark { entry, caps: Some(to), .. } => vec![Fact::Audience(*entry, to.as_slice().into())],
         _ => vec![],
@@ -3068,10 +3066,19 @@ mod tests {
     }
 
     #[test]
-    fn a_levels_rank_is_its_order() {
+    fn a_levels_rank_is_its_order_and_keep_allows_nothing() {
         let levels = [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner];
         assert_eq!(levels.map(Level::rank), [1, 2, 3, 4, 5]);
-        assert!(levels.windows(2).all(|w| w[0] < w[1] && w[0].rank() < w[1].rank()));
+        assert!(levels.windows(2).all(|w| w[1].allows(w[0]) && !w[0].allows(w[1])));
+        // every mode of keep is rank 0, below relay: it allows nothing, and any level allows it, which no rule asks
+        let keeps = [KeepMode::Whole, KeepMode::Opened, KeepMode::Never].map(Level::Keep);
+        assert_eq!(keeps.map(Level::rank), [0, 0, 0]);
+        for k in keeps {
+            assert!(levels.iter().all(|&l| !k.allows(l) && l.allows(k)));
+            assert!(keeps.iter().all(|&m| k.allows(m)), "the modes compare by rank alone");
+            assert!(k.is_keep() && k.mode().is_some());
+        }
+        assert!(levels.iter().all(|l| !l.is_keep() && l.mode().is_none()));
     }
 
     #[test]

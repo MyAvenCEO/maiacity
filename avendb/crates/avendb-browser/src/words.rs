@@ -7,12 +7,12 @@
 //! `where` of labels alone, left out for the whole vault. Its level is the class of its strongest op, which the page
 //! reads and never names. A share the page reads carries, as `above`, the ops of the shares it rests on too, which
 //! narrow it further (`avendb::slice::Slice::to_json`). The built-in groups the page offers come from the core (`{"op":
-//! "groups"}`, `avendb::rules::groups`).
+//! "groups"}`, `avendb::rules::groups`). A keep share's level is its mode: `keepWhole`, `keepOpened` or `keepNever`.
 
 use anyhow::{Result, anyhow, bail};
 use avendb::id::{BlobId, SignerId, VaultId};
 use avendb::lens::Status;
-use avendb::policy::{Kind, Level, Principal, Who};
+use avendb::policy::{KeepMode, Kind, Level, Principal, Who};
 use avendb::rules::Op;
 use avendb::slice::{self, Selector};
 use serde_json::Value;
@@ -27,6 +27,9 @@ pub fn kind_name(kind: Kind) -> &'static str {
 
 pub fn level_name(level: Level) -> &'static str {
     match level {
+        Level::Keep(KeepMode::Whole) => "keepWhole",
+        Level::Keep(KeepMode::Opened) => "keepOpened",
+        Level::Keep(KeepMode::Never) => "keepNever",
         Level::Relay => "relay",
         Level::Backup => "backup",
         Level::Read => "read",

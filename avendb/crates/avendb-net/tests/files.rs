@@ -2,7 +2,7 @@
 //! keeps both whole on disk, opening neither, and still holds them once started again; Carol, who may read Welcome
 //! alone, reads ranges of the photo through the server with Alice's Mac gone, fetching only the segments that hold
 //! them; and nobody fetches a file that no edit they may receive brings: not Carol the scan, not Dave nor a stranger
-//! either file, and nobody a HashSeq with its children. And sync rules (blobs B2c): Alice's iPhone syncs only her
+//! either file, and nobody a HashSeq with its children. And keep shares (blobs B2c): Alice's iPhone syncs only her
 //! proxies and keeps their films whole, while the server keeps every film. And shelves (blobs B2d, B3b): a page brings
 //! files onto its shelf, the server keeps them in its bucket, and serves them from the bucket alone once its folder is
 //! lost.
@@ -15,8 +15,7 @@ use std::time::{Duration, Instant};
 
 use avendb::cast::*;
 use avendb::id::SignerId;
-use avendb::lab::NewRule;
-use avendb::policy::Level;
+use avendb::policy::{KeepMode, Level};
 use avendb::sealed::{FileRoot, PIECE, PIECE_SEGMENTS, SEGMENT};
 use avendb::slice::{Atom, Selector, Sym};
 use avendb_net::bucket::{self, Sealed};
@@ -234,17 +233,16 @@ async fn files_live_on_a_shelf_and_in_the_bucket() {
     }
 }
 
-/// Alice's iPhone syncs only the entries tagged proxy and keeps their films whole, by a rule her Mac sets; the server,
-/// with no rule, keeps every film. The iPhone never hears of the original, nor may it fetch the original's film.
+/// Alice's iPhone syncs only the entries tagged proxy and keeps their films whole, by a keep share her Mac issues; the
+/// server, with none, keeps every film. The iPhone never hears of the original, nor may it fetch the original's film.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_iphone_keeps_the_proxies_its_rule_picks() {
+async fn the_iphone_keeps_the_proxies_its_keep_share_picks() {
     let mut w = world();
     let (alice, mac_a, passkey_a, phone_a, server_d) = (w.alice, w.mac_a, w.passkey_a, w.phone_a, w.server);
     relay_on(&mut w, alice);
     let proxies = Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new("proxy"))]]);
-    let (name, keep) = ("Proxies".into(), true);
-    let rule = NewRule { issuer: alice, device: phone_a, over: alice, name, select: proxies, keep };
-    w.lab.set_rule(mac_a, &[mac_a], rule).expect("Alice's Mac sets her iPhone's rule");
+    let whole = keep(alice, phone_a, alice, KeepMode::Whole, proxies);
+    w.lab.issue(mac_a, &[mac_a], whole).expect("Alice's Mac issues her iPhone's keep share");
     w.lab.sync_all(0);
     let keeps = Options { keep: true, ..Options::local() };
     let mac = node(&mut w, mac_a, &[passkey_a], 1, Options::local()).await;

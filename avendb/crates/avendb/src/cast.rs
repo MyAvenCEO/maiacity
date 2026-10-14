@@ -13,7 +13,7 @@ use crate::doc::Item;
 use crate::id::{EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::lab::{Lab, NewShare};
 use crate::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
-use crate::policy::{Action, Kind, Level, Principal, Proposal, Sharing, Who};
+use crate::policy::{Action, KeepMode, Kind, Level, Principal, Proposal, Sharing, Who};
 use crate::slice::{Atom, Selector};
 
 /// Vault `v` as a share's grantee.
@@ -25,12 +25,19 @@ pub fn vault(v: VaultId) -> Who {
 /// everyone, on what `select` picks.
 pub fn share(over: VaultId, who: Who, level: Level, select: Selector) -> NewShare {
     let name = if who == Who::Everyone { "Public" } else { level.group() };
-    NewShare { over, who, name: name.into(), select, ops: level.ops(), parent: None, issuer: over }
+    NewShare { over, who, name: name.into(), select, ops: level.ops(), parent: None, issuer: over, keep: None }
 }
 
 /// A share over vault `over` resting on the owner share `parent`, issued by its grantee `issuer`.
 pub fn share_on(over: VaultId, who: Who, level: Level, select: Selector, parent: ShareId, issuer: VaultId) -> NewShare {
     NewShare { parent: Some(parent), issuer, ..share(over, who, level, select) }
+}
+
+/// A keep share of vault `issuer` to its device `device`, over vault `over`: the device syncs what `select` picks the
+/// way `mode` says, by the built-in name of its mode.
+pub fn keep(issuer: VaultId, device: SignerId, over: VaultId, mode: KeepMode, select: Selector) -> NewShare {
+    let (who, name) = (Who::Device(device), Level::Keep(mode).group().into());
+    NewShare { over, who, name, select, ops: vec![], parent: None, issuer, keep: Some(mode) }
 }
 
 /// The entries of type `ty`: "all todos".

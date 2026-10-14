@@ -4,10 +4,10 @@
 //! cut exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case
 //! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, shares, entries
 //! (their stays and their wants, and as their readers see them their attributes, whether their creation was let in,
-//! their semantic audience, the sync rules that want them and what a steward would mark them with), writes, key
-//! schedule (each family's epoch, every seal, every published key), schema lanes, and the writes their readers count,
-//! line by line. The lens vectors hold each app's view of many stored blocks and todos, and what each edit through a
-//! view stores.
+//! their semantic audience, the keep shares that pick them and what a steward would mark them with, and whether each
+//! device a keep share over their vault names wants them and keeps them whole), writes, key schedule (each family's
+//! epoch, every seal, every published key), schema lanes, and the writes their readers count, line by line. The lens
+//! vectors hold each app's view of many stored blocks and todos, and what each edit through a view stores.
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -25,7 +25,8 @@
 //! readings, its proof opening the ops of every share of its share's chain. The core's built-in groups of ops are the
 //! model's. A keys edit of the model names only where its boxes go; the core's carries the boxes too, which no rule
 //! opens, so here they are empty. A publish names its blob by a number: here the blob is the bytes `blob <number>`. A
-//! type or a tag is a number in the model, and its digits here.
+//! type or a tag is a number in the model, and its digits here, but for the types of schema and lens entries, which
+//! are the core's (`slice::SCHEMA_TYPE`, `slice::LENS_TYPE`). A keep share is a share like any other, with no ops.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
@@ -35,11 +36,11 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
-    checkpointed, history, mk_audience, replay, tips, Action, Edit, Kind, Level, Line, Principal, Proposal, Readings,
-    Refusal, Revoking, Setting, Share, Sharing, State, SyncRule, Vault, Who,
+    checkpointed, history, mk_audience, replay, tips, Action, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
+    Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who,
 };
 use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
-use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta};
+use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
 use avendb::sealed::FileRoot;
 use avendb::sync::{asks, closed_part, forks, frontiers, link_card, may_fetch, respond, respond_since, LogId};
 use avendb::wire::Wire;
@@ -76,9 +77,13 @@ fn entry(v: &Value) -> EntryId {
     EntryId::from_u64(num(v))
 }
 
-/// A type or a tag.
+/// A type or a tag: the model's schema and lens types (`schemaType`, `lensType`) are the core's.
 fn sym(v: &Value) -> Sym {
-    Sym(num(v).to_string())
+    match num(v) {
+        900 => Sym::new(SCHEMA_TYPE),
+        901 => Sym::new(LENS_TYPE),
+        n => Sym(n.to_string()),
+    }
 }
 
 fn syms(v: &Value) -> Vec<Sym> {
@@ -94,7 +99,16 @@ fn kind(v: &Value) -> Kind {
     }
 }
 
+/// A level: a keep share's is `{"keep": mode}`, any other a name.
 fn level(v: &Value) -> Level {
+    if let Some(m) = v.get("keep") {
+        return Level::Keep(match m.as_str() {
+            Some("whole") => KeepMode::Whole,
+            Some("opened") => KeepMode::Opened,
+            Some("never") => KeepMode::Never,
+            _ => panic!("a keep mode, not {m}"),
+        });
+    }
     match v.as_str() {
         Some("relay") => Level::Relay,
         Some("backup") => Level::Backup,
@@ -273,22 +287,6 @@ impl Names {
         }
     }
 
-    /// A sync rule as the core sets it: its selector where its sealed slice goes, beside the commitment to no op, its
-    /// number as its nonce.
-    fn rule_of(&self, v: &Value) -> SyncRule {
-        let slice = serde_json::to_vec(&v["select"]).unwrap();
-        let commitment = Grant { ops: vec![], salt: [0; 32] }.commitment();
-        SyncRule {
-            issuer: self.vault(&v["issuer"]),
-            device: signer(&v["device"]),
-            over: self.vault(&v["over"]),
-            wide: v["wide"].as_bool().unwrap(),
-            select: Select::Sealed { boxes: vec![], slice, commitment }.to_wire(),
-            keep: v["keep"].as_bool().unwrap(),
-            nonce: num(&v["id"]),
-        }
-    }
-
     fn key_fam(&self, v: &Value) -> KeyFam {
         match variant(v) {
             ("seed", x) => KeyFam::Seed(self.vault(x)),
@@ -429,12 +427,6 @@ impl Names {
                 blob: blob(&x["blob"]),
             },
             "checkpoint" => Action::Checkpoint { entry: entry(&x["entry"]), covers: self.edits(&x["covers"]) },
-            "syncRule" => Action::SyncRule(self.rule_of(&x["rule"]), self.via(&x["via"])),
-            "endRule" => Action::EndSyncRule {
-                rule: self.share(&x["rule"]),
-                issuer: self.vault(&x["issuer"]),
-                via: self.via(&x["via"]),
-            },
             other => panic!("no action {other}"),
         }
     }
@@ -466,11 +458,6 @@ impl Names {
                 self.parents.insert(share, (!parent.is_null()).then(|| self.share(parent)));
                 self.grants.insert(share, grant(x));
                 self.shares.insert(num(&x["id"]), share);
-            }
-            ("syncRule", x) => {
-                let rule = ShareId::from(id);
-                self.readings.selectors.insert(rule, self.selector(&x["rule"]["select"]));
-                self.shares.insert(num(&x["rule"]["id"]), rule);
             }
             ("write", x) => {
                 if !x["create"].is_null() {
@@ -572,7 +559,7 @@ impl Names {
             let marked: BTreeSet<ShareId> = st.wants_of(en.id).iter().copied().collect();
             assert_eq!(marked, self.audience_set(&v["wants"]), "{what}: the wants it is marked with");
             let wants: BTreeSet<ShareId> = m.wants.into_iter().collect();
-            assert_eq!(wants, self.audience_set(&v["semWants"]), "{what}: the rules that want it");
+            assert_eq!(wants, self.audience_set(&v["semWants"]), "{what}: the keep shares that pick it");
             // the steward's one mark, each part a set or left out
             let part = |x: Option<Vec<ShareId>>| x.map(|x| x.into_iter().collect::<BTreeSet<ShareId>>());
             let part_of = |x: &Value| (!x.is_null()).then(|| self.audience_set(x));
@@ -582,16 +569,26 @@ impl Names {
             assert_eq!(mark, want, "{what}: what a steward marks it with");
             let desired = want.and_then(|(caps, _)| caps);
             assert_eq!(part(m.desired), desired, "{what}: where a steward's mark takes it");
+            // each device a keep share over the vault names, live or not, once, in the order of its first: whether it
+            // wants the entry, and keeps its files whole, which with no whole or opened keep share there its own
+            // setting says (`None`), and the model's false
+            let mut named: Vec<SignerId> = vec![];
+            for k in st.shares_over(en.vault).filter(|k| k.share.level.is_keep()) {
+                if let Who::Device(d) = k.share.who
+                    && !named.contains(&d)
+                {
+                    named.push(d);
+                }
+            }
+            let rows = list(&v["devices"]);
+            assert_eq!(named, rows.iter().map(|r| signer(&r["device"])).collect::<Vec<_>>(), "{what}: devices");
+            for r in rows {
+                let d = signer(&r["device"]);
+                let ours = (st.wants(d, en), st.keeps(d, en).unwrap_or(false));
+                let want = (r["wants"].as_bool().unwrap(), r["keeps"].as_bool().unwrap());
+                assert_eq!(ours, want, "{what}: device {}, whether it wants the entry and keeps it", r["device"]);
+            }
         }
-        // every sync rule set, live or ended, in the order set, and the rules that ended
-        type RuleRow = (ShareId, VaultId, SignerId, VaultId, bool, bool);
-        let row = |id: ShareId, r: &SyncRule| (id, r.issuer, r.device, r.over, r.wide, r.keep);
-        let rules: Vec<RuleRow> =
-            list(&case["rules"]).iter().map(|v| row(self.share(&v["id"]), &self.rule_of(v))).collect();
-        let ours: Vec<RuleRow> = st.rules().iter().map(|(id, r)| row(*id, r)).collect();
-        assert_eq!(ours, rules, "{name}: sync rules");
-        let ended: Vec<ShareId> = list(&case["ended"]).iter().map(|r| self.share(r)).collect();
-        assert_eq!(st.ended(), &ended[..], "{name}: ended sync rules");
         same_set(st.all_born().iter().copied(), list(&case["born"]).iter().map(entry), &format!("{name}: born"));
         // the writes, each with the audience its entry was in when it was accepted
         type WriteRow = (EditId, SignerId, VaultId, EntryId, Option<EditId>, u64, Vec<EditId>, Proposal);
@@ -691,7 +688,9 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
     assert!(cases.len() >= 12);
     const KINDS: &str = "settings, shares and revocations, kind by kind";
     const MARKS: &str = "marks, part by part";
-    for name in [KINDS, MARKS] {
+    const KEEPS: &str = "keep shares: each device syncs what its keep shares pick";
+    const MODES: &str = "keep shares: modes, refusals and a device that leaves";
+    for name in [KINDS, MARKS, KEEPS, MODES] {
         assert!(cases.iter().any(|c| c["name"] == name), "the model's case {name:?}");
     }
     for case in cases {
@@ -723,14 +722,27 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
             assert_eq!(why[grant(31)], Some(Refusal::DeviceOnlyKeeps), "{name}: a grant to a device");
             assert_eq!(why[grant(34)], Some(Refusal::WideOwner), "{name}: a wide owner grant");
         }
+        use Refusal::*;
+        let refused: Vec<Refusal> = why.iter().flatten().copied().collect();
         // and each part of a mark: nothing to mark, edits kept where it moves nothing, the audience or the wants the
-        // entry has already, a share or a rule that isn't one, another vault's entry, and a stranger
+        // entry has already, a share or a keep share that isn't one, another vault's entry, and a stranger
         if name == MARKS {
-            use Refusal::*;
-            let refused: Vec<Refusal> = why.iter().flatten().copied().collect();
-            let want =
-                [BadMark, BadMark, SameAudience, SameWants, BadAudience, BadWants, WrongVault, NotActing];
+            let want = [BadMark, BadMark, SameAudience, SameWants, BadAudience, BadWants, WrongVault, NotActing];
             assert_eq!(refused, want, "{name}: why each mark falls");
+        }
+        // a keep share on another vault's device, by a device that doesn't act for its issuer, over a vault its issuer
+        // may not hold; marks with a wide keep share, out of order, the wants the entry has, by strangers; a revocation
+        // by the vault it is over and not its issuer, twice, by a device that doesn't act for it; no such entry
+        if name == KEEPS {
+            let (keeps, marks) = ([NotDevice, NotActing, NoCap], [BadWants, BadWants, SameWants, NotActing, NotActing]);
+            let want = [&keeps[..], &marks, &[NoCap, Revoked, NotActing, NoCap, UnknownEntry]].concat();
+            assert_eq!(refused, want, "{name}: why each falls");
+        }
+        // a keep share to a vault and to everyone, a share to a device that isn't one, a keep share resting on a share,
+        // a mark with a wide keep share, a revocation by the vault it is over, a keep share for a device that left
+        if name == MODES {
+            let want = [KeepNeedsDevice, KeepNeedsDevice, DeviceOnlyKeeps, BadParent, BadWants, NoCap, NotDevice];
+            assert_eq!(refused, want, "{name}: why each falls");
         }
     }
 }
@@ -767,13 +779,15 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
     let cases = list(&vectors["views"]);
     assert!(cases.len() >= 12);
     // a vault's own removals outrank a revoked grant: a core that ranked them the other way round would keep the
-    // revocations these views cut, and drop the removals; a mark of the wants alone leaves the audience as it is, and
-    // a mark stands though a revocation or the end of a rule sorts before it
+    // revocations these views cut, and drop the removals; a mark of the wants alone leaves the audience as it is, a
+    // mark stands though a revocation of a share or of a keep share sorts before it, and revoking a keep share cuts
+    // nothing it hadn't seen (K1)
     let views = [
         "a vault's removals outrank a revoked grant",
         "handing the root on outranks a revoked grant",
         "a mark of the wants alone puts back no audience",
-        "a mark stands after what it names is revoked or ended",
+        "a mark stands after what it names is revoked",
+        "revoking a keep share cuts nothing",
     ];
     for view in views {
         assert!(cases.iter().any(|c| c["name"] == view), "the model's view {view:?}");

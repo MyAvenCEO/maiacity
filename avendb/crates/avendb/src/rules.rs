@@ -30,7 +30,7 @@ use serde_json::{json, Map, Value};
 
 use crate::id::ShareId;
 use crate::ops::Loc;
-use crate::policy::Level;
+use crate::policy::{KeepMode, Level};
 use crate::slice::{Sym, TagDelta};
 
 /// The most ops a share names, steps a pattern has, and values an op may set a place to or tags it may ask for: so
@@ -389,7 +389,7 @@ impl Op {
 
 /// A share's level: the class of its strongest op, relay for none (`Rules.lean`'s `levelOf`).
 pub fn level_of(ops: &[Op]) -> Level {
-    ops.iter().map(Op::level).max().unwrap_or(Level::Relay)
+    ops.iter().map(Op::level).max_by_key(|l| l.rank()).unwrap_or(Level::Relay)
 }
 
 /// A share's ops as it carries them: each once, in the order shares list them (an op's kind, then as given), read with
@@ -452,9 +452,12 @@ pub fn groups() -> Vec<Group> {
 }
 
 impl Level {
-    /// The name of its built-in group.
+    /// The name of its built-in group, or for a keep share, which no group grants, of its mode.
     pub fn group(self) -> &'static str {
         match self {
+            Level::Keep(KeepMode::Whole) => "Keep whole",
+            Level::Keep(KeepMode::Opened) => "Keep when opened",
+            Level::Keep(KeepMode::Never) => "Never keep",
             Level::Owner => "Owner",
             Level::Write => "Editor",
             Level::Read => "Viewer",
@@ -464,7 +467,7 @@ impl Level {
     }
 
     /// The ops of its built-in group: what a share with this level and no narrower ops allows (`Rules.lean`'s
-    /// `Level.ops`).
+    /// `Level.ops`). A keep share allows none.
     pub fn ops(self) -> Vec<Op> {
         let edit = || {
             vec![
@@ -477,6 +480,7 @@ impl Level {
             ]
         };
         match self {
+            Level::Keep(_) => vec![],
             Level::Relay => vec![Op::Relay],
             Level::Backup => vec![Op::Backup],
             Level::Read => vec![Op::Read],

@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use crate::encode::{Encode, VERSION};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Edit, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, SyncRule, Who};
+use crate::policy::{Action, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who};
 use crate::recovery::RecoveryKey;
 use crate::rules::{Grant, On, Op, Proof, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_OPS, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
@@ -583,10 +583,16 @@ impl Decode for Principal {
     }
 }
 
-/// Its rank: relay 1 to owner 5. Rank 0 is no level yet.
+/// Its rank: keep 0, followed by its mode's byte (0 whole, 1 opened, 2 never), relay 1 to owner 5.
 impl Decode for Level {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
+            0 => Ok(Level::Keep(match r.u8()? {
+                0 => KeepMode::Whole,
+                1 => KeepMode::Opened,
+                2 => KeepMode::Never,
+                _ => return Err(WireError::Unknown),
+            })),
             1 => Ok(Level::Relay),
             2 => Ok(Level::Backup),
             3 => Ok(Level::Read),
@@ -618,20 +624,6 @@ impl Decode for Share {
             select: r.bytes()?,
             parent: r.option()?,
             issuer: VaultId::decode(r)?,
-            nonce: u64::decode(r)?,
-        })
-    }
-}
-
-impl Decode for SyncRule {
-    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(SyncRule {
-            issuer: VaultId::decode(r)?,
-            device: SignerId::decode(r)?,
-            over: VaultId::decode(r)?,
-            wide: bool::decode(r)?,
-            select: r.bytes()?,
-            keep: bool::decode(r)?,
             nonce: u64::decode(r)?,
         })
     }
@@ -737,8 +729,6 @@ impl Decode for Action {
                 via: r.seq(32)?,
                 blob: r.bytes()?,
             },
-            9 => Action::SyncRule(SyncRule::decode(r)?, r.seq(32)?),
-            10 => Action::EndSyncRule { rule: ShareId::decode(r)?, issuer: VaultId::decode(r)?, via: r.seq(32)? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -1308,7 +1298,7 @@ mod tests {
             nonce: 0,
         };
         let edit = |action| Edit { parents: vec![], depth: 0, author: SignerId([3; 32]), cosigners: vec![], action };
-        let grant = edit(Action::Share(Sharing::Grant(share, vec![])));
+        let grant = edit(Action::Share(Sharing::Grant(share.clone(), vec![])));
         let bytes = grant.to_wire();
         assert_eq!(Edit::from_wire(&bytes), Ok(grant));
         // after the version, no parents, the depth, the author and no cosigners: the kind, the sub-kind, the vault it
@@ -1325,19 +1315,32 @@ mod tests {
             Ok(Action::Share(Sharing::Grant(c, _))) => Some((c.who, c.level)),
             _ => None,
         };
-        // a level by its rank, relay 1 to owner 5; the rank below relay, 0, isn't a level yet, nor is any above owner
+        // a level by its rank, relay 1 to owner 5, and none above owner
         let levels = [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner];
         for (rank, l) in (1..).zip(levels) {
             assert_eq!(granted(with(level, rank)), Some((Who::Vault(g), l)));
         }
-        for rank in [0, 6, 255] {
+        for rank in [6, 255] {
             assert_eq!(with(level, rank), Err(WireError::Unknown));
         }
         // whom a share names: a vault (0) or a device (2), each named next, or everyone (1), and nothing else
         assert_eq!(granted(with(who, 2)), Some((Who::Device(SignerId(g.0)), Level::Read)));
         assert_eq!(with(who, 3), Err(WireError::Unknown));
-        // three sub-kinds of share and of revocation, two of settings; eight kinds and three more, for now, as a
-        // pick's tag, 11, went with it into the mark's
+        // keep, rank 0, and then its mode: 0 whole, 1 opened, 2 never, and no other
+        let d = SignerId([4; 32]);
+        let keep = |level| Share { who: Who::Device(d), level, ..share.clone() };
+        for mode in [KeepMode::Whole, KeepMode::Opened, KeepMode::Never] {
+            let k = edit(Action::Share(Sharing::Grant(keep(Level::Keep(mode)), vec![])));
+            assert_eq!(Edit::from_wire(&k.to_wire()), Ok(k));
+        }
+        let mut bytes = edit(Action::Share(Sharing::Grant(keep(Level::Keep(KeepMode::Never)), vec![]))).to_wire();
+        assert_eq!((bytes[who], bytes[level], bytes[level + 1]), (2, 0, 2));
+        for b in [3, 255] {
+            bytes[level + 1] = b;
+            assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown), "mode byte {b}");
+        }
+        // three sub-kinds of share and of revocation, two of settings; eight kinds and no more, as a sync rule's tag,
+        // 9, and its end's, 10, went into the share's and the revocation's, and a pick's, 11, into the mark's
         assert_eq!(with(at + 1, 3), Err(WireError::Unknown));
         let revoke = edit(Action::Revoke(Revoking::Grant { share: ShareId(g.0), actor: v, keep: vec![], via: vec![] }));
         let mut bytes = revoke.to_wire();
@@ -1346,8 +1349,9 @@ mod tests {
         let mut bytes = edit(Action::Settings { vault: v, set: Setting::Threshold(1) }).to_wire();
         bytes[at + 1 + 32] = 2;
         assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
-        assert_eq!(with(at, 11), Err(WireError::Unknown));
-        assert_eq!(with(at, 12), Err(WireError::Unknown));
+        for tag in [9, 10, 11, 12] {
+            assert_eq!(with(at, tag), Err(WireError::Unknown), "tag {tag}");
+        }
     }
 
     #[test]

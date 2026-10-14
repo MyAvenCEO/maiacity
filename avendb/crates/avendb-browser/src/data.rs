@@ -209,11 +209,12 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
 }
 
 /// What edit `id` does, as the History view shows it: its kind, and its fields, ids in hex. What is sealed, a write's
-/// body, a share's or a sync rule's slice, keys' boxes, shows by its size or its recipient alone, and a public key by
-/// whether there is one. A write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it
-/// starts one; a write that creates its entry names the audience it goes in (`create`), and its `stay` the mark that
-/// put the entry where it is now (`null` for where it was created). A mark names the audience it takes its entry to
-/// (`caps`) and the sync rules it marks it as wanted by (`wants`), each `null` where it leaves that part as it is.
+/// body, a share's slice, keys' boxes, shows by its size or its recipient alone, and a public key by whether there is
+/// one. A keep share is a `cap` like any share, its `role` its mode (`words::level_name`) and its `grantee` a device. A
+/// write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one; a write
+/// that creates its entry names the audience it goes in (`create`), and its `stay` the mark that put the entry where
+/// it is now (`null` for where it was created). A mark names the audience it takes its entry to (`caps`) and the keep
+/// shares it marks it as wanted by (`wants`), each `null` where it leaves that part as it is.
 fn action(id: EditId, a: &Action) -> (&'static str, Value) {
     let vias = |via: &[VaultId]| via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
     match a {
@@ -328,21 +329,6 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         Action::Checkpoint { entry, covers } => {
             ("checkpoint", json!({ "entry": hex(&entry.0), "covers": ids(covers) }))
         }
-        Action::SyncRule(r, via) => (
-            "syncRule",
-            json!({
-                "issuer": hex(&r.issuer.0),
-                "device": hex(&r.device.0),
-                "over": hex(&r.over.0),
-                "wide": r.wide,
-                "keep": r.keep,
-                "via": vias(via),
-                "sealed": r.select.len(),
-            }),
-        ),
-        Action::EndSyncRule { rule, issuer, via } => {
-            ("endSyncRule", json!({ "rule": hex(&rule.0), "issuer": hex(&issuer.0), "via": vias(via) }))
-        }
     }
 }
 
@@ -383,8 +369,6 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
         | Action::Share(Sharing::Device { vault, .. })
         | Action::Revoke(Revoking::Device { vault, .. })
         | Action::Mark { vault, .. } => vec![*vault],
-        Action::SyncRule(r, _) => vec![r.issuer, r.over],
-        Action::EndSyncRule { issuer, .. } => vec![*issuer],
         Action::Share(Sharing::Grant(c, _)) => {
             let to = match c.who {
                 Who::Vault(v) => Some(v),

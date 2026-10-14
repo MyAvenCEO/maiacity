@@ -1,9 +1,10 @@
-//! Shares (P2, P4; T1, T4, T8, T16, T17, T22), on the rules alone. A grant gives a vault, never a device, a level on a
-//! slice of another vault: relay, read, write or owner on the entries its selector picks, or up to write on the whole
-//! vault for a wide grant, which reaches every audience and splits none; owner of the whole vault is an owner of it,
-//! never a grant (WideOwner). Everyone only reads; a write no share allows is refused, on import too; only the vault
-//! publishes into its schema lane; a share resting on an owner share grants no more than it, and ends with it; and
-//! when revocations clash, the most senior revoker stands.
+//! Shares (P2, P4; T1, T4, T8, T16, T17, T22), on the rules alone. A grant gives a vault a level on a slice of another
+//! vault: relay, read, write or owner on the entries its selector picks, or up to write on the whole vault for a wide
+//! grant, which reaches every audience and splits none; owner of the whole vault is an owner of it, never a grant
+//! (WideOwner). A device it names only as a keep share, of a device of its issuer, which grants nothing. Everyone only
+//! reads; a write no share allows is refused, on import too; only the vault publishes into its schema lane; a share
+//! resting on an owner share grants no more than it, and ends with it; and when revocations clash, the most senior
+//! revoker stands.
 
 mod common;
 
@@ -11,7 +12,8 @@ use avendb::id::{AudienceId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyName};
 use avendb::lens::{DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
 use avendb::policy::{
-    mk_audience, replay, Action, Edit, Kind, Level, Log, Principal, Refusal, Revoking, Share, Sharing, State, Who,
+    mk_audience, replay, Action, Edit, KeepMode, Kind, Level, Log, Principal, Refusal, Revoking, Share, Sharing, State,
+    Who,
 };
 use avendb::slice::Selector;
 use avendb::sync::{log_of, respond, LogId};
@@ -118,6 +120,21 @@ fn share_to_device_rejected() {
     let add = Action::Share(Sharing::Device { vault: c.carol, device: NEW_DEVICE, seal_to: None });
     c.log.append(PASSKEY_C, &[NEW_DEVICE], add).unwrap();
     assert!(reads(&c.log.view(), NEW_DEVICE, WELCOME));
+    // a device is named only by a keep share, of a device of its issuer, as Examples.lean's s6 has it: a keep share to
+    // a vault is none; the coop has no device to keep its entries on, and Carol keeps nothing on Alice's Mac; Carol
+    // keeps Welcome whole on her Mac, which puts it in no audience
+    let (carol, whole) = (c.carol, Level::Keep(KeepMode::Whole));
+    let keep = |c: &mut Cast, signer, who, issuer| {
+        c.issue_on(signer, &[], coop, who, whole, by_id(WELCOME), None, issuer, 2)
+    };
+    assert_eq!(keep(&mut c, MAC_C, vault(carol), carol).err(), Some(Refusal::KeepNeedsDevice));
+    assert_eq!(keep(&mut c, MAC_A, Who::Device(MAC_C), coop).err(), Some(Refusal::NotDevice));
+    assert_eq!(keep(&mut c, MAC_C, Who::Device(MAC_A), carol).err(), Some(Refusal::NotDevice));
+    let audience = |c: &Cast| c.log.view().entry(WELCOME).map(|en| en.audience());
+    let before = audience(&c);
+    keep(&mut c, MAC_C, Who::Device(MAC_C), carol).unwrap();
+    c.tidy(MAC_A);
+    assert_eq!(audience(&c), before);
 }
 
 /// Owner of a whole vault is an owner of it, which only the vault's approval and the newcomer's consent make

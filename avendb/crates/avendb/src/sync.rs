@@ -3,28 +3,30 @@
 //! endpoint key is the device's ed25519 key, and the device shows the rest of its keys, which hash to its signer id).
 //! The peer answers from its own view: the logs of the entries and audiences the device may receive (it acts for their
 //! vault, or for the grantee of a live share that reaches their audience, or that share is public), the logs of every
-//! share it needs to check those (the shares of every audience such an entry was ever in, the vault's wide shares, the
-//! shares its own vaults hold or are over, and every share those rest on), and the logs of every vault all that names,
-//! up their chains of owners. A revocation sits in the log of the share it ends, so a device whose share was revoked
-//! hears of it, and knows what it may no longer do. Nothing about any other entry or audience leaves the peer (T12):
-//! not its writes, not even its audience. Of the entries a device may receive, it is sent those its sync rules want
-//! (`State::wants`, T28): all of a vault it has no rule over, else those one of its rules there is wide over or marks;
-//! the peer reads the stewards' marks, never a selector (T23). Two devices that answered each other hold the same
-//! writes for every entry both sync (T13). Receiving is not reading: a relay share gets the ciphertext and no key.
+//! share it needs to check those or to know what it syncs (the shares of every audience such an entry was ever in or of
+//! its wants, the vault's wide shares, the shares its own vaults issued, hold or are over, and every share those rest
+//! on), and the logs of every vault all that names, up their chains of owners. A revocation sits in the log of the
+//! share it ends, so a device whose share was revoked hears of it, and knows what it may no longer do. Nothing about
+//! any other entry or audience leaves the peer (T12): not its writes, not even its audience. Of the entries a device
+//! may receive, it is sent those its keep shares want (`State::wants`, T28): all of a vault it has no keep share over,
+//! else those one of its whole or opened keep shares there is wide over or marks (all of them when it has only never
+//! ones), but none a never one is wide over or marks; the peer reads the stewards' marks, never a selector (T23). Two
+//! devices that answered each other hold the same writes for every entry both sync (T13). Receiving is not reading: a
+//! relay share gets the ciphertext and no key.
 //!
 //! Every edit belongs to one log (`log_of`): a vault's (its governance, its seed's keys, its schema lane), a share's
-//! (the share, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks, checkpoints and
-//! keys). It names as its parents the frontier of its own log as its device held it. So each log is a small history of
-//! its own, and two copies of a log compare by their frontiers alone: one hash per log (`digests`), which is what
-//! devices gossip. A device asks with its frontier of each log it holds and a few edits further back, the edits 1, 2,
-//! 4, 8, … steps back and the oldest, and with the edits it holds outside them (`asks`); the peer sends only what lies
-//! beyond the ones it holds (`respond_since`). A peer that is behind holds the whole frontier and sends exactly what
-//! the device lacks; one that lacks the device's latest edits still holds one of them close by, and sends back little
-//! the device holds. That withholds nothing the device lacks (T19): a device names of a log only edits of the part
-//! whose whole past it holds, so an edit whose parent hasn't arrived waits outside, with whatever builds on it, until
-//! the gap is filled. A device signs its edits in a log one after another, each building on the last, so two edits of
-//! one device in one log where neither builds on the other mean its key signed twice from the same past (`forks`): a
-//! cloned device, one restored from an old backup, or a stolen key.
+//! (the share, a keep share too, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks,
+//! checkpoints and keys). It names as its parents the frontier of its own log as its device held it. So each log is a
+//! small history of its own, and two copies of a log compare by their frontiers alone: one hash per log (`digests`),
+//! which is what devices gossip. A device asks with its frontier of each log it holds and a few edits further back, the
+//! edits 1, 2, 4, 8, … steps back and the oldest, and with the edits it holds outside them (`asks`); the peer sends
+//! only what lies beyond the ones it holds (`respond_since`). A peer that is behind holds the whole frontier and sends
+//! exactly what the device lacks; one that lacks the device's latest edits still holds one of them close by, and sends
+//! back little the device holds. That withholds nothing the device lacks (T19): a device names of a log only edits of
+//! the part whose whole past it holds, so an edit whose parent hasn't arrived waits outside, with whatever builds on
+//! it, until the gap is filled. A device signs its edits in a log one after another, each building on the last, so two
+//! edits of one device in one log where neither builds on the other mean its key signed twice from the same past
+//! (`forks`): a cloned device, one restored from an old backup, or a stolen key.
 //!
 //! A big reply comes a page at a time (P8d), each edit after the edits it builds on (`place`): the device takes each
 //! page as it comes and asks on after the last edit it got, until the peer has nothing more.
@@ -47,10 +49,11 @@ pub enum LogId {
 }
 
 /// The log of edit `edit`, whose id is `id` (`Edit.log?`): a vault's genesis and settings, its owners and devices given
-/// and revoked, a schema or lens, and a seed's key go to their vault's; a grant, its revocation and its key to the
-/// grant's; an audience's key to the audience's; a write, a mark, a checkpoint and an entry's key to the entry's. A
-/// signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id names the log only of an edit that
-/// starts one, a genesis or a grant. The edit's kind alone says which, so a peer that knows nothing else routes it.
+/// and revoked, a schema or lens, and a seed's key go to their vault's; a grant or a keep share, its revocation and its
+/// key to the grant's; an audience's key to the audience's; a write, a mark, a checkpoint and an entry's key to the
+/// entry's. A signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id names the log only of
+/// an edit that starts one, a genesis or a grant. The edit's kind alone says which, so a peer that knows nothing else
+/// routes it.
 pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
     Some(match &edit.action {
         Action::Genesis { .. } => LogId::Vault(VaultId::from(id)),
@@ -63,8 +66,6 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
         Action::Write { entry, .. } | Action::Mark { entry, .. } | Action::Checkpoint { entry, .. } => {
             LogId::Entry(*entry)
         }
-        Action::SyncRule(r, _) => LogId::Vault(r.issuer),
-        Action::EndSyncRule { issuer, .. } => LogId::Vault(*issuer),
         Action::Keys { name, .. } => match *name {
             KeyName::Signer(_) => return None,
             KeyName::Scoped(KeyFam::Seed(v), _) => LogId::Vault(v),
@@ -95,8 +96,6 @@ fn vaults_named(edit: &Edit) -> Vec<VaultId> {
         }
         Action::Write { vault, actor, via, .. } => [*vault, *actor].into_iter().chain(via.iter().copied()).collect(),
         Action::Mark { vault, via, .. } => std::iter::once(*vault).chain(via.iter().copied()).collect(),
-        Action::SyncRule(r, via) => [r.issuer, r.over].into_iter().chain(via.iter().copied()).collect(),
-        Action::EndSyncRule { issuer, via, .. } => std::iter::once(*issuer).chain(via.iter().copied()).collect(),
         _ => vec![],
     }
 }
@@ -137,19 +136,23 @@ impl<'a> Reach<'a> {
             }
         }
         let mut reach = Reach { st, d, acts, whole, granting, shares: HashSet::new() };
-        // the shares of every audience an entry it may receive was ever in, and the vaults of those entries, for their
-        // wide shares
+        // the shares of every audience an entry it may receive was ever in and the keep shares of its wants, both over
+        // the entry's vault, and the vaults of those entries, for their wide shares
         let (mut stayed, mut vaults) = (HashSet::new(), HashSet::new());
         for en in st.entries().iter().filter(|en| reach.audience(en.vault, en.audience())) {
             vaults.insert(en.vault);
             for (_, x) in &en.stays {
                 stayed.extend(st.audience_shares(*x).unwrap_or_default().iter().copied());
             }
+            stayed.extend(st.wants_of(en.id).iter().copied());
         }
+        // it needs a share it acts for the vault of, or for the grantee of, or for the issuer of, whose keep shares say
+        // what it syncs, or that is wide over or in the audience or the wants of an entry it may receive
         let who = |g: Who| matches!(g, Who::Vault(g) if reach.acts.contains(&g));
         let sees = |cp: &crate::policy::Issued| {
             reach.acts.contains(&cp.share.over)
                 || who(cp.share.who)
+                || reach.acts.contains(&cp.share.issuer)
                 || (vaults.contains(&cp.share.over) && (cp.share.wide || stayed.contains(&cp.id)))
         };
         let shares = st.shares().iter().filter(|cp| sees(cp)).flat_map(|cp| cp.chain.iter().copied());
@@ -164,7 +167,7 @@ impl<'a> Reach<'a> {
             || self.st.audience_shares(x).unwrap_or_default().iter().any(|c| self.granting.get(c) == Some(&v))
     }
 
-    /// It syncs log `l` (`syncsLog`): an entry's it may receive and its sync rules want (T28), any other it may
+    /// It syncs log `l` (`syncsLog`): an entry's it may receive and its keep shares want (T28), any other it may
     /// receive (`mayReceiveLog`). Vault logs come as the vaults the rest names.
     fn log(&self, l: LogId) -> bool {
         match l {

@@ -3,10 +3,10 @@
 //! HashSeq of their hashes when there are several. A node brings a file by sealing it as it reads it, a piece at a
 //! time, under a key of its own (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its
 //! device opens, from its own store or else from a peer that may hand it over, fetching only the sealed segments that
-//! hold the range, which it keeps (`Node::read_file`); and keeps whole every file its device's sync rules say to keep,
-//! fetched from its peers as soon as it learns of them: where its device has no rule over a vault, every file of the
-//! vault if the node keeps files (`Options::keep`), as the server does, and none otherwise (`Lab::kept_files`). It
-//! drops no file it kept.
+//! hold the range, which it keeps (`Node::read_file`); and keeps whole every file its device's keep shares say to keep,
+//! fetched from its peers as soon as it learns of them: where its device has none over a vault but never ones, every
+//! file of the vault it syncs if the node keeps files (`Options::keep`), as the server does, and none otherwise
+//! (`Lab::kept_files`). It drops no file it kept.
 //!
 //! The blob gate (`blobs::gate`) hands a peer a blob only if the peer may fetch it: a McEliece key by `Lab::may_fetch`,
 //! a file's root or one of its pieces by `Lab::may_fetch_file` (T27). Every request names one blob, never a HashSeq
@@ -274,11 +274,11 @@ impl Shared {
         first.into_iter().chain(then).chain(last).map(|(endpoint, _)| endpoint).collect()
     }
 
-    /// Keeps the files the edits its device holds bring: whole, fetched from its peers, those its device's sync rules
-    /// say to keep, or with no rule, if the node keeps files (`Options::keep`), as the server does (`Lab::kept_files`);
-    /// of the rest it marks for the gate the pieces of those whose HashSeq it holds. A file no peer hands over is tried
-    /// again after `retry`, then twice as long each time, up to a minute. After each, it works out again what it holds
-    /// of the file for good, for its holdings.
+    /// Keeps the files the edits its device holds bring: whole, fetched from its peers, those its device's keep shares
+    /// say to keep, or with none but never ones, if the node keeps files (`Options::keep`), as the server does
+    /// (`Lab::kept_files`); of the rest it marks for the gate the pieces of those whose HashSeq it holds. A file no
+    /// peer hands over is tried again after `retry`, then twice as long each time, up to a minute. After each, it works
+    /// out again what it holds of the file for good, for its holdings.
     pub(crate) async fn keeper(self: Arc<Self>) {
         let mut size = self.size.subscribe();
         let (mut kept, mut failing) = (HashSet::new(), Backoff::default());

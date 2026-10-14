@@ -699,7 +699,7 @@ impl Device {
         let (name, select, ops) = words::spec_of(spec)?;
         let (level, wide) = (rules::level_of(&ops), select == Selector::All);
         let parent = self.node.read(move |lab, me| parent(lab.state(me), issuer, over, wide)).await;
-        let new = NewShare { over, who, name, select, ops, parent, issuer };
+        let new = NewShare { over, who, name, select, ops, parent, issuer, keep: None };
         let refused = |why| anyhow!("the cap is refused: {why:?}");
         if level != Level::Owner {
             return self.node.act(move |lab, me| lab.issue(me, &[me], new)).await.map_err(refused);
@@ -1221,7 +1221,8 @@ fn levels(st: &State, v: VaultId, x: AudienceId) -> Vec<(VaultId, Level)> {
     for cp in reaching(st, v, x) {
         let Who::Vault(g) = cp.share.who else { continue };
         match levels.iter_mut().find(|(a, _)| *a == g) {
-            Some((_, r)) => *r = (*r).max(cp.share.level),
+            Some((_, r)) if cp.share.level.rank() > r.rank() => *r = cp.share.level,
+            Some(_) => {}
             None => levels.push((g, cp.share.level)),
         }
     }
@@ -1239,7 +1240,8 @@ fn syncing(st: &State, devices: &[(SignerId, VaultId)], v: VaultId, x: AudienceI
         let mut best: Option<(Level, VaultId)> = st.acts_for(d, v).then_some((Level::Owner, v));
         for cp in &shares {
             let Who::Vault(g) = cp.share.who else { continue };
-            if cp.share.level >= Level::Backup && st.acts_for(d, g) && best.is_none_or(|(r, _)| cp.share.level > r) {
+            let stronger = best.is_none_or(|(r, _)| cp.share.level.rank() > r.rank());
+            if cp.share.level.allows(Level::Backup) && st.acts_for(d, g) && stronger {
                 best = Some((cp.share.level, g));
             }
         }

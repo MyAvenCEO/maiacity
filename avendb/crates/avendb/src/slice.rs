@@ -38,6 +38,19 @@ impl std::fmt::Debug for Sym {
     }
 }
 
+/// The types of the entries that carry a vault's schemas and its lenses (design §5; `State.lean`'s `schemaType` and
+/// `lensType`): every keep share that adds entries picks them too, and a never share none of them
+/// (`policy::keep_picks`), so a device that syncs any of a vault syncs its lane.
+pub const SCHEMA_TYPE: &str = "schema";
+pub const LENS_TYPE: &str = "lens";
+
+impl Sym {
+    /// The type of the entries that carry a vault's schemas or its lenses.
+    pub fn of_lane(&self) -> bool {
+        self.0 == SCHEMA_TYPE || self.0 == LENS_TYPE
+    }
+}
+
 /// What a selector tests of an entry: what its first write says of it, which never changes, and its tags now.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Attrs {

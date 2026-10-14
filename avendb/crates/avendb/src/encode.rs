@@ -4,7 +4,7 @@
 //! byte is the format's version, so a later format can live beside this one.
 
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Edit, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, SyncRule, Who};
+use crate::policy::{Action, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who};
 use crate::rules::{Grant, On, Op, Proof, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -41,7 +41,7 @@ pub fn write_context(edit: &Edit) -> Vec<u8> {
 }
 
 /// What a share's sealed slice is bound to: the share with an empty `select`, so the slice can't be moved to another
-/// share, another grantee or another level.
+/// share, another grantee or another level, nor a keep share's to another device or mode.
 pub fn share_context(share: &Share) -> Vec<u8> {
     let mut out = vec![VERSION];
     out.extend_from_slice(b"share");
@@ -53,25 +53,6 @@ pub fn share_context(share: &Share) -> Vec<u8> {
 /// holds, and for whom. It opens as no other box, and for no other share.
 pub fn share_select_info(share: &Share, id: KeyId, to: &Recipient) -> Vec<u8> {
     let mut out = share_context(share);
-    out.extend_from_slice(b"selector key");
-    id.encode(&mut out);
-    to.encode(&mut out);
-    out
-}
-
-/// What a sync rule's sealed selector is bound to: the rule with an empty `select`, so the selector can't be moved to
-/// another rule, device or vault.
-pub fn rule_context(rule: &SyncRule) -> Vec<u8> {
-    let mut out = vec![VERSION];
-    out.extend_from_slice(b"sync rule");
-    SyncRule { select: vec![], ..rule.clone() }.encode(&mut out);
-    out
-}
-
-/// What a box of a sync rule's selector key is bound to: the rule with an empty `select`, the key it holds, and for
-/// whom.
-pub fn rule_select_info(rule: &SyncRule, id: KeyId, to: &Recipient) -> Vec<u8> {
-    let mut out = rule_context(rule);
     out.extend_from_slice(b"selector key");
     id.encode(&mut out);
     to.encode(&mut out);
@@ -516,10 +497,17 @@ impl Encode for Principal {
     }
 }
 
-/// Its rank (`Level::rank`): relay 1 to owner 5.
+/// Its rank (`Level::rank`): keep 0, then its mode's byte (0 whole, 1 opened, 2 never), relay 1 to owner 5.
 impl Encode for Level {
     fn encode(&self, out: &mut Vec<u8>) {
         out.push(self.rank());
+        if let Level::Keep(m) = self {
+            out.push(match m {
+                KeepMode::Whole => 0,
+                KeepMode::Opened => 1,
+                KeepMode::Never => 2,
+            });
+        }
     }
 }
 
@@ -548,18 +536,6 @@ impl Encode for Share {
         self.select.encode(out);
         self.parent.encode(out);
         self.issuer.encode(out);
-        self.nonce.encode(out);
-    }
-}
-
-impl Encode for SyncRule {
-    fn encode(&self, out: &mut Vec<u8>) {
-        self.issuer.encode(out);
-        self.device.encode(out);
-        self.over.encode(out);
-        self.wide.encode(out);
-        self.select.encode(out);
-        self.keep.encode(out);
         self.nonce.encode(out);
     }
 }
@@ -644,8 +620,9 @@ impl Encode for Revoking {
 }
 
 /// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys, 7 checkpoint, then the
-/// kinds that go in later v8 phases, 8 publish, 9 sync rule, 10 end of a sync rule; 11, a pick, went into the mark. A
-/// settings, share or revoke edit's sub-kind follows in a byte of its own.
+/// kind that goes in a later v8 phase, 8 publish. 9, a sync rule, and 10, its end, went into the share and the revoke,
+/// as a keep share and its revocation; 11, a pick, went into the mark. A settings, share or revoke edit's sub-kind
+/// follows in a byte of its own.
 impl Encode for Action {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -715,17 +692,6 @@ impl Encode for Action {
                 actor.encode(out);
                 via.encode(out);
                 blob.encode(out);
-            }
-            Action::SyncRule(r, via) => {
-                out.push(9);
-                r.encode(out);
-                via.encode(out);
-            }
-            Action::EndSyncRule { rule, issuer, via } => {
-                out.push(10);
-                rule.encode(out);
-                issuer.encode(out);
-                via.encode(out);
             }
         }
     }
@@ -852,7 +818,7 @@ mod tests {
             nonce: 0,
         };
         let root = Setting::Root { root: None, keep: vec![] };
-        let rule = SyncRule { issuer: v, device: d, over: v, wide: true, select: vec![], keep: false, nonce: 0 };
+        let keep = Share { who: Who::Device(d), level: Level::Keep(KeepMode::Whole), ..share.clone() };
         let (name, id) = (KeyName::Signer(d), KeyId([0; 32]));
         let keys = Action::Keys { name, id, public: None, boxes: vec![], clear: None };
         let kinds: Vec<(Action, &[u8])> = vec![
@@ -860,6 +826,7 @@ mod tests {
             (Action::Settings { vault: v, set: Setting::Threshold(1) }, &[1]),
             (Action::Settings { vault: v, set: root }, &[1]),
             (Action::Share(Sharing::Grant(share, vec![])), &[2, 0]),
+            (Action::Share(Sharing::Grant(keep, vec![])), &[2, 0]),
             (Action::Share(Sharing::Owner { vault: v, owner, seal_to: None }), &[2, 1]),
             (Action::Share(Sharing::Device { vault: v, device: d, seal_to: None }), &[2, 2]),
             (Action::Revoke(Revoking::Grant { share: c, actor: v, keep: vec![], via: vec![] }), &[3, 0]),
@@ -871,8 +838,6 @@ mod tests {
             (keys, &[6]),
             (Action::Checkpoint { entry: e, covers: vec![] }, &[7]),
             (Action::Publish { vault: v, actor: v, via: vec![], blob: vec![] }, &[8]),
-            (Action::SyncRule(rule, vec![]), &[9]),
-            (Action::EndSyncRule { rule: c, issuer: v, via: vec![] }, &[10]),
         ];
         for (action, tag) in kinds {
             assert!(tagged(action.clone()).starts_with(tag), "{action:?}");
@@ -916,13 +881,16 @@ mod tests {
 
     #[test]
     fn a_levels_byte_is_its_rank_and_whom_a_share_names_has_a_byte_of_its_own() {
-        let levels = [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner];
-        let bytes = levels.map(|l| {
+        let level = |l: Level| {
             let mut out = vec![];
             l.encode(&mut out);
             out
-        });
-        assert_eq!(bytes, [[1], [2], [3], [4], [5]]);
+        };
+        let levels = [Level::Relay, Level::Backup, Level::Read, Level::Write, Level::Owner];
+        assert_eq!(levels.map(level), [[1], [2], [3], [4], [5]]);
+        // keep is rank 0, and its mode's byte follows: 0 whole, 1 opened, 2 never
+        let keeps = [KeepMode::Whole, KeepMode::Opened, KeepMode::Never].map(|m| level(Level::Keep(m)));
+        assert_eq!(keeps, [[0, 0], [0, 1], [0, 2]]);
         let (v, d) = (VaultId::from_u64(5), SignerId::from_u64(6));
         let who = |w: Who| {
             let mut out = vec![];
@@ -932,6 +900,29 @@ mod tests {
         assert_eq!(who(Who::Vault(v)), [&[0][..], &v.0].concat());
         assert_eq!(who(Who::Everyone), [1]);
         assert_eq!(who(Who::Device(d)), [&[2][..], &d.0].concat());
+    }
+
+    #[test]
+    fn a_keep_share_is_a_grant_to_a_device_with_its_mode_after_its_rank() {
+        let (v, d) = (VaultId::from_u64(1), SignerId::from_u64(2));
+        let keep = |mode| {
+            let level = Level::Keep(mode);
+            let (wide, select, parent) = (false, vec![7], None);
+            Share { over: v, who: Who::Device(d), level, wide, select, parent, issuer: v, nonce: 9 }
+        };
+        let n = |x: u32| x.to_be_bytes();
+        // the share's tag and sub-kind, the vault it is over, the device it names, keep's rank and its mode, not wide,
+        // its sealed slice, no parent, its issuer and its nonce; then the owners it goes through
+        let modes = [(KeepMode::Whole, 0), (KeepMode::Opened, 1), (KeepMode::Never, 2)];
+        for (mode, b) in modes {
+            let grant = Action::Share(Sharing::Grant(keep(mode), vec![]));
+            let nonce = 9u64.to_be_bytes();
+            let golden = [&[2, 0][..], &v.0, &[2], &d.0, &[0, b], &[0], &n(1), &[7], &[0], &v.0, &nonce, &n(0)];
+            assert_eq!(tagged(grant), golden.concat(), "{mode:?}");
+        }
+        // each mode is a share of its own
+        let id = |m| edit_id(&Edit { action: Action::Share(Sharing::Grant(keep(m), vec![])), ..genesis(0) });
+        assert!(distinct(&modes.map(|(m, _)| id(m))));
     }
 
     #[test]
