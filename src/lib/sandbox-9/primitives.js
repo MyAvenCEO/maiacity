@@ -404,7 +404,7 @@ export const TECH = {
 		learn: { group: 'energy', coef: { orc: n(0.8, 'heat per kWh at the floor', 'ORC 12 % → 15 % gross: about 60 % of the exergy limit of 23.8 % at these temperatures, which good ORCs reach (estimate)', true) } }
 	},
 	hall: {
-		label: 'Dome shells a settlement COOP owns and rents out: the food, utilities, factory and centre domes (Samuel, 2026-10-13)',
+		label: 'Dome shells a Tribe COOP owns and rents out: the food, utilities, factory and centre domes (Samuel, 2026-10-13)',
 		good: 'bed',
 		kind: 'hall',
 		capUnit: 'm² of dome floor',
@@ -422,7 +422,7 @@ export const TECH = {
 		glassLife: n(30, 'years (the glazing)', 'physics audit (2026-10-13)')
 	},
 	home: {
-		label: 'Dome homes (Dome80 of 40 and Dome40 of 10) of a settlement COOP',
+		label: 'Dome homes (Dome80 of 40 and Dome40 of 10) of a Tribe COOP',
 		good: 'bed',
 		kind: 'home',
 		capUnit: 'bed',
@@ -522,7 +522,7 @@ export const TECH = {
 	},
 	/**
 	 * The avenCEO COOP's agent harness (Samuel, 2026-10-13 07:27): the software that runs the village's Avens. It owns no
-	 * hardware: it buys inference (accelerator-hours) from the settlement COOPs and the Village COOP, which own the
+	 * hardware: it buys inference (accelerator-hours) from the Tribe COOPs and the Village COOP, which own the
 	 * accelerators in their utilities domes' data centres (./ai.js), and sells Aven service (Aven hours) to the people.
 	 * Its own costs are Aven hours, at the rate card: the harness's upkeep (in step with the hours it serves) and its R&D
 	 * (work proposals, ./coops.js payout).
@@ -566,7 +566,7 @@ export const TECH = {
 /**
  * Accelerators (the chips the Avens run on) cannot be made in the city: world model 5.3 says "GPUs come from outside
  * (euro border)". A chip fab is a plant of billions of euros and hundreds of megawatts, so no hex has one, as no real
- * town has one: a city buys its chips. Round 4 (Samuel, 2026-10-13 07:27): the hardware belongs to the settlement COOPs
+ * town has one: a city buys its chips. Round 4 (Samuel, 2026-10-13 07:27): the hardware belongs to the Tribe COOPs
  * and the Village COOP. They buy accelerators through the euro border (advanced by the MaiaCity COOP's bank and paid
  * back in their own MIND, ./border.js payEur), install them in the data centres of their utilities domes, run them on
  * their power and replace them as they wear; they sell inference (accelerator-hours) to the avenCEO COOP (./ai.js).
@@ -612,7 +612,7 @@ export const FOOD = {
 /**
  * The euro border (paper §11.4, §12.4): what the village cannot make, its COOPs buy outside with euros from the shared
  * euro reserve, filled by the founding euros left over and by exports (electricity a COOP buys in MIND and sells across
- * the line). Food COOPs buy food, the works buy their raw inputs, the settlement COOPs and the Village COOP accelerators. No person holds euros,
+ * the line). Food COOPs buy food, the works buy their raw inputs, the Tribe COOPs and the Village COOP accelerators. No person holds euros,
  * no MIND is made from euros, HEARTS never buy anything.
  */
 const DIET_EUR_KG = { legumes: 1.5, nuts: 7, chestnuts: 3, roots: 0.4, vegetables: 1.2, fruit: 1.25, eggs: 3, chicken: 4.5 };
@@ -700,7 +700,7 @@ export const GENESIS_PRICE_R = n(
 );
 
 /** the Aven rate card: R per Aven work hour, scaled with the HEARTS a day setting so that money stays a veil */
-export const AVEN_RATE_R = n(2, 'R per Aven hour at 24 HEARTS a day', 'the Aven rate anchor of scripts/theos-e2e-sim.mjs (2 R an Aven hour). It is a rate card, not a wage: it prices Aven work items, and no human is paid. By default it is indexed to the HEARTS issued a day (scaled by HEARTS a day ÷ 24, setting rateIndexed), so doubling HEARTS doubles it: X9 and B28 show neutrality under that rule, and B28 reports the world with the card fixed in R (estimate)', true);
+export const AVEN_RATE_R = n(2, 'R per Aven hour at 24 HEARTS a day', 'the Aven rate anchor of scripts/theos-e2e-sim.mjs (2 R an Aven hour). It is a rate card, not a wage: it prices work proposals, and no human is paid. By default it is indexed to the HEARTS issued a day (scaled by HEARTS a day ÷ 24, setting rateIndexed), so doubling HEARTS doubles it: X9 and B28 show neutrality under that rule, and B28 reports the world with the card fixed in R (estimate)', true);
 
 /**
  * The village at founding (day 0 = move-in): built from imports before day 0 (./village.js gives the domes, land,
@@ -726,17 +726,17 @@ export const STARTING_CAPITAL = n(
 		dfSplit: [0.5, 0.5],
 		goodsWorksKgDay: [250, 250],
 		springHours: [150, 150],
-		homesSplit: 'one settlement COOP a hex (Samuel, 2026-10-13 06:50): each living hex’s owns its 290 beds and its food and utilities domes; the centre hex’s, the Village COOP (07:00), owns the centre dome, the eight factory domes and the geothermal plant',
+		homesSplit: 'one Tribe COOP a hex (Samuel, 2026-10-13 06:50): each living hex’s owns its 290 beds and its food and utilities domes; the centre hex’s, the Village COOP (07:00), owns the centre dome, the eight factory domes and the geothermal plant',
 		rentedM2: {
 			food: 'the whole of each food dome (11,310 m² of floor) and the gardens in the utilities dome: the food COOPs',
 			water: '1,200 m² of each utilities dome (membrane bioreactor and wetland): the City COOP’s water works',
 			solar: `${UTIL_SOLAR_M2.battery + UTIL_SOLAR_M2.hydrogen} m² of each utilities dome (${UTIL_SOLAR_M2.hydrogen ? `batteries ${UTIL_SOLAR_M2.battery} m², hydrogen ${UTIL_SOLAR_M2.hydrogen} m²` : 'the batteries; no hydrogen store in this design package'}): the solar COOPs`,
-			compute: '700 m² of each utilities dome (the data centre): the settlement COOP’s own accelerators (and the Village COOP’s in the centre dome), not rented',
+			compute: '700 m² of each utilities dome (the data centre): the Tribe COOP’s own accelerators (and the Village COOP’s in the centre dome), not rented',
 			goods: '1,600 m² of each utilities dome (the workshops): the goods works',
 			works: DF_ENGINE
 				? `the timber and bamboo domes (timber works); the dome factory (the glass & solar works' site) by its lines' floor: the struts line ${DF_ENGINE.floor.struts.toLocaleString('en-US')} m² (the timber COOPs), hubs ${DF_ENGINE.floor.steel.toLocaleString('en-US')} m² (the steel COOPs), glazing ${DF_ENGINE.floor.glass.toLocaleString('en-US')} m² (the glass COOPs), solar ${DF_ENGINE.floor.panel.toLocaleString('en-US')} m² (the panel COOPs); its aisles and loading (${(Math.round(DF_ENGINE.domeM2) - DF_ENGINE.floorAll).toLocaleString('en-US')} m²) the Village COOP's own`
 				: 'the timber and bamboo domes (timber works), the steelworks dome, the glass & solar dome (glass works 70 %, panel works 30 %, estimate)',
-			halls: `the centre dome (community halls) and the hemp, lime, clay${DF_ENGINE ? ', steel' : ''} and recycling domes, whose works the engine does not trade${DF_ENGINE ? ' (the steelworks recycles and makes the steel that is not a dome part)' : ''}: rented by the six living settlement COOPs for their residents, a sixth each`
+			halls: `the centre dome (community halls) and the hemp, lime, clay${DF_ENGINE ? ', steel' : ''} and recycling domes, whose works the engine does not trade${DF_ENGINE ? ' (the steelworks recycles and makes the steel that is not a dome part)' : ''}: rented by the six living Tribe COOPs for their residents, a sixth each`
 		},
 		accelerators: 'none at founding: the hardware owners buy them as the avenCEO COOP’s inference demand grows (./ai.js), the camp’s first server on day 0'
 	},

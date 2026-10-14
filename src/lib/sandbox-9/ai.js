@@ -3,7 +3,7 @@
  * SANDBOX 8 · THE AI MARKET (Samuel, 2026-10-13 07:27) — who owns the accelerators, who sells inference, who sells
  * Aven service, and how the personal Avens work for the COOPs.
  *
- * - **The hardware owners.** The inference hardware belongs to the settlement COOPs and the Village COOP: accelerators
+ * - **The hardware owners.** The inference hardware belongs to the Tribe COOPs and the Village COOP: accelerators
  *   in the data centres of their utilities domes (the centre dome's for the Village COOP), run on their power. They buy
  *   accelerators through the euro border (the MaiaCity COOP's bank advances the euros, and they pay them back in their
  *   own MIND: ./border.js payEur, repayAdvances), keep them and replace them as they wear (CHIPS.life). The accelerators
@@ -17,9 +17,9 @@
  *   the people (the COMPUTE good). An Aven hour takes 1 ÷ 16 of an accelerator-hour (CHIPS.sessions), less as the
  *   harness learns (coefficient `infer`). Its own costs are Aven hours at the rate card (the harness's upkeep, its R&D).
  * - **The personal Avens work for all COOPs.** A person's Aven runs on Aven service: help for its person (the
- *   living-standard stat, bought from what the person holds) and work for the COOPs (running items and work
+ *   living-standard stat, bought from what the person holds) and work for the COOPs (running proposals and work
  *   proposals). An Aven works at most workCapH hours a day while an hour of its work earns more than the hour's Aven
- *   service costs; the work item's pay settles that Aven service at delivery and the person gets the rest, in
+ *   service costs; the work proposal's pay settles that Aven service at delivery and the person gets the rest, in
  *   proportion to skill × hours delivered (./coops.js workBook, workItems), so nobody needs MIND in hand before their
  *   Aven can work. So the village's demand for inference is the people's help, all the COOPs' work and the avenCEO
  *   COOP's own hours.
@@ -180,7 +180,7 @@ export function aiLoads(w) {
 	const perH = ahPerAvenH(w);
 	const ai = aiCoops(w);
 	const flow = (w.aiFlow = { buyers: [], exportAH: 0, exportH: 0, exportBuyer: -1, AH: 0, askedAH: 0, got: new Float64Array(M) });
-	for (const co of w.coops) co.aiKwh = 0;
+	for (const co of w.coops) (co.aiKwh = 0), (co.aiKwhB = 0);
 	let X = 0, askedX = 0;
 	let deliveredAll = 0;
 	for (const co of ai) {
@@ -245,12 +245,20 @@ export function aiLoads(w) {
 			}
 		}
 	}
+	// (round 6, cfg.basicsWork) the inference that runs the basics' plants (their running hours) is part of the basics:
+	// it is dispatched in the basics class, the rest in the running class
+	let gotAll = 0;
+	for (const co of owners) gotAll += got[co.k];
+	const sB = w.cfg.basicsWork && gotAll > 0 ? min(1, ((w.workNeed?.runB ?? 0) * perH) / gotAll) : 0;
+	w.aiBasicsShare = sB;
 	for (const co of owners) {
 		const I = co.inf;
 		I.asked = askedX * I.share;
 		I.rackH = got[co.k] * w.c.rackRunH;
 		co.aiKwh = got[co.k] * w.c.chipKwhH;
-		co.eReq[CLASS.running] += co.aiKwh;
+		co.eReq[CLASS.running] += co.aiKwh * (1 - sB);
+		co.aiKwhB = co.aiKwh * sB;
+		co.eReq[CLASS.basics] += co.aiKwhB;
 	}
 }
 

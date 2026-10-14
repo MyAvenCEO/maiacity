@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 /**
  * SANDBOX 8 · THE FIELD — one hex of land seen from above, drawn on one canvas in the style of Primer's blobs: the
- * City COOP's land in the middle with the protocol's pools beside it, the basics COOPs on their plots in a first
+ * City COOP's land in the middle with the city's pools (the City COOP holds their LP tokens) beside it, the basics COOPs on their plots in a first
  * ring, the crafted and scarce goods' COOPs in a second, and the people's homes round the edge.
  *
  * What moves is only what the world did that day (a frame from ./view.js):

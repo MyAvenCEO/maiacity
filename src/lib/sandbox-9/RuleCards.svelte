@@ -6,13 +6,13 @@
 	// @ts-nocheck — plain JS
 	const RULES = [
 		{ t: 'HEARTS', s: 'Every person gets 24 HEARTS of their own a day. A HEART buys nothing: it is only the right to invest in a COOP.' },
-		{ t: 'Investing', s: 'One HEART becomes one MIND of the COOP at once: half goes to the person, half to the COOP’s treasury. No HEART stays anywhere.' },
-		{ t: 'Pools', s: 'A tenth of the treasury’s half goes into the pools: baskets of 4 to 8 MINDs. Nobody owns them and nobody can withdraw from them; MIND leaves a pool only as the other side of a swap. Their 0.3 % fee stays in them.' },
+		{ t: 'Investing', s: 'One HEART invested makes one MIND of the COOP at once: 0.5 of it to the person, 0.4 to the COOP’s treasury and 0.1 to the city’s pools. One token in three places; no HEART stays anywhere.' },
+		{ t: 'Pools', s: 'The city’s pools are baskets of 4 to 8 MINDs. Their LP tokens belong to the MaiaCity COOP, which may redeem them only by a passed MIP. MIND leaves a pool as the other side of a swap, by the melt, or by such a redemption. Their 0.3 % fee stays in them.' },
 		{ t: 'Pay to use', s: 'A buyer pays with any MIND it holds; the pools convert it, and the seller receives only its own MIND.' },
-		{ t: 'Every sale pays its owners', s: 'A fifth of every real sale goes at once to everyone who holds the seller’s MIND: people and other COOPs, never the seller’s own treasury or the pools.' },
-		{ t: 'No paid labour', s: 'Each person’s Aven proposes and delivers the work. COOPs pay Avens for running items, and for work proposals from what they hold above a reserve of 9 months of costs.' },
+		{ t: 'Every sale pays its owners', s: 'A fifth of every real sale goes at once, in the seller’s own MIND, to everyone who holds it: people, other COOPs’ treasuries and the city’s pools, never the seller’s own treasury.' },
+		{ t: 'Work proposals', s: 'There are no wages and no jobs. All work is a work proposal priced in the COOP’s own MIND, like in a DAO: the running proposals that keep a COOP going, and new ones from what it holds above a reserve of 9 months of costs. Each person’s Aven delivers them.' },
 		{ t: 'Nothing else', s: 'There are no wages, no interest, no loans, no taxes, no basic income and no rent paid to people.' },
-		{ t: 'The melt', s: 'Every HEART and every MIND melts 7 % a year, everywhere at once.' },
+		{ t: 'The melt', s: 'Every HEART and every MIND melts 7 % a year, everywhere at once. Money goes out of existence only by the melt and when a failed COOP’s MIND is retired from the pools; payments for resources, services and work only move MIND.' },
 		{ t: 'Land', s: 'All land belongs to the City COOP. Every citizen holds one equal share that cannot be sold; builders lease plots and pay ground rent in MIND.' },
 		{ t: 'Free prices', s: 'No price caps, no protected prices, no subsidies. Two COOPs sell every good from the first day, and anyone can found another. A seller never sells below its own cost floor.' },
 		{ t: 'Energy first', s: 'Energy serves the basics first, then the works, then building, then the export that buys accelerators. Only the surplus pays for R&D, and only R&D and practice make recipes better, never past their physical floor.' },

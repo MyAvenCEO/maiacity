@@ -8,12 +8,12 @@
  *   for (let d = 0; d < 365 * 30; d++) step(w);
  *   getPeople(w); getCoops(w); getFlows(w); getEnergy(w); getDay(w);
  *
- * A day (world model 4.3): the calendar and shocks → the melt → every person's HEARTS become MIND (half to the
- * person, the rest to the COOP's treasury, a tenth of that into its pools) → the pools' prices → the harvest of sun
+ * A day (world model 4.3): the calendar and shocks → the melt → every person's HEARTS become MIND (Law 4: 1 HEART
+ * makes 1 MIND, 0.5 to the person, 0.4 to the COOP's treasury, 0.1 to the city's pools) → the pools' prices → the harvest of sun
  * and geothermal → nature (forest, rain, logs, pits) → costs, forward margins, posted prices → each Aven orders →
  * COOPs plan → the consumer goods clear (fair shares when a good runs short) → the energy dispatch (basics, running,
  * building, R&D, storage) → materials clear → the works make, upkeep rebuilds, projects build, R&D learns → payment
- * through the pools, Law 5 → records → running items paid to Avens → wear → the slow loop (arbitrage, ground rent,
+ * through the pools, Law 5 → records → running proposals paid to Avens → wear → the slow loop (arbitrage, ground rent,
  * reserve and payout, learning, building, where the HEARTS go, Law 3 foundings, receivership) → both ledgers checked.
  *
  * The slow loop runs every day in the first year, while the village is being built (./ramp.js) and for 90 days after it
@@ -21,7 +21,7 @@
  */
 import { exp, log, pow } from './dmath.js';
 import { DEFAULTS, createWorld as genesisWorld, blankToday, initPerson, firstAlloc, capDayOf, plantCapDay, vcOf } from './genesis.js';
-import { BASICS, BED, CLASS, CLASS_NAMES, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOODS_, LIMIT, LIMIT_NAMES, MATERIALS, MAX_COOPS, PHYSICAL, POOL_SHARE, SPRING, WATER } from './consts.js';
+import { BASICS, BED, CLASS, CLASS_NAMES, COMPUTE, CONSUMER, ENERGY, FOOD, G, GOOD_IDS, GOODS_, INVESTOR_SHARE, LIMIT, LIMIT_NAMES, MATERIALS, MAX_COOPS, PHYSICAL, POOL_SHARE, SPRING, WATER } from './consts.js';
 import { GOODS, MONTH_NAMES, YEAR_DAYS } from './primitives.js';
 import { calendar, harvest, dispatch, shockFactor } from './energy.js';
 import { updatePrices, poolInflow, arbitrage, swap } from './pools.js';
@@ -75,6 +75,9 @@ export function createWorld(config = {}) {
 	// ×1.67), and the two worlds would differ from day 0 for a reason that is not money
 	w.pbar = Float64Array.from(w.c.p0g, (x) => x * (w.c.rentIdx ?? 1));
 	w.laws = { checks: 0, maxRel: 0, breaches: [], poolMissed: 0 };
+	// the pools' LP tokens: the MaiaCity COOP holds them (canon 14); a redemption needs a passed MIP
+	w.lp = { owner: w.cityK, redeemedR: 0, redemptions: [] };
+	w.poolLedger = { checks: 0, breaches: [] };
 	w.peopleShortEma = new Float64Array(4);
 	w.coopLowDays = 0;
 	w.shares = new Float64Array(G * M);
@@ -190,6 +193,8 @@ export function step(w) {
 	if (w.ramp) rampDay(w);
 	melt(w);
 	invest(w);
+	// a redemption of the City COOP's LP tokens, only when a scenario asks for one (a passed MIP)
+	for (const s of cfg.shocks ?? []) if (s.kind === 'mipRedeem' && s.day === w.day) redeemLp(w, s.share ?? 0.1);
 	updatePrices(w);
 	liquidity(w);
 	if (w.day === 0)
@@ -220,7 +225,8 @@ export function step(w) {
 	for (const co of w.coops) {
 		if (!co.alive) continue;
 		for (let cl = 0; cl < 4; cl++) req[cl] += co.eReq[cl];
-		if (co.good === BED) basicsB += co.eReq[CLASS.basics];
+		// (a hardware owner's inference for the basics' running hours is in the first part, with water and basic power)
+		if (co.good === BED) basicsB += co.eReq[CLASS.basics] - (co.aiKwhB ?? 0);
 		heatReq.basics += co.heatReq;
 		heatReq.running += co.heatRun;
 	}
@@ -255,7 +261,7 @@ export function step(w) {
 	badges(w, fill);
 	// the accelerators wear, and the owners buy what the inference ahead needs (./ai.js)
 	aiEvening(w);
-	// the work items: running items and work proposals, delivered by the personal Avens' work hours (./coops.js)
+	// the work proposals: running proposals and new work proposals, delivered by the personal Avens' work hours (./coops.js)
 	workItems(w);
 	recordDay(w);
 	wear(w);
@@ -269,7 +275,10 @@ export function step(w) {
 		foundings(w);
 		deciles(w);
 	}
-	for (const co of w.coops) if (co.alive && co.lowDays >= 30) w.coopLowDays++;
+	let coopLow = 0;
+	for (const co of w.coops) if (co.alive && co.lowDays >= 30) coopLow++;
+	w.coopLowDays += coopLow;
+	if (w.rec.n > 0) w.rec.coopLow[w.rec.n - 1] = coopLow;
 	checkLedgers(w);
 	w.day++;
 	return w;
@@ -293,6 +302,7 @@ function resetDay(w) {
 		co.sold = 0;
 		co.salesR = 0;
 		co.divR = 0;
+		co.divHoldR = 0;
 		co.orders = 0;
 		co.heatRun = 0;
 		co.payoutToday = 0;
@@ -377,14 +387,55 @@ function melt(w) {
 	for (let k = 0; k < M; k++) meltR += melted[k] * P[k];
 	w.today.meltR = meltR;
 	w.meltIndex *= f;
+	// the pool invariant (checked tonight, ./engine.js checkLedgers): after the melt, a basket's product of reserves can
+	// only grow through the day (the pools' part of the HEARTS, Law 5's dividends, swaps whose fee stays in the pool);
+	// it falls only by the melt, and by a redemption of the City COOP's LP tokens by a passed MIP
+	w.poolLogK = w.pools.map(logProduct);
+}
+
+/** a basket's log product of reserves (its G3M invariant), or NaN while a member has no reserve */
+function logProduct(p) {
+	let s = 0;
+	for (let i = 0; i < p.x.length; i++) {
+		if (!(p.x[i] > 0)) return NaN;
+		s += log(p.x[i]);
+	}
+	return s;
 }
 
 /**
- * Every person's HEARTS become MIND of the COOPs their Aven chose: one HEART, one MIND; half to the person, the other
- * half to the COOP's treasury, of which a tenth goes into the COOP's pools. No HEART stays anywhere.
+ * The city's pools belong to the MaiaCity COOP (the City COOP): it holds their LP tokens (paper §6, canon 14). It may
+ * redeem them only by a passed MIP, and no redemption runs unless a scenario asks for one (a shock { kind:
+ * 'mipRedeem', day, share }): then `share` of every basket's reserves moves to the City COOP's treasury. Nothing is
+ * destroyed: the MIND changes holder, and the money ledger still closes.
+ */
+function redeemLp(w, share) {
+	const f = Math.max(0, Math.min(1, share));
+	if (!(f > 0)) return;
+	const city = w.cityK;
+	let R = 0;
+	for (const p of w.pools)
+		for (let i = 0; i < p.x.length; i++) {
+			const x = p.x[i] * f;
+			if (!(x > 0)) continue;
+			p.x[i] -= x;
+			w.tre[city * M + p.members[i]] += x;
+			R += x * w.P[p.members[i]];
+		}
+	w.lp.redeemedR += R;
+	w.lp.redemptions.push({ day: w.day, share: f, R });
+	w.today.lpRedeemed = true;
+	w.events.push({ day: w.day, kind: 'mip', what: `the City COOP redeemed ${(f * 100).toFixed(1)} % of its LP tokens by a passed MIP` });
+}
+
+/**
+ * Every person's HEARTS become MIND of the COOPs their Aven chose (Law 4): 1 HEART invested makes 1 MIND of the COOP,
+ * 0.5 of it to the person, 0.4 to the COOP's treasury and 0.1 to the city's pools (the pools' part, `poolPart`; round 5
+ * and before put 0.05 there, a tenth of the treasury's half). One token in three places. No HEART stays anywhere.
  */
 function invest(w) {
 	const H = w.cfg.heartsPerDay, N = w.N;
+	const pp = w.cfg.poolPart ?? POOL_SHARE;
 	const alive = [];
 	for (const co of w.coops) if (co.alive) alive.push(co.k);
 	const toCoop = new Float64Array(M), toPeople = new Float64Array(M);
@@ -393,38 +444,44 @@ function invest(w) {
 		w.founders = w.founders.filter((f) => f.until > w.day && w.coops[f.k]?.alive);
 		for (const f of w.founders) if (f.i < N) founder[f.i] = f.k;
 	}
+	// (round 6) a newcomer's first days: its Aven invests its HEARTS in the sellers of its basics (./ramp.js arrive)
+	const nb = w.newcomerAlloc;
 	for (let i = 0; i < N; i++) {
 		const b = i * M;
 		if (founder[i] >= 0) {
-			w.hold[b + founder[i]] += H / 2;
-			toPeople[founder[i]] += H / 2;
+			w.hold[b + founder[i]] += H * INVESTOR_SHARE;
+			toPeople[founder[i]] += H * INVESTOR_SHARE;
 			toCoop[founder[i]] += H;
-			w.heartsR[i] = (H / 2) * w.P[founder[i]];
+			w.heartsR[i] = H * INVESTOR_SHARE * w.P[founder[i]];
 			continue;
 		}
+		const al = nb && nb.has(i) ? nb.get(i).alloc : null;
+		const A = al ?? w.alloc;
+		const ab = al ? 0 : b;
 		let s = 0;
-		for (const k of alive) if (w.alloc[b + k] > 0) s += w.alloc[b + k];
+		for (const k of alive) if (A[ab + k] > 0) s += A[ab + k];
 		if (!(s > 0)) {
 			// an Aven with nowhere to invest falls back on the City COOP
-			w.hold[b + w.cityK] += H / 2;
-			toPeople[w.cityK] += H / 2;
+			w.hold[b + w.cityK] += H * INVESTOR_SHARE;
+			toPeople[w.cityK] += H * INVESTOR_SHARE;
 			toCoop[w.cityK] += H;
-			w.heartsR[i] = (H / 2) * w.P[w.cityK];
+			w.heartsR[i] = H * INVESTOR_SHARE * w.P[w.cityK];
 			continue;
 		}
 		let hr = 0;
 		for (const k of alive) {
-			const a = w.alloc[b + k];
+			const a = A[ab + k];
 			if (!(a > 0)) continue;
 			const x = (H * a) / s;
-			w.hold[b + k] += x / 2;
-			toPeople[k] += x / 2;
+			w.hold[b + k] += x * INVESTOR_SHARE;
+			toPeople[k] += x * INVESTOR_SHARE;
 			toCoop[k] += x;
-			hr += (x / 2) * w.P[k];
+			hr += x * INVESTOR_SHARE * w.P[k];
 		}
 		w.heartsR[i] = hr;
 	}
-	// without the bootstrap the pools get their tenth in weekly slices (paper §9.3, world model 4.3 step 11): they are
+	if (nb) for (const [i, e] of nb) if (w.day >= e.until) nb.delete(i);
+	// without the bootstrap the pools get their part in weekly slices (paper §9.3, world model 4.3 step 11): they are
 	// empty on day 0 and fill on day 7; with it they are seeded the day the HEARTS convert
 	const queue = !w.cfg.bootstrap;
 	if (queue && w.day > 0 && w.day % 7 === 0)
@@ -436,18 +493,17 @@ function invest(w) {
 		w.ledger.created[k] += x;
 		const co = w.coops[k];
 		co.heartsToday += x;
-		const half = x / 2;
-		const pool = half * POOL_SHARE;
+		const pool = x * pp;
 		const tre0 = w.tre[k * M + k];
-		w.tre[k * M + k] += half - pool;
+		w.tre[k * M + k] += x * (1 - INVESTOR_SHARE) - pool;
 		let pooled = pool;
 		if (queue) w.poolQueue[k] += pool;
 		else if (!poolInflow(w, k, pool)) (w.tre[k * M + k] += pool), (pooled = 0), w.laws.poolMissed++;
-		// the law, checked: people got half of the MIND these HEARTS made, the treasury and the pools the other half,
-		// a tenth of that half into the pools
-		lawCheck(w, 'invest: people half', toPeople[k], half);
-		lawCheck(w, 'invest: treasury + pools half', w.tre[k * M + k] - tre0 + pooled, half, Math.abs(tre0));
-		if (pooled > 0) lawCheck(w, 'invest: pools tenth', pooled, half * POOL_SHARE);
+		// the law, checked: the investors got 0.5 of the MIND these HEARTS made, the treasury and the pools the rest,
+		// the pools their part (0.1 of each HEART)
+		lawCheck(w, 'invest: the investor’s 0.5', toPeople[k], x * INVESTOR_SHARE);
+		lawCheck(w, 'invest: the treasury’s and the pools’ parts', w.tre[k * M + k] - tre0 + pooled, x * (1 - INVESTOR_SHARE), Math.abs(tre0));
+		if (pooled > 0) lawCheck(w, 'invest: the pools’ part', pooled, x * pp);
 		R += x * w.P[k];
 	}
 	w.today.investR = R;
@@ -578,7 +634,7 @@ function clearPeople(w) {
 		for (const g of PEOPLE_GOODS) w.q[o + g] = Math.min(w.order[o + g], w.gcap[g]) * w.gfrac[g];
 	}
 	// Aven service short (the inference binds): the Avens' work hours for the COOPs are served before anyone's help
-	// (the COOPs' running items keep the village going), the help shares the rest in proportion to what was asked
+	// (the COOPs' running proposals keep the village going), the help shares the rest in proportion to what was asked
 	const wo = w.workOrd;
 	if (!w.workH || w.workH.length !== w.Nmax) w.workH = new Float64Array(w.Nmax);
 	w.workH.fill(0);
@@ -655,7 +711,7 @@ function affordPeople(w) {
 			basicC += qb * pe[b];
 			extraC += (q - qb) * pe[b];
 		}
-		// the Aven's work hours for the COOPs cost its person nothing up front: the work item's pay settles their Aven
+		// the Aven's work hours for the COOPs cost its person nothing up front: the work proposal's pay settles their Aven
 		// service at delivery (./coops.js workBook), so they are never cut for what the person holds
 		const wk = w.workH ? w.workH[i] : 0;
 		extraC += w.q[o + GOODS_] * pe[GOODS_] + w.q[o + SPRING] * pe[SPRING] + (w.q[o + COMPUTE] - wk) * pe[COMPUTE];
@@ -736,6 +792,7 @@ function affordCoops(w) {
 			const f = Math.max(0, budget / billB);
 			co.own = f;
 			co.eReq[CLASS.basics] *= f;
+			if (co.aiKwhB) co.aiKwhB *= f;
 			co.heatReq *= f;
 			co.heatRun *= f;
 		}
@@ -744,10 +801,12 @@ function affordCoops(w) {
 		co.ownPaid = co.own;
 		// a COOP whose running hours the personal Avens did not deliver yesterday (Aven service short: ./coops.js
 		// workItems) runs its plants that much less today: it delivers and makes that share less
-		const wf = w.runFillY ?? 1;
+		const wf = w.cfg.basicsWork ? co.runFillY ?? w.runFillY ?? 1 : w.runFillY ?? 1;
 		if (wf < 1) {
 			co.own *= wf;
-			co.eReq[CLASS.basics] *= wf;
+			// (the inference for the basics' running hours is the Avens', not cut: ./ai.js aiLoads)
+			const aiB = co.aiKwhB ?? 0;
+			co.eReq[CLASS.basics] = (co.eReq[CLASS.basics] - aiB) * wf + aiB;
 			co.heatReq *= wf;
 			co.heatRun *= wf;
 			// (the works' electricity with their plans; the accelerators' own is the Avens' inference and is not cut)
@@ -755,7 +814,7 @@ function affordCoops(w) {
 			co.eReq[CLASS.running] = (co.eReq[CLASS.running] - aiKwh) * wf + aiKwh;
 			for (const pl of co.plants) (pl.plan = (pl.plan ?? 0) * wf), (pl.upkeepPlan = (pl.upkeepPlan ?? 0) * wf);
 		}
-		// today's running items next (they are paid at the end of the day)
+		// today's running proposals next (they are paid at the end of the day)
 		let runH = co.inf?.rackH ?? 0;
 		for (const pl of co.plants) runH += runHours(w, pl);
 		budget -= runH * w.c.rateR;
@@ -774,13 +833,13 @@ function affordCoops(w) {
 		// materials: the works' inputs and upkeep first, then the building project
 		let matP = 0, matJ = 0;
 		for (const g of MATERIALS) (matP += w.b2bProd[g * M + co.k] * pMat[g]), (matJ += w.b2bProj[g * M + co.k] * pMat[g]);
-		// a seller of a basic keeps a week of its basics' energy and its running items in hand before it buys materials
+		// a seller of a basic keeps a week of its basics' energy and its running proposals in hand before it buys materials
 		// (its upkeep waits a few days and its plant wears a little; its beds and water do not stop)
 		const keepB = BASICS.includes(co.good) ? 7 * (billB * co.own + runH * w.c.rateR) : 0;
 		const fp = matP > 0 ? Math.max(0, Math.min(1, (budget - keepB) / matP)) : 1;
 		budget -= matP * fp;
 		// a building project never takes the last month of running costs (a COOP that builds stays able to pay its
-		// running items)
+		// running proposals)
 		budget -= 30 * co.costREma;
 		const fj = matJ > 0 ? Math.max(0, Math.min(1, budget / matJ)) : 1;
 		budget -= matJ * fj;
@@ -898,14 +957,25 @@ function deliver(w, fill) {
 			}
 		}
 	}
+	// (round 6, cfg.basicsWork) the Aven hours that run the basics' plants are served with the basics (./ai.js aiLoads
+	// dispatched their inference in the basics class): they are cut at the basics' fill, the rest at the running fill
+	let fw = fr;
+	if (w.cfg.basicsWork && w.workH) {
+		let WHd = 0;
+		for (let i = 0; i < N; i++) WHd += w.workH[i];
+		const hB = Math.min(WHd, w.workNeed?.runB ?? 0);
+		if (WHd > 0) fw = (hB * fa + (WHd - hB) * fr) / WHd;
+	}
+	w.today.workFill = fw;
 	for (let i = 0; i < N; i++) {
 		const o = i * G;
 		if (fa < 1) w.q[o + WATER] *= fa;
 		if (fb < 1) w.q[o + BED] *= fb;
 		if (fs < 1) w.q[o + SPRING] *= fs;
-		if (fr < 1) {
-			w.q[o + COMPUTE] *= fr;
-			if (w.workH) w.workH[i] *= fr;
+		if (fr < 1 || fw < 1) {
+			const wk = w.workH ? w.workH[i] : 0;
+			w.q[o + COMPUTE] = (w.q[o + COMPUTE] - wk) * fr + wk * fw;
+			if (w.workH) w.workH[i] *= fw;
 		}
 		w.q[o + ENERGY] = w.basicEnergy[i] * fa + w.extraEnergy[i] * fr;
 	}
@@ -1044,7 +1114,7 @@ function settle(w, fill) {
 		}
 		if (list.length) unit.push(g, list);
 	}
-	// the Avens' work hours for the COOPs: their Aven service is settled from the work items' pay (./coops.js
+	// the Avens' work hours for the COOPs: their Aven service is settled from the work proposals' pay (./coops.js
 	// workBook); a person pays from its holdings only its help, and the rare part of its hours' bill a day's pay fell
 	// short of
 	let unitAI = null, unitR = 0;
@@ -1126,7 +1196,8 @@ function settle(w, fill) {
 		let restR = 0, costR = 0;
 		// electricity: its classes as served, and the heat pumps for the heat geothermal did not cover
 		// (the basics class in its two parts: the domes' climate and the heat pumps second, the rest first)
-		let kwh = co.eReq[CLASS.basics] * (co.good === BED ? t.fillB : t.fillA);
+		const aiB = co.aiKwhB ?? 0;
+		let kwh = (co.eReq[CLASS.basics] - aiB) * (co.good === BED ? t.fillB : t.fillA) + aiB * t.fillA;
 		for (let cl = 1; cl < 4; cl++) kwh += co.eReq[cl] * fill[cl];
 		kwh += co.exportUp * t.fillExportUp + co.exportBuild * t.fillExportBuild;
 		const geoB = heatB > 0 ? (co.heatReq / heatB) * hb : 0;
@@ -1169,7 +1240,7 @@ function settle(w, fill) {
 		}
 		// inference from the hardware owners (an AI COOP), and AIX's Aven service for export (the MaiaCity COOP): a
 		// real delivery, each seller paid in its own MIND (./ai.js)
-		// the Aven service its work items used today, settled from their pay (./coops.js workBook): its share of the
+		// the Aven service its work proposals used today, settled from their pay (./coops.js workBook): its share of the
 		// covered bills, in proportion to what it pays for the work, to each seller of the hour in its own MIND
 		const wR = (co.workRunR ?? 0) + (co.workPropR ?? 0);
 		if (unitAI && unitR > 0 && book.cov > 0 && wR > 0) {
@@ -1208,15 +1279,20 @@ function settle(w, fill) {
 		co.b2bToday = costR + (co.passToday ?? 0);
 	}
 	t.salesB2BR = b2bR;
-	aiSettle(w, fill[CLASS.running]);
+	// (with cfg.basicsWork the inference for the basics' running hours was dispatched with the basics: ./ai.js aiLoads)
+	aiSettle(w, w.cfg.basicsWork ? (w.aiBasicsShare ?? 0) * (w.today.fillA ?? 1) + (1 - (w.aiBasicsShare ?? 0)) * fill[CLASS.running] : fill[CLASS.running]);
 	settleSwaps(w);
-	// Law 5 pays holders and the seller's own treasury only: the pools must be untouched by it
+	// Law 5 pays every holder but the seller's own treasury (round 6: the pools too, by their reserves; with
+	// law5Pools false, the old rule, the pools must be untouched by it): the pools gain exactly their dividends
 	let pools0 = 0;
 	for (const p of w.pools) for (let i = 0; i < p.x.length; i++) pools0 += p.x[i];
-	law5(w);
+	for (let k = 0; k < M; k++) pools0 += w.poolQueue[k];
+	const toPools = law5(w);
 	let pools1 = 0;
 	for (const p of w.pools) for (let i = 0; i < p.x.length; i++) pools1 += p.x[i];
-	lawCheck(w, 'Law 5: pools untouched', pools1, pools0, 1);
+	for (let k = 0; k < M; k++) pools1 += w.poolQueue[k];
+	if (w.cfg.law5Pools === false) lawCheck(w, 'Law 5: pools untouched (the old rule)', pools1, pools0, 1);
+	else lawCheck(w, 'Law 5: the pools got their share', pools1 - pools0, toPools, Math.max(1, pools0) * 1e-6);
 	t.unroutedR = w.unroutedR;
 	// a payment no pool could route went back to its payer: the seller was not paid for that delivery
 	if (w.unroutedR > 0) {
@@ -1377,6 +1453,76 @@ function slowLoop(w) {
 	for (let j = 0; j < w.N * M; j++) w.spendMix[j] *= keep;
 	updateAlloc(w, dt);
 	rebalance(w, dt);
+	if (w.cfg.holdingFloor > 0) holdingFloor(w, w.cfg.holdingFloor);
+}
+
+/**
+ * (round 6, B1, an Aven default, cfg.holdingFloor days; no law changed) every Aven keeps at least that many days of
+ * its person's basic bundle in the own MIND of the COOPs that sell the basics (food, water, energy, the bed), in the
+ * bundle's shares, each good's sellers by what they sold lately, so its person can always pay them directly, without
+ * the pools. An Aven below its floor swaps up to a seventh of the gap a day out of the MIND it holds that earns least
+ * (the payment order's yields), through the pools; the swaps of all Avens go together, and each gets what its part
+ * bought.
+ */
+function holdingFloor(w, days) {
+	const N = w.N, P = w.P, need = w.c.need;
+	const basicK = new Uint8Array(M), tgt = new Float64Array(M);
+	const spend = [need[0] * w.pbar[FOOD], need[1] * w.pbar[WATER], need[2] * w.pbar[ENERGY], need[3] * w.pbar[BED]];
+	let all = 0;
+	for (const s of spend) all += s;
+	if (!(all > 0)) return;
+	for (const [b, g] of [[0, FOOD], [1, WATER], [2, ENERGY], [3, BED]]) {
+		let sold = 0;
+		const ss = (w.sellers[g] ?? []).filter((co) => co.alive && w.liquid[co.k] && P[co.k] > 0);
+		for (const co of ss) sold += Math.max(1e-9, co.soldEma ?? 0);
+		for (const co of ss) (basicK[co.k] = 1), (tgt[co.k] += ((spend[b] / all) * Math.max(1e-9, co.soldEma ?? 0)) / sold);
+	}
+	const y = w.yieldDay ?? new Float64Array(M);
+	const order = w.ks.filter((k) => w.coops[k]?.alive && w.liquid[k] && P[k] > 0 && !basicK[k]).sort((a, b) => y[a] - y[b] || a - b);
+	if (!order.length) return;
+	const sellA = new Float64Array(M), part = [];
+	for (let i = 0; i < N; i++) {
+		const b = i * M;
+		let have = 0;
+		for (const k of w.ks) if (basicK[k] && w.hold[b + k] > 0) have += w.hold[b + k] * P[k];
+		let gap = (days * (w.basicCost[i] || all) - have) / 7;
+		if (!(gap > 1e-9)) continue;
+		const take = new Float64Array(M);
+		for (const k of order) {
+			if (!(gap > 0)) break;
+			const v = w.hold[b + k] * P[k];
+			if (!(v > 0)) continue;
+			const x = Math.min(v, gap);
+			take[k] = x / P[k];
+			sellA[k] += x / P[k];
+			gap -= x;
+		}
+		part.push([i, take]);
+	}
+	if (!part.length) return;
+	let soldR = 0;
+	const out = new Float64Array(M * M), back = new Float64Array(M);
+	for (let j = 0; j < M; j++) {
+		if (!(sellA[j] > 0)) continue;
+		soldR += sellA[j] * P[j];
+		for (let k = 0; k < M; k++) {
+			if (!(tgt[k] > 0)) continue;
+			const r = swap(w, j, k, sellA[j] * tgt[k]);
+			out[j * M + k] += r.out;
+			back[j] += r.back;
+		}
+	}
+	for (const [i, take] of part) {
+		const b = i * M;
+		for (let j = 0; j < M; j++) {
+			if (!(take[j] > 0)) continue;
+			const sh = take[j] / sellA[j];
+			w.hold[b + j] -= take[j];
+			w.hold[b + j] += back[j] * sh;
+			for (let k = 0; k < M; k++) if (tgt[k] > 0) w.hold[b + k] += out[j * M + k] * sh;
+		}
+	}
+	w.today.floorR = soldR;
 }
 
 /**
@@ -1485,7 +1631,7 @@ function payRent(w, dt) {
 }
 
 /**
- * Dome rent (on the slow loop, with the ground rent): each tenant pays the settlement COOPs whose domes it works in, in
+ * Dome rent (on the slow loop, with the ground rent): each tenant pays the Tribe COOPs whose domes it works in, in
  * their own MIND, for the m² it rents at the landlord's rate (./coops.js hallRents). It is a sale for the landlord, so
  * Law 5 pays the landlord's holders λ of it. Like the ground rent, a tenant pays at most half its treasury a week;
  * what it cannot pay is owed (arrears) and paid first next time. What each landlord received is kept as a 30-day
@@ -1662,7 +1808,7 @@ function endOfDay(w) {
 		if (hd > 0 && hiD > 0) co.heatDomeUnitR = (co.heatDomeUnitR ?? hd / hiD) + (hd / hiD - (co.heatDomeUnitR ?? hd / hiD)) / 30;
 		if (hp > 0 && hiP > 0) co.heatPondUnitR = (co.heatPondUnitR ?? hp / hiP) + (hp / hiP - (co.heatPondUnitR ?? hp / hiP)) / 30;
 		co.heatNeed = null;
-		// insolvent today: it could not pay all its running items, its bills or its inputs. 30 such days in a row
+		// insolvent today: it could not pay all its running proposals, its bills or its inputs. 30 such days in a row
 		// and it goes into receivership (./coops.js receiverships)
 		co.lowDays = co.unpaidH > 1e-9 || co.unpaidBillR > 1e-9 * Math.max(1, co.costREma) || co.billFail ? co.lowDays + 1 : 0;
 		// what it delivered today at the year's traded prices (to people and to other COOPs): the real output the Avens'
@@ -1676,12 +1822,14 @@ function endOfDay(w) {
 		co.b2bEma = (co.b2bEma ?? 0) + ((co.b2bToday ?? 0) - (co.b2bEma ?? 0)) / 30;
 		co.vaShare = co.revEma > 0 ? Math.max(0.05, Math.min(1, 1 - co.b2bEma / co.revEma)) : 1;
 		co.salesShareR += (co.sold * (w.pYear ?? w.c.p0g)[co.good] * co.vaShare - co.salesShareR) / 30;
-		co.divEma = (co.divEma ?? 0) + (co.divR - (co.divEma ?? 0)) / 30;
+		// (the yield the Avens read is what the holders outside the pools got, over what they hold: ./engine.js payOrder,
+		// rebalance; with Law 5 paying the pools too (round 6) the pools' part is not theirs)
+		co.divEma = (co.divEma ?? 0) + ((co.divHoldR ?? co.divR) - (co.divEma ?? 0)) / 30;
 		co.idleDays = co.sold <= 0 && co.heartsToday <= 0 ? co.idleDays + 1 : 0;
 		// the audit: days in a row its output stood under a quarter of what its plants are rated for
 		co.auditLow = co.ratedDay > 0 && co.capDay < 0.25 * co.ratedDay ? (co.auditLow ?? 0) + 1 : 0;
 		// how much of its plant the COOP used today: what its works made, what its forest let be picked, what it sold of
-		// energy, water, beds and spring time; running items follow it (./coops.js runHours)
+		// energy, water, beds and spring time; running proposals follow it (./coops.js runHours)
 		let u;
 		if (co.good === ENERGY) u = w.eAvail[co.k] > 0 ? w.eSold[co.k] / w.eAvail[co.k] : 0;
 		else if (co.good === FOOD || MATERIALS.includes(co.good) || co.good === GOODS_) u = co.capDay > 0 ? co.made / co.capDay : 0;
@@ -1719,6 +1867,16 @@ function checkLedgers(w) {
 	}
 	L.prev = tot;
 	L.checks++;
+	// the pool invariant: no basket's product of reserves fell since the morning's melt (a redemption by MIP excepted)
+	if (w.poolLogK && !t.lpRedeemed) {
+		const PL = w.poolLedger;
+		for (let i = 0; i < w.poolLogK.length; i++) {
+			const a = w.poolLogK[i], b = logProduct(w.pools[i]);
+			if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+			PL.checks++;
+			if (b < a - 1e-9 * Math.max(1, Math.abs(a))) leak(w, PL.breaches, `pool ${i} (${[...w.pools[i].members].map((k) => w.coops[k]?.id ?? k).join(', ')}): invariant fell, log ${b} vs ${a}`);
+		}
+	}
 	// matter
 	const now = stockTotals(w), prev = w.matter.prevStock;
 	for (let g = 0; g < G; g++) {
@@ -1881,6 +2039,7 @@ export function getFlows(w) {
 		salesBetweenCoopsR: t.salesB2BR,
 		law5ToPeopleR: t.divPeopleR,
 		law5ToTreasuriesR: t.divTreR,
+		law5ToPoolsR: t.divPoolsR ?? 0,
 		runningItemsR: t.runningR,
 		workProposalsR: t.proposalsR,
 		rdR: t.rdR,
@@ -1928,6 +2087,10 @@ export function getLedger(w) {
 		lawMaxRel: w.laws.maxRel,
 		lawBreaches: w.laws.breaches.slice(),
 		poolMissed: w.laws.poolMissed,
+		poolChecks: w.poolLedger?.checks ?? 0,
+		poolBreaches: (w.poolLedger?.breaches ?? []).slice(),
+		lpOwner: w.coops[w.lp?.owner ?? w.cityK]?.id ?? 'CITY',
+		lpRedeemedR: w.lp?.redeemedR ?? 0,
 		coopLowDays: w.coopLowDays,
 		meltIndex: w.meltIndex
 	};
