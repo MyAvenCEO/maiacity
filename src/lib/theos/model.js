@@ -6,7 +6,8 @@
 export const UIA_DAY = 24;
 /** the hardcoded demurrage rate, a year */
 export const RATE = 0.07;
-/** Law 5, every sale pays its owners: the default share of every sale that goes at once to the seller's holders */
+/** Law 5, every sale pays its owners: the share of every sale, the same for every COOP, that goes at once to the
+ *  seller's holders. Fixed like every law; it changes only by the rule-change path (Appendix F). */
 export const DIVIDEND_SHARE = 0.2;
 /** the liquidity rule (Law 4, Section 6): each HEART invested into a COOP makes 1 MIND of that COOP: 0.5 to the
  *  investor, 0.4 to the COOP's treasury, 0.1 to the city's pools (the City COOP holds their LP tokens).

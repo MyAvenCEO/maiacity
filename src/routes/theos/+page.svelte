@@ -224,7 +224,7 @@
 			account: the average MIND is worth 1 HEART.
 		</p>
 		<p>
-			Every sale pays the COOP's owners. A fixed share of every sale, by default {pc(DIVIDEND_SHARE)}, goes at once to
+			Every sale pays the COOP's owners. {pc(DIVIDEND_SHARE)} of every sale goes at once to
 			everyone who holds the COOP's MIND. So a COOP pays its owners best by selling a lot to many people. Ownership
 			pays: holding MIND brings more MIND.
 		</p>
@@ -607,9 +607,8 @@
 		<div class="law">
 			<p class="lawname">Law 5 · Every sale pays its owners</p>
 			<p>
-				A fixed share of every sale goes to the COOP's owners at the moment of sale. By default it is {pc(DIVIDEND_SHARE)}. It is paid
-				in the COOP's own MIND, to everyone who holds that MIND, in proportion to what each one holds. A COOP can change
-				its share by proposal, within a limit that the protocol sets.
+				{pc(DIVIDEND_SHARE)} of every sale goes to the COOP's owners at the moment of sale. The share is the same for every COOP. It is paid
+				in the COOP's own MIND, to everyone who holds that MIND, in proportion to what each one holds.
 			</p>
 		</div>
 		<p>
@@ -1477,7 +1476,7 @@
 			<li><strong>Pure investment.</strong> HEARTS earn no interest. They buy nothing and pay for nothing. Their owner can only invest them.</li>
 			<li><strong>Open cooperative creation.</strong> Anyone can found a COOP, at any time, without permission, from HEARTS and at least three partner COOPs.</li>
 			<li><strong>Every COOP has its own MIND, created by investing HEARTS.</strong> One HEART converts into one MIND, and half goes to the investor: {RULE}.</li>
-			<li><strong>Every sale pays its owners.</strong> A fixed share of every sale, by default {pc(DIVIDEND_SHARE)}, goes at once to everyone who holds the COOP's MIND, in proportion to what each one holds.</li>
+			<li><strong>Every sale pays its owners.</strong> {pc(DIVIDEND_SHARE)} of every sale goes at once to everyone who holds the COOP's MIND, in proportion to what each one holds.</li>
 		</ol>
 		<p>
 			On top of the laws, each part of the machine has a clear job. Table {TAB.parts} lists the parts. MIND is the one part that
@@ -1493,7 +1492,7 @@
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, {UIA_DAY} a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
 					<tr><td>MIND</td><td>Ownership of a COOP and the means to use what it makes; people hold it as ownership and spend it to use, the COOP holds it as working capital</td><td>Every invested HEART, one for one: {RULE}</td><td>Spent on what the COOP makes, and the seller always receives its own MIND; paid out again by COOPs for resources, services and Aven work items; or melted</td></tr>
 					<tr><td>Treasury</td><td>A COOP's working capital: its own MIND and other COOPs' MIND, never HEARTS</td><td>The treasury's part of each new MIND, {fmt(TREASURY_SHARE, 1)} of each HEART, and {pc(1 - DIVIDEND_SHARE)} of every sale</td><td>Inputs, building, ground rent and Aven work items; a reserve of about {SIM.reserveMonths} months; the rest paid out for work proposals; melt</td></tr>
-					<tr><td>Dividends</td><td>Pay the owners of a COOP when it is useful (Law 5)</td><td>A fixed share of every sale, by default {pc(DIVIDEND_SHARE)}, at the moment of sale</td><td>Everyone who holds the seller's MIND, people and other COOPs' treasuries, in proportion to what each one holds; with what people hold, how they live without working</td></tr>
+					<tr><td>Dividends</td><td>Pay the owners of a COOP when it is useful (Law 5)</td><td>{pc(DIVIDEND_SHARE)} of every sale, the same for every COOP, at the moment of sale</td><td>Everyone who holds the seller's MIND, people and other COOPs' treasuries, in proportion to what each one holds; with what people hold, how they live without working</td></tr>
 					<tr><td>Prices</td><td>Tell COOPs what to make and Avens where to buy</td><td>Each COOP, every day, in its own MIND: up when sold out, down when idle; no caps</td><td>Avens, which show them in HEARTS and in days of living (Section 6.3)</td></tr>
 					<tr><td>Liquidity pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; the City COOP holds their LP tokens</td><td>The pool's part of each new MIND, {fmt(POOL_SHARE, 1)} of each HEART, automatically, in baskets of 4 to 8 MINDs</td><td>No COOP or person withdraws; the City COOP redeems LP tokens only after a vote of its members, into its own treasury. MIND leaves a pool only through trades, by melting, when its COOP fails and its MIND is retired, or by such a redemption</td></tr>
 					<tr><td>Demurrage</td><td>The only way money leaves: {pc(RATE)} a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
@@ -1611,7 +1610,7 @@
 			<Tex tex={String.raw`a/(r - \mu)`} />. Dividends also widen the spread. At a spread of returns of 20 %, a lasting
 			return of {pct((RATE / 2) * 100, 1)} a year would raise the resting Gini index of ({EQ.gini}) from
 			{fmt(giniRest(0.2), 2)} to {fmt(giniRest(0.2, RATE, RATE / 2), 2)}. So Law 5 is safe only while the lasting return
-			stays below the melt. At the default share of {pc(DIVIDEND_SHARE)}, the yield alone stays below the melt while
+			stays below the melt. At {pc(DIVIDEND_SHARE)}, the yield alone stays below the melt while
 			yearly sales stay below {pc(salesBound())} of the MIND that others hold.
 		</p>
 		<p>
@@ -2344,7 +2343,7 @@
 				<tbody>
 					<tr><td>Allocation</td><td>Every agent gets {UIA_DAY} personal HEARTS a day, which it can only invest</td><td>Every person with a verified identity gets {UIA_DAY} personal HEARTS a day: one stream per human</td></tr>
 					<tr><td>COOPs</td><td>Agents found COOPs and invest HEARTS, which convert into MIND</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
-					<tr><td>Markets</td><td>Baskets of MINDs, fed by the pool's part of every new MIND; the City COOP holds their LP tokens. {pc(DIVIDEND_SHARE)} of every sale goes at once to the holders of the seller's MIND</td><td>Avens route every purchase through the pools, and the seller gets its own MIND. Each COOP can change its dividend share, within the protocol's limit</td></tr>
+					<tr><td>Markets</td><td>Baskets of MINDs, fed by the pool's part of every new MIND; the City COOP holds their LP tokens. {pc(DIVIDEND_SHARE)} of every sale goes at once to the holders of the seller's MIND</td><td>Avens route every purchase through the pools, and the seller gets its own MIND. {pc(DIVIDEND_SHARE)} of every sale, the same for every COOP</td></tr>
 					<tr><td>Prices</td><td>Free, every day, with two rivals for each basic</td><td>The same</td></tr>
 					<tr><td>Land</td><td>One City COOP holds the map; agents lease plots and pay ground rent</td><td>The City COOP holds all land; every citizen holds one equal share; builders lease plots like an Erbbaurecht</td></tr>
 					<tr><td>Energy</td><td>Every recipe costs energy; growth comes only from surplus energy</td><td>Measured on the village's meters</td></tr>
@@ -2809,7 +2808,7 @@
 					<tr><td><Tex tex={String.raw`\sigma,\ dZ,\ \alpha`} /></td><td>The spread of returns between people, random noise, and the shape of the resting spread</td><td>9.3</td></tr>
 					<tr><td><Tex tex={String.raw`G,\ G_0,\ G_{\infty}`} /></td><td>The Gini index of ownership: over time, at the start, and at rest</td><td>9.3</td></tr>
 					<tr><td><Tex tex={String.raw`s_k,\ v_k`} /></td><td>The supply of MIND <Tex tex="k" />, and its value in HEARTS, the unit of account: its pool price over the supply-weighted average price ({EQ.unit})</td><td>6.3</td></tr>
-					<tr><td><Tex tex={String.raw`\lambda`} /></td><td>Law 5's share of every sale, {pc(DIVIDEND_SHARE)} by default</td><td>10.2</td></tr>
+					<tr><td><Tex tex={String.raw`\lambda`} /></td><td>Law 5's share of every sale, {pc(DIVIDEND_SHARE)}</td><td>10.2</td></tr>
 					<tr><td><Tex tex={String.raw`\omega`} /></td><td>The ownership that a person's investing creates for them: {fmt(INVESTOR_SHARE, 1)} MIND for each HEART</td><td>10.2</td></tr>
 					<tr><td><Tex tex="T_i" /></td><td>The years a holding would pay the basic bundle with nothing flowing in</td><td>10.2</td></tr>
 					<tr><td><Tex tex="p_b" /></td><td>The cost of a day's basic bundle</td><td>10.2</td></tr>
@@ -2836,7 +2835,7 @@
 			<dt>Conversion</dt>
 			<dd>The moment an invested HEART becomes one MIND of its COOP, and half goes to the investor: {RULE}. This is the liquidity rule of Law 4.</dd>
 			<dt>Dividend</dt>
-			<dd>Law 5: a fixed share of every sale, by default {pc(DIVIDEND_SHARE)}. It goes at once to everyone who holds the seller's MIND, in proportion to their holding. It is not Laborde's universal dividend of Section 3, which is new money.</dd>
+			<dd>Law 5: {pc(DIVIDEND_SHARE)} of every sale, the same for every COOP. It goes at once to everyone who holds the seller's MIND, in proportion to their holding. It is not Laborde's universal dividend of Section 3, which is new money.</dd>
 			<dt>Aven work item</dt>
 			<dd>A piece of work that a person's Aven proposes and delivers to a COOP, with the COOP's machines. The COOP pays the Aven's human in its own MIND. No human labour is paid. A <em>running item</em> keeps a COOP going, such as a daily check, and the COOP pays it from its running costs. A <em>work proposal</em> is new work, such as a repair plan. If the members accept it, the treasury pays it from what it holds above its reserve.</dd>
 			<dt>Payout rule</dt>
@@ -3014,7 +3013,7 @@
 			theOS has three layers of rules, and each one changes in a different way. This appendix proposes how.
 		</p>
 		<p>
-			<strong>The laws.</strong> The five laws and the rate are fixed. Nobody holds a key that changes them. A change to
+			<strong>The laws.</strong> The five laws, the melt rate and Law 5's share of {pc(DIVIDEND_SHARE)} are fixed. Nobody holds a key that changes them. A change to
 			a law would be a new protocol, and each person would choose whether to move to it. In the test city it is different:
 			every rule is a parameter, anyone can propose a change, and the change runs in a new world.
 		</p>
@@ -3029,9 +3028,8 @@
 		</p>
 		<p>
 			<strong>Details inside the laws.</strong> Some rules work inside the laws. Among them are the reserve target of
-			about {SIM.reserveMonths} months, the founding signal for rivals (Law 3 entry itself is always open), and the Law 5
-			share and its limit. Basket
-			admission, how the HEART index reads pool prices (Section 6.3) and the identity system are rules of this kind too. The limit matters: shares of {pc(law35.share)} and {pc(V('law50').share)} failed the checks of Proposition 3. These
+			about {SIM.reserveMonths} months and the founding signal for rivals (Law 3 entry itself is always open). Basket
+			admission, how the HEART index reads pool prices (Section 6.3) and the identity system are rules of this kind too. These
 			rules change by the same process as the code, and the test city tests each change first.
 		</p>
 		<p>
