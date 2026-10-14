@@ -2373,14 +2373,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 
 	/** walking freely, once the story is told (Samuel 2026-10-14): the camera behind the player, following them; a tap
 	 *  on the ground walks them there, the arrow keys (or WASD) walk them on, a drag still turns the view round them */
-	let roam = false, roamTo = null;
+	let roam = false, roamTo = [];
 	const keys = new Set();
 	const KEYS = { ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
 	const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '') || e.target?.isContentEditable;
 	const onKey = (e) => {
 		if (!roam || !KEYS[e.code] || typing(e)) return;
 		e.preventDefault();
-		if (e.type === 'keydown') (keys.add(e.code), (roamTo = null));
+		if (e.type === 'keydown') (keys.add(e.code), (roamTo = []));
 		else keys.delete(e.code);
 	};
 	window.addEventListener('keydown', onKey);
@@ -2389,7 +2389,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const me = people[stage.me];
 		if (!me || (on && busy)) return false;
 		roam = !!on;
-		roamTo = null;
+		roamTo = [];
+		inTent = false;
 		keys.clear();
 		errand = null;
 		if (roam) {
@@ -2410,8 +2411,82 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 		return roam;
 	}
-	/** the free walk, a frame of it: on along the keys (ahead is away from the camera) or towards where they tapped, at
-	 *  their walking pace; the camera carried along with them */
+	/** the tent walked into (Samuel 2026-10-14): its wall a ring crossed only at its door (+z), the things in it and
+	 *  round it stood clear of; all in the tent's own frame, as the tent gives them (userData.walk: { r, door,
+	 *  colliders }; a tent without it is not walked into or round) */
+	const BODY = 0.25; // how far a walker keeps from a wall or a thing (m)
+	const tentWalk = () => (home.visible && home.userData.walk) || null;
+	const inside = (w, p) => Math.hypot(p.x, p.z) < w.r;
+	/** where a step from `from` to `to` (world) may end: through the door, slid along the wall, round the things */
+	function walkable(from, to) {
+		const w = tentWalk();
+		if (!w) return to;
+		home.updateMatrixWorld(true);
+		const a = home.worldToLocal(from.clone()), b = home.worldToLocal(to.clone());
+		const rb = Math.hypot(b.x, b.z);
+		const atDoor = b.z > 0 && Math.abs(b.x) < w.door - BODY;
+		if (!atDoor && Math.abs(rb - w.r) < BODY) {
+			// at the canvas: kept on the side they were on, sliding round it
+			const r = inside(w, a) ? w.r - BODY : w.r + BODY;
+			if (rb < 1e-6) return from;
+			(b.x *= r / rb), (b.z *= r / rb);
+		}
+		const step = Math.hypot(b.x - a.x, b.z - a.z);
+		for (const c of w.colliders ?? []) {
+			const d = Math.hypot(b.x - c.x, b.z - c.z), m = c.r + BODY;
+			if (d >= m) continue;
+			if (d < 1e-6) return from;
+			// out to its edge, and on round it, to the side the step leans to
+			const ux = (b.x - c.x) / d, uz = (b.z - c.z) / d, side = Math.sign(ux * (b.z - a.z) - uz * (b.x - a.x)) || 1;
+			(b.x = c.x + ux * m + -uz * side * step * 0.7), (b.z = c.z + uz * m + ux * side * step * 0.7);
+		}
+		return home.localToWorld(b).setY(to.y);
+	}
+	/** the way to a tapped point: straight there; by the door when it is on the wall's other side; round the tent
+	 *  when the straight way outside runs through it */
+	function wayTo(me, at) {
+		const w = tentWalk();
+		if (!w) return [at];
+		home.updateMatrixWorld(true);
+		const L = (p) => home.worldToLocal(p.clone());
+		/** outside to outside: a point beside the tent to pass by, if the way runs through it */
+		const round = (from, to) => {
+			const a = L(from), b = L(to), dx = b.x - a.x, dz = b.z - a.z;
+			const t = Math.min(1, Math.max(0, -(a.x * dx + a.z * dz) / (dx * dx + dz * dz || 1)));
+			const cx = a.x + dx * t, cz = a.z + dz * t, d = Math.hypot(cx, cz), n = Math.hypot(dx, dz) || 1;
+			if (d >= w.r + BODY) return [];
+			const [ux, uz] = d > 1e-3 ? [cx / d, cz / d] : [-dz / n, dx / n];
+			return [home.localToWorld(V(ux * (w.r + 1.2), 0, uz * (w.r + 1.2)))];
+		};
+		const fromIn = inside(w, L(me.position)), toIn = inside(w, L(at));
+		if (fromIn && toIn) return [at];
+		if (!fromIn && !toIn) return [...round(me.position, at), at];
+		const out = home.localToWorld(V(0, 0, w.r + 0.8)), inn = home.localToWorld(V(0, 0, w.r - 0.8));
+		return fromIn ? [inn, out, ...round(out, at), at] : [...round(me.position, out), out, inn, at];
+	}
+	/** the camera in the tent with them: close behind them, under the canvas; back out to the walk's view outside */
+	let inTent = false, stuck = 0;
+	function tentCamera(me) {
+		const w = tentWalk();
+		const now = !!w && inside(w, home.worldToLocal(me.position.clone()));
+		if (now === inTent) return;
+		inTent = now;
+		const back = V(-Math.sin(me.rotation.y), 0, -Math.cos(me.rotation.y));
+		if (!now) return void ((goal = { target: head(me, 1.2), offset: back.multiplyScalar(7.5).setY(3.4) }), (controls.minDistance = 1.5));
+		const target = head(me, 1.35);
+		goal = { target, offset: inTentAt(target.clone().addScaledVector(back, 1.5).setY(1.7)).sub(target) };
+		controls.minDistance = 0.4;
+	}
+	/** a point pulled in under the canvas, if it is out beyond it */
+	function inTentAt(p) {
+		const w = tentWalk();
+		if (!w) return p;
+		const c = home.worldToLocal(p.clone()), rc = Math.hypot(c.x, c.z), max = w.r - 0.35;
+		if (rc > max) (c.x *= max / rc), (c.z *= max / rc);
+		return home.localToWorld(c);
+	}
+	/** the free walk, a frame of it: on along the keys (ahead is away from the camera) or along the way to where they
+	 *  tapped, at their walking pace, never through the tent's canvas; the camera carried along with them */
 	function roaming(step) {
 		const me = people[stage.me];
 		if (!me || me.parent !== world) return;
@@ -2421,18 +2496,24 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const ahead = controls.target.clone().sub(camera.position).setY(0).normalize(), right = V(-ahead.z, 0, ahead.x);
 			const k = [...keys].reduce((a, c) => [a[0] + KEYS[c][0], a[1] + KEYS[c][1]], [0, 0]);
 			dir = ahead.multiplyScalar(k[1]).addScaledVector(right, k[0]);
-		} else if (roamTo) dir = roamTo.clone().sub(me.position).setY(0);
+		} else if (roamTo.length) dir = roamTo[0].clone().sub(me.position).setY(0);
 		const left = dir?.length() ?? 0;
 		if (left > 0.05) {
 			const d = Math.min(keys.size ? Infinity : left, WALK * step);
 			dir.normalize();
-			me.position.addScaledVector(dir, d);
+			me.position.copy(walkable(was, me.position.clone().addScaledVector(dir, d)));
 			me.rotation.y = Math.atan2(dir.x, dir.z);
-			act(me, 'walk');
-		} else ((roamTo = null), act(me, 'idle'));
+			const on = me.position.distanceTo(was) > 0.2 * d;
+			act(me, on ? 'walk' : 'idle');
+			// against a wall or a thing for a moment, where they were going is given up
+			stuck = on ? 0 : stuck + step;
+			if (stuck > 0.6) ((roamTo = []), (stuck = 0));
+		} else if (roamTo.length > 1) roamTo.shift();
+		else ((roamTo = []), act(me, 'idle'));
 		const moved = me.position.clone().sub(was);
 		camera.position.add(moved);
 		controls.target.add(moved);
+		tentCamera(me);
 	}
 
 	const skip = () => {
@@ -2510,7 +2591,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (roam) {
 			// walking freely: the point on the ground under the tap is where they walk to
 			const at = ray.ray.intersectPlane(new THREE.Plane(V(0, 1, 0), 0), V(0, 0, 0));
-			if (at) roamTo = at;
+			if (at) roamTo = wayTo(people[stage.me], at);
 			return;
 		}
 		if (choosing) {
@@ -2563,6 +2644,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			controls.autoRotate = drift && !goal;
 			controls.autoRotateSpeed = tourOn ? 0.45 : 0.25;
 			controls.update();
+			if (roam && inTent) camera.position.copy(inTentAt(camera.position)); // never out through the canvas
 		}
 		// the players posed after the moment has said where they are and what they do, so a cut never shows the last
 		// shot's pose for a frame
