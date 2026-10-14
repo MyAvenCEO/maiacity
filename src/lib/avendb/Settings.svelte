@@ -569,6 +569,7 @@
 									<option value="">everything</option>
 									<option value="note">notes</option>
 									<option value="todo">todos</option>
+									<option value="article">articles</option>
 									<option value="file">files</option>
 								</select>
 								{#if keeping.types}

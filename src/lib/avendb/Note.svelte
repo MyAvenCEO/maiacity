@@ -38,8 +38,13 @@
 	 * @typedef {{ vault: string | null, entry: string, lines: LineView[], edits: EditView[] }} NoteData
 	 */
 
-	/** @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string }} */
-	let { world, actor, api, busy, entry } = $props();
+	/**
+	 * `back` the address its back arrow goes to, `backTo` what it goes to in words: the vault's notes, or the article it
+	 * edits.
+	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string,
+	 *   back?: string, backTo?: string }}
+	 */
+	let { world, actor, api, busy, entry, back = '#notes', backTo = 'All notes' } = $props();
 
 	let note = $state(/** @type {NoteData | null} */ (null));
 	let loaded = $state(false);
@@ -308,12 +313,12 @@
 	}
 
 	/**
-	 * Delete the note, then go back to the notes; or with `back`, bring it back.
-	 * @param {boolean} back
+	 * Delete the note, then go back to the list it is in, the notes or the articles; or with `again`, bring it back.
+	 * @param {boolean} again
 	 */
-	async function remove(back) {
-		const done = await api.run(back ? 'Bringing it back' : 'Deleting', { ...deleting(entry, back), as: actor });
-		if (done && !back) location.hash = '#notes';
+	async function remove(again) {
+		const done = await api.run(again ? 'Bringing it back' : 'Deleting', { ...deleting(entry, again), as: actor });
+		if (done && !again) location.hash = back.split('/')[0];
 	}
 
 	/** Put version `id` back on the line. @param {string} id */
@@ -377,7 +382,7 @@
 
 <div class="doc">
 	<header class="top">
-		<a class="back" href="#notes" title="All notes" aria-label="All notes"><Icon name="back" size={20} /></a>
+		<a class="back" href={back} title={backTo} aria-label={backTo}><Icon name="back" size={20} /></a>
 		<span class="docicon" aria-hidden="true"><Icon name="note" size={24} /></span>
 		<div class="heading">
 			{#if here && writes && !seen && lets('title')}

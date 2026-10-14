@@ -319,6 +319,7 @@ export function seeded(world) {
 const NOUNS = /** @type {Record<string, [string, string]>} */ ({
 	note: ['note', 'notes'],
 	todo: ['todo', 'todos'],
+	article: ['article', 'articles'],
 	file: ['file', 'files'],
 	card: ['device card', 'device cards'],
 	profile: ['profile', 'profiles'],
@@ -524,7 +525,12 @@ export const MODES = /** @type {const} */ ([
 export const shareWhat = (c, world) => (c.whole ? 'Everything' : whereWords(c.slice?.where, world));
 
 /** The kind of record each type of entry holds. */
-const KIND_OF = /** @type {Record<string, string>} */ ({ note: 'document', todo: 'todo', file: 'document' });
+const KIND_OF = /** @type {Record<string, string>} */ ({
+	note: 'document',
+	todo: 'todo',
+	article: 'document',
+	file: 'document'
+});
 
 /**
  * The fields of the newest schema of the records of entries of type `type`, of those a vault's entries are read through

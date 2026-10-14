@@ -144,8 +144,8 @@
 
 	/** the fields of what it shares, each once, with the values each takes where it takes only some */
 	const fields = $derived.by(() => {
-		const of =
-			what === 'entry' && one?.type ? [one.type] : what === 'all' ? ['note', 'todo', 'file'] : types.split(',');
+		const every = ['note', 'todo', 'article', 'file'];
+		const of = what === 'entry' && one?.type ? [one.type] : what === 'all' ? every : types.split(',');
 		const all = of.flatMap((t) => fieldsOf(lane, t));
 		return all.filter((f, i) => all.findIndex((g) => g.name === f.name) === i);
 	});
@@ -238,6 +238,7 @@
 				<option value="todo">todo</option>
 				<option value="note">note</option>
 				<option value="file">file</option>
+				<option value="article">article</option>
 				<option value="note,todo">note and todo</option>
 			</select>
 			<input class="field tags" placeholder="tagged (any)" bind:value={tagged} aria-label="Tagged" />
