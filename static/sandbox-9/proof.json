@@ -239487,7 +239487,7 @@
 		{
 			"id": "SH",
 			"question": "Through a drought, a dark winter, two failing COOPs and a failing well, does everyone keep the basics, and does every decile recover within two years?",
-			"ruleChanged": "No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (WEST, the West settlement COOP selling beds, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).",
+			"ruleChanged": "No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (WEST, the West Tribe COOP selling beds, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).",
 			"years": 9,
 			"pass": false,
 			"claim": "Nobody is short in any shock, and every decile is back within two years (P3 holds with the shocks excused for two years).",
