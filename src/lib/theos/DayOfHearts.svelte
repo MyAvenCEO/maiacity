@@ -1,9 +1,11 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Law 1: every person gets 24 HEARTS a day, one for every hour, in a currency of their own. Three clocks run through
-	// the same day; each hour drops one HEART into its owner's dial. At midnight the day's HEARTS leave to be invested.
+	// Law 1: every person gets UIA_DAY HEARTS a day, one for every hour, in a currency of their own. Three clocks run
+	// through the same day; each hour drops one HEART into its owner's dial. At midnight the day's HEARTS leave to be
+	// invested.
 	import { onMount } from 'svelte';
 	import { runClock, watchNarrow, HEART, ease } from './anim.js';
+	import { UIA_DAY } from './model.js';
 
 	const DAY = 9, OUT = 1.6, R = 66;
 	const PEOPLE = [
@@ -17,7 +19,7 @@
 		narrow: { w: 360, h: 470, at: [[90, 102], [270, 102], [180, 316]], foot: 462 }
 	};
 	const slot = (i) => {
-		const a = -Math.PI / 2 + (i / 24) * Math.PI * 2;
+		const a = -Math.PI / 2 + (i / UIA_DAY) * Math.PI * 2;
 		return [Math.cos(a) * R, Math.sin(a) * R];
 	};
 
@@ -26,9 +28,9 @@
 	const L = $derived(narrow ? LAYOUT.narrow : LAYOUT.wide);
 	let t = $state(DAY - 0.01);
 	const c = $derived(t % (DAY + OUT));
-	const hours = $derived(c < DAY ? (c / DAY) * 24 : 24);
+	const hours = $derived(c < DAY ? (c / DAY) * UIA_DAY : UIA_DAY);
 	const out = $derived(c < DAY ? 0 : ease((c - DAY) / OUT));
-	const count = $derived(Math.min(24, Math.floor(hours)));
+	const count = $derived(Math.min(UIA_DAY, Math.floor(hours)));
 
 	onMount(() => {
 		const a = runClock(box, (s) => (t = s), DAY - 0.01);
@@ -38,11 +40,11 @@
 </script>
 
 <div class="scroll" bind:this={box}>
-<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Three clocks run through one day. Every hour drops one HEART into each person's dial, in their own currency: samuelHEARTS, annaHEARTS, miaHEARTS. At midnight the 24 HEARTS leave to be invested into COOPs.">
+<svg viewBox="0 0 {L.w} {L.h}" class:narrow role="img" aria-label="Three clocks run through one day. Every hour drops one HEART into each person's dial, in their own currency: samuelHEARTS, annaHEARTS, miaHEARTS. At midnight the {UIA_DAY} HEARTS leave to be invested into COOPs.">
 	{#each PEOPLE as p, n}
 		<g transform="translate({L.at[n][0]} {L.at[n][1]})">
 			<circle r={R + 14} fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2" opacity="0.9" />
-			{#each Array(24) as _, i}
+			{#each Array(UIA_DAY) as _, i}
 				{@const [x, y] = slot(i)}
 				{#if i < count}
 					{@const pop = Math.max(0, 1 - (hours - i) * 2)}
@@ -54,11 +56,11 @@
 				{/if}
 			{/each}
 			{#if out === 0}
-				{@const a = -Math.PI / 2 + (hours / 24) * Math.PI * 2}
+				{@const a = -Math.PI / 2 + (hours / UIA_DAY) * Math.PI * 2}
 				<line x1={Math.cos(a) * 40} y1={Math.sin(a) * 40} x2={Math.cos(a) * (R - 12)} y2={Math.sin(a) * (R - 12)} stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round" />
 			{/if}
 			<text y="8" text-anchor="middle" class="big" fill={p.color}>{count}</text>
-			<text y="26" text-anchor="middle" class="sub">of 24 today</text>
+			<text y="26" text-anchor="middle" class="sub">of {UIA_DAY} today</text>
 			<text y={R + 36} text-anchor="middle" class="node" fill={p.color}>{p.name.toLowerCase()}HEARTS</text>
 		</g>
 	{/each}
