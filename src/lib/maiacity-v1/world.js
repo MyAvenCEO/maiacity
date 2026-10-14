@@ -28,7 +28,7 @@ import { human } from '$lib/actors/human.ts';
 import { blend } from '$lib/actors/rig.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
-import { ME_SEAT, packedVan } from './van.js';
+import { FRIENDLY, ME_SEAT, packedVan } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { maiaCentre, oldShed } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
@@ -546,7 +546,7 @@ function acting(p, t) {
 	// joy: the stand-in's own smile (its blend shape: from v7 a warm closed smile, the corners up, the cheeks lifting
 	// the eyes), shown when they beam (after the first mint), coming on and going off over a moment
 	const face = cast.rig.object, j = face.morphTargetDictionary?.joy;
-	if (j !== undefined) face.morphTargetInfluences[j] += ((p.userData.joy ? 1 : 0) - face.morphTargetInfluences[j]) * 0.2;
+	if (j !== undefined) face.morphTargetInfluences[j] += ((p.userData.joy ? 1 : FRIENDLY) - face.morphTargetInfluences[j]) * 0.2; // friendly at rest
 	const hold = { carry: CARRY, push: PUSH, reach: REACH }[what];
 	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
 	const sat = { drive: { ...WHEEL, ...CAR }, ride: CAR, lap: LAP }[what];
@@ -682,6 +682,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// the spot marked
 	const packs = { A: openPack(), B: openPack() };
 	for (const k of ['A', 'B']) (packs[k].visible = false), world.add(named(packs[k], `asset:pack:${k}`));
+	// the seed itself as it is planted, as long as the seed picked (cm, a pip a little larger than life so it reads):
+	// a pip, a stone or a nut
+	const SEED_CM = { apple: 1.2, pear: 1.2, quince: 1.2, mulberry: 0.8, cherry: 1.4, plum: 2, apricot: 2.4, hazel: 1.8, chestnut: 2.8, walnut: 3.4 };
+	const seed = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8).scale(0.006, 0.0045, 0.01), new THREE.MeshStandardMaterial({ color: '#3a2010', roughness: 0.3 }));
+	seed.visible = false;
 	const myKit = spotKit();
 	myKit.visible = false;
 	world.add(myKit);
@@ -1112,10 +1117,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const L = spotAt(stage.spot);
 			return [{ fov: 38, near: 0.05, cam: (k) => [L(0.62, 1.2 - 0.05 * k, -0.34), L(0.62, 0.38, -0.29)], put: (p) => (standAt(p, stage.spot), act(p, 'kneel')) }];
 		},
-		// crane up from the stake to you and the tent beyond
+		// behind you at the stake and its flag, the tent beyond, then craning up and back
 		tend: () => {
 			const L = spotAt(stage.spot);
-			return [{ fov: 44, near: 0.1, cam: (k) => [L(0.35, 0.25, 0.45).lerp(L(1.1, 3.4, -4.6), ease(k)), L(0, 0.1, 0).lerp(L(0, 0.9, 7), ease(k))], put: (p) => standAt(p, stage.spot) }];
+			return [{ fov: 44, near: 0.1, cam: (k) => [L(1.5, 1.5, -2.5).lerp(L(1.1, 3.4, -4.6), ease(k)), L(0, 0.75, 0.4).lerp(L(0, 0.9, 7), ease(k))], put: (p) => standAt(p, stage.spot) }];
 		},
 		// and on, up and away until the tent is a dot, along to the road and the next van coming down it to the stop
 		end: () => {
@@ -1238,11 +1243,18 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		else if (name) focus(name);
 		m?.done();
 	}
+	/** a step's line as it is told: held on over the wordless steps that follow its shot (a push, a roll on), up to
+	 *  the next shot, so the picture never runs on long without the voice */
+	function spoken(m, i) {
+		let dur = m.steps[i].dur;
+		for (let j = i + 1; j < m.steps.length && !m.steps[j].shot && !m.steps[j].caption; j++) dur += m.steps[j].dur;
+		return { ...m.steps[i].caption, dur };
+	}
 	function runMoment(now) {
 		const m = moment;
 		dt = Math.min(0.25, now - (m.last ?? now - 1 / 60));
 		m.last = now;
-		if (!m.started) (m.started = true), m.steps[0].start?.(), m.steps[0].caption && onCaption(m.steps[0].caption);
+		if (!m.started) (m.started = true), m.steps[0].start?.(), m.steps[0].caption && onCaption(spoken(m, 0));
 		let step = m.steps[m.i];
 		let t = now - m.t0;
 		while (t >= step.dur) {
@@ -1253,7 +1265,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			if (m.i >= m.steps.length) return endMoment();
 			step = m.steps[m.i];
 			step.start?.();
-			if (step.caption) onCaption(step.caption);
+			if (step.caption) onCaption(spoken(m, m.i));
 		}
 		step.run?.(t / step.dur);
 	}
@@ -1485,8 +1497,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			controls.target.copy(thing.position.clone().setY(0.8));
 			lensFor({ fov: 40 });
 		});
-		// the voice-over's lines go to the moment's own shots: these two follow the ramp's without words of their own
-		near.shot = there.shot = false;
+		// the voice-over's lines go to the ramp's shot (held on over the push) and to the wide one where it arrives
+		near.shot = false;
 		return [ramp, near, there];
 	}
 	/** a shot of a moment: at least min seconds, and as long as the line of the voice-over it carries; its run gets the
@@ -1494,6 +1506,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function beat(min, run, start) {
 		const st = { dur: min, shot: true, start, run: (k) => run(k * st.dur, k, st.dur) };
 		return st;
+	}
+	/** one long take cut into shots at the times given (s from its start), each its own line of the voice-over; a
+	 *  shot its line holds longer stays on its last frame */
+	function cutsOf(total, at, run, start) {
+		const ends = [...at, total];
+		return ends.map((end, i) => {
+			const from = i ? ends[i - 1] : 0;
+			return beat(end - from, (s) => run(Math.min(end - 1e-3, from + s)), i ? undefined : start);
+		});
 	}
 	/** the voice-over: one line a shot, in order (more lines than shots: the last carries them all; a null line is a
 	 *  shot without words, the picture telling it alone); each shot holds as long as its line takes to tell */
@@ -1611,9 +1632,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 						vanAt(22);
 						me.visible = true;
 						me.position.copy(door);
+						face(me, STOP); // out of the door already turned to the stop: never a step backwards
+						act(me, 'idle');
 					},
 					run: (k) => {
-						walkOn(me, [door, STOP], Math.max(0, k - 0.15) * 5);
+						walkOn(me, [door, STOP], Math.max(0, k - 0.08) * 5);
 						if (k > 0.85) act(me, 'look up');
 						pose(low(k));
 					}
@@ -2190,7 +2213,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				lensFor({ fov: 44 });
 			}),
 			// the bag opened; the tent pitched step by step, one shot each (WINDOWS); the fire place built; they stand back
-			beat(RAISE, (s) => {
+			...cutsOf(RAISE, [WINDOWS[2].at, WINDOWS[4].at, start], (s) => {
 				if (s < OPEN) {
 					bundle.userData.setOpen(s / OPEN);
 					pitchTo(0);
@@ -2345,34 +2368,57 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const L = spotAt(S);
 		const pk = packs[stage.me];
 		const { setWet } = myKit.userData.earth.userData;
+		// the seed from the packet in their fingers, down into the hollow and pressed under: from the side, kneeling at
+		// it, then close on the earth as it goes in (Samuel 2026-10-14: the planting was not seen, and oddly framed)
+		const hand = me.userData.cast.rig.bones.handR, IN = L(0, 0.025, 0); // on the hollow's floor, 2 cm up
+		const seedAt = (k) => {
+			// in the hand, then down to the hollow (k 0.35 … 0.75), then pressed in out of sight
+			const from = hand.localToWorld(V(0, -0.06, 0.02));
+			const e = ease(Math.min(1, Math.max(0, (k - 0.35) / 0.4)));
+			seed.position.lerpVectors(from, IN, e).y -= 0.03 * Math.max(0, (k - 0.8) / 0.2);
+			seed.visible = k < 0.97;
+		};
 		return play(told([
 			beat(3, (s, k) => {
-				act(me, k < 0.7 ? 'press' : 'kneel');
-				camera.position.copy(L(-0.74 + 0.06 * k, 0.42, 0.3 - 0.03 * k));
-				camera.lookAt(L(0, 0.14, -0.12));
+				act(me, 'press');
+				seedAt(Math.min(1, k * 1.25));
+				camera.position.copy(L(-1.55 + 0.1 * k, 1.15 - 0.04 * k, 0.75 - 0.05 * k));
+				camera.lookAt(L(0, 0.58 - 0.05 * k, -0.3));
 			}, () => {
-				lensFor({ fov: 40, near: 0.05 });
+				lensFor({ fov: 50, near: 0.05 });
 				placeKit();
 				myKit.visible = true;
 				setWet(0);
 				me.visible = true;
 				me.position.copy(L(0, 0, -0.55));
 				me.rotation.y = spotYaw(S);
+				act(me, 'press');
+				seed.scale.setScalar((SEED_CM[stage.pick] ?? 1.2) / 2);
+				world.add(seed);
 			}),
+			beat(2.4, (s, k) => {
+				// down onto the earth, a moment lying in the hollow, then pressed under
+				const e = ease(Math.min(1, k / 0.35)), under = ease(Math.min(1, Math.max(0, (k - 0.6) / 0.3)));
+				seed.visible = k < 0.92;
+				seed.position.copy(L(0, 0.09 - 0.065 * e - 0.02 * under, 0));
+				camera.position.copy(L(-0.15, 0.15, 0.15 - 0.015 * k));
+				camera.lookAt(L(0, 0.025, 0));
+			}, () => (lensFor({ fov: 30, near: 0.02 }), act(me, 'press'))),
 			beat(3.2, (s, k) => pourAt(L, S, k, pk.userData.bottle, setWet, me), () => (world.attach(pk.userData.bottle), lensFor({ fov: 36, near: 0.05 }))),
 			// close on the wet earth, then up the stake to its flag: the tree's name and its plant (the line: it carries
 			// your name now)
 			beat(3.5, (s, k) => {
-				const e = ease(Math.min(1, Math.max(0, (k - 0.25) / 0.6)));
-				camera.position.copy(L(0.44 - 0.14 * e, 0.36 + 0.48 * e, 0.34 + 0.11 * e));
-				camera.lookAt(L(0.19 * e, 0.8 * e, -0.02 - 0.1 * e));
+				const e = ease(Math.min(1, Math.max(0, (k - 0.15) / 0.45)));
+				camera.position.copy(L(0.4 - 0.22 * e, 0.36 + 0.47 * e, 0.34 - 0.05 * e));
+				camera.lookAt(L(0.15 * e, 0.05 + 0.78 * e, -0.02 - 0.1 * e));
 			}, () => {
 				pour.visible = false;
+				seed.visible = false;
 				stowBottle(pk);
 				setWet(1);
 				act(me, 'kneel');
 			})
-		], lines));
+		], lines), { keep: true }); // the flag held till the next shot, while the tree is planted in the game
 	}
 	/** the bottle in the hand, its cap off, tipped over the seed, the water running down, the earth darkening (L: the
 	 *  spot's frame; wet: how wet the earth gets, or none) */

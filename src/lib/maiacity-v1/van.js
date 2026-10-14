@@ -130,9 +130,12 @@ function seated(cast, sits, side) {
 	const zero = { forearmL: [-0.5, 0, 0], forearmR: [-0.5, 0, 0], handL: [0, 0, 0], handR: [0, 0, 0] };
 	if (sits === 'drive') return { ...sit, ...zero, spine: [0.08, 0, 0], upperArmL: [-1.05, 0, -0.22], upperArmR: [-1.05, 0, 0.22], forearmL: [-0.55, 0, 0.1], forearmR: [-0.55, 0, -0.1] };
 	if (sits === 'out') return { ...sit, neck: [0, side * 0.3, 0], head: [0.04, side * 0.45, 0] };
-	if (sits === 'asleep') return { ...sit, spine: [0.12, 0, -side * 0.06], chest: [0.04, 0, -side * 0.08], neck: [0.2, 0, -side * 0.3], head: [0.25, 0, -side * 0.32] };
+	if (sits === 'asleep') return { ...sit, spine: [0.08, 0, -side * 0.04], chest: [0.03, 0, -side * 0.05], neck: [0.1, 0, -side * 0.1], head: [0.12, 0, -side * 0.14] }; // a soft lean to the window, never a bent neck
 	return sit;
 }
+/** how much of the stand-in's smile (its `joy` blend shape) every face wears at rest (Samuel 2026-10-14: friendly
+ *  gazes all the time, not a full smile); the sleeper's softer */
+export const FRIENDLY = 0.35;
 /** the woman beside you turned to you as she talks (on her left, +x): her shoulders and head round to you, a little
  *  forward, as people sit when they tell each other something on a long ride (Samuel 2026-10-13: a conversation, no phone) */
 const TALK = { spine: [0.06, 0.1, 0], chest: [0.04, 0.16, 0], neck: [0.02, 0.26, 0], head: [0.04, 0.42, 0.02] };
@@ -352,6 +355,8 @@ export function packedVan() {
 				const pose = k > 0 ? blend(base, { ...base, ...TALK }, k) : base;
 				const h = pose.head ?? [0, 0, 0];
 				const says = k * (Math.sin(t * 5.3 + i) * 0.035 + Math.sin(t * 1.7) * 0.025); // the small nods of someone talking
+				const face = cast.rig.object, j = face.morphTargetDictionary?.joy;
+				if (j !== undefined) face.morphTargetInfluences[j] = o.userData.id === 'sleeper' ? FRIENDLY / 3 : FRIENDLY;
 				cast.rig.pose({ ...pose, head: [h[0] + says + (o.userData.lift ?? 0) + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
 			}
 		},
