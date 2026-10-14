@@ -15,6 +15,12 @@
  * and unrolled (setOpen), it lies flat with what is in it: the groundsheet rolled, the cover rolled, the frame's tubes
  * in a bundle and the hubs in a sack.
  *
+ * THE STORAGE TENT (storageTent, v2 of the Models' tent, Samuel 2026-10-14) is the same dome twice the size, to keep
+ * things in (and later taken to the tribe camp): 8 m across and 4 m high, its tubes 40 mm and 1.02 – 1.3 m long
+ * (each in two halves joined by a sleeve, so they still pack), a door 1.8 m wide and 3.1 m high to carry things in,
+ * on a deck 11.2 m across and as high as the dome tent's; pitched in the same steps. Its bag (storageTentBag) is 1 m
+ * long and 0.7 m thick.
+ *
  * Each at its real measure (./units.js), standing on the ground at its origin; the tent's door towards +z, the bag
  * along x.
  */
@@ -47,6 +53,15 @@ export const DOME_TENT = {
 	frame: [0.2, 0.75],
 	cover: [0.75, 0.94],
 	doorIn: [0.94, 1]
+};
+
+/** the storage tent's measures: the dome tent's, twice the size (the deck as high), pitched in the same steps */
+export const STORAGE_TENT = {
+	...DOME_TENT,
+	r: 4,
+	deck: 5.6,
+	tube: 0.02,
+	door: { w: 1.8, h: 3.1, round: 0.56 }
 };
 
 const clamp = (x) => Math.min(1, Math.max(0, x));
@@ -97,8 +112,7 @@ const deckTex = () =>
 
 /** the door's outline in the front view (x across, y up), counter-clockwise: from under the floor up its sides and
  *  round its top corners */
-function doorOutline() {
-	const { w, h, round } = DOME_TENT.door;
+function doorOutline({ w, h, round }) {
 	const a = w / 2;
 	const pts = [
 		[-a, -0.2],
@@ -114,13 +128,15 @@ function doorOutline() {
 	}
 	return pts;
 }
-const OUTLINE = doorOutline();
-/** whether a point is in the doorway: in front, and inside the outline seen from the front */
-function inDoor(p) {
+/** each tent's door outline, made once */
+const outlines = new Map();
+const outlineOf = (T) => outlines.get(T) ?? (outlines.set(T, doorOutline(T.door)), outlines.get(T));
+/** whether a point is in the doorway of a tent whose door's outline is O: in front, and inside it seen from the front */
+function inDoor(p, O) {
 	if (p.z <= 0) return false;
-	for (let i = 0; i < OUTLINE.length; i++) {
-		const [ax, ay] = OUTLINE[i];
-		const [bx, by] = OUTLINE[(i + 1) % OUTLINE.length];
+	for (let i = 0; i < O.length; i++) {
+		const [ax, ay] = O[i];
+		const [bx, by] = O[(i + 1) % O.length];
 		if ((bx - ax) * (p.y - ay) - (by - ay) * (p.x - ax) < 0) return false;
 	}
 	return true;
@@ -181,13 +197,13 @@ function net(r) {
 }
 
 /** the parts of a tube a→b outside the doorway, each [from, to] along it (0 … 1) */
-function outsideDoor(a, b) {
+function outsideDoor(a, b, O) {
 	const N = 40;
 	const out = [];
 	let from = null;
 	for (let i = 0; i <= N; i++) {
 		const t = i / N;
-		const o = !inDoor(a.clone().lerp(b, t));
+		const o = !inDoor(a.clone().lerp(b, t), O);
 		if (o && from === null) from = t;
 		if ((!o || i === N) && from !== null) {
 			const to = o ? t : (i - 0.5) / N;
@@ -235,12 +251,13 @@ function clipBy(poly, a, b, keepInside) {
 	return out;
 }
 /** a small triangle split at the door's outline (front view): its parts outside the door, and its part in it */
-function splitAtDoor(tri) {
-	if (tri.every((p) => p.z <= 0) || tri.every((p) => !inDoor(p) && Math.abs(p.x) > DOME_TENT.door.w)) return { out: [tri], in: [] };
+function splitAtDoor(tri, T) {
+	const O = outlineOf(T);
+	if (tri.every((p) => p.z <= 0) || tri.every((p) => !inDoor(p, O) && Math.abs(p.x) > T.door.w)) return { out: [tri], in: [] };
 	const outside = [];
 	let rest = tri;
-	for (let i = 0; i < OUTLINE.length && rest.length >= 3; i++) {
-		const a = OUTLINE[i], b = OUTLINE[(i + 1) % OUTLINE.length];
+	for (let i = 0; i < O.length && rest.length >= 3; i++) {
+		const a = O[i], b = O[(i + 1) % O.length];
 		const piece = clipBy(rest, a, b, false);
 		if (piece.length >= 3) outside.push(piece);
 		rest = clipBy(rest, a, b, true);
@@ -249,14 +266,14 @@ function splitAtDoor(tri) {
 }
 /** triangles (fans of polygons) into one geometry: a facet's own normal blended with the dome's, so its panels show
  *  but it reads round; its order kept */
-function panelGeometry(polys, rr) {
+function panelGeometry(polys, rr, r) {
 	const pos = [], nor = [];
 	const n = new THREE.Vector3();
 	for (const poly of polys) {
 		n.copy(poly[1]).sub(poly[0]).cross(poly[2].clone().sub(poly[0])).normalize();
 		for (let i = 1; i + 1 < poly.length; i++)
 			for (const p of [poly[0], poly[i], poly[i + 1]]) {
-				const q = p.clone().multiplyScalar(rr / DOME_TENT.r);
+				const q = p.clone().multiplyScalar(rr / r);
 				pos.push(q.x, q.y, q.z);
 				const b = n.clone().multiplyScalar(0.6).addScaledVector(q.clone().normalize(), 0.4).normalize();
 				nor.push(b.x, b.y, b.z);
@@ -277,15 +294,30 @@ function panelGeometry(polys, rr) {
  * where the work is at k, in the tent's frame (the groundsheet's roll, the tube going in, the cover's edge, the door).
  */
 export function domeTent({ pitch = 1, deck = true } = {}) {
-	const { r, tube } = DOME_TENT;
+	return pitched(DOME_TENT, { pitch, deck });
+}
+
+/** The storage tent (the dome tent twice the size), pitched as far as `pitch`: userData as domeTent's. */
+export function storageTent({ pitch = 1, deck = true } = {}) {
+	return pitched(STORAGE_TENT, { pitch, deck });
+}
+
+/**
+ * A dome tent of the measures T (DOME_TENT, STORAGE_TENT), pitched as far as `pitch`: the frame, the cover, the door,
+ * the groundsheet and the lantern all at T's size (S: how many times the dome tent's), the deck as high as T says.
+ */
+function pitched(T, { pitch = 1, deck = true } = {}) {
+	const { r, tube } = T;
+	const S = r / DOME_TENT.r;
+	const O = outlineOf(T);
 	const g = new THREE.Group();
-	const base = deck ? DOME_TENT.deckTop : 0;
+	const base = deck ? T.deckTop : 0;
 
 	// the deck: larch boards on a ring of posts, its rim
 	let deckMesh = null;
 	if (deck) {
 		const top = new THREE.MeshStandardMaterial({ map: deckTex(), roughness: 0.85 });
-		deckMesh = new THREE.Mesh(new THREE.CylinderGeometry(DOME_TENT.deck, DOME_TENT.deck, 0.2, 48), [m.wood(), top, m.wood()]);
+		deckMesh = new THREE.Mesh(new THREE.CylinderGeometry(T.deck, T.deck, 0.2, 48), [m.wood(), top, m.wood()]);
 		deckMesh.position.y = base - 0.1;
 		deckMesh.receiveShadow = deckMesh.castShadow = true;
 		g.add(deckMesh);
@@ -306,12 +338,12 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 	for (const [a, b] of tubes) {
 		const [lo, hi] = hubs[a].y <= hubs[b].y ? [a, b] : [b, a];
 		const along = ring[lo] === ring[hi];
-		for (const [t0, t1] of outsideDoor(hubs[lo], hubs[hi])) {
+		for (const [t0, t1] of outsideDoor(hubs[lo], hubs[hi], O)) {
 			const p0 = hubs[lo].clone().lerp(hubs[hi], t0), p1 = hubs[lo].clone().lerp(hubs[hi], t1);
 			pieces.push({ p0, p1, ring: ring[hi], along, az: az(p0.clone().add(p1)) });
 		}
 	}
-	const kept = hubs.map((v, i) => ({ v, i, ring: ring[i], az: az(v) })).filter((h) => !inDoor(h.v));
+	const kept = hubs.map((v, i) => ({ v, i, ring: ring[i], az: az(v) })).filter((h) => !inDoor(h.v, O));
 	// when each goes in, as a part of the frame's time (0 … 1): ring by ring; in a ring, round from the door
 	const slot = 1 / rings;
 	for (let n = 0; n < rings; n++) {
@@ -326,7 +358,7 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 
 	const tubeGeo = new THREE.CylinderGeometry(tube, tube, 1, 8, 1, true).translate(0, 0.5, 0);
 	const tubeMesh = new THREE.InstancedMesh(tubeGeo, m.tube(), pieces.length);
-	const hubGeo = new THREE.CylinderGeometry(0.036, 0.036, 0.024, 12);
+	const hubGeo = new THREE.CylinderGeometry(0.036 * S, 0.036 * S, 0.024 * S, 12);
 	const hubMesh = new THREE.InstancedMesh(hubGeo, m.hub(), kept.length);
 	tubeMesh.castShadow = hubMesh.castShadow = true;
 	tubeMesh.frustumCulled = hubMesh.frustumCulled = false;
@@ -338,7 +370,7 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 
 	// the door's frame: a bent tube round the doorway, on the dome, put up from the floor as the rings rise
 	const half = (sx, rr) => {
-		const { w, h, round } = DOME_TENT.door;
+		const { w, h, round } = T.door;
 		const a = w / 2;
 		const pts = [];
 		for (let i = 0; i <= 6; i++) pts.push([a, ((h - round) * i) / 6]); // up its side
@@ -347,7 +379,7 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 		return pts.map(([x, y]) => onDome(sx * x, y, rr));
 	};
 	const arch = new THREE.Group();
-	for (const sx of [-1, 1]) arch.add(pathTube(half(sx, r), 0.016, m.tube()));
+	for (const sx of [-1, 1]) arch.add(pathTube(half(sx, r), 0.016 * S, m.tube()));
 	dome.add(arch);
 
 	// the cover and its door: every face cut in sixteen, the parts in the doorway the door panel
@@ -362,7 +394,7 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 				const tris = [[P(i, j), P(i + 1, j), P(i, j + 1)]];
 				if (i + j < N - 1) tris.push([P(i + 1, j), P(i + 1, j + 1), P(i, j + 1)]);
 				for (const tri of tris) {
-					const cut = splitAtDoor(tri);
+					const cut = splitAtDoor(tri, T);
 					outside.push(...cut.out);
 					inside.push(...cut.in);
 				}
@@ -373,11 +405,11 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 	const mid = (poly) => poly.reduce((s, p) => s.add(p), new THREE.Vector3()).divideScalar(poly.length);
 	outside.sort((a, b) => over(mid(a)) - over(mid(b)));
 	inside.sort((a, b) => mid(b).y - mid(a).y); // let down from the top
-	const COVER_R = r + 0.03;
-	const shellGeo = panelGeometry(outside, COVER_R);
+	const COVER_R = r + 0.03 * S;
+	const shellGeo = panelGeometry(outside, COVER_R, r);
 	const shell = new THREE.Mesh(shellGeo, shellMat);
 	shell.castShadow = true;
-	const doorPanel = new THREE.Mesh(panelGeometry(inside, COVER_R + 0.004), shellMat);
+	const doorPanel = new THREE.Mesh(panelGeometry(inside, COVER_R + 0.004 * S, r), shellMat);
 	doorPanel.castShadow = true;
 	dome.add(shell, doorPanel);
 	const tris = (geo) => geo.attributes.position.count / 3;
@@ -389,25 +421,25 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 	const restAt = Array.from({ length: shellGeo.attributes.position.count }, (_, i) => over(new THREE.Vector3(rest[i * 3], rest[i * 3 + 1], rest[i * 3 + 2])));
 	// the zip round the door panel, closed from the top down
 	const zip = new THREE.Group();
-	for (const sx of [-1, 1]) zip.add(pathTube(half(sx, COVER_R + 0.006).reverse(), 0.007, m.zip()));
+	for (const sx of [-1, 1]) zip.add(pathTube(half(sx, COVER_R + 0.006 * S).reverse(), 0.007 * S, m.zip()));
 	dome.add(zip);
 
 	// the lantern hung from the top hub on its cord, the light in it
 	const lantern = new THREE.Group();
-	const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.42, 4), m.cord());
-	cord.position.y = r - 0.21;
-	const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 10), m.bulb());
-	bulb.position.y = r - 0.47;
-	const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.03, 0.04, 10), m.hub());
-	cap.position.y = r - 0.43;
+	const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.42 * S, 4), m.cord());
+	cord.position.y = r - 0.21 * S;
+	const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05 * S, 14, 10), m.bulb());
+	bulb.position.y = r - 0.47 * S;
+	const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.018 * S, 0.03 * S, 0.04 * S, 10), m.hub());
+	cap.position.y = r - 0.43 * S;
 	lantern.add(cord, bulb, cap);
 	dome.add(lantern);
-	const lamp = new THREE.PointLight(0xffb36a, 0, 14, 1.6);
-	lamp.position.set(0, r - 0.47, 0);
+	const lamp = new THREE.PointLight(0xffb36a, 0, 14 * S, 1.6);
+	lamp.position.set(0, r - 0.47 * S, 0);
 	dome.add(lamp);
 
 	// the groundsheet: rows from the door (s = 0) to the back (s = 2R), folded in three along its length and rolled up
-	const FR = r + 0.02;
+	const FR = r + 0.02 * S;
 	const COLS = 30, ROWS = 120;
 	const fgeo = new THREE.PlaneGeometry(1, 1, COLS, ROWS);
 	const flat = [];
@@ -468,11 +500,11 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 		at = k;
 		g.userData.pitch = k;
 		// the groundsheet
-		const fk = span(k, DOME_TENT.floor);
+		const fk = span(k, T.floor);
 		floor.visible = k > 0;
 		if (floor.visible) g.userData.roll = layFloor(fk);
 		// the frame, ring by ring
-		const f = span(k, DOME_TENT.frame);
+		const f = span(k, T.frame);
 		pieces.forEach((s, i) => {
 			const grow = f >= 1 ? 1 : ease(clamp((f - s.at) / s.dur));
 			if (grow <= 0) mx.makeScale(0, 0, 0);
@@ -494,7 +526,7 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 		for (const a of arch.children) a.userData.upTo(f > 0 ? top : -1);
 		lantern.visible = f >= 1;
 		// the cover drawn up from the back over the top; where it has just come it lifts off the tubes and settles
-		const c = span(k, DOME_TENT.cover);
+		const c = span(k, T.cover);
 		const edge = -0.05 + (Math.PI + 0.4) * ease(c);
 		let on = 0;
 		while (on < coverAt.length && coverAt[on] <= edge) on++;
@@ -504,14 +536,14 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 		if (settle || lifted) {
 			const pa = shellGeo.attributes.position;
 			for (let i = 0; i < pa.count; i++) {
-				const l = 1 + (settle ? 0.09 * (1 - clamp((edge - restAt[i]) / 0.35)) : 0) / COVER_R;
+				const l = 1 + (settle ? 0.09 * S * (1 - clamp((edge - restAt[i]) / 0.35)) : 0) / COVER_R;
 				pa.setXYZ(i, rest[i * 3] * l, rest[i * 3 + 1] * l, rest[i * 3 + 2] * l);
 			}
 			pa.needsUpdate = true;
 			lifted = settle;
 		}
 		// the door panel let down from the top, its zip closed after it
-		const d = span(k, DOME_TENT.doorIn);
+		const d = span(k, T.doorIn);
 		const dn = Math.round(ease(d) * tris(doorPanel.geometry));
 		doorPanel.geometry.setDrawRange(0, dn * 3);
 		doorPanel.visible = dn > 0;
@@ -521,22 +553,22 @@ export function domeTent({ pitch = 1, deck = true } = {}) {
 	 *  top of its sweep, the door */
 	function work(k) {
 		k = clamp(k);
-		if (k <= DOME_TENT.floor[1]) {
+		if (k <= T.floor[1]) {
 			const R = g.userData.roll?.R ?? 0.1;
-			const u = 2 * FR * ease(clamp(span(k, DOME_TENT.floor) / 0.65));
+			const u = 2 * FR * ease(clamp(span(k, T.floor) / 0.65));
 			return new THREE.Vector3(0, base + R, FR - u);
 		}
 		const off = dome.position;
-		if (k <= DOME_TENT.frame[1]) {
-			const f = span(k, DOME_TENT.frame);
+		if (k <= T.frame[1]) {
+			const f = span(k, T.frame);
 			const s = pieces.filter((p) => p.at <= f).sort((a, b) => b.at - a.at)[0] ?? pieces[0];
 			return s.p1.clone().add(off);
 		}
-		if (k <= DOME_TENT.cover[1]) {
-			const e = Math.min(Math.PI, -0.05 + (Math.PI + 0.4) * ease(span(k, DOME_TENT.cover)));
+		if (k <= T.cover[1]) {
+			const e = Math.min(Math.PI, -0.05 + (Math.PI + 0.4) * ease(span(k, T.cover)));
 			return new THREE.Vector3(0, Math.sin(e) * COVER_R, -Math.cos(e) * COVER_R).add(off);
 		}
-		return onDome(0, DOME_TENT.door.h, COVER_R).add(off);
+		return onDome(0, T.door.h, COVER_R).add(off);
 	}
 
 	g.userData = { shell, door: doorPanel, lamp, deck: deckMesh, floor, frame: { tubes: tubeMesh, hubs: hubMesh, arch }, pitch, setPitch, work };
@@ -556,7 +588,22 @@ export const TENT_BAG = { len: 0.9, r: 0.2 };
  * taken off it as the tent is pitched).
  */
 export function packedTent({ open = 0 } = {}) {
-	const { len, r } = TENT_BAG;
+	return bagged(TENT_BAG, { open });
+}
+
+/** the storage tent's bag: its length and its radius rolled up */
+export const STORAGE_TENT_BAG = { len: 1, r: 0.35 };
+
+/** The storage tent's bag, open as far as `open`: userData as packedTent's. */
+export function storageTentBag({ open = 0 } = {}) {
+	return bagged(STORAGE_TENT_BAG, { open });
+}
+
+/** the bag of measures B (TENT_BAG, STORAGE_TENT_BAG): what is in it as much thicker as it is (fr) and as much longer
+ *  (fl) as the dome tent's */
+function bagged(B, { open = 0 } = {}) {
+	const { len, r } = B;
+	const fr = r / TENT_BAG.r, fl = len / TENT_BAG.len;
 	const g = new THREE.Group();
 	const W = 2 * Math.PI * r; // the canvas's width round the roll
 	/** a sheet of the canvas (x0 … x1 along the bag) at radius rr round its middle, as open as k */
@@ -591,17 +638,17 @@ export function packedTent({ open = 0 } = {}) {
 	bagMat.side = THREE.DoubleSide;
 	const canvas = sheet(-len / 2, len / 2, r, bagMat, 10, 40);
 	g.add(canvas);
-	const straps = [-0.26, 0.26].map((x) => sheet(x - 0.02, x + 0.02, r + 0.004, m.strap(), 1, 40));
+	const straps = [-0.26 * fl, 0.26 * fl].map((x) => sheet(x - 0.02 * fr, x + 0.02 * fr, r + 0.004, m.strap(), 1, 40));
 	g.add(...straps);
-	const buckles = [-0.26, 0.26].map((x) => {
-		const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.04), m.buckle());
+	const buckles = [-0.26 * fl, 0.26 * fl].map((x) => {
+		const b = new THREE.Mesh(new THREE.BoxGeometry(0.05 * fr, 0.012, 0.04 * fr), m.buckle());
 		b.position.set(x, 2 * r + 0.006, 0);
 		g.add(b);
 		return b;
 	});
 	// a carry handle lying along its top, sewn to one edge of the canvas at both its ends
-	const handle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.006, 0.035), m.strap());
-	handle.position.set(0, 2 * r + 0.003, 0.015);
+	const handle = new THREE.Mesh(new THREE.BoxGeometry(0.3 * fl, 0.006, 0.035 * fr), m.strap());
+	handle.position.set(0, 2 * r + 0.003, 0.015 * fr);
 	g.add(handle);
 
 	// what is in it: where it lies rolled up (in the roll's section: z across, y up) and where it settles on the open
@@ -612,26 +659,26 @@ export function packedTent({ open = 0 } = {}) {
 		o.castShadow = true;
 		return o;
 	};
-	const floorRoll = roll(0.075, 0.86, new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.75 }));
-	const coverRoll = roll(0.075, 0.84, std('#e6dcc4', 0.9)());
+	const floorRoll = roll(0.075 * fr, 0.86 * fl, new THREE.MeshStandardMaterial({ map: floorTexture, roughness: 0.75 }));
+	const coverRoll = roll(0.075 * fr, 0.84 * fl, std('#e6dcc4', 0.9)());
 	const tubes = new THREE.Group();
 	for (let i = 0; i < 19; i++) {
 		const ringN = i === 0 ? 0 : i < 7 ? 1 : 2;
 		const a = ringN === 1 ? ((i - 1) / 6) * Math.PI * 2 : ((i - 7) / 12) * Math.PI * 2 + 0.26;
-		const t = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.62, 8).rotateZ(Math.PI / 2), m.tube());
-		t.position.set(0, Math.sin(a) * 0.021 * ringN, Math.cos(a) * 0.021 * ringN);
+		const t = new THREE.Mesh(new THREE.CylinderGeometry(0.01 * fr, 0.01 * fr, 0.62 * fl, 8).rotateZ(Math.PI / 2), m.tube());
+		t.position.set(0, Math.sin(a) * 0.021 * fr * ringN, Math.cos(a) * 0.021 * fr * ringN);
 		t.castShadow = true;
 		tubes.add(t);
 	}
-	for (const x of [-0.2, 0.2]) {
-		const tie = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.006, 6, 18).rotateY(Math.PI / 2), m.strap());
+	for (const x of [-0.2 * fl, 0.2 * fl]) {
+		const tie = new THREE.Mesh(new THREE.TorusGeometry(0.052 * fr, 0.006, 6, 18).rotateY(Math.PI / 2), m.strap());
 		tie.position.x = x;
 		tubes.add(tie);
 	}
 	const hubSack = new THREE.Group();
-	const sackBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.16, 12).rotateZ(Math.PI / 2), m.sack());
-	const sackTie = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.005, 6, 12).rotateY(Math.PI / 2), m.cord());
-	sackTie.position.x = 0.085;
+	const sackBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045 * fr, 0.05 * fr, 0.16 * fl, 12).rotateZ(Math.PI / 2), m.sack());
+	const sackTie = new THREE.Mesh(new THREE.TorusGeometry(0.026 * fr, 0.005, 6, 12).rotateY(Math.PI / 2), m.cord());
+	sackTie.position.x = 0.085 * fl;
 	hubSack.add(sackBody, sackTie);
 	sackBody.castShadow = true;
 	const parts = { floor: floorRoll, cover: coverRoll, tubes, hubs: hubSack };
@@ -641,6 +688,7 @@ export function packedTent({ open = 0 } = {}) {
 		tubes: [new THREE.Vector3(-0.11, 0.275, 0), new THREE.Vector3(-0.11, 0.058, 0.2)],
 		hubs: [new THREE.Vector3(0.32, 0.27, 0), new THREE.Vector3(0.32, 0.053, 0.2)]
 	};
+	for (const ends of Object.values(places)) for (const v of ends) v.set(v.x * fl, v.y * fr, v.z * fr);
 	for (const o of Object.values(parts)) g.add(o);
 
 	let at = -1;
