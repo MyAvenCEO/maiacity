@@ -130,11 +130,12 @@ export const TRIPS = [
 	{
 		title: 'A new phone signs in with your passkey alone',
 		caption:
-			'The link card holds the logs of the vaults your passkey owns and nothing of an entry, so the pass alone reads nothing. History then comes in pages of about 4 MiB, each edit after its past, so a vault of any size arrives a page at a time, never one round trip per edit. With every other device lost, this is how a vault comes back.',
+			'The link card holds the logs of the vaults your passkey owns and nothing of an entry, so the pass alone reads nothing. History then comes in pages of about 4 MiB, each edit after its past, so a vault of any size arrives a page at a time, never one round trip per edit. With every other device lost, this is how a vault comes back. Setting up on a second device with the same passkey takes this same path, and founds nothing new.',
 		spec: {
 			actors: [you, { id: 'N', label: 'New phone' }, server],
 			steps: [
 				{ from: 'you', to: 'N', text: 'sign in with your passkey' },
+				{ from: 'N', to: 'N', text: 'wait for the relay to let it in, up to 20 s' },
 				{ from: 'N', to: 'S', text: 'through the relay: show the pass your passkey signed' },
 				{ from: 'S', to: 'N', text: 'the link card: your vault’s log', reply: true },
 				{ from: 'N', to: 'N', text: 'check every edit, open the keys your passkey unlocks' },
