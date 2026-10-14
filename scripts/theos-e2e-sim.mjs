@@ -8,12 +8,15 @@
  * of that COOP: 0.5 to the investor, 0.4 to the COOP's treasury, 0.1 to the city's liquidity pools; COOPs never hold
  * HEARTS; treasuries hold own and other MINDs as working capital; the pools are equal-weight G3M baskets of 4–8 MINDs
  * with a 0.3 % fee kept in the pool, whose LP tokens the City COOP holds (no redemptions here), and all MIND↔MIND
- * trades go through them; Law 5 pays 20 % of every sale at once to the holders of the seller's MIND; a COOP bootstraps
- * from HEARTS plus ≥ 3 basket partners; HEARTS and MINDs melt at 7 %/yr; all land belongs to the City COOP (one equal
- * share per citizen), which also runs what citizens share (here: water, streets, parks), is never sold and is leased
- * for ground rent paid in MIND to the City COOP; a failed COOP's physical assets go to the City COOP, which leases them
- * to another COOP; when a COOP sells, it receives only its own MIND and the pools route the buyer's MIND to it; Avens
- * invest, trade and pay for people.
+ * trades go through them; Law 5 pays 20 % of every sale at once, in the seller's own MIND, pro rata to every holder of
+ * that MIND except the COOP's own treasury (paying itself would eat its own tail): people, other COOPs' treasuries, the
+ * city's pools (each basket's reserve of it, and the pools' part that waits for the step's deposit) and the arbitrage
+ * bot (divPools = 0, the old rule: people and other treasuries only); a COOP bootstraps from HEARTS plus ≥ 3 basket
+ * partners; HEARTS and MINDs melt at 7 %/yr; all land belongs to the City COOP (one equal share per citizen), which
+ * also runs what citizens share (here: water, streets, parks), is never sold and is leased for ground rent paid in MIND
+ * to the City COOP; a failed COOP's physical assets go to the City COOP, which leases them to another COOP; when a COOP
+ * sells, it receives only its own MIND and the pools route the buyer's MIND to it; Avens invest, trade and pay for
+ * people.
  *
  * Switches compared: how using a MIND works ((a) holding it is a quota of the COOP's output / (b) spent MIND goes to
  * the seller's treasury / (c) spent MIND is burned / (d) spent MIND goes to the seller's treasury, but a treasury keeps
@@ -48,12 +51,15 @@
  *                                                    μ, σ, the margin below the melt and Proposition 3's checks
  *                                                    (keys of the dynamic world, e.g. poolShare=0.05, turnDiv=0.1,
  *                                                    capDays=365; reletUse=0 runs without the idle-plant rule: the
- *                                                    City then re-lets every failed plant; crn=1 draws the shocks
- *                                                    from their own stream, see --pair)
+ *                                                    City then re-lets every failed plant; divPools=0 runs Law 5
+ *                                                    without the pools, the old rule: its dividend goes to people and
+ *                                                    other treasuries only; crn=1 draws the shocks from their own
+ *                                                    stream, see --pair)
  *        node scripts/theos-e2e-sim.mjs --pair 20261012-20261035 --vs poolShare=0.05 [--names new,old] [--set …]
  *                                                    the same-shock comparison: the dynamic main and the same with
  *                                                    --vs, both on every seed with common random numbers (crn=1),
- *                                                    paired seed by seed, with a two-sided sign test
+ *                                                    paired seed by seed, with a two-sided sign test (--vs divPools=0:
+ *                                                    the new Law 5 against the old one)
  *        node scripts/theos-e2e-sim.mjs … --melt 0.09  a research run with another melt (the protocol's is 0.07)
  *        node scripts/theos-e2e-sim.mjs --debug d 60 [--empty 0.25 | --grow]   one static run, a line a year
  *        node scripts/theos-e2e-sim.mjs --dyn 60 [--set key=value,…]          one dynamic run, a line a year
@@ -405,8 +411,9 @@ function newBucket() {
 		routeFee: 0, hopsIn: 0, insolv: new Float64Array(M), steps: 0, days: 0, arbR: 0, hearts: new Float64Array(M),
 		burned: 0, retired: 0, issued: 0, payR: 0, cpiSum: 0, cpiN: 0, rentR: 0, wagesR: 0, divR: 0, propR: 0, pFail: 0,
 		divK: new Float64Array(M), eligK: new Float64Array(M), treInR: 0, heartInR: 0, salesHHR: 0, b2bR: 0,
-		// the round trip (R): the investor's half to wallets, the pools' part to the pools, dividends to people and to treasuries, melt by place
-		walHeartR: 0, poolHeartR: 0, divHHR: 0, divTR: 0, meltWR: 0, meltTR: 0, meltPR: 0, meltAR: 0,
+		// the round trip (R): the investor's half to wallets, the pools' part to the pools, Law 5 dividends to people, to
+		// other treasuries, to the pools and to the arbitrage bot, melt by place
+		walHeartR: 0, poolHeartR: 0, divHHR: 0, divTR: 0, divPR: 0, divAR: 0, meltWR: 0, meltTR: 0, meltPR: 0, meltAR: 0,
 		// dynamic world: failures (liquidation to holders, what holders and pools lost), stock that rotted, events, MIND count
 		// melted, Aven work demand, and the per-person proof checks
 		liqHHR: 0, liqTR: 0, lossWalR: 0, lossTreR: 0, lossPoolR: 0, burnTreR: 0, rotR: 0, failN: 0, exitN: 0, foundN: 0, shockN: 0,
@@ -1143,8 +1150,8 @@ function capTreasuries(S, B) {
 /**
  * main scenario: what a treasury holds of its own MIND above its working capital (60 days of running costs and planned
  * building) it pays out within about a month (pace sc.payout a year): a share sc.divShare as a dividend to everyone who
- * holds its MIND (people and other treasuries, pro rata; not itself, not the pools), the rest for accepted work
- * proposals, paid to the people who do the work (by hours offered)
+ * holds its MIND (pro rata, every holder but itself, see holders), the rest for accepted work proposals, paid to the
+ * people who do the work (by hours offered)
  */
 function payOut(S, dt, B) {
 	if (S.sc.mech !== 'b' || !(S.sc.payout > 0)) return;
@@ -1171,27 +1178,43 @@ function payOut(S, dt, B) {
 	}
 }
 
-/** the MIND k that may get a dividend: what people and other treasuries hold (not the COOP itself, not the pools) */
-function holders(S, k) {
+/**
+ * Law 5's holders: everything that holds the MIND k, except the COOP's own treasury (paying itself would eat its own
+ * tail): people, other COOPs' treasuries, and (sc.divPools, the main) the city's pools, whose LP tokens the City COOP
+ * holds (every basket's reserve of k, and the pools' part of new k that waits for this step's deposit), and the
+ * arbitrage bot. With divPools = 0 (the old rule) only people and other treasuries. all = false gives the old set
+ * whatever the rule (a COOP that ends pays its liquidation to people and other treasuries only)
+ */
+const law5All = (S) => !!(S.sc.divPools ?? true);
+function holders(S, k, all = law5All(S)) {
 	let H = 0;
 	if (S.sc.dynamic) {
 		// (rounding can leave −1e-16 behind a payment; it must not take a share)
 		for (let i = 0; i < S.N; i++) H += Math.max(0, S.hold[i * M + k]);
 		for (let j = 0; j < M; j++) if (j !== k && S.c[j].active) H += Math.max(0, S.c[j].tre[k]);
-		return H;
+	} else {
+		for (let i = 0; i < S.N; i++) H += S.hold[i * M + k];
+		for (let j = 0; j < M; j++) if (j !== k && S.c[j].active) H += S.c[j].tre[k];
 	}
-	for (let i = 0; i < S.N; i++) H += S.hold[i * M + k];
-	for (let j = 0; j < M; j++) if (j !== k && S.c[j].active) H += S.c[j].tre[k];
+	if (all) {
+		for (const p of S.pools) if (p.pos[k] >= 0) H += Math.max(0, p.x[p.pos[k]]);
+		H += Math.max(0, S.c[k].poolDue) + Math.max(0, S.arb[k]);
+	}
 	return H;
 }
 
-/** a dividend of div MIND k, pro rata to its holders (people and other treasuries) */
+/**
+ * a dividend of div MIND k, pro rata to its holders (see holders). What a pool gets adds to that basket's reserve of k,
+ * as the pools' part of a HEART does (deposits): every basket that holds k gets the same share of what it holds, so k's
+ * price falls alike in all of them and no pool is left out of line with another; what waits for the deposit grows with
+ * it and is deposited with it
+ */
 function payDiv(S, k, div, B) {
 	const H = holders(S, k);
 	if (!(div > 0 && H > 0)) return;
 	const f = div / H, c = S.c;
 	if (S.sc.dynamic) c[k].divAcc = (c[k].divAcc || 0) + f;
-	let hh = 0;
+	let hh = 0, pl = 0, ab = 0;
 	const dI = S.divI, pos = !!S.sc.dynamic;
 	for (let i = 0; i < S.N; i++) {
 		const d = (pos ? Math.max(0, S.hold[i * M + k]) : S.hold[i * M + k]) * f;
@@ -1201,13 +1224,30 @@ function payDiv(S, k, div, B) {
 		hh += d;
 	}
 	for (let j = 0; j < M; j++) if (j !== k && c[j].active) c[j].tre[k] += (pos ? Math.max(0, c[j].tre[k]) : c[j].tre[k]) * f;
+	if (law5All(S)) {
+		for (const p of S.pools) {
+			const at = p.pos[k];
+			if (at < 0) continue;
+			const d = Math.max(0, p.x[at]) * f;
+			p.x[at] += d;
+			p.depR[at] += d * S.P[k];
+			pl += d;
+		}
+		const due = Math.max(0, c[k].poolDue) * f;
+		c[k].poolDue += due;
+		pl += due;
+		ab = Math.max(0, S.arb[k]) * f;
+		S.arb[k] += ab;
+	}
 	B.divHHR += hh * S.P[k];
-	B.divTR += (div - hh) * S.P[k];
+	B.divTR += (div - hh - pl - ab) * S.P[k];
+	B.divPR += pl * S.P[k];
+	B.divAR += ab * S.P[k];
 	B.divK[k] += div;
 	B.divR += div * S.P[k];
 }
 
-/** eligible holdings of every MIND, for the dividend yield */
+/** eligible holdings of every MIND (all that Law 5 pays: see holders), for the dividend yield */
 function eligible(S, dt, B) {
 	for (let k = 0; k < M; k++) if (S.c[k].active && k !== JUNK) B.eligK[k] += holders(S, k) * dt;
 }
@@ -1402,6 +1442,7 @@ function deliver(S, dt, T, B) {
 		co.revenueR += pay[s] * P[s];
 		if (mech === 'b') {
 			// Law 5, every sale pays its owners: a share of every sale goes at once to everyone who holds the seller's MIND
+			// (every holder but the seller's own treasury: people, other treasuries, the pools, the arbitrage bot)
 			const d = S.sc.turnDiv > 0 && s !== JUNK && holders(S, s) > 0 ? pay[s] * S.sc.turnDiv : 0;
 			treasuryIn(S, s, pay[s] - d), (B.treInR += (pay[s] - d) * P[s]);
 			co.inR += (pay[s] - d) * P[s];
@@ -1986,8 +2027,9 @@ function endCoop(S, k, type, why, B) {
 		}
 	}
 	co.baskets = [];
-	// liquidation: its treasury's other MINDs to the holders of its MIND (people and other treasuries)
-	const H = holders(S, k);
+	// liquidation: its treasury's other MINDs to the holders of its MIND (people and other treasuries; this is not Law 5,
+	// and the pools' reserve of it is already retired)
+	const H = holders(S, k, false);
 	for (let j = 0; j < M; j++) {
 		const a = co.tre[j];
 		if (j === k || !(a > 0)) continue;
@@ -2281,7 +2323,7 @@ function dynYear(S, B, W, split, yk) {
 // Nothing in the simulation reads these values, so every move, price and trade stays the same. Flows are valued at the
 // HEART values of the step in which they happen; price moves are what the change of HEART values from one step to the
 // next did to what each place holds. The report's sections H1–H8 print them.
-const HKEYS = ['payR', 'cpiSum', 'rentR', 'wagesR', 'divR', 'propR', 'treInR', 'heartInR', 'salesHHR', 'b2bR', 'walHeartR', 'poolHeartR', 'divHHR', 'divTR', 'meltWR', 'meltTR', 'meltPR', 'meltAR', 'liqHHR', 'liqTR', 'lossWalR', 'lossTreR', 'lossPoolR', 'burnTreR', 'rotR', 'arbR', 'routeCost', 'routeFee', 'routeIn', 'wageSum'];
+const HKEYS = ['payR', 'cpiSum', 'rentR', 'wagesR', 'divR', 'propR', 'treInR', 'heartInR', 'salesHHR', 'b2bR', 'walHeartR', 'poolHeartR', 'divHHR', 'divTR', 'divPR', 'divAR', 'meltWR', 'meltTR', 'meltPR', 'meltAR', 'liqHHR', 'liqTR', 'lossWalR', 'lossTreR', 'lossPoolR', 'burnTreR', 'rotR', 'arbR', 'routeCost', 'routeFee', 'routeIn', 'wageSum'];
 function heartIndex(S) {
 	const N = S.N, P = S.P, c = S.c, s = new Float64Array(M);
 	for (let i = 0; i < N; i++) for (let k = 0; k < M; k++) s[k] += S.hold[i * M + k];
@@ -2498,7 +2540,7 @@ function closeYear(S) {
 		workRatio: nW && nO && wO > 0 ? wW / nW / (wO / nO) : null, peopleShareR: split.totalR > 0 ? split.walR / split.totalR : null,
 		yk: Array.from(yk), flows: { heartIn: B.heartInR, salesHH: B.salesHHR, b2b: B.b2bR, rent: B.rentR, wages: B.wagesR, prop: B.propR, div: B.divR },
 		rt: {
-			walHeart: B.walHeartR, treHeart: B.heartInR, poolHeart: B.poolHeartR, ops: B.wagesR, prop: B.propR, divHH: B.divHHR, divT: B.divTR,
+			walHeart: B.walHeartR, treHeart: B.heartInR, poolHeart: B.poolHeartR, ops: B.wagesR, prop: B.propR, divHH: B.divHHR, divT: B.divTR, divP: B.divPR, divA: B.divAR,
 			buy: B.salesHHR, b2b: B.b2bR, rent: B.rentR, routeCost: B.routeCost, routeFee: B.routeFee,
 			meltW: B.meltWR, meltT: B.meltTR, meltP: B.meltPR, meltA: B.meltAR, days: B.days,
 			// dynamic world: price moves (revaluation), what a COOP that ended paid out of its treasury to its holders, and the
@@ -2512,7 +2554,9 @@ function closeYear(S) {
 
 // ── scenarios ────────────────────────────────────────────────────────────────────────────────────────────────────────
 const N0 = QUICK ? 120 : 250;
-const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', turnDiv: 0.2, poolShare: POOL_SHARE, payout: 12, divShare: 0, wageR: WAGE_R, capDays: 60, arbTo: 'bot', avenRule: 'price', popGrowth: 0, years: 60 };
+// divPools: Law 5 pays every holder but the seller's own treasury, the pools and the arbitrage bot too (false: the old
+// rule, people and other treasuries only)
+const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', turnDiv: 0.2, divPools: true, poolShare: POOL_SHARE, payout: 12, divShare: 0, wageR: WAGE_R, capDays: 60, arbTo: 'bot', avenRule: 'price', popGrowth: 0, years: 60 };
 // the dynamic world (the new main): free prices, rivals in every good, experiences, reserves of 9 months, productivity
 // growth, shocks, foundings and failures, a zero-Aven test group (every tenth person)
 const DYN = {
@@ -2729,7 +2773,9 @@ const median = (v) => {
 	const x = [...v].sort((a, b) => a - b);
 	return (x[(x.length - 1) >> 1] + x[x.length >> 1]) / 2;
 };
-const setText = (o) => [...Object.entries(o).map(([k, v]) => `${k} = ${v}`), ...(ARGS.includes('--melt') ? [`melt ${pct(RATE, 0)}`] : [])].join(', ');
+const setText = (o) => [...Object.entries(o).map(([k, v]) => (k === 'divPools' && !v ? 'divPools = 0 (Law 5 without the pools, the old rule)' : `${k} = ${v}`)), ...(ARGS.includes('--melt') ? [`melt ${pct(RATE, 0)}`] : [])].join(', ');
+/** who Law 5 pays in a seed run's JSON */
+const lawWho = (r) => (r.divPools === false ? 'to people and other treasuries only (the old rule)' : 'to every holder of the seller\'s MIND but its own treasury (people, other treasuries, the pools, the arbitrage bot)');
 if (ARGS.includes('--seeds')) {
 	const seeds = seedList(ARGS[ARGS.indexOf('--seeds') + 1]);
 	const res = await seedRuns(seeds.map((seed) => ({ seed, set: SET })));
@@ -2737,7 +2783,7 @@ if (ARGS.includes('--seeds')) {
 	const set = setText(SET);
 	const L = [];
 	L.push(`# The seed check: the dynamic main on ${seeds.length} seeds${set ? ` (${set})` : ''}`, '');
-	L.push(`Each row is the dynamic main of the full report on one seed: ${res[0].N} people, ${res[0].years} years, the pools' part ${f(res[0].poolShare, 2)} of each HEART, Law 5 at ${pct(res[0].turnDiv, 0)}. μ and σ: the mean and the spread across people of each person's yearly return in HEARTS (dividends plus price change, before the melt), at rest (the last 10 years). The margin is the ${pct(RATE, 0)} melt less μ. COOP failures: all, with the food COOPs among them in brackets. Proposition 3's checks are the report's proof checks 1–3 (check 2 normal, with the bundle under 12 MIND); "every tenth" is check 3 for the ten tenths alone.`, '');
+	L.push(`Each row is the dynamic main of the full report on one seed: ${res[0].N} people, ${res[0].years} years, the pools' part ${f(res[0].poolShare, 2)} of each HEART, Law 5 at ${pct(res[0].turnDiv, 0)} ${lawWho(res[0])}. μ and σ: the mean and the spread across people of each person's yearly return in HEARTS (dividends plus price change, before the melt), at rest (the last 10 years). The margin is the ${pct(RATE, 0)} melt less μ. COOP failures: all, with the food COOPs among them in brackets. Proposition 3's checks are the report's proof checks 1–3 (check 2 normal, with the bundle under 12 MIND); "every tenth" is check 3 for the ten tenths alone.`, '');
 	L.push('| Seed | μ at rest | margin (melt − μ) | σ | Prop. 2 Gini | measured Gini (HEARTS): last year; trend / 10 y | dividend yield | pools\' share of MIND | COOP failures (food) | 1. no one starves (person-days short from day 8) | 2. no one has to work | 3. living standards rise | every tenth higher | all three |');
 	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: | :---: | :---: | :---: |');
 	for (const r of res) L.push(`| ${r.seed} | ${pct(r.muH, 2)} | ${f(r.marginH * 100, 2)} pt | ${pct(r.sgH, 2)} | ${r.gini2H === null ? '–' : f(r.gini2H, 2)} | ${f(r.giniH.y60, 3)}; ${r.giniH.trend >= 0 ? '+' : ''}${f(r.giniH.trend, 3)} | ${pct(r.yield, 1)} | ${pct(r.pools, 1)} | ${r.fails} (${r.foodFails}) | ${ok(r.ok1)} ${f(r.shLate)} | ${ok(r.ok2)} | ${ok(r.ok3)} | ${ok(r.tenths)} | ${ok(r.all)} |`);
@@ -2775,7 +2821,7 @@ if (ARGS.includes('--pair')) {
 	const ok = okMark;
 	const L = [];
 	L.push(`# The same-shock comparison: ${nA} against ${nB} on ${n} seeds, with common random numbers`, '');
-	L.push(`${nA}: the dynamic main${Object.keys(SET).length ? ` with ${setText(SET)}` : ''} (the pools' part ${f(A[0].poolShare, 2)} of each HEART, Law 5 at ${pct(A[0].turnDiv, 0)}). ${nB}: the same with ${setText(VS)} (the pools' part ${f(B[0].poolShare, 2)}, Law 5 at ${pct(B[0].turnDiv, 0)}). Both run with common random numbers (crn = 1): a second random stream gives every COOP slot its capacity shocks and taste drift on every step, so on one seed both rules meet the same shocks. ${A[0].N} people, ${A[0].years} years. Person-days short: below 98 % of the basics, from day 8. COOP failures: all, food COOPs, and successors (COOPs that took over a failed plant) that failed too. μ: the lasting return at rest in HEARTS. "All three": all three checks of Proposition 3 pass.`, '');
+	L.push(`${nA}: the dynamic main${Object.keys(SET).length ? ` with ${setText(SET)}` : ''} (the pools' part ${f(A[0].poolShare, 2)} of each HEART, Law 5 at ${pct(A[0].turnDiv, 0)} ${lawWho(A[0])}). ${nB}: the same with ${setText(VS)} (the pools' part ${f(B[0].poolShare, 2)}, Law 5 at ${pct(B[0].turnDiv, 0)} ${lawWho(B[0])}). Both run with common random numbers (crn = 1): a second random stream gives every COOP slot its capacity shocks and taste drift on every step, so on one seed both rules meet the same shocks. ${A[0].N} people, ${A[0].years} years. Person-days short: below 98 % of the basics, from day 8. COOP failures: all, food COOPs, and successors (COOPs that took over a failed plant) that failed too. μ: the lasting return at rest in HEARTS. "All three": all three checks of Proposition 3 pass.`, '');
 	L.push(`| Seed | person-days short: ${nA} | ${nB} | food COOP failures: ${nA} | ${nB} | all COOP failures: ${nA} | ${nB} | μ at rest: ${nA} | ${nB} | all three: ${nA} | ${nB} |`);
 	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |');
 	for (let i = 0; i < n; i++) {
@@ -2922,7 +2968,8 @@ const DLADDER = [
 	['wants', 'wants do not grow (no experiences)', { wantsGrow: false }],
 	['aven', 'Avens with fixed capacity, their rate floats', { avenMarket: true }],
 	['pop', 'population grows 2 % a year (newcomers)', { popGrowth: 0.02 }],
-	['pool05', 'the old pool rule: 0.05 of each HEART to the pools', { poolShare: 0.05 }]
+	['pool05', 'the old pool rule: 0.05 of each HEART to the pools', { poolShare: 0.05 }],
+	['law5old', 'Law 5 without the pools, the old rule: dividends to people and other treasuries only', { divPools: false }]
 ];
 const dynYears = (key) => (QUICK ? (key === 'main' ? YRS : 12) : key === 'pop' ? 40 : YRS);
 for (const [key, , extra] of SEED_RUN ? [['main', 'seed', SEED_RUN]] : DLADDER) {
@@ -3156,6 +3203,8 @@ function heartSummary(S) {
 		bundleMaxScript: S.Y.reduce((b, y) => (y.dyn && y.dyn.basicMind !== null && y.dyn.basicMind > b.v ? { v: y.dyn.basicMind, year: y.year } : b), { v: 0, year: 0 }),
 		// who holds the MIND, by HEART value, at rest: wallets, treasuries (with what waits for the pools), pools, the arbitrage bot
 		shares: { people: hmean(shares.people), treasuries: hmean(shares.treasuries), pools: hmean(shares.pools), arb: hmean(shares.arb) },
+		// the pools' depth at rest: what they hold a person, in HEARTS (at the year's end values) and as a MIND count
+		poolDepth: { hearts: hmean(ys.map((y) => hy(S, y).pl.p / hy(S, y).N)), mind: hmean(ys.map((y) => yy(S, y).split.pool / yy(S, y).N)) },
 		// the measured Gini of what people hold, in HEARTS: years L−20, L−10, L, its mean at rest, and its trend over the last 20 years
 		giniH: { y40: hy(S, L - 20)?.giniH ?? null, y50: hy(S, L - 10).giniH, y60: hy(S, L).giniH, rest: hmean(ys.map((y) => hy(S, y).giniH)), trend: L > 20 ? trend10((y) => hy(S, y).giniH, L - 19, L) : null }
 	};
@@ -3175,7 +3224,7 @@ if (SEED_RUN) {
 	// the City scrapped
 	const fl = S.events.filter((e) => e.type === 'fail');
 	const ends = { fails: fl.length, foodFails: fl.filter((e) => e.product === FOOD).length, chainFails: fl.filter((e) => /-B\d*$/.test(e.name)).length, scrapped: fl.filter((e) => e.scrapped).length, exits: S.events.filter((e) => e.type === 'exit' && !/called off/.test(e.note)).length, founds: S.events.filter((e) => e.type === 'found').length, shocks: S.events.filter((e) => e.type === 'shock').length };
-	console.log(JSON.stringify({ seed: S.sc.seed, N: S.sc.N0, years: S.Y.length, poolShare: S.sc.poolShare, turnDiv: S.sc.turnDiv, crn: !!S.sc.crn, reletUse: S.sc.reletUse ?? 0, ...ends, muH: h.muH, sgH: h.sgH, marginH: h.marginH, gini2H: h.gini2H, muR: h.muR, giniH: h.giniH, yield: h.yield, pools: h.shares.pools, people: h.shares.people, ok1: pf.ok1, shLate: pf.shLate, okN: pf.okN, okB: pf.okB, ok2: pf.ok2, ok3: pf.ok3, tenths, all: pf.all, why }));
+	console.log(JSON.stringify({ seed: S.sc.seed, N: S.sc.N0, years: S.Y.length, poolShare: S.sc.poolShare, turnDiv: S.sc.turnDiv, divPools: law5All(S), crn: !!S.sc.crn, reletUse: S.sc.reletUse ?? 0, ...ends, muH: h.muH, sgH: h.sgH, marginH: h.marginH, gini2H: h.gini2H, muR: h.muR, giniH: h.giniH, yield: h.yield, pools: h.shares.pools, poolDepthH: h.poolDepth.hearts, poolMind: h.poolDepth.mind, people: h.shares.people, ok1: pf.ok1, shLate: pf.shLate, okN: pf.okN, okB: pf.okB, ok2: pf.ok2, ok3: pf.ok3, tenths, all: pf.all, why }));
 	process.exit(0);
 }
 const PD = proof(D), SD = ss(D), S0s = ss(results['main:base']);
@@ -3185,7 +3234,7 @@ P('# theOS end-to-end simulation — the dynamic world (new main), and the stati
 P('');
 P(`${N0} people from a cold start with goods (seed capacities ${f(DYN.seedCap * 100)} % of the starting need, nobody holds MIND on day 1), seed ${BASE.seed}, ${dL} years. Daily steps in the first year, weekly steps (traded as 3 batches) after. Steady state = the last 10 years (years ${dA + 1}–${dB}). R = the geometric mean of the reference MIND prices (SOLAR, HABITAT, CITY; chain-linked, so R does not jump when a reference COOP ends and its successor takes its place). A day of living = what an average person's daily consumption costs in R that year. Every tenth person (${zN(D)} people) is the zero-Aven test group: their Avens deliver nothing and they start with nothing; they live only from what they own.`);
 P('');
-P(`The dynamic world: prices move freely with demand in both directions (no cap, no price control, no protected price for basics; a COOP\'s floor is its own variable cost grossed up for Law 5, and it goes below that to clear stock that would rot); every household good starts with two rivals (water stays with the City), a seventh good (experiences, new products) has no satiation; a product whose margin over full cost stays above 30 % for 90 days gets a new rival under Law 3 (founders, 3 basket partners); treasuries keep ${f(DYN.capDays / 30)} months of running costs plus planned building, grow first, then pay out for Aven work proposals; each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - DYN.poolShare, 1)} to the COOP\'s treasury, ${f(DYN.poolShare, 1)} to the pools; Law 5 pays ${pct(DYN.turnDiv, 0)} of every sale to the holders of the seller\'s MIND; productivity rises about 2 % a year, unevenly; random capacity shocks (30–50 % for 2–8 months) and drifting tastes; a COOP whose treasury stays dry while it keeps losing fails (its plant goes to the City, which leases it to a successor with a new MIND while the plant is in use; an idle plant, with demand under ${pct(DYN.reletUse, 0)} of its capacity, is scrapped and its land goes back to the City; the failed MIND leaves the pools and is retired), a small COOP that lost its market exits. People spend about half of what they own a year (basics first).`);
+P(`The dynamic world: prices move freely with demand in both directions (no cap, no price control, no protected price for basics; a COOP\'s floor is its own variable cost grossed up for Law 5, and it goes below that to clear stock that would rot); every household good starts with two rivals (water stays with the City), a seventh good (experiences, new products) has no satiation; a product whose margin over full cost stays above 30 % for 90 days gets a new rival under Law 3 (founders, 3 basket partners); treasuries keep ${f(DYN.capDays / 30)} months of running costs plus planned building, grow first, then pay out for Aven work proposals; each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - DYN.poolShare, 1)} to the COOP\'s treasury, ${f(DYN.poolShare, 1)} to the pools; Law 5 pays ${pct(DYN.turnDiv, 0)} of every sale, in the seller\'s own MIND, pro rata to every holder of that MIND but the seller\'s own treasury (people, other treasuries, the city\'s pools, whose reserve of it grows like a deposit, and the arbitrage bot); productivity rises about 2 % a year, unevenly; random capacity shocks (30–50 % for 2–8 months) and drifting tastes; a COOP whose treasury stays dry while it keeps losing fails (its plant goes to the City, which leases it to a successor with a new MIND while the plant is in use; an idle plant, with demand under ${pct(DYN.reletUse, 0)} of its capacity, is scrapped and its land goes back to the City; the failed MIND leaves the pools and is retired), a small COOP that lost its market exits. People spend about half of what they own a year (basics first).`);
 P('');
 P('## Proof checks (dynamic main, per person, every day)');
 P('');
@@ -3413,12 +3462,12 @@ P('');
 		[['buying from COOPs', pd((r) => r.buy)], ['melt', pd((r) => r.meltW)], ['retired with a COOP that ended', pd((r) => r.lossWal)]], pd((r) => r.revalW), 'walR');
 	const tre = row('COOP treasuries',
 		[[`the treasury's part of the new MIND (${f(0.5 - DYN.poolShare, 2)} of each HEART)`, pd((r) => r.treHeart)], ['sales to people', pd((r) => r.buy)]],
-		[['Law 5 dividends to people', pd((r) => r.divHH)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['melt', pd((r) => r.meltT)], ['paid out to people by COOPs that ended', pd((r) => r.liqHH)], ['retired with a COOP that ended', pd((r) => r.lossTre + r.burnTre)]], pd((r) => r.revalT), 'treR');
+		[['Law 5 dividends to people', pd((r) => r.divHH)], ['Law 5 dividends to the pools', pd((r) => r.divP || 0)], ['Law 5 dividends to the arbitrage bot', pd((r) => r.divA || 0)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['melt', pd((r) => r.meltT)], ['paid out to people by COOPs that ended', pd((r) => r.liqHH)], ['retired with a COOP that ended', pd((r) => r.lossTre + r.burnTre)]], pd((r) => r.revalT), 'treR');
 	const pool = row('Pools',
-		[[`the pools' part of the new MIND (${f(DYN.poolShare, 2)} of each HEART)`, pd((r) => r.poolHeart)], ['routing costs', pd((r) => r.routeCost)]],
+		[[`the pools' part of the new MIND (${f(DYN.poolShare, 2)} of each HEART)`, pd((r) => r.poolHeart)], ['Law 5 dividends', pd((r) => r.divP || 0)], ['routing costs', pd((r) => r.routeCost)]],
 		[['melt', pd((r) => r.meltP)], ['retired with a COOP that ended', pd((r) => r.lossPool)]], pd((r) => r.revalP), 'poolR');
 	table(['Place', 'in (R a person a day)', 'out', 'in − out', 'price moves', 'change of what it holds', 'not explained: routing, timing'], [wal.r, tre.r, pool.r]);
-	P(`Between treasuries (these cancel out, so they are not in the table): sales to other COOPs ${f(pd((r) => r.b2b), 2)}, ground rent to the City COOP ${f(pd((r) => r.rent), 2)}, Law 5 dividends to treasuries that hold other MINDs ${f(pd((r) => r.divT), 2)}, paid out to other treasuries by COOPs that ended ${f(pd((r) => r.liqT), 2)} R a person a day. People pay routing costs on the share of their payments that the pools convert. Price moves: what the year's MIND price changes (in R) did to the value of what each place holds.`);
+	P(`Between treasuries (these cancel out, so they are not in the table): sales to other COOPs ${f(pd((r) => r.b2b), 2)}, ground rent to the City COOP ${f(pd((r) => r.rent), 2)}, Law 5 dividends to treasuries that hold other MINDs ${f(pd((r) => r.divT), 2)}, paid out to other treasuries by COOPs that ended ${f(pd((r) => r.liqT), 2)} R a person a day. Law 5 pays every holder of the seller's MIND but its own treasury, so the pools get their share (it adds to each basket's reserve of that MIND, like the pools' part of a HEART), and so does the arbitrage bot (${f(pd((r) => r.divA || 0), 3)} R a person a day; the bot is not a row here). People pay routing costs on the share of their payments that the pools convert. Price moves: what the year's MIND price changes (in R) did to the value of what each place holds.`);
 	P('');
 	// in MIND counts: what is issued against what melts and what is retired
 	const cnt = (fn) => avg(S, a, b, (y) => fn(y) / y.N / 365);
@@ -3491,8 +3540,8 @@ const HJ = {};
 		};
 		const k = (n) => pd((h) => fl(h, n));
 		const people = place({ own: k('walHeartR'), items: k('wagesR'), proposals: k('propR'), dividends: k('divHHR'), liquidation: k('liqHHR') }, { buying: k('salesHHR'), melt: k('meltWR'), retired: k('lossWalR') }, rv('W'), 'w');
-		const treasuries = place({ own: k('heartInR'), sales: k('salesHHR') }, { dividends: k('divHHR'), items: k('wagesR'), proposals: k('propR'), melt: k('meltTR'), liquidation: k('liqHHR'), retired: k('lossTreR') + k('burnTreR') }, rv('T'), 't');
-		const pools = place({ pool: k('poolHeartR'), routing: k('routeCost') }, { melt: k('meltPR'), retired: k('lossPoolR') }, rv('P'), 'p');
+		const treasuries = place({ own: k('heartInR'), sales: k('salesHHR') }, { dividends: k('divHHR'), dividendsPools: k('divPR'), dividendsBot: k('divAR'), items: k('wagesR'), proposals: k('propR'), melt: k('meltTR'), liquidation: k('liqHHR'), retired: k('lossTreR') + k('burnTreR') }, rv('T'), 't');
+		const pools = place({ pool: k('poolHeartR'), dividends: k('divPR'), routing: k('routeCost') }, { melt: k('meltPR'), retired: k('lossPoolR') }, rv('P'), 'p');
 		HJ.roundTrip = {
 			people, treasuries, pools, between: { sales: k('b2bR'), rent: k('rentR'), divT: k('divTR'), liqT: k('liqTR') },
 			issued: k('walHeartR') + k('heartInR') + k('poolHeartR'), melted: k('meltWR') + k('meltTR') + k('meltPR') + k('meltAR'),
@@ -3536,8 +3585,8 @@ const HJ = {};
 			pricesRest: { min: mean(rest(S).map((y) => HY(S, y).vMinBase)), max: mean(rest(S).map((y) => HY(S, y).vMaxBase)) },
 			roundTrip: {
 				people: { in: { own: k('walHeartR'), items: k('wagesR'), proposals: k('propR'), dividends: k('divHHR') }, out: { buying: k('salesHHR'), melt: k('meltWR') }, change: ch('w') },
-				treasuries: { in: { own: k('heartInR'), sales: k('salesHHR') }, out: { dividends: k('divHHR'), items: k('wagesR'), proposals: k('propR'), melt: k('meltTR') }, change: ch('t') },
-				pools: { in: { pool: k('poolHeartR'), routing: k('routeCost') }, out: { melt: k('meltPR') }, change: ch('p') },
+				treasuries: { in: { own: k('heartInR'), sales: k('salesHHR') }, out: { dividends: k('divHHR'), dividendsPools: k('divPR'), dividendsBot: k('divAR'), items: k('wagesR'), proposals: k('propR'), melt: k('meltTR') }, change: ch('t') },
+				pools: { in: { pool: k('poolHeartR'), dividends: k('divPR'), routing: k('routeCost') }, out: { melt: k('meltPR') }, change: ch('p') },
 				issued: k('walHeartR') + k('heartInR') + k('poolHeartR'), melted: k('meltWR') + k('meltTR') + k('meltPR') + k('meltAR')
 			}
 		};
@@ -3582,7 +3631,8 @@ const HJ = {};
 		['Dividend yield (unit-free)', pct(sD.yield, 1), pct(sD.yield, 1), pct(st.yield, 1), pct(st.yield, 1)],
 		['A day\'s basic bundle: change a year at rest', pct(HJ.bundleDrift, 2), pct(HJ.bundleDriftR, 2), '–', '–'],
 		['A day\'s basic bundle: most in a year (year)', `${f(sD.bundleMax.v, 3)} (${sD.bundleMax.year}); from year 2: ${f(sD.bundleMaxFrom2.v, 3)} (${sD.bundleMaxFrom2.year})`, `script "in MIND": ${f(sD.bundleMaxScript.v, 3)} (${sD.bundleMaxScript.year})`, '–', '–'],
-		['Share of all MIND by HEART value: people / treasuries / pools / bot', `${pct(sD.shares.people, 1)} / ${pct(sD.shares.treasuries, 1)} / ${pct(sD.shares.pools, 1)} / ${pct(sD.shares.arb, 1)}`, '–', `${pct(st.shares.people, 1)} / ${pct(st.shares.treasuries, 1)} / ${pct(st.shares.pools, 1)} / ${pct(st.shares.arb, 1)}`, '–']
+		['Share of all MIND by HEART value: people / treasuries / pools / bot', `${pct(sD.shares.people, 1)} / ${pct(sD.shares.treasuries, 1)} / ${pct(sD.shares.pools, 1)} / ${pct(sD.shares.arb, 1)}`, '–', `${pct(st.shares.people, 1)} / ${pct(st.shares.treasuries, 1)} / ${pct(st.shares.pools, 1)} / ${pct(st.shares.arb, 1)}`, '–'],
+		['The pools\' depth at rest: HEARTS a person (MIND a person)', `${f(sD.poolDepth.hearts)} (${f(sD.poolDepth.mind)})`, '–', `${f(st.poolDepth.hearts)} (${f(st.poolDepth.mind)})`, '–']
 	]);
 	P('## H3. Prices by year (dynamic main, HEARTS)');
 	P('');
@@ -3634,7 +3684,7 @@ P('');
 const S0 = results['main:base'];
 P(`Land: ${f(S0.landTotal / N0)} m² a person (${f(S0.landLeasable / N0)} leasable, the rest streets and parks), all of it the City COOP's. Seed capacities: 115 % of the starting need (goods exist, money does not) or 25 % (empty city).`);
 P('');
-P(`Main scenario: a person pays for what a COOP makes in that COOP's MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). Each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - BASE.poolShare, 1)} to the COOP's treasury and ${f(BASE.poolShare, 1)} to the pools; sales are not levied. No human labour is paid: every human has one Aven, and the Avens do and propose all work items. A treasury pays for inputs and building from other COOPs, for operating work items (2 R a unit, in its prices; paid to the human whose Aven does them) and ground rent; Law 5, every sale pays its owners: 20 % of every sale goes at once, as a dividend in the seller's own MIND, to everyone who holds that MIND (people and other treasuries, pro rata; not the seller, not the pools); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the humans whose Avens propose and deliver the work, by what each Aven delivers). No rent payout, no basic income.`);
+P(`Main scenario: a person pays for what a COOP makes in that COOP's MIND (the Aven pays with any MIND, the pools convert it, the seller receives only its own MIND, into its treasury). Each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - BASE.poolShare, 1)} to the COOP's treasury and ${f(BASE.poolShare, 1)} to the pools; sales are not levied. No human labour is paid: every human has one Aven, and the Avens do and propose all work items. A treasury pays for inputs and building from other COOPs, for operating work items (2 R a unit, in its prices; paid to the human whose Aven does them) and ground rent; Law 5, every sale pays its owners: 20 % of every sale goes at once, as a dividend in the seller's own MIND, to everyone who holds that MIND but the seller's own treasury (people, other treasuries, the pools and the arbitrage bot, pro rata); the rest lands in the treasury. What a treasury holds of its own MIND above 60 days of running costs and planned building it pays out within about a month for accepted work proposals (to the humans whose Avens propose and deliver the work, by what each Aven delivers). No rent payout, no basic income.`);
 P('');
 
 P('## S1. Static main against the side comparisons (60 years from a cold start with goods)');
@@ -3816,12 +3866,12 @@ P('');
 		[['buying from COOPs', pd((r) => r.buy)], ['melt', pd((r) => r.meltW)]], 'walR');
 	const tre = row('COOP treasuries',
 		[[`the treasury's part of the new MIND (${f(0.5 - BASE.poolShare, 2)} of each HEART)`, pd((r) => r.treHeart)], ['sales to people', pd((r) => r.buy)]],
-		[['dividends to people', pd((r) => r.divHH)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['melt', pd((r) => r.meltT)]], 'treR');
+		[['dividends to people', pd((r) => r.divHH)], ['dividends to the pools', pd((r) => r.divP || 0)], ['dividends to the arbitrage bot', pd((r) => r.divA || 0)], ['Aven work items', pd((r) => r.ops)], ['Aven work proposals', pd((r) => r.prop)], ['melt', pd((r) => r.meltT)]], 'treR');
 	const pool = row('Pools',
-		[[`the pools' part of the new MIND (${f(BASE.poolShare, 2)} of each HEART)`, pd((r) => r.poolHeart)], ['routing costs', pd((r) => r.routeCost)]],
+		[[`the pools' part of the new MIND (${f(BASE.poolShare, 2)} of each HEART)`, pd((r) => r.poolHeart)], ['dividends', pd((r) => r.divP || 0)], ['routing costs', pd((r) => r.routeCost)]],
 		[['melt', pd((r) => r.meltP)]], 'poolR');
 	table(['Place', 'in (R a person a day)', 'out', 'in − out', 'change of what it holds', 'not explained: routing, price moves'], [wal, tre, pool]);
-	P(`Between treasuries (these cancel out, so they are not in the table): sales to other COOPs ${f(pd((r) => r.b2b), 2)}, ground rent to the City COOP ${f(pd((r) => r.rent), 2)}, dividends to treasuries that hold other MINDs ${f(pd((r) => r.divT), 2)} R a person a day. People pay routing costs only on the share of their payments that the pools convert.`);
+	P(`Between treasuries (these cancel out, so they are not in the table): sales to other COOPs ${f(pd((r) => r.b2b), 2)}, ground rent to the City COOP ${f(pd((r) => r.rent), 2)}, dividends to treasuries that hold other MINDs ${f(pd((r) => r.divT), 2)} R a person a day; dividends to the arbitrage bot (not a row) ${f(pd((r) => r.divA || 0), 3)}. People pay routing costs only on the share of their payments that the pools convert.`);
 	P('');
 	const issued = pd((r) => r.walHeart + r.treHeart + r.poolHeart), melt = pd((r) => r.meltW + r.meltT + r.meltP + r.meltA);
 	const inc = pd((r) => r.walHeart + r.ops + r.prop + r.divHH);
