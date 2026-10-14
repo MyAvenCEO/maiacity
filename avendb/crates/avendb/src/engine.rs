@@ -144,7 +144,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "undo" => &["entry", "line", "edit", "as"],
         "variant" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
-        "world" | "log" => &[],
+        "world" | "log" | "jobs" => &[],
         "shares" => &["over", "as"],
         "database" => &["vault"],
         "note" => &["entry"],
@@ -167,13 +167,14 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 12] = [
+const READS: [&str; 13] = [
     "query",
     "get",
     "history",
     "schemas",
     "groups",
     "world",
+    "jobs",
     "database",
     "note",
     "log",
@@ -235,8 +236,8 @@ pub fn prepared(out: Result<Prepared, Refused>) -> Value {
 }
 
 /// Runs read op `v` on device `me`: its answer, `{"ok": ...}` or a refusal. A change is refused, as it isn't run.
-/// `world` names no device it is synced to, and `read_file` reads no bytes: a node answers those (avendb-net's
-/// `Node::run`).
+/// `world` names no device it is synced to, and `read_file` reads no bytes, and `jobs` are a node's: a node answers
+/// those (avendb-net's `Node::run`).
 pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
     if name(v) == Some("world") {
         return world(lab, me, &SyncedTo::default());
@@ -251,6 +252,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "creatable" => vaults::creatable(lab, me, o),
         "taggable" => vaults::taggable(lab, me, o),
         "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
+        "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
     });

@@ -472,6 +472,8 @@
 		database: async (vault) => answer(await send({ op: 'database', vault })),
 		/** The database's log: every signed edit this device holds, for the studio's History. */
 		log: async () => answer(await send({ op: 'log' })),
+		/** What the device does in the background, `{ running, ended }`, for the studio's Jobs. */
+		jobs: async () => answer(await send({ op: 'jobs' })),
 		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
 		note: async (entry) => answer(await send({ op: 'note', entry })),
 		/**

@@ -14,6 +14,7 @@ export const READS = [
 	'schemas',
 	'groups',
 	'world',
+	'jobs',
 	'shares',
 	'database',
 	'note',

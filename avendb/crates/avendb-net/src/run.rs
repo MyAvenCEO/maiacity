@@ -2,8 +2,9 @@
 //! or an agent, is one JSON op of avendb's engine (`avendb::engine`), run on the node (`Node::run`) and answered as
 //! JSON: `{"ok": ...}`, a refusal, or for a change its vault's owners approve with no ceremony at hand,
 //! `{"approve": ...}`. What the engine can't do on a Lab alone, the node does around it: it shows where each entry and
-//! file is synced to (`world`), reads and brings a file's bytes (`read_file`, `put_file`), has the passkey sign what
-//! its vault approves in a ceremony, and asks its peers again once the vaults it follows change (`follow`).
+//! file is synced to (`world`), reads and brings a file's bytes (`read_file`, `put_file`), tells what it does in the
+//! background (`jobs`), has the passkey sign what its vault approves in a ceremony, and asks its peers again once the
+//! vaults it follows change (`follow`).
 
 use std::io;
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use avendb::policy::Refusal;
 use avendb::sign::Ceremony;
 use bytes::Bytes;
 use iroh::EndpointId;
-use n0_future::{Stream, stream, task};
+use n0_future::{Stream, StreamExt as _, stream, task};
 use serde_json::{Value, json};
 
 use crate::{Authenticator, Node, Shared, Step};
@@ -42,9 +43,10 @@ impl Node {
     /// `world` shows where each entry and file is synced to (`synced_to`); `read_file` reads from the device's store,
     /// or else from a peer that may hand the bytes over (`read_file`), a file the device doesn't open refused
     /// (`NoCap`); `put_file` checks the entry it would create before it reads a byte of `bytes`, which it seals into
-    /// the store as they come (`store_file`); `follow` asks every peer again once the vaults the device follows
-    /// changed, each request naming them. Fails only where no answer comes: a ceremony that failed, the store or the
-    /// network failing, a file's bytes more or fewer than its length.
+    /// the store as they come (`store_file`), a `bring` job; `jobs` tells the node's jobs (`Node::jobs`); `follow`
+    /// asks every peer again once the vaults the device follows changed, each request naming them. Fails only where no
+    /// answer comes: a ceremony that failed, the store or the network failing, a file's bytes more or fewer than its
+    /// length.
     pub async fn run<S, A>(
         &self,
         op: Value,
@@ -63,6 +65,7 @@ impl Node {
             }
             Some("read_file") => return self.read_bytes(&op).await,
             Some("put_file") => self.put(op, bytes).await?,
+            Some("jobs") => json!({ "ok": self.jobs().to_json() }),
             Some("follow") => self.follow(op).await,
             _ if engine::asks(&op) => self.dry(move |lab, me| engine::run(lab, me, &op)).await,
             _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
@@ -108,8 +111,31 @@ impl Node {
         if checked != Value::Bool(true) {
             return Ok(checked);
         }
-        let brought = self.store_file(len, bytes.context("put_file brings the file's bytes beside it")?).await?;
-        Ok(self.act(move |lab, me| engine::put_file(lab, me, &op, brought)).await)
+        let bytes = bytes.context("put_file brings the file's bytes beside it")?;
+        // a job of its own, its bytes told as they come
+        let name = op.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+        let mut job = self.jobs().begin("bring", String::new(), name, len, "bytes");
+        job.stage("sealing");
+        let mut done = 0;
+        let counted = bytes.inspect(|b| {
+            if let Ok(b) = b {
+                done += b.len() as u64;
+                job.progress(done, None);
+            }
+        });
+        let stored = self.store_file(len, counted).await;
+        let brought = match stored {
+            Ok(brought) => brought,
+            Err(e) => {
+                job.failed(&e);
+                return Err(e);
+            }
+        };
+        job.subject(BlobId(brought.root.hash).to_hex());
+        job.stage("making its entry");
+        let made = self.act(move |lab, me| engine::put_file(lab, me, &op, brought)).await;
+        job.done();
+        Ok(made)
     }
 
     /// `follow`: run, and every peer asked again if the vaults the device follows changed.

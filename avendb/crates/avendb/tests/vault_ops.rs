@@ -94,6 +94,9 @@ fn the_world_is_the_devices_view_and_null_for_a_device_of_no_vault() {
     assert_eq!(refused(&extra), "BadOp", "world takes no field");
     assert!(engine::reads(&json!({ "op": "world" })) && !engine::reads(&json!({ "op": "share" })));
     assert!(engine::asks(&json!({ "op": "shares" })) && engine::asks(&json!({ "op": "may" })));
+    // a node's jobs read nothing of the Lab: a node answers them (avendb-net's Node::run)
+    let jobs = json!({ "op": "jobs" });
+    assert!(engine::reads(&jobs) && refused(&engine::read(&w.lab, mac, &jobs)) == "BadOp");
 }
 
 #[test]
