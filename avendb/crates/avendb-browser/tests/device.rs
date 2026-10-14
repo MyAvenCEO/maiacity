@@ -883,14 +883,17 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(kinds(&log), kinds(&shown_note));
     let brought = json!([{ "set": ["blocks", { "id": 2 }, "text"], "value": "Corn first." }]);
     assert_eq!(log["edits"].as_array().and_then(|es| es.last()).map(|p| &p["changes"]), Some(&brought));
-    // a variant: the proposal's note as a new entry of her vault, with none of its history, that names its origin
-    let mark = json!([{ "op": "insert", "path": ["tags"], "value": format!("avendb:variant:{e}") }]);
-    let copy = json!({ "op": "variant", "entry": e, "line": b, "into": v.to_hex(), "ops": mark });
+    // a variant: the proposal's note as a new entry of her vault, its own edits one, that names its origin and the
+    // version of it it copies, the proposal's heads, so its history goes on into the original's
+    let copy = json!({ "op": "variant", "entry": e, "line": b, "into": v.to_hex() });
     let variant = entry(run(&first, copy).await.expect("a variant"));
     let made = note_of(&first, variant).await;
     assert_eq!((kinds(&made), on_line(&made, None)), (vec!["edit".to_string()], "Corn first.".to_string()));
+    let lines = shown_note["lines"].as_array().expect("its lines");
+    let heads = &lines.iter().find(|l| l["line"] == json!(b)).expect("the proposal")["heads"];
     let world = world_of(&first).await;
-    assert_eq!((&item(&world, variant)["variantOf"], &item(&world, variant)["edits"]), (&json!(e), &json!(1)));
+    let of = item(&world, variant);
+    assert_eq!((&of["variantOf"], &of["variantAt"], &of["edits"]), (&json!(e), heads, &json!(1)));
     assert_eq!((&item(&world, note)["variantOf"], &item(&world, note)["proposals"]), (&Value::Null, &json!(1)));
     assert_eq!(item(&world, variant)["deleted"], false, "not deleted");
     // deleted: the mark among the document's own tags; and taken out again, back
@@ -939,7 +942,9 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V2.id().to_hex()));
     assert_eq!(row(variant)["record"]["blocks"][1]["text"].as_str(), Some("Corn first."));
     let tags = &row(variant)["record"]["tags"];
-    assert_eq!(tags, &json!([format!("avendb:variant:{}", note.to_hex())]), "it names its origin");
+    let at: Vec<&str> = heads.as_array().expect("the heads").iter().filter_map(Value::as_str).collect();
+    let mark = format!("avendb:variant:{}@{}", note.to_hex(), at.join(","));
+    assert_eq!(tags, &json!([mark]), "it names its origin and the version it copies");
     let card = rows.iter().find(|r| r["type"].as_str() == Some("card")).expect("her browser's card");
     assert_eq!(card["title"].as_str(), Some("Eve's browser"));
     assert_eq!(db["edits"]["founded"].as_u64(), Some(1));

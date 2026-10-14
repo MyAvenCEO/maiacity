@@ -55,7 +55,7 @@ use crate::policy::{Line, Proposal, Refusal};
 use crate::rules;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
-use crate::world::SyncedTo;
+use crate::world::{SyncedTo, VARIANT, variant_mark};
 
 pub use vaults::{approve, approved, passkey_of, world, Approval, Prepared, Then};
 
@@ -999,11 +999,21 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
         Step::Variant { entry, line, into, schema, ops } => {
             let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
             let lane = lane(lab, me, vault);
+            // the copy names where it came from, in its first write: the note and the version it copies, by the hashes
+            // of that version's edits, in place of the mark of the note its original was made from, if it was
+            let at = lab.history(me, entry).map(|h| h.heads(line)).unwrap_or_default();
             let mark = |copy: &mut Item| -> Result<(), Refused> {
-                if ops.is_empty() {
+                let tags = copy.as_document().map(|d| d.tags);
+                let older = tags.iter().flatten().filter(|t| t.starts_with(VARIANT));
+                let mut all: Vec<RecordOp> = older.map(|t| RecordOp::Drop("tags".into(), t.as_str().into())).collect();
+                if tags.is_some() {
+                    all.push(RecordOp::Add("tags".into(), variant_mark(entry, &at).into(), None));
+                }
+                all.extend(ops);
+                if all.is_empty() {
                     return Ok(());
                 }
-                let (new, view) = ran(&lane, copy, &schema, &ops)?;
+                let (new, view) = ran(&lane, copy, &schema, &all)?;
                 copy.write(&view, &new);
                 Ok(())
             };

@@ -117,9 +117,6 @@ export const noteRecord = (title, text) => ({
 /** The place of the text of block `id` of a document. @param {number} id */
 export const blockText = (id) => ['blocks', { id }, 'text'];
 
-/** The tag that marks a note a variant of entry `entry`, naming where it came from. @param {string} entry */
-export const variantMark = (entry) => `avendb:variant:${entry}`;
-
 /** The tag that marks a note deleted (avendb-browser's `DELETED`): listed apart, and back once the tag is out. */
 export const DELETED = 'avendb:deleted';
 

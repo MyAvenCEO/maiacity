@@ -17,6 +17,7 @@ use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{self, Schema, Status, TypeV2, View};
 use avendb::policy::{Action, Level, Refusal};
 use avendb::rules::{self, Op};
+use avendb::world;
 use serde_json::{json, Value};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
@@ -220,15 +221,29 @@ fn lines_merge_restore_undo_and_variants_are_ops() {
     assert_eq!(main(&w), "Plan");
     ok(run(&mut w, mac, json!({ "op": "restore", "entry": plan, "at": [edits[4]] })));
     assert_eq!(main(&w), "The plan");
-    // a variant in the coop, its copy marked in the same first write
+    // a variant in the coop, tagged in the same first write, which names the note and the version it copies
     let coop = cast::coop_on(&mut w);
-    let mark = [{ json!({ "op": "insert", "path": ["tags"], "value": format!("variant:{plan}") }) }];
-    let variant = json!({ "op": "variant", "entry": plan, "into": coop.to_hex(), "as": coop.to_hex(), "ops": mark });
+    let tag = [{ json!({ "op": "insert", "path": ["tags"], "value": "draft" }) }];
+    let variant = json!({ "op": "variant", "entry": plan, "into": coop.to_hex(), "as": coop.to_hex(), "ops": tag });
     let made = ok(run(&mut w, mac, variant))["entry"].as_str().unwrap().to_string();
     let copy = EntryId::from_hex(&made).unwrap();
     let doc = w.lab.item(mac, copy).unwrap().as_document().unwrap();
-    assert_eq!((doc.title, doc.tags), ("The plan".to_string(), vec![format!("variant:{plan}")]));
+    let at = w.lab.history(mac, l.plan).unwrap().heads(None);
+    assert_eq!(at.len(), 1, "main's one latest edit, the restore");
+    let mark = world::variant_mark(l.plan, &at);
+    assert_eq!((doc.title, doc.tags), ("The plan".to_string(), vec![mark.clone(), "draft".to_string()]));
     assert_eq!(w.lab.history(mac, copy).unwrap().changes().len(), 1);
+    // a variant of the variant names the variant, and the version of it it copies, alone
+    let again = json!({ "op": "variant", "entry": made, "into": coop.to_hex(), "as": coop.to_hex() });
+    let made = EntryId::from_hex(ok(run(&mut w, mac, again))["entry"].as_str().unwrap()).unwrap();
+    let doc = w.lab.item(mac, made).unwrap().as_document().unwrap();
+    let at = w.lab.history(mac, copy).unwrap().heads(None);
+    assert_eq!(doc.tags, vec!["draft".to_string(), world::variant_mark(copy, &at)]);
+    // the world says so: what each is a variant of, and at which version
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    let of = |e: EntryId| seen["entries"].as_array().unwrap().iter().find(|x| x["entry"] == hex(e)).unwrap().clone();
+    assert_eq!((&of(made)["variantOf"], &of(made)["variantAt"]), (&json!(hex(copy)), &json!([at[0].to_hex()])));
+    assert_eq!((&of(l.plan)["variantOf"], &of(l.plan)["variantAt"]), (&Value::Null, &Value::Null));
 }
 
 #[test]
