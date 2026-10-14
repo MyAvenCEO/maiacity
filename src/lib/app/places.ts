@@ -64,18 +64,37 @@ export const READ: Place[] = [
 	{ href: `${base}/blog/inspire-me/`, label: 'Inspire me', icon: 'spark', note: 'Ideas we learn from' }
 ];
 
+/** the game's building blocks: the models, the buildings, the actors, the plants, the biomes and the worlds, one group
+ *  on the dashboard (Game Assets, /app/assets/), listed with a picture each */
+export const GAME_ASSETS: Place[] = [
+	{ href: `${base}/app/models/`, label: 'Models', icon: 'media', cap: 'media:admin', note: 'The still things the worlds are built from', cover: `${base}/app/covers/models.jpg` },
+	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', cap: 'media:admin', note: 'The tents, the domes and the containers, to walk inside', cover: `${base}/app/covers/buildings.jpg` },
+	{ href: `${base}/app/actors/`, label: 'Actors', icon: 'user', cap: 'media:admin', note: 'People, animals and machines, rigged to move', cover: `${base}/app/covers/actors.jpg` },
+	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all', cover: `${base}/app/covers/plants.jpg` },
+	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix', cover: `${base}/app/covers/biomes.jpg` },
+	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film', cover: `${base}/app/covers/worlds.jpg` }
+];
+
+/** what is the founder's own: films, vaults, skills and generated mini apps, one group (My Data, /app/data/) */
+export const MY_DATA: Place[] = [
+	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound', cover: `${base}/app/covers/studio.jpg` },
+	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', cap: 'media:admin', note: 'Your own vaults, end-to-end encrypted and quantum-proof', cover: `${base}/app/covers/avendb.jpg` },
+	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki", cover: `${base}/app/covers/skills.jpg` },
+	{ href: `${base}/app/genui/`, label: 'Generated UI', icon: 'spark', cap: 'media:admin', note: 'Mini apps agents make on the fly, each in its own box', cover: `${base}/app/covers/genui.jpg` }
+];
+
+/** a dashboard tile that opens a list of places: the sandboxes, the game assets, my data */
+export type Group = Place & { items: Place[] };
+export const SANDBOXES: Group = { href: `${base}/app/games/`, label: 'Sandboxes', icon: 'play', note: 'Every sandbox, each a world of its own to play', items: PLAY };
+export const ASSETS_GROUP: Group = { href: `${base}/app/assets/`, label: 'Game Assets', icon: 'media', cap: 'media:admin', note: 'Models, buildings, actors, plants, biomes and worlds', items: GAME_ASSETS };
+export const DATA_GROUP: Group = { href: `${base}/app/data/`, label: 'My Data', icon: 'database', cap: 'media:admin', note: 'Studio, avenDB, Skills and Generated UI', items: MY_DATA };
+export const GROUPS: Group[] = [SANDBOXES, ASSETS_GROUP, DATA_GROUP];
+
+/** the group a place sits in, if any: its way back goes there */
+export const groupOf = (path: string) => GROUPS.find((g) => g.items.some((p) => path.startsWith(p.href)));
+
 export const ADMIN: Place[] = [
 	{ href: `${base}/app/stories/`, label: 'Stories', icon: 'board', cap: 'content:admin', note: 'Every story, idea to published, and when it goes out' },
-	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound' },
-	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film' },
-	{ href: `${base}/app/models/`, label: 'Assets', icon: 'media', cap: 'media:admin', note: 'The things the worlds are built from' },
-	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', cap: 'media:admin', note: 'The tents, the domes and the containers, to walk inside' },
-	{ href: `${base}/app/actors/`, label: 'Actors', icon: 'user', cap: 'media:admin', note: 'The stand-in and the animals, rigged to move' },
-	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all' },
-	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix' },
-	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki" },
-	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', cap: 'media:admin', note: 'Your own vaults, end-to-end encrypted and quantum-proof' },
-	{ href: `${base}/app/genui/`, label: 'Generated UI', icon: 'spark', cap: 'media:admin', note: 'Mini apps agents make on the fly, each in its own box' },
 	{ href: `${base}/app/device/`, label: 'Terminal', icon: 'key', cap: 'media:admin', note: 'Sign a terminal in' }
 ];
 
@@ -91,9 +110,9 @@ export const released = (founder: Founder | null, p: Place) => p.release !== 'dr
 export const gameAt = (path: string) =>
 	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
 	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : path.startsWith(`${base}/app/genui/`) ? GENUI_TILE : undefined);
-/** the Worlds grid, the Assets, the Buildings, the Actors, the Plants, the Skills and avenDB: only an admin's */
+/** the Worlds grid, the Models, the Buildings, the Actors, the Plants, the Skills and avenDB: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
-const MODELS_TILE: Place = { href: `${base}/app/models/`, label: 'Assets', icon: 'media', release: 'draft' };
+const MODELS_TILE: Place = { href: `${base}/app/models/`, label: 'Models', icon: 'media', release: 'draft' };
 const BUILDINGS_TILE: Place = { href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', release: 'draft' };
 const ACTORS_TILE: Place = { href: `${base}/app/actors/`, label: 'Actors', icon: 'user', release: 'draft' };
 const PLANTS_TILE: Place = { href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', release: 'draft' };
@@ -106,9 +125,11 @@ const GENUI_TILE: Place = { href: `${base}/app/genui/`, label: 'Generated UI', i
 export function placeOf(path: string): string {
 	const rel = path.slice(base.length).replace(/\/+$/, '/');
 	if (rel === '/app/') return 'Dashboard';
-	if (rel.startsWith('/app/games/')) return PLAY.find((p) => path.startsWith(p.href))?.label ?? 'Games';
+	if (rel.startsWith('/app/games/')) return PLAY.find((p) => path.startsWith(p.href))?.label ?? 'Sandboxes';
+	if (rel.startsWith('/app/assets/')) return 'Game Assets';
+	if (rel.startsWith('/app/data/')) return 'My Data';
 	if (rel.startsWith('/app/worlds/')) return WORLDS.find((p) => path.startsWith(p.href))?.label ?? 'Worlds';
-	if (rel.startsWith('/app/models/')) return 'Assets';
+	if (rel.startsWith('/app/models/')) return 'Models';
 	if (rel.startsWith('/app/buildings/')) return 'Buildings';
 	if (rel.startsWith('/app/actors/')) return 'Actors';
 	if (rel.startsWith('/app/plants/')) return 'Plants';
@@ -120,5 +141,5 @@ export function placeOf(path: string): string {
 	if (city) return city.label;
 	const app = APPS.find((p) => path.startsWith(p.href));
 	if (app) return app.label;
-	return ADMIN.find((p) => path.startsWith(p.href))?.label ?? '';
+	return [...ADMIN, ...GAME_ASSETS, ...MY_DATA].find((p) => path.startsWith(p.href))?.label ?? '';
 }

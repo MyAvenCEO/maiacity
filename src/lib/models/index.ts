@@ -1,43 +1,26 @@
 /*
- * THE ASSETS — every reusable model, as the Assets viewer (/app/models/) lists it (the containers are the Buildings', below): its name, what it is, where
+ * THE MODELS — every reusable still model, as the Models viewer (/app/models/) lists it (the containers are the Buildings', below): its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js; a machine that works is an actor, ./actors). A world places
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js; a machine that works or has moving parts is an actor, ./actors, and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
 import type * as THREE from 'three';
-import type { Cast } from '$lib/actors/rig';
 import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, truck, wineCrate } from './furniture';
 import { barCounter, barStool, canvasPrint, coatStand, door, palletShelf, pendantLamp, retroFridge } from './hallway';
 import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
 import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
 import { bridgeLamp, equestrianStatue, limestoneBlock, parkBench, tree } from './outdoor';
 import { bambooTable, bistroChair, bistroTable, clubSofa, festoonLights, ficusTree, geraniumPot, monstera, oliveTree, paperLantern, ribbedPlanter, strelitzia, terracottaPot, toyBee, toyMonkey } from './terrace';
-import { crawlerExcavator } from '$lib/actors/crawler-excavator.js';
-import { miniExcavator } from '$lib/actors/excavator.js';
-import { excavator as excavatorV1 } from '$lib/actors/excavator.v1.js';
-import { excavator as excavatorV2 } from '$lib/actors/excavator.v2.js';
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from './containers';
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
-import { VILLAGE_INFO, batteryPack, pickup, powercube, solarPanel } from './village.js';
-import { powerCube } from '$lib/actors/powercube.js';
-import { electroCube } from '$lib/actors/electrocube.js';
-import { batteryCube } from '$lib/actors/batterycube.js';
-import { batteryPack as batteryModule } from '$lib/actors/batterypack.js';
+import { VILLAGE_INFO, pickup, solarPanel } from './village.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
-
-/** A rigged machine as a model: its rig in the world, playing one of its moves (`userData.tick(t)`, as the viewer's clock runs). */
-function working(cast: Cast, clip: string): THREE.Object3D {
-	const play = (t: number) => cast.rig.pose(cast.clips[clip]!(t));
-	play(0);
-	cast.rig.object.userData.tick = play;
-	return cast.rig.object;
-}
 
 type Make = () => THREE.Object3D;
 /** one kind of a model (a small and a big excavator): the viewer shows its variants to switch between, as the Actors
@@ -47,11 +30,6 @@ export type Model = { id: string; label: string; note: string; usedIn: string; m
 
 /** the models' older versions, by id, each with its frozen builder (the rest are at v1) */
 const HISTORY: Record<string, (Change & { build?: Make })[]> = {
-	excavator: [
-		{ ...FIRST, build: () => working(excavatorV1(), 'dig') },
-		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: () => working(excavatorV2(), 'dig') },
-		{ v: 3, date: '2026-10-06', note: 'Two variants: small, the 1.7 t mini back at its own size; big, a 14 t crawler excavator built as one' }
-	],
 	'chicken-coop': [
 		{ ...FIRST, build: timberCoop },
 		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome: wire round its foot, clear over the run, a shingled back to roost in; perches, three nesting boxes with eggs in them' }
@@ -59,22 +37,6 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	'rabbit-hutch': [
 		{ ...FIRST, build: timberHutch },
 		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome of wire on grass, a little shingled dome inside to sleep in' }
-	],
-	powercube: [
-		{ ...FIRST, build: () => powercube() },
-		{ v: 2, date: '2026-10-13', note: 'Open Source Ecology’s own Power Cube (VII / 7s): a hydraulic power unit, not a generator; every part its own in the Actors, and the same cube the LifeTrac carries. MaiaCity V1 still shows v1 on its hex' },
-		{ v: 3, date: '2026-10-13', note: 'Its Electric variant is its own asset now, the ElectroCube; MaiaCity V1 carries that' }
-	],
-	'battery-pack': [
-		{ ...FIRST, build: () => batteryPack() },
-		{ v: 2, date: '2026-10-13', note: 'The BatteryCube: the Power Cube’s 27" frame with four BatteryPacks (~20.7 kWh) and a 6 kW inverter to 230 V, in place of the 2.3 m cabinet' }
-	],
-	batterypack: [
-		{ ...FIRST, date: '2026-10-13', build: () => working(batteryModule(5), 'explode') },
-		{ v: 2, date: '2026-10-13', note: 'Serviceable from the front: a closed shell and one L-shaped service drawer carrying every inner part; it plays its service move, the two side buttons pressed and the drawer pulled out and pushed home', build: () => working(batteryModule(6), 'service') },
-		{ v: 3, date: '2026-10-13', note: 'Everything from the front and low: the grip, the lock and the two release buttons (on the face’s left and right ends) at the base plate’s level', build: () => working(batteryModule(7), 'service') },
-		{ v: 4, date: '2026-10-13', note: 'The grip, the lock and the release buttons on the shell’s foot, the drawer carrying only the insides; the back socket in one line', build: () => working(batteryModule(8), 'service') },
-		{ v: 5, date: '2026-10-13', note: 'The release buttons and the drawer’s catches in the shell’s two front corner columns, at the base plate’s level' }
 	],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
@@ -170,23 +132,8 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 4', make: () => rabbitDome().group },
 	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 4', make: () => playDome().group },
 	{ id: 'pickup', label: 'Pickup', note: `${VILLAGE_INFO.pickup.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => pickup() },
-	{ id: 'powercube', label: 'Power Cube', note: 'Open Source Ecology’s Power Cube VII / 7s, the hydraulic heart of their Global Village Construction Set: a 28 hp V-twin on a gear pump, 15 gpm at 3,000 psi, with its 7-gallon tanks, relief, gauge, six-tube cooler, battery and two quick couplers in a 27" cube of 181 kg, lifted from one machine to the next. Running; every part its own in the Actors', usedIn: 'The LifeTrac', make: () => working(powerCube(), 'run') },
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
-	{ id: 'electrocube', label: 'ElectroCube', note: `${VILLAGE_INFO.powercube.note}. The Village COOP’s; every part its own in the Actors`, usedIn: 'MaiaCity V1', make: () => working(electroCube(), 'run') },
-	{ id: 'battery-pack', label: 'BatteryCube', note: `${VILLAGE_INFO.battery.note}. The Village COOP’s; every part its own in the Actors`, usedIn: 'MaiaCity V1', make: () => working(batteryCube(), 'off') },
-	{ id: 'batterypack', label: 'BatteryPack', note: 'our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holders, joined by copper contact plates pressed on by a clamp, no welds, all on one L-shaped service drawer that slides out of its shell when the two buttons in the shell’s corner columns are pressed; 460 × 480 × 125 mm, ~26 kg. Four fill a BatteryCube; shown being serviced here', usedIn: 'The BatteryCube', make: () => working(batteryModule(), 'service') },
-	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() },
-	{
-		id: 'excavator',
-		label: 'Excavator',
-		note: 'two sizes, each rigged — it digs, slews and dumps (its other moves in the Actors gallery): small, the 1.7 t mini; big, a 14 t crawler',
-		usedIn: 'Sandbox 1',
-		make: () => working(miniExcavator(), 'dig'),
-		variants: [
-			{ id: 'small', label: 'Small · 1.7 t', note: 'a mini excavator on rubber tracks, 1.55 m long, 0.99 m wide, 2.3 m to its canopy, 3.9 m reach: a dozer blade, a boom that swings, a 40 cm backhoe bucket', make: () => working(miniExcavator(), 'dig') },
-			{ id: 'big', label: 'Big · 14 t', note: 'a crawler excavator on steel tracks, 3.7 m long, 2.49 m wide, 2.95 m to its cab roof: an enclosed cab, a 4.6 m mono boom on two rams, a 2.5 m arm, a 1 m bucket, 8.3 m reach', make: () => working(crawlerExcavator(), 'dig') }
-		]
-	}
+	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() }
 ];
 
 export const MODELS: Model[] = versioned([...LIST, ...DOME_ROOMS], 'make', HISTORY);

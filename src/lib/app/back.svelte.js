@@ -8,6 +8,7 @@
  */
 import { base } from '$app/paths';
 import { untrack } from 'svelte';
+import { groupOf } from './places';
 
 /** @typedef {{ label: string, go: () => void }} Way */
 
@@ -35,7 +36,8 @@ export function wayBack(label, go) {
 }
 
 /**
- * The place above a page, by its path (without the base): a world's is the Worlds, everything else's the dashboard,
+ * The place above a page, by its path (without the base): a world's is the Worlds, a grouped place's its group (the
+ * Sandboxes, Game Assets, My Data), everything else's the dashboard,
  * and the dashboard has none.
  * @param {string} rel
  * @returns {{ href: string, label: string } | null}
@@ -44,5 +46,8 @@ export function upFrom(rel) {
 	if (/^\/app\/?$/.test(rel)) return null;
 	if (/^\/app\/worlds\/[^/]+\/?$/.test(rel)) return { href: `${base}/app/worlds/`, label: 'Back to the worlds' };
 	if (/^\/app\/stories\/story\/?$/.test(rel)) return { href: `${base}/app/stories/`, label: 'Back to the stories' };
+	// a place in a group (a sandbox, a game asset, my data) goes back to its group's list
+	const group = groupOf(`${base}${rel.replace(/\/?$/, '/')}`);
+	if (group) return { href: group.href, label: `Back to ${group.label}` };
 	return { href: `${base}/app/`, label: 'Back to the dashboard' };
 }
