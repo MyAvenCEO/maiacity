@@ -133,6 +133,7 @@ use iroh_blobs::util::connection_pool::{self, ConnectionPool};
 use iroh_blobs::store::mem::MemStore;
 use rustls::crypto::CryptoProvider;
 use n0_future::task::{self, JoinHandle};
+use n0_future::{FuturesUnordered, StreamExt as _, future};
 use n0_future::time::{self, Instant};
 use tokio::sync::{Notify, watch};
 
@@ -149,6 +150,11 @@ pub const ALPN: &[u8] = b"avendb/sync/1";
 
 /// How long a node waits for a peer to connect, or to say its hello.
 const WAIT: Duration = Duration::from_secs(10);
+
+/// How long a dial waits for its peer before a new one starts beside it (`Shared::dial`): a dial whose first packets
+/// were lost, as while the peer isn't on its relay yet, sends them again ever later (QUIC's backoff: after 1, 2, 4 and
+/// 8 seconds), where a new dial sends its first at once.
+const REDIAL: Duration = Duration::from_secs(2);
 
 /// The longest a node waits before it tries a peer out of reach again.
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
@@ -1233,8 +1239,7 @@ impl Shared {
             return Ok(peer);
         }
         self.sent.dials.fetch_add(1, Ordering::Relaxed);
-        let dial = self.endpoint.connect(self.addr_of(endpoint), ALPN);
-        let conn = time::timeout(WAIT, dial).await.context("no answer")??;
+        let conn = time::timeout(WAIT, self.dial(endpoint)).await.context("no answer")??;
         match time::timeout(WAIT, session::dial_hello(self, &conn)).await {
             Ok(Ok(device)) => {
                 let peer = self.connected(conn, device);
@@ -1248,6 +1253,23 @@ impl Shared {
             Err(_) => {
                 conn.close(session::REFUSED, b"no hello");
                 bail!("no hello from {endpoint}")
+            }
+        }
+    }
+
+    /// A connection to `endpoint`: a dial, and a new one beside it every `REDIAL` while none has connected, the first
+    /// that connects kept and the others dropped; or the error of the first that fails, which the peer answered.
+    async fn dial(&self, endpoint: EndpointId) -> Result<Connection> {
+        let mut dials = FuturesUnordered::new();
+        loop {
+            dials.push(self.endpoint.connect(self.addr_of(endpoint), ALPN));
+            let answered = async { dials.next().await.map(|dialed| dialed.map_err(anyhow::Error::from)) };
+            let due = async {
+                time::sleep(REDIAL).await;
+                None
+            };
+            if let Some(dialed) = future::or(answered, due).await {
+                return dialed;
             }
         }
     }
