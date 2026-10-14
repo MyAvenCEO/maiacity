@@ -413,18 +413,51 @@
 	}
 
 	/**
-	 * Fit a textarea to its text, as a page grows with what is written on it, and again when `text` arrives.
+	 * Fit a textarea to its text, as a page grows with what is written on it, again when `text` arrives and when its
+	 * width changes. Svelte runs an action's update before `bind:value` puts the new text in the field, so an update
+	 * fits again on the next frame: else a long text that arrives after the page opens stays cut at the first height.
+	 * The column that scrolls keeps its place while the field is measured.
 	 * @param {HTMLTextAreaElement} el @param {string} [text]
 	 */
 	function grow(el, text) {
 		void text;
+		/** the nearest ancestor that scrolls */
+		const pane = () => {
+			for (let p = el.parentElement; p; p = p.parentElement) {
+				if (/auto|scroll/.test(getComputedStyle(p).overflowY)) return p;
+			}
+			return null;
+		};
 		const fit = () => {
+			const scroller = pane();
+			const top = scroller?.scrollTop ?? 0;
 			el.style.height = 'auto';
 			el.style.height = `${el.scrollHeight}px`;
+			if (scroller) scroller.scrollTop = top;
 		};
+		let frame = 0;
+		const soon = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(fit);
+		};
+		let width = 0;
+		const resized = new ResizeObserver(([e]) => {
+			if (e.contentRect.width === width) return;
+			width = e.contentRect.width;
+			fit();
+		});
 		fit();
+		soon();
+		resized.observe(el);
 		el.addEventListener('input', fit);
-		return { update: fit, destroy: () => el.removeEventListener('input', fit) };
+		return {
+			update: () => (fit(), soon()),
+			destroy: () => {
+				cancelAnimationFrame(frame);
+				resized.disconnect();
+				el.removeEventListener('input', fit);
+			}
+		};
 	}
 
 	/** Save on Ctrl+S or ⌘S, as a docs app does. @param {KeyboardEvent} e */
