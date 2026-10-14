@@ -8,6 +8,8 @@
 	--mustard: #efb54d;
 	--sage: #a8b88a;
 	--terracotta: #c8744f;
+	/* the brand green: the game's Mint button, the nav pill's "+" */
+	--brand-green: #24452f;
 	--font-display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
 	--font-body: 'DM Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 	--radius: 22px;
