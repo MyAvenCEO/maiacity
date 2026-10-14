@@ -79,6 +79,7 @@
 					<h3>Treasury <small>≈ {f(inHearts(view, c.treasury, hv))} ❤︎{chosen === 'maia' ? ` · with its pool basket ≈ ${f(inHearts(view, c.treasury, hv) + inHearts(view, view.pool, hv))} ❤︎` : ''}</small></h3>
 					<ul class="rows">
 						{#each MINDS as t (t)}<li><span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}</span><strong>{f(c.treasury[t] * hv[t])} ❤︎ <small>{f(c.treasury[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
+						{#if c.treasury.EURO > 0}<li title="System minted: each player's first year of HEARTS brings as many €uro in (the euro ingest)"><span><i style="background:#c9a227"></i>€uro</span><strong>{f(c.treasury.EURO)} €</strong></li>{/if}
 					</ul>
 					{#if chosen === 'maia'}
 						<h3>The pool basket it owns <small>the AMM pool is wholly the MaiaCity COOP's</small></h3>

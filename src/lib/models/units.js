@@ -36,7 +36,7 @@ export const REAL_SIZES = {
 	gasStation: { size: [24, 8.2, 16], what: 'a forecourt with its canopy and price sign' },
 	oldShed: { size: [6.2, 2.9, 5], what: 'a small half-roofed shed' },
 	person: { size: [0.52, 1.8, 0.55], what: 'a grown-up, backpack and all (the heart over them not counted)' },
-	tent: { size: [5.6, 2.1, 5.6], what: 'a 4 m geodesic dome tent on its 5.6 m deck' },
+	tent: { size: [7.11, 3.16, 6.16], what: 'the MaiaCity V1 tent: the bell tent pitched (bellTent), 4.2 m across at its wall, its guy pegs 1.5 m out' },
 	domeTent: { size: [5.6, 2.24, 5.6], what: 'the dome tent pitched: 4 m across and 2 m high, its cover 3 cm out over the tubes, on its 5.6 m deck 15 cm high' },
 	tentBag: { size: [0.9, 0.41, 0.41], what: 'the dome tent rolled up in its bag, its straps buckled' },
 	storageTent: { size: [11.2, 4.28, 11.2], what: 'the storage tent pitched: the dome tent twice the size, 8 m across and 4 m high, its cover 6 cm out over the tubes, on its 11.2 m deck 15 cm high' },

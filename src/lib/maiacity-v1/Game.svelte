@@ -35,7 +35,8 @@
 	// what the card shows; a phone opens on the world, the card closed
 	let panel = $state(typeof matchMedia !== 'undefined' && matchMedia('(max-width: 720px), (max-height: 500px)').matches ? null : 'you');
 	let tools = $state(false); // the phone's tools, behind the action button
-	let walking = $state(false); // walking freely through the world, once the story is told
+	let walking = $state(false); // walking (or driving the pickup) freely through the world, any time no film plays
+	let roamNow = $state({ near: false, driving: false }); // by the pickup, or at its wheel
 	let amount = $state(12);
 	let swapToken = $state('MAIA');
 	let swapTo = $state('TRIBE');
@@ -161,7 +162,7 @@
 	// (the editor's rule, the script 2026-10-14: a fade means time passing or an ending, so it is kept for those)
 	// a moment of the story ends the free walk (the world ends it itself as it plays one)
 	$effect(() => {
-		if ((tour || playing) && walking) walking = false;
+		if (playing && walking) walking = false;
 	});
 	let fadeIn = $state(true);
 	let ended = $state(false); // the end faded out: the world fades back in under the player's own page
@@ -294,7 +295,8 @@
 			},
 			onLabels: (l) => (labels = l),
 			onCaption: (c) => (caption = c),
-			onGround: (at) => onGround(at)
+			onGround: (at) => onGround(at),
+			onRoam: (r) => (roamNow = r)
 		});
 		refresh().then(async () => {
 			// claim a seat (or keep mine) and bring its name up to the profile's: the Mac app reads the game with its app key,
@@ -514,10 +516,14 @@
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
-		{#if canMove && !tour && !playing}
-			<!-- walking freely, once the story is told (Samuel 2026-10-14): tap the ground to walk there -->
-			<button class="walkbtn" class:on={walking} onclick={() => (walking = !!world?.walk(!walking))}>{walking ? 'Stop walking' : 'Walk'}</button>
-			{#if walking}<p class="walkhint">Tap the ground to walk there, or use the arrow keys</p>{/if}
+		{#if canMove && !playing && !(tour && (tour.at === 'van' || tour.at === 'cruise'))}
+			<!-- walking freely, any time no film plays (Samuel 2026-10-14): tap the ground to walk there; by the pickup, get
+			     in and drive it anywhere -->
+			<div class="walkbar">
+				<button class="walkbtn" class:on={walking} onclick={() => (walking = !!world?.walk(!walking))}>{walking ? 'Stop walking' : 'Walk'}</button>
+				{#if walking && (roamNow.near || roamNow.driving)}<button class="walkbtn" onclick={() => world?.board(!roamNow.driving)}>{roamNow.driving ? 'Get out' : 'Get in the pickup'}</button>{/if}
+			</div>
+			{#if walking}<p class="walkhint">Tap the ground to {roamNow.driving ? 'drive' : 'walk'} there, or use the arrow keys</p>{/if}
 		{/if}
 		{#if canMove && !tour && !playing && myTree?.due}
 			<!-- the first tree waits for its water: once a game month (a real day), a month of its growth each time -->
@@ -686,14 +692,14 @@
 					<button class="coop" onclick={() => (panel = `coop:${id}`)}>
 						<span class="coop-head"><b>{c.name}</b><span class="mind"><i style="background:{TOKEN_COLOUR[c.mind]}"></i>{TOKEN_LABEL[c.mind]}</span></span>
 						<span class="assets">{#each c.assets as a (a.id)}<span class="asset">{a.name}</span>{/each}</span>
-						<span class="treasury">Treasury {MINDS.filter((t) => t === c.mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`).join(' · ')}</span>
+						<span class="treasury">Treasury {[...MINDS.filter((t) => t === c.mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`), ...(c.treasury.EURO > 0.005 ? [`${f(c.treasury.EURO, 0)} €uro`] : [])].join(' · ')}</span>
 					</button>
 				{/each}
 			{:else if isAssetPanel(panel)}
 				{@const id = panel.slice(6)}
 				{@const owner = ownerOf(id)}
 				{@const a = owner?.[1].assets.find((x) => x.id === id)}
-				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the ElectroCube’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
+				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person bell tent, rolled in its bag with its pole, wall poles and pegs, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the ElectroCube’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
 				<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
 				<h2>{a?.name ?? info?.name ?? info?.model}</h2>
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
@@ -732,6 +738,7 @@
 				<p class="eyebrow">Treasury</p>
 				<dl>
 					{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
+					{#if c.treasury.EURO > 0}<dt title="System minted: each player's first year of HEARTS brings as many €uro in (the euro ingest)">€uro</dt><dd>{f(c.treasury.EURO)}</dd>{/if}
 					{#if c.id === 'tribe'}
 						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 tribeMIND</dd>
 						<dt>Pays hex rent</dt><dd>{f(view.settings.hexRent)} maiaMIND</dd>
@@ -1158,11 +1165,18 @@
 		margin-left: 0.2rem;
 		color: #6b7a6f;
 	}
-	.walkbtn {
+	/* the walk's buttons, stacked bottom up: beside the tools down the left, clear of them and of the mint button */
+	.walkbar {
 		position: absolute;
 		z-index: 7;
-		left: max(1rem, env(safe-area-inset-left, 0px));
+		left: calc(9.6rem + env(safe-area-inset-left, 0px));
 		bottom: calc(var(--nav-room, 4rem) + 0.4rem);
+		display: flex;
+		flex-direction: column-reverse;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+	.walkbtn {
 		padding: 0.7rem 1.2rem;
 		border: 1px solid rgb(255 255 255 / 0.5);
 		border-radius: 999px;
@@ -1828,6 +1842,13 @@
 			color: #f4f1e8;
 		}
 		.tools {
+			display: none;
+		}
+		/* on a phone the tools are a menu: the walk's buttons in the corner, out of the way while it is open */
+		.walkbar {
+			left: max(1rem, env(safe-area-inset-left, 0px));
+		}
+		.tools.open ~ .walkbar {
 			display: none;
 		}
 		.tools.open {
