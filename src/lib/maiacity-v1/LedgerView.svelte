@@ -9,8 +9,9 @@
 	import Mark from './Mark.svelte';
 	import { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, heartsValue, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
 
-	/** show: 'all', or only the 'cash' flow (rents, dividends, pay days) or only the 'tx' (every transaction) */
-	let { view, who, limit = 200, show = 'all', tall = false } = $props();
+	/** show: 'all'; the 'cash' flow of a week (rents, dividends); the 'flow' (that and the last pay days); or only the
+	 * 'tx' (every transaction, under the heading `txTitle`) */
+	let { view, who, limit = 200, show = 'all', tall = false, txTitle = 'Every transaction' } = $props();
 
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: Math.min(d, 2) }));
 	const vdate = (vm) => dateText(dateOf(vm));
@@ -74,7 +75,7 @@
 				<div class="row net" title="one pay day a week; a payer short of the MIND swaps through the pool"><span>Net a week<small>next pay day {vdate((view.week + 1) / 4)}</small></span><span class="amt" class:plus={net > 0} class:minus={net < 0}>{signed(net, 2)} ❤︎{#if grows}<small>+{f(grows)} {heartsName}</small>{/if}{#each weekNet as [t, x] (t)}<small>{signed(x)} {TOKEN_LABEL[t]}</small>{/each}</span></div>
 			</div>
 		{/if}
-		{#if days.length && show === 'all'}
+		{#if days.length && (show === 'all' || show === 'flow')}
 			<p class="eyebrow">Cash flow, the last pay days</p>
 			<div class="subs">
 				{#each days as d (d.week)}
@@ -86,10 +87,10 @@
 				{/each}
 			</div>
 		{/if}
-		{#if show === 'cash' && !grows && !subsIn.length && !subsOut.length && !divs.length}<p class="about">No rents in or out yet.</p>{/if}
+		{#if (show === 'cash' || show === 'flow') && !grows && !subsIn.length && !subsOut.length && !divs.length}<p class="about">No rents in or out yet.</p>{/if}
 {/if}
-{#if show !== 'cash'}
-		<p class="eyebrow">Every transaction</p>
+{#if show === 'all' || show === 'tx'}
+		<p class="eyebrow">{txTitle}</p>
 		{#if lines.length}
 			<div class="ledger" class:tall>
 				{#each lines as e (e.id)}

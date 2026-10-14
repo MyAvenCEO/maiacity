@@ -3,7 +3,8 @@
 	too, on a phone and a desktop alike: back ($lib/app/back.svelte.js: out of what a page has open over itself, else up
 	a place), home to the dashboard, and you (who is signed in, your name, the public site, signing out). No page has a
 	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
-	dashboard.
+	dashboard. A page may add a green "+" between Home and You that opens its main sheet, and the accounts it can be
+	looked at as, listed in the You menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs).
 
 	Where it floats and the room it takes are said once, in src/app.css (--nav-foot, --nav-height, --nav-room): full-screen
 	pages keep what they show at their foot above it with --nav-room.
@@ -13,6 +14,7 @@
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
 	import { back, upFrom } from './back.svelte.js';
+	import { pill } from './pill.svelte.js';
 
 	/** @type {{ founder: import('$lib/auth/client').Founder, onsignout: () => void }} */
 	let { founder, onsignout } = $props();
@@ -22,6 +24,8 @@
 	const path = $derived(page.url.pathname);
 	const up = $derived(upFrom(path.slice(base.length)));
 	const initials = $derived(founder.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase());
+	// looking at another account than one's own (a COOP's wallet): the avatar and the word say whose
+	const acting = $derived(pill.accounts ? pill.accounts.list.find((a) => a.id === pill.accounts?.current && a !== pill.accounts.list[0]) : null);
 	$effect(() => {
 		void path;
 		open = false;
@@ -41,12 +45,29 @@
 	<a class="item" href={home} aria-current={path === home ? 'page' : undefined} title="Dashboard">
 		<Icon name="home" /><span>Home</span>
 	</a>
-	<button class="item" class:on={open} onclick={() => (open = !open)} aria-expanded={open} aria-haspopup="true" title={founder.name}>
-		<span class="avatar">{initials}</span><span>You</span>
+	{#if pill.center}
+		<button class="item plus" class:on={pill.center.on} onclick={() => pill.center?.go()} title={pill.center.label} aria-label={pill.center.label} aria-expanded={pill.center.on}>
+			<span class="ring"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></span><span>{pill.center.label}</span>
+		</button>
+	{/if}
+	<button class="item" class:on={open} onclick={() => (open = !open)} aria-expanded={open} aria-haspopup="true" title={acting ? `${founder.name}, as ${acting.label}` : founder.name}>
+		{#if acting}<span class="avatar {acting.shape ?? 'human'}" style="background:{acting.colour}; color:#fff">{acting.text}</span><span>{acting.label.replace(/ COOP$/, '')}</span>
+		{:else}<span class="avatar">{initials}</span><span>You</span>{/if}
 	</button>
 	{#if open}
 		<div class="account" role="menu">
 			<p class="who"><b>{founder.name}</b><span>Founder {String(founder.number).padStart(3, '0')}</span></p>
+			{#if pill.accounts}
+				<p class="group">{pill.accounts.title}</p>
+				{#each pill.accounts.list as a (a.id)}
+					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.accounts.current} onclick={() => (pill.accounts?.pick(a.id), (open = false))}>
+						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff">{a.text}</span>
+						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
+						{#if a.id === pill.accounts.current}<span class="tick" aria-hidden="true">✓</span>{/if}
+					</button>
+				{/each}
+				<hr />
+			{/if}
 			<a role="menuitem" href="{base}/join/">Your name</a>
 			{#if founder.caps?.includes('media:admin')}<a role="menuitem" href="{base}/join/#terminal">Sign a terminal in</a>{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
@@ -107,6 +128,28 @@
 		background: var(--ink);
 	}
 
+	/* the page's "+": a round, brand green button in the middle of the pill */
+	.plus .ring {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: var(--brand-green);
+		color: #fff;
+		box-shadow: 0 2px 8px rgb(36 69 47 / 0.35);
+	}
+	.plus.on {
+		color: var(--ink);
+		background: rgb(36 69 47 / 0.1);
+	}
+	.plus.on .ring {
+		transform: rotate(45deg);
+	}
+	.plus .ring {
+		transition: transform 160ms ease;
+	}
+
 	.avatar {
 		display: grid;
 		place-items: center;
@@ -126,11 +169,55 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 13rem;
+		max-height: calc(100dvh - var(--nav-room) - 8px);
+		overflow-y: auto;
 		padding: 0.5rem;
 		border: 1px solid var(--line);
 		border-radius: 16px;
 		background: var(--paper);
 		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+	}
+
+	.avatar.coop {
+		border-radius: 7px;
+	}
+	.avatar.aven {
+		border-radius: 4px;
+		font-size: 0.5rem;
+	}
+
+	.group {
+		margin: 0.2rem 0.6rem 0.2rem;
+		font-size: 0.66rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+
+	.account .acct {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.acct-name {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		line-height: 1.25;
+	}
+	.acct-name small {
+		font-size: 0.72rem;
+		color: var(--muted);
+	}
+	.tick {
+		color: var(--brand-green);
+		font-weight: 700;
+	}
+	.account hr {
+		width: 100%;
+		margin: 0.3rem 0;
+		border: 0;
+		border-top: 1px solid var(--line);
 	}
 
 	.who {
@@ -177,13 +264,20 @@
 			gap: 0;
 			padding: 4px;
 		}
-		.item span:not(.avatar) {
+		.item span:not(.avatar, .ring) {
 			display: none;
 		}
 		.item {
 			width: 2.8rem;
 			min-width: 0;
 			padding: 0.55rem 0;
+		}
+		.item.plus {
+			padding: 0.2rem 0;
+		}
+		.plus .ring {
+			width: 36px;
+			height: 36px;
 		}
 	}
 </style>

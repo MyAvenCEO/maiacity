@@ -2,7 +2,9 @@
 	MaiaCity V1: the one shared game, as both players see it, as a game screen like Sandbox 1 and Sandbox 5 — the hex in
 	3D under everything ($lib/maiacity-v1/world.js: the tent and the two players, nothing else), the COOPs and what
 	they own (the MaiaCity COOP the hex and the AMM pool) as a list in a card, the numbers in pills across the top, the tools down the left, and
-	a card on the right for whatever is open (a sheet from the foot on a phone, an aside down the right on its side).
+	a card on the right for whatever is open (a sheet from the foot on a phone, an aside down the right on its side). The
+	wallet is one banking sheet from the foot, opened by the nav pill's green "+": the balance and recent transactions,
+	Invest, Cashflow and Swap at its foot, and whose wallet it is picked in the nav pill's You menu.
 	The server holds the game (api/src/maiacity-v1.js); the page reads it every few seconds and, in between, runs the
 	same rules (game/maiacity-v1/engine.js) forward to the second, so the clock, the melt and the HEARTS growing count
 	live. Every move goes to the server. Every decision is a MIP that needs both players' signatures.
@@ -23,6 +25,8 @@
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
+	import Mark from './Mark.svelte';
+	import { pillAccounts, pillCenter } from '$lib/app/pill.svelte.js';
 
 	let game = $state.raw(null);
 	let me = $state('');
@@ -32,8 +36,13 @@
 	let error = $state('');
 	let busy = $state(false);
 	let seat = $state('A');
-	// what the card shows; a phone opens on the world, the card closed
-	let panel = $state(typeof matchMedia !== 'undefined' && matchMedia('(max-width: 720px), (max-height: 500px)').matches ? null : 'you');
+	// what the card shows (the COOPs, the proposals, the rules, a screen); the page opens on the world, the card closed
+	let panel = $state(null);
+	// the wallet (Samuel 2026-10-14: one banking sheet from the foot, opened by the nav pill's green "+"): its balance and
+	// recent transactions, and its Invest, Cashflow and Swap; null while closed. `account` is whose wallet it shows,
+	// picked in the nav pill's You menu: '' for the seat's own, else another player, a COOP or the pool
+	let wallet = $state(null);
+	let account = $state('');
 	let tools = $state(false); // the phone's tools, behind the action button
 	let walking = $state(false); // walking (or driving the pickup) freely through the world, any time no film plays
 	let roamNow = $state({ on: false, near: false, driving: false }); // walking, by the pickup, or at its wheel
@@ -41,7 +50,6 @@
 	let swapToken = $state('MAIA');
 	let swapTo = $state('TRIBE');
 	let swapAmount = $state(1);
-	let ledgerOfWho = $state('');
 	let draft = $state(null);
 	let labels = $state({});
 	let canvas;
@@ -56,7 +64,7 @@
 	const cal = $derived(view ? calendar(view, now) : null);
 	const hour = $derived(cal ? cal.hour : 11);
 	const mint = $derived(view ? mintState(view, seat, now) : null);
-	const who = $derived(ledgerOfWho || `player:${seat}`);
+	const acct = $derived(account || `player:${seat}`);
 	const total = $derived(view ? supply(view) : null);
 	const swapOut = $derived(view ? quote(view, swapToken, swapTo, Number(swapAmount) || 0) : 0);
 	const nextMonth = $derived(view ? nextPayDay(view) : 0);
@@ -296,10 +304,9 @@
 		world = createWorld(canvas, {
 			onPick: (name) => {
 				// a Village COOP machine opens its own card
-				if (name?.startsWith('asset:')) return void ((panel = name), (chose = true));
+				if (name?.startsWith('asset:')) return void ((panel = name), (chose = true), (wallet = null));
 				if (!name?.startsWith('player:')) return;
-				seat = name.slice(7);
-				open('you');
+				openWallet('home', name);
 			},
 			onLabels: (l) => (labels = l),
 			onCaption: (c) => (caption = c),
@@ -326,8 +333,73 @@
 		chose = true;
 		panel = panel === name ? null : name;
 		tools = false;
-		if (name === 'ledger') ledgerOfWho = '';
+		if (panel) wallet = null;
 	}
+
+	/** the wallet, open on one of its views ('home', 'all', 'invest', 'cashflow', 'swap'), as `id`'s if given */
+	function openWallet(v = 'home', id) {
+		if (id !== undefined) account = id === `player:${seat}` ? '' : id;
+		wallet = v;
+		panel = null;
+		tools = false;
+		chose = true;
+	}
+	// one of the wallet's actions; tapped again, it goes back to the balance
+	const walletTo = (v) => (wallet = wallet === v ? 'home' : v);
+	// a move made in the wallet shows at the top of its recent transactions
+	const walletMove = async (action) => {
+		if (await doMove(action)) wallet = 'home';
+	};
+
+	// whose wallet, as the nav pill lists them: the seat's own first, then the other player, the COOPs and the pool
+	// (Mark.svelte's initials and colours)
+	const accountOf = (id) => {
+		const [kind, k] = id.split(':');
+		if (kind === 'player') {
+			const p = view.players[k];
+			return { id, label: p.founder === me ? `${p.name} (you)` : p.name, sub: p.founder === me ? 'Your wallet' : p.founder ? 'The other player' : 'A free seat', text: (p.name || k).slice(0, 2), colour: `hsl(${k === 'A' ? 28 : 205} 38% 42%)`, shape: 'human', bal: p.wallet, p };
+		}
+		if (kind === 'coop') {
+			const c = view.coops[k];
+			return { id, label: c.name, sub: `Treasury · mints ${TOKEN_LABEL[c.mind]}`, text: c.name.replace(/ COOP$/, '').slice(0, 2), colour: TOKEN_COLOUR[c.mind], shape: 'coop', bal: c.treasury, c };
+		}
+		return { id: 'pool', label: 'AMM pool', sub: 'The MaiaCity COOP’s pool', text: 'AMM', colour: '#8a7a55', shape: 'aven', bal: view.pool };
+	};
+	const accounts = $derived(view ? [`player:${seat}`, `player:${otherSeat}`, ...Object.keys(COOPS).map((k) => `coop:${k}`), 'pool'].map(accountOf) : []);
+	const here = $derived(accounts.find((a) => a.id === acct) ?? accounts[0]);
+	// the rent chain of a week, player → Tribe → Village → MaiaCity (engine.js rents): one link per payer and payee,
+	// the two players' home rents as one
+	const CHAIN = ['players', 'coop:tribe', 'coop:village', 'coop:maia'];
+	const chain = $derived.by(() => {
+		if (!view) return [];
+		const by = new Map();
+		for (const r of rents(view)) {
+			const from = r.from.startsWith('player:') ? 'players' : r.from;
+			const k = `${from}>${r.to}`;
+			const l = by.get(k) ?? { from, to: r.to, token: r.token, weekly: 0, each: r.weekly, what: [], payers: [] };
+			l.weekly += r.weekly;
+			if (!l.what.includes(r.what)) l.what.push(r.what);
+			l.payers.push(r.from);
+			by.set(k, l);
+		}
+		return [...by.values()].sort((a, b) => CHAIN.indexOf(a.from) - CHAIN.indexOf(b.from));
+	});
+	// the slot a MIP's screen may stand in (views.js SLOTS), for each of the wallet's views
+	const WALLET_SLOT = { home: 'you', all: 'ledger', invest: 'invest', cashflow: 'ledger', swap: 'swap' };
+	const walletCard = $derived(wallet ? (slotted[WALLET_SLOT[wallet]] ?? (wallet === 'home' ? slotted.mint : null)) : null);
+	// the nav pill's green "+" opens the wallet, and its You menu switches whose it shows, once the story has shown it
+	const pillOn = $derived(!!view && !!player && shows('you'));
+	$effect(() => {
+		if (!pillOn || playing) return;
+		return pillCenter({ label: 'Wallet', get on() { return !!wallet; }, go: () => (wallet ? (wallet = null) : openWallet()) });
+	});
+	$effect(() => {
+		if (!pillOn) return;
+		return pillAccounts({ title: 'Wallet of', get list() { return accounts; }, get current() { return here?.id ?? ''; }, pick: (id) => openWallet('home', id) });
+	});
+	$effect(() => {
+		if (playing) wallet = null;
+	});
 
 	function newMip(payout) {
 		draft = { title: payout ? `Payout from the ${nameOf(view, payout.from)}` : '', description: '', settings: { ...view.settings }, coops: Object.fromEntries(Object.values(view.coops).map((c) => [c.id, { name: c.name, assets: c.assets.map((x) => `${x.name} | ${x.kind}`).join('\n') }])), payouts: payout ? [payout] : [] };
@@ -365,14 +437,11 @@
 	const pad = (n) => String(n).padStart(2, '0');
 	const vdate = (vm) => dateText(dateOf(vm));
 	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, view.coops[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
+	// the tools down the left: the wallet (your HEARTS and MINDs, investing, the cash flow, swapping, every
+	// transaction) is the nav pill's "+", not a tool
 	const TOOLS = [
-		['you', '◉', 'You'],
-		['mint', '♥', 'Mint'],
-		['invest', '↗', 'Invest'],
-		['swap', '⇄', 'Swap'],
 		['coops', '◇', 'COOPs'],
 		['mips', '✎', 'Proposals'],
-		['ledger', '≡', 'Ledger'],
 		['rules', '⚙', 'Rules']
 	];
 	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
@@ -442,7 +511,7 @@
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
 		if (!demo) try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
-		if (id === 'done') panel = 'you';
+		if (id === 'done') openWallet();
 	};
 	// remembered per game: a fresh game (a reset) starts every story from its first step again
 	const started = $derived(game?.started ?? 0);
@@ -469,6 +538,8 @@
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
 
+<svelte:window onkeydown={(e) => e.key === 'Escape' && wallet && (wallet = null)} />
+
 <div class="v1" class:cinema={!!playing}>
 	<canvas class="stage" bind:this={canvas}></canvas>
 	{#if demo}<div class="demo panel" role="status">Test run · {view?.players[seat].name}’s journey, nothing is saved <button class="link" onclick={endDemo}>End</button></div>
@@ -481,7 +552,7 @@
 				{@const t = trees.find((x) => x.seat === k.slice(5))}
 				{#if t}<div class="tag tree" style="left:{l.x}px;top:{l.y}px">{t.name}<small>{t.label} · {t.now}</small></div>{/if}
 			{:else if l.on}
-				<button class="tag" class:me={k === `player:${seat}`} style="left:{l.x}px;top:{l.y}px" onclick={() => ((seat = k.slice(7)), open('you'))}>
+				<button class="tag" class:me={k === `player:${seat}`} style="left:{l.x}px;top:{l.y}px" onclick={() => openWallet('home', k)}>
 					{view.players[k.slice(7)].name}
 					<small>♥ {f(view.players[k.slice(7)].wallet.HEARTS, 1)}</small>
 				</button>
@@ -504,7 +575,7 @@
 					{#if !view.players[s].founder && mySeat && !demo}
 						<button title="Test run this seat's journey in this browser, as long as no one has taken it" onclick={() => startDemo(s)}>{view.players[s].name} · try</button>
 					{:else}
-						<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
+						<button class:on={seat === s} onclick={() => ((seat = s), (account = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
 					{/if}
 				{/each}
 			</div>{/if}
@@ -518,7 +589,7 @@
 			{/each}
 			{#if shows('you')}<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>{/if}
 		</nav>{/if}
-		{#if canMove && shows('mint') && !tour}
+		{#if canMove && shows('mint') && !tour && !wallet}
 			<!-- the universal mint button over the nav pill, once the story is done: in it the story mints by its own button (Samuel 2026-10-13) -->
 			<button class="mintbar" class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
@@ -611,8 +682,117 @@
 			<svg viewBox="0 0 24 24"><path d={tools ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} /></svg>
 		</button>{/if}
 
+		{#if wallet && here && !playing}
+			{@const hv = heartsValue(view)}
+			{@const isPlayer = here.id.startsWith('player:')}
+			{@const own = here.id === `player:${seat}` && canMove}
+			<!-- the wallet: one banking sheet from the foot of the screen, over the nav pill's "+" (Samuel 2026-10-14) -->
+			<button class="scrim" aria-label="Close the wallet" onclick={() => (wallet = null)}></button>
+			<div class="wallet panel" role="dialog" aria-modal="true" aria-label="Wallet of {here.label}">
+				<header class="w-head">
+					{#if wallet !== 'home'}<button class="w-back" aria-label="Back to the balance" onclick={() => (wallet = 'home')}>←</button>{/if}
+					<Mark {view} id={here.id} size={36} />
+					<span class="w-who"><b>{here.label}</b><small>{wallet === 'invest' ? 'Invest your HEARTS' : wallet === 'cashflow' ? 'Cash flow, a week' : wallet === 'swap' ? 'Swap in the pool' : wallet === 'all' ? 'Every transaction' : here.sub}</small></span>
+					<button class="w-close" aria-label="Close" onclick={() => (wallet = null)}>×</button>
+				</header>
+				<div class="w-body">
+					{#if walletCard}
+						{#if !builtIn[WALLET_SLOT[wallet]]}
+							{#key walletCard.id}<Frame view={frameOf(walletCard)} data={screenData} />{/key}
+							<p class="small">A MIP stood the screen “{walletCard.name}” here; it only shows, every move stays a button. <button class="link" onclick={() => (builtIn = { ...builtIn, [WALLET_SLOT[wallet]]: true })}>Hide it</button></p>
+						{:else}
+							<p class="small"><button class="link" onclick={() => (builtIn = { ...builtIn, [WALLET_SLOT[wallet]]: false })}>Show the screen “{walletCard.name}”</button></p>
+						{/if}
+					{/if}
+					{#if wallet === 'home'}
+						<p class="w-balance">{f(inHearts(view, here.bal, hv))} <span>❤︎</span></p>
+						<p class="w-sub">{isPlayer ? 'Balance, all your HEARTS and MINDs in HEARTS' : here.id === 'pool' ? 'In the pool, in HEARTS' : 'The treasury, in HEARTS'}</p>
+						{#if isPlayer && !here.p.founder}
+							<p class="about">This seat is waiting: the next person to sign in becomes {here.p.name}.</p>
+							{#if mySeat}<button class="primary" onclick={() => startDemo(here.id.slice(7))}>Test run {here.p.name}’s journey</button>{/if}
+						{/if}
+						{#if own && mint.amount > 0.005 && !tour}
+							<div class="w-mint">
+								<span><b>+{f(mint.amount)} ❤︎</b> ready to mint{#if mint.lost > 0.001}<small class="bad">{f(mint.lost)} older than {reach} are lost</small>{/if}</span>
+								<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint</button>
+							</div>
+						{/if}
+						<ul class="hold">
+							{#if isPlayer}
+								{@const hp = here.p}
+								<li><span>{hp.name.charAt(0).toLowerCase() + hp.name.slice(1).replace(/\s+/g, '')}HEARTS<small>your right to own, {f(view.settings.heartsPerDay, 0)} a game day</small></span><strong>{f(hp.wallet.HEARTS)} ❤︎</strong></li>
+							{/if}
+							{#each MINDS.filter((t) => isPlayer || here.bal[t] > 0.005 || here.c?.mind === t) as t (t)}
+								<li><span><i class="dot" style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((here.bal[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(here.bal[t] * hv[t])} ❤︎<small>{f(here.bal[t])} {TOKEN_LABEL[t]}</small></strong></li>
+							{/each}
+							{#if here.bal.EURO > 0.005}<li title="System minted: each player's first year of HEARTS brings as many €uro in (the euro ingest)"><span>€uro<small>the euro ingest</small></span><strong>{f(here.bal.EURO)} €</strong></li>{/if}
+						</ul>
+						{#if isPlayer && here.p.arrears > 0.001}<p class="bad small">{f(here.p.arrears)} tribeMIND home rent owed</p>{/if}
+						<LedgerView {view} who={here.id} show="tx" limit={5} txTitle="Recent transactions" />
+						{#if view.ledger.some((e) => e.from === here.id || e.to === here.id)}<button class="link" onclick={() => (wallet = 'all')}>See every transaction</button>{/if}
+					{:else if wallet === 'all'}
+						<LedgerView {view} who={here.id} show="tx" tall />
+					{:else if wallet === 'invest'}
+						{@const into = here.c ? [here.c.id] : Object.keys(COOPS)}
+						<p class="w-balance small-b">{f(player.wallet.HEARTS)} <span>❤︎ to invest</span></p>
+						<p class="about">Each HEART makes 1 MIND of the COOP: {f(50, 0)} % yours, {f(50 - view.settings.poolShare * 100, 0)} % its treasury, {f(view.settings.poolShare * 100, 0)} % into the city pool.</p>
+						{#if canMove}
+							<div class="row">
+								<input type="number" min="0" step="1" bind:value={amount} aria-label="HEARTS to invest" />
+								<button onclick={() => (amount = Math.floor(player.wallet.HEARTS * 1e6) / 1e6)}>All</button>
+							</div>
+							<div class="buttons col">
+								{#each into as id (id)}
+									<button class="primary" disabled={busy || !(player.wallet.HEARTS > 0) || !(amount > 0)} onclick={() => walletMove({ type: 'invest', coop: id, amount })}>Invest {f(amount, 0)} ❤︎ into the {view.coops[id].name}</button>
+								{/each}
+							</div>
+						{:else}
+							<p class="small">Only {player.name} can invest from this seat.</p>
+						{/if}
+					{:else if wallet === 'cashflow'}
+						<p class="eyebrow">The rent chain · each pay day, a week</p>
+						<ol class="chain">
+							{#each chain as l (l.from + l.to)}
+								{@const on = l.from === here.id || l.to === here.id || l.payers.includes(here.id)}
+								<li class:on>
+									<span class="c-from">{#if l.from === 'players'}<Mark {view} id="player:{seat}" size={26} /><span>Each player<small>{f(l.each, 0)} {TOKEN_LABEL[l.token]} each</small></span>{:else}<Mark {view} id={l.from} size={26} /><span>{nameOf(view, l.from)}</span>{/if}</span>
+									<span class="c-pay"><b>{f(l.weekly, 0)} {TOKEN_LABEL[l.token]}</b><small>{l.what.map((w) => w.replace(/ rent$/, '')).join(', ').toLowerCase()} · ≈ {f(l.weekly * hv[l.token], 0)} ❤︎</small></span>
+									<span class="c-to"><Mark {view} id={l.to} size={26} /><span>{nameOf(view, l.to)}</span></span>
+								</li>
+							{/each}
+						</ol>
+						<p class="small">{f(view.settings.dividendShare * 100, 0)} % of every rent goes on to the holders of the MIND it is paid in: your dividend.</p>
+						<LedgerView {view} who={here.id} show="flow" />
+					{:else if wallet === 'swap'}
+						<p class="about">A Balancer weighted pool of the MaiaCity COOP: one basket of all three MINDs, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}. Any MIND swaps for any other; a {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
+						{#if canMove}
+							<div class="swapbox">
+								<label><span>You pay<small>you hold {f(player.wallet[swapToken], 3)}</small></span>
+									<span class="row"><input type="number" min="0" step="0.1" bind:value={swapAmount} aria-label="Amount to swap" /><select bind:value={swapToken}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></span>
+								</label>
+								<button class="flip" aria-label="Swap the two" onclick={() => ([swapToken, swapTo] = [swapTo, swapToken])}>⇅</button>
+								<label><span>You get<small>≈ {f(swapOut * (hv[swapTo] ?? 0), 2)} ❤︎</small></span>
+									<span class="row"><output>{f(swapOut, 3)}</output><select bind:value={swapTo}>{#each MINDS.filter((t) => t !== swapToken) as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></span>
+								</label>
+							</div>
+							<div class="buttons"><button class="primary wide-b" disabled={busy || !(swapOut > 0)} onclick={() => walletMove({ type: 'swap', token: swapToken, to: swapTo, amount: swapAmount })}>Swap for {f(swapOut, 3)} {TOKEN_LABEL[swapTo]}</button></div>
+						{/if}
+						<dl>
+							{#each MINDS as t (t)}<dt>Pool {TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
+							{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
+						</dl>
+					{/if}
+				</div>
+				<nav class="w-actions" aria-label="Wallet actions">
+					<button class:on={wallet === 'invest'} disabled={!shows('invest')} onclick={() => walletTo('invest')}><span class="w-ic">↗</span>Invest</button>
+					<button class:on={wallet === 'cashflow'} onclick={() => walletTo('cashflow')}><span class="w-ic">⇵</span>Cashflow</button>
+					<button class:on={wallet === 'swap'} disabled={!shows('swap')} onclick={() => walletTo('swap')}><span class="w-ic">⇄</span>Swap</button>
+				</nav>
+			</div>
+		{/if}
+
 		{#if panel && shows(panel) && (!tour || chose)}
-		<aside class="card panel" class:wide={panel === 'ledger' || panel === 'mips' || isViewPanel(panel)}>
+		<aside class="card panel" class:wide={panel === 'mips' || isViewPanel(panel)}>
 			<button class="close" aria-label="Close" onclick={() => (panel = null)}>×</button>
 
 			{#if slotCard && !builtIn[panel]}
@@ -625,71 +805,6 @@
 			{/if}
 			{#if slotCard && !builtIn[panel] && REPLACES.includes(panel)}
 				<!-- the screen above takes this panel's place -->
-			{:else if panel === 'you'}
-				<p class="eyebrow">{mine ? 'You' : player.founder ? 'The other player' : 'A free seat'}</p>
-				<h2>{player.name}</h2>
-				{#if !player.founder}
-					<p class="about">This seat is waiting: the next person to sign in becomes {player.name}.</p>
-					{#if mySeat}<button class="primary" onclick={() => startDemo(seat)}>Test run {player.name}’s journey</button>{/if}
-				{:else if !mySeat}
-					<p class="about">Both seats are taken, so you are watching this game.</p>
-				{/if}
-				{@const hv = heartsValue(view)}
-				<p class="worth">{f(inHearts(view, player.wallet, hv))} <span>❤︎ in all</span></p>
-				<ul class="hold">
-					<li><span>{player.name.charAt(0).toLowerCase() + player.name.slice(1).replace(/\s+/g, '')}HEARTS{#if mint.amount > 0.005}<small>+{f(mint.amount)} ❤︎ ready to mint</small>{/if}</span><strong>{f(player.wallet.HEARTS)} ❤︎</strong></li>
-					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
-				</ul>
-				<LedgerView {view} who={`player:${seat}`} show="cash" />
-				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} tribeMIND home rent owed</p>{/if}
-				{#if canMove}
-					<div class="buttons">
-						<button class="primary" onclick={() => open('invest')}>Invest</button>
-						<button onclick={() => open('ledger')}>Ledger</button>
-					</div>
-				{/if}
-			{:else if panel === 'mint'}
-				<p class="eyebrow">Your HEARTS</p>
-				<h2>Mint</h2>
-				<p class="about">Your first mint brings a starter pack of {f(view.settings.starterPack ?? 8736, 0)} HEARTS. After that your HEARTS grow {f(view.settings.heartsPerDay, 0)} a game day, {view.settings.heartsPerDay === 24 ? 'one every game hour' : `one every ${f(24 / view.settings.heartsPerDay, 1)} game hours`}, on the game clock ({f(view.settings.heartsPerDay * 28 * 24 / view.settings.hoursPerMonth, 0)} a real day). Mint whenever you like: you get all that grew since your last mint. The right to mint reaches back {reach} only, so check in at least that often: growth older than that is lost. HEARTS you hold stay.</p>
-				<div class="wares">
-					<div><span>Ready to mint</span><b>{f(mint.amount)}</b></div>
-					{#if mint.starter}<div><span>Starter pack</span><b>{f(mint.starter)}</b></div>{/if}
-					<div><span>Last mint</span><b class="small">{player.lastMint ? `${dur(now - player.lastMint)} ago` : 'never'}</b></div>
-				</div>
-				{#if mint.lost > 0.001}<p class="bad small">{f(mint.lost)} HEARTS grew more than {reach} ago and are lost.</p>{:else if mint.full > now}<p class="small">The mint window is full in {dur(mint.full - now)}: mint before then so none are lost.</p>{/if}
-				{#if canMove}<div class="buttons"><button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount)} HEARTS</button></div>{/if}
-			{:else if panel === 'invest'}
-				<p class="eyebrow">{f(player.wallet.HEARTS)} HEARTS held</p>
-				<h2>Invest HEARTS</h2>
-				<p class="about">Each HEART makes 1 MIND of the COOP: {f(50, 0)} % yours, {f(50 - view.settings.poolShare * 100, 0)} % its treasury, {f(view.settings.poolShare * 100, 0)} % into the city pool.</p>
-				{#if canMove}
-					<div class="row">
-						<input type="number" min="0" step="1" bind:value={amount} />
-						<button onclick={() => (amount = Math.floor(player.wallet.HEARTS * 1e6) / 1e6)}>All</button>
-					</div>
-					<div class="buttons col">
-						{#each Object.keys(COOPS) as id (id)}
-							<button class="primary" disabled={busy || !(player.wallet.HEARTS > 0)} onclick={() => doMove({ type: 'invest', coop: id, amount })}>Into the {view.coops[id].name}</button>
-						{/each}
-					</div>
-				{/if}
-			{:else if panel === 'swap'}
-				<p class="eyebrow">The MaiaCity COOP’s AMM pool</p>
-				<h2>Swap</h2>
-				<p class="about">A Balancer weighted pool of the MaiaCity COOP: one basket of all three MINDs, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}. Any MIND swaps for any other. A {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
-				{#if canMove}
-					<div class="row">
-						<input type="number" min="0" step="0.1" bind:value={swapAmount} />
-						<select bind:value={swapToken}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select>
-					</div>
-					<div class="row"><span class="arrow">→</span><select bind:value={swapTo}>{#each MINDS.filter((t) => t !== swapToken) as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></div>
-					<div class="buttons"><button class="primary" disabled={busy || !(swapOut > 0)} onclick={() => doMove({ type: 'swap', token: swapToken, to: swapTo, amount: swapAmount })}>Swap for {f(swapOut, 3)} {TOKEN_LABEL[swapTo]}</button></div>
-				{/if}
-				<dl>
-					{#each MINDS as t (t)}<dt>Pool {TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
-					{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
-				</dl>
 			{:else if panel === 'coops'}
 				<p class="eyebrow">Who owns what</p>
 				<h2>COOPs</h2>
@@ -750,19 +865,11 @@
 					{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}
 				</dl>
 				<div class="buttons">
-					{#if canMove}<button class="primary" onclick={() => open('invest')}>Invest</button>{/if}
+					{#if canMove}<button class="primary" onclick={() => openWallet('invest', panel)}>Invest</button>{/if}
 					{#if canMove}<button onclick={() => newMip({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</button>{/if}
-					<button onclick={() => { const k = panel; panel = 'ledger'; ledgerOfWho = k; }}>Its ledger</button>
-					{#if c.id === 'maia'}<button onclick={() => open('swap')}>Swap in the pool</button><button onclick={() => { panel = 'ledger'; ledgerOfWho = 'pool'; }}>The pool’s ledger</button>{/if}
+					<button onclick={() => openWallet('home', panel)}>Its wallet</button>
+					{#if c.id === 'maia'}<button onclick={() => openWallet('swap', '')}>Swap in the pool</button><button onclick={() => openWallet('home', 'pool')}>The pool’s wallet</button>{/if}
 				</div>
-			{:else if panel === 'ledger'}
-				<p class="eyebrow">Rents, cash flow and every transaction</p>
-				<h2>Ledger</h2>
-				<select class="full" bind:value={ledgerOfWho}>
-					<option value="">{player.name} (shown)</option>
-					{#each holdersList as [id, label] (id)}<option value={id}>{label}</option>{/each}
-				</select>
-				<LedgerView {view} {who} />
 			{:else if panel === 'mips'}
 				<p class="eyebrow">MaiaCity improvement proposals</p>
 				<h2>Proposals</h2>
@@ -974,17 +1081,6 @@
 	}
 	.clock.m {
 		display: none;
-	}
-	.worth {
-		margin: 0.2rem 0 0.6rem;
-		font-family: var(--font-display);
-		font-size: 1.9rem;
-		font-variant-numeric: tabular-nums;
-	}
-	.worth span {
-		font-family: var(--font-body);
-		font-size: 0.85rem;
-		opacity: 0.6;
 	}
 	.hold {
 		margin: 0 0 0.8rem;
@@ -1468,30 +1564,6 @@
 	.small {
 		font-size: 0.75rem;
 	}
-	.wares {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.35rem;
-		margin: 0.5rem 0;
-	}
-	.wares div {
-		display: flex;
-		flex-direction: column;
-		padding: 0.45rem 0.6rem;
-		border-radius: 10px;
-		background: rgb(31 42 35 / 0.06);
-	}
-	.wares span {
-		font-size: 0.68rem;
-		opacity: 0.65;
-	}
-	.wares b {
-		font-size: 1.05rem;
-		font-variant-numeric: tabular-nums;
-	}
-	.wares b.small {
-		font-size: 0.85rem;
-	}
 	dl {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
@@ -1806,6 +1878,261 @@
 		font-weight: 400;
 	}
 
+	/* ── the wallet: one banking sheet that pops up from the foot, over the nav pill's "+" ── */
+	.scrim {
+		position: absolute;
+		inset: 0;
+		z-index: 8;
+		padding: 0;
+		border: 0;
+		background: rgb(20 30 24 / 0.18);
+		cursor: default;
+		animation: fade 180ms ease-out;
+	}
+	.wallet {
+		position: absolute;
+		z-index: 9;
+		left: 0;
+		right: 0;
+		bottom: calc(var(--nav-room, 4rem) + 0.2rem);
+		display: flex;
+		flex-direction: column;
+		width: min(26rem, calc(100% - 16px));
+		max-height: min(42rem, calc(100dvh - var(--nav-room, 4rem) - 5rem));
+		margin: 0 auto;
+		border-radius: 22px;
+		background: rgb(250 248 242 / 0.97);
+		box-shadow: 0 18px 50px rgb(20 30 24 / 0.28);
+		transform-origin: 50% 100%;
+		animation: pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+		overflow: hidden;
+	}
+	.w-head {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.75rem 0.9rem 0.6rem;
+		border-bottom: 1px solid rgb(31 42 35 / 0.08);
+	}
+	.w-who {
+		display: flex;
+		flex: 1;
+		min-width: 0;
+		flex-direction: column;
+		line-height: 1.25;
+	}
+	.w-who small {
+		font-size: 0.72rem;
+		opacity: 0.6;
+	}
+	.w-back,
+	.w-close {
+		padding: 0.2rem 0.45rem;
+		border: 0;
+		border-radius: 999px;
+		background: none;
+		font-size: 1.2rem;
+		line-height: 1;
+	}
+	.w-back:hover,
+	.w-close:hover {
+		background: rgb(31 42 35 / 0.06);
+	}
+	.w-body {
+		flex: 1 1 auto;
+		min-height: 0;
+		padding: 0.6rem 1rem 0.8rem;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+	.w-body :global(.ledger) {
+		max-height: none;
+	}
+	.w-balance {
+		margin: 0.3rem 0 0;
+		font-family: var(--font-display);
+		font-size: 2.3rem;
+		line-height: 1.1;
+		font-variant-numeric: tabular-nums;
+	}
+	.w-balance.small-b {
+		font-size: 1.7rem;
+	}
+	.w-balance span {
+		font-family: var(--font-body);
+		font-size: 1rem;
+		opacity: 0.6;
+	}
+	.w-sub {
+		margin: 0.1rem 0 0.7rem;
+		font-size: 0.75rem;
+		opacity: 0.6;
+	}
+	.w-mint {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.6rem;
+		margin: 0 0 0.7rem;
+		padding: 0.5rem 0.5rem 0.5rem 0.8rem;
+		border-radius: 14px;
+		background: rgb(36 69 47 / 0.08);
+		font-size: 0.85rem;
+	}
+	.w-mint small {
+		display: block;
+		font-size: 0.7rem;
+	}
+	.w-mint button,
+	.wallet > .w-body > button.primary {
+		padding: 0.45rem 1rem;
+		border: 0;
+		border-radius: 999px;
+		background: var(--brand-green, #24452f);
+		color: #f4f1e8;
+		font-weight: 600;
+	}
+	.dot {
+		display: inline-block;
+		width: 9px;
+		height: 9px;
+		margin-right: 0.4rem;
+		border-radius: 3px;
+	}
+	.w-actions {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.4rem;
+		padding: 0.55rem 0.7rem 0.7rem;
+		border-top: 1px solid rgb(31 42 35 / 0.08);
+	}
+	.w-actions button {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.15rem;
+		padding: 0.45rem 0.2rem;
+		border: 0;
+		border-radius: 14px;
+		background: rgb(31 42 35 / 0.05);
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+	.w-actions button.on {
+		background: var(--brand-green, #24452f);
+		color: #f4f1e8;
+	}
+	.w-ic {
+		font-size: 1.05rem;
+		line-height: 1;
+	}
+	.chain {
+		margin: 0.4rem 0 0.4rem;
+		padding: 0;
+		list-style: none;
+	}
+	.chain li {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.55rem;
+		border-radius: 12px;
+		font-size: 0.78rem;
+		line-height: 1.25;
+	}
+	.chain li + li {
+		margin-top: 0.15rem;
+	}
+	.chain li.on {
+		background: rgb(36 69 47 / 0.08);
+	}
+	.c-from,
+	.c-to {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+	.c-to {
+		justify-content: flex-end;
+		text-align: right;
+		flex-direction: row-reverse;
+	}
+	.c-from small {
+		display: block;
+		font-size: 0.66rem;
+		opacity: 0.6;
+	}
+	.c-pay {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+	}
+	.c-pay b::after {
+		content: ' →';
+	}
+	.c-pay small {
+		max-width: 8.5rem;
+		font-size: 0.64rem;
+		opacity: 0.6;
+	}
+	.swapbox {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.25rem;
+	}
+	.swapbox label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		padding: 0.55rem 0.7rem;
+		border-radius: 14px;
+		background: rgb(31 42 35 / 0.05);
+		font-size: 0.78rem;
+	}
+	.swapbox label > span:first-child {
+		display: flex;
+		justify-content: space-between;
+	}
+	.swapbox small {
+		opacity: 0.6;
+	}
+	.swapbox output {
+		flex: 1 1 4rem;
+		padding: 0.4rem 0.2rem;
+		font-size: 1rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.flip {
+		align-self: center;
+		margin: -0.55rem 0;
+		z-index: 1;
+		width: 2rem;
+		height: 2rem;
+		padding: 0;
+		border: 3px solid rgb(250 248 242);
+		border-radius: 50%;
+		background: #e8e4d8;
+	}
+	.buttons .wide-b {
+		flex: 1;
+	}
+	@keyframes pop {
+		from {
+			opacity: 0;
+			transform: translateY(28px) scale(0.94);
+		}
+	}
+	@keyframes fade {
+		from {
+			opacity: 0;
+		}
+	}
+
 	/* ── a phone, upright or on its side: the tools behind one action button, the card sliding in ── */
 	@media (max-width: 720px), (max-height: 500px) {
 		.fab {
@@ -1897,6 +2224,9 @@
 		.ledger {
 			max-height: none;
 		}
+		.wallet {
+			max-height: 50dvh;
+		}
 	}
 
 	/* ── on its side: the card an aside down the right, the action button on the left ── */
@@ -1925,6 +2255,12 @@
 			border-right: 0;
 			border-bottom: 0;
 			animation: aside 240ms ease-out;
+		}
+		.wallet {
+			max-height: calc(100dvh - var(--nav-room, 4rem) - 1rem);
+		}
+		.w-balance {
+			font-size: 1.8rem;
 		}
 	}
 	@keyframes sheet {
