@@ -32,10 +32,10 @@
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
-	 *  logs it at every start; the same as long as its shelf (g4, since the reset of #665) keeps its device's key */
+	 *  logs it at every start; the same as long as its shelf (g5, since the reset of #679) keeps its device's key */
 	const RELAY = 'https://avendb.maia.city';
 	const SERVER =
-		'AVENDB14ZZJA2EH2RLDALJFR7VLXPLNSERE2YDN5Q7WM7K37IWWMANPZ5263MPACO4DFLJMGD6A5RPGYTYFYOBSPJ5YOZUYMBKTQHPTRAFLQEIBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+		'AVENDB1UWJMHK72ZNVFGOZFOO5W3GRCDQLTZJL2TZYJZGOA5XVUNOK2SDDCHSOJAJUDEWXUZCMS4LO5YN5VDN6MJIPXXZ2IWNY2FZDOQ2XEEQQBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 
 	/** @type {any} the device's WebAssembly */
 	let avendb = null;
