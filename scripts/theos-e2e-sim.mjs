@@ -1844,7 +1844,7 @@ function waterFloorR(S) {
 	return (varCostR(S, CITY) + (S.sc.rentCover ? 0 : upkeepR(S) / Math.max(co.made, 1e-9))) / (1 - S.sc.turnDiv);
 }
 /**
- * fwdPrice: the test city's forward-margin price (src/lib/sandbox-9/market.js, β = 1). The margin is what the seller
+ * fwdPrice: the test city's forward-margin price (its market rule, β = 1). The margin is what the seller
  * holds (fresh stock and store) plus what its plant will make (its capacity, with a shock's loss until the shock ends)
  * over its need plus IN_HAND days, at the tightest point of the next FWD_H days in 5-day steps; the price's target is the
  * reference ÷ the margin; the reference follows full cost over 60 days; the price moves halfway to its target a day, and
@@ -3209,7 +3209,7 @@ if (ARGS.includes('--seeds')) {
 	L.push('');
 	const mus = res.map((r) => r.muH), mg = res.map((r) => r.marginH), sum = (k) => res.reduce((a, r) => a + r[k], 0);
 	L.push(`μ at rest: ${pct(Math.min(...mus), 2)} to ${pct(Math.max(...mus), 2)} (median ${pct(median(mus), 2)}); below the melt on ${mus.filter((m) => m < RATE).length} of ${res.length} seeds; smallest margin ${f(Math.min(...mg) * 100, 2)} pt (seed ${res[mg.indexOf(Math.min(...mg))].seed}). All three checks of Proposition 3 pass on ${res.filter((r) => r.allOld).length} of ${res.length} seeds by the old yardstick and on ${res.filter((r) => r.allT).length} by tenths (check 1 on ${res.filter((r) => r.ok1).length}, check 2 normal on ${res.filter((r) => r.ok2).length}, strict on ${res.filter((r) => r.okS).length}, check 3 on ${res.filter((r) => r.ok3old).length} by the old yardstick and on ${res.filter((r) => r.ok3t).length} by tenths; every decile higher at each mark on ${res.filter((r) => r.tenths).length}). The founding (days 1–7): ${f(sum('weekShort'))} person-days short, on ${res.filter((r) => r.weekShort > 0).length} seeds. Measured Gini of holdings in the last year: ${f(Math.min(...res.map((r) => r.giniH.y60)), 2)}–${f(Math.max(...res.map((r) => r.giniH.y60)), 2)}. COOP failures: ${sum('fails')} (${sum('foodFails')} food COOPs; ${sum('chainFails')} of all were successors on a failed plant; ${sum('scrapped')} idle plants scrapped). Person-days short from day 8: ${f(sum('shLate'))}.`, '');
-	for (const r of res.filter((x) => !x.allOld || !x.allT)) L.push(`- ${r.seed}: ${[r.whyOld, r.allOld ? '' : '', r.whyT].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join('; ')}.`);
+	for (const r of res.filter((x) => !x.allOld || !x.allT)) L.push(`- ${r.seed}: ${[r.whyOld, r.whyT].filter(Boolean).join('; ').split('; ').filter((x, i, a) => a.indexOf(x) === i).join('; ')}.`);
 	L.push('', `_Runtime ${((Date.now() - T0) / 1000).toFixed(1)} s._`);
 	console.log(L.join('\n'));
 	if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify(res, null, 1));
@@ -3593,7 +3593,7 @@ function proof(S) {
 }
 
 /**
- * Part 3 of Proposition 3 by canon #19, as the test city judges it (src/lib/sandbox-9/prop3.js realUnits): basics
+ * Part 3 of Proposition 3 by canon #19, as the test city judges it (its part-3 rule, realUnits): basics
  * (food, energy, housing, water) at or above need every year (within 1 %); extras (home m², goods, care hours,
  * experiences: the test city's home m², goods, Aven hours and pond hours) never down more than 2 % over any 5-year
  * window unless at satiation (this model has no physical-limit record, so only satiation excuses a fall); each tenth's
