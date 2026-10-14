@@ -8,9 +8,9 @@
 
 	const CYCLE = 12, FLY = 1.2;
 	const KIND = {
-		SOLAR: { color: '#d99a2b', label: 'SOLAR COOP' },
-		AGRI: { color: '#5f8f4a', label: 'AGRI COOP' },
-		HABITAT: { color: '#8a7a5a', label: 'HABITAT COOP' },
+		SOLAR: { color: '#d99a2b', label: 'solar COOP' },
+		AGRI: { color: '#5f8f4a', label: 'agri COOP' },
+		HABITAT: { color: '#8a7a5a', label: 'habitat COOP' },
 		NEW: { color: '#7a5aa8', label: 'a new COOP' },
 		GOODS: { blocked: true, label: 'buy goods' },
 		INTEREST: { blocked: true, label: 'earn interest' }
