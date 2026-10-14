@@ -1,21 +1,28 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 10: the loop of theOS, live. People on the outer ring send their daily HEARTS (terracotta) into the
-	// cooperatives in the middle; every HEART that lands is invested and creates one MIND of the COOP: 0.5 to the investor,
-	// 0.4 to the treasury, 0.1 to the pool. The investor's half flies back to its investor (gold), the treasury's part sinks
-	// into the COOP's treasury (its ring grows); the pools are not drawn. Everything shrinks a little as it travels:
-	// demurrage. Every few seconds one COOP turns extractive; the avens notice and route around it.
+	// Figure 11: the loop of theOS, live. People on the outer ring send their daily HEARTS (terracotta) into the
+	// cooperatives in the middle; every HEART that lands is invested and converts into one MIND of the COOP (Law 4: the
+	// investor's part, the treasury's part, and the pools' part to the city's pools). The investor's half flies back to its
+	// investor (gold), the treasury's part sinks into the COOP's treasury (its ring grows); the city's pools are not drawn.
+	// Everything shrinks a little as it travels: the melt, at RATE, sped up. Every few seconds one COOP turns extractive;
+	// the Avens notice and route around it. Each tag shows the COOP's MIND and its share of the HEARTS invested now.
+	// Water is the City COOP's, so the City COOP stands in the ring (cityMIND).
 	import { onMount } from 'svelte';
-	import { TREASURY_SHARE, POOL_SHARE, fmt } from './model.js';
+	import { TREASURY_SHARE, POOL_SHARE, RATE, fmt } from './model.js';
 
 	const COOPS = [
 		{ id: 'SOLAR', color: 0xd99a2b },
 		{ id: 'AGRI', color: 0x5f8f4a },
-		{ id: 'WATER', color: 0x3f7fb8 },
+		{ id: 'CITY', color: 0x3f7fb8 },
 		{ id: 'COMPUTE', color: 0x7a5aa8 },
-		{ id: 'ART', color: 0xc8744f },
+		{ id: 'ARTS', color: 0xc8744f },
 		{ id: 'HABITAT', color: 0x8a7a5a }
 	];
+	// the melt runs this many times faster than real time, so that it can be seen
+	const FAST = 4;
+	// a tag: the COOP's MIND, lowercase name and uppercase unit (solarMIND), over its share of the HEARTS invested now
+	const mindName = (id) => `${id.toLowerCase()}MIND`;
+	const sharePc = (share) => `${fmt(share * 100)}\u00a0%`;
 
 	let box;
 	let labels = $state(COOPS.map((c) => ({ id: c.id, x: 0, y: 0, share: 1 / COOPS.length, bad: false })));
@@ -95,7 +102,7 @@
 				stage.camera.position.set(Math.sin(angle) * 21, 12, Math.cos(angle) * 21);
 				stage.camera.lookAt(0, 0.4, 0);
 
-				// every 9 s one COOP turns extractive for a while: its MIND buys less utility, so each MIND it mints is worth less
+				// every 9 s one COOP turns extractive for a while: its MIND buys less utility, so each new MIND is worth less
 				regime += dt;
 				if (regime > 9) {
 					regime = 0;
@@ -115,12 +122,13 @@
 				for (let i = live.length - 1; i >= 0; i--) {
 					const d = live[i];
 					d.t += dt * d.speed;
-					d.size *= Math.exp(-0.07 * dt * 4); // demurrage, sped up so it can be seen
+					d.size *= Math.exp(-RATE * dt * FAST); // the melt, sped up so it can be seen
 					if (d.t >= 1) {
 						live.splice(i, 1);
 						if (d.kind === 'heart') {
-							// invested: creates one MIND, half back to the investor who sent the HEART, 0.4 to the treasury and 0.1
-							// to the pools (Law 4); an extractive COOP's MIND is worth less, so its dot is smaller
+							// invested: converts into one MIND, half back to the investor who sent the HEART, the treasury's part to
+							// the treasury and the pools' part to the city's pools (Law 4); an extractive COOP's MIND is worth less,
+							// so its dot is smaller
 							send('mind', d.to, d.from.clone().setY(0.25), d.coop, 0, 0.45 + 0.55 * d.coop.efficiency);
 							send('sink', d.to, d.coop.g.position.clone().setY(0.08), d.coop);
 						} else if (d.kind === 'sink') d.coop.pool += 0.12 * TREASURY_SHARE;
@@ -141,10 +149,10 @@
 				dots.instanceMatrix.needsUpdate = true;
 				if (dots.instanceColor) dots.instanceColor.needsUpdate = true;
 
-				// treasuries melt at the same 7 %, sped up, and grow with what sinks in
+				// treasuries melt at the same rate, sped up, and grow with what sinks in
 				const total = coops.reduce((k, c) => k + c.weight, 0);
 				coops.forEach((c) => {
-					c.pool *= Math.exp(-0.28 * dt);
+					c.pool *= Math.exp(-RATE * FAST * dt);
 					const r = 0.55 + Math.min(1.4, Math.sqrt(c.pool) * 0.32);
 					c.treasury.scale.set(r, r, 1);
 					c.core.rotation.y += dt * 0.6 * c.efficiency;
@@ -167,13 +175,13 @@
 <div class="scene" bind:this={box}>
 	{#each labels as l (l.id)}
 		<span class="tag" class:bad={l.bad} style:transform="translate({l.x.toFixed(1)}px, {l.y.toFixed(1)}px) translate(-50%, -100%)">
-			{l.id}<small>mind · {Math.round(l.share * 100)}%</small>
+			{mindName(l.id)}<small>{sharePc(l.share)}</small>
 		</span>
 	{/each}
 	<div class="keys" aria-hidden="true">
 		<span><i class="h"></i>HEARTS that people invest</span>
 		<span><i class="m"></i>MIND, half back to the investor</span>
-		<span><i class="s"></i>MIND, {fmt(TREASURY_SHARE, 1)} into the COOP's treasury ({fmt(POOL_SHARE, 1)} goes to the pools)</span>
+		<span><i class="s"></i>MIND, {fmt(TREASURY_SHARE, 1)} into the COOP's treasury ({fmt(POOL_SHARE, 1)} goes to the city's pools)</span>
 	</div>
 </div>
 
@@ -205,15 +213,21 @@
 		background: rgb(250 248 242 / 0.88);
 		font-size: 0.66rem;
 		font-weight: 600;
-		letter-spacing: 0.08em;
 		color: var(--ink);
 		pointer-events: none;
 		white-space: nowrap;
 	}
 
+	/* on a phone the six tags crowd the small scene */
+	@media (max-width: 480px) {
+		.tag {
+			padding: 0.1rem 0.3rem;
+			font-size: 0.58rem;
+		}
+	}
+
 	.tag small {
 		font-weight: 400;
-		letter-spacing: 0;
 		color: var(--ink-soft);
 		font-variant-numeric: tabular-nums;
 	}
