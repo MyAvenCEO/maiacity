@@ -13,7 +13,7 @@
 	import { REFS } from '$lib/theos/refs.js';
 	import {
 		RATE, UIA_DAY, DIVIDEND_SHARE, INVESTOR_SHARE, TREASURY_SHARE, POOL_SHARE, OLD_POOL_SHARE, salesBound, dailyLoss, halfLife, steadyState, lifeForRate, rtmRate, balanceAt, decay,
-		idleSeries, convergenceSeries, infraSeries, lvrSeries, basketLvr, selectionSeries, selectionStats, fmt,
+		idleSeries, convergenceSeries, lvrSeries, basketLvr, selectionSeries, selectionStats, fmt,
 		GINI_DE, ownLevel, giniAt, levelYears, reachedBy, giniRest, giniOf, dialSeries,
 		yearlyLoss, steadyStateGrowth, yearsToReach, relativeRate, selfDealDay, honestDay,
 		poolAfterCrash, heldAfterCrash, pairCount, ROUND_TRIP, flowSum, incomeShare,
@@ -35,9 +35,9 @@
 	const C = ['#c8744f', '#2f6fbf', '#1f7a52', '#8a5fb0'];
 
 	// one map for the numbers of figures, tables and equations, so that a new one never leaves a stale reference behind
-	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, pools: 6, lvr: 7, infra: 8, selection: 9, machine: 10, gini: 11, dial: 12, cycle: 13, deciles: 14 };
+	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, pools: 6, lvr: 7, holder: 8, selection: 9, machine: 10, gini: 11, dial: 12, cycle: 13, deciles: 14 };
 	const TAB = { speeds: 1, prices: 2, binds: 3, rivals: 4, parts: 5, twoWorlds: 6, roundTrip: 7, prop3: 8, variations: 9, sameShock: 10, cityParts: 11, conditions: 12, notation: 13, threats: 14, physics: 15, prop2: 16, testCity: 17, scenarios: 18 };
-	const EQ = { unit: 7, built: 8, select: 9, level: 10, gini: 11, normal: 12, strict: 13, abundance: 14 };
+	const EQ = { unit: 7, select: 8, level: 9, gini: 10, normal: 11, strict: 12, abundance: 13 };
 
 	// the slider under Figure 5 sets the rate, so a reader can feel what the 7 % does
 	let rate = $state(RATE);
@@ -45,7 +45,10 @@
 	const idle = idleSeries().map((s, i) => ({ id: `r${s.r}`, label: `${Math.round(s.r * 100)} % a year`, color: [C[1], C[0], C[3]][i], points: s.points }));
 	const conv = $derived(convergenceSeries(rate).map((s, i) => ({ ...s, color: [C[3], C[1], C[0]][i] })));
 	const star = $derived(steadyState(rate));
-	const infra = infraSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
+	// Figure 8: what a holder keeps of 1,000 HEARTS invested in year 1, against the same HEARTS left idle (log scale)
+	const holders = holderSeries().map((s, i) => ({ ...s, color: ['#8a8578', C[0], C[1], C[2], C[3]][i], dash: s.id === 'idle' ? '5 4' : undefined }));
+	const holdEnd = (id) => holders.find((s) => s.id === id).points.at(-1)[1];
+	const BM = MIND_RETURNS.byMind;
 	const lvr = lvrSeries().map((s, i) => ({ ...s, color: [C[2], C[0], C[1]][i] }));
 	const sel = selectionSeries().map((s, i) => ({ ...s, color: [C[0], C[1], C[2]][i] }));
 	const gin = $derived(data.gini.map((s, i) => ({ ...s, color: ['#8a8578', C[0], C[2], C[1]][i] })));
@@ -164,7 +167,7 @@
 			['entropy', '5 · Melting money, in numbers'],
 			['pol', '6 · Keeping every MIND tradeable'],
 			['avens', '7 · Avens: an agent for every person'],
-			['infra', '8 · Building for the long term: land and energy'],
+			['infra', '8 · Building for the long term: land, the euro and energy'],
 			['governance', '9 · Governance and competition']
 		] },
 		{ title: 'Part III · Toward Abundism', sections: [
@@ -418,7 +421,7 @@
 		<p>
 			Silvio Gesell proposed the fix more than a century ago. In 1916 he argued that money should carry a small holding
 			cost, like every good it competes with. Money would then circulate and not wait for a higher interest rate
-			<Cite k="gesell" />. The name for a fee on holding money is <em>demurrage</em>: the charge that a ship pays for
+			<Cite k="gesell" />. Section 8 shows what a safe return does to long-lived projects. The name for a fee on holding money is <em>demurrage</em>: the charge that a ship pays for
 			each day it lies idle in port. Demurrage is the central idea of this paper, and people tested it in practice:
 		</p>
 		<ul>
@@ -1182,53 +1185,78 @@
 	</section>
 
 	<section id="infra">
-		<h2><span>8</span>Building for the long term: land and energy</h2>
+		<h2><span>8</span>Building for the long term: land, the euro and energy</h2>
 		<p>
 			In capitalism, long-lived infrastructure is hard to finance, because every project competes with a safe
 			alternative. That alternative is a government bond: a loan to the state that pays a fixed return for doing
-			nothing. A 50-year tidal barrier must beat that return and also a risk premium, the extra return that investors
-			want for a risk. Gesell and Keynes both saw this floor that a positive return on money puts under every investment
-			<Cite k="gesell keynes36" />.
+			nothing. A tidal barrier that serves for generations must beat that return and also a risk premium, the extra
+			return that investors want for a risk. Gesell and Keynes both saw this floor that a positive return on money puts
+			under every investment <Cite k="gesell keynes36" />.
 		</p>
 		<p>
 			In theOS, there is no safe alternative inside the city. HEARTS cannot be lent or parked; they can only be
-			invested. Outside the city, euros remain a safe alternative for anyone who earns them (Section 12). Inside it, a
-			project does not have to beat a bond. It only has to deliver something that people use. Idle HEARTS melt at
-			{pc(RATE)} a year, and the MINDs that an investment creates melt at the same rate. So no balance earns a return just for being
-			held. A MIND pays its holder only through its COOP's success: a share of its sales, or a higher price. Compare
-			what is left after <Tex tex="T" /> years of the same intent: left idle, or built into a project whose utility
-			changes at its real rate <Tex tex="g" />:
+			invested (Law 2). Outside the city, euros remain a safe alternative for anyone who earns them (Section 8.3).
+			Inside it, a project does not have to beat a bond. But it competes for HEARTS with every other MIND, and an Aven
+			puts HEARTS where price and dividends are highest (Section 10.3). Idle HEARTS earn nothing and melt. MIND earns
+			only what its COOP sells or gains in price. A MIND pays its holder only through its COOP's success: a share of
+			its sales, or a higher price. The higher price is hard to keep, because a MIND above 1 HEART draws new HEARTS,
+			and the new MIND shares the rise (Section 6.3).
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} \text{idle: } e^{-rT}, \qquad \text{built: } e^{gT} \\ r = ${tn(RATE * 100)}\,\%,\ g = -1\,\%,\ T = 50 \\ \Rightarrow\; ${tn(decay(100, RATE, 50))}\,\% \text{ against } ${tn(decay(100, 0.01, 50))}\,\% \end{gathered} \tag{${EQ.built}}`} />
 		<p>
-			What lasts is what the investment built. But the melt does not make the far future worth more to an investor: the
-			investor's MIND melts too, so a share of use in fifty years is worth less to its holder than a share of use today.
-			What the melt changes is who gains. The later years of a long-lived project serve the people who hold its MIND
-			then, the next generations. Nothing pays for sitting still, so the only way to make intent last is to build what
-			people keep using: grids, water systems, domes, rail. In the earlier static world of Section 10.3, the MIND of a
-			long-lived geothermal plant grew to {fmt(STATIC.geo.geo, 1)} times its start in 20 years, with its dividends and
-			after the melt. The MIND of a solar COOP that lost the market kept {fmt(STATIC.geo.solar, 2)}. So building for the
-			long term pays the city, and it pays investors when their COOP wins. Whether Avens fund such long projects as readily as short ones is a question for the test city (Section 12).
+			What lasts is what the investment built: grids, water systems, domes, rail. So the only way to make intent last
+			is to build what people keep using. Who gains from what lasts?
+		</p>
+		<h3 id="gains">8.1 Who gains from long-lived projects</h3>
+		<p>
+			A city-scale project's rising value goes to its users and to the new investors who fund each stage. Long-term
+			holders gain through Law 5 on growing sales, not through a rising price. The cause is Law 4: every HEART invested
+			makes a new MIND, which shares any rise with its new holder (Section 6.3).
+		</p>
+		<p>
+			The simulation shows it. Over {BM.SOLAR.years} years, the MINDs of the city's infrastructure returned between
+			{pc(mindRange('mean')[0], 1)} and {pc(mindRange('mean')[1], 1)} a year in HEARTS, dividends and price changes
+			together, before the melt: solarMIND {pc(BM.SOLAR.mean, 1)}, windMIND {pc(BM.WIND.mean, 1)}, habitatMIND
+			{pc(BM.HABITAT.mean, 1)} and cityMIND {pc(BM.CITY.mean, 1)}. artsMIND, of the COOP that sells experiences,
+			returned {pc(BM.ARTS.mean, 1)}. Yet the solar COOP, the habitat COOP and the City COOP won their markets: by year
+			{SIM.years}, they made {pc(BM.SOLAR.share60)} of the energy, {pc(BM.HABITAT.share60)} of the housing and
+			{pc(BM.CITY.share60)} of the water (Table {TAB.rivals}). Winning a market did not lift their MINDs for long. Their
+			holders gained through Law 5 on the sales, and these returns stayed below the melt, so a holding of these MINDs
+			that is not spent still shrinks (Section 5.4).
+		</p>
+		<p>
+			What the city keeps using is the users' gain. Every resident who uses the grid, the water and the homes pays the
+			price of the day for them. So the users gain what the project goes on giving, and the new investors who fund each
+			stage share its rise. Figure {FIG.holder} shows what a holder keeps.
 		</p>
 		<figure>
 			<LineChart
-				title="1,000 HEARTS over 50 years, left idle or built into infrastructure"
-				series={infra}
-				x={{ min: 0, max: 50, ticks: [0, 10, 20, 30, 40, 50], fmt: (v, tip) => (tip ? `Year ${fmt(v, 1)}` : `${v}`), label: 'Years' }}
-				y={{ min: 0, max: 1000, ticks: [0, 250, 500, 750, 1000], fmt: (v, tip) => fmt(v), label: 'Left of 1,000: balance, or yearly use' }}
+				title={`What a holder keeps of ${fmt(1000)} HEARTS invested in year 1, against the same HEARTS left idle`}
+				series={holders}
+				x={{ min: 1, max: SIM.years, ticks: [1, 10, 20, 30, 40, 50, 60], fmt: (v, tip) => (tip ? `Year ${fmt(v)}` : `${v}`), label: 'Year of the run' }}
+				y={{ min: 1, max: 10_000_000, log: true, ticks: [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000], fmt: (v, tip) => (tip ? `${fmt(v, v < 100 ? 1 : 0)} HEARTS` : v >= 1_000_000 ? `${fmt(v / 1_000_000)} M` : v >= 1000 ? `${fmt(v / 1000)}k` : fmt(v)), label: 'HEARTS (log)' }}
 			/>
 			<figcaption>
-				<strong>Figure {FIG.infra}.</strong> The same 1,000 HEARTS, left idle under 7 % demurrage, or invested into
-				infrastructure. For the idle HEARTS, the line shows the balance. For the projects, it shows the yearly use,
-				which keeps its real value (0 %) or slowly wears (−1 %). After 50 years, the idle HEARTS keep
-				{pct(decay(100, RATE, 50))}. The project that wears still delivers {pct(decay(100, 0.01, 50))} of the use of its
-				first year.
+				<strong>Figure {FIG.holder}.</strong> What a holder keeps of {fmt(1000)} HEARTS invested in year 1 of the main
+				run, valued in HEARTS, on a log scale. Law 4 gives the investor {fmt(INVESTOR_SHARE, 1)} MIND for each HEART;
+				the other half went to the treasury and the pools. Each line grows at its MIND's compounded return, with the
+				dividends kept as more of the same MIND, and melts at {pc(RATE)} a year like any balance. In year {SIM.years},
+				the idle HEARTS had melted to {fmt(holdEnd('idle'), 1)}. The holder of solarMIND kept {fmt(holdEnd('SOLAR'), 1)},
+				of habitatMIND {fmt(holdEnd('HABITAT'), 1)} and of cityMIND {fmt(holdEnd('CITY'), 1)}. The holder of artsMIND
+				had {fmt(holdEnd('ARTS') / 1_000_000, 1)} million (Section 10.6).
 			</figcaption>
 		</figure>
-		<h3>8.1 Land that nobody can sell</h3>
 		<p>
-			Melting money has one old weakness. Wealth flees into whatever does not melt, and the largest such store is land
-			<Cite k="keynes36" />. If land could be bought, the success of every COOP would end up as a higher land
+			How does a long project get its capital? A HEART converts on the day it is invested, so nobody can save HEARTS
+			for a project. Residents can pledge future HEARTS to a project as a standing order, and each HEART converts on its
+			day. Machines from outside the city cost euros. The City COOP advances them, and the project repays in its own
+			MIND, with no interest (Section 8.3). Two questions stay open: how the City COOP sets the ground rent, which is not
+			a sale and so pays no Law 5 dividend, and whether Avens fund long projects as readily as short ones (Sections 12.2
+			and 12.4).
+		</p>
+		<h3 id="land">8.2 Land that nobody can sell</h3>
+		<p>
+			Section 2 ended on Keynes's warning: when money melts, wealth flees into whatever does not melt, and the largest
+			such store is land. If land could be bought, the success of every COOP would end up as a higher land
 			price, and the owners of land would collect it without building anything. Henry George showed that this rent is
 			value that the whole community creates <Cite k="george" />. theOS closes this door with one rule.
 		</p>
@@ -1257,9 +1285,40 @@
 			private wealth, and the melt has no way around it.
 		</p>
 		<p>
-			Land is one physical limit. Energy is the other, and it reaches every recipe.
+			The City COOP decides by one vote per citizen share. A proposal that its members pass is a <em>MIP</em>, a
+			MaiaCity improvement proposal. Only a passed MIP can redeem LP tokens (Section 6), and the same vote decides on
+			changes to the code (Appendix F).
+			<!-- for Samuel to confirm: MIP = MaiaCity improvement proposal -->
 		</p>
-		<h3>8.2 Energy, the master resource</h3>
+		<p>
+			Land is one door out of the melt. The euro is the other.
+		</p>
+		<h3 id="euro">8.3 The euro border</h3>
+		<p>
+			Panels, chips, medicine and insurance cost euros, and taxes are due in euros, even on services paid in MIND. No
+			supplier outside the city accepts solarMIND. The alternative currencies that lasted kept a bridge to national
+			money; the Chiemgauer charges a fee to change back into euros <Cite k="gelleri" />. theOS keeps one bridge, and
+			the City COOP holds it.
+		</p>
+		<div class="law">
+			<p class="lawname">The euro border</p>
+			<p>
+				The City COOP is the city's euro bank, and every euro crosses the border through it; in maiaCITY that is the
+				MaiaCity COOP. It advances euros to COOPs for machines, imports and taxes, and each COOP repays in its own MIND,
+				with no interest. No MIND is ever made from euros, and no person changes MIND into euros.
+			</p>
+		</div>
+		<p>
+			COOPs that sell power, heat, food or services outside the city earn euros, and these euros go through the City
+			COOP too. One legal form carries all of this: an <em>umbrella eG</em>, a registered cooperative whose divisions
+			are the COOPs. Investing a HEART makes the investor a member with one vote. Each COOP keeps a euro balance sheet
+			as a division, publishes a euro reference price and keeps a tax reserve. A COOP that grows large becomes its own
+			eG. Section 12.4 lists what stays open at the border.
+		</p>
+		<p>
+			Land and the euro are the city's two doors. Energy is its physical limit, and it reaches every recipe.
+		</p>
+		<h3 id="energy">8.4 Energy, the master resource</h3>
 		<p>
 			Money only counts what the city makes. Physics sets what it can make, and energy above all. Every <em>recipe</em>,
 			the inputs and energy that make one unit of a good, costs energy: food and pumped water, glass at about {fmt(ENERGY.recipes.glass, 1)} MWh a tonne, steel at about
@@ -1322,16 +1381,15 @@
 			village's basics. It limits how fast the village builds and learns.
 		</p>
 		<p>
-			These are design numbers for the test city, the game of Section 11, and some are estimates. The simulation of
-			Section 10 counts energy as an input to every recipe. It does not yet model the limits of Appendix H, net energy,
-			or growth that surplus energy pays for. It still limits how fast each COOP can grow its plant in a year. And it
-			assumes that each COOP's productivity grows about {pc(SIM.prodGrowth)} a year on average, unevenly. In the test
-			city's world model, only surplus energy pays for growth (Section 11.1). Money cannot make a city richer: twice the
-			HEARTS would only double prices in MIND, and the test city will check this.
+			Some of these design numbers are estimates. The simulation of Section 10 counts energy as an input to every recipe, and it limits
+			how fast each COOP can grow its plant in a year. But it assumes productivity growth and models no energy limit
+			(Section 10.3). In the test city's world model, only surplus energy pays for growth (Section 11.1). Money cannot
+			make a city richer. In the test city, twice the HEARTS raised prices {fmt(TEST_CITY.scenarios.money.prices, 1)}-fold
+			and changed what people got by less than {pc(TEST_CITY.scenarios.money.largest, 1)} (Section 11.2).
 		</p>
 		<p>
-			Long-lived COOPs need good management for decades. The last part of the machine is how they govern themselves,
-			and how they compete.
+			Land, the euro and energy set the city's limits. The last part of the machine is how COOPs decide, and how they
+			compete.
 		</p>
 	</section>
 
@@ -2555,26 +2613,19 @@
 				wealth flows into them.
 			</li>
 			<li>
-				<strong>The euro border.</strong> Panels, chips, medicine and insurance cost euros, and taxes are due in euros,
-				even on services paid in MIND. No supplier outside the city accepts solarMIND. The alternative currencies that
-				lasted kept a bridge to national money; the Chiemgauer charges a fee to change back into euros
-				<Cite k="gelleri" />. theOS keeps one bridge. The City COOP is the city's euro bank at the border, and every
-				euro goes through it; in maiaCITY that is the MaiaCity COOP. It advances euros to COOPs for machines, imports
-				and taxes, and each COOP repays in its own MIND, with no interest. No MIND is ever made from euros, and no person
-				changes MIND into euros. COOPs that sell power, heat, food or services outside the city earn euros, and
-				these euros go through the City COOP too. Each COOP is a legal eG with a euro balance sheet, publishes a euro reference price and keeps a tax
-				reserve. One cost must be said plainly. A repayment in MIND never returns a euro. So the founders' euros are in
-				effect a grant, unless exports earn them back. A test village of about {fmt(EURO_BORDER.people)} people needs
-				about €{fmt(EURO_BORDER.euros / 1e6)} million, and its exports do not repay that within {EURO_BORDER.years}
-				years. <em>Test:</em> the rules are proven first in a game, then in the real city. The test city adds an outside
-				euro economy that agents can trade with and leave for, and counts the euros that exports earn back.
+				<strong>The euro border's open risks.</strong> A repayment in MIND never returns a euro (Section 8.3). So the
+				founders' euros are in effect a grant, unless exports earn them back. In the test city, a village of
+				{fmt(EURO_BORDER.people)} residents needed €{fmt(EURO_BORDER.euros / 1e6, 1)} million from outside, and its
+				exports {EURO_BORDER.repaid ? 'repaid' : 'did not repay'} that within {EURO_BORDER.years} years (Section 11.2).
+				Taxes are due in euros, even on services paid in MIND. <em>Test:</em> the test city adds an outside euro
+				economy that residents can trade with and leave for, and counts the euros that exports earn back.
 			</li>
 			<li>
 				<strong>Securities and co-op law.</strong> Under EU rules, a token that carries ownership and can be traded is
 				likely a security, with the duties of one <Cite k="esma" />. Pools and trading Avens may count as licensed
 				crypto services, and each trade may be a taxable sale. HEARTS, which nobody can transfer, probably fall outside
-				crypto law. We propose to run COOPs as divisions of an umbrella eG. Investing a HEART makes the investor a
-				member with one vote. The legal wrapper describes MIND as a member's share and right to the COOP's services. A
+				crypto law. The umbrella eG of Section 8.3 describes MIND as a member's share and right to the COOP's
+				services. A
 				legal opinion, and rulings from BaFin, Germany's financial supervisor, and from the tax office, come before any
 				real value flows. <em>Test:</em> the test city counts the taxable trades that each Aven makes.
 			</li>
@@ -2751,7 +2802,7 @@
 				<tbody>
 					<tr><td><Tex tex="M, V, P, Q" /></td><td>Fisher's money, velocity, prices and goods</td><td>2</td></tr>
 					<tr><td><Tex tex="r" /></td><td>The melt rate, {fmt(RATE, 2)} a year. In Section 1 only: Piketty's return on capital</td><td>1, 5</td></tr>
-					<tr><td><Tex tex="g" /></td><td>A project's real rate of change. In Section 1 only: the growth of the whole economy</td><td>1, 8</td></tr>
+					<tr><td><Tex tex="g" /></td><td>Piketty's growth of the whole economy</td><td>1</td></tr>
 					<tr><td><Tex tex={String.raw`B,\ \Delta t`} /></td><td>Any balance of HEARTS or of one MIND, and the years since its last update</td><td>5.1</td></tr>
 					<tr><td><Tex tex="u" /></td><td>HEARTS issued per person a year, {fmt(u)}</td><td>5.2</td></tr>
 					<tr><td><Tex tex="N" /></td><td>The number of people</td><td>5.2</td></tr>
@@ -2766,7 +2817,6 @@
 					<tr><td><Tex tex={String.raw`\varphi`} /></td><td>The trading fee, {pct(POOL.fee * 100, 1)}</td><td>6.1</td></tr>
 					<tr><td><Tex tex="V" /></td><td>A pool's value. In Section 2 only: Fisher's velocity</td><td>2, 6</td></tr>
 					<tr><td><Tex tex={String.raw`\sigma,\ \Sigma,\ \rho,\ \ell`} /></td><td>Volatility, covariance and correlation of prices, and the yearly loss-versus-rebalancing</td><td>6.2</td></tr>
-					<tr><td><Tex tex="T" /></td><td>A time horizon in years</td><td>8</td></tr>
 					<tr><td><Tex tex={String.raw`s_i,\ f_i,\ \bar f,\ \kappa`} /></td><td>A COOP's share of its sector's investment, its utility per HEART, the average utility, and the speed of selection</td><td>9</td></tr>
 					<tr><td><Tex tex={String.raw`W_i,\ W^{*},\ \bar W_0`} /></td><td>A person's MIND holding, the resting level when everyone keeps <Tex tex={String.raw`\omega`} />, and the mean holding at the start</td><td>9.2, 10.2</td></tr>
 					<tr><td><Tex tex={String.raw`\mu`} /></td><td>The lasting return on a holding: dividend yield plus any lasting price rise</td><td>5.4</td></tr>

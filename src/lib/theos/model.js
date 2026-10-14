@@ -127,14 +127,6 @@ export const convergenceSeries = (r = RATE, years = 60) => {
 	].map((s) => ({ ...s, points: range(0, years, 240).map((t) => [t, balanceAt(s.b0, t, r)]), star }));
 };
 
-/** Figure 8: 1,000 HEARTS left idle and melting, against the yearly use of what they built, at a real rate of 0 or −1 % */
-export const infraSeries = (years = 50) =>
-	[
-		{ id: 'idle', label: 'Idle HEARTS (−7 %)', r: RATE },
-		{ id: 'loss', label: 'Project at −1 % real', r: 0.01 },
-		{ id: 'flat', label: 'Project at 0 % real', r: 0 }
-	].map((s) => ({ ...s, points: range(0, years, 200).map((t) => [t, decay(1000, s.r, t)]) }));
-
 /** Figure 8: what a holder keeps of 1,000 HEARTS invested in year 1 of the main run, valued in HEARTS, against the
  *  same HEARTS left idle. Law 4 gives the investor INVESTOR_SHARE of a MIND for each HEART; each new MIND is worth about
  *  1 HEART (Section 6.3). The holding then grows at its MIND's compounded return of H5 (price change and Law 5 dividends,
@@ -488,7 +480,6 @@ export const STATIC = {
 	germany: [0.72, 0.45, 0.36], // Gini: made as unequal as Germany, then +10 and +20 years (S6.5)
 	avenEven: 0.05, // Gini owned with all Avens alike (S5)
 	avenDouble: 0.59, // with Avens that differ twice as much (S5)
-	geo: { geo: 1.62, solar: 0.25 }, // 1 MIND after 20 years, with dividends, after the melt, HEARTS (S6.6; H7: 1.62 and 0.25)
 	foodFailure: { withRule: 0.09, without: 1.0 }, // food shortfall the year after the main food COOP fails (S6.2)
 	ring: { hearts: 0.0365, people: 0.016, income: 1.6, wealth: 1.4, years: 10 }, // a founder ring: share of HEARTS and of people, income and wealth (after 10 years) against others (S6.3)
 	coldStart: { day1: 0.944, days1to30: 0.14, year1: 0.011 }, // shortfall without the bootstrap (S1)
