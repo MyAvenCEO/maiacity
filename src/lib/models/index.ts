@@ -17,7 +17,7 @@ import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, 
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, loadingRamp, pickup, solarPanel } from './village.js';
-import { SEED_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
+import { ALL_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
 import { domeTent, packedTent } from './tent.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
@@ -39,6 +39,10 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	'rabbit-hutch': [
 		{ ...FIRST, build: timberHutch },
 		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome of wire on grass, a little shingled dome inside to sleep in' }
+	],
+	backpack: [
+		{ ...FIRST, date: '2026-10-14', build: () => backpack({ v: 1 }) },
+		{ v: 2, date: '2026-10-14', note: 'Ten seed packets in it, one for each of V1’s ten trees: six along the front wall, four behind them standing higher, each a little in front of the one before so all ten read from above; the bottle in the corner behind' }
 	],
 	pickup: [
 		{ ...FIRST, date: '2026-10-13', build: () => pickup({ v: 1 }) },
@@ -140,15 +144,15 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 4', make: () => playDome().group },
 	{ id: 'pickup', label: 'Pickup', note: `${VILLAGE_INFO.pickup.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => pickup() },
 	{ id: 'loading-ramp', label: 'Loading ramp', note: 'one folding aluminium ramp, 0.86 m wide between its rails, grip bars every 10 cm, a lip to lie on the bed: up 1.16 m over 2 m, from the ground to the pickup’s bed', usedIn: 'MaiaCity V1', make: () => loadingRamp() },
-	{ id: 'backpack', label: 'Backpack', note: 'a hiker’s pack of about 35 l, 32 × 22 cm and 46 cm to its rim: a drawstring collar, a lid pocket thrown back, a front pocket, mesh bottle pockets, padded back, curved shoulder straps and a hip belt; open, a 1 l water bottle and five seed packets in it', usedIn: 'MaiaCity V1', make: () => backpack() },
+	{ id: 'backpack', label: 'Backpack', note: 'a hiker’s pack of about 35 l, 32 × 22 cm and 46 cm to its rim: a drawstring collar, a lid pocket thrown back, a front pocket, mesh bottle pockets, padded back, curved shoulder straps and a hip belt; open, a 1 l water bottle and ten seed packets in it', usedIn: 'MaiaCity V1', make: () => backpack() },
 	{ id: 'water-bottle', label: 'Water bottle', note: '1 l, refillable, powder-coated steel, 7.7 cm across and 30 cm to its cap’s loop; its open mouth at the top to pour from', usedIn: 'MaiaCity V1', make: () => waterBottle() },
 	{
 		id: 'seed-packet',
 		label: 'Seed packet',
-		note: 'a paper envelope of 7 × 10 cm, a few seeds in it, its fruit printed on the front with its name: one for each of V1’s seeds',
+		note: 'a paper envelope of 7 × 10 cm, a few seeds in it, its fruit or nut printed on the front with its name: one for each of V1’s ten trees (apple, pear, sweet cherry, plum, apricot, quince, mulberry, walnut, sweet chestnut, hazel), and the blackcurrant it had before',
 		usedIn: 'MaiaCity V1',
 		make: () => seedPacket('apple'),
-		variants: Object.entries(SEED_PACKETS).map(([id, p]) => ({ id: `seed-packet-${id}`, label: p.label, note: `${p.label}, ${p.latin}`, make: () => seedPacket(id) }))
+		variants: Object.entries(ALL_PACKETS).map(([id, p]) => ({ id: `seed-packet-${id}`, label: p.label, note: `${p.label}, ${p.latin}`, make: () => seedPacket(id) }))
 	},
 	{ id: 'marker-sticks', label: 'Marker sticks', note: 'two sticks of square pine, 35 cm long and 12 mm across, pointed, their tops painted orange, pushed into the ground half a metre apart', usedIn: 'MaiaCity V1', make: () => markerSticks() },
 	{ id: 'plant-stake', label: 'Plant stake', note: 'a young tree’s stake of round peeled pine, 1 m long and 32 mm thick, axe-pointed, pushed in beside the seed; on a wire tied to its top a 10 × 7 cm waxed-cloth flag printed on both sides with the tree’s name and its plant', usedIn: 'MaiaCity V1', make: () => plantStake({ name: 'Samuel', seed: 'apple' }) },
