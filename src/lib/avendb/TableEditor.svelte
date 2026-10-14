@@ -794,8 +794,10 @@
 			gap: 0.4rem 0.8rem;
 		}
 
+		/* as wide as the screen at most, however long the names of who a cell is shared with */
 		.tables .pick {
 			margin: 0;
+			max-width: 100%;
 		}
 
 		.tables h4 {
