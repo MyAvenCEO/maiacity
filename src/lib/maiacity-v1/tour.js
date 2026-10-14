@@ -63,7 +63,7 @@ export function story(view, seat, seen) {
 	const say = (step, ...lines) => ({ ...step, lines, text: lines.filter(Boolean).join(' ') });
 	// the story as a film (the storyteller's, director's and editor's skills, .claude/skills): one transformation, from
 	// living on your time to living on what you own; one question, opened in the first line and answered after the
-	// last invest; the pain before the promise (your rent at your own tent); setups paid off (the seed and the bottle in
+	// last invest; the pain before the promise (the roof that was never yours); setups paid off (the seed and the bottle in
 	// the backpack, the ElectroCube powering the tent); the last image, the next van on the road, mirrors the first
 	return [
 		// Act I, the road: the question, the vision, the HEARTS as she tells of them, the first mint
@@ -72,8 +72,8 @@ export function story(view, seat, seen) {
 		say({ id: 'road', chapter: 'The road', title: 'On the road', hint: '', ...next('road'), ...inVan, shots: ['aisle', 'gaze', 'lookup', 'pack'] },
 			'Where you come from, you sell your hours to pay for land, homes and tools that others own.',
 			'And every year, machines need fewer of those hours.',
-			null,
-			null),
+			'So you set out to find another way to live.',
+			'With a backpack, a bottle of water and a seed from home.'),
 		say({ id: 'vision', chapter: 'The road', title: 'Imagine', hint: '', ...next('vision'), ...inVan, shots: ['horizon', 'dot'] },
 			'Imagine a whole city that grows its own food, makes its own power and builds its own homes.',
 			"There is a vision of it: a blueprint for a new generation of cities. It's why you got on this van."),
@@ -87,8 +87,8 @@ export function story(view, seat, seen) {
 		// its machines, co-owner of them on the way home, the empty hex
 		say({ id: 'arrival', chapter: 'The end of the road', title: 'The end of the road', kind: 'intro', part: 'arrive', done: !!seen.arrival, ...inVan },
 			'The old world passed this place by.',
-			null,
-			null,
+			'Here, the old road ends.',
+			'And something new begins.',
 			'Welcome to MaiaCity. You are among our very first human founders.'),
 		// the first walks over to the pickup at the pumps and gets in; the second waits at the stop to be fetched
 		first
@@ -116,36 +116,41 @@ export function story(view, seat, seen) {
 			'This is your village centre. For now, one old shed.'),
 		first
 			? say({ id: 'cube', chapter: 'The end of the road', title: 'The shed', kind: 'load', done: !!seen.cube, ...atStore },
-				null,
-				'Every machine here belongs to the Village COOP. Whoever uses one pays it rent.',
+				'The village keeps everything it shares in here.',
+				'Every machine here belongs to the Village COOP: the COOP of everyone in the village.',
 				'The ElectroCube: open hardware anyone can build. It will power your home.',
-				null)
+				'And your first roof: a tent for two.')
 			: say({ id: 'cube', chapter: 'The end of the road', title: 'The shed', kind: 'load', what: 'power', done: !!seen.cube, ...atStore },
-				null,
-				'Every machine here belongs to the Village COOP. Whoever uses one pays it rent.',
+				'The village keeps everything it shares in here.',
+				'Every machine here belongs to the Village COOP: the COOP of everyone in the village.',
 				'The BatteryCube: four BatteryPacks in one open frame. It stores the sun for your home.',
-				null),
-		say({ id: 'drive', chapter: 'The end of the road', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, ...loaded }, null, null),
+				'And a solar panel to fill it every day.'),
+		say({ id: 'drive', chapter: 'The end of the road', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, ...loaded }, 'A few more minutes, and you are home.', null),
 		say({ id: 'village', chapter: 'The end of the road', title: 'Invest into the Village COOP', hint: 'invest', reveal: 1, ...invest('village', 2000), ...toHome, shots: ['bed'], hold: 'bed' },
 			'Invest 2,000 HEARTS, and every machine of the village works a little for you.'),
 		say({ id: 'home', chapter: 'The end of the road', title: 'Your new home', kind: 'drive', leg: 'home', done: !!seen.home, ...toHome },
 			'This is your new home.',
 			first ? 'One hex of grass at the edge of the village. Nothing stands here yet.' : `One hex of grass at the edge of the village, and ${o}'s tent already on it.`),
-		// Act III, home: the tent and the power, the rent (the low), owning a part of it (the answer), the seed
+		// Act III, home: the tent and the power, the roof never yours (the low), owning a part of it (the answer), the seed
 		first
 			? say({ id: 'pitch', chapter: 'Home', title: 'Pitch your tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed', hour: 14.2 },
-				null,
+				'Everything you need for a first home fits in one bag.',
+				'No builder, no loan, no waiting.',
 				'A home you raised with your own hands.',
-				null)
+				'Room for two, and canvas that stands for years.',
+				'And a fire to gather round when the sun goes down.',
+				'The ElectroCube comes home with you.',
+				'And by nightfall, your tent has light.')
 			: say({ id: 'pitch', chapter: 'Home', title: 'Set up the sun', kind: 'build', what: 'power', done: !!seen.pitch, ...home, battery: 'bed', hour: 14.2 },
-				null,
+				'The BatteryCube comes home with you.',
+				'It stands beside the ElectroCube, by the tent.',
 				'Sun by day, stored for the night.',
 				'One cable, and the tent runs on sunlight.'),
 		say({ id: 'tribe', chapter: 'Home', title: 'Invest into the Tribe COOP', hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home, place: 'tent' },
 			first ? 'Even your tent belongs to a COOP: the Tribe COOP, the COOP of the people on this hex.' : `Even the tent ${o} raised belongs to a COOP: the Tribe COOP, the COOP of the people on this hex.`,
-			'And you pay it rent for your bed. Just like where you come from.',
+			'Where you come from, the roof over your head belonged to someone else.',
 			null,
-			'Only, here, you can own it. Invest 1,000 HEARTS, and part of your own home is yours.'),
+			'Here, you can own it. Invest 1,000 HEARTS, and part of your own home is yours.'),
 		say({ id: 'answer', chapter: 'Home', title: 'What you live on', hint: '', ...next('answer'), ...home, place: 'rise', hour: 16.8 },
 			'The land, the machines, your home: a part of each is yours. That is what you live on here, not your time.'),
 		// the seed from home (Samuel 2026-10-14): the backpack opened, a spot chosen outside the core circle and walked to,
@@ -156,8 +161,9 @@ export function story(view, seat, seen) {
 			'Choose where it grows, out beyond the homes.'),
 		say({ id: 'seed', chapter: 'Home', title: 'Pick your seed', kind: 'pick', done: !!(me.seedling || me.tree), ...atSpot, place: 'seeds', hour: 17 }, null),
 		say({ id: 'plant', chapter: 'Home', title: 'Plant it', kind: 'sow', done: !!me.tree, ...atSpot, place: 'sow', hour: 17 },
+			'Into the earth, a finger deep.',
 			null,
-			null,
+			'A litre of water, and it has all it needs to start.',
 			`It carries your name now: ${me.tree?.name ?? me.name}.`),
 		say({ id: 'tend', chapter: 'Home', title: 'Tend it with care', hint: '', ...next('tend'), ...atSpot, place: 'tend', hour: 17.1 },
 			'Tend it with care. Come back every day, water it, and watch it grow.'),
