@@ -588,10 +588,18 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 | `note` | `entry` | A note's page: its lines, proposals, variants and history |
 | `log` | none | Every signed edit the device holds, in words, each that acts for a vault with its `chain` |
 | `read_file` | `root`, `size`, `from`, `to` | `{root, from, to, len}` and the bytes beside; `NoCap` for a file the device doesn't open |
+| `jobs` | none | What the node does in the background (`Node::jobs`): `{running, ended}`, the last 200 that ended, newest first |
 | `creatable` | `vault`, `type`, `tags`, `as` | The tags a new entry needs to land where vault `as` may create it, or `NoCap` |
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
 | `may` | `ops`, `as` | For each change op: `true`, `{"approve": {signers}}`, or the refusal |
 | `shares` | `over`, `as` | Every share over a vault, owners and devices among them, each with `may` of its revocation |
+
+A job (`crates/avendb-net/src/jobs.rs`) is a file brought into the store as its bytes are sealed (`bring`, in bytes), a
+file kept whole as its pieces come from its holders (`keep`, in pieces), or the edits a peer holds for the device,
+taken page by page (`pull`, in edits). Each says its subject (a file's root, a peer's device), its stage, how far it
+is of how much, when it started and ended, and why it failed. One that did nothing is forgotten: a keep whose pieces
+were all there or that failed before it fetched one (the keeper tries again), a pull that took nothing. The page's
+Jobs view reads it each second, beside what still syncs by entry and by file (`syncedTo`).
 
 `may` and `shares` are asks: they run dry on the Lab, as their answers are dry runs, so a node runs them on a dry Lab
 (`Node::dry`), never on a read-only view. A `shares` row says its kind (`owner`, `device`, `grant` or `keep`), its
@@ -1013,8 +1021,8 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder and the IndexedDB database of its name, the server its
-folder as it starts and its bucket while it runs (`bucket::clear`). `FLOOR` is 3 since one passkey founds one human
-vault and the seed is named as it is founded.
+folder as it starts and its bucket while it runs (`bucket::clear`). `FLOOR` is 4 since every device tells its jobs,
+the last reset.
 
 ### Layout of one generation
 

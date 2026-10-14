@@ -109,8 +109,17 @@ export const PICKUP = {
 	wheel: v3(0.42, 1.2, 1.12),
 	bed: 1.16,
 	tailgate: -2.62,
-	gate: 0.44
+	gate: 0.44,
+	/** v3's four doors: which side (x of their outer face), and the z of their front edge (the hinge) and back edge */
+	doors: {
+		driver: { x: 0.93, front: 1.53, back: 0.47 },
+		passenger: { x: -0.93, front: 1.53, back: 0.47 },
+		rearL: { x: 0.93, front: 0.43, back: -0.6 },
+		rearR: { x: -0.93, front: 0.43, back: -0.6 }
+	}
 };
+/** how far a door opens (radians, about 70°) */
+const DOOR_OPEN = (70 * Math.PI) / 180;
 
 const cab = {
 	glass: shared(() => new THREE.MeshPhysicalMaterial({ color: '#cfe2ea', roughness: 0.04, metalness: 0, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })),
@@ -168,8 +177,11 @@ function steeringWheel(g) {
  *  tool box and a jerrycan in it. v2 (2026-10-14): clear glass all round and the cab inside it, seen from inside —
  *  two front seats and a bench behind, the dash with its gauges, screen and vents, the steering wheel on its column
  *  on the left, pedals, a gear stick on the console, door cards, sun visors and a mirror; and a tailgate that opens
- *  down flat (`tailgate`: 0 shut … 1 down; `userData.setTailgate(k)`). Where its seats, wheel and bed are: PICKUP. */
-export function pickup({ v = 2, tailgate = 0 } = {}) {
+ *  down flat (`tailgate`: 0 shut … 1 down; `userData.setTailgate(k)`). v3: four doors that open, each hinged at its
+ *  front edge and swinging out to about 70°, its window, card, armrest and handles going with it, sills under them
+ *  (`doors`: { driver, passenger, rearL, rearR } each 0 shut … 1 open; `userData.setDoor(name, k)`). Where its seats,
+ *  wheel, bed and doors are: PICKUP. */
+export function pickup({ v = 3, tailgate = 0, doors = {} } = {}) {
 	if (v < 2) return pickupV1();
 	const g = new THREE.Group();
 	g.name = 'pickup';
@@ -180,11 +192,17 @@ export function pickup({ v = 2, tailgate = 0 } = {}) {
 	soft(g, 1.8, 0.16, 0.9, 0.06, m.paint(), 0, 1.16, 1.95); // the bonnet's rise
 	soft(g, 1.86, 0.62, 1.98, 0.12, m.paint(), 0, 0.82, -1.61);
 	part(g, 1.78, 0.06, 2.22, m.trim(), 0, F - 0.03, 0.45); // the cab's floor pan
-	for (const sx of [-1, 1]) {
-		part(g, 0.05, 0.76, 2.22, m.paint(), sx * 0.905, 0.89, 0.45); // its sides up to the waist (the doors)
-		part(g, 0.004, 0.6, 0.006, m.trim(), sx * 0.931, 0.92, -0.06); // the seam between the doors
-		for (const z of [0.95, -0.1]) part(g, 0.02, 0.03, 0.18, m.trim(), sx * 0.935, 1.12, z); // their handles
-	}
+	if (v < 3)
+		for (const sx of [-1, 1]) {
+			part(g, 0.05, 0.76, 2.22, m.paint(), sx * 0.905, 0.89, 0.45); // its sides up to the waist (the doors)
+			part(g, 0.004, 0.6, 0.006, m.trim(), sx * 0.931, 0.92, -0.06); // the seam between the doors
+			for (const z of [0.95, -0.1]) part(g, 0.02, 0.03, 0.18, m.trim(), sx * 0.935, 1.12, z); // their handles
+		}
+	else
+		for (const sx of [-1, 1]) {
+			part(g, 0.06, 0.13, 2.17, m.trim(), sx * 0.9, 0.495, 0.455); // the sills under the doors
+			part(g, 0.06, 0.72, 0.09, m.paint(), sx * 0.88, 0.92, 0.45); // the B pillar down to the sill, between them
+		}
 	part(g, 1.86, 0.76, 0.06, m.paint(), 0, 0.89, 1.55); // the firewall under the screen
 	// the cab's back wall: up to the waist, then round its window
 	part(g, 1.86, 0.79, 0.06, m.paint(), 0, 0.905, -0.66);
@@ -197,6 +215,7 @@ export function pickup({ v = 2, tailgate = 0 } = {}) {
 		bar(g, v3(sx * 0.88, 1.27, 1.54), v3(sx * 0.86, 1.75, 1.2), 0.035, m.paint()); // A
 		part(g, 0.06, 0.48, 0.09, m.paint(), sx * 0.88, 1.51, 0.45); // B
 		part(g, 0.06, 0.48, 0.12, m.paint(), sx * 0.88, 1.51, -0.6); // C
+		if (v >= 3) continue; // from v3 the windows are in the doors
 		part(g, 0.05, 0.03, 2.2, m.paint(), sx * 0.89, 1.27, 0.45); // the waist rail
 		const side = new THREE.Shape([[-0.58, 1.285], [1.52, 1.285], [1.19, 1.735], [-0.58, 1.735]].map(([z, y]) => new THREE.Vector2(z, y)));
 		const pane = new THREE.Mesh(new THREE.ShapeGeometry(side), cab.glass());
@@ -252,15 +271,55 @@ export function pickup({ v = 2, tailgate = 0 } = {}) {
 	// the wheel, the pedals under it
 	steeringWheel(g);
 	for (const [dx, w] of [[-0.13, 0.05], [-0.04, 0.08], [0.08, 0.05]]) part(g, w, 0.07, 0.015, cab.dash(), PICKUP.driver.x + dx, F + 0.12, 1.42).rotation.x = -0.4;
-	// the doors' cards, their pulls and armrests; sun visors; the mirror
+	// the doors' cards, their pulls and armrests (from v3 on the doors); sun visors; the mirror
 	for (const sx of [-1, 1]) {
-		for (const [z, len] of [[1.0, 1.05], [-0.1, 1.05]]) {
-			part(g, 0.02, 0.68, len, cab.door(), sx * 0.872, F + 0.35, z);
-			part(g, 0.05, 0.03, 0.3, cab.plastic(), sx * 0.85, 1.0, z);
-			part(g, 0.02, 0.025, 0.06, cab.chrome(), sx * 0.86, 1.12, z + 0.25);
-		}
+		if (v < 3)
+			for (const [z, len] of [[1.0, 1.05], [-0.1, 1.05]]) {
+				part(g, 0.02, 0.68, len, cab.door(), sx * 0.872, F + 0.35, z);
+				part(g, 0.05, 0.03, 0.3, cab.plastic(), sx * 0.85, 1.0, z);
+				part(g, 0.02, 0.025, 0.06, cab.chrome(), sx * 0.86, 1.12, z + 0.25);
+			}
 		part(g, 0.36, 0.015, 0.16, cab.lining(), sx * 0.42, 1.71, 1.12).rotation.x = 0.15;
 	}
+	// the doors (v3): each a group on its hinge at its front edge, on the body's outer face
+	/** @type {Record<string, THREE.Group>} */
+	const hinged = {};
+	if (v >= 3)
+		for (const [name, d] of Object.entries(PICKUP.doors)) {
+			const sx = Math.sign(d.x), L = d.front - d.back, front = name === 'driver' || name === 'passenger';
+			const door = new THREE.Group();
+			door.name = `door:${name}`;
+			door.position.set(d.x, 0, d.front);
+			// its skin up to the waist, the waist's rail, the outer handle near its back edge
+			part(door, 0.05, 0.71, L - 0.01, m.paint(), -sx * 0.025, 0.915, -L / 2);
+			part(door, 0.05, 0.03, L - 0.01, m.paint(), -sx * 0.03, 1.27, -L / 2);
+			part(door, 0.02, 0.03, 0.18, m.trim(), sx * 0.006, 1.12, -L + 0.17);
+			// its window in a frame: the frame's top and back, and its front (along the A pillar on a front door)
+			const top = front ? -(d.front - 1.19) : 0;
+			const pts = front ? [[-L + 0.02, 1.285], [-0.01, 1.285], [top, 1.735], [-L + 0.02, 1.735]] : [[-L + 0.04, 1.285], [-0.02, 1.285], [-0.02, 1.735], [-L + 0.04, 1.735]];
+			const pane = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y)))), cab.glass());
+			pane.rotation.y = -Math.PI / 2;
+			pane.position.x = -sx * 0.02;
+			pane.renderOrder = 2;
+			door.add(pane);
+			const x = -sx * 0.02;
+			bar(door, v3(x, 1.75, -L + 0.01), v3(x, 1.75, top), 0.015, m.paint());
+			bar(door, v3(x, 1.27, -L + 0.01), v3(x, 1.75, -L + 0.01), 0.015, m.paint());
+			bar(door, v3(x, 1.27, front ? -0.01 : -0.01), v3(x, 1.75, top), 0.015, m.paint());
+			// inside: its card, the armrest and pull, the inner handle
+			part(door, 0.02, 0.68, L - 0.06, cab.door(), -sx * 0.058, F + 0.35, -L / 2);
+			part(door, 0.05, 0.03, 0.3, cab.plastic(), -sx * 0.08, 1.0, -L / 2);
+			part(door, 0.02, 0.025, 0.06, cab.chrome(), -sx * 0.07, 1.12, -0.25);
+			// the outside mirror rides the front door's corner
+			if (front) part(door, 0.06, 0.14, 0.2, m.trim(), sx * 0.035, 1.45, -0.1);
+			g.add(door);
+			hinged[name] = door;
+		}
+	/** open a door: `name` driver | passenger | rearL | rearR, `k` 0 shut … 1 open (about 70°, out from the body) */
+	const setDoor = (name, k) => {
+		const door = hinged[name];
+		if (door) door.rotation.y = -Math.sign(PICKUP.doors[name].x) * DOOR_OPEN * Math.max(0, Math.min(1, k));
+	};
 	part(g, 0.22, 0.06, 0.02, cab.plastic(), 0, 1.62, 1.18);
 	bar(g, v3(0, 1.65, 1.18), v3(0, 1.73, 1.2), 0.008, cab.plastic());
 	// the bed: its floor, sides, the tailgate on its hinges at the floor's back edge
@@ -282,11 +341,12 @@ export function pickup({ v = 2, tailgate = 0 } = {}) {
 	for (const x of [-0.72, 0.72]) {
 		part(g, 0.3, 0.12, 0.05, m.light(), x, 1.0, 2.6);
 		part(g, 0.08, 0.32, 0.05, m.tail(), x * 1.2, 1.28, -2.65);
-		part(g, 0.06, 0.14, 0.2, m.trim(), x * 1.3, 1.45, 1.45); // the mirrors
+		if (v < 3) part(g, 0.06, 0.14, 0.2, m.trim(), x * 1.3, 1.45, 1.45); // the mirrors (from v3 on the front doors)
 	}
 	const setTailgate = (k) => (gate.rotation.x = (-Math.PI / 2) * Math.max(0, Math.min(1, k)));
 	setTailgate(tailgate);
-	g.userData = { tailgate: gate, setTailgate };
+	for (const [name, k] of Object.entries(doors)) setDoor(name, k);
+	g.userData = { tailgate: gate, setTailgate, doors: hinged, setDoor };
 	return g;
 }
 

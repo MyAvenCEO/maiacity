@@ -95,6 +95,7 @@ pub mod disk;
 mod edits;
 mod files;
 mod holdings;
+mod jobs;
 pub mod kx;
 mod progress;
 mod run;
@@ -140,6 +141,7 @@ use tokio::sync::{Notify, watch};
 use holdings::{Logs, MOST};
 
 pub use holdings::{Holder, Holdings, SyncedTo};
+pub use jobs::{HISTORY, Job, Jobs, Running, State as JobState};
 pub use progress::{Ending, Progress, Stage, Steps};
 pub use run::{NoBytes, NoCeremony};
 pub use session::exporter;
@@ -512,6 +514,7 @@ impl Node {
             changed: Notify::new(),
             size: watch::Sender::new(size),
             sent: Sent::default(),
+            jobs: Jobs::default(),
         });
         let router = Router::builder(endpoint)
             .accept(ALPN, session::Protocol(shared.clone()))
@@ -991,6 +994,12 @@ impl Node {
         self.shared.synced_to().await
     }
 
+    /// What it does in the background: the files it brings in and keeps, and what it takes from its peers, those
+    /// under way and the last that ended (`jobs`), as its `jobs` op tells them.
+    pub fn jobs(&self) -> &Jobs {
+        &self.shared.jobs
+    }
+
     /// How many requests and announcements it has sent so far.
     pub fn sent(&self) -> (usize, usize) {
         (self.shared.sent.requests.load(Ordering::Relaxed), self.shared.sent.announcements.load(Ordering::Relaxed))
@@ -1197,6 +1206,8 @@ struct Shared {
     size: watch::Sender<(usize, usize)>,
     /// How many messages it has sent.
     sent: Sent,
+    /// What it does in the background, as its person watches it (`Node::jobs`).
+    jobs: Jobs,
 }
 
 /// How many messages of each kind a node has sent, and how many times it dialed: once its peers and it agree, they
@@ -1365,13 +1376,28 @@ impl Shared {
         self.asking(endpoint, None).await
     }
 
-    /// `ask`, of the logs `logs` alone, if given (`session::ASK_LOGS`).
+    /// `ask`, of the logs `logs` alone, if given (`session::ASK_LOGS`): once connected, a `pull` job of the peer's
+    /// device, forgotten if it took nothing.
     async fn asking(self: &Arc<Self>, endpoint: EndpointId, logs: Option<BTreeSet<LogId>>) -> Result<usize> {
         let peer = self.connection(endpoint).await?;
+        let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
+        let asked = self.pages(endpoint, peer, logs, &mut job).await;
+        if matches!(asked, Ok(0)) { job.forget() } else { job.ended(&asked) }
+        asked
+    }
+
+    /// `asking` of `peer`, connected at `endpoint`: page after page, each told to `job`.
+    async fn pages(
+        self: &Arc<Self>,
+        endpoint: EndpointId,
+        peer: Peer,
+        logs: Option<BTreeSet<LogId>>,
+        job: &mut Running,
+    ) -> Result<usize> {
         let device = peer.device;
         let kind = if logs.is_some() { session::ASK_LOGS } else { session::REQUEST };
         let logs = logs.map(Arc::new);
-        let (mut after, mut new) = (None, 0);
+        let (mut after, mut new, mut pages) = (None, 0, 0);
         loop {
             let logs = logs.clone();
             let request = move |lab: &mut Lab, me| {
@@ -1399,6 +1425,9 @@ impl Shared {
                 self.changed.notify_one();
             }
             new += got;
+            pages += 1;
+            job.stage(format!("page {pages}"));
+            job.progress(new as u64, None);
             match last {
                 Some(last) if more => after = Some(last),
                 _ => return Ok(new),

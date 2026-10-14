@@ -162,6 +162,21 @@ async fn a_node_brings_a_file_in_beside_put_file_and_reads_any_range_of_it_besid
     assert!(mac.run(short, Some(few), None::<&NoCeremony>).await.is_err(), "the file ends early");
     let bare = json!({ "op": "put_file", "vault": alice.to_hex(), "name": "Bare", "len": 1 });
     assert!(mac.op(bare).await.is_err(), "a put_file brings its bytes");
+    // its jobs, as the page reads them: the film brought in, every byte of it, named by its root once sealed; the short
+    // one failed, and why; the refused and the bare ones never began
+    let jobs = mac.op(json!({ "op": "jobs" })).await.expect("its jobs")["ok"].clone();
+    let ended = jobs["ended"].as_array().expect("those that ended");
+    let text = |j: &Value, k: &str| j[k].as_str().unwrap_or_default().to_string();
+    let told: Vec<_> = ended
+        .iter()
+        .map(|j| (text(j, "kind"), text(j, "name"), text(j, "state"), j["done"].as_u64(), j["total"].as_u64()))
+        .collect();
+    let s = |x: &str| x.to_string();
+    let short = (s("bring"), s("Short"), s("failed"), Some(4), Some(10));
+    assert_eq!(told, [short, (s("bring"), s("Harvest.mp4"), s("done"), Some(len), Some(len))], "the newest first");
+    assert_eq!((&ended[1]["subject"], &ended[1]["unit"]), (&root, &json!("bytes")));
+    assert!(text(&ended[0], "error").contains("fewer bytes"), "{}", ended[0]);
+    assert_eq!(jobs["running"], json!([]), "nothing runs now");
     mac.shutdown().await.expect("the node shuts down");
 }
 
