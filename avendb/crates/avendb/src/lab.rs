@@ -2103,6 +2103,11 @@ impl Lab {
         self.held(d).view()
     }
 
+    /// The replay of the edits device `d` holds: which stand, and what they say (`state`).
+    pub fn replay(&self, d: SignerId) -> &Replay {
+        &self.held(d).replay
+    }
+
     /// The signed edit device `d` holds with id `edit`, as it would send it.
     pub fn signed_edit(&self, d: SignerId, edit: EditId) -> Option<&Signed> {
         self.held(d).signed.get(&edit)
