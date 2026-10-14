@@ -178,9 +178,11 @@
 
 	const lines = [
 		['Propose from here', 'Starts a proposal from the version you are looking at, main or an older one.'],
-		['Accept into main', 'A merge write on main that builds on both lines: Loro combines them, nothing is lost.'],
-		['Make main match it', 'Accepts the proposal and makes main read exactly like it.'],
-		['Update from main', 'Brings what main gained since into the proposal.'],
+		[
+			'Merge into main',
+			'As a pull request merges: what only the proposal changed lands, and nothing main changed is lost. Where both changed the same place, you pick which value main keeps.'
+		],
+		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
 		['Undo', 'Takes out one older edit by a three-way merge, keeping every change made after it.'],
 		['Make a variant', 'A new note with the line’s content and tags, and none of its history.']
@@ -195,7 +197,7 @@
 	const groups = [
 		['Owner', 'Owner', 'Everything, and share on', 'Co-owners, on the whole vault; anyone, on a slice'],
 		['Editor', 'Write', 'Read, create, set, tag, propose, merge', 'Someone who works on the entries'],
-		['Suggester', 'Write', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor accepts'],
+		['Suggester', 'Write', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor merges'],
 		['Viewer', 'Read', 'Read', 'A reader'],
 		['Public', 'Read', 'Read, for Everyone', 'Anything published: its key goes out in the clear'],
 		['Backup', 'Backup', 'Keep the ciphertext, read nothing', 'The server, by default'],
@@ -664,8 +666,8 @@
 					<circle class="dot-v" cx="880" cy="160" r="9" />
 					<text class="s" x="112" y="104">Propose from here</text>
 					<text class="s" x="330" y="196">a proposal: its own line, from any version</text>
-					<text class="s" x="652" y="104">Accept into main:</text>
-					<text class="s" x="652" y="122">a merge write</text>
+					<text class="s" x="652" y="104">Merge into main:</text>
+					<text class="s" x="652" y="122">nothing is lost</text>
 					<text class="s" x="600" y="40">Restore and Undo are new writes too</text>
 					<text class="s" x="760" y="196">a variant: a new note,</text>
 					<text class="s" x="760" y="214">with none of this history</text>
