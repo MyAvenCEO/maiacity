@@ -12,21 +12,22 @@
  * dotted rims) and plays its moments: the arrival (intro: the packed travel van down the highway, then the van
  * braking at the bus stop, the player stepping out), the walk to the pickup at the station (station), the drives in
  * the pickup (drive; while an invest waits it rolls slowly on, the camera held in it), loading at the shed (load),
- * pitching the tent (pitch), and the first tree: the spot chosen on the ground (choose, walkTo), marked with two
- * sticks (sticks), the seed sown and watered (sow), and watered each day after (water). The sun follows the story's
- * hour, or else the virtual day. Tapping a player names them (onPick), a tap on the ground while a spot is chosen goes
- * to onGround, and every frame the players' labels' places go to onLabels.
+ * pitching the tent (pitch), and the first tree: the spot chosen on the ground (choose, walkTo), the earth dug and a
+ * plant stake pressed in beside it (sticks), the seed sown and watered (sow), and watered each game month after
+ * (water). The sun follows the story's hour, or else the virtual day. Tapping a player names them (onPick), a tap on
+ * the ground while a spot is chosen goes to onGround, and every frame the players' labels' places go to onLabels.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { pickup, solarPanel } from '$lib/models/village.js';
+import { PICKUP, RAMP, loadingRamp, pickup, solarPanel } from '$lib/models/village.js';
+import { backpack, dugEarth, plantStake } from '$lib/models/planting.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
 import { human } from '$lib/actors/human.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan } from './van.js';
-import { PLOT, SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
+import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { maiaCentre, oldShed } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 
@@ -423,95 +424,60 @@ const TENT_ON_BED = V(-0.15, 1.16, -2.2);
  *  the open tailgate; at the village beside the shed, at home beside the tent and the ElectroCube */
 const PANEL_ON_BED = V(0, 1.16, -2.55);
 
-/** the five seeds a newcomer brings, each in its own little paper packet with its fruit and its name on it */
-const FRUIT_COLOUR = { apple: '#c0392b', pear: '#b5b33a', cherry: '#8e1b2c', hazel: '#8a5a2b', blackcurrant: '#3b2346' };
-function packet(x) {
-	const c = document.createElement('canvas');
-	c.width = 96;
-	c.height = 132;
-	const g = c.getContext('2d');
-	g.fillStyle = '#efe3c8';
-	g.fillRect(0, 0, 96, 132);
-	g.fillStyle = FRUIT_COLOUR[x.id] ?? '#7a5a36';
-	g.beginPath();
-	g.arc(48, 52, 26, 0, Math.PI * 2);
-	g.fill();
-	g.fillStyle = '#3a2a1c';
-	g.font = 'bold 19px Georgia, serif';
-	g.textAlign = 'center';
-	g.fillText(x.label.length > 9 ? x.label.slice(0, 5) + '.' : x.label, 48, 112);
-	const face = new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(c), roughness: 0.95 });
-	face.map.colorSpace = THREE.SRGBColorSpace;
-	const paper = mat(0xe6d8b8);
-	const m = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.075, 0.004), [paper, paper, paper, paper, face, paper]);
-	m.name = `asset:seed:${x.id}`;
-	return m;
-}
-/** a 1 l bottle of water: clear, a little blue, its cap on */
-function bottle() {
+/** the ramp behind the pickup, its lip on the tailgate let down flat (RAMP, PICKUP): along the pickup (its own z), its
+ *  lip and its foot, and the slope it tips a machine to */
+const LIP_Z = PICKUP.tailgate - PICKUP.gate;
+const FOOT_Z = LIP_Z - RAMP.run;
+const SLOPE = Math.atan2(RAMP.rise, RAMP.run);
+/** how high a machine stands at z along the pickup (on the bed, the ramp or the ground behind it), and how far it is
+ *  tipped to the ramp's slope (0 … 1): half tipped where it sits over a knee of the ramp, its 70 cm half on, half off */
+const rampY = (z) => RAMP.rise * Math.min(1, Math.max(0, (z - FOOT_Z) / RAMP.run));
+const rampTip = (z) => Math.min(1, Math.max(0, (Math.min(z - FOOT_Z, LIP_Z - z) + 0.35) / 0.7));
+
+/** the first tree's spot once it is marked (Samuel 2026-10-14): the earth dug, the seed's hollow in its middle, and
+ *  the plant stake the tree will grow by pushed in beside it, 75 cm of it standing; its little flag printed with the
+ *  tree's name and its plant, tied on once the seed is picked */
+const STAKE_AT = V(0.13, -0.25, -0.12);
+function spotKit({ name = '', seed = '' } = {}) {
 	const g = new THREE.Group();
-	const body = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.22, 14), new THREE.MeshStandardMaterial({ color: 0xbfdcec, roughness: 0.15, transparent: true, opacity: 0.55 }));
-	body.position.y = 0.11;
-	const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.04, 0.05, 14), body.material);
-	neck.position.y = 0.245;
-	const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.02, 10), mat(0x2f6fa8));
-	cap.position.y = 0.28;
-	g.add(body, neck, cap);
-	g.userData.cap = cap;
-	return g;
-}
-/** the backpack off the back, standing open (Samuel 2026-10-14: a small paper bag of seeds and a 1 l bottle in it):
- *  the bag, its flap hanging down its back, the bottle and the paper bag of five seed packets out of its top. A stand-in
- *  until the assets thread has the real one */
-function openPack(seat) {
-	const g = new THREE.Group();
-	const cloth = mat(seat === 'A' ? 0x7a5a36 : 0x4f6b3a);
-	const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.18), cloth);
-	bag.position.y = 0.22;
-	const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.02, 0.13), mat(0x2a2018));
-	mouth.position.y = 0.437;
-	const flap = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.02), cloth);
-	flap.position.set(0, 0.36, -0.1);
-	flap.rotation.x = 0.12;
-	const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.4, 10).rotateZ(Math.PI / 2), mat(0x9c3b2f));
-	roll.position.set(0, 0.08, -0.15);
-	const water = bottle();
-	water.position.set(0.085, 0.24, 0.0);
-	const sack = new THREE.Group(); // the paper bag of seeds, its top rolled open, the packets fanned in it
-	const brown = mat(0xc9a878);
-	const paperBag = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.15, 0.09), brown);
-	paperBag.position.y = 0.075;
-	sack.add(paperBag);
-	const seeds = Object.fromEntries(SEEDLINGS.map((x, i) => {
-		const s = packet(x);
-		s.position.set(-0.045 + i * 0.023, 0.17, -0.025 + (i % 2) * 0.02);
-		s.rotation.set(-0.75, (i - 2) * 0.12, (i - 2) * 0.16);
-		sack.add(s);
-		return [x.id, s];
-	}));
-	sack.position.set(-0.065, 0.3, 0.0);
-	g.add(bag, mouth, flap, roll, water, sack);
-	g.traverse((o) => o.isMesh && (o.castShadow = true));
-	g.userData = { water, sack, seeds };
-	return g;
-}
-/** two hazel sticks, pushed into the earth either side of where the seed goes (Samuel 2026-10-14) */
-function sticks() {
-	const g = new THREE.Group();
-	const wood = mat(0xa58a62);
-	for (const s of [-1, 1]) {
-		const st = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.013, 0.55, 6).translate(0, 0.17, 0), wood);
-		st.position.x = s * 0.22;
-		st.rotation.z = s * 0.06;
-		st.castShadow = true;
-		g.add(st);
-	}
-	const earth = new THREE.Mesh(new THREE.CircleGeometry(0.17, 18).rotateX(-Math.PI / 2), flat(0x4a3424, 6));
-	earth.position.y = 0.012;
-	earth.receiveShadow = true;
+	const earth = dugEarth();
 	g.add(earth);
-	g.userData = { earth, stick: g.children.slice(0, 2) };
+	g.userData = { earth, stake: null };
+	labelKit(g, name, seed);
 	return g;
+}
+/** the stake of a kit for a tree of that name and seed: a new one when either changes (its print is made with it),
+ *  its flag shown once there is a seed */
+function labelKit(kit, name, seed) {
+	let stake = kit.userData.stake;
+	if (!stake || stake.userData.seed !== (seed || 'apple') || stake.userData.name !== name) {
+		if (stake) kit.remove(stake);
+		stake = plantStake({ name, seed: seed || 'apple' });
+		stake.position.copy(STAKE_AT);
+		stake.rotation.set(0.03, 0, -0.04);
+		kit.add(stake);
+		kit.userData.stake = stake;
+	}
+	stake.userData.flag.visible = !!seed;
+	return stake;
+}
+/** the backpack off the back and open (Samuel 2026-10-14: the five seeds and a 1 l bottle in it), with where the
+ *  bottle and each seed's packet sit in it, so they go back there */
+function openPack() {
+	const g = backpack({ open: 1 });
+	const { bottle, packets } = g.userData;
+	g.userData.bottleAt = { p: bottle.position.clone(), r: bottle.rotation.clone() };
+	// the packets leaned back against the clothes, their fronts up to whoever looks in
+	for (const p of Object.values(packets)) ((p.rotation.x -= 0.6), (p.userData.y0 = p.position.y));
+	return g;
+}
+/** the bottle back in its pack, its cap on */
+function stowBottle(pk) {
+	const { bottle, inside, bottleAt } = pk.userData;
+	inside.add(bottle);
+	bottle.position.copy(bottleAt.p);
+	bottle.rotation.copy(bottleAt.r);
+	bottle.userData.cap.visible = true;
 }
 
 function packedTent() {
@@ -544,20 +510,18 @@ export function person(seat) {
 	const glow = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0xe0435a, emissive: 0xe0435a, emissiveIntensity: 0.7 }));
 	glow.position.y = 2.3;
 	glow.name = g.name;
-	// one backpack each, clothes and all they brought (Samuel 2026-10-13), on the chest bone so it moves with the back
-	const pack = new THREE.Group();
-	const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.46, 0.18), mat(seat === 'A' ? 0x7a5a36 : 0x4f6b3a));
-	const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.4, 10).rotateZ(Math.PI / 2), mat(0x9c3b2f));
-	roll.position.y = 0.3;
-	bag.castShadow = roll.castShadow = true;
-	bag.name = roll.name = g.name;
-	pack.add(bag, roll);
+	// one backpack each, clothes and all they brought (Samuel 2026-10-13), shut, on the chest bone so it moves with the
+	// back, its back panel and straps against theirs
+	const pack = backpack({ open: 0 });
+	pack.traverse((o) => o.isMesh && (o.name = g.name));
 	const chest = cast.rig.bones.chest ?? cast.rig.bones.spine;
+	const turned = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), Math.PI);
 	if (chest) {
 		chest.add(pack);
 		chest.updateWorldMatrix(true, false);
-		pack.position.copy(chest.worldToLocal(V(0, 1.12, -0.24)));
-	} else (pack.position.set(0, 1.12, -0.24), g.add(pack));
+		pack.position.copy(chest.worldToLocal(V(0, 0.88, -0.25)));
+		pack.quaternion.copy(chest.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(turned));
+	} else (pack.position.set(0, 0.88, -0.25), pack.quaternion.copy(turned), g.add(pack));
 	g.add(cast.rig.object, glow);
 	g.userData = { glow, cast, pack, act: 'idle', t: Math.random() * 9 };
 	return g;
@@ -568,6 +532,9 @@ export function person(seat) {
 const CARRY = { upperArmL: [-0.75, 0, 0.18], upperArmR: [-0.75, 0, -0.18], forearmL: [-0.95, 0, 0], forearmR: [-0.95, 0, 0], handL: [0, 0, -0.3], handR: [0, 0, 0.3] };
 const PUSH = { spine: [0.25, 0, 0], chest: [0.15, 0, 0], upperArmL: [-1.25, 0, 0.12], upperArmR: [-1.25, 0, -0.12], forearmL: [-0.25, 0, 0], forearmR: [-0.25, 0, 0] };
 const WHEEL = { spine: [0.08, 0, 0], upperArmL: [-1.05, 0, -0.22], upperArmR: [-1.05, 0, 0.22], forearmL: [-0.55, 0, 0.1], forearmR: [-0.55, 0, -0.1], handL: [0, 0, 0], handR: [0, 0, 0] };
+/** sitting in the pickup's cab, lower than the stand-in's 0.5 m edge: the thighs rising a little to the knees, the shins
+ *  reaching forward and down to the floor and the pedals */
+const CAR = { thighL: [-(Math.PI / 2 + 0.15), 0, 0.1], thighR: [-(Math.PI / 2 + 0.15), 0, -0.1], shinL: [0.87, 0, 0], shinR: [0.87, 0, 0], footL: [-0.3, 0, 0], footR: [-0.3, 0, 0] };
 const LAP = { neck: [0.2, 0, 0], head: [0.3, 0, 0], upperArmL: [-0.55, 0, -0.18], upperArmR: [-0.55, 0, 0.18], forearmL: [-0.75, 0, 0.35], forearmR: [-0.75, 0, -0.35], handL: [0, 0, 0], handR: [0, 0, 0] };
 const POUR = { spine: [0.3, 0, 0], chest: [0.2, 0, 0], neck: [0.2, 0, 0], head: [0.25, 0, 0], upperArmR: [-1.0, 0, -0.1], forearmR: [-0.6, 0, 0], handR: [0, 0, 0.9], upperArmL: [-0.5, 0, 0.1], forearmL: [-0.6, 0, 0] };
 const PRESS = { spine: [0.45, 0, 0], chest: [0.3, 0, 0], neck: [0.15, 0, 0], head: [0.2, 0, 0], upperArmL: [-1.1, 0, 0.12], upperArmR: [-1.1, 0, -0.12], forearmL: [-0.35, 0, 0], forearmR: [-0.35, 0, 0] };
@@ -589,7 +556,7 @@ function acting(p, t) {
 	if (j !== undefined) face.morphTargetInfluences[j] += ((p.userData.joy ? 1 : 0) - face.morphTargetInfluences[j]) * 0.2;
 	const hold = { carry: CARRY, push: PUSH }[what];
 	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
-	const sat = { drive: WHEEL, lap: LAP }[what];
+	const sat = { drive: { ...WHEEL, ...CAR }, ride: CAR, lap: LAP }[what];
 	if (sat) return cast.rig.pose({ ...cast.poses.sit, ...sat });
 	const knelt = { pour: POUR, press: PRESS }[what];
 	if (knelt) return cast.rig.pose({ ...cast.poses.kneel, ...knelt });
@@ -686,74 +653,34 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const cubeCable = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(YARD.x - 0.35, 0.35, YARD.z + 0.15), V(YARD.x - 1.3, 0.03, YARD.z + 0.6), V(5.2, 0.03, -1.7), V(2.5, 0.22, -0.9)]), 30, 0.013, 6), mat(0x161616));
 	cubeCable.visible = false;
 	world.add(cubeCable);
-	// the pickup at its real size (5.4 m), and the powercube it fetches, drawn as a small silenced cube that fits its bed
-	const truck = named(pickup({ v: 1 }), 'asset:pickup'); // v1 for now: its cab is opened up below (v2 and the real props come next)
+	// the pickup at its real size (5.33 m), its cab seen from inside through its clear glass (v2), and the powercube it
+	// fetches
+	const truck = named(pickup(), 'asset:pickup');
 	// the powercube: the ElectroCube, OSE's Power Cube frame with an alternator in place of its hydraulics
 	const cubeCast = electroCube(); // the ElectroCube (#608): the tent's power
 	cubeCast.rig.pose(cubeCast.clips.off(0));
 	const cube = named(cubeCast.rig.object, 'asset:powercube');
 	const bundle = named(packedTent(), 'asset:tent');
 	world.add(truck, cube, bundle);
-	// inside its cab, as the story films it through the windows (the asset's own glass is dark, so ours is clear enough
-	// to see in): two seats, a steering wheel; and a ramp of two planks off its tailgate while loading
-	truck.traverse((o) => {
-		if (o.isMesh && o.material?.color?.getHexString() === '1c2630') {
-			o.material = o.material.clone();
-			o.material.transparent = true;
-			o.material.opacity = 0.22;
-			o.material.depthWrite = false;
-		}
-	});
-	// its pillars are drawn as panels right across the cab (the village sees it from outside): here, where we also look
-	// through it from inside, each is two slim posts, the glass between them (stand-ins until its cab comes from the assets)
-	for (const o of truck.children.filter((x) => x.isMesh && x.geometry.parameters && Math.abs(x.geometry.parameters.width - 1.76) < 0.01 && Math.abs(x.geometry.parameters.depth - 0.08) < 0.01)) {
-		o.visible = false;
-		const { height } = o.geometry.parameters;
-		for (const x of [-0.84, 0.84]) {
-			const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, height, 0.08), o.material);
-			post.position.set(x, o.position.y, o.position.z);
-			post.castShadow = true;
-			truck.add(post);
-		}
-	}
-	const cab = new THREE.Group();
-	{
-		const seat = mat(0x2d2a27);
-		// a seat under each, its back to the shoulders, so the head shows over it from behind
-		for (const x of [-0.42, 0.42]) {
-			const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.58, 0.1), seat);
-			back.position.set(x, 1.0, 0.42);
-			back.rotation.x = -0.12;
-			const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.46), seat);
-			cushion.position.set(x, 0.66, 0.68);
-			cab.add(back, cushion);
-		}
-		const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.018, 8, 24), mat(0x1d1d1d));
-		wheel.position.set(0.42, 1.38, 1.18);
-		wheel.rotation.x = -0.45;
-		const dash = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 0.3), mat(0x26282a));
-		dash.position.set(0, 1.32, 1.38);
-		cab.add(wheel, dash);
-	}
-	truck.add(named(cab, 'asset:pickup'));
-	const ramp = new THREE.Group();
-	for (const x of [-0.3, 0.3]) {
-		const plank = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.04, 2.3), mat(0x9a7a52));
-		plank.position.set(x, 0.58, -3.55);
-		plank.rotation.x = -Math.atan2(1.14, 2.0);
-		plank.castShadow = plank.receiveShadow = true;
-		ramp.add(plank);
-	}
+	// the loading ramp behind it while a machine goes on or off, its lip on the tailgate let down flat
+	const ramp = named(loadingRamp(), 'asset:pickup');
+	ramp.position.z = FOOT_Z;
 	ramp.visible = false;
 	truck.add(ramp);
-	/** a ramp's foot and top, on the pickup (local): up it into the bed */
-	const RAMP_FOOT = V(0, 0, -4.6), RAMP_TOP = V(0, 1.16, -2.6);
-	// each player's backpack off their back and open, the seeds and the bottle in it; the sticks at the spot marked
-	const packs = { A: openPack('A'), B: openPack('B') };
+	/** the ramp out (or put away), the tailgate down for it; down too while the solar panel rides over it */
+	function rampOut(on) {
+		ramp.visible = on;
+		truck.userData.setTailgate(on || solar.parent === truck ? 1 : 0);
+	}
+	/** a machine on its way up or down the ramp: turned on the pickup (yaw, from its own) and tipped to its slope (k) */
+	const tipOn = (o, yaw, k) => o.quaternion.copy(truck.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-SLOPE * k, yaw, 0)));
+	// each player's backpack off their back and open, the seeds and the bottle in it; the dug earth and the stake at
+	// the spot marked
+	const packs = { A: openPack(), B: openPack() };
 	for (const k of ['A', 'B']) (packs[k].visible = false), world.add(named(packs[k], `asset:pack:${k}`));
-	const mySticks = sticks();
-	mySticks.visible = false;
-	world.add(mySticks);
+	const myKit = spotKit();
+	myKit.visible = false;
+	world.add(myKit);
 	// the water poured from the bottle: a thin clear stream down to the earth
 	const pour = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.01, 1, 8).translate(0, -0.5, 0), new THREE.MeshStandardMaterial({ color: 0xd8ecf6, roughness: 0.1, transparent: true, opacity: 0.6, depthWrite: false }));
 	pour.visible = false;
@@ -791,8 +718,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// a point beside the pickup, out of its left (+x) side
 	const beside = (o, side, ahead = 0) => o.localToWorld(V(side * 2.6, 0, ahead)).setY(0);
 	const HOME = { A: V(-5.5, 0, 7), B: V(5.5, 0, 6) };
-	/** where the players sit in the pickup's cab (its own frame, the feet): the driver on the left (+x), the other beside */
-	const CAB = { driver: V(0.42, 0.22, 0.62), passenger: V(-0.42, 0.22, 0.62) };
+	/** where the players sit in the pickup's cab (its own frame): the driver on the left (+x), the other beside; their
+	 *  hips on its seats (PICKUP), set back against the seat's back, the stand-in's 0.5 m sitting edge under them */
+	const CAB = { driver: V(PICKUP.driver.x, PICKUP.driver.y - 0.5, PICKUP.driver.z - 0.04), passenger: V(PICKUP.passenger.x, PICKUP.passenger.y - 0.5, PICKUP.passenger.z - 0.04) };
 	/** the yaw that turns a spot's own frame (spotAt) to the world: its +z on toward the hex's middle */
 	const spotYaw = (S) => Math.atan2(-S.x, -S.z);
 
@@ -801,7 +729,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  it, whether the other rides along (they came to fetch me), the story's hour, where the pickup rolls on to while an
 	 *  invest waits (cruise: 'shed' or 'home'), the first tree's spot (spot, marked; by: 'spot' while the player stands at
 	 *  it) and the seed picked (pick) */
-	let stage = { at: 'home', cube: 'home', tent: 'up', battery: 'store', me: 'A', other: 'B', rides: false, hour: null, cruise: '', spot: null, marked: false, by: '', pick: '' };
+	let stage = { at: 'home', cube: 'home', tent: 'up', battery: 'store', me: 'A', other: 'B', rides: false, hour: null, cruise: '', spot: null, marked: false, by: '', pick: '', name: '' };
 	let busy = false; // an intro, a drive or a load is playing
 	function set(next) {
 		stage = { ...stage, ...next };
@@ -814,13 +742,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		p.rotation.set(0, 0, 0);
 		p.visible = true;
 		p.userData.glow.visible = false;
-		act(p, where === 'driver' ? 'drive' : 'sit');
+		p.userData.pack.visible = false; // off their back while they sit, against the seat's back
+		act(p, where === 'driver' ? 'drive' : 'ride');
 	}
 	function seatOut(p) {
 		if (p.parent !== truck) return;
 		world.attach(p);
 		p.rotation.set(0, p.rotation.y, 0);
 		p.userData.glow.visible = true;
+		p.userData.pack.visible = true;
 		act(p, 'idle');
 	}
 	/** in the cab as the story has them: the first player at the wheel; the second beside the first, who fetched them */
@@ -853,7 +783,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		placeCube(stage.cube);
 		placeTent(stage.tent);
 		placeBattery(stage.battery);
-		ramp.visible = false;
+		rampOut(false);
 		for (const s of ['A', 'B']) {
 			const p = people[s];
 			if (keepMe && s === me) continue;
@@ -894,19 +824,20 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		p.rotation.y = spotYaw(S);
 	}
 	/** the backpack off and open beside the spot while the seed is chosen and sown, the seed picked lifted a little out
-	 *  of it; the two sticks at the spot once it is marked, until the tree stands there with its own */
+	 *  of it; the dug earth and its stake at the spot once it is marked, until the tree stands there with its own */
 	function placeKit() {
 		for (const k of ['A', 'B']) if (packs[k].parent !== world) world.attach(packs[k]);
 		for (const k of ['A', 'B']) packs[k].visible = false;
 		const S = stage.spot, me = stage.me;
-		mySticks.visible = !!(S && stage.marked && !trees[me]);
-		if (mySticks.visible) (mySticks.position.set(S.x, 0, S.z), (mySticks.rotation.y = spotYaw(S)));
-		mySticks.userData.stick.forEach((s) => (s.position.y = 0));
+		myKit.visible = !!(S && stage.marked && !trees[me]);
+		if (myKit.visible) (myKit.position.set(S.x, 0, S.z), (myKit.rotation.y = spotYaw(S)));
+		const stake = labelKit(myKit, stage.name, stage.pick);
+		stake.position.copy(STAKE_AT);
+		stake.visible = true;
 		const pk = packs[me];
-		for (const [id, s] of Object.entries(pk.userData.seeds)) s.position.y = id === stage.pick ? 0.21 : 0.17;
-		pk.userData.water.position.set(0.085, 0.24, 0);
-		pk.userData.water.rotation.set(0, 0, 0);
-		if (pk.userData.water.parent !== pk) pk.add(pk.userData.water);
+		pk.userData.setOpen(1);
+		for (const [id, p] of Object.entries(pk.userData.packets)) p.position.y = p.userData.y0 + (id === stage.pick ? 0.05 : 0);
+		stowBottle(pk);
 		pour.visible = false;
 		if (stage.at === 'home' && stage.by === 'spot' && S) {
 			pk.position.copy(spotAt(S)(0.62, 0, -0.4));
@@ -999,7 +930,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// while the woman beside them talks, they turn to her and listen
 			me.userData.extra = talking ? { neck: [0.02, -0.28, 0], head: [0.04, -0.4, 0] } : null;
 			me.userData.pack.visible = !shot.lap;
-			if (shot.lap) (van.add(pk), pk.position.copy(LAP_AT), pk.rotation.set(-0.15, 0, 0), (pk.visible = true));
+			if (shot.lap) (van.add(pk), pk.position.copy(LAP_AT), pk.rotation.set(-0.15, 0, 0), pk.userData.setOpen(1), stowBottle(pk), (pk.visible = true));
 			else if (pk.parent === van) (world.attach(pk), (pk.visible = false));
 			me.visible = true;
 		} else if (me.parent === van) {
@@ -1041,8 +972,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		lit = where === 'home' || stage.battery === 'home';
 		cubeCable.visible = where === 'home';
 		if (where !== 'home') cubeCast.rig.pose(cubeCast.clips.off(0)); // it hums only at home, powering the tent
-		if (where === 'shed') (cube.position.copy(CUBE_IN_SHED), (cube.rotation.y = Math.PI / 2));
-		else if (where === 'home') (cube.position.set(YARD.x, 0, YARD.z), (cube.rotation.y = -0.3));
+		if (where === 'shed') (cube.position.copy(CUBE_IN_SHED), cube.rotation.set(0, Math.PI / 2, 0));
+		else if (where === 'home') (cube.position.set(YARD.x, 0, YARD.z), cube.rotation.set(0, -0.3, 0));
 		else {
 			truck.add(cube);
 			cube.position.copy(CUBE_ON_BED);
@@ -1053,7 +984,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  as the light goes */
 	let lit = false;
 
-	// the first trees, each named after the player who planted it, where they planted it, between its two sticks, as
+	// the first trees, each named after the player who planted it, where they planted it, beside its stake, as
 	// it stands on its watered months now; a watering grows it in place (grows)
 	const trees = {};
 	const grows = [];
@@ -1062,13 +993,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		for (const seat of ['A', 'B']) {
 			const t = list.find((x) => x.seat === seat);
 			const had = trees[seat];
-			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}` : '';
+			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}:${t.name}` : '';
 			if (had?.userData.key === key) continue;
 			if (had) (world.remove(had), had.traverse((o) => o.geometry?.dispose?.()), delete trees[seat]);
 			if (!t) continue;
 			const g = new THREE.Group();
 			const plant = t.plant.grow(t.stage, t.seed);
-			g.add(plant, sticks());
+			const kit = spotKit({ name: t.name ?? '', seed: t.plant.id });
+			kit.userData.earth.userData.setWet(0.6);
+			g.add(plant, kit);
 			g.position.set(t.x, 0, t.z);
 			g.rotation.y = spotYaw(t);
 			g.traverse((o) => o.isMesh && ((o.castShadow = true), (o.name = `tree:${seat}`)));
@@ -1079,15 +1012,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			world.add(g);
 			trees[seat] = g;
 		}
-		if (trees[stage.me]) mySticks.visible = false;
+		if (trees[stage.me]) myKit.visible = false;
 	}
 
 	function placeBattery(where) {
 		cables.visible = where === 'home';
 		for (const o of [battery, solar]) if (o.parent !== world) world.attach(o);
 		solar.rotation.set(0, 0, 0);
-		if (where === 'store') (battery.position.copy(BATT_AT), (battery.rotation.y = 0.2), solar.position.copy(PANEL_AT), (solar.rotation.y = Math.PI + 0.3));
-		else if (where === 'home') (battery.position.copy(BATT_HOME), (battery.rotation.y = -0.3), solar.position.copy(PANEL_HOME), (solar.rotation.y = Math.PI - 0.4));
+		if (where === 'store') (battery.position.copy(BATT_AT), battery.rotation.set(0, 0.2, 0), solar.position.copy(PANEL_AT), (solar.rotation.y = Math.PI + 0.3));
+		else if (where === 'home') (battery.position.copy(BATT_HOME), battery.rotation.set(0, -0.3, 0), solar.position.copy(PANEL_HOME), (solar.rotation.y = Math.PI - 0.4));
 		else {
 			truck.add(battery, solar);
 			battery.position.copy(CUBE_ON_BED);
@@ -1095,6 +1028,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			solar.position.copy(PANEL_ON_BED);
 			solar.rotation.set(0, Math.PI / 2, 0);
 		}
+		rampOut(ramp.visible); // the tailgate down while the panel rides over it
 	}
 
 	/** the camera's places: what it looks at, and from where; once there, it drifts slowly round, like a crane on a set */
@@ -1127,6 +1061,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				const pk = packs[stage.me];
 				pk.position.copy(PACK_AT);
 				pk.rotation.set(0, Math.PI + 0.3, 0);
+				pk.userData.setOpen(0);
+				stowBottle(pk);
 				pk.visible = true;
 				p.userData.pack.visible = false;
 				p.position.set(PACK_AT.x - 0.15, 0, PACK_AT.z - 0.62);
@@ -1134,9 +1070,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				act(p, 'press');
 			},
 			run: (k) => {
-				const pk = packs[stage.me];
-				pk.userData.water.position.y = 0.16 + 0.08 * ease(Math.min(1, k * 2));
-				pk.userData.sack.position.y = 0.22 + 0.08 * ease(Math.min(1, k * 2));
+				// the lid thrown back, then the bottle and the seed packets lifted a little out of it
+				const pk = packs[stage.me], { bottle, bottleAt, packets } = pk.userData;
+				const out = ease(Math.min(1, Math.max(0, k * 2.5 - 1)));
+				pk.userData.setOpen(ease(Math.min(1, k * 2.5)));
+				bottle.position.y = bottleAt.p.y + 0.08 * out;
+				for (const p of Object.values(packets)) p.position.y = p.userData.y0 + 0.04 * out;
 				if (k > 0.6) act(people[stage.me], 'kneel');
 			}
 		}],
@@ -1155,9 +1094,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// top-down into the backpack beside the spot: the five seed packets
 		seeds: () => {
 			const L = spotAt(stage.spot);
-			return [{ fov: 38, near: 0.05, cam: (k) => [L(0.62, 0.98 - 0.05 * k, -0.33), L(0.62, 0.38, -0.29)], put: (p) => (standAt(p, stage.spot), act(p, 'kneel')) }];
+			return [{ fov: 38, near: 0.05, cam: (k) => [L(0.62, 1.2 - 0.05 * k, -0.34), L(0.62, 0.38, -0.29)], put: (p) => (standAt(p, stage.spot), act(p, 'kneel')) }];
 		},
-		// crane up from the sticks to you and the tent beyond
+		// crane up from the stake to you and the tent beyond
 		tend: () => {
 			const L = spotAt(stage.spot);
 			return [{ fov: 44, near: 0.1, cam: (k) => [L(0.35, 0.25, 0.45).lerp(L(1.1, 3.4, -4.6), ease(k)), L(0, 0.1, 0).lerp(L(0, 0.9, 7), ease(k))], put: (p) => standAt(p, stage.spot) }];
@@ -1385,6 +1324,50 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// on the pickup (its own frame, +z ahead, the driver's door on its left, +x): the doors, the tailgate, beside it
 	const atTruck = (x, z) => (truck.updateMatrixWorld(true), truck.localToWorld(V(x, 0, z)).setY(0));
 	const DRIVER = [1.25, 0.55], PASSENGER = [-1.25, 0.55], TAIL = [0.5, -3.3], BESIDE = [2.6, 1], BESIDE_2 = [2.6, -1.6];
+	/** where they stand at the ramp's foot, to take a machine off it */
+	const AT_RAMP = [0, FOOT_Z - 0.4];
+	const PUSHING = 0.9; // m/s, a machine on its wheels pushed over the grass
+	/** a machine rolled off the pickup to where it stands (the ElectroCube to its yard, the BatteryCube beside it), s
+	 *  seconds after they reached the ramp's foot: they walk up the ramp below it while it comes out of the bed over the
+	 *  tailgate, walk back down holding it, step round it at the foot and push it on, round the pickup's side. Returns
+	 *  whether it stands there */
+	function rollOff(thing, to, me, s) {
+		const OUT = 1.3, DOWN = 2.2, OFF = FOOT_Z - 0.4; // off the ramp: its whole depth on the ground
+		const on = (z) => truck.localToWorld(V(0, rampY(z), z));
+		if (s < OUT + DOWN) {
+			const z = s < OUT ? CUBE_ON_BED.z + (LIP_Z - CUBE_ON_BED.z) * ease(s / OUT) : LIP_Z + (OFF - LIP_Z) * ease((s - OUT) / DOWN);
+			thing.position.copy(on(z));
+			tipOn(thing, Math.PI / 2, rampTip(z));
+			const zm = s < OUT ? AT_RAMP[1] + (LIP_Z - 0.95 - AT_RAMP[1]) * ease(s / OUT) : z - 0.95;
+			me.position.copy(on(zm));
+			me.rotation.y = truck.rotation.y; // facing up the ramp
+			act(me, s < OUT ? 'walk' : 'carry+walk');
+			return false;
+		}
+		const side = Math.sign(truck.worldToLocal(to.clone()).x) || 1;
+		const way = [on(OFF), atTruck(side * 2.4, OFF + 0.6), to.clone().setY(0)];
+		const d0 = way[1].clone().sub(way[0]).normalize();
+		const round = [on(OFF - 0.95), way[0].clone().addScaledVector(d0, -0.95)];
+		const t = s - OUT - DOWN - walkTime(round);
+		tipOn(thing, Math.PI / 2, 0);
+		if (t < 0) return (thing.position.copy(way[0]), walkOn(me, round, s - OUT - DOWN), t > -0.3 && act(me, 'push'), false);
+		let left = t * PUSHING;
+		for (let i = 1; i < way.length; i++) {
+			const a = way[i - 1], b = way[i], d = a.distanceTo(b);
+			if (left <= d) {
+				const dir = b.clone().sub(a).normalize();
+				thing.position.lerpVectors(a, b, d ? left / d : 1);
+				me.position.copy(thing.position).addScaledVector(dir, -0.95).setY(0);
+				me.rotation.y = Math.atan2(dir.x, dir.z);
+				act(me, 'push+walk');
+				return false;
+			}
+			left -= d;
+		}
+		thing.position.copy(way[way.length - 1]);
+		act(me, 'idle');
+		return true;
+	}
 	/** a shot of a moment: at least min seconds, and as long as the line of the voice-over it carries; its run gets the
 	 *  seconds since it began (s), so a walk keeps its pace however long the line holds the shot */
 	function beat(min, run, start) {
@@ -1561,7 +1544,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  shoulder of the newcomer in it, out through the windscreen to the land ahead (ots); through the windscreen at them
 	 *  (screen); from its bed forward through the rear window, the load in front of us (bed) */
 	const DRIVE_SHOTS = {
-		ots: { inside: true, fov: 54, cam: (k) => truck.localToWorld(V(stage.me === 'A' ? 0.16 : -0.16, 1.6, 0.1 + 0.04 * k)), at: () => truck.localToWorld(V(stage.me === 'A' ? 0.36 : -0.36, 1.25, 14)) },
+		ots: { inside: true, fov: 54, cam: (k) => truck.localToWorld(V(stage.me === 'A' ? 0.12 : -0.12, 1.62, -0.22 + 0.04 * k)), at: () => truck.localToWorld(V(stage.me === 'A' ? 0.36 : -0.36, 1.25, 14)) },
 		screen: { fov: 38, near: 0.1, cam: (k) => truck.localToWorld(V(0.16, 1.72, 5.4 - 0.3 * k)), at: () => truck.localToWorld(V(0.3, 1.52, 0.66)) },
 		bed: { inside: true, fov: 58, cam: (k) => truck.localToWorld(V(0.66 - 0.04 * k, 2.3, -2.85)), at: () => truck.localToWorld(V(0.35, 1.45, 3)) }
 	};
@@ -1813,11 +1796,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const power = what === 'power';
 		const P = power
 			? { push: battery, from: BATT_AT.clone().setY(0.02), carry: solar, carryAt: PANEL_AT, carryTo: PANEL_ON_BED, lift: 0.3, ahead: 0.95, setup: () => placeBattery('store'), mid: () => {}, end: () => ((stage.battery = 'bed'), placeBattery('bed')) }
-			: { push: cube, from: CUBE_IN_SHED.clone(), carry: bundle, carryAt: TENT_IN_SHED, carryTo: TENT_ON_BED, lift: 1.05, ahead: 0.42, setup: () => (placeCube('shed'), placeTent('shed')), mid: () => ((stage.cube = 'bed'), placeCube('bed')), end: () => ((stage.tent = 'bed'), placeTent('bed')) };
+			: { push: cube, from: CUBE_IN_SHED.clone(), carry: bundle, carryAt: TENT_IN_SHED, carryTo: TENT_ON_BED, lift: 1.05, ahead: 0.42, setup: () => (placeCube('shed'), placeTent('shed')), mid: () => ((stage.cube = 'bed'), placeCube('bed')), end: () => ((stage.tent = 'bed'), placeTent('bed'), rampOut(false)) };
 		const tail = atTruck(0, -3.9);
 		const yawTo = truck.rotation.y + Math.PI / 2;
 		const behind = P.from.clone().setY(0).add(P.from.clone().setY(0).sub(tail).setY(0).setLength(1.2));
-		let walkIn = [], eye = V(0, 0, 0), d0, d1, l0, l1, start, foot, top, bedAt, eye26, look26, toTail = [], camOff = V(0, 0, 0);
+		let walkIn = [], eye = V(0, 0, 0), d0, d1, l0, l1, eye26, look26, toTail = [], camOff = V(0, 0, 0);
 		return play(told([
 			// 24: from inside the shed, you walk in against the daylight (the second: from behind the BatteryCube)
 			beat(4.5, (s) => (walkOn(me, walkIn, s), still(eye, head(me))), () => {
@@ -1845,25 +1828,21 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			}),
 			// 26: side on, the ramp in profile: the last of the way to its foot, then up it into the bed, big in the frame
 			beat(6.5, (s) => {
-				const tg = Math.min(1, s / 2.2), up = Math.min(1, Math.max(0, (s - 2.2) / 2.6)), on = Math.min(1, Math.max(0, (s - 4.8) / 0.9));
-				let at = start.clone().lerp(foot, tg);
-				if (up > 0) at = foot.clone().lerp(top, ease(up));
-				if (on > 0) at = top.clone().lerp(bedAt, ease(on));
-				P.push.position.copy(at);
-				P.push.rotation.y = yawTo;
-				const dir = foot.clone().sub(start).setY(0).normalize();
-				me.position.copy(up > 0 ? foot.clone().addScaledVector(dir, -0.85 + 0.55 * ease(up)).setY(0) : at.clone().setY(0).addScaledVector(dir, -0.95));
-				me.rotation.y = Math.atan2(dir.x, dir.z);
-				act(me, tg < 1 ? 'push+walk' : up < 1 ? 'push' : 'idle');
+				// along the pickup: from 2.4 m short of the ramp's foot to it, up the ramp to its lip, on over the tailgate
+				// into the bed, tipped to the slope while it is on it
+				const z = s < 2.2 ? FOOT_Z - 2.4 * (1 - s / 2.2) : s < 4.8 ? FOOT_Z + RAMP.run * ease((s - 2.2) / 2.6) : LIP_Z + (CUBE_ON_BED.z - LIP_Z) * ease(Math.min(1, (s - 4.8) / 0.9));
+				P.push.position.copy(truck.localToWorld(V(0, rampY(z), z)));
+				tipOn(P.push, Math.PI / 2, rampTip(z));
+				// behind it, pushing: up the ramp after it, as far as its top
+				const zm = Math.min(z - 0.95, LIP_Z - 0.45);
+				me.position.copy(truck.localToWorld(V(0, rampY(zm), zm)));
+				me.rotation.y = truck.rotation.y;
+				act(me, s >= 5.7 ? 'idle' : zm < z - 0.95 ? 'push' : 'push+walk');
 				still(eye26, look26);
 			}, () => {
-				ramp.visible = true;
-				foot = truck.localToWorld(RAMP_FOOT.clone());
-				top = truck.localToWorld(RAMP_TOP.clone());
-				bedAt = truck.localToWorld(CUBE_ON_BED.clone());
-				start = foot.clone().add(foot.clone().sub(truck.localToWorld(V(0, 0, 0))).setY(0).setLength(2.4)).setY(P.from.y);
-				eye26 = truck.localToWorld(V(5.6, 1.05, -3.7));
-				look26 = truck.localToWorld(V(0, 0.75, -3.5));
+				rampOut(true);
+				eye26 = truck.localToWorld(V(5.6, 1.05, -4.3));
+				look26 = truck.localToWorld(V(0, 0.75, -4.1));
 				camera.position.copy(eye26);
 				controls.target.copy(look26);
 				lensFor({ fov: 40 });
@@ -1883,7 +1862,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}
 				camLerp(me.position.clone().add(camOff), head(me, 1.1), 0.1);
 			}, () => {
-				ramp.visible = false;
+				ramp.visible = false; // put away; the tailgate stays down to swing the load in over it
 				world.attach(P.carry);
 				const at = atTruck(0.6, -3.3);
 				const from = at.clone().add(P.carryAt.clone().setY(0).sub(at).setY(0).setLength(4.4));
@@ -1912,7 +1891,6 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const orbit = shot({ kind: 'orbit', centre: [0, 0], a0: 0.4, a1: 1.9, r0: 16, r1: 10, y0: 8, y1: 3.5, aim: [0, 1, 0], curve: 'ease' });
 		const LAY = V(0, 0, 2.2), KNEEL = V(0, 0, 3.3);
 		let toTail = [], toLay = [], toTail2 = [];
-		const cubeFrom = () => truck.localToWorld(CUBE_ON_BED.clone());
 		const yard = V(YARD.x, 0, YARD.z);
 		const h0 = stage.hour ?? 14.2;
 		const DUSK = 16.7;
@@ -1957,32 +1935,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			beat(7.5, (s, k) => {
 				if (moment) moment.hour = h0 + 0.2 + (DUSK - h0 - 0.2) * ease(k);
 				const t1 = walkTime(toTail2);
-				const down = Math.min(1, Math.max(0, (s - t1) / 1.5));
-				const along = Math.max(0, s - t1 - 1.5);
-				const tail = atTruck(0, -3.9);
-				const d = tail.distanceTo(yard), u = Math.min(1, along / d);
-				const from = cubeFrom();
-				const at = down < 1 ? from.clone().lerp(tail.clone().setY(0), ease(down)) : tail.clone().lerp(yard, u);
-				if (s >= t1) cube.position.copy(at);
-				if (s < t1) walkOn(me, toTail2, s);
-				else {
-					const dir = (down < 1 ? tail.clone().sub(from) : yard.clone().sub(tail)).setY(0).normalize();
-					me.position.copy(down < 1 ? atTruck(0, -2.9) : at.clone().setY(0).sub(dir.clone().multiplyScalar(0.95)));
-					me.rotation.y = down < 1 ? truck.rotation.y + Math.PI : Math.atan2(dir.x, dir.z);
-					act(me, down < 1 ? 'carry' : u < 1 ? 'push+walk' : 'idle');
-				}
+				const there = s < t1 ? (walkOn(me, toTail2, s), false) : rollOff(cube, yard, me, s - t1);
 				// home: its cable to the tent, and the tent lit from within as the light goes
-				if (u >= 1 && !lit) ((lit = true), (cubeCable.visible = true));
+				if (there && !lit) ((lit = true), (cubeCable.visible = true));
 				still(WIDE, WIDE_AT);
 			}, () => {
 				world.attach(cube);
-				ramp.visible = true;
-				toTail2 = [me.position.clone(), V(KNEEL.x + 3, 0, KNEEL.z + 1), atTruck(0, -2.9)];
+				rampOut(true);
+				toTail2 = [me.position.clone(), V(KNEEL.x + 3, 0, KNEEL.z + 1), atTruck(...AT_RAMP)];
 				camera.position.copy(WIDE);
 				controls.target.copy(WIDE_AT);
 				lensFor({ fov: 40 });
 			}),
-			{ dur: 0.4, start: () => ((stage.cube = 'home'), placeCube('home'), (ramp.visible = false), act(me, 'idle'), moment && (moment.hour = DUSK)), run: () => still(WIDE, WIDE_AT) }
+			{ dur: 0.4, start: () => ((stage.cube = 'home'), placeCube('home'), rampOut(false), act(me, 'idle'), me.position.setY(0), moment && (moment.hour = DUSK)), run: () => still(WIDE, WIDE_AT) }
 		], lines), { hour: h0 });
 	}
 	/** the second player's setting up at home: the BatteryCube down the ramp and pushed beside the ElectroCube, the solar
@@ -1991,7 +1956,6 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function setUp({ lines } = {}) {
 		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
-		const tail = atTruck(0, -3.9);
 		const eye = V(YARD.x - 13, 5.5, YARD.z + 15);
 		const front = (d) => me.position.clone().add(V(Math.sin(me.rotation.y), 0, Math.cos(me.rotation.y)).multiplyScalar(d));
 		const h0 = stage.hour ?? 14.2;
@@ -2000,22 +1964,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		return play(told([
 			beat(7, (s) => {
 				const t1 = walkTime(toTail);
-				const down = Math.min(1, Math.max(0, (s - t1) / 1.5));
-				const d = tail.distanceTo(BATT_HOME), u = Math.min(1, Math.max(0, s - t1 - 1.5) / d);
-				const from = truck.localToWorld(CUBE_ON_BED.clone());
 				if (s < t1) return void (walkOn(me, toTail, s), still(eye, head(me, 1)));
-				const at = down < 1 ? from.clone().lerp(tail.clone().setY(0), ease(down)) : tail.clone().lerp(BATT_HOME, u);
-				battery.position.copy(at);
-				const dir = (down < 1 ? tail.clone().sub(from) : BATT_HOME.clone().sub(tail)).setY(0).normalize();
-				me.position.copy(down < 1 ? atTruck(0, -2.9) : at.clone().setY(0).sub(dir.clone().multiplyScalar(0.95)));
-				me.rotation.y = down < 1 ? truck.rotation.y + Math.PI : Math.atan2(dir.x, dir.z);
-				act(me, down < 1 ? 'carry' : u < 1 ? 'push+walk' : 'idle');
-				still(eye, at.clone().setY(1));
+				rollOff(battery, BATT_HOME, me, s - t1);
+				still(eye, battery.position.clone().setY(1));
 			}, () => {
 				world.attach(battery);
-				ramp.visible = true;
+				rampOut(true);
 				me.visible = true;
-				toTail = [me.position.clone(), atTruck(...TAIL)];
+				toTail = [me.position.clone(), atTruck(...AT_RAMP)];
 				camera.position.copy(eye);
 				controls.target.copy(head(me));
 				lensOut();
@@ -2034,9 +1990,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}
 				still(eye.clone().add(V(2, 0, -2)), (s < t2 ? me.position : solar.position).clone().setY(1));
 			}, () => {
-				ramp.visible = false;
+				ramp.visible = false; // put away; the tailgate stays down till the panel is off it
 				world.attach(solar);
-				toTail = [me.position.clone(), atTruck(0.6, -3.3)];
+				toTail = [me.position.clone().setY(0), atTruck(0.6, -3.3)];
 				toPanel = [atTruck(0.6, -3.3), PANEL_HOME.clone().add(V(0, 0, 1.6))];
 			}),
 			beat(5, (s, k) => {
@@ -2051,25 +2007,25 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		], lines), { hour: h0 });
 	}
 
-	/** two sticks pressed into the earth where the first tree will grow (Samuel 2026-10-14), kneeling at the spot, close */
+	/** the earth dug where the first tree will grow and its plant stake pressed in beside it (Samuel 2026-10-14),
+	 *  kneeling at the spot, close */
 	function markIt({ x, z }) {
 		const me = people[stage.me];
 		const S = { x, z }, L = spotAt(S);
 		return play([
 			beat(3.4, (s, k) => {
-				mySticks.userData.stick.forEach((st, i) => {
-					const kk = Math.min(1, Math.max(0, (k - 0.16 - i * 0.34) / 0.22));
-					st.visible = k > 0.12 + i * 0.34;
-					st.position.y = 0.32 * (1 - ease(kk));
-				});
-				camera.position.copy(L(0.8 - 0.06 * k, 0.36, 0.52 - 0.05 * k));
-				camera.lookAt(L(0, 0.16, -0.06));
+				const { stake } = myKit.userData;
+				stake.visible = k > 0.2;
+				stake.position.y = STAKE_AT.y + 0.32 * (1 - ease(Math.min(1, Math.max(0, (k - 0.25) / 0.4))));
+				camera.position.copy(L(0.95 - 0.06 * k, 0.55, 1.0 - 0.05 * k));
+				camera.lookAt(L(0.08, 0.32, -0.05));
 			}, () => {
 				lensFor({ fov: 40, near: 0.05 });
-				mySticks.position.set(x, 0, z);
-				mySticks.rotation.y = spotYaw(S);
-				mySticks.userData.earth.material.color.set(0x8a6a48);
-				mySticks.visible = true;
+				myKit.position.set(x, 0, z);
+				myKit.rotation.y = spotYaw(S);
+				labelKit(myKit, stage.name, '');
+				myKit.userData.earth.userData.setWet(0);
+				myKit.visible = true;
 				seatOut(me);
 				me.visible = true;
 				me.position.copy(L(0, 0, -0.55));
@@ -2077,20 +2033,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				act(me, 'press');
 				core.visible = marker.visible = false;
 			}),
-			{ dur: 0.05, start: () => (mySticks.userData.stick.forEach((st) => ((st.visible = true), (st.position.y = 0))), act(me, 'kneel')) }
+			{ dur: 0.05, start: () => ((myKit.userData.stake.visible = true), myKit.userData.stake.position.copy(STAKE_AT), act(me, 'kneel')) }
 		], { keep: true });
 	}
-	/** the seed into the earth between the sticks, watered from the bottle (Samuel 2026-10-14): kneeling to press it in;
-	 *  the bottle pouring, the earth darkening; close on the wet earth, nothing showing yet */
-	const WET = 0x4a3424;
+	/** the seed into the dug earth beside the stake, its flag tied on with the tree's name and its plant, watered from
+	 *  the bottle (Samuel 2026-10-14): kneeling to press it in; the bottle pouring, the earth darkening; close on the wet
+	 *  earth, nothing showing yet */
 	function sow({ lines } = {}) {
 		const me = people[stage.me];
 		const S = stage.spot;
 		if (!S) return Promise.resolve();
 		const L = spotAt(S);
 		const pk = packs[stage.me];
-		const earth = mySticks.userData.earth.material;
-		const dry = new THREE.Color(0x8a6a48), wet = new THREE.Color(WET);
+		const { setWet } = myKit.userData.earth.userData;
 		return play(told([
 			beat(3, (s, k) => {
 				act(me, k < 0.7 ? 'press' : 'kneel');
@@ -2099,39 +2054,41 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			}, () => {
 				lensFor({ fov: 40, near: 0.05 });
 				placeKit();
-				mySticks.visible = true;
-				earth.color.copy(dry);
+				myKit.visible = true;
+				setWet(0);
 				me.visible = true;
 				me.position.copy(L(0, 0, -0.55));
 				me.rotation.y = spotYaw(S);
 			}),
-			beat(3.2, (s, k) => pourAt(L, S, k, earth, dry, wet, me), () => (world.attach(pk.userData.water), lensFor({ fov: 36, near: 0.05 }))),
+			beat(3.2, (s, k) => pourAt(L, S, k, pk.userData.bottle, setWet, me), () => (world.attach(pk.userData.bottle), lensFor({ fov: 36, near: 0.05 }))),
+			// close on the wet earth, then up the stake to its flag: the tree's name and its plant (the line: it carries
+			// your name now)
 			beat(3.5, (s, k) => {
-				camera.position.copy(L(0.44 - 0.04 * k, 0.36 - 0.04 * k, 0.34 - 0.03 * k));
-				camera.lookAt(L(0, 0.0, -0.02));
+				const e = ease(Math.min(1, Math.max(0, (k - 0.25) / 0.6)));
+				camera.position.copy(L(0.44 - 0.14 * e, 0.36 + 0.48 * e, 0.34 + 0.11 * e));
+				camera.lookAt(L(0.19 * e, 0.8 * e, -0.02 - 0.1 * e));
 			}, () => {
 				pour.visible = false;
-				pk.add(pk.userData.water);
-				pk.userData.water.position.set(0.085, 0.24, 0);
-				pk.userData.water.rotation.set(0, 0, 0);
-				earth.color.copy(wet);
+				stowBottle(pk);
+				setWet(1);
 				act(me, 'kneel');
 			})
 		], lines));
 	}
-	/** the bottle in the hand tipped over the seed, the water running down, the earth darkening (L: the spot's frame) */
-	function pourAt(L, S, k, earth, dry, wet, me) {
-		const water = packs[stage.me].userData.water;
+	/** the bottle in the hand, its cap off, tipped over the seed, the water running down, the earth darkening (L: the
+	 *  spot's frame; wet: how wet the earth gets, or none) */
+	function pourAt(L, S, k, bottle, wet, me) {
 		const tip = ease(Math.min(1, k / 0.25));
-		water.position.copy(L(0.04, 0.36, -0.15));
-		water.rotation.set(0, spotYaw(S), 0);
-		water.rotateX(2.1 * tip);
-		water.updateMatrixWorld(true);
-		const mouth = water.localToWorld(V(0, 0.27, 0));
+		bottle.userData.cap.visible = false;
+		bottle.position.copy(L(0.04, 0.36, -0.15));
+		bottle.rotation.set(0, spotYaw(S), 0);
+		bottle.rotateX(2.1 * tip);
+		bottle.updateMatrixWorld(true);
+		const mouth = bottle.localToWorld(bottle.userData.mouth.clone());
 		pour.visible = tip > 0.9 && k < 0.92;
 		pour.position.copy(mouth);
 		pour.scale.set(1, Math.max(0.01, mouth.y - 0.01), 1);
-		if (earth) earth.color.lerpColors(dry, wet, Math.min(1, Math.max(0, (k - 0.3) / 0.55)));
+		wet?.(Math.min(1, Math.max(0, (k - 0.3) / 0.55)));
 		act(me, 'pour');
 		camera.position.copy(L(0.46, 0.42, 0.2));
 		camera.lookAt(L(0.02, 0.12, -0.05));
@@ -2145,10 +2102,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const S = { x: g.position.x, z: g.position.z }, L = spotAt(S);
 		const pk = packs[seat];
 		return play([
-			beat(3.2, (s, k) => pourAt(L, S, k, null, null, null, me), () => {
+			beat(3.2, (s, k) => pourAt(L, S, k, pk.userData.bottle, null, me), () => {
 				lensFor({ fov: 36, near: 0.05 });
 				placeKit();
-				world.attach(pk.userData.water);
+				world.attach(pk.userData.bottle);
 				seatOut(me);
 				me.visible = true;
 				me.userData.pack.visible = true;
@@ -2160,9 +2117,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				camera.lookAt(L(0, 0.35 + 0.1 * k, 0.2));
 			}, () => {
 				pour.visible = false;
-				pk.add(pk.userData.water);
-				pk.userData.water.position.set(0.085, 0.24, 0);
-				pk.userData.water.rotation.set(0, 0, 0);
+				stowBottle(pk);
 				act(me, 'kneel');
 				lensFor({ fov: 42, near: 0.1 });
 			})
