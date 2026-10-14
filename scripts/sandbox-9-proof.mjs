@@ -167,6 +167,18 @@ async function main() {
 	prices.df = DF_ENGINE ? { rho: DF_ENGINE.rho, gs: DF_ENGINE.gs, plateT: DF_ENGINE.plateT, glazM2T: DF_ENGINE.glazM2T, cellsM2: DF_ENGINE.cellsM2, pvM2Kwp: DF_ENGINE.pvM2Kwp, cap: DF_ENGINE.cap, floor: DF_ENGINE.floor, unit: DF_ENGINE.unit } : null;
 	prices.src = { ...Object.fromEntries(Object.keys(BORDER).map((k) => [k, BORDER[k].src])), chipEur: CHIPS.eurPerChip.src, spotEurMwh: CHIPS.spotEurMwh.src, solarEurMwh: CHIPS.solarEurMwh.src, lineKw: CHIPS.lineKw.src };
 	const meta = { wall, set, now, only, quick, hash, threads: par, totalCpu: results.reduce((a, r) => a + r.ms, 0), catalog: catalogList(), start: STARTING_CAPITAL, prices };
+	// (round 6) the extras' prices on day 1 of each base world, for part 3's one-basket yardstick (the world is the same
+	// on day 1 as the run's: seeded, the same settings)
+	if (bases.length) {
+		const { createWorld: cw, step: st } = await import(join(LIB, 'engine.js'));
+		const C = await import(join(LIB, 'consts.js'));
+		meta.day1Prices = {};
+		for (const b of bases) {
+			const w1 = cw({ seed: b.seed, people: 1500, ...set });
+			st(w1);
+			meta.day1Prices[b.seed] = { goods: w1.pbar[C.GOODS_], spring: w1.pbar[C.SPRING], compute: w1.pbar[C.COMPUTE], bed: w1.pbar[C.BED], m2PerBed: w1.c.homeM2PerBed };
+		}
+	}
 	if (!OUT) {
 		console.log('--quick without --out: nothing written');
 		return;
@@ -320,6 +332,7 @@ function report(exps, scen, bases, notCovered, meta) {
 		L.push('');
 		round6Section(L, bases, scen);
 		p3Real(L, bases);
+		threeYardsticks(L, bases, meta);
 	}
 
 	// the verdict table
@@ -390,7 +403,7 @@ function moneyLine(bases) {
 	return (
 		`**Where money goes.** Payments only move MIND. MIND leaves existence only by the melt (7 % a year) and by a failed COOP’s MIND retired from the pools. ` +
 		`This engine has no retirement: a failed COOP’s MIND stays with its holders and in the pools and melts away like any other, so in these runs the melt is the only exit (retired from the pools: 0 MIND on every seed). ` +
-		`The money ledger (each MIND’s count today = yesterday’s + what HEARTS made − what melted) closed every day on every seed: largest relative gap ${led.map((l) => (l.mindMaxRel ?? 0).toExponential(1)).join(', ')}, ${led.map((l) => l.mindLeaks.length).join(', ')} leaks; the laws’ checks (Law 4’s 0.5 / 0.4 / 0.1, Law 5’s fifth) largest gap ${led.map((l) => (l.lawMaxRel ?? 0).toExponential(1)).join(', ')}; the pools’ invariant (a swap never lowers a basket’s product of reserves) checked ${led.map((l) => k0(l.poolChecks ?? 0)).join(', ')} times, broken ${led.map((l) => l.poolBreaches?.length ?? 0).join(', ')} times. In the last year HEARTS made ${ly.map((y) => f(y.issuedPP)).join(', ')} R of MIND a person a day and the melt took ${ly.map((y) => f(y.meltPP)).join(', ')}. ` +
+		`The money ledger (each MIND’s count today = yesterday’s + what HEARTS made − what melted) closed every day on every seed: largest relative gap ${led.map((l) => (l.mindMaxRel ?? 0).toExponential(1)).join(', ')}, leaks ${led.map((l) => l.mindLeaks.length).join(', ')}; the laws’ checks (Law 4’s 0.5 / 0.4 / 0.1, Law 5’s fifth) largest gap ${led.map((l) => (l.lawMaxRel ?? 0).toExponential(1)).join(', ')}; the pools’ invariant (a swap never lowers a basket’s product of reserves) checked ${led.map((l) => k0(l.poolChecks ?? 0)).join(', ')} times, broken ${led.map((l) => l.poolBreaches?.length ?? 0).join(', ')} times. In the last year HEARTS made ${ly.map((y) => f(y.issuedPP)).join(', ')} R of MIND a person a day and the melt took ${ly.map((y) => f(y.meltPP)).join(', ')}. ` +
 		`**The pools’ LP tokens** belong to the ${led[0]?.lpOwner === 'CITY' ? 'MaiaCity COOP (the City COOP)' : led[0]?.lpOwner}; it may redeem them only by a passed MIP, and no redemption ran in the base worlds (redeemed: ${led.map((l) => f(l.lpRedeemedR ?? 0)).join(', ')} R).`
 	);
 }
@@ -425,7 +438,7 @@ function round6Section(L, bases, scen) {
 	L.push(`In the last year, on seeds ${last.map((x) => x.seed).join(', ')}: all sales ÷ basics ${last.map((x) => f(x.y?.salesOverBasics)).join(', ')} (B2B ${last.map((x) => f(x.y?.b2bOverBasics)).join(', ')}); the lowest owner-only N × share ${last.map((x) => f(x.y?.ownerRelShareMin)).join(', ')}; the bound for that person ${last.map((x) => f(x.y?.boundMin)).join(', ')}. ${holds ? 'The bound reaches 1 on every seed.' : `**The strict test cannot hold under these sales:** at 20 % it would need all sales ÷ basics of ${last.map((x) => f(x.y?.neededSalesOverBasicsMin, 1)).join(', ')} for the lowest owner-only holding (${last.map((x) => f(x.y?.neededSalesOverBasicsMed, 1)).join(', ')} for the median), against ${last.map((x) => f(x.y?.salesOverBasics)).join(', ')} as run.`}`, '');
 	L.push('### The bank’s turning years', '');
 	L.push('| seed | first year from which each year’s exports cover its imports, to the end | first year the cumulative balance is positive | the best year (exports less imports) |', '|---|---|---|---|');
-	for (const x of R6) L.push(`| ${x.seed} | ${x.r.bank.runningPositiveYear ?? 'never'} | ${x.r.bank.cumulativePositiveYear ?? 'never'} | ${x.r.bank.bestYear ? `year ${x.r.bank.bestYear.year}: €${(x.r.bank.bestYear.bal / 1e6).toFixed(2)} M` : '–'} |`);
+	for (const x of R6) L.push(`| ${x.seed} | ${x.r.bank.runningPositiveYear ?? 'never'} | ${x.r.bank.cumulativePositiveYear ?? 'never'} | ${x.r.bank.bestYear ? `year ${x.r.bank.bestYear.year}: ${x.r.bank.bestYear.bal < 0 ? '−' : '+'}€${Math.abs(x.r.bank.bestYear.bal / 1e6).toFixed(2)} M` : '–'} |`);
 	L.push('');
 	L.push('### The pools: each basket’s loss to arbitrage (LVR) against its fees', '');
 	L.push(`LVR is what the Avens’ arbitrage takes out of a basket less what it puts in after the fee, valued at the consensus prices of the moment (the pools’ own: the engine has no outside price, so this is the loss between baskets, not against an outside market); fees are the 0.3 % on every swap through the basket, payments and arbitrage alike. Seed ${b0.seed}, over the run and over its last ten years:`, '');
@@ -434,6 +447,21 @@ function round6Section(L, bases, scen) {
 	L.push('');
 	const below = R6.map((x) => `${x.r.lvr.filter((p) => p.below).length} of ${x.r.lvr.length}`);
 	L.push(`Baskets whose LVR stayed below their fee income over the run: ${below.join(', ')} (seeds ${R6.map((x) => x.seed).join(', ')}).`, '');
+	// round 6 against round 5 on the same seeds and shocks (scenario R56), Law 5 with and without the pools (L5P), SH
+	// with and without the basics' work first (SHW)
+	const r56 = scen.find((x) => x.id === 'R56');
+	if (r56?.numbers?.rows) {
+		L.push('### Round 6 against round 5, same seeds and shocks (R56)', '');
+		L.push(`Each of the seeds ${r56.numbers.seeds.join(', ')} ran 60 years under round 6’s rules and under round 5’s (Law 4’s pools’ part 0.05, Law 5 without the pools), with the same weather and draws, judged from the founding’s end. A win is a seed where round 6 is better on that check; a tie, where both are equal. The p-value is a two-sided sign test on the wins and losses.`, '');
+		L.push('| check | better under round 6 | worse | tied | sign test p | round 6, by seed | round 5, by seed |', '|---|---|---|---|---|---|---|');
+		const cell = (a) => a.map((x) => (Number.isFinite(x) ? (Math.abs(x) >= 100 ? k0(x) : f(x)) : '–')).join(', ');
+		for (const r of r56.numbers.rows) L.push(`| ${r.label} | ${r.win} | ${r.loss} | ${r.tie} | ${r.p.toFixed(3)} | ${cell(r.r6)} | ${cell(r.r5)} |`);
+		L.push('', r56.takeaway, '');
+	}
+	for (const id of ['L5P', 'SHW']) {
+		const x = scen.find((y) => y.id === id);
+		if (x) L.push(`**${id}, ${x.name}.** ${x.takeaway} ${x.evidence ?? ''}`, '');
+	}
 }
 
 // ── the simple numbers (round 3): what people get, the village's food and energy, the diet, the border ───────────
@@ -925,6 +953,108 @@ function p3Real(L, bases) {
 	}
 }
 
+// ── (round 6) Proposition 3's part 3 under three yardsticks, side by side ───────────────────────────────────────
+// (a) each extra (canon #19, the verdict): no extra falls more than 2 % in any five years unless it is at satiation or a
+//     physical limit binds that year;
+// (b) taste-adjusted: a fall counts only when the tenth got less of that extra than it wanted. The engine rations a
+//     sold-out extra pro rata to everyone's orders, so whether a tenth got what it wanted that year is read from the
+//     year's binding limit for the good: "demand" (not sold out, nobody's budget bound) means every order was filled;
+//     a supply limit (sold out) or "MIND" (budgets bound) means it was not. Tastes are fixed for a person's life, so a
+//     filled order that falls is a smaller budget or a dearer price, never a new taste;
+// (c) one basket: the four extras together, valued at fixed day-1 prices, never fall more than 2 % in any five years.
+// All three on the same full years and windows as the verdict. Read from the saved runs: (b) in the founding sees
+// only the founding's failures (the falls the founding excused for a physical limit are not kept), so it is a floor.
+const EXTRA_KEYS = [
+	['homeM2', 'home m²'],
+	['goodsKgYear', 'goods'],
+	['avenH', 'Aven help'],
+	['pondHWeek', 'warm ponds']
+];
+/** the basket of extras a person a day in R at fixed prices P (day 1's): { goods, spring, compute, bed, m2PerBed } */
+const basketR = (r, P) => (r.goodsKgYear / 365) * P.goods + (r.pondHWeek / 7) * P.spring + r.avenH * P.compute + (r.homeM2 / P.m2PerBed) * P.bed;
+function yardsticksOf(b, P) {
+	const p = b.p, F = p.founding ?? { firstFullYear: 1 };
+	const L = (b.s.living ?? []).filter((y) => y.days >= 365);
+	const spans = [
+		['after', (y) => y.year >= (F.foundingOnly ? 1 : F.firstFullYear), p.P3.real, true],
+		['founding', (y) => !F.foundingOnly && y.year < F.firstFullYear, p.P3.founding, false]
+	];
+	const out = {};
+	for (const [span, inSpan, R, full] of spans) {
+		const Y = L.filter(inSpan);
+		const rows = [];
+		for (const [by, key] of [['holdings', 'byHoldings'], ['aven', 'byAven']])
+			for (let x = 0; x < 10; x++) {
+				const mine = (e) => e.by === by && e.tenth === x + 1;
+				const fails = (R?.failures ?? []).filter(mine);
+				const excused = full && Array.isArray(R?.excused) ? R.excused.filter(mine) : [];
+				// (a) the verdict's falls; (b) the falls where the tenth's orders were not filled
+				const a = fails.map((e) => ({ item: e.item, from: e.from, to: e.to, fall: e.fall, bind: e.bind, met: e.bind === 'demand' }));
+				const b2 = [
+					...fails.filter((e) => e.bind !== 'demand').map((e) => ({ item: e.item, from: e.from, to: e.to, fall: e.fall, bind: e.bind, met: false })),
+					...excused.filter((e) => String(e.why).startsWith('physical limit')).map((e) => ({ item: e.item, from: e.from, to: e.to, fall: e.fall, bind: String(e.why).replace('physical limit: ', ''), met: false }))
+				];
+				// (c) the basket at day-1 prices, every window of up to five years
+				const v = Y.map((y) => (y[key]?.[x] ? basketR(y[key][x], P) : NaN));
+				let worst = null;
+				const c = [];
+				for (let j = 1; j < v.length; j++)
+					for (let i = Math.max(0, j - 5); i < j; i++) {
+						if (!(v[i] > 0) || !Number.isFinite(v[j])) continue;
+						const fall = 1 - v[j] / v[i];
+						if (fall > 0.02) c.push({ from: Y[i].year, to: Y[j].year, fall });
+						if (fall > 0.02 && (!worst || fall > worst.fall)) worst = { from: Y[i].year, to: Y[j].year, fall, before: v[i], after: v[j] };
+					}
+				// which extras fell inside the basket's worst window, and whether their orders were filled
+				const inWorst = worst
+					? EXTRA_KEYS.map(([k, name]) => {
+							const ya = Y.find((y) => y.year === worst.from)?.[key]?.[x], yb = Y.find((y) => y.year === worst.to)?.[key]?.[x];
+							return ya && yb && ya[k] > 0 && yb[k] < ya[k] * 0.98 ? `${name} ${pc(yb[k] / ya[k] - 1, 0)}` : null;
+						}).filter(Boolean)
+					: [];
+				rows.push({ by, tenth: x + 1, a, b: b2, c: worst ? { ...worst, windows: c.length, fell: inWorst } : null, riseFail: !!(R?.riseFail ?? []).find(mine) });
+			}
+		out[span] = { years: Y.map((y) => y.year), rows, bComplete: full };
+	}
+	return out;
+}
+function threeYardsticks(L, bases, meta) {
+	const P = meta.day1Prices;
+	if (!P) return;
+	L.push('### Part 3 under three yardsticks', '');
+	L.push('The verdict above is canon #19, yardstick (a). Two others, side by side, on the same full years and five-year windows (a tenth fails a yardstick when any of its falls counts):', '');
+	L.push('- **(a) each extra (canon #19, the verdict):** no extra falls more than 2 % in any five years, unless it is at satiation or a physical limit binds that year.');
+	L.push('- **(b) taste-adjusted:** a fall counts only when the tenth got less of that extra than it wanted. A fall from wanting less does not count. The engine rations a sold-out extra pro rata to everyone’s orders, so whether a tenth got what it wanted is read from the year’s binding limit for the good. "Demand" means every order was filled: nothing was sold out and no budget bound. A supply limit or "MIND" means orders were not filled. Tastes are fixed for a person’s life, so a filled order that falls means a smaller budget or a dearer price, never a new taste.');
+	L.push(`- **(c) one basket:** the four extras together (home m², goods, Aven help, warm ponds), valued at fixed day-1 prices, never fall more than 2 % in any five years. Prices on seed ${bases[0].seed}: goods ${f(P[bases[0].seed]?.goods, 3)} R a kg, ponds ${f(P[bases[0].seed]?.spring, 3)} R an hour, Aven service ${f(P[bases[0].seed]?.compute, 3)} R an hour, a bed-day ${f(P[bases[0].seed]?.bed, 3)} R.`, '');
+	L.push('In the founding, (b) sees only the founding’s failures under (a): the founding’s falls excused for a physical limit are not kept in the saved runs, so (b) there is a floor.', '');
+	const Ys = bases.map((b) => ({ seed: b.seed, y: b.yardsticks ?? (b.yardsticks = yardsticksOf(b, P[b.seed])) }));
+	for (const span of ['after', 'founding']) {
+		L.push(span === 'after' ? '**After the founding (the claim):**' : '**In the founding (its own column):**', '');
+		L.push('| seed | tenths failing (a) each extra | (b) taste-adjusted | (c) one basket | (a)’s rise test (a basket that did not rise) |', '|---|---|---|---|---|');
+		for (const { seed, y } of Ys) {
+			const S = y[span];
+			const n = (fn) => S.rows.filter(fn).length;
+			L.push(`| ${seed} | ${n((r) => r.a.length)} | ${n((r) => r.b.length)}${S.bComplete ? '' : ' (floor)'} | ${n((r) => r.c)} | ${n((r) => r.riseFail)} |`);
+		}
+		L.push('');
+		for (const { seed, y } of Ys) {
+			const S = y[span];
+			const bad = S.rows.filter((r) => r.a.length || r.b.length || r.c);
+			if (!bad.length) continue;
+			L.push(`Seed ${seed}, ${span === 'after' ? 'after the founding' : 'in the founding'} (years ${S.years[0] ?? '–'}–${S.years.at(-1) ?? '–'}):`, '');
+			L.push('| tenth | (a) each extra: what fell (worst window), orders filled? | (b) taste-adjusted: what counts | (c) one basket: worst fall, and the extras that fell in it |', '|---|---|---|---|');
+			const worstOf = (list) => {
+				const m = new Map();
+				for (const e of list) if (!m.has(e.item) || e.fall > m.get(e.item).fall) m.set(e.item, e);
+				return [...m.values()];
+			};
+			const cell = (list) => (list.length ? worstOf(list).map((e) => `${e.item} ${pc(-e.fall, 0)} (years ${e.from}→${e.to}; ${e.met ? 'orders filled: "demand"' : `orders not filled: ${e.bind}`})`).join('; ') : 'none');
+			for (const r of bad) L.push(`| ${r.by} ${r.tenth} | ${cell(r.a)} | ${cell(r.b)} | ${r.c ? `${pc(-r.c.fall, 1)} (years ${r.c.from}→${r.c.to}, ${r.c.windows} windows over 2 %); fell: ${r.c.fell.join(', ') || 'none over 2 % alone'}` : 'none'} |`);
+			L.push('');
+		}
+	}
+}
+
 /** the base world's border setting, as the run had it, and why (the other setting is B23's counter-case) */
 function borderLine(b0, scen) {
 	// the base run's own setting: the defaults with what --set changed, as the world ran it
@@ -1121,7 +1251,7 @@ function toJson(exps, scen, bases, notCovered, meta) {
 		headline: bases.length ? headline(exps, scen, bases).map((r) => ({ part: r.part, holds: r.holds, base: r.base, founding: r.founding ?? null, breaks: r.breaks })) : [],
 		seeds: bases.map((b) => ({ seed: b.seed, params: paramDiff(b.s.params, pbase), living: round(b.s.living), border: { firstFedYear: b.s.food?.firstFedYear ?? null, lastImportYear: b.s.food?.lastImportYear ?? null, exportsCoverYear: firstYear(b.s.border, (x) => x.exportsCover), reserveOutYear: firstYear(b.s.border, (x) => x.reserveOut), reserveLow: round(Math.min(...(b.s.border ?? []).map((x) => x.reserveMinEur ?? Infinity))), importShortDays: (b.s.border ?? []).reduce((a, x) => a + (x.importShortDays ?? 0), 0), shortPD: b.p.P1.personDaysShortAny }, years: Math.round(b.s.days / 365), pass: b.p.pass, P1: b.p.P1.pass, shortPD: b.p.P1.personDaysShortAny, rampShort: b.s.rampShort ?? null, strictFrom: b.p.P2.strict.holdsEveryDayFrom, P2normal: b.p.P2.normal.pass, P3: b.p.P3.pass, P3failed: b.p.P3.failed, P3real: b.p.P3.real?.pass ?? null, P3realFailed: b.p.P3.real?.failedTenths ?? [], P3oldIndex: b.p.P3.oldIndex?.pass ?? null, bootstrapEur: round(-Math.min(...(b.s.border ?? []).map((x) => x.bank?.lowestEur ?? 0))), exportsOverImportsYear: firstYear(b.s.border, (x) => x.exportEur >= x.importEur), P3withoutCompute: b.p.P3.withoutCompute.pass, computeShareLast: round(b.p.P3.share.at(-1)?.all), coops: b.p.P3.coops.pass, mindBindsBasics: b.p.abundance.mindBindsBasics, seconds: round(b.ms / 1000),
 			// (round 6) the claim from the end of the founding, and the founding's own numbers
-			founding: b.p.founding ?? null, shortInFounding: b.p.P1.founding?.personDaysShortAny ?? null, shortAll: b.p.P1.all?.personDaysShortAny ?? null, strictLowestAfterFounding: round(b.p.P2.strict.lowestAfterFounding), strictLowestInFounding: round(b.p.P2.strict.lowestInFounding), strictLowestLastYear: round(b.p.P2.strict.lowestRatioByYear?.at(-1)), normalFailuresInFounding: b.p.P2.normal.failuresInFounding ?? null, P3realFounding: b.p.P3.founding ? { pass: b.p.P3.founding.pass, failedTenths: b.p.P3.founding.failedTenths } : null, P3realFailures: b.p.P3.real?.failures?.length ?? null, P3riseFail: b.p.P3.real?.riseFail?.length ?? null, mindBindsBasicsInFounding: b.p.abundance.mindBindsBasicsInFounding ?? null, gini: round(b.s.gini), r6: b.s.r6 ? { bank: b.s.r6.bank, last: round(b.s.r6.years.at(-1)), lvr: round(b.s.r6.lvr) } : null })),
+			founding: b.p.founding ?? null, shortInFounding: b.p.P1.founding?.personDaysShortAny ?? null, shortAll: b.p.P1.all?.personDaysShortAny ?? null, strictLowestAfterFounding: round(b.p.P2.strict.lowestAfterFounding), strictLowestInFounding: round(b.p.P2.strict.lowestInFounding), strictLowestLastYear: round(b.p.P2.strict.lowestRatioByYear?.at(-1)), normalFailuresInFounding: b.p.P2.normal.failuresInFounding ?? null, P3realFounding: b.p.P3.founding ? { pass: b.p.P3.founding.pass, failedTenths: b.p.P3.founding.failedTenths } : null, P3realFailures: b.p.P3.real?.failures?.length ?? null, P3riseFail: b.p.P3.real?.riseFail?.length ?? null, mindBindsBasicsInFounding: b.p.abundance.mindBindsBasicsInFounding ?? null, gini: round(b.s.gini), yardsticks: b.yardsticks ? Object.fromEntries(Object.entries(b.yardsticks).map(([k, S]) => [k, { years: [S.years[0] ?? null, S.years.at(-1) ?? null], aEachExtra: S.rows.filter((r) => r.a.length).length, bTasteAdjusted: S.rows.filter((r) => r.b.length).length, bComplete: S.bComplete, cOneBasket: S.rows.filter((r) => r.c).length, failing: S.rows.filter((r) => r.a.length || r.b.length || r.c).map((r) => ({ tenth: `${r.by} ${r.tenth}`, a: [...new Set(r.a.map((e) => e.item))], b: [...new Set(r.b.map((e) => e.item))], c: r.c ? round({ from: r.c.from, to: r.c.to, fall: r.c.fall, fell: r.c.fell }) : null })) }])) : null, r6: b.s.r6 ? { bank: b.s.r6.bank, last: round(b.s.r6.years.at(-1)), lvr: round(b.s.r6.lvr) } : null })),
 		experiments: exps.map((e) => ({ id: e.r.id, question: e.r.question, ruleChanged: e.r.ruleChanged, people: e.r.people, years: e.r.years, seed: e.r.seed, params: { base: paramDiff(e.r.base.params, pbase), changed: paramDiff(e.r.changed.params, pbase) }, food: { base: round(e.r.base.food ?? null), changed: round(e.r.changed.food ?? null) }, pass: e.r.verdict.pass, ens: e.r.ens ?? null, claim: e.r.verdict.claim, evidence: e.r.verdict.evidence, takeaway: e.r.takeaway, metrics: e.r.metrics.map((m) => ({ id: m.id, label: m.label, base: round(m.base), changed: round(m.changed) })), seconds: round(e.ms / 1000) })),
 		scenarios: scen.map((s) => ({ id: s.id, name: s.name, paper: s.paper, claim: s.claim, pass: s.pass, takeaway: s.takeaway, evidence: s.evidence, runs: s.runs.map((r) => ({ label: r.label, people: r.people ?? 1500, years: r.years, params: r.params ? paramDiff(r.params, pbase) : null, food: r.food ? round(r.food) : null })), numbers: round(s.numbers), seconds: round(s.ms / 1000) })),
 		notCovered: notCovered.map(([id, name, why]) => ({ id, name, why }))
