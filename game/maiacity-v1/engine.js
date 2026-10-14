@@ -108,15 +108,16 @@ export const DEFAULT_SETTINGS = {
 	tentRent: 10,
 	/** the Village COOP to the MaiaCity COOP, for the hex, in maiaMIND */
 	hexRent: 100,
-	/** the Tribe COOP to the Village COOP, for the machines it uses, in the owner's MIND (villageMIND) */
-	pickupRent: 50,
-	powercubeRent: 10,
-	batteryRent: 10,
-	solarRent: 10
+	/** the Tribe COOP to the Village COOP, for the machines it uses, in the owner's MIND (villageMIND): 250 a week in all */
+	pickupRent: 100,
+	powercubeRent: 50,
+	batteryRent: 50,
+	solarRent: 50
 };
 
-/** the rents were a month until 2026-10-14; a game from before starts on the weekly prices */
-export const RENTS_WEEKLY = 1;
+/** the rents were a month until 2026-10-14; a game from before starts on the weekly prices (2: the Tribe COOP pays
+ * the Village COOP 250 a week, Samuel 2026-10-14) */
+export const RENTS_WEEKLY = 2;
 const RENT_SETTINGS = ['homeRent', 'tentRent', 'hexRent', 'pickupRent', 'powercubeRent', 'batteryRent', 'solarRent'];
 
 /** what a COOP rents from another, each with the COOP that pays and the setting of its weekly rent; paid to the COOP

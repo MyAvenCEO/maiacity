@@ -162,16 +162,16 @@ test("Law 5: 20 % of every sale goes at once to the COOP's MIND holders, pro rat
 
 test("the Tribe COOP rents the pickup, powercube, battery pack and solar panel from the Village COOP, a week in villageMIND", () => {
   let s = grown(newGame(T0, { demurrage: 0, homeRent: 0, hexRent: 0, poolShare: 0 }));
-  s.coops.tribe.treasury.VILLAGE = 100;
-  // one pay day: 50 + 10 + 10 + 10; the Tribe COOP is the only villageMIND holder, so the 20 % comes back to it
+  s.coops.tribe.treasury.VILLAGE = 300;
+  // one pay day: 100 + 50 + 50 + 50; the Tribe COOP is the only villageMIND holder, so the 20 % comes back to it
   s = advance(s, T0 + DAY_MS / 4);
-  expect(s.coops.village.treasury.VILLAGE).toBeCloseTo(80 * 0.8, 6);
-  expect(s.coops.tribe.treasury.VILLAGE).toBeCloseTo(100 - 80 * 0.8, 6);
+  expect(s.coops.village.treasury.VILLAGE).toBeCloseTo(250 * 0.8, 6);
+  expect(s.coops.tribe.treasury.VILLAGE).toBeCloseTo(300 - 250 * 0.8, 6);
   expect(ledgerOf(s, "coop:village").filter((e) => e.kind === "rent" && e.to === "coop:village").map((e) => e.note.split(",")[0]).sort()).toEqual(["battery pack rent", "pickup rent", "powercube rent", "solar panel rent"]);
   // with nothing to pay with, each rent is owed on its own: the Tribe COOP's machines, the Village COOP's hex
   let t = grown(newGame(T0, { demurrage: 0, homeRent: 0 }));
   t = advance(t, T0 + DAY_MS / 4);
-  expect(t.coops.tribe.owed).toEqual({ pickup: 50, powercube: 10, battery: 10, solar: 10 });
+  expect(t.coops.tribe.owed).toEqual({ pickup: 100, powercube: 50, battery: 50, solar: 50 });
   expect(t.coops.village.owed).toEqual({ hex: 100 });
 });
 
@@ -184,7 +184,7 @@ test("a game from before the weekly prices takes them, its old monthly rents and
   s.players.A.arrears = 7;
   s.coops.tribe.arrears = 2;
   s = advance(s, T0);
-  expect(s.settings).toMatchObject({ homeRent: 100, tentRent: 10, hexRent: 100, pickupRent: 50, powercubeRent: 10, batteryRent: 10, solarRent: 10 });
+  expect(s.settings).toMatchObject({ homeRent: 100, tentRent: 10, hexRent: 100, pickupRent: 100, powercubeRent: 50, batteryRent: 50, solarRent: 50 });
   expect(s.players.A.arrears).toBe(0);
   expect(s.coops.tribe.arrears).toBe(0);
 });
