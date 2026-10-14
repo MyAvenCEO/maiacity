@@ -2,9 +2,9 @@
 /*
  * PLANTING A TREE — what a newcomer to MaiaCity V1 carries to plant their first tree, and what they leave in the
  * ground: a hiker's backpack (open, its lid thrown back) with a 1 l water bottle and five seed packets in it, the
- * packets one for each of V1's seeds (game/maiacity-v1/engine.js SEEDLINGS), two wooden marker sticks and a patch of
- * dug earth that darkens when it is watered. Each to its real measure (./units.js), standing on the ground at its
- * origin, its front towards +z.
+ * packets one for each of V1's seeds (game/maiacity-v1/engine.js SEEDLINGS), two wooden marker sticks, a plant stake
+ * with a little flag naming the tree, and a patch of dug earth that darkens when it is watered. Each to its real
+ * measure (./units.js), standing on the ground at its origin, its front towards +z.
  */
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -439,6 +439,177 @@ export function markerSticks({ apart = 0.5 } = {}) {
 		s.rotation.set(0.04 * sx, 0, -0.06 * sx);
 		g.add(s);
 	}
+	return g;
+}
+
+/** the plant stake's measures: 1 m of round peeled pine 32 mm thick, its point 9 cm; the flag 10 × 7 cm on its wire */
+export const STAKE = { len: 1, r: 0.016, tip: 0.09, flagW: 0.1, flagH: 0.07 };
+
+const stakeWood = () =>
+	canvasTexture('plant-stake-wood', 128, 1024, (x, r) => {
+		// peeled pine: pale and warm, streaked along its length, a few strips of bark left on, two knots
+		x.fillStyle = '#d6b483';
+		x.fillRect(0, 0, 128, 1024);
+		for (let i = 0; i < 70; i++) {
+			const gx = r() * 128, w = 0.6 + r() * 2.2;
+			x.strokeStyle = r() < 0.5 ? '#b38a57' : '#e6caa0';
+			x.globalAlpha = 0.15 + r() * 0.35;
+			x.lineWidth = w;
+			x.beginPath();
+			x.moveTo(gx, 0);
+			for (let y = 0; y <= 1024; y += 64) x.lineTo(gx + Math.sin(y * 0.01 + i) * 1.5, y);
+			x.stroke();
+		}
+		x.globalAlpha = 1;
+		for (let i = 0; i < 9; i++) {
+			x.fillStyle = r() < 0.5 ? '#6e4c2e' : '#8a6440';
+			x.globalAlpha = 0.55 + r() * 0.35;
+			x.beginPath();
+			x.ellipse(r() * 128, r() * 1024, 2 + r() * 5, 20 + r() * 70, 0, 0, Math.PI * 2);
+			x.fill();
+		}
+		x.globalAlpha = 1;
+		for (const [kx, ky] of [[40, 300], [96, 720]]) {
+			for (let k = 4; k >= 1; k--) {
+				x.fillStyle = k % 2 ? '#8c6238' : '#a8794a';
+				x.beginPath();
+				x.ellipse(kx, ky, k * 2.4, k * 4.2, 0, 0, Math.PI * 2);
+				x.fill();
+			}
+		}
+	});
+const endGrain = () =>
+	canvasTexture('plant-stake-end', 128, 128, (x) => {
+		x.fillStyle = '#e4cba0';
+		x.fillRect(0, 0, 128, 128);
+		for (let k = 1; k < 9; k++) {
+			x.strokeStyle = 'rgba(150,105,60,0.55)';
+			x.lineWidth = 1.5;
+			x.beginPath();
+			x.arc(66, 62, k * 7.5, 0, Math.PI * 2);
+			x.stroke();
+		}
+	});
+
+/** the flag's print, on one side: a sleeve down its hoist, the plant in a frame next to it, the tree's name and what it
+ *  is. `hoistLeft`: the side seen from the front has the wire on its left, the back has it on its right. */
+function drawFlag(x, seed, name, hoistLeft) {
+	const s = SEED_PACKETS[seed] ?? SEED_PACKETS.apple;
+	const W = 500, H = 350;
+	x.clearRect?.(0, 0, W, H);
+	x.fillStyle = '#f6efdc';
+	x.fillRect(0, 0, W, H);
+	const at = (px) => (hoistLeft ? px : W - px); // a distance from the hoist, as a canvas x
+	// the sleeve round the wire and a stitched hem round the free edges
+	x.fillStyle = s.band;
+	x.fillRect(hoistLeft ? 0 : W - 26, 0, 26, H);
+	x.strokeStyle = s.band;
+	x.setLineDash?.([10, 7]);
+	x.lineWidth = 3;
+	x.strokeRect(10, 10, W - 20, H - 20);
+	x.setLineDash?.([]);
+	// the plant in its frame, next to the sleeve
+	const fx = Math.min(at(44), at(254));
+	x.fillStyle = '#fffdf6';
+	x.fillRect(fx, 62, 210, 226);
+	x.lineWidth = 4;
+	x.strokeRect(fx, 62, 210, 226);
+	x.save();
+	x.translate(fx + 10, 80);
+	x.scale(0.86, 0.86);
+	FRUIT[seed in FRUIT ? seed : 'apple'](x);
+	x.restore();
+	// the tree's name, as big as it fits, and the plant under it
+	const cx = (at(268) + at(478)) / 2, text = name || s.label;
+	let size = 66;
+	x.font = `bold ${size}px Georgia, serif`;
+	while (size > 26 && x.measureText(text).width > 200) x.font = `bold ${(size -= 2)}px Georgia, serif`;
+	x.textAlign = 'center';
+	x.fillStyle = '#2a2218';
+	x.fillText(text, cx, name ? 172 : 190);
+	if (name) {
+		x.fillStyle = s.band;
+		x.fillRect(cx - 70, 196, 140, 3);
+		x.font = 'italic 30px Georgia, serif';
+		x.fillStyle = '#5a4c3a';
+		x.fillText(s.label, cx, 240);
+	}
+}
+
+/** A plant stake, as a young tree gets one beside it: 1 m of round peeled pine, axe-pointed, to tie the tree to as it
+ *  grows, pushed in beside the seed. Near its top a little waxed-cloth flag on a wire, printed on both sides with the
+ *  tree's name and a picture of what it is (`seed`: one of SEED_PACKETS), flying to its left (+x). Its origin is its
+ *  point (push it in to the depth you want). `userData.setName(name)` reprints the flag; `userData.flag` is the cloth,
+ *  its pivot on the wire (turn it on y to swing it in the wind). */
+export function plantStake({ name = '', seed = 'apple' } = {}) {
+	const g = new THREE.Group();
+	g.name = 'plant-stake';
+	const { len, r, tip, flagW, flagH } = STAKE;
+	const wood = new THREE.MeshStandardMaterial({ map: stakeWood(), roughness: 0.82 });
+	const cut = new THREE.MeshStandardMaterial({ color: '#e3c898', roughness: 0.85, flatShading: true });
+	// the axe-cut point, the round stake, its top chamfered and its end grain
+	const point = new THREE.Mesh(new THREE.ConeGeometry(r, tip, 7, 1).rotateX(Math.PI).translate(0, tip / 2, 0), cut);
+	const top = len - 0.006;
+	const pole = new THREE.Mesh(new THREE.CylinderGeometry(r, r, top - tip, 16, 1).translate(0, (top + tip) / 2, 0), wood);
+	const bevel = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.8, r, 0.006, 16, 1).translate(0, len - 0.003, 0), cut);
+	const end = new THREE.Mesh(new THREE.CircleGeometry(r * 0.8, 16).rotateX(-Math.PI / 2).translate(0, len, 0), new THREE.MeshStandardMaterial({ map: endGrain(), roughness: 0.9 }));
+	g.add(point, pole, bevel, end);
+	// the flag's wire, tied to the stake's side with two lashings of twine, standing up past its top
+	const wire = std('#a7abae', 0.4, { metalness: 0.8 })();
+	const wx = r + 0.0016, w0 = len - 0.13, w1 = len + 0.125;
+	g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.0013, 0.0013, w1 - w0, 6).translate(wx, (w0 + w1) / 2, 0), wire));
+	const knob = new THREE.Mesh(new THREE.SphereGeometry(0.0022, 8, 6), wire);
+	knob.position.set(wx, w1, 0);
+	g.add(knob);
+	const twine = std('#cdb38a', 0.95)();
+	for (const ly of [len - 0.03, len - 0.105])
+		for (let k = 0; k < 4; k++) {
+			const wrap = new THREE.Mesh(new THREE.TorusGeometry(r + 0.0012, 0.0011, 5, 24), twine);
+			wrap.rotation.x = Math.PI / 2;
+			wrap.position.set(0.0008, ly + k * 0.0024, 0);
+			wrap.scale.set(1.08, 1, 1);
+			g.add(wrap);
+		}
+	// the flag: a sleeve round the wire, the cloth flying from it with a soft wave, printed front and back
+	const flag = new THREE.Group();
+	flag.position.set(wx, w1 - 0.006 - flagH / 2, 0);
+	g.add(flag);
+	const print = (hoistLeft) => {
+		const c = document.createElement('canvas');
+		c.width = 500;
+		c.height = 350;
+		const t = new THREE.CanvasTexture(c);
+		t.colorSpace = THREE.SRGBColorSpace;
+		t.anisotropy = 8;
+		if (!hoistLeft) {
+			t.wrapS = THREE.RepeatWrapping;
+			t.repeat.x = -1;
+			t.offset.x = 1;
+		}
+		return { c, t, hoistLeft };
+	};
+	const sides = [print(true), print(false)];
+	const cloth = new THREE.PlaneGeometry(flagW, flagH, 20, 4).translate(flagW / 2 + 0.002, 0, 0);
+	const p = cloth.attributes.position;
+	for (let i = 0; i < p.count; i++) {
+		const u = (p.getX(i) - 0.002) / flagW;
+		p.setZ(i, 0.007 * u * Math.sin(u * Math.PI * 2.2));
+		p.setY(i, p.getY(i) - 0.005 * u * u);
+	}
+	cloth.computeVertexNormals();
+	const faces = sides.map(({ t }, i) => new THREE.Mesh(cloth, new THREE.MeshStandardMaterial({ map: t, roughness: 0.55, side: i ? THREE.BackSide : THREE.FrontSide })));
+	const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.0028, 0.0028, flagH, 10), std((SEED_PACKETS[seed] ?? SEED_PACKETS.apple).band, 0.6)());
+	flag.add(...faces, sleeve);
+	const setName = (n) => {
+		for (const { c, t, hoistLeft } of sides) {
+			drawFlag(c.getContext('2d'), seed, n, hoistLeft);
+			t.needsUpdate = true;
+		}
+		g.userData.name = n;
+	};
+	g.traverse((o) => o.isMesh && (o.castShadow = true));
+	g.userData = { seed, flag, setName };
+	setName(name);
 	return g;
 }
 
