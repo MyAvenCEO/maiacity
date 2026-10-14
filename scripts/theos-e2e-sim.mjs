@@ -455,6 +455,9 @@ function init(sc) {
 		S.tenAw = new Float64Array(10 * NHH);
 		S.tenHs = new Float64Array(10 * NHH);
 		S.tenAs = new Float64Array(10 * NHH);
+		// (the verdict's trace: what each tenth holds, R a person, over the year)
+		S.tenHW = new Float64Array(10);
+		S.tenAW = new Float64Array(10);
 		S.spendH = new Float64Array(Nmax); // what each person bought this year, in HEARTS (θ, the share of holdings spent)
 		S.cityCoverMin = Infinity; // the City COOP's reserve at its lowest from day 8, in days of its running costs
 		// trace = 1 (audit B1): each person's year in HEARTS (income by source, spending, melt) and real consumption by good
@@ -2197,7 +2200,7 @@ function world(S, dt, B) {
 			co.prodF = 1 - (0.3 + 0.2 * (crn ? a : rnd(S)));
 			co.shockUntil = S.t + day + 60 + 180 * (crn ? b : rnd(S));
 			B.shockN++;
-			S.events.push({ t: S.t, type: 'shock', k, name: NAMES[k], product: sp.product, note: `−${Math.round((1 - co.prodF) * 100)} % capacity for ${Math.round(co.shockUntil - S.t)} days` });
+			S.events.push({ t: S.t, type: 'shock', k, name: NAMES[k], product: sp.product, until: co.shockUntil, cut: 1 - co.prodF, note: `−${Math.round((1 - co.prodF) * 100)} % capacity for ${Math.round(co.shockUntil - S.t)} days` });
 			S.watch.push(co.shockUntil + 30);
 		}
 		// demand shifts between rivals: each seller's taste shifter drifts (mean-reverting over about 5 years)
@@ -2281,16 +2284,18 @@ function tenthStep(S, dt) {
 	}
 	const byH = Array.from({ length: N }, (_, i) => i).sort((a, b) => W[a] - W[b] || a - b);
 	const byA = Array.from({ length: N }, (_, i) => i).sort((a, b) => S.workH[a] - S.workH[b] || a - b);
-	for (const [ord, acc, accW, accS] of [[byH, S.tenH, S.tenHw, S.tenHs], [byA, S.tenA, S.tenAw, S.tenAs]])
+	for (const [ord, acc, accW, accS, accH] of [[byH, S.tenH, S.tenHw, S.tenHs, S.tenHW], [byA, S.tenA, S.tenAw, S.tenAs, S.tenAW]])
 		for (let d = 0; d < 10; d++) {
 			const a = Math.floor((d * N) / 10), b = Math.floor(((d + 1) * N) / 10), n = Math.max(1, b - a);
-			for (let x = a; x < b; x++)
+			for (let x = a; x < b; x++) {
+				accH[d] += (W[ord[x]] * dt) / n;
 				for (let g = 0; g < NHH; g++) {
 					const j = ord[x] * NHH + g;
 					acc[d * NHH + g] += (S.cons[j] * dt) / n;
 					accW[d * NHH + g] += (S.wantC[j] * dt) / n;
 					accS[d * NHH + g] += (S.spendC[j] * dt) / n;
 				}
+			}
 		}
 	S.tenDays += dt;
 }
@@ -2861,7 +2866,8 @@ function dynYear(S, B, W, split, yk) {
 	// canon #19's yardstick: each tenth's consumption of every good this year, real units a person a day (from day 8)
 	const td = Math.max(1e-9, S.tenDays), tenH = Array.from(S.tenH, (x) => x / td), tenA = Array.from(S.tenA, (x) => x / td);
 	const tenHw = Array.from(S.tenHw, (x) => x / td), tenAw = Array.from(S.tenAw, (x) => x / td), tenHs = Array.from(S.tenHs, (x) => x / td), tenAs = Array.from(S.tenAs, (x) => x / td);
-	S.tenH.fill(0), S.tenA.fill(0), S.tenHw.fill(0), S.tenAw.fill(0), S.tenHs.fill(0), S.tenAs.fill(0), (S.tenDays = 0);
+	const tenHW = Array.from(S.tenHW, (x) => x / td), tenAW = Array.from(S.tenAW, (x) => x / td);
+	S.tenH.fill(0), S.tenA.fill(0), S.tenHw.fill(0), S.tenAw.fill(0), S.tenHs.fill(0), S.tenAs.fill(0), S.tenHW.fill(0), S.tenAW.fill(0), (S.tenDays = 0);
 	// the strict test's bound (audit point 11): Law 5 pays 20 % of all sales, so a person's dividends ÷ bundle is at most
 	// 0.2 × (their share of the MIND Law 5 pays on) × all sales ÷ their basics spend. The zero-Aven group's shares, at the
 	// year's end
@@ -2886,7 +2892,7 @@ function dynYear(S, B, W, split, yk) {
 		dec, realMean: real.reduce((a, b) => a + b, 0) / N, giniReal: gini(real, N), realMin: sorted[0], newPd: B.newPd, newS: B.newS,
 		basicR: cpi, basicMind: cpi !== null ? cpi / mindR : null, mindR,
 		failN: B.failN, exitN: B.exitN, foundN: B.foundN, shockN: B.shockN, rotR: B.rotR, meltCnt: B.meltCnt, burned: B.burned,
-		tenH, tenA, tenHw, tenAw, tenHs, tenAs, rrR: B.rrR, flips: Array.from(B.flips), landBind: Array.from(B.landBind), sgLate: B.sgLate.slice(), cityDry: B.cityDry, cityWage: B.cityWage, salesR: B.payR, rentR: B.rentR, zDivR: B.zDivR,
+		tenH, tenA, tenHw, tenAw, tenHs, tenAs, tenHW, tenAW, rrR: B.rrR, flips: Array.from(B.flips), landBind: Array.from(B.landBind), sgLate: B.sgLate.slice(), cityDry: B.cityDry, cityWage: B.cityWage, salesR: B.payR, rentR: B.rentR, zDivR: B.zDivR,
 		zShareMed: zs.length ? zs[zs.length >> 1] : null, zShareMin: zs.length ? zs[0] : null, lvr, tasteG: Array.from(S.tasteG),
 		trace, toCityR: B.toCityR, copyN: B.copyN, store: (() => {
 			let st = 0, need = 0;
@@ -3855,7 +3861,7 @@ const tasteShare = (tg, row, g) => {
 function p3Tenths(S) {
 	const Y = S.Y.filter((y) => y.dyn && y.dyn.tenH && y.t - (y.year - 1) * 365 >= 365 - 1e-6);
 	const failures = [], excused = [], basicsFail = [], riseFail = [], failed = [], failedNoTaste = [], failedBasket = [], failedTasteAdj = [], failedTasteAdjNoCap = [], tenths = [];
-	const fails = S.events.filter((e) => e.type === 'fail');
+	const fails = S.events.filter((e) => e.type === 'fail'), shocks = S.events.filter((e) => e.type === 'shock');
 	const causes = ['taste', 'income', 'price', 'supply', 'other'], drops = { n: 0, by: {}, byNoTaste: {}, failNear: 0, failNearBy: {}, nNoTaste: 0, byGood: {}, partsNoTaste: {} };
 	for (const c of causes) (drops.by[c] = 0), (drops.byNoTaste[c] = 0), (drops.failNearBy[c] = 0), (drops.partsNoTaste[c] = 0);
 	// the verdict's falls (each a tenth, an extra and a year whose fall still counts once taste and the cap are excused),
@@ -3867,6 +3873,7 @@ function p3Tenths(S) {
 			const sl = (y, k) => (y.dyn[k] ? y.dyn[k].slice(x * NHH, (x + 1) * NHH) : null);
 			const rows = Y.map((y) => sl(y, key)), want = Y.map((y) => sl(y, key + 'w')), spend = Y.map((y) => sl(y, key + 's'));
 			const yr = Y.map((y) => y.year), tg = Y.map((y) => y.dyn.tasteG);
+			const held = Y.map((y) => (y.dyn[key + 'W'] ? y.dyn[key + 'W'][x] : null)); // what the tenth holds, R a person
 			let ok = rows.length > 0, okNT = ok, okT = ok, okT0 = ok;
 			rows.forEach((r, i) => {
 				for (const g of P3_BASIC) if (r[g] < BASIC[g] * 0.99) (ok = okNT = okT = okT0 = false), basicsFail.push({ by, tenth: x + 1, good: PNAME[g], year: yr[i], v: r[g], need: BASIC[g] });
@@ -3898,7 +3905,7 @@ function p3Tenths(S) {
 				const hasW = zwa > 0 && zwb > 0;
 				const cS = hasW ? Math.log(zb / zwb) - Math.log(za / zwa) : 0;
 				const W = hasW ? Math.log(zwb / zwa) : tot;
-				let cT = 0, cP = 0, cI = 0;
+				let cT = 0, cP = 0, cI = 0, nb = null, pi = null;
 				if (!(hasW && wa >= SAT[g] * 0.98 && wb2 >= SAT[g] * 0.98)) {
 					const sa = tasteShare(tg[ia], rows[ia], g), sb = tasteShare(tg[ib], rows[ib], g);
 					cT = sa > 0 && sb > 0 ? Math.log(sb / sa) : 0;
@@ -3911,14 +3918,27 @@ function p3Tenths(S) {
 					const pga = price(ia, g), pgb = price(ib, g), Xa = budget(ia, g), Xb = budget(ib, g);
 					cP = pga !== null && pgb !== null ? -(Math.log(pgb / pga) - lPI) : 0;
 					cI = Xa !== null && Xb !== null ? Math.log(Xb / Xa) - lPI : 0;
+					// (the income part's two halves: the budget in R, and the tenth's own price index)
+					nb = Xa !== null && Xb !== null ? Math.log(Xb / Xa) : null;
+					pi = lPI;
 				}
 				// (vpart, for the verdict's falls: as the verdict, a rise in the taste share asks for no more, so only a fall of
 				// it is taken out; the rest of the change in what the tenth asked for is income, price or the rest)
 				const cTv = Math.min(0, cT);
-				return { part: { taste: cT, income: cI, price: cP, supply: cS, other: W - cT - cP - cI }, vpart: { taste: cTv, income: cI, price: cP, supply: cS, other: W - cTv - cP - cI }, atSat: hasW && wa >= SAT[g] * 0.98 };
+				return { part: { taste: cT, income: cI, price: cP, supply: cS, other: W - cT - cP - cI }, vpart: { taste: cTv, income: cI, price: cP, supply: cS, other: W - cTv - cP - cI }, nb, pi, atSat: hasW && wa >= SAT[g] * 0.98 };
 			};
 			const r3 = (v) => (v === null || v === undefined ? null : Math.round(v * 1000) / 1000);
 			const failNear = (g, ia, ib) => fails.some((e) => e.product === g && yrOf(e.t) > yr[ia] && yrOf(e.t) <= yr[ib]);
+			// days of year y a capacity shock held a seller of good g back (summed over its sellers), and the deepest cut
+			const shockIn = (g, y) => {
+				let days = 0, cut = 0;
+				for (const e of shocks) {
+					if (e.product !== g) continue;
+					const d = Math.min(e.until, y * 365) - Math.max(e.t, (y - 1) * 365);
+					if (d > 0) (days += d), (cut = Math.max(cut, e.cut));
+				}
+				return { days: Math.round(days), cut: r3(cut) };
+			};
 			for (const g of P3_EXTRA)
 				for (let b = 1; b < rows.length; b++) {
 					let wb = null, wt = null;
@@ -3945,7 +3965,7 @@ function p3Tenths(S) {
 						const sp = split(wt.ia, b, g), land = Y[b].dyn.landBind ? Y[b].dyn.landBind[g] : 0;
 						const cause = sp ? vCauses.reduce((m, c) => (sp.vpart[c] < sp.vpart[m] ? c : m), 'income') : 'other';
 						const askA = want[wt.ia] ? want[wt.ia][g] : null, askB = want[b] ? want[b][g] : null;
-						const rv = { by, tenth: x + 1, good: PNAME[g], from: yr[wt.ia], to: yr[b], fall: r3(wt.fall), fallT: r3(wt.fT), got: [r3(rows[wt.ia][g]), r3(rows[b][g])], asked: [r3(askA), r3(askB)], cause, parts: sp ? Object.fromEntries(causes.map((c) => [c, r3(sp.vpart[c])])) : null, land: Math.round(land), failNear: failNear(g, wt.ia, b) };
+						const rv = { by, tenth: x + 1, good: PNAME[g], from: yr[wt.ia], to: yr[b], fall: r3(wt.fall), fallT: r3(wt.fT), got: [r3(rows[wt.ia][g]), r3(rows[b][g])], asked: [r3(askA), r3(askB)], cause, parts: sp ? Object.fromEntries(causes.map((c) => [c, r3(sp.vpart[c])])) : null, land: Math.round(land), failNear: failNear(g, wt.ia, b), shock: shockIn(g, yr[b]), budgetR: sp ? r3(sp.nb) : null, priceIdx: sp ? r3(sp.pi) : null, held: [r3(held[wt.ia]), r3(held[b])] };
 						vDrops.n++, vDrops.by[cause]++, (vDrops.byGood[PNAME[g]] = (vDrops.byGood[PNAME[g]] || 0) + 1), vDrops.byBy[by]++;
 						if (askB !== null && rows[b][g] < askB * 0.98) vDrops.gotLess++;
 						if (land >= 365 / 2) vDrops.landBound++;
