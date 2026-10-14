@@ -143,7 +143,7 @@ export const convergenceSeries = (r = RATE, years = 60) => {
 	].map((s) => ({ ...s, points: range(0, years, 240).map((t) => [t, balanceAt(s.b0, t, r)]), star }));
 };
 
-/** Figure 8: what a holder keeps of 1,000 HEARTS invested in year 1 of the main run, valued in HEARTS, against the
+/** Figure 14: what a holder keeps of 1,000 HEARTS invested in year 1 of the main run, valued in HEARTS, against the
  *  same HEARTS left idle. Law 4 gives the investor INVESTOR_SHARE of a MIND for each HEART; each new MIND is worth about
  *  1 HEART (Section 6.3). The holding then grows at its MIND's compounded return of H5 (price change and Law 5 dividends,
  *  kept as more of the same MIND, before the melt) and melts at the rate r. Idle HEARTS only melt. The x axis is the
@@ -173,7 +173,7 @@ export const lvrSeries = (c = LVR_CASES) =>
 	].map((s) => ({ ...s, points: range(2, POOL.max, POOL.max - 2).map((n) => [n, basketLvr(n, s.sigma, s.rho) * 100]) }));
 
 /**
- * Figure 9: three cooperatives in one sector, replicator dynamics. Each COOP turns a HEART into f units of utility;
+ * Figure 8: three cooperatives in one sector, replicator dynamics. Each COOP turns a HEART into f units of utility;
  * avens route a share k of the gap to the mean every month. Bureaucracy (B) loses efficiency while it argues, capture
  * (A) slowly turns extractive, C keeps improving. Shares of the sector's flow over ten years.
  */
@@ -205,7 +205,7 @@ export function selectionSeries(years = 10, k = 0.25, learn = 0.05) {
 	];
 }
 
-/** Figure 9 in numbers: the year in which C first leads the sector, and C's share (%) after `at` years */
+/** Figure 8 in numbers: the year in which C first leads the sector, and C's share (%) after `at` years */
 export function selectionStats(learn = 0.05, at = 5, years = 30) {
 	const [A, B, C] = selectionSeries(years, 0.25, learn).map((s) => s.points);
 	const i = C.findIndex(([, c], j) => j > 0 && c > A[j][1] && c > B[j][1]);
@@ -215,7 +215,7 @@ export function selectionStats(learn = 0.05, at = 5, years = 30) {
 
 // ── Fair ownership (Sections 9.2 and 11.2.5) ─────────────────────────────────────────────────────────────────────────────────────
 
-/** Germany's wealth Gini today (Bundesbank PHF 2023), the start and the capitalism baseline of Figure 10 */
+/** Germany's wealth Gini today (Bundesbank PHF 2023), the start and the capitalism baseline of Figure 9 */
 export const GINI_DE = 0.72;
 
 /** the MIND a person owns at rest: half of their own HEARTS a year, against the melt */
@@ -272,7 +272,7 @@ export const giniOf = (w) => {
 	return s / (n * tot);
 };
 
-/** Figure 10: ownership inequality over 100 years, from Germany's spread today, under theOS with three spreads of returns */
+/** Figure 9: ownership inequality over 100 years, from Germany's spread today, under theOS with three spreads of returns */
 export function giniSeries(years = 100, n = 1500, dt = 0.5) {
 	const r = RATE, a = (UIA_DAY * 365) / 2, rest = a / r;
 	const out = [{ id: 'cap', label: 'capitalism today', dash: '5 4', points: [[0, GINI_DE], [years, GINI_DE]] }];
@@ -295,7 +295,7 @@ export function giniSeries(years = 100, n = 1500, dt = 0.5) {
 	return out;
 }
 
-/** Figure 11: the resting Gini against the spread of people's returns, for three demurrage rates */
+/** Figure 10: the resting Gini against the spread of people's returns, for three demurrage rates */
 export const dialSeries = (rates = [0.03, RATE, 0.1]) =>
 	rates.map((r) => ({
 		id: `d${r}`,
@@ -833,7 +833,7 @@ export const flowCheck = (place) => flowNet(place) + (place.moves || 0) - (place
 /** one source of a person's income, as a share of all that flows into people's wallets */
 export const incomeShare = (k, rt = ROUND_TRIP) => rt.people.in[k] / flowSum(rt.people.in);
 
-/** a flow as a share of a person's income (people's inflow), for Figure 13's arrows */
+/** a flow as a share of a person's income (people's inflow), for Figure 12's arrows */
 export const ofIncome = (v, rt = ROUND_TRIP) => v / flowSum(rt.people.in);
 
 /** the share of income that people spend if they spend the share θ of what they hold a year: θ / (θ + r) */
@@ -900,7 +900,7 @@ export function poorestDip(s = LIVING.d1) {
 /** a value of a yearly LIVING series in year y */
 export const livingAt = (key, y) => LIVING[key][y - 1];
 
-/** Figure 14: real consumption a day of the poorest, the middle and the richest tenth, every year */
+/** Figure 13: real consumption a day of the poorest, the middle and the richest tenth, every year */
 export const livingSeries = () =>
 	[
 		{ id: 'd10', label: 'Richest tenth' },

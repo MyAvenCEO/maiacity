@@ -1,6 +1,6 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 13: MIND goes round. New MIND (24 HEARTS a day convert) reaches people, treasuries and the pools (0.5 to the
+	// Figure 12: MIND goes round. New MIND (24 HEARTS a day convert) reaches people, treasuries and the pools (0.5 to the
 	// investor, 0.4 to the treasury, 0.1 to the pool; the COOP adds the pools' part to its baskets); treasuries pay people
 	// for their Avens' work proposals; people spend at the COOPs, so the MIND comes back. At each sale, Law 5's share branches
 	// off at once to the holders, and only the rest reaches the treasury. A little melts in each place. Arrow widths are shares of a person's income, and gold MIND coins travel along each arrow at a

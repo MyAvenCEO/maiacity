@@ -1,6 +1,6 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Figure 12: the loop of theOS, live. People on the outer ring send their daily HEARTS (terracotta) into the
+	// Figure 11: the loop of theOS, live. People on the outer ring send their daily HEARTS (terracotta) into the
 	// cooperatives in the middle; every HEART that lands is invested and creates one MIND of the COOP: 0.5 to the investor,
 	// 0.4 to the treasury, 0.1 to the pool. The investor's half flies back to its investor (gold), the treasury's part sinks
 	// into the COOP's treasury (its ring grows); the pools are not drawn. Everything shrinks a little as it travels:

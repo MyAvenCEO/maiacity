@@ -35,9 +35,9 @@
 	const C = ['#c8744f', '#2f6fbf', '#1f7a52', '#8a5fb0'];
 
 	// one map for the numbers of figures, tables and equations, so that a new one never leaves a stale reference behind
-	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, pools: 6, lvr: 7, holder: 8, selection: 9, gini: 10, dial: 11, machine: 12, cycle: 13, deciles: 14 };
-	const TAB = { speeds: 1, binds: 2, rivals: 3, parts: 4, conditions: 5, twoWorlds: 6, roundTrip: 7, prices: 8, prop3: 9, prop2: 10, variations: 11, cityParts: 12, testCity: 13, scenarios: 14, notation: 15, threats: 16, sameShock: 17, physics: 18, kinds: 19, hyps: 20, versions: 21, rounds: 22, progress: 23 };
-	const EQ = { melt: 1, half: 2, money: 3, rtm: 4, pool: 5, lvr: 6, unit: 7, select: 8, level: 9, gini: 10, normal: 11, strict: 12, abundance: 13, share: 14, stock: 15 };
+	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, pools: 6, lvr: 7, selection: 8, gini: 9, dial: 10, machine: 11, cycle: 12, deciles: 13, holder: 14 };
+	const TAB = { speeds: 1, binds: 2, parts: 3, kinds: 4, hyps: 5, conditions: 6, twoWorlds: 7, versions: 8, roundTrip: 9, prices: 10, prop3: 11, rivals: 12, prop2: 13, variations: 14, cityParts: 15, rounds: 16, testCity: 17, scenarios: 18, progress: 19, notation: 20, threats: 21, sameShock: 22, physics: 23 };
+	const EQ = { melt: 1, half: 2, money: 3, rtm: 4, pool: 5, lvr: 6, unit: 7, select: 8, level: 9, gini: 10, normal: 11, share: 12, strict: 13, stock: 14, abundance: 15 };
 
 	// the slider under Figure 5 sets the rate, so a reader can feel what the 7 % does
 	let rate = $state(RATE);
@@ -87,6 +87,12 @@
 		return `passed ${pp(ok)} and failed ${pp(bad)}`;
 	};
 	const HYP = HYPOTHESES;
+	// the hypotheses counted by status, in words: e.g. '2 proven', '6 mixed'
+	const statusCounts = () =>
+		['proven', 'supported', 'mixed', 'failing', 'open']
+			.map((s) => [s, Object.values(HYP).filter((h) => h.status === s).length])
+			.filter(([, n]) => n)
+			.map(([s, n]) => `${n} ${s}`);
 	const goods = COMPETITION.map((g) => ({ ...g, name: g.good[0].toUpperCase() + g.good.slice(1) }));
 	const energyGood = COMPETITION.find((g) => g.good === 'energy');
 	const foodGood = COMPETITION.find((g) => g.good === 'food');
@@ -301,33 +307,30 @@
 			money.
 		</p>
 		<p>
-			Our central result is Proposition 3. Take a city that can make enough, whose output per person grows, and whose
-			sellers compete. Its residents invest for a founding week before the first sale, so the pools hold MIND on
-			opening day. Then, from the end of the founding, no one starves, and no one has to work to survive. And the real consumption of every tenth of
-			the people is higher at every ten-year mark than ten years before. We check it in one simulation of
-			{SIM.people} people over {SIM.years} years, with free prices, rival COOPs, foundings, failures and shocks. Parts 1
-			and 2 are checked for every person at every step, and part 3 for every tenth. People whose Avens deliver nothing
-			live from what they own: the ownership that each day's investing creates, and its dividends. The simulation
-			assumes that productivity grows about
-			{pc(SIM.prodGrowth)} a year in each COOP, and it has no energy limit yet. Under that assumption, the poorest tenth
-			consumed {fmt(growth('d1'))} times as much in year {SIM.years} as in year 1. {cap(SIM_NAMES.testCity)} must check part 3
-			with growth that only surplus energy pays for.
+			The paper separates what theOS is from what we expect it to achieve. Part II gives its rules, the policies that
+			the city sets, and its concepts. Part III states what it should achieve as hypotheses, each with a status that
+			the evidence sets. The central one is Proposition 3. Take a city that can make enough, whose output per person
+			grows, and whose sellers compete. Then, from the end of the founding, when every person holds MIND, no one
+			starves, and no one has to work to survive. And the real consumption of every tenth of the people is higher at
+			every ten-year mark than ten years before. People whose Avens deliver nothing are meant to live from what they
+			own: the ownership that each day's investing creates, and its dividends.
 		</p>
 		<p>
-			We also report what fails. In the main run, all three parts failed. {cap(inYears(shortYears))}, after a capacity
-			shock, people went short of {worstGoods}, owner-only people too. The poorest tenth consumed less {fellAt}. On
-			one seed, {noneOr(allPass())} of {LADDER.length} runs passed all three checks; on {SEEDS.n} seeds, the main run
-			passed on {SN.pass}. The lasting return on holdings stayed above the melt on {SEEDS.n - SN.below} of the
-			{SEEDS.n} seeds, so nothing bounded how unequal ownership could grow. Only a lower share for Law 5 kept it below
-			the melt, and Law 5 stays at {pc(DIVIDEND_SHARE)}. One seed is one random history. An older rule gave the pools {fmt(OLD_POOL_SHARE, 2)} of each HEART. We
-			ran both rules on the same random shocks, on {SS.n} seeds. Ours gave fewer shortages on {ST.short.better} of
-			them and more on {ST.short.worse}. When a COOP fails, the City COOP now scraps
-			its plant if the plant stands idle. We propose a fix for each other failure, but none is tested yet.
+			Part IV tests the hypotheses in two simulations, checked for every person: {SIM_NAMES.model}, with
+			{SIM.people} people over {SIM.years} years, and {SIM_NAMES.testCity}, a village of {fmt(TC.people)} residents
+			with land, energy and a euro border. Each new version and each new round should come closer. The main run of
+			{SIM_NAMES.model} {checkWords(V('main'))} of Proposition 3; on {SEEDS.n} seeds, all three held on
+			{SN.pass}, and the lasting return on holdings stayed below the melt on {SN.below}. In
+			{SIM_NAMES.round(TC.round)}, part 1 held on {holdsOn(TC.p1)} of {TC.seeds.length} base seeds, the normal test on
+			{holdsOn(TC.p2normal)} and part 3 on {holdsOn(TC.p3.failing)}, and its exports
+			{TC.bank.repaid ? 'repaid' : 'did not repay'} the euros the village owed outside. The
+			{Object.keys(HYP).length} hypotheses stand at {list(statusCounts())}, and Proposition 3 is {HYP.H3.status}. {cap(SIM_NAMES.model)}
+			assumes that productivity grows about {pc(SIM.prodGrowth)} a year in each COOP, and it has no energy limit yet.
+			We propose a fix for each failure, and Section 11.5 lists the next simulations.
 		</p>
 		<p>
-			We will prove theOS first in a game, then in the real city. First comes a test city, where simulated residents
-			live under its rules and we can measure and change every rule. {cap(SIM_NAMES.testCity)} checks Proposition 3 for every person on every
-			day. Then the rules that survive become the economy of maiaCITY, the city we are building.
+			We will prove theOS first in a game, then in the real city. The rules that survive {SIM_NAMES.testCity} become
+			the economy of maiaCITY, the city we are building. Part V names the limits and the open problems.
 		</p>
 		<p class="keywords">
 			<strong>Keywords:</strong> demurrage · personal currencies · universal dividend · Relative Theory of Money · post-labour economics ·
@@ -1768,7 +1771,7 @@
 					<tr><th>Kind</th><th>Name</th><th>Where</th><th>Who changes it</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>Rule</td><td>Laws 1 to 5</td><td>Section 4</td><td>Nobody: the laws cannot change</td></tr>
+					<tr><td>Rule</td><td>Laws 1 to 5</td><td>Section 4</td><td>Nobody inside the protocol; only a new protocol (Appendix F)</td></tr>
 					<tr><td>Rule</td><td>The melt, {pc(RATE)} a year</td><td>Section 5.1</td><td>A new version of the protocol (Appendix F)</td></tr>
 					<tr><td>Rule</td><td>The payout rule</td><td>Section 4</td><td>A new version of the protocol</td></tr>
 					<tr><td>Rule</td><td>The pools and their LP tokens</td><td>Section 6</td><td>A new version of the protocol</td></tr>
@@ -2428,17 +2431,17 @@
 		</p>
 		<div class="table-wrap">
 			<table class="narrow">
-				<caption><strong>Table {TAB.prop3}.</strong> Proposition 3 in the simulation. Parts 1 and 2 are checked for every person at every step: daily in year 1, weekly after, each week counted as seven person-days. Part 3 is checked for every tenth.</caption>
+				<caption><strong>Table {TAB.prop3}.</strong> Proposition 3 in the main run of {SIM_NAMES.model}. Parts 1 and 2 are checked for every person at every step: daily in year 1, weekly after, each week counted as seven person-days. Part 3 is checked for every tenth.</caption>
 				<thead>
 					<tr><th>Part</th><th>What we checked</th><th>Result</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>1. No one starves</td><td>Every person-day from day {PROOF.fromDay}</td><td>Not met: {fmt(PROOF.short)} of {fmt(PROOF.personDays)} below {pc(BASIC_BUNDLE.tolerance)}, {inYears(shortYears)}; the worst person-day had {pc(PROOF.worst)}, in year {PROOF.worstYear}</td></tr>
+					<tr><td>1. No one starves</td><td>Every person-day from day {PROOF.fromDay}</td><td>{PROOF.short ? 'Not met' : 'Met'}: {fmt(PROOF.short)} of {fmt(PROOF.personDays)} below {pc(BASIC_BUNDLE.tolerance)}, {inYears(shortYears)}; the worst person-day had {pc(PROOF.worst)}, in year {PROOF.worstYear}</td></tr>
 					<tr><td>1, after shocks</td><td>The {SIM.shockAfterDays} days after each of {PROOF.shocks} shocks</td><td>{fmt(PROOF.shockShort)} of {fmt(PROOF.shockPersonDays)} short; the worst had {pc(PROOF.shockWorst)}</td></tr>
 					<tr><td>1, after ends</td><td>The {SIM.endAfterDays} days after {PROOF.failures} failures and {PROOF.exits} exits</td><td>{fmt(PROOF.endedShort)} of {fmt(PROOF.endedPersonDays)} short; the worst had {pc(PROOF.endedWorst)}</td></tr>
-					<tr><td>2. Normal test</td><td>Every owner-only person, every day from day {PROOF.fromDay}</td><td>Not met: {fmt(PROOF.normal.short)} owner-only person-days were short, the worst with {pc(PROOF.normal.worst)}, when the basics themselves ran short. No holding ran out: the lowest was {fmt(PROOF.normal.lowestHolding)} HEARTS in year {PROOF.normal.lowestYear}, about {fmt(holdingLivingDays())} days of living, or {fmt(holdingCoverYears())} years of basics with nothing flowing in</td></tr>
+					<tr><td>2. Normal test</td><td>Every owner-only person, every day from day {PROOF.fromDay}</td><td>{V('main').checks[1] ? 'Met' : 'Not met'}: {fmt(PROOF.normal.short)} owner-only person-days were short, the worst with {pc(PROOF.normal.worst)}, when the basics themselves ran short. No holding ran out: the lowest was {fmt(PROOF.normal.lowestHolding)} HEARTS in year {PROOF.normal.lowestYear}, about {fmt(holdingLivingDays())} days of living, or {fmt(holdingCoverYears())} years of basics with nothing flowing in</td></tr>
 					<tr><td>Strict test (not claimed)</td><td>Dividends alone, for every owner-only person</td><td>Missed on {pc(1 - strictEarly.share)} of their person-days in year {strictEarly.year}, and on up to {pc(1 - strictLater.share)} in a later year until year {PROOF.strict.lastShortYear} (year {strictLater.year}); after year 10, on {pc(1 - PROOF.strict.shareAfter10, 2)}, all in years {PROOF.strict.lateMiss.from} to {PROOF.strict.lateMiss.to}; in year {SIM.years}, dividends alone covered only {pc(PROOF.strict.lateMissEnd)} of their person-days, and the worst day paid {fmt(PROOF.strict.endRatio, 2)} times the bundle</td></tr>
-					<tr><td>3. Living standards rise</td><td>Real consumption of every tenth, at every ten-year mark</td><td>Not met: the poorest tenth fell {markFallWords}, and every ten-year window that starts in years {fallStarts} ends lower for them. Poorest {fmt(DECILES.d1[0], 1)} → {fmt(DECILES.d1.at(-1), 1)} HEARTS a day at day-1 prices (×{fmt(growth('d1'))}); middle ×{fmt(growth('d5'))}; richest ×{fmt(growth('d10'))}</td></tr>
+					<tr><td>3. Living standards rise</td><td>Real consumption of every tenth, at every ten-year mark</td><td>{V('main').checks[2] ? 'Met' : 'Not met'}: the poorest tenth fell {markFallWords}, and every ten-year window that starts in years {fallStarts} ends lower for them. Poorest {fmt(DECILES.d1[0], 1)} → {fmt(DECILES.d1.at(-1), 1)} HEARTS a day at day-1 prices (×{fmt(growth('d1'))}); middle ×{fmt(growth('d5'))}; richest ×{fmt(growth('d10'))}</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -2459,7 +2462,7 @@
 		<p>
 			Every tenth gains over the whole run, but not alike. The Gini index of consumption grew from
 			{fmt(DECILES.gini[0], 2)} to {fmt(DECILES.gini.at(-1), 2)}, because Avens that deliver more earn more. Part 3
-			fails even at ten-year marks. In HEARTS a day at day-1 prices, the poorest tenth had {markFallNumbers}.
+			{V('main').checks[2] ? 'holds' : 'fails even'} at ten-year marks. In HEARTS a day at day-1 prices, the poorest tenth had {markFallNumbers}.
 		</p>
 		<p id="founding">
 			<strong>The founding, reported on its own.</strong> Proposition 3 is claimed from day {PROOF.fromDay}, when every
@@ -2527,7 +2530,7 @@
 		<h4 id="fairsim">11.2.5 Fair ownership in the model</h4>
 		<p>
 			Section 9.2 showed that the melt bounds how unequal ownership can grow, if the lasting return
-			<Tex tex={String.raw`\mu`} /> stays below it. Here the simulation does not meet the theory. In the last ten years
+			<Tex tex={String.raw`\mu`} /> stays below it. Here {SIM_NAMES.model} {DYN.mu < RATE ? 'meets' : 'does not meet'} the theory. In the last ten years
 			of the main run, <Tex tex={String.raw`\mu = ${tn(DYN.mu * 100, 1)}\,\%`} /> in HEARTS, and its spread between
 			people was <Tex tex={String.raw`\sigma_W = ${tn(DYN.sigma * 100, 1)}\,\%`} />. So <Tex tex={String.raw`\mu`} /> was
 			{fmt(-meltMargin(), 1)} points above the {pc(RATE)} melt, and ({EQ.gini}) has no resting state. Over the whole
@@ -2651,7 +2654,7 @@
 					<tr><th>Condition</th><th>In the simulation</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>The lasting return <Tex tex={String.raw`\mu`} /> stays below the melt</td><td>Not met: {pc(DYN.mu, 1)} in the last ten years of the main run; above the melt on {SEEDS.n - SN.below} of {SEEDS.n} seeds; only a lower Law 5 share kept it below on every seed</td></tr>
+					<tr><td>The lasting return <Tex tex={String.raw`\mu`} /> stays below the melt</td><td>{DYN.mu < RATE ? 'Met' : 'Not met'}: {pc(DYN.mu, 1)} in the last ten years of the main run; below the melt on {SN.below} of {SEEDS.n} seeds</td></tr>
 					<tr><td>Every COOP accepts HEARTS from anyone</td><td>Assumed</td></tr>
 					<tr><td>The euro border: euros never make MIND, and no person changes MIND into euros (Section 8.3)</td><td>A closed city, with no euros</td></tr>
 					<tr><td>A rule for estates</td><td>Not modelled</td></tr>
@@ -2664,8 +2667,9 @@
 		</div>
 		<h4 id="fails">11.2.6 What fails, and the fixes</h4>
 		<p>
-			From the end of the founding, the main run fails all three parts of Proposition 3, and the strict test too. For
-			each failure we propose a fix, but none is tested yet.
+			From the end of the founding, the main run {checkWords(V('main'))} of Proposition 3, and the strict test
+			{PROOF.strict.shareAfter10 >= 1 ? 'held' : 'failed'}. For each failure below we propose a fix; Section 11.5 lists
+			the tests.
 		</p>
 		<ul>
 			<li>
@@ -3250,7 +3254,8 @@
 			with wages and ownership, and automation begins to remove that answer. theOS answers them differently: everyone
 			gets an equal, daily share of direction and of ownership. That share can only build things. What it builds belongs
 			to those who hold its MIND, on land that the City COOP holds, in which every citizen has one equal share. Every
-			sale pays those owners a share, so a COOP gains exactly when it is useful. All money melts like the world it
+			sale pays those owners a share (Law 5), so owners gain when their COOP sells, and it sells when people find it
+			useful. All money melts like the world it
 			measures, so nobody can keep wealth idle and out of reach. theOS aims for a city whose output has no limit but
 			physics, above all net energy. The whole architecture fits in one line:
 		</p>
@@ -3263,20 +3268,21 @@
 		</p>
 		<p>
 			In capitalism, people sold their time so that they could survive. In Abundism, no human labour is paid.
-			Survival rests on a person's own half of the HEARTS they invest, the work proposals their Aven delivers, and Law 5 dividends (Section 4). In the simulation, basics got cheaper as
-			productivity rose. Whether rivals keep them cheap when a leader prices for profit is still open (Section 12.2).
+			Survival is meant to rest on a person's own half of the HEARTS they invest, the work proposals their Aven
+			delivers, and Law 5 dividends (Section 4; H3). In {SIM_NAMES.model}, basics
+			{PRICES_BY_YEAR[SIM.years].bundle < PRICES_BY_YEAR[1].bundle ? 'got cheaper' : 'did not get cheaper'} as
+			productivity rose. Whether rivals keep them cheap when a leader prices for profit is still open (H6, Section
+			12.2).
 		</p>
 		<p>
-			Proposition 3 says what this gives: no one starves, no one has to work to survive, and the living standard of
-			every tenth of the people rises. In the main run of our simulation, all three parts failed. The first week was
-			short. {cap(inYears(shortYears))}, after a capacity shock, basics ran short, for owner-only people too. The
-			poorest tenth consumed less {fellAt}. Dividends alone missed often in the first {PROOF.strict.lastShortYear}
-			years, and again from year {PROOF.strict.lateMiss.from}. On {SEEDS.n} seeds, the main run passed all three checks
-			on {SN.pass}. The lasting return on holdings stayed above the melt on {SEEDS.n - SN.below} of them, so
-			Proposition 2 set no bound on inequality. Only a lower Law 5 share changed that, and Law 5 stays at
-			{pc(DIVIDEND_SHARE)}. One seed is one random history, so we compare rules on the same shocks. On {SS.n} seeds,
-			the pool rule of this paper gave fewer shortages than the old one. We propose a fix for each failure, and
-			{SIM_NAMES.testCity} must show that each one works. Human action becomes steering: deciding,
+			Proposition 3 says what this should give: no one starves, no one has to work to survive, and the living standard
+			of every tenth of the people rises. It is a hypothesis, and today it is {HYP.H3.status}. The main run of
+			{SIM_NAMES.model} {checkWords(V('main'))}; on {SEEDS.n} seeds, all three parts held on {SN.pass}, and
+			in {SIM_NAMES.round(TC.round)} on {TC.headline.all} of {TC.headline.of} base seeds. The lasting return on holdings
+			stayed below the melt on {SN.below} of the {SEEDS.n} seeds, which is what Proposition 2 needs (H4,
+			{HYP.H4.status}). One seed is one random history, so we compare rules on the same shocks. Each new version of
+			the model and each new round of {SIM_NAMES.testCity} should come closer (Section 11.4), and each proposed fix
+			must show that it works (Section 11.5). Human action becomes steering: deciding,
 			every day and together, what the city builds next. maiaCITY will prove it first in a game, then in the real
 			city.
 		</p>
@@ -3350,7 +3356,7 @@
 					<tr><td><Tex tex="N" /></td><td>The number of people</td><td>5.2</td></tr>
 					<tr><td><Tex tex={String.raw`m,\ m^{*}`} /></td><td>The average count of HEARTS and MINDs per person, and its steady state</td><td>5.2</td></tr>
 					<tr><td><Tex tex={String.raw`a_i,\ W_i^{*}`} /></td><td>What a person adds to a holding each year, net of what they spend, and the level that the holding tends to, <Tex tex={String.raw`a_i/r`} /></td><td>5.2, 9.2</td></tr>
-					<tr><td><Tex tex={String.raw`\omega`} /></td><td>The ownership that a person's investing creates for them a year, <Tex tex="u/2" />: {fmt(INVESTOR_SHARE, 1)} MIND for each HEART</td><td>5.2, 9.2, 10.2</td></tr>
+					<tr><td><Tex tex={String.raw`\omega`} /></td><td>The ownership that a person's investing creates for them a year, <Tex tex="u/2" />: {fmt(INVESTOR_SHARE, 1)} MIND for each HEART</td><td>5.2, 9.2, 10.4</td></tr>
 					<tr><td><Tex tex={String.raw`\nu`} /></td><td>The yearly growth rate of the population</td><td>5.2</td></tr>
 					<tr><td><Tex tex={String.raw`c,\ e_v`} /></td><td>Laborde's universal-dividend rate, and the life span that it derives from</td><td>5.3</td></tr>
 					<tr><td><Tex tex={String.raw`b,\ b_i`} /></td><td>A member's balance relative to the average</td><td>5.3</td></tr>
@@ -3360,19 +3366,21 @@
 					<tr><td><Tex tex="V" /></td><td>A pool's value. In Section 2 only: Fisher's velocity</td><td>2, 6</td></tr>
 					<tr><td><Tex tex={String.raw`\sigma,\ \Sigma,\ \rho,\ \ell`} /></td><td>Volatility, covariance and correlation of prices, and the yearly loss-versus-rebalancing</td><td>6.2</td></tr>
 					<tr><td><Tex tex={String.raw`s_i,\ f_i,\ \bar f,\ \kappa`} /></td><td>A COOP's share of its sector's investment, its utility per HEART, the average utility, and the speed of selection</td><td>9</td></tr>
-					<tr><td><Tex tex={String.raw`W_i,\ W^{*},\ \bar W_0`} /></td><td>A person's MIND holding, the resting level when everyone keeps <Tex tex={String.raw`\omega`} />, and the mean holding at the start</td><td>9.2, 10.2</td></tr>
+					<tr><td><Tex tex={String.raw`W_i,\ W^{*},\ \bar W_0`} /></td><td>A person's MIND holding, the resting level when everyone keeps <Tex tex={String.raw`\omega`} />, and the mean holding at the start</td><td>9.2, 10.4</td></tr>
 					<tr><td><Tex tex={String.raw`\mu`} /></td><td>The lasting return on a holding: dividend yield plus any lasting price rise</td><td>5.4</td></tr>
 					<tr><td><Tex tex={String.raw`t_{1/2}`} /></td><td>The half-life of an idle balance, <Tex tex={String.raw`\ln 2/r`} />, and of a holding that earns <Tex tex={String.raw`\mu`} />, <Tex tex={String.raw`\ln 2/(r - \mu)`} /></td><td>5.1, 5.4</td></tr>
 					<tr><td><Tex tex={String.raw`\sigma_W,\ dZ,\ \alpha`} /></td><td>The spread of returns between people, random noise, and the shape of the resting spread</td><td>9.2</td></tr>
 					<tr><td><Tex tex={String.raw`G,\ G_0,\ G_{\infty}`} /></td><td>The Gini index of ownership: over time, at the start, and at rest</td><td>9.2</td></tr>
 					<tr><td><Tex tex={String.raw`s_k,\ p_k,\ \bar p,\ v_k`} /></td><td>The supply of MIND <Tex tex="k" />, its pool price against one MIND, the supply-weighted average price, and its value in HEARTS, the unit of account ({EQ.unit})</td><td>6.3</td></tr>
-					<tr><td><Tex tex={String.raw`\lambda`} /></td><td>Law 5's share of every sale, {pc(DIVIDEND_SHARE)}</td><td>5.4, 10.2</td></tr>
-					<tr><td><Tex tex="T_i" /></td><td>The years a holding would pay the basic bundle with nothing flowing in</td><td>10.2</td></tr>
-					<tr><td><Tex tex="p_b" /></td><td>The cost of a day's basic bundle</td><td>10.2</td></tr>
-					<tr><td><Tex tex={String.raw`D_i,\ X_i`} /></td><td>A person's dividends, and what they spend</td><td>10.2</td></tr>
-					<tr><td><Tex tex={String.raw`\bar W,\ Y`} /></td><td>The mean holding, and what people buy from COOPs, HEARTS a person a day</td><td>10.2</td></tr>
-					<tr><td><Tex tex={String.raw`\bar\eta`} /></td><td>The city's dividend yield, <Tex tex={String.raw`\lambda Y / \bar W`} /></td><td>10.2</td></tr>
-					<tr><td><Tex tex={String.raw`\theta`} /></td><td>The share of what they hold that people spend a year</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`\lambda`} /></td><td>Law 5's share of every sale, {pc(DIVIDEND_SHARE)}</td><td>5.4, 10.4</td></tr>
+					<tr><td><Tex tex="T_i" /></td><td>The years a holding would pay the basic bundle with nothing flowing in</td><td>10.4</td></tr>
+					<tr><td><Tex tex="p_b" /></td><td>The cost of a day's basic bundle</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`D_i,\ X_i`} /></td><td>A person's dividends, and what they spend</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`\bar W,\ Y`} /></td><td>The mean holding, and what people buy from COOPs, HEARTS a person a day</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`\bar\eta`} /></td><td>The city's dividend yield, <Tex tex={String.raw`\lambda Y / \bar W`} /></td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`Q,\ s_p`} /></td><td>All sales a day, and the share of the dividend-earning MIND that people hold</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`S,\ d,\ q,\ \delta,\ \tau`} /></td><td>A stock of a basic, the need for it a day, the capacity to make it a day, and the share of capacity that a shock takes, for how many days</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`\theta`} /></td><td>The share of what they hold that people spend a year</td><td>11.2.2</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -3441,7 +3449,9 @@
 			<dt>Decile, tenth</dt>
 			<dd>One of ten equal groups of people, sorted by real consumption each year.</dd>
 			<dt>Proposition 3</dt>
-			<dd>The central claim of Section 10.3: from the end of the founding, no one starves, no one has to work to survive, and the living standard of every tenth rises. The founding, a city's first days until every person holds MIND, is reported on its own. Part 2 claims the normal test, which lets an owner-only person spend some of what they hold. The strict test, dividends alone, is a stronger target. The main run met neither test.</dd>
+			<dd>The central claim of Section 10.3: from the end of the founding, no one starves, no one has to work to survive, and the living standard of every tenth rises. The founding, a city's first days until every person holds MIND, is reported on its own. Part 2 claims the normal test, which lets an owner-only person spend some of what they hold. The strict test, dividends alone, is a stronger target. In the main run, the normal test {V('main').checks[1] ? 'held' : 'failed'} and the strict test {PROOF.strict.shareAfter10 >= 1 ? 'held' : 'failed'}.</dd>
+			<dt>Rule, policy, concept, hypothesis</dt>
+			<dd>The four kinds of statement in this paper. A rule is part of the protocol and changes only with a new version of it; a policy is a setting that the City COOP chooses by MIP; a concept is a definition (Part II, Table {TAB.kinds}). A hypothesis is what we expect theOS to achieve, with a status: proven, supported, mixed, failing or open (Section 10.1).</dd>
 			<dt>Rival COOP</dt>
 			<dd>A COOP that makes the same good as another and competes for the same buyers (Section 9.1).</dd>
 			<dt>Founding, exit, failure</dt>
@@ -3540,7 +3550,8 @@
 	<section id="protocol">
 		<h2><span>F</span>Who can change the rules</h2>
 		<p>
-			theOS has three layers of rules, and each one changes in a different way. This appendix proposes how.
+			theOS has three layers of rules, and each one changes in a different way. This appendix proposes how. Table
+			{TAB.kinds} (Section 9.3) lists each rule and policy of Part II with who changes it.
 		</p>
 		<p>
 			<strong>The laws.</strong> The five laws, the melt rate and Law 5's share of {pc(DIVIDEND_SHARE)} are fixed. Nobody holds a key that changes them. A change to
