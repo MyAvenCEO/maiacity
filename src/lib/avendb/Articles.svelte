@@ -11,7 +11,7 @@
 	import { ARTICLE, blogPosts, EXAMPLE, fileNamed, fromBlog, opening, pictures } from './article.js';
 	import { mediaOf, whole } from './files.js';
 	import Icon from './Icon.svelte';
-	import { allowed, creatable, may, noteRecord } from './ops.js';
+	import { allowed, articleRecord, creatable, may } from './ops.js';
 	import { count, EVERYONE, nameOf, reads, why } from './vaults.js';
 
 	/**
@@ -49,7 +49,7 @@
 		vault,
 		type: ARTICLE,
 		tags: asked ?? [],
-		value: noteRecord(title, text)
+		value: articleRecord(title, text)
 	});
 
 	/** why the device won't add an article for the acting vault, as it answers a dry run: '' where it would */

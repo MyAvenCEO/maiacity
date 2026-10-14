@@ -115,6 +115,13 @@ export const noteRecord = (title, text) => ({
 	]
 });
 
+/**
+ * An article as this app writes one, of avenDB's own article schema: titled `title`, its text one Markdown text that
+ * `text` starts it as.
+ * @param {string} title @param {string} text
+ */
+export const articleRecord = (title, text) => ({ kind: 'article', title, text, tags: [] });
+
 /** The place of the text of block `id` of a document. @param {number} id */
 export const blockText = (id) => ['blocks', { id }, 'text'];
 

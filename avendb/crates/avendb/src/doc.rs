@@ -32,7 +32,7 @@ use loro::{
 use serde_json::Value;
 
 use crate::id::{BlobId, SignerId};
-use crate::lens::{BlockV2, DocV1, DocV2, Status, Stored, TodoV1, TodoV2, View};
+use crate::lens::{BlockV2, DocV1, DocV2, Status, Stored, TodoV1, TodoV2, TypeV2, View};
 use crate::ops::{self, Loc, Record};
 use crate::policy::Line;
 use crate::rules::{Scalar, Touch};
@@ -232,6 +232,22 @@ impl Item {
     /// The item as a v2 app reads it, through the lens where a v1 app wrote it; `None` for a todo.
     pub fn as_document(&self) -> Option<DocV2> {
         DocV2::from_value(&self.read(View::document_v2())?)
+    }
+
+    /// The item as Markdown, as a page shows a note: a document as a v2 app reads it, or an article as one, its title
+    /// and its tags, its text the paragraph of block 2, where a note keeps its text (`cast::document`). `None` for
+    /// anything else.
+    pub fn as_markdown(&self) -> Option<DocV2> {
+        if let Some(doc) = self.as_document() {
+            return Some(doc);
+        }
+        let article = self.read(View::built_in("article")?)?;
+        let text = |k: &str| article.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+        let tags = article.get("tags").and_then(Value::as_array).into_iter().flatten();
+        let tags = tags.filter_map(|t| Some(t.as_str()?.to_string())).collect();
+        let paragraph = TypeV2::Paragraph;
+        let block = BlockV2 { id: 2, r#type: paragraph, level: None, checked: None, lang: None, text: text("text") };
+        Some(DocV2 { title: text("title"), blocks: vec![block], tags })
     }
 
     /// The item as a v1 app that has the lens reads it; `None` for a todo.
@@ -490,12 +506,13 @@ fn peer(signer: SignerId, line: Line) -> PeerID {
     usable(u64::from_be_bytes(*h.first_chunk().expect("32 bytes")))
 }
 
-/// The built-in view of a record's kind: a todo's, or else a document's. Fields neither knows are stored by what they
-/// hold.
+/// The built-in view of a record's kind: a todo's, an article's, a flow's, a function's, a post's, or else a
+/// document's. Fields it doesn't know are stored by what they hold.
 fn kind_view(record: &Value) -> &'static View {
     match record.get("kind").and_then(Value::as_str) {
         Some("todo") => View::todo_v2(),
-        _ => View::document_v2(),
+        Some(kind) => View::built_in(kind).unwrap_or(View::document_v2()),
+        None => View::document_v2(),
     }
 }
 

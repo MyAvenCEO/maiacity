@@ -460,6 +460,36 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let roots = move |lab: &Lab, _| lab.state(me).vaults().iter().filter(|v| v.root == Some(passkey)).count();
     assert_eq!(server.read(roots).await, 1, "one vault her passkey roots");
     until("her phone acts for her seed too", || async { world_of(&phone).await["ownsAven"] == true }).await;
+    // her browser gives avenCEO GmbH avenDB's own schemas and lenses, as her page does once her seed is there: each an
+    // entry of avenCEO GmbH's of the very bytes the app ships, so of the same id, shared with Everyone
+    let gmbh = move |lab: &Lab, _| match lab.state(me).vault(avenceo)?.owners[..] {
+        [Principal::Vault(v)] => Some(v.to_hex()),
+        _ => None,
+    };
+    let company = server.read(gmbh).await.expect("avenCEO GmbH owns her CEO Aven");
+    let database = json!({ "op": "database", "vault": company });
+    let standard = run(&first, database.clone()).await.expect("its database")["builtIn"].clone();
+    for (ty, list) in [("schema", "schemas"), ("lens", "lenses")] {
+        for x in standard[list].as_array().expect("the app's own") {
+            let op = json!({ "op": "create", "vault": company, "type": ty, "value": x["json"], "as": company });
+            run(&first, op).await.expect("an entry of avenCEO GmbH's");
+        }
+    }
+    let ids = |xs: &Value| -> Vec<String> {
+        let ids = xs.as_array().into_iter().flatten().filter_map(|x| x["id"].as_str());
+        let mut ids: Vec<String> = ids.map(String::from).collect();
+        ids.sort();
+        ids
+    };
+    let held = run(&first, database).await.expect("its database");
+    let both = (ids(&held["schemas"]), ids(&held["lenses"]));
+    assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
+    assert_eq!(both.0.len(), 8);
+    let public = |w: &Value| -> usize {
+        let es = w["entries"].as_array().into_iter().flatten();
+        es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
+    };
+    until("her phone reads them, each Public", || async { public(&world_of(&phone).await) == 8 }).await;
     let seen = world_of(&first).await;
     assert_eq!(seen["ownsAven"], true, "as her browser shows");
     let (hers, masters) = (Principal::Signer(Passkey::from_seed([5; 32]).id()), Principal::Signer(master.id()));
@@ -937,7 +967,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .iter()
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
-    assert_eq!(schemas.len(), 4);
+    assert_eq!(schemas.len(), 8, "documents and todos, two versions each, articles, flows, functions and posts");
+    assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
     assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V2.id().to_hex()]), "written under document v2");
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V2.id().to_hex()));
     assert_eq!(row(variant)["record"]["blocks"][1]["text"].as_str(), Some("Corn first."));

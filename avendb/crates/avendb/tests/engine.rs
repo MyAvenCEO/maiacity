@@ -187,6 +187,57 @@ fn creation_fills_defaults_and_refuses_what_doesnt_fit() {
 }
 
 #[test]
+fn articles_flows_functions_and_posts_are_kinds_of_their_own() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let create = |ty: &str, value: Value| json!({ "op": "create", "vault": alice, "type": ty, "value": value });
+    let id = |made: Value| EntryId::from_hex(made["entry"].as_str().unwrap()).unwrap();
+    // an article: a title and one Markdown text, which a set changes by the smallest character edit
+    let article = json!({ "kind": "article", "title": "Harvest", "text": "First *light*." });
+    let article = id(ok(run(&mut w, mac, create("article", article))));
+    let set = json!({ "op": "set", "entry": hex(article), "path": ["text"], "value": "First *light*, then rain." });
+    ok(run(&mut w, mac, set));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": hex(article), "schema": "article" })));
+    let text = "First *light*, then rain.";
+    assert_eq!(got["record"], json!({ "kind": "article", "title": "Harvest", "text": text, "tags": [] }));
+    // read as Markdown, as a note is, for the page's note page and its world
+    let doc = w.lab.item(mac, article).unwrap().as_markdown().unwrap();
+    assert_eq!((doc.title.as_str(), doc.blocks[0].text.as_str()), ("Harvest", "First *light*, then rain."));
+    assert!(w.lab.item(mac, article).unwrap().as_document().is_none(), "not a document");
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": hex(article) })));
+    assert_eq!((&note["kind"], &note["lines"][0]["text"]), (&json!("article"), &json!("First *light*, then rain.")));
+    // a variant names its origin among the article's own tags, as a note's does
+    let coop = cast::coop_on(&mut w);
+    let variant = json!({ "op": "variant", "entry": hex(article), "into": coop.to_hex(), "as": coop.to_hex() });
+    let copy = id(ok(run(&mut w, mac, variant)));
+    let at = w.lab.history(mac, article).unwrap().heads(None);
+    let tags = w.lab.item(mac, copy).unwrap().as_markdown().unwrap().tags;
+    assert_eq!(tags, vec![world::variant_mark(article, &at)]);
+    // a flow of stages, a function on one of them, and a post: records of their own kinds, which the world shows
+    let stage = |id: u64, key: &str, next: &[&str]| json!({ "id": id, "key": key, "name": key, "next": next });
+    let stages = [stage(1, "idea", &["draft"]), stage(2, "draft", &["published"]), stage(3, "published", &["draft"])];
+    let flow = json!({ "kind": "flow", "key": "content", "name": "Content", "stages": stages });
+    let flow = id(ok(run(&mut w, mac, create("flow", flow))));
+    let function = json!({ "kind": "function", "name": "Post it", "flow": "content", "stage": "published" });
+    ok(run(&mut w, mac, create("function", function)));
+    let post = json!({ "kind": "post", "title": "Harvest", "text": "Out now.", "about": hex(article) });
+    let post = id(ok(run(&mut w, mac, create("post", post))));
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    let of = |e: EntryId| seen["entries"].as_array().unwrap().iter().find(|x| x["entry"] == hex(e)).unwrap().clone();
+    assert_eq!((&of(article)["kind"], &of(article)["text"]), (&json!("note"), &json!("First *light*, then rain.")));
+    assert_eq!((&of(flow)["kind"], &of(flow)["title"]), (&json!("record"), &json!("Content")));
+    assert_eq!(of(flow)["record"]["stages"][2]["public"], false, "a stage is private unless it says so");
+    assert_eq!((&of(post)["title"], &of(post)["text"]), (&json!("Harvest"), &json!("Out now.")));
+    assert_eq!(of(article)["record"], Value::Null, "a note's record isn't told twice");
+    // each reads through its own schema alone, and a stage needs its key
+    let flows = ok(run(&mut w, mac, json!({ "op": "query", "vault": alice, "schema": "flow" })));
+    assert_eq!(entries(&flows), [hex(flow)]);
+    let keyless = json!({ "kind": "flow", "stages": [{ "id": 1, "name": "Idea" }] });
+    assert_eq!(refused(&run(&mut w, mac, create("flow", keyless))), "NotAView");
+}
+
+#[test]
 fn lines_merge_restore_undo_and_variants_are_ops() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
@@ -389,7 +440,7 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    assert_eq!(kinds, ["document", "document", "todo", "todo"]);
+    assert_eq!(kinds, ["article", "document", "document", "flow", "function", "post", "todo", "todo"]);
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     assert_eq!(list(&schemas["lenses"]).len(), 2);
 }

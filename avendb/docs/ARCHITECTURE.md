@@ -717,7 +717,15 @@ judge (S4). A device refuses to make a write that wouldn't fit (NotAView).
 another, both ways (`crates/avendb/src/lens.rs`, `spec/AvenDB/Lens.lean`). No record is ever migrated: each field stays
 in the version it was written in, each app reads through the lens into its own version, and its edits go back as only
 what changed (T9). So an old app and a new one edit the same todo side by side, and defaults live in the lens. Documents
-and todos ship with every app, two versions each, with a lens between them.
+and todos ship with every app, two versions each, with a lens between them, and so do four schemas of one version each
+(`lens::blobs`), each told by its `kind`: an **article** (a title and one Markdown text), a **flow** (stages an item
+can be in, each with whether it is public and where it goes next), a **function** (a script that runs when an item
+enters or leaves a stage of a flow) and a **post** (a public post of a stream, about an entry).
+
+**avenCEO GmbH holds them.** Every app knows avenDB's own schemas and lenses by heart, so each vault reads and writes
+them offline. Beside that, avenCEO GmbH holds each as an entry of its own, of the very same bytes and so of the same id,
+shared with Everyone: the founder's page adds those it lacks once their seed is there. A vault's lane doesn't reach
+into another's, so any other vault's records still read through the copies every app ships.
 
 **Schemas and lenses are entries.** A vault's schema or lens is an entry of the built-in type `schema` or `lens`
 (`slice::SCHEMA_TYPE`, `LENS_TYPE`), whose creation holds the schema's or lens's JSON alone, as its content, with no

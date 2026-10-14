@@ -79,6 +79,9 @@
 	/** whether the device is writing its card, or vaults' profiles: one such write at a time */
 	let carding = false;
 	let profiling = false;
+	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
+	let standardizing = false;
+	const standardized = new Set();
 
 	const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 	const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
@@ -414,6 +417,34 @@
 			})()
 				.catch((/** @type {Error} */ e) => (error = `Naming your vaults failed: ${plain(e.message)}`))
 				.finally(() => (profiling = false));
+		}
+		// avenDB's standard schemas and lenses, each an entry of the seed's company, avenCEO GmbH, shared with everyone
+		// as it adds them, their JSON as avenDB has it, so the same ids: written once, by whichever device comes first
+		const company = seeded(w)[1]?.[0];
+		if (company && !standardizing && !standardized.has(company.id)) {
+			standardizing = true;
+			standardize(company.id)
+				.then(() => standardized.add(company.id))
+				.catch((/** @type {Error} */ e) => (error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
+				.finally(() => (standardizing = false));
+		}
+	}
+
+	/**
+	 * Each of avenDB's standard schemas and lenses that vault `company` doesn't hold an entry of yet, added as its own:
+	 * the schemas first, so each lens joins two it holds.
+	 * @param {string} company
+	 */
+	async function standardize(company) {
+		/** @type {import('./db.js').Db} */
+		const db = answer(await send({ op: 'database', vault: company }));
+		const held = new Set([...db.schemas, ...db.lenses].map((x) => x.id));
+		const missing = [
+			...db.builtIn.schemas.filter((x) => !held.has(x.id)).map((x) => ['schema', x.json]),
+			...db.builtIn.lenses.filter((x) => !held.has(x.id)).map((x) => ['lens', x.json])
+		];
+		for (const [type, json] of missing) {
+			answer(await send({ op: 'create', vault: company, type, value: json, as: company }));
 		}
 	}
 

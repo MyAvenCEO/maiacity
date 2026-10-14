@@ -16,6 +16,10 @@
 
 	// why it is shown as public
 	const PUBLIC = 'Public: a schema holds no data, so every device that follows the vault reads it';
+	// whose avenDB's own schemas are
+	const STANDARD =
+		'One of avenDB’s own: every app knows it, and avenCEO GmbH holds it as an entry of its own, ' +
+		'the same bytes so the same id, shared with Everyone';
 
 	const fams = $derived(families(s.schemas, s.lenses));
 
@@ -60,7 +64,7 @@
 	What each record holds, version by version, as a table holds its columns. Every edit names the schema it was written
 	under; a lens carries a record between two versions, so an app on either reads what the other writes. Schemas and
 	lenses are entries of the vault shared with Everyone: they hold no data, so every device that follows the vault
-	reads them.
+	reads them. avenDB’s own (notes, todos, articles, flows, functions and posts) are avenCEO GmbH’s entries.
 </p>
 
 {#if actor === vault}
@@ -110,6 +114,7 @@
 							<b>{sc.title}</b>
 							<span class="mono soft" title={sc.id}>{short(sc.id)}</span>
 							<span class="chip ok" title={PUBLIC}>Public</span>
+							{#if s.standard.has(sc.id)}<span class="chip" title={STANDARD}>avenCEO GmbH</span>{/if}
 						</header>
 						{#if json}
 							<table class="fields">
