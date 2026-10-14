@@ -36,6 +36,13 @@ skill is what the people and animals taught us since.
 
 ## The stand-in's face
 
+- **Every face is friendly, all the time.** Samuel (2026-10-14): "all the faces should be way more friendlier (not full
+  smile but friendly gazes, with a slight sparkling eyes not the full smiling sparkle but a slightly sparkle) all the
+  time". So every person, in every shot, game and gallery, wears the `friendly` shape and the catchlight by default:
+  lower lids a little up, brows a little raised, a small glint in each eye. Never a full smile (`joy`) as the resting
+  face, never a blank or stern one, never the full smiling sparkle; `joy` is only for a moment the story asks for.
+  A new head, a new version or a new kind of person starts friendly; an animal with a face gets the same soft, bright
+  eyes.
 - The head (`head.js`) is MakeHuman's CC0 base mesh for a man or a woman (`face`), written into `head.data.js` by
   `scripts/make-head.mjs` from a sparse clone (`--filter=blob:none`; never `git ls-tree -l` on it). It is smoothed once
   (`subdivide.js`); per-vertex values that must follow the smoothing (region marks, a second blend shape) ride it as

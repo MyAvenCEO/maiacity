@@ -206,3 +206,22 @@ truck yard, parking, trees, a sign. Machines are cream with one accent colour pe
 | `vendor/three.bundle.js` | three.js r185 and the addons used (MIT) |
 | `scripts/check.mjs`, `scripts/build.mjs`, `scripts/capture.mjs` | headless run, build, screenshot |
 | `examples/*/spec.js` | six factories made with this skill, each with its built page |
+
+## Our library: where a factory is kept (maiaCITY)
+
+This section is maiaCITY's, added to AirSup's text; everything above it is theirs, word for word (`SOURCE.md`). In
+maiaCITY a factory is built from the assets we already have and is kept where every game and world can take it from.
+
+- **Built from our libraries, never its own copies:** its machines from Machines (`src/lib/machines`, built in
+  `src/lib/actors`), its hall from Buildings (`src/lib/buildings`), its people from Actors (`src/lib/actors`), its
+  goods, pallets and vehicles from Things (`src/lib/models`). A machine the line needs that we do not have yet is
+  built first as a machine (`machine-skill`), then placed in the line.
+- **Real size:** 1 unit = 1 m, the same measure as every other asset; nothing is scaled to fit the table.
+- **Until the first factory joins the app:** the spec, the built page, `check.mjs`'s numbers, the shots and the film
+  go to `/mnt/project-files/factories/<factory>/`, never into the repository.
+- **When it joins the app:** it starts the Factories library the way every group is kept: `src/lib/factories/<factory>.js`
+  in JavaScript, a kind in `LIST` of `src/lib/factories/index.js` with its versions in `HISTORY`
+  (`src/lib/app/versions.js`), a page `/app/factories` and a tile in Game Assets (`src/lib/app/places.ts`). Its
+  simulation is ported as a pure JS module with the same equations, so the numbers stay what the page showed.
+- **Its versions:** every upgrade is a new version with a dated note; the old one stays frozen.
+- Never name the brand or startup that inspired a factory.

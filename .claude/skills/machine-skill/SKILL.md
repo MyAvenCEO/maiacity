@@ -157,3 +157,23 @@ The page is editorial, not a dashboard: a prompt bar, a serif title with an ital
 ## What to say when you hand it over
 
 Give the path of the HTML file, the film command, the operating point the solver reaches against the public figure, and anything you simplified. Offer the next machine.
+
+## Our library: where a machine is kept (maiaCITY)
+
+This section is maiaCITY's, added to AirSup's text; everything above it is theirs, word for word (`SOURCE.md`). In
+maiaCITY a machine is never only a page: it joins the Machines library, and every game, world, building, factory and
+film takes it from there. How to build it into the library is in `ours.md` beside this file.
+
+- **The builder:** `src/lib/actors/<machine>.js`, in JavaScript, at its real size in metres (1 unit = 1 m, never a
+  `scale.set` on its root: the viewer frames it, the model is never resized), standing on y 0, its front towards +z.
+- **The library line:** a kind in `LIST` of `src/lib/machines/index.js`, its versions in `HISTORY` there; it shows in
+  `/app/machines` (admin), under Game Assets on the dashboard.
+- **Its size:** in `REAL_SIZES` (`src/lib/models/units.js`) and the `BUILD` map of `src/lib/models/sizes.test.js`.
+- **Its parts:** every part a mechanic would name is its own, with its card (what it is, what moves it, its numbers,
+  where they come from), and the machine also exports a function that adds its parts to another asset, so a vehicle,
+  a building, a factory or a world can carry it (the LifeTrac carries a Power Cube).
+- **Its versions:** every upgrade is a new version with a dated note; the old builder stays frozen and keeps building
+  exactly what it built.
+- **What you hand over:** the shots, this skill's page and its film go to `/mnt/project-files/machines/<machine>/`,
+  never into the repository.
+- Never name the brand or startup that inspired a machine.
