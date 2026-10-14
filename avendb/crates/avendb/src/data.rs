@@ -5,9 +5,7 @@
 //!
 //! The page's words are the core's own: an edit (`Edit`); a proposal (`Proposal`), a line of a note's history that its
 //! main line may take in; a variant (`Lab::variant`), a new note made from a line of another; a share, what a vault
-//! shares of its entries; and an audience, the entries of a vault the same shares reach, under one key. Its JSON keys
-//! keep their older names: `caps` and `cap` for shares, `cells` and `cell` for audiences, `role` and `roles` for
-//! levels, `grantee` for a share's who, and `generation` for a key's epoch.
+//! shares of its entries; and an audience, the entries of a vault the same shares reach, under one key.
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -48,31 +46,21 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let audience = |x: &AudienceId| {
         json!({
             "id": hex(&x.0),
-            "caps": share_ids(st.audience_shares(*x).unwrap_or_default()),
-            "generation": st.epoch(KeyFam::Audience(vault, *x)),
+            "shares": share_ids(st.audience_shares(*x).unwrap_or_default()),
+            "epoch": st.epoch(KeyFam::Audience(vault, *x)),
             "entries": entries.iter().filter(|en| en.audience() == *x).count(),
         })
     };
-    let schemas = [
-        &*lens::DOCUMENT_V1,
-        &*lens::DOCUMENT_V2,
-        &*lens::TODO_V1,
-        &*lens::TODO_V2,
-        &*lens::ARTICLE_V1,
-        &*lens::FLOW_V1,
-        &*lens::FUNCTION_V1,
-        &*lens::POST_V1,
-    ]
-    .map(schema);
+    let schemas = lens::blobs::SHIPPED.map(|b| schema(&Schema::parse(b.as_bytes()).expect("a shipped schema parses")));
     json!({
         "vault": hex(&vault.0),
         "held": { "edits": edits, "keys": keys },
-        "builtIn": { "schemas": schemas, "lenses": [lens(&lens::DOCUMENT_LENS), lens(&lens::TODO_LENS)] },
+        "builtIn": { "schemas": schemas, "lenses": [] },
         "seed": st.epoch(KeyFam::Seed(vault)),
         "edits": counts(lab, me, vault),
         "schemas": lane.schemas().map(schema).collect::<Vec<_>>(),
         "lenses": lane.lenses().map(lens).collect::<Vec<_>>(),
-        "cells": audiences.iter().map(audience).collect::<Vec<_>>(),
+        "audiences": audiences.iter().map(audience).collect::<Vec<_>>(),
         "rows": entries.iter().map(|en| row(lab, me, en)).collect::<Vec<_>>(),
     })
 }
@@ -121,13 +109,13 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
         "held": lab.fetched(me, entry),
         "lines": lines.len(),
         "proposals": proposals,
-        "cell": hex(&x.0),
-        "generation": st.epoch(KeyFam::Audience(v, x)),
+        "audience": hex(&x.0),
+        "epoch": st.epoch(KeyFam::Audience(v, x)),
         "bytes": item.map_or(0, |i| i.bytes().len()),
         "author": author,
         "actor": hex(&en.creator.0),
         "public": st.public_key(KeyFam::Audience(v, x)),
-        "roles": levels,
+        "levels": levels,
     })
 }
 
@@ -159,7 +147,7 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         "writes": writes,
         "moves": moves,
         "keys": keys,
-        "caps": shares.len(),
+        "shares": shares.len(),
         "revokes": revokes,
     })
 }
@@ -274,11 +262,11 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
             ("setRoot", json!({ "vault": hex(&vault.0), "root": root.map(|r| hex(&r.0)), "keep": keep.len() }))
         }
         Action::Share(Sharing::Grant(c, via)) => (
-            "cap",
+            "share",
             json!({
                 "over": hex(&c.over.0),
-                "role": level_name(c.level),
-                "grantee": who_name(c.who),
+                "level": level_name(c.level),
+                "who": who_name(c.who),
                 "wide": c.wide,
                 "issuer": hex(&c.issuer.0),
                 "parent": c.parent.map(|p| hex(&p.0)),
@@ -288,7 +276,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         ),
         Action::Revoke(Revoking::Grant { share, actor, keep, via }) => (
             "revoke",
-            json!({ "cap": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
+            json!({ "share": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
         ),
         Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body } => {
             let line = match proposal {
@@ -303,7 +291,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                     "entry": hex(&entry.0),
                     "actor": hex(&actor.0),
                     "stay": stay.map(|s| hex(&s.0)),
-                    "generation": epoch,
+                    "epoch": epoch,
                     "deps": ids(deps),
                     "line": line.map(|b| hex(&b.0)),
                     "starts": *proposal == Proposal::New,
@@ -319,7 +307,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
             json!({
                 "vault": hex(&vault.0),
                 "entry": hex(&entry.0),
-                "caps": caps.as_deref().map(share_ids),
+                "shares": caps.as_deref().map(share_ids),
                 "wants": wants.as_deref().map(share_ids),
                 "keep": keep.len(),
                 "via": vias(via),
@@ -416,11 +404,11 @@ fn share_ids(xs: &[ShareId]) -> Vec<String> {
 fn key_name(k: KeyName) -> Value {
     match k {
         KeyName::Signer(s) => json!({ "signer": hex(&s.0) }),
-        KeyName::Scoped(KeyFam::Seed(v), g) => json!({ "seed": hex(&v.0), "generation": g }),
-        KeyName::Scoped(KeyFam::Share(v, c), g) => json!({ "vault": hex(&v.0), "cap": hex(&c.0), "generation": g }),
-        KeyName::Scoped(KeyFam::Audience(v, x), g) => json!({ "vault": hex(&v.0), "cell": hex(&x.0), "generation": g }),
+        KeyName::Scoped(KeyFam::Seed(v), g) => json!({ "seed": hex(&v.0), "epoch": g }),
+        KeyName::Scoped(KeyFam::Share(v, c), g) => json!({ "vault": hex(&v.0), "share": hex(&c.0), "epoch": g }),
+        KeyName::Scoped(KeyFam::Audience(v, x), g) => json!({ "vault": hex(&v.0), "audience": hex(&x.0), "epoch": g }),
         KeyName::Entry(e, stay, g) => {
-            json!({ "entry": hex(&e.0), "stay": stay.map(|s| hex(&s.0)), "generation": g })
+            json!({ "entry": hex(&e.0), "stay": stay.map(|s| hex(&s.0)), "epoch": g })
         }
     }
 }

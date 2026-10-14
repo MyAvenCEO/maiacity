@@ -484,12 +484,12 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let held = run(&first, database).await.expect("its database");
     let both = (ids(&held["schemas"]), ids(&held["lenses"]));
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
-    assert_eq!(both.0.len(), 8);
+    assert_eq!((both.0.len(), both.1.len()), (9, 0), "its own kinds, one version each, and no lens");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
     };
-    until("her phone reads them, each Public", || async { public(&world_of(&phone).await) == 8 }).await;
+    until("her phone reads them, each Public", || async { public(&world_of(&phone).await) == 9 }).await;
     let seen = world_of(&first).await;
     assert_eq!(seen["ownsAven"], true, "as her browser shows");
     let (hers, masters) = (Principal::Signer(Passkey::from_seed([5; 32]).id()), Principal::Signer(master.id()));
@@ -550,8 +550,9 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let records: Vec<&Value> = records.filter(|e| e["kind"] == "record").collect();
     let fields = |e: &Value| (e["type"].clone(), e["public"].clone(), e["record"]["stages"][2]["public"].clone());
     let fields: Vec<_> = records.iter().map(|e| fields(e)).collect();
-    let both = [(json!("flow"), json!(true), json!(true)), (json!("function"), json!(true), Value::Null)];
-    assert_eq!(fields, both, "{records:?}");
+    let hers = (json!("profile"), json!(false), Value::Null);
+    let both = [hers, (json!("flow"), json!(true), json!(true)), (json!("function"), json!(true), Value::Null)];
+    assert_eq!(fields, both, "its profile a record too, its flows and functions Public: {records:?}");
     // her article goes from idea to published, as the content flow moves it: the Public share of her vault on the
     // stage's tag, the tag swapped, and the post its function asks for, carrying that tag too; the server keeps the
     // post and opens it, as everyone may
@@ -629,9 +630,9 @@ fn item(w: &Value, e: EntryId) -> &Value {
     entries.iter().find(|i| i["entry"] == e.to_hex()).unwrap_or_else(|| panic!("entry {} in the world", e.to_hex()))
 }
 
-/// The level vault `v` holds on entry `it` a world shows, if any (its `roles`).
+/// The level vault `v` holds on entry `it` a world shows, if any (its `levels`).
 fn level(it: &Value, v: VaultId) -> Option<&str> {
-    it["roles"][v.to_hex()].as_str()
+    it["levels"][v.to_hex()].as_str()
 }
 
 /// Vault `v`'s name in the world `w` a device shows, as its profile reads.
@@ -649,13 +650,13 @@ fn profile(w: &Value, v: VaultId) -> EntryId {
 /// How device `d` takes the edits of the audience entry `e` is in, as the world `w` a device shows: through which of
 /// its vaults, with what level, and whether it opens them.
 fn syncs(w: &Value, e: EntryId, d: SignerId) -> Option<(String, String, bool)> {
-    let x = &item(w, e)["cell"];
-    let cells = w["cells"].as_array().expect("its audiences");
-    let audience = cells.iter().find(|c| &c["id"] == x).expect("its audience");
+    let x = &item(w, e)["audience"];
+    let audiences = w["audiences"].as_array().expect("its audiences");
+    let audience = audiences.iter().find(|c| &c["id"] == x).expect("its audience");
     let syncs = audience["syncs"].as_array().expect("who syncs it");
     let s = syncs.iter().find(|s| s["device"] == d.to_hex())?;
     let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
-    Some((text(&s["through"]), text(&s["role"]), s["opens"] == true))
+    Some((text(&s["through"]), text(&s["level"]), s["opens"] == true))
 }
 
 /// A share op as the page sends it: vault `over` shared with `who`, a group `level` of ops, on what `what` picks,
@@ -829,8 +830,8 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     assert_eq!(asked[0]["refused"], "NotAllowed", "nor do they let it add a todo: {asked}");
     let w = world_of(&first).await;
     assert_eq!((&item(&w, weed)["title"], &item(&w, weed)["status"]), (&json!("Weed the beds"), &json!("done")));
-    let caps = w["caps"].as_array().expect("its shares");
-    let shown_share = caps.iter().find(|c| c["id"] == ticks).expect("the share that ticks");
+    let shares = w["shares"].as_array().expect("its shares");
+    let shown_share = shares.iter().find(|c| c["id"] == ticks).expect("the share that ticks");
     let ops = json!([{ "op": "read" }, tick]);
     let slice = &shown_share["slice"];
     assert_eq!((&slice["name"], &slice["ops"]), (&json!("Tick done"), &ops), "the page reads its name and ops");
@@ -874,11 +875,11 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     let w = world_of(&first).await;
     assert_eq!(level(item(&w, note), bob), Some("read"), "{read} stands");
     assert_eq!(w["vaults"][4]["name"], "avenALICE");
-    let caps = w["caps"].as_array().expect("its shares");
-    let shared = caps.iter().find(|c| c["id"] == read).expect("the read share");
-    assert_eq!((&shared["role"], &shared["slice"]["where"]), (&json!("read"), &the_note), "the note by its id");
-    let public = caps.iter().find(|c| c["grantee"] == "everyone").expect("the public share");
-    assert_eq!((&public["slice"]["name"], &public["role"]), (&json!("Public"), &json!("read")));
+    let shares = w["shares"].as_array().expect("its shares");
+    let shared = shares.iter().find(|c| c["id"] == read).expect("the read share");
+    assert_eq!((&shared["level"], &shared["slice"]["where"]), (&json!("read"), &the_note), "the note by its id");
+    let public = shares.iter().find(|c| c["who"] == "everyone").expect("the public share");
+    assert_eq!((&public["slice"]["name"], &public["level"]), (&json!("Public"), &json!("read")));
     assert_eq!(public["group"], "Public");
     // the server keeps it all, counts the writes, and opens none of avenALICE's keys
     let counts = move |lab: &Lab, me| lab.state(me).entry_writes(note).count() == 1;
@@ -1063,7 +1064,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .iter()
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
-    assert_eq!(schemas.len(), 8, "documents and todos, two versions each, articles, flows, functions and posts");
+    let own = "documents, todos, articles, flows, functions, posts, cards, profiles and files";
+    assert_eq!(schemas.len(), 9, "{own}, one version each");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
     assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V2.id().to_hex()]), "written under document v2");
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V2.id().to_hex()));
@@ -1078,11 +1080,11 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(db["edits"].get("published"), None, "a vault's schemas and lenses are its entries, writes among writes");
     let writes = db["edits"]["writes"].as_u64();
     assert!(writes.is_some_and(|n| n >= kinds(&shown_note).len() as u64 + 2), "{}", db["edits"]);
-    assert!(db["edits"]["caps"].as_u64().is_some_and(|n| n >= 1), "avenCEO relays it");
-    let audiences = db["cells"].as_array().expect("its audiences");
-    let one = (audiences.len(), audiences[0]["entries"].as_u64(), audiences[0]["caps"].as_array().map(Vec::len));
+    assert!(db["edits"]["shares"].as_u64().is_some_and(|n| n >= 1), "avenCEO relays it");
+    let audiences = db["audiences"].as_array().expect("its audiences");
+    let one = (audiences.len(), audiences[0]["entries"].as_u64(), audiences[0]["shares"].as_array().map(Vec::len));
     assert_eq!(one, (1, Some(3), Some(0)), "her card, the note and its variant: no share splits her vault");
-    assert_eq!(db["builtIn"]["lenses"][0]["title"].as_str(), Some("Markdown document, v1 to v2"));
+    assert_eq!(db["builtIn"]["lenses"], json!([]), "no record is written under an older version");
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
     // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and SLH-DSA signed
     let log = run(&first, json!({ "op": "log" })).await.expect("its log");
@@ -1099,8 +1101,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert!(sigs.iter().any(passkey), "{sigs:?}");
     let browser = first.node().device().to_hex();
     assert!(of("addDevice").iter().any(|o| o["fields"]["device"].as_str() == Some(browser.as_str())));
-    let backup = |o: &&Value| o["fields"]["role"] == "backup" && o["fields"]["wide"] == true;
-    assert!(of("cap").iter().any(backup), "avenCEO's backup of the whole of her vault");
+    let backup = |o: &&Value| o["fields"]["level"] == "backup" && o["fields"]["wide"] == true;
+    assert!(of("share").iter().any(backup), "avenCEO's backup of the whole of her vault");
     let writes = of("write");
     let mine = writes.iter().filter(|o| o["fields"]["entry"].as_str() == Some(note.to_hex().as_str()));
     assert_eq!(mine.clone().count(), kinds(&shown_note).len(), "each write of the note");
@@ -1109,7 +1111,7 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let by_device = |o: &&Value| o["sigs"].as_array().unwrap().iter().all(device);
     assert!(mine.clone().all(by_device), "signed by her browser alone, with no assertion");
     assert!(mine.clone().all(|o| o["allowed"] == true), "and allowed, as her vault's own");
-    assert!(of("cap").iter().all(|o| o["allowed"].is_null()), "a share is no write");
+    assert!(of("share").iter().all(|o| o["allowed"].is_null()), "a share is no write");
     assert!(mine.clone().all(|o| o["fields"]["sealed"].as_u64().is_some_and(|n| n > 0)), "its body by its size alone");
     let starts = |o: &&Value| o["fields"]["starts"] == true && o["fields"]["line"] == o["id"];
     assert!(mine.clone().any(starts), "the proposal's start");

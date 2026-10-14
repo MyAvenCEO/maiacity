@@ -28,7 +28,7 @@ use crate::sign::{self, Ceremony, SignerKeys};
 use crate::slice::{Atom, Attrs, Selector, Sym};
 use crate::wire::Wire as _;
 use crate::words::{self, hex, principal_json, who_json};
-use crate::world::{self, CARD, FILE, MEDIA, PROFILE, SyncedTo, World};
+use crate::world::{self, CARD, FILE, PROFILE, SyncedTo, World};
 
 /// The changes of this module: each runs alone, never in a batch.
 pub(super) const CHANGES: [&str; 11] =
@@ -690,8 +690,8 @@ fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
 
 /// `{"op": "put_file", "vault", "name", "media"?, "tags"?, "len", "as"?}` and the file's bytes, `brought` into the
 /// node's store (`Node::store_file`): a new entry of type `file` (`world::FILE`) in vault `vault`, tagged `tags`,
-/// acting for `as`, a document titled with the file's name, its media type among the document's own tags
-/// (`world::MEDIA`), whose next write brings the file. Whoever may receive the write may fetch the file's sealed
+/// acting for `as`, a record of avenDB's own `file` schema with the file's name and media type (`world::file`), whose
+/// next write brings the file. Whoever may receive the write may fetch the file's sealed
 /// bytes, and who reads the entry opens them (T27). `{"entry", "root", "size"}`, the file's root and sealed size.
 /// Without the bytes, as `may` asks, the entry alone: `{"entry"}`.
 pub fn put_file(
@@ -707,9 +707,7 @@ pub fn put_file(
     };
     let tags = texts_of(o, "tags")?;
     file_len(o)?;
-    let mut item = world::named(&name, me);
-    item.edit_document(|d| d.tags.push(format!("{MEDIA}{media}")));
-    let entry = lab.create(me, actor, vault, FILE, &strs(&tags), item)?;
+    let entry = lab.create(me, actor, vault, FILE, &strs(&tags), world::file(&name, media, me))?;
     let Some(brought) = brought else { return Ok(json!({ "entry": entry.to_hex() })) };
     let root = brought.root;
     lab.bring(me, actor, entry, vec![brought], |_| {})?;
@@ -777,13 +775,13 @@ fn card(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Re
         if title == name {
             return wrote(false);
         }
-        lab.edit(me, vault, entry, move |item| _ = item.edit_document(|d| d.title = name))?;
+        lab.edit(me, vault, entry, move |item| _ = world::retitle(item, CARD, &name))?;
         return wrote(true);
     }
     if !lab.holds_key(me, lab.state(me).current(KeyFam::Seed(vault))) {
         return wrote(false);
     }
-    lab.create(me, vault, vault, CARD, &[], world::named(&name, me))?;
+    lab.create(me, vault, vault, CARD, &[], world::card(&name, me))?;
     wrote(true)
 }
 
@@ -808,7 +806,7 @@ fn written(lab: &mut Lab, me: SignerId, vault: VaultId, name: &str) -> Result<bo
             return Ok(false);
         }
         let name = name.to_string();
-        lab.edit(me, vault, entry, move |item| _ = item.edit_document(|d| d.title = name))?;
+        lab.edit(me, vault, entry, move |item| _ = world::retitle(item, PROFILE, &name))?;
         return Ok(true);
     }
     let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
@@ -817,7 +815,7 @@ fn written(lab: &mut Lab, me: SignerId, vault: VaultId, name: &str) -> Result<bo
         let level = world::server_level(st, mine, avenceo);
         lab.issue(me, &[me], cast::share(vault, cast::vault(avenceo), level, Selector::All))?;
     }
-    lab.create(me, vault, vault, PROFILE, &[], world::named(name, me))?;
+    lab.create(me, vault, vault, PROFILE, &[], world::profile(name, me))?;
     Ok(true)
 }
 

@@ -484,7 +484,10 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    assert_eq!(kinds, ["article", "document", "document", "flow", "function", "post", "todo", "todo"]);
+    let own = [
+        "article", "card", "document", "document", "file", "flow", "function", "post", "profile", "todo", "todo",
+    ];
+    assert_eq!(kinds, own, "its own kinds, and documents and todos at v1 too, the lens engine's example");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     assert_eq!(list(&schemas["lenses"]).len(), 2);
 }

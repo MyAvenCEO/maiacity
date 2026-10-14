@@ -318,9 +318,9 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     let share = run(&mut app, public).await.expect("a share")["share"].clone();
     shown(&mut app, &todo, "her work todos, public", |t| t["public"] == true).await;
     let world = world_of(&mut app).await;
-    let shares = world["caps"].as_array().expect("its shares");
+    let shares = world["shares"].as_array().expect("its shares");
     let shared = shares.iter().find(|c| c["id"] == share).expect("the share");
-    let (who, level, slice) = (&shared["grantee"], &shared["role"], &shared["slice"]);
+    let (who, level, slice) = (&shared["who"], &shared["level"], &shared["slice"]);
     let picks = (&slice["name"], &slice["where"], &slice["ops"]);
     assert_eq!((who, level, &shared["group"]), (&json!("everyone"), &json!("read"), &json!("Public")), "all read");
     assert_eq!(picks, (&json!("Public"), &work, &json!([{ "op": "read" }])), "her work todos, by the Public group");

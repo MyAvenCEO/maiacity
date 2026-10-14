@@ -38,7 +38,7 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 |---|---|
 | Vault | An identity, like a smart account: a person's, a group's (coop) or an agent's (aven). It owns entries. |
 | Entry | One item of data in one vault: a Loro document with a type and tags. |
-| Edit | One signed change. Its id is the SHA-3 hash of its bytes. Eight kinds. |
+| Edit | One signed change. Its id is the SHA-3 hash of its bytes. Seven kinds. |
 | Log | The edits of one vault, one share, one audience or one entry. Each edit builds on its log's frontier. |
 | Share | Who may do what on which entries of a vault: who, level, what. |
 | Level | Keep, Relay, Backup, Read, Write or Owner, in that rank order. |
@@ -198,10 +198,10 @@ Mac and a phone that share it, gets one vault, the one that owns their seed.
 ## 4. Edits, logs and the replay
 
 **An edit** is `{parents, depth, author, cosigners, action}` (`policy::Edit`). Its bytes have one canonical encoding,
-which starts with the version byte 8 (`encode::VERSION`, `crates/avendb/src/encode.rs`). Its id is the SHA-3
+which starts with the version byte 9 (`encode::VERSION`, `crates/avendb/src/encode.rs`). Its id is the SHA-3
 (cSHAKE256) hash of those bytes, and its signatures sign the id (`crates/avendb/src/sign.rs`).
 
-**Eight kinds.** The action's first byte is its kind (`policy::Action`, `Action` in `spec/AvenDB/Step.lean`):
+**Seven kinds.** The action's first byte is its kind (`policy::Action`, `Action` in `spec/AvenDB/Step.lean`):
 
 | Tag | Kind | What it does | Log | Removal |
 |---|---|---|---|---|
@@ -612,13 +612,12 @@ group, what it reaches (`"everything"`, or its `where` where the device reads th
 
 **The world.** `world` is what the page draws everything from (`crates/avendb/src/world.rs`): every vault the device
 knows, with its kind, owners, devices, threshold and root, and as which vault the person acts in it (`acting`); every
-share in force, with its group, whether it is on the whole vault, whether its grantee reads (`reads`) and receives
-(`gets`) what it reaches, and who may revoke it; every audience with the devices that sync it; every entry with its
-type, tags, readers, writers and sharers, and the files its writes bring, each with how many pieces it is in and where
-it is synced to (`syncedTo`, as for the entry); whether the person's vault owns the CEO Aven (`ownsAven`) and whether
-the CEO Aven backs it up (`backsUp`). Its JSON keeps older key names: the shares are `caps`, the audiences `cells`, a
-share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and an audience's epoch
-`generation`.
+share in force (`shares`), with its `who`, its `level` and its group, whether it is on the whole vault, whether its who
+reads (`reads`) and receives (`gets`) what it reaches, and who may revoke it; every audience (`audiences`) with its
+`epoch` and the devices that sync it; every entry with its type, tags, `audience`, `levels` by vault, readers, writers
+and sharers, and the files its writes bring, each with how many pieces it is in and where it is synced to (`syncedTo`,
+as for the entry); whether the person's vault owns the CEO Aven (`ownsAven`) and whether the CEO Aven backs it up
+(`backsUp`). Its JSON names everything as the core does.
 
 ### Changes
 
@@ -716,14 +715,18 @@ judge (S4). A device refuses to make a write that wouldn't fit (NotAView).
 **Schemas** are JSON Schemas, each named by its hash. A **lens** says how a record of one schema version reads as
 another, both ways (`crates/avendb/src/lens.rs`, `spec/AvenDB/Lens.lean`). No record is ever migrated: each field stays
 in the version it was written in, each app reads through the lens into its own version, and its edits go back as only
-what changed (T9). So an old app and a new one edit the same todo side by side, and defaults live in the lens. Documents
-and todos ship with every app, two versions each, with a lens between them, and so do four schemas of one version each
-(`lens::blobs`), each told by its `kind`: an **article** (a title and one Markdown text), a **flow** (stages an item
-can be in, each with whether it is public and where it goes next), a **function** (a script that runs when an item
-enters or leaves a stage of a flow) and a **post** (a public post of a stream, about an entry).
+what changed (T9). So an old app and a new one edit the same todo side by side, and defaults live in the lens.
 
-**avenCEO GmbH holds them.** Every app knows avenDB's own schemas and lenses by heart, so each vault reads and writes
-them offline. Beside that, avenCEO GmbH holds each as an entry of its own, of the very same bytes and so of the same id,
+**Every record has a schema.** avenDB ships the newest schema of each kind of record (`lens::blobs::SHIPPED`), each
+told by its `kind`: a **document** (a note: a title, blocks and tags), a **todo**, an **article** (a title and one
+Markdown text), a **flow** (stages an item can be in, each with whether it is public and where it goes next), a
+**function** (a script that runs when an item enters or leaves a stage of a flow), a **post** (a public post of a
+stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), and a **file** (its
+name and its media type). The first versions of documents and todos, and the lenses from them, stay in the code only
+as the lens engine's worked example (`lens::blobs::ALL`); no record is written under them.
+
+**avenCEO GmbH holds them.** Every app knows avenDB's own schemas by heart, so each vault reads and writes them
+offline. Beside that, avenCEO GmbH holds each as an entry of its own, of the very same bytes and so of the same id,
 shared with Everyone: the founder's page adds those it lacks once their seed is there. A vault's lane doesn't reach
 into another's, so any other vault's records still read through the copies every app ships.
 
@@ -1107,7 +1110,7 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 |---|---|
 | `Basic.lean` | Ids, levels and keep modes, Who, selectors, headers, audiences, key families and names |
 | `State.lean` | What a peer knows: vaults, acting via owners, shares, entries, stays, wants and keeps, the lane |
-| `Step.lean` | The eight kinds and the rules that take or refuse each; the replay order; strong removal (`view`) |
+| `Step.lean` | The seven kinds and the rules that take or refuse each; the replay order; strong removal (`view`) |
 | `Sync.lean` | What a peer sends a device, interest and follow, the files it may fetch, the link card |
 | `Logs.lean` | Logs, frontiers, asks, forks; holdings, announcements, connections, Synced to and the blob gate |
 | `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups and touches; records, diffs and queries; schema fit |
@@ -1175,7 +1178,7 @@ whose keys sign it on that connection.
 
 | Path | What it holds |
 |---|---|
-| `crates/avendb/src/policy.rs` | Edits, the eight kinds, shares, refusals, the replay, strong removal, meaning |
+| `crates/avendb/src/policy.rs` | Edits, the seven kinds, shares, refusals, the replay, strong removal, meaning |
 | `crates/avendb/src/sync.rs` | Logs, frontiers, asks, follow lists, what a peer sends (`answer`, `Reach`) |
 | `crates/avendb/src/keys.rs` | Key families, epochs, sealed boxes (X-Wing and McEliece) |
 | `crates/avendb/src/sign.rs` | SLH-DSA signatures with a passkey's WebAuthn assertion, hellos, passkey ceremonies, standing consent, the pass |

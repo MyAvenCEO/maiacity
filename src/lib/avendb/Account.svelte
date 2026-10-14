@@ -463,7 +463,7 @@
 		];
 		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));
 		const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
-		const open = w.caps.some((c) => c.over === company && c.grantee === EVERYONE && types(c) === SHARED.join());
+		const open = w.shares.some((c) => c.over === company && c.who === EVERYONE && types(c) === SHARED.join());
 		if (!open) {
 			const share = { op: 'share', over: company, who: EVERYONE, level: 'Public', what: { type: SHARED }, as: company };
 			answer(await send(share));

@@ -314,10 +314,10 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let opts = Options { relay: Some(relay.url()), admission: Some(admission.clone()), card: true, ..Options::local() };
     let server = Node::spawn(lab, server_d, opts).await.expect("the server");
 
-    // what an earlier avenDB kept for her first browser's store, in OPFS and in IndexedDB, which it clears as it opens
+    // what an earlier avenDB kept for her first browser's store in OPFS, which it clears as it opens
     tab.frame(&[("page", "earlier"), ("store", "first"), ("earlier", "1")]).await;
     let earlier = tab.expect("earlier", "earlier").await;
-    assert!(earlier["ops"].is_string() && earlier["old"].is_string() && earlier["indexed"] == true, "kept: {earlier}");
+    assert!(earlier["ops"].is_string() && earlier["old"].is_string(), "kept: {earlier}");
 
     // Eve's first browser makes her passkey, founds her vault, claims the server and writes a note, in two ceremonies
     let code = server.offer().to_text();
@@ -423,7 +423,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     assert_eq!(forgot["generations"], json!([old, new]), "a new shelf beside the old: {forgot}");
     assert_eq!(forgot["metas"], json!({ old: ["0000000000000001"], new: [] }), "the old shelf as it was");
     assert_eq!(forgot["meta"], Value::Null, "nothing opens a device on the new one");
-    let gone = json!({ "ops": null, "meta": null, "key": null, "old": null, "indexed": false });
+    let gone = json!({ "ops": null, "meta": null, "key": null, "old": null });
     assert_eq!(forgot["earlier"], gone, "what the earlier avenDB kept, cleared");
     let passkeys = tab.passkeys().await;
     assert_eq!(passkeys.len(), 1, "one passkey, Eve's: {passkeys:?}");

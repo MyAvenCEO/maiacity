@@ -363,7 +363,7 @@
 		color: #6a4b12;
 	}
 
-	.cap .k {
+	.share .k {
 		background: #dcebd9;
 		color: #2b5a37;
 	}

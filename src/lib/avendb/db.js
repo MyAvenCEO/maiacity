@@ -29,13 +29,13 @@ import {
  * @typedef {{ id: string, title: string, from: string, to: string, json: string }} LensView
  * @typedef {{ entry: string, type: string | null, tags: string[] | null, kind: string, title: string | null,
  *   record: any, authored: string[], edits: number, held: number, lines: number, proposals: (string | null)[],
- *   cell: string, generation: number, bytes: number, author: string | null, actor: string | null, public: boolean,
- *   roles: Record<string, import('./vaults.js').Role> }} RowView
- * @typedef {{ id: string, caps: string[], generation: number, entries: number }} CellRow
- * @typedef {{ founded: number, writes: number, moves: number, keys: number, caps: number, revokes: number }} EditCounts
+ *   audience: string, epoch: number, bytes: number, author: string | null, actor: string | null, public: boolean,
+ *   levels: Record<string, import('./vaults.js').Role> }} RowView
+ * @typedef {{ id: string, shares: string[], epoch: number, entries: number }} CellRow
+ * @typedef {{ founded: number, writes: number, moves: number, keys: number, shares: number, revokes: number }} EditCounts
  * @typedef {{ vault: string, held: { edits: number, keys: number },
  *   builtIn: { schemas: SchemaView[], lenses: LensView[] }, seed: number, edits: EditCounts, schemas: SchemaView[],
- *   lenses: LensView[], cells: CellRow[], rows: RowView[] }} Db
+ *   lenses: LensView[], audiences: CellRow[], rows: RowView[] }} Db
  * @typedef {{ signer: string, by: 'device' | 'passkey', webauthn: 'edit' | 'batch' | 'pass' | null,
  *   batch: number | null, pq: number }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
@@ -61,7 +61,7 @@ export function studio(world, db, vault, actor) {
 	const as = byId.get(actor);
 	const held = db?.vault === vault ? db : null;
 	const rows = held?.rows ?? [];
-	const cells = held?.cells ?? [];
+	const cells = held?.audiences ?? [];
 	const known = new Map(world.entries.map((e) => [e.entry, e]));
 	/** Whether the acting vault reads entry `id`, as the device says. @param {string} id */
 	const readable = (id) => {
@@ -85,7 +85,7 @@ export function studio(world, db, vault, actor) {
 	 * @param {string} id
 	 */
 	const share = (id) => {
-		const c = world.caps.find((x) => x.id === id);
+		const c = world.shares.find((x) => x.id === id);
 		const what = c && (c.whole ? 'everything' : whereWords(c.slice?.where, world));
 		return c ? `${granteeOf(c, world)}’s share of ${what} as ${levelName(c, world)}` : `share ${short(id)}`;
 	};
@@ -99,7 +99,7 @@ export function studio(world, db, vault, actor) {
 	 * @param {string} id @param {string} [of]
 	 */
 	const sharedIn = (id, of = vault) => {
-		const caps = world.cells.find((x) => x.id === id)?.caps ?? cells.find((x) => x.id === id)?.caps;
+		const caps = world.audiences.find((x) => x.id === id)?.shares ?? cells.find((x) => x.id === id)?.shares;
 		return caps ? through(caps, of) : null;
 	};
 	/** Who entry `entry` of the vault is shared with. @param {string} entry */
@@ -194,7 +194,7 @@ const SPARSE = ['flows', 'functions', 'posts', 'lane', 'records'];
  * @returns {Table[]}
  */
 export function tables(s, only) {
-	const rows = s.rows.filter((r) => !only || r.cell === only);
+	const rows = s.rows.filter((r) => !only || r.audience === only);
 	/** @param {RowView} r */
 	const table = (r) => (!s.opens(r) ? 'sealed' : (BY_TYPE[r.type ?? ''] ?? 'records'));
 	return TABLES.map(([id, hint, family]) => ({ id, label: id, hint, family, rows: rows.filter((r) => table(r) === id) })).filter(
@@ -353,7 +353,7 @@ export const GROUPS = /** @type {const} */ ([
 	['all', 'All', []],
 	['writes', 'Writes & marks', ['write', 'mark']],
 	['keys', 'Keys', ['keys']],
-	['caps', 'Shares', ['cap', 'revoke']],
+	['shares', 'Shares', ['share', 'revoke']],
 	[
 		'vaults',
 		'Vaults & devices',
@@ -370,7 +370,7 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 	addDevice: 'add device',
 	removeDevice: 'remove device',
 	setRoot: 'set root',
-	cap: 'share',
+	share: 'share',
 	revoke: 'revoke',
 	write: 'write',
 	mark: 'mark',
@@ -407,23 +407,23 @@ export function describe(edit, s, edits) {
 	 */
 	const inside = (actor, over) => (actor === over ? '' : ` in ${s.vaultName(over)}`);
 	/**
-	 * the share the cap edit `id`, of fields `c`, gives: to whom, at what level, and on what, in words where it is in
+	 * the share the share edit `id`, of fields `c`, gives: to whom, at what level, and on what, in words where it is in
 	 * force and this browser reads its slice, else by its size alone @param {string} id @param {any} c
 	 */
 	const granted = (id, c) => {
-		const live = s.world.caps.find((x) => x.id === id);
-		const level = live ? levelName(live, s.world) : roleGroup(s.world, c.role);
+		const live = s.world.shares.find((x) => x.id === id);
+		const level = live ? levelName(live, s.world) : roleGroup(s.world, c.level);
 		const sealed = `a filter (${size(c.sealed ?? 0)} sealed)`;
 		const read = live?.slice ? whereWords(live.slice.where, s.world) : sealed;
-		return { to: who(c.grantee), level, what: c.wide || live?.whole ? 'everything' : read };
+		return { to: who(c.who), level, what: c.wide || live?.whole ? 'everything' : read };
 	};
 	/** a key of the schedule, by its name @param {any} k */
 	const key = (k) => {
 		if (k?.signer) return `${s.signer(k.signer)}’s own key`;
 		if (k?.seed) return `${s.vaultName(k.seed)}’s seed`;
-		if (k?.cap) return `the key of ${s.share(k.cap)}`;
-		if (k?.cell) {
-			const shared = s.sharedIn(k.cell, k.vault);
+		if (k?.share) return `the key of ${s.share(k.share)}`;
+		if (k?.audience) {
+			const shared = s.sharedIn(k.audience, k.vault);
 			return `the key of ${shared ? `the entries shared with ${shared}` : `some entries of ${s.vaultName(k.vault)}`}`;
 		}
 		return k?.entry ? `the key of ${s.entry(k.entry)}` : 'a key';
@@ -446,20 +446,20 @@ export function describe(edit, s, edits) {
 			return `Unlinks ${s.signer(f.device)} from ${s.vaultName(f.vault)}`;
 		case 'setRoot':
 			return f.root ? `Makes ${s.signer(f.root)} the root of ${s.vaultName(f.vault)}` : `Clears ${s.vaultName(f.vault)}’s root`;
-		case 'cap': {
+		case 'share': {
 			const g = granted(edit.id, f);
 			const where = inside(f.issuer, f.over);
-			if (KEEPING[f.role]) return `${s.vaultName(f.issuer)} has ${g.to} ${KEEPING[f.role](g.what)}${where}`;
+			if (KEEPING[f.level]) return `${s.vaultName(f.issuer)} has ${g.to} ${KEEPING[f.level](g.what)}${where}`;
 			const through = f.parent ? `, through its own share ${short(f.parent)}` : '';
 			return `${s.vaultName(f.issuer)} shares ${g.what}${where} with ${g.to} as ${g.level}${through}`;
 		}
 		case 'revoke': {
-			const c = edits(f.cap);
-			if (!c) return `${s.vaultName(f.actor)} revokes share ${short(f.cap)}`;
+			const c = edits(f.share);
+			if (!c) return `${s.vaultName(f.actor)} revokes share ${short(f.share)}`;
 			const g = granted(c.id, c.fields);
 			const where = inside(f.actor, c.fields.over);
-			if (KEEPING[c.fields.role])
-				return `${s.vaultName(f.actor)} no longer has ${g.to} ${KEEPING[c.fields.role](g.what)}${where}`;
+			if (KEEPING[c.fields.level])
+				return `${s.vaultName(f.actor)} no longer has ${g.to} ${KEEPING[c.fields.level](g.what)}${where}`;
 			return `${s.vaultName(f.actor)} revokes ${g.to}’s share of ${g.what}${where} as ${g.level}`;
 		}
 		case 'write': {
@@ -477,12 +477,12 @@ export function describe(edit, s, edits) {
 			const entry = s.entry(f.entry);
 			/** @type {string[]} */
 			const parts = [];
-			if (f.caps) parts.push(`is now shared with ${s.through(f.caps, f.vault)}`);
+			if (f.shares) parts.push(`is now shared with ${s.through(f.shares, f.vault)}`);
 			if (f.wants) {
 				/** @type {string[]} */
 				const wants = f.wants;
 				const grantee = (/** @type {string} */ id) =>
-					edits(id)?.fields.grantee ?? s.world.caps.find((c) => c.id === id)?.grantee;
+					edits(id)?.fields.who ?? s.world.shares.find((c) => c.id === id)?.who;
 				const devices = [...new Set(wants.map(grantee).filter(Boolean))];
 				const by = devices.length
 					? list(devices.map(s.signer))
@@ -495,7 +495,7 @@ export function describe(edit, s, edits) {
 		}
 		case 'keys': {
 			const to = f.boxes?.length ? `, sealed to ${count(f.boxes.length, 'holder')}` : '';
-			const at = f.key?.generation ? `Rotates ${key(f.key)}` : `Makes ${key(f.key)}`;
+			const at = f.key?.epoch ? `Rotates ${key(f.key)}` : `Makes ${key(f.key)}`;
 			return `${at}${to}${f.public ? ', announcing its public half' : ''}${f.clear ? ', in the clear: everyone reads it' : ''}`;
 		}
 		default:

@@ -98,7 +98,7 @@
 		);
 
 	/** what is shared with the vault in other vaults */
-	const held = $derived(world.caps.filter((c) => c.grantee === vault && c.over !== vault));
+	const held = $derived(world.shares.filter((c) => c.who === vault && c.over !== vault));
 	/**
 	 * its entries by who they are shared with, those the same shares reach (each of the core's cells) together where
 	 * who they are shared with reads the same: each with its entries and the devices that get them, the fewest first
@@ -107,8 +107,8 @@
 		/** @typedef {{ n: number, entries: string[], syncs: Map<string, import('./vaults.js').Syncing> }} Audience */
 		/** @type {Map<string, Audience>} */
 		const by = new Map();
-		for (const x of world.cells.filter((x) => x.vault === vault)) {
-			const shared = sharedThrough(world, vault, x.caps);
+		for (const x of world.audiences.filter((x) => x.vault === vault)) {
+			const shared = sharedThrough(world, vault, x.shares);
 			const words = sharedWords(shared);
 			/** @type {Audience} */
 			const a = by.get(words) ?? { n: shared.who.length + shared.gone, entries: [], syncs: new Map() };
@@ -130,7 +130,7 @@
 	 * only connects (Relay), by the role the device's world names; else only that it opens none of them.
 	 * @param {import('./vaults.js').Syncing} d
 	 */
-	const gets = (d) => (d.opens ? 'opens it' : ((d.role && KEEPS[d.role]) ?? 'opens none of it'));
+	const gets = (d) => (d.opens ? 'opens it' : ((d.level && KEEPS[d.level]) ?? 'opens none of it'));
 
 	let renaming = $state(/** @type {string | null} */ (null));
 	let naming = $state(/** @type {string | null} */ (null));

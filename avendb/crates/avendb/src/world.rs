@@ -24,12 +24,12 @@ use crate::sealed::{FileRoot, PIECE};
 use crate::slice::{LENS_TYPE, Selector, Slice};
 use crate::words::{hex, kind_name, level_name, status_name, who_name};
 
-/// The type of a device's card: an entry of its person's human vault, titled with the device's name, that the device
-/// wrote itself (the ops engine's `card`).
+/// The type of a device's card: an entry of its person's human vault, a record of avenDB's own `card` schema
+/// (`lens::CARD_V1`) titled with the device's name, that the device wrote itself (the ops engine's `card`).
 pub const CARD: &str = "card";
 
-/// The type of a vault's profile: an entry of the vault, titled with its name, written acting for the vault (the ops
-/// engine's `profile`).
+/// The type of a vault's profile: an entry of the vault, a record of avenDB's own `profile` schema
+/// (`lens::PROFILE_V1`) titled with its name, written acting for the vault (the ops engine's `profile`).
 pub const PROFILE: &str = "profile";
 
 /// The type of a note: a document, titled, its text in its first paragraph (`cast::document`).
@@ -42,13 +42,10 @@ pub const TODO: &str = "todo";
 /// content flow's function makes one as an article is published (`public_posts`).
 pub const POST: &str = "post";
 
-/// The type of a file: a document titled with the file's name, whose first write brings the file, sealed (the ops
-/// engine's `put_file`); the file's media type rides among the document's own tags (`MEDIA`).
+/// The type of a file: a record of avenDB's own `file` schema (`lens::FILE_V1`), its title the file's name and its
+/// `media` the media type the page shows and plays it as, whose next write brings the file, sealed (the ops engine's
+/// `put_file`).
 pub const FILE: &str = "file";
-
-/// The start of the mark that carries a file's media type among its document's own tags, inside its record:
-/// `avendb:media:video/mp4`, what the page shows and plays it as.
-pub const MEDIA: &str = "avendb:media:";
 
 /// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
 /// one line of another shows (the ops engine's `variant`), marked with that note's entry and the version it copied, the
@@ -212,7 +209,7 @@ pub enum What {
         proposals: usize,
     },
     Todo { title: String, status: Status },
-    /// A file (`FILE`): its name, its media type (`MEDIA`), and whether it is deleted (`DELETED`).
+    /// A file (`FILE`): its name, its media type, and whether it is deleted (`DELETED`).
     File { title: String, media: String, deleted: bool },
     /// A schema or lens entry (`slice::Sym::of_lane`): a schema's title, or a lens's name.
     Lane { title: String, lens: bool },
@@ -227,17 +224,17 @@ impl World {
     /// The world as device `me`'s page reads it: ids in 64 hex digits, kinds, levels and statuses by their lowercase
     /// names, a share's slice as the core writes it (`{name, where, ops, above}`, `slice::Slice::to_json`), `null`
     /// where the device doesn't read it, a vault's `via` `null` where the device doesn't act for it, a share's
-    /// `grantee` `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's `type`, `tags` and `created` `null`
+    /// `who` `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's `type`, `tags` and `created` `null`
     /// where the device doesn't read them and its levels by vault; the built-in groups of ops the page offers when it
     /// shares (`rules::groups`), each with its level; and the master recovery key it adds, `recovery`, `null` for none,
     /// which a vault's owners mark as such. As the device works it out, so the page keeps no rule:
     ///
     /// - `ownsAven` and `backsUp` (`owns_aven`, `backs_up`, `null` while it knows no avenCEO);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
-    /// - each share's `group`, the built-in group whose ops its ops are and whose `everyone` matches its grantee, or a
+    /// - each share's `group`, the built-in group whose ops its ops are and whose `everyone` matches its who, or a
     ///   keep share's mode's (`Level::group`), `null` for one of its own or one whose slice the device doesn't read;
-    ///   `whole`, whether it is on the whole vault; `reads`, whether its grantee reads what it reaches; `gets`, whether
-    ///   its grantee's devices receive it, neither for a keep share;
+    ///   `whole`, whether it is on the whole vault; `reads`, whether its who reads what it reaches; `gets`, whether
+    ///   its who's devices receive it, neither for a keep share;
     /// - each entry's `readers`, `writers` and `sharers`: the vaults whose level on it allows read, write, or is owner,
     ///   its own vault first (everyone besides reads it where it is `public`);
     /// - each entry's `files`, every file its writes bring, `len` `null` where the device doesn't open it, with
@@ -246,9 +243,7 @@ impl World {
     ///
     /// Each entry and each file lists the devices it is synced to, `syncedTo`, smallest first, each `{device, has, of}`
     /// (`Holder`): of an entry, edits of its log; of a file, its pieces. This device is among them once its shelf
-    /// holds some of it. The page's keys keep their older names: the shares are `caps`, the audiences `cells`, a
-    /// share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and an audience's
-    /// epoch `generation`.
+    /// holds some of it.
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let holders = |hs: Option<&Vec<Holder>>| {
@@ -281,8 +276,8 @@ impl World {
                 "id": hex(&c.id.0),
                 "over": hex(&c.share.over.0),
                 "issuer": hex(&c.share.issuer.0),
-                "grantee": who_name(c.share.who),
-                "role": level_name(level),
+                "who": who_name(c.share.who),
+                "level": level_name(level),
                 "wide": c.share.wide,
                 "parent": c.share.parent.map(|p| hex(&p.0)),
                 "chain": c.chain.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
@@ -297,14 +292,14 @@ impl World {
         };
         let syncing = |x: &Syncing| {
             let (device, through) = (hex(&x.device.0), hex(&x.through.0));
-            json!({ "device": device, "through": through, "role": level_name(x.level), "opens": x.opens })
+            json!({ "device": device, "through": through, "level": level_name(x.level), "opens": x.opens })
         };
         let audience = |c: &AudienceView| {
             json!({
                 "id": hex(&c.id.0),
                 "vault": hex(&c.vault.0),
-                "caps": c.shares.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
-                "generation": c.epoch,
+                "shares": c.shares.iter().map(|x| hex(&x.0)).collect::<Vec<_>>(),
+                "epoch": c.epoch,
                 "entries": c.entries.iter().map(|e| hex(&e.0)).collect::<Vec<_>>(),
                 "readers": ids(&c.readers),
                 "public": c.public,
@@ -353,9 +348,9 @@ impl World {
                 "type": i.ty,
                 "tags": i.tags,
                 "created": i.created,
-                "cell": hex(&i.audience.0),
+                "audience": hex(&i.audience.0),
                 "public": i.public,
-                "roles": levels,
+                "levels": levels,
                 "readers": hexes(readers),
                 "writers": hexes(writers),
                 "sharers": hexes(sharers),
@@ -381,8 +376,8 @@ impl World {
             "ownsAven": self.owns_aven,
             "backsUp": self.backs_up,
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
-            "caps": self.shares.iter().map(share).collect::<Vec<_>>(),
-            "cells": self.audiences.iter().map(audience).collect::<Vec<_>>(),
+            "shares": self.shares.iter().map(share).collect::<Vec<_>>(),
+            "audiences": self.audiences.iter().map(audience).collect::<Vec<_>>(),
             "entries": self.entries.iter().map(entry).collect::<Vec<_>>(),
             "groups": rules::groups().iter().map(rules::Group::to_json).collect::<Vec<_>>(),
         })
@@ -390,7 +385,7 @@ impl World {
 }
 
 /// The built-in group share `share` is, as a device reads its slice `slice`: the group whose ops its ops are and whose
-/// `everyone` matches its grantee (`rules::groups`); for a keep share, its mode's (`Level::group`); none for a group of
+/// `everyone` matches its who (`rules::groups`); for a keep share, its mode's (`Level::group`); none for a group of
 /// its own, or where the device doesn't read its slice.
 pub fn group_of(share: &Share, slice: Option<&Slice>) -> Option<&'static str> {
     if share.level.is_keep() {
@@ -505,16 +500,16 @@ fn lane(lab: &Lab, me: SignerId, entry: EntryId, ty: Option<&str>) -> Option<Wha
 /// Entry `en` as device `me` shows it.
 fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
     let meaning = lab.meaning(me, en.id);
-    let file = meaning.as_ref().is_some_and(|m| m.attrs.ty.as_str() == FILE);
     let what = match lab.item(me, en.id) {
         None => lane(lab, me, en.id, meaning.as_ref().map(|m| m.attrs.ty.as_str())).unwrap_or(What::Sealed),
-        Some(item) => match (item.as_markdown(), item.as_todo()) {
-            (Some(doc), _) if file => {
-                let media = doc.tags.iter().find_map(|t| t.strip_prefix(MEDIA)).unwrap_or_default().to_string();
-                let deleted = doc.tags.iter().any(|t| t == DELETED);
-                What::File { title: doc.title.clone(), media, deleted }
+        Some(item) => match (View::built_in(FILE).and_then(|v| item.read(v)), item.as_markdown(), item.as_todo()) {
+            (Some(file), ..) => {
+                let text = |k: &str| file.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+                let mut tags = file.get("tags").and_then(Value::as_array).into_iter().flatten();
+                let deleted = tags.any(|t| t.as_str() == Some(DELETED));
+                What::File { title: text("title"), media: text("media"), deleted }
             }
-            (Some(doc), _) => {
+            (_, Some(doc), _) => {
                 let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
                 let history = lab.history(me, en.id);
                 let edits = history.map_or(0, |h| h.changes().len());
@@ -522,8 +517,8 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
                 let deleted = doc.tags.iter().any(|t| t == DELETED);
                 What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), deleted, edits, proposals }
             }
-            (None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
-            (None, None) => record(item.record()),
+            (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
+            (_, None, None) => record(item.record()),
         },
     };
     let st = lab.state(me);
@@ -629,9 +624,42 @@ fn typed(lab: &Lab, me: SignerId, e: EntryId, ty: &str) -> bool {
     lab.meaning(me, e).is_some_and(|m| m.attrs.ty.as_str() == ty)
 }
 
-/// A document titled `title`, made on device `device`: a card's, a profile's or a file's record.
-pub fn named(title: &str, device: SignerId) -> Item {
-    Item::document(title, device)
+/// A record of avenDB's own schema of kind `kind` (`View::built_in`), made on device `device`: `fields` and its kind,
+/// each other field at its default.
+fn own(kind: &str, fields: Value, device: SignerId) -> Item {
+    let view = View::built_in(kind).expect("one of avenDB's own kinds");
+    let mut value = fields;
+    value["kind"] = json!(kind);
+    let value = view.schema().read(&value).expect("fields of its kind");
+    Item::made(view, &value, device).expect("a record of its kind")
+}
+
+/// Device `device`'s card, titled with its name `title`.
+pub fn card(title: &str, device: SignerId) -> Item {
+    own(CARD, json!({ "title": title }), device)
+}
+
+/// A vault's profile, titled with its name `title`, made on device `device`.
+pub fn profile(title: &str, device: SignerId) -> Item {
+    own(PROFILE, json!({ "title": title }), device)
+}
+
+/// A file's record, made on device `device`: its name `title` and media type `media`.
+pub fn file(title: &str, media: &str, device: SignerId) -> Item {
+    own(FILE, json!({ "title": title, "media": media }), device)
+}
+
+/// The title of record `item` of avenDB's own kind `kind`, a card's or a profile's: `None` for another kind.
+pub fn title_of(item: &Item, kind: &str) -> Option<String> {
+    Some(item.read(View::built_in(kind)?)?.get("title")?.as_str()?.to_string())
+}
+
+/// Record `item` of avenDB's own kind `kind` titled `title` from now on. False if it is of another kind.
+pub fn retitle(item: &mut Item, kind: &str, title: &str) -> bool {
+    let Some(view) = View::built_in(kind) else { return false };
+    let Some(mut value) = item.read(view) else { return false };
+    value["title"] = json!(title);
+    item.write(view, &value)
 }
 
 /// The cards of vault `vault` as device `me` reads them, by the device that wrote each, the author of its entry's first
@@ -641,11 +669,11 @@ pub fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (Ent
     let mut cards = BTreeMap::new();
     for en in st.entries().iter().filter(|en| en.vault == vault && en.creator == vault) {
         let author = st.write(en.creation).map(|w| w.author);
-        let doc = || lab.item(me, en.id).and_then(Item::as_document);
+        let title = || title_of(lab.item(me, en.id)?, CARD);
         if let Some(author) = author.filter(|_| typed(lab, me, en.id, CARD))
-            && let Some(doc) = doc()
+            && let Some(title) = title()
         {
-            cards.entry(author).or_insert((en.id, doc.title));
+            cards.entry(author).or_insert((en.id, title));
         }
     }
     cards
@@ -657,8 +685,7 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
     let st = lab.state(me);
     let profiles = st.entries().iter().filter(|en| en.vault == vault && en.creator == vault);
     profiles.filter(|en| typed(lab, me, en.id, PROFILE)).find_map(|en| {
-        let doc = lab.item(me, en.id)?.as_document()?;
-        Some((en.id, doc.title))
+        Some((en.id, title_of(lab.item(me, en.id)?, PROFILE)?))
     })
 }
 

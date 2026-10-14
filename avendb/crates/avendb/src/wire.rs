@@ -1349,9 +1349,9 @@ mod tests {
             bytes[level + 1] = b;
             assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown), "mode byte {b}");
         }
-        // three sub-kinds of share and of revocation, two of settings; eight kinds and no more, as a publish's tag, 8,
-        // went into the write's, a sync rule's, 9, and its end's, 10, into the share's and the revocation's, and a
-        // pick's, 11, into the mark's
+        // three sub-kinds of share and of revocation, two of settings; seven kinds and no more, as a checkpoint's tag,
+        // 7, went into the signature, a publish's, 8, into the write's, a sync rule's, 9, and its end's, 10, into the
+        // share's and the revocation's, and a pick's, 11, into the mark's
         assert_eq!(with(at + 1, 3), Err(WireError::Unknown));
         let revoke = edit(Action::Revoke(Revoking::Grant { share: ShareId(g.0), actor: v, keep: vec![], via: vec![] }));
         let mut bytes = revoke.to_wire();

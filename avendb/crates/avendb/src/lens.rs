@@ -18,7 +18,8 @@
 //! doesn't allow, drops a field it requires, or tags an item with another kind's schema changes no record anyone
 //! shows, and every device keeps the last record that fit.
 //!
-//! The two examples, each in two versions, with a lens from v1 to v2:
+//! The lens engine's worked example, two kinds in two versions each, with a lens from v1 to v2; avenDB writes v2 alone
+//! (`blobs::SHIPPED`), and the rest of its own schemas come in one version each:
 //! - Markdown documents: v1 blocks have a `kind` (h1, h2, h3, p, li, code); v2 blocks have a `type` with a heading
 //!   `level`, items can be `checked`, code can name its `lang`, and the document gains `tags`.
 //! - Todos: v1 has `done`; v2 has `status` (open, doing, done), and a todo in progress reads as not done in v1.
@@ -916,7 +917,8 @@ impl View {
         &BUILT_IN.todo_v2
     }
 
-    /// The app of built-in kind `kind` of one version alone: an article's, a flow's, a function's, a post's.
+    /// The app of built-in kind `kind` of one version alone: an article's, a flow's, a function's, a post's, a card's,
+    /// a profile's or a file's.
     pub fn built_in(kind: &str) -> Option<&'static View> {
         BUILT_IN.plain.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
     }
@@ -1064,12 +1066,19 @@ impl Fit<'_> {
     }
 }
 
-/// The blobs of the two examples' schemas and lenses, exactly as the apps ship them and a vault holds them as entries.
+/// The blobs of avenDB's own schemas, and of the lens engine's worked example, exactly as the apps ship them and a
+/// vault holds them as entries.
 pub mod blobs {
-    /// Every one of them: what the app reads through before a vault's lane holds anything. avenCEO GmbH, the seed's
-    /// company, holds each as a schema or lens entry of its own, shared with everyone, as their owner (the page's
-    /// `standard`): the same bytes, so the same ids.
-    pub const ALL: [&str; 10] = [
+    /// The newest schema of each kind of record avenDB writes: every record is written under one of them, or under a
+    /// schema of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared
+    /// with everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
+    pub const SHIPPED: [&str; 9] =
+        [DOCUMENT_V2, TODO_V2, ARTICLE_V1, FLOW_V1, FUNCTION_V1, POST_V1, CARD_V1, PROFILE_V1, FILE_V1];
+
+    /// What the app reads through before a vault's lane holds anything: the shipped schemas, and the lens engine's
+    /// worked example, the first versions of documents and todos and the lenses from them to the shipped ones, which
+    /// no record is written under any more.
+    pub const ALL: [&str; 13] = [
         DOCUMENT_V1,
         DOCUMENT_V2,
         TODO_V1,
@@ -1080,6 +1089,9 @@ pub mod blobs {
         FLOW_V1,
         FUNCTION_V1,
         POST_V1,
+        CARD_V1,
+        PROFILE_V1,
+        FILE_V1,
     ];
 
     pub const DOCUMENT_V1: &str = r#"{
@@ -1309,6 +1321,49 @@ pub mod blobs {
   "required": ["kind"]
 }
 "#;
+
+    /// A device's card: the name its vault's other devices show it by.
+    pub const CARD_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Card, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "card" },
+    "title": { "type": "string", "default": "" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// A vault's profile: the name everyone reads it by.
+    pub const PROFILE_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Profile, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "profile" },
+    "title": { "type": "string", "default": "" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// A file of a vault's Library: its name and its media type. Its bytes come with the write that brings them.
+    pub const FILE_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "File, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "file" },
+    "title": { "type": "string", "default": "" },
+    "media": { "type": "string", "default": "application/octet-stream" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
 }
 
 fn built_in_schema(blob: &str) -> Schema {
@@ -1329,6 +1384,9 @@ pub static ARTICLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs
 pub static FLOW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FLOW_V1));
 pub static FUNCTION_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FUNCTION_V1));
 pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V1));
+pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CARD_V1));
+pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
+pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
 
 struct BuiltIn {
     document_v1: View,
@@ -1341,7 +1399,7 @@ struct BuiltIn {
 
 static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
     let view = |app: &Schema, lens: &Lens, other: &Schema| View::through(app, lens, other).expect("the lens joins them");
-    let plain = [&*ARTICLE_V1, &*FLOW_V1, &*FUNCTION_V1, &*POST_V1];
+    let plain = [&*ARTICLE_V1, &*FLOW_V1, &*FUNCTION_V1, &*POST_V1, &*CARD_V1, &*PROFILE_V1, &*FILE_V1];
     let plain = plain.map(|s| (s.kind().expect("a built-in schema names its kind"), View::plain(s)));
     BuiltIn {
         document_v1: view(&DOCUMENT_V1, &DOCUMENT_LENS, &DOCUMENT_V2),

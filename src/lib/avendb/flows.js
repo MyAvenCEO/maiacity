@@ -195,7 +195,7 @@ function onlyTag(w) {
  * @param {import('./vaults.js').WorldView} world @param {string} vault @param {string} tag
  */
 export const publicShare = (world, vault, tag) =>
-	world.caps.find((c) => c.over === vault && c.grantee === EVERYONE && onlyTag(c.slice?.where) === tag);
+	world.shares.find((c) => c.over === vault && c.who === EVERYONE && onlyTag(c.slice?.where) === tag);
 
 /** What a function may ask for: changes of entries, and Public shares. */
 export const ASKS = ['create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'share'];

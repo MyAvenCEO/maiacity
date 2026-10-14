@@ -352,9 +352,9 @@ fn a_keep_share_names_a_device_of_the_vault_and_only_its_issuer_ends_it() {
     let phones = json!({ "op": "keep", "over": alice.to_hex(), "mode": "never", "device": phone.to_hex() });
     ok(run(&mut w, mac, phones));
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
-    let caps = seen["caps"].as_array().expect("its shares");
-    let row = caps.iter().find(|c| c["id"] == made.to_hex()).expect("the keep share");
-    assert_eq!((&row["role"], &row["grantee"]), (&json!("keepWhole"), &json!(mac.to_hex())), "{row}");
+    let shares = seen["shares"].as_array().expect("its shares");
+    let row = shares.iter().find(|c| c["id"] == made.to_hex()).expect("the keep share");
+    assert_eq!((&row["level"], &row["who"]), (&json!("keepWhole"), &json!(mac.to_hex())), "{row}");
     assert_eq!((&row["reads"], &row["gets"], &row["group"]), (&json!(false), &json!(false), &json!("Keep whole")));
     let listed = ok(run(&mut w, mac, json!({ "op": "shares", "over": alice.to_hex() })));
     let rows = listed["rows"].as_array().expect("its rows");
@@ -500,7 +500,7 @@ fn mark_marks_an_entry_as_its_vaults_steward_does() {
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
     let rows = seen["entries"].as_array().expect("its entries");
     let plan = rows.iter().find(|e| e["entry"] == l.plan.to_hex()).expect("the plan");
-    assert_eq!(plan["roles"][bob.to_hex()], "read", "Bob's vault reads it: {plan}");
+    assert_eq!(plan["levels"][bob.to_hex()], "read", "Bob's vault reads it: {plan}");
     assert_eq!(ok(run(&mut w, mac, mark.clone())), json!({ "edit": null }));
     w.lab.sync_all(0);
     assert_eq!(refused(&run(&mut w, mac_b, mark)), "NotActing", "only a device of its vault marks it");

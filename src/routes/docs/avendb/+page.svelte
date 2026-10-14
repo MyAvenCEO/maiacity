@@ -218,8 +218,7 @@
 		['Revoke', 'Ends any of them', 'The same log as what it ends'],
 		['Write', 'An encrypted change of one entry, and the files it brings', 'The entry'],
 		['Mark', 'Which shares pick an entry, and which keep shares want it', 'The entry'],
-		['Keys', 'Sealed boxes of one key, for exactly who may open it', 'The key’s family'],
-		['Checkpoint', 'A device vouches for its own writes with a hash-based signature', 'The entry']
+		['Keys', 'Sealed boxes of one key, for exactly who may open it', 'The key’s family']
 	];
 
 	const merges = [
@@ -367,7 +366,7 @@
 	];
 
 	const blobs = [
-		['An edit (a write, a share, a mark)', 'Its signed bytes; a write’s body is encrypted', '0.2 KiB and up; 17 KiB more with SLH-DSA', 'In a journal entry, then a pack'],
+		['An edit (a write, a share, a mark)', 'Its signed bytes; a write’s body is encrypted', 'about 17 KiB of SLH-DSA signature, then its body', 'In a journal entry, then a pack'],
 		['A pack of edits', 'One blob of many edits, named by a head', 'up to 64 saves', 'On the shelf'],
 		['A McEliece public key', 'One blob, named by its hash in the edits that use it', 'about 1 MiB', 'On the shelf'],
 		['A photo, a document', 'One sealed blob', 'up to 1 GiB', 'On the shelf, with its outboard'],
@@ -631,9 +630,9 @@
 
 		<section id="edits">
 			<p class="eyebrow">Edits and logs</p>
-			<h2>Eight kinds of signed edit, one log each</h2>
+			<h2>Seven kinds of signed edit, one log each</h2>
 			<p class="prose-col">
-				Every change in avenDB is an edit: signed, named by the SHA-3 hash of its bytes, and kept for good. There are eight
+				Every change in avenDB is an edit: signed, named by the SHA-3 hash of its bytes, and kept for good. There are seven
 				kinds. Each edit belongs to one log, a vault’s, a share’s, an audience’s or an entry’s, and its kind alone says
 				which, so a peer that can read nothing of it can still route it.
 			</p>
@@ -926,9 +925,9 @@
 					nothing anyone sees, so a patched app can’t slip in a value its schema forbids.
 				</li>
 				<li>
-					<b>avenDB’s own schemas ship with every app</b>: documents and todos, two versions each with a lens between
-					them, and articles, flows, functions and posts. Every vault reads and writes them offline, and avenCEO GmbH
-					holds each as a Public entry of its own, with the same bytes and so the same id.
+					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, flows, functions, posts, and a
+					device’s card, a vault’s profile and a file, one version each. Every vault reads and writes them offline, and
+					avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so the same id.
 				</li>
 				<li>
 					<b>Flows are stages any entry can be in.</b> An article goes from idea to draft to published. A stage is a
