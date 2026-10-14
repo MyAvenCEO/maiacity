@@ -6,23 +6,33 @@
  * abandoned gas station, the future centre of MaiaCity. There the newcomer meets the COOPs and their MINDs and
  * invests into the MaiaCity COOP, the owner of all the land. Then into the Village COOP's pickup (the first player
  * drives it; the second is fetched by the first) and along the gravel track to the village's centre hex, where the
- * Village COOP keeps the powercube in an old shed beside its solar row and battery: invest there, load the cube, and
- * drive on home to the tribe's hex, the tent and the Tribe COOP. Then the weekly pay day and the melt.
+ * Village COOP keeps the ElectroCube and the tent in an old shed, the BatteryCube and a solar panel beside it: invest
+ * there; the first loads the ElectroCube and the tent and pitches the tent at home, the second loads the BatteryCube
+ * and the panel and sets them up beside it. At the shed each also picks a seedling, a food tree or bush a few
+ * centimetres high, and plants it once home is set up: their first tree, named after them, growing on the game clock
+ * (./trees.js). Then the Tribe COOP, the weekly pay day and the melt.
  *
- * Steps that only tell something wait for "Next"; steps that ask for a move (mint, invest) are done when the game
- * shows it, so the story picks up wherever the player is. Each step also says where the world is at that moment
+ * The story plays as a film: each step's words are its voice-over, a line a shot (lines), and in the van each line's
+ * shot shows what it says (shots: the two of you, her face over your shoulder, your face as you listen; talk: the woman
+ * beside you turned to you, telling you; hold: the shot that stays while the story waits on your move). Steps that only tell
+ * something are done once told; steps that ask for a move (mint, invest) are done when the game shows it, so the story
+ * picks up wherever the player is. Each step also says where the world is at that moment
  * (at: where the pickup and the player are, cube: where the powercube is, place: what the camera looks at, reveal:
  * how much of the locked land shows) and, for the moments the world plays (intro, drive, load), what plays.
  */
-import { heartsValue, inHearts } from '../../../game/maiacity-v1/engine.js';
+import { SEEDLINGS, heartsValue, inHearts } from '../../../game/maiacity-v1/engine.js';
+import { milestones } from './trees.js';
 
 const f = (n, d = 0) => Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+/** how long a line of the voice-over holds (s): a breath, and a third of a second a word */
+export const lineDur = (line) => 1.8 + line.split(/\s+/).length * 0.34;
 
 /** the HEARTS a seat has invested into a COOP, from the ledger */
 export const investedBy = (view, seat, coop) => view.ledger.filter((e) => e.kind === 'invest' && e.from === `player:${seat}` && e.to === `coop:${coop}`).reduce((a, e) => a + e.amount, 0);
 
 /** where the world stands when there is no story: home, the powercube in the tribe's yard, the camera on the tribe */
-export const AT_HOME = { at: 'home', cube: 'home', place: 'tribe', reveal: 2 };
+export const AT_HOME = { at: 'home', cube: 'home', battery: 'store', place: 'tribe', reveal: 2 };
 
 /** the story for one seat, as it stands in the game now: every step with its words, whether it is done, and where the world is */
 export function story(view, seat, seen) {
@@ -36,58 +46,166 @@ export function story(view, seat, seen) {
 	const year = st.heartsPerDay * 28 * 13;
 	const invest = (id, goal) => ({ kind: 'invest', coop: id, goal, have: investedBy(view, seat, id), done: investedBy(view, seat, id) >= goal - 0.5 });
 	const next = (id) => ({ kind: 'next', done: !!seen[id] });
-	// the first player fetches the powercube and the tent from the village shed; the second finds them home already
+	// the first player fetches the ElectroCube and the tent from the village shed; the second, the BatteryCube and the solar panel
 	// still on the road: the van rolls on, the camera in its back seat, while the idea is told and the first HEARTS minted
-	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'van' };
-	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'centre' };
-	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', place: 'village' };
-	const home = { at: 'home', cube: 'home', tent: 'up', place: 'tribe' };
+	// the second fetches the Village COOP's BatteryCube and solar panel, and sets them up beside the tent
+	const inVan = { at: 'van', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'van', pot: 'bench' };
+	const atStop = { at: 'stop', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'centre', pot: 'bench' };
+	// the first player, the jerrycans loaded, sitting at the wheel of the pickup at the gas station; the second still waits at the stop
+	const inCab = first ? { ...atStop, at: 'cab' } : atStop;
+	const atStore = { at: 'village', cube: first ? 'shed' : 'home', tent: first ? 'shed' : 'up', battery: 'store', place: 'village', pot: 'bench' };
+	// the seedling: on the shed's bench, then in the pickup's bed, waiting beside the tent, and planted
+	const pot = me.tree ? 'planted' : me.seedling ? 'home' : 'bench';
+	const home = { at: 'home', cube: 'home', tent: 'up', battery: first ? 'store' : 'home', place: 'tribe', pot };
+	// loaded at the shed: the first player's ElectroCube and tent in the bed, or the second's BatteryCube and panel
+	const loaded = seen.pitch ? { cube: 'home', tent: 'up', battery: home.battery } : { cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed' };
+	const inBed = me.seedling && !me.tree ? 'bed' : pot;
+	const kind = SEEDLINGS.find((x) => x.id === (me.tree?.plant ?? me.seedling)) ?? SEEDLINGS[0];
+	const grows = milestones(kind.id, me.tree?.name ?? me.name);
+	// a span of game months in words, and how many real days it lasts (a game month lasts hoursPerMonth real hours)
+	const span = (n) => {
+		if (n < 2) return 'a game month';
+		if (n < 13) return `${n} game months`;
+		const y = Math.round((n / 13) * 2) / 2;
+		return y === 1 ? 'a game year' : `about ${f(y, y % 1 ? 1 : 0)} game years`;
+	};
+	const real = (n) => `${f((n * (st.hoursPerMonth ?? 24)) / 24)} real days`;
+	const o = other.founder ? other.name : 'the first settler';
+	const pct = (x) => `${f(x * 100)} %`;
+	// each step's words are its voice-over, one line a shot (lines); the moments the world plays (drive, load, build)
+	// cut one shot a line, and a line holds its shot as long as it takes to tell. A null line is a shot without words:
+	// the picture tells it (Samuel 2026-10-13: tell less of what the newcomer does, show it, and narrate what matters)
+	const say = (step, ...lines) => ({ ...step, lines, text: lines.filter(Boolean).join(' ') });
+	// the story as a film (the storyteller's, director's and editor's skills, .claude/skills): one transformation, from
+	// renting everything to owning a part of all of it; one question, opened in the first line (can no one have to work
+	// to survive?) and answered on pay day; the pain before the promise; every scene a step; the action shown, the voice
+	// on what it means; breath beats where the picture speaks; setups paid off (the petrol runs the ElectroCube, the
+	// seedling grows into a tree that feeds those who come after); the last image, one tent on one hex, mirrors the
+	// first, one van on one road
 	return [
-		{ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', part: 'road', done: !!seen.arrive, ...inVan,
-			text: `The old van rattles down the sand highway, full to the roof: people, bags, a sack of rice. Outside, steppe and dust as far as you can see. Somewhere ahead is a place called MaiaCity.` },
-		{ id: 'vision', chapter: 'The road', title: 'Imagine a world', hint: '', ...next('vision'), ...inVan,
-			text: `Imagine a new way of living. Villages that grow their own food, make their own energy and build their own homes, with open machines anyone can make. An economy upgraded from the ground up, where what you use belongs to you and to your neighbours, and every year life gets better for all. People everywhere are starting to build it: the largest civilisation movement of our time. It begins at the end of this road.` },
-		{ id: 'hearts', chapter: 'The road', title: 'Every hour, you receive a HEART', hint: '', ...next('hearts'), ...inVan,
-			text: `The woman beside you smiles and shows you her phone. In MaiaCity, simply because you are alive and here, you receive ${f(st.heartsPerDay)} HEARTS a day, one every hour, for as long as you live. Yours are called ${hearts}. A HEART is not money: you cannot buy bread with it. It is something better: your right to become an owner of the city.` },
-		{ id: 'mint', chapter: 'The road', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan,
-			text: `Your HEARTS grow quietly all the time. To make them yours, you mint them, like picking fruit that has ripened. As a welcome gift, your first mint brings a whole year at once: ${f(st.starterPack ?? year)} HEARTS. Mint them now, while the road rolls by.` },
-		{ id: 'arrival', chapter: 'The road', title: 'The end of the road', kind: 'intro', part: 'arrive', done: !!seen.arrival, ...inVan,
-			text: `The van slows down. Ahead, the road ends.` },
-		{ id: 'welcome', chapter: 'MaiaCity', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop,
-			text: `The van drives on, and the dust settles. A bus stop, an abandoned gas station, the wide steppe. The old world passed this place by and left it behind. ${other.founder ? `You and ${other.name} are` : 'You are'} among its very first people.` },
-		{ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop,
-			text: `Look closer. This bus stop and this old gas station are the centre of MaiaCity: one day a square full of life will stand here, with markets, workshops, gardens and homes all round, a flourishing city owned by everyone who lives in it. Someone once owned this gas station, people paid them, and one day the owner left and took everything. Here it works the other way round: everything belongs to the people. ${other.founder ? `You and ${other.name}` : 'You and the next person to arrive'} will own all of it, together.` },
-		{ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...next('coops'), ...atStop,
-			text: `Everything in the city belongs to a COOP: a company its people own together. There are three, each with its own job, and each has its own share, called a MIND. Turn 1 HEART into 1 MIND, and you own a little part of that COOP. Half the MIND goes to you, four tenths stay in the COOP's treasury so it can grow, and one tenth goes into the city pool.` },
-		{ id: 'maia', chapter: 'The city', title: `The ${c.maia.name}: the ground beneath your feet`, hint: 'invest', reveal: 2, ...invest('maia', 5000), ...atStop, place: 'city',
-			text: `Now look out over the land: 49 hexes, seven villages of seven. The steppe round the bus stop is the city's centre; the green villages round it wait to be settled. All of this land belongs to the ${c.maia.name}, so no one can ever buy it away from you, and every tribe pays it a small ground rent. Invest 5,000 HEARTS, and the land of the whole city becomes, in part, yours.` },
-		{ id: 'pool', chapter: 'The city', title: 'The city pool keeps everything fair', hint: 'swap', ...next('pool'), ...atStop,
-			text: `A tenth of your investment went into the city pool. The pool holds a little of every MIND, about ${f(inHearts(view, view.pool, hv))} ❤︎ now, so anyone can swap one MIND for another at a fair price, at any time. The ${c.maia.name} looks after it for everyone.` },
-		first
-			? { id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', action: 'Get in and drive', done: !!seen.ride, ...atStop,
-				text: `At the old gas station stands a pickup, the key in it. It belongs to the ${c.village.name}, and today it is here for you. Beside it wait two jerrycans of petrol, 40 litres for the Power Cube Electric you will fetch on the way. Throw them and your backpack in the back. A narrow track leaves the road's end and winds east, towards the green. Drive.` }
-			: { id: 'ride', chapter: 'The track', title: `${other.founder ? other.name : 'Someone'} comes to fetch you`, kind: 'drive', leg: 'village', fetch: true, action: 'Wave and get in', done: !!seen.ride, ...atStop,
-				text: `A cloud of dust on the gravel track: ${other.founder ? other.name : 'the first settler'} is coming in the ${c.village.name}'s pickup to fetch you. The village is on the way home.` },
-		{ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000), ...atStore,
-			text: `You have reached your village: seven hexes of grass, with this centre hex in the middle. The pickup you came in, the Power Cube Electric, the solar row and the battery all belong to the ${c.village.name}. It serves every tribe of the village and lends them its machines for a rent. Invest 2,000 HEARTS, and every machine here works a little for you too.` },
-		first
-			? { id: 'cube', chapter: 'The village', title: 'Load the Power Cube and the tent', kind: 'load', action: 'Load them', done: !!seen.cube, ...atStore,
-				text: `In the old shed, under half a roof, wait two things: the Power Cube Electric, Open Source Ecology's open-hardware engine cube with an alternator in it, enough to light a tent, cook and charge every phone of a tribe, and a little dome tent, packed in its canvas. One day this shed will be the village store, and the solar row beside it will light the whole village. Today your tribe needs power and a roof. Load them both onto the pickup.` }
-			: { id: 'cube', chapter: 'The village', title: 'The old shed', ...next('cube'), ...atStore,
-				text: `This is where ${other.founder ? other.name : 'the first settler'} fetched the Power Cube and the tent on the first day. One day the shed becomes the village store; for now the solar row and the battery stand here alone, waiting for more tribes to come.` },
-		{ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', action: 'Drive home', done: !!seen.drive, ...atStore, cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up',
-			text: `Out of the village centre the track bends on through the grass, to the hex at the village's edge where you will live. Drive home.` },
+		// Act I, the road: the promise and the pain, the vision, the HEARTS as she tells of them, the first mint
+		say({ id: 'arrive', chapter: 'The road', title: 'On the road', kind: 'intro', part: 'road', done: !!seen.arrive, ...inVan },
+			'At the end of this road, they say, no one has to work to survive.',
+			'Where you come from, others own the land, the homes and the tools, and you pay them all your life.',
+			'No one here is running away. Everyone is going towards something.'),
+		say({ id: 'vision', chapter: 'The road', title: 'Imagine a world', hint: '', ...next('vision'), ...inVan, shots: ['seat', 'window', 'faces', 'aerial'] },
+			'Villages that grow their own food, make their own power and build their own homes.',
+			'An economy owned by the people who use it.',
+			null,
+			'Perhaps the most important civilisation-building project of our time: the blueprint for a new generation of cities.'),
+		say({ id: 'hearts', chapter: 'The road', title: 'Every hour, you receive a HEART', hint: '', ...next('hearts'), ...inVan, shots: ['two', 'over', 'listen'], talk: true },
+			null,
+			`“There, everyone receives ${f(st.heartsPerDay)} HEARTS a day, one every hour, for life. Yours will be ${hearts}.”`,
+			'“A HEART is not money. It is your right to become an owner.”'),
+		say({ id: 'mint', chapter: 'The road', title: 'Collect your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan, shots: ['her', 'close'], hold: 'close', talk: true },
+			'“They ripen like fruit. Mint them, and they are yours.”',
+			`“Your first mint is a whole year: ${f(st.starterPack ?? year)} HEARTS.”`),
+		// Act II, owning together: the end of the road, the COOPs, the land, the pool, the village and its machines
+		say({ id: 'arrival', chapter: 'The road', title: 'The end of the road', kind: 'intro', part: 'arrive', done: !!seen.arrival, ...inVan },
+			'The old world passed this place by and left it behind.',
+			null,
+			null,
+			'Welcome to MaiaCity.'),
+		// the second waits at the stop to be fetched; the first does not wait (Samuel 2026-10-13): they walk over to the
+		// gas station and load the jerrycans into the village's pickup while the city is told, and get in while the COOPs
+		// are; the ElectroCube is not named until it waits in the shed
 		...(first
-			? [{ id: 'pitch', chapter: 'Your home', title: 'Pitch your tent', kind: 'build', action: 'Pitch the tent', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed',
-				text: `This is it: a clearing of grass and a few bushes at the edge of the village, your hex. Nothing stands here yet. Unload the Power Cube, unroll the canvas, and raise the little dome, strut by strut. Your first home in MaiaCity.` }]
-			: []),
-		{ id: 'tribe', chapter: 'Your home', title: `The ${c.tribe.name}: your home`, hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home,
-			text: `Welcome home. ${first ? 'The tent you just raised' : `The tent ${other.founder ? other.name : 'the first settler'} raised`} stands on the grass, the Power Cube Electric humming beside it, its light already on inside. The tent belongs to the ${c.tribe.name}, the COOP of this one hex: your tribe. It rents the land from the city and the machines from the village, and you pay it a small rent for your bed. Invest 1,000 HEARTS, and you own a part of your own home.` },
-		{ id: 'payday', chapter: 'Pay day', title: 'Every week, the city pays you back', hint: 'you', ...next('payday'), ...home,
-			text: `At the end of each game week it is pay day. The rents flow: from you to your tribe, from your tribe to the land and the machines. And a fifth of every rent flows straight back to the people who own the COOPs. That is you. Look at your cash flow to see it.` },
-		{ id: 'melt', chapter: 'Pay day', title: 'Owning beats hoarding', hint: '', ...next('melt'), ...home,
-			text: `Every HEART and every MIND melts a little, ${f(st.demurrage * 100)} % a year, like ice in the sun. So no one gets rich by sitting on a pile, the way the gas station's owner once tried to. What grows your share is owning the things people really use. And if a rule ever feels wrong, propose a change: a MIP that both of you sign.` },
-		{ id: 'done', chapter: 'Your city', title: 'You are an owner of MaiaCity now', hint: '', kind: 'done', done: !!seen.done, ...home,
-			text: `The land, the machines and your home are partly yours. Come back every day to mint your HEARTS, and watch the city pay you on pay day. Today it is one tent on one hex of grass, at the end of a gravel track. What it becomes is up to the two of you.` }
+			? []
+			: [say({ id: 'welcome', chapter: 'MaiaCity', title: `Welcome to MaiaCity, ${me.name}`, hint: '', ...next('welcome'), ...atStop, act: 'look up', close: true },
+				`${other.founder ? `${other.name} came before you. You are` : 'You are'} among its very first people.`)]),
+		first
+			? say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', kind: 'fuel', done: !!seen.station, ...atStop },
+				'You are among its very first people.',
+				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
+				null,
+				'Here no single owner can leave and take it all. It belongs to the people who live here.')
+			: say({ id: 'station', chapter: 'MaiaCity', title: 'The heart of a city to come', hint: '', ...next('station'), ...atStop, act: 'point' },
+				'In 16 years, a whole city stands here: a square full of life, markets, workshops, gardens and homes.',
+				'Here no single owner can leave and take it all. It belongs to the people who live here.'),
+		first
+			? say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', kind: 'board', done: !!seen.coops, ...atStop, at: 'pickup' },
+				`The pickup belongs to the ${c.village.name}: a COOP, a company its people own together.`,
+				'Invest 1 HEART into a COOP, and it becomes 1 MIND: a share of that COOP.',
+				`Half the MIND is yours, four tenths stay in the COOP's treasury, and ${pct(st.poolShare ?? 0.1)} go to the city pool.`,
+				'COOPs never hold HEARTS. Only people do.')
+			: say({ id: 'coops', chapter: 'Owning together', title: 'Meet the COOPs', hint: 'coops', ...next('coops'), ...atStop, act: 'think', close: true },
+				'Everything here belongs to a COOP, a company its people own together.',
+				'Invest 1 HEART into a COOP, and it becomes 1 MIND: a share of that COOP.',
+				`Half the MIND is yours, four tenths stay in the COOP's treasury, and ${pct(st.poolShare ?? 0.1)} go to the city pool.`,
+				'COOPs never hold HEARTS. Only people do.'),
+		// the land, without its rent: the ground rent is told where the tribe pays it (Samuel 2026-10-13); the city
+		// grows far beyond the first plot, so no count of hexes
+		say({ id: 'maia', chapter: 'The city', title: `The ${c.maia.name}: the ground beneath your feet`, hint: 'invest', reveal: 2, ...invest('maia', 5000), ...inCab, place: 'city' },
+			`The land of MaiaCity belongs to the ${c.maia.name}, so no one can ever buy it away from you.`,
+			'Invest 5,000 HEARTS, and the land is, in part, yours.'),
+		say({ id: 'pool', chapter: 'The city', title: 'The city pool keeps everything fair', hint: 'swap', ...next('pool'), ...inCab },
+			`The city pool holds a little of every MIND, about ${f(inHearts(view, view.pool, hv))} ❤︎ now.`,
+			'Anyone can swap one MIND for another there, at a fair price, at any time.'),
+		first
+			? say({ id: 'ride', chapter: 'The track', title: 'Your ride is waiting', kind: 'drive', leg: 'village', done: !!seen.ride, ...inCab },
+				null,
+				'The centre of your village.')
+			: say({ id: 'ride', chapter: 'The track', title: `${other.founder ? other.name : 'Someone'} comes to fetch you`, kind: 'drive', leg: 'village', fetch: true, done: !!seen.ride, ...atStop },
+				`${o} comes to fetch you in the ${c.village.name}'s pickup.`,
+				null,
+				null,
+				'The centre of your village.'),
+		say({ id: 'village', chapter: 'The village', title: `The ${c.village.name}: the tools that make life easy`, hint: 'invest', reveal: 1, ...invest('village', 2000), ...atStore },
+			`Every machine at the old shed belongs to the ${c.village.name} too.`,
+			`Whoever uses a machine pays its rent, and ${pct(st.dividendShare ?? 0.2)} of every sale goes to its owners.`,
+			'Invest 2,000 HEARTS, and every machine here works a little for you.'),
+		// the loading at the shed ends at the bench of seedlings, where the choice is made (Samuel 2026-10-13: the pick
+		// belongs inside the loading, not after it)
+		first
+			? say({ id: 'cube', chapter: 'The village', title: 'Load the ElectroCube and the tent', kind: 'load', done: !!seen.cube, ...atStore },
+				null,
+				'The ElectroCube: open hardware anyone can build. Your petrol runs it.',
+				null,
+				'And every newcomer takes one more thing home: a tree of their own.')
+			: say({ id: 'cube', chapter: 'The village', title: 'Load the BatteryCube and the solar panel', kind: 'load', what: 'power', done: !!seen.cube, ...atStore },
+				`${o} took the ElectroCube and the tent home on the first day.`,
+				'Yours is the BatteryCube: four BatteryPacks in the same open frame.',
+				null,
+				'And every newcomer takes one more thing home: a tree of their own.'),
+		// a seedling for each newcomer, from the bench beside the shed (Samuel 2026-10-13): five food trees and bushes
+		// that grow outdoors here, a few centimetres high; the player picks one, standing at the bench
+		say({ id: 'seedling', chapter: 'The village', title: 'Pick your first tree', kind: 'pick', done: !!(me.seedling || me.tree), ...atStore, ...loaded, at: 'bench', place: 'bench' }, null, null),
+		say({ id: 'drive', chapter: 'The village', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, at: 'bench', cube: first ? 'bed' : 'home', tent: first ? 'bed' : 'up', battery: first ? 'store' : 'bed', pot: inBed },
+			null,
+			null,
+			'Home: one hex of land at the edge of the village.',
+			'Nothing stands here yet.'),
+		// Act III, your home: the tent and the power, the first tree, the Tribe COOP, pay day (the question answered)
+		...(first
+			? [say({ id: 'pitch', chapter: 'Your home', title: 'Pitch your tent', kind: 'build', done: !!seen.pitch, ...home, cube: 'bed', tent: 'bed', pot: inBed },
+				null,
+				'A home you raised with your own hands.',
+				'Power and a roof: all your tribe needs to begin.')]
+			: [say({ id: 'pitch', chapter: 'Your home', title: 'Set up the sun', kind: 'build', what: 'power', done: !!seen.pitch, ...home, battery: 'bed', pot: inBed },
+				null,
+				'Sun by day, stored for the night.',
+				'One cable, and the tent runs on sunlight. The ElectroCube can rest.')]),
+		// and now the first tree, in the ground beside the tent, named after the player, growing on the game clock
+		say({ id: 'plant', chapter: 'Your home', title: `Plant your ${kind.label.toLowerCase()}`, kind: 'plant', done: !!me.tree, ...home, pot: me.tree ? 'planted' : 'home', place: `plot${seat}` },
+			'Your home stands. Now plant your first tree.'),
+		say({ id: 'tree', chapter: 'Your home', title: `${me.tree?.name ?? me.name}, your first tree`, hint: '', ...next('tree'), ...home, place: `tree${seat}` },
+			`It carries your name now: ${me.tree?.name ?? me.name}.`,
+			`Its first ${kind.fruit} come in ${span(grows.fruit)}: ${real(grows.fruit)} from today.`,
+			'Look after it, and one day it feeds the people who come after you.'),
+		say({ id: 'tribe', chapter: 'Your home', title: `The ${c.tribe.name}: your home`, hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home },
+			`${first ? 'Your tent' : `The tent ${o} raised`} belongs to the ${c.tribe.name}, the COOP of this one hex.`,
+			'It rents the land from the city and the machines from the village. You rent your bed from it.',
+			'Invest 1,000 HEARTS, and you own a part of your own home.'),
+		say({ id: 'payday', chapter: 'Pay day', title: 'Every week, the city pays you back', hint: 'you', ...next('payday'), ...home },
+			'Every game week is pay day. The rents flow: from you to your tribe, from your tribe to the land and the machines.',
+			'And a fifth of every rent flows back to the people who own the COOPs. That is you.'),
+		say({ id: 'melt', chapter: 'Pay day', title: 'Owning beats hoarding', hint: '', ...next('melt'), ...home },
+			`HEARTS and MINDs melt ${pct(st.demurrage)} a year, like ice in the sun.`,
+			'No one gets rich sitting on a pile. You gain by owning what people really use.',
+			'A rule feels wrong? Propose a MIP, and both of you sign it.'),
+		say({ id: 'done', chapter: 'Your city', title: 'You are an owner of MaiaCity now', hint: '', kind: 'done', done: !!seen.done, ...home },
+			'The land, the machines and your home are partly yours.',
+			'Mint every day, and the city pays you every week.',
+			'Today it is one tent on one hex of grass. What it becomes is up to the two of you.')
 	];
 }

@@ -25,14 +25,16 @@ export const SPEED = {
 export const REAL_SIZES = {
 	pickup: { size: [1.86, 1.82, 5.33], what: 'a double-cab pickup' },
 	powerCube: { size: [0.74, 0.75, 0.76], what: 'Open Source Ecology’s Power Cube VII, a 27" (0.69 m) frame, its couplers, caps and handles out of it (actors/powercube.js)' },
-	powerCubeElectric: { size: [0.74, 0.75, 0.97], what: 'our Power Cube Electric: the same 27" cube, 35" (0.9 m) long for its alternator' },
+	electroCube: { size: [0.74, 0.75, 0.76], what: 'our ElectroCube: the Power Cube’s 27" frame and size, a flat axial-flux generator in it (actors/electrocube.js)' },
+	batteryCube: { size: [0.73, 0.75, 0.76], what: 'our BatteryCube: the Power Cube’s 27" frame, four BatteryPacks and an inverter in it (actors/batterycube.js)' },
+	batteryPack: { size: [0.47, 0.13, 0.52], what: 'our BatteryPack: a 460 × 480 × 125 mm rack module, its handles and terminals out of its face (actors/batterypack.js)' },
 	genset: { size: [2.3, 2.83, 2.3], what: 'a 60 kVA silenced diesel genset (the Assets’ powercube v1)' },
 	solarPanel: { size: [1.72, 1.08, 1.4], what: 'one 410 W panel on its 30° ground rack, ballast blocks and cable' },
-	batteryPack: { size: [1.6, 2.51, 1.6], what: 'a 230 kWh outdoor battery cabinet on its plinth, its cable out the back' },
+	batteryCabinet: { size: [1.6, 2.51, 1.6], what: 'a 230 kWh outdoor battery cabinet on its plinth, its cable out the back' },
 	travelVan: { size: [1.95, 2.8, 5.0], what: 'an old travel van, bags tied on its roof' },
 	busStop: { size: [5, 2.9, 2.2], what: 'a bus shelter with its sign' },
 	gasStation: { size: [24, 8.2, 16], what: 'a forecourt with its canopy and price sign' },
 	oldShed: { size: [6.2, 2.9, 5], what: 'a small half-roofed shed' },
-	person: { size: [0.52, 1.8, 0.66], what: 'a grown-up, backpack and all (the heart over them not counted)' },
+	person: { size: [0.52, 1.8, 0.55], what: 'a grown-up, backpack and all (the heart over them not counted)' },
 	tent: { size: [5.6, 2.1, 5.6], what: 'a 4 m geodesic dome tent on its 5.6 m deck' }
 };

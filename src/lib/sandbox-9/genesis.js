@@ -13,7 +13,7 @@
  * 1,500); `people` below it leaves beds empty.
  */
 import { exp, pow } from './dmath.js';
-import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, DAYS_IN_MONTH, FOOD as FOODCAT } from './primitives.js';
+import { ENERGY_SOURCES, GENESIS_PRICE_R, PERSON, RESOURCES, STARTING_CAPITAL, TECH, AVEN_RATE_R, LEARNING, CHIPS, MONTHLY, STANDING_MWH_T, BORDER, DAYS_IN_MONTH, FOOD as FOODCAT, DF_ENGINE } from './primitives.js';
 import { OUTDOOR, INDOOR, outdoorShare, indoorShare, dietFacts, rampFor, skillRamp, skillOf, splitYields } from './food.js';
 import { villageFacts } from './village.js';
 import { rampSchedule, initRamp } from './ramp.js';
@@ -219,6 +219,10 @@ const GENESIS = [
 	{ id: 'GLASS-B', tech: 'glass', i: 1 },
 	{ id: 'PANEL-A', tech: 'panel', i: 0 },
 	{ id: 'PANEL-B', tech: 'panel', i: 1 },
+	// with the dome factory (./primitives.js DF_ENGINE) the steel, glass and panel COOPs run its hub, glazing and solar
+	// lines, and each timber COOP runs half its struts line beside its timber works (one COOP, two plants: the timber
+	// works on the village's logs first, the struts line on bought lamellas for the rest, ./coops.js plan)
+	...(DF_ENGINE ? [{ id: 'TIMBER-A', tech: 'struts', i: 0 }, { id: 'TIMBER-B', tech: 'struts', i: 1 }] : []),
 	{ id: 'GOODS-A', tech: 'goods', i: 0 },
 	{ id: 'GOODS-B', tech: 'goods', i: 1 },
 	{ id: 'SPRING-A', tech: 'spring', i: 0 },
@@ -413,7 +417,11 @@ function constants(cfg) {
 		aiExportEurH: CHIPS.exportEurGpuH.v * (cfg.aiExportPrice ?? 1),
 		aiExportAhDay: CHIPS.exportGpus.v * 24 * CHIPS.exportUtil.v * (cfg.aiExportScale ?? 1),
 		// the border's prices, € (BORDER): food a unit, logs, scrap and float glass a t, cells a kWp
-		eur: { food: diet.eurPer1000 * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatEur.v * ip, cells: BORDER.cellsEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip },
+		// (with the dome factory, its lines' raw inputs at the price of their whole kit: lamellas and C24 a m³, plate, float
+		// glass a t, cells a kWp)
+		eur: DF_ENGINE
+			? { food: diet.eurPer1000 * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatKitEur.v * ip, cells: BORDER.cellsKitEur.v * ip, lamellas: BORDER.lamellasKitEur.v * ip, plate: BORDER.plateKitEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip }
+			: { food: diet.eurPer1000 * ip, logs: BORDER.logsEur.v * ip, scrap: BORDER.scrapEur.v * ip, float: BORDER.floatEur.v * ip, cells: BORDER.cellsEur.v * ip, glulam: BORDER.glulamEur.v * ip, steel: BORDER.steelEur.v * ip, glazing: BORDER.glazingEur.v * ip, panels: BORDER.panelsEur.v * ip },
 		accountDays: BORDER.accountDays.v,
 		importAhead: BORDER.importAhead.v,
 		foodStoreDays: BORDER.foodStoreDays.v,
@@ -451,10 +459,20 @@ function villageTech(w) {
 	const fr = V.factoryRun;
 	const tw = { wood: V.works.timber.wood + V.works.bamboo.wood, steel: V.works.timber.steel + V.works.bamboo.steel, glass: V.works.timber.glass + V.works.bamboo.glass };
 	Object.assign(T.timber.build, per(tw, fr.timber.t + fr.bamboo.t));
-	Object.assign(T.steel.build, per(V.works.steel, fr.steel.t));
-	Object.assign(T.glass.build, per(V.works.glass, fr.glass.t));
+	if (DF_ENGINE) {
+		// the dome factory's Dome120 (the glass & solar works' site), shared by its lines by their floor (the aisles with
+		// them), over each line's capacity
+		const X = DF_ENGINE, df = V.works.glass;
+		for (const k of ['struts', 'steel', 'glass', 'panel']) {
+			const f = X.floor[k] / X.floorAll;
+			Object.assign(T[k].build, per({ wood: df.wood * f, steel: df.steel * f, glass: df.glass * f }, X.cap[k]));
+		}
+	} else {
+		Object.assign(T.steel.build, per(V.works.steel, fr.steel.t));
+		Object.assign(T.glass.build, per(V.works.glass, fr.glass.t));
+	}
 	// the glazing wears faster than the frame: upkeep replaces glass at life ÷ glassLife times the frame's rate
-	for (const k of ['home', 'hall', 'greenhouse', 'timber', 'steel', 'glass']) T[k].glassX = T[k].life > 0 ? T[k].life / (TECH[k].glassLife?.v ?? 30) : 1;
+	for (const k of ['home', 'hall', 'greenhouse', 'timber', 'steel', 'glass', ...(DF_ENGINE ? ['panel', 'struts'] : [])]) T[k].glassX = T[k].life > 0 ? T[k].life / (TECH[k].glassLife?.v ?? 30) : 1;
 }
 
 /** a food forest's share of its mature harvest by age in years (./food.js) */
@@ -557,17 +575,21 @@ function seedPlants(w) {
 				break;
 			}
 			case 'steel':
-				pl.cap = fr.steel.t * S.steelSplit[g.i] * vf;
-				pl.landM2 = pl.cap * def.land;
-				pl.raw = (pl.cap / 365) * w.c.storesDays * rawOf(pl)[1];
-				break;
 			case 'glass':
-				pl.cap = fr.glass.t * S.glassSplit[g.i] * vf;
-				pl.landM2 = pl.cap * def.land;
-				pl.raw = (pl.cap / 365) * w.c.storesDays * rawOf(pl)[1];
-				break;
 			case 'panel':
-				pl.cap = S.panelWorksKwpYear[g.i] * s;
+			case 'struts':
+				if (DF_ENGINE) {
+					// the dome factory's lines on two shifts, half to each COOP; they buy their raw inputs as they need them
+					// (no store at founding: a line runs far below its capacity once the domes stand)
+					pl.cap = DF_ENGINE.cap[g.tech] * S.dfSplit[g.i] * vf;
+					pl.landM2 = pl.cap * def.land;
+					pl.raw = 0;
+					pl.dfLine = true;
+					break;
+				}
+				if (g.tech === 'steel') pl.cap = fr.steel.t * S.steelSplit[g.i] * vf;
+				else if (g.tech === 'glass') pl.cap = fr.glass.t * S.glassSplit[g.i] * vf;
+				else pl.cap = S.panelWorksKwpYear[g.i] * s;
 				pl.landM2 = pl.cap * def.land;
 				pl.raw = (pl.cap / 365) * w.c.storesDays * rawOf(pl)[1];
 				break;
@@ -664,12 +686,14 @@ function attachHalls(w) {
 	const rent = {
 		greenhouse: { hosts: living(D.foodPerHex * f120 + D.utilPerHex * D.utilGardenM2), hosted: 1 },
 		well: { hosts: living(D.utilPerHex * Z.water), hosted: 0 },
-		solar: { hosts: living(D.utilPerHex * (Z.battery + Z.hydrogen)), hosted: 0 },
+		solar: { hosts: living(D.utilPerHex * ((Z.battery ?? 0) + (Z.hydrogen ?? 0))), hosted: 0 },
 		goods: { hosts: living(D.utilPerHex * Z.workshop), hosted: 0 },
 		timber: { hosts: vHosts((WF.timber + WF.bamboo) * vf), hosted: 1 },
-		steel: { hosts: vHosts(WF.steel * vf), hosted: 1 },
-		glass: { hosts: vHosts(0.7 * WF.glass * vf), hosted: 1 },
-		panel: { hosts: vHosts(0.3 * WF.glass * vf), hosted: 1 },
+		// with the dome factory, its lines rent its floor (./primitives.js DF_ENGINE.floor; the aisles and loading stay the
+		// Village COOP's); without it, the steelworks its dome and the glass and panel works the glass & solar dome
+		...(DF_ENGINE
+			? Object.fromEntries(['struts', 'steel', 'glass', 'panel'].map((k) => [k, { hosts: vHosts(DF_ENGINE.floor[k] * vf), hosted: 1, df: true }]))
+			: { steel: { hosts: vHosts(WF.steel * vf), hosted: 1 }, glass: { hosts: vHosts(0.7 * WF.glass * vf), hosted: 1 }, panel: { hosts: vHosts(0.3 * WF.glass * vf), hosted: 1 } }),
 		// the settlement COOPs rent the centre's halls (and the four works domes the engine does not trade) for their
 		// residents, by their beds
 		home: { hosts: vHosts(D.centreFloor * vf), hosted: 0 }
@@ -681,7 +705,7 @@ function attachHalls(w) {
 			const r = rent[pl.tech];
 			if (!r || !(capOf[pl.tech] > 0)) continue;
 			const a = Math.max(0, pl.cap) / capOf[pl.tech];
-			pl.hosts = r.hosts.map(([h, m2]) => ({ hall: h, m2: m2 * a })).filter((x) => x.m2 > 0);
+			pl.hosts = r.hosts.map(([h, m2]) => ({ hall: h, m2: m2 * a, ...(r.df ? { df: true } : {}) })).filter((x) => x.m2 > 0);
 			for (const x of pl.hosts) x.hall.hosted.push(x);
 			pl.hostedCap = r.hosted * Math.max(0, pl.cap);
 			// the land under the landlord's dome is on the landlord's lease
@@ -800,6 +824,12 @@ export function createWorld(config = {}) {
 			plan.push({ ids: [gh.g.id], plants: [[part(gh.pl, dg), part(forest.pl, f)]], city: false });
 		} else for (const x of list) plan.push({ ids: [x.g.id], plants: [[x.pl]], city: !!x.g.city });
 	}
+	// genesis entries with the same id are one COOP with several plants (with the dome factory: a timber COOP's timber
+	// works and its half of the struts line)
+	for (let i = plan.length - 1; i > 0; i--) {
+		const j = plan.findIndex((p) => p.ids[0] === plan[i].ids[0]);
+		if (j < i) (plan[j].plants[0].push(...plan[i].plants[0]), (plan[j].city ||= plan[i].city), plan.splice(i, 1));
+	}
 	// the City COOP first (its MIND is the hub of every basket)
 	plan.sort((a, b) => (b.city ? 1 : 0) - (a.city ? 1 : 0));
 	for (const p of plan) {
@@ -899,8 +929,10 @@ export function blankToday(w) {
 		routeFeeR: 0, routedR: 0, hopsR: 0, arbR: 0, swapSold: new Float64Array(MAX_COOPS), swapBought: new Float64Array(MAX_COOPS),
 		harvest: { solar: 0, geo: 0, battery: 0, geoHeat: 0, lowHeat: 0 },
 		use: new Float64Array(5), heatUse: 0, heatPumpKwh: 0, curtailed: 0, battIn: 0, battLoss: 0, unserved: new Float64Array(5),
-		made: new Float64Array(G), eaten: new Float64Array(G), input: new Float64Array(G), built: new Float64Array(G), rotted: new Float64Array(G), imported: new Float64Array(G),
-		raw: { grown: { logs: 0, ore: 0, sand: 0, scrap: 0 }, used: { logs: 0, ore: 0, sand: 0, scrap: 0, float: 0, cells: 0 }, lost: { logs: 0, ore: 0, sand: 0 }, imported: { logs: 0, scrap: 0, float: 0, cells: 0 } }, unpicked: 0,
+		made: new Float64Array(G), eaten: new Float64Array(G), input: new Float64Array(G), built: new Float64Array(G), upkeep: new Float64Array(G), rotted: new Float64Array(G), imported: new Float64Array(G),
+		// what the dome factory's lines made today (./primitives.js DF_ENGINE), by line
+		dfMade: { struts: 0, steel: 0, glass: 0, panel: 0 },
+		raw: { grown: { logs: 0, ore: 0, sand: 0, scrap: 0 }, used: { logs: 0, ore: 0, sand: 0, scrap: 0, float: 0, cells: 0, lamellas: 0, plate: 0 }, lost: { logs: 0, ore: 0, sand: 0 }, imported: { logs: 0, scrap: 0, float: 0, cells: 0, lamellas: 0, plate: 0 } }, unpicked: 0,
 		salesPeopleR: 0, salesB2BR: 0, divR: 0, divPeopleR: 0, divTreR: 0, investR: 0, runningR: 0, proposalsR: 0, rdR: 0, rentR: 0, meltR: 0,
 		energyPriceR: 0, sun: 0, rain: 0, heatF: 0, month: 0, season: '', shocks: []
 	};

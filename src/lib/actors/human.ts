@@ -1,6 +1,13 @@
 /*
- * THE STAND-IN — a person of 1.70 m, bald, to block a shot with before its actor is in it (a film's second team): never
- * a likeness of anyone, but a person — a head with a face that shows where it looks, a T-shirt, jeans, trainers —
+ * THE STAND-IN — a person of 1.70 m, to block a shot with before its actor is in it (a film's second team): never
+ * a likeness of anyone, but a person — a head with a face that shows where it looks and feels (v2, 2026-10-13: eyes
+ * with whites and irises, a nose, lips, and hair: short, long, a bun or none; v3: the head one sculpted surface on a
+ * real skull's proportions — cranium, brow ridge, eye sockets, cheekbones, jaw and chin; v4: friendly — a soft smile,
+ * open eyes, brows raised a little, the cheeks lifted; v5: real eyes — glossy eyeballs under curved lids with a lash
+ * line, a catchlight in each — a toned skin (warm cheeks, lips, the nose's tip), a warm smile, a shorter chin, fuller
+ * hair; v6: a sculpted head — MakeHuman's head and neck (CC0) for a man or a woman, smoothed, its skin toned by where
+ * it is, eyes in its lids, lash lines, teeth, brows of single hairs, hair grown over its scalp, and a smile to blend
+ * into, `joy`: ./head.js), a T-shirt, jeans, trainers —
  * rigged head to toe so it takes any pose and any move: 17 bones (the hips, the spine, the chest, the neck, the head;
  * each arm's upper arm, forearm and hand; each leg's thigh, shin and foot), one skinned mesh over them, every joint
  * bending smoothly.
@@ -10,18 +17,21 @@
  */
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { blend, egg, limb, loft, loop, rig, skin, spike, type BoneSpec, type Cast, type Clip, type Piece, type Pose, type V3 } from './rig';
+import { blend, limb, loft, loop, rig, skin, type BoneSpec, type Cast, type Clip, type Piece, type Pose, type V3 } from './rig';
+import { crownOf, headPieces, type Face } from './head.js';
 
 /** how tall it is (m) */
 export const HEIGHT = 1.7;
-/** the height its measures below are for: the top of its head, as built for a person of 1.80 m */
-const MEASURED = 1.823;
+/** the height its measures below are for: the top of its head (a man's), as built for a person of 1.80 m */
+const MEASURED = crownOf('man');
 /** the edge it sits on (a bed's, a chair's), m */
 const SEAT = 0.5;
 
 /** what the stand-in wears (and its skin, its brows) */
-export type Look = { skin: string; brows: string; shirt: string; trousers: string; belt: string; shoes: string; soles: string };
-export const LOOK: Look = { skin: '#d6b094', brows: '#3a2a1f', shirt: '#3c4452', trousers: '#47566c', belt: '#2d251f', shoes: '#2a2a2d', soles: '#e9e6df' };
+export type Hair = 'none' | 'short' | 'long' | 'bun';
+/** `face`: a man's head or a woman's (v6) */
+export type Look = { skin: string; brows: string; shirt: string; trousers: string; belt: string; shoes: string; soles: string; hair: Hair; hairColour: string; iris: string; lips: string; face: Face };
+export const LOOK: Look = { skin: '#d6b094', brows: '#3a2a1f', shirt: '#3c4452', trousers: '#47566c', belt: '#2d251f', shoes: '#2a2a2d', soles: '#e9e6df', hair: 'short', hairColour: '#3a2a1f', iris: '#5a4030', lips: '#a8665a', face: 'man' };
 
 const sides = [
 	['L', 1],
@@ -64,25 +74,16 @@ function parts(k: Look): Piece[] {
 				{ y: 1.28, w: 0.36, d: 0.235, z: 0.015 },
 				{ y: 1.37, w: 0.39, d: 0.225, z: 0.005 },
 				{ y: 1.43, w: 0.42, d: 0.2, z: -0.008 },
-				{ y: 1.465, w: 0.36, d: 0.17, z: -0.012 },
-				{ y: 1.495, w: 0.26, d: 0.14, z: -0.015 },
-				{ y: 1.53, w: 0.14, d: 0.12, z: -0.015 },
+				{ y: 1.465, w: 0.375, d: 0.175, z: -0.012 },
+				{ y: 1.495, w: 0.3, d: 0.15, z: -0.015 },
+				{ y: 1.53, w: 0.165, d: 0.13, z: -0.016 },
 				{ y: 1.545, w: 0.02, d: 0.02, z: -0.015 }
-			]),
+			], 44),
 			color: (p) => (p.y < 0.985 ? k.trousers : p.y < 1.012 ? k.belt : k.shirt),
 			chain: { bones: ['hips', 'spine', 'chest', 'neck'], soft: 0.07 }
 		},
-		{ geo: limb([0, 1.64, 0], [0, 1.47, -0.015], 0.05, 0.058), color: k.skin, chain: { bones: ['chest', 'neck', 'head'], soft: 0.04 } },
-		// the head, bald: a skull, a jaw, ears; the face — eyes, brows, a nose, a mouth — so it shows where it looks
-		{ geo: egg([0, 1.705, 0.012], [0.093, 0.118, 0.105], [0, 0, 0], [28, 20]), color: k.skin, bone: 'head' },
-		{ geo: egg([0, 1.648, 0.045], [0.07, 0.05, 0.07]), color: k.skin, bone: 'head' },
-		...sides.flatMap(([, x]): Piece[] => [
-			{ geo: egg([x * 0.093, 1.695, 0.0], [0.016, 0.03, 0.022]), color: k.skin, bone: 'head' },
-			{ geo: egg([x * 0.034, 1.712, 0.098], [0.012, 0.009, 0.006]), color: '#2b2622', bone: 'head' },
-			{ geo: egg([x * 0.035, 1.736, 0.101], [0.022, 0.005, 0.008], [0, 0, x * -0.12]), color: k.brows, bone: 'head' }
-		]),
-		{ geo: spike([0, 1.692, 0.108], [0, -0.35, 1], 0.016, 0.035, { seg: 12 }), color: k.skin, bone: 'head' },
-		{ geo: egg([0, 1.655, 0.1], [0.022, 0.004, 0.006]), color: '#9a6a5a', bone: 'head' },
+		// the head and neck: a sculpted one (./head.js), its face and hair
+		...headPieces(k),
 		// each arm: the sleeve over the top of it, the bare forearm, a hand with its thumb
 		...sides.flatMap(([s, x]): Piece[] => [
 			{ geo: limb([x * 0.185, 1.43, -0.01], [x * 0.2, 1.17, -0.02], 0.047, 0.04), color: (p) => (p.y > 1.32 ? k.shirt : k.skin), chain: { bones: [`upperArm${s}`, `forearm${s}`], soft: 0.06 } },
@@ -106,8 +107,10 @@ function scaled(s: number, k: Look): { bones: BoneSpec[]; parts: Piece[] } {
 		parts: parts(k).map((p) => ({
 			...p,
 			geo: p.geo.scale(s, s, s),
-			// a colour by where a vertex is: asked where it would be at 1.80 m
-			color: typeof p.color === 'string' ? p.color : ((f) => (v: THREE.Vector3) => f(v.clone().divideScalar(s)))(p.color),
+			// a colour (and weights) by where a vertex is: asked where it would be at 1.80 m
+			color: typeof p.color === 'string' ? p.color : ((f) => (v: THREE.Vector3, i?: number) => f(v.clone().divideScalar(s), i))(p.color),
+			...(p.weights ? { weights: ((f) => (v: THREE.Vector3) => f(v.clone().divideScalar(s)))(p.weights) } : {}),
+			...(p.morph ? { morph: Object.fromEntries(Object.entries(p.morph).map(([name, d]) => [name, d.map((x) => x * s)])) } : {}),
 			...(p.chain ? { chain: { ...p.chain, soft: (p.chain.soft ?? 0.05) * s, ...(p.chain.tip ? { tip: m(p.chain.tip) } : {}) } } : {})
 		}))
 	};
@@ -196,11 +199,13 @@ function clipsFor(s: number, poses: Record<string, Pose>): Record<string, Clip> 
 	return { idle, walk, wave, 'sit down': sitDown };
 }
 
-/** A stand-in, rigged: its moves, its poses. `look`: what it wears; `height`: how tall it is (m). */
+/** A stand-in, rigged: its moves, its poses, and its smile (the morph `joy`). `look`: what it wears and its face;
+ *  `height`: how tall it is (m). */
 export function human(look: Partial<Look> = {}, height = HEIGHT): Cast {
-	const s = height / MEASURED;
-	const { bones, parts: body } = scaled(s, { ...LOOK, ...look });
-	const r = rig(bones, body, [skin(0.78)]);
+	const k = { ...LOOK, ...look };
+	const s = height / crownOf(k.face);
+	const { bones, parts: body } = scaled(s, k);
+	const r = rig(bones, body, [skin(0.74), skin(0.12), skin(0.85, { side: THREE.DoubleSide })]);
 	r.object.name = 'stand-in';
 	r.pose(relaxed);
 	const poses = s === HEIGHT / MEASURED ? POSES : posesFor(s);

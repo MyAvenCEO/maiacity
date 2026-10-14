@@ -1,6 +1,6 @@
 // MaiaCity V1's rules (game/maiacity-v1/engine.js): HEARTS, the 50/50 MIND split, the pool, rent and the melt.
 import { expect, test } from "bun:test";
-import { DAY_MS, act, advance, describe, dividendsOf, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
+import { DAY_MS, SEEDLINGS, act, advance, describe, dividendsOf, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
 
 const T0 = Date.UTC(2026, 9, 13);
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
@@ -252,4 +252,20 @@ test("a MIP stands a screen in one of the page's panels (a slot); an unknown slo
   s = act(s, "B", { type: "sign", number: 1 }, T0);
   expect(Object.keys(slotsOf(s))).toEqual(["ledger"]);
   expect(slotsOf(s).ledger.name).toBe("Ledger 2");
+});
+
+test("each newcomer picks one of five seedlings at the shed and plants it: their first tree, named after them, on the game clock", () => {
+  let s = newGame(T0);
+  s.players.A.name = "Samuel";
+  expect(SEEDLINGS.map((x) => x.id)).toEqual(["apple", "pear", "cherry", "hazel", "blackcurrant"]);
+  expect(() => act(s, "A", { type: "plant" }, T0)).toThrow();
+  expect(() => act(s, "A", { type: "seedling", plant: "mango" }, T0)).toThrow();
+  s = act(s, "A", { type: "seedling", plant: "hazel" }, T0);
+  s = act(s, "A", { type: "seedling", plant: "apple" }, T0 + 1);
+  s = act(s, "A", { type: "plant", v: 2 }, T0 + DAY_MS);
+  expect(s.players.A.tree).toEqual({ plant: "apple", v: 2, name: "Samuel", at: T0 + DAY_MS, months: monthsAt(s, T0 + DAY_MS) });
+  expect(s.players.A.tree.months).toBeCloseTo(1, 6);
+  expect(() => act(s, "A", { type: "plant" }, T0 + DAY_MS)).toThrow();
+  expect(() => act(s, "A", { type: "seedling", plant: "pear" }, T0 + DAY_MS)).toThrow();
+  expect(s.players.B.tree).toBeUndefined();
 });

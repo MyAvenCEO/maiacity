@@ -8,8 +8,8 @@
  * - Investing 1 HEART into a COOP makes 1 MIND of that COOP: half to the player's wallet, half to the COOP's treasury.
  * - Three COOPs, each with its own MIND: the MaiaCity COOP (maiaMIND) owns the tribe hex and the AMM pool; the
  *   Tribe COOP (tribeMIND) owns the domes on its hex, the 2-person dome tent; the Village COOP (villageMIND)
- *   owns the pickup, the powercube (the Power Cube Electric: OSE's Power Cube with an alternator), a solar panel and a
- *   big battery pack.
+ *   owns the pickup, the powercube (the ElectroCube: OSE's Power Cube frame with an alternator), a solar panel and the
+ *   battery (the BatteryCube: four BatteryPacks and an inverter in the same frame).
  * - A tenth of every treasury half (5 % of each invested HEART's MIND) goes into the MaiaCity COOP's pool: a Balancer weighted pool, one
  *   basket of all three MINDs with equal weights (1/3 each, settings a MIP may change). Its invariant is
  *   V = Π Bᵢ^wᵢ; any MIND swaps for any other by Balancer's maths (out = Bₒ·(1 − (Bᵢ/(Bᵢ + Aᵢ·(1 − fee)))^(wᵢ/wₒ))),
@@ -41,13 +41,23 @@ export const MINDS = ['MAIA', 'TRIBE', 'VILLAGE'];
 export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', TRIBE: 'tribeMIND', VILLAGE: 'villageMIND' };
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', TRIBE: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 11;
+export const VERSION = 12;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The tribe hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, tribeMIND, villageMIND' }] },
 	tribe: { name: 'Tribe COOP', mind: 'TRIBE', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
-	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The Power Cube Electric', kind: 'Generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'A big battery pack', kind: 'Storage' }] }
+	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The ElectroCube', kind: 'Generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'The BatteryCube', kind: 'Storage' }] }
 };
+/** the seedlings at the village shed, one for each newcomer to take home and plant as their first tree (Samuel
+ *  2026-10-13): food-bearing trees and bushes that grow outdoors in a central European climate, from the Plants
+ *  ($lib/plants: the page grows them from their stages) */
+export const SEEDLINGS = [
+	{ id: 'apple', label: 'Apple', fruit: 'apples' },
+	{ id: 'pear', label: 'Pear', fruit: 'pears' },
+	{ id: 'cherry', label: 'Sweet cherry', fruit: 'cherries' },
+	{ id: 'hazel', label: 'Hazel', fruit: 'hazelnuts' },
+	{ id: 'blackcurrant', label: 'Blackcurrant', fruit: 'blackcurrants' }
+];
 const MAX_LEDGER = 3000;
 const DUST = 1e-9;
 /** an amount asked for may exceed what is held by this much (the melt between a look and a click): it takes all */
@@ -547,6 +557,9 @@ function settle(s, mip, now) {
  *   invest { coop, amount }      HEARTS into a COOP
  *   swap { token, to, amount }   a MIND through the pool for another
  *   name { name }                the player's name
+ *   seedling { plant }           pick a seedling at the village shed (one of SEEDLINGS), until it is planted
+ *   plant { v }                  plant it: the player's first tree, named after them, growing from now on the game
+ *                                clock (v: the plant's version in $lib/plants as the page grew it)
  *   propose { mip }              a MIP: title, description, settings, coops, payouts and screens (views, removeViews; a view's
  *                                data.slot is 'panel' for a tab of its own or a panel it stands in: game/maiacity-v1/views.js
  *                                SLOTS); the proposer signs it (not
@@ -605,6 +618,19 @@ export function act(state, seat, action, now = Date.now()) {
 			const name = String(action.name ?? '').trim().slice(0, 40);
 			if (!name) throw new GameError('Give a name.');
 			p.name = name;
+			break;
+		}
+		case 'seedling': {
+			if (p.tree) throw new GameError('Your first tree is already planted.');
+			if (!SEEDLINGS.some((x) => x.id === action.plant)) throw new GameError('No such seedling at the shed.');
+			p.seedling = action.plant;
+			break;
+		}
+		case 'plant': {
+			if (p.tree) throw new GameError('Your first tree is already planted.');
+			if (!p.seedling) throw new GameError('Pick a seedling at the village shed first.');
+			const v = Math.floor(Number(action.v));
+			p.tree = { plant: p.seedling, v: v > 0 ? v : null, name: p.name, at: now, months: monthsAt(s, now) };
 			break;
 		}
 		case 'propose': {

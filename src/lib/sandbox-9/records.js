@@ -94,6 +94,10 @@ function newYear(w, y) {
 		badges: new Float64Array(G * 32),
 		imp: Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])),
 		impEur: Object.fromEntries(IMPORT_KINDS.map((k) => [k, 0])),
+		// the building materials (glulam, steel, glass, panels): made in the village, bought finished, used for upkeep,
+		// for building (upkeep included) and as the works' inputs; what the dome factory's lines made, by line
+		mat: { made: new Float64Array(G), imported: new Float64Array(G), upkeep: new Float64Array(G), built: new Float64Array(G), input: new Float64Array(G) },
+		df: { struts: 0, steel: 0, glass: 0, panel: 0 },
 		// the settlement COOPs' rents: beds sold and their price (R), dome floor rented and its rate, rent paid (R), and
 		// what a euro was worth in R (the bank's rate) summed over the days
 		rent: { bedR: 0, beds: 0, m2R: 0, m2: 0, paidR: 0, eurR: 0, days: 0, byCoop: {} },
@@ -156,6 +160,14 @@ function yearDay(w, protD) {
 	Y.food.irrigM3 += t.irrigM3 ?? 0;
 	Y.food.indoors += t.foodIn ?? 0;
 	Y.food.imported += t.imp?.food ?? 0;
+	for (const g of [WOOD, STEEL, GLASS, PANEL]) {
+		Y.mat.made[g] += t.made[g];
+		Y.mat.imported[g] += t.imported[g];
+		Y.mat.upkeep[g] += t.upkeep?.[g] ?? 0;
+		Y.mat.built[g] += t.built[g];
+		Y.mat.input[g] += t.input[g];
+	}
+	if (t.dfMade) for (const k of Object.keys(Y.df)) Y.df[k] += t.dfMade[k] ?? 0;
 	Y.food.led += t.ledUnits ?? 0;
 	Y.food.unpicked += t.unpicked ?? 0;
 	Y.food.lost += t.foodLost ?? 0;
@@ -636,6 +648,33 @@ const grewNeed = (Y) => ownShare(Y) >= 1;
 const noFoodImports = (Y) => Y.food.eaten > 0 && Y.food.imported <= 0.01 * Y.food.eaten;
 
 /**
+ * The building materials a year at a time (glulam, steel and glass in t, panels in kWp): what the village's works made,
+ * what was bought finished, what upkeep used and what all building used (upkeep included), the works' inputs; what the
+ * dome factory's lines made in the engine (by line: struts and cassette frames, hubs, glazing in t, solar panes in kWp);
+ * and, while the build-out runs, what the plan's own dome factory made for its domes (sandbox-7 buildout.js: struts m³,
+ * hubs t, glazing, solar and cassettes m²), which the engine's lines do not count (they get what it leaves).
+ */
+export function materialYears(w) {
+	const out = [];
+	const ids = { wood: WOOD, steel: STEEL, glass: GLASS, panel: PANEL };
+	const by = (a) => Object.fromEntries(Object.entries(ids).map(([k, g]) => [k, a[g]]));
+	const months = w.ramp?.plan?.months ?? [];
+	for (const Y of w.rec?.years ?? []) {
+		if (!Y) continue;
+		const plan = { strut: 0, hub: 0, glazing: 0, solar: 0, cassette: 0 }, used = { ...plan };
+		let any = false;
+		for (let m = (Y.year - 1) * 12; m < Math.min(months.length, Y.year * 12); m++) {
+			const d = months[m]?.domeFactory;
+			if (!d?.runs) continue;
+			any = true;
+			for (const k of Object.keys(plan)) (plan[k] += d.made?.[k] ?? 0), (used[k] += d.used?.[k] ?? 0);
+		}
+		out.push({ year: Y.year, days: Y.days, made: by(Y.mat.made), imported: by(Y.mat.imported), upkeep: by(Y.mat.upkeep), built: by(Y.mat.built), input: by(Y.mat.input), df: { ...Y.df }, plan: any ? { made: plan, used } : null });
+	}
+	return out;
+}
+
+/**
  * The border's ledger a year at a time: what the COOPs bought (food in kcal for the whole village, logs, scrap and
  * float glass in t, cells in kWp, accelerators in units) and what it cost in €, what the line's exports earned, the
  * euro reserve at the year's end (the founding euros left and the COOPs' accounts), the village's own food as a share
@@ -652,6 +691,9 @@ export function borderYears(w) {
 			scrap: { t: Y.imp.scrap, eur: Y.impEur.scrap },
 			float: { t: Y.imp.float, eur: Y.impEur.float },
 			cells: { kwp: Y.imp.cells, eur: Y.impEur.cells },
+			// the dome factory's struts line: lamellas and C24 (m³), its hub line: plate (t) (./primitives.js DF_ENGINE)
+			lamellas: { m3: Y.imp.lamellas ?? 0, eur: Y.impEur.lamellas ?? 0 },
+			plate: { t: Y.imp.plate ?? 0, eur: Y.impEur.plate ?? 0 },
 			glulam: { t: Y.imp.glulam, eur: Y.impEur.glulam },
 			steel: { t: Y.imp.steel, eur: Y.impEur.steel },
 			glazing: { t: Y.imp.glazing, eur: Y.impEur.glazing },
@@ -779,7 +821,7 @@ export function foundingStores(w) {
  */
 export function foundingBill(w) {
 	if (w.ramp) return buildoutBill(w);
-	const V = w.c.village, vf = w.c.vf, F = w.founding, E = w.c.eur, P = V.prices;
+	const V = w.c.village, vf = w.c.vf, F = w.founding, E = w.c.eur;
 	const rows = [];
 	const mat = Object.fromEntries(V.materials.map((m) => [m.id, m]));
 	const add = (id, label, o) => rows.push({ id, label, ...o });
@@ -800,7 +842,8 @@ export function foundingBill(w) {
 	const chips = F.chips + F.chipsInstalled;
 	add('accelerators', 'Accelerators in the hardware owners’ data halls', { t: null, n: chips, eur: chips * w.c.chipEur, group: 'machines' });
 	add('foodStore', `Food in the stores (${Math.round(w.c.foodStoreDays)} days, the diet at wholesale)`, { t: null, kcal: F.food * 1000, eur: F.food * E.food, group: 'stores' });
-	const matEur = { [WOOD]: (P.glulam.eur / 0.55), [STEEL]: P.steel.eur, [GLASS]: P.glass.eur / 0.05, [PANEL]: (P.pv.eur * w.c.kwhPerKwp) / 227 };
+	// (round 5) at the border's prices for the finished goods (./primitives.js BORDER, read from the design package)
+	const matEur = { [WOOD]: E.glulam, [STEEL]: E.steel, [GLASS]: E.glazing, [PANEL]: E.panels };
 	add('materialStores', 'Glulam, steel, glass and panels in the works’ and builders’ stores (a month)', { t: F.mat[WOOD] + F.mat[STEEL] + F.mat[GLASS], kwp: F.mat[PANEL], eur: F.mat[WOOD] * matEur[WOOD] + F.mat[STEEL] * matEur[STEEL] + F.mat[GLASS] * matEur[GLASS] + F.mat[PANEL] * matEur[PANEL], group: 'stores' });
 	for (const [k, label, unit] of [['logs', 'Logs for the timber works (a month)', 't'], ['scrap', 'Steel scrap for the arc furnace (a month)', 't'], ['float', 'Float glass for the glassworks (a month)', 't'], ['cells', 'Solar cells for the panel works (a month)', 'kwp']])
 		if (F.raw[k] > 0) add(`raw-${k}`, label, { t: unit === 't' ? F.raw[k] : null, kwp: unit === 'kwp' ? F.raw[k] : undefined, eur: F.raw[k] * E[k], group: 'stores' });

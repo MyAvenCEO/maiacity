@@ -12,11 +12,14 @@
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
-	import { RENTED, COOPS, DAY_MS, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, COOPS, DAY_MS, act, newGame, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
 	import { AT_HOME, story } from './tour.js';
+	import { treeNow } from './trees.js';
+	import { plantAt } from '$lib/plants/index.js';
+	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
@@ -64,34 +67,73 @@
 	const decidedMips = $derived(mips.filter((m) => m.status !== 'open').reverse());
 
 	$effect(() => world?.update(view, hour));
+	// the players' first trees as they stand on the game clock now, each named after its planter
+	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree).map((s) => ({ seat: s, name: view.players[s].tree.name, ...treeNow(view, view.players[s].tree, now) })) : []);
+	$effect(() => void world?.trees(trees));
 	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
 	$effect(() => void (view && world?.reveal(tour ? Math.max(0, ...steps.slice(0, tourAt + 1).map((x) => x.reveal ?? 0)) : 2)));
 	// where the story stands in the world: the pickup, the powercube and the players, and what the camera looks at
-	const where = $derived(tour ?? AT_HOME);
+	// once a second player is in, the BatteryCube and the solar panel stand at home beside the tent
+	const where = $derived(tour ?? { ...AT_HOME, battery: view?.players.B.founder ? 'home' : 'store' });
 	const otherSeat = $derived(seat === 'A' ? 'B' : 'A');
 	$effect(() => {
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', me: seat, other, rides: !!tour && seat === 'B' && where.at === 'village' });
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'bench'), pot: where.pot ?? (player?.tree ? 'planted' : 'bench'), pick: player?.tree?.plant ?? player?.seedling ?? '' });
 		world.touring(!!tour);
 		if (where.place) world.focus(where.place);
 	});
 	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
 	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
 	let caption = $state(null); // the line the arrival's shot carries: { title, sub, big, dur }
-	$effect(() => {
-		if (tour?.kind !== 'intro' || !world || playing) return;
-		playing = 'intro';
-		const id = tour.id;
-		world.intro(tour.part).then(() => ((playing = ''), mark(id)));
-	});
-	async function act(step) {
-		if (playing) return;
-		playing = step.kind;
-		await (step.kind === 'load' ? world.load() : step.kind === 'build' ? world.pitch() : world.drive(step.leg, { fetch: !!step.fetch }));
-		playing = '';
-		mark(step.id);
+	// the whole story plays as a film (Samuel 2026-10-13): every line of a step's words is its own shot, its voice-over
+	// carried by the world's moment; the drives, the loading and the pitching play by themselves; only a move the player makes (mint, invest)
+	// waits, and then only a small prompt with its button shows, after its words were told
+	let told = $state({}); // the moves whose words were already told this visit
+	// the first mint makes the player beam: close on their face, smiling, eyes sparkling (Samuel 2026-10-13); the next
+	// step waits for it
+	function celebrate() {
+		if (!world || playing) return;
+		playing = 'joy';
+		world.joy().then(() => (playing = ''));
 	}
+	// planting the first tree: the player kneels and sets the seedling in the ground while the move goes to the game
+	function plantIt() {
+		if (!world || playing || !player?.seedling) return;
+		playing = 'plant';
+		world.plant().then(() => (playing = ''));
+		doMove({ type: 'plant', v: plantAt(player.seedling)?.version });
+	}
+	function skipShot() {
+		caption = null;
+		world?.skip();
+	}
+	// a new chapter fades in from black; the steps within one cut straight on (Samuel 2026-10-13: the woman leaning
+	// over was lost in the dark)
+	let fadeIn = $state(true);
+	let lastChapter = '';
+	$effect(() => {
+		if (!tour || !world || playing) return;
+		const step = tour;
+		fadeIn = step.chapter !== lastChapter;
+		lastChapter = step.chapter;
+		if (step.kind === 'intro') {
+			playing = 'intro';
+			world.intro(step.part, { lines: step.lines }).then(() => ((playing = ''), mark(step.id)));
+		} else if (step.kind === 'drive' || step.kind === 'load' || step.kind === 'build' || step.kind === 'fuel' || step.kind === 'board') {
+			playing = step.kind;
+			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
+			const lines = step.lines;
+			const moment = step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : step.kind === 'fuel' ? world.fuel({ lines }) : step.kind === 'board' ? world.board({ lines }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
+			moment.then(() => ((playing = ''), mark(step.id)));
+		} else if ((step.kind === 'invest' || step.kind === 'mint' || step.kind === 'pick' || step.kind === 'plant') && !told[step.id]) {
+			playing = 'scene';
+			world.scene(step.place, step).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
+		} else if (step.kind === 'next' || step.kind === 'done') {
+			playing = 'scene';
+			world.scene(step.place, step).then(() => ((playing = ''), mark(step.id)));
+		}
+	});
 
 	function take(res) {
 		game = res.game;
@@ -102,6 +144,7 @@
 	}
 
 	async function refresh() {
+		if (demo) return; // a demo plays on its own copy of the game
 		try {
 			take(await loadGame());
 			error = '';
@@ -125,7 +168,42 @@
 		}
 	}
 
-	const doMove = (action) => run(() => sendMove(seat, action));
+	const doMove = (action) => (demo ? demoMove(action) : run(() => sendMove(seat, action)));
+
+	// a test run of a seat's whole journey (Samuel 2026-10-13: "Play intro A / B"): the story plays from its first
+	// shot for that seat on a fresh game in this browser, the first player already in when it is B's; its moves are made
+	// here and never sent, and ending it brings the real game back
+	let demo = $state(false);
+	let realGame = null;
+	function startDemo(s = 'B') {
+		if (playing) skipShot();
+		if (!demo) realGame = game;
+		const g = newGame(now - 60e3);
+		g.players.A.founder = s === 'A' ? me : 'demo';
+		g.players.A.name = realGame.players.A.name;
+		if (s === 'B') (g.players.B.founder = me), (g.players.B.name = realGame.players.B.founder ? realGame.players.B.name : 'Player B');
+		game = g;
+		seen = { ...seen, [s]: {} };
+		told = {};
+		seat = s;
+		panel = null;
+		demo = true;
+	}
+	function demoMove(action) {
+		try {
+			game = act(game, seat, action, now);
+			error = '';
+		} catch (e) {
+			error = e?.message ?? String(e);
+		}
+	}
+	function endDemo() {
+		skipShot();
+		demo = false;
+		game = realGame;
+		seat = mySeat ?? 'A';
+		refresh();
+	}
 
 	onMount(() => {
 		world = createWorld(canvas, {
@@ -266,10 +344,12 @@
 		for (const x of steps.slice(0, tourAt + 1)) for (const u of UNLOCKS[x.id] ?? []) on.add(u);
 		return on;
 	});
+	/** a step that only tells (Next, or an intro shot), so it can be told again: not a move read off the game */
+	const TOLD = (x) => x.kind === 'next' || x.kind === 'intro';
 	const shows = (what) => !unlocked || unlocked.has('all') || unlocked.has(what) || (what.startsWith('view:') && unlocked.has('mips'));
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
-		try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
+		if (!demo) try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
 		if (id === 'payday') panel = 'you';
 	};
 	// remembered per game: a fresh game (a reset) starts every story from its first step again
@@ -280,16 +360,35 @@
 		try { seen = Object.fromEntries(SEATS.map((s) => [s, JSON.parse(localStorage.getItem(storyKey(s)) ?? '{}')])); } catch {}
 		seenOf = started;
 	});
+	// coming back halfway through a chapter (Samuel 2026-10-13: the story began at "They ripen like fruit"), the chapter
+	// is told again from its first line: the told steps before the open one in its chapter are unseen once per visit
+	let resumed = 0;
+	$effect(() => {
+		if (!tour || resumed === started || demo) return;
+		resumed = started;
+		const ch = steps[tourAt]?.chapter;
+		let i = tourAt;
+		while (i > 0 && steps[i - 1].chapter === ch && TOLD(steps[i - 1])) i--;
+		if (i === tourAt) return;
+		const mine = { ...(seen[seat] ?? {}) };
+		for (const x of steps.slice(i, tourAt)) delete mine[x.id];
+		seen = { ...seen, [seat]: mine };
+	});
 	const ownerOf = (id) => (view ? Object.keys(COOPS).map((k) => [k, view.coops[k]]).find(([, c]) => c.assets.some((a) => a.id === id)) : null);
 </script>
 
-<div class="v1" class:cinema={playing === 'intro'}>
+<div class="v1" class:cinema={!!playing}>
 	<canvas class="stage" bind:this={canvas}></canvas>
+	{#if demo}<div class="demo panel" role="status">Test run · {view?.players[seat].name}’s journey, nothing is saved <button class="link" onclick={endDemo}>End</button></div>
+{/if}
 
 	{#if view}
 		<!-- the players' names over them in the world: tap one to see them -->
 		{#each Object.entries(labels) as [k, l] (k)}
-			{#if l.on}
+			{#if l.on && k.startsWith('tree:')}
+				{@const t = trees.find((x) => x.seat === k.slice(5))}
+				{#if t}<div class="tag tree" style="left:{l.x}px;top:{l.y}px">{t.name}<small>{t.label} · {t.now}</small></div>{/if}
+			{:else if l.on}
 				<button class="tag" class:me={k === `player:${seat}`} style="left:{l.x}px;top:{l.y}px" onclick={() => ((seat = k.slice(7)), open('you'))}>
 					{view.players[k.slice(7)].name}
 					<small>♥ {f(view.players[k.slice(7)].wallet.HEARTS, 1)}</small>
@@ -310,9 +409,14 @@
 		<div class="topright">
 			{#if shows('seats')}<div class="seg panel">
 				{#each SEATS as s (s)}
-					<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
+					{#if !view.players[s].founder && mySeat && !demo}
+						<button title="Test run this seat's journey in this browser, as long as no one has taken it" onclick={() => startDemo(s)}>{view.players[s].name} · try</button>
+					{:else}
+						<button class:on={seat === s} onclick={() => ((seat = s), (ledgerOfWho = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
+					{/if}
 				{/each}
 			</div>{/if}
+			{#if !demo && mySeat && !tour}<div class="seg panel intros" title="Replay a seat's whole story on a fresh test game in this browser; nothing is saved"><span>Play intro</span>{#each SEATS as s (s)}<button onclick={() => startDemo(s)}>{s}</button>{/each}</div>{/if}
 			{#if shows('clock')}<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
 		</div>
 
@@ -322,16 +426,16 @@
 			{/each}
 			{#if shows('you')}<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>{/if}
 		</nav>{/if}
-		{#if canMove && shows('mint')}
-			<!-- the universal mint button: always at hand, over the nav pill -->
+		{#if canMove && shows('mint') && !tour}
+			<!-- the universal mint button over the nav pill, once the story is done: in it the story mints by its own button (Samuel 2026-10-13) -->
 			<button class="mintbar" class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
-		{#if tour && (tour.kind === 'intro' || playing === 'intro')}
+		{#if playing}
 			<!-- the arrival, as a trailer: black bars, one line of the story a shot, fading in and out -->
 			<div class="bars top" aria-hidden="true"></div><div class="bars bottom" aria-hidden="true"></div>
-			<div class="fade-in" aria-hidden="true"></div>
+			{#if fadeIn}<div class="fade-in" aria-hidden="true"></div>{/if}
 			{#if caption}
 				{#key caption.title}
 					<div class="title" class:big={caption.big} style="--dur:{caption.dur ?? 5}s" role="status">
@@ -340,33 +444,42 @@
 					</div>
 				{/key}
 			{/if}
-			<button class="skip link" onclick={() => world?.skip()}>Skip</button>
-		{:else if tour && !playing}
-			<!-- the first-run story: one idea a step, over the Mint button, pointing at what it talks about -->
-			<div class="tour panel" class:down={tour.hint === 'mintbar'} role="dialog" aria-label="Getting started">
-				<p class="eyebrow">{tour.chapter} · {tour.n} of {tour.steps}</p>
+			<button class="skip link" onclick={skipShot}>Skip</button>
+			<button class="skip link all" onclick={() => (mark('off'), skipShot())}>Skip the story</button>
+		{:else if tour && (tour.kind === 'pick' || tour.kind === 'plant')}
+			<!-- the first tree: pick a seedling at the shed, plant it at home (Samuel 2026-10-13) -->
+			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
 				<b>{tour.title}</b>
-				<p>{tour.text}</p>
+				{#if tour.kind === 'pick'}
+					<div class="picks">
+						{#each SEEDLINGS as x (x.id)}
+							<button disabled={busy} title="Bears {x.fruit}" onclick={() => doMove({ type: 'seedling', plant: x.id })}>{x.label}</button>
+						{/each}
+					</div>
+				{/if}
+				<div class="buttons">
+					<button class="link" onclick={() => mark('off')}>Skip the story</button>
+					<span class="grow"></span>
+					{#if tour.kind === 'plant'}<button class="primary" disabled={busy} onclick={plantIt}>Plant it</button>{/if}
+				</div>
+			</div>
+		{:else if tour && (tour.kind === 'invest' || tour.kind === 'mint')}
+			<!-- the story's only stops: a move the player makes, its words already told as the film's voice-over, so only
+			     its title and its button show (Samuel 2026-10-13: as little modal text as possible) -->
+			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
+				<b>{tour.title}</b>
 				{#if tour.kind === 'invest'}
 					<div class="goal"><span style="width:{Math.min(100, (tour.have / tour.goal) * 100)}%"></span></div>
-					<p class="small">{f(tour.have, 0)} of {f(tour.goal, 0)} ❤︎ invested · you hold {f(player.wallet.HEARTS, 0)} ❤︎</p>
+					<p class="small">{f(tour.have, 0)} of {f(tour.goal, 0)} ❤︎ · you hold {f(player.wallet.HEARTS, 0)} ❤︎</p>
 				{/if}
-				<div class="dots">{#each steps as x, i (x.id)}<i class:on={x.done} class:now={i === tourAt}></i>{/each}</div>
-				<!-- Skip on the left, the step's own button on the right (Samuel 2026-10-13) -->
 				<div class="buttons">
-					{#if tour.kind !== 'done'}<button class="link" onclick={() => mark('off')}>Skip the story</button>{/if}
+					<button class="link" onclick={() => mark('off')}>Skip the story</button>
 					<span class="grow"></span>
 					{#if tour.kind === 'invest'}
 						{@const left = Math.min(Math.ceil(tour.goal - tour.have), Math.floor(player.wallet.HEARTS))}
 						<button class="primary" disabled={busy || left < 1} onclick={() => doMove({ type: 'invest', coop: tour.coop, amount: left })}>Invest {f(left, 0)} ❤︎</button>
-					{:else if tour.kind === 'mint'}
-						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint {f(mint.amount, 0)} ❤︎</button>
-					{:else if tour.kind === 'drive' || tour.kind === 'load' || tour.kind === 'build'}
-						<button class="primary" onclick={() => act(tour)}>{tour.action}</button>
-					{:else if tour.kind === 'done'}
-						<button class="primary" onclick={() => mark('done')}>Start playing</button>
 					{:else}
-						<button class="primary" onclick={() => mark(tour.id)}>Next</button>
+						<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => (celebrate(), doMove({ type: 'mint' }))}>Mint {f(mint.amount, 0)} ❤︎</button>
 					{/if}
 				</div>
 			</div>
@@ -394,6 +507,7 @@
 				<h2>{player.name}</h2>
 				{#if !player.founder}
 					<p class="about">This seat is waiting: the next person to sign in becomes {player.name}.</p>
+					{#if mySeat}<button class="primary" onclick={() => startDemo(seat)}>Test run {player.name}’s journey</button>{/if}
 				{:else if !mySeat}
 					<p class="about">Both seats are taken, so you are watching this game.</p>
 				{/if}
@@ -469,7 +583,7 @@
 				{@const id = panel.slice(6)}
 				{@const owner = ownerOf(id)}
 				{@const a = owner?.[1].assets.find((x) => x.id === id)}
-				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the Power Cube Electric’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
+				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person dome tent, rolled in its canvas with its poles, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the ElectroCube’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
 				<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
 				<h2>{a?.name ?? info?.name ?? info?.model}</h2>
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
@@ -785,7 +899,7 @@
 		position: absolute;
 		z-index: 8;
 		left: 50%;
-		bottom: calc(var(--nav-room, 4rem) + 4.4rem);
+		bottom: var(--nav-room, 4.5rem); /* just over the nav pill (Samuel 2026-10-13: only a small gap) */
 		transform: translateX(-50%);
 		width: min(22rem, calc(100vw - 32px));
 		padding: 0.9rem 1rem 0.8rem;
@@ -804,16 +918,6 @@
 	}
 	.tour .eyebrow {
 		margin: 0;
-	}
-	.tour.down::after {
-		content: '';
-		position: absolute;
-		left: 50%;
-		bottom: -7px;
-		width: 14px;
-		height: 14px;
-		background: inherit;
-		transform: translateX(-50%) rotate(45deg);
 	}
 	.tour .goal {
 		height: 0.35rem;
@@ -944,6 +1048,30 @@
 		color: #fff8ec !important;
 		opacity: 0.8;
 	}
+	.skip.all {
+		right: auto;
+		left: 1rem;
+	}
+	.intros span {
+		align-self: center;
+		padding: 0 0.4rem 0 0.7rem;
+		font-size: 0.8rem;
+		opacity: 0.7;
+	}
+	.demo {
+		position: absolute;
+		z-index: 12;
+		left: 50%;
+		transform: translateX(-50%);
+		top: calc(0.6rem + env(safe-area-inset-top, 0px));
+		padding: 0.35rem 0.9rem;
+		border-radius: 999px;
+		font-size: 0.8rem;
+		white-space: nowrap;
+		max-width: calc(100vw - 2rem);
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 	.hint {
 		animation: hint 1.6s ease-in-out infinite;
 	}
@@ -1055,6 +1183,31 @@
 	.tag.me {
 		background: #24452f;
 		color: #f4f1e8;
+	}
+	.tag.tree {
+		background: rgb(244 241 232 / 0.85);
+		color: #2f5a36;
+		pointer-events: none;
+	}
+	/* the five seedlings as one row of small pills (Samuel 2026-10-13: the big grid looked broken) */
+	.tour .picks {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin: 0.4rem 0 0.55rem;
+	}
+	.tour .picks button {
+		padding: 0.3rem 0.7rem;
+		border: 1px solid rgb(31 42 35 / 0.18);
+		border-radius: 999px;
+		background: #fff;
+		font-size: 0.8rem;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.tour .picks button:hover:not(:disabled) {
+		border-color: #24452f;
+		background: #eef3ec;
 	}
 	.card {
 		position: absolute;

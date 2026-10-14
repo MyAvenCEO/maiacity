@@ -15,7 +15,7 @@
  */
 import * as THREE from 'three';
 import { connectFilm, createObstacles, createSky, createStage, createWalker, filmDraws, filmHoldsSize } from '$lib/sandbox-kit';
-import { standIn } from '$lib/actors/human';
+import { standIn } from '$lib/actors/human.v1'; // the stand-in as these shots were blocked (v1)
 import { builder, freeze } from './kit';
 import { buildBuildings, type Lamp } from './buildings';
 import { buildPergola } from './pergola';

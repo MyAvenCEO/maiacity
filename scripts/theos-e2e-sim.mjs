@@ -32,8 +32,10 @@
  * experiences, has no satiation; a product whose margin over full cost stays above 30 % for 90 days gets a new rival
  * (Law 3: founders and 3 basket partners); treasuries keep 9 months of running costs plus planned building, grow first
  * and only then pay out for Aven work proposals; productivity rises about 2 % a year, unevenly; capacity shocks and
- * drifting tastes; weak COOPs fail (their plant goes to the City, which leases it to a successor; the failed MIND leaves
- * the pools and is retired) and small ones that lost their market exit; every tenth person is a zero-Aven test group.
+ * drifting tastes; weak COOPs fail (their plant goes to the City, which leases it to a successor while the plant is in
+ * use; an idle plant, with demand under a quarter of its capacity, is scrapped and its land goes back to the City; the
+ * failed MIND leaves the pools and is retired) and small ones that lost their market exit; every tenth person is a
+ * zero-Aven test group.
  * The report starts with the per-person proof checks of the dynamic main (no one starves, no one has to work to
  * survive, living standards rise for everyone), then the dynamic sections D1–D8 and ladders, then the same runs valued
  * in HEARTS, the paper's unit of account (H1–H8), then the static sections.
@@ -45,7 +47,13 @@
  *        node scripts/theos-e2e-sim.mjs --seeds 20261012-20261019 [--set key=value,…]   the dynamic main on each seed:
  *                                                    μ, σ, the margin below the melt and Proposition 3's checks
  *                                                    (keys of the dynamic world, e.g. poolShare=0.05, turnDiv=0.1,
- *                                                    capDays=365)
+ *                                                    capDays=365; reletUse=0 runs without the idle-plant rule: the
+ *                                                    City then re-lets every failed plant; crn=1 draws the shocks
+ *                                                    from their own stream, see --pair)
+ *        node scripts/theos-e2e-sim.mjs --pair 20261012-20261035 --vs poolShare=0.05 [--names new,old] [--set …]
+ *                                                    the same-shock comparison: the dynamic main and the same with
+ *                                                    --vs, both on every seed with common random numbers (crn=1),
+ *                                                    paired seed by seed, with a two-sided sign test
  *        node scripts/theos-e2e-sim.mjs … --melt 0.09  a research run with another melt (the protocol's is 0.07)
  *        node scripts/theos-e2e-sim.mjs --debug d 60 [--empty 0.25 | --grow]   one static run, a line a year
  *        node scripts/theos-e2e-sim.mjs --dyn 60 [--set key=value,…]          one dynamic run, a line a year
@@ -162,6 +170,18 @@ function rnd(S) {
 	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 const gauss = (S) => Math.sqrt(-2 * Math.log(rnd(S) || 1e-12)) * Math.cos(2 * Math.PI * rnd(S));
+// common random numbers (--set crn=1, and the same-shock comparison --pair): a second stream for the world's capacity
+// shocks and taste drift. It draws for every slot on every step, whether a COOP is there or not, so two runs that differ
+// only in a rule meet the same shocks on the same slots and the same drifting tastes (the main stream still drives the
+// foundings, the growth rates of new COOPs and the order of trades, so their histories can still part)
+function rnd2(S) {
+	S.rs2 = (S.rs2 + 0x6d2b79f5) >>> 0;
+	let t = S.rs2;
+	t = Math.imul(t ^ (t >>> 15), t | 1);
+	t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const gauss2 = (S) => Math.sqrt(-2 * Math.log(rnd2(S) || 1e-12)) * Math.cos(2 * Math.PI * rnd2(S));
 
 function gini(v, n) {
 	const a = Array.from(v.subarray ? v.subarray(0, n) : v.slice(0, n)).map((x) => Math.max(0, x)).sort((x, y) => x - y);
@@ -1699,30 +1719,35 @@ function updateAlloc(S, dt) {
 // ── the dynamic world: productivity, shocks, taste drift, foundings (Law 3), failures and exits ─────────────────────────
 /** productivity growth, capacity shocks and drifting tastes, at the start of a step */
 function world(S, dt, B) {
-	const sc = S.sc, c = S.c, sq = Math.sqrt(dt / 365);
+	const sc = S.sc, c = S.c, sq = Math.sqrt(dt / 365), crn = !!sc.crn;
+	if (crn && S.rs2 === undefined) S.rs2 = (Math.imul(sc.seed >>> 0, 2654435761) ^ 0x5bd1e995) >>> 0;
 	for (let k = 0; k < M; k++) {
 		const co = c[k], sp = SPECS[k];
+		// with common random numbers, every slot takes its draws first (u: is there a shock, a: its depth, b: its length,
+		// g: taste drift)
+		const u = crn ? rnd2(S) : 0, a = crn ? rnd2(S) : 0, b = crn ? rnd2(S) : 0, g = crn ? gauss2(S) : 0;
 		if (!co.active || sp.product < 0) continue;
 		if (sc.prodGrowth) co.A *= Math.exp((co.ga * dt) / 365);
 		if (co.shockUntil >= 0) {
 			if (S.t >= co.shockUntil) (co.prodF = 1), (co.shockUntil = -1);
-		} else if (sc.shockRate > 0 && rnd(S) < (sc.shockRate * dt) / 365) {
+		} else if (sc.shockRate > 0 && (crn ? u : rnd(S)) < (sc.shockRate * dt) / 365) {
 			// a capacity shock: 30–50 % of the plant out for 2–8 months
-			co.prodF = 1 - (0.3 + 0.2 * rnd(S));
-			co.shockUntil = S.t + 60 + 180 * rnd(S);
+			co.prodF = 1 - (0.3 + 0.2 * (crn ? a : rnd(S)));
+			co.shockUntil = S.t + 60 + 180 * (crn ? b : rnd(S));
 			B.shockN++;
 			S.events.push({ t: S.t, type: 'shock', k, name: NAMES[k], product: sp.product, note: `−${Math.round((1 - co.prodF) * 100)} % capacity for ${Math.round(co.shockUntil - S.t)} days` });
 			S.watch.push(co.shockUntil + 30);
 		}
 		// demand shifts between rivals: each seller's taste shifter drifts (mean-reverting over about 5 years)
-		if (sc.tasteSd > 0) co.taste += (-co.taste * dt) / (5 * 365) + sc.tasteSd * sq * gauss(S);
+		if (sc.tasteSd > 0) co.taste += (-co.taste * dt) / (5 * 365) + sc.tasteSd * sq * (crn ? g : gauss(S));
 	}
 	// and between goods: what people want of each good drifts too (mean-reverting over about 10 years)
-	if (sc.tasteSd > 0)
-		for (let g = 0; g < NHH; g++) {
-			S.tasteLg[g] += (-S.tasteLg[g] * dt) / (10 * 365) + 0.5 * sc.tasteSd * sq * gauss(S);
-			S.tasteG[g] = Math.exp(S.tasteLg[g]);
-		}
+	for (let g = 0; g < NHH; g++) {
+		const z = crn ? gauss2(S) : 0;
+		if (!(sc.tasteSd > 0)) continue;
+		S.tasteLg[g] += (-S.tasteLg[g] * dt) / (10 * 365) + 0.5 * sc.tasteSd * sq * (crn ? z : gauss(S));
+		S.tasteG[g] = Math.exp(S.tasteLg[g]);
+	}
 }
 
 /** per person, every step: basic-need coverage, real consumption at base-year prices, and the zero-Aven group's checks */
@@ -1891,7 +1916,8 @@ function prepareHeir(S, fk) {
 	return kk;
 }
 
-/** a failed COOP's plant and land go to the City COOP, which leases them to a successor (same plant, new MIND) */
+/** a failed COOP's plant and land go to the City COOP, which leases them to a successor (same plant, new MIND); in the
+ *  dynamic world only a plant in use (see endCoop) */
 function successor(S, fk, B) {
 	const a = S.c[fk], g = SPECS[fk].product;
 	let kk = a.heir >= 0 && S.c[a.heir] && S.c[a.heir].active && S.c[a.heir].heirOf === fk ? a.heir : -1;
@@ -1929,7 +1955,11 @@ function successor(S, fk, B) {
  */
 function endCoop(S, k, type, why, B) {
 	const co = S.c[k], P = S.P, N = S.N;
-	const kk = type === 'fail' && co.K > 0 ? successor(S, k, B) : -1;
+	// the City re-lets the plant only while it is in use: an idle plant (demand under a quarter of its capacity) is
+	// scrapped, and its land goes back to the City
+	const inUse = !S.sc.dynamic || co.zEma >= (S.sc.reletUse ?? 0);
+	const kk = type === 'fail' && co.K > 0 && inUse ? successor(S, k, B) : -1;
+	const scrapped = type === 'fail' && co.K > 0 && !inUse;
 	if (co.heir >= 0 && kk < 0 && S.c[co.heir]?.active && S.c[co.heir].heirOf === k) {
 		const h = co.heir;
 		co.heir = -1;
@@ -2013,7 +2043,7 @@ function endCoop(S, k, type, why, B) {
 	}
 	if (type === 'fail') B.failN++;
 	else B.exitN++;
-	S.events.push({ t: S.t, type, k, name: NAMES[k], product: SPECS[k].product, note: why + (kk >= 0 ? `; the City leases its plant to ${NAMES[kk]}` : '') });
+	S.events.push({ t: S.t, type, k, name: NAMES[k], product: SPECS[k].product, scrapped, note: why + (kk >= 0 ? `; the City leases its plant to ${NAMES[kk]}` : scrapped ? '; its plant was idle, so the City scraps it and takes the land back' : '') });
 	S.watchF.push(S.t + 180);
 	buildGraph(S);
 }
@@ -2057,7 +2087,7 @@ function lifecycle(S, dt, B) {
 		const share = out[sp.product] > 0 ? co.made / out[sp.product] : 1;
 		if (n[sp.product] >= 2 && share < 0.02 && co.Keff < 0.05 * out[sp.product] && S.t - co.bornT > 730) co.lowDays += dt;
 		else co.lowDays = 0;
-		if (co.K > 0 && co.dryDays >= 90 && !(co.heir >= 0)) prepareHeir(S, k);
+		if (co.K > 0 && co.dryDays >= 90 && !(co.heir >= 0) && co.zEma >= (sc.reletUse ?? 0)) prepareHeir(S, k);
 		else if (co.heir >= 0 && co.dryDays <= 0 && S.c[co.heir]?.active && S.c[co.heir].heirOf === k) {
 			const h = co.heir;
 			co.heir = -1;
@@ -2487,7 +2517,7 @@ const BASE = { N0, seed: 20261012, seedCap: 1.15, mech: 'b', turnDiv: 0.2, poolS
 // growth, shocks, foundings and failures, a zero-Aven test group (every tenth person)
 const DYN = {
 	...BASE, dynamic: true, capDays: 270, spendRate: 0.5, zeroAven: true, prodGrowth: true,
-	prodMean: 0.02, prodSd: 0.015, shockRate: 0.05, tasteSd: 0.15, maxSellers: 4, founderShare: 0.04, growth: true, foundFrom: 3, foundGap: 2,
+	prodMean: 0.02, prodSd: 0.015, shockRate: 0.05, tasteSd: 0.15, maxSellers: 4, founderShare: 0.04, growth: true, foundFrom: 3, foundGap: 2, reletUse: 0.25,
 	avenMarket: false
 };
 const DAILY_YEARS = 1;
@@ -2661,52 +2691,120 @@ const at = (S, y) => S.Y[Math.min(S.Y.length, y) - 1];
 
 // ── the seed check: the dynamic main on several seeds (--seeds 20261012-20261019 [--set key=value,…]) ────────────────
 // One seed is one history. Each seed runs in its own process (--seed-run SEED: the same run as the full script's dynamic
-// main), four at a time; the table gives μ and σ at rest in HEARTS, the margin below the melt, both Ginis and the proof
-// checks of Proposition 3.
-const SET = {};
-if (ARGS.includes('--set')) for (const kv of ARGS[ARGS.indexOf('--set') + 1].split(',')) SET[kv.split('=')[0]] = +kv.split('=')[1];
+// main), four at a time; the table gives μ and σ at rest in HEARTS, the margin below the melt, both Ginis, the COOP
+// failures and the proof checks of Proposition 3.
+const parseSet = (str) => Object.fromEntries((str || '').split(',').filter(Boolean).map((kv) => [kv.split('=')[0], +kv.split('=')[1]]));
+const SET = ARGS.includes('--set') ? parseSet(ARGS[ARGS.indexOf('--set') + 1]) : {};
 const SEED_RUN = ARGS.includes('--seed-run') ? { ...SET, seed: +ARGS[ARGS.indexOf('--seed-run') + 1] } : null;
-if (ARGS.includes('--seeds')) {
-	const arg = ARGS[ARGS.indexOf('--seeds') + 1];
-	const seeds = arg.includes('-') ? Array.from({ length: +arg.split('-')[1] - +arg.split('-')[0] + 1 }, (_, i) => +arg.split('-')[0] + i) : arg.split(',').map(Number);
+const seedList = (arg) => (arg.includes('-') ? Array.from({ length: +arg.split('-')[1] - +arg.split('-')[0] + 1 }, (_, i) => +arg.split('-')[0] + i) : arg.split(',').map(Number));
+/** runs the dynamic main once for each job ({ seed, set }), each in its own process, four at a time; their JSON, in order */
+async function seedRuns(jobs) {
 	const { spawn } = await import('node:child_process');
 	const { fileURLToPath } = await import('node:url');
 	const self = fileURLToPath(import.meta.url);
-	const one = (seed) =>
+	const one = ({ seed, set }) =>
 		new Promise((ok, no) => {
-			const args = [self, '--seed-run', String(seed), ...(QUICK ? ['--quick'] : []), ...(ARGS.includes('--set') ? ['--set', ARGS[ARGS.indexOf('--set') + 1]] : []), ...(ARGS.includes('--melt') ? ['--melt', String(RATE)] : [])];
+			const kv = Object.entries(set).map(([k, v]) => `${k}=${v}`).join(',');
+			const args = [self, '--seed-run', String(seed), ...(QUICK ? ['--quick'] : []), ...(kv ? ['--set', kv] : []), ...(ARGS.includes('--melt') ? ['--melt', String(RATE)] : [])];
 			const ch = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'inherit'] });
 			let o = '';
 			ch.stdout.on('data', (b) => (o += b));
 			ch.on('close', (code) => (code ? no(new Error(`seed ${seed}: exit ${code}`)) : ok(JSON.parse(o))));
 		});
-	const res = new Array(seeds.length);
+	const res = new Array(jobs.length);
 	let next = 0;
 	await Promise.all(
-		Array.from({ length: Math.min(4, seeds.length) }, async () => {
-			while (next < seeds.length) {
+		Array.from({ length: Math.min(4, jobs.length) }, async () => {
+			while (next < jobs.length) {
 				const i = next++;
-				res[i] = await one(seeds[i]);
-				process.stderr.write(`  seed ${seeds[i]} done (${((Date.now() - T0) / 1000).toFixed(1)} s)\n`);
+				res[i] = await one(jobs[i]);
+				process.stderr.write(`  seed ${jobs[i].seed} done (${((Date.now() - T0) / 1000).toFixed(1)} s)\n`);
 			}
 		})
 	);
-	const ok = (b) => (b ? '✓' : '✗');
-	const set = [...Object.entries(SET).map(([k, v]) => `${k} = ${v}`), ...(ARGS.includes('--melt') ? [`melt ${pct(RATE, 0)}`] : [])].join(', ');
+	return res;
+}
+const okMark = (b) => (b ? '✓' : '✗');
+const median = (v) => {
+	const x = [...v].sort((a, b) => a - b);
+	return (x[(x.length - 1) >> 1] + x[x.length >> 1]) / 2;
+};
+const setText = (o) => [...Object.entries(o).map(([k, v]) => `${k} = ${v}`), ...(ARGS.includes('--melt') ? [`melt ${pct(RATE, 0)}`] : [])].join(', ');
+if (ARGS.includes('--seeds')) {
+	const seeds = seedList(ARGS[ARGS.indexOf('--seeds') + 1]);
+	const res = await seedRuns(seeds.map((seed) => ({ seed, set: SET })));
+	const ok = okMark;
+	const set = setText(SET);
 	const L = [];
 	L.push(`# The seed check: the dynamic main on ${seeds.length} seeds${set ? ` (${set})` : ''}`, '');
-	L.push(`Each row is the dynamic main of the full report on one seed: ${res[0].N} people, ${res[0].years} years, the pools' part ${f(res[0].poolShare, 2)} of each HEART, Law 5 at ${pct(res[0].turnDiv, 0)}. μ and σ: the mean and the spread across people of each person's yearly return in HEARTS (dividends plus price change, before the melt), at rest (the last 10 years). The margin is the ${pct(RATE, 0)} melt less μ. Proposition 3's checks are the report's proof checks 1–3 (check 2 normal, with the bundle under 12 MIND); "every tenth" is check 3 for the ten tenths alone.`, '');
-	L.push('| Seed | μ at rest | margin (melt − μ) | σ | Prop. 2 Gini | measured Gini (HEARTS): last year; trend / 10 y | dividend yield | pools\' share of MIND | 1. no one starves (person-days short from day 8) | 2. no one has to work | 3. living standards rise | every tenth higher | all three |');
-	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: | :---: | :---: | :---: |');
-	for (const r of res) L.push(`| ${r.seed} | ${pct(r.muH, 2)} | ${f(r.marginH * 100, 2)} pt | ${pct(r.sgH, 2)} | ${r.gini2H === null ? '–' : f(r.gini2H, 2)} | ${f(r.giniH.y60, 3)}; ${r.giniH.trend >= 0 ? '+' : ''}${f(r.giniH.trend, 3)} | ${pct(r.yield, 1)} | ${pct(r.pools, 1)} | ${ok(r.ok1)} ${f(r.shLate)} | ${ok(r.ok2)} | ${ok(r.ok3)} | ${ok(r.tenths)} | ${ok(r.all)} |`);
+	L.push(`Each row is the dynamic main of the full report on one seed: ${res[0].N} people, ${res[0].years} years, the pools' part ${f(res[0].poolShare, 2)} of each HEART, Law 5 at ${pct(res[0].turnDiv, 0)}. μ and σ: the mean and the spread across people of each person's yearly return in HEARTS (dividends plus price change, before the melt), at rest (the last 10 years). The margin is the ${pct(RATE, 0)} melt less μ. COOP failures: all, with the food COOPs among them in brackets. Proposition 3's checks are the report's proof checks 1–3 (check 2 normal, with the bundle under 12 MIND); "every tenth" is check 3 for the ten tenths alone.`, '');
+	L.push('| Seed | μ at rest | margin (melt − μ) | σ | Prop. 2 Gini | measured Gini (HEARTS): last year; trend / 10 y | dividend yield | pools\' share of MIND | COOP failures (food) | 1. no one starves (person-days short from day 8) | 2. no one has to work | 3. living standards rise | every tenth higher | all three |');
+	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: | :---: | :---: | :---: |');
+	for (const r of res) L.push(`| ${r.seed} | ${pct(r.muH, 2)} | ${f(r.marginH * 100, 2)} pt | ${pct(r.sgH, 2)} | ${r.gini2H === null ? '–' : f(r.gini2H, 2)} | ${f(r.giniH.y60, 3)}; ${r.giniH.trend >= 0 ? '+' : ''}${f(r.giniH.trend, 3)} | ${pct(r.yield, 1)} | ${pct(r.pools, 1)} | ${r.fails} (${r.foodFails}) | ${ok(r.ok1)} ${f(r.shLate)} | ${ok(r.ok2)} | ${ok(r.ok3)} | ${ok(r.tenths)} | ${ok(r.all)} |`);
 	L.push('');
-	const mus = res.map((r) => r.muH), mg = res.map((r) => r.marginH);
-	const sorted = [...mus].sort((a, b) => a - b), med = (sorted[(sorted.length - 1) >> 1] + sorted[sorted.length >> 1]) / 2;
-	L.push(`μ at rest: ${pct(Math.min(...mus), 2)} to ${pct(Math.max(...mus), 2)} (median ${pct(med, 2)}); below the melt on ${mus.filter((m) => m < RATE).length} of ${res.length} seeds; smallest margin ${f(Math.min(...mg) * 100, 2)} pt (seed ${res[mg.indexOf(Math.min(...mg))].seed}). All three checks of Proposition 3 pass on ${res.filter((r) => r.all).length} of ${res.length} seeds (check 1 on ${res.filter((r) => r.ok1).length}, check 2 on ${res.filter((r) => r.ok2).length}, check 3 on ${res.filter((r) => r.ok3).length}; every tenth higher at each mark on ${res.filter((r) => r.tenths).length}). Measured Gini of holdings in the last year: ${f(Math.min(...res.map((r) => r.giniH.y60)), 2)}–${f(Math.max(...res.map((r) => r.giniH.y60)), 2)}.`, '');
+	const mus = res.map((r) => r.muH), mg = res.map((r) => r.marginH), sum = (k) => res.reduce((a, r) => a + r[k], 0);
+	L.push(`μ at rest: ${pct(Math.min(...mus), 2)} to ${pct(Math.max(...mus), 2)} (median ${pct(median(mus), 2)}); below the melt on ${mus.filter((m) => m < RATE).length} of ${res.length} seeds; smallest margin ${f(Math.min(...mg) * 100, 2)} pt (seed ${res[mg.indexOf(Math.min(...mg))].seed}). All three checks of Proposition 3 pass on ${res.filter((r) => r.all).length} of ${res.length} seeds (check 1 on ${res.filter((r) => r.ok1).length}, check 2 on ${res.filter((r) => r.ok2).length}, check 3 on ${res.filter((r) => r.ok3).length}; every tenth higher at each mark on ${res.filter((r) => r.tenths).length}). Measured Gini of holdings in the last year: ${f(Math.min(...res.map((r) => r.giniH.y60)), 2)}–${f(Math.max(...res.map((r) => r.giniH.y60)), 2)}. COOP failures: ${sum('fails')} (${sum('foodFails')} food COOPs; ${sum('chainFails')} of all were successors on a failed plant; ${sum('scrapped')} idle plants scrapped). Person-days short from day 8: ${f(sum('shLate'))}.`, '');
 	for (const r of res.filter((x) => !x.all)) L.push(`- ${r.seed}: ${r.why}.`);
 	L.push('', `_Runtime ${((Date.now() - T0) / 1000).toFixed(1)} s._`);
 	console.log(L.join('\n'));
 	if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify(res, null, 1));
+	process.exit(0);
+}
+
+// ── the same-shock comparison: two rules on the same seeds with common random numbers ─────────────────────────────────
+// --pair 20261012-20261035 --vs poolShare=0.05 [--set key=value,…] [--names new,old]: rule A is the dynamic main (with
+// --set), rule B is rule A with --vs. Both run on every seed with crn=1, so on a seed both meet the same capacity shocks
+// and the same drifting tastes. One seed alone is one random history, and a small change of a rule can give a different
+// history; a paired comparison over many seeds shows what the rule itself does. The sign test counts the seeds on which A
+// is higher and those on which it is lower (ties left out) and asks how likely so uneven a count would be if the rule
+// made no difference (two-sided, exact).
+/** the two-sided sign test of paired differences d (A − B): seeds higher, lower, the same, and p */
+function signTest(d) {
+	const hi = d.filter((x) => x > 0).length, lo = d.filter((x) => x < 0).length, n = hi + lo, k = Math.min(hi, lo);
+	let c = 1, s = 0;
+	for (let i = 0; i <= k; i++) (s += c), (c = (c * (n - i)) / (i + 1));
+	return { hi, lo, same: d.length - n, p: n ? Math.min(1, (2 * s) / 2 ** n) : 1 };
+}
+if (ARGS.includes('--pair')) {
+	const seeds = seedList(ARGS[ARGS.indexOf('--pair') + 1]);
+	const VS = ARGS.includes('--vs') ? parseSet(ARGS[ARGS.indexOf('--vs') + 1]) : {};
+	const [nA, nB] = (ARGS.includes('--names') ? ARGS[ARGS.indexOf('--names') + 1] : 'A,B').split(',');
+	const setA = { ...SET, crn: 1 }, setB = { ...SET, ...VS, crn: 1 }, n = seeds.length;
+	const res = await seedRuns([...seeds.map((seed) => ({ seed, set: setA })), ...seeds.map((seed) => ({ seed, set: setB }))]);
+	const A = res.slice(0, n), B = res.slice(n);
+	const ok = okMark;
+	const L = [];
+	L.push(`# The same-shock comparison: ${nA} against ${nB} on ${n} seeds, with common random numbers`, '');
+	L.push(`${nA}: the dynamic main${Object.keys(SET).length ? ` with ${setText(SET)}` : ''} (the pools' part ${f(A[0].poolShare, 2)} of each HEART, Law 5 at ${pct(A[0].turnDiv, 0)}). ${nB}: the same with ${setText(VS)} (the pools' part ${f(B[0].poolShare, 2)}, Law 5 at ${pct(B[0].turnDiv, 0)}). Both run with common random numbers (crn = 1): a second random stream gives every COOP slot its capacity shocks and taste drift on every step, so on one seed both rules meet the same shocks. ${A[0].N} people, ${A[0].years} years. Person-days short: below 98 % of the basics, from day 8. COOP failures: all, food COOPs, and successors (COOPs that took over a failed plant) that failed too. μ: the lasting return at rest in HEARTS. "All three": all three checks of Proposition 3 pass.`, '');
+	L.push(`| Seed | person-days short: ${nA} | ${nB} | food COOP failures: ${nA} | ${nB} | all COOP failures: ${nA} | ${nB} | μ at rest: ${nA} | ${nB} | all three: ${nA} | ${nB} |`);
+	L.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |');
+	for (let i = 0; i < n; i++) {
+		const a = A[i], b = B[i];
+		L.push(`| ${a.seed} | ${f(a.shLate)} | ${f(b.shLate)} | ${a.foodFails} | ${b.foodFails} | ${a.fails} | ${b.fails} | ${pct(a.muH, 2)} | ${pct(b.muH, 2)} | ${ok(a.all)} | ${ok(b.all)} |`);
+	}
+	const sum = (R, k) => R.reduce((x, r) => x + r[k], 0), cnt = (R, fn) => R.filter(fn).length;
+	L.push(`| **all ${n} seeds** | **${f(sum(A, 'shLate'))}** | **${f(sum(B, 'shLate'))}** | **${sum(A, 'foodFails')}** | **${sum(B, 'foodFails')}** | **${sum(A, 'fails')}** | **${sum(B, 'fails')}** | median **${pct(median(A.map((r) => r.muH)), 2)}** | **${pct(median(B.map((r) => r.muH)), 2)}** | **${cnt(A, (r) => r.all)}** | **${cnt(B, (r) => r.all)}** |`);
+	L.push('');
+	L.push(`Paired, seed by seed (${nA} against ${nB}; two-sided sign test):`, '');
+	L.push(`| Measure | ${nA} higher | ${nA} lower | same | p |`);
+	L.push('| --- | ---: | ---: | ---: | ---: |');
+	const rows = [
+		['person-days short from day 8', 'shLate'],
+		['food COOP failures', 'foodFails'],
+		['successors that failed', 'chainFails'],
+		['all COOP failures', 'fails'],
+		['μ at rest', 'muH']
+	];
+	const tests = {};
+	for (const [label, k] of rows) {
+		const t = (tests[k] = signTest(A.map((a, i) => a[k] - B[i][k])));
+		L.push(`| ${label} | ${t.hi} | ${t.lo} | ${t.same} | ${f(t.p, 3)} |`);
+	}
+	L.push('');
+	const line = (R, nm) => `${nm}: person-days short on ${cnt(R, (r) => r.shLate > 0)} seeds (${f(sum(R, 'shLate'))} in all); food COOP failures on ${cnt(R, (r) => r.foodFails > 0)} seeds (${sum(R, 'foodFails')}; ${sum(R, 'chainFails')} successors failed, ${sum(R, 'scrapped')} idle plants scrapped); check 1 passes on ${cnt(R, (r) => r.ok1)}, check 2 on ${cnt(R, (r) => r.ok2)}, check 3 on ${cnt(R, (r) => r.ok3)}, all three on ${cnt(R, (r) => r.all)} of ${n}; μ at rest ${pct(Math.min(...R.map((r) => r.muH)), 2)} to ${pct(Math.max(...R.map((r) => r.muH)), 2)}, median ${pct(median(R.map((r) => r.muH)), 2)}, below the ${pct(RATE, 0)} melt on ${cnt(R, (r) => r.muH < RATE)}.`;
+	L.push(`- ${line(A, nA)}`, `- ${line(B, nB)}`, '', `_Runtime ${((Date.now() - T0) / 1000).toFixed(1)} s._`);
+	console.log(L.join('\n'));
+	if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify({ names: [nA, nB], setA, setB, seeds, a: A, b: B, tests }, null, 1));
 	process.exit(0);
 }
 
@@ -3073,7 +3171,11 @@ if (SEED_RUN) {
 		!pf.okB && `a day's basic bundle cost ${f(pf.bm.v, 2)} MIND (year ${pf.bm.year})`,
 		!pf.ok3 && `not higher at every 10-year mark: ${pf.falls.slice(0, 3).join('; ')}${pf.falls.length > 3 ? `; and ${pf.falls.length - 3} more` : ''}`
 	].filter(Boolean).join('; ');
-	console.log(JSON.stringify({ seed: S.sc.seed, N: S.sc.N0, years: S.Y.length, poolShare: S.sc.poolShare, turnDiv: S.sc.turnDiv, muH: h.muH, sgH: h.sgH, marginH: h.marginH, gini2H: h.gini2H, muR: h.muR, giniH: h.giniH, yield: h.yield, pools: h.shares.pools, people: h.shares.people, ok1: pf.ok1, shLate: pf.shLate, okN: pf.okN, okB: pf.okB, ok2: pf.ok2, ok3: pf.ok3, tenths, all: pf.all, why }));
+	// its COOP failures: all, food COOPs, successors on a failed plant (a successor's name ends in -B), and idle plants
+	// the City scrapped
+	const fl = S.events.filter((e) => e.type === 'fail');
+	const ends = { fails: fl.length, foodFails: fl.filter((e) => e.product === FOOD).length, chainFails: fl.filter((e) => /-B\d*$/.test(e.name)).length, scrapped: fl.filter((e) => e.scrapped).length, exits: S.events.filter((e) => e.type === 'exit' && !/called off/.test(e.note)).length, founds: S.events.filter((e) => e.type === 'found').length, shocks: S.events.filter((e) => e.type === 'shock').length };
+	console.log(JSON.stringify({ seed: S.sc.seed, N: S.sc.N0, years: S.Y.length, poolShare: S.sc.poolShare, turnDiv: S.sc.turnDiv, crn: !!S.sc.crn, reletUse: S.sc.reletUse ?? 0, ...ends, muH: h.muH, sgH: h.sgH, marginH: h.marginH, gini2H: h.gini2H, muR: h.muR, giniH: h.giniH, yield: h.yield, pools: h.shares.pools, people: h.shares.people, ok1: pf.ok1, shLate: pf.shLate, okN: pf.okN, okB: pf.okB, ok2: pf.ok2, ok3: pf.ok3, tenths, all: pf.all, why }));
 	process.exit(0);
 }
 const PD = proof(D), SD = ss(D), S0s = ss(results['main:base']);
@@ -3083,7 +3185,7 @@ P('# theOS end-to-end simulation — the dynamic world (new main), and the stati
 P('');
 P(`${N0} people from a cold start with goods (seed capacities ${f(DYN.seedCap * 100)} % of the starting need, nobody holds MIND on day 1), seed ${BASE.seed}, ${dL} years. Daily steps in the first year, weekly steps (traded as 3 batches) after. Steady state = the last 10 years (years ${dA + 1}–${dB}). R = the geometric mean of the reference MIND prices (SOLAR, HABITAT, CITY; chain-linked, so R does not jump when a reference COOP ends and its successor takes its place). A day of living = what an average person's daily consumption costs in R that year. Every tenth person (${zN(D)} people) is the zero-Aven test group: their Avens deliver nothing and they start with nothing; they live only from what they own.`);
 P('');
-P(`The dynamic world: prices move freely with demand in both directions (no cap, no price control, no protected price for basics; a COOP\'s floor is its own variable cost grossed up for Law 5, and it goes below that to clear stock that would rot); every household good starts with two rivals (water stays with the City), a seventh good (experiences, new products) has no satiation; a product whose margin over full cost stays above 30 % for 90 days gets a new rival under Law 3 (founders, 3 basket partners); treasuries keep ${f(DYN.capDays / 30)} months of running costs plus planned building, grow first, then pay out for Aven work proposals; each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - DYN.poolShare, 1)} to the COOP\'s treasury, ${f(DYN.poolShare, 1)} to the pools; Law 5 pays ${pct(DYN.turnDiv, 0)} of every sale to the holders of the seller\'s MIND; productivity rises about 2 % a year, unevenly; random capacity shocks (30–50 % for 2–8 months) and drifting tastes; a COOP whose treasury stays dry while it keeps losing fails (its plant goes to the City, which leases it to a successor with a new MIND; the failed MIND leaves the pools and is retired), a small COOP that lost its market exits. People spend about half of what they own a year (basics first).`);
+P(`The dynamic world: prices move freely with demand in both directions (no cap, no price control, no protected price for basics; a COOP\'s floor is its own variable cost grossed up for Law 5, and it goes below that to clear stock that would rot); every household good starts with two rivals (water stays with the City), a seventh good (experiences, new products) has no satiation; a product whose margin over full cost stays above 30 % for 90 days gets a new rival under Law 3 (founders, 3 basket partners); treasuries keep ${f(DYN.capDays / 30)} months of running costs plus planned building, grow first, then pay out for Aven work proposals; each HEART invested makes 1 MIND: ${f(0.5, 1)} to the investor, ${f(0.5 - DYN.poolShare, 1)} to the COOP\'s treasury, ${f(DYN.poolShare, 1)} to the pools; Law 5 pays ${pct(DYN.turnDiv, 0)} of every sale to the holders of the seller\'s MIND; productivity rises about 2 % a year, unevenly; random capacity shocks (30–50 % for 2–8 months) and drifting tastes; a COOP whose treasury stays dry while it keeps losing fails (its plant goes to the City, which leases it to a successor with a new MIND while the plant is in use; an idle plant, with demand under ${pct(DYN.reletUse, 0)} of its capacity, is scrapped and its land goes back to the City; the failed MIND leaves the pools and is retired), a small COOP that lost its market exits. People spend about half of what they own a year (basics first).`);
 P('');
 P('## Proof checks (dynamic main, per person, every day)');
 P('');

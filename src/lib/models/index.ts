@@ -23,6 +23,9 @@ import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, batteryPack, pickup, powercube, solarPanel } from './village.js';
 import { powerCube } from '$lib/actors/powercube.js';
+import { electroCube } from '$lib/actors/electrocube.js';
+import { batteryCube } from '$lib/actors/batterycube.js';
+import { batteryPack as batteryModule } from '$lib/actors/batterypack.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
@@ -59,7 +62,19 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	],
 	powercube: [
 		{ ...FIRST, build: () => powercube() },
-		{ v: 2, date: '2026-10-13', note: 'Open Source Ecology’s own Power Cube (VII / 7s): a hydraulic power unit, not a generator; every part its own in the Actors, and the same cube the LifeTrac carries. MaiaCity V1 still shows v1 on its hex' }
+		{ v: 2, date: '2026-10-13', note: 'Open Source Ecology’s own Power Cube (VII / 7s): a hydraulic power unit, not a generator; every part its own in the Actors, and the same cube the LifeTrac carries. MaiaCity V1 still shows v1 on its hex' },
+		{ v: 3, date: '2026-10-13', note: 'Its Electric variant is its own asset now, the ElectroCube; MaiaCity V1 carries that' }
+	],
+	'battery-pack': [
+		{ ...FIRST, build: () => batteryPack() },
+		{ v: 2, date: '2026-10-13', note: 'The BatteryCube: the Power Cube’s 27" frame with four BatteryPacks (~20.7 kWh) and a 6 kW inverter to 230 V, in place of the 2.3 m cabinet' }
+	],
+	batterypack: [
+		{ ...FIRST, date: '2026-10-13', build: () => working(batteryModule(5), 'explode') },
+		{ v: 2, date: '2026-10-13', note: 'Serviceable from the front: a closed shell and one L-shaped service drawer carrying every inner part; it plays its service move, the two side buttons pressed and the drawer pulled out and pushed home', build: () => working(batteryModule(6), 'service') },
+		{ v: 3, date: '2026-10-13', note: 'Everything from the front and low: the grip, the lock and the two release buttons (on the face’s left and right ends) at the base plate’s level', build: () => working(batteryModule(7), 'service') },
+		{ v: 4, date: '2026-10-13', note: 'The grip, the lock and the release buttons on the shell’s foot, the drawer carrying only the insides; the back socket in one line', build: () => working(batteryModule(8), 'service') },
+		{ v: 5, date: '2026-10-13', note: 'The release buttons and the drawer’s catches in the shell’s two front corner columns, at the base plate’s level' }
 	],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
@@ -155,13 +170,11 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'rabbit-hutch', label: 'Rabbit hutch', note: 'a mini geodesic dome of wire against foxes and hawks, 5.2 m across and 1.6 m high, on grass: a little shingled dome to sleep in, a hay rack, a water bowl, a hollow log to hide in', usedIn: 'Sandbox 4', make: () => rabbitDome().group },
 	{ id: 'playground', label: 'Playground', note: 'about 16 m across, all wood: a sandpit ringed with stumps round a climbing dome of round logs (4.4 m across, a platform at 1.2 m, a rope net under its crown, a slide out of its side), a swing on an arch of logs, balance logs and stepping stumps', usedIn: 'Sandbox 4', make: () => playDome().group },
 	{ id: 'pickup', label: 'Pickup', note: `${VILLAGE_INFO.pickup.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => pickup() },
-	{ id: 'powercube', label: 'Power Cube', note: 'Open Source Ecology’s Power Cube VII / 7s, the hydraulic heart of their Global Village Construction Set: a 28 hp V-twin on a gear pump, 15 gpm at 3,000 psi, with its 7-gallon tanks, relief, gauge, six-tube cooler, battery and two quick couplers in a 27" cube of 181 kg, lifted from one machine to the next. Running; every part its own in the Actors', usedIn: 'The LifeTrac, MaiaCity V1', make: () => working(powerCube(), 'run'),
-		variants: [
-			{ id: 'hydraulic', label: 'Hydraulic', note: 'OSE’s Power Cube VII / 7s: 28 hp on a gear pump, 15 gpm at 3,000 psi, a 27" cube of 181 kg', make: () => working(powerCube(), 'run') },
-			{ id: 'electric', label: 'Electric', note: 'Power Cube Electric, our variant (not an OSE design): the same cube and engine with a brushless ~15 kVA alternator on its shaft in place of the hydraulics, 400 V three-phase and 230 V sockets on its back; 27" wide and high, 35" long', make: () => working(powerCube({ electric: true }), 'run') }
-		] },
+	{ id: 'powercube', label: 'Power Cube', note: 'Open Source Ecology’s Power Cube VII / 7s, the hydraulic heart of their Global Village Construction Set: a 28 hp V-twin on a gear pump, 15 gpm at 3,000 psi, with its 7-gallon tanks, relief, gauge, six-tube cooler, battery and two quick couplers in a 27" cube of 181 kg, lifted from one machine to the next. Running; every part its own in the Actors', usedIn: 'The LifeTrac', make: () => working(powerCube(), 'run') },
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
-	{ id: 'battery-pack', label: 'Big battery pack', note: `${VILLAGE_INFO.battery.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => batteryPack() },
+	{ id: 'electrocube', label: 'ElectroCube', note: `${VILLAGE_INFO.powercube.note}. The Village COOP’s; every part its own in the Actors`, usedIn: 'MaiaCity V1', make: () => working(electroCube(), 'run') },
+	{ id: 'battery-pack', label: 'BatteryCube', note: `${VILLAGE_INFO.battery.note}. The Village COOP’s; every part its own in the Actors`, usedIn: 'MaiaCity V1', make: () => working(batteryCube(), 'off') },
+	{ id: 'batterypack', label: 'BatteryPack', note: 'our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holders, joined by copper contact plates pressed on by a clamp, no welds, all on one L-shaped service drawer that slides out of its shell when the two buttons in the shell’s corner columns are pressed; 460 × 480 × 125 mm, ~26 kg. Four fill a BatteryCube; shown being serviced here', usedIn: 'The BatteryCube', make: () => working(batteryModule(), 'service') },
 	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() },
 	{
 		id: 'excavator',
