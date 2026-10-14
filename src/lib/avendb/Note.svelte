@@ -2,14 +2,16 @@
 	One note as a docs app shows a document, the whole screen: at the top its title, its vault, its tags, its edits, the
 	line being edited, who it is shared with and Share (this note alone, or a rule its tags match); on the left its
 	main line and its proposals, each a line of its own to switch to, and its variants, the notes made from it; in the
-	middle the note on the line picked, as a page, to edit there, and what a proposal changes against main, to accept
-	it, make main match it or bring main's changes in; on the right its history, every edit of that line, newest first,
+	middle the note on the line picked, as a page, to edit there, and what a proposal changes since it started, to merge
+	it into main, as a pull request merges, or bring main's changes in: a merge keeps every change of both lines, and
+	where both changed the same words, main keeps its own unless the person takes the proposal's there; every edit of
+	both stays in the history. On the right its history, every edit of that line, newest first,
 	each with what it changed, word by word, who made it, and the version it made, to view, restore, undo or propose
 	from. A variant is a new note with what a line reads now, and none of its history. Delete marks the note deleted, so
 	Notes lists it apart, and its page offers to bring it back; every edit of it stays. All of it acts for the acting
 	vault, whose caps the device checks as any peer does: a note it only reads, it reads, every version of it; and a
 	button offers what the ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a
-	vault that may only suggest changes proposes them, for one whose cap allows it to accept. An edit no rule allows,
+	vault that may only suggest changes proposes them, for one whose cap allows it to merge. An edit no rule allows,
 	no reader counts, nor anything built on it: the note says how many there are, and shows none of them.
 -->
 <script>
@@ -23,10 +25,12 @@
 	import { count, hue, nameOf, sharedWith, sharedWords, sharerWords, short, signerName } from './vaults.js';
 
 	/**
+	 * @typedef {{ at: unknown[], what: 'value' | 'row' | 'order', base: unknown, ours: unknown, theirs: unknown }} Conflict
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
-	 *   title: string | null, text: string | null, blocks: { id: number, type: string }[] | null }} LineView
+	 *   title: string | null, text: string | null, blocks: { id: number, type: string }[] | null,
+	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null }} LineView
 	 * @typedef {{ id: string, author: string, actor: string, line: string | null, deps: string[],
-	 *   kind: 'edit' | 'propose' | 'merge' | 'promote' | 'sealed', name: string | null,
+	 *   kind: 'edit' | 'propose' | 'merge' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
 	 *   before: string | null, counted: boolean, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
@@ -55,6 +59,8 @@
 	let into = $state('');
 	let made = $state('');
 	let sharing = $state(false);
+	/** the conflicts where the person takes the proposal's value, by place (`place`) */
+	let taking = $state(/** @type {Record<string, boolean>} */ ({}));
 
 	const item = $derived(world.entries.find((e) => e.entry === entry));
 
@@ -116,7 +122,7 @@
 	/**
 	 * What the ops of the caps the acting vault writes through let it do on the line shown, as the device answers a
 	 * dry run of each (`may`): save its text (`write`), rename it (`title`, and `heading`, the heading it opens with),
-	 * propose, accept the proposal into main, make main match it, update it from main, restore or undo the version
+	 * propose, merge the proposal into main, update it from main, restore or undo the version
 	 * shown, make a variant in each vault it may add one to (`variant` and the vault, which only a dry run the device
 	 * would make offers), and delete the note or bring it back (`delete`, `back`). Elsewhere only the ops' refusal
 	 * (`NotAllowed`) holds a button back: what the person then does is the device's to refuse, as any op.
@@ -146,8 +152,7 @@
 			asks[item?.deleted ? 'back' : 'delete'] = deleting(entry, item?.deleted);
 		}
 		if (writes && on !== null) {
-			asks.accept = { op: 'merge', entry, from: on, into: null };
-			asks.promote = { op: 'merge', entry, from: on, into: null, promote: true };
+			asks.merge = { op: 'merge', entry, from: on, into: null };
 			asks.update = { op: 'merge', entry, from: null, into: on };
 		}
 		if (writes && seen) {
@@ -200,11 +205,9 @@
 			case 'propose':
 				return `Proposed “${e.name ?? '…'}”${e.from ? ` from ${at(from)}` : ''}`;
 			case 'merge':
-				if (e.line === null) return `Accepted ${at(from)} into main`;
+				if (e.line === null) return `Merged ${at(from)} into main`;
 				if (from === null) return `Updated ${at(e.line)} from main`;
 				return `Merged ${at(from)} into ${at(e.line)}`;
-			case 'promote':
-				return `Made ${at(e.line)} match ${at(from)}`;
 			case 'sealed':
 				return `An edit this browser can’t open${elsewhere}`;
 			default: {
@@ -269,13 +272,38 @@
 		await api.run('Renaming', { op: 'batch', as: actor, ops });
 	}
 
+	/** A conflict's place, as the engine names it, as a key. @param {Conflict} c */
+	const place = (c) => JSON.stringify({ at: c.at, what: c.what });
+
+	/** Where a conflict is, in words. @param {Conflict} c */
+	function where(c) {
+		const [field, row] = /** @type {[string, { id?: number } | undefined]} */ (c.at);
+		if (c.what === 'order') return `the order of the ${field}`;
+		if (c.what === 'value') return `the ${field}`;
+		if (field === 'blocks' && row?.id === 1) return 'the heading';
+		if (field === 'blocks' && row?.id === 2) return 'the text';
+		return `${field} ${row?.id ?? ''}`.trim();
+	}
+
+	/** What one side holds at a conflict, in words. @param {unknown} v */
+	function holds(v) {
+		if (v === null || v === undefined) return 'nothing (taken out)';
+		if (typeof v === 'string') return v || '(empty)';
+		if (typeof v === 'object' && 'text' in v && typeof v.text === 'string') return v.text || '(empty)';
+		return JSON.stringify(v);
+	}
+
 	/**
-	 * Merge line `from` into line `to`, then show `to`; with `promote`, `to` then shows exactly what `from` does.
-	 * @param {string | null} from @param {string | null} to @param {boolean} promote
+	 * Merge line `from` into line `to`, then show `to`: `to` keeps every change of its own, and takes `from`'s value
+	 * at the conflicts the person picked, merging into main.
+	 * @param {string | null} from @param {string | null} to
 	 */
-	async function merge(from, to, promote) {
-		const op = { op: 'merge', as: actor, entry, from, into: to, promote };
-		if (await api.run(promote ? 'Making it match' : 'Merging', op)) [line, viewing] = [to, ''];
+	async function merge(from, to) {
+		/** @type {Conflict[]} */
+		const conflicts = to === null ? (lines.find((l) => l.line === from)?.conflicts ?? []) : [];
+		const take = conflicts.filter((c) => taking[place(c)]).map((c) => ({ at: c.at, what: c.what }));
+		const op = { op: 'merge', as: actor, entry, from, into: to, take };
+		if (await api.run('Merging', op)) [line, viewing, taking] = [to, '', {}];
 	}
 
 	/**
@@ -488,7 +516,7 @@
 							</span>
 						</button>
 					{:else}
-						<p class="hint soft">None yet. A proposal is a line of its own, to edit apart from main and then accept into it.</p>
+						<p class="hint soft">None yet. A proposal is a line of its own, to edit apart from main and then merge into it.</p>
 					{/each}
 					{#if writes}
 						{#if naming}
@@ -591,21 +619,15 @@
 							<span class="actions">
 								<button
 									class="btn primary"
-									disabled={busy || !lets('accept')}
-									title={barred('accept')}
-									onclick={() => merge(here.line, null, false)}>Accept into main</button
-								>
-								<button
-									class="btn"
-									disabled={busy || !lets('promote')}
-									title={barred('promote')}
-									onclick={() => merge(here.line, null, true)}>Make main match it</button
+									disabled={busy || !lets('merge')}
+									title={barred('merge')}
+									onclick={() => merge(here.line, null)}>Merge into main</button
 								>
 								<button
 									class="btn"
 									disabled={busy || !lets('update')}
 									title={barred('update')}
-									onclick={() => merge(null, here.line, false)}>Update from main</button
+									onclick={() => merge(null, here.line)}>Update from main</button
 								>
 							</span>
 						{/if}
@@ -635,16 +657,41 @@
 						<p class="diff">{@render pieces(diff(seen.text ?? '', here.text ?? ''))}</p>
 					</section>
 				{:else if !seen && here.line !== null}
+					{@const base = here.base ?? main}
+					{@const conflicts = here.conflicts ?? []}
 					<section class="against">
-						<h4>What “{lineName(here)}” changes against main</h4>
-						{#if (main.text ?? '') === (here.text ?? '')}
-							<p class="soft">It reads the same as main.</p>
+						<h4>What “{lineName(here)}” changes</h4>
+						{#if (base.text ?? '') === (here.text ?? '')}
+							<p class="soft">Nothing in its text since it started from main.</p>
 						{:else}
-							<p class="diff">{@render pieces(diff(main.text ?? '', here.text ?? ''))}</p>
+							<p class="diff">{@render pieces(diff(base.text ?? '', here.text ?? ''))}</p>
+						{/if}
+						{#if (base.text ?? '') !== (main.text ?? '')}
+							<p class="hint soft">Main changed too since then. Merging keeps those changes.</p>
+						{/if}
+						{#if conflicts.length}
+							<div class="conflicts">
+								<h5>{count(conflicts.length, 'conflict')}: both changed the same place</h5>
+								{#each conflicts as c (place(c))}
+									<div class="conflict">
+										<b>{where(c)}</b>
+										<p><small class="soft">main</small> {holds(c.ours)}</p>
+										<p><small class="soft">“{lineName(here)}”</small> {holds(c.theirs)}</p>
+										{#if writes}
+											<label>
+												<input type="checkbox" bind:checked={taking[place(c)]} />
+												Use “{lineName(here)}”’s here
+											</label>
+										{/if}
+									</div>
+								{/each}
+							</div>
 						{/if}
 						<p class="hint soft">
-							Accepting keeps the changes of both lines; making main match brings main to exactly this text. Both keep every
-							edit of each.
+							Merging into main works as a pull request: main keeps every change it made, and all this proposal changed
+							comes in.{#if conflicts.length}
+								Where both changed the same words, main keeps its own unless you pick the proposal’s.{/if} Every edit of
+							both stays in the history.
 						</p>
 					</section>
 				{/if}
@@ -657,7 +704,7 @@
 				</header>
 				<ol>
 					{#each history as e (e.id)}
-						{@const changed = e.kind === 'edit' || e.kind === 'merge' || e.kind === 'promote'}
+						{@const changed = e.kind === 'edit' || e.kind === 'merge'}
 						<li class={e.kind} class:on={e.id === viewing}>
 							<button
 								class="what"
@@ -682,7 +729,7 @@
 											onclick={() => restore(e.id)}>Restore</button
 										>
 									{/if}
-									{#if (e.kind === 'edit' || e.kind === 'promote') && e.deps.length}
+									{#if e.kind === 'edit' && e.deps.length}
 										<button
 											class="btn quiet"
 											disabled={busy || !lets('undo')}
@@ -1103,6 +1150,46 @@
 		margin: 0.5rem 0 0;
 	}
 
+	.conflicts {
+		display: grid;
+		gap: 0.5rem;
+		margin-top: 0.8rem;
+	}
+
+	.conflicts h5 {
+		margin: 0;
+		color: #7a4d10;
+		font-size: 0.8rem;
+	}
+
+	.conflict {
+		display: grid;
+		gap: 0.25rem;
+		padding: 0.55rem 0.7rem;
+		border-left: 3px solid #c99a3a;
+		border-radius: 0 8px 8px 0;
+		background: #fbf6ea;
+		font-size: 0.85rem;
+	}
+
+	.conflict p {
+		margin: 0;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+
+	.conflict small {
+		display: inline-block;
+		min-width: 4.5rem;
+	}
+
+	.conflict label {
+		display: flex;
+		gap: 0.4rem;
+		align-items: center;
+		font-size: 0.8rem;
+	}
+
 	.diff {
 		margin: 0.3rem 0 0.2rem;
 		line-height: 1.55;
@@ -1172,8 +1259,7 @@
 		background: #8a6bb8;
 	}
 
-	.history li.merge::before,
-	.history li.promote::before {
+	.history li.merge::before {
 		background: #c99a3a;
 	}
 

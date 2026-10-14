@@ -7,11 +7,13 @@
 //!
 //! On each line a device edits as a Loro peer of that line (`doc`), so its edits on one line never wait for its edits
 //! on another. A proposal starts from any version with a write that holds the proposal's name. A merge is a write on
-//! the target that builds on the heads of both lines and carries no change: its history is the union of both (T10g),
-//! which Loro merges, so the order of merges doesn't matter and merging again changes nothing. A promote is the same
-//! write carrying the change that brings the merged item to exactly the proposal's record: the target then shows the
-//! proposal and keeps both histories (T10h). The merged item imports first and changes after; Loro's own revert is not
-//! used, as it isn't atomic in Loro 1.16.
+//! the target that builds on the heads of both lines: its history is the union of both (T10g), which Loro merges, and
+//! it carries the change that brings Loro's merged item to the three-way merge of the two lines' records from their
+//! base, the version both histories hold in common, as git merges a file (`merge::merge`): so nothing the target
+//! changed since the base is lost, all the other line changed alone lands, and where both changed one place
+//! differently the target keeps its own unless the person merging takes the other's there (T10h). Where the merged
+//! item already shows it, the write carries no change. The merged item imports first and changes after; Loro's own
+//! revert is not used, as it isn't atomic in Loro 1.16.
 //!
 //! Only a line's latest edit is reverted as it is: its line goes back to the record of the version it built on
 //! (`restore`, which puts back any version's record). An older edit is undone by a three-way merge of records
@@ -36,6 +38,7 @@ use serde_json::{Map, Value};
 use crate::doc::Item;
 use crate::id::{AudienceId, BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lens::Lane;
+use crate::merge::{self, Merged, Place};
 use crate::policy::{self, Line, Proposal, Refusal, Write};
 use crate::rules::{self, Touch};
 
@@ -43,7 +46,8 @@ use crate::rules::{self, Touch};
 pub const MAIN: Line = None;
 
 /// One accepted write of an entry as a device holds it: the write, what it carries if the device could open it (a
-/// Loro update, nothing for a merge, or for a write that starts a proposal, the proposal's name), whether it fits the
+/// Loro update, nothing for a merge Loro's merged item already shows, or for a write that starts a proposal, the
+/// proposal's name), whether it fits the
 /// schemas its entry was written under as far as the entry's readers judged it (`History::reading`, which they read
 /// only where what it builds on counts), and whether they count it (`policy::State::lets`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,13 +181,13 @@ impl History {
     }
 
     /// The item at `version`, made from scratch from the updates it holds, as `signer` would edit it on `line`: how a
-    /// device opens any version read-only, and makes the change a promote carries.
+    /// device opens any version read-only, and makes the change a merge carries.
     pub fn item_at(&self, version: &[EditId], signer: SignerId, line: Line) -> Item {
         build(&self.version(version), signer, line).unwrap_or_else(|| Item::new_on(signer, line))
     }
 
     /// The schemas the update of write `edit` was written under, imported on the version it builds on: none for a write
-    /// the device can't open, a proposal's start, a merge, or a promote, a restore or an undo, which name none.
+    /// the device can't open, a proposal's start, a merge, a restore or an undo, which name none.
     pub fn written_under(&self, edit: EditId, signer: SignerId) -> BTreeSet<BlobId> {
         let Some(c) = self.get(edit) else { return BTreeSet::new() };
         let w = &c.write;
@@ -301,19 +305,38 @@ impl History {
         Draft { proposal: Proposal::New, deps: version.to_vec(), body: name.as_bytes().to_vec() }
     }
 
-    /// A merge of `from` into `into`: a write on `into` that builds on the heads of both and carries no change, so the
-    /// history of `into` is then the union of both (T10g).
-    pub fn merge(&self, from: Line, into: Line) -> Draft {
-        Draft { proposal: on(into), deps: self.both(from, into), body: vec![] }
+    /// The base of a merge of `from` into `into`: the version both lines' histories hold in common, the writes of it
+    /// no write of it builds on, as git takes a merge base.
+    pub fn base(&self, from: Line, into: Line) -> Vec<EditId> {
+        let theirs: HashSet<EditId> = self.history(from).iter().map(|c| c.write.edit).collect();
+        let common: Vec<&Change> = self.history(into).into_iter().filter(|c| theirs.contains(&c.write.edit)).collect();
+        policy::tips(&common)
     }
 
-    /// A promote of `from` into `into`: the merge's write, carrying the change that brings the merged item to exactly
-    /// the record `from` shows, so `into` then shows it too and keeps both histories (T10h).
-    pub fn promote(&self, from: Line, into: Line, signer: SignerId) -> Draft {
+    /// What a merge of `from` into `into` shows, as `signer` reads them, and its conflicts (`merge::merge`): the
+    /// three-way merge of the record of their base, what `into` shows and what `from` shows, taking `from`'s value at
+    /// the conflicts `take` names.
+    pub fn merged(&self, from: Line, into: Line, signer: SignerId, take: &BTreeSet<Place>) -> Merged {
+        let record = |v: Value| match v {
+            Value::Object(r) => r,
+            _ => Map::new(),
+        };
+        let base = record(self.item_at(&self.base(from, into), signer, into).record());
+        merge::merge(&base, &record(self.record(into, signer)), &record(self.record(from, signer)), take)
+    }
+
+    /// A merge of `from` into `into`: a write on `into` that builds on the heads of both, so the history of `into` is
+    /// then the union of both (T10g), carrying the change that brings Loro's merged item to what the merge shows
+    /// (`merged`), none where it shows that already (T10h).
+    pub fn merge(&self, from: Line, into: Line, signer: SignerId, take: &BTreeSet<Place>) -> Draft {
         let deps = self.both(from, into);
         let mut item = self.item_at(&deps, signer, into);
+        let want = Value::Object(self.merged(from, into, signer, take).record);
+        if item.record() == want {
+            return Draft { proposal: on(into), deps, body: vec![] };
+        }
         let since = item.version();
-        item.put_record(&self.record(from, signer));
+        item.put_record(&want);
         Draft { proposal: on(into), deps, body: item.export(&since) }
     }
 
@@ -325,7 +348,8 @@ impl History {
     }
 
     /// Undo the edit `edit` on `line`, keeping every change made since (`undo`). `None` if the history doesn't hold
-    /// it. A merge carries no change, so undoing it changes nothing: restoring the version before it does.
+    /// it. Undoing a merge takes back only the change it carried on Loro's merged item: restoring the version before it
+    /// takes back the merge.
     pub fn undo(&self, line: Line, edit: EditId, signer: SignerId) -> Option<Draft> {
         let c = self.get(edit)?;
         let after = self.item_at(&[edit], signer, line).record();
@@ -502,14 +526,15 @@ impl Repo {
         self.make(author, d)
     }
 
+    /// `author` merges `from` into `into`, `into` keeping its own value at every conflict.
     pub fn merge(&mut self, author: SignerId, from: Line, into: Line) -> EditId {
-        let d = self.history.merge(from, into);
-        self.make(author, d).expect("a merge of lines the repo holds")
+        self.merge_taking(author, from, into, &BTreeSet::new())
     }
 
-    pub fn promote(&mut self, author: SignerId, from: Line, into: Line) -> EditId {
-        let d = self.history.promote(from, into, author);
-        self.make(author, d).expect("a promote of lines the repo holds")
+    /// `author` merges `from` into `into`, taking `from`'s value at the conflicts `take` names.
+    pub fn merge_taking(&mut self, author: SignerId, from: Line, into: Line, take: &BTreeSet<Place>) -> EditId {
+        let d = self.history.merge(from, into, author, take);
+        self.make(author, d).expect("a merge of lines the repo holds")
     }
 
     pub fn restore(&mut self, author: SignerId, line: Line, version: &[EditId]) -> EditId {

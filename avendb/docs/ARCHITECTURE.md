@@ -468,13 +468,23 @@ the start cuts the whole proposal (`spec/AvenDB/Proposals.lean`).
 | Action | What it writes |
 |---|---|
 | Propose | A write that starts a line from any version |
-| Merge | A write on the target that builds on both lines' heads: the union of both histories (T10g) |
-| Promote | A merge that also makes the target read exactly like the proposal (T10h) |
+| Merge | A write on the target that builds on both lines' heads: the union of both histories (T10g), reading as the three-way merge of both lines from their base (T10h) |
 | Restore | A new write that puts back an older version |
 | Undo | A new write that takes out one older write, by a three-way merge of records |
 | Variant | A new entry with what a line reads now and its tags, and none of its history |
 
 A write on one line changes no other line (T10f). Nothing is ever overwritten: restore and undo are writes too.
+
+**Merge, as git merges.** A merge works as a pull request merges a branch, and loses nothing
+(`crates/avendb/src/merge.rs`, `Doc.lean`'s `mergeInto`). Its base is what both lines' histories hold in common. A
+record is seen place by place: each field, each row of a list of records with all its fields, and each list's order. A
+place only one line changed since the base takes that change. A place both changed is joined where the changes don't
+clash: a text edited at places apart, a list of values both added to, a row whose fields they changed apart, rows added
+or moved on one side. Where they clash, a conflict, the target keeps its own value, unless the person merging takes the
+proposal's there (`take`). So nothing the target changed since the base is lost (T10d), all the proposal changed alone
+lands (T10e), and the person's choice touches the conflicts alone. The merge's write carries the change that brings
+Loro's merged item to that record, none where Loro's already reads so. Every write of both lines stays in the history
+(T10g).
 
 **Whether a write counts** is decided by every reader the same way. It counts when it fits its schemas (section 8),
 builds only on writes that count, and its actor is the entry's vault or its proof names a live share whose chain
@@ -565,8 +575,9 @@ an audience's epoch `generation`.
 ### Changes
 
 **Entries.** `create {vault, type, tags, schema, value, as}`; the record ops `set`, `unset`, `insert`, `remove`,
-`move` `{entry, line, schema, path, value, at, to, as}`; `tag {entry, add, remove, as}`; `propose`, `merge`,
-`restore`, `undo`, `variant`; and `batch {ops, as}`, whose record ops in a row on one entry's line make one write. A
+`move` `{entry, line, schema, path, value, at, to, as}`; `tag {entry, add, remove, as}`; `propose`;
+`merge {entry, from, into, take, as}`, `take` the conflicts where the target takes the other line's value, each
+`{at: path, what: value | row | order}`, as `note` lists a proposal's `conflicts`; `restore`, `undo`, `variant`; and `batch {ops, as}`, whose record ops in a row on one entry's line make one write. A
 schema or a lens is created as an entry of its type (section 9).
 
 **Vaults.** Each runs alone, never in a batch, and `may` covers each:
@@ -1013,7 +1024,7 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 | `Sync.lean` | What a peer sends a device, interest and follow, the files it may fetch, the link card |
 | `Logs.lean` | Logs, frontiers, asks, forks; holdings, announcements, connections, Synced to and the blob gate |
 | `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups and touches; records, diffs and queries; schema fit |
-| `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge and promote (T10a to T10e); lines of history (T10f to T10h) |
+| `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge of histories and the three-way merge of records (T10a to T10e); lines of history (T10f to T10h) |
 | `Theorems.lean` | Every other theorem's statement; the proofs live in the `*Lemmas.lean` files and `Schemas.lean` |
 | `Examples.lean`, `Vectors.lean` | The scenarios, checked on every build; the cases the Rust core replays |
 
@@ -1030,7 +1041,7 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | T7 | Blind server: no key of a vault whose seed it never held, unless public | `T7_blind_server` |
 | T8 | Everyone only reads | `T8_everyone_read_only` |
 | T9 | Lens laws: round trips, edits through a view keep what it can't see | `T9_*` in `Lens.lean` |
-| T10 | Merge is the union of histories; promote gives the proposal; lines don't touch | `T10_*` in `Doc.lean` and `Proposals.lean`, with `writes_ordered` |
+| T10 | Merge is the union of histories and reads as the three-way merge, keeping the target's changes; lines don't touch | `T10_*` in `Doc.lean` and `Proposals.lean`, with `writes_ordered` |
 | T11 | Same edits in any order, same state | `T11_convergence`, `T11_same_standing` |
 | T12 | Sync sends what shares reach; Everyone only to interest or follow; strangers get nothing | `T12_sync_sends_only_what_shares_reach`, `T12_interest`, `T12_stranger_gets_nothing`, `T12_since` |
 | T13 | Two devices that asked each other once converge | `T13_sync_converges` |

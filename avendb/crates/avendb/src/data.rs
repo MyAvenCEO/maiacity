@@ -9,18 +9,19 @@
 //! keep their older names: `caps` and `cap` for shares, `cells` and `cell` for audiences, `role` and `roles` for
 //! levels, `grantee` for a share's who, and `generation` for a key's epoch.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{Map, Value, json};
 
 use crate::doc::Item;
 use crate::engine::{SHOWN, Wrote, line_name, wrote};
-use crate::history::{Change, History};
+use crate::history::{Change, History, MAIN};
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, Recipient};
 use crate::lab::Lab;
 use crate::lens::{self, DocV2, Lens, Schema};
-use crate::policy::{Action, Entry, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
+use crate::merge::Conflict;
+use crate::policy::{Action, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
 use crate::sign::{Classical, Signature, SignerKeys};
 use crate::slice::LENS_TYPE;
 use crate::wire::Wire as _;
@@ -420,13 +421,24 @@ fn recipient(r: &Recipient) -> Value {
 
 /// Note `entry` as device `me` holds it, for the page's note page: its lines, the main line first, then each proposal
 /// in the order it started, each with its name (`named`), the version it started from, its heads, its history (its own
-/// edits and every edit they build on, oldest first), and the note it shows there; and every edit of it the device
+/// edits and every edit they build on, oldest first), and the note it shows there; for a proposal, as a pull request
+/// shows one, the note at its base with main, what both lines hold in common (`base`), and where a merge into main
+/// would find both changed one place differently (`conflicts`, `merge::Conflict`); and every edit of it the device
 /// counts, in the order the device took them (`edit`). `None` if it counts none.
 pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
     let h = lab.history(me, entry)?;
-    let line = |line| {
+    let line = |line: Line| {
         let doc = lab.item_on(me, entry, line).and_then(Item::as_document);
         let start = line.and_then(|b| h.get(b));
+        let (base, conflicts) = match line {
+            None => (Value::Null, Value::Null),
+            Some(_) => {
+                let base = h.item_at(&h.base(line, MAIN), me, line).as_document();
+                let base = base.map_or(Value::Null, |d| json!({ "title": d.title.clone(), "text": body(&d) }));
+                let conflicts = h.merged(line, MAIN, me, &BTreeSet::new()).conflicts;
+                (base, conflicts.iter().map(Conflict::to_json).collect())
+            }
+        };
         json!({
             "line": line.map(|b: EditId| hex(&b.0)),
             "name": line_name(h, line),
@@ -436,6 +448,8 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
             "title": doc.as_ref().map(|d| d.title.clone()),
             "text": doc.as_ref().map(body),
             "blocks": doc.as_ref().map(|d| d.blocks.iter().map(|b| b.to_value()).collect::<Vec<_>>()),
+            "base": base,
+            "conflicts": conflicts,
         })
     };
     let lines: Vec<Value> = h.lines().into_iter().map(line).collect();
@@ -447,7 +461,7 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
 
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the line it extends, what
 /// it builds on, and what it is, as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the
-/// start of a proposal (`propose`, with its name), a `merge` of two lines, a `promote`, or `sealed`; and the line it
+/// start of a proposal (`propose`, with its name), a `merge` of two lines, or `sealed`; and the line it
 /// brought in, or for a proposal the line it started from (`from`); and whether the note's readers count it, as it
 /// fits the note's schemas, the ops of the shares it relies on allow it and what it builds on counts
 /// (`Change::counted`), and why not (`why`). With `shown`, the note's title and text at its version, and the text at
@@ -457,7 +471,7 @@ fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
     let line = w.line();
     let at = |version: &[EditId]| h.item_at(version, me, line).as_document();
     let (after, before) =
-        if shown && matches!(kind, "edit" | "merge" | "promote") { (at(&[w.edit]), at(&base)) } else { (None, None) };
+        if shown && matches!(kind, "edit" | "merge") { (at(&[w.edit]), at(&base)) } else { (None, None) };
     json!({
         "id": hex(&w.edit.0),
         "author": hex(&w.author.0),

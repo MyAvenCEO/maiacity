@@ -86,6 +86,7 @@ use crate::history::{Change, Draft, History, Reading, MAIN};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{Lane, Lens, Schema};
+use crate::merge;
 use crate::policy::{
     checkpointed, mk_audience, replay, Action, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
     Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
@@ -1746,7 +1747,9 @@ impl Lab {
         self.make(on, actor, entry, draft, TagDelta::default())
     }
 
-    /// Merge line `from` of an entry into line `into`: a write on `into` building on the heads of both.
+    /// Merge line `from` of an entry into line `into`: a write on `into` building on the heads of both, which brings
+    /// `into` to the three-way merge of both lines from their base (`history::History::merge`), `into` keeping its own
+    /// value at every conflict but those `take` names, where it takes `from`'s.
     pub fn merge(
         &mut self,
         on: SignerId,
@@ -1754,24 +1757,10 @@ impl Lab {
         entry: EntryId,
         from: Line,
         into: Line,
+        take: &BTreeSet<merge::Place>,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, entry).merge(from, into);
-        self.make(on, actor, entry, draft, TagDelta::default())
-    }
-
-    /// Promote line `from` of an entry into line `into`: a merge whose write brings `into` to exactly what `from`
-    /// shows, keeping both histories.
-    pub fn promote(
-        &mut self,
-        on: SignerId,
-        actor: VaultId,
-        entry: EntryId,
-        from: Line,
-        into: Line,
-    ) -> Result<EditId, Refusal> {
-        self.unlocked(on)?;
-        let draft = self.shown(on, entry).promote(from, into, on);
+        let draft = self.shown(on, entry).merge(from, into, on, take);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
 

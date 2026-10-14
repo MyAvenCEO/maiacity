@@ -536,8 +536,8 @@ def withPublic : List Edit := wideShares ++ chain 544 [
 
 Welcome's main line is its first write (30) and Bob's edit (40). Bob starts a proposal, draft, from it and edits there;
 main stays as it was until Alice merges draft with a write on main that builds on both lines' heads. A second proposal,
-rewrite, is promoted the same way while main moved on: what the promote's update holds is Loro's (`Proposals.lean`,
-T10h). -/
+rewrite, is merged the same way while main moved on: its update brings main to the three-way merge of the base, main
+and rewrite, which keeps main's own edits (`Proposals.lean`, T10h). -/
 
 def ops8 : List (SignerId × List SignerId × Action) := [
   (macB, [], .write coop welcome coop (some 51) 0 [40] .new [bob]),          -- 300: Bob starts draft from main
@@ -546,7 +546,7 @@ def ops8 : List (SignerId × List SignerId × Action) := [
   (macA, [], .write coop welcome coop (some 51) 0 [302] .new [alice]),       -- 303: Alice starts rewrite from main
   (macA, [], .write coop welcome coop (some 51) 0 [303] (.on 303) [alice]),  -- 304: an edit on rewrite
   (macB, [], .write coop welcome coop (some 51) 0 [302] .main [bob]),        -- 305: main moves on meanwhile
-  (macA, [], .write coop welcome coop (some 51) 0 [305, 304] .main [alice])] -- 306: Alice promotes rewrite
+  (macA, [], .write coop welcome coop (some 51) 0 [305, 304] .main [alice])] -- 306: Alice merges rewrite
 def s8 (n : Nat := ops8.length) : List Edit := s7 ++ chain 300 (ops8.take n)
 #guard refused (s8) == []
 
@@ -559,7 +559,7 @@ def headsOf (edits : List Edit) (l : Option EditId) : List EditId := heads (view
 #guard lineEdits (s8 2) none == [30, 40] && headsOf (s8 2) none == [40]
 -- the merge brings all of draft into main (T10g)
 #guard lineEdits (s8 3) none == [30, 40, 300, 301, 302] && headsOf (s8 3) none == [302]
--- rewrite starts from the merged main; main moves on without it until the promote
+-- rewrite starts from the merged main; main moves on without it until the merge
 #guard lineEdits (s8 6) (some 303) == [30, 40, 300, 301, 302, 303, 304]
 #guard lineEdits (s8 6) none == [30, 40, 300, 301, 302, 305]
 #guard lineEdits (s8) none == [30, 40, 300, 301, 302, 303, 304, 305, 306] && headsOf (s8) none == [306]
