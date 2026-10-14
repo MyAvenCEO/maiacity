@@ -266,7 +266,7 @@
 		<p>
 			Our central result is Proposition 3. Take a city that can make enough, whose output per person grows, and whose
 			sellers compete. Its residents invest for a founding week before the first sale, so the pools hold MIND on
-			opening day. Then no one starves, and no one has to work to survive. And the real consumption of every tenth of
+			opening day. Then, from the end of the founding, no one starves, and no one has to work to survive. And the real consumption of every tenth of
 			the people is higher at every ten-year mark than ten years before. We check it in one simulation of
 			{SIM.people} people over {SIM.years} years, with free prices, rival COOPs, foundings, failures and shocks. Parts 1
 			and 2 are checked for every person at every step, and part 3 for every tenth. People whose Avens deliver nothing
@@ -1724,7 +1724,9 @@
 		</p>
 		<h3>10.1 Proposition 3</h3>
 		<p>
-			Four terms come first. The <em>basic bundle</em> (Section 6.3) is one day of basics for one person. An
+			Five terms come first. The <em>founding</em> is a city's first days: residents invest before the first sale,
+			until every person holds MIND. In the simulation it ends on day {PROOF.fromDay}. The <em>basic bundle</em>
+			(Section 6.3) is one day of basics for one person. An
 			<em>owner-only person</em> is a person whose Aven delivers nothing and who starts with nothing. <em>Real
 			consumption</em> counts every unit that a person consumes, valued at the prices of day 1, so it counts amounts,
 			not price changes. Prices fell sharply in year 1, so real consumption is not comparable with a day of living. A
@@ -1735,8 +1737,8 @@
 			<p class="lawname">Proposition 3 · No one starves, no one has to work, living standards rise</p>
 			<p>
 				<em>Take a city that follows the five laws, the melt, the land rule and the payout rule, and that meets the
-				conditions C1 to C5 below. Then, after the bootstrap, parts 1 and 2 hold for every person on every day, and part
-				3 holds for every tenth of the people:</em>
+				conditions C1 to C5 below. Then, from the end of the founding, parts 1 and 2 hold for every person on every
+				day, and part 3 holds for every tenth of the people:</em>
 			</p>
 			<ol>
 				<li><em><strong>No one starves.</strong> Each person gets at least {pc(BASIC_BUNDLE.tolerance)} of every basic need.</em></li>
@@ -1752,7 +1754,8 @@
 			</ol>
 		</div>
 		<p>
-			We call part 2 the <em>normal test</em>. We also check a stronger target, which the proposition does not claim:
+			Proposition 3 is claimed from the end of the founding, not from day 1. The founding is reported on its own
+			(Section 10.7). We call part 2 the <em>normal test</em>. We also check a stronger target, which the proposition does not claim:
 			the <em>strict test</em>, in which dividends alone pay for the basic bundle. Part 3 is the weakest part. It
 			compares ten-year marks (years 10, 20 and so on). In the main run it fails even there, and a test over every
 			ten-year window fails more often (Section 10.5).
@@ -1772,6 +1775,7 @@
 				<strong>C3 The bootstrap.</strong> Residents invest their HEARTS for a founding week before the first sale. The
 				pools' part of each new MIND fills the pools, so every MIND can trade on opening day. Each person's first
 				investment makes them a part-owner of the basics COOPs (Section 12.4). Euros fund only machines, never MIND.
+				The founding ends once every person holds MIND.
 			</li>
 			<li>
 				<strong>C4 Spread ownership.</strong> Avens keep enough MIND of COOPs that sell a lot to cover the basic bundle,
@@ -1795,7 +1799,7 @@
 				<tbody>
 					<tr><td>C1 Enough output that grows fast enough</td><td>Assumed: each COOP's productivity grows about {pc(SIM.prodGrowth)} a year on average, and net energy is not modelled. Without productivity growth, all checks failed; with {pc(SIM.prodGrowth)} for every COOP, part 3 failed</td></tr>
 					<tr><td>C2 Competition</td><td>Met only in part: water had one seller throughout, and by year {SIM.years} the {list(sole)} each came from one COOP alone (Table {TAB.rivals}). After the {DYN.failures + DYN.exits} ends, {fmt(PROOF.endedShort)} person-days were short</td></tr>
-					<tr><td>C3 The bootstrap (Section 12.4)</td><td>Not modelled: the checks start on day {PROOF.fromDay}, and the genesis week was short (Section 10.7)</td></tr>
+					<tr><td>C3 The bootstrap (Section 12.4)</td><td>Not modelled: the checks start on day {PROOF.fromDay}, when every person holds MIND, and the founding is reported on its own (Section 10.7)</td></tr>
 					<tr><td>C4 Spread ownership</td><td>Not modelled: {pc(ownerCity.share)} of what the owner-only people held was cityMIND, which pays almost nothing</td></tr>
 					<tr><td>C5 Wants and Aven work that can grow</td><td>Met: experiences never satisfy fully. Without them, part 3 failed, and dividends fell to almost nothing</td></tr>
 					<tr><td>The payout rule (Section 4)</td><td>Reserves of {V('res6').months} months failed; {V('res12').months} months passed parts 1 and 2 on the main seed, and all three checks on only {MT.res12.new.pass} of {SEEDS.n} seeds</td></tr>
@@ -1848,7 +1852,7 @@
 		</p>
 		<p>
 			Part 1 needs capacity at or above need, with some stock in hand. It needs buyers who can pay, which part 2 gives.
-			It needs two or more sellers of each basic (C2) and, on day 1, the bootstrap (C3). A seller with idle capacity
+			It needs two or more sellers of each basic (C2) and, in the founding, the bootstrap (C3). A seller with idle capacity
 			lowers its price, and a rival takes the buyers it loses. MIND must never be what runs short while physics allows
 			more.
 		</p>
@@ -2263,18 +2267,19 @@
 			</table>
 		</div>
 		<h3 id="fails">10.7 What fails, and the fixes</h3>
+		<p id="founding">
+			<strong>The founding, reported on its own.</strong> Proposition 3 is claimed from day {PROOF.fromDay}, when every
+			person holds MIND. In days 1 to {PROOF.genesis.days}, nobody holds MIND yet and the pools are empty. Of
+			{fmt(PROOF.genesis.personDays)} person-days, {PROOF.genesis.short} were short, and the worst had
+			{pc(PROOF.genesis.worst)} of the basics, on day 1. In the earlier static world, {pc(STATIC.coldStart.day1, 1)}
+			of people went short on day 1, and {pc(STATIC.coldStart.year1, 1)} of person-days over year 1. Fix (proposed):
+			the bootstrap (C3, Section 12.4). The simulation does not test it yet; the test city did (Section 11.2).
+		</p>
 		<p>
-			The main run fails all three parts of Proposition 3, and the strict test too. For each failure we propose a fix,
-			but none is tested yet.
+			From the end of the founding, the main run fails all three parts of Proposition 3, and the strict test too. For
+			each failure we propose a fix, but none is tested yet.
 		</p>
 		<ul>
-			<li>
-				<strong>The genesis week.</strong> In days 1 to {PROOF.genesis.days}, nobody holds MIND yet and the pools are
-				empty. Of {fmt(PROOF.genesis.personDays)} person-days, {PROOF.genesis.short} were short, and the worst had
-				{pc(PROOF.genesis.worst)} of the basics, on day 1. In the earlier static world, {pc(STATIC.coldStart.day1, 1)}
-				of people went short on day 1, and {pc(STATIC.coldStart.year1, 1)} of person-days over year 1. Fix (proposed):
-				the bootstrap (C3, Section 12.4). The simulation does not test it yet; the test city did (Section 11.2).
-			</li>
 			<li>
 				<strong>Food COOPs that fail.</strong> Here, {foodFailures}: {FAILURE.coop} in year {FAILURE.year} and
 				{FAILURE.second.coop} in year {FAILURE.second.year}. {scrappedWords} (the idle-plant rule, Section 9.1). Basics ran short
@@ -2784,7 +2789,7 @@
 			</li>
 			<li>
 				<strong>Year 1.</strong> On {SN.year1} of the {SEEDS.n} seeds, people went short in the first weeks of year 1,
-				after the genesis week.
+				after the founding.
 			</li>
 		</ul>
 		<p>
@@ -2877,7 +2882,7 @@
 		</ul>
 		<h3>The simulation's settings</h3>
 		<ul class="assume">
-			<li id="a23"><strong>A23 The bootstrap</strong> = C3 (Section 12.4). The simulation does not test it yet. <span class="status">Status: —</span></li>
+			<li id="a23"><strong>A23 The bootstrap</strong> = C3 (Section 12.4). Proposition 3 is claimed from the end of the founding, once every person holds MIND. The simulation does not test the bootstrap yet. <span class="status">Status: —</span></li>
 			<li id="a24"><strong>A24 The main run.</strong> {SIM.people} people over {SIM.years} years on one seed, with the settings of Section 10.3; founders act when a margin over full cost stays above {pc(SIM.foundingMargin)} for {SIM.foundingDays} days (Section 9.1). It pays Law 5 to people and other COOPs' treasuries; the pools' share is being added. <span class="status">Status: —</span></li>
 		</ul>
 	</section>
@@ -2994,7 +2999,7 @@
 			<dt>Decile, tenth</dt>
 			<dd>One of ten equal groups of people, sorted by real consumption each year.</dd>
 			<dt>Proposition 3</dt>
-			<dd>The central claim of Section 10.1: no one starves, no one has to work to survive, and the living standard of every tenth rises. Part 2 claims the normal test, which lets an owner-only person spend some of what they hold. The strict test, dividends alone, is a stronger target that the main run does not meet.</dd>
+			<dd>The central claim of Section 10.1: from the end of the founding, no one starves, no one has to work to survive, and the living standard of every tenth rises. The founding, a city's first days until every person holds MIND, is reported on its own. Part 2 claims the normal test, which lets an owner-only person spend some of what they hold. The strict test, dividends alone, is a stronger target. The main run met neither test.</dd>
 			<dt>Rival COOP</dt>
 			<dd>A COOP that makes the same good as another and competes for the same buyers (Section 9.1).</dd>
 			<dt>Founding, exit, failure</dt>
