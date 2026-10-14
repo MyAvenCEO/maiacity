@@ -32,13 +32,12 @@
 	});
 	const hv = $derived(view ? heartsValue(view) : null);
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: Math.min(d, 2) }));
-	/** what an asset earns a month, and from whom: the hex and the tent by their own settings, the machines by RENTED */
+	/** what an asset earns a week, and from whom: the tent inside the home rent, the rest by RENTED */
 	const rentFor = (id) => {
 		if (!view || !c) return null;
-		if (id === 'hex') return { monthly: view.settings.hexRent, token: 'MAIA', from: 'the Tribe COOP' };
-		if (id === 'tent') return { monthly: view.settings.tentRent, token: 'TRIBE', from: 'each player' };
+		if (id === 'tent') return { weekly: view.settings.tentRent, token: 'TRIBE', from: `each player, inside the ${f(view.settings.homeRent, 0)} tribeMIND home rent` };
 		const r = RENTED.find((x) => x.asset === id);
-		return r && chosen !== 'tribe' ? { monthly: view.settings[r.setting] ?? 0, token: c.mind, from: 'the Tribe COOP' } : null;
+		return r && chosen !== r.payer ? { weekly: view.settings[r.setting] ?? 0, token: c.mind, from: `the ${view.coops[r.payer].name}` } : null;
 	};
 	const pct = (x) => `${f(x * 100, 1)} %`;
 </script>
@@ -97,7 +96,7 @@
 							{@const r = rentFor(a.id)}
 							<li>
 								<span><b>{a.name}</b><small>{[a.kind, VILLAGE_INFO[a.id]?.specs[1] && VILLAGE_INFO[a.id].specs[1].join(': ').toLowerCase(), r && `rented to ${r.from}`].filter(Boolean).join(' · ')}</small></span>
-								{#if r}<strong>{f(r.monthly * hv[r.token])} ❤︎ <small>a month · {f(r.monthly)} {TOKEN_LABEL[r.token]}</small></strong>{/if}
+								{#if r}<strong>{f(r.weekly * hv[r.token])} ❤︎ <small>a week · {f(r.weekly)} {TOKEN_LABEL[r.token]}</small></strong>{/if}
 							</li>
 						{/each}
 					</ul>

@@ -14,11 +14,11 @@
  *   basket of all three MINDs with equal weights (1/3 each, settings a MIP may change). Its invariant is
  *   V = Π Bᵢ^wᵢ; any MIND swaps for any other by Balancer's maths (out = Bₒ·(1 − (Bᵢ/(Bᵢ + Aᵢ·(1 − fee)))^(wᵢ/wₒ))),
  *   so V never falls. It is never paid out; anyone can swap through it (the 0.3 % fee stays in the pool).
- * - Rent, on the pay day that ends every game week (4 a month, each a quarter of the month's rent): each player pays
- *   the Tribe COOP for the tent in tribeMIND; the Tribe COOP pays the MaiaCity COOP for the hex in
- *   maiaMIND; the Tribe COOP rents the Village COOP's pickup, powercube and battery pack, paid to whichever COOP
- *   owns each in that COOP's MIND (villageMIND). A payer who lacks the MIND swaps its others through the pool on its own; what is still missing is owed
- *   (arrears) and paid first next pay day.
+ * - Rent, every price a week, paid on the pay day that ends every game week (Samuel 2026-10-14), down one chain: each
+ *   player pays the Tribe COOP one home rent in tribeMIND and uses everything (the tent, the pickup, the power); the
+ *   Tribe COOP rents the Village COOP's pickup, powercube, battery pack and solar panel; the Village COOP rents the
+ *   MaiaCity COOP's hex. Each rent goes to whichever COOP owns the asset, in that COOP's MIND. A payer who lacks the MIND
+ *   swaps its others through the pool on its own; what is still missing is owed (arrears) and paid first next pay day.
  * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
  *   year begins with Sol (from 21 March, the new year) and ends with March; every month starts on a Sunday. Every balance (HEARTS, wallets, treasuries, the pool)
  *   melts by 7 % a year of virtual time, continuously.
@@ -101,25 +101,36 @@ export const DEFAULT_SETTINGS = {
 	weightVILLAGE: 1,
 	/** the pool's swap fee, kept in the pool */
 	swapFee: 0.003,
-	/** each player, each virtual month, to the Tribe COOP, in tribeMIND */
+	/** every price a game week (Samuel 2026-10-14). Each player to the Tribe COOP, in tribeMIND: the home rent, for
+	 * using everything (the tent, the pickup, the power) */
+	homeRent: 100,
+	/** the tent's own price inside the home rent, shown on the Tribe COOP's price list (nobody pays it apart) */
 	tentRent: 10,
-	/** the Tribe COOP, each virtual month, to the MaiaCity COOP, in maiaMIND */
-	hexRent: 10,
-	/** the Tribe COOP, each virtual month, for the Village COOP's machines it uses, in the owner's MIND (villageMIND) */
-	pickupRent: 4,
-	powercubeRent: 3,
-	batteryRent: 3
+	/** the Village COOP to the MaiaCity COOP, for the hex, in maiaMIND */
+	hexRent: 100,
+	/** the Tribe COOP to the Village COOP, for the machines it uses, in the owner's MIND (villageMIND) */
+	pickupRent: 50,
+	powercubeRent: 10,
+	batteryRent: 10,
+	solarRent: 10
 };
 
-/** the machines the Tribe COOP rents, each with the setting of its monthly rent; paid to the COOP that owns it */
+/** the rents were a month until 2026-10-14; a game from before starts on the weekly prices */
+export const RENTS_WEEKLY = 1;
+const RENT_SETTINGS = ['homeRent', 'tentRent', 'hexRent', 'pickupRent', 'powercubeRent', 'batteryRent', 'solarRent'];
+
+/** what a COOP rents from another, each with the COOP that pays and the setting of its weekly rent; paid to the COOP
+ * that owns it, in that COOP's MIND: the chain player → Tribe → Village → MaiaCity */
 export const RENTED = [
-	{ asset: 'pickup', setting: 'pickupRent', label: 'pickup' },
-	{ asset: 'powercube', setting: 'powercubeRent', label: 'powercube' },
-	{ asset: 'battery', setting: 'batteryRent', label: 'battery pack' }
+	{ asset: 'hex', payer: 'village', setting: 'hexRent', label: 'hex' },
+	{ asset: 'pickup', payer: 'tribe', setting: 'pickupRent', label: 'pickup' },
+	{ asset: 'powercube', payer: 'tribe', setting: 'powercubeRent', label: 'powercube' },
+	{ asset: 'battery', payer: 'tribe', setting: 'batteryRent', label: 'battery pack' },
+	{ asset: 'solar', payer: 'tribe', setting: 'solarRent', label: 'solar panel' }
 ];
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightTRIBE: 'Pool weight of tribeMIND', weightVILLAGE: 'Pool weight of villageMIND', tentRent: 'Tent rent, each player a month (tribeMIND)', hexRent: 'Hex rent, Tribe COOP a month (maiaMIND)', pickupRent: 'Pickup rent, Tribe COOP a month (villageMIND)', powercubeRent: 'Powercube rent, Tribe COOP a month (villageMIND)', batteryRent: 'Battery pack rent, Tribe COOP a month (villageMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightTRIBE: 'Pool weight of tribeMIND', weightVILLAGE: 'Pool weight of villageMIND', homeRent: 'Home rent, each player a week (tribeMIND)', tentRent: 'Tent price inside the home rent, a week (tribeMIND)', hexRent: 'Hex rent, Village COOP a week (maiaMIND)', pickupRent: 'Pickup rent, Tribe COOP a week (villageMIND)', powercubeRent: 'Powercube rent, Tribe COOP a week (villageMIND)', batteryRent: 'Battery pack rent, Tribe COOP a week (villageMIND)', solarRent: 'Solar panel rent, Tribe COOP a week (villageMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -135,11 +146,13 @@ export const SETTING_LIMITS = {
 	weightTRIBE: [0.1, 10],
 	weightVILLAGE: [0.1, 10],
 	swapFee: [0, 0.1],
+	homeRent: [0, 10000],
 	tentRent: [0, 10000],
 	hexRent: [0, 10000],
 	pickupRent: [0, 10000],
 	powercubeRent: [0, 10000],
-	batteryRent: [0, 10000]
+	batteryRent: [0, 10000],
+	solarRent: [0, 10000]
 };
 
 const wallet = () => ({ HEARTS: 0, MAIA: 0, TRIBE: 0, VILLAGE: 0 });
@@ -152,6 +165,7 @@ export function newGame(now = Date.now(), settings = {}) {
 		t: now,
 		month: 0,
 		week: 0,
+		rentsWeekly: RENTS_WEEKLY,
 		settings: { ...DEFAULT_SETTINGS, ...settings },
 		players: Object.fromEntries(SEATS.map((s) => [s, { seat: s, name: `Player ${s}`, founder: null, wallet: wallet(), lastMint: null, arrears: 0 }])),
 		coops: Object.fromEntries(Object.entries(COOPS).map(([id, c]) => [id, { id, ...c, treasury: wallet(), arrears: 0 }])),
@@ -348,41 +362,39 @@ function dividend(s, at, coop, token, amount, why) {
 /** a game month has 4 weeks of 7 days; every week ends in a pay day */
 export const WEEKS_A_MONTH = DAYS_A_MONTH / 7;
 
-/** pay day, at the end of every game week (so on the 8th, 15th, 22nd and the next 1st, each a Sunday): a quarter of each
- * month's rent, and what is still owed. A payer short of the MIND swaps its others through the pool on its own. */
+/** pay day, at the end of every game week (so on the 8th, 15th, 22nd and the next 1st, each a Sunday): each week's
+ * rent down the chain (players → Tribe → Village → MaiaCity), and what is still owed. A payer short of the MIND swaps
+ * its others through the pool on its own. */
 function payDay(s, at) {
 	s.week += 1;
 	s.month = Math.floor(s.week / WEEKS_A_MONTH);
 	const when = `week ${s.week}`;
 	bookMelt(s, at);
 	const st = s.coops.tribe;
-	const m = s.coops.maia;
 	for (const seat of SEATS) {
 		const p = s.players[seat];
 		const had = p.arrears > DUST;
-		const due = s.settings.tentRent / WEEKS_A_MONTH + p.arrears;
+		const due = s.settings.homeRent + p.arrears;
 		if (due <= DUST) continue;
-		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:tribe', st.treasury, 'TRIBE', due, `tent rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
-		if (p.arrears > DUST) log(s, at, { kind: 'arrears', from: `player:${seat}`, to: 'coop:tribe', token: 'TRIBE', amount: p.arrears, note: 'tent rent still owed' });
+		p.arrears = payRent(s, at, `player:${seat}`, p.wallet, 'coop:tribe', st.treasury, 'TRIBE', due, `home rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
+		if (p.arrears > DUST) log(s, at, { kind: 'arrears', from: `player:${seat}`, to: 'coop:tribe', token: 'TRIBE', amount: p.arrears, note: 'home rent still owed' });
 	}
-	const had = st.arrears > DUST;
-	const due = s.settings.hexRent / WEEKS_A_MONTH + st.arrears;
-	if (due > DUST) {
-		st.arrears = payRent(s, at, 'coop:tribe', st.treasury, 'coop:maia', m.treasury, 'MAIA', due, `hex rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
-		if (st.arrears > DUST) log(s, at, { kind: 'arrears', from: 'coop:tribe', to: 'coop:maia', token: 'MAIA', amount: st.arrears, note: 'hex rent still owed' });
-	}
-	// the machines it rents, each to the COOP that owns it now (a MIP may move an asset), in that COOP's MIND
-	st.owed ??= {};
+	// what each COOP rents, to the COOP that owns it now (a MIP may move an asset), in that COOP's MIND
 	for (const r of RENTED) {
-		const owner = Object.values(s.coops).find((c) => c.assets.some((a) => a.id === r.asset));
-		if (!owner || owner.id === 'tribe') continue;
-		const had = (st.owed[r.asset] ?? 0) > DUST;
-		const due = (s.settings[r.setting] ?? 0) / WEEKS_A_MONTH + (st.owed[r.asset] ?? 0);
+		const owner = ownerOf(s, r.asset);
+		const payer = s.coops[r.payer];
+		if (!owner || !payer || owner.id === payer.id) continue;
+		payer.owed ??= {};
+		const had = (payer.owed[r.asset] ?? 0) > DUST;
+		const due = (s.settings[r.setting] ?? 0) + (payer.owed[r.asset] ?? 0);
 		if (due <= DUST) continue;
-		st.owed[r.asset] = payRent(s, at, 'coop:tribe', st.treasury, `coop:${owner.id}`, owner.treasury, owner.mind, due, `${r.label} rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
-		if (st.owed[r.asset] > DUST) log(s, at, { kind: 'arrears', from: 'coop:tribe', to: `coop:${owner.id}`, token: owner.mind, amount: st.owed[r.asset], note: `${r.label} rent still owed` });
+		payer.owed[r.asset] = payRent(s, at, `coop:${payer.id}`, payer.treasury, `coop:${owner.id}`, owner.treasury, owner.mind, due, `${r.label} rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
+		if (payer.owed[r.asset] > DUST) log(s, at, { kind: 'arrears', from: `coop:${payer.id}`, to: `coop:${owner.id}`, token: owner.mind, amount: payer.owed[r.asset], note: `${r.label} rent still owed` });
 	}
 }
+
+/** the COOP that owns an asset now */
+const ownerOf = (s, asset) => Object.values(s.coops).find((c) => c.assets.some((a) => a.id === asset));
 
 /** the real time the next pay day comes */
 export const nextPayDay = (s) => timeOfMonth(s, ((s.week ?? s.month * WEEKS_A_MONTH) + 1) / WEEKS_A_MONTH);
@@ -394,6 +406,16 @@ export function advance(state, now = Date.now()) {
 	s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
 	// a game from before weekly pay days counts its weeks from its months
 	s.week ??= s.month * WEEKS_A_MONTH;
+	// a game from before the weekly prices takes them, and what it owed on the old monthly ones is forgiven
+	if (s.rentsWeekly !== RENTS_WEEKLY) {
+		for (const k of RENT_SETTINGS) s.settings[k] = DEFAULT_SETTINGS[k];
+		for (const p of Object.values(s.players)) p.arrears = 0;
+		for (const c of Object.values(s.coops)) {
+			c.arrears = 0;
+			c.owed = {};
+		}
+		s.rentsWeekly = RENTS_WEEKLY;
+	}
 	if (now <= s.t) return s;
 	for (let guard = 0; guard < 400_000; guard++) {
 		const pay = nextPayDay(s);
@@ -723,19 +745,18 @@ export function act(state, seat, action, now = Date.now()) {
 /** the ledger lines one holder is part of, newest first */
 export const ledgerOf = (s, who) => s.ledger.filter((e) => e.from === who || e.to === who).reverse();
 
-/** every rent running now, as the pay day pays it: who pays whom, in which MIND, a month and each weekly pay day, and
- * what is still owed on it */
+/** every rent running now, as the pay day pays it: who pays whom, in which MIND, each weekly pay day (and a month of
+ * them), and what is still owed on it */
 export function rents(s) {
-	const st = s.coops.tribe;
 	const set = { ...DEFAULT_SETTINGS, ...s.settings };
-	const out = SEATS.map((seat) => ({ what: 'Tent rent', from: `player:${seat}`, to: 'coop:tribe', token: 'TRIBE', monthly: set.tentRent, owed: s.players[seat].arrears ?? 0 }));
-	out.push({ what: 'Hex rent', from: 'coop:tribe', to: 'coop:maia', token: 'MAIA', monthly: set.hexRent, owed: st.arrears ?? 0 });
+	const out = SEATS.map((seat) => ({ what: 'Home rent', from: `player:${seat}`, to: 'coop:tribe', token: 'TRIBE', weekly: set.homeRent, owed: s.players[seat].arrears ?? 0 }));
 	for (const r of RENTED) {
-		const owner = Object.values(s.coops).find((c) => c.assets.some((a) => a.id === r.asset));
-		if (!owner || owner.id === 'tribe') continue;
-		out.push({ what: `${r.label[0].toUpperCase()}${r.label.slice(1)} rent`, from: 'coop:tribe', to: `coop:${owner.id}`, token: owner.mind, monthly: set[r.setting] ?? 0, owed: st.owed?.[r.asset] ?? 0 });
+		const owner = ownerOf(s, r.asset);
+		const payer = s.coops[r.payer];
+		if (!owner || !payer || owner.id === payer.id) continue;
+		out.push({ what: `${r.label[0].toUpperCase()}${r.label.slice(1)} rent`, from: `coop:${payer.id}`, to: `coop:${owner.id}`, token: owner.mind, weekly: set[r.setting] ?? 0, owed: payer.owed?.[r.asset] ?? 0 });
 	}
-	return out.filter((r) => r.monthly > DUST || r.owed > DUST).map((r) => ({ ...r, weekly: r.monthly / WEEKS_A_MONTH }));
+	return out.filter((r) => r.weekly > DUST || r.owed > DUST).map((r) => ({ ...r, monthly: r.weekly * WEEKS_A_MONTH }));
 }
 
 /** the dividends `who` can expect each pay day at today's holdings: Law 5's share of every rent paid to a COOP in its

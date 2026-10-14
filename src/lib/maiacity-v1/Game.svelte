@@ -408,7 +408,7 @@
 	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
 	const isAssetPanel = (x) => typeof x === 'string' && x.startsWith('asset:');
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
-	/** the rent the Tribe COOP pays for an asset, if it rents it */
+	/** the rent a COOP pays for an asset another owns, if one rents it */
 	const rentOf = (id) => RENTED.find((r) => r.asset === id);
 	/** the first-run story ($lib/maiacity-v1/tour.js): one idea a step, for each player at their own seat. The steps
 	 *  that only tell remember "Next" in this browser; the moves (mint, invest) are read off the game. */
@@ -634,7 +634,7 @@
 					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
 				</ul>
 				<LedgerView {view} who={`player:${seat}`} show="cash" />
-				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} tribeMIND tent rent owed</p>{/if}
+				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} tribeMIND home rent owed</p>{/if}
 				{#if canMove}
 					<div class="buttons">
 						<button class="primary" onclick={() => open('invest')}>Invest</button>
@@ -705,7 +705,7 @@
 				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
 				<dl>
 					{#if owner}<dt>Owner</dt><dd>{owner[1].name}</dd><dt>Ownership</dt><dd>{TOKEN_LABEL[owner[1].mind]} holders</dd>{/if}
-					{#if owner && rentOf(id) && owner[0] !== 'tribe'}<dt>Rented to</dt><dd>Tribe COOP</dd><dt>Rent</dt><dd>{f(view.settings[rentOf(id).setting] ?? 0)} {TOKEN_LABEL[owner[1].mind]} a month</dd>{/if}
+					{#if owner && rentOf(id) && owner[0] !== rentOf(id).payer}<dt>Rented to</dt><dd>{view.coops[rentOf(id).payer].name}</dd><dt>Rent</dt><dd>{f(view.settings[rentOf(id).setting] ?? 0)} {TOKEN_LABEL[owner[1].mind]} a week</dd>{/if}
 					{#each info?.specs ?? [] as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 				</dl>
 				{#if owner}<div class="buttons"><button onclick={() => (panel = `coop:${owner[0]}`)}>Open the {owner[1].name}</button></div>{/if}
@@ -725,12 +725,10 @@
 									{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
 								</dl>
 								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
-							{:else if a.id === 'hex'}
-								<small>Rented to the Tribe COOP for {f(view.settings.hexRent)} maiaMIND a month, paid a quarter each weekly pay day.</small>
 							{:else if a.id === 'tent'}
-								<small>Rented to both players for {f(view.settings.tentRent)} tribeMIND a month each, paid a quarter each weekly pay day.</small>
-							{:else if rentOf(a.id) && c.id !== 'tribe'}
-								<small>Rented to the Tribe COOP for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a month, paid a quarter each weekly pay day.</small>
+								<small>{f(view.settings.tentRent)} tribeMIND a week, inside the home rent: each player pays {f(view.settings.homeRent)} tribeMIND a week and uses everything.</small>
+							{:else if rentOf(a.id) && c.id !== rentOf(a.id).payer}
+								<small>Rented to the {view.coops[rentOf(a.id).payer].name} for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a week, paid each pay day.</small>
 							{/if}
 						</li>
 					{/each}
@@ -739,16 +737,10 @@
 				<dl>
 					{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
 					{#if c.treasury.EURO > 0}<dt title="System minted: each player's first year of HEARTS brings as many €uro in (the euro ingest)">€uro</dt><dd>{f(c.treasury.EURO)}</dd>{/if}
-					{#if c.id === 'tribe'}
-						<dt>Gets tent rent</dt><dd>{f(view.settings.tentRent)} × 2 tribeMIND</dd>
-						<dt>Pays hex rent</dt><dd>{f(view.settings.hexRent)} maiaMIND</dd>
-						{#each RENTED.filter((r) => ownerOf(r.asset) && ownerOf(r.asset)[0] !== 'tribe') as r (r.asset)}<dt>Pays {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
-					{:else if c.id === 'maia'}
-						<dt>Gets hex rent</dt><dd>{f(view.settings.hexRent)} maiaMIND</dd>
-					{/if}
-					{#if c.id !== 'tribe'}{#each RENTED.filter((r) => c.assets.some((a) => a.id === r.asset)) as r (r.asset)}<dt>Gets {r.label} rent</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}{/if}
-					{#if c.id === 'tribe'}{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}{/if}
-					{#if c.arrears > 0.001}<dt>Owed for the hex</dt><dd class="bad">{f(c.arrears)} maiaMIND</dd>{/if}
+					{#if c.id === 'tribe'}<dt>Gets home rent, a week</dt><dd>{f(view.settings.homeRent)} × 2 tribeMIND</dd>{/if}
+					{#each RENTED.filter((r) => ownerOf(r.asset)?.[0] === c.id && r.payer !== c.id) as r (r.asset)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}
+					{#each RENTED.filter((r) => r.payer === c.id && ownerOf(r.asset) && ownerOf(r.asset)[0] !== c.id) as r (r.asset)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
+					{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}
 				</dl>
 				<div class="buttons">
 					{#if canMove}<button class="primary" onclick={() => open('invest')}>Invest</button>{/if}
