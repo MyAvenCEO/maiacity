@@ -47,6 +47,14 @@ export const GOVERNANCE = { waitDays: 30, pauseHours: 72 };
 /** the version of the paper being published, for the masthead and the cite-as line */
 export const VERSION = { n: 'v7', date: 'October 2026' };
 
+/** the names of our simulations (Section 11), in one place, so that a rename is one edit here */
+export const SIM_NAMES = {
+	model: 'the economic model',
+	testCity: 'the test city',
+	round: (n) => `the test city, round ${n}`,
+	roundShort: (n) => `round ${n}`
+};
+
 /** a balance after t years of continuous demurrage at rate r */
 export const decay = (b, r, t) => b * Math.exp(-r * t);
 
@@ -608,7 +616,7 @@ export const SEEDS = {
 	n: 8,
 	new: { muMin: 0.0624, muMax: 0.0974, muMedian: 0.0738, below: 2, marginMin: -0.0274, marginMinSeed: 20261019, pass: 2, check1: 4, check2: 4, check3: 3, gini: [0.32, 0.39], rising: 7, flat: 1, fails: 16, food: 14, short: 18_888, year1: 2 },
 	old: { muMin: 0.0602, muMax: 0.0873, muMedian: 0.0684, below: 5, marginMin: -0.0173, marginMinSeed: 20261016, pass: 0, check1: 1, check2: 1, check3: 2, gini: [0.34, 0.4], rising: 8, fails: 16, food: 13, short: 40_157, year1: 3 },
-	noFix: { pass: 3, fails: 34, food: 32, successors: 18, short: 27_113, main: { food: 14, successors: 11, short: 9_975, mu: 0.0944 } }
+	noFix: { muMin: 0.0661, muMax: 0.1008, muMedian: 0.0756, below: 2, pass: 3, check1: 4, check2: 4, check3: 3, fails: 34, food: 32, successors: 18, short: 27_113, main: { food: 14, successors: 11, short: 9_975, mu: 0.0944 } }
 };
 
 /** the melt tests (Section 10.6): the dynamic main on the same eight seeds, with one lever changed at a time, all with
@@ -1035,3 +1043,72 @@ export const EURO_BORDER = {
 	years: TEST_CITY.years,
 	repaid: TEST_CITY.bank.repaid
 };
+
+/** the economic model's versions, in order (Section 11.2). Every version ran SIM.people people for SIM.years years.
+ *  checks: [no one starves, no one has to work (the normal test), living standards rise] on the main seed, 1 holds and
+ *  0 fails (null: not checked per person); short: person-days short from day 8 on the main seed; unit: what the run
+ *  counted in; mu: the lasting return on holdings in the last ten years, in that unit (muHearts: the same in HEARTS);
+ *  seeds: the 8-seed check where one was run. sources: model.js at #520/#522 (the static world), #524 (60a32b8),
+ *  #598 (43d854e; its commit gives the #524 world's mu in HEARTS, 7.50 %, rerun with poolShare 0.05) and #599
+ *  (737c9b3), seeds-new-nofix.md and seeds-new.md. 'pools' (Law 5 paid to the city's pools too) is running now */
+export const MODEL_VERSIONS = [
+	{ id: 'static', pr: [520, 522], date: '2026-10-12', unit: 'R', poolShare: OLD_POOL_SHARE, checks: null, capped: true },
+	{ id: 'dynamic', pr: [524], date: '2026-10-12', unit: 'R', poolShare: OLD_POOL_SHARE, checks: [1, 1, 1], short: 0, genesisShort: 621, mu: 0.0586, muHearts: 0.075, seeds: null },
+	{ id: 'hearts', pr: [598], date: '2026-10-13', unit: 'HEARTS', poolShare: POOL_SHARE, checks: [0, 0, 0], short: SEEDS.noFix.main.short, foodFailures: SEEDS.noFix.main.food, mu: SEEDS.noFix.main.mu, muHearts: SEEDS.noFix.main.mu, seeds: SEEDS.noFix },
+	{ id: 'idle', pr: [599], date: '2026-10-13', unit: 'HEARTS', poolShare: POOL_SHARE, checks: LADDER.find((v) => v.id === 'main').checks, short: PROOF.short, foodFailures: LADDER.find((v) => v.id === 'main').failures, mu: DYN.mu, muHearts: DYN.mu, seeds: SEEDS.new },
+	{ id: 'pools', pr: [], date: '2026-10-14', unit: 'HEARTS', poolShare: POOL_SHARE, checks: null, running: true, seeds: null }
+];
+
+/** the test city's rounds, in order (Section 11.3). Each round ran the five seeds 20261012, 1, 2, 3 and 4 for 60
+ *  years; Avens follow fixed rules. Per seed: p1, person-days short; p2strict, the lowest owner-only dividends ÷ the
+ *  basic bundle in the last year (1 or more passes) and strictFrom, the day from which dividends alone paid the bundle
+ *  every day (null: never); p2normal, owner-only person-days failing the normal test, and normalSeeds, the seeds on
+ *  which it held (it also needs the lowest holding to last over 100 years at its trend); p3, the tenths failing part 3
+ *  (of p3of: ten by holdings and ten by Aven output), judged in real units from round 3 on and before that in a money
+ *  index (p3unit); abundance, the day-goods on which MIND, not physics, bound a basic; bank, the bootstrap number on
+ *  seed 20261012 and its range over the seeds (from round 3, which added the border); suite, the experiments and
+ *  scenarios, with how many passed, failed or only compared. Every round ran the old pools' part (OLD_POOL_SHARE).
+ *  sources: the test city's proof.json at each round's merge commit: round 1 #525 (bcc3ef2), round 2 #526 (d9d48db),
+ *  round 3 #528 (8e513a1), round 4 #538 (431be78), round 5 #613 and #621 (acca3c0); round 5 is TEST_CITY */
+export const SIM_HISTORY = [
+	{
+		round: 1, pr: [525], date: '2026-10-13', engine: 'b76e0243', people: 250,
+		added: 'the economy alone, growing until physics binds, with Proposition 3 checked per person',
+		p1: [0, 0, 0, 0, 0], p2strict: [0.48, 0.49, 0.48, 0.5, 0.46], strictFrom: [null, null, null, null, null],
+		p2normal: [0, 0, 0, 0, 0], normalSeeds: 4, p3: [20, 20, 20, 20, 20], p3of: 20, p3unit: 'index',
+		abundance: [0, 0, 0, 0, 0], bank: null,
+		suite: { experiments: 16, scenarios: 28, pass: 19, fail: 25, compare: 0 }
+	},
+	{
+		round: 2, pr: [526], date: '2026-10-13', engine: 'ed8f7071', people: 250,
+		added: 'an energy order for the plants, and fixes to round 1',
+		p1: [0, 0, 0, 0, 0], p2strict: [2.3, 2.81, 2.56, 3.18, 3.15], strictFrom: [1, 1, 1, 1, 1],
+		p2normal: [0, 0, 0, 0, 0], normalSeeds: 5, p3: [20, 20, 20, 20, 20], p3of: 20, p3unit: 'index',
+		abundance: [0, 0, 0, 0, 0], bank: null,
+		suite: { experiments: 16, scenarios: 30, pass: 20, fail: 25, compare: 1 }
+	},
+	{
+		round: 3, pr: [528], date: '2026-10-13', engine: 'e5239873', people: 1_500,
+		added: 'the village built up from its first settlers, the euro border, and part 3 judged in real units',
+		p1: [108, 95, 123, 148, 110], p2strict: [1.25, 1.26, 1.27, 1.34, 1.24], strictFrom: [4_355, 5_100, 4_391, 7_021, 4_411],
+		p2normal: [0, 0, 0, 3, 0], normalSeeds: 3, p3: [20, 20, 20, 20, 20], p3of: 20, p3unit: 'real',
+		abundance: [14, 12, 18, 45, 18], bank: { bootstrap: 724.6e6, range: [722.8e6, 731.1e6] },
+		suite: { experiments: 17, scenarios: 36, pass: 10, fail: 35, compare: 8 }
+	},
+	{
+		round: 4, pr: [538], date: '2026-10-13', engine: '1c0bea6c', people: 1_500,
+		added: 'the AI market, audited prices for the village, and fixes to round 3',
+		p1: [545, 408, 505, 432, 300], p2strict: [0.27, 0.25, 0.25, 0.27, 0.26], strictFrom: [null, null, null, null, null],
+		p2normal: [238, 128, 195, 135, 82], normalSeeds: 0, p3: [20, 20, 20, 20, 19], p3of: 20, p3unit: 'real',
+		abundance: [401, 350, 424, 390, 305], bank: { bootstrap: 602.29e6, range: [587.5e6, 603.8e6] },
+		suite: { experiments: 18, scenarios: 36, pass: 14, fail: 31, compare: 9 }
+	},
+	{
+		round: TEST_CITY.round, pr: [613, 621], date: '2026-10-13', engine: TEST_CITY.engine, people: TEST_CITY.people,
+		added: 'the dome factory in the village, and fixes to round 4',
+		p1: TEST_CITY.p1, p2strict: TEST_CITY.p2strict, strictFrom: [null, null, null, null, null],
+		p2normal: TEST_CITY.p2normal, normalSeeds: 4, p3: TEST_CITY.p3.failing, p3of: TEST_CITY.p3.of, p3unit: 'real',
+		abundance: TEST_CITY.abundance, bank: { bootstrap: TEST_CITY.bank.bootstrap, range: TEST_CITY.bank.range },
+		suite: { experiments: TEST_CITY.suite.experiments, scenarios: TEST_CITY.suite.scenarios, pass: TEST_CITY.suite.pass, fail: TEST_CITY.suite.fail, compare: TEST_CITY.suite.compare }
+	}
+];
