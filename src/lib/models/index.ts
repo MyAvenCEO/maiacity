@@ -41,7 +41,8 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	],
 	pickup: [
 		{ ...FIRST, date: '2026-10-13', build: () => pickup({ v: 1 }) },
-		{ v: 2, date: '2026-10-14', note: 'Clear glass all round and the cab inside it, seen from inside: two front seats and a bench for three behind, the dash with two gauges under their hood, a screen and four vents, the steering wheel on its column on the left, three pedals, a gear stick and the handbrake on the console, door cards with their pulls, sun visors and the mirror; and a tailgate that opens down flat, level with the bed' }
+		{ v: 2, date: '2026-10-14', note: 'Clear glass all round and the cab inside it, seen from inside: two front seats and a bench for three behind, the dash with two gauges under their hood, a screen and four vents, the steering wheel on its column on the left, three pedals, a gear stick and the handbrake on the console, door cards with their pulls, sun visors and the mirror; and a tailgate that opens down flat, level with the bed', build: () => pickup({ v: 2 }) },
+		{ v: 3, date: '2026-10-14', note: 'Four doors that open to get in: each hinged at its front edge and swinging out to about 70°, its window in its frame, its card, armrest and handles going with it; the outside mirrors on the front doors; sills under them' }
 	],
 	playground: [
 		{ ...FIRST, build: () => playground(90).group },
