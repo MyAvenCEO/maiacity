@@ -18,6 +18,7 @@ services:
     ports:
       - "7401:7401/udp"
       - "3350:3350"
+      - "3351:3351"
 
 volumes:
   avendbdata:

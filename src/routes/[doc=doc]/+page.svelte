@@ -1,16 +1,23 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
+	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { AUTHORS, postHref, slug } from '$lib/universe/posts.js';
-	import { findPost, stream } from '$lib/universe/stream.svelte.js';
+	import { postHref, slug } from '$lib/universe/posts.js';
+	import { authorOf, findPost, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 
 	let { data } = $props();
 
+	// a post published in avenDB opens once its feed is in
+	onMount(() => {
+		if (!findPost(data.doc)) loadFeed();
+	});
+
 	const post = $derived(findPost(data.doc));
-	const author = $derived(post && AUTHORS[post.author]);
+	const author = $derived(post && authorOf(post));
+	const waiting = $derived(!post && (stream.feed === 'idle' || stream.feed === 'loading'));
 	// more from the same channel, then the rest of the stream
 	const more = $derived(
 		post ? [...stream.posts.filter((p) => p !== post && p.channel === post.channel), ...stream.posts.filter((p) => p !== post && p.channel !== post.channel)].slice(0, 3) : []
@@ -24,7 +31,7 @@
 </script>
 
 <svelte:head>
-	<title>{post ? `${post.title} · ${author.name}` : 'Post not found'} · Maia Universe</title>
+	<title>{post ? `${post.title} · ${author.name}` : waiting ? 'A post' : 'Post not found'} · Maia Universe</title>
 	{#if post}<meta name="description" content={post.text} />{/if}
 </svelte:head>
 
@@ -35,8 +42,13 @@
 		<PostCard {post} full />
 
 		<p class="doc">
-			<span>iroh doc</span>
-			<code>{post.doc}</code>
+			{#if post.entry}
+				<span>avenDB entry</span>
+				<code>{post.entry}</code>
+			{:else}
+				<span>iroh doc</span>
+				<code>{post.doc}</code>
+			{/if}
 		</p>
 
 		{#if more.length}
@@ -47,10 +59,17 @@
 				{/each}
 			</div>
 		{/if}
+	{:else if waiting}
+		<div class="missing">
+			<p>Taking in what was published in avenDB…</p>
+		</div>
 	{:else}
 		<div class="missing">
 			<h1>This post is not in the stream</h1>
-			<p>The stream lives in memory for now, so a post shared before the last reload is gone.</p>
+			<p>
+				It may have been taken off avenDB, or shared here before the last reload: what is shared here lives in
+				memory alone.
+			</p>
 		</div>
 	{/if}
 </div>

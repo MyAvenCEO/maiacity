@@ -581,11 +581,43 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     assert_eq!(looks(p, &p["record"]["about"]), about, "its post, a record about it, public too");
     let opens = move |lab: &Lab, me| lab.item(me, post).is_some_and(|i| i.record()["channel"] == "Devlog");
     until("the server keeps her post and opens it", || server.read(opens)).await;
-    // back to a draft: untagged, it is hers alone again
+    // avenCEO GmbH publishes too, its profile Public as it first does, so that everyone reads who published it; the
+    // server, which keeps its seed's vaults, opens that post and that name as well: the Maia Universe's feed lists
+    // both posts, newest first, each by its vault's name where everyone may read it
+    let named = profile(&world_of(&first).await, VaultId::from_hex(&company).expect("a vault"));
+    let named = json!({ "entry": [named.to_hex()] });
+    for what in [json!({ "tag": "content:published" }), named] {
+        let public = json!({ "op": "share", "over": company, "who": "everyone", "level": "Public", "what": what,
+            "as": company });
+        run(&first, public).await.expect("its published stage and its name everyone's too");
+    }
+    let value = json!({ "kind": "post", "title": "Flows", "text": "Articles go from an idea to published.",
+        "channel": "Devlog", "tags": [] });
+    let tags = json!(["content:published"]);
+    let op = json!({ "op": "create", "vault": company, "type": "post", "tags": tags, "value": value, "as": company });
+    let news = entry(run(&first, op).await.expect("its post"));
+    let feed = move |lab: &Lab, me| -> Vec<(String, Option<String>)> {
+        let posts = world::public_posts(lab, me).into_iter();
+        let entry = |p: &Value| p["entry"].as_str().unwrap_or_default().to_string();
+        posts.map(|p| (entry(&p), p["name"].as_str().map(String::from))).collect()
+    };
+    let mut both = vec![(news.to_hex(), Some("avenCEO GmbH".to_string())), (post.to_hex(), None)];
+    both.sort();
+    let listed = move |lab: &Lab, me| {
+        let mut posts = feed(lab, me);
+        posts.sort();
+        posts
+    };
+    until("the server's feed lists both posts", || async { server.read(listed).await == both }).await;
+    // back to a draft: untagged, it is hers alone again, and its post, untagged as its function asks, leaves the feed
     let (add, remove) = (json!(["content:draft"]), json!(["content:published"]));
     let back = json!({ "op": "tag", "entry": article.to_hex(), "add": add, "remove": remove, "as": her });
     run(&first, back).await.expect("back to a draft");
     assert_eq!(item(&world_of(&first).await, article)["public"], false, "a draft is hers alone");
+    let off = json!({ "op": "tag", "entry": post.to_hex(), "remove": ["content:published"], "as": her });
+    run(&first, off).await.expect("its post off the stream");
+    let gmbh = vec![(news.to_hex(), Some("avenCEO GmbH".to_string()))];
+    until("the server's feed lists avenCEO GmbH's alone", || async { server.read(listed).await == gmbh }).await;
     for n in [first.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }

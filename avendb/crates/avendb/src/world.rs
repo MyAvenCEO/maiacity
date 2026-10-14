@@ -38,6 +38,10 @@ pub const NOTE: &str = "note";
 /// The type of a todo.
 pub const TODO: &str = "todo";
 
+/// The type of a post on the Maia Universe stream: a record of avenDB's own `post` schema (`lens::POST_V1`), as the
+/// content flow's function makes one as an article is published (`public_posts`).
+pub const POST: &str = "post";
+
 /// The type of a file: a document titled with the file's name, whose first write brings the file, sealed (the ops
 /// engine's `put_file`); the file's media type rides among the document's own tags (`MEDIA`).
 pub const FILE: &str = "file";
@@ -656,6 +660,45 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
         let doc = lab.item(me, en.id)?.as_document()?;
         Some((en.id, doc.title))
     })
+}
+
+/// The posts device `me` opens that everyone may read, newest first: each entry of type `POST` whose audience is
+/// public and that isn't deleted (`DELETED`), as the Maia Universe stream shows it, `{entry, vault, name, kind,
+/// created, title, text, channel, about}`, its vault's name as its profile reads (`null` where it has none) and kind,
+/// when it was created, in seconds since 1970, and the entry it is about (`null` for none). What avenDB's server serves
+/// as its feed, of what it keeps (avendb-server's `feed`): a post leaves it once its tag no longer reaches a Public
+/// share, as when its article goes back to a draft.
+pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
+    let st = lab.state(me);
+    let mut names: BTreeMap<VaultId, Option<String>> = BTreeMap::new();
+    let mut posts = vec![];
+    for en in st.entries().iter().filter(|en| st.public_key(KeyFam::Audience(en.vault, en.audience()))) {
+        let Some(created) = lab.meaning(me, en.id).filter(|m| m.attrs.ty.as_str() == POST).map(|m| m.attrs.created)
+        else {
+            continue;
+        };
+        let Some(What::Record { title, text, record, deleted: false }) = lab.item(me, en.id).map(|i| record(i.record()))
+        else {
+            continue;
+        };
+        let name = names.entry(en.vault).or_insert_with(|| profile_of(lab, me, en.vault).map(|(_, name)| name));
+        let kind = st.vault(en.vault).map(|v| kind_name(v.kind));
+        let field = |k: &str| record.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
+        let post = json!({
+            "entry": en.id.to_hex(),
+            "vault": en.vault.to_hex(),
+            "name": name,
+            "kind": kind,
+            "created": created,
+            "title": title,
+            "text": text.unwrap_or_default(),
+            "channel": field("channel"),
+            "about": field("about"),
+        });
+        posts.push((created, en.id, post));
+    }
+    posts.sort_by(|a, b| (b.0, b.1).cmp(&(a.0, a.1)));
+    posts.into_iter().map(|(_, _, post)| post).collect()
 }
 
 /// The vaults a person's claim of avenDB's server founds beside their human vault (`avendb_net`'s `Node::found_with`,

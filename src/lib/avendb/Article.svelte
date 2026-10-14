@@ -121,6 +121,12 @@
 							</span>
 						{/if}
 					</nav>
+					{#if writes && onward.some((s) => s.public)}
+						<p class="soft hint">
+							Publishing makes it public with a post about it on the Maia Universe, and {nameOf(byId.get(item.vault))}’s
+							name too, so everyone reads who published it.
+						</p>
+					{/if}
 					{#if problem}<p class="bad">A function of {flow.name} asked for nothing: {problem}.</p>{/if}
 				{/if}
 				{#if missing}
@@ -245,6 +251,11 @@
 		display: flex;
 		gap: 0.4rem;
 		margin-left: auto;
+	}
+
+	.hint {
+		margin: 0.4rem 0 0;
+		font-size: 0.8rem;
 	}
 
 	.text {

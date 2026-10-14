@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=build /avendb-server /usr/local/bin/avendb-server
 ENV AVENDB_DATA=/data
 VOLUME /data
-# 7401/udp: iroh, devices on UDP straight · 3350: the relay's plain HTTP, behind the proxy that ends TLS
-EXPOSE 7401/udp 3350
+# 7401/udp: iroh, devices on UDP straight · 3350: the relay's plain HTTP, behind the proxy that ends TLS · 3351: the
+# Maia Universe's feed, plain HTTP behind the same proxy
+EXPOSE 7401/udp 3350 3351
 ENTRYPOINT ["/usr/local/bin/avendb-server"]

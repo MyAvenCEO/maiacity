@@ -189,14 +189,19 @@ opens nothing but what is public.
   minutes. A device taken out of its vault is let go, and turned away when it tries again. A device with no UDP of its
   own, behind a strict firewall say, reaches the server and every other device through the relay alone.
 
-On this machine: `docker compose -f compose.yml up --build` in `avendb/` runs it with iroh on UDP 7401 and the relay's
-plain HTTP on port 3350. Its environment:
+- Its feed serves the Maia Universe the posts it keeps that everyone may read, newest first, as JSON
+  (`GET /feed/posts`, `avendb::world::public_posts`): a post an article's content flow made as it was published,
+  public while a Public share of its vault reaches it.
+
+On this machine: `docker compose -f compose.yml up --build` in `avendb/` runs it with iroh on UDP 7401, the relay's
+plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 
 | Variable | Default | What it says |
 |---|---|---|
 | `AVENDB_DATA` | `/data` | Its folder: its shelf, or with a bucket its cache, and its device's secret where it keeps no bucket |
 | `AVENDB_BIND` | `0.0.0.0:7401` | The UDP socket of its iroh endpoint, where devices on UDP reach it straight |
 | `AVENDB_RELAY_BIND` | `0.0.0.0:3350` | The socket its relay serves plain HTTP on, behind the proxy that ends TLS |
+| `AVENDB_FEED_BIND` | `0.0.0.0:3351` | The socket the Maia Universe's feed is served on, plain HTTP behind the same proxy |
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
 | `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
 | `AVENDB_SIGNUP` | `open` | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `closed`: only passkeys of vaults it knows |
@@ -212,7 +217,7 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    changes, pushes it to GHCR as `maiacity-avendb`, and restarts that one container on the server: the API and the
    media vault never restart for it, and a failed build holds up nothing of theirs.
 2. **Everything else** comes from `.github/workflows/api.yml`: the Caddy site `avendb.maia.city` (`deploy/Caddyfile`,
-   `reverse_proxy avendb:3350`; Caddy 2.10 and later offers X25519MLKEM768, the only key exchange a device offers; it
+   `reverse_proxy avendb:3350`, and `/feed/*` to `avendb:3351`; Caddy 2.10 and later offers X25519MLKEM768, the only key exchange a device offers; it
    reads request headers up to 64 KB, as a browser's relay pass rides in the relay's URL and Caddy 2.11 turns it away
    otherwise, which both workflows check), UDP 7401 in the firewall (`infra/index.ts`), the service `avendb` in the
    root compose files, and its settings in the server's `.env`: `AVENDB_RELAY_URL=https://avendb.maia.city`,

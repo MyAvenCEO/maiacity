@@ -760,6 +760,13 @@ makes a `post` entry about the article that carries the stage's tag, so the same
 knows the content flow and its two functions; avenCEO GmbH holds them as entries, Public by their type, and a vault's
 own flows and functions, then avenCEO GmbH's, come before the app's, never anyone else's.
 
+**The Maia Universe's feed.** avenDB's server keeps the vaults that give avenCEO backup, the seed's among them, and
+opens what everyone may read. Its feed (`GET avendb.maia.city/feed/posts`, `world::public_posts`) lists the `post`
+entries it opens that are public and not deleted, newest first, each with its vault's name and kind, as JSON any page
+may read; the Maia Universe page takes it in and shows each post under the vault that published it. A post leaves the
+feed as its article goes back from Published: its function deletes it and takes its tag off, so no Public share
+reaches it.
+
 ## 10. Post-quantum only
 
 Every node trusts no elliptic curve alone, and there is no switch back.

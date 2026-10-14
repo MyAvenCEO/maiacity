@@ -7,6 +7,9 @@
 
 import { LIMITS } from '$lib/sandbox-8/sandbox.js';
 
+/** How long one run may take, and how much memory it may use. */
+export const RUN = { ms: LIMITS.callMs * 4, mb: LIMITS.memory / (1 << 20) };
+
 let lib = null;
 async function quickjs() {
 	lib ??= Promise.all([import('quickjs-emscripten-core'), import('@jitl/quickjs-singlefile-browser-release-sync')]);
@@ -57,7 +60,7 @@ export async function runFunction(code, event) {
 		if (vm.typeof(run) !== 'function') return { ops: [], error: 'it exports no run(event)' };
 		// what crosses is one string, parsed inside the engine: nothing of the page goes in
 		const s = vm.newString(JSON.stringify(event));
-		[ms, deadline] = [LIMITS.callMs * 4, Date.now() + LIMITS.callMs * 4];
+		[ms, deadline] = [RUN.ms, Date.now() + RUN.ms];
 		const r = vm.callFunction(call, vm.undefined, run, s);
 		s.dispose();
 		if (r.error) {

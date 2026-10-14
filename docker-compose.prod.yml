@@ -35,6 +35,8 @@ services:
       - ${AVENDB_DATA_PATH:?set AVENDB_DATA_PATH in .env}:/data
     expose:
       - "3350"
+      # the Maia Universe's feed, behind Caddy at avendb.maia.city/feed/
+      - "3351"
 
   caddy:
     image: caddy:2-alpine
