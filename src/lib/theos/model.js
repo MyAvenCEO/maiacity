@@ -41,8 +41,58 @@ export const LVR_CASES = { calm: 0.2, wild: 0.4, rho: 0.6, n: [4, 8] };
 export const CRASH = { left: 0.01, small: 4, large: 8 };
 
 /** who can change the rules (Appendix F): the least waiting time of a code change, days, and the longest a pause runs
- *  unless a large majority renews it, hours */
-export const GOVERNANCE = { waitDays: 30, pauseHours: 72 };
+ *  unless a large majority renews it, hours. redeem: redemption from the city's pools (audit B16, accepted 2026-10-14):
+ *  it needs this majority of the citizen shares; at most capYear of a pool may be redeemed in a year (a policy, set by
+ *  MIP; this is its default); and it waits as long as a code change (Appendix F) */
+const WAIT_DAYS = 30;
+export const GOVERNANCE = {
+	waitDays: WAIT_DAYS,
+	pauseHours: 72,
+	redeem: { majority: 2 / 3, of: 'citizen shares', capYear: 0.1, capKind: 'policy', waitDays: WAIT_DAYS }
+};
+
+/** what each holder of a COOP's MIND gets (the holder rule, Section 9): a Law 5 dividend, and a vote in the COOP. The
+ *  COOP's own treasury gets neither; the city's pools get their dividend but no vote (the coordinator's default, which
+ *  Samuel has not confirmed yet: answered false); people and other COOPs' treasuries get both. The economic model pays
+ *  the arbitrage bot as a holder too (it has no vote in the model, which has no votes) */
+export const HOLDER_RULE = {
+	ownTreasury: { dividend: false, vote: false },
+	pools: { dividend: true, vote: false, answered: false },
+	people: { dividend: true, vote: true },
+	otherTreasuries: { dividend: true, vote: true }
+};
+
+/** the rules and policies that Samuel accepted on 2026-10-14 (13:04: "apply all A, B, C where it still fits") and that
+ *  Part II adds; packages B and C write their words. kind: 'rule' (part of the protocol; it changes only with a new
+ *  version of it, Appendix F), 'policy' (a setting that the City COOP chooses by MIP; its default here) or 'open' (not
+ *  decided; a hypothesis tracks it). audit: the open problem it answers. sim: how the economic model runs it today:
+ *  'same', 'differs' (it runs otherwise, said in why), 'testing' (a run is under way) or 'none' (not modelled). The
+ *  Avens' default investment rule (B7) is already in Part II's table of kinds; the MIP's long name waits on Samuel */
+export const ACCEPTED = {
+	// B16: redemption from the pools; the majority and the wait are rules, the yearly cap a policy
+	redemption: { kind: 'rule', audit: 'B16', terms: GOVERNANCE.redeem, sim: 'none' },
+	// B5: the City COOP keeps a water part inside its reserve. A word, not a number: no simulation sets one yet
+	waterReserve: { kind: 'policy', audit: 'B5', keeper: 'the City COOP', within: 'its reserve', value: null, sim: 'none' },
+	// B8(c): no COOP whose MIND trades in a basket may refuse an investment
+	noRefusal: { kind: 'rule', audit: 'B8(c)', sim: 'same' },
+	// B9: ground rent is a sale, so Law 5 pays its share to cityMIND's holders, not to the City COOP's own treasury. The
+	// economic model books rent as a flow between treasuries, not a sale (D8, D6.2 note); a run with rent as a sale is
+	// under way, and H15 tracks it
+	groundRent: { kind: 'rule', audit: 'B9', share: DIVIDEND_SHARE, payee: "cityMIND's holders", sim: 'testing', hypothesis: 'H15' },
+	// B12: only COOPs build (a person builds through a COOP)
+	onlyCoopsBuild: { kind: 'rule', audit: 'B12', sim: 'same' },
+	// B12: no person sells MIND for euros; only the City COOP's euro bank crosses the border (Section 8.3)
+	euroBank: { kind: 'rule', audit: 'B12', sim: 'none' },
+	// B12: the founders' euros are the MaiaCity COOP's starting balance from outside
+	foundersEuros: { kind: 'rule', audit: 'B12', holder: 'the MaiaCity COOP', sim: 'none' },
+	// B14: a successor that leases a failed plant carries on the failed COOP's MIND; nothing new is minted. The economic
+	// model gives the successor a new MIND (scripts/theos-e2e-sim.mjs successor(): "same plant, new MIND")
+	successorMind: { kind: 'rule', audit: 'B14', newMind: false, sim: 'differs' },
+	// B15: what happens to a person's holdings when they die stays open; H16 tracks it
+	estates: { kind: 'open', audit: 'B15', hypothesis: 'H16', sim: 'none' },
+	// the holder rule for the pools' MIND (HOLDER_RULE.pools)
+	poolMind: { kind: 'rule', audit: 'holder rule', dividend: true, vote: false, answered: false, sim: 'same' }
+};
 
 /** the version of the paper being published, for the masthead and the cite-as line */
 export const VERSION = { n: 'v7', date: 'October 2026' };
@@ -1257,5 +1307,10 @@ export const HYPOTHESES = {
 	// the melt keeps money moving: the model assumes how much people spend
 	H13: { status: 'open', untested: 'spending' },
 	// selection by where Avens invest improves governance
-	H14: { status: 'open', untested: 'governance' }
+	H14: { status: 'open', untested: 'governance' },
+	// ground rent as a Law 5 sale lifts cityMIND and the owner-only people (ACCEPTED.groundRent): the economic model's
+	// run with rent as a sale is under way
+	H15: { status: 'open', untested: 'running' },
+	// either estate rule keeps the Gini bounded (ACCEPTED.estates): no rule is chosen or simulated yet
+	H16: { status: 'open', untested: 'estates' }
 };

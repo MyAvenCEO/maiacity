@@ -1845,6 +1845,8 @@
 					<tr><td>H12 People own most MIND</td><td>The payout rule</td><td>{HYP.H12.status}</td><td>Sections 11.2.2 and 11.3.3</td></tr>
 					<tr><td>H13 The melt keeps money moving</td><td>The melt</td><td>{HYP.H13.status}</td><td>Section 11.2.2</td></tr>
 					<tr><td>H14 Selection improves governance</td><td>Law 3, the Avens' exit</td><td>{HYP.H14.status}</td><td>None yet</td></tr>
+					<tr><td>H15 Ground rent as a Law 5 sale lifts cityMIND and the owner-only people</td><td>Law 5, the land rule</td><td>{HYP.H15.status}</td><td>None yet</td></tr>
+					<tr><td>H16 Either estate rule keeps the Gini bounded</td><td>Law 1, the melt</td><td>{HYP.H16.status}</td><td>None yet</td></tr>
 				</tbody>
 			</table>
 		</div>
