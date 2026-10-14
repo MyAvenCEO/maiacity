@@ -597,9 +597,12 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 A job (`crates/avendb-net/src/jobs.rs`) is a file brought into the store as its bytes are sealed (`bring`, in bytes), a
 file kept whole as its pieces come from its holders (`keep`, in pieces), or the edits a peer holds for the device,
 taken page by page (`pull`, in edits). Each says its subject (a file's root, a peer's device), its stage, how far it
-is of how much, when it started and ended, and why it failed. One that did nothing is forgotten: a keep whose pieces
-were all there or that failed before it fetched one (the keeper tries again), a pull that took nothing. The page's
-Jobs view reads it each second, beside what still syncs by entry and by file (`syncedTo`).
+is of how much, when it started and ended, why it failed, and the vaults and entries it is about, each with how many
+of its units are theirs (`vaults`, `entries`: a file's, the entry that brings it; a pull's, each whose edits it took).
+One that did nothing is forgotten: a keep whose pieces were all there or that failed before it fetched one (the keeper
+tries again), a pull that took nothing. The page's Jobs view reads it each second and shows only the jobs of the vault
+it shows, each that ended with where what it worked on is synced to now (`syncedTo`), beside what still syncs of that
+vault by entry and by file.
 
 `may` and `shares` are asks: they run dry on the Lab, as their answers are dry runs, so a node runs them on a dry Lab
 (`Node::dry`), never on a read-only view. A `shares` row says its kind (`owner`, `device`, `grant` or `keep`), its

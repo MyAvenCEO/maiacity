@@ -1995,6 +1995,24 @@ impl Lab {
         Some(self.held(d).view().entry(entry)?.vault)
     }
 
+    /// The vault log `log` is about, by device `d`'s view, and its entry where it is one's: a vault's own log's or one
+    /// of its audiences', the vault a share is over, or an entry's.
+    pub fn whose_log(&self, d: SignerId, log: LogId) -> Option<(VaultId, Option<EntryId>)> {
+        let view = self.held(d).view();
+        match log {
+            LogId::Vault(v) | LogId::Audience(v, _) => Some((v, None)),
+            LogId::Share(c) => Some((view.share(c)?.share.over, None)),
+            LogId::Entry(e) => Some((view.entry(e)?.vault, Some(e))),
+        }
+    }
+
+    /// The entries whose writes bring file `root`, each with its vault, by device `d`'s view: whose the file is.
+    pub fn whose_file(&self, d: SignerId, root: &FileRoot) -> BTreeMap<EntryId, VaultId> {
+        let store = self.held(d);
+        let entries = store.log.edits().iter().filter(|e| e.files().contains(root)).filter_map(Edit::entry);
+        entries.filter_map(|e| Some((e, store.view().entry(e)?.vault))).collect()
+    }
+
     /// The item as an app on schema `app` shows it on device `d`, through a lens from its vault's lane where another
     /// version wrote it, and whether the app opens it read-only (`Lane::view`). `None` if the device shows no such item
     /// or the app reads nothing of it.
@@ -2596,6 +2614,23 @@ impl Lab {
             self.refresh(d, &[]);
         }
         new
+    }
+
+    /// `receive`, and whose each edit it took is (`whose_log`): what a pull tells its person.
+    pub fn receive_whose(
+        &mut self,
+        d: SignerId,
+        edits: Vec<Signed>,
+        blobs: Vec<Arc<[u8]>>,
+    ) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
+        let held = &self.held(d).signed;
+        let ids = edits.iter().map(|s| (s.edit.id(), &s.edit));
+        let fresh: Vec<(EditId, Option<LogId>)> =
+            ids.filter(|(id, _)| !held.contains_key(id)).map(|(id, e)| (id, log_of(e, id))).collect();
+        let new = self.receive(d, edits, blobs);
+        let taken = fresh.into_iter().filter(|(id, _)| self.held(d).signed.contains_key(id));
+        let whose = taken.filter_map(|(_, log)| self.whose_log(d, log?)).collect();
+        (new, whose)
     }
 
     /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view (`sync::digests`), smallest log

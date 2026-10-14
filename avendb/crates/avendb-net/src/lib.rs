@@ -1386,7 +1386,8 @@ impl Shared {
         asked
     }
 
-    /// `asking` of `peer`, connected at `endpoint`: page after page, each told to `job`.
+    /// `asking` of `peer`, connected at `endpoint`: page after page, each told to `job`, with how many of the edits it
+    /// took are each vault's and each entry's.
     async fn pages(
         self: &Arc<Self>,
         endpoint: EndpointId,
@@ -1398,6 +1399,7 @@ impl Shared {
         let kind = if logs.is_some() { session::ASK_LOGS } else { session::REQUEST };
         let logs = logs.map(Arc::new);
         let (mut after, mut new, mut pages) = (None, 0, 0);
+        let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
         loop {
             let logs = logs.clone();
             let request = move |lab: &mut Lab, me| {
@@ -1420,14 +1422,21 @@ impl Shared {
             let lacking = self.lab(lacking).await;
             let keys = self.fetch(endpoint, lacking).await;
             let fetched = !keys.is_empty();
-            let got = self.lab(move |lab, me| lab.receive(me, edits, keys)).await;
+            let (got, whose) = self.lab(move |lab, me| lab.receive_whose(me, edits, keys)).await;
             if got > 0 || fetched {
                 self.changed.notify_one();
             }
             new += got;
             pages += 1;
+            for (v, e) in whose {
+                *vaults.entry(v.to_hex()).or_default() += 1;
+                if let Some(e) = e {
+                    *entries.entry(e.to_hex()).or_default() += 1;
+                }
+            }
             job.stage(format!("page {pages}"));
             job.progress(new as u64, None);
+            job.about(vaults.clone(), entries.clone());
             match last {
                 Some(last) if more => after = Some(last),
                 _ => return Ok(new),
