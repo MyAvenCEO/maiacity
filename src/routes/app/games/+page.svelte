@@ -1,6 +1,7 @@
-<script lang="ts">
-	import Moved from '$lib/app/Moved.svelte';
+<!-- Sandboxes: every sandbox as one list, opened from the dashboard's Sandboxes tile. -->
+<script>
+	import GroupList from '$lib/app/GroupList.svelte';
+	import { SANDBOXES } from '$lib/app/places';
 </script>
 
-<!-- the games are chosen on the dashboard -->
-<Moved to="/app/" />
+<GroupList group={SANDBOXES} lede="Every sandbox, each a world of its own to play." />

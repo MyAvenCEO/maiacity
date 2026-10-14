@@ -1,12 +1,12 @@
 <!--
 	The dashboard: where a founder lands once signed in. A greeting, then everything the app holds as tiles — the
-	games to play, what to read, and (for whoever holds them) the admin's tools.
+	games to play, the groups (Sandboxes, Game Assets, My Data, each opening its list), what to read, and (for whoever holds them) the admin's tools.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
 	import Icon from '$lib/app/Icon.svelte';
-	import { ADMIN, APPS, CITY, PLAY, READ, holds, released } from '$lib/app/places';
+	import { ADMIN, APPS, CITY, GROUPS, READ, holds, released } from '$lib/app/places';
 	import { asset } from '$lib/media/url';
 
 	let founder = $state<Founder | null>(null);
@@ -19,8 +19,9 @@
 	const hour = new Date().getHours();
 	const hello = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 	const tools = $derived(ADMIN.filter((p) => holds(founder, p)));
-	// the games this founder may open: the published ones, and for an admin the drafts too
-	const games = $derived(PLAY.filter((g) => released(founder, g)));
+	// the groups this founder has something in: the Sandboxes (published ones, and for an admin the drafts too), Game
+	// Assets and My Data, each a tile that opens its list
+	const groups = $derived(GROUPS.filter((g) => holds(founder, g) && g.items.some((p) => holds(founder, p) && released(founder, p))));
 </script>
 
 <svelte:head>
@@ -51,15 +52,11 @@
 		{/each}
 	</div>
 
-	{#if games.length}
-	<p class="divider">Play</p>
-	<div class="games">
-		{#each games as g (g.href)}
-			<a class="game" href={g.href}>
-				{#if g.cover}<img src={asset(g.cover)} alt="" loading="lazy" />{:else}<span class="nocover"></span>{/if}
-				{#if g.release === 'draft'}<span class="draft">Draft</span>{/if}
-				<span class="label"><b>{g.label}</b><span>{g.note}</span></span>
-			</a>
+	{#if groups.length}
+	<p class="divider">Make</p>
+	<div class="tiles">
+		{#each groups as t (t.href)}
+			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
 		{/each}
 	</div>
 	{/if}
@@ -154,20 +151,6 @@
 		background: linear-gradient(160deg, #4f7a5a, #24452f);
 	}
 
-	/* a game only the admins see yet */
-	.draft {
-		position: absolute;
-		top: 0.7rem;
-		left: 0.7rem;
-		padding: 0.15rem 0.6rem;
-		border-radius: 999px;
-		background: var(--mustard);
-		color: var(--ink);
-		font-size: 0.72rem;
-		font-weight: 700;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-	}
 
 	.game .label {
 		position: absolute;
