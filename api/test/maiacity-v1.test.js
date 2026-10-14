@@ -313,3 +313,24 @@ test("HEARTS values: every MIND counts 1 HEART till trades move the pool, whatev
   expect(w.TRIBE).toBeGreaterThan(1);
   expect(w.MAIA).toBeLessThan(1);
 });
+
+test("the euro ingest: a player's first mint, a year of HEARTS, brings as many €uro into the MaiaCity COOP; later mints bring none, and euros never melt", () => {
+  let s = act(newGame(T0), "A", { type: "mint" }, T0 + GAME_DAY);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(8736, 6);
+  const ingest = s.ledger.filter((e) => e.token === "EURO");
+  expect(ingest).toHaveLength(1);
+  expect(ingest[0]).toMatchObject({ kind: "invest", from: "mint", to: "coop:maia", amount: 8736 });
+  expect(ingest[0].note).toContain("system minted");
+  expect(s.players.A.wallet.EURO).toBeUndefined();
+  // the daily mints after it bring none; the second player's first mint brings theirs
+  s = act(s, "A", { type: "mint" }, T0 + 2 * GAME_DAY);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(8736, 6);
+  s = act(s, "B", { type: "mint" }, T0 + 3 * GAME_DAY);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 8736, 6);
+  // a year on, the HEARTS have melted 7 %, the euros not at all
+  const hearts = s.players.A.wallet.HEARTS;
+  s = advance(s, T0 + 3 * GAME_DAY + 13 * DAY_MS);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(hearts * 0.93, 3);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 8736, 6);
+  expect(s.ledger.some((e) => e.kind === "demurrage" && e.token === "EURO")).toBe(false);
+});
