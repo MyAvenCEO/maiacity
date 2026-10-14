@@ -1,22 +1,30 @@
 /*
- * What avenDB's vault screens share: a vault's name, initials and colour, the kinds as a person reads them, a cap in
- * words as a share (who · level · what), who an entry is shared with, a signer's name, a size, and what a vault may
- * do, by the caps and roles the device's world shows (avendb-browser's `World::to_json`). A vault is a flat library:
- * its entries are in it directly, each with a type and tags, and every right is a cap, which the page calls a share:
- * a named group of JSON ops on a slice of it, a query's `where` over their labels (avendb's `slice`
- * and `rules`). Its role is the class of its strongest op. The built-in groups (Owner, Editor, Suggester, Viewer,
- * Public, Backup, Relay) come with the world, from avendb's `rules::groups`. The rules themselves are the device's:
- * every edit is checked against the acting vault's caps, as any peer checks it; these only say beforehand what the
- * page offers.
+ * What avenDB's vault screens share: a vault's name, initials and colour, the kinds as a person reads them, a share
+ * in words (who · level · what), who an entry is shared with, a signer's name, a size, and a refusal's reason. A vault
+ * is a flat library: its entries are in it directly, each with a type and tags, and every right is a share: a named
+ * group of JSON ops on a slice of it, a query's `where` over their labels (avendb's `slice` and `rules`), or one of its
+ * owners or devices. The rules are the device's alone: what each vault may do the page reads from its answers (the
+ * world's `acting`, each share's `group`, `whole`, `reads` and `gets`, each entry's `readers`, `writers` and
+ * `sharers`, the `shares` op's rows, and `may`), and these only word them.
  */
 
 /** @typedef {'human' | 'coop' | 'aven'} Kind */
-/** @typedef {'relay' | 'backup' | 'read' | 'write' | 'owner'} Role */
+/**
+ * A share's level, the class of its strongest op (avendb's `words::level_name`); a keep share's, its mode, which grants
+ * nothing: it says only what one of the vault's devices keeps of it.
+ * @typedef {'relay' | 'backup' | 'read' | 'write' | 'owner' | 'keepWhole' | 'keepOpened' | 'keepNever'} Role
+ */
 /** @typedef {{ id: string, name?: string | null, me: boolean }} DeviceView */
+/**
+ * What the person may do in a vault, as the device says: the vault they act as in it (the vault itself where theirs
+ * owns it, else the vault of theirs that holds the strongest share over it, else their own), whether that vault
+ * reaches anything of it, and whether it may share some of it on.
+ * @typedef {{ as: string, reaches: boolean, shares: boolean }} Acting
+ */
 /**
  * @typedef {{ id: string, kind: Kind, name: string | null,
  *   owners: ({ vault: string } | { signer: string, recovery: boolean })[],
- *   threshold: number, root: string | null, devices: DeviceView[], via: string[] | null }} VaultView
+ *   threshold: number, root: string | null, devices: DeviceView[], via: string[] | null, acting: Acting }} VaultView
  */
 /**
  * A test of a label: an object of one field (avendb's `slice::Atom`).
@@ -42,14 +50,17 @@
  * @typedef {{ name: string, where: Where, ops: Op[], above: Op[][] }} Slice
  */
 /**
- * A built-in group of ops, as the share dialog offers it (avendb's `rules::Group`).
- * @typedef {{ name: string, hint: string, ops: Op[], everyone: boolean }} Group
+ * A built-in group of ops, as the share dialog offers it (avendb's `rules::Group`), with its level.
+ * @typedef {{ name: string, hint: string, ops: Op[], everyone: boolean, level: Role }} Group
  */
 /**
- * A cap in force: `grantee` a vault's id or `"everyone"`, `role` the class of its ops, `slice` `null` where the device
- * doesn't read it.
+ * A share in force: `grantee` a vault's id, `"everyone"`, or for a keep share one of its vault's devices; `role` its
+ * level; `slice` `null` where the device doesn't read it. As the device says: `group` the built-in group it is, if any;
+ * `whole` whether it is on the whole vault; `reads` whether its grantee reads what it reaches; `gets` whether its
+ * grantee's devices receive it. A keep share does neither: it never counts as access.
  * @typedef {{ id: string, over: string, issuer: string, grantee: string, role: Role, wide: boolean,
- *   parent: string | null, chain: string[], slice: Slice | null, revokers: string[], entries: string[] }} CapView
+ *   parent: string | null, chain: string[], slice: Slice | null, revokers: string[], entries: string[],
+ *   group: string | null, whole: boolean, reads: boolean, gets: boolean }} CapView
  */
 /**
  * A device that gets a cell's edits: the vault it gets them through, whether it opens them, and the role it holds
@@ -61,25 +72,57 @@
  *   public: boolean, syncs: Syncing[] }} CellView
  */
 /**
+ * An entry as the device shows it: `readers`, `writers` and `sharers` the vaults that read it, change it and may share
+ * it on, its own vault first; `syncedTo` the devices that hold it.
  * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
  *   created: number | null, cell: string, public: boolean, roles: Record<string, Role>,
+ *   readers: string[], writers: string[], sharers: string[], syncedTo: string[],
  *   kind: 'note' | 'todo' | 'file' | 'sealed', title: string | null, text: string | null,
  *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, deleted: boolean, edits: number,
  *   proposals: number, media: string | null, files: import('./files.js').FileView[] }} EntryView
  */
 /**
+ * The device's world (avendb-browser's `World::to_json`): `ownsAven` whether the person's vault owns an aven,
+ * `backsUp` whether avenDB's server keeps an encrypted copy of it, `null` where it holds no share on it.
  * @typedef {{ me: string, mine: string, recovery: string | null, vaults: VaultView[], caps: CapView[],
- *   cells: CellView[], entries: EntryView[], groups: Group[] }} WorldView
+ *   cells: CellView[], entries: EntryView[], groups: Group[], ownsAven: boolean, backsUp: boolean | null }} WorldView
+ */
+/**
+ * What the device answers `may` for one op: it would make it, it would once those signers approve it, or why not.
+ * @typedef {true | { approve: { signers: string[] } } | { refused: string, why: string }} Verdict
+ */
+/**
+ * A share over a vault as the `shares` op lists them, owners and devices among them: who holds it, its level and
+ * group, what it is on (`"everything"`, a `where`, or `null` where the device doesn't read it), how many entries it
+ * reaches now, and whether the acting vault may revoke it.
+ * @typedef {{ kind: 'owner' | 'device' | 'grant' | 'keep', id: string | null, over: string,
+ *   who: { vault: string } | { signer: string } | { device: string } | 'everyone', level: Role | 'actsFor',
+ *   group: string | null, name: string | null, what: 'everything' | Where | null, ops: Op[] | null,
+ *   above: Op[][] | null, issuer: string | null, parent: string | null, reaches: number, recovery: boolean,
+ *   root: boolean, revoke: Verdict }} ShareRow
+ */
+/**
+ * Every share over vault `over`, for vault `as`: whether it may share some of it on, and the rows.
+ * @typedef {{ over: string, as: string, share: Verdict, rows: ShareRow[] }} Shares
  */
 
-/** Each role ranked: each includes the ones before it. */
-const RANK = { relay: 1, backup: 2, read: 3, write: 4, owner: 5 };
+/** The levels in the order the page lists them: the strongest first, then the keep levels, which grant nothing. */
+export const STRONGEST = /** @type {const} */ ([
+	'owner',
+	'write',
+	'read',
+	'backup',
+	'relay',
+	'keepWhole',
+	'keepOpened',
+	'keepNever'
+]);
 
-/** Whether `role` allows `need`. @param {Role | null | undefined} role @param {Role} need */
-export const allows = (role, need) => !!role && RANK[role] >= RANK[need];
-
-/** The roles, the strongest first. */
-export const STRONGEST = /** @type {const} */ (['owner', 'write', 'read', 'backup', 'relay']);
+/** Where level `role` comes in `STRONGEST`, any other last. @param {string} role */
+export const order = (role) => {
+	const at = STRONGEST.indexOf(/** @type {Role} */ (role));
+	return at < 0 ? STRONGEST.length : at;
+};
 
 /** The kinds, as a person reads them. */
 export const KINDS = /** @type {const} */ ({ human: 'Human vault', coop: 'Coop vault', aven: 'Aven vault' });
@@ -96,7 +139,7 @@ export const KIND_HINTS = /** @type {const} */ ({
 export const short = (id) => (id ? `${id.slice(0, 4)} ${id.slice(4, 8)}` : '');
 
 /** Vault `v`'s name, or what it is while it has none. @param {VaultView | undefined} v */
-export const nameOf = (v) => (v ? (v.name ?? `${KINDS[v.kind]} ${short(v.id)}`) : 'A vault this browser doesn’t know');
+export const nameOf = (v) => (v ? (v.name ?? `${KINDS[v.kind]} ${short(v.id)}`) : 'A vault this device doesn’t know');
 
 /**
  * A vault's initials for its circle: the first letters of its first two words, or of its one word, an aven's without its
@@ -134,39 +177,26 @@ export const list = (names, and = 'and') =>
 /** A tag or a title in quotes. @param {string} t */
 const quote = (t) => `“${t}”`;
 
-/**
- * Whether vault `actor` reads entry `e`: everyone may, or it holds read or more on it.
- * @param {EntryView} e @param {string} actor
- */
-export const reads = (e, actor) => e.public || allows(e.roles[actor], 'read');
+/** Whether vault `actor` reads entry `e`, as the device says. @param {EntryView} e @param {string} actor */
+export const reads = (e, actor) => e.public || e.readers.includes(actor);
+
+/** Whether vault `actor` changes entry `e`, as the device says. @param {EntryView} e @param {string} actor */
+export const writes = (e, actor) => e.writers.includes(actor);
+
+/** Whether vault `actor` may share entry `e` on, as the device says. @param {EntryView} e @param {string} actor */
+export const sharesOn = (e, actor) => e.sharers.includes(actor);
 
 /**
- * Whether vault `actor` holds anything in vault `v`, or is it: a cap over it, to it or to everyone, or an entry of it
- * it reads.
- * @param {WorldView} world @param {string} v @param {string} actor
+ * What the person may do in vault `v`, as the device says (its `acting`); for a vault the device doesn't know, as
+ * their own vault, which reaches only itself.
+ * @param {WorldView} world @param {string} v @returns {Acting}
  */
-export function reaches(world, v, actor) {
-	if (v === actor) return true;
-	return (
-		world.caps.some((c) => c.over === v && (c.grantee === actor || c.grantee === EVERYONE)) ||
-		world.entries.some((e) => e.vault === v && reads(e, actor))
-	);
-}
-
-/**
- * The vault the person acts as in vault `v`, which the page picks for them: `v` itself where their vault owns it,
- * directly or through owners of owners, as its owners need no cap in it; else the vault they act for that holds the
- * strongest cap over `v`, their own first on a tie; else their own.
- * @param {WorldView} world @param {string} v
- */
-export function actorIn(world, v) {
-	const own = world.vaults.filter((x) => x.via !== null).map((x) => x.id);
-	if (own.includes(v)) return v;
-	const rank = (/** @type {string} */ a) =>
-		Math.max(0, ...world.caps.filter((c) => c.over === v && c.grantee === a).map((c) => RANK[c.role]));
-	const first = [world.mine, ...own.filter((id) => id !== world.mine)];
-	return first.reduce((best, a) => (rank(a) > rank(best) ? a : best), world.mine);
-}
+export const acting = (world, v) =>
+	world.vaults.find((x) => x.id === v)?.acting ?? {
+		as: world.mine,
+		reaches: v === world.mine,
+		shares: v === world.mine
+	};
 
 /**
  * Who signer `id` is, as a person reads it: a device by its card's name, else as a device of its vault, an aven's as
@@ -192,7 +222,9 @@ const NOUNS = /** @type {Record<string, [string, string]>} */ ({
 	todo: ['todo', 'todos'],
 	file: ['file', 'files'],
 	card: ['device card', 'device cards'],
-	profile: ['profile', 'profiles']
+	profile: ['profile', 'profiles'],
+	schema: ['schema', 'schemas'],
+	lens: ['lens', 'lenses']
 });
 
 /** Entries of type `t`, as a person names many. @param {string} t */
@@ -214,11 +246,11 @@ const day = (at) => new Date(at * 1000).toLocaleDateString('en-GB', { day: 'nume
 export const EVERYONE = 'everyone';
 
 /**
- * What a `where` of labels picks, as the entries that pass every test of one of its conjunctions: `'all'` for the whole
- * vault (avendb's `ops::Where::cover`).
+ * A `where` of labels as the entries that pass every test of one of its conjunctions, for its words: `'all'` for the
+ * whole vault (avendb's `ops::Where::cover`).
  * @param {Where} w @returns {'all' | Atom[][]}
  */
-export function conjunctions(w) {
+function conjunctions(w) {
 	if ('all' in w) {
 		/** @type {Atom[][]} */
 		let out = [[]];
@@ -266,9 +298,25 @@ export function whereWords(where, world) {
 	return select.map(conjunction).join('; or ');
 }
 
+/**
+ * Who `id` is, as a share names it: Everyone, a vault by its name, or, for a keep share, one of a vault's devices.
+ * @param {string} id @param {WorldView} world
+ */
+export function whoName(id, world) {
+	if (id === EVERYONE) return 'Everyone';
+	const v = world.vaults.find((x) => x.id === id);
+	return v || !world.vaults.some((x) => x.devices.some((d) => d.id === id)) ? nameOf(v) : signerName(world, id, true);
+}
+
 /** A cap's grantee, as a person reads it. @param {CapView} c @param {WorldView} world */
-export const granteeOf = (c, world) =>
-	c.grantee === EVERYONE ? 'Everyone' : nameOf(world.vaults.find((v) => v.id === c.grantee));
+export const granteeOf = (c, world) => whoName(c.grantee, world);
+
+/** Who a row of the `shares` op names, as a person reads it. @param {ShareRow['who']} who @param {WorldView} world */
+export function whoOf(who, world) {
+	if (who === EVERYONE) return 'Everyone';
+	if ('vault' in who) return nameOf(world.vaults.find((v) => v.id === who.vault));
+	return signerName(world, 'signer' in who ? who.signer : who.device, true);
+}
 
 /**
  * A rule's place in words: "anything", "its status", "any row of its blocks", "the checked of row 2 of its blocks".
@@ -328,62 +376,53 @@ export function opWords(r) {
 /** Ops in words: "read, set its status to “done” and add new entries". @param {Op[]} ops */
 export const opsWords = (ops) => list(ops.map(opWords)) || 'nothing';
 
-/** The class of each op that doesn't change entries: every other op writes (avendb's `rules::Op::level`). */
-const LEVEL = /** @type {Record<string, Role>} */ ({ relay: 'relay', backup: 'backup', read: 'read', share: 'owner' });
+/** The built-in group a cap is, as the device says, for its hint. @param {CapView} c @param {WorldView} world */
+export const groupOf = (c, world) => (c.group ? world.groups.find((g) => g.name === c.group) : undefined);
 
-/** A cap's role: the class of its strongest op (avendb's `rules::level_of`). @param {Op[]} ops @returns {Role} */
-export const levelOf = (ops) =>
-	ops.map((o) => LEVEL[o.op] ?? 'write').reduce((a, b) => (RANK[b] > RANK[a] ? b : a), /** @type {Role} */ ('relay'));
-
-/** Two lists of ops say the same, op for op (the device puts them in order). @param {Op[]} a @param {Op[]} b */
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-/**
- * The built-in group a cap's ops are, if they are one: the Public group's for everyone.
- * @param {CapView} c @param {WorldView} world
- */
-export const groupOf = (c, world) =>
-	c.slice && world.groups.find((g) => same(g.ops, c.slice?.ops ?? []) && g.everyone === (c.grantee === EVERYONE));
+/** The groups of the keep levels, which the share dialog doesn't offer (avendb's `Level::group`). */
+const KEEP_GROUPS = /** @type {Record<string, string>} */ ({
+	keepWhole: 'Keep whole',
+	keepOpened: 'Keep when opened',
+	keepNever: 'Never keep'
+});
 
 /**
- * The built-in group of a role a vault holds, by its name (avendb's `Role::group`): Owner, Editor, Viewer, Backup or
- * Relay.
- * @param {WorldView} world @param {Role} role
+ * The built-in group of a level, by its name (avendb's `Level::group`): Owner, Editor, Viewer, Backup, Relay, or a keep
+ * level's.
+ * @param {WorldView} world @param {string} role
  */
 export const roleGroup = (world, role) =>
-	world.groups.find((g) => !g.everyone && levelOf(g.ops) === role)?.name ?? role;
+	world.groups.find((g) => !g.everyone && g.level === role)?.name ?? KEEP_GROUPS[role] ?? role;
 
 /**
- * A cap's level, as its share names it: its built-in group's name, the Public group's as Viewer, as its who is
- * Everyone; else the name of its own group; else, where the device doesn't read its slice, its role's built-in group.
+ * A cap's level, as its share names it: its built-in group's name, the Public group's as its level's group, as its who
+ * is Everyone; else the name of its own group; else, where the device doesn't read its slice, its level's group.
  * @param {CapView} c @param {WorldView} world
  */
 export function levelName(c, world) {
 	const g = groupOf(c, world);
-	if (g) return g.everyone ? roleGroup(world, levelOf(g.ops)) : g.name;
-	return c.slice?.name ?? roleGroup(world, c.role);
+	if (g) return g.everyone ? roleGroup(world, g.level) : g.name;
+	return c.group ?? c.slice?.name ?? roleGroup(world, c.role);
 }
 
 /** What a share does that opens nothing, beside its level's name. */
 export const KEEPS = /** @type {Record<string, string>} */ ({
 	backup: 'keeps an encrypted copy',
-	relay: 'connects only'
+	relay: 'connects only',
+	keepWhole: 'syncs it and keeps its files whole',
+	keepOpened: 'syncs it and fetches its files as they open',
+	keepNever: 'doesn’t sync it'
 });
 
-/** Whether cap `c` is on the whole of its vault. @param {CapView} c */
-export const wholeVault = (c) => c.wide || (!!c.slice && conjunctions(c.slice.where) === 'all');
+/** The keep modes of the `keep` op, each with its level. */
+export const MODES = /** @type {const} */ ([
+	['whole', 'keepWhole'],
+	['opened', 'keepOpened'],
+	['never', 'keepNever']
+]);
 
 /** What a share is on: "Everything", or what its slice picks, in words. @param {CapView} c @param {WorldView} world */
-export const shareWhat = (c, world) => (wholeVault(c) ? 'Everything' : whereWords(c.slice?.where, world));
-
-/** The tags ops let a write ask for: any, or those they list. @param {Op[]} ops @returns {'any' | string[]} */
-function asksFor(ops) {
-	const tag = ops.filter((o) => o.op === 'tag');
-	return tag.some((o) => !o.tags) ? 'any' : [...new Set(tag.flatMap((o) => o.tags ?? []))];
-}
-
-/** What two sets of tags both allow. @param {'any' | string[]} a @param {'any' | string[]} b */
-const both = (a, b) => (a === 'any' ? b : b === 'any' ? a : a.filter((t) => b.includes(t)));
+export const shareWhat = (c, world) => (c.whole ? 'Everything' : whereWords(c.slice?.where, world));
 
 /** The kind of record each type of entry holds. */
 const KIND_OF = /** @type {Record<string, string>} */ ({ note: 'document', todo: 'todo', file: 'document' });
@@ -415,94 +454,24 @@ export function fieldsOf(lane, type) {
  * @param {CapView} c @param {WorldView} world
  */
 export function shareWords(c, world) {
-	const ops = groupOf(c, world) || !c.slice ? '' : `: ${opsWords(c.slice.ops)}`;
+	const ops = c.group || !c.slice ? '' : `: ${opsWords(c.slice.ops)}`;
 	return `${granteeOf(c, world)} · ${levelName(c, world)} · ${shareWhat(c, world)}${ops}`;
 }
 
 /**
- * What a selector tests of an entry, as the device's `slice::Attrs`: its type, the vault that created it, its id, when
- * it was created (seconds since 1970) and its tags now.
- * @typedef {{ type: string, author: string, entry: string | null, created: number, tags: string[] }} Attrs
+ * A row of the `shares` op's level, as its share names it: its group's name (an owner's Owner, the Public group's as
+ * its level's group), else its own group's, else its level's group; a device's "Acts for it".
+ * @param {ShareRow} r @param {WorldView} world
  */
-
-/** Whether one test passes for `a`. @param {Atom} t @param {Attrs} a */
-function passes(t, a) {
-	if ('type' in t) return t.type.includes(a.type);
-	if ('author' in t) return t.author.includes(a.author);
-	if ('entry' in t) return !!a.entry && t.entry.includes(a.entry);
-	if ('created' in t) return t.created[0] <= a.created && a.created < t.created[1];
-	if ('tag' in t) return a.tags.includes(t.tag);
-	if ('noTag' in t) return !t.noTag.some((x) => a.tags.includes(x));
-	if ('onlyTags' in t) return a.tags.every((x) => t.onlyTags.includes(x));
-	return false;
+export function rowLevel(r, world) {
+	if (r.level === 'actsFor') return 'Acts for it';
+	const g = r.group ? world.groups.find((x) => x.name === r.group) : undefined;
+	if (g) return g.everyone ? roleGroup(world, g.level) : g.name;
+	return r.group ?? r.name ?? roleGroup(world, r.level);
 }
 
-/**
- * Whether `where` picks an entry of attributes `a`, as `avendb::slice::Selector::matches`.
- * @param {Where} w @param {Attrs} a
- */
-export function matches(w, a) {
-	const s = conjunctions(w);
-	return s === 'all' || s.some((d) => d.every((t) => passes(t, a)));
-}
-
-/** Entry `e`'s attributes, if the device reads them. @param {EntryView} e @returns {Attrs | null} */
-export const attrsOf = (e) =>
-	e.type === null || e.tags === null ? null : { type: e.type, author: e.by, entry: e.entry, created: e.created ?? 0, tags: e.tags };
-
-/**
- * Whether vault `actor` may add an entry of type `type` with the tags `tags` to vault `vault`, and with which tags more:
- * the vault itself may add anything; any other vault through a cap over it it holds with write or more, whose ops and
- * those of the caps it rests on add entries, and whose slice holds the new entry once it carries the tags its slice
- * asks for (a tag it must carry, as "todos tagged “work”" asks for "work"). The tags to add, or `null` if no cap lets
- * it. The device decides: the ops check the cap, and the vault's devices put the entry where its slice says.
- * @param {WorldView} world @param {string} vault @param {string} actor @param {string} type @param {string[]} [tags]
- * @returns {string[] | null}
- */
-export function creates(world, vault, actor, type, tags = []) {
-	if (vault === actor) return [];
-	const now = Math.floor(Date.now() / 1000);
-	for (const c of world.caps) {
-		if (c.over !== vault || c.grantee !== actor || !allows(c.role, 'write')) continue;
-		if (!c.slice) return [];
-		if (![c.slice.ops, ...c.slice.above].every((ops) => ops.some((o) => o.op === 'create'))) continue;
-		const select = conjunctions(c.slice.where);
-		if (c.wide || select === 'all') return [];
-		for (const d of select) {
-			const more = d.flatMap((t) => ('tag' in t && !tags.includes(t.tag) ? [t.tag] : []));
-			const a = { type, author: actor, entry: null, created: now, tags: [...tags, ...new Set(more)] };
-			if (d.every((t) => passes(t, a))) return [...new Set(more)];
-		}
-	}
-	return null;
-}
-
-/**
- * Whether vault `actor` may share what it holds of vault `vault` on: it is the vault, or holds an owner cap over it,
- * on which the new cap then rests (and reaches no further than it).
- * @param {WorldView} world @param {string} vault @param {string} actor
- */
-export const shares = (world, vault, actor) =>
-	vault === actor || world.caps.some((c) => c.over === vault && c.grantee === actor && c.role === 'owner');
-
-/**
- * The tags vault `actor` may add to or remove from entry `e`: any, as the vault itself, whose devices tag its entries
- * at once (`'any'`); else those its caps over the vault let it ask the vault's devices for, of the caps with write or
- * more that reach the entry: what the tag ops of each cap and of every cap it rests on all allow.
- * @param {WorldView} world @param {EntryView} e @param {string} actor @returns {'any' | string[]}
- */
-export function tagging(world, e, actor) {
-	if (e.vault === actor) return 'any';
-	const caps = world.caps.filter((c) => c.over === e.vault && c.grantee === actor && allows(c.role, 'write'));
-	/** @type {'any' | string[]} */
-	let out = [];
-	for (const c of caps.filter((c) => c.entries.includes(e.entry) && c.slice)) {
-		const s = /** @type {Slice} */ (c.slice);
-		const may = [s.ops, ...s.above].map(asksFor).reduce(both);
-		out = out === 'any' || may === 'any' ? 'any' : [...new Set([...out, ...may])];
-	}
-	return out;
-}
+/** What a row of the `shares` op is on, in words. @param {ShareRow} r @param {WorldView} world */
+export const rowWhat = (r, world) => (r.what === 'everything' ? 'Everything' : whereWords(r.what, world));
 
 /** The tags of `entries`, as many as carry each, the most used first. @param {EntryView[]} entries */
 export function tagsOf(entries) {
@@ -523,27 +492,26 @@ export const tagsIn = (text) => [...new Set(text.split(/[\s,]+/).map((t) => t.tr
 
 /**
  * Who the entries of vault `vault` that caps `caps` pick are shared with, from the caps alone: the vault itself first,
- * their Owner; then the grantee of each of those caps in force, and of each cap in force on the whole vault, by its
- * name and the levels of its caps, the strongest first, and one that only keeps an encrypted copy last. A Relay
- * holder never gets an entry: it goes unsaid.
+ * their Owner; then the grantee of each of those caps in force whose devices get them, and of each such cap on the
+ * whole vault, by its name and the levels of its caps that read, the strongest first, and one that only keeps an
+ * encrypted copy last. A Relay holder never gets an entry, and a keep share only says what a device keeps: both go
+ * unsaid.
  * @param {WorldView} world @param {string} vault @param {string[]} caps @returns {Shared}
  */
 export function sharedThrough(world, vault, caps) {
-	const live = world.caps.filter((c) => c.over === vault && c.role !== 'relay' && (c.wide || caps.includes(c.id)));
+	const live = world.caps.filter((c) => c.over === vault && c.gets && (c.wide || caps.includes(c.id)));
 	/** @type {Map<string, { levels: string[], rank: number }>} */
 	const by = new Map();
-	for (const c of live.sort((a, b) => RANK[b.role] - RANK[a.role])) {
-		const x = by.get(c.grantee) ?? { levels: [], rank: 0 };
-		const level = allows(c.role, 'read') ? levelName(c, world) : '';
+	for (const c of live.sort((a, b) => order(a.role) - order(b.role))) {
+		const x = by.get(c.grantee) ?? { levels: [], rank: STRONGEST.length };
+		const level = c.reads ? levelName(c, world) : '';
 		if (level && !x.levels.includes(level)) x.levels.push(level);
-		by.set(c.grantee, { levels: x.levels, rank: Math.max(x.rank, RANK[c.role]) });
+		by.set(c.grantee, { levels: x.levels, rank: Math.min(x.rank, order(c.role)) });
 	}
-	const name = (/** @type {string} */ id) =>
-		id === EVERYONE ? 'Everyone' : nameOf(world.vaults.find((v) => v.id === id));
 	const who = [...by]
-		.sort(([, a], [, b]) => b.rank - a.rank)
-		.map(([id, x]) => ({ id, name: name(id), levels: x.levels }));
-	const own = { id: vault, name: name(vault), levels: [roleGroup(world, 'owner')] };
+		.sort(([, a], [, b]) => a.rank - b.rank)
+		.map(([id, x]) => ({ id, name: whoName(id, world), levels: x.levels }));
+	const own = { id: vault, name: whoName(vault, world), levels: [roleGroup(world, 'owner')] };
 	return { who: [own, ...who], gone: caps.filter((id) => !world.caps.some((c) => c.id === id)).length };
 }
 
@@ -564,32 +532,52 @@ export const sharerWords = (x) => `${x.name} (${x.levels.join(', ') || KEEPS.bac
 export const sharedWords = (s) =>
 	list([...s.who.map(sharerWords), ...(s.gone ? [`${count(s.gone, 'share')} no longer in force`] : [])]);
 
-/** Why the rules refused an edit, as a person reads it (avendb's `Refusal`). */
-const WHY = /** @type {const} */ ({
+/** Why the rules refused an edit, as a person reads it (avendb's `Refusal`, v2-contract section 7). */
+const WHY = /** @type {Record<string, string>} */ ({
 	NoCap: 'nothing shared with the acting vault allows it',
-	NotActing: 'this browser doesn’t act for that vault',
+	NotActing: 'this device doesn’t act for that vault',
 	BelowThreshold: 'it needs the approval of the vault’s owners',
 	NoConsent: 'someone it names hasn’t signed it',
 	BadParent: 'the acting vault’s own right to share it isn’t in force',
 	PublicBeyondRead: 'everyone may only read: the Public group',
 	BadCap: 'a share needs a name and at least one op',
-	CapToSigner: 'shares go to vaults, never to a key',
 	CapToItself: 'a vault holds every right over itself already',
+	WideOwner: 'Owner of everything makes a co-owner: share Owner on a slice, or add an owner',
+	KeepNeedsDevice: 'a keep share names one of the vault’s own devices, never a vault or everyone',
+	DeviceOnlyKeeps: 'only a keep share names a device: share with its vault',
+	NotDevice: 'that device isn’t one of the acting vault’s',
 	NotAllowed: 'the ops of the share it writes through don’t allow that change',
-	UnknownVault: 'this browser doesn’t know that vault yet',
+	UnknownVault: 'this device doesn’t know that vault yet',
 	UnknownCap: 'that share isn’t in force',
-	UnknownEntry: 'this browser doesn’t know that entry yet',
+	UnknownEntry: 'this device doesn’t know that entry yet',
 	Revoked: 'that share was revoked already',
-	ReadOnly: 'this browser opens it read-only',
-	Locked: 'this browser is locked',
+	BadMark: 'a mark marks an audience, the keep shares that want its entry, or both',
+	BadAudience: 'an audience is shares over the vault, none of them on the whole of it, in order',
+	SameAudience: 'the entry is in that audience already',
+	BadWants: 'the keep shares that want an entry are keep shares over its vault, none on the whole of it, in order',
+	SameWants: 'those keep shares want it already',
+	LastOwner: 'a vault keeps at least one owner',
+	AlreadyMember: 'it is an owner or a device of it already',
+	NotMember: 'it isn’t an owner or a device of it',
+	BadThreshold: 'a vault needs at least one approval, and no more than it has owners',
+	NotRoot: 'only the vault’s root hands the root on',
+	ReadOnly: 'this device opens it read-only',
+	Locked: 'this device is locked',
 	BadSignature: 'a signature didn’t check',
 	WrongOwnerKind: 'that vault may not own it',
 	Cycle: 'a vault would own itself'
 });
 
+/**
+ * Why the device refused, in the page's words where it has them, else the device's.
+ * @param {{ refused?: string, why?: string } | null | undefined} out
+ */
+export const why = (out) =>
+	(out?.refused && WHY[out.refused]) || out?.why || out?.refused || 'the device didn’t answer';
+
 /** An error's message with a refusal's reason in words. @param {string} message */
 export function plain(message) {
 	const m = /^(.*?):?\s*\b([A-Z][A-Za-z]+)\b\s*$/.exec(message);
-	const why = m && WHY[/** @type {keyof typeof WHY} */ (m[2])];
-	return why ? `${m[1].replace(/^\w/, (c) => c.toUpperCase())}: ${why}.` : message;
+	const said = m && WHY[m[2]];
+	return said ? `${m[1].replace(/^\w/, (c) => c.toUpperCase())}: ${said}.` : message;
 }

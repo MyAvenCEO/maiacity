@@ -2,9 +2,10 @@
 	A vault's database studio, as this browser holds it and the acting vault opens it (db.js `studio`), each page its
 	own item in the vault's list: the query console (any op of the ops engine), the table editor (its entries as tables,
 	by type), its shares (its entries by who they are shared with), its schemas, its lenses, and the database's
-	history, every signed edit. The table editor and the shares show the studio's internals, keys' ids and generations
-	and documents' sizes, only once the person asks. It reads the database again whenever what the device holds
-	changes, and the history only while it shows. What the acting vault doesn't open shows sealed.
+	history, every signed edit. The table editor and the shares show the studio's internals, keys' ids and generations,
+	documents' sizes and the mark of an entry to run now, only once the person asks. It reads the database again
+	whenever what the device holds changes (the `database` op), and the history only while it shows (`log`). What the
+	acting vault doesn't open shows sealed.
 -->
 <script>
 	import History from './History.svelte';
@@ -54,7 +55,7 @@
 		void world;
 		if (view !== 'history') return;
 		let gone = false;
-		api.history().then(
+		api.log().then(
 			(/** @type {{ edits: import('./db.js').SignedEdit[] }} */ l) => {
 				if (!gone) [log, logFailed] = [l, ''];
 			},
@@ -84,12 +85,12 @@
 			<input type="checkbox" bind:checked={internals} /> Show the internals: key ids and generations, document sizes
 		</label>
 		{#if view === 'tables'}
-			<TableEditor {s} bind:cell={() => shown, (v) => (cell = v)} {actor} {internals} {onopen} />
+			<TableEditor {s} bind:cell={() => shown, (v) => (cell = v)} {actor} {api} {internals} {onopen} />
 		{:else}
 			<Cells {s} {db} {internals} onpick={(id) => ((cell = id), onview('tables'))} />
 		{/if}
 	{:else if view === 'schemas'}
-		<Schemas {s} onlens={() => onview('lenses')} />
+		<Schemas {s} {api} {vault} {actor} onlens={() => onview('lenses')} />
 	{:else if view === 'lenses'}
 		<Lenses {s} />
 	{:else}

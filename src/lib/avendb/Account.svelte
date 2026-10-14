@@ -24,9 +24,9 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { answer } from './ops.js';
+	import { allowed, answer, reads } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { count, levelOf, plain } from './vaults.js';
+	import { plain } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
@@ -405,7 +405,7 @@
 		const d = device;
 		if (!d) return;
 		/** @type {import('./vaults.js').WorldView | null} */
-		const w = (await d.world()) ?? null;
+		const w = answer(await send({ op: 'world' })) ?? null;
 		if (d !== device) return;
 		world = w;
 		if (!w) return;
@@ -415,7 +415,8 @@
 		const card = mine?.devices.find((x) => x.me);
 		if (card && card.name !== meta.name && !carding) {
 			carding = true;
-			d.card(meta.name)
+			send({ op: 'card', name: meta.name })
+				.then(answer)
 				.catch((/** @type {Error} */ e) => (error = `Naming ${here} failed: ${e.message}`))
 				.finally(() => (carding = false));
 		}
@@ -431,15 +432,34 @@
 		if (unnamed.length && !profiling) {
 			profiling = true;
 			(async () => {
-				for (const [v, name] of unnamed) await d.profile(v, name);
+				for (const [v, name] of unnamed) answer(await send({ op: 'profile', vault: v, name }));
 			})()
 				.catch((/** @type {Error} */ e) => (error = `Naming your vaults failed: ${plain(e.message)}`))
 				.finally(() => (profiling = false));
 		}
 	}
 
-	/** The passkey's ceremony for what its vault approves: new vaults, an owner cap or its revocation. */
-	const approver = async () => (mac ? undefined : (await ceremonies(meta.credential)).sign);
+	/** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
+	 *  new vaults (avendb/v8/v2-contract.md, section 2.3). */
+	const APPROVED = ['share', 'revoke', 'settings', 'found'];
+
+	/**
+	 * Op `op` on the device: the one way the page reads or changes the database (./ops.js, avendb/v8/v2-contract.md),
+	 * on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device runs
+	 * only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device says
+	 * whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file`. The
+	 * device's answer: `{ ok }`, or `{ refused, why }`.
+	 * @param {any} op @param {(at: number, n: number) => Promise<Uint8Array>} [read]
+	 */
+	async function send(op, read) {
+		const d = device;
+		if (reads(op)) return d.run(op);
+		if (APPROVED.includes(op?.op) && doing) {
+			const [verdict] = (await d.run({ op: 'may', ops: [op] }))?.ok ?? [];
+			if (allowed(verdict) && verdict !== true) doing = `${doing}: ${asks} once`;
+		}
+		return d.run(op, mac ? undefined : (await ceremonies(meta.credential)).sign, read);
+	}
 
 	/**
 	 * Runs `work` as `what`, then shows what changed: whether it went through.
@@ -454,82 +474,57 @@
 	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through. */
 	const api = {
 		/**
-		 * Runs op `op` of avenDB's ops engine as `what` (./ops.js): a change of what this browser holds, acting for the
-		 * vault the op names (`as`). What it did, or `null` if it didn't go through, with why shown.
+		 * Runs change op `op` as `what` (./ops.js, avendb/v8/v2-contract.md): an entry's change, a share, a revocation,
+		 * a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or `null` if it
+		 * didn't go through, with why shown.
 		 * @param {string} what @param {object} op
 		 */
 		run: async (what, op) => {
 			let done = null;
-			const ok = await act(what, async () => (done = answer(await device.run(op))));
+			const ok = await act(what, async () => (done = answer(await send(op))));
 			return ok ? done : null;
 		},
 		/**
-		 * Runs op `op` as it is, a read or a change, as the studio's console does: the device's answer, `{ ok }` or
-		 * `{ refused, why }`.
+		 * Runs op `op` as it is, a read or a change, as the studio's console and the screens' reads do: the device's
+		 * answer, `{ ok }` or `{ refused, why }`.
 		 * @param {object} op
 		 */
-		ask: (op) => device.run(op),
-		/** Vault `vault`'s database as this browser holds it, for the database studio. @param {string} vault */
-		database: (vault) => device.database(vault),
-		/** The database's history: every signed edit this browser holds, for the studio's History. */
-		history: () => device.history(),
+		ask: (op) => send(op),
+		/** Vault `vault`'s database as this device holds it, for the database studio. @param {string} vault */
+		database: async (vault) => answer(await send({ op: 'database', vault })),
+		/** The database's log: every signed edit this device holds, for the studio's History. */
+		log: async () => answer(await send({ op: 'log' })),
 		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
-		note: (entry) => device.note(entry),
+		note: async (entry) => answer(await send({ op: 'note', entry })),
 		/**
-		 * Brings file `file` into vault `vault`, tagged `tags`, acting for `actor`: sealed onto this browser's shelf in
-		 * OPFS a megabyte at a time, whatever its size, then an entry that brings it, which syncs as any edit does. The
-		 * new entry, or `null`.
+		 * Brings file `file` into vault `vault`, tagged `tags`, acting for `actor`: sealed onto this device's shelf a
+		 * megabyte at a time, whatever its size, then an entry that brings it, which syncs as any edit does. What it
+		 * made, `{ entry, root, size }`, or `null`.
 		 * @param {string} actor @param {string} vault @param {File} file @param {string} media @param {string[]} tags
 		 */
-		addFile: async (actor, vault, file, media, tags) => {
+		putFile: async (actor, vault, file, media, tags) => {
 			const what = `Adding ${file.name}`;
-			let entry = null;
-			const ok = await act(what, async () => {
-				/** @param {number} at @param {number} n */
-				const read = async (at, n) => {
-					if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
-					return new Uint8Array(await file.slice(at, at + n).arrayBuffer());
-				};
-				entry = await device.addFile(actor, vault, { name: file.name, media, tags, len: file.size }, read);
-			});
-			return ok ? entry : null;
+			/** @param {number} at @param {number} n */
+			const read = async (at, n) => {
+				if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
+				return new Uint8Array(await file.slice(at, at + n).arrayBuffer());
+			};
+			const op = { op: 'put_file', vault, name: file.name, media, tags, len: file.size, as: actor };
+			let done = null;
+			const ok = await act(what, async () => (done = answer(await send(op, read))));
+			return ok ? done : null;
 		},
 		/**
-		 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this browser's
+		 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
 		 * store or fetched from a peer that may hand them over.
 		 * @param {string} root @param {number} size @param {number} from @param {number} to
 		 * @returns {Promise<Uint8Array>}
 		 */
-		readFile: (root, size, from, to) => device.readFile(root, size, from, to),
-		/**
-		 * A cap: the named group of ops `spec` names on what its `where` picks of vault `over` (`{name, where, ops}`),
-		 * to vault `grantee` or `"everyone"`, acting for vault `issuer`; one whose ops share it on takes the passkey.
-		 * @param {string} issuer @param {string} over
-		 * @param {{ name: string, where: import('./vaults.js').Where, ops: import('./vaults.js').Op[] }} spec
-		 * @param {string} grantee
-		 */
-		share: (issuer, over, spec, grantee) =>
-			act(levelOf(spec.ops) === 'owner' ? `Sharing: ${asks} once` : 'Sharing', async () =>
-				device.share(issuer, over, spec, grantee, await approver())
-			),
-		/** @param {string} actor @param {string} cap @param {string} role */
-		revoke: (actor, cap, role) =>
-			act(role === 'owner' ? `Revoking: ${asks} once` : 'Revoking', async () =>
-				device.revoke(actor, cap, await approver())
-			),
-		/** The master recovery key as an owner of the person's vault: one prompt. */
-		addRecovery: () =>
-			act(`Adding the master recovery key: ${asks} once`, async () => device.addRecovery(await approver())),
-		/** @param {string} vault @param {{ signer: string } | { vault: string }} owner */
-		removeOwner: (vault, owner) =>
-			act(`Removing an owner: ${asks} once`, async () => device.removeOwner(vault, owner, await approver())),
-		/** @param {{ name: string, kind: string }[]} vaults */
-		foundVaults: (vaults) =>
-			act(`Creating ${count(vaults.length, 'vault')}: ${asks} once`, async () =>
-				device.foundVaults(vaults, await approver())
-			),
-		/** @param {string} vault @param {string} name */
-		profile: (vault, name) => act('Renaming', () => device.profile(vault, name)),
+		readFile: async (root, size, from, to) => {
+			const out = await send({ op: 'read_file', root, size, from, to });
+			answer(out);
+			return out.bytes;
+		},
 		/** @param {string} name */
 		rename: (name) =>
 			act(`Renaming ${here}`, async () => {
@@ -537,10 +532,6 @@
 				await (mac ? mac.call('rename', name) : device.rename(name));
 				meta = { ...meta, name };
 			}),
-		/** Whether avenDB's server backs up the person's vault, or only relays for it; `null` if it holds no cap on it. */
-		backsUp: async () => (await device.backsUp()) ?? null,
-		/** Has avenDB's server back up the person's vault, or only relay for it, from now on. @param {boolean} on */
-		backUp: (on) => act(on ? 'Turning backups on' : 'Turning backups off', () => device.backUp(on)),
 		forget: () => forget()
 	};
 

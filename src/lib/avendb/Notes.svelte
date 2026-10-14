@@ -2,15 +2,15 @@
 	A vault's notes, as a docs app lists its documents: a blank note to start, made at once and opened, then every note
 	of the vault the acting vault reads, one flat library, narrowed by a tag, the deleted ones apart; each a page with its tags, its edits, its
 	proposals, whether it is a variant of another, and who it is shared with; a click opens it (Note). Everything else
-	stays out of sight, as on a device of the acting vault alone: the device's world says which vault holds which role
-	on each entry, by the caps whose slices hold it (avendb-browser's `World`), and every edit goes out acting for that
-	vault. A vault other than this one adds a note only through a cap with write on a slice that holds it, tagged as its
-	slice asks, and where the ops of that cap allow it, as the device answers a dry run of adding it (`may`).
+	stays out of sight, as on a device of the acting vault alone: the device's world says which vaults read each entry,
+	by the caps whose slices hold it (avendb-browser's `World`), and every edit goes out acting for that vault. A vault
+	other than this one adds a note only through a cap with write on a slice that holds it, tagged as its slice asks, as
+	the device says (`creatable`), and where the ops of that cap allow it, as it answers a dry run of adding it (`may`).
 -->
 <script>
 	import Icon from './Icon.svelte';
-	import { may, noteRecord } from './ops.js';
-	import { count, creates, list, nameOf, reads, sharedWith, sharedWords, tagsIn, tagsOf } from './vaults.js';
+	import { allowed, creatable, may, noteRecord } from './ops.js';
+	import { count, list, nameOf, reads, sharedWith, sharedWords, tagsIn, tagsOf, why } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -40,7 +40,16 @@
 	/** the new note's tags, as the person types them, and those the acting vault's cap asks for besides */
 	let tagging = $state('');
 	const typed = $derived(tagsIn(tagging));
-	const asked = $derived(creates(world, vault, actor, 'note', typed));
+	/** those tags besides, as the device says: `null` while nothing shared with the acting vault lets it add a note */
+	let asked = $state(/** @type {string[] | null} */ (null));
+	$effect(() => {
+		void world;
+		let gone = false;
+		creatable(api, actor, vault, 'note', typed).then((t) => !gone && (asked = t));
+		return () => {
+			gone = true;
+		};
+	});
 	/** every note this browser knows, by entry: to name the one a variant came from */
 	const notes = $derived(new Map(world.entries.filter((e) => e.type === 'note').map((e) => [e.entry, e])));
 
@@ -65,14 +74,14 @@
 		onopen(made.entry);
 	}
 
-	/** why the ops of the cap the acting vault adds through don't let it add the note, as the device answers: '' */
+	/** why the device won't add the note for the acting vault, as it answers a dry run of adding it: '' */
 	let unadded = $state('');
 	$effect(() => {
 		if (!asked) return;
 		const op = blankNote();
 		let gone = false;
 		may(api, actor, [op]).then(([a]) => {
-			if (!gone) unadded = a !== true && a.refused === 'NotAllowed' ? a.why : '';
+			if (!gone) unadded = allowed(a) ? '' : why(/** @type {any} */ (a));
 		});
 		return () => {
 			gone = true;

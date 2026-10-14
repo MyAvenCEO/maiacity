@@ -30,7 +30,7 @@
 	{#if internals}
 		<div class="stat" title="The keys of its entries: one for the entries the same shares reach">
 			<b>{cells.length}</b>
-			<span>{cells.length === 1 ? 'key' : 'keys'}, {count(db.edits.moves, 'move')} between them</span>
+			<span>{cells.length === 1 ? 'key' : 'keys'}, {count(db.edits.moves, 'mark')} between them</span>
 		</div>
 		<div class="stat" title="Every signed edit this browser holds, of every vault it knows">
 			<b>{db.held.edits}</b><span>signed edits held</span>

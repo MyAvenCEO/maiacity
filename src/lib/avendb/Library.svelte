@@ -8,16 +8,16 @@
 	by one: each sealed under a key of its own on this device as it is read, a megabyte at a time, then an entry that
 	brings it, which syncs as any edit does, so the person's other devices and avenDB's server fetch its sealed bytes and
 	open them with the key in the edit. A vault other than this one adds a file only through a cap with write on a
-	slice that holds it, tagged as its slice asks, and where the ops of that cap allow it (`may`). An SVG shows as a
-	data URL, never as a page of this site, so its scripts never run here; and what is neither a picture, a PDF, a film
-	nor a song only saves.
+	slice that holds it, tagged as its slice asks (`creatable`), and where the ops of that cap allow it (`may`). An SVG
+	shows as a data URL, never as a page of this site, so its scripts never run here; and what is neither a picture, a
+	PDF, a film nor a song only saves.
 -->
 <script>
 	import { onDestroy } from 'svelte';
 	import Icon from './Icon.svelte';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
-	import { deleting, may, noteRecord } from './ops.js';
-	import { allows, count, creates, list, nameOf, reads, sharedWith, sharedWords, size, tagsIn } from './vaults.js';
+	import { allowed, creatable, deleting, may } from './ops.js';
+	import { count, list, nameOf, reads, sharedWith, sharedWords, size, tagsIn, why } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -59,19 +59,29 @@
 	/** the new files' tags, as the person types them, and those the acting vault's cap asks for besides */
 	let tagging = $state('');
 	const typed = $derived(tagsIn(tagging));
-	const asked = $derived(creates(world, vault, actor, 'file', typed));
+	/** those tags besides, as the device says: `null` while nothing shared with the acting vault lets it add a file */
+	let asked = $state(/** @type {string[] | null} */ (null));
+	$effect(() => {
+		void world;
+		let gone = false;
+		creatable(api, actor, vault, 'file', typed).then((t) => !gone && (asked = t));
+		return () => {
+			gone = true;
+		};
+	});
 	const tagsWords = $derived(asked?.length ? `, tagged ${list(asked.map((t) => `“${t}”`))} as its share asks` : '');
 	/** Who entry `e` is shared with, in words. @param {EntryView} e */
 	const sharedOf = (e) => `Shared with ${sharedWords(sharedWith(world, vault, e.entry))}${e.public ? ' · Public' : ''}`;
 
-	/** why the ops of the cap the acting vault adds through don't let it add a file, as the device answers: '' */
+	/** why the device won't add a file for the acting vault, as it answers a dry run of adding an empty one: '' */
 	let unadded = $state('');
 	$effect(() => {
 		if (!asked) return;
-		const op = { op: 'create', vault, type: 'file', tags: [...typed, ...asked], value: noteRecord('file', '') };
+		const tags = [...typed, ...asked];
+		const op = { op: 'put_file', vault, name: 'file', media: 'application/octet-stream', tags, len: 0 };
 		let gone = false;
 		may(api, actor, [op]).then(([a]) => {
-			if (!gone) unadded = a !== true && a.refused === 'NotAllowed' ? a.why : '';
+			if (!gone) unadded = allowed(a) ? '' : why(/** @type {any} */ (a));
 		});
 		return () => {
 			gone = true;
@@ -84,7 +94,7 @@
 		const all = [...(picked ?? [])];
 		if (!adds || !all.length) return;
 		const tags = [...typed, ...(asked ?? [])];
-		for (const f of all) if (!(await api.addFile(actor, vault, f, mediaOf(f), tags))) return;
+		for (const f of all) if (!(await api.putFile(actor, vault, f, mediaOf(f), tags))) return;
 		tagging = '';
 	}
 
@@ -223,6 +233,19 @@
 		}
 		a.click();
 	}
+
+	/** whether the acting vault may delete the open file, or bring it back, as the device answers a dry run of it */
+	let tosses = $state(false);
+	$effect(() => {
+		const e = viewing;
+		tosses = false;
+		if (!e) return;
+		let gone = false;
+		may(api, actor, [{ ...deleting(e.entry, e.deleted), as: actor }]).then(([a]) => !gone && (tosses = allowed(a)));
+		return () => {
+			gone = true;
+		};
+	});
 
 	/** Deletes entry `e`, or brings it back. @param {EntryView} e */
 	async function toss(e) {
@@ -368,7 +391,7 @@
 				<button class="btn" disabled={busy || !file || file.len === null || loading >= 0} onclick={() => save(viewing)}
 					><Icon name="download" /> Save</button
 				>
-				{#if vault === actor || allows(viewing.roles[actor], 'write')}
+				{#if tosses}
 					<button class="btn danger" disabled={busy} onclick={() => toss(viewing)}
 						><Icon name="trash" /> {viewing.deleted ? 'Bring back' : 'Delete'}</button
 					>

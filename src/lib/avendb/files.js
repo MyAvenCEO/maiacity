@@ -68,8 +68,10 @@ const WINDOW = 4 << 20;
 export const WHOLE = 1 << 30;
 
 /**
- * @typedef {{ root: string, size: number, len: number | null }} FileView a file an entry brings: its root in hex, its
- *   sealed size and, where the device opens it, its length
+ * @typedef {{ root: string, size: number, len: number | null, syncedTo?: string[], pieces?: number,
+ *   partly?: { device: string, pieces: number[] }[] }} FileView a file an entry brings: its root in hex, its sealed
+ *   size and, where the device opens it, its length; the devices that hold it whole, how many pieces it is in, and the
+ *   devices that hold only some of them, as the device's world says
  * @typedef {(root: string, size: number, from: number, to: number) => Promise<Uint8Array>} Read
  */
 

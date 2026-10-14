@@ -1,20 +1,44 @@
 <!--
 	The studio's schemas, as a database studio draws its tables: each family of versions a chain of lenses joins, oldest
 	first, side by side with the lens between each two, each version a card of its columns and their types, nested
-	records' columns under theirs, how many rows here were written under it, and its JSON Schema as published.
+	records' columns under theirs, how many rows here were written under it, and its JSON Schema as written. The vault
+	itself adds a schema or a lens as it adds any entry, a creation of its own shared with Everyone (the `create` op),
+	once the device answers a dry run of adding it (`may`).
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import { families, fields, parsed, steps } from './db.js';
-	import { count, short } from './vaults.js';
+	import { allowed, may } from './ops.js';
+	import { count, short, why } from './vaults.js';
 
-	/** @type {{ s: import('./db.js').Studio, onlens: () => void }} */
-	let { s, onlens } = $props();
+	/** @type {{ s: import('./db.js').Studio, api: any, vault: string, actor: string, onlens: () => void }} */
+	let { s, api, vault, actor, onlens } = $props();
 
 	// why it is shown as public
-	const PUBLIC = 'Public: a schema holds no data, so it goes in the clear to every device that syncs the vault';
+	const PUBLIC = 'Public: a schema holds no data, so every device that follows the vault reads it';
 
 	const fams = $derived(families(s.schemas, s.lenses));
+
+	/** a schema or a lens to add, and its JSON as the person writes it, kept as written */
+	let kind = $state(/** @type {'schema' | 'lens'} */ ('schema'));
+	let text = $state('');
+	const adding = $derived({ op: 'create', vault, type: kind, value: text, as: actor });
+	/** why the device won't add it, as it answers a dry run of it: '' where it would, or while nothing is written */
+	let unadded = $state('');
+	$effect(() => {
+		const op = { ...adding };
+		unadded = '';
+		if (!op.value.trim()) return;
+		let gone = false;
+		may(api, actor, [op]).then(([a]) => !gone && (unadded = allowed(a) ? '' : why(/** @type {any} */ (a))));
+		return () => {
+			gone = true;
+		};
+	});
+
+	async function add() {
+		if (await api.run(kind === 'schema' ? 'Adding the schema' : 'Adding the lens', { ...adding })) text = '';
+	}
 </script>
 
 {#snippet fieldRows(/** @type {import('./db.js').Field[]} */ list, /** @type {number} */ depth)}
@@ -35,8 +59,34 @@
 <p class="lead soft">
 	What each record holds, version by version, as a table holds its columns. Every edit names the schema it was written
 	under; a lens carries a record between two versions, so an app on either reads what the other writes. Schemas and
-	lenses are public: they hold no data, so every device that syncs the vault reads them, no key needed.
+	lenses are entries of the vault shared with Everyone: they hold no data, so every device that follows the vault
+	reads them.
 </p>
+
+{#if actor === vault}
+	<details class="add">
+		<summary>Add a schema or a lens</summary>
+		<div class="row">
+			<select class="field" bind:value={kind} aria-label="What it is">
+				<option value="schema">A schema</option>
+				<option value="lens">A lens</option>
+			</select>
+			<button class="btn primary" disabled={!text.trim() || !!unadded} onclick={add}>Add it</button>
+		</div>
+		<textarea
+			class="field source"
+			rows="8"
+			bind:value={text}
+			placeholder={kind === 'schema' ? 'Its JSON Schema' : 'Its JSON: the versions it joins, and its steps'}
+			aria-label="Its JSON"
+		></textarea>
+		<p class="soft">
+			{unadded
+				? `It can’t be added: ${unadded}.`
+				: 'It becomes an entry of the vault, shared with Everyone, its JSON kept exactly as written.'}
+		</p>
+	</details>
+{/if}
 
 <div class="schemas">
 	{#each fams as fam (fam.schemas[0]?.id)}
@@ -234,5 +284,26 @@
 
 	details {
 		flex-basis: 100%;
+	}
+
+	.add {
+		max-width: 46rem;
+		margin: 0 0 1.4rem;
+	}
+
+	.add .row {
+		margin: 0.5rem 0;
+	}
+
+	.add .source {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+		font-size: 0.78rem;
+	}
+
+	.add p {
+		font-size: 0.8rem;
 	}
 </style>

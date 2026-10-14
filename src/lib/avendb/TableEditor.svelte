@@ -3,26 +3,31 @@
 	with to pick, or all of them, and its tables on the left, each entry in the one of its type (notes, todos, devices'
 	cards, vaults' profiles, other records, and what the acting vault doesn't open, sealed); the table picked as a grid,
 	its columns the fields of its schema, newest version first, each with its type, then what avenDB keeps of each row
-	(who it is shared with, the tags shares select it by, which its record's own fields don't hold, its schemas, edits,
-	proposals and who wrote it first, and with the studio's internals shown its key's generation and size); sorted by a
-	column, searched, and each row opened in a drawer, its record field by field.
+	(who it is shared with, the devices it is synced to, the tags shares select it by, which its record's own fields
+	don't hold, its schemas, edits, proposals and who wrote it first, and with the studio's internals shown its key's
+	generation and size); sorted by a column, searched, and each row opened in a drawer, its record field by field, and
+	with the internals shown, its mark to run now (the `mark` op). Beside the tables, its files: every file its entries
+	bring, by its root, with its size and the devices that hold it whole or in pieces, as the device's world says.
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import Panel from './Panel.svelte';
 	import { cell, families, familyOf, hint, parsed, pgType, tables, typeOf } from './db.js';
-	import { allows, count, nameOf, sharerWords, short, size } from './vaults.js';
+	import { allowed, may } from './ops.js';
+	import { count, list, nameOf, sharerWords, short, size } from './vaults.js';
 
 	/**
 	 * @typedef {import('./db.js').RowView} Row
 	 * @typedef {{ name: string, type: string, hint: string, pk?: boolean, sys?: boolean, get: (r: Row) => unknown }} Column
+	 * @typedef {{ root: string, size: number, len: number | null, entries: string[], whole: string[],
+	 *   partly: { device: string, pieces: number[] }[], pieces: number }} FileRow
 	 */
 
 	/**
-	 * @type {{ s: import('./db.js').Studio, cell: string, actor: string, internals: boolean,
+	 * @type {{ s: import('./db.js').Studio, cell: string, actor: string, api: any, internals: boolean,
 	 *   onopen: (entry: string) => void }}
 	 */
-	let { s, cell: within = $bindable(''), actor, internals, onopen } = $props();
+	let { s, cell: within = $bindable(''), actor, api, internals, onopen } = $props();
 
 	let picked = $state('notes');
 	let query = $state('');
@@ -32,7 +37,49 @@
 	let open = $state('');
 
 	const all = $derived(tables(s, within));
-	const table = $derived(all.find((t) => t.id === picked) ?? all[0]);
+	/** whether the files show, in place of a table */
+	const filing = $derived(picked === 'files');
+	const table = $derived(filing ? undefined : (all.find((t) => t.id === picked) ?? all[0]));
+
+	/** The devices entry `id` is synced to, by name, as the device's world says: `null` for none. @param {string} id */
+	const synced = (id) => list((s.known.get(id)?.syncedTo ?? []).map(s.signer)) || null;
+
+	/**
+	 * Every file the vault's entries bring (of one cell, or of all of them), once each by its root: its sizes, the
+	 * entries that bring it, and the devices that hold it whole or only some of its pieces, as the device's world says.
+	 */
+	const files = $derived.by(() => {
+		/** @type {Map<string, FileRow>} */
+		const by = new Map();
+		for (const e of s.world.entries) {
+			if (e.vault !== s.here?.id || (within && e.cell !== within)) continue;
+			for (const f of e.files ?? []) {
+				const had = by.get(f.root);
+				if (had) had.entries.push(e.entry);
+				else
+					by.set(f.root, {
+						root: f.root,
+						size: f.size,
+						len: f.len,
+						entries: [e.entry],
+						whole: f.syncedTo ?? [],
+						partly: f.partly ?? [],
+						pieces: f.pieces ?? 1
+					});
+			}
+		}
+		return [...by.values()];
+	});
+	/** The files as shown: searched. */
+	const shownFiles = $derived.by(() => {
+		const q = query.trim().toLowerCase();
+		/** @param {FileRow} f */
+		const text = (f) => [f.root, ...f.entries.map(s.entry), ...f.whole.map(s.signer)].join(' ').toLowerCase();
+		return files.filter((f) => !q || text(f).includes(q));
+	});
+	/** The devices that hold some of file `f`'s pieces, each with how many, in words. @param {FileRow} f */
+	const piecesOn = (f) =>
+		list(f.partly.map((p) => `${s.signer(p.device)} (${p.pieces.length} of ${f.pieces})`)) || null;
 	const family = $derived(table?.family ? familyOf(families(s.schemas, s.lenses), table.family) : undefined);
 
 	/** The table's columns: its key, its schema's fields, newest version first, then what avenDB keeps of each row. */
@@ -66,6 +113,12 @@
 		/** @type {Column[]} */
 		const kept = [
 			{ name: 'shared_with', type: 'text', hint: 'Who it is shared with, and at what level', get: (/** @type {Row} */ r) => s.shared(r.entry) },
+			{
+				name: 'synced_to',
+				type: 'text',
+				hint: 'The devices that hold it, as this browser last heard',
+				get: (/** @type {Row} */ r) => synced(r.entry)
+			},
 			...(sealed
 				? []
 				: [{ name: 'entry_tags', type: 'text[]', hint: 'Its tags now, outside its record: what shares select it by', get: (/** @type {Row} */ r) => r.tags }]),
@@ -109,6 +162,27 @@
 		return `${device}, for ${s.vaultName(r.actor ?? '')}`;
 	}
 
+	/** whether the device would mark the open row now, as it answers a dry run of it, and what its mark did */
+	let marks = $state(false);
+	let marked = $state('');
+	$effect(() => {
+		const entry = open;
+		[marks, marked] = [false, ''];
+		if (!entry || !internals) return;
+		let gone = false;
+		may(api, actor, [{ op: 'mark', entry }]).then(([a]) => !gone && (marks = allowed(a)));
+		return () => {
+			gone = true;
+		};
+	});
+
+	/** Runs the open row's mark now: its audience and the keep shares that want it, as its shares say. */
+	async function mark() {
+		const done = await api.run('Marking', { op: 'mark', entry: open });
+		if (!done) return;
+		marked = done.edit ? `Marked: edit ${short(done.edit)}.` : 'Its marks say what its shares say already.';
+	}
+
 	/** Sort by column `name`, then the other way, then not at all. @param {string} name */
 	function sortBy(name) {
 		sort = sort.by !== name ? { by: name, down: false } : sort.down ? { by: '', down: false } : { by: name, down: true };
@@ -142,11 +216,74 @@
 					</button>
 				</li>
 			{/each}
+			<li>
+				<button
+					class="t"
+					class:on={filing}
+					class:none={!files.length}
+					data-table="files"
+					title="Every file its entries bring, and the devices that hold it whole or in pieces"
+					onclick={() => ([picked, open, sort] = ['files', '', { by: '', down: false }])}
+				>
+					<Icon name="file" size={14} />
+					<span class="mono">files</span>
+					<small>{files.length}</small>
+				</button>
+			</li>
 		</ul>
 	</aside>
 
 	<section class="area">
-		{#if table}
+		{#if filing}
+			<header class="bar">
+				<h3 class="mono">files</h3>
+				<span class="soft hint">
+					Every file its entries bring, sealed in pieces of up to a GiB: who holds it whole, and who only some
+					pieces.
+				</span>
+				<label class="search">
+					<Icon name="search" size={14} />
+					<input class="field" placeholder="Search files" bind:value={query} aria-label="Search files" />
+				</label>
+			</header>
+			<div class="grid" role="region" aria-label="files" tabindex="-1">
+				<table>
+					<thead>
+						<tr>
+							<th class="pk plain" title="Its root: the hash its pieces are checked by">root</th>
+							<th class="plain" title="The entries that bring it">entry</th>
+							<th class="plain" title="Its length, where this browser opens it">bytes</th>
+							<th class="plain" title="Its sealed size">sealed</th>
+							<th class="plain" title="How many pieces it is sealed in">pieces</th>
+							<th class="plain sys" title="The devices that hold every piece of it">whole_on</th>
+							<th class="plain sys" title="The devices that hold only some of its pieces">pieces_on</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each shownFiles as f (f.root)}
+							<tr>
+								<td class="pk mono" title={f.root}>{short(f.root)}</td>
+								<td class="text">{list(f.entries.map(s.entry))}</td>
+								<td class={f.len === null ? 'null' : 'num'}>
+									{f.len === null ? 'SEALED' : size(f.len)}
+								</td>
+								<td class="num">{size(f.size)}</td>
+								<td class="num">{f.pieces}</td>
+								<td class={f.whole.length ? 'sys' : 'null'}>{list(f.whole.map(s.signer)) || 'NULL'}</td>
+								<td class={f.partly.length ? 'sys' : 'null'}>{piecesOn(f) ?? 'NULL'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				{#if !shownFiles.length}
+					<p class="nothing">{query ? 'No file matches.' : 'No files.'}</p>
+				{/if}
+			</div>
+			<footer class="foot">
+				<span>{count(shownFiles.length, 'file')}{query ? ` of ${files.length}` : ''}</span>
+				<span class="soft">{within ? `Shared with ${s.sharedIn(within)}` : 'Every entry'} · {nameOf(s.here)}</span>
+			</footer>
+		{:else if table}
 			<header class="bar">
 				<h3 class="mono">{table.label}</h3>
 				{#if family}<span class="chip accent" title="The schema family its rows are written under">{family.name}</span>{/if}
@@ -223,7 +360,7 @@
 			{#if row.type === 'note'}
 				<button class="btn primary" onclick={() => onopen(row.entry)}>Open the note</button>
 			{/if}
-		{:else if row.record === null && (row.public || allows(row.roles[actor], 'read'))}
+		{:else if row.record === null && (row.public || s.readable(row.entry))}
 			<p class="soft">This browser holds no key to it yet: its edits are ciphertext here.</p>
 		{:else}
 			<p class="soft">
@@ -243,6 +380,8 @@
 				{/each}
 				{#if row.public}<span class="chip ok">Public</span>{/if}
 			</dd>
+			<dt>Synced to</dt>
+			<dd>{synced(row.entry) ?? 'no device this browser has heard of'}</dd>
 			{#if row.type !== null}
 				<dt>Type</dt>
 				<dd>{row.type}</dd>
@@ -272,6 +411,16 @@
 			<dt>First written by</dt>
 			<dd>{first(row) ?? 'nobody this browser knows'}</dd>
 		</dl>
+		{#if internals && marks}
+			<p class="row">
+				<button
+					class="btn"
+					title="Its audience and the keep shares that want it, as its shares say now"
+					onclick={mark}>Mark it now</button
+				>
+				{#if marked}<small class="soft">{marked}</small>{/if}
+			</p>
+		{/if}
 		{#if opened}
 			<details>
 				<summary>Its record as JSON</summary>
@@ -439,6 +588,11 @@
 		padding: 0;
 		background: #f6f5f1;
 		font-weight: 500;
+	}
+
+	th.plain {
+		padding: 0 0.6rem;
+		font-weight: 600;
 	}
 
 	th button {

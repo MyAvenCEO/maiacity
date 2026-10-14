@@ -8,7 +8,7 @@
 -->
 <script>
 	import { cell } from './db.js';
-	import { reads } from './ops.js';
+	import { acts } from './ops.js';
 	import { count, nameOf, short, whereWords } from './vaults.js';
 
 	/**
@@ -58,6 +58,7 @@
 			op: { op: 'history', entry: n.entry, limit: 5 }
 		})),
 		{ name: 'Schemas', op: { op: 'schemas', vault } },
+		{ name: 'Its shares', op: { op: 'shares', over: vault } },
 		{
 			name: 'Add a todo',
 			change: true,
@@ -92,11 +93,13 @@
 			return void (bad = `That isn’t JSON: ${/** @type {Error} */ (e).message}`);
 		}
 		// a change acts as the acting vault, as every screen's does, unless it names another
-		if (op && typeof op === 'object' && !reads(op) && !('as' in op)) op = { ...op, as: actor };
+		if (op && typeof op === 'object' && acts(op) && !('as' in op)) op = { ...op, as: actor };
 		[running, bad] = [true, ''];
 		const start = performance.now();
 		try {
 			out = await api.ask(op);
+			// a file's bytes, which come beside the answer, show by their count
+			if (out?.bytes instanceof Uint8Array) out = { ok: { ...out.ok, bytes: count(out.bytes.length, 'byte') } };
 		} catch (e) {
 			out = { refused: 'Error', why: /** @type {Error} */ (e).message ?? String(e) };
 		} finally {

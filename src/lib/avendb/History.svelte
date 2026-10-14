@@ -1,7 +1,7 @@
 <!--
 	The studio's history: every signed edit this browser holds, the database's history, as a database studio lists its
-	logs: those that concern the vault, or all of them, by kind (writes and moves, checkpoints, keys, caps, vaults and
-	devices, schemas), newest first, each with its place in the order the browser took them, what it does in words, who
+	logs: those that concern the vault, or all of them, by kind (writes and marks, checkpoints, keys, shares, vaults and
+	devices), newest first, each with its place in the order the browser took them, what it does in words, who
 	signed it and how (a classical half, which counts for nothing once only post-quantum counts, and an SLH-DSA half),
 	its causal depth and its size; each opens in a drawer, every field and signature, and the edits it builds on. What
 	an edit seals, a write's body, a cap's slice or a key's boxes, shows by its size alone, as avenDB's server sees it;
@@ -339,7 +339,7 @@
 	}
 
 	.write .k,
-	.move .k {
+	.mark .k {
 		background: #d6e8e4;
 		color: #1f4f47;
 	}

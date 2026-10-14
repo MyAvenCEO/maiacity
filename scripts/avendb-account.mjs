@@ -10,7 +10,8 @@
  * a note and two todos, one tagged “work”, and shares the note with avenBOB, and every todo tagged “work”, a rule
  * rather than a list, and a todo she tags “work” later; she gives avenCHARLY a Suggester cap on a plan of hers, whose
  * ops let him only suggest changes; the Sync list shows her cells, avenCEO's server relaying their ciphertext and
- * opening none of it; making the coop an Owner of her whole vault takes one ceremony, revoking avenBOB's read none.
+ * opening none of it; making the coop a co-owner of her vault, Owner of everything, takes one ceremony, revoking
+ * avenBOB's read none.
  * What a cap's holder sees takes a person who owns it and not her, as the person owns every vault here. The account
  * opens again after a reload in one ceremony; forgotten here,
  * it comes back through the server for the passkey alone, in one ceremony, with every vault and the note. Each step
@@ -554,20 +555,18 @@ try {
 	check('avenCEO’s server relays their ciphertext only', /avenCEO's server.*relays its ciphertext only/.test(sync), sync.slice(0, 400));
 	await shot('9-sync');
 
-	// as avenALICE: the coop owns her whole vault too, which her owner's passkey approves; revoking avenBOB's read needs
-	// none
+	// as avenALICE: Owner of everything makes the coop a co-owner of her vault, which her owner's passkey approves;
+	// revoking avenBOB's read needs none
 	await look('avenALICE', 'Access');
 	const owning = await ceremonies();
 	await choose('.main select[aria-label="What"]', 'the whole vault');
 	await choose('.main select[aria-label="Share with"]', 'Maia City COOP');
 	await click('Owner', '.main .share button.group');
 	await click('Share', '.main .card button.primary');
-	const owns = async () => {
-		const groups = await shown('.main .group');
-		return groups.some((g) => g?.startsWith('Owner') && g.includes('Maia City COOP on the whole vault'));
-	};
+	const owns = async () =>
+		(await shown('.main .grants li')).some((l) => l?.startsWith('Maia City COOP · Owner · Everything · owns it'));
 	const coop = await until(owns, 60000);
-	check('the coop owns her whole vault', coop, await problem());
+	check('the coop co-owns her vault', coop, await problem());
 	check('in one ceremony', (await ceremonies()) - owning === 1, `${(await ceremonies()) - owning}`);
 	const revoking = await ceremonies();
 	const revoke = () =>

@@ -6,11 +6,11 @@
 	its history, every signed edit); then its settings (About, Owners and devices, Sharing); and the page picked in
 	the middle. Each page has an address of its own
 	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
-	screen. The page picks who the person acts as in each vault, with no switch to flip: in a vault their vault owns,
-	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
-	theirs that holds the strongest cap over it, whose caps then decide what the page shows and what it may do (vaults'
-	`actorIn`). At the foot, in the middle above the app's own buttons, what the page is doing, and why not. Marks of
-	the vaults none of theirs holds anything in are faded.
+	screen. The device picks who the person acts as in each vault, with no switch to flip (its world's `acting`): in a
+	vault their vault owns, directly or through owners of owners, they act as it, as its owners need no cap there;
+	elsewhere as the vault of theirs that holds the strongest cap over it, whose caps then decide what the page shows
+	and what it may do. At the foot, in the middle above the app's own buttons, what the page is doing, and why not.
+	Marks of the vaults none of theirs holds anything in are faded.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
@@ -23,7 +23,7 @@
 	import Notes from './Notes.svelte';
 	import Settings from './Settings.svelte';
 	import Todos from './Todos.svelte';
-	import { actorIn, KINDS, list, nameOf, reaches, signerName } from './vaults.js';
+	import { acting, KINDS, list, nameOf, signerName } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
@@ -87,7 +87,7 @@
 	const busy = $derived(!!doing);
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const context = $derived(byId.has(picked) ? picked : world.mine);
-	const actor = $derived(actorIn(world, context));
+	const actor = $derived(acting(world, context).as);
 	const mine = $derived(byId.get(world.mine));
 	const rest = $derived(world.vaults.filter((v) => v.id !== world.mine));
 	const here = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(context) ?? mine));
@@ -131,8 +131,7 @@
 	<nav class="bar" aria-label="Vaults">
 		{#each [mine, ...rest] as v, i (v?.id)}
 			{#if v}
-				{@const by = actorIn(world, v.id)}
-				{@const out = !reaches(world, v.id, by)}
+				{@const out = !acting(world, v.id).reaches}
 				{#if i === 1}<hr />{/if}
 				<button
 					class="slot"

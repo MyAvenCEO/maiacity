@@ -1,11 +1,13 @@
 <!--
 	An entry's tags, as chips, to add to and take off where the acting vault may: the entry's own vault tags it at once;
 	any other vault asks the vault's devices, who grant what its caps let it ask for, the tags the `tag` ops of each
-	cap and of every cap it rests on all allow. A tag can take the entry into a cap's slice or out of it: the vault's
-	devices then move it to the cell of the caps that hold it now, and who reads it changes with it.
+	cap and of every cap it rests on all allow, as the device says (`taggable`). A tag can take the entry into a cap's
+	slice or out of it: the vault's devices then move it to the cell of the caps that hold it now, and who reads it
+	changes with it.
 -->
 <script>
-	import { nameOf, tagging, tagsIn } from './vaults.js';
+	import { read } from './ops.js';
+	import { nameOf, tagsIn } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
@@ -13,7 +15,17 @@
 	 */
 	let { world, actor, api, busy, entry } = $props();
 
-	const may = $derived(tagging(world, entry, actor));
+	/** the tags the acting vault may add or take off, as the device says (`taggable`): any, or those listed */
+	let may = $state(/** @type {'any' | string[]} */ ([]));
+	$effect(() => {
+		void world;
+		const op = { op: 'taggable', entry: entry.entry, as: actor };
+		let gone = false;
+		read(api, op, null).then((out) => !gone && (may = out?.tags ?? []));
+		return () => {
+			gone = true;
+		};
+	});
 	const tags = $derived(entry.tags ?? []);
 	const asks = $derived(entry.vault !== actor);
 	let adding = $state(false);
