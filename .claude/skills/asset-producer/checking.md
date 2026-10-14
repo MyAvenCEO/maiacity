@@ -12,8 +12,9 @@ Law 5 says look at it like a critic. This is how we look, in the cloud container
 - Playwright's Chromium at `/opt/pw-browsers/chromium` with `--use-gl=angle --use-angle=swiftshader
   --enable-unsafe-swiftshader`; wait for `body[data-ready]`; the viewport the size of the canvas, or the picture is
   cut.
-- `/app/models` and `/app/actors` need a passkey login: to test the viewers, mount their component in another
-  throwaway route.
+- `/app/models` (the Things), `/app/machines` and `/app/actors` need a passkey login: to test the viewers, mount
+  their component (`ModelsView.svelte`, `ActorsView.svelte`) in another throwaway route. Headless swiftshader draws
+  nothing of a rigged machine or actor on their live turntable; render it once from the shot route instead.
 - Shoot what the asset will be judged by: every step of a build, the whole thing beside a 1.8 m figure for scale,
   close-ups of every joint, the distance it is seen at in the game or film (a medium close-up for a face), by day, in
   shade and at night. Tile them (Pillow) and save them to `/mnt/project-files/<asset>/`.

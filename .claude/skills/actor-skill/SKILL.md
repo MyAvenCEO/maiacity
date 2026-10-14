@@ -1,38 +1,36 @@
 ---
 name: actor-skill
-description: The maiaCITY actor skill — whatever moves, in the Actors library (src/lib/actors, /app/actors): machines in their parts (a bone and a card per part, LifeTrac, Power Cube, BatteryPack and BatteryCube), combinable kits (powerCubeParts, forkliftParts, clickLockPieces), hydraulic rams, clips and poses, research from open CAD, versions behind an argument or frozen files, and the stand-in's face (MakeHuman CC0 head, blend shapes joy and friendly from measured expression units, catchlights that survive the distance). Use it whenever an actor, a rigged machine or the stand-in is built, upgraded, posed or given an expression. Part of asset-producer.
+description: The maiaCITY actor skill — people and animals rigged to move, in the Actors library (src/lib/actors, /app/actors): the stand-in a shot is blocked with and the animals of the worlds (chickens, rabbits, geese, goats, sheep, frogs, bees, ants, songbirds, fish), where an actor lives (a species on a body plan, a cast line, skins meshed off the page, crowds), clips and poses, versions behind an argument or frozen files, and the stand-in's face (MakeHuman CC0 head, blend shapes joy and friendly from measured expression units, catchlights that survive the distance). Use it whenever a person or an animal is built, upgraded, posed or given an expression. Machines are machine-skill's (our notes in its ours.md). Part of asset-producer.
 ---
 
-# Actors: what we learned rigging them
+# Actors: people and animals
 
-Whatever moves is an actor in `src/lib/actors`, shown in `/app/actors` (admin). How the rig works, the stand-in's
-poses, the excavators, birds and animals are in `production-designer`'s `models.md` ("The actors"). This skill is
-what the machines and the stand-in's head taught us since.
+The Actors are the people and animals rigged to move, in `src/lib/actors`, shown in `/app/actors` (admin): the
+stand-in a shot is blocked with, and the animals of the worlds kind by kind. Machines are rigged the same way and
+built in the same folder, but listed apart in `/app/machines` (`machine-skill`, our notes in its `ours.md`). How the
+rig works, the stand-in's poses, birds and animals are in `production-designer`'s `models.md` ("The actors"). This
+skill is what the people and animals taught us since.
 
-## Machines as actors
+## Where an actor lives
 
-- Every part a mechanic would name is its own bone (`p.<id>`) with a card: the LifeTrac v25 has 135, the Power Cube
-  VII 28. `rig()` records which part each group is, and the cast's `catalog` names them, so `/app/actors` can tap a
-  part and show it alone, assembled or exploded, and play its assembly step by step.
-- Build machines from the shared kit (`machineKit` in `src/lib/actors/parts.js`) and make them **combinable**: a
-  machine is also a function that adds its parts to any other rig (`powerCubeParts(kit, { at, joints, assembly,
-  step })`, `forkliftParts` and `forkliftPose`, `clickLockPieces()`), so the LifeTrac carries a Power Cube on its
-  cradle and a goods pod carries four forklifts. Samuel wants every actor combinable.
-- A hydraulic ram is two joints, the barrel and the rod, kept on the line between their two pins every frame
-  (`excavator-rig.js`).
-- A bigger machine is a different kind, never a smaller one scaled up.
-- A move is a clip (`'pull out'`, `'service'`) and a held state is a pose (`'drawer out'`, `'pulled out'`), so the
-  viewer and a game both play them.
-- Research the real machine from its open CAD and bills of materials (Open Source Ecology's GitHub). Their wiki,
-  YouTube and Dozuki are blocked by the cloud proxy (403); search extracts and GitHub work. Say which numbers are
-  inferred (the ElectroCube's alternator).
+- A kind in `LIST` in `src/lib/actors/index.ts` (`{ id, label, note, from, variants }`): the stand-in, or an animal's
+  breeds and coats, each a line `animal(id, label, note)`.
+- An animal is its species (`./species/`: `goat.ts`, `goose.ts`, `songbird.js` …) on its body plan (`./plans/`:
+  `quadruped.ts`, `bird.ts`) and a line in `./casts.ts`, which is what a world asks for and what the gallery lists.
+- Its skin takes too long to mesh in a frame, so it is meshed in workers off the page (`./build.ts`, `prepare(id)`,
+  the variant's `ready`); a film waits for every skin it asks for (`settled`).
+- Many of one kind are a crowd (`./crowd.ts`): the nearest rigged, the rest instances at rest in coarser shapes,
+  chosen from the eye alone so a shot draws the same frame every time (`world-skill`).
+- A move is a clip (`walk`, `graze`, `wave`) and a held state is a pose (`sit`, `kneel`); the gallery and a game play
+  the same ones. The stand-in's joints can be turned by hand in the gallery and the pose copied out as data.
 
 ## Versions
 
-- Same as models: an actor's `HISTORY` in `src/lib/actors/index.ts`, the older builders frozen in files beside it
-  (`human.v5.ts`, `pod.v4.js`, `excavator.v2.js`, `batterypack.v1.js`) or kept behind a version argument
-  (`batteryPack(v)`, `batteryCube(v)`, `human(look, height, v)`). Each upgrade one step, one version.
-- When a cube carries packs, each cube version names the pack version it carries (cube v8 = packs v7).
+- An actor's `HISTORY` in `src/lib/actors/index.ts`, the older builders frozen in files beside it (`human.v5.ts`,
+  `plans/quadruped.v1.ts`, `plans/bird.v1.ts`) or kept behind a version argument (`human(look, height, v)`). Each
+  upgrade one step, one version; fingerprint the old ones (`asset-producer`'s `checking.md`; the stand-in v6 man is not
+  deterministic between calls, its other versions are).
+- A body plan's change is a version of every kind on it (the grazing fix took goats, sheep and rabbits to v2 at once).
 
 ## The stand-in's face
 
@@ -51,3 +49,9 @@ what the machines and the stand-in's head taught us since.
   1.8 mm on the pupil's edge (clear of the upper lid), on its own slightly emissive material (index 3) so it shows in
   shade and at night.
 - Seen from afar (`lowDetail`), parts under 12 % of the largest are left off: eyes, glints, toes.
+
+## Checking
+
+Headless Chromium (swiftshader) draws nothing of a skinned actor in the gallery's live turntable: shoot a person or an
+animal from a throwaway route that renders once (`asset-producer`'s `checking.md`), at the distance it is seen at,
+by day, in shade and at night.

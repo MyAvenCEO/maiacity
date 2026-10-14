@@ -1,9 +1,13 @@
 ---
-name: model-skill
-description: The maiaCITY model skill — props, vehicles, tents, equipment and furniture in the Models library (src/lib/models, /app/models): where a model lives (LIST, HISTORY, REAL_SIZES and the size test), versions that never break a game (a version argument or a new builder under the same id, fingerprints), size as a measure never a scale (one table of measures per design), models that pitch, open and build in named steps (setPitch, setOpen, setBuild, work), parts and the catalog the viewer picks, explodes and plays, walking in (userData.walk, headroom), lamps and night glow, and what went wrong once. Use it whenever a model is built, upgraded, resized, taken apart or handed to a game. Part of asset-producer.
+name: thing-skill
+description: The maiaCITY thing skill — the still things the worlds are built from (props, vehicles, tents, equipment and furniture) in the Things library (src/lib/models, /app/models; the code keeps the name models): where a thing lives (LIST, HISTORY, REAL_SIZES and the size test), versions that never break a game (a version argument or a new builder under the same id, fingerprints), size as a measure never a scale (one table of measures per design), models that pitch, open and build in named steps (setPitch, setOpen, setBuild, work), parts and the catalog the viewer picks, explodes and plays, walking in (userData.walk, headroom), lamps and night glow, and what went wrong once. Use it whenever a thing is built, upgraded, resized, taken apart or handed to a game. What works by moving parts is a machine (machine-skill); people and animals are actors (actor-skill). Part of asset-producer.
 ---
 
-# Models: what we learned building them
+# Things: what we learned building them
+
+The Things are the still models. The app was called Models; its address (`/app/models`) and the code's names
+(`src/lib/models`, `MODELS`, `ModelsView`) are kept. What works by moving parts is a machine (`machine-skill`, our
+notes in its `ours.md`); people and animals are actors (`actor-skill`).
 
 The conventions every model keeps (origin on the floor, back towards −z, shared materials, seeded randomness, handles
 in `userData`) are in `production-designer`'s `models.md`. This skill is what building the V1 props, the pickup, the
@@ -26,7 +30,7 @@ dome, storage and bell tents taught us on top of them.
 - A game imports a builder by name and keeps building what it built until its own thread switches. So an upgrade
   never changes what an existing call returns: either the builder takes a version (`pickup({ v: 2 })`,
   `batteryPack(v)`, `human(look, h, v)`) and the old branch stays exactly as it was, or the old export stays as it is
-  and the new one gets a new name under the same Models id (`domeTent` v1 and `storageTent` v2 of `dome-tent`).
+  and the new one gets a new name under the same Things id (`domeTent` v1 and `storageTent` v2 of `dome-tent`).
 - When a refactor touches an old builder (making its size a parameter, sharing a helper), fingerprint it before and
   after (`asset-producer`'s `checking.md`): the hash of every attribute must not change.
 - One step at a time: Samuel asks for an upgrade, it becomes one version with one dated note. Never fold two asks into
@@ -55,9 +59,9 @@ dome, storage and bell tents taught us on top of them.
 - Each part is a group tagged `userData.part = id`; the model lists them in `userData.parts` and moves them apart
   with `userData.explode(k)`.
 - `userData.catalog = { assemblies, parts, steps, ranges, sources, play, seconds }` names them, groups them, says
-  which step each belongs to and where its facts come from. With it, the Models viewer picks a part on tap, shows it
-  alone, explodes the model and plays or scrubs its steps (`src/lib/app/ModelsView.svelte`). The actors' version of
-  the same idea is in `actor-skill`.
+  which step each belongs to and where its facts come from. With it, the Things viewer picks a part on tap, shows it
+  alone, explodes the model and plays or scrubs its steps (`src/lib/app/ModelsView.svelte`). The machines' version of
+  the same idea is in `machine-skill`'s `ours.md`.
 
 ## Walked into, lit at night
 

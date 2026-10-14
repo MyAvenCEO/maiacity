@@ -1,6 +1,6 @@
 /*
  * A MACHINE'S PARTS — for an actor that is a machine taken apart: every piece of it its own part, picked on the
- * turntable one by one (/app/actors/), each with its card — what it is, what it does, how it moves and what drives
+ * turntable one by one (/app/machines/), each with its card — what it is, what it does, how it moves and what drives
  * it, its numbers, and the build step it goes on at. The LifeTrac (./lifetrac.js) is built so.
  *
  * `machineKit` collects the parts as they are made: each part's pieces ride a bone of its own (`p.<id>`), hung from the

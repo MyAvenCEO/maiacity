@@ -31,8 +31,8 @@ for the studio's film camera. A world chooses only its size (how far shadows and
 2. **Register it**: `game/film/worlds.js` and `game/film/shot.js`, a film page `/games/<world>/`, an admin page
    `/app/worlds/<world>/` with the time control, a line in `WORLDS` (`src/lib/app/places.ts`).
 3. **The world keeps only its shell** (walls, windows, doors, what is outside) and its lights. Everything else comes
-   from the libraries: models (`model-skill`), actors (`actor-skill`), plants (`plant-skill`), the floor
-   (`biome-skill`), buildings (`building-skill`).
+   from the libraries: things (`thing-skill`), machines (`machine-skill`'s `ours.md`), people and animals
+   (`actor-skill`), plants (`plant-skill`), the floor (`biome-skill`), buildings (`building-skill`).
 4. **A real place**: one plan file of measures that every part is built from (the backyard's `layout.ts`), so a wall
    moved is moved everywhere; textures at their real size (every UV in metres); from map data where it exists (the
    Isar from OpenStreetMap and terrain, `scripts/worlds/isar-map.py`); from photos for a room, with the estimates

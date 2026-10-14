@@ -1,5 +1,5 @@
 <!--
-	A turntable of models (src/lib/models): the Assets (/app/models/) and the Buildings (/app/buildings/) both show
+	A turntable of models (src/lib/models): the Things (/app/models/) and the Buildings (/app/buildings/) both show
 	theirs with it, one at a time — drag to turn round it, scroll to come closer — on a grid of 10 cm squares, with its
 	measure. A model that can be walked (`userData.walk`: the containers) is walked in first person, the sandboxes'
 	walker; one with a roof (`userData.roof`) can have it lifted off to look in from above; a rigged machine
@@ -10,7 +10,7 @@
 	with `enter` picking one steps inside it at once; with `inPlace` (the Buildings) it is walked where it stands, the
 	list kept beside it, never full screen. A building being built says how far it is over the canvas. A model in its
 	parts (`userData.catalog`: the bell tent, its fire place) has every part to pick, on it or from its list, each with
-	its card, shown alone if asked (the rest a ghost round it), as the Actors' machines have theirs; it is taken apart
+	its card, shown alone if asked (the rest a ghost round it), as the Machines (/app/machines/) have theirs; it is taken apart
 	(`userData.explode`) and put up step by step (`userData.setPitch` or `setBuild`), played or scrubbed.
 -->
 <script>

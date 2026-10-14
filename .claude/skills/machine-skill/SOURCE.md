@@ -3,7 +3,9 @@
 `SKILL.md` and `references/` here are AirSup's own text, copied word for word from
 [AirsupHQ/machine-skill](https://github.com/AirsupHQ/machine-skill) at commit `e0bd066` (`e0bd066ac5beaf48512935de2fc0f0e55636853a`), under its MIT licence
 (`LICENSE`, kept beside them). The only change is the skill's `name` in the front matter (`machine-skill`, so it
-matches this folder). Keep it that way: our own know-how goes in the master skill, `asset-producer`, never in here.
+matches this folder). Keep it that way: our own know-how never goes into `SKILL.md` or `references/`. How a
+machine joins our library and the Machines app is in `ours.md` beside them; the laws over both are in the master
+skill, `asset-producer`.
 
 The skill is not installed. Its tools (kit/, scripts/, film/ and examples/) stay in that repository. When a step of `SKILL.md` names one, clone
 the repository at that commit into the scratchpad and run it from there, never inside this repo:
