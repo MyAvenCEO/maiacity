@@ -687,7 +687,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	cubeCable.visible = false;
 	world.add(cubeCable);
 	// the pickup at its real size (5.4 m), and the powercube it fetches, drawn as a small silenced cube that fits its bed
-	const truck = named(pickup(), 'asset:pickup');
+	const truck = named(pickup({ v: 1 }), 'asset:pickup'); // v1 for now: its cab is opened up below (v2 and the real props come next)
 	// the powercube: the ElectroCube, OSE's Power Cube frame with an alternator in place of its hydraulics
 	const cubeCast = electroCube(); // the ElectroCube (#608): the tent's power
 	cubeCast.rig.pose(cubeCast.clips.off(0));
