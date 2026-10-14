@@ -3812,13 +3812,15 @@ function proof(S) {
 const P3_BASIC = [FOOD, ENERGY, HOUSING, WATER], P3_EXTRA = [HOUSING, GOODS, CARE, EXPER];
 /**
  * (round-next-2) the three yardsticks side by side, per tenth: (a) each extra (canon #19 as above); (b) taste-adjusted: a
- * fall counts only by what is left of it once the change in what the tenth wanted of the good, with tastes as they moved,
- * is taken out (Stone–Geary: what a tenth buys of a good above its basic need is its budget share of the good times its
- * budget above the basics, over the price; the share moves with the city's tastes, so the quantity is scaled back by
- * the share's move); (c) one basket: the extras together at the day-1 prices. Basics at need and the basket rising over
- * the run are the same in all three. And each fall of (a) split into its causes: the taste share, the tenth's budget
- * above the basics (real), the good's price against the tenth's other prices, supply (what it got against what it
- * asked for) and the rest (satiation of other goods and rounding)
+ * fall of (a) counts only when the tenth got less of the good than it wanted with its taste as it moved, that is, when
+ * the fall is still over 2 % once the part a fall in the taste share explains is taken out (Stone–Geary: what a tenth
+ * buys of a good above its basic need is its budget share of the good times its budget above the basics, over the
+ * price; the share moves with the city's tastes, so when it fell the later quantity is scaled back up by the share's
+ * fall); (c) one basket: the extras together at the day-1 prices. Basics at need and the basket rising over the run are
+ * the same in all three. And each fall of (a) split into its causes: the taste share, the tenth's budget for the goods
+ * not at satiation (real), the good's price against the tenth's other prices, supply (what it got against what it
+ * asked for) and the rest (the mix of people in the tenth, each with tastes of their own, and single people at
+ * satiation)
  */
 const tasteShare = (tg, row, g) => {
 	let den = 0;
@@ -3829,8 +3831,8 @@ function p3Tenths(S) {
 	const Y = S.Y.filter((y) => y.dyn && y.dyn.tenH && y.t - (y.year - 1) * 365 >= 365 - 1e-6);
 	const failures = [], excused = [], basicsFail = [], riseFail = [], failed = [], failedNoTaste = [], failedBasket = [], failedTasteAdj = [], tenths = [];
 	const fails = S.events.filter((e) => e.type === 'fail');
-	const causes = ['taste', 'income', 'price', 'supply', 'other'], drops = { n: 0, by: {}, byNoTaste: {}, failNear: 0, failNearBy: {}, nNoTaste: 0 };
-	for (const c of causes) (drops.by[c] = 0), (drops.byNoTaste[c] = 0), (drops.failNearBy[c] = 0);
+	const causes = ['taste', 'income', 'price', 'supply', 'other'], drops = { n: 0, by: {}, byNoTaste: {}, failNear: 0, failNearBy: {}, nNoTaste: 0, byGood: {}, partsNoTaste: {} };
+	for (const c of causes) (drops.by[c] = 0), (drops.byNoTaste[c] = 0), (drops.failNearBy[c] = 0), (drops.partsNoTaste[c] = 0);
 	for (const [by, key] of [['holdings', 'tenH'], ['aven', 'tenA']])
 		for (let x = 0; x < 10; x++) {
 			const sl = (y, k) => (y.dyn[k] ? y.dyn[k].slice(x * NHH, (x + 1) * NHH) : null);
@@ -3842,12 +3844,13 @@ function p3Tenths(S) {
 			});
 			// (b): the quantity at b with the taste share of a; (the causes) what the tenth paid a unit, its budget above the basics
 			const price = (i, h) => (spend[i] && rows[i][h] > 0 && spend[i][h] > 0 ? spend[i][h] / rows[i][h] : null);
-			const budget = (i) => {
+			// (the budget left for the goods not at satiation, as in the taste share: what a satiated good takes is fixed)
+			const budget = (i, g) => {
 				if (!want[i]) return null;
 				let X = 0;
 				for (let h = 0; h < NHH; h++) {
 					const p = price(i, h);
-					if (p === null) continue;
+					if (p === null || (h !== g && rows[i][h] >= SAT[h] * 0.98)) continue;
 					X += Math.max(0, want[i][h] - BASIC[h]) * p;
 				}
 				return X > 0 ? X : null;
@@ -3862,9 +3865,11 @@ function p3Tenths(S) {
 						// (diagnostic: did the city's taste for the good fall over the window? Tastes drift in this model)
 						if (fall > 0.02 && (!wb || fall > wb.fall)) wb = { fall, from: yr[a], to: yr[b], taste: tg[b][g] / tg[a][g] - 1, ia: a, ib: b };
 						const sa = tasteShare(tg[a], rows[a], g), sb = tasteShare(tg[b], rows[b], g);
-						const adj = sa > 0 && sb > 0 && vb > BASIC[g] ? BASIC[g] + ((vb - BASIC[g]) * sa) / sb : vb;
+						// only a fall counts, and only by what a fall in the taste share does not explain (a rise in taste
+						// makes no fall out of a steady quantity)
+						const adj = sa > 0 && sb > 0 && sb < sa && vb > BASIC[g] ? BASIC[g] + ((vb - BASIC[g]) * sa) / sb : vb;
 						const fT = 1 - adj / va;
-						if (fT > 0.02 && (wt === null || fT > wt)) wt = fT;
+						if (fall > 0.02 && fT > 0.02 && (wt === null || fT > wt)) wt = fT;
 					}
 					const sat = rows[b][g] >= SAT[g] * 0.98;
 					if (wt !== null && !sat) okT = false;
@@ -3892,7 +3897,7 @@ function p3Tenths(S) {
 							if (pa !== null && pb !== null) (num += rows[ia][h] * pb), (den += rows[ia][h] * pa);
 						}
 						const lPI = num > 0 && den > 0 ? Math.log(num / den) : 0;
-						const pga = price(ia, g), pgb = price(ib, g), Xa = budget(ia), Xb = budget(ib);
+						const pga = price(ia, g), pgb = price(ib, g), Xa = budget(ia, g), Xb = budget(ib, g);
 						const cP = pga !== null && pgb !== null ? -(Math.log(pgb / pga) - lPI) : 0;
 						const cI = Xa !== null && Xb !== null ? Math.log(Xb / Xa) - lPI : 0;
 						const cO = tot - cT - cS - cP - cI;
@@ -3902,14 +3907,24 @@ function p3Tenths(S) {
 					}
 					rec.cause = cause;
 					rec.failNear = fails.some((e) => e.product === g && yrOf(e.t) > yr[ia] && yrOf(e.t) <= yr[ib]);
-					drops.n++, drops.by[cause]++;
-					if (wb.taste >= 0) drops.nNoTaste++, drops.byNoTaste[cause]++;
+					drops.n++, drops.by[cause]++, (drops.byGood[PNAME[g]] = (drops.byGood[PNAME[g]] || 0) + 1);
+					if (wb.taste >= 0) {
+						drops.nNoTaste++, drops.byNoTaste[cause]++;
+						if (rec.parts) for (const c of causes) drops.partsNoTaste[c] += rec.parts[c];
+					}
 					if (rec.failNear) drops.failNear++, drops.failNearBy[cause]++;
 				}
 			if (rows.length >= 2) {
 				const f0 = rows[0], f1 = rows[rows.length - 1], ch = (g) => (f0[g] > 0 ? f1[g] / f0[g] - 1 : f1[g] > 0 ? Infinity : 0);
 				const up = P3_EXTRA.filter((g) => ch(g) >= 0.05), down = P3_EXTRA.filter((g) => ch(g) < -0.02 && !(f1[g] >= SAT[g] * 0.98));
-				if (!up.length || down.length) (ok = okNT = okT = false), riseFail.push({ by, tenth: x + 1, up: up.map((g) => PNAME[g]), down: down.map((g) => PNAME[g]) });
+				// (b): a fall from the first year to the last counts only by what a fall in the taste share does not explain
+				const L = rows.length - 1, downT = down.filter((g) => {
+					const sa = tasteShare(tg[0], f0, g), sb = tasteShare(tg[L], f1, g);
+					const adj = sa > 0 && sb > 0 && sb < sa && f1[g] > BASIC[g] ? BASIC[g] + ((f1[g] - BASIC[g]) * sa) / sb : f1[g];
+					return 1 - adj / f0[g] > 0.02;
+				});
+				if (!up.length || down.length) (ok = okNT = false), riseFail.push({ by, tenth: x + 1, up: up.map((g) => PNAME[g]), down: down.map((g) => PNAME[g]) });
+				if (!up.length || downT.length) okT = false;
 			}
 			if (!ok) failed.push(`${by} ${x + 1}`);
 			if (!okNT) failedNoTaste.push(`${by} ${x + 1}`);
