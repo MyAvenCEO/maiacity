@@ -1,19 +1,21 @@
 <!--
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its pages, as a database studio lists them: its notes, its todos and its Library of files, films,
-	pictures, PDFs and songs; its database (the query console, the table editor, its shares, schemas and lenses, and
-	its history, every signed edit); then its settings (About, Owners and devices, Sharing); and the page picked in
-	the middle. Each page has an address of its own
-	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
-	screen. The device picks who the person acts as in each vault, with no switch to flip (its world's `acting`): in a
-	vault their vault owns, directly or through owners of owners, they act as it, as its owners need no cap there;
-	elsewhere as the vault of theirs that holds the strongest cap over it, whose caps then decide what the page shows
-	and what it may do. At the foot, in the middle above the app's own buttons, what the page is doing, and why not.
-	Marks of the vaults none of theirs holds anything in are faded.
+	vault's name and its pages, as a database studio lists them: its notes, its todos, its articles and its Library of
+	files, films, pictures, PDFs and songs; its database (the query console, the table editor, its shares, schemas and
+	lenses, and its history, every signed edit); then its settings (About, Owners and devices, Sharing); and the page
+	picked in the middle. Each page has an address of its own (`#todos`), and so has each note (`#notes/` and its
+	entry), which opens as a docs app opens a document, on the whole screen, and each article (`#articles/` and its
+	entry), to read, and to edit as a note (`/edit`). The device picks who the person acts as in each vault, with no
+	switch to flip (its world's `acting`): in a vault their vault owns, directly or through owners of owners, they act
+	as it, as its owners need no cap there; elsewhere as the vault of theirs that holds the strongest cap over it, whose
+	caps then decide what the page shows and what it may do. At the foot, in the middle above the app's own buttons,
+	what the page is doing, and why not. Marks of the vaults none of theirs holds anything in are faded.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
+	import Article from './Article.svelte';
+	import Articles from './Articles.svelte';
 	import Database from './Database.svelte';
 	import Icon from './Icon.svelte';
 	import Library from './Library.svelte';
@@ -42,6 +44,7 @@
 			[
 				['notes', 'Notes', 'note'],
 				['todos', 'Todos', 'todo'],
+				['articles', 'Articles', 'article'],
 				['library', 'Library', 'library']
 			]
 		],
@@ -73,12 +76,17 @@
 	/** the pages older addresses name, by the page that shows the same now */
 	const MOVED = /** @type {Record<string, string>} */ ({ access: 'sharing', sync: 'sharing', cells: 'shares' });
 
-	/** The page an address names: `#todos`, a note's `#notes/` and its entry, else the notes. @param {string} hash */
+	/**
+	 * The page an address names: `#todos`, a note's `#notes/` and its entry, an article's `#articles/` and its entry, to
+	 * read, and with `/edit`, to edit as a note; else the notes.
+	 * @param {string} hash
+	 */
 	function parse(hash) {
-		const [at, entry] = hash.replace(/^#/, '').split('/');
+		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
 		const known = PAGES.find(([id]) => id === page)?.[0] ?? 'notes';
-		return { page: known, entry: known === 'notes' && /^[0-9a-f]{64}$/.test(entry ?? '') ? entry : '' };
+		const opens = (known === 'notes' || known === 'articles') && /^[0-9a-f]{64}$/.test(entry ?? '');
+		return { page: known, entry: opens ? entry : '', edit: opens && known === 'articles' && edit === 'edit' };
 	}
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
@@ -105,6 +113,9 @@
 	/** Open note `entry`, on the whole screen. @param {string} entry */
 	const open = (entry) => go(`notes/${entry}`);
 
+	/** Open article `entry` to read, on the whole screen. @param {string} entry */
+	const openArticle = (entry) => go(`articles/${entry}`);
+
 	// a note opens in its vault: its notes are where its back arrow goes
 	$effect(() => {
 		const entry = route.entry;
@@ -124,8 +135,14 @@
 
 <div class="shell" class:reading={!!route.entry}>
 	{#if route.entry}
-		{#key route.entry}
-			<Note {world} {actor} {api} {busy} entry={route.entry} />
+		{#key `${route.entry}${route.page}${route.edit}`}
+			{#if route.page === 'articles' && !route.edit}
+				<Article {world} {actor} {api} entry={route.entry} />
+			{:else if route.page === 'articles'}
+				<Note {world} {actor} {api} {busy} entry={route.entry} back="#articles/{route.entry}" backTo="The article" />
+			{:else}
+				<Note {world} {actor} {api} {busy} entry={route.entry} />
+			{/if}
 		{/key}
 	{:else}
 	<nav class="bar" aria-label="Vaults">
@@ -187,6 +204,8 @@
 		</header>
 		{#if tab === 'notes'}
 			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
+		{:else if tab === 'articles'}
+			<Articles {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openArticle} />
 		{:else if tab === 'todos'}
 			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 		{:else if tab === 'library'}
