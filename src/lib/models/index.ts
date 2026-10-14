@@ -17,7 +17,7 @@ import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, 
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, loadingRamp, pickup, solarPanel } from './village.js';
-import { SEED_PACKETS, backpack, dugEarth, markerSticks, seedPacket, waterBottle } from './planting.js';
+import { SEED_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
@@ -149,6 +149,7 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 		variants: Object.entries(SEED_PACKETS).map(([id, p]) => ({ id: `seed-packet-${id}`, label: p.label, note: `${p.label}, ${p.latin}`, make: () => seedPacket(id) }))
 	},
 	{ id: 'marker-sticks', label: 'Marker sticks', note: 'two sticks of square pine, 35 cm long and 12 mm across, pointed, their tops painted orange, pushed into the ground half a metre apart', usedIn: 'MaiaCity V1', make: () => markerSticks() },
+	{ id: 'plant-stake', label: 'Plant stake', note: 'a young tree’s stake of round peeled pine, 1 m long and 32 mm thick, axe-pointed, pushed in beside the seed; on a wire tied to its top a 10 × 7 cm waxed-cloth flag printed on both sides with the tree’s name and its plant', usedIn: 'MaiaCity V1', make: () => plantStake({ name: 'Samuel', seed: 'apple' }) },
 	{ id: 'dug-earth', label: 'Dug earth', note: 'a patch of turned soil 60 cm across, heaped a little, crumbs and clods on it, a hollow for the seed; it darkens and shines as it is watered', usedIn: 'MaiaCity V1', make: () => dugEarth() },
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
 	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() }
