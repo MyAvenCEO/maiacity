@@ -160,6 +160,9 @@ export const pairCount = (n) => (n * (n - 1)) / 2;
 /** Laborde's RTM rate from life expectancy: c = ln(ev/2) / (ev/2) */
 export const rtmRate = (ev) => Math.log(ev / 2) / (ev / 2);
 
+/** the life expectancy in Laborde's worked example (years) */
+export const RTM_LIFE = 80;
+
 /** the life expectancy whose RTM rate equals r (the branch above ev/2 = e) */
 export function lifeForRate(r = RATE) {
 	let lo = Math.E, hi = 1000;

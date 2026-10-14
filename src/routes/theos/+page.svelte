@@ -25,7 +25,7 @@
 		strictWorstEarly, bedsFromEnergy, decemberGap, SDE_CHECK, bundleMargin, treasuryShare, salesAfterLaw5, OLD_R,
 		EURO_BORDER, SEEDS, MELT_TESTS, passing, soleMakers, issueGap, SAME_SHOCK, CHAOS,
 		TEST_CITY, AVEN_RULE, POOL, CIRCLES, LVR_CASES, CRASH, GOVERNANCE, VERSION, SECONDS_YEAR, netHalfLife, retiredShare,
-		holderSeries, INFRA_MINDS, mindRange, SIM_NAMES, MODEL_VERSIONS, SIM_HISTORY, HYPOTHESES, COST_BAND, holdsCount
+		holderSeries, INFRA_MINDS, mindRange, SIM_NAMES, MODEL_VERSIONS, SIM_HISTORY, HYPOTHESES, COST_BAND, holdsCount, RTM_LIFE
 	} from '$lib/theos/model.js';
 
 	// Figure 10's simulation, run at build time (+page.server.js)
@@ -545,8 +545,8 @@
 			asked which way of creating money treats every generation the same: the people alive now and those not yet born.
 			His answer is a <em>universal dividend</em>: new money paid to every member alike, at a rate that depends on how
 			long people live <Cite k="laborie" />. (This paper keeps the word <em>dividend</em> for Law 5's share of each
-			sale, Section 4.) His rule sets the yearly rate from the life expectancy: for a life of 80 years, about
-			{pct(rtmRate(80) * 100, 1)}. The Ğ1 currency started in 2017 and uses this rule <Cite k="duniter" />. Remember
+			sale, Section 4.) His rule sets the yearly rate from the life expectancy: for a life of {RTM_LIFE} years, about
+			{pct(rtmRate(RTM_LIFE) * 100, 1)}. The Ğ1 currency started in 2017 and uses this rule <Cite k="duniter" />. Remember
 			his rule. Section 5.3 shows that theOS reaches the same rule by another road, once its money has settled
 			(Proposition 1).
 		</p>
@@ -913,7 +913,7 @@
 			can now compare the two systems closely. Laborde derives the rate of the dividend from one requirement: each
 			generation must co-create the same share of money over a life of <Tex tex={String.raw`e_v`} /> years:
 		</p>
-		<Tex display tex={String.raw`\begin{gathered} c = \frac{\ln(e_v/2)}{e_v/2} \\ e_v = 80 \;\Rightarrow\; c \approx ${fmt(rtmRate(80) * 100, 1)}\,\% \end{gathered} \tag{${EQ.rtm}}`} />
+		<Tex display tex={String.raw`\begin{gathered} c = \frac{\ln(e_v/2)}{e_v/2} \\ e_v = ${RTM_LIFE} \;\Rightarrow\; c \approx ${fmt(rtmRate(RTM_LIFE) * 100, 1)}\,\% \end{gathered} \tag{${EQ.rtm}}`} />
 		<p>
 			In Laborde's system, the money supply <Tex tex="M" /> of <Tex tex="N" /> members grows, and each member gets
 			<Tex tex={String.raw`c\,M/N`} /> a year. Measure a member's balance relative to the average,
@@ -956,7 +956,7 @@
 			Circles v2 (Section 3) <Cite k="circles2" />. Circles takes its {pc(CIRCLES.rate)} as a yearly rate, applied day by day. theOS melts continuously, so
 			{pc(RATE)} a year takes {pct(yearlyLoss() * 100, 1)} of an idle balance in a year. Read through ({EQ.rtm}),
 			{pc(RATE)} matches a life of <Tex tex={String.raw`e_v \approx ${tn(ev)}`} /> years, so it is gentler than
-			Laborde's {pct(rtmRate(80) * 100, 1)} for an 80-year life. The rate of {pc(RATE)} also has reasons of its own.
+			Laborde's {pct(rtmRate(RTM_LIFE) * 100, 1)} for a life of {RTM_LIFE} years. The rate of {pc(RATE)} also has reasons of its own.
 			It sets the half-life of any idle holding at {fmt(halfLife(), 1)} years. A balance left idle for ten years still
 			keeps {pct(decay(100, RATE, 10))} of its value. A fortune fades within a lifetime only while it earns less than
 			the melt (Section 5.4). The rate sets the steady state at {fmt(1 / RATE, 1)} years of issuance, a level that
