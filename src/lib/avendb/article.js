@@ -1,10 +1,9 @@
 // Articles in avenDB: each an entry of type `article` in a vault, of avenDB's own article schema (./ops.js
-// `articleRecord`): its title, and its text, one Markdown text. One written before that schema is a Markdown document,
-// as a note is, its text in its first paragraph; both read alike. Its pictures are files of the vault's
-// Library, each named by its content hash, its BLAKE3 hash in hex with its ending (`<hash>.jpg`), as the site's media
-// vault names them, and the article names them so (`![what it shows](<hash>.jpg)`). Who wrote it is the vault its first
-// edit acted for, and when, that edit's time (an entry's `by` and `created`): both come with every signed edit, so the
-// record says neither. It is edited, proposed to, merged and made a variant of as a note is (./Note.svelte).
+// `articleRecord`): its title, and its text, one Markdown text. Its pictures are files of the vault's Library, each
+// named by its content hash, its BLAKE3 hash in hex with its ending (`<hash>.jpg`), as the site's media vault names
+// them, and the article names them so (`![what it shows](<hash>.jpg)`). Who wrote it is the vault its first edit acted
+// for, and when, that edit's time (an entry's `by` and `created`): both come with every signed edit, so the record says
+// neither. It is edited, proposed to, merged and made a variant of as a note is (./Note.svelte).
 
 import { Marked } from 'marked';
 

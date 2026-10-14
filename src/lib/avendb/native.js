@@ -20,18 +20,11 @@ export function call(name, ...args) {
 
 /**
  * What the app's folder holds: `meta`, what opens the device there (its name, relay, salt's own bytes, and its
- * passkey's credential and key), and the device, if it is open; or `null` if the app can't run avenDB natively, as
- * when its device didn't build with the app, and the page runs it instead.
- * @returns {Promise<{ meta: any, open: boolean, device: any } | null>}
+ * passkey's credential and key), and the device, if it is open. It fails if the app can't run avenDB natively, as when
+ * its device didn't build with the app.
+ * @returns {Promise<{ meta: any, open: boolean, device: any }>}
  */
-export async function status() {
-	try {
-		return await call('status');
-	} catch (e) {
-		console.warn(`avenDB runs in the page: ${/** @type {Error} */ (e).message}`);
-		return null;
-	}
-}
+export const status = () => call('status');
 
 /** Bytes as base64, as the app's device takes a file's chunks. @param {Uint8Array} bytes */
 export function base64(bytes) {
