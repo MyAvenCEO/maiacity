@@ -1947,7 +1947,7 @@
 					{#if sole}
 						{@const soleBasics = sole.filter((g) => ['food', 'energy', 'housing'].includes(g))}
 						{@const soleOther = sole.filter((g) => !['food', 'energy', 'housing'].includes(g))}
-						<tr><td>C2 Competition</td><td>{soleBasics.length ? 'Met only in part' : 'Met'}: water had one seller throughout{soleBasics.length ? `, and by year ${SIM.years} ${list(soleBasics)} each came from one COOP alone` : ''}{soleOther.length ? `; so did ${list(soleOther)}, which ${soleOther.length > 1 ? 'are not basics' : 'is not a basic'}` : ''} (Table {TAB.rivals}). After the {DYN.failures + DYN.exits} ends, {shortOr(PROOF.endedShort)}</td></tr>
+						<tr><td>C2 Competition</td><td>{soleBasics.length ? 'Met only in part' : 'Met'}: {soleBasics.length ? `by year ${SIM.years}, ${list(soleBasics)} each came from one COOP alone` : `in year ${SIM.years}, every basic but water had more than one seller`}{soleOther.length ? `; so did ${list(soleOther)}, which ${soleOther.length > 1 ? 'are not basics' : 'is not a basic'}` : ''}. Water, which C2 leaves to the City COOP, had one seller throughout (Table {TAB.rivals}). After the {DYN.failures + DYN.exits} ends, {shortOr(PROOF.endedShort)}</td></tr>
 					{/if}
 					<tr><td>C3 The bootstrap (Section 12.4)</td><td>Not modelled: the checks start on day {PROOF.fromDay}, when every person holds MIND, and the founding is reported on its own (Section 11.2.3)</td></tr>
 					<tr><td>C4 Spread ownership</td><td>Not modelled: {pc(ownerCity.share)} of what the owner-only people held was cityMIND, which pays almost nothing</td></tr>
@@ -2184,8 +2184,8 @@
 		<p>
 			<strong>One seed, one history.</strong> A seed fixes the random events of a run, but each event also depends on
 			what happened before. When a rule moves one number by a hair, a random draw lands on a different event. From then
-			on, the run takes another path. We showed this with an earlier version of {SIM_NAMES.model},
-			{SIM_NAMES.versions.idle} (Table {TAB.versions}), by moving the pools' part on the main seed. At
+			on, the run takes another path. We showed this with an earlier version of {SIM_NAMES.model}
+			({SIM_NAMES.versions.idle} in Table {TAB.versions}), by moving the pools' part on the main seed. At
 			{fmt(hairLow.pool, 4)} of each HEART instead of {fmt(POOL_SHARE, 1)}, {shortWords(hairLow)}, and all three
 			checks {hairLow.pass ? 'passed' : 'failed'}. At {fmt(hairHigh.pool, 4)}, {shortWords(hairHigh)}. The old pool
 			rule did the same. At {fmt(oldLow.pool, 4)}, {shortWords(oldLow)}; at {fmt(oldHigh.pool, 4)},
@@ -2342,7 +2342,10 @@
 			<figcaption>
 				<strong>Figure {FIG.cycle}.</strong> MIND goes round. What treasuries pay out comes back through what they sell,
 				and little melts on the way. At each sale (the gold dot), the Law 5 share goes at once back to the holders, and
-				only the rest reaches the treasury. The gold coins are MIND, and the widths show the simulation's last ten years. The buttons
+				only the rest reaches the treasury. A thin arrow from the sale to the pools carries the pools' own Law 5
+				dividends, {fmt(RT.pools.in.dividends, 2)} MIND a person a day.{#if RT.retiredMind > 0}{' '}Dashed arrows show the
+					MIND retired with COOPs that ended, {fmt(RT.retiredMind, 2)} MIND a person a day.{/if} The gold coins are MIND,
+				and the widths show the simulation's last ten years. The buttons
 				switch to the earlier static world, where people spent {pc(STATIC.spent)} and {pc(STATIC.walletMelt)}
 				melted.
 			</figcaption>
@@ -2511,7 +2514,7 @@
 			/>
 			<figcaption>
 				<strong>Figure {FIG.deciles}.</strong> Real consumption at the prices of day 1, on a log scale, where each step
-				up is ten times as much. The poorest tenth are exactly the {OWNER_ONLY.count} owner-only people.{#if PROOF.short}
+				up is ten times as much. The poorest tenth are exactly the {OWNER_ONLY.count} owner-only people.{#if PROOF.short}{' '}
 					The line marks year {PROOF.worstYear}, when {worstGoods} ran short after a capacity shock.{/if}
 			</figcaption>
 		</figure>
@@ -2640,7 +2643,7 @@
 		<p>
 			Dividends make holding pay. In the simulation, people buy far more than basics. Dividends are
 			{pc(DYN.yield, 1)} a year of the MIND that others hold, so a year's sales are about {pc(impliedSales())} of
-			it.{#if DYN.yield > RATE} So the yield alone is above the melt, and it breaks the sales bound of Section 5.4:
+			it.{#if DYN.yield > RATE}{' '}So the yield alone is above the melt, and it breaks the sales bound of Section 5.4:
 				sales of at most {pc(salesBound())} of that MIND a year.{/if} That bound assumes that prices and COOPs stay the
 			same. What matters is <Tex tex={String.raw`\mu`} />: dividends plus price changes. In HEARTS, the average MIND
 			neither rises nor falls, because ({EQ.unit}) fixes it at 1. In the last ten years, price changes
@@ -2705,9 +2708,10 @@
 		<p>
 			<strong>Law 5 stays at {pc(DIVIDEND_SHARE)}.</strong> A lower share pays owners less: at {pc(MT.law10.share)},
 			the dividend yield was {pc(MT.law10.new.yieldMid, 1)} on the median seed, against {pc(DYN.yield, 1)} in the main
-			run. We keep {pc(DIVIDEND_SHARE)}, and we say plainly what that means.{#if SN.below < SEEDS.n} On
-				{seeds(SEEDS.n - SN.below)} of the {SEEDS.n}{SN.marginMinSeed === SIM.seed ? ', the main seed among them' : ''},
-				holding beat the melt, so there Proposition 2 sets no bound.{/if} On the same-shock seeds,
+			run. We keep {pc(DIVIDEND_SHARE)}, and we say plainly what that means.{#if SN.below < SEEDS.n}{' '}{SEEDS.n - SN.below === 1 && SN.marginMinSeed === SIM.seed
+					? `Of the ${SEEDS.n} seeds, holding beat the melt only on the main seed`
+					: `On ${seeds(SEEDS.n - SN.below)} of the ${SEEDS.n}${SN.marginMinSeed === SIM.seed ? ', the main seed among them' : ''}, holding beat the melt`},
+				so there Proposition 2 sets no bound.{/if} On the same-shock seeds,
 			<Tex tex={String.raw`\mu`} /> stayed below the melt on {SS.new.below} of {SS.n}. A bound on every seed, if there
 			is one, may come from the levers above, or from Avens that spread holdings (C4), whose effect on
 			<Tex tex={String.raw`\mu`} /> is open (Section 12.5). {cap(SIM_NAMES.testCity)} must measure
@@ -2824,7 +2828,7 @@
 				was {pc(DYN.mu, 1)} in the last ten years of the main run{DYN.mu >= RATE
 					? ', above the melt, so on the main seed Proposition 2 sets no bound'
 					: ', below the melt'} (Section 11.2.5). It was below the melt on {SN.below} of {SEEDS.n} seeds, and on
-				{SS.new.below} of {SS.n} seeds with the same shocks.{#if SN.below < SEEDS.n || SS.new.below < SS.n} So
+				{SS.new.below} of {SS.n} seeds with the same shocks.{#if SN.below < SEEDS.n || SS.new.below < SS.n}{' '}So
 					Proposition 2 cannot rely on it on every seed.{/if} In the last ten years, {variationsMuAbove()} of the
 				{LADDER.length - 1} variations reached {pc(RATE)} or more. Proposal (untested): one of the levers of Section
 				11.2.5, or C4. Avens that spread holdings shrink <Tex tex={String.raw`\sigma_W`} />; whether they lower
@@ -2868,7 +2872,7 @@
 				? `, and ×${fmt(bundleMargin(law35.bundleMax), 1)} with Law 5 at ${pc(law35.share)}`
 				: ''}. Yet owner-only people went short in {ownerShort} of the {LADDER.length} runs{V('main').checks[1]
 				? ''
-				: ', the main run among them'}.{#if LADDER.filter((v) => !v.checks[1]).every((v) => !v.checks[0])} In each of
+				: ', the main run among them'}.{#if LADDER.filter((v) => !v.checks[1]).every((v) => !v.checks[0])}{' '}In each of
 				those runs, the basics themselves ran short (part 1).{/if} Law 5's share and the reserves are in Section 11.2.5.
 			One more lesson follows: growth must come from somewhere. Without productivity growth, food ran short in
 			{V('prod0').shortYears} of the {SIM.years} years, on up to {pc(V('prod0').worstYearShare)} of person-days (year
@@ -2892,7 +2896,7 @@
 				: ''} (<em>p</em> = {pv(SS.law5.tests.short)}).
 		</p>
 		<p>
-			An earlier version of {SIM_NAMES.model}, {SIM_NAMES.versions.idle} (Table {TAB.versions}), did not pay Law 5 to
+			An earlier version of {SIM_NAMES.model} ({SIM_NAMES.versions.idle} in Table {TAB.versions}) did not pay Law 5 to
 			the pools. With it, we tested the idle-plant rule itself the same way. The rule cut food COOP failures from
 			{SS.fix.no.food} to {SS.fix.yes.food}: fewer on {SS.fix.tests.food.better} seeds, and more on
 			{noneOr(SS.fix.tests.food.worse)} (<em>p</em> = {pv(SS.fix.tests.food)}). But it left the person-days short
@@ -3095,8 +3099,9 @@
 			{#if MODEL_VERSIONS.at(-1).seeds && MODEL_VERSIONS.at(-2).seeds}
 				{@const now = MODEL_VERSIONS.at(-1)}
 				{@const before = MODEL_VERSIONS.at(-2)}
-				In {SIM_NAMES.model}, {SIM_NAMES.versions[now.id]} passed all three checks on {now.seeds.pass} of {SEEDS.n}
-				seeds, against {before.seeds.pass} for {SIM_NAMES.versions[before.id]}. <Tex tex={String.raw`\mu`} /> stayed
+				In {SIM_NAMES.model}, the newest version ({SIM_NAMES.versions[now.id]}) passed all three checks on
+				{now.seeds.pass} of {SEEDS.n} seeds, against {before.seeds.pass} for the version before it
+				({SIM_NAMES.versions[before.id]}). <Tex tex={String.raw`\mu`} /> stayed
 				below the melt on {now.seeds.below} seeds, against {before.seeds.below}.
 			{/if}
 			{#if SIM_HISTORY.length > 1}
@@ -3150,8 +3155,8 @@
 				and shocks, and Law 5 with and without the pools.
 			</li>
 			<li>
-				<strong>The upgrades of {SIM_NAMES.model}.</strong> Each upgrade runs against {SIM_NAMES.versions.law5all} on the
-				same {SS.n} seeds with the same shocks. They target:
+				<strong>The upgrades of {SIM_NAMES.model}.</strong> Each upgrade runs against this paper's main run
+				({SIM_NAMES.versions.law5all}) on the same {SS.n} seeds with the same shocks. They target:
 				<ul>
 					<li>one yardstick: part 3 by tenths of holdings and of Aven output, in real units where the model has them, and daily steps (Section 11.1);</li>
 					<li>food: a price floor that counts rot and the rent on idle plant, a food stock for a dark winter, and a price that reads the coming harvest;</li>
@@ -3162,8 +3167,8 @@
 					<li>failed COOPs: a successor carries on the failed COOP's MIND, and an ended COOP's other MINDs go to the City COOP;</li>
 					<li>competition: a founding signal on unmet need, and rivals that copy a leader's technology after a delay.</li>
 				</ul>
-				It also measures each person's lasting return and the parts of <Tex tex={String.raw`\mu`} />, compares the two
-				rules for where Avens invest (Section 7), and logs the bound that Law 5 sets on the strict test. A new main run
+				They also measure each person's lasting return and the parts of <Tex tex={String.raw`\mu`} />, compare the two
+				rules for where Avens invest (Section 7), and log the bound that Law 5 sets on the strict test. A new main run
 				then switches on every upgrade that helped.
 			</li>
 		</ol>
@@ -3184,10 +3189,10 @@
 		<h2><span>12</span>Limitations and open problems</h2>
 		<p>
 			A blueprint is only scientific if it says where it could fail. Each item below names an open problem, a rule that
-			we propose for it, and how {SIM_NAMES.testCity} tests it. Every proposed rule works inside the five laws, or says which law it narrows. Appendix E collects
-			the attacks in one threat model.
+			we propose for it, and how {SIM_NAMES.testCity} tests it. Every proposed rule works inside the five laws, or says which law it narrows. Where theOS
+			already has a rule for a problem, the item links it in Part II. Appendix E collects the attacks in one threat model.
 		</p>
-		<h3>12.1 People and identity</h3>
+		<h3>12.1 People, Avens and identity</h3>
 		<ul>
 			<li>
 				<strong>One person, one stream.</strong> The UIA needs an identity that nobody can fake many times. The name for
@@ -3197,13 +3202,16 @@
 				it. {cap(SIM_NAMES.testCity)} and the first village use an in-person register of residents. The city uses a state eID with a
 				zero-knowledge proof: a cryptographic proof that shows only "a unique resident" and nothing else. Everyone gets
 				the full {UIA_DAY} HEARTS. But a new identity can direct only a capped share into any one COOP until others vouch for
-				it. Regular checks make rented keys go stale. <em>Test:</em> farms of fake agents in {SIM_NAMES.testCity}.
+				it. This brings back a small web of trust, for new identities only (Appendix D). Regular checks make rented keys go stale. <em>Test:</em> farms of fake agents in {SIM_NAMES.testCity}.
 			</li>
 			<li>
 				<strong>Estates.</strong> When a person dies, the MIND that they leave goes to the City COOP or to heirs whom
-				they name (Law 1). The choice barely changes inequality, because the melt shrinks any bequest fast: only
-				{pct(decay(100, RATE, 30))} of it is left after 30 years. But people hold a large part of all MIND, so the
-				choice matters for the City COOP's budget. <em>Test:</em> {SIM_NAMES.testCity} runs both rules side by side.
+				they name (Law 1). theOS has not chosen between the two. The melt alone leaves only {pct(decay(100, RATE, 30))}
+				of a bequest after 30 years. But a held bequest also earns the lasting return, which depends on the seed and can
+				pass the melt (Section 11.2.5). So the choice may matter for inequality. It also matters for the City COOP's
+				budget, because people hold {pc(DYN.people)} of all MIND. Hypothesis H16 says that either rule keeps the Gini
+				index bounded (Section 10.5). <em>Test:</em> no one dies in {SIM_NAMES.model} yet, so {SIM_NAMES.testCity} must
+				run both rules side by side.
 			</li>
 			<li>
 				<strong>Work, care and payments between people.</strong> Open questions remain. How do care, art and
@@ -3212,17 +3220,28 @@
 				can change, for COOPs that serve everyone, such as care, courts and research. <em>Test:</em> {SIM_NAMES.testCity} measures
 				which needs no Aven proposes work for.
 			</li>
+			<li>
+				<strong>Aven capacity.</strong> The results of {SIM_NAMES.model} assume that Avens deliver what the COOPs ask,
+				at a fixed rate for each work proposal. We also ran Avens with a fixed capacity and a floating rate. Then the run
+				{checkWords(V('aven'))}: food ran short, and the worst person-day had {pc(V('aven').worst)} of the basics. In
+				{SIM_NAMES.testCity}, Avens run on chips that the City COOP buys abroad. With an open border, a person got
+				{fmt(TS.closed.hoursOpen, 1)} hours of Aven services a day; with a closed one, {noneOr(TS.closed.hoursClosed)}
+				(Section 11.3.3). There, the euro price of the chips limits Aven services, not physics (Appendix H).
+				<em>Test:</em> Avens with real limits, and rates that float.
+			</li>
 		</ul>
 		<h3>12.2 COOPs and their treasuries</h3>
 		<ul>
 			<li>
 				<strong>Self-dealing and related parties.</strong> Nothing in the laws stops a founder from investing in their
 				own COOP. The founder then controls {fmt(selfDealDay(), 1)} MIND a day instead of {fmt(honestDay())}: the
-				investor's part and the treasury's part, everything but the pools' part. Friends can act as each other's basket partners, and two COOPs
+				investor's part and the treasury's part, everything but the pools' part. Friends' COOPs can act as each other's basket partners, and two COOPs
 				could sell to each other in a circle. In the earlier static world, a founder ring drew
 				{pc(STATIC.ring.hearts, 2)} of all HEARTS, though it was {pc(STATIC.ring.people, 1)} of the people. Its income
 				was {fmt(STATIC.ring.income, 1)} times that of others, and after {STATIC.ring.years} years its wealth was
-				{fmt(STATIC.ring.wealth, 1)} times. We propose a related-party rule. When insiders invest, the treasury's part of
+				{fmt(STATIC.ring.wealth, 1)} times. In {SIM_NAMES.testCity}, a ring of {pc(TS.ring.people)} of the residents drew
+				{pc(TS.ring.drew, 1)} of the others' HEARTS. Its members ended with {fmt(TS.ring.endOutput, 2)} times the others'
+				mean holding when Avens followed output (Section 11.3.3). We propose a related-party rule. When insiders invest, the treasury's part of
 				their investment waits in a locked account (escrow) until an audit confirms real output. Every treasury flow and every work proposal is
 				public, with a proof of delivery. Only deliveries that a meter or an outside buyer confirms count as sales, and
 				sales between related COOPs pay no dividend. <em>Test:</em> kickback COOPs, investment rings and circular sales
@@ -3231,9 +3250,10 @@
 			<li>
 				<strong>Who decides inside a COOP.</strong> Each COOP chooses its own rules, but its founders write the first
 				ones. We propose a default constitution that holds until the members change it by a large majority. It follows
-				the holder rule of Section 9 and gives one member one vote on membership. Every member has the rights to
-				information, audit, election and recall. Avens raise a second question: whoever sets an Aven's defaults steers
-				investment. So a person's own choices limit their Aven, and the Aven optimises only inside them. <em>Test:</em>
+				the holder rule of Section 9, under which the pools' MIND gets its dividend but no vote,
+				and gives one member one vote on membership. Every member has the rights to information, audit, election and
+				recall. Avens raise a second question: whoever sets an Aven's defaults steers investment. So the Avens' default
+				rule changes only by MIP, and a person's own choice always overrides it (Section 7). <em>Test:</em>
 				{SIM_NAMES.testCity} compares COOPs with and without the default.
 			</li>
 			<li>
@@ -3242,8 +3262,12 @@
 				receivership: when inflows fall below a threshold or an audit fails, a trustee freezes the treasury, and the
 				members vote. Then an order of payment applies: work proposals first, then supplier COOPs. The physical assets
 				go to the City COOP, which leases them to a COOP that runs them better, without a forced sale, or scraps a plant
-				that stands idle (the idle-plant rule, Section 9.1). Section 11.2.6 reports the failures in the simulation. The
-				order of payment must itself resist capture by a small group, and the legal wrapper must match it.
+				that stands idle (the idle-plant rule, Section 9.1). A successor carries on the failed COOP's MIND under
+				the successor rule (Section 9.1), but {SIM_NAMES.model} still gives a successor a new
+				MIND. Section 11.2.6 reports its failures. In {SIM_NAMES.testCity}, a failing food COOP left
+				{TS.foodFails.short ? `${fmt(TS.foodFails.short)} person-days short` : 'no one short'}, but four shocks at once
+				left {fmt(TS.shocks.short)} person-days short (Section 11.3.3). The order of payment must itself resist capture
+				by a small group, and the legal wrapper must match it.
 				<em>Test:</em> more injected failures in {SIM_NAMES.testCity}.
 			</li>
 			<li>
@@ -3254,16 +3278,10 @@
 				tidal barrier or a fusion plant, and who gains from it.
 			</li>
 			<li>
-				<strong>Competition that fades.</strong> In the simulation, the {list(sole)} each came from one COOP alone
+				<strong>Competition that fades.</strong> In {SIM_NAMES.model}, {list(sole)} each came from one COOP alone
 				(Table {TAB.rivals}). Their prices stayed low, because the simulated leaders price to clear their capacity. A
 				real leader might price for profit. We propose the three rules of Section 9.1. {cap(SIM_NAMES.testCity)} ran one, two and
 				four sellers of each basic (Section 11.3.3). <em>Test:</em> a leader that prices for profit.
-			</li>
-			<li>
-				<strong>Aven capacity.</strong> The results assume that Avens deliver what the COOPs ask, at a fixed rate for each
-				work proposal. We also ran Avens with a fixed capacity and a floating rate. Then all three checks failed: food ran
-				short, and the worst person-day had {pc(V('aven').worst)} of the basics. <em>Test:</em> Avens with real limits,
-				and rates that float.
 			</li>
 		</ul>
 		<h3>12.3 Pools and prices</h3>
@@ -3275,12 +3293,13 @@
 				tokens, simply held, would keep {pct(heldAfterCrash(CRASH.left, CRASH.small) * 100)}, and a pool of
 				{CRASH.large} keeps {pct(poolAfterCrash(CRASH.left, CRASH.large) * 100)}. We propose
 				that a MIND joins a basket only after verified output and with the consent of the COOPs already in it. Its
-				founders also post a bond that they lose on fraud. A breaker stops a pool from taking in a failing MIND, while
+				founders also lock a deposit of MIND, which they lose on fraud. A breaker stops a pool from taking in a failing MIND, while
 				the pool still sells it. The breaker reacts to events, such as failed deliveries, not to prices. The failing
-				COOP's inflow stops too. Once the COOP has failed, its MIND leaves the baskets. The main run of Section 11.2.1 assumes
-				this rule: a failed COOP's MIND leaves the pools and is retired, and its holders lose it. In the earlier static world, a failed
+				COOP's inflow stops too. Once the COOP has failed, its MIND leaves the baskets, unless a successor carries it on under
+				the successor rule (Section 9.1). Then only the MIND of a scrapped plant is retired. {cap(SIM_NAMES.model)} still
+				retires every failed COOP's MIND that the pools hold, and its holders lose it (Section 11.2.1). In the earlier static world, a failed
 				COOP's MIND kept a pool price, and its holders could still swap it for their partners' MIND. The healthy
-				reserves could then move into a successor pool, by a redemption that the City COOP's members vote for (Section
+				reserves could then move into a successor pool, by a redemption under the redemption rule (Section
 				6). A hub MIND in every basket, for
 				example cityMIND, keeps routes short and the network connected. <em>Test:</em> junk dumping, price pumps and
 				sudden failures in {SIM_NAMES.testCity}.
@@ -3299,7 +3318,7 @@
 				average MIND, which needs no anchor MIND. One question stays open: how stable the HEART's purchasing power is.
 				What 1 HEART buys moves with what the COOPs deliver, and no rule holds it steady. In the last ten years of the
 				simulation, {DYN.bundleChange < 0 ? 'basics still got cheaper' : 'basics no longer got cheaper'} (Section
-				10.4). Each COOP also publishes what one of its
+				11.2.2). Each COOP also publishes what one of its
 				MIND buys, for example kWh per solarMIND. <em>Test:</em> {SIM_NAMES.testCity} measures how the HEART moves against a
 				day of living and against the basic bundle.
 			</li>
@@ -3314,9 +3333,9 @@
 			<li>
 				<strong>A vote that thins a pool.</strong> A redemption takes reserves out of a pool. A thinner pool moves its
 				prices more for each trade. So a pushed price costs less to make, and every payment that routes through the pool
-				costs more. A vote could also empty a pool to pay for something else. The guard is the City COOP's own decision
-				rule (Section 8.2), in which every citizen holds one equal share. theOS does not yet set how large a majority a
-				redemption needs. <em>Test:</em> {SIM_NAMES.testCity} runs redemptions by vote, and measures prices and routing costs
+				costs more. A vote could also empty a pool to pay for something else. The guard is the redemption
+				rule of Section 6: a passed MIP with a large majority of citizen shares, a wait, and a yearly cap. Whether
+				these guards are enough stays open. <em>Test:</em> {SIM_NAMES.testCity} runs redemptions by vote, and measures prices and routing costs
 				before and after.
 			</li>
 		</ul>
@@ -3324,18 +3343,26 @@
 		<ul>
 			<li>
 				<strong>Escape into assets.</strong> Section 2 ended on Keynes's warning: melting money pushes wealth into
-				anything that does not decay <Cite k="keynes36" />. The land rule of Section 8.2 closes the largest door. Other stores of value remain, such
-				as euros, art or rare objects. theOS must also decide how the City COOP sets the ground rent, and how citizens
-				decide what it builds with it. <em>Test:</em> {SIM_NAMES.testCity} offers assets that do not melt, and measures how much
+				anything that does not decay <Cite k="keynes36" />. theOS closes two doors. The land rule closes land
+				(Section 8.2). The euro border closes the euro: only the City COOP's euro bank crosses it, and no person sells
+				MIND for euros (Section 8.3). Other stores of value stay open, such as buildings owned outside a COOP, jewellery
+				and precious metals. Ground rent is a sale, so Law 5 pays its share to cityMIND's holders (Section 8.2). But
+				theOS must still choose how the City COOP sets the rent, by an auction or by a self-assessed value, and how
+				citizens decide what it builds with it. In {SIM_NAMES.testCity}, all land with the City COOP gave a Gini index
+				of holdings of {fmt(TS.land.giniCity, 2)}, against {fmt(TS.land.giniPrivate, 2)} with private land (Section
+				11.3.3). <em>Test:</em> {SIM_NAMES.testCity} offers assets that do not melt, and measures how much
 				wealth flows into them.
 			</li>
 			<li>
-				<strong>The euro border's open risks.</strong> A repayment in MIND never returns a euro (Section 8.3). So the
-				founders' euros are in effect a grant, unless exports earn them back. In {SIM_NAMES.testCity}, a village of
-				{fmt(EURO_BORDER.people)} residents needed €{fmt(EURO_BORDER.euros / 1e6, 1)} million from outside, and its
-				exports {EURO_BORDER.repaid ? 'repaid' : 'did not repay'} that within {EURO_BORDER.years} years (Section 11.3.3).
-				Taxes are due in euros, even on services paid in MIND. <em>Test:</em> {SIM_NAMES.testCity} adds an outside euro
-				economy that residents can trade with and leave for, and counts the euros that exports earn back.
+				<strong>The euro border's open risks.</strong> The founders' euros are the MaiaCity COOP's starting balance
+				from outside (Section 8.3). A repayment in MIND never returns a euro, so that balance comes back only if exports
+				earn it. In {SIM_NAMES.testCity}, a village of {fmt(EURO_BORDER.people)} residents needed
+				€{fmt(EURO_BORDER.euros / 1e6, 1)} million from outside, and its exports
+				{EURO_BORDER.repaid ? 'repaid' : 'did not repay'} that within {EURO_BORDER.years} years. In its last ten years, it
+				sold €{fmt(TC.bank.exports / 1e6, 1)} million a year abroad and bought €{fmt(TC.bank.imports / 1e6, 1)} million
+				(Section 11.3.3). Taxes are due in euros, even on services paid in MIND. <em>Test:</em> the border of
+				{SIM_NAMES.testCity}, with import substitution first (Section 11.5). Next: residents who can leave for the euro
+				economy.
 			</li>
 			<li>
 				<strong>Securities and co-op law.</strong> Under EU rules, a token that carries ownership and can be traded is
@@ -3350,7 +3377,7 @@
 				<strong>The founding of the first village.</strong> A COOP needs {POOL.partners} partners before its MIND can
 				trade, so the first COOPs wait for each other. Circles, with the same {CIRCLES.day} a day and
 				{pc(CIRCLES.rate)}, had about {fmt(CIRCLES.people)} registered people in {CIRCLES.asOf} <Cite k="gnosis" />.
-				Empty pools are a second trap (Section 11.2.6). We propose the
+				Empty pools are a second trap (Section 11.2.3). We propose the
 				bootstrap. On opening day, the City COOP, the energy and food COOPs and the Tribe COOP of each settlement open
 				together as the first basket. Residents invest their HEARTS for a founding week before the first sale. The pools' part of each new MIND
 				fills the pools, so any MIND a person holds can pay any seller from the first sale. Only investment creates MIND, so nothing else may fill them. Each
@@ -3364,24 +3391,30 @@
 		</ul>
 		<h3>12.5 What the models still lack</h3>
 		<p>
-			Section 5.3 gives the reasons for the rate of {pc(RATE)}. {cap(SIM_NAMES.testCity)} runs Proposition 3 on a grid of melt rates
-			(Section 11.3.3), and measures how behaviour changes with the rate.
+			Section 5.3 gives the reasons for the rate of {pc(RATE)}. {cap(SIM_NAMES.testCity)} ran Proposition 3 at melt
+			rates from {pc(TS.rates.rates[0])} to {pc(TS.rates.rates.at(-1))}, and part 3
+			{TS.rates.pass ? 'held' : 'failed at each'} (Section 11.3.3). It must still measure how behaviour changes with
+			the rate.
 		</p>
 		<p>
 			Section 10.3 lists the conditions of Proposition 3 and what the simulation found for each, and Section 11.2.5 those
 			of Proposition 2.
 		</p>
 		<p>
-			<strong>The physical numbers.</strong> The food forest's yield is the riskiest number in this paper. Peters and
-			others find that diets like those of the United States need more land than the city plans <Cite k="peters" />.
-			So {SIM_NAMES.testCity} runs the yield at half and at one and a half times the plan. The energy return of deep
-			geothermal and the energy for compute are estimates (Appendix H). And part 3's evidence rests on assumed growth
-			with no physical limit (Section 11.2.1). So {SIM_NAMES.testCity} must check part 3 again, with growth that only surplus
-			energy pays for.
+			<strong>The physical numbers.</strong> The food forest's yield is the riskiest number in this paper. A physics
+			audit found the yields of {SIM_NAMES.testCity}'s food forest and timber too high (Appendix H). At a realistic food
+			yield of {fmt(ENERGY.audit.forest.short.at[1], 2)} kg/m², {fmt(ENERGY.audit.forest.short.personDays[1])}
+			person-days were short in its base world. So the next yield test must use the audited range of
+			{fmt(ENERGY.audit.forest.proposed[0], 2)} to {fmt(ENERGY.audit.forest.proposed[1], 2)} kg/m². Peters and others
+			find that diets like those of the United States need more land than the city plans <Cite k="peters" />. The
+			energy return of deep geothermal and the energy for compute are estimates (Appendix H). And part 3's evidence in
+			{SIM_NAMES.model} rests on assumed growth with no physical limit (Section 11.2.1). In {SIM_NAMES.testCity},
+			growth comes only from surplus energy, and part 3 {TC.headline.p3 ? `held on ${TC.headline.p3} of ${TC.seeds.length} base seeds` : 'failed in real units on every base seed'}
+			(Section 11.3.3).
 		</p>
 		<p>
-			<strong>Gaps in the simulation.</strong> The simulation is a model, and we found gaps in it that can move its
-			results. None is fixed yet:
+			<strong>Gaps in {SIM_NAMES.model}.</strong> We found gaps in {SIM_NAMES.model} that can move its results. None
+			is fixed yet, and its upgrades target most of them (Section 11.5):
 		</p>
 		<ul>
 			<li>
@@ -3393,9 +3426,11 @@
 				every user loses the same share. So one shock to the main energy seller also cuts water and food.
 			</li>
 			<li>
-				<strong>The City COOP's upkeep.</strong> Its price floor leaves out its upkeep. In the main run on seed
-				{SAME_SHOCK.collapse.seed}, its treasury ran dry in year {SAME_SHOCK.collapse.year}, and water stopped for about
-				a year: {fmt(SAME_SHOCK.collapse.short)} person-days were short.
+				<strong>The City COOP's upkeep.</strong> Its price floor leaves out its upkeep. In an earlier version
+				({SIM_NAMES.versions.idle} in Table {TAB.versions}), the main run on seed {SAME_SHOCK.collapse.seed} ran the City
+				COOP's treasury dry in year {SAME_SHOCK.collapse.year}. Water then stopped for about a year:
+				{fmt(SAME_SHOCK.collapse.short)} person-days were short. The water reserve of Section 9.1 answers this; the
+				model does not run it yet.
 			</li>
 			<li>
 				<strong>Founders' technology.</strong> A founder copies the technology of a random seller, even one whose plant
@@ -3404,26 +3439,42 @@
 			<li>
 				<strong>Start-ups.</strong> A new COOP pays ground rent before it builds its plant, and it may never build it.
 			</li>
-			<li>
-				<strong>Year 1.</strong> On {SN.year1} of the {SEEDS.n} seeds, people went short in the first weeks of year 1,
-				after the founding.
-			</li>
+			{#if SN.year1}
+				<li>
+					<strong>Year 1.</strong> On {SN.year1} of the {SEEDS.n} seeds, people went short in the first weeks of year
+					1, after the founding.
+				</li>
+			{/if}
 		</ul>
 		<p>
-			<strong>Proposition 3 is not yet robust.</strong> It failed in the main run, and it depends on the seed
-			(Sections 11.2.5 and 11.2.6). In {SIM_NAMES.testCity}, part 3 held on {noneOr(TEST_CITY.headline.p3 + TEST_CITY.more.p3)}
-			of its {TEST_CITY.seeds.length + TEST_CITY.more.seeds.length} seeds (Section 11.3.3). One seed can make a rule look
+			<strong>Proposition 3 is not yet robust.</strong> In {SIM_NAMES.model}, the main run
+			{checkWords(V('main'))}, but all three checks held on only {SN.pass} of {SEEDS.n} seeds and on {SS.new.pass} of
+			{SS.n} seeds with the same shocks (Section 11.2.6). In {SIM_NAMES.testCity}, part 3 held on
+			{noneOr(TEST_CITY.headline.p3 + TEST_CITY.more.p3)} of its {TEST_CITY.seeds.length + TEST_CITY.more.seeds.length}
+			seeds (Section 11.3.3). One seed can make a rule look
 			sound, and the next seed can break it, so two rules must be compared on the same shocks. <em>Test:</em> many
 			seeds, the same shocks for each pair of rules, and the grid of Section 11.3.3.
+		</p>
+		<p>
+			<strong>What keeps <Tex tex={String.raw`\mu`} /> below the melt.</strong> <Tex tex={String.raw`\mu`} /> depends
+			on the seed: it was below the melt on {SN.below} of {SEEDS.n} seeds and on {SS.new.below} of {SS.n} seeds with
+			the same shocks (Section 11.2.5).
+			{Object.values(MT).every((m) => m.new.below === SEEDS.n) ? 'Every lever of the melt tests kept it below the melt on every seed' : 'Not every lever of the melt tests kept it below the melt on every seed'},
+			and {Math.max(...Object.values(MT).map((m) => m.new.pass)) > SN.pass ? 'some passed all three checks on more seeds than the main run' : 'none passed all three checks on more seeds than the main run'}.
+			Avens that spread holdings shrink <Tex tex={String.raw`\sigma_W`} />; whether they lower
+			<Tex tex={String.raw`\mu`} /> is open. <em>Test:</em> {SIM_NAMES.testCity} measures <Tex tex={String.raw`\mu`} />
+			over whole runs, with the rate as a parameter.
 		</p>
 		<h3 id="roadmap">12.6 A roadmap in three steps</h3>
 		<ol>
 			<li>
 				<strong>The world model.</strong> Play every example of this paper as a seeded scenario, with ({EQ.melt}), many COOPs
-				and their pools. Check Proposition 3 for every person, on every day, on many seeds.
+				and their pools. Check Proposition 3 for every person, on every day, on many seeds. Done in a first form
+				(Section 11.3). Next: this paper's rules in {SIM_NAMES.testCity}, pairs of rules on the same shocks, and the
+				open problems of this section (Section 11.5).
 			</li>
 			<li><strong>Human intents.</strong> Let people make the two daily choices of Section 7 and leave the rest to their Aven. Then humans and AI agents share one economy.</li>
-			<li><strong>The first real village.</strong> One village with its energy and food COOPs and the Tribe COOP of each settlement, which run on the rules that survived {SIM_NAMES.testCity}.</li>
+			<li><strong>The first real village.</strong> One village: the Tribe COOP of each settlement, the Village COOP at the centre, food and solar COOPs, the MaiaCity COOP and the avenCEO COOP, on the rules that survived {SIM_NAMES.testCity}.</li>
 		</ol>
 		<p>
 			Before we build the city, {SIM_NAMES.testCity} must also answer the questions that this paper cannot answer yet.
@@ -3477,44 +3528,50 @@
 		<h2><span>A</span>Assumptions</h2>
 		<p>
 			The results of this paper rest on these model assumptions. Each one has an id, the section that uses it, and a
-			status: whether it holds in the main run, is only assumed, is broken by the results, or was tested in the test
-			city. The conditions of Proposition 3 are C1 to C5 of Section 10.3, and the list cites them.
+			status: whether it holds in the main run, is a setting, is only assumed, is not modelled, is broken by the
+			results, or was tested in {SIM_NAMES.testCity}. The conditions of Proposition 3 are C1 to C5 of Section 10.3, and the list cites them.
 		</p>
 		<h3>The world</h3>
 		<ul class="assume">
-			<li id="a1"><strong>A1 A closed city.</strong> The models leave out euros, imports, exports and taxes (Section 8.3). <span class="status">Status: —</span></li>
-			<li id="a2"><strong>A2 A constant population,</strong> except where Section 5.2 adds growth. Equation ({EQ.money}) holds only then. <span class="status">Status: —</span></li>
-			<li id="a3"><strong>A3 Enough output and net energy</strong> = C1 (Section 10.3). <span class="status">Status: —</span></li>
-			<li id="a4"><strong>A4 Productivity growth.</strong> Each COOP's productivity rises about {pc(SIM.prodGrowth)} a year on average, unevenly. This is assumed. It stands in for growth that surplus energy pays for (Sections 8.4 and 11.2.1). <span class="status">Status: —</span></li>
-			<li id="a5"><strong>A5 Land in the City COOP.</strong> All land belongs to the City COOP and is only leased (Section 8.2). <span class="status">Status: —</span></li>
+			<li id="a1"><strong>A1 A closed city.</strong> {cap(SIM_NAMES.model)} leaves out euros, imports, exports and taxes (Section 8.3). <span class="status">Status: assumed. {cap(SIM_NAMES.testCity)} has a euro border: its exports {TC.bank.repaid ? 'repaid' : 'did not repay'} what the village owed outside (Section 11.3.3)</span></li>
+			<li id="a2"><strong>A2 A constant population, with no births, deaths or estates.</strong> Equation ({EQ.money}) holds only with a constant population. Section 5.2 gives the steady state with growth, and a variation adds {pc(V('pop').popGrowth)} growth a year for {V('pop').popYears} years (Section 11.2.6). <span class="status">Status: holds in the main run; with growth, the run {checkWords(V('pop'))}</span></li>
+			<li id="a3"><strong>A3 Enough output and net energy</strong> = C1 (Section 10.3). <span class="status">Status: assumed in {SIM_NAMES.model}; the yields of {SIM_NAMES.testCity} are under review (Appendix H)</span></li>
+			<li id="a4"><strong>A4 Productivity growth.</strong> Each COOP's productivity rises about {pc(SIM.prodGrowth)} a year on average, unevenly. It stands in for growth that surplus energy pays for (Sections 8.4 and 11.2.1). <span class="status">Status: assumed; without it, the run {checkWords(V('prod0'))}</span></li>
+			<li id="a5"><strong>A5 Land in the City COOP.</strong> All land belongs to the City COOP and is only leased (Section 8.2). <span class="status">Status: holds in the main run; its scenario in {SIM_NAMES.testCity} {TS.land.pass ? 'passed' : 'failed'} (Section 11.3.3)</span></li>
 		</ul>
 		<h3>People and Avens</h3>
 		<ul class="assume">
-			<li id="a6"><strong>A6 One human, one stream.</strong> Identity works, and nobody directs the HEARTS of fake people (Section 12.1). <span class="status">Status: —</span></li>
-			<li id="a7"><strong>A7 Prompt investment.</strong> Avens invest HEARTS as they arrive, so few HEARTS sit unused (Section 7). <span class="status">Status: —</span></li>
-			<li id="a8"><strong>A8 Where Avens invest.</strong> In the simulation, each Aven puts {pc(AVEN_RULE.share)} of its person's HEARTS into the {AVEN_RULE.top} MINDs with the highest price and dividend yield, and the rest by its person's own values (Section 11.2.1). <span class="status">Status: —</span></li>
-			<li id="a9"><strong>A9 Faithful Avens.</strong> Each Aven serves only its human, follows its human's choices and makes no costly mistakes (Section 7). <span class="status">Status: —</span></li>
-			<li id="a10"><strong>A10 No paid human labour.</strong> Every human has one Aven, and the Avens propose and deliver all work with the COOPs' machines. Avens differ in what they deliver (Section 4). <span class="status">Status: —</span></li>
-			<li id="a11"><strong>A11 Avens deliver what COOPs ask,</strong> at a fixed rate for each work proposal (Section 12.2). <span class="status">Status: —</span></li>
-			<li id="a12"><strong>A12 Spending.</strong> People spend a share <Tex tex={String.raw`\theta = ${tn(SIM.spendRate, 1)}`} /> of what they hold a year, basics first (Section 11.2.2). <span class="status">Status: —</span></li>
-			<li id="a13"><strong>A13 Spread ownership</strong> = C4 (Section 10.3). <span class="status">Status: —</span></li>
-			<li id="a14"><strong>A14 Wants that keep growing</strong> = C5 (Section 10.3). <span class="status">Status: —</span></li>
+			<li id="a6"><strong>A6 One human, one stream.</strong> Identity works, and nobody directs the HEARTS of fake people (Section 12.1). <span class="status">Status: assumed</span></li>
+			<li id="a7"><strong>A7 Prompt investment.</strong> Avens invest HEARTS as they arrive, so few HEARTS sit unused (Section 7). <span class="status">Status: holds in the main run, by design</span></li>
+			<li id="a8"><strong>A8 Where Avens invest.</strong> In {SIM_NAMES.model}, each Aven puts {pc(AVEN_RULE.share)} of its person's HEARTS into the {AVEN_RULE.top} MINDs with the highest price and dividend yield, and the rest by its person's own values (Section 11.2.1). <span class="status">Status: assumed; the price rule against the output rule is under test (Section 11.5)</span></li>
+			<li id="a9"><strong>A9 Faithful Avens.</strong> Each Aven serves only its human, follows its human's choices and makes no costly mistakes (Section 7). <span class="status">Status: assumed</span></li>
+			<li id="a10"><strong>A10 No paid human labour.</strong> Every human has one Aven, and the Avens propose and deliver all work with the COOPs' machines. Avens differ in what they deliver (Section 4). <span class="status">Status: assumed</span></li>
+			<li id="a11"><strong>A11 Avens deliver what COOPs ask,</strong> at a fixed rate for each work proposal, which also anchors all prices in {SIM_NAMES.model} (Sections 12.1 and 12.5). <span class="status">Status: assumed; with a fixed capacity, the run {checkWords(V('aven'))}</span></li>
+			<li id="a12"><strong>A12 Spending.</strong> People spend a share <Tex tex={String.raw`\theta = ${tn(SIM.spendRate, 1)}`} /> of what they hold a year, basics first (Section 11.2.2). <span class="status">Status: holds in the main run, as a setting</span></li>
+			<li id="a13"><strong>A13 Spread ownership</strong> = C4 (Section 10.3). <span class="status">Status: not modelled</span></li>
+			<li id="a14"><strong>A14 Wants that keep growing</strong> = C5 (Section 10.3). <span class="status">Status: holds in the main run; without it, the run {checkWords(V('wants'))}</span></li>
 		</ul>
 		<h3>COOPs and markets</h3>
 		<ul class="assume">
-			<li id="a15"><strong>A15 Treasuries pay out</strong> under the payout rule of Section 4. <span class="status">Status: —</span></li>
-			<li id="a16"><strong>A16 Every COOP accepts HEARTS from anyone</strong> (Section 11.2.5). <span class="status">Status: —</span></li>
-			<li id="a17"><strong>A17 Rivals and free prices</strong> = C2 (Section 10.3). Each COOP's own price rule moves its price up and down by equal steps, every day, and nothing caps a price (Section 9.1). <span class="status">Status: —</span></li>
-			<li id="a18"><strong>A18 Honest prices.</strong> Time-averaged pool prices reflect the use that each MIND buys (Section 6.3). <span class="status">Status: —</span></li>
-			<li id="a19"><strong>A19 Connected baskets.</strong> Every MIND in a basket can reach every other MIND through the pools (Section 6). <span class="status">Status: —</span></li>
-			<li id="a20"><strong>A20 No redemptions.</strong> The City COOP redeems no LP tokens (Section 6). The simulation runs this way. <span class="status">Status: —</span></li>
-			<li id="a21"><strong>A21 Random returns.</strong> In Proposition 2, holdings are valued in HEARTS, and their returns move as a random walk (Section 9.2). <span class="status">Status: —</span></li>
-			<li id="a22"><strong>A22 Failed plants:</strong> the idle-plant rule of Section 9.1, with a threshold of {pc(SIM.reletUse)}. <span class="status">Status: —</span></li>
+			<li id="a15"><strong>A15 Law 5 and the payout rule.</strong> Law 5 pays its share of every sale at once to the holders, so it never passes through the treasury. Treasuries pay out the rest under the payout rule (Section 4). <span class="status">Status: holds in the main run; with reserves of {V('res6').months} months, the run {checkWords(V('res6'))}</span></li>
+			<li id="a16"><strong>A16 Every COOP accepts HEARTS from anyone</strong>, the open-investment rule (Section 9). <span class="status">Status: holds in the main run</span></li>
+			<li id="a17"><strong>A17 Rivals and free prices</strong> = C2 (Section 10.3). Each COOP's own price rule moves its price up and down by equal steps, every day, and nothing caps a price. At every step, a price stays above the variable cost, grossed up for Law 5, except to clear stock that would rot (Section 9.1). The floor leaves out some costs (Section 12.5). <span class="status">Status: met only in part: by year {SIM.years}, {list(sole)} each came from one COOP alone (Table {TAB.rivals})</span></li>
+			<li id="a18"><strong>A18 Honest prices.</strong> Time-averaged pool prices reflect the use that each MIND buys (Section 6.3). <span class="status">Status: assumed</span></li>
+			<li id="a19"><strong>A19 Connected baskets.</strong> Every MIND in a basket can reach every other MIND through the pools (Section 6). <span class="status">Status: assumed</span></li>
+			<li id="a20"><strong>A20 No redemptions.</strong> The City COOP redeems no LP tokens; a redemption needs a passed MIP (Section 6). <span class="status">Status: holds in the main run</span></li>
+			<li id="a21"><strong>A21 Random returns.</strong> In Proposition 2, holdings are valued in HEARTS, and their returns move as a random walk (Section 9.2). <span class="status">Status: assumed in the theory</span></li>
+			<li id="a22"><strong>A22 Failed plants:</strong> the idle-plant rule of Section 9.1, with a threshold of {pc(SIM.reletUse)}. <span class="status">Status: holds in the main run. A successor there gets a new MIND, unlike the successor rule (Section 9.1)</span></li>
 		</ul>
 		<h3>The simulation's settings</h3>
 		<ul class="assume">
-			<li id="a23"><strong>A23 The bootstrap</strong> = C3 (Section 12.4). Proposition 3 is claimed from the end of the founding, once every person holds MIND. The simulation does not test the bootstrap yet. <span class="status">Status: —</span></li>
-			<li id="a24"><strong>A24 The main run.</strong> {SIM.people} people over {SIM.years} years on one seed, with the settings of Section 11.2.1; founders act when a margin over full cost stays above {pc(SIM.foundingMargin)} for {SIM.foundingDays} days (Section 9.1). It pays Law 5 to people and other COOPs' treasuries; the pools' share is being added. <span class="status">Status: —</span></li>
+			<li id="a23"><strong>A23 The bootstrap</strong> = C3 (Section 12.4). Proposition 3 is claimed from the end of the founding, once every person holds MIND. {cap(SIM_NAMES.model)} does not model the bootstrap. <span class="status">Status: not modelled; in the founding, {fmt(PROOF.genesis.short)} of {fmt(PROOF.genesis.personDays)} person-days were short (Section 11.2.3). Tested in {SIM_NAMES.testCity}: {shortOr(TS.founding.shortWith)} in year 1 with it (Section 11.3.3)</span></li>
+			<li id="a24"><strong>A24 The main run.</strong> {SIM.people} people over {SIM.years} years on one seed, with the settings of Section 11.2.1; founders act when a margin over full cost stays above {pc(SIM.foundingMargin)} for {SIM.foundingDays} days (Section 9.1). Law 5 pays every holder but the seller's own treasury: people, other COOPs' treasuries and the pools (Section 4). <span class="status">Status: a setting</span></li>
+			<li id="a25"><strong>A25 Steps.</strong> {cap(SIM_NAMES.model)} steps daily in year 1 and weekly after, and counts each week as seven person-days (Section 11.2.3). <span class="status">Status: a setting; daily steps for all {SIM.years} years are under test (Section 11.5)</span></li>
+			<li id="a26"><strong>A26 Ended COOPs.</strong> When a COOP ends, what happens to the other MINDs in its treasury is not yet a rule. <span class="status">Status: open; an upgrade of {SIM_NAMES.model} tests sending them to the City COOP (Section 11.5)</span></li>
+			<li id="a27"><strong>A27 Shocks and tastes.</strong> Capacity shocks hit COOPs at random, and tastes drift (Section 11.1). <span class="status">Status: a setting</span></li>
+			<li id="a28"><strong>A28 Long-lived projects.</strong> Avens fund city-scale projects when their users and new investors gain (Section 8.1). <span class="status">Status: not modelled (Section 12.2)</span></li>
+			<li id="a29"><strong>A29 The lasting return below the melt</strong>, the condition of Proposition 2 (Section 9.2). <span class="status">Status: {DYN.mu < RATE ? 'holds on the main seed' : 'broken on the main seed'}, at {pc(DYN.mu, 1)}; below the melt on {SN.below} of {SEEDS.n} seeds and on {SS.new.below} of {SS.n} with the same shocks (Section 11.2.5)</span></li>
+			<li id="a30"><strong>A30 The known gaps</strong> of {SIM_NAMES.model}: the price floor, energy standby, the City COOP's upkeep, founders' technology and start-ups (Section 12.5). <span class="status">Status: open</span></li>
 		</ul>
 	</section>
 
@@ -3531,37 +3588,37 @@
 					<tr><th>Symbol</th><th>Meaning</th><th>Section</th></tr>
 				</thead>
 				<tbody>
-					<tr><td><Tex tex="M, V, P, Q" /></td><td>Fisher's money, velocity, prices and goods</td><td>2</td></tr>
 					<tr><td><Tex tex="r" /></td><td>The melt rate, {fmt(RATE, 2)} a year. In Section 1 only: Piketty's return on capital</td><td>1, 5</td></tr>
 					<tr><td><Tex tex="g" /></td><td>Piketty's growth of the whole economy</td><td>1</td></tr>
+					<tr><td><Tex tex="M, V, P, Q" /></td><td>Fisher's money, velocity, prices and goods. Not <Tex tex="V" /> of Section 6 or <Tex tex="Q" /> of Section 10.4</td><td>2, 5.1</td></tr>
 					<tr><td><Tex tex={String.raw`B,\ \Delta t`} /></td><td>Any balance of HEARTS or of one MIND, and the years since its last update</td><td>5.1</td></tr>
+					<tr><td><Tex tex={String.raw`t_{1/2}`} /></td><td>The half-life of an idle balance, <Tex tex={String.raw`\ln 2/r`} />, and of a holding that earns <Tex tex={String.raw`\mu`} />, <Tex tex={String.raw`\ln 2/(r - \mu)`} /></td><td>5.1, 5.4</td></tr>
 					<tr><td><Tex tex="u" /></td><td>HEARTS issued per person a year, {fmt(u)}</td><td>5.2</td></tr>
 					<tr><td><Tex tex="N" /></td><td>The number of people</td><td>5.2</td></tr>
-					<tr><td><Tex tex={String.raw`m,\ m^{*}`} /></td><td>The average count of HEARTS and MINDs per person, and its steady state</td><td>5.2</td></tr>
+					<tr><td><Tex tex={String.raw`m,\ m_0,\ m^{*}`} /></td><td>The average count of HEARTS and MINDs per person, at the start, and its steady state</td><td>5.2</td></tr>
 					<tr><td><Tex tex={String.raw`a_i,\ W_i^{*}`} /></td><td>What a person adds to a holding each year, net of what they spend, and the level that the holding tends to, <Tex tex={String.raw`a_i/r`} /></td><td>5.2, 9.2</td></tr>
 					<tr><td><Tex tex={String.raw`\omega`} /></td><td>The ownership that a person's investing creates for them a year, <Tex tex="u/2" />: {fmt(INVESTOR_SHARE, 1)} MIND for each HEART</td><td>5.2, 9.2, 10.4</td></tr>
 					<tr><td><Tex tex={String.raw`\nu`} /></td><td>The yearly growth rate of the population</td><td>5.2</td></tr>
 					<tr><td><Tex tex={String.raw`c,\ e_v`} /></td><td>Laborde's universal-dividend rate, and the life span that it derives from</td><td>5.3</td></tr>
 					<tr><td><Tex tex={String.raw`b,\ b_i`} /></td><td>A member's balance relative to the average</td><td>5.3</td></tr>
+					<tr><td><Tex tex={String.raw`\mu`} /></td><td>The lasting return on a holding: dividend yield plus any lasting price rise</td><td>5.4</td></tr>
+					<tr><td><Tex tex={String.raw`\lambda`} /></td><td>Law 5's share of every sale, {pc(DIVIDEND_SHARE)}</td><td>5.4, 10.4</td></tr>
 					<tr><td><Tex tex={String.raw`n,\ w_i`} /></td><td>The number of MINDs in a basket, {POOL.min} to {POOL.max}, and each one's weight, <Tex tex="1/n" /></td><td>6</td></tr>
+					<tr><td><Tex tex="V" /></td><td>A pool's value. In Sections 2 and 5.1 only: Fisher's velocity</td><td>2, 5.1, 6</td></tr>
 					<tr><td><Tex tex={String.raw`x_i,\ K,\ p_{ij}`} /></td><td>A pool's reserve of MIND <Tex tex="i" />, the pool's invariant, and the price of MIND <Tex tex="j" /> in MIND <Tex tex="i" /></td><td>6.1</td></tr>
 					<tr><td><Tex tex={String.raw`\varphi`} /></td><td>The trading fee, {pct(POOL.fee * 100, 1)}</td><td>6.1</td></tr>
-					<tr><td><Tex tex="V" /></td><td>A pool's value. In Section 2 only: Fisher's velocity</td><td>2, 6</td></tr>
-					<tr><td><Tex tex={String.raw`\sigma,\ \Sigma,\ \rho,\ \ell`} /></td><td>Volatility, covariance and correlation of prices, and the yearly loss-versus-rebalancing</td><td>6.2</td></tr>
+					<tr><td><Tex tex={String.raw`\sigma,\ \Sigma,\ \rho,\ \ell`} /></td><td>Volatility, covariance and correlation of prices, and the yearly loss-versus-rebalancing. Not <Tex tex={String.raw`\sigma_W`} /> of Section 9.2</td><td>6.2</td></tr>
+					<tr><td><Tex tex={String.raw`s_k,\ p_k,\ \bar p,\ v_k`} /></td><td>The supply of MIND <Tex tex="k" />, its pool price against one MIND, the supply-weighted average price, and its value in HEARTS, the unit of account ({EQ.unit}). Not <Tex tex="s_i" /> of Section 9 or <Tex tex="s_p" /> of Section 10.4</td><td>6.3</td></tr>
 					<tr><td><Tex tex={String.raw`s_i,\ f_i,\ \bar f,\ \kappa`} /></td><td>A COOP's share of its sector's investment, its utility per HEART, the average utility, and the speed of selection</td><td>9</td></tr>
 					<tr><td><Tex tex={String.raw`W_i,\ W^{*},\ \bar W_0`} /></td><td>A person's MIND holding, the resting level when everyone keeps <Tex tex={String.raw`\omega`} />, and the mean holding at the start</td><td>9.2, 10.4</td></tr>
-					<tr><td><Tex tex={String.raw`\mu`} /></td><td>The lasting return on a holding: dividend yield plus any lasting price rise</td><td>5.4</td></tr>
-					<tr><td><Tex tex={String.raw`t_{1/2}`} /></td><td>The half-life of an idle balance, <Tex tex={String.raw`\ln 2/r`} />, and of a holding that earns <Tex tex={String.raw`\mu`} />, <Tex tex={String.raw`\ln 2/(r - \mu)`} /></td><td>5.1, 5.4</td></tr>
-					<tr><td><Tex tex={String.raw`\sigma_W,\ dZ,\ \alpha`} /></td><td>The spread of returns between people, random noise, and the shape of the resting spread</td><td>9.2</td></tr>
+					<tr><td><Tex tex={String.raw`\sigma_W,\ dZ,\ \alpha`} /></td><td>The spread of returns between people, random noise, and the shape of the resting spread. Not <Tex tex={String.raw`\sigma`} /> of Section 6.2</td><td>9.2</td></tr>
 					<tr><td><Tex tex={String.raw`G,\ G_0,\ G_{\infty}`} /></td><td>The Gini index of ownership: over time, at the start, and at rest</td><td>9.2</td></tr>
-					<tr><td><Tex tex={String.raw`s_k,\ p_k,\ \bar p,\ v_k`} /></td><td>The supply of MIND <Tex tex="k" />, its pool price against one MIND, the supply-weighted average price, and its value in HEARTS, the unit of account ({EQ.unit})</td><td>6.3</td></tr>
-					<tr><td><Tex tex={String.raw`\lambda`} /></td><td>Law 5's share of every sale, {pc(DIVIDEND_SHARE)}</td><td>5.4, 10.4</td></tr>
 					<tr><td><Tex tex="T_i" /></td><td>The years a holding would pay the basic bundle with nothing flowing in</td><td>10.4</td></tr>
 					<tr><td><Tex tex="p_b" /></td><td>The cost of a day's basic bundle</td><td>10.4</td></tr>
-					<tr><td><Tex tex={String.raw`D_i,\ X_i`} /></td><td>A person's dividends, and what they spend</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`D_i,\ X_i`} /></td><td>A person's dividends, and what they spend, HEARTS a day in ({EQ.share}) and ({EQ.strict})</td><td>10.4</td></tr>
 					<tr><td><Tex tex={String.raw`\bar W,\ Y`} /></td><td>The mean holding, and what people buy from COOPs, HEARTS a person a day</td><td>10.4</td></tr>
-					<tr><td><Tex tex={String.raw`\bar\eta`} /></td><td>The city's dividend yield, <Tex tex={String.raw`\lambda Y / \bar W`} /></td><td>10.4</td></tr>
-					<tr><td><Tex tex={String.raw`Q,\ s_p`} /></td><td>All sales a day, and the share of the dividend-earning MIND that people hold</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`\bar\eta`} /></td><td>The city's dividend yield, <Tex tex={String.raw`\lambda Y / \bar W`} />, a day; about 365 times that a year</td><td>10.4</td></tr>
+					<tr><td><Tex tex={String.raw`Q,\ s_p`} /></td><td>All sales a day, and the share of the dividend-earning MIND that people hold. Not Fisher's <Tex tex="Q" /> of Section 2</td><td>10.4</td></tr>
 					<tr><td><Tex tex={String.raw`S,\ d,\ q,\ \delta,\ \tau`} /></td><td>A stock of a basic, the need for it a day, the capacity to make it a day, and the share of capacity that a shock takes, for how many days</td><td>10.4</td></tr>
 					<tr><td><Tex tex={String.raw`\theta`} /></td><td>The share of what they hold that people spend a year</td><td>11.2.2</td></tr>
 				</tbody>
@@ -3575,7 +3632,7 @@
 			<dt>HEARTS</dt>
 			<dd>A person's own currency of intent, {UIA_DAY} a day. HEARTS buy nothing and pay for nothing, not even food. They earn nothing and can only be invested into COOPs. The HEART is also the unit of account (Section 6.3): every value is shown in HEARTS, and the average MIND is worth 1 HEART.</dd>
 			<dt>MIND</dt>
-			<dd>A COOP's own currency of ownership and utility. To hold it is to own part of the COOP; to spend it is to use what the COOP makes.</dd>
+			<dd>A COOP's own currency of ownership and utility. To hold it is to own part of the COOP; to spend it is to use what the COOP makes. Each COOP has one MIND, and only investing HEARTS creates it (Law 4). A buyer pays with any MIND; the pools convert it, and the seller always receives its own MIND (Section 6).</dd>
 			<dt>COOP</dt>
 			<dd>A cooperative enterprise that makes something a city needs, such as energy, food or housing. It has its own MIND and treasury.</dd>
 			<dt>Treasury</dt>
@@ -3583,7 +3640,7 @@
 			<dt>Conversion</dt>
 			<dd>The moment an invested HEART converts into one MIND of its COOP: {RULE}. This is Law 4.</dd>
 			<dt>Dividend</dt>
-			<dd>Law 5: {pc(DIVIDEND_SHARE)} of every sale, the same for every COOP. It goes at once to everyone who holds the seller's MIND except its own treasury, in proportion to their holding: people, other COOPs and the city's pools. It is not Laborde's universal dividend of Section 3, which is new money.</dd>
+			<dd>Law 5: {pc(DIVIDEND_SHARE)} of every sale, the same for every COOP. It goes at once to everyone who holds the seller's MIND except its own treasury, in proportion to their holding: people, other COOPs and the city's pools (the holder rule, Section 9). It is not Laborde's universal dividend of Section 3, which is new money.</dd>
 			<dt>Work proposal</dt>
 			<dd>All paid work in the city, as in a DAO: a person's Aven proposes a piece of work and its price in the COOP's own MIND, the COOP accepts it, the Aven delivers it with the COOP's machines, and the treasury pays the Aven's human on delivery. There are no jobs and no wages. Some work proposals keep a COOP running, such as a daily check, and the COOP pays them from its running costs. Others are new work, such as a repair plan: if the members accept it, the treasury pays it from what it holds above its reserve. Outside the city, anyone may still take a job for euros.</dd>
 			<dt>Payout rule</dt>
@@ -3592,8 +3649,8 @@
 			<dd>The total of a COOP's sales over a time. Only real deliveries count.</dd>
 			<dt>Unit of account</dt>
 			<dd>The unit in which all values are shown and compared: the HEART. The pools set only how MINDs stand against each other; the supply-weighted average MIND is worth 1 HEART, and a MIND that the pools cannot price yet counts at 1 HEART (Section 6.3). It is for display only: it never changes a trade, a price or a payment, and it is not a peg.</dd>
-			<dt>Melt, demurrage</dt>
-			<dd>To melt is to shrink continuously, at a rate of {pc(RATE)} a year. Demurrage is the name of that holding cost.</dd>
+			<dt>The melt (demurrage)</dt>
+			<dd>The continuous shrinking of every balance of HEARTS and MIND, at {pc(RATE)} a year (Section 5.1). To melt is to shrink this way. Demurrage is the economists' name for such a holding cost.</dd>
 			<dt>UIA</dt>
 			<dd>Universal Intent Allocation, Law 1: the right of every human to invest {UIA_DAY} HEARTS a day.</dd>
 			<dt>Pool, basket, LP token</dt>
@@ -3626,11 +3683,11 @@
 			<dt>Basic bundle</dt>
 			<dd>One day of basics for one person: {fmt(BASIC_BUNDLE.kcal)} kcal of food, {BASIC_BUNDLE.L} L of water, {BASIC_BUNDLE.kWh} kWh of energy and {BASIC_BUNDLE.m2} m² of home.</dd>
 			<dt>Owner-only person</dt>
-			<dd>A person whose Aven delivers nothing and who starts with nothing. Every tenth person in the simulation is one.</dd>
+			<dd>A person whose Aven delivers nothing and who starts with nothing. In {SIM_NAMES.model}, one person in {SIM.ownerOnlyEvery} is one; in {SIM_NAMES.testCity}, one newcomer in {TC.ownerOnlyEvery} (Sections 11.2.3 and 11.3.3).</dd>
 			<dt>Real consumption</dt>
-			<dd>Every unit that a person consumes, valued at the prices of day 1, so that it counts amounts, not price changes. It is not comparable with a day of living.</dd>
+			<dd>Every unit that a person consumes, valued at the prices of day 1, so that it counts amounts, not price changes. {cap(SIM_NAMES.model)} uses it as a stand-in for real units, which {SIM_NAMES.testCity} uses (Section 11.3.3). It is not comparable with a day of living.</dd>
 			<dt>Decile, tenth</dt>
-			<dd>One of ten equal groups of people, sorted by real consumption each year.</dd>
+			<dd>One of ten equal groups of people. {cap(SIM_NAMES.model)} sorts them by real consumption each year; {SIM_NAMES.testCity} sorts them by holdings and by Aven output (Section 11.1).</dd>
 			<dt>Proposition 3</dt>
 			<dd>The central claim of Section 10.3: from the end of the founding, no one starves, no one has to work to survive, and the living standard of every tenth rises. The founding, a city's first days until every person holds MIND, is reported on its own. Part 2 claims the normal test, which lets an owner-only person spend some of what they hold. The strict test, dividends alone, is a stronger target. In the main run, the normal test {V('main').checks[1] ? 'held' : 'failed'} and the strict test {PROOF.strict.shareAfter10 >= 1 ? 'held' : 'failed'}.</dd>
 			<dt>Rule, policy, concept, hypothesis</dt>
@@ -3654,11 +3711,11 @@
 			<dt>Last ten years</dt>
 			<dd>Years {SIM.restFrom} to {SIM.years} of a simulation run, which its steady-state numbers average (Section 11.2.1).</dd>
 			<dt>Main run</dt>
-			<dd>The run of the simulation with the settings of Section 11.2.1: Law 5 at {pc(DIVIDEND_SHARE)}, reserves of {SIM.reserveMonths} months, Law 4 and the idle-plant rule.</dd>
+			<dd>The run of {SIM_NAMES.model} with the settings of Section 11.2.1: Law 5 at {pc(DIVIDEND_SHARE)}, paid to every holder but the seller's own treasury, reserves of {SIM.reserveMonths} months, Law 4 and the idle-plant rule.</dd>
 			<dt>Idle-plant rule</dt>
 			<dd>When a COOP fails, the City COOP leases its plant to a successor only while demand is at least {pc(SIM.reletUse)} of the plant's capacity. Otherwise it scraps the plant and takes the land back (Section 9.1).</dd>
 			<dt>Seed, common random numbers</dt>
-			<dd>A seed fixes all the random events of a simulation run. With common random numbers, two runs of one seed share the random stream for shocks and tastes, so two rules meet the same shocks (Section 11.2.6).</dd>
+			<dd>A seed fixes all the random events of a simulation run. With common random numbers, two runs of one seed share the random stream for shocks and tastes, so two rules meet the same shocks (Section 11.1).</dd>
 			<dt>Sign test</dt>
 			<dd>A test for two rules run on the same seeds: it counts the seeds on which each rule did better and asks how likely so uneven a count is by chance alone.</dd>
 			<dt>Binding limit</dt>
@@ -3667,10 +3724,24 @@
 			<dd>A simulation in which every person and every COOP acts by its own rules, and the result is what all of them do together.</dd>
 			<dt>Stock-flow consistent</dt>
 			<dd>A way to keep the books of a model: every flow leaves one place and arrives in another, so every stock adds up.</dd>
+			<dt>Economic model</dt>
+			<dd>{cap(SIM_NAMES.model)}: the first of our two simulations (Section 11.2), {SIM.people} people over {SIM.years} years, with no land, energy or euro border. Each version adds to the last (Table {TAB.versions}).</dd>
 			<dt>Dynamic and static world</dt>
-			<dd>The two simulations of Section 11.2.1. The dynamic world has rivals, free prices, growth and shocks, and this paper uses it. The earlier static world had fixed tastes, no growth and capped prices; "static" marks its numbers.</dd>
+			<dd>The first two versions of {SIM_NAMES.model} (Section 11.2.1). The dynamic world has rivals, free prices, growth and shocks, and every later version builds on it. The earlier static world had fixed tastes, no growth and capped prices; "static" marks its numbers.</dd>
 			<dt>Test city</dt>
-			<dd>The first step of Section 11.3.1, where simulated residents live, trade and invest under the rules of this paper before the real city.</dd>
+			<dd>{cap(SIM_NAMES.testCity)}: the second simulation (Section 11.3), where simulated residents live, trade and invest under the rules of this paper, in a village with land, energy and a euro border, before the real city. Its Avens follow fixed rules. Up to {SIM_NAMES.roundShort(TC.round)}, it used the old pools' part (Section 11.3.2).</dd>
+			<dt>Holder rule</dt>
+			<dd>Who gets a COOP's Law 5 dividend and a vote in it: a COOP's own treasury gets neither, the city's pools get the dividend but no vote, and people and other COOPs' treasuries get both (Section 9).</dd>
+			<dt>Land rule</dt>
+			<dd>All land belongs to the City COOP, and nobody can sell or buy it; builders lease plots and pay ground rent (Section 8.2).</dd>
+			<dt>Lasting return</dt>
+			<dd><Tex tex={String.raw`\mu`} />: what a holding earns a year, dividends plus any lasting price rise. Proposition 2 bounds inequality only while it stays below the melt (Sections 5.4 and 9.2).</dd>
+			<dt>The founding (bootstrap)</dt>
+			<dd>A city's first days, until every person holds MIND; not the founding of one COOP (below). The bootstrap is the rule for them: residents invest their HEARTS for a founding week before the first sale. Proposition 3 is claimed from the end of the founding, and the founding is reported on its own (Section 12.4).</dd>
+			<dt>Person-day</dt>
+			<dd>One person on one day. It is short when that person gets less than the basic bundle (Section 11.1).</dd>
+			<dt>Abundism</dt>
+			<dd>An economy in which automation makes the basics plentiful, and every person helps to decide what the economy builds, through fair ownership (Sections 1 and 13).</dd>
 		</dl>
 	</section>
 
@@ -3688,20 +3759,22 @@
 			take one-sided inflows from every COOP and hold currencies that melt. The closest model is the owned liquidity
 			that Olympus made known: a treasury buys the LP tokens of its own pools and keeps them, so it does not have to pay
 			outside investors to supply liquidity <Cite k="olympus" />. theOS keeps that idea: owned liquidity, not rented
-			liquidity, but the owner is the City COOP, not the protocol. So every citizen owns an equal part of it, and the
-			inflow comes from the COOPs' own MIND, not from a sale of new tokens (Section 6).
+			liquidity, but the owner is the City COOP, not the protocol. The City COOP holds the LP tokens, and every citizen
+			holds one equal share in it. The inflow comes from the COOPs' own MIND, not from a sale of new tokens (Section 6).
 		</p>
 		<p>
 			<strong>Agent-based and stock-flow consistent models.</strong> Mark-0 <Cite k="gualdi" /> and the model of Dosi
 			and others <Cite k="dosi" /> let many firms and households act by simple rules. Godley and Lavoie
 			<Cite k="godley" />, and Caiani and others <Cite k="caiani" />, keep the books so that every flow lands somewhere.
-			The simulation of Section 11.2.1 keeps stock-flow consistent books, and Section 11.3.1 says what {SIM_NAMES.testCity} borrows
+			{cap(SIM_NAMES.model)} (Section 11.2.1) keeps stock-flow consistent books, and Section 11.3.1 says what {SIM_NAMES.testCity} borrows
 			from these models and where theOS differs.
 		</p>
 		<p>
-			<strong>Sources that the body discusses.</strong> Circles: Section 3. Gesell, Wörgl and the Chiemgauer: Section
-			2. The Relative Theory of Money and Ğ1: Sections 3 and 5.3. Property-owning democracy, after Rawls, Meade and
-			Roemer: Section 1. Georgism: Section 8.2. Energy and growth: Section 8.4.
+			<strong>Sources that the body discusses.</strong> Circles: Section 3; theOS uses its web of trust only for new
+			identities (Section 12.1). Gesell, Wörgl and the Chiemgauer: Section 2. The Relative Theory of Money and Ğ1:
+			Sections 3 and 5.3. Property-owning democracy, after Rawls, Meade and Roemer: Section 1. Georgism: Sections 8.1
+			and 8.2, on who gets the rising value of land; in theOS, ground rent is a sale under Law 5. Energy and growth:
+			Section 8.4.
 		</p>
 	</section>
 
@@ -3718,13 +3791,16 @@
 					<tr><th>Attack</th><th>What it gains</th><th>Proposed defence</th><th>Test in {SIM_NAMES.testCity}</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>Fake identities (Sybil)</td><td>{fmt(u)} HEARTS a year to direct for each fake person</td><td>A staged identity system, caps on new identities, regular liveness checks</td><td>Farms of fake agents</td></tr>
-					<tr><td>Self-dealing and rings</td><td>A founder controls {fmt(selfDealDay(), 1)} MIND a day instead of {fmt(honestDay())}; friends trade empty MINDs for real ones</td><td>Escrow for related parties, no payouts to recent investors, public treasuries, only real deliveries count as sales, basket admission</td><td>Kickback COOPs, investment rings and circular sales</td></tr>
-					<tr><td>Empty work proposals</td><td>Treasury MIND for work that an Aven never delivered, or for a friend's Aven</td><td>Public work proposals with a proof of delivery, members' acceptance, work proposals open to every Aven, audits of the largest earners</td><td>Avens that bill empty work, COOPs that favour related Avens</td></tr>
-					<tr><td>Pool attacks and front-running</td><td>A pushed price draws HEARTS from Avens; bots trade around payments and inflows</td><td>Time-averaged prices, one batch at one price per block, sealed orders, an event breaker</td><td>Price pumps, junk dumping, sandwich bots</td></tr>
-					<tr><td>Capture</td><td>Control of a COOP's treasury, of the Avens' defaults, or of the protocol's code</td><td>The holder rule, a default COOP constitution, several Aven providers, the process of Appendix F</td><td>Vote buying, a captured Aven provider, injected instructions</td></tr>
-					<tr><td>Bugs</td><td>Value drained from pools that only a vote of the City COOP's members can withdraw from</td><td>Verified maths, one global melt index, independent code, a pause that cannot move funds, a bug bounty</td><td>A red team before real value flows</td></tr>
-					<tr><td>Market power over a basic</td><td>A leading COOP raises prices or keeps rivals out</td><td>A founding signal when need goes unmet or a rival's cost is far below the price (Law 3 entry is always open); open improvements after a delay; Avens' exit; Law 5 to all holders; the City COOP leases failed plants that people still use</td><td>One, two and four sellers of each good</td></tr>
+					<tr><td>Fake identities (Sybil)</td><td>{fmt(u)} HEARTS a year to direct for each fake person</td><td>Section 12.1: a staged identity system, caps on new identities, regular liveness checks</td><td>Farms of fake agents</td></tr>
+					<tr><td>Self-dealing and rings</td><td>A founder controls {fmt(selfDealDay(), 1)} MIND a day instead of {fmt(honestDay())}; friends trade empty MINDs for real ones</td><td>Section 12.2: escrow for related parties, public treasuries, only real deliveries count as sales, no dividend on sales between related COOPs; basket admission (Section 12.3)</td><td>Kickback COOPs, investment rings and circular sales</td></tr>
+					<tr><td>Empty work proposals</td><td>Treasury MIND for work that an Aven never delivered, or for a friend's Aven</td><td>Section 12.2: public work proposals with a proof of delivery, members' acceptance, work proposals open to every Aven, audits of the largest earners</td><td>Avens that bill empty work, COOPs that favour related Avens</td></tr>
+					<tr><td>Pool attacks and front-running</td><td>A pushed price draws HEARTS from Avens; bots trade around payments and inflows</td><td>Section 12.3: time-averaged prices, one batch at one price per block, sealed orders, an event breaker</td><td>Price pumps, junk dumping, sandwich bots</td></tr>
+					<tr><td>Capture</td><td>Control of a COOP's treasury, of the Avens' defaults, or of the protocol's code</td><td>Section 12.2: the holder rule, a default COOP constitution, the Avens' default rule changed only by MIP, several Aven providers, the process of Appendix F</td><td>Vote buying, a captured Aven provider, injected instructions</td></tr>
+					<tr><td>Bugs</td><td>Value drained from pools that only a vote of the City COOP's members can withdraw from</td><td>Section 12.3: verified maths, one global melt index, independent code, a pause that cannot move funds, a bug bounty</td><td>A red team before real value flows</td></tr>
+					<tr><td>A vote that thins or empties a pool</td><td>Pool reserves for some other use; pushed prices cost less to make</td><td>Section 12.3: the redemption rule, {GOVERNANCE.redeem.majority === 2 / 3 ? 'two thirds' : pc(GOVERNANCE.redeem.majority)} of the {GOVERNANCE.redeem.of}, a wait of {GOVERNANCE.redeem.waitDays} days and a yearly cap</td><td>Redemptions by vote, with prices and routing costs before and after</td></tr>
+					<tr><td>Arbitrage profits as a lasting return</td><td>A share of every price move between the pools, for whoever trades first</td><td>Section 12.3: one batch at one price per block, or arbitrage profits returned to all people (Table {TAB.prop2})</td><td>Arbitrage bots, with what they keep measured</td></tr>
+					<tr><td>A COOP that refuses new HEARTS</td><td>Scarcity of its MIND for its first owners</td><td>The open-investment rule: no COOP whose MIND trades in a basket may refuse an investment (Section 9)</td><td>A COOP that closes its doors</td></tr>
+					<tr><td>Market power over a basic</td><td>A leading COOP raises prices or keeps rivals out</td><td>Section 12.2: a founding signal when need goes unmet or a rival's cost is far below the price (Law 3 entry is always open); open improvements after a delay; Avens' exit; Law 5 to all holders; the City COOP leases failed plants that people still use</td><td>One, two and four sellers of each basic, and a founder ring: first results in Section 11.3.3</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -3752,10 +3828,15 @@
 			after {GOVERNANCE.pauseHours} hours unless a large majority renews it.
 		</p>
 		<p>
-			<strong>Details inside the laws.</strong> Some rules work inside the laws. Among them are the reserve target of
-			about {SIM.reserveMonths} months and the founding signal for rivals (Law 3 entry itself is always open). Basket
-			admission, how the HEART index reads pool prices (Section 6.3) and the identity system are rules of this kind too. These
-			rules change by the same process as the code, and {SIM_NAMES.testCity} tests each change first.
+			<strong>Details inside the laws.</strong> Some rules and policies work inside the laws, and Table {TAB.kinds}
+			says who changes each. Among them are the reserve target of about {SIM.reserveMonths} months and the founding
+			signal for rivals (Law 3 entry itself is always open). So are basket admission, how the HEART values ({EQ.unit})
+			read pool prices (Section 6.3), the identity system, the idle-plant threshold and the terms of the euro advance.
+			The Avens' default investment rule changes only by MIP, and a person's own choice always overrides it (Section
+			7). A redemption needs {GOVERNANCE.redeem.majority === 2 / 3 ? 'two thirds' : pc(GOVERNANCE.redeem.majority)} of
+			the {GOVERNANCE.redeem.of} and waits {GOVERNANCE.redeem.waitDays} days, and its yearly cap is a policy (Section
+			6). theOS has not yet set how the City COOP sets ground rent (Section 12.4), or the estate rule (Section 12.1).
+			These rules change by the same process as the code, and {SIM_NAMES.testCity} tests each change first.
 		</p>
 		<p>
 			During {SIM_NAMES.testCity} and the first pilot, the maiaCITY team writes and runs the code. That is a concentration of power.
@@ -3771,29 +3852,31 @@
 			stake in maiaCITY. The code behind every number and figure in this paper is open, in the
 			maiaCITY repository at
 			<a href="https://github.com/MyAvenCEO/maiacity" target="_blank" rel="noopener noreferrer">github.com/MyAvenCEO/maiacity</a>.
-			The file <code>src/lib/theos/model.js</code> holds every number that the text prints. Each constant names the
-			table of the simulation that it comes from. A function computes every ratio, so readers can check and rerun each
-			one.
+			The file <code>src/lib/theos/model.js</code> holds every number that the text prints. Each constant names its
+			source: a table of the simulation, a study, {SIM_NAMES.testCity} or a design note. A function computes every
+			ratio, so readers can check and rerun each one.
 		</p>
 		<p>
-			The agent-based simulation that Sections 5 to 12 quote is the script <code>scripts/theos-e2e-sim.mjs</code> in the
+			{cap(SIM_NAMES.model)}, which Sections 5 to 12 quote, is the script <code>scripts/theos-e2e-sim.mjs</code> in the
 			same repository. Its main scenario is the dynamic world, and the static world is the comparison. The script prints the
 			per-person checks of Proposition 3 first. Then it prints the tables of the dynamic world, its variations and the
 			static world. It is seeded with {SIM.seed}, so the same command, <code>node scripts/theos-e2e-sim.mjs</code>,
 			gives the same results, in about {fmt(SIM.runSeconds / 60)} minutes. The flag <code>--quick</code> runs a short smoke test, and
-			<code>--csv FILE</code> also writes a yearly series of every run. {cap(SIM_NAMES.testCity)}'s world model grew from this
-			script (Section 11.3.1).
+			<code>--csv FILE</code> also writes a yearly series of every run. {cap(SIM_NAMES.testCity)} runs on its own engine in
+			the same repository, and Section 11.3 reports its results.
 		</p>
 		<p>
 			The script's own tables still use R, the yardstick that we retired (below). The values in HEARTS come from
-			the same seeded runs. The script's HEART report values every flow and every holding at the HEART index of its
-			step, and it changes no move, price or trade. The script prints it as tables H1 to H8, and <code>model.js</code>
+			the same seeded runs. The script's HEART report values every flow and every holding at the HEART values ({EQ.unit})
+			of its step, and it changes no move, price or trade. The script prints it as tables H1 to H8, and <code>model.js</code>
 			names them. <code>--json FILE</code> writes the report's main numbers. <code>--seeds A-B</code> runs the main run
 			on every seed from A to B and prints the seed check of Section 11.2.6. <code>--set key=value</code> changes one
 			setting of the main run, for example <code>turnDiv</code> for Law 5's share, <code>capDays</code> for the
-			reserves, <code>poolShare</code> for the pools' part or <code>reletUse</code> for the idle-plant rule, and
-			<code>--melt R</code> sets the melt. With <code>--set reletUse=0</code>, the City COOP leases every failed plant,
-			as in the last version of this paper. The melt tests of Section 11.2.5 use these flags, and with
+			reserves, <code>poolShare</code> for the pools' part, <code>reletUse</code> for the idle-plant rule, or
+			<code>divPools</code> for whether Law 5 pays the pools. <code>--melt 0.08</code> sets another rate for the melt
+			in a research run. With <code>--set reletUse=0</code>, the City COOP leases every failed plant, as in an
+			earlier version ({SIM_NAMES.versions.hearts} in Table {TAB.versions}). With <code>--set divPools=0</code>, Law 5
+			pays only people and other COOPs' treasuries, as in the earlier versions. The melt tests of Section 11.2.5 use these flags, and with
 			<code>--set poolShare={OLD_POOL_SHARE}</code> they run under the old pool rule. <code>--pair A-B --vs key=value</code>
 			runs the same-shock comparison of Table {TAB.sameShock}. It runs the main run and the same run with one setting changed, on
 			every seed from A to B, both with common random numbers (<code>crn=1</code>). It prints the paired results and a
@@ -3811,11 +3894,11 @@
 		<p>
 			<strong>The old pool rule.</strong> An earlier version of this paper gave the pools {fmt(OLD_POOL_SHARE, 2)} of
 			each HEART. We ran it against the rule of Law 4 on the same shocks, on {SS.n} seeds, {SS.from} to {SS.to}, both
-			with the idle-plant rule (Table {TAB.sameShock}). Section 11.2.6 explains the method and the sign test.
+			with the idle-plant rule (Table {TAB.sameShock}). Section 11.1 explains the method, and the glossary the sign test.
 		</p>
 		<div class="table-wrap">
 			<table class="narrow">
-				<caption><strong>Table {TAB.sameShock}.</strong> The pool rule of this paper ({fmt(POOL_SHARE, 1)} of each HEART to the pools) against the old one ({fmt(OLD_POOL_SHARE, 2)}), on the same shocks, on {SS.n} seeds. Both run with the idle-plant rule. Better means fewer person-days short, fewer failures, a lower μ, or all three checks passing where the other rule failed. p: the two-sided sign test.</caption>
+				<caption><strong>Table {TAB.sameShock}.</strong> The pool rule of this paper ({fmt(POOL_SHARE, 1)} of each HEART to the pools) against the old one ({fmt(OLD_POOL_SHARE, 2)}), on the same shocks, on {SS.n} seeds. Both run with the idle-plant rule, and Law 5 pays the pools. Better means fewer person-days short, fewer failures, a lower μ, or all three checks passing where the other rule failed. p: the two-sided sign test.</caption>
 				<thead>
 					<tr><th>Measure</th><th class="num">New</th><th class="num">Old</th><th class="num">Seeds: new better · worse · same</th><th class="num">p</th></tr>
 				</thead>
@@ -3829,25 +3912,48 @@
 			</table>
 		</div>
 		<p>
-			On the same shocks, the new pool rule did better. It left fewer person-days short on {ST.short.better} seeds and
-			more on {ST.short.worse} (<em>p</em> = {pv(ST.short)}). It had fewer food COOP failures on {ST.food.better} seeds
-			and more on {ST.food.worse} (<em>p</em> = {pv(ST.food)}). The other differences could be luck, with
-			<em>p</em> above {fmt(SS.alpha, 2)}. All three checks passed on {SS.new.pass} seeds under the new rule and on
-			{SS.old.pass} under the old (<em>p</em> = {pv(ST.pass)}). All COOP failures fell on {ST.fails.better} seeds and
-			rose on {ST.fails.worse} (<em>p</em> = {pv(ST.fails)}). And <Tex tex={String.raw`\mu`} /> was lower on
-			{ST.mu.better} seeds and higher on {ST.mu.worse} (<em>p</em> = {pv(ST.mu)}). It stayed below the melt on
-			{SS.new.below} seeds under the new rule, and on {SS.old.below} under the old. So the larger pools' part did not
-			cause the food failures of the main seed. On the same shocks, it made shortages and food failures rarer.
-			Without the idle-plant rule, the new pool rule also left fewer person-days short than the old
-			one: on {SS.noFix.tests.short.better} seeds, against {SS.noFix.tests.short.worse} (<em>p</em> =
-			{pv(SS.noFix.tests.short)}).
+			On the same shocks, the new pool rule left fewer person-days short on {ST.short.better} seeds and more on
+			{ST.short.worse} (<em>p</em> = {pv(ST.short)}). It had fewer food COOP failures on {ST.food.better} seeds and
+			more on {ST.food.worse} (<em>p</em> = {pv(ST.food)}). All three checks passed on {SS.new.pass} seeds under the
+			new rule and on {SS.old.pass} under the old (<em>p</em> = {pv(ST.pass)}). All COOP failures fell on
+			{ST.fails.better} seeds and rose on {ST.fails.worse} (<em>p</em> = {pv(ST.fails)}). And
+			<Tex tex={String.raw`\mu`} /> was lower on {ST.mu.better} seeds and higher on {ST.mu.worse} (<em>p</em> =
+			{pv(ST.mu)}). It stayed below the melt on {SS.new.below} seeds under the new rule, and on {SS.old.below} under
+			the old.
+			{Object.values(ST).every((x) => x.p >= SS.alpha)
+				? `No difference was significant: every p was above ${fmt(SS.alpha, 2)}, so luck can explain each one.`
+				: `Only the differences with p below ${fmt(SS.alpha, 2)} are significant.`}
 		</p>
 		<p>
-			Under the old pool rule, the melt tests of Section 11.2.5 came to the same answer. A higher melt still left
-			<Tex tex={String.raw`\mu`} /> above it on {seeds(SEEDS.n - MT.melt9.old.below)} at {pc(MT.melt9.melt)}, and on
-			{seeds(SEEDS.n - MT.melt8.old.below)} at {pc(MT.melt8.melt)}. Reserves of {MT.res12.months} months left it above
-			the melt on {seeds(SEEDS.n - MT.res12.old.below)}. Only Law 5 at {pc(MT.law10.share)} kept it at least
-			{fmt(MT.law10.old.marginMin * 100, 1)} points below on {ofSeeds(MT.law10.old.below)}.
+			<strong>Earlier tests.</strong> In an earlier version ({SIM_NAMES.versions.idle} in Table {TAB.versions}), Law 5 did not pay the pools.
+			There the new pool rule left fewer person-days short on {SS.v599.tests.short.better} seeds and more on
+			{SS.v599.tests.short.worse} (<em>p</em> = {pv(SS.v599.tests.short)}). Without the idle-plant rule, it also left
+			fewer person-days short than the old one: on {SS.noFix.tests.short.better} seeds, against
+			{SS.noFix.tests.short.worse} (<em>p</em> = {pv(SS.noFix.tests.short)}). We have not rerun these tests with Law 5
+			paid to the pools.
+		</p>
+		<p>
+			<strong>Law 5 with and without the pools.</strong> We ran this paper's main run against Law 5 without the pools,
+			as in an earlier version ({SIM_NAMES.versions.idle} in Table {TAB.versions}) (<code>--vs divPools=0</code>), on the same {SS.n} seeds. Paying the pools
+			lowered <Tex tex={String.raw`\mu`} /> on {SS.law5.tests.mu.better} of {SS.n} seeds (<em>p</em>
+			{SS.law5.tests.mu.p < 0.001 ? '< 0.001' : `= ${pv(SS.law5.tests.mu)}`}). Person-days short came to
+			{fmt(SS.new.short)}, against {fmt(SS.law5.old.short)} without the pools: more on {SS.law5.tests.short.worse} seeds
+			and fewer on {SS.law5.tests.short.better} (<em>p</em> = {pv(SS.law5.tests.short)}){SS.law5.tests.short.p >= SS.alpha
+				? ', not a significant difference'
+				: ''}. All three checks passed on {SS.new.pass} seeds with the pools paid and on {SS.law5.old.pass} without
+			(<em>p</em> = {pv(SS.law5.tests.pass)}).
+		</p>
+		<p>
+			Under the old pool rule, we ran the melt tests of Section 11.2.5 too.
+			{#if MT}
+				{@const levers = [['melt9', `a melt of ${pc(MT.melt9.melt)}`], ['melt8', `a melt of ${pc(MT.melt8.melt)}`], ['res12', `reserves of ${MT.res12.months} months`], ['law10', `Law 5 at ${pc(MT.law10.share)}`], ['law15', `Law 5 at ${pc(MT.law15.share)}`]]}
+				{@const allBelow = levers.filter(([k]) => MT[k].old.below === SEEDS.n)}
+				{@const notBelow = levers.filter(([k]) => MT[k].old.below < SEEDS.n)}
+				{allBelow.length ? `${cap(list(allBelow.map(([, w]) => w)))} kept μ below the melt on every seed.` : ''}
+				{notBelow.length ? `${cap(list(notBelow.map(([k, w]) => `${w} left it above the melt on ${seeds(SEEDS.n - MT[k].old.below)}`)))}.` : ''}
+				All three checks passed on at most {Math.max(...levers.map(([k]) => MT[k].old.pass))} of the {SEEDS.n} seeds,
+				against up to {Math.max(...levers.map(([k]) => MT[k].new.pass))} under the rule of this paper.
+			{/if}
 		</p>
 	</section>
 
