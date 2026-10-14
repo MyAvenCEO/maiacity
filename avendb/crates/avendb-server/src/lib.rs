@@ -165,6 +165,9 @@ impl Running {
     }
 }
 
+/// How long the server waits at its start to be on its relay.
+const ONLINE: Duration = Duration::from_secs(30);
+
 /// Starts the server as `config` says: its relay, then its node on its shelf, its bucket's or its folder's, made at
 /// its first start, which is reached through that relay and tells it whom to let in.
 pub async fn start(config: &Config) -> Result<Running> {
@@ -193,6 +196,11 @@ pub async fn start(config: &Config) -> Result<Running> {
         progress: avendb_net::Progress::new(),
     };
     let node = server::open(shelf, opts).await?;
+    // on its relay before it says its offer: its endpoint joins the relay once its first net report is done, a few
+    // seconds in, and until then the relay drops what devices send it
+    if tokio::time::timeout(ONLINE, node.endpoint().online()).await.is_err() {
+        tracing::warn!("avenDB server: not on its relay after {ONLINE:?}; devices reach it once it is");
+    }
     let mut offer = node.offer();
     if let Some(public) = config.public_addr {
         let relays: Vec<RelayUrl> = offer.addr.relay_urls().cloned().collect();
