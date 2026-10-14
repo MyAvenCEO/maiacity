@@ -1,7 +1,7 @@
 /*
  * THE MODELS — every reusable still model, as the Models viewer (/app/models/) lists it (the containers are the Buildings', below): its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js; a machine that works or has moving parts is an actor, ./actors, and never listed here too). A world places
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js; a machine that works or has moving parts is an actor, ./actors, and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
@@ -18,6 +18,7 @@ import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, loadingRamp, pickup, solarPanel } from './village.js';
 import { SEED_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
+import { domeTent, packedTent } from './tent.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
@@ -152,6 +153,31 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'marker-sticks', label: 'Marker sticks', note: 'two sticks of square pine, 35 cm long and 12 mm across, pointed, their tops painted orange, pushed into the ground half a metre apart', usedIn: 'MaiaCity V1', make: () => markerSticks() },
 	{ id: 'plant-stake', label: 'Plant stake', note: 'a young tree’s stake of round peeled pine, 1 m long and 32 mm thick, axe-pointed, pushed in beside the seed; on a wire tied to its top a 10 × 7 cm waxed-cloth flag printed on both sides with the tree’s name and its plant', usedIn: 'MaiaCity V1', make: () => plantStake({ name: 'Samuel', seed: 'apple' }) },
 	{ id: 'dug-earth', label: 'Dug earth', note: 'a patch of turned soil 60 cm across, heaped a little, crumbs and clods on it, a hollow for the seed; it darkens and shines as it is watered', usedIn: 'MaiaCity V1', make: () => dugEarth() },
+	{
+		id: 'dome-tent',
+		label: 'Dome tent',
+		note: 'the Tribe COOP’s tent: a geodesic dome 4 m across and 2 m high, its frame of 20 mm steel tubes on hub plates (4-frequency, the tubes 0.51 – 0.65 m long), a canvas cover over it and a door panel zipped in, a round groundsheet under it, a lantern hung from its top; on a timber deck 5.6 m across. It is pitched step by step: the groundsheet unrolled and its sides laid out, the frame raised ring by ring from the floor, the cover drawn up from the back over the top, the door let down',
+		usedIn: 'MaiaCity V1',
+		make: () => domeTent(),
+		variants: [
+			{ id: 'dome-tent-pitched', label: 'Pitched', note: 'standing, its door in', make: () => domeTent() },
+			{ id: 'dome-tent-floor', label: 'Groundsheet down', note: 'the groundsheet unrolled and its folded sides laid out flat', make: () => domeTent({ pitch: 0.2 }) },
+			{ id: 'dome-tent-rings', label: 'Frame going up', note: 'the frame raised ring by ring: the lower rings in, the next one going up', make: () => domeTent({ pitch: 0.5 }) },
+			{ id: 'dome-tent-frame', label: 'Frame up', note: 'the whole frame standing, the door’s bent tube in, the lantern hung', make: () => domeTent({ pitch: 0.75 }) },
+			{ id: 'dome-tent-cover', label: 'Cover going on', note: 'the cover drawn up from the back over the top', make: () => domeTent({ pitch: 0.86 }) }
+		]
+	},
+	{
+		id: 'tent-bag',
+		label: 'Tent bag',
+		note: 'the dome tent packed: a roll of olive canvas 0.9 m long and 0.4 m thick, two straps buckled round it and a handle on top; unrolled, what is in it lies on it: the groundsheet rolled, the cover rolled, the frame’s tubes in a bundle and the hubs in a sack',
+		usedIn: 'MaiaCity V1',
+		make: () => packedTent(),
+		variants: [
+			{ id: 'tent-bag-rolled', label: 'Rolled', note: 'rolled up and strapped', make: () => packedTent() },
+			{ id: 'tent-bag-open', label: 'Unrolled', note: 'its straps undone and the canvas laid out flat', make: () => packedTent({ open: 1 }) }
+		]
+	},
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
 	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() }
 ];
