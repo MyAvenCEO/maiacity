@@ -1,5 +1,5 @@
 //! Documents, schemas and proposals (P4, P5; T9, T10, T11), item by item: the lenses between schema versions, edits
-//! through an app's view that keep what it can't see, proposals merged and promoted, the latest change reverted and an
+//! through an app's view that keep what it can't see, proposals merged as git merges, the latest change reverted and an
 //! older one undone, a variant that copies a record into a new entry, and items that converge whatever order their
 //! edits arrive in and refuse an update whose ops aren't its signer's. In a flat vault each item is one entry, a doc, a
 //! note or a todo: its writes carry its Loro updates, encrypted, on the main line or on a proposal, and an app reads
@@ -8,8 +8,12 @@
 
 mod common;
 
+use std::collections::BTreeSet;
+
 use avendb::doc::{DocError, Item};
 use avendb::history::{Repo, MAIN};
+use avendb::merge::Place;
+use avendb::ops::Key;
 use avendb::lens::{BlockV1, DocV1, KindV1, Status, TodoV1, TodoV2, TypeV2};
 use common::*;
 use serde_json::json;
@@ -81,23 +85,45 @@ fn edits_through_a_view_keep_what_it_cant_see() {
 }
 
 #[test]
-fn promote_equals_proposal() {
+fn a_merge_keeps_main_s_edits_and_takes_the_proposal_s_only_where_asked() {
     let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
     let rewrite = Some(repo.propose(MAC_B, &repo.heads(MAIN), "rewrite").unwrap());
-    repo.edit(MAC_B, rewrite, |i| i.set_text(2, "Welcome to the coop, rewritten"));
+    repo.edit(MAC_B, rewrite, |i| {
+        i.set_text(1, "Welcome, all");
+        i.set_text(2, "Welcome to the coop, rewritten");
+    });
     // main moves on meanwhile, on the block the proposal rewrites and on another
     repo.edit(MAC_A, MAIN, |i| {
         i.set_text(2, "Welcome to Maia Coop: the greenhouse opens at nine.");
         i.push_block(paragraph(3, "an edit on main"));
     });
     let (main, proposal) = (repo.log(MAIN), repo.log(rewrite));
-    repo.promote(MAC_A, rewrite, MAIN);
-    // main shows exactly the proposal's content (T10h, from T10d) and keeps both histories (T10e)
-    let shown = |line| repo.item(line, MAC_A).map(|i| i.record());
-    assert_eq!(shown(MAIN), shown(rewrite));
-    assert_eq!(repo.item(MAIN, MAC_C).unwrap().as_document().unwrap().blocks.len(), 2);
+    // both changed the text at one place: one conflict, there
+    let text = Place::Row("blocks".into(), Key { id: 2, copy: 0 });
+    let conflicts = repo.history().merged(rewrite, MAIN, MAC_A, &BTreeSet::new()).conflicts;
+    assert_eq!(conflicts.iter().map(|c| &c.place).collect::<Vec<_>>(), [&text]);
+    assert_eq!(conflicts[0].theirs.as_ref().map(|r| &r["text"]), Some(&json!("Welcome to the coop, rewritten")));
+    let mut taking = repo.clone();
+    repo.merge(MAC_A, rewrite, MAIN);
+    let texts = |repo: &Repo| {
+        let doc = repo.item(MAIN, MAC_C).unwrap().as_document().unwrap();
+        doc.blocks.iter().map(|b| b.text.clone()).collect::<Vec<_>>()
+    };
+    // nothing main changed is lost (T10d), all the proposal changed alone lands (T10e), and main keeps its own text
+    // where both changed it
+    let nine = "Welcome to Maia Coop: the greenhouse opens at nine.";
+    assert_eq!(texts(&repo), ["Welcome, all", nine, "an edit on main"]);
+    // and every write of both stays in main's history (T10g)
     let log = repo.log(MAIN);
     assert!(main.iter().chain(&proposal).all(|edit| log.contains(edit)), "{log:?}");
+    // taking the proposal's text there, and nothing else
+    taking.merge_taking(MAC_A, rewrite, MAIN, &BTreeSet::from([text]));
+    assert_eq!(texts(&taking), ["Welcome, all", "Welcome to the coop, rewritten", "an edit on main"]);
+    // merging again changes nothing, and a merge Loro's merged item already shows carries no change
+    let merged = repo.item(MAIN, MAC_A).unwrap().record();
+    let again = repo.merge(MAC_A, rewrite, MAIN);
+    assert_eq!(repo.item(MAIN, MAC_A).unwrap().record(), merged);
+    assert_eq!(repo.history().get(again).and_then(|c| c.body.as_deref()), Some(&[][..]));
 }
 
 #[test]

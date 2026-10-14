@@ -23,6 +23,7 @@ use common::*;
 use serde_json::{json, Value};
 use avendb::doc::Item;
 use avendb::history::{Repo, MAIN};
+use avendb::merge::Place;
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
@@ -2442,10 +2443,11 @@ fn lines(repo: &Repo) -> Vec<(Line, Vec<EditId>, Value)> {
 #[test]
 fn t10_proposals() {
     // on random histories of one document, edited on random lines by random devices, proposed from random versions,
-    // and merged and promoted between random lines: a write on one line leaves every other line as it was (T10f); a
-    // merge's history is the union of both lines', so merging the other way shows the same and merging again changes
-    // nothing (T10g); a promote shows exactly the proposal and keeps both histories (T10h); and undoing a line's latest
-    // edit gives back the version it built on
+    // and merged between random lines: a write on one line leaves every other line as it was (T10f); a merge's history
+    // is the union of both lines' (T10g), and it shows the three-way merge of both from their base (T10h): every
+    // field only one side changed shows that side's (T10d, T10e), every conflict keeps the line merged into unless the
+    // merge takes the other's there, and merging again changes nothing; and undoing a line's latest edit gives back
+    // the version it built on
     let mut done = [0; 5];
     for seed in RUNS {
         let mut rng = Rng(seed);
@@ -2479,9 +2481,18 @@ fn t10_proposals() {
                     assert_eq!(shown(&repo, into), back, "seed {seed}");
                     into
                 }
-                3 => {
-                    let mut other = repo.clone();
-                    let merge = repo.merge(author, from, into);
+                _ => {
+                    // the base, what both show, and, merging with case 4, taking the other's at every conflict
+                    let h = repo.history();
+                    let base = h.item_at(&h.base(from, into), MAC_D, MAIN).record();
+                    let (ours, theirs) = (shown(&repo, into), shown(&repo, from));
+                    let conflicts = h.merged(from, into, MAC_D, &BTreeSet::new()).conflicts;
+                    let take: BTreeSet<Place> = match what {
+                        3 => BTreeSet::new(),
+                        _ => conflicts.iter().map(|c| c.place.clone()).collect(),
+                    };
+                    let want = Value::Object(h.merged(from, into, MAC_D, &take).record);
+                    let merge = repo.merge_taking(author, from, into, &take);
                     let union: Vec<EditId> = repo.log(into).into_iter().filter(|&edit| edit != merge).collect();
                     let mut both: Vec<EditId> = [repo_log(&before, into), repo_log(&before, from)].concat();
                     both.sort();
@@ -2489,19 +2500,18 @@ fn t10_proposals() {
                     let mut got = union.clone();
                     got.sort();
                     assert_eq!(got, both, "seed {seed}");
-                    other.merge(author, into, from);
-                    assert_eq!(shown(&other, from), shown(&repo, into), "seed {seed}");
                     let merged = shown(&repo, into);
+                    assert_eq!(merged, want, "seed {seed}");
+                    let kept = one_side_kept(&base, &ours, &theirs, &merged);
+                    assert!(kept, "seed {seed}: {base} {ours} {theirs} {merged}");
+                    for c in &conflicts {
+                        if let Place::Field(f) = &c.place {
+                            let side = if what == 3 { &ours } else { &theirs };
+                            assert_eq!(merged.get(f), side.get(f), "seed {seed}");
+                        }
+                    }
                     repo.merge(author, from, into);
                     assert_eq!(shown(&repo, into), merged, "seed {seed}");
-                    into
-                }
-                _ => {
-                    repo.promote(author, from, into);
-                    assert_eq!(shown(&repo, into), shown(&repo, from), "seed {seed}");
-                    let log = repo.log(into);
-                    let kept = repo_log(&before, into).into_iter().chain(repo_log(&before, from));
-                    assert!(kept.into_iter().all(|edit| log.contains(&edit)), "seed {seed}");
                     into
                 }
             };
@@ -2514,6 +2524,23 @@ fn t10_proposals() {
         }
     }
     assert!(done.iter().all(|&n| n > 20), "{done:?}");
+}
+
+/// A merge of `theirs` into `ours` from their `base` shows, field by field, the change of whichever side alone
+/// changed it: theirs where ours is as the base (T10e), ours where theirs is, or where both are alike (T10d).
+fn one_side_kept(base: &Value, ours: &Value, theirs: &Value, merged: &Value) -> bool {
+    let records = [base, ours, theirs].into_iter().filter_map(Value::as_object);
+    let fields: BTreeSet<&String> = records.flat_map(|r| r.keys()).collect();
+    fields.into_iter().all(|f| {
+        let (b, o, t, m) = (base.get(f), ours.get(f), theirs.get(f), merged.get(f));
+        if o == b {
+            m == t
+        } else if t == b || o == t {
+            m == o
+        } else {
+            true
+        }
+    })
 }
 
 fn repo_log(lines: &[(Line, Vec<EditId>, Value)], line: Line) -> Vec<EditId> {

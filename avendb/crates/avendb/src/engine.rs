@@ -38,7 +38,7 @@
 mod vaults;
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 
 use serde_json::{json, Map, Value};
@@ -48,6 +48,7 @@ use crate::history::{self, History, MAIN};
 use crate::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lab::Lab;
 use crate::lens::{self, Lane, Lens, Schema, View};
+use crate::merge::Place;
 use crate::ops::{self, Path, Record, RecordOp, Where};
 use crate::policy::{Line, Proposal, Refusal};
 use crate::rules;
@@ -137,7 +138,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         }
         "tag" => &["entry", "add", "remove", "as"],
         "propose" => &["entry", "from", "name", "as"],
-        "merge" => &["entry", "from", "into", "promote", "as"],
+        "merge" => &["entry", "from", "into", "take", "as"],
         "restore" => &["entry", "line", "at", "as"],
         "undo" => &["entry", "line", "edit", "as"],
         "variant" => &["entry", "line", "into", "schema", "ops", "as"],
@@ -611,14 +612,13 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
 
 /// What one write of an entry's history is, as `history` and the note page show it.
 pub struct Wrote {
-    /// `edit`; `propose`, the start of a proposal; `merge` of two lines, which carries no change; `promote`, a merge
-    /// whose change brings its line to the other's record; or `sealed`, a write the device can't open.
+    /// `edit`; `propose`, the start of a proposal; `merge` of two lines, with the change, if any, that brings Loro's
+    /// merged item to the three-way merge of both; or `sealed`, a write the device can't open.
     pub kind: &'static str,
-    /// The other line it builds on: for a merge or a promote, the line it brought in; for a proposal, the line it
-    /// started from.
+    /// The other line it builds on: for a merge, the line it brought in; for a proposal, the line it started from.
     pub from: Option<Line>,
-    /// The version it changed: what it built on, or for a merge or a promote, its own line's version before it, so its
-    /// changes are what it brought.
+    /// The version it changed: what it built on, or for a merge, its own line's version before it, so its changes are
+    /// what it brought.
     pub base: Vec<EditId>,
     /// Why its readers don't count it, if they don't: it builds on a write they don't count (`builds-on`); they can't
     /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); or the ops of
@@ -634,8 +634,7 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
     let kind = match &c.body {
         _ if w.proposal == Proposal::New => "propose",
         None => "sealed",
-        Some(change) if change.is_empty() => "merge",
-        Some(_) if from.is_some() => "promote",
+        Some(change) if change.is_empty() || from.is_some() => "merge",
         Some(_) => "edit",
     };
     let own: Vec<EditId> = w.deps.iter().copied().filter(|d| on(d) == Some(line)).collect();
@@ -686,7 +685,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
     let shown = h.changes().len().saturating_sub(limit);
     let edit = |(i, c): (usize, &history::Change)| {
         let (w, x) = (&c.write, wrote(h, c));
-        let changes = (i >= shown && matches!(x.kind, "edit" | "promote")).then(|| {
+        let changes = (i >= shown && matches!(x.kind, "edit" | "merge")).then(|| {
             let after = h.item_at(&[w.edit], me, w.line()).record();
             let before = h.item_at(&x.base, me, w.line()).record();
             let empty = Record::new();
@@ -769,7 +768,7 @@ enum Step {
     Edits { entry: EntryId, line: Line, schema: Named, ops: Vec<RecordOp> },
     Tag { entry: EntryId, add: Vec<String>, remove: Vec<String> },
     Propose { entry: EntryId, from: Option<Vec<EditId>>, name: String },
-    Merge { entry: EntryId, from: Line, into: Line, promote: bool },
+    Merge { entry: EntryId, from: Line, into: Line, take: BTreeSet<Place> },
     Restore { entry: EntryId, line: Line, at: Vec<EditId> },
     Undo { entry: EntryId, line: Line, edit: EditId },
     Variant { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<RecordOp> },
@@ -845,11 +844,16 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
             if !o.contains_key("from") {
                 return Err(bad("merge takes the line it merges: from, null for the main line"));
             }
-            let promote = match o.get("promote") {
-                None => false,
-                Some(p) => p.as_bool().ok_or_else(|| bad("promote is true or false"))?,
+            let take = match o.get("take") {
+                None => BTreeSet::new(),
+                Some(t) => {
+                    let places = t.as_array().ok_or_else(|| bad("take is a list of places: {at, what}"))?;
+                    let why = "a place is {at: path, what: value | row | order}";
+                    let place = |p| Place::of_json(p).ok_or_else(|| bad(why));
+                    places.iter().map(place).collect::<Result<_, _>>()?
+                }
             };
-            Step::Merge { entry: entry_of(o)?, from: line_of(o, "from")?, into: line_of(o, "into")?, promote }
+            Step::Merge { entry: entry_of(o)?, from: line_of(o, "from")?, into: line_of(o, "into")?, take }
         }
         "restore" => {
             let at = edits_of(o.get("at").ok_or_else(|| bad("restore takes the version it puts back: at"))?, "at")?;
@@ -975,11 +979,8 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let edit = lab.propose(me, actor, entry, &from, &name)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": edit.to_hex() }))
         }
-        Step::Merge { entry, from, into, promote } => {
-            let edit = match promote {
-                true => lab.promote(me, actor, entry, from, into)?,
-                false => lab.merge(me, actor, entry, from, into)?,
-            };
+        Step::Merge { entry, from, into, take } => {
+            let edit = lab.merge(me, actor, entry, from, into, &take)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(into) }))
         }
         Step::Restore { entry, line, at } => {

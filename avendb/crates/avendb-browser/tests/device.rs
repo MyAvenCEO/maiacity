@@ -816,7 +816,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(shown_note["lines"][0]["history"], json!(all[..2]), "the main line: the first two");
     assert_eq!(shown_note["lines"][1]["history"], json!(all), "the proposal: what it builds on, then its own");
     assert_eq!(shown_note["edits"][2]["from"], json!({ "line": null, "name": "main" }), "it started from main");
-    // merged into the main line: an edit that carries no change, and the main line shows the proposal's edit
+    // merged into the main line, which hadn't changed since: a write that carries no change, as Loro's merged item
+    // shows the proposal's edit already, and the main line shows it
     run(&first, json!({ "op": "merge", "entry": e, "from": b })).await.expect("merged");
     let shown_note = note_of(&first, note).await;
     assert_eq!(kinds(&shown_note).last().map(String::as_str), Some("merge"));
@@ -835,14 +836,18 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let made = made.expect("the first edit");
     run(&first, json!({ "op": "restore", "entry": e, "at": [made] })).await.expect("restored");
     assert_eq!(on_line(&note_of(&first, note).await, None), "Plant beans.");
-    // the proposal goes on, and a promote brings the main line to exactly what the proposal shows
+    // the proposal goes on while main went back: both changed the text at one place, a conflict the note shows,
+    // and a merge that takes the proposal's text there brings it to main
     run(&first, set_text(v, note, Some(b), 2, "Corn first.")).await.expect("another edit on the proposal");
-    run(&first, json!({ "op": "merge", "entry": e, "from": b, "promote": true })).await.expect("promoted");
+    let text = json!({ "at": ["blocks", { "id": 2 }], "what": "row" });
+    let conflict = note_of(&first, note).await["lines"][1]["conflicts"][0].clone();
+    assert_eq!((&conflict["at"], &conflict["ours"]["text"]), (&text["at"], &json!("Plant beans.")));
+    run(&first, json!({ "op": "merge", "entry": e, "from": b, "take": [text] })).await.expect("merged, taking it");
     let shown_note = note_of(&first, note).await;
-    assert_eq!(kinds(&shown_note).last().map(String::as_str), Some("promote"));
+    assert_eq!(kinds(&shown_note).last().map(String::as_str), Some("merge"));
     let both = (on_line(&shown_note, None), on_line(&shown_note, Some(b)));
     assert_eq!(both, ("Corn first.".into(), "Corn first.".into()));
-    // the engine's history of it: each write as the note page names it, and the promote's change, the text it brought
+    // the engine's history of it: each write as the note page names it, and the merge's change, the text it brought
     let log = run(&first, json!({ "op": "history", "entry": e })).await.expect("its history");
     assert_eq!(kinds(&log), kinds(&shown_note));
     let brought = json!([{ "set": ["blocks", { "id": 2 }, "text"], "value": "Corn first." }]);

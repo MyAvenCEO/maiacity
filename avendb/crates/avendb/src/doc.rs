@@ -11,7 +11,7 @@
 //!
 //! Every edit goes through an app's view (`lens::View`): the app edits what it sees, the lens turns that into the new
 //! stored record, and the item makes the smallest change that holds it. Each change carries the view's schema as its
-//! Loro commit message, so a reader knows which versions wrote an item (`authored`). A promote, restore or undo puts
+//! Loro commit message, so a reader knows which versions wrote an item (`authored`). A merge, restore or undo puts
 //! back a record those versions wrote (`put_record`), and names none; a copy into a new entry names them all (`copy`).
 //!
 //! Each device edits as a Loro peer of its own on each line of an item's history, derived from its signer and the
@@ -181,7 +181,7 @@ impl Item {
         debug_assert_eq!(self.record(), Value::Object(want));
     }
 
-    /// Make the item store exactly `record` by the smallest change, as a promote, a restore or an undo does: the record
+    /// Make the item store exactly `record` by the smallest change, as a merge, a restore or an undo does: the record
     /// is one the item's own changes wrote, so this change names no schema. The built-in views of the record's kind say
     /// which new fields are texts.
     pub fn put_record(&mut self, record: &Value) {
@@ -208,7 +208,7 @@ impl Item {
     }
 
     /// The schemas the item's changes were written under, by their commit messages: each names one, or for a copy
-    /// several, apart by spaces. A change without one (a promote, a restore, an undo) names none.
+    /// several, apart by spaces. A change without one (a merge, a restore, an undo) names none.
     pub fn authored(&self) -> BTreeSet<BlobId> {
         self.authored_since(&Version::default())
     }

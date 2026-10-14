@@ -190,23 +190,34 @@ fn lines_merge_restore_undo_and_variants_are_ops() {
     let l = cast::library(&mut w);
     let mac = w.mac_a;
     let plan = hex(l.plan);
-    // a proposal from the main line's heads, edited on its own line, then promoted into the main line
+    // a proposal from the main line's heads, retitled on its own line while main is retitled too
     let line = ok(run(&mut w, mac, json!({ "op": "propose", "entry": plan, "name": "Bolder" })))["line"].clone();
     let retitle = json!({ "op": "set", "entry": plan, "line": line, "path": ["title"], "value": "The plan" });
     ok(run(&mut w, mac, retitle));
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": plan, "path": ["title"], "value": "Our plan" })));
     let main = |w: &World| w.lab.item(mac, l.plan).unwrap().as_document().unwrap().title;
-    assert_eq!(main(&w), "Plan");
-    ok(run(&mut w, mac, json!({ "op": "merge", "entry": plan, "from": line, "promote": true })));
+    assert_eq!(main(&w), "Our plan");
+    // the note shows the proposal against its base with main, and the conflict a merge would find
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": plan })));
+    let title = json!({ "at": ["title"], "what": "value" });
+    assert_eq!(note["lines"][1]["base"]["title"], "Plan");
+    let conflict = &note["lines"][1]["conflicts"][0];
+    assert_eq!(conflict["at"], title["at"]);
+    assert_eq!((&conflict["ours"], &conflict["theirs"]), (&json!("Our plan"), &json!("The plan")));
+    // merged into the main line, taking the proposal's title there
+    ok(run(&mut w, mac, json!({ "op": "merge", "entry": plan, "from": line, "take": [title] })));
     assert_eq!(main(&w), "The plan");
+    let bad = json!({ "op": "merge", "entry": plan, "from": line, "take": [{ "at": ["title"], "what": "all" }] });
+    assert_eq!(refused(&run(&mut w, mac, bad)), "BadOp");
     // the history names the lines and what each write is
     let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": plan })));
     assert_eq!(history["lines"][1]["name"], "Bolder");
-    assert_eq!(each(&history["edits"], |e| &e["kind"]), ["edit", "propose", "edit", "promote"]);
-    // undo the retitle, which the main line took in, then restore the version the promote made
+    assert_eq!(each(&history["edits"], |e| &e["kind"]), ["edit", "propose", "edit", "edit", "merge"]);
+    // undo the proposal's retitle, which the main line took in, then restore the version the merge made
     let edits = each(&history["edits"], |e| &e["id"]);
     ok(run(&mut w, mac, json!({ "op": "undo", "entry": plan, "edit": edits[2] })));
     assert_eq!(main(&w), "Plan");
-    ok(run(&mut w, mac, json!({ "op": "restore", "entry": plan, "at": [edits[3]] })));
+    ok(run(&mut w, mac, json!({ "op": "restore", "entry": plan, "at": [edits[4]] })));
     assert_eq!(main(&w), "The plan");
     // a variant in the coop, its copy marked in the same first write
     let coop = cast::coop_on(&mut w);

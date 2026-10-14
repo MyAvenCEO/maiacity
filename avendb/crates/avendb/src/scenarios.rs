@@ -422,14 +422,15 @@ fn proposals(run: &mut Run) -> Done {
     let blind = !contains(&server, "Bob's greenhouse draft") && !contains(&server, "Hello, Bob here");
     run.check("the server stores the draft and reads neither its name nor its edit", blind);
     let before_merge = heads(&w.lab, MAIN);
-    run.ok("Alice merges the draft into main", w.lab.merge(w.mac_a, coop, welcome, Some(draft), MAIN))?;
+    let none = BTreeSet::new();
+    run.ok("Alice merges the draft into main", w.lab.merge(w.mac_a, coop, welcome, Some(draft), MAIN, &none))?;
     w.lab.sync_all(8);
     run.same(
         "Bob's Mac shows the draft's edit on main",
         main_text(&w.lab, w.mac_b).as_deref(),
         Some("Hello, Bob here"),
     );
-    // a second proposal is promoted: main ends with exactly its content, though main moved on meanwhile
+    // a second proposal is merged while main moved on meanwhile: main takes the rewrite and keeps its own edit
     let rewrite = w.lab.propose(w.mac_a, coop, welcome, &heads(&w.lab, MAIN), "rewrite");
     let rewrite = Some(run.ok("Alice starts a second proposal, rewrite", rewrite)?);
     let edit = w.lab.edit_on(w.mac_a, coop, welcome, rewrite, |i| i.set_text(2, "Welcome to the coop"));
@@ -437,14 +438,15 @@ fn proposals(run: &mut Run) -> Done {
     let meanwhile = w.lab.edit(w.mac_b, coop, welcome, |i| i.push_block(paragraph(3, "an edit on main meanwhile")));
     run.ok("meanwhile Bob edits main", meanwhile)?;
     w.lab.sync_all(8);
-    run.ok("Alice promotes the rewrite into main", w.lab.promote(w.mac_a, coop, welcome, rewrite, MAIN))?;
+    run.ok("Alice merges the rewrite into main", w.lab.merge(w.mac_a, coop, welcome, rewrite, MAIN, &none))?;
     w.lab.sync_all(8);
     for d in [w.phone_a, w.mac_b] {
-        let shown = |line| w.lab.item_on(d, welcome, line).map(|i| i.record());
-        run.same(format!("{} shows main exactly as the rewrite", named(&w.lab, d)), shown(MAIN), shown(rewrite));
+        let who = named(&w.lab, d);
+        let shown = main_text(&w.lab, d);
+        run.same(format!("{who} shows the rewrite on main"), shown.as_deref(), Some("Welcome to the coop"));
     }
     let record = run.some("Bob's Mac shows Welcome", w.lab.item(w.mac_b, welcome))?.record().to_string();
-    run.check("main no longer holds Bob's edit made meanwhile", !record.contains("meanwhile"));
+    run.check("main keeps Bob's edit made meanwhile", record.contains("an edit on main meanwhile"));
     // the latest edit is reverted: main goes back to the version it built on
     let good = run.some("Alice's Mac shows Welcome", w.lab.item(w.mac_a, welcome))?.as_document();
     let bad = run.ok("Bob makes a bad edit", w.lab.edit(w.mac_b, coop, welcome, |i| i.set_text(2, "oops")))?;
@@ -468,7 +470,7 @@ fn proposals(run: &mut Run) -> Done {
     run.same(
         "the undo keeps the later, good edit",
         texts,
-        vec!["Welcome", "Welcome to the coop", "a later, good edit"],
+        vec!["Welcome", "Welcome to the coop", "an edit on main meanwhile", "a later, good edit"],
     );
     // no version is lost from history: every write of Welcome is in main's, and any version opens read-only
     let history = run.some("Bob's Mac holds Welcome's history", w.lab.history(w.mac_b, welcome))?;

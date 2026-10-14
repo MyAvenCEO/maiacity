@@ -7,13 +7,14 @@ import AvenDB.Doc
 Every write extends one line of its entry's history (`Write.line`): the main line, or a proposal, which a write starts
 (`Proposal.new`) from the version its `deps` name. A line's history is its own writes and every write they build on
 (`history`), and what a device shows on a line is Loro's content of the updates in that history (`content`). A merge
-is a write on a line that also builds on another line's heads; a promote is such a write whose update brings the line
-to exactly the other line's content, as `Doc.lean`'s `promote` does.
+is a write on a line that also builds on another line's heads, whose update brings the line to `Doc.lean`'s
+`mergeInto` of the base, what both lines' histories hold in common (`base`), and of what each line shows.
 
-T10f to T10h tie `Doc.lean`'s merge and promote to the writes. A write on one line leaves every other line as it was,
-so main stays unchanged until a write on it merges a proposal (T10f). A merge's history is the union of both lines'
-(T10g), so by Loro's convergence it shows `Doc.lean`'s merge of the two, for which T10a to T10c hold. A promote shows
-exactly the proposal's content and keeps both histories (T10h, from T10d and T10e).
+T10f to T10h tie `Doc.lean`'s merge to the writes. A write on one line leaves every other line as it was, so main
+stays unchanged until a write on it merges a proposal (T10f). A merge's history is the union of both lines' (T10g), so
+by Loro's convergence it shows `Doc.lean`'s merge of the two histories, for which T10a to T10c hold; and its update
+makes the line show exactly `mergeInto` (T10h), for which T10d and T10e hold: nothing the line changed since the base is
+lost, and all the other line changed alone lands.
 -/
 
 namespace AvenDB
@@ -39,8 +40,12 @@ def heads (ws : List Write) (e : EntryId) (l : Option EditId) : List EditId :=
 
 /-- What a device holding the writes `ws` shows on line `l`: Loro's content of the updates in the line's history,
     each named by its write's id. -/
-def content (L : Loro) (ws : List Write) (e : EntryId) (l : Option EditId) : L.Doc :=
+def content {P V : Type} (L : Loro P V) (ws : List Write) (e : EntryId) (l : Option EditId) : Rec P V :=
   L.materialize ((history ws e l).map (·.edit))
+
+/-- The base of a merge of line `l'` into line `l`: what Loro shows of the writes both lines' histories hold. -/
+def base {P V : Type} (L : Loro P V) (ws : List Write) (e : EntryId) (l l' : Option EditId) : Rec P V :=
+  L.materialize (((history ws e l).filter fun w => (history ws e l').any (·.edit == w.edit)).map (·.edit))
 
 /-- The writes come in an order their dependencies respect: no two share an id, and none builds on itself or on one
     after it. Every peer's writes do (`writes_ordered`). -/
@@ -264,7 +269,7 @@ theorem T10_merge_union {ws : List Write} (hord : Ordered ws) {m : Write} {e : E
 
 /-- T10g, as a device shows it: after the merge, line `l` shows `Doc.lean`'s merge of both lines' histories and the
     merge's own update, so the merge laws T10a to T10c hold for what every device shows. -/
-theorem T10_merge_content (L : Loro) {ws : List Write} (hord : Ordered ws) {m : Write} 
+theorem T10_merge_content {P V : Type} (L : Loro P V) {ws : List Write} (hord : Ordered ws) {m : Write} 
     {e : EntryId} {l l' : Option EditId} (hm : m.entry = e ∧ m.line = l)
     (hdeps : ∀ d, d ∈ m.deps ↔ d ∈ heads ws e l ∨ d ∈ heads ws e l') :
     content L (ws ++ [m]) e l =
@@ -283,15 +288,17 @@ theorem T10_merge_content (L : Loro) {ws : List Write} (hord : Ordered ws) {m : 
     · exact ⟨x, (T10_merge_union hord hm hdeps x).2 (.inr (.inl hx)), rfl⟩
     · exact ⟨m, (T10_merge_union hord hm hdeps m).2 (.inr (.inr rfl)), rfl⟩
 
-/-- T10h: a promote of line `l'` into line `l`, a merge whose update is Loro's revert of the merged history to `l'`'s,
-    makes `l` show exactly what `l'` shows (T10d), and keeps the history of both (T10e, from T10g). -/
-theorem T10_promote_shows (L : Loro) {ws : List Write} (hord : Ordered ws) {m : Write} 
-    {e : EntryId} {l l' : Option EditId} (hm : m.entry = e ∧ m.line = l)
+/-- T10h: a merge of line `l'` into line `l`, a write on `l` that builds on both lines' heads and whose update puts the
+    merged history to `mergeInto` of the base and of what each line shows, makes `l` show exactly that, and keeps
+    every write of both lines (T10g). So by T10d nothing `l` changed since the base is lost, and by T10e all `l'`
+    changed alone lands. -/
+theorem T10_merge_shows {P V : Type} [DecidableEq V] (L : Loro P V) (join : V → V → V → Option V) (take : P → Bool)
+    {ws : List Write} (hord : Ordered ws) {m : Write} {e : EntryId} {l l' : Option EditId} (hm : m.entry = e ∧ m.line = l)
     (hdeps : ∀ d, d ∈ m.deps ↔ d ∈ heads ws e l ∨ d ∈ heads ws e l')
-    (hrev : m.edit = L.revertTo (merge ((history ws e l).map (·.edit)) ((history ws e l').map (·.edit)))
-      ((history ws e l').map (·.edit))) :
-    content L (ws ++ [m]) e l = content L ws e l' := by
-  rw [T10_merge_content L hord hm hdeps, hrev]
-  exact T10_promote_content L _ _
+    (hput : m.edit = L.put (merge ((history ws e l).map (·.edit)) ((history ws e l').map (·.edit)))
+      (mergeInto join (base L ws e l l') (content L ws e l) (content L ws e l') take)) :
+    content L (ws ++ [m]) e l = mergeInto join (base L ws e l l') (content L ws e l) (content L ws e l') take := by
+  rw [T10_merge_content L hord hm hdeps, hput]
+  exact L.puts _ _
 
 end AvenDB
