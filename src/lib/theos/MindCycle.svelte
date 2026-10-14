@@ -7,7 +7,7 @@
 	// rate in proportion to its flow. Two worlds: the dynamic world (wants that keep growing) and the earlier static one.
 	import { onMount } from 'svelte';
 	import { runClock, watchNarrow, HEART } from './anim.js';
-	import { ROUND_TRIP, ROUND_TRIP_STATIC, ofIncome, flowSum, fmt, RATE, UIA_DAY, TREASURY_SHARE, POOL_SHARE, INVESTOR_SHARE } from './model.js';
+	import { ROUND_TRIP, ROUND_TRIP_STATIC, ofIncome, flowSum, law5Paid, fmt, RATE, UIA_DAY, TREASURY_SHARE, POOL_SHARE, INVESTOR_SHARE } from './model.js';
 
 	const GOLD = '#d9a520', MELT = '#8a8578';
 	// wide: new MIND on top, people left, treasuries right, the pools at the bottom right, the melt as a band below.
@@ -33,7 +33,8 @@
 		work: rt.people.in.items + rt.people.in.proposals,
 		div: rt.people.in.dividends,
 		buy: rt.people.out.buying,
-		keep: rt.people.out.buying - rt.people.in.dividends,
+		// what the treasury keeps of a sale: the Law 5 share goes to every holder (people, the pools, the bot), not only to people
+		keep: rt.people.out.buying - law5Paid(rt),
 		meltP: rt.people.out.melt,
 		meltT: rt.treasuries.out.melt,
 		meltX: rt.pools.out.melt

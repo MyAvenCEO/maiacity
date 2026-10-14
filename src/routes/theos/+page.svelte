@@ -132,14 +132,19 @@
 	const worstGoods = list(PROOF.shortYears.find((y) => y.year === PROOF.worstYear)?.goods ?? []);
 	// the runs whose owner-only people went short (part 2 failed)
 	const ownerShort = LADDER.filter((v) => !v.checks[1]).length;
-	// the owner-only group's holding mix in year 60: its cityMIND, and the MIND of a food COOP and an energy COOP that
-	// sold almost nothing by then
+	// the owner-only group's holding mix in year 60: its cityMIND, and the other MINDs in it that paid no dividend that
+	// year (a yield under 0.1 %)
 	const ownerCity = OWNER_ONLY.mix.CITY;
-	const ownerIdle = OWNER_ONLY.mix.GREEN.share + OWNER_ONLY.mix.WIND.share;
+	const ownerIdle = Object.entries(OWNER_ONLY.mix)
+		.filter(([k, m]) => k !== 'CITY' && m.yield < 0.001)
+		.reduce((s, [, m]) => s + m.share, 0);
 	// the food COOPs among the failures, in words
 	const foodFailures = FAILURE.food === FAILURE.count ? (FAILURE.count === 2 ? 'both failures were food COOPs' : `every one of the ${FAILURE.count} failures was a food COOP`) : `${FAILURE.food} of the ${FAILURE.count} failures were food COOPs`;
 	// what the City COOP did with the failed plants (the idle-plant rule), in words
-	const scrappedWords = FAILURE.scrapped === FAILURE.count ? (FAILURE.count === 2 ? 'Both plants stood almost idle, so the City COOP scrapped both' : 'Every one of those plants stood almost idle, so the City COOP scrapped them') : `${FAILURE.scrapped} of those plants stood almost idle, so the City COOP scrapped them`;
+	const scrappedWords = FAILURE.scrapped === FAILURE.count
+		? (FAILURE.count === 2 ? 'Both plants stood almost idle, so the City COOP scrapped both' : 'Every one of those plants stood almost idle, so the City COOP scrapped them')
+		: FAILURE.scrapped === 1 ? 'One of those plants stood almost idle, so the City COOP scrapped it'
+		: `${FAILURE.scrapped} of those plants stood almost idle, so the City COOP scrapped them`;
 	// a phrase with a capital first letter
 	const cap = (t) => t[0].toUpperCase() + t.slice(1);
 	// 'in year 14' or 'in years 2 and 34'
@@ -151,7 +156,8 @@
 		main: 'the main run', law35: `Law 5 at ${pc(V('law35').share)}`, law50: `Law 5 at ${pc(V('law50').share)}`,
 		res6: `reserves of ${V('res6').months} months`, res12: `reserves of ${V('res12').months} months`,
 		prod0: 'no productivity growth', even: 'even growth', wide: 'growth twice as uneven', wants: 'wants that do not grow',
-		aven: 'fixed Aven capacity', pop: 'a growing population', pool05: 'the old pool rule'
+		aven: 'fixed Aven capacity', pop: 'a growing population', pool05: 'the old pool rule',
+		law5old: 'Law 5 without the pools'
 	};
 	// the variations that passed parts 1 and 2 but failed part 3, on the main seed
 	const only3Fails = variations().filter((v) => v.checks[0] && v.checks[1] && !v.checks[2]);
@@ -191,7 +197,7 @@
 			const name = cap(SIM_NAMES.versions[v.id]);
 			if (!v.checks) return { name, cells: ['running', 'running', 'running', 'running', 'running', '—'] };
 			const part = (i, k) => `${mark(v.checks[i])}${v.seeds ? `; ${kOf(v.seeds[k], SEEDS.n)}` : ''}`;
-			const strict = v.id === 'idle' ? mark(PROOF.strict.shareAfter10 >= 1) : '—';
+			const strict = v.strict == null ? '—' : mark(v.strict);
 			const mu = `${mark(v.muHearts < RATE)}${v.seeds ? `; ${kOf(v.seeds.below, SEEDS.n)}` : ''}`;
 			return { name, cells: [part(0, 'check1'), part(1, 'check2'), part(2, 'check3'), strict, mu, '—'] };
 		}),
@@ -2267,7 +2273,7 @@
 					{#each MODEL_VERSIONS as v (v.id)}
 						<tr>
 							<td>{cap(SIM_NAMES.versions[v.id])}</td>
-							<td>{v.pr.length ? v.pr.map((p) => `#${p}`).join(', ') : 'running'}</td>
+							<td>{v.pr.length ? v.pr.map((p) => `#${p}`).join(', ') : v.running ? 'running' : 'this paper'}</td>
 							<td class="num">{fmt(v.poolShare, 2)}</td>
 							<td class="checks">{v.checks ? v.checks.map(mark).join(' · ') : v.running ? 'running' : 'not per person'}</td>
 							<td class="num">{v.short == null ? '—' : fmt(v.short)}</td>
@@ -2347,6 +2353,7 @@
 					<tr class="net"><td>Change of what treasuries hold</td><td>{sg(RT.treasuries.change)}</td></tr>
 					<tr><th colspan="2" scope="colgroup">Pools</th></tr>
 					<tr><td>The pool's part of the new MIND ({fmt(POOL_SHARE, 1)} of each HEART)</td><td>{sg(RT.pools.in.pool)}</td></tr>
+					<tr><td>Law 5 dividends on the MIND the pools hold</td><td>{sg(RT.pools.in.dividends)}</td></tr>
 					<tr><td>Routing costs</td><td>{sg(RT.pools.in.routing)}</td></tr>
 					<tr><td>Melt</td><td>{sg(-RT.pools.out.melt)}</td></tr>
 					<tr><td>Retired with a COOP that ended</td><td>{sg(-RT.pools.out.retired)}</td></tr>
@@ -2451,7 +2458,7 @@
 				series={living}
 				x={{ min: 1, max: SIM.years, ticks: [1, 10, 20, 30, 40, 50, 60], fmt: (v, tip) => (tip ? `Year ${fmt(v)}` : `${v}`), label: 'Year' }}
 				y={{ min: 10, max: 10_000, log: true, ticks: [10, 100, 1_000, 10_000], fmt: (v, tip) => (tip ? `${fmt(v, 1)} HEARTS` : v >= 10_000 ? `${fmt(v / 1000)}k` : fmt(v)), label: 'HEARTS a day, day-1 prices (log)' }}
-				refs={[{ axis: 'x', at: PROOF.worstYear, label: 'basics short' }]}
+				refs={PROOF.short ? [{ axis: 'x', at: PROOF.worstYear, label: 'basics short' }] : []}
 			/>
 			<figcaption>
 				<strong>Figure {FIG.deciles}.</strong> Real consumption at the prices of day 1, on a log scale, where each step
