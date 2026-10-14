@@ -1,7 +1,7 @@
 /*
- * THE MODELS — every reusable still model, as the Models viewer (/app/models/) lists it (the containers are the Buildings', below): its name, what it is, where
+ * THE MODELS — every reusable still model, as the Things viewer (/app/models/) lists it (the containers are the Buildings', below): its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
- * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js, ./belltent.js; a machine that works or has moving parts is an actor, ./actors, and never listed here too). A world places
+ * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js, ./belltent.js; a machine that works or has moving parts is a machine, $lib/machines (/app/machines/), and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */

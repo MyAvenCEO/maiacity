@@ -21,7 +21,7 @@ inside to be walked.
   floor of plaza, food forest, stream and pond, kitchens and aquaponics under the gallery.
 - Containers are models (`src/lib/models/containers.js`, 40-foot high cubes, 12.19 × 2.44 × 2.90 m, walkable,
   `userData.roof`, `userData.walk`); the wayside buildings too (`wayside.js`: bus stop, gas station, the village
-  store, the old shed). A building that is also handed to a game as a model follows `model-skill`.
+  store, the old shed). A building that is also handed to a game as a thing follows `thing-skill`.
 
 ## Versions, walkable as they were
 
@@ -47,7 +47,7 @@ waterfall). A version that was never built into a world need not be kept (the gr
 1. **Research** the real construction: span, height, struts and hubs, glazing, the north shell, people per dome and
    rooms per person, what the floor carries. Say which figures are estimates.
 2. **Build** at real size (1 unit = 1 m), in its parts: structure, skin, floors and galleries, doors to the compass
-   points, the interior's plan before its furniture. Furnish from the Models library (`model-skill`), plant from the
+   points, the interior's plan before its furniture. Furnish from the Things library (`thing-skill`), plant from the
    Plants library (`plant-skill`), floor it with a biome (`biome-skill`).
 3. **Walk** it: every door, every gallery, the stairs, the headroom under the slope of the shell.
 4. **Look** at it from outside and inside, at noon and at night (`asset-producer`'s `checking.md`).

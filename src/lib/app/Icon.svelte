@@ -32,6 +32,8 @@
 		<circle cx="12" cy="7" r="2.6" /><circle cx="6" cy="16" r="2.6" /><circle cx="18" cy="16" r="2.6" /><path d="M10.4 9 7.4 13.8M13.6 9l3 4.8M8.6 16h6.8" />
 	{:else if name === 'leaf'}
 		<path d="M5 19c0-8 5-13.5 14-14 .5 9-5 14-14 14Z" /><path d="M5 19 14 10" /><path d="M9.5 14.5h3.5M9.5 14.5V11" />
+	{:else if name === 'gear'}
+		<circle cx="12" cy="12" r="5.5" /><circle cx="12" cy="12" r="2.2" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.2 2.2M16.2 16.2l2.2 2.2M18.4 5.6l-2.2 2.2M7.8 16.2l-2.2 2.2" />
 	{:else if name === 'key'}
 		<circle cx="8" cy="14" r="4" /><path d="m11 11 8.5-8.5M16 6l2.5 2.5M13.5 8.5 16 11" />
 	{:else if name === 'database'}
