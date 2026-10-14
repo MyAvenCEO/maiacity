@@ -1522,7 +1522,7 @@
 		</p>
 		<div class="table-wrap">
 			<table class="narrow">
-				<caption><strong>Table {TAB.binds}.</strong> What binds first in a small city of {ENERGY.dome.people} people in one dome with solar cells. These are design numbers for {SIM_NAMES.testCity} (Appendix H).</caption>
+				<caption><strong>Table {TAB.binds}.</strong> What binds first in a small city of {ENERGY.dome.people} people in one dome with solar cells. These are design numbers for {SIM_NAMES.testCity}. A physics audit found its food-forest and timber yields too high; Appendix H gives the audited ranges.</caption>
 				<thead>
 					<tr><th>Limit</th><th>In numbers</th><th>When it binds</th></tr>
 				</thead>
