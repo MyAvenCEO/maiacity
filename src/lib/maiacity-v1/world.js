@@ -1052,7 +1052,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			g.rotation.y = spotYaw(t);
 			g.traverse((o) => o.isMesh && ((o.castShadow = true), (o.name = `tree:${seat}`)));
 			const height = Math.max(0, new THREE.Box3().setFromObject(plant).max.y);
-			g.userData = { key, top: Math.max(0.7, height + 0.35), grown: t.grown, height };
+			// a ring on the ground round it, drawn over the grass, while a spot is chosen: a tree already grows here, its
+			// name over it (Samuel 2026-10-14: the trees the first settlers planted marked in the later ones' stories)
+			const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.2, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xa8e07a, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false }));
+			ring.position.y = 0.08;
+			ring.renderOrder = 5;
+			ring.visible = false;
+			g.add(ring);
+			g.userData = { key, top: Math.max(0.7, height + 0.35), grown: t.grown, height, ring };
 			// watered: it grows in place, from the height it had to its new one (Samuel 2026-10-14)
 			if (had && t.grown > had.userData.grown && height > 0.002) grows.push({ plant, t0: performance.now() / 1000, from: Math.min(1, had.userData.height / height) });
 			world.add(g);
@@ -1142,7 +1149,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// the whole circle in the picture, you by the tent in its middle, the land beyond it to tap (further off on an
 			// upright phone)
 			cam: (k) => {
-				const at = V(0, 0, 6), far = camera.aspect < 0.8 ? 1.8 : 1;
+				// a tree another already planted drawn into the picture too, ringed and named (Samuel 2026-10-14)
+				const theirs = trees[stage.me === 'A' ? 'B' : 'A'];
+				const at = theirs ? V(0, 0, 6).lerp(theirs.position.clone().setY(0), 0.3) : V(0, 0, 6);
+				const far = (camera.aspect < 0.8 ? 1.8 : 1) * (theirs ? 1.1 : 1);
 				return [V(-6, 46 + 2 * k, -36 - 1.5 * k).sub(at).multiplyScalar(far).add(at), at];
 			},
 			start: () => (core.visible = true),
@@ -3141,8 +3151,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				out[`player:${k}`] = { x: ((p.x + 1) / 2) * w, y: ((1 - p.y) / 2) * h, on: o.visible && !busy && !held && !riding && stage.at !== 'cruise' && p.z < 1 };
 				const tree = trees[k];
 				if (tree) {
+					// another's tree, while a spot is chosen: ringed and named however far off the camera is
+					const marked = core.visible && k !== stage.me;
+					tree.userData.ring.visible = marked;
 					const q = tree.position.clone().setY(tree.userData.top).project(camera);
-					out[`tree:${k}`] = { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h, on: !busy && !riding && q.z < 1 && camera.position.distanceTo(tree.position) < 60 };
+					out[`tree:${k}`] = { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h, on: !riding && q.z < 1 && (marked || (!busy && camera.position.distanceTo(tree.position) < 60)) };
 				}
 			}
 			onLabels(out);

@@ -159,7 +159,7 @@ export function story(view, seat, seen) {
 			'And this is how everything begins: with a seed you brought from home.',
 			'Everyone who comes here plants their own tree.'),
 		say({ id: 'spot', chapter: 'Home', title: 'Choose where it grows', kind: 'spot', done: !!spot, ...home, place: 'plot', hour: 16.9 },
-			'Choose where it grows, out beyond the homes.'),
+			other.tree ? `${o}'s tree already grows here. Choose where yours grows, out beyond the homes.` : 'Choose where it grows, out beyond the homes.'),
 		say({ id: 'seed', chapter: 'Home', title: 'Pick your seed', kind: 'pick', done: !!(me.seedling || me.tree), ...atSpot, place: 'seeds', hour: 17 }, null),
 		say({ id: 'plant', chapter: 'Home', title: 'Plant it', kind: 'sow', done: !!me.tree, ...atSpot, place: 'sow', hour: 17 },
 			'Into the earth, a finger deep.',
