@@ -39,6 +39,8 @@ export const REAL_SIZES = {
 	tent: { size: [7.11, 3.16, 6.16], what: 'the MaiaCity V1 tent: the bell tent pitched (bellTent), 4.2 m across at its wall, its guy pegs 1.5 m out' },
 	domeTent: { size: [5.6, 2.24, 5.6], what: 'the dome tent pitched: 4 m across and 2 m high, its cover 3 cm out over the tubes, on its 5.6 m deck 15 cm high' },
 	tentBag: { size: [0.9, 0.41, 0.41], what: 'the dome tent rolled up in its bag, its straps buckled' },
+	storageTent: { size: [11.2, 4.28, 11.2], what: 'the storage tent pitched: the dome tent twice the size, 8 m across and 4 m high, its cover 6 cm out over the tubes, on its 11.2 m deck 15 cm high' },
+	storageTentBag: { size: [1, 0.71, 0.71], what: 'the storage tent rolled up in its bag, its straps buckled' },
 	bellTent: { size: [7.11, 3.16, 6.16], what: 'the bell tent pitched: 4.2 m across at its wall, the pole’s spike at 3.15 m, its guy pegs 1.5 m out from the wall (none in front of the door)' },
 	firePlace: { size: [3.08, 1.08, 2.28], what: 'the fire place: its ring of stones 1.2 m across, the woodpile beside it, two camp chairs facing it, the flames' },
 	bellTentBag: { size: [1.1, 0.51, 0.51], what: 'the bell tent rolled up in its bag, its straps buckled' },

@@ -935,6 +935,13 @@
 					them, and articles, flows, functions and posts. Every vault reads and writes them offline, and avenCEO GmbH
 					holds each as a Public entry of its own, with the same bytes and so the same id.
 				</li>
+				<li>
+					<b>Flows are stages any entry can be in.</b> An article goes from idea to draft to published. A stage is a
+					tag, so a move is one tag change, and a public stage is one Public share on that tag. Functions react to a
+					move: each runs in QuickJS on the device that moves the entry and asks for changes, which its vault’s shares
+					still decide. Publishing an article makes a public post about it, which the server’s feed serves to the
+					Maia Universe stream.
+				</li>
 			</ul>
 		</section>
 

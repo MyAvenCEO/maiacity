@@ -1,5 +1,6 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-// The first snippets of the Maia Universe stream. Hardcoded and held in memory only, until the stream has a home.
+// The Maia Universe stream: its first snippets, hardcoded, and every post published in avenDB, as its server's feed
+// serves them (`FEED`, `fromFeed`): a post an article's content flow made as it was published, which everyone may read.
 
 export const AUTHORS = {
 	samuel: { name: 'Samuel Andert', handle: 'samuel', initials: 'SA', color: '#c8744f' },
@@ -122,18 +123,65 @@ export const ago = (min) =>
 export const slug = (title) =>
 	title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'post';
 
-// a fake iroh doc id until the stream has real docs: 32 random bytes, base32 lower case without padding (52 letters)
-export function fakeDocId() {
-	const bytes = crypto.getRandomValues(new Uint8Array(32));
+// 32 bytes as an iroh doc id reads: base32, lower case, without padding (52 letters)
+function base32(bytes) {
 	const abc = 'abcdefghijklmnopqrstuvwxyz234567';
 	let bits = 0, value = 0, out = '';
 	for (const b of bytes) {
-		value = (value << 8) | b;
+		value = ((value << 8) | b) & 0xffff;
 		bits += 8;
 		while (bits >= 5) out += abc[(value >>> (bits -= 5)) & 31];
 	}
 	return bits ? out + abc[(value << (5 - bits)) & 31] : out;
 }
+
+// a fake iroh doc id, for a post shared here in memory: 32 random bytes
+export const fakeDocId = () => base32(crypto.getRandomValues(new Uint8Array(32)));
+
+// avenDB's server: its feed, the posts it keeps that everyone may read, newest first
+export const FEED = 'https://avendb.maia.city/feed/posts';
+
+// the doc id of an avenDB post: its entry's 32 bytes, from 64 hex digits
+export const docOf = (entry) => base32(entry.match(/../g).map((h) => parseInt(h, 16)));
+
+// Markdown as plain text, as a post shows it: no marks, links by their words, no pictures
+export const plain = (md) =>
+	md
+		.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+		.replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+		.replace(/(\*\*|__|\*|_|`|~~)(\S(?:.*?\S)?)\1/g, '$2')
+		.replace(/[ \t]{2,}/g, ' ')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+
+const COLORS = ['#c8744f', '#2f6fbf', '#1f7a52', '#8a5fb0', '#6b8a3a', '#b0703a', '#3b7d8c'];
+
+// the voice of avenDB vault `vault`, named `name` (by its profile, or none) and of kind `kind`
+export function voiceOf(vault, name, kind) {
+	const called = name || `Vault ${vault.slice(0, 4)}`;
+	const words = called.split(/\s+/).filter(Boolean);
+	const initials = (words.length > 1 ? words[0][0] + words[1][0] : called.slice(0, 2)).toUpperCase();
+	const color = COLORS[parseInt(vault.slice(0, 2), 16) % COLORS.length];
+	return { name: called, handle: slug(called), initials, color, ai: kind === 'aven', coop: kind === 'coop', avendb: true };
+}
+
+// a post of avenDB's feed as the stream holds it, `now` in seconds since 1970: its id its entry, its author its vault
+export const fromFeed = (p, now) => ({
+	id: p.entry,
+	entry: p.entry,
+	doc: docOf(p.entry),
+	title: p.title || 'Untitled',
+	author: p.vault,
+	ago: Math.max(0, Math.round((now - p.created) / 60)),
+	channel: p.channel || 'Devlog',
+	text: plain(p.text ?? ''),
+	// its Markdown as written, for its own page, which lays it out as the journal does
+	md: p.text ?? '',
+	likes: 0,
+	replies: 0,
+	liked: false
+});
 
 // a new post's title: its first words, cut at a word
 export function titleOf(text) {

@@ -64,6 +64,18 @@ export function answer(out) {
 	throw new Error(`Refused${at}: ${why(out)}.`);
 }
 
+/**
+ * Op `op` of a list run one after another, each `"$n"` in it the entry op n of the list created, by the answers of
+ * those before it, `done` (as a flow's move names the post its function creates, ./flows.js).
+ * @param {any} op @param {any[]} done @returns {any}
+ */
+export function refs(op, done) {
+	if (typeof op === 'string' && /^\$\d+$/.test(op)) return done[Number(op.slice(1))]?.entry ?? op;
+	if (Array.isArray(op)) return op.map((x) => refs(x, done));
+	if (op && typeof op === 'object') return Object.fromEntries(Object.entries(op).map(([k, v]) => [k, refs(v, done)]));
+	return op;
+}
+
 /** Whether the device would make an op, as `may` answers: alone, or once its owners approve it. @param {any} v */
 export const allowed = (v) => v === true || (!!v && typeof v === 'object' && 'approve' in v);
 

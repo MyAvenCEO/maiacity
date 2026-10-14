@@ -24,8 +24,8 @@ async fn main() -> Result<()> {
         ),
     }
     tracing::info!("avenDB server: offer {}", running.offer.to_text());
-    let (data, bind, relay) = (config.data.display(), config.bind, config.relay_bind);
-    tracing::info!("avenDB server: data in {data}, iroh on {bind}, relay on {relay}");
+    let (data, bind, relay, feed) = (config.data.display(), config.bind, config.relay_bind, running.feed.addr());
+    tracing::info!("avenDB server: data in {data}, iroh on {bind}, relay on {relay}, feed on {feed}");
     match &config.bucket {
         Some(b) => {
             tracing::info!("avenDB server: its shelf is in bucket {} at {}, sealed; {data} caches", b.name, b.endpoint)

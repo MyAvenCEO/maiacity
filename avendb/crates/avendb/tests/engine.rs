@@ -238,6 +238,50 @@ fn articles_flows_functions_and_posts_are_kinds_of_their_own() {
 }
 
 #[test]
+fn the_posts_everyone_reads_are_the_feed_newest_first() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let id = |made: Value| EntryId::from_hex(made["entry"].as_str().unwrap()).unwrap();
+    let feed = |w: &World| world::public_posts(&w.lab, mac);
+    let listed = |posts: &[Value]| -> Vec<String> {
+        let mut es: Vec<String> = posts.iter().map(|p| p["entry"].as_str().unwrap().to_string()).collect();
+        es.sort();
+        es
+    };
+    ok(run(&mut w, mac, json!({ "op": "profile", "vault": alice, "name": "Alice" })));
+    // a post tagged as the content flow's published stage is hers alone until a Public share reaches the tag
+    let tag = "content:published";
+    let post = |title: &str, tags: &[&str]| {
+        let value = json!({ "kind": "post", "title": title, "text": "Out now.", "channel": "Devlog" });
+        json!({ "op": "create", "vault": alice, "type": "post", "tags": tags, "value": value })
+    };
+    let harvest = id(ok(run(&mut w, mac, post("Harvest", &[tag]))));
+    assert!(feed(&w).is_empty(), "hers alone");
+    let public = json!({ "op": "share", "over": alice, "who": "everyone", "level": "Public", "what": { "tag": tag } });
+    ok(run(&mut w, mac, public));
+    let rain = id(ok(run(&mut w, mac, post("Rain", &[tag]))));
+    ok(run(&mut w, mac, post("Mine", &[])));
+    let posts = feed(&w);
+    let mut both = vec![hex(harvest), hex(rain)];
+    both.sort();
+    assert_eq!(listed(&posts), both, "the posts the share reaches, now and later, and no other");
+    let created: Vec<u64> = posts.iter().map(|p| p["created"].as_u64().unwrap()).collect();
+    assert!(created.windows(2).all(|c| c[0] >= c[1]), "newest first: {created:?}");
+    let first = posts.iter().find(|p| p["entry"] == hex(harvest)).unwrap();
+    let fields = ["vault", "name", "kind", "title", "text", "channel", "about"].map(|k| first[k].clone());
+    let want = [json!(alice), json!("Alice"), json!("human"), json!("Harvest"), json!("Out now."), json!("Devlog")];
+    assert_eq!(fields[..6], want, "{first}");
+    assert_eq!(fields[6], Value::Null, "about nothing");
+    // deleted, or untagged as its article goes back to a draft, it leaves the feed
+    let delete = json!({ "op": "insert", "entry": hex(rain), "path": ["tags"], "value": world::DELETED });
+    ok(run(&mut w, mac, delete));
+    assert_eq!(listed(&feed(&w)), [hex(harvest)]);
+    ok(run(&mut w, mac, json!({ "op": "tag", "entry": hex(harvest), "remove": [tag] })));
+    assert!(feed(&w).is_empty(), "no longer public");
+}
+
+#[test]
 fn lines_merge_restore_undo_and_variants_are_ops() {
     let mut w = cast::world();
     let l = cast::library(&mut w);

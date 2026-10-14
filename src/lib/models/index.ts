@@ -18,7 +18,7 @@ import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
 import { VILLAGE_INFO, loadingRamp, pickup, solarPanel } from './village.js';
 import { ALL_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
-import { domeTent, packedTent } from './tent.js';
+import { domeTent, packedTent, storageTent, storageTentBag } from './tent.js';
 import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
@@ -49,6 +49,14 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 		{ ...FIRST, date: '2026-10-13', build: () => pickup({ v: 1 }) },
 		{ v: 2, date: '2026-10-14', note: 'Clear glass all round and the cab inside it, seen from inside: two front seats and a bench for three behind, the dash with two gauges under their hood, a screen and four vents, the steering wheel on its column on the left, three pedals, a gear stick and the handbrake on the console, door cards with their pulls, sun visors and the mirror; and a tailgate that opens down flat, level with the bed', build: () => pickup({ v: 2 }) },
 		{ v: 3, date: '2026-10-14', note: 'Four doors that open to get in: each hinged at its front edge and swinging out to about 70°, its window in its frame, its card, armrest and handles going with it; the outside mirrors on the front doors; sills under them' }
+	],
+	'dome-tent': [
+		{ ...FIRST, date: '2026-10-14', note: 'The dome tent: 4 m across and 2 m high, its door 0.9 × 1.55 m, on a deck 5.6 m across', build: () => domeTent() },
+		{ v: 2, date: '2026-10-14', note: 'The storage tent: the same dome twice the size to keep things in, 8 m across and 4 m high, 40 mm tubes, a door 1.8 m wide and 3.1 m high to carry things in, on a deck 11.2 m across' }
+	],
+	'tent-bag': [
+		{ ...FIRST, date: '2026-10-14', note: 'The dome tent’s bag: 0.9 m long and 0.4 m thick', build: () => packedTent() },
+		{ v: 2, date: '2026-10-14', note: 'The storage tent’s bag: 1 m long and 0.7 m thick, its tubes in halves' }
 	],
 	'bell-tent': [{ ...FIRST, date: '2026-10-14', note: 'The Buildings’ bell tent made a model in its 20 parts, pitched step by step: the groundsheet, the canvas spread, the pole walked up, the wall poles and pegs, the guy ropes, the door rolled back, the things brought in and the lantern lit' }],
 	'fire-place': [{ ...FIRST, date: '2026-10-14', note: 'The bell tent’s fire place in its parts, built step by step and lit' }],
@@ -163,27 +171,27 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'dug-earth', label: 'Dug earth', note: 'a patch of turned soil 60 cm across, heaped a little, crumbs and clods on it, a hollow for the seed; it darkens and shines as it is watered', usedIn: 'MaiaCity V1', make: () => dugEarth() },
 	{
 		id: 'dome-tent',
-		label: 'Dome tent',
-		note: 'the Tribe COOP’s tent: a geodesic dome 4 m across and 2 m high, its frame of 20 mm steel tubes on hub plates (4-frequency, the tubes 0.51 – 0.65 m long), a canvas cover over it and a door panel zipped in, a round groundsheet under it, a lantern hung from its top; on a timber deck 5.6 m across. It is pitched step by step: the groundsheet unrolled and its sides laid out, the frame raised ring by ring from the floor, the cover drawn up from the back over the top, the door let down',
+		label: 'Storage tent',
+		note: 'the dome tent twice the size, to keep things in (and later taken to the tribe camp): a geodesic dome 8 m across and 4 m high, its frame of 40 mm steel tubes on hub plates (4-frequency, the tubes 1.02 – 1.3 m long, each in two halves), a canvas cover over it and a door panel 1.8 m wide and 3.1 m high zipped in, a round groundsheet under it, a lamp hung from its top; on a timber deck 11.2 m across. It is pitched step by step: the groundsheet unrolled and its sides laid out, the frame raised ring by ring from the floor, the cover drawn up from the back over the top, the door let down',
 		usedIn: 'MaiaCity V1',
-		make: () => domeTent(),
+		make: () => storageTent(),
 		variants: [
-			{ id: 'dome-tent-pitched', label: 'Pitched', note: 'standing, its door in', make: () => domeTent() },
-			{ id: 'dome-tent-floor', label: 'Groundsheet down', note: 'the groundsheet unrolled and its folded sides laid out flat', make: () => domeTent({ pitch: 0.2 }) },
-			{ id: 'dome-tent-rings', label: 'Frame going up', note: 'the frame raised ring by ring: the lower rings in, the next one going up', make: () => domeTent({ pitch: 0.5 }) },
-			{ id: 'dome-tent-frame', label: 'Frame up', note: 'the whole frame standing, the door’s bent tube in, the lantern hung', make: () => domeTent({ pitch: 0.75 }) },
-			{ id: 'dome-tent-cover', label: 'Cover going on', note: 'the cover drawn up from the back over the top', make: () => domeTent({ pitch: 0.86 }) }
+			{ id: 'dome-tent-pitched', label: 'Pitched', note: 'standing, its door in', make: () => storageTent() },
+			{ id: 'dome-tent-floor', label: 'Groundsheet down', note: 'the groundsheet unrolled and its folded sides laid out flat', make: () => storageTent({ pitch: 0.2 }) },
+			{ id: 'dome-tent-rings', label: 'Frame going up', note: 'the frame raised ring by ring: the lower rings in, the next one going up', make: () => storageTent({ pitch: 0.5 }) },
+			{ id: 'dome-tent-frame', label: 'Frame up', note: 'the whole frame standing, the door’s bent tube in, the lamp hung', make: () => storageTent({ pitch: 0.75 }) },
+			{ id: 'dome-tent-cover', label: 'Cover going on', note: 'the cover drawn up from the back over the top', make: () => storageTent({ pitch: 0.86 }) }
 		]
 	},
 	{
 		id: 'tent-bag',
-		label: 'Tent bag',
-		note: 'the dome tent packed: a roll of olive canvas 0.9 m long and 0.4 m thick, two straps buckled round it and a handle on top; unrolled, what is in it lies on it: the groundsheet rolled, the cover rolled, the frame’s tubes in a bundle and the hubs in a sack',
+		label: 'Storage tent bag',
+		note: 'the storage tent packed: a roll of olive canvas 1 m long and 0.7 m thick, two straps buckled round it and a handle on top; unrolled, what is in it lies on it: the groundsheet rolled, the cover rolled, the frame’s tubes in halves in a bundle and the hubs in a sack',
 		usedIn: 'MaiaCity V1',
-		make: () => packedTent(),
+		make: () => storageTentBag(),
 		variants: [
-			{ id: 'tent-bag-rolled', label: 'Rolled', note: 'rolled up and strapped', make: () => packedTent() },
-			{ id: 'tent-bag-open', label: 'Unrolled', note: 'its straps undone and the canvas laid out flat', make: () => packedTent({ open: 1 }) }
+			{ id: 'tent-bag-rolled', label: 'Rolled', note: 'rolled up and strapped', make: () => storageTentBag() },
+			{ id: 'tent-bag-open', label: 'Unrolled', note: 'its straps undone and the canvas laid out flat', make: () => storageTentBag({ open: 1 }) }
 		]
 	},
 	{

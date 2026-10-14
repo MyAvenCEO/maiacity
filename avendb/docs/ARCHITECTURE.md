@@ -748,6 +748,25 @@ A write counts once its reader holds its schema: the lane only grows, so a verdi
 counted to counted. Readers agree on the lane because every reader of V syncs V's schema entries: a keep share always
 picks them (section 5), and the Everyone share sends them to every device with an interest in V or that follows it.
 
+**Flows and functions.** A flow is a recipe of stages any entry can be in (`src/lib/avendb/flows.js`): the content
+flow takes an article from idea to draft to published. An entry is in a stage while it carries the entry tag
+`<flow>:<stage>`, so moving it is one `tag` op. A public stage is one Public share of the vault picking that tag
+(`{"tag": "content:published"}`), which reaches each entry tagged so, now and later, and lets go of one untagged:
+nothing is shared or revoked entry by entry. A function names a flow, a stage and whether it runs as an entry enters
+or leaves it; its code, a JS module exporting `run(event)`, runs in QuickJS on the device that moves the entry, with no
+page, network or keys, and hands back the ops it asks for (`src/lib/avendb/functions.js`). The device makes them as
+the acting vault, on the entry's vault alone, a share among them only a Public one: caps still decide. Publishing
+makes a `post` entry about the article that carries the stage's tag, so the same share makes it public. Every app
+knows the content flow and its two functions; avenCEO GmbH holds them as entries, Public by their type, and a vault's
+own flows and functions, then avenCEO GmbH's, come before the app's, never anyone else's.
+
+**The Maia Universe's feed.** avenDB's server keeps the vaults that give avenCEO backup, the seed's among them, and
+opens what everyone may read. Its feed (`GET avendb.maia.city/feed/posts`, `world::public_posts`) lists the `post`
+entries it opens that are public and not deleted, newest first, each with its vault's name and kind, as JSON any page
+may read; the Maia Universe page takes it in and shows each post under the vault that published it. A post leaves the
+feed as its article goes back from Published: its function deletes it and takes its tag off, so no Public share
+reaches it.
+
 ## 10. Post-quantum only
 
 Every node trusts no elliptic curve alone, and there is no switch back.

@@ -21,8 +21,12 @@
 //! server's seal (`avendb_net::bucket`), its folder only a cache: the server tells its peers of an edit only once the
 //! bucket has it, and a server whose folder is lost starts again from the bucket alone, as the same device. Without a
 //! bucket, its shelf is its folder (`avendb_net::disk`).
+//!
+//! Beside them, the Maia Universe's feed (`feed`): the posts the server keeps that everyone may read, as JSON over
+//! plain HTTP on a socket of its own, behind the same proxy at avendb.maia.city/feed/.
 
 pub mod bucket;
+pub mod feed;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -54,6 +58,9 @@ pub struct Config {
     pub bind: SocketAddr,
     /// The socket its relay serves plain HTTP on (`AVENDB_RELAY_BIND`, `0.0.0.0:3350`), behind the proxy.
     pub relay_bind: SocketAddr,
+    /// The socket the Maia Universe's feed is served on, over plain HTTP (`AVENDB_FEED_BIND`, `0.0.0.0:3351`), behind
+    /// the proxy (`feed`).
+    pub feed_bind: SocketAddr,
     /// Where devices reach its relay (`AVENDB_RELAY_URL`, such as `https://avendb.maia.city`); if unsaid, the relay's
     /// own socket, for devices on the server's machine.
     pub relay_url: Option<RelayUrl>,
@@ -114,6 +121,7 @@ impl Config {
             data: var("AVENDB_DATA").map_or_else(|| PathBuf::from("/data"), PathBuf::from),
             bind: socket("AVENDB_BIND", "0.0.0.0:7401")?,
             relay_bind: socket("AVENDB_RELAY_BIND", "0.0.0.0:3350")?,
+            feed_bind: socket("AVENDB_FEED_BIND", "0.0.0.0:3351")?,
             relay_url: var("AVENDB_RELAY_URL").map(url).transpose()?,
             public_addr: var("AVENDB_PUBLIC_ADDR").map(|v| v.parse()).transpose().context("AVENDB_PUBLIC_ADDR")?,
             signup: match var("AVENDB_SIGNUP").as_deref() {
@@ -147,10 +155,11 @@ fn bucket_config(name: String, var: &impl Fn(&str) -> Option<String>) -> Result<
     })
 }
 
-/// The server running: its node, its relay, and its offer.
+/// The server running: its node, its relay, its feed, and its offer.
 pub struct Running {
-    pub node: Node,
+    pub node: Arc<Node>,
     pub relay: Relay,
+    pub feed: feed::Feed,
     /// What the apps know of the server (P8c), so that a new device links through it with its person's passkey alone:
     /// its device, its endpoint, where devices on UDP reach it (`Config::public_addr`) and its relay. A device it
     /// doesn't know yet reaches it straight, over UDP, as its relay lets the device in only once it joined.
@@ -169,7 +178,7 @@ impl Running {
 const ONLINE: Duration = Duration::from_secs(30);
 
 /// Starts the server as `config` says: its relay, then its node on its shelf, its bucket's or its folder's, made at
-/// its first start, which is reached through that relay and tells it whom to let in.
+/// its first start, which is reached through that relay and tells it whom to let in, then the feed of what it keeps.
 pub async fn start(config: &Config) -> Result<Running> {
     let admission = if config.signup { Admission::open() } else { Admission::default() };
     let relay = Relay::spawn(config.relay_bind, admission.clone()).await?;
@@ -195,7 +204,7 @@ pub async fn start(config: &Config) -> Result<Running> {
         // its start is nobody's to watch
         progress: avendb_net::Progress::new(),
     };
-    let node = server::open(shelf, opts).await?;
+    let node = Arc::new(server::open(shelf, opts).await?);
     // on its relay before it says its offer: its endpoint joins the relay once its first net report is done, a few
     // seconds in, and until then the relay drops what devices send it
     if tokio::time::timeout(ONLINE, node.endpoint().online()).await.is_err() {
@@ -207,7 +216,8 @@ pub async fn start(config: &Config) -> Result<Running> {
         let addr = EndpointAddr::new(node.id()).with_ip_addr(public);
         offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
     }
-    Ok(Running { node, relay, offer })
+    let feed = feed::Feed::spawn(config.feed_bind, node.clone()).await?;
+    Ok(Running { node, relay, feed, offer })
 }
 
 /// The server's relay: iroh's, serving plain HTTP on its socket, letting in only the clients its admission admits or
