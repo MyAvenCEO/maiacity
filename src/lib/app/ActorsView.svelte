@@ -6,6 +6,9 @@
 	The stand-in also holds its poses, and any joint of it can be turned by hand (the pose copied out as data). A machine
 	taken apart (one with a catalog of its parts: the LifeTrac) has every part to pick, on it or from its list, each with
 	its card: what it is, what moves it, its numbers — shown alone if asked, the rest of the machine a ghost round it.
+	A machine built of real meshes with its own solver ($lib/assets: the Power Cube from v3) is shown on the asset stage
+	instead, the way AirSup's lab shows one: running on its sliders, its one number read out, and drawn apart, cut away,
+	x-rayed, labelled, slowed or broken from the bar.
 	Drag to turn round it, scroll to come closer. An admin's.
 -->
 <script>
@@ -19,6 +22,16 @@
 	/** @typedef {import('$lib/actors/rig').Cast} Cast */
 	/** @typedef {import('$lib/actors/rig').Pose} Pose */
 	/** @typedef {import('$lib/actors/rig').V3} V3 */
+	/** @typedef {import('$lib/assets/parts.js').Lab} Lab */
+
+	/** the stage's modes as the bar names them */
+	const MODES = /** @type {const} */ ([
+		['explode', 'Explode'],
+		['cut', 'Cut away'],
+		['xray', 'X-ray'],
+		['labels', 'Labels'],
+		['slow', 'Slow']
+	]);
 
 	/** @type {{ name: string, title: string, lede: string, families: Family[] }} */
 	let { name, title, lede, families } = $props();
@@ -54,6 +67,20 @@
 	let lookAt = null;
 	const catalog = $derived(cast?.catalog ?? null);
 	const card = $derived(catalog && picked ? catalog.parts.find((p) => p.id === picked) ?? null : null);
+	/** an asset with a solver (a machine built of real meshes): what it shows, its modes, its reading and its labels */
+	/** @type {Lab | null} */
+	let lab = $state.raw(null);
+	/** @type {Record<string, boolean>} */
+	let modes = $state({ run: true, break: false, explode: false, cut: false, xray: false, labels: false, slow: false });
+	/** @type {Record<string, number>} */
+	let values = $state({});
+	let reading = $state.raw({ value: 0, state: '', sub: '', bad: false });
+	/** @type {{ x: number, y: number, lx: number, ly: number, side: string, text: string, value: string, on: number }[]} */
+	let tags = $state.raw([]);
+	/** @type {[number, string]} */
+	let scale = $state.raw([0, '']);
+	/** @type {((k: string) => void) | null} */
+	let setMode = null;
 	/** @type {((a: Actor) => void) | null} */
 	let show = null;
 	/** @type {(() => void) | null} */
@@ -96,6 +123,7 @@
 		let own = [];
 		paint = () => {
 			const c = cast;
+			if (c?.asset) return void stage?.setPick(picked, alone);
 			if (!c?.rig.parts) return;
 			const mesh = c.rig.object, mats = /** @type {import('three').Material[]} */ (mesh.material);
 			const at = mats.indexOf(lit);
@@ -130,7 +158,11 @@
 			// a tap, not a drag round it, picks the part under it (or, on nothing, lets go)
 			if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || !cast?.catalog) return;
 			down = null;
-			const part = partAt(e);
+			let part = null;
+			if (cast.asset) {
+				const r = renderer.domElement.getBoundingClientRect();
+				part = stage?.pick(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1) ?? null;
+			} else part = partAt(e);
 			picked = part;
 			if (part) lookAt?.(part);
 			else alone = false;
@@ -138,8 +170,19 @@
 		/** @type {import('three').Vector3 | null} */
 		let aim = null;
 		lookAt = (id) => {
+			if (cast?.asset) return void (aim = stage?.partCentre(id) ?? null);
 			const bone = cast?.rig.bones[`p.${id}`];
 			if (bone) aim = bone.getWorldPosition(new THREE.Vector3());
+		};
+		/** the asset stage ($lib/assets/stage.js), made the first time an asset with a solver is shown */
+		/** @type {import('$lib/assets/stage.js').Stage | null} */
+		let stage = null;
+		const readModes = () => {
+			if (stage) modes = Object.fromEntries(['run', 'break', ...MODES.map(([k]) => k)].map((k) => [k, /** @type {any} */ (stage).on(k)]));
+		};
+		setMode = (k) => {
+			stage?.toggle(/** @type {any} */ (k));
+			readModes();
 		};
 
 		show = async (a) => {
@@ -148,11 +191,36 @@
 			if (variant.id !== a.id) return;
 			if (cast) scene.remove(cast.rig.object);
 			if (grid) scene.remove(grid);
+			stage?.clear();
 			const c = a.make();
-			cast = c;
-			edits = {};
 			picked = null;
 			alone = false;
+			if (c.asset) {
+				// on the asset stage: its own studio and floor, no grid; framed on it as built
+				const { Stage } = await import('$lib/assets/stage.js');
+				if (variant.id !== a.id) return;
+				stage ??= new Stage(renderer, camera);
+				stage.resize(box.clientWidth, box.clientHeight);
+				const { centre, size: s } = stage.show(c.rig.object);
+				cast = c;
+				lab = c.asset.lab ?? null;
+				values = Object.fromEntries(Object.entries(lab?.controls ?? {}).map(([k, v]) => [k, v.value]));
+				readModes();
+				size = [s.x, s.y, s.z];
+				const reach = Math.max(s.x, s.y, s.z) * 1.15;
+				// aimed a little under its middle, so it stands clear of the reading at the foot
+				const aimAt = centre.clone().add(new THREE.Vector3(0, -0.12 * s.y, 0));
+				controls.target.copy(aimAt);
+				camera.position.set(aimAt.x + reach * 1.5, aimAt.y + reach * 0.7, aimAt.z + reach * 1.9);
+				camera.near = reach / 300;
+				camera.far = reach * 80;
+				camera.updateProjectionMatrix();
+				return;
+			}
+			lab = null;
+			tags = [];
+			cast = c;
+			edits = {};
 			if (c.catalog) {
 				const mesh = c.rig.object;
 				own = mesh.geometry.groups.map((g) => g.materialIndex ?? 0);
@@ -192,6 +260,7 @@
 			const w = box.clientWidth, h = box.clientHeight;
 			renderer.setSize(w, h);
 			fit(camera, w, h);
+			stage?.resize(w, h);
 		};
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
@@ -199,8 +268,28 @@
 		show(variant);
 		let frame = 0;
 		const start = performance.now();
+		let last = start, slow = 0;
 		const tick = () => {
-			const t = (performance.now() - start) / 1000;
+			const now = performance.now(), t = (now - start) / 1000, dt = Math.min(0.05, (now - last) / 1000);
+			last = now;
+			if (cast?.asset && stage) {
+				// the asset runs on its solver, its modes eased; its reading and labels read off it
+				stage.update(dt);
+				if (aim) {
+					controls.target.lerp(aim, 0.12);
+					if (controls.target.distanceTo(aim) < 0.002) aim = null;
+				}
+				controls.update();
+				stage.render();
+				if (stage.state.labels > 0.01 || tags.length) tags = stage.labels(box.clientWidth, box.clientHeight);
+				if ((slow += dt) > 0.12 && lab) {
+					slow = 0;
+					reading = { ...lab.read };
+					scale = stage.scaleBar(box.clientHeight, controls.target);
+				}
+				frame = requestAnimationFrame(tick);
+				return;
+			}
 			if (cast) {
 				if (doing.kind === 'clip') cast.rig.pose(cast.clips[doing.name]?.(t) ?? {});
 				else if (holding) cast.rig.pose(/** @type {Pose} */ (holding));
@@ -217,6 +306,7 @@
 		tick();
 		dispose = () => {
 			cancelAnimationFrame(frame);
+			stage?.dispose();
 			ro.disconnect();
 			controls.dispose();
 			renderer.dispose();
@@ -276,6 +366,13 @@
 		copied = true;
 		setTimeout(() => (copied = false), 1500);
 	};
+	/** a slider moved: the solver reads it on its next tick @param {string} k @param {number} v */
+	const slide = (k, v) => {
+		if (lab) lab.controls[k].value = v;
+		values = { ...values, [k]: v };
+	};
+	/** a number as the lab reads it @param {number} v @param {number} [digits] */
+	const num = (v, digits = 0) => v.toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 	/** @param {number} v */
 	const measure = (v) => (v < 0.1 ? `${Math.round(v * 1000)} mm` : `${Math.round(v * 100)} cm`);
 </script>
@@ -290,7 +387,15 @@
 	picks={{ title, lede, items: families, chosen, where: (/** @type {Family} */ f) => `${f.variants.length > 1 ? `${f.variants.length} · ` : ''}${f.from}`, onpick: pick, version, onversion: pickVersion }}
 >
 	{#snippet bar()}
-		{#if cast}
+		{#if lab}
+			<div class="chips">
+				<button class="chip" class:on={!modes.run} onclick={() => setMode?.('run')}>{modes.run ? 'Pause' : 'Run'}</button>
+				{#each MODES as [k, label] (k)}
+					<button class="chip" class:on={modes[k]} onclick={() => setMode?.(k)}>{label}</button>
+				{/each}
+				{#if lab.breakIt}<button class="chip break" class:on={modes.break} onclick={() => setMode?.('break')}>{modes.break ? 'Take it back' : lab.breakIt.label}</button>{/if}
+			</div>
+		{:else if cast}
 			<div class="chips">
 				<span class="label">Moves</span>
 				{#each Object.keys(cast.clips) as name (name)}
@@ -313,6 +418,25 @@
 					<button class="chip" class:on={variant.id === v.id} aria-current={variant.id === v.id ? 'true' : undefined} onclick={() => vary(v)}>{v.label}</button>
 				{/each}
 			</nav>
+		{/if}
+		{#if lab}
+			<div class="lab">
+				{#each Object.entries(lab.controls) as [k, c] (k)}
+					<label class="slider">
+						<span>{c.label}</span>
+						<output>{num(values[k] ?? c.value, c.digits ?? 0)} {c.unit ?? ''}</output>
+						<input type="range" min={c.min} max={c.max} step={c.step ?? 'any'} value={values[k] ?? c.value} oninput={(e) => slide(k, +e.currentTarget.value)} />
+						{#if c.ends}<small><span>{c.ends[0]}</span><span>{c.ends[1]}</span></small>{/if}
+					</label>
+				{/each}
+				{#if lab.how}
+					<details class="how">
+						<summary><b>How it is computed</b></summary>
+						<p>{lab.how.text}</p>
+						{#each lab.how.eqs as q (q)}<code>{q}</code>{/each}
+					</details>
+				{/if}
+			</div>
 		{/if}
 		{#if catalog}
 			<div class="parts">
@@ -384,15 +508,210 @@
 				</div>
 			</div>
 		{:else}
+		{#if lab}
+			<div class="hero" class:bad={reading.bad}>
+				<span class="label">{lab.hero.label}</span>
+				<b>{num(reading.value, lab.hero.digits ?? 0)}<small> {lab.hero.unit}</small></b>
+				<i class="meter"><i style:width="{Math.min(100, (Math.max(0, reading.value) / lab.hero.max) * 100)}%"></i></i>
+				<span class="state">{reading.state}</span>
+				<small>{reading.sub}</small>
+			</div>
+		{/if}
 		<b>{variants.length > 1 ? `${chosen.label} · ${variant.label}` : chosen.label}</b>
 		{#if variants.length > 1}<small>{variant.note}</small>{/if}
-		{#if size && cast}<span>{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high · {cast.rig.names.length} bones</span>{/if}
+		{#if size && cast}<span>{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high · {cast.asset ? `${catalog?.parts.length} parts` : `${cast.rig.names.length} bones`}</span>{/if}
+		{#if lab && scale[0] > 0}<span class="scale"><i style:width="{scale[0]}px"></i>{scale[1]}</span>{/if}
 		<small>Drag to turn round it · pinch or scroll to come closer{catalog ? ' · tap any part for its card' : doing.kind === 'pose' ? ' · turn any joint by hand' : ''}</small>
 		{/if}
 	{/snippet}
+	{#if tags.length}
+		<svg class="tags" aria-hidden="true">
+			{#each tags as t, i (i)}
+				{@const left = t.side === 'left'}
+				<g opacity={t.on}>
+					<polyline points="{t.x},{t.y} {t.lx + (left ? 16 : -16)},{t.ly} {t.lx},{t.ly}" />
+					<circle cx={t.x} cy={t.y} r="2.6" />
+					<text x={t.lx + (left ? -5 : 5)} y={t.ly - 2} text-anchor={left ? 'end' : 'start'} class="name">{t.text}</text>
+					{#if t.value}<text x={t.lx + (left ? -5 : 5)} y={t.ly + 12} text-anchor={left ? 'end' : 'start'} class="value">{t.value}</text>{/if}
+				</g>
+			{/each}
+		</svg>
+	{/if}
 </Turntable>
 
 <style>
+	.chip.break.on {
+		background: #b3261e;
+		border-color: #b3261e;
+		color: #fff;
+	}
+
+	.lab {
+		display: flex;
+		flex-direction: column;
+		gap: 0.7rem;
+		margin-bottom: 0.8rem;
+	}
+
+	.slider {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.15rem 0.5rem;
+		align-items: baseline;
+	}
+
+	.slider input {
+		grid-column: 1 / -1;
+		width: 100%;
+		accent-color: #ff7a1a;
+	}
+
+	.slider output {
+		font-variant-numeric: tabular-nums;
+		font-weight: 600;
+	}
+
+	.slider small {
+		grid-column: 1 / -1;
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.7rem;
+		opacity: 0.55;
+	}
+
+	.how summary {
+		cursor: pointer;
+	}
+
+	.how p {
+		margin: 0.35rem 0;
+		font-size: 0.78rem;
+		line-height: 1.45;
+		opacity: 0.8;
+	}
+
+	.how code {
+		display: block;
+		font-size: 0.72rem;
+		padding: 0.12rem 0;
+		white-space: pre-wrap;
+		opacity: 0.85;
+	}
+
+	.hero {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		padding-bottom: 0.5rem;
+		margin-bottom: 0.3rem;
+		border-bottom: 1px solid rgb(0 0 0 / 0.08);
+	}
+
+	.hero b {
+		font-size: 2rem;
+		line-height: 1.05;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.hero b small {
+		font-size: 0.9rem;
+		font-weight: 500;
+		opacity: 0.6;
+	}
+
+	.hero .meter {
+		display: block;
+		height: 4px;
+		border-radius: 2px;
+		background: rgb(0 0 0 / 0.08);
+		overflow: hidden;
+	}
+
+	.hero .meter i {
+		display: block;
+		height: 100%;
+		background: #ff7a1a;
+		transition: width 0.12s linear;
+	}
+
+	.hero .state {
+		font-weight: 600;
+	}
+
+	.hero.bad .state,
+	.hero.bad b {
+		color: #b3261e;
+	}
+
+	.hero.bad .meter i {
+		background: #b3261e;
+	}
+
+	.hero small {
+		font-variant-numeric: tabular-nums;
+		opacity: 0.7;
+	}
+
+	.scale {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.72rem;
+		opacity: 0.7;
+	}
+
+	.scale i {
+		display: block;
+		height: 6px;
+		border: 1.5px solid currentColor;
+		border-top: 0;
+	}
+
+	.tags {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		overflow: visible;
+	}
+
+	.tags polyline {
+		fill: none;
+		stroke: #1f2a23;
+		stroke-width: 1;
+		opacity: 0.7;
+	}
+
+	.tags circle {
+		fill: #ff7a1a;
+		stroke: #fff;
+		stroke-width: 1.2;
+	}
+
+	.tags text {
+		font-size: 12px;
+		fill: #1f2a23;
+		paint-order: stroke;
+		stroke: rgb(243 242 238 / 0.9);
+		stroke-width: 3px;
+	}
+
+	.tags .name {
+		font-weight: 600;
+	}
+
+	.tags .value {
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.8;
+	}
+
+	.lab + .parts {
+		border-top: 1px solid rgb(0 0 0 / 0.08);
+		padding-top: 0.5rem;
+	}
+
 	.variants + .joints,
 	.variants + .parts {
 		margin-top: 0.8rem;

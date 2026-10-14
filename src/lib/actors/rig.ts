@@ -79,6 +79,8 @@ export type Cast = {
 	feet?: string[];
 	/** a machine whose parts can be picked one by one: what each is, does and how it moves (./parts.js) */
 	catalog?: import('./parts.js').Catalog;
+	/** an asset built of real meshes, not rigged ($lib/assets/parts.js): its rig has no bones, its solver moves it */
+	asset?: import('$lib/assets/parts.js').SealedAsset;
 };
 
 export function rig(bones: BoneSpec[], parts: PartSpec[], materials: THREE.Material[]): Rig {
