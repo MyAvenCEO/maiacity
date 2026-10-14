@@ -35,6 +35,7 @@
 	// what the card shows; a phone opens on the world, the card closed
 	let panel = $state(typeof matchMedia !== 'undefined' && matchMedia('(max-width: 720px), (max-height: 500px)').matches ? null : 'you');
 	let tools = $state(false); // the phone's tools, behind the action button
+	let walking = $state(false); // walking freely through the world, once the story is told
 	let amount = $state(12);
 	let swapToken = $state('MAIA');
 	let swapTo = $state('TRIBE');
@@ -158,10 +159,16 @@
 	}
 	// the film fades in from black at its very start and out to black at its very end; everything between is a cut
 	// (the editor's rule, the script 2026-10-14: a fade means time passing or an ending, so it is kept for those)
+	// a moment of the story ends the free walk (the world ends it itself as it plays one)
+	$effect(() => {
+		if ((tour || playing) && walking) walking = false;
+	});
 	let fadeIn = $state(true);
 	let ended = $state(false); // the end faded out: the world fades back in under the player's own page
 	$effect(() => {
-		if (!tour || !world || playing) return;
+		// coming back halfway through a chapter, it starts again from its first line: no film till that is settled
+		// (resumed, below), or the open step played first and the chapter's start after it
+		if (!tour || !world || playing || (!demo && resumed !== started)) return;
 		const step = tour;
 		fadeIn = step.id === 'arrive';
 		if (step.kind === 'intro') {
@@ -241,7 +248,19 @@
 		g.players.A.founder = s === 'A' ? me : 'demo';
 		g.players.A.name = realGame.players.A.name;
 		if (s === 'B') (g.players.B.founder = me), (g.players.B.name = realGame.players.B.founder ? realGame.players.B.name : 'Player B');
-		game = g;
+		// the second's journey comes after the first's: they minted, invested, pitched the tent and planted their first
+		// tree (where and what the real first did, if they did), so its plant stake and flag stand on the hex
+		let first = g;
+		if (s === 'B') {
+			const t = realGame.players.A.tree;
+			const moves = [{ type: 'mint' }, { type: 'invest', coop: 'maia', amount: 5000 }, { type: 'invest', coop: 'village', amount: 2000 }, { type: 'invest', coop: 'tribe', amount: 1000 }, { type: 'mark', x: t?.x ?? 0, z: t?.z ?? 40 }, { type: 'seedling', plant: SEEDLINGS.some((x) => x.id === t?.plant) ? t.plant : 'apple' }, { type: 'plant', v: t?.v ?? 1 }];
+			try {
+				moves.forEach((m, i) => (first = act(first, 'A', m, now - 50e3 + i * 1e3)));
+			} catch {
+				first = g; // the first's journey could not be replayed: the second's starts on its own
+			}
+		}
+		game = first;
 		seen = { ...seen, [s]: {} };
 		told = {};
 		seat = s;
@@ -425,7 +444,7 @@
 	});
 	// coming back halfway through a chapter (Samuel 2026-10-13: the story began at "They ripen like fruit"), the chapter
 	// is told again from its first line: the told steps before the open one in its chapter are unseen once per visit
-	let resumed = 0;
+	let resumed = $state(0);
 	$effect(() => {
 		if (!tour || resumed === started || demo) return;
 		resumed = started;
@@ -494,6 +513,11 @@
 			<button class="mintbar" class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
+		{/if}
+		{#if canMove && !tour && !playing}
+			<!-- walking freely, once the story is told (Samuel 2026-10-14): tap the ground to walk there -->
+			<button class="walkbtn" class:on={walking} onclick={() => (walking = !!world?.walk(!walking))}>{walking ? 'Stop walking' : 'Walk'}</button>
+			{#if walking}<p class="walkhint">Tap the ground to walk there, or use the arrow keys</p>{/if}
 		{/if}
 		{#if canMove && !tour && !playing && myTree?.due}
 			<!-- the first tree waits for its water: once a game month (a real day), a month of its growth each time -->
@@ -601,7 +625,7 @@
 				<p class="worth">{f(inHearts(view, player.wallet, hv))} <span>❤︎ in all</span></p>
 				<ul class="hold">
 					<li><span>{player.name.charAt(0).toLowerCase() + player.name.slice(1).replace(/\s+/g, '')}HEARTS{#if mint.amount > 0.005}<small>+{f(mint.amount)} ❤︎ ready to mint</small>{/if}</span><strong>{f(player.wallet.HEARTS)} ❤︎</strong></li>
-					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
+					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
 				</ul>
 				<LedgerView {view} who={`player:${seat}`} show="cash" />
 				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} tribeMIND tent rent owed</p>{/if}
@@ -1133,6 +1157,40 @@
 	.growth small {
 		margin-left: 0.2rem;
 		color: #6b7a6f;
+	}
+	.walkbtn {
+		position: absolute;
+		z-index: 7;
+		left: max(1rem, env(safe-area-inset-left, 0px));
+		bottom: calc(var(--nav-room, 4rem) + 0.4rem);
+		padding: 0.7rem 1.2rem;
+		border: 1px solid rgb(255 255 255 / 0.5);
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.94);
+		color: #24452f;
+		font: inherit;
+		font-weight: 600;
+		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+		cursor: pointer;
+	}
+	.walkbtn.on {
+		background: #24452f;
+		color: #f4f1e8;
+	}
+	.walkhint {
+		position: absolute;
+		z-index: 7;
+		left: 50%;
+		top: 4.5rem;
+		transform: translateX(-50%);
+		margin: 0;
+		padding: 0.4rem 0.9rem;
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.9);
+		color: #3a4a3f;
+		font-size: 0.85rem;
+		white-space: nowrap;
+		pointer-events: none;
 	}
 	.mintbar.waterbar {
 		bottom: calc(var(--nav-room, 4rem) + 4.2rem);

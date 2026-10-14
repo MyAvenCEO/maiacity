@@ -9,18 +9,19 @@
 
 mod common;
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::io;
 use std::time::{Duration, Instant};
 
 use avendb::cast::*;
-use avendb::id::{BlobId, SignerId};
+use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::policy::{KeepMode, Level};
 use avendb::sealed::{FileRoot, PIECE, PIECE_SEGMENTS, SEGMENT};
 use avendb::slice::{Atom, Selector, Sym};
 use avendb_net::bucket::{self, Sealed};
 use avendb_net::shelf::FLOOR;
-use avendb_net::{JobState, Node, Options, disk};
+use avendb_net::{Job, JobState, Node, Options, disk};
 use bytes::Bytes;
 use common::Folder;
 use iroh::Endpoint;
@@ -113,14 +114,22 @@ async fn files_follow_their_edits_over_iroh() {
         server.holds_file(photo_root).await && server.holds_file(scan_root).await
     })
     .await;
-    // as the server's jobs say: each file kept whole, its one piece fetched, and the edits it took from Alice's Mac
-    let kept_job = |root: FileRoot| (BlobId(root.hash).to_hex(), JobState::Done, 1, 1);
-    let (photo_kept, scan_kept) = (kept_job(photo_root), kept_job(scan_root));
+    // as the server's jobs say: each file kept whole, its one piece fetched, the Coop's, of the entry that brings it;
+    // and the edits it took from Alice's Mac, some of them the Coop's, of Welcome and Onboarding
+    let one = |id: String| BTreeMap::from([(id, 1)]);
+    let kept_job = |root: FileRoot, entry: EntryId| {
+        (BlobId(root.hash).to_hex(), JobState::Done, 1, 1, one(coop.to_hex()), one(entry.to_hex()))
+    };
+    let (photo_kept, scan_kept) = (kept_job(photo_root, welcome), kept_job(scan_root, onboarding));
     until("the server's jobs tell it", || async {
         let (_, ended) = server.jobs().snapshot();
         let kept = ended.iter().filter(|j| j.kind == "keep");
-        let kept: Vec<_> = kept.map(|j| (j.subject.clone(), j.state, j.done, j.total)).collect();
-        let pulled = ended.iter().any(|j| j.kind == "pull" && j.subject == mac_a.to_hex() && j.done > 0);
+        let kept = kept.map(|j| (j.subject.clone(), j.state, j.done, j.total, j.vaults.clone(), j.entries.clone()));
+        let kept: Vec<_> = kept.collect();
+        let from_mac: Vec<&Job> = ended.iter().filter(|j| j.kind == "pull" && j.subject == mac_a.to_hex()).collect();
+        let took_of = |v: VaultId| from_mac.iter().any(|j| j.vaults.contains_key(&v.to_hex()));
+        let took = |e: EntryId| from_mac.iter().any(|j| j.entries.contains_key(&e.to_hex()));
+        let pulled = took_of(coop) && took(welcome) && took(onboarding);
         kept.contains(&photo_kept) && kept.contains(&scan_kept) && pulled
     })
     .await;

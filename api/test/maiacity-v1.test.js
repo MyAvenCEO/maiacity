@@ -1,6 +1,6 @@
 // MaiaCity V1's rules (game/maiacity-v1/engine.js): HEARTS, the 50/50 MIND split, the pool, rent and the melt.
 import { expect, test } from "bun:test";
-import { DAY_MS, SEEDLINGS, act, advance, describe, dividendsOf, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
+import { DAY_MS, SEEDLINGS, act, advance, describe, dividendsOf, heartsValue, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
 
 const T0 = Date.UTC(2026, 9, 13);
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
@@ -257,7 +257,7 @@ test("a MIP stands a screen in one of the page's panels (a slot); an unknown slo
 test("each newcomer marks a spot outside the core, picks a seed from the backpack and plants it: their first tree, named after them", () => {
   let s = newGame(T0);
   s.players.A.name = "Samuel";
-  expect(SEEDLINGS.map((x) => x.id)).toEqual(["apple", "pear", "cherry", "hazel", "blackcurrant"]);
+  expect(SEEDLINGS.map((x) => x.id)).toEqual(["apple", "pear", "cherry", "plum", "apricot", "quince", "mulberry", "walnut", "chestnut", "hazel"]);
   expect(() => act(s, "A", { type: "plant" }, T0)).toThrow(/Mark where/);
   expect(() => act(s, "A", { type: "mark", x: 5, z: 3 }, T0)).toThrow(/Not in the middle/);
   expect(() => act(s, "A", { type: "mark", x: 90, z: 60 }, T0)).toThrow(/beyond your hex/);
@@ -297,4 +297,19 @@ test("a first tree grows one game month for each watering, once a game month; a 
   expect(s.players.A.tree.grown).toBe(2);
   expect(() => act(s, "A", { type: "water" }, T0 + DAY_MS * 4.5)).toThrow(/Come back tomorrow/);
   expect(s.players.B.tree).toBeUndefined();
+});
+
+test("HEARTS values: every MIND counts 1 HEART till trades move the pool, whatever went into each COOP", () => {
+  let s = newGame(T0);
+  s = act(s, "A", { type: "mint" }, T0 + 1);
+  s = act(s, "A", { type: "invest", coop: "maia", amount: 5000 }, T0 + 2);
+  s = act(s, "A", { type: "invest", coop: "village", amount: 2000 }, T0 + 3);
+  s = act(s, "A", { type: "invest", coop: "tribe", amount: 1000 }, T0 + 4);
+  const v = heartsValue(s);
+  for (const t of ["MAIA", "VILLAGE", "TRIBE"]) expect(v[t]).toBeCloseTo(1, 6);
+  // buying tribeMIND out of the pool with maiaMIND: tribeMIND dearer, maiaMIND cheaper
+  s = act(s, "A", { type: "swap", token: "MAIA", to: "TRIBE", amount: 100 }, T0 + 5);
+  const w = heartsValue(s);
+  expect(w.TRIBE).toBeGreaterThan(1);
+  expect(w.MAIA).toBeLessThan(1);
 });

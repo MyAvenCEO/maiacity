@@ -175,6 +175,10 @@ async fn a_node_brings_a_file_in_beside_put_file_and_reads_any_range_of_it_besid
     let short = (s("bring"), s("Short"), s("failed"), Some(4), Some(10));
     assert_eq!(told, [short, (s("bring"), s("Harvest.mp4"), s("done"), Some(len), Some(len))], "the newest first");
     assert_eq!((&ended[1]["subject"], &ended[1]["unit"]), (&root, &json!("bytes")));
+    let alices = |n: u64| json!({ alice.to_hex(): n });
+    assert_eq!((&ended[1]["vaults"], &ended[0]["vaults"]), (&alices(len), &alices(10)), "the vault each went into");
+    let made_entry = json!({ entry.to_hex(): len });
+    assert_eq!((&ended[1]["entries"], &ended[0]["entries"]), (&made_entry, &json!({})), "the entry the film made");
     assert!(text(&ended[0], "error").contains("fewer bytes"), "{}", ended[0]);
     assert_eq!(jobs["running"], json!([]), "nothing runs now");
     mac.shutdown().await.expect("the node shuts down");

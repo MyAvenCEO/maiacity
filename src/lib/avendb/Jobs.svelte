@@ -1,10 +1,12 @@
 <!--
-	What this device does in the background, live, as the studio's Processes shows its jobs (vault/app's jobs.rs): what
-	it works on now, each job with its kind, what it works on, how far it is and how long it has left; and what it did,
-	done or failed and why. Its jobs (the device's `jobs` op): files brought into its store, sealed as their bytes come;
-	files kept whole, their pieces fetched from the peers that hold them; and the edits a peer holds for it, asked for
-	page by page and taken. Beside them, what still syncs, by entry and by file, from where each is synced to: each
-	device that holds only some of what this one holds, with how much of it, of this vault or of every vault.
+	What this device does in the background for the vault the page shows, live, as the studio's Processes shows its
+	jobs (vault/app's jobs.rs): what it works on now, each job with its kind, what it works on, how far it is and how
+	long it has left; and what it did, each with where what it worked on is synced to now, or why it failed. Its jobs
+	(the device's `jobs` op): files brought into its store, sealed as their bytes come; files kept whole, their pieces
+	fetched from the peers that hold them; and the edits a peer holds for it, asked for page by page and taken. Each
+	job tells the vaults and entries it is about, and the page shows only those of its vault, a pull with only that
+	vault's edits. Beside them, what still syncs, by entry and by file, from where each is synced to: each device that
+	holds only some of what this one holds of the vault, with how much of it.
 -->
 <script>
 	import { onMount } from 'svelte';
@@ -12,10 +14,12 @@
 	import { count, short, size } from './vaults.js';
 
 	/**
-	 * A job as the device tells it (avendb-net's `jobs`): `done` of `total` `unit`s, `total` 0 while it doesn't know.
+	 * A job as the device tells it (avendb-net's `jobs`): `done` of `total` `unit`s, `total` 0 while it doesn't know;
+	 * `vaults` and `entries` what it is about, in hex, each with how many of its units are theirs.
 	 * @typedef {{ id: string, kind: 'bring' | 'keep' | 'pull', subject: string, name: string,
 	 *   state: 'running' | 'done' | 'failed', stage: string, done: number, total: number, unit: string,
-	 *   started: number, ended: number | null, error: string | null }} Job
+	 *   started: number, ended: number | null, error: string | null, vaults?: Record<string, number>,
+	 *   entries?: Record<string, number> }} Job
 	 */
 
 	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any }} */
@@ -27,7 +31,6 @@
 	let ended = $state([]);
 	let failed = $state('');
 	let now = $state(Date.now());
-	let scope = $state(/** @type {'vault' | 'all'} */ ('vault'));
 	let filter = $state(/** @type {'all' | 'failed' | 'done'} */ ('all'));
 
 	const s = $derived(studio(world, null, vault, actor));
@@ -63,8 +66,16 @@
 	/** An amount of job `j`'s units, as a person reads it. @param {Job} j @param {number} n */
 	const amount = (j, n) => (j.unit === 'bytes' ? size(n) : count(n, j.unit.replace(/s$/, ''), j.unit));
 
-	/** How far job `j` is, in words: "12 MB of 40 MB", or what it did so far. @param {Job} j */
-	const howFar = (j) => (j.total > 0 ? `${amount(j, j.done)} of ${amount(j, j.total)}` : amount(j, j.done));
+	/**
+	 * How far job `j` is, in words: "12 MB of 40 MB", or what it did so far; a pull, only what it took of the vault.
+	 * @param {Job} j
+	 */
+	const howFar = (j) =>
+		j.kind === 'pull'
+			? amount(j, j.vaults?.[vault] ?? 0)
+			: j.total > 0
+				? `${amount(j, j.done)} of ${amount(j, j.total)}`
+				: amount(j, j.done);
 
 	/** A time in seconds, as a clock reads it: "4:05", "1:02:03". @param {number} t */
 	const clock = (t) => {
@@ -90,27 +101,59 @@
 			? new Date(j.ended).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 			: '';
 
-	/** the entry that brings each file, by the file's root */
-	const bringer = $derived(new Map(world.entries.flatMap((e) => (e.files ?? []).map((f) => [f.root, e.entry]))));
+	/** the vault's entries, by id */
+	const entries = $derived(new Map(world.entries.filter((e) => e.vault === vault).map((e) => [e.entry, e])));
+	/** each file of the vault with the entry that brings it, by the file's root */
+	const files = $derived(
+		new Map([...entries.values()].flatMap((e) => (e.files ?? []).map((f) => [f.root, { file: f, entry: e.entry }])))
+	);
 
-	/** What job `j` works on, in words: a file by its name or its entry, a device by its name. @param {Job} j */
+	/** Whether job `j` is about the vault. @param {Job} j */
+	const ours = (j) => (j.vaults?.[vault] ?? 0) > 0;
+
+	/** The vault's entries job `j` is about, by id. @param {Job} j */
+	const itsEntries = (j) => Object.keys(j.entries ?? {}).filter((e) => entries.has(e));
+
+	/**
+	 * What job `j` works on, in words: a file by its name or its entry; a pull by the device it took from and the
+	 * entries whose edits it took.
+	 * @param {Job} j
+	 */
 	const what = (j) => {
-		if (j.kind === 'pull') return `from ${s.signer(j.subject)}`;
+		if (j.kind === 'pull') {
+			const titles = itsEntries(j).map((e) => s.entry(e));
+			const more = titles.length > 3 ? ` and ${titles.length - 3} more` : '';
+			return `from ${s.signer(j.subject)}${titles.length ? `: ${titles.slice(0, 3).join(', ')}${more}` : ''}`;
+		}
 		if (j.name) return j.name;
-		const entry = bringer.get(j.subject);
+		const entry = files.get(j.subject)?.entry ?? itsEntries(j)[0];
 		return entry ? s.entry(entry) : `file ${short(j.subject)}`;
 	};
 
 	/**
-	 * What still syncs, by entry and by file: each device that holds only some of what this one holds of it, with how
-	 * much, the entry's title first; of the vault, or of every vault.
+	 * Where what job `j` worked on is synced to now: a file's devices, as its Synced to says; a pull's, each device
+	 * with how many it holds of the edits this one holds of the entries whose edits it took, all of them together.
+	 * @param {Job} j @returns {import('./vaults.js').Holder[]}
+	 */
+	const syncedTo = (j) => {
+		if (j.kind !== 'pull') return files.get(j.subject)?.file.syncedTo ?? [];
+		const each = itsEntries(j).map((e) => entries.get(e)?.syncedTo ?? []);
+		const of = each.reduce((n, hs) => n + Math.max(0, ...hs.map((h) => h.of)), 0);
+		/** @type {Map<string, number>} */
+		const has = new Map();
+		for (const h of each.flat()) has.set(h.device, (has.get(h.device) ?? 0) + h.has);
+		return [...has].map(([device, n]) => ({ device, has: n, of }));
+	};
+
+	/**
+	 * What still syncs of the vault, by entry and by file: each device that holds only some of what this one holds of
+	 * it, with how much, the entry's title first.
 	 * @typedef {{ id: string, what: string, kind: 'entry' | 'file', device: string, has: number, of: number }} Syncing
 	 */
 	const syncing = $derived.by(() => {
 		/** @type {Syncing[]} */
 		const rows = [];
-		for (const e of world.entries) {
-			if (scope === 'vault' && e.vault !== vault) continue;
+		for (const e of entries.values()) {
 			const title = s.entry(e.entry);
 			for (const h of e.syncedTo ?? []) {
 				if (h.has < h.of) rows.push({ id: `${e.entry}:${h.device}`, what: title, kind: 'entry', ...h });
@@ -124,23 +167,25 @@
 		return rows;
 	});
 
-	const shown = $derived(ended.filter((j) => filter === 'all' || j.state === filter));
-	const failures = $derived(ended.filter((j) => j.state === 'failed').length);
+	const busy = $derived(running.filter(ours));
+	const ends = $derived(ended.filter(ours));
+	const shown = $derived(ends.filter((j) => filter === 'all' || j.state === filter));
+	const failures = $derived(ends.filter((j) => j.state === 'failed').length);
 </script>
 
 <div class="jobs">
 	<p class="soft lead">
-		What this device does in the background: files it brings in and keeps whole, edits it takes from your other devices
-		and avenDB’s server, and what still syncs, by entry and by file.
+		What this device does in the background for this vault: files it brings in and keeps whole, edits it takes from
+		your other devices and avenDB’s server, where each is synced to now, and what still syncs, by entry and by file.
 	</p>
 	{#if failed}<p class="error">Reading the jobs failed: {failed}</p>{/if}
 
 	<section>
 		<h3>Now</h3>
-		{#if running.length}
+		{#if busy.length}
 			<table>
 				<tbody>
-					{#each running as j (j.id)}
+					{#each busy as j (j.id)}
 						{@const p = part(j)}
 						{@const eta = left(j)}
 						<tr>
@@ -163,13 +208,7 @@
 	</section>
 
 	<section>
-		<div class="head">
-			<h3>Syncing</h3>
-			<div class="seg">
-				<button class:on={scope === 'vault'} onclick={() => (scope = 'vault')}>This vault</button>
-				<button class:on={scope === 'all'} onclick={() => (scope = 'all')}>All vaults</button>
-			</div>
-		</div>
+		<h3>Syncing</h3>
 		{#if syncing.length}
 			<table>
 				<tbody>
@@ -210,9 +249,23 @@
 							<td class="soft when">{when(j)}</td>
 							<td><span class="chip">{KIND[j.kind] ?? j.kind}</span></td>
 							<td class="name" title={j.subject}>{what(j)}</td>
-							<td><span class="chip" class:ok={j.state === 'done'} class:bad={j.state === 'failed'}>
-								{j.state === 'failed' ? 'Failed' : 'Done'}
-							</span></td>
+							<td>
+								<div class="where">
+									{#if j.state === 'failed'}
+										<span class="chip bad">Failed</span>
+									{:else}
+										{#each syncedTo(j) as h (h.device)}
+											{@const all = h.has >= h.of}
+											{@const held = all ? 'all of it' : `${h.has} of ${h.of}`}
+											<span class="chip" class:ok={all} class:warn={!all} title="{s.signer(h.device)} holds {held}">
+												{s.signer(h.device)}{all ? '' : ` ${Math.round((100 * h.has) / h.of)} %`}
+											</span>
+										{:else}
+											<span class="chip">Not synced yet</span>
+										{/each}
+									{/if}
+								</div>
+							</td>
 							<td class="soft" title={j.error ?? ''}>
 								{j.state === 'failed' ? j.error : `${howFar(j)} in ${clock(took(j))}`}
 							</td>
@@ -336,6 +389,12 @@
 	.num,
 	.when {
 		white-space: nowrap;
+	}
+
+	.where {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
 	}
 
 	.num {
