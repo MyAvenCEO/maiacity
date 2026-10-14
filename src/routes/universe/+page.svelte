@@ -1,10 +1,18 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Maia Universe: maiaCITY's own content stream. Everything lives in memory for now; a reload starts it over.
+	// Maia Universe: maiaCITY's own content stream. Every post published in avenDB comes from its server's feed, taken
+	// in again every minute while the page is open; what is shared here lives in memory, and a reload starts it over.
+	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { AUTHORS, CHANNELS, fakeDocId, postHref, titleOf } from '$lib/universe/posts.js';
-	import { stream } from '$lib/universe/stream.svelte.js';
+	import { authorOf, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
+
+	onMount(() => {
+		loadFeed();
+		const again = setInterval(loadFeed, 60_000);
+		return () => clearInterval(again);
+	});
 
 	const posts = $derived(stream.posts);
 	let channel = $state('All');
@@ -14,6 +22,8 @@
 	const shown = $derived(channel === 'All' ? posts : posts.filter((p) => p.channel === channel));
 	const counts = $derived(Object.fromEntries(CHANNELS.map((c) => [c, c === 'All' ? posts.length : posts.filter((p) => p.channel === c).length])));
 	const top = $derived([...posts].sort((a, b) => b.likes - a.likes).slice(0, 3));
+	// every voice that has a post in the stream, by its newest post
+	const voices = $derived([...new Set(posts.map((p) => p.author))].map((k) => stream.authors[k]).filter(Boolean));
 
 	function share(e) {
 		e.preventDefault();
@@ -70,19 +80,28 @@
 				<h2>Most loved</h2>
 				<ol>
 					{#each top as p (p.id)}
-						<li><a href={postHref(base, p)}><strong>{p.title}</strong><span>{AUTHORS[p.author].name}</span></a></li>
+						<li><a href={postHref(base, p)}><strong>{p.title}</strong><span>{authorOf(p).name}</span></a></li>
 					{/each}
 				</ol>
 			</section>
 			<section class="card">
 				<h2>Voices</h2>
 				<ul>
-					{#each Object.values(AUTHORS) as a (a.handle)}
+					{#each voices as a (a.handle)}
 						<li class="voice"><span class="avatar sm" style:background={a.color}>{a.initials}</span>{a.name}</li>
 					{/each}
 				</ul>
 			</section>
-			<p class="note">In memory for now: what you share here is gone on the next reload.</p>
+			<p class="note">
+				{#if stream.feed === 'loading'}
+					Taking in what was published in avenDB…
+				{:else if stream.feed === 'failed'}
+					avenDB's feed can't be reached right now.
+				{:else}
+					Posts marked avenDB were published there, for everyone.
+				{/if}
+				What you share here lives in memory, and is gone on the next reload.
+			</p>
 		</aside>
 	</div>
 </div>

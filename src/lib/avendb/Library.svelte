@@ -1,10 +1,10 @@
 <!--
 	A vault's Library: every file of the vault the acting vault reads, as a media app lists them, by kind (films,
 	images, SVGs, PDFs, audio, other), the deleted ones apart; each a tile with a preview where it is a picture, its
-	size, who added it and who it is shared with. A click opens it on the whole screen: a film or a song plays as the
-	browser's player asks for it, a range at a time, streamed from the device through a service worker (./files.js), or
-	read whole where none runs;
-	a picture, an SVG or a PDF shows whole; any file saves. Files dropped on the page, or picked, go into the vault one
+	size, its kind and its tags. A click opens it in the main area, its details in an aside on the right (its kind,
+	size, who added it and when, its tags, where it is synced to and who it is shared with): a film or a song plays as
+	the browser's player asks for it, a range at a time, streamed from the device through a service worker
+	(./files.js), or read whole where none runs; a picture, an SVG or a PDF shows whole; any file saves. Files dropped on the page, or picked, go into the vault one
 	by one: each sealed under a key of its own on this device as it is read, a megabyte at a time, then an entry that
 	brings it, which syncs as any edit does, so the person's other devices and avenDB's server fetch its sealed bytes and
 	open them with the key in the edit. A vault other than this one adds a file only through a cap with write on a
@@ -17,7 +17,19 @@
 	import Icon from './Icon.svelte';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
 	import { allowed, creatable, deleting, may } from './ops.js';
-	import { count, list, nameOf, reads, sharedWith, sharedWords, size, tagsIn, why } from './vaults.js';
+	import {
+		count,
+		list,
+		nameOf,
+		reads,
+		sharedWith,
+		sharedWords,
+		signerName,
+		size,
+		syncedWords,
+		tagsIn,
+		why
+	} from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -71,7 +83,12 @@
 	});
 	const tagsWords = $derived(asked?.length ? `, tagged ${list(asked.map((t) => `“${t}”`))} as its share asks` : '');
 	/** Who entry `e` is shared with, in words. @param {EntryView} e */
-	const sharedOf = (e) => `Shared with ${sharedWords(sharedWith(world, vault, e.entry))}${e.public ? ' · Public' : ''}`;
+	const sharedOf = (e) => `${sharedWords(sharedWith(world, vault, e.entry))}${e.public ? ', and everyone: Public' : ''}`;
+	/** When entry `e` was added, as a person reads it. @param {EntryView} e */
+	const added = (e) =>
+		e.created
+			? new Date(e.created * 1000).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+			: 'unknown';
 
 	/** why the device won't add a file for the acting vault, as it answers a dry run of adding an empty one: '' */
 	let unadded = $state('');
@@ -167,7 +184,7 @@
 		return { destroy: () => seen.disconnect() };
 	}
 
-	/** the entry open on the whole screen */
+	/** the entry open in the main area */
 	let open = $state('');
 	const viewing = $derived(files.find((e) => e.entry === open));
 	/** what the viewer shows it from, how much of it it read, and why it can't */
@@ -177,7 +194,7 @@
 	/** the viewer's opening, so that a slower one, of a file since closed, shows nothing */
 	let opening = 0;
 
-	/** Opens entry `e` on the whole screen. @param {EntryView} e */
+	/** Opens entry `e` in the main area. @param {EntryView} e */
 	async function show(e) {
 		const at = ++opening;
 		[open, src, loading, failed] = [e.entry, '', -1, ''];
@@ -262,142 +279,124 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && open && close()} />
 
-<div
-	class="library"
-	class:dropping
-	role="region"
-	aria-label="{nameOf(here)}'s files"
-	ondragover={over}
-	ondragleave={(e) => e.currentTarget === e.target && (dropping = false)}
-	ondrop={drop}
->
-	{#if asked}
-		<section class="start" aria-label="Add files">
-			<button class="drop" disabled={busy || !adds} onclick={() => picker?.click()}>
-				<span class="well"><Icon name="upload" size={30} /></span>
-				<span class="label">Add files</span>
-			</button>
-			<div class="say">
-				<p class="soft">
-					{#if unadded}
-						{nameOf(as)} can’t add a file here: {unadded}.
-					{:else}
-						Drop films, pictures, PDFs, SVGs or songs here, or pick them, into {nameOf(here)} as
-						<b>{nameOf(as)}</b>{tagsWords}. Each is sealed with a key of its own on this device, then syncs like
-						any edit.
-					{/if}
-				</p>
-				<input class="field" placeholder="Tags for them (optional)" bind:value={tagging} aria-label="The new files’ tags" />
-			</div>
-			<input
-				bind:this={picker}
-				type="file"
-				multiple
-				hidden
-				onchange={(e) => {
-					const picked = [...(e.currentTarget.files ?? [])];
-					e.currentTarget.value = '';
-					add(picked);
-				}}
-			/>
-		</section>
-	{/if}
-
-	{#if files.length}
-		<nav class="filter" aria-label="Narrow by kind">
-			<button class="chip" class:on={!only && !binned} aria-pressed={!only && !binned} onclick={() => ([only, bin] = ['', false])}
-				>All <small>{live.length}</small></button
-			>
-			{#each kinds.filter((k) => k.n) as k (k.k)}
-				{@const on = only === k.k && !binned}
-				<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : k.k, false])}
-					><Icon name={k.icon} size={12} /> {k.label} <small>{k.n}</small></button
-				>
-			{/each}
-			{#if deleted.length}
-				<button class="chip" class:on={binned} aria-pressed={binned} onclick={() => (bin = !binned)}
-					><Icon name="trash" size={12} /> Deleted <small>{deleted.length}</small></button
-				>
-			{/if}
-		</nav>
-	{/if}
-
-	{#if binned}
-		<p class="soft binned">Deleted files keep their bytes. Open one to bring it back.</p>
-	{/if}
-
-	{#if !seen.length && vault !== actor}
-		<div class="empty">
-			<p>
-				{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}:
-				none of it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)} in
-				<button class="link" onclick={onaccess}>Sharing</button>.
-			</p>
-		</div>
-	{:else if shown.length}
-		<div class="grid">
-			{#each shown as e (e.entry)}
-				{@const k = kind(e)}
-				{@const file = fileOf(e)}
-				{@const thumb = file ? thumbs[file.root] : undefined}
-				<button class="tile" class:deleted={e.deleted} onclick={() => show(e)} aria-label="Open {e.title}">
-					<span class="thumb {k}" use:previews={e}>
-						{#if thumb}
-							<img src={thumb} alt="" loading="lazy" />
-						{:else}
-							<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={k === 'film' ? 28 : 34} />
-						{/if}
-					</span>
-					<span class="info">
-						<b>{e.title}</b>
-						<small class="soft">
-							{file?.len != null ? size(file.len) : 'sealed'} · {KINDS.find(([x]) => x === k)?.[1]}{e.by !== vault
-								? ` · by ${nameOf(byId.get(e.by))}`
-								: ''}
-						</small>
-						{#if e.tags?.length}
-							<span class="tags">{#each e.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>
-						{/if}
-						<small class="soft shared">{sharedOf(e)}</small>
-					</span>
+{#if !viewing}
+	<div
+		class="library"
+		class:dropping
+		role="region"
+		aria-label="{nameOf(here)}'s files"
+		ondragover={over}
+		ondragleave={(e) => e.currentTarget === e.target && (dropping = false)}
+		ondrop={drop}
+	>
+		{#if asked}
+			<section class="start" aria-label="Add files">
+				<button class="drop" disabled={busy || !adds} onclick={() => picker?.click()}>
+					<span class="well"><Icon name="upload" size={30} /></span>
+					<span class="label">Add files</span>
 				</button>
-			{/each}
-		</div>
-	{:else}
-		<p class="soft">{binned ? 'Nothing deleted.' : `No file here${asked ? ' yet: drop some on this page.' : '.'}`}</p>
-	{/if}
+				<div class="say">
+					<p class="soft">
+						{#if unadded}
+							{nameOf(as)} can’t add a file here: {unadded}.
+						{:else}
+							Drop films, pictures, PDFs, SVGs or songs here, or pick them, into {nameOf(here)} as
+							<b>{nameOf(as)}</b>{tagsWords}. Each is sealed with a key of its own on this device, then syncs like
+							any edit.
+						{/if}
+					</p>
+					<input class="field" placeholder="Tags for them (optional)" bind:value={tagging} aria-label="The new files’ tags" />
+				</div>
+				<input
+					bind:this={picker}
+					type="file"
+					multiple
+					hidden
+					onchange={(e) => {
+						const picked = [...(e.currentTarget.files ?? [])];
+						e.currentTarget.value = '';
+						add(picked);
+					}}
+				/>
+			</section>
+		{/if}
 
-	{#if hidden > 0 && seen.length}
-		<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
-	{/if}
-
-	{#if dropping}
-		<div class="dropzone" aria-hidden="true"><Icon name="upload" size={40} /><b>Drop to add to {nameOf(here)}</b></div>
-	{/if}
-</div>
-
-{#if viewing}
-	{@const k = kind(viewing)}
-	{@const file = fileOf(viewing)}
-	<div class="viewer" role="dialog" aria-modal="true" aria-label={viewing.title}>
-		<header>
-			<button class="btn quiet" onclick={close} aria-label="Close"><Icon name="back" /> Back</button>
-			<div class="what">
-				<b>{viewing.title}</b>
-				<small>{viewing.media ?? 'file'}{file?.len != null ? ` · ${size(file.len)}` : ''}</small>
-				<small>{sharedOf(viewing)}</small>
-			</div>
-			<div class="row">
-				<button class="btn" disabled={busy || !file || file.len === null || loading >= 0} onclick={() => save(viewing)}
-					><Icon name="download" /> Save</button
+		{#if files.length}
+			<nav class="filter" aria-label="Narrow by kind">
+				<button class="chip" class:on={!only && !binned} aria-pressed={!only && !binned} onclick={() => ([only, bin] = ['', false])}
+					>All <small>{live.length}</small></button
 				>
-				{#if tosses}
-					<button class="btn danger" disabled={busy} onclick={() => toss(viewing)}
-						><Icon name="trash" /> {viewing.deleted ? 'Bring back' : 'Delete'}</button
+				{#each kinds.filter((k) => k.n) as k (k.k)}
+					{@const on = only === k.k && !binned}
+					<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : k.k, false])}
+						><Icon name={k.icon} size={12} /> {k.label} <small>{k.n}</small></button
+					>
+				{/each}
+				{#if deleted.length}
+					<button class="chip" class:on={binned} aria-pressed={binned} onclick={() => (bin = !binned)}
+						><Icon name="trash" size={12} /> Deleted <small>{deleted.length}</small></button
 					>
 				{/if}
+			</nav>
+		{/if}
+
+		{#if binned}
+			<p class="soft binned">Deleted files keep their bytes. Open one to bring it back.</p>
+		{/if}
+
+		{#if !seen.length && vault !== actor}
+			<div class="empty">
+				<p>
+					{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}:
+					none of it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)} in
+					<button class="link" onclick={onaccess}>Sharing</button>.
+				</p>
 			</div>
-		</header>
+		{:else if shown.length}
+			<div class="grid">
+				{#each shown as e (e.entry)}
+					{@const k = kind(e)}
+					{@const file = fileOf(e)}
+					{@const thumb = file ? thumbs[file.root] : undefined}
+					<button class="tile" class:deleted={e.deleted} onclick={() => show(e)} aria-label="Open {e.title}">
+						<span class="thumb {k}" use:previews={e}>
+							{#if thumb}
+								<img src={thumb} alt="" loading="lazy" />
+							{:else}
+								<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={k === 'film' ? 28 : 34} />
+							{/if}
+						</span>
+						<span class="info">
+							<b>{e.title}</b>
+							<small class="soft">
+								{file?.len != null ? size(file.len) : 'sealed'} · {KINDS.find(([x]) => x === k)?.[1]}{e.by !== vault
+									? ` · by ${nameOf(byId.get(e.by))}`
+									: ''}
+							</small>
+							{#if e.tags?.length}
+								<span class="tags">{#each e.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>
+							{/if}
+						</span>
+					</button>
+				{/each}
+			</div>
+		{:else}
+			<p class="soft">{binned ? 'Nothing deleted.' : `No file here${asked ? ' yet: drop some on this page.' : '.'}`}</p>
+		{/if}
+
+		{#if hidden > 0 && seen.length}
+			<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
+		{/if}
+
+		{#if dropping}
+			<div class="dropzone" aria-hidden="true"><Icon name="upload" size={40} /><b>Drop to add to {nameOf(here)}</b></div>
+		{/if}
+	</div>
+
+{:else}
+	{@const k = kind(viewing)}
+	{@const file = fileOf(viewing)}
+	<div class="viewer" role="region" aria-label={viewing.title}>
 		<div class="stage">
 			{#if failed}
 				<p class="note">{failed}</p>
@@ -416,6 +415,44 @@
 				<p class="note">No preview for this kind of file: save it to open it.</p>
 			{/if}
 		</div>
+		<aside class="details" aria-label="About {viewing.title}">
+			<button class="btn quiet back" onclick={close}><Icon name="back" /> All files</button>
+			<h3>{viewing.title}</h3>
+			<dl>
+				<dt>Kind</dt>
+				<dd>{KINDS.find(([x]) => x === k)?.[1]} · {viewing.media ?? 'file'}</dd>
+				<dt>Size</dt>
+				<dd>{file?.len != null ? size(file.len) : 'sealed: this device can’t open it yet'}</dd>
+				<dt>Added</dt>
+				<dd>{added(viewing)}, by {nameOf(byId.get(viewing.by))}</dd>
+				{#if viewing.tags?.length}
+					<dt>Tags</dt>
+					<dd class="tags">{#each viewing.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</dd>
+				{/if}
+				<dt>Synced to</dt>
+				<dd>{syncedWords(file?.syncedTo, (d) => signerName(world, d)) ?? 'nowhere yet'}</dd>
+				<dt>Shared with</dt>
+				<dd>{sharedOf(viewing)}. <button class="link" onclick={onaccess}>Sharing</button></dd>
+				{#if file}
+					<dt>Hash</dt>
+					<dd><code>{file.root}</code></dd>
+				{/if}
+				{#if viewing.deleted}
+					<dt>Deleted</dt>
+					<dd>It keeps its bytes: bring it back to list it again.</dd>
+				{/if}
+			</dl>
+			<div class="row">
+				<button class="btn" disabled={busy || !file || file.len === null || loading >= 0} onclick={() => save(viewing)}
+					><Icon name="download" /> Save</button
+				>
+				{#if tosses}
+					<button class="btn danger" disabled={busy} onclick={() => toss(viewing)}
+						><Icon name="trash" /> {viewing.deleted ? 'Bring back' : 'Delete'}</button
+					>
+				{/if}
+			</div>
+		</aside>
 	</div>
 {/if}
 
@@ -663,60 +700,91 @@
 		pointer-events: none;
 	}
 
-	/* on the whole screen, under the page's toasts and the app's nav pill, which float over its foot */
+	/* the main area: the file on the left, as large as the pane allows, its details in an aside on the right */
 	.viewer {
-		position: fixed;
-		inset: 0;
-		z-index: 44;
-		display: flex;
-		flex-direction: column;
-		background: #111613;
-		color: #f4f1eb;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 17rem;
+		gap: 1rem;
+		height: calc(100dvh - 8rem - var(--nav-room, 5rem));
+		min-height: 22rem;
 	}
 
-	.viewer header {
+	.details {
+		display: flex;
+		flex-direction: column;
+		gap: 0.7rem;
+		min-width: 0;
+		overflow-y: auto;
+		padding: 0.9rem 1rem;
+		border: 1px solid var(--edge);
+		border-radius: 12px;
+		background: #fff;
+		font-size: 0.84rem;
+	}
+
+	.details .back {
+		align-self: flex-start;
+		margin: -0.3rem 0 0 -0.5rem;
+	}
+
+	.details h3 {
+		margin: 0;
+		font-size: 0.98rem;
+		overflow-wrap: anywhere;
+	}
+
+	.details dl {
+		display: grid;
+		gap: 0.15rem;
+		margin: 0;
+	}
+
+	.details dt {
+		margin-top: 0.45rem;
+		color: var(--soft);
+		font-size: 0.72rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.details dd {
+		margin: 0;
+		line-height: 1.45;
+		overflow-wrap: anywhere;
+	}
+
+	.details code {
+		font-size: 0.72rem;
+	}
+
+	.details .row {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.6rem 1rem;
-		padding: 0.7rem 1rem;
-		border-bottom: 1px solid rgb(255 255 255 / 0.1);
+		gap: 0.4rem;
+		margin-top: auto;
+		padding-top: 0.6rem;
 	}
 
-	.viewer header .btn {
-		border-color: rgb(255 255 255 / 0.2);
-		background: transparent;
-		color: inherit;
-	}
+	@media (max-width: 760px) {
+		.viewer {
+			grid-template-columns: 1fr;
+			height: auto;
+		}
 
-	.viewer header .btn.quiet {
-		border-color: transparent;
-	}
-
-	.what {
-		display: flex;
-		flex: 1 1 12rem;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.what b {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.what small {
-		color: rgb(255 255 255 / 0.6);
-		font-size: 0.76rem;
+		.viewer .stage {
+			height: 60dvh;
+		}
 	}
 
 	.stage {
 		display: grid;
-		flex: 1;
 		place-items: center;
 		min-height: 0;
-		padding: 1rem 1rem var(--nav-room, 5rem);
+		overflow: hidden;
+		padding: 1rem;
+		border-radius: 12px;
+		background: #111613;
+		color: #f4f1eb;
 	}
 
 	.stage video,

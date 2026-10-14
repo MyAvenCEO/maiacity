@@ -22,6 +22,8 @@ import { EVERYONE, seeded } from './vaults.js';
 export const FLOW = 'flow';
 export const FUNCTION = 'function';
 export const POST = 'post';
+/** The type of a vault's profile, the entry that names it. */
+const PROFILE = 'profile';
 
 /**
  * @typedef {{ id: number, key: string, name: string, public: boolean, next: string[], x: number, y: number }} Stage
@@ -155,6 +157,22 @@ export function functionsOf(world, vault, flow) {
 }
 
 /**
+ * Every function entries of vault `vault` follow, whatever their flow, each with the flow it is wired to where this
+ * device knows that flow (`null` where it doesn't, so it never runs).
+ * @param {import('./vaults.js').WorldView} world @param {string} vault
+ * @returns {(Fn & { wired: Flow | null })[]}
+ */
+export function everyFunction(world, vault) {
+	const vaults = trusted(world, vault);
+	const flows = first(/** @type {Flow[]} */ ([...held(world, vaults, FLOW), CONTENT]), (f) => f.key);
+	const all = /** @type {Fn[]} */ ([...held(world, vaults, FUNCTION), ...FUNCTIONS]);
+	return first(all, (f) => `${f.flow}\n${f.name}`).map((f) => ({
+		...f,
+		wired: flows.find((w) => w.key === f.flow && Array.isArray(w.stages)) ?? null
+	}));
+}
+
+/**
  * The posts about entry `entry` its vault holds, not deleted: their entries.
  * @param {import('./vaults.js').WorldView} world @param {string} vault @param {string} entry
  */
@@ -180,7 +198,7 @@ export const publicShare = (world, vault, tag) =>
 	world.caps.find((c) => c.over === vault && c.grantee === EVERYONE && onlyTag(c.slice?.where) === tag);
 
 /** What a function may ask for: changes of entries, and Public shares. */
-const ASKS = ['create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'share'];
+export const ASKS = ['create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'share'];
 
 /**
  * Op `op` a function handed back, as the device makes it: on vault `vault`, as vault `actor`, its `$n` (the entry
@@ -206,10 +224,19 @@ function bound(op, vault, actor, entries, base) {
 }
 
 /**
- * What moving entry `e` to stage `to` of flow `flow` takes, acting for `actor`, in order: the Public share on the
- * stage's tag where the stage is public and its vault gives none yet, the tag swapped, then the ops of each function
- * that runs as it leaves its stage and enters the new one (`$n` the entry the move's op n created, ./ops.js `refs`);
- * and why a function asked for nothing.
+ * Vault `vault`'s profile, the entry that names it, as the device reads it: its first entry of type `profile` it wrote
+ * itself (avendb's `world::profile_of`).
+ * @param {import('./vaults.js').WorldView} world @param {string} vault
+ */
+const profileOf = (world, vault) =>
+	world.entries.find((x) => x.vault === vault && x.type === PROFILE && x.by === vault);
+
+/**
+ * What moving entry `e` to stage `to` of flow `flow` takes, acting for `actor`, in order: where the stage is public,
+ * the Public share on its tag where its vault gives none yet, and one on its vault's profile where that isn't public
+ * yet, so that everyone reads who published it (the Maia Universe names each post's vault by it); the tag swapped,
+ * then the ops of each function that runs as it leaves its stage and enters the new one (`$n` the entry the move's op
+ * n created, ./ops.js `refs`); and why a function asked for nothing.
  * @param {import('./vaults.js').WorldView} world @param {string} actor
  * @param {import('./vaults.js').EntryView} e @param {Flow} flow @param {string} to
  * @returns {Promise<{ ops: object[], errors: string[] }>}
@@ -222,6 +249,11 @@ export async function moving(world, actor, e, flow, to) {
 	const tag = stageTag(flow.key, to);
 	if (stage.public && !publicShare(world, e.vault, tag)) {
 		ops.push({ op: 'share', over: e.vault, who: EVERYONE, level: 'Public', what: { tag }, as: actor });
+	}
+	const profile = stage.public ? profileOf(world, e.vault) : undefined;
+	if (profile && !profile.public) {
+		const what = { entry: [profile.entry] };
+		ops.push({ op: 'share', over: e.vault, who: EVERYONE, level: 'Public', what, as: actor });
 	}
 	const remove = from ? [stageTag(flow.key, from.key)] : [];
 	ops.push({ op: 'tag', entry: e.entry, add: [tag], remove, as: actor });

@@ -2,8 +2,8 @@
 	A vault's flows, as a recipe draws its steps: each flow its entries of the kinds it names can go through, its stages
 	as nodes where they sit, an arrow to each stage one goes on to, each stage with how many of the vault's entries are
 	in it and whether it is public (one Public share of the vault on the stage's tag reaches every entry in it). Under
-	each stage, the functions that run as an entry enters it or leaves it, with their code, as QuickJS runs it on the
-	device that moves the entry (./flows.js, ./functions.js): the vault's own, avenCEO GmbH's, then the app's.
+	each stage, the functions that run as an entry enters it or leaves it (./flows.js): the vault's own, avenCEO GmbH's,
+	then the app's, each a link to Functions, which shows how it is wired and its code (./Functions.svelte).
 -->
 <script>
 	import Icon from './Icon.svelte';
@@ -57,7 +57,7 @@
 	in a stage while it carries the stage’s tag, so moving it swaps one tag. A public stage is one Public share of the
 	vault on that tag, which reaches every entry in it and lets go of one moved out. Functions react to a move: each runs
 	in QuickJS on the device that moves the entry and asks for the changes it makes, which the vault makes as any other,
-	by its shares.
+	by its shares. <a href="#functions">Functions</a> shows each, how it is wired and its code.
 </p>
 
 {#each flows as f (f.key)}
@@ -117,17 +117,13 @@
 						</p>
 					{/if}
 					{#each here as fn (fn.name)}
-						<details class="fn">
-							<summary>
-								<Icon name="code" size={14} />
-								<span>{fn.name}</span>
-								<span class="chip">{fn.on === 'leave' ? 'as it leaves' : 'as it enters'}</span>
-								{#if fn.enabled === false}<span class="chip">Off</span>{/if}
-								<small class="soft">{from(fn)}</small>
-							</summary>
-							{#if fn.about}<p class="soft">{fn.about}</p>{/if}
-							<pre class="code">{fn.code}</pre>
-						</details>
+						<a class="fn" href="#functions" title="How it is wired, and its code, on Functions">
+							<Icon name="fn" size={14} />
+							<span class="name">{fn.name}</span>
+							<span class="chip">{fn.on === 'leave' ? 'as it leaves' : 'as it enters'}</span>
+							{#if fn.enabled === false}<span class="chip">Off</span>{/if}
+							<small class="soft">{from(fn)}</small>
+						</a>
 					{/each}
 				</article>
 			{/each}
@@ -235,27 +231,18 @@
 	}
 
 	.fn {
-		margin-top: 0.5rem;
-		border-top: 1px solid var(--edge);
-		padding-top: 0.45rem;
-	}
-
-	.fn summary {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.35rem;
-		cursor: pointer;
+		margin-top: 0.5rem;
+		border-top: 1px solid var(--edge);
+		padding-top: 0.45rem;
+		color: inherit;
+		text-decoration: none;
 	}
 
-	.code {
-		overflow-x: auto;
-		margin: 0.4rem 0 0;
-		padding: 0.6rem;
-		border-radius: 8px;
-		background: #1e1e1c;
-		color: #f1efe8;
-		font-size: 0.76rem;
-		line-height: 1.45;
+	.fn:hover .name {
+		text-decoration: underline;
 	}
 </style>

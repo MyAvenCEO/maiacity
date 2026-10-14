@@ -156,6 +156,12 @@ jobs:
             echo "::warning::https://$AVENDB_HOST does not answer yet — check its A record (-> $HOST) and let Caddy finish its certificate."; exit 0
           fi
           echo " ← https://$AVENDB_HOST answers"
+          # the Maia Universe's feed: the posts the server keeps that everyone may read
+          if FEED=$(curl -fsS --max-time 10 "https://$AVENDB_HOST/feed/posts"); then
+            echo "$FEED" | head -c 300; echo " ← https://$AVENDB_HOST/feed/posts"
+          else
+            echo "::warning::https://$AVENDB_HOST/feed/posts does not answer: the server before its feed, or Caddy's route?"
+          fi
           # a browser's pass rides in the relay's URL (?token=, ~23 KB): the relay must still take its WebSocket
           PASS=$(head -c 24000 /dev/zero | tr '\0' A)
           CODE=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 5 "https://$AVENDB_HOST/relay?token=$PASS" \

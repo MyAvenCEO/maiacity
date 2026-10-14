@@ -131,7 +131,8 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     let data = dir.path().to_path_buf();
     let (relay_url, public_addr) = (None, None);
     let (signup, bucket, cache) = (false, None, 0);
-    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup, bucket, cache };
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
@@ -239,6 +240,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         data: dir.path().to_path_buf(),
         bind: LOOPBACK,
         relay_bind: LOOPBACK,
+        feed_bind: LOOPBACK,
         relay_url: Some(relay_url.clone()),
         public_addr: Some(public),
         signup: true,
@@ -254,12 +256,48 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
     started.shutdown().await.expect("the server stops");
 }
 
+/// What the server at `addr` answers a plain HTTP/1.1 request for `path` by `method`: its head, lower case, and its
+/// body.
+async fn http(addr: SocketAddr, method: &str, path: &str) -> (String, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr).await.expect("the feed's socket");
+    let request = format!("{method} {path} HTTP/1.1\r\nHost: avendb.maia.city\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.expect("the request");
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).await.expect("the answer");
+    let (head, body) = answer.split_once("\r\n\r\n").expect("a head and a body");
+    (head.to_lowercase(), body.to_string())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() {
+    let dir = Folder::new("feed");
+    let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
+    let (signup, bucket, cache) = (true, None, 0);
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
+    let addr = started.feed.addr();
+    // a new server keeps nothing anyone published yet; any page may read its feed
+    let (head, body) = http(addr, "GET", "/feed/posts").await;
+    assert!(head.starts_with("http/1.1 200"), "{head}");
+    assert!(head.contains("content-type: application/json"), "{head}");
+    assert!(head.contains("access-control-allow-origin: *"), "{head}");
+    assert_eq!(body, r#"{"posts":[]}"#);
+    let (head, _) = http(addr, "OPTIONS", "/feed/posts").await;
+    assert!(head.starts_with("http/1.1 204") && head.contains("access-control-allow-origin: *"), "{head}");
+    let (head, _) = http(addr, "GET", "/relay").await;
+    assert!(head.starts_with("http/1.1 404"), "nothing else: {head}");
+    started.shutdown().await.expect("the server stops");
+}
+
 #[test]
 fn the_server_is_configured_by_its_environment() {
     let defaults = Config::from_vars(|_| None).expect("the defaults");
     assert_eq!(defaults.data, PathBuf::from("/data"));
     assert_eq!(defaults.bind, "0.0.0.0:7401".parse::<SocketAddr>().expect("a socket"), "iroh's UDP");
     assert_eq!(defaults.relay_bind, "0.0.0.0:3350".parse::<SocketAddr>().expect("a socket"), "the relay's HTTP");
+    assert_eq!(defaults.feed_bind, "0.0.0.0:3351".parse::<SocketAddr>().expect("a socket"), "the feed's HTTP");
     assert_eq!(defaults.relay_url, None, "the relay's own socket, unless it is said where devices reach it");
     assert_eq!(defaults.public_addr, None, "its own interfaces' addresses, unless it is said where it is reached");
     assert!(defaults.signup, "sign-up is open, unless it is said closed");
@@ -269,6 +307,7 @@ fn the_server_is_configured_by_its_environment() {
         ("AVENDB_DATA", "/srv/avendb"),
         ("AVENDB_BIND", "[::]:7402"),
         ("AVENDB_RELAY_BIND", "127.0.0.1:3351"),
+        ("AVENDB_FEED_BIND", "127.0.0.1:3352"),
         ("AVENDB_RELAY_URL", "https://avendb.maia.city"),
         ("AVENDB_PUBLIC_ADDR", "203.0.113.7:7401"),
         ("AVENDB_SIGNUP", "closed"),
@@ -284,6 +323,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(set.data, PathBuf::from("/srv/avendb"));
     assert_eq!(set.bind, "[::]:7402".parse::<SocketAddr>().expect("a socket"));
     assert_eq!(set.relay_bind, "127.0.0.1:3351".parse::<SocketAddr>().expect("a socket"));
+    assert_eq!(set.feed_bind, "127.0.0.1:3352".parse::<SocketAddr>().expect("a socket"));
     assert_eq!(set.relay_url, Some("https://avendb.maia.city".parse().expect("a URL")));
     assert_eq!(set.public_addr, Some("203.0.113.7:7401".parse().expect("a socket")));
     assert!(!set.signup);
@@ -414,7 +454,8 @@ async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_stra
     let dir = Folder::new("claim");
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
     let (signup, bucket, cache) = (false, None, 0);
-    let config = Config { data, bind: LOOPBACK, relay_bind: LOOPBACK, relay_url, public_addr, signup, bucket, cache };
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();

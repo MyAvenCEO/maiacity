@@ -1,13 +1,17 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// One post of the Maia Universe stream. In the feed its title links to the post's own page; on that page (`full`) it
-	// stands alone, its title as the page's heading.
+	// One post of the Maia Universe stream. In the feed its title links to the post's own page, its text cut short; on
+	// that page (`full`) it stands alone, its title as the page's heading. A post published in avenDB says so.
 	import { base } from '$app/paths';
-	import { AUTHORS, ago, postHref } from './posts.js';
-	import { like } from './stream.svelte.js';
+	import { ago, postHref } from './posts.js';
+	import { authorOf, like } from './stream.svelte.js';
 
 	let { post: p, full = false } = $props();
-	const a = $derived(AUTHORS[p.author]);
+	const a = $derived(authorOf(p));
+	const SHORT = 320;
+	const text = $derived(
+		full || p.text.length <= SHORT ? p.text : `${p.text.slice(0, SHORT - 20).replace(/\s+\S*$/, '')}…`
+	);
 </script>
 
 <article class="post" class:full>
@@ -17,6 +21,7 @@
 			<strong>{a.name}</strong>
 			{#if a.ai}<span class="badge">AI</span>{:else if a.coop}<span class="badge coop">COOP</span>{/if}
 			<span class="dim">@{a.handle} · {p.ago === 0 ? 'now' : ago(p.ago)}</span>
+			{#if p.entry}<span class="badge db" title="Published in avenDB, where everyone may read it">avenDB</span>{/if}
 			<span class="channel">{p.channel}</span>
 		</div>
 
@@ -29,7 +34,7 @@
 		{#if p.kind === 'quote'}
 			<blockquote>“{p.text}”<cite>{p.note}</cite></blockquote>
 		{:else}
-			<p class="text">{p.text}</p>
+			<p class="text">{text}</p>
 		{/if}
 
 		{#if p.kind === 'stat'}
@@ -120,6 +125,11 @@
 		color: #1f7a52;
 	}
 
+	.badge.db {
+		background: #8a5fb01f;
+		color: #8a5fb0;
+	}
+
 	.channel {
 		margin-left: auto;
 		font-size: 0.72rem;
@@ -163,6 +173,7 @@
 	.text {
 		margin: 0.35rem 0 0;
 		line-height: 1.55;
+		white-space: pre-line;
 		overflow-wrap: anywhere;
 	}
 
