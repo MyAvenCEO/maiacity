@@ -645,6 +645,16 @@ impl Lab {
         self.now = now;
     }
 
+    /// The time new entries' headers say they were created at (`set_now`).
+    pub fn now(&self) -> u64 {
+        self.now
+    }
+
+    /// A nonce of the Lab's randomness, as a vault's genesis takes one: no two vaults founded alike share an id.
+    pub fn nonce(&mut self) -> u64 {
+        self.rng.next_u64()
+    }
+
     /// The name the Lab made signer `s` with.
     pub fn name(&self, s: SignerId) -> Option<&str> {
         self.names.get(&s).map(String::as_str)
@@ -1154,6 +1164,10 @@ impl Lab {
         if self.held(on).log.ids().len() != held {
             self.held(on).view().step(&edit)?;
         }
+        // in a dry run, checked and then not made (`dry`)
+        if self.dry {
+            return Ok(edit.id());
+        }
         let (id, pq, standing) = (edit.id(), sign::needs_pq(&edit), sign::standing(&edit));
         let ceremony = |s: SignerId| ceremonies.iter().find(|(c, _)| *c == s).map(|(_, c)| *c);
         let signers: Vec<SignerId> = edit.sigs().collect();
@@ -1427,12 +1441,19 @@ impl Lab {
         Ok(proof)
     }
 
-    /// Run `f` dry: every write it asks for is checked, proven and refused as ever, and then not made (`may`).
+    /// Run `f` dry: every edit it asks for, a write, a share, any edit it completes (`complete`), is checked, proven
+    /// and refused as ever, and then not made (`may`).
     pub fn dry<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
         let was = std::mem::replace(&mut self.dry, true);
         let out = f(self);
         self.dry = was;
         out
+    }
+
+    /// Whether it runs dry (`dry`): what isn't an edit, as the bytes of a file or the vaults a device follows, it
+    /// leaves as they are too.
+    pub fn is_dry(&self) -> bool {
+        self.dry
     }
 
     /// Run `f` as devices of a patched app, which ignore the ops of the shares they write through and the schemas of
@@ -1892,6 +1913,33 @@ impl Lab {
         store.bodies.insert(id, body);
         store.unvouched.push(id);
         Ok(id)
+    }
+
+    /// Device `on` marks entry `entry` now as a steward of its vault does in its upkeep (`steward`), acting for the
+    /// vault: with the audience its meaning asks for, and the keep shares that pick it, where it reads every selector
+    /// that takes, and where the marks the entry carries say otherwise; never with an audience or wants of its own. The
+    /// mark, or none where there is nothing to mark, or `on` doesn't read every selector a mark takes yet.
+    /// `UnknownEntry` if `on` knows no such entry, `NotActing` if it doesn't act for the entry's vault.
+    pub fn mark_now(&mut self, on: SignerId, entry: EntryId) -> Result<Option<EditId>, Refusal> {
+        self.unlocked(on)?;
+        let store = self.held(on);
+        let (st, r) = (store.view(), &store.readings);
+        let en = st.entry(entry).ok_or(Refusal::UnknownEntry)?;
+        let v = en.vault;
+        if !st.acts_for(on, v) {
+            return Err(Refusal::NotActing);
+        }
+        let read = r.headers.contains_key(&en.creation) && en.retags.iter().all(|w| r.tags.contains_key(w));
+        if !read || !store.reads_shares(st, v) {
+            return Ok(None);
+        }
+        let Some((caps, wants)) = st.meaning(entry, r).and_then(|m| m.mark) else { return Ok(None) };
+        let wants = wants.filter(|_| store.reads_keeps(st, v));
+        if caps.is_none() && wants.is_none() {
+            return Ok(None);
+        }
+        let (keep, via) = (vec![], vec![]);
+        self.submit(on, &[on], Action::Mark { vault: v, entry, caps, wants, keep, via }).map(Some)
     }
 
     /// Device `d` vouches for the writes it made since its last checkpoint: a checkpoint for each entry, covering those

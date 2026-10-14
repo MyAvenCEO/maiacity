@@ -31,8 +31,10 @@
 //! | C shares that name ops | `rules`: a share is a name and a group of ops, its level their class, the built-in groups (Owner, Editor, Suggester, Viewer, Public, Backup, Relay); its slice carries the ops sealed with their commitment in the clear, a write's touches and the proof it always carries; `policy`: the writes an entry's readers count, by the ops of the chain of the share they rely on, tags asked for included; `doc`, `history`: a write's touches read off its Loro update, each line's history of counted writes; `lab`: shares issued as named groups of ops, writes refused that their ops don't allow, the stewards granting counted tag asks, a dry run; `engine`: `may`, `groups` | C1 to C4 |
 //! | B blobs | `sealed`: files of any size sealed as iroh blobs, each under a key of its own, in 64 KiB segments that open one by one, so any range of a film opens from its own segments alone, and in pieces of 1 GiB; `policy`, `wire`: writes that name the files they bring, their keys in the body; `sync`, `lab`: files fetched by whoever may receive such a write, opened by its readers | T27 |
 //! | Bootstrap | `recovery`: the master recovery key, a passkey kept in software that every human vault adds as an owner while avenDB is bootstrapped, for emergencies; its public half as a file; `bin/master-key`, which makes it | |
+//! | V2 one API | `engine`: every read and change the page, the Mac app and MCP make as one op, shares, keeps, revocations, settings, new vaults, files, marks, cards and profiles too, each answered done, refused or to approve, and `may` of each; `world`, `words`, `data`: a device's world, its names for the core's words, its database and its history as the page reads them | |
 
 pub mod cast;
+pub mod data;
 pub mod doc;
 pub mod encode;
 pub mod engine;
@@ -52,3 +54,5 @@ pub mod sign;
 pub mod slice;
 pub mod sync;
 pub mod wire;
+pub mod words;
+pub mod world;

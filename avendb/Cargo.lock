@@ -345,6 +345,7 @@ dependencies = [
  "n0-future",
  "range-collections",
  "rustls",
+ "serde_json",
  "tokio",
  "tracing",
  "x25519-dalek",

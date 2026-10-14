@@ -491,8 +491,10 @@ impl Level {
 }
 
 impl Group {
+    /// `{name, hint, ops, everyone, level}`, its level the class of its ops (`level_of`, `words::level_name`).
     pub fn to_json(&self) -> Value {
-        json!({ "name": self.name, "hint": self.hint, "ops": ops_to_json(&self.ops), "everyone": self.everyone })
+        let (ops, level) = (ops_to_json(&self.ops), crate::words::level_name(level_of(&self.ops)));
+        json!({ "name": self.name, "hint": self.hint, "ops": ops, "everyone": self.everyone, "level": level })
     }
 }
 

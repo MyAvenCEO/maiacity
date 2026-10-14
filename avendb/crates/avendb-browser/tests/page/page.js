@@ -7,7 +7,8 @@
  * `write` there, and waits to read `then`; with `wait`, it then waits for the test's word; once done, with `close`, it
  * closes, its shelf holding all it holds, and with `forget` it forgets the device, its shelf put aside. The device that
  * founds the vault also brings a file, whose pieces its shelf keeps, and reads it back; with `file`, a device reads
- * that file from its peers. Each step is reported to the test, with the passkey's ceremonies so far. With `earlier`,
+ * that file from its peers; with `ops`, it then runs the ops the page's screens send, each through `run` (V2), and
+ * reports what each answered. Each step is reported to the test, with the passkey's ceremonies so far. With `earlier`,
  * it keeps in OPFS and IndexedDB what an earlier avenDB kept for the store, which nothing may read or change; with
  * `twice`, it tries to hold a store another page's device runs from.
  */
@@ -28,10 +29,13 @@ const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16)
 const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
 const sleep = (/** @type {number} */ ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Op `op` of the ops engine run on the device, as the page runs every read and change: what it did, or it throws. */
-async function run(device, op) {
-	const out = await device.run(op);
-	if (!('ok' in out)) throw new Error(`${op.op} refused: ${out.refused}, ${out.why}`);
+/**
+ * Op `op` of the ops engine run on the device, as the page runs every read and change (`PageDevice.run`), with the
+ * passkey's `ceremony` for what the vault's owners approve and `read` for a file's bytes: what it did, or it throws.
+ */
+async function run(device, op, ceremony, read) {
+	const out = await device.run(op, ceremony, read);
+	if (!('ok' in out)) throw new Error(`${op.op} not done: ${JSON.stringify(out)}`);
 	return out.ok;
 }
 
@@ -58,24 +62,75 @@ const FILE = 3 * 1024 * 1024 + 4321;
 const pattern = (/** @type {number} */ from, /** @type {number} */ to) =>
 	Uint8Array.from({ length: to - from }, (_, i) => ((from + i) * 7) % 251);
 
-/** Brings the test's file into vault `vault` and reads it back: its root and sealed size, in hex and bytes. */
+/**
+ * Brings the test's file into vault `vault` (`put_file`, its bytes read a megabyte at a time) and reads it back: its
+ * root and sealed size, in hex and bytes.
+ */
 async function bring(device, vault) {
-	const file = { name: 'Seeds.bin', media: 'application/octet-stream', tags: [], len: FILE };
-	const entry = await device.addFile(vault, vault, file, (/** @type {number} */ at, /** @type {number} */ n) =>
-		pattern(at, at + n)
-	);
-	const world = await device.world();
-	const [{ root, size }] = world.entries.find((/** @type {{entry: string}} */ e) => e.entry === entry).files;
+	const op = { op: 'put_file', vault, name: 'Seeds.bin', media: 'application/octet-stream', tags: [], len: FILE };
+	const [allowed] = await run(device, { op: 'may', ops: [op] });
+	if (allowed !== true) throw new Error(`may put_file: ${JSON.stringify(allowed)}`);
+	const read = (/** @type {number} */ at, /** @type {number} */ n) => pattern(at, at + n);
+	const { entry, root, size } = await run(device, op, undefined, read);
+	const world = await run(device, { op: 'world' });
+	const [file] = world.entries.find((/** @type {{entry: string}} */ e) => e.entry === entry).files;
+	if (file.root !== root || file.size !== size || file.len !== FILE) throw new Error('the world shows another file');
 	if (!(await same(device, { root, size }))) throw new Error('the file it brought reads back wrong');
 	return { root, size };
 }
 
-/** Whether the device reads the test's file right across a step, or false while it can't read it yet. */
+/**
+ * Whether the device reads the test's file right across a step (`read_file`, a range of it, its bytes beside the
+ * answer), or false while it can't read it yet.
+ */
 async function same(device, /** @type {{root: string, size: number}} */ file) {
 	const [from, to] = [1024 * 1024 - 100, 2 * 1024 * 1024 + 50];
-	const got = await device.readFile(file.root, file.size, from, to).catch(() => null);
-	const want = pattern(from, to);
-	return !!got && got.length === want.length && got.every((b, i) => b === want[i]);
+	const out = await device.run({ op: 'read_file', root: file.root, size: file.size, from, to }).catch(() => null);
+	const [got, want] = [out?.ok && out.bytes, pattern(from, to)];
+	if (!got || out.ok.from !== from || out.ok.to !== to || out.ok.len !== want.length) return false;
+	return got.length === want.length && got.every((b, i) => b === want[i]);
+}
+
+/**
+ * The ops the page's screens send, each through `run` (V2), on the device that founded vault `vault`: new vaults in
+ * one ceremony; the world; a note in one of them, shared with the other to read and then no longer; a keep share; the
+ * coop a co-owner of the other, then a threshold of two, each in a ceremony of the passkey, the threshold first asked
+ * without one, which answers what it would sign and makes nothing; the steward's mark; the shares over it; and `may`
+ * of each kind of answer. What each answered, for the test.
+ */
+async function ops(device, passkey, vault) {
+	const out = {};
+	const found = { op: 'found', vaults: [{ kind: 'aven', name: 'avenEVE' }, { kind: 'coop', name: 'Eve COOP' }] };
+	[out.mayFound] = await run(device, { op: 'may', ops: [found] });
+	let before = passkey.count();
+	const { vaults } = await run(device, found, passkey.sign);
+	out.foundCeremonies = passkey.count() - before;
+	const [aven, coop] = (out.vaults = vaults);
+	const world = await run(device, { op: 'world' });
+	const made = world.vaults.filter((/** @type {{id: string}} */ v) => vaults.includes(v.id));
+	out.made = made.map((v) => [v.kind, v.name, v.acting.as, v.owners]);
+	const plan = { op: 'create', as: aven, vault: aven, type: 'note', value: titled('Plan', 'Beans first.') };
+	const { entry } = await run(device, plan);
+	const share = { op: 'share', as: aven, over: aven, who: { vault: coop }, level: 'Viewer', what: { entry: [entry] } };
+	[out.mayShare] = await run(device, { op: 'may', ops: [share] });
+	out.share = (await run(device, share)).share;
+	out.revoke = await run(device, { op: 'revoke', share: out.share, as: aven });
+	out.keep = (await run(device, { op: 'keep', over: vault, mode: 'opened', what: { type: ['note'] } })).share;
+	const owner = { op: 'share', over: aven, who: { vault: coop }, level: 'Owner', what: 'everything' };
+	[out.mayOwner] = await run(device, { op: 'may', ops: [owner] });
+	before = passkey.count();
+	out.owner = await run(device, owner, passkey.sign);
+	const threshold = { op: 'settings', vault: aven, threshold: 2 };
+	out.drafted = await device.run(threshold);
+	out.threshold = await run(device, threshold, passkey.sign);
+	out.ceremonies = passkey.count() - before;
+	const now = await run(device, { op: 'world' });
+	out.thresholdNow = now.vaults.find((/** @type {{id: string}} */ v) => v.id === aven).threshold;
+	out.mark = await run(device, { op: 'mark', entry });
+	out.rows = (await run(device, { op: 'shares', over: aven })).rows.map((r) => [r.kind, r.level, r.revoke]);
+	const asked = [{ op: 'card', name: "Eve's browser" }, { ...threshold, threshold: 3 }, { ...threshold, threshold: 1 }];
+	out.may = await run(device, { op: 'may', ops: asked });
+	return out;
 }
 
 /** Waits until the device reads the test's file from its peers, two minutes at most. */
@@ -247,6 +302,10 @@ async function main() {
 	found.shelf = await shelved(q.get('store'), 'g1');
 	found.generations = (await names(await folder(q.get('store')), [])).filter((n) => /^g[0-9]+$/.test(n));
 	await report(meta ? 'opened' : 'started', { ...found, ...note });
+	if (q.get('ops')) {
+		trace('running the ops');
+		await report('ops', await ops(device, passkey, vault));
+	}
 	if (q.get('reads')) {
 		trace('reading');
 		await reads(device, note, q.get('reads'));

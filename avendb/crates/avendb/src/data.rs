@@ -11,19 +11,20 @@
 
 use std::collections::{HashMap, HashSet};
 
-use avendb::doc::Item;
-use avendb::engine::{SHOWN, Wrote, line_name, wrote};
-use avendb::history::{Change, History};
-use avendb::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
-use avendb::keys::{KeyFam, KeyName, Recipient};
-use avendb::lab::Lab;
-use avendb::lens::{self, DocV2, Lens, Schema};
-use avendb::policy::{Action, Entry, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
-use avendb::sign::{Classical, Signature, SignerKeys};
-use avendb::wire::Wire as _;
 use serde_json::{Map, Value, json};
 
-use crate::{hex, kind_name, level_name, levels, who_name};
+use crate::doc::Item;
+use crate::engine::{SHOWN, Wrote, line_name, wrote};
+use crate::history::{Change, History};
+use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
+use crate::keys::{KeyFam, KeyName, Recipient};
+use crate::lab::Lab;
+use crate::lens::{self, DocV2, Lens, Schema};
+use crate::policy::{Action, Entry, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
+use crate::sign::{Classical, Signature, SignerKeys};
+use crate::wire::Wire as _;
+use crate::words::{hex, kind_name, level_name, who_name};
+use crate::world::levels;
 
 /// Vault `vault`'s database as device `me` holds it, for the page's database studio: how many edits and McEliece keys
 /// the device holds in all; the schemas and lenses the app ships (`lens::blobs`); its seed's epoch; the edits the
@@ -108,7 +109,7 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
 
 /// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves (marks that take an entry to
 /// an audience) and checkpoints of its entries, the keys edits of its keys and its entries', the shares over it and the
-/// revocations of those; and how many schemas and lenses its lane holds (`published`), its schema and lens entries'.
+/// revocations of those. Its schemas and lenses are entries (V1d), counted among the writes, so none counts apart.
 fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let (log, st) = (lab.log(me), lab.state(me));
     let edits = || log.edits().iter().zip(log.ids());
@@ -138,7 +139,6 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         "keys": keys,
         "caps": shares.len(),
         "revokes": revokes,
-        "published": lab.lane_of(me, vault).len(),
     })
 }
 

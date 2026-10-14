@@ -4,7 +4,11 @@
 //! headless Chromium over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and
 //! each of her browsers is a frame of the tab, with a store of its own in OPFS, its shelf. Her first browser finds
 //! there what an earlier avenDB kept, which it never reads, makes the passkey, founds her vault and claims the server
-//! in one ceremony after the unlock, and writes a note; her second links through the first one's code in one ceremony
+//! in one ceremony after the unlock, and writes a note; then it runs the ops the page's screens send, each through
+//! `run` (V2): it brings a file (`put_file`) and reads a range of it back (`read_file`), founds two vaults in one more
+//! ceremony, reads its world, shares a note and revokes the share, keeps her notes, makes the coop a co-owner and sets
+//! a threshold, each in a ceremony of her passkey, marks the note and asks `may`; her second links through the first
+//! one's code in one ceremony
 //! and edits it; the first closes, opens again from its shelf in one ceremony and edits the note once more, no other
 //! page holding its store while it runs; then she forgets it there, and its shelf is put aside, a new one in use, what
 //! the earlier avenDB kept still as it was. Each page reports its steps to the test over HTTP. `cargo test` skips it;
@@ -18,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use avendb::id::{BlobId, EntryId};
+use avendb::id::{BlobId, EntryId, VaultId};
 use avendb::lab::Lab;
 use avendb_net::{Admission, Node, Options};
 use avendb_server::Relay;
@@ -318,12 +322,13 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     // Eve's first browser makes her passkey, founds her vault, claims the server and writes a note, in two ceremonies
     let code = server.offer().to_text();
     let params = [("store", "first"), ("name", "Eve's browser"), ("relay", &url), ("server", &code)];
-    tab.frame(&[&params[..], &[("page", "first"), ("write", MARCH), ("reads", APRIL), ("close", "1")]].concat()).await;
+    let then = [("page", "first"), ("write", MARCH), ("ops", "1"), ("reads", APRIL), ("close", "1")];
+    tab.frame(&[&params[..], &then].concat()).await;
     let first = tab.expect("first", "started").await;
     eprintln!("Eve's first browser founded her vault in {} ms, in {} ceremonies", first["ms"], first["ceremonies"]);
     assert_eq!(first["ceremonies"], 2, "the unlock, and one for her vault and the claim: {first}");
     let owners = server.read(|lab, me| lab.vault_of(me).and_then(|v| Some(lab.state(me).vault(v)?.owners.clone())));
-    let eve = avendb::policy::Principal::Vault(avendb::id::VaultId(id(&first, "vault")));
+    let eve = avendb::policy::Principal::Vault(VaultId(id(&first, "vault")));
     assert_eq!(owners.await, Some(vec![eve]), "the server is a device of avenCEO, which her vault owns");
     let endpoint = EndpointId::from_bytes(&id(&first, "endpoint")).expect("an endpoint");
     until("the server learns her browser from what it relays", || async { admission.admits(&endpoint) }).await;
@@ -338,6 +343,36 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
         let held = first["shelf"][kept].as_array().unwrap_or_else(|| panic!("its {kept}: {first}"));
         assert!(held.contains(&json!(root)), "{root} in its {kept}: {held:?}");
     }
+
+    // the ops the page's screens send, each through `run` (V2): what each answered
+    let ops = tab.expect("first", "ops").await;
+    eprintln!("the ops answered: {ops}");
+    let eve_v = VaultId(id(&first, "vault"));
+    let passkey = server.read(move |lab, me| lab.state(me).vault(eve_v).and_then(|v| v.root)).await;
+    let passkey = passkey.expect("her vault's root, her passkey").to_hex();
+    let approves = json!({ "approve": { "signers": [passkey] } });
+    assert_eq!((&ops["mayFound"], &ops["foundCeremonies"]), (&approves, &json!(1)), "one ceremony for both: {ops}");
+    let [aven, coop] = [&ops["vaults"][0], &ops["vaults"][1]];
+    let mine = json!([{ "vault": first["vault"] }]);
+    let made = json!([["aven", "avenEVE", aven, mine], ["coop", "Eve COOP", coop, mine]]);
+    assert_eq!(ops["made"], made, "each named, her vault its owner, the device acting as it there");
+    assert_eq!(ops["mayShare"], true, "a read share by id, alone");
+    assert!(ops["share"].is_string() && ops["revoke"]["edit"].is_string() && ops["keep"].is_string(), "{ops}");
+    assert_eq!((&ops["mayOwner"], &ops["owner"]["edit"].is_string()), (&approves, &true), "the coop a co-owner");
+    let drafted = &ops["drafted"]["approve"];
+    assert_eq!(drafted["signers"], json!([passkey]), "without a ceremony, what it would sign: {ops}");
+    assert!(drafted["challenge"].as_str().is_some_and(|c| c.len() == 64) && drafted["draft"].is_string());
+    assert!(ops["threshold"]["edit"].is_string(), "{ops}");
+    assert_eq!((&ops["ceremonies"], &ops["thresholdNow"]), (&json!(2), &json!(2)), "one ceremony each");
+    assert!(ops["mark"].get("edit").is_some(), "the steward's mark, or none left to make: {ops}");
+    let rows: Vec<&str> = ops["rows"].as_array().expect("the shares").iter().filter_map(|r| r[0].as_str()).collect();
+    assert_eq!(rows[..2], ["owner", "owner"], "her vault and the coop own it: {ops}");
+    assert_eq!(ops["may"][0], true, "her card");
+    assert_eq!(ops["may"][1]["refused"], "BadThreshold", "three of two owners");
+    assert_eq!(ops["may"][2], approves, "a threshold her passkey approves");
+    let aven = VaultId(aven.as_str().and_then(BlobId::from_hex).expect("the new vault's id").0);
+    let threshold = move |lab: &Lab, me| lab.state(me).vault(aven).map(|v| v.threshold);
+    until("the server sees the new threshold", || async { server.read(threshold).await == Some(2) }).await;
 
     // her second browser links through the first one's code, in one ceremony, and edits the note
     let field = |key| first[key].as_str().unwrap_or_else(|| panic!("{key} in {first}"));

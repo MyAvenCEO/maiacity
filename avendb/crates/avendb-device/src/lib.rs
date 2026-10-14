@@ -35,13 +35,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::{BlobId, EntryId, ShareId, VaultId};
+use avendb::engine;
 use avendb::keys;
-use avendb::policy::Kind;
-use avendb::sealed::FileRoot;
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Fresh, Meta, NewFile, Start, Unlock, steps_json, words};
-use avendb_net::{Authenticator, Ending, Offer, Progress, Shelf, Step, disk};
+use avendb_browser::{Device, Fresh, Meta, Start, Unlock, steps_json};
+use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Offer, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -132,15 +130,15 @@ struct Service {
     files: Mutex<HashMap<u64, Incoming>>,
 }
 
-/// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and a new entry
-/// that brings it (`Device::add_file`).
+/// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the new entry
+/// that brings it: a `put_file` op (`Device::run`).
 struct Incoming {
     /// The chunks, for the file's stream.
     chunks: mpsc::Sender<io::Result<Bytes>>,
     /// How many of its bytes the page handed over so far.
     at: u64,
-    /// The new entry, once the file is in.
-    entry: tokio::task::JoinHandle<Result<EntryId>>,
+    /// The op's answer, once the file is in.
+    answer: tokio::task::JoinHandle<Result<Value>>,
 }
 
 impl Service {
@@ -175,10 +173,14 @@ impl Service {
         }
     }
 
-    /// A call on the open device, as the page's device answers it.
+    /// A call on the open device, as the page's device answers it: `run` an op (`Device::run`), its answer as the
+    /// page's device gives it, a `read_file`'s bytes beside in base64 (`bytes`); a change its vault's owners approve
+    /// signed in the passkey's ceremony in the sheet (`approver`). A `put_file` op's bytes come a chunk at a time:
+    /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileEnd [n]` the op's
+    /// answer, `fileDrop [n]` none, the file dropped.
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
-        let (vault, entry) = (|i| a.id(i).map(VaultId), |i| a.id(i).map(EntryId));
+        let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
         Ok(match call {
             "size" => {
                 let (edits, keys) = d.node().read(|lab, me| lab.size(me)).await;
@@ -188,68 +190,35 @@ impl Service {
                 let held = (a.count(0)?, a.count(1)?);
                 tokio::time::timeout(CHANGED, d.changed(held)).await.map_or(Value::Null, Value::from)
             }
-            "world" => d.world().await.map_or(Value::Null, |w| w.to_json(d.node().device())),
-            "card" => json!(d.card(a.text(0)?).await?),
-            "profile" => json!(d.profile(vault(0)?, a.text(1)?).await?),
-            "backsUp" => d.backs_up().await.map_or(Value::Null, Value::from),
-            "backUp" => json!(d.back_up(a.get(0).as_bool().unwrap_or(true)).await?),
-            "run" => d.run(a.get(0).clone()).await,
-            "database" => d.database(vault(0)?).await,
-            "note" => d.note(entry(0)?).await.unwrap_or(Value::Null),
-            "history" => d.history().await,
-            "foundVaults" => {
-                let mut new = vec![];
-                for v in a.list(0)? {
-                    let kind = match v.get("kind").and_then(Value::as_str) {
-                        Some("aven") => Kind::Aven,
-                        Some("coop") => Kind::Coop,
-                        _ => bail!("a new vault is an aven or a coop vault"),
-                    };
-                    new.push((kind, v.get("name").and_then(Value::as_str).unwrap_or_default().to_string()));
+            "run" => {
+                let op = a.get(0).clone();
+                let asks = engine::reads(&op) || engine::asks(&op);
+                let approver = if asks { None } else { Some(self.approver().await?) };
+                let (mut answer, bytes) = d.run(op, None::<NoBytes>, approver.as_ref()).await?;
+                if let (Some(bytes), Some(out)) = (bytes, answer.as_object_mut()) {
+                    out.insert("bytes".to_string(), BASE64.encode(&bytes).into());
                 }
-                let vaults = d.found_vaults(new, &self.approver().await?).await?;
-                json!(vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>())
+                answer
             }
-            "share" => {
-                let (issuer, over, who) = (vault(0)?, vault(1)?, words::who_of(&a.text(3)?)?);
-                hex(&d.share(issuer, over, a.get(2), who, &self.approver().await?).await?.0).into()
-            }
-            "revoke" => {
-                d.revoke(vault(0)?, ShareId(a.id(1)?), &self.approver().await?).await?;
-                Value::Null
-            }
-            "addRecovery" => {
-                d.add_recovery(&self.approver().await?).await?;
-                Value::Null
-            }
-            "removeOwner" => {
-                d.remove_owner(vault(0)?, words::owner_of(a.get(1))?, &self.approver().await?).await?;
-                Value::Null
-            }
-            "fileStart" => self.file_start(&d, vault(0)?, vault(1)?, NewFile::from_json(a.get(2))?).into(),
+            "fileStart" => self.file_start(&d, a.get(0).clone()).into(),
             "fileChunk" => {
                 let at = a.get(1).as_u64().context("argument 2 is where the chunk starts")?;
                 let chunk = BASE64.decode(a.text(2)?.as_bytes()).context("a chunk in base64")?;
-                self.file_chunk(a.get(0).as_u64().context("argument 1 is a file's number")?, at, chunk).await?;
+                self.file_chunk(number(0)?, at, chunk).await?;
                 Value::Null
             }
             "fileEnd" => {
-                let incoming = self.files.lock().expect("the files").remove(&a.get(0).as_u64().unwrap_or_default());
-                let Incoming { chunks, entry, .. } = incoming.context("no such file on its way in")?;
+                let incoming = self.files.lock().expect("the files").remove(&number(0)?);
+                let Incoming { chunks, answer, .. } = incoming.context("no such file on its way in")?;
                 drop(chunks);
-                hex(&entry.await.context("bringing the file failed")??.0).into()
+                answer.await.context("bringing the file failed")??
             }
             "fileDrop" => {
-                let incoming = self.files.lock().expect("the files").remove(&a.get(0).as_u64().unwrap_or_default());
-                if let Some(Incoming { entry, .. }) = incoming {
-                    entry.abort();
+                let incoming = self.files.lock().expect("the files").remove(&number(0)?);
+                if let Some(Incoming { answer, .. }) = incoming {
+                    answer.abort();
                 }
                 Value::Null
-            }
-            "readFile" => {
-                let root = FileRoot { hash: a.id(0)?, size: a.get(1).as_u64().context("argument 2 is a size")? };
-                let (from, to) = (a.get(2).as_u64().unwrap_or_default(), a.get(3).as_u64().unwrap_or_default());
-                BASE64.encode(&d.read_file(root, from..to).await?).into()
             }
             _ => bail!("no call {call:?}"),
         })
@@ -333,15 +302,15 @@ impl Service {
         self.sheets.lock().expect("the sheets").clear();
     }
 
-    /// File `file` on its way into vault `vault`, acting for `actor` (`Device::add_file`), its chunks still to come in
-    /// order (`fileChunk`), then its end (`fileEnd`), which answers the new entry: its number.
-    fn file_start(&self, d: &Arc<Device>, actor: VaultId, vault: VaultId, file: NewFile) -> u64 {
+    /// `put_file` op `op` under way (`Device::run`), its file's chunks still to come in order (`fileChunk`), then its
+    /// end (`fileEnd`), which answers the op: the file's number.
+    fn file_start(&self, d: &Arc<Device>, op: Value) -> u64 {
         let (chunks, rx) = mpsc::channel(2);
         let data = Box::pin(stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|chunk| (chunk, rx)) }));
         let d = d.clone();
-        let entry = tokio::spawn(async move { d.add_file(actor, vault, file, data).await });
+        let answer = tokio::spawn(async move { Ok(d.run(op, Some(data), None::<&NoCeremony>).await?.0) });
         let n = self.next.fetch_add(1, Ordering::Relaxed);
-        self.files.lock().expect("the files").insert(n, Incoming { chunks, at: 0, entry });
+        self.files.lock().expect("the files").insert(n, Incoming { chunks, at: 0, answer });
         n
     }
 
@@ -595,15 +564,6 @@ impl Args<'_> {
         let n = self.get(i).as_u64().with_context(|| format!("argument {} is a count", i + 1))?;
         Ok(usize::try_from(n)?)
     }
-
-    fn list(&self, i: usize) -> Result<&[Value]> {
-        self.get(i).as_array().map(Vec::as_slice).with_context(|| format!("argument {} is a list", i + 1))
-    }
-
-    /// An id, from its 64 lowercase hex digits.
-    fn id(&self, i: usize) -> Result<[u8; 32]> {
-        id(&self.text(i)?)
-    }
 }
 
 /// `text` as a QR code, an SVG image at least `size` pixels wide, as avendb-browser's `qrSvg` draws it.
@@ -656,9 +616,4 @@ fn now() -> u64 {
 /// Bytes as lowercase hex digits, as the page sees every id.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// An id from its 64 lowercase hex digits.
-fn id(s: &str) -> Result<[u8; 32]> {
-    BlobId::from_hex(s).map(|b| b.0).with_context(|| format!("{s:?} is no id"))
 }

@@ -24,6 +24,8 @@ tokio = { version = "1.44", default-features = false, features = ["sync"] }
 n0-future = "0.3.2"
 anyhow = "1"
 tracing = "0.1"
+# the ops and their answers (`Node::run`, avendb's `engine`)
+serde_json.workspace = true
 # the server's own secrets, and the randomness every node's Lab draws on
 getrandom = "0.4"
 # an offer's text, for a QR code (iroh's own version)

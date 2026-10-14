@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use avendb::id::{EditId, EntryId, SignerId};
+use avendb::id::EditId;
 use avendb::policy::Edit;
 use avendb::sealed::FileRoot;
 use avendb::sync::{LogId, log_of};
@@ -73,14 +73,11 @@ impl Holdings {
     }
 }
 
-/// Where each entry and each file a device holds is synced to, by holdings: the devices that hold every edit of the
-/// entry's log the device holds, or every sealed byte of the file, by their own word and the device's own shelf, among
-/// those that may hold it by the device's view; each list smallest first.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SyncedTo {
-    pub entries: BTreeMap<EntryId, Vec<SignerId>>,
-    pub files: BTreeMap<FileRoot, Vec<SignerId>>,
-}
+/// Where each entry and each file a device holds is synced to, by holdings (`Node::synced_to`): the devices that hold
+/// every edit of the entry's log the device holds, or every sealed byte of the file, and those that hold some of the
+/// file's pieces, by their own word and the device's own shelf, among those that may hold it by the device's view;
+/// each list smallest first. The world the engine shows names them (avendb's `world`).
+pub use avendb::world::SyncedTo;
 
 /// One log of a device's edits: where its edits are among them, its frontier and waiting edits, and the files they
 /// bring.
@@ -201,6 +198,7 @@ fn frontier(edits: &[Edit], ids: &[EditId], places: &[usize]) -> (Frontier, Hash
 mod tests {
     use super::*;
     use avendb::cast::*;
+    use avendb::id::EntryId;
     use avendb::sync::{closed_part, frontiers};
     use avendb::wire::Wire;
 

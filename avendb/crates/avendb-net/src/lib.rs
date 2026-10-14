@@ -45,6 +45,10 @@
 //!   hello proved, and hands a file's root or pieces only to a device that may fetch the file (T27).
 //! - **Keep shares** (blobs B2c, V1c): a node sends a peer's device only the entries it may receive and its keep
 //!   shares want, by the stewards' marks (T28).
+//! - **One API** (V2, `run`): every read and change a device's page, the Mac app and MCP make is one op of avendb's
+//!   engine, JSON in and JSON out (`Node::run`): the node shows where its entries and files are synced to, reads and
+//!   brings a file's bytes beside the op, has the passkey sign in its ceremony what the vault's owners approve, and
+//!   asks its peers again once the vaults its device follows change.
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
 //!   how long it took, for its person to watch while they wait (`Progress`).
 //! - **The server** (P8b, `server`): a node whose device keeps a secret of its own on its shelf, and which hands
@@ -93,6 +97,7 @@ mod files;
 mod holdings;
 pub mod kx;
 mod progress;
+mod run;
 pub mod server;
 mod session;
 pub mod shelf;
@@ -135,6 +140,7 @@ use holdings::{Logs, MOST};
 
 pub use holdings::{Holdings, SyncedTo};
 pub use progress::{Ending, Progress, Stage, Steps};
+pub use run::{NoBytes, NoCeremony};
 pub use session::exporter;
 pub use shelf::{Call, Shelf};
 
@@ -1605,6 +1611,20 @@ impl Shared {
                 };
                 let devices = holders.iter().filter(|(_, h, r)| holds(h, *r)).map(|(d, _, _)| *d).collect();
                 synced.files.insert(f, devices);
+                // and those that hold some of its pieces, each with them
+                let pieces = |h: &Holdings, r: Option<&Reach>| match h.files.get(&f) {
+                    Some(FileHold::Pieces(p)) if r.is_none_or(|r| r.files.contains(&f)) => {
+                        let mut p = p.clone();
+                        p.sort_unstable();
+                        Some(p)
+                    }
+                    _ => None,
+                };
+                let partly: Vec<(SignerId, Vec<u32>)> =
+                    holders.iter().filter_map(|(d, h, r)| Some((*d, pieces(h, *r)?))).collect();
+                if !partly.is_empty() {
+                    synced.partly.insert(f, partly);
+                }
             }
             synced
         })
