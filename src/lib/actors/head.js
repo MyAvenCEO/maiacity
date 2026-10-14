@@ -5,7 +5,9 @@
  * lines, teeth and a tongue, brows of single hairs, and hair grown over the scalp. One smile, `joy`, rides it as a morph:
  * v7 (2026-10-14) a warm one with the lips closed — the mouth's corners up and back, the cheeks lifted, the eyes
  * narrowed by them; v6's (kept: version 6) broad and open, the lips parted on the teeth. v8: the whole jaw and chin
- * ride the head bone (headWeights), the neck blending in below them.
+ * ride the head bone (headWeights), the neck blending in below them. v9: a friendly gaze to wear all the time, its own
+ * morph `friendly` (the lower lids and the brows lifted a little, no smile in it), and a soft catchlight in each eye
+ * that shows at a medium close-up's distance in any light.
  *
  * All of it in the stand-in's measure (./human.ts: a person of 1.80 m, metres, facing +z, its left +x); the stand-in
  * scales it to its height.
@@ -36,8 +38,22 @@ export const SMILES = /** @type {Record<number, { units: Record<string, number>,
 		cheeks: { up: 0.004, out: 0.0025, r: 0.022 }
 	}
 });
-/** the stand-in's version the head is built at by default (v8: the jaw on the head bone, see headWeights) */
-export const HEAD_V = 8;
+/** the friendly gaze `friendly` (v9), the eyes' part of a smile on its own, to wear all the time (with a little of
+ *  `joy` or none): the lower lids lifted about half a millimetre and the upper ones kept where they are (the slit
+ *  alone drops them 2.3 mm, opened-up lifts both), so the eyes stay open and bright; the brows raised about a
+ *  millimetre, the cheeks' apples lifted a hair under the eyes; the mouth left as it is */
+export const FRIENDLY = /** @type {{ units: Record<string, number>, cheeks: { up: number, out: number, r: number } }} */ ({
+	units: { 'eye-left-slit': 0.25, 'eye-right-slit': 0.25, 'eye-left-opened-up': 0.4, 'eye-right-opened-up': 0.4, 'eyebrows-left-up': 0.35, 'eyebrows-right-up': 0.35 },
+	cheeks: { up: 0.002, out: 0.0013, r: 0.02 }
+});
+/** the stand-in's version the head is built at by default (v9: the friendly gaze and a catchlight that shows; v8 the
+ *  jaw on the head bone, see headWeights) */
+export const HEAD_V = 9;
+/** v9's catchlight in each eye: where on the eye (a direction from its middle, about 0.15 rad up and to the left of
+ *  its front, on the pupil's edge, clear of the upper lid), how wide its bright core is and its soft ring (m) */
+export const CATCH = { at: [-0.12, 0.09, 1], core: 0.0018, soft: 0.0028 };
+/** the catchlight's material (the stand-in's index 3): white, glossy, lit from within a little so it shows in shade */
+export const CATCHLIGHT = () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, emissive: '#ffffff', emissiveIntensity: 0.75 });
 /** a version's smile: v7's from v7 on */
 const smileOf = (/** @type {number} */ v) => (v >= 7 ? 7 : 6);
 const smooth = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ x) => {
@@ -86,34 +102,42 @@ function build(face, smile) {
 	const raw = i16(who.pos), n = HEAD_MESH.n;
 	const pos = Float32Array.from(raw, (x, k) => x * HEAD_Q + HEAD_MID[k % 3]);
 	const region = bytes(HEAD_REGION);
-	// the smile: its units' offsets added up
-	const recipe = SMILES[smileOf(smile)];
-	const joy = new Float32Array(n * 3);
-	for (const [unit, wt] of Object.entries(recipe.units)) {
-		const u = HEAD_UNITS[/** @type {keyof typeof HEAD_UNITS} */ (unit)], ids = u16(u.ids), d = i16(u.d);
-		ids.forEach((j, k) => {
-			for (let c = 0; c < 3; c++) joy[j * 3 + c] += d[k * 3 + c] * HEAD_Q * wt;
-		});
-	}
-	// and the cheeks lifted: up and forward round each cheek's apple, under the eye and out from the nose's wing, on
-	// the face's front only
-	const ch = recipe.cheeks;
-	if (ch) {
-		const [ex, ey, ez] = who.eyes.l.at;
-		for (let i = 0; i < n; i++) {
-			if (region[i] !== 0) continue;
-			const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
-			const w = smooth(ez - 0.04, ez - 0.02, z) * [-1, 1].reduce((sum, sx) => sum + Math.exp(-((x - sx * Math.abs(ex) * 1.2) ** 2 + (y - ey + 0.03) ** 2) / (ch.r * ch.r)), 0);
-			joy[i * 3 + 1] += ch.up * w;
-			joy[i * 3 + 2] += ch.out * w;
+	/** a shape's offsets: its units' added up, and the cheeks lifted (up and forward round each cheek's apple, under
+	 *  the eye and out from the nose's wing, on the face's front only)
+	 *  @param {{ units: Record<string, number>, cheeks?: { up: number, out: number, r: number } }} recipe */
+	const shape = (recipe) => {
+		const d3 = new Float32Array(n * 3);
+		for (const [unit, wt] of Object.entries(recipe.units)) {
+			const u = HEAD_UNITS[/** @type {keyof typeof HEAD_UNITS} */ (unit)], ids = u16(u.ids), d = i16(u.d);
+			ids.forEach((j, k) => {
+				for (let c = 0; c < 3; c++) d3[j * 3 + c] += d[k * 3 + c] * HEAD_Q * wt;
+			});
 		}
+		const ch = recipe.cheeks;
+		if (ch) {
+			const [ex, ey, ez] = who.eyes.l.at;
+			for (let i = 0; i < n; i++) {
+				if (region[i] !== 0) continue;
+				const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+				const w = smooth(ez - 0.04, ez - 0.02, z) * [-1, 1].reduce((sum, sx) => sum + Math.exp(-((x - sx * Math.abs(ex) * 1.2) ** 2 + (y - ey + 0.03) ** 2) / (ch.r * ch.r)), 0);
+				d3[i * 3 + 1] += ch.up * w;
+				d3[i * 3 + 2] += ch.out * w;
+			}
+		}
+		return d3;
+	};
+	// the smile and the friendly gaze
+	const joy = shape(SMILES[smileOf(smile)]), kind = shape(FRIENDLY);
+	// per vertex: inside the mouth, in an eye's socket, an ear; and the friendly gaze's offsets, smoothed with the skin
+	const marks = new Float32Array(n * 6);
+	for (let i = 0; i < n; i++) {
+		((marks[i * 6] = region[i] === 1 ? 1 : 0), (marks[i * 6 + 1] = region[i] === 2 ? 1 : 0), (marks[i * 6 + 2] = region[i] === 4 ? 1 : 0));
+		for (let c = 0; c < 3; c++) marks[i * 6 + 3 + c] = kind[i * 3 + c];
 	}
-	// per vertex: inside the mouth, in an eye's socket
-	const marks = new Float32Array(n * 3);
-	for (let i = 0; i < n; i++) ((marks[i * 3] = region[i] === 1 ? 1 : 0), (marks[i * 3 + 1] = region[i] === 2 ? 1 : 0), (marks[i * 3 + 2] = region[i] === 4 ? 1 : 0));
-	const skin = piece('skin', pos, joy, 1, marks, 3);
+	const skin = piece('skin', pos, joy, 1, marks, 6);
 	const carried = /** @type {Float32Array} */ (skin.extra);
-	const mark = (/** @type {number} */ c) => Float32Array.from({ length: skin.n }, (_, i) => carried[i * 3 + c]);
+	const mark = (/** @type {number} */ c) => Float32Array.from({ length: skin.n }, (_, i) => carried[i * 6 + c]);
+	const friendly = Float32Array.from({ length: skin.n * 3 }, (_, k) => carried[((k / 3) | 0) * 6 + 3 + (k % 3)]);
 	const inside = mark(0), socket = mark(1), ears = mark(2);
 	const P = skin.geo.attributes.position, N = skin.geo.attributes.normal, m = skin.n;
 	const eyes = who.eyes, E = { x: eyes.l.at[0], y: eyes.l.at[1], z: eyes.l.at[2], r: eyes.l.r };
@@ -237,7 +261,7 @@ function build(face, smile) {
 	};
 	const parts = /** @type {Record<string, ReturnType<typeof piece>>} */ ({});
 	for (const name of ['teeth-upper', 'teeth-lower', 'tongue']) parts[name] = piece(name, pos, joy, name === 'tongue' ? 1 : 2);
-	return { skin, hollow, dist, inside, socket, ears, mouth: { y: my, z: mz, w: mw }, tip: T, crown, eyes, E, hairW, hairF, surface, parts };
+	return { skin, friendly, hollow, dist, inside, socket, ears, mouth: { y: my, z: mz, w: mw }, tip: T, crown, eyes, E, hairW, hairF, surface, parts };
 }
 
 /** a face's head at a version (its smile), built once @param {Face} face @param {number} [v] */
@@ -292,8 +316,9 @@ function strand(pos, idx, root, dir, curl, face, len, wid, segs = 3) {
 }
 
 /**
- * The head's pieces for a look: the skin (its neck weighted onto the stand-in's neck and chest, and its smile as the
- * morph `joy`), its eyes, lashes, teeth, tongue, brows and hair.
+ * The head's pieces for a look: the skin (its neck weighted onto the stand-in's neck and chest, its smile as the
+ * morph `joy` and from v9 its friendly gaze as the morph `friendly`), its eyes, lashes, teeth, tongue, brows and hair.
+ * Its catchlights from v9 take the material at index 3 (CATCHLIGHT).
  * @param {{ skin: string, lips: string, brows: string, iris: string, hair: string, hairColour: string, face?: Face }} k
  * @param {number} [ver] the stand-in's version it is built at (its smile, SMILES; its weights, headWeights)
  * @returns {Piece[]}
@@ -301,6 +326,7 @@ function strand(pos, idx, root, dir, curl, face, len, wid, segs = 3) {
 export function headPieces(k, ver = HEAD_V) {
 	const h = headOf(k.face ?? 'man', ver);
 	const weights = (/** @type {THREE.Vector3} */ p) => headWeights(p, ver);
+	const kind = ver >= 9;
 	const { skin, E } = h;
 	const P = skin.geo.attributes.position, m = skin.n;
 	const base = new THREE.Color(k.skin), lips = new THREE.Color(k.lips), warm = base.clone().multiply(new THREE.Color(1.0, 0.82, 0.78));
@@ -337,7 +363,7 @@ export function headPieces(k, ver = HEAD_V) {
 		return c;
 	});
 	/** @type {Piece[]} */
-	const out = [{ geo: skin.geo.clone(), color: (_p, i = 0) => colours[i], weights, morph: { joy: skin.joy } }];
+	const out = [{ geo: skin.geo.clone(), color: (_p, i = 0) => colours[i], weights, morph: kind ? { joy: skin.joy, friendly: h.friendly } : { joy: skin.joy } }];
 	// the eyes: a glossy ball each — its white, an iris with a darker rim, a pupil, a catchlight — in the lids' opening
 	const iris = new THREE.Color(k.iris), rim = iris.clone().multiplyScalar(0.5), inner = iris.clone().lerp(new THREE.Color('#c9a25a'), 0.25);
 	const white = new THREE.Color('#f2eee8'), edge = new THREE.Color('#d9c4bc');
@@ -349,17 +375,29 @@ export function headPieces(k, ver = HEAD_V) {
 			g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), front));
 			return g.translate(c.x, c.y, c.z);
 		};
-		const glint = new THREE.SphereGeometry(1, 8, 6).scale(0.0008, 0.0008, 0.0004).translate(...new THREE.Vector3(-0.3, 0.35, 0.88).normalize().multiplyScalar(R + 0.0003).add(c).toArray());
 		// by how far round from the eye's front a point of it is (radians)
 		const off = (/** @type {THREE.Vector3} */ p) => Math.acos(Math.min(1, Math.max(-1, (p.z - c.z) / Math.max(1e-6, p.distanceTo(c)))));
 		out.push(
 			{ geo: cap(R, Math.PI), color: (p) => white.clone().lerp(edge, smooth(0.6, 1.3, off(p))), bone: 'head', mat: 1 },
 			{ geo: cap(R + 0.00012, 0.5, 40), color: (p) => rim.clone().lerp(iris, smooth(0.5, 0.4, off(p))).lerp(inner, 0.6 * smooth(0.28, 0.18, off(p))), bone: 'head', mat: 1 },
-			{ geo: cap(R + 0.0002, 0.175, 24), color: '#0b0908', bone: 'head', mat: 1 },
-			{ geo: glint, color: '#ffffff', bone: 'head', mat: 1 }
+			{ geo: cap(R + 0.0002, 0.175, 24), color: '#0b0908', bone: 'head', mat: 1 }
+		);
+		if (!kind) {
+			const glint = new THREE.SphereGeometry(1, 8, 6).scale(0.0008, 0.0008, 0.0004).translate(...new THREE.Vector3(-0.3, 0.35, 0.88).normalize().multiplyScalar(R + 0.0003).add(c).toArray());
+			out.push({ geo: glint, color: '#ffffff', bone: 'head', mat: 1 });
+			continue;
+		}
+		// v9's catchlight: a disc CATCH.core across on the eye, over the iris up and to the left of the pupil (the same
+		// place in both eyes, as one light's), lit from within (CATCHLIGHT) so it shows in any light; round it a ring
+		// of the iris lightened towards white, lit as the eye is, softening its edge
+		const at = new THREE.Vector3(...CATCH.at).normalize(), turn = new THREE.Quaternion().setFromUnitVectors(front, at);
+		const disc = (/** @type {number} */ r, /** @type {number} */ lift) => new THREE.CircleGeometry(r, 24).applyQuaternion(turn).translate(...at.clone().multiplyScalar(R + lift).add(c).toArray());
+		out.push(
+			{ geo: disc(CATCH.soft / 2, 0.0003), color: `#${inner.clone().lerp(white, 0.55).getHexString()}`, bone: 'head', mat: 1 },
+			{ geo: disc(CATCH.core / 2, 0.0004), color: '#ffffff', bone: 'head', mat: 3 }
 		);
 	}
-	out.push(...lashes(h), ...brows(h, k.brows, k.skin), ...hair(h, k));
+	out.push(...lashes(h, kind), ...brows(h, k.brows, k.skin, kind), ...hair(h, k));
 	// the teeth and the tongue, moving with the smile
 	for (const upper of [true, false]) {
 		const t = h.parts[upper ? 'teeth-upper' : 'teeth-lower'];
@@ -393,10 +431,10 @@ function teeth(p, upper, edge, front) {
 const rng = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 
 /** the lashes: single hairs along each upper lid's edge — where the lid, seen from the front, stops covering the
- *  eye — long in the middle, curling up; they move with the lid in the smile @param {ReturnType<typeof build>} h
- *  @returns {Piece[]} */
-function lashes(h) {
-	const pos = /** @type {number[]} */ ([]), idx = /** @type {number[]} */ ([]), joy = /** @type {number[]} */ ([]);
+ *  eye — long in the middle, curling up; they move with the lid in the smile (and from v9, `kind`, in the friendly
+ *  gaze) @param {ReturnType<typeof build>} h @param {boolean} [kind] @returns {Piece[]} */
+function lashes(h, kind = false) {
+	const pos = /** @type {number[]} */ ([]), idx = /** @type {number[]} */ ([]), joy = /** @type {number[]} */ ([]), gaze = /** @type {number[]} */ ([]);
 	const rand = rng(5);
 	for (const side of /** @type {const} */ (['l', 'r'])) {
 		const e = h.eyes[side], R = e.r, [cx, cy, cz] = e.at, sx = Math.sign(cx);
@@ -427,24 +465,26 @@ function lashes(h) {
 			const root = edge.p.clone().add(new THREE.Vector3(0, 0.0001, 0.0001));
 			const count = strand(pos, idx, root, dir, curl, face, len, 0.00011 + 0.00004 * rand(), 5);
 			joy.push(...follow(h.skin.joy, edge.tri, edge.bary, count));
+			gaze.push(...follow(h.friendly, edge.tri, edge.bary, count));
 		}
 	}
 	const g = new THREE.BufferGeometry();
 	g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
 	g.setIndex(idx);
 	g.computeVertexNormals();
-	return [{ geo: g, color: '#1d1511', bone: 'head', mat: 2, morph: { joy: new Float32Array(joy) } }];
+	return [{ geo: g, color: '#1d1511', bone: 'head', mat: 2, morph: kind ? { joy: new Float32Array(joy), friendly: new Float32Array(gaze) } : { joy: new Float32Array(joy) } }];
 }
 
 /** the brows: single hairs laid on the skin along each brow's arch, rising at the inner end and combed outwards along
- *  it, thinning towards the tail @param {ReturnType<typeof build>} h @param {string} colour @param {string} skinTone
+ *  it, thinning towards the tail; they move with the smile (and from v9, `kind`, the friendly gaze)
+ *  @param {ReturnType<typeof build>} h @param {string} colour @param {string} skinTone @param {boolean} [kind]
  *  @returns {Piece[]} */
-function brows(h, colour, skinTone) {
+function brows(h, colour, skinTone, kind = false) {
 	const { E } = h;
 	const out = /** @type {Piece[]} */ ([]);
 	for (const sx of [-1, 1]) {
 		const rand = rng(sx > 0 ? 7 : 11);
-		const pos = /** @type {number[]} */ ([]), idx = /** @type {number[]} */ ([]), joy = /** @type {number[]} */ ([]);
+		const pos = /** @type {number[]} */ ([]), idx = /** @type {number[]} */ ([]), joy = /** @type {number[]} */ ([]), gaze = /** @type {number[]} */ ([]);
 		for (let s = 0; s < 240; s++) {
 			const u = Math.pow(rand(), 0.8); // along the brow, inner (0) to tail (1)
 			const x = sx * (E.x * 0.4 + E.x * 1.3 * u);
@@ -460,15 +500,15 @@ function brows(h, colour, skinTone) {
 			const len = 0.0045 + 0.003 * rand() * (1 - 0.4 * u);
 			const curl = at.n.clone().multiplyScalar(-0.15);
 			const count = strand(pos, idx, at.p.clone().addScaledVector(at.n, 0.00025), dir.clone().addScaledVector(at.n, 0.25).normalize(), curl, at.n, len, 0.0002);
-			const d = follow(h.skin.joy, at.tri, at.bary, count);
-			joy.push(...d);
+			joy.push(...follow(h.skin.joy, at.tri, at.bary, count));
+			gaze.push(...follow(h.friendly, at.tri, at.bary, count));
 		}
 		const g = new THREE.BufferGeometry();
 		g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
 		g.setIndex(idx);
 		g.computeVertexNormals();
 		const c = new THREE.Color(colour).lerp(new THREE.Color(skinTone), 0.06);
-		out.push({ geo: g, color: `#${c.getHexString()}`, bone: 'head', mat: 2, morph: { joy: new Float32Array(joy) } });
+		out.push({ geo: g, color: `#${c.getHexString()}`, bone: 'head', mat: 2, morph: kind ? { joy: new Float32Array(joy), friendly: new Float32Array(gaze) } : { joy: new Float32Array(joy) } });
 	}
 	return out;
 }

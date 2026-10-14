@@ -7,7 +7,8 @@
  * line, a catchlight in each — a toned skin (warm cheeks, lips, the nose's tip), a warm smile, a shorter chin, fuller
  * hair; v6: a sculpted head — MakeHuman's head and neck (CC0) for a man or a woman, smoothed, its skin toned by where
  * it is, eyes in its lids, lash lines, teeth, brows of single hairs, hair grown over its scalp, and a smile to blend
- * into, `joy`: ./head.js; v7: that smile warm and closed, the cheeks lifted; v8: the jaw turns with the head), a
+ * into, `joy`: ./head.js; v7: that smile warm and closed, the cheeks lifted; v8: the jaw turns with the head; v9: a
+ * friendly gaze to wear all the time, `friendly`, and a catchlight in each eye that shows), a
  * T-shirt, jeans, trainers —
  * rigged head to toe so it takes any pose and any move: 17 bones (the hips, the spine, the chest, the neck, the head;
  * each arm's upper arm, forearm and hand; each leg's thigh, shin and foot), one skinned mesh over them, every joint
@@ -19,7 +20,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { blend, limb, loft, loop, rig, skin, type BoneSpec, type Cast, type Clip, type Piece, type Pose, type V3 } from './rig';
-import { HEAD_V, crownOf, headPieces, type Face } from './head.js';
+import { CATCHLIGHT, HEAD_V, crownOf, headPieces, type Face } from './head.js';
 
 /** how tall it is (m) */
 export const HEIGHT = 1.7;
@@ -200,14 +201,15 @@ function clipsFor(s: number, poses: Record<string, Pose>): Record<string, Clip> 
 	return { idle, walk, wave, 'sit down': sitDown };
 }
 
-/** A stand-in, rigged: its moves, its poses, and its smile (the morph `joy`). `look`: what it wears and its face;
- *  `height`: how tall it is (m); `v`: the version its head is built at (./head.js: 8 the jaw on the head, 7 a closed
- *  warm smile, 6 an open one). */
+/** A stand-in, rigged: its moves, its poses, its smile (the morph `joy`) and from v9 its friendly gaze (the morph
+ *  `friendly`). `look`: what it wears and its face; `height`: how tall it is (m); `v`: the version its head is built
+ *  at (./head.js: 9 the friendly gaze and a catchlight that shows, 8 the jaw on the head, 7 a closed warm smile, 6 an
+ *  open one). */
 export function human(look: Partial<Look> = {}, height = HEIGHT, v = HEAD_V): Cast {
 	const k = { ...LOOK, ...look };
 	const s = height / crownOf(k.face);
 	const { bones, parts: body } = scaled(s, k, v);
-	const r = rig(bones, body, [skin(0.74), skin(0.12), skin(0.85, { side: THREE.DoubleSide })]);
+	const r = rig(bones, body, [skin(0.74), skin(0.12), skin(0.85, { side: THREE.DoubleSide }), CATCHLIGHT()]);
 	r.object.name = 'stand-in';
 	r.pose(relaxed);
 	const poses = s === HEIGHT / MEASURED ? POSES : posesFor(s);
