@@ -156,6 +156,10 @@ const WAIT: Duration = Duration::from_secs(10);
 /// 8 seconds), where a new dial sends its first at once.
 const REDIAL: Duration = Duration::from_secs(2);
 
+/// How long a node with no socket of its own waits for its relay to let it in before it reaches out anyway
+/// (`Node::on_relay`).
+const RELAY_WAIT: Duration = Duration::from_secs(20);
+
 /// The longest a node waits before it tries a peer out of reach again.
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
 
@@ -532,6 +536,18 @@ impl Node {
         &self.shared.endpoint
     }
 
+    /// Whether its relay has let it in, waited for up to `RELAY_WAIT`: a node with no socket of its own, as a page's,
+    /// reaches nobody before its relay lets it in, and a dial it sends sooner is lost and sent again ever later
+    /// (`REDIAL`), so it waits for it first, as its `relay` step. At once for a node with a socket, or no relay.
+    pub async fn on_relay(&self) -> bool {
+        let opts = &self.shared.opts;
+        if opts.relay.is_none() || opts.bind.is_some() || opts.direct {
+            return true;
+        }
+        opts.progress.step("relay");
+        time::timeout(RELAY_WAIT, self.shared.endpoint.online()).await.is_ok()
+    }
+
     /// Its endpoint id: its device's ed25519 key.
     pub fn id(&self) -> EndpointId {
         self.shared.endpoint.id()
@@ -590,20 +606,55 @@ impl Node {
         self.linking(offer, pass, Joins::<InLab>::Pass(unlock)).await
     }
 
+    /// `link_by_pass` through the server `offer` names, only if the pass's passkey roots a vault the server knows: one
+    /// passkey, one human vault, so a new device of a person who has a vault already joins it, as it asks to found
+    /// one (`avendb_browser::Device::found`). That passkey and the vault it joined, or `None` if the passkey roots no
+    /// vault the server hands over, and nothing changed.
+    pub async fn rejoin_by_pass(
+        &self,
+        offer: &Offer,
+        pass: &RelayPass,
+        unlock: Ceremony,
+    ) -> Result<Option<(SignerId, VaultId)>> {
+        self.join_through(offer, pass, Joins::<InLab>::Pass(unlock), false).await
+    }
+
     async fn linking<A: Authenticator>(
         &self,
         offer: &Offer,
         pass: &RelayPass,
         joins: Joins<'_, A>,
     ) -> Result<(SignerId, VaultId)> {
+        self.on_relay().await;
+        self.shared.opts.progress.step("server");
+        self.join_through(offer, pass, joins, true).await?.context("no vault of this passkey to join")
+    }
+
+    /// Join the vault the pass's passkey roots, through device `offer`, which hands over its log for the pass: `None`
+    /// if it hands over none. `linking` marks the pass step as it shows the pass; a device that founds its vault, only
+    /// once the server handed one over.
+    async fn join_through<A: Authenticator>(
+        &self,
+        offer: &Offer,
+        pass: &RelayPass,
+        joins: Joins<'_, A>,
+        linking: bool,
+    ) -> Result<Option<(SignerId, VaultId)>> {
         let progress = &self.shared.opts.progress;
-        progress.step("server");
         let peer = self.offered(offer).await?;
-        progress.step("pass");
+        if linking {
+            progress.step("pass");
+        }
         let card = session::exchange(&peer.conn, session::LINK, &pass.to_wire(), session::REPLY_LIMIT).await?;
         let Reply { mut edits, .. } = Reply::from_wire(&card)?;
         // a card carries vault logs, and nothing else
         edits.retain(of_a_vault);
+        if edits.is_empty() {
+            return Ok(None);
+        }
+        if !linking {
+            progress.step("pass");
+        }
         let passkeys = pass.candidates();
         progress.step("vault");
         let joining = self.shared.lab(move |lab, me| {
@@ -611,7 +662,7 @@ impl Node {
             let at_hand = |p: &SignerId| lab.keys_of(*p).is_some();
             passkeys.into_iter().filter(at_hand).find_map(|p| Some((p, lab.joining(me, p).ok()?)))
         });
-        let (passkey, joining) = joining.await.context("no vault of this passkey to join")?;
+        let Some((passkey, joining)) = joining.await else { return Ok(None) };
         let id = match joining {
             (_, Some(id)) => id,
             (vault, None) => {
@@ -640,7 +691,7 @@ impl Node {
         self.shared.changed.notify_one();
         progress.step("sync");
         self.shared.ask(peer.endpoint).await?;
-        Ok((passkey, vault))
+        Ok(Some((passkey, vault)))
     }
 
     /// `found_with`, with `passkey` a software passkey this device's Lab holds.

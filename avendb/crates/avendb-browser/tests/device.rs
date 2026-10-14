@@ -280,7 +280,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let meta = first.meta([1; 32], "ZXZl".into());
     first.keep(&meta).await.expect("what opens it again, on its shelf");
     assert_eq!(eve.steps(), [Step::Found], "after the unlock, one ceremony for her vault and her browser");
-    let founding = ["keys", "node", "server", "draft", "sign", "settle"];
+    let founding = ["keys", "node", "relay", "server", "draft", "sign", "settle"];
     assert_eq!(steps(&shown_steps), founding, "each step shown as it went, no claim as Alice's vault owns the server");
     assert_eq!(first.p256(), p256, "it learned her passkey's key: the one of the unlock's the second verifies under");
     assert!(first.node().endpoint().bound_sockets().is_empty(), "with no UDP of its own");
@@ -358,7 +358,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let shown_steps = new.progress.clone();
     let new = link(new, &server.offer(), &eve, [3; 32]).await.expect("it links through the server");
     assert!(eve.steps().is_empty(), "no ceremony but the unlock");
-    assert_eq!(steps(&shown_steps), ["keys", "node", "server", "pass", "vault", "join", "sync"]);
+    assert_eq!(steps(&shown_steps), ["keys", "node", "relay", "server", "pass", "vault", "join", "sync"]);
     assert_eq!(new.vault().await, Some(vault), "to her vault");
     until("it reads her note", || shows(&new, note, "Tomatoes in May.")).await;
     assert_eq!(run(&new, card("Eve's new browser")).await, Ok(json!({ "wrote": true })));
@@ -437,7 +437,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let shown_steps = first.progress.clone();
     let first = found(first, &server.offer(), Some(p256), &eve, [1; 32]).await.expect("her vault claims the server");
     assert_eq!(eve.steps(), [Step::Found], "one ceremony for her vault, her browser and the claim");
-    let claiming = ["keys", "node", "server", "draft", "sign", "claim", "settle"];
+    let claiming = ["keys", "node", "relay", "server", "draft", "sign", "claim", "settle"];
     assert_eq!(steps(&shown_steps), claiming, "the claim a step of its own");
     let vault = first.vault().await.expect("her vault");
     let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
@@ -447,6 +447,19 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     };
     let seeded = Some((Kind::Aven, true));
     assert_eq!(server.read(shape).await, seeded, "the CEO Aven of her seed, owned through Maia Holding, avenCEO GmbH");
+    // her phone shares her passkey and sets up too: the server knows her vault, so the phone joins it, in the unlock
+    // alone, and founds nothing; still one vault her passkey roots, the one that owns her seed
+    let phone = start("Eve's phone", &url, 8);
+    let joined = phone.progress.clone();
+    let phone = found(phone, &server.offer(), Some(p256), &eve, [2; 32]).await.expect("her phone in her vault");
+    assert_eq!(phone.vault().await, Some(vault), "her one vault");
+    assert_eq!(eve.steps(), [], "no ceremony past the unlock");
+    let rooted = ["keys", "node", "relay", "server", "pass", "vault", "join", "sync"];
+    assert_eq!(steps(&joined), rooted, "it signs in as a link does");
+    let passkey = Passkey::from_seed([5; 32]).id();
+    let roots = move |lab: &Lab, _| lab.state(me).vaults().iter().filter(|v| v.root == Some(passkey)).count();
+    assert_eq!(server.read(roots).await, 1, "one vault her passkey roots");
+    until("her phone acts for her seed too", || async { world_of(&phone).await["ownsAven"] == true }).await;
     let seen = world_of(&first).await;
     assert_eq!(seen["ownsAven"], true, "as her browser shows");
     let (hers, masters) = (Principal::Signer(Passkey::from_seed([5; 32]).id()), Principal::Signer(master.id()));
@@ -562,12 +575,15 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     assert_eq!(ids, [eve_v.to_hex(), holding.to_hex(), gmbh.to_hex(), avenceo.to_hex()], "her vault and her seed");
     let via = json!([gmbh.to_hex(), holding.to_hex(), eve_v.to_hex()]);
     assert_eq!(shown(&w, avenceo)["via"], via, "her browser acts for the CEO Aven through its owners' owners");
-    // her vault's and her seed's profiles, written by her browser with no ceremony; the CEO Aven's entries are its
-    // own, which its server opens, while hers it only relays
+    // her seed named from the start, by the founding itself; her vault's profile written by her browser with no
+    // ceremony; the CEO Aven's entries are its own, which its server opens, while hers it only relays
+    for (v, name) in [(holding, "Maia Holding GmbH"), (gmbh, "avenCEO GmbH"), (avenceo, "CEO Aven")] {
+        assert_eq!(named(&w, v), Some(name), "{name} named as it was founded");
+    }
     let profiled = |v: VaultId, name: &str| json!({ "op": "profile", "vault": v.to_hex(), "name": name });
     assert_eq!(signed(&first, profiled(eve_v, "Eve"), &eve).await, Ok(json!({ "wrote": true })));
     for (v, name) in [(holding, "Maia Holding GmbH"), (gmbh, "avenCEO GmbH"), (avenceo, "CEO Aven")] {
-        assert_eq!(signed(&first, profiled(v, name), &eve).await, Ok(json!({ "wrote": true })), "{name}");
+        assert_eq!(signed(&first, profiled(v, name), &eve).await, Ok(json!({ "wrote": false })), "{name}");
     }
     assert_eq!(signed(&first, profiled(eve_v, "Eve"), &eve).await, Ok(json!({ "wrote": false })), "it reads Eve");
     assert_eq!(eve.steps(), [], "no ceremony");

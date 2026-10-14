@@ -186,8 +186,14 @@ Holding GmbH to the person's passkey. The claim:
    it too and keeps it (`Lab::accept_claim`). Its answer lets the device box the aven's key for it.
 
 After that, nobody can claim it again: whoever founds a vault later finds the CEO Aven on the server's card. A device
-of a vault founded before claims a new server the same way (`Node::claim`). The page names the seed's vaults on their
-profiles as it first opens.
+of a vault founded before claims a new server the same way (`Node::claim`). The founding device writes each seed
+vault's profile with its name (`world::SEED_NAMES`) as it settles, before the page opens; the page names a seed that
+has none the same way.
+
+**One passkey, one human vault.** A device that founds asks the server first, with the passkey's pass, for the vault
+that passkey roots (`Node::rejoin_by_pass`, the same card as linking). If the server knows one, the device joins it
+in the same ceremony and founds nothing: a person who sets up avenDB on a second device with the same passkey, as a
+Mac and a phone that share it, gets one vault, the one that owns their seed.
 
 ## 4. Edits, logs and the replay
 
@@ -994,8 +1000,8 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder and the IndexedDB database of its name, the server its
-folder as it starts and its bucket while it runs (`bucket::clear`). `FLOOR` is 2 since the seed of Maia Holding GmbH,
-avenCEO GmbH and the CEO Aven.
+folder as it starts and its bucket while it runs (`bucket::clear`). `FLOOR` is 3 since one passkey founds one human
+vault and the seed is named as it is founded.
 
 ### Layout of one generation
 

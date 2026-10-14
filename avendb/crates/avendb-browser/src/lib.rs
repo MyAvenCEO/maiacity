@@ -307,7 +307,9 @@ impl Device {
         let progress = &start.progress;
         progress.step("keys");
         let (lab, me, passkeys, pass) = passed(&start, p256, &fresh, &unlock)?;
-        let node = Device::spawn(lab, me, &start, Some(pass)).await?;
+        let mask = fresh.mask(&unlock);
+        let node = Device::spawn(lab, me, &start, Some(pass.clone())).await?;
+        node.on_relay().await;
         progress.step("server");
         node.know(server.addr.clone());
         let mut tries = 0;
@@ -318,9 +320,13 @@ impl Device {
             }
             sleep(Duration::from_millis(500)).await;
         }
+        // one passkey, one human vault: a passkey whose vault the server knows signs in to it, as `link` does
+        if let Some((passkey, _)) = node.rejoin_by_pass(server, &pass, unlock.ceremony).await? {
+            return Device::of(node, passkey, &passkeys, mask, &start).await;
+        }
         let (passkey, vault, avenceo) = node.found_with(server, &passkeys, authenticator).await?;
         progress.step("settle");
-        let device = Device::of(node, passkey, &passkeys, fresh.mask(&unlock), &start).await?;
+        let device = Device::of(node, passkey, &passkeys, mask, &start).await?;
         let name = start.name.clone();
         let found = move |lab: &mut Lab, me| {
             let level = if backup { Level::Backup } else { Level::Relay };
@@ -328,6 +334,15 @@ impl Device {
             lab.issue(me, &[me], server).map_err(|why| anyhow!("avenCEO's share is refused: {why:?}"))?;
             let card = world::named(&name, me);
             lab.create(me, vault, vault, CARD, &[], card).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
+            // the seed its claim founded, if it did, by name from the start (`world::SEED_NAMES`)
+            let seed = world::seed_of(lab, me).into_iter().zip(world::SEED_NAMES);
+            for (v, name) in seed {
+                let op = json!({ "op": "profile", "vault": hex(&v.0), "name": name });
+                let out = engine::run(lab, me, &op);
+                if out.get("ok").is_none() {
+                    bail!("{name}'s profile is refused: {}", out["why"]);
+                }
+            }
             Ok::<_, anyhow::Error>(())
         };
         device.node.act(found).await?;

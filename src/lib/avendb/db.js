@@ -154,6 +154,8 @@ function byIds(all) {
 const TABLES = /** @type {const} */ ([
 	['notes', 'Notes: Markdown documents', 'document'],
 	['todos', 'Todos', 'todo'],
+	['articles', 'Articles: Markdown documents as notes are, their pictures files of the vault by content hash', 'document'],
+	['files', 'Files: each a document of the Library naming the file it brings, sealed in pieces of up to a GiB', 'document'],
 	['device_cards', 'Each device’s card: a document of its vault, named for the device', 'document'],
 	['vault_profiles', 'The vault’s profile: a document of it, titled with its name', 'document'],
 	['lane', 'The vault’s schemas and lenses: shared with Everyone, as every device that follows it reads them', null],
@@ -165,6 +167,8 @@ const TABLES = /** @type {const} */ ([
 const BY_TYPE = /** @type {Record<string, string>} */ ({
 	note: 'notes',
 	todo: 'todos',
+	article: 'articles',
+	file: 'files',
 	card: 'device_cards',
 	profile: 'vault_profiles',
 	schema: 'lane',

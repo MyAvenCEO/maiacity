@@ -10,6 +10,8 @@
 //! - `keys`: the device's keys, from its secret, and its person's passkey's, from the ceremony;
 //! - `restore`: what its store kept, replayed;
 //! - `node`: its node on an iroh endpoint, reaching its peers through the relay;
+//! - `relay`: the relay letting the node in, which a node with no socket of its own, a page's, waits for before it
+//!   reaches out (`Node::on_relay`);
 //! - `server`: the server, reached and proved by its hello, its card taken, and whether anybody owns it;
 //! - `draft`: the edits that found its person's vault, add the device to it, and claim the server nobody owns yet;
 //! - `sign`: the passkey's ceremony that signs those edits in one go;
