@@ -89,7 +89,7 @@ export function story(view, seat, seen) {
 			'The old world passed this place by.',
 			null,
 			null,
-			'Welcome to MaiaCity. You are among its very first people.'),
+			'Welcome to MaiaCity. You are among our very first human founders.'),
 		// the first walks over to the pickup at the pumps and gets in; the second waits at the stop to be fetched
 		first
 			? say({ id: 'station', chapter: 'The end of the road', title: 'The station', kind: 'station', done: !!seen.station, ...atStop },

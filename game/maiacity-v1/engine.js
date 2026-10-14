@@ -49,18 +49,25 @@ export const COOPS = {
 	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The ElectroCube', kind: 'Generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'The BatteryCube', kind: 'Storage' }] }
 };
 /** the seeds every newcomer brings from home in their backpack, one to plant as their first tree (Samuel 2026-10-13,
- *  2026-10-14): food-bearing trees and bushes that grow outdoors in a central European climate, from the Plants
- *  ($lib/plants: the page grows them from their stages, from the seed on) */
+ *  2026-10-14: ten trees that bear fruit, nuts or seeds): trees that grow outdoors in a central European climate, from
+ *  the Plants ($lib/plants: the page grows them from their stages, from the seed on) */
 export const SEEDLINGS = [
 	{ id: 'apple', label: 'Apple', fruit: 'apples' },
 	{ id: 'pear', label: 'Pear', fruit: 'pears' },
 	{ id: 'cherry', label: 'Sweet cherry', fruit: 'cherries' },
-	{ id: 'hazel', label: 'Hazel', fruit: 'hazelnuts' },
-	{ id: 'blackcurrant', label: 'Blackcurrant', fruit: 'blackcurrants' }
+	{ id: 'plum', label: 'Plum', fruit: 'plums' },
+	{ id: 'apricot', label: 'Apricot', fruit: 'apricots' },
+	{ id: 'quince', label: 'Quince', fruit: 'quinces' },
+	{ id: 'mulberry', label: 'Mulberry', fruit: 'mulberries' },
+	{ id: 'walnut', label: 'Walnut', fruit: 'walnuts' },
+	{ id: 'chestnut', label: 'Sweet chestnut', fruit: 'chestnuts' },
+	{ id: 'hazel', label: 'Hazel', fruit: 'hazelnuts' }
 ];
+/** seeds the backpack held before (a pick of one still plants) */
+const FORMER_SEEDS = ['blackcurrant'];
 /** where a first tree may stand on the tribe's hex, in metres from its centre (Samuel 2026-10-14): outside the core
- *  circle where the homes are built, inside the hex (its inner radius is 99.4 m), and a few metres from the other's */
-export const PLOT = { core: 24, edge: 95, apart: 3 };
+ *  circle where the homes are built, inside the hex (its inner radius is 99.4 m), and not on the other's: 6 m from it, room for both crowns */
+export const PLOT = { core: 24, edge: 95, apart: 6 };
 const MAX_LEDGER = 3000;
 const DUST = 1e-9;
 /** an amount asked for may exceed what is held by this much (the melt between a look and a click): it takes all */
@@ -626,7 +633,7 @@ export function act(state, seat, action, now = Date.now()) {
 			break;
 		}
 		case 'mark': {
-			// two sticks mark where the first tree will grow, before the seed goes in
+			// the plant stake marks where the first tree will grow, before the seed goes in
 			if (p.tree) throw new GameError('Your first tree is already planted.');
 			const x = Number(action.x), z = Number(action.z);
 			if (!Number.isFinite(x) || !Number.isFinite(z)) throw new GameError('Mark a place on the ground.');
@@ -635,13 +642,13 @@ export function act(state, seat, action, now = Date.now()) {
 			if (r > PLOT.edge) throw new GameError('That is beyond your hex.');
 			const o = s.players[seat === 'A' ? 'B' : 'A'];
 			const theirs = o.tree ?? o.spot;
-			if (theirs && Math.hypot(theirs.x - x, theirs.z - z) < PLOT.apart) throw new GameError('Too close to the other first tree.');
+			if (theirs && Math.hypot(theirs.x - x, theirs.z - z) < PLOT.apart) throw new GameError(`Too close to ${o.name}'s ${o.tree ? 'tree' : 'plant stake'}: keep ${PLOT.apart} m from it.`);
 			p.spot = { x: +x.toFixed(2), z: +z.toFixed(2) };
 			break;
 		}
 		case 'seedling': {
 			if (p.tree) throw new GameError('Your first tree is already planted.');
-			if (!SEEDLINGS.some((x) => x.id === action.plant)) throw new GameError('No such seed in your backpack.');
+			if (!SEEDLINGS.some((x) => x.id === action.plant) && !(FORMER_SEEDS.includes(action.plant) && p.seedling === action.plant)) throw new GameError('No such seed in your backpack.');
 			p.seedling = action.plant;
 			break;
 		}
@@ -774,15 +781,23 @@ export function supply(s) {
 
 /** HEARTS as the one display currency (Samuel 2026-10-13): what one of each MIND is worth in HEARTS, for showing only,
  * never for a move. Every MIND is born from HEARTS one for one, so the average MIND in existence is worth 1 HEART; the
- * pool's spot prices say how each MIND stands against the others. So the MINDs the pool prices are scaled together
- * until their supply-weighted average is 1 HEART (Σ supplyᵢ·valueᵢ = Σ supplyᵢ), and a MIND the pool cannot price yet
- * counts at its mint price, 1 HEART. HEARTS count as 1. */
+ * pool's trades say how each MIND stands against the others. Its spot price alone does not: every invest puts its
+ * pool share of the new MIND into the pool, so a basket of equal weights fed only by invests prices each MIND at the
+ * others' supply over its own, and every COOP came out worth the same whatever went into it (Samuel 2026-10-14: 2,500
+ * maiaMIND, 1,000 villageMIND and 500 tribeMIND each 1,333 HEARTS). So each MIND counts by how far the trades moved
+ * it: its spot price over the one the pool would have had it held each MIND in proportion to its supply (1:1 before
+ * any trade). The MINDs the pool prices are scaled together until their supply-weighted average is 1 HEART
+ * (Σ supplyᵢ·valueᵢ = Σ supplyᵢ), and a MIND the pool cannot price yet counts at its mint price, 1 HEART. HEARTS
+ * count as 1. */
 export function heartsValue(s) {
 	const out = { HEARTS: 1, MAIA: 1, TRIBE: 1, VILLAGE: 1 };
-	const rel = Object.fromEntries(MINDS.map((t) => [t, t === 'MAIA' ? (s.pool.MAIA > DUST ? 1 : null) : price(s, t, 'MAIA')]));
+	const sup = supply(s), w = weights(s);
+	// the spot price with each MIND in the pool in proportion to its supply: (sup_MAIA/w_MAIA)/(sup_t/w_t)
+	const even = (t) => (sup.MAIA / w.MAIA) / (sup[t] / w[t]);
+	const rel = Object.fromEntries(MINDS.map((t) => [t, t === 'MAIA' ? (s.pool.MAIA > DUST ? 1 : null) : sup[t] > DUST && sup.MAIA > DUST ? (price(s, t, 'MAIA') ?? NaN) / even(t) : null]));
+	for (const t of MINDS) if (!Number.isFinite(rel[t])) rel[t] = null;
 	const priced = MINDS.filter((t) => rel[t] != null);
 	if (priced.length < 2) return out;
-	const sup = supply(s);
 	const units = priced.reduce((a, t) => a + sup[t], 0);
 	const worth = priced.reduce((a, t) => a + sup[t] * rel[t], 0);
 	if (!(units > DUST && worth > DUST)) return out;
