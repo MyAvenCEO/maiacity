@@ -1112,3 +1112,69 @@ export const SIM_HISTORY = [
 		suite: { experiments: TEST_CITY.suite.experiments, scenarios: TEST_CITY.suite.scenarios, pass: TEST_CITY.suite.pass, fail: TEST_CITY.suite.fail, compare: TEST_CITY.suite.compare }
 	}
 ];
+
+/** how many per-seed values pass `ok` (by default: the value is 0, as for person-days short) */
+export const holdsCount = (xs, ok = (v) => v === 0) => xs.filter(ok).length;
+
+/** a hypothesis's status from how many runs held, of how many: all → 'supported', none → 'failing', some → 'mixed',
+ *  no run → 'open'. 'proven' is kept for mathematics */
+export const statusFrom = (held, of) => (!of ? 'open' : held === of ? 'supported' : held === 0 ? 'failing' : 'mixed');
+
+/** the band around full cost within which Section 10's H6 calls a price "near cost" (audit B13: within 10 %) */
+export const COST_BAND = 0.1;
+
+const tcN = TEST_CITY.seeds.length;
+const tcScen = TEST_CITY.scenarios;
+const mainChecks = LADDER.find((v) => v.id === 'main').checks;
+const infraBelow = INFRA_MINDS.filter((k) => MIND_RETURNS.byMind[k].mean < RATE);
+const infraWon = INFRA_MINDS.filter((k) => MIND_RETURNS.byMind[k].share60 === 1);
+const nearCost = tcScen.sellers.cost.every((c) => Math.abs(c - 1) <= COST_BAND);
+const payoutHeld = [DYN.people > 0.5, ...tcScen.payout.pass].filter(Boolean).length;
+
+/** the hypotheses of Section 10 and their status, derived from the numbers where they can be, so that new numbers
+ *  update them. Each part of Proposition 3 counts the 8-seed check of the economic model (SEEDS.new) and the base seeds
+ *  of the test city's latest round (TEST_CITY); `model` and `city` are [held, of]. A status the numbers cannot give
+ *  yet is 'open', with `untested` saying why. The words of each hypothesis are in the page (Section 10) */
+export const HYPOTHESES = {
+	H1: { status: 'proven' }, // Proposition 1, Section 5.3
+	H2: { status: 'proven' }, // Proposition 2, Section 9.2 (its condition is H4)
+	H3: {
+		model: [SEEDS.new.pass, SEEDS.n],
+		city: [TEST_CITY.headline.all, TEST_CITY.headline.of],
+		main: mainChecks,
+		status: statusFrom(SEEDS.new.pass + TEST_CITY.headline.all, SEEDS.n + TEST_CITY.headline.of),
+		parts: [
+			{ model: [SEEDS.new.check1, SEEDS.n], city: [holdsCount(TEST_CITY.p1), tcN] },
+			{ model: [SEEDS.new.check2, SEEDS.n], city: [holdsCount(TEST_CITY.p2normal), tcN] },
+			{ model: [SEEDS.new.check3, SEEDS.n], city: [holdsCount(TEST_CITY.p3.failing), tcN] }
+		].map((p) => ({ ...p, status: statusFrom(p.model[0] + p.city[0], p.model[1] + p.city[1]) })),
+		// the strict test, not claimed: dividends alone, on every owner-only person-day after year 10 of the model's main
+		// run, and in the last year on the test city's base seeds
+		strict: { model: [PROOF.strict.shareAfter10 >= 1 ? 1 : 0, 1], city: [holdsCount(TEST_CITY.p2strict, (v) => v >= 1), tcN] }
+	},
+	// μ below the melt: the 8-seed check and the 24 same-shock seeds
+	H4: { model: [SEEDS.new.below, SEEDS.n], same: [SAME_SHOCK.new.below, SAME_SHOCK.n], status: statusFrom(SEEDS.new.below + SAME_SHOCK.new.below, SEEDS.n + SAME_SHOCK.n) },
+	// long-lived projects get built (they made all of their good by the last year) and their rise is shared (their
+	// MINDs returned less than the melt)
+	H5: { won: infraWon, below: infraBelow, of: INFRA_MINDS.length, status: infraWon.length && infraBelow.length === INFRA_MINDS.length ? 'supported' : infraWon.length || infraBelow.length ? 'mixed' : 'failing' },
+	// rivals keep basics near cost: the test city's sellers within COST_BAND of full cost; no basic but water with one
+	// seller in the model's last year
+	H6: { nearCost, sole: soleMakers(), status: nearCost && !soleMakers().length ? 'supported' : nearCost || !soleMakers().length ? 'mixed' : 'failing' },
+	// only physics limits abundance: base seeds on which MIND never bound a basic, and twice the HEARTS changing what
+	// people got by at most TEST_CITY.scenarios.money.largest
+	H7: { city: [holdsCount(TEST_CITY.abundance), tcN], money: tcScen.money.pass, status: statusFrom(holdsCount(TEST_CITY.abundance) + (tcScen.money.pass ? 1 : 0), tcN + 1) },
+	// energy binds growth: the model assumes productivity growth and has no energy limit
+	H8: { energy: tcScen.energy.pass, status: 'open', untested: 'model' },
+	// the euro border balances: exports repay the euros the city needed
+	H9: { repaid: TEST_CITY.bank.repaid, status: TEST_CITY.bank.repaid ? 'supported' : 'failing' },
+	// the founding leaves no one short: the model (no founding rule) and the test city (with it)
+	H10: { model: PROOF.genesis.short === 0, city: tcScen.founding.shortWith === 0, status: statusFrom((PROOF.genesis.short === 0 ? 1 : 0) + (tcScen.founding.shortWith === 0 ? 1 : 0), 2) },
+	// ownership spread by the Avens (C4) pays the basics: not modelled yet
+	H11: { status: 'open', untested: 'C4' },
+	// treasuries pay out, so people own most MIND: the model's last ten years and the test city's two payout scenarios
+	H12: { held: payoutHeld, of: 1 + tcScen.payout.pass.length, status: statusFrom(payoutHeld, 1 + tcScen.payout.pass.length) },
+	// the melt keeps money moving: the model assumes how much people spend
+	H13: { status: 'open', untested: 'spending' },
+	// selection by where Avens invest improves governance
+	H14: { status: 'open', untested: 'governance' }
+};
