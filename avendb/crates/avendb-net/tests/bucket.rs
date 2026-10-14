@@ -40,16 +40,17 @@ async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> 
     }
 }
 
-/// Every file under `dir`, by its path there, with its bytes.
+/// Every file under `dir`, by its path there, with its bytes: one a node deletes while it is listed is gone, as a
+/// clear running beside the listing deletes them.
 fn files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     let mut found = BTreeMap::new();
-    for entry in fs::read_dir(dir).expect("a folder") {
-        let path = entry.expect("an entry").path();
+    for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
         let name = path.file_name().expect("a name").to_string_lossy().to_string();
         if path.is_dir() {
             found.extend(files(&path).into_iter().map(|(n, bytes)| (format!("{name}/{n}"), bytes)));
-        } else {
-            found.insert(name, fs::read(&path).expect("a file"));
+        } else if let Ok(bytes) = fs::read(&path) {
+            found.insert(name, bytes);
         }
     }
     found

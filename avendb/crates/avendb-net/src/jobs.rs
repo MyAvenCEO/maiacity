@@ -1,6 +1,8 @@
 //! What a node does in the background, as jobs its person can watch (the page's Jobs), on the studio's model
 //! (vault/app's `jobs.rs`): each job has a kind, what it works on (its subject), a name, a state, the stage it is at,
-//! and how far it is, in units of its own (bytes, pieces, edits), with when it started and ended and why it failed. A
+//! and how far it is, in units of its own (bytes, pieces, edits), with when it started and ended and why it failed, and
+//! the vaults and entries it is about, each with how many of its units are theirs, so that a page shows each vault its
+//! own and where each entry it worked on is synced to. A
 //! node keeps those under way and the last `HISTORY` that ended (`Jobs`), and tells them as its `jobs` op asks
 //! (`Node::run`). A job begins as its work does (`Jobs::begin`) and ends with it: done, failed, or forgotten where it
 //! did nothing worth showing; if its work stops without saying, as a task dropped, it failed (`Running`'s drop).
@@ -64,6 +66,12 @@ pub struct Job {
     pub ended: Option<u64>,
     /// Why it failed.
     pub error: Option<String>,
+    /// The vaults it is about, in hex, each with how many of its units are that vault's: a file's, its entry's vault
+    /// with all of it; a pull's, each vault whose edits it took with how many.
+    pub vaults: BTreeMap<String, u64>,
+    /// The entries it is about, in hex, as `vaults`: a file's, the entry that brings it; a pull's, each entry whose
+    /// edits it took.
+    pub entries: BTreeMap<String, u64>,
 }
 
 impl Job {
@@ -82,6 +90,8 @@ impl Job {
             "started": self.started,
             "ended": self.ended,
             "error": self.error,
+            "vaults": self.vaults,
+            "entries": self.entries,
         })
     }
 }
@@ -119,6 +129,8 @@ impl Jobs {
             started: now_ms(),
             ended: None,
             error: None,
+            vaults: BTreeMap::new(),
+            entries: BTreeMap::new(),
         };
         self.book.lock().expect("jobs").running.insert(id.clone(), job);
         Running { jobs: self.clone(), id, over: false }
@@ -188,6 +200,11 @@ impl Running {
         });
     }
 
+    /// It is about the vaults `vaults` and the entries `entries`, each with how many of its units are theirs.
+    pub fn about(&mut self, vaults: BTreeMap<String, u64>, entries: BTreeMap<String, u64>) {
+        self.jobs.update(&self.id, |j| (j.vaults, j.entries) = (vaults, entries));
+    }
+
     /// It now works on `subject`, as a file once it is sealed is named by its root.
     pub fn subject(&mut self, subject: String) {
         self.jobs.update(&self.id, |j| j.subject = subject);
@@ -243,10 +260,13 @@ mod tests {
         let mut keep = jobs.begin("keep", "ab".into(), "a film".into(), 4, "pieces");
         keep.stage("fetching");
         keep.progress(2, None);
+        keep.about(BTreeMap::from([("v1".to_string(), 4)]), BTreeMap::from([("e1".to_string(), 4)]));
         let (running, ended) = jobs.snapshot();
         assert_eq!((running.len(), ended.len()), (1, 0));
         assert_eq!((running[0].id.as_str(), running[0].done, running[0].total), ("keep:ab#0", 2, 4));
         assert_eq!(running[0].stage, "fetching");
+        let told = jobs.to_json()["running"][0].clone();
+        assert_eq!((&told["vaults"], &told["entries"]), (&json!({ "v1": 4 }), &json!({ "e1": 4 })), "what it is about");
         keep.done();
         let (running, ended) = jobs.snapshot();
         assert!(running.is_empty());

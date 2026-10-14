@@ -6,6 +6,7 @@
 //! background (`jobs`), has the passkey sign what its vault approves in a ceremony, and asks its peers again once the
 //! vaults it follows change (`follow`).
 
+use std::collections::BTreeMap;
 use std::io;
 use std::sync::Arc;
 
@@ -115,6 +116,8 @@ impl Node {
         // a job of its own, its bytes told as they come
         let name = op.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
         let mut job = self.jobs().begin("bring", String::new(), name, len, "bytes");
+        let vault = op.get("vault").and_then(Value::as_str).map(|v| (v.to_string(), len));
+        job.about(vault.clone().into_iter().collect(), BTreeMap::new());
         job.stage("sealing");
         let mut done = 0;
         let counted = bytes.inspect(|b| {
@@ -134,6 +137,9 @@ impl Node {
         job.subject(BlobId(brought.root.hash).to_hex());
         job.stage("making its entry");
         let made = self.act(move |lab, me| engine::put_file(lab, me, &op, brought)).await;
+        if let Some(entry) = made["ok"]["entry"].as_str() {
+            job.about(vault.into_iter().collect(), [(entry.to_string(), len)].into());
+        }
         job.done();
         Ok(made)
     }

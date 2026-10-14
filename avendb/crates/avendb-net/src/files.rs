@@ -317,6 +317,9 @@ impl Shared {
         }
         let count = root.size.div_ceil(PIECE).max(1);
         let mut job = self.jobs.begin("keep", BlobId(root.hash).to_hex(), String::new(), count, "pieces");
+        let whose = self.lab(move |lab, me| lab.whose_file(me, &root)).await;
+        let vaults = whose.values().map(|v| (v.to_hex(), count)).collect();
+        job.about(vaults, whose.keys().map(|e| (e.to_hex(), count)).collect());
         let mut fetched = 0;
         let kept = self.keep_whole(root, &mut job, &mut fetched).await;
         if fetched == 0 { job.forget() } else { job.ended(&kept) }
