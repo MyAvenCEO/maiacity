@@ -84,6 +84,16 @@
  *          foundSignal=1  a founding is also signalled by unmet need or an audited cost far below the price
  *          techCopy=1     rivals copy the market leader's productivity after 2 years
  *          avenRule=output  Avens invest by delivered output, not by price
+ *        Switches of round-next-2 (off by default):
+ *          reroute=1      what a sold-out seller cannot deliver passes at once to the other sellers of the good that still
+ *                         have stock or capacity, at their own price (the buyer's MIND goes through the pools)
+ *          founding=3     days 1–7: only what pays the day's basic needs goes to the sellers of the four basics (split as
+ *                         buyers split their orders, at today's prices); the rest goes by the Avens' normal rule
+ *          rentShort=1    ground rent rises only while someone asks for land the City cannot give (not merely while
+ *                         over 90 % of the land is let)
+ *          waterStock=90  the City COOP keeps a stock of water of 90 days of what it is asked for, filled from spare
+ *                         capacity, and serves from it when its plant cannot
+ *          reletUsed=1    a failed plant's successor leases only the part that was in use; the idle part is scrapped
  *          trace=1        (--seed-run) each year's lowest tenth and zero-Aven group: income by source, holdings, prices
  *        node scripts/theos-e2e-sim.mjs … --melt 0.09  a research run with another melt (the protocol's is 0.07)
  *        node scripts/theos-e2e-sim.mjs --debug d 60 [--empty 0.25 | --grow]   one static run, a line a year
@@ -431,6 +441,14 @@ function init(sc) {
 		S.tenH = new Float64Array(10 * NHH);
 		S.tenA = new Float64Array(10 * NHH);
 		S.tenDays = 0;
+		// (round-next-2, the three yardsticks and the drops' causes: what each person wanted of every good this step (their
+		// demand, units a day) and what they paid for it (R a day), and the same for each tenth over the year)
+		S.wantC = new Float64Array(Nmax * NHH);
+		S.spendC = new Float64Array(Nmax * NHH);
+		S.tenHw = new Float64Array(10 * NHH);
+		S.tenAw = new Float64Array(10 * NHH);
+		S.tenHs = new Float64Array(10 * NHH);
+		S.tenAs = new Float64Array(10 * NHH);
 		S.spendH = new Float64Array(Nmax); // what each person bought this year, in HEARTS (θ, the share of holdings spent)
 		S.cityCoverMin = Infinity; // the City COOP's reserve at its lowest from day 8, in days of its running costs
 		// trace = 1 (audit B1): each person's year in HEARTS (income by source, spending, melt) and real consumption by good
@@ -473,7 +491,9 @@ function newBucket() {
 		// or its work items in full (from day 8); the zero-Aven group's dividends (R) and their share of the MIND Law 5 pays on
 		sgLate: [0, 0, 0, 0], cityDry: 0, cityWage: 0, zDivR: 0,
 		// what ended COOPs' treasuries passed to the City COOP (endToCity, R), technology copies (techCopy)
-		toCityR: 0, copyN: 0
+		toCityR: 0, copyN: 0,
+		// what reroute passed on to other sellers (R); price flips by product
+		rrR: 0, flips: new Float64Array(NPROD)
 	};
 }
 
@@ -736,6 +756,17 @@ function grow(S, dt) {
  */
 function foundingMix(S) {
 	if (!S.sc.dynamic || !S.sc.founding || S.t >= 7) return null;
+	// founding = 3 (round-next-2): only what pays the day's basic needs (BASIC) goes to the sellers of the four basics, each
+	// seller's part as buyers split their orders between them, at today's prices; the rest of the day's HEARTS goes by
+	// the Avens' normal rule (MIND of each seller a person a day)
+	if (S.sc.founding === 3) {
+		const T = sellerTable(S), need = new Float64Array(M);
+		for (const g of [FOOD, ENERGY, HOUSING, WATER]) {
+			const t = T[g];
+			for (let z = 0; z < t.s.length; z++) need[t.s[z]] += BASIC[g] * t.sh[z] * S.c[t.s[z]].price;
+		}
+		return { need };
+	}
 	const goods = S.sc.founding === 2 ? [FOOD, ENERGY, HOUSING, WATER] : [FOOD, ENERGY, WATER], fw = new Float64Array(M);
 	for (const g of goods) {
 		let K = 0;
@@ -744,22 +775,31 @@ function foundingMix(S) {
 	}
 	let fs = 0;
 	for (let k = 0; k < M; k++) fs += fw[k];
-	return fs > 0 ? fw.map((x) => x / fs) : null;
+	return fs > 0 ? { mix: fw.map((x) => x / fs) } : null;
 }
 
 function invest(S, dt) {
 	const half = (HEARTS_DAY * dt) / 2, N = S.N, to = new Float64Array(M);
-	const fw = foundingMix(S);
+	const fm = foundingMix(S), fw = fm && fm.mix, fn = fm && fm.need;
 	let nIn = 0;
 	for (let i = 0; i < N; i++) {
 		const b = i * M;
-		let inc = 0, sum = 0;
+		let inc = 0, sum = 0, left = half;
 		for (let k = 0; k < M; k++) sum += S.alloc[b + k];
 		if (sum > 0) nIn++;
+		if (fn && sum > 0)
+			for (let k = 0; k < M; k++) {
+				const m = Math.min(left, fn[k] * dt);
+				if (!(m > 0)) continue;
+				S.hold[b + k] += m;
+				to[k] += m;
+				inc += m * S.P[k];
+				left -= m;
+			}
 		for (let k = 0; k < M; k++) {
 			const a = fw && sum > 0 ? fw[k] : sum > 0 ? S.alloc[b + k] / sum : 0;
 			if (a > 0) {
-				const m = half * a;
+				const m = left * a;
 				S.hold[b + k] += m;
 				to[k] += m;
 				inc += m * S.P[k];
@@ -886,7 +926,7 @@ function plan(S, dt, T) {
 		co.Keff = effCap(S, k);
 		if (sp.product < 0) continue;
 		// foodStore: a food seller also makes what its preserved store lacks, over about 90 days
-		const plannedDay = Math.min(co.Keff, co.reqEma * 1.05 + (co.storeT > co.store ? (co.storeT - co.store) / 90 : 0));
+		const plannedDay = Math.min(co.Keff, co.reqEma * 1.05 + (co.storeT > co.store ? (co.storeT - co.store) / 90 : 0) + (S.sc.waterStock > 0 && k === CITY ? Math.max(0, S.sc.waterStock * co.reqEma - (co.wst || 0)) / 90 : 0));
 		const want = new Float64Array(NPROD), wantCap = new Float64Array(NPROD);
 		// inputs: replace this step's use and close 30 % of the gap to a 14-day stock
 		const useDay = new Float64Array(NPROD);
@@ -1045,6 +1085,7 @@ function trade(S, dt, T, B) {
 			const bud = Math.min(W, dt * bd);
 			for (let g = 0; g < NHH; g++) bb[g] = S.beta[i * NHH + g] * S.tasteG[g];
 			demand(bud / dt, pi, bb, 0, x);
+			for (let g = 0; g < NHH; g++) S.wantC[i * NHH + g] = x[g];
 		} else if (mech !== 'a') {
 			const y = S.ybar[i];
 			const bud = Math.min(W, dt * Math.max(0, y + (W - 3 * y) / 15));
@@ -1388,8 +1429,115 @@ function eligible(S, dt, B) {
 	for (let k = 0; k < M; k++) if (S.c[k].active && k !== JUNK) B.eligK[k] += holders(S, k) * dt;
 }
 
+/**
+ * reroute (round-next-2): what a sold-out seller cannot deliver passes at once to the other sellers of the same good that
+ * still have stock or capacity, at their own price. The buyer's MIND of the first seller, held for the part it could not
+ * deliver, goes through the pools into the MIND of the seller that delivers; the buyer then pays that seller's price
+ * with it, and keeps what is left. Running orders only (people's and other COOPs' inputs); orders for new capacity keep
+ * their queue. Each seller's spare is shared out in proportion to what it has spare. Returns what each person got this
+ * way (units this step, by good)
+ */
+function reroute(S, dt, T, fl, fi, fc, pay, B) {
+	const N = S.N, c = S.c, P = S.P;
+	const got = new Float64Array(N * NHH), ex = new Float64Array(M);
+	for (let g = 0; g < NPROD; g++) {
+		const t = T[g];
+		if (t.s.length < 2) continue;
+		// what each seller that delivered in full still has: stock and store, and capacity it has not used
+		const spare = [];
+		let spareAll = 0;
+		for (const z of t.s) {
+			const co = c[z];
+			if (!(fl[z] >= 1) || !(P[z] > 0)) continue;
+			const avail = co._Ycap + (co._prod >= 0 ? co.stock + co.store : 0) + (z === CITY && S.sc.waterStock > 0 ? co.wst || 0 : 0);
+			const x = Math.max(0, avail - (co._run || 0));
+			if (x > 0) spare.push([z, x]), (spareAll += x);
+		}
+		if (!(spareAll > 0)) continue;
+		// what the sellers that ran out could not deliver: each buyer's part
+		const short = [];
+		let U = 0;
+		for (const s of t.s) {
+			if (!(fl[s] < 1) || !(P[s] > 0)) continue;
+			const miss = 1 - fl[s], buyers = [];
+			if (g < NHH)
+				for (let i = 0; i < N; i++) {
+					const r = S.reqU[i * M + s];
+					if (r > 0) buyers.push([-1, i, r * miss]), (U += r * miss);
+				}
+			for (let k = 0; k < M; k++) {
+				const co = c[k];
+				if (k === s || !co.active || !co._in || !(co._in[s] > 0)) continue;
+				const u = co._in[s] * miss;
+				buyers.push([k, -1, u]), (U += u);
+			}
+			if (buyers.length) short.push([s, buyers]);
+		}
+		if (!(U > 0)) continue;
+		const rho = Math.min(1, spareAll / U);
+		for (const [s, buyers] of short)
+			for (const [z, x] of spare) {
+				const w = (rho * x) / spareAll;
+				// the MIND of s each buyer sends: what pays this part at z's price (5 % over, for fees and slippage), at most
+				// the MIND of s it holds for it
+				const vs = buyers.map(([k, i, u]) => Math.min(u * w * c[s].price, ((u * w * c[z].price * P[z]) / P[s]) * 1.05));
+				let Q = 0;
+				for (const v of vs) Q += v;
+				if (!(Q > 0)) continue;
+				const { out, fail } = execOrder(S, s, z, Q, B);
+				buyers.forEach(([k, i, u], b) => {
+					const v = vs[b];
+					if (!(v > 0)) return;
+					const sh = v / Q, zIn = out * sh, back = fail * sh;
+					const d = Math.min(u * w, zIn / c[z].price), pm = d * c[z].price;
+					if (k < 0) {
+						const h = i * M;
+						S.hold[h + s] += back - v;
+						S.hold[h + z] += zIn - pm;
+						if (S.spendI) S.spendI[i] += pm * P[z];
+						if (S.spendH) S.spendH[i] += (pm * P[z]) / S.hpH;
+						if (S.tr) S.tr.spend[i] += (pm * P[z]) / S.hpH;
+						if (S.spendC) S.spendC[i * NHH + g] += (pm * P[z]) / dt;
+						B.salesHHR += pm * P[z];
+						got[i * NHH + g] += d;
+					} else {
+						const co = c[k];
+						co.tre[s] += back - v;
+						co.tre[z] += zIn - pm;
+						co.inv[g] += d;
+						co.outR += pm * P[z];
+						B.b2bR += pm * P[z];
+					}
+					pay[z] += pm;
+					ex[z] += d;
+					B.rrR += pm * P[z];
+				});
+			}
+	}
+	// the sellers that delivered more: they make what their stock and store do not cover, and capacity orders get what
+	// is left
+	for (let z = 0; z < M; z++) {
+		if (!(ex[z] > 0)) continue;
+		const co = c[z];
+		const run = (co._run || 0) + ex[z];
+		if (co._prod >= 0) {
+			const have = co._prod + co.stock + co.store;
+			if (run > have) co._prod = Math.min(co._Ycap, co._prod + run - have);
+		}
+		const avail = co._prod >= 0 ? co._prod + co.stock + co.store : co._Ycap + (z === CITY && S.sc.waterStock > 0 ? co.wst || 0 : 0);
+		const self0 = co._self;
+		fc[z] = co._capAll > 0 ? Math.min(1, Math.max(0, avail - run) / co._capAll) : 0;
+		co._self = co.selfIn * fi[z] + co.selfCap * fc[z];
+		co._made += co._self - self0 + ex[z];
+		// (what it is asked for, its price signal and its plan, stay as they were: the sold-out seller is still the one
+		// asked, and it still raises its price; counting the passed-on orders at both would count that demand twice)
+	}
+	return got;
+}
+
 function deliver(S, dt, T, B) {
 	const mech = S.sc.mech, N = S.N, c = S.c, P = S.P;
+	if (S.spendC) S.spendC.fill(0);
 	const tot = new Float64Array(M), totE = new Float64Array(M), totU = new Float64Array(M), totH = new Float64Array(M);
 	// requests: what each buyer can pay for (b, c, d) or wants to use (a)
 	for (let k = 0; k < M; k++) {
@@ -1451,6 +1599,7 @@ function deliver(S, dt, T, B) {
 		if (!co.active || sp.product < 0) continue;
 		let Y = co.Keff * dt;
 		for (const [j, a] of sp.inputs) if (a > 0) Y = Math.min(Y, co.inv[j] / (a / co.A));
+		co._Ycap = Y; // (what its plant can make this step, short of inputs or not)
 		// dynamic world: food and goods are made ahead into a stock (STOCK_DAYS of demand) and sold from it; unsold stock
 		// rots; everything else is made to order
 		co._prod = -1;
@@ -1462,7 +1611,11 @@ function deliver(S, dt, T, B) {
 			co._fill = fill;
 			Y = co._prod + co.stock + co.store;
 		}
+		// waterStock (audit B5's reserve as stock, not as money): the City COOP also serves from a stock of water when its plant
+		// cannot (the stock is filled from spare capacity after delivery)
+		if (S.sc.dynamic && S.sc.waterStock > 0 && s === CITY) Y += co.wst || 0;
 		const capAll = totC[s] + co.selfCap;
+		co._capAll = capAll;
 		const all = tot[s] + totH[s] + co.selfIn + capAll;
 		co.zNow = co.Keff > 0 ? all / (co.Keff * dt) : all > 0 ? 9 : 0;
 		let spare;
@@ -1478,6 +1631,7 @@ function deliver(S, dt, T, B) {
 			// dynamic world: a sold-out COOP serves running orders (households and other COOPs' inputs) pro rata, with no
 			// priority for anyone, and new capacity from what is left; its price does the rest
 			const run = tot[s] + co.selfIn + totH[s];
+			co._run = run;
 			fi[s] = fl[s] = run > 0 ? Math.min(1, Y / run) : 0;
 			// what it was asked for over what it could deliver (short of inputs, a COOP rations below its capacity)
 			co.zDel = run > 0 ? run / Math.max(Y, 1e-9 * run) : 0;
@@ -1498,6 +1652,7 @@ function deliver(S, dt, T, B) {
 	// deliver to people: consume, pay, count shortfalls
 	const cap = S.sc.capDays;
 	const pay = new Float64Array(M);
+	const rr = S.sc.dynamic && S.sc.reroute && mech === 'b' ? reroute(S, dt, T, fl, fi, fc, pay, B) : null;
 	const cons = new Float64Array(NHH);
 	const B4 = [0, 0, 0, 0];
 	let pd = 0, sAny = 0, newPd = 0, newS = 0, cpi = 0;
@@ -1521,11 +1676,14 @@ function deliver(S, dt, T, B) {
 				if (S.tr) S.tr.spend[i] += (pm * P[s]) / S.hpH;
 				pay[s] += pm;
 				B.salesHHR += pm * P[s];
+				if (S.spendC) S.spendC[i * NHH + SPECS[s].product] += (pm * P[s]) / dt;
 			}
 			c[s]._made += d;
 			cons[SPECS[s].product] += d / dt;
 			S.reqU[b + s] = 0;
 		}
+		// (reroute: what other sellers delivered in place of a sold-out one)
+		if (rr) for (let g = 0; g < NHH; g++) cons[g] += rr[i * NHH + g] / dt;
 		let short = false;
 		for (let g = 0; g < 4; g++) if (cons[g] < 0.98 * BASIC[g]) (short = true), (B4[g] += dt);
 		pd += dt;
@@ -1609,7 +1767,15 @@ function deliver(S, dt, T, B) {
 		if (sp.product >= 0) {
 			const made = co._made || 0;
 			// what it produced: its deliveries, or, for goods made ahead, this step's production (the rest went to stock)
-			const prodQ = co._prod >= 0 ? co._prod : made;
+			let prodQ = co._prod >= 0 ? co._prod : made;
+			// waterStock: what the plant could not make came from the stock; the stock is refilled from what the plant has
+			// left, over about 90 days, toward waterStock days of what the City is asked for (no tank costs or losses here)
+			if (S.sc.dynamic && S.sc.waterStock > 0 && s === CITY) {
+				const fromStock = Math.max(0, made - co._Ycap), w0 = Math.max(0, (co.wst || 0) - fromStock);
+				const fill = Math.max(0, Math.min(co._Ycap - (made - fromStock), ((S.sc.waterStock * co.reqEma - w0) / 90) * dt));
+				co.wst = w0 + fill;
+				prodQ = made - fromStock + fill;
+			}
 			if (co._prod >= 0 && (co.store > 0 || co.storeT > 0)) {
 				// foodStore: sales came from fresh stock first, then the store; what fresh stock holds above its target goes
 				// into the store while the store lacks it; fresh food rots at ROT, preserved food at STORE_ROT
@@ -1773,6 +1939,10 @@ function adjust(S, dt) {
 				clear = sr > 2;
 			}
 			step = Math.max(-0.25, Math.min(0.25, step));
+			// (round-next-2: a price flip, a full step up after a full step down or the reverse, the cobweb of a seller
+			// whose step is too big for its market)
+			if (Math.abs(step) >= 0.25 - 1e-9 && Math.abs(co._step || 0) >= 0.25 - 1e-9 && step * co._step < 0 && S.cur.flips) S.cur.flips[sp.product]++;
+			co._step = step;
 			if (S.sc.fwdPrice && sp.product === FOOD) co.priceR = fwdPriceR(S, s, st, pPrev);
 			else co.priceR *= Math.exp(step);
 			// what a unit costs the treasury: its variable cost, of which the treasury keeps only 1 − Law 5's share of the price
@@ -1809,7 +1979,11 @@ function adjust(S, dt) {
 	let leased = 0;
 	for (let k = 0; k < M; k++) if (c[k].active) leased += c[k].land;
 	const occ = (leased + S.leaseUnmet) / S.landLeasable;
-	S.rho *= Math.exp(Math.max(-0.1, Math.min(0.1, 0.03 * st * (occ - 0.9) * 10)));
+	// (rentShort, round-next-2: the rent rises only while someone asks for land the City cannot give; while the land is
+	// over 90 % let but nobody asks for more, it holds. Without it the rent keeps rising for as long as the tenants hold
+	// their land, and a plant cannot give land back faster than it wears out)
+	const occR = S.sc.dynamic && S.sc.rentShort && !(S.leaseUnmet > 0) ? Math.min(occ, 0.9) : occ;
+	S.rho *= Math.exp(Math.max(-0.1, Math.min(0.1, 0.03 * st * (occR - 0.9) * 10)));
 	if (P[CITY] > 0) S.rho = Math.max(S.rho, 0.0001 / P[CITY]);
 	// rentCover: ground rent is at least what pays for what the City COOP runs besides water (the upkeep of streets, parks
 	// and the water network, per citizen), over the land the other COOPs lease (with rentLaw5, before Law 5's share)
@@ -2096,10 +2270,16 @@ function tenthStep(S, dt) {
 	}
 	const byH = Array.from({ length: N }, (_, i) => i).sort((a, b) => W[a] - W[b] || a - b);
 	const byA = Array.from({ length: N }, (_, i) => i).sort((a, b) => S.workH[a] - S.workH[b] || a - b);
-	for (const [ord, acc] of [[byH, S.tenH], [byA, S.tenA]])
+	for (const [ord, acc, accW, accS] of [[byH, S.tenH, S.tenHw, S.tenHs], [byA, S.tenA, S.tenAw, S.tenAs]])
 		for (let d = 0; d < 10; d++) {
 			const a = Math.floor((d * N) / 10), b = Math.floor(((d + 1) * N) / 10), n = Math.max(1, b - a);
-			for (let x = a; x < b; x++) for (let g = 0; g < NHH; g++) acc[d * NHH + g] += (S.cons[ord[x] * NHH + g] * dt) / n;
+			for (let x = a; x < b; x++)
+				for (let g = 0; g < NHH; g++) {
+					const j = ord[x] * NHH + g;
+					acc[d * NHH + g] += (S.cons[j] * dt) / n;
+					accW[d * NHH + g] += (S.wantC[j] * dt) / n;
+					accS[d * NHH + g] += (S.spendC[j] * dt) / n;
+				}
 		}
 	S.tenDays += dt;
 }
@@ -2233,8 +2413,12 @@ function successor(S, fk, B) {
 	const b = S.c[kk];
 	b.heirOf = -1;
 	a.heir = -1;
-	b.K = a.K;
-	b.land = a.land;
+	// (reletUsed, round-next-2: the City leases the successor only the part of the plant that was in use, by what the
+	// failed COOP was asked for against its capacity over its last weeks; the idle part is scrapped and its land comes
+	// back to the City. Without it the successor takes the whole plant, idle part, rent and lease included)
+	const use = S.sc.dynamic && S.sc.reletUsed ? Math.min(1, Math.max(S.sc.reletUse ?? 0, a.zEma)) : 1;
+	b.K = a.K * use;
+	b.land = a.land * use;
 	for (let j = 0; j < NPROD; j++) (b.capInv[j] += a.capInv[j]), (b.inv[j] += a.inv[j]);
 	b.stock = a.stock;
 	b.store = a.store;
@@ -2243,7 +2427,7 @@ function successor(S, fk, B) {
 	b.priceR = a.priceR;
 	b.price = b.priceR / Math.max(1e-9, S.Ptw[kk]);
 	b.graceUntil = S.t + 180;
-	b.leaseFee = S.P[CITY] > 0 ? (capCostR(S, fk) * a.K * 0.06) / 365 / S.P[CITY] : 0; // 6 %/yr of the plant's value, in CITYmind
+	b.leaseFee = S.P[CITY] > 0 ? (capCostR(S, fk) * b.K * 0.06) / 365 / S.P[CITY] : 0; // 6 %/yr of the plant's value, in CITYmind
 	let As = 0, n = 0;
 	for (let k = 0; k < M; k++) if (k !== fk && S.c[k].active && SPECS[k].product === g) (As += S.c[k].A), n++;
 	b.A = Math.max(a.A, n ? As / n : a.A); // new management brings the rivals' average practice
@@ -2257,6 +2441,24 @@ function successor(S, fk, B) {
 	return kk;
 }
 
+/** (round-next-2) a failing COOP at its end, for the failures' trace: its age, ground rent and lease against its running
+ * costs, its land and the city's, the rent against a year earlier, how much of its plant it used, its share of its
+ * product, its margin over full cost and its price against its cheapest rival */
+function failInfo(S, k) {
+	const co = S.c[k], g = SPECS[k].product, P = S.P;
+	let out = 0, lo = Infinity;
+	for (let x = 0; x < M; x++) if (S.c[x].active && SPECS[x].product === g && S.c[x].Keff > 0) (out += S.c[x].made), x !== k && (lo = Math.min(lo, S.c[x].priceR));
+	const rentR = (co.land * S.rho + (co.leaseFee || 0)) * P[CITY];
+	const yr = S.Y.length >= 2 ? S.Y[S.Y.length - 2] : S.Y[0];
+	const fc = fullCostR(S, k);
+	const r3 = (x) => (x === null || !isFinite(x) ? null : Math.round(x * 1000) / 1000);
+	return {
+		age: r3((S.t - co.bornT) / 365), rentShare: r3(co.costEma > 0 ? rentR / co.costEma : null), landShare: r3(co.land / S.landLeasable),
+		occ: r3(S.occ), rhoX: r3(yr && yr.rhoM > 0 ? S.rho / yr.rhoM : null), util: r3(co.Keff > 0 ? co.made / co.Keff : null),
+		share: r3(out > 0 ? co.made / out : null), margin: r3(fc > 0 ? co.priceR / fc - 1 : null), vsRival: r3(isFinite(lo) && lo > 0 ? co.priceR / lo - 1 : null)
+	};
+}
+
 /**
  * a COOP ends (failure: treasury dry and losing; exit: it lost its market): its MIND leaves the pools (the pools' reserve
  * of it is retired), what its treasury holds of other MINDs goes to the holders of its MIND pro rata, and all of its MIND
@@ -2264,6 +2466,7 @@ function successor(S, fk, B) {
  */
 function endCoop(S, k, type, why, B) {
 	const co = S.c[k], P = S.P, N = S.N;
+	const diag = type === 'fail' && S.sc.dynamic ? failInfo(S, k) : null;
 	// the City re-lets the plant only while it is in use: an idle plant (demand under a quarter of its capacity) is
 	// scrapped, and its land goes back to the City
 	const inUse = !S.sc.dynamic || co.zEma >= (S.sc.reletUse ?? 0);
@@ -2357,7 +2560,7 @@ function endCoop(S, k, type, why, B) {
 	}
 	if (type === 'fail') B.failN++;
 	else B.exitN++;
-	S.events.push({ t: S.t, type, k, name: NAMES[k], product: SPECS[k].product, scrapped, note: why + (kk >= 0 ? `; the City leases its plant to ${NAMES[kk]}` : scrapped ? '; its plant was idle, so the City scraps it and takes the land back' : '') });
+	S.events.push({ t: S.t, type, k, name: NAMES[k], product: SPECS[k].product, scrapped, ...(diag ? { diag } : {}), note: why + (kk >= 0 ? `; the City leases its plant to ${NAMES[kk]}` : scrapped ? '; its plant was idle, so the City scraps it and takes the land back' : '') });
 	S.watchF.push(S.t + 180);
 	buildGraph(S);
 }
@@ -2464,6 +2667,7 @@ function lifecycle(S, dt, B) {
  */
 function takeOver(S, k, B) {
 	const co = S.c[k], g = SPECS[k].product;
+	const diag = failInfo(S, k);
 	let As = 0, n = 0;
 	for (let x = 0; x < M; x++) if (x !== k && S.c[x].active && SPECS[x].product === g) (As += S.c[x].A), n++;
 	co.A = Math.max(co.A, n ? As / n : co.A);
@@ -2474,7 +2678,7 @@ function takeOver(S, k, B) {
 	co.zEma = 1;
 	co.relets = (co.relets || 0) + 1;
 	B.failN++;
-	S.events.push({ t: S.t, type: 'fail', k, name: NAMES[k], product: g, scrapped: false, relet: true, again: co.relets > 1, note: 'treasury dry and losing MIND for 180 days; the City takes its plant and leases it to a successor that carries on its MIND' });
+	S.events.push({ t: S.t, type: 'fail', k, name: NAMES[k], product: g, scrapped: false, relet: true, again: co.relets > 1, diag, note: 'treasury dry and losing MIND for 180 days; the City takes its plant and leases it to a successor that carries on its MIND' });
 	S.watchF.push(S.t + 180);
 }
 
@@ -2644,7 +2848,8 @@ function dynYear(S, B, W, split, yk) {
 	const mindR = split.total > 0 ? split.totalR / split.total : 1; // R a MIND, on average over all MIND
 	// canon #19's yardstick: each tenth's consumption of every good this year, real units a person a day (from day 8)
 	const td = Math.max(1e-9, S.tenDays), tenH = Array.from(S.tenH, (x) => x / td), tenA = Array.from(S.tenA, (x) => x / td);
-	S.tenH.fill(0), S.tenA.fill(0), (S.tenDays = 0);
+	const tenHw = Array.from(S.tenHw, (x) => x / td), tenAw = Array.from(S.tenAw, (x) => x / td), tenHs = Array.from(S.tenHs, (x) => x / td), tenAs = Array.from(S.tenAs, (x) => x / td);
+	S.tenH.fill(0), S.tenA.fill(0), S.tenHw.fill(0), S.tenAw.fill(0), S.tenHs.fill(0), S.tenAs.fill(0), (S.tenDays = 0);
 	// the strict test's bound (audit point 11): Law 5 pays 20 % of all sales, so a person's dividends ÷ bundle is at most
 	// 0.2 × (their share of the MIND Law 5 pays on) × all sales ÷ their basics spend. The zero-Aven group's shares, at the
 	// year's end
@@ -2669,7 +2874,7 @@ function dynYear(S, B, W, split, yk) {
 		dec, realMean: real.reduce((a, b) => a + b, 0) / N, giniReal: gini(real, N), realMin: sorted[0], newPd: B.newPd, newS: B.newS,
 		basicR: cpi, basicMind: cpi !== null ? cpi / mindR : null, mindR,
 		failN: B.failN, exitN: B.exitN, foundN: B.foundN, shockN: B.shockN, rotR: B.rotR, meltCnt: B.meltCnt, burned: B.burned,
-		tenH, tenA, sgLate: B.sgLate.slice(), cityDry: B.cityDry, cityWage: B.cityWage, salesR: B.payR, rentR: B.rentR, zDivR: B.zDivR,
+		tenH, tenA, tenHw, tenAw, tenHs, tenAs, rrR: B.rrR, flips: Array.from(B.flips), sgLate: B.sgLate.slice(), cityDry: B.cityDry, cityWage: B.cityWage, salesR: B.payR, rentR: B.rentR, zDivR: B.zDivR,
 		zShareMed: zs.length ? zs[zs.length >> 1] : null, zShareMin: zs.length ? zs[0] : null, lvr, tasteG: Array.from(S.tasteG),
 		trace, toCityR: B.toCityR, copyN: B.copyN, store: (() => {
 			let st = 0, need = 0;
@@ -2922,7 +3127,7 @@ function closeYear(S) {
 		hops: B.routeIn > 0 ? B.hopsIn / B.routeIn : null, routeShare: B.payR > 0 ? B.routeIn / B.payR : null,
 		P: Array.from(P), cpi: B.cpiN ? B.cpiSum / B.cpiN : null, split, mPer: split.total / N,
 		gini: gini(W, N), giniC: gini(C, N), meanW, cover, Kd, insolv: Array.from(B.insolv),
-		arbR: B.arbR, hearts: Array.from(B.hearts), burned: B.burned, retired: B.retired, issued: B.issued, rho: S.rho * P[CITY], occ: S.occ,
+		arbR: B.arbR, hearts: Array.from(B.hearts), burned: B.burned, retired: B.retired, issued: B.issued, rho: S.rho * P[CITY], rhoM: S.rho, occ: S.occ,
 		rentR: B.rentR, wagesR: B.wagesR, divR: B.divR, payR: B.payR, pFail: B.pFail, prices: c.map((co) => co.price), q: c.map((co) => co.q),
 		sigma, muRet, muPrice, ringY, ringW, poolMem, yield: eligAll > 0 ? divAll / eligAll : 0, propR: B.propR, treInR: B.treInR,
 		workRatio: nW && nO && wO > 0 ? wW / nW / (wO / nO) : null, peopleShareR: split.totalR > 0 ? split.walR / split.totalR : null,
@@ -2959,7 +3164,7 @@ const DYN = {
 // the base of round-next (law5-all, commit ab8ed86): the new main with the round's kept switches off
 const ROUND_OFF = { p3: 0, foodStore: 0, techCopy: 0, founding: 0 };
 // the next round's switches (audit B1–B16; see the usage note at the top): each key's old rule is key = 0
-const ROUND_KEYS = ['p3', 'daily', 'crnDay', 'floorFull', 'foodStore', 'fwdPrice', 'waterFloor', 'waterReserve', 'rentCover', 'rentLaw5', 'holdFloor', 'payLeast', 'founding', 'heirMind', 'endToCity', 'foundSignal', 'techCopy', 'avenRule'];
+const ROUND_KEYS = ['p3', 'daily', 'crnDay', 'floorFull', 'foodStore', 'fwdPrice', 'waterFloor', 'waterReserve', 'rentCover', 'rentLaw5', 'holdFloor', 'payLeast', 'founding', 'heirMind', 'endToCity', 'foundSignal', 'techCopy', 'avenRule', 'reroute', 'rentShort', 'waterStock', 'reletUsed'];
 const DAILY_YEARS = 1;
 const DAILY_AFTER = 90; // days of daily steps after a branch point
 
@@ -3602,49 +3807,122 @@ function proof(S) {
  * experiences, a composite whose unit is worth 1 R at the day-1 prices. The poorest person is reported apart.
  */
 const P3_BASIC = [FOOD, ENERGY, HOUSING, WATER], P3_EXTRA = [HOUSING, GOODS, CARE, EXPER];
+/**
+ * (round-next-2) the three yardsticks side by side, per tenth: (a) each extra (canon #19 as above); (b) taste-adjusted: a
+ * fall counts only by what is left of it once the change in what the tenth wanted of the good, with tastes as they moved,
+ * is taken out (Stone–Geary: what a tenth buys of a good above its basic need is its budget share of the good times its
+ * budget above the basics, over the price; the share moves with the city's tastes, so the quantity is scaled back by
+ * the share's move); (c) one basket: the extras together at the day-1 prices. Basics at need and the basket rising over
+ * the run are the same in all three. And each fall of (a) split into its causes: the taste share, the tenth's budget
+ * above the basics (real), the good's price against the tenth's other prices, supply (what it got against what it
+ * asked for) and the rest (satiation of other goods and rounding)
+ */
+const tasteShare = (tg, row, g) => {
+	let den = 0;
+	for (let h = 0; h < NHH; h++) if (h === g || !(row[h] >= SAT[h] * 0.98)) den += tg[h] * BETA[h];
+	return den > 0 ? (tg[g] * BETA[g]) / den : null;
+};
 function p3Tenths(S) {
 	const Y = S.Y.filter((y) => y.dyn && y.dyn.tenH && y.t - (y.year - 1) * 365 >= 365 - 1e-6);
-	const failures = [], excused = [], basicsFail = [], riseFail = [], failed = [], failedNoTaste = [], failedBasket = [];
+	const failures = [], excused = [], basicsFail = [], riseFail = [], failed = [], failedNoTaste = [], failedBasket = [], failedTasteAdj = [], tenths = [];
+	const fails = S.events.filter((e) => e.type === 'fail');
+	const causes = ['taste', 'income', 'price', 'supply', 'other'], drops = { n: 0, by: {}, byNoTaste: {}, failNear: 0, failNearBy: {}, nNoTaste: 0 };
+	for (const c of causes) (drops.by[c] = 0), (drops.byNoTaste[c] = 0), (drops.failNearBy[c] = 0);
 	for (const [by, key] of [['holdings', 'tenH'], ['aven', 'tenA']])
 		for (let x = 0; x < 10; x++) {
-			const rows = Y.map((y) => y.dyn[key].slice(x * NHH, (x + 1) * NHH)), yr = Y.map((y) => y.year), tg = Y.map((y) => y.dyn.tasteG);
-			let ok = rows.length > 0, okNT = ok;
+			const sl = (y, k) => (y.dyn[k] ? y.dyn[k].slice(x * NHH, (x + 1) * NHH) : null);
+			const rows = Y.map((y) => sl(y, key)), want = Y.map((y) => sl(y, key + 'w')), spend = Y.map((y) => sl(y, key + 's'));
+			const yr = Y.map((y) => y.year), tg = Y.map((y) => y.dyn.tasteG);
+			let ok = rows.length > 0, okNT = ok, okT = ok;
 			rows.forEach((r, i) => {
-				for (const g of P3_BASIC) if (r[g] < BASIC[g] * 0.99) (ok = okNT = false), basicsFail.push({ by, tenth: x + 1, good: PNAME[g], year: yr[i], v: r[g], need: BASIC[g] });
+				for (const g of P3_BASIC) if (r[g] < BASIC[g] * 0.99) (ok = okNT = okT = false), basicsFail.push({ by, tenth: x + 1, good: PNAME[g], year: yr[i], v: r[g], need: BASIC[g] });
 			});
+			// (b): the quantity at b with the taste share of a; (the causes) what the tenth paid a unit, its budget above the basics
+			const price = (i, h) => (spend[i] && rows[i][h] > 0 && spend[i][h] > 0 ? spend[i][h] / rows[i][h] : null);
+			const budget = (i) => {
+				if (!want[i]) return null;
+				let X = 0;
+				for (let h = 0; h < NHH; h++) {
+					const p = price(i, h);
+					if (p === null) continue;
+					X += Math.max(0, want[i][h] - BASIC[h]) * p;
+				}
+				return X > 0 ? X : null;
+			};
 			for (const g of P3_EXTRA)
 				for (let b = 1; b < rows.length; b++) {
-					let wb = null;
+					let wb = null, wt = null;
 					for (let a = Math.max(0, b - 5); a < b; a++) {
 						const va = rows[a][g], vb = rows[b][g];
 						if (!(va > 0)) continue;
 						const fall = 1 - vb / va;
 						// (diagnostic: did the city's taste for the good fall over the window? Tastes drift in this model)
-						if (fall > 0.02 && (!wb || fall > wb.fall)) wb = { fall, from: yr[a], to: yr[b], taste: tg[b][g] / tg[a][g] - 1 };
+						if (fall > 0.02 && (!wb || fall > wb.fall)) wb = { fall, from: yr[a], to: yr[b], taste: tg[b][g] / tg[a][g] - 1, ia: a, ib: b };
+						const sa = tasteShare(tg[a], rows[a], g), sb = tasteShare(tg[b], rows[b], g);
+						const adj = sa > 0 && sb > 0 && vb > BASIC[g] ? BASIC[g] + ((vb - BASIC[g]) * sa) / sb : vb;
+						const fT = 1 - adj / va;
+						if (fT > 0.02 && (wt === null || fT > wt)) wt = fT;
 					}
+					const sat = rows[b][g] >= SAT[g] * 0.98;
+					if (wt !== null && !sat) okT = false;
 					if (!wb) continue;
-					const rec = { by, tenth: x + 1, good: PNAME[g], ...wb };
-					if (rows[b][g] >= SAT[g] * 0.98) excused.push(rec);
-					else (ok = false), wb.taste >= 0 && (okNT = false), failures.push(rec);
+					const { ia, ib, ...w0 } = wb;
+					const rec = { by, tenth: x + 1, good: PNAME[g], ...w0 };
+					if (sat) {
+						excused.push(rec);
+						continue;
+					}
+					(ok = false), wb.taste >= 0 && (okNT = false), failures.push(rec);
+					// the fall's causes (log changes of the quantity above the basic need, a → b)
+					const za = rows[ia][g] - BASIC[g], zb = rows[ib][g] - BASIC[g];
+					let cause = 'other';
+					if (za > 0 && zb > 0) {
+						const tot = Math.log(zb / za);
+						const sa = tasteShare(tg[ia], rows[ia], g), sb = tasteShare(tg[ib], rows[ib], g);
+						const cT = sa > 0 && sb > 0 ? Math.log(sb / sa) : 0;
+						const fa = want[ia] && want[ia][g] > 0 ? Math.min(1, rows[ia][g] / want[ia][g]) : 1;
+						const fb = want[ib] && want[ib][g] > 0 ? Math.min(1, rows[ib][g] / want[ib][g]) : 1;
+						const cS = Math.log(fb / fa);
+						let num = 0, den = 0;
+						for (let h = 0; h < NHH; h++) {
+							const pa = price(ia, h), pb = price(ib, h);
+							if (pa !== null && pb !== null) (num += rows[ia][h] * pb), (den += rows[ia][h] * pa);
+						}
+						const lPI = num > 0 && den > 0 ? Math.log(num / den) : 0;
+						const pga = price(ia, g), pgb = price(ib, g), Xa = budget(ia), Xb = budget(ib);
+						const cP = pga !== null && pgb !== null ? -(Math.log(pgb / pga) - lPI) : 0;
+						const cI = Xa !== null && Xb !== null ? Math.log(Xb / Xa) - lPI : 0;
+						const cO = tot - cT - cS - cP - cI;
+						const part = { taste: cT, income: cI, price: cP, supply: cS, other: cO };
+						cause = causes.reduce((m, c) => (part[c] < part[m] ? c : m), 'taste');
+						rec.parts = Object.fromEntries(causes.map((c) => [c, Math.round(part[c] * 1000) / 1000]));
+					}
+					rec.cause = cause;
+					rec.failNear = fails.some((e) => e.product === g && yrOf(e.t) > yr[ia] && yrOf(e.t) <= yr[ib]);
+					drops.n++, drops.by[cause]++;
+					if (wb.taste >= 0) drops.nNoTaste++, drops.byNoTaste[cause]++;
+					if (rec.failNear) drops.failNear++, drops.failNearBy[cause]++;
 				}
 			if (rows.length >= 2) {
 				const f0 = rows[0], f1 = rows[rows.length - 1], ch = (g) => (f0[g] > 0 ? f1[g] / f0[g] - 1 : f1[g] > 0 ? Infinity : 0);
 				const up = P3_EXTRA.filter((g) => ch(g) >= 0.05), down = P3_EXTRA.filter((g) => ch(g) < -0.02 && !(f1[g] >= SAT[g] * 0.98));
-				if (!up.length || down.length) (ok = okNT = false), riseFail.push({ by, tenth: x + 1, up: up.map((g) => PNAME[g]), down: down.map((g) => PNAME[g]) });
+				if (!up.length || down.length) (ok = okNT = okT = false), riseFail.push({ by, tenth: x + 1, up: up.map((g) => PNAME[g]), down: down.map((g) => PNAME[g]) });
 			}
 			if (!ok) failed.push(`${by} ${x + 1}`);
 			if (!okNT) failedNoTaste.push(`${by} ${x + 1}`);
-			// (diagnostic, not the verdict: the extras judged as one basket at the day-1 prices; basics as above)
+			if (!okT) failedTasteAdj.push(`${by} ${x + 1}`);
+			// (c): the extras judged as one basket at the day-1 prices; basics as above
 			const bk = rows.map((r) => P3_EXTRA.reduce((a, g) => a + r[g] * P0[g], 0));
 			let okB = rows.length > 0 && rows.every((r) => P3_BASIC.every((g) => r[g] >= BASIC[g] * 0.99));
 			for (let b = 1; b < bk.length; b++) for (let a = Math.max(0, b - 5); a < b; a++) if (bk[a] > 0 && 1 - bk[b] / bk[a] > 0.02) okB = false;
 			if (bk.length >= 2 && !(bk[bk.length - 1] >= bk[0] * 1.05)) okB = false;
 			if (!okB) failedBasket.push(`${by} ${x + 1}`);
+			tenths.push({ by, tenth: x + 1, a: ok, b: okT, c: okB });
 		}
 	// the poorest person, apart: real consumption at the 10-year marks, and whether it rose at each
 	const marks = marksOf(S, [1, 10, 20, 30, 40, 50, 60]);
 	const poorest = marks.map((y) => at(S, y).dyn.realMin);
-	return { pass: failed.length === 0, failed, failedNoTaste, failedBasket, fallsTaste: failures.filter((x) => x.taste < 0).length, basicsFail, failures, excused, riseFail, years: Y.length, poorest, marks, poorestRises: poorest.every((v, i) => i === 0 || v > poorest[i - 1]) };
+	return { pass: failed.length === 0, failed, failedNoTaste, failedBasket, failedTasteAdj, tenths, drops, fallsTaste: failures.filter((x) => x.taste < 0).length, basicsFail, failures, excused, riseFail, years: Y.length, poorest, marks, poorestRises: poorest.every((v, i) => i === 0 || v > poorest[i - 1]) };
 }
 
 /** a run's steady state (its last 10 years): the measures of the comparisons */
@@ -3772,7 +4050,7 @@ function nextRound(S, pf, h, why) {
 		cityDry: pf.cityDry, cityWage: pf.cityWage, cityCoverMin: isFinite(S.cityCoverMin) ? S.cityCoverMin : null,
 		okS: pf.okS, okS8: pf.okS8, sLate: pf.sLate, sSS: pf.sSS, sShare8: pf.sShare8, sMinLate: pf.sMinLate.v,
 		ok3old: pf.ok3, allOld: pf.all, whyOld: why, ok3t: pf.ok3t, allT: pf.allT, whyT: whyT(pf),
-		p3: { failed: pf.p3.failed.length, holdFail: pf.p3.failed.filter((x) => x.startsWith('holdings')).length, avenFail: pf.p3.failed.filter((x) => x.startsWith('aven')).length, basicsFail: pf.p3.basicsFail.length, falls: pf.p3.failures.length, fallsTaste: pf.p3.fallsTaste, failedNoTaste: pf.p3.failedNoTaste.length, failedBasket: pf.p3.failedBasket.length, riseFail: pf.p3.riseFail.length, excused: pf.p3.excused.length, list: pf.p3.failed, fallsTop: pf.p3.failures.slice(0, 6), basicsTop: pf.p3.basicsFail.slice(0, 4), riseTop: pf.p3.riseFail.slice(0, 4), poorest: pf.p3.poorest, poorestRises: pf.p3.poorestRises },
+		p3: { failed: pf.p3.failed.length, holdFail: pf.p3.failed.filter((x) => x.startsWith('holdings')).length, avenFail: pf.p3.failed.filter((x) => x.startsWith('aven')).length, basicsFail: pf.p3.basicsFail.length, falls: pf.p3.failures.length, fallsTaste: pf.p3.fallsTaste, failedNoTaste: pf.p3.failedNoTaste.length, failedBasket: pf.p3.failedBasket.length, failedTasteAdj: pf.p3.failedTasteAdj.length, tenths: pf.p3.tenths, drops: pf.p3.drops, riseFail: pf.p3.riseFail.length, excused: pf.p3.excused.length, list: pf.p3.failed, fallsTop: pf.p3.failures.slice(0, 6), basicsTop: pf.p3.basicsFail.slice(0, 4), riseTop: pf.p3.riseFail.slice(0, 4), poorest: pf.p3.poorest, poorestRises: pf.p3.poorestRises },
 		marks, dec1: marks.map((y) => at(S, y).dyn.dec[0]), zReal: marks.map((y) => at(S, y).dyn.zReal), realMin: marks.map((y) => at(S, y).dyn.realMin),
 		city: { ret: cr.length ? hmean(cr.map((x) => x.r)) : null, retRest: cityRest.length ? hmean(cityRest.map((x) => x.r)) : null, yieldRest: cityRest.length ? hmean(cityRest.map((x) => x.y)) : null },
 		rho: { u, rho, m, mStar: (u - rho) / RATE, gap: m / ((u - rho) / RATE) - 1, mEnd: at(S, L).mPer, mDyn, gapDyn: mDyn / at(S, L).mPer - 1 },
@@ -3781,7 +4059,13 @@ function nextRound(S, pf, h, why) {
 		split: { div: rest((y, x) => x.split?.div ?? null), price: rest((y, x) => x.split?.price ?? null), retired: rest((y, x) => x.split?.retired ?? null), arb: rest((y, x) => hfl(x, 'arbR') / (x.pl.w + x.pl.t + x.pl.p + x.pl.a)) },
 		lvr: { fee: feeAll, lvr: lvrAll, ratio: feeAll > 0 ? lvrAll / feeAll : null, over: live.filter((p) => p.lvr > p.fee).length, pools: live.length, top: live.sort((a, b) => b.lvr / Math.max(1e-12, b.fee) - a.lvr / Math.max(1e-12, a.fee)).slice(0, 3).map((p) => ({ m: p.m.join('/'), ratio: p.fee > 0 ? p.lvr / p.fee : null })) },
 		bound: { salesRatio, needRatio, boundMed, zGot },
-		failList: fl.map((e) => ({ y: yrOf(e.t), name: e.name, product: PNAME[e.product], scrapped: !!e.scrapped }))
+		failList: fl.map((e) => ({ y: yrOf(e.t), name: e.name, product: PNAME[e.product], scrapped: !!e.scrapped, ...(e.diag ? { diag: e.diag } : {}) })),
+		// (round-next-2) the land each year: share let (with what was asked for and not given) and the ground rent in
+		// cityMIND a m² a day; and what reroute passed on (R a year)
+		landPath: S.Y.map((y) => [Math.round((y.occ || 0) * 1000) / 1000, y.rhoM ? +y.rhoM.toPrecision(4) : null]),
+		rerouteR: S.Y.map((y) => (y.dyn && y.dyn.rrR ? Math.round(y.dyn.rrR) : 0)),
+		// price flips of each product's sellers from year 2 (a full step one way after a full step the other way)
+		flips: Array.from({ length: NPROD }, (_, g) => S.Y.slice(1).reduce((a, y) => a + (y.dyn && y.dyn.flips ? y.dyn.flips[g] : 0), 0))
 	};
 }
 
