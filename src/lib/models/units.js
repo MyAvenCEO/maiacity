@@ -25,6 +25,7 @@ export const SPEED = {
 export const REAL_SIZES = {
 	pickup: { size: [1.86, 1.82, 5.33], what: 'a double-cab pickup' },
 	powerCube: { size: [0.74, 0.75, 0.76], what: 'Open Source Ecology’s Power Cube VII, a 27" (0.69 m) frame, its couplers, caps and handles out of it (actors/powercube.js)' },
+	powerCubeV3: { size: [0.7, 0.74, 0.78], what: 'the Power Cube at v3, built at AirSup’s realism: the same 27" frame, its lifting eyes over it, its couplers and receiver out of its back (machines/powercube.js)' },
 	electroCube: { size: [0.74, 0.75, 0.76], what: 'our ElectroCube: the Power Cube’s 27" frame and size, a flat axial-flux generator in it (actors/electrocube.js)' },
 	batteryCube: { size: [0.73, 0.75, 0.76], what: 'our BatteryCube: the Power Cube’s 27" frame, four BatteryPacks and an inverter in it (actors/batterycube.js)' },
 	batteryPack: { size: [0.47, 0.13, 0.52], what: 'our BatteryPack: a 460 × 480 × 125 mm rack module, its handles and terminals out of its face (actors/batterypack.js)' },

@@ -15,6 +15,7 @@ import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { busStop, gasStation, oldShed, travelVan } from './wayside.js';
 import { person, tent } from '../maiacity-v1/world.js';
 import { powerCube } from '../actors/powercube.js';
+import { powerCube as powerCubeV3 } from '../machines/powercube.js';
 import { electroCube } from '../actors/electrocube.js';
 import { batteryCube } from '../actors/batterycube.js';
 import { batteryPack as packModule } from '../actors/batterypack.js';
@@ -23,7 +24,7 @@ import { batteryPack as packModule } from '../actors/batterypack.js';
 const bare = (o) => (o.remove(o.userData.glow), o);
 const still = (c) => (c.rig.pose(c.clips.off(0)), c.rig.object);
 const ose = () => still(powerCube());
-const BUILD = { pickup, powerCube: () => ose(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent, loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag };
+const BUILD = { pickup, powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent, loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {
@@ -38,7 +39,9 @@ for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {
 }
 
 test('the Power Cube fits the pickup\'s bed (1.7 m wide, 1.55 m long inside)', () => {
-	const c = new THREE.Box3().setFromObject(ose()).getSize(new THREE.Vector3());
-	expect(c.x).toBeLessThan(1.7);
-	expect(c.z).toBeLessThan(1.55);
+	for (const cube of [ose(), powerCubeV3()]) {
+		const c = new THREE.Box3().setFromObject(cube).getSize(new THREE.Vector3());
+		expect(c.x).toBeLessThan(1.7);
+		expect(c.z).toBeLessThan(1.55);
+	}
 });

@@ -164,8 +164,14 @@ This section is maiaCITY's, added to AirSup's text; everything above it is their
 maiaCITY a machine is never only a page: it joins the Machines library, and every game, world, building, factory and
 film takes it from there. How to build it into the library is in `ours.md` beside this file.
 
-- **The builder:** `src/lib/actors/<machine>.js`, in JavaScript, at its real size in metres (1 unit = 1 m, never a
+- **The builder:** `src/lib/machines/<machine>.js`, in JavaScript, at its real size in metres (1 unit = 1 m, never a
   `scale.set` on its root: the viewer frames it, the model is never resized), standing on y 0, its front towards +z.
+  It is built with this skill's kit as ported into the app, `$lib/assets`: `kit.js` (the math, materials, geometry
+  and studio of `kit/lab-kit.js`), `parts.js` (`assetKit(root)`: `part`, `label`, `onTick`, `carry`, `seal`; your
+  `lab.add` as one contract every asset group shares) and `stage.js` (your Lab's studio, post and modes at the
+  machine's real size). The Machines page shows it on that stage with its hero, sliders, how, modes and break. The
+  Power Cube (`src/lib/machines/powercube.js`, v3) is the worked example. Older machines are rigged meshes in
+  `src/lib/actors/` and stay there, frozen.
 - **The library line:** a kind in `LIST` of `src/lib/machines/index.js`, its versions in `HISTORY` there; it shows in
   `/app/machines` (admin), under Game Assets on the dashboard.
 - **Its size:** in `REAL_SIZES` (`src/lib/models/units.js`) and the `BUILD` map of `src/lib/models/sizes.test.js`.

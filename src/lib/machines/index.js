@@ -1,9 +1,11 @@
 /*
  * THE MACHINES — everything we build that works by moving parts, as the Machines gallery (/app/machines/) lists it:
  * the excavators, the pod and the forklift that loads it, Open Source Ecology's LifeTrac and Power Cube, and our own
- * ElectroCube, BatteryCube and BatteryPack — each kind with its variants and its versions. They are rigged like the
+ * ElectroCube, BatteryCube and BatteryPack — each kind with its variants and its versions. Most are rigged like the
  * people and animals (a bone and a card for every part, $lib/actors/rig.ts) and built beside them in $lib/actors, where
- * the games import them from; this list only gathers them apart from the Actors (/app/actors/: people and animals).
+ * the games import them from; a machine built at AirSup's realism (real meshes in measured materials, its insides there
+ * to cut open, a solver running it: $lib/assets) lives here in its own file, the Power Cube from v3 the first. This
+ * list gathers them apart from the Actors (/app/actors/: people and animals).
  */
 import { crawlerExcavator } from '$lib/actors/crawler-excavator.js';
 import { miniExcavator } from '$lib/actors/excavator.js';
@@ -16,12 +18,14 @@ import { pod as podV3 } from '$lib/actors/pod.v3.js';
 import { pod as podV4 } from '$lib/actors/pod.v4.js';
 import { forklift } from '$lib/actors/forklift.js';
 import { lifetrac } from '$lib/actors/lifetrac.js';
-import { powerCube } from '$lib/actors/powercube.js';
+import { powerCube as powerCubeV2 } from '$lib/actors/powercube.js';
+import { powerCube } from './powercube.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
 import { batteryCube as batteryCubeV1 } from '$lib/actors/batterycube.v1.js';
 import { batteryPack } from '$lib/actors/batterypack.js';
 import { batteryPack as batteryPackV1 } from '$lib/actors/batterypack.v1.js';
+import { castOf } from '$lib/assets/parts.js';
 import { FIRST, versioned } from '$lib/app/versions.js';
 
 /** @typedef {import('$lib/actors').Actor} Actor */
@@ -70,7 +74,22 @@ const HISTORY = {
 	],
 	forklift: [{ ...FIRST, date: '2026-10-07' }],
 	lifetrac: [{ ...FIRST, date: '2026-10-13' }],
-	powercube: [{ ...FIRST, date: '2026-10-13' }, { v: 2, date: '2026-10-13', note: 'The Electric variant is its own actor now: the ElectroCube' }],
+	powercube: [
+		{
+			...FIRST,
+			date: '2026-10-13',
+			build: [
+				{ id: 'powercube-7s', label: 'VII / 7s', note: 'as at v1: one rigged mesh in flat colours', make: () => powerCubeV2() },
+				{ id: 'powercube-electric', label: 'Electric', note: 'as at v1: a generator in place of the pump, since its own machine, the ElectroCube (its v1 here)', make: () => electroCube(1) }
+			]
+		},
+		{ v: 2, date: '2026-10-13', note: 'The Electric variant is its own actor now: the ElectroCube', build: [{ id: 'powercube-7s', label: 'VII / 7s', note: 'as at v2: one rigged mesh in flat colours, its parts named', make: () => powerCubeV2() }] },
+		{
+			v: 3,
+			date: '2026-10-14',
+			note: 'Built at AirSup’s realism: every part real solids in measured materials (cast aluminium fins on cast-iron liners, a forged crank and rods, zinc-plated steel, braided hoses, a copper and aluminium cooler, the oil and the petrol inside), the V-twin’s pistons on their rods turned by the crank, the gear pump’s two gears meshing in their housing; a solver runs it on real equations (the pump’s flow, slip and torque, the engine’s torque curve and governor, the relief valve, the oil’s heat) on two sliders, its hydraulic power read out; explode, cut away, x-ray, labels with live readings, slow, and its break: dead-headed with the relief stuck, the engine stalls'
+		}
+	],
 	electrocube: [
 		{ ...FIRST, date: '2026-10-13', build: [{ id: 'electrocube', label: 'ElectroCube', note: 'as at v1: a classic alternator, 35" (0.9 m) long', make: () => electroCube(1) }] },
 		{ v: 2, date: '2026-10-13', note: 'The same 27" size as every other cube (686 × 660 × 686 mm): a flat axial-flux generator, under 10 cm long, on the engine’s shaft where the pump was, and a power converter on the back that makes clean 400 V and 230 V at 50 Hz from it' }
@@ -150,7 +169,7 @@ const LIST = [
 		note: 'Open Source Ecology’s hydraulic power unit, the heart of every machine of their set: an engine on a pump in a steel cube with its own tanks, cooler and couplers, lifted from one machine to the next — every part its own, as in the LifeTrac that carries one',
 		from: 'Open Source Ecology: the Global Village Construction Set',
 		variants: [
-			{ id: 'powercube-7s', label: 'VII / 7s', note: 'Power Cube VII / 7s (v15.6, 2014–15): 28 hp Briggs & Stratton V-twin, 15.2 gpm at 3,000 psi, 27" cube, ~181 kg', make: () => powerCube() }
+			{ id: 'powercube-7s', label: 'VII / 7s', note: 'Power Cube VII / 7s (v15.6, 2014–15): an 810 cc 28 hp air-cooled V-twin on a 16 cm³ gear pump, 15.2 gpm up to 3,000 psi, a 27" cube, ~181 kg; running on its sliders', make: () => castOf(powerCube()) }
 		]
 	},
 	{
