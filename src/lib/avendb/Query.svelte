@@ -119,7 +119,10 @@
 	/** Run on Ctrl+Enter or ⌘Enter, as a studio's editor does. @param {KeyboardEvent} e */
 	const keys = (e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && (e.preventDefault(), run());
 
-	const rows = $derived(/** @type {any[] | null} */ (Array.isArray(out?.ok?.rows) ? out.ok.rows : null));
+	/** a query's rows, to show as a table: any other answer with rows (`shares`) shows as its JSON */
+	const rows = $derived(
+		/** @type {any[] | null} */ (Array.isArray(out?.ok?.rows) && out.ok.plan !== undefined ? out.ok.rows : null)
+	);
 	/** the rows' record fields, in the order they first show */
 	const fields = $derived([...new Set((rows ?? []).flatMap((r) => Object.keys(r.record ?? {})))]);
 </script>
