@@ -14,13 +14,13 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use avendb::cast::*;
-use avendb::id::SignerId;
+use avendb::id::{BlobId, SignerId};
 use avendb::policy::{KeepMode, Level};
 use avendb::sealed::{FileRoot, PIECE, PIECE_SEGMENTS, SEGMENT};
 use avendb::slice::{Atom, Selector, Sym};
 use avendb_net::bucket::{self, Sealed};
 use avendb_net::shelf::FLOOR;
-use avendb_net::{Node, Options, disk};
+use avendb_net::{JobState, Node, Options, disk};
 use bytes::Bytes;
 use common::Folder;
 use iroh::Endpoint;
@@ -111,6 +111,17 @@ async fn files_follow_their_edits_over_iroh() {
     mac.act(bring).await.expect("Alice's Mac brings them with two writes");
     until("the server keeps both files whole", || async {
         server.holds_file(photo_root).await && server.holds_file(scan_root).await
+    })
+    .await;
+    // as the server's jobs say: each file kept whole, its one piece fetched, and the edits it took from Alice's Mac
+    let kept_job = |root: FileRoot| (BlobId(root.hash).to_hex(), JobState::Done, 1, 1);
+    let (photo_kept, scan_kept) = (kept_job(photo_root), kept_job(scan_root));
+    until("the server's jobs tell it", || async {
+        let (_, ended) = server.jobs().snapshot();
+        let kept = ended.iter().filter(|j| j.kind == "keep");
+        let kept: Vec<_> = kept.map(|j| (j.subject.clone(), j.state, j.done, j.total)).collect();
+        let pulled = ended.iter().any(|j| j.kind == "pull" && j.subject == mac_a.to_hex() && j.done > 0);
+        kept.contains(&photo_kept) && kept.contains(&scan_kept) && pulled
     })
     .await;
     let opens = move |lab: &avendb::lab::Lab, me| lab.file(me, &photo_root).or(lab.file(me, &scan_root));

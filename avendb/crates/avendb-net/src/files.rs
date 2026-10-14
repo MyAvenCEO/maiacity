@@ -28,7 +28,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
-use avendb::id::SignerId;
+use avendb::id::{BlobId, SignerId};
 use avendb::sealed::{Brought, FileKey, FileRoot, PIECE, PIECE_SEGMENTS, SEALED, SEGMENT, Sealer, open};
 use avendb::wire::FileHold;
 use bytes::Bytes;
@@ -42,7 +42,7 @@ use n0_future::task::{self, JoinHandle};
 use n0_future::{Stream, StreamExt as _, stream, time};
 use tokio::sync::mpsc;
 
-use crate::{Backoff, Node, Shared};
+use crate::{Backoff, Node, Running, Shared};
 
 /// The most sealed bytes of a piece a node reads at a time: whole segments, as each opens on its own.
 const READ: u64 = 64 * SEALED as u64;
@@ -306,7 +306,8 @@ impl Shared {
         }
     }
 
-    /// Keeps file `root`, whole if `whole` says, as `keeper` says.
+    /// Keeps file `root`, whole if `whole` says, as `keeper` says: a `keep` job of the file, in pieces, forgotten if it
+    /// fetched none, as they were all there or it failed before it fetched one, as the keeper tries it again.
     async fn keep(self: &Arc<Self>, root: FileRoot, whole: bool) -> Result<()> {
         if !whole {
             if root.pieced() && self.store.has(Hash::from_bytes(root.hash)).await? {
@@ -314,18 +315,35 @@ impl Shared {
             }
             return Ok(());
         }
+        let count = root.size.div_ceil(PIECE).max(1);
+        let mut job = self.jobs.begin("keep", BlobId(root.hash).to_hex(), String::new(), count, "pieces");
+        let mut fetched = 0;
+        let kept = self.keep_whole(root, &mut job, &mut fetched).await;
+        if fetched == 0 { job.forget() } else { job.ended(&kept) }
+        kept
+    }
+
+    /// `keep` of file `root` whole, each piece told to `job`, and how many it fetched to `fetched`.
+    async fn keep_whole(self: &Arc<Self>, root: FileRoot, job: &mut Running, fetched: &mut u64) -> Result<()> {
+        job.stage("finding its pieces");
         let pieces = self.pieces_of(root).await?;
         // tagged first, so that a blob store over a shelf puts the pieces it fetches onto it
         self.store.tags().set(tag(&root), content(&root)).await?;
+        job.stage("fetching its pieces");
         for (p, &piece) in pieces.iter().enumerate() {
-            self.get(GetRequest::blob(piece), root, Some(p as u64)).await?;
-            // whole, and on a shelf, finished there: on the server, in its bucket; until then the keeper tries again
             let want = (root.size - p as u64 * PIECE).min(PIECE);
+            let had = matches!(self.store.status(piece).await?, BlobStatus::Complete { size } if size == want);
+            if !had {
+                self.get(GetRequest::blob(piece), root, Some(p as u64)).await?;
+                *fetched += 1;
+            }
+            // whole, and on a shelf, finished there: on the server, in its bucket; until then the keeper tries again
             match self.store.status(piece).await? {
                 BlobStatus::Complete { size } if size == want => {}
                 BlobStatus::Complete { size } => bail!("piece {p} of the file is {size} bytes, not {want}"),
                 _ => bail!("piece {p} of the file isn't kept whole yet"),
             }
+            job.progress(p as u64 + 1, None);
         }
         Ok(())
     }

@@ -3,14 +3,15 @@
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
 	vault's name and its pages, as a database studio lists them: its notes, its todos, its articles and its Library of
 	files, films, pictures, PDFs and songs; its database (the query console, the table editor, its shares, schemas and
-	lenses, and its history, every signed edit); then its settings (About, Owners and devices, Sharing); and the page
-	picked in the middle. Each page has an address of its own (`#todos`), and so has each note (`#notes/` and its
-	entry), which opens as a docs app opens a document, on the whole screen, and each article (`#articles/` and its
-	entry), to read, and to edit as a note (`/edit`). The device picks who the person acts as in each vault, with no
-	switch to flip (its world's `acting`): in a vault their vault owns, directly or through owners of owners, they act
-	as it, as its owners need no cap there; elsewhere as the vault of theirs that holds the strongest cap over it, whose
-	caps then decide what the page shows and what it may do. At the foot, in the middle above the app's own buttons,
-	what the page is doing, and why not. Marks of the vaults none of theirs holds anything in are faded.
+	lenses, its history, every signed edit, and the device's jobs, what it syncs in the background); then its settings
+	(About, Owners and devices, Sharing); and the page picked in the middle. Each page has an address of its own
+	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
+	screen, and each article (`#articles/` and its entry), to read, and to edit as a note (`/edit`). The device picks
+	who the person acts as in each vault, with no switch to flip (its world's `acting`): in a vault their vault owns,
+	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
+	theirs that holds the strongest cap over it, whose caps then decide what the page shows and what it may do. At the
+	foot, in the middle above the app's own buttons, what the page is doing, and why not. Marks of the vaults none of
+	theirs holds anything in are faded.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
@@ -18,6 +19,7 @@
 	import Articles from './Articles.svelte';
 	import Database from './Database.svelte';
 	import Icon from './Icon.svelte';
+	import Jobs from './Jobs.svelte';
 	import Library from './Library.svelte';
 	import Mark from './Mark.svelte';
 	import NewVaults from './NewVaults.svelte';
@@ -56,7 +58,8 @@
 				['shares', 'Shares', 'cell'],
 				['schemas', 'Schemas', 'schema'],
 				['lenses', 'Lenses', 'lens'],
-				['history', 'History', 'history']
+				['history', 'History', 'history'],
+				['jobs', 'Jobs', 'jobs']
 			]
 		],
 		[
@@ -210,6 +213,8 @@
 			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 		{:else if tab === 'library'}
 			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+		{:else if tab === 'jobs'}
+			<Jobs {world} vault={context} {actor} {api} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
 			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} />
 		{:else}
