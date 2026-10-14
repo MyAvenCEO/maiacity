@@ -27,6 +27,9 @@ const LOCK = 'lock';
 const RESERVED = [BLOBS, OUTBOARDS, NEW, LOCK];
 /** A generation's folder: `g1`, `g2` and on. */
 const GENERATION = /^g[1-9][0-9]*$/;
+/** The generation every store is at least, avenDB's `avendb_net::shelf::FLOOR`: a store whose newest is older puts it
+ *  aside as it opens. */
+const FLOOR = 2;
 /** A finished blob's name: its hash in hex. */
 const HASH = /^[0-9a-f]{64}$/;
 /** A blob being written: a name of letters, digits and `-`. */
@@ -207,11 +210,11 @@ function same(a, b) {
 }
 
 const ops = {
-	/** Opens the store named `name`, in its newest generation, or a first, `g1`, made beside whatever the folder
-	 *  holds. */
+	/** Opens the store named `name`, in its newest generation, or, with none or only older ones than `FLOOR`, a new
+	 *  one of that generation, made beside whatever the folder holds. */
 	async open(name) {
 		root = await (await stores()).getDirectoryHandle(name, { create: true });
-		await use((await generations()).at(-1) ?? 1);
+		await use(Math.max((await generations()).at(-1) ?? FLOOR, FLOOR));
 	},
 
 	/** Holds the store for this worker alone, until `release`: refused while another holds it. */
@@ -228,7 +231,7 @@ const ops = {
 
 	/** Puts the generation in use aside, never deleting it, and puts a new one in use, empty. Its number. */
 	async aside() {
-		return use(((await generations()).at(-1) ?? 0) + 1);
+		return use(Math.max(((await generations()).at(-1) ?? 0) + 1, FLOOR));
 	},
 
 	/** Every blob the shelf holds whole, `[hash, size]`, once it dropped the blobs never finished. */

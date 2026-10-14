@@ -21,6 +21,7 @@ use avendb::lab::Lab;
 use avendb::sync::LogId;
 use avendb::wire::FileHold;
 use avendb_net::bucket::{self, Bucket, Fut, Sealed};
+use avendb_net::shelf::FLOOR;
 use avendb_net::{Holder, Node, Options, server};
 use bytes::Bytes;
 use common::Folder;
@@ -100,7 +101,7 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     let earlier = files(objects.path());
     let sealed = Sealed::new(bucket::Folder::new(objects.path()), &SEAL);
     let opts = on(&sealed, cache.path()).await.expect("its shelf");
-    assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![1], "the first, g1");
+    assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![FLOOR], "the first, of avenDB's floor");
     let mac = Node::spawn(w.lab.split(mac_a, &[passkey_a], [1; 32]), mac_a, opts).await.expect("a node");
     let write = move |lab: &mut Lab, me| lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me));
     let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
@@ -112,7 +113,8 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     for (name, bytes) in &earlier {
         assert_eq!(now.get(name), Some(bytes), "{name} stays as it was");
     }
-    assert!(now.keys().any(|n| n.starts_with("g1/journal/")), "the Mac's edits are in g1's journal");
+    let journal = format!("g{FLOOR}/journal/");
+    assert!(now.keys().any(|n| n.starts_with(&journal)), "the Mac's edits are in its shelf's journal");
     for (name, bytes) in now.iter().filter(|(n, _)| !earlier.contains_key(*n)) {
         let sealed_up = !contains(bytes, "avenDB") && !contains(bytes, WELCOME_TEXT);
         assert!(sealed_up, "{name} is sealed: no header of avenDB's, no Welcome");
@@ -136,8 +138,8 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     assert!(format!("{refused:#}").contains("doesn't open"), "{refused:#}");
     // put aside: a second shelf beside the first, which holds nothing, and the first stays whole
     let before = files(objects.path());
-    assert_eq!(bucket::aside(&sealed).await.expect("put aside"), 2);
-    assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![1, 2]);
+    assert_eq!(bucket::aside(&sealed).await.expect("put aside"), FLOOR + 1);
+    assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![FLOOR, FLOOR + 1]);
     let mut third = world();
     handbook_ready(&mut third);
     let lab = third.lab.split(mac_a, &[passkey_a], [1; 32]);
@@ -150,7 +152,8 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     for (name, bytes) in &before {
         assert_eq!(after.get(name), Some(bytes), "{name} stays as it was");
     }
-    assert!(after.keys().any(|n| n.starts_with("g2/journal/")), "and the new shelf keeps what the Mac takes");
+    let journal = format!("g{}/journal/", FLOOR + 1);
+    assert!(after.keys().any(|n| n.starts_with(&journal)), "and the new shelf keeps what the Mac takes");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -162,7 +165,7 @@ async fn a_server_whose_folder_is_lost_is_the_same_device_again() {
     let device = first.device();
     first.shutdown().await.expect("it stops");
     drop(first);
-    let secret = sealed.get(&format!("g1/{}", server::SECRET)).await.expect("the bucket opens");
+    let secret = sealed.get(&format!("g{FLOOR}/{}", server::SECRET)).await.expect("the bucket opens");
     let secret = secret.expect("its secret in the bucket");
     assert_eq!(secret.len(), 32, "a 32-byte secret");
     for (name, bytes) in files(cache.path()) {
@@ -255,6 +258,6 @@ async fn a_server_states_a_holding_only_once_its_bucket_has_it() {
 
 /// The names of the blobs whose outboards bucket folder `objects` holds on its first shelf.
 fn outboards(objects: &Path) -> Vec<String> {
-    let Ok(entries) = fs::read_dir(objects.join("g1/outboards")) else { return Vec::new() };
+    let Ok(entries) = fs::read_dir(objects.join(format!("g{FLOOR}/outboards"))) else { return Vec::new() };
     entries.map(|e| e.expect("an outboard").file_name().into_string().expect("a name")).collect()
 }

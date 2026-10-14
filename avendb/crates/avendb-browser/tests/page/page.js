@@ -299,8 +299,8 @@ async function main() {
 	const [vault, ceremonies_] = [await device.vault(), passkey.count()];
 	const [edits, keys] = await device.size();
 	const found = { ms, vault, edits, keys, ceremonies: ceremonies_, offer: device.offer(), endpoint: device.endpoint() };
-	found.shelf = await shelved(q.get('store'), 'g1');
 	found.generations = (await names(await folder(q.get('store')), [])).filter((n) => /^g[0-9]+$/.test(n));
+	found.shelf = await shelved(q.get('store'), found.generations.at(-1));
 	await report(meta ? 'opened' : 'started', { ...found, ...note });
 	if (q.get('ops')) {
 		trace('running the ops');
@@ -338,7 +338,7 @@ async function main() {
 		await store.aside();
 		const dir = await folder(q.get('store'));
 		const generations = (await names(dir, [])).filter((n) => /^g[0-9]+$/.test(n));
-		const metas = { g1: await names(dir, ['g1', 'meta']), g2: await names(dir, ['g2', 'meta']) };
+		const metas = Object.fromEntries(await Promise.all(generations.map(async (g) => [g, await names(dir, [g, 'meta'])])));
 		const after = await avendb.storeMeta(store);
 		await report('forgot', { generations, metas, meta: after ?? null, earlier: await kept(q.get('store')) });
 		return;
