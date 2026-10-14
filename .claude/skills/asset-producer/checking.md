@@ -66,6 +66,9 @@ every asset group.
   `geo.boundingBox = geo.boundingSphere = null` and recompute the normals.
 - A clone made for a ghost or a cut keeps its own material: give it the original's clipping planes, or the cut shows
   the whole part through it.
+- Labels placed beside the asset's centre ran over a long vehicle's body and under the panels: the stage puts them in
+  columns outside the asset's outline, inside the room the panels leave (`stage.labels(w, h, safe)`), and hands them
+  to the other side when one has no room. Check Labels on the longest asset and on one beside a panel.
 - A new asset app needs every place that names one: its route (`+page.js` prerendered, `+page.svelte`), a line in
   `GAME_ASSETS` with a cover in `static/app/covers/` (force-added, the folder's jpgs are ignored), a tile in `gameAt`
   and a title in `placeOf` (`src/lib/app/places.ts`), the full-screen list `immersive` in

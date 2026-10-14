@@ -4,8 +4,8 @@ This file is ours, not AirSup's. `SKILL.md` and `references/` beside it stay Air
 but for the one section at the end of `SKILL.md` that says where our library keeps a machine. They make one machine as
 a standalone page or a film; this is what building machines into our own library taught us: the excavators, the pod
 and its forklift, the LifeTrac and its Power Cube, the ElectroCube, the BatteryCube and the BatteryPack, the Power
-Cube v3 (the first built with AirSup's own kit inside the app). The laws, the shared
-core (`$lib/assets`, refs, one version control) and how we check are the asset producer's (`asset-producer`); this
+Cube v3 (the first built with AirSup's own kit inside the app), the travel van and the pickup. The laws, the
+shared core (`$lib/assets`, refs, one version control) and how we check are the asset producer's (`asset-producer`); this
 file has the same shape as every other sub skill.
 
 ## Where it lives
@@ -61,9 +61,11 @@ file has the same shape as every other sub skill.
   into machines, machines into factories and buildings, everything into worlds and biomes.
 - **Whole:** a machine built with the kit carries another sealed asset with `kit.carry(guest, { at, prefix, assembly,
   step, explode })`: its parts (ids under the prefix), labels, x-ray shells and solver become the host's, so the
-  host's explode, x-ray, cut and break reach into it (a Power Cube v3 in a vehicle's bed, its engine running).
+  host's explode, x-ray, cut and break reach into it (the pickup's "With a Power Cube" variant carries
+  `machines/powercube@3` in its bed, its engine running).
 - **A piece:** what several machines share is one builder in one file, each machine with its own measures (a road
-  vehicle's wheels, doors and load bed, shared by every vehicle). The older
+  vehicle's wheel corners, ladder frame, axles, engine, hinged doors and solver in `src/lib/machines/vehicle.js`,
+  shared by the van and the pickup). The older
   rigged machines do it by functions that add their parts to another rig (`powerCubeParts(kit, { at, joints,
   assembly, step })`, `forkliftParts`, `clickLockPieces()`): the LifeTrac carries a Power Cube, a goods pod four
   forklifts.
@@ -81,7 +83,7 @@ file has the same shape as every other sub skill.
   fingerprint the old ones.
 - When a machine carries another, each of its versions names the version it carries (cube v8 = packs v7).
 - A machine that was a Thing starts at v1 in the Machines; the Thing stays as it was for the games that use it
-  (the V1 travel van and pickup).
+  (the V1 travel van and pickup are Things; `machines/van` and `machines/pickup` start at v1).
 
 ## Checking
 
