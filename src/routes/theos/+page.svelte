@@ -25,7 +25,7 @@
 		strictWorstEarly, bedsFromEnergy, decemberGap, SDE_CHECK, bundleMargin, treasuryShare, salesAfterLaw5, OLD_R,
 		EURO_BORDER, SEEDS, MELT_TESTS, passing, soleMakers, issueGap, SAME_SHOCK, CHAOS,
 		TEST_CITY, AVEN_RULE, POOL, CIRCLES, LVR_CASES, CRASH, GOVERNANCE, VERSION, SECONDS_YEAR, netHalfLife, retiredShare,
-		holderSeries, INFRA_MINDS, mindRange, SIM_NAMES, MODEL_VERSIONS, SIM_HISTORY
+		holderSeries, INFRA_MINDS, mindRange, SIM_NAMES, MODEL_VERSIONS, SIM_HISTORY, HYPOTHESES, COST_BAND, holdsCount
 	} from '$lib/theos/model.js';
 
 	// Figure 10's simulation, run at build time (+page.server.js)
@@ -36,8 +36,8 @@
 
 	// one map for the numbers of figures, tables and equations, so that a new one never leaves a stale reference behind
 	const FIG = { day: 1, wall: 2, heart: 3, idle: 4, conv: 5, pools: 6, lvr: 7, holder: 8, selection: 9, gini: 10, dial: 11, machine: 12, cycle: 13, deciles: 14 };
-	const TAB = { speeds: 1, binds: 2, rivals: 3, parts: 4, conditions: 5, twoWorlds: 6, roundTrip: 7, prices: 8, prop3: 9, prop2: 10, variations: 11, cityParts: 12, testCity: 13, scenarios: 14, notation: 15, threats: 16, sameShock: 17, physics: 18, kinds: 19 };
-	const EQ = { melt: 1, half: 2, money: 3, rtm: 4, pool: 5, lvr: 6, unit: 7, select: 8, level: 9, gini: 10, normal: 11, strict: 12, abundance: 13 };
+	const TAB = { speeds: 1, binds: 2, rivals: 3, parts: 4, conditions: 5, twoWorlds: 6, roundTrip: 7, prices: 8, prop3: 9, prop2: 10, variations: 11, cityParts: 12, testCity: 13, scenarios: 14, notation: 15, threats: 16, sameShock: 17, physics: 18, kinds: 19, hyps: 20 };
+	const EQ = { melt: 1, half: 2, money: 3, rtm: 4, pool: 5, lvr: 6, unit: 7, select: 8, level: 9, gini: 10, normal: 11, strict: 12, abundance: 13, share: 14, stock: 15 };
 
 	// the slider under Figure 5 sets the rate, so a reader can feel what the 7 % does
 	let rate = $state(RATE);
@@ -77,6 +77,16 @@
 	const dip = poorestDip();
 	const V = variation;
 	const mark = (c) => (c ? '✓' : '✗');
+	// a run's verdict on the three checks of Proposition 3, in words, from its checks
+	const checkWords = (v) => {
+		const ok = [1, 2, 3].filter((k, i) => v.checks[i]);
+		const bad = [1, 2, 3].filter((k, i) => !v.checks[i]);
+		if (!bad.length) return 'passed all three checks';
+		if (!ok.length) return 'failed all three checks';
+		const pp = (a) => `${a.length > 1 ? 'parts' : 'part'} ${list(a.map(String))}`;
+		return `passed ${pp(ok)} and failed ${pp(bad)}`;
+	};
+	const HYP = HYPOTHESES;
 	const goods = COMPETITION.map((g) => ({ ...g, name: g.good[0].toUpperCase() + g.good.slice(1) }));
 	const energyGood = COMPETITION.find((g) => g.good === 'energy');
 	const foodGood = COMPETITION.find((g) => g.good === 'food');
@@ -373,7 +383,8 @@
 			spreads ownership "at the beginning of each period" a property-owning democracy <Cite k="rawls" />. Meade
 			proposed such an economy for an age of automation in 1964 <Cite k="meade" />, and Roemer designed shares that
 			every citizen gets in equal number <Cite k="roemer" />. None of these proposals gives every person an equal flow
-			of new ownership, every day, that the person directs and that cannot pile up without limit.
+			of new ownership, every day, that the person directs and that cannot pile up without limit while no holding
+			earns more than the melt (Section 5.4).
 		</p>
 		<p>
 			This argument does not need the fastest path. It needs only the trend: output moves from wages to ownership, and
@@ -396,8 +407,9 @@
 		<p>
 			The usual answer is a universal basic income: a fixed sum that everyone gets without conditions
 			<Cite k="parijs" />. It would feed people, but it keeps the structure as it is. People would get consumption,
-			never direction: they could spend, but they could not decide what the automated economy builds next. theOS feeds
-			people through ownership: the ownership that each day's investing creates, and its dividends (Section 10.4). HEARTS
+			never direction: they could spend, but they could not decide what the automated economy builds next. theOS is
+			meant to feed people through ownership: the ownership that each day's investing creates, and its dividends
+			(Section 10.4). HEARTS
 			themselves never pay for anything (Law 2, Section 4).
 		</p>
 		<p class="thesis">
@@ -407,9 +419,9 @@
 			fair ownership. Each person's AI agent, the Aven of Section 7, proposes and delivers the work with the machines. Outside the
 			city, anyone may still take a job for euros. Inside it, there are only work proposals (Section 4). A
 			person gains MIND, the money of ownership and use of Section 4, and Section 11.2.2 shows where it comes from. The
-			promise is concrete. No one starves, no one has to work to survive, and the living standard of every tenth of the people
-			rises. theOS aims for a city where only physics limits how far. Section 10.3 states this as Proposition 3, and Section 11.2.3
-			checks it in a simulation, person by person. To get there, we must
+			aim is concrete. No one starves, no one has to work to survive, and the living standard of every tenth of the
+			people rises. theOS aims for a city where only physics limits how far. Section 10.3 states this as Proposition 3,
+			a hypothesis, and Section 11 tests it in two simulations, person by person. To get there, we must
 			first look at the tool that both questions pass through: money. What is it, who creates it, and why does it behave
 			the way it does?
 		</p>
@@ -465,7 +477,7 @@
 		</ul>
 		<p>
 			Melting money alone is not enough. Gesell paired his <em>Freigeld</em> (free money) with <em>Freiland</em>, land
-			held in common <Cite k="gesell" />. Keynes later named the weakness in plain terms. When money carries a cost,
+			that the community owns and leases out, and never sells <Cite k="gesell" />. Keynes later named the weakness in plain terms. When money carries a cost,
 			wealth escapes into substitutes that do not melt, above all land <Cite k="keynes36" />. We return to that warning
 			in Sections 8.2 and 8.3. Demurrage tells us how money should behave. It does not yet tell us where new money should
 			come from, and that is the next question.
@@ -1765,14 +1777,63 @@
 	<section id="living">
 		<h2><span>10</span>Hypotheses: what theOS should achieve</h2>
 		<p>
-			Does every person in Abundism live well? That question decides whether it is worth building. An average can rise
-			while one person goes hungry. So parts 1 and 2 below check every person at every step of the simulation, not
-			averages. Part 3 checks every tenth of the people.
+			Part II said what theOS is. This part says what we expect it to achieve. Each expectation is a
+			<em>hypothesis</em>: a statement that mathematics can prove, or that the simulations of Part IV can support or
+			refute. The central one asks whether every person in Abundism lives well. That question decides whether it is
+			worth building. An average can rise while one person goes hungry, so Proposition 3 checks every person, not
+			averages.
+		</p>
+		<h3 id="hyp">10.1 How we grade a hypothesis</h3>
+		<p>
+			Each hypothesis has a statement, the rules of Part II that should make it hold, a status, and the evidence in
+			Part IV. There are five statuses. <strong>Proven:</strong> it follows from the rules by mathematics.
+			<strong>Supported:</strong> every simulation run that tests it holds. <strong>Mixed:</strong> some runs hold,
+			and some fail. <strong>Failing:</strong> every run that tests it fails. <strong>Open:</strong> no simulation
+			tests it yet. Each status is computed from the results of Section 11, so a new run updates it. Table
+			{TAB.hyps} lists them all.
+		</p>
+		<div class="table-wrap">
+			<table class="narrow">
+				<caption><strong>Table {TAB.hyps}.</strong> The hypotheses of theOS, the rules they rest on, and their status today.</caption>
+				<thead>
+					<tr><th>Hypothesis</th><th>Rests on</th><th>Status</th><th>Evidence</th></tr>
+				</thead>
+				<tbody>
+					<tr><td>H1 Laborde's rule (Proposition 1)</td><td>Law 1, the melt</td><td>{HYP.H1.status}</td><td>Section 5.3</td></tr>
+					<tr><td>H2 Bounded inequality (Proposition 2)</td><td>The melt, Law 5</td><td>{HYP.H2.status}</td><td>Section 9.2</td></tr>
+					<tr><td>H3 No one starves, no one has to work, living standards rise (Proposition 3)</td><td>Laws 1 to 5, the melt, the land rule, the payout rule</td><td>{HYP.H3.status}</td><td>Sections 11.2.3 and 11.3.3</td></tr>
+					<tr><td>H4 The melt levels ownership</td><td>The melt, Law 5's share</td><td>{HYP.H4.status}</td><td>Sections 11.2.5 and 11.3.3</td></tr>
+					<tr><td>H5 Long-lived projects get built, and their rise is shared</td><td>Laws 2 and 4, the euro border</td><td>{HYP.H5.status}</td><td>Section 11.2.4</td></tr>
+					<tr><td>H6 Rivals keep basics near cost</td><td>Law 3, price rules, the idle-plant rule</td><td>{HYP.H6.status}</td><td>Sections 11.2.4 and 11.3.3</td></tr>
+					<tr><td>H7 Only physics limits abundance</td><td>Laws 1 to 4</td><td>{HYP.H7.status}</td><td>Section 11.3.3</td></tr>
+					<tr><td>H8 Energy binds growth</td><td>Recipes and net energy</td><td>{HYP.H8.status}</td><td>Section 11.3.3</td></tr>
+					<tr><td>H9 The euro border balances</td><td>The euro border</td><td>{HYP.H9.status}</td><td>Section 11.3.3</td></tr>
+					<tr><td>H10 The founding leaves no one short</td><td>The bootstrap (C3)</td><td>{HYP.H10.status}</td><td>Sections 11.2.3 and 11.3.3</td></tr>
+					<tr><td>H11 Spread ownership pays the basics</td><td>Law 5, the Avens' choice (C4)</td><td>{HYP.H11.status}</td><td>Sections 11.2.3 and 11.3.3</td></tr>
+					<tr><td>H12 People own most MIND</td><td>The payout rule</td><td>{HYP.H12.status}</td><td>Sections 11.2.2 and 11.3.3</td></tr>
+					<tr><td>H13 The melt keeps money moving</td><td>The melt</td><td>{HYP.H13.status}</td><td>Section 11.2.2</td></tr>
+					<tr><td>H14 Selection improves governance</td><td>Law 3, the Avens' exit</td><td>{HYP.H14.status}</td><td>None yet</td></tr>
+				</tbody>
+			</table>
+		</div>
+		<h3 id="props">10.2 Propositions 1 and 2</h3>
+		<p>
+			<strong>H1, Laborde's rule.</strong> With a constant population and once money has settled, each member's
+			balance, measured against the average, moves toward the average at the rate of the melt: Laborde's law with
+			<Tex tex="c = r" />. This is Proposition 1 (Section 5.3). It rests on Law 1 and the melt. Status:
+			{HYP.H1.status}. In a young city the rate starts higher and falls to <Tex tex="r" />.
+		</p>
+		<p>
+			<strong>H2, bounded inequality.</strong> If the lasting return <Tex tex={String.raw`\mu`} /> stays below the
+			melt and everyone keeps the same each year, holdings settle into a spread whose Gini index is ({EQ.gini}). If
+			any holder keeps <Tex tex={String.raw`\mu \ge r`} />, that holding grows without limit. This is Proposition 2
+			(Section 9.2), and a simulation of the process agrees with it. Status: {HYP.H2.status}. Whether the city meets
+			its condition is H4 (Section 10.5).
 		</p>
 		<h3 id="prop3">10.3 Proposition 3, the central hypothesis</h3>
 		<p>
 			Five terms come first. The <em>founding</em> is a city's first days: residents invest before the first sale,
-			until every person holds MIND. In the simulation it ends on day {PROOF.fromDay}. The <em>basic bundle</em>
+			until every person holds MIND. In the economic model it ends on day {PROOF.fromDay}. The <em>basic bundle</em>
 			(Section 6.3) is one day of basics for one person. An
 			<em>owner-only person</em> is a person whose Aven delivers nothing and who starts with nothing. <em>Real
 			consumption</em> counts every unit that a person consumes, valued at the prices of day 1, so it counts amounts,
@@ -1781,7 +1842,7 @@
 			each year.
 		</p>
 		<div class="law prop">
-			<p class="lawname">Proposition 3 · No one starves, no one has to work, living standards rise</p>
+			<p class="lawname">Hypothesis H3 · Proposition 3 · No one starves, no one has to work, living standards rise</p>
 			<p>
 				<em>Take a city that follows the five laws, the melt, the land rule and the payout rule, and that meets the
 				conditions C1 to C5 below. Then, from the end of the founding, parts 1 and 2 hold for every person on every
@@ -1802,17 +1863,20 @@
 		</div>
 		<p>
 			Proposition 3 is claimed from the end of the founding, not from day 1. The founding is reported on its own
-			(Section 11.2.6). We call part 2 the <em>normal test</em>. We also check a stronger target, which the proposition does not claim:
-			the <em>strict test</em>, in which dividends alone pay for the basic bundle. Part 3 is the weakest part. It
-			compares ten-year marks (years 10, 20 and so on). In the main run it fails even there, and a test over every
-			ten-year window fails more often (Section 11.2.3).
+			(Section 11.2.3), and H10 states what we expect of it. We call part 2 the <em>normal test</em>. We also check a
+			stronger target, which the proposition does not claim: the <em>strict test</em>, in which dividends alone pay
+			for the basic bundle. Part 3 is the weakest part. It compares ten-year marks (years 10, 20 and so on); a test
+			over every ten-year window is stricter (Section 11.2.3). Status of H3: {HYP.H3.status}. Part 1:
+			{HYP.H3.parts[0].status}; part 2: {HYP.H3.parts[1].status}; part 3: {HYP.H3.parts[2].status}. All three parts
+			held on {HYP.H3.model[0]} of the economic model's {HYP.H3.model[1]} seeds and on {HYP.H3.city[0]} of the test
+			city's {HYP.H3.city[1]} base seeds (Section 11.4).
 		</p>
 		<p>The five conditions are these:</p>
 		<ul>
 			<li>
 				<strong>C1 Enough output that grows fast enough.</strong> Plants, land and net energy cover the basics, and output
-				per person grows (Section 8.4). How fast is enough for part 3 is open (Section 10.4). In the simulation, the
-				growth is an assumption (Section 11.2.1).
+				per person grows (Section 8.4). How fast is enough for part 3 is open (Section 10.4). In the economic model,
+				the growth is an assumption (Section 11.2.1).
 			</li>
 			<li>
 				<strong>C2 Competition.</strong> Two or more sellers of every basic, prices that move freely both ways, and Law
@@ -1835,84 +1899,199 @@
 			</li>
 		</ul>
 		<p>
-			Table {TAB.conditions} lists what the simulation of Section 11.2.1 found for each condition.
+			Table {TAB.conditions} lists what the economic model of Section 11.2 found for each condition.
 		</p>
 		<div class="table-wrap">
 			<table class="narrow">
-				<caption><strong>Table {TAB.conditions}.</strong> Conditions and what the simulation found.</caption>
+				<caption><strong>Table {TAB.conditions}.</strong> Conditions and what the economic model found on its main seed.</caption>
 				<thead>
-					<tr><th>Condition</th><th>In the simulation</th></tr>
+					<tr><th>Condition</th><th>In the economic model</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>C1 Enough output that grows fast enough</td><td>Assumed: each COOP's productivity grows about {pc(SIM.prodGrowth)} a year on average, and net energy is not modelled. Without productivity growth, all checks failed; with {pc(SIM.prodGrowth)} for every COOP, part 3 failed</td></tr>
-					<tr><td>C2 Competition</td><td>Met only in part: water had one seller throughout, and by year {SIM.years} the {list(sole)} each came from one COOP alone (Table {TAB.rivals}). After the {DYN.failures + DYN.exits} ends, {fmt(PROOF.endedShort)} person-days were short</td></tr>
-					<tr><td>C3 The bootstrap (Section 12.4)</td><td>Not modelled: the checks start on day {PROOF.fromDay}, when every person holds MIND, and the founding is reported on its own (Section 11.2.6)</td></tr>
+					<tr><td>C1 Enough output that grows fast enough</td><td>Assumed: each COOP's productivity grows about {pc(SIM.prodGrowth)} a year on average, and net energy is not modelled. Without productivity growth, the run {checkWords(V('prod0'))}; with {pc(SIM.prodGrowth)} for every COOP, it {checkWords(V('even'))}</td></tr>
+					<tr><td>C2 Competition</td><td>{sole.length ? 'Met only in part' : 'Met'}: water had one seller throughout, and by year {SIM.years} the {list(sole)} each came from one COOP alone (Table {TAB.rivals}). After the {DYN.failures + DYN.exits} ends, {fmt(PROOF.endedShort)} person-days were short</td></tr>
+					<tr><td>C3 The bootstrap (Section 12.4)</td><td>Not modelled: the checks start on day {PROOF.fromDay}, when every person holds MIND, and the founding is reported on its own (Section 11.2.3)</td></tr>
 					<tr><td>C4 Spread ownership</td><td>Not modelled: {pc(ownerCity.share)} of what the owner-only people held was cityMIND, which pays almost nothing</td></tr>
-					<tr><td>C5 Wants and Aven work that can grow</td><td>Met: experiences never satisfy fully. Without them, part 3 failed, and dividends fell to almost nothing</td></tr>
-					<tr><td>The payout rule (Section 4)</td><td>Reserves of {V('res6').months} months failed; {V('res12').months} months passed parts 1 and 2 on the main seed, and all three checks on only {MT.res12.new.pass} of {SEEDS.n} seeds</td></tr>
+					<tr><td>C5 Wants and Aven work that can grow</td><td>Met: experiences never satisfy fully. Without them, the run {checkWords(V('wants'))}, and the dividend yield fell to {pc(V('wants').yield, 1)}</td></tr>
+					<tr><td>The payout rule (Section 4)</td><td>With reserves of {V('res6').months} months, the run {checkWords(V('res6'))}; with {V('res12').months} months, it {checkWords(V('res12'))}, and all three checks passed on {MT.res12.new.pass} of {SEEDS.n} seeds</td></tr>
 					<tr><td>Every COOP accepts HEARTS from anyone</td><td>Assumed</td></tr>
 				</tbody>
 			</table>
 		</div>
 		<p>
-			Proposition 3 is a claim with an argument and with evidence from a simulation, not a theorem. The normal and strict
-			tests have closed forms, given in Section 10.4. Parts 1 and 3 have none, so the simulation and, later, the test
-			city must check them.
+			Proposition 3 is a hypothesis with an argument, not a theorem. Section 10.4 gives the conditions under which
+			each part can hold. Parts 1 and 3 have no closed form, so the simulations must check them.
 		</p>
 		<h3 id="when">10.4 When Proposition 3 can hold</h3>
 		<p>
-			Part 2 rests on margins that we can compute. Take the normal test first. Let <Tex tex="W_i" /> be what person
-			<Tex tex="i" /> holds, in HEARTS, and let <Tex tex="X_i" /> be what they spend. Let <Tex tex={String.raw`\omega`} /> be
-			the ownership that their investing creates for them, and <Tex tex="D_i" /> their dividends. Let
-			<Tex tex="p_b" /> be the cost of a day's basic bundle. With all flows counted a year,
+			Three conditions follow from the rules. We derive each one and check it against the economic model.
+		</p>
+		<p>
+			<strong>(a) No one has to work if a day's basics cost less than the investor's half of a day's HEARTS, plus
+			dividends.</strong> Let <Tex tex="W_i" /> be what person <Tex tex="i" /> holds, in HEARTS, and let
+			<Tex tex="X_i" /> be what they spend. Let <Tex tex={String.raw`\omega`} /> be the ownership that their
+			investing creates for them, and <Tex tex="D_i" /> their dividends. Let <Tex tex="p_b" /> be the cost of a day's
+			basic bundle. With all flows counted a year,
 		</p>
 		<Tex display tex={String.raw`\begin{gathered} \frac{dW_i}{dt} = \omega + D_i - r\,W_i - X_i \\ 365\,p_b < \omega + D_i \;\Rightarrow\; W_i(t) > 0 \\ T_i = \frac{1}{r}\,\ln\!\Big(1 + \frac{r\,W_i}{365\,p_b}\Big) \end{gathered} \tag{${EQ.normal}}`} />
 		<p>
-			In words: a holding grows while what flows in, new ownership and dividends, exceeds the melt and the spending. The
-			normal test asks only that the holding never runs out while it pays for the basics. The second line is the
-			condition that carries it. A holding cannot run out while the ownership that a year of investing creates,
-			<Tex tex={String.raw`\omega`} />, plus the dividends, exceeds a year of basics. In the main run, a day's basics cost
-			at most {fmt(PROOF.bundleMax, 3)} HEARTS, in year {PROOF.bundleMaxYear}. A day of investing creates
-			{UIA_DAY / 2} MIND for the investor, worth about {UIA_DAY / 2} HEARTS (Section 6.3), so the margin was about
-			×{fmt(bundleMargin())}. A margin in MIND cannot buy food that nobody has made, so part 1 must hold too.
-			<Tex tex="T_i" /> measures the buffer: how many years a holding <Tex tex="W_i" /> would pay a day's basics with
-			nothing flowing in at all, the melt included. In the simulation, no owner-only holding came close to running out
-			(Table {TAB.prop3}). Equation ({EQ.normal}) leaves out price moves: when a MIND that a person holds falls in price,
-			so does the holding. The simulation includes them.
+			In words: a holding grows while what flows in, new ownership and dividends, exceeds the melt and the spending.
+			If a person spends only on the basics, <Tex tex={String.raw`X_i = 365\,p_b`} />, and the second line holds,
+			then the holding moves toward a positive level and never runs out. Each day, a person invests {UIA_DAY} HEARTS
+			and keeps {UIA_DAY / 2} MIND. A new MIND is worth 1 HEART only on average (Section 6.3), so
+			<Tex tex={String.raw`\omega`} /> is about {UIA_DAY / 2} HEARTS a day for a person who invests like the
+			average, and less for one who invests in MINDs worth less. Three qualifiers apply. The condition needs basics
+			that exist, so part 1 must hold too: a margin in MIND cannot buy food that nobody has made. It leaves out price
+			moves: when a MIND that a person holds falls in price, so does the holding. And each payment through the pools
+			costs a small fee. <Tex tex="T_i" /> measures the buffer: how many years a holding <Tex tex="W_i" /> would pay a
+			day's basics with nothing flowing in, the melt included. In the economic model, a day's basics cost at most
+			{fmt(PROOF.bundleMax, 3)} HEARTS, in year {PROOF.bundleMaxYear}, so the investor's half alone covered them
+			about ×{fmt(bundleMargin())}. The model is far inside condition (a).
 		</p>
 		<p>
-			The strict test asks more: dividends alone. Law 5 pays each holder in proportion to what they hold. Let
-			<Tex tex={String.raw`\lambda`} /> be Law 5's share, <Tex tex="Y" /> what people buy from COOPs (HEARTS a person a day)
-			and <Tex tex={String.raw`\bar W`} /> the mean holding. Then the city's dividend yield is
-			<Tex tex={String.raw`\bar\eta = \lambda Y / \bar W`} />, and
+			<strong>(b) Dividends alone can pay everyone's basics only if the basics cost less than Law 5's share of all
+			sales.</strong> Law 5 pays <Tex tex={String.raw`\lambda`} />, {pc(DIVIDEND_SHARE)}, of every sale to the
+			holders of the seller's MIND. Let <Tex tex="Q" /> be all sales a day, <Tex tex="N" /> the number of people,
+			and <Tex tex="s_p" /> the share of the dividend-earning MIND that people hold; the rest is held by other
+			COOPs' treasuries and by the city's pools. Then
+		</p>
+		<Tex display tex={String.raw`\begin{gathered} \sum_i D_i = \lambda\, s_p\, Q \ge N\,p_b \\ \Rightarrow\; \frac{N\,p_b}{Q} \le \lambda\, s_p \le \lambda \end{gathered} \tag{${EQ.share}}`} />
+		<p>
+			So the strict test can hold for everyone only if a day's basics for everyone cost less than
+			{pc(DIVIDEND_SHARE)} of a day's sales, and less still where treasuries and pools hold MIND. The condition is
+			necessary, not sufficient: every person also needs enough MIND that pays. If all sales are to people and the
+			dividend yield is the city's average, <Tex tex={String.raw`\bar\eta = \lambda Y / \bar W`} />, with
+			<Tex tex="Y" /> what people buy (HEARTS a person a day) and <Tex tex={String.raw`\bar W`} /> the mean holding,
+			then each person needs
 		</p>
 		<Tex display tex={String.raw`\begin{gathered} D_i \approx \bar\eta\, W_i = \lambda\,Y\,\frac{W_i}{\bar W} \\ D_i \ge p_b \iff \frac{W_i}{\bar W} \ge \frac{p_b}{\lambda\,Y} \end{gathered} \tag{${EQ.strict}}`} />
 		<p>
-			In the last ten years of the simulation, the right side was {pc(strictThreshold(), 2)} of the mean holding. So an owner with an average mix of MIND
-			passes by far. A miss comes from which MIND a person holds, not from how much (C4). The strict test also needs
-			sales beyond the basics. If people bought only basics, their dividends would be just {pc(DIVIDEND_SHARE)} of their
-			cost. Abundance must be sold and used, not only made.
+			In the last ten years of the economic model, people's dividends were {fmt(RT.people.in.dividends, 2)} HEARTS a
+			person a day, against {fmt(PRICES_BY_YEAR[SIM.years].bundle, 3)} for a day's basics in year {SIM.years}:
+			condition ({EQ.share}) held about ×{fmt(RT.people.in.dividends / PRICES_BY_YEAR[SIM.years].bundle)}. The right
+			side of ({EQ.strict}) was {pc(strictThreshold(), 2)} of the mean holding, so an owner with an average mix of
+			MIND passes by far. Yet in year {SIM.years}, dividends alone covered {pc(PROOF.strict.lateMissEnd)} of the
+			owner-only person-days, and {pc(ownerCity.share)} of what the owner-only people held was cityMIND, which pays
+			almost nothing. A miss comes from which MIND a person holds, not from how much (C4, H11). The strict test also
+			needs sales far beyond the basics: if people bought only basics, their dividends would be just
+			{pc(DIVIDEND_SHARE)} of their cost. So the strict test is a goal for abundance, which must be sold and used, not
+			only made. Law 5 also hedges the basics, but only for those who hold MIND of the food COOPs that sell: when
+			food gets dear, they get more dividends.
 		</p>
 		<p>
-			Law 5 also hedges the basics. When food gets dear, those who hold food MIND get more dividends. Ownership lifts
-			what each person can pay, with no cap on any price.
+			<strong>(c) No one starves only if the stock and the capacity cover the need through the largest shock that
+			the city plans for.</strong> Let <Tex tex="d" /> be the need for a basic a day, <Tex tex="q" /> the capacity
+			to make it, and <Tex tex="S" /> the stock in hand. A shock takes a share <Tex tex={String.raw`\delta`} /> of
+			the capacity for <Tex tex={String.raw`\tau`} /> days. Then the stock must cover the gap:
+		</p>
+		<Tex display tex={String.raw`S \ge \big(d - (1 - \delta)\,q\big)\,\tau \tag{${EQ.stock}}`} />
+		<p>
+			Rot and the stock used before the shock come on top. The largest shock in the economic model takes
+			{pc(SIM.shockDepth[1])} of a plant's capacity for {SIM.shockMonths[1]} months. With capacity just at need, the
+			stock must then hold {fmt(SIM.shockDepth[1] * SIM.shockMonths[1], 1)} months of need. The model keeps no stock
+			sized for this, and its price floor leaves out rot (Section 11.5). Condition (c) is necessary, not sufficient.
+			Part 1 also needs buyers who can pay, which part 2 gives, two or more sellers of each basic (C2), and, in the
+			founding, the bootstrap (C3). A seller with idle capacity lowers its price, and a rival takes the buyers it
+			loses. MIND must never be what runs short while physics allows more (H7).
 		</p>
 		<p>
-			Part 1 needs capacity at or above need, with some stock in hand. It needs buyers who can pay, which part 2 gives.
-			It needs two or more sellers of each basic (C2) and, in the founding, the bootstrap (C3). A seller with idle capacity
-			lowers its price, and a rival takes the buyers it loses. MIND must never be what runs short while physics allows
-			more.
+			<strong>Part 3</strong> has no such condition. It needs output per person to grow fast enough (C1), and wants
+			that grow with it (C5). The poorest tenth gain through two channels. Every person gets the same new ownership
+			each day, {UIA_DAY / 2} MIND. And competition passes productivity on as lower prices of the basics in HEARTS: a
+			day's basics cost {fmt(PRICES_BY_YEAR[1].bundle, 3)} HEARTS in year 1 and {fmt(PRICES_BY_YEAR[60].bundle, 3)} in
+			year {SIM.years}. So the same daily ownership buys more each year. How fast is enough is open (H8). The run with
+			even growth, {pc(SIM.prodGrowth)} for every COOP, meets C1 and C5, and C2 in part, and there the run
+			{checkWords(V('even'))}. Its output per unit of plant grew {pc(plantGrowthRate(V('even').plant), 1)} a year,
+			against {pc(plantGrowthRate(), 1)} in the main run.
 		</p>
+		<h3 id="more">10.5 More hypotheses</h3>
 		<p>
-			Part 3 needs output per person to grow fast enough (C1), and wants that grow with it (C5). The poorest tenth gain
-			through two channels. Every person gets the same new ownership each day, {UIA_DAY / 2} MIND. And competition
-			passes productivity on as lower MIND prices: a day's basics cost {fmt(PRICES_BY_YEAR[1].bundle, 3)} HEARTS in
-			year 1 and {fmt(PRICES_BY_YEAR[60].bundle, 3)} in year {SIM.years}. So the same daily ownership buys more each
-			year. How fast is enough is open. The run with even growth, {pc(SIM.prodGrowth)} for every COOP, meets C1 to C5 as
-			stated, and part 3 still fails there. Its output per unit of plant grew
-			{pc(plantGrowthRate(V('even').plant), 1)} a year, against {pc(plantGrowthRate(), 1)} in the main run. Part 3 has
-			no closed form, and the simulation tests it.
+			Proposition 3 rests on more than its own parts. Each hypothesis below says what we expect, which rules should
+			make it hold, its status and where Part IV tests it.
 		</p>
+		<dl class="hyps">
+			<dt>H4 The melt levels ownership</dt>
+			<dd>
+				The lasting return <Tex tex={String.raw`\mu`} /> stays below the melt for every holder, so no holding grows
+				without limit and every advantage fades. It rests on the melt (Section 5.1) and on Law 5's share, which sets
+				the dividend part of <Tex tex={String.raw`\mu`} /> (Section 5.4). Status: <strong>{HYP.H4.status}</strong>.
+				<Tex tex={String.raw`\mu`} /> was below the melt on {HYP.H4.model[0]} of {HYP.H4.model[1]} seeds of the
+				economic model, and on {HYP.H4.same[0]} of {HYP.H4.same[1]} seeds with the same shocks (Section 11.2.5).
+			</dd>
+			<dt>H5 Long-lived projects get built, and their rise is shared</dt>
+			<dd>
+				The city builds what lasts. A project's rising value goes to its users and to the new investors who fund each
+				stage, and long-term holders gain through Law 5 on growing sales. It rests on Laws 2 and 4 and on the euro
+				loans (Section 8.1). Status: <strong>{HYP.H5.status}</strong>. In the economic model, {HYP.H5.won.length} of
+				the {HYP.H5.of} infrastructure COOPs made all of their good by the last year, and the MINDs of
+				{HYP.H5.below.length} of them returned less than the melt (Section 11.2.4).
+			</dd>
+			<dt>H6 Rivals keep basics near cost</dt>
+			<dd>
+				Open entry, free prices and Avens that switch keep the price of each basic within {pc(COST_BAND)} of its full
+				cost, and no basic but water ends with one seller. It rests on Law 3, each COOP's price rule and the
+				idle-plant rule (Section 9.1). Status: <strong>{HYP.H6.status}</strong>. In the test city, basics sold at
+				{list(TEST_CITY.scenarios.sellers.cost.map((v) => fmt(v, 2)))} times their full cost with
+				{list(TEST_CITY.scenarios.sellers.per.map(String))} sellers. In the economic model, by the last year,
+				{HYP.H6.sole.length ? `the ${list(HYP.H6.sole)} each came from one COOP` : 'every basic but water had two sellers or more'} (Section 11.2.4).
+			</dd>
+			<dt>H7 Only physics limits abundance</dt>
+			<dd>
+				MIND never binds a basic while physics allows more, and more money does not make the city richer. It rests on
+				Laws 1 to 4: money comes from intent, not from goods (Sections 5.2 and 8.4). Status:
+				<strong>{HYP.H7.status}</strong>. In the test city, MIND never bound a basic on {HYP.H7.city[0]} of
+				{HYP.H7.city[1]} base seeds. Twice the HEARTS raised prices {fmt(TEST_CITY.scenarios.money.prices, 1)}-fold
+				and changed what people got by at most {pc(TEST_CITY.scenarios.money.largest, 1)} (Section 11.3.3).
+			</dd>
+			<dt>H8 Energy binds growth</dt>
+			<dd>
+				Output per person grows only as fast as surplus energy pays for, and fast enough for part 3 of Proposition 3.
+				It rests on the recipes and net energy (Section 8.4, Appendix H). Status: <strong>{HYP.H8.status}</strong>:
+				the economic model assumes productivity growth and has no energy limit. In the test city, with surplus energy,
+				{shortOr(TEST_CITY.scenarios.energy.short)}, against {fmt(TEST_CITY.scenarios.energy.shortWithout)} without it
+				(Section 11.3.3).
+			</dd>
+			<dt>H9 The euro border balances</dt>
+			<dd>
+				Exports earn back the euros that the city needs for its machines and imports. It rests on the euro border
+				(Section 8.3). Status: <strong>{HYP.H9.status}</strong>. In the test city, the village owed at most
+				€{fmt(TEST_CITY.bank.bootstrap / 1e6, 1)} million outside, and its exports
+				{TEST_CITY.bank.repaid ? 'repaid' : 'did not repay'} that within {TEST_CITY.years} years (Section 11.3.3).
+			</dd>
+			<dt>H10 The founding leaves no one short</dt>
+			<dd>
+				From the first sale, every person can buy the basics. It rests on the bootstrap (C3, Section 12.4). Status:
+				<strong>{HYP.H10.status}</strong>. The economic model has no founding rule, and {fmt(PROOF.genesis.short)} of
+				{fmt(PROOF.genesis.personDays)} person-days were short in its founding (Section 11.2.3). In the test city,
+				with the founding rule, {shortOr(TEST_CITY.scenarios.founding.shortWith)} in year 1 (Section 11.3.3).
+			</dd>
+			<dt>H11 Spread ownership pays the basics</dt>
+			<dd>
+				Once Avens keep enough MIND of COOPs that sell a lot, dividends alone pay every owner-only person's basics:
+				the strict test. It rests on Law 5 and on the Avens' choice of what to hold (C4, Section 7). Status:
+				<strong>{HYP.H11.status}</strong>: no simulation spreads ownership this way yet. Without it, the strict test
+				held on {HYP.H3.strict.city[0]} of the test city's {HYP.H3.strict.city[1]} base seeds (Sections 11.2.3 and
+				11.3.3).
+			</dd>
+			<dt>H12 People own most MIND</dt>
+			<dd>
+				Treasuries pay out what they do not need, so people, not treasuries, own most of the city's MIND. It rests on
+				the payout rule (Section 4). Status: <strong>{HYP.H12.status}</strong>: it held in {HYP.H12.held} of
+				{HYP.H12.of} tests. In the economic model, people held {pc(DYN.people)} of all MIND by value (Section 11.2.2).
+			</dd>
+			<dt>H13 The melt keeps money moving</dt>
+			<dd>
+				Because money melts, people spend or invest it rather than keep it idle, so the velocity of money rises. It
+				rests on the melt (Section 5.1). Status: <strong>{HYP.H13.status}</strong>: the economic model assumes how much
+				people spend, so it cannot settle this (Section 11.2.2).
+			</dd>
+			<dt>H14 Selection improves governance</dt>
+			<dd>
+				Avens move investment away from COOPs that deliver less for their MIND, so better-run COOPs grow, and governance
+				improves by selection. It rests on Law 3 and on the Avens' exit (Sections 7 and 9). Status:
+				<strong>{HYP.H14.status}</strong>: no simulation tests it yet.
+			</dd>
+		</dl>
 	</section>
 
 	<p class="partline" id="part-4">Part IV · Our simulations</p>
@@ -3623,6 +3802,17 @@
 
 	.law.concept .lawname {
 		color: var(--ink-soft);
+	}
+
+	.hyps dt {
+		margin-top: 1rem;
+		font-weight: 600;
+	}
+
+	.hyps dd {
+		margin: 0.3rem 0 0.8rem;
+		text-align: justify;
+		hyphens: auto;
 	}
 
 	.partline {
