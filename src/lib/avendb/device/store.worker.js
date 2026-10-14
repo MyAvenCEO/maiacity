@@ -1,76 +1,78 @@
 // @ts-nocheck: written by avendb/scripts/build-web.sh from avenDB
-// avenDB's device store in the browser, the worker that keeps it (B2b): a page's device's store in the origin private
-// file system (OPFS), the one place a browser keeps what avenDB holds, as a node keeps it on disk
-// (`avendb_net::Disk`). A worker, because only a worker has OPFS's synchronous files, which write in place and fast.
+// avenDB's store in the browser, the worker that keeps it (v8 phase S): a page's device's shelf in the origin private
+// file system (OPFS), laid out as every place lays out its own (`avendb_net::shelf`, `avendb_net::disk`). A worker,
+// because only a worker has OPFS's synchronous files, which write in place and fast. It keeps bytes, and nothing it
+// keeps means anything to it: the device reads and writes them itself (avendb-browser's `shelf_of`).
 //
-// The store named `name` is the folder `avendb/<name>/`: `ops` holds the device's signed edits in the order it took
-// them, each one record, its length in 4 bytes big-endian and then its bytes on the wire, as on disk; `keys/` its
-// McEliece keys, each in a file named by its id; `meta` what opens the device again, a record of JSON each time it
-// changes, the last one whole counting. No secret is kept: the device's keys derive from its passkey at every unlock,
-// and it opens the rest again from its edits. A crash can cut the last record short: reading stops at the first record
-// that isn't whole, and `ops` is cut back to the records before it.
+// The store named `name` is the folder `avendb/<name>/`. It holds a shelf for each generation, `g1/`, `g2/` and on:
+// the newest is the one in use, and a new one made beside them puts every older one aside, never read again and never
+// deleted (`aside`). Whatever else the folder holds, as an earlier avenDB's store, stays as it is. In a generation's
+// folder:
 //
-// `blobs/` is the device's node's shelf (B2d, `avendb_net::shelf`): each blob it keeps whole, a piece of a file it
-// brings or keeps, in a file named by its BLAKE3 hash in hex, its outboard beside it in `<hash>.obao`, written last, so
-// that a blob counts once both are there; a blob being written is in a file of the node's naming (`new-...`) until it
-// is whole. What the folder holds of anything else, it drops as the node lists it.
+// - `blobs/<hash>`: each finished blob, named by its BLAKE3 hash in hex, and `outboards/<hash>` its outboard, written
+//   last, so that a blob counts once its outboard is there;
+// - `new/`: the blobs being written, each under the name its node chose (`new-...`), and the objects being put;
+// - each named object at its name, put once and never replaced: `heads/0000000000000001` in `heads/`.
 //
-// While its device runs, the worker holds `ops` open, which OPFS lets only one worker do: the same device can't run in
-// two tabs at once. A store IndexedDB kept under the same name, as pages did before, moves over once as the store
-// opens and is then deleted: its meta is written last, so a move cut short starts over the next time.
+// Each object is written whole beside its place, flushed, then moved into it, so an object is always whole. While its
+// device runs, the worker holds the store's `lock`, which OPFS lets only one worker do: the same device can't run in
+// two tabs at once.
 //
 // The page talks to it through `store.js`: each message `{id, op, args}`, each answer `{id, ok}` or `{id, error}`.
 
-const EDITS = 'ops';
-const KEYS = 'keys';
-const META = 'meta';
 const BLOBS = 'blobs';
-/** The most blob files held open at once, the least lately used let go first. */
-const HANDLES = 16;
+const OUTBOARDS = 'outboards';
+const NEW = 'new';
+const LOCK = 'lock';
+/** The folders of a generation no named object is under (`avendb_net::shelf::RESERVED`), and the store's lock. */
+const RESERVED = [BLOBS, OUTBOARDS, NEW, LOCK];
+/** A generation's folder: `g1`, `g2` and on. */
+const GENERATION = /^g[1-9][0-9]*$/;
 /** A finished blob's name: its hash in hex. */
 const HASH = /^[0-9a-f]{64}$/;
+/** A blob being written: a name of letters, digits and `-`. */
+const WRITTEN = /^[A-Za-z0-9-]+$/;
+/** What the names of the blobs a node writes start with: what `list` drops of them is what it never finished. */
+const WRITING = 'new-';
+/** One part of an object's name (`avendb_net::shelf::named`). */
+const PART = /^[a-z0-9._-]+$/;
+/** The most blob files held open at once, the least lately used let go first. */
+const HANDLES = 16;
 /** The bytes copied at a time, where a browser can't move a file. */
 const COPY = 8 << 20;
 
-/** The folder of the store open here, its name, and `ops` while the device runs, with where each of its records ends. */
-let dir, name, log, ends;
+/** The store's folder, the folder of its generation in use, and its lock while this worker holds it. */
+let root, dir, lock;
+
+/** The blob files held open, by their place, the least lately used first. */
+const handles = new Map();
 
 /** The folder every store of this origin is in. */
 async function stores() {
 	return (await navigator.storage.getDirectory()).getDirectoryHandle('avendb', { create: true });
 }
 
-/** `bytes` as one record: its length in 4 bytes big-endian, then the bytes. */
-function record(bytes) {
-	const out = new Uint8Array(4 + bytes.length);
-	new DataView(out.buffer).setUint32(0, bytes.length);
-	out.set(bytes, 4);
-	return out;
-}
+/** Whether an error says there is nothing there. */
+const absent = (e) => e?.name === 'NotFoundError';
 
-/** The whole records of `bytes`, how long they are together, and where each ends. */
-function records(bytes) {
-	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	const [out, ends] = [[], []];
-	let at = 0;
-	while (at + 4 <= bytes.length) {
-		const end = at + 4 + view.getUint32(at);
-		if (end > bytes.length) break;
-		out.push(bytes.slice(at + 4, end));
-		ends.push(end);
-		at = end;
+/** The generations of the store, the oldest first. */
+async function generations() {
+	const found = [];
+	for await (const [name, handle] of root.entries()) {
+		if (handle.kind === 'directory' && GENERATION.test(name)) found.push(Number(name.slice(1)));
 	}
-	return [out, at, ends];
+	return found.sort((a, b) => a - b);
 }
 
-/** All of a synchronous file's bytes. */
-function bytesOf(file) {
-	const bytes = new Uint8Array(file.getSize());
-	file.read(bytes, { at: 0 });
-	return bytes;
+/** Puts generation `n` in use, made if it isn't there yet. Its number. */
+async function use(n) {
+	shutAll();
+	dir = await root.getDirectoryHandle(`g${n}`, { create: true });
+	for (const sub of [BLOBS, OUTBOARDS, NEW]) await dir.getDirectoryHandle(sub, { create: true });
+	return n;
 }
 
-/** Opens file `name` of folder `folder` to write in place, made if there is none and `create`. */
+/** Opens file `name` of `folder` to write in place, made if there is none and `create`. */
 async function writable(folder, name, create = true) {
 	const handle = await folder.getFileHandle(name, { create });
 	try {
@@ -83,21 +85,8 @@ async function writable(folder, name, create = true) {
 	}
 }
 
-/** Appends `bytes` to the whole records of the file `name`, cutting anything after them, and makes it last. */
-async function append(folder, name, bytes) {
-	const file = await writable(folder, name);
-	try {
-		const [, whole] = records(bytesOf(file));
-		file.truncate(whole);
-		file.write(bytes, { at: whole });
-		file.flush();
-	} finally {
-		file.close();
-	}
-}
-
-/** Writes `bytes` as the file `name` of `folder`, whole. */
-async function put(folder, name, bytes) {
+/** Writes `bytes` as the new file `name` of `folder`, whole and flushed. */
+async function written(folder, name, bytes) {
 	const file = await writable(folder, name);
 	try {
 		file.truncate(0);
@@ -109,295 +98,270 @@ async function put(folder, name, bytes) {
 }
 
 /** The bytes of file `name` of `folder`, read without holding it, or `undefined` if there is none. */
-async function read(folder, name) {
+async function bytesOf(folder, name) {
 	try {
 		const file = await (await folder.getFileHandle(name)).getFile();
 		return new Uint8Array(await file.arrayBuffer());
 	} catch (e) {
-		if (e?.name === 'NotFoundError') return undefined;
-		throw e;
-	}
-}
-
-/** What opens the device again, the last whole record of `meta`, or `undefined`. */
-async function meta() {
-	const [kept] = records((await read(dir, META)) ?? new Uint8Array());
-	return kept.length ? JSON.parse(new TextDecoder().decode(kept[kept.length - 1])) : undefined;
-}
-
-async function setMeta(meta) {
-	await append(dir, META, record(new TextEncoder().encode(JSON.stringify(meta))));
-}
-
-/** The McEliece keys the store holds: `[ids, keys]`. */
-async function keys() {
-	const folder = await dir.getDirectoryHandle(KEYS, { create: true });
-	const [ids, held] = [[], []];
-	for await (const [id, handle] of folder.entries()) {
-		if (handle.kind !== 'file') continue;
-		ids.push(id);
-		held.push(new Uint8Array(await (await handle.getFile()).arrayBuffer()));
-	}
-	return [ids, held];
-}
-
-/** Holds `ops` from now on, cut back to its whole records, and returns them. */
-async function hold() {
-	log ??= await writable(dir, EDITS);
-	const [kept, whole, at] = records(bytesOf(log));
-	if (whole < log.getSize()) {
-		log.truncate(whole);
-		log.flush();
-	}
-	ends = at;
-	return kept;
-}
-
-/** What the store kept, `{edits, keys, ids}`, holding `ops` from now on. */
-async function load() {
-	const edits = await hold();
-	const [ids, held] = await keys();
-	return { edits, keys: held, ids };
-}
-
-/**
- * Saves `edits` as the `from`th on, in place of any the store held from there (so saving the same twice keeps them
- * once, and `from` 0 writes `ops` anew), `keys`, each `[id, bytes]`, and drops the keys `drop`.
- */
-async function save({ from, edits, keys, drop }) {
-	if (edits.length || from === 0) {
-		if (!log) await hold();
-		if (from > ends.length) throw new Error(`the store holds ${ends.length} edits, not ${from}`);
-		ends.length = from;
-		let at = ends[from - 1] ?? 0;
-		const start = at;
-		const bytes = new Uint8Array(edits.reduce((n, e) => n + 4 + e.length, 0));
-		for (const edit of edits) {
-			bytes.set(record(edit), at - start);
-			at += 4 + edit.length;
-			ends.push(at);
-		}
-		log.truncate(start);
-		log.write(bytes, { at: start });
-		log.flush();
-	}
-	const folder = await dir.getDirectoryHandle(KEYS, { create: true });
-	for (const [id, bytes] of keys) await put(folder, id, bytes);
-	for (const id of drop) await folder.removeEntry(id).catch(() => {});
-}
-
-/** Lets go of `ops`, for another worker to hold, and of every blob file. */
-function release() {
-	log?.close();
-	log = undefined;
-	for (const name of [...handles.keys()]) shut(name);
-}
-
-/** The blob files held open, by name, the least lately used first. */
-const handles = new Map();
-
-async function blobFolder() {
-	return dir.getDirectoryHandle(BLOBS, { create: true });
-}
-
-/** Blob file `name`, held open to read and write in place, made first if `create`. */
-async function blob(name, create = false) {
-	let file = handles.get(name);
-	if (file) {
-		handles.delete(name);
-	} else {
-		file = await writable(await blobFolder(), name, create);
-		if (handles.size >= HANDLES) shut(handles.keys().next().value);
-	}
-	handles.set(name, file);
-	return file;
-}
-
-/** Lets go of blob file `name`, if it is held. */
-function shut(name) {
-	handles.get(name)?.close();
-	handles.delete(name);
-}
-
-/** Whether `folder` holds a file `name`. */
-async function holds(folder, name) {
-	try {
-		await folder.getFileHandle(name);
-		return true;
-	} catch (e) {
-		if (e?.name === 'NotFoundError') return false;
+		if (absent(e)) return undefined;
 		throw e;
 	}
 }
 
 /** Removes file `name` of `folder`, if it is there. */
-async function removeFile(folder, name) {
-	shut(name);
+async function removed(folder, name) {
 	await folder.removeEntry(name).catch((e) => {
-		if (e?.name !== 'NotFoundError') throw e;
+		if (!absent(e)) throw e;
 	});
 }
 
-/** Every blob the shelf holds whole, `[hash, size]`, dropping whatever else `blobs/` holds. */
-async function blobs() {
-	const folder = await blobFolder();
-	const names = new Set();
-	for await (const [name, handle] of folder.entries()) if (handle.kind === 'file') names.add(name);
-	const held = [];
-	for (const name of names) {
-		if (HASH.test(name) && names.has(`${name}.obao`)) {
-			held.push([name, handles.get(name)?.getSize() ?? (await (await folder.getFileHandle(name)).getFile()).size]);
-		} else if (!(name.endsWith('.obao') && HASH.test(name.slice(0, -5)) && names.has(name.slice(0, -5)))) {
-			await removeFile(folder, name);
+/** A name of the worker's own for what it writes beside its place. */
+function staged(what) {
+	const n = crypto.getRandomValues(new Uint8Array(8));
+	return `${what}-${Array.from(n, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Moves file `from` of `source` to `to` of `target`, replacing what is there; copied, where a browser can't move. */
+async function moved(source, from, target, to) {
+	const handle = await source.getFileHandle(from);
+	if (handle.move) {
+		try {
+			await handle.move(target, to);
+			return;
+		} catch (e) {
+			if (!['NotSupportedError', 'TypeError'].includes(e?.name)) throw e;
 		}
 	}
-	return held;
-}
-
-/** `len` bytes of blob `name` from byte `at` on, or fewer at its end. */
-async function blobRead(name, at, len) {
-	const file = await blob(name);
-	const bytes = new Uint8Array(Math.max(0, Math.min(at + len, file.getSize()) - at));
-	file.read(bytes, { at });
-	return bytes;
-}
-
-/** The outboard of blob `hash`. */
-async function blobOutboard(hash) {
-	const bytes = await read(await blobFolder(), `${hash}.obao`);
-	if (!bytes) throw new Error(`no outboard of ${hash} on the shelf`);
-	return bytes;
-}
-
-/** Writes `bytes` from byte `at` on of blob `name`, begun if it isn't yet. */
-async function blobWrite(name, at, bytes) {
-	(await blob(name, true)).write(bytes, { at });
-}
-
-/** Blob `name` is whole: blob `hash` of `size` bytes from now on, its bytes under its hash, then its outboard. */
-async function blobFinish(name, hash, size, outboard) {
-	const folder = await blobFolder();
-	if (await holds(folder, `${hash}.obao`)) return removeFile(folder, name);
-	const file = await blob(name, size === 0);
-	if (file.getSize() !== size) throw new Error(`${name} is ${file.getSize()} bytes, not ${size}`);
-	file.flush();
-	shut(name);
-	if (name !== hash) {
-		await removeFile(folder, hash);
-		const handle = await folder.getFileHandle(name);
-		if (handle.move) await handle.move(hash);
-		else await copy(folder, name, hash, size);
-	}
-	await put(folder, `${hash}.obao`, outboard);
-}
-
-/** Copies file `from` of `folder` to `to`, `COPY` bytes at a time, then removes it: where a browser can't move one. */
-async function copy(folder, from, to, size) {
-	const [source, target] = [await writable(folder, from), await writable(folder, to)];
+	const [reading, writing] = [await writable(source, from, false), await writable(target, to)];
 	try {
-		const bytes = new Uint8Array(Math.min(COPY, size));
+		const size = reading.getSize();
+		const bytes = new Uint8Array(Math.max(1, Math.min(COPY, size)));
+		writing.truncate(0);
 		for (let at = 0; at < size; at += COPY) {
-			const n = source.read(bytes, { at });
-			target.write(bytes.subarray(0, n), { at });
+			const n = reading.read(bytes, { at });
+			writing.write(bytes.subarray(0, n), { at });
 		}
-		target.flush();
+		writing.flush();
 	} finally {
-		source.close();
-		target.close();
+		reading.close();
+		writing.close();
 	}
-	await removeFile(folder, from);
+	await removed(source, from);
 }
 
-/** Drops blob `name`, its outboard first, so that it counts no more. */
-async function blobDrop(name) {
-	const folder = await blobFolder();
-	if (HASH.test(name)) await removeFile(folder, `${name}.obao`);
-	await removeFile(folder, name);
+/** Where blob `name` is: a finished one in `blobs/` under its hash, one being written in `new/`. */
+async function place(name) {
+	if (HASH.test(name)) return [await dir.getDirectoryHandle(BLOBS), `${BLOBS}/${name}`];
+	if (!WRITTEN.test(name)) throw new Error(`${name} names no blob being written`);
+	return [await dir.getDirectoryHandle(NEW), `${NEW}/${name}`];
 }
 
-/** The store IndexedDB kept under `name`, as pages did before (P8e): `{meta, edits, keys, ids}`, or `undefined`. */
-async function kept(name) {
-	const known = await indexedDB.databases?.();
-	if (known && !known.some((d) => d.name === name)) return undefined;
-	const request = (r) =>
-		new Promise((resolve, reject) => {
-			r.onsuccess = () => resolve(r.result);
-			r.onerror = () => reject(r.error);
-		});
-	const open = indexedDB.open(name);
-	open.onupgradeneeded = () => open.transaction.abort();
-	let db;
+/** Blob `name`, held open to read and write in place, made first if `create`. */
+async function blob(name, create = false) {
+	const [folder, at] = await place(name);
+	let file = handles.get(at);
+	if (file) {
+		handles.delete(at);
+	} else {
+		file = await writable(folder, name, create);
+		if (handles.size >= HANDLES) shut(handles.keys().next().value);
+	}
+	handles.set(at, file);
+	return file;
+}
+
+/** Lets go of the blob file at `at`, if it is held. */
+function shut(at) {
+	handles.get(at)?.close();
+	handles.delete(at);
+}
+
+function shutAll() {
+	for (const at of [...handles.keys()]) shut(at);
+}
+
+/** The size of file `name` of `folder`, or `undefined` if there is none. */
+async function sizeOf(folder, name, at) {
+	const open = handles.get(at);
+	if (open) return open.getSize();
 	try {
-		db = await request(open);
-	} catch {
-		return undefined;
-	}
-	try {
-		const stores = ['meta', EDITS, 'keys'];
-		if (!stores.every((s) => db.objectStoreNames.contains(s))) return undefined;
-		const tx = db.transaction(stores);
-		const [meta, edits, ids, keys] = await Promise.all([
-			request(tx.objectStore('meta').get('device')),
-			request(tx.objectStore(EDITS).getAll()),
-			request(tx.objectStore('keys').getAllKeys()),
-			request(tx.objectStore('keys').getAll())
-		]);
-		return meta ? { meta, edits, keys, ids } : undefined;
-	} finally {
-		db.close();
+		return (await (await folder.getFileHandle(name)).getFile()).size;
+	} catch (e) {
+		if (absent(e)) return undefined;
+		throw e;
 	}
 }
 
-/** Moves the device IndexedDB kept under `name` into this store, if there is one and the store holds none yet. */
-async function move(name) {
-	if (await meta()) return;
-	const old = await kept(name);
-	if (!old) return;
-	const keys = old.ids.map((id, i) => [String(id), new Uint8Array(old.keys[i])]);
-	await save({ from: 0, edits: old.edits.map((e) => new Uint8Array(e)), keys, drop: [] });
-	release();
-	await setMeta(old.meta);
-	await new Promise((resolve, reject) => {
-		const r = indexedDB.deleteDatabase(name);
-		r.onsuccess = resolve;
-		r.onerror = () => reject(r.error);
-		r.onblocked = resolve;
-	});
+/** The folders of object `name` and the name of its file, the folders made first if `create`. */
+async function object(name, create) {
+	const parts = name.split('/');
+	const named = parts.every((p) => PART.test(p) && p !== '.' && p !== '..') && !RESERVED.includes(parts[0]);
+	if (!named) throw new Error(`${JSON.stringify(name)} names no object`);
+	let folder = dir;
+	for (const part of parts.slice(0, -1)) folder = await folder.getDirectoryHandle(part, { create });
+	return [folder, parts[parts.length - 1]];
+}
+
+/** Whether `a` and `b` hold the same bytes. */
+function same(a, b) {
+	return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 const ops = {
-	async open(n) {
-		name = n;
-		dir = await (await stores()).getDirectoryHandle(name, { create: true });
-		await move(name);
+	/** Opens the store named `name`, in its newest generation, or a first, `g1`, made beside whatever the folder
+	 *  holds. */
+	async open(name) {
+		root = await (await stores()).getDirectoryHandle(name, { create: true });
+		await use((await generations()).at(-1) ?? 1);
 	},
-	meta,
-	setMeta,
-	load,
-	save,
-	release,
-	close: release,
-	blobs,
-	blobRead,
-	blobOutboard,
-	blobWrite,
-	blobFinish,
-	blobDrop,
-	/** Removes the store named `n`, and with it the device the page made. */
-	async remove(n) {
-		if (n === name) release();
-		await (await stores()).removeEntry(n, { recursive: true }).catch((e) => {
-			if (e?.name !== 'NotFoundError') throw e;
-		});
+
+	/** Holds the store for this worker alone, until `release`: refused while another holds it. */
+	async hold() {
+		lock ??= await writable(root, LOCK);
+	},
+
+	/** Lets go of the store, for another worker to hold, and of every blob file. */
+	release() {
+		lock?.close();
+		lock = undefined;
+		shutAll();
+	},
+
+	/** Puts the generation in use aside, never deleting it, and puts a new one in use, empty. Its number. */
+	async aside() {
+		return use(((await generations()).at(-1) ?? 0) + 1);
+	},
+
+	/** Every blob the shelf holds whole, `[hash, size]`, once it dropped the blobs never finished. */
+	async list() {
+		const fresh = await dir.getDirectoryHandle(NEW);
+		const unfinished = [];
+		for await (const [name] of fresh.entries()) if (name.startsWith(WRITING)) unfinished.push(name);
+		for (const name of unfinished) {
+			shut(`${NEW}/${name}`);
+			await removed(fresh, name);
+		}
+		const [blobs, outboards] = [await dir.getDirectoryHandle(BLOBS), await dir.getDirectoryHandle(OUTBOARDS)];
+		const held = [];
+		for await (const [name, handle] of outboards.entries()) {
+			if (handle.kind !== 'file' || !HASH.test(name)) continue;
+			const size = await sizeOf(blobs, name, `${BLOBS}/${name}`);
+			if (size !== undefined) held.push([name, size]);
+		}
+		return held;
+	},
+
+	/** `len` bytes of blob `name` from byte `at` on, or fewer at its end. */
+	async read(name, at, len) {
+		const file = await blob(name);
+		const bytes = new Uint8Array(Math.max(0, Math.min(at + len, file.getSize()) - at));
+		file.read(bytes, { at });
+		return bytes;
+	},
+
+	/** The outboard of blob `hash`. */
+	async outboard(hash) {
+		if (!HASH.test(hash)) throw new Error(`${hash} is no blob's hash`);
+		const bytes = await bytesOf(await dir.getDirectoryHandle(OUTBOARDS), hash);
+		if (!bytes) throw new Error(`no outboard of ${hash} on the shelf`);
+		return bytes;
+	},
+
+	/** Writes `bytes` from byte `at` on of blob `name`, being written, begun if it isn't yet. */
+	async write(name, at, bytes) {
+		if (HASH.test(name)) throw new Error(`blob ${name} is finished`);
+		(await blob(name, true)).write(bytes, { at });
+	},
+
+	/** Blob `name`, written whole, is blob `hash` of `size` bytes from now on: flushed and moved into place, then its
+	 *  outboard beside it, written whole first. If the shelf holds `hash` already, `name` goes. */
+	async finish(name, hash, size, outboard) {
+		if (HASH.test(name) || !HASH.test(hash)) throw new Error(`${name} isn't a blob being written`);
+		const folders = [NEW, BLOBS, OUTBOARDS].map((d) => dir.getDirectoryHandle(d));
+		const [fresh, blobs, outboards] = await Promise.all(folders);
+		if ((await bytesOf(outboards, hash)) !== undefined) {
+			shut(`${NEW}/${name}`);
+			return removed(fresh, name);
+		}
+		const file = await blob(name, size === 0);
+		if (file.getSize() !== size) throw new Error(`${name} is ${file.getSize()} bytes, not ${size}`);
+		file.flush();
+		shut(`${NEW}/${name}`);
+		// what a finish cut short left under the hash, without its outboard, counts for nothing
+		shut(`${BLOBS}/${hash}`);
+		await removed(blobs, hash);
+		await moved(fresh, name, blobs, hash);
+		const part = staged('outboard');
+		await written(fresh, part, outboard);
+		await moved(fresh, part, outboards, hash);
+	},
+
+	/** Drops blob `name`, being written or finished: a finished one's outboard first, so that it counts no more. */
+	async drop(name) {
+		const [folder, at] = await place(name);
+		if (HASH.test(name)) await removed(await dir.getDirectoryHandle(OUTBOARDS), name);
+		shut(at);
+		await removed(folder, name);
+	},
+
+	/** Puts `bytes` under object `name` once: written whole in `new/`, then moved into place, unless something is
+	 *  there already. True if it holds them now; false if it holds other bytes there, which it never replaces. */
+	async put(name, bytes) {
+		const [folder, file] = await object(name, true);
+		const there = await bytesOf(folder, file);
+		if (there) return same(there, bytes);
+		const fresh = await dir.getDirectoryHandle(NEW);
+		const part = staged('put');
+		await written(fresh, part, bytes);
+		await moved(fresh, part, folder, file);
+		return true;
+	},
+
+	/** The bytes put under object `name`, or `undefined`. */
+	async get(name) {
+		try {
+			const [folder, file] = await object(name, false);
+			return await bytesOf(folder, file);
+		} catch (e) {
+			if (absent(e) || e?.name === 'TypeMismatchError') return undefined;
+			throw e;
+		}
+	},
+
+	/** The name of every object put whose name starts with `prefix`, in order. */
+	async names(prefix) {
+		const found = [];
+		const walk = async (folder, path) => {
+			for await (const [name, handle] of folder.entries()) {
+				if (!path && RESERVED.includes(name)) continue;
+				if (!PART.test(name) || name === '.' || name === '..') continue;
+				const full = path ? `${path}/${name}` : name;
+				if (handle.kind === 'directory') await walk(handle, full);
+				else if (full.startsWith(prefix)) found.push(full);
+			}
+		};
+		await walk(dir, '');
+		return found.sort();
+	},
+
+	/** Lets go of the store before the page stops this worker. */
+	close() {
+		ops.release();
 	}
 };
+
+/** The buffers of `ok` the answer hands over rather than copies. */
+function handed(ok) {
+	return ok instanceof Uint8Array ? [ok.buffer] : [];
+}
 
 /** Runs one message's op after those before it, and answers it. */
 async function answer({ id, op, args }) {
 	try {
+		if (!Object.hasOwn(ops, op)) throw new Error(`the store has no ${op}`);
+		if (op !== 'open' && !root) throw new Error('the store is not open');
 		const ok = await ops[op](...args);
-		const moved = ok?.edits ? [...ok.edits, ...ok.keys].map((b) => b.buffer) : ok instanceof Uint8Array ? [ok.buffer] : [];
-		postMessage({ id, ok }, moved);
+		postMessage({ id, ok }, handed(ok));
 	} catch (e) {
 		postMessage({ id, error: String(e?.message ?? e) });
 	}
