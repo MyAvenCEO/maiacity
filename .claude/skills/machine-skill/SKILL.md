@@ -1,15 +1,6 @@
 ---
 name: machine-skill
-description: Machine skill (from AirSup's machine-skill, MIT): turn one line ("a turbofan jet engine", "a mechanical watch", "an LVAD heart pump") into a photoreal, physics based, interactive 3D simulation of that machine in a single HTML file, plus a 20 to 30 second film to post it. Real proportions in metres, real materials (PBR metals, paints, polymers, glass), studio lighting with soft shadows, moving parts driven by a small solver that computes real numbers (thrust, torque, rpm, flow, pressure, efficiency), and modes to explode it, cut it open with clean section caps, x-ray it, slow it down, label it and break it. Use this whenever someone asks to build, simulate, visualise, explain or "show how X works" for any machine, engine, mechanism, device, instrument or piece of hardware, wants an interactive 3D model or a cutaway, or wants a video of a machine for a post, even if they never say "simulation" or "three.js". Part of asset-producer.
----
-
-> **Our copy.** Everything below the line is AirSup's own text, copied word for word from
-> [AirsupHQ/machine-skill](https://github.com/AirsupHQ/machine-skill) at commit `e0bd066` (MIT: `LICENSE` here); the
-> `references/` files too. The skill is not installed. Its tools (`kit/`, `scripts/`, `film/` and `examples/`) stay in that repository:
-> when a step names one, clone it into the scratchpad at that commit and run it from there, never inside this repo:
-> `git clone https://github.com/AirsupHQ/machine-skill <scratchpad>/machine-skill && git -C <scratchpad>/machine-skill checkout e0bd066ac5beaf48512935de2fc0f0e55636853a`.
-> How its output joins our assets: the master skill, `asset-producer`.
-
+description: Turn one line ("a turbofan jet engine", "a mechanical watch", "an LVAD heart pump") into a photoreal, physics based, interactive 3D simulation of that machine in a single HTML file, plus a 20 to 30 second film to post it. Real proportions in metres, real materials (PBR metals, paints, polymers, glass), studio lighting with soft shadows, moving parts driven by a small solver that computes real numbers (thrust, torque, rpm, flow, pressure, efficiency), and modes to explode it, cut it open with clean section caps, x-ray it, slow it down, label it and break it. Use this whenever someone asks to build, simulate, visualise, explain or "show how X works" for any machine, engine, mechanism, device, instrument or piece of hardware, wants an interactive 3D model or a cutaway, or wants a video of a machine for a post, even if they never say "simulation" or "three.js".
 ---
 
 # Machine Skill
