@@ -174,12 +174,12 @@
 			const moment = step.kind === 'station' ? world.station({ lines }) : step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
 			moment.then(() => ((playing = ''), mark(step.id)));
 		} else if (step.kind === 'sow' && !told[step.id] && player?.seedling) {
-			// the seed into the earth and the water over it; the move goes to the game as the moment ends
+			// the seed into the earth and the water over it; the move goes to the game as the moment ends, the film held
+			// till it is there (no "Plant it" prompt flashing up between the last shot and the next)
 			playing = 'sow';
 			world.sow({ lines: step.lines }).then(() => {
-				playing = '';
 				told = { ...told, [step.id]: true };
-				plantIt();
+				Promise.resolve(plantIt()).finally(() => (playing = ''));
 			});
 		} else if ((step.kind === 'invest' || step.kind === 'mint' || step.kind === 'pick' || step.kind === 'spot') && !told[step.id]) {
 			playing = 'scene';
