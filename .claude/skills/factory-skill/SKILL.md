@@ -1,15 +1,6 @@
 ---
 name: factory-skill
-description: Factory skill (from AirSup's factory-skill, MIT): turn a one line description of a factory ("a line that makes 2,000 e-bike motors a day", "a bakery that bakes 10,000 croissants an hour", "a battery cell gigafactory") into a single self-contained HTML page with a live 3D tilt-shift miniature of that factory, driven by a real discrete event simulation (stations, cycle times, batches, finite buffers, shifts, breakdowns, scrap) with a live HUD for throughput against target, takt, utilization, WIP, lead time and the bottleneck, where clicking a station lets you add a machine or change a cycle time and watch the bottleneck move. Use it whenever someone wants to see, size, explain or pitch a production line, plant, assembly line, process or factory, asks "how many machines do I need", "where is the bottleneck", "can this line make N a day", wants a factory simulation or digital twin demo, or describes a product and a volume, even if they never say "simulation". Part of asset-producer.
----
-
-> **Our copy.** Everything below the line is AirSup's own text, copied word for word from
-> [AirsupHQ/factory-skill](https://github.com/AirsupHQ/factory-skill) at commit `9fde755` (MIT: `LICENSE` here); the
-> `references/` files too. The skill is not installed. Its tools (`runtime/`, `vendor/`, `scripts/` and `examples/`) stay in that repository:
-> when a step names one, clone it into the scratchpad at that commit and run it from there, never inside this repo:
-> `git clone https://github.com/AirsupHQ/factory-skill <scratchpad>/factory-skill && git -C <scratchpad>/factory-skill checkout 9fde7554e6a30e77ea1008dec08f2ba8d8d37f27`.
-> How its output joins our assets: the master skill, `asset-producer`.
-
+description: Turn a one line description of a factory ("a line that makes 2,000 e-bike motors a day", "a bakery that bakes 10,000 croissants an hour", "a battery cell gigafactory") into a single self-contained HTML page with a live 3D tilt-shift miniature of that factory, driven by a real discrete event simulation (stations, cycle times, batches, finite buffers, shifts, breakdowns, scrap) with a live HUD for throughput against target, takt, utilization, WIP, lead time and the bottleneck, where clicking a station lets you add a machine or change a cycle time and watch the bottleneck move. Use it whenever someone wants to see, size, explain or pitch a production line, plant, assembly line, process or factory, asks "how many machines do I need", "where is the bottleneck", "can this line make N a day", wants a factory simulation or digital twin demo, or describes a product and a volume, even if they never say "simulation".
 ---
 
 # Factory
