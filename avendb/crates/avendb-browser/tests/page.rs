@@ -2,17 +2,16 @@
 //! the page (`tests/page/`) and the device's WebAssembly, which `scripts/test-browser.sh` builds for passkeys of
 //! localhost; it starts a relay open to sign-up and a new server, nobody's yet, on this machine, and drives one
 //! headless Chromium over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and
-//! each of her browsers is a frame of the tab, with a store of its own in OPFS, its shelf. Her first browser finds
-//! there what an earlier avenDB kept, which it never reads, makes the passkey, founds her vault and claims the server
-//! in one ceremony after the unlock, and writes a note; then it runs the ops the page's screens send, each through
-//! `run` (V2): it brings a file (`put_file`) and reads a range of it back (`read_file`), founds two vaults in one more
-//! ceremony, reads its world, shares a note and revokes the share, keeps her notes, makes the coop a co-owner and sets
-//! a threshold, each in a ceremony of her passkey, marks the note and asks `may`; her second links through the first
-//! one's code in one ceremony
-//! and edits it; the first closes, opens again from its shelf in one ceremony and edits the note once more, no other
-//! page holding its store while it runs; then she forgets it there, and its shelf is put aside, a new one in use, what
-//! the earlier avenDB kept still as it was. Each page reports its steps to the test over HTTP. `cargo test` skips it;
-//! the script runs it.
+//! each of her browsers is a frame of the tab, with a store of its own in OPFS, its shelf. Her first browser clears
+//! there what an earlier avenDB kept, makes the passkey, founds her vault and claims the server in one ceremony after
+//! the unlock, and writes a note; then it runs the ops the page's screens send, each through `run` (V2): it brings a
+//! file (`put_file`) and reads a range of it back (`read_file`), founds two vaults in one more ceremony, reads its
+//! world, shares a note and revokes the share, keeps her notes, makes the coop a co-owner and sets a threshold, each in
+//! a ceremony of her passkey, marks the note and asks `may`; her second links through the first one's code in one
+//! ceremony and edits it; the first closes, opens again from its shelf in one ceremony and edits the note once more, no
+//! other page holding its store while it runs; then she forgets it there, and its shelf is put aside, a new one in use,
+//! what the earlier avenDB kept gone. Each page reports its steps to the test over HTTP. `cargo test` skips it; the
+//! script runs it.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -315,10 +314,10 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let opts = Options { relay: Some(relay.url()), admission: Some(admission.clone()), card: true, ..Options::local() };
     let server = Node::spawn(lab, server_d, opts).await.expect("the server");
 
-    // what an earlier avenDB kept for her first browser's store, in OPFS and in IndexedDB, which nothing reads
+    // what an earlier avenDB kept for her first browser's store, in OPFS and in IndexedDB, which it clears as it opens
     tab.frame(&[("page", "earlier"), ("store", "first"), ("earlier", "1")]).await;
     let earlier = tab.expect("earlier", "earlier").await;
-    assert!(earlier["ops"].is_string() && earlier["indexed"] == true, "kept: {earlier}");
+    assert!(earlier["ops"].is_string() && earlier["old"].is_string() && earlier["indexed"] == true, "kept: {earlier}");
 
     // Eve's first browser makes her passkey, founds her vault, claims the server and writes a note, in two ceremonies
     let code = server.offer().to_text();
@@ -337,8 +336,8 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let entry = EntryId(id(&first, "entry"));
     let holds = move |lab: &Lab, me| lab.fetched(me, entry) > 0;
     until("the server keeps her note", || server.read(holds)).await;
-    // her browser's shelf is a new one, beside what the earlier avenDB kept; the file she brought is there, its one
-    // piece under its hash, its outboard too
+    // her browser's shelf is a new one, alone, what the earlier avenDB kept cleared; the file she brought is there, its
+    // one piece under its hash, its outboard too
     assert_eq!(first["generations"], json!([format!("g{FLOOR}")]), "one shelf: {first}");
     let root = first["file"]["root"].as_str().unwrap_or_else(|| panic!("the file she brought: {first}"));
     for kept in ["blobs", "outboards"] {
@@ -415,8 +414,8 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     assert!(refused.contains("open in another tab"), "{refused}");
     tab.expect("second", "read again").await;
 
-    // she forgets it there: its shelf is put aside, never deleted, and a new one is in use, holding nothing; what the
-    // earlier avenDB kept is as it was
+    // she forgets it there: its shelf is put aside, deleting nothing, and a new one is in use, holding nothing; what
+    // the earlier avenDB kept, it cleared
     tab.eval("localStorage.setItem('go:again', '1')").await;
     tab.expect("again", "closed").await;
     let forgot = tab.expect("again", "forgot").await;
@@ -424,7 +423,8 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     assert_eq!(forgot["generations"], json!([old, new]), "a new shelf beside the old: {forgot}");
     assert_eq!(forgot["metas"], json!({ old: ["0000000000000001"], new: [] }), "the old shelf as it was");
     assert_eq!(forgot["meta"], Value::Null, "nothing opens a device on the new one");
-    assert_eq!(forgot["earlier"], earlier, "what the earlier avenDB kept, untouched");
+    let gone = json!({ "ops": null, "meta": null, "key": null, "old": null, "indexed": false });
+    assert_eq!(forgot["earlier"], gone, "what the earlier avenDB kept, cleared");
     let passkeys = tab.passkeys().await;
     assert_eq!(passkeys.len(), 1, "one passkey, Eve's: {passkeys:?}");
     assert_eq!(passkeys[0]["rpId"], "localhost");

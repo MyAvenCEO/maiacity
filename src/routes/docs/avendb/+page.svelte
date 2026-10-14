@@ -1241,8 +1241,9 @@
 		</p>
 		<ul class="prose-col">
 			<li>
-				<b>Never delete, put aside.</b> Forgetting an account, or starting fresh, makes a new generation beside the old
-				one, which is never read again and never deleted.
+				<b>Put aside, clear at a reset.</b> Forgetting an account, or starting fresh, makes a new generation beside the
+				old one, which is never read again. A reset of avenDB clears what came before it, on every device and in the
+				bucket.
 			</li>
 			<li>
 				<b>Nothing counts until the bucket has it.</b> The server’s shelf answers only once the bucket holds the object,

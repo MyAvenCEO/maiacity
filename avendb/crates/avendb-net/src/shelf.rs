@@ -2,11 +2,11 @@
 //! on every place it runs. A page's is in OPFS, through its store's worker (avendb-browser); the Mac's in its folder
 //! (`disk`); the server's in its bucket (`bucket::shelf`), whose folder is only a cache. A place keeps its shelves side
 //! by side, a generation each, `g1`, `g2` and on (`generation`): the newest is the one in use, and every older one is
-//! put aside, never read again and never deleted. A shelf holds blobs, each named by its hash once it is finished,
-//! with its outboard, the BLAKE3 tree iroh-blobs checks it by; and named objects, each put once and never replaced
-//! (`Call::Put`): the edits its device holds, as a journal, packs and heads (`edits`), a page's or the Mac's meta, and
-//! the server's device's secret. What a shelf answered it holds, it holds for good: synced to the folder's disk, in
-//! OPFS, or in the server's bucket.
+//! put aside, never read again, until a reset clears it (`FLOOR`). A shelf holds blobs, each named by its hash once it
+//! is finished, with its outboard, the BLAKE3 tree iroh-blobs checks it by; and named objects, each put once and never
+//! replaced (`Call::Put`): the edits its device holds, as a journal, packs and heads (`edits`), a page's or the Mac's
+//! meta, and the server's device's secret. What a shelf answered it holds, it holds for good: synced to the folder's
+//! disk, in OPFS, or in the server's bucket.
 //!
 //! Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-blobs reads and writes:
 //!
@@ -122,12 +122,19 @@ fn listable(prefix: &str) -> bool {
     prefix.is_empty() || named(prefix.strip_suffix('/').unwrap_or(prefix))
 }
 
-/// The generation every place's shelf is at least: avenDB's resets raise it, and a place whose newest shelf is of an
-/// older one puts it aside as it opens, never deleting it, and starts a new one of this generation, empty: the server's
-/// bucket (`bucket::shelf`), the Mac's folder (`disk::open`) and a page's OPFS (avendb-browser's `store.worker.js`,
-/// whose `FLOOR` is this). 2 since 2026-10-14, as the claim of a server founds the seed of Maia Holding GmbH,
-/// avenCEO GmbH and the CEO Aven (`avendb::world::SEED`).
+/// The generation every place's shelf is at least: avenDB's resets raise it. A place whose newest shelf is of an older
+/// one starts a new one of this generation, empty, as it opens, and clears what came before it: every older shelf and
+/// whatever else an earlier avenDB kept there (`kept`). So do the server's bucket (`bucket::shelf`, `bucket::clear`),
+/// the Mac's folder (`disk::open`, `disk::clear`) and a page's OPFS (avendb-browser's `store.worker.js`, whose `FLOOR`
+/// is this). 2 since 2026-10-14, as the claim of a server founds the seed of Maia Holding GmbH, avenCEO GmbH and the
+/// CEO Aven (`avendb::world::SEED`).
 pub const FLOOR: u64 = 2;
+
+/// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
+/// later one. Whatever else the place holds came before the last reset, and goes as the place opens.
+pub fn kept(name: &str) -> bool {
+    generation(name).is_some_and(|n| n >= FLOOR)
+}
 
 /// The generation a place's shelf is, by the name of its folder or prefix: `g1`, `g2` and on, written as the number
 /// is, if it is one.

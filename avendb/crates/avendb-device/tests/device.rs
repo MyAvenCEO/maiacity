@@ -4,9 +4,9 @@
 //! passkey that seals as the page does (avendb-browser's `sealCeremony`). Eve founds her vault from the Mac in two
 //! sheets, through a relay open to sign-up; the device keeps her vault on the shelf in its folder, opens again from it
 //! in the unlock's sheet alone, following the vaults it followed, and puts the shelf aside when she forgets it there,
-//! never deleting it. Every read and change is an op (`run`, V2), what her vault's owners approve signed in a sheet;
+//! deleting nothing. Every read and change is an op (`run`, V2), what her vault's owners approve signed in a sheet;
 //! a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`), and any range of it back, in base64. A new
-//! device puts aside a shelf a start cut short left, and never reads what an earlier avenDB kept in the folder.
+//! device puts aside a shelf a start cut short left, and clears what an earlier avenDB kept in the folder.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -414,11 +414,16 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_new_device_puts_aside_a_shelf_cut_short_and_never_reads_what_an_earlier_avendb_kept() {
+async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_avendb_kept() {
     let (_relay, url, server) = server().await;
     let folder = Folder::new("aside");
     let dir = folder.0.clone();
-    // what an earlier avenDB kept in the folder: its store, what opened its device, and a store it put aside
+    // a start cut short on the shelf in use: something kept, nothing that opens it
+    let shelf = disk::open(&dir).expect("its shelf");
+    shelf.put("journal/0000000000000001", Bytes::from_static(b"cut short")).await.expect("kept");
+    drop(shelf);
+    // and what an earlier avenDB kept in the folder: its store, what opened its device, a store it put aside, and a
+    // shelf from before the last reset
     let opened = json!({
         "name": "Eve's old Mac",
         "relay": url.to_string(),
@@ -428,16 +433,13 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_never_reads_what_an_earli
         "passkey": hex(&Passkey::from_seed([5; 32]).public()),
     });
     let opened = opened.to_string().into_bytes();
-    let aside = "aside/1760000000-forgotten/meta.json";
-    let earlier: [(&str, &[u8]); 3] = [("meta.json", &opened), ("store/ops", &[0, 0, 0, 3, 1, 2, 3]), (aside, &opened)];
+    let (aside, old) = ("aside/1760000000-forgotten/meta.json", "g1/meta/0000000000000001");
+    let ops: &[u8] = &[0, 0, 0, 3, 1, 2, 3];
+    let earlier = [("meta.json", &opened[..]), ("store/ops", ops), (aside, &opened), (old, &opened)];
     for (name, bytes) in earlier {
         std::fs::create_dir_all(dir.join(name).parent().expect("a folder")).expect("its folder");
         std::fs::write(dir.join(name), bytes).expect("kept");
     }
-    // and a start cut short on the shelf in use: something kept, nothing that opens it
-    let shelf = disk::open(&dir).expect("its shelf");
-    shelf.put("journal/0000000000000001", Bytes::from_static(b"cut short")).await.expect("kept");
-    drop(shelf);
     let mut app = App::start(&dir, Passkey::from_seed([5; 32]), false);
     let nothing = json!({ "meta": null, "open": false, "device": null });
     assert_eq!(app.call("status", json!([])).await, Ok(nothing), "nothing it opens");
@@ -451,9 +453,11 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_never_reads_what_an_earli
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["device"], &status["meta"]["name"]), (&device, &json!("Eve's Mac")));
     app.quit().await;
-    for (name, bytes) in earlier {
-        assert_eq!(std::fs::read(dir.join(name)).expect("still there"), bytes, "{name} as it was");
+    for (name, _) in earlier {
+        assert!(!dir.join(name).exists(), "{name} cleared");
     }
+    let left: Vec<_> = std::fs::read_dir(&dir).expect("its folder").map(|e| e.expect("one").file_name()).collect();
+    assert_eq!(left.len(), 2, "its two shelves alone: {left:?}");
     server.shutdown().await.expect("the server's node stops");
 }
 

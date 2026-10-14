@@ -82,7 +82,8 @@ Eight principles follow from the shape:
 6. **One API.** Every read and change is one JSON op through `run(op)`, the same on every device. The page keeps no
    rule; it asks the device.
 7. **One transport per job, the iroh way.** Our protocol decides what a peer may get. iroh-blobs moves the bytes.
-8. **Never delete, put aside.** An old store becomes an older generation beside the new one.
+8. **Put aside, clear at a reset.** An old store becomes an older generation beside the new one. A reset clears what
+   came before it, on every place.
 
 ## 2. What it guarantees
 
@@ -989,10 +990,12 @@ Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-bl
 A browser tab's worker holds the store's lock, so one device never runs in two tabs at once.
 
 **Generations and resets.** A place keeps its shelves side by side, one per generation, `g1`, `g2` and on. The newest
-is in use; every older one is put aside, never read again and never deleted. Forgetting a device starts a new one. A
-reset of avenDB raises `shelf::FLOOR`, the generation every place is at least: as a place opens, a newest shelf older
-than that is put aside, and the place starts empty, the server with a new device key. `FLOOR` is 2 since the seed of
-Maia Holding GmbH, avenCEO GmbH and the CEO Aven.
+is in use; every older one is put aside, never read again. Forgetting a device starts a new one. A reset of avenDB
+raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
+and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
+Mac clears its folder (`disk::clear`), a page its OPFS folder and the IndexedDB database of its name, the server its
+folder as it starts and its bucket while it runs (`bucket::clear`). `FLOOR` is 2 since the seed of Maia Holding GmbH,
+avenCEO GmbH and the CEO Aven.
 
 ### Layout of one generation
 
@@ -1014,8 +1017,8 @@ Maia Holding GmbH, avenCEO GmbH and the CEO Aven.
 - **Packs, not one object per edit.** An edit is a few kilobytes and object storage bills at least 64 KB per object,
   so packs keep "everything is a blob" true and cheap.
 - **Generations.** A place keeps its shelves side by side: `g1`, `g2` and on. The newest is in use. Forgetting an
-  account, or starting fresh, makes a new generation beside the old one, which is never read again and never deleted.
-  Whatever else the folder or bucket holds, such as an older avenDB's store, stays as it is, never read.
+  account, or starting fresh, makes a new generation beside the old one, which is never read again. A reset clears
+  every generation below `FLOOR` and whatever else the folder or bucket holds, such as an older avenDB's store.
 
 ### The server's bucket
 
@@ -1031,7 +1034,7 @@ Maia Holding GmbH, avenCEO GmbH and the CEO Aven.
   So the server's holdings name an edit or a file only once it is in the bucket. Until then, the device that wrote it
   sees the server lacks it, keeps it and offers it again.
 - **Locked.** The bucket keeps every object version for 7 days in compliance mode (Object Lock), so not even a
-  compromised server wipes the backup.
+  compromised server wipes the backup. What a reset clears stays there 7 more days, then goes.
 
 A server with no bucket runs on a folder shelf, laid out the same. A node with no shelf at all keeps its blobs in
 memory and nothing past its end; only tests run one.
