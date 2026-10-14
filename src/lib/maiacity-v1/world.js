@@ -1841,8 +1841,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				still(eye26, look26);
 			}, () => {
 				rampOut(true);
-				eye26 = truck.localToWorld(V(5.6, 1.05, -4.3));
-				look26 = truck.localToWorld(V(0, 0.75, -4.1));
+				eye26 = truck.localToWorld(V(5.8, 1.35, -4.3));
+				look26 = truck.localToWorld(V(0, 1.1, -4.1)); // high enough for them on the ramp, the bed's floor at 1.16 m
 				camera.position.copy(eye26);
 				controls.target.copy(look26);
 				lensFor({ fov: 40 });
