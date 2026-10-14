@@ -437,7 +437,7 @@ const rampTip = (z) => Math.min(1, Math.max(0, (Math.min(z - FOOT_Z, LIP_Z - z) 
 /** the first tree's spot once it is marked (Samuel 2026-10-14): the earth dug, the seed's hollow in its middle, and
  *  the plant stake the tree will grow by pushed in beside it, 75 cm of it standing; its little flag printed with the
  *  tree's name and its plant, tied on once the seed is picked */
-const STAKE_AT = V(0.15, -0.25, 0);
+const STAKE_AT = V(0.13, -0.25, -0.12);
 function spotKit({ name = '', seed = '' } = {}) {
 	const g = new THREE.Group();
 	const earth = dugEarth();
@@ -742,6 +742,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		p.rotation.set(0, 0, 0);
 		p.visible = true;
 		p.userData.glow.visible = false;
+		p.userData.pack.visible = false; // off their back while they sit, against the seat's back
 		act(p, where === 'driver' ? 'drive' : 'ride');
 	}
 	function seatOut(p) {
@@ -749,6 +750,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		world.attach(p);
 		p.rotation.set(0, p.rotation.y, 0);
 		p.userData.glow.visible = true;
+		p.userData.pack.visible = true;
 		act(p, 'idle');
 	}
 	/** in the cab as the story has them: the first player at the wheel; the second beside the first, who fetched them */
@@ -2059,9 +2061,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				me.rotation.y = spotYaw(S);
 			}),
 			beat(3.2, (s, k) => pourAt(L, S, k, pk.userData.bottle, setWet, me), () => (world.attach(pk.userData.bottle), lensFor({ fov: 36, near: 0.05 }))),
+			// close on the wet earth, then up the stake to its flag: the tree's name and its plant (the line: it carries
+			// your name now)
 			beat(3.5, (s, k) => {
-				camera.position.copy(L(0.44 - 0.04 * k, 0.36 - 0.04 * k, 0.34 - 0.03 * k));
-				camera.lookAt(L(0, 0.0, -0.02));
+				const e = ease(Math.min(1, Math.max(0, (k - 0.25) / 0.6)));
+				camera.position.copy(L(0.44 - 0.14 * e, 0.36 + 0.48 * e, 0.34 + 0.11 * e));
+				camera.lookAt(L(0.19 * e, 0.8 * e, -0.02 - 0.1 * e));
 			}, () => {
 				pour.visible = false;
 				stowBottle(pk);
