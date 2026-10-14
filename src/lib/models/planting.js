@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /*
  * PLANTING A TREE — what a newcomer to MaiaCity V1 carries to plant their first tree, and what they leave in the
- * ground: a hiker's backpack (open, its lid thrown back) with a 1 l water bottle and five seed packets in it, the
+ * ground: a hiker's backpack (open, its lid thrown back) with a 1 l water bottle and ten seed packets in it, the
  * packets one for each of V1's seeds (game/maiacity-v1/engine.js SEEDLINGS), two wooden marker sticks, a plant stake
  * with a little flag naming the tree, and a patch of dug earth that darkens when it is watered. Each to its real
  * measure (./units.js), standing on the ground at its origin, its front towards +z.
@@ -34,14 +34,22 @@ const m = {
 
 /* ── the seed packets ──────────────────────────────────────────────────────────────────────────────────────── */
 
-/** V1's seeds (engine SEEDLINGS ids): what each packet says and its colours */
+/** V1's seeds (engine SEEDLINGS ids, Samuel 2026-10-14: ten trees from our plants that bear fruit or nuts): what each
+ *  packet says and its colours */
 export const SEED_PACKETS = {
 	apple: { label: 'Apple', latin: 'Malus domestica', band: '#b8322a', ground: '#f3ead6' },
 	pear: { label: 'Pear', latin: 'Pyrus communis', band: '#8a9a2c', ground: '#f2eedb' },
 	cherry: { label: 'Sweet cherry', latin: 'Prunus avium', band: '#8e1730', ground: '#f6e9e2' },
-	hazel: { label: 'Hazel', latin: 'Corylus avellana', band: '#7a5530', ground: '#efe6d4' },
-	blackcurrant: { label: 'Blackcurrant', latin: 'Ribes nigrum', band: '#3d2a55', ground: '#ece8ef' }
+	plum: { label: 'Plum', latin: 'Prunus domestica', band: '#4a2d6b', ground: '#efe9f2' },
+	apricot: { label: 'Apricot', latin: 'Prunus armeniaca', band: '#d06f22', ground: '#f8ecdb' },
+	quince: { label: 'Quince', latin: 'Cydonia oblonga', band: '#b8901c', ground: '#f5f0d8' },
+	mulberry: { label: 'Mulberry', latin: 'Morus nigra', band: '#3b1431', ground: '#f2e6ec' },
+	walnut: { label: 'Walnut', latin: 'Juglans regia', band: '#4f6a2e', ground: '#ecebdc' },
+	chestnut: { label: 'Sweet chestnut', latin: 'Castanea sativa', band: '#7c3f1a', ground: '#f1e5d5' },
+	hazel: { label: 'Hazel', latin: 'Corylus avellana', band: '#7a5530', ground: '#efe6d4' }
 };
+/** every packet there is: V1's seeds, and those it no longer has (blackcurrant is a bush; it went on 2026-10-14) */
+export const ALL_PACKETS = { ...SEED_PACKETS, blackcurrant: { label: 'Blackcurrant', latin: 'Ribes nigrum', band: '#3d2a55', ground: '#ece8ef' } };
 /** a packet's size: 7 × 10 cm, a few seeds thick */
 export const PACKET = { w: 7 * CM, h: 10 * CM, d: 4 * MM };
 
@@ -162,12 +170,226 @@ const FRUIT = {
 		stalk(x, 104, 28, 124, 176, 136, 90, 3);
 		const berries = [[96, 74, 17], [126, 86, 19], [104, 106, 20], [134, 120, 19], [110, 142, 19], [140, 156, 17], [116, 176, 15]];
 		for (const [cx, cy, r] of berries) ball(x, cx, cy, r, '#5b4a78', '#120c1c', 0.5);
+	},
+	plum(x) {
+		// oval plums turning blue-black under a pale bloom, the suture down one side
+		const plum = (cx, cy, a) => {
+			x.save();
+			x.translate(cx, cy);
+			x.rotate(a);
+			const g = x.createRadialGradient(-14, -18, 6, 0, 0, 58);
+			g.addColorStop(0, '#7b67b0');
+			g.addColorStop(1, '#1f1440');
+			x.fillStyle = g;
+			x.beginPath();
+			x.ellipse(0, 0, 38, 50, 0, 0, Math.PI * 2);
+			x.fill();
+			x.fillStyle = 'rgba(205,200,235,0.28)';
+			x.beginPath();
+			x.ellipse(-8, -6, 30, 40, 0, 0, Math.PI * 2);
+			x.fill();
+			x.strokeStyle = 'rgba(20,10,40,0.6)';
+			x.lineWidth = 2.5;
+			x.beginPath();
+			x.moveTo(14, -46);
+			x.quadraticCurveTo(28, 0, 12, 46);
+			x.stroke();
+			x.restore();
+		};
+		leaf(x, 104, 30, 74, -0.2);
+		stalk(x, 104, 34, 72, 66, 84, 40, 3);
+		stalk(x, 104, 34, 148, 76, 132, 44, 3);
+		plum(70, 118, -0.15);
+		plum(150, 128, 0.2);
+	},
+	apricot(x) {
+		// round velvety apricots, orange freckled red, a crease down each
+		const apricot = (cx, cy, r) => {
+			ball(x, cx, cy, r, '#ffc260', '#d8641c', 0.3);
+			const g = x.createRadialGradient(cx + r * 0.3, cy - r * 0.1, r * 0.1, cx + r * 0.3, cy - r * 0.1, r * 0.8);
+			g.addColorStop(0, 'rgba(210,50,30,0.55)');
+			g.addColorStop(1, 'rgba(210,50,30,0)');
+			x.fillStyle = g;
+			x.beginPath();
+			x.arc(cx, cy, r, 0, Math.PI * 2);
+			x.fill();
+			x.fillStyle = 'rgba(150,30,20,0.5)';
+			for (let i = 0; i < 14; i++) {
+				const a = i * 2.4, d = r * (0.3 + ((i * 37) % 10) / 16);
+				x.beginPath();
+				x.arc(cx + r * 0.25 + Math.cos(a) * d * 0.6, cy - r * 0.1 + Math.sin(a) * d * 0.6, 1.6, 0, Math.PI * 2);
+				x.fill();
+			}
+			x.strokeStyle = 'rgba(160,70,20,0.55)';
+			x.lineWidth = 2.5;
+			x.beginPath();
+			x.moveTo(cx - r * 0.1, cy - r * 0.95);
+			x.quadraticCurveTo(cx - r * 0.45, cy, cx - r * 0.05, cy + r * 0.95);
+			x.stroke();
+		};
+		leaf(x, 112, 40, 66, -0.45);
+		leaf(x, 112, 40, 52, -2.5);
+		apricot(80, 120, 50);
+		apricot(150, 132, 42);
+	},
+	quince(x) {
+		// one big golden quince, pear-shaped and downy, its dried flower at the bottom; a round felted leaf
+		leaf(x, 120, 38, 72, -0.35, '#6f8f4f');
+		const g = x.createRadialGradient(92, 82, 8, 110, 116, 92);
+		g.addColorStop(0, '#fbe680');
+		g.addColorStop(1, '#c48d17');
+		x.fillStyle = g;
+		x.beginPath();
+		x.moveTo(110, 40);
+		x.bezierCurveTo(140, 40, 146, 72, 168, 98);
+		x.bezierCurveTo(196, 132, 170, 186, 112, 186);
+		x.bezierCurveTo(54, 186, 26, 134, 54, 98);
+		x.bezierCurveTo(76, 72, 82, 40, 110, 40);
+		x.fill();
+		x.fillStyle = 'rgba(255,250,225,0.35)';
+		x.beginPath();
+		x.ellipse(86, 100, 18, 34, 0.3, 0, Math.PI * 2);
+		x.fill();
+		x.strokeStyle = 'rgba(150,100,20,0.35)';
+		x.lineWidth = 2;
+		for (const dx of [-30, 0, 30]) (x.beginPath(), x.moveTo(110 + dx * 0.3, 52), x.quadraticCurveTo(110 + dx * 1.6, 120, 110 + dx * 0.4, 182), x.stroke());
+		x.fillStyle = '#5b3d1e';
+		for (let i = 0; i < 5; i++) {
+			const a = (i / 5) * Math.PI * 2;
+			x.beginPath();
+			x.ellipse(110 + Math.cos(a) * 7, 182 + Math.sin(a) * 4, 6, 3, a, 0, Math.PI * 2);
+			x.fill();
+		}
+		stalk(x, 110, 42, 116, 26, 108, 32, 5);
+	},
+	mulberry(x) {
+		// berries like long blackberries, one still red, a toothed leaf
+		const berry = (cx, cy, a, light, dark) => {
+			x.save();
+			x.translate(cx, cy);
+			x.rotate(a);
+			stalk(x, 0, -38, 2, -56, -4, -48, 3);
+			for (let row = 0; row < 7; row++)
+				for (let k = 0; k < 3; k++) {
+					const w = 16 * Math.sin(((row + 0.6) / 7.2) * Math.PI);
+					ball(x, (k - 1) * w * 0.8 + (row % 2 ? 4 : -4) * (k === 1 ? 0 : 1), -32 + row * 11, 8.5, light, dark, 0.45);
+				}
+			x.restore();
+		};
+		x.fillStyle = '#5a8a3a';
+		x.beginPath();
+		x.moveTo(36, 96);
+		for (let i = 0; i <= 18; i++) {
+			const t = (i / 18) * Math.PI * 2, r = 46 + (i % 2 ? 6 : 0);
+			x.lineTo(80 + Math.cos(t) * r, 70 + Math.sin(t) * r * 0.82);
+		}
+		x.fill();
+		x.strokeStyle = 'rgba(30,50,20,0.5)';
+		x.lineWidth = 2;
+		(x.beginPath(), x.moveTo(40, 100), x.lineTo(112, 44), x.stroke());
+		berry(126, 120, 0.15, '#6a2a52', '#160610');
+		berry(172, 132, -0.1, '#e05a62', '#8a1426');
+		berry(92, 148, 0.4, '#5a2246', '#12050d');
+	},
+	walnut(x) {
+		// a green husk split open on a walnut in its wrinkled shell, and a nut out of it; a pinnate leaf
+		x.save();
+		x.translate(60, 52);
+		x.rotate(-0.5);
+		stalk(x, -40, 0, 70, 0, 15, -4, 3);
+		for (const [lx, a] of [[-24, -1.2], [-24, 1.2], [8, -1.15], [8, 1.15], [70, 0]]) leaf(x, lx, 0, lx === 70 ? 46 : 40, a, '#4d7a30');
+		x.restore();
+		ball(x, 82, 130, 50, '#8fb052', '#3f6420', 0.3);
+		x.fillStyle = '#3a2412';
+		x.beginPath();
+		x.ellipse(90, 124, 30, 34, 0.2, 0, Math.PI * 2);
+		x.fill();
+		const shell = (cx, cy, r) => {
+			const g = x.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.1, cx, cy, r);
+			g.addColorStop(0, '#d9b47c');
+			g.addColorStop(1, '#8a5f2c');
+			x.fillStyle = g;
+			x.beginPath();
+			x.ellipse(cx, cy, r * 0.92, r, 0, 0, Math.PI * 2);
+			x.fill();
+			x.strokeStyle = 'rgba(90,55,20,0.6)';
+			x.lineWidth = 1.8;
+			for (let i = 0; i < 9; i++) {
+				const yy = cy - r * 0.8 + (i * r * 1.6) / 8;
+				x.beginPath();
+				x.moveTo(cx - r * 0.75, yy);
+				for (let k = 1; k <= 6; k++) x.lineTo(cx - r * 0.75 + (k * r * 1.5) / 6, yy + (k % 2 ? 4 : -4));
+				x.stroke();
+			}
+			x.strokeStyle = 'rgba(80,45,15,0.8)';
+			x.lineWidth = 2.5;
+			(x.beginPath(), x.moveTo(cx, cy - r), x.lineTo(cx, cy + r), x.stroke());
+		};
+		shell(92, 124, 26);
+		shell(164, 146, 34);
+	},
+	chestnut(x) {
+		// a spiny burr split open, two glossy chestnuts in it; a long bristle-toothed leaf
+		x.save();
+		x.translate(40, 40);
+		x.rotate(0.12);
+		x.fillStyle = '#5d8c35';
+		x.beginPath();
+		x.moveTo(0, 0);
+		for (let i = 0; i <= 12; i++) x.lineTo(i * 12, -12 - Math.sin((i / 12) * Math.PI) * 6 + (i % 2 ? -4 : 0));
+		for (let i = 12; i >= 0; i--) x.lineTo(i * 12, 12 + Math.sin((i / 12) * Math.PI) * 6 + (i % 2 ? 4 : 0));
+		x.fill();
+		x.strokeStyle = 'rgba(30,50,20,0.5)';
+		x.lineWidth = 2;
+		(x.beginPath(), x.moveTo(0, 0), x.lineTo(144, 0), x.stroke());
+		x.restore();
+		const cx = 104, cy = 128;
+		x.strokeStyle = '#8fae4a';
+		x.lineWidth = 2;
+		for (let i = 0; i < 70; i++) {
+			const a = (i / 70) * Math.PI * 2, r0 = 54, r1 = 74 + ((i * 13) % 7);
+			(x.beginPath(), x.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.85), x.lineTo(cx + Math.cos(a + 0.05) * r1, cy + Math.sin(a + 0.05) * r1 * 0.85), x.stroke());
+		}
+		const husk = x.createRadialGradient(cx, cy, 20, cx, cy, 62);
+		husk.addColorStop(0, '#f1ead2');
+		husk.addColorStop(1, '#9db45a');
+		x.fillStyle = husk;
+		x.beginPath();
+		x.ellipse(cx, cy, 60, 52, 0, 0, Math.PI * 2);
+		x.fill();
+		const nut = (nx, ny, a) => {
+			x.save();
+			x.translate(nx, ny);
+			x.rotate(a);
+			const g = x.createRadialGradient(-10, -10, 3, 0, 0, 34);
+			g.addColorStop(0, '#b0602c');
+			g.addColorStop(1, '#4a2210');
+			x.fillStyle = g;
+			x.beginPath();
+			x.moveTo(0, -32);
+			x.quadraticCurveTo(30, -22, 28, 10);
+			x.quadraticCurveTo(24, 30, 0, 30);
+			x.quadraticCurveTo(-24, 30, -28, 10);
+			x.quadraticCurveTo(-30, -22, 0, -32);
+			x.fill();
+			x.fillStyle = '#d9c9a0';
+			x.beginPath();
+			x.ellipse(0, 24, 20, 7, 0, 0, Math.PI * 2);
+			x.fill();
+			x.fillStyle = 'rgba(255,255,255,0.45)';
+			x.beginPath();
+			x.ellipse(-10, -12, 6, 12, 0.4, 0, Math.PI * 2);
+			x.fill();
+			x.restore();
+		};
+		nut(82, 126, -0.25);
+		nut(128, 128, 0.25);
 	}
 };
 
 /** the packet's printed front: its band, the fruit in a frame, its name and its Latin name */
 function packetFace(id) {
-	const s = SEED_PACKETS[id];
+	const s = ALL_PACKETS[id];
 	return canvasTexture(`seed-packet:${id}`, 280, 400, (x) => {
 		x.fillStyle = s.ground;
 		x.fillRect(0, 0, 280, 400);
@@ -206,7 +428,7 @@ function packetFace(id) {
 }
 
 /** A seed packet: 7 × 10 cm, a paper envelope with a few seeds in it, its fruit printed on the front (+z) with its
- *  name; standing on its bottom edge. `id`: one of V1's seeds (SEED_PACKETS). */
+ *  name; standing on its bottom edge. `id`: one of V1's seeds (SEED_PACKETS), or blackcurrant (ALL_PACKETS). */
 export function seedPacket(id = 'apple') {
 	const g = new THREE.Group();
 	g.name = `seed-packet:${id}`;
@@ -329,9 +551,10 @@ function strap(g, pts, w, t, mat) {
  *  pocket on top hinged at the back; a front pocket, mesh bottle pockets and compression straps on the sides; on the
  *  back (−z) a padded panel, two curved shoulder straps with a sternum strap, and a hip belt. Its front (+z) is the
  *  pocket's side. `open` (0 … 1) throws the lid back over the shoulder straps; open, it holds a 1 l water bottle and
- *  the five seed packets (userData.bottle, userData.packets by seed) standing on the clothes inside.
- *  `userData.setOpen(k)` opens or closes it (the things inside show only while it is open). */
-export function backpack({ open = 1 } = {}) {
+ *  the seed packets (userData.bottle, userData.packets by seed) standing on the clothes inside: v2 the ten of V1's
+ *  seeds in two rows, six in front and four behind them, raised, the bottle in the corner behind; v1 the first five
+ *  in one row. `userData.setOpen(k)` opens or closes it (the things inside show only while it is open). */
+export function backpack({ open = 1, v = 2 } = {}) {
 	const g = new THREE.Group();
 	g.name = 'backpack';
 	const { w, d, rim, top, floor } = PACK;
@@ -388,17 +611,27 @@ export function backpack({ open = 1 } = {}) {
 	inside.name = 'inside';
 	soft(inside, w - 0.05, 0.11, d - 0.05, 0.04, m.clothes(), 0, floor + 0.055, 0);
 	const bottle = waterBottle();
-	bottle.position.set(-0.085, floor, -0.04);
+	bottle.position.set(v >= 2 ? -0.095 : -0.085, floor, v >= 2 ? -0.05 : -0.04);
 	bottle.rotation.z = 0.08;
 	inside.add(bottle);
 	const packets = {};
-	Object.keys(SEED_PACKETS).forEach((id, i) => {
+	const add = (id, [px, py, pz], [rx, ry, rz]) => {
 		const p = seedPacket(id);
-		p.position.set(0.11 - i * 0.035, floor + 0.09, 0.07 - i * 0.008);
-		p.rotation.set(-0.08, -0.25 + i * 0.03, (i - 2) * 0.05);
+		p.position.set(px, py, pz);
+		p.rotation.set(rx, ry, rz);
 		inside.add(p);
 		packets[id] = p;
-	});
+	};
+	if (v < 2)
+		['apple', 'pear', 'cherry', 'hazel', 'blackcurrant'].forEach((id, i) => add(id, [0.11 - i * 0.035, floor + 0.09, 0.07 - i * 0.008], [-0.08, -0.25 + i * 0.03, (i - 2) * 0.05]));
+	else
+		// read from the left as you look in from the front: six along the front wall, each a little in front of the
+		// one before it, then four behind them standing higher, clear of the bottle
+		Object.keys(SEED_PACKETS).forEach((id, i) => {
+			const back = i >= 6, j = back ? i - 6 : i, n = back ? 4 : 6;
+			const x = back ? -0.018 + j * 0.039 : -0.1 + j * 0.04;
+			add(id, [x, floor + (back ? 0.12 : 0.09), (back ? -0.012 : 0.068) + j * 0.003], [back ? -0.12 : -0.08, (j - (n - 1) / 2) * -0.03, (j - (n - 1) / 2) * -0.025]);
+		});
 	g.add(inside);
 	g.traverse((o) => o.isMesh && (o.castShadow = true));
 	const setOpen = (k) => {
@@ -494,7 +727,7 @@ const endGrain = () =>
 /** the flag's print, on one side: a sleeve down its hoist, the plant in a frame next to it, the tree's name and what it
  *  is. `hoistLeft`: the side seen from the front has the wire on its left, the back has it on its right. */
 function drawFlag(x, seed, name, hoistLeft) {
-	const s = SEED_PACKETS[seed] ?? SEED_PACKETS.apple;
+	const s = ALL_PACKETS[seed] ?? ALL_PACKETS.apple;
 	const W = 500, H = 350;
 	x.clearRect?.(0, 0, W, H);
 	x.fillStyle = '#f6efdc';
@@ -598,7 +831,7 @@ export function plantStake({ name = '', seed = 'apple' } = {}) {
 	}
 	cloth.computeVertexNormals();
 	const faces = sides.map(({ t }, i) => new THREE.Mesh(cloth, new THREE.MeshStandardMaterial({ map: t, roughness: 0.55, side: i ? THREE.BackSide : THREE.FrontSide })));
-	const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.0028, 0.0028, flagH, 10), std((SEED_PACKETS[seed] ?? SEED_PACKETS.apple).band, 0.6)());
+	const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.0028, 0.0028, flagH, 10), std((ALL_PACKETS[seed] ?? ALL_PACKETS.apple).band, 0.6)());
 	flag.add(...faces, sleeve);
 	const setName = (n) => {
 		for (const { c, t, hoistLeft } of sides) {
