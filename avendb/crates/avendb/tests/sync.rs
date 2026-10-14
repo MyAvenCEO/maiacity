@@ -52,11 +52,11 @@ fn an_edit_sends_only_what_is_new_both_ways() {
     let mut w = world();
     let h = handbook(&mut w);
     w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
-    // the server, behind, is sent the edit and the checkpoint the Mac makes before it answers
-    assert_eq!(w.lab.sync(w.mac_a, w.server), 2);
+    // the server, behind, is sent the edit alone
+    assert_eq!(w.lab.sync(w.mac_a, w.server), 1);
     // the Mac, ahead, names edits further back than its newest, so the server finds what they share and sends nothing
     assert_eq!(w.lab.sync(w.server, w.mac_a), 0);
-    assert_eq!(w.lab.sync(w.server, w.mac_b), 2);
+    assert_eq!(w.lab.sync(w.server, w.mac_b), 1);
     assert_eq!(text(&w.lab, w.mac_b, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
 }
 

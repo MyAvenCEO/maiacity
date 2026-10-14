@@ -13,8 +13,8 @@ use std::collections::{BTreeSet, HashSet};
 use common::*;
 use avendb::id::{AudienceId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyId, KeyName, Secret};
-use avendb::lab::{Lab, Tamper};
-use avendb::policy::{mk_audience, view, Action, Edit, Level, Principal, Refusal, Revoking, Sharing, State, Who};
+use avendb::lab::Lab;
+use avendb::policy::{mk_audience, view, Action, Edit, Level, Principal, Refusal, Revoking, State, Who};
 use avendb::sealed::{open, seal, Brought, FileKey};
 use avendb::slice::Selector;
 
@@ -357,34 +357,29 @@ fn a_locked_device_holds_no_key() {
     assert!(!w.lab.unlock(w.phone_a) && w.lab.locked(w.phone_a));
 }
 
-/// Once the curves fall (P4b; T18): whoever broke a device's ed25519 key signs writes as it, as writes carry only
-/// the classical half, but no share, no governance and no checkpoint, which carry the hash-based half too. No peer
-/// trusts the curves, so each counts only the writes their own device's checkpoints cover, and the devices' own edits
-/// go on as before, each vouched for at once.
+/// Once the curves fall (P4b): whoever broke a device's ed25519 key, or a passkey's P-256 key, signs no edit, as every
+/// signature on every edit is SLH-DSA. A write or a share by Alice's Mac whose SLH-DSA signature is made up is refused
+/// by every device, and the devices' own edits go on as before.
 #[test]
-fn a_broken_curve_writes_nothing_that_counts() {
+fn a_broken_curve_signs_nothing() {
     let mut w = world();
     let h = handbook(&mut w);
-    let (mac_a, mac_b, dave) = (w.mac_a, w.mac_b, w.dave);
-    let broken = |action| Tamper::BrokenClassicalKey { signer: mac_a, action };
-    // no share to Dave, as Alice's Mac would draft it, and no new device for Alice, with the classical half alone
-    let to_dave = w.lab.draft_share(mac_a, &[mac_a], share(h.coop, vault(dave), Level::Read, by_id(h.welcome)));
-    let to_dave = to_dave.expect("Alice's Mac drafts a share to Dave").edit().action.clone();
-    assert_eq!(w.lab.tamper(mac_b, broken(to_dave)), Err(Refusal::BadSignature));
-    let add = Action::Share(Sharing::Device { vault: w.alice, device: w.stranger, seal_to: None });
-    assert_eq!(w.lab.tamper(mac_b, broken(add)), Err(Refusal::BadSignature));
-    // a write as Alice's Mac is kept, but doesn't count: no checkpoint by her Mac covers it
+    let (mac_a, mac_b) = (w.mac_a, w.mac_b);
+    let held = w.lab.size(mac_b).0;
+    let forge = |w: &mut World, action| {
+        let mut signed = w.lab.sign_unchecked(mac_a, &[mac_a], action).expect("Alice's Mac signs");
+        signed.sigs[0].pq = vec![0; avendb::sign::PQ_SIGNATURE_BYTES];
+        assert_eq!(signed.verify(), Err(Refusal::BadSignature));
+        signed
+    };
     let write = forced(&w.lab, mac_b, h.welcome, h.coop);
-    let forged = w.lab.tamper(mac_b, broken(write)).unwrap();
-    let counts = |w: &World, d| w.lab.state(d).all_writes().iter().any(|x| x.edit == forged);
-    assert!(!counts(&w, mac_b) && w.lab.log(mac_b).view().all_writes().iter().any(|x| x.edit == forged));
-    // the forger can't vouch for it
-    let vouch = Action::Checkpoint { entry: h.welcome, covers: vec![forged] };
-    assert_eq!(w.lab.tamper(mac_b, broken(vouch)), Err(Refusal::BadSignature));
-    assert!(!counts(&w, mac_b));
-    // Alice's own edits, vouched for as she made them, still count
+    let write = forge(&mut w, write);
+    let to_dave = w.lab.draft_share(mac_a, &[mac_a], share(h.coop, vault(w.dave), Level::Read, by_id(h.welcome)));
+    let to_dave = forge(&mut w, to_dave.expect("Alice's Mac drafts a share to Dave").edit().action.clone());
+    assert_eq!(w.lab.receive(mac_b, vec![write, to_dave], vec![]), 0, "Bob's Mac keeps neither");
+    assert_eq!(w.lab.size(mac_b).0, held);
+    // Alice's own edits still count, and an edit made now reaches Bob's Mac
     assert_eq!(text(&w.lab, mac_b, h.welcome, 2).as_deref(), Some(WELCOME_TEXT));
-    // an edit made now is vouched for at once, and reaches Bob's Mac
     w.lab.edit(mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
     w.lab.sync_all(7);
     assert_eq!(text(&w.lab, mac_b, h.welcome, 2).as_deref(), Some(AFTER_TEXT));

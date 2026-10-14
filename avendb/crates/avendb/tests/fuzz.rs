@@ -7,6 +7,7 @@
 //! the item as it was. Every mutation is drawn from a fixed seed, so a failure replays exactly.
 
 use std::fmt::Debug;
+use std::sync::OnceLock;
 
 use serde_json::{json, Map, Value};
 use avendb::doc::{Item, Version};
@@ -16,7 +17,7 @@ use avendb::keys::{self, KeyBox, KeyFam, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{Action, Edit, KeepMode, Level, Proposal, Revoking, Share, Sharing, Who};
 use avendb::rules::{Grant, On, Op, Proof, Scalar, Step};
-use avendb::sign::{Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
+use avendb::sign::{Assertion, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
 use avendb::sealed::{FileRoot, PIECE};
@@ -262,10 +263,7 @@ fn signed_edits() -> Edits {
     let device = DeviceKey::from_secret([7; 32]);
     let mut passkey = Passkey::from_seed([9; 32]);
     let (k, mut rng) = (keys(), SeededRng::new("fuzz", b"edits"));
-    let by_device = |edit: Edit| {
-        let pq = avendb::sign::needs_pq(&edit);
-        Signed { sigs: vec![device.sign(edit.id(), pq)], edit }
-    };
+    let by_device = |edit: Edit| Signed { sigs: vec![device.sign(edit.id())], edit };
     let add = Edit {
         parents: vec![EditId::from_u64(1)],
         depth: 1,
@@ -273,7 +271,7 @@ fn signed_edits() -> Edits {
         cosigners: vec![device.id()],
         action: Action::Share(Sharing::Device { vault: ALICE, device: device.id(), seal_to: None }),
     };
-    let sigs = vec![passkey.sign(add.id(), true), device.sign(add.id(), true)];
+    let sigs = vec![passkey.sign(add.id()), device.sign(add.id())];
     let add = Signed { edit: add, sigs };
     let author = device.id();
     let edit = |depth: u64, action: Action| Edit { parents: vec![], depth, author, cosigners: vec![], action };
@@ -326,15 +324,15 @@ fn signed_edits() -> Edits {
     Edits { add, create, write, share, marked, keep, revoked, wanted }
 }
 
-/// `add` signed again, its passkey's half in one ceremony over a batch: `add` and another edit drafted with it.
+/// `add` signed again, its passkey's assertion in one ceremony over a batch: `add` and another edit drafted with it.
 fn batched(add: &Signed) -> Signed {
     let mut passkey = Passkey::from_seed([9; 32]);
     let device = DeviceKey::from_secret([7; 32]);
     let mut batch = vec![add.edit.id(), EditId::from_u64(3)];
     batch.sort();
     let ceremony = passkey.ceremony(avendb::sign::batch_challenge(&batch));
-    let sig = ceremony.sign_in(passkey.keys(), add.edit.id(), &batch, true).expect("an edit of the batch");
-    Signed { edit: add.edit.clone(), sigs: vec![sig, device.sign(add.edit.id(), true)] }
+    let sig = ceremony.sign_in(passkey.keys(), add.edit.id(), &batch).expect("an edit of the batch");
+    Signed { edit: add.edit.clone(), sigs: vec![sig, device.sign(add.edit.id())] }
 }
 
 #[test]
@@ -365,7 +363,18 @@ fn a_changed_write_decrypts_to_nothing() {
     assert!(elsewhere > 2500, "{elsewhere}");
 }
 
-/// `sig` with one part changed: a key, the classical half, or the hash-based half (changed, left out or made up).
+/// A passkey's real assertion over another edit: put on a device's signature, it makes it no device's.
+fn other_assertion() -> Assertion {
+    static ONE: OnceLock<Assertion> = OnceLock::new();
+    let sign = || match Passkey::from_seed([3; 32]).sign(EditId::from_u64(4)).webauthn {
+        Some(WebAuthn::Edit(a)) => a,
+        _ => unreachable!("a passkey's assertion"),
+    };
+    ONE.get_or_init(sign).clone()
+}
+
+/// `sig` with one part changed: a key, a passkey's assertion (changed, left out, or one put on a device's), or the
+/// SLH-DSA signature (changed, cut short or made up).
 fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     let mut s = sig.clone();
     match g.below(3) {
@@ -378,12 +387,10 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
             let i = g.below(part.len());
             part[i] ^= 1 << g.below(8);
         }
-        1 => match &mut s.classical {
-            Classical::Ed25519(bytes) => {
-                let i = g.below(64);
-                bytes[i] ^= 1 << g.below(8);
-            }
-            Classical::Passkey(a) => {
+        1 => match &mut s.webauthn {
+            None => s.webauthn = Some(WebAuthn::Edit(other_assertion())),
+            Some(_) if g.below(4) == 0 => s.webauthn = None,
+            Some(WebAuthn::Edit(a)) => {
                 let part = match g.below(3) {
                     0 => &mut a.authenticator_data,
                     1 => &mut a.client_data_json,
@@ -391,7 +398,7 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
                 };
                 *part = mutate(g, part);
             }
-            Classical::Batch { assertion, edits } => match g.below(4) {
+            Some(WebAuthn::Batch { assertion, edits }) => match g.below(4) {
                 0 => assertion.signature = mutate(g, &assertion.signature),
                 1 => assertion.client_data_json = mutate(g, &assertion.client_data_json),
                 2 if !edits.is_empty() => {
@@ -400,17 +407,17 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
                 }
                 _ => edits.push(EditId::from_u64(g.next())),
             },
-            Classical::Pass { assertion, made } => match g.below(3) {
+            Some(WebAuthn::Pass { assertion, made }) => match g.below(3) {
                 0 => assertion.signature = mutate(g, &assertion.signature),
                 1 => assertion.client_data_json = mutate(g, &assertion.client_data_json),
                 _ => *made ^= 1 << g.below(64),
             },
         },
         _ => {
-            s.pq = match &s.pq {
-                Some(bytes) if g.below(4) > 0 => Some(mutate(g, bytes)),
-                Some(_) => None,
-                None => Some(g.bytes()),
+            s.pq = match g.below(4) {
+                0 => s.pq[..g.below(s.pq.len())].to_vec(),
+                1 => g.bytes(),
+                _ => mutate(g, &s.pq),
             }
         }
     }
@@ -529,15 +536,11 @@ fn a_changed_signed_edit_is_refused() {
             }
         }
     }
-    // the classical half alone signs nothing but a write: no governance, no share, no mark, no keep share
-    for signed in [&edits.add, &edits.share, &edits.marked, &edits.keep, &edits.revoked, &edits.wanted] {
-        let mut classical = signed.clone();
-        classical.sigs.iter_mut().for_each(|s| s.pq = None);
-        assert!(classical.verify().is_err(), "{classical:?}");
-    }
-    // which it signs alone
-    for signed in [&edits.create, &edits.write] {
-        assert!(signed.sigs.iter().all(|s| s.pq.is_none()) && signed.verify().is_ok());
+    // without its SLH-DSA signature, nothing is signed: no write, no governance, no share, no mark, no keep share
+    for signed in edits.all() {
+        let mut curves = signed.clone();
+        curves.sigs.iter_mut().for_each(|s| s.pq = vec![]);
+        assert!(curves.verify().is_err(), "{curves:?}");
     }
 }
 

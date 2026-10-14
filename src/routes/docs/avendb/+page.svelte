@@ -181,7 +181,7 @@
 		],
 		[
 			'Someone breaks elliptic curves',
-			'Recorded traffic stays closed, since every link and every sealed key has a post-quantum half. A write counts only where a hash-based checkpoint vouches for it.'
+			'Recorded traffic stays closed, since every link and every sealed key has a post-quantum half, and every edit counts by its hash-based signature alone.'
 		]
 	];
 
@@ -396,11 +396,7 @@
 		],
 		[
 			'Signatures',
-			'ed25519 for devices or P-256 for passkeys, each beside SLH-DSA-SHA2-128f, both checked.'
-		],
-		[
-			'Writes',
-			'The classical half alone, to stay small. Its device vouches for it in a checkpoint that carries both, and a write counts only once one covers it.'
+			'SLH-DSA-SHA2-128f on every edit, the only signature that counts. A passkey adds its WebAuthn assertion beside it, which only shows a person was there.'
 		],
 		['Keys sent to devices', 'Sealed boxes of X-Wing and Classic McEliece 6688128f together: closed while either holds.'],
 		[
@@ -422,7 +418,6 @@
 		['Sync sends only what shares reach, and strangers get nothing', 'T12'],
 		['Frontier sync loses nothing, and two devices that synced once hold the same edits', 'T13, T19'],
 		['An edit backdated past a removal that relied on what it took is cut', 'T16'],
-		['Once the curves fall, only checkpointed writes count', 'T18'],
 		['A share never grants more than what it rests on', 'T22'],
 		['The marks on each entry mean exactly what the shares say', 'T23'],
 		['The server decides every edit as an owner does, without reading a selector', 'T25'],
@@ -1347,8 +1342,9 @@
 			<p class="eyebrow">Post-quantum</p>
 			<h2>Quantum-proof, everywhere</h2>
 			<p class="prose-col">
-				Every node runs in post-quantum-only mode: no classical-only path is left. Where a classical algorithm still
-				appears, a post-quantum one stands beside it, and a write counts only once the post-quantum half holds.
+				Every node runs in post-quantum-only mode: no classical-only path is left. Every edit counts by its SLH-DSA
+				signature alone, and where a classical algorithm still appears, in a key exchange or a sealed box, a post-quantum
+				one stands beside it, so it stays closed while either holds.
 			</p>
 			<div class="table">
 				<table>

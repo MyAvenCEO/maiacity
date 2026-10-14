@@ -1,37 +1,35 @@
 //! Signatures: what makes an edit's signers its signers. A signature signs the edit's id, which hashes everything the
 //! edit says, so the rules (`policy`) only ever see edits whose author and cosigners really signed them.
 //!
-//! Every signer signs twice, with a classical key and with a hash-based one (SLH-DSA-SHA2-128f, FIPS 205), and an edit
-//! counts only if both halves verify: whoever breaks the curves, with a quantum computer or with better mathematics,
-//! still has to break SHA-256 too. A signer's id is the hash of both its public keys, so it names both.
+//! Every signature on every edit is SLH-DSA-SHA2-128f (FIPS 205), a hash-based signature, over the edit's id: no
+//! quantum computer and no better mathematics of curves forges one, as long as SHA-256 holds. A signer's id is the
+//! hash of its public keys, so it names each of them.
 //!
-//! - A device signs with ed25519, the key of its iroh endpoint, and with its SLH-DSA key. A person's device derives
-//!   all its keys from their passkey's PRF output (WebAuthn's `prf` extension) on a salt of its own, at every unlock,
-//!   and holds them in memory only: a locked or stolen device holds no key. The server, which has no passkey, keeps
-//!   keys of its own.
-//! - A passkey signs through WebAuthn, so its classical half is an assertion: the authenticator signs its data
-//!   followed by the SHA-256 of the client data, whose challenge is the edit's id, or the hash of the ids of several
-//!   edits it signs at once (`batch_challenge`), as a person's first device founds their vault in one ceremony.
-//!   Passkeys only sign P-256, so their hash-based key derives from their PRF output too: the authenticator computes
-//!   it, and it is a hash; it signs each edit's id on its own.
+//! - A device signs with its SLH-DSA key alone. Its ed25519 key is its iroh endpoint's, which TLS proves on a
+//!   connection beside its hello (`Hello`); it signs no edit. A person's device derives all its keys from their
+//!   passkey's PRF output (WebAuthn's `prf` extension) on a salt of its own, at every unlock, and holds them in memory
+//!   only: a locked or stolen device holds no key. The server, which has no passkey, keeps keys of its own.
+//! - A passkey's SLH-DSA key derives from its PRF output: the authenticator computes it, a keyed hash, so it is as
+//!   post-quantum as the signature. Its signature also carries the ceremony's WebAuthn assertion (`WebAuthn`), as
+//!   WebAuthn signs only with curves, P-256 here: the authenticator signs its data followed by the SHA-256 of the
+//!   client data, whose challenge is the edit's id, or the hash of the ids of several edits it signs at once
+//!   (`batch_challenge`). The assertion is the proof that the authenticator, and its person's fingerprint or PIN, took
+//!   part in that very ceremony, which the SLH-DSA key, the same at every ceremony, can't give; it adds nothing against
+//!   a quantum computer, and nothing counts on it alone.
 //!
-//! Writes are the one exception: a device writes often, and a write carries only its classical half. The device vouches
-//! for its writes in its next checkpoint, signed both ways (`policy::Action::Checkpoint`), and since no peer trusts the
-//! curves, each counts only checkpointed writes (`policy::checkpointed`).
-//!
-//! A signer may also consent once, for good, to be added as an owner (`consent_challenge`, `standing`): its signature,
-//! both halves, over a challenge that names it alone. An edit that founds a vault with it among the first owners, or
-//! adds it as an owner, takes that standing consent in place of its signature on the edit, unless the signer authors
-//! the edit or is the vault's root; no other edit does. So a key kept offline, as the master recovery key is
-//! (`recovery`), is added to vaults without ever coming online.
+//! A signer may also consent once, for good, to be added as an owner (`consent_challenge`, `standing`): its signature
+//! over a challenge that names it alone. An edit that founds a vault with it among the first owners, or adds it as an
+//! owner, takes that standing consent in place of its signature on the edit, unless the signer authors the edit or is
+//! the vault's root; no other edit does. So a key kept offline, as the master recovery key is (`recovery`), is added to
+//! vaults without ever coming online.
 //!
 //! Each signer also has a key that keys are sealed to (`keys`): a device derives it with its other keys, a passkey
 //! from its PRF output, so whoever can sign as the signer can also open what is sealed to it, and nothing else can.
 //!
 //! A passkey in the browser's authenticator signs in ceremonies (P8e, `Ceremony`): `navigator.credentials.get` over a
-//! challenge, with the PRF evaluated on `PRF_SALT` in the same ceremony. The assertion is the classical half, and the
-//! hash-based key and the key sealed to the passkey derive from the PRF output, which a device holds for that ceremony
-//! only. The software passkey of the tests and the Lab makes the same ceremonies (`Passkey::ceremony`).
+//! challenge, with the PRF evaluated on `PRF_SALT` in the same ceremony. The hash-based key and the key sealed to the
+//! passkey derive from the PRF output, which a device holds for that ceremony only. The software passkey of the tests
+//! and the Lab makes the same ceremonies (`Passkey::ceremony`).
 
 use std::fmt;
 
@@ -46,8 +44,8 @@ use crate::id::{EditId, SignerId};
 use crate::keys::Secret;
 use crate::policy::{Action, Edit, Principal, Refusal, Sharing};
 
-/// What both halves of a signature sign: ed25519 this followed by the edit's id, SLH-DSA the edit's id with this as its
-/// context string. It keeps an edit's old name, op, as every signature already made signs it.
+/// What a signature signs: the edit's id, with this as its SLH-DSA context string. It names an edit by its first name,
+/// op, as the master recovery key's standing consent, made offline, signs it (`recovery`).
 pub const SIG_CONTEXT: &[u8] = b"avenDB 2026-10-08 op signature";
 
 /// What a device's hello signs on a connection (`Hello`): SLH-DSA, with this as its context string, over which end of
@@ -55,8 +53,8 @@ pub const SIG_CONTEXT: &[u8] = b"avenDB 2026-10-08 op signature";
 /// apart.
 pub const HELLO_CONTEXT: &[u8] = b"avenDB 2026-10-08 hello";
 
-/// The suite of every signer and signature: ed25519 or P-256, each beside SLH-DSA-SHA2-128f. A signer's id hashes it,
-/// so a later suite names other signers.
+/// The suite of every signer and signature: SLH-DSA-SHA2-128f, a device's beside its ed25519 endpoint key and a
+/// passkey's beside its P-256 key. A signer's id hashes it, so a later suite names other signers.
 pub const SUITE: u8 = 1;
 
 /// An SLH-DSA-SHA2-128f signature's size.
@@ -65,15 +63,18 @@ pub const PQ_SIGNATURE_BYTES: usize = 17_088;
 /// The WebAuthn relying party passkeys belong to.
 pub const RP_ID: &str = "maia.city";
 
-/// Where a passkey assertion may come from: the website and the Mac app's webview.
-pub const ORIGINS: [&str; 3] = ["https://maia.city", "tauri://localhost", "http://tauri.localhost"];
+/// Where a passkey assertion comes from: the website, whose sheet the Mac app opens for its ceremonies too.
+pub const ORIGIN: &str = "https://maia.city";
 
 /// The relying party a test page's passkeys belong to, in a build with the feature `localhost-passkeys`: a page on
 /// localhost, whose virtual authenticator makes them (`scripts/test-browser.sh`). A build that ships never takes one.
 pub const TEST_RP_ID: &str = "localhost";
 
 /// The salt the app asks every passkey's PRF for its own keys: the same on every device, so each device that uses the
-/// passkey derives the same keys from it.
+/// passkey derives the same keys from it. Its date is its version. A later version is a salt of its own: the PRF is a
+/// keyed hash inside the authenticator, so its output on a new salt is independent of this one's, and the keys it
+/// derives are new even to whoever once saw this salt's output; a vault moves to them as to any new owner, the old
+/// keys signing the new in (`Sharing::Owner`) and the new removing the old.
 pub const PRF_SALT: &[u8] = b"avenDB 2026-10-08 passkey prf salt";
 
 /// What a device's salt starts with; 32 random bytes of the device's own follow, kept on the device. They are no
@@ -90,17 +91,18 @@ pub fn device_salt(nonce: &[u8; 32]) -> Vec<u8> {
 const UP: u8 = 0x01;
 const UV: u8 = 0x04;
 
-/// A signer's two public keys.
+/// A signer's public keys.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SignerKeys {
-    /// A device: its ed25519 key, which is also its iroh endpoint's, and its SLH-DSA key.
+    /// A device: its SLH-DSA key, which signs, and its ed25519 key, its iroh endpoint's, which TLS proves.
     Device { ed25519: [u8; 32], slh: [u8; 32] },
-    /// A passkey: its P-256 key (SEC1 compressed), and the SLH-DSA key derived from its PRF output.
+    /// A passkey: the SLH-DSA key derived from its PRF output, which signs, and its P-256 key (SEC1 compressed), which
+    /// signs its ceremonies' assertions.
     Passkey { p256: [u8; 33], slh: [u8; 32] },
 }
 
 impl SignerKeys {
-    /// The signer's id: the hash of the suite and both keys.
+    /// The signer's id: the hash of the suite and its keys.
     pub fn id(&self) -> SignerId {
         let mut h = Hasher::new("signer id");
         h.update(&[SUITE]);
@@ -118,41 +120,53 @@ impl SignerKeys {
     }
 }
 
-/// One signer's signature on an edit: its keys, which hash to its id; the classical half; and the hash-based half, on
-/// every edit but a write.
+/// One signer's signature on an edit: its keys, which hash to its id; the SLH-DSA signature over the edit's id; and a
+/// passkey's WebAuthn assertion from the ceremony that made it, which a device's never carries.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Signature {
     pub keys: SignerKeys,
-    pub classical: Classical,
+    /// A passkey's assertion; `None` for a device.
+    pub webauthn: Option<WebAuthn>,
     /// SLH-DSA-SHA2-128f over the edit's id, `PQ_SIGNATURE_BYTES` long.
-    pub pq: Option<Vec<u8>>,
+    pub pq: Vec<u8>,
 }
 
-/// The hash-based half shows only its size.
+/// The SLH-DSA signature shows only its size.
 impl fmt::Debug for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pq = self.pq.as_ref().map(|s| format!("{} bytes", s.len()));
-        f.debug_struct("Signature").field("keys", &self.keys).field("classical", &self.classical).field("pq", &pq).finish()
+        let pq = format!("{} bytes", self.pq.len());
+        f.debug_struct("Signature")
+            .field("keys", &self.keys)
+            .field("webauthn", &self.webauthn)
+            .field("pq", &pq)
+            .finish()
     }
 }
 
-/// The classical half of a signature.
+/// A passkey's WebAuthn assertion on a signature: the proof that its authenticator, and its person, took part in the
+/// ceremony that signed. WebAuthn signs only with curves, so it adds nothing against a quantum computer.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Classical {
-    /// ed25519 over `SIG_CONTEXT` and the edit's id.
-    Ed25519([u8; 64]),
-    /// A passkey's WebAuthn assertion whose challenge is the edit's id.
-    Passkey(Assertion),
+pub enum WebAuthn {
+    /// The assertion whose challenge is the edit's id.
+    Edit(Assertion),
     /// A passkey's WebAuthn assertion over several edits it signed in one ceremony: its challenge is their batch's
     /// (`batch_challenge`), and `edits` holds their ids, smallest first, the edit's among them.
     Batch { assertion: Assertion, edits: Vec<EditId> },
-    /// A passkey's pass for a new device (`RelayPass`), made at `made`, as the classical half of the edit that adds
-    /// that device to the passkey's vault: the assertion over the pass's challenge (`pass_challenge`), the device's and
-    /// `made`'s. The ceremony that unlocks a new device signs up or in with it: the passkey approves the device, by the
-    /// curve, and the edit itself by the hash-based half, which the pass's ceremony's PRF output makes and which this
-    /// half never goes without. It counts only on an edit adding that very device, which cosigns it
-    /// (`Sharing::Device`, `Signed::verify`).
+    /// A passkey's pass for a new device (`RelayPass`), made at `made`, on the edit that adds that device to the
+    /// passkey's vault: the assertion over the pass's challenge (`pass_challenge`), the device's and `made`'s. The
+    /// ceremony that unlocks a new device signs up or in with it: its PRF output makes the SLH-DSA signature on the
+    /// edit. It counts only on an edit adding that very device, which cosigns it (`Sharing::Device`,
+    /// `Signed::verify`).
     Pass { assertion: Assertion, made: u64 },
+}
+
+impl WebAuthn {
+    /// Its assertion.
+    pub fn assertion(&self) -> &Assertion {
+        match self {
+            WebAuthn::Edit(a) | WebAuthn::Batch { assertion: a, .. } | WebAuthn::Pass { assertion: a, .. } => a,
+        }
+    }
 }
 
 /// What `navigator.credentials.get` returns; the passkey's key is among the signer's keys.
@@ -172,27 +186,27 @@ pub struct Signed {
 }
 
 impl Signed {
-    /// The edit, if each signer it names signed it: both halves, or on a write the classical half.
+    /// The edit, if each signer it names signed it.
     pub fn verify(&self) -> Result<&Edit, Refusal> {
         let signers: Vec<SignerId> = self.edit.sigs().collect();
-        let (id, pq) = (self.edit.id(), needs_pq(&self.edit));
+        let id = self.edit.id();
         let joins = match self.edit.action {
             Action::Share(Sharing::Device { device, .. }) if self.edit.cosigners.contains(&device) => Some(device),
             _ => None,
         };
         let standing = standing(&self.edit);
         let consents =
-            |s: SignerId, sig: &Signature| standing.contains(&s) && verify(s, EditId(consent_challenge(s)), sig, true);
-        let verifies = |(&s, sig): (&SignerId, &Signature)| verify_adding(s, id, sig, pq, joins) || consents(s, sig);
+            |s: SignerId, sig: &Signature| standing.contains(&s) && verify(s, EditId(consent_challenge(s)), sig);
+        let verifies = |(&s, sig): (&SignerId, &Signature)| verify_adding(s, id, sig, joins) || consents(s, sig);
         let all = signers.len() == self.sigs.len() && signers.iter().zip(&self.sigs).all(verifies);
         if all { Ok(&self.edit) } else { Err(Refusal::BadSignature) }
     }
 }
 
 /// A device's hello on a connection (P8): its keys, and its SLH-DSA signature over the connection's TLS exporter and
-/// the end it speaks for. The TLS handshake proves the classical half, as the device's iroh endpoint key is its ed25519
-/// key, and the hello the hash-based half: a connection proves which device is talking even once the curves fall, and
-/// a hello can't be replayed on another connection, nor sent back by the other end.
+/// the end it speaks for. The TLS handshake proves the device's ed25519 key, its iroh endpoint's, and the hello its
+/// SLH-DSA key: a connection proves which device is talking even once the curves fall, and a hello can't be replayed
+/// on another connection, nor sent back by the other end.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Hello {
     pub keys: SignerKeys,
@@ -262,7 +276,7 @@ pub struct RelayPass {
     pub made: u64,
 }
 
-/// The hash-based half shows only its size.
+/// The SLH-DSA signature shows only its size.
 impl fmt::Debug for RelayPass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RelayPass")
@@ -294,7 +308,7 @@ impl RelayPass {
 
     /// The passkeys that made it for its device, checked at `now`, seconds since 1970 by the checker's clock: none
     /// unless its device's keys are a device's, it was made in the `PASS_LIFE` seconds before `now` (or at most
-    /// `PASS_SKEW` after) and its hash-based half checks out; then each of its `candidates` whose P-256 key its
+    /// `PASS_SKEW` after) and its SLH-DSA signature checks out; then each of its `candidates` whose P-256 key its
     /// assertion verifies under. Which device it is for, the checker checks: the endpoint a relay's handshake proved,
     /// or the device whose hello proved it on a connection.
     pub fn passkeys(&self, now: u64) -> Vec<SignerId> {
@@ -330,15 +344,15 @@ impl RelayPass {
     }
 }
 
-/// What both halves of a pass sign: a hash of the device's id, which names both its keys, and when the pass was made.
-/// Its own hash, so no edit's id is ever one. The ceremony that unlocks a new device signs it (`Ceremony::pass`).
+/// What a pass signs: a hash of the device's id, which names both its keys, and when the pass was made. Its own hash,
+/// so no edit's id is ever one. The ceremony that unlocks a new device signs it (`Ceremony::pass`).
 pub fn pass_challenge(device: SignerId, made: u64) -> [u8; 32] {
     let mut h = Hasher::new("relay pass for a device");
     h.update(&device.0).update(&made.to_be_bytes());
     h.finalize()
 }
 
-/// What a signer signs, both halves, to consent for good to be added as an owner (`standing`): a hash of its id alone.
+/// What a signer signs to consent for good to be added as an owner (`standing`): a hash of its id alone.
 /// Its own hash, so it is never an edit's id, nor a batch's, a hello's or a pass's challenge.
 pub fn consent_challenge(signer: SignerId) -> [u8; 32] {
     let mut h = Hasher::new("standing consent to own");
@@ -364,7 +378,7 @@ pub fn standing(edit: &Edit) -> Vec<SignerId> {
     added.into_iter().filter(|&s| s != edit.author).collect()
 }
 
-/// What a passkey's assertion signs for several edits at once, in one ceremony (`Classical::Batch`): a hash of their
+/// What a passkey's assertion signs for several edits at once, in one ceremony (`WebAuthn::Batch`): a hash of their
 /// ids, smallest first. Its own hash, so it is never an edit's id, nor a hello's or a pass's challenge, and it names
 /// exactly these edits: the assertion counts for each of them, and for no other.
 pub fn batch_challenge(edits: &[EditId]) -> [u8; 32] {
@@ -375,54 +389,38 @@ pub fn batch_challenge(edits: &[EditId]) -> [u8; 32] {
     h.finalize()
 }
 
-/// Every edit but a write carries the hash-based half of each of its signatures.
-pub fn needs_pq(edit: &Edit) -> bool {
-    !matches!(edit.action, Action::Write { .. })
-}
-
-/// `sig` is `signer`'s signature on edit `edit`: its keys hash to the signer, its classical half verifies, and so does
-/// its hash-based half wherever it is present, as it must be when `pq`.
-pub fn verify(signer: SignerId, edit: EditId, sig: &Signature, pq: bool) -> bool {
-    verify_adding(signer, edit, sig, pq, None)
+/// `sig` is `signer`'s signature on edit `edit`: its keys hash to the signer, its SLH-DSA signature verifies, and a
+/// passkey's assertion verifies too, where a device's carries none.
+pub fn verify(signer: SignerId, edit: EditId, sig: &Signature) -> bool {
+    verify_adding(signer, edit, sig, None)
 }
 
 /// `verify`, on an edit that adds device `joins` to a vault, which it cosigns (`Sharing::Device`), if it is one:
-/// there a passkey's pass for that device (`Classical::Pass`) is the classical half too, beside its hash-based half.
-pub fn verify_adding(signer: SignerId, edit: EditId, sig: &Signature, pq: bool, joins: Option<SignerId>) -> bool {
+/// there a passkey's pass for that device (`WebAuthn::Pass`) is its assertion too.
+pub fn verify_adding(signer: SignerId, edit: EditId, sig: &Signature, joins: Option<SignerId>) -> bool {
     if sig.keys.id() != signer {
         return false;
     }
-    let classical = match (&sig.keys, &sig.classical) {
-        (SignerKeys::Device { ed25519, .. }, Classical::Ed25519(bytes)) => {
-            let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(ed25519) else { return false };
-            key.verify_strict(&message(edit), &ed25519_dalek::Signature::from_bytes(bytes)).is_ok()
-        }
-        (SignerKeys::Passkey { p256, .. }, Classical::Passkey(a)) => a.verify(p256, edit),
-        (SignerKeys::Passkey { p256, .. }, Classical::Batch { assertion, edits }) => {
+    let present = match (&sig.keys, &sig.webauthn) {
+        (SignerKeys::Device { .. }, None) => true,
+        (SignerKeys::Passkey { p256, .. }, Some(WebAuthn::Edit(a))) => a.verify(p256, edit),
+        (SignerKeys::Passkey { p256, .. }, Some(WebAuthn::Batch { assertion, edits })) => {
             let set = edits.windows(2).all(|w| w[0] < w[1]);
             set && edits.contains(&edit) && assertion.verify(p256, EditId(batch_challenge(edits)))
         }
-        (SignerKeys::Passkey { p256, .. }, Classical::Pass { assertion, made }) => match joins {
-            Some(device) => sig.pq.is_some() && assertion.verify(p256, EditId(pass_challenge(device, *made))),
+        (SignerKeys::Passkey { p256, .. }, Some(WebAuthn::Pass { assertion, made })) => match joins {
+            Some(device) => assertion.verify(p256, EditId(pass_challenge(device, *made))),
             None => false,
         },
         _ => false,
     };
-    classical
-        && match &sig.pq {
-            Some(s) => verify_pq(sig.keys.slh(), edit, s),
-            None => !pq,
-        }
+    present && verify_pq(sig.keys.slh(), edit, &sig.pq)
 }
 
 fn verify_pq(key: &[u8; 32], edit: EditId, sig: &[u8]) -> bool {
     let Ok(key) = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&key[..]) else { return false };
     let Ok(sig) = slh_dsa::Signature::<Sha2_128f>::try_from(sig) else { return false };
     key.try_verify_with_context(&edit.0, SIG_CONTEXT, &sig).is_ok()
-}
-
-fn message(edit: EditId) -> Vec<u8> {
-    [SIG_CONTEXT, &edit.0[..]].concat()
 }
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
@@ -531,39 +529,38 @@ impl Ceremony {
         (slh_public(&key) == *slh && self.assertion.verify(p256, EditId(challenge))).then_some(key)
     }
 
-    /// The signature on edit `edit` of the passkey whose keys are `keys`: the assertion as its classical half, and with
-    /// `pq` the hash-based half. `None` unless this is that passkey's ceremony over the edit's id.
-    pub fn sign(&self, keys: SignerKeys, edit: EditId, pq: bool) -> Option<Signature> {
+    /// The signature on edit `edit` of the passkey whose keys are `keys`: the SLH-DSA signature over the edit's id,
+    /// with the assertion beside it. `None` unless this is that passkey's ceremony over the edit's id.
+    pub fn sign(&self, keys: SignerKeys, edit: EditId) -> Option<Signature> {
         let slh = self.of(&keys, edit.0)?;
-        let classical = Classical::Passkey(self.assertion.clone());
-        Some(Signature { keys, classical, pq: pq.then(|| sign_pq(&slh, edit)) })
+        Some(Signature { keys, webauthn: Some(WebAuthn::Edit(self.assertion.clone())), pq: sign_pq(&slh, edit) })
     }
 
     /// The same, for edit `edit` among the edits `batch` this ceremony signs together, their ids smallest first: the
-    /// assertion over their `batch_challenge` as its classical half (`Classical::Batch`), and with `pq` the hash-based
-    /// half over the edit's own id. An empty `batch` is the edit alone (`sign`). `None` unless the edit is among them
-    /// and this is that passkey's ceremony over their batch.
-    pub fn sign_in(&self, keys: SignerKeys, edit: EditId, batch: &[EditId], pq: bool) -> Option<Signature> {
+    /// SLH-DSA signature over the edit's own id, beside the assertion over their `batch_challenge`
+    /// (`WebAuthn::Batch`). An empty `batch` is the edit alone (`sign`). `None` unless the edit is among them and this
+    /// is that passkey's ceremony over their batch.
+    pub fn sign_in(&self, keys: SignerKeys, edit: EditId, batch: &[EditId]) -> Option<Signature> {
         if batch.is_empty() {
-            return self.sign(keys, edit, pq);
+            return self.sign(keys, edit);
         }
         if !batch.contains(&edit) || !batch.windows(2).all(|w| w[0] < w[1]) {
             return None;
         }
         let slh = self.of(&keys, batch_challenge(batch))?;
-        let classical = Classical::Batch { assertion: self.assertion.clone(), edits: batch.to_vec() };
-        Some(Signature { keys, classical, pq: pq.then(|| sign_pq(&slh, edit)) })
+        let webauthn = WebAuthn::Batch { assertion: self.assertion.clone(), edits: batch.to_vec() };
+        Some(Signature { keys, webauthn: Some(webauthn), pq: sign_pq(&slh, edit) })
     }
 
     /// The signature on edit `edit`, which adds the device `device` to a vault (`Sharing::Device`), of the passkey
     /// whose keys are `keys`, as this ceremony is that passkey's pass for the device, made at `made` (`pass`): the
-    /// pass's assertion as its classical half (`Classical::Pass`), and the hash-based half over the edit's own id,
-    /// which it always carries. So the ceremony that unlocks a new device also signs the edit adding it, and the device
-    /// signs in with one ceremony. `None` unless this is that passkey's ceremony over the device's `pass_challenge`.
+    /// SLH-DSA signature over the edit's own id, beside the pass's assertion (`WebAuthn::Pass`). So the ceremony that
+    /// unlocks a new device also signs the edit adding it, and the device signs in with one ceremony. `None` unless
+    /// this is that passkey's ceremony over the device's `pass_challenge`.
     pub fn sign_adding(&self, keys: SignerKeys, edit: EditId, device: SignerId, made: u64) -> Option<Signature> {
         let slh = self.of(&keys, pass_challenge(device, made))?;
-        let classical = Classical::Pass { assertion: self.assertion.clone(), made };
-        Some(Signature { keys, classical, pq: Some(sign_pq(&slh, edit)) })
+        let webauthn = WebAuthn::Pass { assertion: self.assertion.clone(), made };
+        Some(Signature { keys, webauthn: Some(webauthn), pq: sign_pq(&slh, edit) })
     }
 
     /// Its passkey's pass (`RelayPass`) for the device whose keys are `device`, made at `made`: `None` unless they are a
@@ -588,10 +585,10 @@ impl Ceremony {
     }
 }
 
-/// An assertion made at `origin` for the relying party whose id hashes to `rp` is ours: maia.city's, from one of
-/// `ORIGINS`; or, in a build for the tests with the feature `localhost-passkeys`, localhost's, from a page on it.
+/// An assertion made at `origin` for the relying party whose id hashes to `rp` is ours: maia.city's, from `ORIGIN`;
+/// or, in a build for the tests with the feature `localhost-passkeys`, localhost's, from a page on it.
 fn relying_party(origin: &str, rp: &[u8]) -> bool {
-    if ORIGINS.contains(&origin) {
+    if origin == ORIGIN {
         return rp == sha256(RP_ID.as_bytes());
     }
     #[cfg(feature = "localhost-passkeys")]
@@ -659,9 +656,9 @@ fn slh_public(key: &slh_dsa::SigningKey<Sha2_128f>) -> [u8; 32] {
     key.verifying_key().to_bytes().into()
 }
 
-/// A device's keys: ed25519, the same key as its iroh endpoint, so a connection proves which device is talking; its
-/// SLH-DSA key; and the key keys are sealed to for it. All three derive from 32 secret bytes, and each wipes itself as
-/// it is dropped.
+/// A device's keys: its SLH-DSA key, which signs; ed25519, the same key as its iroh endpoint, so a connection proves
+/// which device is talking; and the key keys are sealed to for it. All three derive from 32 secret bytes, and each
+/// wipes itself as it is dropped.
 pub struct DeviceKey {
     ed25519: ed25519_dalek::SigningKey,
     slh: slh_dsa::SigningKey<Sha2_128f>,
@@ -701,11 +698,9 @@ impl DeviceKey {
         self.keys().id()
     }
 
-    /// The device's signature on edit `edit`: the classical half, and with `pq` the hash-based one.
-    pub fn sign(&self, edit: EditId, pq: bool) -> Signature {
-        use ed25519_dalek::Signer as _;
-        let classical = Classical::Ed25519(self.ed25519.sign(&message(edit)).to_bytes());
-        Signature { keys: self.keys(), classical, pq: pq.then(|| sign_pq(&self.slh, edit)) }
+    /// The device's signature on edit `edit`: SLH-DSA over its id.
+    pub fn sign(&self, edit: EditId) -> Signature {
+        Signature { keys: self.keys(), webauthn: None, pq: sign_pq(&self.slh, edit) }
     }
 
     /// The device's hello on the connection whose TLS exporter is `exporter`, speaking for the end that dialed if
@@ -719,12 +714,6 @@ impl DeviceKey {
     /// The secret of the device's iroh endpoint: its ed25519 key's, as iroh takes it.
     pub fn endpoint_secret(&self) -> Zeroizing<[u8; 32]> {
         Zeroizing::new(self.ed25519.to_bytes())
-    }
-
-    /// The classical half alone, as whoever broke the device's ed25519 key holds it: it signs writes, which carry no
-    /// other half, and nothing else (the Lab's tampering).
-    pub fn classical_half(&self) -> ed25519_dalek::SigningKey {
-        self.ed25519.clone()
     }
 
     /// The key keys are sealed to for this device.
@@ -775,9 +764,8 @@ impl Passkey {
         self.keys().id()
     }
 
-    /// The passkey's signature on edit `edit`, made in the app at `origin`: an assertion, and with `pq` the hash-based
-    /// half.
-    pub fn sign_at(&mut self, edit: EditId, origin: &str, pq: bool) -> Signature {
+    /// The passkey's signature on edit `edit`, made in a ceremony at `origin`: SLH-DSA over its id, and the assertion.
+    pub fn sign_at(&mut self, edit: EditId, origin: &str) -> Signature {
         use p256::ecdsa::signature::Signer as _;
         self.counter += 1;
         let mut data = sha256(RP_ID.as_bytes()).to_vec();
@@ -789,34 +777,30 @@ impl Passkey {
         let sig: p256::ecdsa::Signature = self.key.sign(&signed);
         let assertion =
             Assertion { authenticator_data: data, client_data_json, signature: sig.to_der().as_bytes().to_vec() };
-        Signature {
-            keys: self.keys(),
-            classical: Classical::Passkey(assertion),
-            pq: pq.then(|| sign_pq(&self.slh, edit)),
-        }
+        Signature { keys: self.keys(), webauthn: Some(WebAuthn::Edit(assertion)), pq: sign_pq(&self.slh, edit) }
     }
 
     /// The passkey's signature on edit `edit`, made on the website.
-    pub fn sign(&mut self, edit: EditId, pq: bool) -> Signature {
-        self.sign_at(edit, ORIGINS[0], pq)
+    pub fn sign(&mut self, edit: EditId) -> Signature {
+        self.sign_at(edit, ORIGIN)
     }
 
-    /// The passkey's standing consent to be added as an owner (`standing`): both halves over its consent challenge.
+    /// The passkey's standing consent to be added as an owner (`standing`): its signature over its consent challenge.
     pub fn consent(&mut self) -> Signature {
-        self.sign(EditId(consent_challenge(self.id())), true)
+        self.sign(EditId(consent_challenge(self.id())))
     }
 
     /// The passkey's ceremony over `challenge`, on the website (`Ceremony`): an assertion, and the PRF output on
     /// `PRF_SALT`, as a browser's authenticator answers `navigator.credentials.get` with the PRF extension.
     pub fn ceremony(&mut self, challenge: [u8; 32]) -> Ceremony {
-        let Classical::Passkey(assertion) = self.sign(EditId(challenge), false).classical else {
+        let Some(WebAuthn::Edit(assertion)) = self.sign(EditId(challenge)).webauthn else {
             unreachable!("a passkey signs by assertion")
         };
         Ceremony { assertion, prf: self.prf(PRF_SALT) }
     }
 
     /// The passkey's pass for the device whose keys are `device`, made at `made`, seconds since 1970 (`RelayPass`): an
-    /// assertion and the hash-based half, in one ceremony.
+    /// assertion and the SLH-DSA signature, in one ceremony.
     pub fn pass(&mut self, device: SignerKeys, made: u64) -> RelayPass {
         let ceremony = self.ceremony(pass_challenge(device.id(), made));
         ceremony.pass(device, made).expect("its own ceremony, for a device")
@@ -897,7 +881,7 @@ mod tests {
         let (o, m, device) = (owner.id(), master.id(), DeviceKey::from_secret([4; 32]).id());
         let consent = master.consent();
         let mut signed = |edit: Edit, consent: &Signature| {
-            let own = owner.sign(edit.id(), true);
+            let own = owner.sign(edit.id());
             let sigs = if edit.author == o { vec![own, consent.clone()] } else { vec![consent.clone(), own] };
             Signed { edit, sigs }.verify().map(|_| ())
         };
@@ -949,23 +933,24 @@ mod tests {
         // another signer's consent is no consent of its
         assert_eq!(signed(by(o, add(m)), &other.consent()), Err(Refusal::BadSignature));
         // and a consent is no signature on an edit, as no edit's id is its challenge
-        let mut on_edit = master.sign(EditId(consent_challenge(m)), true);
-        assert!(verify(m, EditId(consent_challenge(m)), &on_edit, true));
-        on_edit.pq = None;
-        assert!(!verify(m, EditId(consent_challenge(m)), &on_edit, true), "both halves");
+        let mut on_edit = master.sign(EditId(consent_challenge(m)));
+        assert!(verify(m, EditId(consent_challenge(m)), &on_edit));
+        on_edit.pq = vec![0; PQ_SIGNATURE_BYTES];
+        assert!(!verify(m, EditId(consent_challenge(m)), &on_edit), "its SLH-DSA signature");
     }
 
     #[test]
     fn a_device_signature_covers_the_whole_edit() {
         let key = DeviceKey::from_secret([7; 32]);
         let edit = edit(key.id(), vec![]);
-        let signed = Signed { edit: edit.clone(), sigs: vec![key.sign(edit.id(), true)] };
+        let signed = Signed { edit: edit.clone(), sigs: vec![key.sign(edit.id())] };
         assert!(signed.verify().is_ok());
-        assert_eq!(signed.sigs[0].pq.as_ref().map(Vec::len), Some(PQ_SIGNATURE_BYTES));
+        assert_eq!(signed.sigs[0].pq.len(), PQ_SIGNATURE_BYTES);
+        assert_eq!(signed.sigs[0].webauthn, None, "a device signs with SLH-DSA alone");
         // the same signature on a changed edit, or claimed by another signer, is refused
         let other = Edit { parents: vec![EditId::from_u64(1)], ..edit.clone() };
         assert_eq!(
-            Signed { edit: other, sigs: vec![key.sign(edit.id(), true)] }.verify().err(),
+            Signed { edit: other, sigs: vec![key.sign(edit.id())] }.verify().err(),
             Some(Refusal::BadSignature)
         );
         let claimed = Edit { author: DeviceKey::from_secret([8; 32]).id(), ..edit.clone() };
@@ -973,34 +958,35 @@ mod tests {
         // and every signer named must sign
         let both = Edit { cosigners: vec![DeviceKey::from_secret([8; 32]).id()], ..edit };
         assert_eq!(
-            Signed { edit: both.clone(), sigs: vec![key.sign(both.id(), true)] }.verify().err(),
+            Signed { edit: both.clone(), sigs: vec![key.sign(both.id())] }.verify().err(),
             Some(Refusal::BadSignature)
         );
     }
 
     #[test]
-    fn both_halves_must_verify() {
+    fn the_slh_dsa_signature_must_verify() {
         let key = DeviceKey::from_secret([7; 32]);
-        let governance = edit(key.id(), vec![]);
-        // a governance edit needs the hash-based half: the classical half alone, or beside a broken one, is refused
-        let mut classical_only = key.sign(governance.id(), false);
-        assert!(!verify(key.id(), governance.id(), &classical_only, true));
-        classical_only.pq = Some(vec![0; PQ_SIGNATURE_BYTES]);
-        assert!(!verify(key.id(), governance.id(), &classical_only, true));
-        // nor does a hash-based half made with another SLH-DSA key pass: the keys no longer hash to the signer
+        let (governance, w) = (edit(key.id(), vec![]), write(key.id()));
+        // every edit, a write as any other, carries it
+        for e in [&governance, &w] {
+            assert!(Signed { edit: e.clone(), sigs: vec![key.sign(e.id())] }.verify().is_ok());
+            let mut broken = key.sign(e.id());
+            broken.pq = vec![0; PQ_SIGNATURE_BYTES];
+            assert!(Signed { edit: e.clone(), sigs: vec![broken] }.verify().is_err());
+        }
+        // nor does one made with another SLH-DSA key pass: the keys no longer hash to the signer
         let thief = DeviceKey::from_secret([9; 32]);
-        let mut theirs = thief.sign(governance.id(), true);
+        let mut theirs = thief.sign(governance.id());
         theirs.keys = SignerKeys::Device { ed25519: key.ed25519.verifying_key().to_bytes(), slh: *thief.keys().slh() };
-        assert!(!verify(key.id(), governance.id(), &theirs, true));
-        // the hash-based half alone, beside a broken classical half, is refused too
-        let mut pq_only = key.sign(governance.id(), true);
-        pq_only.classical = Classical::Ed25519([0; 64]);
-        assert!(!verify(key.id(), governance.id(), &pq_only, true));
-        // a write needs only the classical half
-        let w = write(key.id());
-        assert!(Signed { edit: w.clone(), sigs: vec![key.sign(w.id(), false)] }.verify().is_ok());
-        assert!(Signed { edit: w.clone(), sigs: vec![key.sign(w.id(), true)] }.verify().is_ok());
-        assert!(Signed { edit: governance.clone(), sigs: vec![key.sign(governance.id(), false)] }.verify().is_err());
+        assert!(!verify(key.id(), governance.id(), &theirs));
+        // a device's signature carries no assertion, and a passkey's always one
+        let mut passkey = Passkey::from_seed([1; 32]);
+        let mut dressed = key.sign(governance.id());
+        dressed.webauthn = passkey.sign(governance.id()).webauthn;
+        assert!(!verify(key.id(), governance.id(), &dressed));
+        let p = edit(passkey.id(), vec![]);
+        let bare = Signature { webauthn: None, ..passkey.sign(p.id()) };
+        assert!(!verify(passkey.id(), p.id(), &bare));
     }
 
     #[test]
@@ -1021,10 +1007,10 @@ mod tests {
         let device = DeviceKey::from_secret([2; 32]);
         let edit = edit(passkey.id(), vec![device.id()]);
         let signed =
-            Signed { edit: edit.clone(), sigs: vec![passkey.sign(edit.id(), true), device.sign(edit.id(), true)] };
+            Signed { edit: edit.clone(), sigs: vec![passkey.sign(edit.id()), device.sign(edit.id())] };
         assert!(signed.verify().is_ok());
-        // the Mac app's webview is an origin too
-        assert!(verify(passkey.id(), edit.id(), &passkey.sign_at(edit.id(), "tauri://localhost", true), true));
+        // from the website alone: the Mac app's webview is no origin
+        assert!(!verify(passkey.id(), edit.id(), &passkey.sign_at(edit.id(), "tauri://localhost")));
     }
 
     #[test]
@@ -1036,33 +1022,35 @@ mod tests {
         batch.sort();
         let ceremony = passkey.ceremony(batch_challenge(&batch));
         for o in [&a, &b] {
-            let sig = ceremony.sign_in(passkey.keys(), o.id(), &batch, true).expect("an edit of the batch");
-            assert!(verify(passkey.id(), o.id(), &sig, true), "it counts for each edit of the batch");
+            let sig = ceremony.sign_in(passkey.keys(), o.id(), &batch).expect("an edit of the batch");
+            assert!(verify(passkey.id(), o.id(), &sig), "it counts for each edit of the batch");
         }
         // not for an edit outside it, over its ids in another order, or for one of its edits alone
         let other = EditId::from_u64(7);
-        assert!(ceremony.sign_in(passkey.keys(), other, &batch, true).is_none());
+        assert!(ceremony.sign_in(passkey.keys(), other, &batch).is_none());
         let reversed: Vec<EditId> = batch.iter().rev().copied().collect();
-        assert!(ceremony.sign_in(passkey.keys(), a.id(), &reversed, true).is_none());
-        assert!(ceremony.sign(passkey.keys(), a.id(), true).is_none());
+        assert!(ceremony.sign_in(passkey.keys(), a.id(), &reversed).is_none());
+        assert!(ceremony.sign(passkey.keys(), a.id()).is_none());
         // a ceremony over one edit's id signs no batch
         let alone = passkey.ceremony(a.id().0);
-        assert!(alone.sign_in(passkey.keys(), a.id(), &batch, true).is_none());
+        assert!(alone.sign_in(passkey.keys(), a.id(), &batch).is_none());
         // moved onto another edit, or naming another batch, it verifies nowhere
-        let sig = ceremony.sign_in(passkey.keys(), a.id(), &batch, true).expect("its signature");
-        assert!(!verify(passkey.id(), other, &sig, true));
-        let Classical::Batch { assertion, edits } = sig.classical.clone() else { unreachable!("a batch's signature") };
+        let sig = ceremony.sign_in(passkey.keys(), a.id(), &batch).expect("its signature");
+        assert!(!verify(passkey.id(), other, &sig));
+        let Some(WebAuthn::Batch { assertion, edits }) = sig.webauthn.clone() else {
+            unreachable!("a batch's signature")
+        };
         let mut grown = [&edits[..], &[other]].concat();
         grown.sort();
         for edits in [grown, vec![a.id()], reversed] {
-            let named =
-                Signature { classical: Classical::Batch { assertion: assertion.clone(), edits }, ..sig.clone() };
-            assert!(!verify(passkey.id(), a.id(), &named, true), "only the batch the ceremony signed");
+            let webauthn = Some(WebAuthn::Batch { assertion: assertion.clone(), edits });
+            let named = Signature { webauthn, ..sig.clone() };
+            assert!(!verify(passkey.id(), a.id(), &named), "only the batch the ceremony signed");
         }
-        // its hash-based half is the edit's own
-        let lone = ceremony.sign_in(passkey.keys(), b.id(), &batch, true).expect("its signature");
+        // its SLH-DSA signature is the edit's own
+        let lone = ceremony.sign_in(passkey.keys(), b.id(), &batch).expect("its signature");
         let swapped = Signature { pq: lone.pq, ..sig };
-        assert!(!verify(passkey.id(), a.id(), &swapped, true));
+        assert!(!verify(passkey.id(), a.id(), &swapped));
     }
 
     #[test]
@@ -1080,27 +1068,27 @@ mod tests {
         };
         let join = adds(device.id(), vec![device.id()]);
         let sig = unlock.sign_adding(passkey.keys(), join.id(), device.id(), made).expect("the pass's signature");
-        let signed = Signed { edit: join.clone(), sigs: vec![sig.clone(), device.sign(join.id(), true)] };
+        let signed = Signed { edit: join.clone(), sigs: vec![sig.clone(), device.sign(join.id())] };
         assert!(signed.verify().is_ok(), "the unlock signs the edit adding its device");
         // not for another device, nor at another time, nor without the device cosigning
         assert!(unlock.sign_adding(passkey.keys(), join.id(), other.id(), made).is_none());
         let theirs = adds(other.id(), vec![other.id()]);
-        let moved = Signed { edit: theirs.clone(), sigs: vec![sig.clone(), other.sign(theirs.id(), true)] };
+        let moved = Signed { edit: theirs.clone(), sigs: vec![sig.clone(), other.sign(theirs.id())] };
         assert!(moved.verify().is_err(), "another device's join");
-        let Classical::Pass { assertion, .. } = sig.classical.clone() else { unreachable!("a pass's signature") };
-        let later = Signature { classical: Classical::Pass { assertion, made: made + 1 }, ..sig.clone() };
-        let later = Signed { edit: join.clone(), sigs: vec![later, device.sign(join.id(), true)] };
+        let Some(WebAuthn::Pass { assertion, .. }) = sig.webauthn.clone() else { unreachable!("a pass's signature") };
+        let later = Signature { webauthn: Some(WebAuthn::Pass { assertion, made: made + 1 }), ..sig.clone() };
+        let later = Signed { edit: join.clone(), sigs: vec![later, device.sign(join.id())] };
         assert!(later.verify().is_err(), "another time");
         let alone = adds(device.id(), vec![]);
         let alone_sig = unlock.sign_adding(passkey.keys(), alone.id(), device.id(), made).expect("signed");
         assert!(Signed { edit: alone.clone(), sigs: vec![alone_sig] }.verify().is_err(), "the device must cosign");
-        // the hash-based half is the edit's own, and never left out
-        assert!(!verify(passkey.id(), join.id(), &sig, true), "a pass counts on an edit adding its device alone");
-        let bare = Signature { pq: None, ..sig.clone() };
-        assert!(Signed { edit: join.clone(), sigs: vec![bare, device.sign(join.id(), true)] }.verify().is_err());
+        // its SLH-DSA signature is the edit's own, and never left out
+        assert!(!verify(passkey.id(), join.id(), &sig), "a pass counts on an edit adding its device alone");
+        let bare = Signature { pq: vec![], ..sig.clone() };
+        assert!(Signed { edit: join.clone(), sigs: vec![bare, device.sign(join.id())] }.verify().is_err());
         let other_join = Edit { depth: 1, ..join.clone() };
-        let swapped = Signed { edit: other_join.clone(), sigs: vec![sig, device.sign(other_join.id(), true)] };
-        assert!(swapped.verify().is_err(), "its hash-based half signs this very edit");
+        let swapped = Signed { edit: other_join.clone(), sigs: vec![sig, device.sign(other_join.id())] };
+        assert!(swapped.verify().is_err(), "its SLH-DSA signature signs this very edit");
     }
 
     #[test]
@@ -1108,17 +1096,16 @@ mod tests {
         let mut passkey = Passkey::from_seed([1; 32]);
         let key = passkey.public();
         let edit = edit(passkey.id(), vec![]);
-        let sig = passkey.sign(edit.id(), true);
-        let Classical::Passkey(good) = sig.classical.clone() else { unreachable!() };
+        let sig = passkey.sign(edit.id());
+        let Some(WebAuthn::Edit(good)) = sig.webauthn.clone() else { unreachable!() };
         assert!(good.verify(&key, edit.id()));
         // another edit's challenge
         assert!(!good.verify(&key, EditId::from_u64(1)));
         // another passkey's key, and another signer's id
         assert!(!good.verify(&Passkey::from_seed([2; 32]).public(), edit.id()));
-        assert!(!verify(Passkey::from_seed([2; 32]).id(), edit.id(), &sig, true));
+        assert!(!verify(Passkey::from_seed([2; 32]).id(), edit.id(), &sig));
         // a phishing origin
-        let Classical::Passkey(phished) = passkey.sign_at(edit.id(), "https://maia-city.example", false).classical
-        else {
+        let Some(WebAuthn::Edit(phished)) = passkey.sign_at(edit.id(), "https://maia-city.example").webauthn else {
             unreachable!()
         };
         assert!(!phished.verify(&key, edit.id()));
@@ -1191,10 +1178,10 @@ mod tests {
         let theirs = Passkey::from_seed([2; 32]).pass(device, made);
         let stolen = RelayPass { slh: theirs.slh, sig: theirs.sig, ..pass.clone() }.passkeys(made);
         assert!(!stolen.is_empty() && !stolen.contains(&passkey.id()));
-        // a passkey's signature on an edit over the same challenge is no pass: its hash-based half signs another context
-        let edit = passkey.sign(EditId(pass_challenge(device.id(), made)), true);
-        let Classical::Passkey(assertion) = edit.classical.clone() else { unreachable!() };
-        let replayed = RelayPass { assertion, sig: edit.pq.clone().expect("both halves"), ..pass.clone() };
+        // a passkey's signature on an edit over the same challenge is no pass: its SLH-DSA signature, another context
+        let edit = passkey.sign(EditId(pass_challenge(device.id(), made)));
+        let Some(WebAuthn::Edit(assertion)) = edit.webauthn.clone() else { unreachable!() };
+        let replayed = RelayPass { assertion, sig: edit.pq.clone(), ..pass.clone() };
         assert!(replayed.passkeys(made).is_empty());
         // and an assertion that recovers to no key is no passkey's
         let assertion = Assertion { signature: vec![1, 2, 3], ..pass.assertion.clone() };
@@ -1244,8 +1231,8 @@ mod tests {
         assert_eq!(ceremony.keys(passkey.public()), passkey.keys(), "its PRF output derives the hash-based key");
         assert_eq!(ceremony.seal_secret(), passkey.seal_secret(), "and the key sealed to the passkey");
         // an edit signed by the ceremony and the device is signed by both
-        let sig = ceremony.sign(passkey.keys(), edit.id(), true).expect("the passkey's signature");
-        assert!(Signed { edit: edit.clone(), sigs: vec![sig, device.sign(edit.id(), true)] }.verify().is_ok());
+        let sig = ceremony.sign(passkey.keys(), edit.id()).expect("the passkey's signature");
+        assert!(Signed { edit: edit.clone(), sigs: vec![sig, device.sign(edit.id())] }.verify().is_ok());
         // a pass made in a ceremony is the passkey's, as the one it makes itself is
         let made = 1_791_500_000;
         let pass = passkey.ceremony(pass_challenge(device.id(), made)).pass(device.keys(), made).expect("a pass");
@@ -1258,20 +1245,20 @@ mod tests {
         let device = passkey.device([5; 32]).id();
         let (a, b) = (edit(passkey.id(), vec![]), edit(passkey.id(), vec![device]));
         let ceremony = passkey.ceremony(a.id().0);
-        assert!(ceremony.sign(passkey.keys(), a.id(), true).is_some());
+        assert!(ceremony.sign(passkey.keys(), a.id()).is_some());
         // another edit, or a pass: its assertion signed neither
-        assert!(ceremony.sign(passkey.keys(), b.id(), true).is_none());
+        assert!(ceremony.sign(passkey.keys(), b.id()).is_none());
         assert!(ceremony.pass(passkey.device([5; 32]).keys(), 0).is_none());
         // another passkey's ceremony, or keys with another passkey's half: its PRF output or assertion isn't theirs
-        assert!(other.ceremony(a.id().0).sign(passkey.keys(), a.id(), true).is_none());
+        assert!(other.ceremony(a.id().0).sign(passkey.keys(), a.id()).is_none());
         let (SignerKeys::Passkey { slh: theirs, .. }, SignerKeys::Passkey { slh, .. }) = (other.keys(), passkey.keys())
         else {
             unreachable!()
         };
-        assert!(ceremony.sign(SignerKeys::Passkey { p256: passkey.public(), slh: theirs }, a.id(), true).is_none());
-        assert!(ceremony.sign(SignerKeys::Passkey { p256: other.public(), slh }, a.id(), true).is_none());
+        assert!(ceremony.sign(SignerKeys::Passkey { p256: passkey.public(), slh: theirs }, a.id()).is_none());
+        assert!(ceremony.sign(SignerKeys::Passkey { p256: other.public(), slh }, a.id()).is_none());
         // and a device signs no ceremony
-        assert!(ceremony.sign(DeviceKey::from_secret([7; 32]).keys(), a.id(), true).is_none());
+        assert!(ceremony.sign(DeviceKey::from_secret([7; 32]).keys(), a.id()).is_none());
     }
 
     #[test]

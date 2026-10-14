@@ -78,10 +78,6 @@ inductive Action where
       says who may open what, so this edit changes nothing here: a peer accepts it only from a signer that may open the
       key, and only if every box is one the schedule seals. -/
   | keys       (secret : KeyName) (to : List KeyName) (pub : Bool := false)
-  /-- A device vouches for its own accepted writes of one entry, `covers`, with both halves of its signature, where
-      the writes carry only the classical half. It changes nothing; a peer that no longer trusts the curves counts
-      only the writes a checkpoint covers (`checkpointed`). -/
-  | checkpoint (e : EntryId) (covers : List EditId)
   deriving DecidableEq, Repr
 
 /-- A mark that takes entry `e` to audience `to` and leaves its wants as they are: what a move was. -/
@@ -395,11 +391,6 @@ def apply (st : State) (edit : Edit) : Option State :=
     else if !to.all (fun t => st.seals.contains ⟨secret, t⟩) then none
     else if pub && !st.published.contains secret then none
     else some st
-  | .checkpoint e covers =>
-    -- a device vouches for its own accepted writes of the entry, and changes nothing
-    if covers.isEmpty || !covers.all (fun c => st.writes.any fun w =>
-        w.edit == c && w.author == edit.author && w.entry == e) then none
-    else some st
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)
@@ -589,25 +580,5 @@ def view (edits : List Edit) : State := let o := order edits; (runWith o (resolv
 
 /-- The edits that stand in what a peer holding `edits` knows, in replay order. -/
 def standing (edits : List Edit) : List Edit := let o := order edits; (runWith o (resolve o)).2
-
-/-! ## Once the curves fall
-
-A write carries only the classical half of its author's signatures, so that writes stay fast and small; every other
-edit carries the hash-based half too. A device vouches for its own writes with a checkpoint, which carries both. A
-peer that no longer trusts the curves replays only what a forger who broke them can't have made: every edit but a
-write, and each write that a checkpoint by its own author covers (T18). -/
-
-/-- Checkpoint `c` vouches for edit `o`: it is a checkpoint by `o`'s author that covers `o`. -/
-def vouches (c o : Edit) : Bool :=
-  c.author == o.author && match c.action with
-    | .checkpoint _ covers => covers.contains o.id
-    | _ => false
-
-/-- The edits a peer counts once it no longer trusts the curves: every edit but a write, and each write a checkpoint by
-    its own author covers. -/
-def checkpointed (edits : List Edit) : List Edit :=
-  edits.filter fun o => match o.action with
-    | .write .. => edits.any (vouches · o)
-    | _ => true
 
 end AvenDB

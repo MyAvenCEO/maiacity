@@ -4,15 +4,15 @@ import AvenDB.Step
 # Sync by audiences
 
 Every edit belongs to one log (`Edit.log?`): a vault's (its governance, its seed's keys), a share's (the share, a keep
-share too, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks, checkpoints and entry
-keys; a schema or a lens is an entry too). A device asks a peer for what it may receive, and the peer answers from its
-own view: the logs of the entries and audiences it may receive (it acts for their vault, or for the grantee of a live
-share reaching their audience, or a public share does and the device has an interest in the vault or follows it), the
-logs of every share it needs to check those or to know what it syncs (the shares of every audience such an entry was
-ever in or of its wants, the vault's wide shares, the shares its own vaults issued, are named in or are over, and every
-share those rest on), and the logs of every vault those name, up their chains of owners. Nothing else leaves the peer
-(T12): no other entry, no other audience. Receiving is not reading: relay gets no key. The connection proves which
-device is asking (iroh's endpoint key is the device key), so the request names the device.
+share too, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks and entry keys; a
+schema or a lens is an entry too). A device asks a peer for what it may receive, and the peer answers from its own view:
+the logs of the entries and audiences it may receive (it acts for their vault, or for the grantee of a live share
+reaching their audience, or a public share does and the device has an interest in the vault or follows it), the logs of
+every share it needs to check those or to know what it syncs (the shares of every audience such an entry was ever in or
+of its wants, the vault's wide shares, the shares its own vaults issued, are named in or are over, and every share those
+rest on), and the logs of every vault those name, up their chains of owners. Nothing else leaves the peer (T12): no
+other entry, no other audience. Receiving is not reading: relay gets no key. The connection proves which device is
+asking (iroh's endpoint key is the device key), so the request names the device.
 
 What is public goes only to whoever has an interest in its vault (design §5, option a): a device that acts for the
 vault, or for a vault holding a live share over it, or that names the vault in its request's follow list (`follow`).
@@ -38,14 +38,14 @@ inductive LogId where
 
 /-- The log an edit belongs to: a vault's genesis and settings, its owners and devices given and revoked, and a seed's
     key to its vault's; a grant or a keep share, its revocation and its key to the share's; an audience's key to the
-    audience's; a write (of a schema or a lens entry too), a mark, a checkpoint and an entry's key to the entry's. -/
+    audience's; a write (of a schema or a lens entry too), a mark and an entry's key to the entry's. -/
 def Edit.log? (edit : Edit) : Option LogId :=
   match edit.action with
   | .genesis v .. | .settings v _ | .share (.owner v _) | .share (.device v _) | .revoke (.owner v ..)
   | .revoke (.device v ..) => some (.vault v)
   | .share (.grant c _) => some (.share c.id)
   | .revoke (.grant c ..) => some (.share c)
-  | .write _ e .. | .mark _ e .. | .checkpoint e _ => some (.entry e)
+  | .write _ e .. | .mark _ e .. => some (.entry e)
   | .keys k .. =>
     match k with
     | .signer _ => none

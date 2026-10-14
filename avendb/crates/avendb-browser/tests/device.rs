@@ -7,8 +7,8 @@
 //! server claims it from their first browser, in the same ceremony (P8f), and her vault founds four more vaults it owns
 //! in one more ceremony: her browser acts as each of them, and what each shares, a note by its id, its todos by their
 //! type, or the whole of it, decides what the others may read and write. Her browser brings a film into her vault, a
-//! megabyte at a time, and her Mac reads any range of it. Every device, the server too, trusts no curve: only the
-//! writes a checkpoint covers count.
+//! megabyte at a time, and her Mac reads any range of it. Every device, the server too, trusts no curve: every edit
+//! is SLH-DSA signed.
 //!
 //! Every read and change goes through one entry point, as the page's does (V2, `Device::run`,
 //! `docs/ARCHITECTURE.md` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
@@ -880,7 +880,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     let public = caps.iter().find(|c| c["grantee"] == "everyone").expect("the public share");
     assert_eq!((&public["slice"]["name"], &public["role"]), (&json!("Public"), &json!("read")));
     assert_eq!(public["group"], "Public");
-    // the server keeps it all, counts the writes, each covered by a checkpoint, and opens none of avenALICE's keys
+    // the server keeps it all, counts the writes, and opens none of avenALICE's keys
     let counts = move |lab: &Lab, me| lab.state(me).entry_writes(note).count() == 1;
     until("the server counts avenALICE's note", || server.read(counts)).await;
     let opens_none = move |lab: &Lab, me| {
@@ -1084,8 +1084,7 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(one, (1, Some(3), Some(0)), "her card, the note and its variant: no share splits her vault");
     assert_eq!(db["builtIn"]["lenses"][0]["title"].as_str(), Some("Markdown document, v1 to v2"));
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
-    // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted, as a checkpoint
-    // covers it
+    // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and SLH-DSA signed
     let log = run(&first, json!({ "op": "log" })).await.expect("its log");
     let edits = log["edits"].as_array().expect("its edits");
     assert_eq!(edits.len(), first.node().read(|lab, me| lab.size(me).0).await, "every edit it holds");
@@ -1096,7 +1095,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(genesis["fields"]["vaultKind"].as_str(), Some("human"));
     assert_eq!(genesis["fields"]["root"].as_str(), Some(first.passkey().to_hex().as_str()), "her passkey roots it");
     let sigs = genesis["sigs"].as_array().expect("its signatures");
-    assert!(sigs.iter().any(|s| s["by"] == "passkey" && s["pq"].as_u64().is_some_and(|n| n > 1000)), "{sigs:?}");
+    let passkey = |s: &Value| s["by"] == "passkey" && s["webauthn"] == "batch" && s["pq"].as_u64() == Some(17_088);
+    assert!(sigs.iter().any(passkey), "{sigs:?}");
     let browser = first.node().device().to_hex();
     assert!(of("addDevice").iter().any(|o| o["fields"]["device"].as_str() == Some(browser.as_str())));
     let backup = |o: &&Value| o["fields"]["role"] == "backup" && o["fields"]["wide"] == true;
@@ -1105,6 +1105,9 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let mine = writes.iter().filter(|o| o["fields"]["entry"].as_str() == Some(note.to_hex().as_str()));
     assert_eq!(mine.clone().count(), kinds(&shown_note).len(), "each write of the note");
     assert!(mine.clone().all(|o| o["counted"] == true), "every one counted");
+    let device = |s: &Value| s["by"] == "device" && s["webauthn"].is_null();
+    let by_device = |o: &&Value| o["sigs"].as_array().unwrap().iter().all(device);
+    assert!(mine.clone().all(by_device), "signed by her browser alone, with no assertion");
     assert!(mine.clone().all(|o| o["allowed"] == true), "and allowed, as her vault's own");
     assert!(of("cap").iter().all(|o| o["allowed"].is_null()), "a share is no write");
     assert!(mine.clone().all(|o| o["fields"]["sealed"].as_u64().is_some_and(|n| n > 0)), "its body by its size alone");
@@ -1112,9 +1115,12 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert!(mine.clone().any(starts), "the proposal's start");
     let hers = json!(v.to_hex());
     assert!(writes.iter().all(|o| o["vaults"].as_array().is_some_and(|vs| vs.contains(&hers))));
-    assert!(!of("checkpoint").is_empty() && !of("keys").is_empty());
-    let signed_all =
-        |o: &Value| o["bytes"].as_u64().is_some_and(|n| n > 0) && !o["sigs"].as_array().unwrap().is_empty();
+    assert!(!of("keys").is_empty());
+    let slh = |s: &Value| s["pq"].as_u64() == Some(17_088);
+    let signed_all = |o: &Value| {
+        let sigs = o["sigs"].as_array().unwrap();
+        o["bytes"].as_u64().is_some_and(|n| n > 0) && !sigs.is_empty() && sigs.iter().all(slh)
+    };
     assert!(edits.iter().all(signed_all));
     let text = log.to_string();
     assert!(!text.contains("Corn first") && !text.contains("Plant beans"), "no note's text in its history: sealed");

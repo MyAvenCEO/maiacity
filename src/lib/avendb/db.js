@@ -32,13 +32,12 @@ import {
  *   cell: string, generation: number, bytes: number, author: string | null, actor: string | null, public: boolean,
  *   roles: Record<string, import('./vaults.js').Role> }} RowView
  * @typedef {{ id: string, caps: string[], generation: number, entries: number }} CellRow
- * @typedef {{ founded: number, writes: number, moves: number, checkpoints: number, keys: number, caps: number,
- *   revokes: number }} EditCounts
+ * @typedef {{ founded: number, writes: number, moves: number, keys: number, caps: number, revokes: number }} EditCounts
  * @typedef {{ vault: string, held: { edits: number, keys: number },
  *   builtIn: { schemas: SchemaView[], lenses: LensView[] }, seed: number, edits: EditCounts, schemas: SchemaView[],
  *   lenses: LensView[], cells: CellRow[], rows: RowView[] }} Db
- * @typedef {{ signer: string, by: 'device' | 'passkey', classical: 'ed25519' | 'p256', batch: number | null,
- *   pq: number | null }} SigView
+ * @typedef {{ signer: string, by: 'device' | 'passkey', webauthn: 'edit' | 'batch' | 'pass' | null,
+ *   batch: number | null, pq: number }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
  *   parents: string[], depth: number, bytes: number, vaults: string[], counted: boolean | null,
  *   allowed: boolean | null, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null,
@@ -353,7 +352,6 @@ export const sideOf = (side) =>
 export const GROUPS = /** @type {const} */ ([
 	['all', 'All', []],
 	['writes', 'Writes & marks', ['write', 'mark']],
-	['checkpoints', 'Checkpoints', ['checkpoint']],
 	['keys', 'Keys', ['keys']],
 	['caps', 'Shares', ['cap', 'revoke']],
 	[
@@ -376,8 +374,7 @@ export const KIND_NAMES = /** @type {Record<string, string>} */ ({
 	revoke: 'revoke',
 	write: 'write',
 	mark: 'mark',
-	keys: 'keys',
-	checkpoint: 'checkpoint'
+	keys: 'keys'
 });
 
 /** What a keep share has its device do, by its level. */
@@ -501,8 +498,6 @@ export function describe(edit, s, edits) {
 			const at = f.key?.generation ? `Rotates ${key(f.key)}` : `Makes ${key(f.key)}`;
 			return `${at}${to}${f.public ? ', announcing its public half' : ''}${f.clear ? ', in the clear: everyone reads it' : ''}`;
 		}
-		case 'checkpoint':
-			return `Checkpoints ${s.entry(f.entry)}, covering ${count(f.covers?.length ?? 0, 'write')}`;
 		default:
 			return edit.kind;
 	}

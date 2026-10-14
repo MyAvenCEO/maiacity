@@ -23,7 +23,7 @@ use crate::lab::Lab;
 use crate::lens::{self, DocV2, Lens, Schema};
 use crate::merge::Conflict;
 use crate::policy::{Action, Edit, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Vault, Who};
-use crate::sign::{Classical, Signature, SignerKeys};
+use crate::sign::{Signature, SignerKeys, WebAuthn};
 use crate::slice::LENS_TYPE;
 use crate::wire::Wire as _;
 use crate::words::{hex, kind_name, level_name, who_name};
@@ -131,8 +131,8 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     })
 }
 
-/// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves (marks that take an entry to
-/// an audience) and checkpoints of its entries, the keys edits of its keys and its entries', the shares over it and the
+/// The edits device `me` holds on vault `vault`, by kind: its founding, the writes and moves (marks that take an entry
+/// to an audience) of its entries, the keys edits of its keys and its entries', the shares over it and the
 /// revocations of those. Its schemas and lenses are entries (V1d), counted among the writes, so none counts apart.
 fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let (log, st) = (lab.log(me), lab.state(me));
@@ -142,13 +142,12 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         .filter(|(edit, _)| matches!(&edit.action, Action::Share(Sharing::Grant(c, _)) if c.over == vault))
         .map(|(_, id)| ShareId::from(*id))
         .collect();
-    let (mut founded, mut writes, mut moves, mut checkpoints, mut keys, mut revokes) = (0, 0, 0, 0, 0, 0);
+    let (mut founded, mut writes, mut moves, mut keys, mut revokes) = (0, 0, 0, 0, 0);
     for (edit, id) in edits() {
         match &edit.action {
             Action::Genesis { .. } if VaultId::from(*id) == vault => founded += 1,
             Action::Write { vault: v, .. } if *v == vault => writes += 1,
             Action::Mark { vault: v, caps: Some(_), .. } if *v == vault => moves += 1,
-            Action::Checkpoint { entry, .. } if of(entry) => checkpoints += 1,
             Action::Keys { name: KeyName::Scoped(k, _), .. } if k.vault() == vault => keys += 1,
             Action::Keys { name: KeyName::Entry(e, ..), .. } if of(e) => keys += 1,
             Action::Revoke(Revoking::Grant { share, .. }) if shares.contains(share) => revokes += 1,
@@ -159,7 +158,6 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         "founded": founded,
         "writes": writes,
         "moves": moves,
-        "checkpoints": checkpoints,
         "keys": keys,
         "caps": shares.len(),
         "revokes": revokes,
@@ -179,12 +177,12 @@ fn lens(l: &Lens) -> Value {
 
 /// The database's history: every signed edit device `me` holds, in the order it took them, for the studio's History
 /// view: each one's place in that order, its id, what it does (`action`: its kind and fields, ids in hex, what is
-/// sealed by its size alone), its author and cosigners, each signature by its signer and its halves (`signature`), the
-/// edits of its log it builds on and its causal depth, its size on the wire, the vaults it concerns (`concerns`), and
-/// for an act for a vault, a write, a mark or a grant, who stands behind it back to the passkeys (`Audit::chain`);
-/// for a write, whether the device counts it, as once it no longer trusts the curves it counts only the writes a
-/// checkpoint covers, and whether its entry's readers do, as it fits its entry's schemas, the ops of the shares it
-/// relies on allow it and what it builds on counts (`allowed`, `Change::counted`), and why not (`why`, `wrote`).
+/// sealed by its size alone), its author and cosigners, each signature (`signature`), the edits of its log it builds
+/// on and its causal depth, its size on the wire, the vaults it concerns (`concerns`), and for an act for a vault, a
+/// write, a mark or a grant, who stands behind it back to the passkeys (`Audit::chain`); for a write, whether the
+/// device counts it, as a removal cuts what a revoked signer wrote after it (T16), and whether its entry's readers
+/// do, as it fits its entry's schemas, the ops of the shares it relies on allow it and what it builds on counts
+/// (`allowed`, `Change::counted`), and why not (`why`, `wrote`).
 pub fn history(lab: &Lab, me: SignerId) -> Value {
     let (held, st) = (lab.log(me), lab.state(me));
     let counted: HashSet<EditId> = st.all_writes().iter().map(|w| w.edit).collect();
@@ -337,27 +335,25 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "clear": clear.is_some(),
             }),
         ),
-        Action::Checkpoint { entry, covers } => {
-            ("checkpoint", json!({ "entry": hex(&entry.0), "covers": ids(covers) }))
-        }
     }
 }
 
-/// A signature as the History view shows it: its signer, whether that is a device or a passkey, its classical half (a
-/// device's ed25519, a passkey's assertion, or one assertion over a batch of edits, with how many), and the size of its
-/// SLH-DSA half, if it carries one.
+/// A signature as the History view shows it: its signer, whether that is a device or a passkey, the size of its SLH-DSA
+/// signature, and a passkey's WebAuthn assertion beside it (`webauthn`): over the edit, over a batch of edits, with how
+/// many (`batch`), or a pass for the device the edit adds.
 fn signature(sig: &Signature) -> Value {
     let by = match sig.keys {
         SignerKeys::Device { .. } => "device",
         SignerKeys::Passkey { .. } => "passkey",
     };
-    let (classical, batch) = match &sig.classical {
-        Classical::Ed25519(_) => ("ed25519", None),
-        Classical::Passkey(_) => ("p256", None),
-        Classical::Batch { edits, .. } => ("p256", Some(edits.len())),
-        Classical::Pass { .. } => ("p256", None),
+    let (webauthn, batch) = match &sig.webauthn {
+        None => (None, None),
+        Some(WebAuthn::Edit(_)) => (Some("edit"), None),
+        Some(WebAuthn::Batch { edits, .. }) => (Some("batch"), Some(edits.len())),
+        Some(WebAuthn::Pass { .. }) => (Some("pass"), None),
     };
-    json!({ "signer": hex(&sig.keys.id().0), "by": by, "classical": classical, "batch": batch, "pq": sig.pq.as_ref().map(Vec::len) })
+    let signer = hex(&sig.keys.id().0);
+    json!({ "signer": signer, "by": by, "webauthn": webauthn, "batch": batch, "pq": sig.pq.len() })
 }
 
 /// The vaults edit `id` concerns, by device `st`'s view: the vault it founds or changes, the vault it acts for and the
@@ -396,7 +392,6 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
             KeyName::Scoped(k, _) => vec![k.vault()],
             KeyName::Entry(e, ..) => of(&e).into_iter().collect(),
         },
-        Action::Checkpoint { entry, .. } => of(entry).into_iter().collect(),
     };
     vaults.extend(a.via().unwrap_or_default());
     let mut seen = HashSet::new();

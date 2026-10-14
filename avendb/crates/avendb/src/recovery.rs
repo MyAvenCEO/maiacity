@@ -75,13 +75,13 @@ impl RecoveryKey {
     }
 
     /// The key a file holds: `None` unless its bytes are one whole, a passkey's keys, an X-Wing key, the McEliece key
-    /// the seal names, and the passkey's standing consent, both halves.
+    /// the seal names, and the passkey's standing consent.
     pub fn from_bytes(bytes: &[u8]) -> Option<RecoveryKey> {
         let key = RecoveryKey::from_wire(bytes.strip_prefix(MAGIC)?).ok()?;
         let passkey = matches!(key.keys, SignerKeys::Passkey { .. });
         let mceliece = key.mceliece.len() == MCELIECE_PUBLIC_BYTES && BlobId::of(&key.mceliece) == key.seal.mceliece;
         let challenge = EditId(sign::consent_challenge(key.id()));
-        let consents = sign::verify(key.id(), challenge, &key.consent, true);
+        let consents = sign::verify(key.id(), challenge, &key.consent);
         (passkey && mceliece && consents && key.seal.xwing.len() == XWING_PUBLIC_BYTES).then_some(key)
     }
 }

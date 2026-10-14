@@ -22,18 +22,18 @@
 //! that isn't public (T12); it is the request's, never state, and naming a vault in it needs no proof.
 //!
 //! Every edit belongs to one log (`log_of`): a vault's (its governance, its seed's keys), a share's (the share, a keep
-//! share too, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks, checkpoints and
-//! keys; a schema or a lens is an entry too). It names as its parents the frontier of its own log as its device held
-//! it. So each log is a small history of its own, and two copies of a log compare by their frontiers alone: one hash
-//! per log (`digests`), which is what devices gossip. A device asks with its frontier of each log it holds and a few
-//! edits further back, the edits 1, 2, 4, 8, … steps back and the oldest, and with the edits it holds outside them
-//! (`asks`); the peer sends only what lies beyond the ones it holds (`respond_since`). A peer that is behind holds the
-//! whole frontier and sends exactly what the device lacks; one that lacks the device's latest edits still holds one of
-//! them close by, and sends back little the device holds. That withholds nothing the device lacks (T19): a device names
-//! of a log only edits of the part whose whole past it holds, so an edit whose parent hasn't arrived waits outside,
-//! with whatever builds on it, until the gap is filled. A device signs its edits in a log one after another, each
-//! building on the last, so two edits of one device in one log where neither builds on the other mean its key signed
-//! twice from the same past (`forks`): a cloned device, one restored from an old backup, or a stolen key.
+//! share too, its revocation, its keys), an audience's (its keys), or an entry's (its writes, marks and keys; a schema
+//! or a lens is an entry too). It names as its parents the frontier of its own log as its device held it. So each log
+//! is a small history of its own, and two copies of a log compare by their frontiers alone: one hash per log
+//! (`digests`), which is what devices gossip. A device asks with its frontier of each log it holds and a few edits
+//! further back, the edits 1, 2, 4, 8, … steps back and the oldest, and with the edits it holds outside them (`asks`);
+//! the peer sends only what lies beyond the ones it holds (`respond_since`). A peer that is behind holds the whole
+//! frontier and sends exactly what the device lacks; one that lacks the device's latest edits still holds one of them
+//! close by, and sends back little the device holds. That withholds nothing the device lacks (T19): a device names of a
+//! log only edits of the part whose whole past it holds, so an edit whose parent hasn't arrived waits outside, with
+//! whatever builds on it, until the gap is filled. A device signs its edits in a log one after another, each building
+//! on the last, so two edits of one device in one log where neither builds on the other mean its key signed twice from
+//! the same past (`forks`): a cloned device, one restored from an old backup, or a stolen key.
 //!
 //! A big reply comes a page at a time (P8d), each edit after the edits it builds on (`place`): the device takes each
 //! page as it comes and asks on after the last edit it got, until the peer has nothing more.
@@ -57,10 +57,10 @@ pub enum LogId {
 
 /// The log of edit `edit`, whose id is `id` (`Edit.log?`): a vault's genesis and settings, its owners and devices given
 /// and revoked, and a seed's key go to their vault's; a grant or a keep share, its revocation and its key to the
-/// grant's; an audience's key to the audience's; a write (of a schema or a lens entry too), a mark, a checkpoint and an
-/// entry's key to the entry's. A signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id
-/// names the log only of an edit that starts one, a genesis or a grant. The edit's kind alone says which, so a peer
-/// that knows nothing else routes it.
+/// grant's; an audience's key to the audience's; a write (of a schema or a lens entry too), a mark and an entry's key
+/// to the entry's. A signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id names the log
+/// only of an edit that starts one, a genesis or a grant. The edit's kind alone says which, so a peer that knows
+/// nothing else routes it.
 pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
     Some(match &edit.action {
         Action::Genesis { .. } => LogId::Vault(VaultId::from(id)),
@@ -69,9 +69,7 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
         | Action::Revoke(Revoking::Owner { vault, .. } | Revoking::Device { vault, .. }) => LogId::Vault(*vault),
         Action::Share(Sharing::Grant(..)) => LogId::Share(ShareId::from(id)),
         Action::Revoke(Revoking::Grant { share, .. }) => LogId::Share(*share),
-        Action::Write { entry, .. } | Action::Mark { entry, .. } | Action::Checkpoint { entry, .. } => {
-            LogId::Entry(*entry)
-        }
+        Action::Write { entry, .. } | Action::Mark { entry, .. } => LogId::Entry(*entry),
         Action::Keys { name, .. } => match *name {
             KeyName::Signer(_) => return None,
             KeyName::Scoped(KeyFam::Seed(v), _) => LogId::Vault(v),

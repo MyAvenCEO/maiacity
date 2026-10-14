@@ -301,10 +301,6 @@ pub enum Action {
     /// `clear`. The schedule already says who may open what, so this changes nothing in it: a peer accepts it only
     /// from a signer that may open the key, and only if every box goes where the schedule seals the key.
     Keys { name: KeyName, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
-    /// A device vouches for its own accepted writes of one entry, named in `covers`, with both halves of its signature,
-    /// where the writes carry only the classical half (`sign`). It changes nothing; a peer that no longer trusts the
-    /// curves counts only the writes a checkpoint covers (`checkpointed`).
-    Checkpoint { entry: EntryId, covers: Vec<EditId> },
 }
 
 impl Action {
@@ -390,10 +386,10 @@ impl Edit {
         }
     }
 
-    /// The entry a write changes, a steward marks, or a checkpoint vouches for.
+    /// The entry a write changes, or a steward marks.
     pub fn entry(&self) -> Option<EntryId> {
         match self.action {
-            Action::Write { entry, .. } | Action::Mark { entry, .. } | Action::Checkpoint { entry, .. } => Some(entry),
+            Action::Write { entry, .. } | Action::Mark { entry, .. } => Some(entry),
             _ => None,
         }
     }
@@ -637,8 +633,6 @@ pub enum Refusal {
     Unsealed,
     /// A key in the clear of a family that isn't public.
     NotPublic,
-    /// A checkpoint covers nothing, or something other than its own author's accepted writes of its entry.
-    NotOwnWrite,
     /// A keep share names a signer that isn't a device of the vault that issues it.
     NotDevice,
     /// A mark's wants aren't in canonical order, or one isn't a keep share over the vault, or is wide; live or
@@ -810,7 +804,7 @@ pub struct State {
 /// What an accepted edit changes, worked out before anything changes (`State::check`).
 #[derive(Clone, Debug)]
 enum Change {
-    /// A `Keys` edit or a checkpoint: nothing.
+    /// A `Keys` edit: nothing.
     Nothing,
     Genesis(Vault, Vec<(SignerId, PublicKey)>),
     AddOwner { at: usize, owner: Principal, seal_to: Option<(SignerId, PublicKey)> },
@@ -2097,14 +2091,6 @@ impl State {
                 }
                 Ok(Change::Nothing)
             }
-            Action::Checkpoint { entry, covers } => {
-                // a device vouches for its own accepted writes of the entry, and changes nothing
-                let own = |c: &EditId| self.write(*c).is_some_and(|w| w.author == edit.author && w.entry == *entry);
-                if covers.is_empty() || !covers.iter().all(own) {
-                    return Err(Refusal::NotOwnWrite);
-                }
-                Ok(Change::Nothing)
-            }
         }
     }
 
@@ -2545,26 +2531,6 @@ pub fn keep_picks(mode: KeepMode, select: Option<&Selector>, a: &Attrs) -> bool 
         KeepMode::Never => matches && !a.ty.of_lane(),
         KeepMode::Whole | KeepMode::Opened => matches || a.ty.of_lane(),
     }
-}
-
-/// The edits a peer counts, as it trusts neither ed25519 nor P-256 alone: every edit but a write, as each carries the
-/// hash-based half of its signatures too, and each write that a checkpoint by its own author covers. Removals cut what
-/// a forger signs on an old copy of the log (T16), so whoever broke a device's ed25519 key still writes nothing a
-/// checkpoint didn't cover.
-pub fn checkpointed(edits: &[Edit]) -> Vec<Edit> {
-    let covered: HashSet<(SignerId, EditId)> = edits
-        .iter()
-        .filter_map(|edit| match &edit.action {
-            Action::Checkpoint { covers, .. } => Some(covers.iter().map(|&c| (edit.author, c))),
-            _ => None,
-        })
-        .flatten()
-        .collect();
-    edits
-        .iter()
-        .filter(|edit| !matches!(edit.action, Action::Write { .. }) || covered.contains(&(edit.author, edit.id())))
-        .cloned()
-        .collect()
 }
 
 /// Write `w` builds only on writes of its own entry among `ws`.

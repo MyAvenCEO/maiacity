@@ -1,9 +1,9 @@
 <!--
 	The studio's history: every signed edit this browser holds, the database's history, as a database studio lists its
-	logs: those that concern the vault, or all of them, by kind (writes and marks, checkpoints, keys, shares, vaults and
-	devices), newest first, each with its place in the order the browser took them, what it does in words, who
-	signed it and how (a classical half, which counts for nothing once only post-quantum counts, and an SLH-DSA half),
-	its causal depth and its size; each opens in a drawer, every field and signature, and the edits it builds on. What
+	logs: those that concern the vault, or all of them, by kind (writes and marks, keys, shares, vaults and devices),
+	newest first, each with its place in the order the browser took them, what it does in words, who signed it and how
+	(an SLH-DSA signature, post-quantum, on every edit, and a passkey's WebAuthn assertion beside its own), its causal
+	depth and its size; each opens in a drawer, every field and signature, and the edits it builds on. What
 	an edit seals, a write's body, a cap's slice or a key's boxes, shows by its size alone, as avenDB's server sees it;
 	a cap's slice shows in words where this browser reads it. A write the ops of the caps it relies on don't allow,
 	or that builds on one, says so: no reader of its entry counts it.
@@ -50,8 +50,13 @@
 	const page = $derived(found.slice(0, shown));
 	const picked = $derived(open ? byId.get(open) : undefined);
 
-	/** A signature's halves, as its chips name them. @param {import('./db.js').SigView} sig */
-	const classical = (sig) => (sig.by === 'device' ? 'ed25519' : sig.batch ? `passkey P-256, one for ${sig.batch}` : 'passkey P-256');
+	/** A passkey's WebAuthn assertion beside its signature, as its chip names it. @param {import('./db.js').SigView} sig */
+	const webauthn = (sig) =>
+		sig.webauthn === 'batch' ? `WebAuthn, one for ${sig.batch}` : sig.webauthn === 'pass' ? 'WebAuthn pass' : 'WebAuthn';
+	/** what a passkey's assertion shows */
+	const PRESENCE = 'Its passkey’s WebAuthn assertion: a person was there. Only the SLH-DSA signature counts';
+	/** why the device doesn't count a write */
+	const CUT = 'Its signer was removed before it: the removal cuts what it wrote after';
 
 	/** Who signed edit `e`: its author, then its cosigners. @param {import('./db.js').SignedEdit} e */
 	const signers = (e) => list([e.author, ...e.cosigners].map(s.signer));
@@ -114,7 +119,7 @@
 						<td><span class="chip k">{KIND_NAMES[e.kind] ?? e.kind}</span></td>
 						<td class="what">
 							{said.get(e.id)}
-							{#if e.counted === false}<span class="chip warn" title="No checkpoint of its author covers it yet">not counted</span>{/if}
+							{#if e.counted === false}<span class="chip warn" title={CUT}>cut by a removal</span>{/if}
 							{#if e.allowed === false}
 								<span class="chip warn" title={uncounted(e).why}>{uncounted(e).chip}</span>
 							{/if}
@@ -122,14 +127,9 @@
 						<td>{signers(e)}</td>
 						<td><span class="sigs">
 							{#each e.sigs as sig, i (i)}
-								<span class="chip classical off" title="Counts for nothing: only post-quantum counts"
-									>{classical(sig)}</span
-								>
-								{#if sig.pq}<span class="chip ok" title="SLH-DSA: post-quantum">SLH-DSA {size(sig.pq)}</span>{/if}
+								<span class="chip ok" title="SLH-DSA: post-quantum">SLH-DSA {size(sig.pq)}</span>
+								{#if sig.webauthn}<span class="chip" title={PRESENCE}>{webauthn(sig)}</span>{/if}
 							{/each}
-							{#if e.counted && !e.sigs.some((g) => g.pq)}
-								<span class="chip ok" title="An SLH-DSA checkpoint of its author covers it">SLH-DSA by checkpoint</span>
-							{/if}
 						</span></td>
 						<td class="num">{e.depth}</td>
 						<td class="num">{size(e.bytes)}</td>
@@ -162,7 +162,7 @@
 			<dd>{list(picked.vaults.map(s.vaultName)) || 'no vault this browser knows'}</dd>
 			{#if picked.counted !== null}
 				<dt>Counted</dt>
-				<dd>{picked.counted ? 'Yes: a checkpoint of its author covers it' : 'Not yet: no checkpoint of its author covers it'}</dd>
+				<dd>{picked.counted ? 'Yes: no removal cuts it' : `No: ${CUT.toLowerCase()}`}</dd>
 			{/if}
 			{#if picked.allowed !== null}
 				<dt>Allowed</dt>
@@ -194,10 +194,8 @@
 			{#each picked.sigs as sig, i (i)}
 				<li>
 					<b>{s.signer(sig.signer)}</b>, its {sig.by}:
-					<span class="chip classical off">{classical(sig)}</span>
-					{#if sig.pq}<span class="chip ok">SLH-DSA, {size(sig.pq)}</span>{:else if picked.counted}<span class="chip ok"
-							>no post-quantum half: an SLH-DSA checkpoint covers it</span
-						>{:else}<span class="chip warn">no post-quantum half</span>{/if}
+					<span class="chip ok">SLH-DSA, {size(sig.pq)}</span>
+					{#if sig.webauthn}<span class="chip" title={PRESENCE}>{webauthn(sig)}</span>{/if}
 				</li>
 			{/each}
 		</ul>
@@ -360,8 +358,7 @@
 		color: #1f4f47;
 	}
 
-	.keys .k,
-	.checkpoint .k {
+	.keys .k {
 		background: #efe3c8;
 		color: #6a4b12;
 	}
@@ -380,11 +377,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.25rem;
-	}
-
-	.classical.off {
-		opacity: 0.55;
-		text-decoration: line-through;
 	}
 
 	.nothing {

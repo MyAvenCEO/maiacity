@@ -3,7 +3,7 @@ import AvenDB.Props
 /-!
 # Shares, audiences, removals and relays
 
-The proofs of the theorems about share chains and audiences (T22, T23), the replay and strong removal (T16, T18, the
+The proofs of the theorems about share chains and audiences (T22, T23), the replay and strong removal (T16, the
 view, the order of writes, the epochs along a replay for T15), stated as in `Theorems.lean`.
 
 Settling keys changes only the epochs, the seals and what is published, and never lowers an epoch. An accepted edit
@@ -967,24 +967,6 @@ theorem T16_strong_removal (edits rem : List Edit) (pre post : List (Edit × Nat
 theorem T16_resolved_removals_stand (edits : List Edit) :
     ∀ r ∈ resolve (order edits), (standing edits).any (·.id == r.id) :=
   resolve_stands (order edits)
-
-/-! ## Once the curves fall -/
-
-theorem T18_checkpointed_writes (edits : List Edit) {w : Write} (hw : w ∈ (view (checkpointed edits)).writes) :
-    ∃ c ∈ edits, c.author = w.author ∧ ∃ e covers, c.action = .checkpoint e covers ∧ w.edit ∈ covers := by
-  rw [view_eq_replay] at hw
-  rcases replay_writes_from _ {} w hw with h | ⟨o, ho, hid, hauth, _, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
-  · simp at h
-  · -- the write's edit counts only with a checkpoint by its author that covers it
-    obtain ⟨-, hkeep⟩ := List.mem_filter.1 (standing_mem _ o ho)
-    rw [hact] at hkeep
-    obtain ⟨c, hc, hv⟩ := List.any_eq_true.1 hkeep
-    simp only [vouches, Bool.and_eq_true, beq_iff_eq] at hv
-    obtain ⟨hca, hcov⟩ := hv
-    split at hcov
-    · rename_i e covers heq
-      exact ⟨c, hc, hca.trans hauth, e, covers, heq, hid ▸ List.contains_iff_mem.1 hcov⟩
-    · cases hcov
 
 /-! ## The epochs along a replay -/
 

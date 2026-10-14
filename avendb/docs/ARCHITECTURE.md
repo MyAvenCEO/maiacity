@@ -110,8 +110,8 @@ Each line names the theorem that states it (section 15).
   rules refuse (T27).
 - **Relays are blind and still exact.** The server reads no selector, type or tag, yet every edit stands or falls for
   it exactly as for an owner (T25).
-- **Post-quantum.** Once the curves fall, a write counts only if its author's hash-based checkpoint covers it (T18).
-  Every other edit carries a hash-based signature anyway.
+- **Post-quantum.** Every edit, a write too, counts by its hash-based SLH-DSA signature alone, so nothing counts on
+  the curves.
 - **Readers agree.** Whether a write counts reads nothing a reader may lack (C2), a counted write did only what its
   chain allows (C3), and it fits its entry's schemas (S3).
 
@@ -212,17 +212,17 @@ which starts with the version byte 8 (`encode::VERSION`, `crates/avendb/src/enco
 | 4 | Write | An encrypted change of one entry, and the files it brings | The entry | No |
 | 5 | Mark | An entry's audience, its wants, or both | The entry | With an audience |
 | 6 | Keys | The real boxes of one key | The key's family | No |
-| 7 | Checkpoint | A device vouches for its own writes of one entry | The entry | No |
 
-Every other tag decodes as unknown. The tags of earlier kinds (8 a lane publish, 9 and 10 a sync rule and its end, 11 a
-pick) went into the write, the share, the revocation and the mark, and are never used again. The kind alone says which
+Every other tag decodes as unknown. The tags of earlier kinds (7 a checkpoint, 8 a lane publish, 9 and 10 a sync rule
+and its end, 11 a pick) went into the signature, the write, the share, the revocation and the mark, and are never used
+again. The kind alone says which
 log an edit belongs to (`sync::log_of`), so a peer that knows nothing else routes it. Owners and devices keep sub-kinds
 of their own under Share and Revoke for the same reason: the functions that read an edit alone (its log, its rank, its
 standing consent, the pass key) find the class in the tag.
 
 **Logs.** Every edit belongs to one log (`sync::LogId`): a vault's (its genesis, settings, owners, devices and seed
-keys), a share's (the share, its revocation, its keys), an audience's (its keys) or an entry's (its writes, marks,
-checkpoints and keys). An edit names as its parents the frontier of its own log as its device held it. Its depth is one
+keys), a share's (the share, its revocation, its keys), an audience's (its keys) or an entry's (its writes, marks and
+keys). An edit names as its parents the frontier of its own log as its device held it. Its depth is one
 more than the deepest edit its device held, across logs, so depth is one clock for the whole replay.
 
 **Closed part and frontier.** A device's closed part of a log is the edits whose whole past it holds. Its frontier is
@@ -773,9 +773,8 @@ Every node trusts no elliptic curve alone, and there is no switch back.
 
 | Where | How |
 |---|---|
-| Signatures | Hybrid: ed25519 and SLH-DSA-SHA2-128f on a device, P-256 and SLH-DSA on a passkey, both checked. |
-| Writes | The classical half alone, to stay small. Its device vouches for it in a Checkpoint, which carries both. |
-| Counting | A write counts only once a checkpoint by its own author covers it (T18). |
+| Signatures | SLH-DSA-SHA2-128f on every edit, the only signature that counts (17,088 bytes each). |
+| Passkeys | A passkey's WebAuthn assertion (P-256) rides beside its SLH-DSA signature: it shows a person was there. |
 | Sealed keys | Every box is sealed to X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f at once. |
 | Data | XChaCha20-Poly1305 for edits and boxes, ChaCha20-Poly1305 per 64 KiB file segment, 256-bit keys. |
 | Hashes | SHA-3 (cSHAKE256) for ids and what is signed. BLAKE3 only to store and move bytes. |
@@ -787,8 +786,9 @@ A box opens only with both shared secrets, so it stays closed while either schem
 megabyte, so it travels as a blob named by its hash, beside the edits that name it. The Verifpal model `seal.vp` shows
 that a sealed key stays secret when either scheme falls (`spec/protocol`).
 
-A node checkpoints each write of its own as it makes it, and at its start what it holds that no checkpoint covers.
-`spec/AvenDB/Step.lean` (`checkpointed`) models what a peer counts once the curves fall.
+A device's ed25519 key is only its iroh endpoint's identity: its hello binds it to its SLH-DSA key, and it signs no
+edit. A passkey's device keys come from its PRF output at each unlock, so the SLH-DSA key behind every edit traces back
+to the passkey.
 
 ## 11. Passkeys
 
@@ -811,7 +811,7 @@ ceremony brings back: an assertion over a challenge, and PRF outputs on avenDB's
   SLH-DSA key derived from its PRF output is the one the vault knows (`sign::Ceremony`). So maiaCITY's API, which sees
   its own sign-ins' assertions and never a PRF output, can't sign for a vault.
 - **One prompt for many edits.** Edits drafted together are signed in one ceremony over their batch: its challenge is
-  the hash of their ids, smallest first (`sign::batch_challenge`), and the SLH-DSA half still signs each edit's own id.
+  the hash of their ids, smallest first (`sign::batch_challenge`), and SLH-DSA still signs each edit's own id.
   A first browser founds its vault, adds itself and claims a new server in one prompt after the unlock. New vaults its
   vault owns come in one more (`found`).
 - **The pass.** The ceremony that unlocks a new device is its passkey's pass for it (`sign::RelayPass`): an assertion
@@ -1136,7 +1136,7 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | T15 | Rotation follows revocation | `T15_rotation_follows_revocation`, `T15_no_older_epoch` |
 | T16 | Strong removal: what a removal hadn't seen and relied on is cut | `T16_strong_removal`, `T16_resolved_removals_stand` |
 | T17 | The lane holds only the vault's own schema and lens creations | `T17_lane_from_creations`, `T17_writes_ignored` |
-| T18 | Once the curves fall, only checkpointed writes count | `T18_checkpointed_writes` |
+| T18 | Retired with the checkpoints: every edit carries an SLH-DSA signature | |
 | T19 | Frontier sync loses nothing; one frontier per log tells whether to ask | `T19_frontier_sync`, `T19_frontiers_alone`, `T19_same_frontier` |
 | T20 | Linking hands out vault logs alone | `T20_link_shares_only_vault_logs`, `T20_stranger_gets_nothing` |
 | T21 | Vaults keep to their kind | `T21_vault_kinds` |
@@ -1178,9 +1178,9 @@ whose keys sign it on that connection.
 | `crates/avendb/src/policy.rs` | Edits, the eight kinds, shares, refusals, the replay, strong removal, meaning |
 | `crates/avendb/src/sync.rs` | Logs, frontiers, asks, follow lists, what a peer sends (`answer`, `Reach`) |
 | `crates/avendb/src/keys.rs` | Key families, epochs, sealed boxes (X-Wing and McEliece) |
-| `crates/avendb/src/sign.rs` | Hybrid signatures, hellos, passkey ceremonies, standing consent, the pass |
+| `crates/avendb/src/sign.rs` | SLH-DSA signatures with a passkey's WebAuthn assertion, hellos, passkey ceremonies, standing consent, the pass |
 | `crates/avendb/src/wire.rs`, `encode.rs` | Every message and edit as bytes, one encoding each; holdings' `Announce` |
-| `crates/avendb/src/lab.rs` | A device's state and its upkeep: stewards, keys, checkpoints, schema entries, dry runs |
+| `crates/avendb/src/lab.rs` | A device's state and its upkeep: stewards, keys, schema entries, dry runs |
 | `crates/avendb/src/engine.rs`, `engine/vaults.rs` | `run(op)`: every read, ask and change as one JSON op, and approval |
 | `crates/avendb/src/world.rs`, `data.rs`, `words.rs` | The world, a vault's database and its history as JSON; the names of the core's words |
 | `crates/avendb/src/ops.rs`, `rules.rs` | Record ops, queries and diffs; op groups, touches and proofs |
