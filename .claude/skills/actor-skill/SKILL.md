@@ -1,7 +1,12 @@
+---
+name: actor-skill
+description: The maiaCITY actor skill — whatever moves, in the Actors library (src/lib/actors, /app/actors): machines in their parts (a bone and a card per part, LifeTrac, Power Cube, BatteryPack and BatteryCube), combinable kits (powerCubeParts, forkliftParts, clickLockPieces), hydraulic rams, clips and poses, research from open CAD, versions behind an argument or frozen files, and the stand-in's face (MakeHuman CC0 head, blend shapes joy and friendly from measured expression units, catchlights that survive the distance). Use it whenever an actor, a rigged machine or the stand-in is built, upgraded, posed or given an expression. Part of asset-producer.
+---
+
 # Actors: what we learned rigging them
 
 Whatever moves is an actor in `src/lib/actors`, shown in `/app/actors` (admin). How the rig works, the stand-in's
-poses, the excavators, birds and animals are in `production-designer`'s `models.md` ("The actors"). This file is
+poses, the excavators, birds and animals are in `production-designer`'s `models.md` ("The actors"). This skill is
 what the machines and the stand-in's head taught us since.
 
 ## Machines as actors

@@ -1,3 +1,8 @@
+---
+name: plant-skill
+description: The maiaCITY plant skill — every plant grown from code in the Plants library (src/lib/plants, /app/plants): a plant as a recipe that grows from its seed through ten stages to ripe fruit, its food-forest layer, organs drawn by their own chance, swept tubes and sheets merged in a Bag, branching limbs and crowns, stamped leaves, fruit and leaves that keep clear (Space, Clear), fruit marks for the fruit view and fruit-check, lite detail for worlds of hundreds, and versions a world anchors to. Use it whenever a plant, a tree, a crop, a herb or a fungus is grown, upgraded or planted in a world. Part of asset-producer.
+---
+
 # Plants: what we learned growing them
 
 Every plant is grown from code in `src/lib/plants` and shown in `/app/plants` (admin) at each stage, with its fruit
