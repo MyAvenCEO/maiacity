@@ -254,8 +254,8 @@
 		</p>
 		<p>
 			In this economy, no human labour is paid. Each person has a personal AI agent, called an Aven, which proposes and
-			delivers all work with the COOPs' machines. A person's MIND comes from three places: the ownership their
-			investing creates, the work items their Aven delivers, and the dividends of what they own.
+			delivers all work with the COOPs' machines. A person's MIND comes from three places: their own half of the
+			HEARTS they invest, the work proposals their Aven delivers, and dividends.
 		</p>
 		<p>
 			COOPs that make the same good compete, and anyone can found a rival. Prices move freely with demand, with no caps.
@@ -382,8 +382,8 @@
 					<tr><th>Speed</th><th>What machines do</th><th>Wages</th><th>What theOS does</th></tr>
 				</thead>
 				<tbody>
-					<tr><td>Slow</td><td>Take over tasks one by one, as in recent decades; new kinds of work keep appearing</td><td>Keep rising; the share of income that goes to work falls slowly</td><td>Runs beside the euro. People keep their jobs, and their HEARTS add a growing stake of ownership</td></tr>
-					<tr><td>Medium</td><td>Can do most tasks in about 20 years</td><td>Rise at first, then fall in more and more jobs</td><td>The ownership that investing creates, Aven work items and dividends carry a growing share of each person's income</td></tr>
+					<tr><td>Slow</td><td>Take over tasks one by one, as in recent decades; new kinds of work keep appearing</td><td>Keep rising; the share of income that goes to work falls slowly</td><td>Runs beside the euro. Outside the city, anyone may still take a job for euros. Inside it, there are only work proposals, and HEARTS add a growing stake of ownership</td></tr>
+					<tr><td>Medium</td><td>Can do most tasks in about 20 years</td><td>Rise at first, then fall in more and more jobs</td><td>The ownership that investing creates, work proposals and dividends carry a growing share of each person's income</td></tr>
 					<tr><td>Fast</td><td>Can do most tasks in about 5 years</td><td>Can collapse once machines spread faster than new capital is built</td><td>HEARTS become the main way to gain ownership. How plentiful the basics are depends on what the COOPs' machines make, and on the energy they harvest</td></tr>
 				</tbody>
 			</table>
@@ -399,7 +399,8 @@
 			This paper describes a way out. It keeps what markets do well and changes the base they stand on. We call the
 			destination <em>Abundism</em>: an economy in which automation makes the basics plentiful, and every person helps
 			to decide what the economy builds. In Abundism, distribution is always a question of fair participation through
-			fair ownership. Each person's AI agent, the Aven of Section 7, proposes and delivers the work with the machines. A
+			fair ownership. Each person's AI agent, the Aven of Section 7, proposes and delivers the work with the machines. Outside the
+			city, anyone may still take a job for euros. Inside it, there are only work proposals (Section 4). A
 			person gains MIND, the money of ownership and use of Section 4, and Section 10.4 shows where it comes from. The
 			promise is concrete. No one starves, no one has to work to survive, and the living standard of every tenth of the people
 			rises. theOS aims for a city where only physics limits how far. Section 10 states this as Proposition 3 and checks
@@ -606,11 +607,13 @@
 			In the pools, the solarMIND lets anyone trade solarMIND for another MIND (Section 6). In the treasury, the
 			solarMIND is the COOP's working capital. The COOP spends it through proposals that its members accept. It <em>buys</em> panels: it pays in solarMIND, the
 			pools convert it, and the panel COOP receives panelMIND. And it <em>pays for work</em>, but never for human
-			labour. The Avens propose and deliver all work, with the COOP's machines, and the COOP pays the human whose Aven
-			delivers. Each such piece of work is an <em>Aven work item</em>. Mia's Aven runs the daily check of the panels: a
-			<em>running item</em>, which the COOP pays from its running costs. It also proposes a plan for the panels'
-			repairs: a <em>work proposal</em>. The COOP accepts, Mia's Aven and the COOP's robots do the work, and the COOP
-			pays Mia in solarMIND. Mia herself does not labour for it. And Mia does not keep it long: her Aven pays for her
+			labour. There are no jobs and no wages. All work is a <em>work proposal</em>, priced in the COOP's own MIND, as in
+			a DAO (a decentralised autonomous organisation, which runs on proposals and votes). An Aven proposes a piece of
+			work and its price for its person, the COOP accepts it, and its treasury pays on delivery. The Avens deliver all
+			work with the COOP's machines. Some work proposals keep a COOP running: Mia's Aven runs the daily check of the
+			panels, and the COOP pays it from its running costs. Others are new work, paid from the surplus: Mia's Aven
+			proposes a plan for the panels' repairs, the members accept it, Mia's Aven and the COOP's robots do the work, and
+			the COOP pays Mia in solarMIND. Mia herself does not labour for it. And Mia does not keep it long: her Aven pays for her
 			food, her tram rides and a concert. So the MIND that leaves a treasury comes back to the COOPs through what they
 			sell (Section 10.4).
 		</p>
@@ -623,8 +626,8 @@
 			<p class="lawname">The payout rule</p>
 			<p>
 				A treasury keeps a reserve of {SIM.reserveMonths} months of running costs, plus what it plans to build, and pays
-				out the rest for Aven work items. It grows its own plant first, where it sells out or earns a margin. What it
-				holds above the reserve goes out within weeks, for work proposals that its members accept.
+				out the rest for work proposals. It grows its own plant first, where it sells out or earns a margin. What it
+				holds above the reserve goes out within weeks, for new work that its members accept.
 			</p>
 		</div>
 		<p>
@@ -633,15 +636,16 @@
 		<div class="law">
 			<p class="lawname">Law 5 · Every sale pays its owners</p>
 			<p>
-				{pc(DIVIDEND_SHARE)} of every sale goes to the COOP's owners at the moment of sale. The share is the same for every COOP. It is paid
-				in the COOP's own MIND, to everyone who holds that MIND, in proportion to what each one holds.
+				{pc(DIVIDEND_SHARE)} of every sale goes at once, in the COOP's own MIND, to everyone who holds it: people, other
+				COOPs and the city's pools, in proportion to what each holds. The share is the same for every COOP. The COOP's
+				own treasury gets none, because paying itself would only move its MIND in a circle. Only real deliveries count
+				as sales.
 			</p>
 		</div>
 		<p>
 			This payment is the <em>dividend</em>. When Anna pays for her light, {pc(DIVIDEND_SHARE)} of her payment goes at once to everyone
-			who holds solarMIND. Anna holds solarMIND too, so she gets a little of it back. The holders are people and other
-			COOPs' treasuries. The solar COOP's own treasury and the pools get no share (the holder rule, Section 9). The other {pc(1 - DIVIDEND_SHARE)} goes to
-			the treasury. It pays for inputs, services, building, ground rent, running items and accepted work proposals.
+			who holds solarMIND. Anna holds solarMIND too, so she gets a little of it back. The other {pc(1 - DIVIDEND_SHARE)} goes to
+			the treasury. It pays for inputs, services, building, ground rent and work proposals.
 			Nobody has to vote on each dividend.
 		</p>
 		<p>
@@ -672,8 +676,8 @@
 		<p>
 			So theOS has only two kinds of money. HEARTS are intent, and they exist only until their owner invests them.
 			MINDs are what intent becomes, and they carry the whole economy after that. No human labour is paid. A person's
-			MIND comes from three places: the ownership their investing creates, the work items their Aven delivers, and the
-			dividends of what they own (Section 10.4). The laws say where both come from.
+			MIND comes from three places: their own half of the HEARTS they invest, the work proposals their Aven delivers,
+			and Law 5 dividends (Section 10.4). The laws say where both come from.
 			They do not yet say what stops either from growing without limit. That is the job of the one rule that HEARTS and
 			MINDs share: they melt.
 		</p>
@@ -728,8 +732,9 @@
 			for both kinds of money, it fits in four verbs. The protocol <em>issues</em> money only as HEARTS,
 			<Tex tex={String.raw`u = ${UIA_DAY} \times 365 = ${tn(UIA_DAY * 365)}`} /> a year per person. Money changes form
 			only by <em>conversion</em>, one HEART into one MIND, which neither creates nor destroys money. It
-			<em>circulates</em> as MIND: COOPs make, sell and buy their services in it. And it <em>leaves</em> in two ways: it
-			melts, and a failed COOP's MIND is retired from the pools.
+			<em>circulates</em> as MIND: COOPs make, sell and buy their services in it. Last, it <em>leaves</em> the money
+			stock. Money goes out of existence in two ways: it melts, and a failed COOP's MIND is retired from the pools.
+			Everything else, paying for resources, services and work proposals, only moves MIND from one holder to another.
 		</p>
 		<p>
 			Count all the money there is, HEARTS and MINDs together: in wallets, in treasuries and in the pools. Count every
@@ -757,8 +762,8 @@
 			spend, tends to <Tex tex={String.raw`W_i^{*} = a_i / r`} />. A person who keeps their half of the MIND that their
 			own investing creates, <Tex tex={String.raw`\omega = u/2`} /> a year, and spends nothing, tends to
 			<Tex tex={String.raw`\omega/r = u/(2r) \approx ${tn(ownLevel())}`} /> MIND: half of <Tex tex={String.raw`m^{*}`} />.
-			The other half goes to the treasury and the pools (Law 4). Treasuries pay most of theirs out again for Aven work
-			items (the payout rule, Section 4). A person whose net inflow is twice as large tends to twice the holding.
+			The other half goes to the treasury and the pools (Law 4). Treasuries pay most of theirs out again for work
+			proposals (the payout rule, Section 4). A person whose net inflow is twice as large tends to twice the holding.
 			So every balance moves toward about {fmt(1 / RATE, 1)} years of its own net inflow.
 		</p>
 		<p>
@@ -1153,8 +1158,8 @@
 				as MIND what its human wants to own, and pays for daily life from a small float.
 			</li>
 			<li>
-				<strong>Doing the work.</strong> The Aven proposes and delivers Aven work items to COOPs, with the COOPs'
-				machines: running items and work proposals (Section 4). The COOP pays the Aven's human in its own MIND. Work
+				<strong>Doing the work.</strong> The Aven makes work proposals to COOPs and delivers them with the COOPs'
+				machines: work that keeps a COOP running, and new work (Section 4). The COOP pays the Aven's human in its own MIND. Work
 				proposals are open to every Aven, and they include care work and public work for the City COOP. Avens differ in
 				what they deliver, so their humans' pay differs too (Section 9.2). This is how most MIND flows from the
 				treasuries back to people, and how COOPs grow what they can make.
@@ -1262,8 +1267,8 @@
 		<p>
 			How does a long project get its capital? A HEART converts on the day it is invested, so nobody can save HEARTS
 			for a project. Residents can pledge future HEARTS to a project as a standing order, and each HEART converts on its
-			day. Machines from outside the city cost euros. The City COOP advances them, and the project repays in its own
-			MIND, with no interest (Section 8.3). Two questions stay open: how the City COOP sets the ground rent, which is not
+			day. Machines from outside the city cost euros. The City COOP gives the project a euro loan, and the project repays
+			it in its own MIND, without interest (Section 8.3). Two questions stay open: how the City COOP sets the ground rent, which is not
 			a sale and so pays no Law 5 dividend, and whether Avens fund long projects as readily as short ones (Sections 12.2
 			and 12.4).
 		</p>
@@ -1318,13 +1323,13 @@
 			<p class="lawname">The euro border</p>
 			<p>
 				The City COOP is the city's euro bank, and every euro crosses the border through it; in maiaCITY that is the
-				MaiaCity COOP. It advances euros to COOPs for machines, imports and taxes, and each COOP repays in its own MIND,
-				with no interest. No MIND is ever made from euros, and no person changes MIND into euros.
+				MaiaCity COOP. It gives COOPs euro loans for machines, imports and taxes, and each COOP repays its loan in its
+				own MIND, without interest. The City COOP makes no MIND from euros, and no person changes MIND into euros.
 			</p>
 		</div>
 		<p>
-			COOPs that sell power, heat, food or services outside the city earn euros, and these euros go through the City
-			COOP too. One legal form carries all of this: an <em>umbrella eG</em>, a registered cooperative whose divisions
+			Outside the city, anyone may still take a job for euros. Inside it, there are only work proposals. COOPs that
+			sell power, heat, food or services outside the city earn euros, and these euros go through the City COOP too. One legal form carries all of this: an <em>umbrella eG</em>, a registered cooperative whose divisions
 			are the COOPs. Investing a HEART makes the investor a member with one vote. Each COOP keeps a euro balance sheet
 			as a division, publishes a euro reference price and keeps a tax reserve. A COOP that grows large becomes its own
 			eG. Section 12.4 lists what stays open at the border.
@@ -1416,8 +1421,8 @@
 		<div class="law">
 			<p class="lawname">The holder rule</p>
 			<p>
-				A COOP's own MIND in its own treasury, and every MIND in the pools, carries no vote and gets no dividend. Only
-				MIND that people and other COOPs' treasuries hold can vote in a COOP and earn its dividend.
+				A COOP's own MIND in its own treasury carries no vote and gets no dividend. MIND in the city's pools gets its
+				Law 5 dividend but carries no vote. Only MIND that people and other COOPs' treasuries hold can vote in a COOP.
 			</p>
 		</div>
 		<p>
@@ -1615,7 +1620,7 @@
 				<strong>Figure {FIG.gini}.</strong> An illustration of ({EQ.level}) and ({EQ.gini}), not a forecast. Everyone starts as unequal as
 				Germany today. If everyone keeps the same amount each year and all holdings earn the same return, inequality
 				halves every {fmt(halfLife(), 1)} years and goes to zero. If returns spread by 10 % or 20 % between people, it
-				settles near {fmt(giniRest(0.1), 2)} or {fmt(giniRest(0.2), 2)}. Unequal Aven work items add their own spread
+				settles near {fmt(giniRest(0.1), 2)} or {fmt(giniRest(0.2), 2)}. Unequal pay for work proposals adds its own spread
 				(Section 10.6). Under capitalism it stays where it is.
 			</figcaption>
 		</figure>
@@ -1672,13 +1677,13 @@
 				</thead>
 				<tbody>
 					<tr><td>HEARTS</td><td>A person's intent: what they want built</td><td>The UIA, {UIA_DAY} a day per person</td><td>Converted into MIND by investment, or melted</td></tr>
-					<tr><td>MIND</td><td>Ownership of a COOP and the means to use what it makes; people hold it as ownership and spend it to use, the COOP holds it as working capital</td><td>Every invested HEART, one for one: {RULE}</td><td>Spent on what the COOP makes, and the seller always receives its own MIND; paid out again by COOPs for resources, services and Aven work items; or melted</td></tr>
-					<tr><td>Treasury</td><td>A COOP's working capital: its own MIND and other COOPs' MIND, never HEARTS</td><td>The treasury's part of each new MIND, {fmt(TREASURY_SHARE, 1)} of each HEART, and {pc(1 - DIVIDEND_SHARE)} of every sale</td><td>Inputs, building, ground rent and Aven work items; the reserve of the payout rule (Section 4); the rest paid out for work proposals; melt</td></tr>
-					<tr><td>Dividends</td><td>Pay the owners of a COOP when it is useful (Law 5)</td><td>{pc(DIVIDEND_SHARE)} of every sale, the same for every COOP, at the moment of sale</td><td>Everyone who holds the seller's MIND, people and other COOPs' treasuries, in proportion to what each one holds; with what people hold, how they live without working</td></tr>
+					<tr><td>MIND</td><td>Ownership of a COOP and the means to use what it makes; people hold it as ownership and spend it to use, the COOP holds it as working capital</td><td>Every invested HEART, one for one: {RULE}</td><td>Spent on what the COOP makes, and the seller always receives its own MIND; paid out again by COOPs for resources, services and work proposals, which only moves it from one holder to another. It goes out of existence when it melts, or when a failed COOP's MIND is retired from the pools</td></tr>
+					<tr><td>Treasury</td><td>A COOP's working capital: its own MIND and other COOPs' MIND, never HEARTS</td><td>The treasury's part of each new MIND, {fmt(TREASURY_SHARE, 1)} of each HEART, and {pc(1 - DIVIDEND_SHARE)} of every sale</td><td>Inputs, building, ground rent and work proposals that keep it running; the reserve of the payout rule (Section 4); the rest paid out for new work; melt</td></tr>
+					<tr><td>Dividends</td><td>Pay the owners of a COOP when it is useful (Law 5)</td><td>{pc(DIVIDEND_SHARE)} of every sale, the same for every COOP, at the moment of sale</td><td>Everyone who holds the seller's MIND except its own treasury: people, other COOPs and the city's pools, in proportion to what each one holds; with what people hold, how they live without working</td></tr>
 					<tr><td>Prices</td><td>Tell COOPs what to make and Avens where to buy</td><td>Each COOP, every day, in its own MIND: up when sold out, down when idle; no caps</td><td>Avens, which show them in HEARTS and in days of living (Section 6.3)</td></tr>
 					<tr><td>The city's pools</td><td>Prices and trades between MINDs, and routes every payment into the seller's own MIND; the City COOP holds their LP tokens (Section 6)</td><td>The pools' part of each new MIND, {fmt(POOL_SHARE, 1)} of each HEART, automatically, in baskets of {POOL.min} to {POOL.max} MINDs</td><td>No COOP or person withdraws; MIND leaves a pool in four ways only (Section 6)</td></tr>
-					<tr><td>Demurrage</td><td>One of two ways money leaves (Section 5.2): {pc(RATE)} a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
-					<tr><td>Avens</td><td>One person's agent: invest, trade, pay, propose and deliver all work items with the COOPs' machines, collect dividends, leave</td><td>One per person</td><td>Work only for their human, who receives their pay; no human labour is paid</td></tr>
+					<tr><td>Demurrage</td><td>One of two ways money goes out of existence (Section 5.2): {pc(RATE)} a year on everything</td><td>The protocol</td><td>Nobody; melted money is gone</td></tr>
+					<tr><td>Avens</td><td>One person's agent: invest, trade, pay, propose and deliver all work proposals with the COOPs' machines, collect dividends, leave</td><td>One per person</td><td>Work only for their human, who receives their pay; no human labour is paid</td></tr>
 					<tr><td>City COOP</td><td>Holds all land and what all citizens share, and leases land; never sells it. Holds the LP tokens of the city's pools, and the euro border (Sections 8.2 and 8.3)</td><td>The city: every citizen holds one equal share</td><td>Ground rent in MIND from every builder; pays for streets, parks and water</td></tr>
 					<tr><td>COOP governance</td><td>How each COOP decides; tested by selection</td><td>Chosen by each COOP</td><td>Tested by where people invest</td></tr>
 				</tbody>
@@ -1875,9 +1880,10 @@
 			<li>{SIM.goods} goods. Experiences never satisfy fully.</li>
 			<li>
 				Two rival COOPs for each household good except water, free prices, reserves of {SIM.reserveMonths} months,
-				and Law 5 at {pc(SIM.lawShare)}.
-				</li>
-				<li>Each invested HEART makes one MIND (Law 4, Section 4).</li>
+				and Law 5 at {pc(SIM.lawShare)}. The run pays it to people and other COOPs' treasuries; the pools' share is
+				being added.
+			</li>
+			<li>Each invested HEART makes one MIND (Law 4, Section 4).</li>
 			<li>
 				Each COOP's productivity rises at its own rate, about {pc(SIM.prodGrowth)} a year on average. This is an
 				assumption (Appendix A). The COOPs that grew fastest won their markets. So output per unit of plant rose about
@@ -1952,10 +1958,10 @@
 			</figcaption>
 		</figure>
 		<p>
-			A person's MIND comes from three places. The ownership their investing creates gives {share('own')} of their
-			income. The work items their Aven delivers give {pc(incomeShare('items') + incomeShare('proposals'))}: running
-			items {share('items')} and work proposals {share('proposals')}. The dividends of what they own give
-			{share('dividends')}. There is no wage for human labour.
+			A person's MIND comes from three places. Their own half of the HEARTS they invest gives {share('own')} of their
+			income. The work proposals their Aven delivers give {pc(incomeShare('items') + incomeShare('proposals'))}: work
+			that keeps COOPs running {share('items')} and new work {share('proposals')}. Law 5 dividends give
+			{share('dividends')}. There are no jobs and no wages.
 		</p>
 		<p>
 			Table {TAB.roundTrip} follows every MIND around the round trip, in the last ten years. The
@@ -1977,8 +1983,8 @@
 				<tbody>
 					<tr><th colspan="2" scope="colgroup">People's wallets</th></tr>
 					<tr><td>The ownership their investing creates (their half of the new MIND)</td><td>{sg(RT.people.in.own)}</td></tr>
-					<tr><td>Aven work items: running items</td><td>{sg(RT.people.in.items)}</td></tr>
-					<tr><td>Aven work items: work proposals</td><td>{sg(RT.people.in.proposals)}</td></tr>
+					<tr><td>Work proposals: running work</td><td>{sg(RT.people.in.items)}</td></tr>
+					<tr><td>Work proposals: new work</td><td>{sg(RT.people.in.proposals)}</td></tr>
 					<tr><td>Law 5 dividends, paid at each sale</td><td>{sg(RT.people.in.dividends)}</td></tr>
 					<tr><td>Buying from COOPs</td><td>{sg(-RT.people.out.buying)}</td></tr>
 					<tr><td>Melt</td><td>{sg(-RT.people.out.melt)}</td></tr>
@@ -1990,8 +1996,8 @@
 					<tr><th colspan="2" scope="colgroup">COOP treasuries</th></tr>
 					<tr><td>The treasury's part of the new MIND ({fmt(TREASURY_SHARE, 1)} of each HEART)</td><td>{sg(RT.treasuries.in.own)}</td></tr>
 					<tr><td>Sales to people, after the Law 5 share</td><td>{sg(salesAfterLaw5())}</td></tr>
-					<tr><td>Aven work items: running items</td><td>{sg(-RT.treasuries.out.items)}</td></tr>
-					<tr><td>Aven work items: work proposals</td><td>{sg(-RT.treasuries.out.proposals)}</td></tr>
+					<tr><td>Work proposals: running work</td><td>{sg(-RT.treasuries.out.items)}</td></tr>
+					<tr><td>Work proposals: new work</td><td>{sg(-RT.treasuries.out.proposals)}</td></tr>
 					<tr><td>Melt</td><td>{sg(-RT.treasuries.out.melt)}</td></tr>
 					<tr><td>Retired with a COOP that ended</td><td>{sg(-RT.treasuries.out.retired)}</td></tr>
 					<tr class="net"><td>Net flow</td><td>{sg(RT.treasuries.net)}</td></tr>
@@ -2220,8 +2226,8 @@
 		<p>
 			Law 5 alone does not bring the MIND to people. The rest of every sale lands in the treasury. Under the payout rule
 			(Section 4), a treasury keeps reserves for {SIM.reserveMonths} months, grows its plant first, and pays out what it
-			holds above that. In the last ten years it paid {pc(treasuryShare('items'))} of what it keeps for running items
-			and {pc(treasuryShare('proposals'))} for work proposals. The dividends never pass through it: each sale pays them
+			holds above that. In the last ten years it paid {pc(treasuryShare('items'))} of what it keeps for running work
+			and {pc(treasuryShare('proposals'))} for new work. The dividends never pass through it: each sale pays them
 			at once. People hold {pc(DYN.people)} of all MIND by value, treasuries {pc(DYN.treasuries)} and the pools
 			{pc(DYN.pools)}. People own the COOPs that hold those reserves. In year {SIM.years}, the lowest reserve was
 			{RESERVES.minDays} days of running costs, and the median {RESERVES.medianDays}:
@@ -2415,7 +2421,7 @@
 				</thead>
 				<tbody>
 					<tr><td>Allocation</td><td>Every resident gets {UIA_DAY} personal HEARTS a day, which it can only invest</td><td>Every person with a verified identity gets {UIA_DAY} personal HEARTS a day: one stream per human</td></tr>
-					<tr><td>COOPs</td><td>Residents found COOPs and invest HEARTS, which convert into MIND</td><td>An energy COOP for a village's geothermal plant, a food COOP for its food forest, a housing COOP for its domes</td></tr>
+					<tr><td>COOPs</td><td>Residents found COOPs and invest HEARTS, which convert into MIND</td><td>An energy COOP for a village's geothermal plant and a food COOP for its food forest. Each settlement has a Tribe COOP, whose MIND is tribeMIND: it owns the domes and beds there and rents them to residents</td></tr>
 					<tr><td>Markets</td><td>Baskets of MINDs, fed by the pools' part of every new MIND (Law 4); the City COOP holds their LP tokens. {pc(DIVIDEND_SHARE)} of every sale goes at once to the holders of the seller's MIND</td><td>Avens route every purchase through the pools, and the seller gets its own MIND. {pc(DIVIDEND_SHARE)} of every sale, the same for every COOP</td></tr>
 					<tr><td>Land</td><td>One City COOP holds the map; residents lease plots and pay ground rent</td><td>The City COOP holds all land; every citizen holds one equal share; builders lease plots like an Erbbaurecht</td></tr>
 					<tr><td>Energy</td><td>Every recipe costs energy; growth comes only from surplus energy</td><td>Measured on the village's meters</td></tr>
@@ -2544,7 +2550,7 @@
 				and their pools. Check Proposition 3 for every person, on every day, on many seeds.
 			</li>
 			<li><strong>Human intents.</strong> Let people make the two daily choices of Section 7 and leave the rest to their Aven. Then humans and AI agents share one economy.</li>
-			<li><strong>The first real village.</strong> One village centre with its energy, food and housing COOPs, which run on the rules that survived the test city.</li>
+			<li><strong>The first real village.</strong> One village with its energy and food COOPs and the Tribe COOP of each settlement, which run on the rules that survived the test city.</li>
 		</ol>
 		<p>
 			Before we build the city, the test city must also answer the questions that this paper cannot answer yet.
@@ -2594,7 +2600,7 @@
 				{pc(STATIC.ring.hearts, 2)} of all HEARTS, though it was {pc(STATIC.ring.people, 1)} of the people. Its income
 				was {fmt(STATIC.ring.income, 1)} times that of others, and after {STATIC.ring.years} years its wealth was
 				{fmt(STATIC.ring.wealth, 1)} times. We propose a related-party rule. When insiders invest, the treasury's part of
-				their investment waits in a locked account (escrow) until an audit confirms real output. Every treasury flow and every work item is
+				their investment waits in a locked account (escrow) until an audit confirms real output. Every treasury flow and every work proposal is
 				public, with a proof of delivery. Only deliveries that a meter or an outside buyer confirms count as sales, and
 				sales between related COOPs pay no dividend. <em>Test:</em> kickback COOPs, investment rings and circular sales
 				as attackers in the test city.
@@ -2611,7 +2617,7 @@
 				<strong>Failure and wind-down.</strong> If every Aven leaves, a corrupt COOP still holds
 				{pct(decay(100, RATE, 1))} of its treasury after a year. So exit alone works slowly. We propose recall and
 				receivership: when inflows fall below a threshold or an audit fails, a trustee freezes the treasury, and the
-				members vote. Then an order of payment applies: Aven work items first, then supplier COOPs. The physical assets
+				members vote. Then an order of payment applies: work proposals first, then supplier COOPs. The physical assets
 				go to the City COOP, which leases them to a COOP that runs them better, without a forced sale, or scraps a plant
 				that stands idle (the idle-plant rule, Section 9.1). Section 10.7 reports the failures in the simulation. The
 				order of payment must itself resist capture by a small group, and the legal wrapper must match it.
@@ -2620,8 +2626,8 @@
 			<li>
 				<strong>Long-lived projects.</strong> Who gets the rising value of a city-scale project, and does that make
 				Avens fund it? Section 8.1 shows that the rise goes to its users and to new investors, and that holders gain
-				through Law 5 on growing sales. theOS makes no MIND from euros and charges no interest; the City COOP advances
-				euros, repaid in the COOP's own MIND (Section 8.3). <em>Test:</em> the test city measures whether Avens fund a
+				through Law 5 on growing sales. theOS makes no MIND from euros and charges no interest; the City COOP gives
+				euro loans, repaid in the COOP's own MIND (Section 8.3). <em>Test:</em> the test city measures whether Avens fund a
 				tidal barrier or a fusion plant, and who gains from it.
 			</li>
 			<li>
@@ -2632,7 +2638,7 @@
 			</li>
 			<li>
 				<strong>Aven capacity.</strong> The results assume that Avens deliver what the COOPs ask, at a fixed rate for each
-				work item. We also ran Avens with a fixed capacity and a floating rate. Then all three checks failed: food ran
+				work proposal. We also ran Avens with a fixed capacity and a floating rate. Then all three checks failed: food ran
 				short, and the worst person-day had {pc(V('aven').worst)} of the basics. <em>Test:</em> Avens with real limits,
 				and rates that float.
 			</li>
@@ -2722,8 +2728,8 @@
 				trade, so the first COOPs wait for each other. Circles, with the same {CIRCLES.day} a day and
 				{pc(CIRCLES.rate)}, had about {fmt(CIRCLES.people)} registered people in {CIRCLES.asOf} <Cite k="gnosis" />.
 				Empty pools are a second trap (Section 10.7). We propose the
-				bootstrap. On opening day, the City COOP and the energy, food and housing COOPs open together as the first
-				basket. Residents invest their HEARTS for a founding week before the first sale. The pools' part of each new MIND
+				bootstrap. On opening day, the City COOP, the energy and food COOPs and the Tribe COOP of each settlement open
+				together as the first basket. Residents invest their HEARTS for a founding week before the first sale. The pools' part of each new MIND
 				fills the pools, so any MIND a person holds can pay any seller from the first sale. Only investment creates MIND, so nothing else may fill them. Each
 				person's first investment makes them a part-owner of the basics COOPs, so Law 5 pays them a share of every
 				basic sold from day one. Newcomers get the same start. Euros fund the first machines, never MIND, so that the
@@ -2809,7 +2815,7 @@
 		</p>
 		<p>
 			In capitalism, people sold their time so that they could survive. In Abundism, no human labour is paid.
-			Survival rests on ownership, the work items an Aven delivers, and dividends (Section 4). In the simulation, basics got cheaper as
+			Survival rests on a person's own half of the HEARTS they invest, the work proposals their Aven delivers, and Law 5 dividends (Section 4). In the simulation, basics got cheaper as
 			productivity rose. Whether rivals keep them cheap when a leader prices for profit is still open (Section 12.2).
 		</p>
 		<p>
@@ -2852,7 +2858,7 @@
 			<li id="a8"><strong>A8 Where Avens invest.</strong> In the simulation, each Aven puts {pc(AVEN_RULE.share)} of its person's HEARTS into the {AVEN_RULE.top} MINDs with the highest price and dividend yield, and the rest by its person's own values (Section 10.3). <span class="status">Status: —</span></li>
 			<li id="a9"><strong>A9 Faithful Avens.</strong> Each Aven serves only its human, follows its human's choices and makes no costly mistakes (Section 7). <span class="status">Status: —</span></li>
 			<li id="a10"><strong>A10 No paid human labour.</strong> Every human has one Aven, and the Avens propose and deliver all work with the COOPs' machines. Avens differ in what they deliver (Section 4). <span class="status">Status: —</span></li>
-			<li id="a11"><strong>A11 Avens deliver what COOPs ask,</strong> at a fixed rate for each work item (Section 12.2). <span class="status">Status: —</span></li>
+			<li id="a11"><strong>A11 Avens deliver what COOPs ask,</strong> at a fixed rate for each work proposal (Section 12.2). <span class="status">Status: —</span></li>
 			<li id="a12"><strong>A12 Spending.</strong> People spend a share <Tex tex={String.raw`\theta = ${tn(SIM.spendRate, 1)}`} /> of what they hold a year, basics first (Section 10.4). <span class="status">Status: —</span></li>
 			<li id="a13"><strong>A13 Spread ownership</strong> = C4 (Section 10.1). <span class="status">Status: —</span></li>
 			<li id="a14"><strong>A14 Wants that keep growing</strong> = C5 (Section 10.1). <span class="status">Status: —</span></li>
@@ -2871,7 +2877,7 @@
 		<h3>The simulation's settings</h3>
 		<ul class="assume">
 			<li id="a23"><strong>A23 The bootstrap</strong> = C3 (Section 12.4). The simulation does not test it yet. <span class="status">Status: —</span></li>
-			<li id="a24"><strong>A24 The main run.</strong> {SIM.people} people over {SIM.years} years on one seed, with the settings of Section 10.3; founders act when a margin over full cost stays above {pc(SIM.foundingMargin)} for {SIM.foundingDays} days (Section 9.1). <span class="status">Status: —</span></li>
+			<li id="a24"><strong>A24 The main run.</strong> {SIM.people} people over {SIM.years} years on one seed, with the settings of Section 10.3; founders act when a margin over full cost stays above {pc(SIM.foundingMargin)} for {SIM.foundingDays} days (Section 9.1). It pays Law 5 to people and other COOPs' treasuries; the pools' share is being added. <span class="status">Status: —</span></li>
 		</ul>
 	</section>
 
@@ -2938,11 +2944,11 @@
 			<dt>Conversion</dt>
 			<dd>The moment an invested HEART converts into one MIND of its COOP: {RULE}. This is Law 4.</dd>
 			<dt>Dividend</dt>
-			<dd>Law 5: {pc(DIVIDEND_SHARE)} of every sale, the same for every COOP. It goes at once to everyone who holds the seller's MIND, in proportion to their holding. It is not Laborde's universal dividend of Section 3, which is new money.</dd>
-			<dt>Aven work item</dt>
-			<dd>A piece of work that a person's Aven proposes and delivers to a COOP, with the COOP's machines. The COOP pays the Aven's human in its own MIND. No human labour is paid. A <em>running item</em> keeps a COOP going, such as a daily check, and the COOP pays it from its running costs. A <em>work proposal</em> is new work, such as a repair plan. If the members accept it, the treasury pays it from what it holds above its reserve.</dd>
+			<dd>Law 5: {pc(DIVIDEND_SHARE)} of every sale, the same for every COOP. It goes at once to everyone who holds the seller's MIND except its own treasury, in proportion to their holding: people, other COOPs and the city's pools. It is not Laborde's universal dividend of Section 3, which is new money.</dd>
+			<dt>Work proposal</dt>
+			<dd>All paid work in the city, as in a DAO: a person's Aven proposes a piece of work and its price in the COOP's own MIND, the COOP accepts it, the Aven delivers it with the COOP's machines, and the treasury pays the Aven's human on delivery. There are no jobs and no wages. Some work proposals keep a COOP running, such as a daily check, and the COOP pays them from its running costs. Others are new work, such as a repair plan: if the members accept it, the treasury pays it from what it holds above its reserve. Outside the city, anyone may still take a job for euros.</dd>
 			<dt>Payout rule</dt>
-			<dd>A treasury keeps a reserve of {SIM.reserveMonths} months of running costs, plus what it plans to build, and pays out the rest for Aven work items (Section 4).</dd>
+			<dd>A treasury keeps a reserve of {SIM.reserveMonths} months of running costs, plus what it plans to build, and pays out the rest for work proposals (Section 4).</dd>
 			<dt>Turnover</dt>
 			<dd>The total of a COOP's sales over a time. Only real deliveries count.</dd>
 			<dt>Unit of account</dt>
@@ -2958,9 +2964,11 @@
 			<dt>LVR</dt>
 			<dd>Loss-versus-rebalancing: what a pool loses to arbitrageurs when prices move, against a perfect rebalancer.</dd>
 			<dt>Aven</dt>
-			<dd>A personal AI agent that works only for its human: it invests, trades, pays, proposes and delivers Aven work items, and collects dividends.</dd>
+			<dd>A personal AI agent that works only for its human: it invests, trades, pays, proposes and delivers work proposals, and collects dividends.</dd>
 			<dt>City COOP</dt>
 			<dd>The city's own COOP (Section 4). It holds all land and everything that all citizens share, including the LP tokens of the city's pools, and it is the city's euro bank (Sections 8.2 and 8.3). Every citizen holds one equal share, as a membership. In maiaCITY it is the MaiaCity COOP.</dd>
+			<dt>Settlement, village, Tribe COOP</dt>
+			<dd>A settlement is one hex of the city's map, and a village is a group of settlements. Each settlement has a Tribe COOP, whose MIND is tribeMIND. It owns the domes and beds there and rents them to residents.</dd>
 			<dt>MIP</dt>
 			<!-- for Samuel to confirm: the expansion of MIP -->
 			<dd>A MaiaCity improvement proposal: a vote of the City COOP's members, one vote per citizen share (Section 8.2). Only a passed MIP can redeem LP tokens.</dd>
@@ -3030,7 +3038,7 @@
 		<p>
 			<strong>WIR and Sardex.</strong> WIR has given Swiss firms credit in its own currency since 1934
 			<Cite k="stodder" />, and Sardex gives interest-free credit to firms in Sardinia <Cite k="sardex" />. theOS makes
-			no MIND from euros and charges no interest; the City COOP advances euros, repaid in the COOP's own MIND (Section
+			no MIND from euros and charges no interest; the City COOP gives euro loans, repaid in the COOP's own MIND (Section
 			8.3).
 		</p>
 		<p>
@@ -3071,7 +3079,7 @@
 				<tbody>
 					<tr><td>Fake identities (Sybil)</td><td>{fmt(u)} HEARTS a year to direct for each fake person</td><td>A staged identity system, caps on new identities, regular liveness checks</td><td>Farms of fake agents</td></tr>
 					<tr><td>Self-dealing and rings</td><td>A founder controls {fmt(selfDealDay(), 1)} MIND a day instead of {fmt(honestDay())}; friends trade empty MINDs for real ones</td><td>Escrow for related parties, no payouts to recent investors, public treasuries, only real deliveries count as sales, basket admission</td><td>Kickback COOPs, investment rings and circular sales</td></tr>
-					<tr><td>Empty work items</td><td>Treasury MIND for work that an Aven never delivered, or for a friend's Aven</td><td>Public work items with a proof of delivery, members' acceptance, work proposals open to every Aven, audits of the largest earners</td><td>Avens that bill empty work, COOPs that favour related Avens</td></tr>
+					<tr><td>Empty work proposals</td><td>Treasury MIND for work that an Aven never delivered, or for a friend's Aven</td><td>Public work proposals with a proof of delivery, members' acceptance, work proposals open to every Aven, audits of the largest earners</td><td>Avens that bill empty work, COOPs that favour related Avens</td></tr>
 					<tr><td>Pool attacks and front-running</td><td>A pushed price draws HEARTS from Avens; bots trade around payments and inflows</td><td>Time-averaged prices, one batch at one price per block, sealed orders, an event breaker</td><td>Price pumps, junk dumping, sandwich bots</td></tr>
 					<tr><td>Capture</td><td>Control of a COOP's treasury, of the Avens' defaults, or of the protocol's code</td><td>The holder rule, a default COOP constitution, several Aven providers, the process of Appendix F</td><td>Vote buying, a captured Aven provider, injected instructions</td></tr>
 					<tr><td>Bugs</td><td>Value drained from pools that only a vote of the City COOP's members can withdraw from</td><td>Verified maths, one global melt index, independent code, a pause that cannot move funds, a bug bounty</td><td>A red team before real value flows</td></tr>

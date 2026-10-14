@@ -2,7 +2,7 @@
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Figure 13: MIND goes round. New MIND (24 HEARTS a day convert) reaches people, treasuries and the pools (0.5 to the
 	// investor, 0.4 to the treasury, 0.1 to the pool; the COOP adds the pools' part to its baskets); treasuries pay people
-	// for their Avens' work items; people spend at the COOPs, so the MIND comes back. At each sale, Law 5's share branches
+	// for their Avens' work proposals; people spend at the COOPs, so the MIND comes back. At each sale, Law 5's share branches
 	// off at once to the holders, and only the rest reaches the treasury. A little melts in each place. Arrow widths are shares of a person's income, and gold MIND coins travel along each arrow at a
 	// rate in proportion to its flow. Two worlds: the dynamic world (wants that keep growing) and the earlier static one.
 	import { onMount } from 'svelte';
@@ -44,7 +44,7 @@
 	};
 	const pctOf = (v, rt) => `${fmt(ofIncome(v, rt) * 100)} %`;
 	const D = flowsOf(ROUND_TRIP), S = flowsOf(ROUND_TRIP_STATIC);
-	const aria = `MIND goes round. New MIND from the HEARTS that people invest reaches their wallets, the COOP treasuries and the pools: ${fmt(INVESTOR_SHARE, 1)} to the investor, ${fmt(TREASURY_SHARE, 1)} to the treasury, ${fmt(POOL_SHARE, 1)} to the pool. Treasuries pay people for their Avens' work items. People spend at the COOPs, so the MIND comes back. At each sale, the Law 5 share goes at once to the holders, and only the rest reaches the treasury. A little melts in each place. In the dynamic world, people spend ${pctOf(D.buy, ROUND_TRIP)} of their income and ${pctOf(D.meltP, ROUND_TRIP)} melts in their wallets. In the static world, they spend ${pctOf(S.buy, ROUND_TRIP_STATIC)} and ${pctOf(S.meltP, ROUND_TRIP_STATIC)} melts.`;
+	const aria = `MIND goes round. New MIND from the HEARTS that people invest reaches their wallets, the COOP treasuries and the pools: ${fmt(INVESTOR_SHARE, 1)} to the investor, ${fmt(TREASURY_SHARE, 1)} to the treasury, ${fmt(POOL_SHARE, 1)} to the pool. Treasuries pay people for their Avens' work proposals. People spend at the COOPs, so the MIND comes back. At each sale, the Law 5 share goes at once to the holders, and only the rest reaches the treasury. A little melts in each place. In the dynamic world, people spend ${pctOf(D.buy, ROUND_TRIP)} of their income and ${pctOf(D.meltP, ROUND_TRIP)} melts in their wallets. In the static world, they spend ${pctOf(S.buy, ROUND_TRIP_STATIC)} and ${pctOf(S.meltP, ROUND_TRIP_STATIC)} melts.`;
 
 	let box;
 	let narrow = $state(false);
@@ -111,7 +111,7 @@
 		['own', 'ownership', pctOf(F.own, rt)],
 		['coop', `${fmt(TREASURY_SHARE, 1)} to the treasury,`, '', `${fmt(POOL_SHARE, 1)} to the pools`],
 		['buy', 'spent at COOPs', pctOf(F.buy, rt)],
-		['work', 'Aven work items', pctOf(F.work, rt)],
+		['work', 'Work proposals', pctOf(F.work, rt)],
 		['div', L.divName, pctOf(F.div, rt)],
 		['meltP', 'melts', pctOf(F.meltP, rt)],
 		['meltT', 'melts', pctOf(F.meltT, rt)]

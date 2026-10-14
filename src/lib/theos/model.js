@@ -764,7 +764,7 @@ export const AVEN_RULE = { share: 0.75, top: 6, yieldWeight: 3, sharpness: 10, w
  *  each with what flows in and out, what price moves did to what it holds, and the change of what it holds. Flows are
  *  valued at the HEART values of their step; price moves are what the change of HEART values from one step to the next
  *  did to what each place holds. source: sim-dynamic.md H4 (the same books as D8, which counts in R).
- *  No human labour is paid: every human's Aven delivers the work items. */
+ *  No human labour is paid: every human's Aven delivers the work proposals. */
 // net: H4's own "in − out" column, printed as H4 prints it (the sums of the rounded flows above can differ from it by
 // 0.01); rest: H4's "not explained" column, unrounded (sim-dynamic.json roundTrip, H4 prints 0.005, 0.003 and 0.002). Liquidations were 0.00 at rest and are left out. own: the investor's part
 // (people) or the treasury's part (treasuries) of each HEART invested; pool: the pools' part
@@ -928,7 +928,7 @@ export const decemberGap = (d = ENERGY.dome) => d.decUse - d.decHarvest;
 
 // ── The test city (Section 11.2) ──────────────────────────────────────────────────────────────────────────────────
 // Source: the test city, round 5, engine 20dd2478 (its proof report and engine notes, run 2026-10-13). A village of
-// 1,500 residents over 60 years, built from day 0 with euro advances; Law 5 at 20 %, the 7 % melt, 24 HEARTS a day.
+// 1,500 residents over 60 years, built from day 0 with euro loans from the City COOP; Law 5 at 20 %, the 7 % melt, 24 HEARTS a day.
 
 /** what the test city found in round 5. seeds: the five base seeds, each part per seed in that order; more: five more
  *  seeds (5–9) for parts 1 and 2. p1 = person-days short of a basic; p2normal = owner-only person-days failing the
@@ -955,9 +955,9 @@ export const TEST_CITY = {
 	more: { seeds: [5, 6, 7, 8, 9], p1: 2, p2strict: 0, p2normal: 4, p3: 0 },
 	suite: { experiments: 18, scenarios: 36, pass: 20, fail: 25, compare: 9 },
 	// the bank at the border (the City COOP): the bootstrap number (the most the village owed outside at any moment, in
-	// year 60) and its range over the five seeds; the build-out bill; euros advanced to COOPs and repaid in their own
+	// year 60) and its range over the five seeds; the build-out bill; euros lent to COOPs (euro loans) and repaid in their own
 	// MIND by year 60, and still owed; exports and imports a year over the last ten years; the balance at the end; all
-	// bought and sold abroad. Advances are repaid weekly, a 26th of what is owed, at most 5 % of the COOP's own treasury
+	// bought and sold abroad. Loans are repaid weekly, a 26th of what is owed, at most 5 % of the COOP's own treasury
 	// MIND that week, with no interest. Exports never repaid the bootstrap within the 60 years
 	bank: {
 		bootstrap: 487.87e6,
