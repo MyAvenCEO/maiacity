@@ -4,7 +4,7 @@ import AvenDB.Lemmas
 /-!
 # Shares that name ops
 
-The proofs of C1 to C4 (`avendb/docs/OPS.md`, shares), stated as in `Theorems.lean`.
+The proofs of C1 to C4 (`avendb/docs/ARCHITECTURE.md` §8), stated as in `Theorems.lean`.
 
 A chain allows a write where every share of it is the class of its ops and its ops allow it, and a share's chain is the
 chain of the share it rests on and the share itself (T22), so a share allows no more than the share it rests on (C1).

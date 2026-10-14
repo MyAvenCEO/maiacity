@@ -1,11 +1,11 @@
 //! What a write touches (`avendb::rules`, `doc::Item::footprint`), as every reader of its entry reads it off the
-//! write's Loro ops on the version it builds on, and judges it by (`spec/AvenDB/Rules.lean`, `docs/OPS.md`): the
-//! touches of what apps change name the field, the row by its id and the value set, on the record as it is stored. On
-//! random records, written one after another by two devices, wholesale or by random ops, the places of a write's
-//! touches cover every change it makes to the stored record (`Within`, which C3's `changes_allowed` takes of this
-//! side), and where only touches naming values cover a change, the place one of them names holds that value after: so
-//! rules that allow some values only allow no write that leaves another there. Ruled shares on the Lab, through the ops
-//! engine, are in `engine.rs`.
+//! write's Loro ops on the version it builds on, and judges it by (`spec/AvenDB/Rules.lean`, `docs/ARCHITECTURE.md`
+//! §8): the touches of what apps change name the field, the row by its id and the value set, on the record as it is
+//! stored. On random records, written one after another by two devices, wholesale or by random ops, the places of a
+//! write's touches cover every change it makes to the stored record (`Within`, which C3's `changes_allowed` takes of
+//! this side), and where only touches naming values cover a change, the place one of them names holds that value after:
+//! so rules that allow some values only allow no write that leaves another there. Ruled shares on the Lab, through the
+//! ops engine, are in `engine.rs`.
 
 mod records;
 

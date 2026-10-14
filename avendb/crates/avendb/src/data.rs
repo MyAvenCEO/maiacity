@@ -11,23 +11,25 @@
 
 use std::collections::{HashMap, HashSet};
 
-use avendb::doc::Item;
-use avendb::engine::{SHOWN, Wrote, line_name, wrote};
-use avendb::history::{Change, History};
-use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
-use avendb::keys::{KeyFam, KeyName, Recipient};
-use avendb::lab::Lab;
-use avendb::lens::{self, DocV2, Lens, Schema};
-use avendb::policy::{Action, Entry, Principal, Proposal, State, Who};
-use avendb::sign::{Classical, Signature, SignerKeys};
-use avendb::wire::Wire as _;
 use serde_json::{Map, Value, json};
 
-use crate::{hex, kind_name, level_name, levels, who_name};
+use crate::doc::Item;
+use crate::engine::{SHOWN, Wrote, line_name, wrote};
+use crate::history::{Change, History};
+use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
+use crate::keys::{KeyFam, KeyName, Recipient};
+use crate::lab::Lab;
+use crate::lens::{self, DocV2, Lens, Schema};
+use crate::policy::{Action, Entry, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
+use crate::sign::{Classical, Signature, SignerKeys};
+use crate::slice::LENS_TYPE;
+use crate::wire::Wire as _;
+use crate::words::{hex, kind_name, level_name, who_name};
+use crate::world::levels;
 
 /// Vault `vault`'s database as device `me` holds it, for the page's database studio: how many edits and McEliece keys
 /// the device holds in all; the schemas and lenses the app ships (`lens::blobs`); its seed's epoch; the edits the
-/// device holds on it by kind; the schemas and lenses its lane publishes; each audience its entries are in, the first
+/// device holds on it by kind; the schemas and lenses of its lane; each audience its entries are in, the first
 /// first, with the shares that reach it beside the vault's shares on the whole of it, its key's epoch and how many
 /// entries it holds; and every entry, cards and profiles too, in the order they were created (`row`).
 pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
@@ -64,18 +66,29 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
 }
 
 /// Entry `en` as the studio's table editor shows it: its type and its tags now, if the device reads them; its record
-/// as the device opens it on the main line (`null` if it opens none of it), and its `kind` as the record names it
-/// (`"sealed"` then); the schemas its edits were made under; how many edits of it the device counts and holds; its
-/// lines (the main line and each proposal) and its proposals' names; its audience and its key's epoch there; the size
-/// of its Loro document; the device and the vault of its first edit; and who may read it.
+/// as the device opens it on the main line, or a schema's or lens's JSON (`null` if it opens none of it), and its
+/// `kind` as the record names it, or its type for a schema or lens (`"sealed"` then); the schemas its edits were made
+/// under; how many edits of it the device counts and holds; its lines (the main line and each proposal) and its
+/// proposals' names; its audience and its key's epoch there; the size of its Loro document; the device and the vault
+/// of its first edit; and who may read it.
 fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     let (st, entry) = (lab.state(me), en.id);
     let item = lab.item(me, entry);
-    let record = item.map(Item::record);
-    let field = |name: &str| record.as_ref().and_then(|r| r.get(name)).cloned();
-    let kind = field("kind").and_then(|k| k.as_str().map(str::to_string));
-    let kind = kind.unwrap_or_else(|| if item.is_some() { "record" } else { "sealed" }.into());
     let meaning = lab.meaning(me, entry);
+    let ty = meaning.as_ref().map(|m| m.attrs.ty.as_str().to_string());
+    // A schema or lens entry holds its JSON as written, not a Loro document (`Lab::lane_entry`): that is its record.
+    let lane: Option<Value> = match item {
+        None => lab.lane_entry(me, entry).and_then(|b| serde_json::from_slice(b).ok()),
+        Some(_) => None,
+    };
+    let opens = item.is_some() || lane.is_some();
+    let record = item.map(Item::record).or(lane);
+    let field = |name: &str| record.as_ref().and_then(|r| r.get(name)).cloned();
+    let (kind, title) = match item {
+        None if opens => (ty.clone(), field(if ty.as_deref() == Some(LENS_TYPE) { "lens" } else { "title" })),
+        _ => (field("kind").and_then(|k| k.as_str().map(str::to_string)), field("title")),
+    };
+    let kind = kind.unwrap_or_else(|| if opens { "record" } else { "sealed" }.into());
     let history = lab.history(me, entry);
     let lines = history.map(History::lines).unwrap_or_default();
     let name = |b: EditId| history.and_then(|h| h.name(b)).map_or(Value::Null, Value::from);
@@ -86,10 +99,10 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     let levels: Map<String, Value> = levels(st, v, x).iter().map(|(v, r)| (hex(&v.0), level_name(*r).into())).collect();
     json!({
         "entry": hex(&entry.0),
-        "type": meaning.as_ref().map(|m| m.attrs.ty.as_str().to_string()),
+        "type": ty,
         "tags": meaning.as_ref().map(|m| m.attrs.tags.iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>()),
         "kind": kind,
-        "title": field("title"),
+        "title": title,
         "record": record,
         "authored": authored,
         "edits": history.map_or(0, |h| h.changes().len()),
@@ -106,29 +119,27 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     })
 }
 
-/// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves and checkpoints of its
-/// entries, the keys edits of its keys and its entries', the shares over it and the revocations of those, and what was
-/// published into its lane.
+/// The edits device `me` holds on vault `vault`, by kind: its founding, the writes, moves (marks that take an entry to
+/// an audience) and checkpoints of its entries, the keys edits of its keys and its entries', the shares over it and the
+/// revocations of those. Its schemas and lenses are entries (V1d), counted among the writes, so none counts apart.
 fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let (log, st) = (lab.log(me), lab.state(me));
     let edits = || log.edits().iter().zip(log.ids());
     let of = |e: &EntryId| st.entry(*e).map(|en| en.vault) == Some(vault);
     let shares: HashSet<ShareId> = edits()
-        .filter(|(edit, _)| matches!(&edit.action, Action::Share(c, _) if c.over == vault))
+        .filter(|(edit, _)| matches!(&edit.action, Action::Share(Sharing::Grant(c, _)) if c.over == vault))
         .map(|(_, id)| ShareId::from(*id))
         .collect();
-    let (mut founded, mut writes, mut moves, mut checkpoints, mut keys, mut revokes, mut published) =
-        (0, 0, 0, 0, 0, 0, 0);
+    let (mut founded, mut writes, mut moves, mut checkpoints, mut keys, mut revokes) = (0, 0, 0, 0, 0, 0);
     for (edit, id) in edits() {
         match &edit.action {
             Action::Genesis { .. } if VaultId::from(*id) == vault => founded += 1,
             Action::Write { vault: v, .. } if *v == vault => writes += 1,
-            Action::Move { vault: v, .. } if *v == vault => moves += 1,
+            Action::Mark { vault: v, caps: Some(_), .. } if *v == vault => moves += 1,
             Action::Checkpoint { entry, .. } if of(entry) => checkpoints += 1,
             Action::Keys { name: KeyName::Scoped(k, _), .. } if k.vault() == vault => keys += 1,
             Action::Keys { name: KeyName::Entry(e, ..), .. } if of(e) => keys += 1,
-            Action::Revoke { share, .. } if shares.contains(share) => revokes += 1,
-            Action::Publish { vault: v, .. } if *v == vault => published += 1,
+            Action::Revoke(Revoking::Grant { share, .. }) if shares.contains(share) => revokes += 1,
             _ => {}
         }
     }
@@ -140,16 +151,15 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         "keys": keys,
         "caps": shares.len(),
         "revokes": revokes,
-        "published": published,
     })
 }
 
-/// A schema as the tab shows it: its id, its title and its JSON, as published.
+/// A schema as the tab shows it: its id, its title and its JSON, as its entry holds it.
 fn schema(s: &Schema) -> Value {
     json!({ "id": s.id().to_hex(), "title": s.title(), "json": String::from_utf8_lossy(s.bytes()) })
 }
 
-/// A lens as the tab shows it: its id, its title, the schemas it joins, and its JSON, as published.
+/// A lens as the tab shows it: its id, its title, the schemas it joins, and its JSON, as its entry holds it.
 fn lens(l: &Lens) -> Value {
     let (from, to) = (l.from().to_hex(), l.to().to_hex());
     json!({ "id": l.id().to_hex(), "title": l.title(), "from": from, "to": to, "json": String::from_utf8_lossy(l.bytes()) })
@@ -170,7 +180,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
         .iter()
         .zip(held.ids())
         .filter_map(|(edit, id)| match &edit.action {
-            Action::Share(c, _) => Some((ShareId::from(*id), c.over)),
+            Action::Share(Sharing::Grant(c, _)) => Some((ShareId::from(*id), c.over)),
             _ => None,
         })
         .collect();
@@ -209,10 +219,12 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
 }
 
 /// What edit `id` does, as the History view shows it: its kind, and its fields, ids in hex. What is sealed, a write's
-/// body, a share's or a sync rule's slice, keys' boxes, shows by its size or its recipient alone, and a public key by
-/// whether there is one. A write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one; a
-/// write that creates its entry names the audience it goes in (`create`), and its `stay` the move that put the entry
-/// where it is now (`null` for where it was created).
+/// body, a share's slice, keys' boxes, shows by its size or its recipient alone, and a public key by whether there is
+/// one. A keep share is a `cap` like any share, its `role` its mode (`words::level_name`) and its `grantee` a device. A
+/// write's `line` is the proposal it extends (`null` on the main line), and `starts` whether it starts one; a write
+/// that creates its entry names the audience it goes in (`create`), and its `stay` the mark that put the entry where
+/// it is now (`null` for where it was created). A mark names the audience it takes its entry to (`caps`) and the keep
+/// shares it marks it as wanted by (`wants`), each `null` where it leaves that part as it is.
 fn action(id: EditId, a: &Action) -> (&'static str, Value) {
     let vias = |via: &[VaultId]| via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
     match a {
@@ -226,27 +238,27 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "sealTo": seal_to.len(),
             }),
         ),
-        Action::AddOwner { vault, owner, seal_to } => (
+        Action::Share(Sharing::Owner { vault, owner, seal_to }) => (
             "addOwner",
             json!({ "vault": hex(&vault.0), "owner": principal(owner), "sealTo": seal_to.is_some() }),
         ),
-        Action::RemoveOwner { vault, owner, keep } => {
+        Action::Revoke(Revoking::Owner { vault, owner, keep }) => {
             ("removeOwner", json!({ "vault": hex(&vault.0), "owner": principal(owner), "keep": keep.len() }))
         }
-        Action::SetThreshold { vault, threshold } => {
+        Action::Settings { vault, set: Setting::Threshold(threshold) } => {
             ("setThreshold", json!({ "vault": hex(&vault.0), "threshold": threshold }))
         }
-        Action::AddDevice { vault, device, seal_to } => (
+        Action::Share(Sharing::Device { vault, device, seal_to }) => (
             "addDevice",
             json!({ "vault": hex(&vault.0), "device": hex(&device.0), "sealTo": seal_to.is_some() }),
         ),
-        Action::RemoveDevice { vault, device, keep } => {
+        Action::Revoke(Revoking::Device { vault, device, keep }) => {
             ("removeDevice", json!({ "vault": hex(&vault.0), "device": hex(&device.0), "keep": keep.len() }))
         }
-        Action::SetRoot { vault, root, keep } => {
+        Action::Settings { vault, set: Setting::Root { root, keep } } => {
             ("setRoot", json!({ "vault": hex(&vault.0), "root": root.map(|r| hex(&r.0)), "keep": keep.len() }))
         }
-        Action::Share(c, via) => (
+        Action::Share(Sharing::Grant(c, via)) => (
             "cap",
             json!({
                 "over": hex(&c.over.0),
@@ -259,7 +271,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "sealed": c.select.len(),
             }),
         ),
-        Action::Revoke { share, actor, keep, via } => (
+        Action::Revoke(Revoking::Grant { share, actor, keep, via }) => (
             "revoke",
             json!({ "cap": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
         ),
@@ -287,12 +299,13 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 }),
             )
         }
-        Action::Move { vault, entry, to, keep, via } => (
-            "move",
+        Action::Mark { vault, entry, caps, wants, keep, via } => (
+            "mark",
             json!({
                 "vault": hex(&vault.0),
                 "entry": hex(&entry.0),
-                "to": share_ids(to),
+                "caps": caps.as_deref().map(share_ids),
+                "wants": wants.as_deref().map(share_ids),
                 "keep": keep.len(),
                 "via": vias(via),
             }),
@@ -307,44 +320,9 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "clear": clear.is_some(),
             }),
         ),
-        Action::Publish { vault, actor, via, blob } => {
-            let title = Schema::parse(blob)
-                .map(|s| s.title().to_string())
-                .or_else(|| Lens::parse(blob).map(|l| l.title().to_string()));
-            (
-                "publish",
-                json!({
-                    "vault": hex(&vault.0),
-                    "actor": hex(&actor.0),
-                    "via": vias(via),
-                    "blob": BlobId::of(blob).to_hex(),
-                    "title": title,
-                    "bytes": blob.len(),
-                }),
-            )
-        }
         Action::Checkpoint { entry, covers } => {
             ("checkpoint", json!({ "entry": hex(&entry.0), "covers": ids(covers) }))
         }
-        Action::SyncRule(r, via) => (
-            "syncRule",
-            json!({
-                "issuer": hex(&r.issuer.0),
-                "device": hex(&r.device.0),
-                "over": hex(&r.over.0),
-                "wide": r.wide,
-                "keep": r.keep,
-                "via": vias(via),
-                "sealed": r.select.len(),
-            }),
-        ),
-        Action::EndSyncRule { rule, issuer, via } => {
-            ("endSyncRule", json!({ "rule": hex(&rule.0), "issuer": hex(&issuer.0), "via": vias(via) }))
-        }
-        Action::Pick { vault, entry, rules, via } => (
-            "pick",
-            json!({ "vault": hex(&vault.0), "entry": hex(&entry.0), "rules": share_ids(rules), "via": vias(via) }),
-        ),
     }
 }
 
@@ -375,29 +353,27 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
             let owners = owners.iter().filter_map(|o| if let Principal::Vault(v) = o { Some(*v) } else { None });
             [VaultId::from(id)].into_iter().chain(owners).collect()
         }
-        Action::AddOwner { vault, owner, .. } | Action::RemoveOwner { vault, owner, .. } => match owner {
-            Principal::Vault(o) => vec![*vault, *o],
-            Principal::Signer(_) => vec![*vault],
-        },
-        Action::SetThreshold { vault, .. }
-        | Action::AddDevice { vault, .. }
-        | Action::RemoveDevice { vault, .. }
-        | Action::SetRoot { vault, .. }
-        | Action::Move { vault, .. }
-        | Action::Pick { vault, .. } => vec![*vault],
-        Action::SyncRule(r, _) => vec![r.issuer, r.over],
-        Action::EndSyncRule { issuer, .. } => vec![*issuer],
-        Action::Share(c, _) => {
+        Action::Share(Sharing::Owner { vault, owner, .. }) | Action::Revoke(Revoking::Owner { vault, owner, .. }) => {
+            match owner {
+                Principal::Vault(o) => vec![*vault, *o],
+                Principal::Signer(_) => vec![*vault],
+            }
+        }
+        Action::Settings { vault, .. }
+        | Action::Share(Sharing::Device { vault, .. })
+        | Action::Revoke(Revoking::Device { vault, .. })
+        | Action::Mark { vault, .. } => vec![*vault],
+        Action::Share(Sharing::Grant(c, _)) => {
             let to = match c.who {
-                Who::Principal(Principal::Vault(v)) => Some(v),
+                Who::Vault(v) => Some(v),
                 _ => None,
             };
             [Some(c.issuer), Some(c.over), to].into_iter().flatten().collect()
         }
-        Action::Revoke { share, actor, .. } => {
+        Action::Revoke(Revoking::Grant { share, actor, .. }) => {
             [Some(*actor), shares.get(share).copied()].into_iter().flatten().collect()
         }
-        Action::Write { vault, actor, .. } | Action::Publish { vault, actor, .. } => vec![*actor, *vault],
+        Action::Write { vault, actor, .. } => vec![*actor, *vault],
         Action::Keys { name, .. } => match *name {
             KeyName::Signer(_) => vec![],
             KeyName::Scoped(k, _) => vec![k.vault()],

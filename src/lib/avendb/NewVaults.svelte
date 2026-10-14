@@ -1,11 +1,13 @@
 <!--
 	New vaults the person's vault founds and owns: aven vaults, an agent's or a server's own, and coop vaults, each with
-	its name. One ceremony of their passkey signs all their geneses (avendb-browser's `Device::found_vaults`); then this
-	browser, acting for each through their vault, founds its home, lets avenCEO relay it and writes its name there. It
-	opens on one empty row: the person names every vault they found, as many as they like.
+	its name. One ceremony of their passkey signs all their geneses (the `found` op, avendb-browser's
+	`Device::found_vaults`); then this browser, acting for each through their vault, founds its home, lets avenCEO relay
+	it and writes its name there. It opens on one empty row: the person names every vault they found, as many as they
+	like, and Create shows once the device answers a dry run of founding them (`may`).
 -->
 <script>
-	import { count, nameOf } from './vaults.js';
+	import { allowed, may } from './ops.js';
+	import { count, nameOf, why } from './vaults.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, api: any, busy: boolean, onclose: () => void }} */
 	let { world, api, busy, onclose } = $props();
@@ -16,9 +18,24 @@
 	/** @type {Row[]} */
 	let rows = $state([{ name: '', kind: 'aven' }]);
 	const ready = $derived(rows.filter((r) => r.name.trim()));
+	/** The op that founds them. */
+	const op = $derived({ op: 'found', vaults: ready.map((r) => ({ name: r.name.trim(), kind: r.kind })) });
+
+	/** why the device won't found them, as it answers a dry run of it: '' where it would */
+	let unfounded = $state('');
+	$effect(() => {
+		const o = $state.snapshot(op);
+		unfounded = '';
+		if (!o.vaults.length) return;
+		let gone = false;
+		may(api, world.mine, [o]).then(([a]) => !gone && (unfounded = allowed(a) ? '' : why(/** @type {any} */ (a))));
+		return () => {
+			gone = true;
+		};
+	});
 
 	async function create() {
-		if (await api.foundVaults(ready.map((r) => ({ name: r.name.trim(), kind: r.kind })))) onclose();
+		if (await api.run(`Creating ${count(ready.length, 'vault')}`, $state.snapshot(op))) onclose();
 	}
 </script>
 
@@ -44,12 +61,12 @@
 		{/each}
 		<button class="btn quiet" onclick={() => rows.push({ name: '', kind: 'aven' })}>Add another</button>
 		<div class="row actions">
-			<button class="btn primary" disabled={busy || !ready.length} onclick={create}>
+			<button class="btn primary" disabled={busy || !ready.length || !!unfounded} onclick={create}>
 				Create {count(ready.length, 'vault')}
 			</button>
 			<button class="btn quiet" onclick={onclose}>Cancel</button>
 		</div>
-		<p class="soft">Your passkey confirms them all at once.</p>
+		<p class="soft">{unfounded ? `It can’t: ${unfounded}.` : 'Your passkey confirms them all at once.'}</p>
 	</div>
 </div>
 

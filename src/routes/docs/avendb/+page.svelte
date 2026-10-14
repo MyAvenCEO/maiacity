@@ -3,57 +3,20 @@
 	import Sequence from '$lib/docs/Sequence.svelte';
 	import { TRIPS } from '$lib/docs/avendb.js';
 
-	const answers = [
-		{
-			short: 'Yes',
-			q: 'Is it one backend for data and blobs?',
-			a: 'Yes. An edit is a small blob and a film is a big one. Both are named by their BLAKE3 hash, kept in the same iroh store, moved by the same protocol and backed up to the same bucket.'
-		},
-		{
-			short: 'No',
-			q: 'Can two edits conflict?',
-			a: 'No. Every entry is a CRDT: edits made at the same time on different devices merge the same way everywhere, whatever order they arrive in, and nothing waits for a server to order them.'
-		},
-		{
-			short: 'Yes',
-			q: 'Is the server only relay, sync and backup?',
-			a: 'Yes. Every write is signed and stored on a device first and counts from that moment. The server never orders or approves writes, so it needs no fast write path: what it needs is upload bandwidth for big files, and durable storage.'
-		},
-		{
-			short: 'Yes',
-			q: 'Can it stream terabytes?',
-			a: 'Yes. Files are cut into 1 GiB pieces that are verified every 16 KiB, resume where they stopped and seek to any byte. The store that holds a note’s edits holds a 4 TB film the same way.'
-		},
-		{
-			short: 'Yes',
-			q: 'Is OPFS the browser’s one source of truth?',
-			a: 'Yes. Edits, keys and file pieces live in OPFS, in a Web Worker where it has fast file access. Of a big film, a browser keeps only what you watched or pinned.'
-		},
-		{
-			short: 'Yes',
-			q: 'Is the bucket the server’s truth, its disk only a cache?',
-			a: 'Yes, and only the bucket counts. The server announces an edit, or says it keeps a file, only once the bucket holds it. Until then the device that wrote it sees the server lacks it, keeps it, and announces it again. Wipe the disk and the server rebuilds from the bucket.'
-		},
-		{
-			short: 'Yes',
-			q: 'Are caps and sync rules one concept?',
-			a: 'Yes. A cap says which vault may have what. A sync rule says what one of its devices wants of that, by the same selector, for any kind of data: kept whole, or fetched as it is read. A rule grants nothing. Proxies and originals are just the types or tags your app gives them: your phone keeps proxies, your desktop keeps originals, the server keeps all.'
-		},
-		{
-			short: 'Recovery',
-			q: 'What if every passkey is lost?',
-			a: 'The master recovery key is among the owners of every human vault from its founding. Its secret is kept offline by its person, and it adds a new device or passkey like any owner would. It is added and removed in Settings like any owner.'
-		}
-	];
-
-	// the page's own contents, one link per section
+	// the page's own contents, one link per section: the guarantees, then the pieces, then the protocol
 	const contents = [
+		['guarantees', 'Guarantees'],
+		['who-sees', 'Who sees what'],
+		['mishaps', 'When something goes wrong'],
 		['local-first', 'Local first'],
+		['shape', 'Entry, Share, Blob'],
 		['vaults', 'Vaults'],
-		['crdt', 'Entries and the CRDT'],
+		['edits', 'Edits and logs'],
+		['crdt', 'Entries'],
 		['history', 'History'],
+		['shares', 'Shares'],
+		['audiences', 'Audiences and keys'],
 		['schemas', 'Schemas and lenses'],
-		['caps', 'Caps and cells'],
 		['ops', 'JSON ops'],
 		['system', 'The whole system'],
 		['node', 'Inside one node'],
@@ -61,8 +24,119 @@
 		['files', 'Files'],
 		['roundtrips', 'Roundtrips'],
 		['storage', 'Storage'],
-		['trust', 'Trust'],
-		['post-quantum', 'Post-quantum']
+		['post-quantum', 'Post-quantum'],
+		['proofs', 'Proofs']
+	];
+
+	// what avenDB promises, most of it kept by a theorem of the Lean model (see Proofs)
+	const guarantees = [
+		{
+			short: 'The server',
+			q: 'The server holds ciphertext only.',
+			a: 'It relays, stays online for sync and keeps an encrypted backup, and never holds a key to your vaults. It still checks every edit exactly as an owner would, from labels that say who may write, not what is written.'
+		},
+		{
+			short: 'Readers',
+			q: 'Only the people you share with can read.',
+			a: 'Each entry’s key reaches only the people whose shares pick it. A Backup or Relay share, the kind the server holds, gets no key at all.'
+		},
+		{
+			short: 'Revoking',
+			q: 'Revoking a share is final for what comes next.',
+			a: 'The entries it reached move to a new key the revoked person never gets. What they read before stays read. Nothing new reaches them, and they can’t slip in an edit dated before the revocation.'
+		},
+		{
+			short: 'A lost phone',
+			q: 'A lost or stolen device opens nothing.',
+			a: 'Your passkey is the root: a device’s keys unlock only with it, at every start. Remove the device from any other one, and your vault’s keys move on without it.'
+		},
+		{
+			short: 'Offline',
+			q: 'Every edit counts the moment you make it.',
+			a: 'Online or not. Edits made at the same time on two devices merge the same way everywhere, and no server orders or approves them.'
+		},
+		{
+			short: 'Recovery',
+			q: 'Losing every passkey is not the end.',
+			a: 'The master recovery key, kept offline, is an owner of every human vault from its founding, so a new passkey can still be added. It shows among your owners, and you can remove it like any owner.'
+		},
+		{
+			short: 'Strangers',
+			q: 'Connecting tells a stranger nothing.',
+			a: 'A device that acts for no vault and follows none is sent nothing at all. Even what you share with Everyone goes only to devices with a reason to ask for it.'
+		},
+		{
+			short: 'Backed up',
+			q: 'Backed up means in the bucket.',
+			a: 'The server says it holds an edit or a file only once its sealed bucket has it. Until then, the device that made it keeps it and offers it again.'
+		},
+		{
+			short: 'Quantum',
+			q: 'Post-quantum everywhere.',
+			a: 'Every connection, signature and sealed key has a post-quantum half, and a write counts only once a hash-based signature vouches for it.'
+		}
+	];
+
+	// the server's view: what it sees, what it never sees, and what its bucket sees
+	const serverSees = [
+		'Which devices connect, when, and from where',
+		'Vault ids, and each vault’s owners and devices',
+		'Who holds a share, and at which level',
+		'Which shares pick each entry, its size, and when it changes',
+		'Which files each edit brings, by hash and sealed size, and which pieces get read',
+		'What each device holds, log by log and file by file',
+		'Schemas, lenses and anything else shared with Everyone'
+	];
+	const serverNever = [
+		'Any content: notes, todos, file bytes',
+		'File names, types and tags',
+		'What a share picks, or what it allows',
+		'Any key, except those published for Everyone',
+		'Whether two people hold the same film: every file has its own random key'
+	];
+	const bucketSees = [
+		'Sealed objects, their sizes, and names that are hashes',
+		'Not even what the server sees: every object is sealed with a 256-bit key the server keeps',
+		'Whoever records the link to it, classical TLS since Hetzner offers nothing else, sees the same noise'
+	];
+
+	const mishaps = [
+		[
+			'You lose your phone',
+			'Locked, it opens nothing: its keys unlock only with your passkey. Remove it from your desktop. Your vault’s keys move on, so it reads nothing written after, and whatever it signed that your other devices hadn’t seen by then is cut.'
+		],
+		[
+			'You revoke someone’s share',
+			'Every entry it reached moves to a new key that only the shares still live get. What they read before stays read. Nothing new reaches them, and their edits your devices hadn’t seen when you revoked are cut.'
+		],
+		[
+			'Your phone is offline for a month',
+			'It keeps working on what it holds. Back online, each side sends only what the other lacks, log by log, and both end in the same state.'
+		],
+		[
+			'Two devices change the same note at once',
+			'Both changes stay. Text merges character by character, list rows by their id, and any other field takes one value, the same on every device.'
+		],
+		[
+			'You lose every device',
+			'Sign in on a new one with your passkey. The server hands it your vault’s log, the new device adds itself, and your entries come back from the encrypted backup. With backups off the server kept nothing, so what only your devices held is gone with them.'
+		],
+		[
+			'You lose every passkey',
+			'The master recovery key, an owner of your vault, adds a new passkey.'
+		],
+		[
+			'The server’s disk dies',
+			'Its disk is only a cache. A new server starts from the bucket alone, as the same device, and your vaults notice nothing.'
+		],
+		[
+			'The server is down',
+			'Nothing you write waits on it. Each device keeps working, and they catch up as soon as they reach each other or the server again.'
+		],
+		[
+			'Someone breaks elliptic curves',
+			'Recorded traffic stays closed, since every link and every sealed key has a post-quantum half. A write counts only where a hash-based checkpoint vouches for it.'
+		]
 	];
 
 	// Ink & Switch's seven ideals of local-first software, and how avenDB meets each
@@ -70,7 +144,7 @@
 		['Fast', 'Reads and writes run on the device’s own store. No round trip to a server sits between you and your data.'],
 		[
 			'Multi-device',
-			'Your desktop, phone and browser each hold what their sync rules want of your vaults, and keep each other up to date.'
+			'Your desktop and phone each hold what their keep shares say of your vaults, and keep each other up to date.'
 		],
 		['Offline', 'An edit counts the moment it is saved. Offline, edits pile up and go out when a peer is reachable again.'],
 		[
@@ -87,8 +161,19 @@
 		],
 		[
 			'User control',
-			'A vault is owned by its passkeys. Caps say who may do what, and every device enforces them, the server too.'
+			'A vault is owned by its passkeys. Shares say who may do what, and every device checks them, the server too.'
 		]
+	];
+
+	const kinds = [
+		['Genesis', 'A new vault: its kind, owners, threshold and root', 'Its vault'],
+		['Settings', 'How many owners must approve, or handing the root passkey on', 'The vault'],
+		['Share', 'A share, an owner or a device', 'Its own log, or the vault’s for owners and devices'],
+		['Revoke', 'Ends any of them', 'The same log as what it ends'],
+		['Write', 'An encrypted change of one entry, and the files it brings', 'The entry'],
+		['Mark', 'Which shares pick an entry, and which keep shares want it', 'The entry'],
+		['Keys', 'Sealed boxes of one key, for exactly who may open it', 'The key’s family'],
+		['Checkpoint', 'A device vouches for its own writes with a hash-based signature', 'The entry']
 	];
 
 	const merges = [
@@ -110,6 +195,40 @@
 		['Make a variant', 'A new note with the line’s content and tags, and none of its history.']
 	];
 
+	const who = [
+		['A person, a group or an agent', 'Their vault. It reaches every device that acts for it, so a new phone needs no new share.'],
+		['Everyone', 'Read only. Its key is published in the clear, and it goes only to devices with a reason to ask.'],
+		['One of your own devices', 'Only as a keep share: what that device syncs. It grants nothing.']
+	];
+
+	const groups = [
+		['Owner', 'Owner', 'Everything, and share on', 'Co-owners, on the whole vault; anyone, on a slice'],
+		['Editor', 'Write', 'Read, create, set, tag, propose, merge', 'Someone who works on the entries'],
+		['Suggester', 'Write', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor accepts'],
+		['Viewer', 'Read', 'Read', 'A reader'],
+		['Public', 'Read', 'Read, for Everyone', 'Anything published: its key goes out in the clear'],
+		['Backup', 'Backup', 'Keep the ciphertext, read nothing', 'The server, by default'],
+		['Relay', 'Relay', 'Find the vault’s devices, keep nothing', 'The server, with backups off']
+	];
+
+	const SHARE = `{ "name": "Tick work",
+  "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] },
+  "ops": [{ "op": "read" },
+          { "op": "set", "path": ["status"], "to": ["doing", "done"] }] }`;
+
+	const keeps = [
+		['Whole', 'Syncs the entries it picks, and keeps their files whole', 'Your desktop, for the originals'],
+		['When opened', 'Syncs them, and fetches a file’s pieces as they play', 'Your phone'],
+		['Never', 'Doesn’t sync what it picks', 'An archive the phone never needs']
+	];
+
+	const rotations = [
+		['A share is given, a vault gains a device', 'A few boxes: the share’s key to its holder, the vault’s seed to the device'],
+		['A share is revoked', 'Each audience it reached moves to a new epoch, boxed to the shares still live'],
+		['A vault loses a device or an owner', 'Its seed moves on, and with it the keys in use under it'],
+		['An entry’s tags change, a new share picks it', 'One mark, with a link to its earlier keys']
+	];
+
 	const TODO_V1 = `{ "title": "Water the figs",
   "done": false }`;
 
@@ -127,21 +246,6 @@
                  [{ "status": "doing" }, { "done": false }]]
   } }] }`;
 
-	const CAP = `{ "name": "Tick work",
-  "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] },
-  "ops": [{ "op": "read" },
-          { "op": "set", "path": ["status"], "to": ["doing", "done"] }] }`;
-
-	const groups = [
-		['Owner', 'Everything, and share', 'The vault’s owners'],
-		['Editor', 'Read, create, set, tag, propose, merge', 'Someone who works on the entries'],
-		['Suggester', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor accepts'],
-		['Viewer', 'Read', 'A reader'],
-		['Public', 'Read, for everyone', 'Anything published: its key goes out in the clear'],
-		['Backup', 'Keep the ciphertext, read nothing', 'The server, by default'],
-		['Relay', 'Find the vault’s devices, keep nothing', 'The server, with backups off']
-	];
-
 	const QUERY = `{ "op": "query",
   "where": { "all": [{ "type": ["todo"] }, { "tag": "garden" },
                      { "path": ["status"], "ne": "done" }] },
@@ -152,9 +256,26 @@
           "count": 1 } }
 
 { "refused": "NotAllowed",
-  "why": "the ops of the caps the vault acts through don't allow what it does" }`;
+  "why": "the ops of the shares the vault acts through don't allow what it does" }
 
-	const reads = ['query', 'get', 'history', 'schemas', 'groups'];
+{ "approve": { "challenge": "…", "signers": ["…"], "draft": "…" } }`;
+
+	// every op `run(op)` takes, by what it does: reads, asks (dry runs), changes of an entry, changes of a vault
+	const reads = [
+		'query',
+		'get',
+		'history',
+		'schemas',
+		'groups',
+		'world',
+		'database',
+		'note',
+		'log',
+		'read_file',
+		'creatable',
+		'taggable'
+	];
+	const asks = ['may', 'shares'];
 	const changes = [
 		'create',
 		'set',
@@ -170,14 +291,65 @@
 		'variant',
 		'batch'
 	];
+	const vaultOps = [
+		'share',
+		'keep',
+		'revoke',
+		'settings',
+		'found',
+		'put_file',
+		'back_up',
+		'mark',
+		'card',
+		'profile',
+		'follow'
+	];
+
+	const messages = [
+		['Request', 'The frontier of each log it holds, its loose edits, the keys it lacks, the vaults it follows', 'A page of edits'],
+		['Announce', 'Its holdings: in full once, then only what changed', 'Nothing'],
+		['Ask logs', 'A request for some logs alone, those whose heads it lacks', 'A page of edits'],
+		['Link', 'A passkey’s pass, for a new device', 'The vault logs of that passkey'],
+		['Join', 'The edit that adds the new device', 'Nothing, once taken'],
+		['Card, Claim', 'The server’s contact card; claiming a new server', 'avenCEO’s log; the claim, signed']
+	];
+
+	const blobs = [
+		['An edit (a write, a share, a mark)', 'Its signed bytes; a write’s body is encrypted', '0.2 KiB and up; 17 KiB more with SLH-DSA', 'In a journal entry, then a pack'],
+		['A pack of edits', 'One blob of many edits, named by a head', 'up to 64 saves', 'On the shelf'],
+		['A McEliece public key', 'One blob, named by its hash in the edits that use it', 'about 1 MiB', 'On the shelf'],
+		['A photo, a document', 'One sealed blob', 'up to 1 GiB', 'On the shelf, with its outboard'],
+		['A film or a camera card', 'A HashSeq of sealed 1 GiB pieces', '1 GiB to many TB', 'Whole, or fetched as it plays']
+	];
+
+	const places = [
+		['Desktop', 'A folder of the app’s own', 'What its keep shares want; files whole where they say so'],
+		['Phone or browser', 'The page’s private storage (OPFS), in a worker', 'The same; pieces read but not kept stay in memory'],
+		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
+	];
+
+	const LAYOUT = `g1/                 one generation; starting fresh makes g2 beside it
+  journal/<n>       what one save added: new edits, and the McEliece keys they brought
+  heads/<n>         after every 64 saves: the packs that hold the log so far
+  blobs/<hash>      edit packs, McEliece keys, HashSeqs and file pieces
+  outboards/<hash>  each blob's BLAKE3 outboard, written last
+  new/              what is still being written`;
 
 	const quantum = [
 		['Connections', 'TLS 1.3 with X25519MLKEM768 as the only key exchange, on every link between nodes.'],
 		[
-			'Signatures',
-			'ed25519 for devices or P-256 for passkeys, each beside SLH-DSA-SHA2-128f. A write counts only once its author’s SLH-DSA checkpoint covers it.'
+			'Hellos',
+			'Each connection opens with an SLH-DSA signature each way over its TLS session, so both ends know which device they speak to even once the curves fall.'
 		],
-		['Keys sent to devices', 'Sealed boxes of X-Wing and Classic McEliece 6688128f together.'],
+		[
+			'Signatures',
+			'ed25519 for devices or P-256 for passkeys, each beside SLH-DSA-SHA2-128f, both checked.'
+		],
+		[
+			'Writes',
+			'The classical half alone, to stay small. Its device vouches for it in a checkpoint that carries both, and a write counts only once one covers it.'
+		],
+		['Keys sent to devices', 'Sealed boxes of X-Wing and Classic McEliece 6688128f together: closed while either holds.'],
 		[
 			'Edits and files',
 			'XChaCha20-Poly1305 for edits and keys, ChaCha20-Poly1305 per 64 KiB segment for files, all with 256-bit keys.'
@@ -185,13 +357,38 @@
 		['Hashes', 'SHA-3 (cSHAKE256) for ids and what signatures sign, BLAKE3 for storage and transport.'],
 		['The bucket', 'Every object sealed again with a 256-bit key of the server’s, since the link to it is classical.']
 	];
+
+	const proofs = [
+		['Only edits by someone allowed stand, and a revocation wins over what it hadn’t seen', 'T1'],
+		['Changing owners, devices or settings needs the vault’s approval and the newcomer’s consent', 'T2'],
+		['A key opens only for whoever may read what it protects', 'T5, T24'],
+		['After a removal, the current keys open only for those still entitled, and new writes use them', 'T6, T15'],
+		['The server holds no key of a vault, except what is public', 'T7'],
+		['Everyone can only read', 'T8'],
+		['The same edits in any order give the same state', 'T11'],
+		['Sync sends only what shares reach, and strangers get nothing', 'T12'],
+		['Frontier sync loses nothing, and two devices that synced once hold the same edits', 'T13, T19'],
+		['An edit backdated past a removal that relied on what it took is cut', 'T16'],
+		['Once the curves fall, only checkpointed writes count', 'T18'],
+		['A share never grants more than what it rests on', 'T22'],
+		['The marks on each entry mean exactly what the shares say', 'T23'],
+		['The server decides every edit as an owner does, without reading a selector', 'T25'],
+		['A relay share receives no entry, and files go only with the edits that bring them', 'T26, T27'],
+		['Each device syncs what its keep shares say, and revoking one cuts nothing', 'T28, K1'],
+		[
+			'What a device says it holds counts only from that device, on its own connection, and nobody passes it on',
+			'H1'
+		],
+		['What any device says it holds never gets anyone a file the rules refuse', 'T27'],
+		['Every reader agrees whether a write counts, and a write that breaks its schema counts for no one', 'C2, S3']
+	];
 </script>
 
 <svelte:head>
 	<title>avenDB architecture · Docs · maiaCITY</title>
 	<meta
 		name="description"
-		content="avenDB's architecture: a user-owned, local-first, post-quantum database. Vaults, CRDT entries with history, schemas and lenses, caps, sync between your devices, and terabytes of media backed up to a sealed bucket."
+		content="avenDB's architecture: a user-owned, local-first, post-quantum database. What the server can and cannot see, who can read what, and how vaults, entries, shares, keys, sync over iroh and a sealed bucket fit together."
 	/>
 </svelte:head>
 
@@ -199,7 +396,7 @@
 	<a class="back" href="{base}/docs">← Docs</a>
 
 	<header class="intro">
-		<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 13 October 2026</p>
+		<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 14 October 2026</p>
 		<h1>avenDB Architecture</h1>
 		<p class="lede">
 			A user-owned, local-first database with post-quantum security. Every write happens on your device first and merges
@@ -213,15 +410,65 @@
 		</nav>
 	</header>
 
-	<section>
-		<p class="eyebrow">Short answers</p>
-		<h2>Your questions</h2>
+	<section id="guarantees">
+		<p class="eyebrow">Guarantees</p>
+		<h2>What avenDB promises</h2>
+		<p class="prose-col">
+			Most of these promises are theorems with machine-checked proofs in avenDB’s Lean model, and the code is held to the
+			model by shared test vectors. The <a href="#proofs">proofs</a> section names them.
+		</p>
 		<div class="answers">
-			{#each answers as x (x.q)}
+			{#each guarantees as x (x.q)}
 				<div>
 					<span class="short">{x.short}</span>
 					<b>{x.q}</b>
 					<p>{x.a}</p>
+				</div>
+			{/each}
+		</div>
+	</section>
+
+	<section id="who-sees">
+		<p class="eyebrow">Who sees what</p>
+		<h2>What the server and the bucket can and cannot see</h2>
+		<p class="prose-col">
+			Your devices, and the devices of the people you share with, read your entries. The server reads none of them. It
+			sees enough to route edits and check them, and no more.
+		</p>
+		<div class="split">
+			<div>
+				<h3>The server sees</h3>
+				<ul>
+					{#each serverSees as line (line)}<li>{line}</li>{/each}
+				</ul>
+			</div>
+			<div class="no">
+				<h3>It never sees</h3>
+				<ul>
+					{#each serverNever as line (line)}<li>{line}</li>{/each}
+				</ul>
+			</div>
+			<div class="no">
+				<h3>The bucket sees</h3>
+				<ul>
+					{#each bucketSees as line (line)}<li>{line}</li>{/each}
+				</ul>
+			</div>
+		</div>
+		<p class="note prose-col">
+			With backups off, the server sees only a vault’s owners and devices, to let them through its relay. A Public share
+			is the exception by design: it publishes its key so that anyone with a reason to ask can read what it covers.
+		</p>
+	</section>
+
+	<section id="mishaps">
+		<p class="eyebrow">When something goes wrong</p>
+		<h2>Lost devices, revoked shares, a dead disk</h2>
+		<div class="cards">
+			{#each mishaps as [what, does] (what)}
+				<div>
+					<h3>{what}</h3>
+					<p>{does}</p>
 				</div>
 			{/each}
 		</div>
@@ -253,19 +500,51 @@
 		</p>
 	</section>
 
+	<section id="shape">
+		<p class="eyebrow">The shape</p>
+		<h2>Three parts: Entry, Share, Blob</h2>
+		<p class="prose-col">
+			Everything in avenDB is one of three things. All else is worked out from them and never typed in: whom an entry is
+			shared with, its key, which devices it is synced to, and what a device still has to fetch.
+		</p>
+		<div class="cards">
+			<div>
+				<h3>Entry: what</h3>
+				<p>
+					All data is an entry in a vault: notes, todos, files, a device’s card, a vault’s profile, and the schemas and
+					lenses too. An entry changes only by signed writes.
+				</p>
+			</div>
+			<div>
+				<h3>Share: who may</h3>
+				<p>
+					Who, at which level, on what. People, Everyone, the server and each of your devices are given shares, and a
+					vault’s owners and devices are shares too. Revoke ends any of them.
+				</p>
+			</div>
+			<div>
+				<h3>Blob and holdings: where</h3>
+				<p>
+					All bytes are blobs named by their BLAKE3 hash, on one shelf per place. Each device tells its peers what it
+					holds for good, and every “synced to” comes from that.
+				</p>
+			</div>
+		</div>
+	</section>
+
 	<section id="vaults">
 		<p class="eyebrow">Identity</p>
 		<h2>A vault is an identity</h2>
 		<p class="prose-col">
-			Everything belongs to a vault, the way an account belongs to a person: a vault owns its entries, holds caps in other
-			vaults and has owners who may change it. There are three kinds.
+			Everything belongs to a vault, the way an account belongs to a person: a vault owns its entries, holds shares in
+			other vaults and has owners who may change it. There are three kinds.
 		</p>
 		<div class="cards">
 			<div>
 				<h3>Human vault</h3>
 				<p>
-					Yours. Owned by your passkeys. Its devices, your desktop, phone and browser, act for it, and each one unlocks
-					its keys with your passkey at every start. Nothing else can unlock them.
+					Yours. Owned by your passkeys. Its devices, your desktop and phone, act for it, and each one unlocks its keys
+					with your passkey at every start. Nothing else can unlock them.
 				</p>
 			</div>
 			<div>
@@ -281,20 +560,51 @@
 			</div>
 		</div>
 		<p class="prose-col">
-			The passkey is the root. A new device joins by a QR code and one passkey approval on a device you already have, or
-			by signing in with the passkey alone. The master recovery key, a software passkey kept offline, is among the owners
-			of every new human vault, so a vault whose passkeys are all lost can still add a new one; it is removed like any
-			owner. The first human vault founded through a new server owns avenCEO, and so the server.
+			A vault has two settings: how many owners must approve a change, and its root passkey, which approves anything on
+			its own. Adding or removing an owner or a device takes the vault’s approval and the newcomer’s consent; devices
+			approve nothing. A new device joins with your passkey alone, through a QR code on a device you have or by signing
+			in through the server. The master recovery key, a software passkey kept offline, is among the owners of every new
+			human vault, so a vault whose passkeys are all lost can still add a new one; it is removed like any owner. The
+			first human vault founded through a new server owns avenCEO, and so the server.
+		</p>
+	</section>
+
+	<section id="edits">
+		<p class="eyebrow">Edits and logs</p>
+		<h2>Eight kinds of signed edit, one log each</h2>
+		<p class="prose-col">
+			Every change in avenDB is an edit: signed, named by the SHA-3 hash of its bytes, and kept for good. There are eight
+			kinds. Each edit belongs to one log, a vault’s, a share’s, an audience’s or an entry’s, and its kind alone says
+			which, so a peer that can read nothing of it can still route it.
+		</p>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Kind</th><th>What it does</th><th>Its log</th></tr>
+				</thead>
+				<tbody>
+					{#each kinds as [kind, does, log] (kind)}
+						<tr><td><b>{kind}</b></td><td>{does}</td><td>{log}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="prose-col">
+			Each edit names its log’s latest edits, the frontier, as its parents, so every log is a small graph of hashes: no
+			edit can be changed, dropped or put in another order without every device noticing. Every device replays the edits
+			it holds in one order, so concurrent edits settle the same way everywhere. A removal, such as a revocation, names
+			the edits it had seen. An edit it hadn’t seen that relied on what it took away is cut, so nobody can backdate an
+			edit around it.
 		</p>
 	</section>
 
 	<section id="crdt">
 		<p class="eyebrow">Entries and the CRDT</p>
-		<h2>Every entry merges, every log is a chain of hashes</h2>
+		<h2>Every entry merges</h2>
 		<p class="prose-col">
-			An entry is one note, todo, card or profile. Its type and tags travel encrypted inside its writes. Each entry is a
-			Loro document, a CRDT: any device changes its own copy at any time, and two devices that hold the same edits read
-			the same entry, whatever order the edits arrived in.
+			An entry is one note, todo, file, card or profile. Its type and tags travel encrypted inside its writes. Each entry
+			is a Loro document, a CRDT: any device changes its own copy at any time, and two devices that hold the same writes
+			read the same entry, whatever order the writes arrived in.
 		</p>
 		<div class="table">
 			<table>
@@ -308,11 +618,6 @@
 				</tbody>
 			</table>
 		</div>
-		<p class="prose-col">
-			An edit’s id is the SHA-3 hash of the whole edit, and its signatures sign that id. Each edit names its log’s latest
-			edits, the frontier, as its parents, so every log is a small graph of hashes: no edit can be changed, dropped or
-			put in another order without every device noticing.
-		</p>
 		<figure>
 			<div class="frame">
 				<svg class="fig" viewBox="0 0 960 290" role="img" aria-label="Two devices edit one note at the same time">
@@ -340,8 +645,8 @@
 				</svg>
 			</div>
 			<figcaption>
-				The desktop and the phone change the same note at the same time. Once each holds both edits, both read “Buy oat
-				milk and bread”, whichever came first. The next edit, on either device, names both as its parents.
+				The desktop and the phone change the same note at the same time. Once each holds both writes, both read “Buy oat
+				milk and bread”, whichever came first. The next write, on either device, names both as its parents.
 			</figcaption>
 		</figure>
 	</section>
@@ -395,6 +700,133 @@
 		</p>
 	</section>
 
+	<section id="shares">
+		<p class="eyebrow">Shares</p>
+		<h2>A share says who may do what, on which entries</h2>
+		<p class="prose-col">
+			Every permission in avenDB is a share: <b>who</b>, at which <b>level</b>, on <b>what</b>. People, groups, Everyone,
+			the server and each of your own devices are given shares. A vault’s owners and its devices are shares too, so they
+			all show in one list, and Revoke ends any of them. Every device checks every write against the shares its author
+			relies on, so a write no share allows counts for no one.
+		</p>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Who</th><th>How it works</th></tr>
+				</thead>
+				<tbody>
+					{#each who as [name, how] (name)}
+						<tr><td><b>{name}</b></td><td>{how}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="prose-col">
+			<b>What</b> is everything in the vault, or a selector over an entry’s labels: its type, the vault that created it,
+			its id, when it was created, and its tags. Tags change, so a share reaches every entry tagged so, now and later. A
+			share is also a named group of JSON ops, and its <b>level</b> is the class of its strongest op. Anyone may name a
+			group of their own.
+		</p>
+		<figure>
+			<pre><code>{SHARE}</code></pre>
+			<figcaption>Bob may read the todos tagged work, and set their status to doing or done.</figcaption>
+		</figure>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Group</th><th>Level</th><th>May</th><th>Typical for</th></tr>
+				</thead>
+				<tbody>
+					{#each groups as [name, level, may, typical] (name)}
+						<tr><td><b>{name}</b></td><td>{level}</td><td>{may}</td><td>{typical}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="prose-col">
+			The selector, the name and the ops travel sealed, to the vault, the holder and whoever gave the share. In the clear
+			a share shows only who holds it and at which level, so the server learns nothing of what it picks or allows. A
+			share may rest on another, and a chain of shares allows only what every share of it allows.
+		</p>
+		<h3>Owners and devices</h3>
+		<p class="prose-col">
+			An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only a human vault’s passkeys,
+			and the master recovery key, own it. An Owner share on a slice, one todo or one tag, is something else: its holder
+			may share that slice on. A device “acts for” its vault: it writes as the vault and approves nothing.
+		</p>
+		<h3>Keep shares: what each of your devices syncs</h3>
+		<p class="prose-col">
+			A keep share goes from your vault to one of your own devices, by the same selector as any share. It grants nothing:
+			it says what that device syncs, and whether it keeps files whole.
+		</p>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Keep</th><th>What it does</th><th>Typical for</th></tr>
+				</thead>
+				<tbody>
+					{#each keeps as [mode, does, typical] (mode)}
+						<tr><td><b>{mode}</b></td><td>{does}</td><td>{typical}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="prose-col">
+			With no keep share over a vault, a device syncs all of it that it may: the server keeps every file whole, and a
+			desktop or phone fetches pieces as it reads them. A keep share always brings the vault’s schemas along. Only the
+			vault that made it can end it, so nobody else can force your phone to sync more.
+		</p>
+		<h3>The server: Backup or Relay</h3>
+		<p class="prose-col">
+			Each vault gives the server’s vault a Backup share on everything when it is founded: the server keeps the
+			ciphertext of every entry, and opens none. With backups off it gives Relay instead: the server learns the vault’s
+			devices, to let them through its relay, and keeps nothing of its entries.
+		</p>
+		<h3>Revoking</h3>
+		<p class="prose-col">
+			Revoke ends a share and every share resting on it. Whoever gave it may revoke it, so may the vault it is over, and
+			its holder may give it up. The entries it reached move to a new key, sealed only to the shares still live. What was
+			read stays read.
+		</p>
+	</section>
+
+	<section id="audiences">
+		<p class="eyebrow">Audiences and keys</p>
+		<h2>One key for what the same shares pick</h2>
+		<p class="prose-col">
+			Entries are not encrypted with one key each, nor with one key for the whole vault. Each entry carries, in the
+			clear, its audience: the list of shares that pick it. An audience has one key per epoch, and each entry’s key is
+			derived from it. Share the todos tagged garden with Bob as an Editor, and every todo tagged garden has the audience
+			“that share”. Bob gets its key once.
+		</p>
+		<p class="prose-col">
+			Tag another todo garden and a device of the vault’s own marks it into that audience, with a link that lets its
+			readers read its whole history. Revoke Bob’s share and the audience moves to a new epoch, with a key only the
+			remaining shares get: what Bob read before stays his, and nothing new reaches him.
+		</p>
+		<p class="prose-col">
+			The audience is in the clear for a reason. The server reads no selector, type or tag, yet it checks every write:
+			the mark on each entry tells it which shares may write there. The marks provably mean what the shares say, so the
+			server decides every edit exactly as an owner would.
+		</p>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>When</th><th>What gets new keys</th></tr>
+				</thead>
+				<tbody>
+					{#each rotations as [when, work] (when)}
+						<tr><td>{when}</td><td>{work}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="note prose-col">
+			Keys are derived inside the vault and wrapped only across a trust boundary. Every key sent to a person or a device
+			is sealed with X-Wing and Classic McEliece together. Backup and Relay shares get no key at all.
+		</p>
+	</section>
+
 	<section id="schemas">
 		<p class="eyebrow">Schemas and lenses</p>
 		<h2>Change the shape, migrate nothing</h2>
@@ -420,10 +852,14 @@
 		</div>
 		<ul class="prose-col">
 			<li>
-				<b>Public by default.</b> Schemas and lenses carry no data, so a vault publishes them in the clear, in its own log:
-				every device that syncs the vault reads them, with no key.
+				<b>Schemas and lenses are entries</b> of two built-in types. A vault shares them with Everyone, by a Public share
+				named “Schemas and lenses” that it makes with its first schema or lens, so every device that reads anything of
+				the vault reads its schemas too.
 			</li>
-			<li><b>Only the vault’s owners publish them</b>, so no one else can change what its entries mean.</li>
+			<li>
+				<b>Only the vault itself adds them.</b> A schema entry counts only if the vault created it, so no one with a share
+				can change what its entries mean.
+			</li>
 			<li>
 				<b>Readers count only writes that fit.</b> A write whose result breaks its schema stays in the log and changes
 				nothing anyone sees, so a patched app can’t slip in a value its schema forbids.
@@ -432,47 +868,14 @@
 		</ul>
 	</section>
 
-	<section id="caps">
-		<p class="eyebrow">Caps and cells</p>
-		<h2>Caps say who may do what</h2>
-		<p class="prose-col">
-			A cap is a named group of JSON ops over a selector: which entries, by type, tag, author, entry or creation time, and
-			what may be done to them. A vault gives caps to other vaults, or to everyone. Every device checks every write
-			against its author’s caps, so a write no cap allows counts for no one.
-		</p>
-		<figure>
-			<pre><code>{CAP}</code></pre>
-			<figcaption>Bob may read the todos tagged work, and set their status to doing or done.</figcaption>
-		</figure>
-		<div class="table">
-			<table>
-				<thead>
-					<tr><th>Group</th><th>May</th><th>Typical for</th></tr>
-				</thead>
-				<tbody>
-					{#each groups as [name, may, who] (name)}
-						<tr><td><b>{name}</b></td><td>{may}</td><td>{who}</td></tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-		<h3>Cells: one key for what the same caps reach</h3>
-		<p class="prose-col">
-			Entries are not encrypted with one key each, nor with one key for the whole vault. A cell is all the entries the
-			same caps reach, and it has one key per generation. Share the todos tagged garden with Bob as an Editor, and that
-			cap makes one cell: every todo tagged garden. Bob gets its key once. Tag another todo garden and it moves into the
-			cell by a signed move, and Bob reads it. Revoke Bob’s cap and the cell moves to a new generation, with a key only
-			the remaining caps get: what Bob read before stays his, and nothing new reaches him. Entries no other cap reaches
-			stay in the vault’s own cell.
-		</p>
-	</section>
-
 	<section id="ops">
 		<p class="eyebrow">JSON ops</p>
 		<h2>One JSON op for every read and change</h2>
 		<p class="prose-col">
-			The page, the desktop app and agents all speak one language: a JSON op, run on the device, which answers with what
-			it read or did, or with why it refused. A query picks entries by the same selector caps use, then by their values.
+			Every read and every change, of an entry or of a vault, is one JSON op through one entry point,
+			<code>run(op)</code>, the same on a desktop, a phone and in a browser. The page, the desktop app and agents all
+			speak it. The device runs the op and answers with what it read or did, or with why it refused. A query picks
+			entries by the same selector shares use, then by their values.
 		</p>
 		<div class="codes">
 			<figure class="wide">
@@ -481,7 +884,7 @@
 			</figure>
 			<figure class="wide">
 				<pre><code>{ANSWER}</code></pre>
-				<figcaption>What comes back: what it found, or a refusal and why</figcaption>
+				<figcaption>What comes back: what it found, a refusal and why, or what your passkey must approve</figcaption>
 			</figure>
 		</div>
 		<div class="chips">
@@ -489,64 +892,80 @@
 			{#each reads as op (op)}<code>{op}</code>{/each}
 		</div>
 		<div class="chips">
-			<span class="kind">Changes</span>
+			<span class="kind">Asks</span>
+			{#each asks as op (op)}<code>{op}</code>{/each}
+		</div>
+		<div class="chips">
+			<span class="kind">Entries</span>
 			{#each changes as op (op)}<code>{op}</code>{/each}
+		</div>
+		<div class="chips">
+			<span class="kind">Vaults</span>
+			{#each vaultOps as op (op)}<code>{op}</code>{/each}
 		</div>
 		<p class="prose-col">
 			Before it shows a button, the page asks <code>may</code>: would this device be allowed to make the op, on what it
-			holds now? So a button you see is a change you may make. A <code>batch</code> runs several ops as one.
+			holds now? So a button you see is a change you may make. The page keeps no rule of its own: it reads levels, ops
+			and who may do what from the device’s answers. A <code>batch</code> runs several changes of entries as one.
+		</p>
+		<p class="prose-col">
+			Most changes need nothing but the device. A change the vault’s owners must approve, such as a co-owner, a new
+			device, a threshold or new vaults, is drafted on the device and signed by your passkey, in one prompt however many
+			edits it makes. With no passkey at hand, as for an agent, the answer is <code>approve</code>: what to sign and by
+			whom, and nothing is made until it is signed.
 		</p>
 	</section>
 
 	<section id="system">
 		<p class="eyebrow">The whole system</p>
-		<h2>Desktop, phone, browser and server: one protocol stack</h2>
+		<h2>Desktop, phone and server: one protocol stack</h2>
 		<p class="prose-col">
-			Every device is a full avenDB node with its own store: on disk on a desktop or a phone, in OPFS in a browser. The
-			server is the same kind of node, its bucket its source of truth and its disk only a cache. Devices talk to each
-			other directly whenever the network allows it, and through the relay when it does not. Browsers always go through
-			the relay.
+			Every device is a full avenDB node with its own shelf: a folder on a desktop, the page’s private storage on a phone
+			or in a browser. The server is the same kind of node, and its shelf is a sealed bucket. Devices talk to each other
+			directly whenever the network allows it, and through the relay when it does not. A phone or a browser always goes
+			through the relay.
 		</p>
 		<figure>
 			<div class="frame">
 				<svg class="fig" viewBox="0 0 960 560" role="img" aria-label="System map">
 					<rect class="node" x="20" y="30" width="290" height="180" rx="16" />
 					<text class="h" x="40" y="62">Desktop</text>
-					<text class="s" x="40" y="88">avenDB device, native</text>
-					<text class="s" x="40" y="110">one store on disk:</text>
-					<text class="s" x="40" y="130">edits and keys in it,</text>
-					<text class="s" x="40" y="150">file pieces as files</text>
-					<text class="s" x="40" y="180">keeps what its sync rules want</text>
+					<text class="s" x="40" y="88">avenDB device, native, beside the app</text>
+					<text class="s" x="40" y="110">one shelf, a folder:</text>
+					<text class="s" x="40" y="130">edits in packs,</text>
+					<text class="s" x="40" y="150">files as sealed blobs</text>
+					<text class="s" x="40" y="180">keeps what its keep shares say</text>
 					<rect class="node" x="20" y="350" width="290" height="180" rx="16" />
 					<text class="h" x="40" y="382">Phone or browser</text>
-					<text class="s" x="40" y="408">avenDB device, in the app or the page</text>
-					<text class="s" x="40" y="430">one store on the device,</text>
-					<text class="s" x="40" y="450">in OPFS in a browser</text>
-					<text class="s" x="40" y="480">streams files when they play,</text>
-					<text class="s" x="40" y="500">keeps what you pin</text>
+					<text class="s" x="40" y="408">avenDB device, in the page</text>
+					<text class="s" x="40" y="430">one shelf in OPFS,</text>
+					<text class="s" x="40" y="450">laid out as on a desktop</text>
+					<text class="s" x="40" y="480">streams files as they play,</text>
+					<text class="s" x="40" y="500">keeps what its keep shares say</text>
 					<rect class="srv" x="390" y="150" width="300" height="250" rx="16" />
 					<text class="h" x="410" y="182">avenDB server · Hetzner</text>
-					<text class="s" x="410" y="212">relay: connects devices to each other</text>
+					<text class="s" x="410" y="212">relay: lets your devices meet</text>
 					<text class="s" x="410" y="234">sync peer: always online</text>
 					<text class="s" x="410" y="256">backup: ciphertext only, no keys</text>
 					<line class="thin" x1="410" y1="276" x2="670" y2="276" />
-					<text class="s" x="410" y="300">disk, a cache it can lose:</text>
-					<text class="s" x="410" y="322">recent pieces and outboards,</text>
-					<text class="s" x="410" y="344">what the bucket also holds</text>
-					<text class="m" x="410" y="380">avenCEO acts for it</text>
+					<text class="s" x="410" y="300">its shelf is the bucket;</text>
+					<text class="s" x="410" y="322">its disk, a cache it can lose:</text>
+					<text class="s" x="410" y="344">parts read lately, blobs in transit</text>
+					<text class="m" x="410" y="380">a device of avenCEO</text>
 					<path class="bkt" d="M770 170 v210 a80 18 0 0 0 160 0 v-210" />
 					<ellipse class="bkt" cx="850" cy="170" rx="80" ry="18" />
 					<text class="h" x="850" y="214" text-anchor="middle">Object storage</text>
 					<text class="s" x="850" y="236" text-anchor="middle">maiacity-avendb, hel1</text>
-					<text class="m" x="850" y="272" text-anchor="middle">edits/</text>
-					<text class="m" x="850" y="294" text-anchor="middle">keys/</text>
-					<text class="m" x="850" y="316" text-anchor="middle">pieces/</text>
-					<text class="s" x="850" y="348" text-anchor="middle">sealed, locked 7 days</text>
-					<text class="s" x="850" y="370" text-anchor="middle">the server's truth</text>
-					<line class="ctl" x1="120" y1="210" x2="120" y2="350" />
-					<path class="bytes" d="M175 214 V346" />
-					<text class="s" x="190" y="268">direct QUIC,</text>
-					<text class="s" x="190" y="288">hole punched</text>
+					<text class="m" x="850" y="264" text-anchor="middle">g1/journal/</text>
+					<text class="m" x="850" y="284" text-anchor="middle">g1/heads/</text>
+					<text class="m" x="850" y="304" text-anchor="middle">g1/blobs/</text>
+					<text class="m" x="850" y="324" text-anchor="middle">g1/outboards/</text>
+					<text class="s" x="850" y="352" text-anchor="middle">sealed, locked 7 days</text>
+					<text class="s" x="850" y="372" text-anchor="middle">the server's truth</text>
+					<line class="relay" x1="120" y1="210" x2="120" y2="350" />
+					<path class="bytes" d="M175 214 V346" stroke-dasharray="2 9" />
+					<text class="s" x="190" y="268">QUIC end to end,</text>
+					<text class="s" x="190" y="288">through the relay</text>
 					<line class="ctl" x1="310" y1="110" x2="390" y2="190" />
 					<path class="bytes" d="M310 150 L388 228" />
 					<line class="relay" x1="310" y1="420" x2="390" y2="350" />
@@ -556,20 +975,20 @@
 					<path class="bytes" d="M766 300 H704" />
 					<polygon class="bc" points="706,292 692,300 706,308" />
 					<text class="s" x="700" y="246">up</text>
-					<text class="s" x="700" y="326">ranges</text>
+					<text class="s" x="700" y="326">parts</text>
 					<g transform="translate(410 440)">
 						<line class="ctl" x1="0" y1="10" x2="34" y2="10" />
-						<text class="s" x="44" y="14">edits and control (avendb/sync/1)</text>
+						<text class="s" x="44" y="14">edits, holdings and control (avendb/sync/1)</text>
 						<path class="bytes" d="M0 40 H34" />
-						<text class="s" x="44" y="44">file bytes (iroh-blobs, BLAKE3 verified)</text>
+						<text class="s" x="44" y="44">file bytes and McEliece keys (iroh-blobs, BLAKE3 verified)</text>
 						<line class="relay" x1="0" y1="70" x2="34" y2="70" />
-						<text class="s" x="44" y="74">through the relay: browsers always, others when no direct path</text>
+						<text class="s" x="44" y="74">through the relay: phones and browsers always, others when no direct path</text>
 					</g>
 				</svg>
 			</div>
 			<figcaption>
-				Every arrow carries ciphertext only. Keys never leave the devices of people the vault shares with, and the server
-				seals every object again before it goes to the bucket.
+				Every arrow carries ciphertext only. Keys never leave the devices of the people a vault shares with, and the
+				server seals every object again before it goes to the bucket.
 			</figcaption>
 		</figure>
 	</section>
@@ -579,27 +998,27 @@
 		<h2>The layering n0 intends, and what avenDB adds</h2>
 		<p class="prose-col">
 			iroh’s own guidance: an endpoint, a router that hands each connection to a protocol by its ALPN, the app’s own
-			protocol for app logic, and iroh-blobs for every byte. avenDB has all four: its sync protocol decides what moves,
-			and iroh-blobs carries the bytes of keys, files and edits.
+			protocol for app logic, and iroh-blobs for bytes. avenDB has all four. Its sync protocol decides what moves and
+			carries the edits; iroh-blobs carries McEliece keys and file pieces, verified as they arrive.
 		</p>
 		<figure>
 			<div class="frame">
-				<svg class="fig" viewBox="0 0 960 360" role="img" aria-label="The five layers of an avenDB node">
+				<svg class="fig" viewBox="0 0 960 360" role="img" aria-label="The layers of an avenDB node">
 					<rect class="band-av" x="20" y="20" width="760" height="56" rx="10" />
-					<text class="h" x="40" y="45">Lab: vaults, caps, sync rules, keys, Loro documents, JSON ops</text>
-					<text class="s" x="40" y="65">decides what counts, decrypts what this device may read, names the blobs each edit needs</text>
+					<text class="h" x="40" y="45">Lab: vaults, shares, audiences, keys, Loro entries, JSON ops</text>
+					<text class="s" x="40" y="65">decides what counts, opens what this device may read, keeps marks and keys up to date</text>
 					<rect class="band-n0" x="20" y="86" width="372" height="56" rx="10" />
-					<text class="h" x="40" y="111">Store: one iroh-blobs store per node</text>
-					<text class="s" x="40" y="131">on disk on desktop, phone and server; in OPFS in a browser</text>
+					<text class="h" x="40" y="111">Shelf store: iroh-blobs over one shelf</text>
+					<text class="s" x="40" y="131">a folder on a desktop, OPFS on a phone or in a browser</text>
 					<rect class="band-av" x="408" y="86" width="372" height="56" rx="10" />
-					<text class="h" x="428" y="111">Behind it on the server</text>
-					<text class="s" x="428" y="131">the sealed bucket, its source of truth</text>
+					<text class="h" x="428" y="111">On the server, the shelf is the bucket</text>
+					<text class="s" x="428" y="131">every object sealed, its disk only a cache</text>
 					<rect class="band-av" x="20" y="152" width="372" height="66" rx="10" />
 					<text class="h" x="40" y="178">avendb/sync/1</text>
-					<text class="s" x="40" y="200">hellos, frontiers, announcements, holdings</text>
+					<text class="s" x="40" y="200">hellos, frontiers per log, holdings, asks</text>
 					<rect class="band-n0" x="408" y="152" width="372" height="66" rx="10" />
 					<text class="h" x="428" y="178">/iroh-bytes/4 (iroh-blobs)</text>
-					<text class="s" x="428" y="200">verified streaming, ranges, resume, GetMany</text>
+					<text class="s" x="428" y="200">one pool, verified ranges, resume, GetMany</text>
 					<rect class="band-n0" x="20" y="228" width="760" height="56" rx="10" />
 					<text class="h" x="40" y="253">Endpoint and router (iroh 1.3)</text>
 					<text class="s" x="40" y="273">one id per device · QUIC · TLS 1.3 with X25519MLKEM768 only · hole punching</text>
@@ -613,43 +1032,69 @@
 				</svg>
 			</div>
 			<figcaption>
-				The sync protocol carries small things and decisions (what changed, who holds what). iroh-blobs carries bytes.
-				Both share one endpoint, one identity and one post-quantum TLS setup.
+				The sync protocol carries edits and decisions: what changed, who holds what. iroh-blobs carries bytes, and lets
+				a device in only beside a sync connection whose hello proved it. Both share one endpoint, one identity and one
+				post-quantum TLS setup.
 			</figcaption>
 		</figure>
 	</section>
 
 	<section id="sync">
 		<p class="eyebrow">Sync</p>
-		<h2>Devices exchange only what differs</h2>
+		<h2>Devices say what they hold, and ask only for what differs</h2>
 		<p class="prose-col">
-			When a log changes, a node announces its digest to every peer that may hold it. A peer whose digest differs asks
-			with its frontier, the latest edits it has, and gets only what it lacks, in pages of about 4 MiB. Order never
-			matters, so any device can sync with any other, in any order, any number of times.
+			Each connection opens with a hello each way: an SLH-DSA signature over the TLS session, so both ends know which
+			device they speak to. Then each tells the other its holdings: for every log it may share with that peer, its
+			frontier, and for every file, whether it holds it whole or in pieces. After that it sends only what changed. A
+			device that hears of a head it lacks asks for that log alone, and gets only what it lacks, in pages of about 4
+			MiB. Order never matters, so any device can sync with any other, in any order, any number of times.
 		</p>
 		<div class="split">
 			<div>
-				<h3>Caps: what a device may have</h3>
+				<h3>Shares: what a device may get</h3>
 				<p>
-					A device receives an edit only if its vault may read it, or keep it as a backup. No peer sends what the
-					receiver’s caps don’t allow.
+					A peer sends a device only the entries its vaults may receive, the logs needed to check them, and nothing else.
+					A relay share gets the vault’s devices and no entry.
 				</p>
 			</div>
 			<div>
-				<h3>Sync rules: what it wants</h3>
+				<h3>Keep shares: what it wants</h3>
 				<p>
-					A sync rule uses the same selector as a cap, for any data, and grants nothing: keep these whole, fetch those as
-					they are read. Your phone keeps proxies, your desktop keeps originals.
+					Whole, when opened or never, by the same selector a share uses. Your phone keeps proxies, your desktop keeps
+					originals, the server keeps all.
 				</p>
 			</div>
 			<div>
-				<h3>The server: Backup or Relay</h3>
+				<h3>Holdings: who has what</h3>
 				<p>
-					By default the server keeps the ciphertext of every vault it backs up. With backups off it only relays: it
-					finds your devices and keeps nothing.
+					Only what a device holds for good, on its shelf, and only from the device itself on its own connection. They
+					choose whom to fetch from and fill in “Synced to”. They never grant anything.
+				</p>
+			</div>
+			<div>
+				<h3>Interest and follow</h3>
+				<p>
+					What a vault shares with Everyone goes only to devices with an interest in it, or that follow it by name. A
+					device keeps its follow list across restarts. One that acts for no vault and follows none is sent nothing.
 				</p>
 			</div>
 		</div>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Message</th><th>What it carries</th><th>The answer</th></tr>
+				</thead>
+				<tbody>
+					{#each messages as [name, carries, answer] (name)}
+						<tr><td><b>{name}</b></td><td>{carries}</td><td>{answer}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="note prose-col">
+			Every message is a stream of its own on the one avenDB protocol, with exactly one encoding for every value. Holdings
+			go straight to one proven device, never by gossip, and nobody passes on another device’s holdings.
+		</p>
 	</section>
 
 	<section id="files">
@@ -661,44 +1106,24 @@
 					<tr><th>Thing</th><th>As a blob</th><th>Typical size</th><th>Where a device keeps it</th></tr>
 				</thead>
 				<tbody>
-					<tr>
-						<td>An edit (a note change, a todo, a cap)</td>
-						<td>Its signed wire bytes. The body is already encrypted.</td>
-						<td class="num">0.2 to 16 KiB</td>
-						<td>In the device's store, no file of its own</td>
-					</tr>
-					<tr>
-						<td>A page of a vault's log</td>
-						<td>A HashSeq: the list of its edits' hashes</td>
-						<td class="num">32 B per edit</td>
-						<td>In the store</td>
-					</tr>
-					<tr>
-						<td>A photo, a document</td>
-						<td>One encrypted blob</td>
-						<td class="num">up to 1 GiB</td>
-						<td>A file plus its outboard</td>
-					</tr>
-					<tr>
-						<td>A film or a camera card</td>
-						<td>A HashSeq of encrypted 1 GiB pieces</td>
-						<td class="num">1 GiB to many TB</td>
-						<td>Pieces as files, kept or streamed by need</td>
-					</tr>
+					{#each blobs as [thing, form, size, where] (thing)}
+						<tr><td>{thing}</td><td>{form}</td><td class="num">{size}</td><td>{where}</td></tr>
+					{/each}
 				</tbody>
 			</table>
 		</div>
 		<p class="prose-col">
-			Each edit keeps two names. Its id is a SHA-3 hash, and that is what signatures sign. Its BLAKE3 hash is what iroh
-			stores, moves and verifies. The edit that brings a file lists the file's root hash in the clear, because the server
-			and other devices need it to back the file up and to know who may fetch it. The file's key sits inside the edit's
-			encrypted body.
+			Each edit has two names. Its id is a SHA-3 hash, and that is what signatures sign. The bytes are stored and moved
+			as blobs named by BLAKE3: edits in packs, files in pieces. The write that brings a file names the file’s root hash
+			and sealed size in the clear, because the server and other devices need them to back the file up and to know who
+			may fetch it. The file’s key sits inside the write’s encrypted body. Whoever may fetch the write may fetch its
+			files, and nobody else.
 		</p>
 		<p class="prose-col">
 			Every vault has a Library that lists its files by kind: films, images, SVGs, PDFs and audio. A file is an ordinary
-			entry of type <code>file</code>, a document named after the file whose first edit brings it, so caps, sync and
-			deletion work on it as on a note. A film plays as it streams: the player asks for byte ranges, and the device fetches
-			only the 64 KiB segments those ranges need, verified by iroh-blobs, and opens them.
+			entry of type <code>file</code>, a document named after the file whose first write brings it, so shares, sync and
+			deletion work on it as on a note. A film plays as it streams: the player asks for byte ranges, and the device
+			fetches only the 64 KiB segments those ranges need, verified by iroh-blobs, and opens them.
 		</p>
 		<figure>
 			<div class="frame">
@@ -717,7 +1142,7 @@
 					<text class="s" x="530" y="76">ChaCha20-Poly1305, nonce = segment number + last flag</text>
 					<path class="thin" d="M240 84 v24" />
 					<path class="thin" d="M234 100 l6 8 l6 -8" />
-					<text class="h" x="20" y="134">2 · Encrypted segments, each exactly 64 KiB</text>
+					<text class="h" x="20" y="134">2 · Sealed segments, each exactly 64 KiB</text>
 					<rect class="seg" x="20" y="148" width="110" height="34" rx="6" />
 					<rect class="seg" x="134" y="148" width="110" height="34" rx="6" />
 					<rect class="seg" x="248" y="148" width="110" height="34" rx="6" />
@@ -749,19 +1174,20 @@
 					<path class="thin" d="M95 286 V316 M251 286 V316 M407 286 V316 M95 316 H407 M251 316 V330" />
 					<rect class="box" x="120" y="330" width="262" height="36" rx="7" />
 					<text class="m" x="134" y="353">HashSeq root = list of piece hashes</text>
-					<text class="h" x="20" y="400">4 · The edit that brings it</text>
+					<text class="h" x="20" y="400">4 · The write that brings it</text>
 					<rect class="edit" x="20" y="412" width="500" height="44" rx="8" />
-					<text class="s" x="36" y="432">in the clear: root hash, size</text>
-					<text class="s" x="36" y="449">encrypted: name, type, key K, plaintext length</text>
+					<text class="s" x="36" y="432">in the clear: root hash, sealed size</text>
+					<text class="s" x="36" y="449">encrypted: key K and length, with the entry’s name and type</text>
 					<path class="thin" d="M251 366 V412" />
-					<text class="s" x="560" y="400">the edit is signed and synced like any edit;</text>
-					<text class="s" x="560" y="420">the pieces follow by need, from whoever holds them</text>
+					<text class="s" x="560" y="400">the write is signed and synced like any edit;</text>
+					<text class="s" x="560" y="420">the pieces follow, from whoever holds them</text>
 				</svg>
 			</div>
 			<figcaption>
 				This format is called sealed blob v1. The tag adds 0.024 %. Pieces cannot be swapped or reordered, because every
 				nonce counts segments across the whole file. Whoever holds the key verifies by decrypting; everyone else verifies
-				the ciphertext with BLAKE3.
+				the ciphertext with BLAKE3. Each file has its own random key, so two vaults holding the same film hold two
+				unrelated blobs.
 			</figcaption>
 		</figure>
 	</section>
@@ -783,89 +1209,58 @@
 
 	<section id="storage">
 		<p class="eyebrow">Where the bytes live</p>
-		<h2>Storage on each kind of place</h2>
+		<h2>One shelf per place</h2>
+		<p class="prose-col">
+			Each place keeps what lasts on one shelf, laid out the same everywhere. A shelf says it has something only once its
+			place’s source of truth holds it, so “synced to” never means “on its way”. Pieces a device reads but doesn’t keep
+			stay in memory, 64 MiB at most.
+		</p>
 		<div class="table">
 			<table>
 				<thead>
-					<tr><th>Place</th><th>Small blobs (edits)</th><th>Big blobs (pieces)</th><th>Kept until</th></tr>
+					<tr><th>Place</th><th>Its shelf</th><th>What it keeps</th></tr>
 				</thead>
 				<tbody>
-					<tr>
-						<td>Desktop</td>
-						<td>Its store on disk</td>
-						<td>iroh files, with their outboards</td>
-						<td>No sync rule wants them, then garbage collection</td>
-					</tr>
-					<tr>
-						<td>Phone</td>
-						<td>Its store on the phone</td>
-						<td>What you watched or pinned</td>
-						<td>Played and not pinned, oldest first</td>
-					</tr>
-					<tr>
-						<td>Browser</td>
-						<td>OPFS, its one store, in a worker</td>
-						<td>OPFS, what you watched or pinned</td>
-						<td>Played and not pinned, oldest first</td>
-					</tr>
-					<tr>
-						<td>Server disk</td>
-						<td>A copy of what the bucket holds</td>
-						<td>A cache of recent pieces and their outboards</td>
-						<td>A cache: wiped any time, rebuilt from the bucket</td>
-					</tr>
-					<tr>
-						<td>Bucket</td>
-						<td><code>edits/</code> packs and <code>keys/</code>, each sealed</td>
-						<td><code>pieces/</code>, one object per piece</td>
-						<td>The source of truth: every version locked 7 days, replaced ones gone 7 days later</td>
-					</tr>
+					{#each places as [place, shelf, keeps] (place)}
+						<tr><td><b>{place}</b></td><td>{shelf}</td><td>{keeps}</td></tr>
+					{/each}
 				</tbody>
 			</table>
 		</div>
+		<figure>
+			<pre><code>{LAYOUT}</code></pre>
+			<figcaption>
+				One generation of a shelf. A node starts from its newest head and the journal after it: a few dozen objects,
+				however long the log.
+			</figcaption>
+		</figure>
 		<p class="prose-col">
 			Packing is what makes object storage work for a database. Hetzner bills every object as at least 64 KB and allows
 			750 requests a second per bucket. A million edits stored one per object would take 22 minutes of a fully busy
-			bucket to write or restore. Packed, they are a few hundred objects. Every object version is locked for 7 days in
-			compliance mode, so not even a compromised server can wipe the backup.
+			bucket to write or restore. Packed, a node reads a few dozen objects to start.
 		</p>
-	</section>
-
-	<section id="trust">
-		<p class="eyebrow">Trust</p>
-		<h2>What the server and the bucket can and cannot see</h2>
-		<div class="split">
-			<div>
-				<h3>The server sees</h3>
-				<ul>
-					<li>Which devices connect, and when</li>
-					<li>Vault and cap ids, and which device belongs to which vault</li>
-					<li>Sizes and BLAKE3 hashes of ciphertext</li>
-					<li>Which pieces get read, which hints at what plays</li>
-					<li>The vault’s schemas and lenses, which are public</li>
-				</ul>
-			</div>
-			<div class="no">
-				<h3>It never sees</h3>
-				<ul>
-					<li>Any content: notes, todos, file bytes</li>
-					<li>File names, types, tags, who shares what with whom inside a vault</li>
-					<li>Any key, since keys travel inside sealed edits</li>
-					<li>Whether two people hold the same film, because every file has its own random key</li>
-				</ul>
-			</div>
-			<div class="no">
-				<h3>The bucket sees</h3>
-				<ul>
-					<li>Sealed objects and their sizes, nothing more</li>
-					<li>Not even what the server sees: every object is sealed with a 256-bit key the server keeps</li>
-					<li>Whoever records the link to it, classical TLS since Hetzner offers nothing else, sees the same noise</li>
-				</ul>
-			</div>
-		</div>
-		<p class="note prose-col">
-			A Public cap is the exception by design: it publishes a key in the clear so anyone can read what it covers.
-		</p>
+		<ul class="prose-col">
+			<li>
+				<b>Never delete, put aside.</b> Forgetting an account, or starting fresh, makes a new generation beside the old
+				one, which is never read again and never deleted.
+			</li>
+			<li>
+				<b>Nothing counts until the bucket has it.</b> The server’s shelf answers only once the bucket holds the object,
+				so its holdings name an edit or a file only then.
+			</li>
+			<li>
+				<b>Sealed and in parts.</b> Every object in the bucket is sealed and bound to its name. A blob is stored in 8 MiB
+				parts, and counts once its outboard, written last, is there.
+			</li>
+			<li>
+				<b>Its disk is a cache.</b> The server caches parts it read lately, 8 GiB by default. Its own device secret is in
+				the bucket too, sealed, so a server whose disk is lost comes back from the bucket alone.
+			</li>
+			<li>
+				<b>Locked.</b> Every object version is kept for 7 days in compliance mode, so not even a compromised server can
+				wipe the backup.
+			</li>
+		</ul>
 	</section>
 
 	<section id="post-quantum">
@@ -889,10 +1284,37 @@
 		</div>
 	</section>
 
+	<section id="proofs">
+		<p class="eyebrow">Proofs</p>
+		<h2>What the Lean model proves</h2>
+		<p class="prose-col">
+			avenDB’s rules are written twice: in Lean 4, where each guarantee below is a theorem with a machine-checked proof,
+			and in Rust. Shared test vectors hold the two to the same answers, edit by edit. The proofs assume that signatures
+			can’t be forged, that sealed data reveals nothing without its key, that ids don’t collide and that Loro converges.
+			Verifpal models cover the hello, linking and the sealed box against an attacker who breaks the curves.
+		</p>
+		<div class="table">
+			<table>
+				<thead>
+					<tr><th>Guarantee</th><th>Theorem</th></tr>
+				</thead>
+				<tbody>
+					{#each proofs as [what, names] (names)}
+						<tr><td>{what}</td><td class="num">{names}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="note prose-col">
+			Not covered by the proofs: the Rust and Loro code itself, which the vectors and tests check; timing and traffic
+			analysis; a file’s exact length, which its sealed size shows; and a device compromised while it is unlocked.
+		</p>
+	</section>
+
 	<footer class="note">
 		Sources: Ink &amp; Switch’s <i>Local-first software</i> (2019), Loro 1.16, iroh 1.3, iroh-blobs 0.103.1 and bao-tree
-		0.16.1 source, n0’s blog and docs, Hetzner Object Storage documentation, and avenDB’s code and Lean model as of 13
-		October 2026.
+		0.16.1 source, n0’s blog and docs, Hetzner Object Storage documentation, and avenDB’s code and Lean model for edit
+		format 8, as of 14 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
 	</footer>
 </main>
 

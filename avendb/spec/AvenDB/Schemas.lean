@@ -3,13 +3,13 @@ import AvenDB.Ops
 /-!
 # Schemas: writes that fit them
 
-`avendb/docs/OPS.md`, writes that fit their schemas. Every reader of an entry judges each write it opens by the record
-before it and after it, on the version it builds on, under the schemas the entry was written under up to it, which
-must be in the vault's lane or built in and all of one kind (`lens::Lane::fits`): each place the write changed holds a
-value one of them lets it hold there; each list of records it changed is one they name, holding no copy of a row it
-didn't hold before (copies are what two devices adding a row with one id at once make, never one write); each row it
-added or changed reads under one of them, so holds what that schema requires of a row; and the record's own fields
-read under one of them where it changed one of them or added or dropped a list. A write that doesn't fit counts for no
+`avendb/docs/ARCHITECTURE.md` §8, writes that fit their schemas. Every reader of an entry judges each write it opens by
+the record before it and after it, on the version it builds on, under the schemas the entry was written under up to it,
+which must be in the vault's lane or built in and all of one kind (`lens::Lane::fits`): each place the write changed
+holds a value one of them lets it hold there; each list of records it changed is one they name, holding no copy of a row
+it didn't hold before (copies are what two devices adding a row with one id at once make, never one write); each row it
+added or changed reads under one of them, so holds what that schema requires of a row; and the record's own fields read
+under one of them where it changed one of them or added or dropped a list. A write that doesn't fit counts for no
 reader, nor anything built on it (`State.counts`): every device keeps the last record that fit, whatever a patched app
 writes.
 

@@ -16,7 +16,7 @@ abbrev EntryId  := Nat
 abbrev ShareId  := Nat
 abbrev EditId   := Nat
 abbrev BlobId   := Nat
-/-- A file, by its root: the hash iroh names its sealed pieces by (`docs/BLOBS.md`). -/
+/-- A file, by its root: the hash iroh names its sealed pieces by (`docs/ARCHITECTURE.md` §13). -/
 abbrev FileId   := Nat
 /-- A type (`note`, `todo`, …) or a tag: a short name. -/
 abbrev Sym      := Nat
@@ -37,11 +37,21 @@ inductive Principal where
   | vault  (v : VaultId)
   deriving DecidableEq, Repr
 
-/-- relay < backup < read < write < owner. Relay only learns the vault's devices, from its log, so that a server lets
-    them through and helps them find each other: it receives none of the slice's edits. Backup may hold and pass on the
-    encrypted edits of a slice but gets no key for it: that is the server's level by default. Owner also shares the
-    slice on and is governance. -/
+/-- How a device keeps what a keep share picks: it syncs the entries and keeps the files they bring whole (`whole`),
+    syncs them and fetches a file's pieces as it reads them (`opened`), or doesn't sync them at all (`never`). -/
+inductive KeepMode where
+  | whole
+  | opened
+  | never
+  deriving DecidableEq, Repr
+
+/-- keep < relay < backup < read < write < owner, in the order of their rank. Keep grants nothing: a keep share only
+    says what one device of its issuer syncs, and how (`KeepMode`). Relay only learns the vault's devices, from its log,
+    so that a server lets them through and helps them find each other: it receives none of the slice's edits. Backup
+    may hold and pass on the encrypted edits of a slice but gets no key for it: that is the server's level by default.
+    Owner also shares the slice on and is governance. -/
 inductive Level where
+  | keep (m : KeepMode)
   | relay
   | backup
   | read
@@ -49,22 +59,42 @@ inductive Level where
   | owner
   deriving DecidableEq, Repr
 
+/-- A level's rank, which is also its byte on the wire (a keep share's mode follows it there). -/
 def Level.rank : Level → Nat
-  | .relay  => 0
-  | .backup => 1
-  | .read   => 2
-  | .write  => 3
-  | .owner  => 4
+  | .keep _ => 0
+  | .relay  => 1
+  | .backup => 2
+  | .read   => 3
+  | .write  => 4
+  | .owner  => 5
 
 /-- A share with level `r` allows what `need` allows. -/
 def Level.allows (r need : Level) : Bool := decide (need.rank ≤ r.rank)
 
-/-- Whom a share names: a vault, or everyone. A share naming a signer is refused (T4); the type still allows one, so
-    that the refusal is something we prove rather than assume. -/
+/-- The level of a keep share, of any mode. -/
+def Level.isKeep : Level → Bool
+  | .keep _ => true
+  | _ => false
+
+/-- A keep share's mode, `none` for any other level. -/
+def Level.mode? : Level → Option KeepMode
+  | .keep m => some m
+  | _ => none
+
+/-- Whom a share names: a vault, everyone, or a device. Only a keep share names a device, one of its issuer's (T4). -/
 inductive Who where
-  | principal (p : Principal)
+  | vault    (v : VaultId)
   | everyone
+  | device   (d : SignerId)
   deriving DecidableEq, Repr
+
+/-- The device a share names, if it names one. -/
+def Who.device? : Who → Option SignerId
+  | .device d => some d
+  | _ => none
+
+/-- A share names a device. -/
+def Who.isDevice (w : Who) : Bool := w.device?.isSome
 
 /-! ## Slices
 
@@ -124,11 +154,13 @@ def TagDelta.apply (d : TagDelta) (ts : List Sym) : List Sym :=
   let kept := ts.filter (!d.remove.contains ·)
   kept ++ (d.add.filter (!kept.contains ·)).eraseDups
 
-/-- What an entry's first write says of it, which never changes: its type and when it was created (as its creator
-    says). It travels inside the write's encrypted body, so no relay sees it. -/
+/-- What an entry's first write says of it, which never changes: its type, when it was created (as its creator says),
+    and the hash of the content it starts with (`blob`), which for a schema or a lens entry is the schema or lens it
+    holds (`laneOf`). It travels inside the write's encrypted body, so no relay sees it. -/
 structure Header where
   type    : Sym
   created : Nat
+  blob    : BlobId
   deriving DecidableEq, Repr
 
 /-! ## Audiences and keys -/

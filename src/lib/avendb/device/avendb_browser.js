@@ -1,16 +1,18 @@
 // @ts-nocheck: written by avendb/scripts/build-web.sh from avenDB
 /**
- * The device as the page holds it (`Device`): every call that waits on the network or on its person is a promise.
+ * The device as the page holds it (`Device`), with the page's store its shelf is on (`js/store.js`): every call that
+ * waits on the network or on its person is a promise.
  *
  * A ceremony is the page's: `ceremony(challenge, step)`, a function the device calls with the 32 bytes the passkey
  * signs and what for (`"found"`, `"join"`, `"claim"`, `"approve"`), which resolves to the ceremony's
  * `{authenticatorData, clientDataJSON, signature, prf}`, each bytes, `prf` the PRF output on `prfSalt()`. The unlock
  * is one ceremony's result that also holds `devicePrf`, the output on `deviceSalt(nonce)`, `nonce` the 32 bytes the
- * page keeps for the device. A new device asks for it as `unlock(challenge)`, a function that resolves to it, over the
- * challenge that makes it the passkey's pass for the device (`Fresh`).
+ * device keeps for its salt (`Meta`). A new device asks for it as `unlock(challenge)`, a function that resolves to
+ * it, over the challenge that makes it the passkey's pass for the device (`Fresh`).
  *
  * A device starting shows the page each step of its start as it begins and ends, if the page passes `steps`: a
- * function it calls with them all so far, each time they change (`steps_json`), until the start is over.
+ * function it calls with them all so far, each time they change (`steps_json`), until the start is over. It holds the
+ * store's shelf for this page alone from its start until it closes: the same device never runs in two tabs.
  */
 export class Device {
     static __wrap(ptr) {
@@ -30,77 +32,16 @@ export class Device {
         wasm.__wbg_device_free(ptr, 0);
     }
     /**
-     * Its person's account (`Device::account`): a promise of `{vault, root, devices: [{id, name, me}], ownsAven}`, ids
-     * in hex, `root` the vault's root passkey, each device's `name` the one on its card, or `undefined` while it wrote
-     * none, and `me` whether it is this one; of `undefined` while it belongs to no vault.
+     * Whether its shelf lacks something it holds (`Device::behind`): a promise.
      * @returns {Promise<any>}
      */
-    account() {
-        const ret = wasm.device_account(this.__wbg_ptr);
+    behind() {
+        const ret = wasm.device_behind(this.__wbg_ptr);
         return ret;
     }
     /**
-     * Brings file `file`, `{name, media, tags, len}` (`NewFile`), into vault `vault`, acting for `actor` (ids in hex;
-     * `Device::add_file`): `read(at, n)` hands over its bytes from `at` on, `n` of them, as a promise of a
-     * `Uint8Array`, a megabyte at a time, so that a file of any size passes through a little memory. A promise of the
-     * new entry's id.
-     * @param {string} actor
-     * @param {string} vault
-     * @param {any} file
-     * @param {Function} read
-     * @returns {Promise<any>}
-     */
-    addFile(actor, vault, file, read) {
-        const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.device_addFile(this.__wbg_ptr, ptr0, len0, ptr1, len1, file, read);
-        return ret;
-    }
-    /**
-     * Adds the master recovery key it adds as an owner of its person's vault (`Device::add_recovery`): a promise,
-     * after one ceremony.
-     * @param {Function} ceremony
-     * @returns {Promise<any>}
-     */
-    addRecovery(ceremony) {
-        const ret = wasm.device_addRecovery(this.__wbg_ptr, ceremony);
-        return ret;
-    }
-    /**
-     * Has avenDB's server keep a backup of its person's vaults, if `on`, or relay alone (`Device::back_up`): a promise
-     * of whether anything changed.
-     * @param {boolean} on
-     * @returns {Promise<any>}
-     */
-    backUp(on) {
-        const ret = wasm.device_backUp(this.__wbg_ptr, on);
-        return ret;
-    }
-    /**
-     * Whether avenDB's server keeps a backup of its person's vault (`Device::backs_up`): a promise of a bool, or of
-     * `undefined` while it knows no avenCEO.
-     * @returns {Promise<any>}
-     */
-    backsUp() {
-        const ret = wasm.device_backsUp(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Its card reads `name` (`Device::card`): a promise of whether it wrote, rejected if its view refuses the write.
-     * @param {string} name
-     * @returns {Promise<any>}
-     */
-    card(name) {
-        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.device_card(this.__wbg_ptr, ptr0, len0);
-        return ret;
-    }
-    /**
-     * Waits until it holds other than `edits` edits and `keys` McEliece keys, what the page's store holds: a promise
-     * of true, or of false once the device closed.
+     * Waits until it holds other than `edits` edits and `keys` McEliece keys, as the page last showed it (`size`): a
+     * promise of true, or of false once the device closed.
      * @param {number} edits
      * @param {number} keys
      * @returns {Promise<any>}
@@ -110,33 +51,12 @@ export class Device {
         return ret;
     }
     /**
-     * Closes its connections and its endpoint.
+     * Closes its connections and its endpoint, once its shelf holds what it holds, if it can; then lets go of the
+     * page's store, for another tab to hold.
      * @returns {Promise<any>}
      */
     close() {
         const ret = wasm.device_close(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Vault `vault`'s (in hex) database as the device holds it, for the database studio (`data::database`): a promise
-     * of an object.
-     * @param {string} vault
-     * @returns {Promise<any>}
-     */
-    database(vault) {
-        const ptr0 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.device_database(this.__wbg_ptr, ptr0, len0);
-        return ret;
-    }
-    /**
-     * Its signed edits from the `from`th on, in the order it took them, each bytes: a promise, of `undefined` if it
-     * holds fewer than `from` (`Device::edits`).
-     * @param {number} from
-     * @returns {Promise<any>}
-     */
-    edits(from) {
-        const ret = wasm.device_edits(this.__wbg_ptr, from);
         return ret;
     }
     /**
@@ -156,30 +76,20 @@ export class Device {
         }
     }
     /**
-     * New vaults its person's vault owns (`Device::found_vaults`), `vaults` an array of `{kind, name}`, each `kind`
-     * `"aven"` or `"coop"`: a promise of their ids, in hex, in the order named, after one ceremony.
-     * @param {Array<any>} vaults
-     * @param {Function} ceremony
-     * @returns {Promise<any>}
-     */
-    foundVaults(vaults, ceremony) {
-        const ret = wasm.device_foundVaults(this.__wbg_ptr, vaults, ceremony);
-        return ret;
-    }
-    /**
      * The first device named `name` of a new person, reaching its peers through the relay at `relay` alone, whose
      * passkey's public key info (SPKI, as `getPublicKey()` gives it) is `spki`, or `undefined` for a passkey made
      * before, as at maiaCITY's sign-up: unlocked by `unlock(challenge)`, it founds their human vault and makes it
-     * known to the server whose code reads `server`, which it claims if nobody has yet (`Device::found`).
+     * known to the server whose code reads `server`, which it claims if nobody has yet (`Device::found`). It keeps
+     * what it holds on the shelf of the page's `store`, which holds no device yet (`new_shelf`).
      * @param {string} name
      * @param {string} relay
      * @param {string} server
      * @param {Uint8Array | null | undefined} spki
      * @param {Function} unlock
      * @param {Function} ceremony
-     * @param {boolean | null} [backup]
-     * @param {Function | null} [steps]
-     * @param {any | null} [store]
+     * @param {boolean | null | undefined} backup
+     * @param {Function | null | undefined} steps
+     * @param {any} store
      * @returns {Promise<Device>}
      */
     static found(name, relay, server, spki, unlock, ceremony, backup, steps, store) {
@@ -191,16 +101,7 @@ export class Device {
         const len2 = WASM_VECTOR_LEN;
         var ptr3 = isLikeNone(spki) ? 0 : passArray8ToWasm0(spki, wasm.__wbindgen_malloc);
         var len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_found(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, unlock, ceremony, isLikeNone(backup) ? 0xFFFFFF : backup ? 1 : 0, isLikeNone(steps) ? 0 : addToExternrefTable0(steps), isLikeNone(store) ? 0 : addToExternrefTable0(store));
-        return ret;
-    }
-    /**
-     * The database's history, every signed edit it holds, in the order it took them, for the studio's History view
-     * (`data::history`): a promise of an object.
-     * @returns {Promise<any>}
-     */
-    history() {
-        const ret = wasm.device_history(this.__wbg_ptr);
+        const ret = wasm.device_found(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, unlock, ceremony, isLikeNone(backup) ? 0xFFFFFF : backup ? 1 : 0, isLikeNone(steps) ? 0 : addToExternrefTable0(steps), store);
         return ret;
     }
     /**
@@ -220,33 +121,30 @@ export class Device {
         }
     }
     /**
-     * The ids of the McEliece keys it holds, in hex: a promise.
+     * Keeps what opens it again on its shelf (`Device::keep`), with `nonce`, its salt's own 32 bytes in hex, and
+     * `credential`, its passkey's, which its unlock named: a promise of it, as the page reads it (`Meta::to_json`).
+     * @param {string} nonce
+     * @param {string} credential
      * @returns {Promise<any>}
      */
-    keyIds() {
-        const ret = wasm.device_keyIds(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * McEliece key `id` (in hex), as bytes: a promise, of `undefined` if it doesn't hold it.
-     * @param {string} id
-     * @returns {Promise<any>}
-     */
-    key(id) {
-        const ptr0 = passStringToWasm0(id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    keep(nonce, credential) {
+        const ptr0 = passStringToWasm0(nonce, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.device_key(this.__wbg_ptr, ptr0, len0);
+        const ptr1 = passStringToWasm0(credential, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.device_keep(this.__wbg_ptr, ptr0, len0, ptr1, len1);
         return ret;
     }
     /**
      * A new device named `name` of a person who has one already, unlocked by `unlock(challenge)`, linked through the
-     * device whose code reads `offer` (`Device::link`).
+     * device whose code reads `offer` (`Device::link`), on the shelf of the page's `store`, which holds no device yet
+     * (`new_shelf`).
      * @param {string} name
      * @param {string} relay
      * @param {string} offer
      * @param {Function} unlock
-     * @param {Function | null} [steps]
-     * @param {any | null} [store]
+     * @param {Function | null | undefined} steps
+     * @param {any} store
      * @returns {Promise<Device>}
      */
     static link(name, relay, offer, unlock, steps, store) {
@@ -256,33 +154,7 @@ export class Device {
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(offer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.device_link(ptr0, len0, ptr1, len1, ptr2, len2, unlock, isLikeNone(steps) ? 0 : addToExternrefTable0(steps), isLikeNone(store) ? 0 : addToExternrefTable0(store));
-        return ret;
-    }
-    /**
-     * The mask its secret is kept under, in hex (`Device::mask`): what the page keeps too, beside its salt's own
-     * bytes, to open the device again; `undefined` for a device made before 2026-10-10.
-     * @returns {string | undefined}
-     */
-    mask() {
-        const ret = wasm.device_mask(this.__wbg_ptr);
-        let v1;
-        if (ret[0] !== 0) {
-            v1 = getStringFromWasm0(ret[0], ret[1]);
-            wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        }
-        return v1;
-    }
-    /**
-     * Note `entry` (in hex) as the device holds it, for the note page (`data::note`): a promise of an object, of
-     * `undefined` while it counts no edit of it.
-     * @param {string} entry
-     * @returns {Promise<any>}
-     */
-    note(entry) {
-        const ptr0 = passStringToWasm0(entry, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.device_note(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.device_link(ptr0, len0, ptr1, len1, ptr2, len2, unlock, isLikeNone(steps) ? 0 : addToExternrefTable0(steps), store);
         return ret;
     }
     /**
@@ -302,43 +174,20 @@ export class Device {
         }
     }
     /**
-     * The device named `name` the page made before, opened again: its person's passkey's P-256 key `p256` (in hex,
-     * `passkey()`), the mask its secret is kept under (in hex, `mask()`), `undefined` for a device made before
-     * 2026-10-10, and what its store kept, its `edits` in order and its McEliece `keys`, each bytes (`Device::open`).
-     * The page made the unlock's ceremony itself, so the steps it is shown begin after it.
-     * @param {string} name
-     * @param {string} relay
-     * @param {string} p256
-     * @param {string | null | undefined} mask
+     * The device the page made before, opened again from the shelf of the page's `store`, by what the shelf keeps to
+     * open it (`Meta`, `storeMeta`) and the unlock, a ceremony the page made itself over the device's salt, so the
+     * steps it is shown begin after it (`Device::open`).
      * @param {any} unlock
-     * @param {Array<any>} edits
-     * @param {Array<any>} keys
-     * @param {Function | null} [steps]
-     * @param {any | null} [store]
+     * @param {Function | null | undefined} steps
+     * @param {any} store
      * @returns {Promise<Device>}
      */
-    static open(name, relay, p256, mask, unlock, edits, keys, steps, store) {
-        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(relay, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(p256, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        var ptr3 = isLikeNone(mask) ? 0 : passStringToWasm0(mask, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        var len3 = WASM_VECTOR_LEN;
-        const ret = wasm.device_open(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, unlock, edits, keys, isLikeNone(steps) ? 0 : addToExternrefTable0(steps), isLikeNone(store) ? 0 : addToExternrefTable0(store));
+    static open(unlock, steps, store) {
+        const ret = wasm.device_open(unlock, isLikeNone(steps) ? 0 : addToExternrefTable0(steps), store);
         return ret;
     }
     /**
-     * Whether its vault owns avenCEO, the aven vault the server is a device of (`Device::owns_aven`): a promise.
-     * @returns {Promise<any>}
-     */
-    ownsAven() {
-        const ret = wasm.device_ownsAven(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Its person's passkey's P-256 key, compressed, in hex: what the page keeps to open the device again.
+     * Its person's passkey's P-256 key, compressed, in hex: what its shelf keeps to open it again (`Meta`).
      * @returns {string}
      */
     passkey() {
@@ -354,94 +203,31 @@ export class Device {
         }
     }
     /**
-     * Vault `vault`'s (in hex) profile reads `name` (`Device::profile`): a promise of whether it wrote, rejected if
-     * its view refuses it.
-     * @param {string} vault
+     * Its name reads `name`, on its shelf and on its card (`Device::rename`): a promise of whether its card changed.
      * @param {string} name
      * @returns {Promise<any>}
      */
-    profile(vault, name) {
-        const ptr0 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    rename(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.device_profile(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        const ret = wasm.device_rename(this.__wbg_ptr, ptr0, len0);
         return ret;
     }
     /**
-     * The plaintext bytes from `from` to `to` of the file whose root is `root` (in hex) and whose sealed size is
-     * `size`, cut to the file (`Device::read_file`): a promise of a `Uint8Array`.
-     * @param {string} root
-     * @param {number} size
-     * @param {number} from
-     * @param {number} to
-     * @returns {Promise<any>}
-     */
-    readFile(root, size, from, to) {
-        const ptr0 = passStringToWasm0(root, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.device_readFile(this.__wbg_ptr, ptr0, len0, size, from, to);
-        return ret;
-    }
-    /**
-     * Removes owner `owner`, `{signer}` or `{vault}` as the world shows owners, from vault `vault`, in hex
-     * (`Device::remove_owner`): a promise, after one ceremony.
-     * @param {string} vault
-     * @param {any} owner
-     * @param {Function} ceremony
-     * @returns {Promise<any>}
-     */
-    removeOwner(vault, owner, ceremony) {
-        const ptr0 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.device_removeOwner(this.__wbg_ptr, ptr0, len0, owner, ceremony);
-        return ret;
-    }
-    /**
-     * Ends share `share`, acting for vault `actor` (both in hex, `Device::revoke`): a promise, after one ceremony for
-     * an owner share.
-     * @param {string} actor
-     * @param {string} share
-     * @param {Function} ceremony
-     * @returns {Promise<any>}
-     */
-    revoke(actor, share, ceremony) {
-        const ptr0 = passStringToWasm0(actor, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(share, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.device_revoke(this.__wbg_ptr, ptr0, len0, ptr1, len1, ceremony);
-        return ret;
-    }
-    /**
-     * Runs op `op`, an object of the ops engine's (`Device::run`): a promise of its answer, `{ok}` or
-     * `{refused, why}`.
+     * Runs op `op`, an object of the ops engine's (`Device::run`, `docs/ARCHITECTURE.md` §8): a promise of its
+     * answer, `{ok}`, `{refused, why}`, or for a change its vault's owners approve when no `ceremony` is passed,
+     * `{approve}`, which makes nothing. `ceremony(challenge, step)` is the passkey's, for such a change, as a start
+     * takes it. `read(at, n)` hands over a `put_file`'s bytes from `at` on, `n` of them, as a promise of a
+     * `Uint8Array`, a megabyte at a time (`CHUNK`), so that a file of any size passes through a little memory.
+     * `read_file`'s answer carries the bytes it read beside, as `bytes`, a `Uint8Array`. Rejected only where no answer
+     * comes: a ceremony cancelled, the store or the network failing, a file's bytes more or fewer than its length.
      * @param {any} op
+     * @param {Function | null} [ceremony]
+     * @param {Function | null} [read]
      * @returns {Promise<any>}
      */
-    run(op) {
-        const ret = wasm.device_run(this.__wbg_ptr, op);
-        return ret;
-    }
-    /**
-     * Gives `who`, a vault's id or `"everyone"`, the share `spec` describes on vault `over`, a named group of ops on
-     * a slice of it (`{name, where, ops}`, `words::spec_of`), acting for vault `issuer` (`Device::share`): a promise
-     * of the share's id, after one ceremony for an owner's. Ids in hex.
-     * @param {string} issuer
-     * @param {string} over
-     * @param {any} spec
-     * @param {string} who
-     * @param {Function} ceremony
-     * @returns {Promise<any>}
-     */
-    share(issuer, over, spec, who, ceremony) {
-        const ptr0 = passStringToWasm0(issuer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(over, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(who, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.device_share(this.__wbg_ptr, ptr0, len0, ptr1, len1, spec, ptr2, len2, ceremony);
+    run(op, ceremony, read) {
+        const ret = wasm.device_run(this.__wbg_ptr, op, isLikeNone(ceremony) ? 0 : addToExternrefTable0(ceremony), isLikeNone(read) ? 0 : addToExternrefTable0(read));
         return ret;
     }
     /**
@@ -458,15 +244,6 @@ export class Device {
      */
     vault() {
         const ret = wasm.device_vault(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Its world (`Device::world`, as `World::to_json` writes it): a promise of an object, of `undefined` while it
-     * belongs to no vault.
-     * @returns {Promise<any>}
-     */
-    world() {
-        const ret = wasm.device_world(this.__wbg_ptr);
         return ret;
     }
 }
@@ -726,6 +503,17 @@ export function sealCeremony(key, challenge, ceremony) {
 export function start() {
     wasm.start();
 }
+
+/**
+ * What opens the device on the page's `store` again (`Meta::load`), as the page reads it (`Meta::to_json`): a promise,
+ * of `undefined` while the store holds none, as on a browser new to avenDB, or one whose account was forgotten.
+ * @param {any} store
+ * @returns {Promise<any>}
+ */
+export function storeMeta(store) {
+    const ret = wasm.storeMeta(store);
+    return ret;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -744,6 +532,10 @@ function __wbg_get_imports() {
             const len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
+        __wbg___wbindgen_is_falsy_16bd49b68658263e: function(arg0) {
+            const ret = !arg0;
+            return ret;
         },
         __wbg___wbindgen_is_function_1f9d30630b8b1d3d: function(arg0) {
             const ret = typeof(arg0) === 'function';
@@ -1304,42 +1096,42 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3076, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3204, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5484, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5614, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___wasm_bindgen_61c7e10f51da098e___JsValue__core_7d5f0a2ba6a62c33___result__Result_____wasm_bindgen_61c7e10f51da098e___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 1815, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 1951, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___web_sys_e8fb2a5efce40016___features__gen_CloseEvent__CloseEvent______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 3471, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 3599, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke___web_sys_e8fb2a5efce40016___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3039, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3167, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000006: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3117, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3245, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__1_);
             return ret;
         },
         __wbindgen_generic_0000000000000007: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3119, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3247, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
             const ret = makeClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__2_);
             return ret;
         },
         __wbindgen_generic_0000000000000008: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 4576, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 4704, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_61c7e10f51da098e___convert__closures_____invoke_______true__3_);
             return ret;
         },

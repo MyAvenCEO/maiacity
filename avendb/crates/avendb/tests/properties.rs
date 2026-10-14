@@ -4,7 +4,8 @@
 //! changes, many of them around one entry and one device. The actions: vault governance and devices; shares over random
 //! slices (a type, tags, entries, a creator, a creation time, or the whole vault) with random grantees, levels and
 //! parents; revocations; entries created with a type and tags, in an audience; writes, which retag their entry when
-//! they act for its vault; moves by a vault's stewards, to where an entry's meaning asks or anywhere; keys and schemas.
+//! they act for its vault; marks by a vault's stewards, of an entry's audience, of its wants or of both, to what its
+//! meaning asks or anything; keys and schemas; keep shares to devices, and their revocations.
 //! What no rule reads (a share's selector, an entry's header, a write's tags) goes into each history's `Readings`, as
 //! the readers of its shares and entries open it. The lens laws (T9) are checked on random items, as any mix of apps
 //! could have stored them, read and edited through each app's view, and the proposal laws (T10) on random histories of
@@ -26,11 +27,12 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{
-    checkpointed, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder, Issued, Kind,
-    Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Share, State, SyncRule, Vault, Who, Write,
+    checkpointed, keep_picks, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
+    Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share,
+    Sharing, State, Vault, Who, Write,
 };
 use avendb::rules::Grant;
-use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta};
+use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
 use avendb::sync::{asks, digests, frontiers, log_of, receive, respond, respond_since, Ask, LogId};
 use avendb::wire::Wire;
 
@@ -101,8 +103,8 @@ impl History {
 
 /// What every random history of shares and writes starts with: scenarios 1 to 3; Alice's todos, the door (tagged work)
 /// and the seeds (tagged home), and the coop's documents, the welcome and the charter (tagged work); Bob writing
-/// Alice's work todos, Carol reading her todos, Dave writing the coop's documents, and Carol holding a wide owner share
-/// over the coop, which both its owners approved; and every entry where its vault's stewards would move it.
+/// Alice's work todos, Carol reading her todos, Dave writing the coop's documents, and Carol owner of the coop's
+/// documents, which both its owners approved; and every entry where its vault's stewards would move it.
 fn start() -> History {
     let mut c = cast();
     let coop = with_coop(&mut c);
@@ -114,7 +116,7 @@ fn start() -> History {
     c.issue(MAC_A, &[], alice, vault(bob), Level::Write, tagged("todo", "work")).unwrap();
     c.issue(MAC_A, &[], alice, vault(carol), Level::Read, of_type("todo")).unwrap();
     c.issue(MAC_B, &[], coop, vault(dave), Level::Write, of_type("doc")).unwrap();
-    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Level::Owner, Selector::All).unwrap();
+    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Level::Owner, of_type("doc")).unwrap();
     c.tidy(MAC_A);
     let start = c.log.edits().len();
     History { log: c.log, vaults: vec![alice, bob, carol, dave, coop], readings: c.readings, refused: vec![], start }
@@ -183,6 +185,8 @@ enum Said {
     Nothing,
     Selector(Selector),
     Created(Header, TagDelta),
+    /// A schema or lens entry's header and first tags, the blob it holds, and whether its readers find it fits.
+    Lane(Header, TagDelta, Vec<u8>, bool),
     Tags(TagDelta),
 }
 
@@ -229,6 +233,14 @@ fn keep(h: &mut History, st: &State, a: Attempt, depth: Option<u64>) -> bool {
             h.readings.headers.insert(id, header);
             h.readings.tags.insert(id, tags);
         }
+        Said::Lane(header, tags, blob, fits) => {
+            h.readings.headers.insert(id, header);
+            h.readings.tags.insert(id, tags);
+            h.readings.blobs.insert(id, blob.into());
+            if !fits {
+                h.readings.unfit.insert(id);
+            }
+        }
         Said::Tags(tags) => {
             h.readings.tags.insert(id, tags);
         }
@@ -239,37 +251,34 @@ fn keep(h: &mut History, st: &State, a: Attempt, depth: Option<u64>) -> bool {
     true
 }
 
-/// One random attempt: a write, a new entry, a share, a revocation, a move, a vault edit, a key, a schema, a sync rule,
-/// its end or a steward's marks. An act for a vault names, a time in eight, a random chain of one or two vaults to go
-/// through; otherwise the chain its author acts through, as the log drafts it.
+/// One random attempt: a write, a new entry, a share, a revocation, a steward's mark that moves an entry, a vault edit,
+/// a key, a schema, a keep share, the revocation of one or a steward's mark of an entry's wants. An act for a vault
+/// names, a time in eight, a random chain of one or two vaults to go through; otherwise the chain its author acts
+/// through, as the log drafts it.
 fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let mut a = match rng.below(24) {
         0..=3 => a_write(rng, h, st),
         4..=6 => Some(a_creation(rng, h, st)),
         7..=9 => Some(a_share(rng, h, st)),
         10 => a_revocation(rng, h, st),
-        11 | 12 => a_move(rng, h, st),
+        11 | 12 => a_mark(rng, h, st, true),
         13..=16 => {
             let (author, cosigners) = signers(rng);
             Some(Attempt { author, cosigners, action: vault_action(rng, &h.vaults), said: Said::Nothing })
         }
         17 => some_keys(rng, st),
-        18 | 19 => Some(a_publish(rng, h, st)),
-        20 | 21 => Some(a_rule(rng, h, st)),
-        22 => a_rule_end(rng, h, st),
-        _ => a_pick(rng, h, st),
+        18 | 19 => Some(a_lane_entry(rng, h, st)),
+        20 | 21 => Some(a_keep(rng, h, st)),
+        22 => a_keep_revocation(rng, h, st),
+        _ => a_mark(rng, h, st, false),
     }?;
     if rng.below(8) == 0 {
         let chain: Vec<VaultId> = (0..1 + rng.below(2)).map(|_| rng.pick(&h.vaults)).collect();
         match &mut a.action {
-            Action::Share(_, via)
-            | Action::Revoke { via, .. }
+            Action::Share(Sharing::Grant(_, via))
+            | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
-            | Action::Move { via, .. }
-            | Action::Publish { via, .. }
-            | Action::SyncRule(_, via)
-            | Action::EndSyncRule { via, .. }
-            | Action::Pick { via, .. } => *via = chain,
+            | Action::Mark { via, .. } => *via = chain,
             _ => {}
         }
     }
@@ -277,10 +286,11 @@ fn any_attempt(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
 }
 
 /// What clashes when made concurrently: a write by a vault that may write its entry; a retag of an entry by its own
-/// vault, which changes where its stewards would move it; a steward's move of an entry to where its meaning asks; a
-/// revocation of a live share by its issuer; a device removed; a change to the owners or the threshold of a vault. Half
-/// the writes, moves and removals of devices are of what the devices contend for (`Hot`): the hot entry written by
-/// another vault than its own, moved anywhere by the hot device, and the hot device removed.
+/// vault, which changes where its stewards would move it; a steward's mark of an entry with what its meaning asks, its
+/// audience, its wants or both, as the steward marks it; a revocation of a live share by its issuer; a device removed;
+/// a change to the owners or the threshold of a vault. Half the writes, moves and removals of devices are of what the
+/// devices contend for (`Hot`): the hot entry written by another vault than its own, moved anywhere by the hot device,
+/// and the hot device removed.
 fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt> {
     let ens = st.entries();
     let a = match rng.below(6) {
@@ -305,22 +315,23 @@ fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt>
         2 if hot.entry.is_some_and(|e| st.entry(e).is_some()) && rng.below(2) == 0 => {
             let en = st.entry(hot.entry?)?;
             let (vault, entry, to) = (en.vault, en.id, random_audience(rng, st, en.vault));
-            let action = Action::Move { vault, entry, to, keep: vec![], via: vec![] };
+            let action = Action::Mark { vault, entry, caps: Some(to), wants: None, keep: vec![], via: vec![] };
             let author = hot.device.unwrap_or_else(|| author_for(rng, st, vault));
             Attempt { author, cosigners: vec![], action, said: Said::Nothing }
         }
         2 => {
-            let desired = |en: &Entry| Some((en.vault, en.id, st.meaning(en.id, &h.readings)?.desired?));
-            let moving: Vec<(VaultId, EntryId, Vec<ShareId>)> = ens.iter().filter_map(desired).collect();
-            let (vault, entry, to) = pick_from(rng, &moving)?.clone();
-            let action = Action::Move { vault, entry, to, keep: vec![], via: vec![] };
+            let desired = |en: &Entry| Some((en.vault, en.id, st.meaning(en.id, &h.readings)?.mark?));
+            let marking: Vec<(VaultId, EntryId, Marked)> = ens.iter().filter_map(desired).collect();
+            let (vault, entry, (caps, wants)) = pick_from(rng, &marking)?.clone();
+            let action = Action::Mark { vault, entry, caps, wants, keep: vec![], via: vec![] };
             Attempt { author: author_for(rng, st, vault), cosigners: vec![], action, said: Said::Nothing }
         }
         3 => {
             let live: Vec<&Issued> = st.shares().iter().filter(|cp| st.live(cp.id)).collect();
             let cp = *pick_from(rng, &live)?;
             let (author, cosigners) = signers_for(rng, st, cp.share.issuer, cp.share.level == Level::Owner);
-            let action = Action::Revoke { share: cp.id, actor: cp.share.issuer, keep: vec![], via: vec![] };
+            let revoke = Revoking::Grant { share: cp.id, actor: cp.share.issuer, keep: vec![], via: vec![] };
+            let action = Action::Revoke(revoke);
             Attempt { author, cosigners, action, said: Said::Nothing }
         }
         4 => {
@@ -331,7 +342,7 @@ fn clashing(rng: &mut Rng, h: &History, st: &State, hot: Hot) -> Option<Attempt>
             }
             let &(vault, device) = pick_from(rng, &devices)?;
             let (author, cosigners) = signers(rng);
-            let action = Action::RemoveDevice { vault, device, keep: vec![] };
+            let action = Action::Revoke(Revoking::Device { vault, device, keep: vec![] });
             Attempt { author, cosigners, action, said: Said::Nothing }
         }
         _ => {
@@ -374,7 +385,7 @@ fn signers(rng: &mut Rng) -> (SignerId, Vec<SignerId>) {
 /// The vault share `cp` names, if it names one.
 fn who_vault(cp: &Issued) -> Option<VaultId> {
     match cp.share.who {
-        Who::Principal(Principal::Vault(g)) => Some(g),
+        Who::Vault(g) => Some(g),
         _ => None,
     }
 }
@@ -435,16 +446,18 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
 }
 
 /// The audience an entry of vault `v` with attributes `a` belongs in by the selectors `r` holds: the live shares over
-/// `v` that aren't wide and select it, in canonical order.
+/// `v` that aren't wide nor keep shares and select it, in canonical order.
 fn semantic_audience(st: &State, r: &Readings, v: VaultId, a: &Attrs) -> Vec<ShareId> {
-    let selects = |cp: &&Issued| st.live(cp.id) && !cp.share.wide && st.eff_selects(cp, a, r);
+    let fits = |cp: &Issued| !cp.share.wide && !cp.share.level.is_keep();
+    let selects = |cp: &&Issued| st.live(cp.id) && fits(cp) && st.eff_selects(cp, a, r);
     mk_audience(&st.shares_over(v).filter(selects).map(|cp| cp.id).collect::<Vec<_>>())
 }
 
-/// Up to two of the shares over vault `v` that aren't wide, live or not, in canonical order; now and then with any
-/// share besides, which makes no audience of `v`.
+/// Up to two of the shares over vault `v` that aren't wide nor keep shares, live or not, in canonical order; now and
+/// then with any share besides, which makes no audience of `v`.
 fn random_audience(rng: &mut Rng, st: &State, v: VaultId) -> Vec<ShareId> {
-    let narrow: Vec<ShareId> = st.shares_over(v).filter(|cp| !cp.share.wide).map(|cp| cp.id).collect();
+    let narrow = st.shares_over(v).filter(|cp| !cp.share.wide && !cp.share.level.is_keep());
+    let narrow: Vec<ShareId> = narrow.map(|cp| cp.id).collect();
     let mut audience: Vec<ShareId> = match narrow.is_empty() {
         true => vec![],
         false => (0..rng.below(3)).map(|_| rng.pick(&narrow)).collect(),
@@ -518,7 +531,7 @@ fn a_selector(rng: &mut Rng, h: &History) -> Selector {
     Selector::AnyOf(any)
 }
 
-/// A share to a random grantee (a vault, now and then a signer or everyone) with a random level, on a random slice or
+/// A share to a random grantee (a vault, now and then a device or everyone) with a random level, on a random slice or
 /// the whole vault: resting on a live owner share and issued by that share's grantee; or a root share issued by the
 /// vault it is over, now and then by another; or now and then resting on any share. A few shares select every entry
 /// without being wide. Its selector travels in the clear.
@@ -541,18 +554,19 @@ fn a_share(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     };
     let who = match rng.below(10) {
         0 => Who::Everyone,
-        1 => Who::Principal(Principal::Signer(rng.pick(&SIGNERS))),
+        1 => Who::Device(rng.pick(&SIGNERS)),
         _ => vault(rng.pick(&h.vaults)),
     };
     let level = if who == Who::Everyone && rng.below(2) == 0 { Level::Read } else { rng.pick(&LEVELS) };
     let select = if rng.below(4) == 0 { Selector::All } else { a_selector(rng, h) };
-    let wide = select == Selector::All && rng.below(6) > 0;
+    // wide at owner only now and then: no grant makes an owner of a whole vault, so most such grants are refused
+    let wide = select == Selector::All && rng.below(6) > 0 && (level != Level::Owner || rng.below(4) == 0);
     let grant = Grant { ops: level.ops(), salt: [0; 32] };
     let slice = Slice { name: level.group().into(), select: select.clone(), grant, above: vec![] };
     let bytes = Select::Clear(slice).to_wire();
     let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next() };
     let (author, cosigners) = signers_for(rng, st, issuer, level == Level::Owner);
-    Attempt { author, cosigners, action: Action::Share(share, vec![]), said: Said::Selector(select) }
+    Attempt { author, cosigners, action: Action::Share(Sharing::Grant(share, vec![])), said: Said::Selector(select) }
 }
 
 /// A revocation of a random share, live or not, by its issuer, the vault it is over, its grantee or any vault.
@@ -565,65 +579,82 @@ fn a_revocation(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
         _ => rng.pick(&h.vaults),
     };
     let (author, cosigners) = signers_for(rng, st, actor, cp.share.level == Level::Owner);
-    let action = Action::Revoke { share: cp.id, actor, keep: vec![], via: vec![] };
+    let action = Action::Revoke(Revoking::Grant { share: cp.id, actor, keep: vec![], via: vec![] });
     Some(Attempt { author, cosigners, action, said: Said::Nothing })
 }
 
-/// A steward of an entry's vault moves it to the audience its meaning asks for, if any, two times in three; otherwise
-/// to a random audience, which may be the one it is in; now and then for another vault than the entry's.
-fn a_move(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
+/// A steward's mark of an entry: the audience it takes it to and the wants it marks it with, each left out or not.
+type Marked = (Option<Vec<ShareId>>, Option<Vec<ShareId>>);
+
+/// A steward of an entry's vault marks it. Where it `moves` the entry: to the audience its meaning asks for, if any,
+/// two times in three, otherwise to a random audience, which may be the one it is in, now and then with wants too. Else
+/// with the keep shares that pick it, if that changed, two times in three, otherwise with up to two random keep shares,
+/// now and then any shares, in canonical order or not; now and then with an audience too, with nothing at all, or
+/// keeping a write though it takes the entry to no audience. Now and then for another vault than the entry's.
+fn a_mark(rng: &mut Rng, h: &History, st: &State, moves: bool) -> Option<Attempt> {
     let en = pick_from(rng, st.entries())?;
-    let to = match st.meaning(en.id, &h.readings).and_then(|m| m.desired) {
+    let m = st.meaning(en.id, &h.readings);
+    let caps = |rng: &mut Rng| match m.as_ref().and_then(|m| m.desired.clone()) {
         Some(to) if rng.below(3) > 0 => to,
         _ => random_audience(rng, st, en.vault),
     };
+    let wants = |rng: &mut Rng| match m.as_ref().and_then(|m| m.mark.clone()).and_then(|(_, wants)| wants) {
+        Some(keeps) if rng.below(3) > 0 => keeps,
+        _ => {
+            let any = rng.below(8) == 0;
+            let pool: Vec<ShareId> =
+                st.shares().iter().filter(|k| any || k.share.level.is_keep()).map(|k| k.id).collect();
+            let keeps: Vec<ShareId> = (0..rng.below(3)).filter_map(|_| pick_from(rng, &pool).copied()).collect();
+            if rng.below(2) == 0 { mk_audience(&keeps) } else { keeps }
+        }
+    };
+    let (caps, wants, keep) = match (moves, rng.below(8)) {
+        (true, 0) => (Some(caps(rng)), Some(wants(rng)), vec![]),
+        (true, _) => (Some(caps(rng)), None, vec![]),
+        (false, 0) => (Some(caps(rng)), Some(wants(rng)), vec![]),
+        (false, 1) => (None, None, vec![]),
+        (false, 2) => (None, Some(wants(rng)), st.writes(en.id).into_iter().take(1).collect()),
+        (false, _) => (None, Some(wants(rng)), vec![]),
+    };
     let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
-    let action = Action::Move { vault, entry: en.id, to, keep: vec![], via: vec![] };
+    let action = Action::Mark { vault, entry: en.id, caps, wants, keep, via: vec![] };
     Some(Attempt { author: author_for(rng, st, en.vault), cosigners: vec![], action, said: Said::Nothing })
 }
 
-/// A sync rule for a device of a random vault, now and then another signer, over that vault, now and then another, on a
-/// random slice or every entry, keeping files half the time. Its selector travels in the clear.
-fn a_rule(rng: &mut Rng, h: &History, st: &State) -> Attempt {
+/// A keep share of a random vault to a device of it, now and then to another signer or to a vault, over that vault,
+/// now and then another, in a random mode on a random slice or every entry; now and then resting on a random share.
+/// Its selector travels in the clear.
+fn a_keep(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     let issuer = rng.pick(&h.vaults);
     let devices = st.vault(issuer).map(|v| v.devices.clone()).unwrap_or_default();
-    let device = match pick_from(rng, &devices) {
-        Some(&d) if rng.below(6) > 0 => d,
-        _ => rng.pick(&SIGNERS),
+    let who = match pick_from(rng, &devices) {
+        _ if rng.below(12) == 0 => vault(rng.pick(&h.vaults)),
+        Some(&d) if rng.below(6) > 0 => Who::Device(d),
+        _ => Who::Device(rng.pick(&SIGNERS)),
     };
     let over = if rng.below(3) > 0 { issuer } else { rng.pick(&h.vaults) };
     let select = if rng.below(4) == 0 { Selector::All } else { a_selector(rng, h) };
+    let level = Level::Keep(rng.pick(&[KeepMode::Whole, KeepMode::Opened, KeepMode::Never]));
+    let parent = pick_from(rng, st.shares()).map(|p| p.id).filter(|_| rng.below(12) == 0);
     let grant = Grant { ops: vec![], salt: [0; 32] };
-    let bytes = Select::Clear(Slice { name: "rule".into(), select: select.clone(), grant, above: vec![] }).to_wire();
-    let (wide, keep, nonce) = (select == Selector::All, rng.below(2) == 0, rng.next());
-    let rule = SyncRule { issuer, device, over, wide, select: bytes, keep, nonce };
-    let action = Action::SyncRule(rule, vec![]);
+    let slice = Slice { name: level.group().into(), select: select.clone(), grant, above: vec![] };
+    let (wide, bytes) = (select == Selector::All, Select::Clear(slice).to_wire());
+    let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next() };
+    let action = Action::Share(Sharing::Grant(share, vec![]));
     Attempt { author: author_for(rng, st, issuer), cosigners: vec![], action, said: Said::Selector(select) }
 }
 
-/// The end of a random sync rule, live or not, by the vault that set it, now and then by any vault.
-fn a_rule_end(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
-    let (rule, r) = pick_from(rng, st.rules())?;
-    let issuer = if rng.below(6) > 0 { r.issuer } else { rng.pick(&h.vaults) };
-    let action = Action::EndSyncRule { rule: *rule, issuer, via: vec![] };
-    Some(Attempt { author: author_for(rng, st, issuer), cosigners: vec![], action, said: Said::Nothing })
-}
-
-/// A steward of an entry's vault marks it with the sync rules that pick it, if that changed, two times in three;
-/// otherwise with up to two random rules, in canonical order or not; now and then for another vault than the entry's.
-fn a_pick(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
-    let en = pick_from(rng, st.entries())?;
-    let rules = match st.meaning(en.id, &h.readings).and_then(|m| m.pick) {
-        Some(rules) if rng.below(3) > 0 => rules,
-        _ => {
-            let n = rng.below(3);
-            let rules: Vec<ShareId> = (0..n).filter_map(|_| pick_from(rng, st.rules()).map(|r| r.0)).collect();
-            if rng.below(2) == 0 { mk_audience(&rules) } else { rules }
-        }
+/// A revocation of a random keep share, live or not, by its issuer, now and then by the vault it is over or any vault.
+fn a_keep_revocation(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
+    let keeps: Vec<&Issued> = st.shares().iter().filter(|k| k.share.level.is_keep()).collect();
+    let k = *pick_from(rng, &keeps)?;
+    let actor = match rng.below(6) {
+        0 => k.share.over,
+        1 => rng.pick(&h.vaults),
+        _ => k.share.issuer,
     };
-    let vault = if rng.below(10) == 0 { rng.pick(&h.vaults) } else { en.vault };
-    let action = Action::Pick { vault, entry: en.id, rules, via: vec![] };
-    Some(Attempt { author: author_for(rng, st, en.vault), cosigners: vec![], action, said: Said::Nothing })
+    let action = Action::Revoke(Revoking::Grant { share: k.id, actor, keep: vec![], via: vec![] });
+    Some(Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Nothing })
 }
 
 /// A key of the schedule announced with no boxes: a family's current key, or an entry's in its current stay; by a
@@ -647,12 +678,16 @@ fn some_keys(rng: &mut Rng, st: &State) -> Option<Attempt> {
     Some(Attempt { author: author_for(rng, st, v), cosigners: vec![], action, said: Said::Nothing })
 }
 
-/// A schema or a lens published into a random vault's lane, for the vault or for any vault.
-fn a_publish(rng: &mut Rng, h: &History, st: &State) -> Attempt {
-    let vault = rng.pick(&h.vaults);
-    let actor = if rng.below(2) == 0 { vault } else { rng.pick(&h.vaults) };
-    let action = Action::Publish { vault, actor, via: vec![], blob: rng.pick(&BLOBS).to_vec() };
-    Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Nothing }
+/// A schema or lens entry of a random vault holding a random blob, created as `a_creation` creates one, for the vault
+/// or through a share: now and then one its readers find doesn't fit.
+fn a_lane_entry(rng: &mut Rng, h: &History, st: &State) -> Attempt {
+    let mut a = a_creation(rng, h, st);
+    let ty = Sym::new(if rng.below(2) == 0 { SCHEMA_TYPE } else { LENS_TYPE });
+    let (blob, fits) = (rng.pick(&BLOBS).to_vec(), rng.below(6) > 0);
+    if let Said::Created(header, tags) = a.said {
+        a.said = Said::Lane(Header { ty, ..header }, tags, blob, fits);
+    }
+    a
 }
 
 /// A random vault edit on `vaults`.
@@ -661,14 +696,14 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
         if rng.below(2) == 0 { Principal::Signer(rng.pick(&SIGNERS)) } else { Principal::Vault(rng.pick(vaults)) }
     };
     match rng.below(8) {
-        0 => Action::AddDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), seal_to: None },
-        1 => Action::RemoveDevice { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), keep: vec![] },
-        2 => Action::AddOwner { vault: rng.pick(vaults), owner: principal(rng), seal_to: None },
-        3 => Action::RemoveOwner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] },
-        4 => Action::SetThreshold { vault: rng.pick(vaults), threshold: rng.below(4) as u32 },
+        0 => Action::Share(Sharing::Device { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), seal_to: None }),
+        1 => Action::Revoke(Revoking::Device { vault: rng.pick(vaults), device: rng.pick(&SIGNERS), keep: vec![] }),
+        2 => Action::Share(Sharing::Owner { vault: rng.pick(vaults), owner: principal(rng), seal_to: None }),
+        3 => Action::Revoke(Revoking::Owner { vault: rng.pick(vaults), owner: principal(rng), keep: vec![] }),
+        4 => Action::Settings { vault: rng.pick(vaults), set: Setting::Threshold(rng.below(4) as u32) },
         5 => {
             let root = if rng.below(3) == 0 { None } else { Some(rng.pick(&SIGNERS)) };
-            Action::SetRoot { vault: rng.pick(vaults), root, keep: vec![] }
+            Action::Settings { vault: rng.pick(vaults), set: Setting::Root { root, keep: vec![] } }
         }
         _ => {
             // a third human vaults, a twelfth aven vaults
@@ -703,11 +738,12 @@ fn governance_action(rng: &mut Rng, st: &State, vaults: &[VaultId]) -> Action {
     let owners = st.vault(v).map(|x| x.owners.clone()).unwrap_or_default();
     match rng.below(3) {
         0 if coops.len() > 1 && rng.below(2) == 0 => {
-            Action::AddOwner { vault: rng.pick(&coops), owner: Principal::Vault(rng.pick(&coops)), seal_to: None }
+            let (vault, owner) = (rng.pick(&coops), Principal::Vault(rng.pick(&coops)));
+            Action::Share(Sharing::Owner { vault, owner, seal_to: None })
         }
-        0 => Action::AddOwner { vault: v, owner: Principal::Vault(rng.pick(&known)), seal_to: None },
-        1 => Action::RemoveOwner { vault: v, owner: rng.pick(&owners), keep: vec![] },
-        _ => Action::SetThreshold { vault: v, threshold: 1 + rng.below(owners.len()) as u32 },
+        0 => Action::Share(Sharing::Owner { vault: v, owner: Principal::Vault(rng.pick(&known)), seal_to: None }),
+        1 => Action::Revoke(Revoking::Owner { vault: v, owner: rng.pick(&owners), keep: vec![] }),
+        _ => Action::Settings { vault: v, set: Setting::Threshold(1 + rng.below(owners.len()) as u32) },
     }
 }
 
@@ -1037,25 +1073,38 @@ fn forks_really_clash() {
 #[test]
 fn t4_shares_name_vaults_and_t8_everyone_only_reads() {
     // in every state along the way, and in the view of each history with the attempts the rules refused put back, as a
-    // peer that skips the rules would send them: no share names a signer, and everyone only ever reads
-    let mut tried = 0;
+    // peer that skips the rules would send them: a share names a device exactly when it is a keep share, everyone only
+    // ever reads, and no share makes an owner of a whole vault; and a step that issues a keep share issues it to a
+    // device of its issuer
+    let (mut tried, mut kept) = (0, 0);
     for (seed, h) in every_history() {
+        let steps = steps(h.log.edits());
         let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
-        for st in states(h.log.edits()).iter().chain([&view(&with_refused)]) {
+        for st in steps.iter().map(|(_, _, after)| after).chain([&view(&with_refused)]) {
             for cp in st.shares() {
-                let signer = matches!(cp.share.who, Who::Principal(Principal::Signer(_)));
-                assert!(!signer, "seed {seed}: {cp:?}");
+                assert_eq!(matches!(cp.share.who, Who::Device(_)), cp.share.level.is_keep(), "seed {seed}: {cp:?}");
                 assert!(cp.share.who != Who::Everyone || cp.share.level == Level::Read, "seed {seed}: {cp:?}");
+                assert!(!(cp.share.wide && cp.share.level == Level::Owner), "seed {seed}: {cp:?}");
+            }
+        }
+        for (_, before, after) in &steps {
+            for cp in after.shares().iter().filter(|cp| before.share(cp.id).is_none()) {
+                if let Who::Device(d) = cp.share.who {
+                    assert!(before.is_device(d, cp.share.issuer), "seed {seed}: {cp:?}");
+                    kept += 1;
+                }
             }
         }
         let barred = |c: &Share| {
-            matches!(c.who, Who::Principal(Principal::Signer(_)))
+            matches!(c.who, Who::Device(_)) != c.level.is_keep()
                 || (c.who == Who::Everyone && c.level != Level::Read)
+                || (c.wide && c.level == Level::Owner)
         };
-        tried += h.refused.iter().filter(|o| matches!(&o.action, Action::Share(c, _) if barred(c))).count();
+        let tries = |o: &&Edit| matches!(&o.action, Action::Share(Sharing::Grant(c, _)) if barred(c));
+        tried += h.refused.iter().filter(tries).count();
     }
-    // and the histories do try such shares
-    assert!(tried > 0);
+    // and the histories do try such shares, and issue keep shares
+    assert!(tried > 0 && kept > 0, "{tried} tried, {kept} keep shares");
 }
 
 #[test]
@@ -1110,8 +1159,8 @@ fn hidden(r: &Replay, facts: &[Vec<Fact>], i: usize) -> Vec<Fact> {
 #[test]
 fn t16_strong_removal() {
     // an edit stands only if the state just before it accepts it with what each removal after it that stands, and
-    // hadn't seen it, takes away hidden: an owner, a device, a root, a share and those resting on it, or for a move the
-    // audience it put the entry in
+    // hadn't seen it, takes away hidden: an owner, a device, a root, a share and those resting on it, or for a mark
+    // that moves an entry the audience it put the entry in
     let mut cut = 0;
     for (seed, h) in forked_histories() {
         let edits = h.log.edits();
@@ -1206,14 +1255,20 @@ fn ids(edits: &[Edit]) -> HashSet<EditId> {
     edits.iter().map(Edit::id).collect()
 }
 
-/// Device `d` may receive the edits of the audience of the shares `shares` of vault `v` by `st` (`mayReceiveAudience`):
-/// it acts for the vault, or for the grantee of a live share over it, backup or more, that is in the audience or wide,
-/// or such a share is public.
-fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId]) -> bool {
+/// Device `d` has an interest in vault `v` by `st` (`interested`): it acts for the vault, or for the grantee of a live
+/// share over it, of any level.
+fn interested(st: &State, d: SignerId, v: VaultId) -> bool {
+    st.acts_for(d, v) || st.shares_over(v).any(|cp| st.live(cp.id) && who_vault(cp).is_some_and(|g| st.acts_for(d, g)))
+}
+
+/// Device `d`, which follows the vaults `follow`, may receive the edits of the audience of the shares `shares` of vault
+/// `v` by `st` (`mayReceiveAudience`): it acts for the vault, or for the grantee of a live share over it, backup or
+/// more, that is in the audience or wide, or such a share is public and `d` has an interest in the vault or follows it.
+fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId], follow: &[VaultId]) -> bool {
     let names = |g: Who| match g {
-        Who::Principal(Principal::Vault(g)) => st.acts_for(d, g),
-        Who::Principal(Principal::Signer(_)) => false,
-        Who::Everyone => true,
+        Who::Vault(g) => st.acts_for(d, g),
+        Who::Device(_) => false,
+        Who::Everyone => follow.contains(&v) || interested(st, d, v),
     };
     let keeps = |cp: &Issued| cp.share.level.allows(Level::Backup);
     st.acts_for(d, v)
@@ -1222,44 +1277,56 @@ fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId])
         })
 }
 
-/// Device `d` may receive the edits of entry `e` by `st` (`mayReceive`): it may receive the entry's audience.
-fn may_receive(st: &State, d: SignerId, e: EntryId) -> bool {
+/// Device `d`, which follows the vaults `follow`, may receive the edits of entry `e` by `st` (`mayReceive`): it may
+/// receive the entry's audience.
+fn may_receive(st: &State, d: SignerId, e: EntryId, follow: &[VaultId]) -> bool {
     st.entry(e).is_some_and(|en| {
-        may_receive_audience(st, d, en.vault, st.audience_shares(en.audience()).unwrap_or_default())
+        may_receive_audience(st, d, en.vault, st.audience_shares(en.audience()).unwrap_or_default(), follow)
     })
 }
 
-/// Device `d` needs share `cp` by `st` (`seesShare`): it acts for the vault the share is over or for the vault it
-/// names, or the share is wide or was ever in the audience of an entry of its vault that `d` may receive.
-fn sees_share(st: &State, d: SignerId, cp: &Issued) -> bool {
+/// Device `d` needs share `cp` by `st` (`seesShare`): it acts for the vault the share is over, for the vault it names
+/// or for its issuer, or the share is wide, was ever in the audience of an entry of its vault that `d` may receive, or
+/// is among the wants of one.
+fn sees_share(st: &State, d: SignerId, cp: &Issued, follow: &[VaultId]) -> bool {
     let stayed = |en: &Entry| en.stays.iter().any(|(_, x)| st.audience_shares(*x).unwrap_or_default().contains(&cp.id));
+    let wanted = |en: &Entry| st.wants_of(en.id).contains(&cp.id);
     st.acts_for(d, cp.share.over)
         || who_vault(cp).is_some_and(|g| st.acts_for(d, g))
+        || st.acts_for(d, cp.share.issuer)
         || st.entries().iter().any(|en| {
-            en.vault == cp.share.over && may_receive(st, d, en.id) && (cp.share.wide || stayed(en))
+            en.vault == cp.share.over
+                && may_receive(st, d, en.id, follow)
+                && (cp.share.wide || stayed(en) || wanted(en))
         })
 }
 
 /// Device `d` may receive log `l` by `st` (`mayReceiveLog`): the log of an entry or an audience it may receive, or of a
 /// share it needs or that a share it needs rests on. An audience `st` never met has no shares.
-fn may_receive_log(st: &State, d: SignerId, l: LogId) -> bool {
+fn may_receive_log(st: &State, d: SignerId, l: LogId, follow: &[VaultId]) -> bool {
     match l {
-        LogId::Entry(e) => may_receive(st, d, e),
-        LogId::Audience(v, x) => may_receive_audience(st, d, v, st.audience_shares(x).unwrap_or_default()),
-        LogId::Share(c) => st.shares().iter().any(|x| x.chain.contains(&c) && sees_share(st, d, x)),
+        LogId::Entry(e) => may_receive(st, d, e, follow),
+        LogId::Audience(v, x) => may_receive_audience(st, d, v, st.audience_shares(x).unwrap_or_default(), follow),
+        LogId::Share(c) => st.shares().iter().any(|x| x.chain.contains(&c) && sees_share(st, d, x, follow)),
         LogId::Vault(_) => false,
     }
 }
 
-/// Device `d` syncs entry `e` by `st` (`syncs`): it may receive it, and its sync rules want it.
-fn syncs(st: &State, d: SignerId, e: EntryId) -> bool {
-    may_receive(st, d, e) && st.entry(e).is_some_and(|en| st.wants(d, en))
+/// Device `d`, which follows the vaults `follow`, syncs entry `e` by `st` (`syncs`): it may receive it, and its keep
+/// shares want it.
+fn syncs(st: &State, d: SignerId, e: EntryId, follow: &[VaultId]) -> bool {
+    may_receive(st, d, e, follow) && st.entry(e).is_some_and(|en| st.wants(d, en))
+}
+
+/// Some of the vaults of history `h`, each with even odds: what a device follows.
+fn some_follow(rng: &mut Rng, h: &History) -> Vec<VaultId> {
+    h.vaults.iter().copied().filter(|_| rng.below(2) == 0).collect()
 }
 
 #[test]
 fn t12_sync_sends_only_what_shares_reach() {
     // a peer sends a device only edits it holds, of the entries, audiences and shares the device may receive by the
-    // peer's view, and of vaults' logs; whatever the device says it holds
+    // peer's view, following what it follows, and of vaults' logs; whatever the device says it holds
     let (mut entries, mut audiences, mut shares) = (0, 0, 0);
     for (seed, h) in every_history() {
         let (edits, st) = (h.log.edits(), h.log.view());
@@ -1267,11 +1334,13 @@ fn t12_sync_sends_only_what_shares_reach() {
         let mut rng = Rng(seed);
         for d in SIGNERS {
             let mut may: HashMap<LogId, bool> = HashMap::new();
-            let asked = asks(&part(&mut rng, edits));
-            for edit in respond(edits, d).iter().chain(&respond_since(edits, d, &asked)) {
+            let follow = some_follow(&mut rng, &h);
+            let asked = asks(&part(&mut rng, edits), &follow);
+            for edit in respond(edits, d, &follow).iter().chain(&respond_since(edits, d, &asked)) {
                 assert!(held.contains(&edit.id()), "seed {seed}: {d:?} was sent an edit the peer doesn't hold");
                 let l = log_of(edit, edit.id()).expect("an edit of a log");
-                let ok = matches!(l, LogId::Vault(_)) || *may.entry(l).or_insert_with(|| may_receive_log(&st, d, l));
+                let may = may.entry(l).or_insert_with(|| may_receive_log(&st, d, l, &follow));
+                let ok = matches!(l, LogId::Vault(_)) || *may;
                 let wanted = |e| st.entry(e).is_some_and(|en| st.wants(d, en));
                 assert!(!matches!(l, LogId::Entry(e) if !wanted(e)), "seed {seed}: {d:?} was sent {edit:?} unwanted");
                 assert!(ok, "seed {seed}: {d:?} was sent {edit:?} of {l:?}");
@@ -1303,10 +1372,10 @@ fn t19_frontier_sync_loses_nothing() {
         for _ in 0..3 {
             let a = part(&mut rng, edits);
             let r = if rng.below(2) == 0 { edits.to_vec() } else { part(&mut rng, edits) };
-            let (held, asked) = (ids(&a), asks(&a));
-            let alone = Ask { haves: frontiers(&a), loose: vec![] };
+            let (held, asked) = (ids(&a), asks(&a, &[]));
+            let alone = Ask { haves: frontiers(&a), loose: vec![], follow: vec![] };
             for d in SIGNERS {
-                let whole = respond(&r, d);
+                let whole = respond(&r, d, &[]);
                 for sent in [respond_since(&r, d, &asked), respond_since(&r, d, &alone)] {
                     let lacks = whole.iter().find(|edit| !held.contains(&edit.id()) && !sent.contains(edit));
                     assert!(lacks.is_none(), "seed {seed}: {d:?} lacks {lacks:?}");
@@ -1331,7 +1400,7 @@ fn t19_partial_delivery() {
         let d = rng.pick(&[MAC_A, PHONE_A, MAC_B, MAC_C, MAC_D]);
         let mut held: Vec<Edit> = vec![];
         for round in 0.. {
-            let sent = respond_since(edits, d, &asks(&held));
+            let sent = respond_since(edits, d, &asks(&held, &[]));
             if sent.is_empty() {
                 break;
             }
@@ -1341,14 +1410,14 @@ fn t19_partial_delivery() {
             held = receive(&held, &got);
         }
         let held = ids(&held);
-        assert!(respond(edits, d).iter().all(|edit| held.contains(&edit.id())), "seed {seed}");
+        assert!(respond(edits, d, &[]).iter().all(|edit| held.contains(&edit.id())), "seed {seed}");
     }
 }
 
 #[test]
 fn t13_sync_converges() {
-    // two devices holding parts of the edits each ask the other once: for every entry each syncs by the other's view,
-    // both then hold the same edits of its log
+    // two devices holding parts of the edits, each following vaults of its own, each ask the other once: for every
+    // entry each syncs by the other's view, both then hold the same edits of its log
     let mut checked = 0;
     let devices = [MAC_A, PHONE_A, MAC_B, MAC_C];
     for (seed, h) in forked_histories() {
@@ -1364,13 +1433,14 @@ fn t13_sync_converges() {
         let mut rng = Rng(seed);
         for _ in 0..3 {
             let (p, q) = (part_after_start(&mut rng, h), part_after_start(&mut rng, h));
-            let (vp, vq, ap, aq) = (view(&p), view(&q), asks(&p), asks(&q));
+            let (flp, flq) = (some_follow(&mut rng, h), some_follow(&mut rng, h));
+            let (vp, vq, ap, aq) = (view(&p), view(&q), asks(&p, &flp), asks(&q, &flq));
             let got_p: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&p, &respond_since(&q, d, &ap)))).into();
             let got_q: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&q, &respond_since(&p, d, &aq)))).into();
             for (i, &dp) in devices.iter().enumerate() {
                 for (j, &dq) in devices.iter().enumerate().filter(|&(j, _)| j != i) {
                     for &(e, id) in &entry_logs {
-                        if syncs(&vq, dp, e) && syncs(&vp, dq, e) {
+                        if syncs(&vq, dp, e, &flp) && syncs(&vp, dq, e, &flq) {
                             let (a, b) = (got_p[i].contains(&id), got_q[j].contains(&id));
                             assert_eq!(a, b, "seed {seed}: {dp:?} and {dq:?} on {e:?}");
                             checked += 1;
@@ -1383,54 +1453,83 @@ fn t13_sync_converges() {
     assert!(checked > 100, "only {checked} edits checked");
 }
 
-#[test]
-fn t28_sync_follows_rules() {
-    // a peer sends a device every edit it holds of each entry the device may receive and its sync rules want, and none
-    // of any other entry; a device with no rule over a vault wants all of it
-    let (mut wanted, mut unwanted, mut ruled) = (0, 0, 0);
-    for (seed, h) in every_history() {
-        let (edits, st) = (h.log.edits(), h.log.view());
-        for d in SIGNERS {
-            let sent = ids(&respond(edits, d));
-            for edit in edits {
-                let Some(LogId::Entry(e)) = log_of(edit, edit.id()) else { continue };
-                let Some(en) = st.entry(e) else { continue };
-                let want = syncs(&st, d, e);
-                assert_eq!(sent.contains(&edit.id()), want, "seed {seed}: {d:?} and {edit:?}");
-                if may_receive(&st, d, e) {
-                    *(if want { &mut wanted } else { &mut unwanted }) += 1;
-                }
-                if st.rules_of(d, en.vault).next().is_none() {
-                    assert!(st.wants(d, en), "seed {seed}: {d:?} has no rule over {:?}", en.vault);
-                } else {
-                    ruled += 1;
-                }
-            }
-        }
-    }
-    // and rules do leave out entries a device may receive
-    assert!(wanted > 0 && unwanted > 0 && ruled > 0, "{wanted} wanted, {unwanted} left out, {ruled} under rules");
+/// Share `k` among the keep shares of a device marks entry `en` (`marked`): it is wide, or among the entry's wants.
+fn marked(st: &State, en: &Entry, k: &Issued) -> bool {
+    k.share.wide || st.wants_of(en.id).contains(&k.id)
 }
 
 #[test]
-fn t29_marks_mean_rules() {
-    // where an entry's live marks are what its vault's rules pick (`Meaning::pick` is none), a device wants it exactly
-    // when it has no rule over the vault, or one is wide or picks it by its selector: the peer reads only the marks
-    let mut checked = 0;
+fn t28_sync_follows_keeps() {
+    // a peer sends a device every edit it holds of each entry the device may receive and its keep shares want, and
+    // none of any other entry. Its keep shares over a vault are the live ones naming it, of a vault it is a device of
+    // (`T28_keep_modes`): with none, it wants all of the vault; one of them that is never and marks the entry leaves
+    // it out; one that is whole or opened and marks it, with no such never one, brings it; and it keeps the entry's
+    // files whole exactly when a whole one marks it, its own setting deciding when it has none but never ones
+    let (mut wanted, mut unwanted, mut kept) = (0, 0, 0);
     for (seed, h) in every_history() {
-        let st = h.log.view();
-        for en in st.entries() {
-            let Some(m) = st.meaning(en.id, &h.readings).filter(|m| m.pick.is_none()) else { continue };
-            let picks = |id: &ShareId| h.readings.selectors.get(id).is_some_and(|s| s.matches(&m.attrs));
-            for d in SIGNERS {
-                let rules: Vec<(ShareId, &SyncRule)> = st.rules_of(d, en.vault).collect();
-                let by_rules = rules.is_empty() || rules.iter().any(|(id, r)| r.wide || picks(id));
-                assert_eq!(st.wants(d, en), by_rules, "seed {seed}: {d:?} and {:?}", en.id);
-                checked += usize::from(!rules.is_empty());
+        let (edits, st) = (h.log.edits(), h.log.view());
+        for d in SIGNERS {
+            let sent = ids(&respond(edits, d, &[]));
+            for edit in edits {
+                let Some(LogId::Entry(e)) = log_of(edit, edit.id()) else { continue };
+                let Some(en) = st.entry(e) else { continue };
+                let want = syncs(&st, d, e, &[]);
+                assert_eq!(sent.contains(&edit.id()), want, "seed {seed}: {d:?} and {edit:?}");
+                if may_receive(&st, d, e, &[]) {
+                    *(if want { &mut wanted } else { &mut unwanted }) += 1;
+                }
+                let ks: Vec<&Issued> = st.keeps_of(d, en.vault).collect();
+                for k in &ks {
+                    let names = k.share.who == Who::Device(d) && k.share.over == en.vault;
+                    let ok = k.share.level.is_keep() && names && st.live(k.id) && st.is_device(d, k.share.issuer);
+                    assert!(ok, "seed {seed}: {k:?} of {d:?}");
+                }
+                let is = |k: &Issued, m: KeepMode| k.share.level == Level::Keep(m) && marked(&st, en, k);
+                if ks.is_empty() {
+                    assert!(st.wants(d, en), "seed {seed}: {d:?} has no keep share over {:?}", en.vault);
+                } else if ks.iter().any(|k| is(k, KeepMode::Never)) {
+                    assert!(!st.wants(d, en), "seed {seed}: a never share of {d:?} marks {:?}", en.id);
+                } else if ks.iter().any(|k| is(k, KeepMode::Whole) || is(k, KeepMode::Opened)) {
+                    assert!(st.wants(d, en), "seed {seed}: a keep share of {d:?} marks {:?}", en.id);
+                }
+                let whole = ks.iter().any(|k| is(k, KeepMode::Whole));
+                let own = ks.iter().all(|k| k.share.level == Level::Keep(KeepMode::Never));
+                assert_eq!(st.keeps(d, en), (!own).then_some(whole), "seed {seed}: {d:?} and {:?}", en.id);
+                kept += usize::from(!ks.is_empty());
             }
         }
     }
-    assert!(checked > 0);
+    // and keep shares do leave out entries a device may receive
+    assert!(wanted > 0 && unwanted > 0 && kept > 0, "{wanted} wanted, {unwanted} left out, {kept} under keep shares");
+}
+
+#[test]
+fn k1_keep_revocations_cut_nothing() {
+    // a step that revokes a keep share only marks it revoked (`K1_keep_revocation_cuts_nothing`), and as a removal it
+    // takes nothing away from any edit (`K1_keep_revocation_hides_nothing`)
+    let mut revoked = 0;
+    for (seed, h) in every_history().chain(forked_histories()) {
+        for (edit, before, after) in steps(h.log.edits()) {
+            let Action::Revoke(Revoking::Grant { share, .. }) = &edit.action else { continue };
+            if !before.share(*share).is_some_and(|k| k.share.level.is_keep()) {
+                continue;
+            }
+            let what = format!("seed {seed}: {edit:?}");
+            let mut marked = before.revoked().to_vec();
+            marked.push(*share);
+            assert_eq!(after.revoked(), marked, "{what}");
+            assert_eq!(after.vaults(), before.vaults(), "{what}");
+            assert_eq!(after.shares(), before.shares(), "{what}");
+            assert_eq!(after.entries(), before.entries(), "{what}");
+            assert_eq!(after.all_writes(), before.all_writes(), "{what}");
+            let epochs = |st: &State| st.epochs().collect::<BTreeMap<_, _>>();
+            assert_eq!(epochs(&after), epochs(&before), "{what}");
+            assert!(removes(h.log.edits(), &edit).is_empty(), "{what}");
+            revoked += 1;
+        }
+    }
+    // and the histories do revoke keep shares
+    assert!(revoked > 0);
 }
 
 #[test]
@@ -1662,7 +1761,8 @@ fn some_attrs(st: &State, r: &Readings) -> Vec<Attrs> {
 fn t22_shares_narrow_down_their_chain() {
     // in the view of every history, and with the attempts the rules refused put back: a share that rests on another is
     // over the same vault, rests on an owner share issued to its own issuer, selects nothing that share doesn't, and is
-    // wide only if that share is; a root share is issued by the vault it is over
+    // wide only if that share is, which no owner share is, so never; a root share is issued by the vault it is over,
+    // unless it is a keep share, which rests on none
     let mut rested = 0;
     for (seed, h) in every_history() {
         let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
@@ -1671,14 +1771,17 @@ fn t22_shares_narrow_down_their_chain() {
             for cp in st.shares() {
                 assert_eq!(cp.chain.last(), Some(&cp.id), "seed {seed}: {cp:?}");
                 let Some(p) = cp.share.parent else {
-                    assert!(cp.share.issuer == cp.share.over && cp.chain.len() == 1, "seed {seed}: {cp:?}");
+                    let issued = cp.share.issuer == cp.share.over || cp.share.level.is_keep();
+                    assert!(issued && cp.chain.len() == 1, "seed {seed}: {cp:?}");
                     continue;
                 };
+                assert!(!cp.share.level.is_keep(), "seed {seed}: {cp:?}");
                 let pc = st.share(p).expect("a cap's parent");
                 assert_eq!(pc.share.over, cp.share.over, "seed {seed}: {cp:?}");
                 assert_eq!(pc.share.level, Level::Owner, "seed {seed}: {cp:?}");
                 assert_eq!(pc.share.who, vault(cp.share.issuer), "seed {seed}: {cp:?}");
                 assert!(!cp.share.wide || pc.share.wide, "seed {seed}: {cp:?}");
+                assert!(!cp.share.wide, "seed {seed}: {cp:?}");
                 assert_eq!(cp.chain[..cp.chain.len() - 1], pc.chain[..], "seed {seed}: {cp:?}");
                 for a in &attrs {
                     let narrower = !st.eff_selects(cp, a, &h.readings) || st.eff_selects(pc, a, &h.readings);
@@ -1694,23 +1797,45 @@ fn t22_shares_narrow_down_their_chain() {
 
 #[test]
 fn t23_audiences_mean_what_shares_say() {
-    // in every state along the way: where an entry's audience, revoked shares left aside, is the audience its meaning
-    // asks for, the rule every peer checks without reading a selector, a type or a tag lets exactly the vaults write it
-    // that the shares' selectors let; and that rule never refuses a creation inside its creator's slice
+    // in every state along the way, an entry's marks mean what the selectors say, as the rules every peer checks read
+    // them without reading a selector, a type or a tag. Where its audience, revoked shares left aside, is the audience
+    // its meaning asks for, they let exactly the vaults write it that the shares' selectors let; where its wants,
+    // revoked keep shares left aside, are the keep shares that pick it, a device wants it and keeps it whole exactly as
+    // its keep shares say when each one that is wide or picks it by its selector marks it (each part of
+    // `Meaning::mark` none). And the write rule never refuses a creation inside its creator's slice
     let (mut meant, mut moving, mut admitted) = (0, 0, 0);
+    let (mut kept, mut rewanting) = (0, 0);
     for (seed, h) in every_history() {
         for st in states(h.log.edits()) {
             for en in st.entries() {
                 let Some(m) = st.meaning(en.id, &h.readings) else { continue };
                 if m.desired.is_some() {
                     moving += 1;
+                } else {
+                    for &v in &h.vaults {
+                        let (may, sem) = (st.may_write(v, en.id), st.sem_write(v, en.id, &h.readings));
+                        assert_eq!(may, sem, "seed {seed}: {v:?} on {en:?}");
+                    }
+                    meant += usize::from(!m.audience.is_empty());
+                }
+                if m.mark.as_ref().is_some_and(|(_, wants)| wants.is_some()) {
+                    rewanting += 1;
                     continue;
                 }
-                for &v in &h.vaults {
-                    let (may, sem) = (st.may_write(v, en.id), st.sem_write(v, en.id, &h.readings));
-                    assert_eq!(may, sem, "seed {seed}: {v:?} on {en:?}");
+                let on = |k: &Issued| {
+                    let mode = k.share.level.mode().expect("a keep share");
+                    k.share.wide || keep_picks(mode, h.readings.selectors.get(&k.id), &m.attrs)
+                };
+                let never = |k: &Issued| k.share.level == Level::Keep(KeepMode::Never);
+                for d in SIGNERS {
+                    let ks: Vec<&Issued> = st.keeps_of(d, en.vault).collect();
+                    let brings = ks.iter().all(|k| never(k)) || ks.iter().any(|k| !never(k) && on(k));
+                    let wants = brings && !ks.iter().any(|k| never(k) && on(k));
+                    let whole = ks.iter().any(|k| k.share.level == Level::Keep(KeepMode::Whole) && on(k));
+                    assert_eq!(st.wants(d, en), wants, "seed {seed}: {d:?} and {:?}", en.id);
+                    assert_eq!(st.keeps(d, en).unwrap_or(false), whole, "seed {seed}: {d:?} and {:?}", en.id);
+                    kept += usize::from(!ks.is_empty());
                 }
-                meant += usize::from(!m.audience.is_empty());
             }
             let attrs = some_attrs(&st, &h.readings);
             for cp in st.shares() {
@@ -1722,9 +1847,10 @@ fn t23_audiences_mean_what_shares_say() {
             }
         }
     }
-    // the entries do sit in audiences of shares, some wait for a steward to move them, and shares do let their grantees
-    // create
+    // the entries do sit in audiences of shares, some wait for a steward to move them, shares do let their grantees
+    // create, devices do sync under keep shares, and some entries wait for a steward to mark their wants
     assert!(meant > 0 && moving > 0 && admitted > 0, "{meant} in place, {moving} to move, {admitted} admitted");
+    assert!(kept > 0 && rewanting > 0, "{kept} under keep shares, {rewanting} to mark with their wants");
 }
 
 /// A relay's twin of a history (T25): every edit as a peer that reads no selector, no type and no tag sees it, a share
@@ -1776,7 +1902,7 @@ impl Twin {
 
     fn who(&self, g: Who) -> Who {
         match g {
-            Who::Principal(p) => Who::Principal(self.principal(p)),
+            Who::Vault(v) => Who::Vault(self.vault(v)),
             g => g,
         }
     }
@@ -1826,23 +1952,26 @@ impl Twin {
                 let owners = owners.into_iter().map(|p| self.principal(p)).collect();
                 Action::Genesis { kind, owners, threshold, root, nonce, seal_to }
             }
-            Action::AddOwner { vault, owner, seal_to } => {
-                Action::AddOwner { vault: self.vault(vault), owner: self.principal(owner), seal_to }
+            Action::Share(Sharing::Owner { vault, owner, seal_to }) => {
+                Action::Share(Sharing::Owner { vault: self.vault(vault), owner: self.principal(owner), seal_to })
             }
-            Action::RemoveOwner { vault, owner, keep } => {
-                Action::RemoveOwner { vault: self.vault(vault), owner: self.principal(owner), keep: self.edits(&keep) }
+            Action::Revoke(Revoking::Owner { vault, owner, keep }) => {
+                let (vault, owner, keep) = (self.vault(vault), self.principal(owner), self.edits(&keep));
+                Action::Revoke(Revoking::Owner { vault, owner, keep })
             }
-            Action::SetThreshold { vault, threshold } => Action::SetThreshold { vault: self.vault(vault), threshold },
-            Action::AddDevice { vault, device, seal_to } => {
-                Action::AddDevice { vault: self.vault(vault), device, seal_to }
+            Action::Settings { vault, set: Setting::Threshold(threshold) } => {
+                Action::Settings { vault: self.vault(vault), set: Setting::Threshold(threshold) }
             }
-            Action::RemoveDevice { vault, device, keep } => {
-                Action::RemoveDevice { vault: self.vault(vault), device, keep: self.edits(&keep) }
+            Action::Share(Sharing::Device { vault, device, seal_to }) => {
+                Action::Share(Sharing::Device { vault: self.vault(vault), device, seal_to })
             }
-            Action::SetRoot { vault, root, keep } => {
-                Action::SetRoot { vault: self.vault(vault), root, keep: self.edits(&keep) }
+            Action::Revoke(Revoking::Device { vault, device, keep }) => {
+                Action::Revoke(Revoking::Device { vault: self.vault(vault), device, keep: self.edits(&keep) })
             }
-            Action::Share(c, via) => {
+            Action::Settings { vault, set: Setting::Root { root, keep } } => {
+                Action::Settings { vault: self.vault(vault), set: Setting::Root { root, keep: self.edits(&keep) } }
+            }
+            Action::Share(Sharing::Grant(c, via)) => {
                 // of the selector, a relay reads the commitment to the share's ops, in the clear
                 let select = match Select::from_wire(&c.select) {
                     Ok(s) => Select::Sealed { boxes: vec![], slice: vec![], commitment: s.commitment() }.to_wire(),
@@ -1856,11 +1985,11 @@ impl Twin {
                     issuer: self.vault(c.issuer),
                     ..c
                 };
-                Action::Share(share, self.vaults(&via))
+                Action::Share(Sharing::Grant(share, self.vaults(&via)))
             }
-            Action::Revoke { share, actor, keep, via } => {
+            Action::Revoke(Revoking::Grant { share, actor, keep, via }) => {
                 let (keep, via) = (self.edits(&keep), self.vaults(&via));
-                Action::Revoke { share: self.share(share), actor: self.vault(actor), keep, via }
+                Action::Revoke(Revoking::Grant { share: self.share(share), actor: self.vault(actor), keep, via })
             }
             Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, .. } => {
                 let header = create.is_some().then(|| Header { ty: Sym::new(""), created: 0 });
@@ -1870,9 +1999,20 @@ impl Twin {
                 let (vault, actor, via) = (self.vault(vault), self.vault(actor), self.vaults(&via));
                 Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }
             }
-            Action::Move { vault, entry, to, keep, via } => {
-                let to = self.new_audience(vault, &to);
-                Action::Move { vault: self.vault(vault), entry, to, keep: self.edits(&keep), via: self.vaults(&via) }
+            Action::Mark { vault, entry, caps, wants, keep, via } => {
+                let caps = caps.map(|to| self.new_audience(vault, &to));
+                // in canonical order again where they were, and out of it where they weren't
+                let wants = wants.map(|rules| {
+                    let mut renamed: Vec<ShareId> = rules.iter().map(|&r| self.share(r)).collect();
+                    if rules == mk_audience(&rules) {
+                        renamed = mk_audience(&renamed);
+                    } else if renamed == mk_audience(&renamed) {
+                        renamed.reverse();
+                    }
+                    renamed
+                });
+                let (vault, keep, via) = (self.vault(vault), self.edits(&keep), self.vaults(&via));
+                Action::Mark { vault, entry, caps, wants, keep, via }
             }
             Action::Keys { name, id, public, boxes, clear } => {
                 let to = |r: Recipient| match r {
@@ -1882,34 +2022,13 @@ impl Twin {
                 let boxes = boxes.into_iter().map(|b| KeyBox { to: to(b.to), bytes: b.bytes }).collect();
                 Action::Keys { name: self.key(name), id, public, boxes, clear }
             }
-            Action::Publish { vault, actor, via, blob } => {
-                Action::Publish { vault: self.vault(vault), actor: self.vault(actor), via: self.vaults(&via), blob }
-            }
             Action::Checkpoint { entry, covers } => Action::Checkpoint { entry, covers: self.edits(&covers) },
-            Action::SyncRule(r, via) => {
-                // of the selector, a relay reads nothing
-                let rule = SyncRule { issuer: self.vault(r.issuer), over: self.vault(r.over), select: vec![], ..r };
-                Action::SyncRule(rule, self.vaults(&via))
-            }
-            Action::EndSyncRule { rule, issuer, via } => {
-                Action::EndSyncRule { rule: self.share(rule), issuer: self.vault(issuer), via: self.vaults(&via) }
-            }
-            Action::Pick { vault, entry, rules, via } => {
-                // in canonical order again where they were, and out of it where they weren't
-                let mut renamed: Vec<ShareId> = rules.iter().map(|&r| self.share(r)).collect();
-                if rules == mk_audience(&rules) {
-                    renamed = mk_audience(&renamed);
-                } else if renamed == mk_audience(&renamed) {
-                    renamed.reverse();
-                }
-                Action::Pick { vault: self.vault(vault), entry, rules: renamed, via: self.vaults(&via) }
-            }
         }
     }
 }
 
 /// What a peer knows of the operational part of a state (`State.ops`): all of it but what only readers read, the
-/// selectors of shares and sync rules, every id renamed by `t`.
+/// selectors of shares, keep shares too, every id renamed by `t`.
 #[derive(Debug, PartialEq)]
 struct Ops {
     vaults: Vec<Vault>,
@@ -1922,14 +2041,10 @@ struct Ops {
     epochs: BTreeMap<KeyFam, Vec<Option<EditId>>>,
     seals: BTreeSet<(KeyName, KeyName)>,
     published: Vec<KeyName>,
-    lane: Vec<(VaultId, BlobId)>,
-    rules: Vec<(ShareId, SyncRule)>,
-    ended: Vec<ShareId>,
-    picks: Vec<(EntryId, Vec<ShareId>)>,
+    wants: Vec<(EntryId, Vec<ShareId>)>,
 }
 
 fn ops(st: &State, t: &Twin) -> Ops {
-    let rule = |r: &SyncRule| SyncRule { issuer: t.vault(r.issuer), over: t.vault(r.over), select: vec![], ..r.clone() };
     let vault = |v: &Vault| {
         let owners = v.owners.iter().map(|&p| t.principal(p)).collect();
         Vault { id: t.vault(v.id), owners, ..v.clone() }
@@ -1980,10 +2095,7 @@ fn ops(st: &State, t: &Twin) -> Ops {
         epochs: st.epochs().map(|(k, e)| (t.fam(k), moved(k, e))).collect(),
         seals: st.seals().iter().map(|s| (t.key(s.secret), t.key(s.to))).collect(),
         published: st.published().iter().map(|&n| t.key(n)).collect(),
-        lane: st.lane().iter().map(|p| (t.vault(p.vault), p.blob)).collect(),
-        rules: st.rules().iter().map(|(id, r)| (t.share(*id), rule(r))).collect(),
-        ended: st.ended().iter().map(|&r| t.share(r)).collect(),
-        picks: st.entries().iter().map(|en| (en.id, t.shares(st.picks_of(en.id)))).collect(),
+        wants: st.entries().iter().map(|en| (en.id, t.shares(st.wants_of(en.id)))).collect(),
     }
 }
 

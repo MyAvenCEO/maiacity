@@ -3,7 +3,7 @@ import AvenDB.Ops
 /-!
 # Shares are named groups of ops
 
-`avendb/docs/OPS.md`, shares. A share is a name and the ops its grantee may make, on the slice its selector picks:
+`avendb/docs/ARCHITECTURE.md` §8. A share is a name and the ops its grantee may make, on the slice its selector picks:
 relay, backup and read (keep, pass on and open the slice's edits), the write ops (create an entry, set a value, add,
 delete or move rows, ask for tags, start a proposal, merge a line) and share (issue shares resting on it). Its level,
 which relays and every operational rule read in the clear, is the class of its strongest op (`levelOf`). Every reader of
@@ -82,8 +82,10 @@ def Level.max (a b : Level) : Level := if a.rank < b.rank then b else a
 /-- A share's level: the class of its strongest op, relay for none. -/
 def levelOf (ops : List Op) : Level := ops.foldl (fun r o => r.max o.level) .relay
 
-/-- The ops of a level's built-in group: what a share with that level and no narrower ops allows. -/
+/-- The ops of a level's built-in group: what a share with that level and no narrower ops allows. A keep share allows
+    none. -/
 def Level.ops : Level → List Op
+  | .keep _ => []
   | .relay  => [.relay]
   | .backup => [.backup]
   | .read   => [.read]

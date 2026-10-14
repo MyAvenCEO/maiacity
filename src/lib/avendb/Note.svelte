@@ -17,21 +17,10 @@
 	import { diff } from './diff.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { blockText, deleting, may, variantMark } from './ops.js';
+	import { allowed, blockText, deleting, may, variantMark } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
-	import {
-		allows,
-		count,
-		creates,
-		hue,
-		nameOf,
-		sharedWith,
-		sharedWords,
-		sharerWords,
-		short,
-		signerName
-	} from './vaults.js';
+	import { count, hue, nameOf, sharedWith, sharedWords, sharerWords, short, signerName } from './vaults.js';
 
 	/**
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
@@ -94,8 +83,9 @@
 	const main = $derived(lines[0]);
 	const proposals = $derived(lines.slice(1));
 	const k = $derived(key(here?.line ?? null));
-	const writes = $derived(allows(item?.roles[actor], 'write'));
-	const owns = $derived(allows(item?.roles[actor], 'owner'));
+	/** whether the acting vault changes the note, and shares it on, as the device says */
+	const writes = $derived(!!item?.writers.includes(actor));
+	const owns = $derived(!!item?.sharers.includes(actor));
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const as = $derived(byId.get(actor));
 	/** every edit of the note its readers count, numbered in the order the device took them; how many they don't count
@@ -112,12 +102,8 @@
 	const seen = $derived(viewing ? history.find((e) => e.id === viewing) : undefined);
 	/** the line's one latest edit, which restoring changes nothing */
 	const latest = $derived(here?.heads.length === 1 ? here.heads[0] : '');
-	/** the vaults the acting vault may add the variant to, of the note's type and with its tags, as its caps let it */
-	const into_ = $derived(
-		world.vaults.filter((v) => creates(world, v.id, actor, item?.type ?? 'note', item?.tags ?? [])?.length === 0)
-	);
-	/** of those, the ones the ops of its caps there let it add the variant to (`can`) */
-	const targets = $derived(into_.filter((v) => lets(`variant ${v.id}`)));
+	/** the vaults the acting vault may add the variant to, as the device answers a dry run of making it in each */
+	const targets = $derived(world.vaults.filter((v) => can[`variant ${v.id}`] === true));
 	/** the notes this browser reads, by entry */
 	const notes = $derived(new Map(world.entries.filter((e) => e.type === 'note').map((e) => [e.entry, e])));
 	const origin = $derived(item?.variantOf ? notes.get(item.variantOf) : undefined);
@@ -131,8 +117,8 @@
 	 * What the ops of the caps the acting vault writes through let it do on the line shown, as the device answers a
 	 * dry run of each (`may`): save its text (`write`), rename it (`title`, and `heading`, the heading it opens with),
 	 * propose, accept the proposal into main, make main match it, update it from main, restore or undo the version
-	 * shown, make a variant in each vault it may add one to (`variant` and the vault), and delete the note or bring it
-	 * back (`delete`, `back`). Only the ops' refusal
+	 * shown, make a variant in each vault it may add one to (`variant` and the vault, which only a dry run the device
+	 * would make offers), and delete the note or bring it back (`delete`, `back`). Elsewhere only the ops' refusal
 	 * (`NotAllowed`) holds a button back: what the person then does is the device's to refuse, as any op.
 	 */
 	let can = $state(/** @type {Record<string, boolean>} */ ({}));
@@ -151,7 +137,7 @@
 		if (!here) return;
 		const [on, blocks, title] = [here.line, here.blocks ?? [], `${here.title ?? ''} `];
 		/** @type {Record<string, object>} */
-		const asks = Object.fromEntries(into_.map((v) => [`variant ${v.id}`, varying(v.id)]));
+		const asks = Object.fromEntries(world.vaults.map((v) => [`variant ${v.id}`, varying(v.id)]));
 		if (writes) {
 			asks.write = saving(on, `${here.text ?? ''} `, blocks);
 			asks.title = { op: 'set', entry, line: on, path: ['title'], value: title };
@@ -171,8 +157,9 @@
 		const names = Object.keys(asks);
 		let gone = false;
 		may(api, actor, Object.values(asks)).then((answers) => {
-			const allowed = (/** @type {true | { refused: string }} */ a) => a === true || a.refused !== 'NotAllowed';
-			if (!gone) can = Object.fromEntries(names.map((n, i) => [n, allowed(answers[i])]));
+			/** a variant where the device would make it; else all the ops allow @param {string} n @param {any} a */
+			const offers = (n, a) => allowed(a) || (!n.startsWith('variant ') && a.refused !== 'NotAllowed');
+			if (!gone) can = Object.fromEntries(names.map((n, i) => [n, offers(n, answers[i])]));
 		});
 		return () => {
 			gone = true;

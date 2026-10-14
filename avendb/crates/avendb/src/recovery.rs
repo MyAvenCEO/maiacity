@@ -105,7 +105,7 @@ mod tests {
     use crate::id::VaultId;
     use crate::keys::KeyFam;
     use crate::lab::Lab;
-    use crate::policy::{Action, Kind, Principal, Refusal};
+    use crate::policy::{Action, Kind, Principal, Refusal, Revoking, Setting, Sharing};
 
     #[test]
     fn a_recovery_key_reads_back_from_its_bytes_alone() {
@@ -150,13 +150,14 @@ mod tests {
             Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: Some(alice), nonce: 0, seal_to: vec![] };
         let v = VaultId::from(lab.submit(phone, &signers, genesis).expect("founded with the master key's consent"));
         for d in [phone, laptop] {
-            lab.submit(phone, &[alice, d], Action::AddDevice { vault: v, device: d, seal_to: None }).expect("a device");
+            let add = Action::Share(Sharing::Device { vault: v, device: d, seal_to: None });
+            lab.submit(phone, &[alice, d], add).expect("a device");
         }
         lab.sync_all(1);
         let owners = |lab: &Lab, d| lab.state(d).vault(v).map(|x| x.owners.clone());
         assert_eq!(owners(&lab, laptop), Some(vec![Principal::Signer(alice), Principal::Signer(master)]));
         // its consent signs nothing else
-        let threshold = Action::SetThreshold { vault: v, threshold: 1 };
+        let threshold = Action::Settings { vault: v, set: Setting::Threshold(1) };
         assert_eq!(lab.submit(phone, &[alice, master], threshold.clone()), Err(Refusal::Locked));
         assert_eq!(lab.submit(phone, &[master], threshold), Err(Refusal::Locked));
 
@@ -170,8 +171,8 @@ mod tests {
         let rescue = lab.device("rescue");
         lab.share_contact(laptop, rescue, v);
         assert_eq!(lab.passkey_from("the master recovery", [7; 32]), master);
-        lab.submit(rescue, &[master, rescue], Action::AddDevice { vault: v, device: rescue, seal_to: None })
-            .expect("the master key approves the vault's change alone");
+        let add = Action::Share(Sharing::Device { vault: v, device: rescue, seal_to: None });
+        lab.submit(rescue, &[master, rescue], add).expect("the master key approves the vault's change alone");
         lab.share_contact(rescue, laptop, v);
         lab.sync_all(2);
         assert!(lab.state(rescue).vault(v).is_some_and(|x| x.devices.contains(&rescue)));
@@ -185,12 +186,12 @@ mod tests {
         let phone = lab.device_of(alice, "phone");
         let v = crate::cast::human_on(&mut lab, alice, &[phone]);
         let master = lab.set_recovery(Arc::new(RecoveryKey::of([7; 32])));
-        let add = Action::AddOwner { vault: v, owner: Principal::Signer(master), seal_to: None };
+        let add = Action::Share(Sharing::Owner { vault: v, owner: Principal::Signer(master), seal_to: None });
         lab.submit(phone, &[alice, master], add.clone()).expect("the root adds it, by its consent");
         assert_eq!(lab.submit(phone, &[alice, master], add), Err(Refusal::AlreadyMember));
         let owners = |lab: &Lab| lab.state(phone).vault(v).map(|x| x.owners.clone()).unwrap_or_default();
         assert_eq!(owners(&lab), [Principal::Signer(alice), Principal::Signer(master)]);
-        let remove = Action::RemoveOwner { vault: v, owner: Principal::Signer(master), keep: vec![] };
+        let remove = Action::Revoke(Revoking::Owner { vault: v, owner: Principal::Signer(master), keep: vec![] });
         lab.submit(phone, &[alice], remove).expect("the root removes it");
         assert_eq!(owners(&lab), [Principal::Signer(alice)]);
     }

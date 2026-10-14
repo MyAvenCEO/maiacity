@@ -1,10 +1,10 @@
-//! The ops engine (`avendb/docs/OPS.md`): every read and every change of a device's entries as one JSON op, whatever
-//! their schema, run on the device's Lab. `ops` is the part on records alone; this is the part on entries.
+//! The ops engine (`docs/ARCHITECTURE.md` §8): every read and every change of a device's entries as one JSON op,
+//! whatever their schema, run on the device's Lab. `ops` is the part on records alone; this is the part on entries.
 //!
 //! - **Records through schemas.** An op sees an entry's record as an app on a schema sees it (`lens::View`): the schema
 //!   it names (`"schema"`: `"document"` or `"todo"`, a built-in's name, or a schema's id in hex), or else the one the
-//!   record's own `kind` names, read through the lens to the version that wrote it. The lane an op reads through is
-//!   the app's own schemas and lenses and what the entry's vault publishes. `"stored"` names the record as the item
+//!   record's own `kind` names, read through the lens to the version that wrote it. The lane an op reads through is the
+//!   app's own schemas and lenses and those the entry's vault holds as entries. `"stored"` names the record as the item
 //!   stores it, which ops read and never change. A change runs on the app's view and goes back through the view
 //!   (`View::put`), so the lens writes only what changed, in the representation the item already uses: a new schema
 //!   needs no new code.
@@ -13,22 +13,33 @@
 //!   at a time. `get`: one entry on a line, or at a version. `history`: an entry's lines and every write of it, each
 //!   with the changes it made to the entry's stored record (`ops::diff`), as every reader sees them alike. `schemas`:
 //!   the schemas and lenses a vault's entries are read through. `groups`: the built-in groups of ops a share names
-//!   (`rules::groups`), which the page offers when it shares.
-//! - **Changes** (`run`). `create`; the record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`;
-//!   `tag`; `propose`, `merge`, `restore`, `undo`, `variant`; and `batch`, whose record ops in a row on one entry's
-//!   line make one write. Each acts for a vault (`"as"`, the device's own by default), as every edit does, and the
-//!   rules judge it as they judge any peer's. A write through a share carries the proof that the ops of the shares of
-//!   its chain allow what it touches and the tags it asks for, and is refused (`NotAllowed`) where they don't: its
-//!   readers wouldn't count it (`rules`).
-//! - **Asking** (`may`). Whether each of some change ops would be made, by a dry run of each that checks, proves and
-//!   refuses as `run` does and makes nothing: what a page asks before it offers a button.
+//!   (`rules::groups`), which the page offers when it shares. And of the device's vaults (`vaults`, V2): `world`,
+//!   `database`, `note`, `log`, `creatable`, `taggable`; `read_file`, whose bytes a node reads (avendb-net's
+//!   `Node::run`).
+//! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
+//!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `restore`,
+//!   `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make one write. Each acts for a
+//!   vault (`"as"`, the device's own by default), as every edit does, and the rules judge it as they judge any peer's.
+//!   A write through a share carries the proof that the ops of the shares of its chain allow what it touches and the
+//!   tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`). And
+//!   the changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
+//!   `back_up`, `mark`, `card`, `profile`, `follow`. One its vault's owners approve the device drafts for its person's
+//!   passkey (`prepare`, `Prepared::Approve`): without a ceremony it answers `approve` and makes nothing; with one,
+//!   `approve` keeps it.
+//! - **Asking** (`may`, `shares`). Whether each of some change ops would be made, by a dry run of each that checks,
+//!   proves and refuses as `run` does and makes nothing: what a page asks before it offers a button; `true`, or
+//!   `{"approve": {signers}}` where the passkey would approve it. `shares` lists the shares over a vault, owners and
+//!   devices among them, each with `may` of the revocation that ends it.
 //!
 //! Every op answers `{"ok": ...}` or `{"refused": name, "why": "..."}`: a rule of the edits or of a device
 //! (`policy::Refusal`, by its name), `BadOp` where the JSON says nothing the engine does or an op makes no sense of the
 //! record, `NoSchema` where no schema reads the record, `NoEntry` where the device shows no such entry or line.
 
+mod vaults;
+
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::ops::Range;
 
 use serde_json::{json, Map, Value};
 
@@ -36,11 +47,15 @@ use crate::doc::Item;
 use crate::history::{self, History, MAIN};
 use crate::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lab::Lab;
-use crate::lens::{self, Lane, Schema, View};
+use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::ops::{self, Path, Record, RecordOp, Where};
 use crate::policy::{Line, Proposal, Refusal};
 use crate::rules;
-use crate::slice::Attrs;
+use crate::sealed::{Brought, FileRoot};
+use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
+use crate::world::SyncedTo;
+
+pub use vaults::{approve, approved, passkey_of, world, Approval, Prepared, Then};
 
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
 /// updates it holds.
@@ -89,9 +104,9 @@ impl Refused {
 /// A rule's refusal in words.
 fn rule(r: &Refusal) -> String {
     let why = match r {
-        Refusal::NoCap => "the vault it acts for holds no cap that allows this",
-        Refusal::NotAllowed => "the ops of the caps the vault acts through don't allow what it does",
-        Refusal::BadCap => "a cap has a name, at least one op, and a selector and a chain within bounds",
+        Refusal::NoCap => "the vault it acts for holds no share that allows this",
+        Refusal::NotAllowed => "the ops of the shares the vault acts through don't allow what it does",
+        Refusal::BadCap => "a share has a name, at least one op, and a selector and a chain within bounds",
         Refusal::NotActing => "the device doesn't act for that vault",
         Refusal::ReadOnly => "the entry opens read-only: no lens reaches every schema it was written under",
         Refusal::NotAView => "the record would not fit its schema",
@@ -127,12 +142,47 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "undo" => &["entry", "line", "edit", "as"],
         "variant" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
+        "world" | "log" => &[],
+        "shares" => &["over", "as"],
+        "database" => &["vault"],
+        "note" => &["entry"],
+        "read_file" => &["root", "size", "from", "to"],
+        "creatable" => &["vault", "type", "tags", "as"],
+        "taggable" => &["entry", "as"],
+        "share" => &["over", "who", "level", "what", "as"],
+        "keep" => &["over", "mode", "what", "device", "as"],
+        "revoke" => &["share", "vault", "owner", "device", "as"],
+        "settings" => &["vault", "threshold", "root"],
+        "found" => &["vaults", "kind", "name"],
+        "put_file" => &["vault", "name", "media", "tags", "len", "as"],
+        "back_up" => &["on"],
+        "mark" => &["entry"],
+        "card" => &["name"],
+        "profile" => &["vault", "name"],
+        "follow" => &["vault", "on"],
         _ => return None,
     })
 }
 
-/// The ops that only read.
-const READS: [&str; 5] = ["query", "get", "history", "schemas", "groups"];
+/// The ops that only read what the device holds.
+const READS: [&str; 12] = [
+    "query",
+    "get",
+    "history",
+    "schemas",
+    "groups",
+    "world",
+    "database",
+    "note",
+    "log",
+    "read_file",
+    "creatable",
+    "taggable",
+];
+
+/// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
+/// says whether each share may be revoked.
+const ASKS: [&str; 2] = ["may", "shares"];
 
 /// Op `v`'s name and fields, if it is an op the engine runs and carries no field it doesn't take.
 fn op_of(v: &Value) -> Result<(&str, &Map<String, Value>), Refused> {
@@ -145,35 +195,61 @@ fn op_of(v: &Value) -> Result<(&str, &Map<String, Value>), Refused> {
     Ok((name, o))
 }
 
-/// Whether op `v` only reads: a device runs it on what it holds and changes nothing.
-pub fn reads(v: &Value) -> bool {
-    op_of(v).is_ok_and(|(name, _)| READS.contains(&name))
+/// Op `v`'s name, if it is an op the engine runs and carries no field it doesn't take.
+pub fn name(v: &Value) -> Option<&str> {
+    op_of(v).ok().map(|(name, _)| name)
 }
 
-/// Runs op `v` on device `me`: its answer, `{"ok": ...}` or a refusal.
+/// Whether op `v` only reads: a device runs it on what it holds and changes nothing.
+pub fn reads(v: &Value) -> bool {
+    name(v).is_some_and(|name| READS.contains(&name))
+}
+
+/// Whether op `v` changes nothing, though it runs on the Lab: `may` and `shares`, whose dry runs make nothing.
+pub fn asks(v: &Value) -> bool {
+    name(v).is_some_and(|name| ASKS.contains(&name))
+}
+
+/// Runs op `v` on device `me`: its answer, `{"ok": ...}`, a refusal, or for a change its vault's owners approve,
+/// `{"approve": ...}` (`Approval::to_json`), which makes nothing: a Lab alone holds no ceremony, nor any file's bytes,
+/// which a node brings (avendb-net's `Node::run`).
 pub fn run(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
+    if asks(v) {
+        return lab.dry(|lab| answer(ask(lab, me, v)));
+    }
     if reads(v) {
         return read(lab, me, v);
     }
-    if op_of(v).is_ok_and(|(name, _)| name == "may") {
-        return answer(may(lab, me, v));
-    }
-    answer(change(lab, me, v))
+    prepared(prepare(lab, me, v))
 }
 
-/// Whether op `v` changes nothing, though it runs on the Lab: `may`, whose dry runs make nothing.
-pub fn asks(v: &Value) -> bool {
-    op_of(v).is_ok_and(|(name, _)| name == "may")
+/// The answer of a change prepared (`prepare`) and not approved: `{"ok": ...}`, `{"approve": ...}`, or a refusal.
+pub fn prepared(out: Result<Prepared, Refused>) -> Value {
+    match out {
+        Ok(Prepared::Done(v)) => json!({ "ok": v }),
+        Ok(Prepared::Approve(a)) => a.to_json(),
+        Err(why) => why.to_json(),
+    }
 }
 
 /// Runs read op `v` on device `me`: its answer, `{"ok": ...}` or a refusal. A change is refused, as it isn't run.
+/// `world` names no device it is synced to, and `read_file` reads no bytes: a node answers those (avendb-net's
+/// `Node::run`).
 pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
+    if name(v) == Some("world") {
+        return world(lab, me, &SyncedTo::default());
+    }
     let out = op_of(v).and_then(|(name, o)| match name {
         "query" => query(lab, me, o),
         "get" => get(lab, me, o),
         "history" => history(lab, me, o),
         "schemas" => schemas(lab, me, o),
         "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
+        "database" | "note" | "log" => vaults::data(lab, me, name, o),
+        "creatable" => vaults::creatable(lab, me, o),
+        "taggable" => vaults::taggable(lab, me, o),
+        "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
+        _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
     });
     answer(out)
@@ -184,6 +260,55 @@ fn answer(out: Result<Value, Refused>) -> Value {
         Ok(v) => json!({ "ok": v }),
         Err(why) => why.to_json(),
     }
+}
+
+/// Asking op `v` (`asks`) run on device `me`, dry.
+fn ask(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
+    let (name, o) = op_of(v)?;
+    match name {
+        "shares" => vaults::shares(lab, me, o),
+        _ => may(lab, me, v),
+    }
+}
+
+/// Change op `v` on device `me`: made where the device may make it alone (`Prepared::Done`, its answer), drafted for
+/// its person's passkey to approve where its vault's owners approve it (`Prepared::Approve`), or refused. A read, or
+/// `may`, is refused: it isn't run.
+pub fn prepare(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Prepared, Refused> {
+    let (name, o) = op_of(v)?;
+    match name {
+        "may" => Err(bad("may asks about change ops, not about may")),
+        _ if READS.contains(&name) || ASKS.contains(&name) => {
+            Err(bad(format!("{name} only reads: read it, don't run it")))
+        }
+        _ if vaults::CHANGES.contains(&name) => vaults::prepare(lab, me, name, o),
+        _ => change(lab, me, v).map(Prepared::Done),
+    }
+}
+
+/// The file read op `v`, a `read_file`, reads, and which of its bytes (`vaults::file_range`).
+pub fn file_of(v: &Value) -> Result<(FileRoot, Range<u64>), Refused> {
+    match op_of(v)? {
+        ("read_file", o) => vaults::file_range(o),
+        (name, _) => Err(bad(format!("{name} reads no file"))),
+    }
+}
+
+/// How many bytes change op `v`, a `put_file`, brings beside it.
+pub fn len_of(v: &Value) -> Result<u64, Refused> {
+    match op_of(v)? {
+        ("put_file", o) => vaults::file_len(o),
+        (name, _) => Err(bad(format!("{name} brings no file"))),
+    }
+}
+
+/// Change op `v`, a `put_file`, run on device `me` with its bytes, `brought` into its node's store
+/// (`vaults::put_file`): its answer.
+pub fn put_file(lab: &mut Lab, me: SignerId, v: &Value, brought: Brought) -> Value {
+    answer(op_of(v).and_then(|(name, o)| match name {
+        "put_file" => vaults::put_file(lab, me, o, Some(brought)),
+        _ => Err(bad(format!("{name} brings no file"))),
+    }))
 }
 
 // The fields ops share.
@@ -264,10 +389,10 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
     })
 }
 
-/// The schemas and lenses device `me` reads vault `v`'s entries through: the app's own, then what the vault's lane
-/// publishes.
+/// The schemas and lenses device `me` reads vault `v`'s entries through: the app's own, then those of the vault's lane,
+/// its schema and lens entries (`Lab::lane_of`).
 fn lane(lab: &Lab, me: SignerId, v: VaultId) -> Lane {
-    Lane::with_built_ins(lab.state(me).lane_of(v))
+    Lane::with_built_ins(lab.lane_of(me, v))
 }
 
 /// The schema a record's kind names: of those in the lane whose `kind` is that constant, the newest, the one no lens
@@ -592,8 +717,8 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
 }
 
 /// `{"op": "schemas", "vault"}`: the schemas and lenses vault `vault`'s entries are read through, the app's own first
-/// (`builtIn`), then what its lane publishes: each schema's id, title, the kind its records name and its JSON, each
-/// lens's id, title, the schemas it joins and its JSON.
+/// (`builtIn`), then those of its lane, its schema and lens entries: each schema's id, title, the kind its records name
+/// and its JSON, each lens's id, title, the schemas it joins and its JSON.
 fn schemas(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let vault = vault_of(o, "vault")?;
     let built_in: Vec<BlobId> = lens::blobs::ALL.iter().map(|b| BlobId::of(b.as_bytes())).collect();
@@ -638,6 +763,8 @@ struct Act {
 
 enum Step {
     Create { vault: VaultId, ty: String, tags: Vec<String>, schema: Named, value: Value },
+    /// A schema or lens entry holding `blob`, a schema or lens of type `ty` (`Lab::add_schema`).
+    AddSchema { vault: VaultId, ty: String, blob: Vec<u8> },
     /// Record ops on one entry's line, through one schema: one write.
     Edits { entry: EntryId, line: Line, schema: Named, ops: Vec<RecordOp> },
     Tag { entry: EntryId, add: Vec<String>, remove: Vec<String> },
@@ -689,6 +816,17 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
         text.ok_or_else(|| bad(format!("{name} takes a text {field}")))
     };
     let step = match name {
+        "create" if o.get("type").and_then(Value::as_str).is_some_and(|t| Sym::new(t).of_lane()) => {
+            if let Some(k) = ["tags", "schema"].iter().find(|k| o.contains_key(**k)) {
+                return Err(bad(format!("a schema or lens entry takes no {k:?}: it holds its JSON and nothing else")));
+            }
+            let blob = match o.get("value") {
+                Some(Value::String(text)) => text.as_bytes().to_vec(),
+                Some(v @ Value::Object(_)) => v.to_string().into_bytes(),
+                _ => return Err(bad("create of a schema or lens takes its JSON: value, an object or its text")),
+            };
+            Step::AddSchema { vault: vault_of(o, "vault")?, ty: text("type")?, blob }
+        }
         "create" => {
             let value = o.get("value").filter(|v| v.is_object()).ok_or_else(|| bad("create takes a record: value"))?;
             let (tags, schema) = (texts_of(o, "tags")?, named(o)?);
@@ -726,6 +864,7 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
             let (line, schema) = (line_of(o, "line")?, named(o)?);
             Step::Variant { entry: entry_of(o)?, line, into: vault_of(o, "into")?, schema, ops }
         }
+        name if vaults::CHANGES.contains(&name) => return Err(bad(format!("{name} runs alone, never in a batch"))),
         "batch" => return Err(bad("a batch holds no batch")),
         "may" => return Err(bad("may asks about change ops, not about may")),
         name => return Err(bad(format!("{name} only reads: read it, don't run it"))),
@@ -766,24 +905,33 @@ fn change(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
     Ok(done.into())
 }
 
-/// `{"op": "may", "ops", "as"?}`: whether device `me` would make each of the change ops `ops`, each acting for the
-/// vault it names (`as`, else the may's, else the device's own), each on what the device holds now: for each, `true`,
-/// or the refusal running it would meet. Each runs dry (`Lab::dry`): checked, proven against the ops of the shares it
-/// relies on and refused as `run` would, and then not made.
+/// `{"op": "may", "ops", "as"?}`: whether device `me` would make each of the change ops `ops`, each on what the device
+/// holds now, each acting for the vault it names (`as`), else the may's where it takes one (`fields`), else its own or
+/// the device's: for each, `true`; `{"approve": {signers}}`, once those approve it (`Approval::verdict`); or the
+/// refusal running it would meet. Each runs dry (`Lab::dry`): checked, proven against the ops of the shares it relies
+/// on and refused as `run` would, and then not made.
 fn may(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
     let (_, o) = op_of(v)?;
     let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?;
     let ops = o.get("ops").and_then(Value::as_array).ok_or_else(|| bad("may takes the ops it asks about: ops"))?;
-    let one = |lab: &mut Lab, op: &Value| -> Result<Value, Refused> {
-        let act = act_of(op)?;
-        let actor = act.actor.or(actor).or_else(|| lab.vault_of(me)).ok_or(Refusal::NotActing)?;
-        lab.dry(|lab| step(lab, me, actor, act.step))
+    let acting = |op: &Value| -> Value {
+        let takes = name(op).and_then(fields).is_some_and(|f| f.contains(&"as"));
+        match actor {
+            Some(a) if takes && op.get("as").is_none() => {
+                let mut op = op.clone();
+                op["as"] = a.to_hex().into();
+                op
+            }
+            _ => op.clone(),
+        }
     };
-    let answers = ops.iter().map(|op| match one(lab, op) {
-        Ok(_) => Value::Bool(true),
-        Err(why) => why.to_json(),
-    });
-    Ok(answers.collect::<Vec<_>>().into())
+    Ok(ops.iter().map(|op| verdict(lab, me, &acting(op))).collect::<Vec<_>>().into())
+}
+
+/// What `may` answers of change op `v` on device `me`, by a dry run: `true`, `{"approve": {signers}}` or the
+/// refusal.
+pub fn verdict(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
+    vaults::verdict_of(lab.dry(|lab| prepare(lab, me, v)))
 }
 
 /// Step `s`, acting for `actor`, on device `me`.
@@ -800,6 +948,19 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let item = Item::made(&View::plain(&app), &full(&app, &value)?, me).ok_or(Refusal::NotAView)?;
             let entry = lab.create(me, actor, vault, &ty, &strs(&tags), item)?;
             Ok(json!({ "entry": entry.to_hex() }))
+        }
+        Step::AddSchema { vault, ty, blob } => {
+            // the type its JSON reads as, as `Lab::add_schema` reads it, which must be the one asked for
+            let is = match (Lens::parse(&blob), Schema::parse(&blob)) {
+                (Some(_), _) => LENS_TYPE,
+                (None, Some(_)) => SCHEMA_TYPE,
+                (None, None) => return Err(bad(format!("value is no {ty}: neither a schema nor a lens"))),
+            };
+            if ty != is {
+                return Err(bad(format!("value is a {is}, not a {ty}")));
+            }
+            let entry = lab.add_schema(me, actor, vault, &blob)?;
+            Ok(json!({ "entry": entry.to_hex(), "blob": BlobId::of(&blob).to_hex() }))
         }
         Step::Edits { entry, line, schema, ops } => edits(lab, me, actor, (entry, line), &schema, &ops),
         Step::Tag { entry, add, remove } => {

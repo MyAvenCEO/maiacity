@@ -1,14 +1,14 @@
 <!--
 	The studio's query console, as a database studio's SQL editor: any op of avenDB's ops engine as JSON (./ops.js,
-	avendb/docs/OPS.md), run on what this device holds, whatever the schema of the records it reads or changes. A query
-	shows its rows as a table, with the selector its labels picked them by before any entry was opened: a cap's
-	selector, the very one a cap on those entries would hold. A change acts as the acting vault, unless the op names
-	another (`as`), and the rules judge it as they judge any peer's edit. The examples fill it in for the vault looked
-	at.
+	avendb/docs/ARCHITECTURE.md §8), run on what this device holds, whatever the schema of the records it reads or
+	changes. A query shows its rows as a table, with the selector its labels picked them by before any entry was opened:
+	a share's selector, the very one a share over those entries would hold. A change acts as the acting vault, unless
+	the op names another (`as`), and the rules judge it as they judge any peer's edit. The examples fill it in for the
+	vault looked at.
 -->
 <script>
 	import { cell } from './db.js';
-	import { reads } from './ops.js';
+	import { acts } from './ops.js';
 	import { count, nameOf, short, whereWords } from './vaults.js';
 
 	/**
@@ -58,6 +58,7 @@
 			op: { op: 'history', entry: n.entry, limit: 5 }
 		})),
 		{ name: 'Schemas', op: { op: 'schemas', vault } },
+		{ name: 'Its shares', op: { op: 'shares', over: vault } },
 		{
 			name: 'Add a todo',
 			change: true,
@@ -92,11 +93,13 @@
 			return void (bad = `That isn’t JSON: ${/** @type {Error} */ (e).message}`);
 		}
 		// a change acts as the acting vault, as every screen's does, unless it names another
-		if (op && typeof op === 'object' && !reads(op) && !('as' in op)) op = { ...op, as: actor };
+		if (op && typeof op === 'object' && acts(op) && !('as' in op)) op = { ...op, as: actor };
 		[running, bad] = [true, ''];
 		const start = performance.now();
 		try {
 			out = await api.ask(op);
+			// a file's bytes, which come beside the answer, show by their count
+			if (out?.bytes instanceof Uint8Array) out = { ok: { ...out.ok, bytes: count(out.bytes.length, 'byte') } };
 		} catch (e) {
 			out = { refused: 'Error', why: /** @type {Error} */ (e).message ?? String(e) };
 		} finally {
@@ -116,7 +119,10 @@
 	/** Run on Ctrl+Enter or ⌘Enter, as a studio's editor does. @param {KeyboardEvent} e */
 	const keys = (e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && (e.preventDefault(), run());
 
-	const rows = $derived(/** @type {any[] | null} */ (Array.isArray(out?.ok?.rows) ? out.ok.rows : null));
+	/** a query's rows, to show as a table: any other answer with rows (`shares`) shows as its JSON */
+	const rows = $derived(
+		/** @type {any[] | null} */ (Array.isArray(out?.ok?.rows) && out.ok.plan !== undefined ? out.ok.rows : null)
+	);
 	/** the rows' record fields, in the order they first show */
 	const fields = $derived([...new Set((rows ?? []).flatMap((r) => Object.keys(r.record ?? {})))]);
 </script>

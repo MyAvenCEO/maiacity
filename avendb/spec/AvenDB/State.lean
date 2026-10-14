@@ -4,14 +4,15 @@ import AvenDB.Rules
 # State
 
 What a peer knows after replaying the edits it holds: vaults, shares, entries and the audiences they are in, accepted
-writes, the key schedule (current epochs, seals, published keys), and each vault's schema lane. Everything here is
-executable, so the same definitions that the theorems talk about also produce the test vectors the Rust core must match.
+writes, and the key schedule (current epochs, seals, published keys); and, read off them, each vault's schema lane.
+Everything here is executable, so the same definitions that the theorems talk about also produce the test vectors the
+Rust core must match.
 
 Two layers. The operational one (who acts, which shares are live, which audience an entry is in, who may write it, the
 keys) reads nothing a relay can't see: no selector, no type, no tag, of a share's ops only its level. The semantic one
 (an entry's attributes, whether its creation was let in, its semantic audience, which writes its readers count) is what
 only its readers, and the vault's own devices, the stewards, know; no operational rule reads it, and the stewards keep
-the audiences equal to it by moving entries (T23).
+the audiences equal to it by marking entries (T23).
 -/
 
 namespace AvenDB
@@ -51,28 +52,11 @@ structure Share where
   issuer  : VaultId
   deriving DecidableEq, Repr
 
-/-- A sync rule: device `device` of vault `issuer` syncs the entries of vault `over` that `select` picks, or all of them
-    (`wide`), and keeps the files they bring whole (`keep`) rather than fetching a file's pieces as it reads them. It
-    grants nothing: a device syncs what it may receive and its rules want (`wants`, T28). Its id comes from the same
-    hashes as a share's. -/
-structure SyncRule where
-  id     : ShareId
-  issuer : VaultId
-  device : SignerId
-  over   : VaultId
-  /-- It picks every entry of `over`, in the clear, as a wide share selects them all. -/
-  wide   : Bool
-  /-- Sealed to `over`'s and `issuer`'s vault keys, as a share's selector is: no relay reads it, nor does any
-      operational rule. -/
-  select : Selector
-  keep   : Bool
-  deriving DecidableEq, Repr
-
 /-- An entry of a vault: a note, a todo, a profile. -/
 structure Entry where
   id       : EntryId
   vault    : VaultId
-  /-- Its stays, the current one first: the move that put it in an audience (`none` for its creation), and that
+  /-- Its stays, the current one first: the mark that put it in an audience (`none` for its creation), and that
       audience. -/
   stays    : List (Option EditId × Audience)
   /-- What its first write says of it, and its tags now: known to its readers only. -/
@@ -80,6 +64,9 @@ structure Entry where
   /-- Its creator was the vault itself, or created it inside the slice of the share it created it through, whose ops
       let it: known to the vault's stewards only. -/
   admitted : Bool
+  /-- The hash of the content its first write holds (`Header.blob`): for a schema or a lens entry, the schema or lens
+      it puts in its vault's lane (`laneOf`). Known to its readers only. -/
+  blob     : BlobId
   deriving DecidableEq, Repr
 
 /-- The audience an entry is in now. -/
@@ -140,23 +127,18 @@ structure State where
   epochs    : List (KeyFam × Nat) := []
   seals     : List Seal := []
   published : List KeyName := []
-  /-- The schema lane: the schemas and lenses published into each vault, by their hash, in the order they came. -/
-  lane      : List (VaultId × BlobId) := []
   /-- Every entry id ever created, even of an entry that fell since: an id is created once, so an entry key's name (the
       entry, its stay, an epoch) names one key. -/
   born      : List EntryId := []
-  /-- Only while checking an edit that a move after it hadn't seen (`hide`): each entry such a move took to an audience,
-      and that audience. A write must be allowed there too. -/
+  /-- Only while checking an edit that a mark after it hadn't seen (`hide`): each entry such a mark took to an
+      audience, and that audience. A write must be allowed there too. -/
   narrow    : List (EntryId × Audience) := []
   /-- The accepted writes an entry's readers don't count: what it makes of the record doesn't fit the entry's schemas,
       the ops of its actor's shares don't allow it, or it builds on one they don't count (`counts`). Known to the
       entry's readers only. -/
   uncounted : List EditId := []
-  /-- Every sync rule issued, live or ended. -/
-  rules     : List SyncRule := []
-  ended     : List ShareId := []
-  /-- The sync rules that pick each entry, as its vault's stewards last marked them (`pick`). -/
-  picks     : List (EntryId × List ShareId) := []
+  /-- The keep shares that pick each entry, as its vault's stewards last marked them (`mark`): its wants. -/
+  marks     : List (EntryId × List ShareId) := []
   deriving Repr
 
 namespace State
@@ -164,16 +146,12 @@ namespace State
 def vault? (st : State) (v : VaultId) : Option Vault := st.vaults.find? (·.id == v)
 def share? (st : State) (c : ShareId) : Option Share := st.shares.find? (·.id == c)
 def entry? (st : State) (e : EntryId) : Option Entry := st.entries.find? (·.id == e)
-def rule? (st : State) (r : ShareId) : Option SyncRule := st.rules.find? (·.id == r)
 
 /-- Share `c` was issued and hasn't been revoked. -/
 def live (st : State) (c : ShareId) : Bool := st.shares.any (·.id == c) && !st.revoked.contains c
 
-/-- Sync rule `r` was issued and hasn't ended. -/
-def ruleLive (st : State) (r : ShareId) : Bool := st.rules.any (·.id == r) && !st.ended.contains r
-
-/-- The sync rules that pick entry `e`, as its vault's stewards last marked them. -/
-def picksOf (st : State) (e : EntryId) : List ShareId := ((st.picks.find? (·.1 == e)).map (·.2)).getD []
+/-- The keep shares that pick entry `e`, as its vault's stewards last marked them. -/
+def wantsOf (st : State) (e : EntryId) : List ShareId := ((st.marks.find? (·.1 == e)).map (·.2)).getD []
 
 def epochOf (st : State) (k : KeyFam) : Nat :=
   match st.epochs.find? (·.1 == k) with
@@ -274,9 +252,10 @@ def chain (st : State) (c : Share) : List Share := chainN st (st.shares.length +
 /-- An audience's canonical form: its share ids, each once, smallest first. -/
 def mkAudience (xs : List ShareId) : Audience := xs.eraseDups.mergeSort fun a b => decide (a ≤ b)
 
-/-- Audience `x` is an audience of vault `v`: in canonical form, each of its shares one over `v` that isn't wide. -/
+/-- Audience `x` is an audience of vault `v`: in canonical form, each of its shares one over `v` that isn't wide, nor a
+    keep share. -/
 def audienceOk (st : State) (v : VaultId) (x : Audience) : Bool :=
-  x == mkAudience x && x.all fun c => st.shares.any fun cp => cp.id == c && cp.over == v && !cp.wide
+  x == mkAudience x && x.all fun c => st.shares.any fun cp => cp.id == c && cp.over == v && !cp.wide && !cp.level.isKeep
 
 /-- The intake audience of share `cp`: the shares of its chain that aren't wide. A vault that creates an entry through
     `cp` puts it there, where only those shares' grantees, the wide shares and the vault's stewards read it, until a
@@ -285,10 +264,10 @@ def intake (st : State) (cp : Share) : Audience := mkAudience (((chain st cp).fi
 
 /-- Vault `a` holds share `cp` with level `r` or more: the share is live and names `a`. -/
 def holdsShare (st : State) (a : VaultId) (cp : Share) (r : Level) : Bool :=
-  st.live cp.id && cp.who == .principal (.vault a) && cp.level.allows r
+  st.live cp.id && cp.who == .vault a && cp.level.allows r
 
 /-- Share `cp` reaches entry `en`: it is over the entry's vault, and wide, or in the entry's audience and in the
-    audience of every move the edit being checked hadn't seen (`narrow`). -/
+    audience of every mark the edit being checked hadn't seen (`narrow`). -/
 def inAudience (st : State) (cp : Share) (en : Entry) : Bool :=
   cp.over == en.vault && (cp.wide || (en.audience.contains cp.id &&
     st.narrow.all fun (e, x) => e != en.id || x.contains cp.id))
@@ -305,22 +284,18 @@ def mayCreate (st : State) (a v : VaultId) (x : Audience) : Bool :=
 
 /-- A write is authorized in `st`: its author acts for its actor through the owners it names, and that vault may write
     its entry as the write found it, in the audience it was in then (`Write.audience`). Strong removal judges an edit at
-    its own place in the replay too, so a removal takes from a write only what it took from it there: a move between
+    its own place in the replay too, so a removal takes from a write only what it took from it there: a mark between
     them doesn't hand the removal writes that never rested on what it takes away. -/
 def authorized (st : State) (w : Write) : Bool :=
   actsVia st w.author w.via w.actor && match st.entry? w.entry with
     | some en => mayWrite st w.actor { en with stays := [(w.stay, w.audience)] }
     | none    => false
 
-/-- Vault `a` publishes into vault `v`'s schema lane: it is `v`, or holds a wide owner share over it. -/
-def ownsLane (st : State) (a v : VaultId) : Bool :=
-  a == v || st.shares.any fun cp => cp.over == v && cp.wide && holdsShare st a cp .owner
-
 /-! ## What only readers see
 
 The stewards (the devices acting for a vault) read every selector of the vault's shares and every entry's attributes.
-They work out each entry's semantic audience and move the entry whenever its audience differs (`desired`): that is the
-upkeep an honest device does after each batch of edits it takes in, and nothing here is checked by a relay. -/
+They work out each entry's semantic audience and mark the entry with it whenever its audience differs (`desired`): that
+is the upkeep an honest device does after each batch of edits it takes in, and nothing here is checked by a relay. -/
 
 /-- Share `cp` on its own selects attributes `a`: it is wide, or its selector matches. -/
 def shareSelects (cp : Share) (a : Attrs) : Bool := cp.wide || cp.select.matches a
@@ -363,19 +338,19 @@ def admits (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) (proof : 
     cp.over == v && holdsShare st a cp .write && intake st cp == x && effSelects st cp attrs &&
       lets st cp proof true [.create]
 
-/-- An entry's semantic audience: the live shares over its vault that aren't wide and whose slice holds it; none for an
-    entry whose creator made it outside its own slice. -/
+/-- An entry's semantic audience: the live shares over its vault that aren't wide nor keep shares and whose slice holds
+    it; none for an entry whose creator made it outside its own slice. -/
 def semAudience (st : State) (en : Entry) : Audience :=
   if en.admitted then
     mkAudience ((st.shares.filter fun cp =>
-      cp.over == en.vault && st.live cp.id && !cp.wide && effSelects st cp en.attrs).map (·.id))
+      cp.over == en.vault && st.live cp.id && !cp.wide && !cp.level.isKeep && effSelects st cp en.attrs).map (·.id))
   else []
 
 /-- The live part of an entry's audience. -/
 def liveAudience (st : State) (en : Entry) : Audience := en.audience.filter st.live
 
-/-- Where a steward moves an entry: nowhere while the live part of its audience is its semantic audience (a revoked
-    share left in it is ignored, so a revocation moves no entry), else to its semantic audience. -/
+/-- Where a steward's mark takes an entry: nowhere while the live part of its audience is its semantic audience (a
+    revoked share left in it is ignored, so a revocation moves no entry), else to its semantic audience. -/
 def desired (st : State) (en : Entry) : Option Audience :=
   if liveAudience st en == semAudience st en then none else some (semAudience st en)
 
@@ -385,51 +360,103 @@ def semWrite (st : State) (a : VaultId) (en : Entry) : Bool :=
   a == en.vault || st.shares.any fun cp => cp.over == en.vault && holdsShare st a cp .write &&
     (cp.wide || (en.admitted && effSelects st cp en.attrs))
 
-/-! ## Sync rules
+/-! ## Keep shares
 
-Which entries a device syncs: of those it may receive (`mayReceive`, `Sync.lean`), the ones its rules want. A sync rule
-selects entries as a share does, by what their first write says and their tags now, and its selector is sealed as a
-share's is. The vault's stewards read it and mark which rules pick each entry (`pick`), as they move entries to the
-audiences their shares pick, so a peer that reads no selector, a relay, knows what a device wants from the marks
-alone. -/
+Which entries a device syncs, and how: of those it may receive (`mayReceive`, `Sync.lean`), the ones its keep shares
+want. A keep share names one device of its issuer, with level `keep` and a mode (`KeepMode`): it grants nothing, and
+selects entries as any share does, by what their first write says and their tags now, its selector sealed as a share's
+is. The vault's stewards read it and mark each entry with the keep shares that pick it (`mark`), in the same mark that
+takes the entry to the audience its shares pick, so a peer that reads no selector, a relay, knows what a device wants
+from the marks alone. -/
 
 /-- Signer `d` is a device of vault `v`. -/
 def isDevice (st : State) (d : SignerId) (v : VaultId) : Bool := (st.vault? v).any (·.devices.contains d)
 
-/-- Vault `a` may hold entries of vault `v`: it is `v`, or holds a share over it, backup or more. A vault issues sync
-    rules only over such a vault, so no stranger has a vault's stewards mark entries for it. -/
+/-- Vault `a` may hold entries of vault `v`: it is `v`, or holds a share over it, backup or more. A vault issues keep
+    shares only over such a vault, so no stranger has a vault's stewards mark entries for it. -/
 def mayHold (st : State) (a v : VaultId) : Bool :=
   a == v || st.shares.any fun cp => cp.over == v && holdsShare st a cp .backup
 
-/-- The live sync rules device `d` syncs vault `v` by: those over `v` naming `d`, issued by a vault `d` is still a device
-    of. -/
-def rulesOf (st : State) (d : SignerId) (v : VaultId) : List SyncRule :=
-  st.rules.filter fun r => r.device == d && r.over == v && st.ruleLive r.id && isDevice st d r.issuer
+/-- The live keep shares device `d` syncs vault `v` by: those over `v` naming `d`, issued by a vault `d` is still a
+    device of. A device that leaves its vault drops them, with no revocation. -/
+def keepsOf (st : State) (d : SignerId) (v : VaultId) : List Share :=
+  st.shares.filter fun k =>
+    k.level.isKeep && k.who == .device d && k.over == v && st.live k.id && isDevice st d k.issuer
 
-/-- Device `d` wants entry `en`: it has no rule over the entry's vault, and so wants all of it, or one of its rules there
-    is wide or picks the entry. -/
-def wants (st : State) (d : SignerId) (en : Entry) : Bool :=
-  let rs := rulesOf st d en.vault
-  rs.isEmpty || rs.any fun r => r.wide || (st.picksOf en.id).contains r.id
+/-- Wants `ks` are wants of vault `v`'s entries: in canonical form, each a keep share over `v` that isn't wide, live or
+    not. -/
+def wantsOk (st : State) (v : VaultId) (ks : List ShareId) : Bool :=
+  ks == mkAudience ks && ks.all fun k => st.shares.any fun x => x.id == k && x.over == v && !x.wide && x.level.isKeep
 
-/-- Device `d` keeps whole the files entry `en` brings: one of its rules that wants the entry says so. With no rule over
-    the entry's vault, the device's own setting says. -/
-def keeps (st : State) (d : SignerId) (en : Entry) : Bool :=
-  (rulesOf st d en.vault).any fun r => r.keep && (r.wide || (st.picksOf en.id).contains r.id)
+/-- Keep share `k` takes what it picks out of what its device syncs: its mode is never. Whole and opened add it. -/
+def Share.never (k : Share) : Bool := k.level == .keep .never
 
-/-- The sync rules that pick entry `en`: the live rules over its vault that aren't wide and whose selector matches it,
+/-- What a device whose keep shares over a vault are `ks` makes of an entry that each of them picks or not (`on`): it
+    syncs the entry when none of them adds entries, or one that does picks it, and no never share picks it. -/
+def wantsWith (ks : List Share) (on : Share → Bool) : Bool :=
+  (ks.all (·.never) || ks.any fun k => !k.never && on k) && !ks.any fun k => k.never && on k
+
+/-- And it keeps the files the entry brings whole: a whole share picks it. -/
+def keepsWith (ks : List Share) (on : Share → Bool) : Bool := ks.any fun k => k.level == .keep .whole && on k
+
+/-- Keep share `k` picks entry `en`, by the entry's marks: it is wide, or among the entry's wants. -/
+def marked (st : State) (en : Entry) (k : Share) : Bool := k.wide || (st.wantsOf en.id).contains k.id
+
+/-- Device `d` wants entry `en`, by its keep shares over the entry's vault and the entry's marks (design §3, Modes):
+    with none, or only never ones, it wants all of the vault but what a never share picks. -/
+def wants (st : State) (d : SignerId) (en : Entry) : Bool := wantsWith (keepsOf st d en.vault) (marked st en)
+
+/-- Device `d` keeps whole the files entry `en` brings: a whole share of it over the entry's vault picks the entry.
+    With no keep share there but never ones, the device's own setting says. -/
+def keeps (st : State) (d : SignerId) (en : Entry) : Bool := keepsWith (keepsOf st d en.vault) (marked st en)
+
+/-- The types of the entries that carry a vault's schemas and lenses (design §5). -/
+def schemaType : Sym := 900
+def lensType : Sym := 901
+def schemaTypes : List Sym := [schemaType, lensType]
+
+/-- Keep share `k` picks attributes `a`, as a steward reads it: whole and opened shares pick every schema and lens entry
+    too, so that every device that syncs part of a vault syncs its lane, and a never share picks none of them. -/
+def keepPicks (k : Share) (a : Attrs) : Bool :=
+  if k.never then k.select.matches a && !schemaTypes.contains a.type
+  else k.select.matches a || schemaTypes.contains a.type
+
+/-- The keep shares that pick entry `en`: the live keep shares over its vault that aren't wide and pick its attributes,
     each once, smallest first. -/
-def semPicks (st : State) (en : Entry) : List ShareId :=
-  mkAudience ((st.rules.filter fun r =>
-    r.over == en.vault && st.ruleLive r.id && !r.wide && r.select.matches en.attrs).map (·.id))
+def semWants (st : State) (en : Entry) : List ShareId :=
+  mkAudience ((st.shares.filter fun k =>
+    k.level.isKeep && k.over == en.vault && st.live k.id && !k.wide && keepPicks k en.attrs).map (·.id))
 
-/-- The live part of the marks on entry `en`. -/
-def livePicks (st : State) (en : Entry) : List ShareId := (st.picksOf en.id).filter st.ruleLive
+/-- The live part of the wants marked on entry `en`. -/
+def liveWants (st : State) (en : Entry) : List ShareId := (st.wantsOf en.id).filter st.live
 
-/-- What a steward marks entry `en` with: nothing while the live part of its marks is what the rules pick (an ended rule
-    left in them is ignored, so ending a rule marks no entry), else what they pick. -/
-def desiredPicks (st : State) (en : Entry) : Option (List ShareId) :=
-  if livePicks st en == semPicks st en then none else some (semPicks st en)
+/-- What a steward marks entry `en` with, in one mark: the audience its shares select where the live part of its
+    audience isn't that (`desired`), and the keep shares that pick it where the live part of its wants isn't those (a
+    revoked keep share left in them is ignored, so revoking one marks no entry); nothing while both are as they should
+    be. A part the mark leaves out stays as it is, so a steward that marks only the wants never puts back an audience
+    another steward changed meanwhile. -/
+def desiredMark (st : State) (en : Entry) : Option (Option Audience × Option (List ShareId)) :=
+  let ws := if liveWants st en == semWants st en then none else some (semWants st en)
+  if (desired st en).isNone && ws.isNone then none else some (desired st en, ws)
+
+/-! ## The schema lane
+
+A vault's schemas and lenses are entries of the built-in types schema and lens (`schemaTypes`), which the vault shares
+with everyone through a share of its own that selects those types, so that every reader of anything of the vault
+receives them and opens them. Nothing checks them on the way in: a schema entry is created and written as any entry is.
+Its readers read the lane off the entries alone (T17), and the lane is all that `fits`, an input of every write here,
+stands for: what the schemas the write's entry was written under let it hold (`Schemas.lean`). -/
+
+/-- Entry `en` puts its blob in vault `v`'s lane: it is an entry of `v` of type schema or lens, whose creation acted for
+    `v` itself and counts. One that anyone else created, through a share, acts for its creator and puts nothing there;
+    what later writes make of the entry, and its tags, are never read. -/
+def inLane (st : State) (v : VaultId) (en : Entry) : Bool :=
+  en.vault == v && schemaTypes.contains en.attrs.type &&
+    st.counted.any fun w => w.entry == en.id && w.first && w.actor == v
+
+/-- Vault `v`'s schema lane, as its readers read it: the blob of each entry that puts one there, in the order the
+    entries were created, each blob once, so a blob created again adds nothing. -/
+def laneOf (st : State) (v : VaultId) : List BlobId := ((st.entries.filter (inLane st v)).map (·.blob)).eraseDups
 
 /-! ## Keys -/
 
@@ -440,10 +467,10 @@ def readsV (st : State) (y : VaultId) : KeyFam → Bool
   | .seed v => y == v
   | .share v c =>
     match st.share? c with
-    | some cp => cp.over == v && st.live c && cp.level.allows .read && (y == v || cp.who == .principal (.vault y))
+    | some cp => cp.over == v && st.live c && cp.level.allows .read && (y == v || cp.who == .vault y)
     | none => false
   | .audience v x => y == v || st.shares.any fun cp => cp.over == v && st.live cp.id && cp.level.allows .read &&
-      (cp.wide || x.contains cp.id) && cp.who == .principal (.vault y)
+      (cp.wide || x.contains cp.id) && cp.who == .vault y
 
 /-- Everyone may read family `k`: a live share to everyone reaches it. -/
 def publicKey (st : State) : KeyFam → Bool
@@ -553,7 +580,7 @@ def targets (st : State) : KeyFam → List KeyName
   | .share v c =>
     st.curKey (.seed v) :: match st.share? c with
     | some cp => match cp.who with
-      | .principal (.vault g) => [st.curKey (.seed g)]
+      | .vault g => [st.curKey (.seed g)]
       | _ => []
     | none => []
   | .audience v x =>
@@ -595,7 +622,7 @@ def Write.key (w : Write) : KeyName := .entry w.entry w.stay w.epoch
 /-- The entry keys: each entry's key in its current stay derives from its audience's current key, and the key each
     accepted write used from its stay's audience key of that epoch; the key of each write from an earlier stay is
     wrapped under the current stay's key (a move link), unless it already is under some key of that stay. So whoever
-    reads an entry now reads its whole history, and a move hands nobody a key of the audience the entry left. -/
+    reads an entry now reads its whole history, and a mark hands nobody a key of the audience the entry left. -/
 def linkAll (st : State) : State :=
   st.entries.foldl (fun acc en =>
     let acc := addSeal acc ⟨entryKey acc en, acc.curKey (.audience en.vault en.audience)⟩

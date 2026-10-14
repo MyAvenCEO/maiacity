@@ -6,7 +6,9 @@
 
 pub use avendb::cast::*;
 use avendb::id::{EditId, EntryId, ShareId, SignerId, VaultId};
-use avendb::policy::{mk_audience, Action, Kind, Level, Log, Principal, Proposal, Readings, Refusal, Share, Who};
+use avendb::policy::{
+    mk_audience, Action, Kind, Level, Log, Principal, Proposal, Readings, Refusal, Share, Sharing, Who,
+};
 use avendb::slice::{Header, Selector, Sym, TagDelta};
 
 // Signers on the rules' log: passkeys and device keys.
@@ -50,7 +52,7 @@ pub fn human(log: &mut Log, passkey: SignerId, devices: &[SignerId]) -> VaultId 
     let genesis = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root, nonce: 0, seal_to: vec![] };
     let v = VaultId::from(log.append(passkey, &[], genesis).unwrap());
     for &d in devices {
-        log.append(passkey, &[d], Action::AddDevice { vault: v, device: d, seal_to: None }).unwrap();
+        log.append(passkey, &[d], Action::Share(Sharing::Device { vault: v, device: d, seal_to: None })).unwrap();
     }
     v
 }
@@ -103,6 +105,24 @@ impl Cast {
         Ok(id)
     }
 
+    /// `create`, of a schema or lens entry of type `ty` holding `blob`: its readers read the blob too, which its
+    /// vault's lane names where the vault itself creates it (`State::lane_of`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_holding(
+        &mut self,
+        signer: SignerId,
+        vault: VaultId,
+        entry: EntryId,
+        actor: VaultId,
+        audience: &[ShareId],
+        ty: &str,
+        blob: &[u8],
+    ) -> Result<EditId, Refusal> {
+        let id = self.create(signer, vault, entry, actor, audience, ty, &[])?;
+        self.readings.blobs.insert(id, blob.into());
+        Ok(id)
+    }
+
     /// `signer`, with `cosigners`, issues a root share over vault `over` to `who` with `level` on what `select`
     /// selects; its readers read the selector.
     pub fn issue(
@@ -134,13 +154,13 @@ impl Cast {
     ) -> Result<ShareId, Refusal> {
         let wide = select == Selector::All;
         let share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce };
-        let id = ShareId::from(self.log.append(signer, cosigners, Action::Share(share, vec![]))?);
+        let id = ShareId::from(self.log.append(signer, cosigners, Action::Share(Sharing::Grant(share, vec![])))?);
         self.readings.selectors.insert(id, select);
         Ok(id)
     }
 
-    /// `signer`, a steward acting for vault `vault`, moves entry `entry` to the audience of the shares `to`, keeping
-    /// every write of it.
+    /// `signer`, a steward acting for vault `vault`, marks entry `entry` with the audience of the shares `to`, which
+    /// moves it there, keeping every write of it, and leaves its wants as they are.
     pub fn move_to(
         &mut self,
         signer: SignerId,
@@ -149,8 +169,8 @@ impl Cast {
         to: &[ShareId],
     ) -> Result<EditId, Refusal> {
         let keep = self.log.view().writes(entry);
-        let to = mk_audience(to);
-        self.log.append(signer, &[], Action::Move { vault, entry, to, keep, via: vec![] })
+        let caps = Some(mk_audience(to));
+        self.log.append(signer, &[], Action::Mark { vault, entry, caps, wants: None, keep, via: vec![] })
     }
 
     /// `signer` writes entry `entry` for `actor`, under its current stay and epoch, adding the tags `add` and

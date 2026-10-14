@@ -1,26 +1,25 @@
 <!--
-	Share a slice of a vault on, as the acting vault, as a cap: a name, what it picks and the JSON ops its grantee may
-	make there (avendb-browser's `Device::share`, `{name, where, ops}` as its `words` read it; avendb/docs/OPS.md). What
-	it picks is one entry, every note, todo or file, or those tagged one way and not another, or the whole vault: a rule,
-	never a list, so an entry tagged to match it later is shared then, one untagged leaves it, and the vault's devices
-	move each into the cell the caps that hold it share, under that cell's key. Its ops are a group: a built-in one
+	Share a slice of a vault on, as the acting vault: a name, what it picks and the JSON ops its grantee may make there
+	(the `share` op, `{over, who, level, what}`, avendb/docs/ARCHITECTURE.md §8). What it picks is one entry, every
+	note, todo or file, or those tagged one way and not another, or the whole vault: a rule, never a list, so an entry
+	tagged to match it later is shared then, one untagged leaves it, and the vault's stewards mark each into the
+	audience of the shares that pick it, under that audience's key. Its ops are a group: a built-in one
 	(Owner, Editor, Suggester, Viewer, Backup, Relay, the core's `groups`), or one of its own, named, built op by op or
 	written as JSON, the fields those of the newest schema of what it shares; with everyone, the Public group alone,
 	which only reads. It starts at the least: the one entry it opens on, or else the vault's todos, for a Viewer. The
-	preview says what it reaches now, of what the acting vault reads. A cap whose ops share it on needs the acting
-	vault's passkey; the rest none. A vault that isn't the one shared from shares only through an owner cap of its own,
-	and reaches no further than it, nor beyond its ops.
+	preview says what it reaches now, of what the acting vault reads, as the device's `query` picks it. Owner of
+	everything makes a co-owner. The device answers beforehand whether it would make the share (`may`): alone, once the
+	vault's owners approve it with the passkey, or why not. A vault that isn't the one shared from shares only through
+	an Owner share of its own, and reaches no further than it, nor beyond its ops.
 -->
 <script>
+	import { allowed, may, read } from './ops.js';
 	import Ops from './Ops.svelte';
 	import {
-		attrsOf,
 		count,
 		EVERYONE,
 		fieldsOf,
-		levelOf,
 		list,
-		matches,
 		nameOf,
 		opsWords,
 		reads,
@@ -28,7 +27,8 @@
 		singular,
 		tagsIn,
 		titleOf,
-		whereWords
+		whereWords,
+		why
 	} from './vaults.js';
 
 	/**
@@ -40,8 +40,6 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	/** the owner caps the acting vault shares through, where it isn't the vault: the new cap rests on one of them */
 	const through = $derived(world.caps.filter((c) => c.over === vault && c.grantee === actor && c.role === 'owner'));
-	/** the whole vault only from the vault itself or through an owner cap on all of it */
-	const whole = $derived(vault === actor || through.some((c) => c.wide));
 	/** the vaults it may share with: any other this browser knows, but the vault itself, which holds all of it */
 	const others = $derived(world.vaults.filter((v) => v.id !== vault && v.id !== actor));
 	const one = $derived(world.entries.find((e) => e.entry === entry));
@@ -112,6 +110,37 @@
 
 	/** The cap as the device takes it: `{name, where, ops}`, named by its group, or by hand for a group of its own. */
 	const spec = $derived(ops && { name: theGroup?.name ?? name.trim(), where, ops });
+	/** The share op that gives it: its group by name, or a group of its own, on everything or on what it picks. */
+	const op = $derived(
+		ops && {
+			op: 'share',
+			over: vault,
+			who: to === EVERYONE ? EVERYONE : { vault: to },
+			level: theGroup ? theGroup.name : { name: name.trim(), ops },
+			what: what === 'all' ? 'everything' : where,
+			as: actor
+		}
+	);
+	/** Whether it is Owner of everything, which makes the vault it goes to a co-owner. */
+	const coowner = $derived(what === 'all' && theGroup?.name === 'Owner' && to !== EVERYONE);
+
+	/** whether the device would make the share, and the same share on the whole vault: alone, approved, or why not */
+	let verdict = $state(/** @type {import('./vaults.js').Verdict | null} */ (null));
+	let whole = $state(false);
+	$effect(() => {
+		void world;
+		const o = op && $state.snapshot(op);
+		if (!o) return void (verdict = null);
+		let gone = false;
+		may(api, actor, [o, { ...o, what: 'everything' }]).then(([a, b]) => {
+			if (!gone) [verdict, whole] = [a, allowed(b)];
+		});
+		return () => {
+			gone = true;
+		};
+	});
+	/** why the device won't make the share: '' where it would, or hasn't said yet */
+	const unshared = $derived(verdict && !allowed(verdict) ? why(/** @type {any} */ (verdict)) : '');
 
 	/** the fields of what it shares, each once, with the values each takes where it takes only some */
 	const fields = $derived.by(() => {
@@ -162,12 +191,21 @@
 	/** @param {number} i */
 	const drop = (i) => ops && (json = lines(ops.filter((_, j) => j !== i)));
 
-	/** What it reaches now, of the vault's entries the acting vault reads; and how many it can't tell. */
-	const reach = $derived.by(() => {
-		const of = world.entries.filter((e) => e.vault === vault);
-		const known = of.filter((e) => reads(e, actor) && attrsOf(e));
-		const hits = known.filter((e) => matches(where, /** @type {import('./vaults.js').Attrs} */ (attrsOf(e))));
-		return { hits, unknown: of.length - known.length };
+	/** What it reaches now, of the vault's entries the acting vault reads, as the device's `query` picks them; and how
+	 *  many it can't tell. */
+	let reach = $state(/** @type {{ hits: string[], unknown: number }} */ ({ hits: [], unknown: 0 }));
+	$effect(() => {
+		const [of, w] = [world.entries.filter((e) => e.vault === vault), $state.snapshot(where)];
+		const theirs = new Set(of.filter((e) => reads(e, actor)).map((e) => e.entry));
+		let gone = false;
+		read(api, { op: 'query', vault, where: w, select: [] }, null).then((out) => {
+			const rows = /** @type {{ entry: string }[]} */ (out?.rows ?? []);
+			const hits = rows.map((r) => r.entry).filter((e) => theirs.has(e));
+			if (!gone) reach = { hits, unknown: of.length - theirs.size };
+		});
+		return () => {
+			gone = true;
+		};
 	});
 
 	/** The cap as JSON, an op a line. */
@@ -178,7 +216,7 @@
 	});
 
 	async function give() {
-		if (spec && (await api.share(actor, vault, $state.snapshot(spec), to))) {
+		if (op && (await api.run(coowner ? 'Adding an owner' : 'Sharing', $state.snapshot(op)))) {
 			// back to the least for the next share
 			[tagged, untagged, grantee, group, name, json] = ['', '', '', 'Viewer', '', lines([{ op: 'read' }])];
 			what = entry ? 'entry' : 'rule';
@@ -193,7 +231,7 @@
 		<select class="field" bind:value={what} aria-label="What">
 			{#if entry}<option value="entry">this {singular(one?.type)} alone</option>{/if}
 			<option value="rule">every</option>
-			{#if whole}<option value="all">the whole vault</option>{/if}
+			{#if whole || what === 'all'}<option value="all">the whole vault</option>{/if}
 		</select>
 		{#if what === 'rule'}
 			<select class="field" bind:value={types} aria-label="Type">
@@ -277,15 +315,19 @@
 			: `it may ${ops ? opsWords(ops) : '…'}`}.
 		{#if !ops}
 			Its ops are a JSON list, as avenDB’s docs write them.
-		{:else if levelOf(ops) === 'owner'}
-			Your passkey approves it, as it lets them share it on.
+		{:else if unshared}
+			{nameOf(byId.get(actor))} can’t share it: {unshared}.
+		{:else if verdict && verdict !== true}
+			Your passkey approves it, as {coowner ? 'it makes them an owner' : 'it lets them share it on'}.
 		{/if}
-		{#if what === 'entry'}
+		{#if coowner}
+			Owner of everything makes {nameOf(byId.get(to))} a co-owner of {nameOf(byId.get(vault))}.
+		{:else if what === 'entry'}
 			Only {titleOf(world, entry)}, nothing else of {nameOf(byId.get(vault))}.
 		{:else if what === 'all'}
 			Everything in {nameOf(byId.get(vault))}, now and later.
 		{:else}
-			It reaches {reach.hits.length ? `${count(reach.hits.length, 'entry', 'entries')} now (${list(reach.hits.slice(0, 4).map((e) => titleOf(world, e.entry)))}${reach.hits.length > 4 ? ', …' : ''})` : 'no entry yet'}{reach.unknown
+			It reaches {reach.hits.length ? `${count(reach.hits.length, 'entry', 'entries')} now (${list(reach.hits.slice(0, 4).map((e) => titleOf(world, e)))}${reach.hits.length > 4 ? ', …' : ''})` : 'no entry yet'}{reach.unknown
 				? `, of what ${nameOf(byId.get(actor))} reads`
 				: ''}, and every one that matches later.
 		{/if}
@@ -302,7 +344,7 @@
 	{/if}
 	<button
 		class="btn primary"
-		disabled={busy || !spec?.name || !spec.ops.length || (what === 'rule' && !types)}
+		disabled={busy || !spec?.name || !spec.ops.length || (what === 'rule' && !types) || !!unshared}
 		onclick={give}
 	>
 		{entry ? 'Share it' : 'Share'}

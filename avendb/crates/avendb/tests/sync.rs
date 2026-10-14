@@ -2,21 +2,23 @@
 //! each other with what they hold of each log, gossip one digest per log and ask only where one differs, go offline and
 //! come back, and come back from old backups, which forks what they sign next. A peer sends a device the logs of the
 //! entries and audiences it reaches, and nothing about the others (T12): an entry a steward moves out of a device's
-//! reach stops syncing to it, and the device never hears of the move. Since blobs B2c, of those a device syncs the
-//! entries its sync rules want (T28), by the stewards' marks, which a relay applies without reading a selector (T29).
+//! reach stops syncing to it, and the device never hears of the move; what everyone reads reaches a device only where
+//! it has an interest in the vault or follows it, so a stranger gets nothing. Since blobs B2c, of those a device syncs
+//! the entries its keep shares want (T28), by the stewards' marks, which a relay applies without reading a selector
+//! (T23).
 
 mod common;
 
 use std::collections::BTreeSet;
 
 use avendb::doc::Item;
-use avendb::id::{AudienceId, EntryId, SignerId, VaultId};
-use avendb::lab::{Lab, NewRule};
-use avendb::lens::Status;
-use avendb::policy::{Level, Refusal};
+use avendb::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
+use avendb::lab::Lab;
+use avendb::lens::{Status, DOCUMENT_V2};
+use avendb::policy::{Action, KeepMode, Level, Refusal, Revoking, Who};
 use avendb::sealed::{seal, Brought, FileKey, FileRoot};
-use avendb::slice::{Atom, Selector, Sym};
-use avendb::sync::{log_of, LogId};
+use avendb::slice::{Atom, Selector, Sym, SCHEMA_TYPE};
+use avendb::sync::{log_of, respond, LogId};
 use common::*;
 
 /// Every ordered pair of `ds`.
@@ -231,14 +233,64 @@ fn an_entry_that_leaves_a_devices_reach_stops_syncing_to_it() {
     }
 }
 
+/// The coop's Charter is public, and Carol reads Welcome. What everyone reads goes only to a device that has an
+/// interest in its vault, acting for the grantee of a share over it, or follows it (T12, `T12_interest`): Carol's Mac
+/// receives the Charter; Dave's Mac, with no share over the coop, receives nothing of it until it follows the coop, and
+/// then nothing of the coop that isn't public; following a vault with nothing public brings nothing.
+#[test]
+fn t12_what_everyone_reads_goes_only_to_whoever_has_an_interest() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac, mac_d) = (w.mac_a, w.mac_d);
+    let charter = w.lab.create(mac, h.coop, h.coop, "doc", &[], document("Charter", CHARTER_TEXT, mac)).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome))).unwrap();
+    w.lab.sync_all(12);
+    let reads = |lab: &Lab, d| text(lab, d, charter, 2).as_deref() == Some(CHARTER_TEXT);
+    assert!(reads(&w.lab, w.mac_c), "Carol's Mac, through her share over the coop, reads the Charter");
+    assert_eq!(w.lab.fetched(mac_d, charter), 0, "Dave's Mac, with none, holds nothing of it");
+    let held = w.lab.size(mac_d);
+    w.lab.follow(mac_d, &[w.alice]);
+    w.lab.sync_all(12);
+    assert_eq!(w.lab.size(mac_d), held, "following Alice's vault, with nothing public, brings nothing");
+    w.lab.follow(mac_d, &[h.coop, w.alice]);
+    assert_eq!(w.lab.request(mac_d, mac).ask.follow, w.lab.follows(mac_d), "its requests name what it follows");
+    w.lab.sync_all(12);
+    assert!(reads(&w.lab, mac_d), "following the coop, it reads the Charter");
+    assert_eq!(w.lab.fetched(mac_d, h.welcome), 0, "and holds nothing of Welcome, which isn't public");
+}
+
+/// A device that acts for no vault and follows none is sent nothing at all, however public what its peers hold
+/// (`T12_stranger_gets_nothing`): not the coop's public Charter, nor its schema, nor any vault's log. Once it follows
+/// the coop it receives both, and nothing else of the coop.
+#[test]
+fn t12_a_stranger_gets_nothing() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac, stranger) = (w.mac_a, w.stranger);
+    let charter = w.lab.create(mac, h.coop, h.coop, "doc", &[], document("Charter", CHARTER_TEXT, mac)).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
+    let schema = w.lab.add_schema(mac, h.coop, h.coop, DOCUMENT_V2.bytes()).unwrap();
+    w.lab.sync_all(12);
+    assert!(respond(w.lab.log(mac).edits(), stranger, &[]).is_empty(), "Alice's Mac would send it nothing");
+    for d in devices(&w) {
+        assert_eq!(w.lab.sync(d, stranger), 0, "{d:?} sends it nothing");
+    }
+    assert!(w.lab.entries(stranger).is_empty());
+    w.lab.follow(stranger, &[h.coop]);
+    w.lab.sync_all(12);
+    assert_eq!(set(w.lab.entries(stranger)), set([charter, schema]), "following the coop, its public entries alone");
+    assert_eq!(w.lab.lane_of(stranger, h.coop), [DOCUMENT_V2.bytes()], "whose lane it reads");
+}
+
 /// The entries tagged `tag`, of any type.
 fn tagged_with(tag: &str) -> Selector {
     Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new(tag))]])
 }
 
-/// A sync rule of vault `issuer` for its device `device` over vault `over`.
-fn rule(issuer: VaultId, device: SignerId, over: VaultId, select: Selector, keep: bool) -> NewRule {
-    NewRule { issuer, device, over, name: "Films".into(), select, keep }
+/// Vault `actor` revokes share `share` on device `on`, which signs.
+fn revoke(lab: &mut Lab, on: SignerId, share: ShareId, actor: VaultId) -> Result<EditId, Refusal> {
+    lab.submit(on, &[on], Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] }))
 }
 
 /// A file sealed under a key of its own, its root standing for the hash iroh names its pieces by.
@@ -250,8 +302,13 @@ fn film(text: &str, k: u8) -> Brought {
 
 /// Alice's Mac makes a clip in her vault, tagged `tag`, and brings its film.
 fn clip(w: &mut World, title: &str, tag: &str, k: u8) -> EntryId {
+    clip_tagged(w, title, &[tag], k)
+}
+
+/// A clip as `clip` makes it, tagged `tags`.
+fn clip_tagged(w: &mut World, title: &str, tags: &[&str], k: u8) -> EntryId {
     let (alice, mac) = (w.alice, w.mac_a);
-    let e = w.lab.create(mac, alice, alice, "clip", &[tag], document(title, "A clip.", mac)).unwrap();
+    let e = w.lab.create(mac, alice, alice, "clip", tags, document(title, "A clip.", mac)).unwrap();
     w.lab.bring(mac, alice, e, vec![film(title, k)], |_| {}).unwrap();
     e
 }
@@ -271,26 +328,27 @@ fn roots(xs: impl IntoIterator<Item = FileRoot>) -> BTreeSet<FileRoot> {
 
 /// Alice's films (blobs B2c): two clips, each a proxy and its original, every one bringing its file, and a note, all in
 /// her vault, which gives the server relay. Her iPhone syncs only the proxies and keeps their files whole; the server
-/// syncs every entry of hers and keeps every file whole, by a rule of avenCEO's own; her Mac has no rule and syncs all
-/// of it, fetching files as it reads them. Nothing in the rules names a proxy: they are any slice of any data, by the
-/// same selectors as shares, and the stewards mark which rules pick each entry.
+/// syncs every entry of hers and keeps every file whole, by a keep share of avenCEO's own; her Mac has no keep share
+/// and syncs all of it, fetching files as it reads them. Nothing in the keep shares names a proxy: they are any slice
+/// of any data, by the same selectors as shares, and the stewards mark which keep shares pick each entry.
 #[test]
-fn t28_each_device_syncs_what_its_rules_pick() {
+fn t28_each_device_syncs_what_its_keep_shares_pick() {
     let mut w = world();
     let (alice, mac, phone, server) = (w.alice, w.mac_a, w.phone_a, w.server);
     relay_on(&mut w, alice);
     w.lab.sync_all(0);
-    let phone_rule = w.lab.set_rule(mac, &[mac], rule(alice, phone, alice, tagged_with("proxy"), true)).unwrap();
-    w.lab.set_rule(server, &[server], rule(w.avenceo, server, alice, Selector::All, true)).unwrap();
+    let proxy = keep(alice, phone, alice, KeepMode::Whole, tagged_with("proxy"));
+    let phone_keep = w.lab.issue(mac, &[mac], proxy).unwrap();
+    w.lab.issue(server, &[server], keep(w.avenceo, server, alice, KeepMode::Whole, Selector::All)).unwrap();
     let proxies = [clip(&mut w, "Dawn, proxy", "proxy", 1), clip(&mut w, "Dusk, proxy", "proxy", 2)];
     let originals = [clip(&mut w, "Dawn", "original", 3), clip(&mut w, "Dusk", "original", 4)];
     let note = w.lab.create(mac, alice, alice, "note", &[], document("Shot list", "Dawn, then dusk.", mac)).unwrap();
     w.lab.sync_all(1);
     let all = set(proxies.into_iter().chain(originals).chain([note]));
     assert_eq!(set(w.lab.entries(phone)), set(proxies), "the iPhone syncs the proxies alone");
-    assert_eq!(set(w.lab.entries(mac)), all, "the Mac, with no rule, syncs everything");
-    assert_eq!(set(w.lab.entries(server)), all, "the server syncs everything by its own rule");
-    // each keeps whole the files its rules say: the iPhone the proxies', the server all, the Mac none by default
+    assert_eq!(set(w.lab.entries(mac)), all, "the Mac, with no keep share, syncs everything");
+    assert_eq!(set(w.lab.entries(server)), all, "the server syncs everything by its own keep share");
+    // each keeps whole the files its keep shares say: the iPhone the proxies', the server all, the Mac none by default
     let proxy_files: BTreeSet<FileRoot> = proxies.iter().flat_map(|&e| files_of(&w.lab, mac, e)).collect();
     let every_file = roots(w.lab.files(mac));
     assert_eq!(every_file.len(), 4);
@@ -300,59 +358,120 @@ fn t28_each_device_syncs_what_its_rules_pick() {
     assert_eq!(roots(w.lab.kept_files(mac, true)), every_file);
     // files follow their edits (T27): the iPhone may fetch a proxy's file and not an original's
     let original_files: BTreeSet<FileRoot> = originals.iter().flat_map(|&e| files_of(&w.lab, mac, e)).collect();
-    assert!(proxy_files.iter().all(|f| w.lab.may_fetch_file(mac, phone, f)));
-    assert!(original_files.iter().all(|f| !w.lab.may_fetch_file(mac, phone, f)));
-    // the server reads no selector of Alice's, and still sends the iPhone only what its rule picks, by the marks (T29):
-    // a new proxy reaches the iPhone through the server alone, while the Mac is away
-    assert!(w.lab.slice(server, phone_rule).is_none());
+    assert!(proxy_files.iter().all(|f| w.lab.may_fetch_file(mac, phone, f, &[])));
+    assert!(original_files.iter().all(|f| !w.lab.may_fetch_file(mac, phone, f, &[])));
+    // the server reads no selector of Alice's, and still sends the iPhone only what its keep share picks, by the marks
+    // (T23): a new proxy reaches the iPhone through the server alone, while the Mac is away
+    assert!(w.lab.slice(server, phone_keep).is_none());
     let late = clip(&mut w, "Noon, proxy", "proxy", 5);
     w.lab.sync(mac, server);
     w.lab.set_online(mac, false);
     w.lab.sync_all(2);
     assert_eq!(set(w.lab.entries(phone)), set(proxies.into_iter().chain([late])));
     w.lab.set_online(mac, true);
-    // the rule follows the data: an original retagged a proxy reaches the iPhone
+    // the keep share follows the data: an original retagged a proxy reaches the iPhone
     w.lab.tag(mac, alice, originals[0], &["proxy"], &["original"]).unwrap();
     w.lab.sync_all(3);
     assert!(w.lab.entries(phone).contains(&originals[0]));
     assert!(!w.lab.entries(phone).contains(&originals[1]));
-    // and once the rule ends, the iPhone syncs all of Alice's vault again
-    w.lab.end_rule(mac, &[mac], phone_rule).unwrap();
+    // and once Alice's vault revokes it, the iPhone syncs all of her vault again
+    revoke(&mut w.lab, mac, phone_keep, alice).unwrap();
     w.lab.sync_all(4);
     assert_eq!(set(w.lab.entries(phone)), set(w.lab.entries(mac)));
 }
 
-/// A sync rule grants nothing (blobs B2c): only a vault sets the rules of its own devices, over a vault whose entries
-/// it may hold; a device under a rule syncs only what it may receive and its rule picks; and a rule drops nothing a
-/// device already holds.
+/// The files the edits of entries `es` that Alice's Mac holds bring.
+fn films(w: &World, es: &[EntryId]) -> BTreeSet<FileRoot> {
+    es.iter().flat_map(|&e| files_of(&w.lab, w.mac_a, e)).collect()
+}
+
+/// Keep modes (V1c): Alice's iPhone keeps her proxies when it opens them, the dawn one whole and never the dusk one,
+/// and with them the schema of her clips, which a keep share that keeps anything picks; the server never keeps her
+/// originals, by a never share that picks the schema too and so picks none of it, and keeps whole the films of what it
+/// syncs by its own setting, having no keep share there but a never one. Never wins over whole and opened. Once Alice's
+/// vault revokes the iPhone's never share, the dusk proxy reaches it, and stays a proxy it keeps when it opens it.
 #[test]
-fn sync_rules_grant_nothing() {
+fn keep_modes_choose_what_and_how_a_device_syncs() {
+    let mut w = world();
+    let (alice, mac, phone, server) = (w.alice, w.mac_a, w.phone_a, w.server);
+    relay_on(&mut w, alice);
+    w.lab.sync_all(0);
+    let both = |a: &str, b: &str| Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new(a)), Atom::TagHas(Sym::new(b))]]);
+    let modes = [
+        (KeepMode::Opened, tagged_with("proxy")),
+        (KeepMode::Whole, both("proxy", "dawn")),
+        (KeepMode::Never, tagged_with("dusk")),
+    ];
+    let phone_keeps: Vec<ShareId> =
+        modes.into_iter().map(|(m, s)| w.lab.issue(mac, &[mac], keep(alice, phone, alice, m, s)).unwrap()).collect();
+    let schemas = vec![Atom::TypeIn(vec![Sym::new(SCHEMA_TYPE)])];
+    let never = Selector::AnyOf(vec![vec![Atom::TagHas(Sym::new("original"))], schemas]);
+    // Alice's Mac issues it for avenCEO, which her vault owns: the server holds no seed of Alice's vault to seal the
+    // selector to, as a keep share that isn't wide must be
+    w.lab.issue(mac, &[mac], keep(w.avenceo, server, alice, KeepMode::Never, never)).unwrap();
+    w.lab.sync_all(1);
+    let proxies = [
+        clip_tagged(&mut w, "Dawn, proxy", &["proxy", "dawn"], 1),
+        clip_tagged(&mut w, "Dusk, proxy", &["proxy", "dusk"], 2),
+    ];
+    let originals = [
+        clip_tagged(&mut w, "Dawn", &["original", "dawn"], 3),
+        clip_tagged(&mut w, "Dusk", &["original", "dusk"], 4),
+    ];
+    let schema = w.lab.add_schema(mac, alice, alice, DOCUMENT_V2.bytes()).unwrap();
+    w.lab.sync_all(2);
+    assert_eq!(set(w.lab.entries(phone)), set([proxies[0], schema]), "the dawn proxy and the schema");
+    assert_eq!(set(w.lab.entries(server)), set([proxies[0], proxies[1], schema]), "all but the originals");
+    assert!(originals.iter().all(|e| w.lab.entries(mac).contains(e)));
+    // the iPhone keeps whole only the dawn proxy's film, whatever its own setting; the server keeps whole the films of
+    // what it syncs by its own setting alone
+    let dawn = films(&w, &proxies[..1]);
+    assert_eq!(roots(w.lab.kept_files(phone, false)), dawn);
+    assert_eq!(roots(w.lab.kept_files(phone, true)), dawn);
+    assert_eq!(roots(w.lab.kept_files(server, true)), films(&w, &proxies));
+    assert!(w.lab.kept_files(server, false).is_empty());
+    // with the never share revoked, the dusk proxy reaches the iPhone, which fetches its film's pieces as it reads them
+    revoke(&mut w.lab, mac, phone_keeps[2], alice).unwrap();
+    w.lab.sync_all(3);
+    assert_eq!(set(w.lab.entries(phone)), set([proxies[0], proxies[1], schema]));
+    assert_eq!(roots(w.lab.kept_files(phone, true)), dawn);
+}
+
+/// A keep share grants nothing (blobs B2c, K1): only a vault issues the keep shares of its own devices, over a vault
+/// whose entries it may hold; a device under one syncs only what it may receive and its keep shares pick; a keep share
+/// drops nothing a device already holds; and only its issuer revokes it, not even the vault it is over.
+#[test]
+fn keep_shares_grant_nothing() {
     let mut w = world();
     let (alice, carol, mac, mac_c) = (w.alice, w.carol, w.mac_a, w.mac_c);
     let l = library(&mut w);
     w.lab.sync_all(0);
-    // a rule for a device of another vault, or over a vault the issuer holds no share over, is refused
-    let not_hers = w.lab.set_rule(mac, &[mac], rule(alice, mac_c, alice, Selector::All, false));
+    // a keep share to a device of another vault, or over a vault the issuer holds no share over, is refused
+    let not_hers = w.lab.issue(mac, &[mac], keep(alice, mac_c, alice, KeepMode::Opened, Selector::All));
     assert_eq!(not_hers, Err(Refusal::NotDevice));
-    let no_share = w.lab.set_rule(mac_c, &[mac_c], rule(carol, mac_c, alice, Selector::All, false));
+    let no_share = w.lab.issue(mac_c, &[mac_c], keep(carol, mac_c, alice, KeepMode::Opened, Selector::All));
     assert_eq!(no_share.map(drop), Err(Refusal::NoCap));
-    // with a share to read Alice's notes, Carol's Mac may set a rule over her vault: one that picks the todos brings
-    // her none of them, and no new note either; once it ends, the new note comes
+    // with a share to read Alice's notes, Carol's Mac may keep from her vault: a keep share that picks the todos
+    // brings her none of them, and no new note either; once Carol's vault revokes it, the new note comes
     w.lab.issue(mac, &[mac], share(alice, vault(carol), Level::Read, of_type("note"))).unwrap();
     w.lab.sync_all(1);
     assert_eq!(set(w.lab.entries(mac_c)), set([l.plan, l.diary]));
-    let todos = w.lab.set_rule(mac_c, &[mac_c], rule(carol, mac_c, alice, of_type("todo"), true)).unwrap();
+    let todos = w.lab.issue(mac_c, &[mac_c], keep(carol, mac_c, alice, KeepMode::Whole, of_type("todo"))).unwrap();
     w.lab.sync_all(2);
     let ideas = w.lab.create(mac, alice, alice, "note", &[], document("Ideas", "A pond.", mac)).unwrap();
     w.lab.sync_all(3);
     assert_eq!(set(w.lab.entries(mac_c)), set([l.plan, l.diary]), "no todo, and no new note");
-    w.lab.end_rule(mac_c, &[mac_c], todos).unwrap();
+    // Alice's vault, which it is over, may not revoke it
+    assert_eq!(revoke(&mut w.lab, mac, todos, alice), Err(Refusal::NoCap));
+    revoke(&mut w.lab, mac_c, todos, carol).unwrap();
     w.lab.sync_all(4);
     assert_eq!(set(w.lab.entries(mac_c)), set([l.plan, l.diary, ideas]));
-    // only Alice's vault ends her rules
-    let phone_rule = w.lab.set_rule(mac, &[mac], rule(alice, w.phone_a, alice, of_type("note"), false)).unwrap();
+    // nor does anyone but Alice's vault revoke hers
+    let notes = keep(alice, w.phone_a, alice, KeepMode::Opened, of_type("note"));
+    let phone_keep = w.lab.issue(mac, &[mac], notes).unwrap();
     w.lab.sync_all(4);
-    assert_eq!(w.lab.end_rule(mac_c, &[mac_c], phone_rule), Err(Refusal::NotActing));
-    assert!(w.lab.state(mac).rule_live(phone_rule));
+    assert_eq!(revoke(&mut w.lab, mac_c, phone_keep, alice), Err(Refusal::NotActing));
+    assert_eq!(revoke(&mut w.lab, mac_c, phone_keep, carol), Err(Refusal::NoCap));
+    assert!(w.lab.state(mac).live(phone_keep));
 }
 

@@ -3,13 +3,19 @@ import AvenDB.Props
 /-!
 # Convergence and sync
 
-The proofs of convergence (T11) and of sync (T12, T13, T19, T20), stated as in `Theorems.lean`.
+The proofs of convergence (T11), of sync (T12, T13, T19, T20) and of holdings (H1, T27 extended), stated as in
+`Theorems.lean`.
 
 The replay order is a total preorder whose ties are edits with the same id, so sorting any arrangement of the same
 edits, with distinct ids, gives one list (`order_perm`). A peer's answer is made of two filters of its edits: the edits
 of the entry, audience and share logs the device may receive, and the edits of the vault logs it gathers
-(`mem_respond`). The closed part of a log holds the whole past of each of its edits, so everything a responder finds
-below an asker's frontier is something the asker holds (`reaches_held`).
+(`mem_respond`). What everyone may receive goes only to a device with an interest in its vault or that follows it, so a
+device that acts for no vault and follows none is sent nothing (`T12_interest`, `T12_stranger_gets_nothing`). The
+closed part of a log holds the whole past of each of its edits, so everything a responder finds below an asker's
+frontier is something the asker holds (`reaches_held`). A peer's answer is a union of whole logs
+(`respond_whole_logs`), so the files of the logs a device may know of are files it may fetch (`reachFiles_fetch`). A
+node keeps of a device only what announcements on connections that proved it said (`record_sound`), and a frontier a
+device states of its shelf covers a log only if its shelf holds every edit of it the node holds (`covered_held`).
 -/
 
 namespace AvenDB.Syncing
@@ -92,7 +98,8 @@ theorem T11_same_standing {edits₁ edits₂ : List Edit} (hperm : edits₁.Perm
 /-! ## What a peer sends -/
 
 /-- A device syncs an entry only if it may receive it. -/
-theorem syncs_may {st : State} {d : SignerId} {e : EntryId} (h : syncs st d e = true) : mayReceive st d e = true := by
+theorem syncs_may {st : State} {d : SignerId} {e : EntryId} {fl : List VaultId} (h : syncs st d e fl = true) :
+    mayReceive st d e fl = true := by
   unfold syncs at h
   unfold mayReceive
   cases hen : st.entry? e with
@@ -100,16 +107,17 @@ theorem syncs_may {st : State} {d : SignerId} {e : EntryId} (h : syncs st d e = 
   | some en => rw [hen] at h; simp only [Bool.and_eq_true] at h; exact h.1
 
 /-- A device syncs a log only if it may receive it. -/
-theorem syncsLog_may {st : State} {d : SignerId} {l : LogId} (h : syncsLog st d l = true) :
-    mayReceiveLog st d l = true := by
+theorem syncsLog_may {st : State} {d : SignerId} {l : LogId} {fl : List VaultId} (h : syncsLog st d l fl = true) :
+    mayReceiveLog st d l fl = true := by
   cases l with
   | entry e => exact syncs_may h
   | _ => exact h
 
 /-- An edit a peer sends a device is one it holds, of an entry log the device syncs or an audience or a share log it may
     receive, or of a vault's log. -/
-theorem mem_respond_syncs {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) :
-    o ∈ edits ∧ ((∃ l, o.log? = some l ∧ syncsLog (view edits) d l = true) ∨ ∃ v, o.log? = some (.vault v)) := by
+theorem mem_respond_syncs {edits : List Edit} {d : SignerId} {fl : List VaultId} {o : Edit}
+    (h : o ∈ respond edits d fl) :
+    o ∈ edits ∧ ((∃ l, o.log? = some l ∧ syncsLog (view edits) d l fl = true) ∨ ∃ v, o.log? = some (.vault v)) := by
   simp only [respond, List.mem_append, List.mem_filter] at h
   rcases h with ⟨hm, hl⟩ | ⟨hm, hv⟩
   · refine ⟨hm, .inl ?_⟩
@@ -123,38 +131,41 @@ theorem mem_respond_syncs {edits : List Edit} {d : SignerId} {o : Edit} (h : o �
 
 /-- An edit a peer sends a device is one it holds, of an entry, an audience or a share log the device may receive, or of
     a vault's log. -/
-theorem mem_respond {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) :
-    o ∈ edits ∧ ((∃ l, o.log? = some l ∧ mayReceiveLog (view edits) d l = true) ∨ ∃ v, o.log? = some (.vault v)) := by
+theorem mem_respond {edits : List Edit} {d : SignerId} {fl : List VaultId} {o : Edit} (h : o ∈ respond edits d fl) :
+    o ∈ edits ∧
+      ((∃ l, o.log? = some l ∧ mayReceiveLog (view edits) d l fl = true) ∨ ∃ v, o.log? = some (.vault v)) := by
   obtain ⟨hm, ⟨l, hl, hs⟩ | hv⟩ := mem_respond_syncs h
   · exact ⟨hm, .inl ⟨l, hl, syncsLog_may hs⟩⟩
   · exact ⟨hm, .inr hv⟩
 
 /-- An edit a peer sends is one it holds. -/
-theorem respond_sub {edits : List Edit} {d : SignerId} {o : Edit} (h : o ∈ respond edits d) : o ∈ edits :=
+theorem respond_sub {edits : List Edit} {d : SignerId} {fl : List VaultId} {o : Edit} (h : o ∈ respond edits d fl) :
+    o ∈ edits :=
   (mem_respond h).1
 
 /-- What a peer sends by frontiers is part of what it would send in full. -/
 theorem respondSince_sub {edits : List Edit} {d : SignerId} {fr : Ask} {o : Edit}
-    (h : o ∈ respondSince edits d fr) : o ∈ respond edits d :=
+    (h : o ∈ respondSince edits d fr) : o ∈ respond edits d fr.follow :=
   (List.mem_filter.mp h).1
 
 /-- A peer sends every edit it holds of an entry the device syncs. -/
-theorem entry_in_respond {edits : List Edit} {d : SignerId} {o : Edit} {e : EntryId}
-    (hm : o ∈ edits) (hl : o.log? = some (.entry e)) (hr : syncs (view edits) d e = true) :
-    o ∈ respond edits d := by
+theorem entry_in_respond {edits : List Edit} {d : SignerId} {fl : List VaultId} {o : Edit} {e : EntryId}
+    (hm : o ∈ edits) (hl : o.log? = some (.entry e)) (hr : syncs (view edits) d e fl = true) :
+    o ∈ respond edits d fl := by
   simp only [respond, List.mem_append, List.mem_filter]
   -- an entry's log is one `syncsLog` allows exactly when `syncs` allows the entry
   exact .inl ⟨hm, by rw [hl]; exact hr⟩
 
-theorem T12_sync_sends_only_what_shares_reach (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) :
-    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) := by
+theorem T12_sync_sends_only_what_shares_reach (edits : List Edit) (d : SignerId) (fl : List VaultId) {o : Edit}
+    (h : o ∈ respond edits d fl) :
+    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l fl = true ∨ ∃ v, l = .vault v) := by
   obtain ⟨hm, ⟨l, hl, hr⟩ | ⟨v, hv⟩⟩ := mem_respond h
   · exact ⟨hm, l, hl, .inl hr⟩
   · exact ⟨hm, .vault v, hv, .inr ⟨v, rfl⟩⟩
 
-theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h : o ∈ respond edits d) {e : EntryId}
-    (hl : o.log? = some (.entry e)) :
-    ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience = true ∧
+theorem T28_sync_follows_keeps (edits : List Edit) (d : SignerId) (fl : List VaultId) {o : Edit}
+    (h : o ∈ respond edits d fl) {e : EntryId} (hl : o.log? = some (.entry e)) :
+    ∃ en, (view edits).entry? e = some en ∧ mayReceiveAudience (view edits) d en.vault en.audience fl = true ∧
       wants (view edits) d en = true := by
   obtain ⟨-, ⟨l, hl', hs⟩ | ⟨v, hv⟩⟩ := mem_respond_syncs h
   · rw [hl] at hl'
@@ -169,13 +180,137 @@ theorem T28_sync_follows_rules (edits : List Edit) (d : SignerId) {o : Edit} (h 
   · rw [hl] at hv
     cases hv
 
-theorem T28_no_rule_wants_all (st : State) (d : SignerId) (en : Entry) (h : rulesOf st d en.vault = []) :
-    wants st d en = true := by
-  simp [wants, h]
+theorem T28_keep_modes (st : State) (d : SignerId) (en : Entry) :
+    (keepsOf st d en.vault = [] → wants st d en = true) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.level.isKeep = true ∧ k.who = .device d ∧ k.over = en.vault ∧
+      st.live k.id = true ∧ isDevice st d k.issuer = true) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.never = true → marked st en k = true → wants st d en = false) ∧
+    (∀ k ∈ keepsOf st d en.vault, k.never = false → marked st en k = true →
+      (∀ k' ∈ keepsOf st d en.vault, k'.never = true → marked st en k' = false) → wants st d en = true) ∧
+    (keeps st d en = true ↔ ∃ k ∈ keepsOf st d en.vault, k.level = .keep .whole ∧ marked st en k = true) := by
+  refine ⟨fun h => by simp [wants, wantsWith, h], fun k hk => ?_, fun k hk hn hm => ?_, fun k hk hn hm hno => ?_,
+    by simp [keeps, keepsWith]⟩
+  · -- what `keepsOf` keeps
+    have h := (List.mem_filter.1 hk).2
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+  · -- a never share that picks the entry keeps it out
+    have h : ((keepsOf st d en.vault).any fun k => k.never && marked st en k) = true :=
+      List.any_eq_true.2 ⟨k, hk, by simp [hn, hm]⟩
+    simp [wants, wantsWith, h]
+  · -- a whole or opened share picks it, and no never share does
+    have h1 : ((keepsOf st d en.vault).any fun k => !k.never && marked st en k) = true :=
+      List.any_eq_true.2 ⟨k, hk, by simp [hn, hm]⟩
+    have h2 : ((keepsOf st d en.vault).any fun k => k.never && marked st en k) = false := by
+      rw [Bool.eq_false_iff, ne_eq, List.any_eq_true]
+      rintro ⟨k', hk', h'⟩
+      simp only [Bool.and_eq_true] at h'
+      rw [hno k' hk' h'.1] at h'
+      cases h'.2
+    simp [wants, wantsWith, h1, h2]
 
 theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {o : Edit} (h : o ∈ respondSince edits d fr) :
-    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l = true ∨ ∃ v, l = .vault v) :=
-  T12_sync_sends_only_what_shares_reach edits d (respondSince_sub h)
+    o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l fr.follow = true ∨ ∃ v, l = .vault v) :=
+  T12_sync_sends_only_what_shares_reach edits d fr.follow (respondSince_sub h)
+
+theorem T12_interest (st : State) (d : SignerId) (v : VaultId) (x : Audience) (fl : List VaultId)
+    (h : mayReceiveAudience st d v x fl = true) :
+    (interested st d v = true ∨ v ∈ fl) ∧
+    (mayReceiveAudience st d v x = true ∨ v ∈ fl ∧ ∃ cp ∈ st.shares, cp.over = v ∧ st.live cp.id = true ∧
+      (cp.wide = true ∨ cp.id ∈ x) ∧ cp.who = .everyone) := by
+  unfold mayReceiveAudience at h
+  simp only [Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+  rcases h with ha | ⟨cp, hcp, ⟨⟨⟨hov, hlive⟩, hin⟩, hlev⟩, hwho⟩
+  · exact ⟨.inl (by simp [interested, ha]), .inl (by simp [mayReceiveAudience, ha])⟩
+  -- through a live share over the vault: a vault's, which it acts for, or everyone's
+  cases hw : cp.who with
+  | vault g =>
+    simp only [hw] at hwho
+    refine ⟨.inl ?_, .inl ?_⟩
+    · simp only [interested, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
+      exact .inr ⟨cp, hcp, ⟨hov, hlive⟩, by simp [hw, hwho]⟩
+    · simp only [mayReceiveAudience, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
+      exact .inr ⟨cp, hcp, ⟨⟨⟨hov, hlive⟩, hin⟩, hlev⟩, by simp [hw, hwho]⟩
+  | everyone =>
+    simp only [hw, Bool.or_eq_true, List.contains_eq_mem, decide_eq_true_eq] at hwho
+    rcases hwho with hf | hi
+    · exact ⟨.inr hf, .inr ⟨hf, cp, hcp, hov, hlive, by simpa using hin, hw⟩⟩
+    · refine ⟨.inl hi, .inl ?_⟩
+      simp only [mayReceiveAudience, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
+      exact .inr ⟨cp, hcp, ⟨⟨⟨hov, hlive⟩, hin⟩, hlev⟩, by simp [hw, hi]⟩
+  | device _ => simp [hw] at hwho
+
+/-- A device that acts for no vault has an interest in none. -/
+theorem interested_stranger {st : State} {d : SignerId} (h : ∀ v, actsFor st d v = false) (v : VaultId) :
+    interested st d v = false := by
+  rw [Bool.eq_false_iff, ne_eq, interested, h, Bool.false_or, List.any_eq_true]
+  rintro ⟨cp, -, hc⟩
+  cases hw : cp.who <;> simp [hw, h] at hc
+
+/-- A device that acts for no vault and follows none may receive no audience. -/
+theorem mayReceiveAudience_stranger {st : State} {d : SignerId} (h : ∀ v, actsFor st d v = false) (v : VaultId)
+    (x : Audience) : mayReceiveAudience st d v x = false := by
+  cases hm : mayReceiveAudience st d v x
+  · rfl
+  · rcases (T12_interest st d v x [] hm).1 with hi | hi
+    · rw [interested_stranger h] at hi
+      cases hi
+    · cases hi
+
+/-- `closeVaults` of no vault is no vault. -/
+theorem closeVaults_nil (st : State) : ∀ n, closeVaults st n [] = []
+  | 0 => rfl
+  | n + 1 => by simp [closeVaults, closeVaults_nil st n]
+
+theorem T12_stranger_gets_nothing (edits : List Edit) (d : SignerId) (h : ∀ v, actsFor (view edits) d v = false) :
+    respond edits d = [] := by
+  -- it may receive no entry, no audience and no share
+  have hrec : ∀ e, mayReceive (view edits) d e = false := by
+    intro e
+    unfold mayReceive
+    split
+    · exact mayReceiveAudience_stranger h _ _
+    · rfl
+  have hsee : ∀ cp, seesShare (view edits) d cp = false := by
+    intro cp
+    cases hw : cp.who <;> simp [seesShare, hw, h, hrec]
+  have hlog : ∀ l, syncsLog (view edits) d l = false := by
+    intro l
+    cases l with
+    | entry e =>
+      simp only [syncsLog, syncs]
+      split
+      · simp [mayReceiveAudience_stranger h]
+      · rfl
+    | audience v x => exact mayReceiveAudience_stranger h v x
+    | share c => simp [syncsLog, mayReceiveLog, reachesShare, hsee]
+    | vault v => rfl
+  -- so it is sent no edit of an entry, an audience or a share, and gathers no vault
+  rw [List.eq_nil_iff_forall_not_mem]
+  intro o ho
+  simp only [respond, List.mem_append, List.mem_filter] at ho
+  rcases ho with ⟨-, hl⟩ | ⟨-, hv⟩
+  · split at hl
+    · rw [hlog] at hl
+      cases hl
+    · cases hl
+  · split at hv
+    · rename_i v _
+      have key : ∀ vs : List VaultId, (∀ y, y ∉ vs) →
+          (closeVaults (view edits) (view edits).depth vs).contains v = false := by
+        intro vs hvs
+        rw [List.eq_nil_iff_forall_not_mem.2 hvs, closeVaults_nil]
+        rfl
+      rw [key _ fun y hy => ?_] at hv
+      · cases hv
+      simp only [List.mem_append, List.mem_filterMap, List.mem_flatMap, List.mem_filter] at hy
+      rcases hy with ⟨x, -, hx⟩ | ⟨o', ⟨-, hm⟩, -⟩
+      · simp [h] at hx
+      · split at hm
+        · rw [hlog] at hm
+          cases hm
+        · cases hm
+    · cases hv
 
 /-! ## Frontiers -/
 
@@ -392,16 +527,16 @@ def Truthful (A : List Edit) (a : Ask) : Prop :=
   (∀ l, ∀ i ∈ a.haves l, ∃ x ∈ closedPart Edit.log? A l, x.id = i) ∧ ∀ i ∈ a.loose, ∃ x ∈ A, x.id = i
 
 /-- A device that asks with `asks` says only what is so. -/
-theorem asks_truthful (A : List Edit) : Truthful A (asks A) :=
+theorem asks_truthful (A : List Edit) (fl : List VaultId) : Truthful A (asks A fl) :=
   ⟨fun _ _ hi => haves_mem _ hi, fun _ hi => loose_mem hi⟩
 
 /-- A device that asks with its frontiers alone says only what is so. -/
-theorem frontiers_truthful (A : List Edit) : Truthful A ⟨frontiers A, []⟩ :=
+theorem frontiers_truthful (A : List Edit) (fl : List VaultId) : Truthful A ⟨frontiers A, [], fl⟩ :=
   ⟨fun _ _ hi => frontier_mem _ hi, fun _ hi => nomatch hi⟩
 
 /-- What a device holding `A` is sent when it asks truthfully covers whatever of the full answer it lacks. -/
 theorem respondSince_complete {A R : List Edit} {d : SignerId} (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b)
-    {a : Ask} (ha : Truthful A a) {o : Edit} (h : o ∈ respond R d) : o ∈ A ∨ o ∈ respondSince R d a := by
+    {a : Ask} (ha : Truthful A a) {o : Edit} (h : o ∈ respond R d a.follow) : o ∈ A ∨ o ∈ respondSince R d a := by
   by_cases hw : a.loose.contains o.id = true
   · -- a loose edit the device names is one it holds, and an id both hold names one edit
     left
@@ -434,13 +569,15 @@ theorem same_frontier_held (lgA lgR : Edit → Option LogId) {A R : List Edit} {
   obtain rfl := hid a (closedPart_sub lgA ha).1 x (closedPart_sub lgR hx).1 haid
   exact ha
 
-theorem T19_frontier_sync (A R : List Edit) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
-    ∀ o ∈ respond R d, o ∈ A ∨ o ∈ respondSince R d (asks A) :=
-  fun _ h => respondSince_complete hid (asks_truthful A) h
+theorem T19_frontier_sync (A R : List Edit) (d : SignerId) (fl : List VaultId)
+    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ o ∈ respond R d fl, o ∈ A ∨ o ∈ respondSince R d (asks A fl) :=
+  fun _ h => respondSince_complete hid (asks_truthful A fl) h
 
-theorem T19_frontiers_alone (A R : List Edit) (d : SignerId) (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
-    ∀ o ∈ respond R d, o ∈ A ∨ o ∈ respondSince R d ⟨frontiers A, []⟩ :=
-  fun _ h => respondSince_complete hid (frontiers_truthful A) h
+theorem T19_frontiers_alone (A R : List Edit) (d : SignerId) (fl : List VaultId)
+    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) :
+    ∀ o ∈ respond R d fl, o ∈ A ∨ o ∈ respondSince R d ⟨frontiers A, [], fl⟩ :=
+  fun _ h => respondSince_complete hid (frontiers_truthful A fl) h
 
 theorem T19_same_frontier (lgA lgR : Edit → Option LogId) (A R : List Edit) (l : LogId)
     (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) (huA : ∀ a ∈ A, ∀ b ∈ A, a.id = b.id → a = b)
@@ -465,11 +602,11 @@ theorem mem_receive {edits incoming : List Edit} {o : Edit} :
       · exact .inl h'
       · exact .inr ⟨h, by simpa using h'⟩
 
-/-- After a device holding `A` asked a peer holding `R` (`asks`), it holds an edit of an entry it may receive by the
-    peer's view exactly when one of them held it. -/
-theorem entry_after_sync {A R : List Edit} {d : SignerId} {e : EntryId}
-    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) (hr : syncs (view R) d e = true) {o : Edit}
-    (hop : o.log? = some (.entry e)) : o ∈ receive A (respondSince R d (asks A)) ↔ o ∈ A ∨ o ∈ R := by
+/-- After a device holding `A` and following the vaults `fl` asked a peer holding `R` (`asks`), it holds an edit of an
+    entry it syncs by the peer's view exactly when one of them held it. -/
+theorem entry_after_sync {A R : List Edit} {d : SignerId} {fl : List VaultId} {e : EntryId}
+    (hid : ∀ a ∈ A, ∀ b ∈ R, a.id = b.id → a = b) (hr : syncs (view R) d e fl = true) {o : Edit}
+    (hop : o.log? = some (.entry e)) : o ∈ receive A (respondSince R d (asks A fl)) ↔ o ∈ A ∨ o ∈ R := by
   rw [mem_receive]
   constructor
   · rintro (h | h)
@@ -477,23 +614,18 @@ theorem entry_after_sync {A R : List Edit} {d : SignerId} {e : EntryId}
     · exact .inr (respond_sub (respondSince_sub h))
   · rintro (h | h)
     · exact .inl h
-    · exact respondSince_complete hid (asks_truthful A) (entry_in_respond h hop hr)
+    · exact respondSince_complete hid (asks_truthful A fl) (entry_in_respond h hop hr)
 
-theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (e : EntryId)
+theorem T13_sync_converges (editsP editsQ : List Edit) (dp dq : SignerId) (flp flq : List VaultId) (e : EntryId)
     (hid : ∀ a ∈ editsP, ∀ b ∈ editsQ, a.id = b.id → a = b)
-    (hp : syncs (view editsQ) dp e = true) (hq : syncs (view editsP) dq e = true)
+    (hp : syncs (view editsQ) dp e flp = true) (hq : syncs (view editsP) dq e flq = true)
     (o : Edit) (hop : o.log? = some (.entry e)) :
-    o ∈ receive editsP (respondSince editsQ dp (asks editsP)) ↔
-      o ∈ receive editsQ (respondSince editsP dq (asks editsQ)) := by
+    o ∈ receive editsP (respondSince editsQ dp (asks editsP flp)) ↔
+      o ∈ receive editsQ (respondSince editsP dq (asks editsQ flq)) := by
   rw [entry_after_sync hid hp hop, entry_after_sync (fun a ha b hb h => (hid b hb a ha h.symm).symm) hq hop]
   exact Or.comm
 
 /-! ## Linking -/
-
-/-- `closeVaults` of no vault is no vault. -/
-theorem closeVaults_nil (st : State) : ∀ n, closeVaults st n [] = []
-  | 0 => rfl
-  | n + 1 => by simp [closeVaults, closeVaults_nil st n]
 
 theorem T20_link_shares_only_vault_logs (edits : List Edit) (p : SignerId) {o : Edit} (h : o ∈ linkCard edits p) :
     o ∈ edits ∧ ∃ v, o.log? = some (.vault v) ∧
@@ -512,5 +644,259 @@ theorem T20_stranger_gets_nothing (edits : List Edit) (p : SignerId) (h : ownedB
   rw [List.filter_eq_nil_iff]
   intro o _
   split <;> simp
+
+/-! ## Holdings -/
+
+/-- What holdings say of a log, they hold. -/
+theorem mem_of_log? {h : Holdings} {l : LogId} {F : Frontier} (hs : h.log? l = some F) : (l, F) ∈ h.logs := by
+  simp only [Holdings.log?, Option.map_eq_some_iff] at hs
+  obtain ⟨x, hx, rfl⟩ := hs
+  have hl : x.1 = l := by simpa using List.find?_some hx
+  rw [← hl]
+  exact List.mem_of_find?_eq_some hx
+
+/-- What holdings say of a file, they hold. -/
+theorem mem_of_file? {h : Holdings} {f : FileId} {x : FileHold} (hs : h.file? f = some x) : (f, x) ∈ h.files := by
+  simp only [Holdings.file?, Option.map_eq_some_iff] at hs
+  obtain ⟨y, hy, rfl⟩ := hs
+  have hf : y.1 = f := by simpa using List.find?_some hy
+  rw [← hf]
+  exact List.mem_of_find?_eq_some hy
+
+/-- What holdings say of a log once a device told `a` is what `a` says of it, or what they said before. -/
+theorem take_logs {h : Holdings} {a : Announce} {l : LogId} {F : Frontier} (hm : (l, F) ∈ (h.take a).logs) :
+    (l, F) ∈ a.logs ∨ (l, F) ∈ h.logs := by
+  simp only [Holdings.take, List.mem_append, List.mem_filter] at hm
+  rcases hm with hm | ⟨hm, -⟩
+  · exact .inl hm
+  · split at hm
+    · simp at hm
+    · exact .inr hm
+
+/-- What holdings say of a file once a device told `a` is what `a` says of it, or what they said before. -/
+theorem take_files {h : Holdings} {a : Announce} {f : FileId} {x : FileHold} (hm : (f, x) ∈ (h.take a).files) :
+    (f, some x) ∈ a.files ∨ (f, x) ∈ h.files := by
+  simp only [Holdings.take, List.mem_append, List.mem_filter, List.mem_filterMap] at hm
+  rcases hm with ⟨⟨f', y⟩, hm, he⟩ | ⟨hm, -⟩
+  · cases y with
+    | none => cases he
+    | some y =>
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at he
+      obtain ⟨rfl, rfl⟩ := he
+      exact .inl hm
+  · split at hm
+    · simp at hm
+    · exact .inr hm
+
+/-- What a node keeps of a log once a device told it `a` is what `a` says of it, or what it kept before. -/
+theorem hear_logs {h : Holdings} {a : Announce} {l : LogId} {F : Frontier} (hm : (l, F) ∈ (hear h a).logs) :
+    (l, F) ∈ a.logs ∨ (l, F) ∈ h.logs := by
+  simp only [hear] at hm
+  split at hm
+  · simp at hm
+  · exact take_logs hm
+
+/-- What a node keeps of a file once a device told it `a` is what `a` says of it, or what it kept before. -/
+theorem hear_files {h : Holdings} {a : Announce} {f : FileId} {x : FileHold} (hm : (f, x) ∈ (hear h a).files) :
+    (f, some x) ∈ a.files ∨ (f, x) ∈ h.files := by
+  simp only [hear] at hm
+  split at hm
+  · simp at hm
+  · exact take_files hm
+
+/-- What announcements add up to, from `h` on, says of a log what one of them said, or `h` did. -/
+theorem foldl_hear_logs {l : LogId} {F : Frontier} : ∀ (xs : List (Conn × Announce)) (h : Holdings),
+    (l, F) ∈ (xs.foldl (fun h x => hear h x.2) h).logs → (l, F) ∈ h.logs ∨ ∃ x ∈ xs, (l, F) ∈ x.2.logs
+  | [], _, hm => .inl hm
+  | x :: xs, h, hm => by
+    rcases foldl_hear_logs xs (hear h x.2) hm with hm | ⟨z, hz, hm⟩
+    · rcases hear_logs hm with hm | hm
+      · exact .inr ⟨x, List.mem_cons_self .., hm⟩
+      · exact .inl hm
+    · exact .inr ⟨z, List.mem_cons_of_mem _ hz, hm⟩
+
+/-- What announcements add up to, from `h` on, says of a file what one of them said, or `h` did. -/
+theorem foldl_hear_files {f : FileId} {y : FileHold} : ∀ (xs : List (Conn × Announce)) (h : Holdings),
+    (f, y) ∈ (xs.foldl (fun h x => hear h x.2) h).files → (f, y) ∈ h.files ∨ ∃ x ∈ xs, (f, some y) ∈ x.2.files
+  | [], _, hm => .inl hm
+  | x :: xs, h, hm => by
+    rcases foldl_hear_files xs (hear h x.2) hm with hm | ⟨z, hz, hm⟩
+    · rcases hear_files hm with hm | hm
+      · exact .inr ⟨x, List.mem_cons_self .., hm⟩
+      · exact .inl hm
+    · exact .inr ⟨z, List.mem_cons_of_mem _ hz, hm⟩
+
+/-- A node keeps of device `d` only what an announcement on a connection whose hello proved `d` said. -/
+theorem record_sound (n : Node) (d : SignerId) :
+    (∀ l F, (l, F) ∈ (n.record d).logs → ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (l, F) ∈ a.logs) ∧
+    (∀ f x, (f, x) ∈ (n.record d).files → ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (f, some x) ∈ a.files) := by
+  -- it takes in only what came on a connection that proved `d`
+  have proven : ∀ {c : Conn} {a : Announce}, (c, a) ∈ n.heard.filter (·.1.device == d) →
+      (c, a) ∈ n.heard ∧ c.device = d := fun hx => by simpa using List.mem_filter.mp hx
+  refine ⟨fun l F hm => ?_, fun f x hm => ?_⟩
+  · rcases foldl_hear_logs _ _ hm with hm | ⟨⟨c, a⟩, hx, hm⟩
+    · simp at hm
+    · exact ⟨c, a, (proven hx).1, (proven hx).2, hm⟩
+  · rcases foldl_hear_files _ _ hm with hm | ⟨⟨c, a⟩, hx, hm⟩
+    · simp at hm
+    · exact ⟨c, a, (proven hx).1, (proven hx).2, hm⟩
+
+/-- What a device holding `h` announces says of each log and of each file it holds what `h` says of it, and names a
+    file `none`, no longer held, only if what it last told (`told`) named it. -/
+theorem since_sound {h : Holdings} {told : Option Holdings} {a : Announce} (hs : h.since told = some a) :
+    (∀ l F, (l, F) ∈ a.logs → (l, F) ∈ h.logs) ∧ (∀ f x, (f, some x) ∈ a.files → (f, x) ∈ h.files) ∧
+    (∀ f, (f, none) ∈ a.files → ∃ t ∈ told, ∃ x, (f, x) ∈ t.files) := by
+  cases told with
+  | none =>
+    simp only [Holdings.since, Option.some.injEq] at hs
+    subst hs
+    refine ⟨fun l F hm => hm, fun f x hm => ?_, fun f hm => ?_⟩
+    · obtain ⟨⟨f', y⟩, hy, he⟩ := List.mem_map.mp hm
+      simp only [Prod.mk.injEq, Option.some.injEq] at he
+      obtain ⟨rfl, rfl⟩ := he
+      exact hy
+    · obtain ⟨⟨f', y⟩, -, he⟩ := List.mem_map.mp hm
+      simp at he
+  | some t =>
+    simp only [Holdings.since] at hs
+    split at hs
+    · cases hs
+    · simp only [Option.some.injEq] at hs
+      subst hs
+      refine ⟨fun l F hm => (List.mem_filter.mp hm).1, fun f x hm => ?_, fun f hm => ?_⟩
+      · rcases List.mem_append.mp hm with hm | hm
+        · obtain ⟨⟨f', y⟩, hy, he⟩ := List.mem_map.mp hm
+          simp only [Prod.mk.injEq, Option.some.injEq] at he
+          obtain ⟨rfl, rfl⟩ := he
+          exact (List.mem_filter.mp hy).1
+        · obtain ⟨⟨f', y⟩, -, he⟩ := List.mem_map.mp hm
+          simp at he
+      · rcases List.mem_append.mp hm with hm | hm
+        · obtain ⟨⟨f', y⟩, -, he⟩ := List.mem_map.mp hm
+          simp at he
+        · obtain ⟨⟨f', y⟩, hy, he⟩ := List.mem_map.mp hm
+          simp only [Prod.mk.injEq] at he
+          obtain ⟨rfl, -⟩ := he
+          exact ⟨t, rfl, y, (List.mem_filter.mp hy).1⟩
+
+/-- An edit a peer sends a device brings the whole of its log with it: every edit the peer holds of that log is sent
+    too. -/
+theorem respond_whole_logs {edits : List Edit} {d : SignerId} {fl : List VaultId} {o o' : Edit}
+    (h : o' ∈ respond edits d fl) (ho : o ∈ edits) (hl : o.log? = o'.log?) : o ∈ respond edits d fl := by
+  simp only [respond, List.mem_append, List.mem_filter] at h ⊢
+  rw [hl]
+  rcases h with ⟨-, h⟩ | ⟨-, h⟩
+  · exact .inl ⟨ho, h⟩
+  · exact .inr ⟨ho, h⟩
+
+/-- A file a device may know of by a node's view, it may fetch (T27). -/
+theorem reachFiles_fetch {edits : List Edit} {d : SignerId} {f : FileId} (h : f ∈ reachFiles edits d) :
+    mayFetch edits d f = true := by
+  simp only [reachFiles, List.mem_flatMap, List.mem_filter] at h
+  obtain ⟨o, ⟨ho, hl⟩, hf⟩ := h
+  split at hl
+  · rename_i l hl'
+    simp only [reachLogs, logsOf, List.contains_iff_mem, List.mem_eraseDups, List.mem_filterMap] at hl
+    obtain ⟨o', ho', hl''⟩ := hl
+    unfold mayFetch
+    exact List.any_eq_true.mpr ⟨o, respond_whole_logs ho' ho (hl'.trans hl''.symm), by simpa using hf⟩
+  · cases hl
+
+/-- What a node tells device `d` it holds is of its own holdings, of logs and files `d` may know of. -/
+theorem tells_sound {n : Node} {d : SignerId} :
+    (∀ l F, (l, F) ∈ (n.tells d).logs → F = holdOf n.shelf l ∧ l ∈ logsOf n.shelf ∧ l ∈ reachLogs n.edits d) ∧
+    (∀ f x, (f, x) ∈ (n.tells d).files → (f, x) ∈ n.files ∧ f ∈ reachFiles n.edits d) := by
+  refine ⟨fun l F hm => ?_, fun f x hm => ?_⟩
+  · simp only [Node.tells, Node.own, List.mem_filter, List.mem_map, List.contains_iff_mem] at hm
+    obtain ⟨⟨l', hl', he⟩, hr⟩ := hm
+    simp only [Prod.mk.injEq] at he
+    obtain ⟨rfl, rfl⟩ := he
+    exact ⟨rfl, hl', hr⟩
+  · simp only [Node.tells, Node.own, List.mem_filter, List.contains_iff_mem] at hm
+    exact hm
+
+/-- Every edit a peer reaches walking back from `F` it reaches from `G`, if it reaches each of `F` from `G`. -/
+theorem reaches_trans {os : List Edit} {F G : List EditId} {i : EditId} (h : Reaches os F i)
+    (hF : ∀ j ∈ F, Reaches os G j) : Reaches os G i := by
+  induction h with
+  | base hj => exact hF _ hj
+  | step hy _ hp ih => exact .step hy ih hp
+
+/-- Every edit a device holds waiting is one it holds. -/
+theorem waitingIn_mem {edits : List Edit} {l : LogId} {i : EditId} (h : i ∈ waitingIn edits l) :
+    ∃ a ∈ edits, a.id = i := by
+  simp only [waitingIn, inLog, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter] at h
+  obtain ⟨a, ⟨⟨ha, -⟩, -⟩, rfl⟩ := h
+  exact ⟨a, ha, rfl⟩
+
+/-- An edit of a log outside its closed part is held waiting, when no two edits share an id. -/
+theorem mem_waitingIn {edits : List Edit} {l : LogId} (hu : ∀ a ∈ edits, ∀ b ∈ edits, a.id = b.id → a = b) {x : Edit}
+    (hx : x ∈ inLog Edit.log? edits l) (hc : x ∉ closedPart Edit.log? edits l) : x.id ∈ waitingIn edits l := by
+  simp only [waitingIn, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter]
+  refine ⟨x, ⟨hx, ?_⟩, rfl⟩
+  simp only [Bool.not_eq_true', List.any_eq_false, beq_iff_eq]
+  intro y hy hid
+  exact hc (hu y (closedPart_sub _ hy).1 x (List.mem_filter.mp hx).1 hid ▸ hy)
+
+/-- A frontier a device states of what its shelf `S` holds of log `l` covers the log as a node holding `N` holds it only
+    if `S` holds every edit of it `N` holds: what the stated heads reach, walking `N`'s copy of the log, is of `S`'s
+    closed part, which holds the whole past of each of its edits; and what `N` holds waiting, `S` holds. Assumes ids
+    don't collide. -/
+theorem covered_held {N S : List Edit} {l : LogId} (hid : ∀ a ∈ S, ∀ b ∈ N, a.id = b.id → a = b)
+    (hu : ∀ a ∈ N, ∀ b ∈ N, a.id = b.id → a = b) (hc : covers N l (holdOf S l) = true) {x : Edit}
+    (hx : x ∈ inLog Edit.log? N l) : x ∈ S := by
+  simp only [covers, holdOf, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, List.contains_iff_mem] at hc
+  obtain ⟨hheads, hwait⟩ := hc
+  -- what the stated heads reach is an edit `S` holds, with its whole past
+  have held : ∀ {i}, Reaches (inLog Edit.log? N l) (frontiers S l) i → ∃ a ∈ S, a.id = i := fun hr => by
+    obtain ⟨a, ha, haid⟩ := reaches_held Edit.log? Edit.log? hid (fun _ hj => frontier_mem Edit.log? hj) hr
+    exact ⟨a, (closedPart_sub _ ha).1, haid⟩
+  have hxN : x ∈ N := (List.mem_filter.mp hx).1
+  by_cases hcp : x ∈ closedPart Edit.log? N l
+  · -- at or below the node's frontier, each head of which the stated heads reach
+    obtain ⟨a, ha, haid⟩ := held (reaches_trans (closed_reaches_frontier Edit.log? hu hcp) fun j hj =>
+      reaches_of_ancestorsN _ (hheads j hj))
+    exact hid a ha x hxN haid ▸ ha
+  · rcases hwait x.id (mem_waitingIn hu hx hcp) with h | h
+    · obtain ⟨a, ha, haid⟩ := held (reaches_of_ancestorsN _ h)
+      exact hid a ha x hxN haid ▸ ha
+    · obtain ⟨a, ha, haid⟩ := waitingIn_mem h
+      exact hid a ha x hxN haid ▸ ha
+
+/-- A device a node lists as synced to entry `e`, other than its own, stated on a connection whose hello proved it a
+    frontier of the entry's log that covers the log as the node holds it, and may hold that log by the node's view. -/
+theorem syncedTo_sound {n : Node} {me d : SignerId} {e : EntryId} (h : d ∈ n.syncedTo me e) (hne : d ≠ me) :
+    LogId.entry e ∈ reachLogs n.edits d ∧ ∃ c a F, (c, a) ∈ n.heard ∧ c.device = d ∧ (LogId.entry e, F) ∈ a.logs ∧
+      covers n.edits (.entry e) F = true := by
+  simp only [Node.syncedTo] at h
+  split at h
+  · simp at h
+  · simp only [List.mem_mergeSort, List.mem_append, List.mem_filter, Bool.and_eq_true, List.contains_iff_mem] at h
+    rcases h with h | ⟨-, hl, hc⟩
+    · split at h <;> simp_all
+    · cases hF : (n.record d).log? (.entry e) with
+      | none => simp [hF] at hc
+      | some F =>
+        simp only [hF, Option.any_some] at hc
+        obtain ⟨c, a, hca, hd, hm⟩ := (record_sound n d).1 _ _ (mem_of_log? hF)
+        exact ⟨hl, c, a, F, hca, hd, hm, hc⟩
+
+/-- A device a node lists as synced to file `f`, other than its own, stated on a connection whose hello proved it that
+    it holds the file whole, and may fetch it by the node's view. -/
+theorem syncedToFile_sound {n : Node} {me d : SignerId} {f : FileId} (h : d ∈ n.syncedToFile me f) (hne : d ≠ me) :
+    mayFetch n.edits d f = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (f, some .whole) ∈ a.files := by
+  simp only [Node.syncedToFile] at h
+  split at h
+  · simp at h
+  · simp only [List.mem_mergeSort, List.mem_append, List.mem_filter, Bool.and_eq_true, List.contains_iff_mem] at h
+    rcases h with h | ⟨-, hr, hc⟩
+    · split at h <;> simp_all
+    · cases hF : (n.record d).file? f with
+      | none => simp [hF] at hc
+      | some x =>
+        simp only [hF, beq_iff_eq, Option.some.injEq] at hc
+        subst hc
+        obtain ⟨c, a, hca, hd, hm⟩ := (record_sound n d).2 _ _ (mem_of_file? hF)
+        exact ⟨reachFiles_fetch hr, c, a, hca, hd, hm⟩
 
 end AvenDB.Syncing

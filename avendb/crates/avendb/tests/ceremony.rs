@@ -11,10 +11,10 @@
 mod common;
 
 use common::*;
-use avendb::id::{AudienceId, EditId, SignerId};
+use avendb::id::{AudienceId, BlobId, EditId, SignerId};
 use avendb::keys::{self, KeyFam};
 use avendb::lab::Lab;
-use avendb::policy::{Action, Kind, Principal, Refusal};
+use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sign::{self, Passkey, RelayPass, device_salt, pass_challenge};
 use avendb::wire::{Join, Reply, Request, Wire};
 
@@ -51,7 +51,8 @@ fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     let (edits, ids, more) = from.reply(f, t, &request, usize::MAX);
     let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
     let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
-    let blobs = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
+    let may = |b: &BlobId| from.may_fetch(f, t, *b, &request.ask.follow);
+    let blobs = reply.blobs.iter().filter(|(b, _)| may(b)).filter_map(|(b, _)| from.blob(f, *b));
     to.receive(t, reply.edits, blobs.collect())
 }
 
@@ -63,7 +64,7 @@ fn a_browser_founds_alices_vault_in_ceremonies() {
     assert_eq!(device, authenticator.device([5; 32]).id(), "and the PRF output on the device's salt its keys");
     let genesis = genesis(passkey);
     let vault = ceremony(&mut lab, device, &[passkey], genesis, &mut authenticator).into();
-    let add = Action::AddDevice { vault, device, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault, device, seal_to: None });
     ceremony(&mut lab, device, &[passkey, device], add, &mut authenticator);
     assert_eq!(lab.vault_of(device), Some(vault), "the browser belongs to the vault its passkey founded");
     assert!(lab.opens(device, KeyFam::Seed(vault)), "and opens its seed");
@@ -114,7 +115,7 @@ fn the_lab_holds_no_secret_of_a_browsers_passkey() {
     let (mut lab, passkey, device) = browser(&mut authenticator, [5; 32]);
     let genesis = genesis(passkey);
     let vault = ceremony(&mut lab, device, &[passkey], genesis, &mut authenticator).into();
-    let add = Action::AddDevice { vault, device, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault, device, seal_to: None });
     ceremony(&mut lab, device, &[passkey, device], add, &mut authenticator);
     assert!(lab.secrets(passkey).is_empty(), "no secret of the passkey");
     assert!(lab.passkey_secret(passkey).is_none(), "nor its private key");
@@ -151,7 +152,7 @@ fn a_new_browser_founds_its_vault_in_two_ceremonies() {
     // its vault and itself in it, for each of them, in one batch: the second ceremony signs them all
     let found = |d: &mut avendb::lab::Drafting<'_>, p: SignerId| {
         let vault = d.draft(&[p], genesis(p))?.into();
-        d.draft(&[p, device], Action::AddDevice { vault, device, seal_to: None })?;
+        d.draft(&[p, device], Action::Share(Sharing::Device { vault, device, seal_to: None }))?;
         Ok(vault)
     };
     let sets = lab.drafting_for(device, &passkeys, found).expect("each drafts");
@@ -197,7 +198,7 @@ fn a_browser_links_through_alices_mac_in_two_ceremonies() {
     assert_eq!(joining, [(w.passkey_a, (w.alice, None))], "Alice's vault, by the card, so her passkey is Alice's");
     let (passkey, vault) = (w.passkey_a, w.alice);
     // it joins Alice's vault: the second ceremony signs the edit that adds it, and the Mac takes it
-    let add = Action::AddDevice { vault, device, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault, device, seal_to: None });
     let id = ceremony(&mut browser, device, &[passkey, device], add, &mut authenticator);
     let join = Join::from_wire(&browser.joined(device, id).to_wire()).expect("a join");
     mac.accept_join(w.mac_a, device, join).expect("the Mac takes the join");

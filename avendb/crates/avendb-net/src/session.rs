@@ -2,11 +2,14 @@
 //! its kind in its first byte, and the answer back on the same stream. A message the node refuses gets its stream
 //! reset.
 
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::SignerId;
+use avendb::id::{EditId, SignerId};
+use avendb::lab::Lab;
 use avendb::sign::{Hello, RelayPass};
+use avendb::sync::{LogId, log_of};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
 use iroh::endpoint::{Connection, RecvStream, VarInt};
 use iroh::protocol::{AcceptError, ProtocolHandler};
@@ -15,7 +18,7 @@ use crate::{ALPN, Peer, Shared, WAIT, unix_now};
 
 /// A request, answered by a reply.
 pub(crate) const REQUEST: u8 = 0;
-/// An announcement, answered by nothing.
+/// An announcement of the sender's holdings (`wire::Announce`), answered by nothing.
 pub(crate) const ANNOUNCE: u8 = 1;
 /// A request for the node's contact card, answered by its vault logs, if it hands its card out (the server).
 pub(crate) const CARD: u8 = 2;
@@ -31,6 +34,9 @@ pub(crate) const CLAIM_KEY: u8 = 5;
 /// A claim of the server (P8f), answered by its join once it takes it (`Lab::accept_claim`): the edit that adds it to
 /// avenCEO, signed by it too, and its McEliece key.
 pub(crate) const CLAIM: u8 = 6;
+/// A request for the logs it names alone (v8 phase H, `only`), answered by a reply as a request is, of those logs
+/// alone: what a node asks a peer whose holdings hold what it lacks there.
+pub(crate) const ASK_LOGS: u8 = 7;
 
 /// The error code a node closes a connection or a stream with when it refuses it.
 pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
@@ -117,10 +123,38 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
             }
         });
     }
+    shared.gone(&peer);
 }
 
-/// The answer to the message on the stream `recv`: a request gets a reply, and an announcement nothing, but the
-/// node asks the peer if its digests differ; a request for its card gets its vault logs, if it hands its card out. A
+/// `request`, what device `me` of `lab` asks a peer (`Lab::request`), cut to the logs `logs`, for the peer to answer
+/// of those alone (`ASK_LOGS`): what it names of each, and each it names nothing of named all the same, for the peer
+/// to send it whole; and of its loose edits, those of these logs.
+pub(crate) fn only(lab: &Lab, me: SignerId, mut request: Request, logs: &BTreeSet<LogId>) -> Request {
+    request.ask.haves.retain(|l, _| logs.contains(l));
+    logs.iter().for_each(|l| _ = request.ask.haves.entry(*l).or_default());
+    let log = lab.log(me);
+    let of = |(edit, id): (&avendb::policy::Edit, &EditId)| log_of(edit, *id).is_some_and(|l| logs.contains(&l));
+    let theirs: HashSet<EditId> = log.edits().iter().zip(log.ids()).filter(|e| of(*e)).map(|(_, id)| *id).collect();
+    request.ask.loose.retain(|id| theirs.contains(id));
+    request
+}
+
+/// What device `me` of `lab` answers `request` for the logs it names alone (`ASK_LOGS`) with, as a request
+/// (`Lab::reply`): every edit it holds of any other log, or of none, counted among those the asker holds.
+fn scoped(lab: &Lab, me: SignerId, mut request: Request) -> Request {
+    let log = lab.log(me);
+    let named = |(edit, id): (&avendb::policy::Edit, &EditId)| {
+        log_of(edit, *id).is_some_and(|l| request.ask.haves.contains_key(&l))
+    };
+    let others: Vec<EditId> = log.edits().iter().zip(log.ids()).filter(|e| !named(*e)).map(|(_, id)| *id).collect();
+    request.ask.loose.extend(others);
+    request
+}
+
+/// The answer to the message on the stream `recv`: a request gets a reply, of the logs it names alone if it asks for
+/// those (`ASK_LOGS`); an announcement of the peer's holdings nothing, but the node keeps them, as the device whose
+/// hello proved it on this connection holds them, and asks the peer for the logs where it holds what the node lacks;
+/// a request for its card gets its vault logs, if it hands its card out. A
 /// passkey's pass for the device whose hello proved it on this connection, made in its minutes, gets the link card of
 /// each passkey it may be from, and a join the node accepts gets nothing, and the node tells the new device what it
 /// holds. A server nobody has claimed
@@ -132,15 +166,26 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     match kind {
         REQUEST => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
+            shared.follows(peer, &request);
             let (edits, ids, more) = shared.lab(move |lab, me| lab.reply(me, device, &request, page)).await;
             let blobs = shared.offer(ids).await?;
             Ok(Reply { edits, blobs, more }.to_wire())
         }
+        ASK_LOGS => {
+            let (request, page) = (Request::from_wire(body)?, shared.opts.page);
+            shared.follows(peer, &request);
+            let reply = move |lab: &mut Lab, me| {
+                let request = scoped(lab, me, request);
+                lab.reply(me, device, &request, page)
+            };
+            let (edits, ids, more) = shared.lab(reply).await;
+            let blobs = shared.offer(ids).await?;
+            Ok(Reply { edits, blobs, more }.to_wire())
+        }
         ANNOUNCE => {
-            let Announce { digests } = Announce::from_wire(body)?;
-            if shared.lab(move |lab, me| lab.differs(me, &digests)).await {
-                shared.ask_soon(peer.endpoint);
-            }
+            // of the device whose hello proved it on this connection, and of no other
+            shared.hear(device, Announce::from_wire(body)?);
+            shared.ask_soon(peer.endpoint);
             Ok(Vec::new())
         }
         CARD if shared.opts.card => {

@@ -1,4 +1,4 @@
-//! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`avendb/docs/OPS.md`, shares). A share is a
+//! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`docs/ARCHITECTURE.md` §8). A share is a
 //! name and the ops its grantee may make on the slice its selector picks: relay, backup and read (keep, pass on and
 //! open the slice's edits), the write ops (create an entry, set a value, add, delete or move rows, ask for tags, start
 //! a proposal, merge a line) and share (issue shares resting on it). Its level, which relays and every operational rule
@@ -30,7 +30,7 @@ use serde_json::{json, Map, Value};
 
 use crate::id::ShareId;
 use crate::ops::Loc;
-use crate::policy::Level;
+use crate::policy::{KeepMode, Level};
 use crate::slice::{Sym, TagDelta};
 
 /// The most ops a share names, steps a pattern has, and values an op may set a place to or tags it may ask for: so
@@ -87,8 +87,8 @@ pub enum Touch {
 /// An op a share names, in the order shares list them (`normalize`): `Relay`, `Backup` and `Read` its slice's edits;
 /// `Create` entries; `Set` any change at or under `path` (only to the values `to`, if it lists them), `Insert`,
 /// `Remove` or `Move` the rows of a list, `Merge` another line, each on the lines `on` names (either, if none); ask for
-/// the tags `Tag` lists (any, if none); `Propose`; and `Share`, issue shares resting on it, and on the whole vault
-/// publish into its schema lane.
+/// the tags `Tag` lists (any, if none); `Propose`; and `Share`, issue shares resting on it. A share with `Share` is an
+/// owner's, never on the whole vault (`policy::Refusal::WideOwner`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
     Relay,
@@ -327,7 +327,7 @@ impl Op {
             "relay" | "backup" | "read" | "create" | "propose" | "share" => &["op"],
             other => {
                 return Err(format!(
-                    "a cap names no op {other:?}: relay, backup, read, create, set, insert, remove, move, tag, \
+                    "a share names no op {other:?}: relay, backup, read, create, set, insert, remove, move, tag, \
                      propose, merge or share"
                 ));
             }
@@ -389,7 +389,7 @@ impl Op {
 
 /// A share's level: the class of its strongest op, relay for none (`Rules.lean`'s `levelOf`).
 pub fn level_of(ops: &[Op]) -> Level {
-    ops.iter().map(Op::level).max().unwrap_or(Level::Relay)
+    ops.iter().map(Op::level).max_by_key(|l| l.rank()).unwrap_or(Level::Relay)
 }
 
 /// A share's ops as it carries them: each once, in the order shares list them (an op's kind, then as given), read with
@@ -403,7 +403,7 @@ pub fn normalize(ops: Vec<Op>) -> Result<Vec<Op>, String> {
         }
     }
     if out.is_empty() {
-        return Err("a cap names at least one op".into());
+        return Err("a share names at least one op".into());
     }
     let level = level_of(&out);
     if level.allows(Level::Write) && !out.contains(&Op::Read) {
@@ -416,7 +416,7 @@ pub fn normalize(ops: Vec<Op>) -> Result<Vec<Op>, String> {
     });
     out.sort_by_key(Op::rank);
     if out.len() > MAX_OPS {
-        return Err(format!("a cap names at most {MAX_OPS} ops"));
+        return Err(format!("a share names at most {MAX_OPS} ops"));
     }
     Ok(out)
 }
@@ -424,7 +424,7 @@ pub fn normalize(ops: Vec<Op>) -> Result<Vec<Op>, String> {
 /// A share's name: a few words, at most `MAX_NAME` characters, not blank.
 pub fn name_ok(name: &str) -> Result<(), String> {
     if name.trim().is_empty() || name.chars().count() > MAX_NAME {
-        return Err(format!("a cap has a name of 1 to {MAX_NAME} characters"));
+        return Err(format!("a share has a name of 1 to {MAX_NAME} characters"));
     }
     Ok(())
 }
@@ -452,9 +452,12 @@ pub fn groups() -> Vec<Group> {
 }
 
 impl Level {
-    /// The name of its built-in group.
+    /// The name of its built-in group, or for a keep share, which no group grants, of its mode.
     pub fn group(self) -> &'static str {
         match self {
+            Level::Keep(KeepMode::Whole) => "Keep whole",
+            Level::Keep(KeepMode::Opened) => "Keep when opened",
+            Level::Keep(KeepMode::Never) => "Never keep",
             Level::Owner => "Owner",
             Level::Write => "Editor",
             Level::Read => "Viewer",
@@ -464,7 +467,7 @@ impl Level {
     }
 
     /// The ops of its built-in group: what a share with this level and no narrower ops allows (`Rules.lean`'s
-    /// `Level.ops`).
+    /// `Level.ops`). A keep share allows none.
     pub fn ops(self) -> Vec<Op> {
         let edit = || {
             vec![
@@ -477,6 +480,7 @@ impl Level {
             ]
         };
         match self {
+            Level::Keep(_) => vec![],
             Level::Relay => vec![Op::Relay],
             Level::Backup => vec![Op::Backup],
             Level::Read => vec![Op::Read],
@@ -487,8 +491,10 @@ impl Level {
 }
 
 impl Group {
+    /// `{name, hint, ops, everyone, level}`, its level the class of its ops (`level_of`, `words::level_name`).
     pub fn to_json(&self) -> Value {
-        json!({ "name": self.name, "hint": self.hint, "ops": ops_to_json(&self.ops), "everyone": self.everyone })
+        let (ops, level) = (ops_to_json(&self.ops), crate::words::level_name(level_of(&self.ops)));
+        json!({ "name": self.name, "hint": self.hint, "ops": ops, "everyone": self.everyone, "level": level })
     }
 }
 
@@ -502,7 +508,7 @@ pub fn allows_all(ops: &[Op], main: bool, touches: &[Touch]) -> bool {
 pub fn ops_of_json(v: &Value) -> Result<Vec<Op>, String> {
     let rs = v.as_array().ok_or("ops are a list of ops")?;
     if rs.len() > MAX_OPS {
-        return Err(format!("a cap names at most {MAX_OPS} ops"));
+        return Err(format!("a share names at most {MAX_OPS} ops"));
     }
     rs.iter().map(Op::of_json).collect()
 }

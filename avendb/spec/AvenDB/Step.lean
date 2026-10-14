@@ -7,30 +7,54 @@ Every change is a signed edit. A peer checks each edit against the state just be
 links keys (`settle`), and replays all the edits it holds in one fixed order (`order`), so peers holding the same edits
 end in the same state. A removal also cuts what it hadn't seen (`view`): an edit it hadn't seen stands only if it stands
 without what the removal takes away, so neither a removed owner nor a thief holding a stolen passkey can sign edits that
-claim to come before the removal, and nobody writes into an entry after a move took it out of their slice.
+claim to come before the removal, and nobody writes into an entry after a mark took it out of their slice.
 -/
 
 namespace AvenDB
 
-/-- Every change. An edit that acts for a vault (issues or revokes a share, writes, moves, publishes) names the owners
-    `via` its author acts through (`actsVia`): none when its author is a member of the vault, else from an owner of the
-    vault down to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop through
-    `[bob]`. -/
+/-- What a vault's settings edit sets: its threshold, or its root, which the root hands on to a new passkey, which
+    signs too, or gives up. Handing the root on is a removal: it names the edits it had seen and keeps. -/
+inductive Setting where
+  | threshold (n : Nat)
+  | root      (r : Option SignerId) (keep : List EditId)
+  deriving DecidableEq, Repr
+
+/-- What a share edit gives: a grant, share `c`, issued by `c.issuer`, or a keep share, which grants nothing and names
+    one of its issuer's devices; or a place in vault `v`, as an owner `p`, or as a device `d` (a phone or a browser of a
+    human vault, a server of an aven vault). Owner of the whole vault is an owner of it: a grant never makes anyone
+    that (WideOwner). -/
+inductive Sharing where
+  | grant  (c : Share) (via : List VaultId := [])
+  | owner  (v : VaultId) (p : Principal)
+  | device (v : VaultId) (d : SignerId)
+  deriving DecidableEq, Repr
+
+/-- What a revocation ends: grant `c`, with every grant resting on it, revoked by vault `actor` (a keep share only by
+    its issuer); or the place of owner `p` or of device `d` in vault `v`. Every revocation is a removal: it names the
+    edits it had seen and keeps. -/
+inductive Revoking where
+  | grant  (c : ShareId) (actor : VaultId) (keep : List EditId) (via : List VaultId := [])
+  | owner  (v : VaultId) (p : Principal) (keep : List EditId)
+  | device (v : VaultId) (d : SignerId) (keep : List EditId)
+  deriving DecidableEq, Repr
+
+/-- The edits a revocation had seen and keeps. -/
+def Revoking.keep : Revoking → List EditId
+  | .grant _ _ k _ | .owner _ _ k | .device _ _ k => k
+
+/-- Every change. An edit that acts for a vault (issues or revokes a grant, writes, marks) names the owners `via` its
+    author acts through (`actsVia`): none when its author is a member of the vault, else from an owner of the vault down
+    to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop through `[bob]`. A
+    vault's schemas and lenses are entries it writes (`laneOf`), so no edit of their own. -/
 inductive Action where
   /-- A new vault. A human vault may name a root, its passkey, which signs too. -/
-  | genesis      (v : VaultId) (kind : Kind) (owners : List Principal) (threshold : Nat) (root : Option SignerId := none)
-  | addOwner     (v : VaultId) (p : Principal)
-  | removeOwner  (v : VaultId) (p : Principal) (keep : List EditId)
-  | setThreshold (v : VaultId) (n : Nat)
-  /-- A device of a human vault (a phone, a browser) or of an aven vault (a server). -/
-  | addDevice    (v : VaultId) (d : SignerId)
-  | removeDevice (v : VaultId) (d : SignerId) (keep : List EditId)
-  /-- The root hands itself on to a new passkey, which signs too, or steps down. -/
-  | setRoot      (v : VaultId) (r : Option SignerId) (keep : List EditId)
-  /-- A share, issued by `c.issuer`. -/
-  | share        (c : Share) (via : List VaultId := [])
-  /-- Share `c` ends, with every share resting on it. -/
-  | revoke       (c : ShareId) (actor : VaultId) (keep : List EditId) (via : List VaultId := [])
+  | genesis    (v : VaultId) (kind : Kind) (owners : List Principal) (threshold : Nat) (root : Option SignerId := none)
+  /-- Vault `v`'s threshold or root. -/
+  | settings   (v : VaultId) (s : Setting)
+  /-- A grant, an owner or a device. -/
+  | share      (s : Sharing)
+  /-- A grant, an owner or a device ends. -/
+  | revoke     (r : Revoking)
   /-- An encrypted edit of entry `e` of vault `v`, on the line `proposal` of its history, under the key of its stay
       `stay` at epoch `epoch` of that stay's audience. `deps` are the entry's writes it builds on: a write that starts a
       proposal builds on the version the proposal starts from, and a merge also on the heads of the line it brings in.
@@ -40,33 +64,41 @@ inductive Action where
       where it acts through a share: the share it relies on, whose chain's ops its readers then read; and its readers
       read off its Loro update what it touches (`touches`, `Rules.lean`), besides the tags it asks for, and whether what
       it makes of the record fits the schemas the entry was written under up to it (`fits`, `Schemas.lean`). -/
-  | write        (v : VaultId) (e : EntryId) (actor : VaultId) (stay : Option EditId) (epoch : Nat)
-                 (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
-                 (create : Option (Audience × Header) := none) (tags : TagDelta := {}) (proof : Option ShareId := none)
-                 (touches : List Touch := []) (fits : Bool := true)
-  /-- A steward, acting for vault `v`, moves its entry `e` to audience `to`, keeping the writes it had seen. -/
-  | move         (v : VaultId) (e : EntryId) (to : Audience) (keep : List EditId) (via : List VaultId := [])
+  | write      (v : VaultId) (e : EntryId) (actor : VaultId) (stay : Option EditId) (epoch : Nat)
+               (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
+               (create : Option (Audience × Header) := none) (tags : TagDelta := {}) (proof : Option ShareId := none)
+               (touches : List Touch := []) (fits : Bool := true)
+  /-- A steward, acting for vault `v`, marks its entry `e`: with the audience its shares select (`caps`), which begins a
+      stay and keeps the writes it had seen (`keep`), with the keep shares that pick it (`wants`), or with both. A part
+      left out (`none`) stays as it is, so a mark of the wants alone never puts back an audience that another steward
+      changed meanwhile. -/
+  | mark       (v : VaultId) (e : EntryId) (caps : Option Audience) (wants : Option (List ShareId))
+               (keep : List EditId) (via : List VaultId := [])
   /-- The real boxes of one key: `secret` sealed or wrapped to the keys `to`, or published (`pub`). The schedule already
       says who may open what, so this edit changes nothing here: a peer accepts it only from a signer that may open the
       key, and only if every box is one the schedule seals. -/
-  | keys         (secret : KeyName) (to : List KeyName) (pub : Bool := false)
-  /-- A schema or a lens, published into vault `v`'s schema lane: blobs that hold no data, named by their hash. -/
-  | publish      (v : VaultId) (actor : VaultId) (blob : BlobId) (via : List VaultId := [])
+  | keys       (secret : KeyName) (to : List KeyName) (pub : Bool := false)
   /-- A device vouches for its own accepted writes of one entry, `covers`, with both halves of its signature, where
       the writes carry only the classical half. It changes nothing; a peer that no longer trusts the curves counts
       only the writes a checkpoint covers (`checkpointed`). -/
-  | checkpoint   (e : EntryId) (covers : List EditId)
-  /-- A sync rule (`State.lean`), set by vault `r.issuer` for one of its devices. -/
-  | syncRule     (r : SyncRule) (via : List VaultId := [])
-  /-- Sync rule `r` of vault `issuer` ends. -/
-  | endRule      (r : ShareId) (issuer : VaultId) (via : List VaultId := [])
-  /-- A steward, acting for vault `v`, marks the sync rules that pick its entry `e` (`desiredPicks`). -/
-  | pick         (v : VaultId) (e : EntryId) (rules : List ShareId) (via : List VaultId := [])
+  | checkpoint (e : EntryId) (covers : List EditId)
   deriving DecidableEq, Repr
 
-/-- The edits a removal had seen and keeps; every removal names them. -/
+/-- A mark that takes entry `e` to audience `to` and leaves its wants as they are: what a move was. -/
+@[match_pattern] abbrev Action.move (v : VaultId) (e : EntryId) (to : Audience) (keep : List EditId)
+    (via : List VaultId := []) : Action :=
+  .mark v e (some to) none keep via
+
+/-- A mark of the keep shares `rs` that pick entry `e`, which leaves its audience as it is: what a pick was. -/
+@[match_pattern] abbrev Action.pick (v : VaultId) (e : EntryId) (rs : List ShareId) (via : List VaultId := []) :
+    Action :=
+  .mark v e none (some rs) [] via
+
+/-- The edits a removal had seen and keeps; every removal names them: each revocation, handing the root on, and a mark
+    that takes an entry to another audience. -/
 def Action.keep? : Action → Option (List EditId)
-  | .removeOwner _ _ k | .removeDevice _ _ k | .setRoot _ _ k | .revoke _ _ k _ | .move _ _ _ k _ => some k
+  | .revoke r => some r.keep
+  | .settings _ (.root _ k) | .mark _ _ (some _) _ k _ => some k
   | _ => none
 
 structure Edit where
@@ -98,6 +130,10 @@ def setVault (st : State) (vt : Vault) : State :=
 /-- The writes readers don't count, and write `w` among them unless they count it (`ok`). -/
 def State.counting (st : State) (ok : Bool) (w : EditId) : List EditId :=
   if ok then st.uncounted else st.uncounted ++ [w]
+
+/-- Entry `e` marked with the wants `rs`. -/
+def State.markWants (st : State) (e : EntryId) (rs : List ShareId) : State :=
+  { st with marks := st.marks.filter (·.1 != e) ++ [(e, rs)] }
 
 def setEntry (st : State) (en : Entry) : State :=
   { st with entries := st.entries.map fun x => if x.id == en.id then en else x }
@@ -147,8 +183,8 @@ def closeDeps (ws : List Write) : List Write :=
 /-- After a removal from `pre` to `post`: drop every write the removal took the authorization from, unless the
     remover had seen it, and every write that builds on a dropped one; an entry whose creation is dropped goes with all
     its writes. Writes that were already unauthorized (kept by an earlier removal) stay. Revocation wins over what it
-    had not seen. Each write is judged in the audience it was written in (`authorized`), so a move drops nothing here: a
-    write a move hadn't seen falls by strong removal, checked against the audience the move took its entry to
+    had not seen. Each write is judged in the audience it was written in (`authorized`), so a mark drops nothing here: a
+    write a mark hadn't seen falls by strong removal, checked against the audience the mark took its entry to
     (`hide`). -/
 def dropUnseen (pre post : State) (keep : List EditId) : State :=
   let ws := closeDeps (post.writes.filter fun w => keep.contains w.edit || !authorized pre w || authorized post w)
@@ -163,19 +199,27 @@ def shareParentOk (st : State) (c : Share) : Bool :=
   | some p =>
     match st.share? p with
     | none    => false
-    | some pc => st.live p && pc.over == c.over && pc.level == Level.owner && pc.who == .principal (.vault c.issuer) &&
+    | some pc => st.live p && pc.over == c.over && pc.level == Level.owner && pc.who == .vault c.issuer &&
         (!c.wide || pc.wide)
+
+/-- A share rests where it may: a keep share on nothing, over a vault whose entries its issuer may hold, so no stranger
+    has a vault's stewards mark entries for it; any other share as `shareParentOk` says. -/
+def restsOk (st : State) (c : Share) : Bool :=
+  if c.level.isKeep then c.parent.isNone && mayHold st c.issuer c.over else shareParentOk st c
 
 /-- Vault `a` may revoke share `c`: it issued it, the share is over it, it holds the share (and gives it up), or it may
     revoke the share `c` rests on. -/
 def mayRevokeN (st : State) (a : VaultId) : Nat → Share → Bool
   | 0, _ => false
-  | n + 1, c => c.issuer == a || c.over == a || c.who == .principal (.vault a) ||
+  | n + 1, c => c.issuer == a || c.over == a || c.who == .vault a ||
     match c.parent.bind st.share? with
     | some p => mayRevokeN st a n p
     | none   => false
 
-def mayRevoke (st : State) (a : VaultId) (c : Share) : Bool := mayRevokeN st a (st.shares.length + 1) c
+/-- A keep share only its issuer revokes, through a device or an owner: the vault it is over could otherwise have a
+    device sync all of that vault, by revoking its last keep share that adds entries. -/
+def mayRevoke (st : State) (a : VaultId) (c : Share) : Bool :=
+  if c.level.isKeep then c.issuer == a else mayRevokeN st a (st.shares.length + 1) c
 
 /-- Signer `d` may box key `k`: the key of a family that exists, at an epoch it has reached, that `d` should be able to
     open; or the key of one of an entry's stays at an epoch that stay's audience has reached, when `d` should be able
@@ -207,7 +251,7 @@ def apply (st : State) (edit : Edit) : Option State :=
     -- every first owner consents
     else if !owners.all (approves st sigs) then none
     else some { st with vaults := st.vaults ++ [⟨v, kind, owners, threshold, [], root⟩] }
-  | .addOwner v p =>
+  | .share (.owner v p) =>
     match st.vault? v with
     | none => none
     | some vt =>
@@ -217,7 +261,7 @@ def apply (st : State) (edit : Edit) : Option State :=
       -- the vault's threshold, plus the newcomer's consent
       else if !(approves st sigs (.vault v) && approves st sigs p) then none
       else some (setVault st { vt with owners := vt.owners ++ [p] })
-  | .removeOwner v p keep =>
+  | .revoke (.owner v p keep) =>
     match st.vault? v with
     | none => none
     | some vt =>
@@ -228,13 +272,13 @@ def apply (st : State) (edit : Edit) : Option State :=
         let owners' := vt.owners.erase p
         let post := setVault st { vt with owners := owners', threshold := min vt.threshold owners'.length }
         some (dropUnseen st post keep)
-  | .setThreshold v n =>
+  | .settings v (.threshold n) =>
     match st.vault? v with
     | none => none
     | some vt =>
       if n == 0 || n > vt.owners.length || !approves st sigs (.vault v) then none
       else some (setVault st { vt with threshold := n })
-  | .addDevice v d =>
+  | .share (.device v d) =>
     match st.vault? v with
     | none => none
     | some vt =>
@@ -242,32 +286,39 @@ def apply (st : State) (edit : Edit) : Option State :=
       -- the vault's threshold, plus the device's own signature
       else if !(approves st sigs (.vault v) && sigs.contains d) then none
       else some (setVault st { vt with devices := vt.devices ++ [d] })
-  | .removeDevice v d keep =>
+  | .revoke (.device v d keep) =>
     match st.vault? v with
     | none => none
     | some vt =>
       if !vt.devices.contains d then none
       else if !(approves st sigs (.vault v) || sigs.contains d) then none
       else some (dropUnseen st (setVault st { vt with devices := vt.devices.erase d }) keep)
-  | .setRoot v r _ =>
+  | .settings v (.root r _) =>
     match st.vault? v with
     | none => none
     | some vt =>
       -- only the root hands the root on, and the new root signs
       if !vt.root.any sigs.contains || !r.all sigs.contains then none
       else some (setVault st { vt with root := r })
-  | .share c via =>
+  | .share (.grant c via) =>
     if (st.share? c.id).isSome || (st.vault? c.over).isNone then none
-    -- shares name vaults or everyone, never signers, nor the vault they are over; everyone only reads
+    -- a share names a device exactly when it is a keep share (KeepNeedsDevice, DeviceOnlyKeeps)
+    else if c.level.isKeep != c.who.isDevice then none
+    -- grants name vaults or everyone, nor the vault they are over; everyone only reads
     else if (match c.who with
-             | .principal (.signer _) => true
-             | .principal (.vault x)  => (st.vault? x).isNone || x == c.over
-             | .everyone              => c.level != Level.read) then none
-    else if !actsVia st edit.author via c.issuer || !shareParentOk st c then none
+             | .device _ => false
+             | .vault x  => (st.vault? x).isNone || x == c.over
+             | .everyone => c.level != Level.read) then none
+    -- owner of the whole vault is an owner of it, which only a vault's approval and the newcomer's consent make
+    -- (WideOwner); owner of a slice is a grant
+    else if c.level == Level.owner && c.wide then none
+    -- a vault keeps entries on its own devices only
+    else if !c.who.device?.all (isDevice st · c.issuer) then none
+    else if !actsVia st edit.author via c.issuer || !restsOk st c then none
     -- making someone owner is governance
     else if c.level == Level.owner && !approves st sigs (.vault c.issuer) then none
     else some { st with shares := st.shares ++ [c] }
-  | .revoke cid actor keep via =>
+  | .revoke (.grant cid actor keep via) =>
     match st.share? cid with
     | none => none
     | some c =>
@@ -288,7 +339,7 @@ def apply (st : State) (edit : Edit) : Option State :=
           epoch > st.epochOf (.audience v x) + (reenters st v x).toNat then none
       else
         let attrs : Attrs := ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩
-        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof⟩
+        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof, hdr.blob⟩
         -- its readers count it if it fits and the share it was created through lets a creation through
         some { st with entries := st.entries ++ [en], born := st.born ++ [e],
                        writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], .main, via, true, x⟩],
@@ -315,51 +366,40 @@ def apply (st : State) (edit : Edit) : Option State :=
               -- they count what it builds on
               let ok := counts st actor en deps proof (proposal == .main) (touches ++ tags.touches) fits
               some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id }
-  | .move v e to keep via =>
+  | .mark v e caps wants keep via =>
     match st.entry? e with
     | none => none
     | some en =>
-      -- only a steward moves, to another audience of the vault, and a move begins one stay
+      -- only a steward marks an entry of its vault
       if en.vault != v || !actsVia st edit.author via v then none
-      else if !audienceOk st v to || to == en.audience || en.stays.any (·.1 == some edit.id) then none
-      else some (dropUnseen st (setEntry st { en with stays := (some edit.id, to) :: en.stays }) keep)
+      -- it marks an audience, the keep shares that pick the entry, or both; only a new audience is a removal, which
+      -- keeps what it had seen
+      else if (caps.isNone && wants.isNone) || (caps.isNone && !keep.isEmpty) then none
+      -- another audience of the vault, and a mark begins one stay
+      else if !caps.all (fun to => audienceOk st v to && to != en.audience && !en.stays.any (·.1 == some edit.id)) then
+        none
+      -- wants of the vault, other than the entry's, but where the mark takes it to a new audience. Neither list asks
+      -- whether what it names is live: a revocation that sorts before the mark, of a share or a keep share, mustn't
+      -- refuse it, and readers leave out what isn't live
+      else if !wants.all (fun rs => wantsOk st v rs && (caps.isSome || rs != st.wantsOf e)) then none
+      -- a new audience cuts what the mark hadn't seen that only the audience the entry leaves allowed
+      else match caps, wants with
+        | some to, some rs =>
+          some (dropUnseen st (setEntry (st.markWants e rs) { en with stays := (some edit.id, to) :: en.stays }) keep)
+        | some to, none => some (dropUnseen st (setEntry st { en with stays := (some edit.id, to) :: en.stays }) keep)
+        | none, some rs => some (st.markWants e rs)
+        | none, none => none
   | .keys secret to pub =>
     if !mayBox st edit.author secret then none
     -- a box the schedule doesn't seal would hand the key to someone who may not open it
     else if !to.all (fun t => st.seals.contains ⟨secret, t⟩) then none
     else if pub && !st.published.contains secret then none
     else some st
-  | .publish v actor blob via =>
-    if (st.vault? v).isNone || st.lane.contains (v, blob) then none
-    -- only the vault, or a vault holding a wide owner share over it, publishes into its lane
-    else if !actsVia st edit.author via actor || !ownsLane st actor v then none
-    else some { st with lane := st.lane ++ [(v, blob)] }
   | .checkpoint e covers =>
     -- a device vouches for its own accepted writes of the entry, and changes nothing
     if covers.isEmpty || !covers.all (fun c => st.writes.any fun w =>
         w.edit == c && w.author == edit.author && w.entry == e) then none
     else some st
-  | .syncRule r via =>
-    if (st.rule? r.id).isSome || (st.vault? r.over).isNone then none
-    -- a vault sets the rules of its own devices, over a vault whose entries it may hold
-    else if !isDevice st r.device r.issuer || !actsVia st edit.author via r.issuer || !mayHold st r.issuer r.over then
-      none
-    else some { st with rules := st.rules ++ [r] }
-  | .endRule r issuer via =>
-    match st.rule? r with
-    | none => none
-    | some x =>
-      if x.issuer != issuer || !st.ruleLive r || !actsVia st edit.author via issuer then none
-      else some { st with ended := st.ended ++ [r] }
-  | .pick v e rs via =>
-    match st.entry? e with
-    | none => none
-    | some en =>
-      -- only a steward marks an entry, with live rules over its vault that aren't wide, each once, smallest first
-      if en.vault != v || !actsVia st edit.author via v then none
-      else if rs != mkAudience rs || rs == st.picksOf e ||
-          !rs.all (fun r => st.rules.any fun x => x.id == r && x.over == v && !x.wide && st.ruleLive r) then none
-      else some { st with picks := st.picks.filter (·.1 != e) ++ [(e, rs)] }
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)
@@ -377,7 +417,7 @@ def trace (st : State) : List Edit → List State
 /-- Removals sort before anything else at the same depth. -/
 def Edit.rank (edit : Edit) : Nat :=
   match edit.action with
-  | .removeOwner .. | .removeDevice .. | .setRoot .. | .revoke .. | .move .. => 0
+  | .revoke _ | .settings _ (.root ..) | .mark _ _ (some _) .. => 0
   | _ => 1
 
 /-- The one order every peer replays in: causal depth, then removals first, then id. -/
@@ -396,12 +436,15 @@ def order (edits : List Edit) : List Edit := (edits.filter (wellFormed edits)).m
 
 /-! ## Strong removal
 
-A removal names the edits it had seen and keeps (`keep`): removing an owner or a device, revoking a share, the root
-handing itself on, and moving an entry. Every other edit that comes before it in the replay order was made
-concurrently, or claims to be: it stands only if it also stands with what the removal takes away hidden. When removals
-clash, the senior one stands: removals settle from the top down, a vault's before those of the coops it owns, and within
-a vault its root, then its owners in the order they joined, then removals no owner approved (a device leaving);
-revocations follow, the most senior revoker first; moves come last (`priority`). -/
+A removal names the edits it had seen and keeps (`keep`): revoking an owner, a device or a grant, the root handing
+itself on, and a mark that takes an entry to another audience. Every other edit that comes before it in the replay order
+was made concurrently, or claims to be: it stands only if it also stands with what the removal takes away hidden. When
+removals clash, the senior one stands: a vault's removals (revoking an owner or a device, handing the root on) settle
+from the top down, a vault's before those of the coops it owns, and within a vault its root, then its owners in the
+order they joined, then removals no owner approved (a device leaving); revoked grants follow, the most senior revoker
+first; marks that change an audience come last (`priority`). A mark of the wants alone is no removal: it takes nothing
+away, so nothing it hadn't seen falls by it. Nor does revoking a keep share take anything away (`removes`): nothing
+rests on a keep share, no audience holds one, and no mark asks whether the keep shares it names are live. -/
 
 /-- What a removal takes away. -/
 inductive Fact where
@@ -431,10 +474,10 @@ def hide (st : State) (fs : List Fact) : State :=
 
 def Edit.isRemoval (edit : Edit) : Bool := edit.action.keep?.isSome
 
-/-- The shares the edits `edits` issue. -/
+/-- The grants the edits `edits` issue. -/
 def sharesIn (edits : List Edit) : List Share :=
   edits.filterMap fun o => match o.action with
-    | .share c _ => some c
+    | .share (.grant c _) => some c
     | _ => none
 
 /-- Among the shares `cs`, share `x` is `c` or rests on it through its parents. -/
@@ -445,17 +488,19 @@ def restsOnIn (cs : List Share) (c : ShareId) : Nat → ShareId → Bool
     | some p => restsOnIn cs c n p
     | none   => false
 
-/-- What removal `r` takes away: the owner, the device, the root, among the shares `edits` issue the share and every
-    share resting on it, or for a move the audiences the entry no longer is in. -/
+/-- What removal `r` takes away: the owner, the device, the root, among the grants `edits` issue the grant and every
+    grant resting on it (nothing for a keep share), or for a mark that changes an audience the audiences the entry no
+    longer is in. -/
 def removes (edits : List Edit) (r : Edit) : List Fact :=
   match r.action with
-  | .removeOwner v p _  => [.owner v p]
-  | .removeDevice v d _ => [.device v d]
-  | .setRoot v _ _      => [.root v]
-  | .revoke c _ _ _ =>
+  | .revoke (.owner v p _)   => [.owner v p]
+  | .revoke (.device v d _)  => [.device v d]
+  | .settings v (.root ..)   => [.root v]
+  | .revoke (.grant c _ _ _) =>
     let cs := sharesIn edits
-    (cs.filter fun x => restsOnIn cs c (cs.length + 1) x.id).map fun x => .share x.id
-  | .move _ e to _ _    => [.audience e to]
+    if (cs.find? (·.id == c)).any (·.level.isKeep) then []
+    else (cs.filter fun x => restsOnIn cs c (cs.length + 1) x.id).map fun x => .share x.id
+  | .mark _ e (some to) ..   => [.audience e to]
   | _ => []
 
 /-- Each removal of `rem`, at its position in `edits`: the edits it keeps, and what it takes away. -/
@@ -501,16 +546,17 @@ def seniority (st : State) (a : VaultId) (c : Share) : Nat :=
   if c.over == a then 0
   else let ch := chain st c; (ch.findIdx? (·.issuer == a)).getD ch.length
 
-/-- Who stands when removals clash, the smallest first. Vault removals come before revocations, and a vault's
-    removals before those of the coops it owns (`tier`), since a coop's removals rest on its owners' approval and
-    never the other way round. Within a vault: its root, then its owners by seniority, their place among the owners
-    where no removal has happened yet, then removals no owner approved. Revocations follow, the most senior revoker
-    first: the vault the share is over, then whoever issued a share higher up the chain of the share revoked, since a
-    share falls with the share it rests on. Moves come last: a steward's upkeep. So a removal is only ever kept out by
-    one that ranks above it, and what ranks above it never rests on what it takes away. -/
+/-- Who stands when removals clash, the smallest first. A vault's removals (an owner or a device revoked, the root
+    handed on) come before revoked grants, and a vault's removals before those of the coops it owns (`tier`), since a
+    coop's removals rest on its owners' approval and never the other way round. Within a vault: its root, then its
+    owners by seniority, their place among the owners where no removal has happened yet, then removals no owner
+    approved. Revoked grants follow, the most senior revoker first: the vault the grant is over, then whoever issued a
+    grant higher up the chain of the grant revoked, since a grant falls with the grant it rests on. Marks that change an
+    audience come last: a steward's upkeep. So a removal is only ever kept out by one that ranks above it, and what
+    ranks above it never rests on what it takes away. -/
 def priority (base : State) (edit : Edit) : List Nat :=
   match edit.action with
-  | .removeOwner v _ _ | .removeDevice v _ _ | .setRoot v _ _ =>
+  | .revoke (.owner v _ _) | .revoke (.device v _ _) | .settings v (.root ..) =>
     let t := tier base v
     match base.vault? v with
     | none => [0, t, 2, 0]
@@ -519,8 +565,8 @@ def priority (base : State) (edit : Edit) : List Nat :=
       else match vt.owners.zipIdx.find? fun (p, _) => approves base edit.sigs p with
         | some (_, i) => [0, t, 1, i]
         | none => [0, t, 2, 0]
-  | .revoke c a _ _ => [1, (base.share? c).elim 0 (seniority base a), 0, 0]
-  | .move .. => [2, 0, 0, 0]
+  | .revoke (.grant c a _ _) => [1, (base.share? c).elim 0 (seniority base a), 0, 0]
+  | .mark _ _ (some _) .. => [2, 0, 0, 0]
   | _ => [3, 0, 0, 0]
 
 /-- Priorities compare place by place. -/

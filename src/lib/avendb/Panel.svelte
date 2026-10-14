@@ -55,9 +55,18 @@
 		border-bottom: 1px solid var(--edge);
 	}
 
+	/* a long id below the title wraps, so the close button stays on screen */
+	header > div {
+		min-width: 0;
+	}
+
+	h3,
+	small {
+		overflow-wrap: anywhere;
+	}
+
 	h3 {
 		margin: 0 0 0.15rem;
-		overflow-wrap: anywhere;
 	}
 
 	.close {

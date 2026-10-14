@@ -2,16 +2,16 @@
 //! its person's passkey's ceremonies in the sign-in sheet, which the app shows and whose page seals what it brings back
 //! to the key the device made for that ceremony alone. Here the app is the test, and the sheet's page a software
 //! passkey that seals as the page does (avendb-browser's `sealCeremony`). Eve founds her vault from the Mac in two
-//! sheets, through a relay open to sign-up; the device keeps her vault in its folder, opens again from it in the
-//! unlock's sheet alone, and puts it aside when she forgets it there. A device her browser made before, before
-//! 2026-10-10 even, moves into the folder as it opens (`adopt`), the same device, and opens again from the folder
-//! after.
+//! sheets, through a relay open to sign-up; the device keeps her vault on the shelf in its folder, opens again from it
+//! in the unlock's sheet alone, following the vaults it followed, and puts the shelf aside when she forgets it there,
+//! never deleting it. Every read and change is an op (`run`, V2), what her vault's owners approve signed in a sheet;
+//! a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`), and any range of it back, in base64. A new
+//! device puts aside a shelf a start cut short left, and never reads what an earlier avenDB kept in the folder.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -19,11 +19,11 @@ use avendb::cast::*;
 use avendb::id::EntryId;
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
-use avendb::sign::{Ceremony, PRF_SALT, Passkey, device_salt};
-use avendb_browser::{Device, Fresh, Start, Unlock};
-use avendb_device::{ASIDE, Config, META, SHEET, STORE, serve};
-use avendb_net::{Admission, Authenticator, Node, Options, Progress, Step};
+use avendb::sign::{Ceremony, PRF_SALT, Passkey};
+use avendb_device::{Config, SHEET, serve};
+use avendb_net::{Admission, Node, Options, disk};
 use avendb_server::Relay;
+use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
 use serde_json::{Value, json};
@@ -138,24 +138,6 @@ impl App {
     }
 }
 
-/// A browser's authenticator, holding its person's passkey, as a page's device asks it.
-struct Browser(Mutex<Passkey>);
-
-impl Authenticator for Browser {
-    async fn ceremony(&self, challenge: [u8; 32], _: Step) -> anyhow::Result<Ceremony> {
-        Ok(self.0.lock().expect("the authenticator").ceremony(challenge))
-    }
-}
-
-impl Browser {
-    /// The ceremony that unlocks the device whose salt ends in `nonce`, over `challenge`.
-    fn unlock(&self, nonce: [u8; 32], challenge: [u8; 32]) -> Unlock {
-        let mut passkey = self.0.lock().expect("the authenticator");
-        let device = passkey.prf(&device_salt(&nonce));
-        Unlock { ceremony: passkey.ceremony(challenge), device }
-    }
-}
-
 /// A folder of its own in the system's temporary folder, removed with everything in it when dropped.
 struct Folder(PathBuf);
 
@@ -198,6 +180,14 @@ async fn steps(app: &mut App) -> Vec<String> {
     steps.iter().map(|s| s["step"].as_str().expect("a name").to_string()).collect()
 }
 
+/// The names of the objects on shelf `g` in folder `dir` under `under`, in order.
+fn objects(dir: &Path, g: u64, under: &str) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir.join(format!("g{g}")).join(under)) else { return vec![] };
+    let mut names: Vec<String> = entries.map(|e| e.expect("an entry").file_name().to_string_lossy().into()).collect();
+    names.sort();
+    names
+}
+
 /// Waits until `check` holds, 60 seconds at most.
 async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
     let end = Instant::now() + Duration::from_secs(60);
@@ -215,11 +205,16 @@ fn id(v: &Value) -> [u8; 32] {
     bytes.try_into().expect("32 bytes")
 }
 
+/// The device's world, as the page reads it (the `world` op).
+async fn world_of(app: &mut App) -> Value {
+    run(app, json!({ "op": "world" })).await.expect("its world")
+}
+
 /// Entry `entry` as the device's world shows it, once `check` holds of it, 60 seconds at most.
 async fn shown(app: &mut App, entry: &Value, what: &str, check: impl Fn(&Value) -> bool) -> Value {
     let end = Instant::now() + Duration::from_secs(60);
     loop {
-        let world = app.call("world", json!([])).await.expect("its world");
+        let world = world_of(app).await;
         let entries = world["entries"].as_array().expect("its entries");
         if let Some(shown) = entries.iter().find(|i| i["entry"] == *entry && check(i)) {
             return shown.clone();
@@ -247,7 +242,7 @@ fn titled(title: &str, text: &str) -> Value {
 
 /// The title and text of note `entry`, as the device's world shows it.
 async fn note(app: &mut App, entry: &Value) -> Option<(String, String)> {
-    let world = app.call("world", json!([])).await.expect("its world");
+    let world = world_of(app).await;
     let entries = world["entries"].as_array().expect("its entries");
     let note = entries.iter().find(|i| i["entry"] == *entry)?;
     Some((note["title"].as_str()?.to_string(), note["text"].as_str()?.to_string()))
@@ -262,7 +257,8 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     // a Mac with no account yet
     assert_eq!(app.call("status", json!([])).await, Ok(json!({ "meta": null, "open": false, "device": null })));
     assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()));
-    assert_eq!(app.call("world", json!([])).await, Err("avenDB isn't open here: unlock it first".into()));
+    let world = app.call("run", json!([{ "op": "world" }])).await;
+    assert_eq!(world, Err("avenDB isn't open here: unlock it first".into()));
     assert_eq!(app.call("steps", json!([])).await, Ok(Value::Null), "no start yet");
     // she closes the first sheet: nothing is founded, and nothing kept
     app.cancel = true;
@@ -271,7 +267,8 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(found, Err("You closed the sign-in sheet.".into()));
     assert_eq!(app.asked(), ["unlock"]);
     assert_eq!(steps(&mut app).await, ["unlock"], "it stopped at the unlock");
-    assert!(!dir.join(META).exists(), "nothing to open");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1], "one shelf");
+    assert!(objects(&dir, 1, "meta").is_empty(), "nothing to open");
     // she founds her vault from the Mac in two sheets: the unlock, which is her passkey's pass for it, and her vault
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
     assert_eq!(app.asked(), ["unlock", "found"]);
@@ -287,7 +284,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     let again = app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await;
     assert_eq!(again, Err("this Mac holds an avenDB account already: forget it here first".into()));
     // a note in her vault, which the server keeps, as the relay share her vault gave it at its founding reaches it
-    let vault = app.call("world", json!([])).await.expect("its world")["mine"].clone();
+    let vault = world_of(&mut app).await["mine"].clone();
     let seeds = titled("Seeds", "Tomatoes in March.");
     let write = json!({ "op": "create", "vault": vault, "type": "note", "tags": ["garden"], "value": seeds });
     let entry = run(&mut app, write).await.expect("a note")["entry"].clone();
@@ -296,6 +293,12 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     until("the server keeps her note", || server.read(holds)).await;
     let garden = |n: &Value| n["type"] == "note" && n["tags"] == json!(["garden"]) && n["title"] == "Seeds";
     shown(&mut app, &entry, "her note, tagged", garden).await;
+    // where her note is synced to (v8 phase H): her Mac, once its folder holds it, and the server, and no other
+    let (mac, keeper) = (device["id"].clone(), json!(hex(&server.device().0)));
+    let synced = |n: &Value| {
+        n["syncedTo"].as_array().is_some_and(|d| d.len() == 2 && d.contains(&mac) && d.contains(&keeper))
+    };
+    shown(&mut app, &entry, "her note, synced to her Mac and the server", synced).await;
     // a todo for her work, which she shares with everyone to read, and then no longer
     let sow = json!({ "kind": "todo", "title": "Sow tomatoes" });
     let todo = json!({ "op": "create", "vault": vault, "type": "todo", "tags": ["work"], "value": sow });
@@ -308,19 +311,59 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     let doing = |t: &Value| t["status"] == "doing" && t["tags"] == json!(["work", "urgent"]) && t["public"] == false;
     shown(&mut app, &todo, "her todo, doing and urgent", doing).await;
     let work = json!({ "all": [{ "type": ["todo"] }, { "tag": "work" }] });
-    let public = json!({ "name": "Public", "where": work, "ops": [{ "op": "read" }] });
-    let share = app.call("share", json!([vault, vault, public, "everyone"])).await.expect("a cap");
+    let public = json!({ "op": "share", "over": vault, "who": "everyone", "level": "Public", "what": work });
+    let share = run(&mut app, public).await.expect("a share")["share"].clone();
     shown(&mut app, &todo, "her work todos, public", |t| t["public"] == true).await;
-    let world = app.call("world", json!([])).await.expect("its world");
-    let shares = world["caps"].as_array().expect("its caps");
-    let shared = shares.iter().find(|c| c["id"] == share).expect("the cap");
+    let world = world_of(&mut app).await;
+    let shares = world["caps"].as_array().expect("its shares");
+    let shared = shares.iter().find(|c| c["id"] == share).expect("the share");
     let (who, level, slice) = (&shared["grantee"], &shared["role"], &shared["slice"]);
     let picks = (&slice["name"], &slice["where"], &slice["ops"]);
-    assert_eq!((who, level), (&json!("everyone"), &json!("read")), "everyone reads");
-    assert_eq!(picks, (&public["name"], &work, &public["ops"]), "her work todos, by the Public group");
+    assert_eq!((who, level, &shared["group"]), (&json!("everyone"), &json!("read"), &json!("Public")), "all read");
+    assert_eq!(picks, (&json!("Public"), &work, &json!([{ "op": "read" }])), "her work todos, by the Public group");
     assert_eq!(shown(&mut app, &entry, "her note", |n| n["public"] == false).await["title"], "Seeds", "not a todo");
-    assert_eq!(app.call("revoke", json!([vault, share])).await, Ok(Value::Null));
+    let end = run(&mut app, json!({ "op": "revoke", "share": share })).await.expect("revoked");
+    assert!(end["edit"].is_string(), "{end}");
     shown(&mut app, &todo, "her work todos, hers alone again", |t| t["public"] == false).await;
+    // a new vault her vault owns: her passkey approves it in a sheet, so on the Mac an op never answers approve
+    let new = json!({ "op": "found", "kind": "aven", "name": "avenEVE" });
+    let made = run(&mut app, new).await.expect("a new vault");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    assert_eq!(made["vaults"].as_array().map(Vec::len), Some(1), "{made}");
+    // it follows avenCEO, and keeps that in what opens it again
+    let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("avenCEO");
+    let follow = json!({ "op": "follow", "vault": hex(&avenceo.0), "on": true });
+    assert_eq!(run(&mut app, follow).await, Ok(json!({ "follow": [hex(&avenceo.0)] })));
+    let status = app.call("status", json!([])).await.expect("its status");
+    assert_eq!(status["meta"]["follow"], json!([hex(&avenceo.0)]));
+    // a film, a chunk at a time in base64, as native.js hands it over; then any range of it back, in base64 too
+    let film: Vec<u8> = (0..100_000u32).map(|i| (i * 7 % 253) as u8).collect();
+    let put = json!({ "op": "put_file", "vault": vault, "name": "Film.mp4", "media": "video/mp4", "tags": [],
+        "len": film.len() });
+    let n = app.call("fileStart", json!([put])).await.expect("a file's number");
+    let mut at = 0;
+    for chunk in film.chunks(40_000) {
+        assert_eq!(app.call("fileChunk", json!([n, at, BASE64.encode(chunk)])).await, Ok(Value::Null));
+        at += chunk.len();
+    }
+    let out_of_order = app.call("fileChunk", json!([n, 5, BASE64.encode(b"late")])).await;
+    assert!(out_of_order.is_err_and(|e| e.contains("came before")), "each chunk in order");
+    let made = app.call("fileEnd", json!([n])).await.expect("the op's answer")["ok"].clone();
+    let (root, size) = (made["root"].clone(), made["size"].clone());
+    let file = shown(&mut app, &made["entry"], "the film", |f| f["kind"] == "file").await;
+    assert_eq!((&file["title"], &file["files"][0]["len"]), (&json!("Film.mp4"), &json!(film.len())));
+    let read = json!({ "op": "read_file", "root": root, "size": size, "from": 10, "to": 20 });
+    let answer = app.call("run", json!([read])).await.expect("an answer");
+    assert_eq!(answer["ok"], json!({ "root": root, "from": 10, "to": 20, "len": 10 }));
+    let bytes = BASE64.decode(answer["bytes"].as_str().expect("its bytes").as_bytes()).expect("base64");
+    assert_eq!(bytes, film[10..20], "the bytes beside, in base64");
+    let dropped = app.call("fileStart", json!([{ "op": "put_file", "vault": vault, "name": "x", "len": 4 }])).await;
+    let dropped = dropped.expect("a file's number");
+    assert_eq!(app.call("fileDrop", json!([dropped])).await, Ok(Value::Null));
+    assert_eq!(app.call("fileEnd", json!([dropped])).await, Err("no such file on its way in".into()), "dropped");
+    for old in ["world", "share", "revoke", "foundVaults", "readFile", "database", "history"] {
+        assert_eq!(app.call(old, json!([])).await, Err(format!("no call {old:?}")), "an op now");
+    }
     let size = app.call("size", json!([])).await.expect("its size");
     assert!(size[0].as_u64().expect("its edits") > 0, "it holds her vault's edits: {size}");
     assert_eq!(app.call("changed", json!([0, 0])).await, Ok(json!(true)), "it holds more than nothing at once");
@@ -329,13 +372,17 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     let svg = app.call("qrSvg", json!([device["offer"], 240])).await.expect("a QR code");
     assert!(svg.as_str().expect("an image").contains("<svg"), "an SVG image");
     assert_eq!(app.call("nope", json!([])).await, Err("no call \"nope\"".into()));
-    assert_eq!(app.call("note", json!(["x"])).await, Err("\"x\" is no id".into()));
+    let bad = run(&mut app, json!({ "op": "note", "entry": "x" })).await.expect_err("no id");
+    assert_eq!((&bad["refused"], &bad["why"]), (&json!("BadOp"), &json!("entry is an id, 64 hex digits")));
     let nope = run(&mut app, json!({ "op": "nope" })).await.expect_err("no such op");
     assert_eq!((&nope["refused"], &nope["why"]), (&json!("BadOp"), &json!("no op is called \"nope\"")));
     assert!(app.asked().is_empty(), "with no sheet");
     app.quit().await;
     // the app starts again: the device opens from its folder in the unlock's sheet alone, the same device
-    assert!(dir.join(META).exists() && dir.join(STORE).join("ops").exists(), "its folder keeps it");
+    let metas = ["0000000000000001", "0000000000000002", "0000000000000003"];
+    let kept = "what opens it, as founded, following avenCEO, then as renamed, each kept whole";
+    assert_eq!(objects(&dir, 1, "meta"), metas, "{kept}");
+    assert!(!objects(&dir, 1, "journal").is_empty(), "its shelf keeps its edits");
     let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["open"], &status["meta"]["name"]), (&json!(false), &json!("Eve's MacBook")));
@@ -347,80 +394,62 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert!(app.asked().is_empty());
     let read = note(&mut app, &entry).await;
     assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what its folder kept");
-    // she forgets it here: its store and what opens it are put aside, never deleted
+    let status = app.call("status", json!([])).await.expect("its status");
+    assert_eq!(status["meta"]["follow"], json!([hex(&avenceo.0)]), "and follows what it followed");
+    // she forgets it here: its shelf, with what opens it, is put aside, never deleted, and a new one is in use
     assert_eq!(app.call("forget", json!([])).await, Ok(Value::Null));
     assert_eq!(app.call("status", json!([])).await, Ok(json!({ "meta": null, "open": false, "device": null })));
-    assert!(!dir.join(META).exists() && !dir.join(STORE).exists());
-    let aside = std::fs::read_dir(dir.join(ASIDE)).expect("aside");
-    let aside: Vec<_> = aside.map(|e| e.expect("an entry").path()).collect();
-    let [forgotten] = aside.as_slice() else { panic!("one store put aside: {aside:?}") };
-    assert!(forgotten.to_string_lossy().ends_with("-forgotten"));
-    assert!(forgotten.join(META).exists() && forgotten.join(STORE).join("ops").exists());
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, 2], "a new shelf beside the old");
+    assert_eq!(objects(&dir, 1, "meta"), metas, "the old shelf as it was");
+    assert!(objects(&dir, 2, "meta").is_empty() && objects(&dir, 2, "journal").is_empty(), "the new one empty");
+    app.quit().await;
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()), "forgotten");
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_device_her_browser_made_moves_into_the_macs_folder_and_opens_from_it_after() {
+async fn a_new_device_puts_aside_a_shelf_cut_short_and_never_reads_what_an_earlier_avendb_kept() {
     let (_relay, url, server) = server().await;
-    // the app's page made her device before, in the web view, its store in IndexedDB; before 2026-10-10 even, so its
-    // secret is the PRF output on its salt itself, and the page kept no mask
-    let browser = Browser(Mutex::new(Passkey::from_seed([5; 32])));
-    let nonce = [1; 32];
-    let old = Fresh::from_secret(*browser.0.lock().expect("the authenticator").prf(&device_salt(&nonce)));
-    let start = Start {
-        name: "Eve's Mac".into(),
-        relay: url.clone(),
-        entropy: [7; 32],
-        now: SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs(),
-        direct: false,
-        store: None,
-        shelf: None,
-        progress: Progress::new(),
-        recovery: None,
-    };
-    let unlock = browser.unlock(nonce, old.challenge(start.now));
-    let page = Device::found(start, &server.offer(), None, old, unlock, &browser, true).await.expect("her vault");
-    let vault = page.vault().await.expect("her vault");
-    let seeds = titled("Seeds", "Tomatoes in March.");
-    let write = json!({ "op": "create", "vault": vault.to_hex(), "type": "note", "value": seeds });
-    let entry = page.run(write).await["ok"]["entry"].clone();
-    let edits = page.edits(0).await.expect("its edits");
-    let mut keys = vec![];
-    for id in page.key_ids().await {
-        keys.push(page.key(id).await.expect("a key it holds"));
-    }
-    let (device, p256) = (page.node().device(), page.p256());
-    page.close().await.expect("the page's device closes");
-    // the app moves it into its folder as it opens, in the unlock's sheet alone
-    let folder = Folder::new("adopt");
-    let mut app = App::start(&folder.0, Passkey::from_seed([5; 32]), false);
-    let meta = json!({
-        "name": "Eve's Mac",
+    let folder = Folder::new("aside");
+    let dir = folder.0.clone();
+    // what an earlier avenDB kept in the folder: its store, what opened its device, and a store it put aside
+    let opened = json!({
+        "name": "Eve's old Mac",
         "relay": url.to_string(),
-        "nonce": hex(&nonce),
+        "nonce": hex(&[1; 32]),
+        "mask": hex(&[2; 32]),
         "credential": CREDENTIAL,
-        "passkey": hex(&p256),
+        "passkey": hex(&Passkey::from_seed([5; 32]).public()),
     });
-    let edits: Vec<_> = edits.iter().map(|e| BASE64.encode(e)).collect();
-    let keys: Vec<_> = keys.iter().map(|k| BASE64.encode(k)).collect();
-    let adopted = app.call("adopt", json!([meta, edits, keys])).await.expect("it moves in");
-    assert_eq!(app.asked(), ["unlock"]);
-    assert_eq!(steps(&mut app).await, ["unlock", "keys", "restore", "node", "check"]);
-    assert_eq!(adopted["id"], hex(&device.0), "the same device");
-    assert!(adopted["sockets"].as_array().expect("its sockets").is_empty(), "on its relay alone, as asked");
-    let read = note(&mut app, &entry).await;
-    assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what the page kept");
+    let opened = opened.to_string().into_bytes();
+    let aside = "aside/1760000000-forgotten/meta.json";
+    let earlier: [(&str, &[u8]); 3] = [("meta.json", &opened), ("store/ops", &[0, 0, 0, 3, 1, 2, 3]), (aside, &opened)];
+    for (name, bytes) in earlier {
+        std::fs::create_dir_all(dir.join(name).parent().expect("a folder")).expect("its folder");
+        std::fs::write(dir.join(name), bytes).expect("kept");
+    }
+    // and a start cut short on the shelf in use: something kept, nothing that opens it
+    let shelf = disk::open(&dir).expect("its shelf");
+    shelf.put("journal/0000000000000001", Bytes::from_static(b"cut short")).await.expect("kept");
+    drop(shelf);
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), false);
+    let nothing = json!({ "meta": null, "open": false, "device": null });
+    assert_eq!(app.call("status", json!([])).await, Ok(nothing), "nothing it opens");
+    assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()));
+    let offer = server.offer().to_text();
+    let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, 2], "the shelf cut short put aside");
+    let cut = std::fs::read(dir.join("g1/journal/0000000000000001")).expect("still there");
+    assert_eq!(cut, b"cut short", "as it was");
+    assert_eq!(objects(&dir, 2, "meta"), ["0000000000000001"], "what opens her device, on its own shelf");
     let status = app.call("status", json!([])).await.expect("its status");
-    assert_eq!(status["meta"], meta, "what opens it, as the page kept it");
+    assert_eq!((&status["device"], &status["meta"]["name"]), (&device, &json!("Eve's Mac")));
     app.quit().await;
-    // and opens from the folder after, the page's store no longer needed
-    let mut app = App::start(&folder.0, Passkey::from_seed([5; 32]), false);
-    let opened = app.call("open", json!([])).await.expect("it opens again");
-    assert_eq!((app.asked(), &opened["id"]), (vec!["unlock".to_string()], &adopted["id"]));
-    let read = note(&mut app, &entry).await;
-    assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "from its folder");
-    app.quit().await;
+    for (name, bytes) in earlier {
+        assert_eq!(std::fs::read(dir.join(name)).expect("still there"), bytes, "{name} as it was");
+    }
     server.shutdown().await.expect("the server's node stops");
 }
 

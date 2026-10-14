@@ -1,22 +1,26 @@
-//! Files over iroh-blobs (blobs B2, `docs/BLOBS.md`): a node keeps one blob store, on disk in its store's folder
-//! (`blobs/`), over a shelf (`shelf`), or else in memory, and a file is its sealed pieces there, each a blob, with the
+//! Files over iroh-blobs (`docs/ARCHITECTURE.md` §13): a node keeps one blob store, over its shelf (`shelf`), or else
+//! in memory, and a file is its sealed pieces there, each a blob, with the
 //! HashSeq of their hashes when there are several. A node brings a file by sealing it as it reads it, a piece at a
 //! time, under a key of its own (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its
 //! device opens, from its own store or else from a peer that may hand it over, fetching only the sealed segments that
-//! hold the range, which it keeps (`Node::read_file`); and keeps whole every file its device's sync rules say to keep,
-//! fetched from its peers as soon as it learns of them: where its device has no rule over a vault, every file of the
-//! vault if the node keeps files (`Options::keep`), as the server does, and none otherwise (`Lab::kept_files`). It
-//! drops no file it kept.
+//! hold the range, which it keeps (`Node::read_file`); and keeps whole every file its device's keep shares say to keep,
+//! fetched from its peers as soon as it learns of them: where its device has none over a vault but never ones, every
+//! file of the vault it syncs if the node keeps files (`Options::keep`), as the server does, and none otherwise
+//! (`Lab::kept_files`). It drops no file it kept.
 //!
 //! The blob gate (`blobs::gate`) hands a peer a blob only if the peer may fetch it: a McEliece key by `Lab::may_fetch`,
 //! a file's root or one of its pieces by `Lab::may_fetch_file` (T27). Every request names one blob, never a HashSeq
 //! with its children: a node fetches a file's HashSeq as a blob of its own and then its pieces one by one, so that the
 //! gate weighs every hash a peer asks for, and no blob that merely holds hashes hands out the blobs it names.
 //!
-//! A page's store and the server's keep what they bring and keep whole on their shelf (`shelf`), OPFS and the bucket,
-//! and what else they read in memory, a window at a time: a page that plays a film holds only the stretches that
+//! A node keeps what it brings and keeps whole on its shelf (`shelf`), a page's OPFS, the Mac's folder or the server's
+//! bucket, and what else it reads in memory, a window at a time: a page that plays a film holds only the stretches that
 //! play. A node reads a range a few megabytes at a time (`READ`), so that the window holds what it fetched until it
 //! has read it.
+//!
+//! What a node holds of a file for good, as its holdings say (`holdings`), is what its shelf holds whole of it, or
+//! with no shelf what its blob store does: all of it, or some of its pieces. It fetches a blob of a file first from
+//! the peers whose holdings hold it, then from its other peers, over its pool of blob connections (`blobs`).
 
 use std::collections::HashSet;
 use std::io;
@@ -24,10 +28,11 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
+use avendb::id::SignerId;
 use avendb::sealed::{Brought, FileKey, FileRoot, PIECE, PIECE_SEGMENTS, SEALED, SEGMENT, Sealer, open};
+use avendb::wire::FileHold;
 use bytes::Bytes;
 use iroh::EndpointId;
-use iroh::endpoint::Connection;
 use iroh_blobs::api::proto::BlobStatus;
 use iroh_blobs::api::{Store, TempTag};
 use iroh_blobs::hashseq::HashSeq;
@@ -37,11 +42,7 @@ use n0_future::task::{self, JoinHandle};
 use n0_future::{Stream, StreamExt as _, stream, time};
 use tokio::sync::mpsc;
 
-use crate::{Backoff, Node, Shared, WAIT};
-
-/// The folder of a node's blob store, in its store's folder.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) const BLOBS: &str = "blobs";
+use crate::{Backoff, Node, Shared};
 
 /// The most sealed bytes of a piece a node reads at a time: whole segments, as each opens on its own.
 const READ: u64 = 64 * SEALED as u64;
@@ -165,6 +166,7 @@ impl Shared {
         let brought = Brought::new(*root.as_bytes(), key, len);
         self.store.tags().set(tag(&brought.root), content(&brought.root)).await?;
         self.index(brought.root, &hashes);
+        self.refresh_file(brought.root).await;
         Ok(brought)
     }
 
@@ -183,11 +185,15 @@ impl Shared {
             let hash = pieces[p as usize];
             for start in sealed.clone().step_by(READ as usize) {
                 let at = start..(start + READ).min(sealed.end);
-                self.get(GetRequest::blob_ranges(hash, ChunkRanges::bytes(at.clone()))).await?;
+                self.get(GetRequest::blob_ranges(hash, ChunkRanges::bytes(at.clone())), root, Some(p)).await?;
                 let bytes = self.store.export_ranges(hash, at.clone()).concatenate().await?;
                 let first = p * PIECE_SEGMENTS + at.start / SEALED as u64;
                 plain.extend(open(&brought.key, shape, first, &bytes).context("sealed bytes that don't open")?);
             }
+        }
+        // with no shelf, the pieces it fetched whole it holds
+        if self.shelf.is_none() {
+            self.refresh_file(root).await;
         }
         let skip = (from - segments.start * SEGMENT as u64) as usize;
         Ok(plain[skip..skip + (to - from) as usize].to_vec())
@@ -201,7 +207,7 @@ impl Shared {
         if !root.pieced() {
             return Ok(vec![hash]);
         }
-        self.get(GetRequest::blob(hash)).await?;
+        self.get(GetRequest::blob(hash), root, None).await?;
         let seq = HashSeq::new(self.store.get_bytes(hash).await?).context("a file's HashSeq that is none")?;
         let pieces: Vec<Hash> = seq.iter().collect();
         let count = root.size.div_ceil(PIECE);
@@ -218,17 +224,21 @@ impl Shared {
         }
     }
 
-    /// What `request` asks of one blob, in this node's store: what it lacks of it fetched from the first peer that
-    /// hands it over, and kept.
-    async fn get(self: &Arc<Self>, request: GetRequest) -> Result<()> {
+    /// What `request` asks of one blob of file `root`, piece `piece` of it or else its HashSeq, in this node's store:
+    /// what it lacks of it fetched from the first peer that hands it over (`providers`), and kept.
+    async fn get(self: &Arc<Self>, request: GetRequest, root: FileRoot, piece: Option<u64>) -> Result<()> {
         let remote = self.store.remote();
         if remote.local_for_request(request.clone()).await?.is_complete() {
             return Ok(());
         }
-        for endpoint in self.sources() {
-            let Ok(conn) = self.blob_connection(endpoint).await else { continue };
+        for endpoint in self.providers(root, piece) {
+            // the peer's blob gate lets in only an endpoint whose sync connection lives
+            if self.connection(endpoint).await.is_err() {
+                continue;
+            }
+            let Ok(conn) = self.pool.get_or_connect(endpoint).await else { continue };
             let missing = remote.local_for_request(request.clone()).await?.missing();
-            if remote.execute_get(conn, missing).await.is_err() {
+            if remote.execute_get((*conn).clone(), missing).await.is_err() {
                 continue;
             }
             if remote.local_for_request(request.clone()).await?.is_complete() {
@@ -238,28 +248,38 @@ impl Shared {
         bail!("no peer hands over {}", request.hash)
     }
 
-    /// The peers to fetch a blob from: those this node is connected to now.
-    fn sources(&self) -> Vec<EndpointId> {
-        let peers = self.peers.lock().expect("peers");
-        peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.endpoint).collect()
+    /// The peers to fetch piece `piece` of file `root` from, or its HashSeq: first those connected now whose holdings
+    /// hold it, then the others connected now, then those whose holdings hold it that it would have to reach. Only
+    /// holdings of a file within the holder's reach count, as `Node::synced_to` reads them: a claim to anything else
+    /// steers nothing. Holdings only order them: a peer hands the piece over by its own blob gate (T27).
+    fn providers(&self, root: FileRoot, piece: Option<u64>) -> Vec<EndpointId> {
+        let live: Vec<(EndpointId, SignerId)> = {
+            let peers = self.peers.lock().expect("peers");
+            peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| (p.endpoint, p.device)).collect()
+        };
+        let reach = self.reach.lock().expect("reach").clone();
+        let held = self.held.lock().expect("held");
+        let holders: Vec<(EndpointId, SignerId)> = held
+            .iter()
+            .filter(|(_, h)| match h.files.get(&root) {
+                Some(FileHold::Whole) => true,
+                Some(FileHold::Pieces(pieces)) => piece.is_none_or(|p| pieces.iter().any(|&q| u64::from(q) == p)),
+                None => false,
+            })
+            .filter_map(|(d, _)| reach.get(d).filter(|r| r.files.contains(&root)).map(|r| (r.endpoint, *d)))
+            .collect();
+        drop(held);
+        let holds = |x: &(EndpointId, SignerId)| holders.contains(x);
+        let (first, then): (Vec<_>, Vec<_>) = live.iter().copied().partition(holds);
+        let last = holders.iter().copied().filter(|x| !live.contains(x));
+        first.into_iter().chain(then).chain(last).map(|(endpoint, _)| endpoint).collect()
     }
 
-    /// The blob connection to `endpoint`, dialed if there is none open.
-    async fn blob_connection(self: &Arc<Self>, endpoint: EndpointId) -> Result<Connection> {
-        let open = self.blob_conns.lock().expect("blob connections").get(&endpoint).cloned();
-        if let Some(conn) = open.filter(|c| c.close_reason().is_none()) {
-            return Ok(conn);
-        }
-        let dial = self.endpoint.connect(self.addr_of(endpoint), iroh_blobs::ALPN);
-        let conn = time::timeout(WAIT, dial).await.context("no answer")??;
-        self.blob_conns.lock().expect("blob connections").insert(endpoint, conn.clone());
-        Ok(conn)
-    }
-
-    /// Keeps the files the edits its device holds bring: whole, fetched from its peers, those its device's sync rules
-    /// say to keep, or with no rule, if the node keeps files (`Options::keep`), as the server does (`Lab::kept_files`);
-    /// of the rest it marks for the gate the pieces of those whose HashSeq it holds. A file no peer hands over is tried
-    /// again after `retry`, then twice as long each time, up to a minute.
+    /// Keeps the files the edits its device holds bring: whole, fetched from its peers, those its device's keep shares
+    /// say to keep, or with none but never ones, if the node keeps files (`Options::keep`), as the server does
+    /// (`Lab::kept_files`); of the rest it marks for the gate the pieces of those whose HashSeq it holds. A file no
+    /// peer hands over is tried again after `retry`, then twice as long each time, up to a minute. After each, it works
+    /// out again what it holds of the file for good, for its holdings.
     pub(crate) async fn keeper(self: Arc<Self>) {
         let mut size = self.size.subscribe();
         let (mut kept, mut failing) = (HashSet::new(), Backoff::default());
@@ -269,7 +289,9 @@ impl Shared {
             let whole: HashSet<FileRoot> = whole.into_iter().collect();
             let files = files.into_iter().map(|f| (f, whole.contains(&f)));
             for (root, whole) in files.filter(|f| !kept.contains(f) && failing.due(&f.0)).collect::<Vec<_>>() {
-                match self.keep(root, whole).await {
+                let keeping = self.keep(root, whole).await;
+                self.refresh_file(root).await;
+                match keeping {
                     Ok(()) => {
                         kept.insert((root, whole));
                         failing.reached(&root);
@@ -296,7 +318,7 @@ impl Shared {
         // tagged first, so that a blob store over a shelf puts the pieces it fetches onto it
         self.store.tags().set(tag(&root), content(&root)).await?;
         for (p, &piece) in pieces.iter().enumerate() {
-            self.get(GetRequest::blob(piece)).await?;
+            self.get(GetRequest::blob(piece), root, Some(p as u64)).await?;
             // whole, and on a shelf, finished there: on the server, in its bucket; until then the keeper tries again
             let want = (root.size - p as u64 * PIECE).min(PIECE);
             match self.store.status(piece).await? {
@@ -310,18 +332,59 @@ impl Shared {
 
     /// `Node::holds_file`.
     pub(crate) async fn holds(&self, root: FileRoot) -> bool {
-        let Some(shelf) = &self.shelf else {
-            let local = self.store.remote().local(content(&root)).await;
-            return local.is_ok_and(|l| l.is_complete());
-        };
+        self.hold_of(root).await == Some(FileHold::Whole)
+    }
+
+    /// What this node holds of file `root` for good: of a file whose HashSeq it holds so, if it has one, the pieces
+    /// it holds so, all of them, some, or none (`kept`).
+    pub(crate) async fn hold_of(&self, root: FileRoot) -> Option<FileHold> {
         let hash = Hash::from_bytes(root.hash);
-        if !shelf.shelved(&hash) {
-            return false;
+        let pieces: Vec<Hash> = match root.pieced() {
+            false => vec![hash],
+            true if self.kept(hash, None).await => {
+                HashSeq::new(self.store.get_bytes(hash).await.ok()?)?.iter().collect()
+            }
+            true => return None,
+        };
+        let count = root.size.div_ceil(PIECE).max(1);
+        if pieces.len() as u64 != count {
+            return None;
         }
-        if !root.pieced() {
-            return true;
+        let mut held = Vec::new();
+        for (p, piece) in pieces.into_iter().enumerate() {
+            if self.kept(piece, Some((root.size - p as u64 * PIECE).min(PIECE))).await {
+                held.push(p as u32);
+            }
         }
-        let seq = self.store.get_bytes(hash).await.ok().and_then(HashSeq::new);
-        seq.is_some_and(|seq| seq.iter().all(|p| shelf.shelved(&p)))
+        match held.len() as u64 {
+            0 => None,
+            n if n == count => Some(FileHold::Whole),
+            _ => Some(FileHold::Pieces(held)),
+        }
+    }
+
+    /// This node holds blob `hash` whole for good, of `size` bytes if given: on a shelf, once the shelf holds it, which
+    /// on the server is once its bucket does; with no shelf, in its blob store.
+    async fn kept(&self, hash: Hash, size: Option<u64>) -> bool {
+        if let Some(shelf) = &self.shelf {
+            return shelf.shelved(&hash);
+        }
+        matches!(self.store.status(hash).await, Ok(BlobStatus::Complete { size: s }) if size.is_none_or(|n| n == s))
+    }
+
+    /// Works out again what this node holds of file `root` for good (`hold_of`), for its holdings; and tells its peers
+    /// if that changed.
+    pub(crate) async fn refresh_file(&self, root: FileRoot) {
+        let hold = self.hold_of(root).await;
+        let mut own = self.own.lock().expect("own");
+        let files = &mut own.holdings.files;
+        let changed = match hold {
+            Some(hold) => files.insert(root, hold.clone()).is_none_or(|was| was != hold),
+            None => files.remove(&root).is_some(),
+        };
+        drop(own);
+        if changed {
+            self.changed.notify_one();
+        }
     }
 }

@@ -1,8 +1,8 @@
 //! Schemas and the lenses between their versions, as data: a schema is a JSON Schema and a lens a short list of steps,
-//! each a blob named by its SHA-3 hash (`BlobId`). A vault, or a vault holding a wide owner share over it, publishes
-//! them into its schema lane (`Action::Publish`, T17), so an app learns a newer version's lens from the lane instead of
-//! shipping with it. The model is `avendb/spec/AvenDB/Lens.lean` (T9), and `avendb/spec/vectors/lenses.json` holds this
-//! engine to it.
+//! each a blob named by its SHA-3 hash (`BlobId`). A vault holds them as entries it creates itself, which it shares
+//! with everyone, and their contents make its schema lane (`policy::State::lane_of`, T17), so an app learns a newer
+//! version's lens from the lane instead of shipping with it. The model is `avendb/spec/AvenDB/Lens.lean` (T9), and
+//! `avendb/spec/vectors/lenses.json` holds this engine to it.
 //!
 //! Nothing is migrated. Each edit is tagged with the schema it was written under (its Loro commit message, see `doc`),
 //! and an item is projected on read into the app's schema through the lens (`View::get`): where both versions stored
@@ -497,7 +497,7 @@ impl Schema {
         self.id
     }
 
-    /// The blob, as published into a lane.
+    /// The blob, as a lane holds it: the content of a schema or lens entry.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -938,10 +938,10 @@ impl Lane {
         lane
     }
 
-    /// The lane of the blobs `published` and of the built-in ones, which apps read through before any lane publishes
-    /// anything (`blobs::ALL`): what a device reads and judges a vault's entries by.
-    pub fn with_built_ins<'a>(published: impl IntoIterator<Item = &'a [u8]>) -> Lane {
-        Lane::new(blobs::ALL.iter().map(|b| b.as_bytes()).chain(published))
+    /// The lane of the blobs `lane` and of the built-in ones, which apps read through before a vault creates any schema
+    /// or lens (`blobs::ALL`): what a device reads and judges a vault's entries by.
+    pub fn with_built_ins<'a>(lane: impl IntoIterator<Item = &'a [u8]>) -> Lane {
+        Lane::new(blobs::ALL.iter().map(|b| b.as_bytes()).chain(lane))
     }
 
     pub fn schema(&self, id: BlobId) -> Option<&Schema> {
@@ -1059,9 +1059,9 @@ impl Fit<'_> {
     }
 }
 
-/// The blobs of the two examples' schemas and lenses, exactly as the apps ship and publish them.
+/// The blobs of the two examples' schemas and lenses, exactly as the apps ship them and a vault holds them as entries.
 pub mod blobs {
-    /// Every one of them: what the app reads through before any lane publishes anything.
+    /// Every one of them: what the app reads through before a vault's lane holds anything.
     pub const ALL: [&str; 6] = [DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2, DOCUMENT_LENS, TODO_LENS];
 
     pub const DOCUMENT_V1: &str = r#"{

@@ -1,7 +1,14 @@
-//! A node's shelf (blobs B2d, B3b, `docs/BLOBS.md`): where it keeps whole the blobs of the files it brings or keeps,
-//! each with its outboard, the BLAKE3 tree iroh-blobs checks it by. A page's is in OPFS, through its store's worker
-//! (avendb-browser); the server's in its bucket (`bucket::shelf`). Either is the one place its node keeps them. Over it
-//! the node runs a blob store of its own (`ShelfStore`), which iroh-blobs reads and writes:
+//! A node's shelf (`docs/ARCHITECTURE.md` §14): the one place it keeps what lasts, laid out the same
+//! on every place it runs. A page's is in OPFS, through its store's worker (avendb-browser); the Mac's in its folder
+//! (`disk`); the server's in its bucket (`bucket::shelf`), whose folder is only a cache. A place keeps its shelves side
+//! by side, a generation each, `g1`, `g2` and on (`generation`): the newest is the one in use, and every older one is
+//! put aside, never read again and never deleted. A shelf holds blobs, each named by its hash once it is finished,
+//! with its outboard, the BLAKE3 tree iroh-blobs checks it by; and named objects, each put once and never replaced
+//! (`Call::Put`): the edits its device holds, as a journal, packs and heads (`edits`), a page's or the Mac's meta, and
+//! the server's device's secret. What a shelf answered it holds, it holds for good: synced to the folder's disk, in
+//! OPFS, or in the server's bucket.
+//!
+//! Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-blobs reads and writes:
 //!
 //! - a piece of a file the node brings goes onto the shelf as it is sealed, its outboard made as it streams in
 //!   (`tree::Outboarder`), and counts once the shelf holds it whole under its hash;
@@ -57,8 +64,9 @@ const SMALL: u64 = 4 << 20;
 /// The bytes of a chunk, the least a window holds of a blob.
 const CHUNK: usize = 1024;
 
-/// What a node asks its shelf, each answered on a channel of its own. A blob is named by its hash in hex once it is
-/// finished, and by a name of the node's choosing while it is written.
+/// What a node asks its shelf, each answered on a channel of its own once the shelf holds what it was asked to keep:
+/// on the server, once its bucket does. A blob is named by its hash in hex once it is finished, and by a name of the
+/// node's choosing while it is written; a named object by a name of its own (`named`).
 pub enum Call {
     /// Every blob the shelf holds whole, with its size. It drops what it holds of blobs never finished.
     List(oneshot::Sender<io::Result<Vec<(Hash, u64)>>>),
@@ -73,16 +81,53 @@ pub enum Call {
     Finish { name: String, hash: Hash, size: u64, outboard: Bytes, tx: oneshot::Sender<io::Result<()>> },
     /// Drops blob `name`, being written or finished, with its outboard.
     Drop { name: String, tx: oneshot::Sender<io::Result<()>> },
+    /// `bytes` under `name`, put once: answered once the shelf holds them whole. The same bytes put again change
+    /// nothing; other bytes under a name it holds are refused (`io::ErrorKind::AlreadyExists`), so that nothing put is
+    /// ever replaced.
+    Put { name: String, bytes: Bytes, tx: oneshot::Sender<io::Result<()>> },
+    /// What was put under `name`, if anything.
+    Get { name: String, tx: oneshot::Sender<io::Result<Option<Bytes>>> },
+    /// The name of every object put whose name starts with `prefix`, in order.
+    Names { prefix: String, tx: oneshot::Sender<io::Result<Vec<String>>> },
 }
 
 /// A node's shelf: where it sends its calls, which whoever keeps the shelf answers.
 #[derive(Clone, Debug)]
 pub struct Shelf(mpsc::Sender<Call>);
 
+/// The folders of a shelf that hold its blobs, their outboards, what it is writing, and the lock a page's worker
+/// holds: no named object is under them.
+pub const RESERVED: [&str; 4] = ["blobs", "outboards", "new", "lock"];
+
 /// The hash a finished blob's name is, if it is one.
 pub fn hash_of(name: &str) -> Option<Hash> {
     let bytes: [u8; 32] = HEXLOWER.decode(name.as_bytes()).ok()?.try_into().ok()?;
     Some(Hash::from_bytes(bytes))
+}
+
+/// `name` is one a named object may have: parts parted by `/`, each of lowercase letters, digits, `.`, `_` and `-`,
+/// none of them `.` or `..`, the first none of the folders a shelf keeps its blobs in (`RESERVED`). So a name is the
+/// same file's on every place, and never leaves its shelf.
+pub fn named(name: &str) -> bool {
+    let part = |p: &str| {
+        let bytes = p.bytes().all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-'));
+        !p.is_empty() && p != "." && p != ".." && bytes
+    };
+    let first = name.split('/').next().unwrap_or_default();
+    !RESERVED.contains(&first) && name.split('/').all(part)
+}
+
+/// `prefix` is one names may be listed by: none, or a name, with `/` after it or not.
+fn listable(prefix: &str) -> bool {
+    prefix.is_empty() || named(prefix.strip_suffix('/').unwrap_or(prefix))
+}
+
+/// The generation a place's shelf is, by the name of its folder or prefix: `g1`, `g2` and on, written as the number
+/// is, if it is one.
+pub fn generation(name: &str) -> Option<u64> {
+    let n = name.strip_prefix('g')?;
+    let digits = !n.is_empty() && !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit());
+    digits.then(|| n.parse().ok()).flatten()
 }
 
 fn gone() -> io::Error {
@@ -93,6 +138,10 @@ fn missing(name: &str) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, format!("no blob {name} on the shelf"))
 }
 
+fn unnamed(name: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, format!("{name:?} names nothing a shelf holds"))
+}
+
 impl Shelf {
     /// A shelf, and the calls to it, for whoever keeps it to answer.
     pub fn new() -> (Shelf, mpsc::Receiver<Call>) {
@@ -100,66 +149,34 @@ impl Shelf {
         (Shelf(tx), rx)
     }
 
-    /// A shelf in memory, the tests' and a page's that keeps no store: what a node's blob store puts there lasts as
-    /// long as the shelf, beyond the store.
-    pub fn memory() -> Shelf {
-        let (shelf, mut calls) = Shelf::new();
-        task::spawn(async move {
-            let (mut files, mut outboards) = (HashMap::<String, Vec<u8>>::new(), HashMap::<Hash, Bytes>::new());
-            while let Some(call) = calls.recv().await {
-                match call {
-                    Call::List(tx) => {
-                        files.retain(|name, _| hash_of(name).is_some_and(|h| outboards.contains_key(&h)));
-                        let held = files.iter().filter_map(|(n, f)| Some((hash_of(n)?, f.len() as u64)));
-                        tx.send(Ok(held.collect())).ok();
-                    }
-                    Call::Read { name, at, len, tx } => {
-                        let read = files.get(&name).map(|f| {
-                            let from = (at as usize).min(f.len());
-                            Bytes::copy_from_slice(&f[from..(from + len).min(f.len())])
-                        });
-                        tx.send(read.ok_or_else(|| missing(&name))).ok();
-                    }
-                    Call::Outboard { hash, tx } => {
-                        tx.send(outboards.get(&hash).cloned().ok_or_else(|| missing(&hash.to_hex()))).ok();
-                    }
-                    Call::Write { name, at, bytes, tx } => {
-                        let (file, end) = (files.entry(name).or_default(), at as usize + bytes.len());
-                        if file.len() < end {
-                            file.resize(end, 0);
-                        }
-                        file[at as usize..end].copy_from_slice(&bytes);
-                        tx.send(Ok(())).ok();
-                    }
-                    Call::Finish { name, hash, size, outboard, tx } => {
-                        let done = match files.remove(&name).or_else(|| (size == 0).then(Vec::new)) {
-                            Some(file) if file.len() as u64 == size => {
-                                files.insert(hash.to_hex(), file);
-                                outboards.insert(hash, outboard);
-                                Ok(())
-                            }
-                            Some(file) => Err(io::Error::other(format!("{name} is {} bytes, not {size}", file.len()))),
-                            None => Err(missing(&name)),
-                        };
-                        tx.send(done).ok();
-                    }
-                    Call::Drop { name, tx } => {
-                        files.remove(&name);
-                        if let Some(hash) = hash_of(&name) {
-                            outboards.remove(&hash);
-                        }
-                        tx.send(Ok(())).ok();
-                    }
-                }
-            }
-        });
-        shelf
-    }
-
     async fn ask<T>(&self, call: impl FnOnce(oneshot::Sender<io::Result<T>>) -> Call) -> io::Result<T> {
         let (tx, rx) = oneshot::channel();
         self.0.send(call(tx)).await.map_err(|_| gone())?;
         rx.await.map_err(|_| gone())?
+    }
+
+    /// Puts `bytes` under `name` once, as `Call::Put` says: done once the shelf holds them.
+    pub async fn put(&self, name: &str, bytes: Bytes) -> io::Result<()> {
+        if !named(name) {
+            return Err(unnamed(name));
+        }
+        self.ask(|tx| Call::Put { name: name.to_string(), bytes, tx }).await
+    }
+
+    /// What was put under `name`, if anything.
+    pub async fn get(&self, name: &str) -> io::Result<Option<Bytes>> {
+        if !named(name) {
+            return Err(unnamed(name));
+        }
+        self.ask(|tx| Call::Get { name: name.to_string(), tx }).await
+    }
+
+    /// The name of every object put whose name starts with `prefix`, in order.
+    pub async fn names(&self, prefix: &str) -> io::Result<Vec<String>> {
+        if !listable(prefix) {
+            return Err(unnamed(prefix));
+        }
+        self.ask(|tx| Call::Names { prefix: prefix.to_string(), tx }).await
     }
 
     pub(crate) async fn list(&self) -> io::Result<Vec<(Hash, u64)>> {
@@ -184,6 +201,44 @@ impl Shelf {
 
     pub(crate) async fn drop(&self, name: &str) -> io::Result<()> {
         self.ask(|tx| Call::Drop { name: name.to_string(), tx }).await
+    }
+
+    /// `bytes` as a blob on the shelf, written a step at a time and finished: its hash and size, once the shelf holds
+    /// it whole. What it wrote of a blob it couldn't finish, it drops.
+    pub(crate) async fn put_blob(&self, bytes: &Bytes) -> io::Result<(Hash, u64)> {
+        let mut tree = Outboarder::new();
+        tree.push(bytes);
+        let (hash, size, outboard) = tree.finish();
+        let name = fresh();
+        let written = async {
+            for at in (0..bytes.len()).step_by(STEP) {
+                self.write(&name, at as u64, bytes.slice(at..(at + STEP).min(bytes.len()))).await?;
+            }
+            self.finish(&name, hash, size, outboard.into()).await
+        };
+        if let Err(e) = written.await {
+            self.drop(&name).await.ok();
+            return Err(e);
+        }
+        Ok((hash, size))
+    }
+
+    /// Blob `hash` of `size` bytes, read whole a step at a time, and checked against its hash.
+    pub(crate) async fn read_blob(&self, hash: Hash, size: u64) -> io::Result<Bytes> {
+        let name = hash.to_hex();
+        let mut out = Vec::with_capacity(size as usize);
+        while (out.len() as u64) < size {
+            let len = STEP.min((size - out.len() as u64) as usize);
+            let bytes = self.read(&name, out.len() as u64, len).await?;
+            if bytes.is_empty() {
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, format!("blob {name} is cut short")));
+            }
+            out.extend_from_slice(&bytes);
+        }
+        if Hash::new(&out) != hash {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("blob {name} isn't what its hash says")));
+        }
+        Ok(out.into())
     }
 }
 

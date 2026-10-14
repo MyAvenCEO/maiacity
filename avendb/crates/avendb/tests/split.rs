@@ -8,12 +8,12 @@ mod common;
 
 use std::collections::HashMap;
 
-use avendb::id::{AudienceId, EditId, SignerId, VaultId};
+use avendb::id::{AudienceId, BlobId, EditId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::Action;
+use avendb::policy::{Action, Revoking};
 use avendb::sync::{place, LogId, Place};
-use avendb::wire::{Announce, Reply, Request, Wire};
+use avendb::wire::{Reply, Request, Wire};
 use common::*;
 
 /// `to` asks `from` once, by the bytes alone: its request, the reply, and each McEliece key the reply names that
@@ -30,15 +30,16 @@ fn ask_page(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId), after: Option<
     let (edits, ids, more) = from.reply(f, t, &request, page);
     let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
     let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
-    let keys = reply.blobs.iter().filter(|(b, _)| from.may_fetch(f, t, *b)).filter_map(|(b, _)| from.blob(f, *b));
+    let may = |b: &BlobId| from.may_fetch(f, t, *b, &request.ask.follow);
+    let keys = reply.blobs.iter().filter(|(b, _)| may(b)).filter_map(|(b, _)| from.blob(f, *b));
     let new = to.receive(t, reply.edits.clone(), keys.collect());
     (reply, new)
 }
 
-/// The digests `from` announces to `to`, read back from their bytes.
+/// The digests of the logs `from` names to `to`, each of a log `to` may hold by `from`'s view (`Lab::announce`): the
+/// logs whose holdings a node tells that peer (`avendb-net`).
 fn announced(from: (&mut Lab, SignerId), to: SignerId) -> Vec<(LogId, [u8; 32])> {
-    let digests = from.0.announce(from.1, to);
-    Announce::from_wire(&Announce { digests }.to_wire()).expect("an announcement").digests
+    from.0.announce(from.1, to)
 }
 
 /// Alice's Mac, the server and Bob's Mac split off after scenario 4, each with its own randomness: the coop and
@@ -122,14 +123,14 @@ fn mceliece_keys_go_only_within_reach() {
     let (w, coop, mut mac, mut server, mut bob) = split();
     // Alice's passkey removes her lost iPhone on her Mac: her vault's seed and the coop's rotate, and the public half
     // of each new seed, which keys are sealed to, brings a McEliece key
-    let remove = Action::RemoveDevice { vault: w.alice, device: w.phone_a, keep: vec![] };
+    let remove = Action::Revoke(Revoking::Device { vault: w.alice, device: w.phone_a, keep: vec![] });
     mac.submit(w.mac_a, &[w.passkey_a], remove).expect("Alice's passkey removes the iPhone");
     let new: Vec<_> = mac.blob_ids(w.mac_a).into_iter().filter(|b| server.blob(w.server, *b).is_none()).collect();
     assert!(!new.is_empty(), "the new seeds bring McEliece keys");
     for &b in &new {
-        assert!(mac.may_fetch(w.mac_a, w.server, b), "the server, relaying the coop's entries, may fetch it");
-        assert!(mac.may_fetch(w.mac_a, w.mac_b, b), "so may Bob's Mac, acting for the coop");
-        let outside = !mac.may_fetch(w.mac_a, w.mac_c, b) && !mac.may_fetch(w.mac_a, w.stranger, b);
+        assert!(mac.may_fetch(w.mac_a, w.server, b, &[]), "the server, relaying the coop's entries, may fetch it");
+        assert!(mac.may_fetch(w.mac_a, w.mac_b, b, &[]), "so may Bob's Mac, acting for the coop");
+        let outside = [w.mac_c, w.stranger].iter().all(|&d| !mac.may_fetch(w.mac_a, d, b, &[]));
         assert!(outside, "not Carol, nor a stranger");
     }
     ask((&mut server, w.server), (&mut mac, w.mac_a));

@@ -2,15 +2,27 @@
 	A vault's todos, as the acting vault sees them: one flat list of every todo of the vault it reads, narrowed by a
 	tag, each a tick through open, doing and done where it writes and the ops of its caps allow the next one (the
 	device answers, by a dry run of each tick: `may`), its tags, to add and take off where it may (Tags), who it is
-	shared with, and shared on where it owns; and a new todo where it may add one, tagged as the slice of its cap asks,
-	and where the ops of that cap allow it (`may` again). What it holds no cap on stays out of sight, as on a device of
-	that vault alone.
+	shared with, and shared on where it owns; and a new todo where it may add one, tagged as the slice of its cap asks
+	(the device says: `creatable`), and where the ops of that cap allow it (`may` again). What it holds no cap on stays
+	out of sight, as on a device of that vault alone.
 -->
 <script>
-	import { may } from './ops.js';
+	import { allowed, creatable, may } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
-	import { allows, count, creates, list, nameOf, reads, sharedWith, sharedWords, tagsIn, tagsOf } from './vaults.js';
+	import {
+		count,
+		list,
+		nameOf,
+		reads,
+		sharedWith,
+		sharedWords,
+		sharesOn,
+		tagsIn,
+		tagsOf,
+		why,
+		writes
+	} from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -34,7 +46,16 @@
 	let draft = $state('');
 	let tagging = $state('');
 	const typed = $derived(tagsIn(tagging));
-	const asked = $derived(creates(world, vault, actor, 'todo', typed));
+	/** those tags besides, as the device says: `null` while nothing shared with the acting vault lets it add a todo */
+	let asked = $state(/** @type {string[] | null} */ (null));
+	$effect(() => {
+		void world;
+		let gone = false;
+		creatable(api, actor, vault, 'todo', typed).then((t) => !gone && (asked = t));
+		return () => {
+			gone = true;
+		};
+	});
 	/** the todo whose share form is open */
 	let sharing = $state('');
 
@@ -56,14 +77,14 @@
 		if (await api.run('Adding the todo', { ...adding(title), as: actor })) draft = '';
 	}
 
-	/** why the ops of the cap the acting vault adds through don't let it add the todo, as the device answers: '' */
+	/** why the device won't add the todo for the acting vault, as it answers a dry run of adding it: '' */
 	let unadded = $state('');
 	$effect(() => {
 		if (!asked) return;
 		const op = adding('A todo');
 		let gone = false;
 		may(api, actor, [op]).then(([a]) => {
-			if (!gone) unadded = a !== true && a.refused === 'NotAllowed' ? a.why : '';
+			if (!gone) unadded = allowed(a) ? '' : why(/** @type {any} */ (a));
 		});
 		return () => {
 			gone = true;
@@ -76,9 +97,9 @@
 	const tick = (entry, status) => api.run('Saving', ticking(entry, status));
 
 	/** whether the acting vault may tick each todo it writes on, by entry, as the device answers: `true`, or why not */
-	let ticks = $state(/** @type {Record<string, true | { refused: string, why: string }>} */ ({}));
+	let ticks = $state(/** @type {Record<string, import('./vaults.js').Verdict>} */ ({}));
 	$effect(() => {
-		const writable = shown.filter((it) => allows(it.roles[actor], 'write'));
+		const writable = shown.filter((it) => writes(it, actor));
 		const ops = writable.map((it) => ticking(it.entry, NEXT[it.status ?? 'open']));
 		let gone = false;
 		may(api, actor, ops).then((answers) => {
@@ -111,17 +132,17 @@
 	{:else}
 		<ul class="card todos">
 			{#each shown as it (it.entry)}
-				{@const writes = allows(it.roles[actor], 'write')}
+				{@const changes = writes(it, actor)}
 				{@const answer = ticks[it.entry]}
-				{@const refused = answer === true ? null : answer}
+				{@const refused = answer === undefined || allowed(answer) ? null : /** @type {any} */ (answer)}
 				<li class={it.status ?? 'open'}>
 					<button
 						class="tick"
-						disabled={busy || !writes || !!refused}
-						title={!writes
+						disabled={busy || !changes || !!refused}
+						title={!changes
 							? `${nameOf(as)} may only view it`
 							: refused
-								? `It can't be marked ${NEXT[it.status ?? 'open']}: ${refused.why}`
+								? `It can't be marked ${NEXT[it.status ?? 'open']}: ${why(refused)}`
 								: `Mark it ${NEXT[it.status ?? 'open']}`}
 						onclick={() => tick(it.entry, NEXT[it.status ?? 'open'])}
 					>
@@ -130,7 +151,7 @@
 					<span class="title">{it.title}</span>
 					<Tags {world} {actor} {api} {busy} entry={it} />
 					{#if it.by !== vault}<small class="soft">by {nameOf(byId.get(it.by))}</small>{/if}
-					{#if allows(it.roles[actor], 'owner')}
+					{#if sharesOn(it, actor)}
 						<button class="btn quiet" disabled={busy} onclick={() => (sharing = sharing === it.entry ? '' : it.entry)}>Share</button>
 					{/if}
 					<small class="soft shared">

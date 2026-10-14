@@ -1,7 +1,8 @@
-//! Shares (P2, P4; T1, T4, T8, T16, T17, T22), on the rules alone. A share gives a vault, never a signer, a level on a
-//! slice of another vault: relay, read, write or owner on the entries its selector picks, or on the whole vault for a
-//! wide share, which reaches every audience and splits none. Everyone only reads; a write no share allows is refused,
-//! on import too; only the vault, and a vault holding a wide owner share over it, publish into its schema lane; a share
+//! Shares (P2, P4; T1, T4, T8, T16, T17, T22), on the rules alone. A grant gives a vault a level on a slice of another
+//! vault: relay, read, write or owner on the entries its selector picks, or up to write on the whole vault for a wide
+//! grant, which reaches every audience and splits none; owner of the whole vault is an owner of it, never a grant
+//! (WideOwner). A device it names only as a keep share, of a device of its issuer, which grants nothing. Everyone only
+//! reads; a write no share allows is refused, on import too; a vault's lane holds only what it creates itself; a share
 //! resting on an owner share grants no more than it, and ends with it; and when revocations clash, the most senior
 //! revoker stands.
 
@@ -10,8 +11,11 @@ mod common;
 use avendb::id::{AudienceId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyName};
 use avendb::lens::{DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
-use avendb::policy::{mk_audience, replay, Action, Edit, Kind, Level, Log, Principal, Refusal, Share, State, Who};
-use avendb::slice::Selector;
+use avendb::policy::{
+    mk_audience, replay, Action, Edit, KeepMode, Kind, Level, Log, Principal, Refusal, Revoking, Share, Sharing, State,
+    Who,
+};
+use avendb::slice::{Selector, LENS_TYPE, SCHEMA_TYPE};
 use avendb::sync::{log_of, respond, LogId};
 use common::*;
 
@@ -44,7 +48,8 @@ fn aven_of_alice(c: &mut Cast) -> VaultId {
     let owners = vec![Principal::Vault(c.alice)];
     let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
     let aven = VaultId::from(c.log.append(PASSKEY_A, &[], genesis).unwrap());
-    c.log.append(PASSKEY_A, &[SERVER], Action::AddDevice { vault: aven, device: SERVER, seal_to: None }).unwrap();
+    let server = Action::Share(Sharing::Device { vault: aven, device: SERVER, seal_to: None });
+    c.log.append(PASSKEY_A, &[SERVER], server).unwrap();
     aven
 }
 
@@ -59,7 +64,7 @@ fn share_edit(
     issuer: VaultId,
 ) -> Action {
     let share = Share { over, who: vault(who), level, wide, select: vec![], parent, issuer, nonce: 7 };
-    Action::Share(share, vec![])
+    Action::Share(Sharing::Grant(share, vec![]))
 }
 
 /// A write of entry `e` for `actor`, under the stay `log`'s view has it in and its audience's epoch now: what an app
@@ -94,15 +99,16 @@ fn entries_in(edits: &[Edit]) -> Vec<EntryId> {
 }
 
 #[test]
-fn share_to_signer_rejected() {
+fn share_to_device_rejected() {
     let mut c = cast();
     let coop = with_coop(&mut c);
     c.create(MAC_A, coop, WELCOME, coop, &[], "doc", &[]).unwrap();
-    // neither Carol's Mac nor her passkey can be named, only her vault (T4)
+    // neither Carol's Mac nor her passkey can be named, only her vault (T4), whatever the level
     for signer in [MAC_C, PASSKEY_C] {
-        let to_signer = Who::Principal(Principal::Signer(signer));
-        let refused = c.issue(MAC_A, &[], coop, to_signer, Level::Read, by_id(WELCOME)).err();
-        assert_eq!(refused, Some(Refusal::CapToSigner));
+        for level in [Level::Relay, Level::Read, Level::Write] {
+            let refused = c.issue(MAC_A, &[], coop, Who::Device(signer), level, by_id(WELCOME)).err();
+            assert_eq!(refused, Some(Refusal::DeviceOnlyKeeps));
+        }
     }
     // nor the coop itself, which has every right over its own entries already
     let itself = c.issue(MAC_A, &[], coop, vault(coop), Level::Read, by_id(WELCOME)).err();
@@ -111,9 +117,52 @@ fn share_to_signer_rejected() {
     c.tidy(MAC_A);
     // the share names Carol's vault, so it reaches Welcome on whichever device acts for her, a new one too
     assert!(reads(&c.log.view(), MAC_C, WELCOME) && !reads(&c.log.view(), NEW_DEVICE, WELCOME));
-    let add = Action::AddDevice { vault: c.carol, device: NEW_DEVICE, seal_to: None };
+    let add = Action::Share(Sharing::Device { vault: c.carol, device: NEW_DEVICE, seal_to: None });
     c.log.append(PASSKEY_C, &[NEW_DEVICE], add).unwrap();
     assert!(reads(&c.log.view(), NEW_DEVICE, WELCOME));
+    // a device is named only by a keep share, of a device of its issuer, as Examples.lean's s6 has it: a keep share to
+    // a vault is none; the coop has no device to keep its entries on, and Carol keeps nothing on Alice's Mac; Carol
+    // keeps Welcome whole on her Mac, which puts it in no audience
+    let (carol, whole) = (c.carol, Level::Keep(KeepMode::Whole));
+    let keep = |c: &mut Cast, signer, who, issuer| {
+        c.issue_on(signer, &[], coop, who, whole, by_id(WELCOME), None, issuer, 2)
+    };
+    assert_eq!(keep(&mut c, MAC_C, vault(carol), carol).err(), Some(Refusal::KeepNeedsDevice));
+    assert_eq!(keep(&mut c, MAC_A, Who::Device(MAC_C), coop).err(), Some(Refusal::NotDevice));
+    assert_eq!(keep(&mut c, MAC_C, Who::Device(MAC_A), carol).err(), Some(Refusal::NotDevice));
+    let audience = |c: &Cast| c.log.view().entry(WELCOME).map(|en| en.audience());
+    let before = audience(&c);
+    keep(&mut c, MAC_C, Who::Device(MAC_C), carol).unwrap();
+    c.tidy(MAC_A);
+    assert_eq!(audience(&c), before);
+}
+
+/// Owner of a whole vault is an owner of it, which only the vault's approval and the newcomer's consent make
+/// (`Sharing::Owner`): no grant makes anyone that (WideOwner), whoever approves it and whatever it rests on. Owner of a
+/// slice and a wide read stay grants.
+#[test]
+fn owner_of_a_whole_vault_is_no_grant() {
+    let mut c = cast();
+    let coop = with_coop(&mut c);
+    let (carol, dave) = (c.carol, c.dave);
+    c.create(MAC_A, coop, WELCOME, coop, &[], "doc", &[]).unwrap();
+    // refused with both of the coop's passkeys, and before its approval or its parent is looked at
+    for cosigners in [&[PASSKEY_A, PASSKEY_B][..], &[]] {
+        let wide = c.issue(MAC_A, cosigners, coop, vault(dave), Level::Owner, Selector::All).err();
+        assert_eq!(wide, Some(Refusal::WideOwner));
+    }
+    let carols = c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), Level::Owner, by_id(WELCOME)).unwrap();
+    let on = c.issue_on(PASSKEY_C, &[], coop, vault(dave), Level::Owner, Selector::All, Some(carols), carol, 0);
+    assert_eq!(on.err(), Some(Refusal::WideOwner));
+    // what may be granted wide is write or less, and owner on a slice
+    c.issue(MAC_A, &[], coop, vault(dave), Level::Write, Selector::All).unwrap();
+    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, by_id(WELCOME)).unwrap();
+    let v = c.log.view();
+    assert!(v.shares().iter().all(|cp| !(cp.share.wide && cp.share.level == Level::Owner)));
+    // the way to own the whole coop is to become one of its owners
+    let owner = Action::Share(Sharing::Owner { vault: coop, owner: Principal::Vault(dave), seal_to: None });
+    c.log.append(PASSKEY_A, &[PASSKEY_B, PASSKEY_D], owner).unwrap();
+    assert!(c.log.view().owner_of(dave, coop));
 }
 
 #[test]
@@ -134,8 +183,9 @@ fn everyone_only_reads() {
     let v = c.log.view();
     let public = |e| v.entry(e).is_some_and(|en| v.public_key(KeyFam::Audience(coop, en.audience())));
     assert!(public(CHARTER) && !public(WELCOME));
-    // anyone receives Charter and reads it, and nothing else
-    assert_eq!(entries_in(&respond(c.log.edits(), STRANGER)), [CHARTER]);
+    // anyone that follows the coop receives Charter and reads it, and nothing else; one that follows nothing, nothing
+    assert_eq!(entries_in(&respond(c.log.edits(), STRANGER, &[coop])), [CHARTER]);
+    assert!(respond(c.log.edits(), STRANGER, &[]).is_empty());
     assert!(reads(&v, STRANGER, CHARTER) && !reads(&v, STRANGER, WELCOME));
     // but nobody outside the coop can edit it
     let stranger = c.log.check(STRANGER, &[], write_now(&c.log, CHARTER, coop)).err();
@@ -164,36 +214,52 @@ fn write_without_share_rejected_on_import() {
     assert_eq!(c.log.view().writes(WELCOME).len(), 1);
 }
 
+/// The coop's lane, as Examples.lean's scenario 9 reads it (T17): the blobs of the schema and lens entries the coop
+/// itself creates, each once, in the order they were created, of those its readers count. Nothing anyone else creates
+/// joins it, through a share or an owner share on a slice of the coop, nor anything written to such an entry later.
 #[test]
-fn only_owners_publish_into_the_lane() {
+fn the_lane_holds_only_what_the_vault_itself_creates() {
     let mut c = cast();
     let coop = with_coop(&mut c);
     let (carol, dave) = (c.carol, c.dave);
-    c.create(MAC_A, coop, WELCOME, coop, &[], "doc", &[]).unwrap();
-    // Carol may write Welcome and even owns it, but only the coop, or a vault that owns the whole coop, publishes into
-    // the coop's lane (T17)
-    for level in [Level::Write, Level::Owner] {
-        c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(carol), level, by_id(WELCOME)).unwrap();
-    }
-    let publish = |actor, blob: &[u8]| Action::Publish { vault: coop, actor, via: vec![], blob: blob.to_vec() };
-    assert_eq!(c.log.check(MAC_C, &[], publish(carol, DOCUMENT_V2.bytes())).err(), Some(Refusal::NoCap));
-    // nor can she claim to act for the coop
-    assert_eq!(c.log.check(MAC_C, &[], publish(coop, DOCUMENT_V2.bytes())).err(), Some(Refusal::NotActing));
-    // Alice's Mac acts for the coop: v2 and the lens go in, each blob once
-    for blob in [DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes()] {
-        c.log.append(MAC_A, &[], publish(coop, blob)).unwrap();
-    }
-    let again = c.log.check(MAC_B, &[], publish(coop, DOCUMENT_V2.bytes())).err();
-    assert_eq!(again, Some(Refusal::AlreadyPublished));
-    // Dave, made owner of the whole coop by both its owners, publishes into its lane too
-    c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, Selector::All).unwrap();
-    c.log.append(MAC_D, &[], publish(dave, DOCUMENT_V1.bytes())).unwrap();
-    let v = c.log.view();
-    let lane = [DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes(), DOCUMENT_V1.bytes()];
-    assert_eq!(v.lane_of(coop).collect::<Vec<_>>(), lane);
-    // a vault that doesn't exist has no lane
-    let nowhere = Action::Publish { vault: VaultId::from_u64(404), actor: coop, via: vec![], blob: vec![1] };
-    assert_eq!(c.log.check(MAC_A, &[], nowhere).err(), Some(Refusal::UnknownVault));
+    let lane = |c: &Cast, v| c.log.view().lane_of(v, &c.readings).iter().map(|b| b.to_vec()).collect::<Vec<_>>();
+    let (v1, v2, lens) = (DOCUMENT_V1.bytes(), DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes());
+    c.create(MAC_A, coop, ONBOARDING, coop, &[], "doc", &[]).unwrap();
+    let carols = c.issue(MAC_A, &[], coop, vault(carol), Level::Write, by_id(ONBOARDING)).unwrap();
+    // with its first schema, the coop shares its schemas and lenses with everyone; Alice's Mac acts for the coop
+    let public = c.issue(MAC_A, &[], coop, Who::Everyone, Level::Read, Selector::lane()).unwrap();
+    let schema = EntryId::from_u64(40);
+    c.create_holding(MAC_A, coop, schema, coop, &[public], SCHEMA_TYPE, v2).unwrap();
+    c.create_holding(MAC_A, coop, EntryId::from_u64(41), coop, &[public], LENS_TYPE, lens).unwrap();
+    assert_eq!(lane(&c, coop), [v2, lens]);
+    // the same blob again adds nothing; Bob's Mac acts for the coop too, and adds another
+    c.create_holding(MAC_A, coop, EntryId::from_u64(42), coop, &[public], SCHEMA_TYPE, v2).unwrap();
+    c.create_holding(MAC_B, coop, EntryId::from_u64(43), coop, &[public], SCHEMA_TYPE, v1).unwrap();
+    assert_eq!(lane(&c, coop), [v2, lens, v1]);
+    // a schema its readers don't count, as it doesn't fit, adds nothing either
+    let unfit = c.create_holding(MAC_A, coop, EntryId::from_u64(44), coop, &[public], SCHEMA_TYPE, &[7]).unwrap();
+    c.readings.unfit.insert(unfit);
+    // a later write to the coop's schema, its tags too, leaves the lane as it was: only the creation is read
+    c.retag(MAC_A, schema, coop, &["urgent"], &[]).unwrap();
+    assert_eq!(lane(&c, coop), [v2, lens, v1]);
+    // Carol creates a schema through her share, which the rules accept; but it acts for her, so it puts nothing in
+    // the coop's lane; for the coop she acts not at all, as her vault isn't its owner; nor does a stranger
+    c.create_holding(MAC_C, coop, EntryId::from_u64(45), carol, &[carols], SCHEMA_TYPE, &[3]).unwrap();
+    assert_eq!(lane(&c, coop), [v2, lens, v1]);
+    let theirs = |d| c.log.check(d, &[], creation(coop, EntryId::from_u64(46), coop, &[public])).err();
+    assert_eq!(theirs(MAC_C), Some(Refusal::NotActing));
+    assert!(theirs(STRANGER).is_some());
+    // owner of the whole coop is an owner of it, which no grant makes, even with both its owners (WideOwner); an
+    // owner share on a slice of the coop creates through itself, for Dave, and puts nothing in the coop's lane either
+    let wide = c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, Selector::All).err();
+    assert_eq!(wide, Some(Refusal::WideOwner));
+    let docs = c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, of_type("doc")).unwrap();
+    c.create_holding(MAC_D, coop, EntryId::from_u64(47), dave, &[docs], SCHEMA_TYPE, &[3]).unwrap();
+    assert_eq!(lane(&c, coop), [v2, lens, v1]);
+    // Dave's own vault moves to v2 too: the same blob, in another vault's lane; a vault that doesn't exist has none
+    c.create_holding(MAC_D, dave, EntryId::from_u64(48), dave, &[], SCHEMA_TYPE, v2).unwrap();
+    assert_eq!((lane(&c, coop), lane(&c, dave)), (vec![v2.to_vec(), lens.to_vec(), v1.to_vec()], vec![v2.to_vec()]));
+    assert!(lane(&c, VaultId::from_u64(404)).is_empty());
 }
 
 /// Examples.lean's `seniorRevoke`.
@@ -210,7 +276,7 @@ fn a_revoked_owner_cannot_block_his_revocation() {
     // Dave revokes Carol's read on a copy that never sees Alice go on writing and then revoke Dave's share, so Dave's
     // revocation sorts first
     let mut daves = c.log.clone();
-    let revoke = |share, actor| Action::Revoke { share, actor, keep: vec![], via: vec![] };
+    let revoke = |share, actor| Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
     let late = daves.append(MAC_D, &[], revoke(carol_read, dave)).unwrap();
     c.create(MAC_A, alice, DIARY, alice, &[], "note", &[]).unwrap();
     c.log.append(MAC_A, &[], write_now(&c.log, PLAN, alice)).unwrap();
@@ -268,7 +334,7 @@ fn a_share_on_an_owner_share_grants_no_more_than_it() {
     assert_eq!(LIBRARY.map(|e| reads(&v, MAC_C, e)), [true, true, true, false, false]);
     assert_eq!(LIBRARY.map(|e| reads(&v, MAC_D, e)), [false, true, false, false, false]);
     // Carol, who issued Dave's share, and Dave, giving it up, may revoke it; Bob may not
-    let revoke = |share, actor| Action::Revoke { share, actor, keep: vec![], via: vec![] };
+    let revoke = |share, actor| Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
     assert!(c.log.check(MAC_C, &[], revoke(home, carol)).is_ok());
     assert!(c.log.check(MAC_D, &[], revoke(home, dave)).is_ok());
     assert_eq!(c.log.check(MAC_B, &[], revoke(home, bob)).err(), Some(Refusal::NoCap));
@@ -298,12 +364,12 @@ fn a_wide_share_reaches_every_audience_and_splits_none() {
     let (bobs, none) = (Some(AudienceId::of(alice, &[work])), Some(AudienceId::of(alice, &[])));
     assert_eq!(LIBRARY.map(|e| audience_of(&c.log, e)), [bobs, none, bobs, none, none]);
     assert!(LIBRARY.iter().all(|&e| v.meaning(e, &c.readings).is_some_and(|m| m.desired.is_none())));
-    assert_eq!(c.move_to(MAC_A, alice, DIARY, &[backup]).err(), Some(Refusal::BadCell));
+    assert_eq!(c.move_to(MAC_A, alice, DIARY, &[backup]).err(), Some(Refusal::BadAudience));
     // Dave reads every entry, in every audience, and writes none; Bob reads and writes the two in his audience alone
     assert!(LIBRARY.iter().all(|&e| reads(&v, MAC_D, e) && !v.may_write(dave, e)));
     assert_eq!(LIBRARY.map(|e| reads(&v, MAC_B, e) && v.may_write(bob, e)), [true, false, true, false, false]);
     // the server receives every entry of Alice's and reads none: a relay share has no key
-    let relayed = entries_in(&respond(c.log.edits(), SERVER));
+    let relayed = entries_in(&respond(c.log.edits(), SERVER, &[]));
     assert!(relayed.len() == LIBRARY.len() && LIBRARY.iter().all(|e| relayed.contains(e)));
     assert!(LIBRARY.iter().all(|&e| !reads(&v, SERVER, e)));
     assert!(v.has_fam(KeyFam::Share(alice, backup)) && !v.has_fam(KeyFam::Share(alice, relay)));
@@ -318,7 +384,7 @@ fn a_relay_share_keeps_nothing() {
     let alice = c.alice;
     let ceo = aven_of_alice(&mut c);
     let relay = c.issue(MAC_A, &[], alice, vault(ceo), Level::Relay, Selector::All).unwrap();
-    let sent = respond(c.log.edits(), SERVER);
+    let sent = respond(c.log.edits(), SERVER, &[]);
     assert!(entries_in(&sent).is_empty(), "no entry of Alice's");
     let known = avendb::policy::view(&sent);
     let hers = known.vault(alice).expect("Alice's vault, from its log");
@@ -326,7 +392,7 @@ fn a_relay_share_keeps_nothing() {
     assert!(sent.iter().any(|e| ShareId::from(e.id()) == relay), "the cap itself");
     // with backup, the server keeps the ciphertext of every entry, and still reads none
     c.issue(MAC_A, &[], alice, vault(ceo), Level::Backup, Selector::All).unwrap();
-    let kept = entries_in(&respond(c.log.edits(), SERVER));
+    let kept = entries_in(&respond(c.log.edits(), SERVER, &[]));
     assert!(LIBRARY.iter().all(|e| kept.contains(e)));
     assert!(LIBRARY.iter().all(|&e| !reads(&c.log.view(), SERVER, e)));
 }

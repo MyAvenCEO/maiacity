@@ -3,8 +3,8 @@ import AvenDB.Basic
 /-!
 # Ops: one language to read and change any record
 
-`avendb/docs/OPS.md`. Apps read and change records, whatever their schema, by ops: JSON values that the page, the Mac
-app and every device's engine share. This file is what they mean.
+`avendb/docs/ARCHITECTURE.md` §8. Apps read and change records, whatever their schema, by ops: JSON values that the
+page, the Mac app and every device's engine share. This file is what they mean.
 
 - **Records, flat.** A record (what an item stores, or an app's view of it) is a JSON object. Flat, it is a value at
   each place (a field, or a field of a row of a list of records) and the rows of each list of records, in order. A row

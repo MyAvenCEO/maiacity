@@ -24,6 +24,8 @@ tokio = { version = "1.44", default-features = false, features = ["sync"] }
 n0-future = "0.3.2"
 anyhow = "1"
 tracing = "0.1"
+# the ops and their answers (`Node::run`, avendb's `engine`)
+serde_json.workspace = true
 # the server's own secrets, and the randomness every node's Lab draws on
 getrandom = "0.4"
 # an offer's text, for a QR code (iroh's own version)
@@ -39,8 +41,6 @@ x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
 iroh = { version = "=1.3.0", default-features = false, features = ["tls-aws-lc-rs", "portmapper", "fast-apple-datapath"] }
 rustls = { version = "0.23.33", default-features = false, features = ["aws_lc_rs", "std"] }
 tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "io-util"] }
-# the blob store on disk, beside the node's store (blobs B2)
-iroh-blobs = { version = "=0.103.1", default-features = false, features = ["fs-store"] }
 
 # In a browser (P8d), where aws-lc-rs doesn't build: ring for TLS, and X25519MLKEM768 in pure Rust (`kx`); randomness
 # from the browser

@@ -11,7 +11,8 @@ the same things against the real code.
 A vault holds its entries directly. A share selects a slice of them by type, author, entry id, creation time and tags,
 and the audiences, the sets of shares that select an entry alike, carry the keys. The model never moves an entry on its
 own: a steward, a device acting for the vault, moves each entry to the audience its shares select (`desired`) with a
-`move` edit, so a scenario includes the moves a steward would make, and checks that it has nothing left to do.
+`mark` edit (here `.move`, a mark of the audience alone), so a scenario includes the marks a steward would make, and
+checks that it has nothing left to do.
 -/
 
 namespace AvenDB.Examples
@@ -69,7 +70,13 @@ def byId (e : EntryId) : Selector := .anyOf [[.entryIn [e]]]
     `issuer` issues it. -/
 def shareOf (id : ShareId) (over who : VaultId) (level : Level) (sel : Selector) (parent : Option ShareId := none)
     (issuer : VaultId := over) : Share :=
-  { id, over, who := .principal (.vault who), level, wide := sel == .all, select := sel, ops := level.ops, parent,
+  { id, over, who := .vault who, level, wide := sel == .all, select := sel, ops := level.ops, parent,
+    issuer }
+
+/-- Keep share `id` over vault `over`: device `d` of vault `issuer` syncs what `sel` selects, all of `over` for `all`,
+    as mode `m` says. It grants nothing. -/
+def keepShare (id : ShareId) (over issuer : VaultId) (d : SignerId) (m : KeepMode) (sel : Selector) : Share :=
+  { id, over, who := .device d, level := .keep m, wide := sel == .all, select := sel, ops := [], parent := none,
     issuer }
 
 /-- Share `id` over vault `over`: everyone reads what `sel` selects. -/
@@ -77,10 +84,13 @@ def publicShare (id : ShareId) (over : VaultId) (sel : Selector) : Share :=
   { shareOf id over over .read sel with who := .everyone }
 
 /-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in audience `x`, through the share
-    `proof` names, if it isn't the vault. -/
+    `proof` names, if it isn't the vault, holding the content `blob` (for a schema or a lens entry, the schema or the
+    lens), whose record fits its schemas or not (`fits`). -/
 def create (v : VaultId) (e : EntryId) (actor : VaultId) (x : Audience) (t : Sym) (tags : List Sym := [])
-    (via : List VaultId := []) (proof : Option ShareId := none) : Action :=
-  .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0⟩)) (tags := { add := tags }) (proof := proof)
+    (via : List VaultId := []) (proof : Option ShareId := none) (blob : BlobId := 0) (fits : Bool := true) :
+    Action :=
+  .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0, blob⟩)) (tags := { add := tags }) (proof := proof)
+    (fits := fits)
 
 /-- Edits in sequence: each builds on the one before, ids count from `start`. -/
 def chain (start : Nat) (steps : List (SignerId × List SignerId × Action)) : List Edit :=
@@ -115,7 +125,7 @@ def writable (edits : List Edit) (a : VaultId) : List EntryId :=
 /-- The audience entry `e` is in. -/
 def audienceOf (edits : List Edit) (e : EntryId) : Audience := ((view edits).entry? e).elim [] (·.audience)
 
-/-- What a steward does with entry `e`: nothing (`none`), or move it to the audience its shares select. -/
+/-- What a steward does with entry `e`: nothing (`none`), or mark it into the audience its shares select. -/
 def upkeep (edits : List Edit) (e : EntryId) : Option Audience := let st := view edits; (st.entry? e).bind (desired st)
 
 /-- Every entry is in the audience its shares select: a steward has nothing left to do. -/
@@ -145,8 +155,8 @@ Each person's passkey is their vault's root, as in the app. -/
 
 def s1 : List Edit := chain 1 [
   (passkeyA, [], .genesis alice .human [.signer passkeyA] 1 (some passkeyA)),
-  (passkeyA, [macA], .addDevice alice macA),
-  (passkeyA, [phoneA], .addDevice alice phoneA)]
+  (passkeyA, [macA], .share (.device alice macA)),
+  (passkeyA, [phoneA], .share (.device alice phoneA))]
 #guard refused s1 == []
 
 #guard ((view s1).vault? alice).map (·.devices) == some [macA, phoneA]
@@ -154,33 +164,33 @@ def s1 : List Edit := chain 1 [
 #guard opens' s1 macA (.seed alice) && opens' s1 phoneA (.seed alice) && opens' s1 passkeyA (.seed alice)
 -- the Mac acts for Alice's vault but can't add a device on its own
 #guard actsFor (view s1) macA alice
-#guard !accepted s1 (attempt macA [77] (.addDevice alice 77))
-#guard accepted s1 (attempt passkeyA [77] (.addDevice alice 77))
+#guard !accepted s1 (attempt macA [77] (.share (.device alice 77)))
+#guard accepted s1 (attempt passkeyA [77] (.share (.device alice 77)))
 -- a device can't be added without its own signature
-#guard !accepted s1 (attempt passkeyA [] (.addDevice alice 77))
+#guard !accepted s1 (attempt passkeyA [] (.share (.device alice 77)))
 -- only the root hands the root on, and the new root signs
-#guard accepted s1 (attempt passkeyA [77] (.setRoot alice (some 77) []))
-#guard !accepted s1 (attempt passkeyA [] (.setRoot alice (some 77) []))
-#guard !accepted s1 (attempt macA [77] (.setRoot alice (some 77) []))
+#guard accepted s1 (attempt passkeyA [77] (.settings alice (.root (some 77) [])))
+#guard !accepted s1 (attempt passkeyA [] (.settings alice (.root (some 77) [])))
+#guard !accepted s1 (attempt macA [77] (.settings alice (.root (some 77) [])))
 -- the root signs the genesis that names it
 #guard !accepted [] (attempt passkeyA [] (.genesis alice .human [.signer passkeyA] 1 (some 77)))
 
 def s2 : List Edit := s1 ++ chain 10 [
   (passkeyB, [], .genesis bob .human [.signer passkeyB] 1 (some passkeyB)),
-  (passkeyB, [macB], .addDevice bob macB),
+  (passkeyB, [macB], .share (.device bob macB)),
   (passkeyC, [], .genesis carol .human [.signer passkeyC] 1 (some passkeyC)),
-  (passkeyC, [macC], .addDevice carol macC),
+  (passkeyC, [macC], .share (.device carol macC)),
   (passkeyD, [], .genesis dave .human [.signer passkeyD] 1 (some passkeyD)),
-  (passkeyD, [macD], .addDevice dave macD)]
+  (passkeyD, [macD], .share (.device dave macD))]
 #guard refused s2 == []
 
 -- a second passkey joins Alice's vault at threshold 2; the root still approves alone, the other passkey doesn't
 def twoKeys : List Edit := s1 ++ chain 140 [
-  (passkeyA, [77], .addOwner alice (.signer 77)),
-  (passkeyA, [], .setThreshold alice 2)]
+  (passkeyA, [77], .share (.owner alice (.signer 77))),
+  (passkeyA, [], .settings alice (.threshold 2))]
 #guard refused twoKeys == []
-#guard accepted twoKeys (attempt passkeyA [78] (.addDevice alice 78))
-#guard !accepted twoKeys (attempt 77 [78] (.addDevice alice 78))
+#guard accepted twoKeys (attempt passkeyA [78] (.share (.device alice 78)))
+#guard !accepted twoKeys (attempt 77 [78] (.share (.device alice 78)))
 -- a coop has no root
 #guard !accepted s2 (attempt passkeyA [passkeyB] (.genesis coop .coop [.vault alice, .vault bob] 2 (some passkeyA)))
 
@@ -197,9 +207,9 @@ def s3 : List Edit := s2 ++ chain 20 [
 #guard opens' s3 macB (.seed coop) && opens' s3 macA (.seed coop) && opens' s3 phoneA (.seed coop)
 #guard !opens' s3 macC (.seed coop) && !opens' s3 stranger (.seed coop)
 -- a coop can't own itself, and Alice's vault alone can't add an owner to a threshold-2 coop
-#guard !accepted s3 (attempt passkeyA [passkeyB] (.addOwner coop (.vault coop)))
-#guard !accepted s3 (attempt passkeyA [passkeyD] (.addOwner coop (.vault dave)))
-#guard accepted s3 (attempt passkeyA [passkeyB, passkeyD] (.addOwner coop (.vault dave)))
+#guard !accepted s3 (attempt passkeyA [passkeyB] (.share (.owner coop (.vault coop))))
+#guard !accepted s3 (attempt passkeyA [passkeyD] (.share (.owner coop (.vault dave))))
+#guard accepted s3 (attempt passkeyA [passkeyB, passkeyD] (.share (.owner coop (.vault dave))))
 -- with nothing shared yet, Alice's Mac sends Bob's Mac the coop's log, Carol's Mac nothing of it, a stranger nothing
 #guard (respond s3 macB).any (·.log? == some (.vault coop))
 #guard (respond s3 macC).all (·.log? != some (.vault coop)) && (respond s3 stranger).isEmpty
@@ -216,7 +226,7 @@ def server := 600
 
 def sAven : List Edit := s3 ++ chain 400 [
   (passkeyA, [], .genesis avenCEO .aven [.vault alice] 1),
-  (passkeyA, [server], .addDevice avenCEO server)]
+  (passkeyA, [server], .share (.device avenCEO server))]
 #guard refused sAven == []
 
 -- the server acts for avenCEO, and so do Alice's devices, through Alice's vault; Bob's don't
@@ -225,20 +235,20 @@ def sAven : List Edit := s3 ++ chain 400 [
 #guard opens' sAven server (.seed avenCEO) && opens' sAven phoneA (.seed avenCEO)
 #guard !opens' sAven server (.seed alice) && !opens' sAven macB (.seed avenCEO)
 -- the server doesn't govern avenCEO: it adds no device and no owner; Alice's passkey does, through Alice's vault
-#guard !accepted sAven (attempt server [77] (.addDevice avenCEO 77))
-#guard !accepted sAven (attempt server [passkeyB] (.addOwner avenCEO (.vault bob)))
-#guard accepted sAven (attempt passkeyA [77] (.addDevice avenCEO 77))
-#guard accepted sAven (attempt passkeyA [passkeyB] (.addOwner avenCEO (.vault bob)))
+#guard !accepted sAven (attempt server [77] (.share (.device avenCEO 77)))
+#guard !accepted sAven (attempt server [passkeyB] (.share (.owner avenCEO (.vault bob))))
+#guard accepted sAven (attempt passkeyA [77] (.share (.device avenCEO 77)))
+#guard accepted sAven (attempt passkeyA [passkeyB] (.share (.owner avenCEO (.vault bob))))
 -- signers own human vaults only, and a human vault no vault
 #guard !accepted s2 (attempt passkeyA [] (.genesis avenCEO .aven [.signer passkeyA] 1))
 #guard !accepted s2 (attempt passkeyA [passkeyB] (.genesis coop .coop [.signer passkeyA, .vault bob] 1))
-#guard !accepted sAven (attempt passkeyA [77] (.addOwner avenCEO (.signer 77)))
-#guard !accepted s3 (attempt passkeyA [passkeyB] (.addOwner alice (.vault bob)))
+#guard !accepted sAven (attempt passkeyA [77] (.share (.owner avenCEO (.signer 77))))
+#guard !accepted s3 (attempt passkeyA [passkeyB] (.share (.owner alice (.vault bob))))
 -- an aven vault owns no vault yet, and has no root; a coop has no devices
-#guard !accepted sAven (attempt passkeyA [passkeyB] (.addOwner coop (.vault avenCEO)))
+#guard !accepted sAven (attempt passkeyA [passkeyB] (.share (.owner coop (.vault avenCEO))))
 #guard !accepted sAven (attempt passkeyA [] (.genesis 301 .coop [.vault avenCEO] 1))
 #guard !accepted s2 (attempt passkeyA [] (.genesis avenCEO .aven [.vault alice] 1 (some passkeyA)))
-#guard !accepted s3 (attempt passkeyA [passkeyB, 77] (.addDevice coop 77))
+#guard !accepted s3 (attempt passkeyA [passkeyB, 77] (.share (.device coop 77)))
 
 /-! ## Acts name their chain
 
@@ -293,7 +303,7 @@ def s5 : List Edit := s4 ++ chain 40 [
 #guard !accepted s5 (attempt macB [] (.write coop onboarding coop none 0 [40] (via := [bob])))
 
 def s6 : List Edit := s5 ++ chain 50 [
-  (macA, [], .share (shareOf 1 coop carol .read (byId welcome)) [alice]),
+  (macA, [], .share (.grant (shareOf 1 coop carol .read (byId welcome)) [alice])),
   -- a steward, acting for the coop, moves Welcome to the audience of that share
   (macA, [], .move coop welcome [1] [30, 40] [alice])]
 #guard refused s6 == [] && tidy s6
@@ -306,19 +316,24 @@ def s6 : List Edit := s5 ++ chain 50 [
 -- she can't edit it, and Bob's Mac still reads both documents
 #guard !accepted s6 (attempt macC [] (.write coop welcome carol (some 51) 0 [40]))
 #guard readable s6 macB == [welcome, onboarding]
--- a share naming a device is refused (T4)
-#guard !accepted s6 (attempt macA [] (.share { shareOf 2 coop carol .read (byId welcome) with
-                                              who := .principal (.signer macC) } [alice]))
+-- a share names a device only as a keep share, of a device of its issuer (T4): Carol keeps Welcome whole on her Mac,
+-- which lets her read nothing more; the coop has no device to keep its entries on, and Carol keeps nothing on Alice's
+#guard !accepted s6 (attempt macA [] (.share (.grant { shareOf 2 coop carol .read (byId welcome) with
+                                                      who := .device macC } [alice])))
+#guard accepted s6 (attempt macC [] (.share (.grant (keepShare 2 coop carol macC .whole (byId welcome)))))
+#guard !accepted s6 (attempt macA [] (.share (.grant (keepShare 2 coop coop macC .whole (byId welcome)) [alice])))
+#guard !accepted s6 (attempt macC [] (.share (.grant (keepShare 2 coop carol macA .whole (byId welcome)))))
 
 def s7 : List Edit := s6 ++ chain 60 [
-  (macA, [], .share (publicShare 3 coop (byId charter)) [alice]),
+  (macA, [], .share (.grant (publicShare 3 coop (byId charter)) [alice])),
   -- a steward creates Charter straight in the audience its share selects
   (macA, [], create coop charter coop [3] doc (via := [alice]))]
 #guard refused s7 == [] && tidy s7
 
 -- anyone opens Charter, and nothing else; everyone can't be given write (T8)
 #guard readable s7 stranger == [charter]
-#guard !accepted s7 (attempt macA [] (.share { publicShare 4 coop (byId charter) with level := .write } [alice]))
+#guard !accepted s7
+  (attempt macA [] (.share (.grant { publicShare 4 coop (byId charter) with level := .write } [alice])))
 
 /-! ## Slices: shares select entries, audiences carry the keys
 
@@ -336,7 +351,7 @@ def lib : List Edit := s2 ++ chain 500 [
 #guard refused lib == [] && tidy lib && readable lib macB == []
 
 -- all of Alice's todos, read: the share alone moves nothing, a steward has three todos to move into its audience
-def allTodos : List Edit := lib ++ chain 510 [(macA, [], .share (shareOf 31 alice bob .read todos))]
+def allTodos : List Edit := lib ++ chain 510 [(macA, [], .share (.grant (shareOf 31 alice bob .read todos)))]
 #guard [door, seeds, solar, plan, diary].map (upkeep allTodos) == [some [31], some [31], some [31], none, none]
 #guard readable allTodos macB == []
 def allTodos' : List Edit := allTodos ++ chain 511 [
@@ -350,7 +365,7 @@ def allTodos' : List Edit := allTodos ++ chain 511 [
 
 -- only the todos tagged work, write
 def workShare : List Edit := lib ++ chain 510 [
-  (macA, [], .share (shareOf 32 alice bob .write workTodos)),
+  (macA, [], .share (.grant (shareOf 32 alice bob .write workTodos))),
   (macA, [], .move alice door [32] [500]),
   (macA, [], .move alice solar [32] [502])]
 -- moved, Bob reads and writes the two todos tagged work, not the one tagged home nor the note tagged work
@@ -361,7 +376,7 @@ def workShare : List Edit := lib ++ chain 510 [
 
 -- one note, by its id, write
 def onePlan : List Edit := lib ++ chain 510 [
-  (macA, [], .share (shareOf 33 alice bob .write (byId plan))),
+  (macA, [], .share (.grant (shareOf 33 alice bob .write (byId plan)))),
   (macA, [], .move alice plan [33] [503])]
 -- moved, Bob reads and writes that note alone
 #guard refused onePlan == [] && tidy onePlan
@@ -372,8 +387,8 @@ def onePlan : List Edit := lib ++ chain 510 [
 -- an audience is the set of shares that select its entries alike: Carol writes all of Alice's todos and Bob the ones
 -- tagged work, so the two work todos share an audience of both shares, and the other todo is in Carol's alone
 def shared : List Edit := lib ++ chain 510 [
-  (macA, [], .share (shareOf 31 alice carol .write todos)),
-  (macA, [], .share (shareOf 32 alice bob .write workTodos)),
+  (macA, [], .share (.grant (shareOf 31 alice carol .write todos))),
+  (macA, [], .share (.grant (shareOf 32 alice bob .write workTodos))),
   (macA, [], .move alice door [31, 32] [500]),
   (macA, [], .move alice seeds [31] [501]),
   (macA, [], .move alice solar [31, 32] [502])]
@@ -449,22 +464,22 @@ what every share of its chain selects (T22). Alice makes Carol owner of her todo
 Dave the home todos and, claiming more than she holds, the notes. Revoking Carol's share ends both. -/
 
 def resting : List Edit := lib ++ chain 540 [
-  (passkeyA, [], .share (shareOf 41 alice carol .owner todos)),
-  (macC, [], .share (shareOf 42 alice dave .read homeTodos (parent := some 41) (issuer := carol))),
-  (macC, [], .share (shareOf 43 alice dave .read notes (parent := some 41) (issuer := carol)))]
+  (passkeyA, [], .share (.grant (shareOf 41 alice carol .owner todos))),
+  (macC, [], .share (.grant (shareOf 42 alice dave .read homeTodos (parent := some 41) (issuer := carol)))),
+  (macC, [], .share (.grant (shareOf 43 alice dave .read notes (parent := some 41) (issuer := carol))))]
 #guard refused resting == []
 
 -- a device alone can't make anyone owner, and only the grantee of an owner share issues on it
-#guard !accepted lib (attempt macA [] (.share (shareOf 41 alice carol .owner todos)))
+#guard !accepted lib (attempt macA [] (.share (.grant (shareOf 41 alice carol .owner todos))))
 #guard !accepted resting (attempt macB []
-  (.share (shareOf 44 alice bob .read todos (parent := some 41) (issuer := bob))))
+  (.share (.grant (shareOf 44 alice bob .read todos (parent := some 41) (issuer := bob)))))
 #guard !accepted resting (attempt macD []
-  (.share (shareOf 44 alice bob .read todos (parent := some 42) (issuer := dave))))
+  (.share (.grant (shareOf 44 alice bob .read todos (parent := some 42) (issuer := dave)))))
 -- a wide share rests only on a wide one; an owner share resting on Carol's takes her own approval
 #guard !accepted resting (attempt macC []
-  (.share (shareOf 44 alice dave .read .all (parent := some 41) (issuer := carol))))
-#guard !accepted resting (attempt macC [] (.share (shareOf 44 alice dave .owner homeTodos (some 41) carol)))
-#guard accepted resting (attempt passkeyC [] (.share (shareOf 44 alice dave .owner homeTodos (some 41) carol)))
+  (.share (.grant (shareOf 44 alice dave .read .all (parent := some 41) (issuer := carol)))))
+#guard !accepted resting (attempt macC [] (.share (.grant (shareOf 44 alice dave .owner homeTodos (some 41) carol))))
+#guard accepted resting (attempt passkeyC [] (.share (.grant (shareOf 44 alice dave .owner homeTodos (some 41) carol))))
 -- Dave's slices are what every share of their chain selects: the todo tagged home, and no note at all
 #guard ((view resting).share? 42).any fun c =>
   (view resting).entries.map (effSelects (view resting) c ·.attrs) == [false, true, false, false, false]
@@ -478,11 +493,12 @@ def resting' : List Edit := resting ++ chain 550 [
 #guard refused resting' == [] && tidy resting'
 #guard readable resting' macC == [door, seeds, solar] && readable resting' macD == [seeds]
 -- Carol, who issued Dave's share, and Dave, giving it up, may revoke it; Bob may not
-#guard accepted resting' (attempt macC [] (.revoke 42 carol []))
-#guard accepted resting' (attempt macD [] (.revoke 42 dave []))
-#guard !accepted resting' (attempt macB [] (.revoke 42 bob []))
+#guard accepted resting' (attempt macC [] (.revoke (.grant 42 carol [])))
+#guard accepted resting' (attempt macD [] (.revoke (.grant 42 dave [])))
+#guard !accepted resting' (attempt macB [] (.revoke (.grant 42 bob [])))
 -- revoking Carol's owner share is governance, and ends Dave's shares with it; no entry needs to move
-def carolRevoked : List Edit := resting' ++ chain 560 [(passkeyA, [], .revoke 41 alice [540, 541, 542, 550, 551, 552])]
+def carolRevoked : List Edit := resting' ++ chain 560 [
+  (passkeyA, [], .revoke (.grant 41 alice [540, 541, 542, 550, 551, 552]))]
 #guard refused carolRevoked == [] && tidy carolRevoked
 #guard [41, 42, 43].all (!(view carolRevoked).live ·)
 #guard readable carolRevoked macC == [] && readable carolRevoked macD == []
@@ -495,9 +511,9 @@ wide relay share: its servers hold and pass on every entry of Alice's, and open 
 
 def wideShares : List Edit := shared ++ chain 540 [
   (passkeyA, [], .genesis avenCEO .aven [.vault alice] 1),
-  (passkeyA, [server], .addDevice avenCEO server),
-  (macA, [], .share (shareOf 50 alice dave .read .all)),
-  (macA, [], .share (shareOf 51 alice avenCEO .backup .all))]
+  (passkeyA, [server], .share (.device avenCEO server)),
+  (macA, [], .share (.grant (shareOf 50 alice dave .read .all))),
+  (macA, [], .share (.grant (shareOf 51 alice avenCEO .backup .all)))]
 -- a wide share splits no audience: there is nothing to move
 #guard refused wideShares == [] && tidy wideShares
 -- Dave reads every entry, in every audience
@@ -508,7 +524,7 @@ def wideShares : List Edit := shared ++ chain 540 [
 #guard readable wideShares server == []
 -- everyone reads the plan, the server too, once a steward has moved it to the public share's audience
 def withPublic : List Edit := wideShares ++ chain 544 [
-  (macA, [], .share (publicShare 52 alice (byId plan))),
+  (macA, [], .share (.grant (publicShare 52 alice (byId plan)))),
   (macA, [], .move alice plan [52] [503])]
 #guard refused withPublic == [] && tidy withPublic
 #guard readable withPublic stranger == [plan] && readable withPublic server == [plan]
@@ -562,43 +578,73 @@ def headsOf (edits : List Edit) (l : Option EditId) : List EditId := heads (view
 
 /-! ## Scenario 9: schema v2
 
-The coop moves its documents to schema v2. Alice's Mac, acting for the coop, publishes the v2 schema and the lens from
-v1 into the coop's schema lane, one per vault. Carol may write Onboarding but not publish there. -/
+The coop moves its documents to schema v2. A vault's schemas and lenses are entries of the built-in types schema and
+lens, which it shares with everyone through a share of its own, made with its first schema, that selects those types.
+Alice's Mac, acting for the coop, creates the v2 schema and the lens from v1 as entries of the coop, and their readers
+read the coop's lane off them (T17). Carol may write Onboarding, and create through her share, but puts nothing in the
+coop's lane. -/
 
 def schemaV2 : BlobId := 1
 def lensV1V2 : BlobId := 2
+def coopSchema := 4
+def coopLens := 5
+def daveSchema := 6
+def schemas : Selector := .anyOf [[.typeIn schemaTypes]]
 
 def s9 : List Edit := s7 ++ chain 65 [
-  (macA, [], .share (shareOf 5 coop carol .write (byId onboarding)) [alice]),
+  (macA, [], .share (.grant (shareOf 5 coop carol .write (byId onboarding)) [alice])),
   (macA, [], .move coop onboarding [5] [31] [alice]),
-  (macA, [], .publish coop coop schemaV2 [alice]),
-  (macA, [], .publish coop coop lensV1V2 [alice]),
+  -- with its first schema, the coop shares its schemas and lenses with everyone
+  (macA, [], .share (.grant (publicShare 7 coop schemas) [alice])),
+  (macA, [], create coop coopSchema coop [7] schemaType (via := [alice]) (blob := schemaV2)),
+  (macA, [], create coop coopLens coop [7] lensType (via := [alice]) (blob := lensV1V2)),
   -- Dave's own vault moves to v2 too: the same blob, in another vault's lane
-  (macD, [], .publish dave dave schemaV2)]
-#guard refused s9 == []
+  (macD, [], .share (.grant (publicShare 8 dave schemas))),
+  (macD, [], create dave daveSchema dave [8] schemaType (blob := schemaV2))]
+#guard refused s9 == [] && tidy s9
 
-#guard (view s9).lane == [(coop, schemaV2), (coop, lensV1V2), (dave, schemaV2)]
--- the same blob again is refused; Bob's Mac acts for the coop too, through Bob's vault, and may publish another
-#guard !accepted s9 (attempt macA [] (.publish coop coop schemaV2 [alice]))
-#guard accepted s9 (attempt macB [] (.publish coop coop 3 [bob]))
--- Carol writes Onboarding, but publishes into the coop's lane neither for herself nor for the coop, whose owner her
--- vault isn't; nor does a stranger
+#guard laneOf (view s9) coop == [schemaV2, lensV1V2] && laneOf (view s9) dave == [schemaV2]
+/-- The coop's lane after an edit tried on `edits`, if it is accepted. -/
+def laneAfter (edits : List Edit) (edit : Edit) : Option (List BlobId) := (step (view edits) edit).map (laneOf · coop)
+-- the same blob again adds nothing; Bob's Mac acts for the coop too, through Bob's vault, and adds another
+#guard laneAfter s9 (attempt macA [] (create coop 9 coop [7] schemaType (via := [alice]) (blob := schemaV2))) ==
+  some [schemaV2, lensV1V2]
+#guard laneAfter s9 (attempt macB [] (create coop 9 coop [7] lensType (via := [bob]) (blob := 3))) ==
+  some [schemaV2, lensV1V2, 3]
+-- a schema its readers don't count, as it doesn't fit, adds nothing either
+#guard laneAfter s9 (attempt macA [] (create coop 9 coop [7] schemaType (via := [alice]) (blob := 3) (fits := false)))
+  == some [schemaV2, lensV1V2]
+-- a later write to the coop's schema, its tags too, leaves the lane as it was: only the creation is read
+#guard laneAfter s9 (attempt macA [] (.write coop coopSchema coop none 0 [68] (via := [alice])
+  (tags := { add := [urgent] }))) == some [schemaV2, lensV1V2]
+-- Carol writes Onboarding, and creates a schema through her share, which every peer accepts; but it acts for her, so
+-- it puts nothing in the coop's lane; for the coop she acts not at all, as her vault isn't its owner; nor does a
+-- stranger
 #guard accepted s9 (attempt macC [] (.write coop onboarding carol (some 66) 0 [31]))
-#guard !accepted s9 (attempt macC [] (.publish coop carol 3))
-#guard !accepted s9 (attempt macC [] (.publish coop coop 3 [carol]))
-#guard !accepted s9 (attempt stranger [] (.publish coop coop 3))
--- a vault holding a wide owner share over the coop publishes into its lane; an owner share on a slice doesn't
-def daveOwns (sel : Selector) : List Edit := s9 ++ chain 70 [
-  (passkeyA, [passkeyB], .share (shareOf 6 coop dave .owner sel) [alice])]
-#guard refused (daveOwns .all) == [] && refused (daveOwns docs) == []
-#guard ownsLane (view (daveOwns .all)) dave coop && !ownsLane (view (daveOwns docs)) dave coop
-#guard accepted (daveOwns .all) (attempt macD [] (.publish coop dave 3))
-#guard !accepted (daveOwns docs) (attempt macD [] (.publish coop dave 3))
--- a vault's lane travels with its log: Carol's Mac receives the coop's, through her shares, and so does anyone, through
--- the public Charter; Dave's goes to his own devices, and not to Carol's Mac, as nothing she receives names his vault
-#guard [macC, stranger].all fun d => (respond s9 d).any (·.action == .publish coop coop schemaV2 [alice])
-#guard (respond s9 macD).any (·.action == .publish dave dave schemaV2)
-#guard !(respond s9 macC).any (·.action == .publish dave dave schemaV2)
+#guard laneAfter s9 (attempt macC [] (create coop 9 carol [5] schemaType (proof := some 5) (blob := 3))) ==
+  some [schemaV2, lensV1V2]
+#guard !accepted s9 (attempt macC [] (create coop 9 coop [7] schemaType (via := [carol]) (blob := 3)))
+#guard !accepted s9 (attempt stranger [] (create coop 9 coop [7] schemaType (blob := 3)))
+-- owner of the whole coop is an owner of it, which no grant makes, even with the coop's approval (WideOwner); an owner
+-- share on a slice of the coop creates through itself, for Dave, and puts nothing in the coop's lane either: only the
+-- coop's own owners do
+def daveOwns (sel : Selector) : List Edit := s9 ++ chain 80 [
+  (passkeyA, [passkeyB], .share (.grant (shareOf 6 coop dave .owner sel) [alice]))]
+#guard refused (daveOwns .all) == [80] && refused (daveOwns docs) == []
+#guard !accepted (daveOwns .all) (attempt macD [] (create coop 9 dave [] schemaType (blob := 3)))
+#guard laneAfter (daveOwns docs) (attempt macD [] (create coop 9 dave [6] schemaType (proof := some 6) (blob := 3))) ==
+  some [schemaV2, lensV1V2]
+-- what everyone may read goes to whoever has an interest in the vault (T12): Carol's Mac receives the coop's schema,
+-- through her shares, and a stranger nothing at all, unless it follows the coop; then it receives what is public of
+-- the coop, its schema and lens and the Charter, and none of its other entries
+#guard (respond s9 macC).any (entryLog? · == some coopSchema) && respond s9 stranger == []
+#guard ((respond s9 stranger [coop]).filterMap entryLog?).eraseDups == [charter, coopSchema, coopLens]
+-- Dave's schema goes to his own devices, and to Carol's Mac only once it follows his vault
+#guard (respond s9 macD).any (entryLog? · == some daveSchema)
+#guard !(respond s9 macC).any (entryLog? · == some daveSchema)
+#guard (respond s9 macC [dave]).any (entryLog? · == some daveSchema)
+-- a relay, which reads no type and no blob, has the same edits stand (T25)
+#guard (standing (s9.map Edit.blind)).map (·.id) == (standing s9).map (·.id)
 
 /-- Welcome as an app still on v1 wrote it: v1's fields only. -/
 def welcomeV1 : Lens.StoredDoc := { title := "Welcome", blocks := [
@@ -633,7 +679,7 @@ The audiences the revoked share was in move to a new epoch, whose key only their
 stays in the audience: only the live part of an audience has to be its semantic audience, so a revocation moves no
 entry. -/
 
-def s10 : List Edit := s7 ++ chain 80 [(macA, [], .revoke 1 coop [] [alice])]
+def s10 : List Edit := s7 ++ chain 80 [(macA, [], .revoke (.grant 1 coop [] [alice]))]
 #guard refused s10 == []
 
 -- Welcome's audience moves on: Carol doesn't open its new epoch, Bob does, and Welcome stays where it is
@@ -645,7 +691,8 @@ def s10 : List Edit := s7 ++ chain 80 [(macA, [], .revoke 1 coop [] [alice])]
 
 -- Alice revokes Bob's write on her work todos: their audience moves on, the others' don't, and Bob opens nothing new,
 -- though no entry moves
-def unshared : List Edit := shared ++ chain 530 [(macA, [], .revoke 32 alice [500, 501, 502, 510, 511, 512, 513, 514])]
+def unshared : List Edit := shared ++ chain 530 [
+  (macA, [], .revoke (.grant 32 alice [500, 501, 502, 510, 511, 512, 513, 514]))]
 #guard refused unshared == [] && tidy unshared && audienceOf unshared door == [31, 32]
 #guard (keyFams (view unshared)).all fun k =>
   (view unshared).epochOf k == (view shared).epochOf k + if k == .audience alice [31, 32] then 1 else 0
@@ -656,7 +703,7 @@ def unshared : List Edit := shared ++ chain 530 [(macA, [], .revoke 32 alice [50
 
 A vault's share and audience keys derive from its seed, so when the seed moves on they all do. -/
 
-def s11 : List Edit := s7 ++ chain 90 [(passkeyA, [], .removeDevice alice phoneA [])]
+def s11 : List Edit := s7 ++ chain 90 [(passkeyA, [], .revoke (.device alice phoneA []))]
 #guard refused s11 == []
 
 -- the iPhone opens neither vault key nor Welcome any more, which Alice's Mac and Bob's still read; nor does it write
@@ -669,7 +716,7 @@ def s11 : List Edit := s7 ++ chain 90 [(passkeyA, [], .removeDevice alice phoneA
   (view s11).epochOf k == (view s7).epochOf k + if k.vault == alice || k.vault == coop then 1 else 0
 
 -- the same in Alice's own vault, where Bob and Carol hold shares: every key of hers moves on, theirs don't
-def lostPhone : List Edit := shared ++ chain 530 [(passkeyA, [], .removeDevice alice phoneA [])]
+def lostPhone : List Edit := shared ++ chain 530 [(passkeyA, [], .revoke (.device alice phoneA []))]
 #guard refused lostPhone == []
 #guard (keyFams (view lostPhone)).all fun k =>
   (view lostPhone).epochOf k == (view shared).epochOf k + if k.vault == alice then 1 else 0
@@ -677,7 +724,7 @@ def lostPhone : List Edit := shared ++ chain 530 [(passkeyA, [], .removeDevice a
 
 /-! ## Scenario 12: Bob leaves the coop on his own -/
 
-def s12 : List Edit := s7 ++ chain 95 [(passkeyB, [], .removeOwner coop (.vault bob) [40])]
+def s12 : List Edit := s7 ++ chain 95 [(passkeyB, [], .revoke (.owner coop (.vault bob) [40]))]
 #guard refused s12 == []
 
 #guard ((view s12).vault? coop).map (·.threshold) == some 1
@@ -695,15 +742,15 @@ def s15 : List Edit := s3 ++ chain 100 [
   (macA, [], create alice door alice [] todo [work]),
   (macA, [], create alice seeds alice [] todo [home]),
   (macA, [], create alice solar alice [] todo [work]),
-  (macA, [], .share (shareOf 10 alice bob .write (byId door))),
-  (macA, [], .share (shareOf 11 alice carol .read (byId door))),
+  (macA, [], .share (.grant (shareOf 10 alice bob .write (byId door)))),
+  (macA, [], .share (.grant (shareOf 11 alice carol .read (byId door)))),
   -- making the coop owner of the todo is governance: Alice's passkey
-  (passkeyA, [], .share (shareOf 12 alice coop .owner (byId door))),
+  (passkeyA, [], .share (.grant (shareOf 12 alice coop .owner (byId door)))),
   (macA, [], .move alice door [10, 11, 12] [100])]
 #guard refused s15 == [] && tidy s15
 
 -- a device alone can't make anyone owner
-#guard !accepted s15 (attempt macA [] (.share (shareOf 13 alice coop .owner (byId door))))
+#guard !accepted s15 (attempt macA [] (.share (.grant (shareOf 13 alice coop .owner (byId door)))))
 #guard accepted s15 (attempt macB [] (.write alice door bob (some 106) 0 [100]))
 #guard !accepted s15 (attempt macC [] (.write alice door carol (some 106) 0 [100]))
 #guard reads s15 macC door && !reads s15 macC seeds
@@ -711,10 +758,10 @@ def s15 : List Edit := s3 ++ chain 100 [
 
 def s16a : List Edit := s15 ++ chain 110 [
   -- acting for the coop, through Bob's vault, Bob gives Dave read
-  (macB, [], .share (shareOf 14 alice dave .read (byId door) (parent := some 12) (issuer := coop)) [bob]),
+  (macB, [], .share (.grant (shareOf 14 alice dave .read (byId door) (parent := some 12) (issuer := coop)) [bob])),
   -- Alice raises Carol to write and takes Bob's own write away
-  (macA, [], .share (shareOf 15 alice carol .write (byId door))),
-  (macA, [], .revoke 10 alice [100, 106])]
+  (macA, [], .share (.grant (shareOf 15 alice carol .write (byId door)))),
+  (macA, [], .revoke (.grant 10 alice [100, 106]))]
 #guard refused s16a == []
 
 -- Bob still reaches the todo through the coop, so its audience's key didn't rotate
@@ -731,7 +778,7 @@ def s16b : List Edit := s16a ++ chain 113 [(macA, [], .move alice door [11, 12, 
 
 def s16 : List Edit := s16b ++ chain 120 [
   -- taking the coop's owner share away is governance, and ends the read Bob gave Dave, which Alice had seen
-  (passkeyA, [], .revoke 12 alice [110])]
+  (passkeyA, [], .revoke (.grant 12 alice [110]))]
 #guard refused s16 == [] && tidy s16
 
 -- Dave's share ended with the coop's; neither Bob nor Dave may open the todo's audience, which moves on
@@ -771,10 +818,10 @@ def coop2 := 202
 def gap : List Edit := s3 ++ chain 190 [
   (passkeyA, [], .genesis coop2 .coop [.vault alice] 1),
   (macA, [], create alice plan alice [] note),
-  (macA, [], .share (shareOf 20 alice coop2 .read notes)),
+  (macA, [], .share (.grant (shareOf 20 alice coop2 .read notes))),
   (macA, [], .move alice plan [20] [191]),
-  (macA, [], .revoke 20 alice []),
-  (passkeyA, [passkeyB], .addOwner coop2 (.vault bob))]
+  (macA, [], .revoke (.grant 20 alice [])),
+  (passkeyA, [passkeyB], .share (.owner coop2 (.vault bob)))]
 #guard refused gap == [] && tidy gap
 
 -- the notes' audience moves on: Alice opens its new epoch, Bob, now in the coop, only the one before
@@ -789,12 +836,12 @@ in that audience, so its key doesn't move on with his seed's. When the seeds tod
 a new epoch, which the lost Mac doesn't open. -/
 
 def comeback (n : Nat := 8) : List Edit := lib ++ chain 600 ([
-  (macA, [], .share (shareOf 34 alice bob .read urgentTodos)),
+  (macA, [], .share (.grant (shareOf 34 alice bob .read urgentTodos))),
   (macA, [], .write alice seeds alice none 0 [501] (tags := { add := [urgent] })),
   (macA, [], .move alice seeds [34] [501, 601]),
   (macA, [], .write alice seeds alice (some 602) 0 [601] (tags := { remove := [urgent] })),
   (macA, [], .move alice seeds [] [501, 601, 603]),
-  (passkeyB, [], .removeDevice bob macB []),
+  (passkeyB, [], .revoke (.device bob macB [])),
   (macA, [], .write alice seeds alice (some 604) 0 [603] (tags := { add := [urgent] })),
   (macA, [], .move alice seeds [34] [501, 601, 603, 606])].take n)
 #guard refused (comeback) == [] && tidy (comeback)
@@ -810,7 +857,7 @@ def comeback (n : Nat := 8) : List Edit := lib ++ chain 600 ([
 
 -- an entry created in the empty audience brings it back into use too: its first write may name the epoch the audience
 -- moves to, which the lost Mac doesn't open, and no later one
-def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g (create := some ([34], ⟨todo, 0⟩))
+def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g (create := some ([34], ⟨todo, 0, 0⟩))
   (tags := { add := [urgent] }))
 #guard reenters (view (comeback 6)) alice [34]
 #guard accepted (comeback 6) (lampTodo 1) && !accepted (comeback 6) (lampTodo 2)
@@ -863,7 +910,7 @@ needs them to add itself to its vault, and nothing about any share, audience or 
 #guard (linkCard s15 passkeyB).map (·.id) == [10, 11]
 #guard linkCard s15 macA == [] && linkCard s15 stranger == []
 -- with the card alone, Alice's passkey adds the new device
-#guard accepted (linkCard s15 passkeyA) (attempt passkeyA [77] (.addDevice alice 77))
+#guard accepted (linkCard s15 passkeyA) (attempt passkeyA [77] (.share (.device alice 77)))
 
 /-! ## Strong removal: a removal cuts what it hadn't seen
 
@@ -876,10 +923,10 @@ def sPair : List Edit := s2 ++ chain 140 [(passkeyA, [passkeyB], .genesis pair .
 
 -- Alice goes on, then removes Bob; Bob, offline since the coop began, adds Dave
 def backdated (keep : List EditId) : List Edit := sPair ++ chain 141 [
-  (passkeyA, [], .setThreshold pair 1),
-  (passkeyA, [], .setThreshold pair 1),
-  (passkeyA, [], .removeOwner pair (.vault bob) keep)] ++ offline 150 140 [
-  (passkeyB, [passkeyD], .addOwner pair (.vault dave))]
+  (passkeyA, [], .settings pair (.threshold 1)),
+  (passkeyA, [], .settings pair (.threshold 1)),
+  (passkeyA, [], .revoke (.owner pair (.vault bob) keep))] ++ offline 150 140 [
+  (passkeyB, [passkeyD], .share (.owner pair (.vault dave)))]
 
 -- the removal hadn't seen Bob's add, so it is cut; had it seen it, the add would stand
 #guard refused (backdated []) == [150]
@@ -889,8 +936,8 @@ def backdated (keep : List EditId) : List Edit := sPair ++ chain 141 [
 
 -- the two remove each other at once, and Bob's sorts first: the senior owner stands
 def clash : List Edit := sPair ++ [
-  { id := 161, depth := 141, author := passkeyA, cosigners := [], action := .removeOwner pair (.vault bob) [] },
-  { id := 160, depth := 141, author := passkeyB, cosigners := [], action := .removeOwner pair (.vault alice) [] }]
+  { id := 161, depth := 141, author := passkeyA, cosigners := [], action := .revoke (.owner pair (.vault bob) []) },
+  { id := 160, depth := 141, author := passkeyB, cosigners := [], action := .revoke (.owner pair (.vault alice) []) }]
 #guard ((order clash).map (·.id)).reverse.take 2 == [161, 160]
 #guard refused clash == [160]
 #guard ((view clash).vault? pair).map (·.owners) == some [.vault alice]
@@ -898,9 +945,9 @@ def clash : List Edit := sPair ++ [
 -- a thief holding Alice's second passkey removes the root's passkey from the owners and adds a device; the root,
 -- having seen neither, removes the second passkey. It keeps the threshold it had set, which counted that passkey.
 def stolen : List Edit :=
-  twoKeys ++ chain 142 [(passkeyA, [], .removeOwner alice (.signer 77) [141])] ++ offline 170 141 [
-    (77, [passkeyA], .removeOwner alice (.signer passkeyA) []),
-    (77, [stranger], .addDevice alice stranger)]
+  twoKeys ++ chain 142 [(passkeyA, [], .revoke (.owner alice (.signer 77) [141]))] ++ offline 170 141 [
+    (77, [passkeyA], .revoke (.owner alice (.signer passkeyA) [])),
+    (77, [stranger], .share (.device alice stranger))]
 #guard refused stolen == [170, 171]
 #guard ((view stolen).vault? alice).map (·.owners) == some [.signer passkeyA]
 #guard !actsFor (view stolen) stranger alice
@@ -921,7 +968,7 @@ def revokedProposal : List Edit := s16b ++ offline 190 106 [
 #guard accepted s16b (attempt macB [] (.write alice door coop (some 113) 0 [100] .new [bob]))
 -- revoking Bob's write after his edit arrived keeps it: the revocation names it
 def keptWriter : List Edit := s15 ++ chain 113 [(macB, [], .write alice door bob (some 106) 0 [100])] ++ chain 114 [
-  (macA, [], .revoke 10 alice [113]),
+  (macA, [], .revoke (.grant 10 alice [113])),
   (macC, [], .write alice door carol (some 106) 0 [113])]
 #guard refused keptWriter == [115]
 #guard (entryWrites (view keptWriter) door).map (·.edit) == [100, 113]
@@ -929,10 +976,10 @@ def keptWriter : List Edit := s15 ++ chain 113 [(macB, [], .write alice door bob
 -- handing the root on to a new passkey, then retiring the old one, cuts what the old passkey signs on an old copy;
 -- both keep what the old passkey approved before them, as every honest device's draft does
 def handover : List Edit := s1 ++ chain 140 [
-  (passkeyA, [77], .addOwner alice (.signer 77)),
-  (passkeyA, [77], .setRoot alice (some 77) [2, 3, 140]),
-  (77, [], .removeOwner alice (.signer passkeyA) [2, 3, 140])] ++ offline 150 140 [
-  (passkeyA, [stranger], .addDevice alice stranger)]
+  (passkeyA, [77], .share (.owner alice (.signer 77))),
+  (passkeyA, [77], .settings alice (.root (some 77) [2, 3, 140])),
+  (77, [], .revoke (.owner alice (.signer passkeyA) [2, 3, 140]))] ++ offline 150 140 [
+  (passkeyA, [stranger], .share (.device alice stranger))]
 #guard refused handover == [150]
 #guard ((view handover).vault? alice).map (fun v => (v.owners, v.root)) == some ([.signer 77], some 77)
 #guard !actsFor (view handover) stranger alice
@@ -964,11 +1011,11 @@ judged in the audience it was written in, so the revocation takes nothing from t
 and Bob writes it no more. -/
 
 def kept : List Edit := workShare ++ chain 520 [
-  (macA, [], .share (shareOf 34 alice bob .write urgentTodos)),
+  (macA, [], .share (.grant (shareOf 34 alice bob .write urgentTodos))),
   (macB, [], create alice lamp bob [32] todo [work] (proof := some 32)),
   (macA, [], .write alice lamp alice none 0 [521] (tags := { add := [urgent], remove := [work] })),
   (macA, [], .move alice lamp [34] [521, 522])] ++ offline 530 524 [
-  (passkeyA, [], .revoke 34 alice [520])]
+  (passkeyA, [], .revoke (.grant 34 alice [520]))]
 #guard refused kept == []
 #guard (entryWrites (view kept) lamp).map (·.edit) == [521, 522] && audienceOf kept lamp == [34]
 #guard !(writable kept bob).contains lamp && !accepted kept (attempt macB [] (.write alice lamp bob none 0 [522]))
@@ -981,7 +1028,7 @@ nobody creates it again, so an entry key's name never names two keys. -/
 
 def fallen : List Edit := workShare ++ chain 520 [
   (macB, [], create alice lamp bob [32] todo [work] (proof := some 32)),
-  (passkeyA, [], .revoke 32 alice [])]
+  (passkeyA, [], .revoke (.grant 32 alice []))]
 #guard let st := replay {} fallen; st.entry? lamp == none && entryWrites st lamp == [] && st.born.contains lamp
 #guard (step (replay {} fallen) (attempt macA [] (create alice lamp alice [] todo))).isNone
 #guard ((replay {} fallen.dropLast).entry? lamp).isSome
@@ -997,12 +1044,12 @@ holds a share beneath the one revoked. -/
 -- first all the same: Dave's share goes, Carol's with it, and Dave's revocation falls with the share it rested on.
 def seniorRevoke : List Edit := s2 ++ chain 700 [
   (macA, [], create alice plan alice [] note),
-  (passkeyA, [], .share (shareOf 701 alice dave .owner notes)),
-  (macD, [], .share (shareOf 702 alice carol .read notes (parent := some 701) (issuer := dave))),
+  (passkeyA, [], .share (.grant (shareOf 701 alice dave .owner notes))),
+  (macD, [], .share (.grant (shareOf 702 alice carol .read notes (parent := some 701) (issuer := dave)))),
   (macA, [], create alice diary alice [] note),
   (macA, [], .write alice plan alice none 0 [700]),
-  (passkeyA, [], .revoke 701 alice [700, 701, 702, 703, 704])] ++ offline 720 702 [
-  (macD, [], .revoke 702 dave [])]
+  (passkeyA, [], .revoke (.grant 701 alice [700, 701, 702, 703, 704]))] ++ offline 720 702 [
+  (macD, [], .revoke (.grant 702 dave []))]
 #guard (((order seniorRevoke).map (·.id)).drop (s2.length + 3)).take 1 == [720]
 #guard refused seniorRevoke == [720]
 #guard !(view seniorRevoke).live 701 && !(view seniorRevoke).live 702
@@ -1012,12 +1059,12 @@ def seniorRevoke : List Edit := s2 ++ chain 700 [
 -- from Alice's vault. Alice's vault settles first, so the coop's removal falls, exactly as on a peer that never held
 -- the coop's log.
 def tiers : List Edit := s2 ++ chain 740 [
-  (passkeyA, [77], .addOwner alice (.signer 77)),
-  (passkeyA, [78], .addOwner alice (.signer 78)),
+  (passkeyA, [77], .share (.owner alice (.signer 77))),
+  (passkeyA, [78], .share (.owner alice (.signer 78))),
   (passkeyA, [passkeyB], .genesis pair .coop [.vault alice, .vault bob] 1),
-  (passkeyA, [], .setThreshold pair 1),
-  (78, [], .removeOwner alice (.signer 77) [740, 741, 742, 743])] ++ offline 760 742 [
-  (77, [], .removeOwner pair (.vault bob) [])]
+  (passkeyA, [], .settings pair (.threshold 1)),
+  (78, [], .revoke (.owner alice (.signer 77) [740, 741, 742, 743]))] ++ offline 760 742 [
+  (77, [], .revoke (.owner pair (.vault bob) []))]
 #guard refused tiers == [760]
 #guard ((view tiers).vault? alice).map (·.owners) == some [.signer passkeyA, .signer 78]
 #guard ((view tiers).vault? pair).map (·.owners) == some [.vault alice, .vault bob]
@@ -1050,5 +1097,110 @@ def vouched : List Edit := s15 ++ chain 200 [
 -- the checkpoint travels with its entry: Carol's Mac gets it with the door todo, a stranger gets no entry at all
 #guard (respond vouched macC).any (·.action == .checkpoint door [100])
 #guard (respond vouched stranger).all (entryLog? · == none)
+
+/-! ## Holdings: they come from their own connection, and authorize nothing
+
+Alice's Mac holds the coop's Handbook, where her line in Welcome brings a photo and Bob's Mac wrote a line after it.
+Each device tells it, on the connection whose hello proved that device, what it holds for good, and it tells each its
+own holdings (H1). Carol's Mac and Dave's, outside the coop, claim Welcome and the photo: Alice's Mac keeps each claim
+as that device's word alone, and lists as "Synced to" only devices that may hold what they claim by its view. It names
+to each device only the logs it may know and the files it may fetch, and hands the photo to Bob's Mac while its
+connection is open, to nobody else, whatever they claim (T27). -/
+
+def photo : FileId := 1
+
+/-- `edits` as their devices make them: each building on the frontier of its own log among the edits before it. -/
+def built (edits : List Edit) : List Edit :=
+  edits.foldl (fun acc o => acc ++ [{ o with parents := match o.log? with
+    | some l => frontiers acc l
+    | none => [] }]) []
+
+/-- Write `id` to Welcome by device `d`, for the coop through vault `via`, building on `deps` and bringing `files`. -/
+def welcomeLine (id : EditId) (d : SignerId) (via : VaultId) (deps : List EditId) (files : List FileId := []) : Edit :=
+  { id, depth := id, author := d, cosigners := [], files,
+    action := .write coop welcome coop none 0 deps (via := [via]) }
+
+def sH : List Edit := built (s4 ++ [welcomeLine 40 macA alice [30] [photo], welcomeLine 41 macB bob [40]])
+#guard refused sH == [] && (frontiers sH (.entry welcome)) == [41]
+
+-- the sync connections of Alice's Mac, each from an endpoint, to the device its hello proved
+def toBob : Conn := ⟨50, macB⟩
+def toCarol : Conn := ⟨70, macC⟩
+def toDave : Conn := ⟨90, macD⟩
+
+/-- Bob's Mac, which holds all of it for good and the photo whole, and what it tells Alice's Mac on their new
+    connection. -/
+def bobsMac : Node := { edits := sH, held := sH.length, files := [(photo, .whole)] }
+def bobSays : Announce := (bobsMac.announce ⟨20, macA⟩ none).getD {}
+
+/-- Carol's Mac by hand: it claims Welcome as Alice's Mac holds it and the photo whole. Dave's: the photo whole. -/
+def carolClaims : Announce :=
+  { full := true, logs := [(.entry welcome, holdOf sH (.entry welcome))], files := [(photo, some .whole)] }
+def daveClaims : Announce := { full := true, files := [(photo, some .whole)] }
+
+def alicesMac : Node :=
+  { edits := sH, held := sH.length, files := [(photo, .whole)], conns := [toBob, toCarol, toDave],
+    heard := [(toBob, bobSays), (toCarol, carolClaims), (toDave, daveClaims)] }
+
+-- Bob's Mac tells all it holds that Alice's Mac may know, Welcome's log and the photo among it, and Alice's Mac keeps
+-- exactly that as Bob's Mac's holdings
+#guard bobSays.full && bobSays.logs.contains (.entry welcome, holdOf sH (.entry welcome)) &&
+  bobSays.files.contains (photo, some .whole)
+#guard alicesMac.record macB == bobsMac.tells macA
+-- it keeps Carol's claims as hers alone and Dave's as his, and nothing of a device that told it nothing
+#guard (alicesMac.record macC).log? (.entry welcome) == some (holdOf sH (.entry welcome))
+#guard (alicesMac.record macD).file? photo == some .whole && alicesMac.record macA == ({} : Holdings)
+-- Synced to lists Alice's Mac and Bob's, never Carol's or Dave's, which may not hold Welcome or fetch the photo
+#guard alicesMac.syncedTo macA welcome == [macA, macB] && alicesMac.syncedToFile macA photo == [macA, macB]
+#guard { alicesMac with heard := alicesMac.heard.drop 1 }.syncedTo macA welcome == [macA]
+-- what Carol's Mac says on its own connection changes nothing of Bob's Mac's record, and a full announcement of nothing
+-- stands in for all it said before
+#guard let more := alicesMac.heard ++ [(toCarol, { full := true })]
+  { alicesMac with heard := more }.record macB == alicesMac.record macB &&
+    { alicesMac with heard := more }.record macC == ({} : Holdings)
+-- Alice's Mac names to Carol's Mac and Dave's no file and nothing of Welcome, all of it on their new connections
+#guard [toCarol, toDave].all fun c => (alicesMac.announce c none).all fun a =>
+  a.full && a.files.isEmpty && !a.logs.any (·.1 == .entry welcome)
+#guard (alicesMac.tells macB).file? photo == some .whole
+-- its gate hands the photo, its root or a piece, to Bob's Mac, never to Carol's or Dave's whatever they claim, nor to
+-- an endpoint with no sync connection, and not to Bob's Mac once its connection is closed
+#guard alicesMac.hands 50 (.root photo) && alicesMac.hands 50 (.piece photo 0)
+#guard [70, 90, 99].all fun ep => !alicesMac.hands ep (.root photo) && !alicesMac.hands ep (.piece photo 0)
+#guard !{ alicesMac with conns := [toCarol, toDave] }.hands 50 (.root photo)
+
+-- nothing changed, nothing to tell; once Alice's Mac takes a new line of Welcome, it tells Welcome's log alone
+def sH2 : List Edit := built (s4 ++ [welcomeLine 40 macA alice [30] [photo], welcomeLine 41 macB bob [40],
+  welcomeLine 42 macA alice [41]])
+#guard (alicesMac.tells macB).since (some (alicesMac.tells macB)) == none
+#guard (({ alicesMac with edits := sH2, held := sH2.length }.tells macB).since (some (alicesMac.tells macB))).map
+  (fun a : Announce => (a.full, a.logs.map Prod.fst, a.files)) == some (false, [LogId.entry welcome], [])
+
+-- the bucket first: with nothing on its shelf yet Bob's Mac states no log; before its shelf took Welcome's lines, it
+-- states Welcome's creation alone and no photo, which doesn't cover Welcome as Alice's Mac holds it; once its shelf
+-- holds them, it tells what changed, and Alice's Mac lists it
+def bobsShelfBehind : Node := { bobsMac with held := s4.length, files := [] }
+#guard ({ bobsMac with held := 0 }.tells macA).logs == []
+#guard (bobsShelfBehind.tells macA).log? (.entry welcome) == some ⟨[30], []⟩ && (bobsShelfBehind.tells macA).files == []
+#guard let first := (bobsShelfBehind.announce ⟨20, macA⟩ none).getD {}
+  let next := (bobsMac.announce ⟨20, macA⟩ (some (bobsShelfBehind.tells macA))).getD {}
+  !next.full && { alicesMac with heard := [(toBob, first)] }.syncedTo macA welcome == [macA] &&
+    { alicesMac with heard := [(toBob, first), (toBob, next)] }.syncedTo macA welcome == [macA, macB]
+
+-- an edit waiting for its past: Bob's Mac holding Welcome's last line without the one before states it waiting, which
+-- covers Welcome as a peer with the same gap holds it, not as Alice's Mac holds it
+#guard let gap := sH.filter (·.id != 40)
+  let says := ({ bobsMac with edits := gap, held := gap.length }.announce ⟨20, macA⟩ none).getD {}
+  holdOf gap (.entry welcome) == ⟨[30], [41]⟩ &&
+    { alicesMac with heard := [(toBob, says)] }.syncedTo macA welcome == [macA] &&
+    { alicesMac with edits := gap, held := gap.length, heard := [(toBob, says)] }.syncedTo macA welcome == [macA, macB]
+
+-- a peer ahead: Bob's Mac holds a line of Welcome Alice's Mac lacks, so its frontier names a head she can't walk back
+-- from; it is listed once she holds that line too
+def sAhead : List Edit := built (s4 ++ [welcomeLine 40 macA alice [30] [photo], welcomeLine 41 macB bob [40],
+  welcomeLine 42 macB bob [41]])
+#guard let ahead := ({ bobsMac with edits := sAhead, held := sAhead.length }.announce ⟨20, macA⟩ none).getD {}
+  { alicesMac with heard := [(toBob, ahead)] }.syncedTo macA welcome == [macA] &&
+    { alicesMac with edits := sAhead, held := sAhead.length, heard := [(toBob, ahead)] }.syncedTo macA welcome ==
+      [macA, macB]
 
 end AvenDB.Examples

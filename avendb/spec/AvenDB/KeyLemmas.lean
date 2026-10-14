@@ -150,7 +150,7 @@ inductive Change (st : State) : State → Prop where
   | setVault (v : VaultId) (vt vt' : Vault) : st.vault? v = some vt → vt'.id = vt.id →
       (∀ p ∈ vt'.owners, p ∈ vt.owners ∨ ownerFits st vt.kind p = true) → Change st (setVault st vt')
   | share (c : Share) : st.share? c.id = none → (st.vault? c.over).isSome = true →
-      (∀ g, c.who = .principal (.vault g) → (st.vault? g).isSome = true) →
+      (∀ g, c.who = .vault g → (st.vault? g).isSome = true) →
       Change st { st with shares := st.shares ++ [c] }
   | revoke (rs : List ShareId) : Change st { st with revoked := st.revoked ++ rs }
   | create (en : Entry) (w : Write) (x : Audience) (u : List EditId) : st.entry? en.id = none → en.id ∉ st.born →
@@ -160,11 +160,12 @@ inductive Change (st : State) : State → Prop where
   | write (en : Entry) (w : Write) (st₁ : State) (u : List EditId) : st.entry? w.entry = some en →
       w.stay ∈ en.stays.map (·.1) → (st₁ = st ∨ ∃ a, st₁ = setEntry st { en with attrs := a }) →
       Change st { st₁ with writes := st₁.writes ++ [w], uncounted := u }
-  | move (en : Entry) (σ : Option EditId) (x : Audience) : st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
-      Change st (setEntry st { en with stays := (σ, x) :: en.stays })
-  | lane (l : List (VaultId × BlobId)) : Change st { st with lane := l }
-  | sync (rs : List SyncRule) (en : List ShareId) (ps : List (EntryId × List ShareId)) :
-      Change st { st with rules := rs, ended := en, picks := ps }
+  /-- A mark that takes an entry to another audience, beginning a fresh stay, and may mark its wants too (`ms`). -/
+  | mark (en : Entry) (σ : Option EditId) (x : Audience) (ms : List (EntryId × List ShareId)) :
+      st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
+      Change st (setEntry { st with marks := ms } { en with stays := (σ, x) :: en.stays })
+  /-- The wants marked on an entry. -/
+  | wants (ms : List (EntryId × List ShareId)) : Change st { st with marks := ms }
 
 /-- An accepted edit: a change, then some of the entries and writes dropped. -/
 def Applied (st post : State) : Prop :=
@@ -181,6 +182,20 @@ theorem Change.applied_drop {st mid : State} (h : Change st mid) (keep : List Ed
   ⟨mid, h, _, _, List.filter_sublist, List.filter_sublist.trans ((closeDeps_sublist _).trans List.filter_sublist),
     rfl⟩
 
+/-- The entry a lookup finds is found by its own id. -/
+theorem entry?_self {st : State} {e : EntryId} {en : Entry} (he : st.entry? e = some en) :
+    st.entry? en.id = some en := by
+  rw [entry?_id he]; exact he
+
+/-- A mark whose audience passes the check begins a stay its entry didn't have. -/
+theorem mark_fresh {st : State} {v : VaultId} {en : Entry} {to : Audience} {σ : EditId}
+    (h : ¬(!(some to).all fun to => audienceOk st v to && to != en.audience && !en.stays.any (·.1 == some σ)) = true) :
+    some σ ∉ en.stays.map (·.1) := fun hm => by
+  obtain ⟨p, hp, hp1⟩ := List.mem_map.1 hm
+  simp only [Option.all_some, Bool.not_eq_true', Bool.not_eq_false, Bool.and_eq_true, Bool.not_eq_true',
+    List.any_eq_false, beq_iff_eq] at h
+  exact h.2 p hp hp1
+
 /-- Every accepted edit is a change, then some entries and writes dropped. -/
 theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some post) : Applied st post := by
   unfold apply at h
@@ -195,7 +210,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
       exact hfree.1.1
     · simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false, List.all_eq_true] at hfit
       exact hfit.1
-  · -- addOwner, a vault
+  · -- a new owner, a vault
     rename_i hv _ _ _ hfit _ _
     cases h
     refine Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => ?_)
@@ -205,7 +220,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
       subst hp
       simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hfit
       exact .inr hfit.2
-  · -- addOwner, a signer
+  · -- a new owner, a signer
     rename_i hv _ _ _ hfit _ _
     cases h
     refine Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => ?_)
@@ -215,32 +230,37 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
       subst hp
       simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hfit
       exact .inr hfit.2
-  · -- removeOwner
+  · -- an owner revoked
     rename_i hv _ _
     cases h
     exact Change.applied_drop (.setVault _ _ _ hv (by rfl) fun p hp => .inl (List.mem_of_mem_erase hp)) _
-  · -- setThreshold
+  · -- the threshold
     rename_i hv _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- addDevice
+  · -- a new device
     rename_i hv _ _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- removeDevice
+  · -- a device revoked
     rename_i hv _ _
     cases h
     refine Change.applied_drop (.setVault _ _ _ hv (by rfl) fun p hp => ?_) _
     exact .inl hp
-  · -- setRoot
+  · -- the root
     rename_i hv _
     cases h
     exact Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => .inl hp)
-  · -- a share naming a signer is refused
-    rename_i hno _ _
-    exact absurd rfl hno
-  · -- a share naming a vault
-    rename_i hfree _ g hg hgv _ _
+  · -- a keep share, naming a device of its issuer
+    rename_i hfree _ _ _ hd _ _ _ _ _
+    cases h
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
+      Option.isNone_iff_eq_none] at hfree
+    refine Change.applied (.share _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
+    rw [hd] at hg'
+    cases hg'
+  · -- a grant naming a vault
+    rename_i hfree _ _ g hg hgv _ _ _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree hgv
@@ -248,15 +268,15 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     rw [hg] at hg'
     cases hg'
     exact Option.isSome_iff_ne_none.2 hgv.1
-  · -- a public share
-    rename_i hfree _ hg _ _ _
+  · -- a public grant
+    rename_i hfree _ _ hg _ _ _ _ _
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none] at hfree
     refine Change.applied (.share _ hfree.1 (Option.isSome_iff_ne_none.2 hfree.2) fun g' hg' => ?_)
     rw [hg] at hg'
     cases hg'
-  · -- revoke
+  · -- a grant revoked
     cases h
     exact Change.applied_drop (.revoke _) _
   · -- a write creating its entry
@@ -274,31 +294,21 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     rename_i he _ _ _ hx _ _ _ _
     cases h
     exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inl rfl))
-  · -- move
-    rename_i he _ hnew
+  · -- a mark that takes the entry to another audience and marks its wants
     cases h
-    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, List.any_eq_false, beq_iff_eq] at hnew
-    refine Change.applied_drop (.move _ _ _ (by rw [entry?_id he]; exact he) fun hm => ?_) _
-    obtain ⟨p, hp, hp1⟩ := List.mem_map.1 hm
-    exact hnew.2 p hp hp1
+    exact Change.applied_drop (.mark _ _ _ _ (entry?_self ‹_›) (mark_fresh ‹_›)) _
+  · -- a mark that takes the entry to another audience and leaves its wants
+    cases h
+    exact Change.applied_drop (.mark _ _ _ _ (entry?_self ‹_›) (mark_fresh ‹_›)) _
+  · -- a mark of the wants alone
+    cases h
+    exact Change.applied (.wants _)
   · -- keys
     cases h
     exact Change.applied .same
-  · -- publish
-    cases h
-    exact Change.applied (.lane _)
   · -- checkpoint
     cases h
     exact Change.applied .same
-  · -- a sync rule
-    cases h
-    exact Change.applied (.sync _ _ _)
-  · -- a sync rule ends
-    cases h
-    exact Change.applied (.sync _ _ _)
-  · -- a steward marks an entry
-    cases h
-    exact Change.applied (.sync _ _ _)
 
 /-! ## What exists
 
@@ -352,7 +362,7 @@ structure Sane (st : State) : Prop where
   /-- A share's vault exists. -/
   shareOver : ∀ cp ∈ st.shares, (st.vault? cp.over).isSome = true
   /-- A share's grantee vault exists. -/
-  shareWho : ∀ cp ∈ st.shares, ∀ g, cp.who = .principal (.vault g) → (st.vault? g).isSome = true
+  shareWho : ∀ cp ∈ st.shares, ∀ g, cp.who = .vault g → (st.vault? g).isSome = true
   /-- Entries have distinct ids. -/
   entryIds : (st.entries.map (·.id)).Nodup
   /-- An entry's vault exists. -/
@@ -608,13 +618,13 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
         exact hstay
       · simp only [beq_iff_eq, hxid, ite_false] at hyw ⊢
         exact absurd (hyw.trans hid.symm) hxid
-  | move en σ x he hσ =>
+  | mark en σ x ms he hσ =>
     have hen := entry?_mem he
-    refine hs.set_entry hen rfl rfl (by simp) ?_ fun s hs => List.mem_cons_of_mem _ hs
+    refine (hs.congr (st' := { st with marks := ms }) rfl rfl rfl rfl rfl).set_entry hen rfl rfl (by simp) ?_
+      fun s hs => List.mem_cons_of_mem _ hs
     rw [List.map_cons, List.nodup_cons]
     exact ⟨hσ, hs.staysNodup en hen⟩
-  | lane l => exact hs.congr rfl rfl rfl rfl rfl
-  | sync _ _ _ => exact hs.congr rfl rfl rfl rfl rfl
+  | wants _ => exact hs.congr rfl rfl rfl rfl rfl
 
 /-- An accepted edit keeps the state sane. -/
 theorem Sane.of_apply {st post : State} {edit : Edit} (hs : Sane st) (h : apply st edit = some post) : Sane post := by
@@ -1915,11 +1925,10 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
     · exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
-  | move en σ x _ _ => exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
+  | mark en σ x _ _ _ => exact ⟨⟨[], by simp [setEntry]⟩, fun e he => he, fun x hx => hx⟩
   | same => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
   | revoke rs => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
-  | lane l => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
-  | sync _ _ _ => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
+  | wants _ => exact ⟨⟨[], by simp⟩, fun e he => he, fun x hx => hx⟩
 
 /-- An accepted edit keeps every share, adding shares only at the end, every entry id ever created and every vault. -/
 theorem apply_grows {st post : State} {edit : Edit} (h : apply st edit = some post) :
@@ -1953,8 +1962,7 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
   | setVault _ _ _ _ _ _ => exact hsame
   | share _ _ _ _ => exact hsame
   | revoke _ => exact hsame
-  | lane _ => exact hsame
-  | sync _ _ _ => exact hsame
+  | wants _ => exact hsame
   | create en w x _ _ hnew _ _ _ _ =>
     intro y hy
     rcases List.mem_append.1 hy with hy | hy
@@ -1965,7 +1973,7 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact hsame
     · exact hset en _ (entry?_mem he) ⟨rfl, rfl, [], rfl⟩
-  | move en σ x he _ => exact hset en _ (entry?_mem he) ⟨rfl, rfl, [(σ, x)], rfl⟩
+  | mark en σ x _ he _ => exact hset en _ (entry?_mem he) ⟨rfl, rfl, [(σ, x)], rfl⟩
 
 /-- After an accepted edit, every entry is one that was there, with more stays in front if any, or one whose id was
     never created before. -/
@@ -2390,7 +2398,7 @@ theorem Extends.stay {en en' : Entry} (hext : Extends en en') (hnd : (en'.stays.
     rw [List.nil_append] at hl
     constructor <;> simp [Entry.stay, Entry.audience, hl]
   | cons p l =>
-    -- a move put a fresh stay in front
+    -- a mark put a fresh stay in front
     exfalso
     obtain ⟨τ, y⟩ := p
     have hst : en'.stay = τ := by simp [Entry.stay, hl]

@@ -2,7 +2,7 @@
 	The studio's lenses, as a database studio lists its migrations, but none is ever run on the data: each lens joins two
 	versions of a schema, both ways, so an app on either reads what the other writes. Each with the versions it joins and
 	its steps in words (a field the newer adds, steps for each record of a list, a value converted by its rules, each way),
-	and its JSON as published.
+	and its JSON as written.
 -->
 <script>
 	import Icon from './Icon.svelte';
@@ -13,7 +13,7 @@
 	let { s } = $props();
 
 	// why it is shown as public
-	const PUBLIC = 'Public: a lens holds no data, so it goes in the clear to every device that syncs the vault';
+	const PUBLIC = 'Public: a lens holds no data, so every device that follows the vault reads it';
 </script>
 
 {#snippet rules(/** @type {[any, any][]} */ rows, /** @type {string} */ from, /** @type {string} */ to)}
@@ -51,8 +51,8 @@
 
 <p class="lead soft">
 	Migrations that never rewrite a record: a lens joins two versions of a schema, both ways. A record stays as it was
-	written; an app on either version reads it through the lens, and its edits go back through it. Lenses are public,
-	like schemas: every device that syncs the vault reads them, no key needed.
+	written; an app on either version reads it through the lens, and its edits go back through it. Lenses are entries of
+	the vault shared with Everyone, like schemas: every device that follows the vault reads them.
 </p>
 
 <div class="lenses">

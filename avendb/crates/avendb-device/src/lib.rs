@@ -1,8 +1,8 @@
 //! avenDB's device in the Mac app, maiaCITY Studio: the browser's device (`avendb_browser::Device`) run natively beside
 //! the app, as its sidecar. Its node binds UDP sockets of its own on every interface and maps a port on the router
 //! where one lets it, so it reaches its peers directly and through the relay only where it must
-//! (`avendb_net::Options::direct`); its TLS is aws-lc-rs, X25519MLKEM768 only; and it keeps what it holds in a folder
-//! on disk (`avendb_net::Disk`), not in the web view's store.
+//! (`avendb_net::Options::direct`); its TLS is aws-lc-rs, X25519MLKEM768 only; and it keeps what it holds on a shelf
+//! in a folder on disk (`avendb_net::disk`), not in the web view's store.
 //!
 //! The app (vault/app/src/avendb.rs) starts it with the folder it keeps its account in and talks to it in lines of
 //! JSON on its stdin and stdout, for the app's avenDB page (src/lib/avendb/native.js):
@@ -13,36 +13,33 @@
 //!   passkey, and the app answers `{"sheet": n, "back": url}`, the URL the sheet's page sent back, or
 //!   `{"sheet": n, "error": why}`.
 //!
-//! While the device starts (`found`, `link`, `open`, `adopt`), the page asks `steps` for each step of its start so far,
+//! While the device starts (`found`, `link`, `open`), the page asks `steps` for each step of its start so far,
 //! with how long it took (`avendb_browser::steps_json`), and shows them as they happen.
 //!
 //! The passkey's ceremonies run in the sign-in sheet as the page's do (vault/app/src/passkey.rs,
 //! src/routes/app/avendb/sheet/): for each, the device makes an X-Wing key of its own (`keys::Secret`), names it in the
 //! sheet's URL, and opens what the sheet's page sealed to it (`keys::open_once`), so nothing crosses the app open.
 //!
-//! The device keeps no secret. Its folder holds its store and what opens it again (`meta.json`: its name, its relay,
-//! its salt's own bytes, its secret masked by the PRF output on its salt, which only its passkey computes again, and
-//! its passkey's credential and P-256 key), as the page keeps them; its keys come back at every unlock. A device made
-//! before 2026-10-10 keeps no mask: the PRF output on its salt is its secret. The device the page made before moves
-//! here as it opens (`adopt`): the store the page read (from OPFS, or IndexedDB before B2b) becomes the folder's. A
-//! store that no device opens any more is put aside in the folder, never deleted.
+//! The device keeps no secret. Its folder is its one truth: the shelf in use there holds what it holds and what opens
+//! it again (`avendb_browser::Meta`: its name, its relay, its salt's own bytes, its secret masked by the PRF output on
+//! its salt, which only its passkey computes again, and its passkey's credential and P-256 key), laid out as a page's
+//! shelf in OPFS is; its keys come back at every unlock. A shelf no device opens any more, as one forgotten here, is
+//! put aside in the folder, a new generation made beside it, never deleted (`avendb_net::disk::aside`); and whatever
+//! else the folder holds, as an earlier avenDB's store, stays as it is, never read.
 
 use std::collections::HashMap;
-use std::fs;
-use std::io::{self, ErrorKind, Write as _};
+use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::{BlobId, EntryId, ShareId, VaultId};
+use avendb::engine;
 use avendb::keys;
-use avendb::policy::Kind;
-use avendb::sealed::FileRoot;
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Fresh, NewFile, Start, Unlock, backup, steps_json, words};
-use avendb_net::{Authenticator, Ending, Offer, Progress, Step};
+use avendb_browser::{Device, Fresh, Meta, Start, Unlock, steps_json};
+use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Offer, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -55,28 +52,20 @@ use zeroize::Zeroizing;
 /// The page the sign-in sheet shows for a ceremony: maia.city's, whose passkeys these are.
 pub const SHEET: &str = "https://maia.city/app/avendb/sheet/";
 
-/// What opens the device again, in its folder.
-pub const META: &str = "meta.json";
-
-/// Its store, in its folder (`avendb_net::Disk`).
-pub const STORE: &str = "store";
-
-/// Where a store no device opens any more is put, under when and why: one the folder held without what opens it, or
-/// the one its person forgot here.
-pub const ASIDE: &str = "aside";
-
 /// The longest a call waits for the device to change (`changed`): then it answers `null`, and the page asks again.
 const CHANGED: Duration = Duration::from_secs(50);
 
-/// How the device runs: the folder it keeps its account in, and whether its node reaches its peers directly too
-/// (`avendb_net::Options::direct`), as the app's does; a test's may run on its relay alone.
+/// How the device runs: the folder it keeps its account in, on its shelves (`avendb_net::disk`), and whether its node
+/// reaches its peers directly too (`avendb_net::Options::direct`), as the app's does; a test's may run on its relay
+/// alone.
 pub struct Config {
     pub dir: PathBuf,
     pub direct: bool,
 }
 
 /// Runs the device for the app until `input` ends, the app gone: each line of `input` a call or a sheet's answer, each
-/// line of `output` an answer or a sheet to show. Then it closes the device.
+/// line of `output` an answer or a sheet to show. Then it closes the device. Fails if the folder's shelf can't be
+/// opened.
 pub async fn serve(
     config: Config,
     input: impl AsyncRead + Unpin,
@@ -91,8 +80,10 @@ pub async fn serve(
             }
         }
     });
+    let shelf = Mutex::new(disk::open(&config.dir)?);
     let service = Arc::new(Service {
         config,
+        shelf,
         out,
         sheets: Mutex::default(),
         next: AtomicU64::new(1),
@@ -122,6 +113,8 @@ pub async fn serve(
 /// The device and what it waits on.
 struct Service {
     config: Config,
+    /// The shelf in use in its folder.
+    shelf: Mutex<Shelf>,
     /// Lines to the app, in order.
     out: mpsc::UnboundedSender<String>,
     /// The sheets the app shows, each awaited by the ceremony that asked for it.
@@ -129,7 +122,7 @@ struct Service {
     next: AtomicU64,
     /// The device, once open.
     device: Mutex<Option<Arc<Device>>>,
-    /// One start at a time: founding, linking, opening, adopting or forgetting the device.
+    /// One start at a time: founding, linking, opening or forgetting the device.
     life: tokio::sync::Mutex<()>,
     /// The steps of the start under way, or of the last, for the page to show (`steps`).
     progress: Mutex<Option<Progress>>,
@@ -137,15 +130,15 @@ struct Service {
     files: Mutex<HashMap<u64, Incoming>>,
 }
 
-/// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and a new entry
-/// that brings it (`Device::add_file`).
+/// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the new entry
+/// that brings it: a `put_file` op (`Device::run`).
 struct Incoming {
     /// The chunks, for the file's stream.
     chunks: mpsc::Sender<io::Result<Bytes>>,
     /// How many of its bytes the page handed over so far.
     at: u64,
-    /// The new entry, once the file is in.
-    entry: tokio::task::JoinHandle<Result<EntryId>>,
+    /// The op's answer, once the file is in.
+    answer: tokio::task::JoinHandle<Result<Value>>,
 }
 
 impl Service {
@@ -168,12 +161,11 @@ impl Service {
     async fn call(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         tracing::debug!("call {call}");
         match call {
-            "status" => Ok(self.status()),
+            "status" => self.status().await,
             "steps" => Ok(self.steps()),
             "found" => self.found(a.text(0)?, a.text(1)?, a.text(2)?, a.get(3).as_bool().unwrap_or(true)).await,
             "link" => self.link(a.text(0)?, a.text(1)?, a.text(2)?).await,
             "open" => self.open().await,
-            "adopt" => self.adopt(a.get(0), a.list(1)?, a.list(2)?).await,
             "forget" => self.forget().await.map(|()| Value::Null),
             "rename" => self.rename(a.text(0)?).await.map(Value::from),
             "qrSvg" => qr_svg(&a.text(0)?, u32::try_from(a.count(1)?)?).map(Value::from),
@@ -181,10 +173,14 @@ impl Service {
         }
     }
 
-    /// A call on the open device, as the page's device answers it.
+    /// A call on the open device, as the page's device answers it: `run` an op (`Device::run`), its answer as the
+    /// page's device gives it, a `read_file`'s bytes beside in base64 (`bytes`); a change its vault's owners approve
+    /// signed in the passkey's ceremony in the sheet (`approver`). A `put_file` op's bytes come a chunk at a time:
+    /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileEnd [n]` the op's
+    /// answer, `fileDrop [n]` none, the file dropped.
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
-        let (vault, entry) = (|i| a.id(i).map(VaultId), |i| a.id(i).map(EntryId));
+        let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
         Ok(match call {
             "size" => {
                 let (edits, keys) = d.node().read(|lab, me| lab.size(me)).await;
@@ -194,78 +190,45 @@ impl Service {
                 let held = (a.count(0)?, a.count(1)?);
                 tokio::time::timeout(CHANGED, d.changed(held)).await.map_or(Value::Null, Value::from)
             }
-            "world" => d.world().await.map_or(Value::Null, |w| w.to_json(d.node().device())),
-            "card" => json!(d.card(a.text(0)?).await?),
-            "profile" => json!(d.profile(vault(0)?, a.text(1)?).await?),
-            "backsUp" => d.backs_up().await.map_or(Value::Null, Value::from),
-            "backUp" => json!(d.back_up(a.get(0).as_bool().unwrap_or(true)).await?),
-            "run" => d.run(a.get(0).clone()).await,
-            "database" => d.database(vault(0)?).await,
-            "note" => d.note(entry(0)?).await.unwrap_or(Value::Null),
-            "history" => d.history().await,
-            "foundVaults" => {
-                let mut new = vec![];
-                for v in a.list(0)? {
-                    let kind = match v.get("kind").and_then(Value::as_str) {
-                        Some("aven") => Kind::Aven,
-                        Some("coop") => Kind::Coop,
-                        _ => bail!("a new vault is an aven or a coop vault"),
-                    };
-                    new.push((kind, v.get("name").and_then(Value::as_str).unwrap_or_default().to_string()));
+            "run" => {
+                let op = a.get(0).clone();
+                let asks = engine::reads(&op) || engine::asks(&op);
+                let approver = if asks { None } else { Some(self.approver().await?) };
+                let (mut answer, bytes) = d.run(op, None::<NoBytes>, approver.as_ref()).await?;
+                if let (Some(bytes), Some(out)) = (bytes, answer.as_object_mut()) {
+                    out.insert("bytes".to_string(), BASE64.encode(&bytes).into());
                 }
-                let vaults = d.found_vaults(new, &self.approver()?).await?;
-                json!(vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>())
+                answer
             }
-            "share" => {
-                let (issuer, over, who) = (vault(0)?, vault(1)?, words::who_of(&a.text(3)?)?);
-                hex(&d.share(issuer, over, a.get(2), who, &self.approver()?).await?.0).into()
-            }
-            "revoke" => {
-                d.revoke(vault(0)?, ShareId(a.id(1)?), &self.approver()?).await?;
-                Value::Null
-            }
-            "addRecovery" => {
-                d.add_recovery(&self.approver()?).await?;
-                Value::Null
-            }
-            "removeOwner" => {
-                d.remove_owner(vault(0)?, words::owner_of(a.get(1))?, &self.approver()?).await?;
-                Value::Null
-            }
-            "fileStart" => self.file_start(&d, vault(0)?, vault(1)?, NewFile::from_json(a.get(2))?).into(),
+            "fileStart" => self.file_start(&d, a.get(0).clone()).into(),
             "fileChunk" => {
                 let at = a.get(1).as_u64().context("argument 2 is where the chunk starts")?;
                 let chunk = BASE64.decode(a.text(2)?.as_bytes()).context("a chunk in base64")?;
-                self.file_chunk(a.get(0).as_u64().context("argument 1 is a file's number")?, at, chunk).await?;
+                self.file_chunk(number(0)?, at, chunk).await?;
                 Value::Null
             }
             "fileEnd" => {
-                let incoming = self.files.lock().expect("the files").remove(&a.get(0).as_u64().unwrap_or_default());
-                let Incoming { chunks, entry, .. } = incoming.context("no such file on its way in")?;
+                let incoming = self.files.lock().expect("the files").remove(&number(0)?);
+                let Incoming { chunks, answer, .. } = incoming.context("no such file on its way in")?;
                 drop(chunks);
-                hex(&entry.await.context("bringing the file failed")??.0).into()
+                answer.await.context("bringing the file failed")??
             }
             "fileDrop" => {
-                let incoming = self.files.lock().expect("the files").remove(&a.get(0).as_u64().unwrap_or_default());
-                if let Some(Incoming { entry, .. }) = incoming {
-                    entry.abort();
+                let incoming = self.files.lock().expect("the files").remove(&number(0)?);
+                if let Some(Incoming { answer, .. }) = incoming {
+                    answer.abort();
                 }
                 Value::Null
-            }
-            "readFile" => {
-                let root = FileRoot { hash: a.id(0)?, size: a.get(1).as_u64().context("argument 2 is a size")? };
-                let (from, to) = (a.get(2).as_u64().unwrap_or_default(), a.get(3).as_u64().unwrap_or_default());
-                BASE64.encode(&d.read_file(root, from..to).await?).into()
             }
             _ => bail!("no call {call:?}"),
         })
     }
 
     /// Whether the folder holds an account, what opens it, and the device if it is open.
-    fn status(&self) -> Value {
+    async fn status(&self) -> Result<Value> {
         let device = self.device.lock().expect("the device").clone();
-        let meta = self.meta().ok().flatten().map(|m| m.to_json());
-        json!({ "meta": meta, "open": device.is_some(), "device": device.map(|d| info(&d)) })
+        let meta = Meta::load(&self.shelf()).await?.map(|m| m.to_json());
+        Ok(json!({ "meta": meta, "open": device.is_some(), "device": device.map(|d| info(&d)) }))
     }
 
     /// The first device of a new person (`Device::found`), in two ceremonies: the unlock, which is the passkey's pass
@@ -273,14 +236,14 @@ impl Service {
     /// `server` if nobody has; the server backs the vault up unless `backup` is false, and then only relays.
     async fn found(self: &Arc<Self>, name: String, relay: String, server: String, backup: bool) -> Result<Value> {
         let _life = self.life.lock().await;
+        self.fresh().await?;
         let (start, _ending) = self.start(&name, &relay)?;
-        self.fresh()?;
         let server = Offer::from_text(server.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         start.progress.step("unlock");
         let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
         let d = Device::found(start, &server, None, new, unlock, &sheets, backup).await?;
-        self.started(d, (name, relay, nonce, sheets.credential()?))
+        self.started(d, nonce, sheets.credential()?).await
     }
 
     /// A new device of a person who has one already (`Device::link`), linked through the device or the server whose
@@ -288,72 +251,46 @@ impl Service {
     /// edit that adds it too.
     async fn link(self: &Arc<Self>, name: String, relay: String, through: String) -> Result<Value> {
         let _life = self.life.lock().await;
+        self.fresh().await?;
         let (start, _ending) = self.start(&name, &relay)?;
-        self.fresh()?;
         let through = Offer::from_text(through.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         start.progress.step("unlock");
         let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
         let d = Device::link(start, &through, new, unlock).await?;
-        self.started(d, (name, relay, nonce, sheets.credential()?))
+        self.started(d, nonce, sheets.credential()?).await
     }
 
-    /// The device the folder holds, opened again from its store in the unlock's ceremony alone (`Device::open`): or
+    /// The device the folder holds, opened again from its shelf in the unlock's ceremony alone (`Device::open`): or
     /// the device already open.
     async fn open(self: &Arc<Self>) -> Result<Value> {
         let _life = self.life.lock().await;
         if let Some(d) = self.device.lock().expect("the device").clone() {
             return Ok(info(&d));
         }
-        let meta = self.meta()?.context("this Mac holds no avenDB account yet")?;
+        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account yet")?;
         let (start, _ending) = self.start(&meta.name, &meta.relay)?;
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
         start.progress.step("unlock");
         let unlock = sheets.unlock(meta.nonce, random()?).await?;
-        let d = Device::open(start, meta.p256, meta.mask, unlock, &backup(&[], vec![])).await?;
-        self.opened(d, &meta)
+        let d = Device::open(start, &meta, unlock).await?;
+        Ok(self.opened(d))
     }
 
-    /// The device the page made before, moved here: opened in the unlock's ceremony from what the page's store kept,
-    /// its signed edits and McEliece keys, each in base64, which become the folder's store; `meta` what opens it, as
-    /// the page kept it.
-    async fn adopt(self: &Arc<Self>, meta: &Value, edits: &[Value], keys: &[Value]) -> Result<Value> {
-        let _life = self.life.lock().await;
-        self.fresh()?;
-        let meta = Meta::from_json(meta)?;
-        let bytes = |v: &Value| v.as_str().and_then(|b| BASE64.decode(b.as_bytes()).ok()).context("bytes in base64");
-        let edits = edits.iter().map(bytes).collect::<Result<Vec<_>>>()?;
-        let keys = keys.iter().map(|k| bytes(k).map(Arc::from)).collect::<Result<Vec<Arc<[u8]>>>>()?;
-        let (start, _ending) = self.start(&meta.name, &meta.relay)?;
-        let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
-        start.progress.step("unlock");
-        let unlock = sheets.unlock(meta.nonce, random()?).await?;
-        let d = Device::open(start, meta.p256, meta.mask, unlock, &backup(&edits, keys)).await?;
-        self.opened(d, &meta)
-    }
-
-    /// Forgets the account here: closes the device, and puts its store and what opens it aside.
+    /// Forgets the account here: closes the device, and puts its shelf, with what opens it, aside (`aside`).
     async fn forget(&self) -> Result<()> {
         let _life = self.life.lock().await;
         let d = self.device.lock().expect("the device").take();
         if let Some(d) = d {
             d.close().await.ok();
         }
-        self.aside("forgotten")
+        self.aside()
     }
 
-    /// The device's name reads `name`: kept to open it again, and on its card (`Device::card`). Whether its card
+    /// The device's name reads `name`: kept to open it again, and on its card (`Device::rename`). Whether its card
     /// changed.
     async fn rename(&self, name: String) -> Result<bool> {
-        let name = name.trim().to_string();
-        if name.is_empty() {
-            bail!("a device has a name");
-        }
-        let d = self.device()?;
-        let mut meta = self.meta()?.context("this Mac holds no avenDB account")?;
-        meta.name.clone_from(&name);
-        self.keep(&meta)?;
-        d.card(name).await
+        self.device()?.rename(name).await
     }
 
     /// The app went away: the device closes, and every sheet still awaited ends.
@@ -365,15 +302,15 @@ impl Service {
         self.sheets.lock().expect("the sheets").clear();
     }
 
-    /// File `file` on its way into vault `vault`, acting for `actor` (`Device::add_file`), its chunks still to come in
-    /// order (`fileChunk`), then its end (`fileEnd`), which answers the new entry: its number.
-    fn file_start(&self, d: &Arc<Device>, actor: VaultId, vault: VaultId, file: NewFile) -> u64 {
+    /// `put_file` op `op` under way (`Device::run`), its file's chunks still to come in order (`fileChunk`), then its
+    /// end (`fileEnd`), which answers the op: the file's number.
+    fn file_start(&self, d: &Arc<Device>, op: Value) -> u64 {
         let (chunks, rx) = mpsc::channel(2);
         let data = Box::pin(stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|chunk| (chunk, rx)) }));
         let d = d.clone();
-        let entry = tokio::spawn(async move { d.add_file(actor, vault, file, data).await });
+        let answer = tokio::spawn(async move { Ok(d.run(op, Some(data), None::<&NoCeremony>).await?.0) });
         let n = self.next.fetch_add(1, Ordering::Relaxed);
-        self.files.lock().expect("the files").insert(n, Incoming { chunks, at: 0, entry });
+        self.files.lock().expect("the files").insert(n, Incoming { chunks, at: 0, answer });
         n
     }
 
@@ -395,8 +332,9 @@ impl Service {
         self.device.lock().expect("the device").clone().context("avenDB isn't open here: unlock it first")
     }
 
-    /// Where a device starts here: named `name`, through the relay at `relay`, with the machine's randomness, now; its
-    /// store in the folder; its steps for the page to show (`steps`), the start marked over as the guard drops.
+    /// Where a device starts here: named `name`, through the relay at `relay`, with the machine's randomness, now; on
+    /// the shelf in use in the folder; its steps for the page to show (`steps`), the start marked over as the guard
+    /// drops.
     fn start(&self, name: &str, relay: &str) -> Result<(Start, Ending)> {
         let progress = Progress::new();
         let ending = progress.ending();
@@ -404,9 +342,9 @@ impl Service {
         let relay: RelayUrl = relay.trim().parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
         let mut entropy = Zeroizing::new([0; 32]);
         getrandom::fill(&mut *entropy).map_err(|e| anyhow!("no randomness: {e}"))?;
-        let (name, store, direct) = (name.trim().to_string(), Some(self.config.dir.join(STORE)), self.config.direct);
+        let (name, shelf, direct) = (name.trim().to_string(), Some(self.shelf()), self.config.direct);
         let (entropy, recovery) = (*entropy, Start::recovery());
-        Ok((Start { name, relay, entropy, now: now(), direct, store, shelf: None, progress, recovery }, ending))
+        Ok((Start { name, relay, entropy, now: now(), direct, shelf, progress, recovery }, ending))
     }
 
     /// The steps of the start under way, or of the last (`avendb_browser::steps_json`): null before the first.
@@ -415,76 +353,51 @@ impl Service {
         progress.as_ref().map_or(Value::Null, |p| steps_json(&p.steps()))
     }
 
-    /// Ready for a new device: none open and none to open in the folder; a store left there without what opens it is
-    /// put aside, or, if it holds nothing, removed.
-    fn fresh(&self) -> Result<()> {
-        if self.device.lock().expect("the device").is_some() || self.config.dir.join(META).exists() {
+    /// The shelf in use in the folder.
+    fn shelf(&self) -> Shelf {
+        self.shelf.lock().expect("the shelf").clone()
+    }
+
+    /// Ready for a new device: none open and none to open in the folder. A shelf there that holds anything without what
+    /// opens it, as a start cut short leaves, is put aside (`aside`).
+    async fn fresh(&self) -> Result<()> {
+        let (shelf, open) = (self.shelf(), self.device.lock().expect("the device").is_some());
+        if open || Meta::load(&shelf).await?.is_some() {
             bail!("this Mac holds an avenDB account already: forget it here first");
         }
-        let store = self.config.dir.join(STORE);
-        let holds = |name: &str| fs::read_dir(store.join(name)).is_ok_and(|mut d| d.next().is_some());
-        let edits = fs::metadata(store.join("ops")).is_ok_and(|m| m.len() > 0);
-        if edits || holds("keys") {
-            self.aside("unopened")?;
-        } else if store.exists() {
-            fs::remove_dir_all(&store)?;
+        if !shelf.names("").await?.is_empty() {
+            self.aside()?;
         }
         Ok(())
     }
 
-    /// Device `d`, new here, runs from here on; the folder keeps what opens it again: its name, relay, salt's own
-    /// bytes, mask and passkey's credential.
-    fn started(&self, d: Device, opens: (String, String, [u8; 32], String)) -> Result<Value> {
-        let (name, relay, nonce, credential) = opens;
-        let (name, relay, mask, p256) = (name.trim().into(), relay.trim().into(), d.mask(), d.p256());
-        self.opened(d, &Meta { name, relay, nonce, mask, credential, p256 })
+    /// Device `d`, new here, runs from here on; its shelf keeps what opens it again (`Device::meta`), with its salt's
+    /// own bytes `nonce` and its passkey's credential.
+    async fn started(&self, d: Device, nonce: [u8; 32], credential: String) -> Result<Value> {
+        let meta = d.meta(nonce, credential);
+        let info = self.opened(d);
+        self.device()?.keep(&meta).await?;
+        Ok(info)
     }
 
-    /// Device `d` runs from here on, opened again by `meta`, which the folder keeps.
-    fn opened(&self, d: Device, meta: &Meta) -> Result<Value> {
+    /// Device `d` runs from here on.
+    fn opened(&self, d: Device) -> Value {
         let d = Arc::new(d);
         *self.device.lock().expect("the device") = Some(d.clone());
-        self.keep(meta)?;
-        Ok(info(&d))
+        info(&d)
     }
 
-    /// What opens the device again, as the folder keeps it, if it does.
-    fn meta(&self) -> Result<Option<Meta>> {
-        match fs::read(self.config.dir.join(META)) {
-            Ok(bytes) => Meta::from_json(&serde_json::from_slice(&bytes).context("what opens the device")?).map(Some),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    /// Keeps `meta` in the folder: written beside it first, then in its place, so it is always whole.
-    fn keep(&self, meta: &Meta) -> Result<()> {
-        fs::create_dir_all(&self.config.dir)?;
-        let (path, part) = (self.config.dir.join(META), self.config.dir.join(format!("{META}.part")));
-        let mut file = fs::File::create(&part)?;
-        file.write_all(meta.to_json().to_string().as_bytes())?;
-        file.sync_all()?;
-        fs::rename(&part, &path)?;
-        Ok(())
-    }
-
-    /// Puts the folder's store and what opens it aside, under the time and `why`.
-    fn aside(&self, why: &str) -> Result<()> {
-        let to = self.config.dir.join(ASIDE).join(format!("{}-{why}", now()));
-        for name in [STORE, META] {
-            let from = self.config.dir.join(name);
-            if from.exists() {
-                fs::create_dir_all(&to)?;
-                fs::rename(&from, to.join(name)).with_context(|| format!("putting {name} aside"))?;
-            }
-        }
+    /// Puts the shelf in use aside, never deleting it, and puts a new one in use, empty (`avendb_net::disk::aside`).
+    fn aside(&self) -> Result<()> {
+        disk::aside(&self.config.dir)?;
+        *self.shelf.lock().expect("the shelf") = disk::open(&self.config.dir)?;
         Ok(())
     }
 
     /// The passkey's ceremonies for what its vault approves (new vaults, an owner share, its revocation): in the
     /// sheet, with the passkey that opened the device.
-    fn approver(self: &Arc<Self>) -> Result<Sheets> {
-        let meta = self.meta()?.context("this Mac holds no avenDB account")?;
+    async fn approver(self: &Arc<Self>) -> Result<Sheets> {
+        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
         Ok(Sheets::new(self.clone(), Some(meta.credential)))
     }
 
@@ -510,52 +423,6 @@ impl Service {
             (None, None) => Err("the sign-in sheet ended with nothing".to_string()),
         };
         let _ = tx.send(answer);
-    }
-}
-
-/// What opens the device again, as the page keeps it: its name, its relay, its salt's own 32 bytes, its secret masked
-/// by the PRF output on its salt (`avendb_browser::Fresh::mask`), none for a device made before 2026-10-10, the
-/// credential of its person's passkey (base64url) and that passkey's P-256 key, compressed.
-#[derive(Clone)]
-struct Meta {
-    name: String,
-    relay: String,
-    nonce: [u8; 32],
-    mask: Option<[u8; 32]>,
-    credential: String,
-    p256: [u8; 33],
-}
-
-impl Meta {
-    /// As the page keeps it: the nonce, the mask, if any, and the P-256 key (`passkey`) in hex.
-    fn to_json(&self) -> Value {
-        let mut meta = json!({
-            "name": self.name,
-            "relay": self.relay,
-            "nonce": hex(&self.nonce),
-            "credential": self.credential,
-            "passkey": hex(&self.p256),
-        });
-        if let Some(mask) = self.mask {
-            meta["mask"] = hex(&mask).into();
-        }
-        meta
-    }
-
-    fn from_json(v: &Value) -> Result<Meta> {
-        let field =
-            |k: &str| v.get(k).and_then(Value::as_str).with_context(|| format!("what opens the device: no {k}"));
-        let nonce = unhex(field("nonce")?).and_then(|b| b.try_into().ok());
-        let mask = v.get("mask").and_then(Value::as_str).map(|m| unhex(m).and_then(|b| b.try_into().ok()));
-        let p256 = unhex(field("passkey")?).and_then(|b| b.try_into().ok());
-        Ok(Meta {
-            name: field("name")?.into(),
-            relay: field("relay")?.into(),
-            nonce: nonce.context("a device's nonce is 32 bytes in hex")?,
-            mask: mask.map(|m| m.context("a device's mask is 32 bytes in hex")).transpose()?,
-            credential: field("credential")?.into(),
-            p256: p256.context("a passkey's P-256 key is 33 bytes in hex")?,
-        })
     }
 }
 
@@ -697,15 +564,6 @@ impl Args<'_> {
         let n = self.get(i).as_u64().with_context(|| format!("argument {} is a count", i + 1))?;
         Ok(usize::try_from(n)?)
     }
-
-    fn list(&self, i: usize) -> Result<&[Value]> {
-        self.get(i).as_array().map(Vec::as_slice).with_context(|| format!("argument {} is a list", i + 1))
-    }
-
-    /// An id, from its 64 lowercase hex digits.
-    fn id(&self, i: usize) -> Result<[u8; 32]> {
-        id(&self.text(i)?)
-    }
 }
 
 /// `text` as a QR code, an SVG image at least `size` pixels wide, as avendb-browser's `qrSvg` draws it.
@@ -758,16 +616,4 @@ fn now() -> u64 {
 /// Bytes as lowercase hex digits, as the page sees every id.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Bytes from their lowercase hex digits.
-fn unhex(s: &str) -> Option<Vec<u8>> {
-    let digit = |c: u8| (c as char).to_digit(16).filter(|_| !c.is_ascii_uppercase()).map(|d| d as u8);
-    let pair = |p: &[u8]| Some(digit(p[0])? << 4 | digit(p[1])?);
-    s.len().is_multiple_of(2).then(|| s.as_bytes().chunks(2).map(pair).collect()).flatten()
-}
-
-/// An id from its 64 lowercase hex digits.
-fn id(s: &str) -> Result<[u8; 32]> {
-    BlobId::from_hex(s).map(|b| b.0).with_context(|| format!("{s:?} is no id"))
 }

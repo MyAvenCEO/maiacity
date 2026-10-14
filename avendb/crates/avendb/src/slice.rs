@@ -38,6 +38,19 @@ impl std::fmt::Debug for Sym {
     }
 }
 
+/// The types of the entries that carry a vault's schemas and its lenses (design §5; `State.lean`'s `schemaType` and
+/// `lensType`): every keep share that adds entries picks them too, and a never share none of them
+/// (`policy::keep_picks`), so a device that syncs any of a vault syncs its lane.
+pub const SCHEMA_TYPE: &str = "schema";
+pub const LENS_TYPE: &str = "lens";
+
+impl Sym {
+    /// The type of the entries that carry a vault's schemas or its lenses.
+    pub fn of_lane(&self) -> bool {
+        self.0 == SCHEMA_TYPE || self.0 == LENS_TYPE
+    }
+}
+
 /// What a selector tests of an entry: what its first write says of it, which never changes, and its tags now.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Attrs {
@@ -134,6 +147,12 @@ pub const MAX_TESTS: usize = 16;
 pub const MAX_IDS: usize = 1000;
 
 impl Selector {
+    /// Every schema and lens entry, and nothing else: what a vault's share of its schemas and lenses with everyone
+    /// picks (`Examples.lean`'s `schemas`; `lab::Lab::add_schema`).
+    pub fn lane() -> Selector {
+        Selector::AnyOf(vec![vec![Atom::TypeIn(vec![Sym::new(SCHEMA_TYPE), Sym::new(LENS_TYPE)])]])
+    }
+
     pub fn matches(&self, a: &Attrs) -> bool {
         match self {
             Selector::All => true,
@@ -188,7 +207,7 @@ impl Selector {
     pub fn of_json(v: &Value) -> Result<Selector, String> {
         let w = crate::ops::Where::of_json(v)?;
         if !w.labels_only() {
-            return Err("a cap picks entries by their labels alone: type, author, entry, created and tags".into());
+            return Err("a share picks entries by their labels alone: type, author, entry, created and tags".into());
         }
         let selector = match w.cover() {
             Selector::AnyOf(ds) if ds.iter().any(Vec::is_empty) => Selector::All,
@@ -270,21 +289,21 @@ impl Slice {
 /// out for the whole vault (`Selector::of_json`, `rules::Op::of_json`): its name, its selector and its ops in order
 /// (`rules::normalize`). Fails on anything else, on a name blank or too long and on no op.
 pub fn spec_of_json(v: &Value) -> Result<(String, Selector, Vec<Op>), String> {
-    let o = v.as_object().ok_or("a cap is {name, where, ops}")?;
+    let o = v.as_object().ok_or("a share is {name, where, ops}")?;
     if let Some(k) = o.keys().find(|k| !matches!(k.as_str(), "name" | "where" | "ops")) {
-        return Err(format!("a cap takes no field {k:?}: it is {{name, where, ops}}"));
+        return Err(format!("a share takes no field {k:?}: it is {{name, where, ops}}"));
     }
-    let name = o.get("name").and_then(Value::as_str).ok_or("a cap has a name")?;
+    let name = o.get("name").and_then(Value::as_str).ok_or("a share has a name")?;
     rules::name_ok(name)?;
     let select = o.get("where").map_or(Ok(Selector::All), Selector::of_json)?;
-    let ops = rules::normalize(rules::ops_of_json(o.get("ops").ok_or("a cap names its ops")?)?)?;
+    let ops = rules::normalize(rules::ops_of_json(o.get("ops").ok_or("a share names its ops")?)?)?;
     Ok((name.to_string(), select, ops))
 }
 
 /// What a share's `select` holds (`policy::Share::select`): its slice, in the clear for a share to everyone, else
 /// sealed: the slice encrypted under a key of its own and bound to the share (`keys::seal_edit`,
 /// `encode::share_context`), and that key in a box for each vault that reads the slice, wrapped or sealed to the
-/// vault's seed (`encode::select_info`): the vault the share is over, whose stewards keep its entries in their
+/// vault's seed (`encode::share_select_info`): the vault the share is over, whose stewards keep its entries in their
 /// audiences, its grantee unless it only relays or keeps, and its issuer.
 ///
 /// The commitment to a share's ops (`rules::Grant::commitment`) travels in the clear beside its sealed slice: salted,
