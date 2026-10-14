@@ -30,8 +30,8 @@
 //! (`avendb_net` keeps them), its McEliece keys and the pieces of the files it brings or keeps, each a blob, and what
 //! opens it again (`Meta`). The page's store (`js/store.js`) only carries the shelf's calls to a worker of its own,
 //! which has OPFS's synchronous files and holds the shelf for one tab at a time (`js/store.worker.js`): all that is
-//! kept, and how, is the device's (`shelf_of`). A store is never deleted: a new device, or one forgotten, starts a
-//! new generation of it, and the old stays aside.
+//! kept, and how, is the device's (`shelf_of`). A new device, or one forgotten, starts a new generation of a store,
+//! and the old stays aside, until a reset clears it as the store opens.
 //!
 //! A vault holds its entries itself, flat: each entry has a type (`note`, `todo`, `file`, `card`, `profile`) and tags,
 //! all of it inside the entry's encrypted writes. A vault shares what it holds through shares, each on a slice of its
@@ -1009,7 +1009,7 @@ async fn hold(store: &JsValue) -> Result<(), JsError> {
 
 /// The shelf of the page's `store` for a new device, held for this page alone (`hold`): refused while it opens a device
 /// already, which the page forgets first; and if it holds anything else, as what a start cut short left, a new
-/// generation of it, the old put aside, never deleted.
+/// generation of it, the old put aside.
 async fn new_shelf(store: &JsValue) -> Result<Shelf, JsError> {
     hold(store).await?;
     let shelf = shelf_of(store.clone());

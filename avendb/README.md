@@ -111,7 +111,7 @@ A device starts in one of three ways; everything after is one op through `PageDe
   a worker of its own (`js/store.js`, `js/store.worker.js`; [ARCHITECTURE.md](docs/ARCHITECTURE.md) §14), with what
   opens it again (`Meta`, the vaults it follows among it). It opens again in one ceremony, the unlock; the relay knows
   it, so it needs no pass. While it runs, its worker holds its shelf, so it never runs in two tabs at once. What an
-  earlier avenDB kept, in OPFS or in IndexedDB, it never reads and never deletes.
+  earlier avenDB kept, in OPFS or in IndexedDB, it clears as it opens.
 - **Steps** (`avendb_net::Progress`): each start marks its steps as it takes them, by name, with when each began and how
   long it took: the unlock, the keys, the node, the server, the draft, the ceremony that signs it, the claim, and so
   on (`progress.rs` lists them). The page watches them through the function it hands `found`, `link` or `open`, the
@@ -178,8 +178,8 @@ opens nothing but what is public.
   and belongs to no vault until a human vault claims it ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). It logs its
   offer (`AVENDB1…`): its device, its endpoint, its public address and its relay. The app keeps it, so that devices
   reach the server, and a new device links through it with its person's passkey alone.
-- What an earlier avenDB kept in its bucket or its folder stays as it is, never read and never deleted: its first start
-  makes a new shelf generation beside it, with a new device's secret, nobody's until a human vault claims it.
+- What an earlier avenDB kept in its bucket or its folder, it clears (`bucket::clear`, `disk::clear`): its first start
+  after a reset makes a new shelf generation, with a new device's secret, nobody's until a human vault claims it.
 - A vault gives avenCEO backup on the whole of it, and the server keeps the vault's edits and McEliece keys and serves
   them to the devices that may hold them, also while the device that wrote them is away. With relay instead (backups
   off, at setup or later with the `back_up` op), the server learns only the vault's devices, from its log, to let them

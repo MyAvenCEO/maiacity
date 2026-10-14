@@ -3,8 +3,9 @@
 // OPFS has its fast synchronous files. The store carries bytes alone: what they mean, the device reads and writes
 // itself (avendb-browser's `shelf_of`), its edits as a journal, packs and heads, its McEliece keys and the pieces of
 // the files it brings or keeps as blobs, and what opens it again (`storeMeta`). No secret is kept: the device's keys
-// come back from its passkey at every unlock. OPFS is the one place the page keeps any of it, and a store is never
-// deleted: a new device, or one forgotten, starts a new generation of it, and the old stays aside (`aside`).
+// come back from its passkey at every unlock. OPFS is the one place the page keeps any of it: a new device, or one
+// forgotten, starts a new generation of it, and the old stays aside (`aside`), until a reset of avenDB clears it as the
+// store opens.
 
 /** A worker of its own for a store. */
 const worker = () => new Worker(new URL('./store.worker.js', import.meta.url), { type: 'module' });

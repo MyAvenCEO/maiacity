@@ -5,9 +5,10 @@
 // keeps means anything to it: the device reads and writes them itself (avendb-browser's `shelf_of`).
 //
 // The store named `name` is the folder `avendb/<name>/`. It holds a shelf for each generation, `g1/`, `g2/` and on:
-// the newest is the one in use, and a new one made beside them puts every older one aside, never read again and never
-// deleted (`aside`). Whatever else the folder holds, as an earlier avenDB's store, stays as it is. In a generation's
-// folder:
+// the newest is the one in use, and a new one made beside them puts every older one aside, never read again (`aside`).
+// As it opens, the store is cleared of what came before the last reset (`clear`): shelves older than `FLOOR`, whatever
+// else its folder holds, as an earlier avenDB's store, and the IndexedDB database of its name pages kept before. In a
+// generation's folder:
 //
 // - `blobs/<hash>`: each finished blob, named by its BLAKE3 hash in hex, and `outboards/<hash>` its outboard, written
 //   last, so that a blob counts once its outboard is there;
@@ -28,8 +29,8 @@ const LOCK = 'lock';
 const RESERVED = [BLOBS, OUTBOARDS, NEW, LOCK];
 /** A generation's folder: `g1`, `g2` and on. */
 const GENERATION = /^g[1-9][0-9]*$/;
-/** The generation every store is at least, avenDB's `avendb_net::shelf::FLOOR`: a store whose newest is older puts it
- *  aside as it opens. */
+/** The generation every store is at least, avenDB's `avendb_net::shelf::FLOOR`: as a store opens, it clears every
+ *  older one (`clear`). */
 const FLOOR = 2;
 /** A finished blob's name: its hash in hex. */
 const HASH = /^[0-9a-f]{64}$/;
@@ -65,6 +66,31 @@ async function generations() {
 		if (handle.kind === 'directory' && GENERATION.test(name)) found.push(Number(name.slice(1)));
 	}
 	return found.sort((a, b) => a - b);
+}
+
+/** Whether the store keeps what is under `name` in its folder (`avendb_net::shelf::kept`): its lock, and the shelves of
+ *  generation `FLOOR` and later. */
+const kept = (name) => name === LOCK || (GENERATION.test(name) && Number(name.slice(1)) >= FLOOR);
+
+/** Clears store `name` of what came before the last reset: every entry of its folder it doesn't keep (`kept`), and the
+ *  IndexedDB database of its name, where pages kept it before OPFS. What it can't remove, as a file another tab of an
+ *  earlier avenDB holds open, it leaves. How many entries it removed. */
+async function clear(name) {
+	const gone = [];
+	for await (const [entry, handle] of root.entries()) if (!kept(entry)) gone.push([entry, handle.kind]);
+	let cleared = 0;
+	for (const [entry, kind] of gone) {
+		await root.removeEntry(entry, { recursive: kind === 'directory' }).then(
+			() => cleared++,
+			(e) => absent(e) || console.warn(`avenDB: ${entry} is from before the last reset, and stays: ${e?.message ?? e}`)
+		);
+	}
+	await new Promise((resolve) => {
+		const deleting = globalThis.indexedDB?.deleteDatabase(name);
+		if (!deleting) return resolve();
+		deleting.onsuccess = deleting.onerror = deleting.onblocked = resolve;
+	});
+	return cleared;
 }
 
 /** Puts generation `n` in use, made if it isn't there yet. Its number. */
@@ -212,9 +238,10 @@ function same(a, b) {
 
 const ops = {
 	/** Opens the store named `name`, in its newest generation, or, with none or only older ones than `FLOOR`, a new
-	 *  one of that generation, made beside whatever the folder holds. */
+	 *  one of that generation, once the store is cleared of what came before it (`clear`). */
 	async open(name) {
 		root = await (await stores()).getDirectoryHandle(name, { create: true });
+		await clear(name);
 		await use(Math.max((await generations()).at(-1) ?? FLOOR, FLOOR));
 	},
 
@@ -230,7 +257,7 @@ const ops = {
 		shutAll();
 	},
 
-	/** Puts the generation in use aside, never deleting it, and puts a new one in use, empty. Its number. */
+	/** Puts the generation in use aside, deleting nothing, and puts a new one in use, empty. Its number. */
 	async aside() {
 		return use(Math.max(((await generations()).at(-1) ?? 0) + 1, FLOOR));
 	},

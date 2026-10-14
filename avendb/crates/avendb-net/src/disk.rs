@@ -1,7 +1,8 @@
 //! A shelf in a folder (v8 phase S, `shelf`): the Mac's, the server's when it keeps no bucket, and the tests'. The
 //! folder holds a shelf for each generation, `g1/`, `g2/` and on (`shelf::generation`), and the newest is the one in
-//! use (`open`); a new one made beside them puts every older one aside (`aside`), never read again and never deleted.
-//! Whatever else the folder holds, as an earlier avenDB's store, stays as it is. In a generation's folder:
+//! use (`open`); a new one made beside them puts every older one aside (`aside`), never read again. As it opens, the
+//! folder is cleared of what came before the last reset (`clear`): shelves older than `shelf::FLOOR`, and whatever else
+//! it holds, as an earlier avenDB's store. In a generation's folder:
 //!
 //! - `blobs/<hash>`: each finished blob, and `outboards/<hash>` its outboard, written last, so a blob counts once its
 //!   outboard is there;
@@ -56,9 +57,10 @@ pub fn generations(root: &Path) -> Result<Vec<u64>> {
 }
 
 /// The shelf in folder `root` in use: its newest generation's, or, with none there yet or only older ones than
-/// `shelf::FLOOR`, a new one of that generation, made beside whatever else the folder holds, which stays as it is. Its
+/// `shelf::FLOOR`, a new one of that generation, once the folder is cleared of what came before it (`clear`). Its
 /// calls are answered on tokio's threads that may block.
 pub fn open(root: &Path) -> Result<Shelf> {
+    clear(root);
     let n = match generations(root)?.last() {
         Some(&n) if n >= FLOOR => n,
         _ => make(root, FLOOR)?,
@@ -77,6 +79,32 @@ pub fn open(root: &Path) -> Result<Shelf> {
         }
     });
     Ok(shelf)
+}
+
+/// Clears folder `root` of what came before the last reset: every entry but the shelves of generation `shelf::FLOOR`
+/// and later (`shelf::kept`), as older shelves and an earlier avenDB's store. What it can't remove, it leaves, and says
+/// so. How many entries it removed.
+pub fn clear(root: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(root) else { return 0 };
+    let mut cleared = 0;
+    for entry in entries.flatten() {
+        if entry.file_name().to_str().is_some_and(shelf::kept) {
+            continue;
+        }
+        let path = entry.path();
+        let gone = match entry.file_type() {
+            Ok(kind) if kind.is_dir() => fs::remove_dir_all(&path),
+            _ => fs::remove_file(&path),
+        };
+        match removed(gone) {
+            Ok(()) => cleared += 1,
+            Err(e) => tracing::warn!("avendb: {} is from before the last reset, and stays: {e}", path.display()),
+        }
+    }
+    if cleared > 0 {
+        tracing::info!("avendb: cleared {cleared} entries from before generation {FLOOR} in {}", root.display());
+    }
+    cleared
 }
 
 /// Puts the shelf in folder `root` in use aside: a new generation made beside it, empty, which the next `open` uses.
