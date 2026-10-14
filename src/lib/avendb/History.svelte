@@ -11,7 +11,7 @@
 <script>
 	import Panel from './Panel.svelte';
 	import { describe, GROUPS, KIND_NAMES } from './db.js';
-	import { count, list, short, size } from './vaults.js';
+	import { chainSteps, count, list, short, size } from './vaults.js';
 
 	/**
 	 * @type {{ s: import('./db.js').Studio, log: { edits: import('./db.js').SignedEdit[] } | null, failed: string,
@@ -173,6 +173,22 @@
 				{/if}
 			{/if}
 		</dl>
+		{#if picked.chain}
+			<h4 class="kept">Who stands behind it</h4>
+			<ol class="chain">
+				{#each chainSteps(s.world, picked.chain) as step, i (i)}
+					{@const made = step.edit ? byId.get(step.edit) : undefined}
+					<li>
+						{step.says}
+						{#if step.edit}
+							<button class="btn quiet" disabled={!made} onclick={() => (open = step.edit ?? '')}>
+								<span class="mono">{short(step.edit)}</span>{made ? ` · ${KIND_NAMES[made.kind] ?? made.kind} #${made.n}` : ''}
+							</button>
+						{/if}
+					</li>
+				{/each}
+			</ol>
+		{/if}
 		<h4 class="kept">Signatures</h4>
 		<ul class="sig-list">
 			{#each picked.sigs as sig, i (i)}
@@ -425,6 +441,22 @@
 		padding-left: 1.1rem;
 		font-size: 0.84rem;
 		line-height: 1.9;
+	}
+
+	/* who stands behind it, one link a line, each with the edit that made it so */
+	.chain {
+		display: grid;
+		gap: 0.35rem;
+		margin: 0;
+		padding-left: 1.1rem;
+		font-size: 0.84rem;
+		line-height: 1.5;
+	}
+
+	.chain .btn {
+		margin-left: 0.2rem;
+		padding: 0.05rem 0.4rem;
+		font-size: 0.74rem;
 	}
 
 	.parents {

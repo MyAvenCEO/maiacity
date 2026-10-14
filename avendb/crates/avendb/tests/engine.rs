@@ -9,6 +9,7 @@
 //! JSON, as the page and the Mac app send them.
 
 use avendb::cast::{self, World};
+use avendb::data;
 use avendb::engine;
 use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
@@ -228,6 +229,61 @@ fn lines_merge_restore_undo_and_variants_are_ops() {
     let doc = w.lab.item(mac, copy).unwrap().as_document().unwrap();
     assert_eq!((doc.title, doc.tags), ("The plan".to_string(), vec![format!("variant:{plan}")]));
     assert_eq!(w.lab.history(mac, copy).unwrap().changes().len(), 1);
+}
+
+#[test]
+fn every_write_names_its_acting_chain_back_to_the_passkeys_that_made_it() {
+    let mut w = cast::world();
+    let h = cast::handbook(&mut w);
+    let (mac, alice, bob, coop) = (w.mac_a.to_hex(), w.alice.to_hex(), w.bob.to_hex(), h.coop.to_hex());
+    let on = w.mac_a;
+    let history = ok(run(&mut w, on, json!({ "op": "history", "entry": hex(h.welcome) })));
+    // Alice's Mac wrote Welcome for the coop through Alice's vault, an owner of the coop
+    let first = &history["edits"][0];
+    assert_eq!(first["via"], json!([alice]));
+    let links = list(&first["chain"]["links"]);
+    assert_eq!(links.len(), 2);
+    let device = &links[0];
+    let (who, at) = (json!({ "signer": mac }), json!(alice));
+    assert_eq!((&device["who"], &device["in"], &device["as"]), (&who, &at, &json!("device")));
+    // her passkey, the root of her vault, signed the edit that added the Mac, and the Mac signed it too
+    let passkey = json!({ "signer": w.passkey_a.to_hex(), "vault": alice, "as": "root" });
+    assert!(list(&device["signers"]).contains(&passkey), "{device}");
+    assert!(list(&device["signers"]).contains(&json!({ "signer": mac, "vault": alice, "as": "device" })));
+    // the edit is in the database's history, the Mac's join
+    let log = ok(run(&mut w, on, json!({ "op": "log" })));
+    let added = list(&log["edits"]).iter().find(|e| e["id"] == device["edit"]).expect("the edit that added the Mac");
+    assert_eq!((&added["kind"], &added["fields"]["device"]), (&json!("addDevice"), &json!(mac)));
+    // Alice's vault owns the coop since its genesis, which both passkeys signed
+    let owner = &links[1];
+    let (who, at) = (json!({ "vault": alice }), json!(coop));
+    assert_eq!((&owner["who"], &owner["in"], &owner["as"]), (&who, &at, &json!("owner")));
+    assert_eq!(owner["edit"], json!(coop), "the coop's genesis names it");
+    let roots: Vec<(&Value, &Value)> = list(&owner["signers"]).iter().map(|s| (&s["vault"], &s["as"])).collect();
+    assert!(roots.contains(&(&json!(alice), &json!("root"))) && roots.contains(&(&json!(bob), &json!("root"))));
+    // and who owns the coop now
+    assert_eq!(first["chain"]["owners"], json!([{ "vault": alice }, { "vault": bob }]));
+    // the note page shows the same chain
+    let note = ok(run(&mut w, on, json!({ "op": "note", "entry": hex(h.welcome) })));
+    assert_eq!((&note["edits"][0]["via"], &note["edits"][0]["chain"]), (&first["via"], &first["chain"]));
+}
+
+#[test]
+fn an_aven_s_server_traces_back_to_the_vault_that_owns_the_aven() {
+    let w = cast::world();
+    let (alice, server, avenceo) = (w.alice.to_hex(), w.server.to_hex(), w.avenceo.to_hex());
+    let chain = data::Audit::new(&w.lab, w.mac_a).chain(w.server, w.avenceo, &[]);
+    let link = &chain["links"][0];
+    let (who, at) = (json!({ "signer": server }), json!(avenceo));
+    assert_eq!((&link["who"], &link["in"], &link["as"]), (&who, &at, &json!("device")));
+    // Alice's passkey approved the server's join for avenCEO, which her vault owns, and the server signed it too
+    let signers = list(&link["signers"]);
+    assert!(signers.contains(&json!({ "signer": w.passkey_a.to_hex(), "vault": alice, "as": "root" })), "{link}");
+    assert!(signers.contains(&json!({ "signer": server, "vault": avenceo, "as": "device" })));
+    assert_eq!(chain["owners"], json!([{ "vault": alice }]));
+    // a signer that acts for no vault traces back to nothing
+    let none = data::Audit::new(&w.lab, w.mac_a).chain(w.stranger, w.avenceo, &[]);
+    assert_eq!(none["links"][0]["edit"], Value::Null);
 }
 
 #[test]

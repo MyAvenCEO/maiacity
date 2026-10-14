@@ -232,6 +232,57 @@ export function signerName(world, id, lead = false) {
 	return say(owned ? `a passkey of ${nameOf(owned)}` : `key ${short(id)}`);
 }
 
+/**
+ * Who stands behind an edit, link by link back to the passkeys (avendb's `data::Audit::chain`): the author's device in
+ * the vault it belongs to, then each vault it acted through as an owner of the next, up to the vault it acted for. Each
+ * link names the latest edit that made it so, `null` where no edit this device holds does, and that edit's signers,
+ * each by the vault it is in now and how. Then who owns the vault it acted for now.
+ * @typedef {{ signer: string, vault: string | null, as: 'root' | 'owner' | 'device' | null }} ChainSigner
+ * @typedef {{ who: { signer: string } | { vault: string }, in: string, as: 'device' | 'root' | 'owner',
+ *   edit: string | null, signers: ChainSigner[] }} ChainLink
+ * @typedef {{ links: ChainLink[], owners: ({ vault: string } | { signer: string })[] }} Chain
+ */
+
+/**
+ * Who made an edit, in words: its device, the vault it acted for, and the owners it acted through, from the device's
+ * vault up: "Samuel’s Mac, for Maia COOP through Samuel".
+ * @param {WorldView} world @param {string} author @param {string} actor @param {string[] | null | undefined} via
+ */
+export function actingWords(world, author, actor, via) {
+	const name = (/** @type {string} */ id) => nameOf(world.vaults.find((v) => v.id === id));
+	const through = via?.length ? ` through ${list([...via].reverse().map(name))}` : '';
+	return `${signerName(world, author, true)}, for ${name(actor)}${through}`;
+}
+
+/**
+ * Chain `chain` as sentences, one a link, from the device up to the vault the edit acted for, each with the edit that
+ * made it so: "Samuel’s Mac is a device of Samuel, added by Samuel’s passkey and Samuel’s Mac", "Samuel is an owner of
+ * Maia COOP since its founding, signed by Samuel’s passkey"; then, for a vault owned by vaults, who owns it now.
+ * @param {WorldView} world @param {Chain} chain
+ * @returns {{ says: string, edit: string | null }[]}
+ */
+export function chainSteps(world, chain) {
+	const name = (/** @type {string} */ id) => nameOf(world.vaults.find((v) => v.id === id));
+	const by = (/** @type {ChainSigner[]} */ ss) => list(ss.map((x) => signerName(world, x.signer)));
+	const steps = chain.links.map((l) => {
+		const who = 'vault' in l.who ? name(l.who.vault) : signerName(world, l.who.signer, true);
+		const is = { root: 'the root passkey of', owner: 'an owner of', device: 'a device of' }[l.as];
+		const how =
+			l.edit === null
+				? ', which no edit this browser holds shows'
+				: l.edit === l.in
+					? ` since its founding, signed by ${by(l.signers)}`
+					: `, added by ${by(l.signers)}`;
+		return { says: `${who} is ${is} ${name(l.in)}${how}`, edit: l.edit };
+	});
+	const actor = chain.links.at(-1)?.in;
+	if (actor && chain.owners.some((o) => 'vault' in o)) {
+		const owner = (/** @type {Chain['owners'][number]} */ o) => ('vault' in o ? name(o.vault) : signerName(world, o.signer));
+		steps.push({ says: `${name(actor)} is owned now by ${list(chain.owners.map(owner))}`, edit: null });
+	}
+	return steps;
+}
+
 /** The types of entries, as a person names one and many. */
 const NOUNS = /** @type {Record<string, [string, string]>} */ ({
 	note: ['note', 'notes'],
