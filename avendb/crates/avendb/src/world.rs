@@ -17,7 +17,7 @@ use crate::doc::Item;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
-use crate::lens::{DocV2, Lens, Schema, Status};
+use crate::lens::{DocV2, Lens, Schema, Status, View};
 use crate::policy::{Entry, Issued, Kind, Level, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
@@ -212,6 +212,9 @@ pub enum What {
     File { title: String, media: String, deleted: bool },
     /// A schema or lens entry (`slice::Sym::of_lane`): a schema's title, or a lens's name.
     Lane { title: String, lens: bool },
+    /// Any other record the device opens, of a flow, a function, a post or a schema of a vault's own: its title or
+    /// else its name, its text if it has one, the record itself, and whether it is deleted (`DELETED`).
+    Record { title: String, text: Option<String>, record: Value, deleted: bool },
     /// What the device holds but can't open.
     Sealed,
 }
@@ -234,7 +237,8 @@ impl World {
     /// - each entry's `readers`, `writers` and `sharers`: the vaults whose level on it allows read, write, or is owner,
     ///   its own vault first (everyone besides reads it where it is `public`);
     /// - each entry's `files`, every file its writes bring, `len` `null` where the device doesn't open it, with
-    ///   `pieces`, how many pieces it is sealed in.
+    ///   `pieces`, how many pieces it is sealed in;
+    /// - an entry of kind `record` (`What::Record`: a flow, a function, a post) with its `record`, `null` for others.
     ///
     /// Each entry and each file lists the devices it is synced to, `syncedTo`, smallest first, each `{device, has, of}`
     /// (`Holder`): of an entry, edits of its log; of a file, its pieces. This device is among them once its shelf
@@ -319,6 +323,7 @@ impl World {
                 What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
                 What::File { title, .. } => ("file", Some(title), None, None),
                 What::Lane { title, lens } => (if *lens { "lens" } else { "schema" }, Some(title), None, None),
+                What::Record { title, text, .. } => ("record", Some(title), text.as_ref(), None),
                 What::Sealed => ("sealed", None, None, None),
             };
             let (variant_of, deleted, edits, proposals, media) = match &i.what {
@@ -326,6 +331,7 @@ impl World {
                     (variant_of.as_ref(), *deleted, *edits, *proposals, None)
                 }
                 What::File { deleted, media, .. } => (None, *deleted, 0, 0, Some(media)),
+                What::Record { deleted, .. } => (None, *deleted, 0, 0, None),
                 _ => (None, false, 0, 0, None),
             };
             let variant_at = variant_of.map(|(_, at)| at.iter().map(|e| hex(&e.0)).collect::<Vec<_>>());
@@ -359,6 +365,7 @@ impl World {
                 "edits": edits,
                 "proposals": proposals,
                 "media": media,
+                "record": match &i.what { What::Record { record, .. } => record.clone(), _ => Value::Null },
                 "files": i.files.iter().map(file).collect::<Vec<_>>(),
                 "syncedTo": holders(synced.entries.get(&i.entry)),
             })
@@ -497,7 +504,7 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
     let file = meaning.as_ref().is_some_and(|m| m.attrs.ty.as_str() == FILE);
     let what = match lab.item(me, en.id) {
         None => lane(lab, me, en.id, meaning.as_ref().map(|m| m.attrs.ty.as_str())).unwrap_or(What::Sealed),
-        Some(item) => match (item.as_document(), item.as_todo()) {
+        Some(item) => match (item.as_markdown(), item.as_todo()) {
             (Some(doc), _) if file => {
                 let media = doc.tags.iter().find_map(|t| t.strip_prefix(MEDIA)).unwrap_or_default().to_string();
                 let deleted = doc.tags.iter().any(|t| t == DELETED);
@@ -512,7 +519,7 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
                 What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), deleted, edits, proposals }
             }
             (None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
-            (None, None) => What::Sealed,
+            (None, None) => record(item.record()),
         },
     };
     let st = lab.state(me);
@@ -537,6 +544,20 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
         files: lab.entry_files(me, en.id),
         what,
     }
+}
+
+/// Record `record`, of no kind the page knows apart, as the page shows it: through the built-in schema of its kind, each
+/// field it leaves out at its default, where it has one (`View::built_in`); sealed where it holds nothing (no write the
+/// device counts yet).
+fn record(record: Value) -> What {
+    let kind = record.get("kind").and_then(Value::as_str);
+    let record = kind.and_then(View::built_in).and_then(|v| v.get(&record)).unwrap_or(record);
+    let Some(fields) = record.as_object().filter(|r| !r.is_empty()) else { return What::Sealed };
+    let text = |k: &str| fields.get(k).and_then(Value::as_str).map(String::from);
+    let title = text("title").filter(|t| !t.is_empty()).or_else(|| text("name")).unwrap_or_default();
+    let tags = fields.get("tags").and_then(Value::as_array);
+    let deleted = tags.is_some_and(|ts| ts.iter().any(|t| t.as_str() == Some(DELETED)));
+    What::Record { title, text: text("text"), deleted, record }
 }
 
 /// The note a document is a variant of and the version of it it copied, by its mark (`variant_mark`), if it is one.

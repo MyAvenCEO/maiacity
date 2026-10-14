@@ -930,7 +930,11 @@
 					<b>Readers count only writes that fit.</b> A write whose result breaks its schema stays in the log and changes
 					nothing anyone sees, so a patched app can’t slip in a value its schema forbids.
 				</li>
-				<li><b>Documents and todos ship with every app</b>, two versions each, with a lens between them.</li>
+				<li>
+					<b>avenDB’s own schemas ship with every app</b>: documents and todos, two versions each with a lens between
+					them, and articles, flows, functions and posts. Every vault reads and writes them offline, and avenCEO GmbH
+					holds each as a Public entry of its own, with the same bytes and so the same id.
+				</li>
 			</ul>
 		</section>
 

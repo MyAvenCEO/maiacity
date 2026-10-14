@@ -37,7 +37,8 @@
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
 	 *   before: string | null, counted: boolean, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
-	 * @typedef {{ vault: string | null, entry: string, lines: LineView[], edits: EditView[] }} NoteData
+	 * @typedef {{ vault: string | null, entry: string, kind: string | null, lines: LineView[],
+	 *   edits: EditView[] }} NoteData
 	 */
 
 	/**
@@ -119,6 +120,8 @@
 	const key = (/** @type {string | null} */ l) => l ?? '';
 	const lines = $derived(note?.lines ?? []);
 	const here = $derived(lines.find((l) => l.line === line) ?? lines[0]);
+	/** whether it is an article of avenDB's article schema, its text one field, its title no heading */
+	const article = $derived(note?.kind === 'article');
 	const main = $derived(lines[0]);
 	const proposals = $derived(lines.slice(1));
 	const k = $derived(key(here?.line ?? null));
@@ -203,7 +206,7 @@
 		if (writes) {
 			asks.write = saving(on, `${here.text ?? ''} `, blocks);
 			asks.title = { op: 'set', entry, line: on, path: ['title'], value: title };
-			asks.heading = { op: 'set', entry, line: on, path: blockText(1), value: title };
+			if (!article) asks.heading = { op: 'set', entry, line: on, path: blockText(1), value: title };
 			asks.propose = { op: 'propose', entry, from: here.heads, name: 'a proposal' };
 			asks[item?.deleted ? 'back' : 'delete'] = deleting(entry, item?.deleted);
 		}
@@ -316,14 +319,16 @@
 	}
 
 	/**
-	 * The op that saves `text` on line `on`, whose blocks are `blocks`: its text is its first paragraph, block 2,
-	 * which a note written elsewhere may not have yet.
+	 * The op that saves `text` on line `on`, whose blocks are `blocks`: an article's text is its own field; a note's,
+	 * its first paragraph, block 2, which a note written elsewhere may not have yet.
 	 * @param {string | null} on @param {string} text @param {{ id: number }[]} blocks
 	 */
 	function saving(on, text, blocks) {
-		const op = blocks.some((b) => b.id === 2)
-			? { op: 'set', path: blockText(2), value: text }
-			: { op: 'insert', path: ['blocks'], value: { id: 2, type: 'paragraph', text } };
+		const op = article
+			? { op: 'set', path: ['text'], value: text }
+			: blocks.some((b) => b.id === 2)
+				? { op: 'set', path: blockText(2), value: text }
+				: { op: 'insert', path: ['blocks'], value: { id: 2, type: 'paragraph', text } };
 		return { ...op, entry, line: on };
 	}
 

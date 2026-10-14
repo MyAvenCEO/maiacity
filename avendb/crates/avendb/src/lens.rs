@@ -915,6 +915,11 @@ impl View {
     pub fn todo_v2() -> &'static View {
         &BUILT_IN.todo_v2
     }
+
+    /// The app of built-in kind `kind` of one version alone: an article's, a flow's, a function's, a post's.
+    pub fn built_in(kind: &str) -> Option<&'static View> {
+        BUILT_IN.plain.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
+    }
 }
 
 /// The schemas and lenses a device holds from a vault's lane.
@@ -1061,8 +1066,21 @@ impl Fit<'_> {
 
 /// The blobs of the two examples' schemas and lenses, exactly as the apps ship them and a vault holds them as entries.
 pub mod blobs {
-    /// Every one of them: what the app reads through before a vault's lane holds anything.
-    pub const ALL: [&str; 6] = [DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2, DOCUMENT_LENS, TODO_LENS];
+    /// Every one of them: what the app reads through before a vault's lane holds anything. avenCEO GmbH, the seed's
+    /// company, holds each as a schema or lens entry of its own, shared with everyone, as their owner (the page's
+    /// `standard`): the same bytes, so the same ids.
+    pub const ALL: [&str; 10] = [
+        DOCUMENT_V1,
+        DOCUMENT_V2,
+        TODO_V1,
+        TODO_V2,
+        DOCUMENT_LENS,
+        TODO_LENS,
+        ARTICLE_V1,
+        FLOW_V1,
+        FUNCTION_V1,
+        POST_V1,
+    ];
 
     pub const DOCUMENT_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1203,6 +1221,94 @@ pub mod blobs {
   ]
 }
 "#;
+
+    /// An article: a title and one Markdown text, which concurrent edits merge character by character.
+    pub const ARTICLE_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Article, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "article" },
+    "title": { "type": "string", "default": "" },
+    "text": { "type": "string", "x-loro": "text", "default": "" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// A flow: the stages an item of any type moves through, each a node with the stages it leads on to, and whether
+    /// an item in it is public. An item is in a stage while it carries the flow's key and the stage's, `content:draft`.
+    pub const FLOW_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flow, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "flow" },
+    "key": { "type": "string", "default": "" },
+    "name": { "type": "string", "default": "" },
+    "about": { "type": "string", "x-loro": "text", "default": "" },
+    "types": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "stages": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "key": { "type": "string" },
+          "name": { "type": "string", "default": "" },
+          "public": { "type": "boolean", "default": false },
+          "next": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "x": { "type": "integer", "default": 0 },
+          "y": { "type": "integer", "default": 0 }
+        },
+        "required": ["id", "key"]
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// A function: code that runs when an item enters or leaves a stage of a flow, in a sandbox, and answers with the
+    /// ops it asks for, which run with the caps of whoever moved the item.
+    pub const FUNCTION_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Function, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "function" },
+    "name": { "type": "string", "default": "" },
+    "about": { "type": "string", "x-loro": "text", "default": "" },
+    "on": { "enum": ["enter", "leave"], "default": "enter" },
+    "flow": { "type": "string", "default": "" },
+    "stage": { "type": "string", "default": "" },
+    "code": { "type": "string", "x-loro": "text", "default": "" },
+    "enabled": { "type": "boolean", "default": true },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// A post of the Maia Universe stream: a title, its text, its channel, and the entry it tells of, if one.
+    pub const POST_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Post, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "post" },
+    "title": { "type": "string", "default": "" },
+    "text": { "type": "string", "x-loro": "text", "default": "" },
+    "channel": { "type": "string", "default": "" },
+    "about": { "type": "string", "default": "" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
 }
 
 fn built_in_schema(blob: &str) -> Schema {
@@ -1219,21 +1325,30 @@ pub static TODO_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::T
 pub static TODO_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::TODO_V2));
 pub static DOCUMENT_LENS: LazyLock<Lens> = LazyLock::new(|| built_in_lens(blobs::DOCUMENT_LENS));
 pub static TODO_LENS: LazyLock<Lens> = LazyLock::new(|| built_in_lens(blobs::TODO_LENS));
+pub static ARTICLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTICLE_V1));
+pub static FLOW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FLOW_V1));
+pub static FUNCTION_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FUNCTION_V1));
+pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V1));
 
 struct BuiltIn {
     document_v1: View,
     document_v2: View,
     todo_v1: View,
     todo_v2: View,
+    /// The app of each kind of one version alone, by its kind.
+    plain: Vec<(&'static str, View)>,
 }
 
 static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
     let view = |app: &Schema, lens: &Lens, other: &Schema| View::through(app, lens, other).expect("the lens joins them");
+    let plain = [&*ARTICLE_V1, &*FLOW_V1, &*FUNCTION_V1, &*POST_V1];
+    let plain = plain.map(|s| (s.kind().expect("a built-in schema names its kind"), View::plain(s)));
     BuiltIn {
         document_v1: view(&DOCUMENT_V1, &DOCUMENT_LENS, &DOCUMENT_V2),
         document_v2: view(&DOCUMENT_V2, &DOCUMENT_LENS, &DOCUMENT_V1),
         todo_v1: view(&TODO_V1, &TODO_LENS, &TODO_V2),
         todo_v2: view(&TODO_V2, &TODO_LENS, &TODO_V1),
+        plain: plain.to_vec(),
     }
 });
 
