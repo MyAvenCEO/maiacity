@@ -19,6 +19,7 @@ use avendb::id::{EditId, EntryId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::sign::Signed;
 use avendb::wire::Wire;
+use avendb_net::shelf::FLOOR;
 use avendb_net::{Node, Options, Shelf, disk};
 use bytes::Bytes;
 use common::Folder;
@@ -92,17 +93,20 @@ async fn edits_and_keys_come_back_in_the_order_they_were_taken() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_shelf_is_made_beside_whatever_its_folder_holds_and_put_aside_whole() {
+async fn a_shelf_is_made_beside_whatever_its_folder_holds_older_ones_put_aside_whole() {
     let dir = Folder::new("aside");
     // an earlier avenDB's store, which no avenDB reads again
     fs::create_dir_all(dir.path().join("store/keys")).expect("its folders");
     fs::write(dir.path().join("store/ops"), [0, 0, 0, 3, 1, 2, 3]).expect("its edits");
     fs::write(dir.path().join("store/keys/old"), [7; 64]).expect("a key");
     fs::write(dir.path().join("meta.json"), "{\"name\":\"Alice's Mac\"}").expect("its meta");
+    // and a shelf of a generation older than avenDB's floor, from before its last reset
+    fs::create_dir_all(dir.path().join("g1/journal")).expect("an old shelf");
+    fs::write(dir.path().join("g1/journal/0000000000000001"), [9; 8]).expect("an old journal entry");
     let earlier = files(dir.path());
-    assert_eq!(disk::generations(dir.path()).expect("its shelves"), Vec::<u64>::new(), "no shelf yet");
+    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1], "an old shelf alone");
     let (node, _, coop) = mac(dir.path()).await;
-    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1], "the first, g1");
+    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1, FLOOR], "a new one, of the floor's");
     let welcome = write(&node, coop, "Welcome", WELCOME_TEXT).await;
     node.shutdown().await.expect("it stops");
     drop(node);
@@ -110,10 +114,11 @@ async fn a_shelf_is_made_beside_whatever_its_folder_holds_and_put_aside_whole() 
     for (name, bytes) in &earlier {
         assert_eq!(now.get(name), Some(bytes), "{name} stays as it was");
     }
-    assert!(now.keys().filter(|n| !earlier.contains_key(*n)).all(|n| n.starts_with("g1/")), "all else is in g1");
+    let new = |n: &&String| !earlier.contains_key(*n);
+    assert!(now.keys().filter(new).all(|n| n.starts_with(&format!("g{FLOOR}/"))), "all else is in the new shelf");
     // put aside: a second shelf beside it, which holds nothing, and the first stays whole
-    assert_eq!(disk::aside(dir.path()).expect("put aside"), 2);
-    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1, 2]);
+    assert_eq!(disk::aside(dir.path()).expect("put aside"), FLOOR + 1);
+    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1, FLOOR, FLOOR + 1]);
     let (node, _, coop) = mac(dir.path()).await;
     assert!(!shows(&node, welcome, WELCOME_TEXT).await, "the Mac starts on the new shelf, without Welcome");
     write(&node, coop, "Onboarding", ONBOARDING_TEXT).await;
@@ -123,7 +128,8 @@ async fn a_shelf_is_made_beside_whatever_its_folder_holds_and_put_aside_whole() 
     for (name, bytes) in &now {
         assert_eq!(after.get(name), Some(bytes), "{name} stays as it was");
     }
-    assert!(after.keys().any(|n| n.starts_with("g2/journal/")), "and the new shelf keeps what the Mac takes");
+    let journal = format!("g{}/journal/", FLOOR + 1);
+    assert!(after.keys().any(|n| n.starts_with(&journal)), "and the new shelf keeps what the Mac takes");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -137,7 +143,7 @@ async fn a_head_follows_every_64_journal_entries_and_one_cut_short_is_passed() {
     let held = node.read(|lab, me| lab.size(me)).await;
     node.shutdown().await.expect("it stops");
     drop(node);
-    let g1 = dir.path().join("g1");
+    let g1 = dir.path().join(format!("g{FLOOR}"));
     let heads: Vec<String> = files(&g1.join("heads")).into_keys().collect();
     assert_eq!(heads, vec!["0000000000000001".to_string()], "one head, after the first 64 entries");
     let entries = files(&g1.join("journal")).len();
@@ -169,7 +175,7 @@ async fn a_journal_entry_cut_short_is_passed_and_never_replaced() {
     let onboarding = write(&node, coop, "Onboarding", ONBOARDING_TEXT).await;
     node.shutdown().await.expect("it stops");
     drop(node);
-    let journal = dir.path().join("g1/journal");
+    let journal = dir.path().join(format!("g{FLOOR}/journal"));
     let last = files(&journal).into_keys().last().expect("an entry");
     let path = journal.join(&last);
     let torn = fs::read(&path).expect("the entry")[..60].to_vec();
@@ -193,7 +199,7 @@ async fn an_edit_whose_signatures_fail_brings_a_head_of_the_whole_log() {
     node.shutdown().await.expect("it stops");
     drop(node);
     // a byte of the last edit's signature, changed in its entry, which is summed again so that it reads whole
-    let journal = dir.path().join("g1/journal");
+    let journal = dir.path().join(format!("g{FLOOR}/journal"));
     let path = journal.join(files(&journal).into_keys().last().expect("an entry"));
     let mut bytes = fs::read(&path).expect("the entry");
     let forged = last_edit(&bytes);
@@ -213,7 +219,7 @@ async fn an_edit_whose_signatures_fail_brings_a_head_of_the_whole_log() {
     for (name, bytes) in &before {
         assert_eq!(after.get(name), Some(bytes), "{name} stays as it was");
     }
-    assert!(after.contains_key("g1/heads/0000000000000001"), "a head of the whole log");
+    assert!(after.contains_key(&format!("g{FLOOR}/heads/0000000000000001")), "a head of the whole log");
     let (node, _, _) = mac(dir.path()).await;
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, ids, "from which the Mac starts again");
     node.shutdown().await.expect("it stops");
@@ -255,7 +261,8 @@ async fn an_object_is_put_once_and_owned_by_its_owner_alone() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(dir.path().join("g1/device.key")).expect("its file").permissions().mode();
+        let key = dir.path().join(format!("g{FLOOR}/device.key"));
+        let mode = fs::metadata(key).expect("its file").permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "readable by its owner alone");
     }
 }

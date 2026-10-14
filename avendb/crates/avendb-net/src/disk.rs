@@ -23,7 +23,7 @@ use bytes::Bytes;
 use data_encoding::HEXLOWER;
 use iroh_blobs::Hash;
 
-use crate::shelf::{self, Call, RESERVED, Shelf, generation, hash_of};
+use crate::shelf::{self, Call, FLOOR, RESERVED, Shelf, generation, hash_of};
 
 /// The finished blobs, each under its hash.
 const BLOBS: &str = "blobs";
@@ -55,12 +55,13 @@ pub fn generations(root: &Path) -> Result<Vec<u64>> {
     Ok(found)
 }
 
-/// The shelf in folder `root` in use: its newest generation's, or, with none there yet, a first, `g1`, made beside
-/// whatever else the folder holds, which stays as it is. Its calls are answered on tokio's threads that may block.
+/// The shelf in folder `root` in use: its newest generation's, or, with none there yet or only older ones than
+/// `shelf::FLOOR`, a new one of that generation, made beside whatever else the folder holds, which stays as it is. Its
+/// calls are answered on tokio's threads that may block.
 pub fn open(root: &Path) -> Result<Shelf> {
     let n = match generations(root)?.last() {
-        Some(&n) => n,
-        None => make(root, 1)?,
+        Some(&n) if n >= FLOOR => n,
+        _ => make(root, FLOOR)?,
     };
     let dir = root.join(format!("g{n}"));
     for sub in [BLOBS, OUTBOARDS, NEW] {
@@ -81,7 +82,7 @@ pub fn open(root: &Path) -> Result<Shelf> {
 /// Puts the shelf in folder `root` in use aside: a new generation made beside it, empty, which the next `open` uses.
 /// Its number.
 pub fn aside(root: &Path) -> Result<u64> {
-    let n = generations(root)?.last().map_or(1, |n| n + 1);
+    let n = generations(root)?.last().map_or(FLOOR, |n| (n + 1).max(FLOOR));
     make(root, n)
 }
 

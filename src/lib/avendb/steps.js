@@ -31,9 +31,12 @@ export function stepWords(here) {
 			title: 'Reaching avenDB’s server',
 			does: 'Through its connection server; its hello proves it is the server'
 		},
-		draft: { title: 'Drafting your vault', does: `Its genesis, ${here} in it, avenCEO if nobody owns the server` },
+		draft: {
+			title: 'Drafting your vault',
+			does: `Its genesis, ${here} in it, and if nobody owns the server, Maia Holding, avenCEO and the CEO Aven`
+		},
 		sign: { title: 'Create your vault', does: 'Your passkey signs the whole draft in one go', prompt: true },
-		claim: { title: 'Handing the server its claim', does: 'It signs that your vault owns avenCEO' },
+		claim: { title: 'Handing the server its claim', does: 'It signs that it is the CEO Aven’s device' },
 		settle: {
 			title: 'Sharing your vault with the server',
 			does: `As Backup, or as Relay with backups off, and ${here}’s card in your vault`

@@ -163,19 +163,30 @@ person lost every passkey and device, and that device opens the vault, as its ke
 every owner. So only the `.pub` file is handed on. The tool is `cargo run -p avendb --bin master-key`
 (`crates/avendb/src/bin/master-key.rs`).
 
-**avenCEO and the server.** The server is a device of avenCEO, an aven vault. A new server belongs to no vault. The
-first person to found a human vault through it claims it in the same ceremony:
+**avenCEO and the server.** The server is a device of the CEO Aven, an aven vault. A new server belongs to no vault.
+The first person to found a human vault through it claims it in the same ceremony, and founds the seed
+(`world::SEED`), each vault owned by the one before alone:
+
+| Vault | Kind | Owned by |
+|---|---|---|
+| Maia Holding GmbH | Coop | The person's human vault |
+| avenCEO GmbH | Coop | Maia Holding GmbH |
+| CEO Aven | Aven | avenCEO GmbH; the server is its device |
+
+So the server acts for the CEO Aven on its own, and every edit it makes traces back through avenCEO GmbH and Maia
+Holding GmbH to the person's passkey. The claim:
 
 1. The device takes the server's card (`Lab::card`). If it names no avenCEO, nobody has claimed the server, and the
    device asks it for its key to seal to (`Lab::claim_key`).
-2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, avenCEO's
-   genesis, owned by that human vault, and the edit that adds the server as avenCEO's device, sealed to that key
-   (`Lab::drafting`, `Lab::claim`).
+2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, the
+   seed's three geneses, and the edit that adds the server as the CEO Aven's device, sealed to that key
+   (`Lab::drafting`, `Lab::claim`). The passkey approves for each coop, as the root of the vault that owns it.
 3. The server checks that the edit adds itself and seals to its own key, every signature, and the rules, then signs
-   it too and keeps it (`Lab::accept_claim`). Its answer lets the device box avenCEO's key for it.
+   it too and keeps it (`Lab::accept_claim`). Its answer lets the device box the aven's key for it.
 
-After that, nobody can claim it again: whoever founds a vault later finds avenCEO on the server's card. A device of a
-vault founded before claims a new server the same way (`Node::claim`).
+After that, nobody can claim it again: whoever founds a vault later finds the CEO Aven on the server's card. A device
+of a vault founded before claims a new server the same way (`Node::claim`). The page names the seed's vaults on their
+profiles as it first opens.
 
 ## 4. Edits, logs and the replay
 
@@ -976,6 +987,12 @@ Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-bl
 | Server | An S3 bucket, every object sealed (`crates/avendb-net/src/bucket.rs`) | The bucket | Its folder |
 
 A browser tab's worker holds the store's lock, so one device never runs in two tabs at once.
+
+**Generations and resets.** A place keeps its shelves side by side, one per generation, `g1`, `g2` and on. The newest
+is in use; every older one is put aside, never read again and never deleted. Forgetting a device starts a new one. A
+reset of avenDB raises `shelf::FLOOR`, the generation every place is at least: as a place opens, a newest shelf older
+than that is put aside, and the place starts empty, the server with a new device key. `FLOOR` is 2 since the seed of
+Maia Holding GmbH, avenCEO GmbH and the CEO Aven.
 
 ### Layout of one generation
 

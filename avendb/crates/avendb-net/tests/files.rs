@@ -19,6 +19,7 @@ use avendb::policy::{KeepMode, Level};
 use avendb::sealed::{FileRoot, PIECE, PIECE_SEGMENTS, SEGMENT};
 use avendb::slice::{Atom, Selector, Sym};
 use avendb_net::bucket::{self, Sealed};
+use avendb_net::shelf::FLOOR;
 use avendb_net::{Node, Options, disk};
 use bytes::Bytes;
 use common::Folder;
@@ -165,7 +166,7 @@ async fn files_follow_their_edits_over_iroh() {
 
 /// The names of the blobs whose outboards bucket folder `objects` holds on its first shelf.
 fn outboards(objects: &std::path::Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(objects.join("g1/outboards")) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(objects.join(format!("g{FLOOR}/outboards"))) else { return Vec::new() };
     entries.map(|e| e.expect("an outboard").file_name().into_string().expect("a name")).collect()
 }
 
@@ -207,7 +208,8 @@ async fn files_live_on_a_shelf_and_in_the_bucket() {
     until("the server keeps the photo in its bucket", || server.holds_file(photo_root)).await;
     let hex = Hash::from_bytes(photo_root.hash).to_hex();
     assert!(outboards(objects.path()).iter().any(|r| r.starts_with(&hex)), "its outboard in the bucket");
-    assert!(std::fs::read_dir(cache.path().join("g1/new")).expect("staging").next().is_none(), "none staged");
+    let mut staged = std::fs::read_dir(cache.path().join(format!("g{FLOOR}/new"))).expect("staging");
+    assert!(staged.next().is_none(), "none staged");
     for n in [page, server] {
         n.shutdown().await.expect("the node stops");
     }
@@ -226,7 +228,7 @@ async fn files_live_on_a_shelf_and_in_the_bucket() {
     assert_eq!(got, bytes(1, 70_000, 70_010), "the very bytes");
     let all = carol.read_file(photo_root, 0..u64::MAX).await.expect("and the whole photo");
     assert_eq!(all, bytes(1, 0, photo_len), "every byte");
-    let cached = std::fs::read_dir(lost.path().join("g1/cache")).expect("the cache").count();
+    let cached = std::fs::read_dir(lost.path().join(format!("g{FLOOR}/cache"))).expect("the cache").count();
     assert!(cached > 0, "the server cached what it read from the bucket");
     for n in [carol, server] {
         n.shutdown().await.expect("the node shuts down");

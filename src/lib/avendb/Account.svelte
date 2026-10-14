@@ -5,18 +5,19 @@
 	shelf in the browser's private file system (OPFS) so that it opens again in one ceremony. Every device of the vault
 	shows by the name on its card, an entry of the vault the device writes itself, end-to-end encrypted like its notes
 	(avendb-browser's `Device::card`), and every vault by the name on its profile, an entry this browser writes into it
-	(`Device::profile`): the person's own by their maiaCITY name, avenCEO's as avenCEO. In the Mac app the device runs
+	(`Device::profile`): the person's own by their maiaCITY name, the seed's by theirs. In the Mac app the device runs
 	natively beside the app ($lib/avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
 	Mac. A device forgotten here, or what an earlier avenDB kept, is put aside and never read again. A new person
 	founds their vault here with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or
 	one they make here; the first to found a vault through a server nobody has claimed yet claims it in the same
-	ceremony, so their vault owns avenCEO, the aven vault the server is a device of. A person with an account signs in
-	on a new browser with their passkey alone: avenDB's server, which keeps their vault's log as ciphertext, hands it
-	over, and the browser joins their vault (P8c), as it does after they lost every device. Or it links through the
-	code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once unlocked, the account
-	opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and the aven and coop vaults their vault
-	founds and owns, each of which they act as. avenDB's server runs at avendb.maia.city: its relay and its code are
-	filled in, and a test server's can take their place (?relay=, ?server=).
+	ceremony and founds the seed (avendb's `world::SEED`): Maia Holding GmbH, a coop their vault owns, avenCEO GmbH, a
+	coop Maia Holding owns, and the CEO Aven, the aven vault avenCEO GmbH owns and the server is a device of. A person
+	with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log
+	as ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or
+	it links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once
+	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and the aven and
+	coop vaults their vault founds and owns, each of which they act as. avenDB's server runs at avendb.maia.city: its
+	relay and its code are filled in, and a test server's can take their place (?relay=, ?server=).
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -26,7 +27,7 @@
 	import Signing from './Signing.svelte';
 	import { allowed, answer, reads } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { plain } from './vaults.js';
+	import { plain, seeded } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
@@ -400,15 +401,12 @@
 				.catch((/** @type {Error} */ e) => (error = `Naming ${here} failed: ${e.message}`))
 				.finally(() => (carding = false));
 		}
-		// the profiles of the person's vault, by their maiaCITY name, and of avenCEO, if their vault owns it: written
-		// once, by whichever of their devices comes first
-		const ceo = w.vaults.find(
-			(v) => v.kind === 'aven' && v.devices.length && v.owners.some((o) => 'vault' in o && o.vault === w.mine)
-		);
+		// the profiles of the person's vault, by their maiaCITY name, and of the seed their claim of the server
+		// founded, if it did: written once, by whichever of their devices comes first
 		/** @type {[string, string][]} */
 		const unnamed = [];
 		if (mine && !mine.name && person) unnamed.push([mine.id, person]);
-		if (ceo && !ceo.name) unnamed.push([ceo.id, 'avenCEO']);
+		for (const [v, name] of seeded(w)) if (!v.name) unnamed.push([v.id, name]);
 		if (unnamed.length && !profiling) {
 			profiling = true;
 			(async () => {
@@ -616,7 +614,10 @@
 						<p class="soft">maiaCITY's server, at avendb.maia.city. Change these only for a test server.</p>
 						<input class="field" placeholder="Its connection server: https://…" bind:value={relay} />
 						<input class="field" placeholder="The server’s code: AVENDB1…" bind:value={server} />
-						<p class="soft">The first person to found their vault through a server owns avenCEO, the aven vault the server is a device of.</p>
+						<p class="soft">
+							The first person to found their vault through a server owns it: their vault founds Maia Holding GmbH, which
+							owns avenCEO GmbH, which owns the CEO Aven, the aven vault the server is a device of.
+						</p>
 					</details>
 					<label class="check">
 						<input type="checkbox" bind:checked={backup} />

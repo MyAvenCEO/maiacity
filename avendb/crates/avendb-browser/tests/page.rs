@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 
 use avendb::id::{BlobId, EntryId, VaultId};
 use avendb::lab::Lab;
+use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, Node, Options};
 use avendb_server::Relay;
 use iroh::EndpointId;
@@ -327,9 +328,10 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let first = tab.expect("first", "started").await;
     eprintln!("Eve's first browser founded her vault in {} ms, in {} ceremonies", first["ms"], first["ceremonies"]);
     assert_eq!(first["ceremonies"], 2, "the unlock, and one for her vault and the claim: {first}");
-    let owners = server.read(|lab, me| lab.vault_of(me).and_then(|v| Some(lab.state(me).vault(v)?.owners.clone())));
-    let eve = avendb::policy::Principal::Vault(VaultId(id(&first, "vault")));
-    assert_eq!(owners.await, Some(vec![eve]), "the server is a device of avenCEO, which her vault owns");
+    let eve = VaultId(id(&first, "vault"));
+    let seeded = move |lab: &Lab, me| lab.vault_of(me).is_some_and(|v| avendb::world::seeded(lab.state(me), eve, v));
+    let seeded = server.read(seeded);
+    assert!(seeded.await, "the server is a device of the CEO Aven of the seed her vault founded");
     let endpoint = EndpointId::from_bytes(&id(&first, "endpoint")).expect("an endpoint");
     until("the server learns her browser from what it relays", || async { admission.admits(&endpoint) }).await;
     let entry = EntryId(id(&first, "entry"));
@@ -337,7 +339,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     until("the server keeps her note", || server.read(holds)).await;
     // her browser's shelf is a new one, beside what the earlier avenDB kept; the file she brought is there, its one
     // piece under its hash, its outboard too
-    assert_eq!(first["generations"], json!(["g1"]), "one shelf: {first}");
+    assert_eq!(first["generations"], json!([format!("g{FLOOR}")]), "one shelf: {first}");
     let root = first["file"]["root"].as_str().unwrap_or_else(|| panic!("the file she brought: {first}"));
     for kept in ["blobs", "outboards"] {
         let held = first["shelf"][kept].as_array().unwrap_or_else(|| panic!("its {kept}: {first}"));
@@ -418,8 +420,9 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.eval("localStorage.setItem('go:again', '1')").await;
     tab.expect("again", "closed").await;
     let forgot = tab.expect("again", "forgot").await;
-    assert_eq!(forgot["generations"], json!(["g1", "g2"]), "a new shelf beside the old: {forgot}");
-    assert_eq!(forgot["metas"], json!({ "g1": ["0000000000000001"], "g2": [] }), "the old shelf as it was");
+    let (old, new) = (format!("g{FLOOR}"), format!("g{}", FLOOR + 1));
+    assert_eq!(forgot["generations"], json!([old, new]), "a new shelf beside the old: {forgot}");
+    assert_eq!(forgot["metas"], json!({ old: ["0000000000000001"], new: [] }), "the old shelf as it was");
     assert_eq!(forgot["meta"], Value::Null, "nothing opens a device on the new one");
     assert_eq!(forgot["earlier"], earlier, "what the earlier avenDB kept, untouched");
     let passkeys = tab.passkeys().await;
