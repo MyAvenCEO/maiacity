@@ -93,8 +93,10 @@
 	$effect(() => {
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
+		// whose backpack is down in the tent: mine once my home stands (the pitch told), the other's always (Samuel 2026-10-14)
+		const homed = { [seat]: !tour || steps.findIndex((x) => x.id === 'pitch') < tourAt, [otherSeat]: true };
 		const spot = player?.tree ?? player?.spot ?? null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'cruise'), hour: where.hour, cruise: where.cruise ?? '', spot: spot && { x: spot.x, z: spot.z }, marked: !!spot, by: where.by ?? '', pick: player?.tree?.plant ?? player?.seedling ?? '', name: player?.tree?.name ?? player?.name ?? '' });
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'cruise'), hour: where.hour, cruise: where.cruise ?? '', spot: spot && { x: spot.x, z: spot.z }, marked: !!spot, by: where.by ?? '', pick: player?.tree?.plant ?? player?.seedling ?? '', name: player?.tree?.name ?? player?.name ?? '', homed });
 		world.touring(!!tour);
 		if (where.place) world.focus(growth != null && !tour ? `tree:${seat}` : where.place);
 	});

@@ -133,9 +133,16 @@ function seated(cast, sits, side) {
 	if (sits === 'asleep') return { ...sit, spine: [0.08, 0, -side * 0.04], chest: [0.03, 0, -side * 0.05], neck: [0.1, 0, -side * 0.1], head: [0.12, 0, -side * 0.14] }; // a soft lean to the window, never a bent neck
 	return sit;
 }
-/** how much of the stand-in's smile (its `joy` blend shape) every face wears at rest (Samuel 2026-10-14: friendly
- *  gazes all the time, not a full smile); the sleeper's softer */
-export const FRIENDLY = 0.35;
+/** the face every person wears (Samuel 2026-10-14: friendly gazes all the time, a slight sparkle, not a full smile):
+ *  the stand-in's `friendly` gaze in full (v9, with its catchlight) and a hint of its smile `joy`; beaming (joy, k 1)
+ *  the smile in full and the gaze eased, since the two at full nearly close the eyes; the sleeper's only a soft mouth.
+ *  Eased there by ease (1: at once) */
+export function wearFace(face, { joy = 0, sleeper = false, ease = 1 } = {}) {
+	const d = face.morphTargetDictionary, w = face.morphTargetInfluences;
+	if (!d || !w) return;
+	const to = sleeper ? { joy: 0.1, friendly: 0 } : { joy: 0.25 + 0.75 * joy, friendly: 1 - 0.6 * joy };
+	for (const [k, v] of Object.entries(to)) if (d[k] !== undefined) w[d[k]] += (v - w[d[k]]) * ease;
+}
 /** the woman beside you turned to you as she talks (on her left, +x): her shoulders and head round to you, a little
  *  forward, as people sit when they tell each other something on a long ride (Samuel 2026-10-13: a conversation, no phone) */
 const TALK = { spine: [0.06, 0.1, 0], chest: [0.04, 0.16, 0], neck: [0.02, 0.26, 0], head: [0.04, 0.42, 0.02] };
@@ -355,8 +362,7 @@ export function packedVan() {
 				const pose = k > 0 ? blend(base, { ...base, ...TALK }, k) : base;
 				const h = pose.head ?? [0, 0, 0];
 				const says = k * (Math.sin(t * 5.3 + i) * 0.035 + Math.sin(t * 1.7) * 0.025); // the small nods of someone talking
-				const face = cast.rig.object, j = face.morphTargetDictionary?.joy;
-				if (j !== undefined) face.morphTargetInfluences[j] = o.userData.id === 'sleeper' ? FRIENDLY / 3 : FRIENDLY;
+				wearFace(cast.rig.object, { sleeper: o.userData.id === 'sleeper' });
 				cast.rig.pose({ ...pose, head: [h[0] + says + (o.userData.lift ?? 0) + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
 			}
 		},

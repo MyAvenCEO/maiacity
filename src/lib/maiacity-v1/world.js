@@ -28,7 +28,7 @@ import { human } from '$lib/actors/human.ts';
 import { blend } from '$lib/actors/rig.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
-import { FRIENDLY, ME_SEAT, packedVan } from './van.js';
+import { ME_SEAT, packedVan, wearFace } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { maiaCentre, oldShed } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
@@ -545,8 +545,7 @@ function acting(p, t) {
 	const base = legs === 'walk' ? walk : legs ? cast.clips[legs]?.(t) ?? {} : null;
 	// joy: the stand-in's own smile (its blend shape: from v7 a warm closed smile, the corners up, the cheeks lifting
 	// the eyes), shown when they beam (after the first mint), coming on and going off over a moment
-	const face = cast.rig.object, j = face.morphTargetDictionary?.joy;
-	if (j !== undefined) face.morphTargetInfluences[j] += ((p.userData.joy ? 1 : FRIENDLY) - face.morphTargetInfluences[j]) * 0.2; // friendly at rest
+	wearFace(cast.rig.object, { joy: p.userData.joy ? 1 : 0, ease: 0.2 }); // friendly at rest
 	const hold = { carry: CARRY, push: PUSH, reach: REACH }[what];
 	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
 	const sat = { drive: { ...WHEEL, ...CAR }, ride: CAR, lap: LAP }[what];
@@ -760,8 +759,32 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		world.attach(p);
 		p.rotation.set(0, p.rotation.y, 0);
 		p.userData.glow.visible = true;
-		p.userData.pack.visible = true;
+		wear(p, !homed(p));
 		act(p, 'idle');
+	}
+	/** whose backpack stays in the tent (Samuel 2026-10-14): once a player's home stands, their pack is put down in
+	 *  it and they go on without it (fetching the second player, walking about), out again only to plant or water */
+	const homed = (p) => !!stage.homed?.[p === people.A ? 'A' : 'B'];
+	/** the backpack on their back (on) or not; on, it is no longer in the tent */
+	function wear(p, on) {
+		p.userData.pack.visible = on;
+		const pk = packs[p === people.A ? 'A' : 'B'];
+		if (on && pk.userData.inTent) (pk.visible = false), (pk.userData.inTent = false);
+	}
+	/** the bell tent's own two packs stand in for ours: hidden, our players' backpacks leant on its wall where they
+	 *  stand (the tent's frame) */
+	const TENT_PACKS = { A: [-1.3, 0.1, -1.2], B: [-1.25, 0.55, -1.4] };
+	for (const c of home.userData.parts.packs.children) for (const pk of c.children) pk.visible = false;
+	function packInTent(seat) {
+		const pk = packs[seat], [x, z, ry] = TENT_PACKS[seat];
+		if (pk.parent !== world) world.attach(pk);
+		home.updateMatrixWorld(true);
+		pk.position.copy(home.localToWorld(V(x, 0, z)));
+		pk.rotation.set(0, home.rotation.y + ry + Math.PI / 2, 0);
+		pk.userData.setOpen(0);
+		stowBottle(pk);
+		pk.visible = true;
+		pk.userData.inTent = true;
 	}
 	/** in the cab as the story has them: the first player at the wheel; the second beside the first, who fetched them
 	 *  (alone, at the wheel themselves). Whoever is in already stays as they sit, so every drive can ask it: the pickup
@@ -808,7 +831,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			if (freeTruck && p.parent === truck) continue;
 			p.visible = true;
 			act(p, 'idle');
-			p.userData.pack.visible = true;
+			wear(p, !homed(p));
 			p.rotation.y = s === 'A' ? 0.4 : -0.4;
 			if (s !== me && s !== other) p.visible = false;
 			else if (s === me && errand) continue; // walking to where the first tree grows: the loop moves them
@@ -846,7 +869,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  of it; the dug earth and its stake at the spot once it is marked, until the tree stands there with its own */
 	function placeKit() {
 		for (const k of ['A', 'B']) if (packs[k].parent !== world) world.attach(packs[k]);
-		for (const k of ['A', 'B']) packs[k].visible = false;
+		for (const k of ['A', 'B']) (packs[k].visible = false), (packs[k].userData.inTent = false);
 		const S = stage.spot, me = stage.me;
 		myKit.visible = !!(S && stage.marked && !trees[me]);
 		if (myKit.visible) (myKit.position.set(S.x, 0, S.z), (myKit.rotation.y = spotYaw(S)));
@@ -864,6 +887,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			pk.visible = true;
 			people[me].userData.pack.visible = false;
 		}
+		// a pack not on its player's back nor out at the spot is in the tent, once the tent stands
+		for (const k of ['A', 'B']) if (homed(people[k]) && !people[k].userData.pack.visible && !packs[k].visible && home.visible && home.userData.pitch >= 1) packInTent(k);
 	}
 	/** still on the road (at 'van'): the van rolls on down the highway at its real speed, the camera in its back seat,
 	 *  while the story tells what lies ahead; the road loops far out on the steppe, so the van never reaches the stop */
@@ -1391,7 +1416,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		p.position.lerpVectors(seat, door, e);
 		const yaw1 = Math.atan2(door.x - seat.x, door.z - seat.z), turn = Math.atan2(Math.sin(yaw1 - truck.rotation.y), Math.cos(yaw1 - truck.rotation.y));
 		p.rotation.y = truck.rotation.y + turn * ease(Math.min(1, k / 0.5));
-		p.userData.pack.visible = e > 0.5;
+		p.userData.pack.visible = e > 0.5 && !homed(p);
 		Object.assign(p.userData, { k: 1 - e, seatAs: where });
 		act(p, k >= 1 ? 'idle' : 'getin');
 	}
@@ -2174,6 +2199,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		/** the tent and its bag at pitch e: what was in the bag goes into the tent as each step takes it */
 		const pitchTo = (e) => {
 			home.userData.setPitch(e);
+			// the backpack off and put down in the tent as the packs' turn comes (the tent's own stand in for ours)
+			const me = people[stage.me], pk = packs[stage.me], down = !!home.userData.parts.packs.children[0]?.visible;
+			if (down && !pk.userData.inTent) ((me.userData.pack.visible = false), packInTent(stage.me));
+			else if (!down && pk.userData.inTent) ((pk.visible = false), (pk.userData.inTent = false), (me.userData.pack.visible = true));
 			const { parts } = bundle.userData;
 			parts.groundsheet.visible = e <= S.groundsheet[0];
 			parts.canvas.visible = e < S.canvas[0];
@@ -2453,7 +2482,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				world.attach(pk.userData.bottle);
 				seatOut(me);
 				me.visible = true;
-				me.userData.pack.visible = true;
+				wear(me, true);
 				me.position.copy(L(0, 0, -0.55));
 				me.rotation.y = spotYaw(S);
 			}),
@@ -2604,7 +2633,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const S = { x, z };
 		seatOut(me);
 		me.visible = true;
-		me.userData.pack.visible = true;
+		wear(me, true); // out of the tent with them, for the seed and the bottle
 		errand = { pts: [me.position.clone().setY(0), spotAt(S)(0, 0, -0.62)], t0: performance.now() / 1000, yaw: spotYaw(S) };
 	}
 
@@ -2637,7 +2666,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			seatOut(me);
 			if (sat) me.position.copy(atTruck(...(sat === 'driver' ? DRIVER : PASSENGER))); // out at their door
 			me.visible = true;
-			me.userData.pack.visible = true;
+			wear(me, !homed(me));
 			me.position.setY(0);
 			drift = false;
 			goal = null;
