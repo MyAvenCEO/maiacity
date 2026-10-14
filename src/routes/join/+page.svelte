@@ -28,6 +28,7 @@
 	let busy = $state(false);
 	let error = $state('');
 	let saved = $state(false);
+	let code = $state('');
 	let ready = $state(false);
 	let supported = $state(true);
 
@@ -120,6 +121,21 @@
 
 			{#if saved}<p class="note ok">Saved.</p>{/if}
 			{#if error}<p class="note bad">{error}</p>{/if}
+
+			{#if founder.caps?.includes('media:admin')}
+				<!-- a terminal (`bun media login`) shows a code; typed here it opens the page that approves it -->
+				<form
+					id="terminal"
+					onsubmit={(e) => {
+						e.preventDefault();
+						goto(`${base}/app/device/?code=${encodeURIComponent(code.trim().toUpperCase())}`);
+					}}
+				>
+					<label for="code">Sign a terminal in</label>
+					<input id="code" bind:value={code} placeholder="The code your terminal shows" autocomplete="off" spellcheck="false" />
+					<button class="pill-btn" type="submit" disabled={code.trim().length < 4}>Continue</button>
+				</form>
+			{/if}
 
 			<p class="already"><a class="pill-btn" href="{base}/app/">Open your dashboard →</a></p>
 
@@ -306,5 +322,9 @@
 	.ladder .label {
 		font-size: 0.85rem;
 		color: var(--muted);
+	}
+
+	#terminal {
+		margin-top: 1rem;
 	}
 </style>

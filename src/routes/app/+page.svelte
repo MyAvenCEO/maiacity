@@ -1,12 +1,12 @@
 <!--
 	The dashboard: where a founder lands once signed in. A greeting, then everything the app holds as tiles — the
-	games to play, the groups (Sandboxes, Game Assets, My Data, each opening its list), what to read, and (for whoever holds them) the admin's tools.
+	games to play, the groups (Sandboxes, Game Assets, My Data, each opening its list), and the Universe.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
 	import Icon from '$lib/app/Icon.svelte';
-	import { ADMIN, APPS, CITY, GROUPS, READ, holds, released } from '$lib/app/places';
+	import { APPS, CITY, GROUPS, UNIVERSE, holds, released } from '$lib/app/places';
 	import { asset } from '$lib/media/url';
 
 	let founder = $state<Founder | null>(null);
@@ -18,7 +18,6 @@
 
 	const hour = new Date().getHours();
 	const hello = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-	const tools = $derived(ADMIN.filter((p) => holds(founder, p)));
 	// the groups this founder has something in: the Sandboxes (published ones, and for an admin the drafts too), Game
 	// Assets and My Data, each a tile that opens its list
 	const groups = $derived(GROUPS.filter((g) => holds(founder, g) && g.items.some((p) => holds(founder, p) && released(founder, p))));
@@ -52,37 +51,19 @@
 		{/each}
 	</div>
 
-	{#if groups.length}
 	<p class="divider">Make</p>
-	<div class="tiles">
-		{#each groups as t (t.href)}
+	<div class="tiles four">
+		{#each [...groups, UNIVERSE] as t (t.href)}
 			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
 		{/each}
 	</div>
-	{/if}
-
-	<p class="divider">Read</p>
-	<div class="tiles">
-		{#each READ as t (t.href)}
-			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
-		{/each}
-	</div>
-
-	{#if tools.length}
-		<p class="divider">Admin</p>
-		<div class="tiles">
-			{#each tools as t (t.href)}
-				<a class="tile admin" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
-			{/each}
-		</div>
-	{/if}
 </main>
 
 <style>
 	.dash {
 		max-width: 60rem;
 		margin: 0 auto;
-		padding: 2.5rem clamp(1rem, 4vw, 2rem) 0;
+		padding: 2.5rem clamp(1rem, 4vw, 2rem) 7rem;
 	}
 
 	h1 {
@@ -180,9 +161,14 @@
 		gap: 14px;
 	}
 
-	/* your apps: Ledger, Coops and Universe, wide and side by side */
+	/* your apps: Ledger and Coops, wide and side by side */
 	.tiles.two {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	/* make: the Sandboxes, Game Assets, My Data and the Universe, four in a row */
+	.tiles.four {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 	}
 
 	.tiles.two .tile {
@@ -215,10 +201,6 @@
 		color: var(--mustard);
 	}
 
-	.tile.admin :global(svg) {
-		color: var(--ink);
-	}
-
 	.tile b {
 		margin-top: 0.3rem;
 		font-family: var(--font-display);
@@ -235,7 +217,8 @@
 		.games {
 			grid-template-columns: minmax(0, 1fr);
 		}
-		.tiles {
+		.tiles,
+		.tiles.four {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 		.tiles.two .tile {
