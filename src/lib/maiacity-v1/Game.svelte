@@ -166,7 +166,9 @@
 	let fadeIn = $state(true);
 	let ended = $state(false); // the end faded out: the world fades back in under the player's own page
 	$effect(() => {
-		if (!tour || !world || playing) return;
+		// coming back halfway through a chapter, it starts again from its first line: no film till that is settled
+		// (resumed, below), or the open step played first and the chapter's start after it
+		if (!tour || !world || playing || (!demo && resumed !== started)) return;
 		const step = tour;
 		fadeIn = step.id === 'arrive';
 		if (step.kind === 'intro') {
@@ -246,7 +248,19 @@
 		g.players.A.founder = s === 'A' ? me : 'demo';
 		g.players.A.name = realGame.players.A.name;
 		if (s === 'B') (g.players.B.founder = me), (g.players.B.name = realGame.players.B.founder ? realGame.players.B.name : 'Player B');
-		game = g;
+		// the second's journey comes after the first's: they minted, invested, pitched the tent and planted their first
+		// tree (where and what the real first did, if they did), so its plant stake and flag stand on the hex
+		let first = g;
+		if (s === 'B') {
+			const t = realGame.players.A.tree;
+			const moves = [{ type: 'mint' }, { type: 'invest', coop: 'maia', amount: 5000 }, { type: 'invest', coop: 'village', amount: 2000 }, { type: 'invest', coop: 'tribe', amount: 1000 }, { type: 'mark', x: t?.x ?? 0, z: t?.z ?? 40 }, { type: 'seedling', plant: SEEDLINGS.some((x) => x.id === t?.plant) ? t.plant : 'apple' }, { type: 'plant', v: t?.v ?? 1 }];
+			try {
+				moves.forEach((m, i) => (first = act(first, 'A', m, now - 50e3 + i * 1e3)));
+			} catch {
+				first = g; // the first's journey could not be replayed: the second's starts on its own
+			}
+		}
+		game = first;
 		seen = { ...seen, [s]: {} };
 		told = {};
 		seat = s;
@@ -430,7 +444,7 @@
 	});
 	// coming back halfway through a chapter (Samuel 2026-10-13: the story began at "They ripen like fruit"), the chapter
 	// is told again from its first line: the told steps before the open one in its chapter are unseen once per visit
-	let resumed = 0;
+	let resumed = $state(0);
 	$effect(() => {
 		if (!tour || resumed === started || demo) return;
 		resumed = started;
@@ -611,7 +625,7 @@
 				<p class="worth">{f(inHearts(view, player.wallet, hv))} <span>❤︎ in all</span></p>
 				<ul class="hold">
 					<li><span>{player.name.charAt(0).toLowerCase() + player.name.slice(1).replace(/\s+/g, '')}HEARTS{#if mint.amount > 0.005}<small>+{f(mint.amount)} ❤︎ ready to mint</small>{/if}</span><strong>{f(player.wallet.HEARTS)} ❤︎</strong></li>
-					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
+					{#each MINDS as t (t)}<li><span>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((player.wallet[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(player.wallet[t] * hv[t])} ❤︎<small>{f(player.wallet[t])} {TOKEN_LABEL[t]}</small></strong></li>{/each}
 				</ul>
 				<LedgerView {view} who={`player:${seat}`} show="cash" />
 				{#if player.arrears > 0.001}<p class="bad small">{f(player.arrears)} tribeMIND tent rent owed</p>{/if}

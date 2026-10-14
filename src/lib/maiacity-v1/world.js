@@ -548,8 +548,6 @@ const ground = (cast) => {
 	const up = 0.75; // the thighs up from the hips to the knees
 	return { root: [0, (0.17 - 0.98) * s, 0], thighL: [-(Math.PI / 2 + up), 0, 0.12], thighR: [-(Math.PI / 2 + up), 0, -0.12], shinL: [1.85, 0, 0], shinR: [1.85, 0, 0], footL: [-0.4, 0, 0], footR: [-0.4, 0, 0], spine: [0.22, 0, 0], chest: [0.12, 0, 0], head: [-0.05, 0, 0], upperArmL: [-0.95, 0, -0.12], upperArmR: [-0.95, 0, 0.12], forearmL: [-0.55, 0, 0.25], forearmR: [-0.55, 0, -0.25] };
 };
-/** how far a beaming player's face goes into the stand-in's smile (its blend shape `joy`, 0 to 1) */
-const JOY = 0.45;
 /** how far the stand-in's walk carries it over one second of its clip (m): the pace its feet keep on the ground */
 const CLIP_PACE = 1.27;
 /** how far a player on the ground has walked, forward along where they face (back, it counts down): the walk is
@@ -569,11 +567,10 @@ function acting(p, t) {
 	const [what, legs] = act.split('+'); // 'carry+walk': the arms carry, the legs walk
 	const walk = cast.clips.walk(p.userData.walked / CLIP_PACE);
 	const base = legs === 'walk' ? walk : legs ? cast.clips[legs]?.(t) ?? {} : null;
-	// joy: the stand-in's own smile (its blend shape: the mouth corners up and back, the eyes narrowed), shown when they
-	// beam (after the first mint), coming on and going off over a moment; at under half its full shape, so the lips
-	// stay nearly closed (in full the mouth opens wide on two flat rows of teeth)
+	// joy: the stand-in's own smile (its blend shape: from v7 a warm closed smile, the corners up, the cheeks lifting
+	// the eyes), shown when they beam (after the first mint), coming on and going off over a moment
 	const face = cast.rig.object, j = face.morphTargetDictionary?.joy;
-	if (j !== undefined) face.morphTargetInfluences[j] += ((p.userData.joy ? JOY : 0) - face.morphTargetInfluences[j]) * 0.2;
+	if (j !== undefined) face.morphTargetInfluences[j] += ((p.userData.joy ? 1 : 0) - face.morphTargetInfluences[j]) * 0.2;
 	const hold = { carry: CARRY, push: PUSH, reach: REACH }[what];
 	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
 	const sat = { drive: { ...WHEEL, ...CAR }, ride: CAR, lap: LAP }[what];
@@ -767,6 +764,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		p.userData.glow.visible = false;
 		p.userData.pack.visible = false; // off their back while they sit, against the seat's back
 		act(p, where === 'driver' ? 'drive' : 'ride');
+		p.userData.seat = where;
 	}
 	function seatOut(p) {
 		if (p.parent !== truck) return;
@@ -1351,7 +1349,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const walkTime = (pts) => pts.slice(1).reduce((a, b, i) => a + pts[i].distanceTo(b), 0) / WALK;
 	// on the pickup (its own frame, +z ahead, the driver's door on its left, +x): the doors, the tailgate, beside it
 	const atTruck = (x, z) => (truck.updateMatrixWorld(true), truck.localToWorld(V(x, 0, z)).setY(0));
-	const DRIVER = [1.25, 0.55], PASSENGER = [-1.25, 0.55], TAIL = [0.5, -3.3], BESIDE = [2.6, 1], BESIDE_2 = [2.6, -1.6];
+	// at their door: just behind it when it is open (pickup v3's doors hinge at their front edge), clear of the B pillar
+	const DRIVER = [1.3, 0.8], PASSENGER = [-1.3, 0.8], TAIL = [0.5, -3.3], BESIDE = [2.6, 1], BESIDE_2 = [2.6, -1.6];
 	/** getting in at their door (where: 'driver' or 'passenger'), k from 0 to 1 over GET_IN seconds: the door swung
 	 *  open (the pickup's doors, once it has them: setDoor), a turn towards the seat, a step up and in, sitting down
 	 *  onto it, turning to face ahead, the door pulled shut. At 1 they sit in it */
@@ -1370,6 +1369,26 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		p.userData.pack.visible = e < 0.5; // off their back as they sit back (the seat's back)
 		Object.assign(p.userData, { k: e, seatAs: where });
 		act(p, 'getin');
+	}
+	/** getting out (k from 0 to 1 over GET_IN seconds): the door open, turning to it, up off the seat and out, standing
+	 *  at the door, the door pushed shut behind them */
+	function climbOut(p, where, k) {
+		// out of the seat they sit in (or are on the way out of); not in the cab, nothing to get out of
+		if (p.parent === truck) where = p.userData.seat ?? where;
+		else if (p.userData.act === 'getin') where = p.userData.seatAs ?? where;
+		else if (k < 1) return;
+		truck.updateMatrixWorld(true);
+		truck.userData.setDoor?.(where, Math.min(1, k / 0.2) * (1 - Math.min(1, Math.max(0, (k - 0.8) / 0.2))));
+		if (p.parent === truck) seatOut(p);
+		const door = atTruck(...(where === 'driver' ? DRIVER : PASSENGER));
+		const seat = truck.localToWorld(CAB[where].clone());
+		const e = ease(Math.min(1, Math.max(0, (k - 0.15) / 0.6)));
+		p.position.lerpVectors(seat, door, e);
+		const yaw1 = Math.atan2(door.x - seat.x, door.z - seat.z), turn = Math.atan2(Math.sin(yaw1 - truck.rotation.y), Math.cos(yaw1 - truck.rotation.y));
+		p.rotation.y = truck.rotation.y + turn * ease(Math.min(1, k / 0.5));
+		p.userData.pack.visible = e > 0.5;
+		Object.assign(p.userData, { k: 1 - e, seatAs: where });
+		act(p, k >= 1 ? 'idle' : 'getin');
 	}
 	/** where they stand at the ramp's foot, to take a machine off it */
 	const AT_RAMP = [0, FOOT_Z - 0.4];
@@ -1783,19 +1802,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// the pickup pulls up at the shed, the shed beyond it, and everyone gets out
 			let a = U_STORE, mine = null, theirs = null, eye = V(0, 0, 0);
 			const ARRIVE = 3.2;
-			steps.push(beat(6, (s) => {
+			steps.push(beat(8, (s) => {
 				const { p } = roll(a, U_STORE, 'out', Math.min(1, s / ARRIVE));
 				if (s >= ARRIVE) {
 					if (!mine) {
 						const rides = other && other.parent === truck;
-						for (const q of [me, other]) if (q) seatOut(q);
 						me.visible = true;
-						me.position.copy(atTruck(...(drivesMe ? DRIVER : PASSENGER)));
-						mine = [me.position.clone(), ...(drivesMe ? [] : [atTruck(-1.6, 3.4), atTruck(1.6, 3.4)]), atTruck(...BESIDE)];
-						if (rides) (other.position.copy(atTruck(...DRIVER)), (theirs = [other.position.clone(), atTruck(...BESIDE_2)]));
+						mine = [atTruck(...(drivesMe ? DRIVER : PASSENGER)), ...(drivesMe ? [] : [atTruck(-1.6, 3.4), atTruck(1.6, 3.4)]), atTruck(...BESIDE)];
+						if (rides) theirs = [atTruck(...DRIVER), atTruck(...BESIDE_2)];
 					}
-					walkOn(me, mine, s - ARRIVE);
-					if (theirs) walkOn(other, theirs, s - ARRIVE);
+					// out of the cab, then off to the shed
+					const t = s - ARRIVE;
+					if (t < GET_IN) (climbOut(me, drivesMe ? 'driver' : 'passenger', t / GET_IN), theirs && climbOut(other, 'driver', t / GET_IN));
+					else (walkOn(me, mine, t - GET_IN), theirs && walkOn(other, theirs, t - GET_IN));
 				}
 				camLerp(eye, s < ARRIVE ? p.clone().setY(1.2) : head(me, 1.2), 0.1);
 			}, () => {
@@ -1836,21 +1855,24 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// low in the knee-high grass at the lot: the pickup stops, and you step out into it, looking round
 			let mine = null, theirs = null, eye = V(0, 0, 0);
 			const STOPS = 2.6;
-			steps.push(beat(6.5, (s) => {
+			steps.push(beat(8.5, (s) => {
 				const { p } = roll(1 - m(14), 1, 'out', Math.min(1, s / STOPS));
 				if (s >= STOPS + 0.3) {
 					if (!mine) {
 						const rides = other && other.parent === truck;
-						for (const q of [me, other]) if (q) seatOut(q);
 						const door = atTruck(...(drivesMe ? DRIVER : PASSENGER));
 						me.visible = true;
-						me.position.copy(door);
 						const into = V(0, 0, 0).sub(door).setY(0).setLength(3.2);
 						mine = [door, door.clone().add(into)];
-						if (rides) (other.position.copy(atTruck(...DRIVER)), (theirs = [other.position.clone(), HOME[stage.other]]));
+						if (rides) theirs = [atTruck(...DRIVER), HOME[stage.other]];
 					}
-					if (walkOn(me, mine, s - STOPS - 0.3)) act(me, 'look up');
-					if (theirs) walkOn(other, theirs, s - STOPS - 0.3);
+					// out of the cab, and a few steps into the grass, looking round
+					const t = s - STOPS - 0.3;
+					if (t < GET_IN) (climbOut(me, drivesMe ? 'driver' : 'passenger', t / GET_IN), theirs && climbOut(other, 'driver', t / GET_IN));
+					else {
+						if (walkOn(me, mine, t - GET_IN)) act(me, 'look up');
+						if (theirs) walkOn(other, theirs, t - GET_IN);
+					}
 				}
 				still(eye, s < STOPS ? p.clone().setY(1.1) : head(me, 1.35));
 			}, () => {
@@ -2403,9 +2425,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			drift = false;
 			goal = null;
 			controls.minDistance = 1.5;
+			me.userData.glow.visible = false; // the marker over their head would fill the view from behind them
 			const back = V(-Math.sin(me.rotation.y), 0, -Math.cos(me.rotation.y));
-			goal = { target: head(me, 1.2), offset: back.multiplyScalar(5.5).setY(2.4) };
+			goal = { target: head(me, 1.2), offset: back.multiplyScalar(7.5).setY(3.4) };
 		} else {
+			me.userData.glow.visible = true;
 			act(me, 'idle');
 			controls.minDistance = 12;
 		}
@@ -2451,7 +2475,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		for (const seat of ['A', 'B']) {
 			const hearts = view.players[seat].wallet.HEARTS;
 			const glow = people[seat].userData.glow;
-			glow.visible = hearts > 0.01 && !busy && !held && people[seat].parent === world;
+			glow.visible = hearts > 0.01 && !busy && !held && people[seat].parent === world && !(roam && seat === stage.me);
 			glow.scale.setScalar(0.5 + Math.min(1.5, hearts / 24));
 		}
 	}
