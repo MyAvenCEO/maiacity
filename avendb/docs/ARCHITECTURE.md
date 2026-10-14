@@ -7,6 +7,10 @@ Three things keep it honest. The Lean model in `avendb/spec` states what must al
 crates in `avendb/crates` build it. Shared test vectors (`avendb/spec/vectors`) hold the two to the same answers, edit
 by edit. Where this file and the model disagree, the model is right and this file is wrong.
 
+The other documents each hold one thing. `spec/README.md` lists every theorem with the Rust tests that guard it.
+`README.md` says how to build, test, run and deploy avenDB. The page `/docs/avendb/` in the app tells this file's story
+for people. Every module doc comment names the section of this file it builds.
+
 Paths below are relative to `avendb/` unless they start with `src/` or `static/`, which are the app's.
 
 ## Contents
@@ -18,7 +22,7 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 5. [Shares](#5-shares)
 6. [Audiences, marks and keys](#6-audiences-marks-and-keys)
 7. [Entries, writes and history](#7-entries-writes-and-history)
-8. [JSON ops, op groups and fit](#8-json-ops-op-groups-and-fit)
+8. [One API: run(op), op groups and fit](#8-one-api-runop-op-groups-and-fit)
 9. [Schemas and lenses](#9-schemas-and-lenses)
 10. [Post-quantum only](#10-post-quantum-only)
 11. [Passkeys](#11-passkeys)
@@ -38,12 +42,16 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 | Log | The edits of one vault, one share, one audience or one entry. Each edit builds on its log's frontier. |
 | Share | Who may do what on which entries of a vault: who, level, what. |
 | Level | Keep, Relay, Backup, Read, Write or Owner, in that rank order. |
+| Keep share | A share to one device of the issuer: which entries it syncs, and whether it keeps files whole. |
 | Audience | The shares that pick an entry, in the clear. It carries the entry's key. |
 | Mark | The edit in which a steward writes an entry's audience, its wants, or both. |
 | Steward | A device acting for the vault itself. It reads every selector and keeps the marks true. |
-| Keep share | A share to one device of the issuer: which entries it syncs, and whether it keeps files whole. |
 | Stay | One period of an entry in one audience, named by the mark that began it. |
 | Epoch | The generation of a key family. It moves on when someone loses access. |
+| Lane | The schemas and lenses a vault's readers read off its own schema and lens entries. |
+| Interest | A device's reason to be sent what a vault shares with Everyone: it acts for the vault or a holder of a share over it. |
+| Follow | A vault a device names in its requests, to be sent what that vault shares with Everyone. |
+| Op | One read or change, as JSON, through `run(op)`. |
 | Shelf | The one place a device keeps what lasts: OPFS in a browser, a folder on a desktop, a bucket on the server. |
 | Holdings | What one device says it holds for good: each log's frontier, and each file whole or in pieces. |
 
@@ -53,7 +61,7 @@ Everything in avenDB is one of three things, one per layer.
 
 1. **Entry: what.** All data is an entry in a vault. Notes, todos, files, a device's card, a vault's profile, and also
    schemas and lenses. An entry changes only by writes.
-2. **Share: who may.** A share says who, at which level, on what. People, Everyone, servers and a device's keep rule
+2. **Share: who may.** A share says who, at which level, on what. People, Everyone, servers and a device's keep shares
    are shares. A vault's owners and its devices are shares too. A revocation ends any of them. A vault has two
    settings beside them: how many owners must approve (its threshold), and its root passkey.
 3. **Blob + holdings: where.** All bytes are blobs named by their BLAKE3 hash, on one shelf per place. Each device
@@ -62,7 +70,7 @@ Everything in avenDB is one of three things, one per layer.
 Everything else is derived and never typed in: whom an entry is shared with, its audience's key, the marks, which
 devices an entry is synced to, and what a device still has to fetch.
 
-Seven principles follow from the shape:
+Eight principles follow from the shape:
 
 1. **One log of signed edits is the only truth.** Shares, marks, keys and writes are signed edits. Every view is
    computed from them.
@@ -71,8 +79,10 @@ Seven principles follow from the shape:
    it, and readers check it against the selectors.
 4. **One kind of bytes.** Content-addressed blobs on one shelf per place. Durable means finished on the shelf.
 5. **One frontier.** Holdings. Every "where is it" answer comes from them.
-6. **One transport per job, the iroh way.** Our protocol decides what a peer may get. iroh-blobs moves the bytes.
-7. **Never delete, put aside.** An old store becomes an older generation beside the new one.
+6. **One API.** Every read and change is one JSON op through `run(op)`, the same on every device. The page keeps no
+   rule; it asks the device.
+7. **One transport per job, the iroh way.** Our protocol decides what a peer may get. iroh-blobs moves the bytes.
+8. **Never delete, put aside.** An old store becomes an older generation beside the new one.
 
 ## 2. What it guarantees
 
@@ -90,9 +100,13 @@ Each line names the theorem that states it (section 15).
   and dated before the removal are cut, if they relied on what it took away (T16).
 - **Everyone ends the same.** The same edits in any order give the same state (T11). Frontier sync loses nothing
   (T19), and two devices that asked each other once hold the same edits of what both sync (T13).
-- **Sync sends only what shares reach.** A peer sends a device only what its vaults may receive (T12). A relay share
-  receives nothing of the entries (T26). A keep share narrows what comes, never widens it (T28). A file goes only with
-  a write that brings it (T27).
+- **Sync sends only what shares reach.** A peer sends a device only what its vaults may receive, and what a vault
+  shares with Everyone only to a device with an interest or that follows it (T12). A relay share receives nothing of
+  the entries (T26). A keep share narrows what comes, never widens it (T28). A file goes only with a write that brings
+  it (T27).
+- **Holdings speak for their device alone and authorize nothing.** A node keeps a device's holdings only as that
+  device said them on its own proven connection, and passes nobody's on (H1). No holding gets anyone a file the
+  rules refuse (T27).
 - **Relays are blind and still exact.** The server reads no selector, type or tag, yet every edit stands or falls for
   it exactly as for an owner (T25).
 - **Post-quantum.** Once the curves fall, a write counts only if its author's hash-based checkpoint covers it (T18).
@@ -118,7 +132,8 @@ of a human vault approves anything on its own, wins every clash, and is the only
 
 **Governance** is the vault's settings (threshold, root) and the sharing or revoking of an owner or a device. It needs
 the vault's approval plus the newcomer's consent, except that an owner or a device may leave on its own (T2). Devices
-never govern: a device of a human vault or a server of an aven vault acts for it and approves nothing.
+never govern: a device of a human vault or a server of an aven vault acts for it and approves nothing. So a change
+that needs approval is drafted on a device and signed by the person's passkey in one ceremony (sections 8 and 11).
 
 **Acting through owners.** A coop has no devices, so a person acts for it from a device of their own vault. Every edit
 that acts for a vault names the chain of owners it goes through (`via`): from an owner of the vault down to the vault
@@ -128,23 +143,35 @@ every device (T1, T16).
 
 **The master recovery key.** One master recovery key is a way back in beside the passkeys. It is a signer like any
 other, a passkey kept in software (`crates/avendb/src/recovery.rs`), whose keys all derive from 32 secret bytes kept
-offline. Its public file is built in (`crates/avendb/master-recovery.pub`, key `d9941b22…`). Every human vault is
-founded with it among its owners: it is an Owner share on Everything, added at genesis. The key signed one standing
-consent as it was made (`sign::consent_challenge`), which an edit that adds it takes in place of its signature
-(`sign::standing`). It shows among the owners as "Master recovery key" and is removed like any owner. Whoever holds
-the secret owns every vault that has it, so only the `.pub` file is handed on. The tool is
-`cargo run -p avendb --bin master-key` (`crates/avendb/src/bin/master-key.rs`).
+offline. Its public file is built in (`crates/avendb/master-recovery.pub`, key `d9941b22…`), and every device's Lab
+knows it (`Lab::set_recovery`). Every human vault is founded with it among its owners: it is an Owner share on
+Everything, added at genesis (`Lab::human_owners`). The key signed one standing consent as it was made
+(`sign::consent_challenge`), which an edit that adds it takes in place of its signature (`sign::standing`). It shows
+among the owners as "Master recovery key" and is removed like any owner, and added again the same way (section 8,
+`share` and `revoke`). Whoever holds the secret signs as an owner in full: alone, it adds a device to a vault whose
+person lost every passkey and device, and that device opens the vault, as its keys were sealed to the master key as to
+every owner. So only the `.pub` file is handed on. The tool is `cargo run -p avendb --bin master-key`
+(`crates/avendb/src/bin/master-key.rs`).
 
 **avenCEO and the server.** The server is a device of avenCEO, an aven vault. A new server belongs to no vault. The
-first person to found a human vault through it claims it in the same ceremony: their passkey founds avenCEO, owned by
-their vault, and adds the server as its device; the server checks the edit and signs it too (`Lab::accept_claim`).
-After that, nobody can claim it again.
+first person to found a human vault through it claims it in the same ceremony:
+
+1. The device takes the server's card (`Lab::card`). If it names no avenCEO, nobody has claimed the server, and the
+   device asks it for its key to seal to (`Lab::claim_key`).
+2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, avenCEO's
+   genesis, owned by that human vault, and the edit that adds the server as avenCEO's device, sealed to that key
+   (`Lab::drafting`, `Lab::claim`).
+3. The server checks that the edit adds itself and seals to its own key, every signature, and the rules, then signs
+   it too and keeps it (`Lab::accept_claim`). Its answer lets the device box avenCEO's key for it.
+
+After that, nobody can claim it again: whoever founds a vault later finds avenCEO on the server's card. A device of a
+vault founded before claims a new server the same way (`Node::claim`).
 
 ## 4. Edits, logs and the replay
 
 **An edit** is `{parents, depth, author, cosigners, action}` (`policy::Edit`). Its bytes have one canonical encoding,
-which starts with the version byte 8 (`crates/avendb/src/encode.rs`). Its id is the SHA-3 (cSHAKE256) hash of those
-bytes, and its signatures sign the id (`crates/avendb/src/sign.rs`).
+which starts with the version byte 8 (`encode::VERSION`, `crates/avendb/src/encode.rs`). Its id is the SHA-3
+(cSHAKE256) hash of those bytes, and its signatures sign the id (`crates/avendb/src/sign.rs`).
 
 **Eight kinds.** The action's first byte is its kind (`policy::Action`, `Action` in `spec/AvenDB/Step.lean`):
 
@@ -159,9 +186,11 @@ bytes, and its signatures sign the id (`crates/avendb/src/sign.rs`).
 | 6 | Keys | The real boxes of one key | The key's family | No |
 | 7 | Checkpoint | A device vouches for its own writes of one entry | The entry | No |
 
-The kind alone says which log an edit belongs to (`sync::log_of`), so a peer that knows nothing else routes it.
-Owners and devices keep sub-kinds of their own under Share and Revoke for the same reason: the functions that read an
-edit alone (its log, its rank, its standing consent, the pass key) find the class in the tag.
+Every other tag decodes as unknown. The tags of earlier kinds (8 a lane publish, 9 and 10 a sync rule and its end, 11 a
+pick) went into the write, the share, the revocation and the mark, and are never used again. The kind alone says which
+log an edit belongs to (`sync::log_of`), so a peer that knows nothing else routes it. Owners and devices keep sub-kinds
+of their own under Share and Revoke for the same reason: the functions that read an edit alone (its log, its rank, its
+standing consent, the pass key) find the class in the tag.
 
 **Logs.** Every edit belongs to one log (`sync::LogId`): a vault's (its genesis, settings, owners, devices and seed
 keys), a share's (the share, its revocation, its keys), an audience's (its keys) or an entry's (its writes, marks,
@@ -188,7 +217,8 @@ stands (`priority` in `Step.lean`, `resolve` in `policy.rs`):
    in one batch and chooses what the model's one-by-one tries choose.
 
 A junior owner can't keep his own removal out by removing his remover: his removal is tried later and refused, as he
-is no longer an owner at its place. A mark of the wants alone takes nothing away and is no removal.
+is no longer an owner at its place. A mark of the wants alone takes nothing away and is no removal, and neither is the
+revocation of a keep share (K1).
 
 **Forks.** A device signs its edits in a log one after another. Two of its edits in one log where neither builds on
 the other mean its key signed twice from the same past: a restored backup, a clone or a stolen key. Every peer flags
@@ -215,22 +245,23 @@ A level's byte on the wire is its rank, and each level includes those below it, 
 
 | Rank | Level | Group a person sees | What it allows |
 |---|---|---|---|
-| 0 | Keep | Keep (whole, when opened, never) | Nothing. It says what one device syncs. A mode byte follows. |
+| 0 | Keep | Keep whole, Keep when opened, Never keep | Nothing. It says what one device syncs. A mode byte follows. |
 | 1 | Relay | Relay | Learn the vault's devices from its log, so a server lets them through. Receive no entry. |
 | 2 | Backup | Backup | Keep and pass on the ciphertext of the entries it reaches. No key. |
 | 3 | Read | Viewer, Public | Open the entries it reaches. |
 | 4 | Write | Editor, Suggester | Also write them, as its ops allow, and create entries through it. |
 | 5 | Owner | Owner | Also issue shares resting on it. Governance. |
 
-A share's level is never chosen apart from its ops: it is the class of its strongest op (section 8).
+A share's level is never chosen apart from its ops: it is the class of its strongest op (section 8). A rank of 6 or
+more, or a keep mode of 3 or more, decodes as unknown.
 
 ### What
 
 A share is **wide** (the whole vault, said in the clear) or picks entries by a **selector** over their labels: type,
 author (the vault that created it), entry id, creation time, and tags (has, has none of, only these). A selector is
 `all`, or up to 8 conjunctions OR-ed, each of up to 16 tests, with lists of up to 1,000 ids (`crates/avendb/src/
-slice.rs`). Type, author, entry and creation time never change; tags do, so a share reaches each entry tagged so now
-and later, and lets go of one untagged.
+slice.rs`). A share whose selector is `all` is wide. Type, author, entry and creation time never change; tags do, so a
+share reaches each entry tagged so now and later, and lets go of one untagged.
 
 The selector, the share's name and its ops travel **sealed** in `select`: to the seed of the vault it is over, of its
 grantee and of its issuer. In the clear, `select` carries only a salted hash of the ops (`rules::Grant::commitment`).
@@ -240,12 +271,12 @@ So a relay sees who holds which level, and nothing of what it picks or allows.
 
 A share may rest on another (`parent`): a live owner share over the same vault whose grantee is its issuer. A chain
 selects the AND of its selectors, and allows only what every share of it allows (C1). A share with no parent is
-issued by the vault it is over. A wide share rests only on a wide one, and no owner share is wide (below), so every
-wide share rests on none.
+issued by the vault it is over, or is a keep share. A wide share rests only on a wide one, and no owner share is wide
+(below), so every wide share rests on none.
 
 ### Owners and devices are shares
 
-To a person, a vault's owners and devices are rows in one list of shares:
+To a person, a vault's owners and devices are rows in one list of shares (the `shares` op, section 8):
 
 - An **owner** is "Owner on Everything": a co-owner who approves governance. On the wire it is `Sharing::Owner`.
 - A **device** "acts for" the vault. On the wire it is `Sharing::Device`.
@@ -264,35 +295,39 @@ the issuer's approval.
 
 Everyone gets read alone. An audience that an Everyone share reaches is public: its key is published in the clear, so
 anyone who receives its edits opens them. Everyone shares reach only devices with an interest in the vault, or that
-ask for it by name (section 12, interest and follow).
+follow it by name (section 12, interest and follow).
 
 ### Servers: Relay or Backup
 
 A vault gives avenCEO, the server's vault, a wide Backup share at founding, so the server keeps the ciphertext of all
 its entries and opens none. With backups off it gives Relay instead: the server learns the vault's devices from its
-log, to let them through its relay, and keeps nothing of its entries (T26). The person switches between the two in
-the vault's Sharing.
+log, to let them through its relay, and keeps nothing of its entries (T26). The person switches between the two with
+the `back_up` op, for their vault and the vaults it acts for at once (`world::server_level`). A vault that a person's
+vault founds gives avenCEO the same level as the person's vault has.
 
 ### Keep shares
 
 A keep share is `{over: V, who: Device(d), level: Keep(mode), wide, select, parent: None, issuer}`. It says which
-entries of V device `d` syncs, and how. It grants nothing.
+entries of V device `d` syncs, and how. It grants nothing, has no ops and is in no audience.
 
 - **Who may issue one.** The issuer acts through its owners as for any edit. `d` must be a device of the issuer vault
-  itself (NotDevice). The issuer must be V, or hold a share over V at Backup or more (NoCap). It rests on nothing
-  (BadParent).
+  itself (NotDevice). The issuer must be V, or hold a share over V at Backup or more (NoCap, `State::may_hold`). It
+  rests on nothing (BadParent). The device signs it alone: a keep share is no governance (the `keep` op).
 - **Modes.** `Whole` syncs the entries it picks and keeps their files whole. `Opened` syncs them and fetches file
   pieces as they are read. `Never` subtracts: the device doesn't sync what it picks.
 - **What a device wants.** With no keep share over V, or only Never ones, it wants all of V but what a Never share
   picks. With a Whole or Opened one, it wants what one of those picks and no Never one does. It keeps an entry's files
-  whole exactly where a Whole share picks it (`wantsWith`, `keepsWith` in `State.lean`; T28).
+  whole exactly where a Whole share picks it (`wantsWith`, `keepsWith` in `State.lean`; `State::wants`, `keeps`; T28).
 - **No keep share.** A device with no Whole or Opened share over a vault falls back on its own setting
-  (`Options::keep`): the server keeps every file whole, a desktop fetches pieces as it reads them.
-- **Schemas ride along.** A Whole or Opened share also picks every schema and lens entry of V; a Never share picks
-  none (`keepPicks`). So every reader of V syncs its schemas (section 9).
+  (`Options::keep`): the server keeps every file whole, a desktop or a browser fetches pieces as it reads them.
+- **Schemas ride along.** A Whole or Opened share also picks every schema and lens entry of V; a Never share that
+  isn't wide picks none (`keepPicks`, `policy::keep_picks`). So every reader of V syncs its schemas (section 9). A wide
+  Never share stops the device syncing V at all.
+- **Changing one.** A keep share is never edited: it is revoked and issued again, which cuts nothing.
 - **Revoking one.** Only its issuer revokes it: not the vault it is over, which could otherwise force a device to
   sync all of it. A keep share's revocation cuts nothing: nothing rests on it, no audience holds one and no write
-  relies on one (K1). A device that leaves its vault drops that vault's keep shares without any revocation.
+  relies on one (K1). A device that leaves its vault drops that vault's keep shares without any revocation
+  (`State::keeps_of`).
 - **Where it lives.** In its own share log, like any grant. Vault logs, and the link cards cut from them (T20), carry
   governance alone.
 
@@ -311,7 +346,9 @@ A refused edit is never applied, and every peer refuses the same edits for the s
 share refusals are UnknownCap, NoCap, BadCap, CapToItself, PublicBeyondRead, WideOwner, BadParent, Revoked,
 KeepNeedsDevice, DeviceOnlyKeeps and NotDevice. Governance has BadOwners, AlreadyMember, NotMember, NoConsent,
 BelowThreshold, BadThreshold, WrongOwnerKind, LastOwner, Cycle (T3), NotHuman, NoDevices and NotRoot. Marks have
-WrongVault, BadMark, BadAudience, SameAudience, BadWants and SameWants.
+WrongVault, BadMark, BadAudience, SameAudience, BadWants and SameWants. Writes have NotActing, NotAllowed, NotAView,
+UnknownEntry, UnknownDep and NotOnProposal. The names stay those of the code (`UnknownCap`, `NoCap`, `BadCap`), which
+say share.
 
 ## 6. Audiences, marks and keys
 
@@ -340,14 +377,15 @@ Mark { vault, entry, caps: Option<[ShareId]>, wants: Option<[ShareId]>, keep: [E
   entry after it left their slice.
 - **wants** lists the keep shares that pick the entry. It takes nothing away and is no removal.
 - A part left out (`None`) stays as it is. So a stale mark of the wants alone never puts back an audience another
-  steward changed meanwhile. Only a change of caps cuts writes or starts a stay.
+  steward changed meanwhile. Only a change of `caps` cuts writes or starts a stay.
 - **Checks** (WrongVault, NotActing, BadMark, BadAudience, SameAudience, BadWants, SameWants): the entry is in the
-  vault; the author acts for it; at least one part is there, and `keep` only with caps; caps is canonical, of shares
+  vault; the author acts for it; at least one part is there, and `keep` only with `caps`; `caps` is canonical, of shares
   over the vault that aren't wide or keep shares, and not the audience it is in; wants is canonical, of keep shares
   over the vault that aren't wide. Neither list is checked for liveness: readers leave out what isn't live. A
   liveness check would let a revocation that sorts earlier refuse a mark, and then every write in its stay would fall.
 - **Upkeep.** After each batch of edits, a steward compares each entry's live marks with what the selectors say, and
-  emits one mark where they differ (`Lab` upkeep in `crates/avendb/src/lab.rs`). It answers tag asks first.
+  emits one mark where they differ (`Lab` upkeep in `crates/avendb/src/lab.rs`). It answers tag asks first. The `mark`
+  op runs that same mark of one entry at once (`Lab::mark_now`); nobody hand-sets `caps` or `wants`.
 
 **T23, marks mean what the shares say.** Where an entry's live audience is its semantic audience, the write rule every
 peer checks allows exactly the vaults the selectors allow, and never refuses a creation inside its creator's slice.
@@ -377,8 +415,8 @@ hash, which every box and write names (`crates/avendb/src/keys.rs`).
 | Audience key | Random per epoch | Wrapped under V's seed and under each live Read-or-more share key that reaches it |
 | Entry key | Derived from the audience key, per entry, stay and epoch | Whoever opens the audience key |
 
-Relay and Backup shares get no key at all (T7). An Everyone share's key, and the keys under it, are published in the
-clear: that is what Public means.
+Relay, Backup and keep shares get no key at all (T7). An Everyone share's key, and the keys under it, are published in
+the clear: that is what Public means.
 
 - **Boxes.** A key is sealed to a signer or a seed (X-Wing and Classic McEliece, section 10), or wrapped under a key
   the boxing device holds. A `Keys` edit carries the real boxes. A peer accepts it only if every box goes where the
@@ -400,6 +438,7 @@ What rotates on what:
 | A share is revoked | Each audience it reached moves to a new epoch, boxed to the shares still live |
 | A vault loses a device or an owner | Its seed moves on, and with it its share and audience keys in use |
 | An entry's tags change, a new share picks it | One mark, with its move link |
+| A keep share is issued or revoked | Nothing: it holds no key |
 
 **Why stays remain.** Entry keys are derived per stay, not per (audience, epoch). Suppose an entry is in audience X
 at epoch 1, a mark moves it to Y (the move link gives Y's readers its X key), and another mark moves it back to X.
@@ -442,30 +481,121 @@ builds only on writes that count, and its actor is the entry's vault or its proo
 allows what it touched. A write that doesn't count stays in the log, sealed, and shows on no line, nor does anything
 built on it. So an app patched to skip the checks writes nothing anyone reads.
 
-## 8. JSON ops, op groups and fit
+## 8. One API: run(op), op groups and fit
 
-### One language for every read and change
+### One entry point
 
-Every read and change of avenDB is one JSON op, whatever the schema (`crates/avendb/src/engine.rs`):
+Every read and every change of avenDB is one JSON op, whatever the schema, through one entry point, `run(op)`, the
+same on every device. The page keeps no rule: it reads levels, ops and who may do what from the device's answers,
+asks `may` before it shows a button, and words what comes back.
 
-- **Reads:** `query`, `get`, `history`, `schemas`, `groups`.
-- **Changes:** `create`; the record ops `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`,
-  `restore`, `undo`, `variant`; and `batch`.
-- **Asking:** `may` runs ops dry and answers, for each, whether this device would make it now. The page asks before it
-  shows a button.
+- **On a Lab.** `engine::run(lab, me, op)` (`crates/avendb/src/engine.rs`, `engine/vaults.rs`) runs an op on a
+  device's state: a read on what the device holds, an ask as a dry run that checks, proves and refuses as a change
+  would and makes nothing (`Lab::dry`), and a change as signed edits.
+- **On a node.** `Node::run(op, bytes, authenticator)` (`crates/avendb-net/src/run.rs`) runs it on a node, and does
+  what a Lab alone can't: `world` adds where each entry and file is synced to, `read_file` and `put_file` carry the
+  file's bytes beside the op, a change the vault's owners approve has the passkey sign it in a ceremony, every change
+  is told to the device's peers, and `follow` asks every peer again at once.
+
+Every caller goes through `Node::run`:
+
+| Caller | How it calls |
+|---|---|
+| A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileEnd [n]` and `fileDrop [n]` for `put_file`. Its ceremonies run in the app's sign-in sheet (section 11). |
+| No passkey at hand | `Node::run` with no authenticator (`NoCeremony`), as for an agent: a change the owners approve answers `approve` and makes nothing. |
+
+A device's lifecycle stays outside `run`: founding, linking and opening a device (`Device.found`, `Device.link`,
+`Device.open`), its name, its offer and QR code, and closing it. Everything else is an op.
+
+### Answers
+
+- **Done:** `{"ok": value}`, the value each op names below.
+- **Refused:** `{"refused": "<Name>", "why": "<words>"}`. The name is a `policy::Refusal` by its Rust name, or the
+  engine's own `BadOp` (the JSON says nothing the engine does, or a field the op doesn't take), `NoSchema` or
+  `NoEntry`. A batch's refusal adds `at` and `done`. A refusal is an answer, never an error: a call fails only where no
+  answer comes, as when a ceremony is cancelled, the store or the network fails, or a file's bytes end early.
+- **Approve:** `{"approve": {"challenge", "signers", "draft"}}`, for a change the vault's owners approve, run with no
+  ceremony at hand. Nothing is made.
+
+**Approval.** A change is first tried for the device alone. Where the rules refuse it for want of approval
+(BelowThreshold, NoConsent or NotRoot), it is drafted for the person's passkey (`engine::passkey_of`: the vault's
+root, or else a passkey among its owners, never the master recovery key), with any newcomer that signs too, such as
+the master recovery key by its standing consent (`engine::prepare`). With a ceremony at hand, the passkey signs the
+`challenge` and the device keeps the edits (`engine::approve`). Without one, the answer hands out `challenge` (the 32
+bytes the passkey signs: the edit's id, or the batch challenge of edits drafted together), `signers` (the passkey
+first) and `draft` (the drafted edits on the wire, each behind its length in four bytes little-endian, in base64url
+without padding). `share`, `revoke`, `settings` and `found` may answer `approve`; no other op does.
+
+### Reads and asks
+
+| Op | Fields | Answer |
+|---|---|---|
+| `query` | `vault`, `where`, `schema`, `select`, `order`, `limit`, `offset` | The entries the `where` holds of, picked by its labels' selector first, a page at a time |
+| `get` | `entry`, `schema`, `line`, `at` | One entry on a line, or at a version |
+| `history` | `entry`, `limit` | An entry's lines and every write of it, each with the changes it made |
+| `schemas` | `vault` | The schemas and lenses the vault's entries are read through |
+| `groups` | none | The built-in groups of ops, each with its level |
+| `world` | none | The device's world (below), or `null` while it belongs to no vault |
+| `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |
+| `note` | `entry` | A note's page: its lines, proposals, variants and history |
+| `log` | none | Every signed edit the device holds, in words |
+| `read_file` | `root`, `size`, `from`, `to` | `{root, from, to, len}` and the bytes beside; `NoCap` for a file the device doesn't open |
+| `creatable` | `vault`, `type`, `tags`, `as` | The tags a new entry needs to land where vault `as` may create it, or `NoCap` |
+| `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
+| `may` | `ops`, `as` | For each change op: `true`, `{"approve": {signers}}`, or the refusal |
+| `shares` | `over`, `as` | Every share over a vault, owners and devices among them, each with `may` of its revocation |
+
+`may` and `shares` are asks: they run dry on the Lab, as their answers are dry runs, so a node runs them on a dry Lab
+(`Node::dry`), never on a read-only view. A `shares` row says its kind (`owner`, `device`, `grant` or `keep`), its
+who, its level in words (`owner` to `relay`, `keepWhole`, `keepOpened`, `keepNever`, or `actsFor` for a device), its
+group, what it reaches (`"everything"`, or its `where` where the device reads the slice), its issuer and parent, and
+`revoke`, the `may` of the revocation that ends it: for a keep share, acting as its issuer.
+
+**The world.** `world` is what the page draws everything from (`crates/avendb/src/world.rs`): every vault the device
+knows, with its kind, owners, devices, threshold and root, and as which vault the person acts in it (`acting`); every
+share in force, with its group, whether it is on the whole vault, whether its grantee reads (`reads`) and receives
+(`gets`) what it reaches, and who may revoke it; every audience with the devices that sync it; every entry with its
+type, tags, readers, writers and sharers, and the files its writes bring, each with how many pieces it is in and
+where it is synced to, whole (`syncedTo`) or in some pieces (`partly`); whether the person's vault owns avenCEO
+(`ownsAven`) and whether avenCEO backs it up (`backsUp`). Its JSON keeps older key names: the shares are `caps`, the
+audiences `cells`, a share's who and level `grantee` and `role`, an entry's audience and levels `cell` and `roles`, and
+an audience's epoch `generation`.
+
+### Changes
+
+**Entries.** `create {vault, type, tags, schema, value, as}`; the record ops `set`, `unset`, `insert`, `remove`,
+`move` `{entry, line, schema, path, value, at, to, as}`; `tag {entry, add, remove, as}`; `propose`, `merge`,
+`restore`, `undo`, `variant`; and `batch {ops, as}`, whose record ops in a row on one entry's line make one write. A
+schema or a lens is created as an entry of its type (section 9).
+
+**Vaults.** Each runs alone, never in a batch, and `may` covers each:
+
+| Op | What it makes | Approval |
+|---|---|---|
+| `share {over, who, level, what, as}` | `who` is `{"vault": id}`, `"everyone"`, `{"signer": id}` or `{"device": id}`; `level` a built-in group's name, a group of its own `{name, ops}`, a keep level, or `"actsFor"`; `what` is `"everything"` or a `where` of labels. Owner on everything to a vault or a signer adds a co-owner (`Sharing::Owner`), `actsFor` a device (`Sharing::Device`), a keep level a keep share, anything else a grant (`Sharing::Grant`) resting on the acting vault's owner share where it isn't the vault itself. `{"edit"}` or `{"share"}` | Owners, devices, Owner grants |
+| `keep {over, mode, what, device, as}` | A keep share to one of the acting vault's devices, this one unless named; `mode` is `"whole"`, `"opened"` or `"never"`. `{"share"}` | Never |
+| `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}` | Owner shares, owners, devices; not a device leaving |
+| `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
+| `found {vaults: [{kind, name}]}` or `{kind, name}` | New aven or coop vaults the person's vault founds and owns, in one ceremony; then avenCEO's share and a profile on each. `{"vaults"}` | Always |
+| `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}` | Never |
+| `back_up {on}` | avenCEO's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
+| `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
+| `card {name}`, `profile {vault, name}` | The device's card in its person's vault; a vault's profile. `{"wrote"}` | Never |
+| `follow {vault, on}` | The vaults the device follows (section 12), kept in its shelf's meta. `{"follow"}` | Never |
+
+**Who may.** `share` and `revoke` through a share need the `share` op in the chain the acting vault holds. `put_file`
+and a schema's creation are creations, under the `create` and `set` ops. `read_file` needs read reach (T27). `mark`,
+`settings`, `found`, `keep`, `back_up`, `card` and `profile` are only for devices acting for the vault itself, never
+through a share. `follow` needs nothing: any device follows any vault.
+
+### Paths, queries and two laws
 
 A path names a place in a record: `["title"]`, `["blocks", {"id": 2}, "text"]`. A query's `where` mixes labels
 (type, author, entry, created, tag) with tests on values. Its labels compile to the very selector a share holds, so a
-device picks entries by labels before it opens any (O3). Every answer is `{"ok": ...}`, or
-`{"refused": name, "why": "..."}` with the rule's name.
-
-One engine runs on every device. The browser's device answers `Device::run(op)` (`crates/avendb-browser`); the
-desktop app's native device answers the same JSON on its `run` call (`crates/avendb-device`). The page writes ops
-through `src/lib/avendb/ops.js`. Sharing, settings and files go through one `run(op)` too; that part of the API is
-still being settled.
-
-Two laws tie changes to what they did, proved in `spec/AvenDB/Ops.lean`: a diff explains any two records (O1), and an
-op changes only what it names (O2).
+device picks entries by labels before it opens any (O3). Two laws tie changes to what they did, proved in
+`spec/AvenDB/Ops.lean`: a diff explains any two records (O1), and an op changes only what it names (O2). The ops
+engine's cases are pinned by `spec/vectors/ops.json`.
 
 ### A share is a named group of ops
 
@@ -482,7 +612,7 @@ On      = "main" | "proposals"
 ```
 
 The level is the class of the strongest op (`rules::level_of`): relay, backup, read, write (any op that writes) or
-owner (`share`). The built-in groups (`rules::groups`):
+owner (`share`). A keep share has no ops. The built-in groups (`rules::groups`):
 
 | Group | Ops | Level |
 |---|---|---|
@@ -506,7 +636,8 @@ Anyone may name a group of their own. "Bob may set the status of the todos tagge
 it relies on, and the ops and salt of each share of its chain. Readers check them against each share's commitment and
 level. They read the write's **touches** off its Loro ops, imported on the version it builds on
 (`doc::Item::footprint`): each place set, row added, removed or moved, the creation, a proposal started, a merge, a
-tag asked. A chain allows a write when every share of it allows every touch.
+tag asked. A chain allows a write when every share of it allows every touch. A device refuses to make a write its
+chain doesn't allow (NotAllowed), as its readers wouldn't count it.
 
 - **C1** chains narrow: a chain allows nothing one of its shares forbids.
 - **C2** readers agree: whether a write counts reads no selector, type or tag.
@@ -519,28 +650,36 @@ Every reader judges each write by the schemas its entry was written under, once 
 (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`). Each place it changed holds a value a schema allows there, and each
 row it added or changed reads under one of them. A write is judged by what it changed alone (S1), so a record that fits
 stays so (S2). One that doesn't fit counts for no reader, nor anything built on it (S3). Relays can't tell, and don't
-judge (S4).
+judge (S4). A device refuses to make a write that wouldn't fit (NotAView).
 
 ## 9. Schemas and lenses
 
 **Schemas** are JSON Schemas, each named by its hash. A **lens** says how a record of one schema version reads as
 another, both ways (`crates/avendb/src/lens.rs`, `spec/AvenDB/Lens.lean`). No record is ever migrated: each field stays
 in the version it was written in, each app reads through the lens into its own version, and its edits go back as only
-what changed (T9). So an old app and a new one edit the same todo side by side, and defaults live in the lens.
+what changed (T9). So an old app and a new one edit the same todo side by side, and defaults live in the lens. Documents
+and todos ship with every app, two versions each, with a lens between them.
 
-**Schemas and lenses are entries.** A vault's schema or lens is an entry of the built-in type `schema` or `lens`,
-whose creation holds the schema or lens itself. Every vault shares them with Everyone, through a Viewer share of its
-own that picks those two types, made just before its first schema or lens entry. So whoever reads anything of a vault
-can read the schemas it was written under.
+**Schemas and lenses are entries.** A vault's schema or lens is an entry of the built-in type `schema` or `lens`
+(`slice::SCHEMA_TYPE`, `LENS_TYPE`), whose creation holds the schema's or lens's JSON alone, as its content, with no
+tags. It is made with the `create` op, `{"op": "create", "vault", "type": "schema" | "lens", "value": "<the JSON, as
+text>"}`, which answers `{"entry", "blob"}`, the blob being the hash of those bytes (`Lab::add_schema`). JSON that
+isn't a schema or a lens of the type named is BadOp.
 
-**The lane** is what readers read off those entries (`laneOf` in `State.lean`): for each schema or lens entry of V
-that V created itself, through the owners its creation names, and that its readers count, the blob of its creation,
-in creation order. One created by anyone else through a share adds nothing. A later write to such an entry is ignored.
-No peer checks the lane, and the server knows none (T17, T25).
+**Shared with Everyone.** Every vault shares its schemas and lenses with Everyone, so that whoever reads anything of
+it can read the schemas it was written under. Its first schema or lens entry made acting for the vault itself makes
+the share first: a Read share to Everyone, over the vault, named "Schemas and lenses", not wide, whose selector picks
+the two types (`Selector::lane`). It is made then, never at genesis.
+
+**The lane** is what readers read off those entries (`laneOf` in `State.lean`, `State::lane_of`): for each schema or
+lens entry of V that V created itself, through the owners its creation names, and that its readers count, the blob of
+its creation, in creation order, each blob once. A creation whose content doesn't parse as its type is accepted and
+adds nothing. One created by anyone else through a share adds nothing. A later write to such an entry is ignored. No
+peer checks the lane, and the server knows none (T17, T25).
 
 A write counts once its reader holds its schema: the lane only grows, so a verdict changes at most once, from not
 counted to counted. Readers agree on the lane because every reader of V syncs V's schema entries: a keep share always
-picks them (section 5).
+picks them (section 5), and the Everyone share sends them to every device with an interest in V or that follows it.
 
 ## 10. Post-quantum only
 
@@ -572,27 +711,46 @@ WebAuthn with the PRF extension (`crates/avendb-browser/js/passkey.js`). A devic
 ceremony brings back: an assertion over a challenge, and PRF outputs on avenDB's salts.
 
 - **One passkey for maiaCITY and avenDB.** Both use the relying party `maia.city`, so the passkey a person signed up
-  with can be their vault's root. Sign-up asks for PRF and P-256 first.
+  with can be their vault's root. Sign-up asks for PRF, and for a P-256 key first, as avenDB's ceremonies take P-256
+  signatures alone (`src/lib/auth/client.ts`). A passkey without PRF still signs the person in to maiaCITY; avenDB then
+  offers to make one of its own, and refuses one it made without PRF.
 - **User verification in every ceremony.** Without it an authenticator's PRF answers with another secret. Every
-  assertion must show it (`sign::Assertion`).
+  ceremony requires it, and every assertion must show it (`sign::Assertion` checks the UP and UV flags).
 - **Salts of its own.** The passkey's keys derive from the output on avenDB's salt (`sign::PRF_SALT`). Each device's
-  own secret is kept masked by the output on its own salt, which ends in 32 random bytes the device keeps. So a device
-  unlocks only with its person's passkey, and a stolen, locked device opens nothing.
+  own secret is kept masked by the output on its own salt, which ends in 32 random bytes the device keeps
+  (`sign::device_salt`). The browser hashes each salt under the label "WebAuthn PRF" first, so no other use of the
+  credential gets these outputs. Each key derives under a label of its own. So a device unlocks only with its
+  person's passkey, and a stolen, locked device opens nothing.
 - **Bound to the passkey.** A ceremony counts only if its assertion verifies under the passkey's P-256 key and the
-  SLH-DSA key derived from its PRF output is the one the vault knows (`sign::Ceremony`).
-- **One prompt for many edits.** Edits drafted together are signed in one ceremony over their batch
-  (`sign::batch_challenge`). A first browser founds its vault, adds itself and claims a new server in one prompt after
-  the unlock.
+  SLH-DSA key derived from its PRF output is the one the vault knows (`sign::Ceremony`). So maiaCITY's API, which sees
+  its own sign-ins' assertions and never a PRF output, can't sign for a vault.
+- **One prompt for many edits.** Edits drafted together are signed in one ceremony over their batch: its challenge is
+  the hash of their ids, smallest first (`sign::batch_challenge`), and the SLH-DSA half still signs each edit's own id.
+  A first browser founds its vault, adds itself and claims a new server in one prompt after the unlock. New vaults its
+  vault owns come in one more (`found`).
 - **The pass.** The ceremony that unlocks a new device is its passkey's pass for it (`sign::RelayPass`): an assertion
   and an SLH-DSA signature over the device's keys and the time, good for ten minutes. It lets the device onto the
-  server's relay and proves it to the peer it links through.
-- **In the desktop app.** macOS lets an app's web view use maia.city's passkeys only with an entitlement, so each
-  ceremony runs in a sign-in sheet that seals what it brings back to a one-time X-Wing key of the app's
-  (`keys::seal_once`).
+  server's relay and proves it to the peer it links through. A device that never saw its passkey made learns its
+  P-256 key from the next ceremony: it drafts for each key the unlock's assertion recovers to, and keeps the drafts of
+  the one that ceremony verifies under (`Lab::drafting_for`).
+- **Held briefly.** The device copies each PRF output into memory that wipes itself, and wipes the buffer it came in.
+  None is ever sent open, logged or shown.
+- **In the desktop app.** macOS lets an app's web view use maia.city's passkeys only with an Apple-signed entitlement,
+  so each ceremony runs in a sign-in sheet: the device makes a one-time X-Wing key, names it in the URL of maia.city's
+  sheet page (`/app/avendb/sheet/`), and the sheet page runs the ceremony and seals what it brings back to that key at
+  once (`keys::seal_once`). The device opens it (`keys::open_once`). Nothing crosses the app open. The sheet's answer
+  goes to whichever app opened it, so the person's prompt is the only gate there, and the sheet says to confirm only
+  what they just asked for.
 
-**A device's secure boundary.** Nothing on disk, in a view or in a log holds a secret. Every key wipes itself as it is
-dropped. A locked device holds no key and nothing a key opened. Its randomness can't be rewound or foreseen from a copy
-of its memory.
+Every page on `maia.city` can ask the person's authenticator for a ceremony of that relying party, so the site's own
+scripts are part of what guards the root, as for any passkey. Each ceremony shows the person a prompt.
+
+**A device's secure boundary.** Nothing on disk, in a view, in a log line or in a debug print holds a secret: a node's
+store holds signed edits and McEliece public keys, and a key prints as its id. The server's device secret is the one
+exception, sealed in its bucket, or in its folder where it keeps no bucket. Every key wipes itself as it is dropped. A
+locked device holds no key, nothing a key opened, and no McEliece secret half. Its randomness keeps one key that every
+draw replaces with a hash of it, and an unlock reseeds it from the device's own key, so a copy of its memory can't
+rewind or foresee what it draws.
 
 ## 12. Sync over iroh
 
@@ -604,8 +762,8 @@ direct where they can and through avenDB's own relay where they must.
 
 One `Router` hands each connection to a protocol by its ALPN, as iroh intends:
 
-- `avendb/sync/1`, avenDB's one protocol of its own (`session.rs`): hellos, requests, replies and holdings. It
-  decides what moves.
+- `avendb/sync/1` (`ALPN`), avenDB's one protocol of its own (`session.rs`): hellos, requests, replies and holdings.
+  It decides what moves.
 - `/iroh-bytes/4`, iroh-blobs: McEliece keys and file pieces, verified against their BLAKE3 hash as they arrive. It
   carries the bytes.
 
@@ -642,9 +800,10 @@ on the same stream. Every value has exactly one encoding, fuzzed and checked aga
 ### Frontiers per log
 
 When a device asks, it names of each log its frontier, the edits 1, 2, 4, 8, … steps back from it, and the oldest
-(`sync::Ask`). It lists its loose edits. The peer sends what it would send whole, less those loose edits and whatever
-lies at or below an edit the device named (`respondSince`). A peer that is behind sends exactly what the device lacks.
-Nothing the device lacks is withheld (T19). Replies come a page at a time, about 4 MiB, each edit after its past.
+(`sync::Ask`). It lists its loose edits, and the vaults it follows. The peer sends what it would send whole, less those
+loose edits and whatever lies at or below an edit the device named (`respondSince`). A peer that is behind sends
+exactly what the device lacks. Nothing the device lacks is withheld (T19). Replies come a page at a time, about 4 MiB
+(`Options::page`), each edit after its past.
 
 ### What a peer sends
 
@@ -652,7 +811,7 @@ A peer sends a device, by its own view (`sync::answer`, `respond` in `spec/AvenD
 
 - the logs of the entries the device may receive and its keep shares want (T12, T28). It may receive an entry if it
   acts for the entry's vault, or for the grantee of a live share at Backup or more that is wide or in the entry's
-  audience, or an Everyone share reaches it and it has an interest;
+  audience, or an Everyone share reaches the entry and it has an interest in the vault or follows it;
 - the logs of the audiences and shares needed to check those;
 - the logs of the vaults all that names, up their chains of owners.
 
@@ -660,9 +819,13 @@ Nothing else. A relay share gives the vault log alone, so the server learns the 
 the entries (T26).
 
 **Interest and follow.** What a vault shares with Everyone goes only to a device with an interest in the vault: one
-that acts for it, or for a vault holding a live share over it, at any level. A device may also name vaults in its
-request's `follow` list. Following brings nothing that isn't public, and a device that acts for no vault and follows
-none is sent nothing at all (T12). So nobody who connects learns a vault's governance log unless they know its id.
+that acts for it, or for a vault holding a live share over it, at any level (`interested` in `Sync.lean`,
+`sync::Reach`). A device may also name vaults in its request's `follow` list (`Ask::follow`, a sorted set). Following
+brings nothing that isn't public, and a device that acts for no vault and follows none is sent nothing at all (T12). So
+a device learns nothing of a vault it has no interest in and doesn't follow, not even its governance log. A device
+sets its list with the `follow` op; a browser or the desktop app keeps it in its shelf's meta (`Meta::follow`), so it
+survives a restart, and a change asks every peer again at once. The blob gate reads the follow list of the last
+request on the asker's sync connection, so a follower fetches the public files of what it follows.
 
 ### Holdings
 
@@ -679,22 +842,26 @@ Announce { full: bool, logs: [(LogId, Frontier { heads, waiting })], files: [(Fi
 - **Full, then changes.** The first announcement on a new connection is full. After that only logs whose frontier
   changed, files whose holding changed, and `None` for a file no longer held. If nothing changed, nothing goes.
 - **Only from the device itself.** A node records holdings of device D only from a connection whose hello proved D.
-  An announcement names no device, so a device speaks only for itself, and nobody passes anyone's holdings on.
-- **Asking.** A node that hears of a head it lacks asks for those logs alone (Ask logs). A log nobody changed is never
-  named again.
-- **Synced to.** Each entry and file shows the devices that hold it: this device by its own shelf, and others only by
-  what they said on their own proven connection, and only if they may hold it. "Backed up" is synced to the server.
-- **Routing, never permission.** Holdings choose which peers to ask and fetch from. The blob gate still hands out a
-  file by T27 alone.
+  An announcement names no device, so a device speaks only for itself, and nobody passes anyone's holdings on. A record
+  that claims more than 2^18 logs or files is dropped (`MOST`).
+- **Asking.** A node that hears of a head it lacks, in a log the claimant may hold by the node's view, asks for those
+  logs alone (Ask logs), naming of them only what it may name to that peer. A claim to any other log the node holds
+  steers nothing. A log the node holds nothing of is still asked for, naming nothing.
+- **Synced to.** Each entry and file shows the devices that hold it (`Node::synced_to`): this device by its own shelf,
+  and others only by what they said on their own proven connection, and only if they may hold it by the node's view.
+  A device is synced to an entry when its stated frontier covers every edit of the entry's log the node holds, and to
+  a file when it holds it whole; it is listed `partly` with the pieces it holds. "Backed up" is synced to the server.
+- **Routing, never permission.** Holdings choose which logs to ask for and which peers to fetch from first. The blob
+  gate still hands out a file by T27 alone.
 
-The Lean statements for holdings belong in `Logs.lean` and `SyncLemmas.lean`. The Rust tests that guard them are in
-`crates/avendb-net/tests/holdings.rs` and `bucket.rs`.
+The model defines these in `Logs.lean` (`Holdings`, `Node.record`, `Node.syncedTo`, `Node.hands`), states them in
+`Theorems.lean` and proves them in `SyncLemmas.lean` (section 15, H1 and T27).
 
 ### Blobs
 
 - **One pool.** A node fetches every blob over one iroh-blobs `ConnectionPool` (`blobs.rs`). The McEliece keys a reply
-  names come in one GetMany request. File pieces come from peers whose holdings hold them first, then other connected
-  peers, then peers it would have to dial.
+  names come in one GetMany request, one at a time if the peer refuses one of them. File pieces come from peers whose
+  holdings hold them first, then other connected peers, then holders it would have to dial.
 - **The gate (T27).** A blob connection is let in only while the same endpoint has a live sync connection whose hello
   proved its device. Each request names one blob, never a HashSeq with its children. The gate hands out a McEliece key
   the device may fetch, or a file's root or piece only if the device may receive a write that brings the file. Push is
@@ -707,12 +874,19 @@ those of the vaults it relays or backs up, of avenCEO's owners, and itself. A de
 its passkey's pass for ten minutes. While sign-up is open, or the server is unclaimed, any passkey's pass does. It
 forwards only encrypted QUIC.
 
-A new device links by its passkey alone, through another device's QR code (an offer, `AVENDB1…`) or the server's
-offer. After the hellos it shows its pass. The peer hands back the link card: the logs of the vaults the passkey owns,
-up the chains, and nothing of a share, an audience or an entry (T20). The new device adds itself to the vault whose
-root is the passkey (a Device share signed by the passkey and itself), and the peer takes that edit only for the
-device on the connection. With every other device lost, the server's offer brings the vault back. The Verifpal model
-`link.vp` covers this.
+A new device links by its passkey alone:
+
+1. A device that holds the vault shows its offer as a QR code (`Node::offer`, text `AVENDB1…`): its device, its
+   endpoint and where to reach it. The app knows the server's offer too.
+2. The new device connects, both say their hellos, and it shows its passkey's pass for itself (Link).
+3. The peer checks the pass is for the device whose hello proved it on this connection, and hands back the link card
+   of each passkey the pass may be from: the logs of the vaults the passkey owns, up the chains, and nothing of a
+   share, an audience or an entry (T20, `Lab::link_card`).
+4. The new device adds itself to the vault whose root is the passkey, a Device share signed by the passkey and by
+   itself, from the same ceremony as its pass (Join). The peer takes that edit only for the device on the connection
+   (`Lab::accept_join`). Then they sync.
+
+With every other device lost, the server's offer brings the vault back. The Verifpal model `link.vp` covers this.
 
 **Not gossip.** Announcements go straight to one proven device. A gossip topic would tell every member of a log, its
 members learn each other's addresses, and its 4 KiB messages can't carry one SLH-DSA signature.
@@ -720,7 +894,8 @@ members learn each other's addresses, and its 4 KiB messages can't carry one SLH
 ## 13. Files
 
 A file enters avenDB with a write of the entry it belongs to. A file in a vault's Library is an entry of type `file`,
-a document named after the file, whose first write brings it. Shares, sync and deletion work on it as on a note.
+a document named after the file, whose first write brings it (the `put_file` op). Shares, sync and deletion work on it
+as on a note.
 
 **Sealed blob, version 1** (`crates/avendb/src/sealed.rs`, its bytes pinned by vectors):
 
@@ -741,13 +916,15 @@ fetches and opens, Backup fetches the ciphertext, Relay fetches nothing.
 
 **Bringing, reading, keeping** (`crates/avendb-net/src/files.rs`):
 
-- `Node::store_file` seals a file as it reads it and streams each piece onto the shelf. A file of any size passes
-  through a few segments of memory.
-- `Node::read_file` reads any range: the segments that hold it, from its own shelf, or fetched from a peer, 4 MiB at a
-  time, verified and opened. Pieces read but not kept stay in memory windows, 64 MiB at most, oldest out first.
-- The keeper fetches whole the files a device keeps: where a Whole keep share picks the entry, or by the device's own
-  setting where it has no keep share over the vault. It retries with backoff until each piece is finished on the
-  shelf, and drops nothing it kept.
+- `put_file` checks the entry it would create before it reads a byte. `Node::store_file` seals the file as it reads
+  it and streams each piece onto the shelf, so a file of any size passes through a few segments of memory; then the
+  entry and the write that brings it are made.
+- `read_file` (`Node::read_file`) reads any range: the segments that hold it, from its own shelf, or fetched from a
+  peer, 4 MiB at a time, verified and opened. Pieces read but not kept stay in memory windows, 64 MiB at most, oldest
+  out first.
+- The keeper fetches whole the files a device keeps (`Lab::kept_files`): where a Whole keep share picks the entry, or
+  by the device's own setting where it has no Whole or Opened keep share over the vault. Entries a Never share picks
+  aren't synced at all. It retries with backoff until each piece is finished on the shelf, and drops nothing it kept.
 
 **Playing.** In a browser, a film or a song streams through a service worker (`static/app/avendb-files.sw.js`) that
 asks the page for byte ranges. Pictures and PDFs open whole. An SVG opens as an image, never as a page of the site.
@@ -786,7 +963,7 @@ A browser tab's worker holds the store's lock, so one device never runs in two t
   blobs/<hash>     edit packs, McEliece keys, HashSeqs and file pieces, each named by its BLAKE3 hash
   outboards/<hash> each blob's outboard, written last: a blob counts once its outboard is there
   new/             blobs and objects being written
-  meta/...         what opens the device again (browser, desktop); device.key on the server
+  meta/<n>         what opens the device again, follow list included (browser, desktop); device.key on the server
 ```
 
 - **Edits** (`crates/avendb-net/src/edits.rs`). A save appends a journal entry. Every 64 entries, a pack blob takes
@@ -798,7 +975,7 @@ A browser tab's worker holds the store's lock, so one device never runs in two t
   so packs keep "everything is a blob" true and cheap.
 - **Generations.** A place keeps its shelves side by side: `g1`, `g2` and on. The newest is in use. Forgetting an
   account, or starting fresh, makes a new generation beside the old one, which is never read again and never deleted.
-  Whatever else the folder or bucket holds, such as an older avenDB's store, stays as it is.
+  Whatever else the folder or bucket holds, such as an older avenDB's store, stays as it is, never read.
 
 ### The server's bucket
 
@@ -816,6 +993,9 @@ A browser tab's worker holds the store's lock, so one device never runs in two t
 - **Locked.** The bucket keeps every object version for 7 days in compliance mode (Object Lock), so not even a
   compromised server wipes the backup.
 
+A server with no bucket runs on a folder shelf, laid out the same. A node with no shelf at all keeps its blobs in
+memory and nothing past its end; only tests run one.
+
 ## 15. The Lean model: what guards what
 
 The model is Lean 4 with no Mathlib (`spec/`). `lake build` checks every proof, every scenario (`#guard` in
@@ -828,78 +1008,94 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 | `Basic.lean` | Ids, levels and keep modes, Who, selectors, headers, audiences, key families and names |
 | `State.lean` | What a peer knows: vaults, acting via owners, shares, entries, stays, wants and keeps, the lane |
 | `Step.lean` | The eight kinds and the rules that take or refuse each; the replay order; strong removal (`view`) |
-| `Sync.lean`, `Logs.lean` | What a peer sends a device, interest and follow, files; logs, frontiers, asks |
+| `Sync.lean` | What a peer sends a device, interest and follow, the files it may fetch, the link card |
+| `Logs.lean` | Logs, frontiers, asks, forks; holdings, announcements, connections, Synced to and the blob gate |
 | `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups and touches; records, diffs and queries; schema fit |
-| `Theorems.lean` | Every theorem's statement; the proofs live in the `*Lemmas.lean` files |
-| `Vectors.lean` | The cases the Rust core replays |
+| `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge and promote (T10a to T10e); lines of history (T10f to T10h) |
+| `Theorems.lean` | Every other theorem's statement; the proofs live in the `*Lemmas.lean` files and `Schemas.lean` |
+| `Examples.lean`, `Vectors.lean` | The scenarios, checked on every build; the cases the Rust core replays |
 
-| # | Guarantee | Proved in |
+Each guarantee and the theorems that state it, in `Theorems.lean` unless the row names another file:
+
+| # | Guarantee | Theorems |
 |---|---|---|
-| T1 | Only authorized writes are accepted, and revocation wins over what it hadn't seen | `Lemmas.lean` |
-| T2 | Governance needs approval and consent; devices never govern | `Lemmas.lean` |
-| T3 | No ownership cycles | `Lemmas.lean` |
-| T4 | Shares name a vault or Everyone; a device only in a keep share of its issuer's device | `Lemmas.lean` |
-| T5 | A key opens only for whoever could read its family | `KeyLemmas.lean` |
-| T6 | Forward secrecy: current keys open only for those entitled now | `KeyLemmas.lean` |
-| T7 | Blind server: no key of a vault whose seed it never held, unless public | `KeyLemmas.lean` |
-| T8 | Everyone only reads | `Lemmas.lean` |
-| T9 | Lens laws: round trips, edits through a view keep what it can't see | `Lens.lean` |
-| T10 | Merge is the union of histories; promote gives the proposal; lines don't touch | `Doc.lean`, `Proposals.lean` |
-| T11 | Same edits in any order, same state | `SyncLemmas.lean` |
-| T12 | Sync sends what shares reach; Everyone only to interest or follow; strangers get nothing | `SyncLemmas.lean` |
-| T13 | Two devices that asked each other once converge | `SyncLemmas.lean` |
-| T14 | Accepted writes are causally closed | `Lemmas.lean` |
-| T15 | Rotation follows revocation | `KeyLemmas.lean` |
-| T16 | Strong removal: what a removal hadn't seen and relied on is cut | `CapLemmas.lean` |
-| T17 | The lane holds only the vault's own schema and lens creations | `Lemmas.lean` |
-| T18 | Once the curves fall, only checkpointed writes count | `CapLemmas.lean` |
-| T19 | Frontier sync loses nothing; one frontier per log tells whether to ask | `SyncLemmas.lean` |
-| T20 | Linking hands out vault logs alone | `SyncLemmas.lean` |
-| T21 | Vaults keep to their kind | `Lemmas.lean` |
-| T22 | A share grants no more than what it rests on; no wide owner share | `CapLemmas.lean` |
-| T23 | Marks mean what the shares say: audiences and wants, from `mark_means` | `CapLemmas.lean` |
-| T24 | An entry's key reaches only its audience's readers | `KeyLemmas.lean` |
-| T25 | Blind relays decide every edit as an owner does | `RelayLemmas.lean` |
-| T26 | A relay share receives none of the entries | `SyncLemmas.lean` |
-| T27 | Files follow their edits | `SyncLemmas.lean` |
-| T28 | Sync follows the keep shares, and their modes | `SyncLemmas.lean` |
-| K1 | A keep share's revocation cuts nothing | `CapLemmas.lean` |
-| O1 to O3 | Diffs explain records; ops change what they name; queries pick by labels | `Ops.lean` |
-| C1 to C4 | Chains narrow; readers agree; counted writes do what they may; allowed writes count | `RuleLemmas.lean` |
-| S1 to S4 | Writes judged by what they changed; fit stays; unfit counts for none; relays don't judge | `Schemas.lean` |
+| T1 | Only authorized writes are accepted, and revocation wins over what it hadn't seen | `T1_authorized_writes`, `T1_created_entries`, `T1_revocation_wins` |
+| T2 | Governance needs approval and consent; devices never govern | `T2_governance`, `T2_consent`, `device_cannot_govern`, `devices_cannot_govern` |
+| T3 | No ownership cycles | `T3_no_cycles` |
+| T4 | Shares name a vault or Everyone; a device only in a keep share of its issuer's device | `T4_shares_name_vaults` |
+| T5 | A key opens only for whoever could read its family | `T5_confidentiality` |
+| T6 | Forward secrecy: current keys open only for those entitled now | `T6_forward_secrecy` |
+| T7 | Blind server: no key of a vault whose seed it never held, unless public | `T7_blind_server` |
+| T8 | Everyone only reads | `T8_everyone_read_only` |
+| T9 | Lens laws: round trips, edits through a view keep what it can't see | `T9_*` in `Lens.lean` |
+| T10 | Merge is the union of histories; promote gives the proposal; lines don't touch | `T10_*` in `Doc.lean` and `Proposals.lean`, with `writes_ordered` |
+| T11 | Same edits in any order, same state | `T11_convergence`, `T11_same_standing` |
+| T12 | Sync sends what shares reach; Everyone only to interest or follow; strangers get nothing | `T12_sync_sends_only_what_shares_reach`, `T12_interest`, `T12_stranger_gets_nothing`, `T12_since` |
+| T13 | Two devices that asked each other once converge | `T13_sync_converges` |
+| T14 | Accepted writes are causally closed | `T14_causally_closed`, `T14_entries_whole` |
+| T15 | Rotation follows revocation | `T15_rotation_follows_revocation`, `T15_no_older_epoch` |
+| T16 | Strong removal: what a removal hadn't seen and relied on is cut | `T16_strong_removal`, `T16_resolved_removals_stand` |
+| T17 | The lane holds only the vault's own schema and lens creations | `T17_lane_from_creations`, `T17_writes_ignored` |
+| T18 | Once the curves fall, only checkpointed writes count | `T18_checkpointed_writes` |
+| T19 | Frontier sync loses nothing; one frontier per log tells whether to ask | `T19_frontier_sync`, `T19_frontiers_alone`, `T19_same_frontier` |
+| T20 | Linking hands out vault logs alone | `T20_link_shares_only_vault_logs`, `T20_stranger_gets_nothing` |
+| T21 | Vaults keep to their kind | `T21_vault_kinds` |
+| T22 | A share grants no more than what it rests on; no wide owner share | `T22_slices_narrow`, `T22_wide_shares` |
+| T23 | Marks mean what the shares say: audiences and wants, from `mark_means` | `T23_marks_mean_shares`, `T23_creations` |
+| T24 | An entry's key reaches only its audience's readers | `T24_entry_keys`, `T24_entry_history` |
+| T25 | Blind relays decide every edit as an owner does | `T25_blind_relays` |
+| T26 | A relay share receives none of the entries | `T26_relay_keeps_nothing` |
+| T27 | Files follow their edits; holdings never authorize, and name only files the peer may fetch | `T27_files_follow_their_edits`, `T27_holdings_never_authorize`, `T27_gate_reads_no_holdings`, `T27_holdings_name_only_fetchable_files` |
+| T28 | Sync follows the keep shares, and their modes | `T28_sync_follows_keeps`, `T28_keep_modes` |
+| K1 | A keep share's revocation cuts nothing | `K1_keep_revocation_cuts_nothing`, `K1_keep_revocation_hides_nothing` |
+| H1 | Holdings come only from their proving connection, a node passes none on and states only its shelf, and Synced to lists only devices that said so and may hold it | `H1_heard_on_their_connection`, `H1_third_party_ignored`, `H1_passes_nothing_on`, `H1_states_its_shelf`, `H1_synced_to`, `H1_synced_to_held`, `H1_synced_to_file` |
+| O1 | A diff explains any two records | `apply_diff`, `diff_complete`, `diff_sound` in `Ops.lean` |
+| O2 | An op changes only what it names | `diff_within` in `Ops.lean` |
+| O3 | Queries pick by labels first | `cover_sound`, `plan_sound`, `plan_run` in `Ops.lean` |
+| C1 | Chains narrow | `chain_narrows`, `child_narrows` |
+| C2 | Readers agree whether a write counts | `counts_seen`, `creates_seen` |
+| C3 | Counted writes do what they may | `counted_allowed`, `counted_writes`, and `changes_allowed` in `Rules.lean` |
+| C4 | Allowed writes count, and nothing built on an uncounted one does | `allowed_counts`, `allowed_creates`, `uncounted_closed` |
+| S1 | A write is judged by what it changed | `S1_judged_by_changes` |
+| S2 | Records that fit stay so | `S2_clean_stays_clean`, `S2_first_write` |
+| S3 | Writes that don't fit count for no reader | `S3_unfit_uncounted`, `S3_step` |
+| S4 | Relays don't judge records | `S4_fit_unread` |
 
-T29 (marks mean what the sync rules say) is merged into T23. Holdings add two statements: a node records a device's
-holdings only from the connection that proved it, and holdings never let a file past T27.
+T29 (marks mean what the keep rules say) is merged into T23, whose wants part it is.
 
 **Protocol models.** The theorems take signatures and encryption as given. What devices say on the network is modelled
 in Verifpal against an attacker who breaks the curves (`spec/protocol/*.vp`, run by `check.sh`): `seal.vp` (the sealed
 box), `hello.vp` (the hello) and `link.vp` (linking by passkey).
 
 **Assumptions**, each part of the model and none an axiom: signatures can't be forged; sealed data reveals nothing
-without its key; ids don't collide; Loro converges and can revert to any version it holds.
+without its key; ids don't collide; Loro converges and can revert to any version it holds. A hello proves the device
+whose keys sign it on that connection.
 
 ## 16. Where to look
 
 | Path | What it holds |
 |---|---|
 | `crates/avendb/src/policy.rs` | Edits, the eight kinds, shares, refusals, the replay, strong removal, meaning |
-| `crates/avendb/src/sync.rs` | Logs, frontiers, asks, what a peer sends (`answer`, `Reach`) |
+| `crates/avendb/src/sync.rs` | Logs, frontiers, asks, follow lists, what a peer sends (`answer`, `Reach`) |
 | `crates/avendb/src/keys.rs` | Key families, epochs, sealed boxes (X-Wing and McEliece) |
 | `crates/avendb/src/sign.rs` | Hybrid signatures, hellos, passkey ceremonies, standing consent, the pass |
-| `crates/avendb/src/wire.rs`, `encode.rs` | Every message and edit as bytes, one encoding each |
-| `crates/avendb/src/lab.rs` | A device's state and its upkeep: stewards, keys, checkpoints |
-| `crates/avendb/src/engine.rs`, `ops.rs`, `rules.rs` | JSON ops, record ops, op groups and proofs |
+| `crates/avendb/src/wire.rs`, `encode.rs` | Every message and edit as bytes, one encoding each; holdings' `Announce` |
+| `crates/avendb/src/lab.rs` | A device's state and its upkeep: stewards, keys, checkpoints, schema entries, dry runs |
+| `crates/avendb/src/engine.rs`, `engine/vaults.rs` | `run(op)`: every read, ask and change as one JSON op, and approval |
+| `crates/avendb/src/world.rs`, `data.rs`, `words.rs` | The world, a vault's database and its history as JSON; the names of the core's words |
+| `crates/avendb/src/ops.rs`, `rules.rs` | Record ops, queries and diffs; op groups, touches and proofs |
 | `crates/avendb/src/lens.rs`, `doc.rs`, `history.rs` | Schemas and lenses, Loro items, lines of history |
 | `crates/avendb/src/sealed.rs`, `slice.rs` | Sealed blob v1; selectors, headers and write bodies |
 | `crates/avendb/src/recovery.rs` | The master recovery key |
 | `crates/avendb-net/src/lib.rs`, `session.rs` | The node, its router and messages |
+| `crates/avendb-net/src/run.rs` | `Node::run`: an op on a node, with bytes beside it and the passkey's ceremony |
 | `crates/avendb-net/src/holdings.rs`, `blobs.rs` | Holdings, Synced to, the blob pool and gate |
 | `crates/avendb-net/src/shelf.rs`, `edits.rs` | The shelf, and edits on it |
 | `crates/avendb-net/src/disk.rs`, `bucket.rs` | The folder shelf and the bucket shelf |
 | `crates/avendb-net/src/files.rs` | Bringing, reading and keeping files |
 | `crates/avendb-server` | The server's binary and its relay |
-| `crates/avendb-browser` | A device in a web page, as WebAssembly, and its OPFS worker |
-| `crates/avendb-device` | The same device, native beside the desktop app |
+| `crates/avendb-browser` | A device in a web page, as WebAssembly, `PageDevice.run`, and its OPFS worker |
+| `crates/avendb-device` | The same device, native beside the desktop app, and its calls in lines of JSON |
 | `spec/` | The Lean model, vectors and protocol models |
-| `src/lib/avendb/` | The app's avenDB pages |
+| `src/lib/avendb/` | The app's avenDB pages, which run every op through `ops.js` and `native.js` |
 | `src/routes/docs/avendb/` | The public architecture page |

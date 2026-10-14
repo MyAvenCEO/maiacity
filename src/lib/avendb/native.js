@@ -4,7 +4,7 @@
 // on while the app does, whichever page is open. Each ceremony of the person's passkey it asks for runs in the app's
 // sign-in sheet, which the app shows for it: the page sees none of it. `NativeDevice` answers the page as the page's
 // own device does (avendb-browser's `PageDevice`): every read and change one op through `run`, each one of the app's
-// calls (avendb/v8/v2-contract.md, section 1.2).
+// calls (avendb/docs/ARCHITECTURE.md §8).
 
 import { command } from '$lib/native';
 
@@ -98,10 +98,11 @@ export class NativeDevice {
 	}
 
 	/**
-	 * Op `op`, any read or change of the database (avendb/v8/v2-contract.md): its answer, `{ ok }` or `{ refused, why }`;
-	 * the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so `ceremony` goes unused.
-	 * A `put_file` op's bytes come from `read(at, n)`, a megabyte at a time, each in base64 to the app's device, which
-	 * seals them into its store as they come; a `read_file` op's come back as `bytes`, as the page's device hands them.
+	 * Op `op`, any read or change of the database (avendb/docs/ARCHITECTURE.md §8): its answer, `{ ok }` or
+	 * `{ refused, why }`; the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so
+	 * `ceremony` goes unused. A `put_file` op's bytes come from `read(at, n)`, a megabyte at a time, each in base64 to
+	 * the app's device, which seals them into its store as they come; a `read_file` op's come back as `bytes`, as the
+	 * page's device hands them.
 	 * @param {any} op @param {unknown} [ceremony] @param {(at: number, n: number) => Promise<Uint8Array>} [read]
 	 */
 	async run(op, ceremony, read) {

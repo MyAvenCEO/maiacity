@@ -1,4 +1,4 @@
-//! Files over iroh-blobs (blobs B2, `docs/BLOBS.md`): a node keeps one blob store, over its shelf (`shelf`), or else
+//! Files over iroh-blobs (`docs/ARCHITECTURE.md` §13): a node keeps one blob store, over its shelf (`shelf`), or else
 //! in memory, and a file is its sealed pieces there, each a blob, with the
 //! HashSeq of their hashes when there are several. A node brings a file by sealing it as it reads it, a piece at a
 //! time, under a key of its own (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its

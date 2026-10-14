@@ -1,4 +1,4 @@
-//! One API (V2, `Node::run`, `avendb/v8/v2-contract.md`): a node runs every op of the engine as JSON, a read on what
+//! One API (`Node::run`, `docs/ARCHITECTURE.md` §8): a node runs every op of the engine as JSON, a read on what
 //! its device holds, `may` and `shares` dry, a change made and its peers told; one its vault's owners approve it has
 //! the passkey sign in a ceremony, or else answers `approve` and makes nothing. It brings a file's bytes in beside a
 //! `put_file`, once the entry it would create is checked, and reads any range of a file back beside a `read_file`; and

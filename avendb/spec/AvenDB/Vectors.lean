@@ -1308,7 +1308,8 @@ def onJson : Option On → List (String × String)
   | some .main => [("on", str "main")]
   | some .proposals => [("on", str "proposals")]
 
-/-- An op as the docs write it (`avendb/docs/OPS.md`): a tag, a number here, by its digits, as the core names it. -/
+/-- An op as the docs write it (`avendb/docs/ARCHITECTURE.md` §8): a tag, a number here, by its digits, as the core
+    names it. -/
 def opJson : Op → String
   | .relay => obj [("op", str "relay")]
   | .backup => obj [("op", str "backup")]

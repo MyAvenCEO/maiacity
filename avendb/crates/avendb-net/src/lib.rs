@@ -45,10 +45,10 @@
 //!   hello proved, and hands a file's root or pieces only to a device that may fetch the file (T27).
 //! - **Keep shares** (blobs B2c, V1c): a node sends a peer's device only the entries it may receive and its keep
 //!   shares want, by the stewards' marks (T28).
-//! - **One API** (V2, `run`): every read and change a device's page, the Mac app and MCP make is one op of avendb's
-//!   engine, JSON in and JSON out (`Node::run`): the node shows where its entries and files are synced to, reads and
-//!   brings a file's bytes beside the op, has the passkey sign in its ceremony what the vault's owners approve, and
-//!   asks its peers again once the vaults its device follows change.
+//! - **One API** (V2, `run`): every read and change of a device's database, from its page, the Mac app or an agent, is
+//!   one op of avendb's engine, JSON in and JSON out (`Node::run`): the node shows where its entries and files are
+//!   synced to, reads and brings a file's bytes beside the op, has the passkey sign in its ceremony what the vault's
+//!   owners approve, and asks its peers again once the vaults its device follows change.
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
 //!   how long it took, for its person to watch while they wait (`Progress`).
 //! - **The server** (P8b, `server`): a node whose device keeps a secret of its own on its shelf, and which hands

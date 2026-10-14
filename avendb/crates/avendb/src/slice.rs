@@ -207,7 +207,7 @@ impl Selector {
     pub fn of_json(v: &Value) -> Result<Selector, String> {
         let w = crate::ops::Where::of_json(v)?;
         if !w.labels_only() {
-            return Err("a cap picks entries by their labels alone: type, author, entry, created and tags".into());
+            return Err("a share picks entries by their labels alone: type, author, entry, created and tags".into());
         }
         let selector = match w.cover() {
             Selector::AnyOf(ds) if ds.iter().any(Vec::is_empty) => Selector::All,
@@ -289,14 +289,14 @@ impl Slice {
 /// out for the whole vault (`Selector::of_json`, `rules::Op::of_json`): its name, its selector and its ops in order
 /// (`rules::normalize`). Fails on anything else, on a name blank or too long and on no op.
 pub fn spec_of_json(v: &Value) -> Result<(String, Selector, Vec<Op>), String> {
-    let o = v.as_object().ok_or("a cap is {name, where, ops}")?;
+    let o = v.as_object().ok_or("a share is {name, where, ops}")?;
     if let Some(k) = o.keys().find(|k| !matches!(k.as_str(), "name" | "where" | "ops")) {
-        return Err(format!("a cap takes no field {k:?}: it is {{name, where, ops}}"));
+        return Err(format!("a share takes no field {k:?}: it is {{name, where, ops}}"));
     }
-    let name = o.get("name").and_then(Value::as_str).ok_or("a cap has a name")?;
+    let name = o.get("name").and_then(Value::as_str).ok_or("a share has a name")?;
     rules::name_ok(name)?;
     let select = o.get("where").map_or(Ok(Selector::All), Selector::of_json)?;
-    let ops = rules::normalize(rules::ops_of_json(o.get("ops").ok_or("a cap names its ops")?)?)?;
+    let ops = rules::normalize(rules::ops_of_json(o.get("ops").ok_or("a share names its ops")?)?)?;
     Ok((name.to_string(), select, ops))
 }
 

@@ -1,10 +1,10 @@
-//! The ops engine on the Lab (`avendb::engine`, `docs/OPS.md`): queries that pick entries by the selector of their
-//! labels and test what they open; record ops through an app's schema and its lens, which write only what changed;
-//! every write's changes in its entry's history, the same for every reader; batches, proposals, merges, restores,
-//! undos and variants as ops; and every op's write judged as any peer's, by the shares of the vault it acts for, by the
-//! ops of every share of the chain it relies on (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas its entry
-//! was written under (S1 to S4): `may` answers before a page offers a button, a write they don't allow is refused, and
-//! one a patched app makes all the same counts for no reader, nor anything built on it. Alice's library
+//! The ops engine on the Lab (`avendb::engine`, `docs/ARCHITECTURE.md` §8): queries that pick entries by the selector
+//! of their labels and test what they open; record ops through an app's schema and its lens, which write only what
+//! changed; every write's changes in its entry's history, the same for every reader; batches, proposals, merges,
+//! restores, undos and variants as ops; and every op's write judged as any peer's, by the shares of the vault it acts
+//! for, by the ops of every share of the chain it relies on (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas
+//! its entry was written under (S1 to S4): `may` answers before a page offers a button, a write they don't allow is
+//! refused, and one a patched app makes all the same counts for no reader, nor anything built on it. Alice's library
 //! (`cast::library`) and the coop's handbook (`cast::handbook`, Welcome written by a v1 app) are the data; the ops are
 //! JSON, as the page and the Mac app send them.
 

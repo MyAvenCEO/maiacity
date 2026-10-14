@@ -11,7 +11,7 @@
 //! writes a checkpoint covers count.
 //!
 //! Every read and change goes through one entry point, as the page's does (V2, `Device::run`,
-//! `avendb/v8/v2-contract.md`): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
+//! `docs/ARCHITECTURE.md` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
 //! the passkey's ceremony when one is at hand and else answered `approve`, which makes nothing. `tests/page.rs` runs
 //! the same in Chromium, the passkey in its virtual authenticator.
 

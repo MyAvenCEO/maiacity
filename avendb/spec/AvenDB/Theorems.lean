@@ -155,8 +155,8 @@ theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs
 
 /-! ## Shares that name ops
 
-C1 to C4 (`avendb/docs/OPS.md`): a share is a name and the ops its grantee may make, its level the class of its
-strongest op, and every reader of an entry counts a write by anyone but the entry's vault only where the share the
+C1 to C4 (`avendb/docs/ARCHITECTURE.md` §8): a share is a name and the ops its grantee may make, its level the class of
+its strongest op, and every reader of an entry counts a write by anyone but the entry's vault only where the share the
 write's proof names reaches the entry and every share of its chain is the class of its ops and allows what the write
 touches. The half of C3 about a write's changes, `changes_allowed`, is proven in `Rules.lean`. -/
 
@@ -230,9 +230,9 @@ theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st :=
 
 /-! ## Writes that fit their schemas
 
-S1 to S4 (`avendb/docs/OPS.md`): every reader of an entry counts a write only where what it makes of the record fits
-the schemas the entry was written under, so every device keeps the last record that fit, whatever a patched app
-writes. S1 and S2, about records, are proven in `Schemas.lean`. -/
+S1 to S4 (`avendb/docs/ARCHITECTURE.md` §8): every reader of an entry counts a write only where what it makes of the
+record fits the schemas the entry was written under, so every device keeps the last record that fit, whatever a patched
+app writes. S1 and S2, about records, are proven in `Schemas.lean`. -/
 
 /-- S1 (a write is judged by what it changed): the write from `r` to `s` fits exactly when each change of what it
     changed does, on the record or row around it: a value it didn't change, which two devices' writes at once may

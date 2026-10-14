@@ -1,4 +1,4 @@
-//! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`avendb/docs/OPS.md`, shares). A share is a
+//! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`docs/ARCHITECTURE.md` §8). A share is a
 //! name and the ops its grantee may make on the slice its selector picks: relay, backup and read (keep, pass on and
 //! open the slice's edits), the write ops (create an entry, set a value, add, delete or move rows, ask for tags, start
 //! a proposal, merge a line) and share (issue shares resting on it). Its level, which relays and every operational rule
@@ -327,7 +327,7 @@ impl Op {
             "relay" | "backup" | "read" | "create" | "propose" | "share" => &["op"],
             other => {
                 return Err(format!(
-                    "a cap names no op {other:?}: relay, backup, read, create, set, insert, remove, move, tag, \
+                    "a share names no op {other:?}: relay, backup, read, create, set, insert, remove, move, tag, \
                      propose, merge or share"
                 ));
             }
@@ -403,7 +403,7 @@ pub fn normalize(ops: Vec<Op>) -> Result<Vec<Op>, String> {
         }
     }
     if out.is_empty() {
-        return Err("a cap names at least one op".into());
+        return Err("a share names at least one op".into());
     }
     let level = level_of(&out);
     if level.allows(Level::Write) && !out.contains(&Op::Read) {
@@ -416,7 +416,7 @@ pub fn normalize(ops: Vec<Op>) -> Result<Vec<Op>, String> {
     });
     out.sort_by_key(Op::rank);
     if out.len() > MAX_OPS {
-        return Err(format!("a cap names at most {MAX_OPS} ops"));
+        return Err(format!("a share names at most {MAX_OPS} ops"));
     }
     Ok(out)
 }
@@ -424,7 +424,7 @@ pub fn normalize(ops: Vec<Op>) -> Result<Vec<Op>, String> {
 /// A share's name: a few words, at most `MAX_NAME` characters, not blank.
 pub fn name_ok(name: &str) -> Result<(), String> {
     if name.trim().is_empty() || name.chars().count() > MAX_NAME {
-        return Err(format!("a cap has a name of 1 to {MAX_NAME} characters"));
+        return Err(format!("a share has a name of 1 to {MAX_NAME} characters"));
     }
     Ok(())
 }
@@ -508,7 +508,7 @@ pub fn allows_all(ops: &[Op], main: bool, touches: &[Touch]) -> bool {
 pub fn ops_of_json(v: &Value) -> Result<Vec<Op>, String> {
     let rs = v.as_array().ok_or("ops are a list of ops")?;
     if rs.len() > MAX_OPS {
-        return Err(format!("a cap names at most {MAX_OPS} ops"));
+        return Err(format!("a share names at most {MAX_OPS} ops"));
     }
     rs.iter().map(Op::of_json).collect()
 }

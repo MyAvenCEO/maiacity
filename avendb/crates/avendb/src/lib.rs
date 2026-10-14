@@ -1,14 +1,16 @@
 //! avenDB: the user-owned, end-to-end encrypted database behind the avenDB page: vaults, shares, keys, Loro documents
-//! and sync by shares, entry by entry and log by log.
+//! and sync by shares, entry by entry and log by log. `avendb/docs/ARCHITECTURE.md` describes the whole design.
 //!
-//! Signers (a passkey, each device's key) own human vaults, the passkey as the vault's root; human vaults own coop and
-//! aven vaults. A vault is a flat library: its entries are in it directly, each with a type and tags that travel inside
-//! its encrypted writes. Every right is a share held by a vault, never by a signer: relay < read < write < owner, on a
-//! slice of the vault (`slice`): the entries of some types, with or without some tags, by some authors, created in some
-//! span of time or named by their ids, or the whole of it; read for everyone too. The least is the default: a vault's
-//! entries are its own until it shares them. The entries the same shares reach make up an audience, under a key of its
-//! own that moves on as shares end; each device syncs exactly the logs its vaults' shares reach, and every write is
-//! encrypted under its entry's key, so the server and relays only ever hold ciphertext.
+//! Signers (a person's passkeys and the master recovery key) own human vaults, a passkey as the vault's root, and the
+//! person's devices act for it; human and coop vaults own coop and aven vaults. A vault is a flat library: its entries
+//! are in it directly, each with a type and tags that travel inside its encrypted writes. Every right is a share over a
+//! vault, to a vault or to everyone: relay < backup < read < write < owner, the class of its group of ops (`rules`), on
+//! a slice of the vault (`slice`): the entries of some types, with or without some tags, by some authors, created in
+//! some span of time or named by their ids, or the whole of it; everyone only reads. A keep share, to one device of its
+//! issuer, grants nothing: it says what that device syncs. The least is the default: a vault's entries are its own
+//! until it shares them. The entries the same shares reach make up an audience, under a key of its own that moves on as
+//! shares end; each device syncs exactly the logs its vaults' shares reach, as its keep shares narrow them, and every
+//! write is encrypted under its entry's key, so the server and relays only ever hold ciphertext.
 //!
 //! Built test-first against the Lean specification in `avendb/spec/` (see its README): `policy` mirrors the Lean model
 //! edit for edit, and every test is named after the scenario or theorem it guards. Each module is written in the phase
@@ -31,7 +33,7 @@
 //! | C shares that name ops | `rules`: a share is a name and a group of ops, its level their class, the built-in groups (Owner, Editor, Suggester, Viewer, Public, Backup, Relay); its slice carries the ops sealed with their commitment in the clear, a write's touches and the proof it always carries; `policy`: the writes an entry's readers count, by the ops of the chain of the share they rely on, tags asked for included; `doc`, `history`: a write's touches read off its Loro update, each line's history of counted writes; `lab`: shares issued as named groups of ops, writes refused that their ops don't allow, the stewards granting counted tag asks, a dry run; `engine`: `may`, `groups` | C1 to C4 |
 //! | B blobs | `sealed`: files of any size sealed as iroh blobs, each under a key of its own, in 64 KiB segments that open one by one, so any range of a film opens from its own segments alone, and in pieces of 1 GiB; `policy`, `wire`: writes that name the files they bring, their keys in the body; `sync`, `lab`: files fetched by whoever may receive such a write, opened by its readers | T27 |
 //! | Bootstrap | `recovery`: the master recovery key, a passkey kept in software that every human vault adds as an owner while avenDB is bootstrapped, for emergencies; its public half as a file; `bin/master-key`, which makes it | |
-//! | V2 one API | `engine`: every read and change the page, the Mac app and MCP make as one op, shares, keeps, revocations, settings, new vaults, files, marks, cards and profiles too, each answered done, refused or to approve, and `may` of each; `world`, `words`, `data`: a device's world, its names for the core's words, its database and its history as the page reads them | |
+//! | V2 one API | `engine`: every read and change the page and the Mac app make as one op, shares, keeps, revocations, settings, new vaults, files, marks, cards and profiles too, each answered done, refused or to approve, and `may` of each; `world`, `words`, `data`: a device's world, its names for the core's words, its database and its history as the page reads them | |
 
 pub mod cast;
 pub mod data;

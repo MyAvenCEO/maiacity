@@ -440,15 +440,15 @@
 	}
 
 	/** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
-	 *  new vaults (avendb/v8/v2-contract.md, section 2.3). */
+	 *  new vaults (avendb/docs/ARCHITECTURE.md §8). */
 	const APPROVED = ['share', 'revoke', 'settings', 'found'];
 
 	/**
-	 * Op `op` on the device: the one way the page reads or changes the database (./ops.js, avendb/v8/v2-contract.md),
-	 * on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device runs
-	 * only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device says
-	 * whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file`. The
-	 * device's answer: `{ ok }`, or `{ refused, why }`.
+	 * Op `op` on the device: the one way the page reads or changes the database (./ops.js, avendb/docs/ARCHITECTURE.md
+	 * §8), on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device
+	 * runs only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device
+	 * says whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file`.
+	 * The device's answer: `{ ok }`, or `{ refused, why }`.
 	 * @param {any} op @param {(at: number, n: number) => Promise<Uint8Array>} [read]
 	 */
 	async function send(op, read) {
@@ -474,9 +474,9 @@
 	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through. */
 	const api = {
 		/**
-		 * Runs change op `op` as `what` (./ops.js, avendb/v8/v2-contract.md): an entry's change, a share, a revocation,
-		 * a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or `null` if it
-		 * didn't go through, with why shown.
+		 * Runs change op `op` as `what` (./ops.js, avendb/docs/ARCHITECTURE.md §8): an entry's change, a share, a
+		 * revocation, a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or
+		 * `null` if it didn't go through, with why shown.
 		 * @param {string} what @param {object} op
 		 */
 		run: async (what, op) => {

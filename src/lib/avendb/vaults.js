@@ -37,9 +37,10 @@
  * @typedef {Atom | { all: Where[] } | { any: Where[] }} Where
  */
 /**
- * An op a cap names (avendb's `rules`, avendb/docs/OPS.md): relay, back up or read its slice; add entries; change a
- * value at or under a path whose steps may be "*" (any one field or row), only to some values; add, delete or reorder
- * rows; ask for tags (any, or those listed); start proposals; merge, on the main line or on proposals; share it on.
+ * An op a share names (avendb's `rules`, avendb/docs/ARCHITECTURE.md §8): relay, back up or read its slice; add
+ * entries; change a value at or under a path whose steps may be "*" (any one field or row), only to some values; add,
+ * delete or reorder rows; ask for tags (any, or those listed); start proposals; merge, on the main line or on
+ * proposals; share it on.
  * @typedef {{ op: 'relay' | 'backup' | 'read' | 'create' | 'set' | 'insert' | 'remove' | 'move' | 'tag' | 'propose' |
  *   'merge' | 'share', path?: (string | { id: number })[], to?: (string | number | boolean | null)[],
  *   on?: 'main' | 'proposals', tags?: string[] }} Op
@@ -532,7 +533,7 @@ export const sharerWords = (x) => `${x.name} (${x.levels.join(', ') || KEEPS.bac
 export const sharedWords = (s) =>
 	list([...s.who.map(sharerWords), ...(s.gone ? [`${count(s.gone, 'share')} no longer in force`] : [])]);
 
-/** Why the rules refused an edit, as a person reads it (avendb's `Refusal`, v2-contract section 7). */
+/** Why the rules refused an edit, as a person reads it (avendb's `Refusal`, avendb/docs/ARCHITECTURE.md §5). */
 const WHY = /** @type {Record<string, string>} */ ({
 	NoCap: 'nothing shared with the acting vault allows it',
 	NotActing: 'this device doesn’t act for that vault',

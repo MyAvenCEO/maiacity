@@ -1,10 +1,9 @@
-//! One API (V2, `avendb/v8/v2-contract.md`): every read and every change a device's page, the Mac app and MCP make of
-//! its database is one JSON op of avendb's engine (`avendb::engine`, `avendb/docs/OPS.md`), run on the node
-//! (`Node::run`) and answered as JSON: `{"ok": ...}`, a refusal, or for a change its vault's owners approve with no
-//! ceremony at hand, `{"approve": ...}`. What the engine can't do on a Lab alone, the node does around it: it shows
-//! where each entry and file is synced to (`world`), reads and brings a file's bytes (`read_file`, `put_file`), has
-//! the passkey sign what its vault approves in a ceremony, and asks its peers again once the vaults it follows change
-//! (`follow`).
+//! One API (`docs/ARCHITECTURE.md` §8): every read and every change of a device's database, from its page, the Mac app
+//! or an agent, is one JSON op of avendb's engine (`avendb::engine`), run on the node (`Node::run`) and answered as
+//! JSON: `{"ok": ...}`, a refusal, or for a change its vault's owners approve with no ceremony at hand,
+//! `{"approve": ...}`. What the engine can't do on a Lab alone, the node does around it: it shows where each entry and
+//! file is synced to (`world`), reads and brings a file's bytes (`read_file`, `put_file`), has the passkey sign what
+//! its vault approves in a ceremony, and asks its peers again once the vaults it follows change (`follow`).
 
 use std::io;
 use std::sync::Arc;
@@ -25,7 +24,7 @@ use crate::{Authenticator, Node, Shared, Step};
 /// No bytes beside an op: what `Node::run` takes for every op but `put_file`.
 pub type NoBytes = stream::Empty<io::Result<Bytes>>;
 
-/// No ceremony at hand, as for MCP: an op its vault's owners approve answers `approve` and makes nothing
+/// No ceremony at hand, as for an agent: an op its vault's owners approve answers `approve` and makes nothing
 /// (`Node::run`). A ceremony asked of it fails.
 pub struct NoCeremony;
 

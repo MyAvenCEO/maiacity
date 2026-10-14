@@ -256,9 +256,26 @@
           "count": 1 } }
 
 { "refused": "NotAllowed",
-  "why": "the ops of the shares the vault acts through don't allow what it does" }`;
+  "why": "the ops of the shares the vault acts through don't allow what it does" }
 
-	const reads = ['query', 'get', 'history', 'schemas', 'groups'];
+{ "approve": { "challenge": "…", "signers": ["…"], "draft": "…" } }`;
+
+	// every op `run(op)` takes, by what it does: reads, asks (dry runs), changes of an entry, changes of a vault
+	const reads = [
+		'query',
+		'get',
+		'history',
+		'schemas',
+		'groups',
+		'world',
+		'database',
+		'note',
+		'log',
+		'read_file',
+		'creatable',
+		'taggable'
+	];
+	const asks = ['may', 'shares'];
 	const changes = [
 		'create',
 		'set',
@@ -273,6 +290,19 @@
 		'undo',
 		'variant',
 		'batch'
+	];
+	const vaultOps = [
+		'share',
+		'keep',
+		'revoke',
+		'settings',
+		'found',
+		'put_file',
+		'back_up',
+		'mark',
+		'card',
+		'profile',
+		'follow'
 	];
 
 	const messages = [
@@ -344,7 +374,13 @@
 		['The marks on each entry mean exactly what the shares say', 'T23'],
 		['The server decides every edit as an owner does, without reading a selector', 'T25'],
 		['A relay share receives no entry, and files go only with the edits that bring them', 'T26, T27'],
-		['Each device syncs what its keep shares say, and revoking one cuts nothing', 'T28, K1']
+		['Each device syncs what its keep shares say, and revoking one cuts nothing', 'T28, K1'],
+		[
+			'What a device says it holds counts only from that device, on its own connection, and nobody passes it on',
+			'H1'
+		],
+		['What any device says it holds never gets anyone a file the rules refuse', 'T27'],
+		['Every reader agrees whether a write counts, and a write that breaks its schema counts for no one', 'C2, S3']
 	];
 </script>
 
@@ -360,7 +396,7 @@
 	<a class="back" href="{base}/docs">← Docs</a>
 
 	<header class="intro">
-		<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 13 October 2026</p>
+		<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 14 October 2026</p>
 		<h1>avenDB Architecture</h1>
 		<p class="lede">
 			A user-owned, local-first database with post-quantum security. Every write happens on your device first and merges
@@ -816,8 +852,9 @@
 		</div>
 		<ul class="prose-col">
 			<li>
-				<b>Schemas and lenses are entries</b> of two built-in types. A vault shares them with Everyone, by a Viewer share
-				it makes with its first schema, so every device that reads anything of the vault reads its schemas too.
+				<b>Schemas and lenses are entries</b> of two built-in types. A vault shares them with Everyone, by a Public share
+				named “Schemas and lenses” that it makes with its first schema or lens, so every device that reads anything of
+				the vault reads its schemas too.
 			</li>
 			<li>
 				<b>Only the vault itself adds them.</b> A schema entry counts only if the vault created it, so no one with a share
@@ -835,8 +872,10 @@
 		<p class="eyebrow">JSON ops</p>
 		<h2>One JSON op for every read and change</h2>
 		<p class="prose-col">
-			The page, the desktop app and agents all speak one language: a JSON op, run on the device, which answers with what
-			it read or did, or with why it refused. A query picks entries by the same selector shares use, then by their values.
+			Every read and every change, of an entry or of a vault, is one JSON op through one entry point,
+			<code>run(op)</code>, the same on a desktop, a phone and in a browser. The page, the desktop app and agents all
+			speak it. The device runs the op and answers with what it read or did, or with why it refused. A query picks
+			entries by the same selector shares use, then by their values.
 		</p>
 		<div class="codes">
 			<figure class="wide">
@@ -845,7 +884,7 @@
 			</figure>
 			<figure class="wide">
 				<pre><code>{ANSWER}</code></pre>
-				<figcaption>What comes back: what it found, or a refusal and why</figcaption>
+				<figcaption>What comes back: what it found, a refusal and why, or what your passkey must approve</figcaption>
 			</figure>
 		</div>
 		<div class="chips">
@@ -853,12 +892,27 @@
 			{#each reads as op (op)}<code>{op}</code>{/each}
 		</div>
 		<div class="chips">
-			<span class="kind">Changes</span>
+			<span class="kind">Asks</span>
+			{#each asks as op (op)}<code>{op}</code>{/each}
+		</div>
+		<div class="chips">
+			<span class="kind">Entries</span>
 			{#each changes as op (op)}<code>{op}</code>{/each}
+		</div>
+		<div class="chips">
+			<span class="kind">Vaults</span>
+			{#each vaultOps as op (op)}<code>{op}</code>{/each}
 		</div>
 		<p class="prose-col">
 			Before it shows a button, the page asks <code>may</code>: would this device be allowed to make the op, on what it
-			holds now? So a button you see is a change you may make. A <code>batch</code> runs several ops as one.
+			holds now? So a button you see is a change you may make. The page keeps no rule of its own: it reads levels, ops
+			and who may do what from the device’s answers. A <code>batch</code> runs several changes of entries as one.
+		</p>
+		<p class="prose-col">
+			Most changes need nothing but the device. A change the vault’s owners must approve, such as a co-owner, a new
+			device, a threshold or new vaults, is drafted on the device and signed by your passkey, in one prompt however many
+			edits it makes. With no passkey at hand, as for an agent, the answer is <code>approve</code>: what to sign and by
+			whom, and nothing is made until it is signed.
 		</p>
 	</section>
 
@@ -1021,7 +1075,7 @@
 				<h3>Interest and follow</h3>
 				<p>
 					What a vault shares with Everyone goes only to devices with an interest in it, or that follow it by name. A
-					device that acts for no vault and follows none is sent nothing.
+					device keeps its follow list across restarts. One that acts for no vault and follows none is sent nothing.
 				</p>
 			</div>
 		</div>
@@ -1260,7 +1314,7 @@
 	<footer class="note">
 		Sources: Ink &amp; Switch’s <i>Local-first software</i> (2019), Loro 1.16, iroh 1.3, iroh-blobs 0.103.1 and bao-tree
 		0.16.1 source, n0’s blog and docs, Hetzner Object Storage documentation, and avenDB’s code and Lean model for edit
-		format 8, as of 13 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
+		format 8, as of 14 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
 	</footer>
 </main>
 

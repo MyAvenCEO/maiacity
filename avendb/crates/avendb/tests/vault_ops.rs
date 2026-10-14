@@ -1,4 +1,4 @@
-//! The ops on vaults (V2, `avendb/v8/v2-contract.md`, `engine::vaults`): what a device's page reads of its world, of
+//! The ops on vaults (`docs/ARCHITECTURE.md` §8, `engine::vaults`): what a device's page reads of its world, of
 //! the shares over a vault and of what a vault may add and tag in another; and the changes of vaults, each answered
 //! done, refused by its rule's name, or, where the vault's owners approve it, `approve`, which makes nothing until the
 //! passkey's ceremony signs the drafts (`engine::approve`, as avendb-net's `Node::run` has it signed). `may` answers

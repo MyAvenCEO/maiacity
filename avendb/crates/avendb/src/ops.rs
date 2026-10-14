@@ -1,5 +1,5 @@
 //! Ops, as in `avendb/spec/AvenDB/Ops.lean`: one JSON language to read and change any record, whatever its schema
-//! (`avendb/docs/OPS.md`). This module is the part on records alone; `engine` runs it on a device's Lab.
+//! (`avendb/docs/ARCHITECTURE.md` §8). This module is the part on records alone; `engine` runs it on a device's Lab.
 //!
 //! - **Records, flat** (`Flat`). A record (what an item stores, or an app's view of it) is a JSON object. Flat, it is
 //!   a value at each place (`Path`: a field, or a field of a row of a list of records) and the rows of each list of

@@ -1,5 +1,5 @@
-//! The ops engine (`avendb/docs/OPS.md`): every read and every change of a device's entries as one JSON op, whatever
-//! their schema, run on the device's Lab. `ops` is the part on records alone; this is the part on entries.
+//! The ops engine (`docs/ARCHITECTURE.md` §8): every read and every change of a device's entries as one JSON op,
+//! whatever their schema, run on the device's Lab. `ops` is the part on records alone; this is the part on entries.
 //!
 //! - **Records through schemas.** An op sees an entry's record as an app on a schema sees it (`lens::View`): the schema
 //!   it names (`"schema"`: `"document"` or `"todo"`, a built-in's name, or a schema's id in hex), or else the one the
@@ -104,9 +104,9 @@ impl Refused {
 /// A rule's refusal in words.
 fn rule(r: &Refusal) -> String {
     let why = match r {
-        Refusal::NoCap => "the vault it acts for holds no cap that allows this",
-        Refusal::NotAllowed => "the ops of the caps the vault acts through don't allow what it does",
-        Refusal::BadCap => "a cap has a name, at least one op, and a selector and a chain within bounds",
+        Refusal::NoCap => "the vault it acts for holds no share that allows this",
+        Refusal::NotAllowed => "the ops of the shares the vault acts through don't allow what it does",
+        Refusal::BadCap => "a share has a name, at least one op, and a selector and a chain within bounds",
         Refusal::NotActing => "the device doesn't act for that vault",
         Refusal::ReadOnly => "the entry opens read-only: no lens reaches every schema it was written under",
         Refusal::NotAView => "the record would not fit its schema",

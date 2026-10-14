@@ -10,14 +10,14 @@
 //! (`avendb::sign::RelayPass`), to the server's relay and to the peer it links through. Then a device starts in one of
 //! three ways:
 //!
-//! - `Device::found`: a new person's first device founds their human vault, gives avenCEO, the aven vault the server
-//!   is a device of, relay on the whole of it, and writes its card there, in two ceremonies: the unlock, and one that
-//!   signs the vault's genesis and the edit that adds the device together (`avendb_net::Node::found_with`). The
-//!   passkey may be one the page just made, its P-256 key in its public key info, or one made before for the same
-//!   relying party, maiaCITY's from its sign-up: then the device drafts it all for each key the unlock's assertion
-//!   recovers to, in one batch, and keeps what the second ceremony's assertion verifies under. The first person to
-//!   found their vault through a server nobody has claimed yet claims it in that same ceremony (P8f): their vault owns
-//!   avenCEO.
+//! - `Device::found`: a new person's first device founds their human vault, gives avenCEO, the aven vault the server is
+//!   a device of, backup on the whole of it, or relay with backups off, and writes its card there, in two ceremonies:
+//!   the unlock, and one that signs the vault's genesis and the edit that adds the device together
+//!   (`avendb_net::Node::found_with`). The passkey may be one the page just made, its P-256 key in its public key info,
+//!   or one made before for the same relying party, maiaCITY's from its sign-up: then the device drafts it all for each
+//!   key the unlock's assertion recovers to, in one batch, and keeps what the second ceremony's assertion verifies
+//!   under. The first person to found their vault through a server nobody has claimed yet claims it in that same
+//!   ceremony (P8f): their vault owns avenCEO.
 //! - `Device::link`: a device of a person who has one already links through the code it shows
 //!   (`avendb_net::Node::link_by_pass`), in one ceremony, the unlock, which is its passkey's pass for it and signs the
 //!   edit that adds it too: its passkey is the key, of those the unlock's assertion recovers to, whose vault the peer
@@ -36,12 +36,12 @@
 //! A vault holds its entries itself, flat: each entry has a type (`note`, `todo`, `file`, `card`, `profile`) and tags,
 //! all of it inside the entry's encrypted writes. A vault shares what it holds through shares, each on a slice of its
 //! entries, whatever its selector picks (`avendb::slice`): every entry of a type, those with a tag, one entry, or the
-//! whole vault. Nothing is shared but what a share names: least is the default. A relay share hands out ciphertext and
+//! whole vault. Nothing is shared but what a share names: least is the default. A backup share hands out ciphertext and
 //! no key, which is how a vault lets avenCEO, the server's vault, keep and pass on its entries: a share on the whole
-//! vault.
+//! vault; a relay share hands out none of them, and lets the server know the vault's devices.
 //!
 //! Every read and change the page makes is one op of the ops engine, JSON in and JSON out (`Device::run`,
-//! `PageDevice::run`, `avendb::engine`, `avendb/v8/v2-contract.md`), which the device runs as the vault it names, and
+//! `PageDevice::run`, `avendb::engine`, `docs/ARCHITECTURE.md` §8), which the device runs as the vault it names, and
 //! the rules check as they check any peer's edit; the page keeps no rule, and asks `may` before it offers a button.
 //! Its whole world (`world`, `avendb::world`): every vault it knows, whom it acts for and as which vault its person
 //! acts in each; every share in force, what it reaches and who may revoke it; every audience, with the devices that
@@ -325,7 +325,7 @@ impl Device {
         let found = move |lab: &mut Lab, me| {
             let level = if backup { Level::Backup } else { Level::Relay };
             let server = cast::share(vault, cast::vault(avenceo), level, Selector::All);
-            lab.issue(me, &[me], server).map_err(|why| anyhow!("avenCEO's cap is refused: {why:?}"))?;
+            lab.issue(me, &[me], server).map_err(|why| anyhow!("avenCEO's share is refused: {why:?}"))?;
             let card = world::named(&name, me);
             lab.create(me, vault, vault, CARD, &[], card).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
             Ok::<_, anyhow::Error>(())
@@ -463,7 +463,7 @@ impl Device {
         self.node.read(|lab, me| lab.vault_of(me)).await
     }
 
-    /// Runs op `op` of the ops engine (`avendb::engine`, `avendb/v8/v2-contract.md`), as its node does
+    /// Runs op `op` of the ops engine (`avendb::engine`, `docs/ARCHITECTURE.md` §8), as its node does
     /// (`avendb_net::Node::run`): every read and change of the database it holds, whatever their schema, and of its
     /// vaults, as JSON. Its answer, `{"ok": ...}`, `{"refused": ..., "why": ...}`, or for a change its vault's owners
     /// approve with no `authenticator` at hand, `{"approve": ...}`; and for `read_file` the bytes it read, beside.
@@ -737,7 +737,7 @@ impl PageDevice {
         future_to_promise(async move { Ok(device.vault().await.map(|v| hex(&v.0)).into()) })
     }
 
-    /// Runs op `op`, an object of the ops engine's (`Device::run`, `avendb/v8/v2-contract.md`): a promise of its
+    /// Runs op `op`, an object of the ops engine's (`Device::run`, `docs/ARCHITECTURE.md` §8): a promise of its
     /// answer, `{ok}`, `{refused, why}`, or for a change its vault's owners approve when no `ceremony` is passed,
     /// `{approve}`, which makes nothing. `ceremony(challenge, step)` is the passkey's, for such a change, as a start
     /// takes it. `read(at, n)` hands over a `put_file`'s bytes from `at` on, `n` of them, as a promise of a

@@ -1,10 +1,10 @@
 <!--
 	The studio's query console, as a database studio's SQL editor: any op of avenDB's ops engine as JSON (./ops.js,
-	avendb/docs/OPS.md), run on what this device holds, whatever the schema of the records it reads or changes. A query
-	shows its rows as a table, with the selector its labels picked them by before any entry was opened: a cap's
-	selector, the very one a cap on those entries would hold. A change acts as the acting vault, unless the op names
-	another (`as`), and the rules judge it as they judge any peer's edit. The examples fill it in for the vault looked
-	at.
+	avendb/docs/ARCHITECTURE.md §8), run on what this device holds, whatever the schema of the records it reads or
+	changes. A query shows its rows as a table, with the selector its labels picked them by before any entry was opened:
+	a share's selector, the very one a share over those entries would hold. A change acts as the acting vault, unless
+	the op names another (`as`), and the rules judge it as they judge any peer's edit. The examples fill it in for the
+	vault looked at.
 -->
 <script>
 	import { cell } from './db.js';

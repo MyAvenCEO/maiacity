@@ -1,4 +1,4 @@
-//! The ops on vaults themselves (V2, `avendb/v8/v2-contract.md`), beside those on entries' records: what a device's
+//! The ops on vaults themselves (`docs/ARCHITECTURE.md` §8), beside those on entries' records: what a device's
 //! page reads of its world (`world`), of the shares over a vault (`shares`), and what a vault may add to another and
 //! tag there (`creatable`, `taggable`); and the changes of vaults: shares, keep shares and their revocations, an owner
 //! or a device taken out, a vault's settings, new vaults, a file brought, the server's backup, a steward's mark, a
@@ -97,8 +97,8 @@ pub fn approve(lab: &mut Lab, me: SignerId, a: Approval, ceremony: &Ceremony) ->
     approved(lab, me, &then, &ids)
 }
 
-/// What an approved op answers once device `me` keeps its edits `ids` (`Then`): new vaults first give avenCEO relay on
-/// themselves and get their profiles (`profile`).
+/// What an approved op answers once device `me` keeps its edits `ids` (`Then`): new vaults first give avenCEO the share
+/// it holds on the person's vault, backup or relay (`world::server_level`), and get their profiles (`profile`).
 pub fn approved(lab: &mut Lab, me: SignerId, then: &Then, ids: &[EditId]) -> Result<Value, Refused> {
     let first = ids.first().map(EditId::to_hex);
     Ok(match then {
@@ -649,8 +649,9 @@ fn settings(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepa
 
 /// `{"op": "found", "vaults": [{"kind", "name"}, ...]}`, or `{"op": "found", "kind", "name"}` for one: new vaults
 /// device `me`'s own vault founds and owns alone, each `"aven"` or `"coop"` and named, their geneses drafted together
-/// for one ceremony of the passkey. Once it signed them, the device acting for each through its vault gives avenCEO
-/// relay on it and writes its profile (`approved`): `{"vaults": [id, ...]}`, in the order named.
+/// for one ceremony of the passkey. Once it signed them, the device acting for each through its vault gives avenCEO the
+/// level it holds on the person's vault, backup or relay (`world::server_level`), and writes its profile (`approved`):
+/// `{"vaults": [id, ...]}`, in the order named.
 fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let one = |v: &Map<String, Value>| -> Result<(Kind, String), Refused> {
         let kind = match v.get("kind").and_then(Value::as_str) {
@@ -797,8 +798,10 @@ fn profile(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value,
 }
 
 /// Vault `vault`'s profile reads `name`, written by device `me` acting for the vault; or, if it has a profile, its
-/// title set. A vault that has none yet gives avenCEO relay on the whole of it first, so the server keeps its entries,
-/// unless it is avenCEO itself or does so already. Whether it wrote: not if the profile reads `name` already.
+/// title set. A vault that has none yet first gives avenCEO, on the whole of it, the level it holds on the person's
+/// vault: backup, so the server keeps its ciphertext, or relay alone (`world::server_level`); unless it is avenCEO
+/// itself or avenCEO holds a share on the whole of it already. Whether it wrote: not if the profile reads `name`
+/// already.
 fn written(lab: &mut Lab, me: SignerId, vault: VaultId, name: &str) -> Result<bool, Refused> {
     if let Some((entry, title)) = world::profile_of(lab, me, vault) {
         if title == name {

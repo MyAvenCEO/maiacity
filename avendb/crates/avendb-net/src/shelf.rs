@@ -1,4 +1,4 @@
-//! A node's shelf (blobs B2d, B3b, v8 phase S, `docs/BLOBS.md`): the one place it keeps what lasts, laid out the same
+//! A node's shelf (`docs/ARCHITECTURE.md` §14): the one place it keeps what lasts, laid out the same
 //! on every place it runs. A page's is in OPFS, through its store's worker (avendb-browser); the Mac's in its folder
 //! (`disk`); the server's in its bucket (`bucket::shelf`), whose folder is only a cache. A place keeps its shelves side
 //! by side, a generation each, `g1`, `g2` and on (`generation`): the newest is the one in use, and every older one is

@@ -16,7 +16,7 @@ abbrev EntryId  := Nat
 abbrev ShareId  := Nat
 abbrev EditId   := Nat
 abbrev BlobId   := Nat
-/-- A file, by its root: the hash iroh names its sealed pieces by (`docs/BLOBS.md`). -/
+/-- A file, by its root: the hash iroh names its sealed pieces by (`docs/ARCHITECTURE.md` §13). -/
 abbrev FileId   := Nat
 /-- A type (`note`, `todo`, …) or a tag: a short name. -/
 abbrev Sym      := Nat

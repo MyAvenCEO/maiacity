@@ -1,16 +1,16 @@
 <!--
-	Share a slice of a vault on, as the acting vault, as a cap: a name, what it picks and the JSON ops its grantee may
-	make there (the `share` op, `{over, who, level, what}`, avendb/v8/v2-contract.md; avendb/docs/OPS.md). What
-	it picks is one entry, every note, todo or file, or those tagged one way and not another, or the whole vault: a rule,
-	never a list, so an entry tagged to match it later is shared then, one untagged leaves it, and the vault's devices
-	move each into the cell the caps that hold it share, under that cell's key. Its ops are a group: a built-in one
+	Share a slice of a vault on, as the acting vault: a name, what it picks and the JSON ops its grantee may make there
+	(the `share` op, `{over, who, level, what}`, avendb/docs/ARCHITECTURE.md §8). What it picks is one entry, every
+	note, todo or file, or those tagged one way and not another, or the whole vault: a rule, never a list, so an entry
+	tagged to match it later is shared then, one untagged leaves it, and the vault's stewards mark each into the
+	audience of the shares that pick it, under that audience's key. Its ops are a group: a built-in one
 	(Owner, Editor, Suggester, Viewer, Backup, Relay, the core's `groups`), or one of its own, named, built op by op or
 	written as JSON, the fields those of the newest schema of what it shares; with everyone, the Public group alone,
 	which only reads. It starts at the least: the one entry it opens on, or else the vault's todos, for a Viewer. The
 	preview says what it reaches now, of what the acting vault reads, as the device's `query` picks it. Owner of
 	everything makes a co-owner. The device answers beforehand whether it would make the share (`may`): alone, once the
 	vault's owners approve it with the passkey, or why not. A vault that isn't the one shared from shares only through
-	an owner cap of its own, and reaches no further than it, nor beyond its ops.
+	an Owner share of its own, and reaches no further than it, nor beyond its ops.
 -->
 <script>
 	import { allowed, may, read } from './ops.js';

@@ -1,10 +1,10 @@
-//! Writes that fit their schemas (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`, `docs/OPS.md`): every reader judges
-//! each write by the schemas its entry was written under once it is in, which must be in the vault's lane or built in
-//! and all of one kind, and by what it changed. On random walks of writes over two versions of a schema, a record
-//! that fits keeps fitting through every write that fits, from nothing on (S2), and what a write didn't change, a row
-//! or a value no schema requires, never changes its verdict, whatever it holds (S1). That every edit an app makes fits
-//! is in `properties.rs`; readers that count only writes that fit, and devices that refuse to make one that doesn't
-//! (S3), in `engine.rs`.
+//! Writes that fit their schemas (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`, `docs/ARCHITECTURE.md` §8): every
+//! reader judges each write by the schemas its entry was written under once it is in, which must be in the vault's lane
+//! or built in and all of one kind, and by what it changed. On random walks of writes over two versions of a schema, a
+//! record that fits keeps fitting through every write that fits, from nothing on (S2), and what a write didn't change,
+//! a row or a value no schema requires, never changes its verdict, whatever it holds (S1). That every edit an app makes
+//! fits is in `properties.rs`; readers that count only writes that fit, and devices that refuse to make one that
+//! doesn't (S3), in `engine.rs`.
 
 use std::collections::BTreeSet;
 

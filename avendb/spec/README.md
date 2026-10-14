@@ -1,10 +1,10 @@
 # avenDB spec
 
-The formal specification of avenDB, the user-owned, end-to-end encrypted database behind the avenDB tile, in Lean 4
+The formal specification of avenDB, the user-owned, end-to-end encrypted database behind the avenDB page, in Lean 4
 (core library only, no Mathlib). It states what must always hold: who may write, who can open which key, what each
 device receives. The Rust crate `avendb/crates/avendb` is built against it test-first, and its tests carry the same
-names. The plan with the scenarios and the build order is the Claude Doc "avenDB: E2E reference plan" (linked from
-`avendb/README.md`).
+names. The design it models is [ARCHITECTURE.md](../docs/ARCHITECTURE.md); the plan with the scenarios and the build
+order is the Claude Doc "avenDB: E2E reference plan" (linked from `avendb/README.md`).
 
 ## Build
 
@@ -36,7 +36,7 @@ lake exe vectors
 | `Doc.lean` | Documents as histories: merge and promote, against the laws we rely on from Loro |
 | `Proposals.lean` | Proposals write by write: each write extends one line of its entry's history, the main line or a proposal; a line's history and heads; the order writes come in (`Ordered`); T10f to T10h, which tie `Doc.lean`'s merge and promote to the writes |
 | `Lens.lean` | The markdown document and the todo in two schema versions and the lenses between them; items as stored, projected on read into each app's schema, and edits through each app's view; the lens laws (T9) |
-| `Ops.lean` | One language to read and change any record ([OPS.md](../docs/OPS.md)): records flat, a value at each place and the rows of each list of records by id; changes, `apply` and `diff`; the ops apps send, each naming a place; queries whose `where` mixes a share's labels with tests of values, and the selector a device picks entries by (O1 to O3) |
+| `Ops.lean` | One language to read and change any record ([ARCHITECTURE.md](../docs/ARCHITECTURE.md) §8): records flat, a value at each place and the rows of each list of records by id; changes, `apply` and `diff`; the ops apps send, each naming a place; queries whose `where` mixes a share's labels with tests of values, and the selector a device picks entries by (O1 to O3) |
 | `OpsVectors.lean` | The ops cases for the Rust engine, in the very JSON the page sends: diffs, runs of ops, and queries with the selectors they pick by (`lake exe vectors` writes them to `vectors/ops.json`) |
 | `Rules.lean` | Shares as named groups of ops: the ops (relay, backup, read, the ops that write with paths and `*`, the values a set may take, the lines they hold on and the tags they may ask for, share), a share's level as the class of its strongest op (`levelOf`), the built-in groups (`groups`), a write's touches (what its Loro ops did, place by place, and the tags it asks for) and what ops allow; the half of C3 about a write's changes (`changes_allowed`) |
 | `RuleLemmas.lean` | The proofs of C1 to C4: chains narrow, readers agree whether a write counts, counted writes did what their chain allows, allowed writes count and what builds on an uncounted one never does |
@@ -87,8 +87,8 @@ lake exe vectors
 | T24 | An entry's key reaches only its audience's readers: whoever opens the key of an entry in its current stay, at its audience's current epoch, may open that audience's current key; and over the history a holder opens a key of an entry only if it could read some audience the entry was in | Proven | `t24_entry_keys_reach_only_audience_readers`, `scenario_21_a_tag_moves_an_entry_out_of_a_slice`, `scenario_26_an_audience_that_comes_back_into_use_moves_on` |
 | T25 | Blind relays: a peer that reads no selector, no type and no tag, such as the server, holding the same edits as an owner, has every edit stand or fall alike and knows the same of the vaults, shares, audiences, writes and keys. It knows no schema lane, which only readers read off the entries, and nothing it checks needs one | Proven | `t25_blind_relays`, `scenario_25_wide_shares_relays_and_public` |
 | T26 | Relay alone: a device acting for no vault of an audience, with nothing but relay shares over that vault, receives none of the audience's edits, whatever it follows; relay lets the server know a vault's devices and keeps nothing, backup keeps the ciphertext | Proven | `T26_relay_keeps_nothing`, `a_relay_share_keeps_nothing` |
-| T27 | Files follow their edits: a peer hands a device a file only if it holds a write that brings it, of an entry the device may receive by the peer's view; only writes bring files ([BLOBS.md](../docs/BLOBS.md)). Holdings never authorize (phase H): a node's blob gate hands a file's root or one of its pieces only to the device whose hello proved a sync connection still open from the blob connection's endpoint, and only by T27 (`T27_holdings_never_authorize`), whatever anyone, the node included, says it holds (`T27_gate_reads_no_holdings`); and a node names a file it holds, in what it announces on a connection, only if the device that connection proved may fetch it by T27, naming it as no longer held only if it named it on that connection before (`T27_holdings_name_only_fetchable_files`) | Proven | `t27_files_follow_their_edits`, `a_write_and_a_body_name_their_files_one_way_only`, `holdings_never_let_a_peer_get_a_file_t27_refuses`, `a_follower_fetches_the_files_of_what_it_follows`, the sync vectors |
-| T28 | Sync follows the keep shares: a peer sends a device an entry's edits only if the device may receive the entry and its keep shares want it (`T28_sync_follows_keeps`): the live keep shares naming it over the entry's vault, issued by a vault it is still a device of; all of the vault if it has none but never ones, else what a whole or opened one picks (wide, or among the entry's wants) and no never one does; it keeps the entry's files whole only where a whole one picks it (`T28_keep_modes`); a keep share grants nothing ([BLOBS.md](../docs/BLOBS.md)) | Proven | `t28_sync_follows_keeps`, `t28_each_device_syncs_what_its_keep_shares_pick`, `keep_modes_choose_what_and_how_a_device_syncs`, `keep_shares_grant_nothing`, `the_iphone_keeps_the_proxies_its_keep_share_picks`, the vectors |
+| T27 | Files follow their edits: a peer hands a device a file only if it holds a write that brings it, of an entry the device may receive by the peer's view; only writes bring files ([ARCHITECTURE.md](../docs/ARCHITECTURE.md) §13). Holdings never authorize (phase H): a node's blob gate hands a file's root or one of its pieces only to the device whose hello proved a sync connection still open from the blob connection's endpoint, and only by T27 (`T27_holdings_never_authorize`), whatever anyone, the node included, says it holds (`T27_gate_reads_no_holdings`); and a node names a file it holds, in what it announces on a connection, only if the device that connection proved may fetch it by T27, naming it as no longer held only if it named it on that connection before (`T27_holdings_name_only_fetchable_files`) | Proven | `t27_files_follow_their_edits`, `a_write_and_a_body_name_their_files_one_way_only`, `holdings_never_let_a_peer_get_a_file_t27_refuses`, `a_follower_fetches_the_files_of_what_it_follows`, the sync vectors |
+| T28 | Sync follows the keep shares: a peer sends a device an entry's edits only if the device may receive the entry and its keep shares want it (`T28_sync_follows_keeps`): the live keep shares naming it over the entry's vault, issued by a vault it is still a device of; all of the vault if it has none but never ones, else what a whole or opened one picks (wide, or among the entry's wants) and no never one does; it keeps the entry's files whole only where a whole one picks it (`T28_keep_modes`); a keep share grants nothing ([ARCHITECTURE.md](../docs/ARCHITECTURE.md) §5) | Proven | `t28_sync_follows_keeps`, `t28_each_device_syncs_what_its_keep_shares_pick`, `keep_modes_choose_what_and_how_a_device_syncs`, `keep_shares_grant_nothing`, `the_iphone_keeps_the_proxies_its_keep_share_picks`, the vectors |
 | T29 | Merged into T23, whose wants part it is: marks mean what the rules say | Merged | `t23_audiences_mean_what_shares_say`, its wants part |
 | O1 | A diff explains any two records: applying the diff of `r` and `s` to `r` gives `s`, it names every change and only what changed (`apply_diff`, `diff_complete`, `diff_sound`) | Proven | `o1_a_diff_explains_any_two_records`, `each_diff_makes_the_models_changes` |
 | O2 | Ops do what they say: the diff of a change within some places names only what those places cover (`diff_within`) | Proven | `o2_ops_change_only_what_they_name`, `each_run_ends_where_the_models_does` |
@@ -169,16 +169,16 @@ their slice, and it links the entry's earlier keys under its new one, so whoever
 and nothing of an entry it can't read now (T24). An audience no entry is in keeps its key through removals; an entry
 that brings it back into use moves it to a new epoch, which whoever a removal took out meanwhile doesn't open.
 
-A share is a named group of ops and nothing else (`{name, where, ops}`, [OPS.md](../docs/OPS.md)): what its grantee may
-do on what its `where` picks, from relaying and backing up to reading, writing value by value, asking for tags and
-sharing on; its level is the class of its strongest op. Its sealed slice holds the ops, and its `select` shows only a
-salted hash of them in the clear, beside the level (T25). Every write through a share carries, inside its encrypted
-body, a proof: the share it relies on, and the ops and salt of each share of that share's chain. Every reader of the
-entry reads the write's touches off its Loro ops, imported on the version it builds on, and counts the write only where
-every share of the chain allows every touch and everything it builds on counts (C2 to C4), so a chain allows no more
-than any share of it (C1). A write that doesn't count stays in the log and shows on no line, nor does anything built on
-it: an app patched to skip the check writes nothing anyone reads. Everyone gets the Public group alone, which only reads
-(T8).
+A share is a named group of ops and nothing else (`{name, where, ops}`, [ARCHITECTURE.md](../docs/ARCHITECTURE.md) §8):
+what its grantee may do on what its `where` picks, from relaying and backing up to reading, writing value by value,
+asking for tags and sharing on; its level is the class of its strongest op. Its sealed slice holds the ops, and its
+`select` shows only a salted hash of them in the clear, beside the level (T25). Every write through a share carries,
+inside its encrypted body, a proof: the share it relies on, and the ops and salt of each share of that share's chain.
+Every reader of the entry reads the write's touches off its Loro ops, imported on the version it builds on, and counts
+the write only where every share of the chain allows every touch and everything it builds on counts (C2 to C4), so a
+chain allows no more than any share of it (C1). A write that doesn't count stays in the log and shows on no line, nor
+does anything built on it: an app patched to skip the check writes nothing anyone reads. Everyone gets the Public group
+alone, which only reads (T8).
 
 Every reader also judges each write by the schemas its entry was written under once the write is in, which must be in
 the vault's lane or built in and all of one kind: each place it changed holds a value one of them takes there, each
@@ -306,5 +306,5 @@ what is still red.
 | O | Ops: one JSON language to read and change any record, the same engine on every device, the page and the studio on it | O1, O2, O3 |
 | C | Caps that name ops: rules in a write cap's sealed slice with a commitment in the clear, proof-carrying writes, every reader counting only what the rules allow; `may` for the page; rules in the share dialog | C1, C2, C3, C4, and T25 again |
 | S | Writes that fit their schemas: every reader judging each write by its entry's schemas, devices refusing what doesn't fit, the page saying why a write doesn't count | S1, S2, S3, S4 |
-| B | Blobs ([BLOBS.md](../docs/BLOBS.md)): sealed files of any size, writes that name the files they bring, one iroh-blobs store per node, sync rules by the cap selector for any data (since replaced by keep shares), marked by the stewards | T27, T28, T29 (since merged into T23), and T13, T25 again |
+| B | Blobs ([ARCHITECTURE.md](../docs/ARCHITECTURE.md) §13): sealed files of any size, writes that name the files they bring, one iroh-blobs store per node, sync rules by the cap selector for any data (since replaced by keep shares), marked by the stewards | T27, T28, T29 (since merged into T23), and T13, T25 again |
 | H | Holdings (v8): each device tells each peer, on its own connection, what it holds for good of each log and file the peer may know; asks for the logs that differ alone; Synced to; one pool of blob connections, let in only while a sync connection proves the device | H1, and T27 extended |

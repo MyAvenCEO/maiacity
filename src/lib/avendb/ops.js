@@ -1,4 +1,4 @@
-// avenDB's ops as the page writes them (avendb/docs/OPS.md, avendb's `engine`, avendb/v8/v2-contract.md): every read
+// avenDB's ops as the page writes them (avendb/docs/ARCHITECTURE.md §8, avendb's `engine`): every read
 // and every change of the database is one JSON op, whatever its schema, which the device runs (`run(op)`, in this
 // page's WebAssembly or in the Mac app's device alike) and answers `{ ok }`, `{ refused, why }`, or for a change its
 // vault's owners approve that runs without the passkey's ceremony, `{ approve }`. A change acts for the vault it names

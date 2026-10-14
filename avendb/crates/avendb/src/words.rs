@@ -1,11 +1,11 @@
-//! How avenDB's JSON names what the core says, for the page, the Mac app and MCP alike (`engine`): kinds, levels and
-//! statuses by their lowercase names, ids in 64 lowercase hex digits, a share's who, a vault's owners.
+//! How avenDB's JSON names what the core says, for every caller of `run` alike (`engine`): kinds, levels and statuses
+//! by their lowercase names, ids in 64 lowercase hex digits, a share's who, a vault's owners.
 //!
 //! A share is a named group of ops on a slice of its vault (`slice::spec_of_json`): `{"name": "Work todos", "where":
 //! {"all": [{"type": ["todo"]}, {"tag": "work"}]}, "ops": [{"op": "read"}, {"op": "set", "path": ["status"], "to":
-//! ["done"]}]}`, the ops as the docs write them (`rules`, `avendb/docs/OPS.md`), `where` a query's `where` of labels
-//! alone. Its level is the class of its strongest op (`level_name`), which the page reads and never names. A keep
-//! share's level is its mode: `keepWhole`, `keepOpened` or `keepNever`.
+//! ["done"]}]}`, the ops as the docs write them (`rules`, `docs/ARCHITECTURE.md` §8), `where` a query's `where` of
+//! labels alone. Its level is the class of its strongest op (`level_name`), which the page reads and never names. A
+//! keep share's level is its mode: `keepWhole`, `keepOpened` or `keepNever`.
 
 use serde_json::{Value, json};
 
@@ -111,7 +111,7 @@ mod tests {
             "where": { "all": [{ "type": ["todo"] }, { "tag": "work" }] },
             "ops": [{ "op": "set", "path": ["status"], "to": ["done"] }, { "op": "merge", "on": "proposals" }],
         });
-        let (name, select, ops) = spec_of_json(&work).expect("a cap");
+        let (name, select, ops) = spec_of_json(&work).expect("a share");
         assert_eq!(name, "Work todos");
         assert_eq!(select, Selector::AnyOf(vec![vec![Atom::TypeIn(vec!["todo".into()]), Atom::TagHas("work".into())]]));
         // in order, read beside what writes
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(rules::ops_to_json(&ops), read_first);
         // the whole vault where it picks nothing narrower; what the page reads back says the same
         let public = json!({ "name": "Public", "ops": [{ "op": "read" }] });
-        let (name, select, ops) = spec_of_json(&public).expect("a cap");
+        let (name, select, ops) = spec_of_json(&public).expect("a share");
         assert_eq!((name.as_str(), &select, &ops[..]), ("Public", &Selector::All, &[Op::Read][..]));
         let above = vec![Grant { ops: Level::Owner.ops(), salt: [3; 32] }];
         let slice = Slice { name, select, grant: Grant { ops, salt: [4; 32] }, above };
