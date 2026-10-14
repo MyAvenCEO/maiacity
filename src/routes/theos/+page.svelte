@@ -2643,7 +2643,7 @@
 			and {pc(treasuryShare('proposals'))} for new work. The dividends never pass through it: each sale pays them
 			at once. People hold {pc(DYN.people)} of all MIND by value, treasuries {pc(DYN.treasuries)} and the pools
 			{pc(DYN.pools)}. People own the COOPs that hold those reserves. In year {SIM.years}, the lowest reserve was
-			{RESERVES.minDays} days of running costs, and the median {RESERVES.medianDays}:
+			{fmt(RESERVES.minDays)} days of running costs, and the median {fmt(RESERVES.medianDays)}:
 			{fmt(RESERVES.medianDays / RESERVES.days, 1)} times the {RESERVES.days} days of the target. One reason is that the
 			target also covers planned building, which these days leave out. The target is a tuned number. With
 			{V('res6').months} months, food ran short {inYears(V('res6').foodYears)}. With {V('res12').months} months, no one
