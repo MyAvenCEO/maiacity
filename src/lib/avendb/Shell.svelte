@@ -1,8 +1,8 @@
 <!--
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its pages, as a database studio lists them: its notes, its todos, its articles and its Library of
-	files, films, pictures, PDFs and songs; its database (the query console, the table editor, its shares, schemas and
+	vault's name and its pages, as a database studio lists them: its notes, its todos, its articles, its Library of
+	files, films, pictures, PDFs and songs, and its flows, the stages its entries go through; its database (the query console, the table editor, its shares, schemas and
 	lenses, its history, every signed edit, and the device's jobs, what it syncs in the background); then its settings
 	(About, Owners and devices, Sharing); and the page picked in the middle. Each page has an address of its own
 	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
@@ -17,6 +17,7 @@
 	import { enter } from '$lib/app/immersive.svelte';
 	import Article from './Article.svelte';
 	import Articles from './Articles.svelte';
+	import Flows from './Flows.svelte';
 	import Database from './Database.svelte';
 	import Icon from './Icon.svelte';
 	import Jobs from './Jobs.svelte';
@@ -47,7 +48,8 @@
 				['notes', 'Notes', 'note'],
 				['todos', 'Todos', 'todo'],
 				['articles', 'Articles', 'article'],
-				['library', 'Library', 'library']
+				['library', 'Library', 'library'],
+				['flows', 'Flows', 'flow']
 			]
 		],
 		[
@@ -213,6 +215,8 @@
 			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 		{:else if tab === 'library'}
 			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+		{:else if tab === 'flows'}
+			<Flows {world} vault={context} {actor} />
 		{:else if tab === 'jobs'}
 			<Jobs {world} vault={context} {actor} {api} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}

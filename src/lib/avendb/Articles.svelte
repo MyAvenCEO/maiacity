@@ -4,12 +4,15 @@
 	public with them; then every article of the vault the acting vault reads, each with its cover, its title, its
 	opening words, the vault that wrote it and when, read from its first signed edit (./article.js). A click opens it
 	to read (Article); it is edited, proposed to and merged as a note is. A vault other than this one adds an article
-	only through a cap that lets it, as the device says (`creatable`, `may`).
+	only through a cap that lets it, as the device says (`creatable`, `may`). Each goes through the content flow
+	(./flows.js): a blank one starts as an idea, one made of a blog post as a draft, its pictures public already, and
+	it is published, made public and put on the Maia Universe stream, from its page.
 -->
 <script>
 	import { asset } from '$lib/media/url';
 	import { ARTICLE, blogPosts, EXAMPLE, fileNamed, fromBlog, opening, pictures } from './article.js';
 	import { mediaOf, whole } from './files.js';
+	import { CONTENT, flowsFor, stageOf, stageTag } from './flows.js';
 	import Icon from './Icon.svelte';
 	import { allowed, articleRecord, creatable, may } from './ops.js';
 	import { count, EVERYONE, nameOf, reads, why } from './vaults.js';
@@ -43,12 +46,20 @@
 		};
 	});
 
-	/** The op that adds article `title` reading `text`. @param {string} title @param {string} text */
-	const adding = (title, text) => ({
+	/** the flow its articles go through, and the stage of it each is in */
+	const flow = $derived(flowsFor(world, vault, ARTICLE)[0] ?? CONTENT);
+	/** @param {import('./vaults.js').EntryView} a */
+	const stage = (a) => stageOf(a, flow);
+
+	/**
+	 * The op that adds article `title` reading `text`, in stage `at` of its flow.
+	 * @param {string} title @param {string} text @param {string} [at]
+	 */
+	const adding = (title, text, at = 'idea') => ({
 		op: 'create',
 		vault,
 		type: ARTICLE,
-		tags: asked ?? [],
+		tags: [...(asked ?? []), stageTag(flow.key, at)],
 		value: articleRecord(title, text)
 	});
 
@@ -79,7 +90,8 @@
 
 	/**
 	 * Makes an article of blog post `slug`: each picture it names brought into the vault's Library first, unless a file
-	 * of that name is there, then the article, then a share of both with everyone, which the vault's owners approve.
+	 * of that name is there, and shared with everyone, then the article, a draft of the content flow, published from
+	 * its page.
 	 */
 	async function fromPost() {
 		failed = '';
@@ -103,12 +115,15 @@
 				if (!made) throw new Error(`${name} didn't go into the Library`);
 				files.push(made.entry);
 			}
+			if (files.length) {
+				importing = 'Making its pictures public';
+				const share = { op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { entry: files } };
+				await api.run('Making its pictures public', { ...share, as: actor });
+			}
 			importing = 'Writing the article';
-			const made = await api.run(`Writing “${post.title}”`, { ...adding(post.title, post.text), as: actor });
+			const write = { ...adding(post.title, post.text, 'draft'), as: actor };
+			const made = await api.run(`Writing “${post.title}”`, write);
 			if (!made) throw new Error('the article wasn’t written');
-			importing = 'Making it public';
-			const share = { op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { entry: [made.entry, ...files] } };
-			await api.run('Making the article and its pictures public', { ...share, as: actor });
 			onopen(made.entry);
 		} catch (e) {
 			failed = /** @type {Error} */ (e).message;
@@ -152,9 +167,9 @@
 				<p class="soft">{nameOf(as)} can’t add an article here: {unadded}.</p>
 			{:else}
 				<p class="soft">
-					A new article in {nameOf(here)}, written by <b>{nameOf(as)}</b>: its author and when it was written come
-					from its first signed edit. Or make one of a post of our blog, its pictures brought into the Library by their
-					content hashes, and made public with them:
+					A new article in {nameOf(here)}, written by <b>{nameOf(as)}</b>, starts as an idea: its author and when it
+					was written come from its first signed edit, and it is private until it is published. Or make a draft of a
+					post of our blog, its pictures brought into the Library by their content hashes and made public:
 				</p>
 				<div class="row">
 					<select class="field" bind:value={slug} aria-label="The blog post to make an article of">
@@ -195,7 +210,10 @@
 							? ` · ${count(a.proposals, 'proposal')}`
 							: ''}
 					</small>
-					{#if a.public}<span class="chip">Public</span>{/if}
+					<span class="chips">
+						{#if stage(a)}<span class="chip" class:accent={stage(a)?.public}>{stage(a)?.name}</span>{/if}
+						{#if a.public}<span class="chip">Public</span>{/if}
+					</span>
 				</span>
 			</a>
 		{/each}
@@ -357,6 +375,11 @@
 
 	.info .chip {
 		font-size: 0.66rem;
+	}
+
+	.chips {
+		display: flex;
+		gap: 0.3rem;
 	}
 
 	.empty p {
