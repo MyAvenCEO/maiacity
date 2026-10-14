@@ -344,21 +344,29 @@ pub enum Step {
     /// The edit that adds the new device to its person's vault.
     Join,
     /// The genesis of its person's vault and the edit that adds their first device to it, which that device drafts
-    /// together (`Node::found_with`); and, through a server nobody has claimed yet, avenCEO's genesis and the edit that
-    /// adds the server to it.
+    /// together (`Node::found_with`); and, through a server nobody has claimed yet, the seed's geneses (`seed`) and
+    /// the edit that adds the server to its CEO Aven.
     Found,
-    /// The genesis of avenCEO, the aven vault its person's human vault founds as their device claims a server, and the
-    /// edit that adds the server to it, drafted together (`Node::claim_with`).
+    /// The geneses of the seed its person's human vault founds as their device claims a server (`seed`), and the edit
+    /// that adds the server to its CEO Aven, drafted together (`Node::claim_with`).
     Claim,
     /// Changes its person's vault approves, as the root of the vaults it owns: new vaults it owns, an owner share, the
     /// revocation of one, drafted together (`Node::approve_with`).
     Approve,
 }
 
-/// The genesis of avenCEO, an aven vault human vault `owner` owns alone, as its person claims a server.
-fn aven(owner: VaultId) -> Action {
-    let owners = vec![Principal::Vault(owner)];
-    Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] }
+/// The seed human vault `human` founds as its person claims a server (`avendb::world::SEED`), drafted one on top of
+/// the other, each approved by their passkey `passkey`: Maia Holding GmbH, a coop the human vault owns alone; avenCEO
+/// GmbH, a coop Maia Holding owns alone; and the CEO Aven, the aven vault avenCEO GmbH owns alone, which the server
+/// becomes a device of. The CEO Aven.
+fn seed(drafting: &mut Drafting<'_>, passkey: SignerId, human: VaultId) -> Result<VaultId, Refusal> {
+    let mut owner = human;
+    for kind in avendb::world::SEED {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+        owner = VaultId::from(drafting.draft(&[passkey], genesis)?);
+    }
+    Ok(owner)
 }
 
 /// The software passkey `1` in a node's Lab, which makes its ceremonies itself.
@@ -642,16 +650,18 @@ impl Node {
     }
 
     /// Found this device's person's human vault, its root their passkey, with this device in it and the master recovery
-    /// key the Lab adds among its owners (`Lab::set_recovery`), and make it known to the server `offer` names, whose card it takes (`contact`): `authenticator` signs the vault's genesis and the edit
-    /// that adds this device in one ceremony (`Lab::drafting`). If the card names no avenCEO, as nobody has claimed the
-    /// server yet, the same ceremony founds avenCEO, an aven vault the new human vault owns, and adds the server as its
-    /// device, which the server signs too and keeps (`Lab::accept_claim`): the first person to found their vault
-    /// through a server nobody has claimed owns it. Should another vault claim it first, this device takes that
-    /// avenCEO from its card. The passkey is one of `passkeys`, whose keys the Lab holds: a device that doesn't know
-    /// its passkey's P-256 key yet drafts it all for each key the passkey's pass recovers to, in one batch
-    /// (`Lab::drafting_for`), and keeps the edits of the passkey the ceremony's assertion verifies under. That passkey,
-    /// the human vault and avenCEO. Fails if the device answering isn't the one offered, this device belongs to a vault
-    /// already, no passkey of `passkeys` made the ceremony, or the server names no avenCEO and takes no claim.
+    /// key the Lab adds among its owners (`Lab::set_recovery`), and make it known to the server `offer` names, whose
+    /// card it takes (`contact`): `authenticator` signs the vault's genesis and the edit that adds this device in one
+    /// ceremony (`Lab::drafting`). If the card names no avenCEO, as nobody has claimed the server yet, the same
+    /// ceremony founds the seed (`seed`): Maia Holding GmbH, which the new human vault owns, avenCEO GmbH and the CEO
+    /// Aven, and adds the server as the aven's device, which the server signs too and keeps (`Lab::accept_claim`): the
+    /// first person to found their vault through a server nobody has claimed owns it. Should another vault claim it
+    /// first, this device takes that avenCEO from its card. The passkey is one of `passkeys`, whose keys the Lab holds:
+    /// a device that doesn't know its passkey's P-256 key yet drafts it all for each key the passkey's pass recovers
+    /// to, in one batch (`Lab::drafting_for`), and keeps the edits of the passkey the ceremony's assertion verifies
+    /// under. That passkey, the human vault and avenCEO. Fails if the device answering isn't the one offered, this
+    /// device belongs to a vault already, no passkey of `passkeys` made the ceremony, or the server names no avenCEO
+    /// and takes no claim.
     pub async fn found_with(
         &self,
         offer: &Offer,
@@ -680,7 +690,7 @@ impl Node {
                 let vault = VaultId::from(drafting.draft(&signers, genesis)?);
                 drafting.draft(&[passkey, me], Action::Share(Sharing::Device { vault, device: me, seal_to: None }))?;
                 if let Some(key) = &key {
-                    let avenceo = VaultId::from(drafting.draft(&[passkey], aven(vault))?);
+                    let avenceo = seed(drafting, passkey, vault)?;
                     let add = Sharing::Device { vault: avenceo, device: server, seal_to: Some(key.clone()) };
                     let add = Action::Share(add);
                     drafting.draft(&[passkey, server], add)?;
@@ -709,19 +719,20 @@ impl Node {
     }
 
     /// Claim the server `offer` names for this device's person (P8f), while nobody has claimed it: the server hands its
-    /// key to seal to (`Lab::claim_key`); the passkey `passkey`, used on this device, founds avenCEO, an aven vault
-    /// this device's human vault owns, and adds the server as its device (`Lab::claim`); the server signs that edit too
-    /// and keeps it (`Lab::accept_claim`), and this device keeps the server's join. Then they sync, and this device
-    /// boxes avenCEO's key for the server. avenCEO. Tried again after a claim the server didn't take, it adds the
-    /// server to the avenCEO that claim founded; after one whose answer was lost, it finds the server avenCEO's device
-    /// already. Fails if the device answering isn't the one offered, this device belongs to no vault, the passkey isn't
-    /// at hand, or another vault has claimed the server, or the server refuses the claim.
+    /// key to seal to (`Lab::claim_key`); the passkey `passkey`, used on this device, founds the seed (`seed`):
+    /// Maia Holding GmbH, which this device's human vault owns, avenCEO GmbH and the CEO Aven, and adds the server as
+    /// the aven's device (`Lab::claim`); the server signs that edit too and keeps it (`Lab::accept_claim`), and this
+    /// device keeps the server's join. Then they sync, and this device boxes the aven's key for the server. The CEO
+    /// Aven. Tried again after a claim the server didn't take, it adds the server to the aven that claim founded
+    /// (`Lab::unclaimed_aven`); after one whose answer was lost, it finds the server the aven's device already. Fails
+    /// if the device answering isn't the one offered, this device belongs to no vault, the passkey isn't at hand, or
+    /// another vault has claimed the server, or the server refuses the claim.
     pub async fn claim(&self, offer: &Offer, passkey: SignerId) -> Result<VaultId> {
         self.claim_with(offer, passkey, &InLab(self.shared.clone(), passkey)).await
     }
 
-    /// `claim`, with `passkey` in the platform's authenticator (P8e): `authenticator` signs avenCEO's genesis and the
-    /// edit that adds the server to it in one ceremony (`Lab::drafting`).
+    /// `claim`, with `passkey` in the platform's authenticator (P8e): `authenticator` signs the seed's geneses and the
+    /// edit that adds the server to its aven in one ceremony (`Lab::drafting`).
     pub async fn claim_with(
         &self,
         offer: &Offer,
@@ -745,7 +756,7 @@ impl Node {
             // a claim tried again, after one the server didn't take, adds the server to the avenCEO that one founded
             let avenceo = match lab.unclaimed_aven(me) {
                 Some(avenceo) => avenceo,
-                None => VaultId::from(drafting.draft(&[passkey], aven(human))?),
+                None => seed(&mut drafting, passkey, human)?,
             };
             let add = Action::Share(Sharing::Device { vault: avenceo, device: server, seal_to: Some(key) });
             drafting.draft(&[passkey, server], add)?;

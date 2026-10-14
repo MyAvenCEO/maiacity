@@ -100,6 +100,7 @@ use crate::sync::{
     answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
 };
 use crate::wire::{Claim, Join, Request, Wire as _};
+use crate::world;
 
 /// A device keeps its keys and audiences up to date in a few rounds at most: one to make and seal keys and move
 /// entries, one to seal the keys of the audiences they moved to and link their history, one to answer what moved, one
@@ -801,12 +802,12 @@ impl Lab {
     }
 
     /// Device `on`'s claim of a server no vault has claimed yet (P8f): `draft` (`draft`, `drafting`) adds the server's
-    /// device to an aven vault `on`'s view holds, the new avenCEO, owned by `on`'s human vault, its key to seal to the
-    /// one the server handed (`claim_key`). Every signer but the server signs it here, each by its ceremony among
-    /// `ceremonies` or by its key at hand, and the claim brings the logs the server checks it by, and no others:
-    /// avenCEO's and its owners', up the chains (`sync::vault_logs`). The server signs last, and keeps it all
-    /// (`accept_claim`). `NotClaiming` if `draft` adds no device to an aven vault, `Locked` if a signer's key isn't at
-    /// hand, `BadSignature` if a ceremony isn't its signer's over the draft's challenge.
+    /// device to an aven vault `on`'s view holds, the CEO Aven of the seed `on`'s human vault founds (`world::SEED`),
+    /// its key to seal to the one the server handed (`claim_key`). Every signer but the server signs it here, each by
+    /// its ceremony among `ceremonies` or by its key at hand, and the claim brings the logs the server checks it by,
+    /// and no others: the aven's and its owners', up the chains (`sync::vault_logs`). The server signs last, and keeps
+    /// it all (`accept_claim`). `NotClaiming` if `draft` adds no device to an aven vault, `Locked` if a signer's key
+    /// isn't at hand, `BadSignature` if a ceremony isn't its signer's over the draft's challenge.
     pub fn claim(
         &mut self,
         on: SignerId,
@@ -838,23 +839,25 @@ impl Lab {
         Some(aven.id)
     }
 
-    /// An aven vault device `d`'s own vault alone owns that has no device yet, by `d`'s view: the avenCEO a claim
-    /// founded that the server didn't take, which a claim tried again adds the server to rather than found another.
+    /// The CEO Aven of a seed device `d`'s own vault founded that has no device yet, by `d`'s view (`world::seeded`):
+    /// the one a claim founded that the server didn't take, which a claim tried again adds the server to rather than
+    /// found another seed.
     pub fn unclaimed_aven(&self, d: SignerId) -> Option<VaultId> {
-        let mine = Principal::Vault(self.vault_of(d)?);
+        let mine = self.vault_of(d)?;
         let st = self.held(d).view();
-        let aven = st.vaults().iter().find(|v| v.kind == Kind::Aven && v.devices.is_empty() && v.owners == [mine])?;
+        let aven = st.vaults().iter().find(|v| v.devices.is_empty() && world::seeded(st, mine, v.id))?;
         Some(aven.id)
     }
 
     /// Device `d`, a server no vault has claimed yet, takes a device's claim of it (`claim`, P8f): `d` signs the
     /// claim's edit too, in its place among the edit's signers, and keeps it, with the vault logs the claim brings,
     /// only if every signature checks out and, with them, its view makes `d` a device of an aven vault. So the first
-    /// human vault to claim the server owns avenCEO, and the server acts for avenCEO but never governs it. The server's
-    /// join, for the claiming device to keep too: the edit, signed, and the McEliece key it names, the server's own.
-    /// `AlreadyMember` as `claim_key` says; `NotClaiming` if the edit adds another device, seals to another key than
-    /// the one `d` handed, or adds `d` to anything but an aven vault; `BadSignature` if a signature doesn't verify, or
-    /// one is missing or left over; otherwise why `d`'s view, with the logs the claim brings, refuses the edit.
+    /// human vault to claim the server owns its aven, through the coops of its seed, and the server acts for the aven
+    /// but never governs it. The server's join, for the claiming device to keep too: the edit, signed, and the
+    /// McEliece key it names, the server's own. `AlreadyMember` as `claim_key` says; `NotClaiming` if the edit adds
+    /// another device, seals to another key than the one `d` handed, or adds `d` to anything but an aven vault;
+    /// `BadSignature` if a signature doesn't verify, or one is missing or left over; otherwise why `d`'s view, with the
+    /// logs the claim brings, refuses the edit.
     pub fn accept_claim(&mut self, d: SignerId, claim: Claim) -> Result<Join, Refusal> {
         let key = self.claim_key(d)?;
         let Claim { card, add, sigs } = claim;
@@ -2101,6 +2104,11 @@ impl Lab {
     /// no device trusts the curves.
     pub fn state(&self, d: SignerId) -> &State {
         self.held(d).view()
+    }
+
+    /// The replay of the edits device `d` holds: which stand, and what they say (`state`).
+    pub fn replay(&self, d: SignerId) -> &Replay {
+        &self.held(d).replay
     }
 
     /// The signed edit device `d` holds with id `edit`, as it would send it.

@@ -12,9 +12,10 @@ use avendb::cast::*;
 use avendb::id::{SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Kind, Level, Principal};
+use avendb::world;
+use avendb::policy::{Kind, Level};
 use avendb::slice::Selector;
-use avendb_net::{Admission, Node, Options, disk, server};
+use avendb_net::{Admission, Node, Options, disk, server, shelf};
 use common::Folder;
 use iroh::{EndpointId, SecretKey};
 
@@ -65,7 +66,7 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let secret = dir.path().join("g1").join(server::SECRET);
+        let secret = dir.path().join(format!("g{}", shelf::FLOOR)).join(server::SECRET);
         let mode = std::fs::metadata(secret).expect("its secret").permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "its secret is readable by its owner alone");
     }
@@ -83,14 +84,16 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     assert!(stranger.claim(&offer, passkey_b).await.is_err(), "a device of no vault");
     assert!(bobs.claim(&alices.offer(), passkey_b).await.is_err(), "Alice's Mac");
     assert_eq!(server::vault(&server).await, None, "and the server is still nobody's");
-    // Bob's vault claims it first: the server is a device of a new avenCEO, which Bob's vault owns
+    // Bob's vault claims it first: the server is a device of the CEO Aven of the seed Bob's vault founds, owned by
+    // avenCEO GmbH, which Maia Holding GmbH owns, which Bob's vault owns
     let avenceo = bobs.claim(&offer, passkey_b).await.expect("Bob's vault claims the server");
-    assert_eq!(server::vault(&server).await, Some(avenceo), "the server is avenCEO's device");
+    assert_eq!(server::vault(&server).await, Some(avenceo), "the server is the CEO Aven's device");
     let shape = move |lab: &Lab, me| {
-        lab.state(me).vault(avenceo).map(|v| (v.kind, v.owners.clone(), v.root, v.devices.clone()))
+        let st = lab.state(me);
+        st.vault(avenceo).map(|v| (v.kind, v.root, v.devices.clone(), world::seeded(st, bob, avenceo)))
     };
-    let owned = Some((Kind::Aven, vec![Principal::Vault(bob)], None, vec![server.device()]));
-    assert_eq!(server.read(shape).await, owned, "owned by Bob's vault, the server its one device");
+    let owned = Some((Kind::Aven, None, vec![server.device()], true));
+    assert_eq!(server.read(shape).await, owned, "the end of Bob's seed, the server its one device");
     assert_eq!(bobs.read(shape).await, owned, "on Bob's Mac too");
     let opens = move |lab: &Lab, me| lab.opens(me, KeyFam::Seed(avenceo));
     until("the server opens avenCEO's seed, boxed for it by Bob's Mac", || server.read(opens)).await;

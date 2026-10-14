@@ -43,6 +43,7 @@ use std::ops::Range;
 
 use serde_json::{json, Map, Value};
 
+use crate::data;
 use crate::doc::Item;
 use crate::history::{self, History, MAIN};
 use crate::id::{BlobId, EditId, EntryId, SignerId, VaultId};
@@ -664,11 +665,12 @@ pub fn line_name(h: &History, line: Line) -> Option<String> {
 
 /// `{"op": "history", "entry", "limit"?}`: entry `entry`'s lines, the main line first, then each proposal in the order
 /// it started, each with its name, the version it started from and its heads; and every write of it the device holds,
-/// in the order it took them, each with its id, its device (`author`), the vault it acted for, its line, what it
-/// builds on, what it is (`wrote`), whether its readers count it (`counted`: a write that breaks its entry's schemas,
-/// that no op of its shares allows, or that builds on one, is on no line), why not (`why`) and, for the latest
-/// `limit` (`SHOWN`, left out) that change anything, the changes it made to the stored record (`ops::diff`), which
-/// every reader of the entry sees alike.
+/// in the order it took them, each with its id, its device (`author`), the vault it acted for, the owners it acted
+/// through (`via`) and who stands behind it, link by link back to the passkeys (`chain`, `data::Audit::chain`), its
+/// line, what it builds on, what it is (`wrote`), whether its readers count it (`counted`: a write that breaks its
+/// entry's schemas, that no op of its shares allows, or that builds on one, is on no line), why not (`why`) and, for
+/// the latest `limit` (`SHOWN`, left out) that change anything, the changes it made to the stored record
+/// (`ops::diff`), which every reader of the entry sees alike.
 fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let entry = entry_of(o)?;
     let limit = count_of(o, "limit")?.unwrap_or(SHOWN);
@@ -683,6 +685,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
         })
     };
     let shown = h.changes().len().saturating_sub(limit);
+    let audit = data::Audit::new(lab, me);
     let edit = |(i, c): (usize, &history::Change)| {
         let (w, x) = (&c.write, wrote(h, c));
         let changes = (i >= shown && matches!(x.kind, "edit" | "merge")).then(|| {
@@ -696,6 +699,8 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "id": w.edit.to_hex(),
             "author": w.author.to_hex(),
             "actor": w.actor.to_hex(),
+            "via": w.via.iter().map(VaultId::to_hex).collect::<Vec<_>>(),
+            "chain": audit.chain(w.author, w.actor, &w.via),
             "line": line_json(w.line()),
             "deps": ids(&w.deps),
             "kind": x.kind,

@@ -618,12 +618,29 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
     })
 }
 
-/// Whether device `me`'s vault owns avenCEO, by its view: an aven vault with a device, the server, as once its person's
-/// vault claimed the server (`avendb_net`'s `Node::found_with`).
+/// The vaults a person's claim of avenDB's server founds beside their human vault (`avendb_net`'s `Node::found_with`,
+/// `Node::claim_with`), each owned by the one before alone, the first by the human vault: Maia Holding GmbH and
+/// avenCEO GmbH, two coops, and the CEO Aven, the aven vault the server becomes a device of.
+pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::Aven];
+
+/// Whether vault `aven` ends a seed founded from vault `mine`, by view `st` (`SEED`): its kind, its owner's and its
+/// owner's owner's are the seed's, each owned by the one before alone, the first by `mine`.
+pub fn seeded(st: &State, mine: VaultId, aven: VaultId) -> bool {
+    let mut at = aven;
+    for kind in SEED.iter().rev() {
+        let Some(v) = st.vault(at).filter(|v| v.kind == *kind) else { return false };
+        let [Principal::Vault(owner)] = v.owners[..] else { return false };
+        at = owner;
+    }
+    at == mine
+}
+
+/// Whether device `me`'s vault owns avenCEO, directly or through owners of owners, by its view: an aven vault with a
+/// device, the server, as once its person's vault claimed the server and founded the CEO Aven (`SEED`).
 pub fn owns_aven(lab: &Lab, me: SignerId) -> bool {
-    let Some(mine) = lab.vault_of(me).map(Principal::Vault) else { return false };
-    let avenceo = |v: &Vault| v.kind == Kind::Aven && v.owners.contains(&mine) && !v.devices.is_empty();
-    lab.state(me).vaults().iter().any(avenceo)
+    let Some(mine) = lab.vault_of(me) else { return false };
+    let st = lab.state(me);
+    st.vaults().iter().any(|v| v.kind == Kind::Aven && !v.devices.is_empty() && st.owns(mine, v.id))
 }
 
 /// Whether avenDB's server keeps a backup of device `me`'s person's vault: avenCEO holds backup on the whole of it

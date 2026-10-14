@@ -33,6 +33,7 @@ use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
 use avendb::sealed::FileRoot;
 use avendb::sign::{Ceremony, Passkey, device_salt};
+use avendb::world;
 use avendb_browser::{DELETED, Device, Fresh, Meta, Start, Unlock};
 use avendb_net::{Admission, Authenticator, NoBytes, NoCeremony, Node, Offer, Options, Progress, Step, disk};
 use avendb_server::Relay;
@@ -440,8 +441,12 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     assert_eq!(steps(&shown_steps), claiming, "the claim a step of its own");
     let vault = first.vault().await.expect("her vault");
     let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
-    let shape = move |lab: &Lab, _| lab.state(me).vault(avenceo).map(|v| (v.kind, v.owners.clone()));
-    assert_eq!(server.read(shape).await, Some((Kind::Aven, vec![Principal::Vault(vault)])), "owned by her vault");
+    let shape = move |lab: &Lab, _| {
+        let st = lab.state(me);
+        st.vault(avenceo).map(|v| (v.kind, world::seeded(st, vault, avenceo)))
+    };
+    let seeded = Some((Kind::Aven, true));
+    assert_eq!(server.read(shape).await, seeded, "the CEO Aven of her seed, owned through Maia Holding, avenCEO GmbH");
     let seen = world_of(&first).await;
     assert_eq!(seen["ownsAven"], true, "as her browser shows");
     let (hers, masters) = (Principal::Signer(Passkey::from_seed([5; 32]).id()), Principal::Signer(master.id()));
@@ -547,18 +552,27 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("the server is avenCEO's device");
     let w = world_of(&first).await;
     assert_eq!(w["mine"], eve_v.to_hex());
+    // her seed: Maia Holding GmbH, which her vault owns, avenCEO GmbH, which Maia Holding owns, and the CEO Aven,
+    // which avenCEO GmbH owns and the server is a device of
+    let owner = |v: VaultId| shown(&w, v)["owners"][0]["vault"].as_str().and_then(VaultId::from_hex).expect("an owner");
+    let gmbh = owner(avenceo);
+    let holding = owner(gmbh);
+    assert_eq!(owner(holding), eve_v, "her vault owns Maia Holding");
     let ids: Vec<&str> = w["vaults"].as_array().expect("its vaults").iter().filter_map(|v| v["id"].as_str()).collect();
-    assert_eq!(ids, [eve_v.to_hex(), avenceo.to_hex()], "her vault and avenCEO");
-    assert_eq!(shown(&w, avenceo)["via"], json!([eve_v.to_hex()]), "her browser acts for avenCEO through her vault");
-    // her vault's and avenCEO's profiles, written by her browser with no ceremony; avenCEO's entries are its own,
-    // which its server opens, while hers it only relays
+    assert_eq!(ids, [eve_v.to_hex(), holding.to_hex(), gmbh.to_hex(), avenceo.to_hex()], "her vault and her seed");
+    let via = json!([gmbh.to_hex(), holding.to_hex(), eve_v.to_hex()]);
+    assert_eq!(shown(&w, avenceo)["via"], via, "her browser acts for the CEO Aven through its owners' owners");
+    // her vault's and her seed's profiles, written by her browser with no ceremony; the CEO Aven's entries are its
+    // own, which its server opens, while hers it only relays
     let profiled = |v: VaultId, name: &str| json!({ "op": "profile", "vault": v.to_hex(), "name": name });
     assert_eq!(signed(&first, profiled(eve_v, "Eve"), &eve).await, Ok(json!({ "wrote": true })));
-    assert_eq!(signed(&first, profiled(avenceo, "avenCEO"), &eve).await, Ok(json!({ "wrote": true })));
+    for (v, name) in [(holding, "Maia Holding GmbH"), (gmbh, "avenCEO GmbH"), (avenceo, "CEO Aven")] {
+        assert_eq!(signed(&first, profiled(v, name), &eve).await, Ok(json!({ "wrote": true })), "{name}");
+    }
     assert_eq!(signed(&first, profiled(eve_v, "Eve"), &eve).await, Ok(json!({ "wrote": false })), "it reads Eve");
     assert_eq!(eve.steps(), [], "no ceremony");
     let w = world_of(&first).await;
-    assert_eq!((named(&w, eve_v), named(&w, avenceo)), (Some("Eve"), Some("avenCEO")));
+    assert_eq!((named(&w, eve_v), named(&w, avenceo)), (Some("Eve"), Some("CEO Aven")));
     let (eve_p, ceo_p) = (profile(&w, eve_v), profile(&w, avenceo));
     let (mine, srv) = (first.node().device(), server.device());
     let as_level = |v: VaultId, r: &str, opens: bool| Some((v.to_hex(), r.to_string(), opens));
@@ -575,14 +589,14 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     ] });
     let asked = run(&first, four.clone()).await.expect_err("it waits for her passkey");
     assert_eq!(asked["approve"]["signers"], json!([first.passkey().to_hex()]), "{asked}");
-    assert_eq!(world_of(&first).await["vaults"].as_array().map(Vec::len), Some(2), "nothing made");
+    assert_eq!(world_of(&first).await["vaults"].as_array().map(Vec::len), Some(4), "nothing made");
     let vaults = signed(&first, four, &eve).await.expect("four vaults")["vaults"].clone();
     assert_eq!(eve.steps(), [Step::Approve], "one ceremony for all four");
     let vaults: Vec<VaultId> =
         vaults.as_array().expect("four").iter().filter_map(|v| v.as_str().and_then(VaultId::from_hex)).collect();
     let [alice, bob, charly, coop] = vaults[..] else { panic!("four vaults: {vaults:?}") };
     let w = world_of(&first).await;
-    assert_eq!(w["vaults"].as_array().map(Vec::len), Some(6));
+    assert_eq!(w["vaults"].as_array().map(Vec::len), Some(8));
     let made = [(alice, "aven", "avenALICE"), (bob, "aven", "avenBOB"), (coop, "coop", "Maia City COOP")];
     for (v, kind, name) in made {
         let x = shown(&w, v);
@@ -717,7 +731,7 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
     assert_eq!(refused.expect_err("refused")["refused"], "NoCap");
     let w = world_of(&first).await;
     assert_eq!(level(item(&w, note), bob), Some("read"), "{read} stands");
-    assert_eq!(w["vaults"][2]["name"], "avenALICE");
+    assert_eq!(w["vaults"][4]["name"], "avenALICE");
     let caps = w["caps"].as_array().expect("its shares");
     let shared = caps.iter().find(|c| c["id"] == read).expect("the read share");
     assert_eq!((&shared["role"], &shared["slice"]["where"]), (&json!("read"), &the_note), "the note by its id");
@@ -739,7 +753,8 @@ async fn the_vaults_her_vault_owns_are_real_and_each_acts_by_its_own_shares() {
         let Some(vaults) = w["vaults"].as_array() else { return false };
         let names: Vec<&str> = vaults.iter().filter_map(|v| v["name"].as_str()).collect();
         let entries = w["entries"].as_array().cloned().unwrap_or_default();
-        names == ["Eve", "avenCEO", "avenALICE", "avenBOB", "avenCHARLY", "Maia City COOP"]
+        let seed = ["Eve", "Maia Holding GmbH", "avenCEO GmbH", "CEO Aven"];
+        names == [&seed[..], &["avenALICE", "avenBOB", "avenCHARLY", "Maia City COOP"]].concat()
             && entries.iter().any(|i| i["kind"] == "note" && i["text"] == "Plant beans.")
     };
     until("her other browser shows every vault and avenALICE's note", reads).await;

@@ -48,6 +48,7 @@
 		<div class="account" role="menu">
 			<p class="who"><b>{founder.name}</b><span>Founder {String(founder.number).padStart(3, '0')}</span></p>
 			<a role="menuitem" href="{base}/join/">Your name</a>
+			{#if founder.caps?.includes('media:admin')}<a role="menuitem" href="{base}/join/#terminal">Sign a terminal in</a>{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
 			<button role="menuitem" class="out" onclick={onsignout}>Sign out</button>
 		</div>

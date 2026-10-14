@@ -9,6 +9,7 @@
 //! keep their older names: `caps` and `cap` for shares, `cells` and `cell` for audiences, `role` and `roles` for
 //! levels, `grantee` for a share's who, and `generation` for a key's epoch.
 
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{Map, Value, json};
@@ -21,7 +22,7 @@ use crate::keys::{KeyFam, KeyName, Recipient};
 use crate::lab::Lab;
 use crate::lens::{self, DocV2, Lens, Schema};
 use crate::merge::Conflict;
-use crate::policy::{Action, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
+use crate::policy::{Action, Edit, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Vault, Who};
 use crate::sign::{Classical, Signature, SignerKeys};
 use crate::slice::LENS_TYPE;
 use crate::wire::Wire as _;
@@ -169,7 +170,8 @@ fn lens(l: &Lens) -> Value {
 /// The database's history: every signed edit device `me` holds, in the order it took them, for the studio's History
 /// view: each one's place in that order, its id, what it does (`action`: its kind and fields, ids in hex, what is
 /// sealed by its size alone), its author and cosigners, each signature by its signer and its halves (`signature`), the
-/// edits of its log it builds on and its causal depth, its size on the wire, and the vaults it concerns (`concerns`);
+/// edits of its log it builds on and its causal depth, its size on the wire, the vaults it concerns (`concerns`), and
+/// for an act for a vault, a write, a mark or a grant, who stands behind it back to the passkeys (`Audit::chain`);
 /// for a write, whether the device counts it, as once it no longer trusts the curves it counts only the writes a
 /// checkpoint covers, and whether its entry's readers do, as it fits its entry's schemas, the ops of the shares it
 /// relies on allow it and what it builds on counts (`allowed`, `Change::counted`), and why not (`why`, `wrote`).
@@ -190,6 +192,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
         Action::Write { entry, .. } => lab.history(me, *entry).and_then(|h| Some((h, h.get(id)?))),
         _ => None,
     };
+    let audit = Audit::new(lab, me);
     let edits: Vec<Value> = held
         .edits()
         .iter()
@@ -197,6 +200,8 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
         .enumerate()
         .map(|(n, (edit, &id))| {
             let signed = lab.signed_edit(me, id);
+            let via = edit.action.via().unwrap_or_default();
+            let chain = edit.actor().map(|actor| audit.chain(edit.author, actor, via));
             let ((kind, fields), written) = (action(id, &edit.action), write(id, &edit.action));
             json!({
                 "n": n + 1,
@@ -210,6 +215,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
                 "depth": edit.depth,
                 "bytes": signed.map_or(0, |s| s.to_wire().len()),
                 "vaults": concerns(st, id, &edit.action, &shares).iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+                "chain": chain,
                 "counted": matches!(edit.action, Action::Write { .. }).then(|| counted.contains(&id)),
                 "allowed": written.map(|(_, c)| c.counted),
                 "why": written.and_then(|(h, c)| wrote(h, c).why),
@@ -454,19 +460,20 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
     };
     let lines: Vec<Value> = h.lines().into_iter().map(line).collect();
     let shown = h.changes().len().saturating_sub(SHOWN);
-    let edits: Vec<Value> = h.changes().iter().enumerate().map(|(i, c)| edit(h, me, c, i >= shown)).collect();
+    let audit = Audit::new(lab, me);
+    let edits: Vec<Value> = h.changes().iter().enumerate().map(|(i, c)| edit(h, me, &audit, c, i >= shown)).collect();
     let vault = lab.vault_of_entry(me, entry).map(|v| hex(&v.0));
     Some(json!({ "entry": hex(&entry.0), "vault": vault, "lines": lines, "edits": edits }))
 }
 
-/// One edit of a note as its page shows it: its id, its device and the vault it acted for, the line it extends, what
-/// it builds on, and what it is, as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the
-/// start of a proposal (`propose`, with its name), a `merge` of two lines, or `sealed`; and the line it
-/// brought in, or for a proposal the line it started from (`from`); and whether the note's readers count it, as it
-/// fits the note's schemas, the ops of the shares it relies on allow it and what it builds on counts
-/// (`Change::counted`), and why not (`why`). With `shown`, the note's title and text at its version, and the text at
-/// the one it changed, so the page's diff shows what it brought.
-fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
+/// One edit of a note as its page shows it: its id, its device and the vault it acted for, the owners it acted through
+/// (`via`) and who stands behind it (`chain`, `Audit::chain`), the line it extends, what it builds on, and what it is,
+/// as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the start of a proposal (`propose`,
+/// with its name), a `merge` of two lines, or `sealed`; and the line it brought in, or for a proposal the line it
+/// started from (`from`); and whether the note's readers count it, as it fits the note's schemas, the ops of the shares
+/// it relies on allow it and what it builds on counts (`Change::counted`), and why not (`why`). With `shown`, the
+/// note's title and text at its version, and the text at the one it changed, so the page's diff shows what it brought.
+fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, shown: bool) -> Value {
     let (w, Wrote { kind, from, base, why }) = (&c.write, wrote(h, c));
     let line = w.line();
     let at = |version: &[EditId]| h.item_at(version, me, line).as_document();
@@ -476,6 +483,8 @@ fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
         "id": hex(&w.edit.0),
         "author": hex(&w.author.0),
         "actor": hex(&w.actor.0),
+        "via": w.via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+        "chain": audit.chain(w.author, w.actor, &w.via),
         "line": line.map(|b| hex(&b.0)),
         "deps": ids(&w.deps),
         "kind": kind,
@@ -487,6 +496,105 @@ fn edit(h: &History, me: SignerId, c: &Change, shown: bool) -> Value {
         "counted": c.counted,
         "why": why,
     })
+}
+
+/// The acting chains of writes, an audit trail, as device `me` holds the vaults' logs (`chain`): read off the edits
+/// that stand once, for a view of many writes, each chain worked out once.
+pub struct Audit<'a> {
+    st: &'a State,
+    /// The edits that stand and add a member or an owner to a vault, or found one, in the order `me` took them.
+    links: Vec<(&'a Edit, EditId)>,
+    chains: RefCell<HashMap<(SignerId, VaultId, Vec<VaultId>), Value>>,
+}
+
+impl<'a> Audit<'a> {
+    pub fn new(lab: &'a Lab, me: SignerId) -> Audit<'a> {
+        let replay = lab.replay(me);
+        let edits = replay.edits.iter().zip(replay.ids.iter().copied()).zip(&replay.stood);
+        let joins = |e: &Edit| {
+            matches!(e.action, Action::Genesis { .. } | Action::Share(Sharing::Device { .. } | Sharing::Owner { .. }))
+        };
+        let links = edits.filter(|((e, _), stood)| **stood && joins(e)).map(|(x, _)| x).collect();
+        Audit { st: lab.state(me), links, chains: RefCell::default() }
+    }
+
+    /// The acting chain of a write device `author` signed for vault `actor` through the owners `via`
+    /// (`State::acts_via`): who stands behind it, link by link (`links`), and who owns `actor` now (`owners`). The
+    /// device is a member of the vault at the end of `via`, or of `actor` where `via` is empty, and each vault of `via`
+    /// an owner of the one before it, up to `actor`. Each link names who (`who`, a signer or a vault), the vault it is
+    /// in (`in`), how (`as`: a `device`, the vault's `root` passkey, or an `owner`), and the edit that made it so, the
+    /// latest of those that stand: the one that added it (`addDevice`, `addOwner`) or the genesis that named it, `null`
+    /// if none does; with that edit's signers (`signer`). So a person's device writing for a coop traces back to the
+    /// passkey that added the device and to the passkeys that made the person an owner of the coop; an aven's server,
+    /// to the owners that approved its join.
+    pub fn chain(&self, author: SignerId, actor: VaultId, via: &[VaultId]) -> Value {
+        let key = (author, actor, via.to_vec());
+        if let Some(c) = self.chains.borrow().get(&key) {
+            return c.clone();
+        }
+        let member = via.last().copied().unwrap_or(actor);
+        let device = self.st.vault(member).and_then(|v| self.signer_in(author, v));
+        let named = |owners: &[Principal], root: Option<SignerId>| {
+            root == Some(author) || owners.contains(&Principal::Signer(author))
+        };
+        let joined = |id: EditId, a: &Action| match a {
+            Action::Share(Sharing::Device { vault, device, .. }) => *vault == member && *device == author,
+            Action::Genesis { owners, root, .. } => VaultId::from(id) == member && named(owners, *root),
+            _ => false,
+        };
+        let who = json!({ "signer": hex(&author.0) });
+        let mut links = vec![self.link(who, member, device.unwrap_or("device"), joined)];
+        // from the vault the device is a member of up to the actor, each an owner of the next
+        for (i, &owner) in via.iter().enumerate().rev() {
+            let owned = if i == 0 { actor } else { via[i - 1] };
+            let p = Principal::Vault(owner);
+            links.push(self.link(json!({ "vault": hex(&owner.0) }), owned, "owner", |id, a| match a {
+                Action::Share(Sharing::Owner { vault, owner, .. }) => *vault == owned && *owner == p,
+                Action::Genesis { owners, .. } => VaultId::from(id) == owned && owners.contains(&p),
+                _ => false,
+            }));
+        }
+        let owners = self.st.vault(actor).map_or(vec![], |v| v.owners.iter().map(principal).collect());
+        let chain = json!({ "links": links, "owners": owners });
+        self.chains.borrow_mut().insert(key, chain.clone());
+        chain
+    }
+
+    /// One link of a chain: `who` is in vault `vault` as `role`, made so by the latest edit that stands and `made`.
+    fn link(&self, who: Value, vault: VaultId, role: &str, made: impl Fn(EditId, &Action) -> bool) -> Value {
+        let edit = self.links.iter().rev().find(|(e, id)| made(*id, &e.action));
+        let signers: Vec<Value> = edit.map_or(vec![], |(e, _)| {
+            std::iter::once(e.author).chain(e.cosigners.iter().copied()).map(|s| self.signer(s)).collect()
+        });
+        json!({
+            "who": who,
+            "in": hex(&vault.0),
+            "as": role,
+            "edit": edit.map(|(_, id)| hex(&id.0)),
+            "signers": signers,
+        })
+    }
+
+    /// Signer `s` by the vault it is in now, and how (`signer_in`): `null` for one in no vault.
+    fn signer(&self, s: SignerId) -> Value {
+        let found = self.st.vaults().iter().find_map(|v| self.signer_in(s, v).map(|role| (v.id, role)));
+        json!({
+            "signer": hex(&s.0),
+            "vault": found.map(|(v, _)| hex(&v.0)),
+            "as": found.map(|(_, role)| role),
+        })
+    }
+
+    /// How signer `s` is in vault `v`: its root passkey, one of its owners, one of its devices, or not at all.
+    fn signer_in(&self, s: SignerId, v: &Vault) -> Option<&'static str> {
+        if v.root == Some(s) {
+            Some("root")
+        } else if v.owners.contains(&Principal::Signer(s)) {
+            Some("owner")
+        } else {
+            v.devices.contains(&s).then_some("device")
+        }
+    }
 }
 
 /// A note's text: its first paragraph, block 2, as `cast::document` writes it.

@@ -122,6 +122,13 @@ fn listable(prefix: &str) -> bool {
     prefix.is_empty() || named(prefix.strip_suffix('/').unwrap_or(prefix))
 }
 
+/// The generation every place's shelf is at least: avenDB's resets raise it, and a place whose newest shelf is of an
+/// older one puts it aside as it opens, never deleting it, and starts a new one of this generation, empty: the server's
+/// bucket (`bucket::shelf`), the Mac's folder (`disk::open`) and a page's OPFS (avendb-browser's `store.worker.js`,
+/// whose `FLOOR` is this). 2 since 2026-10-14, as the claim of a server founds the seed of Maia Holding GmbH,
+/// avenCEO GmbH and the CEO Aven (`avendb::world::SEED`).
+pub const FLOOR: u64 = 2;
+
 /// The generation a place's shelf is, by the name of its folder or prefix: `g1`, `g2` and on, written as the number
 /// is, if it is one.
 pub fn generation(name: &str) -> Option<u64> {

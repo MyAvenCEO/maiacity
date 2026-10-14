@@ -22,14 +22,15 @@
 	import { allowed, blockText, deleting, may, variantMark } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
-	import { count, hue, nameOf, sharedWith, sharedWords, sharerWords, short, signerName } from './vaults.js';
+	import { actingWords, chainSteps, count, hue, nameOf, sharedWith, sharedWords, sharerWords, short } from './vaults.js';
 
 	/**
 	 * @typedef {{ at: unknown[], what: 'value' | 'row' | 'order', base: unknown, ours: unknown, theirs: unknown }} Conflict
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
 	 *   title: string | null, text: string | null, blocks: { id: number, type: string }[] | null,
 	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null }} LineView
-	 * @typedef {{ id: string, author: string, actor: string, line: string | null, deps: string[],
+	 * @typedef {{ id: string, author: string, actor: string, via: string[], chain: import('./vaults.js').Chain,
+	 *   line: string | null, deps: string[],
 	 *   kind: 'edit' | 'propose' | 'merge' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
 	 *   before: string | null, counted: boolean, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null }} EditView
@@ -194,8 +195,8 @@
 	/** Vault `id`, by name. @param {string | undefined} id */
 	const vaultName = (id) => (id ? nameOf(byId.get(id)) : 'a vault');
 
-	/** Who made edit `e`: its device by name, and the vault it acted for. @param {EditView} e */
-	const who = (e) => `${signerName(world, e.author, true)}, for ${nameOf(byId.get(e.actor))}`;
+	/** Who made edit `e`: its device by name, the vault it acted for and the owners it acted through. @param {EditView} e */
+	const who = (e) => actingWords(world, e.author, e.actor, e.via);
 
 	/** What edit `e` did, in words. @param {Numbered} e */
 	function what(e) {
@@ -718,6 +719,11 @@
 							<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
 							{#if changed && e.text !== null && (e.before ?? '') !== e.text}
 								<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
+							{/if}
+							{#if e.id === viewing}
+								<ol class="chain" aria-label="Who stands behind it">
+									{#each chainSteps(world, e.chain) as step, i (i)}<li>{step.says}</li>{/each}
+								</ol>
 							{/if}
 							{#if e.id === viewing && writes}
 								<div class="row actions">
@@ -1310,6 +1316,26 @@
 
 	.history .actions {
 		margin: 0.35rem 0 0;
+	}
+
+	/* who stands behind the edit viewed, link by link back to the passkeys */
+	.history ol.chain {
+		margin: 0.35rem 0 0;
+		padding-left: 1.1rem;
+		list-style: decimal;
+		color: var(--soft);
+		font-size: 0.76rem;
+	}
+
+	.history ol.chain li {
+		margin: 0;
+		padding: 0.08rem 0;
+		border: 0;
+		font-size: inherit;
+	}
+
+	.history ol.chain li::before {
+		content: none;
 	}
 
 	.history .actions .btn {

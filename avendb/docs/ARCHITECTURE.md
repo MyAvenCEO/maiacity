@@ -141,6 +141,16 @@ the author's device belongs to, each an owner of the one before. The rules check
 (`State::acts_via`, `actsVia` in `spec/AvenDB/State.lean`). A removal anywhere along it cuts the edit the same way on
 every device (T1, T16).
 
+**Who stands behind an edit.** Every edit that acts for a vault traces back to the passkeys that let it be made
+(`data::Audit::chain`). Its chain has one link per step: the author's device in the vault it belongs to, then each
+vault of `via` as an owner of the next, up to the vault it acted for. Each link names the latest edit that stands and
+made it so, the `addDevice` or `addOwner` that added it or the genesis that named it, and that edit's signers, each by
+the vault it is in and how: its root passkey, an owner or a device. The chain ends with who owns the acting vault now.
+So a write from a person's Mac for a coop shows the passkey that added the Mac to the person's vault and the passkeys
+that made the person an owner of the coop. An aven's server signs on its own, yet its chain leads to the human or coop
+vault that owns the aven: the edit that added the server as the aven's device is signed by an owner's passkey and by
+the server itself. The `history`, `note` and `log` ops carry it as `chain`, and the page shows it under each edit.
+
 **The master recovery key.** One master recovery key is a way back in beside the passkeys. It is a signer like any
 other, a passkey kept in software (`crates/avendb/src/recovery.rs`), whose keys all derive from 32 secret bytes kept
 offline. Its public file is built in (`crates/avendb/master-recovery.pub`, key `d9941b22…`), and every device's Lab
@@ -153,19 +163,30 @@ person lost every passkey and device, and that device opens the vault, as its ke
 every owner. So only the `.pub` file is handed on. The tool is `cargo run -p avendb --bin master-key`
 (`crates/avendb/src/bin/master-key.rs`).
 
-**avenCEO and the server.** The server is a device of avenCEO, an aven vault. A new server belongs to no vault. The
-first person to found a human vault through it claims it in the same ceremony:
+**avenCEO and the server.** The server is a device of the CEO Aven, an aven vault. A new server belongs to no vault.
+The first person to found a human vault through it claims it in the same ceremony, and founds the seed
+(`world::SEED`), each vault owned by the one before alone:
+
+| Vault | Kind | Owned by |
+|---|---|---|
+| Maia Holding GmbH | Coop | The person's human vault |
+| avenCEO GmbH | Coop | Maia Holding GmbH |
+| CEO Aven | Aven | avenCEO GmbH; the server is its device |
+
+So the server acts for the CEO Aven on its own, and every edit it makes traces back through avenCEO GmbH and Maia
+Holding GmbH to the person's passkey. The claim:
 
 1. The device takes the server's card (`Lab::card`). If it names no avenCEO, nobody has claimed the server, and the
    device asks it for its key to seal to (`Lab::claim_key`).
-2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, avenCEO's
-   genesis, owned by that human vault, and the edit that adds the server as avenCEO's device, sealed to that key
-   (`Lab::drafting`, `Lab::claim`).
+2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, the
+   seed's three geneses, and the edit that adds the server as the CEO Aven's device, sealed to that key
+   (`Lab::drafting`, `Lab::claim`). The passkey approves for each coop, as the root of the vault that owns it.
 3. The server checks that the edit adds itself and seals to its own key, every signature, and the rules, then signs
-   it too and keeps it (`Lab::accept_claim`). Its answer lets the device box avenCEO's key for it.
+   it too and keeps it (`Lab::accept_claim`). Its answer lets the device box the aven's key for it.
 
-After that, nobody can claim it again: whoever founds a vault later finds avenCEO on the server's card. A device of a
-vault founded before claims a new server the same way (`Node::claim`).
+After that, nobody can claim it again: whoever founds a vault later finds the CEO Aven on the server's card. A device
+of a vault founded before claims a new server the same way (`Node::claim`). The page names the seed's vaults on their
+profiles as it first opens.
 
 ## 4. Edits, logs and the replay
 
@@ -543,13 +564,13 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 |---|---|---|
 | `query` | `vault`, `where`, `schema`, `select`, `order`, `limit`, `offset` | The entries the `where` holds of, picked by its labels' selector first, a page at a time |
 | `get` | `entry`, `schema`, `line`, `at` | One entry on a line, or at a version |
-| `history` | `entry`, `limit` | An entry's lines and every write of it, each with the changes it made |
+| `history` | `entry`, `limit` | An entry's lines and every write of it, each with the changes it made and who stands behind it (`chain`) |
 | `schemas` | `vault` | The schemas and lenses the vault's entries are read through |
 | `groups` | none | The built-in groups of ops, each with its level |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
 | `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |
 | `note` | `entry` | A note's page: its lines, proposals, variants and history |
-| `log` | none | Every signed edit the device holds, in words |
+| `log` | none | Every signed edit the device holds, in words, each that acts for a vault with its `chain` |
 | `read_file` | `root`, `size`, `from`, `to` | `{root, from, to, len}` and the bytes beside; `NoCap` for a file the device doesn't open |
 | `creatable` | `vault`, `type`, `tags`, `as` | The tags a new entry needs to land where vault `as` may create it, or `NoCap` |
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
@@ -966,6 +987,12 @@ Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-bl
 | Server | An S3 bucket, every object sealed (`crates/avendb-net/src/bucket.rs`) | The bucket | Its folder |
 
 A browser tab's worker holds the store's lock, so one device never runs in two tabs at once.
+
+**Generations and resets.** A place keeps its shelves side by side, one per generation, `g1`, `g2` and on. The newest
+is in use; every older one is put aside, never read again and never deleted. Forgetting a device starts a new one. A
+reset of avenDB raises `shelf::FLOOR`, the generation every place is at least: as a place opens, a newest shelf older
+than that is put aside, and the place starts empty, the server with a new device key. `FLOOR` is 2 since the seed of
+Maia Holding GmbH, avenCEO GmbH and the CEO Aven.
 
 ### Layout of one generation
 

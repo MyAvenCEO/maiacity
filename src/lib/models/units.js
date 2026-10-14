@@ -36,5 +36,11 @@ export const REAL_SIZES = {
 	gasStation: { size: [24, 8.2, 16], what: 'a forecourt with its canopy and price sign' },
 	oldShed: { size: [6.2, 2.9, 5], what: 'a small half-roofed shed' },
 	person: { size: [0.52, 1.8, 0.55], what: 'a grown-up, backpack and all (the heart over them not counted)' },
-	tent: { size: [5.6, 2.1, 5.6], what: 'a 4 m geodesic dome tent on its 5.6 m deck' }
+	tent: { size: [5.6, 2.1, 5.6], what: 'a 4 m geodesic dome tent on its 5.6 m deck' },
+	loadingRamp: { size: [0.96, 1.27, 2.18], what: 'a folding aluminium loading ramp, 0.86 m between its rails, up to the bed at 1.16 m over 2 m, its rails 10 cm over its deck' },
+	backpack: { size: [0.48, 0.63, 0.48], what: 'a 35 l hiker’s pack, open, its lid thrown back, its hip belt’s wings out, a bottle and seed packets in it' },
+	waterBottle: { size: [0.077, 0.3, 0.077], what: 'a 1 l refillable bottle with its cap' },
+	seedPacket: { size: [0.07, 0.1, 0.005], what: 'a 7 × 10 cm seed packet' },
+	markerSticks: { size: [0.54, 0.35, 0.04], what: 'two 35 cm marker sticks (5 cm of it in the ground), half a metre apart, leaning a little' },
+	dugEarth: { size: [0.64, 0.09, 0.64], what: 'a patch of dug earth about 60 cm across, its hollow 3 cm down, clods on it' }
 };
