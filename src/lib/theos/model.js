@@ -983,9 +983,9 @@ export const TEST_CITY = {
 		// a food COOP fails: person-days short of food (one or two food COOPs); days until receivership
 		foodFails: { ids: ['X5', 'B10'], pass: true, short: 0, receivershipDays: 29 },
 		// newcomers in a slowly growing village: person-days short in their first three years, of how many
-		newcomers: { ids: ['X12'], pass: true, short: 0, personDays: 64_705, from: 1_500, to: 1_606 },
+		newcomers: { ids: ['X12'], pass: true, short: 0, personDays: 64_705, from: 1_500, to: 1_606, years: 3 },
 		// people arrive faster than beds are built
-		bedsOutrun: { ids: ['B15'], pass: false, from: 1_500, to: 2_494, short: 763_834, personDays: 1_008_298 },
+		bedsOutrun: { ids: ['B15'], pass: false, from: 1_500, to: 2_494, short: 763_834, personDays: 1_008_298, years: 3 },
 		// a founder ring of four: its share of the people, the share of others' HEARTS it drew, and its members' holding
 		// at the end against the others' mean, under the Avens' output rule and under the price rule
 		ring: { ids: ['X6', 'B11'], pass: false, people: 0.01, drew: 0.002, endOutput: 1.02, endPrice: 0.8 },
@@ -995,10 +995,10 @@ export const TEST_CITY = {
 		// the melt rate swept: Proposition 3 fails at each; the Gini of holdings
 		rates: { ids: ['B22'], pass: false, rates: [0.03, 0.05, 0.07, 0.1, 0.12], gini: [0.29, 0.29, 0.29, 0.29, 0.28] },
 		// all land in the City COOP against private land: the Gini of holdings, and person-days short
-		land: { ids: ['X13', 'B09'], pass: true, giniCity: 0.33, giniPrivate: 0.34, shortCity: 0, shortPrivate: 58 },
+		land: { ids: ['X13', 'B09'], pass: true, years: 8, giniCity: 0.33, giniPrivate: 0.34, shortCity: 0, shortPrivate: 58 },
 		// a closed border: Aven service hours a person a day, person-days short, the mean living standard in the last
 		// year, and tenths failing part 3 (open base against closed; 30 years)
-		closed: { ids: ['B23'], pass: false, hoursOpen: 23.8, hoursClosed: 0, shortOpen: 0, shortClosed: 14_951_097, livingOpen: 8.33, livingClosed: 0.8, p3Open: 17, p3Closed: 20 },
+		closed: { ids: ['B23'], pass: false, years: 30, hoursOpen: 23.8, hoursClosed: 0, shortOpen: 0, shortClosed: 14_951_097, livingOpen: 8.33, livingClosed: 0.8, p3Open: 17, p3Closed: 20 },
 		// a drought, a dark winter, two failing COOPs and a failing well
 		shocks: { ids: ['SH'], pass: false, short: 174_623, p3Failing: 20 },
 		// the food forest at half, the same and one and a half times its yield
@@ -1009,16 +1009,16 @@ export const TEST_CITY = {
 		money: { ids: ['X9', 'B28'], pass: true, seeds: 5, prices: 2.0, largest: 0.003, consumption: 0.0004 },
 		// Anna's lamp: the melt index after 30 years, 100 idle MIND after 10 years, the half-life (A04); a person's share
 		// of all MIND after 30 years against the resting level (A05 fails: 85.1 % of it)
-		melt: { ids: ['A04', 'A05'], pass: [true, false], index30: 0.122456, keep10: 49.66, halfLife: 9.9, level30: 106_558, rest: 125_155 },
-		// food bought abroad as a share of what was eaten, in year 1, year 10 and the last year; the first year the
+		melt: { ids: ['A04', 'A05'], pass: [true, false], years: 30, index30: 0.122456, idle: 100, idleYears: 10, keep10: 49.66, halfLife: 9.9, level30: 106_558, rest: 125_155 },
+		// food bought abroad as a share of what was eaten, in the years of `at` and the last year; the first year the
 		// village grew all it needs (comparison)
-		food: { ids: ['F02', 'F03'], pass: null, bought: [0.76, 0.1, 0.06], selfYear: 9 },
+		food: { ids: ['F02', 'F03'], pass: null, bought: [0.76, 0.1, 0.06], at: [1, 10], selfYear: 9 },
 		// treasuries pay out against keep their surplus: people's share of all MIND (X3 after 8 years, B02 after 30)
-		payout: { ids: ['X3', 'B02'], pass: [true, false], x3: [0.893, 0.384], b02: [0.917, 0.435] },
+		payout: { ids: ['X3', 'B02'], pass: [true, false], years: [8, 30], x3: [0.893, 0.384], b02: [0.917, 0.435] },
 		// holdings made as unequal as Germany's, then the melt: the Gini before, after the shock, and 10 years later
 		germany: { ids: ['B05', 'X4'], pass: true, gini: [0.31, 0.7, 0.34], years: 10 },
 		// Aven skills spread 0, 0.6 and 1.2: the Gini of holdings after 30 years
-		avenSpread: { ids: ['B04'], pass: false, spread: [0, 0.6, 1.2], gini: [0.05, 0.28, 0.43] },
+		avenSpread: { ids: ['B04'], pass: false, years: 30, spread: [0, 0.6, 1.2], gini: [0.05, 0.28, 0.43] },
 		// Law 5 at 20, 35 and 50 %: the year from which the dividend yield stayed under the 7 % melt
 		law5: { ids: ['B03'], pass: false, shares: [0.2, 0.35, 0.5], belowMeltFrom: [6, 8, 10] }
 	}

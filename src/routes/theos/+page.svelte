@@ -153,6 +153,20 @@
 	const seeds = (k) => `${k} ${k === 1 ? 'seed' : 'seeds'}`;
 	// 'every seed' when all of them, else 'k of n seeds'
 	const ofSeeds = (k) => (k === SEEDS.n ? 'every seed' : `${k} of ${SEEDS.n} seeds`);
+	// Section 11.2: the test city's fifth round. A part holds on a seed when nothing failed there; the strict test holds
+	// when dividends alone paid the whole bundle
+	const TC = TEST_CITY, TS = TEST_CITY.scenarios;
+	const holdsOn = (xs, ok = (v) => v === 0) => xs.filter(ok).length;
+	// a scenario's verdict, or two of them, in words
+	const verdict = (p) => [p].flat().map((v) => (v === null ? 'Comparison' : v ? 'Pass' : 'Fail')).join(' / ');
+	// the lowest and the highest of a list, in words: '12 to 18'
+	const span = (xs, f = (v) => fmt(v)) => (Math.min(...xs) === Math.max(...xs) ? f(xs[0]) : `${f(Math.min(...xs))} to ${f(Math.max(...xs))}`);
+	// the base seeds on which part 1 missed, and on which the normal test failed, with their person-days
+	const p1Missed = TC.p1.filter((v) => v > 0);
+	const normalFails = TC.seeds.map((s, i) => [s, TC.p2normal[i]]).filter(([, v]) => v > 0);
+	const mindBound = TC.abundance.filter((v) => v > 0);
+	// person-days short, or none
+	const shortOr = (k, none = 'no one went short') => (k ? `${fmt(k)} person-days were short` : none);
 
 
 	// the paper's arc: where we come from, the system itself, where it leads
@@ -1385,7 +1399,7 @@
 			how fast each COOP can grow its plant in a year. But it assumes productivity growth and models no energy limit
 			(Section 10.3). In the test city's world model, only surplus energy pays for growth (Section 11.1). Money cannot
 			make a city richer. In the test city, twice the HEARTS raised prices {fmt(TEST_CITY.scenarios.money.prices, 1)}-fold
-			and changed what people got by less than {pc(TEST_CITY.scenarios.money.largest, 1)} (Section 11.2).
+			and changed what people got by at most {pc(TEST_CITY.scenarios.money.largest, 1)} (Section 11.2).
 		</p>
 		<p>
 			Land, the euro and energy set the city's limits. The last part of the machine is how COOPs decide, and how they
@@ -2449,7 +2463,81 @@
 			The scenarios replay the examples of this paper, and Proposition 3 runs on several seeds. Section 11.2 gives the
 			results of its fifth round.
 		</p>
-		<h3>11.2 A roadmap in three steps</h3>
+		<h3 id="found">11.2 What the test city found</h3>
+		<p>
+			The fifth round ran a village of {fmt(TC.people)} residents over {TC.years} years, on {TC.seeds.length} base seeds
+			and on {TC.more.seeds.length} more. It also ran {TC.suite.scenarios} scenarios and {TC.suite.experiments}
+			experiments: {TC.suite.pass} passed, {TC.suite.fail} failed, and {TC.suite.compare} only compare. Every check runs
+			for every resident on every day. Part 3 is judged in real units: the basics and the extras that a person gets,
+			such as floor space, goods and Aven hours, not their value in money. Table {TAB.testCity} gives Proposition 3 seed
+			by seed.
+		</p>
+		<div class="table-wrap">
+			<table class="narrow">
+				<caption><strong>Table {TAB.testCity}.</strong> Proposition 3 in the test city, round {TC.round}: {fmt(TC.people)} residents over {TC.years} years. Every {TC.ownerOnlyEvery}th newcomer is owner-only. Part 3 counts the tenths by holdings and the tenths by Aven output.</caption>
+				<thead>
+					<tr><th rowspan="2">Part</th><th colspan={TC.seeds.length}>Base seed</th><th rowspan="2">Holds on</th><th rowspan="2">Holds on, seeds {TC.more.seeds[0]} to {TC.more.seeds.at(-1)}</th></tr>
+					<tr>{#each TC.seeds as s (s)}<th class="num">{s}</th>{/each}</tr>
+				</thead>
+				<tbody>
+					<tr><td>1. No one starves: person-days short of a basic</td>{#each TC.p1 as v, i (i)}<td class="num">{fmt(v)}</td>{/each}<td class="num">{holdsOn(TC.p1)} of {TC.seeds.length}</td><td class="num">{TC.more.p1} of {TC.more.seeds.length}</td></tr>
+					<tr><td>2. Normal test: owner-only person-days failing</td>{#each TC.p2normal as v, i (i)}<td class="num">{fmt(v)}</td>{/each}<td class="num">{holdsOn(TC.p2normal)} of {TC.seeds.length}</td><td class="num">{TC.more.p2normal} of {TC.more.seeds.length}</td></tr>
+					<tr><td>Strict test: what dividends alone paid of the basic bundle, for the lowest owner-only resident in the last year</td>{#each TC.p2strict as v, i (i)}<td class="num">{pc(v)}</td>{/each}<td class="num">{holdsOn(TC.p2strict, (v) => v >= 1)} of {TC.seeds.length}</td><td class="num">{TC.more.p2strict} of {TC.more.seeds.length}</td></tr>
+					<tr><td>3. Living standards rise: tenths failing in real units, of {TC.p3.of}</td>{#each TC.p3.failing as v, i (i)}<td class="num">{v}</td>{/each}<td class="num">{holdsOn(TC.p3.failing)} of {TC.seeds.length}</td><td class="num">{TC.more.p3} of {TC.more.seeds.length}</td></tr>
+					<tr><td>Abundance: day-goods (a day and a basic) on which MIND, not physics, bound a basic</td>{#each TC.abundance as v, i (i)}<td class="num">{fmt(v)}</td>{/each}<td class="num">{holdsOn(TC.abundance)} of {TC.seeds.length}</td><td class="num">—</td></tr>
+				</tbody>
+			</table>
+		</div>
+		<p>
+			The basics held better than in the simulation of Section 10: part 1 held on {holdsOn(TC.p1)} of the
+			{TC.seeds.length} base seeds and missed on the others by {list(p1Missed.map((v) => fmt(v)))} person-days, and the
+			normal test failed only on {normalFails.length === 1 ? 'seed' : 'seeds'}
+			{list(normalFails.map(([s, v]) => `${s}, on ${fmt(v)} owner-only person-days`))}. Part 3 failed in real units on
+			every seed, in {span(TC.p3.failing)} of {TC.p3.of} tenths, and only because extras fell: no basic failed, and every
+			tenth's basket rose over the run. The strict test never held: in the last year, dividends alone paid the lowest
+			owner-only resident {span(TC.p2strict, (v) => pc(v))} of the basic bundle. On {mindBound.length} of the base seeds,
+			MIND rather than physics bound a basic, on {list(mindBound.map((v) => fmt(v)))} day-goods; Section 11.1 asks that
+			it never does. The village owed at most
+			€{fmt(TC.bank.bootstrap / 1e6, 1)} million outside, and its exports {TC.bank.repaid ? 'repaid' : 'did not repay'}
+			that within {TC.years} years: in the last ten years it sold €{fmt(TC.bank.exports / 1e6, 1)} million a year abroad
+			and bought €{fmt(TC.bank.imports / 1e6, 1)} million (Section 8.3). The test city still gives the pools
+			{fmt(TC.poolShare, 2)} of each HEART; its next round runs the rule of Law 4.
+		</p>
+		<p>
+			Table {TAB.scenarios} gives the scenarios that replay the examples of this paper. Each verdict is the scenario's
+			condition for passing (Section 11.1); a comparison has none.
+		</p>
+		<div class="table-wrap">
+			<table class="narrow">
+				<caption><strong>Table {TAB.scenarios}.</strong> The test city's scenarios in round {TC.round}, and what each found.</caption>
+				<thead>
+					<tr><th>Scenario</th><th>What happened</th><th>Verdict</th></tr>
+				</thead>
+				<tbody>
+					<tr><td>Money melts</td><td>A balance kept {fmt(TS.melt.index30, 3)} of itself after {TS.melt.years} years, as the melt says; {TS.melt.idle} idle MIND kept {fmt(TS.melt.keep10, 1)} after {TS.melt.idleYears} years, a half-life of {fmt(TS.melt.halfLife, 1)} years</td><td>{verdict(TS.melt.pass[0])}</td></tr>
+					<tr><td>The resting level</td><td>A person's MIND reached {pc(TS.melt.level30 / TS.melt.rest, 1)} of its resting level after {TS.melt.years} years</td><td>{verdict(TS.melt.pass[1])}</td></tr>
+					<tr><td>The founding</td><td>{cap(shortOr(TS.founding.shortWith))} in year 1 with the founding rule. Without it, {fmt(TS.founding.shortWithout)} person-days were short in year 1, and {pc(TS.founding.day0Without, 1)} of residents were short on day 0</td><td>{verdict(TS.founding.pass)}</td></tr>
+					<tr><td>A food COOP fails</td><td>{cap(shortOr(TS.foodFails.short, 'no one went short'))} of food, with one food COOP or two; the failing COOP went into receivership after {TS.foodFails.receivershipDays} days</td><td>{verdict(TS.foodFails.pass)}</td></tr>
+					<tr><td>Newcomers</td><td>The village grew from {fmt(TS.newcomers.from)} to {fmt(TS.newcomers.to)}; in their first {TS.newcomers.years} years, newcomers were short on {fmt(TS.newcomers.short)} of {fmt(TS.newcomers.personDays)} person-days</td><td>{verdict(TS.newcomers.pass)}</td></tr>
+					<tr><td>People arrive faster than beds</td><td>The village grew from {fmt(TS.bedsOutrun.from)} to {fmt(TS.bedsOutrun.to)}; in their first {TS.bedsOutrun.years} years, newcomers were short on {fmt(TS.bedsOutrun.short)} of {fmt(TS.bedsOutrun.personDays)} person-days</td><td>{verdict(TS.bedsOutrun.pass)}</td></tr>
+					<tr><td>A founder ring</td><td>A ring of {pc(TS.ring.people)} of the residents drew {pc(TS.ring.drew, 1)} of the others' HEARTS. Its members ended with {fmt(TS.ring.endOutput, 2)} times the others' mean holding when Avens followed output, and {fmt(TS.ring.endPrice, 2)} times when they followed prices</td><td>{verdict(TS.ring.pass)}</td></tr>
+					<tr><td>Sellers of a basic</td><td>With {list(TS.sellers.per.map(String))} sellers of each basic, basics sold at {list(TS.sellers.cost.map((v) => fmt(v, 2)))} times their full cost, and sellers kept {list(TS.sellers.keep.map((v) => pc(v, 1)))} of basics revenue above variable cost</td><td>{verdict(TS.sellers.pass)}</td></tr>
+					<tr><td>The melt rate</td><td>At {list(TS.rates.rates.map((v) => pc(v)))}, part 3 failed at each; the Gini of holdings was {span(TS.rates.gini, (v) => fmt(v, 2))}</td><td>{verdict(TS.rates.pass)}</td></tr>
+					<tr><td>All land in the City COOP</td><td>After {TS.land.years} years, the Gini of holdings was {fmt(TS.land.giniCity, 2)}, against {fmt(TS.land.giniPrivate, 2)} with private land; person-days short: {noneOr(TS.land.shortCity)}, against {fmt(TS.land.shortPrivate)}</td><td>{verdict(TS.land.pass)}</td></tr>
+					<tr><td>A closed border</td><td>Over {TS.closed.years} years, closed against open: {fmt(TS.closed.hoursClosed, 1)} hours of Aven services a person a day against {fmt(TS.closed.hoursOpen, 1)}; {fmt(TS.closed.shortClosed)} person-days short against {noneOr(TS.closed.shortOpen)}; a mean living standard of {fmt(TS.closed.livingClosed, 2)} against {fmt(TS.closed.livingOpen, 2)} in the last year; part 3 failed in {TS.closed.p3Closed} tenths against {TS.closed.p3Open}</td><td>{verdict(TS.closed.pass)}</td></tr>
+					<tr><td>Shocks at once</td><td>A drought, a dark winter, failing COOPs and a failing well: {fmt(TS.shocks.short)} person-days short; part 3 failed in {TS.shocks.p3Failing} tenths</td><td>{verdict(TS.shocks.pass)}</td></tr>
+					<tr><td>The food forest's yield</td><td>At {list(TS.forest.yields.map((v) => `${fmt(v, 1)} times`))} its yield, {shortOr(TS.forest.short)}</td><td>{verdict(TS.forest.pass)}</td></tr>
+					<tr><td>Surplus energy</td><td>Person-days short: {noneOr(TS.energy.short)} with geothermal heat and research, against {fmt(TS.energy.shortWithout)} without; the poorest tenth's living standard was {fmt(TS.energy.poorest, 2)}, against {fmt(TS.energy.poorestWithout, 2)}</td><td>{verdict(TS.energy.pass)}</td></tr>
+					<tr><td>Twice the HEARTS</td><td>Prices rose {fmt(TS.money.prices, 1)}-fold, and what people got changed by at most {pc(TS.money.largest, 1)}, on each of {TS.money.seeds} seeds</td><td>{verdict(TS.money.pass)}</td></tr>
+					<tr><td>Food from abroad</td><td>Food bought abroad was {pc(TS.food.bought[0])} of what was eaten in year {TS.food.at[0]}, {pc(TS.food.bought[1])} in year {TS.food.at[1]} and {pc(TS.food.bought[2])} in the last year; the village first grew all it needs in year {TS.food.selfYear}</td><td>{verdict(TS.food.pass)}</td></tr>
+					<tr><td>Treasuries pay out</td><td>People's share of all MIND when treasuries pay out, against when they keep their surplus: {pc(TS.payout.x3[0], 1)} against {pc(TS.payout.x3[1], 1)} after {TS.payout.years[0]} years, and {pc(TS.payout.b02[0], 1)} against {pc(TS.payout.b02[1], 1)} after {TS.payout.years[1]}</td><td>{verdict(TS.payout.pass)}</td></tr>
+					<tr><td>As unequal as Germany</td><td>The Gini of holdings rose from {fmt(TS.germany.gini[0], 2)} to {fmt(TS.germany.gini[1], 2)} with the shock, and was {fmt(TS.germany.gini[2], 2)} after {TS.germany.years} more years</td><td>{verdict(TS.germany.pass)}</td></tr>
+					<tr><td>Avens that differ</td><td>With Aven skills spread {list(TS.avenSpread.spread.map((v) => fmt(v, 1)))}, the Gini of holdings after {TS.avenSpread.years} years was {list(TS.avenSpread.gini.map((v) => fmt(v, 2)))}</td><td>{verdict(TS.avenSpread.pass)}</td></tr>
+					<tr><td>Law 5 at other shares</td><td>At {list(TS.law5.shares.map((v) => pc(v)))}, the dividend yield stayed under the {pc(RATE)} melt from year {list(TS.law5.belowMeltFrom.map(String))}, in that order</td><td>{verdict(TS.law5.pass)}</td></tr>
+				</tbody>
+			</table>
+		</div>
+		<h3 id="roadmap">11.3 A roadmap in three steps</h3>
 		<ol>
 			<li>
 				<strong>The world model.</strong> Play every example of this paper as a seeded scenario, with (1), many COOPs
