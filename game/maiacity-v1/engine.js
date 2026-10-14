@@ -41,16 +41,16 @@ export const MINDS = ['MAIA', 'TRIBE', 'VILLAGE'];
 export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', TRIBE: 'tribeMIND', VILLAGE: 'villageMIND' };
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', TRIBE: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 12;
+export const VERSION = 13;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The tribe hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, tribeMIND, villageMIND' }] },
 	tribe: { name: 'Tribe COOP', mind: 'TRIBE', assets: [{ id: 'tent', name: 'The 2-person dome tent', kind: 'Dome · home for 2' }] },
 	village: { name: 'Village COOP', mind: 'VILLAGE', assets: [{ id: 'pickup', name: 'The pickup', kind: 'Vehicle' }, { id: 'powercube', name: 'The ElectroCube', kind: 'Generator' }, { id: 'solar', name: 'A solar panel', kind: 'Power' }, { id: 'battery', name: 'The BatteryCube', kind: 'Storage' }] }
 };
-/** the seedlings at the village shed, one for each newcomer to take home and plant as their first tree (Samuel
- *  2026-10-13): food-bearing trees and bushes that grow outdoors in a central European climate, from the Plants
- *  ($lib/plants: the page grows them from their stages) */
+/** the seeds every newcomer brings from home in their backpack, one to plant as their first tree (Samuel 2026-10-13,
+ *  2026-10-14): food-bearing trees and bushes that grow outdoors in a central European climate, from the Plants
+ *  ($lib/plants: the page grows them from their stages, from the seed on) */
 export const SEEDLINGS = [
 	{ id: 'apple', label: 'Apple', fruit: 'apples' },
 	{ id: 'pear', label: 'Pear', fruit: 'pears' },
@@ -58,6 +58,9 @@ export const SEEDLINGS = [
 	{ id: 'hazel', label: 'Hazel', fruit: 'hazelnuts' },
 	{ id: 'blackcurrant', label: 'Blackcurrant', fruit: 'blackcurrants' }
 ];
+/** where a first tree may stand on the tribe's hex, in metres from its centre (Samuel 2026-10-14): outside the core
+ *  circle where the homes are built, inside the hex (its inner radius is 99.4 m), and a few metres from the other's */
+export const PLOT = { core: 24, edge: 95, apart: 3 };
 const MAX_LEDGER = 3000;
 const DUST = 1e-9;
 /** an amount asked for may exceed what is held by this much (the melt between a look and a click): it takes all */
@@ -557,9 +560,11 @@ function settle(s, mip, now) {
  *   invest { coop, amount }      HEARTS into a COOP
  *   swap { token, to, amount }   a MIND through the pool for another
  *   name { name }                the player's name
- *   seedling { plant }           pick a seedling at the village shed (one of SEEDLINGS), until it is planted
- *   plant { v }                  plant it: the player's first tree, named after them, growing from now on the game
- *                                clock (v: the plant's version in $lib/plants as the page grew it)
+ *   mark { x, z }                where the first tree grows on the tribe's hex (metres from its centre, PLOT)
+ *   seedling { plant }           pick the seed from the backpack (one of SEEDLINGS), until it is planted
+ *   plant { v }                  plant it at the mark: the player's first tree, named after them, a seed in wet earth
+ *                                (v: the plant's version in $lib/plants as the page grew it)
+ *   water                        water it, once a game month: each watering grows it one game month on (grown)
  *   propose { mip }              a MIP: title, description, settings, coops, payouts and screens (views, removeViews; a view's
  *                                data.slot is 'panel' for a tab of its own or a panel it stands in: game/maiacity-v1/views.js
  *                                SLOTS); the proposer signs it (not
@@ -620,17 +625,44 @@ export function act(state, seat, action, now = Date.now()) {
 			p.name = name;
 			break;
 		}
+		case 'mark': {
+			// two sticks mark where the first tree will grow, before the seed goes in
+			if (p.tree) throw new GameError('Your first tree is already planted.');
+			const x = Number(action.x), z = Number(action.z);
+			if (!Number.isFinite(x) || !Number.isFinite(z)) throw new GameError('Mark a place on the ground.');
+			const r = Math.hypot(x, z);
+			if (r < PLOT.core) throw new GameError('Not in the middle: the homes are built there. Plant it further out.');
+			if (r > PLOT.edge) throw new GameError('That is beyond your hex.');
+			const o = s.players[seat === 'A' ? 'B' : 'A'];
+			const theirs = o.tree ?? o.spot;
+			if (theirs && Math.hypot(theirs.x - x, theirs.z - z) < PLOT.apart) throw new GameError('Too close to the other first tree.');
+			p.spot = { x: +x.toFixed(2), z: +z.toFixed(2) };
+			break;
+		}
 		case 'seedling': {
 			if (p.tree) throw new GameError('Your first tree is already planted.');
-			if (!SEEDLINGS.some((x) => x.id === action.plant)) throw new GameError('No such seedling at the shed.');
+			if (!SEEDLINGS.some((x) => x.id === action.plant)) throw new GameError('No such seed in your backpack.');
 			p.seedling = action.plant;
 			break;
 		}
 		case 'plant': {
+			// the seed into the ground between the sticks, watered with the bottle: no shoot shows yet
 			if (p.tree) throw new GameError('Your first tree is already planted.');
-			if (!p.seedling) throw new GameError('Pick a seedling at the village shed first.');
+			if (!p.spot) throw new GameError('Mark where it grows first.');
+			if (!p.seedling) throw new GameError('Pick a seed from your backpack first.');
 			const v = Math.floor(Number(action.v));
-			p.tree = { plant: p.seedling, v: v > 0 ? v : null, name: p.name, at: now, months: monthsAt(s, now) };
+			const m = monthsAt(s, now);
+			p.tree = { plant: p.seedling, v: v > 0 ? v : null, name: p.name, at: now, months: m, x: p.spot.x, z: p.spot.z, grown: 0, watered: Math.floor(m) };
+			break;
+		}
+		case 'water': {
+			// once a game month (a real day): each watering grows the tree one month on; a month without water, it waits
+			const t = p.tree;
+			if (!t) throw new GameError('Plant your first tree first.');
+			const m = Math.floor(monthsAt(s, now));
+			if (m <= t.watered) throw new GameError('Watered already. Come back tomorrow.');
+			t.grown += 1;
+			t.watered = m;
 			break;
 		}
 		case 'propose': {
