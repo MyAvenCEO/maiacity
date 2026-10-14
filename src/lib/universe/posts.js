@@ -176,6 +176,8 @@ export const fromFeed = (p, now) => ({
 	ago: Math.max(0, Math.round((now - p.created) / 60)),
 	channel: p.channel || 'Devlog',
 	text: plain(p.text ?? ''),
+	// its Markdown as written, for its own page, which lays it out as the journal does
+	md: p.text ?? '',
 	likes: 0,
 	replies: 0,
 	liked: false

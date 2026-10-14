@@ -18,7 +18,9 @@
 -->
 <script>
 	import { untrack } from 'svelte';
+	import ArticleView from './ArticleView.svelte';
 	import { diff } from './diff.js';
+	import { flowsFor, stageOf } from './flows.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import { allowed, blockText, deleting, may } from './ops.js';
@@ -122,6 +124,11 @@
 	const here = $derived(lines.find((l) => l.line === line) ?? lines[0]);
 	/** whether it is an article of avenDB's article schema, its text one field, its title no heading */
 	const article = $derived(note?.kind === 'article');
+	/** an article's stage in its flow (./flows.js), its eyebrow as it is read */
+	const stage = $derived.by(() => {
+		const flow = item && article ? flowsFor(world, item.vault, item.type ?? '')[0] : undefined;
+		return item && flow ? stageOf(item, flow) : null;
+	});
 	const main = $derived(lines[0]);
 	const proposals = $derived(lines.slice(1));
 	const k = $derived(key(here?.line ?? null));
@@ -485,7 +492,7 @@
 		<a class="back" href={back} title={backTo} aria-label={backTo}><Icon name="back" size={20} /></a>
 		<span class="docicon" aria-hidden="true"><Icon name="note" size={24} /></span>
 		<div class="heading">
-			{#if here && writes && !seen && lets('title')}
+			{#if here && writes && !seen && lets('title') && !article}
 				<input
 					class="title"
 					bind:value={titles[k]}
@@ -688,7 +695,7 @@
 				</section>
 			</aside>
 
-			<main class="canvas">
+			<main class="canvas" class:sheet={article}>
 				{#if seen}
 					<div class="banner old">
 						<span class="chip warn">Version #{seen.n}</span>
@@ -741,6 +748,25 @@
 					</div>
 				{/if}
 
+				{#if article && item}
+					<!-- an article reads as it is read, and is edited where it stands (./ArticleView.svelte) -->
+					{#if seen}
+						<ArticleView {world} {api} {item} title={seen.title ?? ''} text={seen.text ?? ''} eyebrow={stage?.name ?? 'Article'} />
+					{:else}
+						<ArticleView
+							{world}
+							{api}
+							{item}
+							bind:title={() => titles[k] ?? '', (v) => (titles[k] = v)}
+							bind:text={() => drafts[k] ?? '', (v) => (drafts[k] = v)}
+							editable={writes && lets('write')}
+							renames={writes && lets('title')}
+							eyebrow={stage?.name ?? 'Article'}
+							onretitle={retitle}
+							onsave={save}
+						/>
+					{/if}
+				{:else}
 				<article class="paper" class:old={!!seen}>
 					{#if seen}
 						<div class="text">{seen.text || '…'}</div>
@@ -757,6 +783,7 @@
 						<div class="text">{here.text || '…'}</div>
 					{/if}
 				</article>
+				{/if}
 
 				{#if seen && (seen.text ?? '') !== (here.text ?? '')}
 					<section class="against">
@@ -1197,6 +1224,21 @@
 	/* the middle: the note as a page */
 	.canvas {
 		padding: 1.4rem clamp(0.8rem, 3vw, 2.4rem) 10rem;
+	}
+
+	/* an article: the page edge to edge, as it is read, and what is around it on the same paper */
+	.canvas.sheet {
+		padding: 0 0 10rem;
+		background: var(--cream);
+	}
+
+	.sheet .banner,
+	.sheet .against {
+		max-width: min(51rem, calc(100% - 2rem));
+	}
+
+	.sheet .banner {
+		margin: 0.9rem auto 0;
 	}
 
 	.banner {

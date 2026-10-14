@@ -697,7 +697,7 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
         });
         posts.push((created, en.id, post));
     }
-    posts.sort_by(|a, b| (b.0, b.1).cmp(&(a.0, a.1)));
+    posts.sort_by_key(|p| std::cmp::Reverse((p.0, p.1)));
     posts.into_iter().map(|(_, _, post)| post).collect()
 }
 
