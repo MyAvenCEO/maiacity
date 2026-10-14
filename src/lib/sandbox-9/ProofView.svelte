@@ -22,6 +22,7 @@
 	import AiView from './AiView.svelte';
 	import WorldParams from './WorldParams.svelte';
 	import * as ENG from './engine.js';
+	import { P3_VERDICT, YARDSTICKS } from './yardstick.js';
 
 	// the engine's own source files, loaded only for their hash (to tell a saved proof older than this engine)
 	const sources = import.meta.glob('./*.js', { query: '?raw', import: 'default' });
@@ -61,6 +62,23 @@
 	const suiteNow = $derived(saved?.suite && hashNow && saved.suite.engineHash === hashNow ? saved.suite : null);
 	/** the base world (proof.json `suite`) was computed by another version of the engine than this page runs */
 	const baseStale = $derived(!!saved?.suite && !!hashNow && saved.suite.engineHash !== hashNow);
+
+	/**
+	 * Part 3 as the proof suite judged it (proof.json `suite.p3`): by the yardstick of the verdict (Samuel 2026-10-14,
+	 * taste-adjusted: $lib/sandbox-9/yardstick.js), on the five base worlds of this engine. It takes the place of the
+	 * P3 card of the saved or quick run, whose runs judge each extra (./prop3.js's own flag). Without it the card says
+	 * which yardstick it was judged by.
+	 */
+	const p3Suite = $derived(!live && suiteNow?.p3 ? suiteNow.p3 : null);
+	const parts = $derived(
+		(shown?.parts ?? []).map((p) =>
+			p.id !== 'P3'
+				? p
+				: p3Suite
+					? { ...p, pass: p3Suite.pass, claim: p3Suite.claim, evidence: p3Suite.evidence, yardstick: p3Suite.label, why: `Samuel’s choice (${p3Suite.decided.replace(/^Samuel, /, '')}). From ${p3Suite.source}. Beside it: ${p3Suite.side.map((s) => `${s.mark} ${s.label}`).join(', ')}.` }
+					: { ...p, yardstick: YARDSTICKS.each.label, why: `As ${live ? 'this quick run' : 'these runs'} judged it; the verdict, ${YARDSTICKS[P3_VERDICT].label}, is judged by the full proof suite.` }
+		)
+	);
 
 	function stop() {
 		for (const w of workers) w.terminate();
@@ -188,16 +206,17 @@
 		</div>
 
 		{#if stale}
-			<p class="bad">This saved proof was computed by an older version of the engine than this page runs (engine {saved.engineHash ?? 'unknown'}, page {hashNow}). Its numbers can differ from what the page shows; run it again below.{baseWorld && !baseStale ? ' The base world above is already from this engine; the verdicts below are not yet.' : ''}</p>
+			<p class="bad">This saved proof was computed by an older version of the engine than this page runs (engine {saved.engineHash ?? 'unknown'}, page {hashNow}). Its numbers can differ from what the page shows; run it again below.{baseWorld && !baseStale ? ` The base world above is already from this engine; the verdicts below are not yet${p3Suite ? ', except part 3’s (living standards), which the proof suite judged on this engine' : ''}.` : ''}</p>
 		{/if}
 		{#if !shown.suiteUsed}
 			<p class="fine">The parts below read the base worlds and the experiments only{saved?.suite ? '; the full proof suite’s scenarios were run with another engine, so their verdicts are left out' : ''}. The full suite (node scripts/sandbox-9-proof.mjs) adds the longer scenarios.</p>
 		{/if}
 
 		<div class="parts">
-			{#each shown.parts as p}
+			{#each parts as p}
 				<article class="part" class:ok={p.pass}>
 					<h3><span class="mark" aria-hidden="true">{p.pass ? '✓' : '✕'}</span>{p.title} <small>{p.pass ? 'pass' : 'fail'}</small></h3>
+					{#if p.yardstick}<p class="yard">Judged <b>{p.yardstick}</b>. {p.why}</p>{/if}
 					<p class="claim">{p.claim}</p>
 					<ul>
 						{#each openParts[p.id] ? p.evidence : p.evidence.slice(0, 2) as line}<li>{line}</li>{/each}
@@ -328,6 +347,14 @@
 	.claim {
 		margin: 0.3rem 0;
 		font-size: 0.84rem;
+	}
+	.yard {
+		margin: 0.25rem 0 0;
+		font-size: 0.74rem;
+		color: var(--muted);
+	}
+	.yard b {
+		color: var(--ink);
 	}
 	ul {
 		margin: 0;
