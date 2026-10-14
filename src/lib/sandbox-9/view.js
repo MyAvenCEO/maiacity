@@ -255,7 +255,8 @@ export function makeViewer(w) {
 	return { day, frame, point, panel };
 }
 
-/** who holds all MIND, in R: people, COOP treasuries (the City COOP's too), and the protocol's pools */
+/** who holds all MIND, in R: people, COOP treasuries (the City COOP's too), and the city's pools (their LP tokens are
+ * the MaiaCity COOP's) */
 export function ownership(w) {
 	const P = w.P;
 	let people = 0, tre = 0, pools = 0;

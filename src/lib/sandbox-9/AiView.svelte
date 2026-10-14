@@ -1,8 +1,8 @@
 <!--
-	Sandbox 8 · the AI tab: the avenCEO AI market, year by year. Who owns the accelerators (each settlement COOP and the
+	Sandbox 8 · the AI tab: the avenCEO AI market, year by year. Who owns the accelerators (each Tribe COOP and the
 	Village COOP, in the data halls of their utility domes) and how many; the inference they sold to the AI COOPs
 	(avenCEO and any rival) and its price; the Aven hours a person a day by tenth of holdings, split into help for the
-	person and work for the COOPs; each tenth's MIND income by source (the HEARTS half, Aven work items, dividends); the
+	person and work for the COOPs; each tenth's MIND income by source (the HEARTS half, work proposals, dividends); the
 	accelerators imported and their euros; and what bound the Aven service.
 -->
 <script>
@@ -127,7 +127,7 @@
 								<th>Help<small>Aven h a day</small></th>
 								<th>Work<small>Aven h a day</small></th>
 								<th>HEARTS half<small>R a day</small></th>
-								<th>Work items<small>R a day</small></th>
+								<th>Work proposals<small>R a day</small></th>
 								<th>Dividends<small>R a day</small></th>
 								<th>All income<small>R a day</small></th>
 							</tr>
@@ -158,7 +158,7 @@
 						</tbody>
 					</table>
 				</div>
-				<p class="fine">Year {yrow.y}{yrow.partial ? ' so far' : ''}: each tenth’s yearly mean a person, people sorted by what they hold. The HEARTS half is the MIND a person’s own 24 HEARTS make each day; work items are what the COOPs paid their Aven for running items and work proposals, by skill × hours delivered; dividends are Law 5’s fifth of every sale in the MINDs they hold. No wages, no basic income.</p>
+				<p class="fine">Year {yrow.y}{yrow.partial ? ' so far' : ''}: each tenth’s yearly mean a person, people sorted by what they hold. The HEARTS half is the MIND a person’s own 24 HEARTS make each day; work proposals are what the COOPs paid their Aven for running proposals and new work proposals, by skill × hours delivered; dividends are Law 5’s fifth of every sale in the MINDs they hold. No wages, no basic income.</p>
 			{/if}
 
 			{#if w.owners?.length}
@@ -197,7 +197,7 @@
 		{:else}
 			<p class="fine">{running ? 'The first year fills in as the run goes.' : 'No yearly AI ledger in this record.'}</p>
 		{/if}
-		<p class="fine">The settlement COOPs and the Village COOP own the accelerators, in the data halls of their utility domes, run them on their own power and buy them through the euro border (the MaiaCity COOP’s bank advances the euros; they pay back in their own MIND). They sell inference by the accelerator-hour to the AI COOPs, avenCEO first; avenCEO runs the harnesses and sells Aven service to the people, who pay in any MIND (the seller receives only its own MIND; Law 5 pays a fifth to its holders). A person’s Aven spends its hours on help for its person, bought from what the person holds, and on work items for the COOPs, whose pay settles the hours’ Aven service first; the person gets the rest, so nobody needs MIND in hand before their Aven can work.</p>
+		<p class="fine">The Tribe COOPs and the Village COOP own the accelerators, in the data halls of their utility domes, run them on their own power and buy them through the euro border (the MaiaCity COOP’s bank advances the euros; they pay back in their own MIND). They sell inference by the accelerator-hour to the AI COOPs, avenCEO first; avenCEO runs the harnesses and sells Aven service to the people, who pay in any MIND (the seller receives only its own MIND; Law 5 pays a fifth to its holders). A person’s Aven spends its hours on help for its person, bought from what the person holds, and on work proposals for the COOPs, whose pay settles the hours’ Aven service first; the person gets the rest, so nobody needs MIND in hand before their Aven can work.</p>
 	{/if}
 </div>
 

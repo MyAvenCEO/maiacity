@@ -173,7 +173,7 @@
 		{:else}
 			<p class="fine">{running ? 'The first year fills in as the run goes.' : 'No yearly ledger in this record.'}</p>
 		{/if}
-		<p class="fine">COOP trade only: food COOPs buy food abroad, the works buy materials, the settlement COOPs and the Village COOP buy accelerators for their data halls, all from the shared euro reserve, which the founding euros left over and the exports (electricity, later goods) fill. No person redeems MIND, no MIND is made from euros, and HEARTS buy nothing.</p>
+		<p class="fine">COOP trade only: food COOPs buy food abroad, the works buy materials, the Tribe COOPs and the Village COOP buy accelerators for their data halls, all from the shared euro reserve, which the founding euros left over and the exports (electricity, later goods) fill. No person redeems MIND, no MIND is made from euros, and HEARTS buy nothing.</p>
 	{/if}
 </div>
 

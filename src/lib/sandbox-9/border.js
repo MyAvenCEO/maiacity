@@ -20,7 +20,7 @@
  *
  * Who buys what: the food COOPs buy food (in the diet's mix, at wholesale) when their stores and harvests ahead fall
  * short of what their buyers will eat; the works buy their raw inputs (logs beyond the village's woods, steel scrap
- * beyond the village's own worn steel, float glass, solar cells); the hardware owners (the settlement COOPs and the
+ * beyond the village's own worn steel, float glass, solar cells); the hardware owners (the Tribe COOPs and the
  * Village COOP) buy accelerators for their data halls (./ai.js aiEvening). What is bought arrives the same day. A COOP that finds no euros buys less: its buyers go short.
  */
 import { CLASS, ENERGY, FOOD, MAX_COOPS, WOOD, STEEL, GLASS, PANEL } from './consts.js';

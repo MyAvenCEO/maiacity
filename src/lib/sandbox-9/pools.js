@@ -1,12 +1,15 @@
 // @ts-nocheck — plain JS
 /**
- * SANDBOX 8 · THE POOLS — protocol-owned, equal-weight G3M baskets of 4 to 8 MINDs (paper Eq. 5–6).
+ * SANDBOX 8 · THE POOLS — the city's pools: equal-weight G3M baskets of 4 to 8 MINDs (paper Eq. 5–6). Their LP tokens
+ * belong to the MaiaCity COOP (the City COOP), not to "the protocol"; it may redeem them only by a passed MIP, and no
+ * redemption runs unless a scenario asks for one (./engine.js redeemLp).
  *
  * A pool holds a reserve of each of its MINDs. In an equal-weight basket the price of one MIND in another is the
  * ratio of their reserves. A swap keeps the product of the reserves (their geometric mean) and the 0.3 % fee stays in
- * the pool, so the product only grows. Nothing is ever withdrawn and nobody holds a share of a pool. The only ways in
- * are the tenth of the treasury half of each HEART (a COOP's own MIND, into its baskets) and swaps; the only way out
- * is the other side of a swap. The CITYmind sits in every basket, so any two MINDs meet in at most 2 hops.
+ * the pool, so the product only grows. Nothing is withdrawn but by a redemption of the City COOP's LP tokens (a passed
+ * MIP). The ways in are the pools' part of each HEART (Law 4: 0.1 of each HEART invested, the COOP's own MIND, into its
+ * baskets), Law 5's dividends (round 6: the pools hold the seller's MIND too, so they get their share by their reserve
+ * of it) and swaps; the ways out are the other side of a swap, the melt and a redemption by MIP. The CITYmind sits in every basket, so any two MINDs meet in at most 2 hops.
  *
  * Plain functions on the world; the maths is lifted from scripts/theos-e2e-sim.mjs (swapOut, routes, the arbitrage
  * cycles, the consensus price), rewritten for a world of up to MAX_COOPS MINDs.
@@ -70,10 +73,14 @@ function routeDo(w, r, amt) {
 	p1.x[r[1]] += amt;
 	p1.x[r[2]] -= o;
 	let fee = amt * (1 - GAMMA) * w.P[p1.members[r[1]]];
+	// (round 6, B16) each basket's fee income, R
+	p1.feeR = (p1.feeR ?? 0) + fee;
 	if (r.length > 3) {
 		const p2 = w.pools[r[3]];
 		const o2 = swapOut(p2.x, r[4], r[5], o);
-		fee += o * (1 - GAMMA) * w.P[p2.members[r[4]]];
+		const f2 = o * (1 - GAMMA) * w.P[p2.members[r[4]]];
+		fee += f2;
+		p2.feeR = (p2.feeR ?? 0) + f2;
 		p2.x[r[4]] += o;
 		p2.x[r[5]] -= o2;
 		o = o2;
@@ -197,7 +204,7 @@ export function updatePrices(w) {
 }
 
 /**
- * Put MIND k into its baskets (the tenth of the treasury half of a HEART), split equally between them. Counted in the
+ * Put MIND k into its baskets (the pools' part of a HEART, 0.1 of it), in equal parts. Counted in the
  * money ledger as part of the HEART conversion, not as a transfer.
  */
 export function poolInflow(w, k, amt) {
@@ -249,6 +256,11 @@ export function arbitrage(w) {
 			for (let h = 0; h < e.length; h += 3) {
 				const p = w.pools[e[h]];
 				const o = swapOut(p.x, e[h + 1], e[h + 2], amt);
+				// (round 6, B16) the loss to arbitrage (LVR) of each basket: what the leg took out less what it put in after
+				// the fee, at the consensus prices (the pools' own: the engine has no outside price), and its fee
+				const Pin = w.P[p.members[e[h + 1]]], Pout = w.P[p.members[e[h + 2]]];
+				p.lvrR = (p.lvrR ?? 0) + (o * Pout - amt * GAMMA * Pin);
+				p.feeR = (p.feeR ?? 0) + amt * (1 - GAMMA) * Pin;
 				p.x[e[h + 1]] += amt;
 				p.x[e[h + 2]] -= o;
 				amt = o;

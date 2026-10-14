@@ -65,7 +65,8 @@ const SHOCK = {
 	coopFail: (s) => `${s.coop ?? 'a COOP'} fails (output × ${num(s.factor ?? 0)}) for ${s.days ?? 365} days`,
 	wellFail: (s) => `geothermal well down for ${s.days ?? '?'} days`,
 	germany: () => 'holdings made as unequal as Germany’s',
-	ring: (s) => `a founder ring of ${s.size ?? 4} for ${s.days ?? '?'} days`
+	ring: (s) => `a founder ring of ${s.size ?? 4} for ${s.days ?? '?'} days`,
+	mipRedeem: (s) => `a passed MIP redeems ${pct(s.share ?? 0.1)} of the MaiaCity COOP’s LP tokens`
 };
 const shocks = (list) =>
 	Array.isArray(list) && list.length
@@ -136,8 +137,17 @@ export const SETTINGS = {
 	foodSplit: { g: 'coops', label: 'Share of the food forest the second food COOP holds', f: pct },
 	geothermal: { g: 'energy', label: 'Geothermal plant', f: onOff },
 	geoStages: { g: 'energy', label: 'Geothermal stages built', f: (v) => `${num(v)} stage${v === 1 ? '' : 's'}` },
-	chipImport: { g: 'border', label: 'Accelerators bought through the euro border', f: (v) => (v === false ? 'no: the city is closed' : 'yes, by the hardware owners (settlement and Village COOPs), advanced by the bank') },
+	chipImport: { g: 'border', label: 'Accelerators bought through the euro border', f: (v) => (v === false ? 'no: the city is closed' : 'yes, by the hardware owners (the Tribe and Village COOPs), advanced by the bank') },
 	law5: { g: 'economy', label: 'Law 5: share of every sale paid at once to the holders', f: pct },
+	law5Pools: { g: 'economy', label: 'Law 5 pays the city’s pools too', f: (v) => (v === false ? 'no: Law 5 without the pools, the old rule' : 'yes: the paper’s rule, pro rata to each basket’s reserve of the seller’s MIND') },
+	poolPart: { g: 'economy', label: 'Law 4: the city’s pools’ part of each HEART invested', f: (v) => (v == null ? '0.1 (the paper)' : `${num(v)}${v === 0.05 ? ' (round 5 and before)' : ''}`) },
+	claimFrom: { g: 'run', label: 'Proposition 3 is claimed from', f: (v) => (v === 'day1' ? 'day 1 (round 5 and before)' : 'the end of the founding (the day all the people are in)') },
+	holdingFloor: { g: 'avens', label: 'Holding floor: every Aven keeps this much of its bundle in the basic sellers’ own MIND', f: (v) => (v > 0 ? `${num(v)} days of the bundle` : 'none (round 5)') },
+	ownerDefer: { g: 'avens', label: 'An owner-only Aven treats what a rationed extra left unspent as income deferred, not capital', f: (v) => (v ? 'yes: it is not kept from the melt' : 'no: it is kept from the melt like the rest (round 5)') },
+	basicsWork: { g: 'avens', label: 'The Aven hours that run the basics’ plants come first, their inference with the basics', f: (v) => (v ? 'yes' : 'no: one fill for all running hours (round 5)') },
+	foundingSignal: { g: 'coops', label: 'In the build-out, a goods COOP short of what its buyers ask builds on its own (a founding signal on unmet need)', f: (v) => (v ? 'yes' : 'no: the plan builds everything (round 5)') },
+	lineMw: { g: 'border', label: 'The line to the grid', f: (v) => (v == null ? 'the catalog’s 10 MW' : `${num(v)} MW`) },
+	newcomerStart: { g: 'people', label: 'A newcomer’s Aven invests its first HEARTS in the sellers of its basics for', f: (v) => (v > 0 ? `${num(v)} days` : 'no: it follows the mean allocation from day 1 (round 5)') },
 	melt: { g: 'economy', label: 'Melt of HEARTS and MINDs', f: (v) => `${pct(v)} a year` },
 	heartsPerDay: { g: 'economy', label: 'HEARTS a person a day', unit: 'HEARTS' },
 	rateIndexed: { g: 'economy', label: 'Aven rate card and ground rent follow the HEARTS a day', f: yesNo },
@@ -513,7 +523,7 @@ export function importsOf(B, F, V, marks = {}, L = null) {
 
 /**
  * The AI tab's record of one world: `A` from aiYears(w) (./records.js). Who owns the accelerators each year (the
- * settlement COOPs and the Village COOP), the inference they sold to the AI COOPs and its price, the Aven hours a
+ * Tribe COOPs and the Village COOP), the inference they sold to the AI COOPs and its price, the Aven hours a
  * person by tenth of holdings (help and work), each tenth's MIND income by source, the accelerators imported and what
  * bound the Aven service. { owners: [{ id, label }], years: [...] }
  */

@@ -10,7 +10,7 @@
  * technology's coefficients down its two-factor learning curve only with R&D energy, and R&D only gets the energy
  * left after basics, running and building (./energy.js).
  *
- * No human labour is paid: COOPs pay Aven work items. Running items keep a plant going (a rate card in R per Aven
+ * No human labour is paid: COOPs pay work proposals. Running proposals keep a plant going (a rate card in R per Aven
  * hour, in R indexed to the HEARTS issued a day by default: ./genesis.js rateIndexed), work proposals are paid from the treasury's surplus above its reserve, and both go
  * to people in proportion to what their Aven delivers.
  */
@@ -387,10 +387,10 @@ function buildOfNow(w, pl) {
 export const ownShare = (pl) => (pl.hostedCap > 0 ? Math.max(0, 1 - pl.hostedCap / Math.max(1e-12, pl.cap)) : 1);
 
 /**
- * The settlement COOPs' dome rents (Samuel, 2026-10-13), worked out on the slow days: a hall's rent a m² of floor a day
+ * The Tribe COOPs' dome rents (Samuel, 2026-10-13), worked out on the slow days: a hall's rent a m² of floor a day
  * covers what its shells wear at replacement cost (the year's traded prices, as every plant's wear) and the ground rent
  * of the land under them, over 1 − λ: the landlord sells the space, Law 5 pays its holders λ of each rent, and what it
- * keeps pays for the domes. Every m² is rented at the same rate (a dome stands where it stands: the settlement COOPs
+ * keeps pays for the domes. Every m² is rented at the same rate (a dome stands where it stands: the Tribe COOPs
  * compete for residents, not for tenants). The part of a dome nobody rents (paths, ponds, offices, stores) stays in the
  * landlord's own price.
  */
@@ -409,7 +409,7 @@ export function hallRents(w) {
 
 /**
  * Each COOP's costs in R: variable cost a unit (inputs and energy at expected prices), its floor (variable cost ÷
- * (1 − Law 5 share): the seller's own reservation price), and full cost (adding running items, ground rent and the
+ * (1 − Law 5 share): the seller's own reservation price), and full cost (adding running proposals, ground rent and the
  * wear of its capital at replacement cost, over what it sells).
  */
 export function costs(w, full) {
@@ -467,7 +467,7 @@ export function costs(w, full) {
 					capR += (ownShare(pl) * live * unitSlowR(w, pl)) / (pl.def.life * 365);
 				}
 				landM2 += pl.landM2 * (pl.rentRate ?? w.land.rent);
-				// dome rent: the m² it rents in a settlement COOP's domes, at the landlord's rate
+				// dome rent: the m² it rents in a Tribe COOP's domes, at the landlord's rate
 				if (pl.hosts) for (const x of pl.hosts) if (x.hall.ownerK >= 0 && x.hall.ownerK !== co.k) domeR += x.m2 * x.hall.rateR;
 			}
 		}
@@ -571,7 +571,7 @@ export function standbyHours(w, pl) {
 	const u = Math.min(1, Math.max(0, pl.utilEma ?? 0.8));
 	// (round 4, the settlers' first months) on the build-out, the homes the plan finished ahead of their people are
 	// kept by the build crews until people move in, within the plan's hours and its running bill (advanced by the
-	// bank): the settlement COOP keeps ready only the part in use and half again, so the first settlers do not pay for
+	// bank): the Tribe COOP keeps ready only the part in use and half again, so the first settlers do not pay for
 	// keeping a dome of empty homes
 	if (pl.def.kind === 'home' && w.ramp && !w.ramp.over) return fullHours(w, pl) * STANDBY * Math.min(1, 1.5 * u);
 	return fullHours(w, pl) * STANDBY * Math.min(1, 0.05 + 1.5 * u);
@@ -957,9 +957,9 @@ export function produce(w, fill) {
 	}
 }
 
-// ── running items, wear ──────────────────────────────────────────────────────────────────────────────────────────
+// ── running proposals, wear ──────────────────────────────────────────────────────────────────────────────────────────
 /**
- * Pay `R` (in R) of Aven work items to people, in proportion to what their Aven delivers: in the paying COOP's own
+ * Pay `R` (in R) of work proposals to people, in proportion to what their Aven delivers: in the paying COOP's own
  * MIND first, then in the other MINDs its treasury holds (largest first). Returns what was paid, in R.
  */
 export function payAvens(w, k, R) {
@@ -1003,7 +1003,7 @@ export function payAvens(w, k, R) {
 /** the Aven hours the COOPs need today: every plant's running hours (and the racks'), and a seventh of the work
  * proposals posted and not yet delivered (./engine.js calls it before the people's orders) */
 export function workNeed(w) {
-	let run = 0, prop = 0;
+	let run = 0, prop = 0, runB = 0;
 	for (const co of w.coops) {
 		co.workRunH = 0;
 		if (!co.alive) continue;
@@ -1011,16 +1011,18 @@ export function workNeed(w) {
 		for (const pl of co.plants) h += runHours(w, pl);
 		co.workRunH = h;
 		run += h;
+		// (round 6) the running hours of the plants that make the basics (food, water, energy, the bed)
+		if (BASICS.includes(co.good)) runB += h;
 		prop += (co.propBacklogR ?? 0) / PROP_DAYS / w.c.rateR;
 	}
-	return (w.workNeed = { run, prop });
+	return (w.workNeed = { run, prop, runB });
 }
 
 /**
- * The day's book of work items (./engine.js settle calls it, once the Aven hours are delivered): what each COOP pays
- * for the hours its items got (the rate card: running items first, proposals with the rest), what each person's work
+ * The day's book of work proposals (./engine.js settle calls it, once the Aven hours are delivered): what each COOP pays
+ * for the hours its items got (the rate card: running proposals first, proposals with the rest), what each person's work
  * earns (in proportion to its Aven's skill × the hours it delivered), and the Aven service the hours used. An Aven's
- * work for a COOP pays for its own inference at delivery (round 4, the coordinator's rule): the work item's pay settles
+ * work for a COOP pays for its own inference at delivery (round 4, the coordinator's rule): the work proposal's pay settles
  * the avenCEO bill for those hours first (the COOPs pay it in settle, in proportion to their pay, to avenCEO and the
  * hardware owners, each in its own MIND), and the person gets the rest (workItems). Nobody needs MIND in hand before
  * their Aven can work. Only if a day's pay falls short of the hours' bill (the Aven's skill was judged on the month's
@@ -1041,12 +1043,18 @@ export function workBook(w, unitR) {
 	}
 	const runFill = need.run > 0 ? Math.min(1, WH / need.run) : 1;
 	const propFill = need.prop > 0 ? Math.min(1, Math.max(0, WH - need.run) / need.prop) : 1;
+	// (round 6, cfg.basicsWork) the hours go first to the running proposals of the plants that make the basics, then to
+	// the other running proposals; each COOP runs tomorrow as far as its own running hours were delivered
+	const bw = !!w.cfg.basicsWork, runB = need.runB ?? 0;
+	const fillB = runB > 0 ? Math.min(1, WH / runB) : 1;
+	const fillO = need.run - runB > 1e-12 ? Math.min(1, Math.max(0, WH - runB) / (need.run - runB)) : 1;
 	let RR = 0;
 	for (const co of w.coops) {
 		co.workRunR = 0;
 		co.workPropR = 0;
+		co.runFillToday = bw ? (BASICS.includes(co.good) ? fillB : fillO) : runFill;
 		if (!co.alive || !(Wsum > 0)) continue;
-		co.workRunR = (co.workRunH ?? 0) * rateR * runFill;
+		co.workRunR = (co.workRunH ?? 0) * rateR * co.runFillToday;
 		co.workPropR = ((co.propBacklogR ?? 0) / PROP_DAYS) * propFill;
 		RR += co.workRunR + co.workPropR;
 	}
@@ -1070,10 +1078,10 @@ export function workBook(w, unitR) {
 }
 
 /**
- * The work items of the day (round 4, Samuel 07:27: the personal Avens work for all COOPs). The COOPs need Aven hours:
+ * The work proposals of the day (round 4, Samuel 07:27: the personal Avens work for all COOPs). The COOPs need Aven hours:
  * every plant's running hours (and the hardware owners' racks), and the work proposals their treasuries posted
  * (./coops.js payout), worked off a seventh a day. The personal Avens deliver them (./market.js peopleOrders,
- * ./engine.js clearPeople): running items first, proposals with the rest. Each COOP pays the rate card for the hours
+ * ./engine.js clearPeople): running proposals first, proposals with the rest. Each COOP pays the rate card for the hours
  * delivered (./coops.js workBook): the part that settles the Aven service the hours used went to avenCEO and the
  * hardware owners in settle; the rest it pays now, in its own MIND first, to the people in proportion to what each
  * one's work earned less its hours' bill (payAvens). Hours not delivered are not paid; a COOP whose running hours fell
@@ -1096,7 +1104,8 @@ export function workItems(w) {
 		const paid = B.Wsum > 0 ? payAvens(w, co.k, Rrun * keep) : 0;
 		co.runToday = paid + billRun;
 		// (hours the Avens did not deliver are not the treasury's failure: only what it could not pay counts)
-		co.unpaidH = Rrun * keep > 0 ? Math.max(0, 1 - paid / (Rrun * keep)) * (co.workRunH ?? 0) * B.runFill : 0;
+		co.unpaidH = Rrun * keep > 0 ? Math.max(0, 1 - paid / (Rrun * keep)) * (co.workRunH ?? 0) * (co.runFillToday ?? B.runFill) : 0;
+		co.runFillY = co.runFillToday ?? B.runFill;
 		co.costR += paid;
 		t.runningR += paid + billRun;
 		paidAll += paid + billRun;
@@ -1315,12 +1324,16 @@ export function buildDecisions(w) {
 		w.land.bestBid = 0;
 		mothball(w);
 	}
-	// during the build-out the plan decides what is built (./ramp.js)
-	if (rampOn(w)) return;
+	// during the build-out the plan decides what is built (./ramp.js); (round 6, B13 rule 1, cfg.foundingSignal) except
+	// the goods: a goods COOP whose buyers ask more than it can make (unmet need) builds by the rules below while the
+	// plan builds the rest, so the goods a person gets do not fall while the people arrive faster than the plan's works
+	const ramp = rampOn(w);
+	if (ramp && !w.cfg.foundingSignal) return;
 	// the basics' COOPs decide first, so a short basic gets free land before a build for extras
 	const order = w.coops.filter((c) => c.alive).sort((a, b) => (a.good <= BED ? 0 : 1) - (b.good <= BED ? 0 : 1) || a.k - b.k);
 	for (const co of order) {
 		if (!co.alive || co.project || !co.plants.length) continue;
+		if (ramp && (co.good !== GOODS_ || !(w.day >= (co.foundDay ?? 0)))) continue;
 		const isBed = co.good === BED;
 		// a basic people have gone short of (on more than a tenth of the last 30 days): its builds skip the payback test
 		// (a COOP that sells a basic builds to serve the need; the treasury still has to carry the build)
@@ -1338,6 +1351,16 @@ export function buildDecisions(w) {
 		if (!bp || bp.why === LIMIT.nature || (!bp.units && !bp.pits)) {
 			if (bp) co.buildLimit = bp.why;
 			continue;
+		}
+		// (in the build-out a goods COOP builds only on land the plan leaves free: what is left when every plan plant
+		// stands at its full size)
+		if (ramp && bp.land > 0) {
+			let planM2 = 0;
+			for (const p of w.ramp.plants ?? []) planM2 += Math.max(0, (p.landFull ?? 0) - (p.landM2 ?? 0));
+			if (bp.land > freeLand(w) - planM2) {
+				co.buildLimit = LIMIT.land;
+				continue;
+			}
 		}
 		const pl = co.plants[0];
 		// more works do not help while one of their inputs is short: that input is the limit
@@ -1802,7 +1825,7 @@ function stillWanted(w, co) {
 }
 
 /**
- * Receivership, checked every day: a COOP fails when on 30 days in a row it could not pay its running items, its bills
+ * Receivership, checked every day: a COOP fails when on 30 days in a row it could not pay its running proposals, its bills
  * or the energy and materials it needed (on such a day it made and delivered only what it paid for), or has had neither sales nor
  * HEARTS for 60 days, or (setting auditExit) has failed its audit (for 30 days its output stayed under a quarter of
  * what its plants are rated for), or never built its first plant within a year. A trustee freezes its treasury (it
@@ -1829,7 +1852,7 @@ export function receiverships(w) {
 		co.died = w.day;
 		// a founding that never built, or a young entrant that failed: the next founder of this good waits (what stopped
 		// it, land, a short input, costs it cannot cover, rarely clears in a year)
-		co.why = stillborn ? 'never built its first plant' : co.lowDays >= 30 ? 'could not pay its running items, bills or inputs for 30 days' : audit ? 'failed audit: output under a quarter of its rated plants for 30 days' : 'no sales and no HEARTS for 60 days';
+		co.why = stillborn ? 'never built its first plant' : co.lowDays >= 30 ? 'could not pay its running proposals, bills or inputs for 30 days' : audit ? 'failed audit: output under a quarter of its rated plants for 30 days' : 'no sales and no HEARTS for 60 days';
 		co.diag = { treR: treasuryR(w, co.k), own: co.own, liquid: w.liquid[co.k], ownR: w.tre[co.k * M + co.k] * w.P[co.k], unpaidH: co.unpaidH, unpaidBillR: co.unpaidBillR, lowDays: co.lowDays, idle: co.idleDays, costREma: co.costREma, salesREma: co.salesREma, priceR: co.priceR, fullR: co.fullR, margin: co.marginEma, goodMargin: w.goodMargin?.[co.good], heartsEma: co.heartsEma, P: w.P[co.k], soldEma: co.soldEma, capDay: co.capDay };
 		for (let i = 0; i < w.N; i++) w.alloc[i * M + co.k] = 0;
 		let to = heir;

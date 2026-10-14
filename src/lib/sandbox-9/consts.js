@@ -21,7 +21,12 @@ export const NX = EXTRAS.length;
 export const MATERIALS = [WOOD, STEEL, GLASS, PANEL];
 
 /** the laws' numbers that are not settings */
-export const POOL_SHARE = 0.1; // a tenth of the treasury half of each HEART goes into the pools
+/** Law 4 (the paper, round 6): 1 HEART invested makes 1 MIND of the COOP, 0.5 of it to the investor, 0.4 to the COOP's
+ * treasury and 0.1 to the city's pools. One token in three places. This is the pools' part of each HEART (round 5 and
+ * before: 0.05, a tenth of the treasury's half; the setting `poolPart` runs it for the same-seed comparison) */
+export const POOL_SHARE = 0.1;
+/** the investor's part of each HEART invested (Law 4's "half to the investor") */
+export const INVESTOR_SHARE = 0.5;
 export const FEE = 0.003; // pool fee, kept in the pool
 export const GAMMA = 1 - FEE;
 export const MAX_COOPS = 48; // MIND slots: the genesis COOPs and room for Law 3 foundings (a slot is never reused: its MIND lives on with its holders)

@@ -22,6 +22,9 @@ const SERIES = {
 	minMet: 4, // the lowest share of need met by anyone, per basic
 	shortN: 4, // how many people were short (< 98 %) of each basic
 	shortAny: 1, // how many people were short of any basic
+	ownerFail: 1, // owner-only people failing the normal test today (short of a basic, or holding nothing): round 6, so the verdict can count from the founding's end
+	coopLow: 1, // COOPs 30 days or more unable to pay today (round 6, the same)
+	mindBasic: 1, // basics held below need by MIND today (round 6, the same)
 	strict: 1, // owner-only: the lowest ratio of today's dividends to today's basic bundle
 	strictMed: 1, // owner-only: the median of that ratio
 	ownerMet: 1, // owner-only: the lowest share of a basic met
@@ -98,7 +101,7 @@ function newYear(w, y) {
 		// for building (upkeep included) and as the works' inputs; what the dome factory's lines made, by line
 		mat: { made: new Float64Array(G), imported: new Float64Array(G), upkeep: new Float64Array(G), built: new Float64Array(G), input: new Float64Array(G) },
 		df: { struts: 0, steel: 0, glass: 0, panel: 0 },
-		// the settlement COOPs' rents: beds sold and their price (R), dome floor rented and its rate, rent paid (R), and
+		// the Tribe COOPs' rents: beds sold and their price (R), dome floor rented and its rate, rent paid (R), and
 		// what a euro was worth in R (the bank's rate) summed over the days
 		rent: { bedR: 0, beds: 0, m2R: 0, m2: 0, paidR: 0, eurR: 0, days: 0, byCoop: {} },
 		exportKwh: 0,
@@ -140,7 +143,7 @@ function yearDay(w, protD) {
 		const o = i * G, d = w.decH[i], da = w.decA[i];
 		const f = w.q[o + FOOD];
 		// Aven help is what a person's Aven gave its person: the Aven hours bought less those it worked for the COOPs;
-		// the income is the R value a day of the HEARTS half, the work items and the Law 5 dividends
+		// the income is the R value a day of the HEARTS half, the work proposals and the Law 5 dividends
 		const wk = w.workH ? w.workH[i] : 0;
 		const v = [f * 1000, f * protD, w.q[o + BED] * homeM2, w.q[o + WATER], w.q[o + ENERGY], w.q[o + COMPUTE] - wk, w.q[o + GOODS_], w.q[o + SPRING], w.q[o + BED], wk, w.heartsR[i], w.income[i], w.div[i]];
 		for (let m = 0; m < nL; m++) (Y.liv[d * nL + m] += v[m]), (Y.liv[10 * nL + m] += v[m]), (Y.livA[da * nL + m] += v[m]);
@@ -292,7 +295,7 @@ export function recordDay(w) {
 	const decL = new Float64Array(20), decLx = new Float64Array(20), decE = new Float64Array(20), decW = new Float64Array(10), decN = new Float64Array(20);
 	let strictMin = Infinity, ownerMet = Infinity, ownerHold = Infinity;
 	const ratios = [];
-	let divSum = 0, holdSum = 0, ownerShort = 0, ownerL = 0, ownerN = 0;
+	let divSum = 0, holdSum = 0, ownerShort = 0, ownerL = 0, ownerN = 0, ownerFail = 0;
 	const limMin = [Infinity, Infinity, Infinity, Infinity], cons = new Float64Array(G);
 	for (let i = 0; i < N; i++) {
 		const o = i * G;
@@ -349,6 +352,7 @@ export function recordDay(w) {
 			if (hd < ownerHold) ownerHold = hd;
 			if (w.day > 0 && (m < 0.98 || !(w.wealth[i] > 0))) {
 				rec.normalFailPD++;
+				ownerFail++;
 				if (rec.normalFail.length < 200) rec.normalFail.push({ day: w.day, i, met: m, hold: w.wealth[i] });
 			}
 			if (m < 0.98) ownerShort++;
@@ -364,6 +368,8 @@ export function recordDay(w) {
 	for (let g = 0; g < G; g++) rec.cons[d * G + g] = cons[g] / N;
 	rec.ownerShort[d] = ownerShort;
 	rec.shortAny[d] = shortAny;
+	rec.ownerFail[d] = ownerFail;
+	rec.coopLow[d] = 0; // filled by the engine's step after receiverships, the day's own count
 	rec.ownerL[d] = ownerN ? ownerL / ownerN : NaN;
 	ratios.sort((a, b) => a - b);
 	rec.strict[d] = ratios.length ? strictMin : NaN;
@@ -403,15 +409,17 @@ export function recordDay(w) {
 		rec.badge[d * G + g] = w.badge[g];
 		rec.pbar[d * G + g] = w.pbar[g];
 	}
-	let mindToday = false;
+	let mindToday = false, mindBasic = 0;
 	for (const b of BASICS)
 		if (w.badge[b] === LIMIT.mind && ceil[b] >= need[b] && w.day > 0) {
+			mindBasic++;
 			rec.mindDayGoods++;
 			rec.mindDayGoodsBy[b]++;
 			mindToday = true;
 			if (rec.mindViolations.length < 500) rec.mindViolations.push({ day: w.day, good: b, minMet: minMet[b] });
 		}
 	if (mindToday) rec.mindDays++;
+	rec.mindBasic[d] = mindBasic;
 	if (w.day > 0) {
 		let ok = ratios.length > 0;
 		for (const r of ratios) if (!(r >= 1)) ok = false;
@@ -570,7 +578,7 @@ export function villageYears(w) {
 				heatPumps: per(E.heatPump, Y)
 			},
 			solarKwp: Y.solarKwp,
-			// the settlement COOPs' rents (Samuel, 2026-10-13): a bed a day (R, and its share of a person's 24 HEARTS a
+			// the Tribe COOPs' rents (Samuel, 2026-10-13): a bed a day (R, and its share of a person's 24 HEARTS a
 			// day, and in euros at the bank's rate), the dome floor a m² a month, the dome rent paid that year
 			rent: rentOf(Y, w),
 			binds: Object.fromEntries(Object.entries(binds).map(([id, b]) => [id, b.words])),
@@ -753,7 +761,7 @@ export function borderYears(w) {
  * The AI market a year at a time (round 4, ./ai.js): who owns the accelerators and how many (at the year's end, and
  * on average), the inference they sold to the AI COOPs (accelerator-hours a day) and its price, the Aven hours the AI
  * COOPs sold, per tenth of holdings split into the person's help and the work for the COOPs, each tenth's MIND income
- * by source (the HEARTS half, Aven work items, Law 5 dividends; R a day), the accelerators bought at the border and
+ * by source (the HEARTS half, work proposals, Law 5 dividends; R a day), the accelerators bought at the border and
  * their euros, what bound the Aven service most days, and the AIX export.
  */
 export function aiYears(w) {
@@ -860,10 +868,14 @@ export function foundingBill(w) {
 	};
 }
 
+/** (round 6) the build-out plan (src/lib/sandbox-7) still names a settlement's COOP its "settlement COOP": the engine
+ * calls it the Tribe COOP (Samuel 2026-10-14) */
+const tribe = (s) => (typeof s === 'string' ? s.replace(/settlement COOPs/g, 'Tribe COOPs').replace(/settlement COOP/g, 'Tribe COOP') : s);
+
 /**
  * On the ramp (./ramp.js) the founding bill is the build-out's: the starter kit, running it, the materials, machines
  * and services (the geothermal drilling among them) and the land, as the build-out plan prices them
- * (src/lib/sandbox-7/buildout.js), by kind, by settlement (each settlement COOP's advances; the Village COOP's for the
+ * (src/lib/sandbox-7/buildout.js), by kind, by settlement (each Tribe COOP's advances; the Village COOP's for the
  * centre) and by year. Same shape as the round-2 bill (rows, builtEur, totalEur …) plus the plan's own tables.
  */
 function buildoutBill(w) {
@@ -883,11 +895,11 @@ function buildoutBill(w) {
 		ramp: true,
 		kit: { eur: plan.kit.eur, byGroup: plan.kit.byGroup, items: plan.kit.items.map((k) => ({ id: k.id, label: k.label, n: k.n, eur: k.eur, total: k.total })) },
 		geothermal: geo ? { label: geo.label, eur: geo.eur.total, start: geo.start, end: geo.end, coop: 'Village COOP' } : null,
-		bySettlement: plan.settlements.map((x) => ({ key: x.key, label: x.label, coop: x.coop, founded: x.founded, done: x.done, beds: x.beds, domes: x.domes, eur: x.eur })),
+		bySettlement: plan.settlements.map((x) => ({ key: x.key, label: x.label, coop: tribe(x.coop), founded: x.founded, done: x.done, beds: x.beds, domes: x.domes, eur: x.eur })),
 		byYear: T.byYear,
 		doneMonth: T.doneMonth,
 		peopleMonth: T.peopleMonth,
-		feasibility: plan.feasibility.statement,
+		feasibility: tribe(plan.feasibility.statement),
 		kitChoice: plan.feasibility.kit ?? null,
 		sources: { buildout: 'src/lib/sandbox-7/buildout.js buildPlan (the build-out plan): kit, work rates, schedule and euros', prices: 'src/lib/sandbox-7 specs.js PRICES; buildout.js BUILD_SOURCES', start: 'launched in January (the engine’s year starts in January)' }
 	};
