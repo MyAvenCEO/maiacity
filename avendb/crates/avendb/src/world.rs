@@ -17,11 +17,11 @@ use crate::doc::Item;
 use crate::id::{AudienceId, BlobId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
-use crate::lens::{DocV2, Status};
+use crate::lens::{DocV2, Lens, Schema, Status};
 use crate::policy::{Entry, Issued, Kind, Level, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
-use crate::slice::{Selector, Slice};
+use crate::slice::{LENS_TYPE, Selector, Slice};
 use crate::words::{hex, kind_name, level_name, status_name, who_name};
 
 /// The type of a device's card: an entry of its person's human vault, titled with the device's name, that the device
@@ -180,6 +180,8 @@ pub enum What {
     Todo { title: String, status: Status },
     /// A file (`FILE`): its name, its media type (`MEDIA`), and whether it is deleted (`DELETED`).
     File { title: String, media: String, deleted: bool },
+    /// A schema or lens entry (`slice::Sym::of_lane`): a schema's title, or a lens's name.
+    Lane { title: String, lens: bool },
     /// What the device holds but can't open.
     Sealed,
 }
@@ -286,6 +288,7 @@ impl World {
                 What::Note { title, text, .. } => ("note", Some(title), Some(text), None),
                 What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
                 What::File { title, .. } => ("file", Some(title), None, None),
+                What::Lane { title, lens } => (if *lens { "lens" } else { "schema" }, Some(title), None, None),
                 What::Sealed => ("sealed", None, None, None),
             };
             let (variant_of, deleted, edits, proposals, media) = match &i.what {
@@ -443,12 +446,25 @@ pub fn acting(st: &State, me: SignerId, mine: VaultId, v: VaultId) -> Acting {
     Acting { actor, reaches, shares }
 }
 
+/// Schema or lens entry `entry` of type `ty` as device `me` reads it: a schema's title, or a lens's name, from its
+/// JSON. `None` for any other entry, or one whose creation `me` doesn't open (`Lab::lane_entry`).
+fn lane(lab: &Lab, me: SignerId, entry: EntryId, ty: Option<&str>) -> Option<What> {
+    let blob = lab.lane_entry(me, entry)?;
+    let lens = ty == Some(LENS_TYPE);
+    let title = if lens {
+        Lens::parse(blob).map(|l| l.title().to_string())
+    } else {
+        Schema::parse(blob).map(|s| s.title().to_string())
+    };
+    Some(What::Lane { title: title.unwrap_or_default(), lens })
+}
+
 /// Entry `en` as device `me` shows it.
 fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
     let meaning = lab.meaning(me, en.id);
     let file = meaning.as_ref().is_some_and(|m| m.attrs.ty.as_str() == FILE);
     let what = match lab.item(me, en.id) {
-        None => What::Sealed,
+        None => lane(lab, me, en.id, meaning.as_ref().map(|m| m.attrs.ty.as_str())).unwrap_or(What::Sealed),
         Some(item) => match (item.as_document(), item.as_todo()) {
             (Some(doc), _) if file => {
                 let media = doc.tags.iter().find_map(|t| t.strip_prefix(MEDIA)).unwrap_or_default().to_string();

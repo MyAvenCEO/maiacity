@@ -22,6 +22,7 @@ use crate::lab::Lab;
 use crate::lens::{self, DocV2, Lens, Schema};
 use crate::policy::{Action, Entry, Principal, Proposal, Revoking, Setting, Sharing, State, Who};
 use crate::sign::{Classical, Signature, SignerKeys};
+use crate::slice::LENS_TYPE;
 use crate::wire::Wire as _;
 use crate::words::{hex, kind_name, level_name, who_name};
 use crate::world::levels;
@@ -65,18 +66,29 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
 }
 
 /// Entry `en` as the studio's table editor shows it: its type and its tags now, if the device reads them; its record
-/// as the device opens it on the main line (`null` if it opens none of it), and its `kind` as the record names it
-/// (`"sealed"` then); the schemas its edits were made under; how many edits of it the device counts and holds; its
-/// lines (the main line and each proposal) and its proposals' names; its audience and its key's epoch there; the size
-/// of its Loro document; the device and the vault of its first edit; and who may read it.
+/// as the device opens it on the main line, or a schema's or lens's JSON (`null` if it opens none of it), and its
+/// `kind` as the record names it, or its type for a schema or lens (`"sealed"` then); the schemas its edits were made
+/// under; how many edits of it the device counts and holds; its lines (the main line and each proposal) and its
+/// proposals' names; its audience and its key's epoch there; the size of its Loro document; the device and the vault
+/// of its first edit; and who may read it.
 fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     let (st, entry) = (lab.state(me), en.id);
     let item = lab.item(me, entry);
-    let record = item.map(Item::record);
-    let field = |name: &str| record.as_ref().and_then(|r| r.get(name)).cloned();
-    let kind = field("kind").and_then(|k| k.as_str().map(str::to_string));
-    let kind = kind.unwrap_or_else(|| if item.is_some() { "record" } else { "sealed" }.into());
     let meaning = lab.meaning(me, entry);
+    let ty = meaning.as_ref().map(|m| m.attrs.ty.as_str().to_string());
+    // A schema or lens entry holds its JSON as written, not a Loro document (`Lab::lane_entry`): that is its record.
+    let lane: Option<Value> = match item {
+        None => lab.lane_entry(me, entry).and_then(|b| serde_json::from_slice(b).ok()),
+        Some(_) => None,
+    };
+    let opens = item.is_some() || lane.is_some();
+    let record = item.map(Item::record).or(lane);
+    let field = |name: &str| record.as_ref().and_then(|r| r.get(name)).cloned();
+    let (kind, title) = match item {
+        None if opens => (ty.clone(), field(if ty.as_deref() == Some(LENS_TYPE) { "lens" } else { "title" })),
+        _ => (field("kind").and_then(|k| k.as_str().map(str::to_string)), field("title")),
+    };
+    let kind = kind.unwrap_or_else(|| if opens { "record" } else { "sealed" }.into());
     let history = lab.history(me, entry);
     let lines = history.map(History::lines).unwrap_or_default();
     let name = |b: EditId| history.and_then(|h| h.name(b)).map_or(Value::Null, Value::from);
@@ -87,10 +99,10 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     let levels: Map<String, Value> = levels(st, v, x).iter().map(|(v, r)| (hex(&v.0), level_name(*r).into())).collect();
     json!({
         "entry": hex(&entry.0),
-        "type": meaning.as_ref().map(|m| m.attrs.ty.as_str().to_string()),
+        "type": ty,
         "tags": meaning.as_ref().map(|m| m.attrs.tags.iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>()),
         "kind": kind,
-        "title": field("title"),
+        "title": title,
         "record": record,
         "authored": authored,
         "edits": history.map_or(0, |h| h.changes().len()),

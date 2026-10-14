@@ -1990,6 +1990,14 @@ impl Lab {
         store.view().lane_of(v, &store.readings)
     }
 
+    /// What schema or lens entry `entry` holds, as device `d` reads it: the JSON its creation brought, as written
+    /// (`policy::Readings::blobs`). `None` for any other entry, or one whose creation `d` doesn't open.
+    pub fn lane_entry(&self, d: SignerId, entry: EntryId) -> Option<&[u8]> {
+        let store = self.held(d);
+        let en = store.view().entry(entry)?;
+        store.readings.blobs.get(&en.creation).map(|b| &b[..])
+    }
+
     /// The vault entry `entry` is of, by device `d`'s view.
     pub fn vault_of_entry(&self, d: SignerId, entry: EntryId) -> Option<VaultId> {
         Some(self.held(d).view().entry(entry)?.vault)

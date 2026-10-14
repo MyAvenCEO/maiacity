@@ -74,11 +74,11 @@
  */
 /**
  * An entry as the device shows it: `readers`, `writers` and `sharers` the vaults that read it, change it and may share
- * it on, its own vault first; `syncedTo` the devices that hold it.
+ * it on, its own vault first; `syncedTo` the devices that hold it; `title` a schema's title or a lens's name for those.
  * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
  *   created: number | null, cell: string, public: boolean, roles: Record<string, Role>,
  *   readers: string[], writers: string[], sharers: string[], syncedTo: string[],
- *   kind: 'note' | 'todo' | 'file' | 'sealed', title: string | null, text: string | null,
+ *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'sealed', title: string | null, text: string | null,
  *   status: 'open' | 'doing' | 'done' | null, variantOf: string | null, deleted: boolean, edits: number,
  *   proposals: number, media: string | null, files: import('./files.js').FileView[] }} EntryView
  */

@@ -11,6 +11,7 @@ use avendb::cast::{self, World};
 use avendb::engine::{self, Prepared};
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
+use avendb::lens::blobs::TODO_LENS;
 use avendb::policy::{Kind, Level, Principal};
 use avendb::recovery::RecoveryKey;
 use avendb::sealed::{Brought, FileKey, seal};
@@ -434,6 +435,34 @@ fn put_file_makes_a_file_entry_whose_write_brings_the_bytes() {
     assert_eq!(refused(&may(&mut w, mac, json!([nameless]))[0]), "BadOp");
     let lengthless = json!({ "op": "put_file", "vault": alice.to_hex(), "name": "x" });
     assert_eq!(refused(&may(&mut w, mac, json!([lengthless]))[0]), "BadOp");
+}
+
+/// A schema or lens entry holds its JSON as written, not a Loro document: the world shows it by its kind and its
+/// name, a schema's title or a lens's, and the database has that JSON for its record, not a sealed row.
+#[test]
+fn a_schema_or_lens_entry_shows_as_what_it_holds() {
+    let mut w = cast::world();
+    let (mac, alice) = (w.mac_a, w.alice);
+    let plant = r#"{ "title": "Plant", "type": "object", "properties": {
+  "kind": { "const": "plant" }, "name": { "type": "string", "default": "" } }, "required": ["kind"] }"#;
+    let mut add = |ty: &str, value: &str| {
+        let made = ok(run(&mut w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": ty, "value": value })));
+        EntryId(id(&made, "entry"))
+    };
+    let (schema, lens) = (add("schema", plant), add("lens", TODO_LENS));
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    let data = ok(run(&mut w, mac, json!({ "op": "database", "vault": alice.to_hex() })));
+    let each = [(schema, "schema", "Plant", plant), (lens, "lens", "Todo, v1 to v2", TODO_LENS)];
+    for (entry, kind, title, blob) in each {
+        let of = |rows: &Value| {
+            let rows = rows.as_array().expect("its rows");
+            rows.iter().find(|e| e["entry"] == entry.to_hex()).cloned().expect("its row")
+        };
+        let (shown, row) = (of(&seen["entries"]), of(&data["rows"]));
+        assert_eq!((&shown["kind"], &shown["title"]), (&json!(kind), &json!(title)));
+        assert_eq!((&row["kind"], &row["title"], &row["type"]), (&json!(kind), &json!(title), &json!(kind)));
+        assert_eq!(row["record"], serde_json::from_str::<Value>(blob).expect("its JSON"));
+    }
 }
 
 #[test]
