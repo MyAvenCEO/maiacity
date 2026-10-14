@@ -352,12 +352,16 @@ export function packedVan() {
 				const pose = k > 0 ? blend(base, { ...base, ...TALK }, k) : base;
 				const h = pose.head ?? [0, 0, 0];
 				const says = k * (Math.sin(t * 5.3 + i) * 0.035 + Math.sin(t * 1.7) * 0.025); // the small nods of someone talking
-				cast.rig.pose({ ...pose, head: [h[0] + says + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
+				cast.rig.pose({ ...pose, head: [h[0] + says + (o.userData.lift ?? 0) + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
 			}
 		},
 		/** the woman beside you turns to you to talk (on), or sits back and looks ahead */
 		talk(on) {
 			her.userData.to = on ? 1 : 0;
+		},
+		/** her head bowed (v > 0) or lifted (v < 0) a little, as she looks down at her hands or up the road */
+		lift(v) {
+			her.userData.lift = v;
 		},
 		/** her face (world) */
 		herFace: () => herHead.localToWorld(V(0, 0.075, 0.08))

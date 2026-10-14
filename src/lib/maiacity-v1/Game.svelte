@@ -66,10 +66,22 @@
 	const openMips = $derived(mips.filter((m) => m.status === 'open'));
 	const decidedMips = $derived(mips.filter((m) => m.status !== 'open').reverse());
 
-	$effect(() => world?.update(view, hour));
+	$effect(() => {
+		const v = view, h = hour; // read first: the world is made after the first run
+		world?.update(v, h);
+	});
 	// the players' first trees as they stand on the game clock now, each named after its planter
-	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree).map((s) => ({ seat: s, name: view.players[s].tree.name, ...treeNow(view, view.players[s].tree, now) })) : []);
-	$effect(() => void world?.trees(trees));
+	// (an admin's growth preview, Samuel 2026-10-14: my tree shown at any number of watered months, for testing; nothing
+	// is saved, and the game's own tree comes back when it ends)
+	let growth = $state(null);
+	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree).map((s) => {
+		const t = view.players[s].tree;
+		return { seat: s, name: t.name, ...treeNow(view, s === seat && growth != null ? { ...t, grown: growth } : t, now) };
+	}) : []);
+	$effect(() => {
+		const t = trees;
+		world?.trees(t);
+	});
 	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
 	$effect(() => void (view && world?.reveal(tour ? Math.max(0, ...steps.slice(0, tourAt + 1).map((x) => x.reveal ?? 0)) : 2)));
 	// where the story stands in the world: the pickup, the powercube and the players, and what the camera looks at
@@ -79,9 +91,10 @@
 	$effect(() => {
 		if (!view || !world) return;
 		const other = view.players[otherSeat]?.founder ? otherSeat : null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'bench'), pot: where.pot ?? (player?.tree ? 'planted' : 'bench'), pick: player?.tree?.plant ?? player?.seedling ?? '' });
+		const spot = player?.tree ?? player?.spot ?? null;
+		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'cruise'), hour: where.hour, cruise: where.cruise ?? '', spot: spot && { x: spot.x, z: spot.z }, marked: !!spot, by: where.by ?? '', pick: player?.tree?.plant ?? player?.seedling ?? '' });
 		world.touring(!!tour);
-		if (where.place) world.focus(where.place);
+		if (where.place) world.focus(growth != null && !tour ? `tree:${seat}` : where.place);
 	});
 	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
 	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
@@ -97,41 +110,87 @@
 		playing = 'joy';
 		world.joy().then(() => (playing = ''));
 	}
-	// planting the first tree: the player kneels and sets the seedling in the ground while the move goes to the game
-	function plantIt() {
-		if (!world || playing || !player?.seedling) return;
-		playing = 'plant';
-		world.plant().then(() => (playing = ''));
-		doMove({ type: 'plant', v: plantAt(player.seedling)?.version });
+	// the first tree (Samuel 2026-10-14): the spot tapped on the ground, outside the core circle (chosen; the rules say
+	// where it may not be), the player walking to it; marked there with two sticks; the seed sown and watered by the
+	// moment, the move going to the game as it ends; after the story, watered once a game month
+	let chosen = $state(null);
+	const spotWhy = (at) => {
+		if (!game || !at) return 'Tap the ground where it grows.';
+		try {
+			act(game, seat, { type: 'mark', x: at.x, z: at.z }, now);
+			return '';
+		} catch (e) {
+			return e?.message ?? String(e);
+		}
+	};
+	const chosenWhy = $derived(spotWhy(chosen));
+	$effect(() => {
+		const on = tour?.kind === 'spot' && !playing, at = chosen, ok = !chosenWhy;
+		world?.choose({ on, at, ok });
+	});
+	function onGround(at) {
+		if (tour?.kind !== 'spot' || playing) return;
+		chosen = at;
+		if (!spotWhy(at)) world?.walkTo(at.x, at.z);
+	}
+	function markIt() {
+		if (!world || playing || !chosen || chosenWhy) return;
+		const at = chosen;
+		playing = 'sticks';
+		world.sticks(at).then(() => (playing = ''));
+		doMove({ type: 'mark', x: at.x, z: at.z }).then(() => (chosen = null));
+	}
+	const plantIt = () => doMove({ type: 'plant', v: plantAt(player.seedling)?.version });
+	const myTree = $derived(trees.find((x) => x.seat === seat));
+	const shownMonths = $derived(growth ?? player?.tree?.grown ?? 0);
+	const stepPreview = (d) => (growth = Math.max(0, Math.min(400, shownMonths + d)));
+	const growthOf = $derived(`${seat}:${game?.started ?? 0}`);
+	$effect(() => void (growthOf, (growth = null))); // a new seat or game ends the preview
+	function waterIt() {
+		if (!world || playing || !myTree?.due) return;
+		playing = 'water';
+		world.water(seat).then(() => (playing = ''));
+		doMove({ type: 'water' });
 	}
 	function skipShot() {
 		caption = null;
 		world?.skip();
 	}
-	// a new chapter fades in from black; the steps within one cut straight on (Samuel 2026-10-13: the woman leaning
-	// over was lost in the dark)
+	// the film fades in from black at its very start and out to black at its very end; everything between is a cut
+	// (the editor's rule, the script 2026-10-14: a fade means time passing or an ending, so it is kept for those)
 	let fadeIn = $state(true);
-	let lastChapter = '';
+	let ended = $state(false); // the end faded out: the world fades back in under the player's own page
 	$effect(() => {
 		if (!tour || !world || playing) return;
 		const step = tour;
-		fadeIn = step.chapter !== lastChapter;
-		lastChapter = step.chapter;
+		fadeIn = step.id === 'arrive';
 		if (step.kind === 'intro') {
 			playing = 'intro';
 			world.intro(step.part, { lines: step.lines }).then(() => ((playing = ''), mark(step.id)));
-		} else if (step.kind === 'drive' || step.kind === 'load' || step.kind === 'build' || step.kind === 'fuel' || step.kind === 'board') {
+		} else if (step.kind === 'station' || step.kind === 'drive' || step.kind === 'load' || step.kind === 'build') {
 			playing = step.kind;
 			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
 			const lines = step.lines;
-			const moment = step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : step.kind === 'fuel' ? world.fuel({ lines }) : step.kind === 'board' ? world.board({ lines }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
+			const moment = step.kind === 'station' ? world.station({ lines }) : step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
 			moment.then(() => ((playing = ''), mark(step.id)));
-		} else if ((step.kind === 'invest' || step.kind === 'mint' || step.kind === 'pick' || step.kind === 'plant') && !told[step.id]) {
+		} else if (step.kind === 'sow' && !told[step.id] && player?.seedling) {
+			// the seed into the earth and the water over it; the move goes to the game as the moment ends
+			playing = 'sow';
+			world.sow({ lines: step.lines }).then(() => {
+				playing = '';
+				told = { ...told, [step.id]: true };
+				plantIt();
+			});
+		} else if ((step.kind === 'invest' || step.kind === 'mint' || step.kind === 'pick' || step.kind === 'spot') && !told[step.id]) {
 			playing = 'scene';
 			world.scene(step.place, step).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
 		} else if (step.kind === 'next' || step.kind === 'done') {
 			playing = 'scene';
-			world.scene(step.place, step).then(() => ((playing = ''), mark(step.id)));
+			world.scene(step.place, step).then(() => {
+				playing = '';
+				if (step.kind === 'done') (ended = true), setTimeout(() => (ended = false), 1600);
+				mark(step.id);
+			});
 		}
 	});
 
@@ -209,13 +268,14 @@
 		world = createWorld(canvas, {
 			onPick: (name) => {
 				// a Village COOP machine opens its own card
-				if (name?.startsWith('asset:')) return void (panel = name);
+				if (name?.startsWith('asset:')) return void ((panel = name), (chose = true));
 				if (!name?.startsWith('player:')) return;
 				seat = name.slice(7);
 				open('you');
 			},
 			onLabels: (l) => (labels = l),
-			onCaption: (c) => (caption = c)
+			onCaption: (c) => (caption = c),
+			onGround: (at) => onGround(at)
 		});
 		refresh().then(async () => {
 			// claim a seat (or keep mine) and bring its name up to the profile's: the Mac app reads the game with its app key,
@@ -232,7 +292,9 @@
 		return () => (clearInterval(t), clearInterval(r), world.dispose());
 	});
 
+	let chose = $state(false); // the player opened a card themselves: while the story plays, only then does one show
 	function open(name) {
+		chose = true;
 		panel = panel === name ? null : name;
 		tools = false;
 		if (name === 'ledger') ledgerOfWho = '';
@@ -335,9 +397,10 @@
 	const tourAt = $derived(steps.findIndex((x) => !x.done));
 	const tour = $derived(tourAt >= 0 && seenOf && seenOf === started && !seen[seat]?.off ? { ...steps[tourAt], n: tourAt + 1, steps: steps.length } : null);
 	// each milestone of the story unlocks the controls and views it talks about (Samuel 2026-10-13): nothing but the
-	// world in the trailer, then the HEARTS and the clock, the mint, the COOPs and their MINDs, invest, swap, and at
-	// pay day the player's own page and the ledger; the rest comes with the last steps. Without a story, all of it.
-	const UNLOCKS = { welcome: ['brand'], hearts: ['hearts', 'clock'], mint: ['mint'], coops: ['coops', 'minds'], maia: ['invest'], pool: ['swap'], payday: ['you', 'ledger', 'seats'], melt: ['mips', 'rules'], done: ['all'] };
+	// world on the road, then the HEARTS and the clock, the mint, with the first invest the COOPs, their MINDs and
+	// investing, with the answer the player's own page, the ledger, the seats and the swap; the rest at the end.
+	// Without a story, all of it.
+	const UNLOCKS = { arrival: ['brand'], hearts: ['hearts', 'clock'], mint: ['mint'], maia: ['invest', 'coops', 'minds'], answer: ['you', 'ledger', 'seats', 'swap'], done: ['all'] };
 	const unlocked = $derived.by(() => {
 		if (!tour) return null;
 		const on = new Set();
@@ -350,7 +413,7 @@
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
 		if (!demo) try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
-		if (id === 'payday') panel = 'you';
+		if (id === 'done') panel = 'you';
 	};
 	// remembered per game: a fresh game (a reset) starts every story from its first step again
 	const started = $derived(game?.started ?? 0);
@@ -432,10 +495,29 @@
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
+		{#if canMove && !tour && !playing && myTree?.due}
+			<!-- the first tree waits for its water: once a game month (a real day), a month of its growth each time -->
+			<button class="mintbar waterbar" disabled={busy} title="Water {myTree.name}: a game month of growth" onclick={waterIt}><span class="drop">💧</span> Water <b>{myTree.name}</b></button>
+		{/if}
+		{#if admin && canMove && !tour && !playing && player.tree}
+			<!-- the admin's growth preview: step my tree through its watered months (a test; nothing is saved) -->
+			<div class="growth panel" role="group" aria-label="Growth preview" title="Admin only: how {myTree?.name ?? 'your tree'} grows, a game month of growth for each watering. A preview, nothing is saved.">
+				<span class="what">Growth preview</span>
+				<button aria-label="A year back" disabled={shownMonths <= 0} onclick={() => stepPreview(-13)}>«</button>
+				<button aria-label="A month back" disabled={shownMonths <= 0} onclick={() => stepPreview(-1)}>‹</button>
+				<b>{shownMonths} {shownMonths === 1 ? 'watering' : 'waterings'}</b>
+				<button aria-label="A month on" onclick={() => stepPreview(1)}>›</button>
+				<button aria-label="A year on" onclick={() => stepPreview(13)}>»</button>
+				<small>{myTree?.now ?? ''}</small>
+				{#if growth != null}<button class="link" onclick={() => (growth = null)}>End</button>{/if}
+			</div>
+		{/if}
+		{#if ended}<div class="fade-in end" aria-hidden="true"></div>{/if}
 		{#if playing}
 			<!-- the arrival, as a trailer: black bars, one line of the story a shot, fading in and out -->
 			<div class="bars top" aria-hidden="true"></div><div class="bars bottom" aria-hidden="true"></div>
 			{#if fadeIn}<div class="fade-in" aria-hidden="true"></div>{/if}
+			{#if tour?.kind === 'done' && caption}<div class="fade-out" style="--dur:{caption.dur ?? 12}s" aria-hidden="true"></div>{/if}
 			{#if caption}
 				{#key caption.title}
 					<div class="title" class:big={caption.big} style="--dur:{caption.dur ?? 5}s" role="status">
@@ -446,11 +528,14 @@
 			{/if}
 			<button class="skip link" onclick={skipShot}>Skip</button>
 			<button class="skip link all" onclick={() => (mark('off'), skipShot())}>Skip the story</button>
-		{:else if tour && (tour.kind === 'pick' || tour.kind === 'plant')}
-			<!-- the first tree: pick a seedling at the shed, plant it at home (Samuel 2026-10-13) -->
+		{:else if tour && (tour.kind === 'spot' || tour.kind === 'pick' || tour.kind === 'sow')}
+			<!-- the first tree (Samuel 2026-10-14): tap where it grows, outside the circle, and mark it; pick one of the seeds
+			     from your backpack; and, if the planting did not reach the game, plant it -->
 			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
 				<b>{tour.title}</b>
-				{#if tour.kind === 'pick'}
+				{#if tour.kind === 'spot'}
+					<p class="small">{chosen ? chosenWhy || 'Here. Mark it with your two sticks.' : 'Tap the ground outside the circle, where the homes will not be built.'}</p>
+				{:else if tour.kind === 'pick'}
 					<div class="picks">
 						{#each SEEDLINGS as x (x.id)}
 							<button disabled={busy} title="Bears {x.fruit}" onclick={() => doMove({ type: 'seedling', plant: x.id })}>{x.label}</button>
@@ -460,7 +545,8 @@
 				<div class="buttons">
 					<button class="link" onclick={() => mark('off')}>Skip the story</button>
 					<span class="grow"></span>
-					{#if tour.kind === 'plant'}<button class="primary" disabled={busy} onclick={plantIt}>Plant it</button>{/if}
+					{#if tour.kind === 'spot'}<button class="primary" disabled={busy || !chosen || !!chosenWhy} onclick={markIt}>Mark it</button>{/if}
+					{#if tour.kind === 'sow'}<button class="primary" disabled={busy || !player.seedling} onclick={plantIt}>Plant it</button>{/if}
 				</div>
 			</div>
 		{:else if tour && (tour.kind === 'invest' || tour.kind === 'mint')}
@@ -488,7 +574,7 @@
 			<svg viewBox="0 0 24 24"><path d={tools ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} /></svg>
 		</button>{/if}
 
-		{#if panel && shows(panel)}
+		{#if panel && shows(panel) && (!tour || chose)}
 		<aside class="card panel" class:wide={panel === 'ledger' || panel === 'mips' || isViewPanel(panel)}>
 			<button class="close" aria-label="Close" onclick={() => (panel = null)}>×</button>
 
@@ -991,6 +1077,66 @@
 	}
 	@keyframes fadeout {
 		to { opacity: 0; }
+	}
+	.fade-in.end {
+		animation-duration: 1.6s;
+	}
+	/* the very end: out to black under the last line */
+	.fade-out {
+		position: absolute;
+		inset: 0;
+		z-index: 9;
+		background: #000;
+		opacity: 0;
+		pointer-events: none;
+		animation: fadeto 1.8s ease-in calc(var(--dur) - 1.8s) forwards;
+	}
+	@keyframes fadeto {
+		to { opacity: 1; }
+	}
+	/* the admin's growth preview, under the numbers at the top */
+	.growth {
+		position: absolute;
+		z-index: 7;
+		top: 4.2rem;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.3rem 0.5rem;
+		border-radius: 999px;
+		font-size: 0.85rem;
+		white-space: nowrap;
+	}
+	.growth .what {
+		margin: 0 0.3rem;
+		color: #6b7a6f;
+	}
+	.growth button:not(.link) {
+		width: 1.9rem;
+		height: 1.9rem;
+		border: 0;
+		border-radius: 50%;
+		background: rgb(36 69 47 / 0.1);
+		font: inherit;
+		cursor: pointer;
+	}
+	.growth button:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.growth b {
+		min-width: 6.5rem;
+		text-align: center;
+	}
+	.growth small {
+		margin-left: 0.2rem;
+		color: #6b7a6f;
+	}
+	.mintbar.waterbar {
+		bottom: calc(var(--nav-room, 4rem) + 4.2rem);
+		background: #2c5a72;
 	}
 	.title {
 		position: absolute;

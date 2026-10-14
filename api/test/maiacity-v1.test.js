@@ -254,18 +254,47 @@ test("a MIP stands a screen in one of the page's panels (a slot); an unknown slo
   expect(slotsOf(s).ledger.name).toBe("Ledger 2");
 });
 
-test("each newcomer picks one of five seedlings at the shed and plants it: their first tree, named after them, on the game clock", () => {
+test("each newcomer marks a spot outside the core, picks a seed from the backpack and plants it: their first tree, named after them", () => {
   let s = newGame(T0);
   s.players.A.name = "Samuel";
   expect(SEEDLINGS.map((x) => x.id)).toEqual(["apple", "pear", "cherry", "hazel", "blackcurrant"]);
-  expect(() => act(s, "A", { type: "plant" }, T0)).toThrow();
-  expect(() => act(s, "A", { type: "seedling", plant: "mango" }, T0)).toThrow();
+  expect(() => act(s, "A", { type: "plant" }, T0)).toThrow(/Mark where/);
+  expect(() => act(s, "A", { type: "mark", x: 5, z: 3 }, T0)).toThrow(/Not in the middle/);
+  expect(() => act(s, "A", { type: "mark", x: 90, z: 60 }, T0)).toThrow(/beyond your hex/);
+  expect(() => act(s, "A", { type: "mark" }, T0)).toThrow(/Mark a place/);
+  s = act(s, "A", { type: "mark", x: 30.123, z: -4 }, T0);
+  expect(s.players.A.spot).toEqual({ x: 30.12, z: -4 });
+  expect(() => act(s, "A", { type: "plant" }, T0)).toThrow(/Pick a seed/);
+  expect(() => act(s, "A", { type: "seedling", plant: "mango" }, T0)).toThrow(/backpack/);
   s = act(s, "A", { type: "seedling", plant: "hazel" }, T0);
   s = act(s, "A", { type: "seedling", plant: "apple" }, T0 + 1);
   s = act(s, "A", { type: "plant", v: 2 }, T0 + DAY_MS);
-  expect(s.players.A.tree).toEqual({ plant: "apple", v: 2, name: "Samuel", at: T0 + DAY_MS, months: monthsAt(s, T0 + DAY_MS) });
+  const m = monthsAt(s, T0 + DAY_MS);
+  expect(s.players.A.tree).toEqual({ plant: "apple", v: 2, name: "Samuel", at: T0 + DAY_MS, months: m, x: 30.12, z: -4, grown: 0, watered: Math.floor(m) });
   expect(s.players.A.tree.months).toBeCloseTo(1, 6);
   expect(() => act(s, "A", { type: "plant" }, T0 + DAY_MS)).toThrow();
   expect(() => act(s, "A", { type: "seedling", plant: "pear" }, T0 + DAY_MS)).toThrow();
+  expect(() => act(s, "A", { type: "mark", x: 40, z: 0 }, T0 + DAY_MS)).toThrow(/already planted/);
+  expect(() => act(s, "B", { type: "mark", x: 31, z: -3 }, T0)).toThrow(/Too close/);
+  s = act(s, "B", { type: "mark", x: -30, z: 10 }, T0);
+  expect(s.players.B.tree).toBeUndefined();
+});
+
+test("a first tree grows one game month for each watering, once a game month; a month without water, it waits", () => {
+  let s = newGame(T0);
+  expect(() => act(s, "A", { type: "water" }, T0)).toThrow(/Plant your first tree/);
+  s = act(s, "A", { type: "mark", x: 0, z: 40 }, T0);
+  s = act(s, "A", { type: "seedling", plant: "pear" }, T0);
+  s = act(s, "A", { type: "plant", v: 1 }, T0 + DAY_MS / 2);
+  expect(s.players.A.tree.grown).toBe(0);
+  // planted and watered with the bottle this month: the next watering is in the next game month
+  expect(() => act(s, "A", { type: "water" }, T0 + DAY_MS * 0.9)).toThrow(/Come back tomorrow/);
+  s = act(s, "A", { type: "water" }, T0 + DAY_MS * 1.1);
+  expect(s.players.A.tree.grown).toBe(1);
+  expect(() => act(s, "A", { type: "water" }, T0 + DAY_MS * 1.9)).toThrow(/Come back tomorrow/);
+  // two days away: one watering on return, no catching up
+  s = act(s, "A", { type: "water" }, T0 + DAY_MS * 4.2);
+  expect(s.players.A.tree.grown).toBe(2);
+  expect(() => act(s, "A", { type: "water" }, T0 + DAY_MS * 4.5)).toThrow(/Come back tomorrow/);
   expect(s.players.B.tree).toBeUndefined();
 });
