@@ -16,6 +16,7 @@
  * @returns {Record<string, { title: string, does: string, prompt?: boolean }>}
  */
 export function stepWords(here) {
+	const Here = `${here.slice(0, 1).toUpperCase()}${here.slice(1)}`;
 	return {
 		make: {
 			title: 'Make your passkey',
@@ -41,7 +42,7 @@ export function stepWords(here) {
 		vault: { title: 'Checking your vault', does: 'Every edit’s signatures, before any of it counts' },
 		join: { title: `Adding ${here} to your vault`, does: 'Your pass signs the edit that adds it' },
 		sync: { title: 'Syncing', does: 'What the server keeps for your vault, asked for' },
-		check: { title: 'Opening your vault', does: `${here} belongs to the vault its store holds` },
+		check: { title: 'Opening your vault', does: `${Here} belongs to the vault its store holds` },
 		save: { title: `Saving on ${here}`, does: 'What opens it again, kept on its shelf in this browser' }
 	};
 }
