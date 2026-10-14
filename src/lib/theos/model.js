@@ -52,7 +52,15 @@ export const SIM_NAMES = {
 	model: 'the economic model',
 	testCity: 'the test city',
 	round: (n) => `the test city, round ${n}`,
-	roundShort: (n) => `round ${n}`
+	roundShort: (n) => `round ${n}`,
+	// the economic model's versions (MODEL_VERSIONS ids)
+	versions: {
+		static: 'the static world',
+		dynamic: 'the dynamic world',
+		hearts: 'the HEART report',
+		idle: 'the idle-plant rule',
+		pools: 'Law 5 paid to the pools'
+	}
 };
 
 /** a balance after t years of continuous demurrage at rate r */
