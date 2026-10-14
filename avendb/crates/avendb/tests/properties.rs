@@ -28,7 +28,7 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
 use avendb::policy::{
-    checkpointed, keep_picks, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
+    keep_picks, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
     Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share,
     Sharing, State, Vault, Who, Write,
 };
@@ -1200,39 +1200,6 @@ fn t16_resolved_removals_stand() {
 }
 
 #[test]
-fn t18_checkpointed_writes() {
-    let (mut counted, mut dropped) = (0, 0);
-    for (seed, h) in forked_histories() {
-        let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
-        let mut edits = h.log.edits().to_vec();
-        // checkpoints of random writes, each covering more writes of its entry: most by the write's own author, some
-        // by any signer, and some covering others' writes too, which the rules refuse
-        let ws = h.log.view().all_writes().to_vec();
-        for _ in 0..ws.len() / 2 {
-            let w = &ws[rng.below(ws.len())];
-            let author = if rng.below(4) > 0 { w.author } else { rng.pick(&SIGNERS) };
-            let same = ws.iter().filter(|x| x.entry == w.entry && x.edit != w.edit);
-            let covers = std::iter::once(w.edit).chain(same.filter(|_| rng.below(3) == 0).map(|x| x.edit)).collect();
-            edits.push(h.log.draft(author, &[], Action::Checkpoint { entry: w.entry, covers }));
-        }
-        // a peer that no longer trusts the curves counts a write only if a checkpoint by its own author covers it
-        let st = replay(&checkpointed(&edits)).state;
-        for w in st.all_writes() {
-            let vouched = edits.iter().any(|c| {
-                c.author == w.author
-                    && matches!(&c.action, Action::Checkpoint { covers, .. } if covers.contains(&w.edit))
-            });
-            assert!(vouched, "seed {seed}: {w:?} counts with no checkpoint by its author");
-        }
-        let all = view(&edits);
-        counted += st.all_writes().len();
-        dropped += all.all_writes().iter().filter(|w| !st.all_writes().contains(w)).count();
-    }
-    // the checkpoints cover some writes and leave others out
-    assert!(counted > 0 && dropped > 0, "{counted} counted, {dropped} dropped");
-}
-
-#[test]
 fn honest_logs_keep_all_they_accepted() {
     // every edit a device appended stands in its own view: its removals keep everything they had seen
     for p in SHARES.iter() {
@@ -2023,7 +1990,6 @@ impl Twin {
                 let boxes = boxes.into_iter().map(|b| KeyBox { to: to(b.to), bytes: b.bytes }).collect();
                 Action::Keys { name: self.key(name), id, public, boxes, clear }
             }
-            Action::Checkpoint { entry, covers } => Action::Checkpoint { entry, covers: self.edits(&covers) },
         }
     }
 }

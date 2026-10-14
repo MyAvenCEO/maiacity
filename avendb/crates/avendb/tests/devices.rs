@@ -2,7 +2,7 @@
 //! (the server), claimed once by the first human vault to claim it, as a device of avenCEO (P8f), in the same ceremony
 //! that founds that vault, which then acts for avenCEO and never governs it; the contact card the server hands out,
 //! avenCEO's vault log, which another vault needs before it gives avenCEO a share; and a store reopened from what the
-//! device saved, which goes on vouching for the device's writes.
+//! device saved, which shows and sends the device's writes as before.
 
 mod common;
 
@@ -10,7 +10,7 @@ use avendb::id::{SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Refusal, Sharing};
-use avendb::sign::{Classical, Signed};
+use avendb::sign::{Signed, WebAuthn};
 use avendb::slice::Selector;
 use avendb::sync::{log_of, LogId};
 use avendb::wire::Claim;
@@ -41,13 +41,13 @@ fn unclaimed(seed: u8) -> (Lab, SignerId, SignerId, SignerId, VaultId) {
 /// `on`, signed by each of its signers but the server in a ceremony of the Lab's software passkey.
 fn claim_by_hand(lab: &mut Lab, on: SignerId, signers: &[SignerId], action: Action, server: SignerId) -> Claim {
     let add = lab.draft(on, signers, action).expect("the view takes the edit").edit().clone();
-    let (id, pq) = (add.id(), avendb::sign::needs_pq(&add));
+    let id = add.id();
     let sigs = add
         .sigs()
         .filter(|&s| s != server)
         .map(|s| {
             let ceremony = lab.ceremony(s, id.0).expect("a software passkey");
-            ceremony.sign(lab.keys_of(s).expect("its keys"), id, pq).expect("its signature")
+            ceremony.sign(lab.keys_of(s).expect("its keys"), id).expect("its signature")
         })
         .collect();
     Claim { card: lab.card(on), add, sigs }
@@ -154,8 +154,8 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     assert_eq!((lab.vault_of(mac), lab.vault_of(server)), (Some(eve), Some(avenceo)));
     let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
     assert_eq!((vault.kind, &vault.owners[..]), (Kind::Aven, &[Principal::Vault(eve)][..]), "Eve's vault owns it");
-    let batched = |id| match &lab.signed_edit(mac, id).expect("held").sigs[0].classical {
-        Classical::Batch { edits, .. } => edits.len(),
+    let batched = |id| match &lab.signed_edit(mac, id).expect("held").sigs[0].webauthn {
+        Some(WebAuthn::Batch { edits, .. }) => edits.len(),
         _ => 0,
     };
     let genesis = avendb::id::EditId(eve.0);
@@ -186,17 +186,14 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
 }
 
 #[test]
-fn a_device_reopened_from_what_it_saved_vouches_for_its_writes_as_before() {
+fn a_device_reopened_from_what_it_saved_shows_and_sends_its_writes_as_before() {
     let mut w = world();
     let h = handbook(&mut w);
-    let after = w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("an edit");
+    w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("an edit");
     let saved = w.lab.backup(w.mac_a);
     // the device starts again from what it saved, as a node does from its store on disk
     w.lab.restore_backup(w.mac_a, &saved);
-    w.lab.checkpoint(w.mac_a);
-    let vouched = w.lab.log(w.mac_a).edits().iter().any(|edit| {
-        edit.author == w.mac_a && matches!(&edit.action, Action::Checkpoint { covers, .. } if covers.contains(&after))
-    });
-    assert!(vouched, "a checkpoint of its own covers the edit it made before it started again");
-    assert_eq!(text(&w.lab, w.mac_a, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "and it shows the edit");
+    assert_eq!(text(&w.lab, w.mac_a, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "it shows the edit");
+    w.lab.sync_all(7);
+    assert_eq!(text(&w.lab, w.mac_b, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "and Bob's Mac reads it");
 }

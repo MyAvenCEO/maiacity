@@ -43,12 +43,10 @@ structure Case where
   name  : String
   edits : List (SignerId × List SignerId × Action)
 
-/-- A view case: each edit with the depth it claims. A post-quantum case (`pq`) is the view of a peer that no longer
-    trusts the curves, which counts only the edits `checkpointed` keeps. -/
+/-- A view case: each edit with the depth it claims. -/
 structure ViewCase where
   name  : String
   edits : List (Nat × SignerId × List SignerId × Action)
-  pq    : Bool := false
 
 /-- Apply the edits one after the other: whether each was accepted, and the state at the end. An edit's id is its
     position. -/
@@ -66,9 +64,8 @@ def ViewCase.toEdits (c : ViewCase) : List Edit :=
 /-- Which edits stand in the view, in the order given, and the view. -/
 def runView (c : ViewCase) : List Bool × State :=
   let edits := c.toEdits
-  let held := if c.pq then checkpointed edits else edits
-  let stood := standing held
-  (edits.map fun o => stood.any (·.id == o.id), view held)
+  let stood := standing edits
+  (edits.map fun o => stood.any (·.id == o.id), view edits)
 
 /-! ## The cases
 
@@ -573,24 +570,6 @@ def cases : List Case := [
     (2, [], newEntry 100 8 100 [34] schemaType (blob := 1)),
     -- a schema entry its readers don't count puts nothing in the lane
     (2, [], newEntry 200 9 200 [31] schemaType (via := [100]) (fits := false) (blob := 6))] },
-  { name := "a device vouches only for its own writes", edits := humans ++ [
-    (1, [3], .share (.device 100 3)),
-    (2, [], newEntry 100 1 100 [] note),
-    (2, [], newEntry 100 2 100 [] note),
-    (3, [], wr 100 1 100 [7]),
-    -- Alice's Mac vouches for its creation of Welcome, her iPhone for its own write
-    (2, [], .checkpoint 1 [7]),
-    (3, [], .checkpoint 1 [9]),
-    -- not for the other device's write, nor for a write of another entry, nor for none at all
-    (2, [], .checkpoint 1 [7, 9]),
-    (3, [], .checkpoint 1 [7]),
-    (2, [], .checkpoint 1 [8]),
-    (2, [], .checkpoint 2 [8, 99]),
-    (2, [], .checkpoint 2 []),
-    (2, [], .checkpoint 3 [8]),
-    -- Bob's Mac, a stranger to Alice's notes, can't vouch for her writes
-    (5, [], .checkpoint 2 [8]),
-    (2, [], .checkpoint 2 [8])] },
   { name := "proposals of an entry", edits := humans ++ [
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newShare 30 100 (toVault 101) .write 100 (only 1)),
@@ -940,21 +919,6 @@ def views : List ViewCase := [
     -- Alice's Mac writes on; Bob's Mac no longer can
     (11, 2, [], wr 200 1 200 [8] (via := [100])),
     (12, 5, [], wr 200 1 200 [11] (via := [101]))] },
-  { name := "once the curves fall, only vouched writes count", pq := true, edits := humansV ++ [
-    (6, 1, [3], .share (.device 100 3)),
-    (7, 2, [], newEntry 100 1 100 [] note),
-    (8, 2, [], newEntry 100 2 100 [] note),
-    (9, 2, [], wr 100 2 100 [8]),
-    -- Alice's Mac vouches for Welcome's creation; for its write of the Charter but not the Charter's creation, which
-    -- the write builds on, so neither counts
-    (10, 2, [], .checkpoint 1 [7]),
-    (11, 2, [], .checkpoint 2 [9]),
-    -- the iPhone's write is vouched for by the iPhone; a forger who broke the Mac's curve signs a write as the Mac,
-    -- and can't vouch for it; nor can the iPhone vouch for it
-    (12, 3, [], wr 100 1 100 [7]),
-    (13, 3, [], .checkpoint 1 [12]),
-    (14, 2, [], wr 100 1 100 [12]),
-    (15, 3, [], .checkpoint 1 [14])] },
   { name := "the senior revoker ranks first", edits := humansV ++ [
     (6, 2, [], newEntry 100 1 100 [] note),
     (7, 1, [], newShare 30 100 (toVault 103) .owner 100 notes),
@@ -1104,7 +1068,6 @@ def syncs : List SyncCase := [
       (2, [], newShare 30 200 (toVault 102) .read 200 (only 1) (via := [100])),
       (2, [], .move 200 1 [30] [] [100]),
       (5, [], wr 200 1 200 [9] (stay := some 12) (via := [101])),
-      (2, [], .checkpoint 1 [9]),
       (2, [], wr 200 2 200 [10] (via := [100])),
       -- the coop's schema, which it shares with everyone
       (2, [], newShare 31 200 .everyone .read 200 schemas (via := [100])),
@@ -1121,7 +1084,7 @@ def syncs : List SyncCase := [
       (5, [0, 1, 2, 3, 4, 5, 8, 9, 10], none, []),
       (555, [], none, []),
       (555, [], none, [200]),
-      (3, List.range 19, none, [])] },
+      (3, List.range 18, none, [])] },
   { name := "forks", edits := plain (humans ++ [
       (1, [3], .share (.device 100 3)),
       (2, [], newEntry 100 1 100 [] note),
@@ -1400,7 +1363,6 @@ def action : Action → String
       [("keep", ids keep), ("via", ids via)]))]
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),
       ("public", bool pub)])]
-  | .checkpoint e covers => obj [("checkpoint", obj [("entry", nat e), ("covers", ids covers)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -1469,7 +1431,7 @@ def viewCase (c : ViewCase) : String :=
   let (stood, st) := runView c
   let edits := c.edits.map fun (depth, author, co, a) =>
     obj [("depth", nat depth), ("author", nat author), ("cosigners", arr (co.map nat)), ("action", action a)]
-  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "pq" ++ ": " ++ bool c.pq ++ ",\n " ++ str "edits" ++
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "edits" ++
     ": [\n  " ++ ",\n  ".intercalate edits ++ "],\n " ++ str "standing" ++ ": " ++ arr (stood.map bool) ++ ",\n " ++
     state st ++ "}"
 
@@ -1540,8 +1502,6 @@ def allActions : List Action :=
 #guard cases.all fun c => nodup (c.edits.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
 -- every audience a case names is in the model's order, so it names one set of shares whatever order the Rust core keeps
 #guard allActions.all fun a => (audiencesOf a).all fun x => x == mkAudience x
--- a post-quantum case drops some writes that would stand in the full view, so the Rust core must drop them too
-#guard views.all fun c => !c.pq || (runView c).1 != (runView { c with pq := false }).1
 -- each kind of settings, share and revocation is accepted or refused as its comment says, wide owner grants and
 -- grants to a device among the refused
 #guard (cases.find? (·.name == "settings, shares and revocations, kind by kind")).all fun c =>

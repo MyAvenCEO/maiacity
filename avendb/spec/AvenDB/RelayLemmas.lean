@@ -661,10 +661,6 @@ theorem apply_ops (st : State) (edit : Edit) :
     simp only [Edit.blind, Action.blind]
     simp only [apply, mayBox_ops, ops_seals, ops_published]
     simp only [map_ite_none, Option.map_some, ops_ops]
-  | checkpoint e covers =>
-    simp only [Edit.blind, Action.blind]
-    simp only [apply, ops_writes]
-    simp only [map_ite_none, Option.map_some, ops_ops]
 
 /-! ## A relay's copy of an edit -/
 

@@ -152,7 +152,7 @@ fn a_link_card_holds_the_logs_of_the_passkeys_vaults_and_nothing_else() {
     assert!(!bob.is_empty() && bobs, "Bob's passkey gets Bob's");
     assert!(w.lab.link_card(w.mac_a, eve).is_empty(), "a passkey that owns nothing gets nothing");
     assert!(w.lab.link_card(w.mac_a, w.mac_b).is_empty(), "nor does a device");
-    assert!(card.iter().all(|s| s.edit.entry().is_none()), "no write, no move, no checkpoint");
+    assert!(card.iter().all(|s| s.edit.entry().is_none()), "no write, no mark");
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn a_peer_accepts_only_a_device_adding_itself_with_its_vaults_approval() {
     assert_eq!(accept(&mut mac, eves, &join), Err(Refusal::NotJoining), "sent by another device than it adds");
     assert_eq!(accept(&mut mac, new, &no_device), Err(Refusal::NotJoining), "an edit adding no device");
     let mut forged = join.clone();
-    forged.edit.sigs[0].pq.as_mut().expect("both halves")[0] ^= 1;
+    forged.edit.sigs[0].pq[0] ^= 1;
     assert_eq!(accept(&mut mac, new, &forged), Err(Refusal::BadSignature), "a changed signature");
     assert_eq!(accept(&mut mac, eves, &eve_adds), Err(Refusal::BelowThreshold), "Eve's passkey can't add to Alice's");
     assert_eq!(accept(&mut mac, new, &no_consent), Err(Refusal::NoConsent), "a device that didn't sign");

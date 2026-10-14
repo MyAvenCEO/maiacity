@@ -8,10 +8,8 @@
 //!   dialer's hello before it sends its own and closes a connection without one; the dialer checks the listener's.
 //! - **Key exchange**: X25519MLKEM768 is the only group either end offers (`pq_provider`): ML-KEM-768 agrees the keys
 //!   of every connection along with X25519, and a peer that offers only classical groups doesn't connect.
-//! - **No curve trusted**: no node's Lab trusts the curves, so neither ed25519 nor P-256 alone makes an edit count: it
-//!   counts only the writes that a checkpoint by their author covers, which carries an SLH-DSA signature, and vouches
-//!   for each write of its own as it makes it, and at its start for those of its own that no checkpoint covers yet.
-//!   Every other edit carries the SLH-DSA half of its signatures anyway.
+//! - **No curve trusted**: every signature on every edit is SLH-DSA, so neither ed25519 nor P-256 makes an edit count;
+//!   a passkey's WebAuthn assertion beside it only proves its person took part.
 //! - **Sync**: either end asks the other on the connection (`wire::Request`) and is answered with the edits it may
 //!   receive by the other's view and the McEliece keys they name (`wire::Reply`), each key by its id and BLAKE3 hash
 //!   alone. The asker fetches the keys it lacks over iroh-blobs, where a node hands a key out only to a device a hello
@@ -410,10 +408,9 @@ pub struct Node {
 
 impl Node {
     /// Device `me` of `lab` on the network: it answers its peers, tells them when its logs change, and asks them when
-    /// theirs differ. It trusts no curve, and vouches at once for the writes of its own that no checkpoint covers yet.
-    /// With a shelf, it first takes back what its device kept there, if anything, and saves there what its device holds
-    /// from then on (`edits`). Fails while the device is locked, as its endpoint key is its own ed25519 key, and if its
-    /// shelf can't be read.
+    /// theirs differ. With a shelf, it first takes back what its device kept there, if anything, and saves there what
+    /// its device holds from then on (`edits`). Fails while the device is locked, as its endpoint key is its own
+    /// ed25519 key, and if its shelf can't be read.
     pub async fn spawn(lab: Lab, me: SignerId, opts: Options) -> Result<Node> {
         let secret = lab.endpoint_secret(me).context("a device of this Lab, unlocked")?;
         // a page keeps what lasts in OPFS, and nowhere else
@@ -602,8 +599,8 @@ impl Node {
     }
 
     /// `link_with`, in the one ceremony that unlocked this device, `unlock`, which is the passkey's pass for it: that
-    /// ceremony signs the edit adding the device too, as the pass (`sign::Classical::Pass`), its PRF output making the
-    /// hash-based half over the edit itself, so that a browser signs in to its person's vault in one ceremony. That
+    /// ceremony signs the edit adding the device too, as the pass (`sign::WebAuthn::Pass`), its PRF output making the
+    /// SLH-DSA signature over the edit itself, so that a browser signs in to its person's vault in one ceremony. That
     /// passkey and the vault it joined.
     pub async fn link_by_pass(&self, offer: &Offer, pass: &RelayPass, unlock: Ceremony) -> Result<(SignerId, VaultId)> {
         self.linking(offer, pass, Joins::<InLab>::Pass(unlock)).await
@@ -1037,14 +1034,13 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), and a checkpoint for the
-/// writes of its own that none covers yet; and the ids of the edits the shelf held, in its order.
+/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`); and the ids of the edits
+/// the shelf held, in its order.
 fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored) -> (Lab, Vec<EditId>) {
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
         lab.restore_backup(me, &Backup::new(signed, keys));
     }
-    lab.checkpoint(me);
     (lab, stored)
 }
 

@@ -39,7 +39,7 @@
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	/** the owner caps the acting vault shares through, where it isn't the vault: the new cap rests on one of them */
-	const through = $derived(world.caps.filter((c) => c.over === vault && c.grantee === actor && c.role === 'owner'));
+	const through = $derived(world.shares.filter((c) => c.over === vault && c.who === actor && c.level === 'owner'));
 	/** the vaults it may share with: any other this browser knows, but the vault itself, which holds all of it */
 	const others = $derived(world.vaults.filter((v) => v.id !== vault && v.id !== actor));
 	const one = $derived(world.entries.find((e) => e.entry === entry));

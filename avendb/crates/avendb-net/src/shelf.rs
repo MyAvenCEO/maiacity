@@ -129,8 +129,8 @@ fn listable(prefix: &str) -> bool {
 /// is this). 2 since 2026-10-14, as the claim of a server founds the seed of Maia Holding GmbH, avenCEO GmbH and the
 /// CEO Aven (`avendb::world::SEED`); 3 since later that day, as one passkey founds one human vault and the seed is
 /// named as it is founded; 4 since later still, as every device tells its jobs; 5 since later again, as the server
-/// serves its feed.
-pub const FLOOR: u64 = 5;
+/// serves its feed; 6 since later that evening, as SLH-DSA signs every edit and every record has a schema.
+pub const FLOOR: u64 = 6;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.

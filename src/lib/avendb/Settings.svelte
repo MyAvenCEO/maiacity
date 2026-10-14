@@ -98,7 +98,7 @@
 		);
 
 	/** what is shared with the vault in other vaults */
-	const held = $derived(world.caps.filter((c) => c.grantee === vault && c.over !== vault));
+	const held = $derived(world.shares.filter((c) => c.who === vault && c.over !== vault));
 	/**
 	 * its entries by who they are shared with, those the same shares reach (each of the core's cells) together where
 	 * who they are shared with reads the same: each with its entries and the devices that get them, the fewest first
@@ -107,8 +107,8 @@
 		/** @typedef {{ n: number, entries: string[], syncs: Map<string, import('./vaults.js').Syncing> }} Audience */
 		/** @type {Map<string, Audience>} */
 		const by = new Map();
-		for (const x of world.cells.filter((x) => x.vault === vault)) {
-			const shared = sharedThrough(world, vault, x.caps);
+		for (const x of world.audiences.filter((x) => x.vault === vault)) {
+			const shared = sharedThrough(world, vault, x.shares);
 			const words = sharedWords(shared);
 			/** @type {Audience} */
 			const a = by.get(words) ?? { n: shared.who.length + shared.gone, entries: [], syncs: new Map() };
@@ -130,7 +130,7 @@
 	 * only connects (Relay), by the role the device's world names; else only that it opens none of them.
 	 * @param {import('./vaults.js').Syncing} d
 	 */
-	const gets = (d) => (d.opens ? 'opens it' : ((d.role && KEEPS[d.role]) ?? 'opens none of it'));
+	const gets = (d) => (d.opens ? 'opens it' : ((d.level && KEEPS[d.level]) ?? 'opens none of it'));
 
 	let renaming = $state(/** @type {string | null} */ (null));
 	let naming = $state(/** @type {string | null} */ (null));
@@ -303,9 +303,9 @@
 			<h3>Quantum-proof</h3>
 			<p><span class="chip ok">Post-quantum only</span></p>
 			<p class="soft">
-				No device trusts the elliptic curves alone: a write counts only once its author's SLH-DSA checkpoint covers it,
-				every other edit carries an SLH-DSA signature, keys are sealed with X-Wing and Classic McEliece, every connection
-				agrees its keys with X25519MLKEM768, and every hash is SHA-3.
+				Every edit carries an SLH-DSA signature, and only that signature counts: a passkey's WebAuthn assertion beside
+				it only shows a person was there. Keys are sealed with X-Wing and Classic McEliece, every connection agrees its
+				keys with X25519MLKEM768, and every id is a SHA-3 hash.
 			</p>
 		</article>
 		{#if vault === world.mine && backs != null}

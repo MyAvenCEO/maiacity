@@ -5,9 +5,8 @@
 //
 // The store named `name` is the folder `avendb/<name>/`. It holds a shelf for each generation, `g1/`, `g2/` and on:
 // the newest is the one in use, and a new one made beside them puts every older one aside, never read again (`aside`).
-// As it opens, the store is cleared of what came before the last reset (`clear`): shelves older than `FLOOR`, whatever
-// else its folder holds, as an earlier avenDB's store, and the IndexedDB database of its name pages kept before. In a
-// generation's folder:
+// As it opens, the store is cleared of what came before the last reset (`clear`): shelves older than `FLOOR`, and
+// whatever else its folder holds, as an earlier avenDB's store. In a generation's folder:
 //
 // - `blobs/<hash>`: each finished blob, named by its BLAKE3 hash in hex, and `outboards/<hash>` its outboard, written
 //   last, so that a blob counts once its outboard is there;
@@ -30,7 +29,7 @@ const RESERVED = [BLOBS, OUTBOARDS, NEW, LOCK];
 const GENERATION = /^g[1-9][0-9]*$/;
 /** The generation every store is at least, avenDB's `avendb_net::shelf::FLOOR`: as a store opens, it clears every
  *  older one (`clear`). */
-const FLOOR = 5;
+const FLOOR = 6;
 /** A finished blob's name: its hash in hex. */
 const HASH = /^[0-9a-f]{64}$/;
 /** A blob being written: a name of letters, digits and `-`. */
@@ -71,10 +70,9 @@ async function generations() {
  *  generation `FLOOR` and later. */
 const kept = (name) => name === LOCK || (GENERATION.test(name) && Number(name.slice(1)) >= FLOOR);
 
-/** Clears store `name` of what came before the last reset: every entry of its folder it doesn't keep (`kept`), and the
- *  IndexedDB database of its name, where pages kept it before OPFS. What it can't remove, as a file another tab of an
- *  earlier avenDB holds open, it leaves. How many entries it removed. */
-async function clear(name) {
+/** Clears the store of what came before the last reset: every entry of its folder it doesn't keep (`kept`). What it
+ *  can't remove, as a file another tab of an earlier avenDB holds open, it leaves. How many entries it removed. */
+async function clear() {
 	const gone = [];
 	for await (const [entry, handle] of root.entries()) if (!kept(entry)) gone.push([entry, handle.kind]);
 	let cleared = 0;
@@ -84,11 +82,6 @@ async function clear(name) {
 			(e) => absent(e) || console.warn(`avenDB: ${entry} is from before the last reset, and stays: ${e?.message ?? e}`)
 		);
 	}
-	await new Promise((resolve) => {
-		const deleting = globalThis.indexedDB?.deleteDatabase(name);
-		if (!deleting) return resolve();
-		deleting.onsuccess = deleting.onerror = deleting.onblocked = resolve;
-	});
 	return cleared;
 }
 
@@ -240,7 +233,7 @@ const ops = {
 	 *  one of that generation, once the store is cleared of what came before it (`clear`). */
 	async open(name) {
 		root = await (await stores()).getDirectoryHandle(name, { create: true });
-		await clear(name);
+		await clear();
 		await use(Math.max((await generations()).at(-1) ?? FLOOR, FLOOR));
 	},
 

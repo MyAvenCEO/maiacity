@@ -1,13 +1,13 @@
 //! The Lean model's test vectors (`avendb/spec/vectors/vaults.json` and `lenses.json`, written by `lake exe vectors`,
 //! checked by every `lake build`). A step case's edits, applied one after the other from the empty state, must be
 //! accepted or refused exactly as the model says. A view case's edits, each at the depth it claims, must stand or be
-//! cut exactly as in the model's view: that is where removals cut what they hadn't seen, and in a post-quantum case
-//! where the writes no checkpoint covers drop out (`checkpointed`). Both must end with the same vaults, shares, entries
-//! (their stays and their wants, and as their readers see them their attributes, whether their creation was let in,
-//! their semantic audience, the keep shares that pick them and what a steward would mark them with, and whether each
-//! device a keep share over their vault names wants them and keeps them whole), writes, key schedule (each family's
-//! epoch, every seal, every published key), schema lanes, and the writes their readers count, line by line. The lens
-//! vectors hold each app's view of many stored blocks and todos, and what each edit through a view stores.
+//! cut exactly as in the model's view: that is where removals cut what they hadn't seen. Both must end with the same
+//! vaults, shares, entries (their stays and their wants, and as their readers see them their attributes, whether their
+//! creation was let in, their semantic audience, the keep shares that pick them and what a steward would mark them
+//! with, and whether each device a keep share over their vault names wants them and keeps them whole), writes, key
+//! schedule (each family's epoch, every seal, every published key), schema lanes, and the writes their readers count,
+//! line by line. The lens vectors hold each app's view of many stored blocks and todos, and what each edit through a
+//! view stores.
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -37,7 +37,7 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::View;
 use avendb::policy::{
-    checkpointed, history, mk_audience, replay, tips, Action, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
+    history, mk_audience, replay, tips, Action, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
     Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who,
 };
 use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
@@ -421,7 +421,6 @@ impl Names {
                 boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
                 clear: x["public"].as_bool().unwrap().then_some([0; 32]),
             },
-            "checkpoint" => Action::Checkpoint { entry: entry(&x["entry"]), covers: self.edits(&x["covers"]) },
             other => panic!("no action {other}"),
         }
     }
@@ -803,7 +802,7 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
             names.created(v, &edit, true);
             held.push(edit);
         }
-        let r = if case["pq"].as_bool().unwrap() { replay(&checkpointed(&held)) } else { replay(&held) };
+        let r = replay(&held);
         let stood = r.standing();
         for (i, (edit, want)) in held.iter().zip(standing).enumerate() {
             assert_eq!(stood.contains(&edit.id()), want.as_bool().unwrap(), "{name}, edit {i}: {}", edits[i]);

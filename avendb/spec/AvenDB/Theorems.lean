@@ -373,15 +373,6 @@ theorem K1_keep_revocation_hides_nothing (edits : List Edit) {r : Edit} {c : Sha
     removes edits r = [] :=
   Shares.keep_revocation_hides_nothing edits hr hk hex
 
-/-! ## Once the curves fall -/
-
-/-- T18 (post-quantum writes): a peer that no longer trusts the curves (`checkpointed`) counts a write only if its
-    author vouched for it in a checkpoint, which carries the hash-based half of the author's signature: whoever broke
-    the curves, and with them a device's classical key, writes nothing such a peer counts. -/
-theorem T18_checkpointed_writes (edits : List Edit) {w : Write} (hw : w ∈ (view (checkpointed edits)).writes) :
-    ∃ c ∈ edits, c.author = w.author ∧ ∃ e covers, c.action = .checkpoint e covers ∧ w.edit ∈ covers :=
-  Shares.T18_checkpointed_writes edits hw
-
 /-! ## Keys -/
 
 /-- T5 (confidentiality): after any history, a holder (a signer, whoever holds a vault's seed, or everyone) opens a key

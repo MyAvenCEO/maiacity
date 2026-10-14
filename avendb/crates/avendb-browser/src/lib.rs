@@ -92,7 +92,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, future_to_promise};
 use zeroize::Zeroizing;
 
-pub use avendb::world::{CARD, DELETED, FILE, MEDIA, NOTE, PROFILE, TODO, VARIANT};
+pub use avendb::world::{CARD, DELETED, FILE, NOTE, PROFILE, TODO, VARIANT};
 
 /// How many bytes of a file the page hands its device at a time (`PageDevice::run`'s `read`, for `put_file`).
 const CHUNK: u64 = 1 << 20;
@@ -332,7 +332,7 @@ impl Device {
             let level = if backup { Level::Backup } else { Level::Relay };
             let server = cast::share(vault, cast::vault(avenceo), level, Selector::All);
             lab.issue(me, &[me], server).map_err(|why| anyhow!("avenCEO's share is refused: {why:?}"))?;
-            let card = world::named(&name, me);
+            let card = world::card(&name, me);
             lab.create(me, vault, vault, CARD, &[], card).map_err(|why| anyhow!("its card is refused: {why:?}"))?;
             // the seed its claim founded, if it did, by name from the start (`world::SEED_NAMES`)
             let seed = world::seed_of(lab, me).into_iter().zip(world::SEED_NAMES);

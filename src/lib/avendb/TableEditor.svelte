@@ -102,7 +102,7 @@
 			{ name: 'edits', type: 'int4', hint: sealed ? 'The edits of it this browser holds, sealed' : 'The edits of it this browser counts', get: (r) => (sealed ? r.held : r.edits) },
 			...(sealed ? [] : [{ name: 'proposals', type: 'int4', hint: 'Its proposals: lines besides main', get: (/** @type {Row} */ r) => Math.max(0, r.lines - 1) }]),
 			...(internals
-				? [{ name: 'key_generation', type: 'int4', hint: 'Its key’s generation: it moves on when a reader may no longer read it', get: (/** @type {Row} */ r) => r.generation }]
+				? [{ name: 'key_generation', type: 'int4', hint: 'Its key’s generation: it moves on when a reader may no longer read it', get: (/** @type {Row} */ r) => r.epoch }]
 				: []),
 			...(internals && !sealed ? [{ name: 'loro_bytes', type: 'int8', hint: 'The size of its Loro document', get: (/** @type {Row} */ r) => r.bytes }] : []),
 			{ name: 'first_by', type: 'text', hint: 'The device and the vault of its first edit', get: first }
@@ -311,7 +311,7 @@
 			{/if}
 			{#if internals}
 				<dt>Key generation</dt>
-				<dd>{row.generation}</dd>
+				<dd>{row.epoch}</dd>
 				{#if opened && row.bytes}
 					<dt>Its Loro document</dt>
 					<dd>{size(row.bytes)}</dd>

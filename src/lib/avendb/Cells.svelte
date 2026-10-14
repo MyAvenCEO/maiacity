@@ -16,7 +16,7 @@
 	let { s, db, internals, onpick } = $props();
 
 	/** the entries by who they are shared with, the vault's own alone first, then by how many shares reach them */
-	const cells = $derived([...s.cells].sort((a, b) => a.caps.length - b.caps.length));
+	const cells = $derived([...s.cells].sort((a, b) => a.shares.length - b.shares.length));
 </script>
 
 <div class="stats">
@@ -25,7 +25,7 @@
 		<b>{db.edits.writes}</b><span>writes</span>
 	</div>
 	<div class="stat" title="Shares given over it, and how many of those were revoked">
-		<b>{db.edits.caps}</b><span>shares, {db.edits.revokes} revoked</span>
+		<b>{db.edits.shares}</b><span>shares, {db.edits.revokes} revoked</span>
 	</div>
 	{#if internals}
 		<div class="stat" title="The keys of its entries: one for the entries the same shares reach">
@@ -66,7 +66,7 @@
 					<td class="num">{x.entries}</td>
 					{#if internals}
 						<td class="mono" title={x.id}>{short(x.id)}</td>
-						<td class="num">{x.generation}</td>
+						<td class="num">{x.epoch}</td>
 					{/if}
 				</tr>
 			{:else}

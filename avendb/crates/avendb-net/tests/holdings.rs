@@ -297,7 +297,6 @@ async fn an_announcement_carries_changes_alone_and_an_ask_the_logs_that_differ()
     // a note on Bob's Mac, which Alice's Mac lacks
     let note = document("Seeds", "Seeds for the greenhouse.", mac_b);
     let note = w.lab.create(mac_b, coop, coop, "doc", &[], note).expect("Bob's Mac writes a note");
-    w.lab.checkpoint(mac_b);
     let log = LogId::Entry(note);
     let frontier = Frontier { heads: frontiers(w.lab.log(mac_b).edits())[&log].clone(), waiting: vec![] };
     let told = Announce { full: true, logs: vec![(log, frontier.clone())], files: vec![] };

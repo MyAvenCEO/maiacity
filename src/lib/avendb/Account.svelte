@@ -17,7 +17,7 @@
 	it links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once
 	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and the aven and
 	coop vaults their vault founds and owns, each of which they act as. avenDB's server runs at avendb.maia.city: its
-	relay and its code are filled in, and a test server's can take their place (?relay=, ?server=).
+	relay and its code are filled in, and in a dev build a test server’s can take their place (?relay=, ?server=).
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -48,7 +48,7 @@
 	/** @type {any} what opens this browser's device again, as its shelf keeps it (avendb-browser's `Meta`): kept as a
 	 *  plain object, as it comes */
 	let meta = $state.raw(null);
-	/** @type {'loading' | 'new' | 'closed' | 'open'} */
+	/** @type {'loading' | 'broken' | 'new' | 'closed' | 'open'} */
 	let phase = $state('loading');
 	let doing = $state('');
 	let error = $state('');
@@ -124,10 +124,10 @@
 
 	onMount(async () => {
 		const q = new URLSearchParams(location.search);
-		// the built-in server, or a test server's for this visit only: an offer kept from an earlier server would
-		// lead a new device to an endpoint that is gone
-		relay = q.get('relay') ?? RELAY;
-		server = q.get('server') ?? SERVER;
+		// the built-in server, or, in a dev build alone, a test server's for this visit only: a link can't lead a
+		// person's page to another server
+		relay = (import.meta.env.DEV && q.get('relay')) || RELAY;
+		server = (import.meta.env.DEV && q.get('server')) || SERVER;
 		code = q.get('link') ?? '';
 		arrived = !!code;
 		name = deviceName();
@@ -138,7 +138,13 @@
 			},
 			() => {}
 		);
-		if (native() && (await openMac())) return;
+		if (native()) {
+			await openMac().catch((/** @type {Error} */ e) => {
+				error = `The Mac app's avenDB didn't start: ${e?.message ?? e}`;
+				phase = 'broken';
+			});
+			return;
+		}
 		try {
 			const pkg = await import('./device/avendb_browser.js');
 			await pkg.default();
@@ -155,17 +161,15 @@
 
 	onDestroy(() => device?.close());
 
-	/** In the Mac app: its device beside it, open already, to unlock, or none yet. Whether the app runs avenDB
-	 *  natively: if it can't, the page runs the device. */
+	/** In the Mac app: its device beside it, open already, to unlock, or none yet. The app runs avenDB natively, and
+	 *  the page never runs a second device beside it. */
 	async function openMac() {
 		const bridge = await import('./native.js');
 		const held = await bridge.status();
-		if (!held) return false;
 		mac = bridge;
 		meta = held.meta ?? null;
 		if (meta && held.device) running(new mac.NativeDevice(held.device));
 		else phase = meta ? 'closed' : 'new';
-		return true;
 	}
 
 	/** In the Mac app: its device runs from here on, its folder keeping what opens it again. @param {any} info */
@@ -459,7 +463,7 @@
 		];
 		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));
 		const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
-		const open = w.caps.some((c) => c.over === company && c.grantee === EVERYONE && types(c) === SHARED.join());
+		const open = w.shares.some((c) => c.over === company && c.who === EVERYONE && types(c) === SHARED.join());
 		if (!open) {
 			const share = { op: 'share', over: company, who: EVERYONE, level: 'Public', what: { type: SHARED }, as: company };
 			answer(await send(share));
@@ -609,6 +613,8 @@
 
 		{#if phase === 'loading'}
 			<p class="soft">Loading your account…</p>
+		{:else if phase === 'broken'}
+			<p class="soft">Restart the Mac app once its avenDB builds.</p>
 		{:else if phase === 'open'}
 			<p class="soft">Opening your vaults…</p>
 		{:else if phase === 'closed'}

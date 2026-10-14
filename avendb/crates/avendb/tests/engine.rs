@@ -15,7 +15,7 @@ use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{self, Schema, Status, TypeV2, View};
-use avendb::policy::{Action, Level, Refusal};
+use avendb::policy::{Level, Refusal};
 use avendb::rules::{self, Op};
 use avendb::world;
 use serde_json::{json, Value};
@@ -484,7 +484,10 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    assert_eq!(kinds, ["article", "document", "document", "flow", "function", "post", "todo", "todo"]);
+    let own = [
+        "article", "card", "document", "document", "file", "flow", "function", "post", "profile", "todo", "todo",
+    ];
+    assert_eq!(kinds, own, "its own kinds, and documents and todos at v1 too, the lens engine's example");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     assert_eq!(list(&schemas["lenses"]).len(), 2);
 }
@@ -552,10 +555,7 @@ fn a_share_lets_whom_it_names_make_only_what_its_ops_allow() {
     let en = st.entry(l.door).expect("the door");
     let action = cast::write(alice, l.door, alice, en.stay(), st.epoch(KeyFam::Audience(alice, en.audience())));
     let on_it = w.lab.tamper(mac, Tamper::Unchecked { signers: vec![mac], action }).expect("Alice's Mac takes it");
-    // her Mac vouches for it, as it does for every write of its own, so only what it builds on keeps it from counting
-    let vouch = Action::Checkpoint { entry: l.door, covers: vec![on_it] };
-    let vouch = w.lab.sign_unchecked(mac, &[mac], vouch).expect("her Mac vouches for it");
-    assert_eq!(w.lab.receive(mac, vec![vouch], vec![]), 1);
+    // her Mac signs it as it signs every write of its own, so only what it builds on keeps it from counting
     assert!(w.lab.history(mac, l.door).and_then(|h| h.get(on_it)).is_some_and(|c| !c.counted));
     assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(on_it.to_hex(), false)));
     // what Alice's app writes builds on the writes her readers count, and counts

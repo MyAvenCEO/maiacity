@@ -21,7 +21,7 @@ use crate::policy::{Action, Edit, KeepMode, Kind, Level, Principal, Proposal, Re
 use crate::recovery::RecoveryKey;
 use crate::rules::{Grant, On, Op, Proof, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_OPS, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
-use crate::sign::{Assertion, Classical, Hello, RelayPass, Signature, SignerKeys, Signed};
+use crate::sign::{Assertion, Hello, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
 
@@ -722,7 +722,6 @@ impl Decode for Action {
                 boxes: r.seq(37)?,
                 clear: r.option()?,
             },
-            7 => Action::Checkpoint { entry: EntryId::decode(r)?, covers: r.seq(32)? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -767,38 +766,37 @@ impl Decode for SignerKeys {
     }
 }
 
-impl Encode for Classical {
+/// A passkey's assertion: 1, 2 or 3, as each was since the master recovery key's standing consent was made, which
+/// carries one; a device's signature, none, 4.
+impl Encode for Option<WebAuthn> {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            Classical::Ed25519(sig) => {
-                out.push(0);
-                sig.encode(out);
-            }
-            Classical::Passkey(a) => {
+            Some(WebAuthn::Edit(a)) => {
                 out.push(1);
                 a.encode(out);
             }
-            Classical::Batch { assertion, edits } => {
+            Some(WebAuthn::Batch { assertion, edits }) => {
                 out.push(2);
                 assertion.encode(out);
                 edits.encode(out);
             }
-            Classical::Pass { assertion, made } => {
+            Some(WebAuthn::Pass { assertion, made }) => {
                 out.push(3);
                 assertion.encode(out);
                 made.encode(out);
             }
+            None => out.push(4),
         }
     }
 }
 
-impl Decode for Classical {
+impl Decode for Option<WebAuthn> {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(Classical::Ed25519(r.array()?)),
-            1 => Ok(Classical::Passkey(Assertion::decode(r)?)),
-            2 => Ok(Classical::Batch { assertion: Assertion::decode(r)?, edits: r.set(32)? }),
-            3 => Ok(Classical::Pass { assertion: Assertion::decode(r)?, made: u64::decode(r)? }),
+            1 => Ok(Some(WebAuthn::Edit(Assertion::decode(r)?))),
+            2 => Ok(Some(WebAuthn::Batch { assertion: Assertion::decode(r)?, edits: r.set(32)? })),
+            3 => Ok(Some(WebAuthn::Pass { assertion: Assertion::decode(r)?, made: u64::decode(r)? })),
+            4 => Ok(None),
             _ => Err(WireError::Unknown),
         }
     }
@@ -818,25 +816,24 @@ impl Decode for Assertion {
     }
 }
 
+/// Its keys, its assertion, and its SLH-DSA signature after a 1, as the master recovery key's consent has it.
 impl Encode for Signature {
     fn encode(&self, out: &mut Vec<u8>) {
         self.keys.encode(out);
-        self.classical.encode(out);
+        self.webauthn.encode(out);
+        out.push(1);
         self.pq.encode(out);
     }
 }
 
 impl Decode for Signature {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Signature {
-            keys: SignerKeys::decode(r)?,
-            classical: Classical::decode(r)?,
-            pq: match r.u8()? {
-                0 => None,
-                1 => Some(r.bytes()?),
-                _ => return Err(WireError::Unknown),
-            },
-        })
+        let keys = SignerKeys::decode(r)?;
+        let webauthn = Option::<WebAuthn>::decode(r)?;
+        if r.u8()? != 1 {
+            return Err(WireError::Unknown);
+        }
+        Ok(Signature { keys, webauthn, pq: r.bytes()? })
     }
 }
 
@@ -1135,7 +1132,7 @@ mod tests {
                 kinds.insert((std::mem::discriminant(&edit.action), sharing));
             }
         }
-        assert!(kinds.len() >= 6, "genesis, devices, keys, grants and writes all crossed: {}", kinds.len());
+        assert!(kinds.len() >= 5, "genesis, devices, keys, grants and writes all crossed: {}", kinds.len());
         let ask = crate::sync::asks(w.lab.log(w.mac_b).edits(), &[]);
         assert!(!ask.haves.is_empty());
         assert_eq!(Ask::from_wire(&ask.to_wire()), Ok(ask.clone()));
@@ -1165,8 +1162,8 @@ mod tests {
         batch.sort();
         let mut passkey = crate::sign::Passkey::from_seed([1; 32]);
         let ceremony = passkey.ceremony(crate::sign::batch_challenge(&batch));
-        let sig = ceremony.sign_in(passkey.keys(), edits[0].id(), &batch, true).expect("its signature");
-        assert!(matches!(&sig.classical, Classical::Batch { edits, .. } if *edits == batch), "it names both edits");
+        let sig = ceremony.sign_in(passkey.keys(), edits[0].id(), &batch).expect("its signature");
+        assert!(matches!(&sig.webauthn, Some(WebAuthn::Batch { edits, .. }) if *edits == batch), "it names both edits");
         let signed = Signed { edit: edits[0].clone(), sigs: vec![sig] };
         let bytes = signed.to_wire();
         assert_eq!(Signed::from_wire(&bytes), Ok(signed));
@@ -1352,9 +1349,9 @@ mod tests {
             bytes[level + 1] = b;
             assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown), "mode byte {b}");
         }
-        // three sub-kinds of share and of revocation, two of settings; eight kinds and no more, as a publish's tag, 8,
-        // went into the write's, a sync rule's, 9, and its end's, 10, into the share's and the revocation's, and a
-        // pick's, 11, into the mark's
+        // three sub-kinds of share and of revocation, two of settings; seven kinds and no more, as a checkpoint's tag,
+        // 7, went into the signature, a publish's, 8, into the write's, a sync rule's, 9, and its end's, 10, into the
+        // share's and the revocation's, and a pick's, 11, into the mark's
         assert_eq!(with(at + 1, 3), Err(WireError::Unknown));
         let revoke = edit(Action::Revoke(Revoking::Grant { share: ShareId(g.0), actor: v, keep: vec![], via: vec![] }));
         let mut bytes = revoke.to_wire();

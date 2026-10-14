@@ -1071,33 +1071,6 @@ def tiers : List Edit := s2 ++ chain 740 [
 #guard ((view (tiers.filter fun o => o.id != 742 && o.id != 760)).vault? alice).map (·.owners) ==
   ((view tiers).vault? alice).map (·.owners)
 
-/-! ## Once the curves fall: checkpoints
-
-A write carries only the classical half of its device's signature. Whoever breaks the curves can sign a write as
-Alice's Mac, but not a checkpoint, which carries the hash-based half too: a peer that no longer trusts the curves
-counts only the writes that a checkpoint by their own device covers. -/
-
--- Alice's Mac vouches for its edit of the door todo; a forger who broke its classical key then writes as the Mac
-def vouched : List Edit := s15 ++ chain 200 [
-  (macA, [], .checkpoint door [100]),
-  (macA, [], .write alice door alice (some 106) 0 [100])]
-#guard refused vouched == []
--- every peer counts the forged edit while it trusts the curves; once it doesn't, only the vouched one
-#guard (entryWrites (view vouched) door).map (·.edit) == [100, 201]
-#guard (entryWrites (view (checkpointed vouched)) door).map (·.edit) == [100]
--- no checkpoint covers the other todos' edits, so they don't count either; every edit but a write still does
-#guard entryWrites (view (checkpointed vouched)) seeds == []
-#guard (view (checkpointed vouched)).shares == (view vouched).shares
--- a device vouches only for its own accepted writes of the entry, and for at least one
-#guard accepted s15 (attempt macA [] (.checkpoint door [100]))
-#guard !accepted s15 (attempt macB [] (.checkpoint door [100]))
-#guard !accepted s15 (attempt macA [] (.checkpoint seeds [100]))
-#guard !accepted s15 (attempt macA [] (.checkpoint door [100, 999]))
-#guard !accepted s15 (attempt macA [] (.checkpoint door []))
--- the checkpoint travels with its entry: Carol's Mac gets it with the door todo, a stranger gets no entry at all
-#guard (respond vouched macC).any (·.action == .checkpoint door [100])
-#guard (respond vouched stranger).all (entryLog? · == none)
-
 /-! ## Holdings: they come from their own connection, and authorize nothing
 
 Alice's Mac holds the coop's Handbook, where her line in Welcome brings a photo and Bob's Mac wrote a line after it.

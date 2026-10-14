@@ -40,10 +40,14 @@ www.{$SITE_ADDRESS:maia.city} {
 
 # avenDB's relay (avendb.maia.city): the iroh relay inside avendb-server, on a host name of its own, as iroh's relay path
 # is /relay and api.maia.city/relay is the media vault's. It holds only ciphertext and lets in only the devices the
-# server knows, or a passkey's pass. Caddy offers X25519MLKEM768, the only key exchange avenDB's devices offer.
+# server knows, or a passkey's pass. Its TLS agrees keys by X25519MLKEM768 alone, as avenDB's own links do: a browser
+# without it can't reach avenDB.
 #   /feed/*        the Maia Universe's feed: the posts the server keeps that everyone may read, as JSON (any page)
 #   everything else the relay
 {$AVENDB_ADDRESS:avendb.maia.city} {
+	tls {
+		curves x25519mlkem768
+	}
 	handle /feed/* {
 		encode zstd gzip
 		reverse_proxy avendb:3351

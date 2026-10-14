@@ -9,8 +9,8 @@
  * founds the vault also brings a file, whose pieces its shelf keeps, and reads it back; with `file`, a device reads
  * that file from its peers; with `ops`, it then runs the ops the page's screens send, each through `run` (V2), and
  * reports what each answered. Each step is reported to the test, with the passkey's ceremonies so far. With `earlier`,
- * it keeps in OPFS and IndexedDB what an earlier avenDB kept for the store, which the store clears as it opens; with
- * `twice`, it tries to hold a store another page's device runs from.
+ * it keeps in OPFS what an earlier avenDB kept for the store, which the store clears as it opens; with `twice`, it
+ * tries to hold a store another page's device runs from.
  */
 import init, * as avendb from '/pkg/avendb_browser.js';
 import { ceremonies, create } from '/js/passkey.js';
@@ -186,15 +186,8 @@ function counted(passkey) {
 	};
 }
 
-/** A request to IndexedDB, as a promise. */
-const request = (r) =>
-	new Promise((resolve, reject) => {
-		r.onsuccess = () => resolve(r.result);
-		r.onerror = () => reject(r.error);
-	});
-
 /** What an earlier avenDB kept for a store: in its OPFS folder, its edits, what opened its device, a key and a shelf
- *  from before the last reset; and in IndexedDB, as pages kept it before B2b. */
+ *  from before the last reset. */
 const EARLIER = {
 	ops: new Uint8Array([0, 0, 0, 3, 1, 2, 3]),
 	meta: new TextEncoder().encode('\u0000\u0000\u0000\u0011{"name":"Eve\'s"}'),
@@ -225,28 +218,17 @@ async function earlier(/** @type {string} */ name) {
 	await put(await dir.getDirectoryHandle('keys', { create: true }), 'ab', EARLIER.key);
 	const old = await (await dir.getDirectoryHandle('g1', { create: true })).getDirectoryHandle('meta', { create: true });
 	await put(old, '0000000000000001', EARLIER.meta);
-	const opening = indexedDB.open(name, 1);
-	opening.onupgradeneeded = () => ['meta', 'ops', 'keys'].forEach((s) => opening.result.createObjectStore(s));
-	const db = await request(opening);
-	const tx = db.transaction(['meta'], 'readwrite');
-	tx.objectStore('meta').put({ name: "Eve's" }, 'device');
-	await new Promise((resolve, reject) => {
-		tx.oncomplete = resolve;
-		tx.onerror = tx.onabort = () => reject(tx.error);
-	});
-	db.close();
 	return kept(name);
 }
 
-/** What store `name`'s folder holds of what an earlier avenDB kept, in hex, and whether IndexedDB holds it. */
+/** What store `name`'s folder holds of what an earlier avenDB kept, in hex. */
 async function kept(/** @type {string} */ name) {
 	const dir = await folder(name);
 	const keys = await dir.getDirectoryHandle('keys').catch(() => null);
 	const old = await dir.getDirectoryHandle('g1').catch(() => null);
 	const shelf = old && (await old.getDirectoryHandle('meta').catch(() => null));
-	const indexed = (await indexedDB.databases()).some((d) => d.name === name);
 	const [ops, meta, key] = [await read(dir, 'ops'), await read(dir, 'meta'), keys && (await read(keys, 'ab'))];
-	return { ops, meta, key, old: shelf && (await read(shelf, '0000000000000001')), indexed };
+	return { ops, meta, key, old: shelf && (await read(shelf, '0000000000000001')) };
 }
 
 /** Waits for the test's word to go on, set in the tab's storage. */

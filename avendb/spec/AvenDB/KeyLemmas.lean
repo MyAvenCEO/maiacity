@@ -306,9 +306,6 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   · -- keys
     cases h
     exact Change.applied .same
-  · -- checkpoint
-    cases h
-    exact Change.applied .same
 
 /-! ## What exists
 

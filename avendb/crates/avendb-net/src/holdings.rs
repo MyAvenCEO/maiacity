@@ -217,6 +217,8 @@ mod tests {
     fn a_devices_holdings_of_each_log_are_its_frontier_and_waiting_edits_as_sync_cuts_them() {
         let mut w = world();
         let h = handbook(&mut w);
+        // Welcome's log of two writes, so that with the first gone the second waits
+        w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("Alice edits Welcome");
         w.lab.sync_all(1);
         let (edits, ids) = (w.lab.log(w.mac_b).edits(), w.lab.log(w.mac_b).ids());
         let logs = Logs::of(edits, ids, w.lab.size(w.mac_b));

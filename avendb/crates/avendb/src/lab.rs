@@ -59,9 +59,8 @@
 //!
 //! A Classic McEliece public key travels as a blob beside the edits that name it (`policy::Edit::blobs`): a device
 //! keeps the blobs of the edits it keeps, each only if it hashes to its id, and seals to a key once it holds that key's
-//! blob. Before it syncs, a device vouches for the writes it made since its last checkpoint
-//! (`policy::Action::Checkpoint`). No device trusts the curves: each counts only the writes a checkpoint by their
-//! author covers (`policy::checkpointed`), and checkpoints each write of its own as it makes it.
+//! blob. Every edit is signed with SLH-DSA (`sign`), so every device counts every edit that stands, and trusts no
+//! curve.
 //! Devices sync by what each holds of each log and the vaults each follows (`follow`), gossip one digest per log in
 //! random orders, and go offline and come back; a device restored from a backup forks from what it made since
 //! (`forks`), and follows what it followed.
@@ -88,13 +87,13 @@ use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, Se
 use crate::lens::{Lane, Lens, Schema};
 use crate::merge;
 use crate::policy::{
-    checkpointed, mk_audience, replay, Action, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
+    mk_audience, replay, Action, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
     Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
-use crate::sign::{self, Ceremony, Classical, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed};
+use crate::sign::{self, Ceremony, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
     answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
@@ -121,9 +120,6 @@ pub enum Tamper {
     ChangedCiphertext(EditId),
     /// A key from before a removal, sealed again to the removed device and replayed.
     ReplayedSeal { key: KeyName, to: SignerId },
-    /// An edit signed with only the classical half of `signer`'s key, as whoever broke its curve (ed25519, or a
-    /// passkey's P-256) could sign it: the hash-based half is missing.
-    BrokenClassicalKey { signer: SignerId, action: Action },
 }
 
 /// A signer's private keys.
@@ -142,10 +138,10 @@ enum Key {
 
 impl Key {
     /// Its signature on edit `edit`: `None` for a passkey in the platform's authenticator, which signs in a ceremony.
-    fn sign(&mut self, edit: EditId, pq: bool) -> Option<Signature> {
+    fn sign(&mut self, edit: EditId) -> Option<Signature> {
         match self {
-            Key::Device(k) => Some(k.sign(edit, pq)),
-            Key::Passkey(p) => Some(p.sign(edit, pq)),
+            Key::Device(k) => Some(k.sign(edit)),
+            Key::Passkey(p) => Some(p.sign(edit)),
             Key::Web { .. } | Key::Consent(_) => None,
         }
     }
@@ -330,12 +326,12 @@ struct Store {
     log: Log,
     signed: HashMap<EditId, Signed>,
     blobs: Blobs,
-    /// The replay of its edits: which stand, and what it knows. Of the checkpointed writes only, as it trusts no curve.
+    /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
-    /// What its edits say with every write counted, checkpointed or not (`Lab::full_view`): replayed once for the edits
-    /// it holds now, not on every ask, announce and fetch.
-    full: OnceLock<State>,
-    /// Empty while it is locked, as is everything below but what it made itself and has to vouch for.
+    /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
+    /// holds now, not on every ask, announce and fetch.
+    latest: OnceLock<State>,
+    /// Empty while it is locked, as is everything below.
     keys: Keyring,
     /// The entry keys it derived: by the key of the audience it derived each from, the entry and the stay.
     derived: HashSet<(KeyId, EntryId, Option<EditId>)>,
@@ -350,8 +346,6 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
-    /// The writes it made itself that no checkpoint of its own covers yet.
-    unvouched: Vec<EditId>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
@@ -366,7 +360,7 @@ impl Default for Store {
             signed: HashMap::new(),
             blobs: HashMap::new(),
             replay: replay(&[]),
-            full: OnceLock::new(),
+            latest: OnceLock::new(),
             keys: Keyring::default(),
             derived: HashSet::new(),
             slices: HashMap::new(),
@@ -375,7 +369,6 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
-            unvouched: vec![],
             digests: None,
             follow: vec![],
         }
@@ -821,9 +814,9 @@ impl Lab {
         if !self.held(on).view().vault(vault).is_some_and(|v| v.kind == Kind::Aven) {
             return Err(Refusal::NotClaiming);
         }
-        let (id, pq) = (edit.id(), sign::needs_pq(&edit));
+        let id = edit.id();
         let signers: Vec<SignerId> = edit.sigs().filter(|&s| s != server).collect();
-        let signature = |s| self.sign_by(s, id, pq, ceremonies, &batch, None, &[]);
+        let signature = |s| self.sign_by(s, id, ceremonies, &batch, None, &[]);
         let sigs = signers.into_iter().map(signature).collect::<Result<_, _>>()?;
         let store = self.held(on);
         let logs: Vec<EditId> = vault_logs(store.log.edits(), store.view(), vec![vault]).iter().map(Edit::id).collect();
@@ -875,8 +868,7 @@ impl Lab {
             signed.verify()?;
         }
         // its own signature in its place among the edit's signers, the others' in theirs
-        let (id, pq) = (add.id(), sign::needs_pq(&add));
-        let mine = self.sign_by(d, id, pq, &[], &[], None, &[])?;
+        let mine = self.sign_by(d, add.id(), &[], &[], None, &[])?;
         let mut theirs = sigs.into_iter();
         let all: Option<Vec<Signature>> =
             add.sigs().map(|s| if s == d { Some(mine.clone()) } else { theirs.next() }).collect();
@@ -900,14 +892,13 @@ impl Lab {
     /// Signer `s`'s signature on edit `id`: by its ceremony among `ceremonies`, over the edit's id or, with the edits
     /// `batch` drafted together, over theirs (`Ceremony::sign_in`), or, with `pass`, the device an edit adds and when
     /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`); or by its key at hand
-    /// (`sign_held`); both halves if `pq`. `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its
-    /// own over that challenge.
+    /// (`sign_held`). `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its own over that
+    /// challenge.
     #[allow(clippy::too_many_arguments)]
     fn sign_by(
         &mut self,
         s: SignerId,
         id: EditId,
-        pq: bool,
         ceremonies: &[(SignerId, &Ceremony)],
         batch: &[EditId],
         pass: Option<(SignerId, u64)>,
@@ -918,21 +909,21 @@ impl Lab {
                 let keys = self.keys_of(s).ok_or(Refusal::Locked)?;
                 let signed = match pass {
                     Some((device, made)) => c.sign_adding(keys, id, device, made),
-                    None => c.sign_in(keys, id, batch, pq),
+                    None => c.sign_in(keys, id, batch),
                 };
                 signed.ok_or(Refusal::BadSignature)
             }
-            None => self.sign_held(s, id, pq, standing),
+            None => self.sign_held(s, id, standing),
         }
     }
 
-    /// Signer `s`'s signature on edit `id` by its key at hand, both halves if `pq`; or, for a signer the Lab holds the
-    /// standing consent of alone (`Key::Consent`), that consent, if the edit takes it (`standing`, `sign::standing`).
-    /// `Locked` if neither is at hand.
-    fn sign_held(&mut self, s: SignerId, id: EditId, pq: bool, standing: &[SignerId]) -> Result<Signature, Refusal> {
+    /// Signer `s`'s signature on edit `id` by its key at hand; or, for a signer the Lab holds the standing consent of
+    /// alone (`Key::Consent`), that consent, if the edit takes it (`standing`, `sign::standing`). `Locked` if neither
+    /// is at hand.
+    fn sign_held(&mut self, s: SignerId, id: EditId, standing: &[SignerId]) -> Result<Signature, Refusal> {
         match self.keys.get_mut(&s).ok_or(Refusal::Locked)? {
             Key::Consent(k) if standing.contains(&s) => Ok(k.consent.clone()),
-            key => key.sign(id, pq).ok_or(Refusal::Locked),
+            key => key.sign(id).ok_or(Refusal::Locked),
         }
     }
 
@@ -1032,14 +1023,13 @@ impl Lab {
         Some(self.keys.get(&s)?.seal_public())
     }
 
-    /// Sign `edit` with the key of each of its signers: both halves, or on a write the classical half alone; a signer
-    /// the Lab holds the standing consent of alone by that consent, where the edit takes it (`sign_held`). `Locked` if
-    /// a signer's key isn't at hand.
+    /// Sign `edit` with the key of each of its signers; a signer the Lab holds the standing consent of alone by that
+    /// consent, where the edit takes it (`sign_held`). `Locked` if a signer's key isn't at hand.
     fn sign(&mut self, edit: Edit) -> Result<Signed, Refusal> {
-        let (id, pq, standing) = (edit.id(), sign::needs_pq(&edit), sign::standing(&edit));
+        let (id, standing) = (edit.id(), sign::standing(&edit));
         let mut sigs = vec![];
         for s in edit.sigs() {
-            sigs.push(self.sign_held(s, id, pq, &standing)?);
+            sigs.push(self.sign_held(s, id, &standing)?);
         }
         Ok(Signed { edit, sigs })
     }
@@ -1067,7 +1057,7 @@ impl Lab {
         }
         if new {
             store.digests = None;
-            store.full = OnceLock::new();
+            store.latest = OnceLock::new();
         }
         new
     }
@@ -1172,7 +1162,7 @@ impl Lab {
         if self.dry {
             return Ok(edit.id());
         }
-        let (id, pq, standing) = (edit.id(), sign::needs_pq(&edit), sign::standing(&edit));
+        let (id, standing) = (edit.id(), sign::standing(&edit));
         let ceremony = |s: SignerId| ceremonies.iter().find(|(c, _)| *c == s).map(|(_, c)| *c);
         let signers: Vec<SignerId> = edit.sigs().collect();
         let pass = match (&edit.action, pass) {
@@ -1183,7 +1173,7 @@ impl Lab {
         // the pass signs for the passkey alone: every other signer as ever
         let signature = |s: SignerId| {
             let by_pass = pass.filter(|_| matches!(self.keys_of(s), Some(SignerKeys::Passkey { .. })));
-            self.sign_by(s, id, pq, ceremonies, &batch, by_pass, &standing)
+            self.sign_by(s, id, ceremonies, &batch, by_pass, &standing)
         };
         let sigs = signers.into_iter().map(signature).collect::<Result<_, _>>()?;
         let signed = Signed { edit, sigs };
@@ -1334,7 +1324,7 @@ impl Lab {
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
             let Some(store) = stores.get_mut(&d) else { return };
-            store.replay = replay(&checkpointed(store.log.edits()));
+            store.replay = replay(store.log.edits());
             // a locked device holds no key, and opens nothing
             if !unlocked {
                 return;
@@ -1354,7 +1344,6 @@ impl Lab {
             for w in work {
                 self.work(d, &view, w);
             }
-            self.vouch(d);
         }
     }
 
@@ -1388,10 +1377,11 @@ impl Lab {
         self.keep(d, vec![signed], &Blobs::new());
     }
 
-    /// What device `d` makes of its edits, every write counted: what it drafts and checks its own edits by.
-    fn full_view(&self, d: SignerId) -> std::borrow::Cow<'_, State> {
+    /// What device `d`'s edits say now, those it kept since it last brought itself up to date too: what it drafts and
+    /// checks its own edits by.
+    fn latest(&self, d: SignerId) -> &State {
         let store = self.held(d);
-        std::borrow::Cow::Borrowed(store.full.get_or_init(|| store.log.view()))
+        store.latest.get_or_init(|| store.log.view())
     }
 
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
@@ -1553,7 +1543,7 @@ impl Lab {
         tags: Vec<Sym>,
         content: Vec<u8>,
     ) -> Result<EntryId, Refusal> {
-        let view = self.full_view(on).into_owned();
+        let view = self.latest(on).clone();
         let x = AudienceId::of(vault, &audience);
         let epoch = view.epoch(KeyFam::Audience(vault, x)) + view.reenters(vault, x) as u64;
         let action = Action::Write {
@@ -1619,7 +1609,7 @@ impl Lab {
     /// now. In a dry run, none is issued.
     fn schemas_share(&mut self, on: SignerId, vault: VaultId) -> Result<Option<ShareId>, Refusal> {
         let select = Selector::lane();
-        let (store, st) = (self.held(on), self.full_view(on));
+        let (store, st) = (self.held(on), self.latest(on));
         let ours = |cp: &&Issued| {
             let s = &cp.share;
             let read = (s.who, s.level, s.wide, s.parent) == (Who::Everyone, Level::Read, false, None);
@@ -1647,11 +1637,11 @@ impl Lab {
         header: &Header,
         tags: &[Sym],
     ) -> Result<Vec<ShareId>, Refusal> {
-        let (store, st) = (self.held(on), self.full_view(on));
+        let (store, st) = (self.held(on), self.latest(on));
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.to_vec() };
         if actor == vault {
-            let complete = store.reads_shares(&st, vault);
-            return Ok(if complete { semantic_audience(&st, vault, &attrs, &store.readings) } else { vec![] });
+            let complete = store.reads_shares(st, vault);
+            return Ok(if complete { semantic_audience(st, vault, &attrs, &store.readings) } else { vec![] });
         }
         let shares: Vec<&Issued> =
             st.shares_held(actor).filter(|cp| cp.share.over == vault && st.holds(actor, cp, Level::Write)).collect();
@@ -1861,7 +1851,7 @@ impl Lab {
         files.sort_by_key(|f| f.root);
         files.dedup_by_key(|f| f.root);
         let roots = files.iter().map(|f| f.root).collect();
-        let view = self.full_view(on).into_owned();
+        let view = self.latest(on).clone();
         let en = view.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let (vault, stay, x) = (en.vault, en.stay(), en.audience());
         let epoch = view.epoch(KeyFam::Audience(vault, x));
@@ -1874,15 +1864,13 @@ impl Lab {
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files }, x)
     }
 
-    /// Encrypt `body` into the write `edit`, whose stay is in audience `x`, then sign and keep it (`seal_write`); vouch
-    /// for it at once, since peers count only checkpointed writes; and bring the device up to date. In a dry run,
-    /// nothing: its id.
+    /// Encrypt `body` into the write `edit`, whose stay is in audience `x`, then sign and keep it (`seal_write`), and
+    /// bring the device up to date. In a dry run, nothing: its id.
     fn write(&mut self, on: SignerId, edit: Edit, body: Body, x: AudienceId) -> Result<EditId, Refusal> {
         if self.dry {
             return Ok(edit.id());
         }
         let id = self.seal_write(on, edit, body, x)?;
-        self.vouch(on);
         self.refresh(on, &[]);
         Ok(id)
     }
@@ -1903,7 +1891,6 @@ impl Lab {
         self.keep(on, vec![signed], &Blobs::new());
         let store = self.stores.get_mut(&on).expect("a device");
         store.bodies.insert(id, body);
-        store.unvouched.push(id);
         Ok(id)
     }
 
@@ -1932,41 +1919,6 @@ impl Lab {
         }
         let (keep, via) = (vec![], vec![]);
         self.submit(on, &[on], Action::Mark { vault: v, entry, caps, wants, keep, via }).map(Some)
-    }
-
-    /// Device `d` vouches for the writes it made since its last checkpoint: a checkpoint for each entry, covering those
-    /// of its writes the entry has accepted, signed both ways. Nothing while it is locked.
-    pub fn checkpoint(&mut self, d: SignerId) {
-        if self.vouch(d) {
-            self.refresh(d, &[]);
-        }
-    }
-
-    /// `checkpoint` without bringing keys and items up to date: true if it made any.
-    fn vouch(&mut self, d: SignerId) -> bool {
-        if self.locked(d) {
-            return false;
-        }
-        let Some(store) = self.stores.get_mut(&d) else { return false };
-        if store.unvouched.is_empty() {
-            return false;
-        }
-        let unvouched = std::mem::take(&mut store.unvouched);
-        // its own writes as every edit it holds has them, whether it counts them yet or not
-        let st = store.full.get_or_init(|| store.log.view());
-        let mut by: BTreeMap<EntryId, Vec<EditId>> = BTreeMap::new();
-        for w in st.all_writes() {
-            if unvouched.contains(&w.edit) {
-                by.entry(w.entry).or_default().push(w.edit);
-            }
-        }
-        let made = !by.is_empty();
-        for (entry, covers) in by {
-            let edit = self.held(d).log.draft(d, &[], Action::Checkpoint { entry, covers });
-            let signed = self.sign(edit).expect("an unlocked device signs");
-            self.keep(d, vec![signed], &Blobs::new());
-        }
-        made
     }
 
     /// The schemas and lenses in vault `v`'s lane, as device `d` reads them off the schema and lens entries it holds
@@ -2118,8 +2070,7 @@ impl Lab {
         &self.held(d).log
     }
 
-    /// What device `d` makes of the edits it holds: what `log(d).view()` says, but of the checkpointed writes only, as
-    /// no device trusts the curves.
+    /// What device `d` makes of the edits it holds, as it last brought itself up to date: what `log(d).view()` says.
     pub fn state(&self, d: SignerId) -> &State {
         self.held(d).view()
     }
@@ -2155,17 +2106,10 @@ impl Lab {
                     SignerKeys::Device { ed25519, slh } => out.extend(ed25519.iter().chain(slh)),
                     SignerKeys::Passkey { p256, slh } => out.extend(p256.iter().chain(slh)),
                 }
-                match &sig.classical {
-                    Classical::Ed25519(b) => out.extend(b),
-                    Classical::Passkey(a)
-                    | Classical::Batch { assertion: a, .. }
-                    | Classical::Pass { assertion: a, .. } => {
-                        for part in [&a.authenticator_data, &a.client_data_json, &a.signature] {
-                            out.extend(part);
-                        }
-                    }
+                if let Some(a) = sig.webauthn.as_ref().map(WebAuthn::assertion) {
+                    out.extend(a.authenticator_data.iter().chain(&a.client_data_json).chain(&a.signature));
                 }
-                out.extend(sig.pq.iter().flatten());
+                out.extend(&sig.pq);
             }
         }
         for secret in store.keys.secrets() {
@@ -2217,17 +2161,16 @@ impl Lab {
 
     /// Device `to` asks device `from` once, with what it holds of each log and the vaults it follows (`sync::asks`),
     /// and `from` answers with what `to` may receive by `from`'s view, of each log only what lies beyond what `to`
-    /// holds of it. `from` vouches for its new writes first. How many edits `from` sent: none while either is offline.
+    /// holds of it. How many edits `from` sent: none while either is offline.
     pub fn sync(&mut self, from: SignerId, to: SignerId) -> usize {
         if !self.online(from) || !self.online(to) {
             return 0;
         }
-        self.checkpoint(from);
         let to_store = self.held(to);
         let asked = asks_ids(to_store.log.edits(), to_store.log.ids(), &to_store.follow);
         let store = self.held(from);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, &self.full_view(from), to, &asked.follow);
+        let places = answer(edits, self.latest(from), to, &asked.follow);
         let sent: Vec<EditId> =
             beyond(edits, ids, &logs_of(edits, ids), &places, &asked).into_iter().map(|i| ids[i]).collect();
         let (signed, blobs) = self.outgoing(from, &sent);
@@ -2250,7 +2193,7 @@ impl Lab {
         let (edits, ids) = (theirs.log.edits(), theirs.log.ids());
         let logs = logs_of(edits, ids);
         let (df, dt) = (theirs.digests.as_ref().expect("worked out"), mine.digests.as_ref().expect("worked out"));
-        answer(edits, &self.full_view(from), to, &mine.follow).into_iter().any(|i| match logs[i] {
+        answer(edits, self.latest(from), to, &mine.follow).into_iter().any(|i| match logs[i] {
             Some(l) => df.get(&l) != dt.get(&l),
             None => !mine.signed.contains_key(&ids[i]),
         })
@@ -2381,7 +2324,7 @@ impl Lab {
     /// entry (T20); a passkey that owns no vault gets nothing.
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
-        let places = link_places(store.log.edits(), &self.full_view(d), passkey);
+        let places = link_places(store.log.edits(), self.latest(d), passkey);
         places.into_iter().map(|i| store.signed[&store.log.ids()[i]].clone()).collect()
     }
 
@@ -2469,7 +2412,7 @@ impl Lab {
     pub fn request(&self, d: SignerId, peer: SignerId) -> Request {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, &self.full_view(d), peer, &[]);
+        let places = answer(edits, self.latest(d), peer, &[]);
         let logs = logs_of(edits, ids);
         let shared: HashSet<LogId> = places.iter().filter_map(|&i| logs[i]).collect();
         let theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
@@ -2485,7 +2428,7 @@ impl Lab {
     /// named, as `sync` sends them, and the McEliece keys `d` holds that those edits name or that the request wants and
     /// `asker` may fetch (`may_fetch`), smallest first. The edits come each once, by their place (`sync::place`), after
     /// the request's `after`: as many as fit in `page` bytes on the wire, and at least one. True if more are left, for
-    /// `asker` to ask on after the last. `d` vouches for its new writes first.
+    /// `asker` to ask on after the last.
     pub fn reply(
         &mut self,
         d: SignerId,
@@ -2493,10 +2436,9 @@ impl Lab {
         request: &Request,
         page: usize,
     ) -> (Vec<Signed>, Vec<BlobId>, bool) {
-        self.checkpoint(d);
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, &self.full_view(d), asker, &request.ask.follow);
+        let places = answer(edits, self.latest(d), asker, &request.ask.follow);
         let sent: BTreeSet<Place> = beyond(edits, ids, &logs_of(edits, ids), &places, &request.ask)
             .into_iter()
             .map(|i| (edits[i].depth, ids[i]))
@@ -2525,14 +2467,14 @@ impl Lab {
         let store = self.held(d);
         let edits = store.log.edits();
         store.blobs.contains_key(&blob)
-            && answer(edits, &self.full_view(d), asker, follow).into_iter().any(|i| edits[i].blobs().contains(&blob))
+            && answer(edits, self.latest(d), asker, follow).into_iter().any(|i| edits[i].blobs().contains(&blob))
     }
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
         let edits = self.held(d).log.edits();
-        answer(edits, &self.full_view(d), asker, follow).into_iter().any(|i| edits[i].files().contains(file))
+        answer(edits, self.latest(d), asker, follow).into_iter().any(|i| edits[i].files().contains(file))
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -2545,7 +2487,7 @@ impl Lab {
     /// where its keep shares over the entry's vault say to keep them whole (`State::keeps`), or, with none there but
     /// never ones, where its own setting `keep` says. It fetches the rest a piece at a time as it reads them.
     pub fn kept_files(&self, d: SignerId, keep: bool) -> Vec<FileRoot> {
-        let (store, st) = (self.held(d), self.full_view(d));
+        let (store, st) = (self.held(d), self.latest(d));
         let kept = |edit: &&Edit| {
             let en = edit.entry().and_then(|e| st.entry(e));
             en.is_some_and(|en| st.wants(d, en) && st.keeps(d, en).unwrap_or(keep))
@@ -2642,7 +2584,7 @@ impl Lab {
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let logs = logs_of(edits, ids);
         let shared: BTreeSet<LogId> =
-            answer(edits, &self.full_view(d), peer, &[]).into_iter().filter_map(|i| logs[i]).collect();
+            answer(edits, self.latest(d), peer, &[]).into_iter().filter_map(|i| logs[i]).collect();
         let digests = store.digests.as_ref().expect("worked out");
         shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
     }
@@ -2663,27 +2605,11 @@ impl Lab {
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
     /// makes next in a log builds on the past the backup kept, so it forks from what it made there since (`forks`).
-    /// It vouches as before for the writes of its own that no checkpoint of its own covers. A node starting again
-    /// from its store on disk restores the same way.
+    /// A node starting again from its store on disk restores the same way.
     pub fn restore_backup(&mut self, d: SignerId, backup: &Backup) {
         let follow = self.held(d).follow.clone();
         self.stores.insert(d, Store { follow, ..Store::default() });
         self.keep(d, backup.signed.clone(), &backup.blobs);
-        let store = self.stores.get_mut(&d).expect("restored");
-        let edits = store.log.edits().iter().zip(store.log.ids());
-        let own: Vec<(&Edit, &EditId)> = edits.filter(|(edit, _)| edit.author == d).collect();
-        let covered: HashSet<EditId> = own
-            .iter()
-            .flat_map(|(edit, _)| match &edit.action {
-                Action::Checkpoint { covers, .. } => covers.clone(),
-                _ => vec![],
-            })
-            .collect();
-        store.unvouched = own
-            .iter()
-            .filter(|(edit, id)| matches!(edit.action, Action::Write { .. }) && !covered.contains(id))
-            .map(|(_, id)| **id)
-            .collect();
         self.refresh(d, &[]);
     }
 
@@ -2706,7 +2632,7 @@ impl Lab {
             Tamper::ForgedSignature { claimed, action } => {
                 let edit = self.held(to).log.draft(claimed, &[], action);
                 let forger = DeviceKey::from_secret(self.secret("forger", ""));
-                Signed { sigs: vec![forger.sign(edit.id(), sign::needs_pq(&edit))], edit }
+                Signed { sigs: vec![forger.sign(edit.id())], edit }
             }
             Tamper::ChangedCiphertext(id) => {
                 let mut signed =
@@ -2731,11 +2657,6 @@ impl Lab {
                 let action = Action::Keys { name: key, id: secret.id(), public: None, boxes, clear: None };
                 let edit = self.held(holder).log.draft(holder, &[], action);
                 self.sign(edit)?
-            }
-            Tamper::BrokenClassicalKey { signer, action } => {
-                let edit = self.held(to).log.draft(signer, &[], action);
-                let key = self.keys.get_mut(&signer).expect("a signer of the Lab");
-                Signed { sigs: vec![key.sign(edit.id(), false).ok_or(Refusal::Locked)?], edit }
             }
         };
         let edit = signed.verify()?.clone();

@@ -9,13 +9,12 @@ use crate::rules::{Grant, On, Op, Proof, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
-/// The version byte every edit starts with: 8 since the v8 kinds, a vault's settings, its shares (grants, owners and
-/// devices) and their revocations, with a level's byte its rank, so avenDB starts afresh (7 since every human vault is
-/// founded with the master recovery key among its owners, 6 since shares are named groups of ops, each share's slice
-/// holding its name and its ops and every write through a share carrying a proof, 5 since flat vaults, whose shares
-/// select slices of a vault and whose entries sit in audiences, 4 since the three kinds of vault, 3 since P5, whose
-/// writes name the line of history they extend, 2 since P4b, whose ids are SHA-3 hashes and whose signers sign twice).
-pub const VERSION: u8 = 8;
+/// The version byte every edit starts with: 9 since every signature on an edit is SLH-DSA alone, a passkey's with its
+/// WebAuthn assertion beside it, and checkpoints are gone, so avenDB starts afresh (8 since the v8 kinds, 7 since every
+/// human vault is founded with the master recovery key among its owners, 6 since shares are named groups of ops, 5
+/// since flat vaults, 4 since the three kinds of vault, 3 since P5, whose writes name the line of history they extend,
+/// 2 since P4b, whose ids are SHA-3 hashes).
+pub const VERSION: u8 = 9;
 
 /// An edit's id: the hash of its encoding, for a purpose that keeps an edit's old name, op (`hash::PREFIX`).
 pub(crate) fn edit_id(edit: &Edit) -> [u8; 32] {
@@ -619,10 +618,11 @@ impl Encode for Revoking {
     }
 }
 
-/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys, 7 checkpoint. 8, a publish
-/// into a vault's schema lane, went into the write, as a schema or lens entry; 9, a sync rule, and 10, its end, into
-/// the share and the revoke, as a keep share and its revocation; 11, a pick, into the mark. No tag is used again. A
-/// settings, share or revoke edit's sub-kind follows in a byte of its own.
+/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys. 7, a checkpoint, went with
+/// the classical half of a signature, as every signature is SLH-DSA; 8, a publish into a vault's schema lane, went into
+/// the write, as a schema or lens entry; 9, a sync rule, and 10, its end, into the share and the revoke, as a keep
+/// share and its revocation; 11, a pick, into the mark. No tag is used again. A settings, share or revoke edit's
+/// sub-kind follows in a byte of its own.
 impl Encode for Action {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -680,11 +680,6 @@ impl Encode for Action {
                 public.encode(out);
                 boxes.encode(out);
                 clear.encode(out);
-            }
-            Action::Checkpoint { entry, covers } => {
-                out.push(7);
-                entry.encode(out);
-                covers.encode(out);
             }
         }
     }
@@ -829,7 +824,6 @@ mod tests {
             (Action::Mark { vault: v, entry: e, caps: Some(vec![]), wants: None, keep: vec![], via: vec![] }, &[5]),
             (Action::Mark { vault: v, entry: e, caps: None, wants: Some(vec![]), keep: vec![], via: vec![] }, &[5]),
             (keys, &[6]),
-            (Action::Checkpoint { entry: e, covers: vec![] }, &[7]),
         ];
         for (action, tag) in kinds {
             assert!(tagged(action.clone()).starts_with(tag), "{action:?}");

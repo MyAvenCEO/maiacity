@@ -191,7 +191,9 @@
 			{/each}
 		</nav>
 		<p class="pq">
-			<span class="chip ok" title="Only the post-quantum halves of every signature and key count">Post-quantum only</span>
+			<span class="chip ok" title="Every edit counts by its SLH-DSA signature alone, and every key is sealed post-quantum"
+				>Post-quantum only</span
+			>
 		</p>
 	</aside>
 
