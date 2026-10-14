@@ -16,7 +16,7 @@ use avendb::policy::{Level, Who};
 use avendb::sealed::FileRoot;
 use avendb::sync::{LogId, asks, frontiers, log_of};
 use avendb::wire::{Announce, FileHold, Frontier, Reply, Request, Wire};
-use avendb_net::{ALPN, Node, Options, exporter, pq_provider};
+use avendb_net::{ALPN, Holder, Node, Options, exporter, pq_provider};
 use bytes::Bytes;
 use iroh::endpoint::{Connection, presets};
 use iroh::{Endpoint, SecretKey};
@@ -118,9 +118,14 @@ fn sorted(mut devices: Vec<SignerId>) -> Vec<SignerId> {
     devices
 }
 
-/// The devices Synced to on `n` lists for entry `e`.
+/// The devices Synced to on `n` lists with all of entry `e`.
 async fn synced(n: &Node, e: EntryId) -> Vec<SignerId> {
-    n.synced_to().await.entries.get(&e).cloned().unwrap_or_default()
+    all(n.synced_to().await.entries.get(&e).map(Vec::as_slice).unwrap_or_default())
+}
+
+/// The devices among `holders` that hold all of it.
+fn all(holders: &[Holder]) -> Vec<SignerId> {
+    holders.iter().filter(|h| h.all()).map(|h| h.device).collect()
 }
 
 /// A photo of `len` bytes, sealed into `n`'s blob store and brought into entry `e` of `coop`.
@@ -199,8 +204,9 @@ async fn a_forged_holding_from_a_third_party_is_ignored() {
     assert_eq!(heard.logs.get(&log), Some(&frontier), "as Carol's Mac's word");
     assert_eq!(mac.holdings_of(mac_b), None, "and of no other device");
     let synced = mac.synced_to().await;
-    assert_eq!(synced.entries[&welcome], [mac_a], "but shows Welcome synced to itself alone");
-    assert_eq!(synced.files[&root], [mac_a], "and the photo");
+    let only = |hs: &[Holder]| hs == [Holder { device: mac_a, has: hs[0].of, of: hs[0].of }];
+    assert!(only(&synced.entries[&welcome]), "but shows Welcome synced to itself alone");
+    assert!(only(&synced.files[&root]), "and the photo");
     // an edit of Welcome Alice's Mac lacks, of a log beyond Carol's Mac's reach: it asks nothing of it
     let lacking = Frontier { heads: vec![avendb::id::EditId([9; 32])], waiting: vec![] };
     let forged = Announce { full: false, logs: vec![(log, lacking)], files: vec![] };

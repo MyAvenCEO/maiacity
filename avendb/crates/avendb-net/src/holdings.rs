@@ -74,11 +74,11 @@ impl Holdings {
     }
 }
 
-/// Where each entry and each file a device holds is synced to, by holdings (`Node::synced_to`): the devices that hold
-/// every edit of the entry's log the device holds, or every sealed byte of the file, and those that hold some of the
-/// file's pieces, by their own word and the device's own shelf, among those that may hold it by the device's view;
-/// each list smallest first. The world the engine shows names them (avendb's `world`).
-pub use avendb::world::SyncedTo;
+/// Where each entry and each file a device holds is synced to, by holdings (`Node::synced_to`): one list for entries
+/// and files alike, of the devices that hold some of it by their own word and the device's own shelf, among those that
+/// may hold it by the device's view, each with how much it holds (`Holder`), smallest first. The world the engine
+/// shows names them (avendb's `world`).
+pub use avendb::world::{Holder, SyncedTo};
 
 /// One log of a device's edits: where its edits are among them, its frontier and waiting edits, and the files they
 /// bring.
@@ -134,12 +134,16 @@ impl Logs {
         theirs.heads.iter().any(|h| !self.closed.contains(h)) || theirs.waiting.iter().any(|w| !self.at.contains_key(w))
     }
 
-    /// A device that holds `theirs` of log `l` holds every edit of it this one holds, `edits` being this one's edits:
-    /// each is one of its heads or waiting edits, or one its heads build on, as far as this one's edits show it.
-    pub(crate) fn covered(&self, edits: &[Edit], l: &LogId, theirs: &Frontier) -> bool {
-        let Some(log) = self.of.get(l) else { return true };
+    /// How many of this one's edits of log `l` a device that holds `theirs` of it holds, `edits` being this one's
+    /// edits, and of how many: those that are one of its heads or waiting edits, or one its heads build on, as far as
+    /// this one's edits show it. It holds all of them when it covers the log: when each head of this one's frontier is
+    /// one of its heads or one they build on, and so is each edit this one holds waiting, unless it holds it waiting
+    /// too (`covers` in the model); short of that, one fewer at most.
+    pub(crate) fn held(&self, edits: &[Edit], l: &LogId, theirs: &Frontier) -> (u64, u64) {
+        let Some(log) = self.of.get(l) else { return (0, 0) };
+        let of = log.edits.len() as u64;
         if log.frontier == *theirs {
-            return true;
+            return (of, of);
         }
         let in_log: HashSet<usize> = log.edits.iter().copied().collect();
         let mut seen: HashSet<EditId> = theirs.heads.iter().copied().collect();
@@ -149,8 +153,14 @@ impl Logs {
             stack.extend(edits[i].parents.iter().filter(|p| seen.insert(**p)));
         }
         let waiting: HashSet<&EditId> = theirs.waiting.iter().collect();
-        log.frontier.heads.iter().all(|h| seen.contains(h))
-            && log.frontier.waiting.iter().all(|w| seen.contains(w) || waiting.contains(w))
+        let covered = log.frontier.heads.iter().all(|h| seen.contains(h))
+            && log.frontier.waiting.iter().all(|w| seen.contains(w) || waiting.contains(w));
+        if covered {
+            return (of, of);
+        }
+        let holds: HashSet<&EditId> = seen.iter().chain(theirs.waiting.iter()).collect();
+        let has = holds.into_iter().filter(|id| self.at.get(*id).is_some_and(|i| in_log.contains(i))).count() as u64;
+        (has.min(of - 1), of)
     }
 }
 
@@ -224,8 +234,10 @@ mod tests {
         assert!(welcome.waiting.iter().all(|id| !closed.contains(id)), "what waits is outside the closed part");
         assert!(cut.lacks(&logs.of[&LogId::Entry(h.welcome)].frontier), "the whole log has what the cut one lacks");
         assert!(!logs.lacks(welcome), "and the cut one nothing the whole one lacks");
-        assert!(logs.covered(edits, &LogId::Entry(h.welcome), &logs.of[&LogId::Entry(h.welcome)].frontier));
-        assert!(!logs.covered(edits, &LogId::Entry(h.welcome), welcome), "the cut log doesn't cover the whole");
+        let (log, of) = (LogId::Entry(h.welcome), logs.of[&LogId::Entry(h.welcome)].edits.len() as u64);
+        assert_eq!(logs.held(edits, &log, &logs.of[&log].frontier), (of, of), "the whole log holds all of it");
+        let held = logs.held(edits, &log, welcome);
+        assert_eq!(held, (of - 1, of), "the cut log doesn't cover the whole: it holds all but its first edit");
     }
 
     #[test]

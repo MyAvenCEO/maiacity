@@ -644,35 +644,39 @@ theorem H1_states_its_shelf (n : Node) (c : Conn) (told : Option Holdings) {a : 
   obtain ⟨hl, hf, -⟩ := Syncing.since_sound h
   exact ⟨fun l F hm => Syncing.tells_sound.1 l F (hl l F hm), fun f x hm => Syncing.tells_sound.2 f x (hf f x hm)⟩
 
-/-- H1, synced to: a node lists a device other than its own as synced to entry `e` only if that device may hold the
-    entry's log by the node's view, and stated itself, on a connection whose hello proved it, a frontier of the log that
-    covers every edit of it the node holds (`covers`). -/
-theorem H1_synced_to (n : Node) (me d : SignerId) (e : EntryId) (h : d ∈ n.syncedTo me e) (hne : d ≠ me) :
-    LogId.entry e ∈ reachLogs n.edits d ∧ ∃ c a F, (c, a) ∈ n.heard ∧ c.device = d ∧ (LogId.entry e, F) ∈ a.logs ∧
-      covers n.edits (.entry e) F = true :=
+/-- H1, synced to: a node lists a device other than its own in "Synced to" for an entry or a file only if that device
+    may hold it by the node's view, and stated itself, on a connection whose hello proved it, what it holds of it: of an
+    entry, a frontier of its log, which covers every edit of it the node holds (`covers`) when the device is listed with
+    all of it; of a file, what it holds of it, the whole file when listed so. One list for entries and files alike. -/
+theorem H1_synced_to (n : Node) (me d : SignerId) (t : Synced) (all : Bool) (h : (d, all) ∈ n.syncedTo me t)
+    (hne : d ≠ me) : t.reaches n.edits d = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ Syncing.Stated n.edits a all t :=
   Syncing.syncedTo_sound h hne
 
 /-- H1, what synced to means: if each announcement a node heard on a connection that proved device `d` was made by a
     node of `d`'s whose shelf is part of `S`, `d`'s shelf now (a shelf holds for good), then a node that lists `d` as
-    synced to entry `e` holds no edit of the entry's log that `S` doesn't hold. Assumes ids don't collide. -/
-theorem H1_synced_to_held (n : Node) (me d : SignerId) (e : EntryId) (S : List Edit) (h : d ∈ n.syncedTo me e)
-    (hne : d ≠ me)
+    synced to all of entry `e` holds no edit of the entry's log that `S` doesn't hold. Assumes ids don't collide. -/
+theorem H1_synced_to_held (n : Node) (me d : SignerId) (e : EntryId) (S : List Edit)
+    (h : (d, true) ∈ n.syncedTo me (.entry e)) (hne : d ≠ me)
     (honest : ∀ c a, (c, a) ∈ n.heard → c.device = d →
       ∃ nd : Node, (∀ x ∈ nd.shelf, x ∈ S) ∧ ∃ c' told, nd.announce c' told = some a)
     (hid : ∀ a ∈ S, ∀ b ∈ n.edits, a.id = b.id → a = b) (hu : ∀ a ∈ n.edits, ∀ b ∈ n.edits, a.id = b.id → a = b)
     {x : Edit} (hx : x ∈ n.edits) (hl : x.log? = some (.entry e)) : x ∈ S := by
-  obtain ⟨-, c, a, F, hca, hd, hm, hcov⟩ := H1_synced_to n me d e h hne
+  obtain ⟨-, c, a, hca, hd, F, hm, hcov⟩ := H1_synced_to n me d (.entry e) true h hne
   obtain ⟨nd, hsub, c', told, hann⟩ := honest c a hca hd
   -- what `d` stated is what the shelf of the node that announced it held of the log
   obtain ⟨rfl, -⟩ := (H1_states_its_shelf nd c' told hann).1 _ _ hm
   exact hsub x (Syncing.covered_held (fun a ha b hb => hid a (hsub a ha) b hb) hu hcov
     (List.mem_filter.mpr ⟨hx, by simp [hl]⟩))
 
-/-- H1, files: a node lists a device other than its own as synced to file `f` only if that device may fetch it by the
-    node's view (T27), and stated itself, on a connection whose hello proved it, that it holds the file whole. -/
-theorem H1_synced_to_file (n : Node) (me d : SignerId) (f : FileId) (h : d ∈ n.syncedToFile me f) (hne : d ≠ me) :
-    mayFetch n.edits d f = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (f, some .whole) ∈ a.files :=
-  Syncing.syncedToFile_sound h hne
+/-- H1, files: a node lists a device other than its own as synced to all of file `f` only if that device may fetch it
+    by the node's view (T27), and stated itself, on a connection whose hello proved it, that it holds the file whole. -/
+theorem H1_synced_to_file (n : Node) (me d : SignerId) (f : FileId) (h : (d, true) ∈ n.syncedTo me (.file f))
+    (hne : d ≠ me) :
+    mayFetch n.edits d f = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (f, some .whole) ∈ a.files := by
+  obtain ⟨hr, c, a, hca, hd, x, hm, hx⟩ := H1_synced_to n me d (.file f) true h hne
+  simp only [Synced.reaches, List.contains_iff_mem] at hr
+  simp only [beq_iff_eq] at hx
+  exact ⟨Syncing.reachFiles_fetch hr, c, a, hca, hd, hx ▸ hm⟩
 
 /-- T27, holdings never authorize: a node's blob gate hands a blob of a file, its root or one of its pieces, over a blob
     connection from an endpoint only while a sync connection from that endpoint is open, and only to the device its

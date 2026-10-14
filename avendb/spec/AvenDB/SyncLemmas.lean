@@ -863,40 +863,37 @@ theorem covered_held {N S : List Edit} {l : LogId} (hid : ∀ a ∈ S, ∀ b ∈
     · obtain ⟨a, ha, haid⟩ := waitingIn_mem h
       exact hid a ha x hxN haid ▸ ha
 
-/-- A device a node lists as synced to entry `e`, other than its own, stated on a connection whose hello proved it a
-    frontier of the entry's log that covers the log as the node holds it, and may hold that log by the node's view. -/
-theorem syncedTo_sound {n : Node} {me d : SignerId} {e : EntryId} (h : d ∈ n.syncedTo me e) (hne : d ≠ me) :
-    LogId.entry e ∈ reachLogs n.edits d ∧ ∃ c a F, (c, a) ∈ n.heard ∧ c.device = d ∧ (LogId.entry e, F) ∈ a.logs ∧
-      covers n.edits (.entry e) F = true := by
+/-- What announcement `a` stated of `t`, and whether that is all of it a node holding `edits` holds: a frontier of the
+    entry's log, covering the log as the node holds it or not; what it holds of the file, the whole file or not. -/
+def Stated (edits : List Edit) (a : Announce) (all : Bool) : Synced → Prop
+  | .entry e => ∃ F, (LogId.entry e, F) ∈ a.logs ∧ covers edits (.entry e) F = all
+  | .file f  => ∃ x, (f, some x) ∈ a.files ∧ (x == .whole) = all
+
+/-- A device a node lists in "Synced to" for `t`, other than its own, may hold `t` by the node's view, and stated on a
+    connection whose hello proved it what it holds of `t`: all of it, if listed so. -/
+theorem syncedTo_sound {n : Node} {me d : SignerId} {t : Synced} {all : Bool} (h : (d, all) ∈ n.syncedTo me t)
+    (hne : d ≠ me) : t.reaches n.edits d = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ Stated n.edits a all t := by
   simp only [Node.syncedTo] at h
   split at h
   · simp at h
-  · simp only [List.mem_mergeSort, List.mem_append, List.mem_filter, Bool.and_eq_true, List.contains_iff_mem] at h
-    rcases h with h | ⟨-, hl, hc⟩
-    · split at h <;> simp_all
-    · cases hF : (n.record d).log? (.entry e) with
-      | none => simp [hF] at hc
-      | some F =>
-        simp only [hF, Option.any_some] at hc
-        obtain ⟨c, a, hca, hd, hm⟩ := (record_sound n d).1 _ _ (mem_of_log? hF)
-        exact ⟨hl, c, a, F, hca, hd, hm, hc⟩
-
-/-- A device a node lists as synced to file `f`, other than its own, stated on a connection whose hello proved it that
-    it holds the file whole, and may fetch it by the node's view. -/
-theorem syncedToFile_sound {n : Node} {me d : SignerId} {f : FileId} (h : d ∈ n.syncedToFile me f) (hne : d ≠ me) :
-    mayFetch n.edits d f = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ (f, some .whole) ∈ a.files := by
-  simp only [Node.syncedToFile] at h
-  split at h
-  · simp at h
-  · simp only [List.mem_mergeSort, List.mem_append, List.mem_filter, Bool.and_eq_true, List.contains_iff_mem] at h
-    rcases h with h | ⟨-, hr, hc⟩
-    · split at h <;> simp_all
-    · cases hF : (n.record d).file? f with
-      | none => simp [hF] at hc
-      | some x =>
-        simp only [hF, beq_iff_eq, Option.some.injEq] at hc
-        subst hc
-        obtain ⟨c, a, hca, hd, hm⟩ := (record_sound n d).2 _ _ (mem_of_file? hF)
-        exact ⟨reachFiles_fetch hr, c, a, hca, hd, hm⟩
+  · simp only [List.mem_mergeSort, List.mem_append, List.mem_map, Option.mem_toList, List.mem_filterMap] at h
+    rcases h with ⟨b, -, hb⟩ | ⟨d', -, hd'⟩
+    · exact absurd (Prod.mk.inj hb).1.symm hne
+    · split at hd'
+      · rename_i hr
+        cases t with
+        | entry e =>
+          simp only [Holdings.of?, Option.map_eq_some_iff, Option.map_map] at hd'
+          obtain ⟨F, hF, hEq⟩ := hd'
+          obtain ⟨rfl, rfl⟩ := Prod.mk.inj hEq
+          obtain ⟨c, a, hca, hd, hm⟩ := (record_sound n d').1 _ _ (mem_of_log? hF)
+          exact ⟨hr, c, a, hca, hd, F, hm, rfl⟩
+        | file f =>
+          simp only [Holdings.of?, Option.map_eq_some_iff, Option.map_map] at hd'
+          obtain ⟨x, hx, hEq⟩ := hd'
+          obtain ⟨rfl, rfl⟩ := Prod.mk.inj hEq
+          obtain ⟨c, a, hca, hd, hm⟩ := (record_sound n d').2 _ _ (mem_of_file? hx)
+          exact ⟨hr, c, a, hca, hd, x, hm, rfl⟩
+      · simp at hd'
 
 end AvenDB.Syncing

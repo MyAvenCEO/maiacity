@@ -1011,7 +1011,12 @@ async fn a_browser_brings_a_film_into_her_vault_and_her_mac_reads_any_range_of_i
     // where it is synced to (v8 phase H): her browser, whose shelf holds it, and her Mac, once it read all of it
     mac.read_file(root, 0..len).await.expect("the Mac reads all of it");
     let (her, macs) = (json!(browser.node().device().to_hex()), json!(mac_a.to_hex()));
-    let both = |list: &Value| list.as_array().is_some_and(|l| l.contains(&her) && l.contains(&macs));
+    // one list for the entry and its file, each device with how much of it it holds: all of it here
+    let both = |list: &Value| {
+        let holders = list.as_array().into_iter().flatten();
+        let all: Vec<&Value> = holders.filter(|h| h["has"] == h["of"]).map(|h| &h["device"]).collect();
+        all.contains(&&her) && all.contains(&&macs)
+    };
     let synced = || async {
         let seen = world_of(&browser).await;
         let row = item(&seen, e);

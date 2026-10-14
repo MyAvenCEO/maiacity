@@ -7,20 +7,20 @@
 	don't hold, its schemas, edits, proposals and who wrote it first, and with the studio's internals shown its key's
 	generation and size); sorted by a column, searched, and each row opened in a drawer, its record field by field, and
 	with the internals shown, its mark to run now (the `mark` op). Beside the tables, its files: every file its entries
-	bring, by its root, with its size and the devices that hold it whole or in pieces, as the device's world says.
+	bring, by its root, with its size and the devices it is synced to, as for every entry, as the device's world says.
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import Panel from './Panel.svelte';
 	import { cell, families, familyOf, hint, parsed, pgType, tables, typeOf } from './db.js';
 	import { allowed, may } from './ops.js';
-	import { count, list, nameOf, sharerWords, short, size } from './vaults.js';
+	import { count, list, nameOf, sharerWords, short, size, syncedWords } from './vaults.js';
 
 	/**
 	 * @typedef {import('./db.js').RowView} Row
 	 * @typedef {{ name: string, type: string, hint: string, pk?: boolean, sys?: boolean, get: (r: Row) => unknown }} Column
-	 * @typedef {{ root: string, size: number, len: number | null, entries: string[], whole: string[],
-	 *   partly: { device: string, pieces: number[] }[], pieces: number }} FileRow
+	 * @typedef {{ root: string, size: number, len: number | null, entries: string[], pieces: number,
+	 *   syncedTo: import('./vaults.js').Holder[] }} FileRow
 	 */
 
 	/**
@@ -41,12 +41,12 @@
 	const filing = $derived(picked === 'files');
 	const table = $derived(filing ? undefined : (all.find((t) => t.id === picked) ?? all[0]));
 
-	/** The devices entry `id` is synced to, by name, as the device's world says: `null` for none. @param {string} id */
-	const synced = (id) => list((s.known.get(id)?.syncedTo ?? []).map(s.signer)) || null;
+	/** Where entry `id` is synced to, in words, as the device's world says: `null` for none. @param {string} id */
+	const synced = (id) => syncedWords(s.known.get(id)?.syncedTo, s.signer);
 
 	/**
 	 * Every file the vault's entries bring (of one cell, or of all of them), once each by its root: its sizes, the
-	 * entries that bring it, and the devices that hold it whole or only some of its pieces, as the device's world says.
+	 * entries that bring it, and the devices it is synced to, as the device's world says.
 	 */
 	const files = $derived.by(() => {
 		/** @type {Map<string, FileRow>} */
@@ -62,9 +62,8 @@
 						size: f.size,
 						len: f.len,
 						entries: [e.entry],
-						whole: f.syncedTo ?? [],
-						partly: f.partly ?? [],
-						pieces: f.pieces ?? 1
+						pieces: f.pieces ?? 1,
+						syncedTo: f.syncedTo ?? []
 					});
 			}
 		}
@@ -74,12 +73,10 @@
 	const shownFiles = $derived.by(() => {
 		const q = query.trim().toLowerCase();
 		/** @param {FileRow} f */
-		const text = (f) => [f.root, ...f.entries.map(s.entry), ...f.whole.map(s.signer)].join(' ').toLowerCase();
+		const text = (f) =>
+			[f.root, ...f.entries.map(s.entry), ...f.syncedTo.map((h) => s.signer(h.device))].join(' ').toLowerCase();
 		return files.filter((f) => !q || text(f).includes(q));
 	});
-	/** The devices that hold some of file `f`'s pieces, each with how many, in words. @param {FileRow} f */
-	const piecesOn = (f) =>
-		list(f.partly.map((p) => `${s.signer(p.device)} (${p.pieces.length} of ${f.pieces})`)) || null;
 	const family = $derived(table?.family ? familyOf(families(s.schemas, s.lenses), table.family) : undefined);
 
 	/** The table's columns: its key, its schema's fields, newest version first, then what avenDB keeps of each row. */
@@ -116,7 +113,7 @@
 			{
 				name: 'synced_to',
 				type: 'text',
-				hint: 'The devices that hold it, as this browser last heard',
+				hint: 'The devices that hold it, and how many of its edits where only some, as this browser last heard',
 				get: (/** @type {Row} */ r) => synced(r.entry)
 			},
 			...(sealed
@@ -238,8 +235,8 @@
 			<header class="bar">
 				<h3 class="mono">files</h3>
 				<span class="soft hint">
-					Every file its entries bring, sealed in pieces of up to a GiB: who holds it whole, and who only some
-					pieces.
+					Every file its entries bring, sealed in pieces of up to a GiB, and the devices it is synced to, as every
+					entry.
 				</span>
 				<label class="search">
 					<Icon name="search" size={14} />
@@ -255,8 +252,12 @@
 							<th class="plain" title="Its length, where this browser opens it">bytes</th>
 							<th class="plain" title="Its sealed size">sealed</th>
 							<th class="plain" title="How many pieces it is sealed in">pieces</th>
-							<th class="plain sys" title="The devices that hold every piece of it">whole_on</th>
-							<th class="plain sys" title="The devices that hold only some of its pieces">pieces_on</th>
+							<th
+								class="plain sys"
+								title="The devices that hold it, and how many of its pieces where only some, as this browser last heard"
+							>
+								synced_to
+							</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -269,8 +270,7 @@
 								</td>
 								<td class="num">{size(f.size)}</td>
 								<td class="num">{f.pieces}</td>
-								<td class={f.whole.length ? 'sys' : 'null'}>{list(f.whole.map(s.signer)) || 'NULL'}</td>
-								<td class={f.partly.length ? 'sys' : 'null'}>{piecesOn(f) ?? 'NULL'}</td>
+								<td class={f.syncedTo.length ? 'sys' : 'null'}>{syncedWords(f.syncedTo, s.signer) ?? 'NULL'}</td>
 							</tr>
 						{/each}
 					</tbody>
