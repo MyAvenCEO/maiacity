@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PICKUP, RAMP, loadingRamp, pickup, solarPanel } from '$lib/models/village.js';
 import { backpack, dugEarth, plantStake } from '$lib/models/planting.js';
+import { DOME_TENT, domeTent, packedTent } from '$lib/models/tent.js';
 import { electroCube } from '$lib/actors/electrocube.js';
 import { batteryCube } from '$lib/actors/batterycube.js';
 import { human } from '$lib/actors/human.ts';
@@ -388,34 +389,9 @@ function clump() {
 	return g;
 }
 
-/** the Tribe COOP's tent pitched: a 4 m geodesic dome, 2 m high at its middle, on a round timber deck; lit from
- *  within once it has power, glowing warm at dusk (light) */
-export function tent() {
-	const g = new THREE.Group();
-	const r = 2;
-	const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 2), mat(0xf1e8d4, { side: THREE.DoubleSide, emissive: 0xffb15e, emissiveIntensity: 0 }));
-	// keep the upper half only: a geodesic dome
-	const pos = shell.geometry.attributes.position;
-	for (let i = 0; i < pos.count; i++) if (pos.getY(i) < 0) pos.setY(i, 0);
-	pos.needsUpdate = true;
-	shell.geometry.computeVertexNormals();
-	shell.castShadow = true;
-	g.add(shell);
-	const struts = new THREE.LineSegments(new THREE.EdgesGeometry(shell.geometry, 1), new THREE.LineBasicMaterial({ color: 0x6b5236 }));
-	g.add(struts);
-	const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.6, 0.2), mat(0x3b2f24));
-	door.position.set(0, 0.8, Math.sqrt(r * r - 1.6 * 1.6) - 0.05);
-	g.add(door);
-	const deck = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.8, r + 0.8, 0.2, 24), mat(0xb08a5e));
-	deck.position.y = 0.05;
-	deck.receiveShadow = true;
-	g.add(deck);
-	const lamp = new THREE.PointLight(0xffb36a, 0, 14, 1.6);
-	lamp.position.set(0, 1.1, 0.4);
-	g.add(lamp);
-	g.userData = { shell, lamp };
-	return g;
-}
+/** the Tribe COOP's tent pitched: the dome tent from the assets ($lib/models/tent.js), a 4 m geodesic dome on a round
+ *  timber deck, pitched step by step (setPitch); lit from within once it has power, glowing warm at dusk (light) */
+export const tent = () => domeTent();
 
 /** where the ElectroCube (0.75 × 1 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
  *  side by side, the cube behind the tool box, the tent by the tailgate */
@@ -479,22 +455,6 @@ function stowBottle(pk) {
 	bottle.position.copy(bottleAt.p);
 	bottle.rotation.copy(bottleAt.r);
 	bottle.userData.cap.visible = true;
-}
-
-function packedTent() {
-	const g = new THREE.Group();
-	const canvas = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 1.3, 12).rotateZ(Math.PI / 2), mat(0xd9ccb0));
-	canvas.position.y = 0.34;
-	const poles = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.5, 8).rotateZ(Math.PI / 2), mat(0x6b5236));
-	poles.position.set(0, 0.12, 0.42);
-	g.add(canvas, poles);
-	for (const x of [-0.4, 0.4]) {
-		const strap = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.025, 6, 16).rotateY(Math.PI / 2), mat(0x3b2f24));
-		strap.position.set(x, 0.34, 0);
-		g.add(strap);
-	}
-	g.traverse((o) => o.isMesh && (o.castShadow = true));
-	return g;
 }
 
 /** a player: the rigged stand-in from Actors (./actors/human.ts) at 1.8 m, in their seat's colour, their one backpack
@@ -979,9 +939,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the tent: packed in the shed, packed on the pickup's bed, or pitched at the middle of our hex */
 	function placeTent(where) {
 		home.visible = where === 'up';
-		home.scale.setScalar(1);
-		home.rotation.y = 0;
+		if (where === 'up') home.userData.setPitch(1);
 		bundle.visible = where !== 'up';
+		bundle.userData.setOpen(0);
+		for (const o of Object.values(bundle.userData.parts)) o.visible = true;
 		if (bundle.parent !== world) world.attach(bundle);
 		bundle.scale.setScalar(1);
 		bundle.rotation.set(0, 0.3, 0);
@@ -2021,7 +1982,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
 		const orbit = shot({ kind: 'orbit', centre: [0, 0], a0: 0.4, a1: 1.9, r0: 16, r1: 10, y0: 8, y1: 3.5, aim: [0, 1, 0], curve: 'ease' });
-		const LAY = V(0, 0, 2.2), KNEEL = V(0, 0, 3.3);
+		// where they kneel at the deck's edge, by the door, and set the bag down beside them, off the deck (it unrolls
+		// across z, 1.26 m wide)
+		const KNEEL = V(0, 0, 3.3), BAG_AT = V(0.75, 0, 3.75);
+		const OPEN = 1.6; // its straps undone and its canvas unrolled, before the groundsheet comes out of it
 		let toTail = [], toLay = [];
 		const yard = V(YARD.x, 0, YARD.z);
 		const h0 = stage.hour ?? 14.2;
@@ -2045,10 +2009,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 					act(me, 'carry');
 					bundle.position.lerpVectors(truck.localToWorld(TENT_ON_BED.clone()), me.localToWorld(V(0, 1.05, 0.42)), ease((s - t1) / 0.7));
 				} else if (s >= t1 + 0.7) {
+					const t2 = t1 + 0.7 + walkTime(toLay);
 					const there = walkOn(me, toLay, s - t1 - 0.7, 'carry');
 					bundle.position.copy(me.localToWorld(V(0, 1.05, 0.42)));
 					bundle.rotation.y = me.rotation.y + Math.PI / 2;
-					if (there) (act(me, 'kneel'), bundle.position.copy(LAY).setY(0.2));
+					// there, set down beside them as they kneel
+					if (there) {
+						act(me, 'kneel');
+						const d = ease(Math.min(1, (s - t2) / 0.6));
+						bundle.position.lerp(BAG_AT, d);
+						bundle.rotation.y += Math.atan2(Math.sin(-bundle.rotation.y), Math.cos(-bundle.rotation.y)) * d;
+					}
 				}
 				camLerp(me.position.clone().add(V(2.6, 1.55, 3)), head(me, 1.0), 0.08);
 			}, () => {
@@ -2060,18 +2031,20 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				controls.target.copy(head(me));
 				lensFor({ fov: 44 });
 			}),
-			// raising it: the floor laid out, then round it, raising its frame ring by ring and drawing its cover up over it
-			// (the tent's own stages, setPitch, once it has them; till then it grows), they kneeling at its foot, then
-			// walking round it reaching up, then standing back to look at it
-			beat(14, (s, k) => {
-				const e = Math.min(1, s / 13);
-				if (home.userData.setPitch) home.userData.setPitch(e);
-				else {
-					const g = ease(Math.min(1, Math.max(0, (e - 0.15) / 0.8)));
-					home.scale.set(0.3 + 0.7 * g, Math.max(0.02, g), 0.3 + 0.7 * g);
-					home.rotation.y = (1 - g) * 0.6;
-				}
-				if (e < 0.2) (me.position.copy(KNEEL), face(me, V(0, 0, 0)), act(me, 'press'));
+			// raising it (the tent's own stages, setPitch): the bag unrolled, the groundsheet laid out from the door to the
+			// back, then round it, its frame raised ring by ring and its cover drawn up over it, the door let down; they
+			// kneeling at its foot, then walking round it reaching up, then standing back to look at it. What was in the
+			// bag goes into the tent as it is used: the groundsheet, the tubes and hubs, the cover
+			beat(15.5, (s, k) => {
+				const e = Math.min(1, Math.max(0, (s - OPEN) / 13));
+				bundle.userData.setOpen(Math.min(1, s / OPEN));
+				home.userData.setPitch(e);
+				const { parts } = bundle.userData;
+				parts.floor.visible = e <= 0;
+				parts.tubes.visible = parts.hubs.visible = e < (DOME_TENT.frame[0] + DOME_TENT.frame[1]) / 2;
+				parts.cover.visible = e < DOME_TENT.cover[0];
+				if (s < OPEN) (me.position.copy(KNEEL), face(me, BAG_AT), act(me, 'press'));
+				else if (e < 0.2) (me.position.copy(KNEEL), face(me, home.localToWorld(home.userData.work(e)).setY(0)), act(me, 'press'));
 				else if (e < 0.95) {
 					// half round it, close by (2.9 m out), at a walk, stopping three times to reach up to it
 					const u = (e - 0.2) / 0.75, part = Math.min(5, Math.floor(u * 6.5)), inPart = u * 6.5 - part;
@@ -2085,12 +2058,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				} else (me.position.set(0, 0, -4.2), face(me, V(0, 1.4, 0)), act(me, 'look up'));
 				pose(orbit(k));
 			}, () => {
-				bundle.visible = false;
+				world.attach(bundle);
+				bundle.position.copy(BAG_AT);
+				bundle.rotation.set(0, 0, 0);
 				home.visible = true;
-				home.userData.setPitch?.(0);
+				home.userData.setPitch(0);
 				lensOut();
 			}),
-			{ dur: 0.1, start: () => ((stage.tent = 'up'), placeTent('up'), home.userData.setPitch?.(1)) },
+			{ dur: 0.1, start: () => ((stage.tent = 'up'), placeTent('up')) },
 			...offShots,
 			{ dur: 0.4, start: () => ((stage.cube = 'home'), placeCube('home'), rampOut(false), act(me, 'idle'), me.position.setY(0), moment && (moment.hour = DUSK)), run: () => still(WIDE, WIDE_AT) }
 		], lines), { hour: h0 });
