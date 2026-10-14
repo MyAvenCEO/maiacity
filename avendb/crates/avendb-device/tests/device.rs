@@ -21,6 +21,7 @@ use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::sign::{Ceremony, PRF_SALT, Passkey};
 use avendb_device::{Config, SHEET, serve};
+use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, Node, Options, disk};
 use avendb_server::Relay;
 use bytes::Bytes;
@@ -267,8 +268,8 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(found, Err("You closed the sign-in sheet.".into()));
     assert_eq!(app.asked(), ["unlock"]);
     assert_eq!(steps(&mut app).await, ["unlock"], "it stopped at the unlock");
-    assert_eq!(disk::generations(&dir).expect("its shelves"), [1], "one shelf");
-    assert!(objects(&dir, 1, "meta").is_empty(), "nothing to open");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [FLOOR], "one shelf");
+    assert!(objects(&dir, FLOOR, "meta").is_empty(), "nothing to open");
     // she founds her vault from the Mac in two sheets: the unlock, which is her passkey's pass for it, and her vault
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
     assert_eq!(app.asked(), ["unlock", "found"]);
@@ -383,8 +384,8 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     // the app starts again: the device opens from its folder in the unlock's sheet alone, the same device
     let metas = ["0000000000000001", "0000000000000002", "0000000000000003"];
     let kept = "what opens it, as founded, following avenCEO, then as renamed, each kept whole";
-    assert_eq!(objects(&dir, 1, "meta"), metas, "{kept}");
-    assert!(!objects(&dir, 1, "journal").is_empty(), "its shelf keeps its edits");
+    assert_eq!(objects(&dir, FLOOR, "meta"), metas, "{kept}");
+    assert!(!objects(&dir, FLOOR, "journal").is_empty(), "its shelf keeps its edits");
     let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["open"], &status["meta"]["name"]), (&json!(false), &json!("Eve's MacBook")));
@@ -401,9 +402,10 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     // she forgets it here: its shelf, with what opens it, is put aside, never deleted, and a new one is in use
     assert_eq!(app.call("forget", json!([])).await, Ok(Value::Null));
     assert_eq!(app.call("status", json!([])).await, Ok(json!({ "meta": null, "open": false, "device": null })));
-    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, 2], "a new shelf beside the old");
-    assert_eq!(objects(&dir, 1, "meta"), metas, "the old shelf as it was");
-    assert!(objects(&dir, 2, "meta").is_empty() && objects(&dir, 2, "journal").is_empty(), "the new one empty");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [FLOOR, FLOOR + 1], "a new shelf beside the old");
+    assert_eq!(objects(&dir, FLOOR, "meta"), metas, "the old shelf as it was");
+    let (meta, journal) = (objects(&dir, FLOOR + 1, "meta"), objects(&dir, FLOOR + 1, "journal"));
+    assert!(meta.is_empty() && journal.is_empty(), "the new one empty");
     app.quit().await;
     let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
     assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()), "forgotten");
@@ -442,10 +444,10 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_never_reads_what_an_earli
     assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()));
     let offer = server.offer().to_text();
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
-    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, 2], "the shelf cut short put aside");
-    let cut = std::fs::read(dir.join("g1/journal/0000000000000001")).expect("still there");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [FLOOR, FLOOR + 1], "the shelf cut short put aside");
+    let cut = std::fs::read(dir.join(format!("g{FLOOR}/journal/0000000000000001"))).expect("still there");
     assert_eq!(cut, b"cut short", "as it was");
-    assert_eq!(objects(&dir, 2, "meta"), ["0000000000000001"], "what opens her device, on its own shelf");
+    assert_eq!(objects(&dir, FLOOR + 1, "meta"), ["0000000000000001"], "what opens her device, on its own shelf");
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["device"], &status["meta"]["name"]), (&device, &json!("Eve's Mac")));
     app.quit().await;

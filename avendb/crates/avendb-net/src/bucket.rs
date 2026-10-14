@@ -33,7 +33,7 @@ use avendb::keys::{self, Secret, SeededRng};
 use bytes::Bytes;
 use iroh_blobs::Hash;
 
-use crate::shelf::{self, Call, Shelf, generation, hash_of};
+use crate::shelf::{self, Call, FLOOR, Shelf, generation, hash_of};
 
 /// What the seal's key is derived for.
 const SEAL: &str = "avenDB bucket seal";
@@ -191,7 +191,7 @@ pub async fn generations(bucket: &Sealed) -> Result<Vec<u64>> {
 /// Puts the shelf in `bucket` in use aside: a new generation marked beside it, empty, which the next `shelf` uses.
 /// Its number.
 pub async fn aside(bucket: &Sealed) -> Result<u64> {
-    let n = generations(bucket).await?.last().map_or(1, |n| n + 1);
+    let n = generations(bucket).await?.last().map_or(FLOOR, |n| (n + 1).max(FLOOR));
     mark(bucket, n).await?;
     Ok(n)
 }
@@ -260,15 +260,15 @@ impl Cached {
 }
 
 /// The shelf of a node whose shelf is `bucket`, beside its folder `dir`, which caches `budget` bytes of parts at most:
-/// the bucket's newest generation's, or, with none there yet, a first, `g1`, marked beside whatever else the bucket
-/// holds. What the folder staged of blobs never finished, it drops as it starts. Fails if the bucket's marker of its
-/// generation doesn't open: a bucket sealed under another seal.
+/// the bucket's newest generation's, or, with none there yet or only older ones than `shelf::FLOOR`, a new one of that
+/// generation, marked beside whatever else the bucket holds. What the folder staged of blobs never finished, it drops
+/// as it starts. Fails if the bucket's marker of its generation doesn't open: a bucket sealed under another seal.
 pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
     let n = match generations(&bucket).await?.last() {
-        Some(&n) => n,
-        None => {
-            mark(&bucket, 1).await?;
-            1
+        Some(&n) if n >= FLOOR => n,
+        _ => {
+            mark(&bucket, FLOOR).await?;
+            FLOOR
         }
     };
     bucket.get(&format!("{GENERATIONS}g{n}")).await?.context("the bucket's generation, marked and gone")?;
