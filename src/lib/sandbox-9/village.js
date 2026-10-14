@@ -11,7 +11,7 @@
  * Samuel 2026-10-13: the tower is too expensive to take for granted) the middle of the centre hex holds one more
  * Dome120 of utilities and community halls; with it, the Tower180 stands there at its real cost.
  *
- * The engine models the village as plants (./genesis.js seedPlants): a settlement COOP a hex (Samuel, 2026-10-13)
+ * The engine models the village as plants (./genesis.js seedPlants): a Tribe COOP a hex (Samuel, 2026-10-13)
  * owns the hex's domes. A living hex's owns its home domes (its beds), its food domes and its utilities dome; the centre
  * hex's, the Village COOP, owns the centre dome (or the tower), the eight factory domes and the geothermal plant. The
  * domes that are not homes are the owners' hall plants (./genesis.js attachHalls), rented by the m² to the food COOPs,
@@ -105,7 +105,7 @@ export function villageFacts(livingHexes = 6, tower = false) {
 		if (s.kind === 'factory120' && TRADED.includes(s.factory)) works[s.factory] = addParts(zero(), p);
 		else addParts(halls, p), addParts(centre, p);
 	}
-	// floor m² of the buildings the settlement COOPs rent out: a Dome120's floor is its footprint (sandbox-7 capOf), a
+	// floor m² of the buildings the Tribe COOPs rent out: a Dome120's floor is its footprint (sandbox-7 capOf), a
 	// works hall's its own (sandbox-7 hallOf); the tower's, its floors
 	const floor120 = Math.PI * 60 * 60;
 	const floorOf = (s) => (s.kind === 'tower' && cPlan.tower ? towerFloors(cPlan.tower).reduce((a, f) => a + f.m2, 0) : siteHall(s)?.floor ?? floor120);

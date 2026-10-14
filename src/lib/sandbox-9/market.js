@@ -10,8 +10,10 @@
  * simulation). A seller that runs out rations in proportion to the orders and what it could not give goes to the
  * others with room. Payment: a buyer pays with the seller's own MIND first (the bootstrap makes Avens hold it); the
  * rest comes from the MIND it holds, swapped through the pools, and the seller receives only its own MIND. Then Law 5:
- * a fifth of every sale goes at once, in the seller's MIND, to everyone who holds that MIND (people and other COOPs'
- * treasuries; never the seller's own treasury, never the pools); the other four fifths go to the seller's treasury.
+ * a fifth of every sale goes at once, in the seller's MIND, pro rata to everyone who holds that MIND except the seller's
+ * own treasury: people, other COOPs' treasuries and the city's pools (round 6, the paper's rule: each basket gets its
+ * share by its reserve of that MIND, which adds to the reserve the way the pools' part of a HEART does); the other four
+ * fifths go to the seller's treasury. `law5Pools: false` runs the old rule (Law 5 without the pools) for comparison.
  */
 import { exp, log, pow } from './dmath.js';
 import { BASICS, BED, COMPUTE, CONSUMER, ENERGY, EXTRAS, FOOD, G, GOODS_, IN_HAND, MAX_COOPS, NX, SPRING, WATER, LIMIT } from './consts.js';
@@ -180,6 +182,10 @@ export function peopleOrders(w) {
 	const workOrd = (w.workOrd = w.workOrd && w.workOrd.length === w.Nmax ? w.workOrd : new Float64Array(w.Nmax));
 	const payH = w.workPayEma ?? c.rateR, pC = pbar[COMPUTE];
 	let offerAll = 0;
+	// (round 6, cfg.ownerDefer) what a rationed extra left unspent yesterday (ordered, not delivered: warm-pond hours,
+	// goods), by person: an owner-only Aven counts it as income it meant to spend, not as capital to keep from the melt
+	const defer = w.cfg.ownerDefer ? (w.deferR = w.deferR && w.deferR.length === w.Nmax ? w.deferR : new Float64Array(w.Nmax)) : null;
+	const pY = w.pbarY ?? pbar;
 	for (let i = 0; i < N; i++) {
 		const b = i * M;
 		let W = 0, Ws = 0;
@@ -189,6 +195,12 @@ export function peopleOrders(w) {
 		}
 		w.wealth[i] = W;
 		w.wealthSlow[i] = Ws;
+		if (defer && !(w.aven[i] > 0)) {
+			const o0 = i * G;
+			let left = 0;
+			for (const g of [SPRING, GOODS_]) left += Math.max(0, w.order[o0 + g] - w.q[o0 + g]) * (pY[g] ?? 0);
+			defer[i] = Math.min(Math.max(0, Ws), defer[i] * (1 - meltDay) + left);
+		}
 		// what the Aven may spend: all it holds, or (strict owner-only test) only the dividends not yet spent
 		if (cap && cap[i] >= 0) W = Math.min(W, cap[i]);
 		w.pb[i] = Cb;
@@ -224,7 +236,8 @@ export function peopleOrders(w) {
 		const kept = ownerIncome ? 0 : (w.aven[i] > 0 ? cfg.keep : cfg.ownerKeep ?? cfg.keep) * w.heartsEma[i] + (cfg.keepOther ?? 0) * Math.max(0, w.inflowEma[i] - w.heartsEma[i]);
 		const rest = kept / meltDay;
 		const Wv = Math.min(W, Ws);
-		let E = ownerIncome ? Math.min(W - Cb, w.inflowEma[i] - Cb - meltDay * Wv) : Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));
+		const Wkeep = defer && ownerIncome ? Math.max(0, Wv - defer[i]) : Wv;
+		let E = ownerIncome ? Math.min(W - Cb, w.inflowEma[i] - Cb - meltDay * Wkeep) : Math.min(W - Cb, w.inflowEma[i] - kept - Cb + cfg.spendRate * Math.max(0, Wv - rest));
 		if (!(E > 0)) E = 0;
 		extraEnergy[i] = 0;
 		// an Aven whose spending rule leaves nothing for extras today (what flows in, less what it keeps and the basics)
@@ -273,7 +286,7 @@ export function peopleOrders(w) {
 		}
 		// the Aven's work for the COOPs (round 4): it offers up to workCapH hours a day when a work hour pays its skill
 		// more than an hour of Aven service costs (an owner-only person's Aven delivers nothing and offers none). What
-		// its person holds does not limit it: the work item's pay settles the hours' Aven service at delivery
+		// its person holds does not limit it: the work proposal's pay settles the hours' Aven service at delivery
 		// (./coops.js workBook), so a newcomer who holds only today's HEARTS half is not kept from the work that pays
 		// its basics (the trap of round 4's brief)
 		offer[i] = 0;
@@ -281,9 +294,9 @@ export function peopleOrders(w) {
 		offerAll += offer[i];
 		for (const g of CONSUMER) tot[g] += w.order[o + g];
 	}
-	// the work the COOPs need today (./coops.js workNeed: running items and a seventh of the posted proposals), shared
+	// the work the COOPs need today (./coops.js workNeed: running proposals and a seventh of the posted proposals), shared
 	// out over the offers in proportion: the hours an Aven works are Aven service beside its help, settled from the
-	// work items' pay (./coops.js workBook)
+	// work proposals' pay (./coops.js workBook)
 	const needH = (w.workNeed?.run ?? 0) + (w.workNeed?.prop ?? 0);
 	const fw = offerAll > 0 ? Math.min(1, needH / offerAll) : 0;
 	for (let i = 0; i < N; i++) {
@@ -296,6 +309,7 @@ export function peopleOrders(w) {
 	}
 	w.today.workOffer = offerAll;
 	w.peopleOrderTot = tot;
+	w.pbarY = Float64Array.from(pbar);
 }
 
 // ── clearing ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -441,12 +455,16 @@ export function settleSwaps(w) {
 }
 
 /**
- * Law 5, "every sale pays its owners": of what each seller received today, its Law 5 share goes at once to the
- * holders of its MIND (people and other COOPs' treasuries), the rest to its own treasury. Dividends to people are
- * written to w.div (R) for the Proposition 3 records.
+ * Law 5, "every sale pays its owners": of what each seller received today, its Law 5 share goes at once, pro rata, to
+ * every holder of its MIND except its own treasury: people, other COOPs' treasuries, and (round 6, `law5Pools`, the
+ * default) the city's pools, each basket by its reserve of that MIND (the pools' queue too, when the bootstrap is off
+ * and the pools' part waits for its weekly slice). The rest goes to its own treasury. Dividends to people are written
+ * to w.div (R) for the Proposition 3 records. Returns the count of MIND paid into the pools (for the ledger's check).
  */
 export function law5(w) {
 	const N = w.N, P = w.P, lam = w.cfg.law5, t = w.today;
+	const withPools = w.cfg.law5Pools !== false;
+	let poolsCount = 0;
 	for (let k = 0; k < M; k++) {
 		const R = w.recv[k];
 		if (!(R > 0)) continue;
@@ -461,6 +479,16 @@ export function law5(w) {
 			if (j === k) continue;
 			const h = w.tre[j * M + k];
 			if (h > 0) H += h;
+		}
+		// the pools' reserves of this MIND (and its part still queued for the pools)
+		let Hp = 0;
+		if (withPools) {
+			for (const pi of w.poolsOf?.[k] ?? []) {
+				const x = w.pools[pi].x[w.pools[pi].pos[k]];
+				if (x > 0) Hp += x;
+			}
+			if (w.poolQueue?.[k] > 0) Hp += w.poolQueue[k];
+			H += Hp;
 		}
 		if (!(H > 0)) div = 0;
 		if (div > 0) {
@@ -484,8 +512,24 @@ export function law5(w) {
 					toTre += h * f;
 				}
 			}
-			// rounding: whatever the two sums miss stays with the seller's treasury, so the count is exact
-			const paid = toPeople + toTre;
+			let toPools = 0;
+			if (Hp > 0) {
+				for (const pi of w.poolsOf[k]) {
+					const p = w.pools[pi], j = p.pos[k];
+					if (p.x[j] > 0) {
+						const d = p.x[j] * f;
+						p.x[j] += d;
+						toPools += d;
+					}
+				}
+				if (w.poolQueue[k] > 0) {
+					const d = w.poolQueue[k] * f;
+					w.poolQueue[k] += d;
+					toPools += d;
+				}
+			}
+			// rounding: whatever the sums miss stays with the seller's treasury, so the count is exact
+			const paid = toPeople + toTre + toPools;
 			// the law, checked: the holders got λ of the sale (to rounding) and the seller's own treasury the rest
 			if (w.laws) {
 				const rel = Math.abs(paid - div) / div;
@@ -495,12 +539,18 @@ export function law5(w) {
 			}
 			t.divPeopleR += toPeople * P[k];
 			t.divTreR += toTre * P[k];
+			t.divPoolsR = (t.divPoolsR ?? 0) + toPools * P[k];
 			t.divR += paid * P[k];
 			co.divR += paid * P[k];
+			// (round 6) what the holders other than the pools got: the Avens read a MIND's yield on it (./engine.js
+			// payOrder, rebalance)
+			co.divHoldR = (co.divHoldR ?? 0) + (toPeople + toTre) * P[k];
+			poolsCount += toPools;
 			w.tre[k * M + k] += R - paid;
 		} else w.tre[k * M + k] += R;
 		co.salesR += R * P[k];
 	}
+	return poolsCount;
 }
 
 /** a COOP pays seller k for `units` of good g at k's posted price (inputs, materials, energy) */

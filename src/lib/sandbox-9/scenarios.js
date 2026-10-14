@@ -35,6 +35,31 @@ const describe = (c) => {
 	return (c.people && c.people !== 1500 ? `${c.people.toLocaleString('en-US')} people` + (s ? ', ' : '') : '') + (s || (c.seed && c.seed !== B.seed ? `seed ${c.seed}` : 'base'));
 };
 const base30 = run({}, 30, 'base (seed 20261012)');
+/** (round 6) round 5's rules on this engine: Law 4's pools' part 0.05, Law 5 without the pools, and round 6's fixes off
+ * (the names, Tribe COOP and work proposal, change no mechanics) */
+const R5_RULES = { poolPart: 0.05, law5Pools: false, holdingFloor: 0, ownerDefer: false, basicsWork: false, newcomerStart: 0 };
+const PAIR_SEEDS = [20261012, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+/** (round 6) the SH experiment's five shocks (./experiments.js SH), as two scenario worlds: as is, and with basicsWork */
+const SH_SHOCKS = [
+	{ kind: 'drought', day: Y + 152, days: 92, factor: 0.5 },
+	{ kind: 'darkWinter', day: 2 * Y + 334, days: 90, factor: 0.4 },
+	{ kind: 'coopFail', coop: 'WEST', day: 4 * Y + 100, days: 365, factor: 0.1 },
+	{ kind: 'coopFail', coop: 'GOODS-A', day: 4 * Y + 100, days: 365, factor: 0.1 },
+	{ kind: 'wellFail', day: 5 * Y + 334, days: 90 }
+];
+const SH_RUNS = [run({ shocks: SH_SHOCKS, basicsWork: false }, 9, 'the SH shocks, one fill for all running hours'), run({ shocks: SH_SHOCKS, basicsWork: true }, 9, 'the SH shocks, the basics’ work first (basicsWork)')];
+/** a two-sided sign test: k wins and m losses (ties dropped) */
+function signTest(k, m) {
+	const n = k + m;
+	if (!n) return 1;
+	let c = 1, tail = 0;
+	const lo = Math.max(k, m);
+	for (let i = 0; i <= n; i++) {
+		if (i >= lo) tail += c;
+		c = (c * (n - i)) / (i + 1);
+	}
+	return Math.min(1, (2 * tail) / 2 ** n);
+}
 
 const pct = (x, d = 1) => (Number.isFinite(x) ? `${(100 * x).toFixed(d)} %` : String(x));
 const f2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : String(x));
@@ -123,12 +148,12 @@ export const SCENARIOS = [
 		name: 'prop3-headline',
 		paper: 'abstract, §9.3, Samuel 16:47',
 		stress: 'P1, P2, P3 with no shock: the base line',
-		claim: 'On every seed, over the world model’s 60 years: nobody below 98 % of a basic after day 0; the owner-only cohort passes the strict test by day 120 and the normal test every day; every decile (by holdings and by Aven output) never falls more than 2 % in a 5-year window and, in every 5-year window, rises or ends within 5 % of the capacity per person; COOPs stay solvent; MIND never binds a basic.',
+		claim: 'On every seed, over the world model’s 60 years, from the end of the founding (round 6: the build-out, until all the people are in; the founding’s own numbers are reported apart): nobody below 98 % of a basic; the owner-only cohort passes the strict test from the founding’s end and the normal test every day; every decile (by holdings and by Aven output) never falls more than 2 % in a 5-year window and, in every 5-year window, rises or ends within 5 % of the capacity per person; COOPs stay solvent; MIND never binds a basic.',
 		runs: SEEDS.map((seed) => run({ seed }, 60, `base, seed ${seed}, 60 years`)),
 		judge(R, runs) {
 			const rows = runs.map((r) => R[r.key]);
 			const share = (s, y, k) => s.prop3.P3.computeShare?.[y - 1]?.[k] ?? NaN;
-			const seeds = rows.map((s) => ({ seed: s.seed, P1: s.prop3.P1.pass, shortPD: s.shortPD, strictFrom: s.prop3.P2.strict.holdsEveryDayFrom, P2: s.prop3.P2.pass, P2n: s.prop3.P2.normal.pass, P3: s.prop3.P3.pass, P3failed: s.prop3.P3.failed.length, P3noCompute: s.prop3.P3.withoutCompute.pass, P3noComputeFailed: s.prop3.P3.withoutCompute.failed.length, coops: s.prop3.P3.coops.pass, unpaidShare: s.prop3.P3.coops.unpaidShare, worstFall: Math.max(...s.prop3.P3.deciles.map((d) => d.fall ?? 0)), windowsFailed: s.prop3.P3.deciles.reduce((a, d) => a + (d.windowsFailed ?? 0), 0), computeShare30: share(s, 30, 'all'), computeShareEnd: share(s, s.years.length, 'all'), computeSharePoorEnd: share(s, s.years.length, 'poorest'), mindBinds: s.prop3.abundance.mindBindsBasics, receiverships: s.receiverships.length, poor1: yearOf(s, 1).poorH, poor30: yearOf(s, 30).poorH, poorEnd: s.poorH }));
+			const seeds = rows.map((s) => ({ seed: s.seed, P1: s.prop3.P1.pass, shortPD: s.shortPD, shortAfter: s.prop3.P1.personDaysShortAny, strictFrom: s.prop3.P2.strict.holdsEveryDayFrom, P2: s.prop3.P2.pass, P2n: s.prop3.P2.normal.pass, P3: s.prop3.P3.pass, P3failed: s.prop3.P3.failed.length, P3noCompute: s.prop3.P3.withoutCompute.pass, P3noComputeFailed: s.prop3.P3.withoutCompute.failed.length, coops: s.prop3.P3.coops.pass, unpaidShare: s.prop3.P3.coops.unpaidShare, worstFall: Math.max(...s.prop3.P3.deciles.map((d) => d.fall ?? 0)), windowsFailed: s.prop3.P3.deciles.reduce((a, d) => a + (d.windowsFailed ?? 0), 0), computeShare30: share(s, 30, 'all'), computeShareEnd: share(s, s.years.length, 'all'), computeSharePoorEnd: share(s, s.years.length, 'poorest'), mindBinds: s.prop3.abundance.mindBindsBasics, receiverships: s.receiverships.length, poor1: yearOf(s, 1).poorH, poor30: yearOf(s, 30).poorH, poorEnd: s.poorH }));
 			const pass = rows.every((s) => s.prop3.pass);
 			const n = (f) => seeds.filter(f).length;
 			return {
@@ -136,7 +161,7 @@ export const SCENARIOS = [
 				numbers: { seeds },
 				takeaway: `Over ${Math.round(rows[0].days / Y)} years Proposition 3 holds on ${n((x) => x.P1 && x.P2 && x.P3)} of ${seeds.length} seeds: P1 on ${n((x) => x.P1)}, P2 on ${n((x) => x.P2)}, P3 on ${n((x) => x.P3)}; without Aven services in the index, P3 holds on ${n((x) => x.P3noCompute)}.`,
 				evidence:
-					seeds.map((x) => `seed ${x.seed}: P1 ${f0(x.shortPD)} person-days short, strict ${x.strictFrom >= 0 ? `from day ${x.strictFrom}` : 'never held to the end'}, normal ${x.P2n ? 'pass' : 'fail'}, P3 ${x.P3 ? 'pass' : `fail (${x.P3failed} deciles, ${f0(x.windowsFailed)} decile-days in falling windows)`}, P3 without Aven services ${x.P3noCompute ? 'pass' : `fail (${x.P3noComputeFailed})`}, COOPs ${x.coops ? 'pass' : 'fail'}, worst fall ${pct(x.worstFall, 1)}, Aven services ${pct(x.computeShare30, 0)} of the index in year 30 and ${pct(x.computeShareEnd, 0)} in year 60 (${pct(x.computeSharePoorEnd, 0)} for the poorest tenth), MIND binds a basic on ${x.mindBinds} day-goods`).join('; ') +
+					seeds.map((x) => `seed ${x.seed}: P1 ${f0(x.shortAfter)} person-days short after the founding (${f0(x.shortPD - x.shortAfter)} in it), strict ${x.strictFrom >= 0 ? `from day ${x.strictFrom}` : 'never held to the end'}, normal ${x.P2n ? 'pass' : 'fail'}, P3 ${x.P3 ? 'pass' : `fail (${x.P3failed} deciles, ${f0(x.windowsFailed)} decile-days in falling windows)`}, P3 without Aven services ${x.P3noCompute ? 'pass' : `fail (${x.P3noComputeFailed})`}, COOPs ${x.coops ? 'pass' : 'fail'}, worst fall ${pct(x.worstFall, 1)}, Aven services ${pct(x.computeShare30, 0)} of the index in year 30 and ${pct(x.computeShareEnd, 0)} in year 60 (${pct(x.computeSharePoorEnd, 0)} for the poorest tenth), MIND binds a basic on ${x.mindBinds} day-goods`).join('; ') +
 					'. The strict test is measured from a cold start, where everyone begins with nothing; A07 tests owner-only newcomers joining a settled city.'
 			};
 		}
@@ -630,7 +655,7 @@ export const SCENARIOS = [
 		name: 'euro-border',
 		paper: 'world model 9 (the border); paper §11.4 (the euro reserve)',
 		stress: 'P3: Aven services without a chip fab',
-		claim: 'The base city trades across the border as COOPs only (paper §11.4): the hardware owners (the settlement COOPs and the Village COOP) buy the accelerators for their data halls with euros the MaiaCity COOP’s bank advances, and pay the advances back in their own MIND; no person redeems MIND and no MIND is made from euros. The closed city (the counter-case) cannot make or import accelerators, so its Aven services wear away with them. The open city keeps more Aven services than the closed one, nobody is short of a basic in any of the three worlds, when accelerators cost three times as much from year 10 the reserve buys fewer, and Proposition 3 (P1–P3) holds through that import price shock (the world model’s target for B23).',
+		claim: 'The base city trades across the border as COOPs only (paper §11.4): the hardware owners (the Tribe COOPs and the Village COOP) buy the accelerators for their data halls with euros the MaiaCity COOP’s bank advances, and pay the advances back in their own MIND; no person redeems MIND and no MIND is made from euros. The closed city (the counter-case) cannot make or import accelerators, so its Aven services wear away with them. The open city keeps more Aven services than the closed one, nobody is short of a basic in any of the three worlds, when accelerators cost three times as much from year 10 the reserve buys fewer, and Proposition 3 (P1–P3) holds through that import price shock (the world model’s target for B23).',
 		runs: [base30, run({ chipImport: false }, 30, 'closed city (no border)'), run({ shocks: [{ kind: 'importPrice', day: 3650, days: 7300, factor: 3 }] }, 30, 'border open, accelerators 3× dearer from year 10')],
 		judge(R, runs) {
 			const [o, c, d] = runs.map((r) => R[r.key]);
@@ -787,13 +812,13 @@ export const SCENARIOS = [
 		judge(R, runs) {
 			const rows = runs.map((r) => {
 				const s = R[r.key], p = s.prop3;
-				return { label: r.label, P1: p.P1.pass, shortPD: s.shortPD, strictFrom: p.P2.strict.holdsEveryDayFrom, P2: p.P2.pass, P3: p.P3.pass, P3failed: p.P3.failed.length, P3noCompute: p.P3.withoutCompute.pass, coops: p.P3.coops.pass, worstFall: Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)), pass: p.pass };
+				return { label: r.label, P1: p.P1.pass, shortPD: s.shortPD, shortAfter: p.P1.personDaysShortAny, strictFrom: p.P2.strict.holdsEveryDayFrom, P2: p.P2.pass, P3: p.P3.pass, P3failed: p.P3.failed.length, P3noCompute: p.P3.withoutCompute.pass, coops: p.P3.coops.pass, worstFall: Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)), pass: p.pass };
 			});
 			return {
 				pass: rows.every((r) => r.pass),
 				numbers: { rows },
 				takeaway: rows.map((r) => `${r.label}: Proposition 3 ${r.pass ? 'holds' : 'fails'} (P1 ${r.P1 ? 'pass' : 'fail'}, P2 ${r.P2 ? 'pass' : 'fail'}, P3 ${r.P3 ? 'pass' : 'fail'}).`).join(' '),
-				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short, strict ${r.strictFrom >= 0 ? `from day ${r.strictFrom}` : 'never held to the end'}, ${r.P3failed} deciles fail P3, P3 without Aven services ${r.P3noCompute ? 'pass' : 'fail'}, COOPs ${r.coops ? 'pass' : 'fail'}, worst fall ${pct(r.worstFall, 1)}`).join('; ')
+				evidence: rows.map((r) => `${r.label}: ${f0(r.shortAfter)} person-days short after the founding (${f0(r.shortPD - r.shortAfter)} in it), strict ${r.strictFrom >= 0 ? `from day ${r.strictFrom}` : 'never held to the end'}, ${r.P3failed} deciles fail P3, P3 without Aven services ${r.P3noCompute ? 'pass' : 'fail'}, COOPs ${r.coops ? 'pass' : 'fail'}, worst fall ${pct(r.worstFall, 1)}`).join('; ')
 			};
 		}
 	},
@@ -802,12 +827,12 @@ export const SCENARIOS = [
 		name: 'seed-ensemble',
 		paper: 'Proposition 3, P1 and P2, beyond the five base seeds',
 		stress: 'P1 and P2 on seeds chosen before the run, at the page’s size and the base size',
-		claim: 'P1 and P2 (strict and normal) hold on every world of an ensemble fixed before the run: seeds 5 to 9 with the 1,500 people (seeds 1 to 4 are in S00), each over 60 years. P3 is reported for each world, not judged here (S00 judges it).',
+		claim: 'P1 and P2 (strict and normal) hold, from the end of the founding, on every world of an ensemble fixed before the run: seeds 5 to 9 with the 1,500 people (seeds 1 to 4 are in S00), each over 60 years. P3 is reported for each world, not judged here (S00 judges it).',
 		runs: [5, 6, 7, 8, 9].map((seed) => run({ seed }, 60, `1,500 people, seed ${seed}`)),
 		judge(R, runs) {
 			const rows = runs.map((r) => {
 				const s = R[r.key], p = s.prop3;
-				return { label: r.label, P1: p.P1.pass, shortPD: s.shortPD, strictFrom: p.P2.strict.holdsEveryDayFrom, strict: p.P2.strict.pass, normal: p.P2.normal.pass, runsOut: p.P2.normal.runsOutInYears, P3: p.P3.pass, P3failed: p.P3.failed.length, worstFall: Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)), mindBinds: p.abundance.mindBindsBasics, receiverships: s.receiverships.length, pass: p.P1.pass && p.P2.pass };
+				return { label: r.label, P1: p.P1.pass, shortPD: s.shortPD, shortAfter: p.P1.personDaysShortAny, strictFrom: p.P2.strict.holdsEveryDayFrom, strict: p.P2.strict.pass, normal: p.P2.normal.pass, runsOut: p.P2.normal.runsOutInYears, P3: p.P3.pass, P3failed: p.P3.failed.length, worstFall: Math.max(...p.P3.deciles.map((d) => d.fall ?? 0)), mindBinds: p.abundance.mindBindsBasics, receiverships: s.receiverships.length, pass: p.P1.pass && p.P2.pass };
 			});
 			const n = (f) => rows.filter(f).length;
 			const failing = rows.filter((r) => !r.pass).map((r) => r.label);
@@ -815,7 +840,7 @@ export const SCENARIOS = [
 				pass: failing.length === 0,
 				numbers: { rows },
 				takeaway: `Of ${rows.length} worlds, P1 holds on ${n((r) => r.P1)}, P2 strict on ${n((r) => r.strict)}, P2 normal on ${n((r) => r.normal)}, P3 on ${n((r) => r.P3)}${failing.length ? `; P1 or P2 fails on ${failing.join(', ')}` : ''}.`,
-				evidence: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short, strict ${r.strictFrom >= 0 ? `from day ${f0(r.strictFrom)}` : 'never held to the end'}${r.strict ? '' : ' (fail)'}, normal ${r.normal ? 'pass' : 'fail'} (lowest holding runs out in ${Number.isFinite(r.runsOut) ? `${f0(r.runsOut)} years` : 'never'}), P3 ${r.P3 ? 'pass' : `fail (${r.P3failed} deciles, worst fall ${pct(r.worstFall, 1)})`}, MIND binds a basic on ${r.mindBinds} day-goods, ${r.receiverships} receiverships`).join('; ')
+				evidence: rows.map((r) => `${r.label}: ${f0(r.shortAfter)} person-days short after the founding (${f0(r.shortPD - r.shortAfter)} in it), strict ${r.strictFrom >= 0 ? `from day ${f0(r.strictFrom)}` : 'never held to the end'}${r.strict ? '' : ' (fail)'}, normal ${r.normal ? 'pass' : 'fail'} (lowest holding runs out in ${Number.isFinite(r.runsOut) ? `${f0(r.runsOut)} years` : 'never'}), P3 ${r.P3 ? 'pass' : `fail (${r.P3failed} deciles, worst fall ${pct(r.worstFall, 1)})`}, MIND binds a basic on ${r.mindBinds} day-goods, ${r.receiverships} receiverships`).join('; ')
 			};
 		}
 	},
@@ -835,6 +860,98 @@ export const SCENARIOS = [
 				numbers: { equal: e, proportion: p },
 				takeaway: `With the forest at half its yield, ${f0(e.shortPD)} person-days were short under equal caps and ${f0(p.shortPD)} under proportional cuts.`,
 				evidence: `lowest share of food met: ${pct(e.lowestFood)} (equal) vs ${pct(p.lowestFood)} (proportional); poorest Aven decile ${f2(e.poorA)} vs ${f2(p.poorA)}. The engine keeps equal caps: a proportional cut gives the largest orders (the richest) the most of a short basic.`
+			};
+		}
+	},
+	{
+		id: 'R56',
+		name: 'round 6 against round 5, same seeds',
+		paper: 'the paper’s rules (round 6) against round 5’s, Proposition 3’s headline checks',
+		stress: 'the headline, in same-shock pairs: each seed runs under both rule sets, so weather and draws are shared',
+		claim: 'A comparison, not a test (no verdict): on the ten seeds of S00 and S04 (same weather and draws), round 6’s rules (Law 4 at 0.5 / 0.4 / 0.1, Law 5 paying the pools, and any fix the base keeps on: none met the bar, so the fixes are off in both) against round 5’s (pools’ part 0.05, Law 5 without the pools), judged by the same yardstick (from the founding’s end). Each check is counted as a win, loss or tie for round 6 on each seed, with a two-sided sign test.',
+		runs: [...PAIR_SEEDS.map((seed) => run({ seed }, 60, seed < 5 || seed > 9 ? `base, seed ${seed}, 60 years` : `1,500 people, seed ${seed}`)), ...PAIR_SEEDS.map((seed) => run({ seed, ...R5_RULES }, 60, `round 5’s rules, seed ${seed}, 60 years`))],
+		judge(R, runs) {
+			const n = PAIR_SEEDS.length;
+			const r6 = runs.slice(0, n).map((r) => R[r.key]), r5 = runs.slice(n).map((r) => R[r.key]);
+			const lowB = (s) => Math.min(0, ...(s.border ?? []).map((b) => b.bank?.lowestEur ?? 0));
+			const C = [
+				['P1: person-days short after the founding', (s) => s.prop3.P1.personDaysShortAny, -1],
+				['P1: person-days short from day 1 (the founding too)', (s) => s.prop3.P1.all?.personDaysShortAny ?? s.shortPD, -1],
+				['P2 strict: lowest dividends ÷ bundle after the founding', (s) => s.prop3.P2.strict.lowestAfterFounding ?? 0, 1],
+				['P2 strict: lowest dividends ÷ bundle in the last year', (s) => s.prop3.P2.strict.lowestLastYear ?? 0, 1],
+				['P2 normal: owner-only person-days failing after the founding', (s) => s.prop3.P2.normal.failures, -1],
+				['P3: tenths failing in real units (of 20)', (s) => s.prop3.P3.real?.failedTenths?.length ?? 20, -1],
+				['P3: extras’ falls', (s) => s.prop3.P3.real?.failures?.length ?? 0, -1],
+				['MIND binds a basic after the founding (day-goods)', (s) => s.prop3.abundance.mindBindsBasics, -1],
+				['poorest holdings tenth, living standard in the last year', (s) => s.poorH, 1],
+				['owner-only cohort, living standard in the last year', (s) => s.ownerLLast, 1],
+				['P3 in the founding: tenths failing in real units (of 20)', (s) => s.prop3.P3.founding?.failedTenths?.length ?? 20, -1],
+				['holdings Gini at the end (lower is more equal)', (s) => s.gini, -1],
+				['the bank’s lowest balance (the bootstrap number, € negative)', lowB, 1]
+			];
+			const rows = C.map(([label, of, dir]) => {
+				let win = 0, loss = 0, tie = 0;
+				const a = r6.map(of), b = r5.map(of);
+				for (let i = 0; i < n; i++) {
+					const d = (a[i] - b[i]) * dir;
+					const scale = Math.max(1e-9, Math.abs(a[i]), Math.abs(b[i]));
+					if (!Number.isFinite(d) || Math.abs(d) <= 1e-6 * scale) tie++;
+					else if (d > 0) win++;
+					else loss++;
+				}
+				return { label, r6: a, r5: b, win, loss, tie, p: signTest(win, loss) };
+			});
+			const pass6 = r6.filter((s) => s.prop3.pass).length, pass5 = r5.filter((s) => s.prop3.pass).length;
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { seeds: PAIR_SEEDS, rows },
+				takeaway: `Proposition 3 holds on ${pass6} of ${n} seeds under round 6’s rules and ${pass5} under round 5’s. ` + rows.map((r) => `${r.label}: round 6 better on ${r.win}, worse on ${r.loss}, tied on ${r.tie} (sign test p = ${r.p.toFixed(3)})`).join('; ') + '.',
+				evidence: rows.map((r) => `${r.label}: round 6 ${r.r6.map((x) => (Number.isFinite(x) ? (Math.abs(x) >= 100 ? f0(x) : f2(x)) : '–')).join(', ')}; round 5 ${r.r5.map((x) => (Number.isFinite(x) ? (Math.abs(x) >= 100 ? f0(x) : f2(x)) : '–')).join(', ')}`).join('. ') + ` (seeds ${PAIR_SEEDS.join(', ')})`
+			};
+		}
+	},
+	{
+		id: 'L5P',
+		name: 'Law 5 with and without the pools',
+		paper: 'Law 5 (the paper: every holder but the seller’s own treasury, the pools by their reserve)',
+		stress: 'what paying the pools their Law 5 share does to the pools, the holders and Proposition 3',
+		claim: 'A comparison, not a test (no verdict): Law 5 paying the city’s pools pro rata to each basket’s reserve of the seller’s MIND (the paper, the base) against Law 5 without the pools (the old rule), 30 years, seed 20261012; Law 4 at 0.5 / 0.4 / 0.1 in both.',
+		runs: [base30, run({ law5Pools: false }, 30, 'Law 5 without the pools, the old rule')],
+		judge(R, runs) {
+			const row = (s, i) => {
+				const y = s.r6?.years?.at(-1) ?? {};
+				const res = (s.r6?.lvr ?? []).reduce((a, p) => a + (p.reserveR ?? 0), 0);
+				return { label: runs[i].label, poolsShare: y.poolsShareOfHoldings, boundMin: y.boundMin, actualMin: y.actualMin, reserveR: res, lvrBelow: (s.r6?.lvr ?? []).filter((p) => p.below).length, baskets: (s.r6?.lvr ?? []).length, P3failed: s.prop3.P3.real?.failedTenths?.length, strictLow: s.prop3.P2.strict.lowestAfterFounding, strictLast: s.prop3.P2.strict.lowestLastYear, poorH: s.poorH, ownerL: s.ownerLLast, yieldLast: s.years.at(-1)?.yield, law: s.ledger.lawMaxRel, poolBreaches: s.ledger.poolBreaches?.length ?? 0 };
+			};
+			const rows = runs.map((r, i) => row(R[r.key], i));
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: the pools hold ${pct(r.poolsShare)} of all holdings in the last year (reserves ${f0(r.reserveR)} R), the lowest owner-only dividends ÷ bundle after the founding ${f3(r.strictLow)} and in the last year ${f3(r.strictLast)}, ${r.P3failed} tenths fail P3 in real units`).join('; ') + '.',
+				evidence: rows.map((r) => `${r.label}: LVR below fees in ${r.lvrBelow} of ${r.baskets} baskets; poorest holdings tenth ${f2(r.poorH)}, owner-only ${f2(r.ownerL)} in the last year; Law 5 checks largest gap ${(r.law ?? 0).toExponential(1)}, pool invariant broken ${r.poolBreaches} times`).join('; ')
+			};
+		}
+	},
+	{
+		id: 'SHW',
+		name: 'the SH shocks with the basics’ work first',
+		paper: 'Proposition 3, P1 through shocks (audit B5: water short with MIND as its badge)',
+		stress: 'the five SH shocks (drought, dark winter, WEST and GOODS-A failing, the geothermal well down 90 days), 9 years, with and without the basics’ Aven hours first',
+		claim: 'A comparison of one switch (no verdict): in SH the water sellers went short with "MIND" as the badge although their treasuries could pay. The cause traced: while the well is down the running class gets no electricity, the Avens’ inference for work proposals is in that class, so no work hours are delivered and the next day every COOP, the water sellers too, runs 0 % of its plants. With basicsWork the Aven hours that run the basics’ plants come first and their inference is dispatched with the basics.',
+		runs: SH_RUNS,
+		judge(R, runs) {
+			const [a, b] = runs.map((r) => R[r.key]);
+			const mindDays = (s, g) => Object.entries(s.shortByLimit ?? {}).filter(([k]) => k.startsWith(`${g}: MIND`)).reduce((t, [, v]) => t + v, 0);
+			const row = (s, i) => ({ label: runs[i].label, shortPD: s.shortPD, shortBy: s.shortBy, waterMindDays: mindDays(s, 'water'), bedMindDays: mindDays(s, 'bed'), byLimit: s.shortByLimit, exits: s.prop3.P3.coops?.receiverships ?? null });
+			const rows = [row(a, 0), row(b, 1)];
+			return {
+				pass: null,
+				comparison: true,
+				numbers: { rows },
+				takeaway: rows.map((r) => `${r.label}: ${f0(r.shortPD)} person-days short (water ${f0(r.shortBy?.water ?? 0)}, beds ${f0(r.shortBy?.bed ?? 0)}); days water was short with MIND as its badge ${f0(r.waterMindDays)}, beds ${f0(r.bedMindDays)}`).join('; ') + '.',
+				evidence: rows.map((r) => `${r.label}: short days by basic and badge ${JSON.stringify(r.byLimit)}`).join('; ')
 			};
 		}
 	},
@@ -863,8 +980,8 @@ export const SCENARIOS = [
 
 /** section 6 scenarios this suite does not run, and why (none is skipped silently) */
 export const NOT_COVERED = [
-	['A01', 'anna-lamp', 'a 3-person, 4-COOP unit world with named people is not built. Every world checks the laws themselves every day instead (each HEART’s halves and the pools’ tenth, Law 5’s fifth against what was paid, pools untouched by Law 5: ./engine.js lawCheck), and the money ledger closes every day'],
-	['A02', 'mia-proposal', 'needs named work items and proposals for one person; the engine pays running items and proposals to Avens in bulk'],
+	['A01', 'anna-lamp', 'a 3-person, 4-COOP unit world with named people is not built. Every world checks the laws themselves every day instead (Law 4’s 0.5, 0.4 and 0.1 of each HEART, Law 5’s fifth against what was paid, the pools’ Law 5 share: ./engine.js lawCheck), and the money ledger closes every day'],
+	['A02', 'mia-proposal', 'needs named work proposals and proposals for one person; the engine pays running proposals and proposals to Avens in bulk'],
 	['A03', 'panel-via-pools', 'circular sales between related COOPs are not modelled (no related-party flag in use)'],
 	['A06', 'own-level and growth', 'the closed-form own level needs a person who keeps everything; the engine’s Avens spend'],
 	['A08', 'young-city prices', 'prices are kept in R anchored to HEARTS (rIndex "hearts"), not in MIND counts; the 13-fold rise is not measured'],
@@ -876,7 +993,7 @@ export const NOT_COVERED = [
 	['B07', 'levelling', 'no births of children or one-fortune start'],
 	['B08', 'geo-plant', 'a new geothermal plant built from pledged HEARTS is not modelled (geothermal stages are set at genesis)'],
 	['B12', 'circular-sales', 'related-party sales are not modelled'],
-	['B13', 'empty-work', 'no audit of undelivered work items (the ring of B11 shows what happens without it)'],
+	['B13', 'empty-work', 'no audit of undelivered work proposals (the ring of B11 shows what happens without it)'],
 	['B16', 'selection', 'three COOPs with the paper’s efficiency paths are not set up'],
 	['B18', 'front-running', 'no sandwich bot or batch clearing'],
 	['B19', 'price-pump', 'an attacker on one pool is not modelled (the B11 ring pushes its own price)'],

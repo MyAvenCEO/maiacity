@@ -32,7 +32,7 @@ export const DEFAULTS = {
 	fieldPeople: null,
 	/** the ramp (Samuel, 2026-10-13 06:42): true (default) builds the village from day 0 by the build-out plan
 	 * (src/lib/sandbox-7/buildout.js, through ./ramp.js): two settlers and the starter kit on day 0, people arriving as
-	 * beds are finished, each settlement COOP founded when its settlement launches, the build-out's euros advanced by the
+	 * beds are finished, each Tribe COOP founded when its settlement launches, the build-out's euros advanced by the
 	 * MaiaCity COOP's bank. false: round 2's start, the whole village standing on day 0 and bought before it (a
 	 * comparison). Only for the default village (six living hexes, built for the people who live in it) */
 	ramp: true,
@@ -72,7 +72,7 @@ export const DEFAULTS = {
 	/** each month's sun and rain drawn from the seed around the normals (true), or the normals every year (false) */
 	weather: true,
 	/** accelerators come in through the euro border (true, default: no hex can make chips, as no real town can, so the
-	 * hardware owners, the settlement COOPs and the Village COOP, buy them with the bank's advances, ./ai.js); or none
+	 * hardware owners, the Tribe COOPs and the Village COOP, buy them with the bank's advances, ./ai.js); or none
 	 * comes in (false: scenario B23's closed city) */
 	chipImport: true,
 	/** the AI-exports experiment (AIX, round 4): the MaiaCity COOP buys Aven service from the avenCEO COOP in MIND and
@@ -171,6 +171,31 @@ export const DEFAULTS = {
 	extrasSigma: 3,
 	/** the owner-only cohort spends 'normal' (dividends and some of its holding) or 'dividends' (strict test: only dividends) */
 	ownerSpend: 'normal',
+	/** Law 4's pools' part of each HEART invested (the paper: 0.1; round 5 and before: 0.05) */
+	poolPart: 0.1,
+	/** Law 5 pays the city's pools too, pro rata to each basket's reserve of the seller's MIND (the paper, round 6);
+	 * false: Law 5 without the pools, the old rule (one comparison scenario) */
+	law5Pools: true,
+	/** Proposition 3 is claimed from the end of the founding (the day all the people are in; 'founding', round 6) or
+	 * from day 1 ('day1', round 5 and before) */
+	claimFrom: 'founding',
+	/** (round 6, B3/B15) a newcomer's Aven invests its first HEARTS in the sellers of its basics for this many days
+	 * before its HEARTS follow the mean allocation (0: round 5) */
+	newcomerStart: 0,
+	/** (round 6, B1, an Aven default) every Aven keeps at least this many days of its person's basic bundle in the
+	 * own MIND of the COOPs that sell the basics (0: off, round 5) */
+	holdingFloor: 0,
+	/** (round 6, B1) an owner-only Aven counts what a rationed extra left unspent (ordered, not delivered) as income
+	 * it meant to spend, not as capital to keep from the melt (false: round 5) */
+	ownerDefer: false,
+	/** (round 6, B5's cause in the test city) the Aven hours that run the plants making the basics come first, and
+	 * their inference is dispatched with the basics (false: round 5, one fill for all running hours) */
+	basicsWork: false,
+	/** (round 6, B13 rule 1) during the build-out a goods COOP whose buyers ask more than it can make builds by its own
+	 * rules (a founding signal on unmet need) while the plan builds the rest (false: round 5, the plan builds all) */
+	foundingSignal: false,
+	/** the line to the grid, MW (null: the catalog's 10 MW; round 6 tests a larger export line, B12) */
+	lineMw: null,
 	/** run the slow loop every day (true) or weekly after the first year (false) */
 	dailySlow: false,
 	/** record ledger leaks instead of throwing */
@@ -180,8 +205,10 @@ export const DEFAULTS = {
 };
 
 /**
- * The settlement COOPs (Samuel, 2026-10-13 06:50): one a hex, each founded when its settlement launches. A living hex's
- * settlement COOP owns every dome in its hex: it rents the beds to its residents (the bed good, paid in its own MIND:
+ * The Tribe COOPs (Samuel, 2026-10-13 06:50; named the Tribe COOP, its MIND tribeMIND, on 2026-10-14 12:57: until
+ * round 5 the "settlement COOP"; "settlement" stays the name of the place): one a hex, each founded when its
+ * settlement launches. A living hex's
+ * Tribe COOP owns every dome in its hex: it rents the beds to its residents (the bed good, paid in its own MIND:
  * the six compete for residents) and the dome space to the business COOPs (a running cost for them, a sale for it, so
  * Law 5 applies). The centre hex's is the Village COOP (07:00): it owns the centre dome, the eight factory domes and the
  * geothermal plant, rents the factory domes to the works COOPs and sells the plant's electricity and heat (it replaces
@@ -189,12 +216,12 @@ export const DEFAULTS = {
  * the euro bank. In the order the build-out launches the settlements (src/lib/sandbox-7/buildout.js LIVING_ORDER).
  */
 export const SETTLEMENTS = [
-	{ id: 'EAST', hex: 'living-e', label: 'East settlement COOP' },
-	{ id: 'SOUTH-EAST', hex: 'living-se', label: 'South-east settlement COOP' },
-	{ id: 'SOUTH-WEST', hex: 'living-sw', label: 'South-west settlement COOP' },
-	{ id: 'WEST', hex: 'living-w', label: 'West settlement COOP' },
-	{ id: 'NORTH-WEST', hex: 'living-nw', label: 'North-west settlement COOP' },
-	{ id: 'NORTH-EAST', hex: 'living-ne', label: 'North-east settlement COOP' }
+	{ id: 'EAST', hex: 'living-e', label: 'East Tribe COOP' },
+	{ id: 'SOUTH-EAST', hex: 'living-se', label: 'South-east Tribe COOP' },
+	{ id: 'SOUTH-WEST', hex: 'living-sw', label: 'South-west Tribe COOP' },
+	{ id: 'WEST', hex: 'living-w', label: 'West Tribe COOP' },
+	{ id: 'NORTH-WEST', hex: 'living-nw', label: 'North-west Tribe COOP' },
+	{ id: 'NORTH-EAST', hex: 'living-ne', label: 'North-east Tribe COOP' }
 ];
 export const VILLAGE_COOP = { id: 'VILLAGE', hex: 'tower', label: 'Village COOP' };
 /** plain names of the genesis COOPs that have one (the page and the proof show them) */
@@ -402,7 +429,8 @@ function constants(cfg) {
 		spotEurKwh: CHIPS.spotEurMwh.v / 1000,
 		solarEurKwh: CHIPS.solarEurMwh.v.map((x) => x / 1000),
 		eurMwh,
-		lineKwhDay: CHIPS.lineKw.v * s * 24,
+		// (round 6, cfg.lineMw: a larger line, which needs a 110 kV substation; its cost is not in the bill, a test only)
+		lineKwhDay: cfg.lineMw != null ? cfg.lineMw * 1000 * 24 : CHIPS.lineKw.v * s * 24,
 		gridEurKwh: BORDER.gridEurKwh.v,
 		// the accelerators (./ai.js): kWh an accelerator-hour (at the wall, with cooling), sessions, life, hours a day
 		chipKwhH: CHIPS.kwAtWall.v * CHIPS.pue.v,
@@ -557,8 +585,8 @@ function seedPlants(w) {
 				pl.village = true;
 				break;
 			case 'home':
-				// a living hex's settlement COOP: its 290 beds (5 Dome80 homes of 40, 9 Dome40 homes of 10); with the tower,
-				// its apartments are let by the six settlement COOPs, a sixth each
+				// a living hex's Tribe COOP: its 290 beds (5 Dome80 homes of 40, 9 Dome40 homes of 10); with the tower,
+				// its apartments are let by the six Tribe COOPs, a sixth each
 				pl.cap = (V.beds.total / V.livingHexes) * vf;
 				pl.hex = g.hex;
 				pl.landM2 = pl.cap * def.land;
@@ -614,7 +642,7 @@ function seedPlants(w) {
 }
 
 /**
- * The settlement COOPs' domes (Samuel, 2026-10-13): each living hex's settlement COOP gets a hall plant holding its two
+ * The Tribe COOPs' domes (Samuel, 2026-10-13): each living hex's Tribe COOP gets a hall plant holding its two
  * food domes and its utilities dome; the Village COOP one holding the centre dome (or the tower), the eight factory
  * domes. A hall plant makes nothing; it wears and is kept up like any plant, and its owner rents its floor out by the m²
  * (./coops.js costs: the rent a m² covers the shells' wear at replacement cost and their ground rent, over 1 − λ so that
@@ -648,7 +676,7 @@ function attachHalls(w) {
 		pl.hosted = [];
 		return pl;
 	};
-	// the living halls, one per settlement COOP and hex (split as the beds are when a hex's homes are split)
+	// the living halls, one per Tribe COOP and hex (split as the beds are when a hex's homes are split)
 	const hexBeds = new Float64Array(nL);
 	for (const co of w.coops) for (const pl of co.plants) if (pl.tech === 'home' && pl.hex != null) hexBeds[pl.hex] += pl.cap;
 	const halls = [], byHex = Array.from({ length: nL }, () => []);
@@ -694,7 +722,7 @@ function attachHalls(w) {
 		...(DF_ENGINE
 			? Object.fromEntries(['struts', 'steel', 'glass', 'panel'].map((k) => [k, { hosts: vHosts(DF_ENGINE.floor[k] * vf), hosted: 1, df: true }]))
 			: { steel: { hosts: vHosts(WF.steel * vf), hosted: 1 }, glass: { hosts: vHosts(0.7 * WF.glass * vf), hosted: 1 }, panel: { hosts: vHosts(0.3 * WF.glass * vf), hosted: 1 } }),
-		// the settlement COOPs rent the centre's halls (and the four works domes the engine does not trade) for their
+		// the Tribe COOPs rent the centre's halls (and the four works domes the engine does not trade) for their
 		// residents, by their beds
 		home: { hosts: vHosts(D.centreFloor * vf), hosted: 0 }
 	};
@@ -713,7 +741,7 @@ function attachHalls(w) {
 		}
 	for (const co of w.coops) {
 		const hexes = new Set(co.plants.filter((p) => p.tech === 'home').map((p) => p.hex));
-		if (hexes.size > 1) co.label = 'Settlement COOP of all the living hexes';
+		if (hexes.size > 1) co.label = 'Tribe COOP of all the living hexes';
 		else if (!co.label && COOP_LABELS[co.id]) co.label = COOP_LABELS[co.id];
 		else if (!co.label && COOP_LABELS[co.id.replace(/[12]$/, '')]) co.label = `${COOP_LABELS[co.id.replace(/[12]$/, '')]} ${co.id.slice(-1)}`;
 	}
@@ -794,7 +822,7 @@ export function createWorld(config = {}) {
 	const byGood = Array.from({ length: G }, () => []);
 	for (const { g, pl } of sets) byGood[pl.def.good].push({ g, pl });
 	// coopsPerGood: 2 keeps the two genesis COOPs of each good; 1 gives both plants to the first; 4 splits each in two
-	// (but the settlement COOPs and the Village COOP)
+	// (but the Tribe COOPs and the Village COOP)
 	const plan = [];
 	for (let gi = 0; gi < G; gi++) {
 		const list = byGood[gi];
@@ -802,7 +830,7 @@ export function createWorld(config = {}) {
 		if (per === 1) plan.push({ ids: [list[0].g.id], plants: [list.map((x) => x.pl)], city: list.some((x) => x.g.city) });
 		else if (per >= 4)
 			for (const x of list) {
-				// a settlement COOP and the Village COOP own their hex's domes: they are not split (six settlements already
+				// a Tribe COOP and the Village COOP own their hex's domes: they are not split (six settlements already
 				// sell beds, and the MIND slots would not hold every COOP twice)
 				if (x.g.village || x.g.hex != null || x.g.ai) {
 					plan.push({ ids: [x.g.id], plants: [[x.pl]], city: !!x.g.city });
@@ -933,7 +961,7 @@ export function blankToday(w) {
 		// what the dome factory's lines made today (./primitives.js DF_ENGINE), by line
 		dfMade: { struts: 0, steel: 0, glass: 0, panel: 0 },
 		raw: { grown: { logs: 0, ore: 0, sand: 0, scrap: 0 }, used: { logs: 0, ore: 0, sand: 0, scrap: 0, float: 0, cells: 0, lamellas: 0, plate: 0 }, lost: { logs: 0, ore: 0, sand: 0 }, imported: { logs: 0, scrap: 0, float: 0, cells: 0, lamellas: 0, plate: 0 } }, unpicked: 0,
-		salesPeopleR: 0, salesB2BR: 0, divR: 0, divPeopleR: 0, divTreR: 0, investR: 0, runningR: 0, proposalsR: 0, rdR: 0, rentR: 0, meltR: 0,
+		salesPeopleR: 0, salesB2BR: 0, divR: 0, divPeopleR: 0, divTreR: 0, divPoolsR: 0, investR: 0, runningR: 0, proposalsR: 0, rdR: 0, rentR: 0, meltR: 0,
 		energyPriceR: 0, sun: 0, rain: 0, heatF: 0, month: 0, season: '', shocks: []
 	};
 }

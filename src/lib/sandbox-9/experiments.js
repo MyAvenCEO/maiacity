@@ -380,6 +380,7 @@ export function track(w) {
 		for (const i of w.newIds) r = Math.min(r, w.basicCost[i] > 0 ? w.div[i] / w.basicCost[i] : 0);
 		nr.push(r);
 	}
+	r6Day(w, x, d, y);
 	if (d % 30 === 0) {
 		const o = ownership(w);
 		x.monthly.push({ day: d, gini: holdingsGini(w), people: o.people, treasuries: o.treasuries, pools: o.pools, mindPP: mindCountPerPerson(w), rent: w.land.rent, N: w.N });
@@ -389,6 +390,94 @@ export function track(w) {
 			x.coopHearts.push({ day: d, share: Object.fromEntries(w.coops.filter((c) => c.alive).map((c) => [c.id, c.heartsEma / Math.max(1e-9, all)])) });
 		}
 	}
+}
+
+/**
+ * (round 6) P2 strict's bound and the pools' LVR, a day at a time into yearly sums. Law 5 pays an owner-only person
+ * λ × (its share of all holdings) × (all sales): divided by its bundle, dividends ÷ bundle = λ × (N × its share) × (all
+ * sales ÷ everyone's basic bundle), exact when its holding is spread over the MINDs as the city's is (otherwise the
+ * share is read per MIND). All holdings: people, the COOPs' treasuries (but each its own MIND, which Law 5 skips) and
+ * the city's pools. Sales: every real sale Law 5 paid on (people, B2B, rent), the B2B part apart.
+ */
+function r6Day(w, x, d, y) {
+	const M = MAX_COOPS, P = w.P, t = w.today, N = w.N;
+	const R = (x.r6 ??= { years: [], pools: [] });
+	const Yr = (R.years[y] ??= { days: 0, allR: 0, peopleR: 0, b2bR: 0, bundleR: 0, relMin: 0, relMed: 0, boundMin: 0, boundMed: 0, actMin: Infinity, actMed: 0, poolHoldShare: 0 });
+	let all = 0;
+	for (const co of w.coops) if (co.alive) all += co.salesR;
+	let H = 0, Hp = 0;
+	for (let i = 0; i < N; i++) H += w.wealth[i];
+	for (const co of w.coops) {
+		if (!co.alive) continue;
+		for (const k of w.ks) if (k !== co.k && w.tre[co.k * M + k] > 0) H += w.tre[co.k * M + k] * P[k];
+	}
+	for (const p of w.pools) for (let i = 0; i < p.x.length; i++) Hp += p.x[i] * P[p.members[i]];
+	H += Hp;
+	const bundle = N * t.basicCostR;
+	Yr.days++;
+	Yr.allR += all;
+	Yr.peopleR += t.salesPeopleR ?? 0;
+	Yr.b2bR += t.salesB2BR ?? 0;
+	Yr.bundleR += bundle;
+	Yr.poolHoldShare += H > 0 ? Hp / H : 0;
+	const rel = [], act = [];
+	for (const i of w.ownerIds) {
+		if (i >= N) continue;
+		rel.push(H > 0 ? (N * w.wealth[i]) / H : 0);
+		act.push(w.basicCost[i] > 0 ? w.div[i] / w.basicCost[i] : 0);
+	}
+	if (rel.length) {
+		rel.sort((a, b) => a - b);
+		act.sort((a, b) => a - b);
+		const sb = bundle > 0 ? all / bundle : 0, lam = w.cfg.law5;
+		Yr.relMin += rel[0];
+		Yr.relMed += rel[rel.length >> 1];
+		Yr.boundMin += lam * rel[0] * sb;
+		Yr.boundMed += lam * rel[rel.length >> 1] * sb;
+		Yr.actMin = Math.min(Yr.actMin, act[0]);
+		Yr.actMed += act[act.length >> 1];
+	}
+	// each basket's fee income and loss to arbitrage, at each year's end (cumulative; ./pools.js)
+	if ((d + 1) % Y === 0) R.pools.push({ year: y + 1, pools: w.pools.map((p) => ({ members: Array.from(p.members, (k) => w.coops[k]?.id ?? k), feeR: p.feeR ?? 0, lvrR: p.lvrR ?? 0, reserveR: p.x.reduce((a, v, i) => a + v * P[p.members[i]], 0) })) });
+}
+
+/** (round 6) the yearly table of P2 strict's bound, the bank's turning years and each basket's LVR against its fees */
+function r6Summary(w) {
+	const R = w.xt?.r6;
+	if (!R) return null;
+	const years = R.years.map((Yr, y) => {
+		const n = Yr.days || 1, sb = Yr.bundleR > 0 ? Yr.allR / Yr.bundleR : 0;
+		const relMed = Yr.relMed / n, relMin = Yr.relMin / n, lam = w.cfg.law5;
+		return {
+			year: y + 1,
+			salesOverBasics: sb,
+			peopleOverBasics: Yr.bundleR > 0 ? Yr.peopleR / Yr.bundleR : 0,
+			b2bOverBasics: Yr.bundleR > 0 ? Yr.b2bR / Yr.bundleR : 0,
+			otherOverBasics: Yr.bundleR > 0 ? (Yr.allR - Yr.peopleR - Yr.b2bR) / Yr.bundleR : 0,
+			poolsShareOfHoldings: Yr.poolHoldShare / n,
+			ownerRelShareMin: relMin,
+			ownerRelShareMed: relMed,
+			boundMin: Yr.boundMin / n,
+			boundMed: Yr.boundMed / n,
+			actualMin: Number.isFinite(Yr.actMin) ? Yr.actMin : null,
+			actualMed: Yr.actMed / n,
+			// the sales ÷ basics the strict test would need for the median and the lowest owner-only holding
+			neededSalesOverBasicsMed: relMed > 0 ? 1 / (lam * relMed) : null,
+			neededSalesOverBasicsMin: relMin > 0 ? 1 / (lam * relMin) : null
+		};
+	});
+	// the bank: the first year from which the year's own balance (exports less all imports) stays at or above zero to
+	// the end, and the first year the cumulative balance is positive ('never': null)
+	const B = borderYears(w).filter((b) => b.days >= 365);
+	let runPos = null;
+	for (let i = B.length - 1; i >= 0 && B[i].exportEur - B[i].importEur >= 0; i--) runPos = B[i].year;
+	const cumPos = B.find((b) => b.bank.cumulativeEur > 0)?.year ?? null;
+	let bestYear = null;
+	for (const b of B) if (bestYear == null || b.exportEur - b.importEur > bestYear.bal) bestYear = { year: b.year, bal: b.exportEur - b.importEur };
+	// each basket's fees and LVR over the run and over its last ten years
+	const last = R.pools.at(-1), ten = R.pools.at(-11) ?? null;
+	const lvr = last ? last.pools.map((p, i) => ({ members: p.members, feeR: p.feeR, lvrR: p.lvrR, reserveR: p.reserveR, fee10R: ten?.pools[i] ? p.feeR - ten.pools[i].feeR : null, lvr10R: ten?.pools[i] ? p.lvrR - ten.pools[i].lvrR : null, below: p.lvrR <= p.feeR })) : [];
+	return { years, bank: { runningPositiveYear: runPos, cumulativePositiveYear: cumPos, bestYear }, lvr };
 }
 
 /** the tracked monthly row nearest a day */
@@ -539,7 +628,7 @@ export const EXPERIMENTS = {
 		metrics: [
 			{ id: 'peopleShare', label: 'people’s share of all MIND (R), end', of: (w) => ownership(w).people },
 			{ id: 'treShare', label: 'treasuries’ share of all MIND, end', of: (w) => ownership(w).treasuries },
-			{ id: 'poolShare', label: 'pools’ share of all MIND, end', of: (w) => ownership(w).pools },
+			{ id: 'poolShare', label: 'the city’s pools’ share of all MIND, end (their LP tokens are the MaiaCity COOP’s)', of: (w) => ownership(w).pools },
 			{ id: 'strictMed', label: 'owner-only median dividends ÷ basic bundle, last year', of: (w) => meanOf(w, 'strictMed', ...lastYear(w)) },
 			{ id: 'Lmean', label: 'mean living standard, last year', of: (w) => meanOf(w, 'Lmean', ...lastYear(w)) },
 			{ id: 'Lpoor', label: 'poorest holdings decile, last year', of: (w) => meanOf(w, 'decH', ...lastYear(w), 0) },
@@ -1193,7 +1282,7 @@ export const EXPERIMENTS = {
 	SH: {
 		id: 'SH',
 		question: 'Through a drought, a dark winter, two failing COOPs and a failing well, does everyone keep the basics, and does every decile recover within two years?',
-		ruleChanged: 'No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (WEST, the West settlement COOP selling beds, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).',
+		ruleChanged: 'No shocks (base) vs five scheduled shocks (changed): a drought (rain −50 %, summer of year 2), a dark winter (sun −60 %, winter of year 3), two COOPs’ output to 10 % for a year (WEST, the West Tribe COOP selling beds, and GOODS-A, year 5), and the geothermal well down for 90 days (winter of year 6).',
 		guesses: ['Nobody goes short in any shock; prices rise and fall back.', 'The dark winter and the failed well cut energy for R&D and extras first; the basics are served first.', 'Living standards dip in each shock and recover within two years.'],
 		people: PAGE_PEOPLE,
 		years: 9,
@@ -1427,7 +1516,9 @@ export function summarize(w) {
 		food: foodLand(w),
 		indoorMonths: indoorMonthsOf(w),
 		// the AI market by year: who owns the accelerators, inference, Aven hours and income by tenth (./records.js)
-		ai: aiYears(w)
+		ai: aiYears(w),
+		// (round 6) P2 strict's bound by year, the bank's turning years, each basket's LVR against its fees
+		r6: r6Summary(w)
 	};
 }
 
@@ -1461,11 +1552,15 @@ export function slimProp3(p) {
 	return {
 		pass: p.pass,
 		days: p.days,
+		// (round 6) the claim's span: Proposition 3 is judged from the end of the founding; the founding's own numbers
+		// sit beside each verdict
+		founding: p.founding,
 		P1: p.P1,
-		P2: { pass: p.P2.pass, cohort: p.P2.cohort, strict: { ...p.P2.strict, lowestRatioByYear: undefined, medianRatioByYear: undefined }, normal: { pass: p.P2.normal.pass, failures: p.P2.normal.failures, firstFailures: p.P2.normal.firstFailures, lowestShareMet: p.P2.normal.lowestShareMet, holdingTrendDaysPerYear: p.P2.normal.holdingTrendDaysPerYear, lowestHoldingDaysByYear: p.P2.normal.lowestHoldingDaysByYear } },
+		P2: { pass: p.P2.pass, cohort: p.P2.cohort, strict: { ...p.P2.strict, lowestRatioByYear: undefined, medianRatioByYear: undefined, lowestLastYear: p.P2.strict.lowestRatioByYear?.at(-1) ?? null }, normal: { pass: p.P2.normal.pass, failures: p.P2.normal.failures, failuresInFounding: p.P2.normal.failuresInFounding, failuresAll: p.P2.normal.failuresAll, firstFailures: p.P2.normal.firstFailures, lowestShareMet: p.P2.normal.lowestShareMet, holdingTrendDaysPerYear: p.P2.normal.holdingTrendDaysPerYear, lowestHoldingDaysByYear: p.P2.normal.lowestHoldingDaysByYear } },
 		P3: {
 			pass: p.P3.pass,
 			failed: p.P3.failed,
+			founding: p.P3.founding ? { pass: p.P3.founding.pass, failedTenths: p.P3.founding.failedTenths, failures: p.P3.founding.failures, years: p.P3.founding.years } : null,
 			// the verdict's own test: real units per tenth (./prop3.js realUnits), and the old money index beside it
 			real: p.P3.real ? { pass: p.P3.real.pass, rule: p.P3.real.rule, newcomers: p.P3.real.newcomers, years: p.P3.real.years, failedTenths: p.P3.real.failedTenths, basicsFail: p.P3.real.basicsFail, failures: p.P3.real.failures, excused: p.P3.real.excused.length, excusedList: p.P3.real.excused.slice(0, 40), riseFail: p.P3.real.riseFail, tenths: p.P3.real.tenths.map((t) => ({ by: t.by, tenth: t.tenth, pass: t.pass, basics: t.basics, extras: t.extras, rise: t.rise, first: t.first, last: t.last, change: t.change, up: t.up, down: t.down })) } : null,
 			oldIndex: p.P3.oldIndex,
@@ -1473,7 +1568,7 @@ export function slimProp3(p) {
 			deciles: p.P3.deciles.map(slimDecile),
 			withoutCompute: { pass: p.P3.withoutCompute.pass, failed: p.P3.withoutCompute.failed, deciles: p.P3.withoutCompute.deciles.map(slimDecile) },
 			computeShare: p.P3.share,
-			coops: { pass: p.P3.coops.pass, alive: p.P3.coops.alive, founded: p.P3.coops.founded, receiverships: p.P3.coops.receiverships.length, shortAround: p.P3.coops.receiverships.reduce((a, r) => a + r.basicShortPersonDaysAround, 0), insolvent: p.P3.coops.insolventNow.length, coopDaysUnableToPay30: p.P3.coops.coopDaysUnableToPay30, unpaidR: p.P3.coops.unpaidR, unpaidShare: p.P3.coops.unpaidShare }
+			coops: { pass: p.P3.coops.pass, alive: p.P3.coops.alive, founded: p.P3.coops.founded, receiverships: p.P3.coops.receiverships.length, shortAround: p.P3.coops.receiverships.reduce((a, r) => a + r.basicShortPersonDaysAround, 0), insolvent: p.P3.coops.insolventNow.length, coopDaysUnableToPay30: p.P3.coops.coopDaysUnableToPay30, coopDaysUnableToPay30All: p.P3.coops.coopDaysUnableToPay30All, receivershipsInFounding: p.P3.coops.receivershipsInFounding, unpaidR: p.P3.coops.unpaidR, unpaidShare: p.P3.coops.unpaidShare }
 		},
 		abundance: p.abundance
 	};

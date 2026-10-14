@@ -4,6 +4,12 @@
  * world kept the proposition, with the evidence: the worst person and the worst day, the first day the strict test
  * held, each decile's series. Nothing here is an average over people; every test is per person and per day.
  *
+ *   CLAIMED FROM THE END OF THE FOUNDING (round 6; Samuel 2026-10-14 13:04: "we don't need to claim it from day 1"):
+ *       on the build-out the founding runs from the two settlers until all the village's people are in (the day the
+ *       last of them arrives, `foundingEnd`); every verdict below counts from that day, and every number of the
+ *       founding is reported beside it in its own field (`founding`), so nothing hides. Without the build-out (ramp
+ *       false) the founding is day 0 alone. A run that ends inside the founding is judged on the founding and says so
+ *       (`foundingOnly`). `claimFrom: 'day1'` (a setting) judges from day 1 as round 5 did.
  *   P1  every person gets at least 98 % of each basic every day after day 0.
  *   P2  the owner-only cohort (5 %, Aven output 0, holdings 0 at the start):
  *       strict: today's Law 5 dividends alone pay today's basic bundle (target: from day 120 on, every day);
@@ -40,18 +46,43 @@ const BASIC_NAMES = BASICS.map((b) => GOOD_IDS[b]);
 /** check every part of Proposition 3 on a world that has run; `opts.window` (days, default 5 years) */
 export function prop3(w, opts = {}) {
 	const rec = w.rec, n = rec.n;
-	const P1 = checkP1(w);
-	const P2 = checkP2(w, opts);
-	const P3 = checkP3(w, opts);
-	const abundance = checkAbundance(w);
-	return { days: n, people: w.N, P1, P2, P3, abundance, pass: P1.pass && P2.pass && P3.pass && abundance.pass, limits: bindingSummary(w), energy: energyByDecile(w) };
+	const F = claimSpan(w);
+	const P1 = checkP1(w, F);
+	const P2 = checkP2(w, opts, F);
+	const P3 = checkP3(w, opts, F);
+	const abundance = checkAbundance(w, F);
+	return { days: n, people: w.N, founding: F, P1, P2, P3, abundance, pass: P1.pass && P2.pass && P3.pass && abundance.pass, limits: bindingSummary(w), energy: energyByDecile(w) };
+}
+
+/**
+ * The span the claim is judged on (round 6): from the end of the founding to the end of the run. The founding ends
+ * the day the build-out has brought all the village's people in (./ramp.js rampDay writes it); without the build-out it
+ * is day 1. `claimFrom: 'day1'` judges from day 1 (round 5's yardstick). A run that ends before the founding does is
+ * judged on what it has (the founding), and says so.
+ */
+export function claimSpan(w) {
+	const n = w.rec.n;
+	const end = w.ramp ? w.ramp.fullDay ?? null : 1;
+	const day1 = w.cfg.claimFrom === 'day1';
+	const from = day1 ? 1 : end == null ? n : Math.max(1, end);
+	const foundingOnly = !day1 && from >= n;
+	return { endDay: end, endYear: end == null ? null : Math.floor(end / YEAR) + 1, from: foundingOnly ? 1 : from, foundingOnly, claimFrom: day1 ? 'day1' : 'founding', firstFullYear: Math.ceil((foundingOnly ? 1 : from) / YEAR) + 1 };
+}
+/** sum a per-day series (width 1, or column col of width wd) over days [a, b) */
+function sumDays(rec, key, a, b, wd = 1, col = 0) {
+	let s = 0;
+	for (let d = Math.max(0, a); d < Math.min(rec.n, b); d++) {
+		const v = rec[key][d * wd + col];
+		if (Number.isFinite(v)) s += v;
+	}
+	return s;
 }
 
 // ── P1 ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-function checkP1(w) {
+function checkP1(w, F) {
 	const rec = w.rec, n = rec.n;
 	const minMet = [Infinity, Infinity, Infinity, Infinity], minDay = [-1, -1, -1, -1];
-	for (let d = 1; d < n; d++)
+	for (let d = F.from; d < n; d++)
 		for (let b = 0; b < 4; b++) {
 			const x = rec.minMet[d * 4 + b];
 			if (x < minMet[b]) (minMet[b] = x), (minDay[b] = d);
@@ -59,10 +90,16 @@ function checkP1(w) {
 	let peopleShort = 0;
 	for (let i = 0; i < w.N; i++) if (rec.personShort[i] > 0) peopleShort++;
 	const worst = rec.worst.i >= 0 ? { person: rec.worst.i, day: rec.worst.day, good: GOOD_IDS[rec.worst.g], met: rec.worst.met } : null;
+	// the claim counts from the end of the founding; the founding's own person-days are reported beside it
+	const after = sumDays(rec, 'shortAny', F.from, n);
+	const fEnd = F.foundingOnly ? n : F.from;
+	const inF = sumDays(rec, 'shortAny', 1, fEnd);
 	return {
-		pass: rec.shortAnyPD === 0,
-		personDaysShort: Object.fromEntries(BASIC_NAMES.map((g, b) => [g, rec.shortPD[b]])),
-		personDaysShortAny: rec.shortAnyPD,
+		pass: after === 0,
+		personDaysShort: Object.fromEntries(BASIC_NAMES.map((g, b) => [g, sumDays(rec, 'shortN', F.from, n, 4, b)])),
+		personDaysShortAny: after,
+		founding: { personDaysShortAny: F.foundingOnly ? rec.shortAnyPD : inF, personDaysShort: Object.fromEntries(BASIC_NAMES.map((g, b) => [g, sumDays(rec, 'shortN', 1, fEnd, 4, b)])) },
+		all: { personDaysShortAny: rec.shortAnyPD, personDaysShort: Object.fromEntries(BASIC_NAMES.map((g, b) => [g, rec.shortPD[b]])) },
 		peopleEverShort: peopleShort,
 		lowestShareMet: Object.fromEntries(BASIC_NAMES.map((g, b) => [g, { share: minMet[b], day: minDay[b] }])),
 		worst
@@ -70,8 +107,10 @@ function checkP1(w) {
 }
 
 // ── P2 ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-function checkP2(w, opts) {
-	const rec = w.rec, n = rec.n, target = opts.strictTarget ?? 120;
+function checkP2(w, opts, F) {
+	const rec = w.rec, n = rec.n;
+	// strict: from the end of the founding (round 6); on a run judged from day 1, by day 120 as before
+	const target = opts.strictTarget ?? (F.claimFrom === 'day1' || F.foundingOnly ? 120 : F.from);
 	let first = -1, holdsFrom = -1, failAfter = 0, worstAfter = { ratio: Infinity, day: -1 };
 	for (let d = 1; d < n; d++) if (rec.strict[d] >= 1) { first = d; break; }
 	// the first day from which it held every day to the end
@@ -101,8 +140,18 @@ function checkP2(w, opts) {
 	const runsOutInYears = slope < 0 ? last / -slope : Infinity;
 	let ownerMetMin = Infinity, ownerMetDay = -1;
 	for (let d = 1; d < n; d++) if (rec.ownerMet[d] < ownerMetMin) (ownerMetMin = rec.ownerMet[d]), (ownerMetDay = d);
+	// the lowest ratio after the founding, and in it
+	let lowAfter = Infinity, lowIn = Infinity;
+	for (let d = 1; d < n; d++) {
+		const r = rec.strict[d];
+		if (!Number.isFinite(r)) continue;
+		if (d >= F.from && !F.foundingOnly) lowAfter = Math.min(lowAfter, r);
+		else lowIn = Math.min(lowIn, r);
+	}
 	const strict = {
 		pass: holdsFrom > 0 && holdsFrom <= target,
+		lowestAfterFounding: Number.isFinite(lowAfter) ? lowAfter : null,
+		lowestInFounding: Number.isFinite(lowIn) ? lowIn : null,
 		target,
 		firstDay: first,
 		holdsEveryDayFrom: holdsFrom,
@@ -112,10 +161,14 @@ function checkP2(w, opts) {
 		lowestRatioByYear: strictByYear,
 		medianRatioByYear: strictMedByYear
 	};
+	const failAfter2 = sumDays(rec, 'ownerFail', F.from, n);
 	const normal = {
-		pass: rec.normalFailPD === 0 && runsOutInYears > 100,
-		// person-days an owner-only person was short of a basic or held nothing (exact; firstFailures lists examples)
-		failures: rec.normalFailPD,
+		pass: failAfter2 === 0 && runsOutInYears > 100,
+		// person-days an owner-only person was short of a basic or held nothing, from the end of the founding (exact;
+		// firstFailures lists examples); the founding's apart
+		failures: failAfter2,
+		failuresInFounding: F.foundingOnly ? rec.normalFailPD : sumDays(rec, 'ownerFail', 1, F.from),
+		failuresAll: rec.normalFailPD,
 		firstFailures: rec.normalFail.slice(0, 5),
 		lowestShareMet: { share: ownerMetMin, day: ownerMetDay },
 		lowestHoldingDaysByYear: byYear,
@@ -126,10 +179,12 @@ function checkP2(w, opts) {
 }
 
 // ── P3 ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-function checkP3(w, opts) {
+function checkP3(w, opts, F) {
 	const rec = w.rec, n = rec.n;
 	const W = Math.min(opts.window ?? 5 * YEAR, Math.max(YEAR, n - YEAR));
+	// the old index's windows read only days whose trailing year lies after the founding
 	const exempt = shockWindows(w);
+	if (!F.foundingOnly && F.from > 1) exempt.push({ kind: 'founding', from: 0, to: F.from + YEAR - 2, part: 'founding' });
 	const ceil = trailing(series1(rec, 'Lceil'));
 	const deciles = [];
 	for (const [by, key] of [['holdings', 'decH'], ['aven', 'decA']])
@@ -139,11 +194,14 @@ function checkP3(w, opts) {
 	const decilesX = [];
 	for (const [by, key] of [['holdings', 'decHx'], ['aven', 'decAx']])
 		for (let x = 0; x < 10; x++) decilesX.push({ by, decile: x + 1, ...decileCheck(rec, key, x, ceilX, W, exempt, n) });
-	const coops = coopCheck(w);
+	const coops = coopCheck(w, F);
 	const failed = deciles.filter((d) => !d.pass);
 	const failedX = decilesX.filter((d) => !d.pass);
-	const real = realUnits(w);
+	// real units: the verdict on the full years after the founding; the founding's own years in their own column
+	const real = realUnits(w, { fromYear: F.foundingOnly ? 1 : F.firstFullYear });
+	const realFounding = F.foundingOnly || F.firstFullYear <= 2 ? null : realUnits(w, { toYear: F.firstFullYear - 1 });
 	return {
+		founding: realFounding ? { pass: realFounding.pass, years: realFounding.years, failedTenths: realFounding.failedTenths, failures: realFounding.failures, basicsFail: realFounding.basicsFail, riseFail: realFounding.riseFail } : null,
 		// the verdict: real units per tenth (Samuel, 06:48); the money index below is the comparison
 		pass: real.pass && coops.pass,
 		failed: real.failedTenths,
@@ -183,8 +241,11 @@ const FALL = 0.02, UP = 0.05, BASIC_TOL = 0.01;
  */
 export function realUnits(w, opts = {}) {
 	const L = livingYears(w);
-	const full = L.filter((y) => y.days >= 365);
-	const Y = full.length ? full : L.slice(0, 1);
+	// (round 6) the years judged: from the first full year after the founding (opts.fromYear), or the founding's own
+	// (opts.toYear); a span with no full year reads its first year
+	const inSpan = (y) => y.year >= (opts.fromYear ?? 1) && y.year <= (opts.toYear ?? Infinity);
+	const full = L.filter((y) => y.days >= 365 && inSpan(y));
+	const Y = full.length ? full : L.filter(inSpan).length ? L.filter(inSpan).slice(0, 1) : L.slice(0, 1);
 	const yrs = w.rec?.years ?? [];
 	const c = w.c;
 	const need = { kcal: c.kcalNeed, protein: c.proteinNeed, waterL: c.waterNeedL ?? c.need[1], homeKwh: c.homeKwhNeed ?? c.need[2], bed: 1 };
@@ -387,9 +448,11 @@ function shockWindows(w) {
 }
 const isExempt = (d, ex) => ex.some((e) => d >= e.from && d <= e.to);
 
-function coopCheck(w) {
+function coopCheck(w, F = { from: 0, foundingOnly: true }) {
 	const rec = w.rec, n = rec.n;
-	const exits = w.events.filter((e) => e.kind === 'receivership');
+	// (round 6) from the end of the founding: receiverships, COOP-days unable to pay and unpaid deliveries after it
+	const from = F.foundingOnly ? 0 : F.from;
+	const exits = w.events.filter((e) => e.kind === 'receivership' && e.day >= from);
 	const list = exits.map((e) => {
 		let pd = 0;
 		// a basic short from a month before the exit to a year after it is laid at the receivership's door (a failing
@@ -401,14 +464,17 @@ function coopCheck(w) {
 	const insolvent = w.coops.filter((c) => c.alive && !c.city && c.lowDays > 0).map((c) => ({ coop: c.id, lowDays: c.lowDays }));
 	// goods and energy delivered and not paid for (a breach of the rule that every sale is paid), against all sales
 	let unpaidR = 0, salesR = 0;
-	for (let d = 0; d < n; d++) unpaidR += rec.unpaidR[d];
-	for (let d = 0; d < n; d++) salesR += rec.basicCostR[d] * w.N;
+	for (let d = from; d < n; d++) unpaidR += rec.unpaidR[d];
+	for (let d = from; d < n; d++) salesR += rec.basicCostR[d] * w.N;
+	const lowDays = sumDays(rec, 'coopLow', from, n);
 	return {
 		// unpaid deliveries fail the part: every sale is paid. The tolerance is floating-point rounding only (a
 		// billionth of what the basic bundles cost), not a share of sales
-		pass: list.every((x) => x.basicShortPersonDaysAround === 0) && insolvent.every((c) => c.lowDays < 30) && (w.coopLowDays ?? 0) === 0 && unpaidR <= 1e-9 * salesR,
+		pass: list.every((x) => x.basicShortPersonDaysAround === 0) && insolvent.every((c) => c.lowDays < 30) && lowDays === 0 && unpaidR <= 1e-9 * salesR,
 		unpaidBy: Object.fromEntries(Object.entries(w.unpaidBy ?? {}).filter(([, v]) => v > 0)),
-		coopDaysUnableToPay30: w.coopLowDays ?? 0,
+		coopDaysUnableToPay30: lowDays,
+		coopDaysUnableToPay30All: w.coopLowDays ?? 0,
+		receivershipsInFounding: w.events.filter((e) => e.kind === 'receivership' && e.day < from).length,
 		unpaidR,
 		unpaidShare: salesR > 0 ? unpaidR / salesR : 0,
 		receiverships: list,
@@ -419,12 +485,16 @@ function coopCheck(w) {
 }
 
 // ── abundance ────────────────────────────────────────────────────────────────────────────────────────────────────
-function checkAbundance(w) {
+function checkAbundance(w, F) {
 	const rec = w.rec, v = rec.mindViolations;
+	const after = sumDays(rec, 'mindBasic', F.from, rec.n);
 	return {
-		pass: rec.mindDayGoods === 0,
-		// day-goods (a day and a basic) on which MIND bound a basic while the physics ceiling was at or above need: exact
-		mindBindsBasics: rec.mindDayGoods,
+		pass: after === 0,
+		// day-goods (a day and a basic) on which MIND bound a basic while the physics ceiling was at or above need: exact,
+		// from the end of the founding (round 6), and in the founding apart
+		mindBindsBasics: after,
+		mindBindsBasicsInFounding: F.foundingOnly ? rec.mindDayGoods : sumDays(rec, 'mindBasic', 1, F.from),
+		mindBindsBasicsAll: rec.mindDayGoods,
 		mindDays: rec.mindDays,
 		mindBy: Object.fromEntries(BASIC_NAMES.map((g, b) => [g, rec.mindDayGoodsBy[b]])),
 		examples: v.slice(0, 5).map((x) => ({ day: x.day, good: GOOD_IDS[x.good], minMet: x.minMet }))
