@@ -53,7 +53,8 @@
 //! (`put_file`, `read_file`), the server's backup (`back_up`), and the device's card, an entry of type `card` of its
 //! person's vault that it writes itself, titled with its name (`card`), so every device of the vault shows the others
 //! by name. What its vault's owners approve, the passkey signs in a ceremony the page runs (`ceremony`). The vaults
-//! it follows, the device keeps on its shelf with what opens it again (`Meta::follow`).
+//! it follows, and how deep its queries read (`set_limits`), the device keeps on its shelf with what opens it again
+//! (`Meta::follow`, `Meta::query_depth`).
 //!
 //! The same device runs natively in the Mac app (`avendb-device`, beside maiaCITY Studio): there its node binds UDP
 //! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it
@@ -187,7 +188,9 @@ impl Start {
 /// (`Fresh::mask`), the credential of its person's passkey (base64url) and that passkey's P-256 key, compressed, and
 /// the device's id, which the unmasked secret must be the key of before the device touches its shelf (`Device::open`);
 /// and the vaults the device follows (the `follow` op, `Lab::follow`), which it names in each request it makes, and
-/// follows again as it opens. None of it is a secret: only the passkey unmasks the device's.
+/// follows again as it opens; and the most rows and links down its queries read (the `set_limits` op,
+/// `Lab::set_query_depth`), none while it reads as deep as any write that counts reaches (`lens::CEILING`). None of it
+/// is a secret: only the passkey unmasks the device's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Meta {
     pub name: String,
@@ -198,17 +201,26 @@ pub struct Meta {
     pub p256: [u8; 33],
     pub device: SignerId,
     pub follow: Vec<VaultId>,
+    pub query_depth: Option<usize>,
 }
 
 /// Where a shelf keeps what opens its device again: each version an object of its own, `meta/0000000000000001` and
 /// on, put once, the newest that reads counting.
 const META: &str = "meta/";
 
+/// What device `me` keeps with what opens it again beside its keys: the vaults it follows, and the most rows and links
+/// down its queries read, none while that is as deep as any write reaches.
+fn settings(lab: &Lab, me: SignerId) -> (Vec<VaultId>, Option<usize>) {
+    let depth = lab.query_depth(me);
+    (lab.follows(me).to_vec(), (depth != avendb::lens::CEILING).then_some(depth))
+}
+
 impl Meta {
-    /// As the page and the Mac app read it: `{name, relay, nonce, mask, credential, passkey, device, follow}`, the
-    /// nonce, the mask, the passkey's P-256 key, the device's id and those of the vaults it follows in hex.
+    /// As the page and the Mac app read it: `{name, relay, nonce, mask, credential, passkey, device, follow,
+    /// queryDepth}`, the nonce, the mask, the passkey's P-256 key, the device's id and those of the vaults it follows
+    /// in hex, `queryDepth` left out where it names none.
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut out = json!({
             "name": self.name,
             "relay": self.relay,
             "nonce": hex(&self.nonce),
@@ -217,10 +229,15 @@ impl Meta {
             "passkey": self.p256.iter().map(|b| format!("{b:02x}")).collect::<String>(),
             "device": hex(&self.device.0),
             "follow": self.follow.iter().map(VaultId::to_hex).collect::<Vec<_>>(),
-        })
+        });
+        if let Some(depth) = self.query_depth {
+            out["queryDepth"] = depth.into();
+        }
+        out
     }
 
-    /// From what `to_json` writes; `follow` left out, as before V2 wrote it, follows nothing.
+    /// From what `to_json` writes; `follow` left out, as before V2 wrote it, follows nothing, and `queryDepth` left
+    /// out, as before links were, reads as deep as any write reaches.
     pub fn from_json(v: &Value) -> Result<Meta> {
         let field = |k: &str| v.get(k).and_then(Value::as_str).with_context(|| format!("what opens it: no {k}"));
         let bytes = |k: &str| field(k).map(|f| hex_bytes(f).unwrap_or_default());
@@ -235,6 +252,10 @@ impl Meta {
             p256: bytes("passkey")?.try_into().ok().context("a passkey's P-256 key is 33 bytes in hex")?,
             device: SignerId(bytes("device")?.try_into().ok().context("a device's id is 32 bytes in hex")?),
             follow: follow.iter().map(vault).collect::<Result<_>>()?,
+            query_depth: match v.get("queryDepth") {
+                None => None,
+                Some(d) => Some(d.as_u64().context("a query depth is a count")? as usize),
+            },
         })
     }
 
@@ -369,9 +390,9 @@ impl Device {
     /// The device made here before, opened again from its shelf (`Start::shelf`) by what the shelf keeps to open it
     /// (`meta`), unlocked by the ceremony of the passkey whose P-256 key it names, its secret kept under the mask it
     /// names (`Fresh::mask`): the relay knows it, so it needs no pass. Its node takes back what the shelf kept
-    /// (`avendb_net::Node::spawn`), and follows the vaults it followed (`Meta::follow`). Fails, before it touches the
-    /// shelf, if the unlock isn't that passkey's or unmasks another device's secret; and if the device then belongs to
-    /// no vault, as one taken out of its vault.
+    /// (`avendb_net::Node::spawn`), follows the vaults it followed (`Meta::follow`), and reads as deep in a query as it
+    /// did (`Meta::query_depth`). Fails, before it touches the shelf, if the unlock isn't that passkey's or unmasks
+    /// another device's secret; and if the device then belongs to no vault, as one taken out of its vault.
     pub async fn open(start: Start, meta: &Meta, unlock: Unlock) -> Result<Device> {
         let (p256, mask) = (meta.p256, meta.mask);
         let progress = &start.progress;
@@ -381,6 +402,9 @@ impl Device {
             bail!("the unlock opens another device than the one this shelf keeps");
         }
         lab.follow(me, &meta.follow);
+        if let Some(depth) = meta.query_depth {
+            lab.set_query_depth(me, depth);
+        }
         progress.step("restore");
         let node = Device::spawn(lab, me, &start, None).await?;
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
@@ -420,14 +444,16 @@ impl Device {
     /// with `nonce`, its salt's own bytes, and `credential`, its passkey's, which the unlock named.
     pub fn meta(&self, nonce: [u8; 32], credential: String) -> Meta {
         let (name, relay, device) = (self.name.trim().to_string(), self.relay.to_string(), self.node.device());
-        Meta { name, relay, nonce, mask: self.mask, credential, p256: self.p256, device, follow: vec![] }
+        let (mask, p256) = (self.mask, self.p256);
+        Meta { name, relay, nonce, mask, credential, p256, device, follow: vec![], query_depth: None }
     }
 
-    /// Keeps `meta` on its shelf, what opens it again (`Meta::keep`), with the vaults it follows now: a device new here
-    /// keeps it once it started, and its shelf holds it from then on. Fails for a device that keeps no shelf.
+    /// Keeps `meta` on its shelf, what opens it again (`Meta::keep`), with the vaults it follows now and how deep its
+    /// queries read: a device new here keeps it once it started, and its shelf holds it from then on. Fails for a
+    /// device that keeps no shelf.
     pub async fn keep(&self, meta: &Meta) -> Result<()> {
-        let follow = self.node.read(|lab, me| lab.follows(me).to_vec()).await;
-        let meta = Meta { follow, ..meta.clone() };
+        let (follow, query_depth) = self.node.read(settings).await;
+        let meta = Meta { follow, query_depth, ..meta.clone() };
         meta.keep(self.shelf.as_ref().context("this device keeps no shelf")?).await
     }
 
@@ -484,8 +510,9 @@ impl Device {
     /// (`avendb_net::Node::run`): every read and change of the database it holds, whatever their schema, and of its
     /// vaults, as JSON. Its answer, `{"ok": ...}`, `{"refused": ..., "why": ...}`, or for a change its vault's owners
     /// approve with no `authenticator` at hand, `{"approve": ...}`; and for `read_file` the bytes it read, beside.
-    /// `put_file` reads its bytes from `bytes`, twice (`avendb_net::Source`). The vaults it follows (`follow`) it
-    /// keeps on its shelf too, in what opens it again (`Meta`), so it follows them again once it opens.
+    /// `put_file` reads its bytes from `bytes`, twice (`avendb_net::Source`). The vaults it follows (`follow`) and how
+    /// deep its queries read (`set_limits`) it keeps on its shelf too, in what opens it again (`Meta`), so it follows
+    /// them again and reads as deep once it opens.
     pub async fn run<B, A>(
         &self,
         op: Value,
@@ -496,10 +523,10 @@ impl Device {
         B: Source,
         A: Authenticator,
     {
-        let follows = engine::name(&op) == Some("follow");
+        let kept = matches!(engine::name(&op), Some("follow" | "set_limits"));
         let out = self.node.run(op, bytes, authenticator).await?;
-        if follows && out.0.get("ok").is_some() {
-            self.keep_follows().await?;
+        if kept && out.0.get("ok").is_some() {
+            self.keep_settings().await?;
         }
         Ok(out)
     }
@@ -510,14 +537,14 @@ impl Device {
         done(out)
     }
 
-    /// Keeps the vaults it follows in what opens it again on its shelf (`Meta::follow`), once that holds any.
-    async fn keep_follows(&self) -> Result<()> {
+    /// Keeps the vaults it follows and how deep its queries read in what opens it again on its shelf (`Meta::follow`,
+    /// `Meta::query_depth`), once that holds any.
+    async fn keep_settings(&self) -> Result<()> {
         let Some(shelf) = &self.shelf else { return Ok(()) };
-        let Some(mut meta) = Meta::load(shelf).await? else { return Ok(()) };
-        let follow = self.node.read(|lab, me| lab.follows(me).to_vec()).await;
-        if meta.follow != follow {
-            meta.follow = follow;
-            meta.keep(shelf).await?;
+        let Some(meta) = Meta::load(shelf).await? else { return Ok(()) };
+        let (follow, query_depth) = self.node.read(settings).await;
+        if (&meta.follow, meta.query_depth) != (&follow, query_depth) {
+            Meta { follow, query_depth, ..meta }.keep(shelf).await?;
         }
         Ok(())
     }
@@ -1240,12 +1267,17 @@ mod tests {
             p256: [3; 33],
             device: SignerId([4; 32]),
             follow: vec![VaultId([5; 32]), VaultId([6; 32])],
+            query_depth: Some(9),
         };
         assert_eq!(Meta::from_json(&meta.to_json()).expect("it reads"), meta);
-        // as written before it followed anything: it follows nothing
+        // as written before it followed anything, or set how deep its queries read: it follows nothing, and reads as
+        // deep as any write reaches
         let mut before = meta.to_json();
         before.as_object_mut().expect("an object").remove("follow");
-        assert_eq!(Meta::from_json(&before).expect("it reads").follow, vec![]);
+        before.as_object_mut().expect("an object").remove("queryDepth");
+        let before = Meta::from_json(&before).expect("it reads");
+        assert_eq!((before.follow, before.query_depth), (vec![], None));
+        assert_eq!(Meta { query_depth: None, ..meta.clone() }.to_json().get("queryDepth"), None);
         let mut maskless = meta.to_json();
         maskless.as_object_mut().expect("an object").remove("mask");
         assert!(Meta::from_json(&maskless).is_err(), "a device opens only by its mask");

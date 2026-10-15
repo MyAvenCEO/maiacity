@@ -11,6 +11,7 @@ import AvenDB.Theorems
 import AvenDB.Examples
 import AvenDB.Vectors
 import AvenDB.Ops
+import AvenDB.Links
 import AvenDB.Rules
 import AvenDB.Schemas
 import AvenDB.OpsVectors

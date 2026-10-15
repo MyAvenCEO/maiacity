@@ -8,7 +8,10 @@
  * closes, its shelf holding all it holds, and with `forget` it forgets the device, its shelf put aside. The device that
  * founds the vault also brings a file, whose pieces its shelf keeps, and reads it back; with `file`, a device reads
  * that file from its peers; with `ops`, it then runs the ops the page's screens send, each through `run` (V2), and
- * reports what each answered. Each step is reported to the test, with the passkey's ceremonies so far. With `earlier`,
+ * reports what each answered. The device that founds the vault also writes an outline, a record of rows inside rows;
+ * with `nest`, a device adds a row of its own three lists down in it, at once with the other device, and waits until
+ * it reads both rows. Each step is reported to the test, with the passkey's ceremonies so far, and how deep the
+ * device's queries read. With `earlier`,
  * it keeps in OPFS what an earlier avenDB kept for the store, which the store clears as it opens; with `twice`, it
  * tries to hold a store another page's device runs from.
  */
@@ -54,6 +57,59 @@ const titled = (/** @type {string} */ title, /** @type {string} */ text) => ({
 		{ id: 2, type: 'paragraph', text }
 	]
 });
+
+/** An outline: nodes, each with a text and the nodes under it, at any depth. */
+const OUTLINE = JSON.stringify({
+	title: 'Outline',
+	type: 'object',
+	$defs: {
+		node: {
+			type: 'object',
+			properties: {
+				id: { type: 'integer' },
+				text: { type: 'string', 'x-loro': 'text', default: '' },
+				kids: { type: 'array', default: [], items: { $ref: '#/$defs/node' } }
+			},
+			required: ['id']
+		}
+	},
+	properties: {
+		kind: { const: 'outline' },
+		title: { type: 'string', default: '' },
+		nodes: { type: 'array', default: [], items: { $ref: '#/$defs/node' } }
+	},
+	required: ['kind']
+});
+
+/** The place of the kids of node 11, under node 1: where each device adds a row of its own. */
+const KIDS = ['nodes', { id: 1 }, 'kids', { id: 11 }, 'kids'];
+
+/** The rows under node 11, as the device reads the outline through its schema: undefined while it can't. */
+async function kids(device, note) {
+	const out = await device.run({ op: 'get', entry: note.outline });
+	if (!out.ok?.schema) return undefined;
+	return out.ok.record.nodes?.[0]?.kids?.find((/** @type {{id: number}} */ k) => k.id === 11)?.kids;
+}
+
+/**
+ * Adds row `id`, reading `text`, under node 11 of the outline, as soon as the device reads the outline, then waits
+ * until it reads two rows there, its own and the other device's, two minutes at most: the outline as it reads it then.
+ */
+async function nest(device, note, id, text) {
+	const end = Date.now() + 120_000;
+	while (!(await kids(device, note))) {
+		if (Date.now() > end) throw new Error('the device never read the outline');
+		await sleep(100);
+	}
+	await run(device, { op: 'insert', as: note.actor, entry: note.outline, path: KIDS, value: { id, text } });
+	let rows = (await kids(device, note)) ?? [];
+	while (rows.length < 2) {
+		if (Date.now() > end) throw new Error(`the device never read the other row: ${JSON.stringify(rows)}`);
+		await sleep(100);
+		rows = (await kids(device, note)) ?? [];
+	}
+	return (await device.run({ op: 'get', entry: note.outline })).ok.record;
+}
 
 /** How long the file the founding browser brings is: more than three of the page's one megabyte steps. */
 const FILE = 3 * 1024 * 1024 + 4321;
@@ -130,6 +186,7 @@ async function ops(device, passkey, vault) {
 	out.rows = (await run(device, { op: 'shares', over: aven })).rows.map((r) => [r.kind, r.level, r.revoke]);
 	const asked = [{ op: 'card', name: "Eve's browser" }, { ...threshold, threshold: 3 }, { ...threshold, threshold: 1 }];
 	out.may = await run(device, { op: 'may', ops: asked });
+	out.limits = await run(device, { op: 'set_limits', depth: 9 });
 	return out;
 }
 
@@ -268,14 +325,19 @@ async function main() {
 			const vault = await device.vault();
 			const write = { op: 'create', vault, type: 'note', value: titled('Seeds', q.get('write')) };
 			const { entry } = await run(device, write);
+			trace('writing an outline');
+			await run(device, { op: 'create', vault, type: 'schema', value: OUTLINE });
+			const beds = [{ id: 1, text: 'Beds', kids: [{ id: 11, text: 'North', kids: [] }] }];
+			const garden = { kind: 'outline', title: 'Garden', nodes: beds };
+			const { entry: outline } = await run(device, { op: 'create', vault, type: 'note', value: garden });
 			trace('bringing a file');
-			note = { actor: vault, entry, file: await bring(device, vault) };
+			note = { actor: vault, entry, outline, file: await bring(device, vault) };
 		} else {
 			passkey = counted(ceremonies(avendb));
 			trace('unlocking and linking');
 			const unlock = (/** @type {Uint8Array} */ challenge) => passkey.unlock(nonce, challenge);
 			device = await avendb.Device.link(name, relay, q.get('offer'), unlock, undefined, store);
-			note = { actor: q.get('actor'), entry: q.get('entry') };
+			note = { actor: q.get('actor'), entry: q.get('entry'), outline: q.get('outline') };
 		}
 		const kept = await device.keep(hex(nonce), passkey.passkey.held.id);
 		if (kept.passkey !== device.passkey() || kept.device !== device.id()) throw new Error('it kept another device');
@@ -285,6 +347,7 @@ async function main() {
 	const [vault, ceremonies_] = [await device.vault(), passkey.count()];
 	const [edits, keys] = await device.size();
 	const found = { ms, vault, edits, keys, ceremonies: ceremonies_, offer: device.offer(), endpoint: device.endpoint() };
+	found.limits = (await run(device, { op: 'limits' })).depth;
 	found.generations = (await names(await folder(q.get('store')), [])).filter((n) => /^g[0-9]+$/.test(n));
 	found.shelf = await shelved(q.get('store'), found.generations.at(-1));
 	await report(meta ? 'opened' : 'started', { ...found, ...note });
@@ -307,6 +370,11 @@ async function main() {
 		const path = ['blocks', { id: 2 }, 'text'];
 		await run(device, { op: 'set', as: note.actor, entry: note.entry, path, value: q.get('write') });
 		await report('wrote');
+	}
+	if (q.get('nest')) {
+		const [id, text] = q.get('nest').split(':');
+		trace('writing in the outline');
+		await report('nested', { record: await nest(device, note, Number(id), text) });
 	}
 	if (q.get('then')) {
 		await reads(device, note, q.get('then'));

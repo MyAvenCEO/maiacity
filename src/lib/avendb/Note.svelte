@@ -4,9 +4,11 @@
 	line and its proposals, each a line of its own to switch to, and its variants, the notes made from it; in the middle
 	the note on the line picked, as a page, to edit there, and what a proposal changes since it started, to merge it
 	into main, as a pull request merges, or bring main's changes in: a merge keeps every change of both lines, and where
-	both changed the same words, main keeps its own unless the person takes the proposal's there; every edit of both
-	stays in the history. On the right its history, every edit of that line, newest first, each with what it changed,
-	word by word, who made it, and the version it made, to view, restore, undo or propose from. A variant is a new note
+	both changed the same words, main keeps its own unless the person takes the proposal's there; a conflict on a row
+	of a record that holds rows says where under it both changed it, at any depth ("the text of row 11 of its kids");
+	every edit of both stays in the history. On the right its history, every edit of that line, newest first, each
+	with what it changed, word by word, or for a record that is no document the places it changed, at any depth, who
+	made it, and the version it made, to view, restore, undo or propose from. A variant is a new note
 	with what a line reads now, whose first edit names that note and that version by the hashes of its edits (avendb's
 	`variant_mark`): its history goes on into the original's edits up to that version, for whoever reads both, and the
 	original lists its variants by the version each came from. Delete marks the note deleted, so Notes lists it apart,
@@ -23,10 +25,22 @@
 	import { flowsFor, stageOf } from './flows.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { allowed, blockText, deleting, may } from './ops.js';
+	import { allowed, blockText, deleting, may, read } from './ops.js';
+	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
-	import { actingWords, chainSteps, count, hue, nameOf, sharedWith, sharedWords, sharerWords, short } from './vaults.js';
+	import {
+		actingWords,
+		chainSteps,
+		count,
+		hue,
+		list,
+		nameOf,
+		sharedWith,
+		sharedWords,
+		sharerWords,
+		short
+	} from './vaults.js';
 
 	/**
 	 * @typedef {{ at: unknown[], what: 'value' | 'row' | 'order', base: unknown, ours: unknown, theirs: unknown }} Conflict
@@ -89,6 +103,27 @@
 				if (!gone) loaded = true;
 			}
 		);
+		return () => {
+			gone = true;
+		};
+	});
+
+	/**
+	 * What each write of a record that is no document or article changed (the `history` op's changes, avendb's
+	 * `ops::diff`), by its edit, in words: the places it set or took out at any depth, and the lists whose rows it
+	 * changed. A document's and an article's show as their text's diff instead. Read again each time the note is.
+	 */
+	let changed = $state(/** @type {Record<string, string[]>} */ ({}));
+	$effect(() => {
+		const [e, kind] = [entry, note?.kind];
+		if (!note || kind === 'document' || kind === 'article') return void (changed = {});
+		let gone = false;
+		read(api, { op: 'history', entry: e }, null).then((/** @type {any} */ h) => {
+			/** @type {Record<string, string[]>} */
+			const by = {};
+			for (const x of h?.edits ?? []) if (x.changes?.length) by[x.id] = x.changes.map(changeWords);
+			if (!gone) changed = by;
+		});
 		return () => {
 			gone = true;
 		};
@@ -359,14 +394,31 @@
 	/** A conflict's place, as the engine names it, as a key. @param {Conflict} c */
 	const place = (c) => JSON.stringify({ at: c.at, what: c.what });
 
-	/** Where a conflict is, in words. @param {Conflict} c */
+	/** Where a conflict is, in words: a field, the order of a list, or a row of a list. @param {Conflict} c */
 	function where(c) {
 		const [field, row] = /** @type {[string, { id?: number } | undefined]} */ (c.at);
-		if (c.what === 'order') return `the order of the ${field}`;
-		if (c.what === 'value') return `the ${field}`;
+		if (c.what === 'order') return `the order of ${pathWords([field])}`;
+		if (c.what === 'value') return pathWords(/** @type {string[]} */ (c.at));
 		if (field === 'blocks' && row?.id === 1) return 'the heading';
 		if (field === 'blocks' && row?.id === 2) return 'the text';
-		return `${field} ${row?.id ?? ''}`.trim();
+		return pathWords(/** @type {any[]} */ (c.at));
+	}
+
+	/**
+	 * Where under a conflict's row both lines changed it differently, at any depth (./paths.js `clashes`): each place
+	 * in words, as a place of the row, and what main and the proposal hold there. A conflict on a field, a list's order,
+	 * or a document's heading or text is its one place.
+	 * @param {Conflict} c
+	 */
+	function spots(c) {
+		const [field] = /** @type {[string]} */ (c.at);
+		if (c.what !== 'row' || field === 'blocks') return [{ key: '', words: '', ours: c.ours, theirs: c.theirs }];
+		const top = /** @type {any[]} */ (c.at);
+		return clashes(top, c.base, c.ours, c.theirs).map((p) => {
+			const under = p.slice(top.length);
+			const words = under.length ? pathWords(under) : '';
+			return { key: JSON.stringify(p), words, ours: atPath(c.ours, under), theirs: atPath(c.theirs, under) };
+		});
 	}
 
 	/** What one side holds at a conflict, in words. @param {unknown} v */
@@ -374,7 +426,7 @@
 		if (v === null || v === undefined) return 'nothing (taken out)';
 		if (typeof v === 'string') return v || '(empty)';
 		if (typeof v === 'object' && 'text' in v && typeof v.text === 'string') return v.text || '(empty)';
-		return JSON.stringify(v);
+		return valueWords(v);
 	}
 
 	/**
@@ -802,8 +854,11 @@
 								{#each conflicts as c (place(c))}
 									<div class="conflict">
 										<b>{where(c)}</b>
-										<p><small class="soft">main</small> {holds(c.ours)}</p>
-										<p><small class="soft">“{lineName(here)}”</small> {holds(c.theirs)}</p>
+										{#each spots(c) as s (s.key)}
+											{#if s.words}<p class="spot">{s.words}</p>{/if}
+											<p><small class="soft">main</small> {holds(s.ours)}</p>
+											<p><small class="soft">“{lineName(here)}”</small> {holds(s.theirs)}</p>
+										{/each}
 										{#if writes}
 											<label>
 												<input type="checkbox" bind:checked={taking[place(c)]} />
@@ -831,7 +886,7 @@
 				</header>
 				<ol>
 					{#each history as e (e.id)}
-						{@const changed = e.kind === 'edit' || e.kind === 'merge'}
+						{@const wrote = e.kind === 'edit' || e.kind === 'merge'}
 						<li class={e.kind} class:on={e.id === viewing}>
 							<button
 								class="what"
@@ -843,8 +898,14 @@
 								<span class="n mono">#{e.n}</span>
 							</button>
 							<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
-							{#if changed && e.text !== null && (e.before ?? '') !== e.text}
+							{#if wrote && e.text !== null && (e.before ?? '') !== e.text}
 								<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
+							{:else if wrote && changed[e.id]}
+								{@const said = changed[e.id]}
+								<ul class="changes">
+									{#each said.slice(0, 4) as w, i (i)}<li>{w}</li>{/each}
+									{#if said.length > 4}<li class="soft">and {count(said.length - 4, 'change')} more</li>{/if}
+								</ul>
 							{/if}
 							{#if e.id === viewing}
 								<ol class="chain" aria-label="Who stands behind it">
@@ -1349,6 +1410,19 @@
 	.conflict small {
 		display: inline-block;
 		min-width: 4.5rem;
+	}
+
+	.conflict .spot {
+		margin-top: 0.2rem;
+		color: #7a4d10;
+		font-size: 0.8rem;
+	}
+
+	.changes {
+		margin: 0.3rem 0 0;
+		padding-left: 1.1rem;
+		font-size: 0.8rem;
+		overflow-wrap: anywhere;
 	}
 
 	.conflict label {

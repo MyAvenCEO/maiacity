@@ -52,6 +52,9 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 | Interest | A device's reason to be sent what a vault shares with Everyone: it acts for the vault or a holder of a share over it. |
 | Follow | A vault a device names in its requests, to be sent what that vault shares with Everyone. |
 | Op | One read or change, as JSON, through `run(op)`. |
+| Row | One record of a list of records, named by its integer id. A row may hold lists of rows in turn, at any depth. |
+| Path | A place in a record from the top: a field, then a row by its id, then a field of that row, and so on. |
+| Link | A field that points at another entry, or at a row of one, at its newest or at a version. Queries follow it. |
 | Shelf | The one place a device keeps what lasts: OPFS in a browser, a folder on a desktop, a bucket on the server. |
 | Holdings | What one device says it holds for good: each log's frontier, and each file whole or in pieces. |
 | Statement | A device's holdings, signed by it with when it checked: its word, which outlives its connection. |
@@ -537,7 +540,27 @@ write's encrypted body (`slice::Body`): `{header, tags, answers, content, proof,
 **Loro.** Each entry is a Loro document, a CRDT. Two devices that hold the same writes read the same entry, whatever
 order they came in. Text merges character by character. A list of records merges row by row, matched by id, and a
 list of values item by item. Any other field takes one value, the same on every device: an object, a tuple or a list
-with bounds too, kept whole. Records are flat: a row holds no list of records (`crates/avendb/src/doc.rs`, `ops.rs`).
+with bounds too, kept whole (`crates/avendb/src/doc.rs`, `ops.rs`).
+
+**Records inside records.** A row of a list of records may hold lists of records in turn, at any depth: an outline's
+nodes, a thread's replies, a part's parts. Each such list is stored as the record's own lists are, a Loro movable list
+of maps inside its row's map, so it is a container of its own and merges row by row by id, whatever holds it. A list
+that two devices make at once in one row is made mergeable, so they share it and neither hides the other. A row's id
+is an integer, one per row in its list; a place is named from the top by its chain of rows, each list's field and the
+row's id in turn (`["nodes", {"id": 1}, "kids", {"id": 11}, "text"]`). The page keeps row ids below 2^53, so a
+JavaScript number holds each exactly. Every walk over a record, in Rust and on the page, is a loop over a stack of its
+own, never a recursion, so a record nested deep can't overflow a stack. Two behaviours follow from Loro, and stay:
+
+- **A move to another list is a delete and an insert.** Moving a row within its list (`move`) keeps the row, so an
+  edit made to it at the same time on another device lands. A row moved to another list is deleted from its list and
+  inserted anew in the other, so an edit made to it at the same time on another device is lost.
+- **Two copies of a row.** Two devices that add a row with the same id to one list at once both keep theirs: two
+  copies, the second named `{"id": n, "copy": 1}`. Each keeps the rows under it, and apps see the first copy and what
+  it holds; the others go wherever it goes, and are deleted with it.
+
+**The ceiling.** No write reaches deeper than 256 rows (`lens::CEILING`): a write that adds a row deeper, or sets a
+value in one, fits no schema, so it counts for no reader (section 8, S2). The ceiling is fixed, not set per device, so
+every reader reaches the same verdict.
 
 **A write** is `Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }`. `deps` are the
 entry's writes it builds on (its Loro frontier). `create` names a new entry's first audience. `files` names, in the
@@ -577,6 +600,16 @@ proposal's there (`take`). So nothing the target changed since the base is lost 
 lands (T10e), and the person's choice touches the conflicts alone. The merge's write carries the change that brings
 Loro's merged item to that record, none where Loro's already reads so. Every write of both lines stays in the history
 (T10g).
+
+A row of the record's own lists stays one place, however deep it goes (`merge::join_row`), so T10 holds as proved.
+Inside it, fields join as an object's do, and each list of records joins row by row by id, at any depth; a list that
+one side lacks counts as an empty list. A clash anywhere inside makes the whole top row the conflict, and the page
+shows where under it both lines changed it ("the text of row 11 of the kids").
+
+**Restore and undo at any depth.** Restore puts back the record a version shows, rows of rows too. Undo takes out one
+write by a three-way merge of records (`history::undo`), at any depth. Undoing a merge takes out only the change it
+carried on Loro's merged item: what comes back is the CRDT union of the merge's two parents. To take back the merge
+itself, restore the version before it.
 
 **Whether a write counts** is decided by every reader the same way. It counts when it fits its schemas (section 8),
 builds only on writes that count, and its actor is the entry's vault or its proof names a live share whose chain
@@ -634,11 +667,12 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 
 | Op | Fields | Answer |
 |---|---|---|
-| `query` | `vault`, `where`, `schema`, `select`, `order`, `limit`, `offset` | The entries the `where` holds of, picked by its labels' selector first, a page at a time |
+| `query` | `vault`, `where`, `schema`, `select`, `order`, `limit`, `offset`, `depth`, `follow` | The entries the `where` holds of, picked by its labels' selector first, a page at a time, each read `depth` rows down, the links at the places `follow` names followed (below) |
 | `get` | `entry`, `schema`, `line`, `at` | One entry on a line, or at a version |
 | `history` | `entry`, `limit` | An entry's lines and every write of it, each with the changes it made and who stands behind it (`chain`) |
 | `schemas` | `vault` | The schemas and lenses the vault's entries are read through |
 | `groups` | none | The built-in groups of ops, each with its level |
+| `limits` | none | How deep the device's queries read: `{depth, default, ceiling}` (below) |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
 | `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |
 | `note` | `entry` | A note's page, an article's or any other record's alike: its lines, each proposal with its base and conflicts, and its edits |
@@ -700,19 +734,68 @@ entry of its type (section 9).
 | `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
 | `card {name}`, `profile {vault, name}` | The device's card in its person's vault; a vault's profile. `{"wrote"}` | Never |
 | `follow {vault, on}` | The vaults the device follows (section 12), kept in its shelf's meta. `{"follow"}` | Never |
+| `set_limits {depth}` | The most rows and links down the device's queries read, 1 to 256, kept in its shelf's meta. Its `limits` | Never |
 
 **Who may.** `share` and `revoke` through a share need the `share` op in the chain the acting vault holds. `put_file`
 and a schema's creation are creations, under the `create` and `set` ops. `read_file` needs read reach (T27). `mark`,
 `settings`, `found`, `keep`, `copy`, `back_up`, `card` and `profile` are only for devices acting for the vault itself,
-never through a share. `follow` needs nothing: any device follows any vault.
+never through a share. `follow` and `set_limits` need nothing: any device follows any vault, and sets its own
+limits. An agent device runs neither (section 3).
 
 ### Paths, queries and two laws
 
-A path names a place in a record: `["title"]`, `["blocks", {"id": 2}, "text"]`. A query's `where` mixes labels
-(type, author, entry, created, tag) with tests on values. Its labels compile to the very selector a share holds, so a
-device picks entries by labels before it opens any (O3). Two laws tie changes to what they did, proved in
-`spec/AvenDB/Ops.lean`: a diff explains any two records (O1), and an op changes only what it names (O2). The ops
-engine's cases are pinned by `spec/vectors/ops.json`.
+A path names a place in a record, at any depth: a field, then a row of the list in it by its id, then a field of that
+row, and so on (`["title"]`, `["blocks", {"id": 2}, "text"]`, `["nodes", {"id": 1}, "kids", {"id": 11}, "text"]`). A
+copy of a row is `{"id": n, "copy": 1}` (section 7). A query's `where` mixes labels (type, author, entry, created, tag)
+with tests on values, at a place or in any row of a list (`"*"`), at any depth: `["nodes", "*", "kids", "*",
+"text"]`. Its labels compile to the very selector a share holds, so a device picks entries by labels before it opens
+any (O3). Two laws tie changes to what they did, proved in `spec/AvenDB/Ops.lean` at any depth by induction on the
+path: a diff explains any two records (O1), and an op changes only what it names (O2). The ops engine's cases are
+pinned by `spec/vectors/ops.json`.
+
+### Limits
+
+Records nest without a limit of their own (up to the ceiling, section 7), and links make a graph. The limits sit where
+a device reads: in its queries. avenDB keeps no paging, as each device holds what it reads.
+
+- **A query reads so many levels down.** Each record is read `depth` rows down: 16 unless the query names its own
+  (`engine::QUERY_DEPTH`), and never deeper than the device's most. A list of rows deeper than that is taken out of
+  the row that holds it before anything else reads the record: no lens translates it, no `where` tests it, no order
+  sorts by it, and the entry's row of the answer shows `"cut": true`. An empty list stays, as it holds nothing to
+  read.
+- **The device's most.** Each device sets its own (`set_limits`, Settings → Query limits), 1 to 256, and keeps it with
+  what opens it again, in a browser's shelf and in the desktop app's folder alike (`Meta::query_depth`); until it sets
+  one, it reads as deep as any write reaches. `limits` answers `{depth, default, ceiling}`: its most, the query's
+  default and the ceiling.
+- **Every level is a row or a hop.** A row a list down and a link followed (below) each take one level, so a deep
+  record and a long chain of links cost only what the device allows.
+
+### Links
+
+A field holds a record's own rows, inline, or a link: another entry, maybe a row of it, at its newest or pinned at a
+version (`ops::Link`, `spec/AvenDB/Links.lean`). The schema says which, field by field: what lives and dies with its
+record is inline; what has a life of its own, its own shares and keys, is linked. A record holds a link as
+`{"vault": id, "entry": id, "row"?: [field, {"id": n}, ..], "at"?: [edit, ..]}`, `row` and `at` left out where they
+name nothing; `at` pins it at the version those writes make.
+
+A query follows the links at the places its `follow` names, a level at a time (`ops::follow`): a field, or a path to
+one through rows (`["cards", "*", "owner"]`), each holding a link or a list of links. Each link it follows shows what
+it leads to as `"to"`, with the links there at those places followed in turn, or shows nothing and why, as `"empty"`
+(a name) and `"why"` (words):
+
+| `empty` | Why the hop shows nothing |
+|---|---|
+| `NoEntry` | The device opens no such entry: none of its shares reaches it, or no key it holds opens it |
+| `WrongVault` | The entry is another vault's than the link names |
+| `NoVersion` | The device holds no such version of the entry |
+| `NoSchema` | No schema in the vault's lane reads the record |
+| `NoRow` | The record holds no such row |
+| `Deep` | Deeper than the query reads |
+
+Each hop opens only what the device reading may read, as `get` would, and reads the record there as many rows down as
+the query has levels left. So every record a query shows through links is one its reader opened, and every hop that
+shows nothing says why (L1, L2). Every hop is one level of the query's depth, so a chain of links ends there, and a
+cycle of links too (L3).
 
 ### A share is a named group of ops
 
@@ -726,9 +809,14 @@ Op      = {"op": "relay" | "backup" | "read" | "create" | "propose" | "share"}
         | {"op": "insert" | "remove" | "move", "path": Pattern?, "on": On?}
         | {"op": "tag", "tags": [tag]?}
         | {"op": "merge", "on": On?}
-Pattern = a path whose steps may be "*"; [] is the whole record
+Pattern = a path whose steps may be "*", at any depth; [] is the whole record
 On      = "main" | "proposals"
 ```
+
+A pattern names places at any depth, as a path does: `["nodes", "*", "kids", "*", "text"]` is the text of any row of
+the kids of any node. An op on a row covers everything under it, its fields and its lists of rows at any depth. The
+page's Share dialog offers each field of the newest schema at any depth, in words ("the text of any row of the kids of
+any row of its nodes"), and each list of records to add, delete or reorder rows of.
 
 The level is the class of the strongest op (`rules::level_of`): relay, backup, read, write (any op that writes) or
 owner (`share`). A keep share has no ops. The built-in groups (`rules::groups`):
@@ -767,9 +855,12 @@ chain doesn't allow (NotAllowed), as its readers wouldn't count it.
 
 Every reader judges each write by the schemas its entry was written under, once the write is in
 (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`). Each place it changed holds a value a schema allows there, and each
-row it added or changed reads under one of them. A write is judged by what it changed alone (S1), so a record that fits
-stays so (S2). One that doesn't fit counts for no reader, nor anything built on it (S3). Relays can't tell, and don't
-judge (S4). A device refuses to make a write that wouldn't fit (NotAView).
+row it added or changed reads under one of them. Each change is judged on the innermost row around it, by the shape
+the schema gives that row, at any depth. A write is judged by what it changed alone (S1), so a record that fits stays
+so (S2). The schemas are capped at the ceiling (section 7): a write that adds a row deeper than 256 fits none of them,
+whatever they let a row hold, so no record that fits holds one (S2, `S2_ceiling`). One that doesn't fit counts for no
+reader, nor anything built on it (S3). Relays can't tell, and don't judge (S4). A device refuses to make a write that
+wouldn't fit (NotAView).
 
 ## 9. Schemas and lenses
 
@@ -794,10 +885,19 @@ only in the tests; nothing ships it, and no record is written under it.
 with `minimum` and `maximum`), a boolean, an object (its own `properties`, `required` and `additionalProperties:
 false`, nested to any depth) or an array. An array of `items` is a list of values (with `minItems` and `maxItems`) or
 of records (objects with a required integer `id`); one of `prefixItems` is a tuple of so many values, a position `[x,
-y, z]`. `$ref` names a shape of the schema's own `$defs`; one that names no shape, or that goes round in a circle,
-makes it no schema. `"x-loro": "text"` marks free text, and `default` what a field reads as when it is absent. A field
-whose value doesn't fit reads as absent, and a record that lacks a required one doesn't read. Other keywords change
-nothing.
+y, z]`. A list of records may sit in a row of a list of records, at any depth (section 7). `$ref` names a shape of the
+schema's own `$defs`; one that names no shape makes it no schema. A shape may hold a list of rows of its own shape,
+an outline whose nodes hold nodes: a `$ref` that goes round through a list of records resolves lazily, one row at a
+time. One that goes round through plain objects or values would be a value with no end, and makes it no schema.
+`"x-loro": "text"` marks free text, and `default` what a field reads as when it is absent. `"x-link"` marks a link
+(section 8): `true` any link, `"newest"` one that follows its entry's newest version, `"pinned"` one pinned at a
+version; a property is one link, or an array of them. A field whose value doesn't fit reads as absent, and a record
+that lacks a required one doesn't read. Other keywords change nothing.
+
+**A lens reads rows of rows.** A lens's steps reach into the rows of a list of records (`in`), and into the rows of
+their lists in turn (`in` inside `in`), so a shape that changes many lists down reads both ways as one at the top
+does. A query translates only what it reads: each list of rows deeper than the query reads is emptied as stored
+before the lens translates anything, then taken out of what the app reads (`engine`'s `see_within`).
 
 **avenCEO GmbH holds them.** Every app knows avenDB's own schemas by heart, so each vault reads and writes them
 offline. Beside that, avenCEO GmbH holds each as an entry of its own, of the very same bytes and so of the same id,
@@ -1272,7 +1372,8 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 | `Step.lean` | The seven kinds and the rules that take or refuse each; the replay order; strong removal (`view`) |
 | `Sync.lean` | What a peer sends a device, interest and follow, the files it may fetch, the link card |
 | `Logs.lean` | Logs, frontiers, asks, forks; holdings, announcements, connections, signed statements, Synced to and the blob gate |
-| `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups and touches; records, diffs and queries; schema fit |
+| `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups and touches; records inside records, diffs and queries at any depth; schema fit per row, the ceiling |
+| `Links.lean` | Links, a record read so many rows down (`Doc.cut`), and following links a level at a time (`follow`) |
 | `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge of histories and the three-way merge of records (T10a to T10e); lines of history (T10f to T10h) |
 | `Props.lean`, `Theorems.lean` | The predicates the theorems use; every other theorem's statement, the proofs in the `*Lemmas.lean` files and `Schemas.lean` |
 | `Examples.lean`, `Vectors.lean`, `OpsVectors.lean` | The scenarios, checked on every build; the cases the Rust core replays |
@@ -1320,9 +1421,12 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | C3 | Counted writes do what they may | `counted_allowed`, `counted_writes`, and `changes_allowed` in `Rules.lean` |
 | C4 | Allowed writes count, and nothing built on an uncounted one does | `allowed_counts`, `allowed_creates`, `uncounted_closed` |
 | S1 | A write is judged by what it changed | `S1_judged_by_changes` |
-| S2 | Records that fit stay so | `S2_clean_stays_clean`, `S2_first_write` |
+| S2 | Records that fit stay so; no write reaches deeper than the ceiling | `S2_clean_stays_clean`, `S2_first_write`, `S2_ceiling`, with `capped_change`, `capped_fits`, `capped_deep` and `capped_clean` in `Schemas.lean` |
 | S3 | Writes that don't fit count for no reader | `S3_unfit_uncounted`, `S3_step` |
 | S4 | Relays don't judge records | `S4_fit_unread` |
+| L1 | A hop the reader opens nothing of shows nothing, and why | `follow_refused` in `Links.lean` |
+| L2 | Every record a query shows through links is one its reader opened, and every empty hop says why | `follow_opened` in `Links.lean` |
+| L3 | A query follows links no deeper than its depth, so a cycle of links ends there | `follow_height` in `Links.lean` |
 
 T29 (marks mean what the keep rules say) is merged into T23, whose wants part it is.
 
@@ -1346,8 +1450,8 @@ whose keys sign it on that connection.
 | `crates/avendb/src/lab.rs` | A device's state and its upkeep: stewards, keys, schema entries, dry runs |
 | `crates/avendb/src/engine.rs`, `engine/vaults.rs` | `run(op)`: every read, ask and change as one JSON op, and approval |
 | `crates/avendb/src/world.rs`, `data.rs`, `words.rs` | The world, a vault's database and its history as JSON; the names of the core's words |
-| `crates/avendb/src/ops.rs`, `rules.rs` | Record ops, queries and diffs; op groups, touches and proofs |
-| `crates/avendb/src/lens.rs`, `doc.rs`, `history.rs` | Schemas and lenses, Loro items, lines of history |
+| `crates/avendb/src/ops.rs`, `rules.rs` | Record ops, queries, diffs, links and following them; op groups, touches and proofs |
+| `crates/avendb/src/lens.rs`, `doc.rs`, `history.rs`, `merge.rs` | Schemas and lenses, the ceiling, Loro items, lines of history, the three-way merge |
 | `crates/avendb/src/sealed.rs`, `slice.rs` | Sealed blob v2; selectors, headers and write bodies |
 | `crates/avendb/src/recovery.rs` | The master recovery key |
 | `crates/avendb-net/src/lib.rs`, `session.rs` | The node, its router and messages |

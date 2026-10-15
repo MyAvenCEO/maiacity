@@ -2,7 +2,7 @@
 //! page reads of its world (`world`), of the shares over a vault (`shares`), and what a vault may add to another and
 //! tag there (`creatable`, `taggable`); and the changes of vaults: shares, keep shares and their revocations, an owner
 //! or a device taken out, a vault's settings, new vaults, a file brought, the server's backup, a steward's mark, a
-//! device's card and a vault's profile, and the vaults a device follows.
+//! device's card and a vault's profile, the vaults a device follows, and how deep its queries read.
 //!
 //! A change a vault's owners approve (governance: an owner, a device, a share at owner level or its revocation, a
 //! vault's settings, new vaults) a device never signs alone, as devices never approve: it drafts it for its person's
@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value, json};
 
-use super::{Refused, bad, entry_of, id_of, strs, texts_of, vault_of};
+use super::{Refused, bad, count_of, entry_of, id_of, limits, strs, texts_of, vault_of};
 use crate::cast;
 use crate::data;
 use crate::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
@@ -31,8 +31,9 @@ use crate::words::{self, hex, principal_json, who_json};
 use crate::world::{self, CARD, FILE, PROFILE, SyncedTo, World};
 
 /// The changes of this module: each runs alone, never in a batch.
-pub(super) const CHANGES: [&str; 12] = [
+pub(super) const CHANGES: [&str; 13] = [
     "share", "keep", "copy", "revoke", "settings", "found", "put_file", "back_up", "mark", "card", "profile", "follow",
+    "set_limits",
 ];
 
 /// What a change op comes to before anything is signed: made, with its answer (`Done`), or drafted for the passkey of
@@ -239,6 +240,7 @@ pub(super) fn prepare(lab: &mut Lab, me: SignerId, name: &str, o: &Map<String, V
         "card" => done(card(lab, me, o)),
         "profile" => done(profile(lab, me, o)),
         "follow" => done(follow(lab, me, o)),
+        "set_limits" => done(set_limits(lab, me, o)),
         _ => Err(bad(format!("no op is called {name:?}"))),
     }
 }
@@ -863,4 +865,17 @@ fn follow(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, 
         lab.follow(me, &follows);
     }
     Ok(json!({ "follow": follows.iter().map(VaultId::to_hex).collect::<Vec<_>>() }))
+}
+
+/// `{"op": "set_limits", "depth"}`: device `me` reads at most `depth` rows and links down in a query from now on, 1 to
+/// `lens::CEILING`, whatever the query asks (`Lab::set_query_depth`); a node keeps it with what opens its device again
+/// (avendb-browser's `Meta`). Its limits, as `limits` answers. Any device sets its own.
+fn set_limits(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let ceiling = crate::lens::CEILING;
+    let depth = count_of(o, "depth")?.filter(|d| (1..=ceiling).contains(d));
+    let depth = depth.ok_or_else(|| bad(format!("set_limits takes how deep a query reads: depth, 1 to {ceiling}")))?;
+    if !lab.is_dry() {
+        lab.set_query_depth(me, depth);
+    }
+    Ok(limits(depth))
 }

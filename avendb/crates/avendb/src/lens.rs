@@ -193,7 +193,10 @@ impl TodoV1 {
 /// list of records, which resolves lazily, one row at a time; one round plain objects or values would be a value with
 /// no end, and makes no schema. `"x-loro": "text"` marks free text, which an item stores as a Loro text so concurrent
 /// edits merge character by character; a list of values is a Loro list, merged item by item; everything else is one
-/// value, where concurrent edits keep one of them. Other keywords are annotations and change nothing.
+/// value, where concurrent edits keep one of them. `"x-link"` marks a link to an entry or a row of one (`ops::Link`),
+/// where a list of records would hold rows inline: `true` any link, `"newest"` one that follows its entry's newest
+/// version, `"pinned"` one pinned at a version; a property is one link, or an array of them. Other keywords are
+/// annotations and change nothing.
 #[derive(Clone, Debug)]
 pub struct Schema {
     id: BlobId,
@@ -251,6 +254,8 @@ enum Check {
     Tuple(Vec<Check>),
     /// An object, one value: its fields' checks, which it must have, and whether it may have others.
     Object { fields: Vec<(String, Check)>, required: Vec<String>, closed: bool },
+    /// A link (`ops::Link`): pinned at a version (`Some(true)`), at the newest (`Some(false)`), or either.
+    Link(Option<bool>),
 }
 
 /// How an item stores a field.
@@ -301,6 +306,14 @@ fn records_of(items: &Value) -> bool {
 impl Check {
     fn of(p: &Value, defs: Defs) -> Option<Check> {
         let (p, defs) = defs.resolve(p)?;
+        if let Some(l) = p.get("x-link") {
+            return match l {
+                Value::Bool(true) => Some(Check::Link(None)),
+                Value::String(s) if s == "newest" => Some(Check::Link(Some(false))),
+                Value::String(s) if s == "pinned" => Some(Check::Link(Some(true))),
+                _ => None,
+            };
+        }
         if let Some(c) = p.get("const") {
             return Some(Check::OneOf(vec![c.clone()]));
         }
@@ -367,6 +380,9 @@ impl Check {
                     && fields.iter().all(|(f, c)| present(o, f).is_none_or(|x| c.holds(x)))
                     && (!closed || o.keys().all(known))
             }),
+            Check::Link(pinned) => {
+                crate::ops::Link::of_json(v).is_some_and(|l| pinned.is_none_or(|p| l.at.is_some() == p))
+            }
         }
     }
 }

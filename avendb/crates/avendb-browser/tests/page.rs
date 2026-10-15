@@ -7,11 +7,12 @@
 //! the unlock, and writes a note; then it runs the ops the page's screens send, each through `run` (V2): it brings a
 //! file (`put_file`) and reads a range of it back (`read_file`), founds two vaults in one more ceremony, reads its
 //! world, shares a note and revokes the share, keeps her notes, makes the coop a co-owner and sets a threshold, each in
-//! a ceremony of her passkey, marks the note and asks `may`; her second links through the first one's code in one
-//! ceremony and edits it; the first closes, opens again from its shelf in one ceremony and edits the note once more, no
-//! other page holding its store while it runs; then she forgets it there, and its shelf is put aside, a new one in use,
-//! what the earlier avenDB kept gone. Each page reports its steps to the test over HTTP. `cargo test` skips it; the
-//! script runs it.
+//! a ceremony of her passkey, marks the note, asks `may` and sets how deep its queries read; her second links through
+//! the first one's code in one ceremony and edits it; both add a row three lists down in her outline at once, and each
+//! reads the other's, the two agreeing on the whole outline; the first closes, opens again from its shelf in one
+//! ceremony and edits the note once more, no other page holding its store while it runs; then she forgets it there, and
+//! its shelf is put aside, a new one in use, what the earlier avenDB kept gone. Each page reports its steps to the test
+//! over HTTP. `cargo test` skips it; the script runs it.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -322,11 +323,13 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     // Eve's first browser makes her passkey, founds her vault, claims the server and writes a note, in two ceremonies
     let code = server.offer().to_text();
     let params = [("store", "first"), ("name", "Eve's browser"), ("relay", &url), ("server", &code)];
-    let then = [("page", "first"), ("write", MARCH), ("ops", "1"), ("reads", APRIL), ("close", "1")];
+    let then = [("page", "first"), ("write", MARCH), ("ops", "1"), ("reads", APRIL), ("nest", "111:Beans")];
+    let then = [&then[..], &[("close", "1")]].concat();
     tab.frame(&[&params[..], &then].concat()).await;
     let first = tab.expect("first", "started").await;
     eprintln!("Eve's first browser founded her vault in {} ms, in {} ceremonies", first["ms"], first["ceremonies"]);
     assert_eq!(first["ceremonies"], 2, "the unlock, and one for her vault and the claim: {first}");
+    assert_eq!(first["limits"], 256, "its queries read as deep as any write reaches, until it says otherwise");
     let eve = VaultId(id(&first, "vault"));
     let seeded = move |lab: &Lab, me| lab.vault_of(me).is_some_and(|v| avendb::world::seeded(lab.state(me), eve, v));
     let seeded = server.read(seeded);
@@ -371,17 +374,20 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     assert_eq!(ops["may"][0], true, "her card");
     assert_eq!(ops["may"][1]["refused"], "BadThreshold", "three of two owners");
     assert_eq!(ops["may"][2], approves, "a threshold her passkey approves");
+    let limits = json!({ "depth": 9, "default": 16, "ceiling": 256 });
+    assert_eq!(ops["limits"], limits, "its queries 9 levels down at most");
     let aven = VaultId(aven.as_str().and_then(BlobId::from_hex).expect("the new vault's id").0);
     let threshold = move |lab: &Lab, me| lab.state(me).vault(aven).map(|v| v.threshold);
     until("the server sees the new threshold", || async { server.read(threshold).await == Some(2) }).await;
 
     // her second browser links through the first one's code, in one ceremony, and edits the note
     let field = |key| first[key].as_str().unwrap_or_else(|| panic!("{key} in {first}"));
-    let note = [("actor", field("actor")), ("entry", field("entry"))];
+    let note = [("actor", field("actor")), ("entry", field("entry")), ("outline", field("outline"))];
     let offer = first["offer"].as_str().expect("the first browser's code");
     let second = [("page", "second"), ("store", "second"), ("name", "Eve's other browser"), ("relay", &url)];
     let file = format!("{root}:{}", first["file"]["size"]);
-    let steps = [("offer", offer), ("reads", MARCH), ("file", &file), ("write", APRIL), ("then", MAY)];
+    let steps = [("offer", offer), ("reads", MARCH), ("file", &file), ("write", APRIL), ("nest", "112:Peas")];
+    let steps = [&steps[..], &[("then", MAY)]].concat();
     tab.frame(&[&second[..], &steps, &note[..]].concat()).await;
     let second = tab.expect("second", "started").await;
     eprintln!("Eve's second browser linked in {} ms", second["ms"]);
@@ -391,6 +397,15 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.expect("second", "fetched").await;
     tab.expect("second", "wrote").await;
     tab.expect("first", "read").await;
+    // both add a row under one row of her outline, three lists down, at once: each reads both, and they agree
+    let (mine, theirs) = (tab.expect("first", "nested").await, tab.expect("second", "nested").await);
+    assert_eq!(mine["record"], theirs["record"], "both browsers read one outline");
+    let under = &mine["record"]["nodes"][0]["kids"][0]["kids"];
+    let mut rows: Vec<(i64, &str)> = under.as_array().expect("its rows").iter().map(|k| {
+        (k["id"].as_i64().expect("an id"), k["text"].as_str().expect("a text"))
+    }).collect();
+    rows.sort();
+    assert_eq!(rows, [(111, "Beans"), (112, "Peas")], "each browser's row, three lists down: {mine}");
     let closed = tab.expect("first", "closed").await;
     eprintln!("Eve's first browser kept {} edits and {} McEliece keys in OPFS", closed["edits"], closed["keys"]);
     let shelf = closed["shelf"].as_array().expect("the names on its shelf");
@@ -405,6 +420,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     assert_eq!(again["ceremonies"], 1, "the unlock alone: {again}");
     assert_eq!((&again["endpoint"], &again["vault"]), (&first["endpoint"], &first["vault"]), "the same device");
     assert_eq!((&again["edits"], &again["keys"]), (&closed["edits"], &closed["keys"]), "holding what its shelf kept");
+    assert_eq!(again["limits"], 9, "its queries as deep as it set them, kept on its shelf");
     tab.expect("again", "read").await;
     tab.expect("again", "wrote").await;
     // while it runs, no other page holds its store
@@ -421,7 +437,9 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let forgot = tab.expect("again", "forgot").await;
     let (old, new) = (format!("g{FLOOR}"), format!("g{}", FLOOR + 1));
     assert_eq!(forgot["generations"], json!([old, new]), "a new shelf beside the old: {forgot}");
-    assert_eq!(forgot["metas"], json!({ old: ["0000000000000001"], new: [] }), "the old shelf as it was");
+    // what opened it, as it kept it at the start and again with how deep its queries read
+    let metas = json!({ old: ["0000000000000001", "0000000000000002"], new: [] });
+    assert_eq!(forgot["metas"], metas, "the old shelf as it was");
     assert_eq!(forgot["meta"], Value::Null, "nothing opens a device on the new one");
     let gone = json!({ "ops": null, "meta": null, "key": null, "old": null });
     assert_eq!(forgot["earlier"], gone, "what the earlier avenDB kept, cleared");

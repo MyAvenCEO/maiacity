@@ -1,4 +1,5 @@
 import AvenDB.Ops
+import AvenDB.Links
 import AvenDB.Vectors
 
 /-!
@@ -13,7 +14,10 @@ Mac app send (`avendb/docs/ARCHITECTURE.md` §8):
 - **runs**: a record, ops run one after the other (`Doc.runAll`), and the record after them, or none where one makes
   no sense of it: at every depth, and in a row that isn't there;
 - **queries**: a few entries, each its labels and its record, and for each `where` the selector a device picks by
-  (`Where.plan`) and the entries it holds of, with tests in any row (`*`) at any depth.
+  (`Where.plan`) and the entries it holds of, with tests in any row (`*`) at any depth;
+- **graph** and **follows**: the records a reader opens, each its vault, its entry and its record with its links, and
+  for a link, the fields a query follows and how deep, what it shows (`Links.follow`): a cycle of links that ends at
+  the depth, hops the reader opens nothing of with their reasons, and a record read so many rows down.
 
 A type or a tag is a number in the model, and its digits here; a vault or an entry is a number, and here the id whose
 last 8 bytes are that number, big-endian (`from_u64`).
@@ -22,6 +26,7 @@ last 8 bytes are that number, big-endian (`from_u64`).
 namespace AvenDB.OpsVectors
 
 open AvenDB.Ops
+open AvenDB.Links
 open AvenDB.Vectors (str arr obj nat bool opt)
 
 /-! ## Records -/
@@ -299,6 +304,36 @@ def wheres : List Where :=
     ((List.range 9).map fun n => lbl (.entryIn [n + 11])).foldr .or .no,
     ((List.range 17).map fun n => lbl (.createdIn 0 (n + 1000))).foldr .and .yes ] ++ deepWheres
 
+/-! ## Links -/
+
+def ada : Link := { vault := 1, entry := 21 }
+def bo : Link := { vault := 1, entry := 22 }
+def garden : Link := { vault := 1, entry := 23 }
+/-- An entry the reader opens nothing of. -/
+def hidden : Link := { vault := 1, entry := 24 }
+/-- Ada's entry, in a vault it isn't in. -/
+def misfiled : Link := { vault := 2, entry := 21 }
+
+/-- The records the reader opens, by entry: each its vault, its record and its links, by field. Ada and Bo are each
+    other's friend, a cycle. -/
+def graph : List (Link × Doc × List (String × Link)) :=
+  [ (ada, [("kind", s "person"), ("name", s "Ada")], [("friend", bo), ("garden", garden), ("notes", hidden)]),
+    (bo, [("kind", s "person"), ("name", s "Bo")], [("friend", ada), ("boss", misfiled)]),
+    (garden, outline, [("owner", ada)]) ]
+
+/-- What the reader opens of a link: the record of its entry, if it opens one, in the vault the link names. -/
+def opens : Opens := fun l => match graph.find? (·.1.entry == l.entry) with
+  | none => .error .noEntry
+  | some (m, d, ls) => if m.vault == l.vault then .ok (d, ls) else .error .wrongVault
+
+def everyLink : List String := ["friend", "garden", "notes", "boss", "owner"]
+
+/-- A link, the fields a query follows from it, and how deep. -/
+def follows : List (Link × List String × Nat) :=
+  (List.range 6).map (fun n => (ada, ["friend"], n)) ++
+  [(ada, everyLink, 4), (bo, everyLink, 2), (ada, [], 1), (hidden, everyLink, 3), (misfiled, [], 2)] ++
+  (List.range 7).map (fun n => (garden, ["owner"], n + 1))
+
 /-! ## JSON -/
 
 def hexDigit (n : Nat) : Char := if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
@@ -452,6 +487,42 @@ def queryCase (w : Where) : String :=
   let rows := (entries.zipIdx.filter fun ((a, d), _) => w.holds a d.meaning).map (·.2)
   obj [("where", «where» w), ("plan", selector w.plan), ("rows", arr (rows.map nat))]
 
+/-- A link as a record holds it: its vault and entry, and its row and the version it is pinned at, if it names them. -/
+def linkFields (l : Link) : List (String × String) :=
+  [("vault", str (hexId l.vault)), ("entry", str (hexId l.entry))] ++
+  (if l.row.isEmpty then [] else [("row", arr (locSteps (rowAt l.row)))]) ++
+  (if l.pinned.isEmpty then [] else [("at", arr (l.pinned.map fun e => str (hexId e)))])
+
+def linkJson (l : Link) : String := obj (linkFields l)
+
+def why : Why → String
+  | .noEntry    => "NoEntry"
+  | .wrongVault => "WrongVault"
+  | .noVersion  => "NoVersion"
+  | .noRow      => "NoRow"
+  | .deep       => "Deep"
+
+mutual
+/-- What a query shows of a link: the link, and the record it leads to (`to`), its links followed in place, or why it
+    shows none (`empty`). -/
+partial def shown : Shown → String
+  | .empty l w => obj (linkFields l ++ [("empty", str (why w))])
+  | .hop l d next => obj (linkFields l ++ [("to", obj (d.map (fun (f, x) => (f, item x)) ++ nextFields next))])
+
+partial def nextFields : Next → List (String × String)
+  | .done => []
+  | .follows f x rest => (f, shown x) :: nextFields rest
+  | .leaves f l rest => (f, linkJson l) :: nextFields rest
+end
+
+def graphJson (n : Link × Doc × List (String × Link)) : String :=
+  obj [("vault", str (hexId n.1.vault)), ("entry", str (hexId n.1.entry)),
+       ("record", obj (n.2.1.map (fun (f, x) => (f, item x)) ++ n.2.2.map fun (f, l) => (f, linkJson l)))]
+
+def followCase (c : Link × List String × Nat) : String :=
+  obj [("link", linkJson c.1), ("follow", arr (c.2.1.map str)), ("depth", nat c.2.2),
+       ("shown", shown (follow opens c.2.1 c.2.2 c.1))]
+
 def ran : List (Doc × Doc) := runs.filterMap fun (d, ops) => (d.runAll ops).map (d, ·)
 
 def lines (xs : List String) : String := "[\n" ++ ",\n".intercalate xs ++ "\n]"
@@ -460,7 +531,9 @@ def render : String :=
   "{\"diffs\": " ++ lines ((records.flatMap fun d => records.map (d, ·)) ++ ran |>.map fun (d, e) => diffCase d e) ++
   ",\n\"runs\": " ++ lines (runs.map fun (d, ops) => runCase d ops) ++
   ",\n\"entries\": " ++ lines (entries.map fun (a, d) => entryJson a d) ++
-  ",\n\"queries\": " ++ lines (wheres.map queryCase) ++ "}\n"
+  ",\n\"queries\": " ++ lines (wheres.map queryCase) ++
+  ",\n\"graph\": " ++ lines (graph.map graphJson) ++
+  ",\n\"follows\": " ++ lines (follows.map followCase) ++ "}\n"
 
 /-! ## What the cases cover -/
 
@@ -526,5 +599,26 @@ def _root_.AvenDB.Ops.RecordOp.depth (op : RecordOp) : Nat := op.loc.countP fun
 #guard wheres.any fun w => let n := (entries.filter fun (a, d) => w.holds a d.meaning).length; 0 < n && n < entries.length
 #guard (deepWheres.filter fun w => let n := (entries.filter fun (a, d) => w.holds a d.meaning).length;
   0 < n && n < entries.length).length ≥ 8
+-- a record read so many rows down goes no deeper, and as deep as it is where that is less
+#guard (List.range 7).all fun n => (outline.cut n).depth == min n outline.depth
+#guard ((outline.cut 0).lookup "blocks").isNone && match (plan.cut 0).lookup "tags" with
+  | some (.rows []) => true
+  | _ => false
+-- a cycle of links ends at the depth, never before
+#guard (List.range 6).all fun n => (follow opens ["friend"] n ada).height == n
+#guard (follow opens everyLink 4 ada).height == 4
+-- a hop the reader opens nothing of shows why, wherever it is
+#guard match follow opens everyLink 3 hidden, follow opens [] 2 misfiled with
+  | .empty _ .noEntry, .empty _ .wrongVault => true
+  | _, _ => false
+#guard match follow opens everyLink 2 ada with
+  | .hop _ _ (.follows "friend" (.hop _ _ _) (.follows "garden" (.hop _ _ _) (.follows "notes" (.empty _ .noEntry)
+      .done))) => true
+  | _ => false
+-- and past the depth, a hop opens nothing at all
+#guard match follow opens everyLink 2 bo with
+  | .hop _ _ (.follows "friend" (.hop _ _ (.follows "friend" (.empty _ .deep) (.follows "garden" (.empty _ .deep)
+      (.follows "notes" (.empty _ .deep) .done)))) (.follows "boss" (.empty _ .wrongVault) .done)) => true
+  | _ => false
 
 end AvenDB.OpsVectors

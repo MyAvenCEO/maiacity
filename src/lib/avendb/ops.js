@@ -22,6 +22,7 @@ export const READS = [
 	'read_file',
 	'creatable',
 	'taggable',
+	'limits',
 	'may'
 ];
 

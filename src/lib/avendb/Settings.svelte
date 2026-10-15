@@ -2,8 +2,9 @@
 	A vault's settings, as its aside lists them: About (what it is, who approves a change to it and how many of its
 	owners, how this browser acts for it), Owners and devices (who owns it, what it owns, the devices that act for it,
 	each removed as a lost one is, and for the person's own vault what each of their devices keeps, a full copy or a
-	light one, this browser's name, linking the next device and forgetting this one; in the Mac app, its Drives: each
-	volume plugged in, used for avenDB as a device of the vault of its own in one ceremony of the passkey, and each
+	light one, this browser's name, how deep its queries read (Query limits), linking the next device and forgetting
+	this one; in the Mac app, its Drives: each volume plugged in, used for avenDB as a device of the vault of its own in
+	one ceremony of the passkey, and each
 	drive joined, plugged in or, unplugged, when it last checked what it holds), and Sharing, the one place that says who has the vault: each vault
 	it is shared with, and Everyone where it is public, one line each, with its shares (level · what, and what each
 	reaches now; shares on chosen entries folded into one line a level) and the devices of theirs it is on, each opening
@@ -275,6 +276,27 @@
 	const drivesById = $derived(new Map((drives?.drives ?? []).map((x) => [x.device, x])));
 	/** the volumes plugged in that this Mac doesn't host as a drive of the vault */
 	const loose = $derived((drives?.volumes ?? []).filter((x) => x.state !== 'hosted'));
+	/**
+	 * How deep this device's queries read, as it says (the `limits` op): at most `depth` rows and links down, whatever a
+	 * query asks, which `set_limits` changes and the device keeps with what opens it again; a query that names no depth
+	 * reads `default`; no write that counts reaches deeper than `ceiling`.
+	 */
+	let limits = $state(/** @type {{ depth: number, default: number, ceiling: number } | null} */ (null));
+	let deepest = $state(0);
+	$effect(() => {
+		void world;
+		read(api, { op: 'limits' }, null).then((/** @type {typeof limits} */ l) => {
+			limits = l;
+			if (l) deepest = l.depth;
+		});
+	});
+	/** Keeps `deepest` as the most rows and links down this device's queries read. */
+	async function setDepth() {
+		if (!limits || deepest === limits.depth) return;
+		const done = await api.run('Saving the query limit', { op: 'set_limits', depth: deepest });
+		if (done) limits = done;
+	}
+
 	/** @type {Record<import('./native.js').Volume['state'], string>} what to say of a volume plugged in, by what it is
 	 *  to this Mac */
 	const VOLUME = {
@@ -638,6 +660,33 @@
 						/>
 						<button class="btn quiet" onclick={copyRunning}>{copied ? 'Copied' : 'Copy the line'}</button>
 					{/if}
+				</article>
+			{/if}
+			{#if limits}
+				<article class="card">
+					<h3>Query limits</h3>
+					<p class="soft">
+						A query on {here} reads each record so many rows down, and follows links as many levels: {limits.default}
+						unless it asks for more, and never more than this, so a record nested deep, or a long chain of links, costs
+						only what you allow. A link or a list of rows deeper than that shows as not read.
+					</p>
+					<label class="harness">
+						<span>At most</span>
+						<input
+							class="field"
+							type="number"
+							min="1"
+							max={limits.ceiling}
+							bind:value={deepest}
+							aria-label="The most rows and links down a query reads"
+						/>
+						<span class="soft">of {limits.ceiling} levels</span>
+					</label>
+					<button
+						class="btn quiet"
+						disabled={busy || !(deepest >= 1 && deepest <= limits.ceiling) || deepest === limits.depth}
+						onclick={setDepth}>Save</button
+					>
 				</article>
 			{/if}
 			<article class="card">

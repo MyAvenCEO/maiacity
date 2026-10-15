@@ -5,14 +5,18 @@
 	its columns the fields of its schema, newest version first, each with its type, then what avenDB keeps of each row
 	(who it is shared with, the devices it is synced to, the tags shares select it by, which its record's own fields
 	don't hold, its schemas, edits, proposals and who wrote it first, and with the studio's internals shown its key's
-	generation and size); sorted by a column, searched, and each row opened in a drawer, its record field by field, and
-	with the internals shown, its mark to run now (the `mark` op). Files are entries too: the files table is the vault's
+	generation and size); sorted by a column, searched, and each row opened in a drawer, its record field by field, a
+	list of records' rows each opened in turn, at any depth, and each link followed to the record or row it leads to,
+	a level at a time, as the device's query follows it (./RecordView.svelte), and with the internals shown, its mark to
+	run now (the `mark` op). Files are entries too: the files table is the vault's
 	file entries, shared, synced and searched as every table's rows are, with the file each brings beside its fields (its
 	root, its length, its sealed size and its pieces).
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import Panel from './Panel.svelte';
+	import RecordView from './RecordView.svelte';
+	import { isLink, isLinks, isRows, valueWords } from './paths.js';
 	import { cell, families, familyOf, hint, parsed, pgType, tables, typeOf } from './db.js';
 	import { allowed, may } from './ops.js';
 	import { count, nameOf, sharerWords, short, size, syncedWords } from './vaults.js';
@@ -34,6 +38,14 @@
 	let sort = $state({ by: '', down: false });
 	/** the row whose drawer is open */
 	let open = $state('');
+	/** where in its record the drawer is: each list's field and a row of it, each link followed (./RecordView.svelte) */
+	let trail = $state(/** @type {(string | number | { id: number } | { to: true })[]} */ ([]));
+
+	// another row's drawer opens at its record
+	$effect.pre(() => {
+		void open;
+		trail = [];
+	});
 
 	const all = $derived(tables(s, within));
 	const table = $derived(all.find((t) => t.id === picked) ?? all[0]);
@@ -250,7 +262,9 @@
 {#if row && table}
 	{@const opened = table.id !== 'sealed'}
 	<Panel title="{table.label} · {short(row.entry)}" sub={row.entry} onclose={() => (open = '')}>
-		{#if opened}
+		{#if opened && trail.length}
+			<RecordView {api} entry={row.entry} record={row.record} bind:trail />
+		{:else if opened}
 			<div class="fields">
 				{#each columns.filter((c) => !c.pk && !c.sys) as c (c.name)}
 					{@const v = c.get(row)}
@@ -258,6 +272,25 @@
 						<div class="fh"><code>{c.name}</code><span class="type">{c.type}</span></div>
 						{#if v === null || v === undefined}
 							<p class="null">NULL</p>
+						{:else if isRows(v) && v.length}
+							<p class="chips">
+								{#each v as r (r.id)}
+									<button class="btn quiet" onclick={() => (trail = [c.name, { id: r.id }])}>row {r.id}</button>
+								{/each}
+							</p>
+						{:else if isLink(v)}
+							<p class="val">
+								{valueWords(v)}
+								<button class="btn quiet" onclick={() => (trail = [c.name, { to: true }])}>Follow</button>
+							</p>
+						{:else if isLinks(v)}
+							<p class="chips">
+								{#each v as l, i (i)}
+									<button class="btn quiet" title={valueWords(l)} onclick={() => (trail = [c.name, i, { to: true }])}
+										>Follow {i + 1}</button
+									>
+								{/each}
+							</p>
 						{:else if typeof v === 'object'}
 							<pre class="json">{JSON.stringify(v, null, 2)}</pre>
 						{:else}

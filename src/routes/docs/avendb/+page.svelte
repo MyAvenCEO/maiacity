@@ -249,6 +249,11 @@
 			'A list of records (a note’s blocks, a checklist)',
 			'Rows are matched by their id: rows added on two devices both stay, and a row moved or removed is that row and no other.'
 		],
+		[
+			'Rows inside rows (an outline’s nodes, a thread’s replies)',
+			'The same at any depth: each list is a container of its own in the row that holds it. A row moved within its list keeps an edit made to it meanwhile; a row moved to another list is deleted and added anew, so such an edit is lost.'
+		],
+		['One row id added on two devices', 'Both rows stay, each with the rows under it, and apps show the first.'],
 		['Any other field', 'One value wins, and it is the same one on every device.']
 	];
 
@@ -256,11 +261,14 @@
 		['Propose from here', 'Starts a proposal from the version you are looking at, main or an older one.'],
 		[
 			'Merge into main',
-			'As a pull request merges: what only the proposal changed lands, and nothing main changed is lost. Where both changed the same place, you pick which value main keeps.'
+			'As a pull request merges: what only the proposal changed lands, and nothing main changed is lost. Where both changed the same place, you pick which value main keeps. Rows inside a row join by id at any depth; a clash anywhere inside makes that row the place you pick, and the page says where under it both changed it.'
 		],
 		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
-		['Undo', 'Takes out one older edit by a three-way merge, keeping every change made after it.'],
+		[
+			'Undo',
+			'Takes out one older edit by a three-way merge, keeping every change made after it, at any depth. Undoing a merge takes out only what the merge itself wrote, so both lines’ changes stay; restore the version before it to take back the merge.'
+		],
 		[
 			'Make a variant',
 			'A new note, in this vault or another, with the line’s content and tags. Its first edit names this note and the version it came from by the hashes of its edits, so its history goes on into this one’s.'
@@ -323,6 +331,18 @@
                      { "path": ["status"], "ne": "done" }] },
   "order": [["created", "desc"]], "limit": 20 }`;
 
+	const FOLLOW = `{ "op": "query",
+  "where": { "path": ["name"], "eq": "Ada" },
+  "follow": [["friend"], ["notes"]], "depth": 1 }`;
+
+	const FOLLOWED = `{ "name": "Ada",
+  "friend": { "vault": "…", "entry": "…",
+              "to": { "name": "Bo",
+                      "friend": { "vault": "…", "entry": "…",
+                                  "empty": "Deep", "why": "…" } } },
+  "notes": [{ "vault": "…", "entry": "…",
+              "empty": "NoEntry", "why": "…" }] }`;
+
 	const ANSWER = `{ "ok": { "rows": [{ "entry": "…", "type": "todo", "tags": ["garden"],
                     "record": { "title": "Water the figs", "status": "doing" } }],
           "count": 1 } }
@@ -346,7 +366,8 @@
 		'log',
 		'read_file',
 		'creatable',
-		'taggable'
+		'taggable',
+		'limits'
 	];
 	const asks = ['may', 'shares'];
 	const changes = [
@@ -376,7 +397,8 @@
 		'mark',
 		'card',
 		'profile',
-		'follow'
+		'follow',
+		'set_limits'
 	];
 
 	const messages = [
@@ -414,7 +436,7 @@
 	];
 
 	const LAYOUT = `g8/                 one generation, 8 or later since the last reset; starting fresh makes g9
-  meta/<n>          what opens the device again, its follow list too (browser, desktop)
+  meta/<n>          what opens the device again, its follow list and query limit too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
   blobs/<hash>      edit packs, McEliece keys, HashSeqs and file pieces
@@ -473,6 +495,11 @@
 		],
 		['What any device says or signs it holds never gets anyone a file the rules refuse', 'T27'],
 		['Every reader agrees whether a write counts, and a write that breaks its schema counts for no one', 'C2, S3'],
+		['A record that fits its schema stays so, and no write reaches deeper than 256 rows', 'S2'],
+		[
+			'A query shows through links only what its reader opened, says why where it opened nothing, and a cycle of links ends at its depth',
+			'L1, L2, L3'
+		],
 		['Merging a proposal loses nothing: what main changed stays, and what only the proposal changed lands', 'T10']
 	];
 </script>
@@ -767,6 +794,13 @@
 				is a Loro document, a CRDT: any device changes its own copy at any time, and two devices that hold the same writes
 				read the same entry, whatever order the writes arrived in.
 			</p>
+			<p class="prose-col">
+				A record holds records: a row of a list may hold lists of rows in turn, at any depth, an outline’s nodes under
+				nodes or a thread’s replies under replies. A place is named from the top by its chain of rows,
+				<code>["nodes", &#123;"id": 1&#125;, "kids", &#123;"id": 11&#125;, "text"]</code>, and every walk over a record is a
+				loop, so a deep one can’t overflow a stack. No write reaches deeper than 256 rows: a deeper one fits no schema,
+				so no reader counts it, the same on every device.
+			</p>
 			<div class="table">
 				<table>
 					<thead>
@@ -894,6 +928,12 @@
 				<pre><code>{SHARE}</code></pre>
 				<figcaption>Bob may read the todos tagged work, and set their status to doing or done.</figcaption>
 			</figure>
+			<p class="prose-col">
+				An op names its place at any depth, and <code>"*"</code> stands for any row or any field:
+				<code>["nodes", "*", "kids", "*", "text"]</code> is the text of any row under any node. An op on a row covers
+				everything under it. The Share form offers every field of the schema at any depth, in words, and each list of
+				rows to add to, delete from or reorder.
+			</p>
 			<div class="table">
 				<table>
 					<thead>
@@ -1027,7 +1067,19 @@
 				</li>
 				<li>
 					<b>Readers count only writes that fit.</b> A write whose result breaks its schema stays in the log and changes
-					nothing anyone sees, so a patched app can’t slip in a value its schema forbids.
+					nothing anyone sees, so a patched app can’t slip in a value its schema forbids. Each change is judged on the row
+					around it, however deep.
+				</li>
+				<li>
+					<b>Rows hold rows, and a shape may hold its own.</b> A list of records may sit inside a row, at any depth. An
+					outline’s node holds nodes: a shape that holds rows of its own shape is read one row at a time. A shape that
+					holds itself through plain fields would have no end, and is no schema. A lens reaches into rows of rows too, and
+					translates only what a query reads.
+				</li>
+				<li>
+					<b>A field holds rows, or a link.</b> What lives and dies with its record is inline, as its rows. What has a life
+					of its own, with its own shares and keys, is linked: <code>"x-link"</code> marks a field that points at another
+					entry, or a row of one, at its newest or at the version it is pinned at.
 				</li>
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, flows, functions, posts,
@@ -1062,6 +1114,27 @@
 				<figure class="wide">
 					<pre><code>{ANSWER}</code></pre>
 					<figcaption>What comes back: what it found, a refusal and why, or what your passkey must approve</figcaption>
+				</figure>
+			</div>
+			<p class="prose-col">
+				A query reads each record 16 rows down unless it asks for another depth, and never deeper than the most your
+				device allows, which you set in Settings, from 1 to 256. A list of rows deeper than that isn’t read, and the
+				answer says so for that entry (<code>"cut": true</code>). A query also follows the links at the places it names, a level at a time:
+				each hop opens only what your device may read there, and a hop that opens nothing says why. Every row and every
+				hop is one level, so a long chain of links, or a cycle, ends at the query’s depth. There is no paging: your
+				device holds what it reads.
+			</p>
+			<div class="codes">
+				<figure class="wide">
+					<pre><code>{FOLLOW}</code></pre>
+					<figcaption>Ada, her friend one link away, and her notes</figcaption>
+				</figure>
+				<figure class="wide">
+					<pre><code>{FOLLOWED}</code></pre>
+					<figcaption>
+						Ada’s record as it comes back: Bo’s record where the link leads, Bo’s own friend one level too deep, and a
+						note this device can’t open
+					</figcaption>
 				</figure>
 			</div>
 			<div class="chips">

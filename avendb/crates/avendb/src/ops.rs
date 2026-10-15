@@ -16,7 +16,13 @@
 //!   doesn't cover (O2).
 //! - **Queries** (`Where`). A `where` mixes labels, the tests of a share's selector, with tests of a record's values, at
 //!   a place or in any row of a list (`*`), at any depth. Its labels make a selector that picks no less than it does
-//!   (`Where::plan`), so a device picks entries by labels first and tests values only in what it opens (O3).
+//!   (`Where::plan`), so a device picks entries by labels first and tests values only in what it opens (O3). A query
+//!   reads each record so many rows down (`cut`): what lies deeper is never read, translated or tested.
+//! - **Links** (`Link`, `follow`), as in `avendb/spec/AvenDB/Links.lean`. A field holds a record's own rows, or a
+//!   link to an entry of a vault, maybe a row of it, at its newest or pinned at a version. A query follows the links
+//!   at the places it names, a level at a time, each hop opening what the reader opens of it, or showing why it opens
+//!   nothing there (L1, L2); every hop and every row is a level of the query's depth, so a cycle of links ends there
+//!   (L3).
 //!
 //! A path is a JSON array: `[]` the whole record, `["title"]` a field, `["blocks", {"id": 2}]` the row of a list of
 //! records with id 2, `["blocks", {"id": 2}, "text"]` a field of it, `["blocks", {"id": 2}, "children", {"id": 5},
@@ -30,6 +36,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde_json::{json, Map, Value};
 
+use crate::id::{EditId, EntryId, VaultId};
 use crate::slice::{Atom, Attrs, Selector};
 
 /// A record: a JSON object.
@@ -79,27 +86,203 @@ pub fn keyed(rows: &[Value]) -> Vec<(Key, &Record)> {
 
 /// Record `r` read `depth` rows down, as a query reads it (`engine`'s `query`): the rows of its lists, of theirs and so
 /// on to `depth` levels, each list of rows deeper than that taken out of the row that holds it (all of the record's
-/// own at 0). Whether it took any out. A loop over an explicit stack, never a recursion.
+/// own at 0; `Doc.cut`). Whether it took any out.
 pub fn cut(r: &mut Record, depth: usize) -> bool {
-    let mut cut = false;
-    let mut todo: Vec<(&mut Record, usize)> = vec![(r, 0)];
-    while let Some((r, d)) = todo.pop() {
+    let places = empty_below(r, depth);
+    take_out(r, &places);
+    !places.is_empty()
+}
+
+/// Record `r` read `depth` rows down, as it is stored: each list of rows deeper than that emptied, so a schema still
+/// reads the row that holds it with nothing below to translate, and the places of those lists, which `take_out`
+/// takes out of what the schema read (`engine`'s `see_within`). A loop over an explicit stack, never a recursion.
+pub fn empty_below(r: &mut Record, depth: usize) -> Vec<Path> {
+    let mut places = vec![];
+    let mut todo: Vec<(&mut Record, Vec<(String, Key)>)> = vec![(r, vec![])];
+    while let Some((r, chain)) = todo.pop() {
         let held = |v: &Value| rows(v).is_some_and(|xs| !xs.is_empty());
         let deeper: Vec<String> = r.iter().filter(|(_, v)| held(v)).map(|(f, _)| f.clone()).collect();
-        if d == depth {
-            cut |= !deeper.is_empty();
-            for f in &deeper {
-                r.remove(f);
+        if chain.len() == depth {
+            for f in deeper {
+                r.insert(f.clone(), json!([]));
+                places.push(Path { rows: chain.clone(), field: f });
             }
             continue;
         }
         for (f, v) in r {
-            if let (true, Value::Array(xs)) = (deeper.contains(f), v) {
-                todo.extend(xs.iter_mut().filter_map(Value::as_object_mut).map(|x| (x, d + 1)));
+            if !deeper.contains(f) {
+                continue;
+            }
+            let keys: Vec<Key> = keyed(rows(v).expect("a list of rows")).into_iter().map(|(k, _)| k).collect();
+            let xs = v.as_array_mut().expect("a list of rows");
+            for (k, x) in keys.into_iter().zip(xs.iter_mut().filter_map(Value::as_object_mut)) {
+                let mut down = chain.clone();
+                down.push((f.clone(), k));
+                todo.push((x, down));
             }
         }
     }
-    cut
+    places
+}
+
+/// Record `r` with the fields at `places` taken out, each where a row by its key holds it: whether it took any. A place
+/// whose row isn't there (a copy an app doesn't see, a row a schema doesn't read) takes nothing.
+pub fn take_out(r: &mut Record, places: &[Path]) -> bool {
+    let mut took = false;
+    'places: for p in places {
+        let mut at: &mut Record = r;
+        for (f, k) in &p.rows {
+            let Some(row) = at.get_mut(f).and_then(|v| row_mut(v, k)) else { continue 'places };
+            at = row;
+        }
+        took |= at.remove(&p.field).is_some();
+    }
+    took
+}
+
+/// The row with key `k` of the list of records `v`.
+fn row_mut<'a>(v: &'a mut Value, k: &Key) -> Option<&'a mut Record> {
+    let i = keyed(rows(v)?).iter().position(|(key, _)| key == k)?;
+    v.as_array_mut()?.get_mut(i)?.as_object_mut()
+}
+
+/// A link (`Links.Link`): entry `entry` of vault `vault`, the row `row` names in it (each list's field and its row's
+/// id, in turn: none for the whole record), at its newest, or pinned at version `at` (its writes). A record holds it
+/// as `{"vault": id, "entry": id, "row"?: [field, {"id": n}, ..], "at"?: [edit, ..]}`, nothing else, `row` and `at`
+/// left out where they name nothing; a schema says a field holds one (`"x-link"`, `lens::Schema`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Link {
+    pub vault: VaultId,
+    pub entry: EntryId,
+    pub row: Vec<(String, i64)>,
+    pub at: Option<Vec<EditId>>,
+}
+
+impl Link {
+    /// The link a value is, if it is one.
+    pub fn of_json(v: &Value) -> Option<Link> {
+        let o = v.as_object()?;
+        if !o.keys().all(|k| ["vault", "entry", "row", "at"].contains(&k.as_str())) {
+            return None;
+        }
+        let vault = VaultId::from_hex(o.get("vault")?.as_str()?)?;
+        let entry = EntryId::from_hex(o.get("entry")?.as_str()?)?;
+        let row = match o.get("row") {
+            None => vec![],
+            Some(steps) => {
+                let Loc(steps) = Loc::of_json(steps).ok()?;
+                if steps.is_empty() || steps.len() % 2 != 0 {
+                    return None;
+                }
+                let pair = |p: &[Seg]| match p {
+                    [Seg::Field(f), Seg::Row(i)] => Some((f.clone(), *i)),
+                    _ => None,
+                };
+                steps.chunks(2).map(pair).collect::<Option<Vec<_>>>()?
+            }
+        };
+        let at = match o.get("at") {
+            None => None,
+            Some(xs) => {
+                let xs = xs.as_array().filter(|xs| !xs.is_empty())?;
+                Some(xs.iter().map(|x| EditId::from_hex(x.as_str()?)).collect::<Option<Vec<_>>>()?)
+            }
+        };
+        Some(Link { vault, entry, row, at })
+    }
+
+    pub fn to_json(&self) -> Value {
+        let mut o = Map::new();
+        o.insert("vault".into(), self.vault.to_hex().into());
+        o.insert("entry".into(), self.entry.to_hex().into());
+        if !self.row.is_empty() {
+            let steps = self.row.iter().flat_map(|(f, i)| [Value::from(f.as_str()), json!({ "id": i })]);
+            o.insert("row".into(), steps.collect());
+        }
+        if let Some(at) = &self.at {
+            o.insert("at".into(), at.iter().map(EditId::to_hex).collect());
+        }
+        Value::Object(o)
+    }
+}
+
+/// Why a hop shows nothing (`Links.Why`): a name (`NoEntry`, `WrongVault`, `NoVersion`, `NoRow`, `Deep`, or the
+/// engine's `NoSchema`) and words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unopened {
+    pub name: &'static str,
+    pub why: String,
+}
+
+/// What a reader opens of a link (`Links.Opens`), read so many rows down: the record or the row there, or why it opens
+/// none.
+pub type Opens<'a> = dyn FnMut(&Link, usize) -> Result<Record, Unopened> + 'a;
+
+/// The places of the links at `targets` in `r`, each with how many rows down it lies: a field that holds a link, or
+/// each link of a list a field holds, by its JSON pointer under `base`. A loop over an explicit stack.
+fn link_places(r: &Record, base: &str, targets: &[Target]) -> Vec<(String, usize)> {
+    let token = |s: &str| s.replace('~', "~0").replace('/', "~1");
+    let mut out = vec![];
+    for t in targets {
+        let mut todo: Vec<(&Record, String, usize)> = vec![(r, base.to_string(), 0)];
+        while let Some((at, ptr, n)) = todo.pop() {
+            let Some((f, pick)) = t.rows.get(n) else {
+                let here = format!("{ptr}/{}", token(&t.field));
+                match at.get(&t.field) {
+                    Some(v) if Link::of_json(v).is_some() => out.push((here, n)),
+                    Some(Value::Array(xs)) => {
+                        let links = xs.iter().enumerate().filter(|(_, x)| Link::of_json(x).is_some());
+                        out.extend(links.map(|(i, _)| (format!("{here}/{i}"), n)));
+                    }
+                    _ => {}
+                }
+                continue;
+            };
+            let Some(list) = at.get(f).and_then(rows) else { continue };
+            for (i, (k, row)) in keyed(list).into_iter().enumerate() {
+                if pick.is_none_or(|p| p == k) {
+                    todo.push((row, format!("{ptr}/{}/{i}", token(f)), n + 1));
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Record `r`, read `depth` rows down, with the links at `targets` followed (`Links.follow`), a level at a time: a link
+/// `k` rows down has `depth - k` levels left. A link with none left shows `"empty": "Deep"`; else it shows what
+/// `open` opens of it, read one level less deep (`"to"`), with the links at `targets` in that followed in turn, or why
+/// it opens nothing (`"empty"` and `"why"`). Every hop is a level, so a cycle of links ends at the depth (L3). A loop
+/// over the hops still to make, never a recursion.
+pub fn follow(r: &mut Record, depth: usize, targets: &[Target], open: &mut Opens) {
+    let mut root = Value::Object(std::mem::take(r));
+    let first = link_places(root.as_object().expect("a record"), "", targets);
+    let mut todo: Vec<(String, usize)> =
+        first.into_iter().filter_map(|(at, k)| Some((at, depth.checked_sub(k)?))).collect();
+    while let Some((at, left)) = todo.pop() {
+        let Some(v) = root.pointer_mut(&at) else { continue };
+        let Some(link) = Link::of_json(v) else { continue };
+        let o = v.as_object_mut().expect("a link is an object");
+        let shown = match left.checked_sub(1) {
+            None => Err(Unopened { name: "Deep", why: format!("deeper than the query reads ({depth} levels)") }),
+            Some(rest) => open(&link, rest).map(|to| (to, rest)),
+        };
+        match shown {
+            Ok((to, rest)) => {
+                let next = link_places(&to, &format!("{at}/to"), targets);
+                todo.extend(next.into_iter().filter_map(|(p, k)| Some((p, rest.checked_sub(k)?))));
+                o.insert("to".into(), Value::Object(to));
+            }
+            Err(u) => {
+                o.insert("empty".into(), u.name.into());
+                o.insert("why".into(), u.why.into());
+            }
+        }
+    }
+    let Value::Object(m) = root else { unreachable!("a record stays one") };
+    *r = m;
 }
 
 /// A record, flat: the value at each place, and the rows of each list of records in order.
@@ -1112,6 +1295,149 @@ mod tests {
         });
         // serde_json clones, compares and drops a record by recursion: that, on the stack this test runs on
         assert_eq!(op.run(&r), Some(after));
+        // read 999 rows down, by loops too: the last list emptied, then taken out
+        let deep = r.clone();
+        let (deep, places) = std::thread::scope(|s| {
+            let small = std::thread::Builder::new().stack_size(64 * 1024);
+            let read = move || {
+                let mut deep = deep;
+                let places = empty_below(&mut deep, 999);
+                assert!(take_out(&mut deep, &places));
+                (deep, places)
+            };
+            small.spawn_scoped(s, read).expect("a thread").join().expect("no overflow")
+        });
+        assert_eq!((places.len(), places[0].rows.len(), places[0].field.as_str()), (1, 999, "in"));
+        assert_eq!(Flat::of(&deep).depth(), 999);
+    }
+
+    /// A query's cut, in two steps as the engine makes it around a lens: each list too deep emptied where it is
+    /// stored, so a schema still reads the row that holds it, then taken out of what it read.
+    #[test]
+    fn a_record_read_so_many_rows_down_holds_no_list_deeper() {
+        let r = outline();
+        for depth in 0..7 {
+            let (mut whole, mut emptied) = (r.clone(), r.clone());
+            let was = cut(&mut whole, depth);
+            let places = empty_below(&mut emptied, depth);
+            assert_eq!(Flat::of(&emptied).depth(), Flat::of(&r).depth().min(depth), "{depth}: the lists stay, empty");
+            for p in &places {
+                assert_eq!(Flat::of(&emptied).lists.get(p), Some(&vec![]), "{depth}: {p:?} is emptied");
+            }
+            assert_eq!(take_out(&mut emptied, &places), was);
+            assert_eq!(emptied, whole, "{depth}");
+            assert_eq!(was, depth < 5, "{depth}");
+            assert!(Flat::of(&whole).depth() <= depth);
+        }
+        // a copy of a row a reader doesn't see takes out nothing of the row it sees
+        let mut seen = record(json!({ "steps": [{ "id": 1, "notes": [{ "id": 1 }] }] }));
+        let copy = Path { rows: vec![("steps".into(), k(1, 1))], field: "notes".into() };
+        assert!(!take_out(&mut seen, &[copy]));
+        assert_eq!(seen["steps"][0]["notes"], json!([{ "id": 1 }]));
+    }
+
+    fn id(n: u8) -> String {
+        format!("{n:064x}")
+    }
+
+    fn link(entry: u8) -> Value {
+        json!({ "vault": id(1), "entry": id(entry) })
+    }
+
+    #[test]
+    fn a_link_reads_back_from_its_json() {
+        let whole = json!({ "vault": id(1), "entry": id(2), "row": ["blocks", { "id": 2 }, "kids", { "id": 5 }],
+            "at": [id(7), id(8)] });
+        let l = Link::of_json(&whole).expect("a link");
+        assert_eq!((l.row.len(), l.at.as_ref().map(Vec::len)), (2, Some(2)));
+        assert_eq!(l.to_json(), whole);
+        assert_eq!(Link::of_json(&link(3)).expect("a link to the newest").to_json(), link(3));
+        let with = |k: &str, v: Value| {
+            let mut x = link(3);
+            x[k] = v;
+            x
+        };
+        let bad = [
+            with("colour", json!("red")),
+            with("entry", json!("3")),
+            with("vault", json!(1)),
+            with("row", json!([])),
+            with("row", json!(["blocks"])),
+            with("row", json!(["blocks", { "id": 2 }, "text"])),
+            with("at", json!([])),
+            with("at", json!(["x"])),
+            json!([id(1), id(3)]),
+        ];
+        for v in bad {
+            assert_eq!(Link::of_json(&v), None, "{v}");
+        }
+    }
+
+    /// Links followed at any depth, a level at a time: in rows (`*`), in a list of links, one level less deep at each
+    /// hop, each row a level too, a cycle ending at the depth, a hop opening nothing showing why, and a value that
+    /// isn't a link left as it is.
+    #[test]
+    fn links_are_followed_a_level_at_a_time() {
+        // Ada and Bo are each other's friend; 9 opens nothing
+        fn open_of(asked: &mut Vec<(i64, usize)>) -> impl FnMut(&Link, usize) -> Result<Record, Unopened> + '_ {
+            move |l: &Link, rows: usize| {
+                let n = i64::from(l.entry.0[31]);
+                asked.push((n, rows));
+                let mut r = match n {
+                    1 => record(json!({ "name": "Ada", "friend": link(2), "kids": [{ "id": 1, "friend": link(2) }] })),
+                    2 => record(json!({ "name": "Bo", "friend": link(1) })),
+                    _ => return Err(Unopened { name: "NoEntry", why: "none".into() }),
+                };
+                cut(&mut r, rows);
+                Ok(r)
+            }
+        }
+        let board = record(json!({
+            "cards": [{ "id": 1, "owner": link(1) }, { "id": 2, "owner": "Bo" }],
+            "refs": [link(2), "not a link", link(9)],
+        }));
+        let targets: Vec<Target> = [json!(["cards", "*", "owner"]), json!(["refs"]), json!(["friend"])]
+            .iter()
+            .map(|t| Target::of_json(t).expect("a place"))
+            .collect();
+        let mut asked = vec![];
+        let mut r = board.clone();
+        follow(&mut r, 2, &targets, &mut open_of(&mut asked));
+        // a card's owner is a row down: one level left, so Ada is read no rows down and her friend lies too deep
+        let ada = &r["cards"][0]["owner"];
+        assert_eq!((&ada["to"]["name"], &ada["to"]["friend"]["empty"]), (&json!("Ada"), &json!("Deep")));
+        assert_eq!(ada["to"].get("kids"), None, "read no rows down");
+        assert_eq!(r["cards"][1]["owner"], "Bo");
+        // a list of links: Bo, then Ada one level less deep, then too deep; a value that isn't a link stays
+        let bo = &r["refs"][0];
+        assert_eq!((&bo["to"]["name"], &bo["to"]["friend"]["to"]["name"]), (&json!("Bo"), &json!("Ada")));
+        assert_eq!(bo["to"]["friend"]["to"]["friend"]["empty"], "Deep");
+        assert_eq!(r["refs"][1], "not a link");
+        assert_eq!((&r["refs"][2]["empty"], &r["refs"][2]["why"]), (&json!("NoEntry"), &json!("none")));
+        asked.sort();
+        assert_eq!(asked, [(1, 0), (1, 0), (2, 1), (9, 1)]);
+        // a cycle ends at the depth: as many hops as the depth, then `Deep`
+        for depth in 0..8 {
+            let mut r = record(json!({ "friend": link(1) }));
+            follow(&mut r, depth, &targets, &mut open_of(&mut vec![]));
+            let mut at = &r["friend"];
+            let mut hops = 0;
+            while let Some(to) = at.get("to") {
+                hops += 1;
+                at = &to["friend"];
+            }
+            assert_eq!((hops, &at["empty"]), (depth, &json!("Deep")));
+        }
+        // a link in a row of a record a hop opened: Ada's kids, a row down from her, one level less again
+        let mut r = record(json!({ "friend": link(1) }));
+        let kids = [Target::of_json(&json!(["kids", "*", "friend"])).unwrap(), targets[2].clone()];
+        follow(&mut r, 3, &kids, &mut open_of(&mut vec![]));
+        assert_eq!(r["friend"]["to"]["kids"][0]["friend"]["to"]["name"], "Bo");
+        assert_eq!(r["friend"]["to"]["kids"][0]["friend"]["to"]["friend"]["empty"], "Deep");
+        // nothing named, nothing followed
+        let mut r = board.clone();
+        follow(&mut r, 16, &[], &mut open_of(&mut vec![]));
+        assert_eq!(r, board);
     }
 
     #[test]

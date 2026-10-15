@@ -433,7 +433,8 @@ impl Service {
         }
         // what opens it again, on its store, as every device keeps it; and its key, wrapped for this Mac
         let (relay, credential) = (host.relay.clone(), host.credential.clone());
-        let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256: d.p256(), device: me, follow: vec![] };
+        let (p256, follow, query_depth) = (d.p256(), vec![], None);
+        let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256, device: me, follow, query_depth };
         meta.keep(&shelf).await?;
         self.wrap_key(&d, me, &secret).await?;
         let _one = self.drives.looking.lock().await;
@@ -526,6 +527,9 @@ impl Service {
             bail!("the key opens another device than this drive's");
         }
         lab.follow(me, &meta.follow);
+        if let Some(depth) = meta.query_depth {
+            lab.set_query_depth(me, depth);
+        }
         let relay = meta.relay.parse::<RelayUrl>().ok();
         let opts = Options { bind: None, direct: self.config.direct, relay, shelf: Some(shelf), ..Options::local() };
         let node = Arc::new(Node::spawn(lab, me, opts).await?);

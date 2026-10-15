@@ -256,6 +256,25 @@ async fn titles(d: &Device) -> Vec<String> {
     rows.iter().map(|r| r["record"]["title"].as_str().unwrap_or_default().to_string()).collect()
 }
 
+/// An outline: nodes, each with a text and the nodes under it, at any depth.
+const OUTLINE: &str = r##"{ "title": "Outline", "type": "object",
+  "$defs": { "node": { "type": "object", "properties": {
+    "id": { "type": "integer" },
+    "text": { "type": "string", "x-loro": "text", "default": "" },
+    "kids": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+    "required": ["id"] } },
+  "properties": {
+    "kind": { "const": "outline" },
+    "title": { "type": "string", "default": "" },
+    "nodes": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+  "required": ["kind"] }"##;
+
+/// Outline `e` as device `d` reads it through its schema: `None` while it reads none.
+async fn outline(d: &Device, e: EntryId) -> Option<Value> {
+    let row = run(d, json!({ "op": "get", "entry": e.to_hex() })).await.ok()?;
+    row["schema"].is_string().then(|| row["record"].clone())
+}
+
 /// The op that writes device `d`'s card, its name.
 fn card(name: &str) -> Value {
     json!({ "op": "card", "name": name })
@@ -318,10 +337,14 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let renamed = ["Eve's Mac", "Eve's other browser"];
     until("the second shows the new name", || async { names(&other_browser).await == renamed }).await;
     assert_eq!(titles(&other_browser).await, ["Seeds"]);
-    // it follows avenCEO from now on: it keeps that on its shelf, in what opens it again
+    // it follows avenCEO from now on, and its queries read 6 levels down at most: it keeps both on its shelf, in what
+    // opens it again
     let follow = json!({ "op": "follow", "vault": avenceo.to_hex(), "on": true });
     assert_eq!(run(&first, follow).await, Ok(json!({ "follow": [avenceo.to_hex()] })));
-    let meta = Meta { follow: vec![avenceo], ..meta };
+    let limits = |depth: usize| json!({ "depth": depth, "default": 16, "ceiling": 256 });
+    assert_eq!(run(&first, json!({ "op": "limits" })).await, Ok(limits(256)), "as deep as any write reaches");
+    assert_eq!(run(&first, json!({ "op": "set_limits", "depth": 6 })).await, Ok(limits(6)));
+    let meta = Meta { follow: vec![avenceo], query_depth: Some(6), ..meta };
     // the first browser closes, its shelf holding all it holds, and opens again from its shelf in the unlock alone
     first.close().await.expect("it closes");
     let kept = files(&shelf.0);
@@ -345,6 +368,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     assert_eq!(again.node().id(), first.node().id(), "the same device");
     let follows = again.node().read(|lab, me| lab.follows(me).to_vec()).await;
     assert_eq!(follows, [avenceo], "it follows what it followed");
+    assert_eq!(run(&again, json!({ "op": "limits" })).await, Ok(limits(6)), "and reads as deep as it did");
     assert!(shows(&again, note, "Tomatoes in April.").await, "it reads what its shelf kept");
     assert_eq!(names(&again).await, renamed, "and both cards");
     run(&other_browser, set_text(vault, note, None, 2, "Tomatoes in May.")).await.expect("another edit");
@@ -410,6 +434,53 @@ async fn alices_browsers_link_through_her_mac_and_each_other_through_the_relay_a
     // Welcome
     let refused = run(&browser, set_text(alice, welcome, None, 2, "Alice's own words")).await;
     assert_eq!(refused.expect_err("refused")["refused"], "NoCap");
+    // both browsers write in one outline of hers at once, rows inside rows: each adds a row under one row two lists
+    // down, and one edits the text of a row while the other moves that row within its list; each reads the other's,
+    // the edit kept by the move, and the two agree on the whole outline
+    let schema = json!({ "op": "create", "as": alice.to_hex(), "vault": alice.to_hex(), "type": "schema",
+        "value": OUTLINE });
+    run(&browser, schema).await.expect("her outline's schema");
+    let beds = json!({ "kind": "outline", "title": "Garden", "nodes": [{ "id": 1, "text": "Beds", "kids": [
+        { "id": 11, "text": "North", "kids": [] }, { "id": 12, "text": "South", "kids": [] }] }] });
+    let garden = json!({ "op": "create", "as": alice.to_hex(), "vault": alice.to_hex(), "type": "note",
+        "value": beds });
+    let garden = entry(run(&browser, garden).await.expect("her outline"));
+    let reads = || async { outline(&other, garden).await.is_some() };
+    until("the other reads the outline through its schema", reads).await;
+    let op = |op: &str, path: Value, more: Value| {
+        let mut o = json!({ "op": op, "as": alice.to_hex(), "entry": garden.to_hex(), "path": path });
+        o.as_object_mut().expect("an op").extend(more.as_object().expect("its fields").clone());
+        o
+    };
+    let row = |id: i64, more: &[&str]| {
+        let mut p = vec![json!("nodes"), json!({ "id": 1 }), json!("kids"), json!({ "id": id })];
+        p.extend(more.iter().map(|f| json!(f)));
+        Value::Array(p)
+    };
+    let under = |id: i64, text: &str| op("insert", row(11, &["kids"]), json!({ "value": { "id": id, "text": text } }));
+    let renamed = op("set", row(12, &["text"]), json!({ "value": "South bed" }));
+    let moved = op("move", row(12, &[]), json!({ "to": 0 }));
+    let first = async { (run(&browser, under(111, "Beans")).await, run(&browser, renamed).await) };
+    let second = async { (run(&other, under(112, "Peas")).await, run(&other, moved).await) };
+    let (first, second) = tokio::join!(first, second);
+    for done in [first.0, first.1, second.0, second.1] {
+        done.expect("each write fits the outline");
+    }
+    let agreed = || async {
+        let (a, b) = (outline(&browser, garden).await, outline(&other, garden).await);
+        let Some(a) = a.filter(|a| Some(a) == b.as_ref()) else { return false };
+        let kids = &a["nodes"][0]["kids"];
+        kids[0]["text"] == "South bed" && kids[1]["kids"].as_array().map(Vec::len) == Some(2)
+    };
+    until("both read both rows, the move and the edit, alike", agreed).await;
+    let read = outline(&browser, garden).await.expect("her outline");
+    let kids = read["nodes"][0]["kids"].as_array().expect("its rows");
+    assert_eq!(kids.iter().map(|k| k["id"].as_i64()).collect::<Vec<_>>(), [Some(12), Some(11)], "moved first");
+    let mut rows: Vec<(i64, String)> = kids[1]["kids"].as_array().expect("its rows").iter().map(|k| {
+        (k["id"].as_i64().expect("an id"), k["text"].as_str().expect("a text").to_string())
+    }).collect();
+    rows.sort();
+    assert_eq!(rows, [(111, "Beans".into()), (112, "Peas".into())], "each browser's row: {read}");
     for n in [browser.node(), other.node(), &mac, &server] {
         n.shutdown().await.expect("the node shuts down");
     }

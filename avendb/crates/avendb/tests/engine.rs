@@ -1014,13 +1014,169 @@ fn a_query_stops_at_its_depth_limit() {
     let mine = rows.iter().find(|r| r["entry"] == hex(outline)).expect("the outline");
     let (record, cut) = (&mine["record"], &mine["cut"]);
     assert_eq!((record.get("nodes"), &record["title"], cut), (None, &json!("Deep"), &json!(true)));
-    // never deeper than the device's most, whatever a query asks
-    assert_eq!(w.lab.query_depth(mac), lens::CEILING);
-    w.lab.set_query_depth(mac, 4);
+    // never deeper than the device's most, whatever a query asks, which the device sets for itself
+    let limits = |depth: usize| json!({ "depth": depth, "default": engine::QUERY_DEPTH, "ceiling": lens::CEILING });
+    assert_eq!(ok(run(&mut w, mac, json!({ "op": "limits" }))), limits(lens::CEILING));
+    let set = |depth: Value| json!({ "op": "set_limits", "depth": depth });
+    assert_eq!(ok(run(&mut w, mac, json!({ "op": "may", "ops": [set(json!(4))] }))), json!([true]));
+    assert_eq!(w.lab.query_depth(mac), lens::CEILING, "a dry run changes nothing");
+    for bad in [json!(0), json!(lens::CEILING + 1), json!("deep")] {
+        assert_eq!(refused(&run(&mut w, mac, set(bad))), "BadOp");
+    }
+    assert_eq!(ok(run(&mut w, mac, set(json!(4)))), limits(4));
+    assert_eq!((w.lab.query_depth(mac), w.lab.query_depth(w.phone_a)), (4, lens::CEILING), "its own alone");
     let capped = query(&mut w, 4, Some(20));
     assert_eq!((&capped["count"], &capped["depth"]), (&json!(1), &json!(4)));
     assert_eq!(query(&mut w, 5, Some(20))["count"], 0);
     assert_eq!(refused(&run(&mut w, mac, json!({ "op": "query", "depth": "deep" }))), "BadOp");
+}
+
+/// A person: a name, a friend (a link that follows its entry's newest version), who they were (a link pinned at a
+/// version) and notes (links of either kind).
+const PERSON: &str = r##"{ "title": "Person", "type": "object", "properties": {
+    "kind": { "const": "person" },
+    "name": { "type": "string", "default": "" },
+    "friend": { "x-link": "newest" },
+    "was": { "x-link": "pinned" },
+    "notes": { "type": "array", "default": [], "items": { "x-link": true } } },
+  "required": ["kind"] }"##;
+
+/// A link to entry `e` of vault `v`.
+fn link(v: VaultId, e: EntryId) -> Value {
+    json!({ "vault": v.to_hex(), "entry": hex(e) })
+}
+
+/// Alice's people, made on her Mac: Ada and Bo, each the other's friend.
+fn alices_people(w: &mut World) -> (EntryId, EntryId) {
+    let (alice, mac) = (w.alice, w.mac_a);
+    ok(run(w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "schema", "value": PERSON })));
+    let mut person = |name: &str| {
+        let value = json!({ "kind": "person", "name": name });
+        let made = ok(run(w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "note", "value": value })));
+        EntryId::from_hex(made["entry"].as_str().expect("its id")).expect("an entry")
+    };
+    let (ada, bo) = (person("Ada"), person("Bo"));
+    for (who, friend) in [(ada, bo), (bo, ada)] {
+        let set = json!({ "op": "set", "entry": hex(who), "path": ["friend"], "value": link(alice, friend) });
+        ok(run(w, mac, set));
+    }
+    (ada, bo)
+}
+
+/// Ada's row of a query of device `d` that follows `follow`, `depth` levels deep (the default, left out).
+fn ada_following(w: &mut World, d: SignerId, follow: Value, depth: Option<usize>) -> Value {
+    let mut q = json!({ "op": "query", "where": { "path": ["name"], "eq": "Ada" }, "follow": follow });
+    if let Some(n) = depth {
+        q["depth"] = n.into();
+    }
+    let found = ok(run(w, d, q));
+    assert_eq!(found["count"], 1, "{found}");
+    found["rows"][0]["record"].clone()
+}
+
+/// How many hops a query made down field `f` from `r`, and what the last link there shows instead.
+fn hops(r: &Value, f: &str) -> (usize, Value) {
+    let (mut at, mut n) = (&r[f], 0);
+    while let Some(to) = at.get("to") {
+        (at, n) = (&to[f], n + 1);
+    }
+    (n, at["empty"].clone())
+}
+
+/// A query follows the links at the places it names, a level at a time, each hop one level of its depth: a cycle of
+/// links ends at the depth, never deeper than the device's most; a place it doesn't name is left a link.
+#[test]
+fn a_cycle_of_links_ends_at_the_depth_limit() {
+    let mut w = cast::world();
+    let (alice, mac) = (w.alice, w.mac_a);
+    let (ada, bo) = alices_people(&mut w);
+    let ada_now = ada_following(&mut w, mac, json!(["friend"]), Some(1));
+    assert_eq!(ada_now["friend"]["to"]["name"], "Bo");
+    assert_eq!(ada_now["friend"]["to"]["friend"]["empty"], "Deep");
+    assert!(ada_now["friend"]["to"]["friend"]["why"].is_string());
+    for (depth, want) in [(Some(0), 0), (Some(1), 1), (Some(5), 5), (None, engine::QUERY_DEPTH)] {
+        let r = ada_following(&mut w, mac, json!(["friend"]), depth);
+        assert_eq!(hops(&r, "friend"), (want, json!("Deep")), "{depth:?}");
+    }
+    // a hop through Bo comes back to Ada, as the link names her
+    let r = ada_following(&mut w, mac, json!(["friend"]), Some(2));
+    assert_eq!(r["friend"]["to"]["friend"]["entry"], hex(ada));
+    assert_eq!(r["friend"]["to"]["friend"]["to"]["name"], "Ada");
+    // nothing named, nothing followed: the link as it is stored
+    let plain = ada_following(&mut w, mac, json!([]), None);
+    assert_eq!(plain["friend"], link(alice, bo));
+    // the device's most bounds the hops as it bounds the rows
+    w.lab.set_query_depth(mac, 2);
+    assert_eq!(hops(&ada_following(&mut w, mac, json!(["friend"]), Some(9)), "friend"), (2, json!("Deep")));
+    let bad = json!({ "op": "query", "follow": [["friend", "*"]] });
+    assert_eq!(refused(&run(&mut w, mac, bad)), "BadOp");
+}
+
+/// Each hop opens only what its reader reads, and one that opens nothing shows why: an entry it doesn't read, a vault
+/// that isn't the entry's, a version it doesn't hold, a row that isn't there. A link names a row, or a version, and a
+/// schema says which kind of link a field takes.
+#[test]
+fn a_hop_the_reader_cant_open_comes_back_empty_with_its_reason() {
+    let mut w = cast::world();
+    let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
+    let (ada, bo) = alices_people(&mut w);
+    let (garden, schema) = alices_outline(&mut w);
+    let beds = json!({ "kind": "outline", "title": "Garden", "nodes": [{ "id": 1, "text": "Beds", "kids": [
+        { "id": 2, "text": "North", "kids": [{ "id": 3, "text": "Beans", "kids": [] }] }] }] });
+    w.lab.edit(mac, alice, garden, |item| item.set_record(&View::plain(&schema), &beds)).expect("it fits");
+    // Bob's own todo, which no share gives Alice
+    let todo = json!({ "kind": "todo", "title": "Bob's door" });
+    let bobs = ok(run(&mut w, mac_b, json!({ "op": "create", "vault": bob.to_hex(), "type": "todo", "value": todo })));
+    let bobs = EntryId::from_hex(bobs["entry"].as_str().expect("its id")).expect("an entry");
+    // Bo as he was, pinned at the version before his new name
+    let then = ok(run(&mut w, mac, json!({ "op": "get", "entry": hex(bo) })))["heads"].clone();
+    let renamed = json!({ "op": "set", "entry": hex(bo), "path": ["name"], "value": "Bob" });
+    ok(run(&mut w, mac, renamed));
+    let pinned = |at: Value| {
+        let mut l = link(alice, bo);
+        l["at"] = at;
+        l
+    };
+    let row = |id: i64| {
+        let mut l = link(alice, garden);
+        l["row"] = json!(["nodes", { "id": 1 }, "kids", { "id": id }]);
+        l
+    };
+    let notes = json!([link(alice, bo), link(bob, bobs), link(bob, bo), row(2), row(9), pinned(json!([hex(bo)]))]);
+    let set = |f: &str, v: Value| json!({ "op": "set", "entry": hex(ada), "path": [f], "value": v });
+    ok(run(&mut w, mac, set("notes", notes)));
+    ok(run(&mut w, mac, set("was", pinned(then.clone()))));
+    // a schema takes the kind of link it names, and nothing else, where a link goes
+    assert_eq!(refused(&run(&mut w, mac, set("friend", json!("Bo")))), "NotAView");
+    assert_eq!(refused(&run(&mut w, mac, set("friend", pinned(then.clone())))), "NotAView");
+    assert_eq!(refused(&run(&mut w, mac, set("was", link(alice, bo)))), "NotAView");
+    // on Alice's Mac
+    let r = ada_following(&mut w, mac, json!(["notes", "was", "friend"]), Some(2));
+    let why = |x: &Value| (x["empty"].as_str().map(str::to_string), x["why"].is_string());
+    let (n, was) = (&r["notes"], &r["was"]);
+    let names = [&n[0]["to"]["name"], &r["friend"]["to"]["name"], &was["to"]["name"]];
+    assert_eq!(names, [&json!("Bob"), &json!("Bob"), &json!("Bo")], "the newest of Bo, and Bo as he was");
+    assert_eq!(was["at"], then, "the link as it is stored, and what it leads to");
+    assert_eq!(why(&n[1]), (Some("NoEntry".into()), true), "Bob's todo is no share's of Alice");
+    assert_eq!(why(&n[2]), (Some("WrongVault".into()), true));
+    assert_eq!((&n[3]["to"]["text"], &n[3]["to"]["kids"][0]["text"]), (&json!("North"), &json!("Beans")));
+    assert_eq!(why(&n[4]), (Some("NoRow".into()), true));
+    assert_eq!(why(&n[5]), (Some("NoVersion".into()), true));
+    // a row a link names is read as many rows down below it as the hop has left, as a record is
+    let shallow = ada_following(&mut w, mac, json!(["notes"]), Some(1));
+    assert_eq!((&shallow["notes"][3]["to"]["text"], shallow["notes"][3]["to"].get("kids")), (&json!("North"), None));
+    // Bob reads Ada, as a share gives him her, and nothing else of Alice's: his hops open what he reads, his own todo
+    let viewer = json!({ "op": "share", "over": alice.to_hex(), "who": { "vault": bob.to_hex() }, "level": "Viewer",
+        "what": { "entry": [hex(ada)] } });
+    ok(run(&mut w, mac, viewer));
+    w.lab.sync_all(0);
+    let r = ada_following(&mut w, mac_b, json!(["notes", "was", "friend"]), Some(2));
+    assert_eq!(why(&r["friend"]), (Some("NoEntry".into()), true));
+    assert_eq!(why(&r["was"]), (Some("NoEntry".into()), true));
+    assert_eq!(r["notes"][1]["to"]["title"], "Bob's door");
+    for i in [0, 2, 3, 4, 5] {
+        assert!(r["notes"][i].get("to").is_none() && r["notes"][i]["empty"].is_string(), "{i}: {}", r["notes"][i]);
+    }
 }
 
 /// A todo schema of Alice's own: v2, where a todo may be blocked too.
