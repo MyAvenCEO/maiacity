@@ -46,9 +46,9 @@ export const FRIENDLY = /** @type {{ units: Record<string, number>, cheeks: { up
 	units: { 'eye-left-slit': 0.25, 'eye-right-slit': 0.25, 'eye-left-opened-up': 0.4, 'eye-right-opened-up': 0.4, 'eyebrows-left-up': 0.35, 'eyebrows-right-up': 0.35 },
 	cheeks: { up: 0.002, out: 0.0013, r: 0.02 }
 });
-/** the stand-in's version the head is built at by default (v9: the friendly gaze and a catchlight that shows; v8 the
- *  jaw on the head bone, see headWeights) */
-export const HEAD_V = 9;
+/** the stand-in's version the head is built at by default (v10: every tooth coloured, the molars too; v9 the friendly
+ *  gaze and a catchlight that shows; v8 the jaw on the head bone, see headWeights) */
+export const HEAD_V = 10;
 /** v9's catchlight in each eye: where on the eye (a direction from its middle, about 0.15 rad up and to the left of
  *  its front, on the pupil's edge, clear of the upper lid), how wide its bright core is and its soft ring (m) */
 export const CATCH = { at: [-0.12, 0.09, 1], core: 0.0018, soft: 0.0028 };
@@ -403,7 +403,7 @@ export function headPieces(k, ver = HEAD_V) {
 		const t = h.parts[upper ? 'teeth-upper' : 'teeth-lower'];
 		t.geo.computeBoundingBox();
 		const box = /** @type {THREE.Box3} */ (t.geo.boundingBox), front = box.max.z;
-		out.push({ geo: t.geo.clone(), color: (p) => teeth(p, upper, upper ? box.min.y : box.max.y, front), weights, morph: { joy: t.joy }, mat: 1 });
+		out.push({ geo: t.geo.clone(), color: (p) => teeth(p, upper, upper ? box.min.y : box.max.y, front, ver), weights, morph: { joy: t.joy }, mat: 1 });
 	}
 	out.push({ geo: h.parts.tongue.geo.clone().translate(0, -0.009, -0.008), color: '#6c3036', weights, morph: { joy: h.parts.tongue.joy } });
 	return out;
@@ -412,14 +412,20 @@ export function headPieces(k, ver = HEAD_V) {
 const ENAMEL = new THREE.Color('#efe9dc'), GAP = new THREE.Color('#7d7268'), GUM = new THREE.Color('#c2706e'), BACK = new THREE.Color('#5a4c48');
 /** where one tooth meets the next, from the middle out, seen from the front (m): incisors, canines, premolars */
 const TEETH = [0, 0.0082, 0.0142, 0.0195, 0.0238, 0.0276, 0.0312];
+/** from v10 the two molars behind them too, turning back along the arch (seen from the front they are narrow): the
+ *  teeth reach 35.8 mm out, and past the premolars' 31.2 mm the table had no tooth, so 350 points of the stand-in's
+ *  teeth took no colour at all (NaN) */
+const TEETH_V10 = [...TEETH, 0.0338, 0.0362];
 
 /** a tooth's colour at p: enamel, a thin dark line between teeth, the gums past each crown, darker further back
- *  @param {THREE.Vector3} p @param {boolean} upper @param {number} edge the biting edge's height @param {number} front */
-function teeth(p, upper, edge, front) {
-	const x = Math.abs(p.x);
+ *  @param {THREE.Vector3} p @param {boolean} upper @param {number} edge the biting edge's height @param {number} front
+ *  @param {number} ver the stand-in's version (before v10 the molars are left as they were built: uncoloured) */
+function teeth(p, upper, edge, front, ver) {
+	const x = Math.abs(p.x), T = ver >= 10 ? TEETH_V10 : TEETH;
 	let k = 1;
-	while (k < TEETH.length - 1 && x > TEETH[k]) k++;
-	const a = TEETH[k - 1], b = TEETH[k], u = (x - a) / (b - a); // across this tooth, 0 to 1
+	while (k < T.length - 1 && x > T[k]) k++;
+	const a = T[k - 1], b = T[k], at = (x - a) / (b - a); // across this tooth, 0 to 1
+	const u = ver >= 10 ? Math.min(1, Math.max(0, at)) : at;
 	const crown = (upper ? 0.0098 : 0.0105) * (k > 2 ? 0.92 : 1) - 0.0012 * (1 - Math.sqrt(Math.sin(Math.PI * u))); // the gum's scallops
 	const up = upper ? p.y - edge : edge - p.y; // from the biting edge to the root
 	const c = ENAMEL.clone().lerp(GAP, 0.75 * smooth(0.1, 0.0, Math.min(u, 1 - u)));
