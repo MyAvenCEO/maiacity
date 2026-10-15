@@ -851,7 +851,7 @@
 			<p class="prose-col">
 				Each device also has one copy setting, a keep share over everything it may read: a full copy keeps every entry and
 				file whole, a light copy syncs every entry and fetches a file only when it is opened. You pick it when the device
-				joins, a desktop or a tablet full and a phone light by default, and change it in Owners and devices. With neither, the
+				joins, the desktop app full and any browser light by default, and change it in Owners and devices. With neither, the
 				server keeps every file whole and any other device fetches pieces as it reads them. A keep share always brings the
 				vault’s schemas along. Only the vault that made it can end it, so nobody else can force your phone to sync more.
 			</p>
