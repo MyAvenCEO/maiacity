@@ -801,12 +801,18 @@ fn files_everyone_reads(
 /// avenCEO GmbH, two coops, and the CEO Aven, the aven vault the server becomes a device of.
 pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::Aven];
 
-/// The names of the seed's vaults, in `SEED`'s order, which their profiles read from the start
-/// (`avendb_browser::Device::found`); the page names a seed that has none yet the same (vaults.js's `SEED`).
-pub const SEED_NAMES: [&str; 3] = ["Maia Holding GmbH", "avenCEO GmbH", "CEO Aven"];
+/// The coop the same claim founds beside `SEED`'s chain, owned alone by the vault of the chain at this place,
+/// avenCEO GmbH: Maia City, where the content lives (Samuel 2026-10-15). Nothing names it in code but the seed.
+pub const SEED_COOP_OF: usize = 1;
 
-/// The seed device `me`'s person's claim of the server founded, by its view, in `SEED`'s order: Maia Holding GmbH,
-/// avenCEO GmbH and the CEO Aven (`seeded`). None if it founded none.
+/// The names of the seed's vaults, in `SEED`'s order and then the coop beside it (`SEED_COOP_OF`), which their
+/// profiles read from the start (`avendb_browser::Device::found`); the page names a seed that has none yet the same
+/// (vaults.js's `SEED`).
+pub const SEED_NAMES: [&str; 4] = ["Maia Holding GmbH", "avenCEO GmbH", "CEO Aven", "Maia City"];
+
+/// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia Holding
+/// GmbH, avenCEO GmbH, the CEO Aven (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one.
+/// None if it founded none.
 pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     let Some(mine) = lab.vault_of(me) else { return vec![] };
     let st = lab.state(me);
@@ -817,6 +823,9 @@ pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
         let Some([Principal::Vault(owner)]) = st.vault(chain[0]).map(|v| &v.owners[..]) else { return vec![] };
         chain.insert(0, *owner);
     }
+    let of = chain[SEED_COOP_OF];
+    let coop = |v: &&Vault| v.kind == Kind::Coop && matches!(v.owners[..], [Principal::Vault(o)] if o == of);
+    chain.extend(st.vaults().iter().find(coop).map(|v| v.id));
     chain
 }
 

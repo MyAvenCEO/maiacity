@@ -927,6 +927,16 @@ impl Lab {
         }
     }
 
+    /// The secret device `d` derives the keys of the files it seals from (`sealed::Convergent`): from the current
+    /// seed of the vault it belongs to, which every device of that vault holds and nobody outside it, so that each of
+    /// them seals the same file to the same bytes, into any vault it acts for. None where it holds no such seed.
+    pub fn convergence(&self, d: SignerId) -> Option<[u8; 32]> {
+        let store = self.held(d);
+        let vault = self.vault_of(d)?;
+        let seed = store.keys.first(store.view().current(KeyFam::Seed(vault)))?;
+        Some(seed.child("avendb file convergence", b"").bytes())
+    }
+
     /// The vault device `d` belongs to, by its view.
     pub fn vault_of(&self, d: SignerId) -> Option<VaultId> {
         self.held(d).view().vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id)

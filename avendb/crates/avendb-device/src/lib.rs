@@ -46,7 +46,7 @@ use iroh::RelayUrl;
 use n0_future::stream;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use zeroize::Zeroizing;
 
 /// The page the sign-in sheet shows for a ceremony: maia.city's, whose passkeys these are.
@@ -133,13 +133,25 @@ struct Service {
 /// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the new entry
 /// that brings it: a `put_file` op (`Device::run`).
 struct Incoming {
-    /// The chunks, for the file's stream.
-    chunks: mpsc::Sender<io::Result<Bytes>>,
-    /// How many of its bytes the page handed over so far.
+    /// The chunks of the pass under way, for its stream; none between two passes.
+    chunks: Option<mpsc::Sender<io::Result<Bytes>>>,
+    /// How many of its bytes the page handed over so far in this pass.
     at: u64,
+    /// Each pass's chunks, as the device opens the file again (`avendb_net::Source`); the first one from the start.
+    passes: mpsc::UnboundedSender<mpsc::Receiver<io::Result<Bytes>>>,
+    /// How many passes the device opened, `DONE` once the op answered.
+    opened: watch::Receiver<u8>,
+    /// How many passes the page started.
+    given: u8,
     /// The op's answer, once the file is in.
     answer: tokio::task::JoinHandle<Result<Value>>,
 }
+
+/// What `Incoming::opened` reads once the op answered: no pass more.
+const DONE: u8 = u8::MAX;
+
+/// A pass of a file's bytes, as the device reads it (`Service::file_start`).
+type Pass = std::pin::Pin<Box<dyn n0_future::Stream<Item = io::Result<Bytes>> + Send>>;
 
 impl Service {
     /// Answers call `id`, `call` with `args`, in a task of its own, so that even a panic gets its answer.
@@ -176,8 +188,9 @@ impl Service {
     /// A call on the open device, as the page's device answers it: `run` an op (`Device::run`), its answer as the
     /// page's device gives it, a `read_file`'s bytes beside in base64 (`bytes`); a change its vault's owners approve
     /// signed in the passkey's ceremony in the sheet (`approver`). A `put_file` op's bytes come a chunk at a time:
-    /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileEnd [n]` the op's
-    /// answer, `fileDrop [n]` none, the file dropped.
+    /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileAgain [n]` once every
+    /// chunk is in, whether the device reads the file again (once for its key, once to seal it: the page then hands
+    /// every chunk over again, from 0), `fileEnd [n]` the op's answer, `fileDrop [n]` none, the file dropped.
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
         let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
@@ -207,6 +220,7 @@ impl Service {
                 self.file_chunk(number(0)?, at, chunk).await?;
                 Value::Null
             }
+            "fileAgain" => self.file_again(number(0)?).await?.into(),
             "fileEnd" => {
                 let incoming = self.files.lock().expect("the files").remove(&number(0)?);
                 let Incoming { chunks, answer, .. } = incoming.context("no such file on its way in")?;
@@ -305,12 +319,39 @@ impl Service {
     /// `put_file` op `op` under way (`Device::run`), its file's chunks still to come in order (`fileChunk`), then its
     /// end (`fileEnd`), which answers the op: the file's number.
     fn file_start(&self, d: &Arc<Device>, op: Value) -> u64 {
-        let (chunks, rx) = mpsc::channel(2);
-        let data = Box::pin(stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|chunk| (chunk, rx)) }));
+        let (chunks, first) = mpsc::channel(2);
+        let (passes, waiting) = mpsc::unbounded_channel();
+        passes.send(first).expect("its first pass");
+        let (open, opened) = watch::channel(0u8);
+        let (open, waiting) = (Arc::new(open), Arc::new(tokio::sync::Mutex::new(waiting)));
+        // each time the device opens the file, the next pass the page hands over
+        let source = {
+            let open = open.clone();
+            move || -> Pass {
+                open.send_modify(|n| *n = n.saturating_add(1).min(DONE - 1));
+                let waiting = waiting.clone();
+                Box::pin(stream::unfold(None, move |pass: Option<mpsc::Receiver<io::Result<Bytes>>>| {
+                    let waiting = waiting.clone();
+                    async move {
+                        let mut pass = match pass {
+                            Some(pass) => pass,
+                            None => waiting.lock().await.recv().await?,
+                        };
+                        let chunk = pass.recv().await?;
+                        Some((chunk, Some(pass)))
+                    }
+                }))
+            }
+        };
         let d = d.clone();
-        let answer = tokio::spawn(async move { Ok(d.run(op, Some(data), None::<&NoCeremony>).await?.0) });
+        let answer = tokio::spawn(async move {
+            let answer = d.run(op, Some(source), None::<&NoCeremony>).await;
+            open.send_replace(DONE);
+            Ok(answer?.0)
+        });
         let n = self.next.fetch_add(1, Ordering::Relaxed);
-        self.files.lock().expect("the files").insert(n, Incoming { chunks, at: 0, answer });
+        let incoming = Incoming { chunks: Some(chunks), at: 0, passes, opened, given: 1, answer };
+        self.files.lock().expect("the files").insert(n, incoming);
         n
     }
 
@@ -323,9 +364,30 @@ impl Service {
                 bail!("the file's bytes from {at} on came before those from {}", incoming.at);
             }
             incoming.at += chunk.len() as u64;
-            incoming.chunks.clone()
+            incoming.chunks.clone().context("the file's pass is over: ask fileAgain")?
         };
         chunks.send(Ok(Bytes::from(chunk))).await.map_err(|_| anyhow!("the file is no longer coming in"))
+    }
+
+    /// File `n`'s pass is over (`fileStart`): whether the device reads it again, so that the page hands every chunk
+    /// over once more, from 0; else the op answers (`fileEnd`).
+    async fn file_again(&self, n: u64) -> Result<bool> {
+        let (mut opened, given) = {
+            let mut files = self.files.lock().expect("the files");
+            let incoming = files.get_mut(&n).context("no such file on its way in")?;
+            incoming.chunks = None;
+            (incoming.opened.clone(), incoming.given)
+        };
+        let now = *opened.wait_for(|&o| o > given).await.map_err(|_| anyhow!("the file is no longer coming in"))?;
+        if now == DONE {
+            return Ok(false);
+        }
+        let mut files = self.files.lock().expect("the files");
+        let incoming = files.get_mut(&n).context("no such file on its way in")?;
+        let (chunks, pass) = mpsc::channel(2);
+        incoming.passes.send(pass).map_err(|_| anyhow!("the file is no longer coming in"))?;
+        (incoming.chunks, incoming.at, incoming.given) = (Some(chunks), 0, given + 1);
+        Ok(true)
     }
 
     fn device(&self) -> Result<Arc<Device>> {

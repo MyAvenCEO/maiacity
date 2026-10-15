@@ -143,6 +143,7 @@ use tokio::sync::{Notify, watch};
 
 use holdings::{Logs, MOST};
 
+pub use files::Source;
 pub use holdings::{Holder, Holdings, SyncedTo};
 pub use jobs::{HISTORY, Job, Jobs, Running, State as JobState};
 pub use progress::{Ending, Progress, Stage, Steps};
@@ -372,15 +373,21 @@ pub enum Step {
 /// The seed human vault `human` founds as its person claims a server (`avendb::world::SEED`), drafted one on top of
 /// the other, each approved by their passkey `passkey`: Maia Holding GmbH, a coop the human vault owns alone; avenCEO
 /// GmbH, a coop Maia Holding owns alone; and the CEO Aven, the aven vault avenCEO GmbH owns alone, which the server
-/// becomes a device of. The CEO Aven.
+/// becomes a device of; and beside them Maia City, a coop avenCEO GmbH owns alone (`avendb::world::SEED_COOP_OF`).
+/// The CEO Aven.
 fn seed(drafting: &mut Drafting<'_>, passkey: SignerId, human: VaultId) -> Result<VaultId, Refusal> {
-    let mut owner = human;
-    for kind in avendb::world::SEED {
+    let genesis = |kind, owner| {
         let owners = vec![Principal::Vault(owner)];
-        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
-        owner = VaultId::from(drafting.draft(&[passkey], genesis)?);
+        Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] }
+    };
+    let mut chain = vec![human];
+    for kind in avendb::world::SEED {
+        let owner = *chain.last().expect("the human vault first");
+        chain.push(VaultId::from(drafting.draft(&[passkey], genesis(kind, owner))?));
     }
-    Ok(owner)
+    // the chain's vaults follow the human vault's place 0
+    drafting.draft(&[passkey], genesis(Kind::Coop, chain[1 + avendb::world::SEED_COOP_OF]))?;
+    Ok(*chain.last().expect("the CEO Aven last"))
 }
 
 /// The software passkey `1` in a node's Lab, which makes its ceremonies itself.

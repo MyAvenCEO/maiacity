@@ -320,16 +320,16 @@ export function chainSteps(world, chain) {
 }
 
 /**
- * The names of the seed a person's claim of avenDB's server founds (avendb's `world::SEED`): Maia Holding GmbH, a coop
- * their vault owns, avenCEO GmbH, a coop Maia Holding owns, and the CEO Aven, the aven vault avenCEO GmbH owns and the
- * server is a device of.
+ * The names of the seed a person's claim of avenDB's server founds (avendb's `world::SEED_NAMES`): Maia Holding GmbH, a
+ * coop their vault owns, avenCEO GmbH, a coop Maia Holding owns, the CEO Aven, the aven vault avenCEO GmbH owns and the
+ * server is a device of, and Maia City, a coop avenCEO GmbH owns, where the content lives.
  */
-export const SEED = /** @type {const} */ (['Maia Holding GmbH', 'avenCEO GmbH', 'CEO Aven']);
+export const SEED = /** @type {const} */ (['Maia Holding GmbH', 'avenCEO GmbH', 'CEO Aven', 'Maia City']);
 
 /**
  * The seed of the person's vault, each vault of it with its name in `SEED`, if their claim of the server founded one:
  * an aven with a device, owned alone by a coop owned alone by a coop their vault owns alone (avendb's
- * `world::seeded`). None otherwise.
+ * `world::seeded`), then Maia City, a coop the aven's owner owns alone, where there is one. None otherwise.
  * @param {WorldView} world
  * @returns {[VaultView, string][]}
  */
@@ -341,11 +341,14 @@ export function seeded(world) {
 		const avenceo = owner(aven);
 		const holding = owner(avenceo);
 		if (avenceo?.kind === 'coop' && holding?.kind === 'coop' && owner(holding)?.id === world.mine) {
-			return [
+			const city = world.vaults.find((v) => v.kind === 'coop' && owner(v)?.id === avenceo.id);
+			/** @type {[VaultView, string][]} */
+			const seed = [
 				[holding, SEED[0]],
 				[avenceo, SEED[1]],
 				[aven, SEED[2]]
 			];
+			return city ? [...seed, [city, SEED[3]]] : seed;
 		}
 	}
 	return [];

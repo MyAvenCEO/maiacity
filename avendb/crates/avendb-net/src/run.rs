@@ -8,7 +8,8 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, bail};
 use avendb::engine::{self, Prepared, Refused};
@@ -18,13 +19,13 @@ use avendb::policy::Refusal;
 use avendb::sign::Ceremony;
 use bytes::Bytes;
 use iroh::EndpointId;
-use n0_future::{Stream, StreamExt as _, stream, task};
+use n0_future::{StreamExt as _, stream, task};
 use serde_json::{Value, json};
 
-use crate::{Authenticator, Node, Shared, Step};
+use crate::{Authenticator, Node, Shared, Source, Step};
 
 /// No bytes beside an op: what `Node::run` takes for every op but `put_file`.
-pub type NoBytes = stream::Empty<io::Result<Bytes>>;
+pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
 
 /// No ceremony at hand, as for an agent: an op its vault's owners approve answers `approve` and makes nothing
 /// (`Node::run`). A ceremony asked of it fails.
@@ -48,14 +49,14 @@ impl Node {
     /// asks every peer again once the vaults the device follows changed, each request naming them. Fails only where no
     /// answer comes: a ceremony that failed, the store or the network failing, a file's bytes more or fewer than its
     /// length.
-    pub async fn run<S, A>(
+    pub async fn run<B, A>(
         &self,
         op: Value,
-        bytes: Option<S>,
+        bytes: Option<B>,
         authenticator: Option<&A>,
     ) -> Result<(Value, Option<Vec<u8>>)>
     where
-        S: Stream<Item = io::Result<Bytes>> + Unpin,
+        B: Source,
         A: Authenticator,
     {
         let name = engine::name(&op).map(str::to_string);
@@ -97,10 +98,7 @@ impl Node {
     }
 
     /// `put_file`: the entry it would create checked, then the bytes stored, then the entry made.
-    async fn put<S>(&self, op: Value, bytes: Option<S>) -> Result<Value>
-    where
-        S: Stream<Item = io::Result<Bytes>> + Unpin,
-    {
+    async fn put<B: Source>(&self, op: Value, bytes: Option<B>) -> Result<Value> {
         let len = match engine::len_of(&op) {
             Ok(len) => len,
             Err(why) => return Ok(why.to_json()),
@@ -119,14 +117,22 @@ impl Node {
         let vault = op.get("vault").and_then(Value::as_str).map(|v| (v.to_string(), len));
         job.about(vault.clone().into_iter().collect(), BTreeMap::new());
         job.stage("sealing");
-        let mut done = 0;
-        let counted = bytes.inspect(|b| {
-            if let Ok(b) = b {
-                done += b.len() as u64;
-                job.progress(done, None);
+        // read twice, for the file's key and then to seal it: each byte counts half
+        let (job, done) = (Arc::new(Mutex::new(job)), Arc::new(AtomicU64::new(0)));
+        let counted = {
+            let (job, mut bytes) = (job.clone(), bytes);
+            move || {
+                let (job, done) = (job.clone(), done.clone());
+                bytes.open().inspect(move |b| {
+                    if let Ok(b) = b {
+                        let now = done.fetch_add(b.len() as u64, Ordering::Relaxed) + b.len() as u64;
+                        job.lock().expect("the job").progress(now / 2, None);
+                    }
+                })
             }
-        });
+        };
         let stored = self.store_file(len, counted).await;
+        let mut job = Arc::into_inner(job).context("the job, once read")?.into_inner().expect("the job");
         let brought = match stored {
             Ok(brought) => brought,
             Err(e) => {

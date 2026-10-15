@@ -140,7 +140,7 @@ fn all(holders: &[Holder]) -> Vec<SignerId> {
 /// A photo of `len` bytes, sealed into `n`'s blob store and brought into entry `e` of `coop`.
 async fn photo(n: &Node, coop: avendb::id::VaultId, e: EntryId, len: u64) -> FileRoot {
     let bytes = Bytes::from((0..len).map(|j| (j % 251) as u8).collect::<Vec<u8>>());
-    let photo = n.store_file(len, stream::iter([Ok(bytes)])).await.expect("a photo");
+    let photo = n.store_file(len, || stream::iter([Ok(bytes.clone())])).await.expect("a photo");
     let root = photo.root;
     n.act(move |lab, me| lab.bring(me, coop, e, vec![photo], |_| {})).await.expect("brought");
     root

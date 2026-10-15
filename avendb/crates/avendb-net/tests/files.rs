@@ -60,9 +60,11 @@ fn bytes(seed: u64, from: u64, to: u64) -> Vec<u8> {
 }
 
 /// That file of `len` bytes as it is read, a megabyte at a time.
-fn reading(seed: u64, len: u64) -> impl Stream<Item = io::Result<Bytes>> + Unpin {
-    let starts = (0..len.div_ceil(1 << 20)).map(|i| i << 20);
-    stream::iter(starts.map(move |from| Ok(Bytes::from(bytes(seed, from, (from + (1 << 20)).min(len))))))
+fn reading(seed: u64, len: u64) -> impl FnMut() -> Box<dyn Stream<Item = io::Result<Bytes>> + Unpin + Send> {
+    move || {
+        let starts = (0..len.div_ceil(1 << 20)).map(|i| i << 20);
+        Box::new(stream::iter(starts.map(move |from| Ok(Bytes::from(bytes(seed, from, (from + (1 << 20)).min(len)))))))
+    }
 }
 
 /// The blob `request` asks for, fetched by hand from `to` over iroh-blobs as `from`'s endpoint: what arrived, if the
@@ -105,6 +107,19 @@ async fn files_follow_their_edits_over_iroh() {
     assert!(mac.holds_file(photo_root).await && mac.holds_file(scan_root).await, "both in its blob store");
     assert!(mac.store_file(10, reading(3, 11)).await.is_err(), "a file longer than it says is refused");
     assert!(mac.store_file(10, reading(3, 9)).await.is_err(), "and one shorter");
+    // the photo sealed again seals to the same bytes, which the store keeps once; Carol's Mac, a device of another
+    // person's vault, seals the same photo under a key of its own
+    let again = mac.store_file(photo_len, reading(1, photo_len)).await.expect("the photo again");
+    assert_eq!((again.root, again.key.bytes()), (photo_root, photo.key.bytes()), "the same root and key");
+    let hers = carol.store_file(photo_len, reading(1, photo_len)).await.expect("Carol's Mac seals the photo too");
+    assert_ne!(hers.root, photo_root, "another person's bytes");
+    // a file whose bytes change between its two reads is refused: one key never seals two files
+    let mut read = 0;
+    let changing = move || {
+        read += 1;
+        reading(read, 10)()
+    };
+    assert!(mac.store_file(10, changing).await.is_err(), "a file that changed while it was sealed");
     let bring = move |lab: &mut avendb::lab::Lab, me| {
         lab.bring(me, coop, welcome, vec![photo], |_| {})?;
         lab.bring(me, coop, onboarding, vec![scan], |_| {})
