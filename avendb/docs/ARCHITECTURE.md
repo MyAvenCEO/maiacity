@@ -175,6 +175,7 @@ vault. The first person to found a human vault through it claims it in the same 
 | Maia Holding GmbH | Coop | The person's human vault |
 | avenCEO GmbH | Coop | Maia Holding GmbH |
 | CEO Aven | Aven | avenCEO GmbH; the server is its device |
+| Maia City | Coop | avenCEO GmbH; the city's content lives here |
 
 So the server acts for the CEO Aven on its own, and every edit it makes traces back through avenCEO GmbH and Maia
 Holding GmbH to the person's passkey. The claim:
@@ -182,7 +183,7 @@ Holding GmbH to the person's passkey. The claim:
 1. The device takes the server's card (`Lab::card`). If it names no CEO Aven, nobody has claimed the server, and the
    device asks it for its key to seal to (`Lab::claim_key`).
 2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, the
-   seed's three geneses, and the edit that adds the server as the CEO Aven's device, sealed to that key
+   seed's four geneses, and the edit that adds the server as the CEO Aven's device, sealed to that key
    (`Lab::drafting`, `Lab::claim`). The passkey approves for each coop, as the root of the vault that owns it.
 3. The server checks that the edit adds itself and seals to its own key, every signature, and the rules, then signs
    it too and keeps it (`Lab::accept_claim`). Its answer lets the device box the aven's key for it.
@@ -191,6 +192,19 @@ After that, nobody can claim it again: whoever founds a vault later finds the CE
 of a vault founded before claims a new server the same way (`Node::claim`). The founding device writes each seed
 vault's profile with its name (`world::SEED_NAMES`) as it settles, before the page opens; the page names a seed that
 has none the same way.
+
+**An agent's own device.** An agent on the person's desktop, such as Claude Code, is an aven of its own with a key
+of its own, never a token: `avendb-device agent avenCLAUDE` (`crates/avendb-device/src/agent.rs`) runs an avenDB device
+as the agent's MCP server on its stdin and stdout, in a folder beside the desktop app's that the app never clears
+(`<app folder>-agents/<name>`). It keeps its secret on its shelf, as the server does (`server::open_agent`), and its
+iroh key derives from it. While it belongs to no vault it hands its card to whoever asks and answers claims, and
+leaves its offer for the app, whose page asks the person to adopt it. One ceremony adopts it the way a server is
+claimed (`Node::adopt_with`): the passkey signs the genesis of the aven vault of that name, which the person's vault
+owns alone, or takes the one it owns already, and the edit that adds the agent's device to it, sealed to the agent's
+key, which the agent signs too. The vaults the person ticks then give the aven a Suggester share, issued by the
+device alone. From then on the agent acts for its aven by its own key, as its shares allow: it reads, and writes on
+proposals its person merges. It keeps no file whole of its own and reads its person's files from their desktop's one
+store, so nothing is kept twice. A reset clears its folder as the app's, and it waits to be adopted again.
 
 **One passkey, one human vault.** A device that founds asks the server first, with the passkey's pass, for the vault
 that passkey roots (`Node::rejoin_by_pass`, the same card as linking). If the server knows one, the device joins it
@@ -562,8 +576,8 @@ Every caller goes through `Node::run`:
 | Caller | How it calls |
 |---|---|
 | A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
-| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileEnd [n]` and `fileDrop [n]` for `put_file`. Its ceremonies run in the app's sign-in sheet (section 11). |
-| An agent in the desktop app | Its MCP server, through that same device: reads, and changes of entries only acting as an aven vault (`as`), so the shares that aven holds decide what an agent may change. |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents`, `adopt [name, offer, vaults]` and `agentCommand` for the agents on the desktop. Its ceremonies run in the app's sign-in sheet (section 11). |
+| An agent on the desktop | Its own device, as its MCP server (`avendb-device agent <name>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, each acting for its aven vault, whose shares decide. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
 A device's lifecycle stays outside `run`: founding, linking and opening a device (`Device.found`, `Device.link`,
@@ -955,8 +969,8 @@ on the same stream. Every value has exactly one encoding, fuzzed and checked aga
 | 2 | Card: the server's contact card | The vault logs of the CEO Aven and its owners, up the chain |
 | 3 | Link: a passkey's pass for this connection's device | The link card |
 | 4 | Join: the edit that adds the new device | Nothing, once taken |
-| 5 | Claim key | The unclaimed server's key to seal to |
-| 6 | Claim: the edit that adds the server to the CEO Aven | It, signed by the server too |
+| 5 | Claim key | The unclaimed server's key to seal to, or an agent's device's |
+| 6 | Claim: the edit that adds the server to the CEO Aven, or an agent's device to its aven | It, signed by the claimed device too |
 | 7 | Ask logs: a request for some logs alone | A page of edits of those logs |
 | 8 | State: a device's signed statement of its holdings, its own or passed on | Nothing, once kept or found older |
 
