@@ -29,7 +29,7 @@
 use serde_json::{json, Map, Value};
 
 use crate::id::ShareId;
-use crate::ops::Loc;
+use crate::ops::{Loc, Seg};
 use crate::policy::{KeepMode, Level};
 use crate::slice::{Sym, TagDelta};
 
@@ -71,15 +71,15 @@ pub enum Scalar {
 
 /// What a write did, one op at a time: a value set or removed, a text edited or a list of values changed at a place
 /// (with the value set, where one op set one plain value, `null` where it removed one); a row of a list of records
-/// added, deleted or moved (what a write does inside a row it adds is part of adding it); the entry created; a tag
-/// asked for, added or removed; a proposal started; another line merged in. An op a reader can't place touches the
-/// whole record (`Loc::Root`).
+/// added, deleted or moved, the list named by its place, at any depth (what a write does inside a row it adds is part
+/// of adding it); the entry created; a tag asked for, added or removed; a proposal started; another line merged in. An
+/// op a reader can't place touches the whole record (`Loc::root`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Touch {
     Set(Loc, Option<Scalar>),
-    Insert(String),
-    Remove(String),
-    Move(String),
+    Insert(Loc),
+    Remove(Loc),
+    Move(Loc),
     Create,
     Tag(Sym),
     Propose,
@@ -169,14 +169,13 @@ impl Grant {
     }
 }
 
-/// A place's path: a field, a row, or a field of a row.
+/// A place's path: its fields and rows, step by step, at any depth.
 pub fn steps(l: &Loc) -> Vec<Step> {
-    match l {
-        Loc::Root => vec![],
-        Loc::Field(f) => vec![Step::Field(f.clone())],
-        Loc::Row(f, i) => vec![Step::Field(f.clone()), Step::Row(*i)],
-        Loc::Cell(f, i, g) => vec![Step::Field(f.clone()), Step::Row(*i), Step::Field(g.clone())],
-    }
+    let step = |s: &Seg| match s {
+        Seg::Field(f) => Step::Field(f.clone()),
+        Seg::Row(i) => Step::Row(*i),
+    };
+    l.0.iter().map(step).collect()
 }
 
 impl Step {
@@ -256,7 +255,6 @@ impl Op {
 
     /// The op allows touch `t` of a write on the main line (`main`) or on a proposal.
     pub fn allows(&self, main: bool, t: &Touch) -> bool {
-        let list = |f: &String| [Step::Field(f.clone())];
         match (self, t) {
             (Op::Set { path, to, on }, Touch::Set(l, v)) => {
                 on_line(main, *on)
@@ -270,7 +268,7 @@ impl Op {
             (Op::Set { path, to: None, on }, Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f))
             | (Op::Insert { path, on }, Touch::Insert(f))
             | (Op::Remove { path, on }, Touch::Remove(f))
-            | (Op::Move { path, on }, Touch::Move(f)) => on_line(main, *on) && reaches(path, &list(f)),
+            | (Op::Move { path, on }, Touch::Move(f)) => on_line(main, *on) && reaches(path, &steps(f)),
             (Op::Merge { on }, Touch::Merge) => on_line(main, *on),
             (Op::Tag(tags), Touch::Tag(t)) => tags.as_ref().is_none_or(|ts| ts.contains(t)),
             (Op::Propose, Touch::Propose) | (Op::Create, Touch::Create) => true,
@@ -525,15 +523,20 @@ pub fn asked(d: &TagDelta) -> impl Iterator<Item = Touch> + '_ {
 }
 
 impl Touch {
-    /// `{"set": path, "to": v}` (no `to` where no one plain value was set), `{"insert": field}`, `{"remove": field}`,
-    /// `{"move": field}`, `"create"`, `{"tag": tag}`, `"propose"` or `"merge"`.
+    /// `{"set": path, "to": v}` (no `to` where no one plain value was set), `{"insert": list}`, `{"remove": list}`,
+    /// `{"move": list}` (a list of the record by its field, one in a row by its path), `"create"`, `{"tag": tag}`,
+    /// `"propose"` or `"merge"`.
     pub fn to_json(&self) -> Value {
+        let list = |l: &Loc| match l.0.as_slice() {
+            [Seg::Field(f)] => f.as_str().into(),
+            _ => l.to_json(),
+        };
         match self {
             Touch::Set(l, None) => json!({ "set": l.to_json() }),
             Touch::Set(l, Some(v)) => json!({ "set": l.to_json(), "to": v.to_json() }),
-            Touch::Insert(f) => json!({ "insert": f }),
-            Touch::Remove(f) => json!({ "remove": f }),
-            Touch::Move(f) => json!({ "move": f }),
+            Touch::Insert(f) => json!({ "insert": list(f) }),
+            Touch::Remove(f) => json!({ "remove": list(f) }),
+            Touch::Move(f) => json!({ "move": list(f) }),
             Touch::Create => "create".into(),
             Touch::Tag(t) => json!({ "tag": t.as_str() }),
             Touch::Propose => "propose".into(),
@@ -546,14 +549,21 @@ impl Touch {
     pub fn loc(&self) -> Option<Loc> {
         match self {
             Touch::Set(l, _) => Some(l.clone()),
-            Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f) => Some(Loc::Field(f.clone())),
-            Touch::Create => Some(Loc::Root),
+            Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f) => Some(f.clone()),
+            Touch::Create => Some(Loc::root()),
             Touch::Tag(_) | Touch::Propose | Touch::Merge => None,
         }
     }
 
     pub fn of_json(v: &Value) -> Result<Touch, String> {
-        let field = |o: &Map<String, Value>, k: &str| o[k].as_str().map(str::to_string).ok_or("a list is a field");
+        // a list of the record by its field, one in a row by its path
+        let field = |o: &Map<String, Value>, k: &str| match &o[k] {
+            Value::String(f) => Ok(Loc::field(f.as_str())),
+            p @ Value::Array(xs) if xs.len() > 1 => Some(Loc::of_json(p)?)
+                .filter(Loc::is_list)
+                .ok_or_else(|| format!("{p} is no list: a field, or a path to a field of a row")),
+            p => Err(format!("{p} is no list: a field, or a path to a field of a row")),
+        };
         match v {
             Value::String(s) => match s.as_str() {
                 "create" => Ok(Touch::Create),
@@ -650,6 +660,10 @@ mod tests {
             json!({ "insert": "items" }),
             json!({ "remove": "items" }),
             json!({ "move": "items" }),
+            json!({ "insert": ["items", { "id": 1 }, "steps"] }),
+            json!({ "remove": ["a", { "id": 1 }, "b", { "id": 2 }, "c"] }),
+            json!({ "move": ["items", { "id": 1 }, "steps"] }),
+            json!({ "set": ["a", { "id": 1 }, "b", { "id": 2 }, "c", { "id": 3 }, "d"], "to": 1 }),
             json!("create"),
             json!({ "tag": "urgent" }),
             json!("propose"),
@@ -657,6 +671,16 @@ mod tests {
         ];
         for v in touches {
             assert_eq!(touch(v.clone()).to_json(), v);
+        }
+        let bad = [
+            json!({ "insert": ["items"] }),
+            json!({ "insert": ["items", { "id": 1 }] }),
+            json!({ "remove": [] }),
+            json!({ "move": 1 }),
+            json!({ "insert": ["items", "*", "steps"] }),
+        ];
+        for v in bad {
+            assert!(Touch::of_json(&v).is_err(), "{v}");
         }
     }
 
@@ -703,6 +727,33 @@ mod tests {
         assert!(allows_all(&ops, true, &ts));
         assert!(allows_all(&ops, true, &[]));
         assert!(!allows_all(&ops, true, &[touch(json!({ "remove": "items" }))]));
+    }
+
+    #[test]
+    fn an_op_reaches_rows_and_lists_at_any_depth() {
+        let steps = json!(["items", { "id": 1 }, "steps"]);
+        let deep = |name: &str| touch(json!({ name: steps.clone() }));
+        // a list in a row: the rows of the list, at or under the op's path
+        for pattern in [json!(["items"]), json!(["items", "*"]), json!(["items", { "id": 1 }, "steps"])] {
+            let insert = op(json!({ "op": "insert", "path": pattern }));
+            assert!(insert.allows(true, &deep("insert")), "{pattern}");
+            assert!(!insert.allows(true, &deep("remove")), "{pattern}");
+        }
+        assert!(op(json!({ "op": "insert", "path": ["items", "*", "steps"] })).allows(true, &deep("insert")));
+        assert!(!op(json!({ "op": "insert", "path": ["items", { "id": 2 }] })).allows(true, &deep("insert")));
+        assert!(!op(json!({ "op": "insert", "path": ["items", "*", "notes"] })).allows(true, &deep("insert")));
+        // the list in a row is no list of the record
+        assert!(!op(json!({ "op": "insert", "path": ["steps"] })).allows(true, &deep("insert")));
+        let move_any = op(json!({ "op": "move", "path": ["items", "*", "steps", "*", "notes"] }));
+        let notes = json!({ "move": ["items", { "id": 1 }, "steps", { "id": 4 }, "notes"] });
+        assert!(move_any.allows(false, &touch(notes)));
+        assert!(!move_any.allows(false, &deep("move")));
+        // a set without values names rows too, and so does one on a row above them
+        let row = op(json!({ "op": "set", "path": ["items", { "id": 1 }] }));
+        assert!(row.allows(true, &deep("remove")));
+        let set = json!({ "set": ["items", { "id": 1 }, "steps", { "id": 2 }, "notes", { "id": 3 }, "text"] });
+        assert!(row.allows(true, &touch(set)));
+        assert_eq!(deep("move").loc(), Some(Loc::of_json(&steps).expect("a path")));
     }
 
     #[test]

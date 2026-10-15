@@ -6,20 +6,24 @@ import AvenDB.Basic
 `avendb/docs/ARCHITECTURE.md` §8. Apps read and change records, whatever their schema, by ops: JSON values that the
 page, the Mac app and every device's engine share. This file is what they mean.
 
-- **Records, flat.** A record (what an item stores, or an app's view of it) is a JSON object. Flat, it is a value at
-  each place (a field, or a field of a row of a list of records) and the rows of each list of records, in order. A row
-  is named by its id, and where several rows share one (two devices added one at once) also by how many rows with
-  that id come before it, its copy.
+- **Records, flat.** A record (what an item stores, or an app's view of it) is a JSON object, and a row of a list of
+  records is one too: its fields may hold lists of records in turn, at any depth. Flat, a record is a value at each
+  place and the rows of each list of records, in order. A place is a field, or a place of a row of a list of records
+  (`Path`), so it is named by the chain of rows around it from the top; a list is named by the place of its field. A
+  row is named by its id, and where several rows of its list share one (two devices added one at once) also by how
+  many rows with that id come before it, its copy.
 - **Changes.** The normal form of what a write did: the new value of a place (none: gone), the new rows of a list
   (none: the field no longer holds a list of records). `apply` runs changes in turn, `diff` gives the changes between
   two records. O1 (`apply_diff`): applying the diff of `r` and `s` to `r` gives `s`. So no change escapes a diff
   (`diff_complete`), and a diff names only what changed (`diff_sound`): what a reader checks of a write is all it did.
-- **Ops.** What an app asks: set or unset a field, a row or a field of a row; insert, remove and move a row of a list
-  of records; add a value to a list of values or drop one. Each names a place (`Loc`), and what it does is a change
-  within it: O2 (`diff_within`): the diff of a change within some places names only what those places cover.
-- **Queries.** A query's `where` mixes labels, the tests of a cap's selector, with tests of a record's values. Its
-  labels make a selector that picks no less than the query (`cover_sound`), so a device can pick entries by labels
-  first and test values only in what it opens: O3 (`plan_run`).
+- **Ops.** What an app asks: set or unset a field, of the record or of a row at any depth, or a whole row; insert,
+  remove and move a row of a list of records; add a value to a list of values or drop one. Each names a place (`Loc`,
+  its steps from the top, each row by its id), and what it does is a change within it: O2 (`diff_within`): the diff
+  of a change within some places names only what those places cover.
+- **Queries.** A query's `where` mixes labels, the tests of a cap's selector, with tests of a record's values, at a
+  place or in any row of a list (`*`), at any depth. Its labels make a selector that picks no less than the query
+  (`cover_sound`), so a device can pick entries by labels first and test values only in what it opens: O3
+  (`plan_run`).
 -/
 
 namespace AvenDB.Ops
@@ -32,28 +36,50 @@ structure Key where
   copy : Nat := 0
   deriving DecidableEq, Repr
 
-/-- A place of a record: a field, or a field of a row of a list of records. -/
+/-- A place of a record: a field (`top f`), or place `p` of row `k` of the list of records in field `f` (`row f k p`),
+    so a place inside rows at any depth, named by the chain of rows around it. A list of records is named by the place
+    of its field. -/
 inductive Path where
   | top (f : String)
-  | row (f : String) (k : Key) (g : String)
+  | row (f : String) (k : Key) (p : Path)
   deriving DecidableEq, Repr
 
+/-- Place `p` of row `k` of the list at `q`. -/
+def Path.under : Path → Key → Path → Path
+  | .top f, k, p => .row f k p
+  | .row f k' q, k, p => .row f k' (q.under k p)
+
+/-- The innermost row around a place: none for a field of the record itself, else the list it is a row of and its
+    key. -/
+def Path.scope : Path → Option (Path × Key)
+  | .top _ => none
+  | .row f k p => some (match p.scope with
+    | none => (.top f, k)
+    | some (q, k') => (.row f k q, k'))
+
+/-- A field of row `k` of the list at `q` has that row around it, innermost. -/
+theorem Path.scope_under (q : Path) (k : Key) (g : String) : (q.under k (.top g)).scope = some (q, k) := by
+  induction q with
+  | top f => rfl
+  | row f k' q ih => simp [Path.under, Path.scope, ih]
+
 /-- A record, flat: the value at each place, and the rows of each list of records in order. A field holds a value
-    (`leaf (.top f)`) or a list of records (`rows f`), and the fields of a list's rows are its places. -/
+    (`leaf (.top f)`) or a list of records (`rows (.top f)`), and the fields of a list's rows are its places, which
+    may hold lists of records in turn. -/
 @[ext] structure Record (V : Type) where
   leaf : Path → Option V
-  rows : String → Option (List Key)
+  rows : Path → Option (List Key)
 
 /-- A change: a place's new value (none: gone), or a list's new rows (none: the field holds no list of records). -/
 inductive Change (V : Type) where
   | set   (p : Path) (v : Option V)
-  | order (f : String) (ks : Option (List Key))
+  | order (f : Path) (ks : Option (List Key))
   deriving DecidableEq, Repr
 
-/-- What a change writes: a place, or a field's rows. -/
+/-- What a change writes: a place, or a list's rows. -/
 inductive Place where
   | leaf (p : Path)
-  | list (f : String)
+  | list (f : Path)
   deriving DecidableEq, Repr
 
 section Flat
@@ -78,7 +104,7 @@ def setOf (p : Path) : List (Change V) → Option (Option V)
   | .order _ _ :: cs  => setOf p cs
 
 /-- The rows the last change of `cs` to list `f` gives it, if one changes it. -/
-def orderOf (f : String) : List (Change V) → Option (Option (List Key))
+def orderOf (f : Path) : List (Change V) → Option (Option (List Key))
   | [] => none
   | .set _ _ :: cs    => orderOf f cs
   | .order g ks :: cs => (orderOf f cs).or (if f = g then some ks else none)
@@ -96,7 +122,7 @@ theorem apply_leaf (r : Record V) (cs : List (Change V)) (p : Path) :
       cases setOf p cs <;> by_cases h : p = q <;> simp [h]
     | order g ks => simp [setOf, Change.on]
 
-theorem apply_rows (r : Record V) (cs : List (Change V)) (f : String) :
+theorem apply_rows (r : Record V) (cs : List (Change V)) (f : Path) :
     (apply r cs).rows f = (orderOf f cs).getD (r.rows f) := by
   induction cs generalizing r with
   | nil => rfl
@@ -114,19 +140,19 @@ theorem setOf_append (p : Path) (xs ys : List (Change V)) : setOf p (xs ++ ys) =
   | nil => simp [setOf]
   | cons c xs ih => cases c <;> simp [setOf, ih, Option.or_assoc]
 
-theorem orderOf_append (f : String) (xs ys : List (Change V)) :
+theorem orderOf_append (f : Path) (xs ys : List (Change V)) :
     orderOf f (xs ++ ys) = (orderOf f ys).or (orderOf f xs) := by
   induction xs with
   | nil => simp [orderOf]
   | cons c xs ih => cases c <;> simp [orderOf, ih, Option.or_assoc]
 
-theorem setOf_orders (p : Path) (fs : List String) (g : String → Option (List Key)) :
+theorem setOf_orders (p : Path) (fs : List Path) (g : Path → Option (List Key)) :
     setOf p (fs.map fun f => (Change.order f (g f) : Change V)) = none := by
   induction fs with
   | nil => rfl
   | cons f fs ih => simpa [setOf] using ih
 
-theorem orderOf_sets (f : String) (ps : List Path) (g : Path → Option V) :
+theorem orderOf_sets (f : Path) (ps : List Path) (g : Path → Option V) :
     orderOf f (ps.map fun p => Change.set p (g p)) = none := by
   induction ps with
   | nil => rfl
@@ -142,7 +168,7 @@ theorem setOf_sets (p : Path) (qs : List Path) (g : Path → Option V) :
     · subst e; by_cases h : p ∈ qs <;> simp [h]
     · by_cases h : p ∈ qs <;> simp [h, e]
 
-theorem orderOf_orders (f : String) (fs : List String) (g : String → Option (List Key)) :
+theorem orderOf_orders (f : Path) (fs : List Path) (g : Path → Option (List Key)) :
     orderOf f (fs.map fun g' => (Change.order g' (g g') : Change V)) = if f ∈ fs then some (g f) else none := by
   induction fs with
   | nil => simp [orderOf]
@@ -154,16 +180,16 @@ theorem orderOf_orders (f : String) (fs : List String) (g : String → Option (L
 
 /-- The changes that make `r` into `s`, given the lists `fs` and the places `ps` where they may differ: the new rows
     of each list that changed, then the new value of each place that changed. -/
-def diff [DecidableEq V] (ps : List Path) (fs : List String) (r s : Record V) : List (Change V) :=
+def diff [DecidableEq V] (ps : List Path) (fs : List Path) (r s : Record V) : List (Change V) :=
   (fs.filter fun f => decide (r.rows f ≠ s.rows f)).map (fun f => .order f (s.rows f)) ++
   (ps.filter fun p => decide (r.leaf p ≠ s.leaf p)).map (fun p => .set p (s.leaf p))
 
 /-- `ps` and `fs` hold every place and every list where `r` and `s` differ. -/
-def Reaches (ps : List Path) (fs : List String) (r s : Record V) : Prop :=
+def Reaches (ps : List Path) (fs : List Path) (r s : Record V) : Prop :=
   (∀ p, r.leaf p ≠ s.leaf p → p ∈ ps) ∧ (∀ f, r.rows f ≠ s.rows f → f ∈ fs)
 
 /-- O1, diff explains apply: applying the diff of `r` and `s` to `r` gives `s`. -/
-theorem apply_diff [DecidableEq V] {ps : List Path} {fs : List String} {r s : Record V} (h : Reaches ps fs r s) :
+theorem apply_diff [DecidableEq V] {ps : List Path} {fs : List Path} {r s : Record V} (h : Reaches ps fs r s) :
     apply r (diff ps fs r s) = s := by
   apply Record.ext
   · funext p
@@ -178,7 +204,7 @@ theorem apply_diff [DecidableEq V] {ps : List Path} {fs : List String} {r s : Re
     · simp [List.mem_filter, h.2 f hf, hf]
 
 /-- Nothing escapes a diff: each place and each list that changed has its new value in it. -/
-theorem diff_complete [DecidableEq V] {ps : List Path} {fs : List String} {r s : Record V} (h : Reaches ps fs r s) :
+theorem diff_complete [DecidableEq V] {ps : List Path} {fs : List Path} {r s : Record V} (h : Reaches ps fs r s) :
     (∀ p, r.leaf p ≠ s.leaf p → .set p (s.leaf p) ∈ diff ps fs r s) ∧
     (∀ f, r.rows f ≠ s.rows f → .order f (s.rows f) ∈ diff ps fs r s) := by
   constructor
@@ -193,7 +219,7 @@ def Change.differs (r s : Record V) : Change V → Prop
   | .order f ks => r.rows f ≠ s.rows f ∧ ks = s.rows f
 
 /-- A diff names only what changed. -/
-theorem diff_sound [DecidableEq V] {ps : List Path} {fs : List String} {r s : Record V} {c : Change V}
+theorem diff_sound [DecidableEq V] {ps : List Path} {fs : List Path} {r s : Record V} {c : Change V}
     (hc : c ∈ diff ps fs r s) : c.differs r s := by
   simp only [diff, List.mem_append, List.mem_map, List.mem_filter] at hc
   rcases hc with ⟨f, ⟨_, hf⟩, rfl⟩ | ⟨p, ⟨_, hp⟩, rfl⟩
@@ -217,26 +243,38 @@ theorem apply_keeps {r : Record V} {cs : List (Change V)} {p : Path} (h : ∀ c 
 
 /-! ### Places ops name -/
 
-/-- What an op names: the whole record, a field, a row of a list of records (the first with that id, the one apps
-    see), or a field of such a row. -/
-inductive Loc where
-  | root
+/-- A step of the place an op names: a field, or the row of a list of records with an id (the first with it, the one
+    apps see). -/
+inductive Seg where
   | field (f : String)
-  | row   (f : String) (id : Int)
-  | cell  (f : String) (id : Int) (g : String)
+  | row   (id : Int)
   deriving DecidableEq, Repr
 
-/-- What changing at `l` may change. A row's place in its list is its list's order; and as rows are told apart by
-    how many with their id come before them, changing one row of an id may renumber its copies. -/
-def Loc.covers : Loc → Place → Bool
-  | .root, _                                    => true
-  | .field f, .leaf (.top g)                    => f == g
-  | .field f, .leaf (.row g _ _)                => f == g
-  | .field f, .list g                           => f == g
-  | .row f i, .leaf (.row g k _)                => f == g && i == k.id
-  | .row f _, .list g                           => f == g
-  | .cell f i g, .leaf (.row f' k g')           => f == f' && i == k.id && g == g'
-  | _, _                                        => false
+/-- What an op names: its steps from the top, field and row in turn. `[]` is the whole record, `[.field f]` a field,
+    `[.field f, .row i]` a row of the list in it, `[.field f, .row i, .field g]` a field of that row, and so on at any
+    depth. -/
+abbrev Loc := List Seg
+
+/-- `l` names place `p`, or a field or a row above it, step by step: a row by its id, whatever its copy. -/
+def Loc.above : Loc → Path → Bool
+  | [], _ => true
+  | [.field f], .top g => f == g
+  | [.field f], .row g _ _ => f == g
+  | .field f :: .row i :: l, .row g k p => f == g && i == k.id && Loc.above l p
+  | _, _ => false
+
+/-- `l` names a row of the list at `q`. -/
+def Loc.rowOf : Loc → Path → Bool
+  | [.field f, .row _], .top g => f == g
+  | .field f :: .row i :: l, .row g k q => f == g && i == k.id && Loc.rowOf l q
+  | _, _ => false
+
+/-- What changing at `l` may change: what is at or under it, and for a row, the order of its list. As rows are told
+    apart by how many with their id come before them, changing one row of an id may renumber its copies, and what is
+    under them: a step to a row covers every copy of its id. -/
+def Loc.covers (l : Loc) : Place → Bool
+  | .leaf p => l.above p
+  | .list q => l.above q || l.rowOf q
 
 /-- `s` is `r` changed only where some of `ls` covers. -/
 def Within (ls : List Loc) (r s : Record V) : Prop :=
@@ -261,7 +299,7 @@ theorem Within.trans {ls ms : List Loc} {r s t : Record V} (h₁ : Within ls r s
       exact ⟨l, List.mem_append_left _ hl, c⟩
 
 /-- O2, apply is what it says: the diff of a change within `ls` names only what `ls` covers. -/
-theorem diff_within [DecidableEq V] {ls : List Loc} {ps : List Path} {fs : List String} {r s : Record V} {c : Change V}
+theorem diff_within [DecidableEq V] {ls : List Loc} {ps : List Path} {fs : List Path} {r s : Record V} {c : Change V}
     (hw : Within ls r s) (hc : c ∈ diff ps fs r s) : ∃ l ∈ ls, l.covers c.place := by
   have := diff_sound hc
   cases c with
@@ -273,7 +311,8 @@ end Flat
 /-! ## Records as JSON
 
 The values of the records the vectors hold: scalars, and lists of scalars. (The engine takes any JSON value as a
-leaf.) An empty JSON array is an empty list of records: a field's kind is read from its value alone. -/
+leaf.) An empty JSON array is an empty list of records: a field's kind is read from its value alone, in a row as in the
+record. -/
 
 inductive Val where
   | null
@@ -288,52 +327,121 @@ inductive Leaf where
   | many (vs : List Val)
   deriving DecidableEq, Repr
 
-/-- A row of a list of records: its id, and its other fields. -/
-structure Row where
-  id     : Int
-  fields : List (String × Leaf)
-  deriving DecidableEq, Repr
-
-/-- What a field holds. -/
+mutual
+/-- What a field holds: a value, or a list of records. -/
 inductive Item where
   | leaf (v : Leaf)
   | rows (rs : List Row)
-  deriving DecidableEq, Repr
+/-- A row of a list of records: its id, and its other fields, which may hold lists of records in turn. -/
+inductive Row where
+  | mk (id : Int) (fields : List (String × Item))
+end
 
-/-- A record: its fields, each once. -/
+deriving instance Repr for Item, Row
+
+/-- A record, or a row's fields: its fields, each once. -/
 abbrev Doc := List (String × Item)
+
+def Row.id : Row → Int
+  | .mk i _ => i
+
+def Row.fields : Row → Doc
+  | .mk _ fs => fs
 
 /-- A list of values as JSON reads it back: an empty one is an empty list of records. -/
 def Item.list (vs : List Val) : Item := if vs.isEmpty then .rows [] else .leaf (.many vs)
 
+/-- Each row with its key, after the rows `seen` of its list: its id, and how many rows before it have that id. -/
+def keyedFrom (seen : List Row) : List Row → List (Key × Row)
+  | [] => []
+  | r :: rs => (⟨r.id, seen.countP (·.id == r.id)⟩, r) :: keyedFrom (seen ++ [r]) rs
+
 /-- Each row with its key: its id, and how many rows before it have that id. -/
-def keyed (rs : List Row) : List (Key × Row) :=
-  rs.zipIdx.map fun (r, i) => (⟨r.id, (rs.take i).countP (·.id == r.id)⟩, r)
+def keyed (rs : List Row) : List (Key × Row) := keyedFrom [] rs
+
+/-- What a place holds, as the chain of rows to it says: the first row of its list with each key. -/
+def Doc.item (d : Doc) : Path → Option Item
+  | .top f => d.lookup f
+  | .row f k p => match d.lookup f with
+    | some (.rows rs) => ((keyed rs).lookup k).bind fun r => Doc.item r.fields p
+    | _ => none
 
 /-- The record, flat. -/
 def Doc.meaning (d : Doc) : Record Leaf where
-  leaf
-    | .top f => match d.lookup f with
-      | some (.leaf v) => some v
-      | _ => none
-    | .row f k g => match d.lookup f with
-      | some (.rows rs) => ((keyed rs).lookup k).bind (·.fields.lookup g)
-      | _ => none
-  rows f := match d.lookup f with
+  leaf p := match d.item p with
+    | some (.leaf v) => some v
+    | _ => none
+  rows p := match d.item p with
     | some (.rows rs) => some ((keyed rs).map (·.1))
     | _ => none
 
-/-- Its places that hold a value. -/
-def Doc.paths (d : Doc) : List Path :=
-  d.flatMap fun (f, x) => match x with
-    | .leaf _ => [.top f]
-    | .rows rs => (keyed rs).flatMap fun (k, r) => r.fields.map fun (g, _) => .row f k g
+mutual
+/-- Its places that hold a value, at every depth. -/
+def Doc.paths : Doc → List Path
+  | [] => []
+  | (f, .leaf _) :: d => .top f :: Doc.paths d
+  | (f, .rows rs) :: d => Rows.paths f [] rs ++ Doc.paths d
 
-/-- Its lists of records. -/
-def Doc.lists (d : Doc) : List String :=
-  d.filterMap fun (f, x) => match x with
-    | .rows _ => some f
-    | .leaf _ => none
+/-- The places that hold a value in the rows `rs` of list `f`, after the rows `seen`. -/
+def Rows.paths (f : String) (seen : List Row) : List Row → List Path
+  | [] => []
+  | .mk i fs :: rs =>
+    (Doc.paths fs).map (.row f ⟨i, seen.countP (·.id == i)⟩) ++ Rows.paths f (seen ++ [.mk i fs]) rs
+end
+
+mutual
+/-- Its lists of records, at every depth. -/
+def Doc.lists : Doc → List Path
+  | [] => []
+  | (_, .leaf _) :: d => Doc.lists d
+  | (f, .rows rs) :: d => .top f :: Rows.lists f [] rs ++ Doc.lists d
+
+/-- The lists of records in the rows `rs` of list `f`, after the rows `seen`. -/
+def Rows.lists (f : String) (seen : List Row) : List Row → List Path
+  | [] => []
+  | .mk i fs :: rs =>
+    (Doc.lists fs).map (.row f ⟨i, seen.countP (·.id == i)⟩) ++ Rows.lists f (seen ++ [.mk i fs]) rs
+end
+
+theorem Rows.paths_eq (f : String) (seen rs : List Row) :
+    Rows.paths f seen rs = (keyedFrom seen rs).flatMap fun (k, r) => (Doc.paths r.fields).map (.row f k) := by
+  induction rs generalizing seen with
+  | nil => simp [Rows.paths, keyedFrom]
+  | cons r rs ih =>
+    cases r with
+    | mk i fs => simp [Rows.paths, keyedFrom, ih, Row.id, Row.fields]
+
+theorem Rows.lists_eq (f : String) (seen rs : List Row) :
+    Rows.lists f seen rs = (keyedFrom seen rs).flatMap fun (k, r) => (Doc.lists r.fields).map (.row f k) := by
+  induction rs generalizing seen with
+  | nil => simp [Rows.lists, keyedFrom]
+  | cons r rs ih =>
+    cases r with
+    | mk i fs => simp [Rows.lists, keyedFrom, ih, Row.id, Row.fields]
+
+/-- Its places: each field's, and each of each of its rows'. -/
+theorem Doc.paths_eq (d : Doc) : d.paths = d.flatMap fun (f, x) => match x with
+    | .leaf _ => [.top f]
+    | .rows rs => (keyed rs).flatMap fun (k, r) => (Doc.paths r.fields).map (.row f k) := by
+  induction d with
+  | nil => simp [Doc.paths]
+  | cons p d ih =>
+    obtain ⟨f, x⟩ := p
+    cases x with
+    | leaf v => simp [Doc.paths, ih]
+    | rows rs => simp [Doc.paths, ih, Rows.paths_eq, keyed]
+
+/-- Its lists: each field's that holds one, and each of each of their rows'. -/
+theorem Doc.lists_eq (d : Doc) : d.lists = d.flatMap fun (f, x) => match x with
+    | .leaf _ => []
+    | .rows rs => .top f :: (keyed rs).flatMap fun (k, r) => (Doc.lists r.fields).map (.row f k) := by
+  induction d with
+  | nil => simp [Doc.lists]
+  | cons p d ih =>
+    obtain ⟨f, x⟩ := p
+    cases x with
+    | leaf v => simp [Doc.lists, ih]
+    | rows rs => simp [Doc.lists, ih, Rows.lists_eq, keyed]
 
 theorem lookup_mem {α β : Type} [BEq α] [LawfulBEq α] {a : α} {b : β} :
     ∀ {xs : List (α × β)}, xs.lookup a = some b → (a, b) ∈ xs
@@ -345,34 +453,60 @@ theorem lookup_mem {α β : Type} [BEq α] [LawfulBEq α] {a : α} {b : β} :
       simp only [List.lookup, ne] at h
       exact List.mem_cons_of_mem _ (lookup_mem h)
 
+/-- A place that holds a value is one of the record's places: by induction on the path, row by row. -/
 theorem Doc.leaf_mem {d : Doc} {p : Path} (h : d.meaning.leaf p ≠ none) : p ∈ d.paths := by
-  cases p with
+  induction p generalizing d with
   | top f =>
-    simp only [Doc.meaning] at h
+    simp only [Doc.meaning, Doc.item] at h
     split at h
     · rename_i v hv
+      rw [Doc.paths_eq]
       exact List.mem_flatMap.2 ⟨(f, .leaf v), lookup_mem hv, by simp⟩
     · exact absurd rfl h
-  | row f k g =>
-    simp only [Doc.meaning] at h
+  | row f k p ih =>
+    simp only [Doc.meaning, Doc.item] at h
+    cases hf : d.lookup f with
+    | none => simp [hf] at h
+    | some x =>
+      cases x with
+      | leaf v => simp [hf] at h
+      | rows rs =>
+        cases hr : (keyed rs).lookup k with
+        | none => simp [hf, hr] at h
+        | some r =>
+          have hp : r.fields.meaning.leaf p ≠ none := by
+            simpa [Doc.meaning, hf, hr] using h
+          rw [Doc.paths_eq]
+          refine List.mem_flatMap.2 ⟨(f, .rows rs), lookup_mem hf, ?_⟩
+          exact List.mem_flatMap.2 ⟨(k, r), lookup_mem hr, List.mem_map.2 ⟨p, ih hp, rfl⟩⟩
+
+/-- A list of records is one of the record's lists: by induction on its path, row by row. -/
+theorem Doc.rows_mem {d : Doc} {f : Path} (h : d.meaning.rows f ≠ none) : f ∈ d.lists := by
+  induction f generalizing d with
+  | top f =>
+    simp only [Doc.meaning, Doc.item] at h
     split at h
     · rename_i rs hrs
-      cases hr : (keyed rs).lookup k with
-      | none => simp [hr] at h
-      | some r =>
-        cases hv : r.fields.lookup g with
-        | none => simp [hr, hv] at h
-        | some v =>
-          refine List.mem_flatMap.2 ⟨(f, .rows rs), lookup_mem hrs, ?_⟩
-          exact List.mem_flatMap.2 ⟨(k, r), lookup_mem hr, List.mem_map.2 ⟨(g, v), lookup_mem hv, rfl⟩⟩
+      rw [Doc.lists_eq]
+      exact List.mem_flatMap.2 ⟨(f, .rows rs), lookup_mem hrs, by simp⟩
     · exact absurd rfl h
-
-theorem Doc.rows_mem {d : Doc} {f : String} (h : d.meaning.rows f ≠ none) : f ∈ d.lists := by
-  simp only [Doc.meaning] at h
-  split at h
-  · rename_i rs hrs
-    exact List.mem_filterMap.2 ⟨(f, .rows rs), lookup_mem hrs, rfl⟩
-  · exact absurd rfl h
+  | row f k p ih =>
+    simp only [Doc.meaning, Doc.item] at h
+    cases hf : d.lookup f with
+    | none => simp [hf] at h
+    | some x =>
+      cases x with
+      | leaf v => simp [hf] at h
+      | rows rs =>
+        cases hr : (keyed rs).lookup k with
+        | none => simp [hf, hr] at h
+        | some r =>
+          have hp : r.fields.meaning.rows p ≠ none := by
+            simpa [Doc.meaning, hf, hr] using h
+          rw [Doc.lists_eq]
+          refine List.mem_flatMap.2 ⟨(f, .rows rs), lookup_mem hf, ?_⟩
+          exact List.mem_cons_of_mem _
+            (List.mem_flatMap.2 ⟨(k, r), lookup_mem hr, List.mem_map.2 ⟨p, ih hp, rfl⟩⟩)
 
 /-- Two records' places and lists reach everything where they differ. -/
 theorem Doc.reaches (d e : Doc) : Reaches (d.paths ++ e.paths) (d.lists ++ e.lists) d.meaning e.meaning := by
@@ -399,39 +533,38 @@ theorem Doc.apply_diff (d e : Doc) : apply d.meaning (d.diff e) = e.meaning := b
 
 /-! ## Ops -/
 
-/-- What an app asks of a record. A row is named by its id: an app's view holds one row of each id. -/
-inductive RecordOp where
-  /-- The whole record. -/
-  | put       (d : Doc)
-  | set       (f : String) (x : Item)
-  | unset     (f : String)
+/-- What an op does to one field of the record, or of a row. A row is named by its id: an app's view holds one row of
+    each id. -/
+inductive FieldOp where
+  | set    (x : Item)
+  | unset
   /-- The row with `r`'s id, all its fields. -/
-  | setRow    (f : String) (r : Row)
-  | setCell   (f : String) (id : Int) (g : String) (v : Leaf)
-  | unsetCell (f : String) (id : Int) (g : String)
+  | setRow (r : Row)
   /-- A new row, at place `pos` or last. -/
-  | insert    (f : String) (r : Row) (pos : Option Nat)
-  | remove    (f : String) (id : Int)
+  | insert (r : Row) (pos : Option Nat)
+  | remove (id : Int)
   /-- The row to place `to` of the list without it. -/
-  | move      (f : String) (id : Int) (to : Nat)
+  | move   (id : Int) (to : Nat)
   /-- A value into a list of values, at place `pos` or last. -/
-  | add       (f : String) (v : Val) (pos : Option Nat)
+  | add    (v : Val) (pos : Option Nat)
   /-- Every copy of a value out of a list of values. -/
-  | drop      (f : String) (v : Val)
+  | drop   (v : Val)
+  deriving Repr
+
+/-- What an app asks of a record: the whole record, or an edit of field `f` of the row `l` names (of the record
+    itself, for `[]`), at any depth. -/
+inductive RecordOp where
+  | put  (d : Doc)
+  | edit (l : Loc) (f : String) (e : FieldOp)
   deriving Repr
 
 def RecordOp.loc : RecordOp → Loc
-  | .put _              => .root
-  | .set f _            => .field f
-  | .unset f            => .field f
-  | .setRow f r         => .row f r.id
-  | .setCell f i g _    => .cell f i g
-  | .unsetCell f i g    => .cell f i g
-  | .insert f r _       => .row f r.id
-  | .remove f i         => .row f i
-  | .move f i _         => .row f i
-  | .add f _ _          => .field f
-  | .drop f _           => .field f
+  | .put _                    => []
+  | .edit l f (.setRow r)     => l ++ [.field f, .row r.id]
+  | .edit l f (.insert r _)   => l ++ [.field f, .row r.id]
+  | .edit l f (.remove i)     => l ++ [.field f, .row i]
+  | .edit l f (.move i _)     => l ++ [.field f, .row i]
+  | .edit l f _               => l ++ [.field f]
 
 /-- `xs` with `k` holding `v`: in its place if it has one, else last. -/
 def assign {α : Type} (xs : List (String × α)) (k : String) (v : α) : List (String × α) :=
@@ -453,42 +586,33 @@ def Doc.rowsAt (d : Doc) (f : String) : Option (List Row) :=
   | some (.rows rs) => some rs
   | _ => none
 
-/-- The record after `op`, or none where the op makes no sense of it: a row or a field that isn't there, a second row
-    with one id, a place past the end of a list, a row's id changed. -/
-def Doc.run (d : Doc) : RecordOp → Option Doc
-  | .put e => some e
-  | .set f x => some (assign d f x)
-  | .unset f => some (unassign d f)
-  | .setRow f r => do
+/-- The record (or row's fields) after edit `e` of its field `f`, or none where the edit makes no sense of it: a row
+    or a field that isn't there, a second row with one id, a place past the end of a list. -/
+def Doc.edit (d : Doc) (f : String) : FieldOp → Option Doc
+  | .set x => some (assign d f x)
+  | .unset => some (unassign d f)
+  | .setRow r => do
     let rs ← d.rowsAt f
     guard (rs.any (·.id == r.id))
     some (assign d f (.rows (editRow rs r.id fun _ => r)))
-  | .setCell f i g v => do
-    let rs ← d.rowsAt f
-    guard (g != "id" && rs.any (·.id == i))
-    some (assign d f (.rows (editRow rs i fun r => { r with fields := assign r.fields g v })))
-  | .unsetCell f i g => do
-    let rs ← d.rowsAt f
-    guard (g != "id" && rs.any (·.id == i))
-    some (assign d f (.rows (editRow rs i fun r => { r with fields := unassign r.fields g })))
-  | .insert f r pos =>
+  | .insert r pos =>
     match d.lookup f with
     | none => if pos.getD 0 == 0 then some (assign d f (.rows [r])) else none
     | some (.rows rs) =>
       let n := pos.getD rs.length
       if rs.any (·.id == r.id) || n > rs.length then none else some (assign d f (.rows (rs.insertIdx n r)))
     | some (.leaf _) => none
-  | .remove f i => do
+  | .remove i => do
     let rs ← d.rowsAt f
     guard (rs.any (·.id == i))
     some (assign d f (.rows (dropRow rs i)))
-  | .move f i to => do
+  | .move i to => do
     let rs ← d.rowsAt f
     let r ← rs.find? (·.id == i)
     let rest := dropRow rs i
     guard (to ≤ rest.length)
     some (assign d f (.rows (rest.insertIdx to r)))
-  | .add f v pos =>
+  | .add v pos =>
     let vs := match d.lookup f with
       | none | some (.rows []) => some []
       | some (.leaf (.many vs)) => some vs
@@ -498,11 +622,28 @@ def Doc.run (d : Doc) : RecordOp → Option Doc
       let n := pos.getD vs.length
       if n > vs.length then none else some (assign d f (Item.list (vs.insertIdx n v)))
     | none => none
-  | .drop f v =>
+  | .drop v =>
     match d.lookup f with
     | none | some (.rows []) => some d
     | some (.leaf (.many vs)) => some (assign d f (Item.list (vs.filter (· != v))))
     | _ => none
+
+/-- The record with the fields of the row `l` names (the record's own, for `[]`) made by `g`: none where there is no
+    such row, or `g` makes none. A step names the first row of its list with its id. -/
+def Doc.atRow (d : Doc) (g : Doc → Option Doc) : Loc → Option Doc
+  | [] => g d
+  | .field f :: .row i :: l => do
+    let rs ← d.rowsAt f
+    let r ← rs.find? (·.id == i)
+    let fs ← Doc.atRow r.fields g l
+    some (assign d f (.rows (editRow rs i fun r => .mk r.id fs)))
+  | _ => none
+
+/-- The record after `op`, or none where the op makes no sense of it: a row or a field that isn't there (a row around
+    it too), a second row with one id, a place past the end of a list, a row's id changed. -/
+def Doc.run (d : Doc) : RecordOp → Option Doc
+  | .put e => some e
+  | .edit l f e => d.atRow (fun r => if !l.isEmpty && f == "id" then none else r.edit f e) l
 
 /-- Ops one after the other: none if one makes no sense. -/
 def Doc.runAll (d : Doc) (ops : List RecordOp) : Option Doc := ops.foldlM Doc.run d
@@ -570,26 +711,32 @@ def Test.test : Test → Option Leaf → Bool
   | .present b, x => x.isSome == b
   | _, _ => false
 
-/-- What a test reads: a place, or a field of any row of a list (it holds if it holds of one). -/
+/-- What a test reads: a field (`top f`); in the row of the list in field `f` with key `k` (`row f k t`), or in any of
+    its rows (`each f t`, `*`: it holds if it holds of one), what `t` reads there, at any depth. -/
 inductive Target where
-  | at   (p : Path)
-  | each (f : String) (g : String)
+  | top  (f : String)
+  | row  (f : String) (k : Key) (t : Target)
+  | each (f : String) (t : Target)
   deriving DecidableEq, Repr
+
+/-- Row `k` of the list in field `f`, as a record of its own. -/
+def Record.sub {V : Type} (r : Record V) (f : String) (k : Key) : Record V :=
+  ⟨fun p => r.leaf (.row f k p), fun p => r.rows (.row f k p)⟩
 
 /-- The value a test sees at a field, as in JSON: an empty list of records is an empty list; a list of records is no
     value a test compares, though it is there. -/
 def Record.seen (r : Record Leaf) (f : String) : Option Leaf :=
-  match r.leaf (.top f), r.rows f with
+  match r.leaf (.top f), r.rows (.top f) with
   | some v, _ => some v
   | none, some [] => some (.many [])
   | _, _ => none
 
 def Target.holds (r : Record Leaf) (t : Test) : Target → Bool
-  | .at (.top f) => match t with
-    | .present x => ((r.leaf (.top f)).isSome || (r.rows f).isSome) == x
+  | .top f => match t with
+    | .present x => ((r.leaf (.top f)).isSome || (r.rows (.top f)).isSome) == x
     | t => t.test (r.seen f)
-  | .at p => t.test (r.leaf p)
-  | .each f g => ((r.rows f).getD []).any fun k => t.test (r.leaf (.row f k g))
+  | .row f k x => x.holds (r.sub f k) t
+  | .each f x => ((r.rows (.top f)).getD []).any fun k => x.holds (r.sub f k) t
 
 /-- A query's `where`: labels, as a cap's selector tests them, and tests of the record's values. -/
 inductive Where where

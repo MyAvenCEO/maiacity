@@ -418,13 +418,13 @@ impl Item {
         for op in self.doc.export_json_in_id_span(IdSpan::new(p, start, end)).iter().flat_map(|c| &c.ops) {
             let Some(path) = self.doc.get_path_to_container(&op.container) else {
                 if !inside_made(&op.container) {
-                    out.push(Touch::Set(Loc::Root, None));
+                    out.push(Touch::Set(Loc::root(), None));
                 }
                 continue;
             };
             let root = ContainerID::Root { name: ROOT.into(), container_type: ContainerType::Map };
             if path.first().is_none_or(|(c, _)| *c != root) {
-                out.push(Touch::Set(Loc::Root, None));
+                out.push(Touch::Set(Loc::root(), None));
                 continue;
             }
             if path.iter().any(|(c, _)| made(c)) {
@@ -439,7 +439,7 @@ impl Item {
                     }
                     JsonOpContent::Map(JsonMapOp::Insert { key, value }) => Touch::Set(field(key), scalar(value)),
                     JsonOpContent::Map(JsonMapOp::Delete { key }) => Touch::Set(field(key), Some(Scalar::Null)),
-                    _ => Touch::Set(Loc::Root, None),
+                    _ => Touch::Set(Loc::root(), None),
                 });
                 continue;
             };
@@ -452,28 +452,28 @@ impl Item {
                 _ => None,
             };
             out.push(match (path.len(), &op.content, row) {
-                (2, JsonOpContent::MovableList(JsonMovableListOp::Insert { .. }), _) => Touch::Insert(f),
-                (2, JsonOpContent::MovableList(JsonMovableListOp::Delete { .. }), _) => Touch::Remove(f),
-                (2, JsonOpContent::MovableList(JsonMovableListOp::Move { .. }), _) => Touch::Move(f),
-                (2, JsonOpContent::Tree(_) | JsonOpContent::Future(_), _) => Touch::Set(Loc::Root, None),
+                (2, JsonOpContent::MovableList(JsonMovableListOp::Insert { .. }), _) => Touch::Insert(field(&f)),
+                (2, JsonOpContent::MovableList(JsonMovableListOp::Delete { .. }), _) => Touch::Remove(field(&f)),
+                (2, JsonOpContent::MovableList(JsonMovableListOp::Move { .. }), _) => Touch::Move(field(&f)),
+                (2, JsonOpContent::Tree(_) | JsonOpContent::Future(_), _) => Touch::Set(Loc::root(), None),
                 // a field of a row, by the row's id: its id itself names the row, so changing it changes the list
                 (3, JsonOpContent::Map(JsonMapOp::Insert { key, value }), Some(id)) if key != "id" => {
-                    Touch::Set(Loc::Cell(f, id, key.clone()), if container(value) { None } else { scalar(value) })
+                    Touch::Set(Loc::cell(f, id, key.clone()), if container(value) { None } else { scalar(value) })
                 }
                 (3, JsonOpContent::Map(JsonMapOp::Delete { key }), Some(id)) if key != "id" => {
-                    Touch::Set(Loc::Cell(f, id, key.clone()), Some(Scalar::Null))
+                    Touch::Set(Loc::cell(f, id, key.clone()), Some(Scalar::Null))
                 }
                 (4.., _, Some(id)) => match path.get(3) {
-                    Some((_, Index::Key(g))) if g.as_str() != "id" => Touch::Set(Loc::Cell(f, id, g.to_string()), None),
-                    _ => Touch::Set(Loc::Field(f), None),
+                    Some((_, Index::Key(g))) if g.as_str() != "id" => Touch::Set(Loc::cell(f, id, g.to_string()), None),
+                    _ => Touch::Set(field(&f), None),
                 },
-                _ => Touch::Set(Loc::Field(f), None),
+                _ => Touch::Set(field(&f), None),
             });
         }
         // a list of records made to add rows to is adding them
         for k in lists {
-            if !out.contains(&Touch::Insert(k.clone())) {
-                out.push(Touch::Set(Loc::Field(k), None));
+            if !out.contains(&Touch::Insert(field(&k))) {
+                out.push(Touch::Set(field(&k), None));
             }
         }
         Some(Footprint { touches: crate::rules::dedup(out), before, after })
@@ -517,7 +517,7 @@ fn kind_view(record: &Value) -> &'static View {
 
 /// A field of the record.
 fn field(key: &str) -> Loc {
-    Loc::Field(key.to_string())
+    Loc::field(key)
 }
 
 /// A map slot's value that makes a container there: a container, or the marker of a mergeable one, which Loro stores

@@ -50,7 +50,7 @@ use crate::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lab::Lab;
 use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::merge::Place;
-use crate::ops::{self, Path, Record, RecordOp, Where};
+use crate::ops::{self, FieldOp, Path, Record, RecordOp, Where};
 use crate::policy::{Line, Proposal, Refusal};
 use crate::rules;
 use crate::sealed::{Brought, FileRoot};
@@ -1019,9 +1019,10 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let mark = |copy: &mut Item| -> Result<(), Refused> {
                 let tags = copy.as_markdown().map(|d| d.tags);
                 let older = tags.iter().flatten().filter(|t| t.starts_with(VARIANT));
-                let mut all: Vec<RecordOp> = older.map(|t| RecordOp::Drop("tags".into(), t.as_str().into())).collect();
+                let drop = |t: &String| RecordOp::top("tags", FieldOp::Drop(t.as_str().into()));
+                let mut all: Vec<RecordOp> = older.map(drop).collect();
                 if tags.is_some() {
-                    all.push(RecordOp::Add("tags".into(), variant_mark(entry, &at).into(), None));
+                    all.push(RecordOp::top("tags", FieldOp::Add(variant_mark(entry, &at).into(), None)));
                 }
                 all.extend(ops);
                 if all.is_empty() {

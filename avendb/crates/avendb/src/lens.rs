@@ -966,8 +966,9 @@ impl Lane {
     /// that no write tags an item with another kind's schema to write that kind's fields into it. Only what it changed
     /// is judged (S1): each place it changed holds a value one of them lets it hold there; each list of records it
     /// changed is one they name, holding no copy of a row it didn't hold before; each row it added, or one of whose
-    /// fields it changed, reads under one of them; and the record's own fields read under one of them where it changed
-    /// one of them, or added or dropped a list. A write that changes nothing fits.
+    /// own fields it changed or whose lists it added or dropped, reads under one of them (the innermost row around
+    /// each change, by its own fields); and the record's own fields read under one of them where it changed one of
+    /// them, or added or dropped a list. A write that changes nothing fits.
     pub fn fits(&self, authored: &BTreeSet<BlobId>, before: &Value, after: &Value) -> bool {
         let empty = Record::new();
         let (before, after) = (before.as_object().unwrap_or(&empty), after.as_object().unwrap_or(&empty));
@@ -985,19 +986,19 @@ impl Lane {
         let fit = Fit(under);
         let top = std::cell::OnceCell::new();
         let top = || *top.get_or_init(|| fit.top(after));
-        let row = |f: &str, k: &Key| fit.row(f, &s.row(f, k));
+        let row = |f: &Path, k: &Key| fit.row(f, &s.own(f, k));
+        // the innermost row around a place reads, where the record after still holds it; the record's own fields, where
+        // no row is around it
+        let scoped = |p: &Path| match p.scope() {
+            None => top(),
+            Some((f, k)) => !s.holds(&f, &k) || row(&f, &k),
+        };
         changes.iter().all(|c| match c {
-            Change::Set(p, v) => {
-                v.as_ref().is_none_or(|v| fit.leaf(p, v))
-                    && match p {
-                        Path::Top(_) => top(),
-                        Path::Row(f, k, _) => !s.holds(f, k) || row(f, k),
-                    }
-            }
-            Change::Order(_, None) => top(),
+            Change::Set(p, v) => v.as_ref().is_none_or(|v| fit.leaf(p, v)) && scoped(p),
+            Change::Order(f, None) => scoped(f),
             Change::Order(f, Some(ks)) => {
                 let old = r.lists.get(f);
-                fit.rows(f, old, ks) && (old.is_some() || top()) && ks.iter().all(|k| r.holds(f, k) || row(f, k))
+                fit.rows(f, old, ks) && (old.is_some() || scoped(f)) && ks.iter().all(|k| r.holds(f, k) || row(f, k))
             }
         })
     }
@@ -1007,22 +1008,30 @@ impl Lane {
 struct Fit<'a>(Vec<&'a Schema>);
 
 impl Fit<'_> {
+    /// The shape schema `x` gives the rows the chain `rows` ends in, each list's in turn: the record's own, for none.
+    fn around<'x>(x: &'x Schema, rows: &[(String, Key)]) -> Option<&'x Shape> {
+        let mut shape = &x.root;
+        for (f, _) in rows {
+            shape = shape.records(f)?;
+        }
+        Some(shape)
+    }
+
+    /// What schema `x` names place `p`: the field of the shape around it.
+    fn field<'x>(x: &'x Schema, p: &Path) -> Option<&'x Field> {
+        Fit::around(x, &p.rows)?.field(&p.field)
+    }
+
     /// One of them lets place `p` hold `v`.
     fn leaf(&self, p: &Path, v: &Value) -> bool {
-        self.0.iter().any(|x| {
-            let field = match p {
-                Path::Top(f) => x.root.field(f),
-                Path::Row(f, _, g) => x.root.records(f).and_then(|shape| shape.field(g)),
-            };
-            field.is_some_and(|field| field.ty.fits(v))
-        })
+        self.0.iter().any(|x| Fit::field(x, p).is_some_and(|field| field.ty.fits(v)))
     }
 
     /// One of them names `f` a list of records, or of values while it holds none (an empty list is either), and `new`
     /// holds no copy of a row `old` doesn't: a write may keep or move the copies two devices adding a row with one id
     /// at once make, never make one.
-    fn rows(&self, f: &str, old: Option<&Vec<Key>>, new: &[Key]) -> bool {
-        let named = |x: &&Schema| match x.root.field(f).map(|field| &field.ty) {
+    fn rows(&self, f: &Path, old: Option<&Vec<Key>>, new: &[Key]) -> bool {
+        let named = |x: &&Schema| match Fit::field(x, f).map(|field| &field.ty) {
             Some(Type::Records(_)) => true,
             Some(Type::List(_)) => new.is_empty(),
             // an empty array reads as an empty list of records too: a value it may hold
@@ -1040,9 +1049,11 @@ impl Fit<'_> {
         self.0.iter().any(|x| x.root.read(&own).is_some())
     }
 
-    /// A row of list `f` reads under one of them: it holds what that schema requires of a row.
-    fn row(&self, f: &str, row: &Record) -> bool {
-        self.0.iter().any(|x| x.root.records(f).is_some_and(|shape| shape.read(row).is_some()))
+    /// A row of the list at `f` reads under one of them, by its own fields (`Flat::own`): it holds what that schema
+    /// requires of a row there.
+    fn row(&self, f: &Path, row: &Record) -> bool {
+        let shape = |x: &Schema| Fit::around(x, &f.rows)?.records(&f.field).map(|shape| shape.read(row).is_some());
+        self.0.iter().any(|x| shape(x) == Some(true))
     }
 }
 

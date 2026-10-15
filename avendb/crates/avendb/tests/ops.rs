@@ -11,7 +11,7 @@ mod records;
 use avendb::id::{EntryId, VaultId};
 use avendb::ops::{diff, run_all, Change, Flat, Record, RecordOp, Where};
 use avendb::slice::{Attrs, Sym};
-use records::{random_op, random_record, Rng, FIELDS};
+use records::{nested_op, nested_record, random_op, random_record, Rng, FIELDS};
 use serde_json::{json, Value};
 
 const OPS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/ops.json");
@@ -101,11 +101,9 @@ fn each_query_picks_and_holds_as_the_models() {
 }
 
 /// O1: a diff applied gives the record after, between any two records.
-#[test]
-fn o1_a_diff_explains_any_two_records() {
-    let mut rng = Rng(0x0101_0101);
+fn o1(rng: &mut Rng, record: fn(&mut Rng) -> Record) {
     for _ in 0..4000 {
-        let (r, s) = (random_record(&mut rng), random_record(&mut rng));
+        let (r, s) = (record(rng), record(rng));
         let mut flat = Flat::of(&r);
         flat.apply(&diff(&r, &s));
         assert_eq!(flat.record(), s, "{r:?} to {s:?}");
@@ -115,22 +113,51 @@ fn o1_a_diff_explains_any_two_records() {
     }
 }
 
-/// O2: an op the run takes changes nothing it doesn't name, and a run of ops nothing none of them names.
 #[test]
-fn o2_ops_change_only_what_they_name() {
-    let mut rng = Rng(0x0202_0202);
-    let mut taken = 0;
-    for _ in 0..4000 {
-        let before = random_record(&mut rng);
-        let json: Vec<Value> = (0..1 + rng.below(3)).map(|_| random_op(&mut rng, &before)).collect();
+fn o1_a_diff_explains_any_two_records() {
+    o1(&mut Rng(0x0101_0101), random_record);
+}
+
+/// O1 on records whose rows hold rows, a few lists deep.
+#[test]
+fn o1_a_diff_explains_any_two_nested_records() {
+    o1(&mut Rng(0x0111_0111), nested_record);
+}
+
+/// O2: an op the run takes changes nothing it doesn't name, and a run of ops nothing none of them names, over `runs`
+/// runs. The runs it takes, and of those the ones that changed a place in a row of a row.
+type Op = fn(&mut Rng, &Record) -> Value;
+fn o2(rng: &mut Rng, runs: usize, record: fn(&mut Rng) -> Record, op: Op) -> (usize, usize) {
+    let (mut taken, mut deep) = (0, 0);
+    for _ in 0..runs {
+        let before = record(rng);
+        let json: Vec<Value> = (0..1 + rng.below(3)).map(|_| op(rng, &before)).collect();
         let Ok(ops) = json.iter().map(RecordOp::of_json).collect::<Result<Vec<_>, _>>() else { continue };
         let Some(after) = run_all(&before, &ops) else { continue };
         taken += 1;
-        for c in diff(&before, &after) {
-            assert!(ops.iter().any(|op| op.loc().covers(&c)), "{before:?} {json:?}: {} named by none", c.to_json());
+        let changes = diff(&before, &after);
+        for c in &changes {
+            assert!(ops.iter().any(|op| op.loc().covers(c)), "{before:?} {json:?}: {} named by none", c.to_json());
         }
+        let place = |c: &Change| match c {
+            Change::Set(p, _) | Change::Order(p, _) => p.rows.len(),
+        };
+        deep += usize::from(changes.iter().any(|c| place(c) >= 2));
     }
+    (taken, deep)
+}
+
+#[test]
+fn o2_ops_change_only_what_they_name() {
+    let (taken, _) = o2(&mut Rng(0x0202_0202), 4000, random_record, random_op);
     assert!(taken > 1000, "only {taken} runs taken");
+}
+
+/// O2 on records whose rows hold rows, by ops at any depth.
+#[test]
+fn o2_ops_at_any_depth_change_only_what_they_name() {
+    let (taken, deep) = o2(&mut Rng(0x0222_0222), 40000, nested_record, nested_op);
+    assert!(taken > 1000 && deep > 300, "only {taken} runs taken, {deep} deep");
 }
 
 /// O3: the selector a query picks entries by picks every entry the query holds of.

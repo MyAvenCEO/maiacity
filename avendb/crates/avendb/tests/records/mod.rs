@@ -1,6 +1,7 @@
 //! Random records and ops on them, for the properties of `spec/AvenDB/Ops.lean` (`ops.rs`) and of `Rules.lean`
 //! (`rules.rs`): fields that hold a plain value, a list of values or a list of records whose ids may repeat, and ops on
-//! fields, rows and ids that are there or not.
+//! fields, rows and ids that are there or not; and records whose rows hold lists of records in turn, a few deep, with
+//! ops at any depth.
 #![allow(dead_code)]
 
 use avendb::ops::Record;
@@ -27,6 +28,8 @@ impl Rng {
 }
 
 pub const FIELDS: [&str; 4] = ["title", "blocks", "tags", "n"];
+/// The fields of a row an op at depth picks from: its rows, a value, a list of values or rows.
+pub const ROW_FIELDS: [&str; 4] = ["kids", "text", "tags", "id"];
 pub const AUDIENCES: [&str; 4] = ["text", "type", "level", "id"];
 
 pub fn scalar(rng: &mut Rng) -> Value {
@@ -63,9 +66,60 @@ pub fn random_record(rng: &mut Rng) -> Record {
     r
 }
 
+/// A row with id 1 to 4, which may hold rows of its own in `kids`, `depth` lists deep at most, and a list of values or
+/// an empty list in `tags`.
+pub fn nested_row(rng: &mut Rng, depth: usize) -> Value {
+    let mut r = row(rng);
+    if depth > 0 && rng.below(2) == 0 {
+        r["kids"] = (0..rng.below(4)).map(|_| nested_row(rng, depth - 1)).collect();
+    }
+    if rng.below(4) == 0 {
+        r["tags"] = (0..rng.below(3)).map(|_| scalar(rng)).collect();
+    }
+    r
+}
+
+/// A record whose blocks may hold rows of their own, four lists deep at most.
+pub fn nested_record(rng: &mut Rng) -> Record {
+    let mut r = random_record(rng);
+    if rng.below(2) == 0 {
+        r.insert("blocks".into(), (0..rng.below(4)).map(|_| nested_row(rng, 3)).collect());
+    }
+    r
+}
+
+/// An op at any depth: down a chain of rows that are there or not (mostly there: through the fields that hold rows,
+/// by ids they hold), then one of `random_op`'s on a field of the row it reached; a row it inserts may hold rows of
+/// its own.
+pub fn nested_op(rng: &mut Rng, r: &Record) -> Value {
+    let (mut steps, mut at, mut fields, mut down) = (vec![], Some(r), &FIELDS, "blocks");
+    while rng.below(3) != 0 {
+        let f = if rng.below(8) == 0 { rng.pick(fields) } else { down };
+        let rows = at.and_then(|x| x.get(f)).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        let ids: Vec<i64> = rows.iter().filter_map(|x| x["id"].as_i64()).collect();
+        let id = if ids.is_empty() || rng.below(8) == 0 { rng.below(5) as i64 + 1 } else { rng.pick(&ids) };
+        at = rows.iter().find(|x| x["id"].as_i64() == Some(id)).and_then(Value::as_object);
+        steps.extend([json!(f), json!({ "id": id })]);
+        (fields, down) = (&ROW_FIELDS, "kids");
+    }
+    let empty = Record::new();
+    let mut op = op_on(rng, at.unwrap_or(&empty), fields);
+    if op["op"] == "insert" && op["value"].is_object() && rng.below(2) == 0 {
+        op["value"] = nested_row(rng, 2);
+    }
+    let path = op["path"].as_array().expect("a path").clone();
+    op["path"] = steps.into_iter().chain(path).collect();
+    op
+}
+
 /// An op on fields and rows that are there or not, ids that are there or not: the run may refuse it.
 pub fn random_op(rng: &mut Rng, r: &Record) -> Value {
-    let f = rng.pick(&FIELDS);
+    op_on(rng, r, &FIELDS)
+}
+
+/// An op on one of `fields` of record or row `r`.
+fn op_on(rng: &mut Rng, r: &Record, fields: &[&str]) -> Value {
+    let f = rng.pick(fields);
     let rows = r.get(f).and_then(Value::as_array).into_iter().flatten();
     let ids: Vec<i64> = rows.filter_map(|x| x["id"].as_i64()).collect();
     let id = if ids.is_empty() || rng.below(4) == 0 { rng.below(5) as i64 + 1 } else { rng.pick(&ids) };
