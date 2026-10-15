@@ -26,6 +26,20 @@ export function call(name, ...args) {
  */
 export const status = () => call('status');
 
+/**
+ * The drives of the app's device (avendb-device's `drive`), as `drives` answers: each volume plugged into the Mac, by
+ * its path and name, what it is to this Mac (`free` for avenDB to use, `hosted` here, `locked` for one ceremony to open
+ * here, `removed` from the vault, `other` for another person's, `ejected` here and still mounted, `busy`) and the device
+ * on it; and each drive joined
+ * here that is a device of the person's vault, whether it is plugged in, on which volume, its name there, and when it
+ * last checked what it holds, by its newest signed statement (seconds since 1970).
+ * @typedef {{ path: string, name: string,
+ *   state: 'free' | 'hosted' | 'locked' | 'removed' | 'other' | 'ejected' | 'busy', device: string | null }} Volume
+ * @typedef {{ device: string, name: string | null, volume: string | null, plugged: boolean, checked: number | null }}
+ *   Drive
+ * @typedef {{ volumes: Volume[], drives: Drive[] }} Drives
+ */
+
 /** Bytes as base64, as the app's device takes a file's chunks. @param {Uint8Array} bytes */
 export function base64(bytes) {
 	let text = '';

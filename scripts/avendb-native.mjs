@@ -7,7 +7,10 @@
  * account, as on a server that started fresh, the page names the button that sets one up; the person founds their vault
  * from the "Mac" in two sheets, the page's own sheet showing every step of it done, with its seconds; the page shows
  * the device native, on its own UDP sockets; reloaded, it opens with no sheet, as the device runs on; the app quits
- * and starts again, and the device opens from its folder in one sheet; it is renamed. A note of theirs is titled, written, proposed on, accepted, undone and restored, deleted and brought back, with no sheet. Their
+ * and starts again, and the device opens from its folder in one sheet; it is renamed. A drive plugged into the "Mac",
+ * a folder in the volumes' folder the device looks at as macOS mounts them in /Volumes, becomes a device of their vault
+ * in one sheet, a full copy, its store in .avendb beside the person's own files; unplugged, it shows when it last
+ * checked what it holds; plugged in again, it is hosted again with no sheet; and it is removed as a lost phone is. A note of theirs is titled, written, proposed on, accepted, undone and restored, deleted and brought back, with no sheet. Their
  * Library takes a picture, an SVG, a PDF and a song, each sealed by the device a megabyte at a time; the pictures show,
  * the song plays streamed through the page's service worker, in ranges, and the PDF is deleted and brought back. Their
  * vault founds avenALICE, avenBOB, avenCHARLY and Maia City COOP, named by hand, in one sheet, and the person acts as
@@ -32,7 +35,7 @@
  */
 import { spawn } from 'node:child_process';
 import { createHash, createHmac, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -55,6 +58,9 @@ const chrome =
 if (!chrome) throw new Error('No Chrome found: set CHROME to one.');
 const origin = new URL(base).origin;
 const folder = mkdtempSync(join(tmpdir(), 'avendb-native-'));
+// where the "Mac" mounts its volumes, as macOS does in /Volumes, and where a drive goes while it is unplugged
+const volumes = mkdtempSync(join(tmpdir(), 'avendb-volumes-'));
+const unplugged = mkdtempSync(join(tmpdir(), 'avendb-unplugged-'));
 
 const checks = [];
 const check = (what, ok, found = '') => {
@@ -103,7 +109,7 @@ const passkey = (() => {
 /** The app's side of the native device: started on the folder, each call answered, each sheet shown. */
 class App {
 	constructor() {
-		this.child = spawn(binary, ['--dir', folder], { stdio: ['pipe', 'pipe', 'inherit'] });
+		this.child = spawn(binary, ['--dir', folder, '--volumes', volumes], { stdio: ['pipe', 'pipe', 'inherit'] });
 		/** @type {Map<number, { resolve: (v: any) => void, reject: (e: string) => void }>} */
 		this.waiting = new Map();
 		this.next = 0;
@@ -477,6 +483,65 @@ try {
 	await click('Save', '.main .list li button');
 	check('renamed, on its card', await until(async () => (await devices()).includes('Samuel’s test Mac')), (await devices()).join(', '));
 	await shot('4-again');
+
+	// a drive plugged into the Mac: one sheet makes it a device of the vault, a full copy, hosted while it is plugged in
+	app.sheets();
+	const photo = join(volumes, 'Photo drive');
+	const away = join(unplugged, 'Photo drive');
+	mkdirSync(photo);
+	writeFileSync(join(photo, 'holiday.txt'), 'the person’s own');
+	/** The card headed `title`: its words, and the names in its list. @param {string} title */
+	const card = (title) =>
+		page.evaluate((title) => {
+			const card = [...document.querySelectorAll('.main article.card')].find((c) => c.querySelector('h3')?.textContent?.trim() === title);
+			const names = [...(card?.querySelectorAll('.list li') ?? [])].map((li) => li.querySelector('b')?.textContent?.trim() ?? '');
+			const chips = [...(card?.querySelectorAll('.list li .chip') ?? [])].map((c) => c.textContent?.trim() ?? '');
+			return { text: card?.textContent?.replace(/\s+/g, ' ').trim() ?? '', names, chips };
+		}, title);
+	const drivesCard = async () => (await card('Drives')).text;
+	const deviceList = async () => (await card('Devices')).names;
+	/** Click the button `t` in the Drives card. @param {string} t */
+	const clickDrives = async (t) => {
+		const ok = await page.evaluate((t) => {
+			const card = [...document.querySelectorAll('.main article.card')].find((c) => c.querySelector('h3')?.textContent?.trim() === 'Drives');
+			const button = [...(card?.querySelectorAll('li button') ?? [])].find((b) => b.textContent?.trim() === t);
+			if (button instanceof HTMLElement) button.click();
+			return !!button;
+		}, t);
+		if (!ok) check(`there is a “${t}” to click in Drives`, false);
+		await sleep(250);
+	};
+	check('the drive plugged in shows, to use for avenDB', await until(async () => (await drivesCard()).includes('Photo drive') && (await drivesCard()).includes('Use for avenDB'), 30000), await drivesCard());
+	await clickDrives('Use for avenDB');
+	check('a device of the vault, by its name', await until(async () => (await deviceList()).includes('Photo drive'), 60000), (await deviceList()).join(', '));
+	check('in one sheet: drive', app.sheets().join(',') === 'drive');
+	const deviceChips = async () => (await card('Devices')).chips;
+	check('shown as a drive among its devices', await until(async () => (await deviceChips()).includes('Drive'), 15000), (await deviceChips()).join(', '));
+	// what the drive keeps, as its row in the Drives card shows it
+	const driveCopy = () =>
+		page.evaluate(() => {
+			const card = [...document.querySelectorAll('.main article.card')].find((c) => c.querySelector('h3')?.textContent?.trim() === 'Drives');
+			const row = [...(card?.querySelectorAll('.list li') ?? [])].find((li) => li.querySelector('b')?.textContent?.trim() === 'Photo drive');
+			return row?.querySelector('button[aria-pressed="true"]')?.textContent?.trim() ?? '';
+		});
+	check('plugged in, a full copy', await until(async () => (await drivesCard()).includes('Plugged in') && (await driveCopy()) === 'Full copy', 30000), `${await drivesCard()} | ${await driveCopy()}`);
+	const onDrive = existsSync(join(photo, '.avendb')) ? readdirSync(join(photo, '.avendb')) : [];
+	check('its store on the drive, the person’s own file as it was', onDrive.length > 0 && readFileSync(join(photo, 'holiday.txt'), 'utf8') === 'the person’s own', onDrive.join(', '));
+	await shot('4b-drive');
+	renameSync(photo, away);
+	const checked = async () => /Unplugged checked (just now|\d+ min ago)/.test(await drivesCard());
+	check('unplugged, it shows when it last checked what it holds', await until(checked, 60000), await drivesCard());
+	await shot('4c-drive-unplugged');
+	renameSync(away, photo);
+	check('plugged in again, it is hosted again', await until(async () => (await drivesCard()).includes('Plugged in'), 30000), await drivesCard());
+	check('with no sheet', app.sheets().length === 0);
+	page.once('dialog', (d) => d.accept());
+	await clickDrives('Remove');
+	check('removed as a lost phone is, a device no more', await until(async () => !(await deviceList()).includes('Photo drive'), 60000), (await deviceList()).join(', '));
+	check('in one sheet: approve', app.sheets().join(',') === 'approve');
+	check('the drive shows taken out of the vault', await until(async () => (await drivesCard()).includes('Taken out of your vault'), 30000), await drivesCard());
+	await shot('4d-drive-removed');
+	renameSync(photo, away);
 
 	// a note as a docs app keeps one: titled, written, proposed on, accepted, undone and restored, with no sheet
 	app.sheets();

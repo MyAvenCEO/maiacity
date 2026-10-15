@@ -26,8 +26,14 @@
 //! shelf in OPFS is; its keys come back at every unlock. A shelf no device opens any more, as one forgotten here, is
 //! put aside in the folder, a new generation made beside it (`avendb_net::disk::aside`); and what came before the last
 //! reset, older shelves and an earlier avenDB's store, is cleared as the device opens its folder (`disk::clear`).
+//!
+//! Each external drive the person uses for avenDB is a device of their vault of its own, which the Mac's device hosts
+//! as a second node while the drive is plugged in (`drive`): the page lists the volumes and the drives (`drives`), uses
+//! a drive for avenDB in one ceremony (`joinDrive`), opens one that another Mac of theirs joined in one more
+//! (`openDrive`), and ejects one, its node stopped first, so that Finder never finds it in use (`ejectDrive`).
 
 pub mod agent;
+pub mod drive;
 
 use std::collections::HashMap;
 use std::io;
@@ -58,12 +64,14 @@ pub const SHEET: &str = "https://maia.city/app/avendb/sheet/";
 /// The longest a call waits for the device to change (`changed`): then it answers `null`, and the page asks again.
 const CHANGED: Duration = Duration::from_secs(50);
 
-/// How the device runs: the folder it keeps its account in, on its shelves (`avendb_net::disk`), and whether its node
-/// reaches its peers directly too (`avendb_net::Options::direct`), as the app's does; a test's may run on its relay
-/// alone.
+/// How the device runs: the folder it keeps its account in, on its shelves (`avendb_net::disk`), whether its node
+/// reaches its peers directly too (`avendb_net::Options::direct`), as the app's does, where a test's may run on its
+/// relay alone; and the folder the system mounts volumes in, whose drives it hosts (`drive`): `/Volumes` on a Mac
+/// (`drive::VOLUMES`), a folder of its own in a test, none where it hosts no drive.
 pub struct Config {
     pub dir: PathBuf,
     pub direct: bool,
+    pub volumes: Option<PathBuf>,
 }
 
 /// Runs the device for the app until `input` ends, the app gone: each line of `input` a call or a sheet's answer, each
@@ -94,6 +102,7 @@ pub async fn serve(
         life: tokio::sync::Mutex::default(),
         progress: Mutex::default(),
         files: Mutex::default(),
+        drives: drive::Drives::default(),
     });
     let mut lines = BufReader::new(input).lines();
     while let Some(line) = lines.next_line().await? {
@@ -131,6 +140,8 @@ struct Service {
     progress: Mutex<Option<Progress>>,
     /// The files on their way in from the page (`fileStart`), by number.
     files: Mutex<HashMap<u64, Incoming>>,
+    /// The drives it hosts, and the volumes it looks at (`drive`).
+    drives: drive::Drives,
 }
 
 /// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the new entry
@@ -199,6 +210,9 @@ impl Service {
     /// unless it is one of its devices already, and each of `shares` `{over, level}` a share that aven gets,
     /// `deny [name, device]` one denied (`agent`), and `agentCommand [harness?]` the command that runs a harness's
     /// agent device, Claude Code's unless named, and for Claude Code the line that adds it.
+    /// `drives` the volumes plugged in and the drives joined here, `joinDrive [volume, name]` a drive used for avenDB as
+    /// a device of the person's vault, `openDrive [volume]` one another Mac of theirs joined, opened here, and
+    /// `ejectDrive [volume]` one hosted here, its node stopped and the volume ejected (`drive`).
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
         let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
@@ -235,6 +249,10 @@ impl Service {
                 agent::named(harness)?;
                 agent::command(&std::env::current_exe()?, &self.config.dir, harness)
             }
+            "drives" => self.drives().await?,
+            "joinDrive" => self.join_drive(&a.text(0)?, a.get(1).as_str().unwrap_or_default()).await?,
+            "openDrive" => self.open_drive(&a.text(0)?).await?,
+            "ejectDrive" => self.eject_drive(&a.text(0)?).await?,
             "grant" => {
                 let shares = a.get(3).as_array().cloned().unwrap_or_default();
                 self.grant(&d, &a.text(0)?, &a.text(1)?, a.get(2), &shares).await?
@@ -277,7 +295,7 @@ impl Service {
         let server = Offer::from_text(server.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         start.progress.step("unlock");
-        let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
+        let unlock = sheets.unlock("unlock", nonce, new.challenge(start.now)).await?;
         let d = Device::found(start, &server, None, new, unlock, &sheets, backup).await?;
         self.started(d, nonce, sheets.credential()?).await
     }
@@ -292,7 +310,7 @@ impl Service {
         let through = Offer::from_text(through.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         start.progress.step("unlock");
-        let unlock = sheets.unlock(nonce, new.challenge(start.now)).await?;
+        let unlock = sheets.unlock("unlock", nonce, new.challenge(start.now)).await?;
         let d = Device::link(start, &through, new, unlock).await?;
         self.started(d, nonce, sheets.credential()?).await
     }
@@ -308,7 +326,7 @@ impl Service {
         let (start, _ending) = self.start(&meta.name, &meta.relay)?;
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
         start.progress.step("unlock");
-        let unlock = sheets.unlock(meta.nonce, random()?).await?;
+        let unlock = sheets.unlock("unlock", meta.nonce, random()?).await?;
         let d = Device::open(start, &meta, unlock).await?;
         Ok(self.opened(d))
     }
@@ -316,6 +334,7 @@ impl Service {
     /// Forgets the account here: closes the device, and puts its shelf, with what opens it, aside (`aside`).
     async fn forget(&self) -> Result<()> {
         let _life = self.life.lock().await;
+        self.drives.stop().await;
         let d = self.device.lock().expect("the device").take();
         if let Some(d) = d {
             d.close().await.ok();
@@ -329,8 +348,9 @@ impl Service {
         self.device()?.rename(name).await
     }
 
-    /// The app went away: the device closes, and every sheet still awaited ends.
+    /// The app went away: the drives it hosts stop, the device closes, and every sheet still awaited ends.
     async fn close(&self) {
+        self.drives.stop().await;
         let d = self.device.lock().expect("the device").take();
         if let Some(d) = d {
             d.close().await.ok();
@@ -457,18 +477,19 @@ impl Service {
 
     /// Device `d`, new here, runs from here on; its shelf keeps what opens it again (`Device::meta`), with its salt's
     /// own bytes `nonce` and its passkey's credential.
-    async fn started(&self, d: Device, nonce: [u8; 32], credential: String) -> Result<Value> {
+    async fn started(self: &Arc<Self>, d: Device, nonce: [u8; 32], credential: String) -> Result<Value> {
         let meta = d.meta(nonce, credential);
         let info = self.opened(d);
         self.device()?.keep(&meta).await?;
         Ok(info)
     }
 
-    /// Device `d` runs from here on.
-    fn opened(&self, d: Device) -> Value {
+    /// Device `d` runs from here on, and hosts the person's drives plugged into this Mac (`drive`).
+    fn opened(self: &Arc<Self>, d: Device) -> Value {
         let d = Arc::new(d);
         *self.device.lock().expect("the device") = Some(d.clone());
         self.leave_offer(&d);
+        self.watch_drives();
         info(&d)
     }
 
@@ -677,11 +698,11 @@ impl Sheets {
         self.credential.lock().expect("the credential").clone().context("no ceremony named the passkey")
     }
 
-    /// The ceremony that unlocks the device whose salt ends in `nonce` (`sign::device_salt`), over `challenge`: a new
-    /// device's, which makes the unlock its passkey's pass for it (`avendb_browser::Fresh::challenge`), or one of its
-    /// own.
-    async fn unlock(&self, nonce: [u8; 32], challenge: [u8; 32]) -> Result<Unlock> {
-        let brought = self.ask("unlock", challenge, Some(&nonce)).await?;
+    /// The ceremony for `what` that unlocks the device whose salt ends in `nonce` (`sign::device_salt`), over
+    /// `challenge`: a new device's, which makes the unlock its passkey's pass for it
+    /// (`avendb_browser::Fresh::challenge`), or one of its own: this Mac's, or a drive's (`drive`).
+    async fn unlock(&self, what: &str, nonce: [u8; 32], challenge: [u8; 32]) -> Result<Unlock> {
+        let brought = self.ask(what, challenge, Some(&nonce)).await?;
         let device = brought.device.context("the sheet brought no PRF output on the device's salt")?;
         Ok(Unlock { ceremony: Ceremony::new(brought.assertion, *brought.prf), device })
     }

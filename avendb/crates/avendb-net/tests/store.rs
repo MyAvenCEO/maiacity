@@ -223,13 +223,13 @@ async fn an_edit_whose_signatures_fail_brings_a_head_of_the_whole_log() {
     node.shutdown().await.expect("it stops");
 }
 
-/// The id of the last edit of journal entry `entry`: after its header, its keys, each 72 bytes, and its records, the
-/// BLAKE3 hash of all before it.
+/// The id of the last edit of journal entry `entry`: after its header, its keys, each 40 bytes (a BLAKE3 hash and a
+/// size), and its records, the BLAKE3 hash of all before it.
 fn last_edit(entry: &[u8]) -> EditId {
     let body = &entry[..entry.len() - 32];
     let header = b"avenDB journal 1\n".len();
     let keys = u32::from_be_bytes(body[header..header + 4].try_into().expect("4 bytes")) as usize;
-    let (mut at, mut last) = (header + 4 + keys * 72, None);
+    let (mut at, mut last) = (header + 4 + keys * 40, None);
     while at < body.len() {
         let len = u32::from_be_bytes(body[at..at + 4].try_into().expect("4 bytes")) as usize;
         last = Some(Signed::from_wire(&body[at + 4..at + 4 + len]).expect("an edit").edit.id());

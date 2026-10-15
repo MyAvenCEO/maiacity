@@ -1,8 +1,10 @@
 <!--
 	A vault's settings, as its aside lists them: About (what it is, who approves a change to it and how many of its
 	owners, how this browser acts for it), Owners and devices (who owns it, what it owns, the devices that act for it,
-	and for the person's own vault what each of their devices keeps, a full copy or a light one, this browser's name,
-	linking the next device and forgetting this one), and Sharing, the one place that says who has the vault: each vault
+	each removed as a lost one is, and for the person's own vault what each of their devices keeps, a full copy or a
+	light one, this browser's name, linking the next device and forgetting this one; in the Mac app, its Drives: each
+	volume plugged in, used for avenDB as a device of the vault of its own in one ceremony of the passkey, and each
+	drive joined, plugged in or, unplugged, when it last checked what it holds), and Sharing, the one place that says who has the vault: each vault
 	it is shared with, and Everyone where it is public, one line each, with its shares (level · what, and what each
 	reaches now; shares on chosen entries folded into one line a level) and the devices of theirs it is on, each opening
 	it or only keeping an encrypted copy; the one Share form; and what others share with the vault. All of it is the
@@ -19,6 +21,7 @@
 	import Share from './Share.svelte';
 	import {
 		acting,
+		ago,
 		count,
 		EVERYONE,
 		groupOf,
@@ -43,9 +46,10 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null }}
+	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null,
+	 *   drives?: import('./native.js').Drives | null }}
 	 */
-	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null } = $props();
+	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null, drives = null } = $props();
 	/** in the Mac app, the harness whose agent device the page shows how to run, and that, as the device says */
 	let harness = $state('claude');
 	let running = $state(/** @type {{ device: string, command: string, claude: string | null } | null} */ (null));
@@ -254,6 +258,34 @@
 	 */
 	const keepCopy = (d, full) =>
 		api.run(full ? 'Keeping a full copy' : 'Keeping a light copy', { op: 'copy', device: d.id, full });
+
+	/** Whether the acting vault may remove device `id`, as the device's list of shares says. @param {string} id */
+	const removable = (id) =>
+		rows.some((r) => r.kind === 'device' && r.who !== EVERYONE && 'device' in r.who && r.who.device === id && allowed(r.revoke));
+	/**
+	 * Removes device `id` from the vault, as a lost phone is (`revoke`): its peers refuse it from then on, and what the
+	 * vault holds moves to keys it doesn't have. The vault's owners approve it.
+	 * @param {string} id @param {string} name
+	 */
+	const removeDevice = (id, name) =>
+		confirm(`Remove ${name} from ${nameOf(v)}? It syncs nothing more, and what it holds stays on it as ciphertext.`) &&
+		api.run(`Removing ${name}`, { op: 'revoke', vault, device: id });
+
+	/** the drives joined here, by their device: in the Mac app alone */
+	const drivesById = $derived(new Map((drives?.drives ?? []).map((x) => [x.device, x])));
+	/** the volumes plugged in that this Mac doesn't host as a drive of the vault */
+	const loose = $derived((drives?.volumes ?? []).filter((x) => x.state !== 'hosted'));
+	/** @type {Record<import('./native.js').Volume['state'], string>} what to say of a volume plugged in, by what it is
+	 *  to this Mac */
+	const VOLUME = {
+		free: 'Not used for avenDB.',
+		hosted: 'One of your drives, open on this Mac.',
+		locked: 'One of your drives: your passkey opens it on this Mac once, and from then on it opens by itself.',
+		removed: 'Taken out of your vault: using it again makes it a new device, what it held put aside on it.',
+		other: "Another person's avenDB drive.",
+		ejected: 'Ejected: avenDB holds nothing open on it, so you can unplug it.',
+		busy: 'Under way…'
+	};
 </script>
 
 {#if tab === 'about'}
@@ -459,7 +491,13 @@
 								<span class="chip accent">{here}</span>
 								<button class="btn quiet" disabled={busy} onclick={() => (renaming = d.name ?? thisName)}>Rename</button>
 							{:else}
+								{#if drivesById.has(d.id)}<span class="chip">Drive</span>{/if}
 								<span class="soft mono">{short(d.id)}</span>
+								{#if removable(d.id)}
+									<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(d.id, deviceName(d.id))}
+										>Remove</button
+									>
+								{/if}
 							{/if}
 							{#if vault === world.mine}
 								<span class="copy" role="group" aria-label="What it keeps">
@@ -490,6 +528,77 @@
 				</p>
 			{/if}
 		</article>
+
+		{#if vault === world.mine && drives}
+			<article class="card">
+				<h3>Drives</h3>
+				<p class="soft">
+					Each drive you use for avenDB is a device of your vault of its own, with a key of its own that is never on the
+					drive in plain: the drive holds only ciphertext. While it is plugged into {here}, {here} keeps it in sync;
+					unplugged, it shows what it held when it last checked.
+				</p>
+				<ul class="list">
+					{#each drives.drives as x (x.device)}
+						{@const d = v.devices.find((y) => y.id === x.device)}
+						{@const name = d?.name ?? x.name ?? 'A drive'}
+						<li>
+							<span class="key">💽</span>
+							<b>{name}</b>
+							{#if x.plugged}
+								<span class="chip ok">Plugged in</span>
+							{:else}
+								<span class="chip">Unplugged</span>
+								<span class="soft">{x.checked == null ? 'not checked yet' : `checked ${ago(x.checked)}`}</span>
+							{/if}
+							{#if d}
+								<span class="copy" role="group" aria-label="What it keeps">
+									<button
+										class="btn quiet"
+										class:on={d.copy === 'full'}
+										aria-pressed={d.copy === 'full'}
+										disabled={busy || !lets('copy') || d.copy === 'full'}
+										onclick={() => keepCopy(d, true)}>Full copy</button
+									>
+									<button
+										class="btn quiet"
+										class:on={d.copy !== 'full'}
+										aria-pressed={d.copy !== 'full'}
+										disabled={busy || !lets('copy') || d.copy === 'light'}
+										onclick={() => keepCopy(d, false)}>Light</button
+									>
+								</span>
+							{/if}
+							{#if x.plugged && x.volume}
+								<button class="btn quiet" disabled={busy} onclick={() => api.ejectDrive(x.volume, name)}>Eject</button>
+							{/if}
+							{#if removable(x.device)}
+								<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(x.device, name)}>Remove</button>
+							{/if}
+						</li>
+					{/each}
+					{#each loose as x (x.path)}
+						<li>
+							<span class="key">💽</span>
+							<b>{x.name}</b>
+							<span class="soft">{VOLUME[x.state]}</span>
+							{#if x.state === 'free' || x.state === 'removed'}
+								<button class="btn" disabled={busy} onclick={() => api.useDrive(x.path, x.name)}>Use for avenDB</button>
+							{:else if x.state === 'locked' || x.state === 'ejected'}
+								<button class="btn" disabled={busy} onclick={() => api.openDrive(x.path, x.name)}>Open on {here}</button>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				{#if !drives.drives.length && !loose.length}
+					<p class="soft">No drive is plugged in. Plug one in to use it for avenDB.</p>
+				{:else}
+					<p class="soft">
+						Using a drive asks for your passkey once. Eject it here before you unplug it. A drive you lose, you remove
+						as you would a lost phone.
+					</p>
+				{/if}
+			</article>
+		{/if}
 
 		{#if vault === world.mine}
 			<article class="card">

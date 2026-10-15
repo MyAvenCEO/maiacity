@@ -39,9 +39,9 @@
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
 	 *   link: string, qr: string, sockets?: string[] | null,
-	 *   requests?: import('./vaults.js').AccessRequestView[] }}
+	 *   requests?: import('./vaults.js').AccessRequestView[], drives?: import('./native.js').Drives | null }}
 	 */
-	let { world, api, doing, error, thisName, link, qr, sockets = null, requests = [] } = $props();
+	let { world, api, doing, error, thisName, link, qr, sockets = null, requests = [], drives = null } = $props();
 
 	/** the vault the person looks at: their own until they pick another */
 	let picked = $state('');
@@ -240,7 +240,7 @@
 		{:else if tab === 'jobs'}
 			<Jobs {world} vault={context} {actor} {api} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
-			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} />
+			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} />
 		{:else}
 			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 		{/if}

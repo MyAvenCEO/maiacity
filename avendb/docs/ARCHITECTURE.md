@@ -216,6 +216,24 @@ vault picked then gives the aven a share at its level, which the device issues a
 (`<device>.denied`), which asks no more until it asks again. A share covers one vault: a share of the person's own vault
 reaches none of the vaults it owns, so "all my vaults" is a share of each.
 
+**A drive's own device.** Each external drive the person uses for avenDB is a device of their own vault, as a phone
+is, on the same sync, shares, copy setting and holdings as every other: nothing in sync knows it is a drive
+(`crates/avendb-device/src/drive.rs`). Its store is a folder on the drive, `<volume>/.avendb/`, laid out as the
+desktop's (section 14), so the drive holds ciphertext, signed edits and public keys only. Its key is 32 random bytes of
+its own, never on the drive in plain: its meta keeps them masked by the PRF output of the person's passkey on the
+drive's own salt, as every device keeps its secret, so one ceremony opens it on any Mac of the person's; and the shelf
+of each Mac that hosts it keeps them wrapped (`keys::wrap`) under a key that Mac's device alone derives from its own
+(`Lab::own_key`), `drives/<device>`, so that Mac opens it silently while its own device is open. Joining takes one
+ceremony, which unlocks the new device and is its pass: the Mac's device links it to the vault as a new phone links
+(`Node::link_by_pass`), sets it to a full copy and writes its card with its name. While the drive is plugged into a
+Mac that holds its key, the Mac's device runs it as a second node beside its own, on the drive's shelf. The Mac looks
+at its volumes every few seconds (in `/Volumes` on macOS, a folder of its own in a test): an unplugged drive's node
+stops, and its last signed statement of what it holds stays with the person's other devices, which show when it
+checked; plugged in again, it is hosted again without a ceremony. The page's Eject stops the drive's node first, so
+nothing on the drive stays open, then has macOS eject the volume (`diskutil eject`), so Finder never finds it in use;
+an Eject in Finder itself isn't heard, and the drive's node stops as the volume goes. A lost drive is revoked like a
+lost phone, and its peers refuse it from then on.
+
 **One passkey, one human vault.** A device that founds asks the server first, with the passkey's pass, for the vault
 that passkey roots (`Node::rejoin_by_pass`, the same card as linking). If the server knows one, the device joins it
 in the same ceremony and founds nothing: a person who sets up avenDB on a second device with the same passkey, as a
@@ -586,7 +604,7 @@ Every caller goes through `Node::run`:
 | Caller | How it calls |
 |---|---|
 | A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
-| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, aven, shares]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop. Its ceremonies run in the app's sign-in sheet (section 11). |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, aven, shares]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
 | An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, each acting for its aven, whose shares decide, and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
@@ -1184,6 +1202,7 @@ Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-bl
 |---|---|---|---|
 | Browser | OPFS `avendb/<name>/`, run by `crates/avendb-browser/js/store.worker.js` | OPFS | Memory windows |
 | Desktop | A folder (`crates/avendb-net/src/disk.rs`), on a Mac in Application Support | The folder | Memory windows |
+| Drive | A folder on the drive, `<volume>/.avendb/`, laid out as the desktop's | The folder | Memory windows |
 | Server | An S3 bucket, every object sealed (`crates/avendb-net/src/bucket.rs`) | The bucket | Its folder |
 
 A browser tab's worker holds the store's lock, so one device never runs in two tabs at once.
@@ -1206,6 +1225,7 @@ it runs (`bucket::clear`). `FLOOR` is 8 since every hash of avenDB's own is BLAK
   new/             blobs and objects being written
   meta/<n>         what opens the device again, follow list included (browser, desktop); device.key on the server
   stated/<device>/<checked>  each device's signed statements of its holdings, at most one an hour each (H2)
+  drives/<device> the key of each drive this desktop hosts, wrapped under its own device's (section 3)
 ```
 
 - **Edits** (`crates/avendb-net/src/edits.rs`). A save appends a journal entry. Every 64 entries, a pack blob takes
@@ -1339,7 +1359,7 @@ whose keys sign it on that connection.
 | `crates/avendb-net/src/files.rs` | Bringing, reading and keeping files |
 | `crates/avendb-server` | The server's binary, its relay and its feed |
 | `crates/avendb-browser` | A device in a web page, as WebAssembly, `PageDevice.run`, and its OPFS worker |
-| `crates/avendb-device` | The same device, native beside the desktop app, and its calls in lines of JSON |
+| `crates/avendb-device` | The same device, native beside the desktop app, and its calls in lines of JSON; the agents' devices (`agent.rs`) and the drives' it hosts (`drive.rs`) |
 | `spec/` | The Lean model, vectors and protocol models |
 | `src/lib/avendb/` | The app's avenDB pages, which run every op through `ops.js` and `native.js` |
 | `src/routes/app/avendb/` | The avenDB page, `/app/avendb/`, and the sign-in sheet's page |

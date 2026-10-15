@@ -409,6 +409,7 @@
 	const places = [
 		['Desktop', 'A folder of the app’s own', 'What its keep shares want; files whole where they say so'],
 		['Phone or browser', 'The page’s private storage (OPFS), in a worker', 'The same; pieces read but not kept stay in memory'],
+		['Drive', 'A folder on the drive, hosted by the Mac it is plugged into', 'The same as a desktop'],
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
@@ -1099,6 +1100,16 @@
 				One prompt of your passkey adds a new device to the aven, the way a new server is claimed; the shares need none.
 				Every harness of an aven acts with the aven’s access, and removing one device leaves the others. It keeps no
 				file of its own: it reads your files from your desktop’s one store, so nothing is kept twice.
+			</p>
+			<p class="prose-col">
+				An external drive you use for avenDB is a device of your vault of its own, as a phone is, on the same sync,
+				shares, copy setting and holdings. One prompt of your passkey adds it, in Owners and devices on the desktop app,
+				and it keeps a full copy unless you make it light. It holds only ciphertext, in <code>.avendb</code> on the
+				drive, and its key never in plain: masked by your passkey, as every device’s, and wrapped by each Mac that hosts
+				it under that Mac’s own device key, so plugging it in again asks for nothing. While it is plugged in, the Mac’s
+				device runs it as a second node; unplugged, its last signed statement of what it holds shows when it checked.
+				Eject it in the page, which stops its node before macOS ejects it, so nothing on it is in use. A lost drive is
+				removed like a lost phone.
 			</p>
 		</section>
 

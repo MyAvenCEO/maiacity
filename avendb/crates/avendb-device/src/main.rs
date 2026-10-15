@@ -1,6 +1,7 @@
-//! avenDB's device as the Mac app's sidecar: `avendb-device --dir <folder>`, the folder it keeps its account in. It
-//! answers the app in lines of JSON on its stdin and stdout until its stdin ends (`avendb_device::serve`), and logs on
-//! its stderr, as `RUST_LOG` says, else its warnings.
+//! avenDB's device as the Mac app's sidecar: `avendb-device --dir <folder> [--volumes <folder>]`, the folder it keeps
+//! its account in, and the one the system mounts volumes in, whose drives it hosts (`avendb_device::drive`): on a Mac
+//! `/Volumes` unless named, elsewhere none unless named. It answers the app in lines of JSON on its stdin and stdout
+//! until its stdin ends (`avendb_device::serve`), and logs on its stderr, as `RUST_LOG` says, else its warnings.
 //!
 //! `avendb-device agent <harness> [--aven <name>] [--dir <folder>]`: a harness's agent device (agentClaude for
 //! `claude`) beside the app's folder, the app's own by default, as an MCP server on its stdin and stdout, asking to
@@ -9,7 +10,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb_device::{Config, agent, serve};
+use avendb_device::{Config, agent, drive, serve};
 use tracing_subscriber::EnvFilter;
 
 fn main() -> Result<()> {
@@ -25,9 +26,10 @@ async fn run() -> Result<()> {
     let provider = std::sync::Arc::unwrap_or_clone(avendb_net::pq_provider());
     provider.install_default().map_err(|_| anyhow!("a TLS provider was installed before avenDB's"))?;
     match usage()? {
-        Usage::App(dir) => {
+        Usage::App { dir, volumes } => {
             std::fs::create_dir_all(&dir).with_context(|| format!("the device's folder {}", dir.display()))?;
-            serve(Config { dir, direct: true }, tokio::io::stdin(), tokio::io::stdout()).await
+            let volumes = volumes.or_else(|| cfg!(target_os = "macos").then(|| drive::VOLUMES.into()));
+            serve(Config { dir, direct: true, volumes }, tokio::io::stdin(), tokio::io::stdout()).await
         }
         Usage::Agent { harness, aven, dir } => {
             agent::serve(dir, harness, aven, tokio::io::stdin(), tokio::io::stdout()).await
@@ -37,8 +39,9 @@ async fn run() -> Result<()> {
 
 /// What it runs as.
 enum Usage {
-    /// The app's device, in the folder the app names: `--dir <folder>`.
-    App(PathBuf),
+    /// The app's device, in the folder the app names, hosting the drives mounted in the folder named, if any:
+    /// `--dir <folder> [--volumes <folder>]`.
+    App { dir: PathBuf, volumes: Option<PathBuf> },
     /// Harness `harness`'s agent device beside the app's folder `dir`, asking to join aven `aven`, if named:
     /// `agent <harness> [--aven <name>] [--dir <folder>]`.
     Agent { harness: String, aven: Option<String>, dir: PathBuf },
@@ -46,10 +49,13 @@ enum Usage {
 
 fn usage() -> Result<Usage> {
     const USAGE: &str =
-        "usage: avendb-device --dir <folder> | avendb-device agent <harness> [--aven <name>] [--dir <folder>]";
+        "usage: avendb-device --dir <folder> [--volumes <folder>] | avendb-device agent <harness> [--aven <name>] [--dir <folder>]";
     let args: Vec<String> = std::env::args().skip(1).collect();
     match &args[..] {
-        [flag, dir] if flag == "--dir" => Ok(Usage::App(dir.into())),
+        [flag, dir] if flag == "--dir" => Ok(Usage::App { dir: dir.into(), volumes: None }),
+        [flag, dir, v, volumes] if flag == "--dir" && v == "--volumes" => {
+            Ok(Usage::App { dir: dir.into(), volumes: Some(volumes.into()) })
+        }
         [agent, harness, rest @ ..] if agent == "agent" => {
             let (mut aven, mut dir) = (None, None);
             for pair in rest.chunks(2) {
