@@ -1429,10 +1429,11 @@ fn marked(st: &State, en: &Entry, k: &Issued) -> bool {
 #[test]
 fn t28_sync_follows_keeps() {
     // a peer sends a device every edit it holds of each entry the device may receive and its keep shares want, and
-    // none of any other entry. Its keep shares over a vault are the live ones naming it, of a vault it is a device of
+    // none of any other entry. Its keep shares for a vault are the live ones naming it over the vault, of a vault it
+    // is a device of, else its copy setting, the live wide ones naming it over the vault that issued them
     // (`T28_keep_modes`): with none, it wants all of the vault; one of them that is never and marks the entry leaves
     // it out; one that is whole or opened and marks it, with no such never one, brings it; and it keeps the entry's
-    // files whole exactly when a whole one marks it, its own setting deciding when it has none but never ones
+    // files whole exactly when a whole one marks it, the node's own default deciding when it has none but never ones
     let (mut wanted, mut unwanted, mut kept) = (0, 0, 0);
     for (seed, h) in every_history() {
         let (edits, st) = (h.log.edits(), h.log.view());
@@ -1446,9 +1447,16 @@ fn t28_sync_follows_keeps() {
                 if may_receive(&st, d, e, &[]) {
                     *(if want { &mut wanted } else { &mut unwanted }) += 1;
                 }
-                let ks: Vec<&Issued> = st.keeps_of(d, en.vault).collect();
+                let own: Vec<&Issued> = st.keeps_of(d, en.vault).collect();
+                let copy = st.shares().iter().filter(|k| {
+                    let named = k.share.level.is_keep() && k.share.who == Who::Device(d) && k.share.wide;
+                    named && k.share.over == k.share.issuer && st.live(k.id) && st.is_device(d, k.share.issuer)
+                });
+                let ks = if own.is_empty() { copy.collect() } else { own };
+                assert_eq!(st.keeps_for(d, en.vault), ks, "seed {seed}: {d:?} over {:?}", en.vault);
                 for k in &ks {
-                    let names = k.share.who == Who::Device(d) && k.share.over == en.vault;
+                    let over = k.share.over == en.vault || k.share.wide && k.share.over == k.share.issuer;
+                    let names = k.share.who == Who::Device(d) && over;
                     let ok = k.share.level.is_keep() && names && st.live(k.id) && st.is_device(d, k.share.issuer);
                     assert!(ok, "seed {seed}: {k:?} of {d:?}");
                 }
@@ -1796,7 +1804,7 @@ fn t23_audiences_mean_what_shares_say() {
                 };
                 let never = |k: &Issued| k.share.level == Level::Keep(KeepMode::Never);
                 for d in SIGNERS {
-                    let ks: Vec<&Issued> = st.keeps_of(d, en.vault).collect();
+                    let ks = st.keeps_for(d, en.vault);
                     let brings = ks.iter().all(|k| never(k)) || ks.iter().any(|k| !never(k) && on(k));
                     let wants = brings && !ks.iter().any(|k| never(k) && on(k));
                     let whole = ks.iter().any(|k| k.share.level == Level::Keep(KeepMode::Whole) && on(k));

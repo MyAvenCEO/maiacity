@@ -292,7 +292,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     // her vault, her passkey its root, and her browser, by the name on its card
     let mine = shown(&seen, vault);
     assert_eq!((&mine["kind"], &mine["root"]), (&json!("human"), &json!(first.passkey().to_hex())));
-    let me = json!({ "id": first.node().device().to_hex(), "name": "Eve's browser", "me": true });
+    let me = json!({ "id": first.node().device().to_hex(), "name": "Eve's browser", "me": true, "copy": null });
     assert_eq!(mine["devices"], json!([me]));
     let note = write_note(&first, vault, vault, titled("Seeds", "Tomatoes in March."), &[]).await.expect("a note");
     let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;

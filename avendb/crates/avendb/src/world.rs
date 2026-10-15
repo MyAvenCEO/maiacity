@@ -18,7 +18,7 @@ use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
 use crate::lens::{DocV2, Lens, Schema, Status, View};
-use crate::policy::{Entry, Issued, Kind, Level, Principal, Share, State, Vault, Who};
+use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
 use crate::slice::{LENS_TYPE, Selector, Slice};
@@ -115,6 +115,9 @@ pub struct VaultView {
     pub name: Option<String>,
     /// Its devices' names, by their cards, of each that wrote one.
     pub names: BTreeMap<SignerId, String>,
+    /// What each of its devices keeps of every vault it syncs, by its copy setting (`State::copy_of`): a full copy
+    /// (`true`) or a light one (`false`), of each that set one.
+    pub copies: BTreeMap<SignerId, bool>,
     /// The owners the device acts for it through (`State::via`): none for its own vault, `None` if it doesn't act for
     /// it.
     pub via: Option<Vec<VaultId>>,
@@ -255,7 +258,10 @@ impl World {
             Principal::Signer(s) => json!({ "signer": hex(&s.0), "recovery": Some(*s) == self.recovery }),
         };
         let vault = |v: &VaultView| {
-            let device = |d: &SignerId| json!({ "id": hex(&d.0), "name": v.names.get(d), "me": *d == me });
+            let device = |d: &SignerId| {
+                let copy = v.copies.get(d).map(|&full| if full { "full" } else { "light" });
+                json!({ "id": hex(&d.0), "name": v.names.get(d), "me": *d == me, "copy": copy })
+            };
             let a = &v.acting;
             json!({
                 "id": hex(&v.vault.id.0),
@@ -405,7 +411,14 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
     let vault = |v: &Vault| {
         let names = cards(lab, me, v.id).into_iter().map(|(d, (_, name))| (d, name)).collect();
         let name = profile_of(lab, me, v.id).map(|(_, name)| name);
-        VaultView { vault: v.clone(), name, names, via: st.via(me, v.id), acting: acting(st, me, mine, v.id) }
+        let copy = |d: &SignerId| {
+            let modes: Vec<Option<KeepMode>> = st.copy_of(*d).map(|k| k.share.level.mode()).collect();
+            let full = modes.contains(&Some(KeepMode::Whole));
+            (full || modes.contains(&Some(KeepMode::Opened))).then_some((*d, full))
+        };
+        let copies = v.devices.iter().filter_map(copy).collect();
+        let (via, acting) = (st.via(me, v.id), acting(st, me, mine, v.id));
+        VaultView { vault: v.clone(), name, names, copies, via, acting }
     };
     let vaults = st.vaults().iter().map(vault).collect();
     let share = |cp: &Issued| {

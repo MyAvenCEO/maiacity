@@ -1204,26 +1204,47 @@ impl State {
         })
     }
 
+    /// Device `d`'s copy setting (`copyOf`): the live wide keep shares naming it over a vault it is a device of, issued
+    /// by that vault, whole for a full copy, opened for a light one. It stands for every vault where the device has
+    /// no keep share of its own (`keeps_for`), so one setting says what it keeps of every vault it syncs.
+    pub fn copy_of(&self, d: SignerId) -> impl Iterator<Item = &Issued> {
+        self.shares().iter().filter(move |k| {
+            k.share.level.is_keep()
+                && k.share.who == Who::Device(d)
+                && k.share.wide
+                && k.share.over == k.share.issuer
+                && self.live(k.id)
+                && self.is_device(d, k.share.issuer)
+        })
+    }
+
+    /// The keep shares device `d` syncs vault `v` by (`keepsFor`): its own over `v` (`keeps_of`), else its copy setting
+    /// (`copy_of`).
+    pub fn keeps_for(&self, d: SignerId, v: VaultId) -> Vec<&Issued> {
+        let own: Vec<&Issued> = self.keeps_of(d, v).collect();
+        if own.is_empty() { self.copy_of(d).collect() } else { own }
+    }
+
     /// Keep share `k` picks entry `en`, by the entry's marks (`marked`): it is wide, or among the entry's wants.
     fn marked(&self, en: &Entry, k: &Issued) -> bool {
         k.share.wide || self.wants_of(en.id).contains(&k.id)
     }
 
-    /// Device `d` wants entry `en`, by its keep shares over the entry's vault and the entry's marks (`wantsWith`, T28):
-    /// with none, or only never ones, it wants all of the vault but what a never share picks; else what a whole or an
-    /// opened one picks and no never one does.
+    /// Device `d` wants entry `en`, by its keep shares for the entry's vault (`keeps_for`) and the entry's marks
+    /// (`wantsWith`, T28): with none, or only never ones, it wants all of the vault but what a never share picks; else
+    /// what a whole or an opened one picks and no never one does.
     pub fn wants(&self, d: SignerId, en: &Entry) -> bool {
-        let ks: Vec<&Issued> = self.keeps_of(d, en.vault).collect();
+        let ks = self.keeps_for(d, en.vault);
         let never = |k: &&Issued| k.share.level == Level::Keep(KeepMode::Never);
         let adds = ks.iter().all(never) || ks.iter().any(|k| !never(k) && self.marked(en, k));
         adds && !ks.iter().any(|k| never(k) && self.marked(en, k))
     }
 
-    /// Whether device `d` keeps whole the files entry `en` brings (`keepsWith`): a whole keep share of it over the
-    /// entry's vault picks the entry. `None` where it has no whole or opened keep share there, only never ones or none:
-    /// the device's own setting says.
+    /// Whether device `d` keeps whole the files entry `en` brings (`keepsWith`): a whole share of its keep shares for
+    /// the entry's vault (`keeps_for`) picks the entry. `None` where none of them is whole or opened, only never ones or
+    /// none: the node's own default says (`Options::keep` in avendb-net, the server's backup).
     pub fn keeps(&self, d: SignerId, en: &Entry) -> Option<bool> {
-        let ks: Vec<&Issued> = self.keeps_of(d, en.vault).collect();
+        let ks = self.keeps_for(d, en.vault);
         if ks.iter().all(|k| k.share.level == Level::Keep(KeepMode::Never)) {
             return None;
         }

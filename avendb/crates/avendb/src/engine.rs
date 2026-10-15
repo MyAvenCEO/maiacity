@@ -153,6 +153,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "taggable" => &["entry", "as"],
         "share" => &["over", "who", "level", "what", "as"],
         "keep" => &["over", "mode", "what", "device", "as"],
+        "copy" => &["device", "full"],
         "revoke" => &["share", "vault", "owner", "device", "as"],
         "settings" => &["vault", "threshold", "root"],
         "found" => &["vaults", "kind", "name"],

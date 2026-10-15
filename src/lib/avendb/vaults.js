@@ -14,7 +14,11 @@
  * nothing: it says only what one of the vault's devices keeps of it.
  * @typedef {'relay' | 'backup' | 'read' | 'write' | 'owner' | 'keepWhole' | 'keepOpened' | 'keepNever'} Role
  */
-/** @typedef {{ id: string, name?: string | null, me: boolean }} DeviceView */
+/**
+ * A device of a vault: its name, by its card; whether it is this one; and its copy setting, what it keeps of every vault
+ * it syncs: `full`, every entry and file, or `light`, every entry and a file as it is opened, `null` where it set none.
+ * @typedef {{ id: string, name?: string | null, me: boolean, copy?: 'full' | 'light' | null }} DeviceView
+ */
 /**
  * What the person may do in a vault, as the device says: the vault they act as in it (the vault itself where theirs
  * owns it, else the vault of theirs that holds the strongest share over it, else their own), whether that vault
@@ -515,13 +519,6 @@ export const KEEPS = /** @type {Record<string, string>} */ ({
 	keepOpened: 'syncs it and fetches its files as they open',
 	keepNever: 'doesn’t sync it'
 });
-
-/** The keep modes of the `keep` op, each with its level. */
-export const MODES = /** @type {const} */ ([
-	['whole', 'keepWhole'],
-	['opened', 'keepOpened'],
-	['never', 'keepNever']
-]);
 
 /** What a share is on: "Everything", or what its slice picks, in words. @param {CapView} c @param {WorldView} world */
 export const shareWhat = (c, world) => (c.whole ? 'Everything' : whereWords(c.slice?.where, world));
