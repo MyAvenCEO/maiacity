@@ -14,7 +14,7 @@
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
-	import { RENTED, COOPS, DAY_MS, act, newGame, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
@@ -862,7 +862,9 @@
 					{#if c.id === 'tribe'}<dt>Gets home rent, a week</dt><dd>{f(view.settings.homeRent)} × 2 tribeMIND</dd>{/if}
 					{#each RENTED.filter((r) => ownerOf(r.asset)?.[0] === c.id && r.payer !== c.id) as r (r.asset)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}
 					{#each RENTED.filter((r) => r.payer === c.id && ownerOf(r.asset) && ownerOf(r.asset)[0] !== c.id) as r (r.asset)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
-					{#each Object.entries(c.owed ?? {}).filter(([, v]) => v > 0.001) as [id, v] (id)}<dt>Owed for the {rentOf(id)?.label ?? id}</dt><dd class="bad">{f(v)} {TOKEN_LABEL[ownerOf(id)?.[1].mind ?? 'VILLAGE']}</dd>{/each}
+					{#each SUBLET.filter((r) => r.payer === c.id) as r (r.key)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} × 2 {TOKEN_LABEL[view.coops[rentOf(r.asset)?.payer]?.mind ?? 'VILLAGE']}</dd>{/each}
+					{#each SUBLET.filter((r) => rentOf(r.asset)?.payer === c.id && r.payer !== c.id) as r (r.key)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} × 2 {TOKEN_LABEL[c.mind]}</dd>{/each}
+					{#each rents(view).filter((r) => r.from === `coop:${c.id}` && r.owed > 0.001) as r (r.what + r.to)}<dt>Owed: {r.what.toLowerCase()}</dt><dd class="bad">{f(r.owed)} {TOKEN_LABEL[r.token]}</dd>{/each}
 				</dl>
 				<div class="buttons">
 					{#if canMove}<button class="primary" onclick={() => openWallet('invest', panel)}>Invest</button>{/if}

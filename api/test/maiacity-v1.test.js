@@ -161,7 +161,7 @@ test("Law 5: 20 % of every sale goes at once to the COOP's MIND holders, pro rat
 });
 
 test("the Tribe COOP rents the pickup, powercube, battery pack and solar panel from the Village COOP, a week in villageMIND", () => {
-  let s = grown(newGame(T0, { demurrage: 0, homeRent: 0, hexRent: 0, poolShare: 0 }));
+  let s = grown(newGame(T0, { demurrage: 0, homeRent: 0, hexRent: 0, hexSubRent: 0, poolShare: 0 }));
   s.coops.tribe.treasury.VILLAGE = 300;
   // one pay day: 100 + 50 + 50 + 50; the Tribe COOP is the only villageMIND holder, so the 20 % comes back to it
   s = advance(s, T0 + DAY_MS / 4);
@@ -169,7 +169,7 @@ test("the Tribe COOP rents the pickup, powercube, battery pack and solar panel f
   expect(s.coops.tribe.treasury.VILLAGE).toBeCloseTo(300 - 250 * 0.8, 6);
   expect(ledgerOf(s, "coop:village").filter((e) => e.kind === "rent" && e.to === "coop:village").map((e) => e.note.split(",")[0]).sort()).toEqual(["battery pack rent", "pickup rent", "powercube rent", "solar panel rent"]);
   // with nothing to pay with, each rent is owed on its own: the Tribe COOP's machines, the Village COOP's hex
-  let t = grown(newGame(T0, { demurrage: 0, homeRent: 0 }));
+  let t = grown(newGame(T0, { demurrage: 0, homeRent: 0, hexSubRent: 0 }));
   t = advance(t, T0 + DAY_MS / 4);
   expect(t.coops.tribe.owed).toEqual({ pickup: 100, powercube: 50, battery: 50, solar: 50 });
   expect(t.coops.village.owed).toEqual({ hex: 100 });
@@ -194,7 +194,7 @@ test("the ledger's rents in and out, the dividends to expect, and what each pay 
   for (const seat of ["A", "B"]) s = act(s, seat, { type: "mint" }, T0);
   s = act(s, "A", { type: "invest", coop: "tribe", amount: 20 }, T0);
   s = act(s, "B", { type: "invest", coop: "tribe", amount: 20 }, T0);
-  expect(rents(s).filter((r) => r.from === "coop:tribe").map((r) => r.what)).toEqual(["Pickup rent", "Powercube rent", "Battery pack rent", "Solar panel rent"]);
+  expect(rents(s).filter((r) => r.from === "coop:tribe").map((r) => r.what)).toEqual(["Pickup rent", "Powercube rent", "Battery pack rent", "Solar panel rent", "Hex rent"]);
   expect(rents(s).filter((r) => r.from === "coop:village").map((r) => [r.what, r.to, r.weekly])).toEqual([["Hex rent", "coop:maia", 100]]);
   expect(rents(s).filter((r) => r.to === "coop:tribe").map((r) => r.weekly)).toEqual([2.5, 2.5]);
   // A holds half the tribeMIND outside its treasury: half of 20 % of the 5 home rent a pay day
@@ -351,4 +351,15 @@ test("the euro ingest: a player's first mint, a year of HEARTS, brings as many â
   expect(s.players.A.wallet.HEARTS).toBeCloseTo(hearts * 0.93, 3);
   expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 8736, 6);
   expect(s.ledger.some((e) => e.kind === "demurrage" && e.token === "EURO")).toBe(false);
+});
+
+test("the Tribe COOP pays the Village COOP for the hex it lives on, 25 a player a week in villageMIND", () => {
+  let s = grown(newGame(T0, { demurrage: 0, dividendShare: 0, homeRent: 0, hexRent: 0, pickupRent: 0, powercubeRent: 0, batteryRent: 0, solarRent: 0, poolShare: 0 }));
+  expect(rents(s).filter((r) => r.from === "coop:tribe").map((r) => [r.what, r.to, r.token, r.weekly])).toEqual([["Hex rent", "coop:village", "VILLAGE", 50]]);
+  s.coops.tribe.treasury.VILLAGE = 60;
+  s = advance(s, T0 + DAY_MS / 4);
+  expect(s.coops.village.treasury.VILLAGE).toBeCloseTo(50, 6);
+  expect(s.coops.tribe.treasury.VILLAGE).toBeCloseTo(10, 6);
+  s = advance(s, T0 + DAY_MS / 2);
+  expect(s.coops.tribe.owed.hexSub).toBeCloseTo(40, 6);
 });
