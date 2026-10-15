@@ -440,8 +440,10 @@ def entryJson (a : Attrs) (d : Doc) : String :=
   obj [("type", sym a.type), ("author", str (hexId a.author)), ("entry", str (hexId a.entry)),
        ("created", nat a.created), ("tags", arr (a.tags.map sym)), ("record", doc d)]
 
+/-- Two records, the changes between them, how deep each record's rows go, and how deep the changes reach. -/
 def diffCase (d e : Doc) : String :=
-  obj [("before", doc d), ("after", doc e), ("changes", arr ((d.diff e).map change))]
+  obj [("before", doc d), ("after", doc e), ("changes", arr ((d.diff e).map change)),
+       ("depths", arr [nat d.depth, nat e.depth]), ("reach", nat ((d.diff e).foldl (fun m c => max m c.depth) 0))]
 
 def runCase (d : Doc) (ops : List RecordOp) : String :=
   obj [("before", doc d), ("ops", arr (ops.map op)), ("after", opt doc (d.runAll ops))]
@@ -478,11 +480,6 @@ def _root_.AvenDB.Ops.RecordOp.depth (op : RecordOp) : Nat := op.loc.countP fun
   | .field _ => true
   | .row _ => false
 
-/-- How many lists deep a place lies: the rows on the way to it. -/
-def _root_.AvenDB.Ops.Path.rowsAbove : Path → Nat
-  | .top _ => 0
-  | .row _ _ p => p.rowsAbove + 1
-
 -- O2 on the cases: every run that makes sense changes only what its ops name
 #guard runs.all fun (d, ops) => match d.runAll ops with
   | some e => d.within (ops.map RecordOp.loc) e
@@ -516,8 +513,12 @@ def _root_.AvenDB.Ops.Path.rowsAbove : Path → Nat
   | .order _ (some _) => true
   | _ => false
 #guard [1, 2, 3, 4].all fun n => ran.any fun (d, e) => (d.diff e).any fun
-  | .order f _ => f.rowsAbove == n
+  | .order f _ => f.depth == n
   | _ => false
+-- how deep records go, the outline five rows, and diffs that reach every depth from none to five
+#guard [outline.depth, nestedCopies.depth, plan.depth, todo.depth] == [5, 2, 1, 0]
+#guard [0, 1, 2, 3, 4, 5].all fun n => ((records.flatMap fun d => records.map (d, ·)) ++ ran).any fun (d, e) =>
+  (d.diff e).foldl (fun m c => max m c.depth) 0 == n
 -- queries pick some entries and not others, and some plan picks by no selector for its size; so do tests in rows of
 -- rows
 #guard wheres.all fun w => entries.all fun (a, d) => !w.holds a d.meaning || w.plan.matches a

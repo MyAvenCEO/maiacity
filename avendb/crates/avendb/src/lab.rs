@@ -84,7 +84,7 @@ use crate::hash::{Hasher, Reader};
 use crate::history::{Change, Draft, History, Reading, MAIN};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, SeededRng, Secret};
-use crate::lens::{Lane, Lens, Schema};
+use crate::lens::{self, Lane, Lens, Schema};
 use crate::merge;
 use crate::policy::{
     mk_audience, replay, Action, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
@@ -351,6 +351,8 @@ struct Store {
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
     /// everyone may read of them. Its own, never an edit's.
     follow: Vec<VaultId>,
+    /// The most rows down a query on it reads, however deep the query asks (`engine`'s `query`). Its own too.
+    query_depth: usize,
 }
 
 impl Default for Store {
@@ -371,6 +373,7 @@ impl Default for Store {
             shown: BTreeMap::new(),
             digests: None,
             follow: vec![],
+            query_depth: lens::CEILING,
         }
     }
 }
@@ -2169,6 +2172,18 @@ impl Lab {
         &self.held(d).follow
     }
 
+    /// Device `d` reads at most `depth` rows down in a query from now on, however deep the query asks (`engine`'s
+    /// `query`, whose own limit is `engine::QUERY_DEPTH` unless it names one).
+    pub fn set_query_depth(&mut self, d: SignerId, depth: usize) {
+        self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab")).query_depth = depth;
+    }
+
+    /// The most rows down device `d` reads in a query (`set_query_depth`): `lens::CEILING` until set, as deep as any
+    /// write that counts reaches.
+    pub fn query_depth(&self, d: SignerId) -> usize {
+        self.held(d).query_depth
+    }
+
     /// Device `to` asks device `from` once, with what it holds of each log and the vaults it follows (`sync::asks`),
     /// and `from` answers with what `to` may receive by `from`'s view, of each log only what lies beyond what `to`
     /// holds of it. How many edits `from` sent: none while either is offline.
@@ -2631,8 +2646,8 @@ impl Lab {
     /// makes next in a log builds on the past the backup kept, so it forks from what it made there since (`forks`).
     /// A node starting again from its store on disk restores the same way.
     pub fn restore_backup(&mut self, d: SignerId, backup: &Backup) {
-        let follow = self.held(d).follow.clone();
-        self.stores.insert(d, Store { follow, ..Store::default() });
+        let (follow, query_depth) = (self.held(d).follow.clone(), self.held(d).query_depth);
+        self.stores.insert(d, Store { follow, query_depth, ..Store::default() });
         self.keep(d, backup.signed.clone(), &backup.blobs);
         self.refresh(d, &[]);
     }

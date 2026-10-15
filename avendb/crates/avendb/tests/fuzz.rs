@@ -2,7 +2,8 @@
 //! Loro updates), changed a bit or a byte at a time, cut short, grown or spliced; from P8 every message on the wire
 //! (signed edits, hellos, asks, requests, replies, announcements, and from P8c passkeys' hellos and joins); and with
 //! flat vaults what only readers read: a share's slice, its selector in the clear or sealed (a keep share's too), and a
-//! write's body. Nothing panics; a changed box, write, signed edit or sealed selector is refused, a changed message
+//! write's body; and with records inside records, a schema whose rows hold rows of its own shape, and an update of an
+//! item that holds them. Nothing panics; a changed box, write, signed edit or sealed selector is refused, a changed message
 //! reads as nothing or as another message whose own bytes these are, and a changed Loro update that is refused leaves
 //! the item as it was. Every mutation is drawn from a fixed seed, so a failure replays exactly.
 
@@ -855,4 +856,66 @@ fn a_changed_loro_update_never_panics_and_changes_nothing() {
     }
     // Loro checks its updates: almost no change gets through
     assert!(taken < 50, "{taken}");
+}
+
+/// An outline: nodes, each with a text and the nodes under it, its node shape holding a list of itself.
+const OUTLINE: &str = r##"{ "title": "Outline", "type": "object",
+  "$defs": { "node": { "type": "object", "properties": {
+      "id": { "type": "integer" },
+      "text": { "type": "string", "x-loro": "text", "default": "" },
+      "done": { "type": "boolean" },
+      "kids": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+    "required": ["id"] } },
+  "properties": {
+    "kind": { "const": "outline" },
+    "title": { "type": "string", "default": "" },
+    "nodes": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+  "required": ["kind"] }"##;
+
+#[test]
+fn a_changed_self_holding_schema_or_nested_update_never_panics() {
+    let mut g = Gen::new(6);
+    let mut deep = json!([]);
+    for n in (1..=40).rev() {
+        deep = json!([{ "id": n, "text": "x", "kids": deep }]);
+    }
+    let docs = [
+        json!({ "kind": "outline", "title": "Garden", "nodes": [{ "id": 1, "text": "Beds", "kids": [{ "id": 2 }] }] }),
+        json!({ "kind": "outline", "nodes": deep }),
+        json!({ "kind": "outline", "nodes": [{ "id": 1, "kids": [{ "id": "x" }, 7, { "id": 1 }, { "id": 1 }] }] }),
+    ];
+    // a changed schema, its $refs cycling anywhere: parsed or not, it reads, writes and stores without a panic
+    let (mut parsed, mut stored) = (0, 0);
+    for bytes in mutated_blobs(&mut g, OUTLINE, 1500) {
+        let Some(schema) = Schema::parse(&bytes) else { continue };
+        parsed += 1;
+        let view = View::plain(&schema);
+        for d in &docs {
+            let Some(mut seen) = view.get(d) else { continue };
+            view.put(d, &seen);
+            if let Some(item) = Item::made(&view, &seen, SignerId::from_u64(7)) {
+                stored += 1;
+                assert_eq!(item.read(&view).as_ref(), Some(&seen));
+            }
+            mutate_value(&mut g, &mut seen, d);
+            view.put(d, &seen);
+        }
+    }
+    assert!(parsed > 150 && stored > 300, "{parsed} parsed, {stored} stored");
+    // a changed update of an outline forty rows deep: refused, changing nothing, or taken
+    let view = View::plain(&Schema::parse(OUTLINE.as_bytes()).expect("a schema"));
+    let alice = SignerId::from_u64(2);
+    let full = view.get(&docs[1]).expect("an outline");
+    let update = Item::made(&view, &full, alice).expect("an outline").export(&Version::default());
+    let mut taken = 0;
+    for _ in 0..500 {
+        let mut empty = Item::new(SignerId::from_u64(7));
+        if empty.import(&mutate(&mut g, &update), alice).is_ok() {
+            taken += 1;
+            let _ = empty.read(&view);
+        } else {
+            assert_eq!(empty.record(), json!({}));
+        }
+    }
+    assert!(taken < 25, "{taken}");
 }

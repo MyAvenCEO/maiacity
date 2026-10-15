@@ -77,6 +77,31 @@ pub fn keyed(rows: &[Value]) -> Vec<(Key, &Record)> {
     rows.iter().map(|r| (key(r), r.as_object().expect("a row is an object"))).collect()
 }
 
+/// Record `r` read `depth` rows down, as a query reads it (`engine`'s `query`): the rows of its lists, of theirs and so
+/// on to `depth` levels, each list of rows deeper than that taken out of the row that holds it (all of the record's
+/// own at 0). Whether it took any out. A loop over an explicit stack, never a recursion.
+pub fn cut(r: &mut Record, depth: usize) -> bool {
+    let mut cut = false;
+    let mut todo: Vec<(&mut Record, usize)> = vec![(r, 0)];
+    while let Some((r, d)) = todo.pop() {
+        let held = |v: &Value| rows(v).is_some_and(|xs| !xs.is_empty());
+        let deeper: Vec<String> = r.iter().filter(|(_, v)| held(v)).map(|(f, _)| f.clone()).collect();
+        if d == depth {
+            cut |= !deeper.is_empty();
+            for f in &deeper {
+                r.remove(f);
+            }
+            continue;
+        }
+        for (f, v) in r {
+            if let (true, Value::Array(xs)) = (deeper.contains(f), v) {
+                todo.extend(xs.iter_mut().filter_map(Value::as_object_mut).map(|x| (x, d + 1)));
+            }
+        }
+    }
+    cut
+}
+
 /// A record, flat: the value at each place, and the rows of each list of records in order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Flat {
@@ -86,6 +111,12 @@ pub struct Flat {
 
 impl Flat {
     pub fn of(r: &Record) -> Flat {
+        Flat::of_with(r, |_| true)
+    }
+
+    /// Record `r`, flat, an array of rows read as a list of records only where `rows_at` says its place holds one, and
+    /// as one value elsewhere: as a schema that calls a field one value reads it (`lens::Lane::fits`).
+    pub fn of_with(r: &Record, rows_at: impl Fn(&Path) -> bool) -> Flat {
         let mut flat = Flat::default();
         // each record or row still to flatten, with the chain of rows to it
         let mut todo: Vec<(Vec<(String, Key)>, &Record)> = vec![(vec![], r)];
@@ -96,7 +127,7 @@ impl Flat {
                     continue;
                 }
                 let place = Path { rows: chain.clone(), field: f.clone() };
-                let Some(rows) = rows(v) else {
+                let Some(rows) = rows(v).filter(|_| rows_at(&place)) else {
                     flat.leaves.insert(place, v.clone());
                     continue;
                 };
@@ -153,10 +184,16 @@ impl Flat {
     /// Row `k` of the list at `list`, its own fields: its id, its values, and each of its lists as `[]`, whatever its
     /// rows (the row as a scope of its own, what a schema reads of it).
     pub fn own(&self, list: &Path, k: &Key) -> Record {
-        let chain = list.row(k);
-        let mut r = Record::new();
+        let mut r = self.fields(&list.row(k));
         r.insert("id".into(), k.id.into());
-        let from = Path { rows: chain.clone(), field: String::new() };
+        r
+    }
+
+    /// The own fields of the record (`chain` empty) or of the row the chain names: its values, and each of its lists as
+    /// `[]`, whatever its rows.
+    pub fn fields(&self, chain: &[(String, Key)]) -> Record {
+        let mut r = Record::new();
+        let from = Path { rows: chain.to_vec(), field: String::new() };
         for (p, v) in self.leaves.range(&from..).take_while(|(p, _)| p.rows == chain) {
             r.insert(p.field.clone(), v.clone());
         }
@@ -169,6 +206,12 @@ impl Flat {
     /// Row `k` is in the list at `f`.
     pub fn holds(&self, f: &Path, k: &Key) -> bool {
         self.lists.get(f).is_some_and(|ks| ks.contains(k))
+    }
+
+    /// How many rows deep its deepest row is, counting the row itself (`Doc.depth`): 0 for a record that holds no row,
+    /// 1 where only its own lists hold rows.
+    pub fn depth(&self) -> usize {
+        self.lists.iter().filter(|(_, ks)| !ks.is_empty()).map(|(f, _)| f.rows.len() + 1).max().unwrap_or(0)
     }
 
     /// The changes that make this record into `after`: each list's new rows, by place, then each place's new value, by
@@ -302,6 +345,17 @@ impl Path {
 }
 
 impl Change {
+    /// How many rows deep it reaches (`Change.depth`): a value set in a row, as deep as the row; rows given to a list,
+    /// one deeper than the list; a value or a list gone, or a list emptied, no row at all. No change a write that fits
+    /// makes reaches deeper than `lens::CEILING`.
+    pub fn depth(&self) -> usize {
+        match self {
+            Change::Set(p, Some(_)) => p.rows.len(),
+            Change::Order(f, Some(ks)) if !ks.is_empty() => f.rows.len() + 1,
+            _ => 0,
+        }
+    }
+
     /// `{"set": path, "value": v}`, `{"unset": path}`, or `{"rows": list, "keys": [key, ..]}` (`null`: no list), a
     /// list of the record by its field, one in a row by its path.
     pub fn to_json(&self) -> Value {

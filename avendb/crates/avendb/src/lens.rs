@@ -23,7 +23,10 @@
 //! (`example`): no device ships it or reads through it.
 //!
 //! Records in a list (a document's blocks) are matched by their `id`, which apps pick at random, so that two devices
-//! adding records at once don't pick the same one; where they do, apps see the first.
+//! adding records at once don't pick the same one; where they do, apps see the first. A row may hold lists of records
+//! in turn, at any depth, and a shape may hold lists of rows of its own shape (an outline, a thread of replies), so
+//! every walk over a record here is a loop over an explicit stack, never a recursion: a record nested deep can't
+//! overflow the stack. A write reaches no deeper than `CEILING` rows, whatever its schemas say.
 //!
 //! A view follows one lens: an item written under the app's schema and at most one other version, joined to it by a
 //! lens in the lane. Anything else opens read-only (`Lane::view`); chains of lenses come with a third version.
@@ -35,7 +38,7 @@ use std::sync::LazyLock;
 use serde_json::Value;
 
 use crate::id::BlobId;
-use crate::ops::{self, Change, Flat, Key, Path, Record};
+use crate::ops::{Change, Flat, Key, Path, Record};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TypeV1 {
@@ -182,22 +185,26 @@ impl TodoV1 {
 /// The subset it reads: an object's `properties` and `required`; each property a `const`, an `enum`, or a `type` of
 /// string (with a `maxLength`), integer or number (with a `minimum` and a `maximum`; a number is any finite one),
 /// boolean, object or array; a `default` where a field may be absent. An array's `items` are values (a list, with
-/// `minItems` and `maxItems`) or records (objects with a required integer `id`, which edits match them by); an array
-/// of `prefixItems` is a tuple of so many values (a position `[x, y, z]`). An object (a property whose type is object,
-/// or an array's items that are objects with no integer `id`, or anything inside a record's row) is one value, checked
-/// by its own `properties`, `required` and `additionalProperties: false`, nested to any depth. `$ref` names a shape of
-/// the schema's `$defs`. `"x-loro": "text"` marks free text, which an item stores as a Loro text so concurrent edits
-/// merge character by character; a list of values is a Loro list, merged item by item; everything else is one value,
-/// where concurrent edits keep one of them. Other keywords are annotations and change nothing.
+/// `minItems` and `maxItems`) or records (objects with a required integer `id`, which edits match them by), whose rows
+/// may hold lists of records in turn, at any depth; an array of `prefixItems` is a tuple of so many values (a position
+/// `[x, y, z]`). An object (a property whose type is object, or an array's items that are objects with no integer `id`)
+/// is one value, checked by its own `properties`, `required` and `additionalProperties: false`, nested to any depth.
+/// `$ref` names a shape of the schema's `$defs`: a shape may hold a list of rows of its own shape, a `$ref` round a
+/// list of records, which resolves lazily, one row at a time; one round plain objects or values would be a value with
+/// no end, and makes no schema. `"x-loro": "text"` marks free text, which an item stores as a Loro text so concurrent
+/// edits merge character by character; a list of values is a Loro list, merged item by item; everything else is one
+/// value, where concurrent edits keep one of them. Other keywords are annotations and change nothing.
 #[derive(Clone, Debug)]
 pub struct Schema {
     id: BlobId,
     bytes: Vec<u8>,
     title: String,
-    root: Shape,
+    /// The record's shape first, then the shape of the rows of each list of records, at any depth, each once: a shape
+    /// whose rows hold rows of its own shape names itself (`Type::Records`).
+    shapes: Vec<Shape>,
 }
 
-/// The fields of one record.
+/// The fields of one record, or of the rows of one list of records.
 #[derive(Clone, Debug, Default)]
 struct Shape {
     fields: Vec<Field>,
@@ -220,8 +227,14 @@ enum Type {
     Value(Check),
     /// A list of values.
     List(Check),
-    /// A movable list of records, each a map with its `id`.
-    Records(Shape),
+    /// A movable list of records, each a map with its `id`, of the shape of this index in its schema's.
+    Records(usize),
+}
+
+/// What a property of a schema is: a type, or a list of records, by the object its rows resolve to.
+enum Of<'a> {
+    Type(Type),
+    Rows(&'a Value),
 }
 
 /// Which values a field takes.
@@ -359,49 +372,39 @@ impl Check {
 }
 
 impl Type {
-    /// A property of a schema; `nested` for the fields of a list's records, which hold no records themselves: a list
-    /// of records in a row is kept for records inside records, which will merge row by row at every depth, so no
-    /// schema stores one as one value meanwhile.
-    fn of(p: &Value, nested: bool, defs: Defs) -> Option<Type> {
+    /// A property of a schema, or the rows of a list of records it is, whose shape is built once (`Schema::shapes`).
+    fn of<'a>(p: &'a Value, defs: Defs<'a>) -> Option<Of<'a>> {
         let (p, defs) = defs.resolve(p)?;
         if p.get("type").and_then(Value::as_str) == Some("array") && p.get("prefixItems").is_none() {
             let (items, deeper) = defs.resolve(p.get("items")?)?;
             if records_of(items) {
-                // records are matched by their id
-                return (!nested).then(|| Some(Type::Records(Shape::of(items, true, deeper)?))).flatten();
+                // records are matched by their id, at any depth
+                return Some(Of::Rows(items));
             }
             if items.get("type").and_then(Value::as_str) != Some("object") {
                 let bounded = p.get("minItems").is_some() || p.get("maxItems").is_some();
                 if !bounded {
-                    return Some(Type::List(Check::of(items, deeper)?));
+                    return Some(Of::Type(Type::List(Check::of(items, deeper)?)));
                 }
             }
             // objects that are no records, or a list with bounds: one value
-            return Some(Type::Value(Check::of(p, defs)?));
+            return Some(Of::Type(Type::Value(Check::of(p, defs)?)));
         }
         let string = p.get("type").and_then(Value::as_str) == Some("string");
         if string && p.get("x-loro").and_then(Value::as_str) == Some("text") {
-            return Some(Type::Text);
+            return Some(Of::Type(Type::Text));
         }
-        Some(Type::Value(Check::of(p, defs)?))
+        Some(Of::Type(Type::Value(Check::of(p, defs)?)))
     }
 
-    /// The value an app sees for what is stored: the value if it fits, a list's values that fit, a list's records that
-    /// read and whose id no record before them in the list has.
+    /// The value an app sees for what is stored: the value if it fits, a list's values that fit. A list of records'
+    /// rows are read row by row (`Schema::seen`).
     fn read(&self, v: &Value) -> Option<Value> {
         match self {
             Type::Text => v.is_string().then(|| v.clone()),
             Type::Value(c) => c.holds(v).then(|| v.clone()),
             Type::List(c) => Some(v.as_array()?.iter().filter(|x| c.holds(x)).cloned().collect()),
-            Type::Records(shape) => {
-                let mut ids = HashSet::new();
-                let records = v.as_array()?.iter().filter_map(|x| {
-                    let r = x.as_object()?;
-                    let first = present(r, "id").is_some_and(|id| ids.insert(id.clone()));
-                    first.then(|| shape.read(r)).flatten().map(Value::Object)
-                });
-                Some(records.collect())
-            }
+            Type::Records(_) => None,
         }
     }
 
@@ -427,57 +430,131 @@ impl Type {
 }
 
 impl Shape {
-    fn of(v: &Value, nested: bool, defs: Defs) -> Option<Shape> {
-        if v.get("type")?.as_str()? != "object" {
-            return None;
-        }
-        let fields = v.get("properties")?.as_object()?.iter().map(|(name, p)| {
-            Some(Field { name: name.clone(), ty: Type::of(p, nested, defs)?, default: p.get("default").cloned() })
-        });
-        let required = match v.get("required") {
-            None => vec![],
-            Some(r) => r.as_array()?.iter().map(|x| Some(x.as_str()?.to_string())).collect::<Option<_>>()?,
-        };
-        Some(Shape { fields: fields.collect::<Option<_>>()?, required })
-    }
-
     fn field(&self, name: &str) -> Option<&Field> {
         self.fields.iter().find(|f| f.name == name)
     }
 
-    fn records(&self, name: &str) -> Option<&Shape> {
-        match &self.field(name)?.ty {
+    /// The shape of the rows of list `name`, by its index in the schema's.
+    fn records(&self, name: &str) -> Option<usize> {
+        match self.field(name)?.ty {
             Type::Records(shape) => Some(shape),
             _ => None,
         }
     }
+}
 
-    /// Each field as an app on this schema sees it: the stored value if it fits, else the field's default; a field
-    /// with neither is left out.
-    fn seen(&self, r: &Record) -> Record {
-        let mut out = Record::new();
-        for f in &self.fields {
-            if let Some(v) = present(r, &f.name).and_then(|v| f.ty.read(v)).or_else(|| f.default.clone()) {
-                out.insert(f.name.clone(), v);
-            }
-        }
-        out
-    }
-
-    /// The record as an app on this schema sees it, if it has every required field.
-    fn read(&self, r: &Record) -> Option<Record> {
-        let seen = self.seen(r);
-        self.required.iter().all(|f| seen.contains_key(f)).then_some(seen)
-    }
+/// A record or a row being read (`Schema::seen`): its shape, its fields, and for each field of its shape that holds a
+/// list of records, the rows that may read, by their place in the walk.
+struct Reading<'r> {
+    shape: usize,
+    fields: &'r Record,
+    rows: Vec<Option<Vec<usize>>>,
 }
 
 impl Schema {
     /// A schema blob, if it is a JSON Schema of the subset above.
     pub fn parse(bytes: &[u8]) -> Option<Schema> {
         let v: Value = serde_json::from_slice(bytes).ok()?;
-        let root = Shape::of(&v, false, Defs::of(&v))?;
+        let shapes = Schema::shapes(&v)?;
         let title = v.get("title").and_then(Value::as_str).unwrap_or_default().to_string();
-        Some(Schema { id: BlobId::of(bytes), bytes: bytes.to_vec(), title, root })
+        Some(Schema { id: BlobId::of(bytes), bytes: bytes.to_vec(), title, shapes })
+    }
+
+    /// The shapes of schema `v`: the record's, then the rows' of each list of records, at any depth, each built once by
+    /// the object its rows resolve to, so a `$ref` round a list of records names a shape it has, lazily. A loop over
+    /// the shapes still to build.
+    fn shapes(v: &Value) -> Option<Vec<Shape>> {
+        let mut shapes = vec![Shape::default()];
+        let mut index: HashMap<*const Value, usize> = HashMap::from([(v as *const Value, 0)]);
+        let mut todo = vec![(v, 0)];
+        while let Some((node, at)) = todo.pop() {
+            if node.get("type")?.as_str()? != "object" {
+                return None;
+            }
+            let mut fields = vec![];
+            for (name, p) in node.get("properties")?.as_object()? {
+                let ty = match Type::of(p, Defs::of(v))? {
+                    Of::Type(ty) => ty,
+                    Of::Rows(items) => Type::Records(*index.entry(items as *const Value).or_insert_with(|| {
+                        shapes.push(Shape::default());
+                        todo.push((items, shapes.len() - 1));
+                        shapes.len() - 1
+                    })),
+                };
+                fields.push(Field { name: name.clone(), ty, default: p.get("default").cloned() });
+            }
+            let required = match node.get("required") {
+                None => vec![],
+                Some(r) => r.as_array()?.iter().map(|x| Some(x.as_str()?.to_string())).collect::<Option<_>>()?,
+            };
+            shapes[at] = Shape { fields, required };
+        }
+        Some(shapes)
+    }
+
+    /// The shape schema walks to down the lists `lists`, from the record's: the record's own, for none.
+    fn down<'s>(&self, lists: impl IntoIterator<Item = &'s str>) -> Option<&Shape> {
+        let mut at = 0;
+        for l in lists {
+            at = self.shapes[at].records(l)?;
+        }
+        Some(&self.shapes[at])
+    }
+
+    /// Record or row `r`, of shape `at`, as an app on this schema sees it: each field the shape names as the stored
+    /// value if it fits, else the field's default, a field with neither left out; of a list of records, the rows that
+    /// read and whose id no row before them in the list has, each holding what its shape requires. A loop down the
+    /// rows, then back up, never a recursion.
+    fn seen(&self, at: usize, r: &Record) -> Record {
+        let mut walk = vec![Reading { shape: at, fields: r, rows: vec![] }];
+        let mut i = 0;
+        while i < walk.len() {
+            let (shape, fields) = (walk[i].shape, walk[i].fields);
+            let mut rows = Vec::with_capacity(self.shapes[shape].fields.len());
+            for f in &self.shapes[shape].fields {
+                let list = present(fields, &f.name).and_then(Value::as_array);
+                let (Type::Records(of), Some(list)) = (&f.ty, list) else {
+                    rows.push(None);
+                    continue;
+                };
+                let mut ids = HashSet::new();
+                let mut these = vec![];
+                for row in list.iter().filter_map(Value::as_object) {
+                    if present(row, "id").is_some_and(|id| ids.insert(id.clone())) {
+                        these.push(walk.len());
+                        walk.push(Reading { shape: *of, fields: row, rows: vec![] });
+                    }
+                }
+                rows.push(Some(these));
+            }
+            walk[i].rows = rows;
+            i += 1;
+        }
+        // back up: each row is read before the record or row that holds it
+        let mut read: Vec<Option<Record>> = vec![None; walk.len()];
+        for (i, at) in walk.iter().enumerate().rev() {
+            let shape = &self.shapes[at.shape];
+            let mut out = Record::new();
+            for (f, rows) in shape.fields.iter().zip(&at.rows) {
+                let v = match rows {
+                    Some(rows) => Some(rows.iter().filter_map(|j| read[*j].take().map(Value::Object)).collect()),
+                    None => present(at.fields, &f.name).and_then(|v| f.ty.read(v)),
+                };
+                if let Some(v) = v.or_else(|| f.default.clone()) {
+                    out.insert(f.name.clone(), v);
+                }
+            }
+            let whole = i == 0 || shape.required.iter().all(|f| out.contains_key(f));
+            read[i] = whole.then_some(out);
+        }
+        read[0].take().expect("the record itself is read")
+    }
+
+    /// Record or row `r`, of shape `at`, as an app on this schema sees it (`seen`), if it has every field its shape
+    /// requires.
+    fn read_as(&self, at: usize, r: &Record) -> Option<Record> {
+        let seen = self.seen(at, r);
+        self.shapes[at].required.iter().all(|f| seen.contains_key(f)).then_some(seen)
     }
 
     pub fn id(&self) -> BlobId {
@@ -495,7 +572,7 @@ impl Schema {
 
     /// The kind its records name, where its `kind` field is a constant: `"document"`, `"todo"`.
     pub fn kind(&self) -> Option<&str> {
-        match &self.root.field("kind")?.ty {
+        match &self.shapes[0].field("kind")?.ty {
             Type::Value(Check::OneOf(vs)) if vs.len() == 1 => vs[0].as_str(),
             _ => None,
         }
@@ -504,16 +581,13 @@ impl Schema {
     /// A record as an app on this schema sees it, with no lens: each field it names that fits, else the field's
     /// default. `None` if it lacks a field the schema requires.
     pub fn read(&self, r: &Value) -> Option<Value> {
-        Some(Value::Object(self.root.read(r.as_object()?)?))
+        Some(Value::Object(self.read_as(0, r.as_object()?)?))
     }
 
-    /// How an item stores field `field`, of each record of the list `list` if given.
-    fn stored(&self, list: Option<&str>, field: &str) -> Option<Stored> {
-        let shape = match list {
-            None => &self.root,
-            Some(l) => self.root.records(l)?,
-        };
-        Some(shape.field(field)?.ty.stored())
+    /// How an item stores field `field` of the record, or of each row down the lists `lists`, each a field of a row
+    /// of the one before.
+    fn stored(&self, lists: &[String], field: &str) -> Option<Stored> {
+        Some(self.down(lists.iter().map(String::as_str))?.field(field)?.ty.stored())
     }
 }
 
@@ -660,12 +734,65 @@ fn translate(steps: &[Step], side: Side, r: &Record) -> Record {
     out
 }
 
-/// The stored record after an app on `shape`, at `side` of `steps`, edits its view of `r` into `n`: each field whose
-/// view changed is written in the representation the record already holds it in, and nothing else is.
-fn put(shape: &Shape, steps: &[Step], side: Side, r: &Record, n: &Record) -> Record {
-    let seen = shape.seen(&translate(steps, side, r));
+/// A record or row an app's edit is put back into (`put`): its shape, the lens's steps for it, what it stores and the
+/// app's view of it after the edit.
+#[derive(Clone, Copy)]
+struct Put<'a> {
+    shape: usize,
+    steps: &'a [Step],
+    r: &'a Record,
+    n: &'a Record,
+}
+
+/// A record of a list put back: one kept as it is stored, or the one put at that place in the walk.
+enum Slot {
+    Kept(Value),
+    Put(usize),
+}
+
+type Slots = Vec<Slot>;
+
+static NOTHING: LazyLock<Record> = LazyLock::new(Record::new);
+
+/// The stored record after an app on `schema`, at `side` of `steps`, edits its view of `r` into `n`: each field whose
+/// view changed is written in the representation the record already holds it in, and nothing else is (`put_one`),
+/// each list of records it changed row by row (`put_list`), at any depth. A loop down the rows, then back up, never a
+/// recursion.
+fn put(schema: &Schema, steps: &[Step], side: Side, r: &Record, n: &Record) -> Record {
+    let mut walk = vec![Put { shape: 0, steps, r, n }];
+    let mut put = vec![];
+    while put.len() < walk.len() {
+        let at = walk[put.len()];
+        put.push(put_one(schema, at, side, &mut walk));
+    }
+    // back up: each row is whole before the record or row whose list takes it
+    let mut whole: Vec<Option<Record>> = vec![None; put.len()];
+    for (i, (mut out, lists)) in put.into_iter().enumerate().rev() {
+        for (f, slots) in lists {
+            let row = |s: Slot| match s {
+                Slot::Kept(v) => v,
+                Slot::Put(j) => Value::Object(whole[j].take().expect("each row is put once")),
+            };
+            let rows: Vec<Value> = slots.into_iter().map(row).collect();
+            out.insert(f, rows.into());
+        }
+        whole[i] = Some(out);
+    }
+    whole[0].take().expect("the record is put")
+}
+
+/// The fields of one record or row put back, and each list of records in it that the app changed, its records yet to
+/// be put whole.
+fn put_one<'a>(schema: &Schema, at: Put<'a>, side: Side, walk: &mut Vec<Put<'a>>) -> (Record, Vec<(String, Slots)>) {
+    let Put { shape, steps, r, n } = at;
+    let shape_at = shape;
+    let shape = &schema.shapes[shape];
+    let seen = schema.seen(shape_at, &translate(steps, side, r));
     let changed = |f: &str| present(n, f) != seen.get(f);
+    let list = |x: Option<&'a Value>| x.and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    let seen_list = |f: &str| seen.get(f).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
     let mut out = r.clone();
+    let mut lists = vec![];
     for s in steps {
         match s {
             Step::Convert { older, newer, forward, .. } => {
@@ -698,38 +825,43 @@ fn put(shape: &Shape, steps: &[Step], side: Side, r: &Record, n: &Record) -> Rec
                 }
             }
             Step::In(f, inner) => {
-                if let Some(records) = shape.records(f)
+                if let Some(rows) = shape.records(f)
                     && changed(f)
                 {
-                    let list = |x: Option<&Value>| x.and_then(Value::as_array).cloned().unwrap_or_default();
-                    let stored = list(present(r, f));
-                    let new = put_list(records, inner, side, &stored, &list(seen.get(f)), &list(present(n, f)));
-                    out.insert(f.clone(), new.into());
+                    let (stored, new) = (list(present(r, f)), list(present(n, f)));
+                    lists.push((f.clone(), put_list(rows, inner, stored, seen_list(f), new, walk)));
                 }
             }
         }
     }
     let spoken_for: HashSet<&str> = steps.iter().flat_map(Step::fields).collect();
     for f in shape.fields.iter().filter(|f| !spoken_for.contains(f.name.as_str())) {
-        if f.ty.stored() == Stored::Records && changed(&f.name) {
-            let list = |x: Option<&Value>| x.and_then(Value::as_array).cloned().unwrap_or_default();
-            let records = shape.records(&f.name).expect("a list of records");
-            let (stored, seen, new) = (list(present(r, &f.name)), list(seen.get(&f.name)), list(present(n, &f.name)));
-            let new = put_list(records, &[], side, &stored, &seen, &new);
-            out.insert(f.name.clone(), new.into());
-        } else if changed(&f.name) {
-            set(&mut out, &f.name, present(n, &f.name));
+        match f.ty {
+            Type::Records(rows) if changed(&f.name) => {
+                let (stored, new) = (list(present(r, &f.name)), list(present(n, &f.name)));
+                lists.push((f.name.clone(), put_list(rows, &[], stored, seen_list(&f.name), new, walk)));
+            }
+            _ if changed(&f.name) => set(&mut out, &f.name, present(n, &f.name)),
+            _ => {}
         }
     }
-    out
+    (out, lists)
 }
 
 /// A list of records after an app edits the records it saw, `seen`, into `new`. A record matches the stored record with
 /// its id: records the app saw and dropped are deleted, the others edited in place (`put`) and put in the app's order,
 /// new ones added. Records the app didn't see stay as they are, each after the record it followed, or at the start.
 /// Where several records have one id (two devices added one each at once), apps see the first; the others, its copies,
-/// go wherever it goes, so it stays the one apps see, and are deleted with it.
-fn put_list(shape: &Shape, steps: &[Step], side: Side, stored: &[Value], seen: &[Value], new: &[Value]) -> Vec<Value> {
+/// go wherever it goes, so it stays the one apps see, and are deleted with it. Each record the app wrote is put in turn
+/// (`put`), of shape `shape`, by the lens's `steps` for it.
+fn put_list<'a>(
+    shape: usize,
+    steps: &'a [Step],
+    stored: &'a [Value],
+    seen: &[Value],
+    new: &'a [Value],
+    walk: &mut Vec<Put<'a>>,
+) -> Vec<Slot> {
     let id = |v: &Value| v.as_object().and_then(|r| present(r, "id")).cloned();
     let visible: HashSet<Value> = seen.iter().filter_map(id).collect();
     let wanted: HashSet<Value> = new.iter().filter_map(id).collect();
@@ -745,7 +877,7 @@ fn put_list(shape: &Shape, steps: &[Step], side: Side, stored: &[Value], seen: &
     }
     // records the app didn't see, after the last record before them that it keeps
     let mut lead = vec![];
-    let mut after: HashMap<Value, Vec<Value>> = HashMap::new();
+    let mut after: HashMap<Value, Vec<Slot>> = HashMap::new();
     let mut anchor: Option<Value> = None;
     for (i, e) in stored.iter().enumerate() {
         let x = id(e);
@@ -760,7 +892,7 @@ fn put_list(shape: &Shape, steps: &[Step], side: Side, stored: &[Value], seen: &
             Some(x) if wanted.contains(x) => {}
             _ => {
                 let its_copies = x.as_ref().and_then(|x| copies.remove(x)).unwrap_or_default();
-                let kept = std::iter::once(e.clone()).chain(its_copies);
+                let kept = std::iter::once(e.clone()).chain(its_copies).map(Slot::Kept);
                 match &anchor {
                     None => lead.extend(kept),
                     Some(a) => after.entry(a.clone()).or_default().extend(kept),
@@ -768,14 +900,14 @@ fn put_list(shape: &Shape, steps: &[Step], side: Side, stored: &[Value], seen: &
             }
         }
     }
-    let empty = Record::new();
     let mut out = lead;
     for e in new {
         let n = e.as_object().expect("a record of a view");
         let x = id(e).expect("a record of a view has an id");
-        let base = first.get(&x).and_then(|&i| stored[i].as_object()).unwrap_or(&empty);
-        out.push(Value::Object(put(shape, steps, side, base, n)));
-        out.extend(copies.remove(&x).unwrap_or_default());
+        let base = first.get(&x).and_then(|&i| stored[i].as_object()).unwrap_or(&NOTHING);
+        out.push(Slot::Put(walk.len()));
+        walk.push(Put { shape, steps, r: base, n });
+        out.extend(copies.remove(&x).unwrap_or_default().into_iter().map(Slot::Kept));
         out.extend(after.remove(&x).unwrap_or_default());
     }
     out
@@ -861,7 +993,7 @@ impl View {
     /// requires (another kind of item, or nothing stored yet).
     pub fn get(&self, stored: &Value) -> Option<Value> {
         let (steps, side) = self.steps();
-        Some(Value::Object(self.app.root.read(&translate(steps, side, stored.as_object()?))?))
+        Some(Value::Object(self.app.read_as(0, &translate(steps, side, stored.as_object()?))?))
     }
 
     /// The stored record after the app edits its view of `stored` into `new`: `None` if `new` isn't a view of the app's
@@ -872,17 +1004,18 @@ impl View {
         let empty = Record::new();
         let r = stored.as_object().unwrap_or(&empty);
         let n = new.as_object()?;
-        if self.app.root.read(n).as_ref() != Some(n) {
+        if self.app.read_as(0, n).as_ref() != Some(n) {
             return None;
         }
         let (steps, side) = self.steps();
-        Some(Value::Object(put(&self.app.root, steps, side, r, n)))
+        Some(Value::Object(put(&self.app, steps, side, r, n)))
     }
 
-    /// How an item stores field `field` (of each record of `list`), by the app's schema or else the other one.
-    pub fn stored(&self, list: Option<&str>, field: &str) -> Option<Stored> {
-        let other = self.lens.as_ref().and_then(|(_, _, other)| other.stored(list, field));
-        self.app.stored(list, field).or(other)
+    /// How an item stores field `field` of the record, or of each row down the lists `lists` (each a field of a row of
+    /// the one before), by the app's schema or else the other one.
+    pub fn stored(&self, lists: &[String], field: &str) -> Option<Stored> {
+        let other = self.lens.as_ref().and_then(|(_, _, other)| other.stored(lists, field));
+        self.app.stored(lists, field).or(other)
     }
 
     /// The markdown app, of the shipped document schema alone.
@@ -968,24 +1101,32 @@ impl Lane {
     /// changed is one they name, holding no copy of a row it didn't hold before; each row it added, or one of whose
     /// own fields it changed or whose lists it added or dropped, reads under one of them (the innermost row around
     /// each change, by its own fields); and the record's own fields read under one of them where it changed one of
-    /// them, or added or dropped a list. A write that changes nothing fits.
+    /// them, or added or dropped a list. Rows hold lists of records at any depth, each judged as its own scope; an
+    /// array of rows where each of them that names the place calls it one value is that value, and none of it a row.
+    /// No change is deeper than `CEILING` rows, whatever the schemas say. A write that changes nothing fits.
     pub fn fits(&self, authored: &BTreeSet<BlobId>, before: &Value, after: &Value) -> bool {
-        let empty = Record::new();
-        let (before, after) = (before.as_object().unwrap_or(&empty), after.as_object().unwrap_or(&empty));
-        let (r, s) = (Flat::of(before), Flat::of(after));
+        let (before, after) = (before.as_object().unwrap_or(&NOTHING), after.as_object().unwrap_or(&NOTHING));
+        let under = authored.iter().map(|id| self.schemas.get(id)).collect::<Option<Vec<_>>>();
+        // an array of rows is a list of records unless every schema that names its place calls it one value
+        let rows_at = |p: &Path| {
+            let named = |records: bool| {
+                let names = |x: &&Schema| Fit::field(x, p).is_some_and(|f| matches!(f.ty, Type::Records(_)) == records);
+                under.iter().flatten().any(names)
+            };
+            named(true) || !named(false)
+        };
+        let (r, s) = (Flat::of_with(before, rows_at), Flat::of_with(after, rows_at));
         let changes = r.diff(&s);
         if changes.is_empty() {
             return true;
         }
-        let Some(under) = authored.iter().map(|id| self.schemas.get(id)).collect::<Option<Vec<_>>>() else {
-            return false;
-        };
+        let Some(under) = under else { return false };
         if under.windows(2).any(|w| w[0].kind() != w[1].kind()) {
             return false;
         }
         let fit = Fit(under);
         let top = std::cell::OnceCell::new();
-        let top = || *top.get_or_init(|| fit.top(after));
+        let top = || *top.get_or_init(|| fit.top(&s.fields(&[])));
         let row = |f: &Path, k: &Key| fit.row(f, &s.own(f, k));
         // the innermost row around a place reads, where the record after still holds it; the record's own fields, where
         // no row is around it
@@ -1004,17 +1145,19 @@ impl Lane {
     }
 }
 
-/// The schemas a write is judged under (`Lane::fits`; `Schemas.lean`'s `Fit`): what they let a record hold.
+/// How many rows deep a write may reach: a value in a row no deeper, a row in a list no deeper (the record's own lists
+/// hold rows 1 deep). A write deeper than that fits no schema, so it counts for no reader; it is fixed, not set per
+/// device, so that every reader reaches the same verdict (`Schemas.lean`'s `Fit.capped`).
+pub const CEILING: usize = 256;
+
+/// The schemas a write is judged under (`Lane::fits`; `Schemas.lean`'s `Fit`, capped at `CEILING`): what they let a
+/// record hold.
 struct Fit<'a>(Vec<&'a Schema>);
 
 impl Fit<'_> {
     /// The shape schema `x` gives the rows the chain `rows` ends in, each list's in turn: the record's own, for none.
     fn around<'x>(x: &'x Schema, rows: &[(String, Key)]) -> Option<&'x Shape> {
-        let mut shape = &x.root;
-        for (f, _) in rows {
-            shape = shape.records(f)?;
-        }
-        Some(shape)
+        x.down(rows.iter().map(|(f, _)| f.as_str()))
     }
 
     /// What schema `x` names place `p`: the field of the shape around it.
@@ -1022,14 +1165,14 @@ impl Fit<'_> {
         Fit::around(x, &p.rows)?.field(&p.field)
     }
 
-    /// One of them lets place `p` hold `v`.
+    /// One of them lets place `p` hold `v`, no deeper than `CEILING` rows.
     fn leaf(&self, p: &Path, v: &Value) -> bool {
-        self.0.iter().any(|x| Fit::field(x, p).is_some_and(|field| field.ty.fits(v)))
+        p.rows.len() <= CEILING && self.0.iter().any(|x| Fit::field(x, p).is_some_and(|field| field.ty.fits(v)))
     }
 
     /// One of them names `f` a list of records, or of values while it holds none (an empty list is either), and `new`
     /// holds no copy of a row `old` doesn't: a write may keep or move the copies two devices adding a row with one id
-    /// at once make, never make one.
+    /// at once make, never make one. Its rows are no deeper than `CEILING`.
     fn rows(&self, f: &Path, old: Option<&Vec<Key>>, new: &[Key]) -> bool {
         let named = |x: &&Schema| match Fit::field(x, f).map(|field| &field.ty) {
             Some(Type::Records(_)) => true,
@@ -1038,21 +1181,21 @@ impl Fit<'_> {
             Some(Type::Value(c)) => new.is_empty() && c.holds(&Value::Array(vec![])),
             _ => false,
         };
-        self.0.iter().any(named) && new.iter().all(|k| k.copy == 0 || old.is_some_and(|ks| ks.contains(k)))
+        (new.is_empty() || f.rows.len() < CEILING)
+            && self.0.iter().any(named)
+            && new.iter().all(|k| k.copy == 0 || old.is_some_and(|ks| ks.contains(k)))
     }
 
     /// The record's own fields read under one of them: it holds what that schema requires, by its own values and by
-    /// which lists it holds, whatever their rows.
-    fn top(&self, s: &Record) -> bool {
-        let own = |v: &Value| if ops::rows(v).is_some() { Value::Array(vec![]) } else { v.clone() };
-        let own: Record = s.iter().map(|(f, v)| (f.clone(), own(v))).collect();
-        self.0.iter().any(|x| x.root.read(&own).is_some())
+    /// which lists it holds, whatever their rows (`Flat::fields`).
+    fn top(&self, own: &Record) -> bool {
+        self.0.iter().any(|x| x.read_as(0, own).is_some())
     }
 
     /// A row of the list at `f` reads under one of them, by its own fields (`Flat::own`): it holds what that schema
     /// requires of a row there.
     fn row(&self, f: &Path, row: &Record) -> bool {
-        let shape = |x: &Schema| Fit::around(x, &f.rows)?.records(&f.field).map(|shape| shape.read(row).is_some());
+        let shape = |x: &Schema| Some(x.read_as(Fit::around(x, &f.rows)?.records(&f.field)?, row).is_some());
         self.0.iter().any(|x| shape(x) == Some(true))
     }
 }

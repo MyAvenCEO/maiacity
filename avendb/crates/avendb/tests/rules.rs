@@ -13,9 +13,9 @@ use avendb::cast;
 use avendb::doc::Item;
 use avendb::id::SignerId;
 use avendb::lens::{example, Status, TodoV1, View};
-use avendb::ops::{diff, run_all, Loc, Record, RecordOp, Seg};
+use avendb::ops::{diff, run_all, Change, Loc, Record, RecordOp, Seg};
 use avendb::rules::{Scalar, Touch};
-use records::{random_op, random_record, Rng};
+use records::{nested_op, nested_record, random_op, random_record, Rng};
 use serde_json::{json, Value};
 
 const ALICE: SignerId = SignerId::from_u64(2);
@@ -97,27 +97,34 @@ fn touches_name_the_field_the_row_and_the_value() {
     assert_eq!(touches(&welcome, view, paragraph), want);
 }
 
-/// The record as an item stores it: no field, and no field of a row, holds `null`, which storing leaves out.
+/// The record as an item stores it: no field, and no field of a row at any depth, holds `null`, which storing leaves
+/// out.
 fn stored(mut r: Record) -> Record {
-    r.retain(|_, v| !v.is_null());
-    for rows in r.values_mut().filter_map(Value::as_array_mut) {
-        for row in rows.iter_mut().filter_map(Value::as_object_mut) {
-            row.retain(|_, v| !v.is_null());
+    let mut todo: Vec<&mut Record> = vec![&mut r];
+    while let Some(o) = todo.pop() {
+        o.retain(|_, v| !v.is_null());
+        for rows in o.values_mut().filter_map(Value::as_array_mut) {
+            todo.extend(rows.iter_mut().filter_map(Value::as_object_mut));
         }
     }
     r
 }
 
-/// Record `r` holds plain value `v` at place `l` (`null`: nothing there), in some row of the place's id.
+/// Record `r` holds plain value `v` at place `l` (`null`: nothing there), in some row of each row's id on the way.
 fn holds(r: &Record, l: &Loc, v: &Scalar) -> bool {
     let plain = |x: Option<&Value>| Scalar::of_json(x.unwrap_or(&Value::Null)).as_ref() == Some(v);
-    match l.0.as_slice() {
-        [Seg::Field(f)] => plain(r.get(f)),
-        [Seg::Field(f), Seg::Row(i), Seg::Field(g)] => {
-            let rows = r.get(f).and_then(Value::as_array).into_iter().flatten();
-            rows.filter(|x| x["id"].as_i64() == Some(*i)).any(|x| plain(x.get(g)))
+    let mut at = vec![r];
+    let mut steps = l.0.as_slice();
+    loop {
+        match steps {
+            [Seg::Field(f)] => return at.iter().any(|x| plain(x.get(f))),
+            [Seg::Field(f), Seg::Row(i), rest @ ..] => {
+                let rows = at.iter().filter_map(|x| x.get(f)?.as_array()).flatten();
+                at = rows.filter(|x| x["id"].as_i64() == Some(*i)).filter_map(Value::as_object).collect();
+                steps = rest;
+            }
+            _ => return false,
         }
-        _ => false,
     }
 }
 
@@ -127,16 +134,33 @@ fn holds(r: &Record, l: &Loc, v: &Scalar) -> bool {
 /// they alone cover; and every op is placed.
 #[test]
 fn c3_touches_cover_every_change() {
-    let mut rng = Rng(0x0c03_0c03);
-    let (mut writes, mut valued) = (0, 0);
-    for _ in 0..1000 {
+    let (writes, valued, _) = c3_walks(Rng(0x0c03_0c03), 1000, false);
+    assert!(writes > 2000 && valued > 2000, "{writes} writes, {valued} changes covered by values alone");
+}
+
+/// C3 on records whose rows hold rows, four lists deep at most, changed wholesale or by ops at any depth: the touches
+/// name each row on the way by its id.
+#[test]
+fn c3_touches_cover_every_change_at_any_depth() {
+    let (writes, valued, deep) = c3_walks(Rng(0x0c03_0d03), 1500, true);
+    let counts = format!("{writes} writes, {valued} changes covered by values alone, {deep} in rows of rows");
+    assert!(writes > 2000 && valued > 2000 && deep > 1000, "{counts}");
+}
+
+/// The walks of C3: `walks` items, each written four times; how many writes, how many changes touches naming values
+/// alone cover, and how many changes are in rows of rows.
+fn c3_walks(mut rng: Rng, walks: usize, nested: bool) -> (usize, usize, usize) {
+    let (mut writes, mut valued, mut deep) = (0, 0, 0);
+    for _ in 0..walks {
         let mut item = Item::new(ALICE);
         let mut before = Record::new();
         for step in 0..4 {
-            let after = match rng.below(3) {
-                0 => random_record(&mut rng),
+            let after = match (rng.below(3), nested) {
+                (0, false) => random_record(&mut rng),
+                (0, true) => nested_record(&mut rng),
                 _ => {
-                    let ops = (0..1 + rng.below(3)).map(|_| RecordOp::of_json(&random_op(&mut rng, &before)));
+                    let op = |rng: &mut Rng| if nested { nested_op(rng, &before) } else { random_op(rng, &before) };
+                    let ops = (0..1 + rng.below(3)).map(|_| RecordOp::of_json(&op(&mut rng)));
                     let Ok(ops) = ops.collect::<Result<Vec<_>, _>>() else { continue };
                     let Some(after) = run_all(&before, &ops) else { continue };
                     after
@@ -152,6 +176,9 @@ fn c3_touches_cover_every_change() {
             let why = |c: &str| format!("{before:?} to {after:?}: {c} in {touched:?}");
             assert!(touched.iter().all(|t| t.loc() != Some(Loc::root())), "{}", why("an op placed nowhere"));
             for c in diff(&before, &after) {
+                if matches!(&c, Change::Set(p, _) | Change::Order(p, _) if p.rows.len() > 1) {
+                    deep += 1;
+                }
                 let covering: Vec<&Touch> = touched.iter().filter(|t| t.loc().is_some_and(|l| l.covers(&c))).collect();
                 assert!(!covering.is_empty(), "{}", why(&c.to_json().to_string()));
                 let named: Vec<(&Loc, &Scalar)> = covering
@@ -170,5 +197,5 @@ fn c3_touches_cover_every_change() {
             before = after;
         }
     }
-    assert!(writes > 2000 && valued > 2000, "{writes} writes, {valued} changes covered by values alone");
+    (writes, valued, deep)
 }

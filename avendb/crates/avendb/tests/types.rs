@@ -126,13 +126,18 @@ fn objects_nest_to_any_depth() {
 }
 
 #[test]
-fn a_list_of_records_in_a_row_is_kept_for_records_inside_records() {
-    // rows of rows will merge row by row; until they do, no schema may store one as one value
+fn a_row_holds_lists_of_records_of_its_own() {
+    // rows of rows read row by row, at every depth: each the first with its id, each holding what its shape requires
     let rows_in_rows = r#"{ "type": "object", "properties": { "pieces": { "type": "array", "items": {
       "type": "object", "properties": { "id": { "type": "integer" }, "holes": { "type": "array", "items": {
-        "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] } } },
+        "type": "object", "properties": { "id": { "type": "integer" }, "d": { "type": "number" } },
+        "required": ["id", "d"] } } },
       "required": ["id"] } } } }"#;
-    assert!(Schema::parse(rows_in_rows.as_bytes()).is_none());
+    let s = Schema::parse(rows_in_rows.as_bytes()).expect("rows in rows parse");
+    let holes = json!([{ "id": 1, "d": 0.5 }, { "id": 1, "d": 0.7 }, { "id": 2 }, { "id": 3, "d": 0.1 }]);
+    let r = json!({ "pieces": [{ "id": 7, "holes": holes }, { "id": 8 }] });
+    let want = json!({ "pieces": [{ "id": 7, "holes": [{ "id": 1, "d": 0.5 }, { "id": 3, "d": 0.1 }] }, { "id": 8 }] });
+    assert_eq!(s.read(&r), Some(want));
 }
 
 #[test]
@@ -146,7 +151,24 @@ fn a_schema_whose_refs_dont_resolve_is_none() {
     assert!(refs(r#"{ "n": { "type": "number" } }"#, "other.json#/n").is_none(), "only its own $defs");
     assert!(refs(r##"{ "a": { "$ref": "#/$defs/b" }, "b": { "$ref": "#/$defs/a" } }"##, "#/$defs/a").is_none(), "a circle");
     let selfish = r##"{ "t": { "type": "object", "properties": { "next": { "$ref": "#/$defs/t" } } } }"##;
-    assert!(refs(selfish, "#/$defs/t").is_none(), "a shape that holds itself has no end");
+    assert!(refs(selfish, "#/$defs/t").is_none(), "a value that holds itself has no end");
+    let values = r##"{ "t": { "type": "array", "items": { "type": "object", "properties": {
+      "next": { "$ref": "#/$defs/t" } } } } }"##;
+    assert!(refs(values, "#/$defs/t").is_none(), "nor a list of values that holds itself");
+    // a list of records whose rows hold a list of rows of their own shape: an outline, read one row at a time
+    let node = r##"{ "node": { "type": "object", "properties": { "id": { "type": "integer" },
+      "kids": { "type": "array", "items": { "$ref": "#/$defs/node" } } }, "required": ["id"] },
+      "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } } }"##;
+    let outline = refs(node, "#/$defs/nodes").expect("rows that hold rows of their own shape");
+    let r = json!({ "x": [{ "id": 1, "kids": [{ "id": 2, "kids": [{ "id": 3, "kids": [] }] }, { "kid": 4 }] }] });
+    let want = json!({ "x": [{ "id": 1, "kids": [{ "id": 2, "kids": [{ "id": 3, "kids": [] }] }] }] });
+    assert_eq!(outline.read(&r), Some(want), "a row with no id reads at no depth");
+    // ...but not where a plain object round it holds it too: that would be a value with no end
+    let held = r##"{ "node": { "type": "object", "properties": { "id": { "type": "integer" },
+      "kids": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+      "note": { "type": "object", "properties": { "about": { "$ref": "#/$defs/node" } } } }, "required": ["id"] },
+      "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } } }"##;
+    assert!(refs(held, "#/$defs/nodes").is_none());
 }
 
 /// The item a Mac makes of `r`, and the same item on the phone.

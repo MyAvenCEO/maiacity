@@ -4,10 +4,11 @@
 //!
 //! An item is one root map, `item`: the stored record, holding the fields of every schema version that wrote it
 //! (`lens`). Free text is a Loro text, so concurrent edits of it merge character by character; a list of records (a
-//! document's blocks) is a movable list of maps, each with its `id`; a list of values (tags) a Loro list; anything else
-//! one value, where concurrent edits keep one of them. A container that appears after the item was made (a document's
-//! first tag, the text of a block that had none) is created mergeable, so two devices creating it at once share it
-//! instead of one hiding the other.
+//! document's blocks) is a movable list of maps, each with its `id`, and so is a list of records in a row, at any
+//! depth; a list of values (tags) a Loro list; anything else one value, where concurrent edits keep one of them. A
+//! container that appears after the item was made (a document's first tag, the text of a block that had none, the
+//! first rows of a row) is created mergeable, so two devices creating it at once share it instead of one hiding the
+//! other. Every walk over a record here is a loop over an explicit stack, never a recursion.
 //!
 //! Every edit goes through an app's view (`lens::View`): the app edits what it sees, the lens turns that into the new
 //! stored record, and the item makes the smallest change that holds it. Each change carries the view's schema as its
@@ -34,7 +35,7 @@ use serde_json::Value;
 use crate::id::{BlobId, SignerId};
 use crate::lens::example::{self, DocV0, TodoV0};
 use crate::lens::{BlockV1, DocV1, Status, Stored, TodoV1, TypeV1, View};
-use crate::ops::{self, Loc, Record};
+use crate::ops::{self, Loc, Record, Seg};
 use crate::policy::Line;
 use crate::rules::{Scalar, Touch};
 
@@ -178,7 +179,7 @@ impl Item {
     /// record, and how a test sets up records no single app writes.
     pub fn set_record(&mut self, view: &View, record: &Value) {
         let want = record.as_object().cloned().unwrap_or_default();
-        sync_map(&self.root(), &want, view, None);
+        sync(&self.root(), &want, view);
         self.doc.commit_with(CommitOptions::new().commit_msg(&view.schema().id().to_hex()));
         debug_assert_eq!(self.record(), Value::Object(want));
     }
@@ -188,7 +189,7 @@ impl Item {
     /// which new fields are texts.
     pub fn put_record(&mut self, record: &Value) {
         let want = record.as_object().cloned().unwrap_or_default();
-        sync_map(&self.root(), &want, kind_view(record), None);
+        sync(&self.root(), &want, kind_view(record));
         self.doc.commit();
         debug_assert_eq!(self.record(), Value::Object(want));
     }
@@ -199,7 +200,7 @@ impl Item {
     pub fn copy(&self, signer: SignerId) -> Item {
         let item = Item::new(signer);
         let record = self.record();
-        sync_map(&item.root(), &record.as_object().cloned().unwrap_or_default(), kind_view(&record), None);
+        sync(&item.root(), &record.as_object().cloned().unwrap_or_default(), kind_view(&record));
         let names: Vec<String> = self.authored().iter().map(BlobId::to_hex).collect();
         if names.is_empty() {
             item.doc.commit();
@@ -378,12 +379,13 @@ impl Item {
 
     /// Import an update `signer` wrote on line `line` (`import_on`) on this item, which holds the version it builds on,
     /// and read what it touches (`rules::Touch`): each of its ops by the place its container has in the record once it
-    /// is in. A value set at a field (`Set` with the value, where it set one plain value; `null` where it deleted one);
-    /// a text, a list of values or a map changed in a field (`Set`, no value); a row of a list of records added,
-    /// deleted or moved (`Insert`, `Remove`, `Move`), whatever the op does inside a row it adds being part of adding
-    /// it; a field of a row set or changed (`Set` at the row's field, the row by its id), where that field is a list of
-    /// records before and after (else at the field); a list of records made to add rows to is adding them. An op
-    /// nowhere in the record (outside the root map, or in a container it no longer reaches) touches the whole record.
+    /// is in (`At`). A value set at a field (`Set` with the value, where it set one plain value; `null` where it
+    /// deleted one); a text, a list of values or a map changed in a field (`Set`, no value); a row of a list of records
+    /// added, deleted or moved (`Insert`, `Remove`, `Move`), whatever the op does inside a row it adds being part of
+    /// adding it; each of these in a row too, at any depth, the row by its id, down each list that is a list of records
+    /// before and after (else at the field of that list); a row's id set is changing its list; a list of records made
+    /// to add rows to is adding them. An op nowhere in the record (outside the root map, or in a container it no longer
+    /// reaches) touches the whole record.
     /// With them, the record before and after it, which readers judge it by too (`lens::Lane::fits`). `None` where the
     /// update doesn't import, or imports only in part: it builds on ops the item doesn't hold.
     pub fn footprint(&mut self, update: &[u8], signer: SignerId, line: Line) -> Option<Footprint> {
@@ -409,11 +411,6 @@ impl Item {
             }
             false
         };
-        let rows = |f: &str| {
-            let is = |r: &Value| r.get(f).and_then(ops::rows).is_some();
-            is(&before) && is(&after)
-        };
-        let row_id = |f: &str, i: usize| after.get(f)?.get(i)?.get("id")?.as_i64();
         let (mut out, mut lists) = (vec![], vec![]);
         for op in self.doc.export_json_in_id_span(IdSpan::new(p, start, end)).iter().flat_map(|c| &c.ops) {
             let Some(path) = self.doc.get_path_to_container(&op.container) else {
@@ -430,50 +427,35 @@ impl Item {
             if path.iter().any(|(c, _)| made(c)) {
                 continue;
             }
-            let Some((list, Index::Key(f))) = path.get(1) else {
-                // the root map's own fields
-                out.push(match &op.content {
-                    JsonOpContent::Map(JsonMapOp::Insert { key, value }) if container(value) => {
-                        lists.push(key.clone());
-                        continue;
-                    }
-                    JsonOpContent::Map(JsonMapOp::Insert { key, value }) => Touch::Set(field(key), scalar(value)),
-                    JsonOpContent::Map(JsonMapOp::Delete { key }) => Touch::Set(field(key), Some(Scalar::Null)),
-                    _ => Touch::Set(Loc::root(), None),
-                });
-                continue;
-            };
-            let f = f.to_string();
-            let movable = list.container_type() == ContainerType::MovableList;
-            let row = match path.get(2) {
-                Some((r, Index::Seq(i))) if movable && r.container_type() == ContainerType::Map && rows(&f) => {
-                    row_id(&f, *i)
+            out.push(match (At::of(&path, &before, &after), &op.content) {
+                // a row's id names it: changing it changes its list
+                (At::Map(at), JsonOpContent::Map(JsonMapOp::Insert { key, .. } | JsonMapOp::Delete { key }))
+                    if key == "id" && !at.0.is_empty() =>
+                {
+                    Touch::Set(list_of(&at), None)
                 }
-                _ => None,
-            };
-            out.push(match (path.len(), &op.content, row) {
-                (2, JsonOpContent::MovableList(JsonMovableListOp::Insert { .. }), _) => Touch::Insert(field(&f)),
-                (2, JsonOpContent::MovableList(JsonMovableListOp::Delete { .. }), _) => Touch::Remove(field(&f)),
-                (2, JsonOpContent::MovableList(JsonMovableListOp::Move { .. }), _) => Touch::Move(field(&f)),
-                (2, JsonOpContent::Tree(_) | JsonOpContent::Future(_), _) => Touch::Set(Loc::root(), None),
-                // a field of a row, by the row's id: its id itself names the row, so changing it changes the list
-                (3, JsonOpContent::Map(JsonMapOp::Insert { key, value }), Some(id)) if key != "id" => {
-                    Touch::Set(Loc::cell(f, id, key.clone()), if container(value) { None } else { scalar(value) })
+                (At::Map(at), JsonOpContent::Map(JsonMapOp::Insert { key, value })) if container(value) => {
+                    lists.push(and(&at, key));
+                    continue;
                 }
-                (3, JsonOpContent::Map(JsonMapOp::Delete { key }), Some(id)) if key != "id" => {
-                    Touch::Set(Loc::cell(f, id, key.clone()), Some(Scalar::Null))
+                (At::Map(at), JsonOpContent::Map(JsonMapOp::Insert { key, value })) => {
+                    Touch::Set(and(&at, key), scalar(value))
                 }
-                (4.., _, Some(id)) => match path.get(3) {
-                    Some((_, Index::Key(g))) if g.as_str() != "id" => Touch::Set(Loc::cell(f, id, g.to_string()), None),
-                    _ => Touch::Set(field(&f), None),
-                },
-                _ => Touch::Set(field(&f), None),
+                (At::Map(at), JsonOpContent::Map(JsonMapOp::Delete { key })) => {
+                    Touch::Set(and(&at, key), Some(Scalar::Null))
+                }
+                (At::Map(at), _) => Touch::Set(list_of(&at), None),
+                (At::Field(at), JsonOpContent::MovableList(JsonMovableListOp::Insert { .. })) => Touch::Insert(at),
+                (At::Field(at), JsonOpContent::MovableList(JsonMovableListOp::Delete { .. })) => Touch::Remove(at),
+                (At::Field(at), JsonOpContent::MovableList(JsonMovableListOp::Move { .. })) => Touch::Move(at),
+                (At::Field(_), JsonOpContent::Tree(_) | JsonOpContent::Future(_)) => Touch::Set(Loc::root(), None),
+                (At::Field(at) | At::Inside(at), _) => Touch::Set(at, None),
             });
         }
         // a list of records made to add rows to is adding them
-        for k in lists {
-            if !out.contains(&Touch::Insert(field(&k))) {
-                out.push(Touch::Set(field(&k), None));
+        for l in lists {
+            if !out.contains(&Touch::Insert(l.clone())) {
+                out.push(Touch::Set(l, None));
             }
         }
         Some(Footprint { touches: crate::rules::dedup(out), before, after })
@@ -515,9 +497,61 @@ fn kind_view(record: &Value) -> &'static View {
     record.get("kind").and_then(Value::as_str).and_then(View::built_in).unwrap_or(View::document_v1())
 }
 
-/// A field of the record.
-fn field(key: &str) -> Loc {
-    Loc::field(key)
+/// Where an op's container is in the record, once the update is in (`Item::footprint`): the map of the record or of a
+/// row (`Map`), the container at a field (`Field`), or one inside it (`Inside`), each by its place, a row by its id.
+enum At {
+    Map(Loc),
+    Field(Loc),
+    Inside(Loc),
+}
+
+impl At {
+    /// Where the container `path` leads to from the root map is: down each list of records that holds rows before and
+    /// after the update, through the row `after` holds at the position the path goes through, by its id; at the field
+    /// of a list that doesn't. A loop down the path.
+    fn of<'v>(path: &[(ContainerID, Index)], before: &'v Value, after: &'v Value) -> At {
+        let (mut b, mut a) = (before.as_object(), after.as_object());
+        let mut at = Loc::root();
+        let mut i = 1;
+        loop {
+            let Some((c, Index::Key(f))) = path.get(i) else {
+                return if i == path.len() { At::Map(at) } else { At::Inside(at) };
+            };
+            let field = and(&at, f);
+            match path.get(i + 1) {
+                None => return At::Field(field),
+                Some((r, Index::Seq(j)))
+                    if c.container_type() == ContainerType::MovableList && r.container_type() == ContainerType::Map =>
+                {
+                    let rows = |x: Option<&'v Record>| x.and_then(|x| x.get(f.as_str())).and_then(ops::rows);
+                    let (Some(was), Some(now)) = (rows(b), rows(a)) else { return At::Inside(field) };
+                    let Some(row) = now.get(*j).and_then(Value::as_object) else { return At::Inside(field) };
+                    let Some(id) = row.get("id").and_then(Value::as_i64) else { return At::Inside(field) };
+                    b = was.iter().find(|x| x["id"].as_i64() == Some(id)).and_then(Value::as_object);
+                    a = Some(row);
+                    at = field;
+                    at.0.push(Seg::Row(id));
+                    i += 2;
+                }
+                Some(_) => return At::Inside(field),
+            }
+        }
+    }
+}
+
+/// Field `key` of the record or the row at `at`.
+fn and(at: &Loc, key: &str) -> Loc {
+    let mut l = at.clone();
+    l.0.push(Seg::Field(key.to_string()));
+    l
+}
+
+/// The list a row is in (the record itself for the record's own place): its place without its last row.
+fn list_of(at: &Loc) -> Loc {
+    match at.0.split_last() {
+        Some((Seg::Row(_), list)) => Loc(list.to_vec()),
+        _ => Loc::root(),
+    }
 }
 
 /// A map slot's value that makes a container there: a container, or the marker of a mergeable one, which Loro stores
@@ -575,10 +609,29 @@ fn present<'a>(r: &'a Record, k: &str) -> Option<&'a Value> {
     r.get(k).filter(|v| !v.is_null())
 }
 
+/// What is left to sync (`sync`): a map to hold a record or a row, or a movable list to hold rows, each with the lists
+/// it is down (each a field of a row of the one before), by which the view's schemas say how its fields are stored.
+enum Sync<'a> {
+    Map(LoroMap, &'a Record, Vec<String>),
+    Rows(LoroMovableList, &'a [Value], Vec<String>),
+}
+
+/// Make the root map `m` hold exactly `want` by the smallest change (`sync_map`, `sync_records`), rows in rows at any
+/// depth: a loop over what is left to sync, never a recursion.
+fn sync(m: &LoroMap, want: &Record, view: &View) {
+    let mut todo = vec![Sync::Map(m.clone(), want, vec![])];
+    while let Some(next) = todo.pop() {
+        match next {
+            Sync::Map(m, want, lists) => sync_map(&m, want, view, &lists, &mut todo),
+            Sync::Rows(l, want, lists) => sync_records(&l, want, lists, &mut todo),
+        }
+    }
+}
+
 /// Make map `m` hold exactly `want`: each key whose value differs is set, deleted, or for a container brought to its
-/// new content by the smallest change, so concurrent edits of other parts merge. `list` names the list whose record
-/// `m` is.
-fn sync_map(m: &LoroMap, want: &Record, view: &View, list: Option<&str>) {
+/// new content by the smallest change, so concurrent edits of other parts merge. `lists` are the lists `m` is a row
+/// down; a list of records in it is left to sync.
+fn sync_map<'a>(m: &LoroMap, want: &'a Record, view: &View, lists: &[String], todo: &mut Vec<Sync<'a>>) {
     let have = m.get_deep_value().to_json_value();
     let have = have.as_object().cloned().unwrap_or_default();
     let keys: BTreeSet<&String> = have.keys().chain(want.keys()).collect();
@@ -589,28 +642,29 @@ fn sync_map(m: &LoroMap, want: &Record, view: &View, list: Option<&str>) {
         }
         match w {
             None => edit(m.delete(key)),
-            Some(w) => set_key(m, key, w, view, list),
+            Some(w) => set_key(m, key, w, view, lists, todo),
         }
     }
 }
 
 /// Set `key` of `m` to `w`, a container the way the view's schemas store the field.
-fn set_key(m: &LoroMap, key: &str, w: &Value, view: &View, list: Option<&str>) {
+fn set_key<'a>(m: &LoroMap, key: &str, w: &'a Value, view: &View, lists: &[String], todo: &mut Vec<Sync<'a>>) {
     let now = m.get(key);
     // a field no schema of the view names: one value stays one value, else an array of rows (objects with an integer
-    // id) is a list of records, an array of other objects one value, and any other array a list of values
-    let stored = view.stored(list, key).unwrap_or(match (&now, w) {
+    // id) is a list of records, at any depth, an array of other objects one value, and any other array a list of values
+    let stored = view.stored(lists, key).unwrap_or(match (&now, w) {
         (Some(ValueOrContainer::Value(v)), _) if !container(v) => Stored::Value,
-        (_, Value::Array(xs)) if list.is_none() && xs.iter().any(Value::is_object) => {
+        (_, Value::Array(xs)) if xs.iter().any(Value::is_object) => {
             if ops::rows(w).is_some() { Stored::Records } else { Stored::Value }
         }
         (_, Value::Array(_)) => Stored::List,
         _ => Stored::Value,
     });
+    let down = || lists.iter().cloned().chain([key.to_string()]).collect::<Vec<_>>();
     match (&now, w) {
         (Some(ValueOrContainer::Container(Container::Text(t))), Value::String(s)) => return update_text(t, s),
         (Some(ValueOrContainer::Container(Container::MovableList(l))), Value::Array(xs)) => {
-            return sync_records(l, xs, view, key);
+            return todo.push(Sync::Rows(l.clone(), xs, down()));
         }
         (Some(ValueOrContainer::Container(Container::List(l))), Value::Array(xs)) => return sync_values(l, xs),
         _ => {}
@@ -627,9 +681,9 @@ fn set_key(m: &LoroMap, key: &str, w: &Value, view: &View, list: Option<&str>) {
             replace(m);
             update_text(&edit(m.ensure_mergeable_text(key)), s);
         }
-        (Stored::Records, Value::Array(xs)) if list.is_none() => {
+        (Stored::Records, Value::Array(xs)) => {
             replace(m);
-            sync_records(&edit(m.ensure_mergeable_movable_list(key)), xs, view, key);
+            todo.push(Sync::Rows(edit(m.ensure_mergeable_movable_list(key)), xs, down()));
         }
         // an array its schema holds as one value (a tuple, a list of objects): one value, as any other
         (Stored::Value, Value::Array(_)) => edit(m.insert(key, loro(w))),
@@ -690,9 +744,9 @@ fn keys(list: &[Value]) -> Vec<Key> {
 
 /// Make the movable list of records `l` hold `want`: records it no longer has are deleted; of those it keeps, the
 /// longest run already in the wanted order stays where it is and each other moves next to the record before it; new
-/// records are inserted; each record is then synced field by field. Concurrent edits inside a record that moved still
-/// land in it.
-fn sync_records(l: &LoroMovableList, want: &[Value], view: &View, field: &str) {
+/// records are inserted; each record is then left to sync field by field, once the list holds its rows in order.
+/// Concurrent edits inside a record that moved still land in it. `lists` are the lists down to this one, its own last.
+fn sync_records<'a>(l: &LoroMovableList, want: &'a [Value], lists: Vec<String>, todo: &mut Vec<Sync<'a>>) {
     let have = l.get_deep_value().to_json_value();
     let have = have.as_array().cloned().unwrap_or_default();
     let (hk, wk) = (keys(&have), keys(want));
@@ -731,7 +785,9 @@ fn sync_records(l: &LoroMovableList, want: &[Value], view: &View, field: &str) {
             }
         };
         match (l.get(at), want[j].as_object()) {
-            (Some(ValueOrContainer::Container(Container::Map(m))), Some(r)) => sync_map(&m, r, view, Some(field)),
+            (Some(ValueOrContainer::Container(Container::Map(m))), Some(r)) => {
+                todo.push(Sync::Map(m, r, lists.clone()));
+            }
             // something that isn't a record, which the lens never changes: kept as it is
             (Some(ValueOrContainer::Value(v)), _) if v.to_json_value() == want[j] => {}
             _ => edit(l.set(at, loro(&want[j]))),

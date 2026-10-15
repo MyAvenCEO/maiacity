@@ -45,6 +45,10 @@ fn each_diff_makes_the_models_changes() {
         let mut flat = Flat::of(&r);
         flat.apply(&got);
         assert_eq!(flat.record(), s, "{case}");
+        // how deep each record's rows go, and how deep the write reaches, which the ceiling bounds
+        let depths = [Flat::of(&r).depth(), Flat::of(&s).depth()];
+        assert_eq!(json!(depths), case["depths"], "{case}");
+        assert_eq!(json!(got.iter().map(Change::depth).max().unwrap_or(0)), case["reach"], "{case}");
     }
 }
 

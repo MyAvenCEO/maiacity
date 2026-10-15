@@ -169,6 +169,167 @@ fn s2_a_record_that_fits_keeps_fitting() {
     assert!(fit > 2000 && unfit > 2000 && beside > 2000, "{fit} writes fit, {unfit} don't, {beside} beside a row");
 }
 
+/// Two versions of a schema whose rows hold rows of their own shape: in A, each node of the blocks has a type and
+/// holds nodes of its own; in B, each has a text, and its kids are one value, a bounded list of objects.
+const NESTED_A: &str = r##"{ "title": "Nested, A", "type": "object",
+  "$defs": { "node": { "type": "object", "properties": {
+    "id": { "type": "integer" }, "text": { "type": "string" }, "type": { "enum": ["a", "B"] },
+    "level": { "type": "integer", "minimum": 0 },
+    "kids": { "type": "array", "items": { "$ref": "#/$defs/node" } } }, "required": ["id", "type"] } },
+  "properties": {
+    "title": { "type": "string", "x-loro": "text" },
+    "n": { "type": "integer", "minimum": -2 },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "blocks": { "type": "array", "items": { "$ref": "#/$defs/node" } } },
+  "required": ["title"] }"##;
+
+const NESTED_B: &str = r#"{ "title": "Nested, B", "type": "object", "properties": {
+  "title": { "type": "string", "default": "" },
+  "n": { "type": "boolean" },
+  "blocks": { "type": "array", "items": { "type": "object", "properties": {
+    "id": { "type": "integer" }, "text": { "type": "string" },
+    "kids": { "type": "array", "maxItems": 2, "items": { "type": "object", "properties": {
+      "id": { "type": "integer" }, "text": { "type": "string" } } } } }, "required": ["id", "text"] } } } }"#;
+
+const ROW_FIELDS: [&str; 4] = ["text", "type", "level", "kids"];
+
+/// A row with id `id`, each field there or not, and rows of its own `depth` lists deep at most.
+fn nested_row(rng: &mut Rng, id: i64, depth: usize) -> Value {
+    // most rows read under both schemas, so walks reach rows of rows
+    let good = |rng: &mut Rng| json!({ "id": id, "type": rng.pick(&["a", "B"]), "text": rng.pick(&["a", ""]) });
+    let mut r = if rng.below(4) != 0 { good(rng) } else { row(rng, id) };
+    if depth > 0 && rng.below(2) == 0 {
+        r["kids"] = nested_rows(rng, depth - 1);
+    }
+    r
+}
+
+/// Up to three rows with ids 1 to 3, each with rows of its own `depth` lists deep at most.
+fn nested_rows(rng: &mut Rng, depth: usize) -> Value {
+    (0..rng.below(4))
+        .map(|_| {
+            let id = rng.below(3) as i64 + 1;
+            nested_row(rng, id, depth)
+        })
+        .collect()
+}
+
+/// The rows of list `l` of record or row `o`, if it holds an array of objects.
+fn rows<'a>(o: &'a mut ops::Record, l: &str) -> Option<&'a mut Vec<Value>> {
+    o.get_mut(l).and_then(Value::as_array_mut).filter(|xs| xs.iter().all(Value::is_object))
+}
+
+/// A random write on `r`, on the record or on a row a few lists down (each row's in `kids`): one of its fields set or
+/// dropped, or a row of its list added (with rows of its own), under an id the list may hold already, dropped, moved,
+/// or one of its fields set or dropped.
+fn nested_write(rng: &mut Rng, r: &Value) -> Value {
+    let list = |d: usize| if d == 0 { "blocks" } else { "kids" };
+    // the rows down to the record or row it changes, each by its position
+    let mut chain = vec![];
+    let mut at = r;
+    while chain.len() < 4 && rng.below(3) != 0 {
+        let n = at.get(list(chain.len())).and_then(Value::as_array).map_or(0, Vec::len);
+        if n == 0 || !at[list(chain.len())][0].is_object() {
+            break;
+        }
+        let i = rng.below(n);
+        at = &at[list(chain.len())][i];
+        chain.push(i);
+    }
+    let mut s = r.clone();
+    let mut at = &mut s;
+    for (d, i) in chain.iter().enumerate() {
+        at = &mut at[list(d)][*i];
+    }
+    let (depth, l) = (chain.len(), list(chain.len()));
+    let Some(o) = at.as_object_mut() else { return s };
+    let fields: &[&str] = if depth == 0 { &FIELDS } else { &ROW_FIELDS };
+    let n = rows(o, l).map_or(0, |xs| xs.len());
+    match (rng.below(7), n) {
+        (0 | 1, _) => {
+            let f = rng.pick(fields);
+            let v = match f {
+                "kids" | "blocks" => nested_rows(rng, 3 - depth.min(3)),
+                g if depth > 0 => cell(rng, g),
+                f => value(rng, f),
+            };
+            o.insert(f.into(), v);
+        }
+        (2, _) => drop(o.remove(rng.pick(fields))),
+        (3, n) => {
+            let id = rng.below(4) as i64 + 1;
+            let new = nested_row(rng, id, 2 - depth.min(2));
+            match rows(o, l) {
+                Some(xs) => xs.insert(rng.below(n + 1), new),
+                None => drop(o.insert(l.into(), json!([new]))),
+            }
+        }
+        (4, n) if n > 0 => drop(rows(o, l).expect("rows").remove(rng.below(n))),
+        (5, n) if n > 1 => rows(o, l).expect("rows").swap(rng.below(n), rng.below(n)),
+        (6, n) if n > 0 => {
+            let (i, g) = (rng.below(n), rng.pick(&["text", "type", "level"]));
+            let v = cell(rng, g);
+            let r = rows(o, l).expect("rows")[i].as_object_mut().expect("a row");
+            match rng.below(3) {
+                0 => drop(r.remove(g)),
+                _ => drop(r.insert(g.into(), v)),
+            }
+        }
+        _ => {}
+    }
+    s
+}
+
+#[test]
+fn s1_s2_on_records_whose_rows_hold_rows() {
+    // as above, on records whose rows hold rows of their own, under A (rows at every depth), B (whose rows' kids are
+    // one value) or both: every record a walk reaches fits as a whole (S2), and what a write didn't change, a row
+    // beside it at any depth, never changes its verdict (S1)
+    let lane = Lane::new([NESTED_A.as_bytes(), NESTED_B.as_bytes()]);
+    let (nothing, junk) = (json!({}), json!({ "id": 9, "type": 1.5, "level": "x", "kids": [{ "id": 1 }] }));
+    let (mut fit, mut unfit, mut beside, mut deep) = (0, 0, 0, 0);
+    for seed in 0..300u64 {
+        let mut rng = Rng(0x5300_0000 + seed);
+        let under = [ids(&[NESTED_A]), ids(&[NESTED_B]), ids(&[NESTED_A, NESTED_B])][seed as usize % 3].clone();
+        let a_names_kids = seed % 3 != 1;
+        let mut r = nothing.clone();
+        for _ in 0..40 {
+            let s = nested_write(&mut rng, &r);
+            let fits = lane.fits(&under, &r, &s);
+            // a row of a list both hold, at the top and a list down, where the schemas read it as rows
+            let lists = |x: &Value| {
+                let top = x.get("blocks").and_then(ops::rows).is_some();
+                let first = x.get("blocks").and_then(|b| b.get(0));
+                let down = first.and_then(|b| b.get("kids")).and_then(ops::rows).is_some();
+                (top, down, first.map(|b| b["id"].clone()))
+            };
+            let ((rt, rd, ri), (st, sd, si)) = (lists(&r), lists(&s));
+            if rt && st {
+                let leave = |x: &Value| with(x, |x| x["blocks"].as_array_mut().expect("rows").push(junk.clone()));
+                assert_eq!(lane.fits(&under, &leave(&r), &leave(&s)), fits, "seed {seed}: {r} to {s}");
+                beside += 1;
+            }
+            if a_names_kids && rd && sd && ri == si {
+                let kids = |x: &mut Value| x["blocks"][0]["kids"].as_array_mut().expect("rows").push(junk.clone());
+                let leave = |x: &Value| with(x, kids);
+                assert_eq!(lane.fits(&under, &leave(&r), &leave(&s)), fits, "seed {seed}: {r} to {s}");
+                beside += 1;
+            }
+            if !fits {
+                unfit += 1;
+                continue;
+            }
+            assert!(lane.fits(&under, &nothing, &s), "seed {seed}: {r} to {s}");
+            if ops::Flat::of(s.as_object().expect("a record")).depth() > 1 {
+                deep += 1;
+            }
+            (fit, r) = (fit + 1, s);
+        }
+    }
+    let counts = format!("{fit} writes fit, {unfit} don't, {beside} beside a row, {deep} reach rows of rows");
+    assert!(fit > 2000 && unfit > 2000 && beside > 2000 && deep > 1000, "{counts}");
+}
+
 #[test]
 fn s1_a_write_is_judged_by_what_it_changed() {
     let lane = Lane::new([A.as_bytes()]);

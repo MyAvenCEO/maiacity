@@ -57,6 +57,11 @@ def Path.scope : Path → Option (Path × Key)
     | none => (.top f, k)
     | some (q, k') => (.row f k q, k'))
 
+/-- How many rows deep a place lies: the rows on the way to it. -/
+def Path.depth : Path → Nat
+  | .top _ => 0
+  | .row _ _ p => p.depth + 1
+
 /-- A field of row `k` of the list at `q` has that row around it, innermost. -/
 theorem Path.scope_under (q : Path) (k : Key) (g : String) : (q.under k (.top g)).scope = some (q, k) := by
   induction q with
@@ -89,6 +94,13 @@ variable {V : Type}
 def Change.place : Change V → Place
   | .set p _   => .leaf p
   | .order f _ => .list f
+
+/-- How many rows deep a change reaches (`ops::Change::depth`): a value set in a row, as deep as the row; rows given
+    to a list, one deeper than the list; a value or a list gone, or a list emptied, no row at all. -/
+def Change.depth : Change V → Nat
+  | .set p (some _)          => p.depth
+  | .order f (some (_ :: _)) => f.depth + 1
+  | _                        => 0
 
 def Change.on (r : Record V) : Change V → Record V
   | .set q v    => { r with leaf := fun p => if p = q then v else r.leaf p }
@@ -525,6 +537,11 @@ theorem Doc.reaches (d e : Doc) : Reaches (d.paths ++ e.paths) (d.lists ++ e.lis
 /-- What a write did to a record: its changes, each list's new rows first, then each place's new value. -/
 def Doc.diff (d e : Doc) : List (Change Leaf) :=
   Ops.diff (d.paths ++ e.paths).eraseDups (d.lists ++ e.lists).eraseDups d.meaning e.meaning
+
+/-- How many rows deep its deepest row is (`ops::Flat::depth`): 0 for a record that holds no row, 1 where only its own
+    lists hold rows. -/
+def Doc.depth (d : Doc) : Nat :=
+  d.lists.foldl (fun m f => if ((d.meaning.rows f).getD []).isEmpty then m else max m (f.depth + 1)) 0
 
 /-- O1 for records: a write's diff, applied to the record before it, gives the record after it. -/
 theorem Doc.apply_diff (d e : Doc) : apply d.meaning (d.diff e) = e.meaning := by

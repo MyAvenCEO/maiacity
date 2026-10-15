@@ -6,10 +6,12 @@
 //! A record is seen place by place (`Place`): each field outside lists of records, each row of a list of records with
 //! all its fields, and the order of each list's rows. A place only one side changed since the base shows that change,
 //! and a place both changed alike shows it. A place both changed differently shows both changes joined where they don't
-//! clash (`join`): a text both edited at places apart, a list of values both added to or took from, an object or a row
-//! whose fields they changed apart, rows both added or moved apart. Where they do clash, a conflict, the line merged
-//! into keeps its own value, unless the person merging takes the other's there (`take`). So nothing the line merged
-//! into changed is lost (T10d), all the other changed alone lands (T10e), and the person's choice touches the
+//! clash (`join`): a text both edited at places apart, a list of values both added to or took from, an object whose
+//! fields they changed apart, rows both added or moved apart. A row of the record's own lists is one place, whatever
+//! it holds: inside it, its fields join as an object's and its lists of records, at any depth, row by row by id
+//! (`join_row`), and a clash anywhere in it makes the whole row the conflict. Where they do clash, a conflict, the line
+//! merged into keeps its own value, unless the person merging takes the other's there (`take`). So nothing the line
+//! merged into changed is lost (T10d), all the other changed alone lands (T10e), and the person's choice touches the
 //! conflicts alone.
 //!
 //! The record is then made again from its places: each field, each row that is there, and each list's rows in the
@@ -20,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Map, Value};
 
-use crate::ops::{self, Key, Record};
+use crate::ops::{self, Flat, Key, Path, Record};
 
 /// A place of a record, as a merge sees it: a field outside lists of records, a row of a list of records with all its
 /// fields, or the order of a list's rows.
@@ -142,7 +144,8 @@ pub fn merge(base: &Record, ours: &Record, theirs: &Record, take: &BTreeSet<Plac
     for r in rows {
         let place = Place::Row(r.0.clone(), r.1);
         let (bv, ov, tv) = (b.rows.get(r), o.rows.get(r), t.rows.get(r));
-        if let Some(v) = at(bv, ov, tv, join, take.contains(&place), &mut |c| conflicts.push(c.of(place.clone(), id))) {
+        let clash = &mut |c: Clash<'_, Value>| conflicts.push(c.of(place.clone(), id));
+        if let Some(v) = at(bv, ov, tv, join_row, take.contains(&place), clash) {
             out.rows.insert(r.clone(), v);
         }
     }
@@ -254,6 +257,46 @@ pub fn join(base: &Value, ours: &Value, theirs: &Value) -> Option<Value> {
         }
         _ => None,
     }
+}
+
+/// Two changes of one row of the record's lists joined, where nothing in it clashes (`Flat`): each value in it, at any
+/// depth, as `join` joins one, and each list of records in it row by row by id, its order as `join_order` joins a
+/// list's, a list a side lacks as an empty one. `None` where anything clashes, so the whole row is the conflict, one
+/// place as `Doc.lean`'s `mergeInto` sees it, whatever joins inside it: a value both changed that doesn't join, a list
+/// both moved rows of, a row one side took out where the other changed what it holds, or a place one side made a value
+/// and the other rows. A loop over the row's places, never a recursion.
+pub fn join_row(base: &Value, ours: &Value, theirs: &Value) -> Option<Value> {
+    let flat = |v: &Value| v.as_object().map(Flat::of);
+    let (b, o, t) = (flat(base)?, flat(ours)?, flat(theirs)?);
+    let mut clashed = false;
+    let mut out = Flat::default();
+    let paths: BTreeSet<&Path> = b.leaves.keys().chain(o.leaves.keys()).chain(t.leaves.keys()).collect();
+    for p in paths {
+        let (bv, ov, tv) = (b.leaves.get(p), o.leaves.get(p), t.leaves.get(p));
+        if let Some(v) = at(bv, ov, tv, join, false, &mut |_| clashed = true) {
+            out.leaves.insert(p.clone(), v);
+        }
+    }
+    let lists: BTreeSet<&Path> = b.lists.keys().chain(o.lists.keys()).chain(t.lists.keys()).collect();
+    let none = vec![];
+    for f in lists {
+        // a list a side lacks joins as an empty one, and is there where it holds rows, or where the side that changed
+        // whether it is there has it
+        let (bv, ov, tv) = (b.lists.get(f), o.lists.get(f), t.lists.get(f));
+        let [b_, o_, t_] = [bv, ov, tv].map(|v| Some(v.unwrap_or(&none)));
+        let ks = at(b_, o_, t_, join_order, false, &mut |_| clashed = true);
+        let there = if ov.is_some() == bv.is_some() { tv.is_some() } else { ov.is_some() };
+        if let Some(ks) = ks.filter(|ks| there || !ks.is_empty()) {
+            out.lists.insert(f.clone(), ks);
+        }
+    }
+    // what is left is in rows their lists still hold, and no place holds both a value and rows
+    let held = |rows: &[(String, Key)]| {
+        (0..rows.len()).all(|i| out.holds(&Path { rows: rows[..i].to_vec(), field: rows[i].0.clone() }, &rows[i].1))
+    };
+    let formed = out.leaves.keys().all(|p| held(&p.rows) && !out.lists.contains_key(p))
+        && out.lists.keys().all(|f| held(&f.rows));
+    (!clashed && formed).then(|| Value::Object(out.record()))
 }
 
 /// A text both sides edited joined, where they edited it at places apart: each side's change is the one stretch of
@@ -376,6 +419,66 @@ mod tests {
         let m = merged(base, json!({ "blocks": [{ "id": 1, "type": "h1", "text": "One two" }] }),
             json!({ "blocks": [{ "id": 1, "type": "p", "text": "one two three" }] }));
         assert_eq!(m.record["blocks"], json!([{ "id": 1, "type": "h1", "text": "One two three" }]));
+        assert!(m.conflicts.is_empty());
+    }
+
+    #[test]
+    fn rows_of_rows_join_by_id_and_a_clash_anywhere_makes_the_top_row_the_conflict() {
+        let kid = |id: i64, text: &str| json!({ "id": id, "text": text });
+        let bed = |kids: Vec<Value>| json!({ "blocks": [{ "id": 1, "text": "Beds", "kids": kids }, { "id": 2 }] });
+        let base = bed(vec![kid(11, "North"), kid(12, "South")]);
+        // ours edits the north bed and adds an east one; theirs edits the south bed, adds a west one, moves nothing
+        let ours = bed(vec![kid(11, "North bed"), kid(12, "South"), kid(13, "East")]);
+        let theirs = bed(vec![kid(14, "West"), kid(11, "North"), kid(12, "South bed")]);
+        let m = merged(base.clone(), ours.clone(), theirs.clone());
+        let want = bed(vec![kid(14, "West"), kid(11, "North bed"), kid(12, "South bed"), kid(13, "East")]);
+        assert_eq!(Value::Object(m.record), want);
+        assert!(m.conflicts.is_empty());
+        // two levels down, the same
+        let deep = |text: &str, more: Vec<Value>| {
+            let mut kids = vec![json!({ "id": 111, "text": text })];
+            kids.extend(more);
+            bed(vec![json!({ "id": 11, "kids": kids })])
+        };
+        let m = merged(deep("Beans", vec![]), deep("Runner beans", vec![]), deep("Beans", vec![kid(112, "Peas")]));
+        assert_eq!(Value::Object(m.record), deep("Runner beans", vec![kid(112, "Peas")]));
+        // both edit one text a list down at one place: the whole top row is the conflict, ours kept unless taken
+        let nord = bed(vec![kid(11, "Nord"), kid(12, "South")]);
+        let norte = bed(vec![kid(11, "Norte"), kid(12, "South")]);
+        let m = merged(base.clone(), nord, norte);
+        let top = Place::Row("blocks".into(), Key { id: 1, copy: 0 });
+        assert_eq!(m.conflicts.iter().map(|c| c.place.clone()).collect::<Vec<_>>(), vec![top.clone()]);
+        assert_eq!(m.conflicts[0].ours, Some(bed(vec![kid(11, "Nord"), kid(12, "South")])["blocks"][0].clone()));
+        assert_eq!(m.record["blocks"][0]["kids"][0]["text"], "Nord");
+        let take = BTreeSet::from([top.clone()]);
+        let ours = rec(bed(vec![kid(11, "Nord"), kid(12, "South")]));
+        let m = merge(&rec(base.clone()), &ours, &rec(bed(vec![kid(11, "Norte"), kid(12, "South")])), &take);
+        assert_eq!(m.record["blocks"][0]["kids"][0]["text"], "Norte");
+        // a row one side took out where the other changed it, and a list both moved rows of: the top row too
+        let gone = merged(base.clone(), bed(vec![kid(12, "South")]), bed(vec![kid(11, "North!"), kid(12, "South")]));
+        assert_eq!(gone.conflicts.iter().map(|c| c.place.clone()).collect::<Vec<_>>(), vec![top.clone()]);
+        let three = bed(vec![kid(11, "a"), kid(12, "b"), kid(13, "c")]);
+        let moved = merged(
+            three.clone(),
+            bed(vec![kid(13, "c"), kid(11, "a"), kid(12, "b")]),
+            bed(vec![kid(12, "b"), kid(11, "a"), kid(13, "c")]),
+        );
+        assert_eq!(moved.conflicts.iter().map(|c| c.place.clone()).collect::<Vec<_>>(), [top]);
+        // a row one side took out that the other left alone is gone
+        let m = merged(base, bed(vec![kid(12, "South")]), bed(vec![kid(11, "North"), kid(12, "South"), kid(15, "x")]));
+        assert_eq!(Value::Object(m.record), bed(vec![kid(12, "South"), kid(15, "x")]));
+        // a list both made in one row joins as two that grew from an empty one, theirs' first rows first, as above; a
+        // list one side emptied and lacks, as an emptied one
+        let lacks = json!({ "blocks": [{ "id": 1, "text": "Beds" }, { "id": 2 }] });
+        let added = bed(vec![kid(11, "North"), kid(12, "South"), kid(15, "x")]);
+        let m = merged(bed(vec![kid(11, "North"), kid(12, "South")]), lacks, added);
+        assert_eq!(Value::Object(m.record), bed(vec![kid(15, "x")]));
+        let with = |kids: Option<Vec<Value>>| match kids {
+            Some(kids) => json!({ "blocks": [{ "id": 1, "text": "Beds", "kids": kids }] }),
+            None => json!({ "blocks": [{ "id": 1, "text": "Beds" }] }),
+        };
+        let m = merged(with(None), with(Some(vec![kid(11, "North")])), with(Some(vec![kid(12, "South")])));
+        assert_eq!(Value::Object(m.record), with(Some(vec![kid(12, "South"), kid(11, "North")])));
         assert!(m.conflicts.is_empty());
     }
 

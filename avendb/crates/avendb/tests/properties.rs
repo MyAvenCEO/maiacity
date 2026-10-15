@@ -9,9 +9,10 @@
 //! What no rule reads (a share's selector, an entry's header, a write's tags) goes into each history's `Readings`, as
 //! the readers of its shares and entries open it. The lens laws (T9) are checked on random items, as any mix of apps
 //! could have stored them, read and edited through each app's view, and the proposal laws (T10) on random histories of
-//! one document. Sync (T12, T13, T19) is checked between devices holding random parts of random histories, gaps and
-//! all. Each property carries its theorem's name; T7 (the blind server, which follows from T5), T15 (rotation follows
-//! revocation, which follows from T24), T17 and T20 are guarded by the tests the Lean README lists.
+//! one document, and of one outline, whose rows hold rows. Sync (T12, T13, T19) is checked between devices holding
+//! random parts of random histories, gaps and all. Each property carries its theorem's name; T7 (the blind server,
+//! which follows from T5), T15 (rotation follows revocation, which follows from T24), T17 and T20 are guarded by the
+//! tests the Lean README lists.
 
 mod common;
 
@@ -24,10 +25,11 @@ use serde_json::{json, Value};
 use avendb::doc::Item;
 use avendb::history::{Repo, MAIN};
 use avendb::merge::Place;
+use avendb::ops;
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
-use avendb::lens::{DocV1, Lane, View, DOCUMENT_V1, TODO_V1};
+use avendb::lens::{DocV1, Lane, Schema, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{
     keep_picks, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
     Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share,
@@ -2423,11 +2425,98 @@ fn t10_proposals() {
     // field only one side changed shows that side's (T10d, T10e), every conflict keeps the line merged into unless the
     // merge takes the other's there, and merging again changes nothing; and undoing a line's latest edit gives back
     // the version it built on
-    let mut done = [0; 5];
+    let (done, _) = t10_on(&|| document("Welcome", WELCOME_TEXT, MAC_A), edit_item, 12);
+    assert!(done.iter().all(|&n| n > 20), "{done:?}");
+}
+
+/// An outline: nodes, each with a text, whether it is done, and the nodes under it, at any depth.
+const OUTLINE: &str = r##"{ "title": "Outline", "type": "object",
+  "$defs": { "node": { "type": "object", "properties": {
+      "id": { "type": "integer" },
+      "text": { "type": "string", "x-loro": "text", "default": "" },
+      "done": { "type": "boolean" },
+      "kids": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+    "required": ["id"] } },
+  "properties": {
+    "kind": { "const": "outline" },
+    "title": { "type": "string", "default": "" },
+    "nodes": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+  "required": ["kind"] }"##;
+
+static OUTLINE_VIEW: LazyLock<View> =
+    LazyLock::new(|| View::plain(&Schema::parse(OUTLINE.as_bytes()).expect("a schema")));
+
+/// One random write of an outline: its title set, or one to three edits a few rows down, each a node added under an id
+/// its list doesn't show, dropped, moved, its text set or ticked off.
+fn edit_outline(rng: &mut Rng, item: &mut Item) {
+    let view = &*OUTLINE_VIEW;
+    let mut d = item.read(view).unwrap_or_else(|| json!({ "kind": "outline", "title": "", "nodes": [] }));
+    if rng.below(10) == 0 {
+        d["title"] = json!(rng.pick(&["Garden", "Shed", "Plan"]));
+    } else {
+        for _ in 0..1 + rng.below(3) {
+            edit_nodes(rng, &mut d["nodes"]);
+        }
+    }
+    assert!(item.write(view, &d));
+}
+
+/// One edit of the nodes of a view of an outline, or of the nodes under one of them, a few rows down.
+fn edit_nodes(rng: &mut Rng, nodes: &mut Value) {
+    let mut at = nodes;
+    while rng.below(3) != 0 {
+        let n = at.as_array().map_or(0, Vec::len);
+        if n == 0 {
+            break;
+        }
+        at = &mut at[rng.below(n)]["kids"];
+    }
+    let nodes = at.as_array_mut().expect("a view's nodes");
+    let n = nodes.len();
+    match rng.below(8) {
+        0..=2 => {
+            let shown: Vec<Value> = nodes.iter().map(|x| x["id"].clone()).collect();
+            let free: Vec<u64> = (1..=12).filter(|&x| !shown.contains(&json!(x))).collect();
+            if !free.is_empty() {
+                let id = free[rng.below(free.len())];
+                let text = rng.pick(&["Beans", "Peas", "Water", ""]);
+                nodes.insert(rng.below(n + 1), json!({ "id": id, "text": text, "kids": [] }));
+            }
+        }
+        3 if n > 0 => drop(nodes.remove(rng.below(n))),
+        4 if n > 1 => nodes.swap(rng.below(n), rng.below(n)),
+        _ if n > 0 => {
+            let x = &mut nodes[rng.below(n)];
+            match rng.below(2) {
+                0 => x["text"] = json!(rng.pick(&["Beans", "Runner beans", "Peas", "Sweet peas"])),
+                _ => x["done"] = json!(rng.below(2) == 0),
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The proposal laws on outlines, whose rows hold rows: as `t10_proposals`, a merge joining rows of rows by id inside
+/// each of the outline's own rows, a clash anywhere in one making that row the conflict, whole.
+#[test]
+fn t10_proposals_on_rows_of_rows() {
+    let garden = json!({ "kind": "outline", "title": "Garden", "nodes": [
+        { "id": 1, "text": "Beds", "kids": [{ "id": 1, "text": "North", "kids": [] }] },
+        { "id": 2, "text": "Tools", "kids": [] }] });
+    let new = || Item::made(&OUTLINE_VIEW, &garden, MAC_A).expect("an outline");
+    let (done, rows) = t10_on(&new, edit_outline, 40);
+    assert!(done.iter().all(|&n| n > 20), "{done:?}");
+    assert!(rows[0] > 20 && rows[1] > 10, "{rows:?} rows of rows joined, rows in conflict");
+}
+
+/// The walks of the proposal laws, `steps` long, from the item `new` makes, each edit made by `edit`: how many of each
+/// step, and how many rows both lines changed joined, and how many conflicts at a row.
+fn t10_on(new: &dyn Fn() -> Item, edit: fn(&mut Rng, &mut Item), steps: usize) -> ([usize; 5], [usize; 2]) {
+    let (mut done, mut rows) = ([0; 5], [0; 2]);
     for seed in RUNS {
         let mut rng = Rng(seed);
-        let mut repo = Repo::new(&document("Welcome", WELCOME_TEXT, MAC_A), MAC_A);
-        for _ in 0..12 {
+        let mut repo = Repo::new(&new(), MAC_A);
+        for _ in 0..steps {
             let before = lines(&repo);
             let ls: Vec<Line> = before.iter().map(|x| x.0).collect();
             let author = rng.pick(&[MAC_A, MAC_B, MAC_C]);
@@ -2436,7 +2525,7 @@ fn t10_proposals() {
             done[what] += 1;
             let line = match what {
                 0 => {
-                    repo.edit(author, into, |i| edit_item(&mut rng, i));
+                    repo.edit(author, into, |i| edit(&mut rng, i));
                     into
                 }
                 1 => {
@@ -2480,11 +2569,18 @@ fn t10_proposals() {
                     let kept = one_side_kept(&base, &ours, &theirs, &merged);
                     assert!(kept, "seed {seed}: {base} {ours} {theirs} {merged}");
                     for c in &conflicts {
-                        if let Place::Field(f) = &c.place {
-                            let side = if what == 3 { &ours } else { &theirs };
-                            assert_eq!(merged.get(f), side.get(f), "seed {seed}");
+                        let side = if what == 3 { &ours } else { &theirs };
+                        match &c.place {
+                            Place::Field(f) => assert_eq!(merged.get(f), side.get(f), "seed {seed}"),
+                            // a row whole, whatever in it clashed
+                            Place::Row(f, k) => {
+                                rows[1] += 1;
+                                assert_eq!(row_at(&merged, f, k), row_at(side, f, k), "seed {seed}");
+                            }
+                            Place::Order(_) => {}
                         }
                     }
+                    rows[0] += joined_rows(&base, &ours, &theirs, &conflicts);
                     repo.merge(author, from, into);
                     assert_eq!(shown(&repo, into), merged, "seed {seed}");
                     into
@@ -2498,7 +2594,26 @@ fn t10_proposals() {
             }
         }
     }
-    assert!(done.iter().all(|&n| n > 20), "{done:?}");
+    (done, rows)
+}
+
+/// The row with key `k` of the list at field `f` of `r`, if it holds one.
+fn row_at(r: &Value, f: &str, k: &ops::Key) -> Option<Value> {
+    let rows = ops::rows(r.get(f)?)?;
+    ops::keyed(rows).into_iter().find(|(key, _)| key == k).map(|(_, row)| Value::Object(row.clone()))
+}
+
+/// How many rows of the record's own lists both sides changed, each holding rows of its own, that a merge joined
+/// with no conflict.
+fn joined_rows(base: &Value, ours: &Value, theirs: &Value, conflicts: &[avendb::merge::Conflict]) -> usize {
+    let Some(rows) = ours.get("nodes").and_then(ops::rows) else { return 0 };
+    let both = |k: &ops::Key| {
+        let (b, o, t) = (row_at(base, "nodes", k), row_at(ours, "nodes", k), row_at(theirs, "nodes", k));
+        let deep = o.as_ref().and_then(|o| o.get("kids")).and_then(ops::rows).is_some_and(|ks| !ks.is_empty());
+        b.is_some() && o != b && t != b && t.is_some() && o != t && deep
+    };
+    let clashed = |k: &ops::Key| conflicts.iter().any(|c| c.place == Place::Row("nodes".into(), *k));
+    ops::keyed(rows).iter().filter(|(k, _)| both(k) && !clashed(k)).count()
 }
 
 /// A merge of `theirs` into `ours` from their `base` shows, field by field, the change of whichever side alone

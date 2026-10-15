@@ -17,7 +17,9 @@ last record that fit, whatever a patched app writes.
 S1: a write is judged by what it changed alone (`fits_iff`), on the record or row around each change: a value it
 didn't change, which two devices' writes at once may have left behind, holds it back nowhere else. S2: a record that
 fits keeps fitting through writes that fit
-(`fits_clean`), from the first write on (`fits_new`). S3 and S4, about the state, are in `Theorems.lean`.
+(`fits_clean`), from the first write on (`fits_new`). The ceiling: schemas capped at `n` rows deep (`Fit.capped`) fit no
+write that adds a row deeper (`capped_deep`), so no record that fits them holds one (`capped_clean`). S3 and S4, about
+the state, are in `Theorems.lean`.
 -/
 
 namespace AvenDB.Ops
@@ -233,6 +235,80 @@ theorem fits_new [DecidableEq V] {fit : Fit V} {ps : List Path} {fs : List Path}
   · cases hk' : s.rows f with
     | none => simp [Record.holds, hk'] at hk
     | some ks => exact (hlist f ks hk').2.2 k (by simpa [Record.holds, hk'] using hk)
+
+/-! ## The ceiling
+
+Records nest at any depth, but no write reaches deeper than a ceiling `n` (`lens::CEILING`, 256 rows): the schemas a
+write is judged under, capped at `n`, let a place hold a value only in a row no deeper than `n`, and a list hold rows
+only where they are no deeper than `n`. The ceiling is fixed, so every reader reaches the same verdict, and capped
+schemas are schemas still, so S1 and S2 hold of them as they are. -/
+
+/-- The schemas `fit`, capped at `n` rows deep. -/
+def Fit.capped (fit : Fit V) (n : Nat) : Fit V where
+  leaf p v := decide (p.depth ≤ n) && fit.leaf p v
+  rows f old new := (new.isEmpty || decide (f.depth < n)) && fit.rows f old new
+  top := fit.top
+  row := fit.row
+  rows_fresh f a b ha hb := by
+    simp only [Bool.and_eq_true] at ha hb ⊢
+    exact ⟨hb.1, fit.rows_fresh f a b ha.2 hb.2⟩
+  top_local := fit.top_local
+  row_local := fit.row_local
+
+/-- A change that fits capped schemas reaches no deeper than the ceiling. -/
+theorem capped_change {fit : Fit V} {n : Nat} {r s : Record V} {c : Change V}
+    (h : (fit.capped n).change r s c = true) : c.depth ≤ n := by
+  match c, h with
+  | .set p none, _ => simp [Change.depth]
+  | .set p (some v), h =>
+    simp only [Fit.change, Option.all_some, Fit.capped, Bool.and_eq_true, decide_eq_true_eq] at h
+    exact h.1.1
+  | .order f none, _ => simp [Change.depth]
+  | .order f (some []), _ => simp [Change.depth]
+  | .order f (some (k :: ks)), h =>
+    simp only [Fit.change, Fit.capped, Bool.and_eq_true, List.isEmpty_cons, Bool.false_or,
+      decide_eq_true_eq] at h
+    simp only [Change.depth]
+    omega
+
+/-- A write that fits capped schemas reaches no deeper than the ceiling, by any change it makes. -/
+theorem capped_fits [DecidableEq V] {fit : Fit V} {n : Nat} {ps fs : List Path} {r s : Record V}
+    (hw : (fit.capped n).fits ps fs r s = true) {c : Change V} (hc : c ∈ diff ps fs r s) : c.depth ≤ n :=
+  capped_change (List.all_eq_true.1 hw c hc)
+
+/-- The ceiling: a write that adds a row deeper than the ceiling fits no capped schemas, whatever they let a row
+    hold. -/
+theorem capped_deep [DecidableEq V] {fit : Fit V} {n : Nat} {ps fs : List Path} {r s : Record V}
+    (h : Reaches ps fs r s) {f : Path} {k : Key} (hr : r.holds f k = false) (hs : s.holds f k = true)
+    (hd : n ≤ f.depth) : (fit.capped n).fits ps fs r s = false := by
+  cases hk : s.rows f with
+  | none => simp [Record.holds, hk] at hs
+  | some ks =>
+    have hne : r.rows f ≠ s.rows f := by
+      intro e
+      have he : r.holds f k = s.holds f k := by simp only [Record.holds, e]
+      rw [he, hs] at hr
+      cases hr
+    apply Bool.eq_false_iff.2
+    intro hw
+    have hc := capped_fits hw ((diff_complete h).2 f hne)
+    cases ks with
+    | nil => simp [Record.holds, hk] at hs
+    | cons k' ks => simp [hk, Change.depth] at hc; omega
+
+/-- A record that fits capped schemas holds no row deeper than the ceiling. -/
+theorem capped_clean {fit : Fit V} {n : Nat} {r : Record V} (hc : (fit.capped n).Clean r) {f : Path} {k : Key}
+    (hk : r.holds f k = true) : f.depth < n := by
+  cases hr : r.rows f with
+  | none => simp [Record.holds, hr] at hk
+  | some ks =>
+    have := hc.2.1 f ks hr
+    simp only [Fit.capped, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at this
+    rcases this.1 with he | hd
+    · cases ks with
+      | nil => simp [Record.holds, hr] at hk
+      | cons _ _ => simp at he
+    · exact hd
 
 end
 

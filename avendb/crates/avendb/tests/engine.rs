@@ -751,6 +751,278 @@ fn s3_a_write_that_breaks_its_schema_counts_for_no_reader() {
     }
 }
 
+/// An outline: nodes, each with a text and the nodes under it, at any depth.
+const OUTLINE: &str = r##"{ "title": "Outline", "type": "object",
+  "$defs": { "node": { "type": "object", "properties": {
+      "id": { "type": "integer" },
+      "text": { "type": "string", "x-loro": "text", "default": "" },
+      "done": { "type": "boolean" },
+      "kids": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+    "required": ["id"] } },
+  "properties": {
+    "kind": { "const": "outline" },
+    "title": { "type": "string", "default": "" },
+    "nodes": { "type": "array", "default": [], "items": { "$ref": "#/$defs/node" } } },
+  "required": ["kind"] }"##;
+
+/// An outline `depth` nodes deep, one under the other, as an app on it sees it.
+fn chain(depth: usize) -> Value {
+    let mut nodes = json!([]);
+    for i in (0..depth).rev() {
+        nodes = json!([{ "id": i as i64 + 1, "text": "", "kids": nodes }]);
+    }
+    json!({ "kind": "outline", "title": "", "nodes": nodes })
+}
+
+/// Alice's outline schema, in her lane, and an outline of hers made on her Mac: `(entry, schema)`.
+fn alices_outline(w: &mut World) -> (EntryId, Schema) {
+    let (alice, mac) = (w.alice.to_hex(), w.mac_a);
+    ok(run(w, mac, json!({ "op": "create", "vault": alice, "type": "schema", "value": OUTLINE })));
+    let value = json!({ "kind": "outline", "title": "Garden" });
+    let made = ok(run(w, mac, json!({ "op": "create", "vault": alice, "type": "note", "value": value })));
+    let entry = EntryId::from_hex(made["entry"].as_str().expect("its id")).expect("an entry");
+    (entry, Schema::parse(OUTLINE.as_bytes()).expect("a schema"))
+}
+
+/// The ceiling (`lens::CEILING`): a write whose rows reach deeper than 256 counts for no reader, whatever its schema
+/// says, and a device refuses to make one; a write as deep as the ceiling counts. Every reader reaches the same
+/// verdict, as the ceiling is fixed.
+#[test]
+fn a_write_deeper_than_the_ceiling_counts_for_no_reader() {
+    let mut w = cast::world();
+    let (alice, mac, phone) = (w.alice, w.mac_a, w.phone_a);
+    let (outline, schema) = alices_outline(&mut w);
+    let view = View::plain(&schema);
+    // as deep as the ceiling: it counts, on both of Alice's devices
+    let deepest = chain(lens::CEILING);
+    w.lab.edit(mac, alice, outline, |item| item.set_record(&view, &deepest)).expect("it fits");
+    w.lab.sync_all(0);
+    for d in [mac, phone] {
+        assert_eq!(counted(&mut w, d, outline).last().map(|c| c.1), Some(true));
+        assert_eq!(w.lab.item(d, outline).and_then(|i| i.read(&view)), Some(deepest.clone()));
+    }
+    // 300 deep: her device refuses to make it, and a patched app's counts for no reader, each keeping the last that fit
+    let deeper = chain(300);
+    let refused = w.lab.edit(mac, alice, outline, |item| item.set_record(&view, &deeper));
+    assert_eq!(refused, Err(Refusal::NotAView));
+    let patched = w.lab.patched(|lab| lab.edit(mac, alice, outline, |item| item.set_record(&view, &deeper)));
+    let patched = patched.expect("a patched app makes it").to_hex();
+    w.lab.sync_all(1);
+    for d in [mac, phone] {
+        assert_eq!(counted(&mut w, d, outline).last(), Some(&(patched.clone(), false)));
+        assert_eq!(w.lab.item(d, outline).and_then(|i| i.read(&view)), Some(deepest.clone()));
+    }
+}
+
+/// The path of a row `ids` names down an outline, each id a row of the `kids` of the one before (the first of `nodes`),
+/// and then `then`.
+fn down(ids: &[i64], then: &[&str]) -> Value {
+    let mut path = vec![];
+    for (i, id) in ids.iter().enumerate() {
+        path.push(json!(if i == 0 { "nodes" } else { "kids" }));
+        path.push(json!({ "id": id }));
+    }
+    path.extend(then.iter().map(|f| json!(f)));
+    Value::Array(path)
+}
+
+/// `run` and `may` take paths rows down, and the ops of a share name places rows down as they do at the top: a share
+/// lets whom it names make only what its ops reach, at any depth, `may` answering first, and an op on a row reaches
+/// everything under it. What he makes counts for every reader.
+#[test]
+fn run_and_may_take_deep_paths_and_deep_caps() {
+    let mut w = cast::world();
+    let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
+    let (outline, _) = alices_outline(&mut w);
+    let e = hex(outline);
+    let insert = |path: Value, value: Value| json!({ "op": "insert", "entry": e, "path": path, "value": value });
+    let set = |path: Value, value: &str| json!({ "op": "set", "entry": e, "path": path, "value": value });
+    // Alice writes rows three levels down, an op at a time
+    ok(run(&mut w, mac, insert(json!(["nodes"]), json!({ "id": 1, "text": "Beds" }))));
+    ok(run(&mut w, mac, insert(json!(["nodes"]), json!({ "id": 2, "text": "Tools" }))));
+    ok(run(&mut w, mac, insert(down(&[1], &["kids"]), json!({ "id": 11, "text": "North" }))));
+    ok(run(&mut w, mac, insert(down(&[1, 11], &["kids"]), json!({ "id": 111, "text": "Beans" }))));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": e })));
+    assert_eq!(got["record"]["nodes"][0]["kids"][0]["kids"][0]["text"], "Beans");
+    // Bob may set the texts two rows down, add rows to any list under a node, and change anything of the tools
+    let caps = ops_of(json!([
+        { "op": "set", "path": ["nodes", "*", "kids", "*", "text"] },
+        { "op": "insert", "path": ["nodes", "*", "kids"] },
+        { "op": "set", "path": ["nodes", { "id": 2 }] },
+    ]));
+    w.lab.issue(mac, &[mac], on_entry(alice, bob, outline, caps)).expect("Alice shares her outline with Bob");
+    w.lab.sync_all(0);
+    let remove = |path: Value| json!({ "op": "remove", "entry": e, "path": path });
+    let north = set(down(&[1, 11], &["text"]), "North bed");
+    let peas = insert(down(&[1, 11], &["kids"]), json!({ "id": 112, "text": "Peas" }));
+    let spades = set(down(&[2], &["text"]), "Spades");
+    let spade = insert(down(&[2], &["kids"]), json!({ "id": 21, "text": "Spade", "kids": [{ "id": 211 }] }));
+    let asks = [
+        north.clone(),
+        set(down(&[1], &["text"]), "Raised beds"),
+        set(down(&[1, 11, 111], &["text"]), "Runner beans"),
+        peas.clone(),
+        insert(json!(["nodes"]), json!({ "id": 3 })),
+        spades.clone(),
+        spade.clone(),
+        remove(down(&[1, 11], &[])),
+    ];
+    let (yes, no) = (json!(true), json!("NotAllowed"));
+    let want = [&yes, &no, &no, &yes, &no, &yes, &yes, &no].map(Value::clone);
+    assert_eq!(may(&mut w, mac_b, bob, &asks), want, "one row down, three rows down, the top: not his");
+    for (ask, want) in asks.iter().zip(&want) {
+        if *want == no {
+            assert_eq!(refused(&run(&mut w, mac_b, ask.clone())), "NotAllowed", "{ask}");
+        }
+    }
+    // what they allow is made, and every reader counts it; a row added with rows of its own, under the tools' row
+    for op in [north, peas, spades, spade] {
+        ok(run(&mut w, mac_b, op));
+    }
+    let under = set(down(&[2, 21, 211], &["text"]), "Handle");
+    assert_eq!(may(&mut w, mac_b, bob, std::slice::from_ref(&under)), [yes]);
+    ok(run(&mut w, mac_b, under));
+    w.lab.sync_all(1);
+    for d in [mac, mac_b] {
+        assert!(counted(&mut w, d, outline).iter().all(|c| c.1));
+        let got = ok(run(&mut w, d, json!({ "op": "get", "entry": e })));
+        let (beds, tools) = (&got["record"]["nodes"][0], &got["record"]["nodes"][1]);
+        assert_eq!((&beds["text"], &beds["kids"][0]["text"]), (&json!("Beds"), &json!("North bed")));
+        assert_eq!(each(&beds["kids"][0]["kids"], |k| &k["text"]), ["Beans", "Peas"]);
+        assert_eq!((&tools["text"], &tools["kids"][0]["kids"][0]["text"]), (&json!("Spades"), &json!("Handle")));
+    }
+}
+
+/// Merges, undos, restores and variants of an outline, rows down: a proposal's rows join main's by id inside each of
+/// the outline's own rows, and a clash anywhere in one makes that row the conflict, whole, the merge keeping main's
+/// unless it takes the proposal's; undo and restore give back what a version showed, at any depth; a variant copies
+/// every row.
+#[test]
+fn merge_undo_restore_and_variants_reach_rows_of_rows() {
+    let mut w = cast::world();
+    let mac = w.mac_a;
+    let (outline, _) = alices_outline(&mut w);
+    let e = hex(outline);
+    let insert = |line: &Value, path: Value, value: Value| {
+        json!({ "op": "insert", "entry": e, "line": line, "path": path, "value": value })
+    };
+    let set = |line: &Value, path: Value, value: &str| {
+        json!({ "op": "set", "entry": e, "line": line, "path": path, "value": value })
+    };
+    let main = Value::Null;
+    let beds = json!({ "id": 1, "text": "Beds", "kids": [{ "id": 11, "text": "North" }, { "id": 12, "text": "South" }]
+    });
+    ok(run(&mut w, mac, insert(&main, json!(["nodes"]), beds)));
+    let record = |w: &mut World, line: &Value| {
+        let got = ok(run(w, mac, json!({ "op": "get", "entry": e, "line": line })));
+        got["record"].clone()
+    };
+    let kids = |r: &Value| each(&r["nodes"][0]["kids"], |k| &k["text"]);
+    // a proposal and main each change a different row under the beds, and each add one: the merge joins them
+    let line = ok(run(&mut w, mac, json!({ "op": "propose", "entry": e, "name": "Spring" })))["line"].clone();
+    ok(run(&mut w, mac, set(&line, down(&[1, 12], &["text"]), "South bed")));
+    ok(run(&mut w, mac, insert(&line, down(&[1], &["kids"]), json!({ "id": 13, "text": "East" }))));
+    ok(run(&mut w, mac, set(&main, down(&[1, 11], &["text"]), "North bed")));
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": e })));
+    assert_eq!(note["lines"][1]["conflicts"], json!([]), "no clash anywhere in the beds");
+    ok(run(&mut w, mac, json!({ "op": "merge", "entry": e, "from": line })));
+    assert_eq!(kids(&record(&mut w, &main)), ["North bed", "South bed", "East"]);
+    // both change one text two rows down: the beds' row is the conflict, whole, and main keeps its own
+    let line = ok(run(&mut w, mac, json!({ "op": "propose", "entry": e, "name": "Summer" })))["line"].clone();
+    ok(run(&mut w, mac, set(&line, down(&[1, 13], &["text"]), "East bed")));
+    ok(run(&mut w, mac, set(&line, down(&[1, 12], &["text"]), "Sunny bed")));
+    ok(run(&mut w, mac, set(&main, down(&[1, 13], &["text"]), "Eastern bed")));
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": e })));
+    let conflicts = list(&note["lines"][2]["conflicts"]);
+    assert_eq!(conflicts.len(), 1, "{conflicts:?}");
+    assert_eq!(conflicts[0]["at"], json!(["nodes", { "id": 1 }]));
+    let theirs = conflicts[0]["theirs"].clone();
+    assert_eq!(each(&theirs["kids"], |k| &k["text"]), ["North bed", "Sunny bed", "East bed"]);
+    // merged taking the proposal's row there: all of it, the text it didn't clash on too
+    let take = json!([{ "at": conflicts[0]["at"], "what": conflicts[0]["what"] }]);
+    let merge = ok(run(&mut w, mac, json!({ "op": "merge", "entry": e, "from": line, "take": take })))["edit"].clone();
+    assert_eq!(kids(&record(&mut w, &main)), ["North bed", "Sunny bed", "East bed"]);
+    // undo an edit two rows down; take a row there out, and restore the version the merge made: as each showed it
+    let north = ok(run(&mut w, mac, set(&main, down(&[1, 11], &["text"]), "Northern bed")))["edit"].clone();
+    assert_eq!(kids(&record(&mut w, &main)), ["Northern bed", "Sunny bed", "East bed"]);
+    ok(run(&mut w, mac, json!({ "op": "undo", "entry": e, "edit": north })));
+    assert_eq!(kids(&record(&mut w, &main)), ["North bed", "Sunny bed", "East bed"]);
+    ok(run(&mut w, mac, json!({ "op": "remove", "entry": e, "path": down(&[1, 12], &[]) })));
+    assert_eq!(kids(&record(&mut w, &main)), ["North bed", "East bed"]);
+    ok(run(&mut w, mac, json!({ "op": "restore", "entry": e, "at": [merge] })));
+    assert_eq!(kids(&record(&mut w, &main)), ["North bed", "Sunny bed", "East bed"]);
+    // a variant in her vault, whose lane holds the outline schema, copies every row, and a deep op in its first write
+    let alice = w.alice.to_hex();
+    let more = [json!({ "op": "insert", "path": down(&[1, 11], &["kids"]), "value": { "id": 111, "text": "Beans" } })];
+    let variant = json!({ "op": "variant", "entry": e, "into": alice, "ops": more });
+    let copy = ok(run(&mut w, mac, variant))["entry"].as_str().expect("its id").to_string();
+    let copied = ok(run(&mut w, mac, json!({ "op": "get", "entry": copy })))["record"].clone();
+    assert_eq!(kids(&copied), ["North bed", "Sunny bed", "East bed"]);
+    assert_eq!(copied["nodes"][0]["kids"][0]["kids"][0]["text"], "Beans");
+}
+
+/// A query reads each record so many rows down: 16 unless it names its own depth, and never deeper than the device's
+/// most. A list of rows below that isn't read: no where sees it, the record shows the row above it without it, and the
+/// row says it was cut.
+#[test]
+fn a_query_stops_at_its_depth_limit() {
+    let mut w = cast::world();
+    let (alice, mac) = (w.alice, w.mac_a);
+    let (outline, schema) = alices_outline(&mut w);
+    // twenty nodes, one under the other, the nth's text "n"
+    let mut nodes = json!([]);
+    for n in (1..=20).rev() {
+        nodes = json!([{ "id": n, "text": n.to_string(), "kids": nodes }]);
+    }
+    let deep = json!({ "kind": "outline", "title": "Deep", "nodes": nodes });
+    let view = View::plain(&schema);
+    w.lab.edit(mac, alice, outline, |item| item.set_record(&view, &deep)).expect("it fits");
+    // the where on the text `n` rows down, and the query of it
+    let at = |n: usize| {
+        let mut path = vec![json!("nodes"), json!("*")];
+        for _ in 1..n {
+            path.extend([json!("kids"), json!("*")]);
+        }
+        path.push(json!("text"));
+        json!({ "path": path, "eq": n.to_string() })
+    };
+    let query = |w: &mut World, n: usize, depth: Option<usize>| {
+        let mut q = json!({ "op": "query", "vault": alice.to_hex(), "where": at(n) });
+        if let Some(d) = depth {
+            q["depth"] = d.into();
+        }
+        ok(run(w, mac, q))
+    };
+    // 16 rows down by default: the 16th is there, the 17th isn't, and the 16th shows no rows under it
+    let found = query(&mut w, 16, None);
+    assert_eq!((&found["count"], &found["depth"]), (&json!(1), &json!(16)));
+    let row = &found["rows"][0];
+    assert_eq!(row["cut"], true);
+    let mut node = &row["record"]["nodes"][0];
+    for _ in 1..16 {
+        node = &node["kids"][0];
+    }
+    assert_eq!((&node["text"], node.get("kids")), (&json!("16"), None));
+    assert_eq!(query(&mut w, 17, None)["count"], 0);
+    // deeper where a query asks, and shallower
+    let all = query(&mut w, 20, Some(20));
+    assert_eq!((&all["count"], &all["rows"][0]["cut"]), (&json!(1), &json!(false)));
+    assert_eq!(query(&mut w, 2, Some(2))["count"], 1);
+    assert_eq!(query(&mut w, 3, Some(2))["count"], 0);
+    let top = ok(run(&mut w, mac, json!({ "op": "query", "vault": alice.to_hex(), "depth": 0 })));
+    let rows = list(&top["rows"]);
+    let mine = rows.iter().find(|r| r["entry"] == hex(outline)).expect("the outline");
+    let (record, cut) = (&mine["record"], &mine["cut"]);
+    assert_eq!((record.get("nodes"), &record["title"], cut), (None, &json!("Deep"), &json!(true)));
+    // never deeper than the device's most, whatever a query asks
+    assert_eq!(w.lab.query_depth(mac), lens::CEILING);
+    w.lab.set_query_depth(mac, 4);
+    let capped = query(&mut w, 4, Some(20));
+    assert_eq!((&capped["count"], &capped["depth"]), (&json!(1), &json!(4)));
+    assert_eq!(query(&mut w, 5, Some(20))["count"], 0);
+    assert_eq!(refused(&run(&mut w, mac, json!({ "op": "query", "depth": "deep" }))), "BadOp");
+}
+
 /// A todo schema of Alice's own: v2, where a todo may be blocked too.
 const TODO_V2: &str = r#"{ "title": "Todo, v2", "type": "object", "properties": {
   "kind": { "const": "todo" },
