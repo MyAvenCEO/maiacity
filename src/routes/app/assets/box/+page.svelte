@@ -1,11 +1,13 @@
 <!--
-	THE ASSET BOX'S LAB (/app/assets/box/) — phases 0 to 2d of the asset pipeline (src/lib/assets): our own assets built
+	THE ASSET BOX'S LAB (/app/assets/box/) — phases 0 to 3 of the asset pipeline (src/lib/assets): our own assets built
 	inside the box, a worker in a frame with no origin running a frozen engine, and shown from the plain data it hands
 	back, as an asset no one trusts would be. Every build is named by its recipe's BLAKE3 hash and the values it takes
 	(`<hash>?seed=maia&stage=9`); a label such as plants/apple@2 only points at a hash. One button runs every check: each
 	frozen engine checked against its hash and engine 1 still building as it did, what the box cannot reach (tried by a recipe), assets built in the box against the
 	same built in the page, a recipe that never stops, a recipe whose bytes are not its name, data and cards out of shape,
-	each recipe's parameters, and each asset loaded again from this device's cache the same, with no box started.
+	each recipe's parameters, and each asset loaded again from this device's cache the same, with no box started. A
+	second button builds every asset of ours (every version and variant, phase 3) in the box and in the page, compares
+	the two and times both.
 	Laid out as every asset library of the app is ($lib/app/Turntable.svelte): the builds down the left, the asset on its
 	turntable, the actions across the top, the build's name, the cache and the checks down the right.
 -->
@@ -382,6 +384,65 @@
 		line = checks.every((c) => c.ok) ? 'Every check passed.' : 'Some checks failed.';
 		busy = false;
 	}
+
+	/** a built object's geometry, materials and pictures let go, once it has been compared */
+	function dispose(obj) {
+		obj.traverse((o) => {
+			o.geometry?.dispose();
+			for (const m of [o.material].flat().filter(Boolean)) {
+				for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+				m.dispose?.();
+			}
+		});
+	}
+
+	const median = (xs) => {
+		const a = xs.filter((x) => typeof x === 'number').sort((x, y) => x - y);
+		return a.length ? a[Math.floor(a.length / 2)] : 0;
+	};
+
+	// phase 3: every recipe of ours, each version and variant at its own values, built in the box and in the page, the
+	// two compared as the samples are, and both timed
+	let sweep = $state(null);
+	async function everyAsset() {
+		busy = true;
+		still = true;
+		checks = checks.filter((c) => !c.name.startsWith('Every asset'));
+		const { objectAt } = await import('$lib/assets/index.js');
+		const all = Object.entries(INDEX.recipes).sort(([, a], [, b]) => a.label.localeCompare(b.label));
+		const rows = [];
+		const t0 = now();
+		for (const [hash, at] of all) {
+			line = `Every asset: ${rows.length + 1} of ${all.length}, ${at.label}…`;
+			try {
+				const b = await loadAsset(hash, { box, cache: false });
+				const t1 = now();
+				const direct = await objectAt(at.label);
+				const page = Math.round(now() - t1);
+				const skinned = b.data.stats.skinned > 0;
+				const same = tris(direct) === tris(b.obj) && b.card.triangles === tris(direct) && (skinned || JSON.stringify(size(direct)) === JSON.stringify(size(b.obj)));
+				rows.push({ label: at.label, hash, tris: b.card.triangles, recipe: b.ms.recipe, start: b.ms.start, build: b.ms.build, serialize: b.ms.serialize, box: b.ms.box, rebuild: b.ms.rebuild, page, mb: Math.round(cache.bytesOf(b.data) / 10485.76) / 100, same, skinned, ...(same ? {} : { page_tris: tris(direct), page_size: size(direct), box_size: size(b.obj) }) });
+				dispose(direct);
+				dispose(b.obj);
+			} catch (e) {
+				rows.push({ label: at.label, hash, error: String(e.message).slice(0, 200) });
+			}
+		}
+		const failed = rows.filter((r) => !r.same);
+		const slowest = rows.filter((r) => r.same).sort((a, b) => b.box - a.box).slice(0, 10);
+		sweep = { userAgent: navigator.userAgent, engine: INDEX.engine, ms: Math.round(now() - t0), count: rows.length, failed: failed.length, median: { build: median(rows.map((r) => r.build)), box: median(rows.map((r) => r.box)), page: median(rows.map((r) => r.page)), rebuild: median(rows.map((r) => r.rebuild)), mb: median(rows.map((r) => r.mb)) }, slowest, rows };
+		checks = [
+			...checks,
+			{
+				name: `Every asset comes out the same`,
+				ok: failed.length === 0,
+				note: `${rows.length - failed.length} of ${rows.length} recipes (every asset, version and variant) built in the box as in the page, in ${(sweep.ms / 1000).toFixed(0)} s; medians: built in ${sweep.median.build} ms, ${sweep.median.box} ms in the box in all, ${sweep.median.page} ms in the page, rebuilt in ${sweep.median.rebuild} ms, ${sweep.median.mb} MB${failed.length ? `; not the same: ${failed.map((r) => r.label).join(', ')}` : ''}`
+			}
+		];
+		still = false;
+		line = failed.length ? `${failed.length} of ${rows.length} not the same.` : `Every asset, all ${rows.length}, came out the same.`;
+		busy = false;
+	}
 </script>
 
 <svelte:head><title>Asset box · maiaCITY</title></svelte:head>
@@ -405,6 +466,7 @@
 	{#snippet bar()}
 		<div class="chips">
 			<button class="chip run" onclick={runAll} disabled={busy}>Run every check</button>
+			<button class="chip" onclick={everyAsset} disabled={busy} title="Build all {Object.keys(INDEX.recipes).length} recipes in the box and in the page, and compare them">Every asset</button>
 			<button class="chip" onclick={loadOne} disabled={busy}>Load</button>
 			{#if linkOf(name)}<a class="chip" href={linkOf(name)}>Its page</a>{/if}
 			<button class="chip" onclick={empty} disabled={busy}>Empty the cache</button>
@@ -425,6 +487,15 @@
 				{/each}
 			</ul>
 		{/if}
+		{#if sweep}
+			<details>
+				<summary>Every asset: the slowest in the box{sweep.failed ? ', and those not the same' : ''}</summary>
+				<ul class="probes">
+					{#each sweep.rows.filter((r) => !r.same) as r}<li><b>{r.label}</b> {r.error ?? `${r.tris} triangles in the box, ${r.page_tris} in the page`}</li>{/each}
+					{#each sweep.slowest as r}<li><b>{r.label}</b> {r.box} ms in the box ({r.build} ms built), {r.page} ms in the page, {r.tris.toLocaleString('en')} triangles, {r.mb} MB</li>{/each}
+				</ul>
+			</details>
+		{/if}
 		{#if probes}
 			<details>
 				<summary>Every way out, tried from inside the box</summary>
@@ -438,6 +509,7 @@
 		{#if loaded}<span>{loaded.triangles.toLocaleString('en')} triangles · {loaded.size.map((x) => x.toFixed(2)).join(' × ')} m · engine {loaded.engine}</span>{/if}
 	{/snippet}
 	{#if results}<pre id="results" hidden>{JSON.stringify(results)}</pre>{/if}
+	{#if sweep}<pre id="sweep" hidden>{JSON.stringify(sweep)}</pre>{/if}
 </Turntable>
 
 <style>
