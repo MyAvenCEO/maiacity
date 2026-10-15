@@ -418,6 +418,34 @@ async fn the_relay_lets_a_device_go_once_its_pass_runs_out_unless_it_joined() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_device_with_no_udp_gets_onto_its_relay_soon_after_the_relay_first_answers() {
+    // a relay on a port that answers nothing yet, as one a browser's first HTTPS request doesn't reach in time: the
+    // device's first report of its relays picks none, and iroh's next comes only 20 to 26 seconds on
+    let free = std::net::TcpListener::bind(LOOPBACK).expect("a free port");
+    let bind = free.local_addr().expect("its address");
+    drop(free);
+    let url: RelayUrl = format!("http://{bind}").parse().expect("the relay's URL");
+    let admission = Admission::open();
+    let mut w = world();
+    let eve_key = w.lab.passkey("Eve");
+    let eves = w.lab.device_of(eve_key, "Eve's browser");
+    let pass = w.lab.relay_pass(eves, eve_key, unix_now()).expect("a pass");
+    let browser = node(&mut w, eves, &[eve_key], 8, with_pass(&url, pass)).await;
+    let started = Instant::now();
+    let late = async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        Relay::spawn(bind, admission.clone()).await.expect("the relay, a second late")
+    };
+    let (on, relay) = tokio::join!(browser.on_relay(), late);
+    let took = started.elapsed();
+    assert!(on, "the browser gets onto its relay");
+    assert!(relay.serves(&browser.id()), "which serves it");
+    // it has iroh pick its relay again every two seconds while it has none: on it within a few seconds of the first
+    assert!(took < Duration::from_secs(12), "on its relay {took:?} after it started, not 20 to 26 seconds on");
+    browser.shutdown().await.expect("the node shuts down");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_persons_first_browser_founds_their_vault_through_a_relay_open_to_sign_up() {
     let admission = Admission::open();
     let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
