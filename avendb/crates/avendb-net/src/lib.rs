@@ -854,6 +854,49 @@ impl Node {
         self.send_claim(offer, claim.context("a claim")?).await
     }
 
+    /// `adopt_with`, the passkey `passkey` in this node's Lab, which makes its ceremony itself.
+    pub async fn adopt(&self, offer: &Offer, into: Option<VaultId>, passkey: SignerId) -> Result<VaultId> {
+        self.adopt_with(offer, into, passkey, &InLab(self.shared.clone(), passkey)).await
+    }
+
+    /// Adopt the device `offer` names, one of no vault yet that answers claims (`Options::card`), as a device of an
+    /// aven vault this device's person's vault owns: `into`, or else a new one their vault founds and owns alone, in
+    /// the same ceremony. The passkey `passkey` approves the edit that adds the device, which the device signs too, as
+    /// a server's claim goes (`claim_with`, `Lab::claim`): an agent's own device, such as avenCLAUDE's on the person's
+    /// Mac, which acts for its aven vault by its own key from then on. The aven vault. Fails if this device belongs to
+    /// no vault, the device offered isn't the one answering or takes no claim, the passkey isn't at hand, or the
+    /// device refuses the edit.
+    pub async fn adopt_with(
+        &self,
+        offer: &Offer,
+        into: Option<VaultId>,
+        passkey: SignerId,
+        authenticator: &impl Authenticator,
+    ) -> Result<VaultId> {
+        self.offered(offer).await?;
+        let human = self.shared.lab(|lab, me| lab.vault_of(me)).await.context("this device belongs to no vault")?;
+        let (device, key) = (offer.device, self.claim_key(offer).await?);
+        let draft = move |lab: &mut Lab, me| {
+            let nonce = lab.nonce();
+            let mut drafting = lab.drafting(me);
+            let aven = match into {
+                Some(aven) => aven,
+                None => {
+                    let owners = vec![Principal::Vault(human)];
+                    let kind = Kind::Aven;
+                    let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+                    VaultId::from(drafting.draft(&[passkey], genesis)?)
+                }
+            };
+            let add = Action::Share(Sharing::Device { vault: aven, device, seal_to: Some(key) });
+            drafting.draft(&[passkey, device], add)?;
+            Ok::<_, Refusal>(drafting.done())
+        };
+        let drafts = self.shared.lab(draft).await.map_err(|why| anyhow!("the adoption is refused: {why:?}"))?;
+        let (_, (), claim) = self.sign(vec![(passkey, (), drafts)], true, Step::Approve, authenticator).await?;
+        self.send_claim(offer, claim.context("a claim")?).await
+    }
+
     /// Edits that need the approval of a vault its person's passkey `passkey` roots, or of one their vault owns, as the
     /// genesis of a vault their vault owns or an owner share: `draft` drafts them on this device one on top of the
     /// other (`Lab::drafting`), and `authenticator` signs them all in one ceremony; then this device keeps them in that

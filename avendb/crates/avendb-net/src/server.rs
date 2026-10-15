@@ -31,6 +31,18 @@ pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
     Node::spawn(lab, me, Options { shelf: Some(shelf), keep: true, card: true, ..opts }).await
 }
 
+/// An agent's own device on `shelf`, named `name`, with `opts` for its network: avenCLAUDE's on its person's Mac, as
+/// the server's is, with its secret on the shelf beside its edits, made at its first start; but keeping no file whole
+/// of its own accord (`Options::keep` as `opts` say), so that it reads its person's files from their Mac's one store.
+/// It hands its card to whoever asks and answers claims while it belongs to no vault, so that its person's Mac adopts
+/// it into an aven vault their vault owns (`Node::adopt_with`); from then on it acts for that vault by its own key.
+pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node> {
+    let secret = secret(&shelf).await?;
+    let mut lab = Lab::with_entropy(*random()?);
+    let me = lab.device_with(name, *secret);
+    Node::spawn(lab, me, Options { shelf: Some(shelf), card: true, ..opts }).await
+}
+
 /// The vault the node's device belongs to, as its view has it: avenCEO, once a device claimed the server.
 pub async fn vault(node: &Node) -> Option<VaultId> {
     node.read(|lab, me| lab.vault_of(me)).await

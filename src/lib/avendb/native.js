@@ -94,8 +94,8 @@ export class NativeDevice {
 	 * Op `op`, any read or change of the database (avendb/docs/ARCHITECTURE.md §8): its answer, `{ ok }` or
 	 * `{ refused, why }`; the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so
 	 * `ceremony` goes unused. A `put_file` op's bytes come from `read(at, n)`, a megabyte at a time, each in base64 to
-	 * the app's device, which reads them twice, for the file's key and to seal them into its store; a `read_file` op's come back as `bytes`, as the
-	 * page's device hands them.
+	 * the app's device, which reads them twice, for the file's key and to seal them into its store; a `read_file` op's
+	 * come back as `bytes`, as the page's device hands them.
 	 * @param {any} op @param {unknown} [ceremony] @param {(at: number, n: number) => Promise<Uint8Array>} [read]
 	 */
 	async run(op, ceremony, read) {

@@ -6,7 +6,9 @@
 //! in the unlock's sheet alone, following the vaults it followed, and puts the shelf aside when she forgets it there,
 //! deleting nothing. Every read and change is an op (`run`, V2), what her vault's owners approve signed in a sheet;
 //! a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`), and any range of it back, in base64. A new
-//! device puts aside a shelf a start cut short left, and clears what an earlier avenDB kept in the folder.
+//! device puts aside a shelf a start cut short left, and clears what an earlier avenDB kept in the folder. And an
+//! agent's own device on the Mac (`agent`), as Claude Code starts it, waits for the page, which adopts it as Eve's
+//! aven avenCLAUDE in one sheet; from then on it reads her vault by its own key.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -20,7 +22,7 @@ use avendb::id::EntryId;
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::sign::{Ceremony, PRF_SALT, Passkey};
-use avendb_device::{Config, SHEET, serve};
+use avendb_device::{Config, SHEET, agent, serve};
 use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, Node, Options, disk};
 use avendb_server::Relay;
@@ -467,6 +469,120 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_av
     }
     let left: Vec<_> = std::fs::read_dir(&dir).expect("its folder").map(|e| e.expect("one").file_name()).collect();
     assert_eq!(left.len(), 2, "its two shelves alone: {left:?}");
+    server.shutdown().await.expect("the server's node stops");
+}
+
+/// An agent harness, as an agent's own device sees it (`agent::serve`): MCP on its stdin and stdout.
+struct Harness {
+    to: Option<WriteHalf<DuplexStream>>,
+    from: Lines<BufReader<ReadHalf<DuplexStream>>>,
+    serving: JoinHandle<anyhow::Result<()>>,
+    next: u64,
+}
+
+impl Harness {
+    /// The harness starts agent `name`'s device beside the app's folder `host`.
+    fn start(host: &Path, name: &str) -> Harness {
+        let (harness, device) = tokio::io::duplex(1 << 20);
+        let (input, output) = tokio::io::split(device);
+        let serving = tokio::spawn(agent::serve(host.to_path_buf(), name.to_string(), input, output));
+        let (from, to) = tokio::io::split(harness);
+        Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
+    }
+
+    /// MCP request `method` with `params`: its result, or its error.
+    async fn ask(&mut self, method: &str, params: Value) -> Result<Value, Value> {
+        self.next += 1;
+        let id = self.next;
+        let line = format!("{}\n", json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
+        let to = self.to.as_mut().expect("the harness runs");
+        to.write_all(line.as_bytes()).await.expect("the agent's stdin");
+        let line = tokio::time::timeout(Duration::from_secs(60), self.from.next_line()).await;
+        let line = line.expect("an answer within 60 s").expect("the agent's stdout").expect("a line");
+        let answer: Value = serde_json::from_str(&line).expect("a line of JSON");
+        assert_eq!(answer["id"], id, "the answer to the request: {answer}");
+        answer.get("result").cloned().ok_or_else(|| answer["error"].clone())
+    }
+
+    /// Tool `name` with `args`: its text, and whether it is an error.
+    async fn tool(&mut self, name: &str, args: Value) -> (String, bool) {
+        let result = self.ask("tools/call", json!({ "name": name, "arguments": args })).await.expect("a result");
+        let text = result["content"][0]["text"].as_str().expect("its text").to_string();
+        (text, result["isError"] == true)
+    }
+
+    /// The harness quits: the agent's stdin ends, and its device stops.
+    async fn quit(mut self) {
+        let mut to = self.to.take().expect("the harness runs");
+        to.shutdown().await.expect("the agent's stdin ends");
+        let done = tokio::time::timeout(Duration::from_secs(60), &mut self.serving).await;
+        done.expect("the agent stops within 60 s").expect("the agent's task").expect("the agent stops cleanly");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_mac_adopts_claude_codes_own_device_as_eves_aven_in_one_sheet_and_it_reads_her_vault() {
+    let (_relay, url, server) = server().await;
+    // the app's folder and the agents' beside it, both in a folder of the test's own
+    let folder = Folder::new("agent");
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let mine = world_of(&mut app).await["mine"].clone();
+    let seeds = titled("Seeds", "Tomatoes in March.");
+    let note = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": seeds })).await;
+    let entry = note.expect("her note")["entry"].clone();
+    assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "no agent on her Mac yet");
+    // Claude Code starts its own device, which waits to be adopted: the page shows it
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    assert_eq!(hello["serverInfo"]["name"], "avendb");
+    let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
+    let names: Vec<&str> = tools.as_array().expect("tools").iter().filter_map(|t| t["name"].as_str()).collect();
+    assert_eq!(names, ["avendb_vaults", "avendb_ask", "avendb_run"]);
+    let (waits, _) = claude.tool("avendb_vaults", json!({})).await;
+    assert!(waits.contains("waiting to be adopted"), "{waits}");
+    let mut waiting = Value::Null;
+    for _ in 0..100 {
+        waiting = app.call("agents", json!([])).await.expect("the agents");
+        if waiting.as_array().is_some_and(|w| !w.is_empty()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(waiting[0]["name"], agent::CLAUDE, "avenCLAUDE waits: {waiting}");
+    // one sheet adopts it, as an aven her vault owns, which may suggest in her vault
+    let offer = waiting[0]["offer"].clone();
+    let adopted = app.call("adopt", json!([agent::CLAUDE, offer, [mine]])).await.expect("adopted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let aven = adopted["aven"].clone();
+    let world = world_of(&mut app).await;
+    let shown = world["vaults"].as_array().expect("vaults").iter().find(|v| v["id"] == aven).cloned();
+    let shown = shown.expect("the aven on her Mac");
+    assert_eq!((&shown["kind"], &shown["name"]), (&json!("aven"), &json!(agent::CLAUDE)), "{shown}");
+    assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "none waits any more");
+    // the agent acts for avenCLAUDE by its own key, and reads her note
+    let (me, _) = claude.tool("avendb_vaults", json!({})).await;
+    let me: Value = serde_json::from_str(&me).expect("JSON");
+    assert_eq!(me["me"]["vault"], aven, "avenCLAUDE: {me}");
+    let get = json!({ "op": { "op": "get", "entry": entry } });
+    let mut read = (String::new(), true);
+    for _ in 0..100 {
+        read = claude.tool("avendb_ask", get.clone()).await;
+        if !read.1 && read.0.contains("Tomatoes in March.") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!read.1 && read.0.contains("Tomatoes in March."), "the agent reads her note: {read:?}");
+    let (no, error) = claude.tool("avendb_run", json!({ "op": { "op": "world" } })).await;
+    assert!(error && no.contains("only reads"), "{no}");
+    let put = json!({ "op": { "op": "put_file", "vault": mine, "name": "a.txt", "size": 1 } });
+    let (no, error) = claude.tool("avendb_run", put).await;
+    assert!(error && no.contains("isn't for an agent"), "{no}");
+    claude.quit().await;
+    app.quit().await;
     server.shutdown().await.expect("the server's node stops");
 }
 

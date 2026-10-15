@@ -27,6 +27,8 @@
 //! put aside in the folder, a new generation made beside it (`avendb_net::disk::aside`); and what came before the last
 //! reset, older shelves and an earlier avenDB's store, is cleared as the device opens its folder (`disk::clear`).
 
+pub mod agent;
+
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
@@ -36,6 +38,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine;
+use avendb::id::VaultId;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
 use avendb_browser::{Device, Fresh, Meta, Start, Unlock, steps_json};
@@ -191,6 +194,8 @@ impl Service {
     /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileAgain [n]` once every
     /// chunk is in, whether the device reads the file again (once for its key, once to seal it: the page then hands
     /// every chunk over again, from 0), `fileEnd [n]` the op's answer, `fileDrop [n]` none, the file dropped.
+    /// `agents` the agents on this Mac waiting to be adopted, `adopt [name, offer, vaults]` one of them adopted as the
+    /// person's aven (`agent`), and `agentCommand` the line that connects Claude Code to its own device, avenCLAUDE.
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
         let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
@@ -221,6 +226,12 @@ impl Service {
                 Value::Null
             }
             "fileAgain" => self.file_again(number(0)?).await?.into(),
+            "agents" => self.agents(&d),
+            "agentCommand" => agent::command(&std::env::current_exe()?, &self.config.dir, agent::CLAUDE).into(),
+            "adopt" => {
+                let vaults = a.get(2).as_array().cloned().unwrap_or_default();
+                self.adopt(&d, &a.text(0)?, &a.text(1)?, &vaults).await?
+            }
             "fileEnd" => {
                 let incoming = self.files.lock().expect("the files").remove(&number(0)?);
                 let Incoming { chunks, answer, .. } = incoming.context("no such file on its way in")?;
@@ -446,7 +457,77 @@ impl Service {
     fn opened(&self, d: Device) -> Value {
         let d = Arc::new(d);
         *self.device.lock().expect("the device") = Some(d.clone());
+        self.leave_offer(&d);
         info(&d)
+    }
+
+    /// Device `d`'s offer, left for the agents on this Mac where one ever started (`agent`), as it is now.
+    fn leave_offer(&self, d: &Device) {
+        let (file, offer) = (agent::host_offer(&self.config.dir), d.node().offer().to_text());
+        let left = std::fs::read_to_string(&file).is_ok_and(|now| now == offer);
+        if !left && agent::agents(&self.config.dir).is_dir() {
+            if let Err(e) = std::fs::write(&file, offer) {
+                tracing::warn!("the offer for this Mac's agents isn't written: {e}");
+            }
+        }
+    }
+
+    /// The agents on this Mac waiting to be adopted (`agent`): each its name, its device and its offer; this device's
+    /// own offer left for them as it is now.
+    fn agents(&self, d: &Device) -> Value {
+        self.leave_offer(d);
+        let dir = agent::agents(&self.config.dir);
+        let mut waiting = vec![];
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|x| x != "offer") {
+                continue;
+            }
+            let (Some(name), Ok(text)) = (path.file_stem().and_then(|n| n.to_str()), std::fs::read_to_string(&path))
+            else {
+                continue;
+            };
+            if let Ok(offer) = Offer::from_text(text.trim()) {
+                waiting.push(json!({ "name": name, "device": hex(&offer.device.0), "offer": offer.to_text() }));
+            }
+        }
+        Value::Array(waiting)
+    }
+
+    /// Adopts agent `name`, waiting with offer `offer` (`agents`), as the device of the aven vault of that name the
+    /// person's vault owns, founding it if it owns none, in one ceremony of their passkey in the sheet
+    /// (`Node::adopt_with`); then each of `vaults` gives that aven a Suggester share over all of it. The aven vault.
+    async fn adopt(self: &Arc<Self>, d: &Arc<Device>, name: &str, offer: &str, vaults: &[Value]) -> Result<Value> {
+        agent::named(name)?;
+        let offer = Offer::from_text(offer)?;
+        let mine = d.vault().await.context("this Mac belongs to no vault")?;
+        let world = d.node().op(json!({ "op": "world" })).await?;
+        let owned = |v: &&Value| {
+            v["kind"] == "aven"
+                && v["name"] == name
+                && v["owners"].as_array().is_some_and(|o| o.len() == 1)
+                && v["owners"][0]["vault"] == hex(&mine.0)
+        };
+        let vaults_seen = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
+        let into = vaults_seen.iter().find(owned).and_then(|v| v["id"].as_str()).and_then(VaultId::from_hex);
+        let approver = self.approver().await?;
+        let aven = d.node().adopt_with(&offer, into, d.passkey(), &approver).await?;
+        let aven_hex = hex(&aven.0);
+        let named = d.node().op(json!({ "op": "profile", "vault": aven_hex, "name": name })).await?;
+        if named.get("ok").is_none() {
+            tracing::warn!("{name}'s profile isn't written: {named}");
+        }
+        for over in vaults {
+            // acting for the vault itself, as the person's vault owns it, directly or through owners of owners
+            let share = json!({ "op": "share", "over": over, "who": { "vault": aven_hex }, "level": "Suggester",
+                "what": "everything", "as": over });
+            let (shared, _) = d.run(share, None::<NoBytes>, Some(&approver)).await?;
+            if shared.get("ok").is_none() {
+                bail!("{name}'s Suggester share over {over} is refused: {shared}");
+            }
+        }
+        std::fs::remove_file(agent::waiting(&self.config.dir, name)).ok();
+        Ok(json!({ "aven": aven_hex }))
     }
 
     /// Puts the shelf in use aside, never deleting it, and puts a new one in use, empty (`avendb_net::disk::aside`).

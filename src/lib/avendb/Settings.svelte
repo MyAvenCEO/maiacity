@@ -43,9 +43,17 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null }}
+	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null,
+	 *   connect?: string }}
 	 */
-	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null } = $props();
+	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null, connect = '' } = $props();
+	let connected = $state(false);
+	/** Copies the line that connects Claude Code to its own device, avenCLAUDE. */
+	async function copyConnect() {
+		await navigator.clipboard.writeText(connect);
+		connected = true;
+		setTimeout(() => (connected = false), 1400);
+	}
 
 	/** This device, as the person sees it: in the Mac app, the Mac. */
 	const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
@@ -487,6 +495,18 @@
 				<div class="qr">{@html qr}</div>
 				<input class="field code" readonly value={link} onfocus={(e) => e.currentTarget.select()} />
 			</article>
+			{#if connect}
+				<article class="card">
+					<h3>Claude Code on {here}</h3>
+					<p class="soft">
+						Run this line once in a terminal. Claude Code then starts avenCLAUDE, an avenDB device of its own with a key
+						of its own, and this page asks you to adopt it as your aven with one touch of your passkey. It reads your
+						files from this Mac's one store, so nothing is kept twice, and it suggests changes that you merge.
+					</p>
+					<input class="field code" readonly value={connect} onfocus={(e) => e.currentTarget.select()} />
+					<button class="btn quiet" onclick={copyConnect}>{connected ? 'Copied' : 'Copy the line'}</button>
+				</article>
+			{/if}
 			<article class="card">
 				<h3>{Here}</h3>
 				{#if sockets}
