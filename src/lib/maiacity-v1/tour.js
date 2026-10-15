@@ -25,7 +25,7 @@
 import { equilibriumOf } from '../../../game/maiacity-v1/engine.js';
 
 /** what each player invests on the way (Samuel 2026-10-15): 50,000 HEARTS into the MaiaCity COOP, 25,000 into the
- * Village COOP and 25,000 into the Tribe COOP, of the 120,379 their first mint brings */
+ * Village COOP and 25,000 into the Tribe COOP, of the 124,800 their first mint brings */
 export const STORY_INVESTS = { maia: 50000, village: 25000, tribe: 25000 };
 
 const f = (n, d = 0) => Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
