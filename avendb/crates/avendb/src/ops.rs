@@ -543,10 +543,13 @@ pub enum Test {
     Exists(bool),
 }
 
-/// An order on values: of two integers, or of two texts; any other two aren't ordered.
+/// An order on values: of two numbers (two integers exactly), or of two texts; any other two aren't ordered.
 fn lt(a: &Value, b: &Value) -> bool {
     match (a, b) {
-        (Value::Number(x), Value::Number(y)) => matches!((x.as_i64(), y.as_i64()), (Some(x), Some(y)) if x < y),
+        (Value::Number(x), Value::Number(y)) => match (x.as_i64(), y.as_i64()) {
+            (Some(x), Some(y)) => x < y,
+            _ => matches!((x.as_f64(), y.as_f64()), (Some(x), Some(y)) if x < y),
+        },
         (Value::String(x), Value::String(y)) => x < y,
         _ => false,
     }

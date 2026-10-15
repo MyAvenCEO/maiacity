@@ -493,8 +493,9 @@ acted for. Its tags are a set of symbols that writes change by deltas. Header, t
 write's encrypted body (`slice::Body`): `{header, tags, answers, content, proof, files}`. No relay sees a type or a tag.
 
 **Loro.** Each entry is a Loro document, a CRDT. Two devices that hold the same writes read the same entry, whatever
-order they came in. Text merges character by character. A list of records merges row by row, matched by id. Any other
-field takes one value, the same on every device. Records are flat (`crates/avendb/src/doc.rs`, `ops.rs`).
+order they came in. Text merges character by character. A list of records merges row by row, matched by id, and a
+list of values item by item. Any other field takes one value, the same on every device: an object, a tuple or a list
+with bounds too, kept whole. Records are flat: a row holds no list of records (`crates/avendb/src/doc.rs`, `ops.rs`).
 
 **A write** is `Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }`. `deps` are the
 entry's writes it builds on (its Loro frontier). `create` names a new entry's first audience. `files` names, in the
@@ -745,6 +746,16 @@ its title and format, the sparks it grew from, its journey's beats and its hook 
 description and launch; the story flow's tag says which of its stages it is in). The first versions of documents and
 todos, and the lenses from them, stay in the code only as the lens engine's worked example (`lens::blobs::ALL`); no
 record is written under them.
+
+**What a schema can say** (`lens::Schema`). An object's `properties` and `required`; each property a `const`, an
+`enum`, or a `type`: a string (with `maxLength`, counted in characters), an integer or a number (any finite one, each
+with `minimum` and `maximum`), a boolean, an object (its own `properties`, `required` and `additionalProperties:
+false`, nested to any depth) or an array. An array of `items` is a list of values (with `minItems` and `maxItems`) or
+of records (objects with a required integer `id`); one of `prefixItems` is a tuple of so many values, a position `[x,
+y, z]`. `$ref` names a shape of the schema's own `$defs`; one that names no shape, or that goes round in a circle,
+makes it no schema. `"x-loro": "text"` marks free text, and `default` what a field reads as when it is absent. A field
+whose value doesn't fit reads as absent, and a record that lacks a required one doesn't read. Other keywords change
+nothing.
 
 **avenCEO GmbH holds them.** Every app knows avenDB's own schemas by heart, so each vault reads and writes them
 offline. Beside that, avenCEO GmbH holds each as an entry of its own, of the very same bytes and so of the same id,

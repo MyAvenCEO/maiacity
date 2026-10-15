@@ -597,12 +597,17 @@ fn sync_map(m: &LoroMap, want: &Record, view: &View, list: Option<&str>) {
 
 /// Set `key` of `m` to `w`, a container the way the view's schemas store the field.
 fn set_key(m: &LoroMap, key: &str, w: &Value, view: &View, list: Option<&str>) {
-    let stored = view.stored(list, key).unwrap_or(match w {
-        Value::Array(xs) if list.is_none() && xs.iter().any(Value::is_object) => Stored::Records,
-        Value::Array(_) => Stored::List,
+    let now = m.get(key);
+    // a field no schema of the view names: one value stays one value, else an array of rows (objects with an integer
+    // id) is a list of records, an array of other objects one value, and any other array a list of values
+    let stored = view.stored(list, key).unwrap_or(match (&now, w) {
+        (Some(ValueOrContainer::Value(v)), _) if !container(v) => Stored::Value,
+        (_, Value::Array(xs)) if list.is_none() && xs.iter().any(Value::is_object) => {
+            if ops::rows(w).is_some() { Stored::Records } else { Stored::Value }
+        }
+        (_, Value::Array(_)) => Stored::List,
         _ => Stored::Value,
     });
-    let now = m.get(key);
     match (&now, w) {
         (Some(ValueOrContainer::Container(Container::Text(t))), Value::String(s)) => return update_text(t, s),
         (Some(ValueOrContainer::Container(Container::MovableList(l))), Value::Array(xs)) => {
@@ -627,6 +632,8 @@ fn set_key(m: &LoroMap, key: &str, w: &Value, view: &View, list: Option<&str>) {
             replace(m);
             sync_records(&edit(m.ensure_mergeable_movable_list(key)), xs, view, key);
         }
+        // an array its schema holds as one value (a tuple, a list of objects): one value, as any other
+        (Stored::Value, Value::Array(_)) => edit(m.insert(key, loro(w))),
         (_, Value::Array(xs)) => {
             replace(m);
             sync_values(&edit(m.ensure_mergeable_list(key)), xs);
