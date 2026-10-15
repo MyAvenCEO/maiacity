@@ -418,8 +418,9 @@ fn recipient(r: &Recipient) -> Value {
     key_name(r.name())
 }
 
-/// Note `entry` as device `me` holds it, for the page's note page, an article alike (`Item::as_markdown`): the kind its
-/// record names on the main line (`"document"`, `"article"`); its lines, the main line first, then each proposal in the
+/// Note `entry` as device `me` holds it, for the page's note page, an article alike (`Item::as_markdown`), and any
+/// other record by its title and the record itself (a story's page): the kind its record names on the main line
+/// (`"document"`, `"article"`, `"story"`); its lines, the main line first, then each proposal in the
 /// order it started, each with its name (`named`), the version it started from, its heads, its history (its own edits
 /// and every edit they build on, oldest first), and the note it shows there; for a proposal, as a pull request shows
 /// one, the note at its base with main, what both lines hold in common (`base`), and where a merge into main would find
@@ -428,7 +429,9 @@ fn recipient(r: &Recipient) -> Value {
 pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
     let h = lab.history(me, entry)?;
     let line = |line: Line| {
-        let doc = lab.item_on(me, entry, line).and_then(Item::as_markdown);
+        let item = lab.item_on(me, entry, line);
+        let record = item.as_ref().map_or(Value::Null, |i| i.record());
+        let doc = item.and_then(Item::as_markdown);
         let start = line.and_then(|b| h.get(b));
         let (base, conflicts) = match line {
             None => (Value::Null, Value::Null),
@@ -445,9 +448,10 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
             "from": start.map(|c| ids(&c.write.deps)),
             "heads": ids(&h.heads(line)),
             "history": h.history(line).iter().map(|c| hex(&c.write.edit.0)).collect::<Vec<_>>(),
-            "title": doc.as_ref().map(|d| d.title.clone()),
+            "title": doc.as_ref().map(|d| d.title.clone()).or_else(|| titled(&record)),
             "text": doc.as_ref().map(body),
             "blocks": doc.as_ref().map(|d| d.blocks.iter().map(|b| b.to_value()).collect::<Vec<_>>()),
+            "record": record,
             "base": base,
             "conflicts": conflicts,
         })
@@ -461,6 +465,11 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
     Some(json!({ "entry": hex(&entry.0), "vault": vault, "kind": kind, "lines": lines, "edits": edits }))
 }
 
+/// The title a record holds, for a record no document or article reads.
+fn titled(record: &Value) -> Option<String> {
+    record.get("title")?.as_str().map(String::from)
+}
+
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the owners it acted through
 /// (`via`) and who stands behind it (`chain`, `Audit::chain`), the line it extends, what it builds on, and what it is,
 /// as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the start of a proposal (`propose`,
@@ -472,8 +481,15 @@ fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, shown: bool) -> Va
     let (w, Wrote { kind, from, base, why }) = (&c.write, wrote(h, c));
     let line = w.line();
     let at = |version: &[EditId]| h.item_at(version, me, line).as_markdown();
-    let (after, before) =
-        if shown && matches!(kind, "edit" | "merge") { (at(&[w.edit]), at(&base)) } else { (None, None) };
+    let changed = shown && matches!(kind, "edit" | "merge");
+    let (after, before) = if changed { (at(&[w.edit]), at(&base)) } else { (None, None) };
+    // a record no document or article reads, a story's, by the title its record holds
+    let title = |version: &[EditId]| titled(&h.item_at(version, me, line).record());
+    let (title, before_title) = match &after {
+        Some(d) => (Some(d.title.clone()), None),
+        None if changed => (title(&[w.edit]), title(&base)),
+        None => (None, None),
+    };
     json!({
         "id": hex(&w.edit.0),
         "author": hex(&w.author.0),
@@ -485,9 +501,10 @@ fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, shown: bool) -> Va
         "kind": kind,
         "name": if kind == "propose" { h.name(w.edit) } else { None },
         "from": from.map(|l| json!({ "line": l.map(|b| hex(&b.0)), "name": line_name(h, l) })),
-        "title": after.as_ref().map(|d| d.title.clone()),
+        "title": title,
         "text": after.as_ref().map(body),
         "before": before.as_ref().map(body),
+        "beforeTitle": before_title,
         "counted": c.counted,
         "why": why,
     })

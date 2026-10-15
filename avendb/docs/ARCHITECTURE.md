@@ -721,8 +721,10 @@ what changed (T9). So an old app and a new one edit the same todo side by side, 
 told by its `kind`: a **document** (a note: a title, blocks and tags), a **todo**, an **article** (a title and one
 Markdown text), a **flow** (stages an item can be in, each with whether it is public and where it goes next), a
 **function** (a script that runs when an item enters or leaves a stage of a flow), a **post** (a public post of a
-stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), and a **file** (its
-name and its media type). The first versions of documents and todos, and the lenses from them, stay in the code only
+stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
+name and its media type), and a **story** (one content piece from its first spark to every platform it goes out on:
+its title and format, the sparks it grew from, its journey's beats and its hook variants as rows, its intro,
+description and launch; the story flow's tag says which of its stages it is in). The first versions of documents and todos, and the lenses from them, stay in the code only
 as the lens engine's worked example (`lens::blobs::ALL`); no record is written under them.
 
 **avenCEO GmbH holds them.** Every app knows avenDB's own schemas by heart, so each vault reads and writes them

@@ -282,6 +282,43 @@ fn the_posts_everyone_reads_are_the_feed_newest_first() {
 }
 
 #[test]
+fn a_story_is_a_kind_of_its_own_proposed_to_and_merged_by_its_title() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    // a story: its hook variants and its journey's beats as rows, its stage a flow's tag
+    let hook = "The 1 decision I didn't dare to take";
+    let hooks = [json!({ "id": 7, "text": hook, "dial": 3, "image_title": ["The 1 decision"] })];
+    let beats = [json!({ "id": 1, "title": "Waking up", "type": "hook", "tension": 40, "link": "but" })];
+    let mut value = json!({ "kind": "story", "title": "Trailer story", "format": "film", "hooks": hooks, "hook": 7 });
+    value["beats"] = json!(beats);
+    let create = json!({ "op": "create", "vault": alice, "type": "story", "tags": ["story:idea"], "value": value });
+    let story = ok(run(&mut w, mac, create))["entry"].as_str().unwrap().to_string();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": story, "schema": "story" })));
+    assert_eq!((&got["record"]["title"], &got["record"]["hooks"][0]["dial"]), (&json!("Trailer story"), &json!(3)));
+    assert_eq!(got["record"]["sparks"], json!([]), "what it doesn't hold reads as its default");
+    // what doesn't fit its schema is refused: a format it doesn't know, a tension that isn't a whole number
+    let bad = |v: Value| json!({ "op": "create", "vault": alice, "type": "story", "value": v });
+    assert_eq!(refused(&run(&mut w, mac, bad(json!({ "kind": "story", "format": "opera" })))), "NotAView");
+    let half = json!({ "kind": "story", "beats": [{ "id": 1, "tension": 0.5 }] });
+    assert_eq!(refused(&run(&mut w, mac, bad(half))), "NotAView");
+    // retitled on a proposal, then merged: its note page tells each line and edit by the title its record holds
+    let line = ok(run(&mut w, mac, json!({ "op": "propose", "entry": story, "name": "Sharper" })))["line"].clone();
+    let retitle = json!({ "op": "set", "entry": story, "line": line, "path": ["title"], "value": "The decision" });
+    ok(run(&mut w, mac, retitle));
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": story })));
+    assert_eq!(note["kind"], "story");
+    let titles = (&note["lines"][0]["title"], &note["lines"][1]["title"]);
+    assert_eq!(titles, (&json!("Trailer story"), &json!("The decision")));
+    assert_eq!(note["lines"][1]["record"]["format"], "film");
+    let last = list(&note["edits"]).last().unwrap().clone();
+    assert_eq!((&last["title"], &last["beforeTitle"]), (&json!("The decision"), &json!("Trailer story")));
+    ok(run(&mut w, mac, json!({ "op": "merge", "entry": story, "from": line })));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": story, "schema": "story" })));
+    assert_eq!(got["record"]["title"], "The decision");
+}
+
+#[test]
 fn lines_merge_restore_undo_and_variants_are_ops() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
@@ -485,7 +522,8 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
     let own = [
-        "article", "card", "document", "document", "file", "flow", "function", "post", "profile", "todo", "todo",
+        "article", "card", "document", "document", "file", "flow", "function", "post", "profile", "story", "todo",
+        "todo",
     ];
     assert_eq!(kinds, own, "its own kinds, and documents and todos at v1 too, the lens engine's example");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));

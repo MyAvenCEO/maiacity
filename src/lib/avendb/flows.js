@@ -10,8 +10,8 @@
  * the ops that move makes besides. The device makes them as the acting vault, on the entry's vault alone, so every cap
  * still holds: a function asks, the vault decides.
  *
- * Every app knows the content flow and its two functions by heart (`CONTENT`, `FUNCTIONS`), as it knows avenDB's own
- * schemas, and avenCEO GmbH holds each as an entry of its own. A vault's own flows and functions come first, then
+ * Every app knows the content flow and its two functions, and the story flow, by heart (`FLOWS`, `FUNCTIONS`), as it
+ * knows avenDB's own schemas, and avenCEO GmbH holds each as an entry of its own. A vault's own flows and functions come first, then
  * avenCEO GmbH's where this device knows it as the person's seed, then the app's: only those, so no one else's code
  * runs on a person's entries.
  */
@@ -50,6 +50,48 @@ export const CONTENT = {
 	],
 	tags: []
 };
+
+/** The stages a story goes through, in order: each goes on to the next and back to the one before. */
+const STORY_STAGES = /** @type {const} */ ([
+	['idea', 'Idea'],
+	['hook', 'Hook'],
+	['thumbnail', 'Thumbnail'],
+	['journey', 'Journey'],
+	['writing', 'Writing'],
+	['movie', 'Movie'],
+	['derivatives', 'Derivatives'],
+	['scheduled', 'Scheduled'],
+	['published', 'Published']
+]);
+
+/**
+ * @type {Flow} the story flow: one content piece from its idea to every platform it goes out on. Every stage is
+ * private: what goes public is its master post and what it is cut into, not the story, so publishing a story takes
+ * the functions the next milestones bring.
+ */
+export const STORY = {
+	kind: 'flow',
+	key: 'story',
+	name: 'Story',
+	about:
+		'A story from its idea to every platform it goes out on: its hook, its thumbnail, its journey, its writing, its ' +
+		'movie, what it is cut into, when each goes out, and published. Each stage stays with whoever its vault shares ' +
+		'it with.',
+	types: ['story'],
+	stages: STORY_STAGES.map(([key, name], i) => ({
+		id: i + 1,
+		key,
+		name,
+		public: false,
+		next: [STORY_STAGES[i + 1]?.[0], STORY_STAGES[i - 1]?.[0]].filter((k) => !!k),
+		x: i,
+		y: 0
+	})),
+	tags: []
+};
+
+/** @type {Flow[]} the flows every app knows by heart */
+export const FLOWS = [CONTENT, STORY];
 
 const PUBLISH = `// As an article enters Published: a post about it on the Maia Universe stream, and the pictures it shows that
 // go public with it. Each carries the stage's tag too, so the same Public share reaches it.
@@ -176,7 +218,7 @@ function first(xs, key) {
  * @param {import('./vaults.js').WorldView} world @param {string} vault @param {string} type @returns {Flow[]}
  */
 export function flowsFor(world, vault, type) {
-	const all = /** @type {Flow[]} */ ([...held(world, trusted(world, vault), FLOW), CONTENT]);
+	const all = /** @type {Flow[]} */ ([...held(world, trusted(world, vault), FLOW), ...FLOWS]);
 	return first(all, (f) => f.key).filter((f) => (f.types ?? []).includes(type) && Array.isArray(f.stages));
 }
 
@@ -197,7 +239,7 @@ export function functionsOf(world, vault, flow) {
  */
 export function everyFunction(world, vault) {
 	const vaults = trusted(world, vault);
-	const flows = first(/** @type {Flow[]} */ ([...held(world, vaults, FLOW), CONTENT]), (f) => f.key);
+	const flows = first(/** @type {Flow[]} */ ([...held(world, vaults, FLOW), ...FLOWS]), (f) => f.key);
 	const all = /** @type {Fn[]} */ ([...held(world, vaults, FUNCTION), ...FUNCTIONS]);
 	return first(all, (f) => `${f.flow}\n${f.name}`).map((f) => ({
 		...f,
