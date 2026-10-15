@@ -391,7 +391,11 @@
 		['Link', 'A passkey’s pass, for a new device', 'The vault logs of that passkey'],
 		['Join', 'The edit that adds the new device', 'Nothing, once taken'],
 		['Card', 'A request for the server’s contact card', 'The vault logs of CEO Aven and every vault that owns it'],
-		['Claim key, Claim', 'Asks an unclaimed server for its key to seal to, then claims it', 'The key; the claim, signed by the server too']
+		[
+			'Claim key, Claim',
+			'Asks an unclaimed server, or an agent’s new device, for its key to seal to, then claims it',
+			'The key; the claim, signed by the claimed device too'
+		]
 	];
 
 	const blobs = [
@@ -652,7 +656,10 @@
 				</div>
 				<div>
 					<h3>Aven vault</h3>
-					<p>An agent, such as CEO Aven. Owned like a COOP; its servers act for it but never govern it.</p>
+					<p>
+						An agent, such as CEO Aven or avenCLAUDE. Owned like a COOP; its devices, a server or an agent’s own on your
+						desktop, act for it but never govern it.
+					</p>
 				</div>
 			</div>
 			<p class="prose-col">
@@ -661,8 +668,9 @@
 				approve nothing. A new device joins with your passkey alone, through a QR code on a device you have or by signing
 				in through the server. Set up avenDB on a second device with the same passkey and it joins the vault that passkey
 				already has: one passkey, one human vault. The first person to found a vault through a new server claims it. The
-				same prompt founds three vaults, each owned by the one before: Maia Holding GmbH and avenCEO GmbH, two COOPs, and
-				CEO Aven, the agent the server is a device of. Each is named as it is founded.
+				same prompt founds four vaults: Maia Holding GmbH and avenCEO GmbH, two COOPs, each owned by the one before; CEO
+				Aven, the agent the server is a device of; and Maia City, a COOP avenCEO GmbH owns, where the city’s content
+				lives. Each is named as it is founded.
 			</p>
 		</section>
 
@@ -1077,6 +1085,14 @@
 				device, a threshold or new vaults, is drafted on the device and signed by your passkey, in one prompt however many
 				edits it makes. With no passkey at hand, as for an agent, the answer is <code>approve</code>: what to sign and by
 				whom, and nothing is made until it is signed.
+			</p>
+			<p class="prose-col">
+				An agent such as Claude Code works as an aven of its own, by its own device’s key, never a token.
+				<code>avendb-device agent avenCLAUDE</code> is an avenDB device of its own on your desktop, which Claude Code
+				starts as its MCP. The desktop app shows it waiting, and one prompt of your passkey founds the aven vault
+				avenCLAUDE, which your vault owns, and adds the agent’s device to it, the way a new server is claimed. The vaults
+				you tick give it a Suggester share: it reads them and writes only on proposals, which you merge. It keeps no file
+				of its own: it reads your files from your desktop’s one store, so nothing is kept twice.
 			</p>
 		</section>
 
