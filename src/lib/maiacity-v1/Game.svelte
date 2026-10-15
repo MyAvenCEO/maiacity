@@ -18,7 +18,7 @@
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
-	import { AT_HOME, story } from './tour.js';
+	import { AT_HOME, STORY_INVESTS, story } from './tour.js';
 	import { treeNow } from './trees.js';
 	import { plantAt } from '$lib/plants/index.js';
 	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
@@ -270,7 +270,7 @@
 		let first = g;
 		if (s === 'B') {
 			const t = realGame.players.A.tree;
-			const moves = [{ type: 'mint' }, { type: 'invest', coop: 'maia', amount: 5000 }, { type: 'invest', coop: 'village', amount: 2000 }, { type: 'invest', coop: 'tribe', amount: 1000 }, { type: 'mark', x: t?.x ?? 0, z: t?.z ?? 40 }, { type: 'seedling', plant: SEEDLINGS.some((x) => x.id === t?.plant) ? t.plant : 'apple' }, { type: 'plant', v: t?.v ?? 1 }];
+			const moves = [{ type: 'mint' }, { type: 'invest', coop: 'maia', amount: STORY_INVESTS.maia }, { type: 'invest', coop: 'village', amount: STORY_INVESTS.village }, { type: 'invest', coop: 'tribe', amount: STORY_INVESTS.tribe }, { type: 'mark', x: t?.x ?? 0, z: t?.z ?? 40 }, { type: 'seedling', plant: SEEDLINGS.some((x) => x.id === t?.plant) ? t.plant : 'apple' }, { type: 'plant', v: t?.v ?? 1 }];
 			try {
 				moves.forEach((m, i) => (first = act(first, 'A', m, now - 50e3 + i * 1e3)));
 			} catch {
@@ -725,7 +725,7 @@
 							{#each MINDS.filter((t) => isPlayer || here.bal[t] > 0.005 || here.c?.mind === t) as t (t)}
 								<li><span><i class="dot" style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((here.bal[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(here.bal[t] * hv[t])} ❤︎<small>{f(here.bal[t])} {TOKEN_LABEL[t]}</small></strong></li>
 							{/each}
-							{#if here.bal.EURO > 0.005}<li title="System minted: each player's first year of HEARTS brings as many €uro in (the euro ingest)"><span>€uro<small>the euro ingest</small></span><strong>{f(here.bal.EURO)} €</strong></li>{/if}
+							{#if here.bal.EURO > 0.005}<li title="System minted: each player's first mint brings €12,500 in (the euro ingest)"><span>€uro<small>the euro ingest</small></span><strong>{f(here.bal.EURO)} €</strong></li>{/if}
 						</ul>
 						{#if isPlayer && here.p.arrears > 0.001}<p class="bad small">{f(here.p.arrears)} tribeMIND home rent owed</p>{/if}
 						<LedgerView {view} who={here.id} show="tx" limit={5} txTitle="Recent transactions" />
@@ -858,7 +858,7 @@
 				<p class="eyebrow">Treasury</p>
 				<dl>
 					{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
-					{#if c.treasury.EURO > 0}<dt title="System minted: each player's first year of HEARTS brings as many €uro in (the euro ingest)">€uro</dt><dd>{f(c.treasury.EURO)}</dd>{/if}
+					{#if c.treasury.EURO > 0}<dt title="System minted: each player's first mint brings €12,500 in (the euro ingest)">€uro</dt><dd>{f(c.treasury.EURO)}</dd>{/if}
 					{#if c.id === 'tribe'}<dt>Gets home rent, a week</dt><dd>{f(view.settings.homeRent)} × 2 tribeMIND</dd>{/if}
 					{#each RENTED.filter((r) => ownerOf(r.asset)?.[0] === c.id && r.payer !== c.id) as r (r.asset)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}
 					{#each RENTED.filter((r) => r.payer === c.id && ownerOf(r.asset) && ownerOf(r.asset)[0] !== c.id) as r (r.asset)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
