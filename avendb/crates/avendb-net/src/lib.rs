@@ -27,6 +27,10 @@
 //!   member too, and its members learn each other's endpoints, while an announcement goes to one proven device. A
 //!   peer it can't reach it tries again after `Options::retry`, then twice as long each time it stays out of reach,
 //!   up to a minute, or at once when the peer connects to it.
+//! - **Signed holdings** (H2, `statements`): each device also signs what it tells each peer it holds, with when it
+//!   checked (`wire::Statement`), and hands it to the peers it is connected to (`session::STATE`). A node keeps the
+//!   newest statement of each device it knows, whoever brought it, passes it on to a connected peer that may know all
+//!   of it, and keeps it on its shelf; Synced to lists a device on no live connection by it, with that time.
 //! - **Shelf** (v8 phase S, `shelf`): with `Options::shelf`, a node keeps what its device holds on its shelf, the one
 //!   place it keeps what lasts, laid out the same everywhere: a page's in OPFS, the Mac's in its folder (`disk`), the
 //!   server's in its S3 bucket (`bucket`), every object sealed, its folder only a cache. It saves its device's edits
@@ -100,6 +104,7 @@ mod run;
 pub mod server;
 mod session;
 pub mod shelf;
+mod statements;
 mod tree;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -117,7 +122,7 @@ use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
 use avendb::sync::{log_of, place, LogId};
-use avendb::wire::{Announce, Claim, FileHold, Join, Reply, Request, Wire};
+use avendb::wire::{Announce, Claim, FileHold, Join, Reply, Request, Statement, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use iroh::address_lookup::MemoryLookup;
 #[cfg(not(target_arch = "wasm32"))]
@@ -515,6 +520,7 @@ impl Node {
             reach: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
+            statements: Mutex::default(),
             telling: Mutex::default(),
             unreached: Mutex::default(),
             asking: Mutex::default(),
@@ -539,6 +545,7 @@ impl Node {
             task::spawn(shared.clone().announcer()),
             task::spawn(shared.clone().keeper()),
             task::spawn(shared.clone().saver()),
+            task::spawn(shared.clone().unshelve()),
         ];
         Ok(Node { shared, router, tasks })
     }
@@ -1013,9 +1020,16 @@ impl Node {
         self.shared.held.lock().expect("held").get(&device).cloned()
     }
 
+    /// The newest statement `device` signed of its holdings that this node keeps (H2), heard from it or passed on by
+    /// any peer, or kept on its shelf.
+    pub fn statement_of(&self, device: SignerId) -> Option<Statement> {
+        self.shared.statement_of(device)
+    }
+
     /// Where each entry and each file its device holds is synced to (`SyncedTo`): this device, once its shelf holds
     /// every edit of the entry it holds, or the whole file; and each device whose own holdings, as it told them, hold
-    /// as much, among those that may hold it by this device's view.
+    /// as much, among those that may hold it by this device's view: on a live connection or with no statement, as it
+    /// announced them, else as its newest statement says, with when it checked (`Holder::checked`).
     pub async fn synced_to(&self) -> SyncedTo {
         self.shared.synced_to().await
     }
@@ -1202,6 +1216,8 @@ struct Shared {
     held: Mutex<HashMap<SignerId, Holdings>>,
     /// What each peer was last told, and on which connection (`Connection::stable_id`).
     told: Mutex<HashMap<SignerId, (usize, Holdings)>>,
+    /// The signed statements of holdings it keeps, signs and passes on (H2, `statements`).
+    statements: Mutex<statements::Statements>,
     /// The peers being told now.
     telling: Mutex<HashSet<SignerId>>,
     /// The peers it couldn't tell, and when to try each again.
@@ -1543,6 +1559,7 @@ impl Shared {
             }
             self.own_logs().await;
             self.announce(&news);
+            self.state(&news.reach);
             let owed = self.owed.lock().expect("owed").ready();
             owed.into_iter().for_each(|endpoint| self.ask_soon(endpoint));
             time::timeout(self.opts.retry, self.changed.notified()).await.ok();
@@ -1731,27 +1748,34 @@ impl Shared {
         self.asking(endpoint, Some(logs)).await
     }
 
-    /// `Node::synced_to`.
+    /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
+    /// what it announced (H1), and each other device by its newest statement, with when it checked (H2).
     async fn synced_to(self: &Arc<Self>) -> SyncedTo {
         self.own_logs().await;
         let own = self.own.lock().expect("own").holdings.clone();
-        let held = self.held.lock().expect("held").clone();
+        let mut held: BTreeMap<SignerId, (Holdings, Option<u64>)> = {
+            let held = self.held.lock().expect("held");
+            held.iter().map(|(d, h)| (*d, (h.clone(), None))).collect()
+        };
+        held.extend(self.stated().into_iter().map(|(d, (h, checked))| (d, (h, Some(checked)))));
         let reach = self.reach.lock().expect("reach").clone();
         let shared = self.clone();
         self.lab(move |lab, me| {
             let all = shared.logs_of(lab, me);
             let edits = lab.log(me).edits();
             // this device, which may hold all it holds; and each other device that may hold it by this one's view
-            let mut holders: Vec<(SignerId, &Holdings, Option<&Reach>)> = vec![(me, &own, None)];
-            holders.extend(held.iter().filter_map(|(d, h)| Some((*d, h, Some(reach.get(d)?)))));
-            holders.sort_by_key(|(d, _, _)| *d);
+            let mut holders: Vec<(SignerId, &Holdings, Option<&Reach>, Option<u64>)> = vec![(me, &own, None, None)];
+            let others = held.iter().filter(|(d, _)| **d != me);
+            holders.extend(others.filter_map(|(d, (h, checked))| Some((*d, h, Some(reach.get(d)?), *checked))));
             // each with how much it holds, among those that hold some of it as far as this device's edits show
             let list = |has: &dyn Fn(&Holdings, Option<&Reach>) -> Option<(u64, u64)>| {
-                let holder = |(device, h, r): &(SignerId, &Holdings, Option<&Reach>)| {
+                let holder = |(device, h, r, checked): &(SignerId, &Holdings, Option<&Reach>, Option<u64>)| {
                     let (has, of) = has(h, *r)?;
-                    (has > 0).then_some(Holder { device: *device, has, of })
+                    (has > 0).then_some(Holder { device: *device, has, of, checked: *checked })
                 };
-                holders.iter().filter_map(holder).collect::<Vec<_>>()
+                let mut listed = holders.iter().filter_map(holder).collect::<Vec<_>>();
+                listed.sort_by_key(|h| h.device);
+                listed
             };
             let mut synced = SyncedTo::default();
             for l in all.of.keys() {

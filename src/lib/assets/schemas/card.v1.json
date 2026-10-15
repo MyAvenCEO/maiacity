@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Asset card, v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "asset-card" },
+    "v": { "const": 1 },
+    "ref": { "type": "string", "maxLength": 200, "pattern": "^[a-z]+/[a-z0-9-]+@[0-9]+(:[a-z0-9-]+)?$" },
+    "group": { "enum": ["machines", "actors", "things", "plants"] },
+    "id": { "$ref": "#/$defs/id" },
+    "version": { "type": "integer", "minimum": 1, "maximum": 100000 },
+    "variant": { "$ref": "#/$defs/id" },
+    "label": { "$ref": "#/$defs/line" },
+    "note": { "$ref": "#/$defs/text" },
+    "size": { "$ref": "#/$defs/size" },
+    "triangles": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+    "skinned": { "type": "boolean" },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assemblies": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "label": { "$ref": "#/$defs/line" },
+              "note": { "$ref": "#/$defs/text" },
+              "out": { "$ref": "#/$defs/v3" }
+            },
+            "required": ["id", "label"]
+          }
+        },
+        "parts": {
+          "type": "array",
+          "maxItems": 5000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "label": { "$ref": "#/$defs/line" },
+              "assembly": { "$ref": "#/$defs/id" },
+              "what": { "$ref": "#/$defs/text" },
+              "moves": { "$ref": "#/$defs/text" },
+              "drive": { "$ref": "#/$defs/text" },
+              "specs": {
+                "type": "array",
+                "maxItems": 60,
+                "items": { "type": "array", "prefixItems": [{ "$ref": "#/$defs/line" }, { "$ref": "#/$defs/line" }], "minItems": 2, "maxItems": 2 }
+              },
+              "count": { "type": "integer", "minimum": 1, "maximum": 100000 },
+              "step": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "source": { "$ref": "#/$defs/line" },
+              "unit": { "$ref": "#/$defs/line" },
+              "ref": { "type": "string", "maxLength": 200, "pattern": "^[a-z]+/[a-z0-9-]+@[0-9]+(:[a-z0-9-]+)?$" }
+            },
+            "required": ["id", "label"]
+          }
+        },
+        "steps": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/text" } },
+        "ranges": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "type": "array", "prefixItems": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "number", "minimum": 0, "maximum": 1 }], "minItems": 2, "maxItems": 2 }
+        },
+        "play": { "$ref": "#/$defs/line" },
+        "seconds": { "type": "number", "minimum": 0, "maximum": 3600 },
+        "sources": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "label": { "$ref": "#/$defs/line" }, "url": { "type": "string", "format": "link", "maxLength": 500 } },
+            "required": ["label"]
+          }
+        }
+      },
+      "required": ["parts"]
+    },
+    "controls": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/key" },
+          "label": { "$ref": "#/$defs/line" },
+          "min": { "type": "number" },
+          "max": { "type": "number" },
+          "value": { "type": "number" },
+          "step": { "type": "number", "minimum": 0 },
+          "unit": { "type": "string", "maxLength": 20 },
+          "digits": { "type": "integer", "minimum": 0, "maximum": 10 },
+          "ends": { "type": "array", "prefixItems": [{ "$ref": "#/$defs/line" }, { "$ref": "#/$defs/line" }], "minItems": 2, "maxItems": 2 }
+        },
+        "required": ["id", "label", "min", "max", "value"]
+      }
+    },
+    "measures": {
+      "type": "object",
+      "maxProperties": 200,
+      "propertyNames": { "$ref": "#/$defs/key" },
+      "additionalProperties": { "anyOf": [{ "type": "number" }, { "$ref": "#/$defs/v3" }] }
+    },
+    "lods": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "level": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "file": { "$ref": "#/$defs/file" },
+          "triangles": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+          "screen": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "required": ["level", "file", "triangles", "screen"]
+      }
+    },
+    "impostor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": { "$ref": "#/$defs/file" },
+        "views": { "enum": [8, 16] },
+        "pixels": { "type": "integer", "minimum": 16, "maximum": 4096 },
+        "screen": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "required": ["file", "views", "pixels", "screen"]
+    }
+  },
+  "required": ["format", "v", "ref", "group", "id", "version", "label", "size", "triangles"],
+  "$defs": {
+    "id": { "type": "string", "maxLength": 80, "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "key": { "type": "string", "maxLength": 80, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
+    "line": { "type": "string", "maxLength": 300 },
+    "text": { "type": "string", "maxLength": 4000 },
+    "file": { "type": "string", "maxLength": 120, "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+    "v3": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }, { "type": "number" }], "minItems": 3, "maxItems": 3 },
+    "size": { "type": "array", "prefixItems": [{ "$ref": "#/$defs/metres" }, { "$ref": "#/$defs/metres" }, { "$ref": "#/$defs/metres" }], "minItems": 3, "maxItems": 3 },
+    "metres": { "type": "number", "minimum": 0, "maximum": 10000 }
+  }
+}

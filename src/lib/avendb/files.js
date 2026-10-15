@@ -1,6 +1,6 @@
-// The files of a vault, as its Library shows them (./Library.svelte): each an entry of type `file`, a document titled
-// with the file's name, its media type among the document's own tags, whose first edit brings the file, sealed under a
-// key of its own (avendb-browser's `Device::add_file`). Their kinds, and how the page reads one its device holds:
+// The files of a vault, as its Library shows them (./Library.svelte): each a record of the `file` schema, its name and
+// media type among its fields, made by one write and brought by the next, the file sealed under a key of its own (the
+// `put_file` op). Their kinds, and how the page reads one its device holds:
 // a range at a time as a film or a song plays, through a service worker that answers the browser's player from the
 // device (static/app/avendb-files.sw.js); or whole, into a Blob, for a picture, a PDF, a file to save, and a film where
 // no service worker runs, as in the Mac app.

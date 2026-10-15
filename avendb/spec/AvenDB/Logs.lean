@@ -156,7 +156,8 @@ it tells them all (`full`), and after that what changed (`Holdings.since`).
 
 A connection proves the device at its other end by the hello on it, and an announcement names no device: a node keeps
 what it hears as the holdings of the device the connection proved (`Node.record`), so no device speaks for another, and
-it tells each peer its own holdings alone, never what it heard (H1). Holdings route and never authorize: a node asks a
+it announces to each peer its own holdings alone, never what it heard (H1). A device signs them too, with when it
+checked, and those statements a node keeps and passes on (H2, below). Holdings route and never authorize: a node asks a
 peer for the logs where the peer holds what it lacks, fetches a file first from those that hold it, and lists the
 devices each entry and file is synced to, with whether each holds all of it (`Node.syncedTo`); its blob gate hands a file out by T27 alone, to the device a
 sync connection still open proves (`Node.hands`), and it names to a device only the files that device may fetch (T27).
@@ -242,16 +243,30 @@ structure Conn where
   device   : SignerId
   deriving DecidableEq, Repr
 
+/-- A device's signed statement of its holdings (H2, `wire::Statement`): the device, when it checked (seconds by its
+    clock), and what it holds, as it tells one peer. The model abstracts its SLH-DSA signature as `signer`: whose key
+    it verifies under, if anyone's (`Statement::verify`), which only that device's key can make. -/
+structure Statement where
+  device   : SignerId
+  checked  : Nat
+  holdings : Holdings := {}
+  signer   : Option SignerId
+  deriving DecidableEq, Repr
+
+/-- A statement its own device signed. -/
+def Statement.signed (s : Statement) : Bool := s.signer == some s.device
+
 /-- A node, as far as holdings go: the edits it holds, in the order it took them; how many of them its shelf holds for
     good, the first `held` (on the server, those its bucket accepted; with no shelf, all of them); what its shelf holds
-    of each file; its open sync connections; and each announcement it heard, oldest first, with the connection it came
-    on. -/
+    of each file; its open sync connections; each announcement it heard, oldest first, with the connection it came
+    on; and each statement it heard or kept on its shelf, on whatever connection it came. -/
 structure Node where
-  edits : List Edit
-  held  : Nat
-  files : List (FileId × FileHold) := []
-  conns : List Conn := []
-  heard : List (Conn × Announce) := []
+  edits  : List Edit
+  held   : Nat
+  files  : List (FileId × FileHold) := []
+  conns  : List Conn := []
+  heard  : List (Conn × Announce) := []
+  stated : List Statement := []
 
 /-- The edits a node's shelf holds for good. -/
 def Node.shelf (n : Node) : List Edit := n.edits.take n.held
@@ -329,6 +344,59 @@ def Node.syncedTo (n : Node) (me : SignerId) (t : Synced) : List (SignerId × Bo
     (((n.own.of? n.edits t).toList.map (me, ·)) ++ (n.heard.map (·.1.device)).eraseDups.filterMap fun d =>
       if t.reaches n.edits d then ((n.record d).of? n.edits t).map (d, ·) else none).mergeSort
       fun a b => decide (a.1 ≤ b.1)
+
+/-! ### Signed holdings (H2)
+
+A device also signs what it tells each peer it holds, with when it checked (`Node.states`): the holdings it announces to
+that peer (`Node.tells`), under its own SLH-DSA signature. A statement names its device and proves itself, so unlike an
+announcement it counts whatever connection it came on, and a node passes it on. Of each device it knows as some vault's
+(`devicesIn`) a node keeps the newest statement that device signed, the one checked last (`Node.statement`), and passes
+it to a peer only if the peer may know all it says by the node's view (`Node.passes`), so it tells nobody what they may
+not know. "Synced to" lists a device on a live connection, or of which the node keeps no statement, by what it
+announced (H1), and any other by its newest statement, with when it checked (`Node.syncedToAt`): a device's word
+outlives its connection. Statements route nothing and authorize nothing: the gate reads none (T27). -/
+
+/-- What a node whose device is `me` signs for device `d`, having checked at `now` (`Shared::statement`): what it tells
+    `d` it holds. -/
+def Node.states (n : Node) (me d : SignerId) (now : Nat) : Statement :=
+  { device := me, checked := now, holdings := n.tells d, signer := some me }
+
+/-- The newer of two statements: `b`, unless `s` was checked later. -/
+def newer (b s : Statement) : Statement := if b.checked < s.checked then s else b
+
+/-- What a node keeps of device `d` (`Shared::keep`): if it knows `d` as some vault's device, of the statements it heard
+    that `d` signed, the one checked last, the first it heard among those checked at once. -/
+def Node.statement (n : Node) (d : SignerId) : Option Statement :=
+  if devicesIn n.edits d then
+    match n.stated.filter (fun s => s.signed && s.device == d) with
+    | [] => none
+    | s :: rest => some (rest.foldl newer s)
+  else none
+
+/-- Device `p` may know all that statement `s` says by the view of a node holding `edits`: each log it states is one
+    `p` may know of, and each file one `p` may fetch. -/
+def mayKnow (edits : List Edit) (p : SignerId) (s : Statement) : Bool :=
+  s.holdings.logs.all (fun x => (reachLogs edits p).contains x.1) &&
+    s.holdings.files.all (fun x => (reachFiles edits p).contains x.1)
+
+/-- The statements a node passes to device `p` (`Shared::pass`): of each other device it keeps a statement of, that
+    statement, if `p` may know all it says. -/
+def Node.passes (n : Node) (p : SignerId) : List Statement :=
+  ((n.stated.map (·.device)).eraseDups.filter (· != p)).filterMap fun d => (n.statement d).filter (mayKnow n.edits p)
+
+/-- "Synced to" for `t`, with when each device checked (`Node::synced_to`), smallest first: this device, and each device
+    on a live connection (`live`) or of which the node keeps no statement, as `syncedTo` lists them, with no time; and
+    each other device by its newest statement, if it may hold `t` by the node's view and the statement states some of
+    it, with when it checked. -/
+def Node.syncedToAt (n : Node) (me : SignerId) (live : List SignerId) (t : Synced) :
+    List (SignerId × Bool × Option Nat) :=
+  let byWord := ((n.syncedTo me t).filter fun x => x.1 == me || live.contains x.1 || (n.statement x.1).isNone).map
+    fun x => (x.1, x.2, (none : Option Nat))
+  let others := (n.stated.map (·.device)).eraseDups.filter fun d => d != me && !live.contains d && t.reaches n.edits d
+  let byStatement := if t.held n.edits then others.filterMap fun d =>
+      (n.statement d).bind fun s => (s.holdings.of? n.edits t).map fun all => (d, all, some s.checked)
+    else []
+  (byWord ++ byStatement).mergeSort fun a b => decide (a.1 ≤ b.1)
 
 /-- A blob of a file: its root (the HashSeq of a file of several pieces, or a small file's one piece) or one of its
     pieces. -/

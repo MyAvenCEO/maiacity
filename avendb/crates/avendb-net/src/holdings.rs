@@ -6,8 +6,8 @@
 //! (`Lab::announce`), and the files their edits bring, which the peer may fetch (T27).
 //!
 //! A node keeps what each device told it, on a connection whose hello proved that device, and nothing else: no device
-//! speaks for another, and a node passes on no holdings of anyone's (H1, `H1_heard_on_their_connection`,
-//! `H1_passes_nothing_on`). They route, and never let anyone do anything: a node asks a peer for the logs where the
+//! speaks for another, and a node announces no holdings of anyone's (H1, `H1_heard_on_their_connection`,
+//! `H1_passes_nothing_on`); what it passes on is only what a device signed itself (H2, `statements`). They route, and never let anyone do anything: a node asks a peer for the logs where the
 //! peer holds what it lacks, fetches a file first from the peers that hold it, and shows where each entry and each file
 //! is synced to (`SyncedTo`, `H1_synced_to`); its blob gate hands a file out by T27 alone, whatever anyone holds
 //! (`T27_holdings_never_authorize`).

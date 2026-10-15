@@ -21,7 +21,7 @@ use crate::policy::{Action, Edit, KeepMode, Kind, Level, Principal, Proposal, Re
 use crate::recovery::RecoveryKey;
 use crate::rules::{Grant, On, Op, Proof, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_OPS, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
-use crate::sign::{Assertion, Hello, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
+use crate::sign::{self, Assertion, Hello, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
 
@@ -75,7 +75,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Ask, Hello, Request, Reply, Announce, Join, RelayPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
+wire!(Signed, Ask, Hello, Request, Reply, Announce, Statement, Join, RelayPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -152,6 +152,74 @@ pub struct Announce {
     pub logs: Vec<(LogId, Frontier)>,
     /// Smallest file first, no repeats.
     pub files: Vec<(FileRoot, Option<FileHold>)>,
+}
+
+/// A device's signed statement of its holdings (H2): what it holds for good of each log and each file one peer may know
+/// by its view, as it announces them to that peer, and when it checked, in seconds since 1970 by its clock, under its
+/// own SLH-DSA signature (`sign::STATEMENT_CONTEXT`). Unlike an announcement it proves itself whatever connection brings
+/// it: a node keeps the newest statement each device it knows signed, and passes it on to a peer that may know all of
+/// it. Like an announcement, it routes and shows, and never lets anyone fetch anything.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Statement {
+    /// The device's keys, which its signature verifies under.
+    pub keys: SignerKeys,
+    pub checked: u64,
+    /// Smallest log first, no repeats.
+    pub logs: Vec<(LogId, Frontier)>,
+    /// Smallest file first, no repeats.
+    pub files: Vec<(FileRoot, FileHold)>,
+    /// SLH-DSA-SHA2-128f over `body`.
+    pub sig: Vec<u8>,
+}
+
+/// The signature shows only its size.
+impl std::fmt::Debug for Statement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Statement")
+            .field("device", &self.keys.id())
+            .field("checked", &self.checked)
+            .field("logs", &self.logs)
+            .field("files", &self.files)
+            .field("sig", &format!("{} bytes", self.sig.len()))
+            .finish()
+    }
+}
+
+impl Statement {
+    /// What a statement's signature signs: the format's version, its device, when it checked, then of each log its
+    /// frontier and of each file what the device holds of it, as the wire writes them.
+    pub fn body(device: SignerId, checked: u64, logs: &[(LogId, Frontier)], files: &[(FileRoot, FileHold)]) -> Vec<u8> {
+        let mut out = vec![VERSION];
+        device.encode(&mut out);
+        checked.encode(&mut out);
+        holdings(logs, files, &mut out);
+        out
+    }
+
+    /// The device it is of: the one its keys are.
+    pub fn device(&self) -> SignerId {
+        self.keys.id()
+    }
+
+    /// Its device, if its signature checks out: a device's keys, signing this body.
+    pub fn verify(&self) -> Option<SignerId> {
+        let body = Statement::body(self.device(), self.checked, &self.logs, &self.files);
+        sign::verify_statement(&self.keys, &body, &self.sig)
+    }
+}
+
+/// Of each log, smallest first, its frontier, then of each file, smallest first, what a device holds of it.
+fn holdings(logs: &[(LogId, Frontier)], files: &[(FileRoot, FileHold)], out: &mut Vec<u8>) {
+    (logs.len() as u32).encode(out);
+    for (log, frontier) in logs {
+        log.encode(out);
+        frontier.encode(out);
+    }
+    (files.len() as u32).encode(out);
+    for (root, hold) in files {
+        root.encode(out);
+        hold.encode(out);
+    }
 }
 
 /// What a new device sends the peer its passkey proved itself to (P8c), once it holds the passkey's link card: the edit
@@ -1097,6 +1165,36 @@ impl Decode for Announce {
     }
 }
 
+/// Its keys, when it checked, its holdings as a statement's body writes them, then its signature.
+impl Encode for Statement {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.keys.encode(out);
+        self.checked.encode(out);
+        holdings(&self.logs, &self.files, out);
+        self.sig.encode(out);
+    }
+}
+
+impl Decode for Statement {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let (keys, checked) = (SignerKeys::decode(r)?, u64::decode(r)?);
+        let n = r.count(41)?;
+        let mut logs: Vec<(LogId, Frontier)> = Vec::with_capacity(n.min(64));
+        for _ in 0..n {
+            logs.push((LogId::decode(r)?, Frontier::decode(r)?));
+        }
+        let n = r.count(41)?;
+        let mut files: Vec<(FileRoot, FileHold)> = Vec::with_capacity(n.min(64));
+        for _ in 0..n {
+            let root = FileRoot::decode(r)?;
+            files.push((root, file_hold(r, &root)?));
+        }
+        let sig = r.bytes()?;
+        let ordered = logs.windows(2).all(|w| w[0].0 < w[1].0) && files.windows(2).all(|w| w[0].0 < w[1].0);
+        if ordered { Ok(Statement { keys, checked, logs, files, sig }) } else { Err(WireError::Unordered) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1440,5 +1538,40 @@ mod tests {
         let mut flagged = bytes.clone();
         flagged[0] = 2;
         assert_eq!(Announce::from_wire(&flagged), Err(WireError::Unknown), "full is a flag");
+    }
+
+    #[test]
+    fn a_statement_proves_its_device_and_reads_back_only_from_its_own_bytes() {
+        let (a, b) = (LogId::Vault(VaultId([1; 32])), LogId::Entry(EntryId([0; 32])));
+        let frontier = Frontier { heads: vec![EditId([1; 32])], waiting: vec![EditId([3; 32])] };
+        let one = FileRoot { hash: [4; 32], size: 16 };
+        let film = FileRoot { hash: [5; 32], size: 3 * crate::sealed::PIECE };
+        let (logs, files) =
+            (vec![(a, frontier), (b, Frontier::default())], vec![(one, FileHold::Whole), (film, FileHold::Pieces(vec![1]))]);
+        let (mac, phone) = (DeviceKey::from_secret([7; 32]), DeviceKey::from_secret([8; 32]));
+        let sig = mac.state(&Statement::body(mac.id(), 1_760_000_000, &logs, &files));
+        let stated = Statement { keys: mac.keys(), checked: 1_760_000_000, logs, files, sig };
+        assert_eq!(stated.verify(), Some(mac.id()), "the Mac signed it, of itself");
+        assert_eq!(Statement::from_wire(&stated.to_wire()), Ok(stated.clone()));
+        // another time, other holdings or another device's keys: the signature is for none of them
+        let later = Statement { checked: stated.checked + 1, ..stated.clone() };
+        let less = Statement { files: vec![(one, FileHold::Whole)], ..stated.clone() };
+        let theirs = Statement { keys: phone.keys(), ..stated.clone() };
+        for forged in [later, less, theirs] {
+            assert_eq!(forged.verify(), None, "{forged:?}");
+        }
+        // its signature on an edit, or an edit's on it, counts for neither
+        let edit = EditId(crate::hash::Hasher::new("x").finalize());
+        assert_eq!(Statement { sig: mac.sign(edit).pq, ..stated.clone() }.verify(), None);
+        let body = Statement::body(mac.id(), stated.checked, &stated.logs, &stated.files);
+        assert!(!crate::sign::verify(mac.id(), edit, &Signature { pq: mac.state(&body), ..mac.sign(edit) }));
+        // a passkey's keys prove no statement
+        let passkey = SignerKeys::Passkey { p256: [2; 33], slh: [1; 32] };
+        assert_eq!(Statement { keys: passkey, ..stated.clone() }.verify(), None);
+        // logs or files out of order
+        let swapped = Statement { logs: stated.logs.iter().rev().cloned().collect(), ..stated.clone() };
+        assert_eq!(Statement::from_wire(&swapped.to_wire()), Err(WireError::Unordered));
+        let swapped = Statement { files: stated.files.iter().rev().cloned().collect(), ..stated.clone() };
+        assert_eq!(Statement::from_wire(&swapped.to_wire()), Err(WireError::Unordered));
     }
 }

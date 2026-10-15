@@ -63,8 +63,8 @@ export const CITY: Place[] = [
 
 /** the game's building blocks, one group on the dashboard (Game Assets, /app/assets/), listed with a picture each, in
  *  the asset producer's order (.claude/skills/asset-producer): the factories (whole production lines, live), the
- *  machines, the actors (people and animals), the worlds, the buildings, the things, the biomes and the plants. The
- *  things are the still models (src/lib/models; the address kept from when they were the Models) */
+ *  machines, the actors (people and animals), the worlds, the buildings, the things, the biomes and the plants, then
+ *  the asset box's lab (the engine under them all). The things are the still models (src/lib/models; the address kept from when they were the Models) */
 export const GAME_ASSETS: Place[] = [
 	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', cap: 'media:admin', note: 'Whole production lines, run live by simulation: the BatteryPack line', cover: `${base}/app/covers/factories.jpg` },
 	{ href: `${base}/app/machines/`, label: 'Machines', icon: 'gear', cap: 'media:admin', note: 'Diggers, the pod, the LifeTrac, the cubes: every part its own', cover: `${base}/app/covers/machines.jpg` },
@@ -73,7 +73,8 @@ export const GAME_ASSETS: Place[] = [
 	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', cap: 'media:admin', note: 'The tents, the domes and the containers, to walk inside', cover: `${base}/app/covers/buildings.jpg` },
 	{ href: `${base}/app/models/`, label: 'Things', icon: 'media', cap: 'media:admin', note: 'The still things the worlds are built from', cover: `${base}/app/covers/models.jpg` },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix', cover: `${base}/app/covers/biomes.jpg` },
-	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all', cover: `${base}/app/covers/plants.jpg` }
+	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all', cover: `${base}/app/covers/plants.jpg` },
+	{ href: `${base}/app/assets/box/`, label: 'Asset box', icon: 'gear', cap: 'media:admin', note: 'The engine\'s safety lab: our assets built where an untrusted one would run', cover: `${base}/app/covers/box.jpg` }
 ];
 
 /** what is the founder's own: films, vaults, skills, generated mini apps, the stories, the journal and Inspire me, one

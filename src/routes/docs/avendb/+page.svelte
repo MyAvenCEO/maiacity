@@ -134,7 +134,7 @@
 		'Who holds a share, and at which level',
 		'Which shares pick each entry, its size, and when it changes',
 		'Which files each edit brings, by hash and sealed size, and which pieces get read',
-		'What each device holds, log by log and file by file',
+		'What each device holds, log by log and file by file, and when it last checked',
 		'Schemas, lenses and anything else shared with Everyone'
 	];
 	const serverNever = [
@@ -161,7 +161,7 @@
 		],
 		[
 			'Your phone is offline for a month',
-			'It keeps working on what it holds. Back online, each side sends only what the other lacks, log by log, and both end in the same state.'
+			'It keeps working on what it holds, and your desktop still shows what it holds, as of when it last checked. Back online, each side sends only what the other lacks, log by log, and both end in the same state.'
 		],
 		[
 			'Two devices change the same note at once',
@@ -267,9 +267,9 @@
           { "op": "set", "path": ["status"], "to": ["doing", "done"] }] }`;
 
 	const keeps = [
-		['Whole', 'Syncs the entries it picks, and keeps their files whole', 'Your desktop, for the originals'],
-		['When opened', 'Syncs them, and fetches a file’s pieces as they play', 'Your phone'],
-		['Never', 'Doesn’t sync what it picks', 'An archive the phone never needs']
+		['Keep whole', 'Syncs the entries it picks, and keeps their files whole', 'Your desktop, for the originals'],
+		['Keep when opened', 'Syncs them, and fetches a file’s pieces as they play', 'Your phone'],
+		['Never keep', 'Doesn’t sync what it picks', 'An archive the phone never needs']
 	];
 
 	const rotations = [
@@ -318,6 +318,7 @@
 		'schemas',
 		'groups',
 		'world',
+		'jobs',
 		'database',
 		'note',
 		'log',
@@ -344,6 +345,7 @@
 	const vaultOps = [
 		'share',
 		'keep',
+		'copy',
 		'revoke',
 		'settings',
 		'found',
@@ -358,6 +360,11 @@
 	const messages = [
 		['Request', 'The frontier of each log it holds, its loose edits, the keys it lacks, the vaults it follows', 'A page of edits'],
 		['Announce', 'Its holdings: in full once, then only what changed', 'Nothing'],
+		[
+			'State',
+			'A device’s signed statement of its holdings, with when it checked: its own, or another’s passed on',
+			'Nothing, once kept or found older'
+		],
 		['Ask logs', 'A request for some logs alone, those whose heads it lacks', 'A page of edits'],
 		['Link', 'A passkey’s pass, for a new device', 'The vault logs of that passkey'],
 		['Join', 'The edit that adds the new device', 'Nothing, once taken'],
@@ -379,12 +386,13 @@
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
-	const LAYOUT = `g4/                 one generation, 4 or later since the last reset; starting fresh makes g5
+	const LAYOUT = `g7/                 one generation, 7 or later since the last reset; starting fresh makes g8
   meta/<n>          what opens the device again, its follow list too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
   blobs/<hash>      edit packs, McEliece keys, HashSeqs and file pieces
   outboards/<hash>  each blob's BLAKE3 outboard, written last
+  stated/<device>/  each device's signed holdings, named by when it checked, at most one an hour each
   new/              what is still being written`;
 
 	const quantum = [
@@ -397,7 +405,10 @@
 			'Signatures',
 			'SLH-DSA-SHA2-128f on every edit, the only signature that counts. A passkey adds its WebAuthn assertion beside it, which only shows a person was there.'
 		],
-		['Keys sent to devices', 'Sealed boxes of X-Wing and Classic McEliece 6688128f together: closed while either holds.'],
+		[
+			'Keys sent to devices',
+			'Sealed boxes of X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f together: closed while either holds.'
+		],
 		[
 			'Edits and files',
 			'XChaCha20-Poly1305 for edits and keys, ChaCha20-Poly1305 per 64 KiB segment for files, all with 256-bit keys.'
@@ -423,10 +434,14 @@
 		['A relay share receives no entry, and files go only with the edits that bring them', 'T26, T27'],
 		['Each device syncs what its keep shares say, and revoking one cuts nothing', 'T28, K1'],
 		[
-			'What a device says it holds counts only from that device, on its own connection, and nobody passes it on',
+			'What a device announces it holds counts only from that device, on its own connection, and no node announces it for another',
 			'H1'
 		],
-		['What any device says it holds never gets anyone a file the rules refuse', 'T27'],
+		[
+			'A signed statement of holdings counts only as the word of its device, the newest wins, and it is passed on only to peers that may know all of it',
+			'H2'
+		],
+		['What any device says or signs it holds never gets anyone a file the rules refuse', 'T27'],
 		['Every reader agrees whether a write counts, and a write that breaks its schema counts for no one', 'C2, S3'],
 		['Merging a proposal loses nothing: what main changed stays, and what only the proposal changed lands', 'T10']
 	];
@@ -459,7 +474,7 @@
 		<a class="back" href="{base}/docs">← Docs</a>
 
 		<header class="intro">
-			<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 14 October 2026</p>
+			<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 15 October 2026</p>
 			<h1>avenDB Architecture</h1>
 			<p class="lede">
 				A user-owned, local-first database with post-quantum security. Every write happens on your device first and merges
@@ -584,7 +599,7 @@
 					<h3>Blob and holdings: where</h3>
 					<p>
 						All bytes are blobs named by their BLAKE3 hash, on one shelf per place. Each device tells its peers what it
-						holds for good, and every “synced to” comes from that.
+						holds for good, and signs it with when it checked. Every “synced to” comes from that.
 					</p>
 				</div>
 			</div>
@@ -601,8 +616,9 @@
 				<div>
 					<h3>Human vault</h3>
 					<p>
-						Yours. Owned by your passkeys. Its devices, your desktop and phone, act for it, and each one unlocks its keys
-						with your passkey at every start. Nothing else can unlock them.
+						Yours. Owned by your passkeys, and by the master recovery key, a way back in kept offline that you remove
+						like any owner. Its devices, your desktop and phone, act for it, and each one unlocks its keys with your
+						passkey at every start. Nothing else can unlock them.
 					</p>
 				</div>
 				<div>
@@ -765,8 +781,8 @@
 			<h2>A share says who may do what, on which entries</h2>
 			<p class="prose-col">
 				Every permission in avenDB is a share: <b>who</b>, at which <b>level</b>, on <b>what</b>. People, groups, Everyone,
-				the server and each of your own devices are given shares. A vault’s owners and its devices are shares too, so they
-				all show in one list, and Revoke ends any of them. Every device checks every write against the shares its author
+				the server and each of your own devices are given shares. A vault’s owners and its devices are shares too, so the
+				device lists them with every other share, and Revoke ends any of them. Every device checks every write against the shares its author
 				relies on, so a write no share allows counts for no one.
 			</p>
 			<div class="table">
@@ -785,7 +801,8 @@
 				<b>What</b> is everything in the vault, or a selector over an entry’s labels: its type, the vault that created it,
 				its id, when it was created, and its tags. Tags change, so a share reaches every entry tagged so, now and later. A
 				share is also a named group of JSON ops, and its <b>level</b> is the class of its strongest op. Anyone may name a
-				group of their own.
+				group of their own. In the app, one Share form makes every share, wherever a page offers to share, and a vault’s
+				Sharing page is the one place that says who has it.
 			</p>
 			<figure>
 				<pre><code>{SHARE}</code></pre>
@@ -810,8 +827,8 @@
 			</p>
 			<h3>Owners and devices</h3>
 			<p class="prose-col">
-				An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only a human vault’s passkeys own
-				it. An Owner share on a slice, one todo or one tag, is something else: its holder may share that slice on. A device
+				An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only signers own a human vault:
+				its person’s passkeys, and the master recovery key it is founded with. An Owner share on a slice, one todo or one tag, is something else: its holder may share that slice on. A device
 				“acts for” its vault: it writes as the vault and approves nothing.
 			</p>
 			<h3>Keep shares: what each of your devices syncs</h3>
@@ -834,7 +851,7 @@
 			<p class="prose-col">
 				Each device also has one copy setting, a keep share over everything it may read: a full copy keeps every entry and
 				file whole, a light copy syncs every entry and fetches a file only when it is opened. You pick it when the device
-				joins, a Mac or a tablet full and a phone light by default, and change it in Owners and devices. With neither, the
+				joins, a desktop or a tablet full and a phone light by default, and change it in Owners and devices. With neither, the
 				server keeps every file whole and any other device fetches pieces as it reads them. A keep share always brings the
 				vault’s schemas along. Only the vault that made it can end it, so nobody else can force your phone to sync more.
 			</p>
@@ -927,8 +944,8 @@
 					nothing anyone sees, so a patched app can’t slip in a value its schema forbids.
 				</li>
 				<li>
-					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, flows, functions, posts, and a
-					device’s card, a vault’s profile and a file, one version each. Every vault reads and writes them offline, and
+					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, flows, functions, posts,
+					and a device’s card, a vault’s profile and a file, one version each. Every vault reads and writes them offline, and
 					avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so the same id.
 				</li>
 				<li>
@@ -1141,8 +1158,9 @@
 				<div>
 					<h3>Holdings: who has what</h3>
 					<p>
-						Only what a device holds for good, on its shelf, and only from the device itself on its own connection. They
-						choose whom to fetch from and fill in “Synced to”. They never grant anything.
+						Only what a device holds for good, on its shelf. Announced, they count only from the device itself on its own
+						connection, and choose whom to fetch from; signed, they outlive it and only show. Both fill in “Synced to”.
+						They never grant anything.
 					</p>
 				</div>
 				<div>
@@ -1166,8 +1184,21 @@
 				</table>
 			</div>
 			<p class="note prose-col">
-				Every message is a stream of its own on the one avenDB protocol, with exactly one encoding for every value. Holdings
-				go straight to one proven device, never by gossip, and nobody passes on another device’s holdings.
+				Every message is a stream of its own on the one avenDB protocol, with exactly one encoding for every value.
+				Announcements go straight to one proven device, never by gossip, and no node announces another device’s holdings:
+				what it passes on is only that device’s own signed statement.
+			</p>
+			<h3>Signed holdings: “checked 2 h ago”</h3>
+			<p class="prose-col">
+				An announcement counts only while its device is connected. So each device also signs what it tells a peer it
+				holds, with when it checked: a statement, signed with SLH-DSA like an edit and good for nothing else. It signs a
+				new one on each connection and once its holdings change, at most every 10 seconds, and again every 15 minutes
+				while they stay the same, and hands it only to the peers it is connected to. Every node, the server no less than
+				your desktop, keeps the newest statement of each device it knows, whoever brought it, passes it on to each
+				connected peer that may know all it says, and keeps it on its shelf, so it outlives the device’s connection and
+				the node’s restarts. “Synced to” lists a device connected now by what it announced, and any other by its newest
+				statement, with when it checked: the phone in your drawer shows as “checked 2 h ago”. Statements only show: a
+				node asks and fetches by what its connected peers announce, and no statement lets anyone fetch anything.
 			</p>
 		</section>
 
@@ -1317,8 +1348,8 @@
 			<ul class="prose-col">
 				<li>
 					<b>Put aside, clear at a reset.</b> Forgetting an account, or starting fresh, makes a new generation beside the
-					old one, which is never read again. A reset raises the lowest generation, now 3. As each place opens, it deletes
-					every older one: the Mac its folder, a browser its private storage, the server its folder and its bucket.
+					old one, which is never read again. A reset raises the lowest generation, now 7. As each place opens, it deletes
+					every older one: the desktop its folder, a browser its private storage, the server its folder and its bucket.
 				</li>
 				<li>
 					<b>Nothing counts until the bucket has it.</b> The server’s shelf answers only once the bucket holds the object,
@@ -1391,7 +1422,7 @@
 		<footer class="note">
 			Sources: Ink &amp; Switch’s <i>Local-first software</i> (2019), Loro 1.16, iroh 1.3, iroh-blobs 0.103.1 and bao-tree
 			0.16.1 source, n0’s blog and docs, Hetzner Object Storage documentation, and avenDB’s code and Lean model for edit
-			format 8, as of 14 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
+			format 9, as of 15 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
 		</footer>
 	</main>
 </div>
