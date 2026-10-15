@@ -167,7 +167,7 @@
 			<span>Shared with</span>
 			<select class="field" bind:value={within} aria-label="Shared with">
 				<option value="">Every entry</option>
-				{#each s.cells as x (x.id)}<option value={x.id}>{s.sharedIn(x.id) ?? short(x.id)}</option>{/each}
+				{#each s.byWho as g (g.words)}<option value={g.words}>{g.words}</option>{/each}
 			</select>
 		</label>
 		<h4>Tables</h4>
@@ -240,7 +240,7 @@
 			</div>
 			<footer class="foot">
 				<span>{count(rows.length, 'row')}{query ? ` of ${table.rows.length}` : ''}</span>
-				<span class="soft">{within ? `Shared with ${s.sharedIn(within)}` : 'Every entry'} · {nameOf(s.here)}</span>
+				<span class="soft">{within ? `Shared with ${within}` : 'Every entry'} · {nameOf(s.here)}</span>
 				<span class="soft">As {nameOf(s.as)}: what is shared with it shows; the rest is in sealed.</span>
 			</footer>
 		{/if}
