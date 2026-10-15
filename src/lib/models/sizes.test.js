@@ -21,12 +21,13 @@ import { pickup as pickupMachine } from '../machines/pickup.js';
 import { electroCube } from '../actors/electrocube.js';
 import { batteryCube } from '../actors/batterycube.js';
 import { batteryPack as packModule } from '../actors/batterypack.js';
+import { batteryPack as batteryPackV10 } from '../machines/batterypack.js';
 
 // a player is measured without the heart that floats over them
 const bare = (o) => (o.remove(o.userData.glow), o);
 const still = (c) => (c.rig.pose(c.clips.off(0)), c.rig.object);
 const ose = () => still(powerCube());
-const BUILD = { pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent, loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag };
+const BUILD = { pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), batteryPackV10: () => batteryPackV10(), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent, loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {

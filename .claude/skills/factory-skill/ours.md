@@ -138,6 +138,9 @@ sub skill.
   the dev server, not another edit.
 - AirSup's runtime is ported word for word under `// @ts-nocheck` (`checkJs` strict would flood it); our own files
   are typed. In a JSDoc comment `@10` reads as a tag: write "version 10".
+- A token is drawn once for every product on the line: count its triangles before moving the product to a more
+  detailed version (`tokenOf` of the BatteryPack: 28,364 at version 9, 139,560 at version 10, the same outside). A
+  detailed machine goes on the line only as what shows outside.
 - The world folds a line of more than six columns into a U; look before setting `layout.maxCols`.
 - The HUD is scoped to its host: `:root` and `body` become `.fs-root`, `fixed` becomes `absolute`, the foot keeps
   above the nav pill by `--nav-room`; AirSup's class names stay so their `app.js` finds them.
