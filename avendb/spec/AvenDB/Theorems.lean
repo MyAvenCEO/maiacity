@@ -256,6 +256,13 @@ theorem S2_first_write {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List O
     (hw : fit.fits ps fs Ops.Record.empty s = true) : fit.Clean s :=
   Ops.fits_new h hs hne hw
 
+/-- S2, the ceiling: under schemas capped at `n` rows deep (`lens::CEILING`, 256 for every reader), a write that adds a
+    row deeper fits nothing, whatever the schemas let a row hold; so no record that fits holds one. -/
+theorem S2_ceiling {V : Type} [DecidableEq V] {fit : Ops.Fit V} {n : Nat} {ps : List Ops.Path} {fs : List Ops.Path}
+    {r s : Ops.Record V} (h : Ops.Reaches ps fs r s) {f : Ops.Path} {k : Ops.Key} (hr : r.holds f k = false)
+    (hs : s.holds f k = true) (hd : n ≤ f.depth) : (fit.capped n).fits ps fs r s = false :=
+  Ops.capped_deep h hr hs hd
+
 /-- S3 (writes that don't fit count for no reader): readers count no write and no creation whose result doesn't fit,
     whatever its shares and their ops, and so (C4) nothing built on it. -/
 theorem S3_unfit_uncounted (st : State) (a v : VaultId) (en : Entry) (deps : List EditId) (proof : Option ShareId)

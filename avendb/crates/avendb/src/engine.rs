@@ -9,8 +9,9 @@
 //!   (`View::put`), so the lens writes only what changed, in the representation the item already uses: a new schema
 //!   needs no new code.
 //! - **Reads** (`read`). `query`: the entries whose labels and records a `where` holds of, picked by the selector of
-//!   its labels first (`ops::Where::plan`), so a device opens no more than the selector picks, then ordered and a page
-//!   at a time. `get`: one entry on a line, or at a version. `history`: an entry's lines and every write of it, each
+//!   its labels first (`ops::Where::plan`), so a device opens no more than the selector picks, each record read only
+//!   so many rows down (`QUERY_DEPTH`, or the query's own, up to the device's most), then ordered and a page at a
+//!   time. `get`: one entry on a line, or at a version. `history`: an entry's lines and every write of it, each
 //!   with the changes it made to the entry's stored record (`ops::diff`), as every reader sees them alike. `schemas`:
 //!   the schemas and lenses a vault's entries are read through. `groups`: the built-in groups of ops a share names
 //!   (`rules::groups`), which the page offers when it shares. And of the device's vaults (`vaults`, V2): `world`,
@@ -62,6 +63,10 @@ pub use vaults::{approve, approved, passkey_of, world, Approval, Prepared, Then}
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
 /// updates it holds.
 pub const SHOWN: usize = 200;
+
+/// How many rows down a query reads each record unless it names its own depth (`query`), which the device's most
+/// bounds (`Lab::query_depth`).
+pub const QUERY_DEPTH: usize = 16;
 
 /// Why an op was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,7 +133,7 @@ fn bad(why: impl Into<String>) -> Refused {
 /// The fields of each op beside `op`: a field it doesn't take is a mistake, never ignored.
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
-        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset"],
+        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth"],
         "get" => &["entry", "schema", "line", "at"],
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
@@ -470,13 +475,24 @@ fn full(app: &Schema, new: &Value) -> Result<Value, Refused> {
     Ok(seen)
 }
 
-/// Whether `a` is `b` with some of its records' fields left out.
+/// Whether `a` is `b` with some of its records' fields left out, at any depth: a loop over the pairs left to compare,
+/// never a recursion.
 fn within(a: &Value, b: &Value) -> bool {
-    match (a, b) {
-        (Value::Object(x), Value::Object(y)) => x.iter().all(|(k, v)| y.get(k).is_some_and(|w| within(v, w))),
-        (Value::Array(xs), Value::Array(ys)) => xs.len() == ys.len() && xs.iter().zip(ys).all(|(x, y)| within(x, y)),
-        _ => a == b,
+    let mut todo = vec![(a, b)];
+    while let Some(pair) = todo.pop() {
+        match pair {
+            (Value::Object(x), Value::Object(y)) => {
+                for (k, v) in x {
+                    let Some(w) = y.get(k) else { return false };
+                    todo.push((v, w));
+                }
+            }
+            (Value::Array(xs), Value::Array(ys)) if xs.len() == ys.len() => todo.extend(xs.iter().zip(ys)),
+            (a, b) if a != b => return false,
+            _ => {}
+        }
     }
+    true
 }
 
 // Reads.
@@ -540,12 +556,14 @@ fn row(entry: EntryId, vault: VaultId, attrs: &Attrs, seen: &Seen, record: Recor
     })
 }
 
-/// `{"op": "query", "vault"?, "where"?, "schema"?, "select"?, "order"?, "limit"?, "offset"?}`: the entries of vault
-/// `vault` (of every vault, left out) on their main lines whose labels and records `where` holds of, each record
-/// through `schema`; an entry it doesn't read, or that isn't one of the schema named, isn't there. Entries are picked
-/// by the selector of the where's labels before any is opened (`plan`). In the order the device took them, or by
-/// `order`; from the `offset`th, at most `limit`; each record with only the fields `select` names, if it names any.
-/// `count` is how many rows there are in all.
+/// `{"op": "query", "vault"?, "where"?, "schema"?, "select"?, "order"?, "limit"?, "offset"?, "depth"?}`: the entries
+/// of vault `vault` (of every vault, left out) on their main lines whose labels and records `where` holds of, each
+/// record through `schema`; an entry it doesn't read, or that isn't one of the schema named, isn't there. Entries are
+/// picked by the selector of the where's labels before any is opened (`plan`). Each record is read `depth` rows down
+/// (`QUERY_DEPTH`, left out), and no deeper than the device's most (`Lab::query_depth`): a list of rows below that
+/// isn't read (`ops::cut`), so the where doesn't see it, the order neither, and the row shows `cut`. In the order the
+/// device took them, or by `order`; from the `offset`th, at most `limit`; each record with only the fields `select`
+/// names, if it names any. `count` is how many rows there are in all, and `depth` how deep each was read.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let w = o.get("where").map(Where::of_json).transpose().map_err(bad)?.unwrap_or(Where::Yes);
     let vault = o.get("vault").map(|_| vault_of(o, "vault")).transpose()?;
@@ -553,6 +571,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     let select = o.get("select").map(|_| texts_of(o, "select")).transpose()?;
     let order = order_of(o)?;
     let (limit, offset) = (count_of(o, "limit")?, count_of(o, "offset")?.unwrap_or(0));
+    let depth = count_of(o, "depth")?.unwrap_or(QUERY_DEPTH).min(lab.query_depth(me));
     let plan = w.plan();
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
@@ -561,8 +580,11 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
         let Some(item) = lab.item(me, entry) else { continue };
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
-        let Some(seen) = see(lane, item, &schema).filter(|s| w.holds(&m.attrs, &s.record)) else { continue };
-        rows.push((entry, v, m.attrs, seen));
+        let Some(mut seen) = see(lane, item, &schema) else { continue };
+        let cut = ops::cut(&mut seen.record, depth);
+        if w.holds(&m.attrs, &seen.record) {
+            rows.push((entry, v, m.attrs, seen, cut));
+        }
     }
     let label = |a: &Attrs, l: &str| -> Value {
         match l {
@@ -572,7 +594,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
             _ => a.created.into(),
         }
     };
-    rows.sort_by(|(_, _, a, x), (_, _, b, y)| {
+    rows.sort_by(|(_, _, a, x, _), (_, _, b, y, _)| {
         let by = |(key, down): &(By, bool)| {
             let o = match key {
                 By::Label(l) => compare(Some(&label(a, l)), Some(&label(b, l))),
@@ -584,12 +606,14 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     });
     let count = rows.len();
     let page = rows.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX));
-    let shown = page.map(|(entry, v, attrs, seen)| {
+    let shown = page.map(|(entry, v, attrs, seen, cut)| {
         let picked = |f: &String| select.as_ref().is_none_or(|fs| fs.contains(f));
         let record = seen.record.iter().filter(|(f, _)| picked(f)).map(|(f, x)| (f.clone(), x.clone())).collect();
-        row(entry, v, &attrs, &seen, record)
+        let mut row = row(entry, v, &attrs, &seen, record);
+        row["cut"] = cut.into();
+        row
     });
-    Ok(json!({ "rows": shown.collect::<Vec<_>>(), "count": count, "plan": plan.to_json() }))
+    Ok(json!({ "rows": shown.collect::<Vec<_>>(), "count": count, "plan": plan.to_json(), "depth": depth }))
 }
 
 /// `{"op": "get", "entry", "schema"?, "line"?, "at"?}`: entry `entry` on line `line` (the main line, left out), or at
