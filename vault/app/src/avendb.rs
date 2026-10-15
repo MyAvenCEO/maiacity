@@ -56,14 +56,6 @@ pub async fn avendb(
     call_on(&state, window, call, args).await
 }
 
-/// Calls `call` with `args` on avenDB's device for one of the app's own parts (the MCP, mcp.rs), its sheets over the
-/// app's first window: what it answered.
-pub async fn call_from(handle: &tauri::AppHandle, call: &str, args: Vec<Value>) -> Result<Value, String> {
-    use tauri::Manager as _;
-    let window = handle.webview_windows().into_values().next().ok_or("the app has no window open")?;
-    call_on(&handle.state::<Avendb>(), window, call.to_string(), args).await
-}
-
 async fn call_on(
     state: &Avendb,
     window: tauri::WebviewWindow,

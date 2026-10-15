@@ -81,6 +81,11 @@
 	let link = $state('');
 	/** in the Mac app, the UDP sockets its device's node bound, on which it reaches its peers directly */
 	let sockets = $state(/** @type {string[] | null} */ (null));
+	/** in the Mac app, the agents on this Mac waiting for the person to adopt them (avendb-device's `agent`): each
+	 *  its name, its device and its offer */
+	let agents = $state(/** @type {{ name: string, device: string, offer: string }[]} */ ([]));
+	/** in the Mac app, the line that connects Claude Code to its own device on this Mac, avenCLAUDE */
+	let connect = $state('');
 	/** whether the device is writing its card, its copy setting, or vaults' profiles: one such write at a time */
 	let carding = false;
 	let copying = false;
@@ -165,6 +170,21 @@
 	});
 
 	onDestroy(() => device?.close());
+
+	// in the Mac app, while it is open: the agents waiting on this Mac, looked for every few seconds, as an agent
+	// leaves its offer once its harness starts it
+	$effect(() => {
+		if (!mac || phase !== 'open') return;
+		mac.call('agentCommand').then((/** @type {string} */ line) => (connect = line), () => {});
+		const look = () =>
+			mac
+				.call('agents')
+				.then((/** @type {typeof agents} */ waiting) => (agents = waiting))
+				.catch(() => {});
+		look();
+		const every = setInterval(look, 3000);
+		return () => clearInterval(every);
+	});
 
 	/** In the Mac app: its device beside it, open already, to unlock, or none yet. The app runs avenDB natively, and
 	 *  the page never runs a second device beside it. */
@@ -603,7 +623,17 @@
 				await (mac ? mac.call('rename', name) : device.rename(name));
 				meta = { ...meta, name };
 			}),
-		forget: () => forget()
+		forget: () => forget(),
+		/**
+		 * In the Mac app: adopts agent `name`, waiting with `offer`, as the person's aven of that name, in one ceremony
+		 * of their passkey, `vaults` giving it a Suggester share (avendb-device's `adopt`).
+		 * @param {string} name @param {string} offer @param {string[]} vaults
+		 */
+		adopt: (name, offer, vaults) =>
+			act(`Adopting ${name}`, async () => {
+				await mac.call('adopt', name, offer, vaults);
+				agents = agents.filter((a) => a.offer !== offer);
+			})
 	};
 
 	const forget = () => {
@@ -623,7 +653,7 @@
 </script>
 
 {#if phase === 'open' && world}
-	<Shell {world} {api} doing={signing ? '' : doing} {error} thisName={meta?.name ?? ''} {link} {qr} {sockets} />
+	<Shell {world} {api} doing={signing ? '' : doing} {error} thisName={meta?.name ?? ''} {link} {qr} {sockets} {agents} {connect} />
 {:else}
 	<div class="account">
 		<header class="lead">
