@@ -135,6 +135,23 @@
 	let naming = $state(/** @type {string | null} */ (null));
 	/** how many of its owners a change needs, as the person picks it */
 	let threshold = $state(0);
+	/** the vault picked to become an owner too: a human or coop vault this device knows that doesn't own it yet */
+	let newOwner = $state('');
+	const ownable = $derived(
+		world.vaults.filter(
+			(x) => x.id !== vault && x.kind !== 'aven' && !v.owners.some((o) => 'vault' in o && o.vault === x.id)
+		)
+	);
+	/** Makes vault `id` an owner of this one too, as its owners approve. @param {string} id */
+	const addOwner = (id) =>
+		api.run(`Making ${nameOf(byId.get(id))} an owner`, {
+			op: 'share',
+			over: vault,
+			who: { vault: id },
+			level: 'Owner',
+			what: 'everything',
+			as: actor
+		});
 	const needs = $derived(v.threshold);
 	$effect.pre(() => {
 		threshold = needs;
@@ -341,6 +358,20 @@
 				{/each}
 			</ul>
 			<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
+			{#if v.kind !== 'human' && actor === vault && ownable.length}
+				<div class="add-owner">
+					<select class="field" bind:value={newOwner} aria-label="A vault to make an owner too">
+						<option value="">A vault to make an owner too…</option>
+						{#each ownable as x (x.id)}<option value={x.id}>{nameOf(x)} · {KINDS[x.kind]}</option>{/each}
+					</select>
+					<button class="btn" disabled={busy || !newOwner} onclick={() => addOwner(newOwner).then(() => (newOwner = ''))}
+						>Add as owner</button
+					>
+				</div>
+				<p class="soft">
+					A new owner acts for it as you do. To hand it over, add the new owner first, then remove the old one.
+				</p>
+			{/if}
 			{#if recoveryMissing && lets('recovery')}
 				<p class="soft">
 					The master recovery key is avenDB's way back into a vault whose passkeys are all lost, while avenDB
@@ -614,6 +645,18 @@
 
 	dd {
 		margin: 0;
+	}
+
+	.add-owner {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-top: 0.6rem;
+	}
+
+	.add-owner .field {
+		flex: 1 1 14rem;
+		min-width: 0;
 	}
 
 	dd .row {

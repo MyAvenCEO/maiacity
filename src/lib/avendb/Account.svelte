@@ -25,7 +25,7 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { CONTENT, FLOW, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
+	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { allowed, answer, reads, refs } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded } from './vaults.js';
@@ -479,7 +479,7 @@
 			w.entries.filter((e) => e.vault === company && e.type === type && e.kind === 'record').map((e) => e.record);
 		const [flows, fns] = [own(FLOW).map((f) => f?.key), own(FUNCTION).map((f) => `${f?.flow}\n${f?.name}`)];
 		const made = [
-			...[CONTENT].filter((f) => !flows.includes(f.key)).map((f) => [FLOW, f]),
+			...FLOWS.filter((f) => !flows.includes(f.key)).map((f) => [FLOW, f]),
 			...FUNCTIONS.filter((f) => !fns.includes(`${f.flow}\n${f.name}`)).map((f) => [FUNCTION, f])
 		];
 		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));

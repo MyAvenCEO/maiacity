@@ -382,7 +382,7 @@ enum Named {
 
 fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
     let bad = || {
-        let kinds = "document, todo, article, flow, function, post, card, profile or file";
+        let kinds = "document, todo, article, flow, function, post, card, profile, file or story";
         bad(format!("schema is a built-in kind ({kinds}), \"stored\" or a schema's id, 64 hex digits"))
     };
     Ok(match o.get("schema") {
@@ -398,6 +398,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "card" => Named::Id(lens::CARD_V1.id()),
             "profile" => Named::Id(lens::PROFILE_V1.id()),
             "file" => Named::Id(lens::FILE_V1.id()),
+            "story" => Named::Id(lens::STORY_V1.id()),
             s => Named::Id(BlobId::from_hex(s).ok_or_else(bad)?),
         },
         Some(_) => return Err(bad()),
