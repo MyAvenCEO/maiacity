@@ -2,11 +2,11 @@
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
 	vault's name and its pages, as a database studio lists them: its notes, its todos, its articles, its stories (each
-	content piece from its idea to every platform, on a board by stage), its Library of
-	files, films, pictures, PDFs and songs, its flows, the stages its entries go through, and its functions, what runs as
-	an entry moves from one to the next; its database (the query console, the table editor, its shares, schemas and
-	lenses, its history, every signed edit, and the device's jobs, what it syncs in the background); then its settings
-	(About, Owners and devices, Sharing); and the page picked in the middle. Each page has an address of its own
+	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
+	songs, its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
+	next; its database (the query console, the table editor, its schemas and lenses, its history, every signed edit, and
+	the device's jobs, what it syncs in the background); then its settings (About, Owners and devices, and Sharing, the
+	one place that says who it is shared with); and the page picked in the middle. Each page has an address of its own
 	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
 	screen, and each article (`#articles/` and its entry), to read, and to edit as a note (`/edit`). The device picks
 	who the person acts as in each vault, with no switch to flip (its world's `acting`): in a vault their vault owns,
@@ -64,7 +64,6 @@
 			[
 				['query', 'Query', 'search'],
 				['tables', 'Table editor', 'table'],
-				['shares', 'Shares', 'cell'],
 				['schemas', 'Schemas', 'schema'],
 				['lenses', 'Lenses', 'lens'],
 				['history', 'History', 'history'],
@@ -86,7 +85,7 @@
 	/** the pages that show a vault as its owners see it, whoever acts */
 	const SETTINGS = /** @type {Page[]} */ (['about', 'members', 'sharing']);
 	/** the pages older addresses name, by the page that shows the same now */
-	const MOVED = /** @type {Record<string, string>} */ ({ access: 'sharing', sync: 'sharing', cells: 'shares' });
+	const MOVED = /** @type {Record<string, string>} */ ({ access: 'sharing', sync: 'sharing', cells: 'sharing', shares: 'sharing' });
 
 	/**
 	 * The page an address names: `#todos`, a note's `#notes/` and its entry, an article's `#articles/` and its entry, to

@@ -102,6 +102,19 @@ export function studio(world, db, vault, actor) {
 		const caps = world.audiences.find((x) => x.id === id)?.shares ?? cells.find((x) => x.id === id)?.shares;
 		return caps ? through(caps, of) : null;
 	};
+	/**
+	 * The vault's entries by who they are shared with: the cells whose shares read alike as one, so a filter lists each
+	 * who once, the fewest entries first.
+	 * @type {{ words: string, ids: string[], entries: number }[]}
+	 */
+	const byWho = [];
+	for (const x of cells) {
+		const words = sharedIn(x.id) ?? short(x.id);
+		const g = byWho.find((y) => y.words === words);
+		if (g) [g.ids, g.entries] = [[...g.ids, x.id], g.entries + x.entries];
+		else byWho.push({ words, ids: [x.id], entries: x.entries });
+	}
+	byWho.sort((a, b) => a.entries - b.entries);
 	/** Who entry `entry` of the vault is shared with. @param {string} entry */
 	const sharers = (entry) => sharedWith(world, vault, entry);
 	/** Who entry `entry` of the vault is shared with, in words. @param {string} entry */
@@ -123,6 +136,7 @@ export function studio(world, db, vault, actor) {
 		as,
 		rows,
 		cells,
+		byWho,
 		opens,
 		schemas,
 		lenses,
@@ -187,14 +201,15 @@ const BY_TYPE = /** @type {Record<string, string>} */ ({
 const SPARSE = ['flows', 'functions', 'posts', 'lane', 'records'];
 
 /**
- * The tables of the vault's entries, of one cell (the entries shared with the same vaults alike) or of all of them,
- * each with its rows, as `s.opens` says the acting vault opens them: flows, functions, posts, `lane` and `records`
- * only when they have any.
- * @param {Studio} s @param {string} only a cell's id, or '' for every cell
+ * The tables of the vault's entries, of those shared with the same vaults alike (`s.byWho`) or of all of them, each
+ * with its rows, as `s.opens` says the acting vault opens them: flows, functions, posts, `lane` and `records` only
+ * when they have any.
+ * @param {Studio} s @param {string} only who they are shared with, in words, or '' for every entry
  * @returns {Table[]}
  */
 export function tables(s, only) {
-	const rows = s.rows.filter((r) => !only || r.audience === only);
+	const ids = only ? new Set(s.byWho.find((g) => g.words === only)?.ids ?? []) : null;
+	const rows = s.rows.filter((r) => !ids || ids.has(r.audience));
 	/** @param {RowView} r */
 	const table = (r) => (!s.opens(r) ? 'sealed' : (BY_TYPE[r.type ?? ''] ?? 'records'));
 	return TABLES.map(([id, hint, family]) => ({ id, label: id, hint, family, rows: rows.filter((r) => table(r) === id) })).filter(

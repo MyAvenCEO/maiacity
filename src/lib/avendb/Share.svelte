@@ -1,16 +1,18 @@
 <!--
-	Share a slice of a vault on, as the acting vault: a name, what it picks and the JSON ops its grantee may make there
-	(the `share` op, `{over, who, level, what}`, avendb/docs/ARCHITECTURE.md §8). What it picks is one entry, every
-	note, todo or file, or those tagged one way and not another, or the whole vault: a rule, never a list, so an entry
-	tagged to match it later is shared then, one untagged leaves it, and the vault's stewards mark each into the
-	audience of the shares that pick it, under that audience's key. Its ops are a group: a built-in one
-	(Owner, Editor, Suggester, Viewer, Backup, Relay, the core's `groups`), or one of its own, named, built op by op or
-	written as JSON, the fields those of the newest schema of what it shares; with everyone, the Public group alone,
-	which only reads. It starts at the least: the one entry it opens on, or else the vault's todos, for a Viewer. The
-	preview says what it reaches now, of what the acting vault reads, as the device's `query` picks it. Owner of
-	everything makes a co-owner. The device answers beforehand whether it would make the share (`may`): alone, once the
-	vault's owners approve it with the passkey, or why not. A vault that isn't the one shared from shares only through
-	an Owner share of its own, and reaches no further than it, nor beyond its ops.
+	The one way to share in avenDB, wherever a page offers it (a note, a todo, a vault's Sharing page): opened on one
+	entry, it says first who that entry is shared with now, from the same shares the Sharing page lists. Then it shares
+	a slice of a vault on, as the acting vault: a name, what it picks and the JSON ops its grantee may make there (the
+	`share` op, `{over, who, level, what}`, avendb/docs/ARCHITECTURE.md §8). What it picks is one entry, every note,
+	todo or file, or those tagged one way and not another, or the whole vault: a rule, never a list, so an entry tagged
+	to match it later is shared then, one untagged leaves it, and the vault's stewards mark each into the audience of
+	the shares that pick it, under that audience's key. Its ops are a group: a built-in one (Owner, Editor, Suggester,
+	Viewer, Backup, Relay, the core's `groups`), or one of its own, named, built op by op or written as JSON, the fields
+	those of the newest schema of what it shares; with everyone, the Public group alone, which only reads. It starts at
+	the least: the one entry it opens on, or else the vault's todos, for a Viewer. The preview says what it reaches now,
+	of what the acting vault reads, as the device's `query` picks it. Owner of everything makes a co-owner. The device
+	answers beforehand whether it would make the share (`may`): alone, once the vault's owners approve it with the
+	passkey, or why not. A vault that isn't the one shared from shares only through an Owner share of its own, and
+	reaches no further than it, nor beyond its ops.
 -->
 <script>
 	import { allowed, may, read } from './ops.js';
@@ -23,6 +25,8 @@
 		nameOf,
 		opsWords,
 		reads,
+		sharedWith,
+		sharerWords,
 		shareWords,
 		singular,
 		tagsIn,
@@ -43,6 +47,8 @@
 	/** the vaults it may share with: any other this browser knows, but the vault itself, which holds all of it */
 	const others = $derived(world.vaults.filter((v) => v.id !== vault && v.id !== actor));
 	const one = $derived(world.entries.find((e) => e.entry === entry));
+	/** who the one entry it opens on is shared with now, by the shares in force that reach it */
+	const has = $derived(entry ? sharedWith(world, vault, entry) : null);
 
 	/** Ops as a group of its own writes them: one a line. @param {import('./vaults.js').Op[]} ops */
 	const lines = (ops) => `[\n${ops.map((o) => `  ${JSON.stringify(o)}`).join(',\n')}\n]`;
@@ -226,6 +232,12 @@
 </script>
 
 <div class="share">
+	{#if has}
+		<div class="row has">
+			<span class="lead">Now</span>
+			{#each has.who as x (x.id)}<span class="chip" class:accent={x.id === actor}>{sharerWords(x)}</span>{/each}
+		</div>
+	{/if}
 	<div class="row">
 		<span class="lead">Share</span>
 		<select class="field" bind:value={what} aria-label="What">
@@ -358,6 +370,13 @@
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 0.45rem;
+	}
+
+	.has {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.3rem;
 	}
 
 	.lead {
