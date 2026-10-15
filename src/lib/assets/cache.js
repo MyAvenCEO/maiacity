@@ -7,31 +7,31 @@
  * comes out of a box (../load.js: the card's schema, ./box/rebuild.js), so an entry spoiled by anyone is refused like a
  * box that lies, dropped and built again. Bounded: past LIMIT bytes the entries used longest ago go first.
  *
- *   key = BLAKE3 in its key-derivation mode, context CONTEXT, of [engine, recipe, ref]
+ *   key = BLAKE3 in its key-derivation mode, context CONTEXT, of [engine, recipe, values]
  *
- * engine: the box's script's hash (./box/plugin.js; every recipe of ours is in it), recipe: a recipe's own file's hash
- * once recipes come from avenDB (empty for ours), ref: as asked, its parameters sorted (`plants/apple@2?seed=maia&stage=9`).
- * The same ref under the same engine is the same build, so it is kept once; a new engine (a recipe of ours changed)
- * names every build anew, and the old ones fade out by LIMIT.
+ * engine: the frozen engine's hash (./engines.json), recipe: the recipe file's hash (./recipes.js), values: what it is
+ * built with, sorted (`seed=maia&stage=9`). The same recipe with the same values on the same engine is the same build,
+ * so it is kept once; a recipe changed is another hash, so another build, and the old ones fade out by LIMIT.
  */
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
-import { parseRef, refOf } from './refs.js';
+import { queryOf } from './params.js';
 
 export const CONTEXT = 'maiaCITY 2026-10-15 asset cache';
 /** how much the cache may hold (bytes) */
 export const LIMIT = 512 * 1024 * 1024;
 const DB = 'maiacity-asset-cache';
 
+const HASH = /^[0-9a-f]{64}$/;
+
 /**
- * The cache key of a build. @param {string} ref @param {{ engine: string, recipe?: string }} o
+ * The cache key of a build. @param {{ engine: string, recipe: string, params?: Record<string, unknown> }} build
  * @returns {string} 64 hex digits
  */
-export function keyOf(ref, { engine, recipe = '' }) {
-	if (!/^[0-9a-f]{64}$/.test(engine)) throw new Error('no engine hash');
-	const { group, id, v, variant, params } = parseRef(ref);
-	const canon = refOf(group, id, v, variant, params);
-	return bytesToHex(blake3(utf8ToBytes(JSON.stringify([engine, recipe, canon])), { context: utf8ToBytes(CONTEXT) }));
+export function keyOf({ engine, recipe, params }) {
+	if (!HASH.test(engine)) throw new Error('no engine hash');
+	if (!HASH.test(recipe)) throw new Error('no recipe hash');
+	return bytesToHex(blake3(utf8ToBytes(JSON.stringify([engine, recipe, queryOf(params)])), { context: utf8ToBytes(CONTEXT) }));
 }
 
 /**

@@ -57,15 +57,17 @@ test('a ref with parameters builds what the same arguments build, and an asset t
 	expect((await objectAt('things/bell-tent')).userData.ref).toBe('things/bell-tent@1');
 }, 60000);
 
-test('one build, one cache key: the same values in any order, another value or engine another key', () => {
-	const k = keyOf('plants/apple?seed=maia&stage=9', { engine: ENGINE });
+test('one build, one cache key: the same values in any order, another value, recipe or engine another key', () => {
+	const R = 'cd'.repeat(32);
+	const k = keyOf({ engine: ENGINE, recipe: R, params: { seed: 'maia', stage: 9 } });
 	expect(k).toMatch(/^[0-9a-f]{64}$/);
-	expect(keyOf('plants/apple?stage=9&seed=maia', { engine: ENGINE })).toBe(k);
-	expect(keyOf('plants/apple?seed=isar&stage=9', { engine: ENGINE })).not.toBe(k);
-	expect(keyOf('plants/apple@2?seed=maia&stage=9', { engine: ENGINE })).not.toBe(k);
-	expect(keyOf('plants/apple?seed=maia&stage=9', { engine: 'cd'.repeat(32) })).not.toBe(k);
-	expect(keyOf('plants/apple?seed=maia&stage=9', { engine: ENGINE, recipe: 'ef'.repeat(32) })).not.toBe(k);
-	expect(() => keyOf('plants/apple', { engine: 'nope' })).toThrow();
+	expect(keyOf({ engine: ENGINE, recipe: R, params: { stage: 9, seed: 'maia' } })).toBe(k);
+	expect(keyOf({ engine: ENGINE, recipe: R, params: { stage: '9', seed: 'maia' } })).toBe(k);
+	expect(keyOf({ engine: ENGINE, recipe: R, params: { seed: 'isar', stage: 9 } })).not.toBe(k);
+	expect(keyOf({ engine: ENGINE, recipe: 'ef'.repeat(32), params: { seed: 'maia', stage: 9 } })).not.toBe(k);
+	expect(keyOf({ engine: 'ef'.repeat(32), recipe: R, params: { seed: 'maia', stage: 9 } })).not.toBe(k);
+	expect(() => keyOf({ engine: 'nope', recipe: R })).toThrow();
+	expect(() => keyOf({ engine: ENGINE, recipe: 'nope' })).toThrow();
 });
 
 test('a fingerprint tells data apart by every byte and every field', () => {

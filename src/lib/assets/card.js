@@ -1,15 +1,13 @@
 /*
  * AN ASSET'S CARD — what a world, a viewer or a film needs to know of an asset without building it: its name and
- * version (its ref, with the values it was built with), its real size and weight in triangles, what its recipe is
- * built with (../params.js), its parts (the catalog its kit sealed), the sliders its solver reads.
- * Read off a built object, by the same code in the page and in the asset box, and always checked against the card's
- * schema (./schemas/card.v1.json) before it is used; the card a pack carries is this, plus its levels of detail and its
- * impostor once those are baked (phase 5).
+ * version (its ref, with the values it was built with), the hash of the recipe that built it and the engine it ran
+ * on, its real size and weight in triangles, what its recipe is built with (./params.js), its parts (the catalog its
+ * kit sealed), the sliders its solver reads. Read off a built object and what its recipe says of it (./recipe.js), by
+ * the box's engine (./box/engine.js) and by the page's tests alike, and always checked against the card's schema
+ * (./schemas/card.v1.json) before it is used.
  */
 import * as THREE from 'three';
 import { parseRef, refOf } from './refs.js';
-
-/** @typedef {import('./groups.js').Item} Item @typedef {import('./groups.js').AnyVersion} AnyVersion */
 
 const mm = (/** @type {number} */ x) => Math.round(x * 1000) / 1000;
 /** the keys of `o` that are set, as a fresh plain object (a card holds no `undefined`) */
@@ -29,16 +27,22 @@ export function trianglesOf(obj) {
 }
 
 /**
- * The card of a built asset.
- * @param {string} ref the ref it was built from (`machines/powercube@3`, `plants/apple`)
- * @param {THREE.Object3D} obj what its builder made
- * @param {{ item: Item, version: AnyVersion }} at its item and version as its group lists them
+ * @typedef {{
+ *   group: string, id: string, version: number, variant?: string, label: string, note?: string,
+ *   params?: import('./params.js').Param[]
+ * }} Meta what a recipe says of the asset it builds (./recipe.js `metaOf`)
  */
-export function cardOf(ref, obj, { item, version }) {
-	const { group, id, variant } = parseRef(ref);
-	// the values it was built with, as the ref on the object names them (../refs.js `objectIn`)
+
+/**
+ * The card of a built asset.
+ * @param {THREE.Object3D} obj what its builder made, its ref on it with the values it was built with (./refs.js `buildWith`)
+ * @param {Meta} meta what its recipe says of it
+ * @param {{ recipe?: string, engine?: number }} [made] the recipe's hash and the engine's version it was built on
+ */
+export function cardOf(obj, meta, { recipe, engine } = {}) {
+	const { group, id, version, variant } = meta;
+	// the values it was built with, as the ref on the object names them
 	const built = typeof obj.userData.ref === 'string' && obj.userData.ref.includes('?') ? parseRef(obj.userData.ref).params : undefined;
-	const v = Array.isArray(version.build) ? version.build.find((x) => x.id === (variant ?? version.build[0]?.id)) : null;
 	const box = new THREE.Box3().setFromObject(obj);
 	const size = box.isEmpty() ? [0, 0, 0] : box.getSize(new THREE.Vector3()).toArray().map(mm);
 	let skinned = false;
@@ -49,17 +53,19 @@ export function cardOf(ref, obj, { item, version }) {
 	return set({
 		format: 'asset-card',
 		v: 1,
-		ref: refOf(group, id, version.v, variant ?? (v ? v.id : undefined), built),
+		ref: refOf(group, id, version, variant, built),
+		recipe,
+		engine,
 		group,
 		id,
-		version: version.v,
-		variant: variant ?? v?.id,
-		label: v?.label ? `${item.label}: ${v.label}` : item.label,
-		note: v?.note ?? version.note,
+		version,
+		variant,
+		label: meta.label,
+		note: meta.note,
 		size,
 		triangles: trianglesOf(obj),
 		skinned,
-		params: item.params?.length ? plain(item.params) : undefined,
+		params: meta.params?.length ? plain(meta.params) : undefined,
 		catalog: catalog && plain(catalog),
 		controls: sliders && Object.entries(sliders).map(([cid, c]) => set({ id: cid, label: c.label, min: c.min, max: c.max, value: c.value, step: c.step, unit: c.unit, digits: c.digits, ends: c.ends }))
 	});

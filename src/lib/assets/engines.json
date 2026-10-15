@@ -1,0 +1,19 @@
+{
+	"engines": [
+		{
+			"v": 1,
+			"date": "2026-10-15",
+			"blake3": "712314345c4cfb6adf643017825ba39e78801fd6b4b82c9c947c1b629fed45a4",
+			"bytes": 768650,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "The first engine: three.js r186 with RoundedBoxGeometry, Reflector, BufferGeometryUtils and SkeletonUtils; the box's second lock; recipes as scripts named by their BLAKE3 hash, built with their declared parameters, handed back as plain data (format 0) and a card (v1)"
+		}
+	]
+}

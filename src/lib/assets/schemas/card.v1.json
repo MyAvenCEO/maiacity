@@ -7,6 +7,8 @@
     "format": { "const": "asset-card" },
     "v": { "const": 1 },
     "ref": { "$ref": "#/$defs/ref" },
+    "recipe": { "$ref": "#/$defs/hash" },
+    "engine": { "type": "integer", "minimum": 1, "maximum": 10000 },
     "group": { "enum": ["machines", "actors", "things", "plants"] },
     "id": { "$ref": "#/$defs/id" },
     "version": { "type": "integer", "minimum": 1, "maximum": 100000 },
@@ -159,6 +161,7 @@
   "required": ["format", "v", "ref", "group", "id", "version", "label", "size", "triangles"],
   "$defs": {
     "id": { "type": "string", "maxLength": 80, "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "hash": { "type": "string", "maxLength": 64, "pattern": "^[0-9a-f]{64}$" },
     "ref": { "type": "string", "maxLength": 300, "pattern": "^[a-z]+/[a-z0-9-]+@[0-9]+(:[a-z0-9-]+)?(\\?[A-Za-z][A-Za-z0-9_.-]*=[A-Za-z0-9%+*._-]*(&[A-Za-z][A-Za-z0-9_.-]*=[A-Za-z0-9%+*._-]*)*)?$" },
     "key": { "type": "string", "maxLength": 80, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
     "line": { "type": "string", "maxLength": 300 },
