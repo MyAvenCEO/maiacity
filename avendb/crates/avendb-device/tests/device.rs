@@ -3,16 +3,17 @@
 //! to the key the device made for that ceremony alone. Here the app is the test, and the sheet's page a software
 //! passkey that seals as the page does (avendb-browser's `sealCeremony`). Eve founds her vault from the Mac in two
 //! sheets, through a relay open to sign-up; the device keeps her vault on the shelf in its folder, opens again from it
-//! in the unlock's sheet alone, following the vaults it followed, and puts the shelf aside when she forgets it there,
-//! deleting nothing. Every read and change is an op (`run`, V2), what her vault's owners approve signed in a sheet;
-//! a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`), and any range of it back, in base64. A new
-//! device puts aside a shelf a start cut short left, and clears what an earlier avenDB kept in the folder. And agent
-//! devices on the Mac (`agent`), as Claude Code and Codex start them, ask for access; she denies, it asks again, and
-//! the page's consent screen adds both to her one aven avenEve, a sheet each, whose share they act with. And Eve's
-//! photo drive (`drive`) joins her vault as a device of its own in one sheet, its key never on it in plain; the Mac
-//! it is plugged into hosts it, a full copy; unplugged, its node stops and its signed holdings stay, with when it
-//! checked; plugged in again it is hosted with no sheet; ejected, nothing on it stays open, and plugged in again it is
-//! hosted with no sheet; her other Mac opens it in one; removed like a lost phone, her vault's peers refuse it.
+//! in the unlock's sheet alone, following the vaults it followed and reading as deep in a query as it did, and puts the
+//! shelf aside when she forgets it there, deleting nothing. Every read and change is an op (`run`, V2), what her
+//! vault's owners approve signed in a sheet; a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`),
+//! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and clears what an
+//! earlier avenDB kept in the folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
+//! for access; she denies, it asks again, and the page's consent screen adds both to her one aven avenEve, a sheet
+//! each, whose share they act with. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
+//! sheet, its key never on it in plain; the Mac it is plugged into hosts it, a full copy; unplugged, its node stops and
+//! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
+//! stays open, and plugged in again it is hosted with no sheet; her other Mac opens it in one; removed like a lost
+//! phone, her vault's peers refuse it.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -355,6 +356,13 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(run(&mut app, follow).await, Ok(json!({ "follow": [hex(&avenceo.0)] })));
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!(status["meta"]["follow"], json!([hex(&avenceo.0)]));
+    // its queries read 7 rows and links down at most, as Settings sets it: it keeps that in what opens it again too
+    let limits = |depth: usize| json!({ "depth": depth, "default": 16, "ceiling": 256 });
+    assert_eq!(run(&mut app, json!({ "op": "limits" })).await, Ok(limits(256)), "as deep as any write reaches");
+    assert_eq!(run(&mut app, json!({ "op": "set_limits", "depth": 7 })).await, Ok(limits(7)));
+    assert!(app.asked().is_empty(), "a device's own setting, with no sheet");
+    let status = app.call("status", json!([])).await.expect("its status");
+    assert_eq!(status["meta"]["queryDepth"], 7);
     // a film, a chunk at a time in base64, as native.js hands it over, once for its key and once to seal it; then
     // any range of it back, in base64 too
     let film: Vec<u8> = (0..100_000u32).map(|i| (i * 7 % 253) as u8).collect();
@@ -407,8 +415,8 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert!(app.asked().is_empty(), "with no sheet");
     app.quit().await;
     // the app starts again: the device opens from its folder in the unlock's sheet alone, the same device
-    let metas = ["0000000000000001", "0000000000000002", "0000000000000003"];
-    let kept = "what opens it, as founded, following avenCEO, then as renamed, each kept whole";
+    let metas = ["0000000000000001", "0000000000000002", "0000000000000003", "0000000000000004"];
+    let kept = "what opens it, as founded, following avenCEO, reading 7 levels down, then as renamed, each kept whole";
     assert_eq!(objects(&dir, FLOOR, "meta"), metas, "{kept}");
     assert!(!objects(&dir, FLOOR, "journal").is_empty(), "its shelf keeps its edits");
     let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
@@ -424,6 +432,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(read, Some(("Seeds".into(), "Tomatoes in March.".into())), "it reads what its folder kept");
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!(status["meta"]["follow"], json!([hex(&avenceo.0)]), "and follows what it followed");
+    assert_eq!(run(&mut app, json!({ "op": "limits" })).await, Ok(limits(7)), "and reads as deep as it did");
     // she forgets it here: its shelf, with what opens it, is put aside, never deleted, and a new one is in use
     assert_eq!(app.call("forget", json!([])).await, Ok(Value::Null));
     assert_eq!(app.call("status", json!([])).await, Ok(json!({ "meta": null, "open": false, "device": null })));
@@ -654,6 +663,8 @@ async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_a
     let put = json!({ "op": { "op": "put_file", "vault": mine, "name": "a.txt", "size": 1 } });
     let (no, error) = claude.tool("avendb_run", put).await;
     assert!(error && no.contains("isn't for an agent"), "{no}");
+    let (no, error) = claude.tool("avendb_run", json!({ "op": { "op": "set_limits", "depth": 4 } })).await;
+    assert!(error && no.contains("isn't for an agent"), "a device's own setting, which an agent keeps nowhere: {no}");
     codex.quit().await;
     claude.quit().await;
     app.quit().await;

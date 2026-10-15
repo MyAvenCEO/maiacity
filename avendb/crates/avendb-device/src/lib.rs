@@ -22,7 +22,8 @@
 //!
 //! The device keeps no secret. Its folder is its one truth: the shelf in use there holds what it holds and what opens
 //! it again (`avendb_browser::Meta`: its name, its relay, its salt's own bytes, its secret masked by the PRF output on
-//! its salt, which only its passkey computes again, and its passkey's credential and P-256 key), laid out as a page's
+//! its salt, which only its passkey computes again, and its passkey's credential and P-256 key; the vaults it follows,
+//! and the query limit the person set in Settings, how deep its queries read, `set_limits`), laid out as a page's
 //! shelf in OPFS is; its keys come back at every unlock. A shelf no device opens any more, as one forgotten here, is
 //! put aside in the folder, a new generation made beside it (`avendb_net::disk::aside`); and what came before the last
 //! reset, older shelves and an earlier avenDB's store, is cleared as the device opens its folder (`disk::clear`).

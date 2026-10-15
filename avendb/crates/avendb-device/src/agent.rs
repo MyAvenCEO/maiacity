@@ -331,7 +331,7 @@ impl Agent {
                 if engine::reads(&op) || engine::asks(&op) {
                     anyhow::bail!("{:?} only reads: read with avendb_ask", engine::name(&op));
                 }
-                if matches!(op_name(&op), Some("put_file" | "follow")) {
+                if matches!(op_name(&op), Some("put_file" | "follow" | "set_limits")) {
                     anyhow::bail!("{:?} isn't for an agent yet", op_name(&op));
                 }
                 let (answer, _) = self.node.run(op, None::<NoBytes>, None::<&NoCeremony>).await?;

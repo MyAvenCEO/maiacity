@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use avendb::doc::{Item, Version};
 use avendb::id::{BlobId, SignerId};
 use avendb::lens::{Lane, Lens, Schema, View, CEILING};
-use avendb::ops::{diff, Change, Flat, Key, Path};
+use avendb::ops::{cut, diff, empty_below, take_out, Change, Flat, Key, Path};
 use avendb::rules::Touch;
 use serde_json::{json, Value};
 
@@ -264,6 +264,39 @@ fn a_lens_reads_rows_of_rows_through_in_inside_in() {
     assert!(item.write(&old, &finished));
     assert_eq!(item.record()["sections"][0]["tasks"][1], json!({ "id": 12, "what": "Water", "status": "done" }));
     assert_eq!(item.read(&old), Some(finished));
+}
+
+/// A lens translates only what a query reads (`engine`'s `see_within`): each list of rows deeper than the query reads
+/// is emptied as stored before the lens translates anything, then taken out of what the app reads. That reads the same
+/// as the whole record read and then cut, through either side of the lens, at any depth; the tasks of a plan read no
+/// rows down are never translated, and a row whose list was emptied still reads.
+#[test]
+fn a_lens_translates_only_what_a_query_reads() {
+    let (v0, v1) = (Schema::parse(PLAN_V0.as_bytes()).unwrap(), Schema::parse(PLAN_V1.as_bytes()).unwrap());
+    let lens = plan_lens();
+    let old = View::through(&v0, &lens, &v1).expect("the lens joins them");
+    let new = View::through(&v1, &lens, &v0).expect("the lens joins them");
+    let task = |id: i64, done: bool| json!({ "id": id, "what": "x", "done": done });
+    let written = json!({ "kind": "plan", "sections": [
+        { "id": 1, "name": "Spring", "tasks": [task(11, true), task(12, false)] },
+        { "id": 2, "name": "Summer", "tasks": [] }] });
+    let item = Item::made(&old, &written, MAC).expect("a v0 app writes it");
+    for view in [&old, &new] {
+        for depth in 0..4 {
+            let mut stored = item.record();
+            let below = empty_below(stored.as_object_mut().unwrap(), depth);
+            let mut within = view.get(&stored).expect("it reads");
+            take_out(within.as_object_mut().unwrap(), &below);
+            let mut whole = item.read(view).expect("it reads");
+            let was = cut(whole.as_object_mut().unwrap(), depth);
+            assert_eq!((within.clone(), !below.is_empty()), (whole, was), "{depth}");
+            if depth == 1 {
+                // the sections read, the tasks not: the section that held some shows none, the empty one its []
+                assert_eq!(within["sections"][0], json!({ "id": 1, "name": "Spring" }));
+                assert_eq!(within["sections"][1]["tasks"], json!([]));
+            }
+        }
+    }
 }
 
 /// An outline `depth` nodes deep, one node under the other: `depth` 0 holds none.

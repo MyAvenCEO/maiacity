@@ -10,13 +10,14 @@
 //!   needs no new code.
 //! - **Reads** (`read`). `query`: the entries whose labels and records a `where` holds of, picked by the selector of
 //!   its labels first (`ops::Where::plan`), so a device opens no more than the selector picks, each record read only
-//!   so many rows down (`QUERY_DEPTH`, or the query's own, up to the device's most), then ordered and a page at a
-//!   time. `get`: one entry on a line, or at a version. `history`: an entry's lines and every write of it, each
-//!   with the changes it made to the entry's stored record (`ops::diff`), as every reader sees them alike. `schemas`:
-//!   the schemas and lenses a vault's entries are read through. `groups`: the built-in groups of ops a share names
-//!   (`rules::groups`), which the page offers when it shares. And of the device's vaults (`vaults`, V2): `world`,
-//!   `database`, `note`, `log`, `creatable`, `taggable`; `read_file`, whose bytes a node reads (avendb-net's
-//!   `Node::run`).
+//!   so many rows down (`QUERY_DEPTH`, or the query's own, up to the device's most) before its lens translates it,
+//!   then ordered and a page at a time, the links at the places it names followed a level at a time (`ops::follow`),
+//!   each hop opening only what the device reads. `get`: one entry on a line, or at a version. `history`: an entry's
+//!   lines and every write of it, each with the changes it made to the entry's stored record (`ops::diff`), as every
+//!   reader sees them alike. `schemas`: the schemas and lenses a vault's entries are read through. `groups`: the
+//!   built-in groups of ops a share names (`rules::groups`), which the page offers when it shares. `limits`: how deep
+//!   the device's queries read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`,
+//!   `creatable`, `taggable`; `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
 //!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `restore`,
 //!   `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make one write. Each acts for a
@@ -24,9 +25,9 @@
 //!   A write through a share carries the proof that the ops of the shares of its chain allow what it touches and the
 //!   tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`). And
 //!   the changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
-//!   `back_up`, `mark`, `card`, `profile`, `follow`. One its vault's owners approve the device drafts for its person's
-//!   passkey (`prepare`, `Prepared::Approve`): without a ceremony it answers `approve` and makes nothing; with one,
-//!   `approve` keeps it.
+//!   `back_up`, `mark`, `card`, `profile`, `follow`, `set_limits`. One its vault's owners approve the device drafts
+//!   for its person's passkey (`prepare`, `Prepared::Approve`): without a ceremony it answers `approve` and makes
+//!   nothing; with one, `approve` keeps it.
 //! - **Asking** (`may`, `shares`). Whether each of some change ops would be made, by a dry run of each that checks,
 //!   proves and refuses as `run` does and makes nothing: what a page asks before it offers a button; `true`, or
 //!   `{"approve": {signers}}` where the passkey would approve it. `shares` lists the shares over a vault, owners and
@@ -133,11 +134,11 @@ fn bad(why: impl Into<String>) -> Refused {
 /// The fields of each op beside `op`: a field it doesn't take is a mistake, never ignored.
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
-        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth"],
+        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow"],
         "get" => &["entry", "schema", "line", "at"],
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
-        "groups" => &[],
+        "groups" | "limits" => &[],
         "create" => &["vault", "type", "tags", "schema", "value", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
@@ -168,12 +169,13 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "card" => &["name"],
         "profile" => &["vault", "name"],
         "follow" => &["vault", "on"],
+        "set_limits" => &["depth"],
         _ => return None,
     })
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 13] = [
+const READS: [&str; 14] = [
     "query",
     "get",
     "history",
@@ -187,6 +189,7 @@ const READS: [&str; 13] = [
     "read_file",
     "creatable",
     "taggable",
+    "limits",
 ];
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
@@ -254,6 +257,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "history" => history(lab, me, o),
         "schemas" => schemas(lab, me, o),
         "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
+        "limits" => Ok(limits(lab.query_depth(me))),
         "database" | "note" | "log" => vaults::data(lab, me, name, o),
         "creatable" => vaults::creatable(lab, me, o),
         "taggable" => vaults::taggable(lab, me, o),
@@ -441,18 +445,36 @@ impl Seen {
 /// Item `item` as an op naming `schema` sees it through `lane`: `None` if that schema isn't in the lane or the record
 /// isn't one of it.
 fn see(lane: &Lane, item: &Item, schema: &Named) -> Option<Seen> {
-    let stored = item.record();
+    seen_of(lane, &item.record(), &item.authored(), schema)
+}
+
+/// What `item` stores, `stored`, as an op naming `schema` sees it through `lane`, the item's writes made under the
+/// schemas `authored`.
+fn seen_of(lane: &Lane, stored: &Value, authored: &BTreeSet<BlobId>, schema: &Named) -> Option<Seen> {
     let app = match schema {
         Named::Stored => None,
-        Named::Own => own(lane, &stored),
+        Named::Own => own(lane, stored),
         Named::Id(id) => Some(lane.schema(*id)?.clone()),
     };
     let Some(app) = app else {
         return Some(Seen { record: stored.as_object().cloned().unwrap_or_default(), view: None, read_only: true });
     };
-    let (view, read_only) = lane.view(&app, &item.authored());
-    let record = item.read(&view)?.as_object()?.clone();
+    let (view, read_only) = lane.view(&app, authored);
+    let record = view.get(stored)?.as_object()?.clone();
     Some(Seen { record, view: Some(view), read_only })
+}
+
+/// Item `item` as `see` sees it, read only `depth` rows down: each list of rows deeper than that emptied as the item
+/// stores it, before the lens translates anything, and taken out of what the schema reads (`ops::empty_below`), so
+/// nothing a query doesn't read is translated. Whether it took any out (`ops::cut`). A lens's steps keep each list of
+/// rows at its field and its rows in it, so the places of the emptied lists are theirs in what the schema reads; a
+/// `convert` whose `when` tests a list of rows would see it empty there.
+fn see_within(lane: &Lane, item: &Item, schema: &Named, depth: usize) -> Option<(Seen, bool)> {
+    let mut stored = item.record();
+    let below = stored.as_object_mut().map(|r| ops::empty_below(r, depth)).unwrap_or_default();
+    let mut seen = seen_of(lane, &stored, &item.authored(), schema)?;
+    ops::take_out(&mut seen.record, &below);
+    Some((seen, !below.is_empty()))
 }
 
 /// Why `see` saw nothing.
@@ -556,14 +578,69 @@ fn row(entry: EntryId, vault: VaultId, attrs: &Attrs, seen: &Seen, record: Recor
     })
 }
 
-/// `{"op": "query", "vault"?, "where"?, "schema"?, "select"?, "order"?, "limit"?, "offset"?, "depth"?}`: the entries
-/// of vault `vault` (of every vault, left out) on their main lines whose labels and records `where` holds of, each
-/// record through `schema`; an entry it doesn't read, or that isn't one of the schema named, isn't there. Entries are
-/// picked by the selector of the where's labels before any is opened (`plan`). Each record is read `depth` rows down
-/// (`QUERY_DEPTH`, left out), and no deeper than the device's most (`Lab::query_depth`): a list of rows below that
-/// isn't read (`ops::cut`), so the where doesn't see it, the order neither, and the row shows `cut`. In the order the
-/// device took them, or by `order`; from the `offset`th, at most `limit`; each record with only the fields `select`
-/// names, if it names any. `count` is how many rows there are in all, and `depth` how deep each was read.
+/// What a query follows (`"follow"`): places that hold links, each a field, or a path to one in rows at any depth, a
+/// row by its key or any row (`"*"`), as a `where` tests them.
+fn follows_of(o: &Map<String, Value>) -> Result<Vec<ops::Target>, Refused> {
+    let Some(v) = o.get("follow") else { return Ok(vec![]) };
+    let bad = || bad("follow is a list of places that hold links: a field, or a path, [\"blocks\", \"*\", \"ref\"]");
+    let one = |x: &Value| match x {
+        Value::String(f) => Ok(ops::Target { rows: vec![], field: f.clone() }),
+        _ => ops::Target::of_json(x).map_err(|_| bad()),
+    };
+    v.as_array().ok_or_else(bad)?.iter().map(one).collect()
+}
+
+/// What device `me` opens of link `l` (`ops::Opens`): the record of its entry through the schema its kind names, in
+/// its vault's lane, at its newest on the main line or at the version it is pinned at, read `rows` rows down below the
+/// record or the row the link names; or why it opens none: it reads no such entry (`NoEntry`: none of its shares
+/// reaches it, or no key it holds opens it), the entry is another vault's (`WrongVault`), it holds no such version
+/// (`NoVersion`), no schema reads the record (`NoSchema`), or the record holds no such row (`NoRow`).
+fn open_link(
+    lab: &Lab,
+    me: SignerId,
+    lanes: &mut HashMap<VaultId, Lane>,
+    l: &ops::Link,
+    rows: usize,
+) -> Result<Record, ops::Unopened> {
+    let no = |name: &'static str, why: &str| ops::Unopened { name, why: why.to_string() };
+    let newest = lab.item(me, l.entry).ok_or_else(|| {
+        no("NoEntry", "the reader opens no such entry: none of its shares reaches it, or no key it holds opens it")
+    })?;
+    let vault = lab.vault_of_entry(me, l.entry).filter(|v| *v == l.vault);
+    let vault = vault.ok_or_else(|| no("WrongVault", "the entry is another vault's than the link names"))?;
+    let pinned;
+    let item = match &l.at {
+        None => newest,
+        Some(at) => {
+            let h = lab.history(me, l.entry).filter(|h| at.iter().all(|e| h.get(*e).is_some()));
+            let h = h.ok_or_else(|| no("NoVersion", "the reader holds no such version of the entry"))?;
+            pinned = h.item_at(at, me, MAIN);
+            &pinned
+        }
+    };
+    let lane = lanes.entry(vault).or_insert_with(|| lane(lab, me, vault));
+    let (seen, _) = see_within(lane, item, &Named::Own, rows + l.row.len())
+        .ok_or_else(|| no("NoSchema", "no schema in the vault's lane reads the record"))?;
+    let mut at = seen.record;
+    for (f, id) in &l.row {
+        let row = at.get(f).and_then(ops::rows).and_then(|rs| rs.iter().find(|r| r["id"].as_i64() == Some(*id)));
+        at = row.and_then(Value::as_object).cloned().ok_or_else(|| no("NoRow", "the record holds no such row"))?;
+    }
+    Ok(at)
+}
+
+/// `{"op": "query", "vault"?, "where"?, "schema"?, "select"?, "order"?, "limit"?, "offset"?, "depth"?, "follow"?}`:
+/// the entries of vault `vault` (of every vault, left out) on their main lines whose labels and records `where` holds
+/// of, each record through `schema`; an entry it doesn't read, or that isn't one of the schema named, isn't there.
+/// Entries are picked by the selector of the where's labels before any is opened (`plan`). Each record is read `depth`
+/// rows down (`QUERY_DEPTH`, left out), and no deeper than the device's most (`Lab::query_depth`): a list of rows
+/// below that isn't read, nor translated (`see_within`), so the where doesn't see it, the order neither, and the row
+/// shows `cut`. In the order the device took them, or by `order`; from the `offset`th, at most `limit`; each record
+/// with only the fields `select` names, if it names any. Then the links at the places `follow` names are followed, a
+/// level at a time (`ops::follow`): each link shows the record or row it leads to (`to`), with the links there at
+/// those places followed in turn, or why it shows none (`empty` and `why`, `open_link`); every row and every hop is a
+/// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
+/// how deep each was read.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let w = o.get("where").map(Where::of_json).transpose().map_err(bad)?.unwrap_or(Where::Yes);
     let vault = o.get("vault").map(|_| vault_of(o, "vault")).transpose()?;
@@ -572,6 +649,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     let order = order_of(o)?;
     let (limit, offset) = (count_of(o, "limit")?, count_of(o, "offset")?.unwrap_or(0));
     let depth = count_of(o, "depth")?.unwrap_or(QUERY_DEPTH).min(lab.query_depth(me));
+    let follow = follows_of(o)?;
     let plan = w.plan();
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
@@ -580,8 +658,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
         let Some(item) = lab.item(me, entry) else { continue };
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
-        let Some(mut seen) = see(lane, item, &schema) else { continue };
-        let cut = ops::cut(&mut seen.record, depth);
+        let Some((seen, cut)) = see_within(lane, item, &schema, depth) else { continue };
         if w.holds(&m.attrs, &seen.record) {
             rows.push((entry, v, m.attrs, seen, cut));
         }
@@ -606,14 +683,26 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     });
     let count = rows.len();
     let page = rows.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX));
-    let shown = page.map(|(entry, v, attrs, seen, cut)| {
+    let mut shown = vec![];
+    for (entry, v, attrs, seen, cut) in page {
         let picked = |f: &String| select.as_ref().is_none_or(|fs| fs.contains(f));
-        let record = seen.record.iter().filter(|(f, _)| picked(f)).map(|(f, x)| (f.clone(), x.clone())).collect();
+        let mut record = seen.record.iter().filter(|(f, _)| picked(f)).map(|(f, x)| (f.clone(), x.clone())).collect();
+        if !follow.is_empty() {
+            ops::follow(&mut record, depth, &follow, &mut |l, rows| open_link(lab, me, &mut lanes, l, rows));
+        }
         let mut row = row(entry, v, &attrs, &seen, record);
         row["cut"] = cut.into();
-        row
-    });
-    Ok(json!({ "rows": shown.collect::<Vec<_>>(), "count": count, "plan": plan.to_json(), "depth": depth }))
+        shown.push(row);
+    }
+    Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth }))
+}
+
+/// `{"op": "limits"}`, and what `set_limits` answers: the most rows and links down a query of the device reads
+/// (`depth`, `Lab::query_depth`, which `set_limits` sets and a node keeps with what opens its device again), how deep a
+/// query reads that names no depth of its own (`default`, `QUERY_DEPTH`), and the most a device may read (`ceiling`,
+/// `lens::CEILING`, as deep as any write that counts reaches).
+pub(crate) fn limits(depth: usize) -> Value {
+    json!({ "depth": depth, "default": QUERY_DEPTH, "ceiling": lens::CEILING })
 }
 
 /// `{"op": "get", "entry", "schema"?, "line"?, "at"?}`: entry `entry` on line `line` (the main line, left out), or at

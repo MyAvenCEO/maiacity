@@ -4,12 +4,14 @@
 //! end on the model's record, or be refused where the model refuses it, and change nothing its ops don't name (O2).
 //! Each query must pick entries by the model's selector (`Where::plan`), which picks no less than the query (O3), and
 //! hold of exactly the model's entries. A type or a tag is a number in the model, and its digits here; a vault or an
-//! entry is its number in 64 hex digits.
+//! entry is its number in 64 hex digits. Each link followed must show what the model's does (`Links.follow`), each
+//! record read so many rows down as the model reads it (`Doc.cut`), and each hop that shows nothing the model's reason,
+//! by its name (the model says no more of why).
 
 mod records;
 
 use avendb::id::{EntryId, VaultId};
-use avendb::ops::{diff, run_all, Change, Flat, Record, RecordOp, Where};
+use avendb::ops::{cut, diff, follow, run_all, Change, Flat, Link, Record, RecordOp, Target, Unopened, Where};
 use avendb::slice::{Attrs, Sym};
 use records::{nested_op, nested_record, random_op, random_record, Rng, FIELDS};
 use serde_json::{json, Value};
@@ -102,6 +104,60 @@ fn each_query_picks_and_holds_as_the_models() {
             assert!(!w.holds(a, r) || plan.matches(a), "{case}: the plan misses {}", a.entry.to_hex());
         }
     }
+}
+
+/// `v` with every `why` taken out, at any depth: the model names why a hop shows nothing, and says no more.
+fn without_why(mut v: Value) -> Value {
+    let mut todo = vec![&mut v];
+    while let Some(x) = todo.pop() {
+        match x {
+            Value::Object(o) => {
+                o.remove("why");
+                todo.extend(o.values_mut());
+            }
+            Value::Array(xs) => todo.extend(xs.iter_mut()),
+            _ => {}
+        }
+    }
+    v
+}
+
+#[test]
+fn each_link_followed_shows_what_the_models_does() {
+    let v = vectors();
+    let graph: Vec<(Link, Record)> = list(&v["graph"])
+        .iter()
+        .map(|n| {
+            let link = Link::of_json(&json!({ "vault": n["vault"], "entry": n["entry"] })).expect("a link");
+            (link, record(&n["record"]))
+        })
+        .collect();
+    let mut shown = 0;
+    for case in list(&v["follows"]) {
+        let link = Link::of_json(&case["link"]).unwrap_or_else(|| panic!("a link: {case}"));
+        assert_eq!(link.to_json(), case["link"], "{case}");
+        let field = |f: &Value| Target { rows: vec![], field: f.as_str().expect("a field").to_string() };
+        let fields: Vec<Target> = list(&case["follow"]).iter().map(field).collect();
+        let depth = case["depth"].as_u64().expect("a depth") as usize;
+        // what the reader opens: the record of the link's entry, read so many rows down, in the vault it names
+        let mut open = |l: &Link, rows: usize| -> Result<Record, Unopened> {
+            let no = |name| Unopened { name, why: String::new() };
+            let (at, r) = graph.iter().find(|(g, _)| g.entry == l.entry).ok_or(no("NoEntry"))?;
+            if at.vault != l.vault {
+                return Err(no("WrongVault"));
+            }
+            let mut r = r.clone();
+            cut(&mut r, rows);
+            Ok(r)
+        };
+        // the link at the top of a record, which it follows as deep as the case
+        let mut r = Record::from_iter([("at".to_string(), case["link"].clone())]);
+        let at = Target { rows: vec![], field: "at".into() };
+        follow(&mut r, depth, &[&fields[..], &[at]].concat(), &mut open);
+        assert_eq!(without_why(r["at"].clone()), case["shown"], "{case}");
+        shown += r["at"].get("to").is_some() as usize;
+    }
+    assert!(shown >= 10, "most cases open a record: {shown}");
 }
 
 /// O1: a diff applied gives the record after, between any two records.

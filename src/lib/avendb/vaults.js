@@ -8,6 +8,8 @@
  * `sharers`, the `shares` op's rows, and `may`), and these only word them.
  */
 
+import { fieldPaths, pathWords } from './paths.js';
+
 /** @typedef {'human' | 'coop' | 'aven'} Kind */
 /**
  * A share's level, the class of its strongest op (avendb's `words::level_name`); a keep share's, its mode, which grants
@@ -466,19 +468,11 @@ export function whoOf(who, world) {
 }
 
 /**
- * A rule's place in words: "anything", "its status", "any row of its blocks", "the checked of row 2 of its blocks".
+ * A rule's place in words, at any depth (./paths.js `pathWords`): "anything", "its status", "any row of its blocks",
+ * "the text of any row of the kids of any row of its nodes".
  * @param {Op['path']} path
  */
-function placeWords(path = []) {
-	const field = (/** @type {string | { id: number }} */ s) => (s === '*' ? 'any field' : `its ${s}`);
-	const row = (/** @type {string | { id: number }} */ s) => (typeof s === 'object' ? `row ${s.id}` : 'any row');
-	const [f, r, g] = path;
-	if (!path.length) return 'anything';
-	if (path.length === 1) return field(f);
-	if (path.length === 2) return `${row(r)} of ${field(f)}`;
-	const cell = g === '*' ? 'any field' : `the ${g}`;
-	return path.length === 3 ? `${cell} of ${row(r)} of ${field(f)}` : path.map((s) => JSON.stringify(s)).join(' › ');
-}
+const placeWords = (path = []) => pathWords(path);
 
 /** The lines an op holds on, in words. @param {Op['on']} on */
 const onWords = (on) => (on === 'main' ? ' on the main line' : on === 'proposals' ? ' on a proposal' : '');
@@ -576,19 +570,21 @@ const KIND_OF = /** @type {Record<string, string>} */ ({
 
 /**
  * The fields of the newest schema of the records of entries of type `type`, of those a vault's entries are read through
- * (the `schemas` op's answer: the one no lens reads on to a newer one), each with the values it takes where it takes
- * only some (an enum, or true and false): what a rule may name.
+ * (the `schemas` op's answer: the one no lens reads on to a newer one), at any depth (./paths.js `fieldPaths`): each
+ * field of the record and of the rows of its lists of records, by its path, "*" for any row, in words, with the values
+ * it takes where it takes only some (an enum, or true and false), and whether it is a list of records: what a rule may
+ * name. Each is named by its path as JSON.
  * @param {{ schemas: { id: string, kind: string, json: string }[], lenses: { from: string }[] } | null} lane
- * @param {string} type @returns {{ name: string, values: (string | number | boolean | null)[] | null }[]}
+ * @param {string} type
+ * @returns {{ name: string, path: string[], words: string, values: (string | number | boolean | null)[] | null,
+ *   rows: boolean }[]}
  */
 export function fieldsOf(lane, type) {
 	const kind = KIND_OF[type] ?? type;
 	const s = lane?.schemas.find((x) => x.kind === kind && !lane.lenses.some((l) => l.from === x.id));
 	try {
-		const props = s ? (JSON.parse(s.json).properties ?? {}) : {};
-		return Object.entries(props)
-			.filter(([name]) => name !== 'kind')
-			.map(([name, p]) => ({ name, values: p.enum ?? (p.type === 'boolean' ? [true, false] : null) }));
+		const fields = s ? fieldPaths(JSON.parse(s.json)) : [];
+		return fields.map((f) => ({ ...f, name: JSON.stringify(f.path), words: pathWords(f.path) }));
 	} catch {
 		return [];
 	}

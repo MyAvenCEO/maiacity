@@ -7,7 +7,9 @@
 	to match it later is shared then, one untagged leaves it, and the vault's stewards mark each into the audience of
 	the shares that pick it, under that audience's key. Its ops are a group: a built-in one (Owner, Editor, Suggester,
 	Viewer, Backup, Relay, the core's `groups`), or one of its own, named, built op by op or written as JSON, the fields
-	those of the newest schema of what it shares; with everyone, the Public group alone, which only reads. It starts at
+	those of the newest schema of what it shares at any depth, a field of the rows of a list of records, of their rows
+	and so on, picked by its place in words ("the text of any row of the kids of any row of its nodes"), and a list of
+	records' rows added, deleted or reordered; with everyone, the Public group alone, which only reads. It starts at
 	the least: the one entry it opens on, or else the vault's todos, for a Viewer. The preview says what it reaches now,
 	of what the acting vault reads, as the device's `query` picks it. Owner of everything makes a co-owner. The device
 	answers beforehand whether it would make the share (`may`): alone, once the vault's owners approve it with the
@@ -148,24 +150,33 @@
 	/** why the device won't make the share: '' where it would, or hasn't said yet */
 	const unshared = $derived(verdict && !allowed(verdict) ? why(/** @type {any} */ (verdict)) : '');
 
-	/** the fields of what it shares, each once, with the values each takes where it takes only some */
-	const fields = $derived.by(() => {
+	/** The ops on a list of records' rows, which name one list. */
+	const ROWS = ['insert', 'remove', 'move'];
+
+	/** the fields of what it shares, at any depth, each once, by its path, with the values each takes where it takes
+	 *  only some, and whether it is a list of records */
+	const all = $derived.by(() => {
 		const every = ['note', 'todo', 'article', 'file'];
 		const of = what === 'entry' && one?.type ? [one.type] : what === 'all' ? every : types.split(',');
-		const all = of.flatMap((t) => fieldsOf(lane, t));
-		return all.filter((f, i) => all.findIndex((g) => g.name === f.name) === i);
+		const found = of.flatMap((t) => fieldsOf(lane, t));
+		return found.filter((f, i) => found.findIndex((g) => g.name === f.name) === i);
 	});
+	/** the fields a value goes in, those with some values, and the lists of records */
+	const fields = $derived(all.filter((f) => !f.rows));
 	const valued = $derived(fields.filter((f) => f.values));
-	const theField = $derived.by(() => {
-		const of = adding === 'values' ? valued : fields;
-		return of.find((f) => f.name === field) ?? of[0];
-	});
+	const lists = $derived(all.filter((f) => f.rows));
+	/** what the field picker offers for the op it adds */
+	const picks = $derived(adding === 'values' ? valued : ROWS.includes(adding) ? lists : fields);
+	const theField = $derived(picks.find((f) => f.name === field) ?? picks[0]);
 
 	/** The ops the builder adds, as a person picks one; a field's only where what it shares has fields. */
 	const ADD = $derived({
 		set: 'change anything',
 		...(fields.length ? { field: 'change one field' } : {}),
 		...(valued.length ? { values: 'set one field to some values' } : {}),
+		...(lists.length
+			? { insert: 'add rows to one list', remove: 'delete rows of one list', move: 'reorder one list' }
+			: {}),
 		create: 'add new entries',
 		tag: 'ask for tags',
 		propose: 'start proposals',
@@ -177,10 +188,13 @@
 	/** The op the builder adds, or `null` while it names nothing. @returns {import('./vaults.js').Op | null} */
 	const next = $derived.by(() => {
 		if (adding === 'set') return { op: 'set' };
-		if (adding === 'field') return theField ? { op: 'set', path: [theField.name] } : null;
+		if (adding === 'field') return theField ? { op: 'set', path: theField.path } : null;
 		if (adding === 'values') {
 			const to = /** @type {any[]} */ (values.filter((x) => theField?.values?.includes(/** @type {any} */ (x))));
-			return theField && to.length ? { op: 'set', path: [theField.name], to } : null;
+			return theField && to.length ? { op: 'set', path: theField.path, to } : null;
+		}
+		if (ROWS.includes(adding)) {
+			return theField ? /** @type {import('./vaults.js').Op} */ ({ op: adding, path: theField.path }) : null;
 		}
 		if (adding === 'tag') return tagsIn(asks).length ? { op: 'tag', tags: tagsIn(asks) } : { op: 'tag' };
 		if (adding === 'proposals') return { op: 'set', on: 'proposals' };
@@ -296,15 +310,15 @@
 			<select class="field" bind:value={adding} aria-label="An op to add">
 				{#each Object.entries(ADD) as [k, words] (k)}<option value={k}>{words}</option>{/each}
 			</select>
-			{#if (adding === 'field' || adding === 'values') && theField}
+			{#if (adding === 'field' || adding === 'values' || ROWS.includes(adding)) && theField}
 				<select
-					class="field"
+					class="field place"
 					value={theField.name}
 					onchange={(e) => (field = e.currentTarget.value)}
-					aria-label="Which field"
+					aria-label={ROWS.includes(adding) ? 'Which list' : 'Which field'}
 				>
-					{#each adding === 'values' ? valued : fields as f (f.name)}
-						<option value={f.name}>{f.name}</option>
+					{#each picks as f (f.name)}
+						<option value={f.name} title={JSON.stringify(f.path)}>{f.words}</option>
 					{/each}
 				</select>
 			{/if}
