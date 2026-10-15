@@ -5,7 +5,10 @@
  */
 
 /** @typedef {import('$lib/app/versions.js').Version<any>} AnyVersion */
-/** @typedef {{ id: string, label: string, versions: AnyVersion[], version: number }} Item an asset as its group lists it */
+/**
+ * @typedef {{ id: string, label: string, versions: AnyVersion[], version: number, params?: import('./params.js').Param[] }} Item
+ *   an asset as its group lists it; `params`, what its recipe is built with (./params.js), if it takes any
+ */
 /** @typedef {{ label: string, list: () => Promise<Item[]> }} Group */
 
 /** @type {Record<string, Group>} */

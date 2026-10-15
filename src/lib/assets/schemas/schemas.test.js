@@ -1,7 +1,8 @@
 // @ts-nocheck — plain JS
 // Phase 1 of the asset pipeline: every asset's card fits its schema, and a card made to do harm is refused.
 // Run: bun test src/lib/assets/schemas            (five sample assets and every hostile card)
-//      ALL_ASSETS=1 bun test src/lib/assets/schemas   (the card of every asset, every version, every variant)
+//      ALL_ASSETS=1 bun test src/lib/assets/schemas   (the card of every asset, every version, every variant, each
+//                                                      built at its own declared values)
 import { expect, test } from 'bun:test';
 
 // outside a page: textures draw on a stand-in canvas, and a module's runes are plain values
@@ -14,24 +15,22 @@ const { cardOf } = await import('../card.js');
 const { checkCard, checkText, CARD, ASSET } = await import('./index.js');
 const { hostileCards } = await import('./hostile.js');
 
-const SAMPLES = [
-	['plants/apple', [9, 'maia']],
-	['things/bell-tent', []],
-	['machines/powercube@3', []],
-	['machines/pickup@1:pickup-cube', []],
-	['actors/stand-in', []]
-];
+const SAMPLES = ['plants/apple?seed=maia&stage=9', 'things/bell-tent', 'machines/powercube@3', 'machines/pickup@1:pickup-cube', 'actors/stand-in'];
 
-const cardAt = async (ref, args = []) => cardOf(ref, await objectAt(ref, ...args), await assetAt(ref));
+const cardAt = async (ref) => cardOf(ref, await objectAt(ref), await assetAt(ref));
 
-test('the five sample assets: their cards fit', async () => {
-	for (const [ref, args] of SAMPLES) {
-		const card = await cardAt(ref, args);
+test('the five sample assets: their cards fit, with the values they were built with', async () => {
+	for (const ref of SAMPLES) {
+		const card = await cardAt(ref);
 		const verdict = checkCard(card);
 		expect(verdict.ok ? [] : verdict.errors).toEqual([]);
 		// the same card read back from its text
 		expect(checkCard(JSON.stringify(card)).ok).toBe(true);
 	}
+	const apple = await cardAt('plants/apple?seed=isar&stage=4');
+	expect(apple.ref).toBe('plants/apple@2?seed=isar&stage=4');
+	expect(apple.params.map((p) => p.id)).toEqual(['stage', 'seed']);
+	expect((await cardAt('things/bell-tent')).params).toBeUndefined();
 }, 120000);
 
 test('a card made to do harm is refused', async () => {
@@ -61,7 +60,7 @@ test.skipIf(!process.env.ALL_ASSETS)('every asset, every version, every variant:
 				for (const variant of variants) {
 					const ref = refOf(group, item.id, version.v, variant);
 					try {
-						const card = await cardAt(ref, group === 'plants' ? [9, 'maia'] : []);
+						const card = await cardAt(ref);
 						const verdict = checkCard(card);
 						if (!verdict.ok) failed.push(`${ref}: ${verdict.errors.slice(0, 3).join('; ')}`);
 					} catch (err) {

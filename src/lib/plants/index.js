@@ -727,12 +727,25 @@ const HISTORY = {
 	]
 };
 
+export const SEEDS = ['maia', 'isar', 'samuel', 'backyard', 'seed-0042', 'sun', 'rain', 'domes'];
+
 /**
- * every plant, layer by layer from the canopy down (in each layer as they were added), with its versions
- * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number })[]}
+ * What a plant is grown with, in the order `grow` takes it ($lib/assets/params.js): its stage, from seed to ripe fruit
+ * (between two stages, on the way), and its seed id.
+ * @param {{ stages: Stage[] }} p @returns {import('$lib/assets/params.js').Param[]}
+ */
+const paramsOf = (p) => [
+	{ id: 'stage', label: 'Stage', type: 'number', min: 0, max: p.stages.length - 1, value: p.stages.length - 1, names: p.stages.map((s) => s.name) },
+	{ id: 'seed', label: 'Seed', type: 'string', value: SEEDS[0], maxLength: 40 }
+];
+
+/**
+ * every plant, layer by layer from the canopy down (in each layer as they were added), with its versions and what it
+ * is grown with
+ * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number, params: import('$lib/assets/params.js').Param[] })[]}
  */
 export const PLANTS = versioned(
-	LAYERS.flatMap((l) => [...ALL, ...WALD, ...FIELDS].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id }))),
+	LAYERS.flatMap((l) => [...ALL, ...WALD, ...FIELDS].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id, params: paramsOf(p) }))),
 	'grow',
 	HISTORY
 );
@@ -747,8 +760,6 @@ export function plantAt(id, v) {
 	const ver = p && at(p.versions, v);
 	return p && ver ? { ...p, grow: ver.build, version: ver.v } : undefined;
 }
-
-export const SEEDS = ['maia', 'isar', 'samuel', 'backyard', 'seed-0042', 'sun', 'rain', 'domes'];
 
 /** a fresh seed id, five letters and digits */
 export const freshSeed = () => Math.random().toString(36).slice(2, 7);
