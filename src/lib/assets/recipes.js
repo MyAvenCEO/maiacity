@@ -12,6 +12,7 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import INDEX from 'virtual:asset-recipes';
+import { idOf, slug } from '$lib/ids.js';
 import { RECIPE_HEAD, recipeTail } from './engines.js';
 import { paramsIn, queryOf } from './params.js';
 import { parseRef, refOf } from './refs.js';
@@ -43,6 +44,16 @@ export function parseBuild(ref) {
 export const buildOf = (hash, values) => {
 	const q = queryOf(values);
 	return q ? `${hash}?${q}` : hash;
+};
+
+/**
+ * A build's page: on the root, its recipe's hash as an address reads it ($lib/ids.js), its label in words (`?t=`,
+ * never one of its values), then its values, sorted ($lib/assets/AssetPage.svelte).
+ * @param {string} base the site's base path @param {string} hash @param {Record<string, unknown>} [values]
+ */
+export const pageOf = (base, hash, values) => {
+	const q = queryOf(values);
+	return `${base}/${idOf(hash)}/?t=${slug(INDEX.recipes[hash]?.label ?? '', 'asset')}${q ? `&${q}` : ''}`;
 };
 
 /**

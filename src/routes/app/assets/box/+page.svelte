@@ -20,7 +20,8 @@
 	import { trianglesOf as tris } from '$lib/assets/card.js';
 	import { LATEST } from '$lib/assets/engines.js';
 	import { boxOf, keyOf, loadAsset } from '$lib/assets/load.js';
-	import { INDEX, buildAt, checked, hashText, recipeAt } from '$lib/assets/recipes.js';
+	import { base as root } from '$app/paths';
+	import { INDEX, buildAt, checked, hashText, pageOf, parseBuild, recipeAt } from '$lib/assets/recipes.js';
 	import { valuesOf } from '$lib/assets/params.js';
 	import { checkCard } from '$lib/assets/schemas/index.js';
 	import { hostileCards } from '$lib/assets/schemas/hostile.js';
@@ -29,6 +30,15 @@
 	const LABELS = ['plants/apple?seed=maia&stage=9', 'plants/jackfruit?seed=maia&stage=9', 'things/bell-tent', 'machines/powercube@3', 'actors/stand-in'];
 	const SAMPLES = LABELS.map((label) => ({ label, name: buildAt(label) }));
 	const short = (name) => `${name.slice(0, 10)}…${name.slice(64)}`;
+	// a build's own page, on the root by its hash ($lib/assets/AssetPage.svelte), or none for a name of nothing
+	const linkOf = (n) => {
+		try {
+			const { hash, params } = parseBuild(n.trim());
+			return INDEX.recipes[hash] ? pageOf(root, hash, params) : null;
+		} catch {
+			return null;
+		}
+	};
 
 	let box = boxOf();
 	let canvas = $state();
@@ -330,6 +340,7 @@
 		<input bind:value={name} aria-label="A build: its recipe's hash, then ?its=values" list="builds" />
 		<datalist id="builds">{#each SAMPLES as s}<option value={s.name}>{s.label}</option>{/each}</datalist>
 		<button onclick={loadOne} disabled={busy}>Load</button>
+		{#if linkOf(name)}<a class="quiet open" href={linkOf(name)}>Its page</a>{/if}
 		<button class="quiet" onclick={empty} disabled={busy}>Empty the cache</button>
 	</section>
 	<p class="line" data-line>{line}</p>
@@ -364,6 +375,7 @@
 	button:disabled { opacity: 0.5; cursor: default; }
 	input { flex: 1 1 200px; min-width: 0; }
 	.quiet { background: #22302a; color: inherit; border: 1px solid #3c4a42; }
+	.open { font: inherit; border-radius: 10px; padding: 8px 12px; text-decoration: none; }
 	.held { color: #8f9a91; font-size: 14px; margin: -6px 0 10px; }
 	.line { min-height: 1.4em; color: #cfc8b9; }
 	canvas { width: 100%; height: min(56vh, 520px); display: block; border-radius: 14px; background: #1d2420; }
