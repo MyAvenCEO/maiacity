@@ -131,6 +131,8 @@ jobs:
           docker image prune -f >/dev/null
           EOS
       - name: What the server says
+        env:
+          HAS_BUCKET: ${{ secrets.HETZNER_S3_ACCESS_KEY != '' && secrets.HETZNER_S3_SECRET_KEY != '' && secrets.AVENDB_BUCKET_SEAL != '' }}
         run: |
           # its device, its endpoint, whether a vault has claimed it, and its offer, all public (what the apps link through)
           for i in $(seq 1 24); do
@@ -149,6 +151,11 @@ jobs:
           printf '%s\n' "$SAID" | tail -6
           if printf '%s\n' "$SAID" | grep -q "the bucket can't be written"; then
             echo "::warning::avenDB's server can't write its bucket: it announces nothing new until it can"
+          fi
+          # on its volume it is another device, with another offer than the one the apps link through
+          if [ "$HAS_BUCKET" = true ] && printf '%s\n' "$SAID" | grep -q 'avenDB server: no bucket'; then
+            echo "::error::avenDB's server started without its bucket, though its settings are set: is AVENDB_BUCKET in its .env?"
+            exit 1
           fi
           ssh prod "docker exec maia-city-caddy wget -qO- http://avendb:3350/healthz" && echo " ← its relay answers inside" \
             || echo "::warning::avenDB's relay does not answer inside"
