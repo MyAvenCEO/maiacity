@@ -73,7 +73,9 @@ export function bytesOf(data) {
 		add(g.index);
 	}
 	for (const node of data.nodes ?? []) if (node.mesh?.instances) (add(node.mesh.instances.matrices), add(node.mesh.instances.colors));
-	for (const t of data.textures ?? []) {
+	// a picture is on its texture in format 0 (engine 1), in `images` from format 1 on
+	for (const t of [...(data.textures ?? []), ...(data.images ?? [])]) {
+		if (!t) continue;
 		add(t.pixels?.data);
 		add(t.picture?.rgba);
 		n += t.picture?.png?.size ?? 0;
@@ -90,21 +92,27 @@ function canvasOf(bitmap) {
 	return { c, g };
 }
 
+/** where a build's pictures are: on its textures in format 0 (engine 1), in `images` from format 1 on */
+const LISTS = ['textures', 'images'];
+
 /**
  * A build's data with every picture the box handed over as an ImageBitmap as `picture`: as `encode` makes it of the
  * canvas it is drawn on. Undefined where this browser has no canvas off the page.
  */
 async function pictures(data, encode) {
-	if (!data.textures.some((t) => t.bitmap)) return data;
+	const lists = LISTS.filter((k) => Array.isArray(data[k]) && data[k].some((t) => t?.bitmap));
+	if (!lists.length) return data;
 	if (typeof OffscreenCanvas !== 'function') return undefined;
-	const textures = await Promise.all(
-		data.textures.map(async (t) => {
-			if (!t.bitmap) return t;
-			const { bitmap, ...rest } = t;
-			return { ...rest, picture: { ...(await encode(canvasOf(bitmap))), width: bitmap.width, height: bitmap.height } };
-		})
-	);
-	return { ...data, textures };
+	const out = { ...data };
+	for (const k of lists)
+		out[k] = await Promise.all(
+			data[k].map(async (t) => {
+				if (!t?.bitmap) return t;
+				const { bitmap, ...rest } = t;
+				return { ...rest, picture: { ...(await encode(canvasOf(bitmap))), width: bitmap.width, height: bitmap.height } };
+			})
+		);
+	return out;
 }
 
 /** A build's data as it is stored: its pictures (ImageBitmaps, which IndexedDB cannot keep) as PNG files, lossless. */
@@ -115,19 +123,22 @@ export const pixelsOf = (data) => pictures(data, async ({ g, c }) => ({ rgba: ne
 
 /** the other way: each stored picture an ImageBitmap again, as the box hands it over (./box/rebuild.js checks it) */
 export async function revive(data) {
-	if (!Array.isArray(data?.textures) || !data.textures.some((t) => t?.picture)) return data;
-	const textures = await Promise.all(
-		data.textures.map(async (t) => {
-			if (!t?.picture) return t;
-			const { png, width, height } = t.picture;
-			if (!(png instanceof Blob) || png.type !== 'image/png') throw new Error('refused: a stored picture that is no PNG');
-			const bitmap = await createImageBitmap(png);
-			if (bitmap.width !== width || bitmap.height !== height) throw new Error('refused: a stored picture of another size');
-			const { picture, ...rest } = t;
-			return { ...rest, bitmap };
-		})
-	);
-	return { ...data, textures };
+	const lists = LISTS.filter((k) => Array.isArray(data?.[k]) && data[k].some((t) => t?.picture));
+	if (!lists.length) return data;
+	const out = { ...data };
+	for (const k of lists)
+		out[k] = await Promise.all(
+			data[k].map(async (t) => {
+				if (!t?.picture) return t;
+				const { png, width, height } = t.picture;
+				if (!(png instanceof Blob) || png.type !== 'image/png') throw new Error('refused: a stored picture that is no PNG');
+				const bitmap = await createImageBitmap(png);
+				if (bitmap.width !== width || bitmap.height !== height) throw new Error('refused: a stored picture of another size');
+				const { picture, ...rest } = t;
+				return { ...rest, bitmap };
+			})
+		);
+	return out;
 }
 
 let opened;

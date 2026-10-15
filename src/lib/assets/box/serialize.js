@@ -2,13 +2,15 @@
 /*
  * AN OBJECT AS PLAIN DATA — what leaves the box: a built asset (a three.js object tree) turned into numbers, typed
  * arrays and pictures that can cross into the page (structured clone, the arrays and pictures moved, not copied). No
- * function, no class, no shader code goes out: a material is its kind and its plain settings, a texture its pixels.
- * The page (./rebuild.js) checks every bit of it and builds its own three.js objects from it.
+ * function, no class, no shader code goes out: a material is its kind and its plain settings, a texture its settings
+ * and the picture it shows. The page (./rebuild.js) checks every bit of it and builds its own three.js objects from it.
  *
- * Version 0 of the format: the box spike (phase 0). Phase 1 writes it down as a JSON Schema with the asset card.
+ * Format 0 (engine 1): each texture carried its own pixels, so a picture shared by many textures (the kit's, one per
+ * material for its own tiling) went out once for each. Format 1 (engine 2): each picture goes out once, in `images`,
+ * and a texture names the one it shows (`image`).
  */
 
-export const FORMAT = 0;
+export const FORMAT = 1;
 
 /** the material settings that go out as they are (numbers, booleans, colours) */
 const PLAIN = ['roughness', 'metalness', 'opacity', 'transparent', 'side', 'vertexColors', 'flatShading', 'alphaTest', 'depthWrite', 'depthTest', 'transmission', 'ior', 'thickness', 'clearcoat', 'clearcoatRoughness', 'sheen', 'sheenRoughness', 'envMapIntensity', 'emissiveIntensity', 'bumpScale', 'wireframe', 'size', 'sizeAttenuation', 'linewidth', 'shininess', 'specularIntensity', 'iridescence', 'anisotropy', 'dispersion', 'aoMapIntensity', 'lightMapIntensity', 'displacementScale', 'displacementBias', 'toneMapped', 'fog'];
@@ -26,9 +28,11 @@ export async function serialize(root) {
 	const geometries = [];
 	const materials = [];
 	const textures = [];
+	const images = [];
 	const geoAt = new Map();
 	const matAt = new Map();
 	const texAt = new Map();
+	const imageAt = new Map();
 	const buffers = new Set();
 	const pending = [];
 	const stats = { tris: 0, custom: 0, skinned: 0 };
@@ -55,15 +59,27 @@ export async function serialize(root) {
 		geoAt.set(g, geometries.length - 1);
 		return geometries.length - 1;
 	};
+	// a picture, once however many textures show it (a clone of a texture shares its source); null for none
+	const image = (t) => {
+		const key = t.source ?? t.image;
+		if (imageAt.has(key)) return imageAt.get(key);
+		const img = t.image;
+		let i = null;
+		if (img?.data && img.width && img.height) {
+			i = images.push({ pixels: { data: array(new Uint8Array(img.data.buffer.slice(0))), width: img.width, height: img.height } }) - 1;
+		} else if (img && img.width && img.height && typeof createImageBitmap === 'function') {
+			const plain = {};
+			i = images.push(plain) - 1;
+			pending.push(createImageBitmap(img).then((b) => (plain.bitmap = b)));
+		}
+		imageAt.set(key, i);
+		return i;
+	};
 	const texture = (t) => {
 		if (texAt.has(t)) return texAt.get(t);
 		const i = textures.length;
-		const plain = { wrapS: t.wrapS, wrapT: t.wrapT, repeat: [t.repeat.x, t.repeat.y], offset: [t.offset.x, t.offset.y], rotation: t.rotation, colorSpace: t.colorSpace, flipY: t.flipY, anisotropy: t.anisotropy };
-		textures.push(plain);
+		textures.push({ image: image(t), wrapS: t.wrapS, wrapT: t.wrapT, repeat: [t.repeat.x, t.repeat.y], offset: [t.offset.x, t.offset.y], rotation: t.rotation, colorSpace: t.colorSpace, flipY: t.flipY, anisotropy: t.anisotropy });
 		texAt.set(t, i);
-		const img = t.image;
-		if (img?.data && img.width && img.height) plain.pixels = { data: array(new Uint8Array(img.data.buffer.slice(0))), width: img.width, height: img.height };
-		else if (img && img.width && img.height && typeof createImageBitmap === 'function') pending.push(createImageBitmap(img).then((b) => (plain.bitmap = b)));
 		return i;
 	};
 	const material = (m) => {
@@ -101,6 +117,6 @@ export async function serialize(root) {
 	visit(root);
 	await Promise.all(pending);
 	stats.tris = Math.round(stats.tris);
-	const transfer = [...buffers, ...textures.flatMap((t) => (t.bitmap ? [t.bitmap] : []))];
-	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, stats }, transfer };
+	const transfer = [...buffers, ...images.flatMap((x) => (x.bitmap ? [x.bitmap] : []))];
+	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, images, stats }, transfer };
 }

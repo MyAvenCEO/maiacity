@@ -1,9 +1,9 @@
 <!--
-	THE ASSET BOX'S LAB (/app/assets/box/) — phases 0 to 2b of the asset pipeline (src/lib/assets): our own assets built
+	THE ASSET BOX'S LAB (/app/assets/box/) — phases 0 to 2d of the asset pipeline (src/lib/assets): our own assets built
 	inside the box, a worker in a frame with no origin running a frozen engine, and shown from the plain data it hands
 	back, as an asset no one trusts would be. Every build is named by its recipe's BLAKE3 hash and the values it takes
-	(`<hash>?seed=maia&stage=9`); a label such as plants/apple@2 only points at a hash. One button runs every check: the
-	engine checked against its hash, what the box cannot reach (tried by a recipe), assets built in the box against the
+	(`<hash>?seed=maia&stage=9`); a label such as plants/apple@2 only points at a hash. One button runs every check: each
+	frozen engine checked against its hash and engine 1 still building as it did, what the box cannot reach (tried by a recipe), assets built in the box against the
 	same built in the page, a recipe that never stops, a recipe whose bytes are not its name, data and cards out of shape,
 	each recipe's parameters, and each asset loaded again from this device's cache the same, with no box started.
 -->
@@ -18,7 +18,7 @@
 	import { FORMAT } from '$lib/assets/box/serialize.js';
 	import * as cache from '$lib/assets/cache.js';
 	import { trianglesOf as tris } from '$lib/assets/card.js';
-	import { LATEST } from '$lib/assets/engines.js';
+	import { ENGINES, LATEST } from '$lib/assets/engines.js';
 	import { boxOf, keyOf, loadAsset } from '$lib/assets/load.js';
 	import { base as root } from '$app/paths';
 	import { INDEX, buildAt, checked, hashText, pageOf, parseBuild, recipeAt } from '$lib/assets/recipes.js';
@@ -142,7 +142,8 @@
 		'a node with two parents': (d) => d.nodes[0].children.push(d.nodes[0].children[0]),
 		'a material kind we do not know': (d) => (d.materials[0].type = 'ShaderMaterial'),
 		'a material that is code': (d) => (d.materials[0].type = 'constructor'),
-		'a picture too large': (d) => d.textures.push({ pixels: { data: new Uint8Array(4), width: 9000, height: 1 } }),
+		'a picture too large': (d) => d.images.push({ pixels: { data: new Uint8Array(4), width: 9000, height: 1 } }),
+		'a texture showing a picture it does not have': (d) => d.textures.push({ image: d.images.length + 7 }),
 		'a string where an array should be': (d) => (d.geometries[0].attributes.position.array = 'x'.repeat(30)),
 		'too many triangles': (d) => {
 			const g = d.geometries[0];
@@ -162,9 +163,13 @@
 		const out = { userAgent: navigator.userAgent, engine: null, assets: [], probes: null, kill: null, hostile: {} };
 		try {
 			let t0 = now();
-			const code = await engineCode(LATEST.v);
-			out.engine = { v: LATEST.v, blake3: LATEST.blake3, bytes: code.length, hashed: hashText(code) };
-			add(`Engine ${LATEST.v} is the one frozen`, out.engine.hashed === LATEST.blake3, `its ${(code.length / 1024).toFixed(0)} KB file hashes to ${LATEST.blake3.slice(0, 16)}…, the BLAKE3 hash engines.json froze it under on ${LATEST.date}; three.js ${LATEST.three}, ${LATEST.modules.length} modules lent to recipes`);
+			out.engines = [];
+			for (const e of ENGINES) {
+				const code = await engineCode(e.v);
+				const row = { v: e.v, blake3: e.blake3, bytes: code.length, hashed: hashText(code) };
+				out.engines.push(row);
+				add(`Engine ${e.v} is the one frozen`, row.hashed === e.blake3, `its ${(code.length / 1024).toFixed(0)} KB file hashes to ${e.blake3.slice(0, 16)}…, the BLAKE3 hash engines.json froze it under on ${e.date}; three.js ${e.three}, ${e.modules.length} modules lent to recipes${e.v === LATEST.v ? '; our recipes run on it' : ''}`);
+			}
 
 			t0 = now();
 			await box.start();
@@ -234,6 +239,33 @@
 			out.forged = forgedSaid;
 			const named = hashText(real.code) === real.hash;
 			add('A recipe is only what its hash names', named && forgedSaid.startsWith('refused'), named && forgedSaid.startsWith('refused') ? `${Object.keys(INDEX.recipes).length} recipes of ours, each named by the BLAKE3 hash of its bytes; one changed by a comment is refused before the box sees it` : forgedSaid);
+
+			// an engine frozen is never changed: what was made for engine 1 still builds on it, as it did
+			if (LATEST.v > 1) {
+				line = 'Engine 1, as it was frozen…';
+				const old = new AssetBox({ engine: 1 });
+				try {
+					out.engine1 = [];
+					for (const { label, name: n } of [SAMPLES[3], SAMPLES[2]]) {
+						const [hash] = n.split('?');
+						const recipe = await recipeAt(hash);
+						const one = await old.build(recipe);
+						const two = await box.build(recipe);
+						const pictures = async (d) => {
+							const shown = (await cache.pixelsOf(d))[d.format === 0 ? 'textures' : 'images'];
+							return [...new Set(shown.map((x) => x?.picture?.rgba ?? x?.pixels?.data).filter(Boolean).map(cache.fingerprint))].sort();
+						};
+						const [p1, p2] = [await pictures(one.data), await pictures(two.data)];
+						out.engine1.push({ label, format: [one.data.format, two.data.format], tris: [tris(rebuild(one.data)), tris(rebuild(two.data))], bytes: [cache.bytesOf(one.data), cache.bytesOf(two.data)], pictures: [p1.length, p2.length], same: JSON.stringify(p1) === JSON.stringify(p2) });
+					}
+					const ok = out.engine1.every((r) => r.format[0] === 0 && r.tris[0] === r.tris[1] && r.same);
+					const mb = (b) => (b / 1048576).toFixed(1);
+					add(`Engine 1 still builds as it did`, ok, out.engine1.map((r) => `${r.label}: ${r.tris[0].toLocaleString('en')} triangles on both, the same ${r.pictures[1]} pictures; ${mb(r.bytes[0])} MB out of engine 1, ${mb(r.bytes[1])} MB out of engine ${LATEST.v}`).join(' · '));
+				} catch (e) {
+					add(`Engine 1 still builds as it did`, false, e.message);
+				}
+				old.stop();
+			}
 
 			line = 'Data out of shape…';
 			const base = (await box.build(await recipeAt(SAMPLES[2].name))).data;
@@ -330,7 +362,7 @@
 
 <main class="lab">
 	<header>
-		<p class="kicker">Game Assets · phases 0 to 2b</p>
+		<p class="kicker">Game Assets · phases 0 to 2d</p>
 		<h1>The asset box</h1>
 		<p class="lede">Our own assets built where an untrusted one would be: a worker in a frame with no origin, no network and no storage. The box runs a frozen engine, checked against its hash, and each recipe it is handed is named by the BLAKE3 hash of its bytes. The page only sees the plain data it hands back, checks it, and builds its own objects from it. Only the recipe is kept anywhere for good; what it built stays on this device, named by its hash, and is checked again each time it is read.</p>
 	</header>

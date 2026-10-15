@@ -3,12 +3,18 @@
  * FROM DATA TO OBJECTS — the page's side of the box: the plain data a box hands back (./serialize.js) checked, every
  * bit of it, and built into three.js objects by our own code. Nothing in it is run; anything out of shape or over a
  * budget is refused with the reason, so an asset can be no more than geometry, plain materials and pictures.
+ *
+ * It reads every format a frozen engine still in use hands back (./serialize.js): 0 from engine 1, each texture with
+ * its own picture; 1 from engine 2 on, each picture once in `images`, named by the textures that show it.
  */
 import * as THREE from 'three';
 import { FORMAT, MATERIALS } from './serialize.js';
 
 /** what one asset may be at most (phase 0: generous; phase 1 sets them per LOD) */
 export const BUDGET = { nodes: 20000, geometries: 20000, materials: 2000, textures: 64, texturePixels: 4096, tris: 2_000_000, vertices: 4_000_000, instances: 100_000 };
+
+/** the formats it reads: engine 1's and the one ./serialize.js writes now */
+export const FORMATS = [0, FORMAT];
 
 const ARRAYS = [Float32Array, Uint8Array, Uint16Array, Uint32Array, Int8Array, Int16Array, Int32Array];
 const fail = (why) => {
@@ -54,18 +60,33 @@ function geometry(x, i) {
 	return g;
 }
 
-function texture(x, i) {
-	let t;
+/** one picture, checked, as the source of every texture that shows it (uploaded once) */
+function image(x, i) {
+	if (!x || typeof x !== 'object') fail(`picture ${i} missing`);
 	if (x.bitmap) {
-		if (!(x.bitmap instanceof ImageBitmap)) fail(`texture ${i} is not a picture`);
-		if (x.bitmap.width > BUDGET.texturePixels || x.bitmap.height > BUDGET.texturePixels) fail(`texture ${i} larger than ${BUDGET.texturePixels} px`);
-		t = new THREE.Texture(x.bitmap);
-	} else if (x.pixels) {
+		if (!(x.bitmap instanceof ImageBitmap)) fail(`picture ${i} is not a picture`);
+		if (x.bitmap.width > BUDGET.texturePixels || x.bitmap.height > BUDGET.texturePixels) fail(`picture ${i} larger than ${BUDGET.texturePixels} px`);
+		return { source: new THREE.Source(x.bitmap), pixels: false };
+	}
+	if (x.pixels) {
 		const { data, width, height } = x.pixels;
-		int(width, BUDGET.texturePixels + 1, 'texture width');
-		int(height, BUDGET.texturePixels + 1, 'texture height');
-		if (!(data instanceof Uint8Array) || data.length !== width * height * 4) fail(`texture ${i} pixels`);
-		t = new THREE.DataTexture(data, width, height);
+		int(width, BUDGET.texturePixels + 1, 'picture width');
+		int(height, BUDGET.texturePixels + 1, 'picture height');
+		if (!(data instanceof Uint8Array) || data.length !== width * height * 4) fail(`picture ${i} pixels`);
+		return { source: new THREE.Source({ data, width, height }), pixels: true };
+	}
+	return null;
+}
+
+function texture(x, i, images) {
+	const img = x.image == null ? null : images[int(x.image, images.length, `texture ${i} picture`)];
+	let t;
+	if (img?.pixels) {
+		t = new THREE.DataTexture();
+		t.source = img.source;
+	} else if (img) {
+		t = new THREE.Texture();
+		t.source = img.source;
 	} else t = new THREE.Texture();
 	t.wrapS = [THREE.RepeatWrapping, THREE.ClampToEdgeWrapping, THREE.MirroredRepeatWrapping].includes(x.wrapS) ? x.wrapS : THREE.ClampToEdgeWrapping;
 	t.wrapT = [THREE.RepeatWrapping, THREE.ClampToEdgeWrapping, THREE.MirroredRepeatWrapping].includes(x.wrapT) ? x.wrapT : THREE.ClampToEdgeWrapping;
@@ -73,7 +94,7 @@ function texture(x, i) {
 	if (Array.isArray(x.offset)) t.offset.set(num(x.offset[0], 'offset'), num(x.offset[1], 'offset'));
 	t.rotation = typeof x.rotation === 'number' ? num(x.rotation, 'rotation') : 0;
 	t.colorSpace = x.colorSpace === THREE.SRGBColorSpace ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-	t.flipY = x.flipY !== false && !x.pixels;
+	t.flipY = x.flipY !== false && !img?.pixels;
 	t.anisotropy = Math.min(16, Math.max(1, Number(x.anisotropy) || 1));
 	t.needsUpdate = true;
 	return t;
@@ -99,11 +120,15 @@ function material(x, i, textures) {
  * @returns {THREE.Object3D}
  */
 export function rebuild(data) {
-	if (!data || data.format !== FORMAT) fail('not box data of this format');
+	if (!data || !FORMATS.includes(data.format)) fail('not box data of a format we read');
 	const { nodes, geometries, materials, textures } = data;
 	if (![nodes, geometries, materials, textures].every(Array.isArray)) fail('missing lists');
-	if (nodes.length > BUDGET.nodes || geometries.length > BUDGET.geometries || materials.length > BUDGET.materials || textures.length > BUDGET.textures) fail('too many parts');
-	const tex = textures.map(texture);
+	// format 0: each texture its own picture, as format 1 would name it
+	const listed = data.format === 0 ? textures.map((t) => (t?.bitmap || t?.pixels ? { bitmap: t.bitmap, pixels: t.pixels } : null)) : data.images;
+	if (!Array.isArray(listed)) fail('missing lists');
+	if (nodes.length > BUDGET.nodes || geometries.length > BUDGET.geometries || materials.length > BUDGET.materials || textures.length > BUDGET.textures || listed.length > BUDGET.textures) fail('too many parts');
+	const images = listed.map((x, i) => (data.format === 0 && x === null ? null : image(x, i)));
+	const tex = textures.map((t, i) => texture(data.format === 0 ? { ...t, image: images[i] ? i : null } : t, i, images));
 	const mats = materials.map((x, i) => material(x, i, tex));
 	const geos = geometries.map(geometry);
 	let vertices = 0;
