@@ -14,6 +14,21 @@
 				"three/addons/utils/SkeletonUtils.js"
 			],
 			"note": "The first engine: three.js r186 with RoundedBoxGeometry, Reflector, BufferGeometryUtils and SkeletonUtils; the box's second lock; recipes as scripts named by their BLAKE3 hash, built with their declared parameters, handed back as plain data (format 0) and a card (v1)"
+		},
+		{
+			"v": 2,
+			"date": "2026-10-15",
+			"blake3": "c1b42a6ab3dab6f865cc72a27f10a8cae281a4f94f28a64f3c149c2a07288770",
+			"bytes": 768813,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "Each picture goes out once (box data format 1): textures name the picture they show in images, so a picture shared by many textures, as the kit's are, crosses once and is kept once"
 		}
 	]
 }

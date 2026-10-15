@@ -1,24 +1,29 @@
 <!--
-	THE ASSET BOX'S LAB (/app/assets/box/) — phases 0 to 2b of the asset pipeline (src/lib/assets): our own assets built
+	THE ASSET BOX'S LAB (/app/assets/box/) — phases 0 to 2d of the asset pipeline (src/lib/assets): our own assets built
 	inside the box, a worker in a frame with no origin running a frozen engine, and shown from the plain data it hands
 	back, as an asset no one trusts would be. Every build is named by its recipe's BLAKE3 hash and the values it takes
-	(`<hash>?seed=maia&stage=9`); a label such as plants/apple@2 only points at a hash. One button runs every check: the
-	engine checked against its hash, what the box cannot reach (tried by a recipe), assets built in the box against the
+	(`<hash>?seed=maia&stage=9`); a label such as plants/apple@2 only points at a hash. One button runs every check: each
+	frozen engine checked against its hash and engine 1 still building as it did, what the box cannot reach (tried by a recipe), assets built in the box against the
 	same built in the page, a recipe that never stops, a recipe whose bytes are not its name, data and cards out of shape,
 	each recipe's parameters, and each asset loaded again from this device's cache the same, with no box started.
+	Laid out as every asset library of the app is ($lib/app/Turntable.svelte): the builds down the left, the asset on its
+	turntable, the actions across the top, the build's name, the cache and the checks down the right.
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import * as THREE from 'three';
 	import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+	import Turntable from '$lib/app/Turntable.svelte';
+	import { fit } from '$lib/app/turntable.js';
+	import { OBJECT_GROUPS } from '$lib/assets/groups.js';
 	import TRIALS from 'virtual:asset-recipes/trials';
 	import { AssetBox, engineCode } from '$lib/assets/box/host.js';
 	import { rebuild } from '$lib/assets/box/rebuild.js';
 	import { FORMAT } from '$lib/assets/box/serialize.js';
 	import * as cache from '$lib/assets/cache.js';
 	import { trianglesOf as tris } from '$lib/assets/card.js';
-	import { LATEST } from '$lib/assets/engines.js';
+	import { ENGINES, LATEST } from '$lib/assets/engines.js';
 	import { boxOf, keyOf, loadAsset } from '$lib/assets/load.js';
 	import { base as root } from '$app/paths';
 	import { INDEX, buildAt, checked, hashText, pageOf, parseBuild, recipeAt } from '$lib/assets/recipes.js';
@@ -40,13 +45,24 @@
 		}
 	};
 
+	// the builds down the left, as a library lists its assets: each by its name and version, its values beside it
+	const ITEMS = SAMPLES.map(({ label, name: n }) => {
+		const at = INDEX.recipes[n.slice(0, 64)];
+		return { id: n, label: `${at.id}@${at.v}${at.variant ? `:${at.variant}` : ''}`, values: n.slice(65).replace(/&/g, ' · '), group: OBJECT_GROUPS[at.group]?.label ?? at.group, note: `${label}, its recipe ${n.slice(0, 12)}…` };
+	});
+
 	let box = boxOf();
-	let canvas = $state();
+	let canvasBox = $state();
 	let name = $state(SAMPLES[0].name);
 	let busy = $state(false);
 	let held = $state(null);
 	let line = $state('');
 	let checks = $state([]);
+	// the card of what is on the turntable
+	let loaded = $state(null);
+	const passed = $derived(checks.filter((c) => c.ok).length);
+	// the build in the field, as the list names it (or as typed, when it is none of the list's)
+	const chosen = $derived(ITEMS.find((i) => i.id === name.trim()) ?? { id: name, label: 'A build of your own' });
 	let probes = $state(null);
 	let results = $state(null);
 	let renderer, scene, camera, controls, shown, frame;
@@ -54,39 +70,49 @@
 	let still = false;
 
 	onMount(() => {
-		renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+		renderer = new THREE.WebGLRenderer({ antialias: true });
 		renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		canvasBox.appendChild(renderer.domElement);
 		scene = new THREE.Scene();
-		scene.background = new THREE.Color(0x1d2420);
-		scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a3326, 1.6));
-		const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+		scene.background = new THREE.Color('#e9e6e0');
+		scene.add(new THREE.HemisphereLight('#ffffff', '#b9b2a6', 1.25));
+		const sun = new THREE.DirectionalLight('#fff4e6', 2.3);
 		sun.position.set(4, 8, 5);
 		scene.add(sun);
 		camera = new THREE.PerspectiveCamera(40, 1, 0.01, 500);
+		camera.userData.fov = 40; // widened on an upright canvas ($lib/app/turntable.js)
 		camera.position.set(4, 3, 6);
-		controls = new OrbitControls(camera, canvas);
+		controls = new OrbitControls(camera, renderer.domElement);
+		controls.enableDamping = true;
+		const resize = () => {
+			const w = canvasBox.clientWidth, h = canvasBox.clientHeight;
+			renderer.setSize(w, h);
+			fit(camera, w, h);
+		};
+		const ro = new ResizeObserver(resize);
+		ro.observe(canvasBox);
+		resize();
 		const loop = () => {
 			frame = requestAnimationFrame(loop);
-			const w = canvas.clientWidth, h = canvas.clientHeight;
-			if (canvas.width !== Math.round(w * renderer.getPixelRatio())) {
-				renderer.setSize(w, h, false);
-				camera.aspect = w / Math.max(1, h);
-				camera.updateProjectionMatrix();
-			}
 			if (still) return;
 			controls.update();
 			renderer.render(scene, camera);
 		};
 		loop();
-	});
-	onMount(() => void count());
-	onDestroy(() => {
-		cancelAnimationFrame(frame);
-		box.stop();
-		renderer?.dispose();
+		void count();
+		return () => {
+			cancelAnimationFrame(frame);
+			ro.disconnect();
+			box.stop();
+			controls.dispose();
+			renderer.dispose();
+		};
 	});
 
-	function show(obj) {
+	/** an asset on the turntable, framed, and its card read out under it */
+	function show(obj, card) {
+		loaded = card ?? null;
 		if (shown) scene.remove(shown);
 		shown = obj;
 		scene.add(obj);
@@ -94,7 +120,7 @@
 		const size = b.getSize(new THREE.Vector3()).length() || 1;
 		const mid = b.getCenter(new THREE.Vector3());
 		controls.target.copy(mid);
-		camera.position.copy(mid).add(new THREE.Vector3(0.6, 0.45, 1).multiplyScalar(size));
+		camera.position.copy(mid).add(new THREE.Vector3(0.6, 0.45, 1).multiplyScalar(size * 1.3));
 		camera.near = size / 500;
 		camera.far = size * 50;
 		camera.updateProjectionMatrix();
@@ -117,7 +143,7 @@
 		line = `Loading ${short(name)}…`;
 		try {
 			const r = await loadAsset(name.trim(), { box });
-			show(r.obj);
+			show(r.obj, r.card);
 			const where = r.from === 'cache' ? `from this device's cache in ${r.ms.total} ms (read ${r.ms.read} ms, rebuilt ${r.ms.rebuild} ms)` : `built in the box in ${r.ms.build} ms, ${r.ms.total} ms to the page, rebuilt in ${r.ms.rebuild} ms`;
 			line = `${r.card.label} (${r.card.ref}): ${r.data.stats.tris.toLocaleString('en')} triangles, ${where}` + (r.data.stats.custom ? `, ${r.data.stats.custom} materials with their own shader drawn plain` : '');
 			await r.stored;
@@ -142,7 +168,8 @@
 		'a node with two parents': (d) => d.nodes[0].children.push(d.nodes[0].children[0]),
 		'a material kind we do not know': (d) => (d.materials[0].type = 'ShaderMaterial'),
 		'a material that is code': (d) => (d.materials[0].type = 'constructor'),
-		'a picture too large': (d) => d.textures.push({ pixels: { data: new Uint8Array(4), width: 9000, height: 1 } }),
+		'a picture too large': (d) => d.images.push({ pixels: { data: new Uint8Array(4), width: 9000, height: 1 } }),
+		'a texture showing a picture it does not have': (d) => d.textures.push({ image: d.images.length + 7 }),
 		'a string where an array should be': (d) => (d.geometries[0].attributes.position.array = 'x'.repeat(30)),
 		'too many triangles': (d) => {
 			const g = d.geometries[0];
@@ -162,9 +189,13 @@
 		const out = { userAgent: navigator.userAgent, engine: null, assets: [], probes: null, kill: null, hostile: {} };
 		try {
 			let t0 = now();
-			const code = await engineCode(LATEST.v);
-			out.engine = { v: LATEST.v, blake3: LATEST.blake3, bytes: code.length, hashed: hashText(code) };
-			add(`Engine ${LATEST.v} is the one frozen`, out.engine.hashed === LATEST.blake3, `its ${(code.length / 1024).toFixed(0)} KB file hashes to ${LATEST.blake3.slice(0, 16)}…, the BLAKE3 hash engines.json froze it under on ${LATEST.date}; three.js ${LATEST.three}, ${LATEST.modules.length} modules lent to recipes`);
+			out.engines = [];
+			for (const e of ENGINES) {
+				const code = await engineCode(e.v);
+				const row = { v: e.v, blake3: e.blake3, bytes: code.length, hashed: hashText(code) };
+				out.engines.push(row);
+				add(`Engine ${e.v} is the one frozen`, row.hashed === e.blake3, `its ${(code.length / 1024).toFixed(0)} KB file hashes to ${e.blake3.slice(0, 16)}…, the BLAKE3 hash engines.json froze it under on ${e.date}; three.js ${e.three}, ${e.modules.length} modules lent to recipes${e.v === LATEST.v ? '; our recipes run on it' : ''}`);
+			}
 
 			t0 = now();
 			await box.start();
@@ -195,7 +226,7 @@
 					const row = { label, name: n, tris: tris(b.obj), page: pageMs, ...b.ms, size: size(b.obj), same, custom: b.data.stats.custom, skinned: b.data.stats.skinned };
 					out.assets.push(row);
 					add(`${label} comes out the same`, same, `${short(n)} · ${row.tris.toLocaleString('en')} triangles, its card fits${skinned ? ' (skinned: in its rest pose until phase 6)' : ''} · box ${row.build} ms + ${row.serialize} ms out, ${row.box} ms in all · page ${pageMs} ms · rebuilt in ${row.rebuild} ms`);
-					show(b.obj);
+					show(b.obj, b.card);
 				} catch (e) {
 					out.assets.push({ label, name: n, error: e.message });
 					add(`${label} comes out the same`, false, e.message);
@@ -234,6 +265,33 @@
 			out.forged = forgedSaid;
 			const named = hashText(real.code) === real.hash;
 			add('A recipe is only what its hash names', named && forgedSaid.startsWith('refused'), named && forgedSaid.startsWith('refused') ? `${Object.keys(INDEX.recipes).length} recipes of ours, each named by the BLAKE3 hash of its bytes; one changed by a comment is refused before the box sees it` : forgedSaid);
+
+			// an engine frozen is never changed: what was made for engine 1 still builds on it, as it did
+			if (LATEST.v > 1) {
+				line = 'Engine 1, as it was frozen…';
+				const old = new AssetBox({ engine: 1 });
+				try {
+					out.engine1 = [];
+					for (const { label, name: n } of [SAMPLES[3], SAMPLES[2]]) {
+						const [hash] = n.split('?');
+						const recipe = await recipeAt(hash);
+						const one = await old.build(recipe);
+						const two = await box.build(recipe);
+						const pictures = async (d) => {
+							const shown = (await cache.pixelsOf(d))[d.format === 0 ? 'textures' : 'images'];
+							return [...new Set(shown.map((x) => x?.picture?.rgba ?? x?.pixels?.data).filter(Boolean).map(cache.fingerprint))].sort();
+						};
+						const [p1, p2] = [await pictures(one.data), await pictures(two.data)];
+						out.engine1.push({ label, format: [one.data.format, two.data.format], tris: [tris(rebuild(one.data)), tris(rebuild(two.data))], bytes: [cache.bytesOf(one.data), cache.bytesOf(two.data)], pictures: [p1.length, p2.length], same: JSON.stringify(p1) === JSON.stringify(p2) });
+					}
+					const ok = out.engine1.every((r) => r.format[0] === 0 && r.tris[0] === r.tris[1] && r.same);
+					const mb = (b) => (b / 1048576).toFixed(1);
+					add(`Engine 1 still builds as it did`, ok, out.engine1.map((r) => `${r.label}: ${r.tris[0].toLocaleString('en')} triangles on both, the same ${r.pictures[1]} pictures; ${mb(r.bytes[0])} MB out of engine 1, ${mb(r.bytes[1])} MB out of engine ${LATEST.v}`).join(' · '));
+				} catch (e) {
+					add(`Engine 1 still builds as it did`, false, e.message);
+				}
+				old.stop();
+			}
 
 			line = 'Data out of shape…';
 			const base = (await box.build(await recipeAt(SAMPLES[2].name))).data;
@@ -290,7 +348,7 @@
 					out.cache.push(row);
 					const x = row.cached ? (row.cold / row.cached).toFixed(1) : '∞';
 					add(`${label} loads from the cache the same`, same, same ? `cold ${row.cold} ms in the box · cached ${row.cached} ms (read ${row.read} ms, rebuilt ${row.rebuild} ms), ${x}× faster, no box started · ${(row.bytes / 1048576).toFixed(1)} MB kept (${(row.raw / 1048576).toFixed(1)} MB in memory), bit for bit the same` : `kept ${kept}, from ${warm.from}, box started ${!noBox}, same data ${a === b}`);
-					show(warm.obj);
+					show(warm.obj, warm.card);
 				} catch (e) {
 					out.cache.push({ label, name: n, error: e.message });
 					add(`${label} loads from the cache the same`, false, e.message);
@@ -328,60 +386,152 @@
 
 <svelte:head><title>Asset box · maiaCITY</title></svelte:head>
 
-<main class="lab">
-	<header>
-		<p class="kicker">Game Assets · phases 0 to 2b</p>
-		<h1>The asset box</h1>
-		<p class="lede">Our own assets built where an untrusted one would be: a worker in a frame with no origin, no network and no storage. The box runs a frozen engine, checked against its hash, and each recipe it is handed is named by the BLAKE3 hash of its bytes. The page only sees the plain data it hands back, checks it, and builds its own objects from it. Only the recipe is kept anywhere for good; what it built stays on this device, named by its hash, and is checked again each time it is read.</p>
-	</header>
-
-	<section class="bar">
-		<button onclick={runAll} disabled={busy}>Run every check</button>
-		<input bind:value={name} aria-label="A build: its recipe's hash, then ?its=values" list="builds" />
-		<datalist id="builds">{#each SAMPLES as s}<option value={s.name}>{s.label}</option>{/each}</datalist>
-		<button onclick={loadOne} disabled={busy}>Load</button>
-		{#if linkOf(name)}<a class="quiet open" href={linkOf(name)}>Its page</a>{/if}
-		<button class="quiet" onclick={empty} disabled={busy}>Empty the cache</button>
-	</section>
-	<p class="line" data-line>{line}</p>
-	{#if held}<p class="held">This device’s cache: {held}</p>{/if}
-
-	<canvas bind:this={canvas}></canvas>
-
-	{#if checks.length}
-		<ul class="checks">
-			{#each checks as c}
-				<li class:bad={!c.ok}><b>{c.ok ? '✓' : '✗'} {c.name}</b><span>{c.note}</span></li>
-			{/each}
-		</ul>
-	{/if}
-	{#if probes}
-		<details>
-			<summary>Every way out, tried from inside the box</summary>
-			<ul class="probes">{#each Object.entries(probes) as [k, v]}<li><b>{k}</b> {v}</li>{/each}</ul>
-		</details>
-	{/if}
+<Turntable
+	name="box"
+	bind:canvas={canvasBox}
+	picks={{
+		title: 'Asset box',
+		lede: 'Our own assets built where an untrusted one would be: a worker in a frame with no origin, no network and no storage, running a frozen engine checked against its hash. Each recipe is named by the BLAKE3 hash of its bytes; the page builds its own objects from the plain data the box hands back, and keeps them on this device by that hash.',
+		items: ITEMS,
+		chosen,
+		where: (item) => item.values,
+		onpick: (item) => {
+			name = item.id;
+			if (!busy) loadOne();
+		},
+		group: (item) => item.group
+	}}
+>
+	{#snippet bar()}
+		<div class="chips">
+			<button class="chip run" onclick={runAll} disabled={busy}>Run every check</button>
+			<button class="chip" onclick={loadOne} disabled={busy}>Load</button>
+			{#if linkOf(name)}<a class="chip" href={linkOf(name)}>Its page</a>{/if}
+			<button class="chip" onclick={empty} disabled={busy}>Empty the cache</button>
+		</div>
+	{/snippet}
+	{#snippet panel()}
+		<label class="build">
+			<span class="label">A build: its recipe's hash, then ?its=values</span>
+			<input bind:value={name} list="builds" spellcheck="false" autocomplete="off" />
+			<datalist id="builds">{#each SAMPLES as s}<option value={s.name}>{s.label}</option>{/each}</datalist>
+		</label>
+		{#if held}<p class="held"><span class="label">This device's cache</span>{held}</p>{/if}
+		{#if checks.length}
+			<span class="label">Checks · {passed} of {checks.length} passed</span>
+			<ul class="checks">
+				{#each checks as c}
+					<li class:bad={!c.ok}><b>{c.ok ? '✓' : '✗'} {c.name}</b><small>{c.note}</small></li>
+				{/each}
+			</ul>
+		{/if}
+		{#if probes}
+			<details>
+				<summary>Every way out, tried from inside the box</summary>
+				<ul class="probes">{#each Object.entries(probes) as [k, v]}<li><b>{k}</b> {v}</li>{/each}</ul>
+			</details>
+		{/if}
+	{/snippet}
+	{#snippet readout()}
+		{#if loaded}<b>{loaded.label} <em>{loaded.ref}</em></b>{/if}
+		<small data-line>{line || 'Pick a build to load it, or run every check.'}</small>
+		{#if loaded}<span>{loaded.triangles.toLocaleString('en')} triangles · {loaded.size.map((x) => x.toFixed(2)).join(' × ')} m · engine {loaded.engine}</span>{/if}
+	{/snippet}
 	{#if results}<pre id="results" hidden>{JSON.stringify(results)}</pre>{/if}
-</main>
+</Turntable>
 
 <style>
-	.lab { min-height: 100dvh; padding: 24px 16px 120px; max-width: 980px; margin: 0 auto; color: #ece6d8; background: #18201c; }
-	.kicker { color: #e8a964; letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; margin: 0; }
-	h1 { font-size: 34px; margin: 6px 0 8px; }
-	.lede { color: #b9b3a6; margin: 0 0 18px; max-width: 70ch; }
-	.bar { display: flex; flex-wrap: wrap; gap: 8px; }
-	button, input { font: inherit; border-radius: 10px; border: 1px solid #3c4a42; background: #22302a; color: inherit; padding: 8px 12px; }
-	button { background: #e8a964; color: #1b1712; border: 0; font-weight: 600; cursor: pointer; }
-	button:disabled { opacity: 0.5; cursor: default; }
-	input { flex: 1 1 200px; min-width: 0; }
-	.quiet { background: #22302a; color: inherit; border: 1px solid #3c4a42; }
-	.open { font: inherit; border-radius: 10px; padding: 8px 12px; text-decoration: none; }
-	.held { color: #8f9a91; font-size: 14px; margin: -6px 0 10px; }
-	.line { min-height: 1.4em; color: #cfc8b9; }
-	canvas { width: 100%; height: min(56vh, 520px); display: block; border-radius: 14px; background: #1d2420; }
-	.checks { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 6px; }
-	.checks li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; background: #1f2a25; }
-	.checks li.bad { background: #3a2222; }
-	.checks span, .probes { color: #b9b3a6; font-size: 14px; }
-	.probes { padding-left: 18px; }
+	/* the checks need room: the panel is wider here than a library's */
+	:global(.turntable.box .panel) {
+		width: 22rem;
+	}
+
+	.run {
+		background: #3d6b2e;
+		border-color: #3d6b2e;
+		color: #fff;
+	}
+
+	.chip:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	a.chip {
+		text-decoration: none;
+		color: inherit;
+	}
+
+	.build {
+		display: grid;
+		gap: 0.3rem;
+	}
+
+	.build input {
+		min-width: 0;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid rgb(0 0 0 / 0.12);
+		border-radius: 8px;
+		background: #fff;
+		color: inherit;
+		font: 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace;
+	}
+
+	.held {
+		display: grid;
+		gap: 0.15rem;
+		margin: 0.7rem 0;
+	}
+
+	.checks {
+		display: grid;
+		gap: 0.35rem;
+		margin: 0.4rem 0 0.7rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.checks li {
+		display: grid;
+		gap: 0.1rem;
+		padding: 0.45rem 0.55rem;
+		border-radius: 8px;
+		background: #edf2e6;
+	}
+
+	.checks li b {
+		font-weight: 600;
+		color: #2f5a22;
+	}
+
+	.checks li.bad {
+		background: #f6e1dc;
+	}
+
+	.checks li.bad b {
+		color: #a3312a;
+	}
+
+	.checks small,
+	.probes {
+		color: rgb(31 42 35 / 0.7);
+		font-size: 0.75rem;
+		overflow-wrap: anywhere;
+	}
+
+	summary {
+		cursor: pointer;
+		font-size: 0.8rem;
+	}
+
+	.probes {
+		padding-left: 1rem;
+	}
+
+	em {
+		margin-left: 0.3rem;
+		font-weight: 400;
+		opacity: 0.55;
+		overflow-wrap: anywhere;
+	}
 </style>
