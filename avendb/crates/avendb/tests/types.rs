@@ -38,7 +38,7 @@ const PART: &str = r##"{ "title": "Part", "type": "object",
       "at": { "$ref": "#/$defs/vec3" },
       "material": { "$ref": "#/$defs/material" },
       "holes": { "type": "array", "items": { "type": "object", "properties": {
-        "id": { "type": "integer" }, "d": { "type": "number", "minimum": 0 } }, "required": ["id"] } } },
+        "d": { "type": "number", "minimum": 0 } }, "required": ["d"] } } },
       "required": ["id"] } } },
   "required": ["kind", "name"] }"##;
 
@@ -58,7 +58,7 @@ fn steel() -> Value {
         "colours": ["grey", "black"],
         "tags": ["metal"],
         "pieces": [
-            { "id": 1, "at": [0, 0, 0], "material": { "name": "steel" }, "holes": [{ "id": 1, "d": 0.008 }] },
+            { "id": 1, "at": [0, 0, 0], "material": { "name": "steel" }, "holes": [{ "d": 0.008 }] },
             { "id": 2 }
         ]
     })
@@ -108,7 +108,7 @@ fn a_value_out_of_its_bounds_does_not_read() {
     assert_eq!(read(|r| r["tags"] = json!(["metal", 7])).unwrap()["tags"], json!(["metal"]));
     let rows = read(|r| r["pieces"][0]["material"] = json!({ "name": 3 })).unwrap();
     assert!(rows["pieces"][0].get("material").is_none(), "a row's field that doesn't fit reads as absent");
-    let holes = read(|r| r["pieces"][0]["holes"] = json!([{ "id": 1, "d": -1 }])).unwrap();
+    let holes = read(|r| r["pieces"][0]["holes"] = json!([{ "d": -1 }])).unwrap();
     assert!(holes["pieces"][0].get("holes").is_none(), "{holes}");
 }
 
@@ -123,6 +123,16 @@ fn objects_nest_to_any_depth() {
     assert_eq!(s.read(&r), Some(r.clone()));
     let wrong = json!({ "a": { "b": { "c": [{ "d": [1, 2] }] } } });
     assert_eq!(s.read(&wrong), Some(json!({})), "the field whose value doesn't fit, whole");
+}
+
+#[test]
+fn a_list_of_records_in_a_row_is_kept_for_records_inside_records() {
+    // rows of rows will merge row by row; until they do, no schema may store one as one value
+    let rows_in_rows = r#"{ "type": "object", "properties": { "pieces": { "type": "array", "items": {
+      "type": "object", "properties": { "id": { "type": "integer" }, "holes": { "type": "array", "items": {
+        "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] } } },
+      "required": ["id"] } } } }"#;
+    assert!(Schema::parse(rows_in_rows.as_bytes()).is_none());
 }
 
 #[test]
@@ -235,7 +245,7 @@ fn a_write_of_v2_values_fits_its_schema() {
     assert!(fits(|r| r["at"] = json!([0.25, 0.5, 0.75])));
     assert!(fits(|r| r["ports"] = json!([])));
     assert!(fits(|r| r["colours"] = json!([])));
-    assert!(fits(|r| r["pieces"][0]["holes"] = json!([{ "id": 2, "d": 0.01 }])));
+    assert!(fits(|r| r["pieces"][0]["holes"] = json!([{ "d": 0.01 }])));
     assert!(!fits(|r| r["material"] = json!({ "name": "oak", "grain": "fine" })));
     assert!(!fits(|r| r["at"] = json!([0, 0])));
     assert!(!fits(|r| r["count"] = json!(100)));

@@ -475,14 +475,16 @@ impl Check {
 }
 
 impl Type {
-    /// A property of a schema; `nested` for the fields of a list's records, which hold no records themselves.
+    /// A property of a schema; `nested` for the fields of a list's records, which hold no records themselves: a list
+    /// of records in a row is kept for records inside records, which will merge row by row at every depth, so no
+    /// schema stores one as one value meanwhile.
     fn of(p: &Value, nested: bool, defs: Defs) -> Option<Type> {
         let (p, defs) = defs.resolve(p)?;
         if p.get("type").and_then(Value::as_str) == Some("array") && p.get("prefixItems").is_none() {
             let (items, deeper) = defs.resolve(p.get("items")?)?;
-            if records_of(items) && !nested {
+            if records_of(items) {
                 // records are matched by their id
-                return Some(Type::Records(Shape::of(items, true, deeper)?));
+                return (!nested).then(|| Some(Type::Records(Shape::of(items, true, deeper)?))).flatten();
             }
             if items.get("type").and_then(Value::as_str) != Some("object") {
                 let bounded = p.get("minItems").is_some() || p.get("maxItems").is_some();
