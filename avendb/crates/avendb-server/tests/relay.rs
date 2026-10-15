@@ -286,6 +286,16 @@ async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() 
     assert_eq!(body, r#"{"posts":[]}"#);
     let (head, _) = http(addr, "OPTIONS", "/feed/posts").await;
     assert!(head.starts_with("http/1.1 204") && head.contains("access-control-allow-origin: *"), "{head}");
+    // no picture anyone may read yet, a name that isn't a picture's, nor a path that names no vault
+    let vault = "ab".repeat(32);
+    let picture = format!("/feed/files/{vault}/{}.png", "cd".repeat(32));
+    for path in [picture.as_str(), &format!("/feed/files/{vault}/notes.txt"), "/feed/files/nobody/a.png"] {
+        let (head, body) = http(addr, "GET", path).await;
+        assert!(head.starts_with("http/1.1 404") && head.contains("access-control-allow-origin: *"), "{path}: {head}");
+        assert_eq!(body, "no such picture", "{path}");
+    }
+    let (head, _) = http(addr, "OPTIONS", &picture).await;
+    assert!(head.starts_with("http/1.1 204"), "a page may ask for one: {head}");
     let (head, _) = http(addr, "GET", "/relay").await;
     assert!(head.starts_with("http/1.1 404"), "nothing else: {head}");
     started.shutdown().await.expect("the server stops");

@@ -346,8 +346,14 @@ entries of V device `d` syncs, and how. It grants nothing, has no ops and is in 
 - **What a device wants.** With no keep share over V, or only Never ones, it wants all of V but what a Never share
   picks. With a Whole or Opened one, it wants what one of those picks and no Never one does. It keeps an entry's files
   whole exactly where a Whole share picks it (`wantsWith`, `keepsWith` in `State.lean`; `State::wants`, `keeps`; T28).
-- **No keep share.** A device with no Whole or Opened share over a vault falls back on its own setting
-  (`Options::keep`): the server keeps every file whole, a desktop or a browser fetches pieces as it reads them.
+- **Copy setting.** A device's copy setting is one wide keep share its own vault issues over itself, Whole for a
+  full copy or Opened for a light one (`copyOf` in `State.lean`, `State::copy_of`; the `copy` op). Over any vault
+  where the device has no keep share of its own, it counts as one (`keepsFor`, `State::keeps_for`). So a full copy
+  keeps whole every entry and file the device may read, and a light copy syncs every entry and fetches a file's
+  pieces as they are read. The person picks it when the device joins: a Mac, a desktop or a tablet is a full copy
+  by default, a phone a light one. They change it in Owners and devices.
+- **No keep share.** A device with no Whole or Opened share over a vault, and no copy setting, falls back on its own
+  setting (`Options::keep`): the server keeps every file whole, any other device fetches pieces as it reads them.
 - **Schemas ride along.** A Whole or Opened share also picks every schema and lens entry of V; a Never share that
   isn't wide picks none (`keepPicks`, `policy::keep_picks`). So every reader of V syncs its schemas (section 9). A wide
   Never share stops the device syncing V at all.
@@ -633,6 +639,7 @@ schema or a lens is created as an entry of its type (section 9).
 |---|---|---|
 | `share {over, who, level, what, as}` | `who` is `{"vault": id}`, `"everyone"`, `{"signer": id}` or `{"device": id}`; `level` a built-in group's name, a group of its own `{name, ops}`, a keep level, or `"actsFor"`; `what` is `"everything"` or a `where` of labels. Owner on everything to a vault or a signer adds a co-owner (`Sharing::Owner`), `actsFor` a device (`Sharing::Device`), a keep level a keep share, anything else a grant (`Sharing::Grant`) resting on the acting vault's owner share where it isn't the vault itself. `{"edit"}` or `{"share"}` | Owners, devices, Owner grants |
 | `keep {over, mode, what, device, as}` | A keep share to one of the acting vault's devices, this one unless named; `mode` is `"whole"`, `"opened"` or `"never"`. `{"share"}` | Never |
+| `copy {device, full}` | The copy setting of one of the person's devices, this one unless named: a wide keep share their vault issues over itself, Whole when `full`, else Opened; the device's other copy shares are revoked. `{"share"}` | Never |
 | `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
 | `found {vaults: [{kind, name}]}` or `{kind, name}` | New aven or coop vaults the person's vault founds and owns, in one ceremony; then the CEO Aven's share and a profile on each. `{"vaults"}` | Always |
@@ -721,8 +728,10 @@ what changed (T9). So an old app and a new one edit the same todo side by side, 
 told by its `kind`: a **document** (a note: a title, blocks and tags), a **todo**, an **article** (a title and one
 Markdown text), a **flow** (stages an item can be in, each with whether it is public and where it goes next), a
 **function** (a script that runs when an item enters or leaves a stage of a flow), a **post** (a public post of a
-stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), and a **file** (its
-name and its media type). The first versions of documents and todos, and the lenses from them, stay in the code only
+stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
+name and its media type), and a **story** (one content piece from its first spark to every platform it goes out on:
+its title and format, the sparks it grew from, its journey's beats and its hook variants as rows, its intro,
+description and launch; the story flow's tag says which of its stages it is in). The first versions of documents and todos, and the lenses from them, stay in the code only
 as the lens engine's worked example (`lens::blobs::ALL`); no record is written under them.
 
 **avenCEO GmbH holds them.** Every app knows avenDB's own schemas by heart, so each vault reads and writes them
@@ -769,6 +778,15 @@ entries it opens that are public and not deleted, newest first, each with its va
 may read; the Maia Universe page takes it in and shows each post under the vault that published it. A post leaves the
 feed as its article goes back from Published: its function deletes it and takes its tag off, so no Public share
 reaches it.
+
+An article shows the pictures of its vault's Library by their names (`<hash>.jpg`), and a post lists those of them
+everyone may read (`pictures`): each a `file` entry of the vault, public and not deleted (`world::public_files`). The
+server serves each whole, as it opens it, at `GET avendb.maia.city/feed/files/<vault>/<name>`, pictures alone, by
+their names' endings; the post's page shows its cover and its pictures from there, and leaves out any other. Publishing
+an article asks first whether the pictures it shows that are not public yet go public too: if so, the Publish function
+tags them with the stage's tag, as it tags the post, so the same Public share covers them; going back from Published,
+the other function takes the tag off those no other published entry shows. A published article that leaves any out
+offers it again.
 
 ## 10. Post-quantum only
 
@@ -1017,8 +1035,9 @@ fetches and opens, Backup fetches the ciphertext, Relay fetches nothing.
 - `read_file` (`Node::read_file`) reads any range: the segments that hold it, from its own shelf, or fetched from a
   peer, 4 MiB at a time, verified and opened. Pieces read but not kept stay in memory windows, 64 MiB at most, oldest
   out first.
-- The keeper fetches whole the files a device keeps (`Lab::kept_files`): where a Whole keep share picks the entry, or
-  by the device's own setting where it has no Whole or Opened keep share over the vault. Entries a Never share picks
+- The keeper fetches whole the files a device keeps (`Lab::kept_files`): where a Whole keep share picks the entry,
+  its copy setting is a full copy where it has no keep share over the vault, or by the device's own setting where it
+  has neither. Entries a Never share picks
   aren't synced at all. It retries with backoff until each piece is finished on the shelf, and drops nothing it kept.
 
 **Playing.** In a browser, a film or a song streams through a service worker (`static/app/avendb-files.sw.js`) that
@@ -1054,8 +1073,8 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder and the IndexedDB database of its name, the server its
-folder as it starts and its bucket while it runs (`bucket::clear`). `FLOOR` is 4 since every device tells its jobs,
-the last reset.
+folder as it starts and its bucket while it runs (`bucket::clear`). `FLOOR` is 7 since each device has a copy
+setting, the last reset.
 
 ### Layout of one generation
 

@@ -14,8 +14,8 @@ beside them):
   `LAUNCH.md`, `evals/evals.json` (prompts and what a good answer contains) and `.github/REPO.md`.
 
 Keep them that way: our own know-how never goes into any of them, beyond that one section at the end of `SKILL.md`. It
-is in the master skill, `asset-producer`; when we build our first factory into our own app, what it teaches us goes in
-an `ours.md` beside them, as `machine-skill`'s does.
+is in the master skill, `asset-producer`, and in `ours.md` beside them (ours, as `machine-skill`'s is): what building
+the first factory into our own app taught us, the BatteryPack line (2026-10-15).
 
 The skill is not installed. Its tools and pictures (`runtime/`, `vendor/` with three.js and its licence, `scripts/`,
 `examples/`, `.github/assets/`) stay in that repository, so the links to them in `README.md` lead nowhere here. When

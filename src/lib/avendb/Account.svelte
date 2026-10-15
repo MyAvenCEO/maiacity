@@ -25,17 +25,17 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { CONTENT, FLOW, FUNCTION, FUNCTIONS } from './flows.js';
+	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { allowed, answer, reads, refs } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
-	 *  logs it at every start; the same as long as its shelf (g6, since the reset of #686) keeps its device's key */
+	 *  logs it at every start; the same as long as its shelf (g7, since the reset of #721) keeps its device's key */
 	const RELAY = 'https://avendb.maia.city';
 	const SERVER =
-		'AVENDB1UQG6AY64L5BG352WHG7J5H2M2O3MFSWVW7BXM43GYCPXQMZIQP4WPF3BRWRKJZOJPKVIQTX7BEAK7IWPEMGWJZEGCLDUJZI2JHHOOIYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+		'AVENDB1WY4P3DWGS7QGN5HFSSE2EPBEJXNCKCAEQWUFWM5ZWZL7TG7T3IDK3NKYOX55XM4OZMC4RSDNKNA37JOF2TFH44DBRLM27YNOKJSCL7ABAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 
 	/** @type {any} the device's WebAssembly */
 	let avendb = null;
@@ -64,6 +64,9 @@
 	let server = $state('');
 	/** Whether the vault founded here has avenDB's server keep its ciphertext: on unless the person turns it off. */
 	let backup = $state(true);
+	/** Whether this device keeps a full copy, every entry and every file, or a light one, every entry and a file as
+	 *  it is opened: its copy setting, which it writes once it has none (`refresh`). A full copy unless it is a phone. */
+	let full = $state(!phone());
 	let code = $state('');
 	/** whether another device's link brought the person here, to link this browser */
 	let arrived = $state(false);
@@ -77,8 +80,9 @@
 	let link = $state('');
 	/** in the Mac app, the UDP sockets its device's node bound, on which it reaches its peers directly */
 	let sockets = $state(/** @type {string[] | null} */ (null));
-	/** whether the device is writing its card, or vaults' profiles: one such write at a time */
+	/** whether the device is writing its card, its copy setting, or vaults' profiles: one such write at a time */
 	let carding = false;
+	let copying = false;
 	let profiling = false;
 	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
 	let standardizing = false;
@@ -120,6 +124,14 @@
 						? 'Safari'
 						: 'A browser';
 		return system ? `${browser} on ${system}` : browser;
+	}
+
+	/** Whether this device is a phone, which keeps a light copy unless the person says otherwise. */
+	function phone() {
+		if (native()) return false;
+		const ua = navigator.userAgent;
+		const small = Math.min(screen.width, screen.height) < 600 && matchMedia('(pointer: coarse)').matches;
+		return /iPhone|iPod|Android.+Mobile/.test(ua) || small;
 	}
 
 	onMount(async () => {
@@ -409,6 +421,14 @@
 				.catch((/** @type {Error} */ e) => (error = `Naming ${here} failed: ${e.message}`))
 				.finally(() => (carding = false));
 		}
+		// its copy setting, a full copy or a light one, as the person chose it here, where it has none yet
+		if (card && !card.copy && !copying) {
+			copying = true;
+			send({ op: 'copy', full })
+				.then(answer)
+				.catch((/** @type {Error} */ e) => (error = `Setting what ${here} keeps failed: ${e.message}`))
+				.finally(() => (copying = false));
+		}
 		// the profiles of the person's vault, by their maiaCITY name, and of the seed their claim of the server
 		// founded, if it did: written once, by whichever of their devices comes first
 		/** @type {[string, string][]} */
@@ -439,7 +459,8 @@
 	/**
 	 * Each of avenDB's standard schemas and lenses that vault `company` doesn't hold an entry of yet, added as its own:
 	 * the schemas first, so each lens joins two it holds. Then the flows and functions every app knows (./flows.js)
-	 * that it doesn't hold yet, by their key and their name, and a Public share of its flows and functions, where it
+	 * that it doesn't hold yet, by their key and their name, and the app's code for each it holds whose code is one
+	 * the app ran before (`RETIRED`), not one changed by hand; and a Public share of its flows and functions, where it
 	 * gives none yet, so every app may read them as they read its schemas.
 	 * @param {import('./vaults.js').WorldView} w @param {string} company
 	 */
@@ -458,10 +479,18 @@
 			w.entries.filter((e) => e.vault === company && e.type === type && e.kind === 'record').map((e) => e.record);
 		const [flows, fns] = [own(FLOW).map((f) => f?.key), own(FUNCTION).map((f) => `${f?.flow}\n${f?.name}`)];
 		const made = [
-			...[CONTENT].filter((f) => !flows.includes(f.key)).map((f) => [FLOW, f]),
+			...FLOWS.filter((f) => !flows.includes(f.key)).map((f) => [FLOW, f]),
 			...FUNCTIONS.filter((f) => !fns.includes(`${f.flow}\n${f.name}`)).map((f) => [FUNCTION, f])
 		];
 		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));
+		const fnEntries = w.entries.filter((e) => e.vault === company && e.type === FUNCTION && !e.deleted && e.record);
+		for (const e of fnEntries) {
+			const app = FUNCTIONS.find((f) => f.flow === e.record?.flow && f.name === e.record?.name);
+			if (!app || !(RETIRED[app.name] ?? []).includes(e.record?.code)) continue;
+			for (const [path, value] of [[['code'], app.code], [['about'], app.about]]) {
+				answer(await send({ op: 'set', entry: e.entry, path, value, as: company }));
+			}
+		}
 		const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
 		const open = w.shares.some((c) => c.over === company && c.who === EVERYONE && types(c) === SHARED.join());
 		if (!open) {
@@ -692,6 +721,18 @@
 							owns avenCEO GmbH, which owns the CEO Aven, the aven vault the server is a device of.
 						</p>
 					</details>
+					<label class="check">
+						<input type="checkbox" bind:checked={full} />
+						<span>
+							Keep a full copy on {here}
+							<span class="soft">
+								{full
+									? 'Every entry and every file, kept here: it works offline and is one more backup.'
+									: 'Every entry, and a file only once you open it: it takes little space.'}
+								You can change it later in Owners and devices.
+							</span>
+						</span>
+					</label>
 					<label class="check">
 						<input type="checkbox" bind:checked={backup} />
 						<span>

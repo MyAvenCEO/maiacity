@@ -1,14 +1,15 @@
 <!--
 	A vault's settings, as its aside lists them: About (what it is, who approves a change to it and how many of its
 	owners, how this browser acts for it), Owners and devices (who owns it, what it owns, the devices that act for it,
-	and for the person's own vault this browser's name, linking the next device and forgetting this one), and Sharing
-	(who it is shared with: its owners, then every share in force over it, each who · level · what, with what it
-	reaches now; sharing some of it as the acting vault; what each of the person's devices keeps of it; what is shared
-	with it elsewhere; and its entries by who they are shared with, each with the devices that get them and whether
-	each opens them or only keeps an encrypted copy). All of it is the device's: its world (avendb-browser's `World`)
-	and its list of the shares over the vault (the `shares` op), which says too whether the acting vault may revoke
-	each; every other button shows only where the device answers a dry run of it (`may`), and every change goes out as
-	one op, acting for the acting vault, which the rules check against what is shared with it.
+	and for the person's own vault what each of their devices keeps, a full copy or a light one, this browser's name,
+	linking the next device and forgetting this one), and Sharing, the one place that says who has the vault: each vault
+	it is shared with, and Everyone where it is public, one line each, with its shares (level · what, and what each
+	reaches now; shares on chosen entries folded into one line a level) and the devices of theirs it is on, each opening
+	it or only keeping an encrypted copy; the one Share form; and what others share with the vault. All of it is the
+	device's: its world (avendb-browser's `World`) and its list of the shares over the vault (the `shares` op), which
+	says too whether the acting vault may revoke each; every other button shows only where the device answers a dry run
+	of it (`may`), and every change goes out as one op, acting for the acting vault, which the rules check against what
+	is shared with it.
 -->
 <script>
 	import { native } from '$lib/native';
@@ -26,14 +27,10 @@
 		KINDS,
 		levelName,
 		list,
-		MODES,
 		nameOf,
-		reads,
 		roleGroup,
 		rowLevel,
 		rowWhat,
-		sharedThrough,
-		sharedWords,
 		shareWhat,
 		short,
 		signerName,
@@ -99,32 +96,54 @@
 
 	/** what is shared with the vault in other vaults */
 	const held = $derived(world.shares.filter((c) => c.who === vault && c.over !== vault));
+	/** A row's who: a vault's id, a signer's, a device's, or `"everyone"`. @param {ShareRow} r */
+	const whoOf = (r) =>
+		r.who === EVERYONE ? EVERYONE : 'vault' in r.who ? r.who.vault : 'signer' in r.who ? r.who.signer : r.who.device;
+	/** The entries a share on chosen entries picks, or none for any other share. @param {ShareRow} r */
+	const entriesOf = (r) => {
+		const w = /** @type {any} */ (r.what);
+		const one = w && typeof w === 'object' && Array.isArray(w.entry) && Object.keys(w).length === 1;
+		return one ? /** @type {string[]} */ (w.entry) : [];
+	};
 	/**
-	 * its entries by who they are shared with, those the same shares reach (each of the core's cells) together where
-	 * who they are shared with reads the same: each with its entries and the devices that get them, the fewest first
+	 * Who has the vault, one each: the vault itself and the vaults that own it, which hold all of it, then each vault
+	 * and Everyone a share in force goes to, with its shares. Its shares on chosen entries fold into one line a level,
+	 * so entries shared one by one don't fill the page.
+	 * @typedef {{ id: string, owner: string, grants: ShareRow[], chosen: Map<string, ShareRow[]> }} Person
 	 */
-	const audiences = $derived.by(() => {
-		/** @typedef {{ n: number, entries: string[], syncs: Map<string, import('./vaults.js').Syncing> }} Audience */
-		/** @type {Map<string, Audience>} */
+	const people = $derived.by(() => {
+		/** @type {Map<string, Person>} */
 		const by = new Map();
-		for (const x of world.audiences.filter((x) => x.vault === vault)) {
-			const shared = sharedThrough(world, vault, x.shares);
-			const words = sharedWords(shared);
-			/** @type {Audience} */
-			const a = by.get(words) ?? { n: shared.who.length + shared.gone, entries: [], syncs: new Map() };
-			a.entries.push(...x.entries);
-			for (const d of x.syncs) {
-				const had = a.syncs.get(d.device);
-				a.syncs.set(d.device, had ? { ...had, opens: had.opens || d.opens } : d);
-			}
-			by.set(words, a);
+		for (const o of owners)
+			by.set(o.id, { id: o.id, owner: o.id === vault ? 'the vault itself' : 'owns it', grants: [], chosen: new Map() });
+		for (const r of given) {
+			const id = whoOf(r);
+			/** @type {Person} */
+			const p = by.get(id) ?? { id, owner: '', grants: [], chosen: new Map() };
+			if (entriesOf(r).length) {
+				const level = rowLevel(r, world);
+				p.chosen.set(level, [...(p.chosen.get(level) ?? []), r]);
+			} else p.grants.push(r);
+			by.set(id, p);
 		}
-		return [...by].sort(([, a], [, b]) => a.n - b.n);
+		return [...by.values()];
 	});
-	/** every device this browser knows, by its id: its name and the vault it is a device of */
-	const devices = $derived(
-		new Map(world.vaults.flatMap((x) => x.devices.map((d) => [d.id, { ...d, vault: x }])))
-	);
+	/**
+	 * The devices that get some of the vault, by the vault they get it through, as the device's world says: whether
+	 * each opens what it gets, or only keeps an encrypted copy.
+	 */
+	const getters = $derived.by(() => {
+		/** @type {Map<string, Map<string, import('./vaults.js').Syncing>>} */
+		const by = new Map();
+		for (const x of world.audiences.filter((x) => x.vault === vault))
+			for (const d of x.syncs) {
+				const of = by.get(d.through) ?? new Map();
+				const had = of.get(d.device);
+				of.set(d.device, had ? { ...had, opens: had.opens || d.opens } : d);
+				by.set(d.through, of);
+			}
+		return by;
+	});
 	/**
 	 * What a device does with the entries it gets: opens them, or, where it doesn't, keeps an encrypted copy (Backup) or
 	 * only connects (Relay), by the role the device's world names; else only that it opens none of them.
@@ -132,10 +151,29 @@
 	 */
 	const gets = (d) => (d.opens ? 'opens it' : ((d.level && KEEPS[d.level]) ?? 'opens none of it'));
 
+	/** whether the Share form is open on the Sharing page */
+	let adding = $state(false);
 	let renaming = $state(/** @type {string | null} */ (null));
 	let naming = $state(/** @type {string | null} */ (null));
 	/** how many of its owners a change needs, as the person picks it */
 	let threshold = $state(0);
+	/** the vault picked to become an owner too: a human or coop vault this device knows that doesn't own it yet */
+	let newOwner = $state('');
+	const ownable = $derived(
+		world.vaults.filter(
+			(x) => x.id !== vault && x.kind !== 'aven' && !v.owners.some((o) => 'vault' in o && o.vault === x.id)
+		)
+	);
+	/** Makes vault `id` an owner of this one too, as its owners approve. @param {string} id */
+	const addOwner = (id) =>
+		api.run(`Making ${nameOf(byId.get(id))} an owner`, {
+			op: 'share',
+			over: vault,
+			who: { vault: id },
+			level: 'Owner',
+			what: 'everything',
+			as: actor
+		});
 	const needs = $derived(v.threshold);
 	$effect.pre(() => {
 		threshold = needs;
@@ -143,25 +181,10 @@
 	/** Whether avenDB's server backs up the person's vault (true), only relays for it (false), or holds no cap (null). */
 	const backs = $derived(world.backsUp);
 
-	/** the keep share being set up for one of the person's devices: which, its mode, and what it keeps */
-	let keeping = $state(/** @type {{ device: string, mode: string, types: string, tag: string } | null} */ (null));
-	/** What the keep share keeps: everything, or entries of a type, tagged one way. */
-	const keepWhat = $derived.by(() => {
-		if (!keeping || !keeping.types) return 'everything';
-		/** @type {import('./vaults.js').Atom[]} */
-		const tests = [{ type: keeping.types.split(',') }];
-		const tag = keeping.tag.trim().replace(/^#/, '');
-		if (tag) tests.push({ tag });
-		return tests.length === 1 ? tests[0] : { all: tests };
-	});
-	const keepOp = $derived(
-		keeping && { op: 'keep', over: vault, mode: keeping.mode, what: keepWhat, device: keeping.device, as: world.mine }
-	);
-
 	/**
 	 * What the device would make, as it answers a dry run of each (`may`): the vault's name (`profile`), how many owners
 	 * a change needs (`threshold`), the master recovery key as an owner (`recovery`), backups on or off (`backUp`), and
-	 * the keep share being set up (`keep`): `true`, `{ approve }` where the vault's owners approve it, or why not.
+	 * what a device of the vault keeps (`copy`): `true`, `{ approve }` where the vault's owners approve it, or why not.
 	 */
 	let can = $state(/** @type {Record<string, Verdict>} */ ({}));
 	$effect(() => {
@@ -172,7 +195,8 @@
 		if (recoveryMissing && world.recovery)
 			asks.recovery = { op: 'share', over: vault, who: { signer: world.recovery }, level: 'Owner', what: 'everything' };
 		if (vault === world.mine && backs != null) asks.backUp = { op: 'back_up', on: !backs };
-		if (keepOp) asks.keep = $state.snapshot(keepOp);
+		const other = v.devices.find((d) => !d.me) ?? v.devices[0];
+		if (vault === world.mine && other) asks.copy = { op: 'copy', device: other.id, full: other.copy !== 'full' };
 		const names = Object.keys(asks);
 		let gone = false;
 		may(api, actor, Object.values(asks)).then((answers) => {
@@ -189,10 +213,6 @@
 
 	/** A device's name, to start a line: its card's, or what it is. @param {string} id */
 	const deviceName = (id) => signerName(world, id, true);
-	/** The keep shares over the vault that name device `id`. @param {string} id */
-	const keepsOf = (id) =>
-		rows.filter((r) => r.kind === 'keep' && r.who !== EVERYONE && 'device' in r.who && r.who.device === id);
-
 	/** How this browser acts for the vault. */
 	const actsFor = $derived.by(() => {
 		if (!v.via) return 'It doesn’t act for it: it only knows it from what it syncs.';
@@ -200,15 +220,6 @@
 		const chain = v.via.map((o) => nameOf(byId.get(o)));
 		return `It acts for it through ${list(chain)}, which ${v.via.length === 1 ? 'owns it' : 'own it in turn'}.`;
 	});
-
-	/** Entries, as a person reads them: titled where the acting vault reads them. @param {string[]} es */
-	function titles(es) {
-		const known = es.map((e) => world.entries.find((x) => x.entry === e)).filter((x) => !!x);
-		const named = known.filter((x) => reads(x, actor) && x.title).map((x) => titleOf(world, x.entry));
-		const sealed = es.length - named.length;
-		const more = named.length > 5 ? [`${named.length - 5} more`] : [];
-		return list([...named.slice(0, 5), ...more, ...(sealed ? [`${sealed} sealed for ${nameOf(as)}`] : [])]);
-	}
 
 	/** Revokes share row `r`: a keep share as its issuer, any other as the acting vault. @param {ShareRow} r */
 	const revoke = (r) =>
@@ -222,9 +233,12 @@
 			owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer }
 		});
 
-	async function keep() {
-		if (keepOp && (await api.run('Keeping', $state.snapshot(keepOp)))) keeping = null;
-	}
+	/**
+	 * Sets what device `d` keeps of every vault it syncs: a full copy, or a light one (`copy`).
+	 * @param {import('./vaults.js').DeviceView} d @param {boolean} full
+	 */
+	const keepCopy = (d, full) =>
+		api.run(full ? 'Keeping a full copy' : 'Keeping a light copy', { op: 'copy', device: d.id, full });
 </script>
 
 {#if tab === 'about'}
@@ -357,6 +371,20 @@
 				{/each}
 			</ul>
 			<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
+			{#if v.kind !== 'human' && actor === vault && ownable.length}
+				<div class="add-owner">
+					<select class="field" bind:value={newOwner} aria-label="A vault to make an owner too">
+						<option value="">A vault to make an owner too…</option>
+						{#each ownable as x (x.id)}<option value={x.id}>{nameOf(x)} · {KINDS[x.kind]}</option>{/each}
+					</select>
+					<button class="btn" disabled={busy || !newOwner} onclick={() => addOwner(newOwner).then(() => (newOwner = ''))}
+						>Add as owner</button
+					>
+				</div>
+				<p class="soft">
+					A new owner acts for it as you do. To hand it over, add the new owner first, then remove the old one.
+				</p>
+			{/if}
 			{#if recoveryMissing && lets('recovery')}
 				<p class="soft">
 					The master recovery key is avenDB's way back into a vault whose passkeys are all lost, while avenDB
@@ -418,10 +446,34 @@
 							{:else}
 								<span class="soft mono">{short(d.id)}</span>
 							{/if}
+							{#if vault === world.mine}
+								<span class="copy" role="group" aria-label="What it keeps">
+									<button
+										class="btn quiet"
+										class:on={d.copy === 'full'}
+										aria-pressed={d.copy === 'full'}
+										disabled={busy || !lets('copy') || d.copy === 'full'}
+										onclick={() => keepCopy(d, true)}>Full copy</button
+									>
+									<button
+										class="btn quiet"
+										class:on={d.copy !== 'full'}
+										aria-pressed={d.copy !== 'full'}
+										disabled={busy || !lets('copy') || d.copy === 'light'}
+										onclick={() => keepCopy(d, false)}>Light</button
+									>
+								</span>
+							{/if}
 						{/if}
 					</li>
 				{/each}
 			</ul>
+			{#if vault === world.mine && v.devices.length}
+				<p class="soft">
+					A full copy keeps every entry and every file of every vault the device syncs, so it works offline and is one
+					more backup. A light one keeps every entry, and a file only once it is opened there.
+				</p>
+			{/if}
 		</article>
 
 		{#if vault === world.mine}
@@ -458,135 +510,95 @@
 {:else if tab === 'sharing'}
 	<div class="cards">
 		<article class="card wide">
-			<h3>Who {nameOf(v)} is shared with</h3>
+			<div class="row top">
+				<h3>Who has {nameOf(v)}</h3>
+				{#if sharesOn}
+					<button class="btn" class:primary={!adding} onclick={() => (adding = !adding)}>
+						{adding ? 'Close' : 'Share'}
+					</button>
+				{/if}
+			</div>
 			<p class="soft">
-				Each share is who, at what level, on what: everything, its entries of a type or with some tags, or chosen
-				entries. A share on a type or a tag reaches what matches it now and later. {nameOf(v)} and the vaults that
-				own it hold all of it.
+				Each vault it is shared with, and Everyone where it is public: at what level, on what, and on which of their
+				devices it is. A share on a type or a tag reaches what matches it now and later. A note or a todo shares the
+				same way, from its own Share button.{sharesOn
+					? ''
+					: ` Only ${nameOf(v)} itself, or a vault it shares some of it with as Owner, shares it on.`}
 			</p>
-			<ul class="list grants">
-				{#each owners as o (o.id)}
+			{#if adding}
+				<div class="adding"><Share {world} {actor} {api} {busy} {vault} ondone={() => (adding = false)} /></div>
+			{/if}
+			<ul class="list people">
+				{#each people as p (p.id)}
+					{@const pv = p.id === EVERYONE ? undefined : byId.get(p.id)}
+					{@const on = [...(getters.get(p.id)?.values() ?? [])]}
 					<li>
-						<span class="cap">
-							<Mark vault={o} size={28} />
+						{#if p.id === EVERYONE}<span class="chip">Public</span>{:else}<Mark vault={pv} size={28} />{/if}
+						<div class="person">
 							<span>
-								<b class:mine={o.id === actor}>{nameOf(o)}</b> · {roleGroup(world, 'owner')} · Everything
-								<small class="soft">· {o.id === vault ? 'the vault itself' : 'owns it'}</small>
+								<b class:mine={p.id === actor}>{p.id === EVERYONE ? 'Everyone' : nameOf(pv)}</b>
+								{#if p.owner}<small class="soft">· {p.owner}</small>{/if}
 							</span>
-						</span>
-					</li>
-				{/each}
-				{#each given as r (r.id)}
-					{@const to = r.who !== EVERYONE && 'vault' in r.who ? r.who.vault : null}
-					{@const name = r.who === EVERYONE ? 'Everyone' : nameOf(to ? byId.get(to) : undefined)}
-					{@const hint = world.groups.find((g) => g.name === r.group)?.hint}
-					<li>
-						<span class="cap">
-							{#if r.who === EVERYONE}
-								<span class="chip">Public</span>
-							{:else}
-								<Mark vault={to ? byId.get(to) : undefined} size={28} />
-							{/if}
-							<span class="held">
-								<span>
-									<b class:mine={to === actor}>{name}</b> ·
-									<span title={hint}>{rowLevel(r, world)}</span> · {rowWhat(r, world)}
-									<small class="soft">
-										{KEEPS[r.level] ? `· ${KEEPS[r.level]} ` : ''}· reaches
-										{count(r.reaches, 'entry', 'entries')} now{r.issuer
-											? ` · given by ${nameOf(byId.get(r.issuer))}`
-											: ''}{r.parent ? ', through its own Owner share, which narrows it too' : ''}
-									</small>
+							<ul class="theirs">
+								{#if p.owner}<li><span>{roleGroup(world, 'owner')} · Everything</span></li>{/if}
+								{#each p.grants as r (r.id)}
+									{@const hint = world.groups.find((g) => g.name === r.group)?.hint}
+									<li>
+										<span class="held">
+											<span>
+												<span title={hint}>{rowLevel(r, world)}</span> · {rowWhat(r, world)}
+												<small class="soft">
+													{KEEPS[r.level] ? `· ${KEEPS[r.level]} ` : ''}· reaches
+													{count(r.reaches, 'entry', 'entries')} now{r.issuer
+														? ` · given by ${nameOf(byId.get(r.issuer))}`
+														: ''}{r.parent ? ', through its own Owner share, which narrows it too' : ''}
+												</small>
+											</span>
+											{#if r.what === null}
+												<small class="soft">What it picks and allows is sealed from {here}.</small>
+											{:else if !r.group && r.ops}
+												<Ops ops={r.ops} />
+											{/if}
+										</span>
+										{#if allowed(r.revoke)}
+											<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
+										{/if}
+									</li>
+								{/each}
+								{#each [...p.chosen] as [level, rs] (level)}
+									<li>
+										<details class="chosen">
+											<summary>{level} · {count(rs.length, 'chosen entry', 'chosen entries')}</summary>
+											<ul>
+												{#each rs as r (r.id)}
+													<li>
+														<span>{list(entriesOf(r).map((e) => titleOf(world, e)))}</span>
+														{#if allowed(r.revoke)}
+															<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
+														{/if}
+													</li>
+												{/each}
+											</ul>
+										</details>
+									</li>
+								{/each}
+							</ul>
+							{#if on.length}
+								<span class="on">
+									<small class="soft">On</small>
+									{#each on as d (d.device)}
+										<span class="chip" class:ok={d.opens} title={gets(d)}>{deviceName(d.device)}</span>
+									{/each}
 								</span>
-								{#if r.what === null}
-									<small class="soft">What it picks and allows is sealed from {here}.</small>
-								{:else if !r.group && r.ops}
-									<Ops ops={r.ops} />
-								{/if}
-							</span>
-						</span>
-						{#if allowed(r.revoke)}
-							<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
-						{/if}
+							{/if}
+						</div>
 					</li>
 				{/each}
 			</ul>
 		</article>
 
-		<article class="card">
-			<h3>Share some of it as {nameOf(as)}</h3>
-			{#if sharesOn}
-				<Share {world} {actor} {api} {busy} {vault} />
-			{:else}
-				<p class="soft">
-					Nothing of {nameOf(v)} is shared with {nameOf(as)} as Owner: only the vault itself, or a vault it shares
-					some of it with as Owner, shares it on.
-				</p>
-			{/if}
-		</article>
-
-		{#if mine?.devices.length}
-			<article class="card">
-				<h3>Kept on your devices</h3>
-				<p class="soft">
-					What each of your devices keeps of {nameOf(v)}: {roleGroup(world, 'keepWhole')} {KEEPS.keepWhole};
-					{roleGroup(world, 'keepOpened')} {KEEPS.keepOpened}; {roleGroup(world, 'keepNever')} {KEEPS.keepNever}. A
-					keep share grants nothing: it only says what one of your devices keeps.
-				</p>
-				<ul class="list keeps">
-					{#each mine.devices as d (d.id)}
-						<li>
-							<span class="held">
-								<span>
-									<b>{d.me ? (d.name ?? thisName) : deviceName(d.id)}</b>
-									{#if d.me}<span class="chip accent">{here}</span>{/if}
-								</span>
-								{#each keepsOf(d.id) as r (r.id)}
-									<span class="kept">
-										<span>{rowLevel(r, world)} · {rowWhat(r, world)}</span>
-										{#if allowed(r.revoke)}
-											<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
-										{/if}
-									</span>
-								{:else}
-									<small class="soft">Nothing set: it syncs everything it gets.</small>
-								{/each}
-							</span>
-							{#if keeping?.device !== d.id}
-								<button
-									class="btn quiet"
-									disabled={busy}
-									onclick={() => (keeping = { device: d.id, mode: 'whole', types: '', tag: '' })}>Set</button
-								>
-							{/if}
-						</li>
-						{#if keeping?.device === d.id}
-							<li class="keep-form">
-								<select class="field" bind:value={keeping.mode} aria-label="What it keeps">
-									{#each MODES as [mode, level] (mode)}<option value={mode}>{roleGroup(world, level)}</option>{/each}
-								</select>
-								<select class="field" bind:value={keeping.types} aria-label="Of what">
-									<option value="">everything</option>
-									<option value="note">notes</option>
-									<option value="todo">todos</option>
-									<option value="article">articles</option>
-									<option value="file">files</option>
-								</select>
-								{#if keeping.types}
-									<input class="field tag" placeholder="tagged (any)" bind:value={keeping.tag} aria-label="Tagged" />
-								{/if}
-								<button class="btn primary" disabled={busy || !lets('keep')} onclick={keep}>Keep</button>
-								<button class="btn quiet" onclick={() => (keeping = null)}>Cancel</button>
-								{#if barred('keep')}<small class="soft">It can’t: {barred('keep')}.</small>{/if}
-							</li>
-						{/if}
-					{/each}
-				</ul>
-			</article>
-		{/if}
-
-		<article class="card">
-			<h3>Shared with {nameOf(v)} elsewhere</h3>
+		<article class="card wide">
+			<h3>What others share with {nameOf(v)}</h3>
 			<ul class="list">
 				{#each held as c (c.id)}
 					<li>
@@ -604,33 +616,6 @@
 			</ul>
 		</article>
 	</div>
-
-	<h3 class="who-gets">Who gets what</h3>
-	<p class="lead-in soft">
-		{nameOf(v)}'s entries, by who they are shared with, and the devices that get them: those of {nameOf(v)} and of each
-		vault they are shared with, and no one else. A tag that takes an entry into a share, or out of it, changes who gets
-		it. A device that only keeps an encrypted copy opens none of it.
-	</p>
-	{#each audiences as [words, a] (words)}
-		<section class="audience">
-			<h2>Shared with {words}</h2>
-			<p class="soft">{count(a.entries.length, 'entry', 'entries')}: {titles(a.entries)}</p>
-			<ul class="card list">
-				{#each [...a.syncs.values()] as d (d.device)}
-					{@const of = devices.get(d.device)?.vault}
-					<li>
-						<b>{deviceName(d.device)}</b>
-						<span class="soft">of {nameOf(of)}{of?.id !== d.through ? `, as ${nameOf(byId.get(d.through))}` : ''}</span>
-						<span class="chip" class:ok={d.opens}>{gets(d)}</span>
-					</li>
-				{:else}
-					<li class="soft">No device gets it.</li>
-				{/each}
-			</ul>
-		</section>
-	{:else}
-		<div class="empty">{nameOf(v)} holds no entry yet.</div>
-	{/each}
 {/if}
 
 <style>
@@ -668,6 +653,18 @@
 		margin: 0;
 	}
 
+	.add-owner {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-top: 0.6rem;
+	}
+
+	.add-owner .field {
+		flex: 1 1 14rem;
+		min-width: 0;
+	}
+
 	dd .row {
 		margin-top: 0.35rem;
 	}
@@ -696,25 +693,93 @@
 		border-bottom: 0;
 	}
 
-	.grants li,
-	.keeps li {
+	.grants li {
 		justify-content: space-between;
 	}
 
-	.keeps .kept {
+	.top {
+		justify-content: space-between;
+	}
+
+	.adding {
+		margin: 0.6rem 0 0.8rem;
+		padding: 0.8rem 0.9rem;
+		border: 1px solid var(--edge);
+		border-radius: 10px;
+		background: #fbfaf7;
+	}
+
+	.people > li {
+		align-items: flex-start;
+	}
+
+	.person {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.4rem;
+		flex: 1;
+		flex-direction: column;
+		gap: 0.2rem;
+		min-width: 0;
+	}
+
+	/* a person's shares, under their name */
+	.theirs {
+		margin: 0;
+		padding: 0;
+		list-style: none;
 		font-size: 0.88rem;
 	}
 
-	.keeps .keep-form {
-		justify-content: flex-start;
+	.theirs > li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.2rem 0;
 	}
 
-	.keeps .tag {
-		width: 8rem;
+	.chosen summary {
+		cursor: pointer;
+	}
+
+	.chosen ul {
+		margin: 0.3rem 0 0 1rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.chosen li {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.15rem 0;
+	}
+
+	.on {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	/* what a device keeps: a full copy or a light one */
+	.copy {
+		display: inline-flex;
+		margin-left: auto;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		overflow: hidden;
+	}
+
+	.copy .btn {
+		border-radius: 0;
+		font-size: 0.82rem;
+	}
+
+	.copy .btn.on {
+		background: var(--accent);
+		color: #fff;
+		opacity: 1;
 	}
 
 	.mine {
@@ -742,38 +807,11 @@
 		flex: 1 1 10rem;
 	}
 
-	ul.card.list {
-		padding: 0.3rem 1rem;
-	}
-
 	.key {
 		display: inline-grid;
 		place-items: center;
 		width: 28px;
 		height: 28px;
-	}
-
-	.who-gets {
-		margin: 2rem 0 0.4rem;
-	}
-
-	.audience {
-		margin-bottom: 1.8rem;
-	}
-
-	.audience > p {
-		margin: 0 0 0.6rem;
-		font-size: 0.84rem;
-		line-height: 1.5;
-	}
-
-	.audience h2 {
-		margin: 0 0 0.6rem;
-		font-family: var(--font-body);
-		font-size: 1.05rem;
-		font-weight: 600;
-		font-variation-settings: normal;
-		letter-spacing: 0;
 	}
 
 	.qr :global(svg) {
@@ -789,11 +827,5 @@
 		box-sizing: border-box;
 		font-family: ui-monospace, monospace;
 		font-size: 0.75rem;
-	}
-
-	.lead-in {
-		max-width: 70ch;
-		margin: 0 0 1rem;
-		line-height: 1.5;
 	}
 </style>

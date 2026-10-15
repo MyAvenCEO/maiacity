@@ -4,11 +4,20 @@
  * studio (a softbox environment, a soft key shadow, a contact shadow, a seamless floor that fades into the backdrop),
  * ambient occlusion, a little bloom, neutral tone mapping and a light grade; and its modes, eased in and out:
  *
+ * its views, how it is looked at (any of them on at once):
+ *
  *   explode   every part out along its own way, staggered
  *   cut       the section planes sweep in and the solids show clean red caps where they are cut
  *   xray      the shells turn to glass with their edges drawn, the insides solid
  *   labels    leader lines to the named parts, with live readings
  *   slow      the solver's time slowed to 8 %
+ *
+ * and its moves, how it moves (one at a time, by the clock on the wall, slowed by Slow and held by Pause):
+ *
+ *   run       its solver at the sliders, nothing scripted
+ *   <its own> a machine's own moves (`lab.moves`: the service drawer out and in, a door opened), loops over its
+ *             controls; a slider a move sets follows it
+ *   assemble  its parts flying in by their build steps, again and again
  *   break     the machine's own failure, decided by its solver
  *
  * Ported from AirSup's Lab (`.claude/skills/machine-skill`, kit/lab-kit.js at e0bd066, MIT; ./kit.js has the licence)
@@ -31,12 +40,14 @@ export class Stage {
 	/**
 	 * @param {THREE.WebGLRenderer} renderer the page's renderer (its tone mapping is set while the stage draws)
 	 * @param {THREE.PerspectiveCamera} camera
-	 * @param {{ theme?: 'paper' | 'night' }} [o]
+	 * @param {{ theme?: 'paper' | 'night', low?: boolean }} [o] `low`: a phone's budget (no occlusion pass, 2× multisampling,
+	 *   a smaller, softer-sampled shadow), so it draws smoothly and fits in a phone's memory ($lib/app/view3d.js)
 	 */
-	constructor(renderer, camera, { theme = 'paper' } = {}) {
+	constructor(renderer, camera, { theme = 'paper', low = false } = {}) {
 		this.renderer = renderer;
 		this.camera = camera;
 		this.theme = theme;
+		this.low = low;
 		this.scene = new THREE.Scene();
 		this.state = { explode: 0, cut: 0, xray: 0, labels: 0, slow: 0 };
 		this.target = { explode: 0, cut: 0, xray: 0, labels: 0, slow: 0 };
@@ -44,6 +55,11 @@ export class Stage {
 		this.broken = false;
 		this.time = 0;
 		this.built = 1;
+		/** the move playing ('run', 'assemble' or one of the asset's own), its time, and the controls it took over */
+		this.move = 'run';
+		this.moveT = 0;
+		/** @type {Record<string, number>} */
+		this.held = {};
 		/** @type {THREE.Box3 | null} the asset's world box as shown, for the labels' columns */
 		this.box = null;
 		/** the part picked, and whether it is shown alone */
@@ -57,9 +73,9 @@ export class Stage {
 		// lights: a soft key with its shadow, a cool rim, a gentle fill (the environment does most of the work)
 		const key = new THREE.DirectionalLight(0xfff3e6, paper ? 2.4 : 2.6);
 		key.castShadow = true;
-		key.shadow.mapSize.set(2048, 2048);
-		key.shadow.radius = 7;
-		key.shadow.blurSamples = 16;
+		key.shadow.mapSize.setScalar(low ? 1024 : 2048);
+		key.shadow.radius = low ? 4 : 7;
+		key.shadow.blurSamples = low ? 8 : 16;
 		const rim = new THREE.DirectionalLight(0xdbe8ff, paper ? 0.9 : 1.8);
 		const fill = new THREE.HemisphereLight(0xffffff, paper ? 0xd9d5cc : 0x202020, paper ? 0.2 : 0.15);
 		this.scene.add(key, key.target, rim, fill);
@@ -69,16 +85,42 @@ export class Stage {
 		this.edges = null;
 	}
 
-	/** the post stack, made at the canvas's size (AirSup's: MSAA HDR, GTAO, bloom, tone map, grade) */
+	/** the post stack, made at the canvas's size (AirSup's: MSAA HDR, GTAO, bloom, tone map, grade; on a phone no GTAO) */
 	_post() {
 		const r = this.renderer, size = r.getDrawingBufferSize(new THREE.Vector2());
-		const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+		const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: this.low ? 2 : 4 });
 		const comp = new EffectComposer(r, rt);
 		// at the canvas's own pixels (a composer given its target counts them 1:1 until told the ratio)
 		const css = r.getSize(new THREE.Vector2());
 		comp.setPixelRatio(r.getPixelRatio());
 		comp.setSize(css.x, css.y);
 		comp.addPass(new RenderPass(this.scene, this.camera));
+		if (!this.low) this._ao(comp, size);
+		const paper = this.theme === 'paper';
+		const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), paper ? 0.22 : 0.42, 0.55, paper ? 1.6 : 1.0);
+		comp.addPass(bloom);
+		comp.addPass(new OutputPass());
+		const grade = new ShaderPass({
+			uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: paper ? 0.1 : 0.32 }, uGrain: { value: paper ? 0.012 : 0.02 }, uSat: { value: 1.06 }, uRes: { value: new THREE.Vector2(size.x, size.y) } },
+			vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+			fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uVig, uGrain, uSat; uniform vec2 uRes; varying vec2 vUv;
+				float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+				void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb;
+					float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, uSat);
+					vec2 q = vUv - 0.5; q.x *= uRes.x / uRes.y; c *= 1.0 - uVig * smoothstep(0.35, 1.25, length(q));
+					c += (h(vUv * uRes + fract(uTime) * 91.7) - 0.5) * uGrain;
+					gl_FragColor = vec4(c, 1.0); }`
+		});
+		comp.addPass(grade);
+		this.composer = comp;
+		this.grade = grade;
+		this._fitAO();
+	}
+	/**
+	 * the ambient occlusion (GTAO) after the render pass: on a desktop only, the heaviest pass for a phone's GPU
+	 * @param {EffectComposer} comp @param {THREE.Vector2} size
+	 */
+	_ao(comp, size) {
 		const ao = new GTAOPass(this.scene, this.camera, size.x, size.y);
 		ao.blendIntensity = this.theme === 'paper' ? 0.85 : 1;
 		ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
@@ -103,26 +145,7 @@ export class Stage {
 			ao.normalMaterial.side = THREE.DoubleSide;
 		}
 		comp.addPass(ao);
-		const paper = this.theme === 'paper';
-		const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), paper ? 0.22 : 0.42, 0.55, paper ? 1.6 : 1.0);
-		comp.addPass(bloom);
-		comp.addPass(new OutputPass());
-		const grade = new ShaderPass({
-			uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: paper ? 0.1 : 0.32 }, uGrain: { value: paper ? 0.012 : 0.02 }, uSat: { value: 1.06 }, uRes: { value: new THREE.Vector2(size.x, size.y) } },
-			vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-			fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uVig, uGrain, uSat; uniform vec2 uRes; varying vec2 vUv;
-				float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-				void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb;
-					float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, uSat);
-					vec2 q = vUv - 0.5; q.x *= uRes.x / uRes.y; c *= 1.0 - uVig * smoothstep(0.35, 1.25, length(q));
-					c += (h(vUv * uRes + fract(uTime) * 91.7) - 0.5) * uGrain;
-					gl_FragColor = vec4(c, 1.0); }`
-		});
-		comp.addPass(grade);
-		this.composer = comp;
 		this.ao = ao;
-		this.grade = grade;
-		this._fitAO();
 	}
 	_fitAO() {
 		if (this.ao) this.ao.updateGtaoMaterial({ radius: 0.35 * this.s, distanceExponent: 1.6, thickness: 1.2 * this.s, scale: 1, samples: 16 });
@@ -192,12 +215,16 @@ export class Stage {
 		this.broken = false;
 		this.picked = null;
 		this.alone = false;
+		this.move = 'run';
+		this.moveT = 0;
+		this.held = {};
 		return { centre, size };
 	}
 
 	/** take the asset off the stage (it is the caller's to dispose of) */
 	clear() {
 		if (this.root) {
+			this.play('run');
 			this.resetBreak();
 			this.asset?.pose(0, 1);
 			this._cutTo(0);
@@ -226,6 +253,29 @@ export class Stage {
 	/** is a mode on (where it is going, not where it is) @param {string} k */
 	on(k) {
 		return k === 'run' ? !this.paused : k === 'break' ? this.broken : this.target[k] > 0.5;
+	}
+	/** the moves it can play, in the bar's order: Run, its own, Assemble @returns {[string, string][]} */
+	moves() {
+		const own = Object.entries(this.asset?.lab?.moves ?? {}).map(([k, m]) => /** @type {[string, string]} */ ([k, m.label]));
+		return [['run', 'Run'], ...own, ['assemble', 'Assemble']];
+	}
+	/**
+	 * Play a move from its start: the controls the last one set go back to where the sliders had them, and the ones
+	 * this one sets are taken over (the sliders follow them).
+	 * @param {string} k
+	 */
+	play(k) {
+		const c = this.asset?.lab?.controls ?? {};
+		for (const [id, v] of Object.entries(this.held)) if (c[id]) c[id].value = v;
+		this.held = {};
+		const m = this.asset?.lab?.moves?.[k];
+		this.move = m || k === 'assemble' ? k : 'run';
+		this.moveT = 0;
+		if (m) for (const id of Object.keys(m.at(0))) if (c[id]) this.held[id] = c[id].value;
+	}
+	/** does the move playing set this control @param {string} id */
+	drives(id) {
+		return id in this.held;
 	}
 	breakNow() {
 		if (this.broken || !this.asset?.lab?.breakIt) return;
@@ -263,10 +313,22 @@ export class Stage {
 		if (!this.asset) return;
 		const sdt = this.paused ? 0 : dt * lerp(1, 0.08, s.slow);
 		this.time += sdt;
+		// a move runs by the clock on the wall (slowed and held like the solver), so it plays through however slowly
+		// the frames come
+		this.moveT += this.paused ? 0 : wall * lerp(1, 0.08, s.slow);
+		// its own move sets the controls it drives before the solver reads them
+		const m = this.asset.lab?.moves?.[this.move], c = this.asset.lab?.controls;
+		if (m && c) for (const [id, v] of Object.entries(m.at((this.moveT / m.seconds) % 1))) if (c[id]) c[id].value = v;
 		this.asset.tick(sdt, this._env());
-		// the parts fly in over 2.6 s of the clock on the wall, however slowly the frames come
+		// the parts fly in over 2.6 s of the clock on the wall, however slowly the frames come; Assemble plays the build
+		// by its steps over the catalog's seconds, holds it built a moment, and again
 		if (this.built < 1) this.built = Math.min(1, (now - this.shownAt) / 2600);
-		this.asset.pose(s.explode, this.built);
+		let built = this.built;
+		if (this.move === 'assemble') {
+			const T = this.asset.catalog?.seconds ?? 12;
+			built = Math.min(1, (this.moveT % (T + 2.5)) / T);
+		}
+		this.asset.pose(s.explode, built);
 		this._cutTo(s.cut);
 		this._xray(s.xray);
 	}
@@ -474,6 +536,31 @@ export class Stage {
 		return /** @type {[number, string]} */ ([L * pxPerM, L >= 1 ? `${L} m` : L >= 0.01 ? `${Math.round(L * 100)} cm` : `${Math.round(L * 1000)} mm`]);
 	}
 
+	/**
+	 * Compile the asset's shaders as the stage draws them (into its post stack, tone mapped there, clipped), before its
+	 * first frame and off the page's thread where the browser can (KHR_parallel_shader_compile): a phone's first frame
+	 * of a big machine otherwise holds the page for seconds. Resolves when they are ready; never rejects.
+	 * @returns {Promise<void>}
+	 */
+	compile() {
+		if (!this.composer) this._post();
+		const r = this.renderer;
+		const was = { tm: r.toneMapping, clip: r.localClippingEnabled, rt: r.getRenderTarget() };
+		r.toneMapping = THREE.NeutralToneMapping;
+		r.localClippingEnabled = true;
+		r.setRenderTarget(this.composer.readBuffer);
+		let done = Promise.resolve();
+		try {
+			done = r.compileAsync(this.scene, this.camera);
+		} catch {
+			/* drawn as usual */
+		}
+		r.setRenderTarget(was.rt);
+		r.toneMapping = was.tm;
+		r.localClippingEnabled = was.clip;
+		return done.then(() => {}, () => {});
+	}
+
 	/** draw a frame (the page's renderer, our post stack) */
 	render() {
 		if (!this.composer) this._post();
@@ -495,6 +582,7 @@ export class Stage {
 	/** the canvas changed size @param {number} w @param {number} h */
 	resize(w, h) {
 		if (!this.composer) return;
+		this.composer.setPixelRatio(this.renderer.getPixelRatio()); // the page may lower it while frames are slow
 		this.composer.setSize(w, h);
 		const s = this.renderer.getDrawingBufferSize(new THREE.Vector2());
 		this.grade.uniforms.uRes.value.set(s.x, s.y);

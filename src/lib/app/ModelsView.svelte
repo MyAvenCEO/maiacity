@@ -20,6 +20,7 @@
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
 	import { atOrLatest } from '$lib/app/versions.js';
+	import { adaptiveResolution, disposeObject, lowPower, topPixelRatio } from '$lib/app/view3d.js';
 	import { WorldBar } from '$lib/sandbox-kit';
 	import { roundGround, groundRadius } from '$lib/buildings/ground.js';
 	import { wayBack } from '$lib/app/back.svelte';
@@ -121,7 +122,9 @@
 		const { createWalker, PACE } = await import('$lib/sandbox-kit/walker.js');
 		const box = /** @type {HTMLDivElement} */ (canvasBox);
 		const renderer = new THREE.WebGLRenderer({ antialias: true });
-		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+		// a phone draws at most 1.5 pixels a point and a smaller shadow; slow frames lower the resolution ($lib/app/view3d.js)
+		const low = lowPower();
+		renderer.setPixelRatio(topPixelRatio(low));
 		renderer.shadowMap.enabled = true;
 		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -136,7 +139,7 @@
 		scene.add(new THREE.HemisphereLight('#ffffff', '#b9b2a6', 1.2));
 		const key = new THREE.DirectionalLight('#fff4e6', 2.2);
 		key.castShadow = true;
-		key.shadow.mapSize.set(2048, 2048);
+		key.shadow.mapSize.setScalar(low ? 1024 : 2048);
 		scene.add(key, key.target);
 		// the floor: a soft shadow catcher, and a grid of 10 cm squares (1 m lines darker)
 		const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.22 }));
@@ -265,6 +268,8 @@
 			walkOut?.();
 			if (current) scene.remove(current);
 			if (grid) scene.remove(grid);
+			// let go of it on the graphics card too, or a phone runs out after a few models
+			if (current && !dome) disposeObject(current);
 			dome?.dispose();
 			current = grid = dome = null;
 			groundR = 0;
@@ -485,6 +490,7 @@
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
 		resize();
+		const adapt = adaptiveResolution(renderer, { top: topPixelRatio(low), onChange: resize });
 		show(chosen, version, variant);
 		const start = performance.now();
 		let raf = 0;
@@ -493,6 +499,7 @@
 		const tick = () => {
 			const now = performance.now();
 			const dt = Math.min(0.1, (now - last) / 1000);
+			adapt(now);
 			// a model in its parts put up as it plays, and taken apart or put back together
 			if (playing && catalog) {
 				stage = Math.min(playTo, stage + dt / (catalog.seconds ?? 20));

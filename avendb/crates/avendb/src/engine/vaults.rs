@@ -31,8 +31,9 @@ use crate::words::{self, hex, principal_json, who_json};
 use crate::world::{self, CARD, FILE, PROFILE, SyncedTo, World};
 
 /// The changes of this module: each runs alone, never in a batch.
-pub(super) const CHANGES: [&str; 11] =
-    ["share", "keep", "revoke", "settings", "found", "put_file", "back_up", "mark", "card", "profile", "follow"];
+pub(super) const CHANGES: [&str; 12] = [
+    "share", "keep", "copy", "revoke", "settings", "found", "put_file", "back_up", "mark", "card", "profile", "follow",
+];
 
 /// What a change op comes to before anything is signed: made, with its answer (`Done`), or drafted for the passkey of
 /// its vault's owners to approve (`Approve`).
@@ -226,6 +227,7 @@ pub(super) fn prepare(lab: &mut Lab, me: SignerId, name: &str, o: &Map<String, V
     match name {
         "share" => share(lab, me, o),
         "keep" => keep(lab, me, o),
+        "copy" => done(copy(lab, me, o)),
         "revoke" => revoke(lab, me, o),
         "settings" => settings(lab, me, o),
         "found" => found(lab, me, o),
@@ -599,6 +601,33 @@ fn keep(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared,
     };
     let (over, select, actor) = (vault_of(o, "over")?, what_of(o)?, actor_of(lab, me, o)?);
     issued(lab, me, cast::keep(actor, device, over, mode, select))
+}
+
+/// `{"op": "copy", "device"?, "full"}`: what device `device` (this one, left out) keeps of every vault it syncs where it
+/// has no keep share of its own (`State::copy_of`): a full copy, every entry and the files they bring whole (`true`),
+/// or a light one, every entry and a file only as it is opened (`false`). Its copy setting is a wide keep share the
+/// vault it is a device of issues over itself, whole or opened: the op issues it, then revokes every other of its copy
+/// setting, so one stays. `{"share": id}`, the one that stays.
+fn copy(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let device = match o.get("device") {
+        None => me,
+        d => id_of(d, "device", SignerId::from_hex)?,
+    };
+    let mode = if bool_of(o, "full", "copy")? { KeepMode::Whole } else { KeepMode::Opened };
+    let st = lab.state(me);
+    let vault = st.vaults().iter().find(|v| v.devices.contains(&device)).map(|v| v.id);
+    let vault = vault.ok_or_else(|| bad("copy sets what a device keeps: one of a vault's devices"))?;
+    let copies: Vec<(ShareId, KeepMode)> =
+        st.copy_of(device).filter_map(|k| Some((k.id, k.share.level.mode()?))).collect();
+    let keeps = match copies.iter().find(|(_, m)| *m == mode) {
+        Some(&(id, _)) => id,
+        None => lab.issue(me, &[me], cast::keep(vault, device, vault, mode, Selector::All))?,
+    };
+    for (id, _) in copies.into_iter().filter(|(id, _)| *id != keeps) {
+        let revoking = Revoking::Grant { share: id, actor: vault, keep: vec![], via: vec![] };
+        lab.submit(me, &[me], Action::Revoke(revoking))?;
+    }
+    Ok(json!({ "share": keeps.to_hex() }))
 }
 
 /// `{"op": "revoke", "share", "as"?}` ends a share and every share resting on it, acting for `as`; `{"op": "revoke",

@@ -579,13 +579,6 @@
 
 	{#if sharing && item}
 		<div class="sharebar">
-			<span class="who">
-				<span class="soft">Shared with</span>
-				{#each sharers as x (x.id)}
-					<span class="chip" class:accent={x.id === actor}>{sharerWords(x)}</span>
-				{/each}
-				{#if item?.public}<span class="chip">Public</span>{/if}
-			</span>
 			<Share {world} {actor} {api} {busy} vault={item.vault} {entry} ondone={() => (sharing = false)} />
 		</div>
 	{/if}
@@ -1052,12 +1045,6 @@
 		background: #f6e7e1;
 		color: #7a3422;
 		font-size: 0.86rem;
-	}
-
-	.sharebar .who {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
 	}
 
 	.pad {

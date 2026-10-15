@@ -1,6 +1,8 @@
 //! The studio, for agents: an MCP server inside maiaCITY Studio, so Claude Code (or any agent harness) can drive
 //! every step the studio's buttons drive — ingest, the library and its copies, describing files, probes and proxies,
-//! timelines (edit), grades and renders, the content board and its deliveries (draft and publish).
+//! timelines (edit), grades and renders, the content board and its deliveries (draft and publish); and avenDB, the
+//! person's own database, through its device in this app (avendb.rs): every read one op, every change one op acting as
+//! an aven vault, so the shares the person gives that aven decide what an agent may change.
 //!
 //! Every tool is the same native function the studio calls; nothing here is a second implementation. It listens on
 //! this Mac only (127.0.0.1:4545/mcp) and answers only a request that carries the app's MCP token
@@ -28,6 +30,22 @@ use vault_core::{Meta, Vault};
 use crate::auth::{self, Auth};
 
 pub const ADDR: &str = "127.0.0.1:4545";
+
+/// avenDB's read ops an agent asks (the page's `READS`, src/lib/avendb/ops.js), and the changes it makes acting as an
+/// aven.
+const AVENDB_READS: [&str; 13] = [
+    "query", "get", "history", "schemas", "groups", "world", "jobs", "shares", "database", "note", "creatable",
+    "taggable", "may",
+];
+const AVENDB_CHANGES: [&str; 13] = [
+    "create", "set", "unset", "insert", "remove", "move", "tag", "propose", "merge", "restore", "undo", "variant",
+    "batch",
+];
+
+/// How an agent works on avenDB, as avendb_vaults says.
+const AVENDB_NOTE: &str = "Read with avendb_ask, change with avendb_run acting as one of agentsActAs. The person makes \
+    an aven vault for each agent (+ in avenDB's vault bar, kind Aven) and shares a vault with it in Sharing: Suggester \
+    to propose only, which they merge on the page. A story's page is #stories/<entry> in avenDB.";
 
 fn token_file() -> PathBuf {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
@@ -637,6 +655,28 @@ pub struct GenuiDelete {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct AvendbAsk {
+    /// a read op of avenDB's one API, as JSON: query (`{"op":"query","vault","schema"?,"where"?}`), get
+    /// (`{"op":"get","entry","line"?,"schema"?}`), note (an entry's lines, proposals and history), history, schemas
+    /// (`{"op":"schemas","vault"}`: every schema a vault's records are written under), database, world, shares,
+    /// creatable, taggable, may (`{"op":"may","as","ops"}`: a dry run), jobs
+    pub op: Value,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct AvendbRun {
+    /// a change op, as JSON: create (`{"op":"create","vault","type","tags"?,"value"}`), set
+    /// (`{"op":"set","entry","line"?,"path","value"}`), unset, insert, remove, move, tag (`{"op":"tag","entry","add"?,
+    /// "remove"?}`), propose (`{"op":"propose","entry","name"}`: a new proposal, its `line` in the answer), merge,
+    /// restore, undo, variant, or batch (`{"op":"batch","ops"}`); a write on a proposal names its `line`
+    pub op: Value,
+    /// the id of the aven vault the agent acts as (an agent's own vault, owned through this Mac's person): every op
+    /// runs as it, so the shares other vaults give it decide what it may do; a Suggester share only proposes
+    #[serde(rename = "as")]
+    pub act_as: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct ApiArgs {
     /// GET, POST, PUT, PATCH or DELETE
     pub method: String,
@@ -652,6 +692,19 @@ impl Studio {
 
     fn signed_in(&self) -> Result<(), String> {
         if auth::signed_in() { Ok(()) } else { Err("maiaCITY Studio is not signed in — sign in with the passkey first".into()) }
+    }
+
+    /// avenDB's device in this app (avendb.rs), opened if the person opened it here before: what `run` answers to op
+    /// `op`, `{ok}` or `{refused, why}`.
+    async fn avendb(&self, op: Value) -> Result<Value, String> {
+        let status = crate::avendb::call_from(&self.handle, "status", vec![]).await?;
+        if status["open"] != true {
+            if status["meta"].is_null() {
+                return Err("avenDB isn't set up in this app yet: open avenDB in the app and sign in first".into());
+            }
+            crate::avendb::call_from(&self.handle, "open", vec![]).await?;
+        }
+        crate::avendb::call_from(&self.handle, "run", vec![op]).await
     }
 
     async fn api(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
@@ -1784,6 +1837,66 @@ impl Studio {
         text(self.api("DELETE", &format!("/api/genui/{}", a.id), None).await.map(|_| json!({ "deleted": a.id })))
     }
 
+    // ── avenDB: the vaults this Mac's person acts for, every read and change one JSON op (avendb/docs/OPS.md) ─
+
+    #[tool(
+        description = "avenDB's vaults this Mac acts for: each one's id, name and kind (human, coop or aven), and the aven vaults an agent may act as with avendb_run. Nothing names a vault for content: stories, notes and articles live in whichever vault they were made in. Start here."
+    )]
+    async fn avendb_vaults(&self) -> String {
+        text(self.avendb(json!({ "op": "world" })).await.and_then(|w| {
+            let w = w.get("ok").ok_or_else(|| format!("refused: {w}"))?;
+            let vaults: Vec<Value> = w["vaults"].as_array().into_iter().flatten().map(|v| {
+                let (id, acts) = (&v["id"], !v["via"].is_null());
+                json!({ "id": id, "name": v["name"], "kind": v["kind"], "mine": *id == w["mine"], "actsFor": acts })
+            }).collect();
+            let agent = |v: &&Value| v["kind"] == "aven" && v["actsFor"] == true;
+            let avens: Vec<Value> = vaults.iter().filter(agent).map(|v| v["id"].clone()).collect();
+            Ok(json!({ "vaults": vaults, "agentsActAs": avens, "note": AVENDB_NOTE }))
+        }))
+    }
+
+    #[tool(
+        description = "Read avenDB: one read op, as JSON (query, get, note, history, schemas, database, world, shares, creatable, taggable, may, jobs). `schemas` with a vault lists every schema its records follow, so an agent writes records that fit (a story is avenDB's own `story` schema; its stage is the flow tag `story:<stage>`)."
+    )]
+    async fn avendb_ask(&self, Parameters(a): Parameters<AvendbAsk>) -> String {
+        let name = a.op["op"].as_str().unwrap_or_default();
+        if !AVENDB_READS.contains(&name) {
+            let reads = AVENDB_READS.join(", ");
+            return format!("error: {name:?} is no read op: read with one of {reads}; change with avendb_run");
+        }
+        text(self.avendb(a.op).await)
+    }
+
+    #[tool(
+        description = "Change avenDB, acting as an aven vault (`as`): one change op, as JSON (create, set, unset, insert, remove, move, tag, propose, merge, restore, undo, variant, or a batch of them). It runs only as an aven vault, never as the person's own vault or a coop: the shares other vaults give that aven decide, so with a Suggester share it proposes (`propose`, then writes naming the proposal's `line`) and the person merges on the page."
+    )]
+    async fn avendb_run(&self, Parameters(a): Parameters<AvendbRun>) -> String {
+        let mut op = a.op;
+        let name = op["op"].as_str().unwrap_or_default().to_string();
+        if !AVENDB_CHANGES.contains(&name.as_str()) {
+            return format!("error: {name:?} isn't a change an agent makes here: one of {}", AVENDB_CHANGES.join(", "));
+        }
+        let world = match self.avendb(json!({ "op": "world" })).await {
+            Ok(w) => w,
+            Err(e) => return format!("error: {e}"),
+        };
+        let vaults = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
+        if !vaults.iter().any(|v| v["id"] == a.act_as.as_str() && v["kind"] == "aven" && !v["via"].is_null()) {
+            return format!("error: {} is no aven vault this Mac acts for: see avendb_vaults' agentsActAs", a.act_as);
+        }
+        // every op of it acts as the aven, a batch's too
+        op["as"] = json!(a.act_as);
+        if let Some(ops) = op.get_mut("ops").and_then(Value::as_array_mut) {
+            for o in ops {
+                if !AVENDB_CHANGES.contains(&o["op"].as_str().unwrap_or_default()) || o["op"] == "batch" {
+                    return "error: a batch holds the changes avendb_run makes, one level deep".into();
+                }
+                o["as"] = json!(a.act_as);
+            }
+        }
+        text(self.avendb(op).await)
+    }
+
     // ── anything else the admin may do ──
 
     #[tool(description = "Any maiaCITY API call under /api/ with the app's key (shots, grades, jobs, LUTs, media …) — the same rights the admin gave this Mac")]
@@ -1996,7 +2109,11 @@ impl ServerHandler for Studio {
              natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
              hash only. Also the economy sandbox (Sandbox 7, the avens trading): its configs, every run's stats day by \
              day, and MIPs (proposals that change a config, which only the admin accepts). And Generated UI: mini app \
-             views (declarative or sandboxed code) an agent puts on the dashboard's Generated UI page on the fly.",
+             views (declarative or sandboxed code) an agent puts on the dashboard's Generated UI page on the fly. And \
+             avenDB, \
+             the person's own end-to-end encrypted database on this Mac (avendb_vaults, avendb_ask, avendb_run): their \
+             vaults' stories, notes, articles and files, read with any read op and changed acting as an aven vault, \
+             whose shares decide; with a Suggester share every change is a proposal the person merges.",
         )
     }
 }

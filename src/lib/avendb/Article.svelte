@@ -3,11 +3,13 @@
 	(./ArticleView.svelte): its main line's text. Edit opens the same page in the editor (Note), with its proposals and
 	variants on the left and its history on the right. Above it, the stages of its flow (./flows.js), the one it is in
 	marked, and for whoever may change it the stages it goes on to: publishing it makes it public and puts a post about
-	it on the Maia Universe stream.
+	it on the Maia Universe stream. Where it shows pictures of its vault's Library that everyone may not read yet, it
+	asks first whether they go public with it, as the flow's function tags them (the post shows only those); once it
+	is public, it offers it again.
 -->
 <script>
 	import ArticleView from './ArticleView.svelte';
-	import { flowsFor, moving, stageOf } from './flows.js';
+	import { flowsFor, moving, privatePictures, stageOf, stageTag } from './flows.js';
 	import Icon from './Icon.svelte';
 	import { count, nameOf } from './vaults.js';
 
@@ -29,12 +31,34 @@
 	/** what a function of the flow couldn't ask for, as the last move ran it */
 	let problem = $state('');
 
-	/** Moves it to stage `to` of its flow: the ops its flow and its functions take (./flows.js). @param {string} to */
-	async function move(to) {
+	/** the pictures it shows that everyone may not read yet, of those the acting vault may tag */
+	const hidden = $derived(item ? privatePictures(world, item, actor) : []);
+	/** the public stage it is about to go to, while the page asks whether its pictures go public too */
+	let asking = $state(/** @type {string | null} */ (null));
+
+	/**
+	 * Moves it to stage `to` of its flow: the ops its flow and its functions take (./flows.js), its hidden pictures
+	 * handed to them where `pictures`. A public stage asks first, while it shows any.
+	 * @param {string} to @param {boolean | null} pictures
+	 */
+	async function move(to, pictures = null) {
 		if (!item || !flow) return;
-		const { ops, errors } = await moving(world, actor, item, flow, to);
+		if (pictures === null && flow.stages.find((s) => s.key === to)?.public && hidden.length) {
+			asking = to;
+			return;
+		}
+		asking = null;
+		const { ops, errors } = await moving(world, actor, item, flow, to, pictures !== false);
 		problem = errors.join(' · ');
 		await api.runAll(`Moving it to ${flow.stages.find((s) => s.key === to)?.name ?? to}`, ops);
+	}
+
+	/** Makes the pictures it shows public, once it is public itself: tagged with its stage, as publishing tags them. */
+	async function showPictures() {
+		if (!item || !flow || !stage || !hidden.length) return;
+		const tag = stageTag(flow.key, stage.key);
+		const ops = hidden.map((f) => ({ op: 'tag', entry: f.entry, add: [tag], as: actor }));
+		await api.runAll(`Making ${count(hidden.length, 'picture')} public`, ops);
 	}
 
 	/** What the button that moves it to stage `s` says. @param {import('./flows.js').Stage} s */
@@ -80,6 +104,32 @@
 					Publishing makes it public with a post about it on the Maia Universe, and {nameOf(byId.get(item.vault))}’s
 					name too, so everyone reads who published it.
 				</small>
+			{/if}
+			{#if asking}
+				<div class="ask" role="group" aria-label="Its pictures">
+					<p>
+						It shows {count(hidden.length, 'picture')} only {nameOf(byId.get(item.vault))} reads. Make
+						{hidden.length === 1 ? 'it' : 'them'} public too, so everyone who reads it sees {hidden.length === 1
+							? 'it'
+							: 'them'}?
+					</p>
+					<span class="moves">
+						<button class="btn primary" onclick={() => asking && move(asking, true)}>Publish with its pictures</button>
+						<button class="btn" onclick={() => asking && move(asking, false)}>Publish without them</button>
+						<button class="btn" onclick={() => (asking = null)}>Cancel</button>
+					</span>
+				</div>
+			{:else if stage?.public && hidden.length}
+				<div class="ask" role="group" aria-label="Its pictures">
+					<p>
+						Its post leaves out {count(hidden.length, 'picture')} only {nameOf(byId.get(item.vault))} reads.
+					</p>
+					<span class="moves">
+						<button class="btn primary" onclick={showPictures}>
+							Make {hidden.length === 1 ? 'it' : 'them'} public
+						</button>
+					</span>
+				</div>
 			{/if}
 			{#if problem}<small class="bad hint">A function of {flow.name} asked for nothing: {problem}.</small>{/if}
 		</nav>
@@ -175,6 +225,28 @@
 	.hint {
 		flex-basis: 100%;
 		font-size: 0.78rem;
+	}
+
+	/* whether its pictures go public with it */
+	.ask {
+		display: flex;
+		flex-basis: 100%;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.45rem 0.8rem;
+		padding: 0.55rem 0.75rem;
+		border: 1px solid #ecd9a8;
+		border-radius: 10px;
+		background: #fbf3dc;
+	}
+
+	.ask p {
+		flex: 1 1 16rem;
+		margin: 0;
+	}
+
+	.ask .moves {
+		flex-wrap: wrap;
 	}
 
 	.scroll {

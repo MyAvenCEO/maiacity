@@ -30,6 +30,7 @@ export const REAL_SIZES = {
 	electroCube: { size: [0.74, 0.75, 0.76], what: 'our ElectroCube: the Power Cube’s 27" frame and size, a flat axial-flux generator in it (actors/electrocube.js)' },
 	batteryCube: { size: [0.73, 0.75, 0.76], what: 'our BatteryCube: the Power Cube’s 27" frame, four BatteryPacks and an inverter in it (actors/batterycube.js)' },
 	batteryPack: { size: [0.47, 0.13, 0.52], what: 'our BatteryPack: a 460 × 480 × 125 mm rack module, its handles and terminals out of its face (actors/batterypack.js)' },
+	batteryPackV10: { size: [0.472, 0.1275, 0.522], what: 'the BatteryPack at v10, built at AirSup’s realism: the same 460 × 480 × 125 mm shell on its 2.5 mm skids, its grip 39 mm out of its face, the ClickLock’s teeth 6 mm out of each side (machines/batterypack.js)' },
 	genset: { size: [2.3, 2.83, 2.3], what: 'a 60 kVA silenced diesel genset (the Assets’ powercube v1)' },
 	solarPanel: { size: [1.72, 1.08, 1.4], what: 'one 410 W panel on its 30° ground rack, ballast blocks and cable' },
 	batteryCabinet: { size: [1.6, 2.51, 1.6], what: 'a 230 kWh outdoor battery cabinet on its plinth, its cable out the back' },

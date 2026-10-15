@@ -136,15 +136,15 @@ theorem T22_wide_shares {st : State} (hr : Reachable st) {c : Share} (hc : c ∈
     stewards mark it with (`desiredMark`), the rules every peer checks without reading a selector, a type or a tag mean
     what the selectors say. Its audience: where it is the entry's semantic audience, the write rule allows exactly the
     vaults the shares' selectors allow. Its wants: where they are the keep shares that pick the entry (`semWants`), a
-    device wants it, and keeps its files whole, exactly as its keep shares over the entry's vault say (`wantsWith`,
+    device wants it, and keeps its files whole, exactly as its keep shares for the entry's vault say (`wantsWith`,
     `keepsWith`) when each of them picks the entry where it is wide or its selector picks it, a whole or opened share
     picking every schema and lens entry too and a never share none (`keepPicks`). So a relay, which reads only the
     marks, writes and sends as the selectors say. -/
 theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
     (liveAudience st en = semAudience st en → ∀ a, mayWrite st a en = semWrite st a en) ∧
     (liveWants st en = semWants st en → ∀ d,
-      wants st d en = wantsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
-      keeps st d en = keepsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs)) :=
+      wants st d en = wantsWith (keepsFor st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
+      keeps st d en = keepsWith (keepsFor st d en.vault) (fun k => k.wide || keepPicks k en.attrs)) :=
   Shares.T23_marks_mean_shares hr en
 
 /-- T23, new entries: the rule every peer checks never refuses a creation that stays inside its creator's slice. -/
@@ -532,19 +532,21 @@ theorem T28_sync_follows_keeps (edits : List Edit) (d : SignerId) (fl : List Vau
       wants (view edits) d en = true :=
   Syncing.T28_sync_follows_keeps edits d fl h hl
 
-/-- T28, the modes: a device with no keep share over a vault wants all of it. The keep shares it syncs by are live
-    keep shares naming it over the entry's vault, issued by a vault it is still a device of, so a device that leaves its
-    vault drops them with no revocation. A never share that picks an entry (it is wide or among the entry's wants)
-    keeps the entry out; a whole or opened share that picks it brings it in, unless a never share picks it too; and the
-    device keeps its files whole exactly when a whole share picks it. -/
+/-- T28, the modes: a device syncs a vault by its keep shares over it, else by its copy setting, the wide keep shares
+    naming it over the vault that issued them (Full copy whole, Light opened); with neither, it wants all of it. The keep
+    shares it syncs by are live keep shares naming it, issued by a vault it is still a device of, so a device that
+    leaves its vault drops them with no revocation. A never share that picks an entry (it is wide or among the entry's
+    wants) keeps the entry out; a whole or opened share that picks it brings it in, unless a never share picks it too;
+    and the device keeps its files whole exactly when a whole share picks it. -/
 theorem T28_keep_modes (st : State) (d : SignerId) (en : Entry) :
-    (keepsOf st d en.vault = [] → wants st d en = true) ∧
-    (∀ k ∈ keepsOf st d en.vault, k.level.isKeep = true ∧ k.who = .device d ∧ k.over = en.vault ∧
-      st.live k.id = true ∧ isDevice st d k.issuer = true) ∧
-    (∀ k ∈ keepsOf st d en.vault, k.never = true → marked st en k = true → wants st d en = false) ∧
-    (∀ k ∈ keepsOf st d en.vault, k.never = false → marked st en k = true →
-      (∀ k' ∈ keepsOf st d en.vault, k'.never = true → marked st en k' = false) → wants st d en = true) ∧
-    (keeps st d en = true ↔ ∃ k ∈ keepsOf st d en.vault, k.level = .keep .whole ∧ marked st en k = true) :=
+    (keepsFor st d en.vault = if keepsOf st d en.vault = [] then copyOf st d else keepsOf st d en.vault) ∧
+    (keepsFor st d en.vault = [] → wants st d en = true) ∧
+    (∀ k ∈ keepsFor st d en.vault, k.level.isKeep = true ∧ k.who = .device d ∧
+      (k.over = en.vault ∨ k.wide = true ∧ k.over = k.issuer) ∧ st.live k.id = true ∧ isDevice st d k.issuer = true) ∧
+    (∀ k ∈ keepsFor st d en.vault, k.never = true → marked st en k = true → wants st d en = false) ∧
+    (∀ k ∈ keepsFor st d en.vault, k.never = false → marked st en k = true →
+      (∀ k' ∈ keepsFor st d en.vault, k'.never = true → marked st en k' = false) → wants st d en = true) ∧
+    (keeps st d en = true ↔ ∃ k ∈ keepsFor st d en.vault, k.level = .keep .whole ∧ marked st en k = true) :=
   Syncing.T28_keep_modes st d en
 
 /-- T19 (frontier sync loses nothing): a device that asks a peer with its frontier of each log it holds and a few edits

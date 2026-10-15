@@ -1,7 +1,8 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// One post of the Maia Universe stream. In the feed its title links to the post's own page, its text cut short; on
-	// that page (`full`) it stands alone, its title as the page's heading. A post published in avenDB says so.
+	// One post of the Maia Universe stream, an article published in avenDB. In the feed its title links to the post's
+	// own page, its text cut short, under its cover where everyone may read it; on that page (`full`) it stands alone,
+	// its title as the page's heading.
 	import { base } from '$app/paths';
 	import { ago, postHref } from './posts.js';
 	import { authorOf, like } from './stream.svelte.js';
@@ -20,7 +21,7 @@
 		<div class="meta">
 			<strong>{a.name}</strong>
 			{#if a.ai}<span class="badge">AI</span>{:else if a.coop}<span class="badge coop">COOP</span>{/if}
-			<span class="dim">@{a.handle} · {p.ago === 0 ? 'now' : ago(p.ago)}</span>
+			<span class="dim">@{a.handle}{p.ago == null ? '' : ` · ${p.ago === 0 ? 'now' : ago(p.ago)}`}</span>
 			{#if p.entry}<span class="badge db" title="Published in avenDB, where everyone may read it">avenDB</span>{/if}
 			<span class="channel">{p.channel}</span>
 		</div>
@@ -31,22 +32,11 @@
 			<h3 class="title"><a href={postHref(base, p)}>{p.title}</a></h3>
 		{/if}
 
-		{#if p.kind === 'quote'}
-			<blockquote>“{p.text}”<cite>{p.note}</cite></blockquote>
-		{:else}
-			<p class="text">{text}</p>
+		{#if p.cover}
+			<div class="cover"><img src={p.cover.src} alt={p.cover.alt || p.title} loading="lazy" /></div>
 		{/if}
 
-		{#if p.kind === 'stat'}
-			<div class="stat">
-				<span class="value">{p.stat.value}<small>{p.stat.unit}</small></span>
-				<span class="label">{p.stat.label}</span>
-			</div>
-		{:else if p.kind === 'visual'}
-			<div class="visual" style:background="linear-gradient(135deg, {p.visual.from}, {p.visual.to})">
-				<span>{p.visual.caption}</span>
-			</div>
-		{/if}
+		<p class="text">{text}</p>
 
 		<div class="actions">
 			<button class="act" aria-label="Reply">
@@ -182,69 +172,21 @@
 		font-size: 1.12rem;
 	}
 
-	blockquote {
-		margin: 0.6rem 0 0;
-		font-family: var(--font-display);
-		font-size: 1.4rem;
-		font-style: italic;
-		line-height: 1.3;
-	}
-
-	cite {
+	/* the article's cover, where everyone may read it */
+	.cover {
 		display: block;
-		margin-top: 0.4rem;
-		font-family: var(--font-body);
-		font-size: 0.8rem;
-		font-style: normal;
-		color: var(--muted);
-	}
-
-	.stat {
-		display: flex;
-		align-items: baseline;
-		gap: 0.8rem;
 		margin-top: 0.8rem;
-		padding: 0.9rem 1.1rem;
+		aspect-ratio: 16 / 9;
+		overflow: hidden;
 		border-radius: 16px;
 		background: var(--cream);
 	}
 
-	.value {
-		font-family: var(--font-display);
-		font-size: 2.2rem;
-		font-weight: 600;
-		line-height: 1;
-	}
-
-	.value small {
-		margin-left: 0.3rem;
-		font-family: var(--font-body);
-		font-size: 0.8rem;
-		font-weight: 600;
-		letter-spacing: 0.1em;
-		color: var(--terracotta);
-	}
-
-	.label {
-		font-size: 0.85rem;
-		color: var(--ink-soft);
-	}
-
-	.visual {
-		display: flex;
-		align-items: flex-end;
-		aspect-ratio: 16 / 7;
-		margin-top: 0.8rem;
-		padding: 0.9rem 1.1rem;
-		border-radius: 16px;
-	}
-
-	.visual span {
-		font-family: var(--font-display);
-		font-size: 1.2rem;
-		font-style: italic;
-		color: #fff;
-		text-shadow: 0 1px 8px rgb(0 0 0 / 0.25);
+	.cover img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 
 	.actions {

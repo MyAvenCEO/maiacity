@@ -383,6 +383,19 @@ def keepsOf (st : State) (d : SignerId) (v : VaultId) : List Share :=
   st.shares.filter fun k =>
     k.level.isKeep && k.who == .device d && k.over == v && st.live k.id && isDevice st d k.issuer
 
+/-- Device `d`'s copy setting: the live wide keep shares naming it over a vault it is a device of, issued by that vault
+    (its whole or opened mode, Full copy or Light). It stands for every vault where the device has no keep share of
+    its own (`keepsFor`), so one setting says what it keeps of every vault it syncs. -/
+def copyOf (st : State) (d : SignerId) : List Share :=
+  st.shares.filter fun k =>
+    k.level.isKeep && k.who == .device d && k.wide && k.over == k.issuer && st.live k.id && isDevice st d k.issuer
+
+/-- The keep shares device `d` syncs vault `v` by: its own over `v` (`keepsOf`), else its copy setting (`copyOf`). -/
+def keepsFor (st : State) (d : SignerId) (v : VaultId) : List Share :=
+  match keepsOf st d v with
+  | [] => copyOf st d
+  | ks => ks
+
 /-- Wants `ks` are wants of vault `v`'s entries: in canonical form, each a keep share over `v` that isn't wide, live or
     not. -/
 def wantsOk (st : State) (v : VaultId) (ks : List ShareId) : Bool :=
@@ -402,13 +415,13 @@ def keepsWith (ks : List Share) (on : Share → Bool) : Bool := ks.any fun k => 
 /-- Keep share `k` picks entry `en`, by the entry's marks: it is wide, or among the entry's wants. -/
 def marked (st : State) (en : Entry) (k : Share) : Bool := k.wide || (st.wantsOf en.id).contains k.id
 
-/-- Device `d` wants entry `en`, by its keep shares over the entry's vault and the entry's marks (design §3, Modes):
-    with none, or only never ones, it wants all of the vault but what a never share picks. -/
-def wants (st : State) (d : SignerId) (en : Entry) : Bool := wantsWith (keepsOf st d en.vault) (marked st en)
+/-- Device `d` wants entry `en`, by its keep shares for the entry's vault (`keepsFor`) and the entry's marks (design §3,
+    Modes): with none, or only never ones, it wants all of the vault but what a never share picks. -/
+def wants (st : State) (d : SignerId) (en : Entry) : Bool := wantsWith (keepsFor st d en.vault) (marked st en)
 
-/-- Device `d` keeps whole the files entry `en` brings: a whole share of it over the entry's vault picks the entry.
-    With no keep share there but never ones, the device's own setting says. -/
-def keeps (st : State) (d : SignerId) (en : Entry) : Bool := keepsWith (keepsOf st d en.vault) (marked st en)
+/-- Device `d` keeps whole the files entry `en` brings: a whole share of its keep shares for the entry's vault
+    (`keepsFor`) picks the entry. With none of them whole or opened, the node's own default says (the server's backup). -/
+def keeps (st : State) (d : SignerId) (en : Entry) : Bool := keepsWith (keepsFor st d en.vault) (marked st en)
 
 /-- The types of the entries that carry a vault's schemas and lenses (design §5). -/
 def schemaType : Sym := 900

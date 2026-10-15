@@ -162,10 +162,12 @@
 					t0 = now();
 					const direct = await objectAt(r, ...a);
 					const pageMs = Math.round(now() - t0);
-					const same = tris(direct) === tris(b.obj) && JSON.stringify(size(direct)) === JSON.stringify(size(b.obj));
+					// a skinned actor comes out in its rest pose (its bones come with phase 6), so only its triangles compare
+					const skinned = b.data.stats.skinned > 0;
+					const same = tris(direct) === tris(b.obj) && (skinned || JSON.stringify(size(direct)) === JSON.stringify(size(b.obj)));
 					const row = { ref: r, tris: tris(b.obj), page: pageMs, ...b.ms, size: size(b.obj), same, custom: b.data.stats.custom, skinned: b.data.stats.skinned };
 					out.assets.push(row);
-					add(`${r} comes out the same`, same, `${row.tris.toLocaleString('en')} triangles · box ${row.build} ms + ${row.serialize} ms out, ${row.total} ms in all · page ${pageMs} ms · rebuilt in ${row.rebuild} ms`);
+					add(`${r} comes out the same`, same, `${row.tris.toLocaleString('en')} triangles${skinned ? ' (skinned: in its rest pose until phase 6)' : ''} · box ${row.build} ms + ${row.serialize} ms out, ${row.total} ms in all · page ${pageMs} ms · rebuilt in ${row.rebuild} ms`);
 					show(b.obj);
 				} catch (e) {
 					out.assets.push({ ref: r, error: e.message });

@@ -180,28 +180,45 @@ theorem T28_sync_follows_keeps (edits : List Edit) (d : SignerId) (fl : List Vau
   · rw [hl] at hv
     cases hv
 
-theorem T28_keep_modes (st : State) (d : SignerId) (en : Entry) :
-    (keepsOf st d en.vault = [] → wants st d en = true) ∧
-    (∀ k ∈ keepsOf st d en.vault, k.level.isKeep = true ∧ k.who = .device d ∧ k.over = en.vault ∧
-      st.live k.id = true ∧ isDevice st d k.issuer = true) ∧
-    (∀ k ∈ keepsOf st d en.vault, k.never = true → marked st en k = true → wants st d en = false) ∧
-    (∀ k ∈ keepsOf st d en.vault, k.never = false → marked st en k = true →
-      (∀ k' ∈ keepsOf st d en.vault, k'.never = true → marked st en k' = false) → wants st d en = true) ∧
-    (keeps st d en = true ↔ ∃ k ∈ keepsOf st d en.vault, k.level = .keep .whole ∧ marked st en k = true) := by
-  refine ⟨fun h => by simp [wants, wantsWith, h], fun k hk => ?_, fun k hk hn hm => ?_, fun k hk hn hm hno => ?_,
-    by simp [keeps, keepsWith]⟩
-  · -- what `keepsOf` keeps
-    have h := (List.mem_filter.1 hk).2
+/-- The keep shares a device syncs a vault by are its own over the vault, else its copy setting. -/
+theorem keepsFor_eq (st : State) (d : SignerId) (v : VaultId) :
+    keepsFor st d v = if keepsOf st d v = [] then copyOf st d else keepsOf st d v := by
+  unfold keepsFor
+  split <;> simp_all
+
+/-- Each keep share a device syncs a vault by is a live keep share naming it, issued by a vault it is still a device
+    of: over the vault, or, its copy setting, wide over the vault that issued it. -/
+theorem mem_keepsFor {st : State} {d : SignerId} {v : VaultId} {k : Share} (hk : k ∈ keepsFor st d v) :
+    k.level.isKeep = true ∧ k.who = .device d ∧ (k.over = v ∨ k.wide = true ∧ k.over = k.issuer) ∧
+      st.live k.id = true ∧ isDevice st d k.issuer = true := by
+  rw [keepsFor_eq] at hk
+  split at hk
+  · have h := (List.mem_filter.1 hk).2
     simp only [Bool.and_eq_true, beq_iff_eq] at h
-    exact ⟨h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+    exact ⟨h.1.1.1.1.1, h.1.1.1.1.2, .inr ⟨h.1.1.1.2, h.1.1.2⟩, h.1.2, h.2⟩
+  · have h := (List.mem_filter.1 hk).2
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨h.1.1.1.1, h.1.1.1.2, .inl h.1.1.2, h.1.2, h.2⟩
+
+theorem T28_keep_modes (st : State) (d : SignerId) (en : Entry) :
+    (keepsFor st d en.vault = if keepsOf st d en.vault = [] then copyOf st d else keepsOf st d en.vault) ∧
+    (keepsFor st d en.vault = [] → wants st d en = true) ∧
+    (∀ k ∈ keepsFor st d en.vault, k.level.isKeep = true ∧ k.who = .device d ∧
+      (k.over = en.vault ∨ k.wide = true ∧ k.over = k.issuer) ∧ st.live k.id = true ∧ isDevice st d k.issuer = true) ∧
+    (∀ k ∈ keepsFor st d en.vault, k.never = true → marked st en k = true → wants st d en = false) ∧
+    (∀ k ∈ keepsFor st d en.vault, k.never = false → marked st en k = true →
+      (∀ k' ∈ keepsFor st d en.vault, k'.never = true → marked st en k' = false) → wants st d en = true) ∧
+    (keeps st d en = true ↔ ∃ k ∈ keepsFor st d en.vault, k.level = .keep .whole ∧ marked st en k = true) := by
+  refine ⟨keepsFor_eq st d en.vault, fun h => by simp [wants, wantsWith, h], fun k hk => mem_keepsFor hk,
+    fun k hk hn hm => ?_, fun k hk hn hm hno => ?_, by simp [keeps, keepsWith]⟩
   · -- a never share that picks the entry keeps it out
-    have h : ((keepsOf st d en.vault).any fun k => k.never && marked st en k) = true :=
+    have h : ((keepsFor st d en.vault).any fun k => k.never && marked st en k) = true :=
       List.any_eq_true.2 ⟨k, hk, by simp [hn, hm]⟩
     simp [wants, wantsWith, h]
   · -- a whole or opened share picks it, and no never share does
-    have h1 : ((keepsOf st d en.vault).any fun k => !k.never && marked st en k) = true :=
+    have h1 : ((keepsFor st d en.vault).any fun k => !k.never && marked st en k) = true :=
       List.any_eq_true.2 ⟨k, hk, by simp [hn, hm]⟩
-    have h2 : ((keepsOf st d en.vault).any fun k => k.never && marked st en k) = false := by
+    have h2 : ((keepsFor st d en.vault).any fun k => k.never && marked st en k) = false := by
       rw [Bool.eq_false_iff, ne_eq, List.any_eq_true]
       rintro ⟨k', hk', h'⟩
       simp only [Bool.and_eq_true] at h'

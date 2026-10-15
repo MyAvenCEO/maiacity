@@ -323,6 +323,13 @@ def s6 : List Edit := s5 ++ chain 50 [
 #guard accepted s6 (attempt macC [] (.share (.grant (keepShare 2 coop carol macC .whole (byId welcome)))))
 #guard !accepted s6 (attempt macA [] (.share (.grant (keepShare 2 coop coop macC .whole (byId welcome)) [alice])))
 #guard !accepted s6 (attempt macC [] (.share (.grant (keepShare 2 coop carol macA .whole (byId welcome)))))
+-- Carol's Mac keeps a full copy: a wide whole keep share over her own vault, its copy setting, stands for every vault
+-- where it has no keep share of its own (`keepsFor`), so it keeps Welcome's files whole; Bob's Mac, with neither, syncs
+-- Welcome and keeps none of its files
+def s6copy : List Edit := s6 ++ chain 55 [(macC, [], .share (.grant (keepShare 2 carol carol macC .whole .all)))]
+#guard refused s6copy == []
+#guard ((view s6copy).entry? welcome).any fun en => wants (view s6copy) macC en && keeps (view s6copy) macC en
+#guard ((view s6copy).entry? welcome).any fun en => wants (view s6copy) macB en && !keeps (view s6copy) macB en
 
 def s7 : List Edit := s6 ++ chain 60 [
   (macA, [], .share (.grant (publicShare 3 coop (byId charter)) [alice])),

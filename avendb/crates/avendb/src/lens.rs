@@ -1072,13 +1072,13 @@ pub mod blobs {
     /// The newest schema of each kind of record avenDB writes: every record is written under one of them, or under a
     /// schema of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared
     /// with everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 9] =
-        [DOCUMENT_V2, TODO_V2, ARTICLE_V1, FLOW_V1, FUNCTION_V1, POST_V1, CARD_V1, PROFILE_V1, FILE_V1];
+    pub const SHIPPED: [&str; 10] =
+        [DOCUMENT_V2, TODO_V2, ARTICLE_V1, FLOW_V1, FUNCTION_V1, POST_V1, CARD_V1, PROFILE_V1, FILE_V1, STORY_V1];
 
     /// What the app reads through before a vault's lane holds anything: the shipped schemas, and the lens engine's
     /// worked example, the first versions of documents and todos and the lenses from them to the shipped ones, which
     /// no record is written under any more.
-    pub const ALL: [&str; 13] = [
+    pub const ALL: [&str; 14] = [
         DOCUMENT_V1,
         DOCUMENT_V2,
         TODO_V1,
@@ -1092,6 +1092,7 @@ pub mod blobs {
         CARD_V1,
         PROFILE_V1,
         FILE_V1,
+        STORY_V1,
     ];
 
     pub const DOCUMENT_V1: &str = r#"{
@@ -1364,6 +1365,78 @@ pub mod blobs {
   "required": ["kind"]
 }
 "#;
+
+    /// A story: one content piece from its first spark to every platform it goes out on, the spine the rest of it
+    /// points at (docs/ARCHITECTURE.md §9). Its sparks are entry ids; its journey's beats and its hook variants are
+    /// rows, the chosen hook naming its row's id; a beat's tension is 0 to 100. The stage it is in is a flow's tag.
+    pub const STORY_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Story, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "story" },
+    "title": { "type": "string", "default": "" },
+    "format": { "enum": ["film", "reel", "article", "post", "thread", "inspire", "newsletter", "podcast"] },
+    "sparks": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "from": { "type": "string", "default": "" },
+    "to": { "type": "string", "default": "" },
+    "question": { "type": "string", "default": "" },
+    "beats": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string", "default": "" },
+          "type": {
+            "enum": ["hook", "context", "problem", "intention", "obstacle", "low", "turn", "solution", "vision"]
+          },
+          "text": { "type": "string", "x-loro": "text", "default": "" },
+          "link": { "enum": ["but", "therefore"] },
+          "feel": { "type": "string" },
+          "tension": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["id"]
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "text": { "type": "string", "default": "" },
+          "subject": { "type": "string" },
+          "action": { "type": "string" },
+          "end": { "type": "string" },
+          "contrast": { "type": "string" },
+          "proof": { "type": "string" },
+          "time": { "type": "string" },
+          "anchor": { "type": "string" },
+          "promise": { "type": "string" },
+          "objection": { "type": "string" },
+          "dial": { "type": "integer", "minimum": 1 },
+          "note": { "type": "string" },
+          "image_title": { "type": "array", "items": { "type": "string" }, "default": [] }
+        },
+        "required": ["id"]
+      }
+    },
+    "hook": { "type": "integer", "minimum": 0 },
+    "intro": { "type": "string", "x-loro": "text", "default": "" },
+    "description": { "type": "string", "x-loro": "text", "default": "" },
+    "image_title": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "categories": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "series": { "type": "string", "default": "" },
+    "episode": { "type": "integer", "minimum": 0 },
+    "launch": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
 }
 
 fn built_in_schema(blob: &str) -> Schema {
@@ -1387,6 +1460,7 @@ pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::P
 pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CARD_V1));
 pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
 pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
+pub static STORY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::STORY_V1));
 
 struct BuiltIn {
     document_v1: View,
@@ -1399,7 +1473,7 @@ struct BuiltIn {
 
 static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
     let view = |app: &Schema, lens: &Lens, other: &Schema| View::through(app, lens, other).expect("the lens joins them");
-    let plain = [&*ARTICLE_V1, &*FLOW_V1, &*FUNCTION_V1, &*POST_V1, &*CARD_V1, &*PROFILE_V1, &*FILE_V1];
+    let plain = [&*ARTICLE_V1, &*FLOW_V1, &*FUNCTION_V1, &*POST_V1, &*CARD_V1, &*PROFILE_V1, &*FILE_V1, &*STORY_V1];
     let plain = plain.map(|s| (s.kind().expect("a built-in schema names its kind"), View::plain(s)));
     BuiltIn {
         document_v1: view(&DOCUMENT_V1, &DOCUMENT_LENS, &DOCUMENT_V2),

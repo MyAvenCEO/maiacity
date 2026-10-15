@@ -1,8 +1,9 @@
 /*
- * EVERY ASSET BY ONE NAME — the asset groups of the app (the Things, the Machines, the Actors, the Plants, the Biomes,
- * the Buildings, the Worlds) behind one way to name an asset at a version, so anything can ask for anything:
+ * EVERY ASSET BY ONE NAME — the asset groups of the app (the Factories, the Things, the Machines, the Actors, the
+ * Plants, the Biomes, the Buildings, the Worlds) behind one way to name an asset at a version, so anything can ask for
+ * anything:
  *
- *   group/id@v            machines/powercube@3, plants/apple@1, things/pickup@2, worlds/sandbox-5@9
+ *   group/id@v            machines/powercube@3, plants/apple@1, things/pickup@2, factories/batterypack-line@1
  *   group/id@v:variant    machines/powercube@1:powercube-electric (a kind's variant, as it was at that version)
  *   group/id              its latest version
  *
@@ -21,11 +22,13 @@ export { parseRef, refOf } from './refs.js';
 /** @typedef {import('./groups.js').Item} Item an asset as its group lists it */
 
 /**
- * Every group: the four built as one object (./groups.js, which the asset box loads too) and the three that are not
- * (a biome's recipe, a building's interior kind, a world's page).
+ * Every group: the four built as one object (./groups.js, which the asset box loads too) and the four that are not
+ * (a factory's spec, a biome's recipe, a building's interior kind, a world's page).
  * @type {Record<string, import('./groups.js').Group>}
  */
 export const GROUPS = {
+	// a factory is its spec, not an object: objectAt throws for it as for a biome ($lib/factories/index.js)
+	factories: { label: 'Factories', list: async () => (await import('$lib/factories/index.js')).FACTORIES },
 	...OBJECT_GROUPS,
 	biomes: { label: 'Biomes', list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/biomes')).BIOMES)) },
 	buildings: { label: 'Buildings', list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/buildings')).BUILDINGS)) },
