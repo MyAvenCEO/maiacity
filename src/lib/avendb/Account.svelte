@@ -25,7 +25,7 @@
 	import { native } from '$lib/native';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { CONTENT, FLOW, FUNCTION, FUNCTIONS } from './flows.js';
+	import { CONTENT, FLOW, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { allowed, answer, reads, refs } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded } from './vaults.js';
@@ -439,7 +439,8 @@
 	/**
 	 * Each of avenDB's standard schemas and lenses that vault `company` doesn't hold an entry of yet, added as its own:
 	 * the schemas first, so each lens joins two it holds. Then the flows and functions every app knows (./flows.js)
-	 * that it doesn't hold yet, by their key and their name, and a Public share of its flows and functions, where it
+	 * that it doesn't hold yet, by their key and their name, and the app's code for each it holds whose code is one
+	 * the app ran before (`RETIRED`), not one changed by hand; and a Public share of its flows and functions, where it
 	 * gives none yet, so every app may read them as they read its schemas.
 	 * @param {import('./vaults.js').WorldView} w @param {string} company
 	 */
@@ -462,6 +463,14 @@
 			...FUNCTIONS.filter((f) => !fns.includes(`${f.flow}\n${f.name}`)).map((f) => [FUNCTION, f])
 		];
 		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));
+		const fnEntries = w.entries.filter((e) => e.vault === company && e.type === FUNCTION && !e.deleted && e.record);
+		for (const e of fnEntries) {
+			const app = FUNCTIONS.find((f) => f.flow === e.record?.flow && f.name === e.record?.name);
+			if (!app || !(RETIRED[app.name] ?? []).includes(e.record?.code)) continue;
+			for (const [path, value] of [[['code'], app.code], [['about'], app.about]]) {
+				answer(await send({ op: 'set', entry: e.entry, path, value, as: company }));
+			}
+		}
 		const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
 		const open = w.shares.some((c) => c.over === company && c.who === EVERYONE && types(c) === SHARED.join());
 		if (!open) {

@@ -1,121 +1,13 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-// The Maia Universe stream: its first snippets, hardcoded, and every post published in avenDB, as its server's feed
-// serves them (`FEED`, `fromFeed`): a post an article's content flow made as it was published, which everyone may read.
-
-export const AUTHORS = {
-	samuel: { name: 'Samuel Andert', handle: 'samuel', initials: 'SA', color: '#c8744f' },
-	aven: { name: 'avenCEO', handle: 'avenceo', initials: 'AV', color: '#2f6fbf', ai: true },
-	village: { name: 'Village COOP', handle: 'village', initials: 'VC', color: '#1f7a52', coop: true },
-	city: { name: 'MaiaCity COOP', handle: 'maiacity', initials: 'MC', color: '#8a5fb0', coop: true },
-	forest: { name: 'Food Forest', handle: 'foodforest', initials: 'FF', color: '#6b8a3a', coop: true }
-};
+// The Maia Universe stream: every post published in avenDB, as its server's feed serves them (`FEED`, `fromFeed`): a
+// post an article's content flow made as it was published, which everyone may read, with the pictures it shows that
+// everyone may read too (`FILES`).
+import { laidOut } from '$lib/avendb/article.js';
 
 export const CHANNELS = ['All', 'Devlog', 'theOS', 'Village', 'Food', 'Energy'];
 
-// `doc` stands in for the post's iroh doc id (a fake one for now: 32 random bytes in base32, the way iroh prints a
-// namespace id); the post's page lives on the root, at /<doc>/?t=<slug of the title>.
-// `ago` is in minutes, so the stream reads the same whenever the page is opened
-export const POSTS = [
-	{
-		id: 'p1',
-		doc: 'ckvyzutd3zn5agywule6atscqugopai6ccjun2un53legrsuewha',
-		title: 'Day one of the Maia Universe',
-		author: 'samuel',
-		ago: 12,
-		channel: 'Devlog',
-		text: 'Day one of the Maia Universe. One stream for everything that happens in maiaCITY: the builds, the villages, the COOPs and the avens. In memory for now, so enjoy it before the page reloads.',
-		likes: 24,
-		replies: 3
-	},
-	{
-		id: 'p2',
-		doc: 'i6ooonkvir3fqq46umtm5fhodcwerhuvjcvsdktnhbp5zusw7vvq',
-		title: '24 HEARTS a day',
-		author: 'city',
-		ago: 47,
-		channel: 'theOS',
-		kind: 'stat',
-		stat: { value: '24', unit: 'HEARTS', label: 'every person receives, every day' },
-		text: 'Every HEART you invest becomes one MIND: half for you, half for the COOP treasury. Both melt 7 % a year, so nothing sits idle.',
-		likes: 61,
-		replies: 9
-	},
-	{
-		id: 'p3',
-		doc: 'vplq2zlk4mm5bjhv75j5t4ul36livqmibd2lz7dv75armldo63ya',
-		title: 'First jackfruit under the dome',
-		author: 'forest',
-		ago: 95,
-		channel: 'Food',
-		kind: 'visual',
-		visual: { from: '#a8b88a', to: '#1f7a52', caption: 'Jackfruit, year 3' },
-		text: 'The jackfruit trees under the dome carry their first fruit straight off the trunk. 58 % of the land is food forest, about 1,050 m² for every head.',
-		likes: 112,
-		replies: 14
-	},
-	{
-		id: 'p4',
-		doc: '4lxlibw52ybvfrwa4pgmzjxvdvgfacogm56itxnibfi2j7k547la',
-		title: 'Weekly pay day closed',
-		author: 'aven',
-		ago: 160,
-		channel: 'Village',
-		text: 'Weekly pay day closed. 20 % of every sale went to the holders in real time. No one in the village went hungry this week, and water was never short.',
-		likes: 38,
-		replies: 5
-	},
-	{
-		id: 'p5',
-		doc: 'iizsfajusmklcayp2fpfklmbhoaphzafh6binpsfu6ywcgpl7c6q',
-		title: 'One plant powers the village',
-		author: 'village',
-		ago: 240,
-		channel: 'Energy',
-		kind: 'stat',
-		stat: { value: '3.4', unit: 'MW', label: 'net power from one geothermal plant' },
-		text: 'One EGS plant under the village center, plus 12.6 MW of heat for the domes. The sun on the dome glass does the rest.',
-		likes: 47,
-		replies: 6
-	},
-	{
-		id: 'p6',
-		doc: 'lhwdhyj2p6xmkpdfpkaw4xc4dofqxj6digwpqzhyhbvdthvnz5kq',
-		title: 'Fair participation through fair ownership',
-		author: 'samuel',
-		ago: 380,
-		channel: 'theOS',
-		kind: 'quote',
-		text: 'Fair participation through fair ownership.',
-		note: 'Proposition 2, theOS paper',
-		likes: 89,
-		replies: 11
-	},
-	{
-		id: 'p7',
-		doc: 'zgp5zfqlovogwidtelxcal7vm5ss6cg4xphobfw2obd5kie2adbq',
-		title: 'Seven hexes make a village',
-		author: 'village',
-		ago: 600,
-		channel: 'Village',
-		kind: 'visual',
-		visual: { from: '#efb54d', to: '#c8744f', caption: '7 hexes, one village' },
-		text: 'One hex is a settlement, seven hexes make a village. The village centers sit 1.76 km apart, with a ring road around each.',
-		likes: 73,
-		replies: 8
-	},
-	{
-		id: 'p8',
-		doc: 'nyhrtqrbka2u57avsmfwlqgkolmnawvl5ccs7avr3zatbl6gnsaa',
-		title: 'avenDB keeps every file by its hash',
-		author: 'aven',
-		ago: 1440,
-		channel: 'Devlog',
-		text: 'avenDB now keeps every file by its hash, one source of truth per place: OPFS in your browser, the bucket on the server. Nothing counts until the bucket has it.',
-		likes: 29,
-		replies: 2
-	}
-];
-
+// A post's page lives on the root, at /<doc>/?t=<slug of the title>, `doc` its avenDB entry as an iroh doc id reads.
+// `ago` is in minutes.
 export const ago = (min) =>
 	min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`;
 
@@ -135,11 +27,14 @@ function base32(bytes) {
 	return bits ? out + abc[(value << (5 - bits)) & 31] : out;
 }
 
-// a fake iroh doc id, for a post shared here in memory: 32 random bytes
-export const fakeDocId = () => base32(crypto.getRandomValues(new Uint8Array(32)));
-
 // avenDB's server: its feed, the posts it keeps that everyone may read, newest first
 export const FEED = 'https://avendb.maia.city/feed/posts';
+
+// avenDB's server: the pictures it keeps that everyone may read, each by its vault and the name an article gives it
+export const FILES = 'https://avendb.maia.city/feed/files';
+
+// where picture `name` of vault `vault` is read, which everyone may read
+export const pictureUrl = (vault, name) => `${FILES}/${vault}/${name}`;
 
 // the doc id of an avenDB post: its entry's 32 bytes, from 64 hex digits
 export const docOf = (entry) => base32(entry.match(/../g).map((h) => parseInt(h, 16)));
@@ -166,28 +61,33 @@ export function voiceOf(vault, name, kind) {
 	return { name: called, handle: slug(called), initials, color, ai: kind === 'aven', coop: kind === 'coop', avendb: true };
 }
 
-// a post of avenDB's feed as the stream holds it, `now` in seconds since 1970: its id its entry, its author its vault
-export const fromFeed = (p, now) => ({
+// The cover of a post's article text `md`, as avenDB lays it out, where everyone may read it, among `pictures`: its
+// address and its words, or null.
+function coverOf(md, vault, pictures) {
+	const { coverName, coverAlt } = laidOut(md);
+	return coverName && pictures.includes(coverName) ? { src: pictureUrl(vault, coverName), alt: coverAlt } : null;
+}
+
+// a post of avenDB's feed as the stream holds it, `now` in seconds since 1970: its id its entry, its author its vault,
+// the pictures it shows that everyone may read, by the names it gives them, and its cover where it is one of them
+export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictures : []) => ({
 	id: p.entry,
 	entry: p.entry,
 	doc: docOf(p.entry),
 	title: p.title || 'Untitled',
 	author: p.vault,
-	ago: Math.max(0, Math.round((now - p.created) / 60)),
+	// none for a post whose entry says no time (`created` 0, as before avenDB's devices set their clock)
+	ago: p.created > 0 ? Math.max(0, Math.round((now - p.created) / 60)) : null,
 	channel: p.channel || 'Devlog',
 	text: plain(p.text ?? ''),
 	// its Markdown as written, for its own page, which lays it out as the journal does
 	md: p.text ?? '',
+	vault: p.vault,
+	pictures,
+	cover: coverOf(p.text ?? '', p.vault, pictures),
 	likes: 0,
 	replies: 0,
 	liked: false
 });
-
-// a new post's title: its first words, cut at a word
-export function titleOf(text) {
-	const words = text.trim().split(/\s+/);
-	const head = words.slice(0, 7).join(' ').replace(/[.,:;!?]+$/, '');
-	return words.length > 7 ? `${head}…` : head;
-}
 
 export const postHref = (base, p) => `${base}/${p.doc}/?t=${slug(p.title)}`;

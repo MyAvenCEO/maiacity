@@ -770,6 +770,15 @@ may read; the Maia Universe page takes it in and shows each post under the vault
 feed as its article goes back from Published: its function deletes it and takes its tag off, so no Public share
 reaches it.
 
+An article shows the pictures of its vault's Library by their names (`<hash>.jpg`), and a post lists those of them
+everyone may read (`pictures`): each a `file` entry of the vault, public and not deleted (`world::public_files`). The
+server serves each whole, as it opens it, at `GET avendb.maia.city/feed/files/<vault>/<name>`, pictures alone, by
+their names' endings; the post's page shows its cover and its pictures from there, and leaves out any other. Publishing
+an article asks first whether the pictures it shows that are not public yet go public too: if so, the Publish function
+tags them with the stage's tag, as it tags the post, so the same Public share covers them; going back from Published,
+the other function takes the tag off those no other published entry shows. A published article that leaves any out
+offers it again.
+
 ## 10. Post-quantum only
 
 Every node trusts no elliptic curve alone, and there is no switch back.

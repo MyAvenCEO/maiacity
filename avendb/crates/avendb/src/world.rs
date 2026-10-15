@@ -691,12 +691,14 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
 
 /// The posts device `me` opens that everyone may read, newest first: each entry of type `POST` whose audience is
 /// public and that isn't deleted (`DELETED`), as the Maia Universe stream shows it, `{entry, vault, name, kind,
-/// created, title, text, channel, about}`, its vault's name as its profile reads (`null` where it has none) and kind,
-/// when it was created, in seconds since 1970, and the entry it is about (`null` for none). What avenDB's server serves
-/// as its feed, of what it keeps (avendb-server's `feed`): a post leaves it once its tag no longer reaches a Public
-/// share, as when its article goes back to a draft.
+/// created, title, text, channel, about, pictures}`, its vault's name as its profile reads (`null` where it has none)
+/// and kind, when it was created, in seconds since 1970, the entry it is about (`null` for none), and the names of the
+/// files of its vault everyone may read that its text shows (`public_files`). What avenDB's server serves as its feed,
+/// of what it keeps (avendb-server's `feed`): a post leaves it once its tag no longer reaches a Public share, as when
+/// its article goes back to a draft, and a picture once its own does.
 pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
     let st = lab.state(me);
+    let files = public_files(lab, me);
     let mut names: BTreeMap<VaultId, Option<String>> = BTreeMap::new();
     let mut posts = vec![];
     for en in st.entries().iter().filter(|en| st.public_key(KeyFam::Audience(en.vault, en.audience()))) {
@@ -711,6 +713,9 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
         let name = names.entry(en.vault).or_insert_with(|| profile_of(lab, me, en.vault).map(|(_, name)| name));
         let kind = st.vault(en.vault).map(|v| kind_name(v.kind));
         let field = |k: &str| record.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
+        let text = text.unwrap_or_default();
+        let ours = files.keys().filter(|(v, name)| *v == en.vault && text.contains(name.as_str()));
+        let pictures: Vec<&str> = ours.map(|(_, name)| name.as_str()).collect();
         let post = json!({
             "entry": en.id.to_hex(),
             "vault": en.vault.to_hex(),
@@ -718,14 +723,59 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
             "kind": kind,
             "created": created,
             "title": title,
-            "text": text.unwrap_or_default(),
+            "text": text,
             "channel": field("channel"),
             "about": field("about"),
+            "pictures": pictures,
         });
         posts.push((created, en.id, post));
     }
     posts.sort_by_key(|p| std::cmp::Reverse((p.0, p.1)));
     posts.into_iter().map(|(_, _, post)| post).collect()
+}
+
+/// A file everyone may read, as a device opens it (`public_files`): its root, its plaintext length and its media type.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublicFile {
+    pub root: FileRoot,
+    pub len: u64,
+    pub media: String,
+}
+
+/// The files device `me` opens that everyone may read, by their vault and their name: each entry of type `FILE` whose
+/// audience is public and that isn't deleted (`DELETED`), by the name its record reads, with the first file its writes
+/// bring that the device opens; of two of a vault named alike, the first. An article shows a picture of its vault's
+/// Library by its name (`<hash>.jpg`), so a public post names the pictures it shows that are among these
+/// (`public_posts`), which avenDB's server serves (avendb-server's `feed`).
+pub fn public_files(lab: &Lab, me: SignerId) -> BTreeMap<(VaultId, String), PublicFile> {
+    files_everyone_reads(lab, me, |_| true)
+}
+
+/// The file of vault `vault` named `name` that device `me` opens and everyone may read (`public_files`), if any.
+pub fn public_file(lab: &Lab, me: SignerId, vault: VaultId, name: &str) -> Option<PublicFile> {
+    files_everyone_reads(lab, me, |en| en.vault == vault).remove(&(vault, name.to_string()))
+}
+
+/// `public_files`, of the entries `of` picks.
+fn files_everyone_reads(
+    lab: &Lab,
+    me: SignerId,
+    of: impl Fn(&Entry) -> bool,
+) -> BTreeMap<(VaultId, String), PublicFile> {
+    let st = lab.state(me);
+    let mut files = BTreeMap::new();
+    let public = st.entries().iter().filter(|en| of(en) && st.public_key(KeyFam::Audience(en.vault, en.audience())));
+    for en in public.filter(|en| typed(lab, me, en.id, FILE)) {
+        let Some(What::Record { title, record, deleted: false, .. }) = lab.item(me, en.id).map(|i| record(i.record()))
+        else {
+            continue;
+        };
+        let media = record.get("media").and_then(Value::as_str).unwrap_or_default().to_string();
+        if let Some((root, len)) = lab.entry_files(me, en.id).into_iter().find_map(|(root, len)| Some((root, len?))) {
+            files.entry((en.vault, title)).or_insert(PublicFile { root, len, media });
+        }
+    }
+    files
 }
 
 /// The vaults a person's claim of avenDB's server founds beside their human vault (`avendb_net`'s `Node::found_with`,

@@ -4,6 +4,11 @@
 //! (`Access-Control-Allow-Origin: *`), as it is what everyone reads anyway: a post is in it while a Public share of its
 //! vault reaches it, as the content flow's published stage does, and leaves it as its article goes back to a draft. The
 //! server works it out at most every few seconds (`FRESH`), however many ask.
+//!
+//! Beside it, the pictures everyone may read (`GET /feed/files/<vault>/<name>`, `FILES`): each a file entry of a vault,
+//! public, by the name an article shows it by, served whole as the server opens it (`world::public_file`), so that a
+//! post's page shows its cover and its pictures. Pictures alone, by their names' endings (`media_of`): nothing a page
+//! would run.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -11,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
+use avendb::id::VaultId;
 use avendb::world;
 use avendb_net::Node;
 use http_body_util::Full;
@@ -27,6 +33,16 @@ use crate::Abort;
 
 /// Where the feed is served.
 pub const PATH: &str = "/feed/posts";
+
+/// Where the pictures everyone may read are served, each at `FILES` `<vault>/<name>`: its vault in 64 hex digits, and
+/// the name an article shows it by.
+pub const FILES: &str = "/feed/files/";
+
+/// The most bytes of a picture the feed serves, which it reads whole.
+const LARGEST: u64 = 32 << 20;
+
+/// How long a picture is served again from a cache: it is named by its content, but may stop being public.
+const KEPT: &str = "public, max-age=300";
 
 /// How long the feed the server worked out is served again before it works it out anew.
 const FRESH: Duration = Duration::from_secs(5);
@@ -81,12 +97,16 @@ impl Feed {
     }
 }
 
-/// The answer to `request`: the feed for a GET or HEAD of `PATH`, nothing for a browser's OPTIONS before one, and not
-/// found for anything else.
+/// The answer to `request`: the feed for a GET or HEAD of `PATH`, a picture for one of `FILES` (`picture`), nothing
+/// for a browser's OPTIONS before either, and not found for anything else.
 async fn answer(request: Request<Incoming>, node: Arc<Node>, last: Last) -> Result<Response<Full<Bytes>>, Infallible> {
-    let (status, body) = match (request.method(), request.uri().path()) {
+    let path = request.uri().path();
+    if let Some(at) = path.strip_prefix(FILES).filter(|_| matches!(*request.method(), Method::GET | Method::HEAD)) {
+        return Ok(picture(at, &node).await);
+    }
+    let (status, body) = match (request.method(), path) {
         (&Method::GET | &Method::HEAD, PATH) => (StatusCode::OK, posts(&node, &last).await),
-        (&Method::OPTIONS, PATH) => (StatusCode::NO_CONTENT, Bytes::new()),
+        (&Method::OPTIONS, _) if path == PATH || path.starts_with(FILES) => (StatusCode::NO_CONTENT, Bytes::new()),
         _ => (StatusCode::NOT_FOUND, Bytes::from_static(br#"{"error":"no such feed"}"#)),
     };
     let mut response = Response::new(Full::new(body));
@@ -110,4 +130,55 @@ async fn posts(node: &Node, last: &Last) -> Bytes {
     let body = Bytes::from(serde_json::to_vec(&json!({ "posts": posts })).expect("JSON writes"));
     *last.lock().expect("the feed") = Some((Instant::now(), body.clone()));
     body
+}
+
+/// The media type of a picture named `name`, by its ending, as an article shows one (the page's `PICTURE`): none for
+/// any other.
+fn media_of(name: &str) -> Option<&'static str> {
+    let (_, ending) = name.rsplit_once('.')?;
+    Some(match ending {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "avif" => "image/avif",
+        _ => return None,
+    })
+}
+
+/// The answer to a GET or HEAD of `FILES` `at`, `<vault>/<name>`: the picture of that vault by that name that
+/// everyone may read, whole, as the server opens it (`world::public_file`); not found for none, or for a file that
+/// isn't a picture or is larger than `LARGEST`; and unavailable while the server can't read its bytes.
+async fn picture(at: &str, node: &Node) -> Response<Full<Bytes>> {
+    let asked = at.split_once('/').and_then(|(vault, name)| Some((VaultId::from_hex(vault)?, name.to_string())));
+    let picture = asked.and_then(|(vault, name)| Some((vault, media_of(&name)?, name)));
+    let Some((vault, media, name)) = picture else { return plain(StatusCode::NOT_FOUND, "no such picture") };
+    let public = node.read(move |lab, me| world::public_file(lab, me, vault, &name)).await;
+    let Some(file) = public.filter(|f| f.len <= LARGEST) else {
+        return plain(StatusCode::NOT_FOUND, "no such picture");
+    };
+    let bytes = match node.read_file(file.root, 0..file.len).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::debug!("avenDB feed: a picture of {}: {e:#}", vault.to_hex());
+            return plain(StatusCode::SERVICE_UNAVAILABLE, "the server can't read this picture yet");
+        }
+    };
+    let mut response = Response::new(Full::new(Bytes::from(bytes)));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(media));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(KEPT));
+    response
+}
+
+/// An answer of `status` that says `why`, as text.
+fn plain(status: StatusCode, why: &'static str) -> Response<Full<Bytes>> {
+    let mut response = Response::new(Full::new(Bytes::from_static(why.as_bytes())));
+    *response.status_mut() = status;
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    response
 }
