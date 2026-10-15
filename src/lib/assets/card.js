@@ -1,6 +1,7 @@
 /*
  * AN ASSET'S CARD — what a world, a viewer or a film needs to know of an asset without building it: its name and
- * version, its real size and weight in triangles, its parts (the catalog its kit sealed), the sliders its solver reads.
+ * version (its ref, with the values it was built with), its real size and weight in triangles, what its recipe is
+ * built with (../params.js), its parts (the catalog its kit sealed), the sliders its solver reads.
  * Read off a built object, by the same code in the page and in the asset box, and always checked against the card's
  * schema (./schemas/card.v1.json) before it is used; the card a pack carries is this, plus its levels of detail and its
  * impostor once those are baked (phase 5).
@@ -35,6 +36,8 @@ export function trianglesOf(obj) {
  */
 export function cardOf(ref, obj, { item, version }) {
 	const { group, id, variant } = parseRef(ref);
+	// the values it was built with, as the ref on the object names them (../refs.js `objectIn`)
+	const built = typeof obj.userData.ref === 'string' && obj.userData.ref.includes('?') ? parseRef(obj.userData.ref).params : undefined;
 	const v = Array.isArray(version.build) ? version.build.find((x) => x.id === (variant ?? version.build[0]?.id)) : null;
 	const box = new THREE.Box3().setFromObject(obj);
 	const size = box.isEmpty() ? [0, 0, 0] : box.getSize(new THREE.Vector3()).toArray().map(mm);
@@ -46,7 +49,7 @@ export function cardOf(ref, obj, { item, version }) {
 	return set({
 		format: 'asset-card',
 		v: 1,
-		ref: refOf(group, id, version.v, variant ?? (v ? v.id : undefined)),
+		ref: refOf(group, id, version.v, variant ?? (v ? v.id : undefined), built),
 		group,
 		id,
 		version: version.v,
@@ -56,6 +59,7 @@ export function cardOf(ref, obj, { item, version }) {
 		size,
 		triangles: trianglesOf(obj),
 		skinned,
+		params: item.params?.length ? plain(item.params) : undefined,
 		catalog: catalog && plain(catalog),
 		controls: sliders && Object.entries(sliders).map(([cid, c]) => set({ id: cid, label: c.label, min: c.min, max: c.max, value: c.value, step: c.step, unit: c.unit, digits: c.digits, ends: c.ends }))
 	});

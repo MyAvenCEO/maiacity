@@ -6,7 +6,7 @@
   "properties": {
     "format": { "const": "asset-card" },
     "v": { "const": 1 },
-    "ref": { "type": "string", "maxLength": 200, "pattern": "^[a-z]+/[a-z0-9-]+@[0-9]+(:[a-z0-9-]+)?$" },
+    "ref": { "$ref": "#/$defs/ref" },
     "group": { "enum": ["machines", "actors", "things", "plants"] },
     "id": { "$ref": "#/$defs/id" },
     "version": { "type": "integer", "minimum": 1, "maximum": 100000 },
@@ -57,7 +57,7 @@
               "step": { "type": "integer", "minimum": 0, "maximum": 1000 },
               "source": { "$ref": "#/$defs/line" },
               "unit": { "$ref": "#/$defs/line" },
-              "ref": { "type": "string", "maxLength": 200, "pattern": "^[a-z]+/[a-z0-9-]+@[0-9]+(:[a-z0-9-]+)?$" }
+              "ref": { "$ref": "#/$defs/ref" }
             },
             "required": ["id", "label"]
           }
@@ -82,6 +82,26 @@
         }
       },
       "required": ["parts"]
+    },
+    "params": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/key" },
+          "label": { "$ref": "#/$defs/line" },
+          "type": { "enum": ["number", "integer", "string"] },
+          "value": { "anyOf": [{ "type": "number" }, { "type": "string", "maxLength": 200 }] },
+          "min": { "type": "number" },
+          "max": { "type": "number" },
+          "step": { "type": "number", "minimum": 0 },
+          "names": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/line" } },
+          "maxLength": { "type": "integer", "minimum": 1, "maximum": 200 }
+        },
+        "required": ["id", "label", "type", "value"]
+      }
     },
     "controls": {
       "type": "array",
@@ -139,6 +159,7 @@
   "required": ["format", "v", "ref", "group", "id", "version", "label", "size", "triangles"],
   "$defs": {
     "id": { "type": "string", "maxLength": 80, "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "ref": { "type": "string", "maxLength": 300, "pattern": "^[a-z]+/[a-z0-9-]+@[0-9]+(:[a-z0-9-]+)?(\\?[A-Za-z][A-Za-z0-9_.-]*=[A-Za-z0-9%+*._-]*(&[A-Za-z][A-Za-z0-9_.-]*=[A-Za-z0-9%+*._-]*)*)?$" },
     "key": { "type": "string", "maxLength": 80, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
     "line": { "type": "string", "maxLength": 300 },
     "text": { "type": "string", "maxLength": 4000 },
