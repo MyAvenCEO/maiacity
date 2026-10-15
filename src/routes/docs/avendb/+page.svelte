@@ -143,7 +143,7 @@
 		'File names, types and tags',
 		'What a share picks, or what it allows',
 		'Any key, except those published for Everyone',
-		'Whether two people hold the same film: every file has its own random key'
+		'Whether two people hold the same film: each person’s files are keyed by a secret of their own vault'
 	];
 	const bucketSees = [
 		'Sealed objects, their sizes, and names that are hashes',
@@ -1318,7 +1318,7 @@
 						<text class="m" x="150" y="66">65,520 B</text>
 						<text class="m" x="264" y="66">65,520 B</text>
 						<text class="m" x="378" y="66">65,520 B</text>
-						<text class="s" x="530" y="58">random key K for this file</text>
+						<text class="s" x="530" y="58">key K derived from the file, keyed by the vault</text>
 						<text class="s" x="530" y="76">ChaCha20-Poly1305, nonce = segment number + last flag</text>
 						<path class="thin" d="M240 84 v24" />
 						<path class="thin" d="M234 100 l6 8 l6 -8" />
@@ -1366,8 +1366,9 @@
 				<figcaption>
 					This format is called sealed blob v1. The tag adds 0.024 %. Pieces cannot be swapped or reordered, because every
 					nonce counts segments across the whole file. Whoever holds the key verifies by decrypting; everyone else verifies
-					the ciphertext with BLAKE3. Each file has its own random key, so two vaults holding the same film hold two
-					unrelated blobs.
+					the ciphertext with BLAKE3. A file’s key is derived from what it holds, keyed by a secret of the person’s vault: the
+					same film added again by any of their devices seals to the same blobs, kept once, while another person’s copy
+					seals to unrelated ones.
 				</figcaption>
 			</figure>
 		</section>
