@@ -79,7 +79,9 @@ use avendb::slice::Selector;
 use avendb::words::hex;
 use avendb::world;
 use avendb_net::shelf::hash_of;
-use avendb_net::{Authenticator, Call, NoBytes, NoCeremony, Node, Offer, Options, Progress, Shelf, Stage, Step, Steps};
+use avendb_net::{
+    Authenticator, Call, NoBytes, NoCeremony, Node, Offer, Options, Progress, Shelf, Source, Stage, Step, Steps,
+};
 use bytes::Bytes;
 use iroh::RelayUrl;
 use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
@@ -482,16 +484,16 @@ impl Device {
     /// (`avendb_net::Node::run`): every read and change of the database it holds, whatever their schema, and of its
     /// vaults, as JSON. Its answer, `{"ok": ...}`, `{"refused": ..., "why": ...}`, or for a change its vault's owners
     /// approve with no `authenticator` at hand, `{"approve": ...}`; and for `read_file` the bytes it read, beside.
-    /// `put_file` reads its bytes from `bytes`. The vaults it follows (`follow`) it keeps on its shelf too, in what
-    /// opens it again (`Meta`), so it follows them again once it opens.
-    pub async fn run<S, A>(
+    /// `put_file` reads its bytes from `bytes`, twice (`avendb_net::Source`). The vaults it follows (`follow`) it
+    /// keeps on its shelf too, in what opens it again (`Meta`), so it follows them again once it opens.
+    pub async fn run<B, A>(
         &self,
         op: Value,
-        bytes: Option<S>,
+        bytes: Option<B>,
         authenticator: Option<&A>,
     ) -> Result<(Value, Option<Vec<u8>>)>
     where
-        S: Stream<Item = io::Result<Bytes>> + Unpin,
+        B: Source,
         A: Authenticator,
     {
         let follows = engine::name(&op) == Some("follow");
@@ -756,7 +758,8 @@ impl PageDevice {
     /// answer, `{ok}`, `{refused, why}`, or for a change its vault's owners approve when no `ceremony` is passed,
     /// `{approve}`, which makes nothing. `ceremony(challenge, step)` is the passkey's, for such a change, as a start
     /// takes it. `read(at, n)` hands over a `put_file`'s bytes from `at` on, `n` of them, as a promise of a
-    /// `Uint8Array`, a megabyte at a time (`CHUNK`), so that a file of any size passes through a little memory.
+    /// `Uint8Array`, a megabyte at a time (`CHUNK`), so that a file of any size passes through a little memory; it
+    /// reads the file twice, from the start each time, once for its key and once to seal it.
     /// `read_file`'s answer carries the bytes it read beside, as `bytes`, a `Uint8Array`. Rejected only where no answer
     /// comes: a ceremony cancelled, the store or the network failing, a file's bytes more or fewer than its length.
     pub fn run(&self, op: JsValue, ceremony: Option<Function>, read: Option<Function>) -> Promise {
@@ -765,7 +768,7 @@ impl PageDevice {
             let op = String::from(js_sys::JSON::stringify(&op)?);
             let op: Value = serde_json::from_str(&op).map_err(|e| JsError::new(&format!("no op: {e}")))?;
             let len = op.get("len").and_then(Value::as_u64).unwrap_or(0);
-            let (bytes, ceremony) = (read.map(|read| chunks(read, len)), ceremony.map(Js));
+            let (bytes, ceremony) = (read.map(|read| move || chunks(read.clone(), len)), ceremony.map(Js));
             let (answer, bytes) = device.run(op, bytes, ceremony.as_ref()).await.map_err(js_value)?;
             let answer = js_sys::JSON::parse(&answer.to_string())?;
             if let Some(bytes) = bytes {

@@ -339,18 +339,27 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(run(&mut app, follow).await, Ok(json!({ "follow": [hex(&avenceo.0)] })));
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!(status["meta"]["follow"], json!([hex(&avenceo.0)]));
-    // a film, a chunk at a time in base64, as native.js hands it over; then any range of it back, in base64 too
+    // a film, a chunk at a time in base64, as native.js hands it over, once for its key and once to seal it; then
+    // any range of it back, in base64 too
     let film: Vec<u8> = (0..100_000u32).map(|i| (i * 7 % 253) as u8).collect();
     let put = json!({ "op": "put_file", "vault": vault, "name": "Film.mp4", "media": "video/mp4", "tags": [],
         "len": film.len() });
     let n = app.call("fileStart", json!([put])).await.expect("a file's number");
-    let mut at = 0;
-    for chunk in film.chunks(40_000) {
-        assert_eq!(app.call("fileChunk", json!([n, at, BASE64.encode(chunk)])).await, Ok(Value::Null));
-        at += chunk.len();
+    let mut passes = 0;
+    loop {
+        passes += 1;
+        let mut at = 0;
+        for chunk in film.chunks(40_000) {
+            assert_eq!(app.call("fileChunk", json!([n, at, BASE64.encode(chunk)])).await, Ok(Value::Null));
+            at += chunk.len();
+        }
+        let out_of_order = app.call("fileChunk", json!([n, 5, BASE64.encode(b"late")])).await;
+        assert!(out_of_order.is_err_and(|e| e.contains("came before")), "each chunk in order");
+        if app.call("fileAgain", json!([n])).await != Ok(json!(true)) {
+            break;
+        }
     }
-    let out_of_order = app.call("fileChunk", json!([n, 5, BASE64.encode(b"late")])).await;
-    assert!(out_of_order.is_err_and(|e| e.contains("came before")), "each chunk in order");
+    assert_eq!(passes, 2, "read twice: for its key, then to seal it");
     let made = app.call("fileEnd", json!([n])).await.expect("the op's answer")["ok"].clone();
     let (root, size) = (made["root"].clone(), made["size"].clone());
     let file = shown(&mut app, &made["entry"], "the film", |f| f["kind"] == "file").await;

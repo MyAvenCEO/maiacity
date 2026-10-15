@@ -2,8 +2,11 @@
 //! travels and is kept as iroh blobs that anyone can verify and only its readers can open, and so that any range of it
 //! opens on its own.
 //!
-//! Each file has a key of its own, 32 random bytes (`FileKey`), never derived from what it holds, so two vaults that
-//! hold the same film hold two unrelated blobs. Its plaintext is cut into segments of 65,520 bytes (`SEGMENT`), each
+//! Each file has a key of its own (`FileKey`). A device derives it from what the file holds, keyed by a secret of the
+//! person's vault (`Convergent`, `Lab::convergence`): the same file sealed again by any device of that vault, into any
+//! vault it acts for, seals to the same bytes, which iroh's content addressing then keeps once; another person's
+//! devices, without that secret, derive an unrelated key, so nobody else can tell which files they hold. A device
+//! with no such secret takes 32 random bytes. Its plaintext is cut into segments of 65,520 bytes (`SEGMENT`), each
 //! encrypted with ChaCha20-Poly1305 under the file's payload key (a key derived from the file key for this purpose
 //! alone), its nonce the segment's number in the file, big-endian in 11 bytes, then a byte that marks the file's last
 //! segment, as in age's STREAM. Each sealed segment is exactly 64 KiB (`SEALED`): four of iroh-blobs' 16 KiB chunk
@@ -50,6 +53,14 @@ impl FileKey {
         FileKey(key)
     }
 
+    /// The key of a file whose plaintext `bytes` hold all of it: its convergent key under `secret`, as `Convergent`
+    /// derives it a piece at a time.
+    pub fn convergent(secret: &[u8; 32], bytes: &[u8]) -> FileKey {
+        let mut c = Convergent::new(secret, bytes.len() as u64);
+        c.push(bytes);
+        c.key()
+    }
+
     /// The key the edit that brought the file carried.
     pub fn from_bytes(key: [u8; 32]) -> FileKey {
         FileKey(key)
@@ -84,6 +95,46 @@ impl ZeroizeOnDrop for FileKey {}
 impl std::fmt::Debug for FileKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("FileKey(..)")
+    }
+}
+
+/// A file's convergent key as its plaintext comes, a chunk at a time: cSHAKE256 keyed by the person's secret, over the
+/// format, the file's length and every byte of it. Whoever holds the secret and the same bytes derives the same key;
+/// nobody without the secret learns anything of the bytes from it. The key seals one plaintext only, so a sealer that
+/// derives it before it seals checks it again over the bytes it seals (`Node::store_file`): two different files
+/// under one key would share their nonces.
+pub struct Convergent {
+    hasher: hash::Hasher,
+    len: u64,
+    seen: u64,
+}
+
+impl Convergent {
+    /// The key of a file of `len` bytes under `secret`, before a byte of it.
+    pub fn new(secret: &[u8; 32], len: u64) -> Convergent {
+        let mut hasher = hash::Hasher::new("avendb convergent file key");
+        hasher.update(secret).update(&[VERSION]).update(&len.to_be_bytes());
+        Convergent { hasher, len, seen: 0 }
+    }
+
+    /// The file's next bytes.
+    pub fn push(&mut self, bytes: &[u8]) {
+        self.seen += bytes.len() as u64;
+        self.hasher.update(bytes);
+    }
+
+    /// The bytes it saw so far.
+    pub fn seen(&self) -> u64 {
+        self.seen
+    }
+
+    /// The key, once every byte of the file came: none if more or fewer came than its length.
+    pub fn finish(self) -> Option<FileKey> {
+        (self.seen == self.len).then(|| FileKey(self.hasher.finalize()))
+    }
+
+    fn key(self) -> FileKey {
+        FileKey(self.hasher.finalize())
     }
 }
 

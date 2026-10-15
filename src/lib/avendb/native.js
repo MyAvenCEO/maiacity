@@ -94,7 +94,7 @@ export class NativeDevice {
 	 * Op `op`, any read or change of the database (avendb/docs/ARCHITECTURE.md §8): its answer, `{ ok }` or
 	 * `{ refused, why }`; the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so
 	 * `ceremony` goes unused. A `put_file` op's bytes come from `read(at, n)`, a megabyte at a time, each in base64 to
-	 * the app's device, which seals them into its store as they come; a `read_file` op's come back as `bytes`, as the
+	 * the app's device, which reads them twice, for the file's key and to seal them into its store; a `read_file` op's come back as `bytes`, as the
 	 * page's device hands them.
 	 * @param {any} op @param {unknown} [ceremony] @param {(at: number, n: number) => Promise<Uint8Array>} [read]
 	 */
@@ -106,18 +106,21 @@ export class NativeDevice {
 	}
 
 	/**
-	 * A `put_file` op, its bytes handed over as `read` reads them: the op's answer.
+	 * A `put_file` op, its bytes handed over as `read` reads them, as often as the device reads the file (twice: once
+	 * for its key, derived from what it holds, then to seal it): the op's answer.
 	 * @param {{ len: number }} op @param {(at: number, n: number) => Promise<Uint8Array>} read
 	 */
 	async putFile(op, read) {
 		const n = await call('fileStart', op);
 		try {
-			for (let at = 0; at < op.len; ) {
-				const bytes = await read(at, Math.min(CHUNK, op.len - at));
-				if (!bytes.length) throw new Error('the file ends early');
-				await call('fileChunk', n, at, base64(bytes));
-				at += bytes.length;
-			}
+			do {
+				for (let at = 0; at < op.len; ) {
+					const bytes = await read(at, Math.min(CHUNK, op.len - at));
+					if (!bytes.length) throw new Error('the file ends early');
+					await call('fileChunk', n, at, base64(bytes));
+					at += bytes.length;
+				}
+			} while (await call('fileAgain', n));
 			return await call('fileEnd', n);
 		} catch (e) {
 			await call('fileDrop', n).catch(() => {});

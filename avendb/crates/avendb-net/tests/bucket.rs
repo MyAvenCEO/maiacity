@@ -215,7 +215,8 @@ async fn a_server_states_a_holding_only_once_its_bucket_has_it() {
     }
     let photo_len = 300_000;
     let bytes = Bytes::from((0..photo_len).map(|j| (j % 251) as u8).collect::<Vec<u8>>());
-    let photo = mac.store_file(photo_len, stream::iter([Ok(bytes)])).await.expect("Alice's Mac seals a photo");
+    let photo = mac.store_file(photo_len, || stream::iter([Ok(bytes.clone())])).await;
+    let photo = photo.expect("Alice's Mac seals a photo");
     let root = photo.root;
     let write = move |lab: &mut Lab, me| {
         let welcome = lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))?;

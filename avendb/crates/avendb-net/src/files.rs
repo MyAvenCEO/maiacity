@@ -1,7 +1,9 @@
 //! Files over iroh-blobs (`docs/ARCHITECTURE.md` §13): a node keeps one blob store, over its shelf (`shelf`), or else
 //! in memory, and a file is its sealed pieces there, each a blob, with the
-//! HashSeq of their hashes when there are several. A node brings a file by sealing it as it reads it, a piece at a
-//! time, under a key of its own (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its
+//! HashSeq of their hashes when there are several. A node brings a file by reading it twice (`Source`): once to
+//! derive its key from what it holds, keyed by its person's vault (`Lab::convergence`, `sealed::Convergent`), so that
+//! the same file brought again seals to the same pieces, which the store keeps once; then to seal it, a piece at a
+//! time (`Node::store_file`), for a write to name (`Lab::bring`); reads any range of a file its
 //! device opens, from its own store or else from a peer that may hand it over, fetching only the sealed segments that
 //! hold the range, which it keeps (`Node::read_file`); and keeps whole every file its device's keep shares say to keep,
 //! fetched from its peers as soon as it learns of them: where its device has none over a vault but never ones, every
@@ -29,7 +31,7 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use avendb::id::{BlobId, SignerId};
-use avendb::sealed::{Brought, FileKey, FileRoot, PIECE, PIECE_SEGMENTS, SEALED, SEGMENT, Sealer, open};
+use avendb::sealed::{Brought, Convergent, FileKey, FileRoot, PIECE, PIECE_SEGMENTS, SEALED, SEGMENT, Sealer, open};
 use avendb::wire::FileHold;
 use bytes::Bytes;
 use iroh::EndpointId;
@@ -58,15 +60,37 @@ fn content(root: &FileRoot) -> HashAndFormat {
     HashAndFormat::new(Hash::from_bytes(root.hash), format)
 }
 
+/// A file's bytes as a node brings it (`Node::store_file`): each `open`, all of them again, from the first. The node
+/// reads them twice: once to derive the file's key from what it holds (`sealed::Convergent`), once to seal them.
+pub trait Source {
+    /// The bytes, a chunk at a time.
+    type Read: Stream<Item = io::Result<Bytes>> + Unpin;
+
+    /// All of the file's bytes, from the first.
+    fn open(&mut self) -> Self::Read;
+}
+
+impl<F, S> Source for F
+where
+    F: FnMut() -> S,
+    S: Stream<Item = io::Result<Bytes>> + Unpin,
+{
+    type Read = S;
+
+    fn open(&mut self) -> S {
+        self()
+    }
+}
+
 impl Node {
-    /// A file of `len` bytes, sealed under a key of its own as it is read from `data`, a piece at a time, into this
-    /// node's blob store, where it stays: the file for a write to bring (`Lab::bring`), which names it by its root.
-    /// Fails if `data` holds more or fewer bytes than `len`, or fails itself.
-    pub async fn store_file<S>(&self, len: u64, data: S) -> Result<Brought>
-    where
-        S: Stream<Item = io::Result<Bytes>> + Unpin,
-    {
-        self.shared.store_file(len, data).await
+    /// A file of `len` bytes, read from `source` twice: once for its key, derived from what it holds under its
+    /// device's convergence secret (`Lab::convergence`), or 32 random bytes where it has none; then sealed under that
+    /// key, a piece at a time, into this node's blob store, where it stays: the file for a write to bring
+    /// (`Lab::bring`), which names it by its root. The same file brought again, by any device of the same vault, seals
+    /// to the same pieces and root, which the store keeps once. Fails if `source` holds more or fewer bytes than
+    /// `len`, reads other bytes the second time, or fails itself.
+    pub async fn store_file<B: Source>(&self, len: u64, source: B) -> Result<Brought> {
+        self.shared.store_file(len, source).await
     }
 
     /// The plaintext bytes `range` of file `root`, cut to the file, which this node's device opens (`Lab::file`): the
@@ -142,18 +166,38 @@ fn start(store: &Store) -> (u64, mpsc::Sender<Bytes>, JoinHandle<Result<TempTag>
 
 impl Shared {
     /// `Node::store_file`.
-    async fn store_file<S>(self: &Arc<Self>, len: u64, mut data: S) -> Result<Brought>
-    where
-        S: Stream<Item = io::Result<Bytes>> + Unpin,
-    {
-        let key = FileKey::from_bytes(*crate::server::random()?);
+    async fn store_file<B: Source>(self: &Arc<Self>, len: u64, mut source: B) -> Result<Brought> {
+        let secret = self.lab(|lab, me| lab.convergence(me)).await;
+        let key = match &secret {
+            Some(secret) => {
+                let mut convergent = Convergent::new(secret, len);
+                let mut data = source.open();
+                while let Some(bytes) = data.next().await {
+                    convergent.push(&bytes?);
+                    ensure!(convergent.seen() <= len, "more bytes than the file's {len}");
+                }
+                convergent.finish().with_context(|| format!("fewer bytes than the file's {len}"))?
+            }
+            None => FileKey::from_bytes(*crate::server::random()?),
+        };
+        // the bytes it seals derive the same key again: one key never seals two files, whose segments' nonces it
+        // would share
+        let mut again = secret.as_ref().map(|secret| Convergent::new(secret, len));
         let mut sealer = Sealer::new(&key, len);
         let mut pieces = Pieces::new(self.store.clone());
+        let mut data = source.open();
         while let Some(bytes) = data.next().await {
-            let sealed = sealer.push(&bytes?).map_err(|_| anyhow!("more bytes than the file's {len}"))?;
+            let bytes = bytes?;
+            if let Some(again) = &mut again {
+                again.push(&bytes);
+            }
+            let sealed = sealer.push(&bytes).map_err(|_| anyhow!("more bytes than the file's {len}"))?;
             pieces.write(sealed).await?;
         }
         pieces.write(sealer.finish().map_err(|_| anyhow!("fewer bytes than the file's {len}"))?).await?;
+        if let Some(again) = again {
+            ensure!(again.finish().is_some_and(|k| k == key), "the file changed while it was sealed");
+        }
         let pieces = pieces.finish().await?;
         let hashes: Vec<Hash> = pieces.iter().map(TempTag::hash).collect();
         let root = match &hashes[..] {
