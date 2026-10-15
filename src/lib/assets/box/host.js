@@ -1,4 +1,8 @@
 // @ts-nocheck — plain JS
+import { base } from '$app/paths';
+import { blake3 } from '@noble/hashes/blake3.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { LATEST, engineAt, enginePath } from '../engines.js';
 /*
  * THE ASSET BOX — where an asset's builder runs when we cannot trust it: a worker inside a frame with no origin. The
  * same boundary as a Generated UI code view ($lib/genui/Frame.svelte), one step further: the frame does nothing but
@@ -9,7 +13,9 @@
  *   cookie, storage, OPFS (avenDB), passkey or page of ours. A Permissions Policy turns every device feature off.
  * - Its Content Security Policy, which the worker inherits (a worker from a blob: URL takes its maker's policy): no
  *   connection of any kind, no script but the frame's own and the worker's blob, no images, styles, frames or forms.
- * - The worker's code is the box bundle (`virtual:asset-box`, ./plugin.js), handed in whole: the box can load nothing.
+ * - The worker is a frozen engine (./engine.js, static/engines/engine-v<n>.js), its bytes checked against its BLAKE3
+ *   hash (../engines.json) before it starts, and handed in whole: the box can load nothing. Each build hands it its
+ *   recipe as code (../recipes.js), which the page checked against the recipe's hash as well.
  * - Out comes plain data only (./serialize.js), which the page checks and builds its own objects from (./rebuild.js).
  * - A job that runs too long is ended by removing the frame (the worker goes with it); the next job starts a new box.
  */
@@ -36,8 +42,25 @@ addEventListener('message', (e) => {
 /** how long a job may take before the box is torn down (ms) */
 export const TIMEOUT = 20000;
 
+/**
+ * A frozen engine's code, its bytes checked against its hash. @param {number} v
+ * @returns {Promise<string>}
+ */
+export async function engineCode(v) {
+	const at = engineAt(v);
+	if (!at) throw new Error(`no engine ${v}`);
+	const res = await fetch(`${base}${enginePath(v)}`);
+	if (!res.ok) throw new Error(`engine ${v}: ${res.status}`);
+	const bytes = new Uint8Array(await res.arrayBuffer());
+	const named = bytesToHex(blake3(bytes));
+	if (named !== at.blake3) throw new Error(`refused: engine ${v} hashes to ${named.slice(0, 12)}…, not ${at.blake3.slice(0, 12)}…`);
+	return new TextDecoder().decode(bytes);
+}
+
 export class AssetBox {
-	constructor({ timeout = TIMEOUT } = {}) {
+	/** @param {{ engine?: number, timeout?: number }} [o] the engine it runs (the latest) */
+	constructor({ engine = LATEST.v, timeout = TIMEOUT } = {}) {
+		this.engine = engine;
 		this.timeout = timeout;
 		this.frame = null;
 		this.ready = null;
@@ -50,7 +73,7 @@ export class AssetBox {
 	start() {
 		if (this.ready) return this.ready;
 		this.ready = (async () => {
-			const { default: code } = await import('virtual:asset-box');
+			const code = await engineCode(this.engine);
 			const frame = document.createElement('iframe');
 			frame.setAttribute('sandbox', 'allow-scripts');
 			frame.setAttribute('allow', DENY);
@@ -100,9 +123,13 @@ export class AssetBox {
 		});
 	}
 
-	/** an asset built in the box, as plain data (./serialize.js) */
-	build(ref, args = [], o) {
-		return this.ask('build', { ref, args }, o);
+	/**
+	 * A recipe built in the box: `{ data, card, ms }`, its plain data (./serialize.js) and its card, unchecked.
+	 * @param {{ hash: string, code: string }} recipe checked against its hash (../recipes.js)
+	 * @param {Record<string, string>} [given] its parameters' values, as text
+	 */
+	build(recipe, given, o) {
+		return this.ask('build', { recipe, given, engine: this.engine }, o);
 	}
 
 	/** tears the box down: the frame and its worker are gone, every job open fails with `why` */

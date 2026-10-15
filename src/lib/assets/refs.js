@@ -31,6 +31,25 @@ export function refOf(group, id, v, variant, values) {
 }
 
 /**
+ * The asset `id` at version `v` (its latest when not given), and a kind's variant (the one asked for, or its first), in a
+ * group's list: its item, its version and its builder. Undefined if there is no such asset, version or variant.
+ * @param {Item[]} list @param {string} id @param {number} [v] @param {string} [variant]
+ * @returns {{ item: Item, version: AnyVersion, build: any, kept: boolean } | undefined}
+ */
+export function pick(list, id, v, variant) {
+	const item = list.find((x) => x.id === id);
+	const version = item && (v === undefined ? item.versions[item.versions.length - 1] : item.versions.find((x) => x.v === v));
+	if (!item || !version) return undefined;
+	let build = version.build;
+	// a kind with variants (the machines, the actors): the one asked for, or its first
+	if (Array.isArray(build) && build.every((x) => typeof x?.make === 'function')) {
+		build = (variant ? build.find((x) => x.id === variant) : build[0])?.make;
+		if (!build) return undefined;
+	} else if (variant) return undefined;
+	return { item, version, build, kept: version.kept };
+}
+
+/**
  * An asset at a version in `groups`, by its ref (see ./index.js `assetAt`).
  * @param {Record<string, Group>} groups
  * @param {string} ref
@@ -40,22 +59,33 @@ export async function assetIn(groups, ref) {
 	const { group, id, v, variant } = parseRef(ref);
 	const g = groups[group];
 	if (!g) throw new Error(`no asset group ${group}: ${Object.keys(groups).join(', ')}`);
-	const item = (await g.list()).find((x) => x.id === id);
-	const version = item && (v === undefined ? item.versions[item.versions.length - 1] : item.versions.find((x) => x.v === v));
-	if (!item || !version) return undefined;
-	let build = version.build;
-	// a kind with variants (the machines, the actors): the one asked for, or its first
-	if (Array.isArray(build) && build.every((x) => typeof x?.make === 'function')) {
-		build = (variant ? build.find((x) => x.id === variant) : build[0])?.make;
-		if (!build) return undefined;
-	} else if (variant) return undefined;
-	return { group, item, version, build, kept: version.kept };
+	const got = pick(await g.list(), id, v, variant);
+	return got && { group, ...got };
 }
 
 /**
- * An asset at a version in `groups`, built (see ./index.js `objectAt`). A recipe that declares parameters is built with
- * the ref's, else with `args` in their order, else with its own values (./params.js); one that declares none takes
- * `args` as they are. The ref on the object names the version and every value it was built with.
+ * Builds an object with a builder and what it declares it takes (./params.js): the values `given` (a ref's, as text),
+ * else `args` in their order, else its own; a builder that declares none takes `args` as they are. A builder may make
+ * its object or a rig that carries it, at once or in time. The object comes with its ref (`userData.ref`): `ref`, the
+ * name of the version it was built from, and every value it was built with. The page (`objectIn`) and the box's engine
+ * (./box/engine.js) both build through here.
+ * @param {{ build: (...args: any[]) => any, params?: import('./params.js').Param[], ref: string }} recipe
+ * @param {Record<string, string>} [given] @param {unknown[]} [args]
+ * @returns {Promise<import('three').Object3D>}
+ */
+export async function buildWith({ build, params = [], ref }, given, args = []) {
+	if (given && !params.length) throw new Error(`${ref} takes no parameters`);
+	const values = params.length ? valuesOf(params, given, args) : undefined;
+	const made = await (values ? build(...argsOf(params, values)) : build(...args));
+	const obj = made?.isObject3D ? made : made?.rig?.object;
+	if (!obj?.isObject3D) throw new Error(`${ref}: its builder made no object`);
+	const q = queryOf(values);
+	obj.userData.ref = q ? `${ref}?${q}` : ref;
+	return obj;
+}
+
+/**
+ * An asset at a version in `groups`, built (see ./index.js `objectAt`), with the ref's values, else `args` (`buildWith`).
  * @param {Record<string, Group>} groups
  * @param {string} ref
  * @param {...any} args
@@ -67,12 +97,5 @@ export async function objectIn(groups, ref, ...args) {
 	if (!got.kept) throw new Error(`${ref}: only its note was kept, not its builder`);
 	if (typeof got.build !== 'function') throw new Error(`${ref}: ${got.group} are not built as one object`);
 	const { variant, params: given } = parseRef(ref);
-	const declared = got.item.params ?? [];
-	if (given && !declared.length) throw new Error(`${ref}: ${got.item.id} takes no parameters`);
-	const values = declared.length ? valuesOf(declared, given, args) : undefined;
-	const made = values ? got.build(...argsOf(declared, values)) : got.build(...args);
-	const obj = made?.isObject3D ? made : made?.rig?.object;
-	if (!obj?.isObject3D) throw new Error(`${ref}: its builder made no object`);
-	obj.userData.ref = refOf(got.group, got.item.id, got.version.v, variant, values);
-	return obj;
+	return buildWith({ build: got.build, params: got.item.params, ref: refOf(got.group, got.item.id, got.version.v, variant) }, given, args);
 }
