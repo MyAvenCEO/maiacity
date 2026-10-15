@@ -873,6 +873,36 @@ locked device holds no key, nothing a key opened, and no McEliece secret half. I
 draw replaces with a hash of it, and an unlock reseeds it from the device's own key, so a copy of its memory can't
 rewind what it drew, nor, taken while the device was locked, foresee what it draws.
 
+### Device keys: one per install
+
+Your passkey stands for you and is the same on every device it syncs to: its keys derive from its PRF output on
+`sign::PRF_SALT` the same way every time, and it owns the vault. A device key stands for one install, a browser on
+`maia.city` or the desktop app, and signs what that install writes.
+
+- **Random, not derived.** A new device draws its secret, 32 bytes, from its own randomness (`avendb_browser::Fresh`),
+  so its keys and id exist before any prompt. The prompt that unlocks it is then also its passkey's pass for it, as
+  the pass names its id (`sign::RelayPass`): two prompts to set up or sign in, where a derived key would need a
+  third. A device key holds no data, so nothing needs it back: a wiped or new install joins with the passkey and
+  syncs from the person's other devices and the server, and the old device is revoked. Making an old key again would
+  do harm: the copy would sign edits that don't build on the old device's own, which sync reports as a fork
+  (`sync::forks`), as for a stolen key, and a revoked device would come back.
+- **As long as its storage.** Closing a tab, the browser or the app keeps the device whole. The next start takes one
+  prompt (`Device::open`), opens with everything the device held, and syncs only what changed, log by log. Only wiped
+  storage makes a new device: cleared site data, a private window, an uninstall, a new phone. Browsers may clear a
+  site's storage on their own (Safari after a week unused), so a browser starts as a light copy and the desktop app
+  as a full one (section 5, Copy setting).
+- **What opens it.** Its shelf keeps one record that opens it again (`avendb_browser::Meta`, as `meta/<n>` objects,
+  put once, the newest that reads counting): its name, relay and id, the 32 bytes of its salt, the passkey's
+  credential and P-256 key, the vaults it follows, and its secret XORed with the PRF output on its salt
+  (`Fresh::mask`). None of it is a secret. A browser keeps the shelf in `maia.city`'s OPFS, the desktop app in
+  `~/Library/Application Support/city.maia.studio/avendb/`.
+- **Kept safe.** Unmasking the secret takes the PRF output on the device's salt, which only the person's
+  authenticator gives, with user verification and to `maia.city` alone; the device checks that the unmasked secret
+  is the key of its id before it touches its shelf. While open, the key is in memory only and wiped as the device
+  locks. A disk copy gets nothing; malware on a machine while the device is open, or the site's own scripts asking
+  for a prompt, are outside what a disk can guard. The server's device is the one whose secret is on disk, sealed in
+  its bucket, as nobody is there to unlock it.
+
 ## 12. Sync over iroh
 
 ### The node
