@@ -112,13 +112,16 @@ export const DEFAULT_SETTINGS = {
 	pickupRent: 100,
 	powercubeRent: 50,
 	batteryRent: 50,
-	solarRent: 50
+	solarRent: 50,
+	/** the Tribe COOP to the Village COOP, for the hex the Village COOP rents and the tribe lives on, a player a week, in
+	 * villageMIND (Samuel 2026-10-15) */
+	hexSubRent: 25
 };
 
 /** the rents were a month until 2026-10-14; a game from before starts on the weekly prices (2: the Tribe COOP pays
  * the Village COOP 250 a week, Samuel 2026-10-14) */
 export const RENTS_WEEKLY = 2;
-const RENT_SETTINGS = ['homeRent', 'tentRent', 'hexRent', 'pickupRent', 'powercubeRent', 'batteryRent', 'solarRent'];
+const RENT_SETTINGS = ['homeRent', 'tentRent', 'hexRent', 'pickupRent', 'powercubeRent', 'batteryRent', 'solarRent', 'hexSubRent'];
 
 /** what a COOP rents from another, each with the COOP that pays and the setting of its weekly rent; paid to the COOP
  * that owns it, in that COOP's MIND: the chain player → Tribe → Village → MaiaCity */
@@ -130,8 +133,11 @@ export const RENTED = [
 	{ asset: 'solar', payer: 'tribe', setting: 'solarRent', label: 'solar panel' }
 ];
 
+/** what a COOP rents on to another, a player a week: paid to the COOP that rents the asset (RENTED's payer), in its MIND */
+export const SUBLET = [{ asset: 'hex', payer: 'tribe', setting: 'hexSubRent', label: 'hex', key: 'hexSub' }];
+
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightTRIBE: 'Pool weight of tribeMIND', weightVILLAGE: 'Pool weight of villageMIND', homeRent: 'Home rent, each player a week (tribeMIND)', tentRent: 'Tent price inside the home rent, a week (tribeMIND)', hexRent: 'Hex rent, Village COOP a week (maiaMIND)', pickupRent: 'Pickup rent, Tribe COOP a week (villageMIND)', powercubeRent: 'Powercube rent, Tribe COOP a week (villageMIND)', batteryRent: 'Battery pack rent, Tribe COOP a week (villageMIND)', solarRent: 'Solar panel rent, Tribe COOP a week (villageMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightTRIBE: 'Pool weight of tribeMIND', weightVILLAGE: 'Pool weight of villageMIND', homeRent: 'Home rent, each player a week (tribeMIND)', tentRent: 'Tent price inside the home rent, a week (tribeMIND)', hexRent: 'Hex rent, Village COOP a week (maiaMIND)', pickupRent: 'Pickup rent, Tribe COOP a week (villageMIND)', powercubeRent: 'Powercube rent, Tribe COOP a week (villageMIND)', batteryRent: 'Battery pack rent, Tribe COOP a week (villageMIND)', solarRent: 'Solar panel rent, Tribe COOP a week (villageMIND)', hexSubRent: 'Hex rent, Tribe COOP to the Village COOP, a player a week (villageMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -153,7 +159,8 @@ export const SETTING_LIMITS = {
 	pickupRent: [0, 10000],
 	powercubeRent: [0, 10000],
 	batteryRent: [0, 10000],
-	solarRent: [0, 10000]
+	solarRent: [0, 10000],
+	hexSubRent: [0, 10000]
 };
 
 const wallet = () => ({ HEARTS: 0, MAIA: 0, TRIBE: 0, VILLAGE: 0 });
@@ -392,7 +399,22 @@ function payDay(s, at) {
 		payer.owed[r.asset] = payRent(s, at, `coop:${payer.id}`, payer.treasury, `coop:${owner.id}`, owner.treasury, owner.mind, due, `${r.label} rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
 		if (payer.owed[r.asset] > DUST) log(s, at, { kind: 'arrears', from: `coop:${payer.id}`, to: `coop:${owner.id}`, token: owner.mind, amount: payer.owed[r.asset], note: `${r.label} rent still owed` });
 	}
+	// what a COOP rents on: the Tribe COOP pays the Village COOP for the hex it rents, a player a week
+	for (const r of SUBLET) {
+		const renter = renterOf(s, r.asset);
+		const payer = s.coops[r.payer];
+		if (!renter || !payer || renter.id === payer.id) continue;
+		payer.owed ??= {};
+		const had = (payer.owed[r.key] ?? 0) > DUST;
+		const due = (s.settings[r.setting] ?? 0) * SEATS.length + (payer.owed[r.key] ?? 0);
+		if (due <= DUST) continue;
+		payer.owed[r.key] = payRent(s, at, `coop:${payer.id}`, payer.treasury, `coop:${renter.id}`, renter.treasury, renter.mind, due, `${r.label} rent, pay day ${when}${had ? ' (with arrears)' : ''}`);
+		if (payer.owed[r.key] > DUST) log(s, at, { kind: 'arrears', from: `coop:${payer.id}`, to: `coop:${renter.id}`, token: renter.mind, amount: payer.owed[r.key], note: `${r.label} rent still owed` });
+	}
 }
+
+/** the COOP that rents an asset from its owner (RENTED), the one a sublet is paid to */
+const renterOf = (s, asset) => s.coops[RENTED.find((r) => r.asset === asset)?.payer];
 
 /** the COOP that owns an asset now */
 const ownerOf = (s, asset) => Object.values(s.coops).find((c) => c.assets.some((a) => a.id === asset));
@@ -756,6 +778,12 @@ export function rents(s) {
 		const payer = s.coops[r.payer];
 		if (!owner || !payer || owner.id === payer.id) continue;
 		out.push({ what: `${r.label[0].toUpperCase()}${r.label.slice(1)} rent`, from: `coop:${payer.id}`, to: `coop:${owner.id}`, token: owner.mind, weekly: set[r.setting] ?? 0, owed: payer.owed?.[r.asset] ?? 0 });
+	}
+	for (const r of SUBLET) {
+		const renter = renterOf(s, r.asset);
+		const payer = s.coops[r.payer];
+		if (!renter || !payer || renter.id === payer.id) continue;
+		out.push({ what: `${r.label[0].toUpperCase()}${r.label.slice(1)} rent`, from: `coop:${payer.id}`, to: `coop:${renter.id}`, token: renter.mind, weekly: (set[r.setting] ?? 0) * SEATS.length, owed: payer.owed?.[r.key] ?? 0 });
 	}
 	return out.filter((r) => r.weekly > DUST || r.owed > DUST).map((r) => ({ ...r, monthly: r.weekly * WEEKS_A_MONTH }));
 }
