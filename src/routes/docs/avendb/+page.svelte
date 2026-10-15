@@ -934,7 +934,7 @@
 					tag, so a move is one tag change, and a public stage is one Public share on that tag. Functions react to a
 					move: each runs in QuickJS on the device that moves the entry and asks for changes, which its vault’s shares
 					still decide. Publishing an article makes a public post about it, which the server’s feed serves to the
-					Maia Universe stream.
+					Maia Universe stream, and asks whether the pictures it shows go public too, so the stream shows them.
 				</li>
 			</ul>
 		</section>

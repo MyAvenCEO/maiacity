@@ -1,12 +1,11 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-// The stream held in memory and shared by the feed and the post pages, so a post shared a moment ago opens on its
-// own page too. A reload starts it over from the hardcoded posts, then takes in avenDB's feed (`loadFeed`): every post
+// The stream held in memory and shared by the feed and the post pages: avenDB's feed (`loadFeed`), every post
 // published in avenDB that everyone may read, its author the vault that published it.
-import { AUTHORS, FEED, POSTS, fromFeed, voiceOf } from './posts.js';
+import { FEED, fromFeed, voiceOf } from './posts.js';
 
 export const stream = $state({
-	posts: POSTS.map((p) => ({ ...p, liked: false })),
-	authors: { ...AUTHORS },
+	posts: [],
+	authors: {},
 	// avenDB's feed: 'idle', 'loading', 'done' or 'failed'
 	feed: 'idle'
 });
@@ -24,13 +23,13 @@ export function like(p) {
 // here stays liked; then the whole stream newest first.
 function take(posts) {
 	const now = Date.now() / 1000;
-	const before = new Map(stream.posts.filter((p) => p.entry).map((p) => [p.entry, p]));
+	const before = new Map(stream.posts.map((p) => [p.entry, p]));
 	for (const p of posts) stream.authors[p.vault] ??= voiceOf(p.vault, p.name, p.kind);
 	const fed = posts.map((p) => {
 		const had = before.get(p.entry);
 		return { ...fromFeed(p, now), ...(had && { liked: had.liked, likes: had.likes }) };
 	});
-	stream.posts = [...stream.posts.filter((p) => !p.entry), ...fed].sort((a, b) => a.ago - b.ago);
+	stream.posts = fed.sort((a, b) => (a.ago ?? Infinity) - (b.ago ?? Infinity));
 }
 
 let loading = null;

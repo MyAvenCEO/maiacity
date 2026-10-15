@@ -1,10 +1,10 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// Maia Universe: maiaCITY's own content stream. Every post published in avenDB comes from its server's feed, taken
-	// in again every minute while the page is open; what is shared here lives in memory, and a reload starts it over.
+	// in again every minute while the page is open.
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
-	import { AUTHORS, CHANNELS, fakeDocId, postHref, titleOf } from '$lib/universe/posts.js';
+	import { CHANNELS, postHref } from '$lib/universe/posts.js';
 	import { authorOf, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 
@@ -16,23 +16,12 @@
 
 	const posts = $derived(stream.posts);
 	let channel = $state('All');
-	let draft = $state('');
-	let draftChannel = $state('Devlog');
 
 	const shown = $derived(channel === 'All' ? posts : posts.filter((p) => p.channel === channel));
 	const counts = $derived(Object.fromEntries(CHANNELS.map((c) => [c, c === 'All' ? posts.length : posts.filter((p) => p.channel === c).length])));
 	const top = $derived([...posts].sort((a, b) => b.likes - a.likes).slice(0, 3));
 	// every voice that has a post in the stream, by its newest post
 	const voices = $derived([...new Set(posts.map((p) => p.author))].map((k) => stream.authors[k]).filter(Boolean));
-
-	function share(e) {
-		e.preventDefault();
-		const text = draft.trim();
-		if (!text) return;
-		stream.posts.unshift({ id: `n${Date.now()}`, doc: fakeDocId(), title: titleOf(text), author: 'samuel', ago: 0, channel: draftChannel, text, likes: 0, replies: 0, liked: false });
-		draft = '';
-		channel = 'All';
-	}
 </script>
 
 <svelte:head>
@@ -49,19 +38,6 @@
 
 	<div class="layout">
 		<main class="feed">
-			<form class="composer card" onsubmit={share}>
-				<span class="avatar" style:background={AUTHORS.samuel.color}>{AUTHORS.samuel.initials}</span>
-				<div class="compose">
-					<textarea bind:value={draft} rows="2" placeholder="What is growing in maiaCITY today?" maxlength="500"></textarea>
-					<div class="compose-row">
-						<select bind:value={draftChannel} aria-label="Channel">
-							{#each CHANNELS.slice(1) as c (c)}<option>{c}</option>{/each}
-						</select>
-						<button type="submit" disabled={!draft.trim()}>Share</button>
-					</div>
-				</div>
-			</form>
-
 			<nav class="chips" aria-label="Channels">
 				{#each CHANNELS as c (c)}
 					<button class:on={channel === c} onclick={() => (channel = c)}>{c}<span>{counts[c]}</span></button>
@@ -71,36 +47,45 @@
 			{#each shown as p (p.id)}
 				<PostCard post={p} />
 			{:else}
-				<p class="empty">Nothing in {channel} yet. Be the first to share.</p>
+				<p class="empty">
+					{#if stream.feed === 'loading' || stream.feed === 'idle'}
+						Taking in what was published in avenDB…
+					{:else if channel === 'All'}
+						Nothing published yet. An article published in avenDB shows here.
+					{:else}
+						Nothing in {channel} yet.
+					{/if}
+				</p>
 			{/each}
 		</main>
 
 		<aside class="side">
-			<section class="card">
-				<h2>Most loved</h2>
-				<ol>
-					{#each top as p (p.id)}
-						<li><a href={postHref(base, p)}><strong>{p.title}</strong><span>{authorOf(p).name}</span></a></li>
-					{/each}
-				</ol>
-			</section>
-			<section class="card">
-				<h2>Voices</h2>
-				<ul>
-					{#each voices as a (a.handle)}
-						<li class="voice"><span class="avatar sm" style:background={a.color}>{a.initials}</span>{a.name}</li>
-					{/each}
-				</ul>
-			</section>
+			{#if top.length}
+				<section class="card">
+					<h2>Most loved</h2>
+					<ol>
+						{#each top as p (p.id)}
+							<li><a href={postHref(base, p)}><strong>{p.title}</strong><span>{authorOf(p).name}</span></a></li>
+						{/each}
+					</ol>
+				</section>
+				<section class="card">
+					<h2>Voices</h2>
+					<ul>
+						{#each voices as a (a.handle)}
+							<li class="voice"><span class="avatar sm" style:background={a.color}>{a.initials}</span>{a.name}</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
 			<p class="note">
 				{#if stream.feed === 'loading'}
 					Taking in what was published in avenDB…
 				{:else if stream.feed === 'failed'}
 					avenDB's feed can't be reached right now.
 				{:else}
-					Posts marked avenDB were published there, for everyone.
+					Every post here is an article published in avenDB, for everyone.
 				{/if}
-				What you share here lives in memory, and is gone on the next reload.
 			</p>
 		</aside>
 	</div>
@@ -188,65 +173,9 @@
 		font-size: 0.65rem;
 	}
 
-	.composer {
-		display: flex;
-		gap: 0.9rem;
-	}
-
-	.compose {
-		flex: 1;
-		min-width: 0;
-	}
-
-	textarea {
-		width: 100%;
-		box-sizing: border-box;
-		resize: vertical;
-		border: 0;
-		background: transparent;
-		font: inherit;
-		font-size: 1rem;
-		color: var(--ink);
-		outline: none;
-		padding: 0.5rem 0 0.4rem;
-	}
-
-	.compose-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.6rem;
-		padding-top: 0.6rem;
-		border-top: 1px solid var(--line);
-	}
-
-	select {
-		font: inherit;
-		font-size: 0.85rem;
-		padding: 0.35rem 0.7rem;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		background: var(--cream);
-		color: var(--ink);
-	}
-
 	button {
 		font: inherit;
 		cursor: pointer;
-	}
-
-	button[type='submit'] {
-		padding: 0.5rem 1.3rem;
-		border: 0;
-		border-radius: 999px;
-		background: var(--ink);
-		color: var(--cream);
-		font-weight: 500;
-	}
-
-	button[type='submit']:disabled {
-		opacity: 0.35;
-		cursor: default;
 	}
 
 	.chips {
@@ -371,10 +300,6 @@
 
 		.card {
 			padding: 0.95rem;
-		}
-
-		.composer {
-			gap: 0.7rem;
 		}
 
 		.avatar {

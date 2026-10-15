@@ -568,7 +568,16 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let (add, remove) = (json!(["content:published"]), json!(["content:idea"]));
     let moved = json!({ "op": "tag", "entry": article.to_hex(), "add": add, "remove": remove, "as": her });
     run(&first, moved).await.expect("moved to published");
-    let value = json!({ "kind": "post", "title": "Seeds", "text": "Tomatoes in **March**.", "channel": "Devlog",
+    // a picture of her Library, which its post shows by its name, as an article does
+    let photo: Vec<u8> = (0..70_000u32).map(|i| (i * 7 % 253) as u8).collect();
+    let (len, name) = (photo.len() as u64, format!("{}.png", "ab".repeat(32)));
+    let put = json!({ "op": "put_file", "as": her, "vault": her, "name": name, "media": "image/png", "tags": [],
+        "len": len });
+    let chunks = vec![Ok::<Bytes, io::Error>(Bytes::from(photo.clone()))];
+    let (made, _) = first.run(put, Some(stream::iter(chunks)), None::<&NoCeremony>).await.expect("an answer");
+    let picture = entry(made["ok"].clone());
+    let text = format!("Tomatoes in **March**.\n\n![Seedlings]({name})");
+    let value = json!({ "kind": "post", "title": "Seeds", "text": text, "channel": "Devlog",
         "about": article.to_hex(), "tags": [] });
     let tags = json!(["content:published"]);
     let op = json!({ "op": "create", "vault": her, "type": "post", "tags": tags, "value": value, "as": her });
@@ -582,6 +591,23 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     assert_eq!(looks(p, &p["record"]["about"]), about, "its post, a record about it, public too");
     let opens = move |lab: &Lab, me| lab.item(me, post).is_some_and(|i| i.record()["channel"] == "Devlog");
     until("the server keeps her post and opens it", || server.read(opens)).await;
+    // its picture is hers alone, so the feed names none, until it goes public on the stage's tag, as the content
+    // flow's function tags it: then the feed names it, and the server reads it whole, as it serves it
+    let pictures = move |lab: &Lab, me| -> Option<Value> {
+        let ours = world::public_posts(lab, me).into_iter().find(|p| p["entry"] == post.to_hex());
+        ours.map(|p| p["pictures"].clone())
+    };
+    assert_eq!(server.read(pictures).await, Some(json!([])), "the feed names no picture of hers yet");
+    let (vault_of, named) = (vault, name.clone());
+    let served = move |lab: &Lab, me| world::public_file(lab, me, vault_of, &named);
+    assert_eq!(server.read(served.clone()).await, None, "and serves none");
+    let tag = json!({ "op": "tag", "entry": picture.to_hex(), "add": ["content:published"], "as": her });
+    run(&first, tag).await.expect("its picture published with it");
+    let shown = json!([name]);
+    until("the feed names its picture", || async { server.read(pictures).await.as_ref() == Some(&shown) }).await;
+    let file = server.read(served.clone()).await.expect("a picture everyone may read");
+    assert_eq!((file.len, file.media.as_str()), (len, "image/png"), "its length and its media type");
+    assert_eq!(server.read_file(file.root, 0..file.len).await.expect("the server reads it"), photo, "all of it");
     // avenCEO GmbH publishes too, its profile Public as it first does, so that everyone reads who published it; the
     // server, which keeps its seed's vaults, opens that post and that name as well: the Maia Universe's feed lists
     // both posts, newest first, each by its vault's name where everyone may read it
@@ -617,6 +643,9 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     assert_eq!(item(&world_of(&first).await, article)["public"], false, "a draft is hers alone");
     let off = json!({ "op": "tag", "entry": post.to_hex(), "remove": ["content:published"], "as": her });
     run(&first, off).await.expect("its post off the stream");
+    let off = json!({ "op": "tag", "entry": picture.to_hex(), "remove": ["content:published"], "as": her });
+    run(&first, off).await.expect("its picture with it");
+    until("the server serves its picture no more", || async { server.read(served.clone()).await.is_none() }).await;
     let gmbh = vec![(news.to_hex(), Some("avenCEO GmbH".to_string()))];
     until("the server's feed lists avenCEO GmbH's alone", || async { server.read(listed).await == gmbh }).await;
     for n in [first.node(), &server] {

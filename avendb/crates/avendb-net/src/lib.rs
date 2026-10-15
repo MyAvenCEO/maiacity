@@ -1297,12 +1297,14 @@ struct News {
 }
 
 impl Shared {
-    /// `f` on the Lab, off the async threads: its crypto takes milliseconds, a McEliece key pair seconds. If what the
-    /// device holds changed, its saver puts it on the shelf, if the node keeps one.
+    /// `f` on the Lab, off the async threads: its crypto takes milliseconds, a McEliece key pair seconds. The Lab's
+    /// clock is the machine's, so an entry `f` creates says when (`Lab::set_now`). If what the device holds changed,
+    /// its saver puts it on the shelf, if the node keeps one.
     async fn lab<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let shared = self.clone();
         let work = move || {
             let mut lab = shared.lab.lock().expect("the Lab");
+            lab.set_now(unix_now());
             let out = f(&mut lab, shared.me);
             let now = lab.size(shared.me);
             if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
