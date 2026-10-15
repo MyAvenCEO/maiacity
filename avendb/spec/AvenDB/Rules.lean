@@ -35,14 +35,15 @@ inductive On where
   deriving DecidableEq, Repr
 
 /-- What a write did, one op at a time: a value set or removed, a text edited or a list of values changed at a place
-    (`to`: its new value, where one op set one value); a row of a list of records added, deleted or moved (what a write
-    does inside a row it adds is part of adding it); the entry created; a tag asked for, added or removed; a proposal
-    started; another line merged in. An op a reader can't place touches the whole record (`.root`). -/
+    (`to`: its new value, where one op set one value); a row of the list of records at a place added, deleted or moved
+    (what a write does inside a row it adds is part of adding it), at any depth; the entry created; a tag asked for,
+    added or removed; a proposal started; another line merged in. An op a reader can't place touches the whole record
+    (`[]`). -/
 inductive Touch where
   | set     (l : Loc) (to : Option Val)
-  | insert  (f : String)
-  | remove  (f : String)
-  | move    (f : String)
+  | insert  (l : Loc)
+  | remove  (l : Loc)
+  | move    (l : Loc)
   | create
   | tag     (t : Sym)
   | propose
@@ -114,12 +115,13 @@ def groups : List Group := [
 #guard (groups.map fun g => levelOf g.ops) == [.owner, .write, .write, .read, .read, .backup, .relay]
 #guard groups.all fun g => !g.everyone || levelOf g.ops == .read
 
-/-- A place's path: a field, a row, or a field of a row. -/
-def Ops.Loc.steps : Loc → List Step
-  | .root => []
-  | .field f => [.field f]
-  | .row f i => [.field f, .row i]
-  | .cell f i g => [.field f, .row i, .field g]
+/-- A step of a place, as a step of a path. -/
+def Ops.Seg.step : Seg → Step
+  | .field f => .field f
+  | .row i => .row i
+
+/-- A place's path: its steps, a field or a row, at any depth. -/
+def Ops.Loc.steps (l : Loc) : List Step := l.map Seg.step
 
 /-- A step of a pattern fits a step of a path: the same field, the same row, or any. -/
 def Step.fits : Step → Step → Bool
@@ -146,15 +148,28 @@ def Op.allows (main : Bool) : Op → Touch → Bool
     | none, _ => true
     | some vs, some x => vs.contains x
     | some _, none => false
-  | .set p none o, .insert f | .set p none o, .remove f | .set p none o, .move f =>
-    onLine main o && reaches p [.field f]
-  | .insert p o, .insert f | .remove p o, .remove f | .move p o, .move f => onLine main o && reaches p [.field f]
+  | .set p none o, .insert l | .set p none o, .remove l | .set p none o, .move l =>
+    onLine main o && reaches p l.steps
+  | .insert p o, .insert l | .remove p o, .remove l | .move p o, .move l => onLine main o && reaches p l.steps
   | .merge o, .merge => onLine main o
   | .tag none, .tag _ => true
   | .tag (some ts), .tag t => ts.contains t
   | .propose, .propose => true
   | .create, .create => true
   | _, _ => false
+
+-- the same patterns at any depth: a field of any row of the lists in any row, a row's list's rows, and a cap on a
+-- row covering everything under it
+#guard (Op.set [.field "blocks", .any, .field "children", .any, .field "text"] none none).allows true
+  (.set [.field "blocks", .row 1, .field "children", .row 2, .field "text"] (some (.str "x")))
+#guard !(Op.set [.field "blocks", .any, .field "text"] none none).allows true
+  (.set [.field "blocks", .row 1, .field "children", .row 2, .field "text"] none)
+#guard (Op.insert [.field "blocks", .any, .field "children"] none).allows true
+  (.insert [.field "blocks", .row 1, .field "children"])
+#guard !(Op.insert [.field "blocks"] none).allows true (.remove [.field "blocks", .row 1, .field "children"])
+#guard [Touch.set [.field "blocks", .row 1, .field "children", .row 2, .field "text"] none,
+  .insert [.field "blocks", .row 1, .field "children"], .move [.field "blocks", .row 1, .field "children"]].all
+  fun t => (Op.set [.field "blocks", .row 1] none none).allows true t
 
 /-- Ops allow a write: each of its touches is allowed by one of them. -/
 def allowsAll (rs : List Op) (main : Bool) (ts : List Touch) : Bool := ts.all fun t => rs.any (·.allows main t)
@@ -166,8 +181,8 @@ def TagDelta.touches (d : TagDelta) : List Touch := (d.add ++ d.remove).map .tag
     none for a tag, a proposal's start or a merge, which change nothing of the record. -/
 def Touch.loc : Touch → Option Loc
   | .set l _ => some l
-  | .insert f | .remove f | .move f => some (.field f)
-  | .create => some .root
+  | .insert l | .remove l | .move l => some l
+  | .create => some []
   | .tag _ | .propose | .merge => none
 
 /-- Only ops that write allow a touch: relay, backup, read and share allow none. -/
@@ -214,7 +229,7 @@ theorem allowsAll_sublist {rs : List Op} {main : Bool} {ts us : List Touch} (h :
 /-- C3, the changes: where ops allow every touch of a write and the touches' places cover what the write changed
     (`Within`), every change of its diff is at a place some touch covers that some op allows. -/
 theorem changes_allowed {V : Type} [DecidableEq V] {rs : List Op} {main : Bool} {ts : List Touch}
-    {ps : List Path} {fs : List String} {r s : Record V} {c : Change V} (hall : allowsAll rs main ts = true)
+    {ps : List Path} {fs : List Path} {r s : Record V} {c : Change V} (hall : allowsAll rs main ts = true)
     (hw : Within (ts.filterMap Touch.loc) r s) (hc : c ∈ diff ps fs r s) :
     ∃ t ∈ ts, (∃ l, t.loc = some l ∧ l.covers c.place = true) ∧ ∃ op ∈ rs, op.allows main t = true := by
   obtain ⟨l, hl, hcov⟩ := diff_within hw hc

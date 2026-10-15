@@ -132,7 +132,7 @@ def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option E
     (fits := fits)
 
 /-- Setting a todo's field `f` to the text `x`. -/
-def sets (f x : String) : Touch := .set (.field f) (some (.str x))
+def sets (f x : String) : Touch := .set [.field f] (some (.str x))
 
 /-- Setting a todo's status, to open or done only. -/
 def statusOp : Op := .set [.field "status"] (some [.str "open", .str "done"]) none
@@ -620,11 +620,16 @@ def cases : List Case := [
     (2, [], newShare 32 100 (toVault 101) .write 100 todos (ops := some [.read, .create, statusOp,
       .insert [.field "items"] none])),
     (5, [], newEntry 100 23 101 [32] todo (proof := some 32)),
-    (5, [], wr 100 23 101 [19] (proof := some 32) (touches := [.insert "items"])),
-    (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.set (.cell "items" 1 "text") (some (.str "milk"))])),
-    (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.remove "items"])),
+    (5, [], wr 100 23 101 [19] (proof := some 32) (touches := [.insert [.field "items"]])),
+    (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.set [.field "items", .row 1, .field "text"] (some (.str "milk"))])),
+    (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.remove [.field "items"]])),
     -- ops never widen a share: Carol reads, and writes nothing, whatever proof she names
-    (6, [], wr 100 21 102 [10] (stay := some 9) (proof := some 31) (touches := [sets "status" "done"]))] },
+    (6, [], wr 100 21 102 [10] (stay := some 9) (proof := some 31) (touches := [sets "status" "done"])),
+    -- at any depth: adding items reaches the lists of records in an item, but no other change in them
+    (5, [], wr 100 23 101 [20] (proof := some 32) (touches := [.insert [.field "items", .row 1, .field "steps"]])),
+    (5, [], wr 100 23 101 [24] (proof := some 32)
+      (touches := [.set [.field "items", .row 1, .field "steps", .row 2, .field "text"] (some (.str "rinse"))])),
+    (5, [], wr 100 23 101 [24] (proof := some 32) (touches := [.move [.field "items", .row 1, .field "steps"]]))] },
   { name := "ops: a chain narrows the shares resting on it, and a suggester writes on proposals",
     edits := humans ++ [
     (2, [], newEntry 100 21 100 [] todo),
@@ -1294,14 +1299,19 @@ def opJson : Op → String
   | .propose => obj [("op", str "propose")]
   | .create => obj [("op", str "create")]
 
-/-- What a write touches: `{"set": path, "to": v}` (no `to` where no one value was set), `{"insert": field}`, ... -/
+/-- A list of records a touch names: a field of the record by its name, one in a row by its path. -/
+def list : Ops.Loc → String
+  | [.field f] => str f
+  | l => path l.steps
+
+/-- What a write touches: `{"set": path, "to": v}` (no `to` where no one value was set), `{"insert": list}`, ... -/
 def touch : Touch → String
   | .set l to => obj ([("set", path l.steps)] ++ match to with
       | some v => [("to", jsonVal v)]
       | none => [])
-  | .insert f => obj [("insert", str f)]
-  | .remove f => obj [("remove", str f)]
-  | .move f => obj [("move", str f)]
+  | .insert l => obj [("insert", list l)]
+  | .remove l => obj [("remove", list l)]
+  | .move l => obj [("move", list l)]
   | .create => str "create"
   | .tag t => obj [("tag", nat t)]
   | .propose => str "propose"

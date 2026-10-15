@@ -237,7 +237,7 @@ app writes. S1 and S2, about records, are proven in `Schemas.lean`. -/
 /-- S1 (a write is judged by what it changed): the write from `r` to `s` fits exactly when each change of what it
     changed does, on the record or row around it: a value it didn't change, which two devices' writes at once may
     have left behind, holds it back nowhere else. -/
-theorem S1_judged_by_changes {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List String}
+theorem S1_judged_by_changes {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List Ops.Path}
     {r s : Ops.Record V} (h : Ops.Reaches ps fs r s) :
     fit.fits ps fs r s = true ↔
       (∀ p, r.leaf p ≠ s.leaf p → fit.change r s (.set p (s.leaf p)) = true) ∧
@@ -245,13 +245,13 @@ theorem S1_judged_by_changes {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : 
   Ops.fits_iff h
 
 /-- S2 (records that fit stay so): a record that fits keeps fitting through a write that fits. -/
-theorem S2_clean_stays_clean {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List String}
+theorem S2_clean_stays_clean {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List Ops.Path}
     {r s : Ops.Record V} (h : Ops.Reaches ps fs r s) (hr : fit.Clean r) (hw : fit.fits ps fs r s = true) :
     fit.Clean s :=
   Ops.fits_clean h hr hw
 
 /-- S2, the first write: the first write of an entry, if it fits, makes a record that fits of nothing. -/
-theorem S2_first_write {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List String}
+theorem S2_first_write {V : Type} [DecidableEq V] {fit : Ops.Fit V} {ps : List Ops.Path} {fs : List Ops.Path}
     {s : Ops.Record V} (h : Ops.Reaches ps fs Ops.Record.empty s) (hs : s.Formed) (hne : s ≠ Ops.Record.empty)
     (hw : fit.fits ps fs Ops.Record.empty s = true) : fit.Clean s :=
   Ops.fits_new h hs hne hw

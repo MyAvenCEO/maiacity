@@ -13,7 +13,7 @@ use avendb::cast;
 use avendb::doc::Item;
 use avendb::id::SignerId;
 use avendb::lens::{example, Status, TodoV1, View};
-use avendb::ops::{diff, run_all, Loc, Record, RecordOp};
+use avendb::ops::{diff, run_all, Loc, Record, RecordOp, Seg};
 use avendb::rules::{Scalar, Touch};
 use records::{random_op, random_record, Rng};
 use serde_json::{json, Value};
@@ -111,13 +111,13 @@ fn stored(mut r: Record) -> Record {
 /// Record `r` holds plain value `v` at place `l` (`null`: nothing there), in some row of the place's id.
 fn holds(r: &Record, l: &Loc, v: &Scalar) -> bool {
     let plain = |x: Option<&Value>| Scalar::of_json(x.unwrap_or(&Value::Null)).as_ref() == Some(v);
-    match l {
-        Loc::Field(f) => plain(r.get(f)),
-        Loc::Cell(f, i, g) => {
+    match l.0.as_slice() {
+        [Seg::Field(f)] => plain(r.get(f)),
+        [Seg::Field(f), Seg::Row(i), Seg::Field(g)] => {
             let rows = r.get(f).and_then(Value::as_array).into_iter().flatten();
             rows.filter(|x| x["id"].as_i64() == Some(*i)).any(|x| plain(x.get(g)))
         }
-        Loc::Root | Loc::Row(..) => false,
+        _ => false,
     }
 }
 
@@ -150,7 +150,7 @@ fn c3_touches_cover_every_change() {
             let touched = item.footprint(&device.export(&since), signer, None).expect("it imports whole").touches;
             assert_eq!(item.record(), Value::Object(after.clone()));
             let why = |c: &str| format!("{before:?} to {after:?}: {c} in {touched:?}");
-            assert!(touched.iter().all(|t| t.loc() != Some(Loc::Root)), "{}", why("an op placed nowhere"));
+            assert!(touched.iter().all(|t| t.loc() != Some(Loc::root())), "{}", why("an op placed nowhere"));
             for c in diff(&before, &after) {
                 let covering: Vec<&Touch> = touched.iter().filter(|t| t.loc().is_some_and(|l| l.covers(&c))).collect();
                 assert!(!covering.is_empty(), "{}", why(&c.to_json().to_string()));
