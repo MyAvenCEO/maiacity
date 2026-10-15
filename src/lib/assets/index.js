@@ -1,8 +1,9 @@
 /*
- * EVERY ASSET BY ONE NAME — the asset groups of the app (the Things, the Machines, the Actors, the Plants, the Biomes,
- * the Buildings, the Worlds) behind one way to name an asset at a version, so anything can ask for anything:
+ * EVERY ASSET BY ONE NAME — the asset groups of the app (the Factories, the Things, the Machines, the Actors, the
+ * Plants, the Biomes, the Buildings, the Worlds) behind one way to name an asset at a version, so anything can ask for
+ * anything:
  *
- *   group/id@v            machines/powercube@3, plants/apple@1, things/pickup@2, worlds/sandbox-5@9
+ *   group/id@v            machines/powercube@3, plants/apple@1, things/pickup@2, factories/batterypack-line@1
  *   group/id@v:variant    machines/powercube@1:powercube-electric (a kind's variant, as it was at that version)
  *   group/id              its latest version
  *
@@ -18,6 +19,8 @@
 
 /** @type {Record<string, { label: string, list: () => Promise<Item[]> }>} */
 export const GROUPS = {
+	// a factory is its spec, not an object: objectAt throws for it as for a biome ($lib/factories/index.js)
+	factories: { label: 'Factories', list: async () => (await import('$lib/factories/index.js')).FACTORIES },
 	things: { label: 'Things', list: async () => (await import('$lib/models')).MODELS },
 	machines: { label: 'Machines', list: async () => (await import('$lib/machines/index.js')).MACHINES },
 	actors: { label: 'Actors', list: async () => (await import('$lib/actors')).FAMILIES },
