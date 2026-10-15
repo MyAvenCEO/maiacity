@@ -2,12 +2,13 @@
 /*
  * THE ASSET BOX'S WORKER — builds an asset by its ref and hands it back as plain data (./serialize.js). It runs as a
  * worker started inside a frame with no origin (./host.js), under that frame's rules: no network, no storage of the
- * page, no page at all. Whatever a builder does in here, all that leaves is checked data.
+ * page, no page at all. Whatever a builder does in here, all that leaves is checked data: the asset as plain data, and its card (../card.js).
  */
 import './lockdown.js';
 import './shim.js';
 import { OBJECT_GROUPS } from '../groups.js';
-import { objectIn } from '../refs.js';
+import { assetIn, objectIn } from '../refs.js';
+import { cardOf } from '../card.js';
 import { serialize } from './serialize.js';
 import { probe } from './probe.js';
 
@@ -20,8 +21,9 @@ self.onmessage = async (e) => {
 			const t0 = performance.now();
 			const obj = await objectIn(OBJECT_GROUPS, ref, ...(args ?? []));
 			const built = performance.now() - t0;
+			const card = cardOf(ref, obj, await assetIn(OBJECT_GROUPS, ref));
 			const { data, transfer } = await serialize(obj);
-			reply({ id, ok: true, data, ms: { build: Math.round(built), serialize: Math.round(performance.now() - t0 - built) } }, transfer);
+			reply({ id, ok: true, data, card, ms: { build: Math.round(built), serialize: Math.round(performance.now() - t0 - built) } }, transfer);
 		} else if (op === 'list') {
 			const out = {};
 			for (const [g, group] of Object.entries(OBJECT_GROUPS)) out[g] = (await group.list()).map((x) => ({ id: x.id, label: x.label, version: x.version, variants: Array.isArray(x.versions.at(-1)?.build) ? x.versions.at(-1).build.map((v) => v.id) : null }));

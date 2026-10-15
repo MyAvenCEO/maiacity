@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Asset, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "asset" },
+    "title": { "type": "string", "default": "" },
+    "group": { "enum": ["factories", "machines", "actors", "worlds", "buildings", "things", "biomes", "plants"] },
+    "name": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1, "default": 1 },
+    "note": { "type": "string", "x-loro": "text", "default": "" },
+    "licence": { "type": "string", "default": "" },
+    "files": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "role": { "enum": ["recipe", "card", "lod0", "lod1", "lod2", "lod3", "impostor", "controls"] },
+          "name": { "type": "string" },
+          "media": { "type": "string", "default": "application/octet-stream" }
+        },
+        "required": ["id", "role", "name"]
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind", "group", "name"]
+}

@@ -2,7 +2,8 @@
 	THE ASSET BOX'S LAB (/app/assets/box/) — phase 0 of the asset pipeline (src/lib/assets/box): our own assets built
 	inside the box, a worker in a frame with no origin, and shown from the plain data it hands back, as an asset no one
 	trusts would be. One button runs every check: what the box cannot reach, assets built in the box against the same
-	built in the page, a builder that never stops, and data out of shape that the page must refuse.
+	built in the page (each with its card, checked against its schema: phase 1), a builder that never stops, and data
+	and cards out of shape that the page must refuse.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -12,6 +13,9 @@
 	import { AssetBox } from '$lib/assets/box/host.js';
 	import { rebuild } from '$lib/assets/box/rebuild.js';
 	import { FORMAT } from '$lib/assets/box/serialize.js';
+	import { trianglesOf as tris } from '$lib/assets/card.js';
+	import { checkCard } from '$lib/assets/schemas/index.js';
+	import { hostileCards } from '$lib/assets/schemas/hostile.js';
 
 	const SAMPLES = [
 		['plants/apple', [9, 'maia']],
@@ -81,13 +85,6 @@
 	}
 
 	const now = () => performance.now();
-	const tris = (obj) => {
-		let n = 0;
-		obj.traverse((o) => {
-			if (o.isMesh && !o.isLine && !o.isPoints && o.geometry) n += ((o.geometry.index?.count ?? o.geometry.attributes.position?.count ?? 0) / 3) * (o.isInstancedMesh ? o.count : 1);
-		});
-		return Math.round(n);
-	};
 	const size = (obj) => new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3()).toArray().map((x) => Math.round(x * 1000) / 1000);
 
 	/** one asset built in the box and shown from its data, with its times */
@@ -95,9 +92,11 @@
 		const t0 = now();
 		const got = await box.build(r, a);
 		const t1 = now();
+		const card = checkCard(got.card);
+		if (!card.ok) throw new Error(`its card does not fit: ${card.errors.slice(0, 3).join('; ')}`);
 		const obj = rebuild(got.data);
 		const t2 = now();
-		return { obj, data: got.data, ms: { build: got.ms.build, serialize: got.ms.serialize, total: Math.round(t1 - t0), rebuild: Math.round(t2 - t1) } };
+		return { obj, data: got.data, card: got.card, ms: { build: got.ms.build, serialize: got.ms.serialize, total: Math.round(t1 - t0), rebuild: Math.round(t2 - t1) } };
 	}
 
 	async function buildOne() {
@@ -164,10 +163,10 @@
 					const pageMs = Math.round(now() - t0);
 					// a skinned actor comes out in its rest pose (its bones come with phase 6), so only its triangles compare
 					const skinned = b.data.stats.skinned > 0;
-					const same = tris(direct) === tris(b.obj) && (skinned || JSON.stringify(size(direct)) === JSON.stringify(size(b.obj)));
+					const same = tris(direct) === tris(b.obj) && b.card.triangles === tris(direct) && (skinned || JSON.stringify(size(direct)) === JSON.stringify(size(b.obj)));
 					const row = { ref: r, tris: tris(b.obj), page: pageMs, ...b.ms, size: size(b.obj), same, custom: b.data.stats.custom, skinned: b.data.stats.skinned };
 					out.assets.push(row);
-					add(`${r} comes out the same`, same, `${row.tris.toLocaleString('en')} triangles${skinned ? ' (skinned: in its rest pose until phase 6)' : ''} · box ${row.build} ms + ${row.serialize} ms out, ${row.total} ms in all · page ${pageMs} ms · rebuilt in ${row.rebuild} ms`);
+					add(`${r} comes out the same`, same, `${row.tris.toLocaleString('en')} triangles, its card fits${skinned ? ' (skinned: in its rest pose until phase 6)' : ''} · box ${row.build} ms + ${row.serialize} ms out, ${row.total} ms in all · page ${pageMs} ms · rebuilt in ${row.rebuild} ms`);
 					show(b.obj);
 				} catch (e) {
 					out.assets.push({ ref: r, error: e.message });
@@ -208,6 +207,12 @@
 			}
 			const taken = Object.entries(out.hostile).filter(([, v]) => v === 'ACCEPTED');
 			add('Data out of shape is refused', taken.length === 0, taken.length ? `accepted: ${taken.map(([k]) => k).join(', ')}` : `${Object.keys(HOSTILE).length} kinds, every one refused`);
+
+			line = 'Cards made to do harm…';
+			const evil = hostileCards((await box.build('machines/powercube@3', [])).card);
+			out.cards = Object.fromEntries(Object.entries(evil).map(([name, card]) => [name, checkCard(card).ok ? 'ACCEPTED' : 'refused']));
+			const let_in = Object.entries(out.cards).filter(([, v]) => v === 'ACCEPTED');
+			add('A card made to do harm is refused', let_in.length === 0, let_in.length ? `accepted: ${let_in.map(([k]) => k).join(', ')}` : `${Object.keys(evil).length} kinds, every one refused`);
 		} catch (e) {
 			add('The checks ran', false, e.message);
 		}
@@ -222,7 +227,7 @@
 
 <main class="lab">
 	<header>
-		<p class="kicker">Game Assets · phase 0</p>
+		<p class="kicker">Game Assets · phases 0 and 1</p>
 		<h1>The asset box</h1>
 		<p class="lede">Our own assets built where an untrusted one would be: a worker in a frame with no origin, no network and no storage. The page only sees the plain data it hands back, checks it, and builds its own objects from it.</p>
 	</header>
