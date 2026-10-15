@@ -217,14 +217,16 @@ maiaCITY a factory is built from the assets we already have and is kept where ev
   (`src/lib/buildings`), its people from Actors (`src/lib/actors`), its goods and pallets from Things
   (`src/lib/models`), its vehicles from Machines. Each station names what stands there by its ref at a version
   (`machines/powercube@3`, `$lib/assets/index.js`), so the line stays as it was built. A machine the line needs that
-  we do not have yet is built first as a machine (`machine-skill`), then placed in the line.
+  we do not have yet is built first as a machine (`machine-skill`), then placed in the line; until it is, the station
+  may stand in AirSup's kit machine, said so on the station (`standIn: { kit, for, label }`) and in its inspector.
 - **Real size:** 1 unit = 1 m, the same measure as every other asset; nothing is scaled to fit the table.
-- **Until the first factory joins the app:** the spec, the built page, `check.mjs`'s numbers, the shots and the film
-  go to `/mnt/project-files/factories/<factory>/`, never into the repository.
-- **When it joins the app:** it starts the Factories library the way every group is kept: `src/lib/factories/<factory>.js`
-  in JavaScript, a kind in `LIST` of `src/lib/factories/index.js` with its versions in `HISTORY`
-  (`src/lib/app/versions.js`), a page `/app/factories` and a tile in Game Assets (`src/lib/app/places.ts`). Its
-  simulation is ported as a pure JS module with the same equations, so the numbers stay what the page showed.
+- **What the tools make stays out of the repository:** the spec as `spec.js`, the built page, `check.mjs`'s numbers,
+  the shots and the film go to `/mnt/project-files/factories/<factory>/`.
+- **In the app:** the Factories library, kept the way every group is: `src/lib/factories/<factory>.js` in JavaScript,
+  a kind in `LIST` of `src/lib/factories/index.js` with its versions in `HISTORY` (`src/lib/app/versions.js`), the
+  page `/app/factories` and the first tile in Game Assets (`src/lib/app/places.ts`). The runtime is ported into
+  `src/lib/factories` (the engine pure, with the same equations, so the numbers stay what `check.mjs` showed; a test
+  holds it to them). The first, the BatteryPack line (2026-10-15), and what it taught us: `ours.md` beside this file.
 - **Its versions:** every upgrade is a new version with a dated note; the old one stays frozen, and a group of its
   own in `GROUPS` (`$lib/assets/index.js`) puts it under the versions test with every other asset.
 - Never name the brand or startup that inspired a factory.

@@ -62,10 +62,11 @@ export const CITY: Place[] = [
 
 
 /** the game's building blocks, one group on the dashboard (Game Assets, /app/assets/), listed with a picture each, in
- *  the asset producer's order (.claude/skills/asset-producer): the machines, the actors (people and animals), the
- *  worlds, the buildings, the things, the biomes and the plants. The things are the still models (src/lib/models; the
- *  address kept from when they were the Models) */
+ *  the asset producer's order (.claude/skills/asset-producer): the factories (whole production lines, live), the
+ *  machines, the actors (people and animals), the worlds, the buildings, the things, the biomes and the plants. The
+ *  things are the still models (src/lib/models; the address kept from when they were the Models) */
 export const GAME_ASSETS: Place[] = [
+	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', cap: 'media:admin', note: 'Whole production lines, run live by simulation: the BatteryPack line', cover: `${base}/app/covers/factories.jpg` },
 	{ href: `${base}/app/machines/`, label: 'Machines', icon: 'gear', cap: 'media:admin', note: 'Diggers, the pod, the LifeTrac, the cubes: every part its own', cover: `${base}/app/covers/machines.jpg` },
 	{ href: `${base}/app/actors/`, label: 'Actors', icon: 'user', cap: 'media:admin', note: 'People and animals, rigged to move', cover: `${base}/app/covers/actors.jpg` },
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film', cover: `${base}/app/covers/worlds.jpg` },
@@ -90,7 +91,7 @@ export const MY_DATA: Place[] = [
 /** a dashboard tile that opens a list of places: the sandboxes, the game assets, my data */
 export type Group = Place & { items: Place[] };
 export const SANDBOXES: Group = { href: `${base}/app/games/`, label: 'Sandboxes', icon: 'play', note: 'Every sandbox, each a world of its own to play', items: PLAY };
-export const ASSETS_GROUP: Group = { href: `${base}/app/assets/`, label: 'Game Assets', icon: 'media', cap: 'media:admin', note: 'Machines, actors, worlds, buildings, things, biomes and plants', items: GAME_ASSETS };
+export const ASSETS_GROUP: Group = { href: `${base}/app/assets/`, label: 'Game Assets', icon: 'media', cap: 'media:admin', note: 'Factories, machines, actors, worlds, buildings, things, biomes and plants', items: GAME_ASSETS };
 export const DATA_GROUP: Group = { href: `${base}/app/data/`, label: 'My Data', icon: 'database', note: 'Studio, avenDB, Skills, Generated UI, Stories, the Journal and Inspire me', items: MY_DATA };
 export const GROUPS: Group[] = [SANDBOXES, ASSETS_GROUP, DATA_GROUP];
 
@@ -109,9 +110,10 @@ export const released = (founder: Founder | null, p: Place) => p.release !== 'dr
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
 export const gameAt = (path: string) =>
 	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
-	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/machines/`) ? MACHINES_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : path.startsWith(`${base}/app/genui/`) ? GENUI_TILE : undefined);
-/** the Worlds grid, the Things, the Buildings, the Actors, the Machines, the Plants, the Skills and avenDB: only an admin's */
+	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/factories/`) ? FACTORIES_TILE : path.startsWith(`${base}/app/machines/`) ? MACHINES_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : path.startsWith(`${base}/app/genui/`) ? GENUI_TILE : undefined);
+/** the Worlds grid, the Things, the Buildings, the Actors, the Factories, the Machines, the Plants, the Skills and avenDB: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
+const FACTORIES_TILE: Place = { href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', release: 'draft' };
 const MODELS_TILE: Place = { href: `${base}/app/models/`, label: 'Things', icon: 'media', release: 'draft' };
 const BUILDINGS_TILE: Place = { href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', release: 'draft' };
 const ACTORS_TILE: Place = { href: `${base}/app/actors/`, label: 'Actors', icon: 'user', release: 'draft' };
@@ -133,6 +135,7 @@ export function placeOf(path: string): string {
 	if (rel.startsWith('/app/models/')) return 'Things';
 	if (rel.startsWith('/app/buildings/')) return 'Buildings';
 	if (rel.startsWith('/app/actors/')) return 'Actors';
+	if (rel.startsWith('/app/factories/')) return 'Factories';
 	if (rel.startsWith('/app/machines/')) return 'Machines';
 	if (rel.startsWith('/app/plants/')) return 'Plants';
 	if (rel.startsWith('/app/biomes/')) return 'Biomes';
