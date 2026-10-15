@@ -13,9 +13,9 @@
 //! write is encrypted under its entry's key, so the server and relays only ever hold ciphertext.
 //!
 //! Built test-first against the Lean specification in `avendb/spec/` (see its README): `policy` mirrors the Lean model
-//! edit for edit, and every test is named after the scenario or theorem it guards. Each module is written in the phase
-//! named below; until then it is a stub, and the tests waiting for it are ignored with that phase as the reason, so
-//! `cargo test -p avendb -- --ignored` lists what is still red.
+//! edit for edit, and every test is named after the scenario or theorem it guards. Each module was written in the phase
+//! named below, its tests ignored with that phase as the reason until it was built; every phase is built now, so no
+//! core test is ignored.
 //!
 //! | Phase | Modules | Proven in Lean |
 //! |---|---|---|
