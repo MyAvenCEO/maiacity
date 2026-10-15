@@ -10,8 +10,12 @@
 import * as THREE from 'three';
 import { FORMAT, MATERIALS } from './serialize.js';
 
-/** what one asset may be at most (phase 0: generous; phase 1 sets them per LOD) */
-export const BUDGET = { nodes: 20000, geometries: 20000, materials: 2000, textures: 64, texturePixels: 4096, tris: 2_000_000, vertices: 4_000_000, instances: 100_000 };
+/**
+ * what one asset may be at most (phase 0: generous; phase 1 sets them per LOD). A texture is only its settings and the
+ * picture it names, so there may be one per material map; the pictures are what weigh (`images`, each at most
+ * `texturePixels` a side; in format 0 each texture its own picture, so both counts hold for engine 1 as before).
+ */
+export const BUDGET = { nodes: 20000, geometries: 20000, materials: 2000, textures: 2000, images: 64, texturePixels: 4096, tris: 2_000_000, vertices: 4_000_000, instances: 100_000 };
 
 /** the formats it reads: engine 1's and the one ./serialize.js writes now */
 export const FORMATS = [0, FORMAT];
@@ -126,7 +130,8 @@ export function rebuild(data) {
 	// format 0: each texture its own picture, as format 1 would name it
 	const listed = data.format === 0 ? textures.map((t) => (t?.bitmap || t?.pixels ? { bitmap: t.bitmap, pixels: t.pixels } : null)) : data.images;
 	if (!Array.isArray(listed)) fail('missing lists');
-	if (nodes.length > BUDGET.nodes || geometries.length > BUDGET.geometries || materials.length > BUDGET.materials || textures.length > BUDGET.textures || listed.length > BUDGET.textures) fail('too many parts');
+	const counts = { nodes: nodes.length, geometries: geometries.length, materials: materials.length, textures: textures.length, images: data.format === 0 ? textures.length : listed.length };
+	for (const [what, n] of Object.entries(counts)) if (n > BUDGET[what]) fail(`${n} ${what}, more than ${BUDGET[what]}`);
 	const images = listed.map((x, i) => (data.format === 0 && x === null ? null : image(x, i)));
 	const tex = textures.map((t, i) => texture(data.format === 0 ? { ...t, image: images[i] ? i : null } : t, i, images));
 	const mats = materials.map((x, i) => material(x, i, tex));

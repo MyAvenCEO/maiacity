@@ -401,6 +401,11 @@
 		return a.length ? a[Math.floor(a.length / 2)] : 0;
 	};
 
+	// what the box refuses on purpose: frozen versions with a fault their own notes name (the stand-in's back teeth had no
+	// colour from v6 to v9, NaN in its colours, put right in v10), refused as any data out of shape is
+	const FAULTY = [{ label: /^actors\/stand-in@[6-9]:/, error: 'color has a value that is not a number', why: 'the stand-ins v6 to v9, whose back teeth have no colour (fixed in v10)' }];
+	const faulty = (r) => FAULTY.find((f) => f.label.test(r.label) && r.error?.includes(f.error));
+
 	// phase 3: every recipe of ours, each version and variant at its own values, built in the box and in the page, the
 	// two compared as the samples are, and both timed
 	let sweep = $state(null);
@@ -428,19 +433,20 @@
 				rows.push({ label: at.label, hash, error: String(e.message).slice(0, 200) });
 			}
 		}
-		const failed = rows.filter((r) => !r.same);
+		const refused = rows.filter((r) => !r.same && faulty(r));
+		const failed = rows.filter((r) => !r.same && !faulty(r));
 		const slowest = rows.filter((r) => r.same).sort((a, b) => b.box - a.box).slice(0, 10);
-		sweep = { userAgent: navigator.userAgent, engine: INDEX.engine, ms: Math.round(now() - t0), count: rows.length, failed: failed.length, median: { build: median(rows.map((r) => r.build)), box: median(rows.map((r) => r.box)), page: median(rows.map((r) => r.page)), rebuild: median(rows.map((r) => r.rebuild)), mb: median(rows.map((r) => r.mb)) }, slowest, rows };
+		sweep = { userAgent: navigator.userAgent, engine: INDEX.engine, ms: Math.round(now() - t0), count: rows.length, failed: failed.length, refused: refused.length, median: { build: median(rows.map((r) => r.build)), box: median(rows.map((r) => r.box)), page: median(rows.map((r) => r.page)), rebuild: median(rows.map((r) => r.rebuild)), mb: median(rows.map((r) => r.mb)) }, slowest, rows };
 		checks = [
 			...checks,
 			{
 				name: `Every asset comes out the same`,
 				ok: failed.length === 0,
-				note: `${rows.length - failed.length} of ${rows.length} recipes (every asset, version and variant) built in the box as in the page, in ${(sweep.ms / 1000).toFixed(0)} s; medians: built in ${sweep.median.build} ms, ${sweep.median.box} ms in the box in all, ${sweep.median.page} ms in the page, rebuilt in ${sweep.median.rebuild} ms, ${sweep.median.mb} MB${failed.length ? `; not the same: ${failed.map((r) => r.label).join(', ')}` : ''}`
+				note: `${rows.length - failed.length - refused.length} of ${rows.length} recipes (every asset, version and variant) built in the box as in the page, in ${(sweep.ms / 1000).toFixed(0)} s${refused.length ? `, and ${refused.length} refused as they should be: ${[...new Set(refused.map((r) => faulty(r).why))].join('; ')}` : ''}; medians: built in ${sweep.median.build} ms, ${sweep.median.box} ms in the box in all, ${sweep.median.page} ms in the page, rebuilt in ${sweep.median.rebuild} ms, ${sweep.median.mb} MB${failed.length ? `; not the same: ${failed.map((r) => r.label).join(', ')}` : ''}`
 			}
 		];
 		still = false;
-		line = failed.length ? `${failed.length} of ${rows.length} not the same.` : `Every asset, all ${rows.length}, came out the same.`;
+		line = failed.length ? `${failed.length} of ${rows.length} not the same.` : `Every asset came out the same${refused.length ? `, but ${refused.length} refused for a fault of their own` : ''}.`;
 		busy = false;
 	}
 </script>
@@ -491,7 +497,7 @@
 			<details>
 				<summary>Every asset: the slowest in the box{sweep.failed ? ', and those not the same' : ''}</summary>
 				<ul class="probes">
-					{#each sweep.rows.filter((r) => !r.same) as r}<li><b>{r.label}</b> {r.error ?? `${r.tris} triangles in the box, ${r.page_tris} in the page`}</li>{/each}
+					{#each sweep.rows.filter((r) => !r.same) as r}<li><b>{r.label}</b> {faulty(r) ? `refused as it should be: ${r.error}` : (r.error ?? `${r.tris} triangles in the box, ${r.page_tris} in the page`)}</li>{/each}
 					{#each sweep.slowest as r}<li><b>{r.label}</b> {r.box} ms in the box ({r.build} ms built), {r.page} ms in the page, {r.tris.toLocaleString('en')} triangles, {r.mb} MB</li>{/each}
 				</ul>
 			</details>
