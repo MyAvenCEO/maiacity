@@ -23,7 +23,7 @@
 // connection, as is the card it names.
 //
 // Since 2026-10-10 the unlock signs the join too, so the iPhone links in that one ceremony: the join's classical half
-// is the pass's own assertion (`sign::Classical::Pass`, `Node::link_by_pass`), which names the device and not the op,
+// is the pass's own assertion (`sign::WebAuthn::Pass`, `Node::link_by_pass`), which names the device and not the op,
 // and its hash-based half is over the op itself, made from the same ceremony's PRF output, as below. With the curves
 // broken that half is all the model keeps of either signature, so the model and its result stay as they were.
 //

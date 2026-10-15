@@ -4,7 +4,7 @@
 //! the newest statement each device it knows signed (`Shared::keep_statement`), passes it on to each live peer that may know all it
 //! says by the node's view, and keeps it on its shelf, so that it outlives the device's connection and the node's own
 //! restarts. Synced to lists a device on a live connection by what it announced, and any other by its newest statement,
-//! with when it checked (`Shared::synced_to`, `H2_synced_to_at`). Like holdings, statements route and show, and never
+//! with when it checked (`Shared::synced_to`, `H2_synced_to_checked`). Like holdings, statements route and show, and never
 //! let anyone fetch anything (T27).
 //!
 //! A device signs one statement for each set of holdings it tells a peer, once it tells that peer something new, at
