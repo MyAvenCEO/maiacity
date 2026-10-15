@@ -31,7 +31,7 @@ pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
     Node::spawn(lab, me, Options { shelf: Some(shelf), keep: true, card: true, ..opts }).await
 }
 
-/// An agent's own device on `shelf`, named `name`, with `opts` for its network: avenCLAUDE's on its person's Mac, as
+/// An agent device on `shelf`, named `name`, with `opts` for its network: agentClaude on its person's Mac, as
 /// the server's is, with its secret on the shelf beside its edits, made at its first start; but keeping no file whole
 /// of its own accord (`Options::keep` as `opts` say), so that it reads its person's files from their Mac's one store.
 /// It hands its card to whoever asks and answers claims while it belongs to no vault, so that its person's Mac adopts

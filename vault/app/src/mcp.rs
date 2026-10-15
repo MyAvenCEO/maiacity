@@ -1,8 +1,8 @@
 //! The studio, for agents: an MCP server inside maiaCITY Studio, so Claude Code (or any agent harness) can drive
 //! every step the studio's buttons drive — ingest, the library and its copies, describing files, probes and proxies,
 //! timelines (edit), grades and renders, the content board and its deliveries (draft and publish). avenDB isn't here:
-//! an agent reaches the person's own database as an aven of its own, by its own device's key, never by this token
-//! (avendb/crates/avendb-device/src/agent.rs).
+//! an agent reaches the person's own database as an agent device of an aven, by its own device's key, never by this
+//! token (avendb/crates/avendb-device/src/agent.rs).
 //!
 //! Every tool is the same native function the studio calls; nothing here is a second implementation. It listens on
 //! this Mac only (127.0.0.1:4545/mcp) and answers only a request that carries the app's MCP token
@@ -1999,8 +1999,8 @@ impl ServerHandler for Studio {
              hash only. Also the economy sandbox (Sandbox 7, the avens trading): its configs, every run's stats day by \
              day, and MIPs (proposals that change a config, which only the admin accepts). And Generated UI: mini app \
              views (declarative or sandboxed code) an agent puts on the dashboard's Generated UI page on the fly. \
-             avenDB is not here: an agent reaches it as an aven of its own, by its own device's key (the avendb MCP, \
-             `avendb-device agent avenCLAUDE`), never by this token.",
+             avenDB is not here: an agent reaches it as an agent device of an aven, by its own device's key (the \
+             avendb MCP, `avendb-device agent claude`), never by this token.",
         )
     }
 }

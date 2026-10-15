@@ -81,11 +81,9 @@
 	let link = $state('');
 	/** in the Mac app, the UDP sockets its device's node bound, on which it reaches its peers directly */
 	let sockets = $state(/** @type {string[] | null} */ (null));
-	/** in the Mac app, the agents on this Mac waiting for the person to adopt them (avendb-device's `agent`): each
-	 *  its name, its device and its offer */
-	let agents = $state(/** @type {{ name: string, device: string, offer: string }[]} */ ([]));
-	/** in the Mac app, the line that connects Claude Code to its own device on this Mac, avenCLAUDE */
-	let connect = $state('');
+	/** in the Mac app, the access requests the agent devices on this Mac left for the person to answer
+	 *  (avendb-device's `agent`, ./AccessRequest.svelte) */
+	let requests = $state(/** @type {import('./vaults.js').AccessRequestView[]} */ ([]));
 	/** whether the device is writing its card, its copy setting, or vaults' profiles: one such write at a time */
 	let carding = false;
 	let copying = false;
@@ -171,15 +169,14 @@
 
 	onDestroy(() => device?.close());
 
-	// in the Mac app, while it is open: the agents waiting on this Mac, looked for every few seconds, as an agent
-	// leaves its offer once its harness starts it
+	// in the Mac app, while it is open: the access requests on this Mac, looked for every few seconds, as an agent
+	// device leaves its request once its harness starts it, and again as it asks for more
 	$effect(() => {
 		if (!mac || phase !== 'open') return;
-		mac.call('agentCommand').then((/** @type {string} */ line) => (connect = line), () => {});
 		const look = () =>
 			mac
 				.call('agents')
-				.then((/** @type {typeof agents} */ waiting) => (agents = waiting))
+				.then((/** @type {typeof requests} */ asked) => (requests = asked))
 				.catch(() => {});
 		look();
 		const every = setInterval(look, 3000);
@@ -625,15 +622,28 @@
 			}),
 		forget: () => forget(),
 		/**
-		 * In the Mac app: adopts agent `name`, waiting with `offer`, as the person's aven of that name, in one ceremony
-		 * of their passkey, `vaults` giving it a Suggester share (avendb-device's `adopt`).
-		 * @param {string} name @param {string} offer @param {string[]} vaults
+		 * In the Mac app: grants agent device `name`'s access request, the one its device `device` left: it joins aven
+		 * `aven` (`{id}` of one the person's vault owns, or `{name}` of a new one), in one ceremony of their passkey if
+		 * it is none of its devices yet, and the aven gets each of `shares` (avendb-device's `grant`).
+		 * @param {string} name @param {string} device @param {{ id: string } | { name: string }} aven
+		 * @param {{ over: string, level: string }[]} shares
 		 */
-		adopt: (name, offer, vaults) =>
-			act(`Adopting ${name}`, async () => {
-				await mac.call('adopt', name, offer, vaults);
-				agents = agents.filter((a) => a.offer !== offer);
-			})
+		grant: (name, device, aven, shares) =>
+			act(`Granting ${name}`, async () => {
+				await mac.call('grant', name, device, aven, shares);
+				requests = requests.filter((r) => r.device !== device);
+			}),
+		/** In the Mac app: denies agent device `name`'s access request, its device `device`'s. @param {string} name
+		 *  @param {string} device */
+		deny: (name, device) =>
+			run(`Denying ${name}`, async () => {
+				await mac.call('deny', name, device);
+				requests = requests.filter((r) => r.device !== device);
+			}),
+		/** In the Mac app: the command that runs harness `harness`'s agent device, and for Claude Code the line that
+		 *  adds it (avendb-device's `agentCommand`); else none. @param {string} harness
+		 *  @returns {Promise<{ device: string, command: string, claude: string | null } | null>} */
+		agentCommand: async (harness) => (mac ? mac.call('agentCommand', harness) : null)
 	};
 
 	const forget = () => {
@@ -653,7 +663,7 @@
 </script>
 
 {#if phase === 'open' && world}
-	<Shell {world} {api} doing={signing ? '' : doing} {error} thisName={meta?.name ?? ''} {link} {qr} {sockets} {agents} {connect} />
+	<Shell {world} {api} doing={signing ? '' : doing} {error} thisName={meta?.name ?? ''} {link} {qr} {sockets} {requests} />
 {:else}
 	<div class="account">
 		<header class="lead">

@@ -121,6 +121,14 @@
  * @typedef {{ over: string, as: string, share: Verdict, rows: ShareRow[] }} Shares
  */
 
+/**
+ * An access request an agent device on the Mac left (avendb-device's `agent`, ./AccessRequest.svelte): its device's
+ * name (agentClaude) and key, its offer while it is no aven's device yet, the aven it names, if any, the level it asks
+ * for, why, and the vaults it names.
+ * @typedef {{ name: string, kind: string, device: string, offer: string | null, aven: string | null,
+ *   level: string, why: string, vaults: string[] }} AccessRequestView
+ */
+
 /** The levels in the order the page lists them: the strongest first, then the keep levels, which grant nothing. */
 export const STRONGEST = /** @type {const} */ ([
 	'owner',

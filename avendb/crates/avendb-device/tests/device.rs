@@ -6,9 +6,9 @@
 //! in the unlock's sheet alone, following the vaults it followed, and puts the shelf aside when she forgets it there,
 //! deleting nothing. Every read and change is an op (`run`, V2), what her vault's owners approve signed in a sheet;
 //! a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`), and any range of it back, in base64. A new
-//! device puts aside a shelf a start cut short left, and clears what an earlier avenDB kept in the folder. And an
-//! agent's own device on the Mac (`agent`), as Claude Code starts it, waits for the page, which adopts it as Eve's
-//! aven avenCLAUDE in one sheet; from then on it reads her vault by its own key.
+//! device puts aside a shelf a start cut short left, and clears what an earlier avenDB kept in the folder. And agent
+//! devices on the Mac (`agent`), as Claude Code and Codex start them, ask for access; she denies, it asks again, and
+//! the page's consent screen adds both to her one aven avenEve, a sheet each, whose share they act with.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -481,12 +481,13 @@ struct Harness {
 }
 
 impl Harness {
-    /// The harness starts agent `name`'s device beside the app's folder `host`.
-    fn start(host: &Path, name: &str) -> Harness {
-        let (harness, device) = tokio::io::duplex(1 << 20);
+    /// The harness `harness` starts its agent device beside the app's folder `host`, asking to join `aven`, if named.
+    fn start(host: &Path, harness: &str, aven: Option<&str>) -> Harness {
+        let (pipe, device) = tokio::io::duplex(1 << 20);
         let (input, output) = tokio::io::split(device);
-        let serving = tokio::spawn(agent::serve(host.to_path_buf(), name.to_string(), input, output));
-        let (from, to) = tokio::io::split(harness);
+        let (host, harness, aven) = (host.to_path_buf(), harness.to_string(), aven.map(String::from));
+        let serving = tokio::spawn(agent::serve(host, harness, aven, input, output));
+        let (from, to) = tokio::io::split(pipe);
         Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
     }
 
@@ -520,8 +521,35 @@ impl Harness {
     }
 }
 
+/// The access requests on the page once there are `n`, as the device lists them (`agents`).
+async fn requests(app: &mut App, n: usize) -> Value {
+    let mut asked = Value::Null;
+    for _ in 0..100 {
+        asked = app.call("agents", json!([])).await.expect("the requests");
+        if asked.as_array().is_some_and(|a| a.len() == n) {
+            return asked;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("{n} requests, not {asked}");
+}
+
+/// What harness `h` reads of entry `entry`, once it reads it: its text, and whether it is an error.
+async fn reads(h: &mut Harness, entry: &Value) -> (String, bool) {
+    let get = json!({ "op": { "op": "get", "entry": entry } });
+    let mut read = (String::new(), true);
+    for _ in 0..100 {
+        read = h.tool("avendb_ask", get.clone()).await;
+        if !read.1 && read.0.contains("\"ok\"") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    read
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_mac_adopts_claude_codes_own_device_as_eves_aven_in_one_sheet_and_it_reads_her_vault() {
+async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_and_edit_her_vault() {
     let (_relay, url, server) = server().await;
     // the app's folder and the agents' beside it, both in a folder of the test's own
     let folder = Folder::new("agent");
@@ -534,53 +562,85 @@ async fn the_mac_adopts_claude_codes_own_device_as_eves_aven_in_one_sheet_and_it
     let note = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": seeds })).await;
     let entry = note.expect("her note")["entry"].clone();
     assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "no agent on her Mac yet");
-    // Claude Code starts its own device, which waits to be adopted: the page shows it
-    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    // Claude Code starts its agent device, agentClaude, which asks to join her aven avenEve: the page shows it
+    let mut claude = Harness::start(&dir, agent::CLAUDE, Some("avenEve"));
     let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
     assert_eq!(hello["serverInfo"]["name"], "avendb");
     let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
     let names: Vec<&str> = tools.as_array().expect("tools").iter().filter_map(|t| t["name"].as_str()).collect();
-    assert_eq!(names, ["avendb_vaults", "avendb_ask", "avendb_run"]);
+    assert_eq!(names, ["avendb_vaults", "avendb_ask", "avendb_request_access", "avendb_run"]);
     let (waits, _) = claude.tool("avendb_vaults", json!({})).await;
-    assert!(waits.contains("waiting to be adopted"), "{waits}");
-    let mut waiting = Value::Null;
-    for _ in 0..100 {
-        waiting = app.call("agents", json!([])).await.expect("the agents");
-        if waiting.as_array().is_some_and(|w| !w.is_empty()) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    assert_eq!(waiting[0]["name"], agent::CLAUDE, "avenCLAUDE waits: {waiting}");
-    // one sheet adopts it, as an aven her vault owns, which may suggest in her vault
-    let offer = waiting[0]["offer"].clone();
-    let adopted = app.call("adopt", json!([agent::CLAUDE, offer, [mine]])).await.expect("adopted");
+    assert!(waits.contains("waiting for its person to answer"), "{waits}");
+    let asked = requests(&mut app, 1).await;
+    let device = asked[0]["device"].clone();
+    assert_eq!(asked[0]["name"], "agentClaude", "{asked}");
+    assert_eq!((&asked[0]["aven"], &asked[0]["level"]), (&json!("avenEve"), &json!("Suggester")));
+    assert!(asked[0]["offer"].is_string(), "its offer, to join by");
+    // the command that runs any harness's agent device, and for Claude Code the line that adds it
+    let codex = app.call("agentCommand", json!(["codex"])).await.expect("its command");
+    assert_eq!(codex["device"], "agentCodex");
+    assert!(codex["command"].as_str().is_some_and(|l| l.contains(" agent codex --dir ")), "{codex}");
+    assert!(codex["claude"].is_null(), "no Claude Code line for Codex");
+    let line = app.call("agentCommand", json!([])).await.expect("Claude Code's");
+    assert!(line["claude"].as_str().is_some_and(|l| l.starts_with("claude mcp add --scope user avendb -- ")));
+    assert!(app.call("agentCommand", json!(["../x"])).await.is_err(), "no name of a folder elsewhere");
+    // she says no: it is gone, and the agent is told
+    app.call("deny", json!(["agentClaude", device])).await.expect("denied");
+    assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "no request any more");
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "and it asks no more of its own accord");
+    let (no, _) = claude.tool("avendb_vaults", json!({})).await;
+    assert!(no.contains("said no"), "{no}");
+    // it asks again, for more and saying why; a level it may not ask for is refused
+    let (bad, error) = claude.tool("avendb_request_access", json!({ "level": "Owner", "why": "all of it" })).await;
+    assert!(error && bad.contains("no level"), "{bad}");
+    let why = "to sort the garden notes";
+    let (ok, error) = claude.tool("avendb_request_access", json!({ "level": "Editor", "why": why })).await;
+    assert!(!error, "{ok}");
+    let asked = requests(&mut app, 1).await;
+    assert_eq!((&asked[0]["level"], &asked[0]["why"]), (&json!("Editor"), &json!(why)), "{asked}");
+    // one sheet: the device joins her new aven avenEve, which her vault owns and which may edit her vault
+    let shares = json!([{ "over": mine, "level": "Editor" }]);
+    let owner = json!([{ "over": mine, "level": "Owner" }]);
+    let refused = app.call("grant", json!(["agentClaude", device, { "name": "avenEve" }, owner])).await;
+    assert!(refused.is_err_and(|e| e.contains("isn't a level")), "never Owner");
+    let granted = app.call("grant", json!(["agentClaude", device, { "name": "avenEve" }, shares])).await;
+    let aven = granted.expect("granted")["aven"].clone();
     assert_eq!(app.asked(), ["approve"], "one sheet");
-    let aven = adopted["aven"].clone();
     let world = world_of(&mut app).await;
     let shown = world["vaults"].as_array().expect("vaults").iter().find(|v| v["id"] == aven).cloned();
     let shown = shown.expect("the aven on her Mac");
-    assert_eq!((&shown["kind"], &shown["name"]), (&json!("aven"), &json!(agent::CLAUDE)), "{shown}");
+    assert_eq!((&shown["kind"], &shown["name"]), (&json!("aven"), &json!("avenEve")), "{shown}");
     assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "none waits any more");
-    // the agent acts for avenCLAUDE by its own key, and reads her note
+    // agentClaude acts for avenEve by its own key: it reads her note, and edits her vault directly
     let (me, _) = claude.tool("avendb_vaults", json!({})).await;
     let me: Value = serde_json::from_str(&me).expect("JSON");
-    assert_eq!(me["me"]["vault"], aven, "avenCLAUDE: {me}");
-    let get = json!({ "op": { "op": "get", "entry": entry } });
-    let mut read = (String::new(), true);
-    for _ in 0..100 {
-        read = claude.tool("avendb_ask", get.clone()).await;
-        if !read.1 && read.0.contains("Tomatoes in March.") {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    assert!(!read.1 && read.0.contains("Tomatoes in March."), "the agent reads her note: {read:?}");
+    assert_eq!((&me["me"]["device"], &me["me"]["aven"]), (&json!("agentClaude"), &aven), "{me}");
+    let read = reads(&mut claude, &entry).await;
+    assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentClaude reads her note: {read:?}");
+    let beans = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
+    let beans = json!({ "op": beans });
+    let (made, error) = claude.tool("avendb_run", beans).await;
+    assert!(!error && made.contains("\"ok\""), "an Editor writes: {made}");
+    // Codex starts its own agent device, which joins the same aven in one more sheet, and has its access
+    let mut codex = Harness::start(&dir, "codex", None);
+    let asked = requests(&mut app, 1).await;
+    assert_eq!((&asked[0]["name"], &asked[0]["aven"]), (&json!("agentCodex"), &Value::Null), "{asked}");
+    let joined = app.call("grant", json!(["agentCodex", asked[0]["device"], { "id": aven }, []])).await;
+    assert_eq!(joined.expect("joined")["aven"], aven, "the same aven");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let world = world_of(&mut app).await;
+    let shown = world["vaults"].as_array().expect("vaults").iter().find(|v| v["id"] == aven).cloned();
+    let devices = shown.expect("the aven")["devices"].as_array().map_or(0, Vec::len);
+    assert_eq!(devices, 2, "agentClaude and agentCodex, both devices of avenEve");
+    let read = reads(&mut codex, &entry).await;
+    assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentCodex reads her note too: {read:?}");
     let (no, error) = claude.tool("avendb_run", json!({ "op": { "op": "world" } })).await;
     assert!(error && no.contains("only reads"), "{no}");
     let put = json!({ "op": { "op": "put_file", "vault": mine, "name": "a.txt", "size": 1 } });
     let (no, error) = claude.tool("avendb_run", put).await;
     assert!(error && no.contains("isn't for an agent"), "{no}");
+    codex.quit().await;
     claude.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");

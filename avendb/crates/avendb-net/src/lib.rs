@@ -862,8 +862,8 @@ impl Node {
     /// Adopt the device `offer` names, one of no vault yet that answers claims (`Options::card`), as a device of an
     /// aven vault this device's person's vault owns: `into`, or else a new one their vault founds and owns alone, in
     /// the same ceremony. The passkey `passkey` approves the edit that adds the device, which the device signs too, as
-    /// a server's claim goes (`claim_with`, `Lab::claim`): an agent's own device, such as avenCLAUDE's on the person's
-    /// Mac, which acts for its aven vault by its own key from then on. The aven vault. Fails if this device belongs to
+    /// a server's claim goes (`claim_with`, `Lab::claim`): an agent device, such as agentClaude on the person's Mac,
+    /// which acts for its aven vault by its own key from then on. The aven vault. Fails if this device belongs to
     /// no vault, the device offered isn't the one answering or takes no claim, the passkey isn't at hand, or the
     /// device refuses the edit.
     pub async fn adopt_with(

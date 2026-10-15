@@ -17,7 +17,7 @@
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
-	import Agents from './Agents.svelte';
+	import AccessRequest from './AccessRequest.svelte';
 	import Article from './Article.svelte';
 	import Articles from './Articles.svelte';
 	import Flows from './Flows.svelte';
@@ -39,9 +39,9 @@
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
 	 *   link: string, qr: string, sockets?: string[] | null,
-	 *   agents?: { name: string, device: string, offer: string }[], connect?: string }}
+	 *   requests?: import('./vaults.js').AccessRequestView[] }}
 	 */
-	let { world, api, doing, error, thisName, link, qr, sockets = null, agents = [], connect = '' } = $props();
+	let { world, api, doing, error, thisName, link, qr, sockets = null, requests = [] } = $props();
 
 	/** the vault the person looks at: their own until they pick another */
 	let picked = $state('');
@@ -222,7 +222,7 @@
 				{/if}
 			</p>
 		</header>
-		<Agents {world} {agents} {busy} onadopt={api.adopt} />
+		<AccessRequest {world} {requests} {busy} ongrant={api.grant} ondeny={api.deny} />
 		{#if tab === 'notes'}
 			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
 		{:else if tab === 'articles'}
@@ -240,7 +240,7 @@
 		{:else if tab === 'jobs'}
 			<Jobs {world} vault={context} {actor} {api} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
-			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {connect} />
+			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} />
 		{:else}
 			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 		{/if}

@@ -194,8 +194,11 @@ impl Service {
     /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileAgain [n]` once every
     /// chunk is in, whether the device reads the file again (once for its key, once to seal it: the page then hands
     /// every chunk over again, from 0), `fileEnd [n]` the op's answer, `fileDrop [n]` none, the file dropped.
-    /// `agents` the agents on this Mac waiting to be adopted, `adopt [name, offer, vaults]` one of them adopted as the
-    /// person's aven (`agent`), and `agentCommand` the line that connects Claude Code to its own device, avenCLAUDE.
+    /// `agents` the access requests the agent devices on this Mac left, `grant [name, device, aven, shares]` one of
+    /// them granted, its device added to aven `aven` (`{id}` of one the person's vault owns, or `{name}` of a new one)
+    /// unless it is one of its devices already, and each of `shares` `{over, level}` a share that aven gets,
+    /// `deny [name, device]` one denied (`agent`), and `agentCommand [harness?]` the command that runs a harness's
+    /// agent device, Claude Code's unless named, and for Claude Code the line that adds it.
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
         let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
@@ -227,10 +230,18 @@ impl Service {
             }
             "fileAgain" => self.file_again(number(0)?).await?.into(),
             "agents" => self.agents(&d),
-            "agentCommand" => agent::command(&std::env::current_exe()?, &self.config.dir, agent::CLAUDE).into(),
-            "adopt" => {
-                let vaults = a.get(2).as_array().cloned().unwrap_or_default();
-                self.adopt(&d, &a.text(0)?, &a.text(1)?, &vaults).await?
+            "agentCommand" => {
+                let harness = a.get(0).as_str().unwrap_or(agent::CLAUDE);
+                agent::named(harness)?;
+                agent::command(&std::env::current_exe()?, &self.config.dir, harness)
+            }
+            "grant" => {
+                let shares = a.get(3).as_array().cloned().unwrap_or_default();
+                self.grant(&d, &a.text(0)?, &a.text(1)?, a.get(2), &shares).await?
+            }
+            "deny" => {
+                self.deny(&a.text(0)?, &a.text(1)?)?;
+                Value::Null
             }
             "fileEnd" => {
                 let incoming = self.files.lock().expect("the files").remove(&number(0)?);
@@ -465,69 +476,126 @@ impl Service {
     fn leave_offer(&self, d: &Device) {
         let (file, offer) = (agent::host_offer(&self.config.dir), d.node().offer().to_text());
         let left = std::fs::read_to_string(&file).is_ok_and(|now| now == offer);
-        if !left && agent::agents(&self.config.dir).is_dir() {
-            if let Err(e) = std::fs::write(&file, offer) {
-                tracing::warn!("the offer for this Mac's agents isn't written: {e}");
-            }
+        if !left
+            && agent::agents(&self.config.dir).is_dir()
+            && let Err(e) = std::fs::write(&file, offer)
+        {
+            tracing::warn!("the offer for this Mac's agents isn't written: {e}");
         }
     }
 
-    /// The agents on this Mac waiting to be adopted (`agent`): each its name, its device and its offer; this device's
-    /// own offer left for them as it is now.
+    /// The access requests the agents on this Mac left (`agent::asking`), each as it asks: its name, its kind, its
+    /// device, its offer while it belongs to no vault, the level it asks for, why, and the vaults it names; this
+    /// device's own offer left for them as it is now.
     fn agents(&self, d: &Device) -> Value {
         self.leave_offer(d);
         let dir = agent::agents(&self.config.dir);
-        let mut waiting = vec![];
+        let mut asking = vec![];
         for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
             let path = entry.path();
-            if path.extension().is_none_or(|x| x != "offer") {
-                continue;
-            }
-            let (Some(name), Ok(text)) = (path.file_stem().and_then(|n| n.to_str()), std::fs::read_to_string(&path))
-            else {
+            let name = path.file_stem().and_then(|n| n.to_str()).filter(|n| agent::named(n).is_ok());
+            let (Some(name), true) = (name, path.extension().is_some_and(|x| x == "request")) else {
                 continue;
             };
-            if let Ok(offer) = Offer::from_text(text.trim()) {
-                waiting.push(json!({ "name": name, "device": hex(&offer.device.0), "offer": offer.to_text() }));
+            if let Some(asked) = self.request(name) {
+                asking.push(asked);
             }
         }
-        Value::Array(waiting)
+        Value::Array(asking)
     }
 
-    /// Adopts agent `name`, waiting with offer `offer` (`agents`), as the device of the aven vault of that name the
-    /// person's vault owns, founding it if it owns none, in one ceremony of their passkey in the sheet
-    /// (`Node::adopt_with`); then each of `vaults` gives that aven a Suggester share over all of it. The aven vault.
-    async fn adopt(self: &Arc<Self>, d: &Arc<Device>, name: &str, offer: &str, vaults: &[Value]) -> Result<Value> {
-        agent::named(name)?;
-        let offer = Offer::from_text(offer)?;
-        let mine = d.vault().await.context("this Mac belongs to no vault")?;
-        let world = d.node().op(json!({ "op": "world" })).await?;
-        let owned = |v: &&Value| {
-            v["kind"] == "aven"
-                && v["name"] == name
-                && v["owners"].as_array().is_some_and(|o| o.len() == 1)
-                && v["owners"][0]["vault"] == hex(&mine.0)
+    /// Agent device `name`'s access request as it left it, checked: its device's key, its offer if any naming that
+    /// device, the aven it names, if any, a level of `agent::LEVELS`, why in at most 500 characters, and the vaults it
+    /// names; or none.
+    fn request(&self, name: &str) -> Option<Value> {
+        let text = std::fs::read_to_string(agent::request(&self.config.dir, name)).ok()?;
+        let asked: Value = serde_json::from_str(&text).ok()?;
+        let device = asked["device"].as_str().filter(|d| d.len() == 64 && d.bytes().all(|b| b.is_ascii_hexdigit()))?;
+        let offer = match &asked["offer"] {
+            Value::String(o) => Some(Offer::from_text(o).ok().filter(|o| hex(&o.device.0) == device)?.to_text()),
+            _ => None,
         };
-        let vaults_seen = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
-        let into = vaults_seen.iter().find(owned).and_then(|v| v["id"].as_str()).and_then(VaultId::from_hex);
-        let approver = self.approver().await?;
-        let aven = d.node().adopt_with(&offer, into, d.passkey(), &approver).await?;
-        let aven_hex = hex(&aven.0);
-        let named = d.node().op(json!({ "op": "profile", "vault": aven_hex, "name": name })).await?;
-        if named.get("ok").is_none() {
-            tracing::warn!("{name}'s profile isn't written: {named}");
+        let level = asked["level"].as_str().filter(|l| agent::LEVELS.contains(l))?.to_string();
+        let why: String = asked["why"].as_str().unwrap_or_default().chars().take(500).collect();
+        let vaults: Vec<String> =
+            asked["vaults"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
+        let aven = asked["aven"].as_str().and_then(|a| agent::aven_named(a).ok());
+        Some(agent::asking(name, device, offer, &agent::Asking { aven, level, why, vaults }))
+    }
+
+    /// Grants agent device `name`'s access request (`agents`), the one its device `device` left: the device joins
+    /// aven `aven`, `{"id"}` of an aven the person's vault owns or `{"name"}` of a new one their vault founds, in one
+    /// ceremony of their passkey in the sheet (`Node::adopt_with`), unless it is one of that aven's devices already;
+    /// then each of `shares`, `{over, level}`, gives the aven a share of vault `over` at `level`, one of
+    /// `agent::LEVELS`, over all of it, as any share is (`share`), acting for that vault, with no ceremony. The aven.
+    async fn grant(
+        self: &Arc<Self>,
+        d: &Arc<Device>,
+        name: &str,
+        device: &str,
+        aven: &Value,
+        shares: &[Value],
+    ) -> Result<Value> {
+        agent::named(name)?;
+        let asked = self.request(name).filter(|a| a["device"] == device).context("no such request: it changed")?;
+        for share in shares {
+            let level = share["level"].as_str().unwrap_or_default();
+            anyhow::ensure!(share["over"].is_string(), "a share is {{over, level}}: {share}");
+            anyhow::ensure!(agent::LEVELS.contains(&level), "{level:?} isn't a level to give: {:?}", agent::LEVELS);
         }
-        for over in vaults {
+        let mine = hex(&d.vault().await.context("this Mac belongs to no vault")?.0);
+        let world = d.node().op(json!({ "op": "world" })).await?;
+        let vaults = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
+        let ours = |v: &&Value| {
+            v["kind"] == "aven" && v["owners"].as_array().is_some_and(|o| o.iter().any(|o| o["vault"] == mine.as_str()))
+        };
+        let approver = self.approver().await?;
+        let aven = match (aven["id"].as_str(), aven["name"].as_str()) {
+            (Some(id), _) => {
+                let v = vaults.iter().filter(ours).find(|v| v["id"] == id).context("no aven your vault owns")?;
+                let into = VaultId::from_hex(id).context("an aven's id")?;
+                let devices = v["devices"].as_array().into_iter().flatten();
+                if !devices.clone().any(|x| x["id"] == device) {
+                    let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
+                    d.node().adopt_with(&Offer::from_text(offer)?, Some(into), d.passkey(), &approver).await?;
+                }
+                into
+            }
+            (None, Some(named)) => {
+                let named = agent::aven_named(named)?;
+                let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
+                let aven = d.node().adopt_with(&Offer::from_text(offer)?, None, d.passkey(), &approver).await?;
+                let profile = d.node().op(json!({ "op": "profile", "vault": hex(&aven.0), "name": named })).await?;
+                if profile.get("ok").is_none() {
+                    tracing::warn!("{named}'s profile isn't written: {profile}");
+                }
+                aven
+            }
+            _ => bail!("an aven to join is {{id}} or {{name}}: {aven}"),
+        };
+        let aven_hex = hex(&aven.0);
+        for share in shares {
+            let (over, level) = (&share["over"], &share["level"]);
             // acting for the vault itself, as the person's vault owns it, directly or through owners of owners
-            let share = json!({ "op": "share", "over": over, "who": { "vault": aven_hex }, "level": "Suggester",
+            let share = json!({ "op": "share", "over": over, "who": { "vault": aven_hex }, "level": level,
                 "what": "everything", "as": over });
             let (shared, _) = d.run(share, None::<NoBytes>, Some(&approver)).await?;
             if shared.get("ok").is_none() {
-                bail!("{name}'s Suggester share over {over} is refused: {shared}");
+                bail!("the aven's {level} share over {over} is refused: {shared}");
             }
         }
-        std::fs::remove_file(agent::waiting(&self.config.dir, name)).ok();
+        std::fs::remove_file(agent::request(&self.config.dir, name)).ok();
         Ok(json!({ "aven": aven_hex }))
+    }
+
+    /// Denies agent `name`'s access request, the one its device `device` left: it is taken away, and the no left for
+    /// the agent, which asks no more until it asks again (`agent`).
+    fn deny(&self, name: &str, device: &str) -> Result<()> {
+        agent::named(name)?;
+        self.request(name).filter(|a| a["device"] == device).context("no such request: it changed")?;
+        std::fs::write(agent::denied(&self.config.dir, name), device)?;
+        std::fs::remove_file(agent::request(&self.config.dir, name))?;
+        Ok(())
     }
 
     /// Puts the shelf in use aside, never deleting it, and puts a new one in use, empty (`avendb_net::disk::aside`).
