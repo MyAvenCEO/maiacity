@@ -1,26 +1,28 @@
 // MaiaCity V1's rules (game/maiacity-v1/engine.js): HEARTS, the 50/50 MIND split, the pool, rent and the melt.
 import { expect, test } from "bun:test";
-import { DAY_MS, SEEDLINGS, act, advance, describe, dividendsOf, heartsValue, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
+import { DAY_MS, SEEDLINGS, act, advance, describe, dividendsOf, equilibriumOf, heartsValue, invariant, ledgerOf, monthsAt, newGame, payDaysOf, price, quote, rents, supply, weights } from "../../game/maiacity-v1/engine.js";
 
 const T0 = Date.UTC(2026, 9, 13);
+/** the starter pack: the 7 % equilibrium, rounded */
+const STARTER = 120379;
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
 /** one game day: a real day is a game month of 28 */
 const GAME_DAY = DAY_MS / 28;
 /** a game started one game day before T0, its players' starter packs had: 24 HEARTS each ready to mint at T0 */
 const grown = (s) => { s.started = s.t = T0 - GAME_DAY; for (const p of Object.values(s.players)) { p.lastMint = T0 - GAME_DAY; p.starter = true; } return s; };
 
-test("the first mint brings the 8,736 HEARTS starter pack; then HEARTS grow 24 a game day on the game clock, at most the last 24 real hours of growth", () => {
+test("the first mint brings the 120,379 HEARTS starter pack (the 7 % equilibrium); then HEARTS grow 24 a game day on the game clock, at most the last 24 real hours of growth", () => {
   const H = GAME_DAY / 24;
   let s = newGame(T0, { demurrage: 0 });
   s = act(s, "A", { type: "mint" }, T0 + 6 * H);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(8742, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(STARTER + 6, 6);
   expect(s.players.A.starter).toBe(true);
   expect(() => act(s, "A", { type: "mint" }, T0 + 6 * H)).toThrow();
   s = act(s, "A", { type: "mint" }, T0 + 7 * H);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(8743, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(STARTER + 7, 6);
   // three real days away: only the last 24 real hours count (a game month: 28 × 24), and the HEARTS held stay
   s = act(s, "A", { type: "mint" }, T0 + 7 * H + 3 * DAY_MS);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(8743 + 672, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(STARTER + 7 + 672, 6);
 });
 
 test("investing splits each HEART: 0.5 to the investor, 0.4 to the treasury, 0.1 to the city pool", () => {
@@ -29,7 +31,7 @@ test("investing splits each HEART: 0.5 to the investor, 0.4 to the treasury, 0.1
   expect(s.players.A.wallet.MAIA).toBeCloseTo(5, 6);
   expect(s.coops.maia.treasury.MAIA).toBeCloseTo(4, 6);
   expect(s.pool.MAIA).toBeCloseTo(1, 6);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(8736 + 672 - 10, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(STARTER + 672 - 10, 6);
   expect(price(s)).toBe(null);
 });
 
@@ -93,7 +95,7 @@ test("a MIP may change every setting and every COOP: the clock speed, the mint w
   expect(s.month).toBe(1);
   s = act(s, "A", { type: "mint" }, T0 + 3 * DAY_MS);
   // the 48 h window at 12 h a month: 4 game months of 28 days
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(8736 + 4 * 28 * 24, 6);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(STARTER + 4 * 28 * 24, 6);
   // the Village COOP renamed, its assets rewritten; then one signature is enough
   s = act(s, "A", { type: "propose", mip: { title: "Village kit", coops: { village: { name: "Valley COOP", assets: [{ name: "The pickup", kind: "Vehicle" }, { name: "A tractor", kind: "Vehicle" }] } }, settings: { signatures: 1 } } }, T0 + 3 * DAY_MS);
   s = act(s, "B", { type: "sign", number: 2 }, T0 + 3 * DAY_MS);
@@ -233,7 +235,7 @@ test("the first two founders to sign in take seat A and seat B; each moves only 
   await expect(move({ id: "eve" }, true, "B", { type: "mint" }, T0 + 3600e3)).rejects.toThrow(/no seat/);
   s = await move({ id: "bob" }, false, "", { type: "mint" }, T0 + 3600e3);
   // a real hour is 28/24 game days: 28 HEARTS
-  expect(s.players.B.wallet.HEARTS).toBeCloseTo(8736 + 28, 4);
+  expect(s.players.B.wallet.HEARTS).toBeCloseTo(STARTER + 28, 4);
   s = await getGame(null, T0 + 3 * DAY_MS);
   expect(s.month).toBe(3);
   s = await resetGame(T0 + 3 * DAY_MS);
@@ -332,24 +334,32 @@ test("HEARTS values: every MIND counts 1 HEART till trades move the pool, whatev
   expect(w.MAIA).toBeLessThan(1);
 });
 
-test("the euro ingest: a player's first mint, a year of HEARTS, brings as many €uro into the MaiaCity COOP; later mints bring none, and euros never melt", () => {
+test("the starter pack is the 7 % equilibrium: a year's growth equals the year's continuous melt", () => {
+  expect(Math.round(equilibriumOf())).toBe(STARTER);
+  // held at the equilibrium, a year of growth and a year of melt cancel out
+  let s = act(newGame(T0, { homeRent: 0, hexRent: 0, pickupRent: 0, powercubeRent: 0, batteryRent: 0, solarRent: 0, hexSubRent: 0 }), "A", { type: "mint" }, T0);
+  for (let d = 1; d <= 13; d++) s = act(s, "A", { type: "mint" }, T0 + d * DAY_MS);
+  expect(Math.abs(s.players.A.wallet.HEARTS - STARTER) / STARTER).toBeLessThan(0.005);
+});
+
+test("the euro ingest: a player's first mint brings €12,500 into the MaiaCity COOP; later mints bring none, and euros never melt", () => {
   let s = act(newGame(T0), "A", { type: "mint" }, T0 + GAME_DAY);
-  expect(s.coops.maia.treasury.EURO).toBeCloseTo(8736, 6);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(12500, 6);
   const ingest = s.ledger.filter((e) => e.token === "EURO");
   expect(ingest).toHaveLength(1);
-  expect(ingest[0]).toMatchObject({ kind: "invest", from: "mint", to: "coop:maia", amount: 8736 });
+  expect(ingest[0]).toMatchObject({ kind: "invest", from: "mint", to: "coop:maia", amount: 12500 });
   expect(ingest[0].note).toContain("system minted");
   expect(s.players.A.wallet.EURO).toBeUndefined();
   // the daily mints after it bring none; the second player's first mint brings theirs
   s = act(s, "A", { type: "mint" }, T0 + 2 * GAME_DAY);
-  expect(s.coops.maia.treasury.EURO).toBeCloseTo(8736, 6);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(12500, 6);
   s = act(s, "B", { type: "mint" }, T0 + 3 * GAME_DAY);
-  expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 8736, 6);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 12500, 6);
   // a year on, the HEARTS have melted 7 %, the euros not at all
   const hearts = s.players.A.wallet.HEARTS;
   s = advance(s, T0 + 3 * GAME_DAY + 13 * DAY_MS);
   expect(s.players.A.wallet.HEARTS).toBeCloseTo(hearts * 0.93, 3);
-  expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 8736, 6);
+  expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 12500, 6);
   expect(s.ledger.some((e) => e.kind === "demurrage" && e.token === "EURO")).toBe(false);
 });
 

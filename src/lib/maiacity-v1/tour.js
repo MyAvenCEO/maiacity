@@ -3,7 +3,7 @@
  * MaiaCity V1's first-run story: the journey every player makes at their own seat (the script: Samuel 2026-10-14,
  * /mnt/project-files/maiacity-v1/story-script-v2.md). It opens on one question (what do you live on, when your time no
  * longer pays for your life?) and answers it with ownership. On the road, in a packed old travel van down a sandy
- * highway, the newcomer hears of the vision and of the HEARTS and mints their first year of them. The road ends at the
+ * highway, the newcomer hears of the vision and of the HEARTS and mints all of them at once (the 7 % equilibrium). The road ends at the
  * bus stop by the abandoned gas station, the future centre of MaiaCity; the Village COOP's pickup takes them along the
  * gravel track to the village's old shed (the first player drives it; the second is fetched by the first), and on
  * home to one empty hex of grass. Every invest plays on a drive, shortly before arriving: into the MaiaCity COOP on the
@@ -22,6 +22,12 @@
  * and, for the moments the world plays (intro, station, drive, load, build, sow), what plays.
  */
 
+import { equilibriumOf } from '../../../game/maiacity-v1/engine.js';
+
+/** what each player invests on the way (Samuel 2026-10-15): 50,000 HEARTS into the MaiaCity COOP, 25,000 into the
+ * Village COOP and 25,000 into the Tribe COOP, of the 120,379 their first mint brings */
+export const STORY_INVESTS = { maia: 50000, village: 25000, tribe: 25000 };
+
 const f = (n, d = 0) => Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 /** how long a line of the voice-over holds (s): a breath, and a third of a second a word */
@@ -39,7 +45,6 @@ export function story(view, seat, seen) {
 	const other = view.players[seat === 'A' ? 'B' : 'A'];
 	const first = seat === 'A'; // the first to arrive drives; the second is fetched
 	const st = view.settings;
-	const year = st.heartsPerDay * 28 * 13;
 	const invest = (id, goal) => ({ kind: 'invest', coop: id, goal, have: investedBy(view, seat, id), done: investedBy(view, seat, id) >= goal - 0.5 });
 	const next = (id) => ({ kind: 'next', done: !!seen[id] });
 	const o = other.founder ? other.name : 'The first settler';
@@ -81,8 +86,8 @@ export function story(view, seat, seen) {
 			null,
 			'“There, every hour of your life brings you a HEART. Not for your work. For your life.”',
 			'“A HEART is not money. It is your right to become an owner, and only people get it.”'),
-		say({ id: 'mint', chapter: 'The road', title: 'Mint your first year of HEARTS', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan, shots: ['mcu'], hold: 'mcu', talk: true },
-			`“Your first mint is a whole year: ${f(st.starterPack ?? year)} HEARTS.”`),
+		say({ id: 'mint', chapter: 'The road', title: 'Mint all your HEARTS at once', hint: 'mintbar', kind: 'mint', done: !!me.lastMint, ...inVan, shots: ['mcu'], hold: 'mcu', talk: true },
+			`“Your first mint brings all your HEARTS at once: ${f(st.starterPack ?? equilibriumOf(st))}, as many as you can ever hold.”`),
 		// Act II, the end of the road: the stop, the station, co-owner of MaiaCity on the way to the shed, the shed and
 		// its machines, co-owner of them on the way home, the empty hex
 		say({ id: 'arrival', chapter: 'The end of the road', title: 'The end of the road', kind: 'intro', part: 'arrive', done: !!seen.arrival, ...inVan },
@@ -110,8 +115,8 @@ export function story(view, seat, seen) {
 				'MaiaCity belongs to the MaiaCity COOP: a company owned by its people.',
 				'Its land is never sold, so no one can ever buy it away from you.',
 				'Every HEART you invest becomes a MIND: your share of MaiaCity.'),
-		say({ id: 'maia', chapter: 'The end of the road', title: 'Invest into the MaiaCity COOP', hint: 'invest', reveal: 2, ...invest('maia', 5000), ...toShed, shots: ['ots'], hold: 'ots' },
-			'Invest 5,000 HEARTS, and you are a co-owner of MaiaCity.'),
+		say({ id: 'maia', chapter: 'The end of the road', title: 'Invest into the MaiaCity COOP', hint: 'invest', reveal: 2, ...invest('maia', STORY_INVESTS.maia), ...toShed, shots: ['ots'], hold: 'ots' },
+			`Invest ${f(STORY_INVESTS.maia)} HEARTS, and you are a co-owner of MaiaCity.`),
 		say({ id: 'shed', chapter: 'The end of the road', title: 'Your village centre', kind: 'drive', leg: 'pullup', done: !!seen.shed, ...toShed },
 			'This is your village centre. For now, one old shed.'),
 		first
@@ -126,8 +131,8 @@ export function story(view, seat, seen) {
 				'The BatteryCube: four BatteryPacks in one open frame. It stores the sun for your home.',
 				'And a solar panel to fill it every day.'),
 		say({ id: 'drive', chapter: 'The end of the road', title: 'The last stretch', kind: 'drive', leg: 'tribe', done: !!seen.drive, ...atStore, ...loaded }, 'A few more minutes, and you are home.', null),
-		say({ id: 'village', chapter: 'The end of the road', title: 'Invest into the Village COOP', hint: 'invest', reveal: 1, ...invest('village', 2000), ...toHome, shots: ['bed'], hold: 'bed' },
-			'Invest 2,000 HEARTS, and every machine of the village works a little for you.'),
+		say({ id: 'village', chapter: 'The end of the road', title: 'Invest into the Village COOP', hint: 'invest', reveal: 1, ...invest('village', STORY_INVESTS.village), ...toHome, shots: ['bed'], hold: 'bed' },
+			`Invest ${f(STORY_INVESTS.village)} HEARTS, and every machine of the village works a little for you.`),
 		say({ id: 'home', chapter: 'The end of the road', title: 'Your new home', kind: 'drive', leg: 'home', done: !!seen.home, ...toHome },
 			'This is your new home.',
 			first ? 'One hex of grass at the edge of the village. Nothing stands here yet.' : `One hex of grass at the edge of the village, and the tent you share with ${o} already on it.`),
@@ -146,11 +151,11 @@ export function story(view, seat, seen) {
 				'It stands beside the ElectroCube, by the tent.',
 				'Sun by day, stored for the night.',
 				'One cable, and the tent runs on sunlight.'),
-		say({ id: 'tribe', chapter: 'Home', title: 'Invest into the Tribe COOP', hint: 'invest', reveal: 0, ...invest('tribe', 1000), ...home, place: 'tent' },
+		say({ id: 'tribe', chapter: 'Home', title: 'Invest into the Tribe COOP', hint: 'invest', reveal: 0, ...invest('tribe', STORY_INVESTS.tribe), ...home, place: 'tent' },
 			'Even the tent you share belongs to a COOP: the Tribe COOP, the COOP of the people on this hex.',
 			'Where you come from, the roof over your head belonged to someone else.',
 			null,
-			'Here, you can own it. Invest 1,000 HEARTS, and part of your own home is yours.'),
+			`Here, you can own it. Invest ${f(STORY_INVESTS.tribe)} HEARTS, and part of your own home is yours.`),
 		say({ id: 'answer', chapter: 'Home', title: 'What you live on', hint: '', ...next('answer'), ...home, place: 'rise', hour: 16.8 },
 			'The land, the machines, your home: a part of each is yours. That is what you live on here, not your time.'),
 		// the seed from home (Samuel 2026-10-14): the backpack opened, a spot chosen outside the core circle and walked to,
