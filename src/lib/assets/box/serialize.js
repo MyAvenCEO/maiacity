@@ -1,0 +1,106 @@
+// @ts-nocheck — plain JS, runs inside the box
+/*
+ * AN OBJECT AS PLAIN DATA — what leaves the box: a built asset (a three.js object tree) turned into numbers, typed
+ * arrays and pictures that can cross into the page (structured clone, the arrays and pictures moved, not copied). No
+ * function, no class, no shader code goes out: a material is its kind and its plain settings, a texture its pixels.
+ * The page (./rebuild.js) checks every bit of it and builds its own three.js objects from it.
+ *
+ * Version 0 of the format: the box spike (phase 0). Phase 1 writes it down as a JSON Schema with the asset card.
+ */
+
+export const FORMAT = 0;
+
+/** the material settings that go out as they are (numbers, booleans, colours) */
+const PLAIN = ['roughness', 'metalness', 'opacity', 'transparent', 'side', 'vertexColors', 'flatShading', 'alphaTest', 'depthWrite', 'depthTest', 'transmission', 'ior', 'thickness', 'clearcoat', 'clearcoatRoughness', 'sheen', 'sheenRoughness', 'envMapIntensity', 'emissiveIntensity', 'bumpScale', 'wireframe', 'size', 'sizeAttenuation', 'linewidth', 'shininess', 'specularIntensity', 'iridescence', 'anisotropy', 'dispersion', 'aoMapIntensity', 'lightMapIntensity', 'displacementScale', 'displacementBias', 'toneMapped', 'fog'];
+const COLORS = ['color', 'emissive', 'sheenColor', 'specularColor', 'attenuationColor', 'specular'];
+const MAPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'bumpMap', 'emissiveMap', 'aoMap', 'clearcoatNormalMap', 'displacementMap'];
+export const MATERIALS = ['MeshStandardMaterial', 'MeshPhysicalMaterial', 'MeshBasicMaterial', 'MeshLambertMaterial', 'MeshPhongMaterial', 'MeshToonMaterial', 'LineBasicMaterial', 'LineDashedMaterial', 'PointsMaterial', 'MeshMatcapMaterial', 'ShadowMaterial'];
+
+/**
+ * @param {import('three').Object3D} root
+ * @returns {Promise<{ data: object, transfer: Transferable[] }>}
+ */
+export async function serialize(root) {
+	root.updateMatrixWorld(true);
+	const nodes = [];
+	const geometries = [];
+	const materials = [];
+	const textures = [];
+	const geoAt = new Map();
+	const matAt = new Map();
+	const texAt = new Map();
+	const buffers = new Set();
+	const pending = [];
+	const stats = { tris: 0, custom: 0, skinned: 0 };
+
+	const array = (a) => {
+		buffers.add(a.buffer);
+		return a;
+	};
+	const attribute = (attr) => {
+		if (attr.isInterleavedBufferAttribute) {
+			const out = new Float32Array(attr.count * attr.itemSize);
+			for (let i = 0; i < attr.count; i++) for (let k = 0; k < attr.itemSize; k++) out[i * attr.itemSize + k] = attr.getComponent(i, k);
+			return { array: array(out), itemSize: attr.itemSize, normalized: attr.normalized };
+		}
+		return { array: array(attr.array), itemSize: attr.itemSize, normalized: attr.normalized };
+	};
+	const geometry = (g) => {
+		if (geoAt.has(g)) return geoAt.get(g);
+		const attributes = {};
+		for (const [name, attr] of Object.entries(g.attributes)) attributes[name] = attribute(attr);
+		const morph = {};
+		for (const [name, list] of Object.entries(g.morphAttributes ?? {})) morph[name] = list.map(attribute);
+		geometries.push({ attributes, morph, morphRelative: !!g.morphTargetsRelative, index: g.index ? array(g.index.array) : null, groups: g.groups.map((x) => ({ start: x.start, count: x.count, materialIndex: x.materialIndex ?? 0 })) });
+		geoAt.set(g, geometries.length - 1);
+		return geometries.length - 1;
+	};
+	const texture = (t) => {
+		if (texAt.has(t)) return texAt.get(t);
+		const i = textures.length;
+		const plain = { wrapS: t.wrapS, wrapT: t.wrapT, repeat: [t.repeat.x, t.repeat.y], offset: [t.offset.x, t.offset.y], rotation: t.rotation, colorSpace: t.colorSpace, flipY: t.flipY, anisotropy: t.anisotropy };
+		textures.push(plain);
+		texAt.set(t, i);
+		const img = t.image;
+		if (img?.data && img.width && img.height) plain.pixels = { data: array(new Uint8Array(img.data.buffer.slice(0))), width: img.width, height: img.height };
+		else if (img && img.width && img.height && typeof createImageBitmap === 'function') pending.push(createImageBitmap(img).then((b) => (plain.bitmap = b)));
+		return i;
+	};
+	const material = (m) => {
+		if (matAt.has(m)) return matAt.get(m);
+		const type = MATERIALS.includes(m.type) ? m.type : 'MeshStandardMaterial';
+		const custom = !MATERIALS.includes(m.type) || (m.onBeforeCompile && m.onBeforeCompile.toString() !== m.constructor.prototype.onBeforeCompile?.toString());
+		if (custom) stats.custom++;
+		const params = {};
+		for (const k of PLAIN) if (k in m && (typeof m[k] === 'number' || typeof m[k] === 'boolean')) params[k] = m[k];
+		for (const k of COLORS) if (m[k]?.isColor) params[k] = m[k].getHex(); else if (Array.isArray(m.uniforms?.[k]?.value)) params[k] = m.uniforms[k].value;
+		if (type !== 'MeshStandardMaterial' || !m.isShaderMaterial) for (const k of MAPS) if (m[k]?.isTexture) params[k] = texture(m[k]);
+		if (m.normalScale?.isVector2) params.normalScale = [m.normalScale.x, m.normalScale.y];
+		materials.push({ type, params, name: m.name, custom: !!custom });
+		matAt.set(m, materials.length - 1);
+		return materials.length - 1;
+	};
+	const visit = (o) => {
+		const i = nodes.length;
+		const n = { name: o.name, matrix: o.matrix.toArray(), visible: o.visible, children: [] };
+		nodes.push(n);
+		if ((o.isMesh || o.isLine || o.isPoints) && o.geometry) {
+			const g = geometry(o.geometry);
+			const mats = Array.isArray(o.material) ? o.material.map(material) : material(o.material);
+			n.mesh = { geometry: g, material: mats, kind: o.isPoints ? 'points' : o.isLineSegments ? 'lineSegments' : o.isLine ? 'line' : 'mesh', castShadow: o.castShadow, receiveShadow: o.receiveShadow };
+			if (o.morphTargetInfluences) n.mesh.morph = [...o.morphTargetInfluences];
+			if (o.isSkinnedMesh) stats.skinned++;
+			const idx = o.geometry.index ? o.geometry.index.count : (o.geometry.attributes.position?.count ?? 0);
+			const count = o.isInstancedMesh ? o.count : 1;
+			if (o.isInstancedMesh) n.mesh.instances = { count: o.count, matrices: array(o.instanceMatrix.array), colors: o.instanceColor ? array(o.instanceColor.array) : null };
+			if (!o.isLine && !o.isPoints) stats.tris += (idx / 3) * count;
+		}
+		for (const c of o.children) n.children.push(visit(c));
+		return i;
+	};
+	visit(root);
+	await Promise.all(pending);
+	stats.tris = Math.round(stats.tris);
+	const transfer = [...buffers, ...textures.flatMap((t) => (t.bitmap ? [t.bitmap] : []))];
+	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, stats }, transfer };
+}

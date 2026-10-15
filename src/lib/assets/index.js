@@ -13,15 +13,20 @@
  * only when it is asked for.
  */
 
-/** @typedef {import('$lib/app/versions.js').Version<any>} AnyVersion */
-/** @typedef {{ id: string, label: string, versions: AnyVersion[], version: number }} Item an asset as its group lists it */
+import { OBJECT_GROUPS } from './groups.js';
+import { assetIn, objectIn } from './refs.js';
+export { parseRef, refOf } from './refs.js';
 
-/** @type {Record<string, { label: string, list: () => Promise<Item[]> }>} */
+/** @typedef {import('./groups.js').AnyVersion} AnyVersion */
+/** @typedef {import('./groups.js').Item} Item an asset as its group lists it */
+
+/**
+ * Every group: the four built as one object (./groups.js, which the asset box loads too) and the three that are not
+ * (a biome's recipe, a building's interior kind, a world's page).
+ * @type {Record<string, import('./groups.js').Group>}
+ */
 export const GROUPS = {
-	things: { label: 'Things', list: async () => (await import('$lib/models')).MODELS },
-	machines: { label: 'Machines', list: async () => (await import('$lib/machines/index.js')).MACHINES },
-	actors: { label: 'Actors', list: async () => (await import('$lib/actors')).FAMILIES },
-	plants: { label: 'Plants', list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/plants')).PLANTS)) },
+	...OBJECT_GROUPS,
 	biomes: { label: 'Biomes', list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/biomes')).BIOMES)) },
 	buildings: { label: 'Buildings', list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/buildings')).BUILDINGS)) },
 	worlds: {
@@ -38,40 +43,12 @@ export const GROUPS = {
 export const idOfHref = (href) => href.replace(/\/+$/, '').split('/').pop() ?? href;
 
 /**
- * A ref as its parts. @param {string} ref
- * @returns {{ group: string, id: string, v?: number, variant?: string }}
- */
-export function parseRef(ref) {
-	const m = /^([a-z]+)\/([^@:]+)(?:@(\d+))?(?::(.+))?$/.exec(ref);
-	if (!m) throw new Error(`not an asset ref: ${ref} (group/id@v)`);
-	return { group: m[1], id: m[2], v: m[3] ? Number(m[3]) : undefined, variant: m[4] };
-}
-
-/** The ref of an asset at a version (and a variant). @param {string} group @param {string} id @param {number} [v] @param {string} [variant] */
-export const refOf = (group, id, v, variant) => `${group}/${id}${v ? `@${v}` : ''}${variant ? `:${variant}` : ''}`;
-
-/**
  * An asset at a version, by its ref: the item as its group lists it, the version, its builder (a kind's: the variant
  * asked for, or its first) and whether that builder is the version's own. Undefined if there is no such asset or
  * version.
  * @param {string} ref
- * @returns {Promise<{ group: string, item: Item, version: AnyVersion, build: any, kept: boolean } | undefined>}
  */
-export async function assetAt(ref) {
-	const { group, id, v, variant } = parseRef(ref);
-	const g = GROUPS[group];
-	if (!g) throw new Error(`no asset group ${group}: ${Object.keys(GROUPS).join(', ')}`);
-	const item = (await g.list()).find((x) => x.id === id);
-	const version = item && (v === undefined ? item.versions[item.versions.length - 1] : item.versions.find((x) => x.v === v));
-	if (!item || !version) return undefined;
-	let build = version.build;
-	// a kind with variants (the machines, the actors): the one asked for, or its first
-	if (Array.isArray(build) && build.every((x) => typeof x?.make === 'function')) {
-		build = (variant ? build.find((x) => x.id === variant) : build[0])?.make;
-		if (!build) return undefined;
-	} else if (variant) return undefined;
-	return { group, item, version, build, kept: version.kept };
-}
+export const assetAt = (ref) => assetIn(GROUPS, ref);
 
 /**
  * An asset at a version, built: the object a thing's builder, a plant's `grow`, or a machine's or an actor's variant
@@ -80,16 +57,5 @@ export async function assetAt(ref) {
  * are not built as one object (a biome's recipe, a dome's interior, a world's page).
  * @param {string} ref
  * @param {...any} args
- * @returns {Promise<import('three').Object3D>}
  */
-export async function objectAt(ref, ...args) {
-	const got = await assetAt(ref);
-	if (!got) throw new Error(`no asset ${ref}`);
-	if (!got.kept) throw new Error(`${ref}: only its note was kept, not its builder`);
-	if (typeof got.build !== 'function') throw new Error(`${ref}: ${got.group} are not built as one object`);
-	const made = got.build(...args);
-	const obj = made?.isObject3D ? made : made?.rig?.object;
-	if (!obj?.isObject3D) throw new Error(`${ref}: its builder made no object`);
-	obj.userData.ref = refOf(got.group, got.item.id, got.version.v, parseRef(ref).variant);
-	return obj;
-}
+export const objectAt = (ref, ...args) => objectIn(GROUPS, ref, ...args);
