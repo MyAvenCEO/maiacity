@@ -358,7 +358,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let shown_steps = new.progress.clone();
     let new = link(new, &server.offer(), &eve, [3; 32]).await.expect("it links through the server");
     assert!(eve.steps().is_empty(), "no ceremony but the unlock");
-    assert_eq!(steps(&shown_steps), ["keys", "node", "relay", "server", "pass", "vault", "join", "sync"]);
+    assert_eq!(steps(&shown_steps), ["keys", "node", "relay", "server", "pass", "vault", "join"]);
     assert_eq!(new.vault().await, Some(vault), "to her vault");
     until("it reads her note", || shows(&new, note, "Tomatoes in May.")).await;
     assert_eq!(run(&new, card("Eve's new browser")).await, Ok(json!({ "wrote": true })));
@@ -454,7 +454,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let phone = found(phone, &server.offer(), Some(p256), &eve, [2; 32]).await.expect("her phone in her vault");
     assert_eq!(phone.vault().await, Some(vault), "her one vault");
     assert_eq!(eve.steps(), [], "no ceremony past the unlock");
-    let rooted = ["keys", "node", "relay", "server", "pass", "vault", "join", "sync"];
+    let rooted = ["keys", "node", "relay", "server", "pass", "vault", "join"];
     assert_eq!(steps(&joined), rooted, "it signs in as a link does");
     let passkey = Passkey::from_seed([5; 32]).id();
     let roots = move |lab: &Lab, _| lab.state(me).vaults().iter().filter(|v| v.root == Some(passkey)).count();

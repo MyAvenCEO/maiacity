@@ -48,7 +48,6 @@ export function stepWords(here) {
 		pass: { title: 'Showing your pass', does: 'The server checks it, hands back your vault, still encrypted' },
 		vault: { title: 'Checking your vault', does: 'Every edit’s signatures, before any of it counts' },
 		join: { title: `Adding ${here} to your vault`, does: 'Your pass signs the edit that adds it' },
-		sync: { title: 'Syncing', does: 'What the server keeps for your vault, asked for' },
 		check: { title: 'Opening your vault', does: `${Here} belongs to the vault its store holds` },
 		save: { title: `Saving on ${here}`, does: 'What opens it again, kept on its shelf in this browser' }
 	};
@@ -68,7 +67,7 @@ export function plan(start, { mac, make = false }) {
 			...own(['save'])
 		];
 	if (start === 'link')
-		return ['unlock', 'keys', 'node', 'relay', 'server', 'pass', 'vault', 'join', 'sync', ...own(['save'])];
+		return ['unlock', 'keys', 'node', 'relay', 'server', 'pass', 'vault', 'join', ...own(['save'])];
 	return ['unlock', 'keys', 'restore', 'node', 'check'];
 }
 

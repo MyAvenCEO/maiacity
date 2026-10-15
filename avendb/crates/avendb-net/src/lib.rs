@@ -710,8 +710,9 @@ impl Node {
         let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
         sent.context("the peer refuses the join")?;
         self.shared.changed.notify_one();
-        progress.step("sync");
-        self.shared.ask(peer.endpoint).await?;
+        // what the peer keeps for the vault comes in the background, a `pull` job: nobody waits on it
+        let (shared, endpoint) = (self.shared.clone(), peer.endpoint);
+        task::spawn(async move { shared.ask(endpoint).await.ok() });
         Ok(Some((passkey, vault)))
     }
 
