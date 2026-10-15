@@ -18,7 +18,8 @@
 		join: 'to add the app to your vault as one of its devices',
 		found: 'to found your vault',
 		claim: 'to claim avenDB’s server',
-		approve: 'to approve what your vault changes'
+		approve: 'to approve what your vault changes',
+		drive: 'to use a drive for avenDB as one of your devices'
 	};
 
 	/** @type {'loading' | 'asking' | 'sending' | 'failed' | 'lost'} */

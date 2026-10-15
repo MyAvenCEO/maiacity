@@ -8,7 +8,11 @@
 //! a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`), and any range of it back, in base64. A new
 //! device puts aside a shelf a start cut short left, and clears what an earlier avenDB kept in the folder. And agent
 //! devices on the Mac (`agent`), as Claude Code and Codex start them, ask for access; she denies, it asks again, and
-//! the page's consent screen adds both to her one aven avenEve, a sheet each, whose share they act with.
+//! the page's consent screen adds both to her one aven avenEve, a sheet each, whose share they act with. And Eve's
+//! photo drive (`drive`) joins her vault as a device of its own in one sheet, its key never on it in plain; the Mac
+//! it is plugged into hosts it, a full copy; unplugged, its node stops and its signed holdings stay, with when it
+//! checked; plugged in again it is hosted with no sheet; ejected, nothing on it stays open, and plugged in again it is
+//! hosted with no sheet; her other Mac opens it in one; removed like a lost phone, her vault's peers refuse it.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -18,11 +22,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
-use avendb::id::EntryId;
+use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
-use avendb::sign::{Ceremony, PRF_SALT, Passkey};
-use avendb_device::{Config, SHEET, agent, serve};
+use avendb::sign::{Ceremony, DeviceKey, PRF_SALT, Passkey, device_salt};
+use avendb_device::{Config, SHEET, agent, drive, serve};
 use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, Node, Options, disk};
 use avendb_server::Relay;
@@ -56,9 +60,19 @@ struct App {
 impl App {
     /// The app starts the device on folder `dir`, Eve's passkey answering its sheets.
     fn start(dir: &Path, passkey: Passkey, direct: bool) -> App {
+        App::with(Config { dir: dir.to_path_buf(), direct, volumes: None }, passkey)
+    }
+
+    /// The app starts the device on folder `dir`, hosting the drives mounted in folder `volumes`, as macOS mounts them
+    /// in /Volumes.
+    fn with_volumes(dir: &Path, volumes: &Path, passkey: Passkey) -> App {
+        App::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()) }, passkey)
+    }
+
+    fn with(config: Config, passkey: Passkey) -> App {
         let (app, device) = tokio::io::duplex(1 << 20);
         let (input, output) = tokio::io::split(device);
-        let serving = tokio::spawn(serve(Config { dir: dir.to_path_buf(), direct }, input, output));
+        let serving = tokio::spawn(serve(config, input, output));
         let (from, to) = tokio::io::split(app);
         let from = BufReader::new(from).lines();
         App { to: Some(to), from, serving, passkey, asked: vec![], cancel: false, next: 0 }
@@ -642,6 +656,278 @@ async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_a
     assert!(error && no.contains("isn't for an agent"), "{no}");
     codex.quit().await;
     claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+/// What the Mac's device says of its volumes and drives (`drives`), once `check` holds of it, 60 seconds at most.
+async fn drives(app: &mut App, what: &str, check: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let drives = app.call("drives", json!([])).await.expect("its drives");
+        if check(&drives) {
+            return drives;
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s: {drives}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// Device `device` of vault `vault` as the device's world shows it, if it is one, once `check` holds of that, 60
+/// seconds at most.
+async fn device_shown(app: &mut App, vault: &Value, device: &Value, what: &str, check: impl Fn(Option<&Value>) -> bool) {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let world = world_of(app).await;
+        let v = world["vaults"].as_array().expect("its vaults").iter().find(|v| v["id"] == *vault).cloned();
+        let shown = v.and_then(|v| v["devices"].as_array()?.iter().find(|d| d["id"] == *device).cloned());
+        if check(shown.as_ref()) {
+            return;
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s: {shown:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Whether `holders`, an entry's or a file's `syncedTo`, has `device` holding all of it: on a live connection
+/// (`checked` null) if `live`, else as the statement it signed says.
+fn holds_all(holders: &Value, device: &Value, live: bool) -> bool {
+    let all = |h: &Value| h["device"] == *device && h["has"] == h["of"] && h["checked"].is_null() == live;
+    holders.as_array().into_iter().flatten().any(all)
+}
+
+/// Every file in folder `dir` and the folders in it, with its bytes.
+fn files_in(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut out = vec![];
+    for entry in std::fs::read_dir(dir).expect("a folder").flatten() {
+        let (path, kind) = (entry.path(), entry.file_type().expect("its type"));
+        if kind.is_dir() {
+            out.extend(files_in(&path));
+        } else if kind.is_file() {
+            let bytes = std::fs::read(&path).expect("its bytes");
+            out.push((path, bytes));
+        }
+    }
+    out
+}
+
+/// A file named `name` into vault `vault`, a chunk at a time in base64, as native.js hands one over: what it made.
+async fn put_file(app: &mut App, vault: &Value, name: &str, bytes: &[u8]) -> Value {
+    let put = json!({ "op": "put_file", "vault": vault, "name": name, "media": "image/jpeg", "tags": [],
+        "len": bytes.len() });
+    let n = app.call("fileStart", json!([put])).await.expect("a file's number");
+    loop {
+        let mut at = 0;
+        for chunk in bytes.chunks(40_000) {
+            app.call("fileChunk", json!([n, at, BASE64.encode(chunk)])).await.expect("a chunk");
+            at += chunk.len();
+        }
+        if app.call("fileAgain", json!([n])).await != Ok(json!(true)) {
+            break;
+        }
+    }
+    app.call("fileEnd", json!([n])).await.expect("the op's answer")["ok"].clone()
+}
+
+/// The files in folder `dir` this process holds open, as Linux names them in /proc/self/fd; none known elsewhere.
+fn open_under(dir: &Path) -> Vec<PathBuf> {
+    let Ok(fds) = std::fs::read_dir("/proc/self/fd") else { return vec![] };
+    fds.flatten().filter_map(|fd| std::fs::read_link(fd.path()).ok()).filter(|p| p.starts_with(dir)).collect()
+}
+
+/// A volume moved from `from` to `to`: unplugged, or plugged in.
+fn plug(from: &Path, to: &Path) {
+    std::fs::rename(from, to).expect("moved");
+}
+
+/// The time by this machine's clock: seconds since 1970.
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn eves_drive_is_a_device_of_her_vault_hosted_by_the_mac_it_is_plugged_into() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("drive");
+    let (dir, volumes, away) = (folder.0.join("avendb"), folder.0.join("Volumes"), folder.0.join("unplugged"));
+    std::fs::create_dir_all(&volumes).expect("the volumes' folder");
+    let passkey = || Passkey::from_seed([5; 32]);
+    let mut app = App::with_volumes(&dir, &volumes, passkey());
+    let mac = app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await;
+    let mac = mac.expect("her vault");
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let mine = world_of(&mut app).await["mine"].clone();
+    // she plugs in her photo drive, which avenDB doesn't use yet; beside it the startup disk, linked as macOS links
+    // it, and a hidden folder: no drives
+    let photo = volumes.join("Photo drive");
+    std::fs::create_dir_all(&photo).expect("her drive");
+    std::fs::write(photo.join("DSC0001.jpg"), b"her photo").expect("her photo");
+    std::os::unix::fs::symlink("/", volumes.join("Macintosh HD")).expect("the startup disk");
+    std::fs::create_dir_all(volumes.join(".Trashes")).expect("a hidden folder");
+    let path = json!(photo.to_string_lossy());
+    let free = json!({ "volumes": [{ "path": path, "name": "Photo drive", "state": "free", "device": null }],
+        "drives": [] });
+    assert_eq!(app.call("drives", json!([])).await, Ok(free), "a volume of hers, free");
+    // one sheet makes it a device of her vault, with a key of its own
+    let joined = app.call("joinDrive", json!([path, "Photo drive"])).await.expect("her drive joins");
+    assert_eq!(app.asked(), ["drive"], "one sheet");
+    let drive = joined["device"].clone();
+    assert_ne!(drive, mac["id"], "a device of its own");
+    let again = app.call("joinDrive", json!([path, "Photo drive"])).await;
+    assert_eq!(again, Err("this drive is one of your devices already".into()));
+    // a full copy, by default, named by its card
+    let full = |d: Option<&Value>| d.is_some_and(|d| d["name"] == "Photo drive" && d["copy"] == "full" && d["me"] == false);
+    device_shown(&mut app, &mine, &drive, "her drive, a full copy named by its card", full).await;
+    let hosted = drives(&mut app, "her drive, hosted", |s| s["drives"][0]["plugged"] == true).await;
+    assert_eq!((&hosted["volumes"][0]["state"], &hosted["volumes"][0]["device"]), (&json!("hosted"), &drive));
+    let one = &hosted["drives"][0];
+    assert_eq!((&one["device"], &one["name"], &one["volume"]), (&drive, &json!("Photo drive"), &path));
+    // her note and her photo sync to it, the photo whole, as it keeps a full copy
+    let seeds = titled("Seeds", "Tomatoes in March.");
+    let note = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": seeds })).await;
+    let note = note.expect("her note")["entry"].clone();
+    let picture: Vec<u8> = (0..60_000u32).map(|i| (i * 13 % 251) as u8).collect();
+    let picture = put_file(&mut app, &mine, "Tomatoes.jpg", &picture).await["entry"].clone();
+    shown(&mut app, &note, "her note, on her drive", |n| holds_all(&n["syncedTo"], &drive, true)).await;
+    let whole = |f: &Value| holds_all(&f["files"][0]["syncedTo"], &drive, true);
+    shown(&mut app, &picture, "her photo, whole on her drive", whole).await;
+    let synced = now();
+    // what opens the drive keeps its key masked by her passkey's PRF output on the drive's own salt: its key is
+    // nowhere on the drive in plain, nor on her Mac, which keeps it wrapped under a key of its own
+    let opens = photo.join(format!(".avendb/g{FLOOR}/meta/0000000000000001"));
+    let meta: Value = serde_json::from_slice(&std::fs::read(opens).expect("what opens it")).expect("JSON");
+    assert_eq!((&meta["device"], &meta["name"]), (&drive, &json!("Photo drive")));
+    let (nonce, mask) = (id(&meta["nonce"]), id(&meta["mask"]));
+    let unmask = passkey().prf(&device_salt(&nonce));
+    let secret: [u8; 32] = std::array::from_fn(|i| mask[i] ^ unmask[i]);
+    let key = DeviceKey::from_secret(secret);
+    assert_eq!(json!(hex(&key.id().0)), drive, "her passkey unmasks the drive's own key");
+    let (endpoint, secret_hex) = (key.endpoint_secret(), hex(&secret));
+    let plain: [&[u8]; 3] = [&secret, secret_hex.as_bytes(), &endpoint[..]];
+    let stored = files_in(&photo);
+    assert!(stored.len() > 5, "its store: {} files", stored.len());
+    for (file, bytes) in stored.iter().chain(&files_in(&dir)) {
+        for p in plain {
+            assert!(!bytes.windows(p.len()).any(|w| w == p), "{} holds the drive's key in plain", file.display());
+        }
+    }
+    assert_eq!(objects(&dir, FLOOR, "drives"), [drive.as_str().expect("hex")], "her Mac keeps it wrapped");
+    let untouched = std::fs::read(photo.join("DSC0001.jpg")).expect("her photo");
+    assert_eq!(untouched, b"her photo", "the rest of the drive as it was");
+    // it signs what it holds now, and her Mac keeps that
+    let since = |s: &Value| s["drives"][0]["checked"].as_u64().is_some_and(|c| c > synced);
+    drives(&mut app, "the drive's statement since it holds her note", since).await;
+    // unplugged: its node stops, and her Mac shows what it held as it last said, and when it checked
+    plug(&photo, &away);
+    let unplugged = drives(&mut app, "her drive, unplugged", |s| s["drives"][0]["plugged"] == false).await;
+    assert_eq!(unplugged["volumes"], json!([]), "no volume of hers");
+    assert!(since(&unplugged) && unplugged["drives"][0]["volume"].is_null(), "{unplugged}");
+    shown(&mut app, &note, "her note, on her drive as it said", |n| holds_all(&n["syncedTo"], &drive, false)).await;
+    let said = |f: &Value| holds_all(&f["files"][0]["syncedTo"], &drive, false);
+    shown(&mut app, &picture, "her photo, whole on her drive as it said", said).await;
+    // plugged in again, it is hosted with no sheet, and takes what she wrote meanwhile
+    let later = titled("Later", "Beans in May.");
+    let later = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": later })).await;
+    let later = later.expect("another note")["entry"].clone();
+    plug(&away, &photo);
+    drives(&mut app, "her drive, plugged in again", |s| s["drives"][0]["plugged"] == true).await;
+    shown(&mut app, &later, "her later note, on her drive", |n| holds_all(&n["syncedTo"], &drive, true)).await;
+    assert!(app.asked().is_empty(), "no sheet");
+    // she ejects it in the page: its node stops and nothing on the drive stays open, so macOS ejects it as Finder
+    // would; it shows unplugged, with when it checked, and stays so until it is unmounted and plugged in again, then
+    // it is hosted with no sheet
+    let its_store = photo.join(".avendb").canonicalize().expect("its store");
+    if cfg!(target_os = "linux") {
+        let probe = std::fs::File::open(photo.join(format!(".avendb/g{FLOOR}/meta/0000000000000001")))
+            .expect("a file of its store");
+        assert!(!open_under(&its_store).is_empty(), "a file held open on the drive shows");
+        drop(probe);
+    }
+    let ejected = app.call("ejectDrive", json!([path])).await.expect("ejected");
+    assert_eq!(ejected["ejected"], path);
+    assert_eq!(open_under(&its_store), Vec::<PathBuf>::new(), "nothing on the drive open once it is ejected");
+    let out = drives(&mut app, "her drive, ejected", |s| s["drives"][0]["plugged"] == false).await;
+    assert!(since(&out) && out["volumes"][0]["state"] == "ejected", "{out}");
+    tokio::time::sleep(drive::LOOK * 2).await;
+    let still = app.call("drives", json!([])).await.expect("her drives");
+    assert_eq!((&still["drives"][0]["plugged"], &still["volumes"][0]["state"]), (&json!(false), &json!("ejected")));
+    assert_eq!(open_under(&its_store), Vec::<PathBuf>::new(), "nor after the Mac looked again");
+    plug(&photo, &away);
+    drives(&mut app, "her drive, unmounted", |s| s["volumes"] == json!([])).await;
+    plug(&away, &photo);
+    drives(&mut app, "her drive, plugged in after it was ejected", |s| s["drives"][0]["plugged"] == true).await;
+    assert!(app.asked().is_empty(), "no sheet");
+    // a light copy, as she picks
+    let light = run(&mut app, json!({ "op": "copy", "device": drive, "full": false })).await;
+    assert!(light.expect("a light copy")["share"].is_string());
+    device_shown(&mut app, &mine, &drive, "her drive, a light copy", |d| d.is_some_and(|d| d["copy"] == "light")).await;
+    // her other Mac, linked to her vault through this one, opens the drive in one sheet, then in none
+    let (dir_b, volumes_b) = (folder.0.join("avendb-b"), folder.0.join("Volumes B"));
+    std::fs::create_dir_all(&volumes_b).expect("its volumes' folder");
+    let mut other = App::with_volumes(&dir_b, &volumes_b, passkey());
+    other.call("link", json!(["Eve's other Mac", url.to_string(), mac["offer"]])).await.expect("linked");
+    assert_eq!(other.asked(), ["unlock"]);
+    plug(&photo, &away);
+    drives(&mut app, "her drive, unplugged from her first Mac", |s| s["drives"][0]["plugged"] == false).await;
+    let photo_b = volumes_b.join("Photo drive");
+    plug(&away, &photo_b);
+    let path_b = json!(photo_b.to_string_lossy());
+    let locked = drives(&mut other, "her drive, locked on her other Mac", |s| s["volumes"][0]["state"] == "locked").await;
+    assert_eq!((&locked["volumes"][0]["device"], &locked["drives"]), (&drive, &json!([])));
+    let opened = other.call("openDrive", json!([path_b])).await.expect("opened there");
+    assert_eq!((other.asked(), &opened["device"]), (vec!["drive".to_string()], &drive), "one sheet");
+    drives(&mut other, "her drive, hosted by her other Mac", |s| s["drives"][0]["plugged"] == true).await;
+    plug(&photo_b, &away);
+    drives(&mut other, "unplugged from her other Mac", |s| s["drives"][0]["plugged"] == false).await;
+    plug(&away, &photo_b);
+    drives(&mut other, "plugged into it again", |s| s["drives"][0]["plugged"] == true).await;
+    assert!(other.asked().is_empty(), "no sheet the second time");
+    plug(&photo_b, &away);
+    drives(&mut other, "unplugged from it again", |s| s["drives"][0]["plugged"] == false).await;
+    other.quit().await;
+    // she loses it: removed as a lost phone is, in one sheet
+    let removed = run(&mut app, json!({ "op": "revoke", "vault": mine, "device": drive })).await;
+    assert!(removed.expect("removed")["edit"].is_string());
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    device_shown(&mut app, &mine, &drive, "her drive, a device of her vault no more", |d| d.is_none()).await;
+    drives(&mut app, "no drive of hers", |s| s["drives"] == json!([])).await;
+    let (vault, gone) = (VaultId(id(&mine)), SignerId(id(&drive)));
+    let out = move |lab: &Lab, me| lab.state(me).vault(vault).is_some_and(|v| !v.devices.contains(&gone));
+    until("the server takes it out of her vault", || server.read(out)).await;
+    let newer = titled("Newer", "Peas in June.");
+    let newer = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": newer })).await;
+    let newer = EntryId(id(&newer.expect("a newer note")["entry"]));
+    until("the server keeps her newer note", || server.read(move |lab, me| lab.fetched(me, newer) > 0)).await;
+    // whoever runs it now, with its key, is refused: what it writes stands nowhere, as its device's removal takes it
+    // away (strong removal), and it gets nothing new
+    let mut lab = Lab::with_entropy([7; 32]);
+    let me = lab.device_with("Photo drive", secret);
+    let shelf = disk::open(&away.join(".avendb")).expect("its store");
+    let thief = Node::spawn(lab, me, Options { shelf: Some(shelf), ..Options::local() }).await.expect("its node");
+    let note = titled("Mine now", "Not hers.");
+    let written = thief.op(json!({ "op": "create", "vault": mine, "type": "note", "value": note })).await;
+    let written = EntryId(id(&written.expect("an answer")["ok"]["entry"]));
+    let stands = move |lab: &Lab, me| lab.entries(me).contains(&written);
+    assert!(thief.read(stands).await, "it stands on the drive, which hasn't heard it was removed");
+    thief.know(server.addr());
+    server.know(thief.addr());
+    let _ = server.sync_with(thief.id()).await;
+    let _ = thief.sync_with(server.id()).await;
+    let seen = server.read(move |lab, me| (lab.fetched(me, written), stands(lab, me))).await;
+    assert_eq!(seen, (1, false), "the server holds what it signed, and refuses it");
+    assert_eq!(thief.read(move |lab, me| lab.fetched(me, newer)).await, 0, "it gets nothing new");
+    thief.shutdown().await.expect("its node stops");
+    // plugged into her Mac again, it is hosted no more; used for avenDB again, it is a new device, what it held put
+    // aside on it, never deleted
+    plug(&away, &photo);
+    let taken = drives(&mut app, "her drive, taken out", |s| s["volumes"][0]["state"] == "removed").await;
+    assert_eq!(taken["drives"], json!([]));
+    assert!(app.asked().is_empty(), "no sheet");
+    let rejoined = app.call("joinDrive", json!([path, "Photo drive"])).await.expect("a new device");
+    assert_eq!(app.asked(), ["drive"]);
+    assert_ne!(rejoined["device"], drive, "a new device, its key new");
+    let shelves = disk::generations(&photo.join(".avendb")).expect("its shelves");
+    assert_eq!(shelves, [FLOOR, FLOOR + 1], "what it held put aside");
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
 }

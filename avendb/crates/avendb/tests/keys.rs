@@ -357,6 +357,34 @@ fn a_locked_device_holds_no_key() {
     assert!(!w.lab.unlock(w.phone_a) && w.lab.locked(w.phone_a));
 }
 
+/// A device's own key (`Lab::own_key`): what it wraps for itself under a key derived from its own, as the Mac wraps the
+/// key of a drive it hosts, it alone opens again, for that one purpose and drive, and only while it is unlocked; a
+/// passkey has none.
+#[test]
+fn a_device_wraps_a_secret_only_it_opens_again() {
+    use avendb::keys::{open, wrap, SeededRng};
+    let mut w = world();
+    let (drive, info) = ([7; 32], b"avenDB drive");
+    let mut rng = SeededRng::new("the test's wrap", b"");
+    let key = w.lab.own_key(w.mac_a, "drive key", &drive).expect("an unlocked device's");
+    let secret = Secret::from_bytes([9; 32]);
+    let wrapped = wrap(&secret, &key, info, &mut rng);
+    assert!(!wrapped.windows(32).any(|x| x == secret.bytes()), "never in plain");
+    assert_eq!(open(&wrapped, &key, info), Some(secret.clone()));
+    assert_eq!(w.lab.own_key(w.mac_a, "drive key", &drive), Some(key), "the same key each time");
+    let others = [
+        w.lab.own_key(w.phone_a, "drive key", &drive),
+        w.lab.own_key(w.mac_a, "drive key", &[8; 32]),
+        w.lab.own_key(w.mac_a, "another purpose", &drive),
+    ];
+    for other in others {
+        assert_eq!(open(&wrapped, &other.expect("a device's"), info), None, "another device, drive or purpose");
+    }
+    assert!(w.lab.own_key(w.passkey_a, "drive key", &drive).is_none(), "a passkey has no own key");
+    w.lab.lock(w.mac_a);
+    assert!(w.lab.own_key(w.mac_a, "drive key", &drive).is_none(), "nor a locked device");
+}
+
 /// Once the curves fall (P4b): whoever broke a device's ed25519 key, or a passkey's P-256 key, signs no edit, as every
 /// signature on every edit is SLH-DSA. A write or a share by Alice's Mac whose SLH-DSA signature is made up is refused
 /// by every device, and the devices' own edits go on as before.

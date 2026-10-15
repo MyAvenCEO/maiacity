@@ -7,7 +7,9 @@
 	(avendb-browser's `Device::card`), and every vault by the name on its profile, an entry this browser writes into it
 	(`Device::profile`): the person's own by their maiaCITY name, the seed's by theirs. In the Mac app the device runs
 	natively beside the app ($lib/avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
-	Mac. A device forgotten here, or what an earlier avenDB kept, is put aside and never read again. A new person
+	Mac; and it hosts each of the person's drives plugged into the Mac, a device of their vault of its own, which the
+	page lists and joins in Owners & devices ($lib/avendb/Settings.svelte). A device forgotten here, or what an
+	earlier avenDB kept, is put aside and never read again. A new person
 	founds their vault here with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or
 	one they make here; the first to found a vault through a server nobody has claimed yet claims it in the same
 	ceremony and founds the seed (avendb's `world::SEED`): Maia Holding GmbH, a coop their vault owns, avenCEO GmbH, a
@@ -84,6 +86,9 @@
 	/** in the Mac app, the access requests the agent devices on this Mac left for the person to answer
 	 *  (avendb-device's `agent`, ./AccessRequest.svelte) */
 	let requests = $state(/** @type {import('./vaults.js').AccessRequestView[]} */ ([]));
+	/** in the Mac app, the volumes plugged into this Mac and the drives joined here, each a device of the person's
+	 *  vault of its own that this Mac's device hosts while it is plugged in (avendb-device's `drive`): null elsewhere */
+	let drives = $state.raw(/** @type {import('./native.js').Drives | null} */ (null));
 	/** whether the device is writing its card, its copy setting, or vaults' profiles: one such write at a time */
 	let carding = false;
 	let copying = false;
@@ -170,18 +175,29 @@
 	onDestroy(() => device?.close());
 
 	// in the Mac app, while it is open: the access requests on this Mac, looked for every few seconds, as an agent
-	// device leaves its request once its harness starts it, and again as it asks for more
+	// device leaves its request once its harness starts it, and again as it asks for more; and the drives plugged in and
+	// unplugged. The phase is read first, so that the effect runs again as it changes: `mac` isn't reactive, and is set
+	// before the device opens
 	$effect(() => {
-		if (!mac || phase !== 'open') return;
-		const look = () =>
+		if (phase !== 'open' || !mac) return;
+		const look = () => {
 			mac
 				.call('agents')
 				.then((/** @type {typeof requests} */ asked) => (requests = asked))
 				.catch(() => {});
+			lookDrives();
+		};
 		look();
 		const every = setInterval(look, 3000);
 		return () => clearInterval(every);
 	});
+
+	/** In the Mac app: the volumes plugged in and the drives joined, as its device sees them now. */
+	const lookDrives = () =>
+		mac
+			?.call('drives')
+			.then((/** @type {import('./native.js').Drives} */ seen) => (drives = seen))
+			.catch(() => {});
 
 	/** In the Mac app: its device beside it, open already, to unlock, or none yet. The app runs avenDB natively, and
 	 *  the page never runs a second device beside it. */
@@ -643,7 +659,38 @@
 		/** In the Mac app: the command that runs harness `harness`'s agent device, and for Claude Code the line that
 		 *  adds it (avendb-device's `agentCommand`); else none. @param {string} harness
 		 *  @returns {Promise<{ device: string, command: string, claude: string | null } | null>} */
-		agentCommand: async (harness) => (mac ? mac.call('agentCommand', harness) : null)
+		agentCommand: async (harness) => (mac ? mac.call('agentCommand', harness) : null),
+		/**
+		 * In the Mac app: uses the drive plugged in at volume `path` for avenDB, as a device of the person's vault of
+		 * its own named `name`, in one ceremony of their passkey (avendb-device's `joinDrive`).
+		 * @param {string} path @param {string} name
+		 */
+		useDrive: (path, name) =>
+			act(`Using ${name} for avenDB`, async () => {
+				await mac.call('joinDrive', path, name);
+				await lookDrives();
+			}),
+		/**
+		 * In the Mac app: opens the drive at volume `path`, one of the person's another Mac of theirs joined, on this
+		 * Mac in one ceremony of their passkey, which this Mac hosts from then on without one (`openDrive`).
+		 * @param {string} path @param {string} name
+		 */
+		openDrive: (path, name) =>
+			act(`Opening ${name} on ${here}`, async () => {
+				await mac.call('openDrive', path);
+				await lookDrives();
+			}),
+		/**
+		 * In the Mac app: ejects the drive at volume `path`, hosted here: its node stops and lets go of every file on it,
+		 * and macOS ejects the volume, so Finder never finds it in use (`ejectDrive`). It shows unplugged, with when it
+		 * last checked what it holds.
+		 * @param {string} path @param {string} name
+		 */
+		ejectDrive: (path, name) =>
+			run(`Ejecting ${name}`, async () => {
+				await mac.call('ejectDrive', path);
+				await lookDrives();
+			})
 	};
 
 	const forget = () => {
@@ -663,7 +710,18 @@
 </script>
 
 {#if phase === 'open' && world}
-	<Shell {world} {api} doing={signing ? '' : doing} {error} thisName={meta?.name ?? ''} {link} {qr} {sockets} {requests} />
+	<Shell
+		{world}
+		{api}
+		doing={signing ? '' : doing}
+		{error}
+		thisName={meta?.name ?? ''}
+		{link}
+		{qr}
+		{sockets}
+		{requests}
+		{drives}
+	/>
 {:else}
 	<div class="account">
 		<header class="lead">

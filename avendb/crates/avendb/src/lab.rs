@@ -2305,6 +2305,16 @@ impl Lab {
         }
     }
 
+    /// A key device `d` alone derives, for `purpose` and `data`, from the key keys are sealed to for it
+    /// (`keys::Secret::child`): to wrap a secret it keeps for itself (`keys::wrap`), as the Mac's device wraps the key
+    /// of each drive it hosts. `None` while `d` is locked, or for a signer that is no device.
+    pub fn own_key(&self, d: SignerId, purpose: &str, data: &[u8]) -> Option<Secret> {
+        match self.keys.get(&d)? {
+            Key::Device(k) => Some(k.seal_secret().child(purpose, data)),
+            Key::Passkey(_) | Key::Web { .. } | Key::Consent(_) => None,
+        }
+    }
+
     /// Device `d`'s hello on the connection whose TLS exporter is `exporter`, for the end that dialed if `dialer`
     /// (`sign::Hello`): `None` while it is locked.
     pub fn hello(&self, d: SignerId, exporter: &[u8; 32], dialer: bool) -> Option<Hello> {
