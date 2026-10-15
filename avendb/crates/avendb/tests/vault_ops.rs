@@ -12,7 +12,7 @@ use avendb::engine::{self, Prepared};
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::lens::blobs::TODO_LENS;
-use avendb::policy::{Kind, Level, Principal};
+use avendb::policy::{KeepMode, Kind, Level, Principal};
 use avendb::recovery::RecoveryKey;
 use avendb::sealed::{Brought, FileKey, seal};
 use avendb::sign;
@@ -367,6 +367,54 @@ fn a_keep_share_names_a_device_of_the_vault_and_only_its_issuer_ends_it() {
     let end = json!({ "op": "revoke", "share": made.to_hex(), "as": alice.to_hex() });
     assert!(ok(run(&mut w, mac, end))["edit"].is_string());
     assert!(!w.lab.state(mac).live(made));
+}
+
+#[test]
+fn a_devices_copy_setting_is_one_wide_keep_share_its_vault_issues_over_itself() {
+    let mut w = cast::world();
+    let lib = cast::library(&mut w);
+    let (mac, phone, alice) = (w.mac_a, w.phone_a, w.alice);
+    let copy = |full: bool| json!({ "op": "copy", "device": phone.to_hex(), "full": full });
+    let copies = |w: &World| {
+        let st = w.lab.state(mac);
+        st.copy_of(phone).map(|k| (k.id, k.share.level, k.share.wide, k.share.over, k.share.issuer)).collect::<Vec<_>>()
+    };
+    let shown_copy = |w: &mut World, d: SignerId| {
+        let world = ok(run(w, mac, json!({ "op": "world" })));
+        let devices = shown(&world, alice)["devices"].as_array().cloned().expect("its devices");
+        devices.iter().find(|x| x["id"] == d.to_hex()).map(|x| x["copy"].clone()).expect("the device")
+    };
+    // nothing set: it syncs every entry and keeps a file only by the node's own default
+    assert_eq!((shown_copy(&mut w, phone), shown_copy(&mut w, mac)), (Value::Null, Value::Null));
+    let door = |w: &World| w.lab.state(mac).entry(lib.door).cloned().expect("the door todo");
+    assert_eq!(w.lab.state(mac).keeps(phone, &door(&w)), None);
+    // a full copy: its vault issues it, a device alone, no passkey; the phone keeps every file whole
+    assert_eq!(may(&mut w, mac, json!([copy(true)])), [json!(true)]);
+    let full = ShareId(id(&ok(run(&mut w, mac, copy(true))), "share"));
+    assert_eq!(copies(&w), [(full, Level::Keep(KeepMode::Whole), true, alice, alice)]);
+    assert_eq!(shown_copy(&mut w, phone), json!("full"));
+    assert_eq!(w.lab.state(mac).keeps(phone, &door(&w)), Some(true));
+    assert!(w.lab.state(mac).wants(phone, &door(&w)));
+    // the same again issues nothing
+    assert_eq!(ok(run(&mut w, mac, copy(true)))["share"], json!(full.to_hex()));
+    assert_eq!(copies(&w).len(), 1);
+    // a light one: every entry, a file only as it is opened; the full copy is revoked, so one stays
+    let light = ShareId(id(&ok(run(&mut w, mac, copy(false))), "share"));
+    assert_eq!(copies(&w), [(light, Level::Keep(KeepMode::Opened), true, alice, alice)]);
+    assert!(!w.lab.state(mac).live(full));
+    assert_eq!(shown_copy(&mut w, phone), json!("light"));
+    assert_eq!(w.lab.state(mac).keeps(phone, &door(&w)), Some(false));
+    assert!(w.lab.state(mac).wants(phone, &door(&w)));
+    // a keep share of its own over a vault speaks for that vault instead
+    let never = json!({ "op": "keep", "over": alice.to_hex(), "mode": "never", "what": "everything",
+        "device": phone.to_hex() });
+    ok(run(&mut w, mac, never));
+    assert!(!w.lab.state(mac).wants(phone, &door(&w)));
+    // only a device of a vault the acting device acts for
+    let stranger = json!({ "op": "copy", "device": w.mac_b.to_hex(), "full": true });
+    assert!(run(&mut w, mac, stranger).get("refused").is_some());
+    let unknown = json!({ "op": "copy", "device": w.stranger.to_hex(), "full": true });
+    assert_eq!(refused(&run(&mut w, mac, unknown)), "BadOp");
 }
 
 #[test]

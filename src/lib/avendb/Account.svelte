@@ -64,6 +64,9 @@
 	let server = $state('');
 	/** Whether the vault founded here has avenDB's server keep its ciphertext: on unless the person turns it off. */
 	let backup = $state(true);
+	/** Whether this device keeps a full copy, every entry and every file, or a light one, every entry and a file as
+	 *  it is opened: its copy setting, which it writes once it has none (`refresh`). A full copy unless it is a phone. */
+	let full = $state(!phone());
 	let code = $state('');
 	/** whether another device's link brought the person here, to link this browser */
 	let arrived = $state(false);
@@ -77,8 +80,9 @@
 	let link = $state('');
 	/** in the Mac app, the UDP sockets its device's node bound, on which it reaches its peers directly */
 	let sockets = $state(/** @type {string[] | null} */ (null));
-	/** whether the device is writing its card, or vaults' profiles: one such write at a time */
+	/** whether the device is writing its card, its copy setting, or vaults' profiles: one such write at a time */
 	let carding = false;
+	let copying = false;
 	let profiling = false;
 	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
 	let standardizing = false;
@@ -120,6 +124,14 @@
 						? 'Safari'
 						: 'A browser';
 		return system ? `${browser} on ${system}` : browser;
+	}
+
+	/** Whether this device is a phone, which keeps a light copy unless the person says otherwise. */
+	function phone() {
+		if (native()) return false;
+		const ua = navigator.userAgent;
+		const small = Math.min(screen.width, screen.height) < 600 && matchMedia('(pointer: coarse)').matches;
+		return /iPhone|iPod|Android.+Mobile/.test(ua) || small;
 	}
 
 	onMount(async () => {
@@ -408,6 +420,14 @@
 				.then(answer)
 				.catch((/** @type {Error} */ e) => (error = `Naming ${here} failed: ${e.message}`))
 				.finally(() => (carding = false));
+		}
+		// its copy setting, a full copy or a light one, as the person chose it here, where it has none yet
+		if (card && !card.copy && !copying) {
+			copying = true;
+			send({ op: 'copy', full })
+				.then(answer)
+				.catch((/** @type {Error} */ e) => (error = `Setting what ${here} keeps failed: ${e.message}`))
+				.finally(() => (copying = false));
 		}
 		// the profiles of the person's vault, by their maiaCITY name, and of the seed their claim of the server
 		// founded, if it did: written once, by whichever of their devices comes first
@@ -701,6 +721,18 @@
 							owns avenCEO GmbH, which owns the CEO Aven, the aven vault the server is a device of.
 						</p>
 					</details>
+					<label class="check">
+						<input type="checkbox" bind:checked={full} />
+						<span>
+							Keep a full copy on {here}
+							<span class="soft">
+								{full
+									? 'Every entry and every file, kept here: it works offline and is one more backup.'
+									: 'Every entry, and a file only once you open it: it takes little space.'}
+								You can change it later in Owners and devices.
+							</span>
+						</span>
+					</label>
 					<label class="check">
 						<input type="checkbox" bind:checked={backup} />
 						<span>

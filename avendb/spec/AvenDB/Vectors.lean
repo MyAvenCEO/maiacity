@@ -789,7 +789,10 @@ def cases : List Case := [
     (7, [], .revoke (.grant 44 102 [])),
     -- the tablet leaves Alice's vault: its keep share, still live, no longer applies, and it gets no new one
     (77, [], .revoke (.device 100 77 [])),
-    (2, [], keepShare 45 100 77 .whole 100 todos)] }]
+    (2, [], keepShare 45 100 77 .whole 100 todos),
+    -- Carol's Mac keeps a full copy: a wide whole keep share over her own vault, its copy setting, stands for every
+    -- vault where it has no keep share of its own, so it keeps Alice's notes whole now that hers there is revoked
+    (7, [], keepShare 50 102 7 .whole 102 (wide := true))] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -1535,14 +1538,16 @@ def allActions : List Action :=
 #guard (cases.find? (·.name == "keep shares: each device syncs what its keep shares pick")).all fun c =>
   (run c.edits).1.drop humans.length == [true, true, true, true, true, true, true, false, false, false, true, true,
     true, false, false, false, false, false, false, true, false, false, false, true, true, false]
--- each mode, each refusal, and a device that left: its keep share, still live, no longer applies
+-- each mode, each refusal, a device that left (its keep share, still live, no longer applies), and a copy setting
 #guard (cases.find? (·.name == "keep shares: modes, refusals and a device that leaves")).all fun c =>
   let (acc, st) := run c.edits
   let wk (d : SignerId) (e : EntryId) := (st.entry? e).map fun en => (wants st d en, keeps st d en)
   acc.drop humans.length == [true, true, true, true, true, true, true, true, false, false, false, false, true, true,
-    true, true, true, true, true, true, true, false, false, true, true, false] &&
+    true, true, true, true, true, true, true, false, false, true, true, false, true] &&
     [1, 21, 22, 2].map (wk 3) == [some (true, true), some (true, false), some (false, false), some (true, true)] &&
     [1, 21, 2].map (wk 77) == [some (true, false), some (true, false), some (true, false)] &&
+    -- Carol's Mac, its keep share over Alice's vault revoked, keeps her notes whole by its copy setting
+    wk 7 1 == some (true, true) &&
     st.live 43 && (st.entry? 1).any fun en => semWants st en == [40, 43] && st.wantsOf 1 == [40, 43]
 -- revoking a keep share cuts nothing it hadn't seen: no write, no mark and no share falls with it
 #guard (views.find? (·.name == "revoking a keep share cuts nothing")).all fun c =>

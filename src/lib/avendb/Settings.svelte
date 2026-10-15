@@ -1,11 +1,11 @@
 <!--
 	A vault's settings, as its aside lists them: About (what it is, who approves a change to it and how many of its
 	owners, how this browser acts for it), Owners and devices (who owns it, what it owns, the devices that act for it,
-	and for the person's own vault this browser's name, linking the next device and forgetting this one), and Sharing
-	(who it is shared with: its owners, then every share in force over it, each who · level · what, with what it
-	reaches now; sharing some of it as the acting vault; what each of the person's devices keeps of it; what is shared
-	with it elsewhere; and its entries by who they are shared with, each with the devices that get them and whether
-	each opens them or only keeps an encrypted copy). All of it is the device's: its world (avendb-browser's `World`)
+	and for the person's own vault what each of their devices keeps, a full copy or a light one, this browser's name,
+	linking the next device and forgetting this one), and Sharing (who it is shared with: its owners, then every share
+	in force over it, each who · level · what, with what it reaches now; sharing some of it as the acting vault; what
+	is shared with it elsewhere; and its entries by who they are shared with, each with the devices that get them and
+	whether each opens them or only keeps an encrypted copy). All of it is the device's: its world (avendb-browser's `World`)
 	and its list of the shares over the vault (the `shares` op), which says too whether the acting vault may revoke
 	each; every other button shows only where the device answers a dry run of it (`may`), and every change goes out as
 	one op, acting for the acting vault, which the rules check against what is shared with it.
@@ -26,7 +26,6 @@
 		KINDS,
 		levelName,
 		list,
-		MODES,
 		nameOf,
 		reads,
 		roleGroup,
@@ -160,25 +159,10 @@
 	/** Whether avenDB's server backs up the person's vault (true), only relays for it (false), or holds no cap (null). */
 	const backs = $derived(world.backsUp);
 
-	/** the keep share being set up for one of the person's devices: which, its mode, and what it keeps */
-	let keeping = $state(/** @type {{ device: string, mode: string, types: string, tag: string } | null} */ (null));
-	/** What the keep share keeps: everything, or entries of a type, tagged one way. */
-	const keepWhat = $derived.by(() => {
-		if (!keeping || !keeping.types) return 'everything';
-		/** @type {import('./vaults.js').Atom[]} */
-		const tests = [{ type: keeping.types.split(',') }];
-		const tag = keeping.tag.trim().replace(/^#/, '');
-		if (tag) tests.push({ tag });
-		return tests.length === 1 ? tests[0] : { all: tests };
-	});
-	const keepOp = $derived(
-		keeping && { op: 'keep', over: vault, mode: keeping.mode, what: keepWhat, device: keeping.device, as: world.mine }
-	);
-
 	/**
 	 * What the device would make, as it answers a dry run of each (`may`): the vault's name (`profile`), how many owners
 	 * a change needs (`threshold`), the master recovery key as an owner (`recovery`), backups on or off (`backUp`), and
-	 * the keep share being set up (`keep`): `true`, `{ approve }` where the vault's owners approve it, or why not.
+	 * what a device of the vault keeps (`copy`): `true`, `{ approve }` where the vault's owners approve it, or why not.
 	 */
 	let can = $state(/** @type {Record<string, Verdict>} */ ({}));
 	$effect(() => {
@@ -189,7 +173,8 @@
 		if (recoveryMissing && world.recovery)
 			asks.recovery = { op: 'share', over: vault, who: { signer: world.recovery }, level: 'Owner', what: 'everything' };
 		if (vault === world.mine && backs != null) asks.backUp = { op: 'back_up', on: !backs };
-		if (keepOp) asks.keep = $state.snapshot(keepOp);
+		const other = v.devices.find((d) => !d.me) ?? v.devices[0];
+		if (vault === world.mine && other) asks.copy = { op: 'copy', device: other.id, full: other.copy !== 'full' };
 		const names = Object.keys(asks);
 		let gone = false;
 		may(api, actor, Object.values(asks)).then((answers) => {
@@ -206,10 +191,6 @@
 
 	/** A device's name, to start a line: its card's, or what it is. @param {string} id */
 	const deviceName = (id) => signerName(world, id, true);
-	/** The keep shares over the vault that name device `id`. @param {string} id */
-	const keepsOf = (id) =>
-		rows.filter((r) => r.kind === 'keep' && r.who !== EVERYONE && 'device' in r.who && r.who.device === id);
-
 	/** How this browser acts for the vault. */
 	const actsFor = $derived.by(() => {
 		if (!v.via) return 'It doesn’t act for it: it only knows it from what it syncs.';
@@ -239,9 +220,12 @@
 			owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer }
 		});
 
-	async function keep() {
-		if (keepOp && (await api.run('Keeping', $state.snapshot(keepOp)))) keeping = null;
-	}
+	/**
+	 * Sets what device `d` keeps of every vault it syncs: a full copy, or a light one (`copy`).
+	 * @param {import('./vaults.js').DeviceView} d @param {boolean} full
+	 */
+	const keepCopy = (d, full) =>
+		api.run(full ? 'Keeping a full copy' : 'Keeping a light copy', { op: 'copy', device: d.id, full });
 </script>
 
 {#if tab === 'about'}
@@ -449,10 +433,34 @@
 							{:else}
 								<span class="soft mono">{short(d.id)}</span>
 							{/if}
+							{#if vault === world.mine}
+								<span class="copy" role="group" aria-label="What it keeps">
+									<button
+										class="btn quiet"
+										class:on={d.copy === 'full'}
+										aria-pressed={d.copy === 'full'}
+										disabled={busy || !lets('copy') || d.copy === 'full'}
+										onclick={() => keepCopy(d, true)}>Full copy</button
+									>
+									<button
+										class="btn quiet"
+										class:on={d.copy !== 'full'}
+										aria-pressed={d.copy !== 'full'}
+										disabled={busy || !lets('copy') || d.copy === 'light'}
+										onclick={() => keepCopy(d, false)}>Light</button
+									>
+								</span>
+							{/if}
 						{/if}
 					</li>
 				{/each}
 			</ul>
+			{#if vault === world.mine && v.devices.length}
+				<p class="soft">
+					A full copy keeps every entry and every file of every vault the device syncs, so it works offline and is one
+					more backup. A light one keeps every entry, and a file only once it is opened there.
+				</p>
+			{/if}
 		</article>
 
 		{#if vault === world.mine}
@@ -555,66 +563,6 @@
 				</p>
 			{/if}
 		</article>
-
-		{#if mine?.devices.length}
-			<article class="card">
-				<h3>Kept on your devices</h3>
-				<p class="soft">
-					What each of your devices keeps of {nameOf(v)}: {roleGroup(world, 'keepWhole')} {KEEPS.keepWhole};
-					{roleGroup(world, 'keepOpened')} {KEEPS.keepOpened}; {roleGroup(world, 'keepNever')} {KEEPS.keepNever}. A
-					keep share grants nothing: it only says what one of your devices keeps.
-				</p>
-				<ul class="list keeps">
-					{#each mine.devices as d (d.id)}
-						<li>
-							<span class="held">
-								<span>
-									<b>{d.me ? (d.name ?? thisName) : deviceName(d.id)}</b>
-									{#if d.me}<span class="chip accent">{here}</span>{/if}
-								</span>
-								{#each keepsOf(d.id) as r (r.id)}
-									<span class="kept">
-										<span>{rowLevel(r, world)} · {rowWhat(r, world)}</span>
-										{#if allowed(r.revoke)}
-											<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
-										{/if}
-									</span>
-								{:else}
-									<small class="soft">Nothing set: it syncs everything it gets.</small>
-								{/each}
-							</span>
-							{#if keeping?.device !== d.id}
-								<button
-									class="btn quiet"
-									disabled={busy}
-									onclick={() => (keeping = { device: d.id, mode: 'whole', types: '', tag: '' })}>Set</button
-								>
-							{/if}
-						</li>
-						{#if keeping?.device === d.id}
-							<li class="keep-form">
-								<select class="field" bind:value={keeping.mode} aria-label="What it keeps">
-									{#each MODES as [mode, level] (mode)}<option value={mode}>{roleGroup(world, level)}</option>{/each}
-								</select>
-								<select class="field" bind:value={keeping.types} aria-label="Of what">
-									<option value="">everything</option>
-									<option value="note">notes</option>
-									<option value="todo">todos</option>
-									<option value="article">articles</option>
-									<option value="file">files</option>
-								</select>
-								{#if keeping.types}
-									<input class="field tag" placeholder="tagged (any)" bind:value={keeping.tag} aria-label="Tagged" />
-								{/if}
-								<button class="btn primary" disabled={busy || !lets('keep')} onclick={keep}>Keep</button>
-								<button class="btn quiet" onclick={() => (keeping = null)}>Cancel</button>
-								{#if barred('keep')}<small class="soft">It can’t: {barred('keep')}.</small>{/if}
-							</li>
-						{/if}
-					{/each}
-				</ul>
-			</article>
-		{/if}
 
 		<article class="card">
 			<h3>Shared with {nameOf(v)} elsewhere</h3>
@@ -739,25 +687,28 @@
 		border-bottom: 0;
 	}
 
-	.grants li,
-	.keeps li {
+	.grants li {
 		justify-content: space-between;
 	}
 
-	.keeps .kept {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.88rem;
+	/* what a device keeps: a full copy or a light one */
+	.copy {
+		display: inline-flex;
+		margin-left: auto;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		overflow: hidden;
 	}
 
-	.keeps .keep-form {
-		justify-content: flex-start;
+	.copy .btn {
+		border-radius: 0;
+		font-size: 0.82rem;
 	}
 
-	.keeps .tag {
-		width: 8rem;
+	.copy .btn.on {
+		background: var(--accent);
+		color: #fff;
+		opacity: 1;
 	}
 
 	.mine {

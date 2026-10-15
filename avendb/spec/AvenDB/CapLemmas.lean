@@ -568,21 +568,27 @@ theorem keepsWith_congr {ks : List Share} {f g : Share → Bool} (h : ∀ k ∈ 
   exact any_congr_mem fun k hk => by rw [h k hk]
 
 /-- An entry's wants mean what the keep shares say: where their live part is the keep shares that pick the entry, a
-    device wants the entry, and keeps its files whole, exactly as its keep shares over the entry's vault say when each
-    one picks it where it is wide or its selector, with the schema and lens types, picks the entry (`keepPicks`). -/
+    device wants the entry, and keeps its files whole, exactly as its keep shares for the entry's vault (`keepsFor`: its
+    own there, else its copy setting) say when each one picks it where it is wide or its selector, with the schema and
+    lens types, picks the entry (`keepPicks`). -/
 theorem wants_mean_keeps {st : State} (hr : Reachable st) (d : SignerId) (en : Entry)
     (hwants : liveWants st en = semWants st en) :
-    wants st d en = wantsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
-      keeps st d en = keepsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) := by
+    wants st d en = wantsWith (keepsFor st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
+      keeps st d en = keepsWith (keepsFor st d en.vault) (fun k => k.wide || keepPicks k en.attrs) := by
   -- each of the device's keep shares there is marked on the entry exactly when it picks it
-  have hm : ∀ k ∈ keepsOf st d en.vault, marked st en k = (k.wide || keepPicks k en.attrs) := by
+  have hm : ∀ k ∈ keepsFor st d en.vault, marked st en k = (k.wide || keepPicks k en.attrs) := by
     intro k hk
-    obtain ⟨hkm, hcond⟩ := List.mem_filter.1 hk
-    simp only [Bool.and_eq_true, beq_iff_eq] at hcond
-    obtain ⟨⟨⟨⟨hkeep, -⟩, hover⟩, hlive⟩, -⟩ := hcond
     unfold marked
     cases hw : k.wide
-    · -- a keep share that isn't wide is among the marks exactly when it picks the entry
+    · -- a keep share that isn't wide is one of its own over the vault, among the marks exactly when it picks the entry
+      have hown : k ∈ keepsOf st d en.vault := by
+        unfold keepsFor at hk
+        split at hk
+        · simp [copyOf, hw] at hk
+        · exact hk
+      obtain ⟨hkm, hcond⟩ := List.mem_filter.1 hown
+      simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+      obtain ⟨⟨⟨⟨hkeep, -⟩, hover⟩, hlive⟩, -⟩ := hcond
       rw [Bool.false_or, Bool.false_or]
       exact mark_means (sel := fun k => keepPicks k en.attrs) (sharesWell_reachable hr).1 hwants hkm hlive
         (by simp [hover, hlive, hw, hkeep])
@@ -594,8 +600,8 @@ theorem wants_mean_keeps {st : State} (hr : Reachable st) (d : SignerId) (en : E
 theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
     (liveAudience st en = semAudience st en → ∀ a, mayWrite st a en = semWrite st a en) ∧
     (liveWants st en = semWants st en → ∀ d,
-      wants st d en = wantsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
-      keeps st d en = keepsWith (keepsOf st d en.vault) (fun k => k.wide || keepPicks k en.attrs)) :=
+      wants st d en = wantsWith (keepsFor st d en.vault) (fun k => k.wide || keepPicks k en.attrs) ∧
+      keeps st d en = keepsWith (keepsFor st d en.vault) (fun k => k.wide || keepPicks k en.attrs)) :=
   ⟨fun h a => audiences_mean_slices hr en h a, fun h d => wants_mean_keeps hr d en h⟩
 
 theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}
