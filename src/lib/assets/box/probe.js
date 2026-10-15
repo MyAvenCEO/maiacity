@@ -43,6 +43,7 @@ const tries = {
 			w.onmessage = () => ok('started');
 			w.onerror = () => no(new Error('error'));
 		}),
+	BroadcastChannel: () => new BroadcastChannel('box-probe') && 'opened',
 	'eval': () => (0, eval)('1 + 1'),
 	'new Function': () => new Function('return 1')(),
 	origin: () => (self.origin === 'null' ? Promise.reject(new Error('opaque origin')) : self.origin)
