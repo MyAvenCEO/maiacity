@@ -50,9 +50,10 @@
 			});
 	});
 
-	// a Maia Universe post lives on the root (/<doc>/?t=…), and still belongs to the Universe tab
+	// a Maia Universe post lives on the root (/<doc>/?t=…), and still belongs to the Universe tab; an asset's build there
+	// belongs to none
 	const isActive = (href: string) =>
-		href === `${base}/universe` && page.route.id === '/[doc=doc]'
+		href === `${base}/universe` && page.route.id === '/[doc=doc]' && !page.data.asset
 			? true
 			: href === (base || '/') ? page.url.pathname === (base || '/') : page.url.pathname.startsWith(href);
 </script>

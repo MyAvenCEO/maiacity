@@ -3,6 +3,7 @@
 // post an article's content flow made as it was published, which everyone may read, with the pictures it shows that
 // everyone may read too (`FILES`).
 import { laidOut } from '$lib/avendb/article.js';
+import { idOf, slug } from '$lib/ids.js';
 
 export const CHANNELS = ['All', 'Devlog', 'theOS', 'Village', 'Food', 'Energy'];
 
@@ -12,20 +13,7 @@ export const ago = (min) =>
 	min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`;
 
 // a title as it reads in an address: lower case, words joined by dashes
-export const slug = (title) =>
-	title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'post';
-
-// 32 bytes as an iroh doc id reads: base32, lower case, without padding (52 letters)
-function base32(bytes) {
-	const abc = 'abcdefghijklmnopqrstuvwxyz234567';
-	let bits = 0, value = 0, out = '';
-	for (const b of bytes) {
-		value = ((value << 8) | b) & 0xffff;
-		bits += 8;
-		while (bits >= 5) out += abc[(value >>> (bits -= 5)) & 31];
-	}
-	return bits ? out + abc[(value << (5 - bits)) & 31] : out;
-}
+export { slug };
 
 // avenDB's server: its feed, the posts it keeps that everyone may read, newest first
 export const FEED = 'https://avendb.maia.city/feed/posts';
@@ -36,8 +24,8 @@ export const FILES = 'https://avendb.maia.city/feed/files';
 // where picture `name` of vault `vault` is read, which everyone may read
 export const pictureUrl = (vault, name) => `${FILES}/${vault}/${name}`;
 
-// the doc id of an avenDB post: its entry's 32 bytes, from 64 hex digits
-export const docOf = (entry) => base32(entry.match(/../g).map((h) => parseInt(h, 16)));
+// the doc id of an avenDB post: its entry's 32 bytes as an address reads them ($lib/ids.js)
+export const docOf = (entry) => idOf(entry);
 
 // Markdown as plain text, as a post shows it: no marks, links by their words, no pictures
 export const plain = (md) =>

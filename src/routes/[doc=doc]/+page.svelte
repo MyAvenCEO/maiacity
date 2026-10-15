@@ -1,6 +1,7 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// A post of the Maia Universe on its own page, laid out as the journal lays out every article on the site
+	// A post of the Maia Universe on its own page (or, when the name is an asset recipe's hash, that asset's build:
+	// $lib/assets/AssetPage.svelte, as ./+page.js finds), laid out as the journal lays out every article on the site
 	// ($lib/blog/PostLayout.svelte): its cover, its channel, its title, its subtitle, who wrote it and when, its words,
 	// then more of the stream. Its Markdown reads as avenDB lays it out ($lib/avendb/article.js), with the pictures
 	// everyone may read, from avenDB's server; one only its vault's readers hold is left out.
@@ -18,7 +19,7 @@
 
 	// a post published in avenDB opens once its feed is in
 	onMount(() => {
-		if (!findPost(data.doc)) loadFeed();
+		if (!data.asset && !findPost(data.doc)) loadFeed();
 	});
 
 	const post = $derived(findPost(data.doc));
@@ -48,8 +49,10 @@
 </script>
 
 <svelte:head>
-	<title>{post ? `${post.title} · ${author.name}` : waiting ? 'A post' : 'Post not found'} · Maia Universe</title>
-	{#if post}<meta name="description" content={post.text} />{/if}
+	{#if !data.asset}
+		<title>{post ? `${post.title} · ${author.name}` : waiting ? 'A post' : 'Post not found'} · Maia Universe</title>
+		{#if post}<meta name="description" content={post.text} />{/if}
+	{/if}
 </svelte:head>
 
 {#snippet back()}<a class="back" href="{base}/universe/">← Maia Universe</a>{/snippet}
@@ -81,7 +84,9 @@
 	{/if}
 {/snippet}
 
-{#if post}
+{#if data.asset}
+	<data.AssetPage hash={data.asset} />
+{:else if post}
 	<PostLayout
 		hero={post.cover ? hero : undefined}
 		{back}
