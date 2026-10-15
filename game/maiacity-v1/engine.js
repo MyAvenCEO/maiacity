@@ -21,11 +21,11 @@
  *   swaps its others through the pool on its own; what is still missing is owed (arrears) and paid first next pay day.
  * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
  *   year begins with Sol (from 21 March, the new year) and ends with March; every month starts on a Sunday. Every balance (HEARTS, wallets, treasuries, the pool)
- *   melts by 7 % a year of virtual time, continuously.
+ *   melts continuously at the rate of 7 % a year of virtual time (b·e^(-0.07 t), as in the theOS paper).
  * - Every decision (the settings, and payouts of MIND from a COOP's treasury to any wallet) is a MIP, as in Sandbox 7.
  *   It needs two signatures, and applies at once in this same game (no new world).
  * - The first mint (Samuel 2026-10-15): the starter pack is the whole 7 % equilibrium at once, the balance at which a
- *   year of HEARTS grown equals the year's melt (heartsPerDay a game day against the continuous 7 %: 120,379 HEARTS).
+ *   year of HEARTS grown equals the year's melt (heartsPerDay a game day over the 7 % rate: 8,736 / 0.07 = 124,800 HEARTS).
  * - The euro border (Samuel 2026-10-14, 2026-10-15): each player's first mint also brings €12,500 into the MaiaCity
  *   COOP, minted by the system as an invest of its own (the euro ingest); later mints bring none. Euros make no MIND
  *   and do not melt: the MaiaCity COOP holds them for the city (its treasury's EURO).
@@ -48,7 +48,7 @@ export const TOKEN_LABEL = { HEARTS: 'HEARTS', MAIA: 'maiaMIND', TRIBE: 'tribeMI
 export const EURO = 'EURO';
 export const TOKEN_COLOUR = { MAIA: '#5f8f6e', TRIBE: '#c87a4f', VILLAGE: '#4f7fa8' };
 /** a game kept from before this shape is started again (api/src/maiacity-v1.js), its seats kept */
-export const VERSION = 16;
+export const VERSION = 17;
 export const SEATS = ['A', 'B'];
 export const COOPS = {
 	maia: { name: 'MaiaCity COOP', mind: 'MAIA', assets: [{ id: 'hex', name: 'The tribe hex', kind: 'Land' }, { id: 'pool', name: 'The AMM pool', kind: 'Liquidity: maiaMIND, tribeMIND, villageMIND' }] },
@@ -88,7 +88,7 @@ export const DEFAULT_SETTINGS = {
 	/** signatures a MIP needs before it applies (two seats: 1 or 2) */
 	signatures: 2,
 	/** each player's first mint brings this starter pack on top of what grew: the 7 % equilibrium (equilibriumOf) */
-	starterPack: 120379,
+	starterPack: 124800,
 	/** and brings this many €uro into the MaiaCity COOP (the euro ingest) */
 	euroIngest: 12500,
 	heartsPerDay: 24,
@@ -141,7 +141,7 @@ export const RENTED = [
 export const SUBLET = [{ asset: 'hex', payer: 'tribe', setting: 'hexSubRent', label: 'hex', key: 'hexSub' }];
 
 /** the settings, in words */
-export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', euroIngest: 'Euro ingest, €uro into the MaiaCity COOP on a first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage a year (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightTRIBE: 'Pool weight of tribeMIND', weightVILLAGE: 'Pool weight of villageMIND', homeRent: 'Home rent, each player a week (tribeMIND)', tentRent: 'Tent price inside the home rent, a week (tribeMIND)', hexRent: 'Hex rent, Village COOP a week (maiaMIND)', pickupRent: 'Pickup rent, Tribe COOP a week (villageMIND)', powercubeRent: 'Powercube rent, Tribe COOP a week (villageMIND)', batteryRent: 'Battery pack rent, Tribe COOP a week (villageMIND)', solarRent: 'Solar panel rent, Tribe COOP a week (villageMIND)', hexSubRent: 'Hex rent, Tribe COOP to the Village COOP, a player a week (villageMIND)' };
+export const SETTING_NAMES = { hoursPerMonth: 'Real hours a game month lasts', mintWindowHours: 'Mint window, real hours back', signatures: 'Signatures a MIP needs', starterPack: 'Starter pack, HEARTS on the first mint', euroIngest: 'Euro ingest, €uro into the MaiaCity COOP on a first mint', heartsPerDay: 'HEARTS a game day', demurrage: 'Demurrage rate a year, continuous (0.07 = 7 %)', poolShare: 'Share of every invested HEART to the city pool', dividendShare: 'Dividend: share of every sale to the MIND holders', swapFee: 'Swap fee', weightMAIA: 'Pool weight of maiaMIND', weightTRIBE: 'Pool weight of tribeMIND', weightVILLAGE: 'Pool weight of villageMIND', homeRent: 'Home rent, each player a week (tribeMIND)', tentRent: 'Tent price inside the home rent, a week (tribeMIND)', hexRent: 'Hex rent, Village COOP a week (maiaMIND)', pickupRent: 'Pickup rent, Tribe COOP a week (villageMIND)', powercubeRent: 'Powercube rent, Tribe COOP a week (villageMIND)', batteryRent: 'Battery pack rent, Tribe COOP a week (villageMIND)', solarRent: 'Solar panel rent, Tribe COOP a week (villageMIND)', hexSubRent: 'Hex rent, Tribe COOP to the Village COOP, a player a week (villageMIND)' };
 
 /** the settings a MIP may change, with their limits */
 export const SETTING_LIMITS = {
@@ -258,7 +258,7 @@ function log(s, at, entry) {
 /** melt every balance over `ms` of real time (that many virtual months), counting what melted per holder */
 function melt(s, ms) {
 	if (ms <= 0 || !s.settings.demurrage) return;
-	const f = Math.pow(1 - s.settings.demurrage, ms / monthMs(s) / MONTHS_A_YEAR);
+	const f = Math.exp(-s.settings.demurrage * (ms / monthMs(s) / MONTHS_A_YEAR));
 	for (const [who, bal] of holders(s)) {
 		for (const k of Object.keys(bal)) {
 			if (!bal[k] || k === EURO) continue; // euros do not melt
@@ -473,7 +473,7 @@ const num = (v) => {
  * what a seat may mint now: HEARTS grow all the time on the GAME clock, 24 a game day (one a game hour; at a month a
  * real day that is 672 a real day), and are minted whenever the player likes, all that grew since the last mint. The
  * right to mint reaches back the mint window only (24 real hours: one game month): what grew before that is lost.
- * Minted HEARTS stay (they only melt). A player's first mint also brings the starter pack (the 7 % equilibrium, 120,379 HEARTS) once.
+ * Minted HEARTS stay (they only melt). A player's first mint also brings the starter pack (the 7 % equilibrium, 124,800 HEARTS) once.
  * { amount (starter included), starter, grown, since, full: when the window is full and growth starts being lost, lost: what was lost already }
  */
 export function mintState(s, seat, now) {
@@ -490,8 +490,8 @@ export function mintState(s, seat, now) {
 }
 
 /** the 7 % equilibrium: the HEARTS balance at which a year's growth (heartsPerDay a game day) equals its continuous
- * melt; with 24 a day and 7 % a year, 120,379 (the starter pack) */
-export const equilibriumOf = (set = DEFAULT_SETTINGS) => (set.heartsPerDay * DAYS_A_MONTH * MONTHS_A_YEAR) / -Math.log(1 - set.demurrage);
+ * melt, the paper's steady state u / r; with 24 a day and 7 % a year, 8,736 / 0.07 = 124,800 (the starter pack) */
+export const equilibriumOf = (set = DEFAULT_SETTINGS) => (set.heartsPerDay * DAYS_A_MONTH * MONTHS_A_YEAR) / set.demurrage;
 
 /** signatures a MIP needs before it is accepted (the default; the game's own is its signatures setting) */
 export const SIGNATURES = 2;

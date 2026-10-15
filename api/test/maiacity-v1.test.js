@@ -4,14 +4,14 @@ import { DAY_MS, SEEDLINGS, act, advance, describe, dividendsOf, equilibriumOf, 
 
 const T0 = Date.UTC(2026, 9, 13);
 /** the starter pack: the 7 % equilibrium, rounded */
-const STARTER = 120379;
+const STARTER = 124800;
 /** a game whose players have a full day of HEARTS grown, ready to mint at T0 */
 /** one game day: a real day is a game month of 28 */
 const GAME_DAY = DAY_MS / 28;
 /** a game started one game day before T0, its players' starter packs had: 24 HEARTS each ready to mint at T0 */
 const grown = (s) => { s.started = s.t = T0 - GAME_DAY; for (const p of Object.values(s.players)) { p.lastMint = T0 - GAME_DAY; p.starter = true; } return s; };
 
-test("the first mint brings the 120,379 HEARTS starter pack (the 7 % equilibrium); then HEARTS grow 24 a game day on the game clock, at most the last 24 real hours of growth", () => {
+test("the first mint brings the 124,800 HEARTS starter pack (the 7 % equilibrium); then HEARTS grow 24 a game day on the game clock, at most the last 24 real hours of growth", () => {
   const H = GAME_DAY / 24;
   let s = newGame(T0, { demurrage: 0 });
   s = act(s, "A", { type: "mint" }, T0 + 6 * H);
@@ -35,12 +35,12 @@ test("investing splits each HEART: 0.5 to the investor, 0.4 to the treasury, 0.1
   expect(price(s)).toBe(null);
 });
 
-test("a virtual year melts every balance by 7 %", () => {
+test("a virtual year melts every balance at the continuous 7 % rate (e^-0.07, 6.76 % lost)", () => {
   let s = act(grown(newGame(T0, { homeRent: 0, hexRent: 0 })), "A", { type: "mint" }, T0);
   s = act(s, "A", { type: "invest", coop: "maia", amount: 24 }, T0);
   s = advance(s, T0 + 13 * DAY_MS);
-  expect(s.players.A.wallet.MAIA).toBeCloseTo(12 * 0.93, 6);
-  expect(supply(s).MAIA).toBeCloseTo(24 * 0.93, 6);
+  expect(s.players.A.wallet.MAIA).toBeCloseTo(12 * Math.exp(-0.07), 6);
+  expect(supply(s).MAIA).toBeCloseTo(24 * Math.exp(-0.07), 6);
 });
 
 test("rent down the chain: the players pay the Tribe COOP, it pays the Village COOP, which pays the MaiaCity COOP, through the pool", () => {
@@ -355,10 +355,10 @@ test("the euro ingest: a player's first mint brings €12,500 into the MaiaCity 
   expect(s.coops.maia.treasury.EURO).toBeCloseTo(12500, 6);
   s = act(s, "B", { type: "mint" }, T0 + 3 * GAME_DAY);
   expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 12500, 6);
-  // a year on, the HEARTS have melted 7 %, the euros not at all
+  // a year on, the HEARTS have melted at the 7 % rate, the euros not at all
   const hearts = s.players.A.wallet.HEARTS;
   s = advance(s, T0 + 3 * GAME_DAY + 13 * DAY_MS);
-  expect(s.players.A.wallet.HEARTS).toBeCloseTo(hearts * 0.93, 3);
+  expect(s.players.A.wallet.HEARTS).toBeCloseTo(hearts * Math.exp(-0.07), 3);
   expect(s.coops.maia.treasury.EURO).toBeCloseTo(2 * 12500, 6);
   expect(s.ledger.some((e) => e.kind === "demurrage" && e.token === "EURO")).toBe(false);
 });
