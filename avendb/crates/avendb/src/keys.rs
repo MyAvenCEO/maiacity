@@ -34,8 +34,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use crate::hash::{self, Hasher, Reader};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 
-/// The suite of every box and edit: X-Wing and Classic McEliece 6688128f, XChaCha20-Poly1305, SHA-3. Its first byte.
-pub const SUITE: u8 = 1;
+/// The suite of every box and edit: X-Wing and Classic McEliece 6688128f, XChaCha20-Poly1305, BLAKE3. Its first byte:
+/// 2 since its keys are derived with BLAKE3 (1 with SHA-3).
+pub const SUITE: u8 = 2;
 
 /// A box sealed to a key pair, or wrapped under a key the sealer holds, or sealed once to an X-Wing key alone
 /// (`seal_once`): its second byte.

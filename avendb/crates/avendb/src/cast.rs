@@ -12,7 +12,8 @@
 use crate::doc::Item;
 use crate::id::{EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::lab::{Lab, NewShare};
-use crate::lens::{BlockV1, BlockV2, DocV1, KindV1, Status, TypeV2};
+use crate::lens::example::{BlockV0, DocV0, KindV0};
+use crate::lens::{BlockV1, Status, TypeV1};
 use crate::policy::{Action, KeepMode, Kind, Level, Principal, Proposal, Sharing, Who};
 use crate::slice::{Atom, Selector};
 
@@ -260,12 +261,12 @@ pub fn relay_on(w: &mut World, v: VaultId) -> ShareId {
     w.lab.issue(w.mac_a, &[w.mac_a], relay).expect("the vault gives the server relay")
 }
 
-pub fn paragraph(id: u64, text: &str) -> BlockV2 {
-    BlockV2 { id, r#type: TypeV2::Paragraph, level: None, checked: None, lang: None, text: text.into() }
+pub fn paragraph(id: u64, text: &str) -> BlockV1 {
+    BlockV1 { id, r#type: TypeV1::Paragraph, level: None, checked: None, lang: None, text: text.into() }
 }
 
-pub fn heading(id: u64, text: &str) -> BlockV2 {
-    BlockV2 { id, r#type: TypeV2::Heading, level: Some(1), checked: None, lang: None, text: text.into() }
+pub fn heading(id: u64, text: &str) -> BlockV1 {
+    BlockV1 { id, r#type: TypeV1::Heading, level: Some(1), checked: None, lang: None, text: text.into() }
 }
 
 /// A markdown document made on `signer`'s device: a heading (block 1) and one paragraph (block 2).
@@ -276,11 +277,12 @@ pub fn document(title: &str, body: &str, signer: SignerId) -> Item {
     item
 }
 
-/// The same document as an app still on v1 writes it.
-pub fn document_v1(title: &str, body: &str, signer: SignerId) -> Item {
-    let block = |id, kind, text: &str| BlockV1 { id, kind, text: text.into() };
-    let blocks = vec![block(1, KindV1::H1, title), block(2, KindV1::P, body)];
-    Item::written_v1(&DocV1 { title: title.into(), blocks }, signer)
+/// The same document as an app of the lens engine's example on v0 writes it (`lens::example`): a vault takes it only
+/// with the example in its lane.
+pub fn document_v0(title: &str, body: &str, signer: SignerId) -> Item {
+    let block = |id, kind, text: &str| BlockV0 { id, kind, text: text.into() };
+    let blocks = vec![block(1, KindV0::H1, title), block(2, KindV0::P, body)];
+    Item::written_v0(&DocV0 { title: title.into(), blocks }, signer)
 }
 
 /// The text of block `id` of entry `e` as device `d` shows it.
@@ -314,8 +316,8 @@ pub fn handbook_ready(w: &mut World) -> VaultId {
 }
 
 /// Scenarios 3 to 5 on the Lab: the coop, its documents Welcome and Onboarding written by Alice for the coop, and every
-/// device synced. Welcome is older: an app still on v1 wrote it (scenario 9). No share selects either: they are in the
-/// audience of no shares, which the coop's devices read and the server relays.
+/// device synced. No share selects either: they are in the audience of no shares, which the coop's devices read and the
+/// server relays.
 pub struct Handbook {
     pub coop: VaultId,
     pub welcome: EntryId,
@@ -325,7 +327,7 @@ pub struct Handbook {
 pub fn handbook(w: &mut World) -> Handbook {
     let coop = coop_on(w);
     relay_on(w, coop);
-    let welcome = document_v1("Welcome", WELCOME_TEXT, w.mac_a);
+    let welcome = document("Welcome", WELCOME_TEXT, w.mac_a);
     let welcome = w.lab.create(w.mac_a, coop, coop, "doc", &[], welcome).expect("Welcome");
     let onboarding = document("Onboarding", ONBOARDING_TEXT, w.mac_a);
     let onboarding = w.lab.create(w.mac_a, coop, coop, "doc", &[], onboarding).expect("Onboarding");

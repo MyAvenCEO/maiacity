@@ -27,11 +27,10 @@ fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
 fn ask_page(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId), after: Option<Place>, page: usize) -> (Reply, usize) {
     let ((to, t), (from, f)) = (to, from);
     let request = Request::from_wire(&Request { after, ..to.request(t, f) }.to_wire()).expect("a request");
-    let (edits, ids, more) = from.reply(f, t, &request, page);
-    let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
+    let (edits, blobs, more) = from.reply(f, t, &request, page);
     let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
     let may = |b: &BlobId| from.may_fetch(f, t, *b, &request.ask.follow);
-    let keys = reply.blobs.iter().filter(|(b, _)| may(b)).filter_map(|(b, _)| from.blob(f, *b));
+    let keys = reply.blobs.iter().filter(|b| may(b)).filter_map(|b| from.blob(f, *b));
     let new = to.receive(t, reply.edits.clone(), keys.collect());
     (reply, new)
 }
@@ -59,7 +58,7 @@ fn split() -> (World, VaultId, Lab, Lab, Lab) {
 #[test]
 fn scenario_5_between_devices_split_off() {
     let (w, coop, mut mac, mut server, mut bob) = split();
-    let welcome = document_v1("Welcome", WELCOME_TEXT, w.mac_a);
+    let welcome = document("Welcome", WELCOME_TEXT, w.mac_a);
     let welcome = mac.create(w.mac_a, coop, coop, "doc", &[], welcome).expect("Alice's Mac writes Welcome on its own");
     // the server asks Alice's Mac, then Bob's Mac asks the server
     assert!(ask((&mut server, w.server), (&mut mac, w.mac_a)) > 0);

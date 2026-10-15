@@ -78,16 +78,16 @@ ids! {
     /// An audience of a vault: the hash of the vault and the ids of the shares that select its entries
     /// (`AudienceId::of`).
     AudienceId,
-    /// A signed edit: the hash of its encoding with its signatures.
+    /// A signed edit: the BLAKE3 hash of its encoding, which its signatures sign.
     EditId,
     /// Bytes named by their hash: a schema or a lens of a vault's schema lane, or a Classic McEliece public key.
     BlobId,
 }
 
 impl BlobId {
-    /// The id of a blob: the hash of its bytes (`hash`), unlike any other hash of them.
+    /// The id of a blob: the BLAKE3 hash of its bytes, the name iroh-blobs gives them (`hash::content`).
     pub fn of(bytes: &[u8]) -> BlobId {
-        BlobId(crate::hash::hash("blob id", bytes))
+        BlobId(crate::hash::content(bytes))
     }
 }
 

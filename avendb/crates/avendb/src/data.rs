@@ -18,7 +18,7 @@ use crate::history::{Change, History, MAIN};
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, Recipient};
 use crate::lab::Lab;
-use crate::lens::{self, DocV2, Lens, Schema};
+use crate::lens::{self, DocV1, Lens, Schema};
 use crate::merge::Conflict;
 use crate::policy::{Action, Edit, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Vault, Who};
 use crate::sign::{Signature, SignerKeys, WebAuthn};
@@ -610,7 +610,7 @@ impl<'a> Audit<'a> {
 }
 
 /// A note's text: its first paragraph, block 2, as `cast::document` writes it.
-fn body(doc: &DocV2) -> String {
+fn body(doc: &DocV1) -> String {
     doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default()
 }
 

@@ -11,8 +11,9 @@ publish.workspace = true
 # sealing and encryption and the Loro documents the edits carry, P4b the post-quantum halves of both. iroh arrives with
 # the phase that uses it.
 [dependencies]
-# every hash of our own (ids, key derivation, commitments): cSHAKE256, SHA-3's customizable XOF (NIST SP 800-185)
-cshake = { version = "0.2.1", features = ["zeroize"] }
+# every hash of our own (ids, key derivation, commitments): BLAKE3, the hash iroh-blobs names every byte by; the
+# version iroh-blobs uses
+blake3 = { version = "1.8.7", features = ["zeroize"] }
 # device keys: ed25519, the device's iroh endpoint key; the version iroh uses
 ed25519-dalek = "3"
 # passkeys: WebAuthn assertions are ECDSA P-256 over SHA-256

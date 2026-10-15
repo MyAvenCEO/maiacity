@@ -44,11 +44,10 @@ fn link(new: (&mut Lab, SignerId), passkey: SignerId, peer: (&mut Lab, SignerId)
 fn ask(to: (&mut Lab, SignerId), from: (&mut Lab, SignerId)) -> usize {
     let ((to, t), (from, f)) = (to, from);
     let request = Request::from_wire(&to.request(t, f).to_wire()).expect("a request");
-    let (edits, ids, more) = from.reply(f, t, &request, usize::MAX);
-    let blobs = ids.iter().map(|&b| (b, [0; 32])).collect();
+    let (edits, blobs, more) = from.reply(f, t, &request, usize::MAX);
     let reply = Reply::from_wire(&Reply { edits, blobs, more }.to_wire()).expect("a reply");
     let may = |b: &BlobId| from.may_fetch(f, t, *b, &request.ask.follow);
-    let blobs = reply.blobs.iter().filter(|(b, _)| may(b)).filter_map(|(b, _)| from.blob(f, *b));
+    let blobs = reply.blobs.iter().filter(|b| may(b)).filter_map(|b| from.blob(f, *b));
     to.receive(t, reply.edits, blobs.collect())
 }
 

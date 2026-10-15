@@ -389,8 +389,8 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
         None | Some(Value::Null) => Named::Own,
         Some(Value::String(s)) => match s.as_str() {
             "stored" => Named::Stored,
-            "document" => Named::Id(lens::DOCUMENT_V2.id()),
-            "todo" => Named::Id(lens::TODO_V2.id()),
+            "document" => Named::Id(lens::DOCUMENT_V1.id()),
+            "todo" => Named::Id(lens::TODO_V1.id()),
             "article" => Named::Id(lens::ARTICLE_V1.id()),
             "flow" => Named::Id(lens::FLOW_V1.id()),
             "function" => Named::Id(lens::FUNCTION_V1.id()),
@@ -739,7 +739,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
 /// and its JSON, each lens's id, title, the schemas it joins and its JSON.
 fn schemas(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let vault = vault_of(o, "vault")?;
-    let built_in: Vec<BlobId> = lens::blobs::ALL.iter().map(|b| BlobId::of(b.as_bytes())).collect();
+    let built_in: Vec<BlobId> = lens::blobs::SHIPPED.iter().map(|b| BlobId::of(b.as_bytes())).collect();
     let lane = lane(lab, me, vault);
     let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
     let schema = |s: &Schema| {

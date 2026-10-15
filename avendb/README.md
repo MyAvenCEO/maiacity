@@ -82,8 +82,9 @@ secret and makes the `.pub` file again, over one of an older format alone; `id` 
 with no file, the secret it asks for. Whoever holds the secret owns every vault that added the key: only the `.pub` file
 is handed on.
 
-The key's file is built in (`crates/avendb/master-recovery.pub`, `recovery::master`, the key `d9941b22…`). A vault's
-settings show it among the owners as the master recovery key, and its person removes it, or adds it again, as any
+The key's file is built in (`crates/avendb/master-recovery.pub`, `recovery::master`); an empty file builds avenDB
+without one. Every key of it is derived with BLAKE3, so a file of the format before edit version 10 is made again with
+`pub`. A vault's settings show it among the owners as the master recovery key, and its person removes it, or adds it again, as any
 owner: the ops `revoke {vault, owner}` and `share {over, who: {"signer": id}, level: "Owner", what: "everything"}`.
 
 ## A device in the browser
@@ -183,7 +184,7 @@ opens nothing but what is public.
   and belongs to no vault until a human vault claims it ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). It logs its
   offer (`AVENDB1…`): its device, its endpoint, its public address and its relay. The app keeps it, so that devices
   reach the server, and a new device links through it with its person's passkey alone.
-- A reset raises `shelf::FLOOR` (`crates/avendb-net/src/shelf.rs`, 7 now, and `FLOOR` in
+- A reset raises `shelf::FLOOR` (`crates/avendb-net/src/shelf.rs`, 8 now, and `FLOOR` in
   `crates/avendb-browser/js/store.worker.js` with it), the generation every place's shelf is at least. What an earlier
   avenDB kept in its bucket or its folder, it clears (`bucket::clear`, `disk::clear`): its first start after a reset
   makes a new shelf generation, with a new device's secret, so a new offer, nobody's until a human vault claims it.
@@ -269,7 +270,7 @@ and lens entries, added holdings, one `run(op)` API and one shelf per place, as
 | Phase | What it builds | State |
 |---|---|---|
 | P0 to P4 | The spec and the API, vaults and signatures, caps and sync by caps, keys and encrypted edits, schemas and lenses | Merged |
-| P4b | Post-quantum hardening: SHA-3 ids and hashes, a hash-based signature beside every classical one but a write's, checkpoints that vouch for the writes (T18; since VERSION 9 SLH-DSA signs every edit and checkpoints are gone), a McEliece share beside X-Wing in every key box; the passkey as the only way back in, each device key kept masked by its PRF output and unmasked at every unlock | Merged |
+| P4b | Post-quantum hardening: SHA-3 ids and hashes (BLAKE3 since VERSION 10), a hash-based signature beside every classical one but a write's, checkpoints that vouch for the writes (T18; since VERSION 9 SLH-DSA signs every edit and checkpoints are gone), a McEliece share beside X-Wing in every key box; the passkey as the only way back in, each device key kept masked by its PRF output and unmasked at every unlock | Merged |
 | P5 | History and proposals: every write an edit on a line of its entry's history, proposals from any version, a lossless three-way merge, revert and restore, undo of an older edit, variants in another space (T10) | Merged |
 | P6 | Sync log by log: every edit builds on the frontier of its own log (a vault's, a space's or an entry's), a device asks with its frontier of each log and a few edits further back and is sent only what it lacks (T19), devices gossip one digest per log, a device restored from an old backup is flagged when it signs again (a fork); offline devices, random delivery orders, partial delivery, Lean ⇄ Rust vectors for sync (T11, T12, T13); a device that has seen a revocation writes under the new key (T15) | Merged |
 | P7 | The avenDB tile: the Lab's whole world in one page, as WebAssembly in the page's workers, every device side by side; pick one and act as it: vaults and the passkeys that sign their changes, spaces, entries read and edited as each app version sees them, history, proposals, access and why, todos, schemas and lenses, sync, locked and offline devices, and the plan's scenarios played green | Merged |

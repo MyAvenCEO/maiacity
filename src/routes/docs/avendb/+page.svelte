@@ -301,14 +301,14 @@
 		['An entry’s tags change, a new share picks it', 'One mark, with a link to its earlier keys']
 	];
 
-	const TODO_V1 = `{ "title": "Water the figs",
+	const TODO_V0 = `{ "title": "Water the figs",
   "done": false }`;
 
-	const TODO_V2 = `{ "title": "Water the figs",
+	const TODO_V1 = `{ "title": "Water the figs",
   "status": "doing" }`;
 
-	const TODO_LENS = `{ "lens": "Todo, v1 to v2",
-  "from": "307636b7…", "to": "9e9b2af2…",
+	const TODO_LENS = `{ "lens": "Todo, v0 to v1",
+  "from": "40de6c0e…", "to": "0d785ad3…",
   "steps": [{ "convert": {
     "from": ["done"], "to": ["status"],
     "forward": [[{ "done": true },  { "status": "done" }],
@@ -412,7 +412,7 @@
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
-	const LAYOUT = `g7/                 one generation, 7 or later since the last reset; starting fresh makes g8
+	const LAYOUT = `g8/                 one generation, 8 or later since the last reset; starting fresh makes g9
   meta/<n>          what opens the device again, its follow list too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
@@ -439,7 +439,10 @@
 			'Edits and files',
 			'XChaCha20-Poly1305 for edits and keys, ChaCha20-Poly1305 per 64 KiB segment for files, all with 256-bit keys.'
 		],
-		['Hashes', 'SHA-3 (cSHAKE256) for ids and what signatures sign, BLAKE3 for storage and transport.'],
+		[
+			'Hashes',
+			'BLAKE3 for every hash of avenDB’s own: an id is the plain hash of the bytes, the name iroh gives them, and every other hash derives its own key for its purpose.'
+		],
 		['The bucket', 'Every object sealed again with a 256-bit key of the server’s, since the link to it is classical.']
 	];
 
@@ -730,7 +733,7 @@
 			<p class="eyebrow">Edits and logs</p>
 			<h2>Seven kinds of signed edit, one log each</h2>
 			<p class="prose-col">
-				Every change in avenDB is an edit: signed, named by the SHA-3 hash of its bytes, and kept for good. There are seven
+				Every change in avenDB is an edit: signed, named by the BLAKE3 hash of its bytes, and kept for good. There are seven
 				kinds. Each edit belongs to one log, a vault’s, a share’s, an audience’s or an entry’s, and its kind alone says
 				which, so a peer that can read nothing of it can still route it.
 			</p>
@@ -999,16 +1002,16 @@
 			</p>
 			<div class="codes">
 				<figure>
-					<pre><code>{TODO_V1}</code></pre>
-					<figcaption>Todo, version 1, as an old app reads it</figcaption>
+					<pre><code>{TODO_V0}</code></pre>
+					<figcaption>Todo, version 0, as an old app reads it</figcaption>
 				</figure>
 				<figure>
-					<pre><code>{TODO_V2}</code></pre>
-					<figcaption>The same todo in version 2</figcaption>
+					<pre><code>{TODO_V1}</code></pre>
+					<figcaption>The same todo in version 1</figcaption>
 				</figure>
 				<figure class="wide">
 					<pre><code>{TODO_LENS}</code></pre>
-					<figcaption>The lens between them: “doing” has no word in version 1, so it reads as not done there.</figcaption>
+					<figcaption>The lens between them: “doing” has no word in version 0, so it reads as not done there.</figcaption>
 				</figure>
 			</div>
 			<ul class="prose-col">
@@ -1027,8 +1030,9 @@
 				</li>
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, flows, functions, posts,
-					and a device’s card, a vault’s profile and a file, one version each. Every vault reads and writes them offline, and
-					avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so the same id.
+					and a device’s card, a vault’s profile and a file, one version each, and each starts at version 1. Every vault
+					reads and writes them offline, and avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so
+					the same id. The todo’s version 0 above is the lens engine’s worked example, which lives only in its tests.
 				</li>
 				<li>
 					<b>Flows are stages any entry can be in.</b> An article goes from idea to draft to published. A stage is a
@@ -1308,11 +1312,11 @@
 				</table>
 			</div>
 			<p class="prose-col">
-				Each edit has two names. Its id is a SHA-3 hash, and that is what signatures sign. The bytes are stored and moved
-				as blobs named by BLAKE3: edits in packs, files in pieces. The write that brings a file names the file’s root hash
-				and sealed size in the clear, because the server and other devices need them to back the file up and to know who
-				may fetch it. The file’s key sits inside the write’s encrypted body. Whoever may fetch the write may fetch its
-				files, and nobody else.
+				Every edit and every blob has one name, the BLAKE3 hash of its bytes, which is also the name iroh stores and
+				moves those bytes by. An edit’s signatures sign that name. Edits are kept in packs and files in pieces, each a
+				blob. The write that brings a file names the file’s root hash and sealed size in the clear, because the server and
+				other devices need them to back the file up and to know who may fetch it. The file’s key sits inside the write’s
+				encrypted body. Whoever may fetch the write may fetch its files, and nobody else.
 			</p>
 			<p class="prose-col">
 				Every vault has a Library that lists its files by kind: films, images, SVGs, PDFs and audio. A file is an ordinary
@@ -1380,7 +1384,7 @@
 					</svg>
 				</div>
 				<figcaption>
-					This format is called sealed blob v1. The tag adds 0.024 %. Pieces cannot be swapped or reordered, because every
+					This format is called sealed blob v2. The tag adds 0.024 %. Pieces cannot be swapped or reordered, because every
 					nonce counts segments across the whole file. Whoever holds the key verifies by decrypting; everyone else verifies
 					the ciphertext with BLAKE3. A file’s key is derived from what it holds, keyed by a secret of the person’s vault: the
 					same film added again by any of their devices seals to the same blobs, kept once, while another person’s copy
@@ -1439,7 +1443,7 @@
 			<ul class="prose-col">
 				<li>
 					<b>Put aside, clear at a reset.</b> Forgetting an account, or starting fresh, makes a new generation beside the
-					old one, which is never read again. A reset raises the lowest generation, now 7. As each place opens, it deletes
+					old one, which is never read again. A reset raises the lowest generation, now 8. As each place opens, it deletes
 					every older one: the desktop its folder, a browser its private storage, the server its folder and its bucket.
 				</li>
 				<li>

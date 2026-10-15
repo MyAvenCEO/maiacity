@@ -1,8 +1,8 @@
-//! The McEliece keys in iroh-blobs, and the gate of a node's blob store. A node offers the keys its replies name, by
-//! BLAKE3 hash, and its gate hands each out only to a device a hello proved that may fetch it by the node's view; the
-//! asker checks each key it fetches against its id, a cSHAKE256 hash, so a peer can serve no other bytes for it. The
-//! sealed pieces of files are in the same store (`files`), and the gate hands those out by the same rule (T27),
-//! whatever anyone's holdings say (`holdings`).
+//! The McEliece keys in iroh-blobs, and the gate of a node's blob store. A node offers the keys its replies name, each
+//! by its id, the BLAKE3 hash iroh-blobs names it by, and its gate hands each out only to a device a hello proved that
+//! may fetch it by the node's view; iroh-blobs verifies every byte the asker fetches against that hash, so a peer can
+//! serve no other bytes for it. The sealed pieces of files are in the same store (`files`), and the gate hands those
+//! out by the same rule (T27), whatever anyone's holdings say (`holdings`).
 //!
 //! A node fetches every blob over one pool of blob connections (S1), one to each peer, which closes once it has been
 //! idle a while; the McEliece keys a reply names in one request (GetMany), or one at a time if the peer refuses that.
@@ -13,11 +13,11 @@
 //! in the write that brings it: the gate keeps others from learning whom a node seals to and what it keeps, and keeps
 //! nothing secret.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, ensure};
 use avendb::id::BlobId;
 use avendb::lab::Lab;
 use avendb::sealed::FileRoot;
@@ -36,74 +36,53 @@ use crate::Shared;
 /// How long a node waits for a McEliece key, a megabyte or so, once asked for.
 const FETCH: Duration = Duration::from_secs(60);
 
-/// The McEliece keys in a node's blob store, by hash and by id.
-#[derive(Default)]
-pub(crate) struct Offered {
-    ids: HashMap<Hash, BlobId>,
-    hashes: HashMap<BlobId, Hash>,
-}
+/// The McEliece keys in a node's blob store, each by its id, the hash the store holds it by.
+pub(crate) type Offered = HashSet<BlobId>;
 
-impl Offered {
-    fn insert(&mut self, id: BlobId, hash: Hash) {
-        self.ids.insert(hash, id);
-        self.hashes.insert(id, hash);
-    }
+/// The hash iroh-blobs names a blob by: its id.
+fn hash(id: BlobId) -> Hash {
+    Hash::from_bytes(id.0)
 }
 
 impl Shared {
-    /// The BLAKE3 hash of each McEliece key in `ids`, each put in the blob store first if it isn't there: a key
-    /// fetched into a page's window may have left it since.
-    pub(crate) async fn offer(self: &Arc<Self>, ids: Vec<BlobId>) -> Result<Vec<(BlobId, [u8; 32])>> {
-        let mut offered = Vec::with_capacity(ids.len());
-        for id in ids {
-            let known = self.offered.lock().expect("offered").hashes.get(&id).copied();
-            let held = match known {
-                Some(hash) => self.store.has(hash).await?.then_some(hash),
-                None => None,
-            };
-            let hash = match held {
-                Some(hash) => hash,
-                None => {
-                    let key = self.lab(move |lab, me| lab.blob(me, id)).await.context("a key the node holds")?;
-                    let hash = self.store.add_bytes(key.to_vec()).temp_tag().await?.hash();
-                    self.offered.lock().expect("offered").insert(id, hash);
-                    hash
-                }
-            };
-            offered.push((id, *hash.as_bytes()));
+    /// The McEliece keys `ids`, each put in the blob store first if it isn't there: a key fetched into a page's window
+    /// may have left it since.
+    pub(crate) async fn offer(self: &Arc<Self>, ids: Vec<BlobId>) -> Result<Vec<BlobId>> {
+        for &id in &ids {
+            let known = self.offered.lock().expect("offered").contains(&id);
+            if known && self.store.has(hash(id)).await? {
+                continue;
+            }
+            let key = self.lab(move |lab, me| lab.blob(me, id)).await.context("a key the node holds")?;
+            let stored = self.store.add_bytes(key.to_vec()).temp_tag().await?.hash();
+            ensure!(stored == hash(id), "the key the node holds as {} is another's", id.to_hex());
+            self.offered.lock().expect("offered").insert(id);
         }
-        Ok(offered)
+        Ok(ids)
     }
 
-    /// The McEliece keys `wanted`, each by its id and hash, fetched from `endpoint` over iroh-blobs, through the node's
-    /// pool of blob connections, in one request: each that arrives whole and is the key its id names. A peer that
-    /// refuses them together, as it may not hand one, is asked for each alone.
-    pub(crate) async fn fetch(
-        self: &Arc<Self>,
-        endpoint: EndpointId,
-        wanted: Vec<(BlobId, [u8; 32])>,
-    ) -> Vec<Arc<[u8]>> {
+    /// The McEliece keys `wanted`, each by its id, fetched from `endpoint` over iroh-blobs, through the node's pool of
+    /// blob connections, in one request: each that arrives whole, which iroh-blobs verified to be the key its id names.
+    /// A peer that refuses them together, as it may not hand one, is asked for each alone.
+    pub(crate) async fn fetch(self: &Arc<Self>, endpoint: EndpointId, wanted: Vec<BlobId>) -> Vec<Arc<[u8]>> {
         if wanted.is_empty() {
             return Vec::new();
         }
         let Ok(conn) = self.pool.get_or_connect(endpoint).await else { return Vec::new() };
-        let (remote, hashes) = (self.store.remote(), wanted.iter().map(|(_, h)| Hash::from_bytes(*h)));
+        let (remote, hashes) = (self.store.remote(), wanted.iter().map(|&id| hash(id)));
         let wait = FETCH.saturating_mul(wanted.len().min(64) as u32);
         let all = remote.execute_get_many((*conn).clone(), hashes.collect::<GetManyRequest>());
         if !matches!(time::timeout(wait, all.into_future()).await, Ok(Ok(_))) {
-            for (_, hash) in &wanted {
-                let one = remote.execute_get((*conn).clone(), GetRequest::blob(Hash::from_bytes(*hash)));
+            for &id in &wanted {
+                let one = remote.execute_get((*conn).clone(), GetRequest::blob(hash(id)));
                 time::timeout(FETCH, one.into_future()).await.ok();
             }
         }
         let mut keys = Vec::new();
-        for (id, hash) in wanted {
-            let hash = Hash::from_bytes(hash);
-            let Ok(key) = self.store.get_bytes(hash).await else { continue };
-            if BlobId::of(&key) == id {
-                self.offered.lock().expect("offered").insert(id, hash);
-                keys.push(Arc::from(&key[..]));
-            }
+        for id in wanted {
+            let Ok(key) = self.store.get_bytes(hash(id)).await else { continue };
+            self.offered.lock().expect("offered").insert(id);
+            keys.push(Arc::from(&key[..]));
         }
         keys
     }
@@ -124,7 +103,8 @@ impl Shared {
         let asked: Vec<([u8; 32], Option<BlobId>, Vec<FileRoot>)> = {
             let (offered, pieces) = (self.offered.lock().expect("offered"), self.pieces.lock().expect("pieces"));
             let of = |h: &Hash| pieces.get(h).map(|roots| roots.iter().copied().collect()).unwrap_or_default();
-            hashes.iter().map(|h| (*h.as_bytes(), offered.ids.get(h).copied(), of(h))).collect()
+            let key = |h: &Hash| offered.get(&BlobId(*h.as_bytes())).copied();
+            hashes.iter().map(|h| (*h.as_bytes(), key(h), of(h))).collect()
         };
         let may = move |lab: &mut Lab, me| {
             let files = lab.files(me);

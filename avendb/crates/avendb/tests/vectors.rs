@@ -35,7 +35,7 @@ use std::hash::Hash;
 
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
-use avendb::lens::View;
+use avendb::lens::{example, View};
 use avendb::policy::{
     history, mk_audience, replay, tips, Action, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
     Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who,
@@ -923,7 +923,7 @@ fn the_lens_vectors() {
     let vectors: Value = serde_json::from_str(&file).unwrap();
     let (blocks, todos) = (list(&vectors["blocks"]), list(&vectors["todos"]));
     assert!(blocks.len() >= 100 && todos.len() >= 10);
-    let apps = [("v1", "putV1", View::document_v1()), ("v2", "putV2", View::document_v2())];
+    let apps = [("v0", "putV0", example::document_v0()), ("v1", "putV1", example::document_v1())];
     for case in blocks {
         let stored = json!({"kind": "document", "blocks": [present(&case["stored"])]});
         for (seen, puts, view) in apps {
@@ -939,7 +939,7 @@ fn the_lens_vectors() {
             }
         }
     }
-    let apps = [("v1", "putV1", View::todo_v1()), ("v2", "putV2", View::todo_v2())];
+    let apps = [("v0", "putV0", example::todo_v0()), ("v1", "putV1", example::todo_v1())];
     for case in todos {
         let stored = item("todo", &case["stored"]);
         for (seen, puts, view) in apps {

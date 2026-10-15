@@ -9,16 +9,16 @@ use crate::rules::{Grant, On, Op, Proof, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
-/// The version byte every edit starts with: 9 since every signature on an edit is SLH-DSA alone, a passkey's with its
-/// WebAuthn assertion beside it, and checkpoints are gone, so avenDB starts afresh (8 since the v8 kinds, 7 since every
-/// human vault is founded with the master recovery key among its owners, 6 since shares are named groups of ops, 5
-/// since flat vaults, 4 since the three kinds of vault, 3 since P5, whose writes name the line of history they extend,
-/// 2 since P4b, whose ids are SHA-3 hashes).
-pub const VERSION: u8 = 9;
+/// The version byte every edit starts with: 10 since every id is a BLAKE3 hash, so avenDB starts afresh (9 since every
+/// signature on an edit is SLH-DSA alone, a passkey's with its WebAuthn assertion beside it, and checkpoints are gone,
+/// 8 since the v8 kinds, 7 since every human vault is founded with the master recovery key among its owners, 6 since
+/// shares are named groups of ops, 5 since flat vaults, 4 since the three kinds of vault, 3 since P5, whose writes name
+/// the line of history they extend, 2 since P4b, whose ids were SHA-3 hashes until 10).
+pub const VERSION: u8 = 10;
 
-/// An edit's id: the hash of its encoding, for a purpose that keeps an edit's old name, op (`hash::PREFIX`).
+/// An edit's id: the BLAKE3 hash of its bytes, the name iroh-blobs gives them (`hash::content`).
 pub(crate) fn edit_id(edit: &Edit) -> [u8; 32] {
-    crate::hash::hash("op id", &bytes(edit))
+    crate::hash::content(&bytes(edit))
 }
 
 /// An edit's bytes: the version, then its encoding.

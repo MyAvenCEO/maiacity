@@ -14,7 +14,8 @@ use avendb::doc::{Item, Version};
 use avendb::encode::{share_context, share_select_info, write_context};
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, KeyBox, KeyFam, KeyName, Recipient, SeededRng, Secret};
-use avendb::lens::{blobs, BlockV2, Lane, Lens, Schema, TypeV2, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
+use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
+use avendb::lens::{BlockV1, Lane, Lens, Schema, TypeV1, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{Action, Edit, KeepMode, Level, Proposal, Revoking, Share, Sharing, Who};
 use avendb::rules::{Grant, On, Op, Proof, Scalar, Step};
 use avendb::sign::{Assertion, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
@@ -688,7 +689,7 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     let (wants, after) = (vec![BlobId::from_u64(3), BlobId::from_u64(4)], Some((9, EditId::from_u64(8))));
     let request = Request { ask, wants, after };
     wire_mutations(&mut g, &request, 3000, |_| {});
-    let blobs = vec![(BlobId::from_u64(3), [1; 32]), (BlobId::from_u64(4), [2; 32])];
+    let blobs = vec![BlobId::from_u64(3), BlobId::from_u64(4)];
     let sent: Vec<Signed> = edits.all().into_iter().cloned().collect();
     let reply = Reply { edits: sent.clone(), blobs, more: true };
     wire_mutations(&mut g, &reply, 1500, |r: &Reply| {
@@ -784,7 +785,10 @@ fn a_changed_schema_or_lens_never_panics() {
         json!({"kind": "todo", "title": "Fix the door", "done": true, "status": "doing", "due": "2026-10-10"}),
         json!({"kind": "document", "blocks": [{"id": "x"}, 7, null]}),
     ];
-    let pairs = [(&*DOCUMENT_V1, blobs::DOCUMENT_LENS, &*DOCUMENT_V2), (&*TODO_V1, blobs::TODO_LENS, &*TODO_V2)];
+    let pairs = [
+        (&*DOCUMENT_V0, example::blobs::DOCUMENT_LENS, &*DOCUMENT_V1),
+        (&*TODO_V0, example::blobs::TODO_LENS, &*TODO_V1),
+    ];
     let (mut parsed, mut through) = (0, 0);
     for (from, lens, to) in pairs {
         // a changed schema: parsed or not, it reads and writes without a panic
@@ -827,7 +831,7 @@ fn a_changed_loro_update_never_panics_and_changes_nothing() {
     let update = first.export(&Version::default());
     let mut next = first.clone();
     let text = "the greenhouse opens at eight".into();
-    next.push_block(BlockV2 { id: 2, r#type: TypeV2::Paragraph, level: None, checked: None, lang: None, text });
+    next.push_block(BlockV1 { id: 2, r#type: TypeV1::Paragraph, level: None, checked: None, lang: None, text });
     let more = next.export(&first.version());
     assert!(!more.is_empty() && next.record() != first.record());
     let mut g = Gen::new(5);

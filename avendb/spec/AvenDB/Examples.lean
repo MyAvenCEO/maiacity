@@ -583,16 +583,16 @@ def headsOf (edits : List Edit) (l : Option EditId) : List EditId := heads (view
 #guard !accepted (s8) (attempt macA [] (.write coop onboarding coop none 0 [31] (.on 300) [alice]))
 #guard !accepted (s8) (attempt macA [] (.write coop welcome coop (some 51) 0 [] (.on 999) [alice]))
 
-/-! ## Scenario 9: schema v2
+/-! ## Scenario 9: schema v1
 
-The coop moves its documents to schema v2. A vault's schemas and lenses are entries of the built-in types schema and
+The coop moves its documents to schema v1. A vault's schemas and lenses are entries of the built-in types schema and
 lens, which it shares with everyone through a share of its own, made with its first schema, that selects those types.
-Alice's Mac, acting for the coop, creates the v2 schema and the lens from v1 as entries of the coop, and their readers
+Alice's Mac, acting for the coop, creates the v1 schema and the lens from v0 as entries of the coop, and their readers
 read the coop's lane off them (T17). Carol may write Onboarding, and create through her share, but puts nothing in the
 coop's lane. -/
 
-def schemaV2 : BlobId := 1
-def lensV1V2 : BlobId := 2
+def schemaV1 : BlobId := 1
+def lensV0V1 : BlobId := 2
 def coopSchema := 4
 def coopLens := 5
 def daveSchema := 6
@@ -603,33 +603,33 @@ def s9 : List Edit := s7 ++ chain 65 [
   (macA, [], .move coop onboarding [5] [31] [alice]),
   -- with its first schema, the coop shares its schemas and lenses with everyone
   (macA, [], .share (.grant (publicShare 7 coop schemas) [alice])),
-  (macA, [], create coop coopSchema coop [7] schemaType (via := [alice]) (blob := schemaV2)),
-  (macA, [], create coop coopLens coop [7] lensType (via := [alice]) (blob := lensV1V2)),
-  -- Dave's own vault moves to v2 too: the same blob, in another vault's lane
+  (macA, [], create coop coopSchema coop [7] schemaType (via := [alice]) (blob := schemaV1)),
+  (macA, [], create coop coopLens coop [7] lensType (via := [alice]) (blob := lensV0V1)),
+  -- Dave's own vault moves to v1 too: the same blob, in another vault's lane
   (macD, [], .share (.grant (publicShare 8 dave schemas))),
-  (macD, [], create dave daveSchema dave [8] schemaType (blob := schemaV2))]
+  (macD, [], create dave daveSchema dave [8] schemaType (blob := schemaV1))]
 #guard refused s9 == [] && tidy s9
 
-#guard laneOf (view s9) coop == [schemaV2, lensV1V2] && laneOf (view s9) dave == [schemaV2]
+#guard laneOf (view s9) coop == [schemaV1, lensV0V1] && laneOf (view s9) dave == [schemaV1]
 /-- The coop's lane after an edit tried on `edits`, if it is accepted. -/
 def laneAfter (edits : List Edit) (edit : Edit) : Option (List BlobId) := (step (view edits) edit).map (laneOf · coop)
 -- the same blob again adds nothing; Bob's Mac acts for the coop too, through Bob's vault, and adds another
-#guard laneAfter s9 (attempt macA [] (create coop 9 coop [7] schemaType (via := [alice]) (blob := schemaV2))) ==
-  some [schemaV2, lensV1V2]
+#guard laneAfter s9 (attempt macA [] (create coop 9 coop [7] schemaType (via := [alice]) (blob := schemaV1))) ==
+  some [schemaV1, lensV0V1]
 #guard laneAfter s9 (attempt macB [] (create coop 9 coop [7] lensType (via := [bob]) (blob := 3))) ==
-  some [schemaV2, lensV1V2, 3]
+  some [schemaV1, lensV0V1, 3]
 -- a schema its readers don't count, as it doesn't fit, adds nothing either
 #guard laneAfter s9 (attempt macA [] (create coop 9 coop [7] schemaType (via := [alice]) (blob := 3) (fits := false)))
-  == some [schemaV2, lensV1V2]
+  == some [schemaV1, lensV0V1]
 -- a later write to the coop's schema, its tags too, leaves the lane as it was: only the creation is read
 #guard laneAfter s9 (attempt macA [] (.write coop coopSchema coop none 0 [68] (via := [alice])
-  (tags := { add := [urgent] }))) == some [schemaV2, lensV1V2]
+  (tags := { add := [urgent] }))) == some [schemaV1, lensV0V1]
 -- Carol writes Onboarding, and creates a schema through her share, which every peer accepts; but it acts for her, so
 -- it puts nothing in the coop's lane; for the coop she acts not at all, as her vault isn't its owner; nor does a
 -- stranger
 #guard accepted s9 (attempt macC [] (.write coop onboarding carol (some 66) 0 [31]))
 #guard laneAfter s9 (attempt macC [] (create coop 9 carol [5] schemaType (proof := some 5) (blob := 3))) ==
-  some [schemaV2, lensV1V2]
+  some [schemaV1, lensV0V1]
 #guard !accepted s9 (attempt macC [] (create coop 9 coop [7] schemaType (via := [carol]) (blob := 3)))
 #guard !accepted s9 (attempt stranger [] (create coop 9 coop [7] schemaType (blob := 3)))
 -- owner of the whole coop is an owner of it, which no grant makes, even with the coop's approval (WideOwner); an owner
@@ -640,7 +640,7 @@ def daveOwns (sel : Selector) : List Edit := s9 ++ chain 80 [
 #guard refused (daveOwns .all) == [80] && refused (daveOwns docs) == []
 #guard !accepted (daveOwns .all) (attempt macD [] (create coop 9 dave [] schemaType (blob := 3)))
 #guard laneAfter (daveOwns docs) (attempt macD [] (create coop 9 dave [6] schemaType (proof := some 6) (blob := 3))) ==
-  some [schemaV2, lensV1V2]
+  some [schemaV1, lensV0V1]
 -- what everyone may read goes to whoever has an interest in the vault (T12): Carol's Mac receives the coop's schema,
 -- through her shares, and a stranger nothing at all, unless it follows the coop; then it receives what is public of
 -- the coop, its schema and lens and the Charter, and none of its other entries
@@ -653,32 +653,32 @@ def daveOwns (sel : Selector) : List Edit := s9 ++ chain 80 [
 -- a relay, which reads no type and no blob, has the same edits stand (T25)
 #guard (standing (s9.map Edit.blind)).map (·.id) == (standing s9).map (·.id)
 
-/-- Welcome as an app still on v1 wrote it: v1's fields only. -/
-def welcomeV1 : Lens.StoredDoc := { title := "Welcome", blocks := [
+/-- Welcome as an app still on v0 wrote it: v0's fields only. -/
+def welcomeV0 : Lens.StoredDoc := { title := "Welcome", blocks := [
   { id := 1, text := "Welcome", kind := some .h1 },
   { id := 2, text := "The greenhouse opens at eight.", kind := some .p },
   { id := 3, text := "Water the seedlings", kind := some .li }] }
 
-/-- A v2 app makes the second block a heading and tags the document. -/
-def welcomeV2 : Lens.StoredDoc :=
-  let v := welcomeV1.v2
-  welcomeV1.putV2 { v with
+/-- A v1 app makes the second block a heading and tags the document. -/
+def welcomeV1 : Lens.StoredDoc :=
+  let v := welcomeV0.v1
+  welcomeV0.putV1 { v with
     blocks := v.blocks.map fun b => if b.id == 2 then { b with type := .heading, level := some 2 } else b,
     tags := ["greenhouse"] }
 
--- a v1 app reads every other block exactly as before, and the heading through the lens
-#guard welcomeV2.v1.blocks.filter (·.id != 2) == welcomeV1.v1.blocks.filter (·.id != 2)
-#guard welcomeV2.v1.blocks.find? (·.id == 2) ==
+-- a v0 app reads every other block exactly as before, and the heading through the lens
+#guard welcomeV1.v0.blocks.filter (·.id != 2) == welcomeV0.v0.blocks.filter (·.id != 2)
+#guard welcomeV1.v0.blocks.find? (·.id == 2) ==
   some { id := 2, kind := .h2, text := "The greenhouse opens at eight." }
 -- nothing was written to the other blocks: none of them gained `checked`, `lang`, `type` or `level`
-#guard welcomeV2.blocks.filter (·.id != 2) == welcomeV1.blocks.filter (·.id != 2)
-#guard (welcomeV2.blocks.filter (·.id != 2)).all fun b =>
+#guard welcomeV1.blocks.filter (·.id != 2) == welcomeV0.blocks.filter (·.id != 2)
+#guard (welcomeV1.blocks.filter (·.id != 2)).all fun b =>
   b.checked.isNone && b.lang.isNone && b.type.isNone && b.level.isNone
--- the heading holds v2's representation now, and the document its tag, which a v1 app's edit keeps
-#guard (welcomeV2.blocks.find? (·.id == 2)).map (fun b => (b.kind, b.type, b.level)) ==
+-- the heading holds v1's representation now, and the document its tag, which a v0 app's edit keeps
+#guard (welcomeV1.blocks.find? (·.id == 2)).map (fun b => (b.kind, b.type, b.level)) ==
   some (none, some .heading, some 2)
-#guard welcomeV2.v2.tags == ["greenhouse"]
-#guard (welcomeV2.putV1 { welcomeV2.v1 with title := "Welcome!" }).tags == ["greenhouse"]
+#guard welcomeV1.v1.tags == ["greenhouse"]
+#guard (welcomeV1.putV0 { welcomeV1.v0 with title := "Welcome!" }).tags == ["greenhouse"]
 
 /-! ## Scenario 10: revoking a share rotates the audiences it was in
 

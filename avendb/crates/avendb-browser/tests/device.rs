@@ -1100,8 +1100,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let own = "documents, todos, articles, flows, functions, posts, cards, profiles, files and stories";
     assert_eq!(schemas.len(), 10, "{own}, one version each");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
-    assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V2.id().to_hex()]), "written under document v2");
-    assert!(schemas.contains(&avendb::lens::DOCUMENT_V2.id().to_hex()));
+    assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V1.id().to_hex()]), "written under document v1");
+    assert!(schemas.contains(&avendb::lens::DOCUMENT_V1.id().to_hex()));
     assert_eq!(row(variant)["record"]["blocks"][1]["text"].as_str(), Some("Corn first."));
     let tags = &row(variant)["record"]["tags"];
     let at: Vec<&str> = heads.as_array().expect("the heads").iter().filter_map(Value::as_str).collect();

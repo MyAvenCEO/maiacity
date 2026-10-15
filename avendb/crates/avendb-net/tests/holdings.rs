@@ -323,9 +323,7 @@ async fn an_announcement_carries_changes_alone_and_an_ask_the_logs_that_differ()
         let (edits, ids) = (lab.log(mac_b).edits(), lab.log(mac_b).ids());
         let others = edits.iter().zip(ids).filter(|(e, id)| log_of(e, **id) != Some(log)).map(|(_, id)| *id);
         request.ask.loose.extend(others);
-        let (edits, ids, more) = lab.reply(mac_b, mac_a, &request, usize::MAX);
-        let hash = |id| Hash::new(&lab.blob(mac_b, id).expect("a key")[..]);
-        let blobs = ids.into_iter().map(|id| (id, *hash(id).as_bytes())).collect();
+        let (edits, blobs, more) = lab.reply(mac_b, mac_a, &request, usize::MAX);
         Reply { edits, blobs, more }.to_wire()
     };
     let (_, between) = next(&conn, ASK_LOGS, answer).await;

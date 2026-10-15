@@ -10,7 +10,8 @@ mod common;
 
 use avendb::id::{AudienceId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyFam, KeyName};
-use avendb::lens::{DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
+use avendb::lens::example::{DOCUMENT_LENS, DOCUMENT_V0};
+use avendb::lens::DOCUMENT_V1;
 use avendb::policy::{
     mk_audience, replay, Action, Edit, KeepMode, Kind, Level, Log, Principal, Refusal, Revoking, Share, Sharing, State,
     Who,
@@ -223,29 +224,29 @@ fn the_lane_holds_only_what_the_vault_itself_creates() {
     let coop = with_coop(&mut c);
     let (carol, dave) = (c.carol, c.dave);
     let lane = |c: &Cast, v| c.log.view().lane_of(v, &c.readings).iter().map(|b| b.to_vec()).collect::<Vec<_>>();
-    let (v1, v2, lens) = (DOCUMENT_V1.bytes(), DOCUMENT_V2.bytes(), DOCUMENT_LENS.bytes());
+    let (v0, v1, lens) = (DOCUMENT_V0.bytes(), DOCUMENT_V1.bytes(), DOCUMENT_LENS.bytes());
     c.create(MAC_A, coop, ONBOARDING, coop, &[], "doc", &[]).unwrap();
     let carols = c.issue(MAC_A, &[], coop, vault(carol), Level::Write, by_id(ONBOARDING)).unwrap();
     // with its first schema, the coop shares its schemas and lenses with everyone; Alice's Mac acts for the coop
     let public = c.issue(MAC_A, &[], coop, Who::Everyone, Level::Read, Selector::lane()).unwrap();
     let schema = EntryId::from_u64(40);
-    c.create_holding(MAC_A, coop, schema, coop, &[public], SCHEMA_TYPE, v2).unwrap();
+    c.create_holding(MAC_A, coop, schema, coop, &[public], SCHEMA_TYPE, v1).unwrap();
     c.create_holding(MAC_A, coop, EntryId::from_u64(41), coop, &[public], LENS_TYPE, lens).unwrap();
-    assert_eq!(lane(&c, coop), [v2, lens]);
+    assert_eq!(lane(&c, coop), [v1, lens]);
     // the same blob again adds nothing; Bob's Mac acts for the coop too, and adds another
-    c.create_holding(MAC_A, coop, EntryId::from_u64(42), coop, &[public], SCHEMA_TYPE, v2).unwrap();
-    c.create_holding(MAC_B, coop, EntryId::from_u64(43), coop, &[public], SCHEMA_TYPE, v1).unwrap();
-    assert_eq!(lane(&c, coop), [v2, lens, v1]);
+    c.create_holding(MAC_A, coop, EntryId::from_u64(42), coop, &[public], SCHEMA_TYPE, v1).unwrap();
+    c.create_holding(MAC_B, coop, EntryId::from_u64(43), coop, &[public], SCHEMA_TYPE, v0).unwrap();
+    assert_eq!(lane(&c, coop), [v1, lens, v0]);
     // a schema its readers don't count, as it doesn't fit, adds nothing either
     let unfit = c.create_holding(MAC_A, coop, EntryId::from_u64(44), coop, &[public], SCHEMA_TYPE, &[7]).unwrap();
     c.readings.unfit.insert(unfit);
     // a later write to the coop's schema, its tags too, leaves the lane as it was: only the creation is read
     c.retag(MAC_A, schema, coop, &["urgent"], &[]).unwrap();
-    assert_eq!(lane(&c, coop), [v2, lens, v1]);
+    assert_eq!(lane(&c, coop), [v1, lens, v0]);
     // Carol creates a schema through her share, which the rules accept; but it acts for her, so it puts nothing in
     // the coop's lane; for the coop she acts not at all, as her vault isn't its owner; nor does a stranger
     c.create_holding(MAC_C, coop, EntryId::from_u64(45), carol, &[carols], SCHEMA_TYPE, &[3]).unwrap();
-    assert_eq!(lane(&c, coop), [v2, lens, v1]);
+    assert_eq!(lane(&c, coop), [v1, lens, v0]);
     let theirs = |d| c.log.check(d, &[], creation(coop, EntryId::from_u64(46), coop, &[public])).err();
     assert_eq!(theirs(MAC_C), Some(Refusal::NotActing));
     assert!(theirs(STRANGER).is_some());
@@ -255,10 +256,10 @@ fn the_lane_holds_only_what_the_vault_itself_creates() {
     assert_eq!(wide, Some(Refusal::WideOwner));
     let docs = c.issue(PASSKEY_A, &[PASSKEY_B], coop, vault(dave), Level::Owner, of_type("doc")).unwrap();
     c.create_holding(MAC_D, coop, EntryId::from_u64(47), dave, &[docs], SCHEMA_TYPE, &[3]).unwrap();
-    assert_eq!(lane(&c, coop), [v2, lens, v1]);
-    // Dave's own vault moves to v2 too: the same blob, in another vault's lane; a vault that doesn't exist has none
-    c.create_holding(MAC_D, dave, EntryId::from_u64(48), dave, &[], SCHEMA_TYPE, v2).unwrap();
-    assert_eq!((lane(&c, coop), lane(&c, dave)), (vec![v2.to_vec(), lens.to_vec(), v1.to_vec()], vec![v2.to_vec()]));
+    assert_eq!(lane(&c, coop), [v1, lens, v0]);
+    // Dave's own vault moves to v1 too: the same blob, in another vault's lane; a vault that doesn't exist has none
+    c.create_holding(MAC_D, dave, EntryId::from_u64(48), dave, &[], SCHEMA_TYPE, v1).unwrap();
+    assert_eq!((lane(&c, coop), lane(&c, dave)), (vec![v1.to_vec(), lens.to_vec(), v0.to_vec()], vec![v1.to_vec()]));
     assert!(lane(&c, VaultId::from_u64(404)).is_empty());
 }
 
