@@ -65,8 +65,9 @@
 	/** Whether the vault founded here has avenDB's server keep its ciphertext: on unless the person turns it off. */
 	let backup = $state(true);
 	/** Whether this device keeps a full copy, every entry and every file, or a light one, every entry and a file as
-	 *  it is opened: its copy setting, which it writes once it has none (`refresh`). A full copy unless it is a phone. */
-	let full = $state(!phone());
+	 *  it is opened: its copy setting, which it writes once it has none (`refresh`). A full copy in the Mac app, a light
+	 *  one in any browser, whose storage the browser may clear: Safari does after a week unused. */
+	let full = $state(native());
 	let code = $state('');
 	/** whether another device's link brought the person here, to link this browser */
 	let arrived = $state(false);
@@ -124,14 +125,6 @@
 						? 'Safari'
 						: 'A browser';
 		return system ? `${browser} on ${system}` : browser;
-	}
-
-	/** Whether this device is a phone, which keeps a light copy unless the person says otherwise. */
-	function phone() {
-		if (native()) return false;
-		const ua = navigator.userAgent;
-		const small = Math.min(screen.width, screen.height) < 600 && matchMedia('(pointer: coarse)').matches;
-		return /iPhone|iPod|Android.+Mobile/.test(ua) || small;
 	}
 
 	onMount(async () => {

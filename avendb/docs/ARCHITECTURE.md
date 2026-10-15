@@ -354,8 +354,9 @@ entries of V device `d` syncs, and how. It grants nothing, has no ops and is in 
   full copy or Opened for a light one (`copyOf` in `State.lean`, `State::copy_of`; the `copy` op). Over any vault
   where the device has no keep share of its own, it counts as one (`keepsFor`, `State::keeps_for`). So a full copy
   keeps whole every entry and file the device may read, and a light copy syncs every entry and fetches a file's
-  pieces as they are read. The person picks it when the device joins: a Mac, a desktop or a tablet is a full copy
-  by default, a phone a light one. They change it in Owners and devices.
+  pieces as they are read. The person picks it when the device joins: the desktop app is a full copy by default,
+  and any browser a light one, as a browser may clear a site's storage (Safari after a week unused). They change it
+  in Owners and devices.
 - **No keep share.** Where the keep shares a device syncs a vault by, its own or else its copy setting, are none or
   only Never ones, it falls back on its own setting (`Options::keep`): the server keeps every file whole, any other
   device fetches pieces as it reads them.
