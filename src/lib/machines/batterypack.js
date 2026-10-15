@@ -1,5 +1,5 @@
 /*
- * THE BATTERYPACK, v10 — our own modular, repairable battery (Samuel 2026-10-13; the v9 design of
+ * THE BATTERYPACK, v10 and v11 — our own modular, repairable battery (Samuel 2026-10-13; the v9 design of
  * $lib/actors/batterypack.js, kept to every measure) built the way AirSup's machine skill builds a machine: every part a
  * technician would name as real solids in measured materials, its insides there to cut open (each cell's can, its
  * jelly roll, its crimped cap with the vent, its insulator ring and its sleeve; the contact plates' spring fingers in
@@ -51,7 +51,7 @@
  * measures below are v9's, in mm: x across, y to the front, z up.
  */
 import * as THREE from 'three';
-import { GEO, MAT, Flow, approach, clamp, fmt, lerp, table } from '$lib/assets/kit.js';
+import { GEO, MAT, Flow, approach, clamp, ease, fmt, lerp, table } from '$lib/assets/kit.js';
 import { assetKit } from '$lib/assets/parts.js';
 
 /** @typedef {[number, number, number]} V3 */
@@ -71,6 +71,34 @@ const Y0 = PACK.L / 2 - 30, LOCK_Z = 10, GRIP_Z = 10, LOCK_BACK = 22;
 const Wh = PACK.W / 2, Lh = PACK.L / 2, PX = Wh - POST.w, CATCH_Y = Y0 - 14;
 /** how far the drawer comes out (mm) */
 const DRAWER_OUT = 450;
+/** a step from 0 to 1 between two moments of a loop, eased @param {number} t @param {number} a @param {number} b */
+const phase = (t, a, b) => ease.io(clamp((t - a) / (b - a)));
+/**
+ * Its own moves (v11), loops over its controls: Service presses the two buttons (the drawer's first 4 mm), pulls the
+ * whole inside out between the columns and slides it home again till the catches click; Grip closes a hand round
+ * the grip, the trigger pulls both pawls in, and lets go, so they click out again.
+ * @type {Record<string, import('$lib/assets/parts.js').Move>}
+ */
+const MOVES = {
+	service: {
+		label: 'Service',
+		seconds: 9,
+		note: 'Press both buttons, pull the drawer out, slide it home',
+		at: (u) => {
+			const t = u * 9;
+			return { drawer: DRAWER_OUT * (phase(t, 0.6, 3.2) - phase(t, 5, 7.6)) };
+		}
+	},
+	grip: {
+		label: 'Grip',
+		seconds: 3,
+		note: 'Squeeze the trigger: the pawls swing in; let go: they click out',
+		at: (u) => {
+			const t = u * 3;
+			return { trigger: 4 * (phase(t, 0.3, 0.6) - phase(t, 1.6, 1.9)) };
+		}
+	}
+};
 
 const SOURCES = [
 	{ label: 'BatteryPack v9 (our design, $lib/actors/batterypack.js)', url: 'https://github.com/maiacity' },
@@ -434,11 +462,12 @@ function solver(ctl) {
 // ---------------------------------------------------------------- the pack
 
 /**
- * The BatteryPack v10: a root at its real size, every part its own, its solver running it per row.
- * @param {{ load?: number, ambient?: number, soc?: number }} [o] the load (kW, negative charging), the room (°C), the state of charge (%)
+ * The BatteryPack: a root at its real size, every part its own, its solver running it per row. v11 (the default) adds
+ * its own moves, Service and Grip; v10 is the same pack without them.
+ * @param {{ load?: number, ambient?: number, soc?: number, v?: 10 | 11 }} [o] the load (kW, negative charging), the room (°C), the state of charge (%), the version
  * @returns {THREE.Group}
  */
-export function batteryPack({ load = 2, ambient = 20, soc = 70 } = {}) {
+export function batteryPack({ load = 2, ambient = 20, soc = 70, v = 11 } = {}) {
 	const root = new THREE.Group();
 	root.name = 'BatteryPack';
 	const M = materials();
@@ -775,6 +804,8 @@ export function batteryPack({ load = 2, ambient = 20, soc = 70 } = {}) {
 		},
 		cut: { a: [1, 0, 0], b: [0, 1, 0], center: [0.011, (CELLS.z0 + TOP) / 2 * S + LIFT * S, -0.05], reach: 0.9 }
 	};
+	// v11: its own moves, what a hand does with it (the stage adds Run and Assemble)
+	if (v >= 11) lab.moves = MOVES;
 	const asset = kit.seal({ lab });
 	root.userData.mass = mass;
 	// at rest: every moving part where the solver's first moment puts it

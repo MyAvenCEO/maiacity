@@ -49,8 +49,8 @@ every asset group.
   wait for `body[data-ready]`. Swiftshader draws rigged (skinned) machines and actors on the live turntable too; an
   empty turntable with its panels filled is a bug, not the headless browser (the excavators drew nothing from #601 to
   the loading fix: their parts' materials were wiped).
-- Shoot what the asset will be judged by: the whole beside a 1.8 m figure for scale, every mode (labels, cut,
-  x-ray, explode, the break), close ups of every joint and the cut, the back, every step of a build, the distance it
+- Shoot what the asset will be judged by: the whole beside a 1.8 m figure for scale, every move (its own, Assemble,
+  the break; mid-move as well as its ends) and every view (labels, cut, x-ray, explode), close ups of every joint and the cut, the back, every step of a build, the distance it
   is seen at in the game or film (a medium close-up for a face), by day, in shade and at night. Tile them (Pillow)
   and save them to `/mnt/project-files/<group>/<asset>/`.
 - Read every picture yourself before saying it works.
