@@ -1092,8 +1092,12 @@ a record of the `file` schema with the file's name and media type, made by one w
 
 **Sealed blob, version 1** (`crates/avendb/src/sealed.rs`, its bytes pinned by vectors):
 
-- **Key.** Each file has its own random 32-byte key, never derived from its content. Two vaults holding the same film
-  hold two unrelated blobs.
+- **Key.** Each file has its own 32-byte key, derived from what the file holds, keyed by a secret of the person's
+  vault (`sealed::Convergent`): cSHAKE256 over that secret, the format, the file's length and every byte. The secret
+  is a child of the vault's current seed (`Lab::convergence`, "avendb file convergence"), which every device of that
+  vault holds and nobody outside it. So the same file sealed again by any device of the vault, into any vault it acts
+  for, gives the same bytes, which iroh keeps once. Another person's devices derive an unrelated key, so nobody else
+  can tell which files they hold. A device with no such seed takes 32 random bytes.
 - **Segments.** The plaintext is cut into segments of 65,520 bytes, each sealed with ChaCha20-Poly1305 under a nonce of
   its number across the whole file and a flag for the last one. A sealed segment is 65,536 bytes, four iroh-blobs
   chunk groups, so a seek fetches whole segments and nothing more.
@@ -1109,9 +1113,10 @@ fetches and opens, Backup fetches the ciphertext, Relay fetches nothing.
 
 **Bringing, reading, keeping** (`crates/avendb-net/src/files.rs`):
 
-- `put_file` checks the entry it would create before it reads a byte. `Node::store_file` seals the file as it reads
-  it and streams each piece onto the shelf, so a file of any size passes through a few segments of memory; then the
-  entry and the write that brings it are made.
+- `put_file` checks the entry it would create before it reads a byte. `Node::store_file` reads the file twice: once
+  to derive its key, once to seal it, checking the key again over the bytes it seals, so two different files never
+  share a key. It streams each piece onto the shelf, so a file of any size passes through a few segments of memory;
+  then the entry and the write that brings it are made.
 - `read_file` (`Node::read_file`) reads any range: the segments that hold it, from its own shelf, or fetched from a
   peer, 4 MiB at a time, verified and opened. Pieces read but not kept stay in memory windows, 64 MiB at most, oldest
   out first.
