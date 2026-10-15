@@ -124,7 +124,7 @@ use iroh::address_lookup::MemoryLookup;
 use iroh::endpoint::PortmapperConfig;
 use iroh::endpoint::{Connection, presets};
 use iroh::protocol::Router;
-use iroh::{Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey};
+use iroh::{Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey, Watcher as _};
 use iroh_blobs::BlobsProtocol;
 use iroh_blobs::api::Store;
 use iroh_blobs::util::connection_pool::{self, ConnectionPool};
@@ -159,6 +159,11 @@ const REDIAL: Duration = Duration::from_secs(2);
 /// How long a node with no socket of its own waits for its relay to let it in before it reaches out anyway
 /// (`Node::on_relay`).
 const RELAY_WAIT: Duration = Duration::from_secs(20);
+
+/// How long a node with no socket of its own waits for iroh to pick its relay before it has it pick again
+/// (`Node::on_relay`): iroh picks it by a report of how fast each relay answers, which a browser times by an HTTPS
+/// request; a report with no answer in its three seconds picks none, and the next comes only 20 to 26 seconds on.
+const RELAY_PICK: Duration = Duration::from_secs(2);
 
 /// The longest a node waits before it tries a peer out of reach again.
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
@@ -394,6 +399,15 @@ pub fn pass_token(pass: &RelayPass) -> String {
     BASE64URL_NOPAD.encode(&pass.to_wire())
 }
 
+/// How a node with `opts` reaches its relay `relay`: with its pass, if it has one.
+fn relay_config(relay: &RelayUrl, opts: &Options) -> RelayConfig {
+    let config = RelayConfig::from(relay.clone());
+    match &opts.relay_pass {
+        Some(pass) => config.with_auth_token(pass_token(pass)),
+        None => config,
+    }
+}
+
 /// The relay pass a token carries (`pass_token`), if it is one.
 pub fn token_pass(token: &str) -> Option<RelayPass> {
     RelayPass::from_wire(&BASE64URL_NOPAD.decode(token.as_bytes()).ok()?).ok()
@@ -462,11 +476,7 @@ impl Node {
             bail!("a node in a browser binds no socket and needs a relay");
         }
         if let Some(relay) = &opts.relay {
-            let mut config = RelayConfig::from(relay.clone());
-            if let Some(pass) = &opts.relay_pass {
-                config = config.with_auth_token(pass_token(pass));
-            }
-            builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(config)));
+            builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(relay_config(relay, &opts))));
         }
         let endpoint = builder.bind().await?;
         // its blob store over its shelf, which lists what it holds once its edits are taken back; else in memory
@@ -538,14 +548,25 @@ impl Node {
 
     /// Whether its relay has let it in, waited for up to `RELAY_WAIT`: a node with no socket of its own, as a page's,
     /// reaches nobody before its relay lets it in, and a dial it sends sooner is lost and sent again ever later
-    /// (`REDIAL`), so it waits for it first, as its `relay` step. At once for a node with a socket, or no relay.
+    /// (`REDIAL`), so it waits for it first, as its `relay` step. At once for a node with a socket, or no relay. While
+    /// iroh has picked no relay, it has it pick again every `RELAY_PICK`, by handing it its relay once more.
     pub async fn on_relay(&self) -> bool {
-        let opts = &self.shared.opts;
-        if opts.relay.is_none() || opts.bind.is_some() || opts.direct {
-            return true;
-        }
+        let (opts, endpoint) = (&self.shared.opts, &self.shared.endpoint);
+        let Some(relay) = opts.relay.as_ref().filter(|_| opts.bind.is_none() && !opts.direct) else { return true };
         opts.progress.step("relay");
-        time::timeout(RELAY_WAIT, self.shared.endpoint.online()).await.is_ok()
+        let end = Instant::now() + RELAY_WAIT;
+        loop {
+            let wait = end.saturating_duration_since(Instant::now()).min(RELAY_PICK);
+            if time::timeout(wait, endpoint.online()).await.is_ok() {
+                return true;
+            }
+            if Instant::now() >= end {
+                return false;
+            }
+            if endpoint.home_relay_status().get().is_empty() {
+                endpoint.insert_relay(relay.clone(), Arc::new(relay_config(relay, opts))).await;
+            }
+        }
     }
 
     /// Its endpoint id: its device's ed25519 key.
@@ -689,8 +710,9 @@ impl Node {
         let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
         sent.context("the peer refuses the join")?;
         self.shared.changed.notify_one();
-        progress.step("sync");
-        self.shared.ask(peer.endpoint).await?;
+        // what the peer keeps for the vault comes in the background, a `pull` job: nobody waits on it
+        let (shared, endpoint) = (self.shared.clone(), peer.endpoint);
+        task::spawn(async move { shared.ask(endpoint).await.ok() });
         Ok(Some((passkey, vault)))
     }
 

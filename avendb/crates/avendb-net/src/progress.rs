@@ -19,8 +19,8 @@
 //! - `settle`: the server's share on the new vault and the device's card in it;
 //! - `pass`: the passkey's pass for the device, shown to the peer it links through, which hands back its person's vault;
 //! - `vault`: that vault's log, every edit checked as it is taken;
-//! - `join`: the edit that adds the device to its vault, signed and sent to the peer;
-//! - `sync`: what the peer holds for the device, asked for;
+//! - `join`: the edit that adds the device to its vault, signed and sent to the peer, which then hands over what it
+//!   holds for the device in the background, a `pull` job (`Node::jobs`), as nobody waits for it;
 //! - `check`: the device belongs to the vault its store holds.
 
 use std::sync::Arc;
