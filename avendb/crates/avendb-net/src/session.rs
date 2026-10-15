@@ -10,7 +10,7 @@ use avendb::id::{EditId, SignerId};
 use avendb::lab::Lab;
 use avendb::sign::{Hello, RelayPass};
 use avendb::sync::{LogId, log_of};
-use avendb::wire::{Announce, Claim, Join, Reply, Request, Wire};
+use avendb::wire::{Announce, Claim, Join, Reply, Request, Statement, Wire};
 use iroh::endpoint::{Connection, RecvStream, VarInt};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 
@@ -37,6 +37,9 @@ pub(crate) const CLAIM: u8 = 6;
 /// A request for the logs it names alone (v8 phase H, `only`), answered by a reply as a request is, of those logs
 /// alone: what a node asks a peer whose holdings hold what it lacks there.
 pub(crate) const ASK_LOGS: u8 = 7;
+/// A device's signed statement of its holdings (H2, `wire::Statement`), its own or another device's passed on,
+/// answered by nothing once the node keeps it or finds it older than the one it keeps (`Shared::keep_statement`).
+pub(crate) const STATE: u8 = 8;
 
 /// The error code a node closes a connection or a stream with when it refuses it.
 pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
@@ -186,6 +189,11 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             // of the device whose hello proved it on this connection, and of no other
             shared.hear(device, Announce::from_wire(body)?);
             shared.ask_soon(peer.endpoint);
+            Ok(Vec::new())
+        }
+        STATE => {
+            // of whichever device signed it, on whatever connection it came
+            shared.keep_statement(Statement::from_wire(body)?, false).await?;
             Ok(Vec::new())
         }
         CARD if shared.opts.card => {

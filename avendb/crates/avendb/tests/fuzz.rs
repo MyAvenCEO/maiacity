@@ -21,7 +21,7 @@ use avendb::sign::{Assertion, DeviceKey, Hello, Passkey, RelayPass, Signature, S
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
 use avendb::sealed::{FileRoot, PIECE};
-use avendb::wire::{Announce, Claim, FileHold, Frontier, Join, Reply, Request, Wire};
+use avendb::wire::{Announce, Claim, FileHold, Frontier, Join, Reply, Request, Statement, Wire};
 
 /// Where and how to mutate: xorshift64*, seeded per test.
 struct Gen(u64);
@@ -704,6 +704,17 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     let files = vec![(one, Some(FileHold::Whole)), (film, Some(FileHold::Pieces(vec![0, 2]))), (dropped, None)];
     let announce = Announce { full: true, logs, files };
     wire_mutations(&mut g, &announce, 3000, |_| {});
+    // a statement of holdings: whatever a mutation leaves of it, its signature proves none but itself
+    let key = DeviceKey::from_secret([9; 32]);
+    let (logs, files) = (announce.logs.clone(), vec![(one, FileHold::Whole), (film, FileHold::Pieces(vec![0, 2]))]);
+    let sig = key.state(&Statement::body(key.id(), 7, &logs, &files));
+    let statement = Statement { keys: key.keys(), checked: 7, logs, files, sig };
+    assert_eq!(statement.verify(), Some(key.id()));
+    wire_mutations(&mut g, &statement, 1500, |s: &Statement| {
+        if *s != statement {
+            assert_eq!(s.verify(), None, "{s:?}");
+        }
+    });
 }
 
 /// `v` with one value somewhere inside replaced: by null, a boolean, a number, a string, an empty or deeply nested

@@ -292,6 +292,20 @@ impl fmt::Debug for RelayPass {
 /// What a pass signs with SLH-DSA (`RelayPass`), as its context string: never an edit's id, nor a hello.
 pub const RELAY_PASS_CONTEXT: &[u8] = b"avenDB 2026-10-10 relay pass";
 
+/// The context of a device's SLH-DSA signature on its statement of its holdings (H2, `wire::Statement`): what it signs
+/// counts as that statement alone, never as an edit, a hello or a pass.
+pub const STATEMENT_CONTEXT: &[u8] = b"avenDB 2026-10-15 holdings statement";
+
+/// The device whose keys `keys` are, if `sig` is their SLH-DSA signature on the body of a statement of holdings,
+/// `body` (`wire::Statement::body`): `None` unless they are a device's keys and the signature checks out.
+pub fn verify_statement(keys: &SignerKeys, body: &[u8], sig: &[u8]) -> Option<SignerId> {
+    let SignerKeys::Device { slh, .. } = keys else { return None };
+    let key = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&slh[..]).ok()?;
+    let sig = slh_dsa::Signature::<Sha2_128f>::try_from(sig).ok()?;
+    key.try_verify_with_context(body, STATEMENT_CONTEXT, &sig).ok()?;
+    Some(keys.id())
+}
+
 /// How long a pass lets its device in: seconds from when it was made.
 pub const PASS_LIFE: u64 = 10 * 60;
 
@@ -709,6 +723,11 @@ impl DeviceKey {
         let message = hello_message(exporter, dialer);
         let sig = self.slh.try_sign_with_context(&message, HELLO_CONTEXT, None).expect("a short context").to_vec();
         Hello { keys: self.keys(), sig }
+    }
+
+    /// The device's SLH-DSA signature on `body`, the body of its statement of its holdings (`wire::Statement::body`).
+    pub fn state(&self, body: &[u8]) -> Vec<u8> {
+        self.slh.try_sign_with_context(body, STATEMENT_CONTEXT, None).expect("a short context").to_vec()
     }
 
     /// The secret of the device's iroh endpoint: its ed25519 key's, as iroh takes it.

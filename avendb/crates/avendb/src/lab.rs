@@ -98,7 +98,7 @@ use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, 
 use crate::sync::{
     answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
 };
-use crate::wire::{Claim, Join, Request, Wire as _};
+use crate::wire::{Claim, FileHold, Frontier, Join, Request, Statement, Wire as _};
 use crate::world;
 
 /// A device keeps its keys and audiences up to date in a few rounds at most: one to make and seal keys and move
@@ -2287,6 +2287,20 @@ impl Lab {
             Key::Device(k) => Some(k.hello(exporter, dialer)),
             Key::Passkey(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
+    }
+
+    /// Device `d`'s signed statement that it holds `logs` and `files`, as it checked at `checked`, seconds since 1970
+    /// (H2, `wire::Statement`): `None` while it is locked.
+    pub fn statement(
+        &self,
+        d: SignerId,
+        checked: u64,
+        logs: Vec<(LogId, Frontier)>,
+        files: Vec<(FileRoot, FileHold)>,
+    ) -> Option<Statement> {
+        let Key::Device(k) = self.keys.get(&d)? else { return None };
+        let sig = k.state(&Statement::body(d, checked, &logs, &files));
+        Some(Statement { keys: k.keys(), checked, logs, files, sig })
     }
 
     /// The pass passkey `passkey`, used on device `d`, makes `d` at `made`, seconds since 1970 (`sign::RelayPass`): for

@@ -1192,4 +1192,44 @@ def sAhead : List Edit := built (s4 ++ [welcomeLine 40 macA alice [30] [photo], 
     { alicesMac with edits := sAhead, held := sAhead.length, heard := [(toBob, ahead)] }.syncedTo macA
       (.entry welcome) == [(macA, true), (macB, true)]
 
+/-! ## Signed holdings: a device's word outlives its connection
+
+Bob's Mac signs what it tells Alice's Mac it holds, checked at 100, and again at 200. Alice's Mac keeps the newest,
+whichever connection brought it, and ignores a newer one Carol's Mac signed in Bob's Mac's name. It passes Bob's Mac's
+statement to Alice's iPhone, which may know all of it, and not to Carol's Mac or Dave's, which may not. While Bob's Mac
+is on no live connection, "Synced to" lists it by that statement, with when it checked; on a live one, by what it
+announced there, with no time (H2). -/
+
+def bobAt100 : Statement := bobsMac.states macB macA 100
+def bobAt200 : Statement := bobsMac.states macB macA 200
+/-- Carol's Mac's signature on a statement in Bob's Mac's name, saying it holds nothing. -/
+def forged : Statement := { bobAt200 with checked := 300, holdings := {}, signer := some macC }
+/-- Carol's Mac's own statement, claiming Welcome. -/
+def carolStates : Statement :=
+  { device := macC, checked := 150, holdings := { logs := [(.entry welcome, holdOf sH (.entry welcome))] },
+    signer := some macC }
+
+def alicesMacLater : Node := { alicesMac with heard := [], stated := [bobAt100, forged, bobAt200, carolStates] }
+
+-- Bob's Mac signs what it tells Alice's Mac; Alice's Mac keeps the newest it signed, whatever order they came in, and
+-- nothing of Carol's in its name
+#guard bobAt100.signed && bobAt100.holdings == bobsMac.tells macA && !forged.signed
+#guard alicesMacLater.statement macB == some bobAt200
+#guard { alicesMacLater with stated := [bobAt200, forged, bobAt100] }.statement macB == some bobAt200
+#guard { alicesMacLater with stated := [forged] }.statement macB == none
+-- it passes Bob's Mac's statement to Alice's iPhone, and nothing to Carol's Mac or Dave's
+#guard (alicesMacLater.passes phoneA).contains bobAt200
+#guard !(alicesMacLater.passes macC).contains bobAt200 && !(alicesMacLater.passes macD).contains bobAt200
+-- Synced to: Bob's Mac by its statement, checked at 200, the entry and the file alike; never Carol's Mac, whatever
+-- she signs of herself
+#guard alicesMacLater.syncedToAt macA [] (.entry welcome) == [(macA, true, none), (macB, true, some 200)]
+#guard alicesMacLater.syncedToAt macA [] (.file photo) == [(macA, true, none), (macB, true, some 200)]
+-- on a live connection, by what it announced there; with no statement, by what it last announced
+#guard { alicesMacLater with heard := [(toBob, bobSays)] }.syncedToAt macA [macB] (.entry welcome) ==
+  [(macA, true, none), (macB, true, none)]
+#guard { alicesMac with stated := [] }.syncedToAt macA [] (.entry welcome) == [(macA, true, none), (macB, true, none)]
+-- a statement of an older shelf: Bob's Mac before its shelf took Welcome's lines states some of it
+#guard { alicesMacLater with stated := [bobsShelfBehind.states macB macA 400] }.syncedToAt macA []
+  (.entry welcome) == [(macA, true, none), (macB, false, some 400)]
+
 end AvenDB.Examples

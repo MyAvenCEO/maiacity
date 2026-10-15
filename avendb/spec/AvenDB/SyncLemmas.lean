@@ -913,4 +913,138 @@ theorem syncedTo_sound {n : Node} {me d : SignerId} {t : Synced} {all : Bool} (h
           exact ⟨hr, c, a, hca, hd, x, hm, rfl⟩
       · simp at hd'
 
+/-! ## Signed holdings (H2) -/
+
+/-- The newer of two statements is checked no earlier than either. -/
+theorem newer_ge (b s : Statement) : b.checked ≤ (newer b s).checked ∧ s.checked ≤ (newer b s).checked := by
+  unfold newer
+  split <;> refine ⟨?_, ?_⟩ <;> omega
+
+/-- The newest of statements, from `s` on, is one of them. -/
+theorem foldl_newer_mem : ∀ (rest : List Statement) (s : Statement), rest.foldl newer s ∈ s :: rest
+  | [], _ => List.mem_singleton.mpr rfl
+  | x :: rest, s => by
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp (foldl_newer_mem rest (newer s x)) with h | h
+    · rw [h]
+      unfold newer
+      split
+      · exact List.mem_cons_of_mem _ List.mem_cons_self
+      · exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h)
+
+/-- Taking the newer of each statement in turn checks no earlier than where it starts. -/
+theorem foldl_newer_ge : ∀ (rest : List Statement) (b : Statement), b.checked ≤ (rest.foldl newer b).checked
+  | [], _ => Nat.le_refl _
+  | x :: rest, b => Nat.le_trans (newer_ge b x).1 (foldl_newer_ge rest (newer b x))
+
+/-- The newest of statements, from `s` on, was checked no earlier than any of them. -/
+theorem le_foldl_newer : ∀ (rest : List Statement) (s x : Statement), x ∈ s :: rest →
+    x.checked ≤ (rest.foldl newer s).checked
+  | [], s, x, h => by
+    rw [List.mem_singleton.mp h]
+    exact Nat.le_refl _
+  | y :: rest, s, x, h => by
+    rw [List.foldl_cons]
+    rcases List.mem_cons.mp h with rfl | h
+    · exact Nat.le_trans (newer_ge x y).1 (foldl_newer_ge rest _)
+    · rcases List.mem_cons.mp h with rfl | h
+      · exact Nat.le_trans (newer_ge s x).2 (foldl_newer_ge rest _)
+      · exact le_foldl_newer rest (newer s y) x (List.mem_cons_of_mem _ h)
+
+/-- What a node keeps of device `d` is a statement it heard that `d` signed, of a device it knows, and checked no
+    earlier than any other statement it heard that `d` signed. -/
+theorem statement_sound {n : Node} {d : SignerId} {s : Statement} (h : n.statement d = some s) :
+    s ∈ n.stated ∧ s.device = d ∧ s.signer = some d ∧ devicesIn n.edits d = true ∧
+      ∀ x ∈ n.stated, x.signer = some d → x.device = d → x.checked ≤ s.checked := by
+  unfold Node.statement at h
+  split at h
+  · rename_i hd
+    split at h
+    · cases h
+    · rename_i s0 rest hf
+      simp only [Option.some.injEq] at h
+      subst h
+      have hmem := hf ▸ foldl_newer_mem rest s0
+      obtain ⟨hin, hok⟩ := List.mem_filter.mp hmem
+      simp only [Statement.signed, Bool.and_eq_true, beq_iff_eq] at hok
+      obtain ⟨hsig, hdev⟩ := hok
+      refine ⟨hin, hdev, by rw [hsig, hdev], hd, fun x hx hxs hxd => le_foldl_newer rest s0 x ?_⟩
+      rw [← hf]
+      exact List.mem_filter.mpr ⟨hx, by simp [Statement.signed, hxs, hxd]⟩
+  · cases h
+
+/-- A statement that isn't `d`'s own, signed by it, changes nothing of what a node keeps of `d`, wherever it falls. -/
+theorem statement_ignores (n : Node) (d : SignerId) (before after : List Statement) (x : Statement)
+    (hx : ¬(x.signer = some d ∧ x.device = d)) :
+    { n with stated := before ++ x :: after }.statement d = { n with stated := before ++ after }.statement d := by
+  have hf : (x.signed && x.device == d) = false := by
+    by_cases hd : x.device = d
+    · have : ¬x.signer = some x.device := fun h => hx ⟨hd ▸ h, hd⟩
+      simp [Statement.signed, this]
+    · simp [hd]
+  simp only [Node.statement, List.filter_append, List.filter_cons, hf]
+  rfl
+
+/-- A statement a node passes to device `p` is what it keeps of another device, and `p` may know all it says. -/
+theorem passes_sound {n : Node} {p : SignerId} {s : Statement} (h : s ∈ n.passes p) :
+    ∃ d, d ≠ p ∧ n.statement d = some s ∧ (∀ l F, (l, F) ∈ s.holdings.logs → l ∈ reachLogs n.edits p) ∧
+      (∀ f x, (f, x) ∈ s.holdings.files → f ∈ reachFiles n.edits p) := by
+  simp only [Node.passes, List.mem_filterMap, List.mem_filter, bne_iff_ne, ne_eq] at h
+  obtain ⟨d, ⟨-, hdp⟩, hs⟩ := h
+  rw [Option.filter_eq_some_iff] at hs
+  obtain ⟨hs, hk⟩ := hs
+  simp only [mayKnow, Bool.and_eq_true, List.all_eq_true, List.contains_iff_mem] at hk
+  exact ⟨d, hdp, hs, fun l F hm => hk.1 _ hm, fun f x hm => hk.2 _ hm⟩
+
+/-- What holdings `h` state of `t`, and whether that is all of it a node holding `edits` holds: a frontier of the entry's
+    log, covering the log as the node holds it or not; what they hold of the file, the whole file or not. -/
+def HoldsAs (edits : List Edit) (h : Holdings) (all : Bool) : Synced → Prop
+  | .entry e => ∃ F, (LogId.entry e, F) ∈ h.logs ∧ covers edits (.entry e) F = all
+  | .file f  => ∃ x, (f, x) ∈ h.files ∧ (x == .whole) = all
+
+theorem of?_sound {h : Holdings} {edits : List Edit} {t : Synced} {all : Bool} (hh : h.of? edits t = some all) :
+    HoldsAs edits h all t := by
+  cases t with
+  | entry e =>
+    simp only [Holdings.of?, Option.map_eq_some_iff] at hh
+    obtain ⟨F, hF, rfl⟩ := hh
+    exact ⟨F, mem_of_log? hF, rfl⟩
+  | file f =>
+    simp only [Holdings.of?, Option.map_eq_some_iff] at hh
+    obtain ⟨x, hx, rfl⟩ := hh
+    exact ⟨x, mem_of_file? hx, rfl⟩
+
+/-- A device "Synced to" lists with no time, other than the node's own, it lists as `syncedTo` does: by what it
+    announced on a connection whose hello proved it. -/
+theorem syncedToAt_now {n : Node} {me d : SignerId} {live : List SignerId} {t : Synced} {all : Bool}
+    (h : (d, all, none) ∈ n.syncedToAt me live t) : (d, all) ∈ n.syncedTo me t := by
+  simp only [Node.syncedToAt, List.mem_mergeSort, List.mem_append, List.mem_map, List.mem_filter] at h
+  rcases h with ⟨x, ⟨hx, -⟩, he⟩ | h
+  · simp only [Prod.mk.injEq] at he
+    obtain ⟨rfl, rfl, -⟩ := he
+    exact hx
+  · split at h
+    · simp [List.mem_filterMap, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+    · simp at h
+
+/-- A device "Synced to" lists with when it checked is on no live connection, and listed by the newest statement the
+    node keeps of it, which it signed, checked then: it may hold `t` by the node's view, and the statement says what it
+    holds of `t`, all of it if listed so. -/
+theorem syncedToAt_checked {n : Node} {me d : SignerId} {live : List SignerId} {t : Synced} {all : Bool} {T : Nat}
+    (h : (d, all, some T) ∈ n.syncedToAt me live t) :
+    d ≠ me ∧ d ∉ live ∧ t.reaches n.edits d = true ∧
+      ∃ s, n.statement d = some s ∧ s.checked = T ∧ s.signer = some d ∧ HoldsAs n.edits s.holdings all t := by
+  simp only [Node.syncedToAt, List.mem_mergeSort, List.mem_append, List.mem_map, List.mem_filter] at h
+  rcases h with ⟨x, -, he⟩ | h
+  · simp at he
+  · split at h
+    · simp only [List.mem_filterMap, Option.bind_eq_some_iff, Option.map_eq_some_iff, List.mem_filter,
+        Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at h
+      obtain ⟨d', ⟨-, ⟨hme, hl⟩, hr⟩, s, hs, all', ha, he⟩ := h
+      simp only [Prod.mk.injEq, Option.some.injEq] at he
+      obtain ⟨rfl, rfl, rfl⟩ := he
+      exact ⟨hme, by simpa using hl, hr, s, hs, rfl, (statement_sound hs).2.2.1, of?_sound ha⟩
+    · simp at h
+
 end AvenDB.Syncing

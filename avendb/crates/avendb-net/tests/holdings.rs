@@ -31,6 +31,8 @@ const REQUEST: u8 = 0;
 const ANNOUNCE: u8 = 1;
 /// A request for the logs it names alone (`session::ASK_LOGS`).
 const ASK_LOGS: u8 = 7;
+/// A signed statement of holdings (`session::STATE`), which the tests here by hand let pass.
+const STATE: u8 = 8;
 
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8) -> Node {
@@ -82,8 +84,10 @@ async fn next(conn: &Connection, kind: u8, answer: impl FnOnce(&[u8]) -> Vec<u8>
         let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
         let message = recv.read_to_end(16 << 20).await.expect("its bytes");
         let (&k, body) = message.split_first().expect("a kind");
-        if k == ANNOUNCE {
-            heard.push(Announce::from_wire(body).expect("an announcement"));
+        if k == ANNOUNCE || k == STATE {
+            if k == ANNOUNCE {
+                heard.push(Announce::from_wire(body).expect("an announcement"));
+            }
             send.finish().expect("nothing back");
             continue;
         }
@@ -94,14 +98,19 @@ async fn next(conn: &Connection, kind: u8, answer: impl FnOnce(&[u8]) -> Vec<u8>
     }
 }
 
-/// The next announcement the node sends on `conn`.
+/// The next announcement the node sends on `conn`, past its statements.
 async fn announced(conn: &Connection) -> Announce {
-    let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
-    let message = recv.read_to_end(16 << 20).await.expect("its bytes");
-    let (&k, body) = message.split_first().expect("a kind");
-    assert_eq!(k, ANNOUNCE, "an announcement");
-    send.finish().expect("nothing back");
-    Announce::from_wire(body).expect("an announcement")
+    loop {
+        let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
+        let message = recv.read_to_end(16 << 20).await.expect("its bytes");
+        let (&k, body) = message.split_first().expect("a kind");
+        send.finish().expect("nothing back");
+        if k == STATE {
+            continue;
+        }
+        assert_eq!(k, ANNOUNCE, "an announcement");
+        return Announce::from_wire(body).expect("an announcement");
+    }
 }
 
 /// The blob `hash`, fetched by hand from `to` as `from`'s endpoint, if the node hands it over.
@@ -138,9 +147,10 @@ async fn photo(n: &Node, coop: avendb::id::VaultId, e: EntryId, len: u64) -> Fil
 }
 
 /// Alice's and Bob's Macs reach each other through the server alone. Each node keeps what each device told it on
-/// their own connection: Bob's Mac never hears Alice's Mac's holdings, as the server passes on nobody's, nor Alice's
-/// Mac Bob's; and Carol's Mac, outside the coop, hears of Welcome from nobody. Synced to lists exactly the devices
-/// that told each node they hold Welcome, and the node's own device, and never Carol's.
+/// their own connection: Bob's Mac never hears Alice's Mac's announcements, as the server passes on nobody's, nor
+/// Alice's Mac Bob's; and Carol's Mac, outside the coop, hears of Welcome from nobody. Synced to lists exactly the
+/// devices that told each node they hold Welcome, and the node's own device, and never Carol's: each Mac lists the
+/// other by the statement it signed, which the server passed on (H2), with when it checked.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn holdings_come_only_from_the_connection_that_proved_their_device() {
     let mut w = world();
@@ -162,12 +172,16 @@ async fn holdings_come_only_from_the_connection_that_proved_their_device() {
     until("Bob's Mac reads Welcome through the server", reads).await;
     let all = sorted(vec![mac_a, server_d, mac_b]);
     until("the server shows Welcome synced to all three", || async { synced(&server, welcome).await == all }).await;
-    let (on_mac, on_bob) = (sorted(vec![mac_a, server_d]), sorted(vec![server_d, mac_b]));
-    until("Alice's Mac to itself and the server", || async { synced(&mac, welcome).await == on_mac }).await;
-    until("Bob's Mac to the server and itself", || async { synced(&bob, welcome).await == on_bob }).await;
+    until("Alice's Mac to all three", || async { synced(&mac, welcome).await == all }).await;
+    until("Bob's Mac to all three", || async { synced(&bob, welcome).await == all }).await;
     assert_eq!(bob.proven(mac.id()), None, "the Macs never met");
-    assert_eq!(bob.holdings_of(mac_a), None, "so Bob's Mac never heard Alice's Mac's holdings: the server passes none");
+    assert_eq!(bob.holdings_of(mac_a), None, "so Bob's Mac never heard Alice's Mac's announcements: the server passes none");
     assert_eq!(mac.holdings_of(mac_b), None, "nor Alice's Mac Bob's Mac's");
+    let checked = |hs: Vec<Holder>, d| hs.iter().find(|h| h.device == d).map(|h| h.checked);
+    let on_bob = bob.synced_to().await.entries[&welcome].clone();
+    assert!(checked(on_bob.clone(), mac_a).flatten().is_some(), "Bob's Mac lists Alice's Mac by her Mac's statement");
+    assert_eq!(checked(on_bob, server_d), Some(None), "and the server, connected, by what it announces");
+    assert_eq!(bob.statement_of(mac_a).and_then(|s| s.verify()), Some(mac_a), "which Alice's Mac signed");
     let frontier = mac.holdings().await.logs[&log].clone();
     let told = bob.holdings_of(server_d).expect("the server's own holdings");
     assert_eq!(told.logs.get(&log), Some(&frontier), "which hold Welcome as Alice's Mac does");
@@ -204,7 +218,7 @@ async fn a_forged_holding_from_a_third_party_is_ignored() {
     assert_eq!(heard.logs.get(&log), Some(&frontier), "as Carol's Mac's word");
     assert_eq!(mac.holdings_of(mac_b), None, "and of no other device");
     let synced = mac.synced_to().await;
-    let only = |hs: &[Holder]| hs == [Holder { device: mac_a, has: hs[0].of, of: hs[0].of }];
+    let only = |hs: &[Holder]| hs == [Holder { device: mac_a, has: hs[0].of, of: hs[0].of, checked: None }];
     assert!(only(&synced.entries[&welcome]), "but shows Welcome synced to itself alone");
     assert!(only(&synced.files[&root]), "and the photo");
     // an edit of Welcome Alice's Mac lacks, of a log beyond Carol's Mac's reach: it asks nothing of it
