@@ -14,7 +14,8 @@ use crate::history::MAIN;
 use crate::id::{AudienceId, EntryId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName};
 use crate::lab::{Lab, NewShare, Tamper};
-use crate::lens::{Status, DOCUMENT_LENS, DOCUMENT_V1, DOCUMENT_V2};
+use crate::lens::example::{DOCUMENT_LENS, DOCUMENT_V0};
+use crate::lens::{Status, DOCUMENT_V1};
 use crate::policy::{mk_audience, Action, Kind, Level, Principal, Refusal, Revoking, Setting, Sharing, Who};
 use crate::rules::Op;
 use crate::slice::{Selector, Sym};
@@ -132,7 +133,7 @@ pub static SCENARIOS: [Scenario; 29] = [
     Scenario { number: "6", title: "One document via caps", phase: "P3", play: one_document_via_shares },
     Scenario { number: "7", title: "Public", phase: "P3", play: public },
     Scenario { number: "8", title: "Proposals", phase: "P5", play: proposals },
-    Scenario { number: "9", title: "Schema v2", phase: "P4", play: schema_v2 },
+    Scenario { number: "9", title: "Schema v0 and a lens", phase: "P4", play: schema_v0 },
     Scenario { number: "10", title: "Revoke Carol", phase: "P3", play: revoke_carol },
     Scenario { number: "11", title: "Lost iPhone", phase: "P3", play: lost_iphone },
     Scenario { number: "12", title: "Bob leaves", phase: "P3", play: bob_leaves },
@@ -495,33 +496,35 @@ fn proposals(run: &mut Run) -> Done {
     Ok(())
 }
 
-fn schema_v2(run: &mut Run) -> Done {
+fn schema_v0(run: &mut Run) -> Done {
     let mut w = world();
-    let h = handbook(&mut w);
-    let (coop, welcome) = (h.coop, h.welcome);
-    let v1 = w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_V1.bytes());
-    run.ok("Alice adds v1, the schema Welcome was written under, to the coop's lane: an entry of the coop", v1)?;
+    let coop = handbook(&mut w).coop;
+    let v0 = w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_V0.bytes());
+    run.ok("Alice adds v0, the lens engine's example of an older document schema, to the coop's lane: an entry", v0)?;
     let public = |lab: &Lab, d| {
         let st = lab.state(d);
         st.shares().iter().filter(|cp| cp.share.over == coop && cp.share.who == Who::Everyone && st.live(cp.id)).count()
     };
     run.same("with its first schema, the coop shares its schemas and lenses with everyone", public(&w.lab, w.mac_a), 1);
+    let welcome = document_v0("Welcome", WELCOME_TEXT, w.mac_a);
+    let made = w.lab.create(w.mac_a, coop, coop, "doc", &[], welcome);
+    let welcome = run.ok("an app on v0 on Alice's Mac writes Welcome", made)?;
     w.lab.sync_all(9);
-    let opened = w.lab.open(w.mac_b, welcome, &DOCUMENT_V2);
-    let (seen, read_only) = run.some("a v2 app on Bob's Mac opens Welcome", opened)?;
-    run.check("with no lens to v1 yet, it opens it read-only", read_only);
+    let opened = w.lab.open(w.mac_b, welcome, &DOCUMENT_V1);
+    let (seen, read_only) = run.some("a v1 app on Bob's Mac opens Welcome", opened)?;
+    run.check("with no lens from v0 yet, it opens it read-only", read_only);
     run.same("and shows what it can", (&seen["title"], &seen["blocks"]), (&json!("Welcome"), &json!([])));
     let tag = |d: &mut Value| d["tags"] = json!(["greenhouse"]);
-    run.same("so it can't edit it", w.lab.edit_as(w.mac_b, coop, welcome, &DOCUMENT_V2, tag), Err(Refusal::ReadOnly));
-    run.ok("Alice adds v2", w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_V2.bytes()))?;
-    run.ok("and the lens from v1 to v2", w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_LENS.bytes()))?;
+    run.same("so it can't edit it", w.lab.edit_as(w.mac_b, coop, welcome, &DOCUMENT_V1, tag), Err(Refusal::ReadOnly));
+    run.ok("Alice adds v1", w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_V1.bytes()))?;
+    run.ok("and the lens from v0 to v1", w.lab.add_schema(w.mac_a, coop, coop, DOCUMENT_LENS.bytes()))?;
     run.same("through the same share", public(&w.lab, w.mac_a), 1);
     w.lab.sync_all(9);
-    let (seen, read_only) = run.some("Bob's v2 app opens Welcome again", w.lab.open(w.mac_b, welcome, &DOCUMENT_V2))?;
+    let (seen, read_only) = run.some("Bob's v1 app opens Welcome again", w.lab.open(w.mac_b, welcome, &DOCUMENT_V1))?;
     run.check("and now may edit it", !read_only);
     let heading = json!({"id": 1, "type": "heading", "level": 1, "text": "Welcome"});
-    run.same("it reads Welcome's v1 heading through the lens", seen["blocks"][0].clone(), heading);
-    let edit = w.lab.edit_as(w.mac_b, coop, welcome, &DOCUMENT_V2, |d| {
+    run.same("it reads Welcome's v0 heading through the lens", seen["blocks"][0].clone(), heading);
+    let edit = w.lab.edit_as(w.mac_b, coop, welcome, &DOCUMENT_V1, |d| {
         d["tags"] = json!(["greenhouse"]);
         let item = json!({"id": 3, "type": "item", "checked": false, "text": "Water the seedlings"});
         if let Some(blocks) = d["blocks"].as_array_mut() {
@@ -530,27 +533,27 @@ fn schema_v2(run: &mut Run) -> Done {
     });
     run.check("it adds a tag and a checklist item", matches!(edit, Ok(Some(_))));
     w.lab.sync_all(9);
-    let opened = w.lab.open(w.mac_a, welcome, &DOCUMENT_V1);
-    let (seen, read_only) = run.some("a v1 app on Alice's Mac opens Welcome", opened)?;
+    let opened = w.lab.open(w.mac_a, welcome, &DOCUMENT_V0);
+    let (seen, read_only) = run.some("the v0 app on Alice's Mac opens Welcome", opened)?;
     run.check("and may edit it", !read_only);
-    let v1 = |text: &str| {
+    let v0 = |text: &str| {
         json!({"kind": "document", "title": "Welcome", "blocks": [
             {"id": 1, "kind": "h1", "text": "Welcome"},
             {"id": 2, "kind": "p", "text": text},
             {"id": 3, "kind": "li", "text": "Water the seedlings"}]})
     };
-    run.same("it reads its own content as it wrote it, and Bob's item as a list item", seen, v1(WELCOME_TEXT));
-    let unchanged = w.lab.edit_as(w.mac_a, coop, welcome, &DOCUMENT_V1, |_| {});
+    run.same("it reads its own content as it wrote it, and Bob's item as a list item", seen, v0(WELCOME_TEXT));
+    let unchanged = w.lab.edit_as(w.mac_a, coop, welcome, &DOCUMENT_V0, |_| {});
     run.same("its view put back unchanged writes nothing", unchanged, Ok(None));
-    let edit = w.lab.edit_as(w.mac_a, coop, welcome, &DOCUMENT_V1, |d| d["blocks"][1]["text"] = json!(AFTER_TEXT));
-    run.check("the v1 app edits what it sees", matches!(edit, Ok(Some(_))));
+    let edit = w.lab.edit_as(w.mac_a, coop, welcome, &DOCUMENT_V0, |d| d["blocks"][1]["text"] = json!(AFTER_TEXT));
+    run.check("the v0 app edits what it sees", matches!(edit, Ok(Some(_))));
     w.lab.sync_all(9);
-    let reread = w.lab.open(w.mac_a, welcome, &DOCUMENT_V1).map(|(v, _)| v);
-    run.same("and reads its edit back", reread, Some(v1(AFTER_TEXT)));
-    let (seen, _) = run.some("Bob's v2 app opens Welcome", w.lab.open(w.mac_b, welcome, &DOCUMENT_V2))?;
+    let reread = w.lab.open(w.mac_a, welcome, &DOCUMENT_V0).map(|(v, _)| v);
+    run.same("and reads its edit back", reread, Some(v0(AFTER_TEXT)));
+    let (seen, _) = run.some("Bob's v1 app opens Welcome", w.lab.open(w.mac_b, welcome, &DOCUMENT_V1))?;
     let kept = (&seen["tags"], &seen["blocks"][2]["checked"]);
     run.same(
-        "the v1 edit kept what only v2 says: the tag, the item's checkbox",
+        "the v0 edit kept what only v1 says: the tag, the item's checkbox",
         kept,
         (&json!(["greenhouse"]), &json!(false)),
     );
@@ -561,9 +564,9 @@ fn schema_v2(run: &mut Run) -> Done {
         {"id": 3, "type": "item", "checked": false, "text": "Water the seedlings"}]});
     run.same("no default was ever written: each field stays as its app wrote it", item.record(), record);
     run.same(
-        "Welcome was written under v1 and v2",
+        "Welcome was written under v0 and v1",
         item.authored(),
-        BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]),
+        BTreeSet::from([DOCUMENT_V0.id(), DOCUMENT_V1.id()]),
     );
     Ok(())
 }

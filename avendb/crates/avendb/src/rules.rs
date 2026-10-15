@@ -37,7 +37,9 @@ use crate::slice::{Sym, TagDelta};
 /// judging a write stays linear in it, and ops fit in a sealed slice. The most shares a proof opens: a write through a
 /// longer chain is never counted. And the longest name a share has, in characters.
 pub const MAX_OPS: usize = 64;
-pub const MAX_STEPS: usize = 8;
+/// The steps of a cap's path: a bound on decoding only, set with the generation 8 reset, so records nest inside
+/// records as deep as anyone needs, and a cap reaches them, without another reset.
+pub const MAX_STEPS: usize = 64;
 pub const MAX_VALUES: usize = 64;
 pub const MAX_GRANTS: usize = 16;
 pub const MAX_NAME: usize = 64;
@@ -630,7 +632,7 @@ mod tests {
             json!({ "op": "propose", "path": [] }),
             json!({ "op": "delete", "path": [] }),
             json!({ "op": "set", "path": [1] }),
-            json!({ "op": "set", "path": ["a", "b", "c", "d", "e", "f", "g", "h", "i"] }),
+            json!({ "op": "set", "path": vec!["a"; MAX_STEPS + 1] }),
             json!({ "op": "tag", "tags": "urgent" }),
             json!({ "op": "read", "path": [] }),
         ];

@@ -17,7 +17,7 @@ use crate::doc::Item;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
-use crate::lens::{DocV2, Lens, Schema, Status, View};
+use crate::lens::{DocV1, Lens, Schema, Status, View};
 use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
@@ -578,7 +578,7 @@ fn record(record: Value) -> What {
 }
 
 /// The note a document is a variant of and the version of it it copied, by its mark (`variant_mark`), if it is one.
-fn variant_of(doc: &DocV2) -> Option<(EntryId, Vec<EditId>)> {
+fn variant_of(doc: &DocV1) -> Option<(EntryId, Vec<EditId>)> {
     let mark = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT))?;
     let (entry, at) = mark.split_once('@')?;
     let at: Option<Vec<EditId>> = at.split(',').filter(|e| !e.is_empty()).map(EditId::from_hex).collect();

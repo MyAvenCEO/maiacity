@@ -12,7 +12,7 @@ mod records;
 use avendb::cast;
 use avendb::doc::Item;
 use avendb::id::SignerId;
-use avendb::lens::{Status, TodoV2, View};
+use avendb::lens::{example, Status, TodoV1, View};
 use avendb::ops::{diff, run_all, Loc, Record, RecordOp};
 use avendb::rules::{Scalar, Touch};
 use records::{random_op, random_record, Rng};
@@ -39,9 +39,9 @@ fn blocks(doc: &mut Value) -> &mut Vec<Value> {
 #[test]
 fn touches_name_the_field_the_row_and_the_value() {
     let due = Some("2026-10-12".to_string());
-    let todo = TodoV2 { title: "Fix the door".into(), status: Status::Open, notes: String::new(), due };
-    let todo = Item::made(View::todo_v2(), &todo.to_value(), ALICE).expect("a todo");
-    let view = View::todo_v2();
+    let todo = TodoV1 { title: "Fix the door".into(), status: Status::Open, notes: String::new(), due };
+    let todo = Item::made(View::todo_v1(), &todo.to_value(), ALICE).expect("a todo");
+    let view = View::todo_v1();
     assert_eq!(touches(&todo, view, |t| t["status"] = json!("done")), [json!({ "set": ["status"], "to": "done" })]);
     assert_eq!(touches(&todo, view, |t| t["title"] = json!("Fixed")), [json!({ "set": ["title"], "to": "Fixed" })]);
     // a place emptied is set to null; a text's edits name no value
@@ -54,7 +54,7 @@ fn touches_name_the_field_the_row_and_the_value() {
     assert_eq!(touches(&todo, view, |_| {}), Vec::<Value>::new());
     // a document's blocks: a field of a row by the row's id, a text naming no value and a checkbox its value
     let doc = cast::document("Plan", "The greenhouse plan for spring.", ALICE);
-    let view = View::document_v2();
+    let view = View::document_v1();
     let text = json!({ "set": ["blocks", { "id": 2 }, "text"] });
     assert_eq!(touches(&doc, view, |d| d["blocks"][1]["text"] = json!("Sow beans")), [text]);
     let checked = json!({ "set": ["blocks", { "id": 2 }, "checked"], "to": true });
@@ -82,9 +82,10 @@ fn touches_name_the_field_the_row_and_the_value() {
         json!({ "set": ["title"], "to": "Spring plan" }),
     ];
     assert!(both.len() == want.len() && want.iter().all(|t| both.contains(t)), "{both:?}");
-    // a v2 app's edit of a block a v1 app wrote touches what the item stores: the block's v1 kind goes, its v2 type
-    // comes
-    let welcome = cast::document_v1("Welcome", cast::WELCOME_TEXT, ALICE);
+    // with the lens engine's example, a v1 app's edit of a block a v0 app wrote touches what the item stores: the
+    // block's v0 kind goes, its v1 type comes
+    let welcome = cast::document_v0("Welcome", cast::WELCOME_TEXT, ALICE);
+    let view = example::document_v1();
     let paragraph = |d: &mut Value| {
         d["blocks"][0]["type"] = json!("paragraph");
         d["blocks"][0].as_object_mut().expect("a block").remove("level");

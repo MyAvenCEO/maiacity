@@ -9,7 +9,8 @@
 use std::collections::BTreeSet;
 
 use avendb::id::BlobId;
-use avendb::lens::{Lane, DOCUMENT_V2, TODO_V1, TODO_V2};
+use avendb::lens::example::{self, TODO_V0};
+use avendb::lens::{Lane, DOCUMENT_V1, TODO_V1};
 use avendb::ops;
 use serde_json::{json, Value};
 
@@ -216,16 +217,16 @@ fn a_write_makes_no_copy_of_a_row() {
 
 #[test]
 fn the_schemas_are_in_the_lane_and_of_one_kind() {
-    let lane = Lane::with_built_ins([]);
+    let lane = Lane::with_built_ins(example::blobs::LANE.map(str::as_bytes));
     let (todo, gate) = (json!({ "kind": "todo", "title": "Fix the door" }), json!({ "kind": "todo", "title": "Gate" }));
     let under = |ids: &[BlobId]| ids.iter().copied().collect::<BTreeSet<_>>();
-    assert!(lane.fits(&under(&[TODO_V2.id()]), &todo, &gate));
-    assert!(lane.fits(&under(&[TODO_V1.id(), TODO_V2.id()]), &todo, &gate));
+    assert!(lane.fits(&under(&[TODO_V1.id()]), &todo, &gate));
+    assert!(lane.fits(&under(&[TODO_V0.id(), TODO_V1.id()]), &todo, &gate));
     // a document's schema beside a todo's: another kind, though it takes a title too
-    assert!(!lane.fits(&under(&[TODO_V2.id(), DOCUMENT_V2.id()]), &todo, &gate));
+    assert!(!lane.fits(&under(&[TODO_V1.id(), DOCUMENT_V1.id()]), &todo, &gate));
     // a schema the lane doesn't hold, or none at all, lets nothing change
     let a = BlobId::of(A.as_bytes());
-    assert!(!lane.fits(&under(&[TODO_V2.id(), a]), &todo, &gate));
+    assert!(!lane.fits(&under(&[TODO_V1.id(), a]), &todo, &gate));
     assert!(!lane.fits(&under(&[]), &todo, &gate));
     assert!(lane.fits(&under(&[]), &todo, &todo));
     // once the lane holds it

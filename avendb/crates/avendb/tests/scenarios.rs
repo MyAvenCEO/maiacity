@@ -62,7 +62,7 @@ fn scenario_08_proposals() {
 }
 
 #[test]
-fn scenario_09_schema_v2() {
+fn scenario_09_schema_v0() {
     play("9");
 }
 

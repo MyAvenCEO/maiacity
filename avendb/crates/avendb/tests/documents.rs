@@ -14,73 +14,86 @@ use avendb::doc::{DocError, Item};
 use avendb::history::{Repo, MAIN};
 use avendb::merge::Place;
 use avendb::ops::Key;
-use avendb::lens::{BlockV1, DocV1, KindV1, Status, TodoV1, TodoV2, TypeV2};
+use avendb::lens::example::{self, BlockV0, DocV0, KindV0, TodoV0};
+use avendb::lens::{DocV1, Status, TodoV1, TypeV1};
 use common::*;
 use serde_json::json;
 
-fn welcome_v1() -> DocV1 {
-    let block = |id, kind, text: &str| BlockV1 { id, kind, text: text.into() };
-    DocV1 {
+/// The document as the lens engine's example v1 app, which has the lens from v0, reads it.
+fn through_lens(item: &Item) -> Option<DocV1> {
+    DocV1::from_value(&item.read(example::document_v1())?)
+}
+
+/// Edit the document as the example's v1 app sees it.
+fn edit_through_lens(item: &mut Item, change: impl FnOnce(&mut DocV1)) -> bool {
+    let Some(mut d) = through_lens(item) else { return false };
+    change(&mut d);
+    item.write(example::document_v1(), &d.to_value())
+}
+
+fn welcome_v0() -> DocV0 {
+    let block = |id, kind, text: &str| BlockV0 { id, kind, text: text.into() };
+    DocV0 {
         title: "Welcome".into(),
         blocks: vec![
-            block(1, KindV1::H1, "Welcome"),
-            block(2, KindV1::P, WELCOME_TEXT),
-            block(3, KindV1::H2, "First steps"),
-            block(4, KindV1::Li, "Water the seedlings"),
-            block(5, KindV1::Code, "open greenhouse --at 8"),
+            block(1, KindV0::H1, "Welcome"),
+            block(2, KindV0::P, WELCOME_TEXT),
+            block(3, KindV0::H2, "First steps"),
+            block(4, KindV0::Li, "Water the seedlings"),
+            block(5, KindV0::Code, "open greenhouse --at 8"),
         ],
     }
 }
 
 #[test]
-fn lens_round_trip_v1() {
-    // v1 → v2 → v1 returns the same document and the same todo (T9a, T9d)
-    let doc = welcome_v1();
+fn lens_round_trip_v0() {
+    // v0 → v1 → v0 returns the same document and the same todo (T9a, T9d)
+    let doc = welcome_v0();
     assert_eq!(doc.fwd().bwd(), doc);
     for done in [false, true] {
         let (notes, due) = ("hinge".into(), Some("2026-10-10".into()));
-        let todo = TodoV1 { title: "Fix the greenhouse door".into(), done, notes, due };
+        let todo = TodoV0 { title: "Fix the greenhouse door".into(), done, notes, due };
         assert_eq!(todo.fwd().bwd(), todo);
     }
-    // v2 → v1 → v2 too, for what v1 can say (T9b, T9e); a todo in progress reads as not done in v1
-    let v2 = doc.fwd();
-    assert_eq!(v2.bwd().fwd(), v2);
-    let doing = TodoV2 { title: "Order seeds".into(), status: Status::Doing, notes: String::new(), due: None };
+    // v1 → v0 → v1 too, for what v0 can say (T9b, T9e); a todo in progress reads as not done in v0
+    let v1 = doc.fwd();
+    assert_eq!(v1.bwd().fwd(), v1);
+    let doing = TodoV1 { title: "Order seeds".into(), status: Status::Doing, notes: String::new(), due: None };
     assert!(!doing.bwd().done);
 }
 
 #[test]
 fn edits_through_a_view_keep_what_it_cant_see() {
-    // Welcome as a v1 app wrote it; a v2 app checks the list item, names the code's language and tags it
-    let mut item = Item::written_v1(&welcome_v1(), MAC_A);
-    assert!(item.edit_document(|d| {
+    // Welcome as a v0 app wrote it; a v1 app checks the list item, names the code's language and tags it
+    let mut item = Item::written_v0(&welcome_v0(), MAC_A);
+    assert!(edit_through_lens(&mut item, |d| {
         d.blocks[3].checked = Some(true);
         d.blocks[4].lang = Some("sh".into());
         d.tags.push("greenhouse".into());
     }));
-    // a v1 app edits all it sees: the title, a text, a kind, the order, and a new block
-    assert!(item.edit_document_v1(|d| {
+    // a v0 app edits all it sees: the title, a text, a kind, the order, and a new block
+    assert!(item.edit_document_v0(|d| {
         d.title = "Welcome to Maia Coop".into();
         d.blocks[1].text = AFTER_TEXT.into();
-        d.blocks[2].kind = KindV1::H3;
+        d.blocks[2].kind = KindV0::H3;
         d.blocks.swap(3, 4);
-        d.blocks.push(BlockV1 { id: 6, kind: KindV1::P, text: "See you there".into() });
+        d.blocks.push(BlockV0 { id: 6, kind: KindV0::P, text: "See you there".into() });
     }));
-    // what only v2 says survives (T9h)
-    let after = item.as_document().unwrap();
+    // what only v1 says survives (T9h)
+    let after = through_lens(&item).unwrap();
     let block = |id| after.blocks.iter().find(|b| b.id == id).unwrap().clone();
     assert_eq!(after.tags, ["greenhouse"]);
     assert_eq!((block(4).checked, block(5).lang.as_deref()), (Some(true), Some("sh")));
-    // and the v1 app's edit shows as made, in v1 and through the lens in v2 (T9f)
-    assert_eq!(item.as_document_v1().unwrap().blocks[1].text, AFTER_TEXT);
+    // and the v0 app's edit shows as made, in v0 and through the lens in v1 (T9f)
+    assert_eq!(item.as_document_v0().unwrap().blocks[1].text, AFTER_TEXT);
     assert_eq!(after.title, "Welcome to Maia Coop");
-    assert_eq!((block(3).r#type, block(3).level), (TypeV2::Heading, Some(3)));
+    assert_eq!((block(3).r#type, block(3).level), (TypeV1::Heading, Some(3)));
     assert_eq!(after.blocks.iter().map(|b| b.id).collect::<Vec<_>>(), [1, 2, 3, 5, 4, 6]);
-    // its new block is stored as v1 wrote it, with no default filled in
+    // its new block is stored as v0 wrote it, with no default filled in
     assert_eq!(item.record()["blocks"][5], json!({"id": 6, "kind": "p", "text": "See you there"}));
     // and either app's view put back unchanged writes nothing (T9g)
     let v = item.version();
-    assert!(item.edit_document_v1(|_| {}) && item.edit_document(|_| {}));
+    assert!(item.edit_document_v0(|_| {}) && edit_through_lens(&mut item, |_| {}));
     assert_eq!(item.version(), v);
 }
 
@@ -174,8 +187,8 @@ fn the_latest_change_reverts_and_an_older_one_is_undone() {
 
 #[test]
 fn a_fork_copies_the_record_and_the_schemas_that_wrote_it() {
-    let mut welcome = document_v1("Welcome", WELCOME_TEXT, MAC_A);
-    welcome.edit_document(|d| d.tags.push("greenhouse".into()));
+    let mut welcome = document_v0("Welcome", WELCOME_TEXT, MAC_A);
+    edit_through_lens(&mut welcome, |d| d.tags.push("greenhouse".into()));
     let copy = welcome.copy(MAC_B);
     assert_eq!((copy.record(), copy.authored()), (welcome.record(), welcome.authored()));
     assert_eq!(copy.authored().len(), 2);
@@ -183,7 +196,8 @@ fn a_fork_copies_the_record_and_the_schemas_that_wrote_it() {
     let mut reader = Item::new(MAC_C);
     assert!(reader.import(&copy.export(&Default::default()), MAC_A).is_err());
     reader.import(&copy.export(&Default::default()), MAC_B).unwrap();
-    assert_eq!(reader.as_document(), welcome.as_document());
+    assert_eq!(through_lens(&reader), through_lens(&welcome));
+    assert!(through_lens(&reader).is_some());
 }
 
 #[test]

@@ -18,11 +18,13 @@ use crate::keys::{MCELIECE_PUBLIC_BYTES, PublicKey};
 use crate::sign::{self, Passkey, Signature, SignerKeys};
 use crate::wire::Wire;
 
-/// How a master recovery key's public half starts, as its file holds it: what it is, and the format's version.
-const MAGIC: &[u8] = b"avenDB master recovery key 2\n";
+/// How a master recovery key's public half starts, as its file holds it: what it is, and the format's version, 3 since
+/// its keys are derived with BLAKE3 (a file of 2 holds those SHA-3 derived).
+const MAGIC: &[u8] = b"avenDB master recovery key 3\n";
 
-/// The file of avenDB's master recovery key, its public half, as its person made it (`d9941b22…`, since avenDB started
-/// afresh with it, edit version 7); an empty file builds avenDB without one.
+/// The file of avenDB's master recovery key, its public half, as its person made it: empty until they make it again
+/// from its secret (`master-key pub`), as every key of it is derived with BLAKE3 since edit version 10. An empty file
+/// builds avenDB without one.
 const MASTER: &[u8] = include_bytes!("../master-recovery.pub");
 
 /// avenDB's master recovery key, which every human vault adds as an owner while avenDB is bootstrapped (`MASTER`):

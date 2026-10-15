@@ -33,7 +33,7 @@ order it started. A write carries its proof and its touches, as its readers read
 The file starts with the built-in groups (`groups`), which the Rust core offers as they are.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
-reads from them (`v1`, `v2`), and what each of a few edits through each app's view stores (`putV1`, `putV2`). The Rust
+reads from them (`v0`, `v1`), and what each of a few edits through each app's view stores (`putV0`, `putV1`). The Rust
 core must read and write exactly the same.
 -/
 
@@ -1642,17 +1642,17 @@ def allActions : List Action :=
 
 /-! ## The lens cases
 
-Stored blocks in every shape the lens tells apart: v1's kind or none; v2's type and level or none, among them a
-heading of a level v1 can't say and a level without a type, which neither app can read; checked or not; a language or
-not. A v1 app edits each to every kind and to a new text, keeping the kind it reads (a paragraph when it reads none).
-A v2 app edits each to every type, keeping the `checked` and `lang` it reads (none when it reads no block), and flips
+Stored blocks in every shape the lens tells apart: v0's kind or none; v1's type and level or none, among them a
+heading of a level v0 can't say and a level without a type, which neither app can read; checked or not; a language or
+not. A v0 app edits each to every kind and to a new text, keeping the kind it reads (a paragraph when it reads none).
+A v1 app edits each to every type, keeping the `checked` and `lang` it reads (none when it reads no block), and flips
 `checked` and sets a new language, keeping the type it reads (a paragraph when it reads none). Todos have `done`,
-`status` and a due date, each stored or not; a v1 app sets `done` either way and edits the notes, a v2 app sets each
+`status` and a due date, each stored or not; a v0 app sets `done` either way and edits the notes, a v1 app sets each
 status and edits the title. -/
 
 open Lens
 
-def kindV1 : KindV1 → String
+def kindV0 : KindV0 → String
   | .h1 => str "h1"
   | .h2 => str "h2"
   | .h3 => str "h3"
@@ -1660,7 +1660,7 @@ def kindV1 : KindV1 → String
   | .li => str "li"
   | .code => str "code"
 
-def typeV2 : TypeV2 → String
+def typeV1 : TypeV1 → String
   | .heading => str "heading"
   | .paragraph => str "paragraph"
   | .item => str "item"
@@ -1672,33 +1672,33 @@ def status : Status → String
   | .done => str "done"
 
 def storedBlock (b : StoredBlock) : String :=
-  obj [("id", nat b.id), ("text", str b.text), ("kind", opt kindV1 b.kind), ("type", opt typeV2 b.type),
+  obj [("id", nat b.id), ("text", str b.text), ("kind", opt kindV0 b.kind), ("type", opt typeV1 b.type),
        ("level", opt nat b.level), ("checked", opt bool b.checked), ("lang", opt str b.lang)]
 
-def blockV1 (b : BlockV1) : String := obj [("id", nat b.id), ("kind", kindV1 b.kind), ("text", str b.text)]
+def blockV0 (b : BlockV0) : String := obj [("id", nat b.id), ("kind", kindV0 b.kind), ("text", str b.text)]
 
-def blockV2 (b : BlockV2) : String :=
-  obj [("id", nat b.id), ("type", typeV2 b.type), ("level", opt nat b.level), ("checked", opt bool b.checked),
+def blockV1 (b : BlockV1) : String :=
+  obj [("id", nat b.id), ("type", typeV1 b.type), ("level", opt nat b.level), ("checked", opt bool b.checked),
        ("lang", opt str b.lang), ("text", str b.text)]
 
 def storedTodo (t : StoredTodo) : String :=
   obj [("title", str t.title), ("notes", str t.notes), ("due", opt str t.due), ("done", opt bool t.done),
        ("status", opt status t.status)]
 
-def todoV1 (t : TodoV1) : String :=
+def todoV0 (t : TodoV0) : String :=
   obj [("title", str t.title), ("done", bool t.done), ("notes", str t.notes), ("due", opt str t.due)]
 
-def todoV2 (t : TodoV2) : String :=
+def todoV1 (t : TodoV1) : String :=
   obj [("title", str t.title), ("status", status t.status), ("notes", str t.notes), ("due", opt str t.due)]
 
-def kinds : List KindV1 := [.h1, .h2, .h3, .p, .li, .code]
+def kinds : List KindV0 := [.h1, .h2, .h3, .p, .li, .code]
 
-/-- Each type with the level v1's kinds give it. -/
-def types : List (TypeV2 × Option Nat) :=
+/-- Each type with the level v0's kinds give it. -/
+def types : List (TypeV1 × Option Nat) :=
   [(.heading, some 1), (.heading, some 2), (.heading, some 3), (.paragraph, none), (.item, none), (.code, none)]
 
 def storedBlocks : List StoredBlock :=
-  let reps : List (Option TypeV2 × Option Nat) := [(none, none), (some .heading, some 1), (some .heading, some 2),
+  let reps : List (Option TypeV1 × Option Nat) := [(none, none), (some .heading, some 1), (some .heading, some 2),
     (some .heading, some 3), (some .heading, some 4), (some .paragraph, none), (some .item, none),
     (some .code, none), (none, some 2)]
   let shapes := (none :: kinds.map some).flatMap fun k => reps.flatMap fun (t, l) =>
@@ -1706,11 +1706,11 @@ def storedBlocks : List StoredBlock :=
   (shapes.zipIdx 1).map fun ((k, t, l, c, lang), i) =>
     { id := i, text := "Seeds", kind := k, type := t, level := l, checked := c, lang := lang }
 
-def v1Views (b : StoredBlock) : List BlockV1 :=
-  kinds.map (fun k => ⟨b.id, k, b.text⟩) ++ [⟨b.id, (b.v1.map (·.kind)).getD .p, "Seeds, sown"⟩]
+def v0Views (b : StoredBlock) : List BlockV0 :=
+  kinds.map (fun k => ⟨b.id, k, b.text⟩) ++ [⟨b.id, (b.v0.map (·.kind)).getD .p, "Seeds, sown"⟩]
 
-def v2Views (b : StoredBlock) : List BlockV2 :=
-  let old := b.v2.getD ⟨b.id, .paragraph, none, none, none, b.text⟩
+def v1Views (b : StoredBlock) : List BlockV1 :=
+  let old := b.v1.getD ⟨b.id, .paragraph, none, none, none, b.text⟩
   types.map (fun (t, l) => { old with type := t, level := l }) ++
     [{ old with checked := some !(old.checked.getD false), lang := some "py" }]
 
@@ -1720,43 +1720,43 @@ def storedTodos : List StoredTodo :=
       [none, some "2026-10-10"].map fun due =>
         { title := "Fix the door", notes := "The hinge squeaks", due, done, status }
 
-def todoV1Views (t : StoredTodo) : List TodoV1 :=
-  [{ t.v1 with done := false }, { t.v1 with done := true }, { t.v1 with notes := "Oil the hinge" }]
+def todoV0Views (t : StoredTodo) : List TodoV0 :=
+  [{ t.v0 with done := false }, { t.v0 with done := true }, { t.v0 with notes := "Oil the hinge" }]
 
-def todoV2Views (t : StoredTodo) : List TodoV2 :=
-  [Status.«open», .doing, .done].map (fun s => { t.v2 with status := s }) ++
-    [{ t.v2 with title := "Fix the shed door" }]
+def todoV1Views (t : StoredTodo) : List TodoV1 :=
+  [Status.«open», .doing, .done].map (fun s => { t.v1 with status := s }) ++
+    [{ t.v1 with title := "Fix the shed door" }]
 
 def puts (views : List String) : String := "[\n  " ++ ",\n  ".intercalate views ++ "]"
 
 def blockCase (b : StoredBlock) : String :=
-  let p1 := (v1Views b).map fun v => obj [("view", blockV1 v), ("stored", storedBlock (b.putV1 v))]
-  let p2 := (v2Views b).map fun v => obj [("view", blockV2 v), ("stored", storedBlock (b.putV2 v))]
-  "{" ++ str "stored" ++ ": " ++ storedBlock b ++ ",\n " ++ str "v1" ++ ": " ++ opt blockV1 b.v1 ++ ", " ++
-    str "v2" ++ ": " ++ opt blockV2 b.v2 ++ ",\n " ++ str "putV1" ++ ": " ++ puts p1 ++ ",\n " ++ str "putV2" ++
+  let p1 := (v0Views b).map fun v => obj [("view", blockV0 v), ("stored", storedBlock (b.putV0 v))]
+  let p2 := (v1Views b).map fun v => obj [("view", blockV1 v), ("stored", storedBlock (b.putV1 v))]
+  "{" ++ str "stored" ++ ": " ++ storedBlock b ++ ",\n " ++ str "v0" ++ ": " ++ opt blockV0 b.v0 ++ ", " ++
+    str "v1" ++ ": " ++ opt blockV1 b.v1 ++ ",\n " ++ str "putV0" ++ ": " ++ puts p1 ++ ",\n " ++ str "putV1" ++
     ": " ++ puts p2 ++ "}"
 
 def todoCase (t : StoredTodo) : String :=
-  let p1 := (todoV1Views t).map fun v => obj [("view", todoV1 v), ("stored", storedTodo (t.putV1 v))]
-  let p2 := (todoV2Views t).map fun v => obj [("view", todoV2 v), ("stored", storedTodo (t.putV2 v))]
-  "{" ++ str "stored" ++ ": " ++ storedTodo t ++ ",\n " ++ str "v1" ++ ": " ++ todoV1 t.v1 ++ ", " ++ str "v2" ++
-    ": " ++ todoV2 t.v2 ++ ",\n " ++ str "putV1" ++ ": " ++ puts p1 ++ ",\n " ++ str "putV2" ++ ": " ++ puts p2 ++
+  let p1 := (todoV0Views t).map fun v => obj [("view", todoV0 v), ("stored", storedTodo (t.putV0 v))]
+  let p2 := (todoV1Views t).map fun v => obj [("view", todoV1 v), ("stored", storedTodo (t.putV1 v))]
+  "{" ++ str "stored" ++ ": " ++ storedTodo t ++ ",\n " ++ str "v0" ++ ": " ++ todoV0 t.v0 ++ ", " ++ str "v1" ++
+    ": " ++ todoV1 t.v1 ++ ",\n " ++ str "putV0" ++ ": " ++ puts p1 ++ ",\n " ++ str "putV1" ++ ": " ++ puts p2 ++
     "}"
 
 def renderLenses : String :=
   "{\"blocks\": [\n" ++ ",\n".intercalate (storedBlocks.map blockCase) ++ "\n],\n\"todos\": [\n" ++
     ",\n".intercalate (storedTodos.map todoCase) ++ "\n]}\n"
 
--- every way a put writes is taken by some case, so neither side can pass while skipping one: a v1 edit's new kind as
--- v2's fields and as `kind`, a v2 edit's new type dropping `kind`, a v1 edit's `done` as the status and as `done`, a
--- v2 edit's status dropping `done`; and some edits write nothing at all
-#guard storedBlocks.any fun b => (v1Views b).any fun v => (b.putV1 v).type != b.type && (b.putV1 v).kind == b.kind
+-- every way a put writes is taken by some case, so neither side can pass while skipping one: a v0 edit's new kind as
+-- v1's fields and as `kind`, a v1 edit's new type dropping `kind`, a v0 edit's `done` as the status and as `done`, a
+-- v1 edit's status dropping `done`; and some edits write nothing at all
+#guard storedBlocks.any fun b => (v0Views b).any fun v => (b.putV0 v).type != b.type && (b.putV0 v).kind == b.kind
+#guard storedBlocks.any fun b => (v0Views b).any fun v => (b.putV0 v).kind != b.kind
 #guard storedBlocks.any fun b => (v1Views b).any fun v => (b.putV1 v).kind != b.kind
-#guard storedBlocks.any fun b => (v2Views b).any fun v => (b.putV2 v).kind != b.kind
-#guard storedTodos.any fun t => (todoV1Views t).any fun v => (t.putV1 v).status != t.status
+#guard storedTodos.any fun t => (todoV0Views t).any fun v => (t.putV0 v).status != t.status
+#guard storedTodos.any fun t => (todoV0Views t).any fun v => (t.putV0 v).done != t.done
 #guard storedTodos.any fun t => (todoV1Views t).any fun v => (t.putV1 v).done != t.done
-#guard storedTodos.any fun t => (todoV2Views t).any fun v => (t.putV2 v).done != t.done
-#guard storedBlocks.any (fun b => (v1Views b).any (b.putV1 · == b) && (v2Views b).any (b.putV2 · == b)) &&
-  storedTodos.any fun t => (todoV1Views t).any (t.putV1 · == t) && (todoV2Views t).any (t.putV2 · == t)
+#guard storedBlocks.any (fun b => (v0Views b).any (b.putV0 · == b) && (v1Views b).any (b.putV1 · == b)) &&
+  storedTodos.any fun t => (todoV0Views t).any (t.putV0 · == t) && (todoV1Views t).any (t.putV1 · == t)
 
 end AvenDB.Vectors

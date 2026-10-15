@@ -111,14 +111,14 @@ pub struct Request {
 }
 
 /// What the peer sends back: a page of the edits the device may receive beyond what it asked with
-/// (`sync::respond_since`), by their place, and of each McEliece key those edits or the request name that the peer
-/// holds and the device may fetch, its id and the hash it is fetched by (iroh-blobs' BLAKE3). The device checks each
-/// key against its id once it has it. If more edits are left, the device asks on after the last place it got.
+/// (`sync::respond_since`), by their place, and the id of each McEliece key those edits or the request name that the
+/// peer holds and the device may fetch: the BLAKE3 hash iroh-blobs fetches it by. If more edits are left, the device
+/// asks on after the last place it got.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reply {
     pub edits: Vec<Signed>,
-    /// Smallest id first, no repeats.
-    pub blobs: Vec<(BlobId, [u8; 32])>,
+    /// Smallest first, no repeats.
+    pub blobs: Vec<BlobId>,
     pub more: bool,
 }
 
@@ -1071,7 +1071,7 @@ impl Encode for Reply {
 
 impl Decode for Reply {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        let (edits, blobs) = (r.seq(76)?, r.set(64)?);
+        let (edits, blobs) = (r.seq(76)?, r.set(32)?);
         let more = match r.u8()? {
             0 => false,
             1 => true,

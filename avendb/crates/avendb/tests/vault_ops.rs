@@ -11,7 +11,7 @@ use avendb::cast::{self, World};
 use avendb::engine::{self, Prepared};
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
-use avendb::lens::blobs::TODO_LENS;
+use avendb::lens::example::blobs::TODO_LENS;
 use avendb::policy::{KeepMode, Kind, Level, Principal};
 use avendb::recovery::RecoveryKey;
 use avendb::sealed::{Brought, FileKey, seal};
@@ -503,7 +503,7 @@ fn a_schema_or_lens_entry_shows_as_what_it_holds() {
     let (schema, lens) = (add("schema", plant), add("lens", TODO_LENS));
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
     let data = ok(run(&mut w, mac, json!({ "op": "database", "vault": alice.to_hex() })));
-    let each = [(schema, "schema", "Plant", plant), (lens, "lens", "Todo, v1 to v2", TODO_LENS)];
+    let each = [(schema, "schema", "Plant", plant), (lens, "lens", "Todo, v0 to v1", TODO_LENS)];
     for (entry, kind, title, blob) in each {
         let of = |rows: &Value| {
             let rows = rows.as_array().expect("its rows");

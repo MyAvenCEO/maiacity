@@ -1,5 +1,5 @@
 //! Schemas and the lenses between their versions, as data: a schema is a JSON Schema and a lens a short list of steps,
-//! each a blob named by its SHA-3 hash (`BlobId`). A vault holds them as entries it creates itself, which it shares
+//! each a blob named by its BLAKE3 hash (`BlobId`). A vault holds them as entries it creates itself, which it shares
 //! with everyone, and their contents make its schema lane (`policy::State::lane_of`, T17), so an app learns a newer
 //! version's lens from the lane instead of shipping with it. The model is `avendb/spec/AvenDB/Lens.lean` (T9), and
 //! `avendb/spec/vectors/lenses.json` holds this engine to it.
@@ -18,11 +18,9 @@
 //! doesn't allow, drops a field it requires, or tags an item with another kind's schema changes no record anyone
 //! shows, and every device keeps the last record that fit.
 //!
-//! The lens engine's worked example, two kinds in two versions each, with a lens from v1 to v2; avenDB writes v2 alone
-//! (`blobs::SHIPPED`), and the rest of its own schemas come in one version each:
-//! - Markdown documents: v1 blocks have a `kind` (h1, h2, h3, p, li, code); v2 blocks have a `type` with a heading
-//!   `level`, items can be `checked`, code can name its `lang`, and the document gains `tags`.
-//! - Todos: v1 has `done`; v2 has `status` (open, doing, done), and a todo in progress reads as not done in v1.
+//! Every schema avenDB ships starts at v1, one version of each kind (`blobs::SHIPPED`). The lens engine's worked
+//! example, documents and todos in a v0 with a lens from each to v1, is for the tests and the Lean model alone
+//! (`example`): no device ships it or reads through it.
 //!
 //! Records in a list (a document's blocks) are matched by their `id`, which apps pick at random, so that two devices
 //! adding records at once don't pick the same one; where they do, apps see the first.
@@ -40,30 +38,7 @@ use crate::id::BlobId;
 use crate::ops::{self, Change, Flat, Key, Path, Record};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum KindV1 {
-    H1,
-    H2,
-    H3,
-    P,
-    Li,
-    Code,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlockV1 {
-    pub id: u64,
-    pub kind: KindV1,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DocV1 {
-    pub title: String,
-    pub blocks: Vec<BlockV1>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TypeV2 {
+pub enum TypeV1 {
     Heading,
     Paragraph,
     Item,
@@ -71,9 +46,9 @@ pub enum TypeV2 {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlockV2 {
+pub struct BlockV1 {
     pub id: u64,
-    pub r#type: TypeV2,
+    pub r#type: TypeV1,
     pub level: Option<u64>,
     pub checked: Option<bool>,
     pub lang: Option<String>,
@@ -81,9 +56,9 @@ pub struct BlockV2 {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DocV2 {
+pub struct DocV1 {
     pub title: String,
-    pub blocks: Vec<BlockV2>,
+    pub blocks: Vec<BlockV1>,
     pub tags: Vec<String>,
 }
 
@@ -97,30 +72,14 @@ pub enum Status {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TodoV1 {
     pub title: String,
-    pub done: bool,
-    pub notes: String,
-    pub due: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TodoV2 {
-    pub title: String,
     pub status: Status,
     pub notes: String,
     pub due: Option<String>,
 }
 
 /// Each value as the schemas name it.
-const KINDS: [(KindV1, &str); 6] = [
-    (KindV1::H1, "h1"),
-    (KindV1::H2, "h2"),
-    (KindV1::H3, "h3"),
-    (KindV1::P, "p"),
-    (KindV1::Li, "li"),
-    (KindV1::Code, "code"),
-];
-const TYPES: [(TypeV2, &str); 4] =
-    [(TypeV2::Heading, "heading"), (TypeV2::Paragraph, "paragraph"), (TypeV2::Item, "item"), (TypeV2::Code, "code")];
+const TYPES: [(TypeV1, &str); 4] =
+    [(TypeV1::Heading, "heading"), (TypeV1::Paragraph, "paragraph"), (TypeV1::Item, "item"), (TypeV1::Code, "code")];
 const STATUSES: [(Status, &str); 3] = [(Status::Open, "open"), (Status::Doing, "doing"), (Status::Done, "done")];
 
 fn name<T: PartialEq>(table: &[(T, &'static str)], value: T) -> &'static str {
@@ -157,21 +116,6 @@ impl BlockV1 {
     pub fn to_value(&self) -> Value {
         object([
             ("id", Some(id_value(self.id))),
-            ("kind", Some(name(&KINDS, self.kind).into())),
-            ("text", Some(self.text.clone().into())),
-        ])
-    }
-
-    pub fn from_value(v: &Value) -> Option<BlockV1> {
-        let r = v.as_object()?;
-        Some(BlockV1 { id: id_of(r)?, kind: named(&KINDS, present(r, "kind")?.as_str()?)?, text: text(r, "text")? })
-    }
-}
-
-impl BlockV2 {
-    pub fn to_value(&self) -> Value {
-        object([
-            ("id", Some(id_value(self.id))),
             ("type", Some(name(&TYPES, self.r#type).into())),
             ("level", self.level.map(Value::from)),
             ("checked", self.checked.map(Value::from)),
@@ -180,9 +124,9 @@ impl BlockV2 {
         ])
     }
 
-    pub fn from_value(v: &Value) -> Option<BlockV2> {
+    pub fn from_value(v: &Value) -> Option<BlockV1> {
         let r = v.as_object()?;
-        Some(BlockV2 {
+        Some(BlockV1 {
             id: id_of(r)?,
             r#type: named(&TYPES, present(r, "type")?.as_str()?)?,
             level: present(r, "level").and_then(Value::as_u64),
@@ -199,74 +143,19 @@ impl DocV1 {
             ("kind", Some("document".into())),
             ("title", Some(self.title.clone().into())),
             ("blocks", Some(self.blocks.iter().map(BlockV1::to_value).collect())),
+            ("tags", Some(self.tags.iter().cloned().map(Value::from).collect())),
         ])
     }
 
     pub fn from_value(v: &Value) -> Option<DocV1> {
         let r = v.as_object()?;
         let blocks = present(r, "blocks")?.as_array()?.iter().map(BlockV1::from_value).collect::<Option<_>>()?;
-        Some(DocV1 { title: text(r, "title")?, blocks })
-    }
-
-    /// The lens forwards: the document as a v2 app reads what a v1 app wrote.
-    pub fn fwd(&self) -> DocV2 {
-        DocV2::from_value(&View::document_v2().get(&self.to_value()).expect("a v1 document reads in v2"))
-            .expect("a v2 document")
-    }
-}
-
-impl DocV2 {
-    pub fn to_value(&self) -> Value {
-        object([
-            ("kind", Some("document".into())),
-            ("title", Some(self.title.clone().into())),
-            ("blocks", Some(self.blocks.iter().map(BlockV2::to_value).collect())),
-            ("tags", Some(self.tags.iter().cloned().map(Value::from).collect())),
-        ])
-    }
-
-    pub fn from_value(v: &Value) -> Option<DocV2> {
-        let r = v.as_object()?;
-        let blocks = present(r, "blocks")?.as_array()?.iter().map(BlockV2::from_value).collect::<Option<_>>()?;
         let tags = present(r, "tags")?.as_array()?.iter().map(|t| Some(t.as_str()?.to_string())).collect::<Option<_>>()?;
-        Some(DocV2 { title: text(r, "title")?, blocks, tags })
-    }
-
-    /// The lens backwards: the document as a v1 app reads what a v2 app wrote. What v1 can't say (checked, lang,
-    /// tags) it doesn't show, and a heading below level 3 reads as h3.
-    pub fn bwd(&self) -> DocV1 {
-        DocV1::from_value(&View::document_v1().get(&self.to_value()).expect("a v2 document reads in v1"))
-            .expect("a v1 document")
+        Some(DocV1 { title: text(r, "title")?, blocks, tags })
     }
 }
 
 impl TodoV1 {
-    pub fn to_value(&self) -> Value {
-        object([
-            ("kind", Some("todo".into())),
-            ("title", Some(self.title.clone().into())),
-            ("done", Some(self.done.into())),
-            ("notes", Some(self.notes.clone().into())),
-            ("due", self.due.clone().map(Value::from)),
-        ])
-    }
-
-    pub fn from_value(v: &Value) -> Option<TodoV1> {
-        let r = v.as_object()?;
-        Some(TodoV1 {
-            title: text(r, "title")?,
-            done: present(r, "done")?.as_bool()?,
-            notes: text(r, "notes")?,
-            due: text(r, "due"),
-        })
-    }
-
-    pub fn fwd(&self) -> TodoV2 {
-        TodoV2::from_value(&View::todo_v2().get(&self.to_value()).expect("a v1 todo reads in v2")).expect("a v2 todo")
-    }
-}
-
-impl TodoV2 {
     pub fn to_value(&self) -> Value {
         object([
             ("kind", Some("todo".into())),
@@ -277,19 +166,14 @@ impl TodoV2 {
         ])
     }
 
-    pub fn from_value(v: &Value) -> Option<TodoV2> {
+    pub fn from_value(v: &Value) -> Option<TodoV1> {
         let r = v.as_object()?;
-        Some(TodoV2 {
+        Some(TodoV1 {
             title: text(r, "title")?,
             status: named(&STATUSES, present(r, "status")?.as_str()?)?,
             notes: text(r, "notes")?,
             due: text(r, "due"),
         })
-    }
-
-    /// Going back, a todo in progress shows as not done.
-    pub fn bwd(&self) -> TodoV1 {
-        TodoV1::from_value(&View::todo_v1().get(&self.to_value()).expect("a v2 todo reads in v1")).expect("a v1 todo")
     }
 }
 
@@ -1001,28 +885,20 @@ impl View {
         self.app.stored(list, field).or(other)
     }
 
-    /// A v1 markdown app that knows the lens to v2.
+    /// The markdown app, of the shipped document schema alone.
     pub fn document_v1() -> &'static View {
-        &BUILT_IN.document_v1
+        View::built_in("document").expect("a built-in document app")
     }
 
-    /// A v2 markdown app, which knows the lens from v1.
-    pub fn document_v2() -> &'static View {
-        &BUILT_IN.document_v2
-    }
-
+    /// The todo app, of the shipped todo schema alone.
     pub fn todo_v1() -> &'static View {
-        &BUILT_IN.todo_v1
+        View::built_in("todo").expect("a built-in todo app")
     }
 
-    pub fn todo_v2() -> &'static View {
-        &BUILT_IN.todo_v2
-    }
-
-    /// The app of built-in kind `kind` of one version alone: an article's, a flow's, a function's, a post's, a card's,
-    /// a profile's or a file's.
+    /// The app of built-in kind `kind`, of its one shipped schema alone (`blobs::SHIPPED`): a document's, a todo's, an
+    /// article's, a flow's, a function's, a post's, a card's, a profile's, a file's or a story's.
     pub fn built_in(kind: &str) -> Option<&'static View> {
-        BUILT_IN.plain.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
+        BUILT_IN.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
     }
 }
 
@@ -1047,10 +923,10 @@ impl Lane {
         lane
     }
 
-    /// The lane of the blobs `lane` and of the built-in ones, which apps read through before a vault creates any schema
-    /// or lens (`blobs::ALL`): what a device reads and judges a vault's entries by.
+    /// The lane of the blobs `lane` and of the shipped schemas, which apps read through before a vault creates any
+    /// schema or lens (`blobs::SHIPPED`): what a device reads and judges a vault's entries by.
     pub fn with_built_ins<'a>(lane: impl IntoIterator<Item = &'a [u8]>) -> Lane {
-        Lane::new(blobs::ALL.iter().map(|b| b.as_bytes()).chain(lane))
+        Lane::new(blobs::SHIPPED.iter().map(|b| b.as_bytes()).chain(lane))
     }
 
     pub fn schema(&self, id: BlobId) -> Option<&Schema> {
@@ -1170,63 +1046,20 @@ impl Fit<'_> {
     }
 }
 
-/// The blobs of avenDB's own schemas, and of the lens engine's worked example, exactly as the apps ship them and a
-/// vault holds them as entries.
+/// The blobs of avenDB's own schemas, exactly as the apps ship them and a vault holds them as entries. Every one starts
+/// at v1, avenDB's genesis.
 pub mod blobs {
-    /// The newest schema of each kind of record avenDB writes: every record is written under one of them, or under a
-    /// schema of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared
-    /// with everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
+    /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
+    /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
+    /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
     pub const SHIPPED: [&str; 10] =
-        [DOCUMENT_V2, TODO_V2, ARTICLE_V1, FLOW_V1, FUNCTION_V1, POST_V1, CARD_V1, PROFILE_V1, FILE_V1, STORY_V1];
+        [DOCUMENT_V1, TODO_V1, ARTICLE_V1, FLOW_V1, FUNCTION_V1, POST_V1, CARD_V1, PROFILE_V1, FILE_V1, STORY_V1];
 
-    /// What the app reads through before a vault's lane holds anything: the shipped schemas, and the lens engine's
-    /// worked example, the first versions of documents and todos and the lenses from them to the shipped ones, which
-    /// no record is written under any more.
-    pub const ALL: [&str; 14] = [
-        DOCUMENT_V1,
-        DOCUMENT_V2,
-        TODO_V1,
-        TODO_V2,
-        DOCUMENT_LENS,
-        TODO_LENS,
-        ARTICLE_V1,
-        FLOW_V1,
-        FUNCTION_V1,
-        POST_V1,
-        CARD_V1,
-        PROFILE_V1,
-        FILE_V1,
-        STORY_V1,
-    ];
-
+    /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
+    /// its language), and tags.
     pub const DOCUMENT_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Markdown document, v1",
-  "type": "object",
-  "properties": {
-    "kind": { "const": "document" },
-    "title": { "type": "string", "default": "" },
-    "blocks": {
-      "type": "array",
-      "default": [],
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "kind": { "enum": ["h1", "h2", "h3", "p", "li", "code"] },
-          "text": { "type": "string", "x-loro": "text", "default": "" }
-        },
-        "required": ["id", "kind"]
-      }
-    }
-  },
-  "required": ["kind"]
-}
-"#;
-
-    pub const DOCUMENT_V2: &str = r#"{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Markdown document, v2",
   "type": "object",
   "properties": {
     "kind": { "const": "document" },
@@ -1253,24 +1086,10 @@ pub mod blobs {
 }
 "#;
 
+    /// A todo: a title, its status (open, doing, done), notes and a due date.
     pub const TODO_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Todo, v1",
-  "type": "object",
-  "properties": {
-    "kind": { "const": "todo" },
-    "title": { "type": "string", "default": "" },
-    "done": { "type": "boolean", "default": false },
-    "notes": { "type": "string", "x-loro": "text", "default": "" },
-    "due": { "type": "string", "format": "date" }
-  },
-  "required": ["kind"]
-}
-"#;
-
-    pub const TODO_V2: &str = r#"{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Todo, v2",
   "type": "object",
   "properties": {
     "kind": { "const": "todo" },
@@ -1280,62 +1099,6 @@ pub mod blobs {
     "due": { "type": "string", "format": "date" }
   },
   "required": ["kind"]
-}
-"#;
-
-    pub const DOCUMENT_LENS: &str = r#"{
-  "lens": "Markdown document, v1 to v2",
-  "from": "516ba29a8009c5728821ee69ed2781960c858f16eb2384c65c67adb3a85875d6",
-  "to": "1bd29ba34c58ccd4e603e9ce455360ab4df65144a204b45d435bcfb046730868",
-  "steps": [
-    { "add": "tags" },
-    { "in": { "field": "blocks", "steps": [
-      { "convert": {
-        "from": ["kind"],
-        "to": ["type", "level"],
-        "forward": [
-          [{ "kind": "h1" }, { "type": "heading", "level": 1 }],
-          [{ "kind": "h2" }, { "type": "heading", "level": 2 }],
-          [{ "kind": "h3" }, { "type": "heading", "level": 3 }],
-          [{ "kind": "p" }, { "type": "paragraph" }],
-          [{ "kind": "li" }, { "type": "item" }],
-          [{ "kind": "code" }, { "type": "code" }]
-        ],
-        "backward": [
-          [{ "type": "heading", "level": 1 }, { "kind": "h1" }],
-          [{ "type": "heading", "level": 2 }, { "kind": "h2" }],
-          [{ "type": "heading" }, { "kind": "h3" }],
-          [{ "type": "paragraph" }, { "kind": "p" }],
-          [{ "type": "item" }, { "kind": "li" }],
-          [{ "type": "code" }, { "kind": "code" }]
-        ]
-      } },
-      { "add": "checked" },
-      { "add": "lang" }
-    ] } }
-  ]
-}
-"#;
-
-    pub const TODO_LENS: &str = r#"{
-  "lens": "Todo, v1 to v2",
-  "from": "307636b72ace1e476cd6acb0b13acd95abcbb40ad2e53d6c7bd71dd565147ba2",
-  "to": "9e9b2af29dc24ae8b4a59a5b136c912a0bc4239862a805ffe0cba8600fb03407",
-  "steps": [
-    { "convert": {
-      "from": ["done"],
-      "to": ["status"],
-      "forward": [
-        [{ "done": true }, { "status": "done" }],
-        [{ "done": false }, { "status": "open" }]
-      ],
-      "backward": [
-        [{ "status": "done" }, { "done": true }],
-        [{ "status": "open" }, { "done": false }],
-        [{ "status": "doing" }, { "done": false }]
-      ]
-    } }
-  ]
 }
 "#;
 
@@ -1547,16 +1310,8 @@ fn built_in_schema(blob: &str) -> Schema {
     Schema::parse(blob.as_bytes()).expect("a built-in schema parses")
 }
 
-fn built_in_lens(blob: &str) -> Lens {
-    Lens::parse(blob.as_bytes()).expect("a built-in lens parses")
-}
-
 pub static DOCUMENT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::DOCUMENT_V1));
-pub static DOCUMENT_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::DOCUMENT_V2));
 pub static TODO_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::TODO_V1));
-pub static TODO_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::TODO_V2));
-pub static DOCUMENT_LENS: LazyLock<Lens> = LazyLock::new(|| built_in_lens(blobs::DOCUMENT_LENS));
-pub static TODO_LENS: LazyLock<Lens> = LazyLock::new(|| built_in_lens(blobs::TODO_LENS));
 pub static ARTICLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTICLE_V1));
 pub static FLOW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FLOW_V1));
 pub static FUNCTION_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FUNCTION_V1));
@@ -1566,35 +1321,327 @@ pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs
 pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
 pub static STORY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::STORY_V1));
 
-struct BuiltIn {
-    document_v1: View,
-    document_v2: View,
-    todo_v1: View,
-    todo_v2: View,
-    /// The app of each kind of one version alone, by its kind.
-    plain: Vec<(&'static str, View)>,
-}
-
-static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
-    let view = |app: &Schema, lens: &Lens, other: &Schema| View::through(app, lens, other).expect("the lens joins them");
-    let plain = [&*ARTICLE_V1, &*FLOW_V1, &*FUNCTION_V1, &*POST_V1, &*CARD_V1, &*PROFILE_V1, &*FILE_V1, &*STORY_V1];
-    let plain = plain.map(|s| (s.kind().expect("a built-in schema names its kind"), View::plain(s)));
-    BuiltIn {
-        document_v1: view(&DOCUMENT_V1, &DOCUMENT_LENS, &DOCUMENT_V2),
-        document_v2: view(&DOCUMENT_V2, &DOCUMENT_LENS, &DOCUMENT_V1),
-        todo_v1: view(&TODO_V1, &TODO_LENS, &TODO_V2),
-        todo_v2: view(&TODO_V2, &TODO_LENS, &TODO_V1),
-        plain: plain.to_vec(),
-    }
+/// The app of each kind avenDB ships, of its one schema alone, by its kind.
+static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
+    let shipped = [
+        &*DOCUMENT_V1,
+        &*TODO_V1,
+        &*ARTICLE_V1,
+        &*FLOW_V1,
+        &*FUNCTION_V1,
+        &*POST_V1,
+        &*CARD_V1,
+        &*PROFILE_V1,
+        &*FILE_V1,
+        &*STORY_V1,
+    ];
+    shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });
+
+/// The lens engine's worked example, for the tests and the Lean model alone (`spec/AvenDB/Lens.lean`, the lens cases
+/// of `spec/vectors/lenses.json`): documents and todos in a version before the shipped one, v0, and a lens from each to
+/// v1. avenDB ships none of it, seeds none of it and reads nothing through it; a vault that wants it holds it in its
+/// lane (`blobs::LANE`), as any other schema or lens.
+///
+/// - Markdown documents: v0 blocks have a `kind` (h1, h2, h3, p, li, code); v1 blocks have a `type` with a heading
+///   `level`, items can be `checked`, code can name its `lang`, and the document gains `tags`.
+/// - Todos: v0 has `done`; v1 has `status` (open, doing, done), and a todo in progress reads as not done in v0.
+pub mod example {
+    use std::sync::LazyLock;
+
+    use serde_json::Value;
+
+    use super::{
+        DOCUMENT_V1, DocV1, Lens, Schema, TODO_V1, TodoV1, View, built_in_schema, id_of, id_value, name, named, object,
+        present, text,
+    };
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum KindV0 {
+        H1,
+        H2,
+        H3,
+        P,
+        Li,
+        Code,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct BlockV0 {
+        pub id: u64,
+        pub kind: KindV0,
+        pub text: String,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct DocV0 {
+        pub title: String,
+        pub blocks: Vec<BlockV0>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct TodoV0 {
+        pub title: String,
+        pub done: bool,
+        pub notes: String,
+        pub due: Option<String>,
+    }
+
+    /// Each kind of block as v0 names it.
+    const KINDS: [(KindV0, &str); 6] = [
+        (KindV0::H1, "h1"),
+        (KindV0::H2, "h2"),
+        (KindV0::H3, "h3"),
+        (KindV0::P, "p"),
+        (KindV0::Li, "li"),
+        (KindV0::Code, "code"),
+    ];
+
+    impl BlockV0 {
+        pub fn to_value(&self) -> Value {
+            object([
+                ("id", Some(id_value(self.id))),
+                ("kind", Some(name(&KINDS, self.kind).into())),
+                ("text", Some(self.text.clone().into())),
+            ])
+        }
+
+        pub fn from_value(v: &Value) -> Option<BlockV0> {
+            let r = v.as_object()?;
+            let kind = named(&KINDS, present(r, "kind")?.as_str()?)?;
+            Some(BlockV0 { id: id_of(r)?, kind, text: text(r, "text")? })
+        }
+    }
+
+    impl DocV0 {
+        pub fn to_value(&self) -> Value {
+            object([
+                ("kind", Some("document".into())),
+                ("title", Some(self.title.clone().into())),
+                ("blocks", Some(self.blocks.iter().map(BlockV0::to_value).collect())),
+            ])
+        }
+
+        pub fn from_value(v: &Value) -> Option<DocV0> {
+            let r = v.as_object()?;
+            let blocks = present(r, "blocks")?.as_array()?.iter().map(BlockV0::from_value).collect::<Option<_>>()?;
+            Some(DocV0 { title: text(r, "title")?, blocks })
+        }
+
+        /// The lens forwards: the document as a v1 app reads what a v0 app wrote.
+        pub fn fwd(&self) -> DocV1 {
+            DocV1::from_value(&document_v1().get(&self.to_value()).expect("a v0 document reads in v1"))
+                .expect("a v1 document")
+        }
+    }
+
+    impl DocV1 {
+        /// The lens backwards: the document as a v0 app reads what a v1 app wrote. What v0 can't say (checked, lang,
+        /// tags) it doesn't show, and a heading below level 3 reads as h3.
+        pub fn bwd(&self) -> DocV0 {
+            DocV0::from_value(&document_v0().get(&self.to_value()).expect("a v1 document reads in v0"))
+                .expect("a v0 document")
+        }
+    }
+
+    impl TodoV0 {
+        pub fn to_value(&self) -> Value {
+            object([
+                ("kind", Some("todo".into())),
+                ("title", Some(self.title.clone().into())),
+                ("done", Some(self.done.into())),
+                ("notes", Some(self.notes.clone().into())),
+                ("due", self.due.clone().map(Value::from)),
+            ])
+        }
+
+        pub fn from_value(v: &Value) -> Option<TodoV0> {
+            let r = v.as_object()?;
+            Some(TodoV0 {
+                title: text(r, "title")?,
+                done: present(r, "done")?.as_bool()?,
+                notes: text(r, "notes")?,
+                due: text(r, "due"),
+            })
+        }
+
+        pub fn fwd(&self) -> TodoV1 {
+            TodoV1::from_value(&todo_v1().get(&self.to_value()).expect("a v0 todo reads in v1")).expect("a v1 todo")
+        }
+    }
+
+    impl TodoV1 {
+        /// Going back, a todo in progress shows as not done.
+        pub fn bwd(&self) -> TodoV0 {
+            TodoV0::from_value(&todo_v0().get(&self.to_value()).expect("a v1 todo reads in v0")).expect("a v0 todo")
+        }
+    }
+
+    /// The example's blobs: its two v0 schemas and the lenses from them to the shipped v1.
+    pub mod blobs {
+        /// The lane a vault holds to read through the example, beside the shipped schemas.
+        pub const LANE: [&str; 4] = [DOCUMENT_V0, TODO_V0, DOCUMENT_LENS, TODO_LENS];
+
+        pub const DOCUMENT_V0: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Markdown document, v0",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "document" },
+    "title": { "type": "string", "default": "" },
+    "blocks": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "kind": { "enum": ["h1", "h2", "h3", "p", "li", "code"] },
+          "text": { "type": "string", "x-loro": "text", "default": "" }
+        },
+        "required": ["id", "kind"]
+      }
+    }
+  },
+  "required": ["kind"]
+}
+"#;
+
+        pub const TODO_V0: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Todo, v0",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "todo" },
+    "title": { "type": "string", "default": "" },
+    "done": { "type": "boolean", "default": false },
+    "notes": { "type": "string", "x-loro": "text", "default": "" },
+    "due": { "type": "string", "format": "date" }
+  },
+  "required": ["kind"]
+}
+"#;
+
+        pub const DOCUMENT_LENS: &str = r#"{
+  "lens": "Markdown document, v0 to v1",
+  "from": "49c168c604a95269cc5a8b11b436802da0e99979a88ccd83d49e941d5051c33c",
+  "to": "02dcdc79ca73a93751c08a27455a7769551b242b1927027bdba955a9f8c4e4dc",
+  "steps": [
+    { "add": "tags" },
+    { "in": { "field": "blocks", "steps": [
+      { "convert": {
+        "from": ["kind"],
+        "to": ["type", "level"],
+        "forward": [
+          [{ "kind": "h1" }, { "type": "heading", "level": 1 }],
+          [{ "kind": "h2" }, { "type": "heading", "level": 2 }],
+          [{ "kind": "h3" }, { "type": "heading", "level": 3 }],
+          [{ "kind": "p" }, { "type": "paragraph" }],
+          [{ "kind": "li" }, { "type": "item" }],
+          [{ "kind": "code" }, { "type": "code" }]
+        ],
+        "backward": [
+          [{ "type": "heading", "level": 1 }, { "kind": "h1" }],
+          [{ "type": "heading", "level": 2 }, { "kind": "h2" }],
+          [{ "type": "heading" }, { "kind": "h3" }],
+          [{ "type": "paragraph" }, { "kind": "p" }],
+          [{ "type": "item" }, { "kind": "li" }],
+          [{ "type": "code" }, { "kind": "code" }]
+        ]
+      } },
+      { "add": "checked" },
+      { "add": "lang" }
+    ] } }
+  ]
+}
+"#;
+
+        pub const TODO_LENS: &str = r#"{
+  "lens": "Todo, v0 to v1",
+  "from": "40de6c0ec5c3a9bbd632ec51355747ff2f0b8da31035f95f4f20035ccb35deb4",
+  "to": "0d785ad396a9285ab1b4b75a70057d439573622dbc58d5306264ccd3f6262193",
+  "steps": [
+    { "convert": {
+      "from": ["done"],
+      "to": ["status"],
+      "forward": [
+        [{ "done": true }, { "status": "done" }],
+        [{ "done": false }, { "status": "open" }]
+      ],
+      "backward": [
+        [{ "status": "done" }, { "done": true }],
+        [{ "status": "open" }, { "done": false }],
+        [{ "status": "doing" }, { "done": false }]
+      ]
+    } }
+  ]
+}
+"#;
+    }
+
+    fn example_lens(blob: &str) -> Lens {
+        Lens::parse(blob.as_bytes()).expect("the example's lens parses")
+    }
+
+    pub static DOCUMENT_V0: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::DOCUMENT_V0));
+    pub static TODO_V0: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::TODO_V0));
+    pub static DOCUMENT_LENS: LazyLock<Lens> = LazyLock::new(|| example_lens(blobs::DOCUMENT_LENS));
+    pub static TODO_LENS: LazyLock<Lens> = LazyLock::new(|| example_lens(blobs::TODO_LENS));
+
+    struct Views {
+        document_v0: View,
+        document_v1: View,
+        todo_v0: View,
+        todo_v1: View,
+    }
+
+    static VIEWS: LazyLock<Views> = LazyLock::new(|| {
+        let view = |app: &Schema, lens: &Lens, other: &Schema| View::through(app, lens, other).expect("it joins them");
+        Views {
+            document_v0: view(&DOCUMENT_V0, &DOCUMENT_LENS, &DOCUMENT_V1),
+            document_v1: view(&DOCUMENT_V1, &DOCUMENT_LENS, &DOCUMENT_V0),
+            todo_v0: view(&TODO_V0, &TODO_LENS, &TODO_V1),
+            todo_v1: view(&TODO_V1, &TODO_LENS, &TODO_V0),
+        }
+    });
+
+    /// A v0 markdown app, which knows the lens to v1.
+    pub fn document_v0() -> &'static View {
+        &VIEWS.document_v0
+    }
+
+    /// A v1 markdown app that knows the lens from v0, as the shipped one doesn't (`View::document_v1`).
+    pub fn document_v1() -> &'static View {
+        &VIEWS.document_v1
+    }
+
+    /// A v0 todo app, which knows the lens to v1.
+    pub fn todo_v0() -> &'static View {
+        &VIEWS.todo_v0
+    }
+
+    /// A v1 todo app that knows the lens from v0, as the shipped one doesn't (`View::todo_v1`).
+    pub fn todo_v1() -> &'static View {
+        &VIEWS.todo_v1
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn the_built_in_lenses_join_the_built_in_schemas() {
-        assert_eq!((DOCUMENT_LENS.from(), DOCUMENT_LENS.to()), (DOCUMENT_V1.id(), DOCUMENT_V2.id()));
-        assert_eq!((TODO_LENS.from(), TODO_LENS.to()), (TODO_V1.id(), TODO_V2.id()));
+    fn every_shipped_schema_starts_at_v1() {
+        for blob in blobs::SHIPPED {
+            let title = serde_json::from_str::<Value>(blob).expect("JSON")["title"].as_str().map(str::to_string);
+            assert!(title.as_deref().is_some_and(|t| t.ends_with(", v1")), "{title:?}");
+        }
+    }
+
+    #[test]
+    fn the_examples_lenses_join_its_schemas_to_the_shipped_ones() {
+        use example::{DOCUMENT_LENS, DOCUMENT_V0, TODO_LENS, TODO_V0};
+        assert_eq!((DOCUMENT_LENS.from(), DOCUMENT_LENS.to()), (DOCUMENT_V0.id(), DOCUMENT_V1.id()));
+        assert_eq!((TODO_LENS.from(), TODO_LENS.to()), (TODO_V0.id(), TODO_V1.id()));
     }
 }

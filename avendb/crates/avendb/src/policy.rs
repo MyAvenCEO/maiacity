@@ -365,8 +365,8 @@ pub struct Edit {
 }
 
 impl Edit {
-    /// The SHA-3 hash (`hash`) of the edit's canonical encoding (`encode`): everything the edit says, its signers
-    /// included. Each signer signs this id.
+    /// The BLAKE3 hash (`hash::content`) of the edit's canonical encoding (`encode`): everything the edit says, its
+    /// signers included. Each signer signs this id.
     pub fn id(&self) -> EditId {
         EditId(crate::encode::edit_id(self))
     }

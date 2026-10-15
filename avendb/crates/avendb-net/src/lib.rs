@@ -1502,8 +1502,8 @@ impl Shared {
             let Reply { edits, blobs, more } = Reply::from_wire(&reply)?;
             // where the next page starts: a page that brings nothing past the last ends the asking
             let last = edits.iter().map(|s| place(&s.edit)).max().filter(|&l| after.is_none_or(|a| l > a));
-            let lacking = move |lab: &mut Lab, me| -> Vec<(BlobId, [u8; 32])> {
-                blobs.into_iter().filter(|(b, _)| lab.blob(me, *b).is_none()).collect()
+            let lacking = move |lab: &mut Lab, me| -> Vec<BlobId> {
+                blobs.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect()
             };
             let lacking = self.lab(lacking).await;
             let keys = self.fetch(endpoint, lacking).await;

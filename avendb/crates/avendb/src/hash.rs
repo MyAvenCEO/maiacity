@@ -1,26 +1,37 @@
 //! Every hash avenDB computes itself: edit, blob, key and signer ids, key derivation, key commitment, and the Lab's
-//! randomness. All of it is cSHAKE256 (SHA-3's customizable XOF, NIST SP 800-185), with a customization string that
-//! names the purpose, so no two purposes ever share a hash of the same bytes. SHA-3 has 24 rounds where the best
-//! published attacks reach 6, and no algebraic structure for a quantum computer or better mathematics to use; at 256
-//! bits of output, Grover's search leaves 128 bits.
+//! randomness. All of it is BLAKE3, the hash iroh names and moves every byte by (iroh-blobs), so avenDB has one hash
+//! (Samuel, 2026-10-15: "BLAKE3 everywhere", the full iroh-native way):
+//!
+//! - **Content** (`content`): an edit's id and a blob's id (a schema, a lens, a Classic McEliece key) are the plain
+//!   BLAKE3 hash of their bytes, so they are the very names iroh-blobs gives the same bytes (`iroh_blobs::Hash`), and
+//!   a file's root is one too. Bytes have one name, wherever they are.
+//! - **Purposes** (`hash`, `keyed`, `Hasher`): every other hash names its purpose with BLAKE3's key derivation mode
+//!   (`derive_key`, context "avenDB 2026-10-15 <purpose>"), so no two purposes ever share a hash of the same bytes,
+//!   nor any purpose a content hash. Its extendable output gives the Lab's randomness.
+//!
+//! At 256 bits of output, Grover's search leaves 128 bits, as with any 256-bit hash. The hashes inside the standards
+//! avenDB uses are theirs: SHA-2 in SLH-DSA-SHA2-128f and the passkeys' P-256, SHA-3 in ML-KEM and Classic McEliece.
 //!
 //! Where several values go into one hash, each has a fixed size or its length in front of it, so two different lists
 //! of values never hash the same.
 
-use cshake::digest::{ExtendableOutput, Update, XofReader};
-use cshake::{CShake256, CShake256Reader};
+/// Every context starts with this, then names its purpose: "avenDB 2026-10-15 audience id". The date is the day
+/// avenDB's hashes became BLAKE3, as BLAKE3's key derivation asks a context to be: fixed, unique, and the
+/// application's.
+pub const PREFIX: &str = "avenDB 2026-10-15 ";
 
-/// Every customization string starts with this, then names its purpose: "avenDB 2026-10-08 op id", an edit's id. A
-/// purpose keeps the words it was given (an edit was once called an op), so every id already made stays what it was.
-pub const PREFIX: &str = "avenDB 2026-10-08 ";
+/// The name of some bytes: their plain BLAKE3 hash, as iroh-blobs names them.
+pub fn content(bytes: &[u8]) -> [u8; 32] {
+    blake3::hash(bytes).into()
+}
 
 /// A hash being computed, for one purpose.
 #[derive(Clone)]
-pub struct Hasher(CShake256);
+pub struct Hasher(blake3::Hasher);
 
 impl Hasher {
     pub fn new(purpose: &str) -> Hasher {
-        Hasher(CShake256::new_with_function_name(b"", format!("{PREFIX}{purpose}").as_bytes()))
+        Hasher(blake3::Hasher::new_derive_key(&format!("{PREFIX}{purpose}")))
     }
 
     pub fn update(&mut self, bytes: &[u8]) -> &mut Hasher {
@@ -30,9 +41,7 @@ impl Hasher {
 
     /// The hash: 32 bytes.
     pub fn finalize(self) -> [u8; 32] {
-        let mut out = [0u8; 32];
-        self.0.finalize_xof().read(&mut out);
-        out
+        self.0.finalize().into()
     }
 
     /// As many bytes as are read: an XOF.
@@ -42,11 +51,11 @@ impl Hasher {
 }
 
 /// The output of a hash, as long as it is read.
-pub struct Reader(CShake256Reader);
+pub struct Reader(blake3::OutputReader);
 
 impl Reader {
     pub fn fill(&mut self, out: &mut [u8]) {
-        self.0.read(out);
+        self.0.fill(out);
     }
 
     pub fn array<const N: usize>(&mut self) -> [u8; N] {
@@ -77,37 +86,32 @@ mod tests {
 
     #[test]
     fn purposes_keep_hashes_apart() {
-        assert_eq!(hash("op id", b"x"), hash("op id", b"x"));
-        assert_ne!(hash("op id", b"x"), hash("blob id", b"x"));
-        assert_ne!(hash("op id", b"x"), hash("op id", b"y"));
+        assert_eq!(hash("audience id", b"x"), hash("audience id", b"x"));
+        assert_ne!(hash("audience id", b"x"), hash("signer id", b"x"));
+        assert_ne!(hash("audience id", b"x"), hash("audience id", b"y"));
+        assert_ne!(hash("audience id", b"x"), content(b"x"));
         assert_ne!(keyed(&[1; 32], "data key", b""), keyed(&[2; 32], "data key", b""));
         // an XOF: its first 32 bytes are the hash, and it reads on from there
-        let mut h = Hasher::new("op id");
+        let mut h = Hasher::new("audience id");
         h.update(b"x");
         let mut r = h.reader();
-        assert_eq!(r.array::<32>(), hash("op id", b"x"));
-        assert_ne!(r.array::<32>(), hash("op id", b"x"));
+        assert_eq!(r.array::<32>(), hash("audience id", b"x"));
+        assert_ne!(r.array::<32>(), hash("audience id", b"x"));
     }
 
     #[test]
-    fn it_is_cshake256() {
-        // NIST SP 800-185's cSHAKE256 samples 3 and 4: N = "", S = "Email Signature", 512 bits of output
-        let sample = |data: &[u8]| {
-            let mut h = CShake256::new_with_function_name(b"", b"Email Signature");
-            h.update(data);
-            let mut out = [0u8; 64];
-            h.finalize_xof().read(&mut out);
-            hex(&out)
-        };
-        let three = "d008828e2b80ac9d2218ffee1d070c48b8e4c87bff32c9699d5b6896eee0edd1\
-                     64020e2be0560858d9c00c037e34a96937c561a74c412bb4c746469527281c8c";
-        let four = "07dc27b11e51fbac75bc7b3c1d983e8b4b85fb1defaf218912ac864302730917\
-                    27f42b17ed1df63e8ec118f04b23633c1dfb1574c8fb55cb45da8e25afb092bb";
-        assert_eq!(sample(&[0, 1, 2, 3]), three);
-        assert_eq!(sample(&(0..200).map(|i| i as u8).collect::<Vec<_>>()), four);
-        // and ours, as an independent cSHAKE256 computes it
-        assert_eq!(hex(&hash("op id", b"x")), "71b6752d416f7dc9ba44f80028a435c31d2aa9b0c0f56ecbe52e80607642d6e1");
+    fn it_is_blake3() {
+        // BLAKE3's own test vectors (github.com/BLAKE3-team/BLAKE3, test_vectors.json): the empty input, hashed and
+        // with the key derived for the vectors' context; and "abc", as every BLAKE3 hashes it
+        assert_eq!(hex(&content(b"")), "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262");
+        assert_eq!(hex(&content(b"abc")), "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85");
+        let derived: [u8; 32] = blake3::derive_key("BLAKE3 2019-12-27 16:29:52 test vectors context", b"");
+        assert_eq!(hex(&derived), "2cc39783c223154fea8dfb7c1b1660f2ac2dcbd1c1de8277b0b0dd39b7e50d7d");
+        // and a purpose of ours, as an independent BLAKE3 computes it (Python's blake3, derive_key_context)
+        assert_eq!(hex(&hash("audience id", b"x")), AUDIENCE_X);
     }
+
+    const AUDIENCE_X: &str = "0cdc699db491cc25e39c7f90c9778abf356f19bd6c93afa55e7a6a281c5ec98c";
 
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{b:02x}")).collect()

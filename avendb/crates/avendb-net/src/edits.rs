@@ -3,7 +3,7 @@
 //! in blobs:
 //!
 //! - `journal/<n>`, numbered from 0 on in 16 hex digits: what one save added, the McEliece keys it brought, each by its
-//!   id and the blob that holds it, and the new edits of the device's log;
+//!   id, the hash of the blob that holds it, and its size, and the new edits of the device's log;
 //! - `heads/<n>`, numbered from 1 on: a head, put after every `JOURNALED` entries, which names the packs that hold the
 //!   device's edits up to an entry of the journal, and every McEliece key: a node starts from its newest head and the
 //!   journal after it, a few dozen objects, however long its device's log;
@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::ErrorKind;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, SignerId};
 use avendb::lab::Lab;
 use avendb::sign::Signed;
@@ -36,10 +36,10 @@ use tokio::sync::Notify;
 use crate::shelf::Shelf;
 use crate::{BACKOFF_MAX, Cursor, Shared};
 
-/// What every head starts with: avenDB's heads, version 1.
-const HEAD: &[u8] = b"avenDB head 1\n";
-/// What every journal entry starts with.
-const ENTRY: &[u8] = b"avenDB journal 1\n";
+/// What every head starts with: avenDB's heads, version 2 since a McEliece key's id is its blob's hash.
+const HEAD: &[u8] = b"avenDB head 2\n";
+/// What every journal entry starts with, of the same version.
+const ENTRY: &[u8] = b"avenDB journal 2\n";
 /// What every pack starts with: avenDB's edits, version 1.
 const PACK: &[u8] = b"avenDB edits 1\n";
 /// How many journal entries a head comes after.
@@ -51,8 +51,8 @@ const JOURNAL: &str = "journal/";
 
 /// A blob on the shelf: its hash and its size.
 type Blob = (Hash, u64);
-/// A McEliece key on the shelf: its id, and the blob that holds it.
-type Key = (BlobId, Blob);
+/// A McEliece key on the shelf: its id, the hash of the blob that holds it, and its size.
+type Key = (BlobId, u64);
 
 /// A node's edits on its shelf, as the module says.
 pub(crate) struct Edits {
@@ -68,8 +68,8 @@ pub(crate) struct Edits {
 struct Book {
     /// The packs the newest head names.
     packs: Vec<Blob>,
-    /// Every McEliece key on the shelf.
-    keys: BTreeMap<BlobId, Blob>,
+    /// Every McEliece key on the shelf, and its size.
+    keys: BTreeMap<BlobId, u64>,
     /// The first journal entry the newest head doesn't cover, and the next to put.
     mark: u64,
     next: u64,
@@ -137,10 +137,14 @@ fn put_blob(out: &mut Vec<u8>, (hash, size): &Blob) {
 
 fn put_keys(out: &mut Vec<u8>, keys: &[Key]) {
     out.extend((keys.len() as u32).to_be_bytes());
-    for (id, blob) in keys {
-        out.extend(id.0);
-        put_blob(out, blob);
+    for (id, size) in keys {
+        put_blob(out, &(key_blob(*id), *size));
     }
+}
+
+/// The hash of the blob that holds McEliece key `id`: its id.
+fn key_blob(id: BlobId) -> Hash {
+    Hash::from_bytes(id.0)
 }
 
 impl Cursor<'_> {
@@ -149,7 +153,8 @@ impl Cursor<'_> {
     }
 
     fn keys(&mut self) -> Option<Vec<Key>> {
-        (0..u32::from_be_bytes(self.array()?)).map(|_| Some((BlobId(self.array()?), self.blob()?))).collect()
+        let key = |(hash, size): Blob| (BlobId(*hash.as_bytes()), size);
+        (0..u32::from_be_bytes(self.array()?)).map(|_| self.blob().map(key)).collect()
     }
 }
 
@@ -230,7 +235,7 @@ impl Edits {
             }
         }
         let (head, mut signed) = start.unwrap_or_default();
-        let mut keys: BTreeMap<BlobId, Blob> = head.keys.into_iter().collect();
+        let mut keys: BTreeMap<BlobId, u64> = head.keys.into_iter().collect();
         let (mut pending, mut next) = (Vec::new(), head.journal);
         while let Some(bytes) = shelf.get(&journal_name(next)).await? {
             next += 1;
@@ -244,13 +249,10 @@ impl Edits {
             keys.extend(entry.keys);
         }
         let mut bytes = Vec::new();
-        for (id, (hash, size)) in keys.clone() {
-            match shelf.read_blob(hash, size).await {
-                Ok(key) if BlobId::of(&key) == id => bytes.push(Arc::from(&key[..])),
-                Ok(_) => {
-                    tracing::warn!("avendb: McEliece key {} on the shelf isn't its id's, and is left out", id.to_hex());
-                    keys.remove(&id);
-                }
+        for (id, size) in keys.clone() {
+            // checked against its hash, which is its id
+            match shelf.read_blob(key_blob(id), size).await {
+                Ok(key) => bytes.push(Arc::from(&key[..])),
                 Err(e) => {
                     tracing::warn!("avendb: McEliece key {} on the shelf doesn't read whole: {e}", id.to_hex());
                     keys.remove(&id);
@@ -316,11 +318,15 @@ impl Edits {
     async fn put(&self, book: &mut Book, due: Due) -> Result<()> {
         let mut brought = Vec::new();
         for (id, bytes) in &due.keys {
-            let blob = match book.keys.get(id) {
-                Some(blob) => *blob,
-                None => self.shelf.put_blob(&Bytes::copy_from_slice(bytes)).await?,
+            let size = match book.keys.get(id) {
+                Some(size) => *size,
+                None => {
+                    let (hash, size) = self.shelf.put_blob(&Bytes::copy_from_slice(bytes)).await?;
+                    ensure!(hash == key_blob(*id), "the McEliece key {} is another's", id.to_hex());
+                    size
+                }
             };
-            brought.push((*id, blob));
+            brought.push((*id, size));
         }
         let ids: Vec<BlobId> = due.keys.iter().map(|(id, _)| *id).collect();
         if due.whole {

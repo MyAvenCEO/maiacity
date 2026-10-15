@@ -1,4 +1,4 @@
-//! Sealed blobs, version 1: a file of any size, from a photo to a film of several terabytes, encrypted so that it
+//! Sealed blobs, version 2: a file of any size, from a photo to a film of several terabytes, encrypted so that it
 //! travels and is kept as iroh blobs that anyone can verify and only its readers can open, and so that any range of it
 //! opens on its own.
 //!
@@ -28,8 +28,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::hash;
 
-/// The format's version, as the edit that brings a file names it.
-pub const VERSION: u8 = 1;
+/// The format's version, as the edit that brings a file names it: 2 since its keys are derived with BLAKE3 (1 with
+/// SHA-3).
+pub const VERSION: u8 = 2;
 /// Plaintext bytes in a segment, but the last of a file.
 pub const SEGMENT: usize = 65_520;
 /// The tag each segment gains.
@@ -98,11 +99,11 @@ impl std::fmt::Debug for FileKey {
     }
 }
 
-/// A file's convergent key as its plaintext comes, a chunk at a time: cSHAKE256 keyed by the person's secret, over the
-/// format, the file's length and every byte of it. Whoever holds the secret and the same bytes derives the same key;
-/// nobody without the secret learns anything of the bytes from it. The key seals one plaintext only, so a sealer that
-/// derives it before it seals checks it again over the bytes it seals (`Node::store_file`): two different files
-/// under one key would share their nonces.
+/// A file's convergent key as its plaintext comes, a chunk at a time: BLAKE3's key derivation for this purpose
+/// (`hash::Hasher`) over the person's secret, the format, the file's length and every byte of it. Whoever holds the
+/// secret and the same bytes derives the same key; nobody without the secret learns anything of the bytes from it. The
+/// key seals one plaintext only, so a sealer that derives it before it seals checks it again over the bytes it seals
+/// (`Node::store_file`): two different files under one key would share their nonces.
 pub struct Convergent {
     hasher: hash::Hasher,
     len: u64,
@@ -473,20 +474,19 @@ mod tests {
     }
 
     #[test]
-    fn its_bytes_stay_what_version_1_made() {
-        // the format's own vectors: if one of these changes, files already sealed stop opening
-        let vector = |k: u8, len: usize| hex(&hash::hash("sealed blob vector", &seal(&key(k), &plaintext(len))));
-        assert_eq!(vector(0, 0), VECTORS[0]);
-        assert_eq!(vector(1, 1), VECTORS[1]);
-        assert_eq!(vector(2, SEGMENT), VECTORS[2]);
-        assert_eq!(vector(3, 2 * SEGMENT + 5), VECTORS[3]);
+    fn its_bytes_stay_what_version_2_made() {
+        // the format's own vectors, each the root of a sealed file of one piece (the BLAKE3 hash iroh-blobs names its
+        // bytes by): if one of these changes, files already sealed stop opening
+        let root = |k: u8, len: usize| hex(&hash::content(&seal(&key(k), &plaintext(len))));
+        let made = [root(0, 0), root(1, 1), root(2, SEGMENT), root(3, 2 * SEGMENT + 5)];
+        assert_eq!(made, VECTORS);
     }
 
     const VECTORS: [&str; 4] = [
-        "2854affd64d8e049c943ecd944123c27c3f1a6bad10ec3225fbf3471c42fa5f2",
-        "de075b609d3968aa72fc42bb328eda13427de6a8a5d47a53141f80c430d104ce",
-        "c0ec11cb6234daac69669e4a602131837f557623a8436787d5f7c09a81f7a136",
-        "97fe5323a1b2b5e121a5503b01d423f925cf994b59da8833230339e78a820e2f",
+        "51207487ab68a90bca875e9ee63d610b4b819fdf5599c50175a1546da8e7d98c",
+        "5931d76bba7922c3f5a839eb92474b52ef98b1237929498f0f195cf18d920125",
+        "9987a6107d1c6df24f75643d45d6df671320caa76b8a46c524d1273b13bc1484",
+        "45da91d6a265e82036be0518b76b3c777f061b4159e6ae9d10ade41bfa315015",
     ];
 
     fn hex(bytes: &[u8]) -> String {

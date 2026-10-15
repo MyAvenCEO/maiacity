@@ -1,7 +1,7 @@
 # avenDB architecture
 
 avenDB is the user-owned, end-to-end encrypted, local-first database under maiaCITY. This file describes it as it
-ships with edit format version 9, from first principles. It is the one reference for the design.
+ships with edit format version 10, from first principles. It is the one reference for the design.
 
 Three things keep it honest. The Lean model in `avendb/spec` states what must always hold and proves it. The Rust
 crates in `avendb/crates` build it. Shared test vectors (`avendb/spec/vectors`) hold the two to the same answers, edit
@@ -38,7 +38,7 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 |---|---|
 | Vault | An identity, like a smart account: a person's, a group's (coop) or an agent's (aven). It owns entries. |
 | Entry | One item of data in one vault: a Loro document with a type and tags. |
-| Edit | One signed change. Its id is the SHA-3 hash of its bytes. Seven kinds. |
+| Edit | One signed change. Its id is the BLAKE3 hash of its bytes. Seven kinds. |
 | Log | The edits of one vault, one share, one audience or one entry. Each edit builds on its log's frontier. |
 | Share | Who may do what on which entries of a vault: who, level, what. |
 | Level | Keep, Relay, Backup, Read, Write or Owner, in that rank order. |
@@ -156,9 +156,9 @@ the server itself. The `history`, `note` and `log` ops carry it as `chain`, and 
 
 **The master recovery key.** One master recovery key is a way back in beside the passkeys. It is a signer like any
 other, a passkey kept in software (`crates/avendb/src/recovery.rs`), whose keys all derive from 32 secret bytes kept
-offline. Its public file is built in (`crates/avendb/master-recovery.pub`, key `d9941b22…`), and every device's Lab
-knows it (`Lab::set_recovery`). Every human vault is founded with it among its owners: it is an Owner share on
-Everything, added at genesis (`Lab::human_owners`). The key signed one standing consent as it was made
+offline. Its public file is built in (`crates/avendb/master-recovery.pub`; an empty file builds avenDB without one),
+and every device's Lab knows it (`Lab::set_recovery`). Every human vault is founded with it among its owners: it is an
+Owner share on Everything, added at genesis (`Lab::human_owners`). The key signed one standing consent as it was made
 (`sign::consent_challenge`), which an edit that adds it takes in place of its signature (`sign::standing`). It shows
 among the owners as "Master recovery key" and is removed like any owner, and added again the same way (section 8,
 `share` and `revoke`). Whoever holds the secret signs as an owner in full: alone, it adds a device to a vault whose
@@ -214,8 +214,8 @@ Mac and a phone that share it, gets one vault, the one that owns their seed.
 ## 4. Edits, logs and the replay
 
 **An edit** is `{parents, depth, author, cosigners, action}` (`policy::Edit`). Its bytes have one canonical encoding,
-which starts with the version byte 9 (`encode::VERSION`, `crates/avendb/src/encode.rs`). Its id is the SHA-3
-(cSHAKE256) hash of those bytes, and its signatures sign the id (`crates/avendb/src/sign.rs`).
+which starts with the version byte 10 (`encode::VERSION`, `crates/avendb/src/encode.rs`). Its id is the BLAKE3 hash
+of those bytes, the name iroh-blobs gives the same bytes, and its signatures sign the id (`crates/avendb/src/sign.rs`).
 
 **Seven kinds.** The action's first byte is its kind (`policy::Action`, `Action` in `spec/AvenDB/Step.lean`):
 
@@ -757,9 +757,9 @@ Markdown text), a **flow** (stages an item can be in, each with whether it is pu
 stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
 name and its media type), and a **story** (one content piece from its first spark to every platform it goes out on:
 its title and format, the sparks it grew from, its journey's beats and its hook variants as rows, its intro,
-description and launch; the story flow's tag says which of its stages it is in). The first versions of documents and
-todos, and the lenses from them, stay in the code only as the lens engine's worked example (`lens::blobs::ALL`); no
-record is written under them.
+description and launch; the story flow's tag says which of its stages it is in). Every shipped schema starts at v1.
+The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
+only in the tests; nothing ships it, and no record is written under it.
 
 **What a schema can say** (`lens::Schema`). An object's `properties` and `required`; each property a `const`, an
 `enum`, or a `type`: a string (with `maxLength`, counted in characters), an integer or a number (any finite one, each
@@ -837,7 +837,7 @@ Every node trusts no elliptic curve alone, and there is no switch back.
 | Passkeys | A passkey's WebAuthn assertion (P-256) rides beside its SLH-DSA signature: it shows a person was there. |
 | Sealed keys | Every box is sealed to X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f at once. |
 | Data | XChaCha20-Poly1305 for edits and boxes, ChaCha20-Poly1305 per 64 KiB file segment, 256-bit keys. |
-| Hashes | SHA-3 (cSHAKE256) for ids and what is signed. BLAKE3 only to store and move bytes. |
+| Hashes | BLAKE3 for every hash of avenDB's own: an id is the plain hash of its bytes, the name iroh-blobs gives them; every other hash derives its own key for its purpose (`hash`). |
 | Connections | TLS 1.3 with X25519MLKEM768 as the only key exchange, on every link between nodes. |
 | Hellos | Each connection opens with an SLH-DSA signature each way over the TLS exporter (section 12). |
 | The bucket | Its endpoint is classical, so the server seals every object first, with a 256-bit key of its own. |
@@ -1115,10 +1115,10 @@ A file enters avenDB with a write of the entry it belongs to. A file in a vault'
 a record of the `file` schema with the file's name and media type, made by one write and brought by the next (the
 `put_file` op). Shares, sync and deletion work on it as on a note.
 
-**Sealed blob, version 1** (`crates/avendb/src/sealed.rs`, its bytes pinned by vectors):
+**Sealed blob, version 2** (`crates/avendb/src/sealed.rs`, its bytes pinned by vectors):
 
 - **Key.** Each file has its own 32-byte key, derived from what the file holds, keyed by a secret of the person's
-  vault (`sealed::Convergent`): cSHAKE256 over that secret, the format, the file's length and every byte. The secret
+  vault (`sealed::Convergent`): BLAKE3 over that secret, the format, the file's length and every byte. The secret
   is a child of the vault's current seed (`Lab::convergence`, "avendb file convergence"), which every device of that
   vault holds and nobody outside it. So the same file sealed again by any device of the vault, into any vault it acts
   for, gives the same bytes, which iroh keeps once. Another person's devices derive an unrelated key, so nobody else
@@ -1183,8 +1183,7 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 7 since each device has a copy
-setting, the last reset.
+it runs (`bucket::clear`). `FLOOR` is 8 since every hash of avenDB's own is BLAKE3, the last reset.
 
 ### Layout of one generation
 
@@ -1319,7 +1318,7 @@ whose keys sign it on that connection.
 | `crates/avendb/src/world.rs`, `data.rs`, `words.rs` | The world, a vault's database and its history as JSON; the names of the core's words |
 | `crates/avendb/src/ops.rs`, `rules.rs` | Record ops, queries and diffs; op groups, touches and proofs |
 | `crates/avendb/src/lens.rs`, `doc.rs`, `history.rs` | Schemas and lenses, Loro items, lines of history |
-| `crates/avendb/src/sealed.rs`, `slice.rs` | Sealed blob v1; selectors, headers and write bodies |
+| `crates/avendb/src/sealed.rs`, `slice.rs` | Sealed blob v2; selectors, headers and write bodies |
 | `crates/avendb/src/recovery.rs` | The master recovery key |
 | `crates/avendb-net/src/lib.rs`, `session.rs` | The node, its router and messages |
 | `crates/avendb-net/src/run.rs` | `Node::run`: an op on a node, with bytes beside it and the passkey's ceremony |

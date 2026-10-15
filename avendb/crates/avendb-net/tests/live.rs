@@ -107,7 +107,7 @@ async fn scenario_5_over_iroh() {
         server.know(n.addr());
     }
     let write = move |lab: &mut Lab, me| {
-        lab.create(me, coop, coop, "doc", &[], document_v1("Welcome", WELCOME_TEXT, me))
+        lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))
     };
     let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
     let reads = || bob.read(move |lab, me| text(lab, me, welcome, 2).as_deref() == Some(WELCOME_TEXT));

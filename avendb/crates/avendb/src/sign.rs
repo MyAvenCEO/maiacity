@@ -834,7 +834,7 @@ impl Passkey {
 
     /// WebAuthn's PRF extension: 32 bytes the authenticator alone computes from `salt`, in the same ceremony as an
     /// assertion. The browser hashes the salt with the label "WebAuthn PRF" and the authenticator answers with its
-    /// `hmac-secret` over that hash; this one uses a keyed SHA-3 hash with a secret of its own instead of HMAC.
+    /// `hmac-secret` over that hash; this one uses a keyed BLAKE3 hash with a secret of its own instead of HMAC.
     pub fn prf(&self, salt: &[u8]) -> Zeroizing<[u8; 32]> {
         let hashed = sha256(&[&b"WebAuthn PRF\0"[..], salt].concat());
         let scalar: Zeroizing<[u8; 32]> = Zeroizing::new(self.key.to_bytes().into());

@@ -32,7 +32,8 @@ use loro::{
 use serde_json::Value;
 
 use crate::id::{BlobId, SignerId};
-use crate::lens::{BlockV2, DocV1, DocV2, Status, Stored, TodoV1, TodoV2, TypeV2, View};
+use crate::lens::example::{self, DocV0, TodoV0};
+use crate::lens::{BlockV1, DocV1, Status, Stored, TodoV1, TypeV1, View};
 use crate::ops::{self, Loc, Record};
 use crate::policy::Line;
 use crate::rules::{Scalar, Touch};
@@ -119,27 +120,28 @@ impl Item {
         item.write(view, value).then_some(item)
     }
 
-    /// A new markdown document made by a v2 app on `signer`'s device: its edits carry that signer's Loro peer. Only
-    /// what differs from the schema's defaults is written: its kind and title.
+    /// A new markdown document made by the document app on `signer`'s device: its edits carry that signer's Loro
+    /// peer. Only what differs from the schema's defaults is written: its kind and title.
     pub fn document(title: &str, signer: SignerId) -> Item {
-        let doc = DocV2 { title: title.into(), blocks: vec![], tags: vec![] };
-        Item::made(View::document_v2(), &doc.to_value(), signer).expect("a v2 document")
+        let doc = DocV1 { title: title.into(), blocks: vec![], tags: vec![] };
+        Item::made(View::document_v1(), &doc.to_value(), signer).expect("a v1 document")
     }
 
-    /// A document as an app still on v1 writes it, on `signer`'s device. Its block ids must differ.
-    pub fn written_v1(doc: &DocV1, signer: SignerId) -> Item {
-        Item::made(View::document_v1(), &doc.to_value(), signer).expect("a v1 document, each block id once")
+    /// A document as an app of the lens engine's example on v0 writes it (`lens::example`), on `signer`'s device. Its
+    /// block ids must differ.
+    pub fn written_v0(doc: &DocV0, signer: SignerId) -> Item {
+        Item::made(example::document_v0(), &doc.to_value(), signer).expect("a v0 document, each block id once")
     }
 
-    /// A new todo made by a v2 app: its status is open by the schema's default, and not written.
+    /// A new todo made by the todo app: its status is open by the schema's default, and not written.
     pub fn todo(title: &str, signer: SignerId) -> Item {
-        let todo = TodoV2 { title: title.into(), status: Status::Open, notes: String::new(), due: None };
-        Item::made(View::todo_v2(), &todo.to_value(), signer).expect("a v2 todo")
+        let todo = TodoV1 { title: title.into(), status: Status::Open, notes: String::new(), due: None };
+        Item::made(View::todo_v1(), &todo.to_value(), signer).expect("a v1 todo")
     }
 
-    /// A todo as an app still on v1 writes it.
-    pub fn todo_v1(todo: &TodoV1, signer: SignerId) -> Item {
-        Item::made(View::todo_v1(), &todo.to_value(), signer).expect("a v1 todo")
+    /// A todo as an app of the lens engine's example on v0 writes it.
+    pub fn todo_v0(todo: &TodoV0, signer: SignerId) -> Item {
+        Item::made(example::todo_v0(), &todo.to_value(), signer).expect("a v0 todo")
     }
 
     /// The same item as another device holds it, whose edits from now on are that device's.
@@ -229,15 +231,15 @@ impl Item {
         out
     }
 
-    /// The item as a v2 app reads it, through the lens where a v1 app wrote it; `None` for a todo.
-    pub fn as_document(&self) -> Option<DocV2> {
-        DocV2::from_value(&self.read(View::document_v2())?)
+    /// The item as the document app reads it; `None` for a todo.
+    pub fn as_document(&self) -> Option<DocV1> {
+        DocV1::from_value(&self.read(View::document_v1())?)
     }
 
-    /// The item as Markdown, as a page shows a note: a document as a v2 app reads it, or an article as one, its title
-    /// and its tags, its text the paragraph of block 2, where a note keeps its text (`cast::document`). `None` for
-    /// anything else.
-    pub fn as_markdown(&self) -> Option<DocV2> {
+    /// The item as Markdown, as a page shows a note: a document as the document app reads it, or an article as one, its
+    /// title and its tags, its text the paragraph of block 2, where a note keeps its text (`cast::document`). `None`
+    /// for anything else.
+    pub fn as_markdown(&self) -> Option<DocV1> {
         if let Some(doc) = self.as_document() {
             return Some(doc);
         }
@@ -245,56 +247,57 @@ impl Item {
         let text = |k: &str| article.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
         let tags = article.get("tags").and_then(Value::as_array).into_iter().flatten();
         let tags = tags.filter_map(|t| Some(t.as_str()?.to_string())).collect();
-        let paragraph = TypeV2::Paragraph;
-        let block = BlockV2 { id: 2, r#type: paragraph, level: None, checked: None, lang: None, text: text("text") };
-        Some(DocV2 { title: text("title"), blocks: vec![block], tags })
+        let paragraph = TypeV1::Paragraph;
+        let block = BlockV1 { id: 2, r#type: paragraph, level: None, checked: None, lang: None, text: text("text") };
+        Some(DocV1 { title: text("title"), blocks: vec![block], tags })
     }
 
-    /// The item as a v1 app that has the lens reads it; `None` for a todo.
-    pub fn as_document_v1(&self) -> Option<DocV1> {
-        DocV1::from_value(&self.read(View::document_v1())?)
+    /// The item as the example's v0 app, which has the lens, reads it; `None` for a todo.
+    pub fn as_document_v0(&self) -> Option<DocV0> {
+        DocV0::from_value(&self.read(example::document_v0())?)
     }
 
-    /// The item as a v2 todo app reads it; `None` for a document.
-    pub fn as_todo(&self) -> Option<TodoV2> {
-        TodoV2::from_value(&self.read(View::todo_v2())?)
-    }
-
-    /// The item as a v1 todo app that has the lens reads it; `None` for a document.
-    pub fn as_todo_v1(&self) -> Option<TodoV1> {
+    /// The item as the todo app reads it; `None` for a document.
+    pub fn as_todo(&self) -> Option<TodoV1> {
         TodoV1::from_value(&self.read(View::todo_v1())?)
     }
 
-    /// Edit the document as a v2 app sees it. False if it isn't a document, or `change` leaves two blocks with one id.
-    pub fn edit_document(&mut self, change: impl FnOnce(&mut DocV2)) -> bool {
-        let Some(mut d) = self.as_document() else { return false };
-        change(&mut d);
-        self.write(View::document_v2(), &d.to_value())
+    /// The item as the example's v0 todo app, which has the lens, reads it; `None` for a document.
+    pub fn as_todo_v0(&self) -> Option<TodoV0> {
+        TodoV0::from_value(&self.read(example::todo_v0())?)
     }
 
-    /// Edit the document as a v1 app sees it.
-    pub fn edit_document_v1(&mut self, change: impl FnOnce(&mut DocV1)) -> bool {
-        let Some(mut d) = self.as_document_v1() else { return false };
+    /// Edit the document as the document app sees it. False if it isn't a document, or `change` leaves two blocks with
+    /// one id.
+    pub fn edit_document(&mut self, change: impl FnOnce(&mut DocV1)) -> bool {
+        let Some(mut d) = self.as_document() else { return false };
         change(&mut d);
         self.write(View::document_v1(), &d.to_value())
     }
 
-    /// Edit the todo as a v2 app sees it.
-    pub fn edit_todo(&mut self, change: impl FnOnce(&mut TodoV2)) -> bool {
-        let Some(mut t) = self.as_todo() else { return false };
-        change(&mut t);
-        self.write(View::todo_v2(), &t.to_value())
+    /// Edit the document as the example's v0 app sees it.
+    pub fn edit_document_v0(&mut self, change: impl FnOnce(&mut DocV0)) -> bool {
+        let Some(mut d) = self.as_document_v0() else { return false };
+        change(&mut d);
+        self.write(example::document_v0(), &d.to_value())
     }
 
-    /// Edit the todo as a v1 app sees it.
-    pub fn edit_todo_v1(&mut self, change: impl FnOnce(&mut TodoV1)) -> bool {
-        let Some(mut t) = self.as_todo_v1() else { return false };
+    /// Edit the todo as the todo app sees it.
+    pub fn edit_todo(&mut self, change: impl FnOnce(&mut TodoV1)) -> bool {
+        let Some(mut t) = self.as_todo() else { return false };
         change(&mut t);
         self.write(View::todo_v1(), &t.to_value())
     }
 
+    /// Edit the todo as the example's v0 todo app sees it.
+    pub fn edit_todo_v0(&mut self, change: impl FnOnce(&mut TodoV0)) -> bool {
+        let Some(mut t) = self.as_todo_v0() else { return false };
+        change(&mut t);
+        self.write(example::todo_v0(), &t.to_value())
+    }
+
     /// Append a block to a document (a todo has none).
-    pub fn push_block(&mut self, block: BlockV2) {
+    pub fn push_block(&mut self, block: BlockV1) {
         self.edit_document(|d| d.blocks.push(block));
     }
 
@@ -506,14 +509,10 @@ fn peer(signer: SignerId, line: Line) -> PeerID {
     usable(u64::from_be_bytes(*h.first_chunk().expect("32 bytes")))
 }
 
-/// The built-in view of a record's kind: a todo's, an article's, a flow's, a function's, a post's, or else a
-/// document's. Fields it doesn't know are stored by what they hold.
+/// The built-in view of a record's kind (`View::built_in`), or else a document's. Fields it doesn't know are stored by
+/// what they hold.
 fn kind_view(record: &Value) -> &'static View {
-    match record.get("kind").and_then(Value::as_str) {
-        Some("todo") => View::todo_v2(),
-        Some(kind) => View::built_in(kind).unwrap_or(View::document_v2()),
-        None => View::document_v2(),
-    }
+    record.get("kind").and_then(Value::as_str).and_then(View::built_in).unwrap_or(View::document_v1())
 }
 
 /// A field of the record.
@@ -771,7 +770,8 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::lens::{BlockV1, KindV1, TypeV2, DOCUMENT_V1, DOCUMENT_V2};
+    use crate::lens::example::{BlockV0, KindV0, DOCUMENT_V0};
+    use crate::lens::{TypeV1, DOCUMENT_V1};
 
     const ALICE: SignerId = SignerId::from_u64(2);
     const BOB: SignerId = SignerId::from_u64(5);
@@ -779,20 +779,32 @@ mod tests {
     const WELCOME: &str = "Welcome to Maia Coop: the greenhouse opens at eight.";
     const NINE: &str = "Welcome to Maia Coop: the greenhouse opens at nine.";
 
-    fn block(id: u64, r#type: TypeV2, text: &str) -> BlockV2 {
-        BlockV2 { id, r#type, level: None, checked: None, lang: None, text: text.into() }
+    fn block(id: u64, r#type: TypeV1, text: &str) -> BlockV1 {
+        BlockV1 { id, r#type, level: None, checked: None, lang: None, text: text.into() }
     }
 
     /// A heading (block 1) and a paragraph (block 2), made on `signer`'s device.
     fn welcome(signer: SignerId) -> Item {
         let mut item = Item::document("Welcome", signer);
-        item.push_block(BlockV2 { level: Some(1), ..block(1, TypeV2::Heading, "Welcome") });
-        item.push_block(block(2, TypeV2::Paragraph, WELCOME));
+        item.push_block(BlockV1 { level: Some(1), ..block(1, TypeV1::Heading, "Welcome") });
+        item.push_block(block(2, TypeV1::Paragraph, WELCOME));
         item
     }
 
     fn text(item: &Item, id: u64) -> Option<String> {
         item.as_document()?.blocks.into_iter().find(|b| b.id == id).map(|b| b.text)
+    }
+
+    /// The document as the example's v1 app, which has the lens from v0, reads it.
+    fn through_lens(item: &Item) -> Option<DocV1> {
+        DocV1::from_value(&item.read(example::document_v1())?)
+    }
+
+    /// Edit the document as the example's v1 app sees it.
+    fn edit_through_lens(item: &mut Item, change: impl FnOnce(&mut DocV1)) -> bool {
+        let Some(mut d) = through_lens(item) else { return false };
+        change(&mut d);
+        item.write(example::document_v1(), &d.to_value())
     }
 
     /// `a` and `b` after each imports what the other wrote since `start`.
@@ -805,8 +817,8 @@ mod tests {
     #[test]
     fn a_documents_blocks_round_trip() {
         let mut doc = welcome(ALICE);
-        let code = BlockV2 { lang: Some("sh".into()), ..block(3, TypeV2::Code, "open greenhouse --at 8") };
-        let item = BlockV2 { checked: Some(true), ..block(u64::MAX, TypeV2::Item, "Water the seedlings") };
+        let code = BlockV1 { lang: Some("sh".into()), ..block(3, TypeV1::Code, "open greenhouse --at 8") };
+        let item = BlockV1 { checked: Some(true), ..block(u64::MAX, TypeV1::Item, "Water the seedlings") };
         doc.push_block(code.clone());
         doc.push_block(item.clone());
         doc.set_text(2, NINE);
@@ -822,7 +834,7 @@ mod tests {
     fn a_todos_status_round_trips() {
         let title = "Fix the greenhouse door";
         let mut todo = Item::todo(title, ALICE);
-        let open = TodoV2 { title: title.into(), status: Status::Open, notes: String::new(), due: None };
+        let open = TodoV1 { title: title.into(), status: Status::Open, notes: String::new(), due: None };
         assert_eq!(todo.as_todo(), Some(open));
         assert!(todo.as_document().is_none());
         for status in [Status::Doing, Status::Done] {
@@ -841,11 +853,11 @@ mod tests {
         let mut doc = welcome(ALICE);
         let mut todo = Item::todo("Order seeds", ALICE);
         let before = (doc.version(), todo.version());
-        for view in [View::document_v1(), View::document_v2()] {
+        for view in [example::document_v0(), example::document_v1(), View::document_v1()] {
             let seen = doc.read(view).unwrap();
             assert!(doc.write(view, &seen));
         }
-        for view in [View::todo_v1(), View::todo_v2()] {
+        for view in [example::todo_v0(), example::todo_v1(), View::todo_v1()] {
             let seen = todo.read(view).unwrap();
             assert!(todo.write(view, &seen));
         }
@@ -862,26 +874,26 @@ mod tests {
         let chapter = json!({"kind": "document", "blocks": [{"id": 1, "type": "chapter"}]});
         let twice = json!({"kind": "document", "blocks": [{"id": 1, "type": "paragraph"}, {"id": 1, "type": "code"}]});
         for bad in [chapter, twice, json!({"kind": "todo"}), json!("Welcome")] {
-            assert!(!doc.write(View::document_v2(), &bad), "{bad}");
+            assert!(!doc.write(View::document_v1(), &bad), "{bad}");
         }
-        assert!(!doc.edit_document(|d| d.blocks.push(block(1, TypeV2::Code, "a second block 1"))));
+        assert!(!doc.edit_document(|d| d.blocks.push(block(1, TypeV1::Code, "a second block 1"))));
         assert_eq!(doc.version(), before);
-        assert!(Item::made(View::todo_v2(), &json!({"kind": "document"}), BOB).is_none());
+        assert!(Item::made(View::todo_v1(), &json!({"kind": "document"}), BOB).is_none());
     }
 
     #[test]
     fn each_change_names_the_schema_it_was_written_under() {
-        let heading = BlockV1 { id: 1, kind: KindV1::H1, text: "Welcome".into() };
-        let v1 = DocV1 { title: "Welcome".into(), blocks: vec![heading] };
-        let mut doc = Item::written_v1(&v1, ALICE);
-        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id()]));
-        // a v2 app reads it through the lens, and an edit that changes nothing tags nothing
-        let heading = BlockV2 { level: Some(1), ..block(1, TypeV2::Heading, "Welcome") };
-        assert_eq!(doc.as_document().unwrap().blocks[0], heading);
-        assert!(doc.edit_document(|_| {}));
-        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id()]));
-        assert!(doc.edit_document(|d| d.tags.push("coop".into())));
-        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]));
+        let heading = BlockV0 { id: 1, kind: KindV0::H1, text: "Welcome".into() };
+        let v0 = DocV0 { title: "Welcome".into(), blocks: vec![heading] };
+        let mut doc = Item::written_v0(&v0, ALICE);
+        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V0.id()]));
+        // a v1 app reads it through the lens, and an edit that changes nothing tags nothing
+        let heading = BlockV1 { level: Some(1), ..block(1, TypeV1::Heading, "Welcome") };
+        assert_eq!(through_lens(&doc).unwrap().blocks[0], heading);
+        assert!(edit_through_lens(&mut doc, |_| {}));
+        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V0.id()]));
+        assert!(edit_through_lens(&mut doc, |d| d.tags.push("coop".into())));
+        assert_eq!(doc.authored(), BTreeSet::from([DOCUMENT_V0.id(), DOCUMENT_V1.id()]));
         // another device reads the same tags off the updates it imports
         let mut bobs = Item::new(BOB);
         bobs.import(&doc.export(&Version::default()), ALICE).unwrap();
@@ -891,11 +903,11 @@ mod tests {
 
     #[test]
     fn a_record_put_back_names_no_schema_and_a_copy_names_them_all() {
-        let heading = BlockV1 { id: 1, kind: KindV1::H1, text: "Welcome".into() };
-        let mut doc = Item::written_v1(&DocV1 { title: "Welcome".into(), blocks: vec![heading] }, ALICE);
+        let heading = BlockV0 { id: 1, kind: KindV0::H1, text: "Welcome".into() };
+        let mut doc = Item::written_v0(&DocV0 { title: "Welcome".into(), blocks: vec![heading] }, ALICE);
         let first = doc.record();
-        assert!(doc.edit_document(|d| d.tags.push("coop".into())));
-        let both = BTreeSet::from([DOCUMENT_V1.id(), DOCUMENT_V2.id()]);
+        assert!(edit_through_lens(&mut doc, |d| d.tags.push("coop".into())));
+        let both = BTreeSet::from([DOCUMENT_V0.id(), DOCUMENT_V1.id()]);
         // a restore of the first version writes the change back, under no schema of its own
         let mut bobs = doc.fork_as(BOB);
         bobs.put_record(&first);
@@ -911,7 +923,7 @@ mod tests {
         // nobody had tagged the document, and block 3 had no text yet: each device makes the container, and the two
         // are one, so neither edit hides the other
         let mut base = welcome(ALICE);
-        base.push_block(block(3, TypeV2::Paragraph, ""));
+        base.push_block(block(3, TypeV1::Paragraph, ""));
         assert!(base.record()["blocks"][2].get("text").is_none());
         let start = base.version();
         let (mut alices, mut bobs) = (base.fork_as(ALICE), base.fork_as(BOB));
@@ -960,7 +972,7 @@ mod tests {
             json!({"kind": "document"}),
         ];
         for record in records {
-            item.set_record(View::document_v2(), &record);
+            item.set_record(View::document_v1(), &record);
             assert_eq!(item.record(), record);
         }
     }

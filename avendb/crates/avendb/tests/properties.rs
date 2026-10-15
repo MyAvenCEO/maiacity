@@ -26,7 +26,8 @@ use avendb::history::{Repo, MAIN};
 use avendb::merge::Place;
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
-use avendb::lens::{DocV2, Lane, View, DOCUMENT_V1, DOCUMENT_V2, TODO_V1, TODO_V2};
+use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
+use avendb::lens::{DocV1, Lane, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{
     keep_picks, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
     Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share,
@@ -2122,7 +2123,7 @@ fn each_step_settles_as_the_whole_model_does() {
     }
 }
 
-/// A random document as any mix of apps could have stored it: blocks in v1's representation, v2's, or both after
+/// A random document as any mix of apps could have stored it: blocks in v0's representation, v1's, or both after
 /// concurrent edits; values no schema takes; blocks no app can read; ids two blocks share.
 fn stored_document(rng: &mut Rng) -> Value {
     let blocks: Vec<Value> = (0..rng.below(7))
@@ -2162,7 +2163,7 @@ fn stored_document(rng: &mut Rng) -> Value {
     d
 }
 
-/// A new block as an app on v2 (`newer`) or v1 writes it.
+/// A new block as an app on v1 (`newer`) or v0 writes it.
 fn new_block(rng: &mut Rng, id: u64, newer: bool) -> Value {
     let text = rng.pick(&["Seeds", "Water", ""]);
     if !newer {
@@ -2178,7 +2179,7 @@ fn new_block(rng: &mut Rng, id: u64, newer: bool) -> Value {
     b
 }
 
-/// One random edit of a document as an app on v2 (`newer`) or v1 sees it: what a user does in its editor.
+/// One random edit of a document as an app on v1 (`newer`) or v0 sees it: what a user does in its editor.
 fn edit_document(rng: &mut Rng, d: &mut Value, newer: bool) {
     let what = rng.below(8);
     if what == 0 {
@@ -2252,15 +2253,15 @@ fn t9_put_get() {
     // on random documents as any mix of apps could have stored them, for both apps: both see the same item (T9c), an
     // unchanged view writes nothing (T9g), an edit reads back exactly as made (T9f), and what the app can't see is left
     // as it was; an older app's edit keeps the tags and each block's checked and lang (T9h)
-    let (v1, v2) = (View::document_v1(), View::document_v2());
+    let (v0, v1) = (example::document_v0(), example::document_v1());
     let mut in_place = 0;
     for seed in RUNS {
         let mut rng = Rng(seed);
         for _ in 0..50 {
             let stored = stored_document(&mut rng);
-            let as_v2 = v2.get(&stored).expect("every document reads");
-            assert_eq!(v1.get(&stored), v1.get(&as_v2), "seed {seed}: {stored}");
-            for (view, newer) in [(v1, false), (v2, true)] {
+            let as_v1 = v1.get(&stored).expect("every document reads");
+            assert_eq!(v0.get(&stored), v0.get(&as_v1), "seed {seed}: {stored}");
+            for (view, newer) in [(v0, false), (v1, true)] {
                 let seen = view.get(&stored).expect("every document reads");
                 assert_eq!(view.put(&stored, &seen).as_ref(), Some(&stored), "seed {seed}: {stored}");
                 let mut edited = seen.clone();
@@ -2330,15 +2331,15 @@ fn edit_todo(rng: &mut Rng, t: &mut Value, newer: bool) {
 #[test]
 fn t9_put_get_todos() {
     // the same laws for todos; and a todo in progress stays in progress when an older app edits anything but done
-    let (v1, v2) = (View::todo_v1(), View::todo_v2());
+    let (v0, v1) = (example::todo_v0(), example::todo_v1());
     let mut kept = 0;
     for seed in RUNS {
         let mut rng = Rng(seed);
         for _ in 0..50 {
             let stored = stored_todo(&mut rng);
-            let as_v2 = v2.get(&stored).expect("every todo reads");
-            assert_eq!(v1.get(&stored), v1.get(&as_v2), "seed {seed}: {stored}");
-            for (view, newer) in [(v1, false), (v2, true)] {
+            let as_v1 = v1.get(&stored).expect("every todo reads");
+            assert_eq!(v0.get(&stored), v0.get(&as_v1), "seed {seed}: {stored}");
+            for (view, newer) in [(v0, false), (v1, true)] {
                 let seen = view.get(&stored).expect("every todo reads");
                 assert_eq!(view.put(&stored, &seen).as_ref(), Some(&stored), "seed {seed}: {stored}");
                 let mut edited = seen.clone();
@@ -2363,9 +2364,9 @@ fn s1_every_edit_an_app_makes_fits() {
     // app reads and ids two blocks share, every edit an app makes through its view fits the schemas both apps wrote
     // them under (`Lane::fits`): what it didn't change holds back nothing it changed, so a device never refuses its
     // app's edit and every reader counts it. A block with no id is no row, and no app writes one: those it leaves out.
-    let lane = Lane::with_built_ins([]);
-    let docs: BTreeSet<BlobId> = [DOCUMENT_V1.id(), DOCUMENT_V2.id()].into();
-    let todos: BTreeSet<BlobId> = [TODO_V1.id(), TODO_V2.id()].into();
+    let lane = Lane::with_built_ins(example::blobs::LANE.map(str::as_bytes));
+    let docs: BTreeSet<BlobId> = [DOCUMENT_V0.id(), DOCUMENT_V1.id()].into();
+    let todos: BTreeSet<BlobId> = [TODO_V0.id(), TODO_V1.id()].into();
     let mut judged = 0;
     for seed in RUNS {
         let mut rng = Rng(seed);
@@ -2374,14 +2375,14 @@ fn s1_every_edit_an_app_makes_fits() {
             let todo = stored_todo(&mut rng);
             let rows = blocks(&doc).iter().all(|b| b["id"].is_u64());
             for newer in [false, true] {
-                let view = if newer { View::document_v2() } else { View::document_v1() };
+                let view = if newer { example::document_v1() } else { example::document_v0() };
                 let mut edited = view.get(&doc).expect("every document reads");
                 for _ in 0..1 + rng.below(3) {
                     edit_document(&mut rng, &mut edited, newer);
                 }
                 let put = view.put(&doc, &edited).expect("an edited view is a view");
                 assert!(!rows || lane.fits(&docs, &doc, &put), "seed {seed}: {doc} edited into {put}");
-                let view = if newer { View::todo_v2() } else { View::todo_v1() };
+                let view = if newer { example::todo_v1() } else { example::todo_v0() };
                 let mut edited = view.get(&todo).expect("every todo reads");
                 for _ in 0..1 + rng.below(3) {
                     edit_todo(&mut rng, &mut edited, newer);
@@ -2395,10 +2396,10 @@ fn s1_every_edit_an_app_makes_fits() {
     assert!(judged > 6000, "{judged}");
 }
 
-/// One random edit of a document, as a user makes it in a v2 app; a new one where an undo took the first write back.
+/// One random edit of a document, as a user makes it in a v1 app; a new one where an undo took the first write back.
 fn edit_item(rng: &mut Rng, item: &mut Item) {
-    let view = View::document_v2();
-    let new = || DocV2 { title: "Welcome".into(), blocks: vec![], tags: vec![] }.to_value();
+    let view = View::document_v1();
+    let new = || DocV1 { title: "Welcome".into(), blocks: vec![], tags: vec![] }.to_value();
     let mut d = item.read(view).unwrap_or_else(new);
     edit_document(rng, &mut d, true);
     assert!(item.write(view, &d));

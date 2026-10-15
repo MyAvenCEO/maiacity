@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use avendb::doc::Item;
 use avendb::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
-use avendb::lens::{Status, DOCUMENT_V2};
+use avendb::lens::{Status, DOCUMENT_V1};
 use avendb::policy::{Action, KeepMode, Level, Refusal, Revoking, Who};
 use avendb::sealed::{seal, Brought, FileKey, FileRoot};
 use avendb::slice::{Atom, Selector, Sym, SCHEMA_TYPE};
@@ -270,7 +270,7 @@ fn t12_a_stranger_gets_nothing() {
     let (mac, stranger) = (w.mac_a, w.stranger);
     let charter = w.lab.create(mac, h.coop, h.coop, "doc", &[], document("Charter", CHARTER_TEXT, mac)).unwrap();
     w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
-    let schema = w.lab.add_schema(mac, h.coop, h.coop, DOCUMENT_V2.bytes()).unwrap();
+    let schema = w.lab.add_schema(mac, h.coop, h.coop, DOCUMENT_V1.bytes()).unwrap();
     w.lab.sync_all(12);
     assert!(respond(w.lab.log(mac).edits(), stranger, &[]).is_empty(), "Alice's Mac would send it nothing");
     for d in devices(&w) {
@@ -280,7 +280,7 @@ fn t12_a_stranger_gets_nothing() {
     w.lab.follow(stranger, &[h.coop]);
     w.lab.sync_all(12);
     assert_eq!(set(w.lab.entries(stranger)), set([charter, schema]), "following the coop, its public entries alone");
-    assert_eq!(w.lab.lane_of(stranger, h.coop), [DOCUMENT_V2.bytes()], "whose lane it reads");
+    assert_eq!(w.lab.lane_of(stranger, h.coop), [DOCUMENT_V1.bytes()], "whose lane it reads");
 }
 
 /// The entries tagged `tag`, of any type.
@@ -418,7 +418,7 @@ fn keep_modes_choose_what_and_how_a_device_syncs() {
         clip_tagged(&mut w, "Dawn", &["original", "dawn"], 3),
         clip_tagged(&mut w, "Dusk", &["original", "dusk"], 4),
     ];
-    let schema = w.lab.add_schema(mac, alice, alice, DOCUMENT_V2.bytes()).unwrap();
+    let schema = w.lab.add_schema(mac, alice, alice, DOCUMENT_V1.bytes()).unwrap();
     w.lab.sync_all(2);
     assert_eq!(set(w.lab.entries(phone)), set([proxies[0], schema]), "the dawn proxy and the schema");
     assert_eq!(set(w.lab.entries(server)), set([proxies[0], proxies[1], schema]), "all but the originals");

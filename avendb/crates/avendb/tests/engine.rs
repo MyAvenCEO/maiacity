@@ -14,7 +14,7 @@ use avendb::engine;
 use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
-use avendb::lens::{self, Schema, Status, TypeV2, View};
+use avendb::lens::{self, Schema, Status, TypeV1, View};
 use avendb::policy::{Level, Refusal};
 use avendb::rules::{self, Op};
 use avendb::world;
@@ -120,7 +120,7 @@ fn record_ops_write_only_what_changed_through_the_schema() {
     ok(run(&mut w, mac, json!({ "op": "move", "entry": hex(l.plan), "path": ["blocks", { "id": 3 }], "to": 0 })));
     let doc = w.lab.item(mac, l.plan).unwrap().as_document().unwrap();
     assert_eq!(doc.blocks.iter().map(|b| b.id).collect::<Vec<_>>(), [3, 1, 2]);
-    assert_eq!(doc.blocks[0].r#type, TypeV2::Paragraph);
+    assert_eq!(doc.blocks[0].r#type, TypeV1::Paragraph);
     ok(run(&mut w, mac, json!({ "op": "remove", "entry": hex(l.plan), "path": ["blocks", { "id": 3 }] })));
     assert_eq!(cast::text(&w.lab, mac, l.plan, 3), None);
     // a list of values, by value
@@ -132,30 +132,37 @@ fn record_ops_write_only_what_changed_through_the_schema() {
 }
 
 #[test]
-fn a_v1_document_reads_and_changes_through_the_lens() {
+fn a_v0_document_reads_and_changes_through_the_lens() {
     let mut w = cast::world();
     let h = cast::handbook(&mut w);
     let (mac, coop) = (w.mac_a, h.coop.to_hex());
-    // Welcome as a v2 app sees it: its v1 blocks through the lens, a heading and a paragraph
-    let get = ok(run(&mut w, mac, json!({ "op": "get", "entry": hex(h.welcome), "schema": "document" })));
+    // the coop's lane holds the lens engine's example, an older document schema and the lens from it, and an app on
+    // that v0 writes a document
+    for blob in [lens::example::blobs::DOCUMENT_V0, lens::example::blobs::DOCUMENT_LENS] {
+        w.lab.add_schema(mac, h.coop, h.coop, blob.as_bytes()).expect("a lane entry");
+    }
+    let welcome = cast::document_v0("Welcome", cast::WELCOME_TEXT, mac);
+    let welcome = w.lab.create(mac, h.coop, h.coop, "doc", &[], welcome).expect("a v0 document");
+    // Welcome as a v1 app sees it: its v0 blocks through the lens, a heading and a paragraph
+    let get = ok(run(&mut w, mac, json!({ "op": "get", "entry": hex(welcome), "schema": "document" })));
     assert_eq!(get["record"]["blocks"][0]["type"], "heading");
     assert_eq!(get["readOnly"], false);
-    // the stored record is what the v1 app wrote, and ops only read it
-    let stored = ok(run(&mut w, mac, json!({ "op": "get", "entry": hex(h.welcome), "schema": "stored" })));
+    // the stored record is what the v0 app wrote, and ops only read it
+    let stored = ok(run(&mut w, mac, json!({ "op": "get", "entry": hex(welcome), "schema": "stored" })));
     assert_eq!(stored["record"]["blocks"][0]["kind"], "h1");
     assert_eq!((stored["schema"].clone(), stored["readOnly"].clone()), (Value::Null, json!(true)));
-    let raw = json!({ "op": "set", "entry": hex(h.welcome), "schema": "stored", "path": ["title"], "value": "x" });
+    let raw = json!({ "op": "set", "entry": hex(welcome), "schema": "stored", "path": ["title"], "value": "x" });
     assert_eq!(refused(&run(&mut w, mac, raw)), "NoSchema");
-    // a v2 edit through the lens: a v1 app sees it, and what only v2 says lands as v2 stores it
+    // a v1 edit through the lens: a v0 app sees it, and what only v1 says lands as v1 stores it
     let edit = json!({ "op": "batch", "as": coop, "ops": [
-        { "op": "set", "entry": hex(h.welcome), "path": ["blocks", { "id": 2 }, "text"], "value": cast::AFTER_TEXT },
-        { "op": "set", "entry": hex(h.welcome), "path": ["blocks", { "id": 2 }, "checked"], "value": true },
+        { "op": "set", "entry": hex(welcome), "path": ["blocks", { "id": 2 }, "text"], "value": cast::AFTER_TEXT },
+        { "op": "set", "entry": hex(welcome), "path": ["blocks", { "id": 2 }, "checked"], "value": true },
     ] });
     assert_eq!(ok(run(&mut w, mac, edit)).as_array().map(Vec::len), Some(1));
-    let v1 = w.lab.item(mac, h.welcome).unwrap().as_document_v1().unwrap();
-    assert_eq!(v1.blocks[1].text, cast::AFTER_TEXT);
+    let v0 = w.lab.item(mac, welcome).unwrap().as_document_v0().unwrap();
+    assert_eq!(v0.blocks[1].text, cast::AFTER_TEXT);
     // its history shows each write's changes to the stored record, as every reader sees them
-    let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": hex(h.welcome) })));
+    let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": hex(welcome) })));
     let last = history["edits"].as_array().unwrap().last().unwrap().clone();
     assert_eq!(last["kind"], "edit");
     let changes = last["changes"].as_array().unwrap();
@@ -521,13 +528,10 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = [
-        "article", "card", "document", "document", "file", "flow", "function", "post", "profile", "story", "todo",
-        "todo",
-    ];
-    assert_eq!(kinds, own, "its own kinds, and documents and todos at v1 too, the lens engine's example");
+    let own = ["article", "card", "document", "file", "flow", "function", "post", "profile", "story", "todo"];
+    assert_eq!(kinds, own, "its own kinds, each once: every shipped schema starts at v1");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
-    assert_eq!(list(&schemas["lenses"]).len(), 2);
+    assert!(list(&schemas["lenses"]).is_empty());
 }
 
 /// Ops from their JSON.
@@ -712,7 +716,7 @@ fn s3_a_write_that_breaks_its_schema_counts_for_no_reader() {
         assert_eq!(w.lab.edit(mac_b, bob, t.door, |item| item.put_record(bad)), Err(Refusal::NotAView), "{bad}");
     }
     let retitled = with(&|r| r["title"] = json!("The door"));
-    let document = w.lab.edit(mac_b, bob, t.door, |item| item.set_record(View::document_v2(), &retitled));
+    let document = w.lab.edit(mac_b, bob, t.door, |item| item.set_record(View::document_v1(), &retitled));
     assert_eq!(document, Err(Refusal::NotAView));
     assert_eq!(may(&mut w, mac_b, bob, &[status("later")]), [json!("NotAView")]);
     // a patched app makes one all the same: no reader counts it, its own device neither, and each keeps the last
@@ -748,7 +752,7 @@ fn s3_a_write_that_breaks_its_schema_counts_for_no_reader() {
 }
 
 /// A todo schema of Alice's own: v2, where a todo may be blocked too.
-const TODO_V3: &str = r#"{ "title": "Todo, v3", "type": "object", "properties": {
+const TODO_V2: &str = r#"{ "title": "Todo, v2", "type": "object", "properties": {
   "kind": { "const": "todo" },
   "title": { "type": "string", "default": "" },
   "status": { "enum": ["open", "doing", "blocked", "done"], "default": "open" },
@@ -764,11 +768,11 @@ fn a_write_counts_once_the_lane_holds_its_schema() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let (alice, mac) = (w.alice, w.mac_a);
-    let v3 = Schema::parse(TODO_V3.as_bytes()).expect("a schema");
-    let (door, schema) = (hex(l.door), v3.id().to_hex());
+    let v2 = Schema::parse(TODO_V2.as_bytes()).expect("a schema");
+    let (door, schema) = (hex(l.door), v2.id().to_hex());
     let get = json!({ "op": "get", "entry": door, "schema": schema });
     let blocked = json!({ "op": "set", "entry": door, "schema": schema, "path": ["status"], "value": "blocked" });
-    // an app on v3 neither reads nor writes through it while Alice's lane doesn't hold it
+    // an app on v2 neither reads nor writes through it while Alice's lane doesn't hold it
     assert_eq!(refused(&run(&mut w, mac, get.clone())), "NoSchema");
     assert_eq!(refused(&run(&mut w, mac, blocked)), "NoSchema");
     // a patched one writes through it all the same, which no reader counts: the todo stores no status still, so is
@@ -777,7 +781,7 @@ fn a_write_counts_once_the_lane_holds_its_schema() {
         lab.edit(mac, alice, l.door, |item| {
             let mut r = item.record();
             r["status"] = json!("blocked");
-            item.set_record(&View::plain(&v3), &r);
+            item.set_record(&View::plain(&v2), &r);
         })
     });
     let patched = patched.expect("a patched app makes it").to_hex();
@@ -787,19 +791,19 @@ fn a_write_counts_once_the_lane_holds_its_schema() {
     // a schema entry holds a schema and nothing else, of the type it says
     let add = |ty: &str, value: Value| json!({ "op": "create", "vault": alice.to_hex(), "type": ty, "value": value });
     assert_eq!(refused(&run(&mut w, mac, add("schema", json!("no schema")))), "BadOp");
-    assert_eq!(refused(&run(&mut w, mac, add("lens", json!(TODO_V3)))), "BadOp");
-    assert_eq!(refused(&run(&mut w, mac, add("schema", json!(lens::blobs::TODO_LENS)))), "BadOp");
-    let tagged = json!({ "op": "create", "vault": alice.to_hex(), "type": "schema", "tags": [], "value": TODO_V3 });
+    assert_eq!(refused(&run(&mut w, mac, add("lens", json!(TODO_V2)))), "BadOp");
+    assert_eq!(refused(&run(&mut w, mac, add("schema", json!(lens::example::blobs::TODO_LENS)))), "BadOp");
+    let tagged = json!({ "op": "create", "vault": alice.to_hex(), "type": "schema", "tags": [], "value": TODO_V2 });
     assert_eq!(refused(&run(&mut w, mac, tagged)), "BadOp");
-    // once Alice adds v3 to her lane, the write fits the schemas it was written under, and counts
-    let made = ok(run(&mut w, mac, add("schema", json!(TODO_V3))));
-    assert_eq!(made["blob"], BlobId::of(TODO_V3.as_bytes()).to_hex());
+    // once Alice adds v2 to her lane, the write fits the schemas it was written under, and counts
+    let made = ok(run(&mut w, mac, add("schema", json!(TODO_V2))));
+    assert_eq!(made["blob"], BlobId::of(TODO_V2.as_bytes()).to_hex());
     let entry = EntryId::from_hex(made["entry"].as_str().expect("its id")).expect("an entry");
-    assert_eq!(w.lab.lane_of(mac, alice), [TODO_V3.as_bytes()], "its JSON, as written");
+    assert_eq!(w.lab.lane_of(mac, alice), [TODO_V2.as_bytes()], "its JSON, as written");
     assert!(w.lab.meaning(mac, entry).is_some_and(|m| m.attrs.ty.of_lane()), "of a schema entry");
     assert_eq!(counted(&mut w, mac, l.door).last(), Some(&(patched, true)));
     assert_eq!(stored(&w), "blocked");
-    // an app on v3 reads it, read-only: no lens joins v3 to v2, which the todo was written under too
+    // an app on v2 reads it, read-only: no lens joins v2 to v1, which the todo was written under too
     let seen = ok(run(&mut w, mac, get));
     assert_eq!((seen["record"]["status"].clone(), seen["readOnly"].clone()), (json!("blocked"), json!(true)));
 }
