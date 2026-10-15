@@ -393,7 +393,7 @@
 		['Card', 'A request for the server’s contact card', 'The vault logs of CEO Aven and every vault that owns it'],
 		[
 			'Claim key, Claim',
-			'Asks an unclaimed server, or an agent’s new device, for its key to seal to, then claims it',
+			'Asks an unclaimed server, or a new agent device, for its key to seal to, then claims it',
 			'The key; the claim, signed by the claimed device too'
 		]
 	];
@@ -660,8 +660,8 @@
 				<div>
 					<h3>Aven vault</h3>
 					<p>
-						An agent, such as CEO Aven or avenCLAUDE. Owned like a COOP; its devices, a server or an agent’s own on your
-						desktop, act for it but never govern it.
+						An agent’s identity, such as CEO Aven or your own aven. Owned like a COOP; its devices, a server or the agent
+						devices of the harnesses that control it, act for it but never govern it.
 					</p>
 				</div>
 			</div>
@@ -1091,12 +1091,14 @@
 				whom, and nothing is made until it is signed.
 			</p>
 			<p class="prose-col">
-				An agent such as Claude Code works as an aven of its own, by its own device’s key, never a token.
-				<code>avendb-device agent avenCLAUDE</code> is an avenDB device of its own on your desktop, which Claude Code
-				starts as its MCP. The desktop app shows it waiting, and one prompt of your passkey founds the aven vault
-				avenCLAUDE, which your vault owns, and adds the agent’s device to it, the way a new server is claimed. The vaults
-				you tick give it a Suggester share: it reads them and writes only on proposals, which you merge. It keeps no file
-				of its own: it reads your files from your desktop’s one store, so nothing is kept twice.
+				An aven is an identity your vault owns, and agent harnesses control it, each as an agent device with a key of its
+				own, never a token: Claude Code as agentClaude, Codex as agentCodex, and likewise Cursor, Grok and our own
+				native aven. <code>avendb-device agent claude</code> is that device on your desktop, which Claude Code starts as
+				its MCP. Access is asked for and given as any share is, on one consent screen: the agent says what it wants and
+				why, and you pick the aven it joins and all your vaults or only some, a level each, Viewer, Suggester or Editor.
+				One prompt of your passkey adds a new device to the aven, the way a new server is claimed; the shares need none.
+				Every harness of an aven acts with the aven’s access, and removing one device leaves the others. It keeps no
+				file of its own: it reads your files from your desktop’s one store, so nothing is kept twice.
 			</p>
 		</section>
 

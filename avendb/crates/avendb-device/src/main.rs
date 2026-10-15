@@ -2,8 +2,9 @@
 //! answers the app in lines of JSON on its stdin and stdout until its stdin ends (`avendb_device::serve`), and logs on
 //! its stderr, as `RUST_LOG` says, else its warnings.
 //!
-//! `avendb-device agent <name> [--dir <folder>]`: an agent's own device beside the app's folder, the app's own by
-//! default, as an MCP server on its stdin and stdout (`avendb_device::agent`).
+//! `avendb-device agent <harness> [--aven <name>] [--dir <folder>]`: a harness's agent device (agentClaude for
+//! `claude`) beside the app's folder, the app's own by default, as an MCP server on its stdin and stdout, asking to
+//! join the aven named, if any (`avendb_device::agent`).
 
 use std::path::PathBuf;
 
@@ -28,7 +29,9 @@ async fn run() -> Result<()> {
             std::fs::create_dir_all(&dir).with_context(|| format!("the device's folder {}", dir.display()))?;
             serve(Config { dir, direct: true }, tokio::io::stdin(), tokio::io::stdout()).await
         }
-        Usage::Agent { name, dir } => agent::serve(dir, name, tokio::io::stdin(), tokio::io::stdout()).await,
+        Usage::Agent { harness, aven, dir } => {
+            agent::serve(dir, harness, aven, tokio::io::stdin(), tokio::io::stdout()).await
+        }
     }
 }
 
@@ -36,18 +39,31 @@ async fn run() -> Result<()> {
 enum Usage {
     /// The app's device, in the folder the app names: `--dir <folder>`.
     App(PathBuf),
-    /// Agent `name`'s own device beside the app's folder `dir`: `agent <name> [--dir <folder>]`.
-    Agent { name: String, dir: PathBuf },
+    /// Harness `harness`'s agent device beside the app's folder `dir`, asking to join aven `aven`, if named:
+    /// `agent <harness> [--aven <name>] [--dir <folder>]`.
+    Agent { harness: String, aven: Option<String>, dir: PathBuf },
 }
 
 fn usage() -> Result<Usage> {
-    const USAGE: &str = "usage: avendb-device --dir <folder> | avendb-device agent <name> [--dir <folder>]";
+    const USAGE: &str =
+        "usage: avendb-device --dir <folder> | avendb-device agent <harness> [--aven <name>] [--dir <folder>]";
     let args: Vec<String> = std::env::args().skip(1).collect();
     match &args[..] {
         [flag, dir] if flag == "--dir" => Ok(Usage::App(dir.into())),
-        [agent, name] if agent == "agent" => Ok(Usage::Agent { name: name.clone(), dir: app_folder()? }),
-        [agent, name, flag, dir] if agent == "agent" && flag == "--dir" => {
-            Ok(Usage::Agent { name: name.clone(), dir: dir.into() })
+        [agent, harness, rest @ ..] if agent == "agent" => {
+            let (mut aven, mut dir) = (None, None);
+            for pair in rest.chunks(2) {
+                match pair {
+                    [flag, value] if flag == "--aven" && aven.is_none() => aven = Some(value.clone()),
+                    [flag, value] if flag == "--dir" && dir.is_none() => dir = Some(PathBuf::from(value)),
+                    _ => bail!(USAGE),
+                }
+            }
+            let dir = match dir {
+                Some(dir) => dir,
+                None => app_folder()?,
+            };
+            Ok(Usage::Agent { harness: harness.clone(), aven, dir })
         }
         _ => bail!(USAGE),
     }

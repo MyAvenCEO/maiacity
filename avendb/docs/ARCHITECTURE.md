@@ -193,18 +193,28 @@ of a vault founded before claims a new server the same way (`Node::claim`). The 
 vault's profile with its name (`world::SEED_NAMES`) as it settles, before the page opens; the page names a seed that
 has none the same way.
 
-**An agent's own device.** An agent on the person's desktop, such as Claude Code, is an aven of its own with a key
-of its own, never a token: `avendb-device agent avenCLAUDE` (`crates/avendb-device/src/agent.rs`) runs an avenDB device
-as the agent's MCP server on its stdin and stdout, in a folder beside the desktop app's that the app never clears
-(`<app folder>-agents/<name>`). It keeps its secret on its shelf, as the server does (`server::open_agent`), and its
-iroh key derives from it. While it belongs to no vault it hands its card to whoever asks and answers claims, and
-leaves its offer for the app, whose page asks the person to adopt it. One ceremony adopts it the way a server is
-claimed (`Node::adopt_with`): the passkey signs the genesis of the aven vault of that name, which the person's vault
-owns alone, or takes the one it owns already, and the edit that adds the agent's device to it, sealed to the agent's
-key, which the agent signs too. The vaults the person ticks then give the aven a Suggester share, issued by the
-device alone. From then on the agent acts for its aven by its own key, as its shares allow: it reads, and writes on
-proposals its person merges. It keeps no file whole of its own and reads its person's files from their desktop's one
-store, so nothing is kept twice. A reset clears its folder as the app's, and it waits to be adopted again.
+**Avens and agent devices.** An aven is an identity, an aven vault the person's vault owns, which holds the aven's
+shares. Agent harnesses control it, each as an agent device of it with a key of its own, never a token: Claude Code as
+agentClaude, Codex as agentCodex, and likewise Cursor, Grok and our own native aven, as a person's Mac and phone are
+devices of their one vault. So every harness of an aven acts with the aven's access and signs by its own key, and one
+is taken out by removing its device, leaving the others. `avendb-device agent <harness> [--aven <name>]`
+(`crates/avendb-device/src/agent.rs`) runs an agent device as the harness's MCP server on its stdin and stdout, in a
+folder beside the desktop app's that the app never clears (`<app folder>-agents/<device>`). It keeps its secret on its
+shelf, as the server does (`server::open_agent`), and its iroh key derives from it. It keeps no file whole of its own
+and reads its person's files from their desktop's one store, so nothing is kept twice. A reset clears its folder as the
+app's, and it asks to join again.
+
+**Asking for access.** Access is asked for and given as any share is, on one consent screen. An agent device leaves an
+access request for the desktop app (`<device>.request`): who asks, by its device's name and key, the aven it would
+join, if it names one, a level (Viewer, Suggester or Editor), why, and the vaults it names, if any; while it is no
+vault's device, its offer too. It asks again for more with its MCP tool `avendb_request_access`. The page shows the
+request and the person picks the aven it joins, one their vault owns or a new one they name, then all their vaults or
+only some, a level each, and approves or denies. Approving a device that is none of the aven's yet adds it in one
+ceremony, the way a server is claimed (`Node::adopt_with`): the passkey signs the genesis of a new aven their vault owns
+alone, if it is new, and the edit that adds the device, sealed to the device's key, which the device signs too. Each
+vault picked then gives the aven a share at its level, which the device issues alone. A no is left for the agent
+(`<device>.denied`), which asks no more until it asks again. A share covers one vault: a share of the person's own vault
+reaches none of the vaults it owns, so "all my vaults" is a share of each.
 
 **One passkey, one human vault.** A device that founds asks the server first, with the passkey's pass, for the vault
 that passkey roots (`Node::rejoin_by_pass`, the same card as linking). If the server knows one, the device joins it
@@ -576,8 +586,8 @@ Every caller goes through `Node::run`:
 | Caller | How it calls |
 |---|---|
 | A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
-| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents`, `adopt [name, offer, vaults]` and `agentCommand` for the agents on the desktop. Its ceremonies run in the app's sign-in sheet (section 11). |
-| An agent on the desktop | Its own device, as its MCP server (`avendb-device agent <name>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, each acting for its aven vault, whose shares decide. It has no passkey, so a change the owners approve answers `approve`. |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, aven, shares]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop. Its ceremonies run in the app's sign-in sheet (section 11). |
+| An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, each acting for its aven, whose shares decide, and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
 A device's lifecycle stays outside `run`: founding, linking and opening a device (`Device.found`, `Device.link`,
@@ -969,8 +979,8 @@ on the same stream. Every value has exactly one encoding, fuzzed and checked aga
 | 2 | Card: the server's contact card | The vault logs of the CEO Aven and its owners, up the chain |
 | 3 | Link: a passkey's pass for this connection's device | The link card |
 | 4 | Join: the edit that adds the new device | Nothing, once taken |
-| 5 | Claim key | The unclaimed server's key to seal to, or an agent's device's |
-| 6 | Claim: the edit that adds the server to the CEO Aven, or an agent's device to its aven | It, signed by the claimed device too |
+| 5 | Claim key | The unclaimed server's key to seal to, or an agent device's |
+| 6 | Claim: the edit that adds the server to the CEO Aven, or an agent device to its aven | It, signed by the claimed device too |
 | 7 | Ask logs: a request for some logs alone | A page of edits of those logs |
 | 8 | State: a device's signed statement of its holdings, its own or passed on | Nothing, once kept or found older |
 

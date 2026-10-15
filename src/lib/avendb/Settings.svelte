@@ -43,16 +43,23 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
-	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null,
-	 *   connect?: string }}
+	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null }}
 	 */
-	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null, connect = '' } = $props();
-	let connected = $state(false);
-	/** Copies the line that connects Claude Code to its own device, avenCLAUDE. */
-	async function copyConnect() {
-		await navigator.clipboard.writeText(connect);
-		connected = true;
-		setTimeout(() => (connected = false), 1400);
+	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null } = $props();
+	/** in the Mac app, the harness whose agent device the page shows how to run, and that, as the device says */
+	let harness = $state('claude');
+	let running = $state(/** @type {{ device: string, command: string, claude: string | null } | null} */ (null));
+	let copied = $state(false);
+	$effect(() => {
+		const h = harness.trim();
+		if (!/^[A-Za-z0-9_-]+$/.test(h)) return void (running = null);
+		api.agentCommand?.(h).then((/** @type {typeof running} */ r) => (running = r), () => (running = null));
+	});
+	/** Copies the line that runs the harness's agent device. */
+	async function copyRunning() {
+		await navigator.clipboard.writeText(running?.claude ?? running?.command ?? '');
+		copied = true;
+		setTimeout(() => (copied = false), 1400);
 	}
 
 	/** This device, as the person sees it: in the Mac app, the Mac. */
@@ -495,16 +502,33 @@
 				<div class="qr">{@html qr}</div>
 				<input class="field code" readonly value={link} onfocus={(e) => e.currentTarget.select()} />
 			</article>
-			{#if connect}
+			{#if sockets}
 				<article class="card">
-					<h3>Claude Code on {here}</h3>
+					<h3>Agents on {here}</h3>
 					<p class="soft">
-						Run this line once in a terminal. Claude Code then starts avenCLAUDE, an avenDB device of its own with a key
-						of its own, and this page asks you to adopt it as your aven with one touch of your passkey. It reads your
-						files from this Mac's one store, so nothing is kept twice, and it suggests changes that you merge.
+						An aven is an identity your vault owns; agent harnesses control it, each as an agent device with a key of its
+						own: Claude Code as agentClaude, Codex as agentCodex, and so on. Once a harness runs its device, this page asks
+						you which aven it joins and which vaults that aven may work in. It reads your files from this Mac's one
+						store, so nothing is kept twice.
 					</p>
-					<input class="field code" readonly value={connect} onfocus={(e) => e.currentTarget.select()} />
-					<button class="btn quiet" onclick={copyConnect}>{connected ? 'Copied' : 'Copy the line'}</button>
+					<label class="harness">
+						<span>Harness</span>
+						<input class="field" bind:value={harness} aria-label="The harness's name" placeholder="claude" />
+					</label>
+					{#if running}
+						<p class="soft">
+							{running.claude
+								? `Run this line once in a terminal: Claude Code then starts ${running.device} in every folder.`
+								: `Give this command to the harness's MCP settings, as the server it starts: ${running.device}.`}
+						</p>
+						<input
+							class="field code"
+							readonly
+							value={running.claude ?? running.command}
+							onfocus={(e) => e.currentTarget.select()}
+						/>
+						<button class="btn quiet" onclick={copyRunning}>{copied ? 'Copied' : 'Copy the line'}</button>
+					{/if}
 				</article>
 			{/if}
 			<article class="card">
@@ -783,6 +807,13 @@
 	}
 
 	/* what a device keeps: a full copy or a light one */
+	.harness {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0 0 0.6rem;
+	}
+
 	.copy {
 		display: inline-flex;
 		margin-left: auto;
