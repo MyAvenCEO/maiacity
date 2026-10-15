@@ -16,6 +16,7 @@
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
 	import { atOrLatest } from '$lib/app/versions.js';
+	import { adaptiveResolution, disposeObject, lowPower, precompile, topPixelRatio } from '$lib/app/view3d.js';
 
 	/** @typedef {import('$lib/actors').Actor} Actor */
 	/** @typedef {import('$lib/actors').Family} Family */
@@ -85,6 +86,10 @@
 	let show = null;
 	/** @type {(() => void) | null} */
 	let dispose = null;
+	/** a model being built and its shaders compiled: the canvas says so meanwhile, not an empty floor */
+	let building = $state(false);
+	/** the graphics card gave up the canvas (out of memory on a phone): it says so, a tap loads the page again */
+	let lost = $state(false);
 
 	const holding = $derived(doing.kind === 'pose' && cast?.poses ? { ...cast.poses[doing.name], ...edits } : null);
 
@@ -112,7 +117,13 @@
 		const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
 		const box = /** @type {HTMLDivElement} */ (canvasBox);
 		const renderer = new THREE.WebGLRenderer({ antialias: true });
-		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+		// a phone draws at most 1.5 pixels a point and a smaller shadow; slow frames lower the resolution ($lib/app/view3d.js)
+		const low = lowPower();
+		renderer.setPixelRatio(topPixelRatio(low));
+		renderer.domElement.addEventListener('webglcontextlost', (e) => {
+			e.preventDefault();
+			lost = true;
+		});
 		renderer.shadowMap.enabled = true;
 		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -126,7 +137,7 @@
 		scene.add(new THREE.HemisphereLight('#ffffff', '#b9b2a6', 1.2));
 		const key = new THREE.DirectionalLight('#fff4e6', 2.2);
 		key.castShadow = true;
-		key.shadow.mapSize.set(2048, 2048);
+		key.shadow.mapSize.setScalar(low ? 1024 : 2048);
 		scene.add(key, key.target);
 		const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.22 }));
 		floor.rotation.x = -Math.PI / 2;
@@ -143,12 +154,14 @@
 		paint = () => {
 			const c = cast;
 			if (c?.asset) return void stage?.setPick(picked, alone);
-			if (!c?.rig.parts) return;
+			// only a machine with a catalog has parts to pick; any other rig keeps its own materials (painting one
+			// without its own list left every group with no material: nothing drawn, the excavators and animals since #601)
+			if (!c?.catalog || !c.rig.parts) return;
 			const mesh = c.rig.object, mats = /** @type {import('three').Material[]} */ (mesh.material);
 			const at = mats.indexOf(lit);
 			mesh.geometry.groups.forEach((g, i) => {
 				const part = c.rig.parts?.[i];
-				g.materialIndex = picked && part === picked ? at : picked && alone ? at + 1 : own[i];
+				g.materialIndex = picked && part === picked ? at : picked && alone ? at + 1 : (own[i] ?? 0);
 			});
 		};
 		const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -204,23 +217,39 @@
 			readModes();
 		};
 
+		/** the model shown, taken off and let go of on the graphics card (else a phone runs out after a few) */
+		const letGo = () => {
+			if (!cast) return;
+			if (cast.asset) stage?.clear();
+			else scene.remove(cast.rig.object);
+			disposeObject(cast.rig.object, new Set([lit, ghost]));
+			cast = null;
+		};
 		show = async (a) => {
+			building = true;
+			// the note on the canvas is drawn before the model is built (building holds the page a moment)
+			await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 			// an animal's skin is meshed off the page first; picked away from meanwhile, it is not shown
 			await a.ready?.();
 			if (variant.id !== a.id) return;
-			if (cast) scene.remove(cast.rig.object);
+			letGo();
 			if (grid) scene.remove(grid);
-			stage?.clear();
 			const c = a.make();
 			picked = null;
 			alone = false;
 			if (c.asset) {
 				// on the asset stage: its own studio and floor, no grid; framed on it as built
 				const { Stage } = await import('$lib/assets/stage.js');
-				if (variant.id !== a.id) return;
-				stage ??= new Stage(renderer, camera);
+				if (variant.id !== a.id) return void disposeObject(c.rig.object);
+				stage ??= new Stage(renderer, camera, { low });
 				stage.resize(box.clientWidth, box.clientHeight);
 				const { centre, size: s } = stage.show(c.rig.object);
+				// its shaders compiled before its first frame, off the page's thread where the browser can
+				await stage.compile();
+				if (variant.id !== a.id) {
+					stage.clear();
+					return void disposeObject(c.rig.object);
+				}
 				cast = c;
 				lab = c.asset.lab ?? null;
 				values = Object.fromEntries(Object.entries(lab?.controls ?? {}).map(([k, v]) => [k, v.value]));
@@ -234,8 +263,11 @@
 				camera.near = reach / 300;
 				camera.far = reach * 80;
 				camera.updateProjectionMatrix();
+				building = false;
 				return;
 			}
+			await precompile(renderer, c.rig.object, camera, scene);
+			if (variant.id !== a.id) return void disposeObject(c.rig.object);
 			lab = null;
 			tags = [];
 			cast = c;
@@ -274,6 +306,7 @@
 			sh.far = reach * 10;
 			sh.updateProjectionMatrix();
 			key.shadow.normalBias = reach * 0.004; // a texel or two: no shadow acne on big flat faces (a machine's plates)
+			building = false;
 		};
 		const resize = () => {
 			const w = box.clientWidth, h = box.clientHeight;
@@ -284,6 +317,7 @@
 		const ro = new ResizeObserver(resize);
 		ro.observe(box);
 		resize();
+		const adapt = adaptiveResolution(renderer, { top: topPixelRatio(low), hold: () => building, onChange: resize });
 		show(variant);
 		let frame = 0;
 		const start = performance.now();
@@ -291,6 +325,7 @@
 		const tick = () => {
 			const now = performance.now(), t = (now - start) / 1000, dt = Math.min(0.05, (now - last) / 1000);
 			last = now;
+			adapt(now);
 			if (cast?.asset && stage) {
 				// the asset runs on its solver, its modes eased; its reading and labels read off it
 				stage.update(dt);
@@ -325,6 +360,7 @@
 		tick();
 		dispose = () => {
 			cancelAnimationFrame(frame);
+			letGo();
 			stage?.dispose();
 			ro.disconnect();
 			controls.dispose();
@@ -558,6 +594,11 @@
 			{/each}
 		</svg>
 	{/if}
+	{#if lost}
+		<button class="canvas-note lost" onclick={() => location.reload()}>This device’s graphics ran out of room. Tap to load it again.</button>
+	{:else if building}
+		<div class="canvas-note" role="status">Building the {chosen.label}…</div>
+	{/if}
 </Turntable>
 
 <style>
@@ -686,6 +727,31 @@
 		height: 6px;
 		border: 1.5px solid currentColor;
 		border-top: 0;
+	}
+
+	/* while a model is built and its shaders compiled, or when the graphics card gave the canvas up */
+	.canvas-note {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		padding: 9px 16px;
+		border: 1px solid #d9d4ca;
+		border-radius: 999px;
+		background: #fbfaf7;
+		box-shadow: 0 6px 20px rgb(31 42 35 / 0.12);
+		color: #1f2a23;
+		font: inherit;
+		font-size: 14px;
+		white-space: nowrap;
+		pointer-events: none;
+	}
+	.canvas-note.lost {
+		white-space: normal;
+		max-width: min(80%, 320px);
+		text-align: center;
+		pointer-events: auto;
+		cursor: pointer;
 	}
 
 	.tags {

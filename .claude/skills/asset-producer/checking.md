@@ -46,13 +46,18 @@ every asset group.
   imports the builder, makes a `WebGLRenderer` with `preserveDrawingBuffer: true` and ACES tone mapping, a hemisphere
   light and one key light, a floor, the asset, and a camera from the query (`cam=x,y,z&at=x,y,z&fov=30`, plus the
   asset's own options: `k=0.5`, `fr=1`, `light=night`). It renders once and sets `document.body.dataset.ready`;
-  wait for `body[data-ready]`. Headless swiftshader draws nothing of a rigged (skinned) machine or actor on the live
-  turntable (its panels, parts and moves still work and can be read from the page): render it once from this route.
+  wait for `body[data-ready]`. Swiftshader draws rigged (skinned) machines and actors on the live turntable too; an
+  empty turntable with its panels filled is a bug, not the headless browser (the excavators drew nothing from #601 to
+  the loading fix: their parts' materials were wiped).
 - Shoot what the asset will be judged by: the whole beside a 1.8 m figure for scale, every mode (labels, cut,
   x-ray, explode, the break), close ups of every joint and the cut, the back, every step of a build, the distance it
   is seen at in the game or film (a medium close-up for a face), by day, in shade and at night. Tile them (Pillow)
   and save them to `/mnt/project-files/<group>/<asset>/`.
 - Read every picture yourself before saying it works.
+- **Loading on a phone**: shoot the page at 390 × 844 with `deviceScaleFactor: 3, isMobile: true, hasTouch: true`;
+  the canvas says "Building the …" while a model is built and its shaders compiled. Pick ten models in a row and count
+  the live WebGL buffers (wrap `createBuffer`/`deleteBuffer` in an init script): the count must stay bounded, or a
+  phone loses its canvas after a few (`src/lib/app/view3d.js` lets each model go).
 
 ## Seen before
 
