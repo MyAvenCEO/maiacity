@@ -78,8 +78,10 @@
  */
 /**
  * A device Synced to lists for an entry or a file: how much of it it holds, `has`, of how much this device holds,
- * `of`: of an entry, edits of its log; of a file, its sealed pieces. All of it when they are equal.
- * @typedef {{ device: string, has: number, of: number }} Holder
+ * `of`: of an entry, edits of its log; of a file, its sealed pieces. All of it when they are equal. `checked` when the
+ * device last said so, in the statement it signed, in seconds since 1970 by its clock: `null` for this device and for
+ * one connected now, whose word is live.
+ * @typedef {{ device: string, has: number, of: number, checked: number | null }} Holder
  */
 /**
  * An entry as the device shows it: `readers`, `writers` and `sharers` the vaults that read it, change it and may share
@@ -188,13 +190,41 @@ export const list = (names, and = 'and') =>
 	names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} ${and} ${names.at(-1)}`;
 
 /**
+ * How long ago `at`, seconds since 1970, was, roughly: "just now", "5 min ago", "3 h ago", "2 days ago".
+ * @param {number} at @param {number} [now] milliseconds since 1970
+ */
+export const ago = (at, now = Date.now()) => {
+	const s = Math.max(0, Math.floor(now / 1000) - at);
+	if (s < 60) return 'just now';
+	if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+	if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+	const days = Math.floor(s / 86400);
+	return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+};
+
+/**
+ * How much of it a holder holds, and since when, in words: "3 of 8", "checked 2 h ago", or both; `null` for a device
+ * connected now that holds all of it.
+ * @param {Holder} h
+ */
+export const heldWords = (h) =>
+	[h.has >= h.of ? '' : `${h.has} of ${h.of}`, h.checked == null ? '' : `checked ${ago(h.checked)}`]
+		.filter(Boolean)
+		.join(', ') || null;
+
+/**
  * Where an entry or a file is synced to, in words, one wording for both: each device by name, with how much of it it
- * holds where that is only some, as "this browser, the server (3 of 8)". `null` for none.
+ * holds where that is only some, and when it last said so where it isn't connected now, as "this browser, the server
+ * (3 of 8), the iPhone (checked 2 h ago)". `null` for none.
  * @param {Holder[] | undefined} holders @param {(device: string) => string} name
  */
 export const syncedWords = (holders, name) =>
-	list((holders ?? []).map((h) => (h.has >= h.of ? name(h.device) : `${name(h.device)} (${h.has} of ${h.of})`))) ||
-	null;
+	list(
+		(holders ?? []).map((h) => {
+			const held = heldWords(h);
+			return held ? `${name(h.device)} (${held})` : name(h.device);
+		})
+	) || null;
 
 /** A tag or a title in quotes. @param {string} t */
 const quote = (t) => `“${t}”`;

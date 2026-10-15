@@ -74,12 +74,15 @@ pub struct SyncedTo {
 
 /// A device Synced to lists for an entry or a file: how much of it the device holds, `has`, of how much this device
 /// holds, `of`. Of an entry, the edits of its log this device holds, as far as its edits show those the device's
-/// frontier covers; of a file, its sealed pieces. It holds all of it when `has` is `of`.
+/// frontier covers; of a file, its sealed pieces. It holds all of it when `has` is `of`. `checked`, when the device
+/// said so in the statement it signed (H2), seconds since 1970 by its clock: `None` for this device, and for one that
+/// said it on a live connection now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Holder {
     pub device: SignerId,
     pub has: u64,
     pub of: u64,
+    pub checked: Option<u64>,
 }
 
 impl Holder {
@@ -244,13 +247,15 @@ impl World {
     ///   `pieces`, how many pieces it is sealed in;
     /// - an entry of kind `record` (`What::Record`: a flow, a function, a post) with its `record`, `null` for others.
     ///
-    /// Each entry and each file lists the devices it is synced to, `syncedTo`, smallest first, each `{device, has, of}`
-    /// (`Holder`): of an entry, edits of its log; of a file, its pieces. This device is among them once its shelf
-    /// holds some of it.
+    /// Each entry and each file lists the devices it is synced to, `syncedTo`, smallest first, each
+    /// `{device, has, of, checked}` (`Holder`): of an entry, edits of its log; of a file, its pieces; `checked` when
+    /// the device said so in its signed statement, `null` for this device and one on a live connection. This device is
+    /// among them once its shelf holds some of it.
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let holders = |hs: Option<&Vec<Holder>>| {
-            let holder = |h: &Holder| json!({ "device": hex(&h.device.0), "has": h.has, "of": h.of });
+            let holder =
+                |h: &Holder| json!({ "device": hex(&h.device.0), "has": h.has, "of": h.of, "checked": h.checked });
             hs.into_iter().flatten().map(holder).collect::<Vec<_>>()
         };
         let owner = |p: &Principal| match p {

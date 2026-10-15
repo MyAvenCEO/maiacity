@@ -702,4 +702,90 @@ theorem T27_holdings_name_only_fetchable_files (n : Node) (c : Conn) (told : Opt
   exact T27_files_follow_their_edits n.edits c.device f []
     (Syncing.reachFiles_fetch ((H1_states_its_shelf n c told h).2 f x hf).2)
 
+/-! ## Signed holdings
+
+A device signs what it tells each peer it holds, with when it checked (`Logs.lean`, "Signed holdings (H2)"): a node
+keeps of each device it knows the newest statement that device signed, passes it to a peer only if the peer may know
+all of it, and lists a device that is not on a live connection by that statement in "Synced to", with when it checked.
+The model abstracts each signature as the device whose key it verifies under; the theorems assume no key signs for
+another device, as SLH-DSA's unforgeability says. -/
+
+/-- H2 (a device's word, signed): what a node keeps of device `d` is a statement it heard that `d` signed, about `d`,
+    and `d` is some vault's device by the node's view. Whatever connection brought it. -/
+theorem H2_signed_by_its_device (n : Node) (d : SignerId) {s : Statement} (h : n.statement d = some s) :
+    s ∈ n.stated ∧ s.device = d ∧ s.signer = some d ∧ devicesIn n.edits d = true :=
+  let ⟨hm, hd, hs, hk, _⟩ := Syncing.statement_sound h
+  ⟨hm, hd, hs, hk⟩
+
+/-- H2, newest wins: what a node keeps of `d` was checked no earlier than any statement it heard that `d` signed. -/
+theorem H2_newest_wins (n : Node) (d : SignerId) {s : Statement} (h : n.statement d = some s) :
+    ∀ x ∈ n.stated, x.signer = some d → x.device = d → x.checked ≤ s.checked :=
+  (Syncing.statement_sound h).2.2.2.2
+
+/-- H2, nobody speaks for a device: a statement `d` didn't sign about itself, however new, wherever it falls among what
+    the node heard, changes nothing of what it keeps of `d`. -/
+theorem H2_unsigned_ignored (n : Node) (d : SignerId) (before after : List Statement) (x : Statement)
+    (hx : ¬(x.signer = some d ∧ x.device = d)) :
+    { n with stated := before ++ x :: after }.statement d = { n with stated := before ++ after }.statement d :=
+  Syncing.statement_ignores n d before after x hx
+
+/-- H2, a device states its shelf: the statement a node's device signs for device `d` is its own, and says what the node
+    announces to `d`: of each log, what its shelf holds of it, a log `d` may know of; of each file, what its shelf holds
+    of it, a file `d` may fetch (T27). -/
+theorem H2_states_its_shelf (n : Node) (me d : SignerId) (now : Nat) :
+    (n.states me d now).signed = true ∧ (n.states me d now).checked = now ∧
+      (∀ l F, (l, F) ∈ (n.states me d now).holdings.logs →
+        F = holdOf n.shelf l ∧ l ∈ logsOf n.shelf ∧ l ∈ reachLogs n.edits d) ∧
+      (∀ f x, (f, x) ∈ (n.states me d now).holdings.files → (f, x) ∈ n.files ∧ mayFetch n.edits d f = true) := by
+  refine ⟨by simp [Node.states, Statement.signed], rfl, Syncing.tells_sound.1, fun f x hm => ?_⟩
+  obtain ⟨hf, hr⟩ := Syncing.tells_sound.2 f x hm
+  exact ⟨hf, Syncing.reachFiles_fetch hr⟩
+
+/-- H2, passed on only to who may know it: a statement a node passes to device `p` is the newest it keeps of another
+    device, which signed it; and `p` may know of every log it states and fetch every file (T27), by the node's view. -/
+theorem H2_passes_only_what_they_may_know (n : Node) (p : SignerId) {s : Statement} (h : s ∈ n.passes p) :
+    ∃ d, d ≠ p ∧ n.statement d = some s ∧ s.signer = some d ∧
+      (∀ l F, (l, F) ∈ s.holdings.logs → l ∈ reachLogs n.edits p) ∧
+      (∀ f x, (f, x) ∈ s.holdings.files → mayFetch n.edits p f = true) := by
+  obtain ⟨d, hdp, hs, hl, hf⟩ := Syncing.passes_sound h
+  exact ⟨d, hdp, hs, (Syncing.statement_sound hs).2.2.1, hl, fun f x hm => Syncing.reachFiles_fetch (hf f x hm)⟩
+
+/-- H2, synced to, with when it checked: a node lists a device other than its own with a time only if no live
+    connection proves it, it may hold `t` by the node's view, and the newest statement the node keeps of it, which it
+    signed, checked then, says what it holds of `t`: all of it, if listed so. -/
+theorem H2_synced_to_checked (n : Node) (me d : SignerId) (live : List SignerId) (t : Synced) (all : Bool) (T : Nat)
+    (h : (d, all, some T) ∈ n.syncedToAt me live t) :
+    d ≠ me ∧ d ∉ live ∧ t.reaches n.edits d = true ∧
+      ∃ s, n.statement d = some s ∧ s.checked = T ∧ s.signer = some d ∧ Syncing.HoldsAs n.edits s.holdings all t :=
+  Syncing.syncedToAt_checked h
+
+/-- H2, synced to now: a node lists a device other than its own with no time only as H1 says, by what it announced on a
+    connection whose hello proved it. -/
+theorem H2_synced_to_now (n : Node) (me d : SignerId) (live : List SignerId) (t : Synced) (all : Bool)
+    (h : (d, all, none) ∈ n.syncedToAt me live t) (hne : d ≠ me) :
+    t.reaches n.edits d = true ∧ ∃ c a, (c, a) ∈ n.heard ∧ c.device = d ∧ Syncing.Stated n.edits a all t :=
+  H1_synced_to n me d t all (Syncing.syncedToAt_now h) hne
+
+/-- H2, what synced to with a time means: if every statement `d` signed about itself, that a node heard, is what a node
+    of `d`'s whose shelf is part of `S`, `d`'s shelf now, signed (`Node.states`), then a node that lists `d` with all of
+    entry `e`, as it checked then, holds no edit of the entry's log that `S` doesn't hold. Assumes ids don't collide. -/
+theorem H2_synced_to_held (n : Node) (me d : SignerId) (live : List SignerId) (e : EntryId) (T : Nat) (S : List Edit)
+    (h : (d, true, some T) ∈ n.syncedToAt me live (.entry e))
+    (honest : ∀ s ∈ n.stated, s.signer = some d → s.device = d →
+      ∃ nd : Node, (∀ x ∈ nd.shelf, x ∈ S) ∧ ∃ p now, nd.states d p now = s)
+    (hid : ∀ a ∈ S, ∀ b ∈ n.edits, a.id = b.id → a = b) (hu : ∀ a ∈ n.edits, ∀ b ∈ n.edits, a.id = b.id → a = b)
+    {x : Edit} (hx : x ∈ n.edits) (hl : x.log? = some (.entry e)) : x ∈ S := by
+  obtain ⟨-, -, -, s, hs, -, hsig, F, hm, hcov⟩ := H2_synced_to_checked n me d live (.entry e) true T h
+  obtain ⟨hin, hdev, -⟩ := H2_signed_by_its_device n d hs
+  obtain ⟨nd, hsub, p, now, rfl⟩ := honest s hin hsig hdev
+  -- what `d` stated is what the shelf of the node that signed it held of the log
+  obtain ⟨rfl, -⟩ := (H2_states_its_shelf nd d p now).2.2.1 _ _ hm
+  exact hsub x (Syncing.covered_held (fun a ha b hb => hid a (hsub a ha) b hb) hu hcov
+    (List.mem_filter.mpr ⟨hx, by simp [hl]⟩))
+
+/-- T27, whatever anyone signs: the gate answers the same whatever statements a node heard or keeps. -/
+theorem T27_gate_reads_no_statements (n : Node) (stated : List Statement) (ep : EndpointId) (b : FileBlob)
+    (fl : List VaultId) : { n with stated }.hands ep b fl = n.hands ep b fl :=
+  rfl
+
 end AvenDB

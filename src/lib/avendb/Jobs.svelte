@@ -11,7 +11,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { studio } from './db.js';
-	import { count, short, size } from './vaults.js';
+	import { ago, count, short, size } from './vaults.js';
 
 	/**
 	 * A job as the device tells it (avendb-net's `jobs`): `done` of `total` `unit`s, `total` 0 while it doesn't know;
@@ -141,8 +141,13 @@
 		const of = each.reduce((n, hs) => n + Math.max(0, ...hs.map((h) => h.of)), 0);
 		/** @type {Map<string, number>} */
 		const has = new Map();
-		for (const h of each.flat()) has.set(h.device, (has.get(h.device) ?? 0) + h.has);
-		return [...has].map(([device, n]) => ({ device, has: n, of }));
+		/** @type {Map<string, number>} the oldest each device said it holds them, if it isn't connected now */
+		const checked = new Map();
+		for (const h of each.flat()) {
+			has.set(h.device, (has.get(h.device) ?? 0) + h.has);
+			if (h.checked != null) checked.set(h.device, Math.min(checked.get(h.device) ?? h.checked, h.checked));
+		}
+		return [...has].map(([device, n]) => ({ device, has: n, of, checked: checked.get(device) ?? null }));
 	};
 
 	/**
@@ -257,8 +262,11 @@
 										{#each syncedTo(j) as h (h.device)}
 											{@const all = h.has >= h.of}
 											{@const held = all ? 'all of it' : `${h.has} of ${h.of}`}
-											<span class="chip" class:ok={all} class:warn={!all} title="{s.signer(h.device)} holds {held}">
-												{s.signer(h.device)}{all ? '' : ` ${Math.round((100 * h.has) / h.of)} %`}
+											{@const since = h.checked == null ? '' : `, as it said ${ago(h.checked, now)}`}
+											<span class="chip" class:ok={all} class:warn={!all} title="{s.signer(h.device)} holds {held}{since}">
+												{s.signer(h.device)}{all ? '' : ` ${Math.round((100 * h.has) / h.of)} %`}{h.checked == null
+													? ''
+													: ` · ${ago(h.checked, now)}`}
 											</span>
 										{:else}
 											<span class="chip">Not synced yet</span>
