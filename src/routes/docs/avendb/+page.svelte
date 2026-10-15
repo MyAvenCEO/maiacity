@@ -20,6 +20,7 @@
 				['local-first', 'Local first'],
 				['shape', 'Entry, Share, Blob'],
 				['vaults', 'Vaults'],
+				['devices', 'Passkey and device keys'],
 				['edits', 'Edits and logs'],
 				['crdt', 'Entries'],
 				['history', 'History'],
@@ -148,6 +149,27 @@
 		'Sealed objects, their sizes, and names that are hashes',
 		'Not even what the server sees: every object is sealed with a 256-bit key the server keeps',
 		'Whoever records the link to it, classical TLS since Hetzner offers nothing else, sees the same noise'
+	];
+
+	const keyring = [
+		[
+			'Your passkey',
+			'You',
+			'In your phone’s or computer’s passkey store, synced by it (iCloud Keychain, for one)',
+			'The same everywhere: its keys come from its PRF output the same way each time. It owns your vault.'
+		],
+		[
+			'A device key',
+			'One install: a browser on maia.city, or the desktop app',
+			'Masked on that install’s own shelf',
+			'Made once from the install’s own randomness, kept until its storage is wiped, never made again.'
+		],
+		[
+			'The unlock',
+			'One session',
+			'In memory only',
+			'One passkey prompt as the device starts. The key is wiped as the device closes.'
+		]
 	];
 
 	const mishaps = [
@@ -641,6 +663,58 @@
 				already has: one passkey, one human vault. The first person to found a vault through a new server claims it. The
 				same prompt founds three vaults, each owned by the one before: Maia Holding GmbH and avenCEO GmbH, two COOPs, and
 				CEO Aven, the agent the server is a device of. Each is named as it is founded.
+			</p>
+		</section>
+
+		<section id="devices">
+			<p class="eyebrow">Keys</p>
+			<h2>Your passkey is you, a device key is one install</h2>
+			<p class="prose-col">
+				Two kinds of key act for a human vault. Your passkey is the root, and the same on every device it syncs to. Each
+				install of avenDB, a browser on maia.city or the desktop app, has a device key of its own, which signs what that
+				install writes.
+			</p>
+			<div class="table">
+				<table>
+					<thead>
+						<tr><th>Key</th><th>Stands for</th><th>Lives</th><th>Lasts</th></tr>
+					</thead>
+					<tbody>
+						{#each keyring as [key, stands, lives, lasts] (key)}
+							<tr><td><b>{key}</b></td><td>{stands}</td><td>{lives}</td><td>{lasts}</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<h3>Random, not derived</h3>
+			<p class="prose-col">
+				A device key is 32 random bytes the install draws when it is made, not something derived from your passkey. So
+				it exists before the first prompt, and that one prompt both unlocks the device and vouches for it by its id: two
+				prompts to set up or sign in, where a derived key would need a third. A device key holds no data, so nothing is
+				lost with it. A wiped or new install joins with your passkey and syncs from your other devices and the server,
+				and you revoke the old one. Making an old key again would do harm: the copy would sign edits that don’t build on
+				the old device’s own, which sync flags as a fork, as for a stolen key, and a revoked device would come back.
+			</p>
+			<h3>How long it lasts</h3>
+			<p class="prose-col">
+				As long as the install’s storage. Closing a tab, the browser or the app keeps everything: the next start takes one
+				prompt, opens with all the device had, and syncs only what changed, log by log. Only wiped storage makes a new
+				device: cleared site data, a private window, an uninstall, a new phone. Browsers may clear a site’s storage on
+				their own (Safari after a week unused), so every browser starts as a light copy and the desktop app as a full
+				one.
+			</p>
+			<h3>Where it lives, and how it is kept</h3>
+			<p class="prose-col">
+				A browser keeps its device in maia.city’s private storage (OPFS); the desktop app in its folder,
+				<code>~/Library/Application Support/city.maia.studio/avendb/</code>. Beside the signed, sealed edits, public keys
+				and file pieces, the device keeps one small record that opens it again: its name, its id, its relay, the 32
+				bytes of its salt, the passkey’s credential and public key, the vaults it follows, and its secret XORed with
+				your passkey’s PRF output on that salt. Nothing on disk is a secret: whoever copies it gets only noise, as
+				unmasking the secret takes that PRF output, which only your authenticator gives, after Face ID, Touch ID or your
+				PIN, and only to maia.city. While the device is open its key is in memory only, and wiped as it closes. What a
+				disk can’t protect against: malware on a machine while the device is open, and the site’s own scripts, which may
+				ask your passkey for a prompt as any page of maia.city may. The server is the one device whose secret is on
+				disk, sealed in its bucket, as nobody is there to unlock it.
 			</p>
 		</section>
 
