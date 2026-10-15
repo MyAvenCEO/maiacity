@@ -296,10 +296,15 @@ impl TodoV2 {
 /// A schema: one version of an item's shape, as a JSON Schema, named by the hash of its bytes.
 ///
 /// The subset it reads: an object's `properties` and `required`; each property a `const`, an `enum`, or a `type` of
-/// string, integer (with a `minimum`), boolean, or array, whose `items` are values or records (objects with a required
-/// integer `id`, which edits match them by); a `default` where a field may be absent. `"x-loro": "text"` marks free
-/// text, which an item stores as a Loro text so concurrent edits merge character by character; everything else is one
-/// value, where concurrent edits keep one of them. Other keywords are annotations and change nothing.
+/// string (with a `maxLength`), integer or number (with a `minimum` and a `maximum`; a number is any finite one),
+/// boolean, object or array; a `default` where a field may be absent. An array's `items` are values (a list, with
+/// `minItems` and `maxItems`) or records (objects with a required integer `id`, which edits match them by); an array
+/// of `prefixItems` is a tuple of so many values (a position `[x, y, z]`). An object (a property whose type is object,
+/// or an array's items that are objects with no integer `id`, or anything inside a record's row) is one value, checked
+/// by its own `properties`, `required` and `additionalProperties: false`, nested to any depth. `$ref` names a shape of
+/// the schema's `$defs`. `"x-loro": "text"` marks free text, which an item stores as a Loro text so concurrent edits
+/// merge character by character; a list of values is a Loro list, merged item by item; everything else is one value,
+/// where concurrent edits keep one of them. Other keywords are annotations and change nothing.
 #[derive(Clone, Debug)]
 pub struct Schema {
     id: BlobId,
@@ -338,10 +343,17 @@ enum Type {
 /// Which values a field takes.
 #[derive(Clone, Debug)]
 enum Check {
-    String,
-    Integer { minimum: Option<i64> },
+    String { max_length: Option<usize> },
+    Integer { minimum: Option<i64>, maximum: Option<i64> },
+    Number { minimum: Option<f64>, maximum: Option<f64> },
     Boolean,
     OneOf(Vec<Value>),
+    /// An array of values, one value.
+    Array { items: Box<Check>, min: usize, max: Option<usize> },
+    /// A tuple: so many values, each its own.
+    Tuple(Vec<Check>),
+    /// An object, one value: its fields' checks, which it must have, and whether it may have others.
+    Object { fields: Vec<(String, Check)>, required: Vec<String>, closed: bool },
 }
 
 /// How an item stores a field.
@@ -353,51 +365,139 @@ pub enum Stored {
     Records,
 }
 
+/// A schema's `$defs`, which a `$ref` names, and how many `$ref`s deep a shape is: a schema whose `$ref`s go round in a
+/// circle is not one.
+#[derive(Clone, Copy)]
+struct Defs<'a> {
+    defs: Option<&'a serde_json::Map<String, Value>>,
+    depth: u8,
+}
+
+impl<'a> Defs<'a> {
+    const DEPTH: u8 = 32;
+
+    fn of(root: &'a Value) -> Defs<'a> {
+        Defs { defs: root.get("$defs").and_then(Value::as_object), depth: 0 }
+    }
+
+    /// `p`, or the shape its `$ref` names, and these defs one step deeper.
+    fn resolve(self, p: &'a Value) -> Option<(&'a Value, Defs<'a>)> {
+        let deeper = Defs { depth: self.depth.checked_add(1).filter(|d| *d <= Self::DEPTH)?, ..self };
+        match p.get("$ref") {
+            None => Some((p, deeper)),
+            Some(r) => {
+                let name = r.as_str()?.strip_prefix("#/$defs/")?;
+                deeper.resolve(self.defs?.get(name)?)
+            }
+        }
+    }
+}
+
+/// The record objects in an array's `items`, if they make one: objects with a required integer `id`.
+fn records_of(items: &Value) -> bool {
+    let id_integer = items.get("properties").and_then(|ps| ps.get("id")).and_then(|id| id.get("type")).and_then(Value::as_str)
+        == Some("integer");
+    let required = items.get("required").and_then(Value::as_array).is_some_and(|r| r.iter().any(|x| x == "id"));
+    items.get("type").and_then(Value::as_str) == Some("object") && id_integer && required
+}
+
 impl Check {
-    fn of(p: &Value) -> Option<Check> {
+    fn of(p: &Value, defs: Defs) -> Option<Check> {
+        let (p, defs) = defs.resolve(p)?;
         if let Some(c) = p.get("const") {
             return Some(Check::OneOf(vec![c.clone()]));
         }
         if let Some(e) = p.get("enum") {
             return Some(Check::OneOf(e.as_array()?.clone()));
         }
+        let int = |k: &str| p.get(k).and_then(Value::as_i64);
+        let count = |k: &str| p.get(k).and_then(Value::as_u64).map(|n| n as usize);
+        let num = |k: &str| p.get(k).and_then(Value::as_f64);
         match p.get("type")?.as_str()? {
-            "string" => Some(Check::String),
-            "integer" => Some(Check::Integer { minimum: p.get("minimum").and_then(Value::as_i64) }),
+            "string" => Some(Check::String { max_length: count("maxLength") }),
+            "integer" => Some(Check::Integer { minimum: int("minimum"), maximum: int("maximum") }),
+            "number" => Some(Check::Number { minimum: num("minimum"), maximum: num("maximum") }),
             "boolean" => Some(Check::Boolean),
+            "array" => match p.get("prefixItems") {
+                Some(t) => Some(Check::Tuple(t.as_array()?.iter().map(|x| Check::of(x, defs)).collect::<Option<_>>()?)),
+                None => {
+                    let items = Box::new(Check::of(p.get("items")?, defs)?);
+                    Some(Check::Array { items, min: count("minItems").unwrap_or(0), max: count("maxItems") })
+                }
+            },
+            "object" => {
+                let fields = match p.get("properties") {
+                    None => vec![],
+                    Some(ps) => ps
+                        .as_object()?
+                        .iter()
+                        .map(|(k, x)| Some((k.clone(), Check::of(x, defs)?)))
+                        .collect::<Option<_>>()?,
+                };
+                let required = match p.get("required") {
+                    None => vec![],
+                    Some(r) => r.as_array()?.iter().map(|x| Some(x.as_str()?.to_string())).collect::<Option<_>>()?,
+                };
+                let closed = p.get("additionalProperties") == Some(&Value::Bool(false));
+                Some(Check::Object { fields, required, closed })
+            }
             _ => None,
         }
     }
 
     fn holds(&self, v: &Value) -> bool {
         match self {
-            Check::String => v.is_string(),
-            Check::Integer { minimum } => v.as_i64().is_some_and(|n| minimum.is_none_or(|m| n >= m)),
+            Check::String { max_length } => {
+                v.as_str().is_some_and(|s| max_length.is_none_or(|m| s.chars().count() <= m))
+            }
+            Check::Integer { minimum, maximum } => {
+                v.as_i64().is_some_and(|n| minimum.is_none_or(|m| n >= m) && maximum.is_none_or(|m| n <= m))
+            }
+            Check::Number { minimum, maximum } => v
+                .as_f64()
+                .is_some_and(|n| n.is_finite() && minimum.is_none_or(|m| n >= m) && maximum.is_none_or(|m| n <= m)),
             Check::Boolean => v.is_boolean(),
             Check::OneOf(vs) => vs.contains(v),
+            Check::Array { items, min, max } => v
+                .as_array()
+                .is_some_and(|xs| xs.len() >= *min && max.is_none_or(|m| xs.len() <= m) && xs.iter().all(|x| items.holds(x))),
+            Check::Tuple(cs) => {
+                v.as_array().is_some_and(|xs| xs.len() == cs.len() && xs.iter().zip(cs).all(|(x, c)| c.holds(x)))
+            }
+            Check::Object { fields, required, closed } => v.as_object().is_some_and(|o| {
+                let known = |k: &String| fields.iter().any(|(f, _)| f == k);
+                required.iter().all(|r| present(o, r).is_some())
+                    && fields.iter().all(|(f, c)| present(o, f).is_none_or(|x| c.holds(x)))
+                    && (!closed || o.keys().all(known))
+            }),
         }
     }
 }
 
 impl Type {
     /// A property of a schema; `nested` for the fields of a list's records, which hold no records themselves.
-    fn of(p: &Value, nested: bool) -> Option<Type> {
-        if p.get("type").and_then(Value::as_str) == Some("array") {
-            let items = p.get("items")?;
-            if items.get("type").and_then(Value::as_str) == Some("object") {
-                let shape = Shape::of(items, true).filter(|_| !nested)?;
+    fn of(p: &Value, nested: bool, defs: Defs) -> Option<Type> {
+        let (p, defs) = defs.resolve(p)?;
+        if p.get("type").and_then(Value::as_str) == Some("array") && p.get("prefixItems").is_none() {
+            let (items, deeper) = defs.resolve(p.get("items")?)?;
+            if records_of(items) && !nested {
                 // records are matched by their id
-                let id = shape.fields.iter().find(|f| f.name == "id")?;
-                let integer = matches!(id.ty, Type::Value(Check::Integer { .. }));
-                return (integer && shape.required.iter().any(|r| r == "id")).then_some(Type::Records(shape));
+                return Some(Type::Records(Shape::of(items, true, deeper)?));
             }
-            return Some(Type::List(Check::of(items)?));
+            if items.get("type").and_then(Value::as_str) != Some("object") {
+                let bounded = p.get("minItems").is_some() || p.get("maxItems").is_some();
+                if !bounded {
+                    return Some(Type::List(Check::of(items, deeper)?));
+                }
+            }
+            // objects that are no records, or a list with bounds: one value
+            return Some(Type::Value(Check::of(p, defs)?));
         }
         let string = p.get("type").and_then(Value::as_str) == Some("string");
         if string && p.get("x-loro").and_then(Value::as_str) == Some("text") {
             return Some(Type::Text);
         }
-        Some(Type::Value(Check::of(p)?))
+        Some(Type::Value(Check::of(p, defs)?))
     }
 
     /// The value an app sees for what is stored: the value if it fits, a list's values that fit, a list's records that
@@ -441,12 +541,12 @@ impl Type {
 }
 
 impl Shape {
-    fn of(v: &Value, nested: bool) -> Option<Shape> {
+    fn of(v: &Value, nested: bool, defs: Defs) -> Option<Shape> {
         if v.get("type")?.as_str()? != "object" {
             return None;
         }
         let fields = v.get("properties")?.as_object()?.iter().map(|(name, p)| {
-            Some(Field { name: name.clone(), ty: Type::of(p, nested)?, default: p.get("default").cloned() })
+            Some(Field { name: name.clone(), ty: Type::of(p, nested, defs)?, default: p.get("default").cloned() })
         });
         let required = match v.get("required") {
             None => vec![],
@@ -489,7 +589,7 @@ impl Schema {
     /// A schema blob, if it is a JSON Schema of the subset above.
     pub fn parse(bytes: &[u8]) -> Option<Schema> {
         let v: Value = serde_json::from_slice(bytes).ok()?;
-        let root = Shape::of(&v, false)?;
+        let root = Shape::of(&v, false, Defs::of(&v))?;
         let title = v.get("title").and_then(Value::as_str).unwrap_or_default().to_string();
         Some(Schema { id: BlobId::of(bytes), bytes: bytes.to_vec(), title, root })
     }
@@ -1047,6 +1147,8 @@ impl Fit<'_> {
         let named = |x: &&Schema| match x.root.field(f).map(|field| &field.ty) {
             Some(Type::Records(_)) => true,
             Some(Type::List(_)) => new.is_empty(),
+            // an empty array reads as an empty list of records too: a value it may hold
+            Some(Type::Value(c)) => new.is_empty() && c.holds(&Value::Array(vec![])),
             _ => false,
         };
         self.0.iter().any(named) && new.iter().all(|k| k.copy == 0 || old.is_some_and(|ks| ks.contains(k)))

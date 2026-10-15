@@ -627,6 +627,8 @@ fn set_key(m: &LoroMap, key: &str, w: &Value, view: &View, list: Option<&str>) {
             replace(m);
             sync_records(&edit(m.ensure_mergeable_movable_list(key)), xs, view, key);
         }
+        // an array its schema holds as one value (a tuple, a list of objects): one value, as any other
+        (Stored::Value, Value::Array(_)) => edit(m.insert(key, loro(w))),
         (_, Value::Array(xs)) => {
             replace(m);
             sync_values(&edit(m.ensure_mergeable_list(key)), xs);
