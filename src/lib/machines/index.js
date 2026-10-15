@@ -124,8 +124,10 @@ const HISTORY = {
 		{
 			v: 10,
 			date: '2026-10-15',
-			note: 'Built at AirSup’s realism, the v9 design and every measure kept: every part real solids in measured materials (the 280 cells each a steel can, a crimped positive cap with its vent, an insulator ring and a blue sleeve, merged by series row so each row reads its own voltage and heat; polyamide holders with their holes; nickel-plated copper contact plates and the clamp that presses them, no welds; the BMS board with its MOSFETs, shunt, fuse, balance leads to every row and inner plug; the anodised shell with its hollow foot and sill, the L-shaped service drawer, the grip, trigger, pawls, cables, springs, release buttons and spring-bolt catches; the back socket with its guide holes; a ten-segment charge strip); a solver runs it on real equations (open-circuit voltage against state of charge, resistance rising in the cold and near empty, the current’s I²R heat in cells, plates and pressed contacts, a lumped heat path out through the drawer and shell, the BMS’s cutoffs and balancing) on sliders for load, ambient, state of charge, an aged row, the drawer and the trigger, the power delivered read out; explode, cut away, x-ray with the current streaking along the plates, labels with live readings, slow, and its break: overloaded until the BMS opens'
-		}
+			note: 'Built at AirSup’s realism, the v9 design and every measure kept: every part real solids in measured materials (the 280 cells each a steel can, a crimped positive cap with its vent, an insulator ring and a blue sleeve, merged by series row so each row reads its own voltage and heat; polyamide holders with their holes; nickel-plated copper contact plates and the clamp that presses them, no welds; the BMS board with its MOSFETs, shunt, fuse, balance leads to every row and inner plug; the anodised shell with its hollow foot and sill, the L-shaped service drawer, the grip, trigger, pawls, cables, springs, release buttons and spring-bolt catches; the back socket with its guide holes; a ten-segment charge strip); a solver runs it on real equations (open-circuit voltage against state of charge, resistance rising in the cold and near empty, the current’s I²R heat in cells, plates and pressed contacts, a lumped heat path out through the drawer and shell, the BMS’s cutoffs and balancing) on sliders for load, ambient, state of charge, an aged row, the drawer and the trigger, the power delivered read out; explode, cut away, x-ray with the current streaking along the plates, labels with live readings, slow, and its break: overloaded until the BMS opens',
+			build: [{ id: 'batterypack', label: 'BatteryPack', note: 'as at v10: its solver and views, no moves of its own', make: () => castOf(batteryPackV10({ v: 10 })) }]
+		},
+		{ v: 11, date: '2026-10-15', note: 'Its moves back, apart from its views: Service (both buttons pressed, the whole inside pulled out between the columns and slid home till the catches click) and Grip (the trigger squeezed, both pawls swing in and click out again), beside the stage’s Run and Assemble; the sliders they set follow them' }
 	],
 	excavator: [
 		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
@@ -218,7 +220,7 @@ const LIST = [
 		label: 'BatteryPack',
 		note: 'Our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holder plates, copper contact plates pressed on by its lid, no welds and no glue, so every cell, plate and the BMS comes out again. Four fill a BatteryCube',
 		from: 'Our design',
-		variants: [{ id: 'batterypack', label: 'BatteryPack', note: '460 × 480 × 125 mm, 280 cells (14S20P, 51.8 V, 100 Ah, ~5.2 kWh), a charge strip on its face; its solver on the load, the ambient and its charge, every row read', make: () => castOf(batteryPackV10()) }]
+		variants: [{ id: 'batterypack', label: 'BatteryPack', note: '460 × 480 × 125 mm, 280 cells (14S20P, 51.8 V, 100 Ah, ~5.2 kWh), a charge strip on its face; its solver on the load, the ambient and its charge, every row read; its moves Service and Grip', make: () => castOf(batteryPackV10()) }]
 	}
 ];
 

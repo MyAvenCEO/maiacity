@@ -25,7 +25,7 @@
 	/** @typedef {import('$lib/actors/rig').V3} V3 */
 	/** @typedef {import('$lib/assets/parts.js').Lab} Lab */
 
-	/** the stage's modes as the bar names them */
+	/** the stage's views (how it is looked at, any at once) as the bar names them; its moves come from the stage */
 	const MODES = /** @type {const} */ ([
 		['explode', 'Explode'],
 		['cut', 'Cut away'],
@@ -73,6 +73,10 @@
 	let lab = $state.raw(null);
 	/** @type {Record<string, boolean>} */
 	let modes = $state({ run: true, break: false, explode: false, cut: false, xray: false, labels: false, slow: false });
+	/** its moves (Run, its own, Assemble) and the one playing */
+	/** @type {[string, string][]} */
+	let moveList = $state.raw([]);
+	let moving = $state('run');
 	/** @type {Record<string, number>} */
 	let values = $state({});
 	let reading = $state.raw({ value: 0, state: '', sub: '', bad: false });
@@ -82,6 +86,10 @@
 	let scale = $state.raw([0, '']);
 	/** @type {((k: string) => void) | null} */
 	let setMode = null;
+	/** @type {((k: string) => void) | null} */
+	let playMove = null;
+	/** @type {((k: string) => void) | null} */
+	let letSlide = null;
 	/** @type {((a: Actor) => void) | null} */
 	let show = null;
 	/** @type {(() => void) | null} */
@@ -210,7 +218,19 @@
 		/** @type {import('$lib/assets/stage.js').Stage | null} */
 		let stage = null;
 		const readModes = () => {
-			if (stage) modes = Object.fromEntries(['run', 'break', ...MODES.map(([k]) => k)].map((k) => [k, /** @type {any} */ (stage).on(k)]));
+			if (!stage) return;
+			modes = Object.fromEntries(['run', 'break', ...MODES.map(([k]) => k)].map((k) => [k, /** @type {any} */ (stage).on(k)]));
+			moveList = stage.moves();
+			moving = stage.move;
+		};
+		playMove = (k) => {
+			stage?.play(k);
+			readValues();
+			readModes();
+		};
+		// a hand on a slider the move playing sets: the move stops (Run), the slider is the hand's
+		letSlide = (k) => {
+			if (stage?.drives(k)) playMove?.('run');
 		};
 		setMode = (k) => {
 			stage?.toggle(/** @type {any} */ (k));
@@ -252,7 +272,7 @@
 				}
 				cast = c;
 				lab = c.asset.lab ?? null;
-				values = Object.fromEntries(Object.entries(lab?.controls ?? {}).map(([k, v]) => [k, v.value]));
+				readValues();
 				readModes();
 				size = [s.x, s.y, s.z];
 				const reach = Math.max(s.x, s.y, s.z) * 1.15;
@@ -340,6 +360,8 @@
 					slow = 0;
 					reading = { ...lab.read };
 					scale = stage.scaleBar(box.clientHeight, controls.target);
+					// the sliders a move sets follow it
+					if (stage.move !== 'run') readValues();
 				}
 				frame = requestAnimationFrame(tick);
 				return;
@@ -421,8 +443,11 @@
 		copied = true;
 		setTimeout(() => (copied = false), 1500);
 	};
+	/** the sliders as the solver has them */
+	const readValues = () => (values = Object.fromEntries(Object.entries(lab?.controls ?? {}).map(([k, v]) => [k, v.value])));
 	/** a slider moved: the solver reads it on its next tick @param {string} k @param {number} v */
 	const slide = (k, v) => {
+		letSlide?.(k);
 		if (lab) lab.controls[k].value = v;
 		values = { ...values, [k]: v };
 	};
@@ -443,12 +468,18 @@
 >
 	{#snippet bar()}
 		{#if lab}
+			<!-- how it moves (one at a time) apart from how it is looked at (any views at once) -->
 			<div class="chips">
-				<button class="chip" class:on={!modes.run} onclick={() => setMode?.('run')}>{modes.run ? 'Pause' : 'Run'}</button>
+				<span class="label">Moves</span>
+				{#each moveList as [k, label] (k)}
+					<button class="chip" class:on={moving === k} title={lab.moves?.[k]?.note} onclick={() => playMove?.(k)}>{label}</button>
+				{/each}
+				{#if lab.breakIt}<button class="chip break" class:on={modes.break} onclick={() => setMode?.('break')}>{modes.break ? 'Take it back' : lab.breakIt.label}</button>{/if}
+				<button class="chip" class:on={!modes.run} onclick={() => setMode?.('run')}>{modes.run ? 'Pause' : 'Play'}</button>
+				<span class="label">Views</span>
 				{#each MODES as [k, label] (k)}
 					<button class="chip" class:on={modes[k]} onclick={() => setMode?.(k)}>{label}</button>
 				{/each}
-				{#if lab.breakIt}<button class="chip break" class:on={modes.break} onclick={() => setMode?.('break')}>{modes.break ? 'Take it back' : lab.breakIt.label}</button>{/if}
 			</div>
 		{:else if cast}
 			<div class="chips">
@@ -474,25 +505,7 @@
 				{/each}
 			</nav>
 		{/if}
-		{#if lab}
-			<div class="lab">
-				{#each Object.entries(lab.controls) as [k, c] (k)}
-					<label class="slider">
-						<span>{c.label}</span>
-						<output>{num(values[k] ?? c.value, c.digits ?? 0)} {c.unit ?? ''}</output>
-						<input type="range" min={c.min} max={c.max} step={c.step ?? 'any'} value={values[k] ?? c.value} oninput={(e) => slide(k, +e.currentTarget.value)} />
-						{#if c.ends}<small><span>{c.ends[0]}</span><span>{c.ends[1]}</span></small>{/if}
-					</label>
-				{/each}
-				{#if lab.how}
-					<details class="how">
-						<summary><b>How it is computed</b></summary>
-						<p>{lab.how.text}</p>
-						{#each lab.how.eqs as q (q)}<code>{q}</code>{/each}
-					</details>
-				{/if}
-			</div>
-		{/if}
+		<!-- its parts first, then its sliders -->
 		{#if catalog}
 			<div class="parts">
 				<div class="row head">
@@ -517,6 +530,25 @@
 						{#each catalog.sources as s (s.url)}<li><a href={s.url} target="_blank" rel="noreferrer">{s.label} ↗</a></li>{/each}
 					</ul>
 				</details>
+			</div>
+		{/if}
+		{#if lab}
+			<div class="lab">
+				{#each Object.entries(lab.controls) as [k, c] (k)}
+					<label class="slider">
+						<span>{c.label}</span>
+						<output>{num(values[k] ?? c.value, c.digits ?? 0)} {c.unit ?? ''}</output>
+						<input type="range" min={c.min} max={c.max} step={c.step ?? 'any'} value={values[k] ?? c.value} oninput={(e) => slide(k, +e.currentTarget.value)} />
+						{#if c.ends}<small><span>{c.ends[0]}</span><span>{c.ends[1]}</span></small>{/if}
+					</label>
+				{/each}
+				{#if lab.how}
+					<details class="how">
+						<summary><b>How it is computed</b></summary>
+						<p>{lab.how.text}</p>
+						{#each lab.how.eqs as q (q)}<code>{q}</code>{/each}
+					</details>
+				{/if}
 			</div>
 		{/if}
 		{#if cast && holding && !catalog}
@@ -612,7 +644,13 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.7rem;
-		margin-bottom: 0.8rem;
+	}
+
+	/* the sliders under the parts: a line between, the last part's list closed above it */
+	.parts + .lab {
+		border-top: 1px solid rgb(0 0 0 / 0.08);
+		margin-top: 0.4rem;
+		padding-top: 0.8rem;
 	}
 
 	.slider {
@@ -794,12 +832,8 @@
 		opacity: 0.8;
 	}
 
-	.lab + .parts {
-		border-top: 1px solid rgb(0 0 0 / 0.08);
-		padding-top: 0.5rem;
-	}
-
 	.variants + .joints,
+	.variants + .lab,
 	.variants + .parts {
 		margin-top: 0.8rem;
 	}

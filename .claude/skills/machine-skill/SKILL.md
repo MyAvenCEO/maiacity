@@ -169,7 +169,8 @@ film takes it from there. How to build it into the library is in `ours.md` besid
   It is built with this skill's kit as ported into the app, `$lib/assets`: `kit.js` (the math, materials, geometry
   and studio of `kit/lab-kit.js`), `parts.js` (`assetKit(root)`: `part`, `label`, `onTick`, `carry`, `seal`; your
   `lab.add` as one contract every asset group shares) and `stage.js` (your Lab's studio, post and modes at the
-  machine's real size). The Machines page shows it on that stage with its hero, sliders, how, modes and break. The
+  machine's real size). The Machines page shows it on that stage with its parts, its hero, sliders and how, its moves
+  (Run, its own `lab.moves`, Assemble, its break) apart from its views (Explode, Cut away, X-ray, Labels, Slow). The
   Power Cube (`src/lib/machines/powercube.js`, v3) is the worked example. Older machines are rigged meshes in
   `src/lib/actors/` and stay there, frozen.
 - **The library line:** a kind in `LIST` of `src/lib/machines/index.js`, its versions in `HISTORY` there; it shows in

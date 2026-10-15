@@ -65,10 +65,20 @@ import { clamp, ease } from './kit.js';
  * @property {[string, string]} [ends] what its two ends mean
  */
 /**
+ * @typedef {object} Move one of a machine's own moves (what a hand does with it, or what it does): a loop over its
+ *   controls, played while chosen, by the clock on the wall (Slow slows it, Pause holds it). The viewer's other moves are
+ *   the stage's own: Run (its solver at the sliders) and Assemble (its parts in by their build steps).
+ * @property {string} label
+ * @property {number} seconds one loop
+ * @property {(u: number) => Record<string, number>} at the controls it sets, `u` 0…1 through the loop
+ * @property {string} [note] what it shows, in a few words
+ */
+/**
  * @typedef {object} Lab what a machine with a solver shows besides its parts (AirSup's hero, sliders, how and break)
  * @property {{ label: string, unit: string, max: number, digits?: number }} hero the one number a viewer cares about
  * @property {{ value: number, state: string, sub: string, bad: boolean }} read the hero as the solver last set it
  * @property {Record<string, Control>} controls
+ * @property {Record<string, Move>} [moves] its own moves, by id (a slider a move sets follows it)
  * @property {{ text: string, eqs: string[] }} [how] how it is computed: plain words and the equations
  * @property {{ label: string, run: (env: Env) => void, reset: (env: Env) => void }} [breakIt] what breaks, decided by the solver
  * @property {{ a: V3, b?: V3, center?: V3, reach?: number, offset?: number }} [cut] the section planes (normals pointing

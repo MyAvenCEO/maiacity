@@ -15,8 +15,8 @@ file has the same shape as every other sub skill.
   (`src/lib/app/ActorsView.svelte`). A machine never also goes into the Things (`thing-skill`).
 - **A new machine, or a new version built from scratch:** `src/lib/machines/<machine>.js`, built at AirSup's realism
   with `$lib/assets`. Its variant's `make` hands the turntable `castOf(root)` (`$lib/assets/parts.js`), and the
-  turntable shows it on the asset stage: running, its hero number read out, its sliders, "How it is computed", and
-  Explode, Cut away, X-ray, Labels, Slow and its break on the bar.
+  turntable shows it on the asset stage: its parts, its sliders and "How it is computed" in the panel, its hero number
+  read out, and on the bar its moves apart from its views (below).
 - **The older machines** are rigged meshes in `src/lib/actors/*.js` (`rig.ts`, flat vertex colours, a bone per part),
   where the games import them from (`$lib/actors/batterypack.js`). They stay as they are, frozen; how their rig works
   is in `production-designer`'s `models.md` ("The actors").
@@ -55,6 +55,25 @@ file has the same shape as every other sub skill.
   things slower, and say so (heat 20×, the engine 40× slowed).
 - The oil's paths as `Flow` streaks, coloured by its temperature, shown when cut or x-rayed.
 
+### Moves and views (Samuel, 2026-10-15)
+
+How a machine moves and how it is looked at are kept apart, on the bar and in the code:
+
+- **Moves**, one at a time, by the clock on the wall (Slow slows them, Pause holds them): **Run** (its solver at the
+  sliders, nothing scripted), **its own moves**, **Assemble** (its parts flying in by their build steps, from its
+  `steps`, again and again), its **break**, and **Pause**. Run and Assemble are the stage's (`$lib/assets/stage.js`,
+  `moves()`, `play(k)`): never write them per machine.
+- **Views**, any at once: **Explode**, **Cut away**, **X-ray**, **Labels**, **Slow**. Explode is a view, never a move.
+- **Its own moves** are `lab.moves`: `{ service: { label: 'Service', seconds: 9, note, at: (u) => ({ drawer: … }) } }`,
+  a loop over its own controls (`u` 0…1), so a move is the same physics as its slider: the pack's drawer pulled out by
+  Service unplugs it, as the slider does. Give every machine what a hand does with it and what it does by itself, the
+  moves the older rigged machines played as clips: the drawer out and home, the trigger squeezed, the doors opened,
+  the arms lifted, a pack taken into its cube. A control a move drives needs its slider (`lab.controls`) first.
+- A slider the move playing sets follows it; a hand on that slider stops the move (back to Run) and keeps its value.
+- The panel shows its parts first (the catalog by assembly), then its sliders and "How it is computed".
+- Moves added to a machine are a new version (the BatteryPack's v11 = v10 with Service and Grip; v10 kept behind
+  `batteryPack({ v: 10 })`).
+
 ## Composable
 
 - Samuel (2026-10-14): every asset composable, the parts and moving pieces of one reusable in the others; things go
@@ -89,8 +108,8 @@ file has the same shape as every other sub skill.
 
 - Headless first: a throwaway Bun script inside the repo builds it, ticks it once, steps its solver through slider
   settings and the break, and prints the hero's reading, the labels' values and its outer box.
-- Then the real page as a mocked admin (asset-producer's `checking.md`): the whole, every mode, a close cut, the back
-  and the break, like a critic.
+- Then the real page as a mocked admin (asset-producer's `checking.md`): the whole, every move (mid-move too, not
+  only its ends) and every view, a close cut, the back and the break, like a critic.
 - The size test, the versions test and the type check.
 
 ## Lessons kept
