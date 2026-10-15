@@ -4,6 +4,7 @@
  * worker started inside a frame with no origin (./host.js), under that frame's rules: no network, no storage of the
  * page, no page at all. Whatever a builder does in here, all that leaves is checked data.
  */
+import './lockdown.js';
 import './shim.js';
 import { OBJECT_GROUPS } from '../groups.js';
 import { objectIn } from '../refs.js';
