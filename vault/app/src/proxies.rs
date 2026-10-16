@@ -31,7 +31,7 @@ pub fn journey(profile: &str) -> bool {
 }
 
 /// The journey a file made through it records (a proxy, a grading still): its hash, as the render report names it.
-fn journey_record(profile: &str) -> Value {
+pub(crate) fn journey_record(profile: &str) -> Value {
     if journey(profile) { json!(vault_render::journey_hash(profile)) } else { Value::Null }
 }
 
@@ -53,7 +53,7 @@ const DETECTOR: u64 = 3;
 
 /// The grading still's version: one made by an older one is made again, at the same moment (2: the frame decoded 4:2:2,
 /// its colour at full height, as the iPhone records ProRes).
-const STILL: u64 = 2;
+pub(crate) const STILL: u64 = 2;
 
 /// A piece of work under way or waiting its turn, as the studio's file lists show it (a view of the jobs, jobs.rs):
 /// `of` its key — a file's hash for its proxy, else `still:`, `shot:`, `render:`, `transcript:`, `analysis:` and what for.
@@ -527,7 +527,7 @@ async fn make(vault: &Vault, hex: &str, name: &str, source: PathBuf) -> Result<(
 }
 
 /// How wide a grading still is: 4K UHD.
-const STILL_WIDTH: u32 = 3840;
+pub(crate) const STILL_WIDTH: u32 = 3840;
 
 /// A video original's grading still and preview, at `at` (the frame picked for it), else its middle: through its
 /// journey (CST) into ACEScct, 3840 wide, a 16-bit PNG of ACEScct code values (vault_render `grading_still`) — beside
@@ -591,7 +591,7 @@ async fn grading_still_at(vault: &Vault, hex: &str, name: &str, path: &vault_med
 }
 
 /// How wide a file's preview is, before its graded still takes its place (as wide as that).
-const PREVIEW_WIDTH: u32 = 1920;
+pub(crate) const PREVIEW_WIDTH: u32 = 1920;
 
 
 /// An original with a proxy of ours but no grading still yet (made before there were any): its still, from the

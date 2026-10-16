@@ -175,6 +175,10 @@ async fn wanted(auth: &Auth, vault: &Vault) -> Res<Vec<Want>> {
         let story = count.into_iter().max_by_key(|(s, n)| (*n, *s)).map(|(s, _)| s.to_string());
         for c in clips.iter().filter(|c| c["kind"] == "world") {
             let (Some(shot), Some(version)) = (c["shot"].as_str(), version_of(&c["shotVersion"])) else { continue };
+            // avenDB's shots get their proxies from its tasks (the `world-proxy` rule, aven.rs)
+            if shot.starts_with("shot:") {
+                continue;
+            }
             let key = (shot.to_lowercase(), version);
             if have.contains(&key) {
                 continue;
@@ -307,21 +311,10 @@ async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
     let _awake = Awake::begin("rendering a world shot's proxy");
     jobs::stage(Kind::WorldProxy, &of, "opening the world", 0.0);
 
-    let (shape, width, height) = frame_of(w.spec["aspect"].as_str().unwrap_or("16:9"));
-    let fps = w.spec["fps"].as_f64().filter(|f| *f > 0.0).unwrap_or(30.0);
-    let seconds = w.spec["seconds"].as_f64().filter(|s| *s > 0.0).ok_or("the shot has no length")?;
-    let frames = ((seconds * fps).round() as u32).max(1);
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
     let part = vault.ingest_dir().join(format!("{}-v{}-{stamp}.world.part.mp4", w.shot, w.version));
     let of2 = of.clone();
-    let ask = Frames { spec: w.spec.clone(), shape, width, height, fps, from: 0.0, frames, bitrate: None };
-    let (proxy, info) = match shoot(handle, &format!("{}-v{}", w.shot, w.version), &ask, &part, move |done| jobs::stage(Kind::WorldProxy, &of2, "making", done)).await {
-        Ok(made) => made,
-        Err(e) => {
-            std::fs::remove_file(&part).ok();
-            return Err(e);
-        }
-    };
+    let (proxy, info, shape, fps) = proxy_into(handle, &format!("{}-v{}", w.shot, w.version), &w.spec, &part, move |done| jobs::stage(Kind::WorldProxy, &of2, "making", done)).await?;
 
     jobs::stage(Kind::WorldProxy, &of, "adding", 1.0);
     let named = vault.ingest_dir().join(format!("shot-{}-v{}-proxy.mp4", &w.shot[..8.min(w.shot.len())], w.version));
@@ -345,6 +338,45 @@ async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
     let made = vault.ingest_file(&named, &batch).await.map_err(err);
     std::fs::remove_file(&named).ok();
     Ok(made?.hash)
+}
+
+/// A shot's whole HD proxy rendered into `out` from its `spec` (`label` names its run), the caller holding the GPU
+/// lane: the proxy, what the world says of it, and the shape and rate it was made at. Nothing is left at `out` when it
+/// fails.
+pub(crate) async fn proxy_into(handle: &AppHandle, label: &str, spec: &Value, out: &Path, progress: impl FnMut(f64) + Send + 'static) -> Res<(Proxy, Value, &'static str, f64)> {
+    let (shape, width, height) = frame_of(spec["aspect"].as_str().unwrap_or("16:9"));
+    let fps = spec["fps"].as_f64().filter(|f| *f > 0.0).unwrap_or(30.0);
+    let seconds = spec["seconds"].as_f64().filter(|s| *s > 0.0).ok_or("the shot has no length")?;
+    let frames = ((seconds * fps).round() as u32).max(1);
+    let ask = Frames { spec: spec.clone(), shape, width, height, fps, from: 0.0, frames, bitrate: None };
+    match shoot(handle, label, &ask, out, progress).await {
+        Ok((proxy, info)) => Ok((proxy, info, shape, fps)),
+        Err(e) => {
+            std::fs::remove_file(out).ok();
+            Err(e)
+        }
+    }
+}
+
+/// A world shot of avenDB's (Jobs and studio 2.0, J10), `shot:<entry>` at version `version`, as the studio writes it
+/// (src/lib/studio/shots.js): its name and spec, from the version's own entry on the device.
+pub(crate) async fn aven_shot(handle: &AppHandle, shot: &str, version: u64) -> Res<(String, Value)> {
+    let id = shot.strip_prefix("shot:").ok_or_else(|| format!("{shot} is no avenDB shot"))?;
+    let world = crate::aven::world(handle).await?;
+    let e = world["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|e| {
+            let r = &e["record"];
+            e["type"] == "shot" && r["kind"] == "shot" && r["version"].as_u64() == Some(version) && (r["shot"] == id || (r["version"] == 1 && e["entry"] == id))
+        })
+        .ok_or_else(|| format!("shot {shot} v{version} is not on this Mac"))?;
+    let spec: Value = serde_json::from_str(e["record"]["spec"].as_str().unwrap_or("null")).map_err(|err| format!("shot {shot} v{version}: {err}"))?;
+    if !spec.is_object() {
+        return Err(format!("shot {shot} v{version} has no spec"));
+    }
+    Ok((e["record"]["name"].as_str().unwrap_or("a world shot").to_string(), spec))
 }
 
 /// What the world renders: `frames` frames of a shot from `from` seconds into it, framed for `shape`, at a size and a

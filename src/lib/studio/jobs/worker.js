@@ -19,10 +19,11 @@ import { BUILT_IN, held, layered } from './rules.js';
 import { claimable, claiming, failing, finishing, LEASE, reconcile, tasksOf } from './tasks.js';
 
 /**
- * What an executor gets: the entry an input names, a range of a file's bytes, and a way to say how far it is.
+ * What an executor gets: the entry an input names, a range of a file's bytes, a way to say how far it is, the
+ * vault the worker acts as in the task's vault, and the world the task was claimed in.
  * @typedef {{ entry: (id: string) => import('../../avendb/vaults.js').EntryView | undefined,
  *   read: (root: string, size: number, from: number, to: number) => Promise<Uint8Array>,
- *   progress: (done: number) => void }} Ctx
+ *   progress: (done: number) => void, as: string, world: import('../../avendb/vaults.js').WorldView }} Ctx
  * @typedef {(task: import('./tasks.js').Task, ctx: Ctx) => Promise<{ outputs?: string[], result?: any }>} Executor
  */
 
@@ -46,6 +47,13 @@ export class Worker {
 		/** @type {ReturnType<typeof setInterval> | null} */
 		this.timer = null;
 		this.ticking = false;
+		/** @type {Map<string, string>} the vault it acts as in each vault it works on, from the last world */
+		this.acting = new Map();
+	}
+
+	/** The vault it acts as in vault `v` (the vault itself where the person's owns it). @param {string} v */
+	as(v) {
+		return this.acting.get(v) ?? v;
 	}
 
 	/** The device's world, now. */
@@ -60,11 +68,18 @@ export class Worker {
 		try {
 			let world = await this.world();
 			const me = world.me;
+			this.acting = new Map((world.vaults ?? []).map((/** @type {any} */ v) => [v.id, v.acting?.as ?? v.id]));
 			for (const vault of this.vaults(world)) {
 				// only the rules some worker can do yet: a task nobody runs would only sit in every device's log
 				const rules = layered(BUILT_IN, this.ceo ? held(world, this.ceo) : [], held(world, vault)).filter((r) => this.executors[r.key]);
-				const ops = [...lacking(world, vault, vault), ...reconcile(rules, world, vault, vault, this.now())];
-				for (const op of ops) answer(await this.send(op));
+				const as = this.as(vault);
+				const ops = [...lacking(world, vault, as), ...reconcile(rules, world, vault, as, this.now())];
+				try {
+					for (const op of ops) answer(await this.send(op));
+				} catch (e) {
+					// a vault it may read but not write: the others go on
+					this.log(`${vault.slice(0, 8)}: ${e instanceof Error ? e.message : e}`);
+				}
 				if (ops.length) {
 					this.log(`queued ${ops.filter((o) => o.type === 'task').length} in ${vault.slice(0, 8)}`);
 					world = await this.world();
@@ -79,7 +94,7 @@ export class Worker {
 				if (this.busy.has(lane)) continue;
 				const t = open.find((x) => x.lane === lane);
 				if (!t) continue;
-				answer(await this.send(claiming(t, me, now, t.vault)));
+				answer(await this.send(claiming(t, me, now, this.as(t.vault))));
 				this.busy.set(lane, { task: t.entry, rule: t.rule, done: 0 });
 				started.push(t.entry);
 				void this.run(t, world, me);
@@ -95,7 +110,7 @@ export class Worker {
 	 * @param {import('./tasks.js').Task} t @param {any} world @param {string} me
 	 */
 	async run(t, world, me) {
-		const renew = setInterval(() => void this.send(claiming(t, me, this.now(), t.vault)).catch(() => {}), (LEASE / 3) * 1000);
+		const renew = setInterval(() => void this.send(claiming(t, me, this.now(), this.as(t.vault))).catch(() => {}), (LEASE / 3) * 1000);
 		/** @type {Ctx} */
 		const ctx = {
 			entry: (id) => world.entries.find((/** @type {any} */ e) => e.entry === id),
@@ -107,16 +122,18 @@ export class Worker {
 			progress: (done) => {
 				const b = this.busy.get(t.lane);
 				if (b) b.done = done;
-			}
+			},
+			as: this.as(t.vault),
+			world
 		};
 		try {
 			const made = await this.executors[t.rule](t, ctx);
-			answer(await this.send(finishing(t, made.outputs ?? [], made.result ?? null, t.vault)));
+			answer(await this.send(finishing(t, made.outputs ?? [], made.result ?? null, this.as(t.vault))));
 			this.log(`${t.rule} done`);
 		} catch (e) {
 			const why = e instanceof Error ? e.message : String(e);
 			this.log(`${t.rule} failed: ${why}`);
-			await this.send(failing(t, why, t.vault)).catch(() => {});
+			await this.send(failing(t, why, this.as(t.vault))).catch(() => {});
 		} finally {
 			clearInterval(renew);
 			this.busy.delete(t.lane);

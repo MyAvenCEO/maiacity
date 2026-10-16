@@ -7,6 +7,7 @@
 <script>
 	import { isCache } from './color.js';
 	import { allShots, blankSpec, newShot } from './shots.js';
+	import { isCut } from './cuts.js';
 	import { itemName, raw, thumb } from './studio.svelte.js';
 	import { command } from '$lib/native';
 	import { transcriptState } from './transcript.js';
@@ -130,7 +131,7 @@
 		const name = prompt('Name the new world shot', `Shot ${shots.length + 1}`);
 		if (!name) return;
 		const aspect = /** @type {import('$lib/auth/client').Shape} */ (['16:9', '9:16', '1:1', '4:5'].includes(s.aspect) ? s.aspect : '16:9');
-		const made = await newShot(name, s.current?.project ?? null, blankSpec(aspect)).catch((e) => void (s.error = `Shot: ${e.message}`));
+		const made = await newShot(name, s.current?.project ?? null, blankSpec(aspect), isCut(s.current?.id)).catch((e) => void (s.error = `Shot: ${e.message}`));
 		if (!made) return;
 		await loadShots();
 		s.placeShot(made, s.time);

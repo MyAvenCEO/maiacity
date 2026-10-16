@@ -23,6 +23,9 @@ use tokio::sync::oneshot;
 /// What a call comes back with: what the device answered, or why there is no answer.
 type Answer = Result<Value, String>;
 
+/// The window the sheets show over.
+type Window = Arc<Mutex<Option<tauri::WebviewWindow>>>;
+
 /// The device's input, shared by the calls and the sheets' answers; gone once the app quits.
 type Stdin = Arc<tokio::sync::Mutex<Option<DuplexStream>>>;
 
@@ -38,8 +41,8 @@ pub struct Avendb(tokio::sync::Mutex<Option<Sidecar>>);
 struct Sidecar {
     stdin: Stdin,
     calls: Arc<Mutex<Calls>>,
-    /// The window whose page called last, which its sheets show over.
-    window: Arc<Mutex<tauri::WebviewWindow>>,
+    /// The window whose page called last, which its sheets show over; none while only the app's own Rust called.
+    window: Window,
     /// Comes once the device has closed its store and its thread has ended.
     ended: oneshot::Receiver<()>,
 }
@@ -63,12 +66,20 @@ pub async fn avendb(
     call: String,
     args: Vec<Value>,
 ) -> Result<Value, String> {
-    call_on(&state, window, call, args).await
+    call_on(&state, Some(window), call, args).await
+}
+
+/// Calls `call` with `args` on avenDB's device from the app's own Rust (the studio's jobs, `aven`), starting it if it
+/// isn't running: what it answered. A call that asks for the person's passkey shows its sheet over the window that
+/// called last, and fails if no page has called yet.
+pub async fn call(app: &tauri::AppHandle, call: &str, args: Vec<Value>) -> Result<Value, String> {
+    use tauri::Manager as _;
+    call_on(&app.state::<Avendb>(), None, call.to_string(), args).await
 }
 
 async fn call_on(
     state: &Avendb,
-    window: tauri::WebviewWindow,
+    window: Option<tauri::WebviewWindow>,
     call: String,
     args: Vec<Value>,
 ) -> Result<Value, String> {
@@ -77,10 +88,12 @@ async fn call_on(
         if held.as_ref().is_none_or(|s| s.calls.lock().expect("the calls").ended.is_some()) {
             // a device that stopped has closed its store already: its thread ends as its output does
             held.take();
-            *held = Some(start(&window)?);
+            *held = Some(start()?);
         }
         let sidecar = held.as_ref().expect("started");
-        *sidecar.window.lock().expect("the window") = window;
+        if let Some(window) = window {
+            *sidecar.window.lock().expect("the window") = Some(window);
+        }
         let (tx, rx) = oneshot::channel();
         let id = {
             let mut calls = sidecar.calls.lock().expect("the calls");
@@ -138,8 +151,8 @@ fn moved() -> Result<(), String> {
     Ok(())
 }
 
-/// Starts the device on a thread of its own, its sheets over `window` until another window calls.
-fn start(window: &tauri::WebviewWindow) -> Result<Sidecar, String> {
+/// Starts the device on a thread of its own, its sheets over the window that calls (`call_on`).
+fn start() -> Result<Sidecar, String> {
     moved()?;
     let dir = folder();
     std::fs::create_dir_all(&dir).map_err(|e| format!("avenDB's folder {} couldn't be made: {e}", dir.display()))?;
@@ -178,7 +191,7 @@ fn start(window: &tauri::WebviewWindow) -> Result<Sidecar, String> {
         })
         .map_err(|e| format!("avenDB's device didn't start: {e}"))?;
     let stdin: Stdin = Arc::new(tokio::sync::Mutex::new(Some(stdin)));
-    let window = Arc::new(Mutex::new(window.clone()));
+    let window: Window = Arc::new(Mutex::new(None));
     tauri::async_runtime::spawn(read(stdout, calls.clone(), stdin.clone(), window.clone()));
     Ok(Sidecar { stdin, calls, window, ended })
 }
@@ -190,7 +203,7 @@ async fn read(
     stdout: DuplexStream,
     calls: Arc<Mutex<Calls>>,
     stdin: Stdin,
-    window: Arc<Mutex<tauri::WebviewWindow>>,
+    window: Window,
 ) {
     let mut lines = BufReader::new(stdout).lines();
     let why = loop {
@@ -210,7 +223,11 @@ async fn read(
             let url = message.get("url").and_then(Value::as_str).unwrap_or_default().to_string();
             let (stdin, window) = (stdin.clone(), window.lock().expect("the window").clone());
             tauri::async_runtime::spawn(async move {
-                let answer = match crate::passkey::sheet(&window, url).await {
+                let shown = match &window {
+                    Some(window) => crate::passkey::sheet(window, url).await,
+                    None => Err("no window to show the sign-in sheet over: open avenDB's page first".into()),
+                };
+                let answer = match shown {
                     Ok(back) => json!({ "sheet": n, "back": back }),
                     Err(why) => json!({ "sheet": n, "error": why }),
                 };

@@ -581,8 +581,14 @@ pub(crate) async fn program(
     v1.sort_by(|a, b| a.start.total_cmp(&b.start));
     for c in v1 {
         let Some(file) = files.get(&c.id) else { continue };
-        let hash: iroh_blobs::Hash = file.parse().map_err(err)?;
-        let source = crate::blob::source(vault, hash, &format!("{}.mov", c.id)).await.map_err(|e| format!("{e:#}"))?;
+        // an avenDB file (studio 2.0), else the legacy vault's
+        let source = match crate::aven::source_of_ref(file, &format!("{}.mov", c.id)) {
+            Some(source) => source?,
+            None => {
+                let hash: iroh_blobs::Hash = file.parse().map_err(err)?;
+                crate::blob::source(vault, hash, &format!("{}.mov", c.id)).await.map_err(|e| format!("{e:#}"))?
+            }
+        };
         let profile = profiles.get(&c.id).map(String::as_str).unwrap_or("rec709");
         let journey = vault_media::cst::journey(profile).or_else(|| vault_media::cst::journey("rec709")).ok_or("no journey")?.kernel_args();
         let (steps, cubes) = crate::proxies::graded(vault, t, c, 33).await?;

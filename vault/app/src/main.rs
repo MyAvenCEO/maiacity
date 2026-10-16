@@ -7,6 +7,7 @@ mod analyse;
 mod analysis;
 mod asks;
 mod auth;
+mod aven;
 mod avendb;
 mod blob;
 mod drives;
@@ -504,6 +505,7 @@ fn main() {
         .manage(auth::Auth::default())
         .manage(avendb::Avendb::default())
         .setup(|app| {
+            aven::init(app.handle());
             let vault = Arc::new(tauri::async_runtime::block_on(Vault::open(vault_dir()))?);
             app.manage(App { vault: vault.clone(), busy: AtomicBool::new(false) });
             // every process this Mac runs, in one registry (jobs.rs): the studio's Processes tab is its view
@@ -569,6 +571,10 @@ fn main() {
             let http = ctx.app_handle().state::<auth::Auth>().http();
             tauri::async_runtime::spawn(async move { responder.respond(auth::proxy(http, request).await) });
         })
+        .register_asynchronous_uri_scheme_protocol("aven", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn(async move { responder.respond(aven::serve(app, request).await) });
+        })
         .register_asynchronous_uri_scheme_protocol("vault", |ctx, request, responder| {
             let vault = ctx.app_handle().state::<App>().vault.clone();
             tauri::async_runtime::spawn(async move { responder.respond(serve(vault, request).await) });
@@ -582,6 +588,9 @@ fn main() {
             auth::brain,
             passkey::passkey_sheet,
             avendb::avendb,
+            aven::studio_ingest,
+            aven::studio_job,
+            aven::studio_import,
             sync::vault_connect,
             sync::vault_copies,
             mcp::mcp_info,

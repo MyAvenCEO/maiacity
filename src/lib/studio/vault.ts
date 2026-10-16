@@ -1,4 +1,5 @@
 // This Mac's vault, as the studio's Ingest and Library tabs see it (the app's own commands; see vault/app).
+import { avenUrl, isAven } from './avenref.js';
 
 export type VaultFile = {
 	hash: string;
@@ -110,8 +111,8 @@ export type StoryView = Story & { inbox: boolean; files: number; bytes: number; 
 /** Verified copies of a file: this Mac and the server count; two make a card safe to format. */
 export const verifiedCopies = (c: Copies) => (c.here === 'verified' ? 1 : 0) + (c.server === 'stored' ? 1 : 0);
 
-/** A file's bytes from this Mac's store — with Range, for <img>, <video> and <audio>. */
-export const vaultUrl = (hash: string) => `vault://localhost/${hash}`;
+/** A file's bytes from this Mac's store — with Range, for <img>, <video> and <audio>; an avenDB file's from its device. */
+export const vaultUrl = (hash: string) => (isAven(hash) ? avenUrl(hash) : `vault://localhost/${hash}`);
 
 export const gb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${(n / 1e3).toFixed(0)} KB`);
 export const name = (p: string) => p.split('/').filter(Boolean).pop() ?? p;

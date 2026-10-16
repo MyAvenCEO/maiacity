@@ -54,6 +54,14 @@ test('a when picks by type, tag and media type', () => {
 	expect(picks(null, v)).toBe(false);
 });
 
+test('a when picks by the fields a record holds', () => {
+	const yt = { entry: 'a1', type: 'artifact', tags: [], record: { look: 'youtube', url: 'https://youtu.be/x' } };
+	const when = { all: [{ type: ['artifact'] }, { record: { look: 'youtube' } }] };
+	expect(picks(when, yt)).toBe(true);
+	expect(picks(when, { ...yt, record: { look: 'article' } })).toBe(false);
+	expect(picks(when, { ...yt, record: null })).toBe(false);
+});
+
 test('the reconciler queues what is wanted and missing, waits for made inputs, and never twice', () => {
 	const rules = layered(BUILT_IN);
 	const v = file(1, 'video/quicktime', ['media:original']);
@@ -187,4 +195,19 @@ test('a worker whose executor fails marks the task failed, and it is tried again
 	const t = d.entries.find((e) => e.type === 'task').record;
 	expect([t.status, t.attempts, t.error]).toEqual(['failed', 1, 'boom']);
 	expect(await w.tick()).toHaveLength(1);
+});
+
+test('an optional input never holds a task back, and moves its key once it is made', () => {
+	const still = layered(BUILT_IN).filter((r) => r.key === 'still');
+	const v = file(1, 'video/quicktime', ['media:original']);
+	const done = (id, rule, result) => taskEntry(id, { kind: 'task', rule, version: 1, key: id, lane: 'io', inputs: [{ id: 1, name: 'original', entry: 'f1', at: ['r1'] }], params: '{}', status: 'done', worker: 'w', lease_until: 0, attempts: 1, error: '', outputs: [], result: JSON.stringify(result), by: 'w', at: 1 });
+	const probe = done('p1', 'probe', { journey: { profile: 'apple-log' }, seconds: 10 });
+	const first = reconcile(still, world([v, probe]), V, V, 100).filter((o) => o.type === 'task');
+	expect(first).toHaveLength(1);
+	expect(first[0].value.inputs.map((i) => i.name)).toEqual(['original', 'probe']);
+	const analysis = done('a1', 'analysis', { hero: { t: 7.5 } });
+	const after = reconcile(still, world([v, probe, analysis, taskEntry('t0', { ...at(first[0], 0), status: 'done' })]), V, V, 200).filter((o) => o.type === 'task');
+	expect(after).toHaveLength(1);
+	expect(JSON.parse(after[0].value.params)['analysis.hero.t']).toBe(7.5);
+	expect(after[0].value.key).not.toBe(first[0].value.key);
 });

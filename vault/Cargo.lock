@@ -3981,6 +3981,7 @@ dependencies = [
  "anyhow",
  "avendb-device",
  "axum",
+ "base64 0.22.1",
  "blake3",
  "block2",
  "chrono",
