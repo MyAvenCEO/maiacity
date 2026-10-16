@@ -477,6 +477,7 @@ impl Encode for Kind {
             Kind::Human => 0,
             Kind::Coop => 1,
             Kind::Aven => 2,
+            Kind::DeviceVault => 3,
         });
     }
 }

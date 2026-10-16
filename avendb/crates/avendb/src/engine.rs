@@ -15,7 +15,9 @@
 //!   each hop opening only what the device reads. `get`: one entry on a line, or at a version. `history`: an entry's
 //!   lines and every write of it, each with the changes it made to the entry's stored record (`ops::diff`), as every
 //!   reader sees them alike. `schemas`: the schemas and lenses a vault's entries are read through. `groups`: the
-//!   built-in groups of ops a share names (`rules::groups`), which the page offers when it shares. `limits`: how deep
+//!   built-in groups of ops a share names (`rules::groups`), which the page offers when it shares. `kinds`: the kind
+//!   table (`Kind::rules`, `words::kinds_json`), which the page reads to say what each kind of vault may own and hold
+//!   and never decides itself. `limits`: how deep
 //!   the device's queries read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`,
 //!   `creatable`, `taggable`; `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
@@ -55,6 +57,7 @@ use crate::merge::Place;
 use crate::ops::{self, FieldOp, Path, Record, RecordOp, Where};
 use crate::policy::{Line, Proposal, Refusal};
 use crate::rules;
+use crate::words;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
 use crate::world::{SyncedTo, VARIANT, variant_mark};
@@ -138,7 +141,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "get" => &["entry", "schema", "line", "at"],
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
-        "groups" | "limits" => &[],
+        "groups" | "kinds" | "limits" => &[],
         "create" => &["vault", "type", "tags", "schema", "value", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
@@ -175,12 +178,13 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 14] = [
+const READS: [&str; 15] = [
     "query",
     "get",
     "history",
     "schemas",
     "groups",
+    "kinds",
     "world",
     "jobs",
     "database",
@@ -257,6 +261,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "history" => history(lab, me, o),
         "schemas" => schemas(lab, me, o),
         "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
+        "kinds" => Ok(words::kinds_json()),
         "limits" => Ok(limits(lab.query_depth(me))),
         "database" | "note" | "log" => vaults::data(lab, me, name, o),
         "creatable" => vaults::creatable(lab, me, o),

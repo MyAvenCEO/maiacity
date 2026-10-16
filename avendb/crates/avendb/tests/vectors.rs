@@ -23,11 +23,12 @@
 //! ciphertext goes, and the readings (`Readings`) hold what a reader opens of them. A share's selector JSON goes inside
 //! a sealed selector, beside the commitment to its ops, salted with its number; a write's proof and touches go into the
 //! readings, its proof opening the ops of every share of its share's chain. The core's built-in groups of ops are the
-//! model's. A keys edit of the model names only where its boxes go; the core's carries the boxes too, which no rule
-//! opens, so here they are empty. A creation's header names the blob it holds by a number, which only a schema or lens
-//! entry's readers read: here its content is the bytes `blob <number>`, and the lane names it by their hash. A type or
-//! a tag is a number in the model, and its digits here, but for the types of schema and lens entries, which are the
-//! core's (`slice::SCHEMA_TYPE`, `slice::LENS_TYPE`). A keep share is a share like any other, with no ops.
+//! model's, and so is its kind table (`Kind::rules`). A keys edit of the model names only where its boxes go; the
+//! core's carries the boxes too, which no rule opens, so here they are empty. A creation's header names the blob it
+//! holds by a number, which only a schema or lens entry's readers read: here its content is the bytes `blob <number>`,
+//! and the lane names it by their hash. A type or a tag is a number in the model, and its digits here, but for the
+//! types of schema and lens entries, which are the core's (`slice::SCHEMA_TYPE`, `slice::LENS_TYPE`). A keep share is a
+//! share like any other, with no ops.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
@@ -96,6 +97,7 @@ fn kind(v: &Value) -> Kind {
         Some("human") => Kind::Human,
         Some("coop") => Kind::Coop,
         Some("aven") => Kind::Aven,
+        Some("device") => Kind::DeviceVault,
         _ => panic!("a kind, not {v}"),
     }
 }
@@ -678,6 +680,11 @@ fn the_built_in_groups_are_the_models() {
         .map(|g| json!({ "name": g.name, "ops": rules::ops_to_json(&g.ops), "everyone": g.everyone }))
         .collect();
     assert_eq!(Value::Array(ours), vectors()["groups"]);
+}
+
+#[test]
+fn the_kind_table_is_the_models() {
+    assert_eq!(avendb::words::kinds_json(), vectors()["kinds"]);
 }
 
 #[test]

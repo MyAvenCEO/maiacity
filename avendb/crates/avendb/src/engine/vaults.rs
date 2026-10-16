@@ -344,7 +344,7 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
         rows.push((row, json!({ "op": "revoke", "share": cp.id.to_hex(), "as": by.to_hex() })));
     }
     // a read share to everyone on what the share it would rest on picks: whether `as` may share some of it on
-    let parent = world::parent(st, actor, over, false);
+    let parent = world::parent(st, actor, over, Who::Everyone, Level::Read, false);
     let select = parent.and_then(|p| lab.slice(me, p)).map_or(Selector::All, |x| x.select.clone());
     let (name, ops) = ("Public".to_string(), vec![Op::Read]);
     let public = NewShare { over, who: Who::Everyone, name, select, ops, parent, issuer: actor, keep: None };
@@ -540,12 +540,13 @@ fn what_of(o: &Map<String, Value>) -> Result<Selector, Refused> {
     }
 }
 
-/// `{"op": "share", "over", "who", "level", "what", "as"?}`: vault `over` shared with `who`, acting for `as`. Owner
-/// of everything to a vault or a signer makes a co-owner (`Sharing::Owner`, the master recovery key by its standing
+/// `{"op": "share", "over", "who", "level", "what", "as"?}`: vault `over` shared with `who`, acting for `as`. Owner of
+/// everything to a vault or a signer makes a co-owner (`Sharing::Owner`, the master recovery key by its standing
 /// consent), a device's place a device of it (`Sharing::Device`), both approved by the vault's owners: `{"edit": id}`.
 /// A keep level to a device is a keep share `as` issues; anything else a share of the group named, or of its own, on
-/// what `what` picks, resting on the owner share of `as`'s where `as` isn't `over` (`world::parent`), approved by the
-/// owners where its level is owner: `{"share": id}`. The rules refuse whatever else.
+/// what `what` picks, resting where `as` isn't `over` on a share `as` holds that the rules let it rest on, an owner
+/// share or, to a vault `as` owns, one at its level or more (`world::parent`), approved by the owners where its level
+/// is owner: `{"share": id}`. The rules refuse whatever else.
 fn share(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let (over, whom, giving, select) = (vault_of(o, "over")?, whom(o)?, giving(o)?, what_of(o)?);
     let actor = actor_of(lab, me, o)?;
@@ -584,7 +585,8 @@ fn share(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
         Whom::Device(d) => Who::Device(d),
         _ => Who::Everyone,
     };
-    let parent = world::parent(lab.state(me), actor, over, everything);
+    let level = rules::level_of(&ops);
+    let parent = world::parent(lab.state(me), actor, over, who, level, everything);
     issued(lab, me, NewShare { over, who, name, select, ops, parent, issuer: actor, keep: None })
 }
 
@@ -679,17 +681,15 @@ fn settings(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepa
 }
 
 /// `{"op": "found", "vaults": [{"kind", "name"}, ...]}`, or `{"op": "found", "kind", "name"}` for one: new vaults
-/// device `me`'s own vault founds and owns alone, each `"aven"` or `"coop"` and named, their geneses drafted together
-/// for one ceremony of the passkey. Once it signed them, the device acting for each through its vault gives avenCEO the
+/// device `me`'s own vault founds and owns alone, each of a kind by its name (`words::kind_name`) and named, their
+/// geneses drafted together for one ceremony of the passkey; the kind table says which kinds a vault may found, and
+/// how many (`Kind::rules`): a person's vault founds coops, one aven and device vaults. Once it signed them, the device acting for each through its vault gives avenCEO the
 /// level it holds on the person's vault, backup or relay (`world::server_level`), and writes its profile (`approved`):
 /// `{"vaults": [id, ...]}`, in the order named.
 fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let one = |v: &Map<String, Value>| -> Result<(Kind, String), Refused> {
-        let kind = match v.get("kind").and_then(Value::as_str) {
-            Some("aven") => Kind::Aven,
-            Some("coop") => Kind::Coop,
-            _ => return Err(bad("a vault a vault founds is \"aven\" or \"coop\": kind")),
-        };
+        let kind = v.get("kind").and_then(Value::as_str).and_then(words::kind_of);
+        let kind = kind.ok_or_else(|| bad("a vault's kind is one of the kind table's names: kind"))?;
         Ok((kind, name_of(v, "name", "a new vault")?))
     };
     let new: Vec<(Kind, String)> = match o.get("vaults") {

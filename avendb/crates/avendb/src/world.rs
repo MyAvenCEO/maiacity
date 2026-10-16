@@ -6,8 +6,8 @@
 //! its writes bring, each with where it is synced to (`SyncedTo`).
 //!
 //! Also the entries a device writes itself, by their types: its card in its person's vault (`CARD`), a vault's profile
-//! (`PROFILE`), a file it brings (`FILE`); and how avenCEO, the aven vault avenDB's server is a device of, keeps or
-//! relays a person's vaults (`avenceo`, `server_level`).
+//! (`PROFILE`), a file it brings (`FILE`); and how avenCEO server, the device vault avenDB's server is a device of,
+//! keeps or relays a person's vaults (`avenceo`, `server_level`).
 
 use std::collections::BTreeMap;
 
@@ -99,9 +99,9 @@ pub struct World {
     pub mine: VaultId,
     /// The master recovery key it adds (`Lab::set_recovery`), if any.
     pub recovery: Option<SignerId>,
-    /// Its vault owns avenCEO (`owns_aven`).
-    pub owns_aven: bool,
-    /// avenCEO keeps a backup of its vault (`backs_up`).
+    /// Its vault owns avenCEO server (`owns_server`).
+    pub owns_server: bool,
+    /// avenCEO server keeps a backup of its vault (`backs_up`).
     pub backs_up: Option<bool>,
     pub vaults: Vec<VaultView>,
     pub shares: Vec<ShareView>,
@@ -172,7 +172,7 @@ pub struct AudienceView {
 
 /// A device that receives an audience's edits: the vault it receives them through, the one of those it acts for that
 /// holds the strongest level on the audience, that level, and whether it opens any of what they hold, or only keeps
-/// ciphertext, as the server for avenCEO.
+/// ciphertext, as avenDB's server does.
 pub struct Syncing {
     pub device: SignerId,
     pub through: VaultId,
@@ -237,7 +237,7 @@ impl World {
     /// shares (`rules::groups`), each with its level; and the master recovery key it adds, `recovery`, `null` for none,
     /// which a vault's owners mark as such. As the device works it out, so the page keeps no rule:
     ///
-    /// - `ownsAven` and `backsUp` (`owns_aven`, `backs_up`, `null` while it knows no avenCEO);
+    /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenCEO server);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
     /// - each share's `group`, the built-in group whose ops its ops are and whose `everyone` matches its who, or a
     ///   keep share's mode's (`Level::group`), `null` for one of its own or one whose slice the device doesn't read;
@@ -389,7 +389,7 @@ impl World {
             "me": hex(&me.0),
             "mine": hex(&self.mine.0),
             "recovery": self.recovery.map(|r| hex(&r.0)),
-            "ownsAven": self.owns_aven,
+            "ownsServer": self.owns_server,
             "backsUp": self.backs_up,
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
             "shares": self.shares.iter().map(share).collect::<Vec<_>>(),
@@ -466,9 +466,9 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
         });
     }
     let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
-    let (owns_aven, backs_up) = (owns_aven(lab, me), backs_up(lab, me));
+    let (owns_server, backs_up) = (owns_server(lab, me), backs_up(lab, me));
     let synced_to = SyncedTo::default();
-    Some(World { mine, recovery: lab.recovery(), owns_aven, backs_up, vaults, shares, audiences, entries, synced_to })
+    Some(World { mine, recovery: lab.recovery(), owns_server, backs_up, vaults, shares, audiences, entries, synced_to })
 }
 
 /// As which vault device `me`, of vault `mine`, has its person act in vault `v`, and what that vault may there: the
@@ -804,8 +804,8 @@ fn files_everyone_reads(
 
 /// The vaults a person's claim of avenDB's server founds beside their human vault (`avendb_net`'s `Node::found_with`,
 /// `Node::claim_with`), each owned by the one before alone, the first by the human vault: Maia Holding GmbH and
-/// avenCEO GmbH, two coops, and the CEO Aven, the aven vault the server becomes a device of.
-pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::Aven];
+/// avenCEO GmbH, two coops, and avenCEO server, the device vault the server becomes a device of.
+pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::DeviceVault];
 
 /// The coop the same claim founds beside `SEED`'s chain, owned alone by the vault of the chain at this place,
 /// avenCEO GmbH: Maia City, where the content lives (Samuel 2026-10-15). Nothing names it in code but the seed.
@@ -814,17 +814,17 @@ pub const SEED_COOP_OF: usize = 1;
 /// The names of the seed's vaults, in `SEED`'s order and then the coop beside it (`SEED_COOP_OF`), which their
 /// profiles read from the start (`avendb_browser::Device::found`); the page names a seed that has none yet the same
 /// (vaults.js's `SEED`).
-pub const SEED_NAMES: [&str; 4] = ["Maia Holding GmbH", "avenCEO GmbH", "CEO Aven", "Maia City"];
+pub const SEED_NAMES: [&str; 4] = ["Maia Holding GmbH", "avenCEO GmbH", "avenCEO server", "Maia City"];
 
 /// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia Holding
-/// GmbH, avenCEO GmbH, the CEO Aven (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one.
+/// GmbH, avenCEO GmbH, avenCEO server (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one.
 /// None if it founded none.
 pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     let Some(mine) = lab.vault_of(me) else { return vec![] };
     let st = lab.state(me);
-    let avens = st.vaults().iter().filter(|v| v.kind == Kind::Aven && !v.devices.is_empty());
-    let Some(aven) = avens.map(|v| v.id).find(|&aven| seeded(st, mine, aven)) else { return vec![] };
-    let mut chain = vec![aven];
+    let servers = st.vaults().iter().filter(|v| v.kind == Kind::DeviceVault && !v.devices.is_empty());
+    let Some(server) = servers.map(|v| v.id).find(|&server| seeded(st, mine, server)) else { return vec![] };
+    let mut chain = vec![server];
     while chain.len() < SEED.len() {
         let Some([Principal::Vault(owner)]) = st.vault(chain[0]).map(|v| &v.owners[..]) else { return vec![] };
         chain.insert(0, *owner);
@@ -835,10 +835,10 @@ pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     chain
 }
 
-/// Whether vault `aven` ends a seed founded from vault `mine`, by view `st` (`SEED`): its kind, its owner's and its
+/// Whether vault `server` ends a seed founded from vault `mine`, by view `st` (`SEED`): its kind, its owner's and its
 /// owner's owner's are the seed's, each owned by the one before alone, the first by `mine`.
-pub fn seeded(st: &State, mine: VaultId, aven: VaultId) -> bool {
-    let mut at = aven;
+pub fn seeded(st: &State, mine: VaultId, server: VaultId) -> bool {
+    let mut at = server;
     for kind in SEED.iter().rev() {
         let Some(v) = st.vault(at).filter(|v| v.kind == *kind) else { return false };
         let [Principal::Vault(owner)] = v.owners[..] else { return false };
@@ -847,27 +847,33 @@ pub fn seeded(st: &State, mine: VaultId, aven: VaultId) -> bool {
     at == mine
 }
 
-/// Whether device `me`'s vault owns avenCEO, directly or through owners of owners, by its view: an aven vault with a
-/// device, the server, as once its person's vault claimed the server and founded the CEO Aven (`SEED`).
-pub fn owns_aven(lab: &Lab, me: SignerId) -> bool {
-    let Some(mine) = lab.vault_of(me) else { return false };
-    let st = lab.state(me);
-    st.vaults().iter().any(|v| v.kind == Kind::Aven && !v.devices.is_empty() && st.owns(mine, v.id))
+/// A server's vault by view `st`: a device vault with a device, the server, owned by no aven, as avenCEO GmbH owns
+/// avenCEO server; an aven's device vaults are its agents'.
+fn is_server(st: &State, v: &Vault) -> bool {
+    let by_aven = |p: &Principal| matches!(*p, Principal::Vault(o) if st.vault(o).is_some_and(|o| o.kind == Kind::Aven));
+    v.kind == Kind::DeviceVault && !v.devices.is_empty() && !v.owners.iter().any(by_aven)
 }
 
-/// Whether avenDB's server keeps a backup of device `me`'s person's vault: avenCEO holds backup on the whole of it
-/// (`server_level`). `None` while it knows no avenCEO.
+/// Whether device `me`'s vault owns avenCEO server, directly or through owners of owners, by its view: a server's
+/// vault (`is_server`), as once its person's vault claimed the server and founded its seed (`SEED`).
+pub fn owns_server(lab: &Lab, me: SignerId) -> bool {
+    let Some(mine) = lab.vault_of(me) else { return false };
+    let st = lab.state(me);
+    st.vaults().iter().any(|v| is_server(st, v) && st.owns(mine, v.id))
+}
+
+/// Whether avenDB's server keeps a backup of device `me`'s person's vault: avenCEO server holds backup on the whole of
+/// it (`server_level`). `None` while it knows no avenCEO server.
 pub fn backs_up(lab: &Lab, me: SignerId) -> Option<bool> {
     let mine = lab.vault_of(me)?;
     let st = lab.state(me);
     Some(server_level(st, mine, avenceo(st, mine)?) == Level::Backup)
 }
 
-/// avenCEO by this view: the aven vault with a device, the server, that vault `mine` gives relay on the whole of it, as
-/// its person's first device did as it founded it.
+/// avenCEO server by this view: a server's vault (`is_server`) that vault `mine` gives relay on the whole of it, as its
+/// person's first device did as it founded it.
 pub fn avenceo(st: &State, mine: VaultId) -> Option<VaultId> {
-    let server = |v: &&Vault| v.kind == Kind::Aven && !v.devices.is_empty() && relays(st, mine, v.id);
-    st.vaults().iter().find(server).map(|v| v.id)
+    st.vaults().iter().find(|v| is_server(st, v) && relays(st, mine, v.id)).map(|v| v.id)
 }
 
 /// Vault `to` holds a share in force on the whole of vault `over`, relay or more.
@@ -882,15 +888,17 @@ pub fn server_level(st: &State, mine: VaultId, avenceo: VaultId) -> Level {
     if backs_up { Level::Backup } else { Level::Relay }
 }
 
-/// The owner share vault `issuer`'s right to share a slice of vault `over` rests on: none if it is the vault itself,
-/// else one in force over the vault that it holds, a share on the whole vault first, and only such a one if the new
-/// share is on the whole vault (`wide`), as a share on the whole vault rests only on another.
-pub fn parent(st: &State, issuer: VaultId, over: VaultId, wide: bool) -> Option<ShareId> {
+/// The share vault `issuer`'s right to share a slice of vault `over` with `who` at level `level` rests on: none if it
+/// is the vault itself, else one in force over the vault that it holds which the one rule lets the new share rest on
+/// (`State::share_parent_ok`): an owner share, or, for a share to a vault `issuer` owns, as an aven's to its agent, one
+/// at `level` or more; and only one on the whole vault if the new share is (`wide`). An owner share first, then one on
+/// the whole vault, then the highest.
+pub fn parent(st: &State, issuer: VaultId, over: VaultId, who: Who, level: Level, wide: bool) -> Option<ShareId> {
     if issuer == over {
         return None;
     }
-    let owner = |cp: &&Issued| cp.share.over == over && st.holds(issuer, cp, Level::Owner) && (cp.share.wide || !wide);
-    let mut held: Vec<&Issued> = st.shares_held(issuer).filter(owner).collect();
-    held.sort_by_key(|cp| !cp.share.wide);
+    let probe = |cp: &Issued| Share { over, who, level, wide, select: vec![], parent: Some(cp.id), issuer, nonce: 0 };
+    let mut held: Vec<&Issued> = st.shares_held(issuer).filter(|cp| st.share_parent_ok(&probe(cp))).collect();
+    held.sort_by_key(|cp| (cp.share.level != Level::Owner, !cp.share.wide, std::cmp::Reverse(cp.share.level.rank())));
     held.first().map(|cp| cp.id)
 }

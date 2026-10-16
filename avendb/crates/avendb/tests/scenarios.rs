@@ -157,10 +157,15 @@ fn scenario_26_an_audience_that_comes_back_into_use_moves_on() {
 }
 
 #[test]
+fn scenario_27_an_agent_writes_what_its_avens_share_allows_until_the_coop_revokes_it() {
+    play("27");
+}
+
+#[test]
 fn every_scenario_has_its_test() {
     let tested = [
         "1", "1b", "2", "3", "3b", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18",
-        "18b", "19", "20", "21", "22", "23", "24", "25", "26",
+        "18b", "19", "20", "21", "22", "23", "24", "25", "26", "27",
     ];
     let numbers: Vec<&str> = SCENARIOS.iter().map(|s| s.number).collect();
     assert_eq!(numbers, tested);

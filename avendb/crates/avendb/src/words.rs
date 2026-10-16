@@ -11,19 +11,39 @@ use serde_json::{Value, json};
 
 use crate::id::BlobId;
 use crate::lens::Status;
-use crate::policy::{KeepMode, Kind, Level, Principal, Who};
+use crate::policy::{KeepMode, Kind, Level, OwnedBy, Principal, Who};
 
+/// A kind's name: a device vault's is `device`.
 pub fn kind_name(kind: Kind) -> &'static str {
     match kind {
         Kind::Human => "human",
         Kind::Coop => "coop",
         Kind::Aven => "aven",
+        Kind::DeviceVault => "device",
     }
 }
 
 /// A kind by its name (`kind_name`).
 pub fn kind_of(name: &str) -> Option<Kind> {
-    [Kind::Human, Kind::Coop, Kind::Aven].into_iter().find(|&k| kind_name(k) == name)
+    Kind::ALL.into_iter().find(|&k| kind_name(k) == name)
+}
+
+/// The kind table (`Kind::rules`), a row for each kind, as the page reads it: `{"kind": "aven", "ownedBy": ["human"],
+/// "most": 1, "devices": false, "each": 1}`, where `ownedBy` is `"signers"` or the names of the kinds whose vaults may
+/// own one, `most` how many owners it has at most and `each` how many of it one owner may own, `null` for any number.
+/// The model writes the same rows to its vectors (`Vectors.lean`).
+pub fn kinds_json() -> Value {
+    Kind::ALL
+        .into_iter()
+        .map(|k| {
+            let r = k.rules();
+            let owned_by = match r.owned_by {
+                OwnedBy::Signers => json!("signers"),
+                OwnedBy::Vaults(ks) => ks.iter().map(|&o| kind_name(o)).collect(),
+            };
+            json!({ "kind": kind_name(k), "ownedBy": owned_by, "most": r.most, "devices": r.devices, "each": r.each })
+        })
+        .collect()
 }
 
 /// The levels, by their names (`level_name`).
@@ -156,7 +176,7 @@ mod tests {
         for level in LEVELS {
             assert_eq!(level_of(level_name(level)), Some(level));
         }
-        for kind in [Kind::Human, Kind::Coop, Kind::Aven] {
+        for kind in Kind::ALL {
             assert_eq!(kind_of(kind_name(kind)), Some(kind));
         }
         assert_eq!((level_of("Owner"), level_of("actsFor"), kind_of("Aven")), (None, None, None));

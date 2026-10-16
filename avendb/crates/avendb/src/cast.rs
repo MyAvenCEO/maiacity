@@ -1,13 +1,14 @@
 //! The people, devices and vaults of the plan's scenarios, on the Lab: Alice with a passkey, a Mac and an iPhone; Bob,
 //! Carol and Dave with a passkey and a Mac each; the relay server and a stranger. Alice's vault is the first to claim
-//! the server: the server is a device of avenCEO, an aven vault Alice's vault owns. The scenarios (`scenarios`) and the
-//! tests start from them, and so does a page's Lab, which makes the world a step at a time (`Making`) so that it makes
-//! the McEliece pairs of each step in its workers before the next step needs them. `avendb/spec/AvenDB/Examples.lean`
-//! has the same cast on the Lean model.
+//! the server: the server is a device of avenCEO server, a device vault Alice's vault owns. The scenarios (`scenarios`)
+//! and the tests start from them, and so does a page's Lab, which makes the world a step at a time (`Making`) so that
+//! it makes the McEliece pairs of each step in its workers before the next step needs them.
+//! `avendb/spec/AvenDB/Examples.lean` has the same cast on the Lean model.
 //!
 //! A vault holds its entries itself, each with a type (`doc`, `note`, `todo`) and tags; the coop's documents are in the
 //! coop's vault, Alice's todos and notes in hers. A vault that wants the server to hold and pass on its entries gives
-//! avenCEO a wide relay share (`relay_on`); everything else is shared by shares on slices: a type, a tag, one entry.
+//! avenCEO server a wide relay share (`relay_on`); everything else is shared by shares on slices: a type, a tag, one
+//! entry.
 
 use crate::doc::Item;
 use crate::id::{EditId, EntryId, ShareId, SignerId, VaultId};
@@ -64,7 +65,7 @@ pub fn write(vault: VaultId, entry: EntryId, actor: VaultId, stay: Option<EditId
     Action::Write { vault, entry, actor, stay, epoch, deps: vec![], proposal, via: vec![], create: None, files, body }
 }
 
-/// The Lab after scenarios 1 and 2, plus the server, avenCEO and a stranger.
+/// The Lab after scenarios 1 and 2, plus the server, avenCEO server and a stranger.
 pub struct World {
     pub lab: Lab,
     pub passkey_a: SignerId,
@@ -77,7 +78,7 @@ pub struct World {
     pub passkey_d: SignerId,
     pub mac_d: SignerId,
     pub server: SignerId,
-    /// The aven vault the server is a device of, which Alice's vault owns.
+    /// avenCEO server, the device vault the server is a device of, which Alice's vault owns.
     pub avenceo: VaultId,
     pub stranger: SignerId,
     pub alice: VaultId,
@@ -106,16 +107,17 @@ pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> Vault
 }
 
 /// The server claimed by human vault `human`, the first to (`Lab::claim`, P8f), its passkey `passkey` signing on its
-/// device `on`: the server hands its key to seal to, the passkey founds avenCEO, an aven vault `human` owns, and adds
-/// the server as its device; the server signs last and keeps it all, `on` keeps the server's join, and syncs the
-/// server the key it boxed for it. avenCEO.
+/// device `on`: the server hands its key to seal to, the passkey founds avenCEO server, a device vault `human` owns,
+/// and adds the server as its device; the server signs last and keeps it all, `on` keeps the server's join, and syncs
+/// the server the key it boxed for it. avenCEO server.
 pub fn claim_on(lab: &mut Lab, on: SignerId, passkey: SignerId, human: VaultId, server: SignerId) -> VaultId {
     let key = lab.claim_key(server).expect("a server nobody has claimed hands its key");
     let owners = vec![Principal::Vault(human)];
-    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
-    let avenceo = VaultId::from(lab.submit(on, &[passkey], genesis).expect("the passkey founds avenCEO"));
+    let kind = Kind::DeviceVault;
+    let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+    let avenceo = VaultId::from(lab.submit(on, &[passkey], genesis).expect("the passkey founds avenCEO server"));
     let add = Action::Share(Sharing::Device { vault: avenceo, device: server, seal_to: Some(key) });
-    let draft = lab.draft(on, &[passkey, server], add).expect("avenCEO adds the server");
+    let draft = lab.draft(on, &[passkey, server], add).expect("avenCEO server adds the server");
     let claim = lab.claim(on, draft, &[]).expect("the passkey signs the claim");
     let join = lab.accept_claim(server, claim).expect("the server takes the claim");
     lab.receive(on, vec![join.edit], join.blobs.into_iter().map(Into::into).collect());
@@ -131,13 +133,13 @@ pub fn world() -> World {
 }
 
 /// The world made a step at a time: every signer first, whose McEliece pairs a page then makes in its workers, then
-/// Alice's vault, avenCEO as Alice's vault claims the server, the other people's vaults, and the contact cards they
+/// Alice's vault, avenCEO server as Alice's vault claims the server, the other people's vaults, and the contact cards they
 /// exchange.
 pub struct Making {
     lab: Lab,
     /// Each person's passkey and devices, then the server and the stranger.
     signers: Vec<SignerId>,
-    /// Alice's vault, avenCEO, then Bob's, Carol's and Dave's.
+    /// Alice's vault, avenCEO server, then Bob's, Carol's and Dave's.
     vaults: Vec<VaultId>,
     done: usize,
 }
@@ -192,7 +194,7 @@ impl Making {
                 let (s, v) = (&self.signers, &self.vaults);
                 let avenceo = claim_on(lab, s[1], s[0], v[0], s[9]);
                 self.vaults.push(avenceo);
-                "avenCEO, as Alice's vault claims the server"
+                "avenCEO server, as Alice's vault claims the server"
             }
             3 => {
                 let s = &self.signers;
@@ -202,7 +204,7 @@ impl Making {
                 "Bob's, Carol's and Dave's vaults"
             }
             4 => {
-                // they all know each other's vaults and avenCEO, as after exchanging contact cards; Alice's iPhone
+                // they all know each other's vaults and avenCEO server, as after exchanging contact cards; Alice's iPhone
                 // holds the same contacts as Alice's Mac
                 let (s, v) = (&self.signers, &self.vaults);
                 let macs = [(s[1], v[0]), (s[2], v[0]), (s[4], v[2]), (s[6], v[3]), (s[8], v[4]), (s[9], v[1])];
@@ -254,7 +256,7 @@ pub fn coop_on(w: &mut World) -> VaultId {
     VaultId::from(w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("Alice and Bob found the coop"))
 }
 
-/// Vault `v` gives avenCEO relay on all its entries, on Alice's Mac, for the server to hold and pass them on: a wide
+/// Vault `v` gives avenCEO server relay on all its entries, on Alice's Mac, for the server to hold and pass them on: a wide
 /// share, which reaches every audience and splits none.
 pub fn relay_on(w: &mut World, v: VaultId) -> ShareId {
     let relay = share(v, vault(w.avenceo), Level::Backup, Selector::All);
