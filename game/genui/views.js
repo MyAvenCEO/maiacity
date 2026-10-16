@@ -24,6 +24,8 @@
  * The API (api/src/genui.js) and the page both check a view with `check` before keeping or drawing it.
  */
 
+import { viewHtml } from '../code/rules.js';
+
 /** the components an a2ui view may use, and the props each takes (anything else is dropped) */
 export const CATALOG = {
 	Column: { props: ['gap', 'align'], children: true },
@@ -159,8 +161,12 @@ export function check(v) {
  */
 export const VIEW_SLOTS = ['panel'];
 export const MAX_VIEW = 100_000;
-/** `slots`: where a game lets a screen stand (MaiaCity V1 names its own panels, game/maiacity-v1/views.js) */
-export function checkViewCard(raw, slots = VIEW_SLOTS) {
+/**
+ * `slots`: where a game lets a screen stand (MaiaCity V1 names its own panels, game/maiacity-v1/views.js). In mode
+ * 'write' (a MIP bringing it) its HTML is held to the rules every view is (game/code/rules.js); `notes` say what of it
+ * will do nothing.
+ */
+export function checkViewCard(raw, slots = VIEW_SLOTS, { mode = 'write' } = {}) {
 	const id = String(raw?.id ?? '').trim();
 	if (!/^[a-z][a-z0-9_-]{1,40}$/.test(id)) return { error: `A view card's id is lowercase letters, digits, - and _, 2 to 41 long (got "${id.slice(0, 40)}").` };
 	const name = String(raw?.name ?? '').trim().slice(0, 80) || id;
@@ -175,5 +181,9 @@ export function checkViewCard(raw, slots = VIEW_SLOTS) {
 	const bad = libs.find((l) => !LIBS[l]);
 	if (bad) return { error: `Card ${id}: no library "${bad.slice(0, 30)}"; a view may load ${Object.keys(LIBS).join(', ')}.` };
 	const height = Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], Math.round(Number(d.height) || 520)));
-	return { card: { id, kind: 'view', name, description, values: {}, data: { slot, libs: [...new Set(libs)], height }, code } };
+	const card = { id, kind: 'view', name, description, values: {}, data: { slot, libs: [...new Set(libs)], height }, code };
+	if (mode === 'read') return { card };
+	const h = viewHtml(code, { what: `Card ${id}`, libs: card.data.libs });
+	if (h.errors.length) return { error: h.errors[0] };
+	return { card, notes: h.notes };
 }

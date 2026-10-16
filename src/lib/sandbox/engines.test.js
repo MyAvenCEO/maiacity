@@ -51,9 +51,9 @@ describe('engines come only from us', () => {
 			globalThis.fetch = real;
 		}
 	});
-	test('no source names a CDN (the box probe only proves one is refused)', () => {
+	test('no source names a CDN (the box probe and the checker\'s hostile views only prove one is refused)', () => {
 		const CDN = /\b(cdn\.jsdelivr\.net|unpkg\.com|esm\.sh|cdnjs\.cloudflare\.com|cdn\.skypack\.dev|ga\.jspm\.io)\b/;
-		const PROBES = new Set(['src/lib/assets/box/probe.js']);
+		const PROBES = new Set(['src/lib/assets/box/probe.js', 'src/lib/code/check.test.js']);
 		const hits = [];
 		const walk = (dir) => {
 			for (const d of readdirSync(`${ROOT}${dir}`, { withFileTypes: true })) {

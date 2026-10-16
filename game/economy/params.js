@@ -204,7 +204,7 @@ const MAX_DATA = 50000;
  * One card, checked and cleaned: { card } or { error } in a sentence. Values are checked against the catalogue (and
  * clamped to their range); code is kept as text (it runs only in the QuickJS sandbox, never on the server).
  */
-export function checkCard(raw) {
+export function checkCard(raw, { mode = 'write' } = {}) {
 	const id = String(raw?.id ?? '').trim();
 	if (!CARD_ID.test(id)) return { error: `A card's id is lowercase letters, digits, - and _, 2 to 41 long (got "${id}").` };
 	const kind = raw?.kind;
@@ -217,7 +217,7 @@ export function checkCard(raw) {
 		if (ok == null) return { error: `Card ${id}: ${k} is not a value the valley has (or ${JSON.stringify(v)} is not a number).` };
 		values[k] = ok;
 	}
-	if (kind === 'view') return checkViewCard({ ...raw, id, name, description });
+	if (kind === 'view') return checkViewCard({ ...raw, id, name, description }, undefined, { mode });
 	const data = raw?.data == null ? undefined : raw.data;
 	if (data !== undefined && (typeof data !== 'object' || JSON.stringify(data).length > MAX_DATA)) return { error: `Card ${id}: its data is a JSON object of at most ${MAX_DATA} characters.` };
 	const code = String(raw?.code ?? '');
