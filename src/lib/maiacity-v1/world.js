@@ -25,7 +25,7 @@ import { human } from '$lib/actors/human.ts';
 import { blend } from '$lib/actors/rig.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
-import { ME_SEAT, packedVan, wearFace } from './van.js';
+import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 import { BELL_TENT, CENTRE_AT, PICKUP, RAMP, THINGS } from './things.js';
@@ -727,8 +727,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	marker.position.y = 0.08;
 	marker.visible = false;
 	world.add(core, marker);
-	// the travel van of the arrival, packed
+	// the travel van of the arrival, packed: the minibus itself built in the box, its glass see-through
 	const van = named(packedVan(), 'asset:van');
+	drawn.load(THINGS.van, van, { pick: 'asset:van' }).then((got) => seeThrough(got.obj), () => {});
 	for (const p of van.userData.people) p.castShadow = false; // its people stay out of the sun's coarse shadow map
 	van.visible = false;
 	world.add(van);
