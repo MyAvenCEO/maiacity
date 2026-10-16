@@ -5,7 +5,7 @@
 // for, and when, that edit's time (an entry's `by` and `created`): both come with every signed edit, so the record says
 // neither. It is edited, proposed to, merged and made a variant of as a note is (./Note.svelte).
 
-import { Marked } from 'marked';
+import { markdown } from '../markdown/index.js';
 
 /** The type of an article's entry. */
 export const ARTICLE = 'article';
@@ -13,59 +13,19 @@ export const ARTICLE = 'article';
 /** A picture's name in an article: its content hash in hex and its ending. */
 export const PICTURE = /^[0-9a-f]{64}\.(jpe?g|png|webp|gif|avif)$/;
 
-/** What each letter HTML gives a meaning to is written as. */
-const ESCAPED = /** @type {Record<string, string>} */ ({
-	'&': '&amp;',
-	'<': '&lt;',
-	'>': '&gt;',
-	'"': '&quot;',
-	"'": '&#39;'
-});
-
-/** Text as HTML text, or an attribute's value. @param {unknown} s */
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESCAPED[c]);
-
-/** Where a link may go: the web, mail, and this site. */
-const SAFE = /^(https?:|mailto:|\/(?!\/)|#)/i;
-
 /**
- * Article text `md` as HTML, safe to show whoever wrote it: its own HTML shown as text, links only to the web, mail or
- * this site, and pictures only the vault's own files, each shown from `src(name)` (`''` while it isn't read yet); a
- * picture alone in its paragraph is a figure, its words its caption.
+ * Article text `md` as HTML, safe to show whoever wrote it, by the one Markdown engine ($lib/markdown): its own HTML
+ * shown as text, links only to the web, mail or this site, and pictures only the vault's own files, each shown from
+ * `src(name)` (`''` while it isn't read yet); a picture alone in its paragraph is a figure, its words its caption.
  * @param {string} md @param {(name: string) => string} src
  */
 export function render(md, src) {
-	/** @param {string} href @param {string} text */
-	const picture = (href, text) => {
-		const name = (href ?? '').trim();
-		if (!PICTURE.test(name)) return `<span class="unshown">${esc(text)}</span>`;
-		const url = src(name);
-		return `<img${url ? ` src="${esc(url)}"` : ''} alt="${esc(text)}" data-picture="${name}" loading="lazy" />`;
-	};
-	const marked = new Marked({
-		gfm: true,
-		async: false,
-		renderer: {
-			html: ({ text }) => esc(text),
-			link({ href, title, tokens }) {
-				const text = this.parser.parseInline(tokens);
-				if (!SAFE.test(href ?? '')) return text;
-				const titled = title ? ` title="${esc(title)}"` : '';
-				const away = /^https?:/i.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '';
-				return `<a href="${esc(href)}"${titled}${away}>${text}</a>`;
-			},
-			image: ({ href, text }) => picture(href, text),
-			paragraph({ tokens }) {
-				const [only] = tokens;
-				if (tokens.length === 1 && only.type === 'image') {
-					const caption = only.text ? `<figcaption>${esc(only.text)}</figcaption>` : '';
-					return `<figure>${picture(only.href, only.text)}${caption}</figure>\n`;
-				}
-				return `<p>${this.parser.parseInline(tokens)}</p>\n`;
-			}
+	return markdown(md, {
+		picture: (href) => {
+			const name = href.trim();
+			return PICTURE.test(name) ? { src: src(name) ?? '', name } : null;
 		}
 	});
-	return /** @type {string} */ (marked.parse(md ?? ''));
 }
 
 /**

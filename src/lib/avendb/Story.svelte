@@ -2,7 +2,10 @@
 	One story, the whole screen: its title and format, the stages of the story flow (./flows.js) with the one it is in
 	marked and, for whoever may change it, the stages it goes on to; a tab for each stage, each the step of its journey
 	the next milestones fill (sparks and idea, hook, thumbnail, journey, writing, movie, derivatives, scheduled,
-	published), the Idea tab the sparks it grows from and its sources (StorySparks); and on the right its lines and its
+	published), the Idea tab the sparks it grows from and its sources (StorySparks), the Hook tab its hooks, the one on the card, its
+	image title, intro and description beside how it looks on YouTube (StoryHook), the Thumbnail tab its cards, one per
+	shape, in layers (StoryThumbnail), the Journey tab where it starts and ends, its question and its beats with their
+	tension (StoryJourney); and on the right its lines and its
 	history, as a note's: each proposal, what its title reads there and Merge for whoever may merge it, and every edit of
 	the main line, newest first, who made it and what title it left, to restore. Agents over the Mac app's MCP write on proposals, which the person merges here.
 -->
@@ -10,7 +13,10 @@
 	import { flowsFor, moving, STORY, stageOf } from './flows.js';
 	import Icon from './Icon.svelte';
 	import { allowed, may } from './ops.js';
+	import StoryHook from './StoryHook.svelte';
+	import StoryJourney from './StoryJourney.svelte';
 	import StorySparks from './StorySparks.svelte';
+	import StoryThumbnail from './StoryThumbnail.svelte';
 	import { count, nameOf, short } from './vaults.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string }} */
@@ -20,7 +26,7 @@
 	const STEPS = /** @type {Record<string, [string, string]>} */ ({
 		idea: ['The sparks it grows from: thoughts, links, pictures, mood boards, others’ posts.', 'M1'],
 		hook: ['Its hook variants side by side, the one chosen, its image title, intro and description.', 'M2'],
-		thumbnail: ['Its title cards in layers, one per shape, rendered into the Library.', 'M3'],
+		thumbnail: ['Its title cards in layers, one per shape, each rendered into the Library.', 'M3'],
 		journey: ['From → to, the question it asks, and its beats with their tension.', 'M4'],
 		writing: ['Its article, with proposals and variants (a German one, a shorter one).', 'M5'],
 		movie: ['Its cuts and their variants: the full film, the trailer, each Short.', 'M6 · M7'],
@@ -165,11 +171,20 @@
 		</nav>
 
 		<div class="body">
-			<section class="step" class:filled={tab === 'idea'} aria-label={flow.stages.find((s) => s.key === tab)?.name}>
+			<section class="step" class:filled={['idea', 'hook', 'thumbnail', 'journey'].includes(tab)} aria-label={flow.stages.find((s) => s.key === tab)?.name}>
 				<h2>{flow.stages.find((s) => s.key === tab)?.name}</h2>
 				{#if tab === 'idea'}
 					<p>{STEPS.idea[0]}</p>
 					<StorySparks {world} {actor} {api} {busy} {item} {writes} />
+				{:else if tab === 'hook'}
+					<p>{STEPS.hook[0]}</p>
+					<StoryHook {world} {actor} {api} {busy} {item} {writes} lines={note?.lines ?? []} />
+				{:else if tab === 'thumbnail'}
+					<p>{STEPS.thumbnail[0]}</p>
+					<StoryThumbnail {world} {actor} {api} {busy} {item} {writes} />
+				{:else if tab === 'journey'}
+					<p>{STEPS.journey[0]}</p>
+					<StoryJourney {world} {actor} {api} {busy} {item} {writes} lines={note?.lines ?? []} />
 				{:else if STEPS[tab]}
 					<p>{STEPS[tab][0]}</p>
 					<p class="soft">This step comes with milestone {STEPS[tab][1]} of the content plan.</p>

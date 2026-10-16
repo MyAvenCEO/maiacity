@@ -1,0 +1,12 @@
+{
+	"logic": [
+		{
+			"v": 1,
+			"date": "2026-10-16",
+			"blake3": "3efe6ff9869b915ebafefc962f46197bf42d1889969e65cf43d7173fd285f265",
+			"bytes": 739906,
+			"quickjs": "0.32.0",
+			"note": "The first logic engine: QuickJS (quickjs-emscripten, single file) and the logic core, behind the shell's second lock; code as a JS module with no buffers, a seeded Math.random and a frozen Date, work counted in ticks, called as call, see, hook or view with one JSON text in and out"
+		}
+	]
+}

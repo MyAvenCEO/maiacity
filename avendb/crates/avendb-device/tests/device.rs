@@ -7,13 +7,19 @@
 //! shelf aside when she forgets it there, deleting nothing. Every read and change is an op (`run`, V2), what her
 //! vault's owners approve signed in a sheet; a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`),
 //! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and clears what an
-//! earlier avenDB kept in the folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
+//! earlier avenDB kept in the folder. The app may host the same device in its own process (`host`): the same calls and
+//! sheets with no lines between, and the open device's node at hand, which reads her film back by range itself; closed,
+//! it opens again from its folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
 //! for access; she denies, it asks again, and the page's consent screen adds both under her one aven avenEve, founded
 //! with the first, a device vault and a sheet each, with the shares the aven passes on to them; the same harness on her
 //! other Mac joins its agent's device vault there. An agent saves a file of her Mac by its path as its shares allow,
 //! an Editor's and not a Suggester's, and keeps it while her Mac keeps a light copy, then lets go of it once her Mac
-//! keeps a full one: one copy on her Mac. Her aven passes on no more than it holds of a coop that hired it, and the
-//! coop taking its share back ends its agent's. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
+//! keeps a full one: one copy on her Mac. It reads a file back to a path on her Mac, every byte, from its own shelf
+//! or else from her Mac, never over a file there unless it says so, a small text file inline; a Suggester reads it
+//! too, and no agent reads a file of a vault none of its shares reaches. An agent adds a spark to her own vault by
+//! its fields' plain names, as the page captures one, and her Mac reads it; one that may add a spark nowhere says so,
+//! and where it may. Her aven passes on no more than it holds of a coop that hired it, and the coop taking its share
+//! back ends its agent's. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
 //! sheet, its key never on it in plain; the Mac it is plugged into hosts it, a full copy; unplugged, its node stops and
 //! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
 //! stays open, and plugged in again it is hosted with no sheet; her other Mac opens it in one; removed like a lost
@@ -31,9 +37,10 @@ use avendb::id::{EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Revoking, Sharing};
+use avendb::sealed::FileRoot;
 use avendb::slice::Selector;
 use avendb::sign::{Ceremony, DeviceKey, PRF_SALT, Passkey, device_salt};
-use avendb_device::{Config, SHEET, agent, drive, serve};
+use avendb_device::{Config, Host, SHEET, agent, drive, host, serve};
 use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, Node, Options, disk};
 use avendb_server::Relay;
@@ -112,40 +119,14 @@ impl App {
         to.write_all(format!("{message}\n").as_bytes()).await.expect("the device's stdin");
     }
 
-    /// Sheet `n` at `url`, as maia.city's sheet page runs it: the ceremony the fragment asks for, sealed to its key and
-    /// bound to its challenge, sent back to the app's scheme; or the person closed it.
+    /// Sheet `n` at `url`, as maia.city's sheet page runs it (`sheet_page`); or the person closed it.
     fn sheet(&mut self, n: u64, url: &str) -> Value {
-        let fragment = url.strip_prefix(SHEET).and_then(|u| u.strip_prefix('#')).expect("maia.city's sheet page");
-        // every value is base64url or a word, which a URL holds as it is
-        let asked: HashMap<&str, &str> = fragment.split('&').map(|p| p.split_once('=').expect("a pair")).collect();
-        let bytes = |k: &str| BASE64URL_NOPAD.decode(asked[k].as_bytes()).expect("base64url");
+        let asked = asked_in(url);
         self.asked.push(asked["what"].to_string());
         if std::mem::take(&mut self.cancel) {
             return json!({ "sheet": n, "error": "You closed the sign-in sheet." });
         }
-        assert_eq!(bytes("salt"), PRF_SALT, "the app's PRF salt");
-        assert!(asked.get("id").is_none_or(|id| *id == CREDENTIAL), "her passkey's credential, if any");
-        let challenge: [u8; 32] = bytes("challenge").try_into().expect("a challenge of 32 bytes");
-        let Ceremony { assertion, .. } = self.passkey.ceremony(challenge);
-        let prf = self.passkey.prf(PRF_SALT);
-        let device = asked.contains_key("device").then(|| self.passkey.prf(&bytes("device")));
-        let parts: [&[u8]; 6] = [
-            CREDENTIAL.as_bytes(),
-            &assertion.authenticator_data,
-            &assertion.client_data_json,
-            &assertion.signature,
-            &prf[..],
-            device.as_ref().map_or(&[][..], |d| &d[..]),
-        ];
-        let mut plain = vec![];
-        for part in parts {
-            plain.extend_from_slice(&u32::try_from(part.len()).expect("a short part").to_le_bytes());
-            plain.extend_from_slice(part);
-        }
-        let info = [&b"avenDB sign-in sheet "[..], &challenge].concat();
-        let mut rng = SeededRng::new("the test's sign-in sheet", &challenge);
-        let sealed = keys::seal_once(&bytes("key"), &plain, &info, &mut rng).expect("an X-Wing key");
-        json!({ "sheet": n, "back": format!("city.maia.studio://avendb#sealed={}", BASE64URL_NOPAD.encode(&sealed)) })
+        sheet_page(&mut self.passkey, n, &asked)
     }
 
     /// What the sheets since the last ask were for.
@@ -159,6 +140,91 @@ impl App {
         to.shutdown().await.expect("the device's stdin ends");
         let done = tokio::time::timeout(Duration::from_secs(60), &mut self.serving).await;
         done.expect("the device stops within 60 s").expect("the device's task").expect("the device stops cleanly");
+    }
+}
+
+/// What the sign-in sheet at `url` asks, by name: the fragment of maia.city's sheet page.
+fn asked_in(url: &str) -> HashMap<&str, &str> {
+    let fragment = url.strip_prefix(SHEET).and_then(|u| u.strip_prefix('#')).expect("maia.city's sheet page");
+    // every value is base64url or a word, which a URL holds as it is
+    fragment.split('&').map(|p| p.split_once('=').expect("a pair")).collect()
+}
+
+/// Sheet `n`'s answer, as maia.city's sheet page runs it with `passkey`: the ceremony `asked` asks for, sealed to its
+/// key and bound to its challenge, sent back to the app's scheme.
+fn sheet_page(passkey: &mut Passkey, n: u64, asked: &HashMap<&str, &str>) -> Value {
+    let bytes = |k: &str| BASE64URL_NOPAD.decode(asked[k].as_bytes()).expect("base64url");
+    assert_eq!(bytes("salt"), PRF_SALT, "the app's PRF salt");
+    assert!(asked.get("id").is_none_or(|id| *id == CREDENTIAL), "her passkey's credential, if any");
+    let challenge: [u8; 32] = bytes("challenge").try_into().expect("a challenge of 32 bytes");
+    let Ceremony { assertion, .. } = passkey.ceremony(challenge);
+    let prf = passkey.prf(PRF_SALT);
+    let device = asked.contains_key("device").then(|| passkey.prf(&bytes("device")));
+    let parts: [&[u8]; 6] = [
+        CREDENTIAL.as_bytes(),
+        &assertion.authenticator_data,
+        &assertion.client_data_json,
+        &assertion.signature,
+        &prf[..],
+        device.as_ref().map_or(&[][..], |d| &d[..]),
+    ];
+    let mut plain = vec![];
+    for part in parts {
+        plain.extend_from_slice(&u32::try_from(part.len()).expect("a short part").to_le_bytes());
+        plain.extend_from_slice(part);
+    }
+    let info = [&b"avenDB sign-in sheet "[..], &challenge].concat();
+    let mut rng = SeededRng::new("the test's sign-in sheet", &challenge);
+    let sealed = keys::seal_once(&bytes("key"), &plain, &info, &mut rng).expect("an X-Wing key");
+    json!({ "sheet": n, "back": format!("city.maia.studio://avendb#sealed={}", BASE64URL_NOPAD.encode(&sealed)) })
+}
+
+/// The Mac app with avenDB's device in its own process (`avendb_device::host`), in place of the sidecar: each call
+/// straight to the host, and each sheet the device asks for meanwhile shown, the person's passkey answering in it, its
+/// answer handed to the host (`Host::answer`).
+struct InApp {
+    host: Host,
+    sheets: avendb_device::Lines,
+    passkey: Passkey,
+    /// What each sheet was for, since the test last asked.
+    asked: Vec<String>,
+    /// Whether the person closes the next sheet instead of using their passkey.
+    cancel: bool,
+}
+
+impl InApp {
+    /// The app hosts the device on folder `dir`, Eve's passkey answering its sheets.
+    fn start(dir: &Path, passkey: Passkey) -> InApp {
+        let (host, sheets) = host(Config { dir: dir.to_path_buf(), direct: true, volumes: None }).expect("hosted");
+        InApp { host, sheets, passkey, asked: vec![], cancel: false }
+    }
+
+    /// Call `call` with `args` on the device, showing each sheet it asks for meanwhile: its answer, `{"ok": value}` or
+    /// `{"error": why}`.
+    async fn call(&mut self, call: &str, args: Value) -> Value {
+        let (host, call, args) = (self.host.clone(), call.to_string(), args.as_array().cloned().expect("its args"));
+        let mut answer = tokio::spawn(async move { host.call(&call, args).await });
+        let end = Instant::now() + Duration::from_secs(120);
+        loop {
+            let sheet = tokio::select! {
+                done = &mut answer => return done.expect("the call's task"),
+                sheet = self.sheets.recv() => sheet.expect("the device's sheets"),
+                () = tokio::time::sleep_until(end.into()) => panic!("an answer within 120 s"),
+            };
+            let n = sheet["sheet"].as_u64().expect("a sheet, all the device sends unprompted");
+            let asked = asked_in(sheet["url"].as_str().expect("the sheet's URL"));
+            self.asked.push(asked["what"].to_string());
+            let back = match std::mem::take(&mut self.cancel) {
+                true => json!({ "sheet": n, "error": "You closed the sign-in sheet." }),
+                false => sheet_page(&mut self.passkey, n, &asked),
+            };
+            self.host.answer(&back);
+        }
+    }
+
+    /// What the sheets since the last ask were for.
+    fn asked(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.asked)
     }
 }
 
@@ -501,6 +567,76 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_av
     server.shutdown().await.expect("the server's node stops");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_mac_app_hosts_the_device_in_its_own_process_and_reads_a_file_from_its_node() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("hosted");
+    let dir = folder.0.clone();
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    // nothing open yet: no node, and each call answers as its line would, with no id
+    assert!(app.host.node().is_none(), "no node before the device opens");
+    let nothing = json!({ "ok": { "meta": null, "open": false, "device": null } });
+    assert_eq!(app.call("status", json!([])).await, nothing);
+    assert_eq!(app.call("open", json!([])).await, json!({ "error": "this Mac holds no avenDB account yet" }));
+    // she closes the first sheet, and the call says so
+    app.cancel = true;
+    let offer = server.offer().to_text();
+    let found = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await;
+    assert_eq!(found, json!({ "error": "You closed the sign-in sheet." }));
+    assert_eq!(app.asked(), ["unlock"]);
+    // she founds her vault in two sheets, each answered through the host; then its node is at hand, the device's own
+    let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await["ok"].clone();
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let node = app.host.node().expect("its node, once open");
+    assert_eq!(json!(hex(&node.device().0)), device["id"], "the device the call opened");
+    // an op, and a change her vault's owners approve, in a sheet answered through the host too
+    let vault = app.call("run", json!([{ "op": "world" }])).await["ok"]["ok"]["mine"].clone();
+    let aven = app.call("run", json!([{ "op": "found", "kind": "aven", "name": "avenEVE" }])).await;
+    assert_eq!(aven["ok"]["ok"]["vaults"].as_array().map(Vec::len), Some(1), "a new vault: {aven}");
+    assert_eq!(app.asked(), ["approve"]);
+    // a film, a chunk at a time in base64, as native.js hands it over
+    let film: Vec<u8> = (0..300_000u32).map(|i| (i * 13 % 251) as u8).collect();
+    let put = json!({ "op": "put_file", "vault": vault, "name": "Film.mp4", "media": "video/mp4", "tags": [],
+        "len": film.len() });
+    let n = app.call("fileStart", json!([put])).await["ok"].clone();
+    loop {
+        let mut at = 0;
+        for chunk in film.chunks(100_000) {
+            assert_eq!(app.call("fileChunk", json!([n, at, BASE64.encode(chunk)])).await, json!({ "ok": null }));
+            at += chunk.len();
+        }
+        if app.call("fileAgain", json!([n])).await != json!({ "ok": true }) {
+            break;
+        }
+    }
+    let made = app.call("fileEnd", json!([n])).await["ok"]["ok"].clone();
+    // its bytes read back by range from the node itself, with no JSON and no base64 between
+    let root = FileRoot { hash: id(&made["root"]), size: made["size"].as_u64().expect("its sealed size") };
+    assert_eq!(node.read_file(root, 1_000..250_000).await.expect("a range"), film[1_000..250_000]);
+    assert_eq!(node.read_file(root, 0..film.len() as u64).await.expect("all of it"), film);
+    assert!(node.jobs().to_json().is_object(), "its jobs at hand too");
+    assert_eq!(app.call("nope", json!([])).await, json!({ "error": "no call \"nope\"" }));
+    app.host.answer(&json!({ "sheet": 999, "back": "city.maia.studio://avendb#sealed=x" }));
+    assert!(app.asked().is_empty(), "no other sheet");
+    // the app closes it as it quits: the host holds no node, and its sheets end once it is gone
+    app.host.close().await;
+    assert!(app.host.node().is_none(), "no node once closed");
+    drop(node);
+    let InApp { host, mut sheets, .. } = app;
+    drop(host);
+    let ended = tokio::time::timeout(Duration::from_secs(60), sheets.recv()).await;
+    assert_eq!(ended.expect("within 60 s"), None, "no line more");
+    // hosted again, it opens from its folder in the unlock's sheet alone, the same device, and reads the film it kept
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    let opened = app.call("open", json!([])).await["ok"].clone();
+    assert_eq!((&opened["id"], app.asked()), (&device["id"], vec!["unlock".to_string()]), "the same device");
+    let node = app.host.node().expect("its node");
+    assert_eq!(node.read_file(root, 0..10).await.expect("its first bytes"), film[..10], "kept on its shelf");
+    drop(node);
+    app.host.close().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
 /// An agent harness, as an agent's own device sees it (`agent::serve`): MCP on its stdin and stdout.
 struct Harness {
     to: Option<WriteHalf<DuplexStream>>,
@@ -590,6 +726,20 @@ async fn reads(h: &mut Harness, entry: &Value) -> (String, bool) {
     read
 }
 
+/// What harness `h` answers reading a file back (`avendb_read_file`) with `args`, once the file's entry reached it: its
+/// text, and whether it is an error.
+async fn reads_file(h: &mut Harness, args: Value) -> (String, bool) {
+    let mut read = (String::new(), true);
+    for _ in 0..100 {
+        read = h.tool("avendb_read_file", args.clone()).await;
+        if !read.0.ends_with("(NoEntry)") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    read
+}
+
 /// Vault `id` as device `app`'s world shows it, once `check` holds of it, 60 seconds at most.
 async fn vault_shown(app: &mut App, id: &Value, what: &str, check: impl Fn(&Value) -> bool) -> Value {
     let end = Instant::now() + Duration::from_secs(60);
@@ -624,7 +774,8 @@ async fn harnesses_ask_for_access_and_join_her_one_aven_as_agents_that_read_and_
     assert_eq!(hello["serverInfo"]["name"], "avendb");
     let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
     let names: Vec<&str> = tools.as_array().expect("tools").iter().filter_map(|t| t["name"].as_str()).collect();
-    assert_eq!(names, ["avendb_vaults", "avendb_ask", "avendb_request_access", "avendb_run"]);
+    let named = ["avendb_vaults", "avendb_ask", "avendb_request_access", "avendb_run", "avendb_add_spark"];
+    assert_eq!(names, [&named[..], &["avendb_add_artifact", "avendb_read_file"]].concat());
     let (waits, _) = claude.tool("avendb_vaults", json!({})).await;
     assert!(waits.contains("waiting for its person to answer"), "{waits}");
     let asked = requests(&mut app, 1).await;
@@ -934,7 +1085,7 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     }
     let create = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
     let (no, error) = claude.tool("avendb_run", json!({ "op": create, "path": at(&path) })).await;
-    assert!(error && no.contains("beside put_file alone"), "{no}");
+    assert!(error && no.contains("beside put_file or get_file alone"), "{no}");
     // and saves it into her vault, as an Editor creates an entry: its length the file's size, sealed onto its own shelf
     let (made, error) = claude.tool("avendb_run", json!({ "op": op, "path": at(&path) })).await;
     assert!(!error && made.contains("\"ok\""), "an Editor saves a file: {made}");
@@ -942,6 +1093,45 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let (file, root, size) = (made["ok"]["entry"].clone(), made["ok"]["root"].clone(), made["ok"]["size"].clone());
     let (claudes, blob) = (agent::folder(&dir, "agentClaude"), root.as_str().expect("its root in hex").to_string());
     assert!(objects(&claudes, FLOOR, "blobs").contains(&blob), "in agentClaude's folder");
+    // it reads the file back by its entry (`avendb_read_file`), every byte, from its own shelf to a new path on her Mac
+    let back = folder.0.join("Harvest back.csv");
+    let (read, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;
+    assert!(!error, "{read}");
+    let read: Value = serde_json::from_str(&read).expect("JSON");
+    let said = (&read["entry"], &read["name"], &read["media"], &read["len"], &read["path"]);
+    assert_eq!(said, (&file, &json!("Harvest.csv"), &json!("text/csv"), &json!(harvest.len()), &at(&back)));
+    assert!(read.get("text").is_none(), "nothing inline past 64 KiB: {read}");
+    assert_eq!(std::fs::read(&back).expect("read back"), harvest, "every byte");
+    // never over a file there, unless it says so, as a get_file op on avendb_run by the file's vault and name does
+    std::fs::write(&back, b"hers").expect("a file of hers");
+    let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;
+    assert!(error && no.contains("overwrite: true"), "{no}");
+    assert_eq!(std::fs::read(&back).expect("her file"), b"hers", "hers, as it was");
+    let get = json!({ "op": "get_file", "vault": mine, "name": "Harvest.csv" });
+    let (done, error) = claude.tool("avendb_run", json!({ "op": get, "path": at(&back), "overwrite": true })).await;
+    assert!(!error && done.contains("\"ok\""), "{done}");
+    assert_eq!(std::fs::read(&back).expect("read back"), harvest, "over hers, as it said");
+    let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file })).await;
+    assert!(error && no.contains("give an absolute path"), "a file past 64 KiB comes back to a path: {no}");
+    let raw = json!({ "op": { "op": "read_file", "root": root, "size": size } });
+    let (no, error) = claude.tool("avendb_ask", raw).await;
+    assert!(error && no.contains("avendb_read_file"), "{no}");
+    let (no, error) = claude.tool("avendb_run", json!({ "op": create, "overwrite": true })).await;
+    assert!(error && no.contains("beside get_file alone"), "{no}");
+    // a small text file comes back inline, with no path
+    let notes = folder.0.join("Seeds.md");
+    std::fs::write(&notes, "# Seeds\n\nTomatoes in March.\n").expect("her notes");
+    let put = json!({ "op": "put_file", "vault": mine, "name": "Seeds.md", "media": "text/markdown" });
+    let (made, error) = claude.tool("avendb_run", json!({ "op": put, "path": at(&notes) })).await;
+    assert!(!error && made.contains("\"ok\""), "{made}");
+    let (read, error) = claude.tool("avendb_read_file", json!({ "vault": mine, "name": "Seeds.md" })).await;
+    assert!(!error, "{read}");
+    let read: Value = serde_json::from_str(&read).expect("JSON");
+    assert_eq!((&read["text"], &read["path"]), (&json!("# Seeds\n\nTomatoes in March.\n"), &Value::Null), "{read}");
+    // and nothing it wrote beside the paths stays
+    let left = std::fs::read_dir(&folder.0).expect("her folder").map(|e| e.expect("one").file_name());
+    let left: Vec<String> = left.map(|n| n.to_string_lossy().into_owned()).collect();
+    assert!(!left.iter().any(|n| n.contains(".avendb-")), "{left:?}");
     // her Mac shows it and reads it back, fetched from agentClaude
     let shown_file = shown(&mut app, &file, "the agent's file in her vault", |f| f["kind"] == "file").await;
     assert_eq!((&shown_file["title"], &shown_file["files"][0]["len"]), (&json!("Harvest.csv"), &json!(harvest.len())));
@@ -960,6 +1150,11 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     until("agentClaude's folder holds none of it", || async { !objects(&claudes, FLOOR, "blobs").contains(&blob) })
         .await;
     assert_eq!(read_back(&mut app, &root, &size, 100, 200).await, harvest[100..200], "her Mac reads it still");
+    // and agentClaude reads it back still, fetched from her Mac's one store
+    let again = folder.0.join("Harvest again.csv");
+    let (read, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&again) })).await;
+    assert!(!error, "{read}");
+    assert_eq!(std::fs::read(&again).expect("read again"), harvest, "every byte, from her Mac");
     // agentCursor joins under the same aven, which passes on to it only a Suggester's share of her vault: a Suggester
     // creates no entry, whatever the aven holds, so it saves no file there, refused before it reads a byte, and a
     // put_file has no proposal's line to go on
@@ -972,6 +1167,11 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let read = reads(&mut cursor, &note).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentCursor reads her note: {read:?}");
+    // it reads her files back as it reads her notes
+    let cursors = folder.0.join("Harvest for Cursor.csv");
+    let read = reads_file(&mut cursor, json!({ "entry": file, "path": at(&cursors) })).await;
+    assert!(!read.1, "a Suggester reads her file: {read:?}");
+    assert_eq!(std::fs::read(&cursors).expect("read back"), harvest, "every byte");
     let (no, error) = cursor.tool("avendb_run", json!({ "op": op, "path": at(&path) })).await;
     let no: Value = serde_json::from_str(&no).expect("JSON");
     assert!(!error && no["refused"] == "NotAllowed", "a Suggester's ops create no entry: {no}");
@@ -984,10 +1184,249 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let (no, error) = cursor.tool("avendb_run", json!({ "op": on_line, "path": at(&path) })).await;
     let no: Value = serde_json::from_str(&no).expect("JSON");
     assert!(!error && no["why"] == "put_file takes no field \"line\"", "{no}");
+    // a file of a vault no share of agentClaude's reaches, her studio's, it reads by neither its entry nor its name,
+    // and writes nothing
+    let studio = run(&mut app, json!({ "op": "found", "kind": "coop", "name": "Studio" })).await;
+    let studio = studio.expect("her studio")["vaults"][0].clone();
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let plan: Vec<u8> = (0..20_000u32).map(|i| (i * 17 % 239) as u8).collect();
+    let put = json!({ "op": "put_file", "vault": studio, "name": "Plan.jpg", "len": plan.len(), "as": studio });
+    let plan = bring(&mut app, put, &plan).await;
+    let plan = plan["ok"]["entry"].as_str().map(Value::from).unwrap_or_else(|| panic!("her studio's plan: {plan}"));
+    shown(&mut app, &plan, "her studio's plan", |f| f["kind"] == "file").await;
+    let nowhere = folder.0.join("Plan.jpg");
+    let (no, error) = claude.tool("avendb_read_file", json!({ "entry": plan, "path": at(&nowhere) })).await;
+    assert!(error && no.contains("agentClaude reads no entry") && no.ends_with("(NoEntry)"), "{no}");
+    let by_name = json!({ "vault": studio, "name": "Plan.jpg", "path": at(&nowhere) });
+    let (no, error) = claude.tool("avendb_read_file", by_name).await;
+    assert!(error && no.contains("reads no file named \"Plan.jpg\""), "{no}");
+    assert!(!nowhere.exists(), "nothing written");
     cursor.quit().await;
     claude.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_agent_adds_a_spark_to_her_own_vault_and_her_mac_reads_it() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("agent-sparks");
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let mine = world_of(&mut app).await["mine"].clone();
+    // agentClaude tells its harness how to add a spark, by its fields' plain names
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    let told = hello["instructions"].as_str().is_some_and(|i| i.contains("avendb_add_spark") && i.contains("`text`"));
+    assert!(told, "{hello}");
+    let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
+    let spark = tools.as_array().expect("tools").iter().find(|t| t["name"] == "avendb_add_spark").cloned();
+    let schema = spark.expect("avendb_add_spark")["inputSchema"].clone();
+    assert_eq!(schema["required"], json!(["text"]));
+    let fields: Vec<&String> = schema["properties"].as_object().expect("its fields").keys().collect();
+    assert_eq!(fields, ["tags", "text", "title", "vault"], "a spark's own fields, kind, title and blocks, and where");
+    assert!(spark_tool_says_artifacts(&tools), "links and media go in as artifacts");
+    let (waits, error) = claude.tool("avendb_add_spark", json!({ "text": "Too soon." })).await;
+    assert!(!error && waits.contains("waiting for its person to answer"), "{waits}");
+    // she adds it under her aven avenEve, which may edit her vault
+    let asked = requests(&mut app, 1).await;
+    let editor = json!([{ "over": mine, "level": "Editor" }]);
+    let granted = app.call("grant", json!(["agentClaude", asked[0]["device"], editor, "avenEve"])).await;
+    let aven = granted.expect("granted")["aven"].clone();
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    // a thought, as the page captures one: no vault named, so into her own, once its share reaches it; its one line
+    // its title
+    let thought = json!({ "text": "Tomatoes like the warm wall.", "tags": ["garden"] });
+    let mut made = (String::new(), true);
+    for _ in 0..100 {
+        made = claude.tool("avendb_add_spark", thought.clone()).await;
+        if !made.0.contains("waiting for its person") && !made.0.contains("may add no spark") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!made.1, "{made:?}");
+    let made: Value = serde_json::from_str(&made.0).expect("JSON");
+    assert_eq!((&made["vault"], &made["tags"]), (&mine, &json!(["garden"])), "{made}");
+    let thought = |s: &Value| s["type"] == "spark" && s["title"] == "Tomatoes like the warm wall.";
+    let shown_spark = shown(&mut app, &made["entry"], "agentClaude's spark on her Mac", thought).await;
+    assert_eq!(shown_spark["tags"], json!(["garden"]));
+    assert_eq!(shown_spark["text"], "", "its words all its title");
+    // one titled, its words beside
+    let words = "Sow them under glass in March, and plant them out once the nights stay warm.";
+    let (made, error) = claude.tool("avendb_add_spark", json!({ "text": words, "title": "Sowing tomatoes" })).await;
+    assert!(!error, "{made}");
+    let entry = serde_json::from_str::<Value>(&made).expect("JSON")["entry"].clone();
+    let sowing = shown(&mut app, &entry, "the titled one, on her Mac", |s| s["title"] == "Sowing tomatoes").await;
+    assert_eq!((&sowing["text"], &sowing["record"]["blocks"][0]["text"]), (&json!(words), &json!("Sowing tomatoes")));
+    // a longer one, titled by its first line cut at a word
+    let long = "Grow a wall of tomatoes along the south side of the shed, where the old bricks hold the warmth of the \
+                day well into the night.\nPinch out the side shoots.";
+    let (made, error) = claude.tool("avendb_add_spark", json!({ "text": long })).await;
+    assert!(!error, "{made}");
+    let entry = serde_json::from_str::<Value>(&made).expect("JSON")["entry"].clone();
+    let title = "Grow a wall of tomatoes along the south side of the shed, where the old bricks…";
+    let wall = shown(&mut app, &entry, "the long one, on her Mac", |s| s["title"] == title).await;
+    assert_eq!(wall["text"], long);
+    // its refusals read plainly: her aven shares nothing with it; a link goes in as an artifact, not on a spark
+    let (no, error) = claude.tool("avendb_add_spark", json!({ "text": "x", "vault": aven })).await;
+    let mine_id = mine.as_str().expect("her vault's id");
+    let may = format!("may add sparks to {mine_id}");
+    assert!(error && no.starts_with("agentClaude may add no spark to vault") && no.contains(&may), "{no}");
+    let (no, error) = claude.tool("avendb_add_spark", json!({ "text": "x", "url": "https://example.com/sow" })).await;
+    assert!(error && no.starts_with("a spark has no \"url\"") && no.contains("as an artifact"), "{no}");
+    let (no, error) = claude.tool("avendb_add_spark", json!({ "title": "No words" })).await;
+    assert!(error && no.contains("text"), "{no}");
+    // agentCodex, a Viewer of her vault, may add a spark nowhere, and says so
+    let mut codex = Harness::start(&dir, "codex");
+    let asked = requests(&mut app, 1).await;
+    let viewer = json!([{ "over": mine, "level": "Viewer" }]);
+    app.call("grant", json!(["agentCodex", asked[0]["device"], viewer, "avenEve"])).await.expect("granted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let read = reads(&mut codex, &entry).await;
+    assert!(!read.1 && read.0.contains("Pinch out the side shoots."), "agentCodex reads her spark: {read:?}");
+    let (no, error) = codex.tool("avendb_add_spark", json!({ "text": "Beans in May." })).await;
+    let own = format!("may add no spark to its person's own vault, {mine_id}");
+    assert!(error && no.contains(&own) && no.contains("avendb_request_access"), "{no}");
+    codex.quit().await;
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_agent_adds_artifacts_by_link_and_by_file_and_puts_them_on_a_spark() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("agent-artifacts");
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let mine = world_of(&mut app).await["mine"].clone();
+    // agentClaude tells its harness how to add an artifact, by its fields' plain names
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    let told = hello["instructions"].as_str().is_some_and(|i| i.contains("avendb_add_artifact") && i.contains("`url`"));
+    assert!(told, "{hello}");
+    let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
+    let tool = tools.as_array().expect("tools").iter().find(|t| t["name"] == "avendb_add_artifact").cloned();
+    let schema = tool.expect("avendb_add_artifact")["inputSchema"].clone();
+    let fields: Vec<&String> = schema["properties"].as_object().expect("its fields").keys().collect();
+    let all = ["by", "language", "note", "path", "spark", "tags", "taken", "title", "transcript", "url", "vault"];
+    assert_eq!(fields, all, "an artifact's own fields, its file, and where");
+    let (waits, error) = claude.tool("avendb_add_artifact", json!({ "url": "https://example.com" })).await;
+    assert!(!error && waits.contains("waiting for its person to answer"), "{waits}");
+    // she adds it under her aven avenEve, which may edit her vault
+    let asked = requests(&mut app, 1).await;
+    let editor = json!([{ "over": mine, "level": "Editor" }]);
+    app.call("grant", json!(["agentClaude", asked[0]["device"], editor, "avenEve"])).await.expect("granted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    // a spark to put them on, once its share reaches it
+    let mut made = (String::new(), true);
+    for _ in 0..100 {
+        made = claude.tool("avendb_add_spark", json!({ "text": "Morning light" })).await;
+        if !made.0.contains("waiting for its person") && !made.0.contains("may add no spark") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!made.1, "{made:?}");
+    let spark = serde_json::from_str::<Value>(&made.0).expect("JSON")["entry"].clone();
+    // a YouTube video with its words, on the spark: titled by its id, its platform known, its words timed
+    let video = json!({
+        "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5",
+        "note": "The light at six.",
+        "by": { "name": "Ana Ruiz" },
+        "transcript": "0:00 The town wakes.\n0:04 Bread first,\nthen the goats.\n[1:02:03] Late.",
+        "tags": ["light"],
+        "spark": spark,
+    });
+    let (made, error) = claude.tool("avendb_add_artifact", video).await;
+    assert!(!error, "{made}");
+    let made: Value = serde_json::from_str(&made).expect("JSON");
+    assert_eq!((&made["vault"], &made["look"], &made["tags"]), (&mine, &json!("youtube"), &json!(["light"])), "{made}");
+    assert_eq!(made["spark"]["placed"], true, "{made}");
+    let art = shown(&mut app, &made["entry"], "the video on her Mac", |a| a["type"] == "artifact").await;
+    let r = &art["record"];
+    assert_eq!((&r["title"], &r["site"]), (&json!("YouTube · dQw4w9WgXcQ"), &json!("youtube.com")), "{r}");
+    assert_eq!(r["note"], "The light at six.");
+    assert_eq!(r["by"], json!({ "name": "Ana Ruiz", "platform": "youtube" }), "{r}");
+    let rows: Vec<(f64, &str)> = r["transcript"]
+        .as_array()
+        .expect("its words")
+        .iter()
+        .map(|w| (w["t"].as_f64().unwrap_or(-1.0), w["text"].as_str().unwrap_or_default()))
+        .collect();
+    assert_eq!(rows, [(0.0, "The town wakes."), (4.0, "Bread first, then the goats."), (3723.0, "Late.")]);
+    let holds = |n: usize| move |s: &Value| s["record"]["items"].as_array().is_some_and(|i| i.len() == n);
+    let on = shown(&mut app, &spark, "the spark holding the video", holds(1)).await;
+    let item = &on["record"]["items"][0];
+    assert_eq!((&item["what"], &item["x"], &item["y"]), (&json!("artifact"), &json!(32), &json!(32)), "{item}");
+    assert_eq!((&item["ref"]["vault"], &item["ref"]["entry"]), (&mine, &made["entry"]), "{item}");
+    // a picture of this Mac: saved to her Library first, which the artifact shows, put on the spark under the video
+    let path = folder.0.join("Sunrise.jpg");
+    let picture: Vec<u8> = (0..30_000u32).map(|i| (i * 31 % 251) as u8).collect();
+    std::fs::write(&path, &picture).expect("the picture");
+    let picture_on = json!({ "path": path.to_string_lossy(), "spark": spark });
+    let (made, error) = claude.tool("avendb_add_artifact", picture_on).await;
+    assert!(!error, "{made}");
+    let made: Value = serde_json::from_str(&made).expect("JSON");
+    assert_eq!((&made["look"], &made["spark"]["placed"]), (&json!("image"), &json!(true)), "{made}");
+    let file = shown(&mut app, &made["file"], "its file in her Library", |f| f["kind"] == "file").await;
+    assert_eq!((&file["title"], &file["media"]), (&json!("Sunrise.jpg"), &json!("image/jpeg")), "{file}");
+    let art = shown(&mut app, &made["entry"], "the picture on her Mac", |a| a["type"] == "artifact").await;
+    assert_eq!(art["record"]["title"], "Sunrise.jpg");
+    assert_eq!(art["record"]["files"][0]["entry"], made["file"], "{art}");
+    let on = shown(&mut app, &spark, "the spark holding both", holds(2)).await;
+    let items = on["record"]["items"].as_array().expect("its items");
+    let under = items.iter().find(|i| i["ref"]["entry"] == made["entry"]);
+    assert_eq!(under.expect("the picture on it")["y"], 32 + 170 + 24, "under the video");
+    // a link to a picture on the web: a picture by its ending, titled by its host and path, on no spark
+    let (made, error) = claude.tool("avendb_add_artifact", json!({ "url": "https://example.com/Sow/Beans.png" })).await;
+    assert!(!error, "{made}");
+    let made: Value = serde_json::from_str(&made).expect("JSON");
+    assert!(made["spark"].is_null(), "{made}");
+    let art = shown(&mut app, &made["entry"], "the link on her Mac", |a| a["type"] == "artifact").await;
+    let r = &art["record"];
+    assert_eq!((&r["look"], &r["site"]), (&json!("image"), &json!("example.com")), "{r}");
+    assert_eq!(r["title"], "example.com/Sow/Beans.png");
+    // its refusals read plainly
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "title": "Nothing" })).await;
+    assert!(error && no.contains("a link or a file"), "{no}");
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "url": "ftp://example.com/x" })).await;
+    assert!(error && no.contains("is no link"), "{no}");
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "url": "https://example.com", "text": "x" })).await;
+    assert!(error && no.starts_with("an artifact has no \"text\""), "{no}");
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "path": "Sunrise.jpg" })).await;
+    assert!(error && no.contains("isn't an absolute path"), "{no}");
+    // agentCodex, a Viewer of her vault, may add an artifact nowhere, and saves no file before it says so
+    let mut codex = Harness::start(&dir, "codex");
+    let asked = requests(&mut app, 1).await;
+    let viewer = json!([{ "over": mine, "level": "Viewer" }]);
+    app.call("grant", json!(["agentCodex", asked[0]["device"], viewer, "avenEve"])).await.expect("granted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let read = reads(&mut codex, &spark).await;
+    assert!(!read.1, "agentCodex reads her spark: {read:?}");
+    let files = |w: &Value| w["entries"].as_array().map_or(0, |e| e.iter().filter(|e| e["kind"] == "file").count());
+    let before = files(&world_of(&mut app).await);
+    let (no, error) = codex.tool("avendb_add_artifact", json!({ "path": path.to_string_lossy() })).await;
+    let mine_id = mine.as_str().expect("her vault's id");
+    let own = format!("may add no artifact and its file to its person's own vault, {mine_id}");
+    assert!(error && no.contains(&own) && no.contains("avendb_request_access"), "{no}");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(files(&world_of(&mut app).await), before, "no file saved");
+    codex.quit().await;
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+/// Whether the description of `avendb_add_spark` among `tools` says a link or a media file goes in as an artifact.
+fn spark_tool_says_artifacts(tools: &Value) -> bool {
+    let spark = tools.as_array().into_iter().flatten().find(|t| t["name"] == "avendb_add_spark");
+    spark.and_then(|t| t["description"].as_str()).is_some_and(|d| d.contains("goes in as an artifact"))
 }
 
 /// What the Mac's device says of its volumes and drives (`drives`), once `check` holds of it, 60 seconds at most.
@@ -1045,6 +1484,11 @@ fn files_in(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 async fn put_file(app: &mut App, vault: &Value, name: &str, bytes: &[u8]) -> Value {
     let put = json!({ "op": "put_file", "vault": vault, "name": name, "media": "image/jpeg", "tags": [],
         "len": bytes.len() });
+    bring(app, put, bytes).await["ok"].clone()
+}
+
+/// Put_file op `put` with the file's `bytes`, a chunk at a time in base64, as native.js hands one over: its answer.
+async fn bring(app: &mut App, put: Value, bytes: &[u8]) -> Value {
     let n = app.call("fileStart", json!([put])).await.expect("a file's number");
     loop {
         let mut at = 0;
@@ -1056,7 +1500,7 @@ async fn put_file(app: &mut App, vault: &Value, name: &str, bytes: &[u8]) -> Val
             break;
         }
     }
-    app.call("fileEnd", json!([n])).await.expect("the op's answer")["ok"].clone()
+    app.call("fileEnd", json!([n])).await.expect("the op's answer")
 }
 
 /// The files in folder `dir` this process holds open, as Linux names them in /proc/self/fd; none known elsewhere.

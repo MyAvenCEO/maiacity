@@ -1,8 +1,9 @@
-// The base article, read the way the journal renders it: its front matter apart, the Markdown as HTML, a standalone
-// image as a figure with its alt text as caption, every site path through the CDN (see $lib/media/url). The words are
-// our own, written in the repo — rendered as they are, not sanitised.
+// The base article, read the way the journal renders it: its front matter apart, the Markdown as HTML by the one
+// Markdown engine ($lib/markdown: raw HTML shown as text, only safe links), a standalone image as a figure with its alt
+// text as caption, every site path through the CDN (see $lib/media/url). Agents write these too, so nothing in them
+// runs.
 import { base } from '$app/paths';
-import { marked } from 'marked';
+import { journalHtml } from '$lib/markdown/journal.js';
 import { parse as parseYaml } from 'yaml';
 import { asset } from '$lib/media/url';
 
@@ -24,15 +25,6 @@ export function splitArticle(md: string): Article {
 	return { title: str(fm.title), subtitle: str(fm.subtitle), cover: asset(str(fm.cover)), coverPosition: str(fm.coverPosition), excerpt: str(fm.excerpt), body: m ? m[2] : md };
 }
 
-const withBase = (html: string) =>
-	html.replace(/src="([0-9a-f]{64}[^"]*)"/g, (_, src: string) => `src="${asset(src)}"`).replace(/href="\//g, `href="${base}/`);
-
-const asFigures = (html: string) =>
-	html.replace(
-		/<p><img src="([^"]*)" alt="([^"]*)"[^>]*><\/p>/g,
-		(_, src: string, alt: string) => `<figure><img src="${src}" alt="${alt}" loading="lazy" />${alt ? `<figcaption>${alt}</figcaption>` : ''}</figure>`
-	);
-
 /** Markdown as the journal's HTML. `blocks` keeps only the first few paragraphs (headings and figures skipped). */
 export function renderMarkdown(md: string, blocks?: number): string {
 	let src = md;
@@ -43,7 +35,7 @@ export function renderMarkdown(md: string, blocks?: number): string {
 			.filter((b) => b && !/^(#|!\[|<|---|\|)/.test(b));
 		src = paras.slice(0, blocks).join('\n\n');
 	}
-	return asFigures(withBase(marked.parse(src, { async: false })));
+	return journalHtml(src, base);
 }
 
 /** About how long it reads, at 200 words a minute. */

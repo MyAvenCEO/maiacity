@@ -202,6 +202,22 @@ label.
    each other word for word.
 4. Write the hooks **last** in the draft, once the body is known, and rewrite them more than anything else.
 
+## In avenDB: a story's Hook tab
+
+A story is an avenDB entry of the `story` schema; its Hook tab (`src/lib/avendb/StoryHook.svelte`) shows every hook
+tried, the one on the card, and how it looks on YouTube. Through the avenDB MCP an agent writes there as its shares
+allow:
+
+- Each hook tried is a row of `hooks`: `{ id, text, subject, action, end, contrast, proof, time, anchor, promise,
+  objection, dial, note, image_title }`. `id` is a new integer, `dial` 1 mild · 2 bold · 3 extreme · 4 false, and
+  `image_title` the card's catchwords, one string per line.
+- `hook` is the id of the row on the card, whose `text` is the title everywhere; the story's own `image_title` is
+  the words on the card; `intro` and `description` are its texts.
+- Propose, never change the main line: `avendb_ask` `{ op: "note", entry }` gives the main line's `heads`;
+  `avendb_run` `{ op: "propose", entry, from: <heads>, name: "Hooks: <angle>" }` answers its `line`; then one
+  `{ op: "batch", ops: [...] }` of `{ op: "insert", entry, line, path: ["hooks"], value: <row> }`, all ten at once,
+  each with its parts named. The person reads them on the Hook tab, merges the proposal and puts one on the card.
+
 ## Copy work
 
 When a hook lands anywhere — a video, a headline, a thread — copy it out, mark its six parts, then swap our subject,

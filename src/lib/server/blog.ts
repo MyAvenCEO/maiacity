@@ -1,9 +1,8 @@
 import { dev } from '$app/environment';
 import { base } from '$app/paths';
-import { marked } from 'marked';
+import { journalHtml } from '$lib/markdown/journal.js';
 import { parse as parseYaml } from 'yaml';
 import type { Post, PostMeta } from '$lib/blog/types';
-import { asset } from '$lib/media/url';
 
 // Hand-written articles live in /blog/<slug>/post.md.
 const posts = import.meta.glob('/blog/*/post.md', {
@@ -17,18 +16,6 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 const slugOf = (path: string) => path.split('/').at(-2)!;
 
 const optional = (value: unknown) => (value == null || value === '' ? undefined : String(value));
-
-// every image by its hash: from the vault's gateway (see $lib/media/url)
-const withBase = (html: string) =>
-	html.replace(/src="([0-9a-f]{64}[^"]*)"/g, (_, src: string) => `src="${asset(src)}"`).replace(/href="\//g, `href="${base}/`);
-
-// A standalone image becomes a figure; its alt text becomes the caption.
-const asFigures = (html: string) =>
-	html.replace(
-		/<p><img src="([^"]*)" alt="([^"]*)"[^>]*><\/p>/g,
-		(_, src: string, alt: string) =>
-			`<figure><img src="${src}" alt="${alt}" loading="lazy" />${alt ? `<figcaption>${alt}</figcaption>` : ''}</figure>`
-	);
 
 function parsePost(slug: string, raw: string): { meta: PostMeta; body: string } {
 	const match = raw.match(FRONTMATTER);
@@ -77,5 +64,6 @@ export function getPost(slug: string): Post | undefined {
 
 	const { meta, body } = parsePost(slug, raw);
 	if (meta.draft && !dev) return undefined;
-	return { ...meta, html: asFigures(withBase(marked.parse(body, { async: false }))) };
+	// every image by its hash from the vault's gateway, site paths under the base, by the one Markdown engine
+	return { ...meta, html: journalHtml(body, base) };
 }

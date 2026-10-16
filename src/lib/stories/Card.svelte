@@ -1,5 +1,5 @@
 <!--
-	A title card, drawn from its layers on a 16:9 canvas: a picture (the background), a cut-out (a transparent PNG laid
+	A title card, drawn from its layers on a 16:9 canvas (or any other shape's, `ratio`): a picture (the background), a cut-out (a transparent PNG laid
 	over it), the hook as text, a badge ("DAY 1"). Every position is a percent of the canvas, a text's size a percent
 	of its width, so the card reads the same at any size: on the Thumbnail step large and editable (a layer is picked
 	by clicking it and moved by dragging, sized by a corner, turned by the handle above it), on the Hook step small as
@@ -20,10 +20,22 @@
 	 *   editable?: boolean,
 	 *   onselect?: (id: string) => void,
 	 *   onmove?: (id: string, x: number, y: number) => void,
-	 *   onresize?: (id: string, patch: { w?: number, size?: number, rot?: number }) => void
+	 *   onresize?: (id: string, patch: { w?: number, size?: number, rot?: number }) => void,
+	 *   ratio?: string,
+	 *   src?: (l: Layer) => string | null | undefined
 	 * }}
 	 */
-	let { layers, hook = '', selected = null, editable = false, onselect, onmove, onresize } = $props();
+	let {
+		layers,
+		hook = '',
+		selected = null,
+		editable = false,
+		onselect,
+		onmove,
+		onresize,
+		ratio = '16 / 9',
+		src = (l) => (l.hash ? fileUrl(l.hash) : null)
+	} = $props();
 
 	/** @type {HTMLElement | null} */
 	let canvas = $state(null);
@@ -135,9 +147,10 @@
 	{/if}
 {/snippet}
 
-<div class="card" class:editable bind:this={canvas} role="img" aria-label="The title card">
+<div class="card" class:editable bind:this={canvas} role="img" aria-label="The title card" style:aspect-ratio={ratio}>
 	{#each layers.filter((l) => l.on !== false) as l (l.id)}
 		{@const b = boxOf(l)}
+		{@const url = src(l)}
 		{#if l.kind === 'image'}
 			<div
 				class="layer image" role="presentation"
@@ -152,8 +165,8 @@
 				onpointerup={up}
 				onpointercancel={up}
 			>
-				{#if l.hash}
-					<img src={fileUrl(l.hash)} alt="" draggable="false" style:object-fit={l.fit ?? 'cover'} />
+				{#if url}
+					<img src={url} alt="" draggable="false" style:object-fit={l.fit ?? 'cover'} />
 				{:else}
 					<span class="none">No picture yet</span>
 				{/if}
@@ -161,8 +174,8 @@
 			</div>
 		{:else if l.kind === 'cutout'}
 			<div class="layer cutout" role="presentation" class:picked={selected === l.id} style:left="{b.x}%" style:top="{b.y}%" style:width="{b.w}%" style:transform={turned(l)} onpointerdown={(e) => down(e, l)} onpointermove={move} onpointerup={up} onpointercancel={up}>
-				{#if l.hash}
-					<img src={fileUrl(l.hash)} alt="" draggable="false" />
+				{#if url}
+					<img src={url} alt="" draggable="false" />
 				{:else}
 					<span class="none">No cut-out yet</span>
 				{/if}

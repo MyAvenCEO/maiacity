@@ -47,6 +47,8 @@
 	/** whether tag `t` is one avenDB's pages keep. @param {string} t */
 	const auto = (t) => t === IN_SPARKS || t === IN_STORIES;
 	const video = $derived(look === 'video' || look === 'youtube');
+	/** whether its words carry times: a transcript's do, a text copied in as paragraphs doesn't */
+	const timed = $derived((record.transcript ?? []).some((/** @type {any} */ r) => r.t > 0));
 
 	/** whether the acting vault's ops let it change the artifact, as the device says */
 	let changes = $state(false);
@@ -308,6 +310,7 @@
 
 		{#if video || record.chapters?.length || record.transcript?.length}
 			<section class="part">
+				{#if video || record.chapters?.length}
 				<h4>Chapters <small class="soft">{record.chapters?.length || ''}</small></h4>
 				{#if record.chapters?.length}
 					<ol class="times">
@@ -331,12 +334,13 @@
 						<button class="btn" disabled={seconds(chapterAt) === null || !chapterTitle.trim()}>Add</button>
 					</form>
 				{/if}
+				{/if}
 
-				<h4>Transcript <small class="soft">{record.transcript?.length ? count(record.transcript.length, 'line') : ''}</small></h4>
+				<h4>{video ? 'Transcript' : 'Its words'} <small class="soft">{record.transcript?.length ? count(record.transcript.length, timed ? 'line' : 'paragraph') : ''}</small></h4>
 				{#if record.transcript?.length}
-					<ol class="times transcript">
+					<ol class="times transcript" class:untimed={!timed}>
 						{#each record.transcript as r (r.id)}
-							<li><span class="t">{clock(r.t)}</span><span>{r.text}</span></li>
+							<li>{#if timed}<span class="t">{clock(r.t)}</span>{/if}<span>{r.text}</span></li>
 						{/each}
 					</ol>
 				{:else}
@@ -674,6 +678,11 @@
 	.transcript {
 		max-height: 18rem;
 		overflow: auto;
+	}
+
+	.transcript.untimed {
+		gap: 0.6rem;
+		line-height: 1.45;
 	}
 
 	.tags .chip {

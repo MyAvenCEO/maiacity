@@ -26,6 +26,15 @@
 {$SITE_ADDRESS:maia.city} {
 	root * /srv/site/current
 	encode zstd gzip
+	# the page's own walls (code-architecture/security-audit.md F3): no other site may frame us (a click on Accept in a
+	# frame we can't see), no file is read as another type than it says, no plugin objects, no <base> moving our links.
+	# A strict script-src follows once every sandboxed frame is its own document (plan milestone C2).
+	header {
+		Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
+		X-Frame-Options SAMEORIGIN
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
 	# hashed chunks never change; pages are looked at again
 	@immutable path /_app/immutable/*
 	header @immutable Cache-Control "public, max-age=31536000, immutable"
