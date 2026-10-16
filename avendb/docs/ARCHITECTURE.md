@@ -213,31 +213,43 @@ Code as agentClaude, Codex as agentCodex, and likewise Cursor, Grok and our own 
 aven passes on to it, sub caps of the aven's own shares by the one rule a share rests on another by (section 5): no
 stronger and no wider than the aven's, and a coop that revokes its share to the aven ends every agent's share resting
 on it (Lab scenario 27). So each harness signs by its own key with no more than its aven gives it, and one is taken
-out by removing its device or revoking its shares, leaving the others. (The device and net crates still adopt an
-agent into a device vault the person's own vault owns, `Node::adopt_with`; founding it under their aven, with its
-sub caps, is their next step.) `avendb-device agent <harness> [--aven <name>]`
+out by removing its device or revoking its shares, leaving the others. The same harness on the person's second Mac is
+a second device of the same agent's device vault. A harness never names or picks an aven: the person's one aven is
+the parent, and the agent is added under it. `avendb-device agent <harness>`
 (`crates/avendb-device/src/agent.rs`) runs an agent device as the harness's MCP server on its stdin and stdout, in a
 folder beside the desktop app's that the app never clears (`<app folder>-agents/<device>`). It keeps its secret on its
 shelf, as the server does (`server::open_agent`), and its iroh key derives from it. It keeps no file whole of its own
 accord and reads its person's files from their desktop's one store, so nothing is kept twice. It saves a file of the
-desktop as every device does, its vault's shares deciding (`put_file`, the file named by its path beside the op): an
+desktop as every device does, acting as its device vault, its shares deciding (`put_file`, the file named by its path
+beside the op): an
 Editor share creates its entry, a Suggester's or a Viewer's doesn't. It seals the file onto its own shelf, and lets go
 of it once the desktop app's device, the one whose key is the endpoint of the offer the app leaves it, holds it whole
 by that device's holdings (`Node::holds_whole`, `Node::let_go`): a read of it then fetches it from there. Where the
 desktop keeps a light copy, the agent's copy is the one. A reset clears its folder as the app's, and it asks to join
 again.
 
+**Adding a device vault.** An agent, the server and a coop's drive are each added the same way, in one flow
+(`avendb_net::Place`, `Node::add_device_vault_with`): a device vault founded under its parent, or the one there already;
+the device's key added to it, the edit sealed to the device's key and signed by the device too, as it answers claims
+while it is no vault's device; then shares its parent passes on to it, each resting on one the parent holds. The
+passkey signs whatever of it needs the person's vault in one ceremony, with any vault its parent needs founded first:
+the server's claim founds the seed with avenCEO server (`Place::Seed`), and a person's first agent founds their aven
+with its own device vault (`Place::UnderNew`).
+
 **Asking for access.** Access is asked for and given as any share is, on one consent screen. An agent device leaves an
-access request for the desktop app (`<device>.request`): who asks, by its device's name and key, the aven it would join,
-if it names one, a level (Viewer, Suggester or Editor), why, and the vaults it names, if any; while it is no vault's
-device, its offer too. It asks again for more with its MCP tool `avendb_request_access`. The page shows the request and
-the person picks the aven it joins, one their vault owns or a new one they name, then all their vaults or only some, a
-level each, and approves or denies. Approving a device that is none of the aven's yet adds it in one ceremony, the way a
-server is claimed (`Node::adopt_with`): the passkey signs the genesis of a new device vault their vault owns alone, if
-it is new, and the edit that adds the device, sealed to the device's key, which the device signs too. Each vault picked
-then gives that device vault a share at its level, which the device issues alone. A no is left for the agent
-(`<device>.denied`), which asks no more until it asks again. A share covers one vault: a share of the person's own vault
-reaches none of the vaults it owns, so "all my vaults" is a share of each.
+access request for the desktop app (`<device>.request`): who asks, by its device's name and key, a level (Viewer,
+Suggester or Editor), why, and the vaults it names, if any; while it is no vault's device, its offer too. It asks again
+for more with its MCP tool `avendb_request_access`. The page shows the request and the person picks all their vaults or
+only some, a level each, and approves or denies; if their vault owns no aven yet, they name the one it founds. Approving
+(`grant [name, device, shares, avenName]`) adds the agent under their one aven in one ceremony at most: the aven,
+founded and named if it is new, the agent's device vault under it, named after the agent, founded if it is new, and the
+edit that adds the device, which the device signs too; for the same harness on their other Mac, only that edit, to the
+agent's device vault there already. Then for each vault picked the aven passes a share at its level on to the agent's
+device vault, acting as the aven, with no ceremony: over a vault their vault is or owns, resting on a share that vault
+gives the aven first where it holds none at that level; over a coop that hired the aven, on the coop's share, and a
+share above it is refused before any ceremony. A no is left for the agent (`<device>.denied`), which asks no more until
+it asks again. A share covers one vault: a share of the person's own vault reaches none of the vaults it owns, so "all
+my vaults" is a share of each.
 
 **A drive's own device.** Each external drive the person uses for avenDB is a device of their own vault, as a phone
 is, on the same sync, shares, copy setting and holdings as every other: nothing in sync knows it is a drive
@@ -662,7 +674,7 @@ Every caller goes through `Node::run`:
 | Caller | How it calls |
 |---|---|
 | A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
-| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, aven, shares]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
 | An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` too with the absolute `path` of a file on the desktop beside the op, each acting for its device vault, whose shares decide, and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
