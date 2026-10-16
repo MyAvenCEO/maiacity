@@ -134,6 +134,8 @@ const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), eb = new THREE.E
 /**
  * Between two poses: the root's place, and each bone turned t of the way from a to b along the shortest arc, its size
  * and offset between (as $lib/actors/rig.ts `blend`).
+ * @param {Record<string, number[]>} a @param {Record<string, number[]>} b @param {number} t
+ * @returns {Record<string, number[]>}
  */
 export function blend(a, b, t) {
 	const out = {};
