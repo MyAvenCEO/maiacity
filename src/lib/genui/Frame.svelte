@@ -10,6 +10,9 @@
 	  EventSource or beacon), scripts only inline or from the pinned library files (game/genui/views.js LIBS), images,
 	  fonts and media only from data: and blob:, no workers, no base, no forms. A later meta can only tighten it. A
 	  Permissions Policy turns off camera, microphone, location, clipboard, payment and passkeys.
+	- what we send it goes only down a MessageChannel port that our bridge (the frame's first script, before any of the
+	  view's code) hands us: a port belongs to its document, so a view that navigates its frame elsewhere takes nothing
+	  of ours with it, and we tear the frame down on any load we did not cause.
 	- its one way out is postMessage, as MCP Apps' JSON-RPC. We take a message only from this frame's own window, only
 	  JSON-RPC 2.0 of the METHODS we answer, size-capped; links, tool calls and resource reads are refused. What it
 	  tells us reaches the page as plain data, never as markup or code.
@@ -21,20 +24,30 @@
 	import { onMount } from 'svelte';
 	import { LIBS, LIMITS, METHODS, PROTOCOL } from '../../../game/genui/views.js';
 	import { native } from '$lib/native';
+	import { DENY, SANDBOX } from '$lib/sandbox/policy.js';
 
 	// `data`, when given, is the view's tool result as it moves on (a game's state): sent again whenever it changes
 	let { view, data = undefined, onevent = () => {}, onerror = () => {} } = $props();
 	let frame = $state();
 	let ready = $state(false);
-	const send = (m) => frame?.contentWindow?.postMessage({ jsonrpc: '2.0', ...m }, '*');
+	// the bridge's port to the document we wrote, and whether we are waiting for a new one (after writing a document)
+	let port = null;
+	let awaiting = true;
+	let stopped = $state('');
+	const key = crypto.randomUUID();
+	const send = (m) => port?.postMessage({ jsonrpc: '2.0', ...m });
 	const result = (d) => send({ method: 'ui/notifications/tool-result', params: { content: [], structuredContent: JSON.parse(JSON.stringify(d ?? {})) } });
 	$effect(() => {
 		const d = data === undefined ? undefined : $state.snapshot(data);
 		if (ready && d !== undefined) result(d);
 	});
 	let height = $state(view.spec.height);
-	// no device, no passkey, no clipboard, no payment: every powerful feature off, whatever the browser would allow
-	const DENY = ['camera', 'microphone', 'geolocation', 'display-capture', 'clipboard-read', 'clipboard-write', 'payment', 'usb', 'serial', 'hid', 'publickey-credentials-get', 'publickey-credentials-create', 'storage-access'].map((f) => `${f} 'none'`).join('; ');
+	// our bridge, the document's first script: hands us a port, then passes what comes down it to the view as a message
+	// from us; it removes itself, so the view never sees its key
+	const BRIDGE = `(() => { const me = document.currentScript; const key = me.dataset.key; me.remove();
+const ch = new MessageChannel();
+ch.port1.onmessage = (e) => dispatchEvent(new MessageEvent('message', { data: e.data, source: parent }));
+parent.postMessage({ maiaBridge: key }, '*', [ch.port2]); })();`;
 
 	const csp = (libs) =>
 		[
@@ -60,6 +73,7 @@
 		return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp(libs)}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script data-key="${key}">${BRIDGE}<\/script>
 ${Object.keys(imports).length ? `<script type="importmap">${JSON.stringify({ imports })}<\/script>` : ''}
 ${scripts.join('\n')}
 <script>
@@ -86,6 +100,22 @@ addEventListener('unhandledrejection', (e) => log(e.reason && e.reason.message |
 		}
 	});
 
+	// each document we write is loaded once; any other load is the view navigating its frame away: it is stopped, and
+	// nothing more of ours goes to it
+	let expected = false;
+	$effect(() => {
+		doc;
+		port?.close();
+		[port, awaiting, expected, ready] = [null, true, true, false];
+	});
+	function loaded() {
+		if (expected) return void (expected = false);
+		port?.close();
+		[port, awaiting] = [null, false];
+		stopped = 'This view tried to leave its box, so it was stopped.';
+		onerror(stopped);
+	}
+
 	onMount(() => {
 		const answer = (id, result) => id != null && send({ id, result });
 		const refuse = (id, code, message) => id != null && send({ id, error: { code, message } });
@@ -93,6 +123,12 @@ addEventListener('unhandledrejection', (e) => log(e.reason && e.reason.message |
 			// only this frame's own window, only JSON-RPC 2.0, only small plain data
 			if (!frame || e.source !== frame.contentWindow) return;
 			const m = e.data;
+			// the bridge of the document we just wrote: its port is the only way anything of ours reaches the view
+			if (m && typeof m === 'object' && 'maiaBridge' in m) {
+				if (awaiting && m.maiaBridge === key && e.ports?.[0]) [port, awaiting] = [e.ports[0], false];
+				return;
+			}
+			if (!port) return;
 			if (!m || typeof m !== 'object' || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return;
 			let size;
 			try {
@@ -137,17 +173,30 @@ addEventListener('unhandledrejection', (e) => log(e.reason && e.reason.message |
 	});
 </script>
 
-<iframe
-	bind:this={frame}
-	title={view.title}
-	sandbox="allow-scripts"
-	referrerpolicy="no-referrer"
-	allow={DENY}
-	srcdoc={doc}
-	style:height="{height}px"
-></iframe>
+{#if stopped}
+	<p class="stopped">{stopped}</p>
+{:else}
+	<iframe
+		bind:this={frame}
+		title={view.title}
+		sandbox={SANDBOX}
+		referrerpolicy="no-referrer"
+		allow={DENY}
+		srcdoc={doc}
+		onload={loaded}
+		style:height="{height}px"
+	></iframe>
+{/if}
 
 <style>
+	.stopped {
+		margin: 0;
+		padding: 14px 16px;
+		border-radius: 14px;
+		background: #fff;
+		color: #8a3a2a;
+		font-size: 0.9rem;
+	}
 	iframe {
 		display: block;
 		width: 100%;

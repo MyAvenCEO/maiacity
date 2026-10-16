@@ -1,6 +1,6 @@
 import { asset } from '$lib/media/url';
 import { base } from '$app/paths';
-import { marked } from 'marked';
+import { journalHtml } from '$lib/markdown/journal.js';
 import { parse as parseYaml } from 'yaml';
 import type {
 	Author,
@@ -29,8 +29,8 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 const slugOf = (path: string) => path.split('/').at(-2)!;
 
 // Report cards link to each other with absolute paths; GitHub Pages serves them under a base.
-const toHtml = (md: string) =>
-	marked.parse(md, { async: false }).replace(/href="\//g, `href="${base}/`);
+// copied web pages too: by the one Markdown engine, so raw HTML in a source shows as text
+const toHtml = (md: string) => journalHtml(md, base);
 
 const optional = (value: unknown) => (value == null || value === '' ? undefined : String(value));
 
