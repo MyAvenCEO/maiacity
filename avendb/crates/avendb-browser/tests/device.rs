@@ -556,7 +556,8 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let held = run(&first, database).await.expect("its database");
     let both = (ids(&held["schemas"]), ids(&held["lenses"]));
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
-    assert_eq!((both.0.len(), both.1.len()), (15, 1), "its own kinds, the spark's two versions, and the lens between");
+    let own = "its own kinds, the article's and the spark's two versions, and the lenses between";
+    assert_eq!((both.0.len(), both.1.len()), (16, 2), "{own}");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
