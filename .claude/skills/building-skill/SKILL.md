@@ -24,6 +24,11 @@ inside to be walked. The laws, the shared core (`$lib/assets`, refs, one version
 - Containers are models (`src/lib/models/containers.js`, 40-foot high cubes, 12.19 × 2.44 × 2.90 m, walkable,
   `userData.roof`, `userData.walk`); the wayside buildings too (`wayside.js`: bus stop, gas station, the village
   store, the old shed). A building that is also handed to a game as a thing follows `thing-skill`.
+- The buildings built as one object (the containers and the wayside) are listed in `src/lib/buildings/built.js`
+  (`BUILT`, their `HISTORY`): each a recipe of the `buildings` group the asset box builds, shown in the one asset
+  viewer like any thing. The tent and the domes are worlds in disguise (Sandbox 3's interiors, with their sky, lamps,
+  animals and forest): `src/lib/buildings/inside.js` raises one alone on the viewer's canvas, by the interior's own
+  code, never in the box, until an interior is an asset of its own.
 - Its ref: `buildings/<id>@<v>`.
 
 ## How it is built

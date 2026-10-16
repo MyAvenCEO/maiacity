@@ -15,6 +15,11 @@
 	Every build comes from the asset box or this device's cache, checked ($lib/assets/load.js), and is shown from its
 	data alone ($lib/assets/hero.js): what moves by itself runs in the box, and only numbers come back. Drag to turn round
 	it, scroll to come closer. An admin's.
+
+	The Buildings add three things: every building stands on the same round ground ($lib/buildings/ground.js, `round`)
+	and is walked there, the list kept beside it (`inPlace`); and an item that is a world in disguise (a dome: Sandbox
+	3's interior, `inside`) is built by that world's own code into a scene of its own on this canvas, not in the box
+	($lib/buildings/inside.js), and stepped inside the same way.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -33,6 +38,9 @@
 	import { parseRef, refOf } from './refs.js';
 	import { soilOf } from './soil.js';
 
+	/** how many steps a world in disguise reports while it is built ($lib/buildings/inside.js) */
+	const STEPS = 5;
+
 	/** the stage's views (how it is looked at, any at once), as the bar names them */
 	const VIEWS = /** @type {const} */ ([
 		['explode', 'Explode'],
@@ -45,11 +53,14 @@
 	const tabbed = (p) => Array.isArray(p.names) && p.names.length > 1 && p.names.length <= 12;
 
 	/**
-	 * @type {{ name: string, title: string, lede: string, group: string, items: any[], where?: (item: any) => string, heading?: (item: any) => string, soil?: boolean }}
-	 *   `group` the recipes' group (things, machines, actors, plants); `items` its list, as the group lists it; `heading`
-	 *   the heading an item is listed under; `soil` a plant's earth round its roots
+	 * @type {{ name: string, title: string, lede: string, group: string, items: any[], where?: (item: any) => string, heading?: (item: any) => string, soil?: boolean, round?: boolean, inPlace?: boolean, inside?: { is: (item: any) => boolean, raise: Function } | null }}
+	 *   `group` the recipes' group (things, machines, actors, plants, buildings); `items` its list, as the group lists it;
+	 *   `heading` the heading an item is listed under; `soil` a plant's earth round its roots; `round` every build on the
+	 *   Buildings' round ground, a walk kept to it; `inPlace` a walk keeps the list beside it, never the whole screen;
+	 *   `inside` the items that are worlds in disguise (`is`) and how one is raised on this canvas (`raise`,
+	 *   $lib/buildings/inside.js)
 	 */
-	let { name, title, lede, group, items, where = (it) => it.from ?? it.usedIn ?? '', heading, soil = false } = $props();
+	let { name, title, lede, group, items, where = (it) => it.from ?? it.usedIn ?? '', heading, soil = false, round = false, inPlace = false, inside = null } = $props();
 	const first = untrack(() => items[0]);
 
 	/** @type {HTMLDivElement | undefined} */
@@ -119,6 +130,13 @@
 	let copied = $state(false);
 	let roofOff = $state(false);
 	let walking = $state(false);
+	/** a world in disguise shown (a dome, built by its own world's code, not in the box): its handle, what its build is doing, how far it is, and whether it stands */
+	let world = $state.raw(null);
+	let step = $state('');
+	let steps = $state(0);
+	let worldUp = $state(false);
+	/** whether what is chosen is a world in disguise */
+	const worldly = $derived(!!inside?.is(chosen));
 
 	const catalog = $derived(hero?.catalog?.parts?.length ? hero.catalog : null);
 	const card = $derived(catalog && picked ? (catalog.parts.find((p) => p.id === picked) ?? null) : null);
@@ -193,6 +211,7 @@
 
 	let stage = null;
 	let show = null;
+	let raiseWorld = null;
 	let lookAt = null;
 	let walkIn = null;
 	let walkOut = null;
@@ -221,8 +240,12 @@
 		controls.enableDamping = true;
 		stage = new Stage(renderer, camera, { low });
 		const earth = soil ? soilOf() : null;
+		// the Buildings' round ground, laid under each build as it is shown
+		const grounds = round ? await import('$lib/buildings/ground.js') : null;
+		/** @type {{ obj: any, r: number } | null} */
+		let ground = null;
 		// for a test in a browser to read what is shown
-		window.__viewer = { stage, get hero() { return hero; }, get building() { return building; }, get error() { return error; } };
+		window.__viewer = { stage, get hero() { return hero; }, get building() { return building; }, get error() { return error; }, get world() { return world; } };
 		if (earth) stage.scene.add(earth.group);
 
 		let aim = null;
@@ -287,10 +310,94 @@
 			camera.far = smooth ? Math.max(camera.far, reach * 80) : reach * 80;
 			camera.updateProjectionMatrix();
 		};
+		/** the round ground under a build of this measure (the Buildings'), as large as it needs, the stage's floor under it @param {THREE.Box3} b */
+		const layGround = (b) => {
+			if (ground) {
+				stage.scene.remove(ground.obj);
+				ground.obj.traverse((o) => (o.geometry?.dispose(), o.material?.dispose()));
+				ground = null;
+			}
+			if (!grounds) return;
+			const s = b.getSize(new THREE.Vector3()), mid = b.getCenter(new THREE.Vector3());
+			const r = grounds.groundRadius(Math.hypot(s.x, s.z) / 2);
+			const obj = grounds.roundGround(r);
+			obj.position.set(mid.x, 0, mid.z);
+			// the stage keeps its studio things out of a part's pick, its x-ray and a walk's floors
+			obj.traverse((o) => (o.userData.studio = true));
+			stage.scene.add(obj);
+			ground = { obj, r };
+		};
+		/** the world in disguise shown, let go of (another is picked, or a build) */
+		const dropWorld = () => {
+			if (!world) return;
+			walkOut?.();
+			world.dispose();
+			world = null;
+			worldUp = false;
+			step = '';
+		};
+		/** when the world shown was raised, for its clock */
+		let raisedAt = 0;
+		/**
+		 * An item that is a world in disguise (a dome), raised by its own world's code on this canvas: framed where it will
+		 * stand at once, its steps told while it is built, measured and walkable once it stands.
+		 */
+		raiseWorld = (item, v) => {
+			const mine = ++asked;
+			building = true;
+			error = '';
+			walkOut?.();
+			dropWorld();
+			// the build shown before goes: the canvas draws the world now
+			letGo(hero);
+			hero = null;
+			stage.clear();
+			picked = null;
+			size = null;
+			steps = 0;
+			step = 'Opening the doors';
+			const w = inside.raise(item, v, {
+				renderer,
+				camera,
+				box,
+				low,
+				onStep: (label, done) => {
+					if (mine !== asked) return;
+					step = label;
+					steps = done;
+				},
+				onGhost: (b) => {
+					if (mine !== asked) return;
+					framed = { centre: b.getCenter(new THREE.Vector3()), size: b.getSize(new THREE.Vector3()) };
+					frame();
+				}
+			});
+			world = w;
+			raisedAt = performance.now();
+			w.ready.then(
+				(got) => {
+					if (mine !== asked || world !== w) return;
+					building = false;
+					step = '';
+					if (!got) return void (error = `The ${item.label} could not be built`);
+					const s = got.measured.getSize(new THREE.Vector3());
+					size = [s.x, s.y, s.z];
+					framed = { centre: got.measured.getCenter(new THREE.Vector3()), size: s };
+					frame();
+					worldUp = true;
+				},
+				(e) => {
+					if (mine !== asked) return;
+					building = false;
+					error = String(e?.message ?? e);
+				}
+			);
+		};
 		show = async (name, reframe) => {
 			const mine = ++asked;
 			building = true;
 			error = '';
+			dropWorld();
 			try {
 				const got = await loadAsset(name);
 				if (mine !== asked) return void letGo(heroOf(got));
@@ -305,7 +412,9 @@
 				const bounds = new THREE.Box3().setFromObject(got.obj);
 				// a plant stands in its soil; its fruit, shown on its own, on the floor
 				const soiled = earth && !(c.values?.fruit >= 1);
-				const { centre, size: s } = stage.show(got.obj, { asset: h, ground: soiled ? -earth.fit(bounds) : undefined });
+				// a building on the round ground, the stage's floor a hair under it
+				const { centre, size: s } = stage.show(got.obj, { asset: h, ground: soiled ? -earth.fit(bounds) : grounds ? Math.min(bounds.min.y, 0) - 0.01 : undefined });
+				if (grounds) layGround(bounds);
 				await stage.compile();
 				if (mine !== asked) {
 					stage.clear();
@@ -342,13 +451,15 @@
 			if (mine === asked) building = false;
 		};
 
-		// walked in: the sandboxes' walker, on the floors and between the walls its own shape has; Escape walks out
+		// walked in: the sandboxes' walker, on the floors and between the walls its own shape has (a world in disguise: its
+		// own floors and walls), on the round ground never off its edge; Escape walks out
 		let walker = null;
 		const lamps = [];
 		walkIn = () => {
-			const w = hero?.view.walk;
+			const w = world ? world.walk : hero?.view.walk;
 			if (!w || walker) return;
-			const ground = walkOf(hero.root);
+			const floors = world ? world.walk : walkOf(hero.root);
+			const g = !world && ground ? ground : null;
 			controls.enabled = false;
 			walker = createWalker(camera, renderer.domElement, {
 				x: w.x,
@@ -357,24 +468,24 @@
 				pitch: -0.05,
 				walk: PACE.walk,
 				hurry: PACE.hurry,
-				canStand: ground.canStand,
-				floorAt: ground.floorAt,
+				canStand: g ? (x, z, here, at, from) => Math.hypot(x - g.obj.position.x, z - g.obj.position.z) < g.r - 0.4 && floors.canStand(x, z, here, at, from) : floors.canStand,
+				floorAt: floors.floorAt,
 				onKey: (k, isDown) => {
 					if (k !== 'escape' || !isDown) return false;
 					walkOut?.();
 					return true;
 				}
 			});
-			for (const [x, y, z] of w.lamps) {
+			for (const [x, y, z] of w.lamps ?? []) {
 				const lamp = new THREE.PointLight('#fff1dc', 2.2, 6, 2);
 				lamp.position.set(x, y, z);
-				stage.scene.add(lamp);
+				(world ? world.scene : stage.scene).add(lamp);
 				lamps.push(lamp);
 			}
 			camera.userData.fov = 0; // a walk sees as a walker does, upright or not
 			camera.fov = 70;
 			camera.near = 0.05;
-			camera.far = 400;
+			camera.far = Math.max(400, (ground?.r ?? 0) * 4);
 			camera.updateProjectionMatrix();
 			stick = { move: (x, y, h) => walker?.move(x, y, h), look: (dx, dy) => walker?.look(dx, dy) };
 			walking = true;
@@ -384,7 +495,7 @@
 			walker.dispose();
 			walker = null;
 			stick = null;
-			for (const lamp of lamps.splice(0)) stage.scene.remove(lamp);
+			for (const lamp of lamps.splice(0)) lamp.removeFromParent();
 			controls.enabled = true;
 			camera.userData.fov = 40;
 			resize();
@@ -404,6 +515,10 @@
 		const adapt = adaptiveResolution(renderer, { top: topPixelRatio(low), hold: () => building, onChange: resize });
 		shown = build ?? '';
 		if (build) show(build, true);
+		else if (worldly) {
+			shownWorld = `${chosen.id}@${version}`;
+			raiseWorld(chosen, version);
+		}
 		let raf = 0, last = performance.now(), slow = 0, grownAt = 0;
 		const tick = () => {
 			// the stage eases by the wall clock; so do the camera's own eases, however slow the frames
@@ -411,6 +526,7 @@
 			last = now;
 			adapt(now);
 			stage.update(dt);
+			world?.frame((now - raisedAt) / 1000);
 			if (walker) walker.update(dt);
 			else {
 				if (glide) {
@@ -436,24 +552,27 @@
 				}
 				controls.update();
 			}
-			stage.render();
+			if (world) world.draw();
+			else stage.render();
 			if (stage.state.labels > 0.01 || tags.length) tags = stage.labels(box.clientWidth, box.clientHeight, safeArea(box));
-			if ((slow += wall) > 0.12 && hero) {
+			if ((slow += wall) > 0.12 && (hero || world)) {
 				slow = 0;
-				if (lab) reading = { ...lab.read };
 				scale = stage.scaleBar(box.clientHeight, controls.target);
-				builtNow = stage.builtNow();
-				running = !!hero.live;
-				// growing: the next stage once this one has stood a moment
-				if (building) grownAt = now;
-				else if (growing && now - grownAt > 1400) {
-					const at = Math.round(values.stage);
-					if (!staged || at >= staged.max) growing = false;
-					else setParam('stage', at + 1);
-					grownAt = now;
+				if (hero) {
+					if (lab) reading = { ...lab.read };
+					builtNow = stage.builtNow();
+					running = !!hero.live;
+					// growing: the next stage once this one has stood a moment
+					if (building) grownAt = now;
+					else if (growing && now - grownAt > 1400) {
+						const at = Math.round(values.stage);
+						if (!staged || at >= staged.max) growing = false;
+						else setParam('stage', at + 1);
+						grownAt = now;
+					}
+					// the sliders a move sets follow it
+					if (stage.move !== 'run') readValues();
 				}
-				// the sliders a move sets follow it
-				if (stage.move !== 'run') readValues();
 			}
 			raf = requestAnimationFrame(tick);
 		};
@@ -461,6 +580,7 @@
 		dispose = () => {
 			cancelAnimationFrame(raf);
 			walkOut?.();
+			dropWorld();
 			letGo(hero);
 			hero = null;
 			earth?.dispose();
@@ -475,13 +595,23 @@
 	});
 	onDestroy(() => dispose?.());
 
-	// a new build asked for whenever what is chosen or what it is built with changes
+	// a new build asked for whenever what is chosen or what it is built with changes; a world in disguise raised
+	// whenever it or its version is chosen
 	let shown = '';
+	let shownWorld = '';
 	$effect(() => {
 		const b = build;
 		if (!b || b === shown || !show) return;
 		shown = b;
+		shownWorld = '';
 		untrack(() => show(b));
+	});
+	$effect(() => {
+		const w = worldly ? `${chosen.id}@${version}` : '';
+		if (!w || w === shownWorld || !raiseWorld) return;
+		shownWorld = w;
+		shown = '';
+		untrack(() => raiseWorld(chosen, version));
 	});
 	$effect(() => {
 		void [picked, alone, hero];
@@ -618,11 +748,17 @@
 	{name}
 	bind:canvas={canvasBox}
 	bind:stage={viewBox}
-	full={walking}
+	full={walking && !inPlace}
 	picks={{ title, lede, items, chosen, where, onpick: pick, group: heading, version, onversion: pickVersion }}
 >
 	{#snippet bar()}
-		{#if hero}
+		{#if world}
+			{#if worldUp && world.walk}
+				<div class="chips">
+					<button class="chip dark" onclick={() => (walking ? walkOut?.() : walkIn?.())}>{walking ? 'Step outside' : 'Step inside'}</button>
+				</div>
+			{/if}
+		{:else if hero}
 			<div class="chips">
 				{#each params.filter(tabbed) as p (p.id)}
 					<span class="label">{p.label}</span>
@@ -825,7 +961,10 @@
 			{:else}
 				<small>{note}</small>
 			{/if}
-			{#if !hash}
+			{#if typeof chosen.size === 'string'}<span>{chosen.size}</span>{/if}
+			{#if worldly}
+				{#if building}<span class="soft">{step || 'Opening the doors'}…</span>{:else if size}<span>{measure(Math.max(size[0], size[2]))} across · {measure(size[1])} high</span>{/if}
+			{:else if !hash}
 				<span>Only its note was kept of this version, not how it was built.</span>
 			{:else if size}
 				<span>{#if rise}{measure(rise[0])} above the soil · {measure(rise[1])} below · {measure(Math.max(size[0], size[2]))} across{:else}{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high{/if}{#if catalog}{` · ${catalog.parts.length} parts`}{/if}{#if hero && !running && hero.view.ticks}{' · starting its moves…'}{/if}</span>
@@ -852,6 +991,8 @@
 		<button class="canvas-note lost" onclick={() => location.reload()}>This device’s graphics ran out of room. Tap to load it again.</button>
 	{:else if error}
 		<div class="canvas-note error" role="alert">{error}</div>
+	{:else if building && world}
+		<div class="canvas-note" role="status">{step || 'Opening the doors'}… <i class="steps"><i style:width="{Math.min(100, (steps / STEPS) * 100)}%"></i></i></div>
 	{:else if building}
 		<div class="canvas-note" role="status">Building the {chosen.label}…</div>
 	{/if}
@@ -1060,6 +1201,26 @@
 		font-size: 14px;
 		white-space: nowrap;
 		pointer-events: none;
+	}
+	/* a world in disguise being built: how far it is */
+	.canvas-note .steps {
+		display: inline-block;
+		width: 4rem;
+		height: 3px;
+		margin-left: 0.4rem;
+		vertical-align: middle;
+		border-radius: 2px;
+		background: rgb(31 42 35 / 0.12);
+		overflow: hidden;
+	}
+	.canvas-note .steps i {
+		display: block;
+		height: 100%;
+		background: #c8744f;
+		transition: width 400ms ease;
+	}
+	.soft {
+		opacity: 0.7;
 	}
 	.canvas-note.lost,
 	.canvas-note.error {
