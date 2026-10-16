@@ -3,7 +3,7 @@
  * it (./tiredLandSet.js, the same set Sandbox 4's Day 19 shots are filmed in), alone under the kit's sky: walked on
  * foot across the fields and along the road, the trucks going by on the world's clock, and shot like every sandbox
  * (`world.sandbox: 'tired-land'`). The set's own coordinates: the highway runs north–south at x = −470. Its trucks are
- * the library's (`things/truck@1`, each in its colours), built in the asset box and drawn by the renderer
+ * the library's (`machines/truck@1`, each in its colours), built in the asset box and drawn by the renderer
  * (./assets.js), moved along the road each frame.
  */
 import * as THREE from 'three';
@@ -14,7 +14,7 @@ import { withValues, worldAssets } from './assets.js';
 export type TiredLandHandle = { move: (x: number, y: number, hurry: boolean) => void; look: (dx: number, dy: number) => void; dispose: () => void };
 
 /** the truck, by its ref in the library */
-const TRUCK = 'things/truck@1';
+const TRUCK = 'machines/truck@1';
 /** where the fields reach (the set's plane: x −2698 … −398, z ±1300), a little inside */
 const FIELDS = { x0: -2690, x1: -402, z: 1290 } as const;
 

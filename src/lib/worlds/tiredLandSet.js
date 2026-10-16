@@ -119,7 +119,7 @@ export function buildTiredLand(seed = 1, lorry = builtLorry) {
 		set.add(tree);
 	}
 
-	// the trucks (the model: things/truck@1, src/lib/models/furniture.ts): each drives its lane at its speed, `z32` =
+	// the trucks (the machine: machines/truck@1, built by src/lib/models/furniture.ts): each drives its lane at its speed, `z32` =
 	// where it is at 0:32 on the film
 	const fleet = [
 		{ dir: 1, speed: 22, z32: 5, cab: '#c8c4bc', box: '#dcdad4' }, // the one the camera rides beside (0:32)

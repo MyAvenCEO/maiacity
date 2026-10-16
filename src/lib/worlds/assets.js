@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, trusted: runs in the page
 /*
  * A WORLD'S ASSETS — how a world (the tired land; src/lib/worlds) puts the library's assets in: by their ref
- * (`things/truck@1?box=%23e0ddd6&cab=%23a33a2a`), built in the asset box (or read from this device's cache) and drawn
+ * (`machines/truck@1?box=%23e0ddd6&cab=%23a33a2a`), built in the asset box (or read from this device's cache) and drawn
  * by the universal renderer ($lib/assets/render), never by calling a builder. The world's own geometry (its ground,
  * its fields, its road) stays the world's.
  *
@@ -14,7 +14,7 @@ import { filmDraws } from '$lib/sandbox-kit';
 
 /**
  * A ref with the values it is built with, written as every ref writes them (sorted, a colour's # escaped):
- * `withValues('things/truck@1', { cab: '#a33a2a', box: '#e0ddd6' })`. Each value exactly as given, so the build is the
+ * `withValues('machines/truck@1', { cab: '#a33a2a', box: '#e0ddd6' })`. Each value exactly as given, so the build is the
  * one its builder called with them made.
  * @param {string} ref @param {Record<string, number | string>} values
  */
