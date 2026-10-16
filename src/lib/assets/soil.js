@@ -32,7 +32,8 @@ function grainOf() {
 /** the earth: `group` to add to a scene, `fit(box)` to size it to a plant's bounds (its depth, under 0) */
 export function soilOf() {
 	const grain = grainOf(), top = grain.clone();
-	const walls = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 96, 1, false), new THREE.MeshStandardMaterial({ color: '#c09a74', map: grain, roughness: 1, side: THREE.BackSide }));
+	// its floor lies on the stage's floor: drawn a touch nearer, so the two do not fight over the same depth
+	const walls = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 96, 1, false), new THREE.MeshStandardMaterial({ color: '#c09a74', map: grain, roughness: 1, side: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }));
 	walls.receiveShadow = true;
 	const sides = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 96, 1, true), new THREE.MeshStandardMaterial({ color: '#a07a56', map: grain, roughness: 1, transparent: true, opacity: 0.1, depthWrite: false }));
 	const face = new THREE.Mesh(new THREE.CircleGeometry(1, 96).rotateX(-Math.PI / 2).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: '#b08860', map: top, roughness: 1, transparent: true, opacity: 0.32, depthWrite: false }));
