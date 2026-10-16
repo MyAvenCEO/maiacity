@@ -1,10 +1,12 @@
 // @ts-nocheck — plain JS
 /*
  * HOW FINELY TO DRAW A THING — chosen by how big it looks, never by how far off it is, so one rule fits a cup and a
- * tree: its size on the screen (the ball that holds it, as a share of the view's height). An asset has up to three
- * levels of its shape (its recipe at a lower `detail`, phase 5 for every asset) and, smallest, its picture
- * (./impostors.js). Each level is drawn while the thing looks at least as big as its threshold; a coarser one fades in
- * under it (the dither of ./presets.js) over the last stretch before, so when it takes over it is already there.
+ * tree: its size on the screen (the ball that holds it, as a share of the view's height). Every asset has three levels
+ * of its shape and, smallest, its picture (./impostors.js): a recipe that takes a `detail` (the plants) is built at a
+ * lower detail for each, and every other asset's lower levels are made from its finest by simplifying it
+ * (./simplify.js), each within what it may cost (BUDGETS). Each level is drawn while the thing looks at least as big as
+ * its threshold; a coarser one fades in under it (the dither of ./presets.js) over the last stretch before, so when it
+ * takes over it is already there.
  *
  * The thresholds are the ones Sandbox 4's forest draws its trees by (src/lib/sandbox-2/interior/flora.js: its near
  * shape to 32 m, its middle one to 80 m, a picture beyond, for a tree 12 m across), as shares of the view, so every
@@ -27,6 +29,58 @@ export const BAND = 0.3;
 export const HOLD = 0.06;
 /** smaller than this on screen (about a pixel on a phone held upright), not drawn at all */
 export const SMALLEST = 0.002;
+
+/** the screen the levels are made for, its height in pixels: a laptop's, or a phone's held across */
+export const SCREEN = 1080;
+
+/**
+ * What each level of a shape may cost, finest first, and how far one made by simplifying may stray from the finest:
+ *
+ * - level 0, the build as its recipe made it: held only by the box's own budgets (../box/rebuild.js);
+ * - level 1, drawn from 1.2 down to 0.28 of the view: at most 0.3 of level 0's triangles, about what the plants'
+ *   recipes keep at detail 0.25 (measured at stage 9: hazel 27 %, walnut 25 %, apple 24 %, redcurrant 18 %, rhubarb
+ *   12 %, strawberry 10 %);
+ * - level 2, from 0.28 down to its picture: at most 0.08, as the plants keep at detail 0.1 (2.5 to 7 %).
+ *
+ * A level made by simplifying never has more triangles than the pixels of the square it fills where it hands over to
+ * the next, at its threshold on SCREEN ((LEVELS[L] × SCREEN)²: 91,445 for level 1, 14,113 for level 2): a triangle
+ * smaller than a pixel there is never seen, and nearer, where it would be, the finer level is drawn. Nor is it made
+ * lighter than `floor`: a few hundred triangles cost little more than the draw call that holds them, and a chair of a
+ * thousand is cheap whole. A plant's levels are its recipe's own and are held to their share alone: a big tree's crown
+ * at detail 0.1 (a walnut's 18,328, a linden's 20,358) is over its ceiling, but simplifying a crown only takes its
+ * leaves away, and a thinned crown reads worse at its distance than the triangles cost.
+ *
+ * A level made by simplifying keeps within `px` pixels on SCREEN of the finest where it is drawn biggest (at the
+ * threshold before it), as long as its triangles let it: the simplifier takes the edges whose loss shows least first.
+ * Only a shape that cannot reach its share so (a machine's parts, hard edges at every corner) goes on to STRETCH times
+ * that, and only where that brings it to its share. A part smaller than a pixel there is left out. A shape of many pieces each already as plain as it can be (a
+ * coop's planks, a battery's cells, a planter's cards) cannot reach its share without leaving out pieces that show:
+ * it keeps them and stays over its share, though never over its ceiling (./simplify.js).
+ */
+export const BUDGETS = [
+	{ share: 1, floor: 0, px: 0 },
+	{ share: 0.3, floor: 1000, px: 2 },
+	{ share: 0.08, floor: 300, px: 2 }
+];
+export const STRETCH = 4;
+
+/**
+ * The most triangles level L may have, for a kind whose finest level has `tris` (not known, as for a plant whose
+ * finest is built only once a copy is near: its ceiling alone).
+ * @param {number} L @param {number} [tris] @param {number[]} [all] the thresholds of the levels (LEVELS)
+ */
+export function budgetOf(L, tris = Infinity, all = LEVELS) {
+	if (L <= 0) return tris;
+	const b = BUDGETS[Math.min(L, BUDGETS.length - 1)];
+	const ceiling = Math.round((all[Math.min(L, all.length - 1)] * SCREEN) ** 2);
+	return Math.min(ceiling, Math.max(b.floor, Math.ceil(b.share * tris)));
+}
+
+/** how far level L of a thing of `radius` may stray from its finest shape (m) @param {number} L @param {number} radius @param {number[]} [all] */
+export const errorOf = (L, radius, all = LEVELS) => (L <= 0 ? 0 : (BUDGETS[Math.min(L, BUDGETS.length - 1)].px * 2 * radius) / (all[L - 1] * SCREEN));
+
+/** the smallest part level L of a thing of `radius` draws (its ball's diameter, m): a pixel where it is drawn biggest */
+export const smallestOf = (L, radius, all = LEVELS) => (L <= 0 ? 0 : (2 * radius) / (all[L - 1] * SCREEN));
 
 /**
  * How big a thing looks: its ball's diameter as a share of the view's height.

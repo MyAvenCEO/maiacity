@@ -3,12 +3,14 @@
 	assets of every group (plants, things, machines, actors; ../../../lib/assets/render/testScene.js), each built the
 	one way any asset is (from this device's cache, else in the asset box) and drawn by the universal renderer: every
 	copy at the level of detail its size on screen calls for, the far ones as pictures of themselves, every copy of a
-	kind one more instance of the same few drawings. Walked as Sandbox 4 is (the sandbox kit's stage, sky and walker),
-	so the two can be measured alike: "Measure" stands at the scene's three places in turn and times ten seconds of
-	frames at each. "Cut open" cuts the whole scene along a plane through the green, the kit's solids showing their
-	section caps. "Controls near you" moves the copies within reach by the controls their builds offer (a tent pitched,
-	a pickup's doors, a machine drawn apart or built up), played from the numbers the box wrote down; "Rest" puts every
-	copy back. `?fresh` builds every asset afresh, keeping nothing; `?boxes=n` builds n at a time.
+	kind one more instance of the same few drawings, and every kind at three levels of its shape before its picture (a
+	plant's recipe at a lower detail, every other kind's build simplified beside the page: phase 5; each level read
+	beside the finest where it takes over at ./levels/). Walked as Sandbox 4 is (the sandbox kit's stage, sky and
+	walker), so the two can be measured alike: "Measure" stands at the scene's three places in turn and times ten
+	seconds of frames at each. "Cut open" cuts the whole scene along a plane through the green, the kit's solids
+	showing their section caps. "Controls near you" moves the copies within reach by the controls their builds offer (a
+	tent pitched, a pickup's doors, a machine drawn apart or built up), played from the numbers the box wrote down;
+	"Rest" puts every copy back. `?fresh` builds every asset afresh, keeping nothing; `?boxes=n` builds n at a time.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -229,7 +231,7 @@
 				<dt>Materials</dt>
 				<dd>{stats.materials} · {stats.pages} picture page{stats.pages === 1 ? '' : 's'}</dd>
 				<dt>Building</dt>
-				<dd>{stats.building ? `${stats.building} in the box` : 'nothing'} · {stats.builds} builds kept</dd>
+				<dd>{stats.building ? `${stats.building} in the box` : 'nothing'} · {stats.builds} builds kept, {stats.made} levels made from them</dd>
 			</dl>
 			{#if stats.failed.length}
 				<p class="failed">Did not load: {stats.failed.map((f) => f.label).join(', ')}</p>
