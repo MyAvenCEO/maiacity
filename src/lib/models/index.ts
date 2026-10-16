@@ -6,7 +6,7 @@
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
 import type * as THREE from 'three';
-import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, truck, wineCrate } from './furniture';
+import { bed, chair, crateTower, edisonBulb, framedPicture, neewerCb60, sheepskin, wineCrate } from './furniture';
 import { barCounter, barStool, canvasPrint, coatStand, door, palletShelf, pendantLamp, retroFridge } from './hallway';
 import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
 import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
@@ -24,11 +24,15 @@ import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
 
-type Make = () => THREE.Object3D;
+/** a model's builder: none of its arguments, or the values of the parameters it declares, in their order */
+type Make = (...args: any[]) => THREE.Object3D;
+/** what a model's recipe is built with, when a world places it otherwise than as it is listed ($lib/assets/params.js):
+ *  each takes its `value` when not given */
+type Param = { id: string; label: string; type: 'number' | 'integer' | 'string'; value: number | string; min?: number; max?: number; step?: number; maxLength?: number };
 /** one kind of a model (a small and a big excavator): the viewer shows its variants to switch between, as the Actors
  *  gallery shows a kind's breeds; `make` is the first's */
 export type Variant = { id: string; label: string; note: string; make: Make };
-export type Model = { id: string; label: string; note: string; usedIn: string; make: Make; variants?: Variant[]; versions: Version<Make>[]; version: number };
+export type Model = { id: string; label: string; note: string; usedIn: string; make: Make; variants?: Variant[]; params?: Param[]; versions: Version<Make>[]; version: number };
 
 /** the models' older versions, by id, each with its frozen builder (the rest are at v1) */
 const HISTORY: Record<string, (Change & { build?: Make })[]> = {
@@ -96,7 +100,6 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'washbasin', label: 'Washbasin', note: 'a wall-hung basin, 60 × 42 cm, its spout from the wall', usedIn: 'The bathroom', make: () => washbasin() },
 	{ id: 'glass-shower', label: 'Glass shower', note: 'frameless glass, a rain head under the ceiling, a hand shower on its rail', usedIn: 'The bathroom', make: () => glassShower() },
 	{ id: 'towel-radiator', label: 'Towel radiator', note: 'white, a ladder of round rails, 50 × 140 cm', usedIn: 'The bathroom', make: () => towelRadiator() },
-	{ id: 'truck', label: 'Truck', note: 'a cab and a box trailer, about 16 × 2.55 × 4 m', usedIn: 'The tired land', make: () => truck({ cab: '#a33a2a', box: '#e0ddd6' }) },
 	{ id: 'tree-broadleaf', label: 'Tree, broadleaf', note: "an ash or a maple of the Isar's banks, about 19 m high, its crown 12 m across: limbs and branches, leaf cards lit as one soft crown", usedIn: 'The Isar', make: () => tree('broadleaf') },
 	{ id: 'tree-willow', label: 'White willow', note: 'two leaning trunks and a broad silvery crown, about 15 m', usedIn: 'The Isar', make: () => tree('willow') },
 	{ id: 'tree-poplar', label: 'Black poplar', note: 'tall and oval, about 27 m', usedIn: 'The Isar', make: () => tree('poplar') },

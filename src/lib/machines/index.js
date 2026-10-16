@@ -28,6 +28,7 @@ import { batteryCube as batteryCubeV1 } from '$lib/actors/batterycube.v1.js';
 import { batteryPack } from '$lib/actors/batterypack.js';
 import { batteryPack as batteryPackV1 } from '$lib/actors/batterypack.v1.js';
 import { batteryPack as batteryPackV10 } from './batterypack.js';
+import { truck } from '$lib/models/furniture';
 import { castOf } from '$lib/assets/parts.js';
 import { FIRST, versioned } from '$lib/app/versions.js';
 
@@ -221,6 +222,17 @@ const LIST = [
 		note: 'Our modular, repairable battery: 280 cylindrical 21700 cells (14S20P, 51.8 V, ~5.2 kWh) in two holder plates, copper contact plates pressed on by its lid, no welds and no glue, so every cell, plate and the BMS comes out again. Four fill a BatteryCube',
 		from: 'Our design',
 		variants: [{ id: 'batterypack', label: 'BatteryPack', note: '460 × 480 × 125 mm, 280 cells (14S20P, 51.8 V, 100 Ah, ~5.2 kWh), a charge strip on its face; its solver on the load, the ambient and its charge, every row read; its moves Service and Grip', make: () => castOf(batteryPackV10()) }]
+	},
+	{
+		id: 'truck',
+		label: 'Truck',
+		note: 'a cab and a box trailer on a long chassis, eight wheels, about 16 × 2.55 × 4 m: the trucks on the tired land’s highway, each in its own colours (a Thing until 2026-10-16, things/truck@1)',
+		from: 'The tired land: the highway',
+		params: [
+			{ id: 'cab', label: 'Cab', type: 'string', value: '#a33a2a', maxLength: 7 },
+			{ id: 'box', label: 'Box', type: 'string', value: '#e0ddd6', maxLength: 7 }
+		],
+		variants: [{ id: 'truck', label: 'Truck', note: 'a red cab and a white box trailer, as listed; a world gives each its colours (cab, box)', make: (cab = '#a33a2a', box = '#e0ddd6') => /** @type {any} */ (truck({ cab, box })) }]
 	}
 ];
 
