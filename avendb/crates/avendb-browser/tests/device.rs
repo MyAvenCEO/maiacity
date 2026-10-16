@@ -1172,10 +1172,10 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .iter()
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
-    let own = "documents, todos, articles, flows, functions, posts, cards, profiles, files, stories, sparks (v1 and v2), \
-        requests, artifacts, artworks";
-    assert_eq!(schemas.len(), 15, "{own}");
-    assert_eq!(db["builtIn"]["lenses"].as_array().map(Vec::len), Some(1), "the lens from spark v1 to v2");
+    let own = "documents, todos, articles (v1 and v2), flows, functions, posts, cards, profiles, files, stories, \
+        sparks (v1 and v2), requests, artifacts, artworks";
+    assert_eq!(schemas.len(), 16, "{own}");
+    assert_eq!(db["builtIn"]["lenses"].as_array().map(Vec::len), Some(2), "the lenses from article and spark v1 to v2");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
     assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V1.id().to_hex()]), "written under document v1");
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V1.id().to_hex()));
@@ -1195,9 +1195,11 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let one = (audiences.len(), audiences[0]["entries"].as_u64(), audiences[0]["shares"].as_array().map(Vec::len));
     assert_eq!(one, (1, Some(3), Some(0)), "her card, the note and its variant: no share splits her vault");
     let lenses = db["builtIn"]["lenses"].as_array().expect("the app's own lenses");
-    let spark = (avendb::lens::SPARK_LENS.from().to_hex(), avendb::lens::SPARK_LENS.to().to_hex());
-    assert_eq!(lenses.len(), 1, "the one lens avenDB ships, from spark v1 to v2");
-    assert_eq!((lenses[0]["from"].as_str(), lenses[0]["to"].as_str()), (Some(spark.0.as_str()), Some(spark.1.as_str())));
+    let ends = |l: &avendb::lens::Lens| (l.from().to_hex(), l.to().to_hex());
+    let shipped = [ends(&avendb::lens::ARTICLE_LENS), ends(&avendb::lens::SPARK_LENS)];
+    let hex = |l: &Value, end: &str| l[end].as_str().unwrap_or_default().to_string();
+    let got: Vec<_> = lenses.iter().map(|l| (hex(l, "from"), hex(l, "to"))).collect();
+    assert_eq!(got, shipped, "the lenses avenDB ships, from article and spark v1 to v2");
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
     // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and SLH-DSA signed
     let log = run(&first, json!({ "op": "log" })).await.expect("its log");

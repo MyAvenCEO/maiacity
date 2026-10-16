@@ -432,6 +432,52 @@ fn an_artwork_is_a_story_card_of_one_shape_in_layers_rendered_into_the_library()
     assert_eq!(r["story"]["to"]["title"], "Trailer story");
 }
 
+/// An article written for a story: it links the story and says its language, and a German variant of it links the
+/// same story and names the article it came from. One written under v1, as every article was before, opens in v2 as it
+/// was and edits on, what v2 adds beside what v1 held.
+#[test]
+fn an_article_is_written_for_a_story_and_a_v1_article_edits_on_in_v2() {
+    let mut w = cast::world();
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let create = |ty: &str, value: Value| json!({ "op": "create", "vault": alice, "type": ty, "value": value });
+    let made = |w: &mut World, op: Value| ok(run(w, mac, op))["entry"].as_str().unwrap().to_string();
+    let story = made(&mut w, create("story", json!({ "kind": "story", "title": "Trailer story" })));
+    let link = json!({ "vault": alice, "entry": story });
+    let value = json!({ "kind": "article", "title": "Trailer story", "text": "## The morning", "story": link,
+        "language": "en", "excerpt": "A town where nobody must work to survive." });
+    let article = made(&mut w, create("article", value));
+    let quote = json!({ "text": "Abundance is room to breathe.", "by": "Laborde" });
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": article, "path": ["quote"], "value": quote })));
+    let ops = json!([{ "op": "set", "path": ["language"], "value": "de" }, { "op": "set", "path": ["title"],
+        "value": "Trailer story · Deutsch" }]);
+    let de = ok(run(&mut w, mac, json!({ "op": "variant", "entry": article, "into": alice, "ops": ops })));
+    let de = de["entry"].as_str().unwrap().to_string();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": de, "schema": "article" })));
+    let r = &got["record"];
+    let said = (&r["language"], &r["story"]["entry"], &r["quote"]["by"]);
+    assert_eq!(said, (&json!("de"), &json!(story), &json!("Laborde")));
+    let q = json!({ "op": "query", "where": { "all": [{ "type": ["article"] }, { "path": ["language"], "eq": "de" }] },
+        "follow": [["story"]] });
+    let found = ok(run(&mut w, mac, q));
+    assert_eq!(found["rows"][0]["record"]["story"]["to"]["title"], "Trailer story");
+    // the world gives an article's record beside its title and text, so a page finds a story's articles
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    let of = |e: &str| seen["entries"].as_array().unwrap().iter().find(|x| x["entry"] == e).unwrap().clone();
+    let shown = of(&de);
+    assert_eq!((&shown["kind"], &shown["record"]["story"]["entry"]), (&json!("note"), &json!(story)));
+    assert_eq!((&shown["variantOf"], &shown["text"]), (&json!(article), &json!("## The morning")));
+    // an article of v1 opens as it was, and takes its story
+    let old = json!({ "kind": "article", "title": "Seeds", "text": "*Sown in March.*" });
+    let v1 = lens::ARTICLE_V1.id().to_hex();
+    let op = json!({ "op": "create", "vault": alice, "type": "article", "schema": v1, "value": old });
+    let old = made(&mut w, op);
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": old, "path": ["story"], "value": link })));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": old, "schema": "article" })));
+    assert_eq!((&got["record"]["text"], &got["record"]["story"]["entry"]), (&json!("*Sown in March.*"), &json!(story)));
+    let as_v1 = ok(run(&mut w, mac, json!({ "op": "get", "entry": old, "schema": v1 })));
+    assert_eq!(as_v1["record"].get("story"), None, "v1 reads it without what it doesn't know");
+}
+
 /// A spark written under v1, as the page wrote them before the canvas, opens in the spark app of v2 through the lens
 /// avenDB ships, its title and words kept, and edits on there: the canvas's items go beside what v1 held.
 #[test]
@@ -722,14 +768,15 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "artifact", "artwork", "card", "document", "file", "flow", "function", "post", "profile"];
-    let own = [&own[..], &["request"]].concat();
+    let own = ["article", "article", "artifact", "artwork", "card", "document", "file", "flow", "function", "post"];
+    let own = [&own[..], &["profile", "request"]].concat();
     let own = [&own[..], &["spark", "spark", "story", "todo"]].concat();
-    assert_eq!(kinds, own, "its own kinds, each once but the spark's two versions");
+    assert_eq!(kinds, own, "its own kinds, each once but the article's and the spark's two versions");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     let lenses = list(&schemas["lenses"]);
-    assert_eq!(lenses.len(), 1, "the lens from spark v1 to v2");
-    assert_eq!((&lenses[0]["from"], &lenses[0]["builtIn"]), (&json!(lens::SPARK_V1.id().to_hex()), &json!(true)));
+    let from = |l: &Value| (l["from"].clone(), l["builtIn"].clone());
+    let older = [lens::ARTICLE_V1.id(), lens::SPARK_V1.id()].map(|id| (json!(id.to_hex()), json!(true)));
+    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "the lenses from article and spark v1 to v2");
 }
 
 /// Ops from their JSON.
