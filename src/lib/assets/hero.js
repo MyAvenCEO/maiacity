@@ -72,6 +72,8 @@ export function heroOf({ obj: root, card }, { start } = {}) {
 
 	/** the build kept running in the box, once it is (null: it stands still, its controls played here) */
 	let running = null;
+	/** the box's first answer is still to come: it tells what moved from the build as built, not from this copy */
+	let fresh = false;
 	let asking = false;
 	let waited = 0;
 	let gone = false;
@@ -86,6 +88,7 @@ export function heroOf({ obj: root, card }, { start } = {}) {
 			.then((r) => {
 				if (gone) return void r?.end();
 				running = r;
+				fresh = true;
 			})
 			.catch(() => {});
 
@@ -103,6 +106,8 @@ export function heroOf({ obj: root, card }, { start } = {}) {
 		if (!(n instanceof Uint32Array) || !(r.trs instanceof Float32Array) || !(r.visible instanceof Uint8Array)) fail('a step: its lists');
 		if (r.trs.length !== n.length * 10 || r.visible.length !== n.length) fail('a step: its lengths');
 		finite(r.trs, 'a step');
+		// the copy as built again first (its controls at rest), wherever the poser had put it while nothing ran
+		if (fresh) ((fresh = false), poser.reset());
 		for (let j = 0; j < n.length; j++) {
 			const o = nodes[n[j] < N ? n[j] : fail('a step: a node there is not')];
 			const T = r.trs, a = j * 10;

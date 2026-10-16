@@ -153,16 +153,18 @@ export function createDrawn({ renderer, camera, scene }) {
 		 * ($lib/assets/hero.js `heroOf`): `play(clip)`, `hold(pose)`, and `tick(dt)` each frame it moves. Until the box
 		 * has it running, it stands as built.
 		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o]
-		 * @param {(got: any) => void} [first] what is done with the build before it runs (its parts found by name)
+		 * @param {(got: any) => void} [then] what is done with the build once it is ready to run (its parts found by
+		 *   name; anything the world hangs on it is added only now, so its nodes stay the box's, one for one)
 		 */
-		cast(ref, anchor, o, first) {
+		cast(ref, anchor, o, then) {
 			return this.load(ref, anchor, o).then(async (got) => {
-				first?.(got);
 				const m = await up;
 				const c = m.canonical(m.buildAt(ref));
 				const values = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
 				const code = await m.recipeAt(c.hash).catch(() => null);
+				// its nodes walked here, each the box's of the same place in its tree: before anything is added to it
 				const hero = m.heroOf(got, { start: code && !gone ? m.runner(m.liveBoxOf(), code, values) : undefined });
+				then?.(got);
 				if (gone) hero.dispose();
 				else heroes.push(hero);
 				return hero;

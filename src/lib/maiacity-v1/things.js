@@ -79,3 +79,20 @@ export const FIRE_WALK = {
 		{ x: -1.55, z: -0.2, r: 0.45 }
 	]
 };
+
+/** the bell tent's lantern, a light the box hands over as a plain node (the world hangs its own light there, set as the
+ *  dusk goes: engine 5 will carry lights): where it hangs (in its part `lantern`, the path of children down to it), its
+ *  colour, reach and fall-off; and the canvas's glow by day (its material's emissive, which the world turns warm at
+ *  night: how it finds that material) */
+export const TENT_LAMP = { part: 'lantern', path: [0, 2], color: 0xffcf8a, distance: 5, decay: 1.6 };
+export const TENT_CLOTH = { emissive: 0x5a4c34 };
+
+/** the fire place (things/fire-place@1): its light, a plain node in the build (in its part `flames`, by that path), its
+ *  colour, reach and fall-off; its flames' and embers' materials (by their glow) and how far each goes lit; and the
+ *  stretch of its build (0 … 1) its fire catches over, the last: built that far it burns as much as `lit` asks */
+export const FIRE = {
+	light: { part: 'flames', path: [0, 3], color: 0xff9a4a, distance: 7, decay: 1.8 },
+	flame: { emissive: 0xff7a1a, opacity: 0.85 },
+	embers: { emissive: 0xff4a12, glow: 0.9 },
+	catches: [0.86, 1]
+};
