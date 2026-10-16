@@ -1225,7 +1225,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 14] = [
+    pub const SHIPPED: [&str; 15] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1240,6 +1240,7 @@ pub mod blobs {
         SPARK_V2,
         REQUEST_V1,
         ARTIFACT_V1,
+        ARTWORK_V1,
     ];
 
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
@@ -1673,6 +1674,52 @@ pub mod blobs {
 }
 "#;
 
+    /// A title card or a thumbnail of one shape, in layers, as a story's Thumbnail step designs it: a picture (the
+    /// background), a cut-out (a transparent picture laid over it), words (empty: the hook it carries), a badge; each
+    /// place a percent of the shape's canvas, a text's size a percent of its width. Each picture is a Library file, by
+    /// link, and so is the card rendered from them (`render`). It belongs to a story (`story`) and carries one of its
+    /// hooks (`hook`, that row's id; none, the story's chosen one); an A/B card is a variant of another.
+    pub const ARTWORK_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Artwork, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "artwork" },
+    "title": { "type": "string", "default": "" },
+    "shape": { "enum": ["16x9", "9x16", "1x1", "4x5", "5x2"], "default": "16x9" },
+    "layers": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "kind": { "enum": ["image", "cutout", "text", "badge"], "default": "text" },
+          "name": { "type": "string" },
+          "on": { "type": "boolean", "default": true },
+          "file": { "x-link": "newest" },
+          "fit": { "enum": ["cover", "contain"] },
+          "text": { "type": "string", "default": "" },
+          "color": { "type": "string" },
+          "align": { "enum": ["left", "center", "right"] },
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "w": { "type": "number", "minimum": 0 },
+          "size": { "type": "number", "minimum": 0 },
+          "rot": { "type": "number" }
+        },
+        "required": ["id"]
+      }
+    },
+    "story": { "x-link": "newest" },
+    "hook": { "type": "integer", "minimum": 0 },
+    "render": { "x-link": "newest" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
     /// An access request: a record the asking vault writes in its own vault and shares, that entry alone, with the
     /// vault it asks (`to`, its id in hex), which may read it and set its answer alone (`engine`'s `ask`): the level it
     /// asks for, the name of a built-in group; why, in a few words; the vaults it asks that level on, where `to` holds
@@ -1712,6 +1759,7 @@ pub static SPARK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::
 pub static SPARK_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V2));
 pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
 pub static ARTIFACT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTIFACT_V1));
+pub static ARTWORK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTWORK_V1));
 pub static SPARK_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::SPARK_LENS.as_bytes()).expect("a built-in lens parses"));
 
@@ -1731,6 +1779,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*SPARK_V2,
         &*REQUEST_V1,
         &*ARTIFACT_V1,
+        &*ARTWORK_V1,
     ];
     shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });

@@ -21,14 +21,14 @@ function boxOf(/** @type {Layer} */ l) {
 }
 const sizeOf = (/** @type {Layer} */ l) => l.size ?? (l.kind === 'badge' ? 2.4 : 6.2);
 
-/** A picture out of the vault, drawable on a canvas. @param {string} hash */
-function picture(hash) {
+/** A picture, drawable on a canvas: out of the vault, or any URL the page may draw (an avenDB file's blob). @param {string} url */
+function picture(url) {
 	return new Promise((resolve, reject) => {
 		const img = new Image();
 		img.crossOrigin = 'anonymous';
 		img.onload = () => resolve(img);
-		img.onerror = () => reject(new Error(`The picture ${hash.slice(0, 10)}… could not be loaded.`));
-		img.src = fileUrl(hash);
+		img.onerror = () => reject(new Error(`The picture ${url.slice(0, 40)}… could not be loaded.`));
+		img.src = url;
 	});
 }
 
@@ -38,15 +38,20 @@ const linesOf = (/** @type {string} */ text) => text.split('\n').map((l) => l.re
 /**
  * The card as a JPEG, drawn from its layers at `width` pixels (3240 for the master: the wide and the tall crops stay
  * sharp). A layer whose picture cannot be loaded stops the render, with a sentence saying which.
- * @param {Layer[]} layers @param {string} hook what an empty text says @param {{ width?: number, quality?: number }} [o]
+ * Another shape's card is drawn at `width` by its `ratio` (its width and height), each picture from `src`.
+ * @param {Layer[]} layers @param {string} hook what an empty text says
+ * @param {{ width?: number, quality?: number, ratio?: [number, number], src?: (l: Layer) => string | null | undefined }} [o]
  * @returns {Promise<Blob>}
  */
 export async function renderCard(layers, hook, o = {}) {
 	const W = o.width ?? 3240;
-	const H = Math.round((W * 9) / 16);
+	const [rw, rh] = o.ratio ?? [16, 9];
+	const H = Math.round((W * rh) / rw);
+	const src = o.src ?? ((/** @type {Layer} */ l) => (l.hash ? fileUrl(l.hash) : null));
 	const shown = layers.filter((l) => l.on !== false);
 	// the pictures first, all of them, so a missing one is said before anything is drawn
-	const pics = new Map(await Promise.all(shown.filter((l) => (l.kind === 'image' || l.kind === 'cutout') && l.hash).map(async (l) => /** @type {[string, HTMLImageElement]} */ ([/** @type {string} */ (l.hash), await picture(/** @type {string} */ (l.hash))]))));
+	const urls = [...new Set(shown.filter((l) => l.kind === 'image' || l.kind === 'cutout').map(src).filter((u) => !!u))];
+	const pics = new Map(await Promise.all(urls.map(async (u) => /** @type {[string, HTMLImageElement]} */ ([/** @type {string} */ (u), await picture(/** @type {string} */ (u))]))));
 	if (typeof document !== 'undefined' && document.fonts?.load) await Promise.all([document.fonts.load(`800 100px ${FONT}`), document.fonts.load(`900 100px ${FONT}`)]).catch(() => {});
 
 	const canvas = document.createElement('canvas');
@@ -72,9 +77,10 @@ export async function renderCard(layers, hook, o = {}) {
 			ctx.translate(-(bx + w / 2), -(by + h / 2));
 		};
 		if (l.kind === 'image') {
-			const img = l.hash ? pics.get(l.hash) : undefined;
+			const url = src(l);
+			const img = url ? pics.get(url) : undefined;
 			const bw = bwMax;
-			const bh = (b.w / 100) * H; // the box is 16:9 like the canvas
+			const bh = (b.w / 100) * H; // the box has the canvas's shape
 			turn(bw, bh);
 			if (img) {
 				ctx.beginPath();
@@ -88,7 +94,8 @@ export async function renderCard(layers, hook, o = {}) {
 				ctx.drawImage(img, bx + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh);
 			}
 		} else if (l.kind === 'cutout') {
-			const img = l.hash ? pics.get(l.hash) : undefined;
+			const url = src(l);
+			const img = url ? pics.get(url) : undefined;
 			if (img) {
 				const bw = bwMax;
 				const dh = (bw * img.naturalHeight) / img.naturalWidth;

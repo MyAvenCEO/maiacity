@@ -385,6 +385,53 @@ fn an_artifact_is_one_source_and_a_spark_a_canvas_of_them_a_story_grows_from() {
     assert_eq!((&v["type"], &v["record"]["look"], &v["record"]["duration"]), (&json!("artifact"), &json!("youtube"), &json!(612.5)));
 }
 
+#[test]
+fn an_artwork_is_a_story_card_of_one_shape_in_layers_rendered_into_the_library() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let create = |ty: &str, value: Value| json!({ "op": "create", "vault": alice, "type": ty, "value": value });
+    let made = |w: &mut World, op: Value| ok(run(w, mac, op))["entry"].as_str().unwrap().to_string();
+    let link = |e: &str| json!({ "vault": alice, "entry": e });
+    let hooks = json!([{ "id": 7, "text": "Nobody must work to survive" }, { "id": 8, "text": "Rent is zero" }]);
+    let story = json!({ "kind": "story", "title": "Trailer story", "hooks": hooks, "hook": 7 });
+    let story = made(&mut w, create("story", story));
+    let face = made(&mut w, create("file", json!({ "kind": "file", "title": "face.png", "media": "image/png" })));
+    // the 16:9 card: the picture, the cut-out over it, the words its hook gives
+    let layers = json!([
+        { "id": 1, "kind": "image", "file": link(&face), "fit": "cover", "x": 0, "y": 0, "w": 100 },
+        { "id": 2, "kind": "cutout", "file": link(&face), "x": -2, "y": 8, "w": 46, "rot": -3 },
+        { "id": 3, "kind": "text", "x": 48, "y": 14, "w": 48, "size": 6.2, "color": "white", "align": "left" }
+    ]);
+    let card = json!({ "kind": "artwork", "title": "Trailer story · 16:9", "shape": "16x9", "layers": layers });
+    let mut card = card;
+    card["story"] = link(&story);
+    let card = made(&mut w, create("artwork", card));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": card, "schema": "artwork" })));
+    assert_eq!((&got["record"]["layers"][2]["text"], &got["record"]["layers"][0]["on"]), (&json!(""), &json!(true)));
+    // moved, given the other hook, and rendered: the card a file of the Library
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": card, "path": ["layers", { "id": 3 }, "y"], "value": 60.5 })));
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": card, "path": ["hook"], "value": 8 })));
+    let still = json!({ "kind": "file", "title": "card-16x9.jpg", "media": "image/jpeg" });
+    let still = made(&mut w, create("file", still));
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": card, "path": ["render"], "value": link(&still) })));
+    // what doesn't fit its schema is refused: a shape it doesn't know, a picture that isn't a link
+    let odd_shape = json!({ "kind": "artwork", "shape": "3x1" });
+    let odd_file = json!({ "kind": "artwork", "layers": [{ "id": 1, "kind": "image", "file": "face.png" }] });
+    for odd in [odd_shape, odd_file] {
+        assert_eq!(refused(&run(&mut w, mac, create("artwork", odd.clone()))), "NotAView", "{odd}");
+    }
+    // a query of the story's cards follows their links to the pictures and the render
+    let q = json!({ "op": "query", "where": { "all": [{ "type": ["artwork"] }, { "path": ["shape"], "eq": "16x9" }] },
+        "follow": [["layers", "*", "file"], ["render"], ["story"]] });
+    let found = ok(run(&mut w, mac, q));
+    let r = &found["rows"][0]["record"];
+    assert_eq!((&r["layers"][2]["y"], &r["hook"]), (&json!(60.5), &json!(8)));
+    assert_eq!(r["layers"][1]["file"]["to"]["media"], "image/png");
+    assert_eq!(r["render"]["to"]["title"], "card-16x9.jpg");
+    assert_eq!(r["story"]["to"]["title"], "Trailer story");
+}
+
 /// A spark written under v1, as the page wrote them before the canvas, opens in the spark app of v2 through the lens
 /// avenDB ships, its title and words kept, and edits on there: the canvas's items go beside what v1 held.
 #[test]
@@ -675,7 +722,8 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "artifact", "card", "document", "file", "flow", "function", "post", "profile", "request"];
+    let own = ["article", "artifact", "artwork", "card", "document", "file", "flow", "function", "post", "profile"];
+    let own = [&own[..], &["request"]].concat();
     let own = [&own[..], &["spark", "spark", "story", "todo"]].concat();
     assert_eq!(kinds, own, "its own kinds, each once but the spark's two versions");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));

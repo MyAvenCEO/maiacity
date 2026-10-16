@@ -4,14 +4,16 @@
 	anchor), the promise and the objection killer after it, how far up the extreme dial it sits, a note and its image
 	title; the one on the card (`hook`, its row's id), whose line is the title everywhere; the image title, the hook's
 	catchwords on the card; the intro, the first 3 to 30 seconds; and the description. Beside them how it looks on
-	YouTube: the card (a stand-in until the Thumbnail step designs it), the title, the channel, the first lines. Hooks a
+	YouTube: the card (the 16:9 one rendered on the Thumbnail step, a stand-in until then), the title, the channel, the first lines. Hooks a
 	proposal adds (an agent's, which may only suggest) show among them, marked, until the proposal is merged on the
 	right. Each change is one op on its main line, as the device allows it.
 -->
 <script>
+	import { entryOf } from './artifacts.js';
+	import { artworksOf } from './artworks.js';
 	import Icon from './Icon.svelte';
 	import { allowed, may } from './ops.js';
-	import { newId } from './sparks.js';
+	import { newId, pictureOf } from './sparks.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
@@ -41,6 +43,22 @@
 	const title = $derived(chosen?.text?.trim() || record.title || 'Untitled');
 	/** the words on the card: the image title, else the hook */
 	const words = $derived((record.image_title ?? []).filter(Boolean).join('\n') || chosen?.text?.trim() || record.title || '');
+	/** the 16:9 card as rendered on the Thumbnail step, once it is: what YouTube shows */
+	const rendered = $derived.by(() => {
+		const card = artworksOf(world, entry).find((c) => /** @type {any} */ (c.record)?.shape === '16x9' && !c.variantOf);
+		const id = entryOf(/** @type {any} */ (card?.record)?.render);
+		return (id && world.entries.find((e) => e.entry === id)) || null;
+	});
+	let cover = $state(/** @type {string | null} */ (null));
+	$effect(() => {
+		let gone = false;
+		if (rendered) pictureOf(api, rendered).then((u) => !gone && (cover = u));
+		else cover = null;
+		return () => {
+			gone = true;
+		};
+	});
+
 	/** the hooks each proposal adds or rewrites, not on the main line yet */
 	const proposed = $derived(
 		lines.slice(1).flatMap((l) =>
@@ -300,8 +318,10 @@
 	</section>
 
 	<aside class="yt" aria-label="How it looks on YouTube">
-		<div class="frame"><div class="stand-in"><b>{words}</b></div></div>
-		<p class="cardnote soft">A stand-in: the card is designed on the Thumbnail step.</p>
+		<div class="frame">
+			{#if cover}<img src={cover} alt="The 16:9 card" />{:else}<div class="stand-in"><b>{words}</b></div>{/if}
+		</div>
+		<p class="cardnote soft">{cover ? 'The 16:9 card, as rendered on the Thumbnail step.' : 'A stand-in until the 16:9 card is rendered on the Thumbnail step.'}</p>
 		<h3>{title}</h3>
 		<p class="chan soft">maiaCITY</p>
 		{#if record.intro}<p class="intro">{record.intro}</p>{/if}
@@ -556,6 +576,13 @@
 		overflow: hidden;
 		border-radius: 12px;
 		background: #1d2b22;
+	}
+
+	.frame img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 
 	.stand-in {

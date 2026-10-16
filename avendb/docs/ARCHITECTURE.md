@@ -1063,7 +1063,10 @@ and when, its language and length, the Library files it shows as links, and a vi
 rows; a Library file is only bytes, an artifact is what they are), a **spark** (anything that might become something:
 a scratchpad, an open canvas whose items are rows, each an artifact or a spark it links to or a free text note, with
 where it sits and how big it is, beside a document's title and blocks, so a note's page edits it; a story names the
-sparks it grows from, and the artifacts on their canvases are its sources), and an access **request** (the vault
+sparks it grows from, and the artifacts on their canvases are its sources), an **artwork** (a story's title card or
+thumbnail of one shape, 16:9, 9:16, 1:1, 4:5 or 5:2, in layers as rows, a picture, a cut-out, words or a badge, each
+placed in percent of its canvas, its pictures and the card rendered from them Library files by link, the story it
+belongs to and the hook it carries; an A/B card is a variant of another), and an access **request** (the vault
 asked, a level, why, the vaults it names and, once given, its answer: `"granted"` or `"denied"`, section 3). A note
 keeps its type, a document; the page lists notes among the sparks, and the world gives a spark's record beside its
 title and text (`world::What::Note`). Every shipped schema starts at v1, and a kind that grew ships its older
