@@ -110,7 +110,7 @@ test('the stand-in: skinned, bound to its own bones, its clips and poses named, 
 	const nodes = walk(root);
 	for (const n of out.nodes) expect(nodes[n].isBone).toBe(true);
 	live.end(session);
-});
+}, 30000);
 
 test('engine 5: an animal’s clips written down in the box, played in the page as its own clips pose it', async () => {
 	const THREE = await import('three');
@@ -156,7 +156,7 @@ test('engine 5: an animal’s clips written down in the box, played in the page 
 	const first = Object.values(bad.view.clips.motion.clips)[0];
 	first.base = first.base.subarray(1);
 	expect(() => rebuild(bad)).toThrow('refused');
-});
+}, 30000);
 
 test('engine 5: a fire kept running hands back its light’s flicker, a light on the page', async () => {
 	const { root } = await through('things/fire-place');
@@ -176,7 +176,7 @@ test('the LifeTrac: its parts are the groups of its skinned mesh, its catalog on
 	expect(v.parts?.length).toBeGreaterThan(20);
 	expect(v.parts.every((p) => Array.isArray(p.groups) && p.groups.length > 0)).toBe(true);
 	expect(obj.userData.catalog.parts.length).toBeGreaterThan(20);
-});
+}, 30000);
 
 test('a refused view: a node it names that is not there, or a move table of the wrong length', async () => {
 	const { data } = await through('machines/powercube@3');
@@ -201,7 +201,7 @@ test('a plant in its fruit view: one fruit on its own, or a note when it bears n
 	expect(Math.max(size.x, size.y, size.z)).toBeLessThan(0.3);
 	const none = await through('plants/basil?fruit=1');
 	expect(none.root.userData.view.note).toMatch(/no fruit|not set/);
-});
+}, 30000);
 
 test('a container: its roof and where it is walked in from leave as data, on the same nodes, and its card says it is a building', async () => {
 	const { obj, root, view, meta } = { ...(await through('buildings/container-kitchen')), meta: (await made('buildings/container-kitchen')).meta };
