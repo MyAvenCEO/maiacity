@@ -40,7 +40,7 @@ can't carry alone (`gaffer`).
 |---|---|---|
 | `controls.md` | operating it | the back panel, the modes (CCT, HSI, FX) and how to drive each, the 17 effects, the display, the NEEWER app and 2.4G |
 | `recipes.md` | lighting with it | the modifiers it takes, seven recipes for Samuel's room with the settings to dial, safety and care |
-| `twin.md` | its twin in the room | where it stands, switching it on in a shot (`cb60`), its beam and colour, matching the real set-up |
+| `twin.md` | its twin in the room (that world removed 2026-10-16) | where it stood, switching it on in a shot (`cb60`), its beam and colour, matching the real set-up |
 
 ## Measure it once (15 minutes with a lux meter)
 

@@ -1,7 +1,6 @@
 # The worlds and their sets
 
-Where a world film is shot: the map of Sandbox 4, the Apartment of Samuel (his room and the rest of it), the tired
-land, the Isar in Munich, the backyard, and the sets built into a scene while it is filmed.
+Where a world film is shot: the map of Sandbox 4, the tired land, and the sets built into a scene while it is filmed.
 
 ## Framing Sandbox 4
 
@@ -21,56 +20,6 @@ A shot names it (`props: 'tired-land'`); `shoot.mjs` builds it once and calls `w
 Day 19's `tired-land` west of the city's edge (x < −398): ploughed monoculture fields, a highway at x = −470, power
 lines, dead trees, eight trucks. The empty plain beyond the edge showed nothing and read as a dead shot.
 
-## The room (`src/lib/worlds/room.ts`)
-
-Samuel's real bedroom (Day 02), rebuilt from seven photos: 3.10 × 4.50 m, 2.55 m high.
-- **Axes:** x across (−1.55 the left wall with the door, +1.55 the window wall), z along (−2.25 the back wall behind
-  the bed, +2.25 the front wall), y up.
-- **North is +x:** the window looks north (`createSky({ north: π/2 })`), so the sun never shines in. It rises behind
-  the bed, stands in the south over the door's side at noon, and sets behind the front wall.
-- **Where things are:**
-  - The bed (140 × 200) stands against the back wall between two wine-crate shelves.
-  - The window sits a little right of its wall's middle (z −0.35…0.95), with its deep reveal, the radiator, the
-    blanket on the sill and the curtain knotted to the front.
-  - The red chair stands just before the window; the leather school chair by the left wall.
-  - The door is in the left wall near the front corner (z 0.88…1.74).
-  - The picture hangs between the window and the front corner. The sheepskin lies at the bed's foot.
-  - The Edison bulb hangs on a short cord; the CB60 light stands on its stand (`neewer-cb60`).
-- **Walked** at a room's pace, kept off the walls and out of the furniture by solid boxes. **Filmed** as
-  `world.sandbox: 'room'` — its lights are the shot's `lamps` (the bulb) and `cb60`.
-- **Stand-ins** (the rigged stand-in, `src/lib/actors/human.ts`), each a set a shot names in `world.props`, hidden
-  otherwise: `stand-in sitting` on the bed's edge, elbows on its knees; `stand-in fallen` back across the bed, arms
-  out, face to the ceiling; `stand-in window` standing at the window, looking out.
-
-## The Apartment of Samuel (`src/lib/worlds/apartment.ts`)
-
-The room is one room of Samuel's apartment, and the rest is built round it in the same axes — rough, from his sketch
-and his photos, furnished with the models and none of the clutter. One set: walk out of his door and through it all.
-- **The hallway** (x −4.60…−1.70, z 0.20…2.25), out of Samuel's door. The wall beside his door is painted with
-  blackboard paint, the quote chalked on it (the wall itself, not a board). Along the other wall stand the shoe rack,
-  the storeroom's door (shut) and the red fridge (127 cm) by the kitchen's doorway.
-- **Its arm** (x −4.60…−3.10, z 2.25…6.40). The bar runs along one wall under the pallet shelf and the red pendant,
-  with four stools. The bathroom's door stands across from the bar, and the front door (shut) at the far end. The
-  coat stand and the print are on the end wall.
-- **The kitchen** (x −7.60…−4.75, z 0.20…2.25), a galley. On the right as you come in, three modules from the window:
-  the washing machine, the oven under the gas hob, and right beside it the black sink over drawers — under a brick
-  wall, three dark crates as shelves from the window to the boiler over the sink, then the X-shelf. One washing
-  machine only, nothing under the window. On the grey wall: the crate pantry and the bin.
-- **The bathroom** (x −7.60…−4.75, z 2.40…3.85), long and narrow (1.45 m). The basin and the WC are on the left, the
-  towel radiator on the right, and the glass shower at the far end under the tall window. Its door opens out into
-  the hallway and stands folded back along the wall; the mirror on its bathroom face is a true one: it shows the
-  room, not the sky.
-- **The windows at the far end look south:** the sun comes into the kitchen and the bathroom. The shadows reach the
-  whole apartment (`shadowReach` 9.8 round the room); past their reach the sun would shine through the walls.
-- **The door opens as you come to it.** In a shot it is shut while the camera is inside the room and open when it
-  stands outside. The apartment's lamps light only when one can see out — the door open, or oneself outside. What is
-  behind a shut door does not light the room, so the room's shots stay as they were.
-- **The pendant and the bathroom's spots are downlights with shadows**, so the walls keep their light in their
-  rooms. Each has a second, soft light rising from above the furniture: the bounce off its pool on the floor, so
-  the room round it is lit a little, never quite dark. The kitchen's bare bulb has no shadows and a short reach
-  (3.2 m). They are all the shot's `lamps`.
-- **A world's page is full screen** like a sandbox's: its own bar holds the time of day (Auto / Manual).
-
 ## The tired land (`src/lib/worlds/tired-land.ts`, `tiredLandSet.js`)
 
 Day 19's world as it was, west of the city's edge:
@@ -79,86 +28,6 @@ Day 19's world as it was, west of the city's edge:
 - eight trucks driving on the shot's clock.
 
 It is its own world (`/games/tired-land`) and also Sandbox 4's `tired-land` set.
-
-## The Isar (`src/lib/worlds/isar`)
-
-The river in Munich from the Wittelsbacherbrücke south to the railway bridge (the Braunauer Eisenbahnbrücke), about
-700 m of it, flowing north. A real place built from open data, not by hand:
-- **Its data** comes from `scripts/worlds/isar-map.py` (run it again to bring the map up to date): OpenStreetMap for
-  the river's outline, the gravel, the meadows, woods, paths, benches, trees, both bridges and the town; the Bavarian
-  survey's 1 m terrain model (DGM1) for the ground's real heights. It writes `map.json` (every feature in the world's
-  metres) and `ground.bin` (the heights on the world's grid). Both are credited on the world's page: © OpenStreetMap
-  contributors (ODbL), DGM1 © Bayerische Vermessungsverwaltung (CC BY 4.0).
-- **Axes:** x east, z south, y up, in metres from a point on the river midway between the bridges (UTM 32N 690850 E,
-  5332890 N); y 0 is the water's surface there (513.24 m above sea level), and it falls 1.1 m per km downstream.
-  The river's own frame: **s** along it, downstream (north-east), **n** across it, towards the east bank.
-- **Where things are:** the railway bridge at s ≈ −343, the Wittelsbacherbrücke at s ≈ +340. The river 35–60 m
-  wide, deepest (up to 1.8 m) along the steep, tree-lined west bank, shallow over the gravel bars on the east. The
-  east bank: the gravel path by the water (n ≈ 20–58), the meadow some 2 m above the water, the dike with its benches
-  and the cycle path (n ≈ 85–115), the park behind it. The statue's pier stands on the gravel island under the
-  bridge; the path passes under its third arch; stone steps lead down to the water under its south face.
-- **The Wittelsbacherbrücke:** four arches of 44, 28, 27 and 26 m from the west, clad in shell limestone; the bays
-  of its piers, the pavilions on the two eastern ones, Otto von Wittelsbach on his pillar over the island (upstream
-  side), lamps along both parapets. Its plan is OpenStreetMap's outline, its ends' heights the survey's; the arches'
-  rise, the pavilions and the pillar's height are estimates from photos.
-- **The railway bridge:** three spans of about 48.5 m on stone piers, the two tracks on plate girders, the catenary,
-  and on its downstream side the old lattice truss. Its piers' places are estimated from the ground and its length.
-  By it on the west bank, Hefner-Alteneck-Straße crosses the Westermühlbach's mouth on a sprayed concrete slab.
-- **The skyline:** the houses round it from their footprints and storeys; St. Maximilian's two towers north beyond
-  the bridge; the Heizkraftwerk Süd's chimneys (176, 130, 90 m) south beyond the railway bridge.
-- **Walked** along the east bank and into the river: wading over the gravel, swimming where it is deep (the current
-  carries a swimmer downstream), not over the dike; up the ramps at the bridge's east end and across its deck between
-  the parapets; and on the west bank along its riverside way — Wittelsbacherstraße's pavement, the path on the bank,
-  Hefner-Alteneck-Straße over the Westermühlbach's mouth (its own concrete bridge) — and down the wooded bank to the
-  water, not into the town behind it. **Filmed** as `world.sandbox: 'isar'`; its lights are the shot's `lamps`
-  (the bridge's lanterns). Close to the camera the grass grows in blades and the trees are drawn full: both follow
-  the shot's camera, so a shot renders the same every time.
-- **The sky turns as Munich's does** (`createSky({ map: true })`): the sun rises over the east bank, stands in the
-  south at noon and sets behind the west bank's trees.
-
-## The backyard (`src/lib/worlds/backyard`)
-
-A Munich backyard, built from seventeen photos (October 2026): rough, not surveyed, everything in it to its real
-measure. Its plan is one file (`layout.ts`); the houses `buildings.ts`, the pergola and the terrace `pergola.ts`, the
-ground and the garden `garden.ts`, the surfaces `surfaces.ts`, the tools and the welding `kit.ts`.
-- **Axes:** x north, z east, y up, in metres; the origin on the ground at the middle of the old workshop's front.
-  **North is +x — to the right of the sofa as one faces it** (`createSky({ map: true, north: π/2 })`): the house and
-  the workshop face east, the morning sun reaches in under the pergola, at noon it stands over the garden's wall in the
-  south, by the afternoon the house's shadow lies over the terrace.
-- **The house** on the west side, its face at z −1.2 from the south wall (x −15) to x −0.6: four storeys of apricot
-  render, grey surrounds, white casements (some curtained, three lit at night), three dormers in the tiled roof. On its
-  ground floor from the south: the small white steel window behind the little maple, the front door of old wood on its
-  stone step under the arched glass canopy and the barn lamp, the bell plate, the letterbox on its post; the workshop's
-  steel window (window boxes on its sill, the bike before it) and its brown double door on a steel plate.
-- **The workshop** (the annex), x −2.6…3.2, its face at z 0: one storey of saffron render, the cornice with its black
-  tube ends, the big steel window (13 × 9 panes, clear) onto the studio behind it — a long table and benches, prints,
-  three bulbs, a skylight.
-- **The terrace** under the pergola, x −3.3…5.4, z 0…4.0, and the corner behind the workshop's north end (to z −1.3):
-  flagstones, two steel plates over the cellar's light well. The roof: clear corrugated polycarbonate on white rafters,
-  3.77 m at the workshop falling to 3.42 at the gutter; the grey steel (the beam south of the workshop, the corner post,
-  the long diagonal strut down to the workshop's corner, the fat column with its collar and two pipe braces, the slim
-  column); the larch frame in front (sills on the paving, three posts — the south ones leaning out — the header with the
-  rolled-up side awning, the brown gutter whose pipe runs back diagonally to the house's corner). Two sand sails sag
-  under the roof and glow by day. On it: the cognac club sofa centred under the window, the bamboo table, the bistro set
-  in the corner, white ribbed planters (mint, lavender, rosemary, a trailing plant, oregano, rosemary in flower), the
-  olive tree in its bowl, the bird of paradise, the monstera on the sill, the passion flower up its wire trellis, nine
-  paper lanterns (two big ones under the roof, the rest by the trellis, hung from the strut), the ficus outside.
-- **The neighbour's wall** along the terrace's back and north side: saffron to 1.72 m, a painted ledge (the toy monkey and
-  the toy bee on it, the festoon lights above, ivy over it), polycarbonate over it to 4.5 m, vines behind.
-- **The garden** in the south-west corner: pale gravel in a curb of granite setts, the oval teak table (its long axis
-  east–west, along the wall) with two oiled recliners, a weathered one and two pine folding chairs, a red tin and an
-  ashtray on it, the stoneware crock; the beds of bark mulch with the hedge along the house, rhododendrons under the
-  privet and the corkscrew willow by the south wall, the climber up it, honeysuckle and the ivy cone.
-- **The east side:** the shed (x −13…−6.2), its long wall facing the courtyard with the insect hotel, two floodlights,
-  the rain barrel under its pipe, the old lilac before it, the sapling in its pot; the gate south of it under its glass
-  canopy, the station clock and the plaque; the driveway north of it, ivy over its wall, out east through the passage
-  under the front house on the street. The neighbours' houses stand over the walls.
-- **Walked** at a courtyard's pace (1.4 m/s, Shift 3.2): the paving, the gravel, the terrace and its corner, the
-  driveway to the passage; not the beds, the walls or the furniture. **Filmed** as `world.sandbox: 'backyard'`; its
-  lights are the shot's `lamps` (the lanterns, the festoon, the front door's lamp, the studio, the lit windows). Its
-  sets: `stand-in sofa`, `stand-in bistro`, `stand-in garden` (sitting).
-- **Everything that never moves is welded** (`kit.ts`, `freeze`): one mesh per material, a hundred-odd draw calls for
-  some thousand parts. A material a world drives (the lanterns' paper) is still one material for all of them.
 
 ## Building a new world
 
@@ -176,8 +45,9 @@ ground and the garden `garden.ts`, the surfaces `surfaces.ts`, the tools and the
    - an admin page `/app/worlds/<world>/` with the time control (`SkyControl`, Auto/Manual);
    - a line in `WORLDS` (`src/lib/app/places.ts`).
 3. **Furnish it from the 3D models** (`models.md`). The world's own code keeps only its shell — walls, windows, doors,
-   what is outside — and its lights. A world of many parts welds what never moves (the backyard's `freeze`).
-4. **From photos:** one plan file of measures (the backyard's `layout.ts`) that every part is built from, so a wall
+   what is outside — and its lights. A world of many parts welds what never moves: one mesh per material,
+   a hundred-odd draw calls for some thousand parts.
+4. **From photos:** one plan file of measures that every part is built from, so a wall
    moved is moved everywhere; textures at their real size (every UV in metres).
 5. **Check it in the film camera** at the hours its shots use, from every camera position in the shot list. Then
    check it in its admin page with the time control on Manual.

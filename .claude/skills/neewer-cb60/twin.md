@@ -1,5 +1,9 @@
 # Its twin in the room
 
+The room world was removed on 2026-10-16. The CB60's 3D model stays in the Things library, and the shot's `cb60`
+light is kept so old shots still read, but it lights nothing now. What follows is how the twin stood and was lit, for
+a world that places it again.
+
 The CB60 stands in the room world too: the 3D model on its stand (`neewerCb60` in `src/lib/models/furniture.ts`, built
 to Neewer's measures, in the 3D models viewer) and its beam at the reflector (`src/lib/worlds/room.ts`), so a world shot
 is lit the way the real room is.

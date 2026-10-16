@@ -3,7 +3,7 @@
 // renders it on demand — live in the studio, as a proxy, or as a 4K log plate at render time.
 //
 //   spec = {
-//     world:    { sandbox: 'sandbox-1' … 'sandbox-4' | 'room' | 'tired-land' | 'isar' | 'backyard', area?, build: { commit, hash, file? } | null, seed, stand: [x, z],
+//     world:    { sandbox: 'sandbox-1' … 'sandbox-6' | 'tired-land', area?, build: { commit, hash, file? } | null, seed, stand: [x, z],
 //                 dome?, props?, clock },   which world (game/film/worlds.js) and where in it; dome and props are Sandbox 4's
 //     seconds, fps: 30, aspect: '1:1',          the shot's length, frame rate, and the shape it was composed for
 //     camera:   game/film/camera.js (move · orbit · turn · fly · whip · keys, with a curve),
@@ -12,8 +12,8 @@
 //     exposure: { meter: 'lock' | 'ramp' | 'fixed', stops, ev? },   metered like a camera (middle grey 18%), `stops`
 //               over or under it; `ev` = the metered (or, fixed, the given) gain in stops — once known, it is pinned
 //     lights:   [{ id: 'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass' | 'cb60', intensity?: k | [[t, k], …], color? }],  multipliers
-//               (glass: the low sun's warm sheen on the domes' glass, 0 = none, about 1–4 a glow; cb60: the room's Neewer CB60,
-//               off unless a shot names it, 1 = full)
+//               (glass: the low sun's warm sheen on the domes' glass, 0 = none, about 1–4 a glow; cb60: the Neewer CB60 of the
+//               room world, since removed; kept so its old shots still read)
 //     cues:     [{ at, kind: 'sound', hash, level } | { at, kind: 'event', name, args }],  on the shot's clock (seconds)
 //     shutter:  { angle: 180, samples: 1 },     motion blur: the shutter open for angle/360 of a frame, in samples
 //     framing:  { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },  a native camera per delivery shape (else the rule)
@@ -50,7 +50,7 @@ import { DEFAULT_SANDBOX, WORLDS } from './worlds.js';
  * }} Spec
  */
 /** @typedef {'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass' | 'cb60'} LightId */
-/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'sandbox-5' | 'sandbox-6' | 'room' | 'tired-land' | 'isar' | 'backyard'} Sandbox */
+/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'sandbox-5' | 'sandbox-6' | 'tired-land'} Sandbox */
 
 /** The delivery shapes, width over height. */
 export const SHAPES = /** @type {Record<Shape, number>} */ ({ '1:1': 1, '16:9': 16 / 9, '9:16': 9 / 16, '4:5': 4 / 5 });

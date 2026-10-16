@@ -28,19 +28,9 @@ export const WORLDS = {
 	// a valley of settlers, played by its autoplayer from the same seed: roads, carriers, workshops
 	// (src/lib/sandbox-6)
 	'sandbox-6': { label: 'Sandbox 6 · a valley of settlers', areas: null },
-	// a real apartment, built from photos: Samuel's 14 m² room — the bed, two wine-crate towers, two chairs, the window,
-	// the door, a bulb — and round it the hallway, the kitchen and the bathroom (src/lib/worlds/room.ts, apartment.ts;
-	// Day 02)
-	room: { label: 'Apartment of Samuel · his room, the hallway, the kitchen, the bathroom', areas: null, sets: ['stand-in sitting', 'stand-in fallen', 'stand-in window'] },
 	// the tired land on its own: the fields, the highway, the trucks (src/lib/worlds/tired-land.ts; the same set as
 	// Sandbox 4's `tired-land`)
-	'tired-land': { label: 'The tired land · fields, a highway, trucks', areas: null },
-	// a real river: the Isar in Munich from the Wittelsbacherbrücke south to the railway bridge, flowing north — its
-	// ground the survey's, its banks, paths and bridges OpenStreetMap's (src/lib/worlds/isar)
-	isar: { label: 'The Isar · Wittelsbacherbrücke to the railway bridge', areas: null },
-	// a real backyard in Munich, built from photos: the courtyard, the pergola terrace in front of the old workshop, the
-	// garden corner, the shed and the driveway (src/lib/worlds/backyard)
-	backyard: { label: 'The backyard · the courtyard, the pergola terrace, the garden', areas: null, sets: ['stand-in sofa', 'stand-in bistro', 'stand-in garden'] }
+	'tired-land': { label: 'The tired land · fields, a highway, trucks', areas: null }
 };
 
 /** Where a shot is when it names no world: the film camera's first world. */

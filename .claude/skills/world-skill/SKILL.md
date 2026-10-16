@@ -5,8 +5,7 @@ description: The maiaCITY world skill — the worlds and sandboxes everything is
 
 # Worlds: where everything is placed
 
-A world is a place to walk and to film: the room, the Apartment, the tired land, the Isar in Munich, the backyard
-(`src/lib/worlds`, `/app/worlds`), and the sandboxes (`src/lib/sandbox-*`, `/app/games`). The laws, the shared core
+A world is a place to walk and to film: the tired land (`src/lib/worlds`, `/app/worlds`), and the sandboxes (`src/lib/sandbox-*`, `/app/games`). The laws, the shared core
 (refs, one version control) and how we check are the `asset-producer`'s; this is how a world is made. The details of
 each film world (axes, where things are, how its light falls) are in `production-designer`'s `worlds.md`.
 
@@ -16,7 +15,7 @@ each film world (axes, where things are, how its light falls) are in `production
   `/app/worlds/<world>/` with the time control.
 - A line in `WORLDS` or `PLAY` (`src/lib/app/places.ts`) with its `versions` and what it is `anchors`ed to; the film
   registers it in `game/film/worlds.js` and `game/film/shot.js`.
-- Its ref: `worlds/<id>@<v>`, the id the last part of its address (`worlds/sandbox-5@9`, `worlds/isar`).
+- Its ref: `worlds/<id>@<v>`, the id the last part of its address (`worlds/sandbox-5@9`, `worlds/tired-land`).
 
 ## How it is built
 
@@ -41,16 +40,16 @@ for the studio's film camera. A world chooses only its size (how far shadows and
 2. **Register it** (Where it lives).
 3. **The world keeps only its shell** (walls, windows, doors, what is outside) and its lights. Everything else comes
    from the libraries (Composable).
-4. **A real place**: one plan file of measures that every part is built from (the backyard's `layout.ts`), so a wall
-   moved is moved everywhere; textures at their real size (every UV in metres); from map data where it exists (the
-   Isar from OpenStreetMap and terrain, `scripts/worlds/isar-map.py`); from photos for a room, with the estimates
+4. **A real place**: one plan file of measures that every part is built from, so a wall
+   moved is moved everywhere; textures at their real size (every UV in metres); from map data where it exists
+   (OpenStreetMap and survey terrain); from photos for a room, with the estimates
    named. The person who lives there notices a window on the wrong side at once.
 5. **Real scale, real speeds**: distances in metres and speeds in m/s (`SPEED` in `src/lib/models/units.js`: walk 5,
    track 30, highway 80 km/h). A long drive is shortened by film cuts, never by speeding up.
 
 ### Many things, cheaply
 
-- Weld what never moves: one mesh per material (the backyard's `freeze`), a hundred-odd draw calls for a whole yard.
+- Weld what never moves: one mesh per material, a hundred-odd draw calls for a whole yard.
 - Instance what repeats: a tree as two geometries (wood, leaves) for instancing; a biome's cover as one instanced
   mesh a kind (`biome-skill`).
 - Far things as impostors: a forest draws near trees in full, further ones coarser, the far ones as one card turned
