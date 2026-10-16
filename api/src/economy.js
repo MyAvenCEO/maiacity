@@ -15,7 +15,8 @@
  * stood (its state), so the page can open it again and play on.
  */
 import { db } from "./pg";
-import { PARAMS, SECTIONS, CARD_KINDS, HOOKS, applyCards, checkCard, defaultCards, fullCards, paramsOf } from "../../game/economy/params.js";
+import { PARAMS, SECTIONS, CARD_KINDS, HOOKS, applyCards, defaultCards, fullCards, paramsOf } from "../../game/economy/params.js";
+import { checkCode } from "../../game/code/check.js";
 
 export class EconomyError extends Error {
   constructor(message, status = 400) {
@@ -142,10 +143,11 @@ async function checkMip(body, q = db) {
   if (json(raw).length > MAX_MIP) throw new EconomyError("That MIP is too large.", 413);
   const cards = [];
   for (const c of raw) {
-    const r = checkCard(c);
-    if (r.error) throw new EconomyError(r.error);
-    if (cards.some((x) => x.id === r.card.id)) throw new EconomyError(`Card ${r.card.id} is in this MIP twice.`);
-    cards.push(r.card);
+    // the one checker (game/code/check.js): its shape, its data plain JSON, its code a module QuickJS can run alone
+    const r = checkCode("rule-card", c);
+    if (!r.ok) throw new EconomyError(r.errors[0]);
+    if (cards.some((x) => x.id === r.value.id)) throw new EconomyError(`Card ${r.value.id} is in this MIP twice.`);
+    cards.push(r.value);
   }
   const remove = [];
   for (const id of body?.remove ?? []) {
@@ -424,9 +426,9 @@ async function createWorld(player, body, q = db) {
     if (body.cards.length > MAX_CARDS) throw new EconomyError(`At most ${MAX_CARDS} cards.`);
     cards = [];
     for (const raw of body.cards) {
-      const c = checkCard(raw);
-      if (c.error) throw new EconomyError(c.error);
-      cards.push(c.card);
+      const c = checkCode("rule-card", raw);
+      if (!c.ok) throw new EconomyError(c.errors[0]);
+      cards.push(c.value);
     }
   }
   cards = fullCards(cards); // the world keeps its whole rulebook, every rule's code written out

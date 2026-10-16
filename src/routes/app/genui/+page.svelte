@@ -10,7 +10,7 @@
 	import { onMount } from 'svelte';
 	import { apiCall } from '$lib/auth/client';
 	import ViewHost from '$lib/sandbox/ViewHost.svelte';
-	import { check } from '../../../../game/genui/views.js';
+	import { checkCode } from '$lib/code/check.js';
 	import { EXAMPLES } from '../../../../game/genui/examples.js';
 
 	let views = $state([]);
@@ -22,20 +22,18 @@
 	async function load() {
 		try {
 			const r = await apiCall('/api/genui');
-			// the API keeps only checked views; checked again here, so a view the page cannot draw safely is never drawn
+			// the API keeps only views the one checker passed (game/code/check.js); its shape is checked again here, as
+			// code already kept: whatever else it holds, the view host's engine drops
 			const next = [];
 			for (const v of r.views) {
-				try {
-					next.push({ ...check(v), version: v.version, via: v.via, updated: v.updated });
-				} catch (e) {
-					next.push({ id: v.id, title: v.title, broken: e.message, version: v.version });
-				}
+				const c = checkCode('view', v, { mode: 'read' });
+				next.push(c.ok ? { ...c.value, version: v.version, via: v.via, updated: v.updated } : { id: v.id, title: v.title, broken: c.errors.join(' '), version: v.version });
 			}
 			const changed = next.length !== views.length || next.some((v, i) => v.id !== views[i]?.id || v.version !== views[i]?.version);
 			if (changed) views = next;
 			offline = '';
 		} catch (e) {
-			if (!views.length) views = EXAMPLES.map((v) => ({ ...check(v), version: 1, via: 'example' }));
+			if (!views.length) views = EXAMPLES.map((v) => ({ ...checkCode('view', v, { mode: 'read' }).value, version: 1, via: 'example' }));
 			offline = e.message || String(e);
 		}
 	}
