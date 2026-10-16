@@ -18,7 +18,7 @@
 	import { createSky, createStage, WorldBar } from '$lib/sandbox-kit';
 
 	/** the kinds checked unless the address names others */
-	const SAMPLE = ['machines/pickup', 'machines/lifetrac', 'machines/batterycube', 'things/bell-tent', 'things/dome-tent', 'things/chicken-coop', 'things/bistro-chair', 'actors/goat:goat-saanen', 'actors/stand-in', 'plants/walnut?stage=9', 'plants/apple@2?stage=9'];
+	const SAMPLE = ['machines/pickup', 'machines/lifetrac', 'machines/batterycube', 'things/bell-tent', 'things/dome-tent', 'things/chicken-coop', 'things/tent-bag', 'actors/goat:goat-saanen', 'actors/stand-in', 'plants/walnut?stage=9', 'plants/apple@2?stage=9'];
 	/**
 	 * where the eye looks from: a little to the right of the front, a little above; and for a picture, also from one
 	 * of the eight sides it was photographed from (between two, it shows the nearer: what eight sides cost)

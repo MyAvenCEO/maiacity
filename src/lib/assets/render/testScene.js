@@ -2,7 +2,7 @@
 /*
  * THE RENDERER'S TEST SCENE — a thousand of our assets of every group in one place, the gate of phase 4 of the asset
  * pipeline (/mnt/project-files/asset-audit/e2e-plan.md): a square of 240 m, a village's green in the middle with its
- * tables, chairs, bikes and stalls, a yard of machines to the east, a pasture of animals and people to the south, an
+ * tables, seats, tents and stalls, a yard of machines to the east, a pasture of animals and people to the south, an
  * orchard round them with its shrubs and the plants under them, and a ring of tall nut trees outside. Laid out from one
  * seed, so it is the same every time, and walked by the lab (/app/assets/render/) from the same three places.
  */
@@ -61,19 +61,19 @@ export const KINDS = {
 	],
 	// the green
 	things: [
-		['things/park-bench', 16, 2.5],
-		['things/bistro-table', 14],
-		['things/bistro-chair', 56],
-		['things/folding-chair', 16],
+		['things/sofa', 16, 2.5],
+		['things/bistro-set', 14],
+		['things/bar-stool-round', 56],
+		['things/backpack', 16],
 		['things/long-table', 6, 5],
 		['things/parasol', 10, 3],
-		['things/city-bike', 18],
-		['things/rain-barrel', 12],
-		['things/terracotta-pot', 36],
-		['things/planter-lavender', 12],
-		['things/mailbox-post', 6],
-		['things/barn-lamp', 12],
-		['things/insect-hotel', 6],
+		['things/loading-ramp', 18],
+		['things/tent-bag', 12],
+		['things/potted-rosemary', 36],
+		['things/potted-lavender', 12],
+		['things/plant-stake', 6],
+		['things/paper-lantern-big', 12],
+		['things/dug-earth', 6],
 		['things/kiosk', 3, 6],
 		['things/bread-oven', 2, 4],
 		['things/fire-place', 6, 3],
@@ -82,7 +82,7 @@ export const KINDS = {
 		['things/chicken-coop', 3, 4],
 		['things/rabbit-hutch', 3, 3],
 		['things/solar-panel', 12, 3],
-		['things/station-clock', 1]
+		['things/water-bottle', 1]
 	],
 	// the yard
 	machines: [

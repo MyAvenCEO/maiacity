@@ -1,16 +1,16 @@
 /*
- * THE BATHROOM'S MODELS — the wall-hung WC, the wall-hung basin and its tap, the glass shower with its rain head, the
- * white towel radiator. Each to its real measure; wall-hung things have their back at z 0 and stand on the floor at
+ * THE WC AND THE BASIN — the wall-hung WC and the wall-hung basin with its tap, as the sanitary container fits them
+ * (./containers.js). They were the bathroom's of Samuel's apartment; the bathroom's Things went with that world on
+ * 2026-10-16, these two stay for the container. Each to its real measure; their back at z 0, standing on the floor at
  * their origin, their front towards +z.
  */
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { bar, part, shared, std, v3 } from './parts';
+import { bar, part, std, v3 } from './parts';
 
 const m = {
 	porcelain: std('#f7f7f4', 0.22),
 	chrome: std('#dadada', 0.15, { metalness: 1 }),
-	glass: shared(() => new THREE.MeshPhysicalMaterial({ color: '#e9f1f2', roughness: 0.05, transmission: 0.9, transparent: true, opacity: 0.25, depthWrite: false })),
 	white: std('#f4f4f1', 0.35)
 };
 
@@ -49,40 +49,5 @@ export function washbasin({ w = 0.6 }: { w?: number } = {}): THREE.Group {
 	lever.rotation.x = Math.PI / 2;
 	lever.position.set(0, 1.1, 0.005);
 	g.add(lever);
-	return g;
-}
-
-/** A frameless glass shower, `w` × `d`: a fixed glass wall and a glass door on the open side, a rain head under the
- *  ceiling (`ceiling` m high) and a hand shower on its rail. Its back wall at z 0, its floor at y 0. */
-export function glassShower({ w = 0.9, d = 0.9, ceiling = 2.5 }: { w?: number; d?: number; ceiling?: number } = {}): THREE.Group {
-	const g = new THREE.Group();
-	g.name = 'glass shower';
-	const pane = (pw: number, x: number, z: number, ry: number) => {
-		const p = new THREE.Mesh(new THREE.PlaneGeometry(pw, 2.0), m.glass());
-		p.position.set(x, 1.0, z);
-		p.rotation.y = ry;
-		g.add(p);
-	};
-	pane(w, 0, d, 0); // the front, the door in it
-	bar(g, v3(-w / 2, 2.0, d), v3(w / 2, 2.0, d), 0.006, m.chrome());
-	const head = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.012, 32), m.chrome());
-	head.position.set(0, ceiling - 0.12, d / 2);
-	g.add(head);
-	bar(g, v3(0, ceiling, d / 2), v3(0, ceiling - 0.12, d / 2), 0.01, m.chrome());
-	bar(g, v3(w / 2 - 0.15, 0.9, 0.02), v3(w / 2 - 0.15, 1.9, 0.02), 0.01, m.chrome()); // the rail
-	part(g, 0.6, 0.012, 0.05, std('#333', 0.5)(), 0, 0.006, d - 0.08, false); // the drain
-	return g;
-}
-
-/** A white towel radiator, `w` × `h`: two uprights, a ladder of round rails. Its back at z 0, its foot at y 0.15. */
-export function towelRadiator({ w = 0.5, h = 1.4 }: { w?: number; h?: number } = {}): THREE.Group {
-	const g = new THREE.Group();
-	g.name = 'towel radiator';
-	for (const x of [-w / 2, w / 2]) bar(g, v3(x, 0.15, 0.05), v3(x, 0.15 + h, 0.05), 0.016, m.white());
-	const n = 14;
-	for (let k = 0; k < n; k++) {
-		const y = 0.2 + (k * (h - 0.1)) / (n - 1);
-		bar(g, v3(-w / 2, y, 0.05), v3(w / 2, y, 0.05), 0.011, m.white());
-	}
 	return g;
 }

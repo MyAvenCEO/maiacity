@@ -49,4 +49,4 @@ softer or warmer, never invented.
 | `world-light.md` | light in the worlds | the sun by the hour, the room's north window and bulb, three.js light units, matching the real room to its twin |
 
 Its fixtures: **`neewer-cb60`** — the Neewer CB60 RGB on its stand in the room: its modes, settings and recipes, and its
-twin, the shot's `cb60` light.
+twin as the room world had it (the model and that world removed 2026-10-16; the shot's `cb60` light).
