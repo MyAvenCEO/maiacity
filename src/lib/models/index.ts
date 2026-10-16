@@ -1,5 +1,5 @@
 /*
- * THE MODELS — every reusable still model, as the Things viewer (/app/models/) lists it (the containers are the Buildings', below): its name, what it is, where
+ * THE MODELS — every reusable still model, as the Things viewer (/app/models/) lists it (the containers and the wayside are the Buildings', $lib/buildings/built.js): its name, what it is, where
  * it is used, and the function that builds it (./furniture.ts, ./hallway.ts, ./kitchen.ts, ./bathroom.ts,
  * ./outdoor.ts, ./terrace.ts, ./yard.ts, ./containers.js, ./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js, ./belltent.js; a machine that works or has moving parts is a machine, $lib/machines (/app/machines/), and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
@@ -12,7 +12,6 @@ import { gasBoiler, kitchenRun, panRail, pedalBin, xShelf } from './kitchen';
 import { glassShower, towelRadiator, washbasin, wallToilet } from './bathroom';
 import { bridgeLamp, equestrianStatue, limestoneBlock, parkBench, tree } from './outdoor';
 import { bambooTable, bistroChair, bistroTable, clubSofa, festoonLights, ficusTree, geraniumPot, monstera, oliveTree, paperLantern, ribbedPlanter, strelitzia, terracottaPot, toyBee, toyMonkey } from './terrace';
-import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from './containers';
 import { ashtray, barnLamp, casementWindow, cityBike, doorCanopy, entranceDoor, floodlight, foldingChair, hedge, insectHotel, ivyCone, mailboxPost, rainBarrel, redTin, stationClock, steelWindow, stonewareCrock, teakRecliner, teakTable, windowBox, workshopDoor } from './yard';
 
 import { henDome, playDome, rabbitDome } from './minidomes.js';
@@ -20,7 +19,7 @@ import { VILLAGE_INFO, loadingRamp, pickup, solarPanel } from './village.js';
 import { ALL_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle } from './planting.js';
 import { domeTent, packedTent, storageTent, storageTentBag } from './tent.js';
 import { bellTent, bellTentBag, firePlace } from './belltent.js';
-import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, travelVan, villageStore } from './wayside.js';
+import { WAYSIDE_INFO, travelVan } from './wayside.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
@@ -240,21 +239,3 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 
 export const MODELS: Model[] = versioned([...LIST, ...DOME_ROOMS], 'make', HISTORY);
 
-/** the shipping containers, fitted out to walk in: the Buildings' (/app/buildings/, $lib/buildings), not the assets' */
-const CONTAINER_LIST: Omit<Model, 'versions' | 'version'>[] = [
-	{ id: 'container-kitchen', label: 'Kitchen container', note: "a 40' high cube (12.19 × 2.44 × 2.90 m) fitted as the crew's central kitchen: six-burner range under its hood, combi steamer, sinks, dishwasher, fridges and freezer, the serving hatch — and the pantry behind a partition. Walk in", usedIn: 'Sandbox 1', make: () => kitchenContainer() },
-	{ id: 'container-workshop', label: 'Workshop container', note: "the workshop: a 4 m bench under a pegboard of hand tools, timber rack, pillar drill, grinder, mitre saw, table saw, welder, compressor, cordless tools in their cases, spades, ladder, wheelbarrow; a mixer outside. Walk in", usedIn: 'Sandbox 1', make: () => workshopContainer() },
-	{ id: 'container-tech', label: 'Tech container', note: "28 solar panels (about 11 kWp) on the roof and fold-out wings, 40 kWh of batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, and the AI server room behind glass. Walk in", usedIn: 'Sandbox 1', make: () => techContainer() },
-	{ id: 'container-sanitary', label: 'Sanitary container', note: 'washing machines and dryers, three washbasins, three showers and three toilets in cubicles, the hot-water heat pump; a rainwater tank outside. Walk in', usedIn: 'Sandbox 1', make: () => sanitaryContainer() },
-];
-export const CONTAINERS: Model[] = versioned(CONTAINER_LIST, 'make', HISTORY);
-
-/** the wayside of MaiaCity V1: buildings on the dusty highway and at the village centre, and the places they make together */
-const WAYSIDE_LIST: (Omit<Model, 'versions' | 'version'> & { group: string })[] = [
-	{ id: 'bus-stop', label: 'Bus stop', group: 'Wayside', note: `${WAYSIDE_INFO.busStop.note}. Where every newcomer steps off`, usedIn: 'MaiaCity V1', make: () => busStop() },
-	{ id: 'gas-station', label: 'Abandoned gas station', group: 'Wayside', note: `${WAYSIDE_INFO.gasStation.note}. The old world, left behind at the city's centre`, usedIn: 'MaiaCity V1', make: () => gasStation() },
-	{ id: 'old-shed', label: 'Old shed', group: 'Wayside', note: WAYSIDE_INFO.shed.note, usedIn: 'MaiaCity V1', make: () => oldShed() },
-	{ id: 'maia-centre', label: 'MaiaCity centre', group: 'Places', note: 'the centre of the city plot today, where the sand highway ends: the abandoned gas station at the road’s end, the bus stop, the travel van pulling in. Where the story starts', usedIn: 'MaiaCity V1', make: () => maiaCentre() },
-	{ id: 'village-store', label: 'Village store', group: 'Places', note: "the village centre's future storage area: the broken shed with the powercube inside, the solar row and the battery beside it. All the Village COOP's", usedIn: 'MaiaCity V1', make: () => villageStore() }
-];
-export const WAYSIDE: Model[] = versioned(WAYSIDE_LIST, 'make', HISTORY);

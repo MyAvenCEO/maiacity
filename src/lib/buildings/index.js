@@ -1,13 +1,18 @@
 /*
- * THE BUILDINGS — what a settlement lives and works in, as the Buildings viewer (/app/buildings/) lists it: the tent a
- * settler starts in, the domes of a village and the factory that makes their glass (built alone, as Sandbox 3's
- * village builds them into its world: $lib/sandbox-2/interior), and the shipping containers fitted out as the crew's
- * kitchen, workshop, power and washroom (Sandbox 1's, $lib/models/containers.js). Each stands on the same round ground
- * (./ground.js) on the turntable, and is stepped inside there.
+ * THE BUILDINGS — what a settlement lives and works in, as the Buildings viewer (/app/buildings/, the one asset viewer
+ * $lib/assets/AssetViewer.svelte) lists it: the tent a settler starts in, the domes of a village and the factory that
+ * makes their glass, and the shipping containers fitted out as the crew's kitchen, workshop, power and washroom and
+ * the wayside of MaiaCity V1 (./built.js). Each stands on the same round ground (./ground.js), and is stepped inside
+ * there.
+ *
+ * The containers and the wayside are built in the asset box, each a recipe of the `buildings` group
+ * ($lib/assets/groups.js). The tent and the domes are worlds in disguise: each is Sandbox 3's interior of that kind
+ * ($lib/sandbox-2/interior), built alone, without the land round it, by that world's own code (./inside.js), as
+ * Sandbox 3's village builds it into its world; they stay world code until their interiors are assets of their own.
  */
 import { DOMES } from '$lib/sandbox-2/interior/interior';
 import { DOMES_IN_ORDER } from './domes.js';
-import { CONTAINERS, WAYSIDE } from '$lib/models';
+import { CONTAINERS, WAYSIDE } from './built.js';
 import { versioned } from '$lib/app/versions.js';
 
 /** @typedef {import('$lib/sandbox-2/interior/interior').DomeKind} DomeKind */

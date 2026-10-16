@@ -22,8 +22,8 @@ export { parseRef, refOf } from './refs.js';
 /** @typedef {import('./groups.js').Item} Item an asset as its group lists it */
 
 /**
- * Every group: the four built as one object (./groups.js, which the asset box loads too) and the four that are not
- * (a factory's spec, a biome's recipe, a building's interior kind, a world's page).
+ * Every group: the ones built as one object (./groups.js, which the asset box loads too) and what is not (a factory's
+ * spec, a biome's recipe, a dome's interior kind, a world's page).
  * @type {Record<string, import('./groups.js').Group>}
  */
 export const GROUPS = {
@@ -31,7 +31,9 @@ export const GROUPS = {
 	factories: { label: 'Factories', list: async () => (await import('$lib/factories/index.js')).FACTORIES },
 	...OBJECT_GROUPS,
 	biomes: { label: 'Biomes', list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/biomes')).BIOMES)) },
-	buildings: { label: 'Buildings', list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/buildings')).BUILDINGS)) },
+	// every building: the ones built as one object, which the box builds (./groups.js), and the tent and the domes, worlds
+	// in disguise built by Sandbox 3's interiors (objectAt throws for one of them, as for a biome)
+	buildings: { ...OBJECT_GROUPS.buildings, list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/buildings')).BUILDINGS)) },
 	worlds: {
 		label: 'Worlds',
 		list: async () => {

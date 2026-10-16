@@ -1,7 +1,8 @@
 // @ts-nocheck — plain JS
 // Engine 4 of the asset pipeline: what a viewer needs of a build read in the box (./view.js), carried out as data
 // (./serialize.js, format 3), checked and rebuilt in the page (./rebuild.js); a skinned actor bound to its own bones;
-// and a build kept running in the box (./live.js), its steps handed back as numbers the page's copy follows.
+// and a build kept running in the box (./live.js), its steps handed back as numbers the page's copy follows; a
+// building's roof and walk, and every building built as one object (the domes are not: worlds in disguise).
 // Run: bun test src/lib/assets/box/view.test.js
 import { expect, test } from 'bun:test';
 
@@ -135,6 +136,47 @@ test('a plant in its fruit view: one fruit on its own, or a note when it bears n
 	const none = await through('plants/basil?fruit=1');
 	expect(none.root.userData.view.note).toMatch(/no fruit|not set/);
 });
+
+test('a container: its roof and where it is walked in from leave as data, on the same nodes, and its card says it is a building', async () => {
+	const { obj, root, view, meta } = { ...(await through('buildings/container-kitchen')), meta: (await made('buildings/container-kitchen')).meta };
+	expect(meta.group).toBe('buildings');
+	const nodes = walk(root), theirs = walk(obj);
+	// the roof the viewer lifts off: its builder's roof, node for node
+	expect(view.roof?.length).toBeGreaterThan(0);
+	for (const n of view.roof) expect(nodes[n].name).toBe(theirs[n].name);
+	expect(theirs[view.roof[0]]).toBe(obj.userData.roof);
+	// walked in from where its builder says, its lamps lit inside
+	const w = obj.userData.walk;
+	expect(root.userData.view.walk).toEqual({ x: w.x, z: w.z, yaw: w.yaw, lamps: w.lamps.map((l) => [...l]) });
+	const verdict = checkCard(cardOf(obj, meta, { recipe: 'ab'.repeat(32), engine: 4 }));
+	expect(verdict.ok ? [] : verdict.errors).toEqual([]);
+});
+
+test('every building built as one object: built through the box’s side and the page’s, its card fits; the tent and the domes are worlds in disguise, never a recipe', async () => {
+	const list = await OBJECT_GROUPS.buildings.list();
+	const failed = [];
+	for (const item of list) {
+		const label = `buildings/${item.id}`;
+		const { obj, meta, view, root } = { ...(await through(label)), meta: (await made(label)).meta };
+		let meshes = 0;
+		root.traverse((o) => (meshes += o.isMesh ? 1 : 0));
+		if (!meshes) failed.push(`${label}: nothing drawn`);
+		const verdict = checkCard(cardOf(obj, meta, { recipe: 'ab'.repeat(32), engine: 4 }));
+		if (!verdict.ok) failed.push(`${label}: ${verdict.errors.slice(0, 2).join('; ')}`);
+		// a container is walked and its roof lifted, as it always was
+		if (item.id.startsWith('container-') && !(view.walk && view.roof?.length)) failed.push(`${label}: no walk or roof`);
+	}
+	expect(failed).toEqual([]);
+	expect(list.map((x) => x.id)).toEqual(['container-kitchen', 'container-workshop', 'container-tech', 'container-sanitary', 'bus-stop', 'gas-station', 'old-shed', 'maia-centre', 'village-store']);
+	// every building, the domes too, in the page's group; only those built as one object in the box's
+	const { GROUPS, objectAt } = await import('../index.js');
+	const all = await GROUPS.buildings.list();
+	expect(all.length).toBe(16);
+	const domes = all.filter((b) => 'dome' in b);
+	expect(domes.map((d) => d.id)).toEqual(['dome-tent', 'dome-glamp', 'dome-home', 'dome-large', 'dome-grand', 'dome-master', 'dome-factory']);
+	expect(all.filter((b) => !('dome' in b)).map((b) => b.id)).toEqual(list.map((x) => x.id));
+	await expect(objectAt('buildings/dome-grand@2')).rejects.toThrow(/not built as one object/);
+}, 600000);
 
 test('a running build on the page: the stage asks, the box steps, the page copy follows, checked', async () => {
 	const { heroOf } = await import('../hero.js');

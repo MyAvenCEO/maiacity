@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS
 // Phase 1 of the asset pipeline: every asset's card fits its schema, and a card made to do harm is refused.
-// Run: bun test src/lib/assets/schemas            (five sample assets and every hostile card)
+// Run: bun test src/lib/assets/schemas            (a sample asset of every group the box builds, and every hostile card)
 //      ALL_ASSETS=1 bun test src/lib/assets/schemas   (the card of every asset, every version, every variant, each
 //                                                      built at its own declared values)
 import { expect, test } from 'bun:test';
@@ -16,14 +16,15 @@ const { metaOf, recipesIn } = await import('../recipe.js');
 const { checkCard, checkText, CARD, ASSET } = await import('./index.js');
 const { hostileCards } = await import('./hostile.js');
 
-const SAMPLES = ['plants/apple?seed=maia&stage=9', 'things/bell-tent', 'machines/powercube@3', 'machines/pickup@1:pickup-cube', 'actors/stand-in'];
+const SAMPLES = ['plants/apple?seed=maia&stage=9', 'things/bell-tent', 'machines/powercube@3', 'machines/pickup@1:pickup-cube', 'actors/stand-in', 'buildings/container-tech'];
 
 const cardAt = async (ref) => {
 	const at = await assetAt(ref);
 	return cardOf(await objectAt(ref), metaOf(at.group, at.item, at.version, parseRef(ref).variant), { recipe: 'ab'.repeat(32), engine: 1 });
 };
 
-test('the five sample assets: their cards fit, with the values they were built with', async () => {
+test('the sample assets, one of every group the box builds: their cards fit, with the values they were built with', async () => {
+	expect(new Set(SAMPLES.map((r) => parseRef(r).group))).toEqual(new Set(Object.keys(OBJECT_GROUPS)));
 	for (const ref of SAMPLES) {
 		const card = await cardAt(ref);
 		const verdict = checkCard(card);
