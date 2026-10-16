@@ -36,13 +36,37 @@ const signatureOf = (g) =>
 /** a shape's indices, made when it has none */
 const indexOf = (g) => (g.index ? g.index.array : Uint32Array.from({ length: g.attributes.position.count }, (_, i) => i));
 
-/** the part of a shape one of its groups draws, as a shape of its own sharing its corners */
+/** each corner's new number in the group being cut out, -1 for none: kept between groups, and only as big as needed */
+let renumber = new Int32Array(0);
+
+/**
+ * The part of a shape one of its groups draws, as a shape of its own with only the corners it uses: a machine built
+ * as one shape of half a million corners in two hundred materials is two hundred small shapes, not two hundred copies
+ * of the whole (welded again by material below, they would be a hundred million corners).
+ */
 function groupOf(g, group) {
-	const s = new THREE.BufferGeometry();
-	for (const [k, a] of Object.entries(g.attributes)) s.setAttribute(k, a);
 	const idx = indexOf(g);
 	const end = Math.min(idx.length, group.start + group.count);
-	s.setIndex(new THREE.BufferAttribute(Uint32Array.from(idx.subarray(group.start, end)), 1));
+	const n = g.attributes.position.count;
+	if (renumber.length < n) renumber = new Int32Array(n).fill(-1);
+	/** the corners it uses, in the order they first come */
+	const used = [];
+	const index = new Uint32Array(Math.max(0, end - group.start));
+	for (let t = group.start; t < end; t++) {
+		const v = idx[t];
+		if (renumber[v] < 0) renumber[v] = used.push(v) - 1;
+		index[t - group.start] = renumber[v];
+	}
+	for (const v of used) renumber[v] = -1;
+	const s = new THREE.BufferGeometry();
+	for (const [k, a] of Object.entries(g.attributes)) {
+		const size = a.itemSize;
+		const to = new THREE.BufferAttribute(new a.array.constructor(used.length * size), size, a.normalized);
+		if (a.isInterleavedBufferAttribute) used.forEach((v, i) => { for (let c = 0; c < size; c++) to.setComponent(i, c, a.getComponent(v, c)); });
+		else used.forEach((v, i) => to.array.set(a.array.subarray(v * size, v * size + size), i * size));
+		s.setAttribute(k, to);
+	}
+	s.setIndex(new THREE.BufferAttribute(index, 1));
 	return s;
 }
 
