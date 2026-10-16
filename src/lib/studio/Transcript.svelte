@@ -296,11 +296,11 @@
 	}
 
 	.w:hover {
-		background: rgb(230 238 247 / 0.08);
+		background: rgb(38 56 44 / 0.07);
 	}
 
 	.w.out {
-		color: #5f7690;
+		color: var(--dim);
 	}
 
 	.w.low {

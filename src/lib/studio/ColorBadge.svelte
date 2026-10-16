@@ -122,7 +122,7 @@
 		border: 1px solid var(--edge, #e2dccd);
 		border-radius: 8px;
 		background: var(--raised);
-		box-shadow: 0 10px 30px rgb(0 0 0 / 0.55);
+		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 		font-size: 0.72rem;
 	}
 

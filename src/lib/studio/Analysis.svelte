@@ -176,13 +176,13 @@
 		background: #d67fb1;
 	}
 	:global(.cue-kind.cut) {
-		background: #e8e0c8;
+		background: #b8ad90;
 	}
 	:global(.cue-kind.transition) {
 		background: #3fae96;
 	}
 	:global(.cue-kind.highlight) {
-		background: #f2c14e;
+		background: #d9a52c;
 	}
 	:global(.cue-kind.problem) {
 		background: var(--rec, #ff5a4c);

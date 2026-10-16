@@ -842,13 +842,13 @@
 
 	.mix .loud {
 		fill: none;
-		stroke: rgb(230 238 247 / 0.4);
+		stroke: rgb(38 56 44 / 0.4);
 		stroke-width: 1;
 		vector-effect: non-scaling-stroke;
 	}
 
 	.mix .env {
-		fill: rgb(230 238 247 / 0.1);
+		fill: rgb(38 56 44 / 0.08);
 		stroke: var(--ink);
 		stroke-width: 1.5;
 		vector-effect: non-scaling-stroke;
@@ -907,8 +907,8 @@
 	.clip.image,
 	.clip.video {
 		display: flex;
-		border-color: #4fae84;
-		background: #103527;
+		border-color: #5aa77f;
+		background: #d6eadc;
 	}
 
 	/* the grade's stacks (Grade), one row each over V1: a bar per shot, per scene or the whole timeline, in its stack's
@@ -978,8 +978,8 @@
 		bottom: 0.3rem;
 		overflow: hidden;
 		padding: 0.2rem 0.4rem;
-		border-left: 2px solid rgb(230 238 247 / 0.45);
-		background: rgb(230 238 247 / 0.04);
+		border-left: 2px solid rgb(38 56 44 / 0.35);
+		background: rgb(38 56 44 / 0.03);
 		font-size: 0.7rem;
 		cursor: pointer;
 	}
@@ -1000,23 +1000,23 @@
 	}
 
 	.sec.hook {
-		background: #3a2c13;
+		background: #f6e6c2;
 	}
 
 	.sec.act1 {
-		background: #162b4a;
+		background: #dde5f3;
 	}
 
 	.sec.act2 {
-		background: #15322a;
+		background: #d8eadf;
 	}
 
 	.sec.act3 {
-		background: #281f48;
+		background: #e6def4;
 	}
 
 	.sec.cliffhanger {
-		background: #3d1f1c;
+		background: #f4dcd3;
 	}
 
 	.sec.mark {
@@ -1059,7 +1059,7 @@
 	}
 
 	.tension .release {
-		stroke: #8fb59a;
+		stroke: #5d9a70;
 		stroke-dasharray: 5 3;
 	}
 
@@ -1085,19 +1085,19 @@
 		border-radius: 50%;
 		transform: translateY(-50%);
 		background: currentColor;
-		box-shadow: 0 0 0 2px rgb(0 0 0 / 0.45);
+		box-shadow: 0 0 0 2px rgb(250 248 242 / 0.9);
 	}
 
 	.feel.warm {
-		color: #e9b45c;
+		color: #b37a12;
 	}
 
 	.feel.cold {
-		color: #8fb0e6;
+		color: #3a5ea6;
 	}
 
 	.feel.open {
-		color: #e6e0d4;
+		color: #6b6458;
 	}
 
 	/* J and L cuts: the clips keep their full height; across the overlap each keeps its half (outline()); the letter */
@@ -1108,8 +1108,8 @@
 		z-index: 3;
 		display: grid;
 		place-items: center;
-		border-left: 1px dashed rgb(230 238 247 / 0.45);
-		border-right: 1px dashed rgb(230 238 247 / 0.45);
+		border-left: 1px dashed rgb(38 56 44 / 0.45);
+		border-right: 1px dashed rgb(38 56 44 / 0.45);
 		pointer-events: none;
 	}
 
@@ -1162,8 +1162,8 @@
 	.clip.slate {
 		display: flex;
 		border-style: dashed;
-		border-color: #a88f55;
-		background: repeating-linear-gradient(135deg, #2a2415 0 6px, #211c11 6px 12px);
+		border-color: #b39a5c;
+		background: repeating-linear-gradient(135deg, #f3ead3 0 6px, #ebe0c3 6px 12px);
 	}
 
 	.clip.audio.line {
@@ -1173,7 +1173,7 @@
 
 	.clip.world {
 		border-color: #6f8fd6;
-		background: linear-gradient(180deg, #172e57, #16342c);
+		background: linear-gradient(180deg, #dbe3f4, #d6eadc);
 	}
 
 	.clip.image img {
@@ -1183,17 +1183,17 @@
 
 	.clip.audio.A1 {
 		border-color: #d4a64a;
-		background: #33280f;
+		background: #f6e7c4;
 	}
 
 	.clip.audio.A2 {
 		border-color: #45b6a4;
-		background: #0d3434;
+		background: #d3ece7;
 	}
 
 	.clip.audio.A3 {
 		border-color: #6f8fd6;
-		background: #16284d;
+		background: #dce4f5;
 	}
 
 	.clip.cue {
@@ -1266,21 +1266,21 @@
 	}
 
 	.gr {
-		background: rgb(232 168 58 / 0.26);
-		color: #f6cf85;
+		background: rgb(239 181 77 / 0.3);
+		color: #7a520a;
 	}
 
 	.clip.caps {
 		display: flex;
 		align-items: center;
 		border-color: #8d78cc;
-		background: #221b42;
+		background: #e8e1f6;
 		cursor: default;
 	}
 
 	.clip.caps.now {
 		border-color: var(--violet);
-		background: #372a6a;
+		background: #d6c9f2;
 	}
 
 	.clip.caps span {
@@ -1320,7 +1320,7 @@
 		font-size: 0.58rem;
 		line-height: 1;
 		white-space: nowrap;
-		color: rgb(230 238 247 / 0.55);
+		color: rgb(38 56 44 / 0.55);
 		pointer-events: none;
 	}
 
@@ -1368,7 +1368,7 @@
 
 	.clip:hover .edge,
 	.clip.sel .edge {
-		background: rgb(230 238 247 / 0.22);
+		background: rgb(38 56 44 / 0.18);
 	}
 
 	.span {
@@ -1381,7 +1381,7 @@
 	}
 
 	.span.hour {
-		background: linear-gradient(90deg, #183257, #3a2c13);
+		background: linear-gradient(90deg, #dde5f3, #f6e6c2);
 	}
 
 	.val {
@@ -1410,7 +1410,7 @@
 
 	.key.on {
 		background: var(--accent);
-		border-color: #f6cf85;
+		border-color: #b37a12;
 	}
 
 	.key.out {
@@ -1419,14 +1419,14 @@
 
 	.key.cue.sound {
 		border-color: var(--info);
-		background: #3c5fa8;
+		background: #9fb6e6;
 		border-radius: 50%;
 		transform: none;
 	}
 
 	.key.cue.event {
 		border-color: var(--violet);
-		background: #4a3a80;
+		background: #b9a8e6;
 	}
 
 	/* Edit: a picture clip opens with its thumbnail as it will look (balance and grades) */

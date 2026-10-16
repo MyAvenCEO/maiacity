@@ -400,7 +400,7 @@
 	}
 
 	.thumb.world {
-		background: linear-gradient(#2b4a70, #2c4838);
+		background: linear-gradient(#cbd7ee, #cfe3d4);
 	}
 
 	.thumb img {
