@@ -15,6 +15,7 @@
 		seed,
 		settlements,
 		focus = undefined,
+		paused = false,
 		onpick
 	}: {
 		/** The island seed, from the city's card on the planet. */
@@ -23,6 +24,8 @@
 		settlements: { cell: string; level: number }[];
 		/** The cell the opening shot frames. */
 		focus?: string;
+		/** Another view covers the island (a dome walked into): it draws nothing until it shows again. */
+		paused?: boolean;
 		/** A cell was chosen — or none, when the choice is cleared. */
 		onpick: (tile: HexTile | null) => void;
 	} = $props();
@@ -73,6 +76,10 @@
 			api?.dispose();
 			api = undefined;
 		};
+	});
+
+	$effect(() => {
+		api?.setPaused(paused);
 	});
 
 	// A settlement founded, joined or grown: the island follows the server.

@@ -418,6 +418,7 @@
 			seed={inside.island!}
 			settlements={standing.map((s) => ({ cell: api.cellOf(s)!, level: s.level }))}
 			focus={api.cellOf(standing.find((s) => s.slug === homeSettlement) ?? standing[0] ?? { places: {} }) ?? undefined}
+			paused={!!walking}
 			onpick={(t) => void onCell(t)}
 		/>
 	{/if}

@@ -86,6 +86,8 @@ export interface SceneApi {
 	setBuildings(buildings: Record<string, PlacedKind>): void
 	/** Brings a hex to the middle of the view, keeping the camera's angle. */
 	frame(cell: string): void
+	/** Stops drawing while another view covers the island (a dome walked into), and starts again. */
+	setPaused(on: boolean): void
 	dispose(): void
 }
 
@@ -609,8 +611,11 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 
 	const clock = new THREE.Clock()
 	let raf = 0
+	/** a dome walked into covers the island: nothing of it is drawn, for every frame of it would hold up the dome's */
+	let paused = false
 	function animate(): void {
 		raf = requestAnimationFrame(animate)
+		if (paused) return
 		// while the film camera holds the island it draws the canvas itself, at the size it asks for
 		if (!filmDraws()) resize()
 		// the map camera, or where the film camera holds it
@@ -687,6 +692,11 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			controls.target.copy(target)
 			camera.position.copy(target).add(offset)
 			controls.update()
+		},
+		setPaused(on) {
+			paused = on
+			// the time away is no step for the camera
+			if (!on) clock.getDelta()
 		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
