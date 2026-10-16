@@ -28,6 +28,9 @@ const modules = () =>
 		loadAsset: l.loadAsset,
 		buildAt: x.buildAt
 	})));
+// in a page, fetched as soon as the world's code is: the box is asked for the first builds before the world's first
+// frame (its shaders compiled, seconds on a slow machine) holds the page up
+if (typeof window !== 'undefined' && window.document?.createElement) modules().catch(() => {});
 
 /**
  * @param {{ renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, scene: THREE.Scene }} o
@@ -70,19 +73,35 @@ export function createDrawn({ renderer, camera, scene }) {
 	return {
 		/**
 		 * A copy of `ref` drawn by the renderer wherever `anchor` is, hidden with it.
-		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string }} [o] `pick`: the name a tap finds it by
+		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, receive?: boolean }} [o] `pick`: the
+		 *   name a tap finds it by; `receive`: whether a shadow falls on it (as its builder has it: none by default)
+		 * @returns {{ ready: Promise<THREE.Box3 | null> }} `ready`: the box round it as built, once it is there (null if it
+		 *   did not come)
 		 */
-		follow(ref, anchor, { pick } = {}) {
-			const c = { copy: null, anchor, m: AWAY.clone() };
+		follow(ref, anchor, { pick, receive = false } = {}) {
+			let built;
+			const c = { copy: null, anchor, m: AWAY.clone(), gone: false, ready: new Promise((ok) => (built = ok)) };
 			copies.push(c);
 			const go = () => {
-				const kind = assets.use(ref, { shadows: true, picture: false });
+				if (c.gone) return built(null);
+				const kind = assets.use(ref, { shadows: true, picture: false, receive });
 				c.copy = assets.place(kind, AWAY);
-				if (pick) kind.ready.then((k) => pickBox(anchor, k.ok ? k.levels[k.base].level?.box : null, pick));
+				kind.ready.then((k) => {
+					const box = k.ok ? (k.levels[k.base].level?.box ?? null) : null;
+					if (pick && !c.gone) pickBox(anchor, box, pick);
+					built(box);
+				});
 			};
 			if (assets) go();
 			else waiting.push(go);
 			return c;
+		},
+		/** a copy `follow` put down, taken away again @param {any} c */
+		drop(c) {
+			c.gone = true;
+			const i = copies.indexOf(c);
+			if (i >= 0) copies.splice(i, 1);
+			if (c.copy) assets.remove(c.copy);
 		},
 		/**
 		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data }`

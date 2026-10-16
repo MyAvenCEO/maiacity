@@ -125,8 +125,9 @@ export function createAssets(o) {
 	/**
 	 * A kind: an asset at its version, variant and values, at every level it is drawn at. Asked for again, the same (as
 	 * it was first asked for). `shadows`: true, its shadow cast at every level; false, at none; else as below
-	 * (`meshOf`). `picture: false`, none taken: a kind a world never draws so small.
-	 * @param {string} ref a label or a build @param {{ shadows?: boolean, picture?: boolean }} [opts]
+	 * (`meshOf`). `picture: false`, none taken: a kind a world never draws so small. `receive: false`, no shadow falls
+	 * on it (a world that always drew it so: its builder lays none on it).
+	 * @param {string} ref a label or a build @param {{ shadows?: boolean, picture?: boolean, receive?: boolean }} [opts]
 	 */
 	function use(ref, opts) {
 		const { hash, params } = resolve(ref);
@@ -154,6 +155,7 @@ export function createAssets(o) {
 			/** its thresholds the world's own (`tune`), not its shape's */
 			tuned: false,
 			shadows: opts?.shadows,
+			receive: opts?.receive !== false,
 			picture: opts?.picture !== false,
 			slot: null,
 			n: 0,
@@ -347,7 +349,7 @@ export function createAssets(o) {
 		// once casts one at every level, as it did when it had only the one; a kind asked for with its shadows (`use`)
 		// casts them at every level, or at none
 		mesh.castShadow = k.shadows ?? (d.cast && (k.names.length === 1 || L < k.names.length - 1));
-		mesh.receiveShadow = true;
+		mesh.receiveShadow = k.receive;
 		mesh.name = `${k.label} · level ${L}`;
 		group.add(mesh);
 		return { mesh, draw: d, cap, used: 0 };

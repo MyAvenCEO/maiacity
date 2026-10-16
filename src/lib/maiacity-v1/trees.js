@@ -3,10 +3,11 @@
  * MaiaCity V1's first trees (Samuel 2026-10-14): the seed each newcomer brings from home in their backpack, planted
  * at a spot they choose outside the core circle, named after them. It grows only when it is watered: each watering
  * (once a game month, one a real day) walks it one game month (28 game days) on through its plant's own stages from
- * the Plants ($lib/plants), from the seed; a month without water, it waits. Once it has borne its first crop it
- * flowers and fruits again every game year.
+ * the Plants ($lib/plants, read through ./plants.js), from the seed; a month without water, it waits. Once it has
+ * borne its first crop it flowers and fruits again every game year. The tree itself is built in the asset box at its
+ * stage and drawn by the renderer (./plants.js `plantRef`).
  */
-import { plantAt } from '$lib/plants/index.js';
+import { plantOf } from './plants.js';
 import { DAYS_A_MONTH, MONTHS_A_YEAR, SEEDLINGS, monthsAt } from '../../../game/maiacity-v1/engine.js';
 
 const YEAR = DAYS_A_MONTH * MONTHS_A_YEAR;
@@ -32,7 +33,7 @@ export function stageAt(p, age) {
 /** a tree as it stands now: its plant, its age in game days (its watered months, from the seed), its stage, the stage's
  *  name, where it stands, and whether it may be watered now (a new game month since its last watering) */
 export function treeNow(view, tree, now) {
-	const p = plantAt(tree.plant, tree.v ?? undefined) ?? plantAt(tree.plant);
+	const p = plantOf(tree.plant, tree.v ?? undefined);
 	const seed = tree.name || 'maia';
 	const grown = tree.grown ?? 0;
 	const age = p.stages[0].day + grown * DAYS_A_MONTH;
