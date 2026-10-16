@@ -5,8 +5,10 @@
 // Run: bun test src/lib/code
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { entries, indexText } from '../../../scripts/code-index.mjs';
+import { moduleTexts } from '../../../scripts/code-index.mjs';
 import { ENTRIES } from '../../../code/index.js';
+import { DECIDED } from '../../../code/decided.js';
+import { cardsOfFiles } from '../../../game/code/files.js';
 import { cardOfEntry, codeAt, codeIn, parseCodeRef, viewOfEntry } from '../../../game/code/index.js';
 import { checkCode } from '../../../game/code/check.js';
 import { SLOTS } from '../../../game/maiacity-v1/views.js';
@@ -17,8 +19,17 @@ import { EXAMPLES } from '../../../game/genui/examples.js';
 const ROOT = new URL('../../../', import.meta.url).pathname;
 
 describe('code/', () => {
-	test('code/index.js is what the files make (else: node scripts/code-index.mjs)', () => {
-		expect(readFileSync(`${ROOT}code/index.js`, 'utf8')).toBe(indexText(entries()));
+	test('code/index.js and code/decided.js are what the files make (else: node scripts/code-index.mjs)', () => {
+		for (const [file, text] of Object.entries(moduleTexts())) expect([file, readFileSync(`${ROOT}code/${file}`, 'utf8') === text]).toEqual([file, true]);
+	});
+	test('every decided config version and landed MIP holds cards the one checker reads', () => {
+		for (const e of Object.values(DECIDED)) {
+			expect([e.ref, e.type, e.for]).toEqual([e.ref, expect.stringMatching(/^(config|mip)$/), 'sandbox-7']);
+			for (const c of cardsOfFiles(e.files)) {
+				const r = checkCode('rule-card', c, { mode: 'read' });
+				expect([e.ref, c.id, r.ok]).toEqual([e.ref, c.id, true]);
+			}
+		}
 	});
 	test('every entry passes the one checker, with nothing it holds left doing nothing', () => {
 		for (const e of Object.values(ENTRIES)) {

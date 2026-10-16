@@ -1,10 +1,16 @@
-// The economy sandbox's configs, MIPs and runs against real Postgres semantics (PGlite).
-import { beforeAll, expect, test } from "bun:test";
+// The economy sandbox's configs, MIPs and runs against real Postgres semantics (PGlite). Configs live in the repo
+// (code/configs/): here a repo of the test's own, the valley at version 1, and every accepted MIP lands in it the way
+// the landing job lands it (game/code/land.js) before the API lands it (landMips).
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { readdirSync, readFileSync } from "node:fs";
 import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
-import { addDays, catalogue, createMip, decideMip, getConfig, getMip, getRun, linkMipPrs, listConfigs, listMips, listRuns, startRun, withdrawMip } from "../src/economy.js";
-import { DEFAULT_PARAMS, HOOK_NAMES } from "../../game/economy/params.js";
+import { addDays, catalogue, createMip, decideMip, getConfig, getMip, getRun, landMips, linkMipPrs, listConfigs, listMips, listRuns, startRun, withdrawMip } from "../src/economy.js";
+import { DEFAULT_PARAMS, HOOK_NAMES, defaultCards } from "../../game/economy/params.js";
+import { landing } from "../../game/code/land.js";
+import { entriesOfFiles } from "../../game/code/files.js";
+import { useDecided } from "../../game/code/decided.js";
 
 const pg = new PGlite();
 beforeAll(async () => {
@@ -17,9 +23,31 @@ beforeAll(async () => {
   });
   useDb({ ...wrap(pg), exec: async (t) => void (await pg.exec(t)), transaction: (fn) => pg.transaction((tx) => fn(wrap(tx))) });
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('admin', 'Admin', 'admin'), ('alice', 'Alice', 'citizen')");
+  repo = entriesOfFiles(landing({ versions: [{ config: "valley", version: 1, body: { name: "The valley", description: "", cards: defaultCards().map((c) => ({ ...c, code: "" })) }, mip: null, at: "2026-10-09T12:00:00Z" }] }).files, hashOf);
+  useDecided(repo);
   W = (await startRun("admin", { config_id: "valley", config: { params: {} } })).id;
 });
+afterAll(() => useDecided());
 let W = ""; // the world every MIP here is proposed in
+let repo = {}; // the test's code/: configs and landed MIPs
+const hashOf = (t) => Bun.hash(t).toString(16); // the index names entries by BLAKE3; any hash does here
+
+/** what the landing job does (deploy/code-export.sh land, then game/code/land.js), and then the API's landing */
+async function land() {
+  const { rows } = await pg.query(`SELECT number, title, action, config_id AS config, name, about, from_id AS "from", cards, remove, world_id, world, decided
+    FROM mips WHERE status = 'accepted' AND result->>'landing' = 'waiting'`);
+  const r = landing({ mips: rows }, repo);
+  expect(r.refused).toEqual([]);
+  repo = { ...repo, ...entriesOfFiles(r.files, hashOf) };
+  useDecided(repo);
+  return landMips();
+}
+/** accept a MIP and land it: what the API answers once it landed */
+const acceptAndLand = async (number, note) => {
+  expect(await decideMip(number, "admin", { accept: true, note })).toEqual({ number, status: "accepted", landing: "waiting" });
+  const landed = await land();
+  return landed.find((l) => l.number === number);
+};
 
 const card = (cfg, id) => cfg.cards.find((c) => c.id === id);
 
@@ -51,8 +79,13 @@ test("a MIP is a title, a description and whole cards; accepted, they go in as t
   await expect(createMip("alice", { world_id: "nope", title: "Nowhere", config: "valley", cards: [hearts] })).rejects.toThrow(/No world nope/);
   expect(mip.base.hearts.values.mint).toBe(24); // what it was, so the proposal reads "from → to"
   expect(mip.base_version).toBe(1);
-  const done = await decideMip(mip.number, "admin", { accept: true, note: "yes" });
-  expect(done).toEqual({ number: mip.number, status: "accepted", config: "valley", version: 2 });
+  expect(await decideMip(mip.number, "admin", { accept: true, note: "yes" })).toEqual({ number: mip.number, status: "accepted", landing: "waiting" });
+  // accepted, it changes nothing until it lands from the repo
+  expect((await getConfig("valley")).version).toBe(1);
+  expect((await getMip(mip.number)).result).toEqual({ landing: "waiting" });
+  expect(await land()).toEqual([{ number: mip.number, config: "valley", version: 2, landing: "landed" }]);
+  expect(await landMips()).toEqual([]); // once
+  expect((await getMip(mip.number)).result).toEqual(expect.objectContaining({ config: "valley", version: 2, landing: "landed", code: expect.any(String) }));
   const valley = await getConfig("valley");
   expect(valley.params.mint).toBe(30);
   expect(valley.params.decay).toBe(12);
@@ -94,7 +127,7 @@ test("a MIP creates a config from another with new cards, edits and deletes; rej
   });
   expect(create.via).toBe("mcp");
   expect(create.base).toEqual({ weather: expect.objectContaining({ id: "weather" }), wells: null, harvests: expect.objectContaining({ id: "harvests" }) });
-  expect(await decideMip(create.number, "admin", { accept: true })).toEqual(expect.objectContaining({ config: "dry-valley", version: 1 }));
+  expect(await acceptAndLand(create.number)).toEqual(expect.objectContaining({ config: "dry-valley", version: 1 }));
   const dry = await getConfig("dry-valley");
   expect(dry.name).toBe("Dry valley");
   expect(dry.params.mint).toBe(30); // copied from the valley as it is now
@@ -112,10 +145,10 @@ test("a MIP creates a config from another with new cards, edits and deletes; rej
   await expect(withdrawMip(back.number, "alice")).rejects.toThrow(/open MIP/);
 
   const del = await createMip("alice", { world_id: W, title: "Delete it", config: "dry-valley", action: "delete" });
-  await decideMip(del.number, "admin", { accept: true });
+  await acceptAndLand(del.number);
   expect((await listConfigs()).map((c) => c.id)).toEqual(["valley"]);
   expect((await listMips("open")).map((m) => m.number)).not.toContain(del.number);
-  expect((await getMip(del.number)).result).toEqual({ config: "dry-valley", deleted: true });
+  expect((await getMip(del.number)).result).toEqual(expect.objectContaining({ config: "dry-valley", deleted: true, landing: "landed" }));
   await expect(createMip("alice", { world_id: W, title: "Back", config: "dry-valley", action: "create" })).rejects.toThrow(/pick another id/);
 
   const last = await createMip("alice", { world_id: W, title: "No valley", config: "valley", action: "delete" });
@@ -143,11 +176,11 @@ test("a run keeps its config copy and its days: stats, trades, decisions", async
 
 test("a new world starts from the world it follows: its cards and values as played, the MIP's cards on top", async () => {
   const first = await createMip("admin", { title: "Auction world", world_id: W, action: "world", world: { name: "Auction", model: "qwen", values: { mint: 30 } }, cards: [{ id: "trading", kind: "policy", values: { haggleMax: 0 }, code: "export function haggle() { return null; }" }] });
-  const a = await decideMip(first.number, "admin", { accept: true });
+  const a = await acceptAndLand(first.number);
   const health = await createMip("admin", { title: "Health world", world_id: a.world, action: "world", world: { name: "Health", model: "qwen" }, cards: [{ id: "bodies", kind: "world", values: { healthMax: 10 } }] });
   expect(health.world.after_name).toBe("Auction");
   expect(health.world.diff).toEqual(["Health: 100 → 10 points"]);
-  const h = await decideMip(health.number, "admin", { accept: true });
+  const h = await acceptAndLand(health.number);
   const { rows } = await pg.query("SELECT state FROM econ_runs WHERE id = $1", [h.world]);
   const s = rows[0].state.settings;
   expect(s.after).toBe(a.world);
@@ -159,19 +192,19 @@ test("a new world starts from the world it follows: its cards and values as play
 
 test("an amend MIP changes a running world's own rules, and nothing else", async () => {
   const made = await createMip("admin", { title: "A world to amend", world_id: W, action: "world", world: { name: "Amend me", model: "qwen" }, cards: [] });
-  const w = await decideMip(made.number, "admin", { accept: true });
-  const before = (await pg.query("SELECT version FROM econ_configs WHERE id = 'valley'")).rows[0].version;
+  const w = await acceptAndLand(made.number);
+  const before = (await getConfig("valley")).version;
   const step = await createMip("admin", { title: "A faster price", world_id: w.world, action: "amend", cards: [{ id: "trading", kind: "policy", values: { haggleMax: 0 }, code: "export function price({ price }) { return price; }" }] });
   expect(step.action).toBe("amend");
   expect(step.world.amends).toBe(w.world);
   expect(step.world.diff).toContain("Haggling: 100 → 0 %");
-  const r = await decideMip(step.number, "admin", { accept: true });
+  const r = await acceptAndLand(step.number);
   expect(r.amended).toBe(w.world);
   const { rows } = await pg.query("SELECT state FROM econ_runs WHERE id = $1", [w.world]);
   const t = card(rows[0].state.settings.config, "trading");
   expect(t.values.haggleMax).toBe(0);
   expect(t.code).toContain("export function price");
-  expect((await pg.query("SELECT version FROM econ_configs WHERE id = 'valley'")).rows[0].version).toBe(before);
+  expect((await getConfig("valley")).version).toBe(before);
   await expect(createMip("admin", { title: "No world", action: "amend", world_id: null, cards: [] })).rejects.toThrow();
 });
 
@@ -186,4 +219,26 @@ test("a MIP links the GitHub PRs it needs: on proposing, and later by its author
   // decided MIPs too: what shipped in code is part of the record
   expect((await linkMipPrs(m.number, "admin", true, [])).prs).toEqual([]);
   await expect(linkMipPrs(99999, "admin", true, [])).rejects.toThrow("No such MIP");
+});
+
+test("a MIP that can no longer land says why, and changes nothing", async () => {
+  const made = await createMip("admin", { title: "A world to lose", world_id: W, action: "world", world: { name: "Lost", model: "qwen" }, cards: [] });
+  const w = await acceptAndLand(made.number);
+  const step = await createMip("admin", { title: "Too late", world_id: w.world, action: "amend", cards: [{ id: "trading", kind: "policy", values: { haggleMax: 0 } }] });
+  expect(await decideMip(step.number, "admin", { accept: true })).toEqual({ number: step.number, status: "accepted", landing: "waiting" });
+  await pg.query("DELETE FROM econ_runs WHERE id = $1", [w.world]); // the world goes before its amend lands
+  const [r] = await land();
+  expect(r).toEqual({ number: step.number, landing: "failed", error: `No world ${w.world}.` });
+  expect((await getMip(step.number)).result).toEqual({ landing: "failed", error: `No world ${w.world}.` });
+  expect(await landMips()).toEqual([]);
+});
+
+test("the code is the repo's: the config tables are read only, and no API reads code from them", async () => {
+  await expect(pg.query("INSERT INTO econ_configs (id, name) VALUES ('sneaky', 'Sneaky')")).rejects.toThrow(/read only/);
+  await expect(pg.query("UPDATE econ_config_versions SET version = 9")).rejects.toThrow(/read only/);
+  const dir = new URL("../src/", import.meta.url).pathname;
+  for (const f of readdirSync(dir).filter((n) => /\.(js|ts)$/.test(n) && n !== "migrations-list.ts")) {
+    const code = readFileSync(dir + f, "utf8").replace(/^\s*(\/\/|\*).*$/gm, "");
+    expect([f, /econ_configs|econ_config_versions/.test(code)]).toEqual([f, false]);
+  }
 });

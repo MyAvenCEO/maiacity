@@ -10,7 +10,7 @@
  */
 import { prepare } from './build';
 import { CASTS } from './casts';
-import { HEIGHT, human } from './human';
+import { HEIGHT, LOOK, human, type Look } from './human';
 import { human as humanV1 } from './human.v1';
 import { human as humanV2 } from './human.v2';
 import { human as humanV3 } from './human.v3';
@@ -51,7 +51,8 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 		{ v: 7, date: '2026-10-14', note: 'A warm smile in place of the open one (`joy`, its name kept): the lips stay closed, the mouth’s corners go up and wide, the cheeks lift and narrow the eyes from below', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v7: its jaw’s underside on the neck', make: () => human({}, HEIGHT, 7) }] },
 		{ v: 8, date: '2026-10-14', note: 'The jaw turns with the head: the whole jaw and chin ride the head bone, and the neck blends in below them, so no edge runs from the ear to the chin when the head turns', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v8: a tiny glint in each eye, no friendly gaze', make: () => human({}, HEIGHT, 8) }] },
 		{ v: 9, date: '2026-10-14', note: 'Friendlier eyes: a friendly gaze to wear all the time as its own blend shape (`friendly`: the lower lids lifted a little, the upper ones kept open, the brows raised a touch, no smile in it), and a soft catchlight on each pupil’s edge, 1.8 mm across with a lighter ring, lit a little from within so it shows at a medium close-up in any light', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v9: its back teeth left without a colour', make: () => human({}, HEIGHT, 9) }] },
-		{ v: 10, date: '2026-10-15', note: 'Every tooth coloured: the two molars behind the premolars are in the teeth’s table, so no point of the skin is left without a colour (350 had none)' }
+		{ v: 10, date: '2026-10-15', note: 'Every tooth coloured: the two molars behind the premolars are in the teeth’s table, so no point of the skin is left without a colour (350 had none)', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v10: one look, 1.70 m', make: () => human({}, HEIGHT, 10) }] },
+		{ v: 11, date: '2026-10-16', note: 'Built with how tall it is and its look (`height`, and `face`, `skin`, `hair`, `hairColour`, `shirt`, `trousers` and the rest, as ./human.ts LOOK has them): MaiaCity V1’s players and the people in its van, each their own; as v10 otherwise, and at v10’s 1.70 m and look when given none' }
 	],
 	goose: [{ ...FIRST, build: GEESE_V1 }, { v: 2, date: '2026-10-06', note: 'Grazing with the neck stretched forward and down in one curve, the bill in the grass ahead of the feet (the head bent back under the breast); the head carried level walking, slow long looks standing' }],
 	goat: [{ ...FIRST, build: quadV1('goat', GOAT_BREEDS, goat) }, GRAZE_V2],
@@ -61,13 +62,33 @@ const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
 
 const animal = (id: string, label: string, note: string): Actor => ({ id, label, note, make: CASTS[id]!, ready: () => prepare(id) });
 
+/** the stand-in's look, one parameter each after its height, in LOOK's order (./human.ts) */
+const LOOK_KEYS = Object.keys(LOOK) as (keyof Look)[];
+const LOOK_LABELS: Record<keyof Look, string> = { skin: 'Skin', brows: 'Brows', shirt: 'T-shirt', trousers: 'Jeans', belt: 'Belt', shoes: 'Trainers', soles: 'Soles', hair: 'Hair (none, short, long, bun)', hairColour: 'Hair colour', iris: 'Eyes', lips: 'Lips', face: 'Face (man, woman)' };
+/** what the stand-in is built with from v11: its height (1.0 to 2.2 m) and its look, a colour or a word each */
+const STAND_IN_PARAMS: import('$lib/assets/params.js').Param[] = [
+	{ id: 'height', label: 'Height (m)', type: 'number', min: 1, max: 2.2, step: 0.01, value: HEIGHT },
+	...LOOK_KEYS.map((k) => ({ id: k, label: LOOK_LABELS[k], type: 'string' as const, value: LOOK[k], maxLength: k === 'hair' || k === 'face' ? 8 : 16 }))
+];
+const HAIRS = ['none', 'short', 'long', 'bun'];
+/** a look from the parameters after the height, in LOOK's order: a hair or a face it does not know is LOOK's */
+function lookOf(given: string[]): Partial<Look> {
+	const out: Record<string, string> = {};
+	LOOK_KEYS.forEach((k, i) => given[i] !== undefined && (out[k] = String(given[i])));
+	if (out.hair !== undefined && !HAIRS.includes(out.hair)) delete out.hair;
+	if (out.face !== undefined && out.face !== 'man' && out.face !== 'woman') delete out.face;
+	return out as Partial<Look>;
+}
+
 const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	{
 		id: 'stand-in',
 		label: 'Stand-in',
 		note: 'a person of 1.70 m with a face and hair, rigged head to toe — 17 bones under one skin, any pose, any move',
 		from: 'the room: Day 01, Day 02',
-		variants: [{ id: 'stand-in', label: 'Stand-in', note: 'a person of 1.70 m', make: () => human() }]
+		// v11: how tall it is and what it looks like are what it is built with (v10 and before: one look, 1.70 m)
+		params: STAND_IN_PARAMS,
+		variants: [{ id: 'stand-in', label: 'Stand-in', note: 'a person of 1.70 m', make: (height?: number, ...look: string[]) => human(lookOf(look), height) }]
 	},
 	{
 		id: 'chicken',
