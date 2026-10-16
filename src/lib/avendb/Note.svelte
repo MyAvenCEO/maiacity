@@ -283,12 +283,14 @@
 		const names = Object.keys(asks);
 		let gone = false;
 		may(api, actor, Object.values(asks)).then((answers) => {
+			/** what the device refuses, if it does @param {any} a @returns {string | null} */
+			const refused = (a) => a?.refused ?? null;
 			/** a variant where the device would make it; else all the ops allow @param {string} n @param {any} a */
 			const offers = (n, a) =>
-				allowed(a) || (!n.startsWith('variant ') && !['NotAllowed', 'NotAccepted'].includes(a.refused));
+				allowed(a) || (!n.startsWith('variant ') && !['NotAllowed', 'NotAccepted'].includes(refused(a) ?? ''));
 			if (gone) return;
 			can = Object.fromEntries(names.map((n, i) => [n, offers(n, answers[i])]));
-			waits = Object.fromEntries(names.map((n, i) => [n, answers[i]?.refused === 'NotAccepted']));
+			waits = Object.fromEntries(names.map((n, i) => [n, refused(answers[i]) === 'NotAccepted']));
 		});
 		return () => {
 			gone = true;
