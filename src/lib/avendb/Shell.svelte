@@ -48,6 +48,7 @@
 	import Todos from './Todos.svelte';
 	import { may } from './ops.js';
 	import { acting, count, hue, initials, KINDS, list, nameOf, signerName } from './vaults.js';
+	import { wordsFilling } from './youtube.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
@@ -176,6 +177,25 @@
 			const go = ops.filter((_, i) => verdicts[i] === true);
 			if (!go.length || doing) return;
 			api.run(`Tagging ${count(go.length, 'piece')} by the sparks and stories that hold them`, { op: 'batch', as: actor, ops: go });
+		});
+	});
+
+	// a YouTube video's words (./youtube.js): the newest done task of the studio's `youtube` rule an artifact hasn't
+	// taken yet fills what it has empty, once, by whichever page looks at the vault where the acting vault may write it
+	let filled = '';
+	$effect(() => {
+		const [w, vault, as] = [world, context, actor];
+		if (busy) return;
+		wordsFilling(w, vault, as, api).then((ops) => {
+			const key = JSON.stringify([as, ops]);
+			if (!ops.length || key === filled) return;
+			filled = key;
+			return may(api, as, ops).then((verdicts) => {
+				const go = ops.filter((_, i) => verdicts[i] === true);
+				if (!go.length || doing) return;
+				const videos = new Set(go.map((o) => /** @type {any} */ (o).entry)).size;
+				api.run(`Taking YouTube’s words into ${count(videos, 'artifact')}`, { op: 'batch', as, ops: go });
+			});
 		});
 	});
 
