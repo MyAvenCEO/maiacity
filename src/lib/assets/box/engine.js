@@ -24,10 +24,17 @@
  * sliders, controls, clip or pose set, one step run, what moved handed back as numbers), breaks or mends it, and lets
  * it go (`end`). A rig's catalog (the LifeTrac's parts) goes on its card as a sealed asset's does.
  *
+ * Version 5 adds (format 4): an actor's clips played here and written down as tables (./clips.js, on its view), so
+ * the page plays any number of copies of it, each at its own time, without a session; lights that leave as lights;
+ * and what else a control or a step changes, only where it changes: the meshes it reshapes (positions and normals),
+ * the looks of materials (colour, glow, opacity, roughness, metalness) and lights (colour, brightness, reach,
+ * fall-off), in a control's samples (./bake.js) and in each step's answer (./live.js: `shapes`, `looks`, `lights`).
+ *
  * Messages: { id, op: 'build', recipe: { hash, code }, given?, args?, engine } is answered with
  * { id, ok: true, data, card, ms } or { id, ok: false, error }; { id, op: 'live', recipe, given?, nodes } with
  * { id, ok: true, session, nodes }; { id, op: 'tick', session, ask } with { id, ok: true, nodes, trs, visible, morph,
- * instances, read?, labels?, sliders? }; { id, op: 'break' | 'mend' | 'end', session } with { id, ok: true }.
+ * instances, shapes, looks, lights, read?, labels?, sliders? }; { id, op: 'break' | 'mend' | 'end', session } with
+ * { id, ok: true }.
  */
 import { load } from './loader.js';
 import './lockdown.js';

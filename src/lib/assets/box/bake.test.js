@@ -139,3 +139,56 @@ test('a bag whose canvas unrolls as it opens: its moves kept, and the bag left p
 		expect(near(size(), packed, 1e-6)).toBe(true);
 	}
 });
+
+test('engine 5: what else a control changes goes with it, and plays back as its builder sets it', async () => {
+	const meshes = (root, nodes) => nodes.map((i) => Array.from(walk(root)[i].geometry.attributes.position.array));
+	const lookAt = (root, x) => [walk(root)[x.node].material].flat()[x.slot];
+	// a bell tent's canvas hung and draped as its pole goes up: the meshes it reshapes, at each step
+	{
+		const { baked, root, poser } = await through('things/bell-tent');
+		const pitch = baked.controls.find((c) => c.id === 'pitch');
+		expect(pitch.shapes.length).toBeGreaterThan(0);
+		const at = pitch.shapes.map((x) => x.node);
+		const fresh = await objectAt('things/bell-tent');
+		fresh.userData.setPitch(0.5);
+		poser.set('pitch', 0.5);
+		const [a, b] = [meshes(root, at), meshes(fresh, at)];
+		expect(a.every((m, k) => near(m, b[k], 1e-4))).toBe(true);
+		// and as built again at its rest
+		poser.reset();
+		const built = meshes(await objectAt('things/bell-tent'), at);
+		expect(meshes(root, at).every((m, k) => near(m, built[k], 1e-4))).toBe(true);
+	}
+	// a fire put out and lit: its light (a light still), its flames' opacity, its embers' glow
+	{
+		const { baked, root, poser } = await through('things/fire-place');
+		const lit = baked.controls.find((c) => c.id === 'lit');
+		expect(lit.lights.length).toBeGreaterThan(0);
+		expect(lit.looks.length).toBeGreaterThan(0);
+		const lights = [], theirs = [];
+		root.traverse((o) => o.isPointLight && lights.push(o));
+		expect(lights.length).toBeGreaterThan(0);
+		const fresh = await objectAt('things/fire-place');
+		fresh.traverse((o) => o.isPointLight && theirs.push(o));
+		for (const v of [0, 1]) {
+			fresh.userData.fire.setLit(v);
+			poser.set('lit', v);
+			expect(near(lights.map((l) => l.intensity), theirs.map((l) => l.intensity), 1e-5)).toBe(true);
+			for (const x of lit.looks) {
+				const mine = lookAt(root, x), made = lookAt(fresh, x);
+				expect(near([mine.opacity, mine.emissiveIntensity], [made.opacity, made.emissiveIntensity], 1e-5)).toBe(true);
+			}
+		}
+	}
+	// earth darkening as it is watered: its colour and roughness
+	{
+		const { baked, root, poser } = await through('things/dug-earth');
+		const wet = baked.controls.find((c) => c.id === 'wet');
+		expect(wet?.looks.length).toBeGreaterThan(0);
+		const fresh = await objectAt('things/dug-earth');
+		fresh.userData.setWet(1);
+		poser.set('wet', 1);
+		const mine = lookAt(root, wet.looks[0]), made = lookAt(fresh, wet.looks[0]);
+		expect(near([mine.color.r, mine.color.g, mine.color.b, mine.roughness], [made.color.r, made.color.g, made.color.b, made.roughness], 1e-5)).toBe(true);
+	}
+});
