@@ -775,7 +775,7 @@ async fn harnesses_ask_for_access_and_join_her_one_aven_as_agents_that_read_and_
     let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
     let names: Vec<&str> = tools.as_array().expect("tools").iter().filter_map(|t| t["name"].as_str()).collect();
     let named = ["avendb_vaults", "avendb_ask", "avendb_request_access", "avendb_run", "avendb_add_spark"];
-    assert_eq!(names, [&named[..], &["avendb_read_file"]].concat());
+    assert_eq!(names, [&named[..], &["avendb_add_artifact", "avendb_read_file"]].concat());
     let (waits, _) = claude.tool("avendb_vaults", json!({})).await;
     assert!(waits.contains("waiting for its person to answer"), "{waits}");
     let asked = requests(&mut app, 1).await;
@@ -1290,6 +1290,133 @@ async fn an_agent_adds_a_spark_to_her_own_vault_and_her_mac_reads_it() {
     let (no, error) = codex.tool("avendb_add_spark", json!({ "text": "Beans in May." })).await;
     let own = format!("may add no spark to its person's own vault, {mine_id}");
     assert!(error && no.contains(&own) && no.contains("avendb_request_access"), "{no}");
+    codex.quit().await;
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_agent_adds_artifacts_by_link_and_by_file_and_puts_them_on_a_spark() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("agent-artifacts");
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let mine = world_of(&mut app).await["mine"].clone();
+    // agentClaude tells its harness how to add an artifact, by its fields' plain names
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    let told = hello["instructions"].as_str().is_some_and(|i| i.contains("avendb_add_artifact") && i.contains("`url`"));
+    assert!(told, "{hello}");
+    let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
+    let tool = tools.as_array().expect("tools").iter().find(|t| t["name"] == "avendb_add_artifact").cloned();
+    let schema = tool.expect("avendb_add_artifact")["inputSchema"].clone();
+    let fields: Vec<&String> = schema["properties"].as_object().expect("its fields").keys().collect();
+    let all = ["by", "language", "note", "path", "spark", "tags", "taken", "title", "transcript", "url", "vault"];
+    assert_eq!(fields, all, "an artifact's own fields, its file, and where");
+    let (waits, error) = claude.tool("avendb_add_artifact", json!({ "url": "https://example.com" })).await;
+    assert!(!error && waits.contains("waiting for its person to answer"), "{waits}");
+    // she adds it under her aven avenEve, which may edit her vault
+    let asked = requests(&mut app, 1).await;
+    let editor = json!([{ "over": mine, "level": "Editor" }]);
+    app.call("grant", json!(["agentClaude", asked[0]["device"], editor, "avenEve"])).await.expect("granted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    // a spark to put them on, once its share reaches it
+    let mut made = (String::new(), true);
+    for _ in 0..100 {
+        made = claude.tool("avendb_add_spark", json!({ "text": "Morning light" })).await;
+        if !made.0.contains("waiting for its person") && !made.0.contains("may add no spark") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!made.1, "{made:?}");
+    let spark = serde_json::from_str::<Value>(&made.0).expect("JSON")["entry"].clone();
+    // a YouTube video with its words, on the spark: titled by its id, its platform known, its words timed
+    let video = json!({
+        "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5",
+        "note": "The light at six.",
+        "by": { "name": "Ana Ruiz" },
+        "transcript": "0:00 The town wakes.\n0:04 Bread first,\nthen the goats.\n[1:02:03] Late.",
+        "tags": ["light"],
+        "spark": spark,
+    });
+    let (made, error) = claude.tool("avendb_add_artifact", video).await;
+    assert!(!error, "{made}");
+    let made: Value = serde_json::from_str(&made).expect("JSON");
+    assert_eq!((&made["vault"], &made["look"], &made["tags"]), (&mine, &json!("youtube"), &json!(["light"])), "{made}");
+    assert_eq!(made["spark"]["placed"], true, "{made}");
+    let art = shown(&mut app, &made["entry"], "the video on her Mac", |a| a["type"] == "artifact").await;
+    let r = &art["record"];
+    assert_eq!((&r["title"], &r["site"]), (&json!("YouTube · dQw4w9WgXcQ"), &json!("youtube.com")), "{r}");
+    assert_eq!(r["note"], "The light at six.");
+    assert_eq!(r["by"], json!({ "name": "Ana Ruiz", "platform": "youtube" }), "{r}");
+    let rows: Vec<(f64, &str)> = r["transcript"]
+        .as_array()
+        .expect("its words")
+        .iter()
+        .map(|w| (w["t"].as_f64().unwrap_or(-1.0), w["text"].as_str().unwrap_or_default()))
+        .collect();
+    assert_eq!(rows, [(0.0, "The town wakes."), (4.0, "Bread first, then the goats."), (3723.0, "Late.")]);
+    let holds = |n: usize| move |s: &Value| s["record"]["items"].as_array().is_some_and(|i| i.len() == n);
+    let on = shown(&mut app, &spark, "the spark holding the video", holds(1)).await;
+    let item = &on["record"]["items"][0];
+    assert_eq!((&item["what"], &item["x"], &item["y"]), (&json!("artifact"), &json!(32), &json!(32)), "{item}");
+    assert_eq!((&item["ref"]["vault"], &item["ref"]["entry"]), (&mine, &made["entry"]), "{item}");
+    // a picture of this Mac: saved to her Library first, which the artifact shows, put on the spark under the video
+    let path = folder.0.join("Sunrise.jpg");
+    let picture: Vec<u8> = (0..30_000u32).map(|i| (i * 31 % 251) as u8).collect();
+    std::fs::write(&path, &picture).expect("the picture");
+    let picture_on = json!({ "path": path.to_string_lossy(), "spark": spark });
+    let (made, error) = claude.tool("avendb_add_artifact", picture_on).await;
+    assert!(!error, "{made}");
+    let made: Value = serde_json::from_str(&made).expect("JSON");
+    assert_eq!((&made["look"], &made["spark"]["placed"]), (&json!("image"), &json!(true)), "{made}");
+    let file = shown(&mut app, &made["file"], "its file in her Library", |f| f["kind"] == "file").await;
+    assert_eq!((&file["title"], &file["media"]), (&json!("Sunrise.jpg"), &json!("image/jpeg")), "{file}");
+    let art = shown(&mut app, &made["entry"], "the picture on her Mac", |a| a["type"] == "artifact").await;
+    assert_eq!(art["record"]["title"], "Sunrise.jpg");
+    assert_eq!(art["record"]["files"][0]["entry"], made["file"], "{art}");
+    let on = shown(&mut app, &spark, "the spark holding both", holds(2)).await;
+    let items = on["record"]["items"].as_array().expect("its items");
+    let under = items.iter().find(|i| i["ref"]["entry"] == made["entry"]);
+    assert_eq!(under.expect("the picture on it")["y"], 32 + 170 + 24, "under the video");
+    // a link to a picture on the web: a picture by its ending, titled by its host and path, on no spark
+    let (made, error) = claude.tool("avendb_add_artifact", json!({ "url": "https://example.com/Sow/Beans.png" })).await;
+    assert!(!error, "{made}");
+    let made: Value = serde_json::from_str(&made).expect("JSON");
+    assert!(made["spark"].is_null(), "{made}");
+    let art = shown(&mut app, &made["entry"], "the link on her Mac", |a| a["type"] == "artifact").await;
+    let r = &art["record"];
+    assert_eq!((&r["look"], &r["site"]), (&json!("image"), &json!("example.com")), "{r}");
+    assert_eq!(r["title"], "example.com/Sow/Beans.png");
+    // its refusals read plainly
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "title": "Nothing" })).await;
+    assert!(error && no.contains("a link or a file"), "{no}");
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "url": "ftp://example.com/x" })).await;
+    assert!(error && no.contains("is no link"), "{no}");
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "url": "https://example.com", "text": "x" })).await;
+    assert!(error && no.starts_with("an artifact has no \"text\""), "{no}");
+    let (no, error) = claude.tool("avendb_add_artifact", json!({ "path": "Sunrise.jpg" })).await;
+    assert!(error && no.contains("isn't an absolute path"), "{no}");
+    // agentCodex, a Viewer of her vault, may add an artifact nowhere, and saves no file before it says so
+    let mut codex = Harness::start(&dir, "codex");
+    let asked = requests(&mut app, 1).await;
+    let viewer = json!([{ "over": mine, "level": "Viewer" }]);
+    app.call("grant", json!(["agentCodex", asked[0]["device"], viewer, "avenEve"])).await.expect("granted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let read = reads(&mut codex, &spark).await;
+    assert!(!read.1, "agentCodex reads her spark: {read:?}");
+    let files = |w: &Value| w["entries"].as_array().map_or(0, |e| e.iter().filter(|e| e["kind"] == "file").count());
+    let before = files(&world_of(&mut app).await);
+    let (no, error) = codex.tool("avendb_add_artifact", json!({ "path": path.to_string_lossy() })).await;
+    let mine_id = mine.as_str().expect("her vault's id");
+    let own = format!("may add no artifact and its file to its person's own vault, {mine_id}");
+    assert!(error && no.contains(&own) && no.contains("avendb_request_access"), "{no}");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(files(&world_of(&mut app).await), before, "no file saved");
     codex.quit().await;
     claude.quit().await;
     app.quit().await;
