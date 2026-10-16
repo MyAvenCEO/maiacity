@@ -109,3 +109,20 @@ test('what the page refuses: a control naming a node there is not, or numbers th
 	delete old.controls;
 	expect(rebuild(old).userData.controls).toEqual([]);
 });
+
+test("the kit's cut faces cross with the colours it gave them, not one red for all", async () => {
+	const obj = await objectAt('machines/powercube@3');
+	const { data } = await serialize(obj, { controls: bake(obj).controls });
+	const root = rebuild(data);
+	const caps = new Map();
+	root.traverse((o) => {
+		for (const m of [o.material].flat().filter(Boolean)) if (m.userData.cap) caps.set(m.userData.cap.color, m.userData.cap);
+	});
+	// the museum red the kit gives by default, and the colours its machines name for their own cut faces
+	expect(caps.has(new THREE.Color(0.56, 0.085, 0.045).getHex())).toBe(true);
+	expect(caps.size).toBeGreaterThan(1);
+	for (const c of caps.values()) {
+		expect(c.rough).toBeGreaterThanOrEqual(0);
+		expect(c.rough).toBeLessThanOrEqual(1);
+	}
+});

@@ -116,8 +116,11 @@ function material(x, i, textures) {
 		else if (typeof m[k] === typeof v && (typeof v === 'number' ? Number.isFinite(v) : typeof v === 'boolean')) m[k] = v;
 	}
 	m.name = String(x.name ?? '').slice(0, 80);
-	// it had a shader of its own in the box, which never crosses (the kit's section caps): our renderer gives it ours
+	// it had a shader of its own in the box, which never crosses (the kit's section caps): our renderer gives it ours,
+	// with the cut face it said it has (format 2)
 	if (x.custom === true) m.userData.custom = true;
+	if (x.custom === true && x.cap && typeof x.cap === 'object')
+		m.userData.cap = { color: int(x.cap.color, 0x1000000, `material ${i} cap`), rough: Math.min(1, Math.max(0, num(x.cap.rough, 'cap'))), metal: Math.min(1, Math.max(0, num(x.cap.metal, 'cap'))) };
 	return m;
 }
 

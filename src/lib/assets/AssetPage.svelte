@@ -4,7 +4,9 @@
 	its bytes, read in base32, and the values it is built with; `?t=` is only its label (plants/apple@2) in words, so
 	the address reads, and is never one of its values. The build loads as every build does (./load.js): from this
 	device's cache when it was built here before, else in the box, checked either way. Each value the recipe declares
-	can be changed here, and the address follows, written the one way that build is named: every value, sorted.
+	can be changed here, and the address follows, written the one way that build is named: every value, sorted. Its
+	controls (a tent's pitch, a pickup's doors, a machine drawn apart or built up) move the build in the view, played
+	from the numbers the box wrote down when it played its builder's own (./controls.js); they change no address.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -14,6 +16,7 @@
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { poserOf } from './controls.js';
 	import { engineAt } from './engines.js';
 	import { OBJECT_GROUPS } from './groups.js';
 	import { boxOf, canonical, loadAsset } from './load.js';
@@ -74,6 +77,9 @@
 	let built = $state(null);
 	// what a slider reads while it is moved, before the build it names is asked for
 	let draft = $state({});
+	// the build's controls, and each one's value now
+	let poser = $state.raw(null);
+	let pose = $state({});
 	let renderer, scene, camera, controls, grid, shown, frame;
 	let asking = 0;
 
@@ -131,6 +137,8 @@
 			show(r.obj);
 			built = r;
 			draft = {};
+			poser = poserOf(r.obj);
+			pose = Object.fromEntries(poser.list.map((c) => [c.id, c.rest]));
 		} catch (e) {
 			if (mine === asking) error = e.message;
 		}
@@ -184,6 +192,17 @@
 	function set(id, raw) {
 		const next = { ...(named.values ?? {}), [id]: raw };
 		goto(hrefOf(hash, next), { replaceState: true, noScroll: true, keepFocus: true });
+	}
+
+	/** a control moved: the build in the view with it */
+	function move(id, v) {
+		poser.set(id, v);
+		pose = { ...pose, [id]: poser.get(id) };
+	}
+
+	function rest() {
+		poser.reset();
+		pose = Object.fromEntries(poser.list.map((c) => [c.id, c.rest]));
 	}
 
 	const valueAt = (p) => draft[p.id] ?? named.values?.[p.id] ?? p.value;
@@ -242,6 +261,25 @@
 							{/if}
 						</label>
 					{/each}
+				</section>
+			{/if}
+
+			{#if poser?.list.length}
+				<section>
+					<h2>Controls</h2>
+					{#each poser.list as c (c.id)}
+						<label class="param">
+							<span>{c.label}<b>{c.choice ? (pose[c.id] >= 0.5 ? 'on' : 'off') : `${Math.round(((pose[c.id] - c.from) / (c.to - c.from)) * 100)} %`}</b></span>
+							{#if c.choice}
+								<input type="checkbox" checked={pose[c.id] >= 0.5} onchange={(e) => move(c.id, e.currentTarget.checked ? c.to : c.from)} />
+							{:else}
+								<input type="range" min={Math.min(c.from, c.to)} max={Math.max(c.from, c.to)} step="0.01" value={pose[c.id]} oninput={(e) => move(c.id, Number(e.currentTarget.value))} />
+							{/if}
+						</label>
+					{/each}
+					{#if Object.entries(pose).some(([id, v]) => v !== poser.list.find((c) => c.id === id)?.rest)}
+						<button class="rest" onclick={rest}>Back as built</button>
+					{/if}
 				</section>
 			{/if}
 
@@ -379,7 +417,23 @@
 		accent-color: var(--brand-green);
 	}
 
-	.param input:not([type='range']) {
+	.param input[type='checkbox'] {
+		justify-self: start;
+		accent-color: var(--brand-green);
+	}
+
+	.rest {
+		padding: 0.35rem 0.8rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--paper);
+		color: inherit;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.param input:not([type='range']):not([type='checkbox']) {
 		font: inherit;
 		padding: 0.45rem 0.7rem;
 		border: 1px solid var(--line);

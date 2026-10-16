@@ -74,6 +74,15 @@ export function poserOf(root, controls = root.userData.controls ?? []) {
 		}
 	}
 
+	/** a control's value kept, between its ends; whether it has that control */
+	function put(id, v) {
+		const c = controls.find((x) => x.id === id);
+		if (!c || !Number.isFinite(Number(v))) return false;
+		const lo = Math.min(c.from, c.to), hi = Math.max(c.from, c.to);
+		values.set(id, Math.min(hi, Math.max(lo, Number(v))));
+		return true;
+	}
+
 	/** every control played: those at rest first, then those moved, in their order */
 	function apply() {
 		for (const c of controls) if (values.get(c.id) === c.rest) play(c, c.rest);
@@ -88,11 +97,13 @@ export function poserOf(root, controls = root.userData.controls ?? []) {
 		get: (id) => values.get(id),
 		/** a control set to `v` (kept between its ends); its parts moved */
 		set(id, v) {
-			const c = controls.find((x) => x.id === id);
-			if (!c) return;
-			const lo = Math.min(c.from, c.to), hi = Math.max(c.from, c.to);
-			values.set(id, Math.min(hi, Math.max(lo, Number(v))));
-			apply();
+			if (put(id, v)) apply();
+		},
+		/** several set at once, as `[id, value]` pairs or `{ id: value }`; the others left as they are, the parts moved once */
+		setMany(given) {
+			let any = false;
+			for (const [id, v] of given instanceof Map ? given : Object.entries(given)) any = put(id, v) || any;
+			if (any) apply();
 		},
 		/** every control back at its rest */
 		reset() {

@@ -25,7 +25,8 @@ const textureKey = (t) => `${t.source?.uuid ?? t.uuid}:${t.wrapS},${t.wrapT}:${t
 
 /** @param {THREE.Material} m */
 export function keyOf(m) {
-	const out = [m.type, m.userData.custom ? 'custom' : ''];
+	const cap = m.userData.cap;
+	const out = [m.type, m.userData.custom ? 'custom' : '', cap ? `${cap.color}/${cap.rough}/${cap.metal}` : ''];
 	for (const k of PLAIN) if (k in m) out.push(m[k]);
 	for (const k of COLORS) if (m[k]?.isColor) out.push(m[k].getHex());
 	for (const k of MAPS) out.push(m[k]?.isTexture ? textureKey(m[k]) : '');
@@ -49,6 +50,8 @@ export const DITHER = 'fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.23
 export function createPresets() {
 	/** @type {Map<string, THREE.Material>} */
 	const kept = new Map();
+	/** @type {WeakSet<THREE.Material>} the materials kept */
+	const ours = new WeakSet();
 	// the cut, shared by every material: the plane (removed where dot(n, p) + w < 0), and a second one never used yet
 	const CUT = { a: { value: new THREE.Vector4(0, 0, -1, 1e5) }, b: { value: new THREE.Vector4(0, 0, -1, 1e5) }, hatch: { value: 0.012 } };
 	/** @type {THREE.Plane[]} */
@@ -57,9 +60,11 @@ export function createPresets() {
 	/** @param {THREE.Material} m */
 	function patch(m) {
 		const cap = capped(m);
-		const uCap = { value: CAP.clone() };
-		const uCapR = { value: 0.55 };
-		const uCapM = { value: 0 };
+		// its cut face as the kit gave it (engine 3 says), else the kit's museum red
+		const given = m.userData.cap;
+		const uCap = { value: given ? new THREE.Color(given.color) : CAP.clone() };
+		const uCapR = { value: given ? given.rough : 0.55 };
+		const uCapM = { value: given ? given.metal : 0 };
 		m.onBeforeCompile = (sh) => {
 			sh.vertexShader = sh.vertexShader
 				.replace('#include <common>', '#include <common>\nattribute float aFade;\nvarying float vFade;' + (cap ? '\nvarying vec3 vLabW;' : ''))
@@ -158,9 +163,12 @@ void labClip(vec4 P, vec3 ro, vec3 rd, inout float t0, inout float t1, inout int
 	return {
 		/** the material kept for `m`: itself, given our shaders, the first time one like it comes; else the one kept */
 		of(/** @type {THREE.Material} */ m) {
+			// one of ours already (a copy of a level, moved by its controls, wears what the level wears)
+			if (ours.has(m)) return m;
 			const key = keyOf(m);
 			let p = kept.get(key);
 			if (!p) kept.set(key, (p = patch(m)));
+			ours.add(p);
 			return p;
 		},
 		/** how many there are */

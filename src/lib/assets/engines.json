@@ -33,8 +33,8 @@
 		{
 			"v": 3,
 			"date": "2026-10-16",
-			"blake3": "4e8d02639276617d848f8e596dd3d5300fa7bb567387f7f65db37fc64416f32d",
-			"bytes": 773429,
+			"blake3": "d84f7358fcad594561d046513ea5fe8fa1e52180e5e7e3f97cc8b2ab51e0e0c7",
+			"bytes": 773907,
 			"three": "0.186.0",
 			"modules": [
 				"three",
@@ -43,7 +43,7 @@
 				"three/addons/utils/BufferGeometryUtils.js",
 				"three/addons/utils/SkeletonUtils.js"
 			],
-			"note": "Controls: each control a built object offers (a tent's pitch, a pickup's doors and tailgate, a bag's open, a fire lit, a sealed asset's explode and build) is played in the box from 0 to 1 and leaves as numbers (box data format 2), with the object as built put back first"
+			"note": "Controls: each control a built object offers (a tent's pitch, a pickup's doors and tailgate, a bag's open, a fire lit, a sealed asset's explode and build) is played in the box from 0 to 1 and leaves as numbers (box data format 2), with the object as built put back first; and each material with the kit's section caps says how its cut face looks (its colour, roughness and metalness)"
 		}
 	]
 }

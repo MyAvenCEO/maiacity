@@ -6,7 +6,9 @@
 	kind one more instance of the same few drawings. Walked as Sandbox 4 is (the sandbox kit's stage, sky and walker),
 	so the two can be measured alike: "Measure" stands at the scene's three places in turn and times ten seconds of
 	frames at each. "Cut open" cuts the whole scene along a plane through the green, the kit's solids showing their
-	section caps. `?fresh` builds every asset afresh, keeping nothing; `?boxes=n` builds n at a time.
+	section caps. "Controls near you" moves the copies within reach by the controls their builds offer (a tent pitched,
+	a pickup's doors, a machine drawn apart or built up), played from the numbers the box wrote down; "Rest" puts every
+	copy back. `?fresh` builds every asset afresh, keeping nothing; `?boxes=n` builds n at a time.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -24,7 +26,14 @@
 	let measuring = $state(false);
 	let measured = $state(null);
 	let cut = $state(false);
+	/** the controls of the copies within reach: each its id, its name, how many copies, the nearest one's value */
+	let near = $state([]);
+	let moved = $state(0);
 	let walker, assets, world, frame, timer;
+	/** every copy placed, where it stands */
+	let copies = [];
+	/** how far the controls near you reach (m) */
+	const REACH = 25;
 	let destroyed = false;
 	/** the frame times of the last second, for the readout */
 	const times = [];
@@ -52,7 +61,8 @@
 
 		const t0 = performance.now();
 		const placed = testScene();
-		for (const p of placed) assets.place(p.ref, { x: p.x, z: p.z, turn: p.turn, scale: p.scale });
+		copies = placed.map((p) => ({ x: p.x, z: p.z, copy: assets.place(p.ref, { x: p.x, z: p.z, turn: p.turn, scale: p.scale }) }));
+		window.__copies = copies;
 		of = assets.kinds().length;
 		line = `Building ${of} kinds of asset in the box`;
 
@@ -73,7 +83,10 @@
 			frame = requestAnimationFrame(tick);
 		};
 		tick();
-		timer = setInterval(() => (stats = readout(renderer)), 500);
+		timer = setInterval(() => {
+			stats = readout(renderer);
+			if (!loading) near = nearby();
+		}, 500);
 
 		await assets.ready((n, total) => {
 			done = n;
@@ -92,6 +105,42 @@
 		const recent = times.slice(-60);
 		const mean = recent.reduce((a, b) => a + b, 0) / Math.max(1, recent.length);
 		return { ...s, fps: mean ? 1000 / mean : 0, ms: mean, calls: renderer.info.render.calls, drawn: renderer.info.render.triangles };
+	}
+
+	/** the copies within reach that have controls, nearest first */
+	function reachable() {
+		const { x, z } = world.camera.position;
+		return copies
+			.map((c) => ({ ...c, d: Math.hypot(c.x - x, c.z - z) }))
+			.filter((c) => c.d < REACH && assets.controlsOf(c.copy).length)
+			.sort((a, b) => a.d - b.d);
+	}
+
+	/** the controls near you, as rows: one for each control any of them has */
+	function nearby() {
+		const rows = new Map();
+		for (const c of reachable()) {
+			const values = assets.poseOf(c.copy);
+			for (const k of assets.controlsOf(c.copy)) {
+				const row = rows.get(k.id);
+				if (row) row.copies++;
+				else rows.set(k.id, { ...k, copies: 1, value: values[k.id] });
+			}
+		}
+		moved = copies.filter((c) => assets.posed(c.copy)).length;
+		return [...rows.values()];
+	}
+
+	/** a control set on every copy within reach that has it */
+	function setNear(id, v) {
+		for (const c of reachable()) assets.pose(c.copy, id, v);
+		near = nearby();
+	}
+
+	/** every copy back at rest */
+	function restAll() {
+		for (const c of copies) assets.rest(c.copy);
+		near = nearby();
 	}
 
 	const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -140,6 +189,7 @@
 		delete window.__assets;
 		delete window.__walker;
 		delete window.__world;
+		delete window.__copies;
 	});
 
 	const n = (x) => Math.round(x).toLocaleString('en');
@@ -184,6 +234,26 @@
 			{#if stats.failed.length}
 				<p class="failed">Did not load: {stats.failed.map((f) => f.label).join(', ')}</p>
 			{/if}
+		{/if}
+		{#if !loading}
+			<section class="controls" aria-label="Controls near you">
+				<h2>Controls near you <span>{REACH} m</span></h2>
+				{#each near as c (c.id)}
+					<label class="control">
+						<span>{c.label} <i>{c.copies} {c.copies === 1 ? 'copy' : 'copies'}</i></span>
+						{#if c.choice}
+							<input type="checkbox" checked={c.value >= 0.5} onchange={(e) => setNear(c.id, e.currentTarget.checked ? c.to : c.from)} />
+						{:else}
+							<input type="range" min={Math.min(c.from, c.to)} max={Math.max(c.from, c.to)} step="0.01" value={c.value} oninput={(e) => setNear(c.id, Number(e.currentTarget.value))} />
+						{/if}
+					</label>
+				{:else}
+					<p class="none">Walk up to a tent, a fire place or a machine.</p>
+				{/each}
+				{#if moved}
+					<button class="rest" onclick={restAll}>Rest {moved} moved {moved === 1 ? 'copy' : 'copies'}</button>
+				{/if}
+			</section>
 		{/if}
 		{#if measured}
 			<table class="measured">
@@ -282,6 +352,64 @@
 	.failed {
 		margin: 0.5rem 0 0;
 		color: #8a2a1a;
+	}
+	.controls {
+		margin-top: 0.7rem;
+		padding-top: 0.6rem;
+		border-top: 1px solid rgb(31 42 35 / 0.12);
+	}
+	.controls h2 {
+		display: flex;
+		justify-content: space-between;
+		margin: 0 0 0.4rem;
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		opacity: 0.7;
+	}
+	.controls h2 span {
+		font-weight: 400;
+		letter-spacing: 0;
+		text-transform: none;
+	}
+	.control {
+		display: grid;
+		gap: 0.15rem;
+		margin-bottom: 0.4rem;
+	}
+	.control span {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.control i {
+		font-style: normal;
+		opacity: 0.55;
+	}
+	.control input[type='range'] {
+		width: 100%;
+		accent-color: #2f5f2a;
+	}
+	.control input[type='checkbox'] {
+		justify-self: start;
+		accent-color: #2f5f2a;
+	}
+	.none {
+		margin: 0;
+		opacity: 0.6;
+	}
+	.rest {
+		width: 100%;
+		margin-top: 0.2rem;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid rgb(31 42 35 / 0.18);
+		border-radius: 999px;
+		background: #fff;
+		color: inherit;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
 	}
 	.measured {
 		width: 100%;
