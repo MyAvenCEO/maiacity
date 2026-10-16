@@ -236,7 +236,8 @@ fn articles_flows_functions_and_posts_are_kinds_of_their_own() {
     assert_eq!((&of(flow)["kind"], &of(flow)["title"]), (&json!("record"), &json!("Content")));
     assert_eq!(of(flow)["record"]["stages"][2]["public"], false, "a stage is private unless it says so");
     assert_eq!((&of(post)["title"], &of(post)["text"]), (&json!("Harvest"), &json!("Out now.")));
-    assert_eq!(of(article)["record"], Value::Null, "a note's record isn't told twice");
+    let told = &of(article)["record"];
+    assert_eq!((&told["title"], &told["text"]), (&json!("Harvest"), &Value::Null), "its text is told once, as `text`");
     // each reads through its own schema alone, and a stage needs its key
     let flows = ok(run(&mut w, mac, json!({ "op": "query", "vault": alice, "schema": "flow" })));
     assert_eq!(entries(&flows), [hex(flow)]);
@@ -466,6 +467,7 @@ fn an_article_is_written_for_a_story_and_a_v1_article_edits_on_in_v2() {
     let shown = of(&de);
     assert_eq!((&shown["kind"], &shown["record"]["story"]["entry"]), (&json!("note"), &json!(story)));
     assert_eq!((&shown["variantOf"], &shown["text"]), (&json!(article), &json!("## The morning")));
+    assert_eq!(shown["record"].get("text"), None, "its text is the entry's, not told twice");
     // an article of v1 opens as it was, and takes its story
     let old = json!({ "kind": "article", "title": "Seeds", "text": "*Sown in March.*" });
     let v1 = lens::ARTICLE_V1.id().to_hex();

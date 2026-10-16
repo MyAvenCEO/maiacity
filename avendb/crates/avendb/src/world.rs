@@ -223,7 +223,8 @@ pub enum What {
     /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
     /// it is a variant of and the version of it it copied, if it is one (`VARIANT`); whether it is deleted (`DELETED`);
     /// how many edits of it the device counts, and how many proposals it has; and for a spark or an article, its
-    /// record, each field it leaves out at its default: a spark's canvas, an article's story, language and quote.
+    /// record, each field it leaves out at its default: a spark's canvas; an article's story, language and quote, all
+    /// but its text, which `text` is.
     Note {
         title: String,
         text: String,
@@ -558,7 +559,9 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
                 let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
                 let deleted = doc.tags.iter().any(|t| t == DELETED);
                 let read = |kind: &str| View::built_in(kind).and_then(|v| item.read(v));
-                let record = read("spark").or_else(|| read("article"));
+                // an article's text is the entry's text already: its record tells the rest
+                let article = || read("article").map(|mut r| (r.as_object_mut().map(|o| o.remove("text")), r).1);
+                let record = read("spark").or_else(article);
                 let variant_of = variant_of(&doc);
                 What::Note { title: doc.title.clone(), text, variant_of, deleted, edits, proposals, record }
             }
