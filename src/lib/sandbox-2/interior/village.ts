@@ -18,7 +18,7 @@ import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mo
 import { cafes, coops, coopsAround, henPatches, playground, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { BIOMES, groundMaterial } from '$lib/biomes'
-import { coverStream } from '$lib/biomes/stream.js'
+import { LEVELS } from '$lib/assets/render/lod.js'
 import { songbirds } from './birds.js'
 import { playDome } from '$lib/models/minidomes.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
@@ -32,7 +32,8 @@ import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
-import { createFlora } from './drawn.js'
+import { createDrawn, createFlora } from './drawn.js'
+import { createCover } from './cover.js'
 import { swapLegacy } from './legacy.js'
 import { DRIFT, FIELDS, OUTDOOR_SPACING, pick, planting, stageOf, type Flora } from './sandbox5.js'
 
@@ -107,6 +108,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	 *  Sandbox 4's squares traded for its plants too (./legacy.js) */
 	// its trees in full near you, coarser to 40 m, and beyond that each a picture of itself
 	const forest: Forest | null = plantsOut ? createForest({ flora: plantsOut }) : null
+	/** the library's assets the village puts down, each built in the asset box and drawn at its finest however far off,
+	 *  as the village always drew what it baked (./drawn.js): Sandbox 5's floor cover, outside and in the domes */
+	const library = createDrawn({ renderer, camera, scene, boxes: 1, levels: [LEVELS[0]!], force: 0, shadows: staleShadows })
 	const swapR = seeded(707)
 	const swap = (root: THREE.Object3D) => {
 		if (forest && flora) swapLegacy(root, scene, forest, { warm: false, seed: flora.seed, r: swapR })
@@ -850,8 +854,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// Sandbox 5's floor cover: the food forest biome's grasses, moss, flowers, strawberries, ferns, leaves and deadwood,
 	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell;
 	// all of it near you, thinning out further off, each plant growing out of the ground as you come (so it has no edge)
-	const floorCover = flora ? coverStream({ recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505 }) : null
-	if (floorCover) scene.add(floorCover.object)
+	// ($lib/biomes/stream.js lays it; each kind built in the box and drawn by the renderer, ./cover.js)
+	const floorCover = flora ? createCover({ drawn: library, recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505 }) : null
 	const TILE = 70
 	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
 	const tiles = new Map<string, Tile>()
@@ -984,7 +988,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		// for a look at its weight from the console: __forest.weight()
 		;(window as unknown as { __forest?: Forest }).__forest = forest
 		// and at what its renderers draw and hold: __assets.stats()
-		;(window as unknown as { __assets?: unknown }).__assets = { stats: () => ({ out: plantsOut!.assets.stats(), in: plantsIn!.assets.stats() }) }
+		;(window as unknown as { __assets?: unknown }).__assets = { stats: () => ({ out: plantsOut!.assets.stats(), in: plantsIn!.assets.stats(), library: library.assets.stats() }) }
 		await pause('Growing the forest')
 	}
 	{
@@ -1209,7 +1213,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const job = { i, cancelled: false }
 		building = job
 		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn! } : undefined })
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
 			.then((h) => {
 				if (building === job) building = null
 				if (job.cancelled || !h.embedded) return h.dispose()
@@ -1336,6 +1340,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		forestTick()
 		// the floor's cover follows the eye every frame (a tile at most built a frame; it fades in as it nears)
 		floorCover?.update(camera.position.x, camera.position.z, filmDraws() ? 999 : 1)
+		library.update()
 		// the film camera draws the canvas itself while it holds it (src/lib/film)
 		if (!filmDraws()) renderer.render(scene, camera)
 		// keep it smooth; while a film is shot every frame is rendered at the resolution it asks for
@@ -1344,11 +1349,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	walker.update(0)
 	sky.follow(camera.position.x, camera.position.z)
+	// what the library's assets are built from, there before the first frame
+	await library.ready()
 	// Sandbox 5: the plants near where you stand at their finer shapes before the first frame, as they always were
 	if (plantsOut) {
 		onProgress('Growing the forest: the plants near you')
 		forestTick()
-		for (let waited = 0; waited < 120000 && !(plantsOut.settled() && plantsIn!.settled()); waited += 100) {
+		for (let waited = 0; waited < 120000 && !(plantsOut.settled() && plantsIn!.settled() && library.settled()); waited += 100) {
 			await new Promise((r) => setTimeout(r, 100))
 			forestTick()
 		}
@@ -1385,6 +1392,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			for (const i of shown) built.get(i)!.update(t)
 			// what the renderers draw of the domes' insides too, now their plants round the camera are put down
 			forestTick()
+			library.update()
 			glowMat.emissive.set(GLOW)
 			for (const p of pool) p.color.set(LAMP)
 			// the glass's sun sheen: off unless the shot turns it up, always towards where the sun is now
@@ -1432,6 +1440,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
 			// one while a finer one is still being built
 			if (plantsOut) await Promise.all([plantsOut.assets.ready(undefined, true), plantsIn!.assets.ready(undefined, true)])
+			await library.ready()
 			settle()
 		},
 		holds: (w) => w.dome === undefined || shown.has(w.dome),
@@ -1502,6 +1511,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			for (const dm of built.values()) dm.dispose()
 			plantsOut?.dispose()
 			plantsIn?.dispose()
+			library.dispose()
 			sound.dispose()
 			world.disconnect()
 			walker.dispose()
