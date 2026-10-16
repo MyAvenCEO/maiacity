@@ -9,7 +9,7 @@
     "ref": { "$ref": "#/$defs/ref" },
     "recipe": { "$ref": "#/$defs/hash" },
     "engine": { "type": "integer", "minimum": 1, "maximum": 10000 },
-    "group": { "enum": ["machines", "actors", "things", "plants", "buildings"] },
+    "group": { "enum": ["machines", "actors", "things", "plants", "buildings", "biomes"] },
     "id": { "$ref": "#/$defs/id" },
     "version": { "type": "integer", "minimum": 1, "maximum": 100000 },
     "variant": { "$ref": "#/$defs/id" },

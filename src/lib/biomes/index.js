@@ -221,5 +221,11 @@ export function coverAt(recipe, r, x, z, hidden) {
 	return w.length - 1;
 }
 
+/**
+ * The seed a kind of a biome's cover is built at: by its place in the recipe and its name, so each kind of a floor is
+ * built a little differently, and the same every time. @param {number} i @param {Cover} kind
+ */
+export const coverSeed = (i, kind) => 7100 + i * 13 + kind.length * 31;
+
 /** Every kind of a biome's cover, built once (in its order). @param {Recipe} recipe */
-export const coverOf = (recipe) => recipe.cover.map((c, i) => COVER[c.kind].build(7100 + i * 13 + c.kind.length * 31));
+export const coverOf = (recipe) => recipe.cover.map((c, i) => COVER[c.kind].build(coverSeed(i, c.kind)));

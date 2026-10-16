@@ -21,8 +21,14 @@ floors taught us on top of them.
 - `index.js`: a biome is surface weights plus colonies; `coverAt` says what stands where; `BIOMES` with its
   `HISTORY`, versioned like every asset.
 - `stream.js`: `coverStream({ recipe, open, tile, reach, near, thin, perFrame, origin })` → `{ object, update(x, z),
-  rebuild(recipe, hidden) }`.
-- Its ref: `biomes/<id>@<v>`.
+  rebuild(recipe, hidden) }`; `coverTile` lays one tile, `coverLaid(recipe, { eye, … })` the stream's floor round an
+  eye that stays, as matrices only, each grown as the fading shader grows it.
+- `built.js`: the cover kinds as recipes of the `biomes` group the asset box builds (`BUILT`): one asset, its kinds
+  its variants, built at a seed, `biomes/cover@1:fern?seed=7139` (`coverRef`, the seed `coverSeed(i, kind)` from
+  `index.js`). `/app/biomes` draws its cover from these through the universal renderer (`$lib/assets/render`), at
+  their finest shape, where `coverLaid` lays them; the worlds still stream their own (`coverStream`).
+- Its ref: `biomes/<id>@<v>`. A biome stays a recipe of numbers, never a box recipe: a floor without an edge laid
+  round the eye, its ground painted by the page's shader, its layout plain sums with no one's code to keep apart.
 
 ## How it is built
 

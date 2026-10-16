@@ -16,7 +16,7 @@ const { metaOf, recipesIn } = await import('../recipe.js');
 const { checkCard, checkText, CARD, ASSET } = await import('./index.js');
 const { hostileCards } = await import('./hostile.js');
 
-const SAMPLES = ['plants/apple?seed=maia&stage=9', 'things/bell-tent', 'machines/powercube@3', 'machines/pickup@1:pickup-cube', 'actors/stand-in', 'buildings/container-tech'];
+const SAMPLES = ['plants/apple?seed=maia&stage=9', 'things/bell-tent', 'machines/powercube@3', 'machines/pickup@1:pickup-cube', 'actors/stand-in', 'buildings/container-tech', 'biomes/cover:fern?seed=7139'];
 
 const cardAt = async (ref) => {
 	const at = await assetAt(ref);

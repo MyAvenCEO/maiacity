@@ -12,6 +12,11 @@
  *
  * `coverStream({ recipe, open })` → `{ object, update(x, z), rebuild(recipe, hidden) }`: add `object` to the scene,
  * call `update` with where the eye is every frame.
+ *
+ * `coverLaid(recipe, { eye })` is the same cover seen from an eye that stays where it is (the Biomes explorer's), as
+ * places only: every plant the stream would draw there, each scaled as far as it grows there, for a page that draws
+ * the kinds itself (the universal renderer, each kind built in the box: ./built.js). `coverTile` is one tile of it, as
+ * both lay it out.
  */
 import * as THREE from 'three';
 import { coverAt, coverOf } from './index.js';
@@ -44,35 +49,10 @@ export function coverStream(o) {
 	const keep = (/** @type {number} */ d) => (d <= near ? 1 : 1 - (1 - thin) * Math.min(1, (d - near) / Math.max(1e-3, reach - near)));
 	/** each kind's meshes (one InstancedMesh per part, sharing the kind's instances) */
 	let kinds = kindsOf(recipe, uniforms, shadows, object);
-	/** @typedef {{ m: Float32Array, rank: Float32Array }[]} TileKinds each kind's plants in a tile, by rank, least first */
 	/** @type {Map<string, { ix: number, iz: number, kinds: TileKinds }>} */
 	const tiles = new Map();
-	const step = () => 1 / Math.sqrt(o.density ?? recipe.density);
 	/** @param {number} ix @param {number} iz @returns {TileKinds} */
-	const build = (ix, iz) => {
-		const r = rng((ix * 73856093) ^ (iz * 19349663) ^ (seed * 83492791));
-		/** @type {{ rank: number, m: THREE.Matrix4 }[][]} */
-		const at = kinds.map(() => []);
-		const s = step(), x0 = ix * tile, z0 = iz * tile;
-		const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), sc = new THREE.Vector3();
-		for (let x = x0; x < x0 + tile; x += s)
-			for (let z = z0; z < z0 + tile; z += s) {
-				const px = x + r() * s, pz = z + r() * s;
-				const k = coverAt(recipe, r, px + ox, pz + oz, hidden);
-				const turn = r() * Math.PI * 2, size = 0.75 + r() * 0.6, rank = r();
-				if (k < 0 || (o.open && !o.open(px, pz))) continue;
-				at[k]?.push({ rank, m: new THREE.Matrix4().compose(p.set(px, 0, pz), q.setFromAxisAngle(up, turn), sc.setScalar(size)) });
-			}
-		return at.map((list) => {
-			list.sort((a, b) => a.rank - b.rank);
-			const m = new Float32Array(list.length * 16), rank = new Float32Array(list.length);
-			list.forEach((e, i) => {
-				e.m.toArray(m, i * 16);
-				rank[i] = e.rank;
-			});
-			return { m, rank };
-		});
-	};
+	const build = (ix, iz) => coverTile(recipe, ix, iz, { tile, seed, density: o.density, open: o.open, origin: [ox, oz], hidden });
 	/** the tiles' plants gathered into each kind's instances, as many of each tile as stand at its distance */
 	let gathered = { x: Infinity, z: Infinity }, changed = true;
 	const gather = (/** @type {number} */ x, /** @type {number} */ z) => {
@@ -153,6 +133,91 @@ export function coverStream(o) {
 		/** how many plants of it stand now, for a look at its weight */
 		count: () => kinds.reduce((a, k) => a + k.count(), 0)
 	};
+}
+
+/** @typedef {{ m: Float32Array, rank: Float32Array }[]} TileKinds each kind's plants in a tile, by rank, least first */
+
+/**
+ * One tile of a biome's cover, worked out from its place alone (the same tile, the same plants, every time): each kind's
+ * plants in it (by its index in `recipe.cover`), their places and their ranks, least first.
+ * @param {import('./index.js').Recipe} recipe @param {number} ix @param {number} iz
+ * @param {{ tile?: number, seed?: number, density?: number, open?: (x: number, z: number) => boolean, origin?: [number, number], hidden?: Set<number> }} [o]
+ * @returns {TileKinds}
+ */
+export function coverTile(recipe, ix, iz, o = {}) {
+	const tile = o.tile ?? 12, seed = o.seed ?? 1, hidden = o.hidden ?? new Set();
+	const [ox, oz] = o.origin ?? [0, 0];
+	const r = rng((ix * 73856093) ^ (iz * 19349663) ^ (seed * 83492791));
+	/** @type {{ rank: number, m: THREE.Matrix4 }[][]} */
+	const at = recipe.cover.map(() => []);
+	const s = 1 / Math.sqrt(o.density ?? recipe.density), x0 = ix * tile, z0 = iz * tile;
+	const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), sc = new THREE.Vector3();
+	for (let x = x0; x < x0 + tile; x += s)
+		for (let z = z0; z < z0 + tile; z += s) {
+			const px = x + r() * s, pz = z + r() * s;
+			const k = coverAt(recipe, r, px + ox, pz + oz, hidden);
+			const turn = r() * Math.PI * 2, size = 0.75 + r() * 0.6, rank = r();
+			if (k < 0 || (o.open && !o.open(px, pz))) continue;
+			at[k]?.push({ rank, m: new THREE.Matrix4().compose(p.set(px, 0, pz), q.setFromAxisAngle(up, turn), sc.setScalar(size)) });
+		}
+	return at.map((list) => {
+		list.sort((a, b) => a.rank - b.rank);
+		const m = new Float32Array(list.length * 16), rank = new Float32Array(list.length);
+		list.forEach((e, i) => {
+			e.m.toArray(m, i * 16);
+			rank[i] = e.rank;
+		});
+		return { m, rank };
+	});
+}
+
+/**
+ * A biome's cover as the stream draws it round an eye that stays where it is (`coverStream` with every tile in reach
+ * built, `update(eye)`): each kind's plants (by its index in `recipe.cover`), as their matrices, each scaled by how far
+ * it grows there (the fading shader's sum, below: the same), the ones that do not grow there left out. The same
+ * options as the stream's.
+ * @param {import('./index.js').Recipe} recipe
+ * @param {{
+ *   tile?: number, reach?: number, near?: number, thin?: number, seed?: number, density?: number, hidden?: Set<number>,
+ *   open?: (x: number, z: number) => boolean, origin?: [number, number], eye?: [number, number]
+ * }} [o]
+ * @returns {Float32Array[]}
+ */
+export function coverLaid(recipe, o = {}) {
+	const tile = o.tile ?? 12, reach = o.reach ?? 30;
+	const near = o.near ?? Math.min(10, reach * 0.4), thin = o.thin ?? 0.3;
+	const [x, z] = o.eye ?? [0, 0];
+	const keep = (/** @type {number} */ d) => (d <= near ? 1 : 1 - (1 - thin) * Math.min(1, (d - near) / Math.max(1e-3, reach - near)));
+	const smooth = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ v) => {
+		const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+		return t * t * (3 - 2 * t);
+	};
+	/** @type {number[][]} */
+	const laid = recipe.cover.map(() => []);
+	// the tiles the stream builds round the eye: out past where the cover shows
+	const out = reach + tile * 0.75;
+	const ix = Math.floor(x / tile), iz = Math.floor(z / tile), n = Math.ceil(out / tile);
+	for (let dx = -n; dx <= n; dx++)
+		for (let dz = -n; dz <= n; dz++) {
+			const tx = ix + dx, tz = iz + dz;
+			if (!(Math.hypot((tx + 0.5) * tile - x, (tz + 0.5) * tile - z) - tile * 0.71 < out)) continue;
+			// as many of the tile as it gathers (by the tile's nearest point, a little nearer still)…
+			const ex = Math.max(tx * tile - x, 0, x - (tx + 1) * tile), ez = Math.max(tz * tile - z, 0, z - (tz + 1) * tile);
+			const td = Math.hypot(ex, ez) - 3;
+			const kk = td > reach ? 0 : keep(Math.max(0, td));
+			if (kk <= 0) continue;
+			coverTile(recipe, tx, tz, o).forEach(({ m, rank }, k) => {
+				for (let i = 0; i < rank.length && /** @type {number} */ (rank[i]) < kk + 0.02; i++) {
+					// …each grown as far as the shader grows it where it stands
+					const d = Math.hypot(/** @type {number} */ (m[i * 16 + 12]) - x, /** @type {number} */ (m[i * 16 + 14]) - z);
+					const grow = Math.min(1, Math.max(0, (keep(d) - /** @type {number} */ (rank[i])) / 0.08)) * (1 - smooth(reach - 4, reach, d));
+					if (!(grow > 0)) continue;
+					const list = /** @type {number[]} */ (laid[k]);
+					for (let j = 0; j < 16; j++) list.push(/** @type {number} */ (m[i * 16 + j]) * (j % 4 < 3 && j < 12 ? grow : 1));
+				}
+			});
+		}
+	return laid.map((list) => Float32Array.from(list));
 }
 
 /**
