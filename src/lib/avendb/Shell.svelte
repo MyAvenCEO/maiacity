@@ -47,6 +47,8 @@
 	/** the vault the person looks at: their own until they pick another */
 	let picked = $state('');
 	let adding = $state(false);
+	/** on a phone, whether the vault's pages slide in from the left */
+	let pages = $state(false);
 
 	/** The vault's pages, in its list: each a group's, by its address, name and icon. */
 	const NAV = /** @type {const} */ ([
@@ -154,7 +156,7 @@
 	}
 </script>
 
-<svelte:window onhashchange={() => (route = parse(location.hash))} />
+<svelte:window onhashchange={() => ((route = parse(location.hash)), (pages = false))} />
 
 <div class="shell" class:reading={!!route.entry}>
 	{#if route.entry}
@@ -190,7 +192,18 @@
 		<button class="slot add" title="New vaults your vault owns" aria-label="New vaults" onclick={() => (adding = true)}>+</button>
 	</nav>
 
-	<aside class="aside">
+	{#if pages}
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="scrim" onclick={() => (pages = false)}></div>
+	{/if}
+	<!-- on a phone: the vault's pages, from a round button at the foot of the screen, left of the nav pill -->
+	<button
+		class="pages"
+		aria-pressed={pages}
+		aria-label="{nameOf(here)}'s pages"
+		onclick={() => (pages = !pages)}><Icon name="library" size={20} /></button
+	>
+	<aside class="aside" class:open={pages}>
 		<header>
 			<small>{KINDS[here.kind]}</small>
 			<h1>{nameOf(here)}</h1>
@@ -355,6 +368,11 @@
 		color: #fff;
 	}
 
+	/* wider, the vault's pages stand in their column: no button to slide them in */
+	.pages {
+		display: none;
+	}
+
 	.aside {
 		padding: calc(1.3rem + env(safe-area-inset-top, 0px)) 0.8rem 7rem;
 		border-right: 1px solid var(--edge);
@@ -487,7 +505,7 @@
 	@media (max-width: 760px) {
 		.shell {
 			grid-template-columns: 1fr;
-			grid-template-rows: auto auto 1fr;
+			grid-template-rows: auto minmax(0, 1fr);
 		}
 
 		.bar {
@@ -514,29 +532,67 @@
 			outline-offset: 2px;
 		}
 
+		/* the vault's pages slide in from the left, over a scrim, from the round button at the foot */
 		.aside {
-			max-height: 40dvh;
-			padding: 1rem 0.8rem 0.6rem;
-			border-right: 0;
-			border-bottom: 1px solid var(--edge);
+			position: fixed;
+			top: 0;
+			bottom: 0;
+			left: 0;
+			z-index: 41;
+			box-sizing: border-box;
+			width: min(19rem, 84vw);
+			overflow-y: auto;
+			overscroll-behavior: contain;
+			padding: calc(1.2rem + env(safe-area-inset-top, 0px)) 0.8rem calc(var(--nav-room, 5rem) + 1rem);
+			box-shadow: 0 0 40px rgb(0 0 0 / 0.18);
+			visibility: hidden;
+			transform: translateX(-100%);
+			transition:
+				transform 240ms ease,
+				visibility 0s linear 240ms;
+		}
+
+		.aside.open {
+			visibility: visible;
+			transform: none;
+			transition: transform 240ms ease;
+		}
+
+		.scrim {
+			position: fixed;
+			inset: 0;
+			z-index: 40;
+			background: rgb(20 28 24 / 0.28);
+		}
+
+		.pages {
+			display: grid;
+			place-items: center;
+			position: fixed;
+			bottom: var(--nav-foot, 8px);
+			left: max(12px, env(safe-area-inset-left, 0px));
+			z-index: 50;
+			box-sizing: border-box;
+			width: var(--nav-height, 52px);
+			height: var(--nav-height, 52px);
+			padding: 0;
+			border: 1px solid var(--line, var(--edge));
+			border-radius: 50%;
+			background: rgb(250 248 242 / 0.94);
+			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+			backdrop-filter: blur(10px);
+			color: inherit;
+			cursor: pointer;
+		}
+
+		.pages[aria-pressed='true'] {
+			border-color: var(--accent);
+			background: var(--accent);
+			color: #fff;
 		}
 
 		.main {
 			padding-top: 1.2rem;
-		}
-
-		.tabs-list {
-			flex-direction: row;
-			overflow-x: auto;
-		}
-
-		.item {
-			width: auto;
-			white-space: nowrap;
-		}
-
-		.tabs-list .group {
-			display: none;
 		}
 
 		.shell.reading {
@@ -546,6 +602,12 @@
 
 		.pq {
 			display: none;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.aside {
+			transition: none;
 		}
 	}
 </style>
