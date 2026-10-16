@@ -26,7 +26,9 @@ const PICK = new THREE.MeshBasicMaterial({ visible: false });
 
 let mods = null;
 const modules = () =>
-	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('$lib/assets/hero.js'), import('$lib/assets/controls.js')]).then(([r, l, x, h, c]) => ({
+	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('$lib/assets/hero.js'), import('$lib/assets/controls.js'), import('$lib/assets/clips.js'), import('$lib/assets/box/host.js')]).then(([r, l, x, h, c, k, b]) => ({
+		AssetBox: b.AssetBox,
+		engine: x.INDEX.engine,
 		createAssets: r.createAssets,
 		loadAsset: l.loadAsset,
 		canonical: l.canonical,
@@ -35,7 +37,9 @@ const modules = () =>
 		recipeAt: x.recipeAt,
 		heroOf: h.heroOf,
 		runner: h.runner,
-		poserOf: c.poserOf
+		poserOf: c.poserOf,
+		playerOf: k.playerOf,
+		bonePoser: k.poser
 	})));
 // in a page, fetched as soon as the world's code is: the box is asked for the first builds before the world's first
 // frame (its shaders compiled, seconds on a slow machine) holds the page up
@@ -64,6 +68,17 @@ export function createDrawn({ renderer, camera, scene }) {
 	const loads = [];
 	/** the builds kept running in the box (`cast`) */
 	const heroes = [];
+	/** the boxes the people are built in, beside the page's (one for each core the page and its box leave, up to two),
+	 *  so that the stand-ins (a third of a second each) are not queued behind everything else; none on a machine of two
+	 *  cores or fewer */
+	const crew = [];
+	let turn = 0;
+	const crewBox = (m) => {
+		const most = Math.max(0, Math.min(2, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 2));
+		if (!most) return undefined;
+		if (crew.length < most) crew.push(new m.AssetBox({ engine: m.engine }));
+		return crew[turn++ % crew.length];
+	};
 	/** whether an anchor is in the scene and shown, and everything it is in */
 	const shown = (o) => {
 		for (let x = o; x; x = x.parent) {
@@ -131,20 +146,21 @@ export function createDrawn({ renderer, camera, scene }) {
 		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data, named,
 		 * poser }` ($lib/assets/load.js; `named`: its first node of each name, as its builder named them; `poser`: its
 		 * controls, played from the numbers the box wrote down: $lib/assets/controls.js), once it is there.
-		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o] `pick`: every
-		 *   part of it named so; `cast`: every part casting a shadow (false: as built)
+		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean, apart?: boolean }} [o]
+		 *   `pick`: every part of it named so (its bones keep their names); `cast`: every part casting a shadow (false: as
+		 *   built); `apart`: built in one of the people's boxes, beside the page's
 		 */
-		load(ref, anchor, { pick, cast = true } = {}) {
+		load(ref, anchor, { pick, cast = true, apart = false } = {}) {
 			let mods;
 			const p = up
-				.then((m) => ((mods = m), m.loadAsset(m.buildAt(ref))))
+				.then((m) => ((mods = m), m.loadAsset(m.buildAt(ref), { box: apart ? crewBox(m) : undefined })))
 				.then((got) => {
 					// its controls played on it (./controls.js), its nodes walked before the world adds any of its own
 					got.poser = mods.poserOf(got.obj);
 					got.named = new Map();
 					got.obj.traverse((c) => {
 						if (c.name && !got.named.has(c.name)) got.named.set(c.name, c);
-						if (pick) c.name = pick;
+						if (pick && !c.isBone) c.name = pick; // (its bones keep theirs: a pose names them)
 						if (cast && c.isMesh) c.castShadow = true;
 					});
 					if (!gone) anchor.add(got.obj);
@@ -175,6 +191,50 @@ export function createDrawn({ renderer, camera, scene }) {
 				return hero;
 			});
 		},
+		/**
+		 * A rigged actor of `ref` (a person: the stand-in, with their height and look) put into `anchor` as the box built
+		 * it, moved as its builder's cast was, by our own code: `rig.bones` by name and `rig.pose(p)` its bones set to a
+		 * pose ($lib/assets/clips.js `poser`); `clips` by name, (t) → pose, played from the tables the box wrote down
+		 * (`playerOf`), each named in `cycles` played within one round of it (s); `poses` its poses as data (its view's
+		 * held ones); `face` the skinned mesh its blend shapes are on (`joy`, `friendly`). `ready` once it is here (a pose
+		 * asked for before is set then); `loaded` settles then.
+		 * @param {string} ref @param {THREE.Object3D} anchor
+		 * @param {{ pick?: string, shadow?: boolean, receive?: boolean, cycles?: Record<string, number> }} [o] `pick`: the
+		 *   name a tap finds it by; `shadow`: whether it casts one; `receive`: whether one falls on it
+		 * @param {(cast: any) => void} [then] what is done once it is here, its bones still as built (anything hung on one)
+		 */
+		actor(ref, anchor, { pick, shadow = true, receive = false, cycles = {} } = {}, then) {
+			let asked = null;
+			const cast = { ready: false, rig: { object: anchor, bones: {}, pose: (p) => void (asked = p) }, clips: {}, poses: {}, mesh: null, face: null, loaded: null };
+			cast.loaded = this.load(ref, anchor, { pick, cast: shadow, apart: true }).then(async (got) => {
+				const m = await up;
+				const view = got.obj.userData.view?.clips;
+				let mesh = null;
+				got.obj.traverse((o) => (mesh ??= o.isSkinnedMesh ? o : null));
+				if (!mesh || !view?.motion) throw new Error(`${ref}: no rig or no clips`);
+				mesh.castShadow = shadow;
+				mesh.receiveShadow = receive;
+				mesh.frustumCulled = false;
+				const bones = mesh.skeleton.bones;
+				for (const [name, clip] of Object.entries(m.playerOf(view.motion, view.bones ?? []))) {
+					const c = cycles[name];
+					cast.clips[name] = c > 0 ? (t, mo) => clip(((t % c) + c) % c, mo) : clip;
+				}
+				Object.assign(cast.poses, view.held ?? {});
+				Object.assign(cast.rig.bones, Object.fromEntries(bones.map((b) => [b.name, b])));
+				cast.mesh = mesh;
+				cast.face = mesh.morphTargetDictionary ? mesh : null;
+				const pose = m.bonePoser(bones);
+				then?.(cast);
+				cast.rig.pose = pose;
+				cast.ready = true;
+				if (asked) pose(asked);
+				return cast;
+			});
+			// (one that did not come stands as nothing)
+			loads.push(cast.loaded.catch((e) => console.warn(`maiacity-v1: ${ref} is not moved: ${e?.message ?? e}`)));
+			return cast;
+		},
 		/** where each copy stands now: before every frame */
 		update() {
 			if (!assets) return;
@@ -195,6 +255,7 @@ export function createDrawn({ renderer, camera, scene }) {
 		dispose() {
 			gone = true;
 			for (const h of heroes.splice(0)) h.dispose();
+			for (const b of crew.splice(0)) b.stop('the world is gone');
 			assets?.dispose();
 		}
 	};

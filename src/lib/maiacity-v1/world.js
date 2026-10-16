@@ -19,16 +19,14 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { backpack } from '$lib/models/planting.js';
 import { bellTent } from '$lib/models/belltent.js';
-import { human } from '$lib/actors/human.ts';
-import { blend } from '$lib/actors/rig.ts';
+import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
-import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, stakeRef, tentWork } from './things.js';
+import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, WALK_CYCLE, stakeRef, standInRef, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
 import { plantRef } from './plants.js';
 
@@ -561,33 +559,45 @@ function stowBottle(pk) {
 	bottle.userData.cap.visible = true;
 }
 
-/** a player: the rigged stand-in from Actors (./actors/human.ts) at 1.8 m, in their seat's colour, their one backpack
- *  on. It plays what it does (act): a clip of the stand-in (idle, walk, wave), one of its poses (kneel, point, look up,
- *  think) or one of the player's own (carry, push), walking on as it moves */
-export function person(seat) {
+/** how tall a player is (m): the stand-in built at it */
+export const PLAYER_HEIGHT = 1.8;
+/** where a player's backpack sits on them, standing as built (their own frame) */
+const PACK_ON = V(0, 0.88, -0.25);
+/**
+ * A player's one backpack (clothes and all they brought, Samuel 2026-10-13) on their chest bone, so it moves with the
+ * back, its back panel and straps against theirs: placed as the stand-in stands as built, in its own frame (`root`).
+ * @param {THREE.Bone} chest @param {THREE.Object3D} pack @param {THREE.Object3D} root
+ */
+export function wearPack(chest, pack, root) {
+	root.updateWorldMatrix(true, true);
+	const rel = root.matrixWorld.clone().invert().multiply(chest.matrixWorld);
+	const q = new THREE.Quaternion();
+	rel.decompose(V(0, 0, 0), q, V(1, 1, 1));
+	chest.add(pack);
+	pack.position.copy(PACK_ON).applyMatrix4(rel.invert());
+	pack.quaternion.copy(q.invert().multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), Math.PI)));
+}
+/** a player: the rigged stand-in (actors/stand-in@11, built in the box at 1.8 m in their seat's colours, ./things.js
+ *  standInRef), their one backpack on (things/backpack@2, shut by its control `open`). It plays what it does (act): a
+ *  clip of the stand-in (idle, walk, wave), one of its poses (kneel, point, look up, think) or one of the player's own
+ *  (carry, push), walking on as it moves; until it is here, nothing of them shows but the heart over them */
+function person(seat, drawn) {
 	const g = new THREE.Group();
 	g.name = `player:${seat}`;
-	const cast = human({ shirt: `#${SEAT_COLOUR[seat].toString(16).padStart(6, '0')}`, trousers: seat === 'A' ? '#5b5145' : '#3d4a5c' }, 1.8);
-	cast.rig.object.name = g.name;
-	cast.rig.object.castShadow = true;
-	cast.rig.object.receiveShadow = false; // the sun's shadow map is far too coarse for a face: it drew a dark band over the eyes
-	cast.rig.object.frustumCulled = false;
+	const body = new THREE.Group();
 	const glow = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0xe0435a, emissive: 0xe0435a, emissiveIntensity: 0.7 }));
 	glow.position.y = 2.3;
 	glow.name = g.name;
-	// one backpack each, clothes and all they brought (Samuel 2026-10-13), shut, on the chest bone so it moves with the
-	// back, its back panel and straps against theirs
-	const pack = backpack({ open: 0 });
-	pack.traverse((o) => o.isMesh && (o.name = g.name));
-	const chest = cast.rig.bones.chest ?? cast.rig.bones.spine;
-	const turned = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), Math.PI);
-	if (chest) {
-		chest.add(pack);
-		chest.updateWorldMatrix(true, false);
-		pack.position.copy(chest.worldToLocal(V(0, 0.88, -0.25)));
-		pack.quaternion.copy(chest.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(turned));
-	} else (pack.position.set(0, 0.88, -0.25), pack.quaternion.copy(turned), g.add(pack));
-	g.add(cast.rig.object, glow);
+	const pack = new THREE.Group();
+	drawn.load(THINGS.pack, pack, { pick: g.name, cast: false }).then((got) => got.poser.set('open', 0), () => {});
+	const look = { shirt: `#${SEAT_COLOUR[seat].toString(16).padStart(6, '0')}`, trousers: seat === 'A' ? '#5b5145' : '#3d4a5c' };
+	// casting its shadow, none on it: the sun's shadow map is far too coarse for a face (it drew a dark band over the eyes)
+	const cast = drawn.actor(standInRef(PLAYER_HEIGHT, look), body, { pick: g.name, shadow: true, receive: false, cycles: { walk: WALK_CYCLE } }, (c) => {
+		const chest = c.rig.bones.chest ?? c.rig.bones.spine;
+		if (chest) wearPack(chest, pack, c.mesh);
+		else (pack.position.copy(PACK_ON), pack.rotation.set(0, Math.PI, 0), body.add(pack));
+	});
+	g.add(body, glow);
 	g.userData = { glow, cast, pack, act: 'idle', t: Math.random() * 9, walked: 0, last: null };
 	return g;
 }
@@ -628,12 +638,13 @@ function stride(p, onGround) {
 /** play a player's act at time t: a clip, a pose, or walking carrying/pushing (the legs walk, the arms hold) */
 function acting(p, t) {
 	const { cast, act } = p.userData;
+	if (!cast.ready) return; // (not here yet)
 	const [what, legs] = act.split('+'); // 'carry+walk': the arms carry, the legs walk
 	const walk = cast.clips.walk(p.userData.walked / CLIP_PACE);
 	const base = legs === 'walk' ? walk : legs ? cast.clips[legs]?.(t) ?? {} : null;
 	// joy: the stand-in's own smile (its blend shape: from v7 a warm closed smile, the corners up, the cheeks lifting
 	// the eyes), shown when they beam (after the first mint), coming on and going off over a moment
-	wearFace(cast.rig.object, { joy: p.userData.joy ? 1 : 0, ease: 0.2 }); // friendly at rest
+	wearFace(cast.face, { joy: p.userData.joy ? 1 : 0, ease: 0.2 }); // friendly at rest
 	const hold = { carry: CARRY, push: PUSH, reach: REACH }[what];
 	if (hold) return cast.rig.pose({ ...(base ?? cast.clips.idle(t)), ...hold });
 	const sat = { drive: { ...WHEEL, ...CAR }, ride: CAR, lap: LAP }[what];
@@ -890,12 +901,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	marker.visible = false;
 	world.add(core, marker);
 	// the travel van of the arrival, packed: the minibus itself built in the box, its glass see-through
-	const van = named(packedVan(), 'asset:van');
+	// (its people stay out of the sun's coarse shadow map: ./van.js)
+	const van = named(packedVan(drawn, 'asset:van'), 'asset:van');
 	drawn.load(THINGS.van, van, { pick: 'asset:van' }).then((got) => seeThrough(got.obj), () => {});
-	for (const p of van.userData.people) p.castShadow = false; // its people stay out of the sun's coarse shadow map
 	van.visible = false;
 	world.add(van);
-	const people = { A: person('A'), B: person('B') };
+	const people = { A: person('A', drawn), B: person('B', drawn) };
 	world.add(people.A, people.B);
 
 	/** a place on the track (0 the highway, 1 the lot) and the way it heads */
@@ -2626,7 +2637,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const { setWet } = myKit.userData;
 		// the seed from the packet in their fingers, down into the hollow and pressed under: from the side, kneeling at
 		// it, then close on the earth as it goes in (Samuel 2026-10-14: the planting was not seen, and oddly framed)
-		const hand = me.userData.cast.rig.bones.handR, IN = L(0, 0.025, 0); // on the hollow's floor, 2 cm up
+		const hand = me.userData.cast.rig.bones.handR ?? me, IN = L(0, 0.025, 0); // on the hollow's floor, 2 cm up (in their hand: them, until they are here)
 		const seedAt = (k) => {
 			// in the hand, then down to the hollow (k 0.35 … 0.75), then pressed in out of sight
 			const from = hand.localToWorld(V(0, -0.06, 0.02));
