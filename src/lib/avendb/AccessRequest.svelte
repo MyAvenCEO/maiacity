@@ -6,8 +6,13 @@
 	own or only some, a level each, Viewer, Suggester or Editor, which the aven gets as any share is given; and approves
 	or denies. Approving a device that is no aven's yet takes one touch of their passkey; a share needs none. Access is
 	the aven's, so every harness of it acts with it, and each vault's Sharing page shows it and takes it back.
+
+	It rises as a sheet from the foot of the page, as the passkey's does (./Signing.svelte), one request at a time, with
+	pills to pick from rather than the browser's own selects and radios. "Later" puts it away until the page is opened
+	again; the request stays until it is answered.
 -->
 <script>
+	import { fade, fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 	import { list, nameOf } from './vaults.js';
 
@@ -91,169 +96,393 @@
 	}
 
 	const short = (/** @type {string} */ id) => `${id.slice(0, 4)}…${id.slice(-4)}`;
+
+	/** the requests put away for later, by their key, until the page opens again */
+	let later = $state(/** @type {string[]} */ ([]));
+	/** the requests to answer now, the first of them shown */
+	const open = $derived(requests.filter((r) => !later.includes(key(r)) && answers[key(r)]));
+	const r = $derived(open[0]);
+	const a = $derived(r && answers[key(r)]);
+	const member = $derived(r && joined(r));
+	/** the levels a vault's pills offer: none, then each level */
+	const PICKS = /** @type {const} */ (['', ...LEVELS]);
 </script>
 
-{#each requests as r (key(r))}
-	{@const a = answers[key(r)]}
-	{@const member = joined(r)}
-	{#if a}
-		<section class="request" aria-label="{r.name} asks for access">
-			<header>
-				<Icon name="key" size={18} />
-				<div>
-					<b>{r.name} {member ? `asks for more access for ${nameOf(member)}` : 'wants to control an aven of yours'}</b>
-					<small class="soft">An agent device on this Mac · its key <span class="mono">{short(r.device)}</span></small>
-				</div>
-			</header>
-			{#if r.why}<blockquote>“{r.why}”</blockquote>{/if}
-			<p class="soft">It asks for <b>{r.level}</b>: it {DOES[r.level]}.</p>
-
-			{#if !member}
-				<label class="row">
-					<span>As a device of</span>
-					<select class="field" bind:value={a.aven}>
-						{#each avens as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
-						<option value={NEW}>A new aven…</option>
-					</select>
-					{#if a.aven === NEW}
-						<input class="field" bind:value={a.naming} aria-label="The new aven's name" placeholder="Its name" />
-					{/if}
-				</label>
-			{/if}
-
-			<fieldset>
-				<legend>Which vaults</legend>
-				<label><input type="radio" bind:group={a.all} value={true} /> All my vaults</label>
-				<label><input type="radio" bind:group={a.all} value={false} /> Only select vaults</label>
-			</fieldset>
-			{#if a.all}
-				<label class="row">
-					<span>Every vault, at</span>
-					<select class="field" bind:value={a.level}>
-						{#each LEVELS as l (l)}<option value={l}>{l}</option>{/each}
-					</select>
-				</label>
-			{:else}
-				<ul>
-					{#each ownable as v (v.id)}
-						<li>
-							<span>{nameOf(v)}</span>
-							<select class="field" bind:value={a.levels[v.id]} aria-label="{nameOf(v)}'s level">
-								<option value="">No access</option>
-								{#each LEVELS as l (l)}<option value={l}>{l}</option>{/each}
-							</select>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-			<p class="soft">
-				{says(a)}
-				{#if !member}One touch of your passkey adds this device to {avenName(a) || 'the aven'}.{/if}
-				Each vault's Sharing page shows it and takes it back.
-			</p>
-			{#if !member && !r.online}
-				<p class="offline">
-					{r.name} isn't running right now. Joining an aven takes its own device, which signs it too: open a Claude
-					Code session (or the harness it belongs to), and Approve turns on.
+{#if r && a}
+	<div class="scrim" transition:fade={{ duration: 180 }}></div>
+	<div
+		class="sheet"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="request-title"
+		transition:fly={{ y: 640, duration: 280, opacity: 1 }}
+	>
+		<div class="grip" aria-hidden="true"></div>
+		<header>
+			<span class="badge" aria-hidden="true"><Icon name="key" size={18} /></span>
+			<div>
+				<h2 id="request-title">
+					{r.name}
+					{member ? `asks for more access for ${nameOf(member)}` : 'wants to control an aven of yours'}
+				</h2>
+				<p class="soft">
+					An agent device on this Mac · its key <span class="mono">{short(r.device)}</span>
+					{#if open.length > 1}· 1 of {open.length}{/if}
 				</p>
-			{/if}
-			<div class="actions">
-				<button
-					class="btn primary"
-					disabled={busy || (a.aven === NEW && !a.naming.trim()) || (!member && !r.online)}
-					onclick={() => approve(r)}>Approve</button
-				>
-				<button class="btn quiet" disabled={busy} onclick={() => ondeny(r.name, r.device)}>Deny</button>
 			</div>
+			<span class="state" class:on={member || r.online}>{member || r.online ? 'Running' : 'Not running'}</span>
+		</header>
+
+		{#if r.why}<blockquote>“{r.why}”</blockquote>{/if}
+		<p class="soft">It asks for <b>{r.level}</b>: it {DOES[r.level]}.</p>
+
+		{#if !member}
+			<section>
+				<h3>As a device of</h3>
+				<div class="pills" role="radiogroup" aria-label="The aven it joins">
+					{#each avens as v (v.id)}
+						<button role="radio" aria-checked={a.aven === v.id} class:on={a.aven === v.id} onclick={() => (a.aven = v.id)}
+							>{nameOf(v)}</button
+						>
+					{/each}
+					<button role="radio" aria-checked={a.aven === NEW} class:on={a.aven === NEW} onclick={() => (a.aven = NEW)}
+						><Icon name="plus" size={13} /> A new aven</button
+					>
+				</div>
+				{#if a.aven === NEW}
+					<input class="name" bind:value={a.naming} aria-label="The new aven's name" placeholder="Its name" />
+				{/if}
+			</section>
+		{/if}
+
+		<section>
+			<h3>Which vaults</h3>
+			<div class="switch" role="radiogroup" aria-label="Which vaults">
+				<button role="radio" aria-checked={a.all} class:on={a.all} onclick={() => (a.all = true)}>All my vaults</button>
+				<button role="radio" aria-checked={!a.all} class:on={!a.all} onclick={() => (a.all = false)}
+					>Only some</button
+				>
+			</div>
+			{#if a.all}
+				<div class="vault">
+					<span>Every vault</span>
+					<div class="levels" role="radiogroup" aria-label="Every vault's level">
+						{#each LEVELS as l (l)}
+							<button role="radio" aria-checked={a.level === l} class:on={a.level === l} onclick={() => (a.level = l)}
+								>{l}</button
+							>
+						{/each}
+					</div>
+				</div>
+			{:else}
+				{#each ownable as v (v.id)}
+					<div class="vault">
+						<span>{nameOf(v)}</span>
+						<div class="levels" role="radiogroup" aria-label="{nameOf(v)}'s level">
+							{#each PICKS as l (l)}
+								<button
+									role="radio"
+									aria-checked={(a.levels[v.id] ?? '') === l}
+									class:on={(a.levels[v.id] ?? '') === l}
+									class:none={l === ''}
+									onclick={() => (a.levels[v.id] = l)}>{l || 'None'}</button
+								>
+							{/each}
+						</div>
+					</div>
+				{/each}
+			{/if}
 		</section>
-	{/if}
-{/each}
+
+		<p class="says">
+			{says(a)}
+			{#if !member}One touch of your passkey adds this device to {avenName(a) || 'the aven'}.{/if}
+			Each vault's Sharing page shows it and takes it back.
+		</p>
+		{#if !member && !r.online}
+			<p class="offline">
+				{r.name} isn't running right now. Joining an aven takes its own device, which signs it too: open a Claude Code
+				session (or the harness it belongs to), and Approve turns on.
+			</p>
+		{/if}
+		<div class="actions">
+			<button class="btn quiet" disabled={busy} onclick={() => (later = [...later, key(r)])}>Later</button>
+			<button class="btn quiet danger" disabled={busy} onclick={() => ondeny(r.name, r.device)}>Deny</button>
+			<button
+				class="btn primary"
+				disabled={busy || (a.aven === NEW && !a.naming.trim()) || (!member && !r.online)}
+				onclick={() => approve(r)}>Approve</button
+			>
+		</div>
+	</div>
+{/if}
 
 <style>
-	.offline {
-		margin: 0;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		background: #f6efe0;
-		font-size: 0.88rem;
+	/* under the passkey's own sheet, which rises over it as Approve asks for the passkey */
+	.scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 60;
+		background: rgb(20 28 24 / 0.32);
 	}
 
-	.request {
+	.sheet {
+		position: fixed;
+		left: 50%;
+		bottom: var(--nav-room, 0.5rem);
+		z-index: 61;
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
-		margin: 0 0 1rem;
-		padding: 0.9rem 1rem;
-		border: 1px solid var(--accent);
-		border-radius: 12px;
-		background: #fff;
+		gap: 0.9rem;
+		box-sizing: border-box;
+		width: min(36rem, calc(100% - 1rem));
+		max-height: min(46rem, calc(100vh - var(--nav-room, 0.5rem) - 1rem));
+		overflow-y: auto;
+		transform: translateX(-50%);
+		padding: 0.6rem 1.2rem 1.2rem;
+		border-radius: 1.1rem;
+		background: var(--card, #fff);
+		box-shadow: 0 -12px 40px rgb(0 0 0 / 0.18);
 		font-size: 0.9rem;
 	}
 
-	.request header {
+	.grip {
+		width: 2.6rem;
+		height: 0.28rem;
+		margin: 0 auto -0.2rem;
+		border-radius: 999px;
+		background: var(--edge);
+	}
+
+	header {
 		display: flex;
+		gap: 0.75rem;
 		align-items: flex-start;
-		gap: 0.5rem;
 	}
 
-	.request header div {
-		display: flex;
-		flex-direction: column;
+	header > div {
+		flex: 1;
+		min-width: 0;
 	}
 
-	.request p,
-	.request blockquote {
+	.badge {
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 2.2rem;
+		height: 2.2rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		color: var(--accent);
+	}
+
+	/* the title in the site's display face, as the passkey's sheet has it */
+	h2 {
 		margin: 0;
+		font-size: 1.25rem;
+		letter-spacing: -0.01em;
+		line-height: 1.2;
 	}
 
-	.request blockquote {
-		padding-left: 0.7rem;
-		border-left: 3px solid var(--accent);
-	}
-
-	.request fieldset {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem 1.2rem;
-		margin: 0;
-		padding: 0;
-		border: 0;
-	}
-
-	.request legend {
-		margin-bottom: 0.3rem;
+	/* the labels in the page's own type */
+	h3 {
+		margin: 0 0 0.45rem;
+		font-family: var(--font-body);
+		font-size: 0.78rem;
 		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--soft);
 	}
 
-	.row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.request ul {
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
+	p {
 		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
-	.request li {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.8rem;
+	header p {
+		margin-top: 0.15rem;
+		font-size: 0.82rem;
+	}
+
+	.soft {
+		color: var(--soft);
 	}
 
 	.mono {
 		font-family: ui-monospace, monospace;
 	}
 
+	.state {
+		flex: none;
+		padding: 0.2rem 0.6rem;
+		border-radius: 999px;
+		font-size: 0.78rem;
+		background: #f6efe0;
+		color: #8a6a2f;
+	}
+
+	.state.on {
+		background: color-mix(in srgb, var(--ok) 14%, transparent);
+		color: var(--ok);
+	}
+
+	blockquote {
+		margin: 0;
+		padding: 0.55rem 0.8rem;
+		border-radius: 10px;
+		background: #f7f5f0;
+		font-style: italic;
+	}
+
+	/* choices as pills: the chosen one filled */
+	.pills,
+	.switch,
+	.levels {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+
+	.switch,
+	.levels {
+		flex-wrap: nowrap;
+		gap: 0;
+		padding: 2px;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #f4f1eb;
+	}
+
+	.switch {
+		display: inline-flex;
+	}
+
+	.pills button,
+	.switch button,
+	.levels button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		border: 0;
+		background: transparent;
+		font: inherit;
+		font-weight: 500;
+		color: var(--soft);
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.pills button {
+		padding: 0.38rem 0.85rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		color: inherit;
+	}
+
+	.switch button {
+		padding: 0.3rem 0.9rem;
+		border-radius: 999px;
+		font-size: 0.85rem;
+	}
+
+	.levels button {
+		padding: 0.24rem 0.65rem;
+		border-radius: 999px;
+		font-size: 0.78rem;
+	}
+
+	.pills button:hover,
+	.switch button:hover,
+	.levels button:hover {
+		color: var(--accent);
+	}
+
+	.pills button.on,
+	.switch button.on,
+	.levels button.on {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: #fff;
+	}
+
+	.levels button.none.on {
+		border-color: transparent;
+		background: #fff;
+		color: inherit;
+		box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+	}
+
+	.name {
+		box-sizing: border-box;
+		width: 100%;
+		margin-top: 0.5rem;
+		padding: 0.55rem 0.85rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		font: inherit;
+		outline: none;
+	}
+
+	.name:focus {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+	}
+
+	.vault {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.8rem;
+		padding: 0.45rem 0;
+		border-bottom: 1px solid var(--edge);
+	}
+
+	.vault:last-child {
+		border-bottom: 0;
+	}
+
+	.switch + .vault,
+	.switch + .vault ~ .vault {
+		margin-top: 0;
+	}
+
+	section .switch {
+		margin-bottom: 0.35rem;
+	}
+
+	.vault > span {
+		min-width: 0;
+		overflow-wrap: anywhere;
+		font-weight: 500;
+	}
+
+	.says {
+		padding: 0.6rem 0.8rem;
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--accent) 7%, transparent);
+		line-height: 1.45;
+	}
+
+	.offline {
+		padding: 0.6rem 0.8rem;
+		border-radius: 10px;
+		background: #f6efe0;
+		line-height: 1.45;
+	}
+
 	.actions {
 		display: flex;
 		gap: 0.5rem;
+		justify-content: flex-end;
+	}
+
+	@media (max-width: 520px) {
+		.vault {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.35rem;
+		}
 	}
 </style>
