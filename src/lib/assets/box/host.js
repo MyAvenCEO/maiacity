@@ -14,13 +14,23 @@ import { Shell, TIMEOUT, frozen } from '../../sandbox/frame.js';
 
 export { TIMEOUT };
 
+/** each engine's code as it was fetched and checked, once for every box of the page that runs it */
+const codes = new Map();
+
 /**
- * A frozen engine's code, its bytes checked against its hash. @param {number} v
+ * A frozen engine's code, its bytes checked against its hash (once a page: the boxes that run it share the checked
+ * text). @param {number} v
  * @returns {Promise<string>}
  */
-export async function engineCode(v) {
-	if (!engineAt(v)) throw new Error(`no engine ${v}`);
-	return frozen(enginePath(v), engineAt(v).blake3, `engine ${v}`);
+export function engineCode(v) {
+	if (!engineAt(v)) return Promise.reject(new Error(`no engine ${v}`));
+	if (!codes.has(v)) {
+		const code = frozen(enginePath(v), engineAt(v).blake3, `engine ${v}`);
+		codes.set(v, code);
+		// (a fetch that failed is tried again by the next box)
+		code.catch(() => codes.delete(v));
+	}
+	return codes.get(v);
 }
 
 export class AssetBox extends Shell {

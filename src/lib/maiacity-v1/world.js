@@ -3438,6 +3438,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		get ready() {
 			return drawn.ready();
 		},
+		/** settles once every library asset in the camera's view (as the next frame is drawn) is there to draw (or
+		 *  failed): what the shot on screen shows, the rest perhaps still coming */
+		get inView() {
+			return drawn.inView();
+		},
 		/** what the renderer draws of the library */
 		stats: () => drawn.stats(),
 		dispose() {
