@@ -78,7 +78,7 @@ export function bytesOf(data) {
 		if (!t) continue;
 		add(t.pixels?.data);
 		add(t.picture?.rgba);
-		n += t.picture?.png?.size ?? 0;
+		n += t.picture?.png?.size ?? t.picture?.png?.byteLength ?? 0;
 		if (t.bitmap) n += t.bitmap.width * t.bitmap.height * 4;
 	}
 	return n;
@@ -115,8 +115,21 @@ async function pictures(data, encode) {
 	return out;
 }
 
-/** A build's data as it is stored: its pictures (ImageBitmaps, which IndexedDB cannot keep) as PNG files, lossless. */
-export const storable = (data) => pictures(data, async ({ c }) => ({ png: await c.convertToBlob({ type: 'image/png' }) }));
+/**
+ * A build's data as it is stored: its pictures (ImageBitmaps, which IndexedDB cannot keep) as PNG files, lossless, kept
+ * as their bytes (WebKit, the Mac app's engine, refuses to keep a Blob in IndexedDB in some windows, which lost every
+ * build with a picture there).
+ */
+export const storable = (data) => pictures(data, async ({ c }) => ({ png: new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer()) }));
+
+/** a PNG file's first eight bytes */
+const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/** a stored picture as a PNG file: its bytes (or, kept before, a Blob), refused if it is not one */
+function pngOf(png) {
+	if (png instanceof Blob && png.type === 'image/png') return png;
+	if (png instanceof Uint8Array && png.length > 8 && PNG.every((b, i) => png[i] === b)) return new Blob([png], { type: 'image/png' });
+	throw new Error('refused: a stored picture that is no PNG');
+}
 
 /** A build's data with its pictures as their pixels, to compare two builds bit for bit (`fingerprint`). */
 export const pixelsOf = (data) => pictures(data, async ({ g, c }) => ({ rgba: new Uint8Array(g.getImageData(0, 0, c.width, c.height).data.buffer) }));
@@ -131,8 +144,7 @@ export async function revive(data) {
 			data[k].map(async (t) => {
 				if (!t?.picture) return t;
 				const { png, width, height } = t.picture;
-				if (!(png instanceof Blob) || png.type !== 'image/png') throw new Error('refused: a stored picture that is no PNG');
-				const bitmap = await createImageBitmap(png);
+				const bitmap = await createImageBitmap(pngOf(png));
 				if (bitmap.width !== width || bitmap.height !== height) throw new Error('refused: a stored picture of another size');
 				const { picture, ...rest } = t;
 				return { ...rest, bitmap };
