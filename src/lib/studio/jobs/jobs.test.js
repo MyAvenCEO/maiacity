@@ -122,3 +122,69 @@ test('an explicit ask makes a task once, with the params the asker gives', () =>
 	expect(asking(rule('render'), cut, world([cut, taskEntry('t1', a.value)]), 'samuel', V, 6, { delivery: 'reel' })).not.toBeNull();
 	expect(tasksOf(world([taskEntry('t1', a.value)]))[0].entry).toBe('t1');
 });
+
+// A device in memory: the world, entries made by `create`, record fields set by `batch`, and file bytes by root.
+function fakeDevice(entries, bytes) {
+	let n = 0;
+	const sent = [];
+	const one = (op) => {
+		if (op.op === 'create') {
+			const entry = `e${++n}`;
+			const value = op.type === 'schema' ? null : structuredClone(op.value);
+			entries.push({ entry, vault: op.vault, type: op.type, title: op.type === 'schema' ? JSON.parse(op.value).title : null, tags: [], deleted: false, record: value, files: [] });
+			return { ok: { entry } };
+		}
+		if (op.op === 'set') {
+			const e = entries.find((x) => x.entry === op.entry);
+			e.record[op.path[0]] = op.value;
+			return { ok: {} };
+		}
+		throw new Error(`unknown op ${op.op}`);
+	};
+	return {
+		sent,
+		entries,
+		async send(op) {
+			sent.push(op);
+			if (op.op === 'world') return { ok: { me: 'dev1', mine: V, entries } };
+			if (op.op === 'read_file') return { ok: {}, bytes: bytes[op.root].subarray(op.from, op.to) };
+			if (op.op === 'batch') return { ok: op.ops.map(one) };
+			return one(op);
+		}
+	};
+}
+
+test('the worker adds the schemas, queues the checksum, claims it, reads the bytes and names their BLAKE3', async () => {
+	const { Worker } = await import('./worker.js');
+	const { EXECUTORS } = await import('./executors.js');
+	const { blake3 } = await import('@noble/hashes/blake3.js');
+	const { bytesToHex } = await import('@noble/hashes/utils.js');
+	const data = new Uint8Array(3 << 20).map((_, i) => i % 251);
+	const f = { ...file(7, 'text/plain', ['jobs:test']), files: [{ root: 'r7', size: data.length + 64, len: data.length }] };
+	const d = fakeDevice([f], { r7: data });
+	const w = new Worker({ send: (op) => d.send(op), executors: EXECUTORS, now: () => 1000 });
+	const started = await w.tick();
+	expect(started).toHaveLength(1);
+	expect(d.entries.filter((e) => e.type === 'schema').map((e) => e.title).sort()).toEqual(['Rule, v1', 'Task, v1']);
+	await new Promise((r) => setTimeout(r, 50));
+	const t = d.entries.find((e) => e.type === 'task').record;
+	expect(t.status).toBe('done');
+	expect(t.worker).toBe('dev1');
+	expect(JSON.parse(t.result).blake3.r7).toBe(bytesToHex(blake3(data)));
+	expect(d.sent.filter((o) => o.op === 'read_file')).toHaveLength(3);
+	// done: the next round queues nothing and claims nothing
+	expect(await w.tick()).toEqual([]);
+	expect(d.entries.filter((e) => e.type === 'task')).toHaveLength(1);
+});
+
+test('a worker whose executor fails marks the task failed, and it is tried again', async () => {
+	const { Worker } = await import('./worker.js');
+	const f = file(8, 'text/plain', ['jobs:test']);
+	const d = fakeDevice([f], {});
+	const w = new Worker({ send: (op) => d.send(op), executors: { checksum: async () => { throw new Error('boom'); } }, now: () => 1000 });
+	await w.tick();
+	await new Promise((r) => setTimeout(r, 20));
+	const t = d.entries.find((e) => e.type === 'task').record;
+	expect([t.status, t.attempts, t.error]).toEqual(['failed', 1, 'boom']);
+	expect(await w.tick()).toHaveLength(1);
+});
