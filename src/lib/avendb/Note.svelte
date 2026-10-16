@@ -1029,6 +1029,7 @@
 	/* the whole screen, as a docs app's document: a bar on top, then three columns, each scrolling on its own */
 	.doc {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto auto minmax(0, 1fr);
 		height: 100%;
 		min-height: 0;
@@ -1783,7 +1784,7 @@
 			display: none;
 		}
 
-		/* one row: back, the title with its line under it, then the tools */
+		/* one row: back, the title, then who it is shared with and the tools */
 		.top {
 			flex-wrap: nowrap;
 		}
@@ -1800,31 +1801,21 @@
 			white-space: nowrap;
 		}
 
-		.meta {
-			margin-left: 0.3rem;
-			overflow: hidden;
-			font-size: 0.7rem;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-		}
-
-		.meta.shared,
-		.mode.main {
+		/* the avatars say who it is shared with; its line of edits and tags waits on a wider screen */
+		.meta,
+		.mode:not(.warn) {
 			display: none;
 		}
 
 		.tools {
-			flex: none;
+			flex: 0 1 auto;
 			flex-wrap: nowrap;
 			gap: 0.25rem;
+			min-width: 0;
 		}
 
 		.tools > * {
 			flex: none;
-		}
-
-		.tools .label {
-			display: none;
 		}
 
 		.tools .btn {

@@ -4,7 +4,8 @@
 	a place), home to the dashboard, and you (who is signed in, your name, the public site, signing out). No page has a
 	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
 	dashboard. A page may add a green "+" between Home and You that opens its main sheet, and the accounts it can be
-	looked at as, listed in the You menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs).
+	looked at as, listed in the You menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs), and a context of
+	its own beside You, with a menu of its own (avenDB's vaults), kept apart from the account signed in.
 
 	Where it floats and the room it takes are said once, in src/app.css (--nav-foot, --nav-height, --nav-room): full-screen
 	pages keep what they show at their foot above it with --nav-room.
@@ -21,6 +22,9 @@
 
 	const home = `${base}/app/`;
 	let open = $state(false);
+	/** whether the page's context menu (avenDB's vaults) is open, apart from the You menu */
+	let ctx = $state(false);
+	const here = $derived(pill.context ? (pill.context.list.find((a) => a.id === pill.context?.current) ?? null) : null);
 	const path = $derived(page.url.pathname);
 	const up = $derived(upFrom(path.slice(base.length)));
 	const initials = $derived(founder.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase());
@@ -29,10 +33,11 @@
 	$effect(() => {
 		void path;
 		open = false;
+		ctx = false;
 	});
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && ((open = false), (ctx = false))} />
 
 <nav class="pill" aria-label="App">
 	{#if back.open}
@@ -50,10 +55,31 @@
 			<span class="ring"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></span><span>{pill.center.label}</span>
 		</button>
 	{/if}
-	<button class="item" class:on={open} onclick={() => (open = !open)} aria-expanded={open} aria-haspopup="true" title={acting ? `${founder.name}, as ${acting.label}` : founder.name}>
+	<button class="item" class:on={open} onclick={() => ((open = !open), (ctx = false))} aria-expanded={open} aria-haspopup="true" title={acting ? `${founder.name}, as ${acting.label}` : founder.name}>
 		{#if acting}<span class="avatar {acting.shape ?? 'human'}" style="background:{acting.colour}; color:#fff">{acting.text}</span><span>{acting.label.replace(/ COOP$/, '')}</span>
 		{:else}<span class="avatar">{initials}</span><span>You</span>{/if}
 	</button>
+	{#if pill.context && here}
+		<button class="item" class:on={ctx} onclick={() => ((ctx = !ctx), (open = false))} aria-expanded={ctx} aria-haspopup="true" title="{pill.context.title}: {here.label}">
+			<span class="avatar {here.shape ?? 'human'}" style="background:{here.colour}; color:#fff">{here.text}</span><span class="ctx-name">{here.label}</span>
+		</button>
+	{/if}
+	{#if ctx && pill.context}
+		<div class="account" role="menu">
+			<p class="group">{pill.context.title}</p>
+			{#each pill.context.list as a (a.id)}
+				<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), (ctx = false))}>
+					<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff">{a.text}</span>
+					<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
+					{#if a.id === pill.context.current}<span class="tick" aria-hidden="true">✓</span>{/if}
+				</button>
+			{/each}
+			{#if pill.context.add}
+				<hr />
+				<button role="menuitem" onclick={() => (pill.context?.add?.go(), (ctx = false))}>{pill.context.add.label}</button>
+			{/if}
+		</div>
+	{/if}
 	{#if open}
 		<div class="account" role="menu">
 			<p class="who"><b>{founder.name}</b><span>Founder {String(founder.number).padStart(3, '0')}</span></p>
@@ -180,6 +206,14 @@
 
 	.avatar.coop {
 		border-radius: 7px;
+	}
+
+	/* the context's name under its mark, cut to the item's width */
+	.ctx-name {
+		max-width: 4.5rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.avatar.aven {
 		border-radius: 4px;
