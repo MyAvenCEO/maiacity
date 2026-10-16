@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { labelOf, poserOf, walk } from './controls.js';
 import { MOVE_SAMPLES } from './box/view.js';
+import { LIGHT, MAT, putLight, putLook } from './box/bake.js';
 import { LAB_PLANES, capPatch } from './kit.js';
 
 /** the controls the stage itself plays: drawn apart is its Explode view; built (or pitched) its Assemble move */
@@ -125,6 +126,37 @@ export function heroOf({ obj: root, card }, { start } = {}) {
 			o.instanceMatrix.array.set(m.matrices);
 			o.instanceMatrix.needsUpdate = true;
 			o.frustumCulled = false;
+		}
+		// engine 5: a mesh reshaped, a material's look and a light changed (a fire's flicker)
+		for (const m of Array.isArray(r.shapes) ? r.shapes : []) {
+			const o = nodes[Number.isInteger(m?.node) && m.node < N ? m.node : fail('a step: shapes')];
+			const g = o.geometry, p = g?.attributes?.position;
+			if (!o.isMesh || !p || !(m.position instanceof Float32Array) || m.position.length !== p.count * 3) fail('a step: shapes');
+			finite(m.position, 'a step');
+			p.array.set(m.position);
+			p.needsUpdate = true;
+			const n = g.attributes.normal;
+			if (m.normal != null) {
+				if (!n || !(m.normal instanceof Float32Array) || m.normal.length !== n.count * 3) fail('a step: normals');
+				finite(m.normal, 'a step');
+				n.array.set(m.normal);
+				n.needsUpdate = true;
+			}
+			g.computeBoundingSphere();
+			o.frustumCulled = false;
+		}
+		for (const m of Array.isArray(r.looks) ? r.looks : []) {
+			const o = nodes[Number.isInteger(m?.node) && m.node < N ? m.node : fail('a step: looks')];
+			const mat = Array.isArray(o.material) ? o.material[m.slot] : m.slot === 0 ? o.material : null;
+			if (!mat || !(m.values instanceof Float32Array) || m.values.length !== MAT) fail('a step: looks');
+			finite(m.values, 'a step');
+			putLook(mat, m.values, 0);
+		}
+		for (const m of Array.isArray(r.lights) ? r.lights : []) {
+			const o = nodes[Number.isInteger(m?.node) && m.node < N ? m.node : fail('a step: lights')];
+			if (!o.isLight || !(m.values instanceof Float32Array) || m.values.length !== LIGHT) fail('a step: lights');
+			finite(m.values, 'a step');
+			putLight(o, m.values, 0);
 		}
 		if (lab && r.read && typeof r.read === 'object') {
 			const x = r.read;

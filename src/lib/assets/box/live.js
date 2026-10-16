@@ -5,14 +5,15 @@
  * tick it, frame by frame (`tick`): the box sets what the page asks (the solver's sliders, the controls, the clip and
  * its time, a pose held, the parts drawn apart or flown in), runs one step of it, and hands back only what changed
  * since the last step, as numbers: each node moved (its place, turn and size, by its place in the walk of the tree,
- * the order the page built it in, ./serialize.js), shown or hidden, its blend shapes, its instances; and what the
- * solver reads now (its hero number, its labels' readings, its sliders). The page checks them (../hero.js) and puts
- * them on its own copy, which nothing of the box's touches.
+ * the order the page built it in, ./serialize.js), shown or hidden, its blend shapes, its instances; each mesh
+ * reshaped, its positions and normals (engine 5), each material's look and each light that changed (./bake.js
+ * `MAT`, `LIGHT`: a fire's flicker); and what the solver reads now (its hero number, its labels' readings, its
+ * sliders). The page checks them (../hero.js) and puts them on its own copy, which nothing of the box's touches.
  *
  * A session is one build; a box keeps a few (the last ones ticked), and a torn-down box has none (the page then shows
  * its copy standing still).
  */
-import { offered, trsOf } from './bake.js';
+import { LIGHT, MAT, SLOTS, lightOf, lookOf, materialsOf, offered, reshaped, shapeOf, trsOf } from './bake.js';
 
 /** sessions a box keeps at once: the last ones ticked */
 const KEEP = 4;
@@ -53,13 +54,29 @@ export function open(obj, cast, nodes) {
 		trs: new Float32Array(list.length * 10),
 		visible: new Uint8Array(list.length),
 		morph: new Map(),
-		instances: new Map()
+		instances: new Map(),
+		looks: new Map(),
+		lights: new Map(),
+		shapes: new Map()
 	};
 	list.forEach((o, i) => {
 		trsOf(o, last.trs, i * 10);
 		last.visible[i] = o.visible ? 1 : 0;
 		if (o.morphTargetInfluences?.length) last.morph.set(i, Float32Array.from(o.morphTargetInfluences));
 		if (o.isInstancedMesh) last.instances.set(i, Float32Array.from(o.instanceMatrix.array.subarray(0, o.count * 16)));
+		const mats = materialsOf(o).slice(0, SLOTS);
+		if (mats.length) {
+			const v = new Float32Array(mats.length * MAT);
+			mats.forEach((m, k) => lookOf(m, v, k * MAT));
+			last.looks.set(i, v);
+		}
+		if (o.isLight) {
+			const v = new Float32Array(LIGHT);
+			lightOf(o, v, 0);
+			last.lights.set(i, v);
+		}
+		const sh = shapeOf(o);
+		if (sh) last.shapes.set(i, sh);
 	});
 	const id = next++;
 	sessions.set(id, { obj, cast, asset, list, controls, last, time: 0, broken: false, used: 0 });
@@ -125,8 +142,8 @@ export function tick(id, ask = {}) {
 /** what changed on the build since the last step, as numbers */
 function changes(s) {
 	const { list, last } = s;
-	const nodes = [], trs = [], visible = [], morph = [], instances = [];
-	const cur = new Float32Array(10);
+	const nodes = [], trs = [], visible = [], morph = [], instances = [], shapes = [], looks = [], lights = [];
+	const cur = new Float32Array(10), look = new Float32Array(MAT), light = new Float32Array(LIGHT);
 	list.forEach((o, i) => {
 		trsOf(o, cur, 0);
 		const vis = o.visible ? 1 : 0;
@@ -153,8 +170,43 @@ function changes(s) {
 				instances.push({ node: i, matrices: Float32Array.from(mw) });
 			}
 		}
+		const lw = last.looks.get(i);
+		if (lw)
+			materialsOf(o).slice(0, lw.length / MAT).forEach((x, k) => {
+				lookOf(x, look, 0);
+				let any = false;
+				for (let q = 0; q < MAT && !any; q++) any = Math.abs(look[q] - lw[k * MAT + q]) > EPS;
+				if (!any) return;
+				lw.set(look, k * MAT);
+				looks.push({ node: i, slot: k, values: Float32Array.from(look) });
+			});
+		const ll = last.lights.get(i);
+		if (ll) {
+			lightOf(o, light, 0);
+			let any = false;
+			for (let q = 0; q < LIGHT && !any; q++) any = Math.abs(light[q] - ll[q]) > EPS;
+			if (any) {
+				ll.set(light);
+				lights.push({ node: i, values: Float32Array.from(light) });
+			}
+		}
+		const shape = last.shapes.get(i);
+		const now = shape ? reshaped(o, shape) : null;
+		if (shape && o.geometry?.attributes?.position) {
+			// what it stands as now, the next step's to change from (its versions, even when its numbers came back)
+			const p = o.geometry.attributes.position, n = o.geometry.attributes.normal;
+			shape.g = o.geometry;
+			shape.pv = p.version ?? p.data?.version;
+			shape.nv = n ? n.version ?? n.data?.version : -1;
+			shape.index = o.geometry.index;
+			if (now) {
+				shape.p.set(now.p);
+				if (shape.n && now.n) shape.n.set(now.n);
+				shapes.push({ node: i, position: Float32Array.from(now.p), normal: now.n ? Float32Array.from(now.n) : null });
+			}
+		}
 	});
-	return { nodes: Uint32Array.from(nodes), trs: Float32Array.from(trs), visible: Uint8Array.from(visible), morph, instances };
+	return { nodes: Uint32Array.from(nodes), trs: Float32Array.from(trs), visible: Uint8Array.from(visible), morph, instances, shapes, looks, lights };
 }
 
 /** what the solver reads now: its hero number, its labels' live readings, its sliders */
@@ -200,4 +252,7 @@ export function end(id) {
 }
 
 /** the transfer list of a tick's answer (its arrays moved, not copied) */
-export const moved = (x) => [x.nodes, x.trs, x.visible, ...(x.morph ?? []).map((m) => m.weights), ...(x.instances ?? []).map((m) => m.matrices)].filter((a) => a?.buffer).map((a) => a.buffer);
+export const moved = (x) =>
+	[x.nodes, x.trs, x.visible, ...(x.morph ?? []).map((m) => m.weights), ...(x.instances ?? []).map((m) => m.matrices), ...(x.shapes ?? []).flatMap((m) => [m.position, m.normal]), ...(x.looks ?? []).map((m) => m.values), ...(x.lights ?? []).map((m) => m.values)]
+		.filter((a) => a?.buffer)
+		.map((a) => a.buffer);

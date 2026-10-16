@@ -7,9 +7,16 @@
  * those numbers alone (../controls.js), on its own page and in the renderer, as the builder's function would have
  * moved it. A function of one number is all any of our controls is, so nothing is lost but the shortcuts.
  *
+ * Engine 5 adds what else a control changes, only for the parts it changes: a mesh it reshapes (a tent's canvas
+ * hung and draped as its pole goes up, a bag's cover laid open), its positions and normals at each step (`shapes`),
+ * as many vertices as it was built with; a material's colour, glow, opacity, roughness and metalness (`looks`, `MAT`
+ * numbers a step); a light's colour, brightness, reach and fall-off (`lights`, `LIGHT` numbers). The page puts them
+ * back as it does the rest (../controls.js), and so does a build kept running (./live.js), step by step.
+ *
  * The controls it knows, by the function on the object's userData (engine 3, the first that bakes them):
  *   setPitch → pitch, setBuild → build, explode → explode, setOpen → open, setTailgate → tailgate,
- *   setDoor(name, k) with `doors` → door.<name> for each, fire.setLit(on) → lit (a choice: off or on).
+ *   setDoor(name, k) with `doors` → door.<name> for each, fire.setLit(on) → lit (a choice: off or on); and from
+ *   engine 5, setWet → wet.
  * Each is sampled at SAMPLES even steps from 0 to 1, with the object as built put back between controls and after the
  * last; `rest` is the value it was built at (the sample that matches it best). A control that changes the object's
  * tree (adds or takes away a part) cannot be played back from numbers: it is left out, and the object built again.
@@ -22,6 +29,8 @@ const TIME = 4000;
 /** the most numbers one control's tracks may hold */
 const MOST = 4_000_000;
 const EPS = 1e-5;
+/** the most material slots of one mesh whose looks are written down */
+export const SLOTS = 16;
 
 /** the controls an object offers: each an id, the function that sets it (0 … 1), how many samples, whether a choice */
 export function offered(u) {
@@ -33,10 +42,107 @@ export function offered(u) {
 	one('explode', fn(u.explode));
 	one('open', fn(u.setOpen));
 	one('tailgate', fn(u.setTailgate));
+	one('wet', fn(u.setWet));
 	if (fn(u.setDoor) && u.doors && typeof u.doors === 'object')
 		for (const name of Object.keys(u.doors).slice(0, 16)) if (/^[a-zA-Z0-9]{1,24}$/.test(name)) one(`door.${name}`, (k) => u.setDoor(name, k));
 	if (u.fire && typeof u.fire === 'object' && fn(u.fire.setLit)) one('lit', (k) => u.fire.setLit(k >= 0.5), 2, true);
 	return out;
+}
+
+/** numbers a material's look is written as: its colour (r, g, b), its glow (r, g, b), how strongly it glows, its
+ *  opacity, roughness and metalness (a material without one of them: 0, and the page leaves it) */
+export const MAT = 10;
+/** numbers a light is written as: its colour (r, g, b), its brightness, how far it reaches, how it falls off */
+export const LIGHT = 6;
+const num = (x, or = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : or);
+
+/** a material's look as numbers, into `out` at `at` */
+export function lookOf(m, out, at) {
+	const c = m?.color?.isColor ? m.color : null, e = m?.emissive?.isColor ? m.emissive : null;
+	out[at] = c ? c.r : 0;
+	out[at + 1] = c ? c.g : 0;
+	out[at + 2] = c ? c.b : 0;
+	out[at + 3] = e ? e.r : 0;
+	out[at + 4] = e ? e.g : 0;
+	out[at + 5] = e ? e.b : 0;
+	out[at + 6] = num(m?.emissiveIntensity);
+	out[at + 7] = num(m?.opacity, 1);
+	out[at + 8] = num(m?.roughness);
+	out[at + 9] = num(m?.metalness);
+}
+
+/** a light as numbers, into `out` at `at` */
+export function lightOf(l, out, at) {
+	out[at] = l.color?.isColor ? l.color.r : 1;
+	out[at + 1] = l.color?.isColor ? l.color.g : 1;
+	out[at + 2] = l.color?.isColor ? l.color.b : 1;
+	out[at + 3] = num(l.intensity);
+	out[at + 4] = num(l.distance);
+	out[at + 5] = num(l.decay);
+}
+
+/** a material set to a look written as numbers (what it has of it) */
+export function putLook(m, v, at) {
+	if (!m) return;
+	if (m.color?.isColor) m.color.setRGB(v[at], v[at + 1], v[at + 2]);
+	if (m.emissive?.isColor) m.emissive.setRGB(v[at + 3], v[at + 4], v[at + 5]);
+	if (typeof m.emissiveIntensity === 'number') m.emissiveIntensity = v[at + 6];
+	if (typeof m.opacity === 'number') m.opacity = v[at + 7];
+	if (typeof m.roughness === 'number') m.roughness = v[at + 8];
+	if (typeof m.metalness === 'number') m.metalness = v[at + 9];
+}
+
+/** a light set to numbers */
+export function putLight(l, v, at) {
+	if (l.color?.isColor) l.color.setRGB(v[at], v[at + 1], v[at + 2]);
+	if (typeof l.intensity === 'number') l.intensity = v[at + 3];
+	if (typeof l.distance === 'number') l.distance = v[at + 4];
+	if (typeof l.decay === 'number') l.decay = v[at + 5];
+}
+
+/** a node's materials, one for each slot */
+export const materialsOf = (o) => (!o.isMesh && !o.isLine && !o.isPoints ? [] : Array.isArray(o.material) ? o.material : o.material ? [o.material] : []);
+
+/** an attribute's numbers, three to a vertex */
+export const flat = (a) => {
+	const arr = numbersOf(a);
+	if (!a.isInterleavedBufferAttribute && arr.length === a.count * 3) return arr;
+	const out = new Float32Array(a.count * 3);
+	for (let i = 0; i < a.count; i++) for (let k = 0; k < 3; k++) out[i * 3 + k] = a.getComponent(i, k);
+	return out;
+};
+
+/**
+ * A mesh's shape as built: its geometry, its positions and normals (copied) and their versions; null for a node
+ * without. Reshaped, it can be written down only with as many vertices, drawn the same way.
+ */
+export function shapeOf(o) {
+	const g = o.geometry, p = g?.attributes?.position;
+	if (!p || p.itemSize !== 3 || o.isInstancedMesh) return null;
+	const n = g.attributes.normal?.itemSize === 3 ? g.attributes.normal : null;
+	return { g, count: p.count, index: g.index, p: Float32Array.from(flat(p)), n: n ? Float32Array.from(flat(n)) : null, pv: versionOf(p), nv: n ? versionOf(n) : -1 };
+}
+
+/** a mesh's positions and normals now, if they are not what `was` holds and can be written down as numbers */
+export function reshaped(o, was) {
+	const g = o.geometry, p = g?.attributes?.position, n = g?.attributes?.normal;
+	if (!was || !p) return null;
+	// marked changed, or another geometry put in its place
+	if (g === was.g && versionOf(p) === was.pv && (n ? versionOf(n) : -1) === was.nv) return null;
+	if (p.count !== was.count || p.itemSize !== 3 || !!n !== !!was.n || (n && (n.count !== was.count || n.itemSize !== 3))) return null;
+	if (g !== was.g && (g.index?.count ?? -1) !== (was.index?.count ?? -1)) return null;
+	const pa = flat(p), na = n ? flat(n) : null;
+	if (same(pa, was.p) && (!na || same(na, was.n))) return null;
+	return { p: pa, n: na };
+}
+
+/** a mesh put back in its shape as built */
+export function reshape(o, was) {
+	if (!was) return;
+	if (o.geometry !== was.g) o.geometry = was.g;
+	const p = o.geometry.attributes.position, n = o.geometry.attributes.normal;
+	if (!p.isInterleavedBufferAttribute && numbersOf(p).length === was.p.length) numbersOf(p).set(was.p);
+	if (n && was.n && !n.isInterleavedBufferAttribute && numbersOf(n).length === was.n.length) numbersOf(n).set(was.n);
 }
 
 /** every node of the tree, in the order it is walked (each before its children): how a control names a part */
@@ -81,14 +187,27 @@ const same = (a, b) => {
 function snapshot(nodes) {
 	const trs = new Float32Array(nodes.length * 10);
 	const visible = new Uint8Array(nodes.length);
-	const morph = new Map(), instances = new Map();
+	const morph = new Map(), instances = new Map(), looks = new Map(), lights = new Map(), shapes = new Map();
 	nodes.forEach((o, i) => {
 		trsOf(o, trs, i * 10);
 		visible[i] = o.visible ? 1 : 0;
 		if (o.morphTargetInfluences?.length) morph.set(i, Float32Array.from(o.morphTargetInfluences));
 		if (o.isInstancedMesh) instances.set(i, Float32Array.from(o.instanceMatrix.array.subarray(0, o.count * 16)));
+		const mats = materialsOf(o).slice(0, SLOTS);
+		if (mats.length) {
+			const v = new Float32Array(mats.length * MAT);
+			mats.forEach((m, k) => lookOf(m, v, k * MAT));
+			looks.set(i, v);
+		}
+		if (o.isLight) {
+			const v = new Float32Array(LIGHT);
+			lightOf(o, v, 0);
+			lights.set(i, v);
+		}
+		const sh = shapeOf(o);
+		if (sh) shapes.set(i, sh);
 	});
-	return { trs, visible, morph, instances };
+	return { trs, visible, morph, instances, looks, lights, shapes };
 }
 
 /** the object put back as it stood */
@@ -107,6 +226,10 @@ function restore(nodes, s) {
 			o.instanceMatrix.array.set(m);
 			o.instanceMatrix.needsUpdate = true;
 		}
+		const v = s.looks.get(i);
+		if (v) materialsOf(o).slice(0, SLOTS).forEach((x, k) => putLook(x, v, k * MAT));
+		const l = s.lights.get(i);
+		if (l) putLight(o, l, 0);
 	});
 }
 
@@ -142,7 +265,7 @@ export function bake(root) {
 	const shaped = shapesOf(nodes);
 	const t0 = performance.now();
 	const controls = [];
-	const cur = new Float32Array(10);
+	const cur = new Float32Array(10), look = new Float32Array(MAT), light = new Float32Array(LIGHT);
 	for (const c of list) {
 		if (performance.now() - t0 > TIME) break;
 		const S = c.samples;
@@ -159,6 +282,13 @@ export function bake(root) {
 				moved.set(i, t);
 			}
 			return t;
+		};
+		/** what else it changes: each material's look, by node and slot; each light; each mesh it reshapes */
+		const looks = new Map(), lights = new Map(), shapes = new Map();
+		const filled = (rest, per) => {
+			const a = new Float32Array(S * per);
+			for (let k = 0; k < S; k++) a.set(rest, k * per);
+			return a;
 		};
 		let ok = true;
 		/** how far each sample stands from the object as built: the nearest is its rest */
@@ -201,6 +331,39 @@ export function bake(root) {
 							if (spreads) off[s] += 1;
 						}
 					}
+					const restLook = rest.looks.get(i);
+					if (restLook)
+						materialsOf(o).slice(0, restLook.length / MAT).forEach((x, k) => {
+							const key = i * SLOTS + k, r = restLook.subarray(k * MAT, (k + 1) * MAT);
+							lookOf(x, look, 0);
+							const differs = !same(look, r);
+							if (!differs && !looks.has(key)) return;
+							if (!looks.has(key)) looks.set(key, { node: i, slot: k, values: filled(r, MAT) });
+							looks.get(key).values.set(look, s * MAT);
+							if (differs) off[s] += 1;
+						});
+					const restLight = rest.lights.get(i);
+					if (restLight) {
+						lightOf(o, light, 0);
+						const differs = !same(light, restLight);
+						if (differs || lights.has(i)) {
+							if (!lights.has(i)) lights.set(i, { node: i, values: filled(restLight, LIGHT) });
+							lights.get(i).values.set(light, s * LIGHT);
+							if (differs) off[s] += 1;
+						}
+					}
+					const was = rest.shapes.get(i);
+					const now = was ? reshaped(o, was) : null;
+					if (now || shapes.has(i)) {
+						const per = was.count * 3;
+						if (!shapes.has(i)) shapes.set(i, { node: i, position: filled(was.p, per), normal: was.n ? filled(was.n, per) : null });
+						const t = shapes.get(i);
+						// as it stands now: reshaped, or as it was built again
+						const p = o.geometry.attributes.position, n = o.geometry.attributes.normal;
+						if (p.count === was.count) t.position.set(now?.p ?? flat(p), s * per);
+						if (t.normal && n?.count === was.count) t.normal.set(now?.n ?? flat(n), s * per);
+						if (now) off[s] += 1;
+					}
 				});
 			}
 		} catch {
@@ -216,14 +379,19 @@ export function bake(root) {
 		} catch {
 			ok = false;
 		}
+		// each mesh it reshaped put back as built (set to its rest, it is only as near as its samples come)
+		for (const i of shapes.keys()) reshape(nodes[i], rest.shapes.get(i));
 		if (!intact(root, nodes)) return { controls, intact: false };
 		restore(nodes, rest);
-		if (!ok || !moved.size) continue;
+		if (!ok || !(moved.size || looks.size || lights.size || shapes.size)) continue;
 		const order = [...moved.keys()].sort((a, b) => a - b);
 		const m = order.length;
-		const numbers = order.reduce((a, i) => a + S * 11 + (moved.get(i).morph?.length ?? 0) + (moved.get(i).instances?.length ?? 0), 0);
+		let numbers = order.reduce((a, i) => a + S * 11 + (moved.get(i).morph?.length ?? 0) + (moved.get(i).instances?.length ?? 0), 0);
+		for (const x of looks.values()) numbers += x.values.length;
+		for (const x of lights.values()) numbers += x.values.length;
+		for (const x of shapes.values()) numbers += x.position.length + (x.normal?.length ?? 0);
 		if (numbers > MOST) continue;
-		const out = { id: c.id, from: 0, to: 1, rest: 0, samples: S, nodes: Uint32Array.from(order), trs: new Float32Array(S * m * 10), visible: new Uint8Array(S * m), morph: [], instances: [] };
+		const out = { id: c.id, from: 0, to: 1, rest: 0, samples: S, nodes: Uint32Array.from(order), trs: new Float32Array(S * m * 10), visible: new Uint8Array(S * m), morph: [], instances: [], shapes: [...shapes.values()].sort((a, b) => a.node - b.node), looks: [...looks.values()], lights: [...lights.values()] };
 		if (c.choice) out.choice = true;
 		order.forEach((i, j) => {
 			const t = moved.get(i);
@@ -242,6 +410,6 @@ export function bake(root) {
 	// a mesh a control reshaped and its rest did not shape back as built (putting the nodes back does not undo it): its
 	// moves are kept, the object is built again
 	const now = shapesOf(nodes.filter((o) => o.geometry));
-	const same = now.length === shaped.length && now.every((x, i) => x.a === shaped[i].a && (x.version === shaped[i].version || x.sum === shaped[i].sum));
-	return { controls, intact: same };
+	const asBuilt = now.length === shaped.length && now.every((x, i) => x.a === shaped[i].a && (x.version === shaped[i].version || x.sum === shaped[i].sum));
+	return { controls, intact: asBuilt };
 }

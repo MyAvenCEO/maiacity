@@ -8,11 +8,14 @@
  * its own picture; 1 from engine 2, each picture once in `images`, named by the textures that show it; 2 from engine 3
  * on, and its controls as numbers (./bake.js), kept on the root's `userData.controls` for ../controls.js to play; 3
  * from engine 4 on, and what a viewer needs of it (`viewOf`, kept on the root's `userData.view`), a skinned actor
- * bound to its own bones, and each blend shape by its name.
+ * bound to its own bones, and each blend shape by its name; 4 from engine 5 on, and its lights as lights, its
+ * controls with the meshes they reshape and the looks and lights they change, and an actor's clips as tables
+ * (`userData.view.clips.motion`, for ../clips.js to play).
  */
 import * as THREE from 'three';
 import { dualQuaternionSkinning } from '$lib/actors/dqs.ts';
-import { FORMAT, MATERIALS } from './serialize.js';
+import { FORMAT, LIGHTS, MATERIALS } from './serialize.js';
+import { LIGHT, MAT } from './bake.js';
 import { MOVE_SAMPLES } from './view.js';
 
 /**
@@ -20,10 +23,10 @@ import { MOVE_SAMPLES } from './view.js';
  * picture it names, so there may be one per material map; the pictures are what weigh (`images`, each at most
  * `texturePixels` a side; in format 0 each texture its own picture, so both counts hold for engine 1 as before).
  */
-export const BUDGET = { nodes: 20000, geometries: 20000, materials: 2000, textures: 2000, images: 64, texturePixels: 4096, tris: 2_000_000, vertices: 4_000_000, instances: 100_000, controls: 32, controlNumbers: 8_000_000, bones: 1024 };
+export const BUDGET = { nodes: 20000, geometries: 20000, materials: 2000, textures: 2000, images: 64, texturePixels: 4096, tris: 2_000_000, vertices: 4_000_000, instances: 100_000, controls: 32, controlNumbers: 8_000_000, bones: 1024, lights: 64, clipNumbers: 8_000_000 };
 
-/** the formats it reads: engine 1's, engine 2's, engine 3's and the one ./serialize.js writes now */
-export const FORMATS = [0, 1, 2, FORMAT];
+/** the formats it reads: engine 1's, engine 2's, engine 3's, engine 4's and the one ./serialize.js writes now */
+export const FORMATS = [0, 1, 2, 3, FORMAT];
 
 const ARRAYS = [Float32Array, Uint8Array, Uint16Array, Uint32Array, Int8Array, Int16Array, Int32Array];
 const fail = (why) => {
@@ -170,7 +173,7 @@ export function rebuild(data) {
 	let vertices = 0;
 	for (const g of geos) vertices += g.attributes.position.count;
 	if (vertices > BUDGET.vertices) fail(`${vertices} vertices, more than ${BUDGET.vertices}`);
-	let tris = 0;
+	let tris = 0, lights = 0;
 	/** @type {[THREE.SkinnedMesh, any, number][]} */
 	const skins = [];
 	const objs = nodes.map((n, i) => {
@@ -204,6 +207,9 @@ export function rebuild(data) {
 				o.updateMorphTargets();
 				n.mesh.morph.slice(0, o.morphTargetInfluences?.length ?? 0).forEach((w, j) => (o.morphTargetInfluences[j] = num(w, 'morph weight')));
 			}
+		} else if (data.format >= 4 && n.light != null) {
+			if (++lights > BUDGET.lights) fail(`more than ${BUDGET.lights} lights`);
+			o = lightOf(n.light, i);
 		} else o = data.format >= 3 && n.bone === true ? new THREE.Bone() : new THREE.Group();
 		o.name = String(n.name ?? '').slice(0, 120);
 		if (!Array.isArray(n.matrix) || n.matrix.length !== 16) fail(`node ${i} matrix`);
@@ -234,6 +240,27 @@ export function rebuild(data) {
 	root.userData.controls = data.format >= 2 ? controlsOf(data.controls, objs, root) : [];
 	if (data.format >= 3 && data.view != null) root.userData.view = viewOf(data.view, objs, data.controls?.length ? root.userData.controls : []);
 	return root;
+}
+
+/** a light, checked: a kind we know, its colour, brightness, reach and fall-off; where a spot or the sun points */
+function lightOf(x, i) {
+	const kinds = Object.values(LIGHTS);
+	if (!x || typeof x !== 'object' || !kinds.includes(x.kind)) fail(`node ${i}: a light of no kind we know`);
+	const color = int(x.color, 0x1000000, `light ${i} colour`), intensity = Math.max(0, num(x.intensity, `light ${i} brightness`));
+	const reach = (k, or) => (x[k] === undefined ? or : Math.max(0, num(x[k], `light ${i} ${k}`)));
+	let o;
+	if (x.kind === 'point') o = new THREE.PointLight(color, intensity, reach('distance', 0), reach('decay', 2));
+	else if (x.kind === 'spot') o = new THREE.SpotLight(color, intensity, reach('distance', 0), Math.min(Math.PI / 2, reach('angle', Math.PI / 3)), Math.min(1, reach('penumbra', 0)), reach('decay', 2));
+	else if (x.kind === 'directional') o = new THREE.DirectionalLight(color, intensity);
+	else if (x.kind === 'ambient') o = new THREE.AmbientLight(color, intensity);
+	else o = new THREE.HemisphereLight(color, int(x.ground ?? 0, 0x1000000, `light ${i} ground`), intensity);
+	o.castShadow = x.castShadow === true && (x.kind === 'point' || x.kind === 'spot' || x.kind === 'directional');
+	// where it points, carried with it
+	if (o.target && x.target !== undefined) {
+		o.target.position.fromArray(point(x.target, `light ${i} target`));
+		o.add(o.target);
+	}
+	return o;
 }
 
 /**
@@ -343,7 +370,8 @@ function viewOf(v, objs, _controls) {
 			poses: names(c.poses ?? [], 'poses'),
 			first: text(c.first, 40, 'view first clip'),
 			held: c.held === undefined ? undefined : plainData(c.held, 'view poses', 0, { n: 20000 }),
-			bones: c.bones === undefined ? undefined : Array.isArray(c.bones) && c.bones.length <= 512 ? c.bones.map((k) => (isText(k, 40) ? k : fail('view bones'))) : fail('view bones')
+			bones: c.bones === undefined ? undefined : Array.isArray(c.bones) && c.bones.length <= 512 ? c.bones.map((k) => (isText(k, 40) ? k : fail('view bones'))) : fail('view bones'),
+			motion: c.motion === undefined ? undefined : motionOf(c.motion, Array.isArray(c.bones) ? c.bones.length : 0)
 		});
 	}
 	out.ticks = v.ticks === true;
@@ -358,6 +386,73 @@ function viewOf(v, objs, _controls) {
 	}
 	if (v.note !== undefined) out.note = text(v.note, 200, 'view note');
 	return out;
+}
+
+/**
+ * An actor's clips written down (./clips.js): for each, its channels (each a bone's turn, size or offset, or the
+ * root's place), as many rows as paces, every table as long as its samples and channels call for, every list naming
+ * channels there are, every number finite; and all of them no more than the budget.
+ */
+function motionOf(m, nb) {
+	if (!m || typeof m !== 'object' || Array.isArray(m)) fail('view motion');
+	if (m.bones !== nb || !nb) fail('view motion: its bones');
+	if (!m.clips || typeof m.clips !== 'object' || Array.isArray(m.clips)) fail('view motion clips');
+	const width = nb * 7 + 3;
+	let numbers = 0;
+	const floats = (a, n, what) => {
+		const x = typed(a, what);
+		if (!(x instanceof Float32Array) || x.length !== n) fail(`${what}: its length`);
+		finite(x, what);
+		numbers += x.length;
+		return x;
+	};
+	const list = (a, most, what) => {
+		const x = typed(a, what);
+		if (!(x instanceof Uint16Array)) fail(what);
+		for (let i = 0; i < x.length; i++) if (x[i] >= most) fail(`${what}: names what is not there`);
+		return x;
+	};
+	const count = (x, most, what) => (Number.isInteger(x) && x >= 1 && x <= most ? x : fail(`${what}: its count`));
+	const positive = (x, what) => (num(x, what) > 0 ? x : fail(`${what}: not above 0`));
+	const out = {};
+	for (const [name, c] of Object.entries(m.clips).slice(0, 64)) {
+		const what = `view motion ${isText(name, 40) ? name : fail('view motion: a clip name')}`;
+		if (!c || typeof c !== 'object') fail(what);
+		const channels = list(c.channels, width, `${what} channels`);
+		const nch = channels.length || fail(`${what}: no channels`);
+		const base = typed(c.base, `${what} base`);
+		const rows = base.length / nch;
+		if (!Number.isInteger(rows) || rows < 1 || rows > 32) fail(`${what}: its rows`);
+		floats(base, rows * nch, `${what} base`);
+		const axis = (A, what) => {
+			if (!A || typeof A !== 'object') fail(what);
+			const n = count(A.n, 2_000_000, what), mm = typed(A.list, `${what} list`).length;
+			return { n, rate: positive(A.rate, `${what} rate`), length: positive(A.length, `${what} length`), list: list(A.list, nch, `${what} list`), table: floats(A.table, rows * n * mm, `${what} table`), drift: floats(A.drift, rows * mm, `${what} drift`) };
+		};
+		if (!Array.isArray(c.t) || c.t.length > 4) fail(`${what}: its times`);
+		const t = c.t.map((T, j) => {
+			const A = axis(T, `${what} time ${j}`);
+			const snap = typed(T.snap, `${what} time ${j} snap`);
+			if (!(snap instanceof Uint8Array) || snap.length !== A.list.length) fail(`${what} time ${j} snap`);
+			return { ...A, snap };
+		});
+		const clip = { channels, base, t };
+		if (c.gear !== undefined) {
+			clip.gear = positive(c.gear, `${what} gear`);
+			if (!Array.isArray(c.paces) || c.paces.length !== rows) fail(`${what}: its paces`);
+			clip.paces = c.paces.map((p, j) => (num(p, `${what} pace`) >= 0 && (!j || p > c.paces[j - 1]) ? p : fail(`${what}: its paces in order`)));
+			if (c.stride !== undefined) clip.stride = positive(c.stride, `${what} stride`);
+			const D = axis(c.d, `${what} distance`);
+			clip.d = { ...D, k: floats(c.d.k, D.list.length, `${what} distance waves`) };
+			if (!Array.isArray(c.turns) || c.turns.length > 8) fail(`${what}: its turns`);
+			clip.turns = c.turns.map((x) => num(x, `${what} turn`));
+			clip.rch = list(c.rch, nch, `${what} turned`);
+			clip.turn = floats(c.turn, clip.turns.length * D.n * clip.rch.length, `${what} turning`);
+		} else if (rows !== 1) fail(`${what}: rows without a gait`);
+		if (numbers > BUDGET.clipNumbers) fail(`clips hold more than ${BUDGET.clipNumbers} numbers`);
+		out[name] = clip;
+	}
+	return { bones: nb, clips: out };
 }
 
 /** a machine's own moves, each its sliders and the table of their values at each step */
@@ -422,7 +517,32 @@ function controlsOf(list, objs, root) {
 			numbers += a.length;
 			return { node: walked.get(o), matrices: a };
 		});
+		// what else it changes (format 4): meshes it reshapes, as many vertices as they were built with; looks; lights
+		const floats = (a, n, what) => {
+			const x = typed(a, `control ${id} ${what}`);
+			if (!(x instanceof Float32Array) || x.length !== n) fail(`control ${id} ${what}`);
+			finite(x, `control ${id} ${what}`);
+			numbers += x.length;
+			return x;
+		};
+		const shapes = (Array.isArray(c.shapes) ? c.shapes : []).map((x) => {
+			const o = node(x?.node, 'shapes');
+			const g = o.geometry, n = g?.attributes?.position?.count;
+			if (!o.isMesh || o.isInstancedMesh || !n) fail(`control ${id} shapes: not a mesh`);
+			const normal = x.normal == null ? null : g.attributes.normal ? floats(x.normal, S * n * 3, 'normals') : fail(`control ${id} normals: a mesh without`);
+			return { node: walked.get(o), position: floats(x.position, S * n * 3, 'shapes'), normal };
+		});
+		const looks = (Array.isArray(c.looks) ? c.looks : []).map((x) => {
+			const o = node(x?.node, 'looks');
+			const many = Array.isArray(o.material) ? o.material.length : o.material ? 1 : 0;
+			return { node: walked.get(o), slot: int(x.slot, many, `control ${id} looks slot`), values: floats(x.values, S * MAT, 'looks') };
+		});
+		const lights = (Array.isArray(c.lights) ? c.lights : []).map((x) => {
+			const o = node(x?.node, 'lights');
+			if (!o.isLight) fail(`control ${id} lights: not a light`);
+			return { node: walked.get(o), values: floats(x.values, S * LIGHT, 'lights') };
+		});
 		if (numbers > BUDGET.controlNumbers) fail(`controls hold more than ${BUDGET.controlNumbers} numbers`);
-		return { id, from, to, rest, samples: S, choice: c.choice === true, nodes: Uint32Array.from(nodes, (k) => walked.get(node(k, 'node'))), trs, visible, morph, instances };
+		return { id, from, to, rest, samples: S, choice: c.choice === true, nodes: Uint32Array.from(nodes, (k) => walked.get(node(k, 'node'))), trs, visible, morph, instances, shapes, looks, lights };
 	});
 }
