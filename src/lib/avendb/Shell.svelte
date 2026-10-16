@@ -1,13 +1,14 @@
 <!--
 	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
 	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its pages, as a database studio lists them: its notes, its todos, its articles, its stories (each
+	vault's name and its pages, as a database studio lists them: its sparks (thoughts, links, pictures, mood boards,
+	others' posts, the notes written before them), its todos, its articles, its stories (each
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
 	songs, its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
 	next; its database (the query console, the table editor, its schemas and lenses, its history, every signed edit, and
 	the device's jobs, what it syncs in the background); then its settings (About, Owners and devices, and Sharing, the
 	one place that says who it is shared with); and the page picked in the middle. Each page has an address of its own
-	(`#todos`), and so has each note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
+	(`#todos`), and so has each spark and note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
 	screen, and each article (`#articles/` and its entry), to read, and to edit as a note (`/edit`). The device picks
 	who the person acts as in each vault, with no switch to flip (its world's `acting`): in a vault their vault owns,
 	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
@@ -29,8 +30,8 @@
 	import Mark from './Mark.svelte';
 	import NewVaults from './NewVaults.svelte';
 	import Note from './Note.svelte';
-	import Notes from './Notes.svelte';
 	import Settings from './Settings.svelte';
+	import Sparks from './Sparks.svelte';
 	import Stories from './Stories.svelte';
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
@@ -52,7 +53,7 @@
 		[
 			'',
 			[
-				['notes', 'Notes', 'note'],
+				['sparks', 'Sparks', 'spark'],
 				['todos', 'Todos', 'todo'],
 				['articles', 'Articles', 'article'],
 				['stories', 'Stories', 'story'],
@@ -87,18 +88,24 @@
 	/** the pages that show a vault as its owners see it, whoever acts */
 	const SETTINGS = /** @type {Page[]} */ (['about', 'members', 'sharing']);
 	/** the pages older addresses name, by the page that shows the same now */
-	const MOVED = /** @type {Record<string, string>} */ ({ access: 'sharing', sync: 'sharing', cells: 'sharing', shares: 'sharing' });
+	const MOVED = /** @type {Record<string, string>} */ ({
+		access: 'sharing',
+		sync: 'sharing',
+		cells: 'sharing',
+		shares: 'sharing',
+		notes: 'sparks'
+	});
 
 	/**
-	 * The page an address names: `#todos`, a note's `#notes/` and its entry, an article's `#articles/` and its entry, to
-	 * read, and with `/edit`, to edit as a note, a story's `#stories/` and its entry; else the notes.
+	 * The page an address names: `#todos`, a spark's or a note's `#notes/` and its entry, an article's `#articles/` and
+	 * its entry, to read, and with `/edit`, to edit as a note, a story's `#stories/` and its entry; else the sparks.
 	 * @param {string} hash
 	 */
 	function parse(hash) {
 		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
-		const known = PAGES.find(([id]) => id === page)?.[0] ?? 'notes';
-		const opens = ['notes', 'articles', 'stories'].includes(known) && /^[0-9a-f]{64}$/.test(entry ?? '');
+		const known = PAGES.find(([id]) => id === page)?.[0] ?? 'sparks';
+		const opens = ['sparks', 'articles', 'stories'].includes(known) && /^[0-9a-f]{64}$/.test(entry ?? '');
 		return { page: known, entry: opens ? entry : '', edit: opens && known === 'articles' && edit === 'edit' };
 	}
 
@@ -123,7 +130,7 @@
 		location.hash = to;
 	}
 
-	/** Open note `entry`, on the whole screen. @param {string} entry */
+	/** Open spark or note `entry`, on the whole screen. @param {string} entry */
 	const open = (entry) => go(`notes/${entry}`);
 
 	/** Open article `entry` to read, on the whole screen. @param {string} entry */
@@ -132,7 +139,7 @@
 	/** Open story `entry`, on the whole screen. @param {string} entry */
 	const openStory = (entry) => go(`stories/${entry}`);
 
-	// a note opens in its vault: its notes are where its back arrow goes
+	// a note opens in its vault: its sparks are where its back arrow goes
 	$effect(() => {
 		const entry = route.entry;
 		const of = entry ? world.entries.find((e) => e.entry === entry)?.vault : undefined;
@@ -223,8 +230,8 @@
 			</p>
 		</header>
 		<AccessRequest {world} {requests} {busy} ongrant={api.grant} ondeny={api.deny} />
-		{#if tab === 'notes'}
-			<Notes {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
+		{#if tab === 'sparks'}
+			<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
 		{:else if tab === 'articles'}
 			<Articles {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openArticle} />
 		{:else if tab === 'stories'}

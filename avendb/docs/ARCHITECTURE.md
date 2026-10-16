@@ -876,7 +876,13 @@ Markdown text), a **flow** (stages an item can be in, each with whether it is pu
 stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
 name and its media type), and a **story** (one content piece from its first spark to every platform it goes out on:
 its title and format, the sparks it grew from, its journey's beats and its hook variants as rows, its intro,
-description and launch; the story flow's tag says which of its stages it is in). Every shipped schema starts at v1.
+description and launch; the story flow's tag says which of its stages it is in), and a **spark** (anything that might
+become something, a thought, a link, a picture, a mood board, someone else's post, a video with its words, a quote: a
+document's title and blocks, so a note's page edits it, and beside them its look, its link, whose it is, its language,
+its transcript, its files and, for a mood board, the sparks it gathers; a story names the sparks it grows from, and
+those with a link or whose they are are its sources). A note keeps its type, a document; the page lists notes among
+the sparks, and the world gives a spark's record beside its title and text (`world::What::Note`). Every shipped
+schema starts at v1.
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 

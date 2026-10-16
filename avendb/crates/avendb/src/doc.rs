@@ -237,12 +237,15 @@ impl Item {
         DocV1::from_value(&self.read(View::document_v1())?)
     }
 
-    /// The item as Markdown, as a page shows a note: a document as the document app reads it, or an article as one, its
-    /// title and its tags, its text the paragraph of block 2, where a note keeps its text (`cast::document`). `None`
-    /// for anything else.
+    /// The item as Markdown, as a page shows a note: a document as the document app reads it, a spark by its title, its
+    /// blocks and its tags, as a document, or an article as one, its title and its tags, its text the paragraph of
+    /// block 2, where a note keeps its text (`cast::document`). `None` for anything else.
     pub fn as_markdown(&self) -> Option<DocV1> {
         if let Some(doc) = self.as_document() {
             return Some(doc);
+        }
+        if let Some(spark) = self.read(View::built_in("spark")?).and_then(|s| DocV1::from_value(&s)) {
+            return Some(spark);
         }
         let article = self.read(View::built_in("article")?)?;
         let text = |k: &str| article.get(k).and_then(Value::as_str).unwrap_or_default().to_string();

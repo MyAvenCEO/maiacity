@@ -11,7 +11,7 @@
 	made it, and the version it made, to view, restore, undo or propose from. A variant is a new note
 	with what a line reads now, whose first edit names that note and that version by the hashes of its edits (avendb's
 	`variant_mark`): its history goes on into the original's edits up to that version, for whoever reads both, and the
-	original lists its variants by the version each came from. Delete marks the note deleted, so Notes lists it apart,
+	original lists its variants by the version each came from. Delete marks the note deleted, so Sparks lists it apart,
 	and its page offers to bring it back; every edit of it stays. All of it acts for the acting vault, whose caps the
 	device checks as any peer does: a note it only reads, it reads, every version of it; and a button offers what the
 	ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a vault that may only
@@ -28,6 +28,7 @@
 	import { allowed, blockText, deleting, may, read } from './ops.js';
 	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
 	import Share from './Share.svelte';
+	import SparkFields from './SparkFields.svelte';
 	import Tags from './Tags.svelte';
 	import {
 		actingWords,
@@ -46,7 +47,7 @@
 	 * @typedef {{ at: unknown[], what: 'value' | 'row' | 'order', base: unknown, ours: unknown, theirs: unknown }} Conflict
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
 	 *   title: string | null, text: string | null, blocks: { id: number, type: string }[] | null,
-	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null }} LineView
+	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null, record?: any }} LineView
 	 * @typedef {{ id: string, author: string, actor: string, via: string[], chain: import('./vaults.js').Chain,
 	 *   line: string | null, deps: string[],
 	 *   kind: 'edit' | 'propose' | 'merge' | 'sealed', name: string | null,
@@ -58,12 +59,12 @@
 	 */
 
 	/**
-	 * `back` the address its back arrow goes to, `backTo` what it goes to in words: the vault's notes, or the article it
-	 * edits.
+	 * `back` the address its back arrow goes to, `backTo` what it goes to in words: the vault's sparks, or the article
+	 * it edits.
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string,
 	 *   back?: string, backTo?: string }}
 	 */
-	let { world, actor, api, busy, entry, back = '#notes', backTo = 'All notes' } = $props();
+	let { world, actor, api, busy, entry, back = '#sparks', backTo = 'All sparks' } = $props();
 
 	let note = $state(/** @type {NoteData | null} */ (null));
 	let loaded = $state(false);
@@ -159,6 +160,8 @@
 	const here = $derived(lines.find((l) => l.line === line) ?? lines[0]);
 	/** whether it is an article of avenDB's article schema, its text one field, its title no heading */
 	const article = $derived(note?.kind === 'article');
+	/** whether it is a spark (./sparks.js), its fields beside its text */
+	const spark = $derived(note?.kind === 'spark' || item?.type === 'spark');
 	/** an article's stage in its flow (./flows.js), its eyebrow as it is read */
 	const stage = $derived.by(() => {
 		const flow = item && article ? flowsFor(world, item.vault, item.type ?? '')[0] : undefined;
@@ -542,7 +545,7 @@
 <div class="doc">
 	<header class="top">
 		<a class="back" href={back} title={backTo} aria-label={backTo}><Icon name="back" size={20} /></a>
-		<span class="docicon" aria-hidden="true"><Icon name="note" size={24} /></span>
+		<span class="docicon" aria-hidden="true"><Icon name={spark ? 'spark' : 'note'} size={24} /></span>
 		<div class="heading">
 			{#if here && writes && !seen && lets('title') && !article}
 				<input
@@ -608,7 +611,7 @@
 				<button
 					class="btn quiet danger"
 					disabled={busy || !lets('delete')}
-					title={barred('delete') ?? 'Delete the note: Notes lists it apart, and every edit stays'}
+					title={barred('delete') ?? 'Delete it: Sparks lists it apart, and every edit stays'}
 					onclick={() => remove(false)}
 				>
 					<Icon name="trash" size={15} /> Delete
@@ -620,7 +623,7 @@
 	{#if item?.deleted}
 		<div class="gone" role="status">
 			<Icon name="trash" size={16} />
-			<span>This note is deleted: Notes lists it under Deleted, and every edit of it stays.</span>
+			<span>This {spark ? 'spark' : 'note'} is deleted: Sparks lists it under Deleted, and every edit of it stays.</span>
 			{#if writes}
 				<button class="btn primary" disabled={busy || !lets('back')} title={barred('back')} onclick={() => remove(true)}
 					>Bring it back</button
@@ -812,7 +815,21 @@
 						/>
 					{/if}
 				{:else}
-				<article class="paper" class:old={!!seen}>
+				<!-- a spark's fields come first, what it is and whose; its words on the page under them -->
+				{#if spark && item && !seen}
+					<SparkFields
+						{world}
+						{actor}
+						{api}
+						{busy}
+						{entry}
+						vault={item.vault}
+						line={here.line}
+						record={here.record}
+						{writes}
+					/>
+				{/if}
+				<article class="paper" class:old={!!seen} class:short={spark}>
 					{#if seen}
 						<div class="text">{seen.text || '…'}</div>
 					{:else if writes && lets('write')}
@@ -1333,6 +1350,14 @@
 		box-shadow:
 			0 1px 3px rgb(60 64 67 / 0.18),
 			0 4px 14px rgb(60 64 67 / 0.08);
+	}
+
+	.paper.short {
+		min-height: 0;
+	}
+
+	.paper.short .text {
+		min-height: 8rem;
 	}
 
 	.paper.old {

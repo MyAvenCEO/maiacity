@@ -115,20 +115,6 @@ export const creatable = (api, actor, vault, type, tags = []) =>
 	read(api, { op: 'creatable', vault, type, tags, as: actor }, null).then((out) => out?.tags ?? null);
 
 /**
- * A note as this app writes one, a document of avenDB's own schema: titled `title`, its opening heading (block 1)
- * the title too, then a paragraph (block 2) that reads `text`.
- * @param {string} title @param {string} text
- */
-export const noteRecord = (title, text) => ({
-	kind: 'document',
-	title,
-	blocks: [
-		{ id: 1, type: 'heading', level: 1, text: title },
-		{ id: 2, type: 'paragraph', text }
-	]
-});
-
-/**
  * An article as this app writes one, of avenDB's own article schema: titled `title`, its text one Markdown text that
  * `text` starts it as.
  * @param {string} title @param {string} text

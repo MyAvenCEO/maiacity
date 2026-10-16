@@ -88,8 +88,8 @@ import { fieldPaths, pathWords } from './paths.js';
 /**
  * An entry as the device shows it: `readers`, `writers` and `sharers` the vaults that read it, change it and may share
  * it on, its own vault first; `syncedTo` the devices that hold some of it, each with how many of its edits; `title` a
- * schema's title or a lens's name for those; `record` the record of a flow, a function or a post (kind `record`), each
- * field it leaves out at its default.
+ * schema's title or a lens's name for those; `record` the record of a flow, a function, a post or a story (kind
+ * `record`), or of a spark (kind `note`, ./sparks.js), each field it leaves out at its default.
  * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
  *   created: number | null, audience: string, public: boolean, levels: Record<string, Role>,
  *   readers: string[], writers: string[], sharers: string[], syncedTo: Holder[],
