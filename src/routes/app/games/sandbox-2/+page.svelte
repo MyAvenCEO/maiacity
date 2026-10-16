@@ -233,9 +233,11 @@
 		if (city) world?.focus(api.tileOf(city)!, visibleMiddle(), 0.62);
 	}
 
-	// inside a city, the nav pill's way back goes up to the planet
+	// inside a city, the nav pill's way back goes up to the planet: told once as the city opens, so the city's data
+	// coming in again (every 30 s) never puts it back over a dome walked into since, whose own way back comes first
+	const isInside = $derived(!!inside);
 	$effect(() => {
-		if (inside) return wayBack('Back to the planet', leave);
+		if (isInside) return wayBack('Back to the planet', leave);
 	});
 
 	/** On the planet: a city is entered, an empty card is where a founder places their city, the sea is the sea. */
