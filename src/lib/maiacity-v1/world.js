@@ -19,10 +19,8 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { pickup } from '$lib/models/village.js';
 import { backpack, dugEarth, plantStake } from '$lib/models/planting.js';
 import { bellTent, bellTentBag, firePlace } from '$lib/models/belltent.js';
-import { electroCube } from '$lib/actors/electrocube.js';
 import { human } from '$lib/actors/human.ts';
 import { blend } from '$lib/actors/rig.ts';
 import { SPEED } from '$lib/models/units.js';
@@ -669,13 +667,24 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const cubeCable = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(YARD.x - 0.35, 0.35, YARD.z + 0.15), V(YARD.x - 1.3, 0.03, YARD.z + 0.6), V(4.6, 0.03, -1.5), V(1.95, 0.02, -0.8)]), 30, 0.013, 6), mat(0x161616));
 	cubeCable.visible = false;
 	world.add(cubeCable);
-	// the pickup at its real size (5.33 m), its cab seen from inside through its clear glass (v2), and the powercube it
-	// fetches
-	const truck = named(pickup(), 'asset:pickup');
-	// the powercube: the ElectroCube, OSE's Power Cube frame with an alternator in place of its hydraulics
-	const cubeCast = electroCube(); // the ElectroCube (#608): the tent's power
-	cubeCast.rig.pose(cubeCast.clips.off(0));
-	const cube = named(cubeCast.rig.object, 'asset:powercube');
+	// the pickup at its real size (5.33 m), its cab seen from inside through its clear glass (v2), its four doors that
+	// open (v3), and the powercube it fetches: drawn by the renderer, its tailgate and its doors its controls
+	// (`tailgate`, `door.<name>`: 0 shut … 1 open)
+	const truck = new THREE.Group();
+	const truckCopy = drawn.follow(THINGS.pickup, truck, { pick: 'asset:pickup' });
+	const setTruck = (id, k) => drawn.pose(truckCopy, id, k);
+	// the powercube: the ElectroCube, OSE's Power Cube frame with an alternator in place of its hydraulics (#608): the
+	// tent's power, built in the box and kept running there, its clip `run` while it hums at home, `off` elsewhere
+	const cube = new THREE.Group();
+	cube.name = 'asset:powercube';
+	let cubeHero = null;
+	drawn.cast(THINGS.cube, cube, { pick: 'asset:powercube' }).then(
+		(h) => {
+			cubeHero = h;
+			if (stage.cube !== 'home') h.hold('off');
+		},
+		() => {}
+	);
 	const bundle = named(bellTentBag(), 'asset:tent');
 	overLand(bundle, true); // its canvas lies flat on the ground once it is opened
 	world.add(truck, cube, bundle);
@@ -687,7 +696,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the ramp out (or put away), the tailgate down for it; down too while the solar panel rides over it */
 	function rampOut(on) {
 		ramp.visible = on;
-		truck.userData.setTailgate(on || solar.parent === truck ? 1 : 0);
+		setTruck('tailgate', on || solar.parent === truck ? 1 : 0);
 	}
 	/** a machine on its way up or down the ramp: turned on the pickup (yaw, from its own) and tipped to its slope (k) */
 	const tipOn = (o, yaw, k) => o.quaternion.copy(truck.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-SLOPE * k, yaw, 0)));
@@ -1031,7 +1040,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (cube.parent !== world) world.attach(cube);
 		lit = where === 'home' || stage.battery === 'home';
 		cubeCable.visible = where === 'home';
-		if (where !== 'home') cubeCast.rig.pose(cubeCast.clips.off(0)); // it hums only at home, powering the tent
+		if (where !== 'home') cubeHero?.hold('off'); // it hums only at home, powering the tent
 		if (where === 'shed') (cube.position.copy(CUBE_IN_SHED), cube.rotation.set(0, Math.PI / 2, 0));
 		else if (where === 'home') (cube.position.set(YARD.x, 0, YARD.z), cube.rotation.set(0, -0.3, 0));
 		else {
@@ -1442,7 +1451,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const GET_IN = 1.8;
 	function climbIn(p, where, k) {
 		truck.updateMatrixWorld(true);
-		truck.userData.setDoor?.(where, Math.min(1, k / 0.2) * (1 - Math.min(1, Math.max(0, (k - 0.8) / 0.2))));
+		setTruck(`door.${where}`, Math.min(1, k / 0.2) * (1 - Math.min(1, Math.max(0, (k - 0.8) / 0.2))));
 		if (k >= 1) return void (p.parent !== truck && seatIn(p, where));
 		if (p.parent === truck) seatOut(p);
 		const door = atTruck(...(where === 'driver' ? DRIVER : PASSENGER));
@@ -1463,7 +1472,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		else if (p.userData.act === 'getin') where = p.userData.seatAs ?? where;
 		else if (k < 1) return;
 		truck.updateMatrixWorld(true);
-		truck.userData.setDoor?.(where, Math.min(1, k / 0.2) * (1 - Math.min(1, Math.max(0, (k - 0.8) / 0.2))));
+		setTruck(`door.${where}`, Math.min(1, k / 0.2) * (1 - Math.min(1, Math.max(0, (k - 0.8) / 0.2))));
 		if (p.parent === truck) seatOut(p);
 		const door = atTruck(...(where === 'driver' ? DRIVER : PASSENGER));
 		const seat = truck.localToWorld(CAB[where].clone());
@@ -3158,7 +3167,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const step = Math.min(0.25, t - (lastT ?? t));
 		lastT = t;
 		settleDust(step);
-		if (stage.cube === 'home' && cube.parent === world && !busy) cubeCast.rig.pose(cubeCast.clips.run(t));
+		if (cubeHero) {
+			// humming at home while no film plays (held where it was while one does), off elsewhere
+			const runs = stage.cube === 'home' && cube.parent === world && !busy;
+			if (runs && cubeHero.doing?.name !== 'run') cubeHero.play('run');
+			if (runs || cubeHero.doing?.name === 'off') cubeHero.tick(runs ? step : 0);
+		}
 		if (errand && !moment) {
 			// walking to where the first tree grows, the camera holding
 			const me = people[stage.me];
