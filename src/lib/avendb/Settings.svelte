@@ -10,7 +10,9 @@
 	drive joined, plugged in or, unplugged, when it last checked what it holds), and Sharing, the one place that says who has the vault: each vault
 	it is shared with, and Everyone where it is public, one line each, with its shares (level · what, and what each
 	reaches now; shares on chosen entries folded into one line a level) and the devices of theirs it is on, each opening
-	it or only keeping an encrypted copy; the one Share form; and what others share with the vault. All of it is the
+	it or only keeping an encrypted copy; the one Share form; what others share with the vault; and asking for access
+	(./Ask.svelte), as the vault where the person acts for it, else asking it, with the requests their vaults made and
+	the answers. All of it is the
 	device's: its world (avendb-browser's `World`) and its list of the shares over the vault (the `shares` op), which
 	says too whether the acting vault may revoke each; every other button shows only where the device answers a dry run
 	of it (`may`), and every change goes out as one op, acting for the acting vault, which the rules check against what
@@ -18,6 +20,7 @@
 -->
 <script>
 	import { native } from '$lib/native';
+	import Ask from './Ask.svelte';
 	import Mark from './Mark.svelte';
 	import { allowed, may, read } from './ops.js';
 	import Ops from './Ops.svelte';
@@ -54,9 +57,22 @@
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
 	 *   tab: 'about' | 'members' | 'sharing', thisName: string, link: string, qr: string, sockets?: string[] | null,
-	 *   drives?: import('./native.js').Drives | null }}
+	 *   drives?: import('./native.js').Drives | null, asks?: import('./vaults.js').Requests }}
 	 */
-	let { world, vault, actor, api, busy, tab, thisName, link, qr, sockets = null, drives = null } = $props();
+	let {
+		world,
+		vault,
+		actor,
+		api,
+		busy,
+		tab,
+		thisName,
+		link,
+		qr,
+		sockets = null,
+		drives = null,
+		asks = { asked: [], made: [] }
+	} = $props();
 	/** in the Mac app, the harness whose agent device the page shows how to run, and that, as the device says */
 	let harness = $state('claude');
 	let running = $state(/** @type {{ device: string, command: string, claude: string | null } | null} */ (null));
@@ -807,6 +823,16 @@
 					<li class="soft">Nothing in another vault.</li>
 				{/each}
 			</ul>
+		</article>
+
+		<article class="card wide">
+			<h3>Ask for access</h3>
+			<p class="soft">
+				{v.via
+					? `Ask another vault to share with ${vault === world.mine ? 'your aven or a vault of yours' : nameOf(v)}: its owners answer on their consent screen.`
+					: `Ask ${nameOf(v)} to share with your aven or a vault of yours: its owners answer on their consent screen.`}
+			</p>
+			<Ask {world} {api} {busy} made={asks.made} to={v.via ? '' : vault} as={v.via && vault !== world.mine ? vault : ''} />
 		</article>
 	</div>
 {/if}

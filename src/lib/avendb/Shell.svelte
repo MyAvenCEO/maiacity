@@ -15,13 +15,16 @@
 	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
 	theirs that holds the strongest cap over it, whose caps then decide what the page shows and what it may do. At the
 	foot, in the middle above the app's own buttons, what the page is doing, and why not. Marks of the vaults none of
-	theirs holds anything in are faded.
+	theirs holds anything in are faded. Over it all, the consent screen, for every access request a vault of theirs was
+	asked (./AccessRequest.svelte); and in a vault they don't act for, Ask for access, which opens the form that asks it
+	(./Ask.svelte) in a drawer.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import AccessRequest from './AccessRequest.svelte';
 	import Article from './Article.svelte';
+	import Ask from './Ask.svelte';
 	import Articles from './Articles.svelte';
 	import Flows from './Flows.svelte';
 	import Functions from './Functions.svelte';
@@ -31,6 +34,7 @@
 	import Library from './Library.svelte';
 	import NewVaults from './NewVaults.svelte';
 	import Note from './Note.svelte';
+	import Panel from './Panel.svelte';
 	import Settings from './Settings.svelte';
 	import Sparks from './Sparks.svelte';
 	import Stories from './Stories.svelte';
@@ -41,13 +45,28 @@
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
 	 *   link: string, qr: string, sockets?: string[] | null,
-	 *   requests?: import('./vaults.js').AccessRequestView[], drives?: import('./native.js').Drives | null }}
+	 *   requests?: import('./vaults.js').AccessRequestView[], asks?: import('./vaults.js').Requests,
+	 *   drives?: import('./native.js').Drives | null }}
 	 */
-	let { world, api, doing, error, thisName, link, qr, sockets = null, requests = [], drives = null } = $props();
+	let {
+		world,
+		api,
+		doing,
+		error,
+		thisName,
+		link,
+		qr,
+		sockets = null,
+		requests = [],
+		asks = { asked: [], made: [] },
+		drives = null
+	} = $props();
 
 	/** the vault the person looks at: their own until they pick another */
 	let picked = $state('');
 	let adding = $state(false);
+	/** whether the drawer that asks the vault looked at for access is open */
+	let asking = $state(false);
 	/** on a phone, whether the vault's pages slide in from the left */
 	let pages = $state(false);
 
@@ -212,8 +231,9 @@
 				<small>{KINDS[here.kind]}</small>
 				<h1>{nameOf(here)}</h1>
 				<p class="soft">{owners(here)}</p>
+				{#if !here.via}<button class="btn" onclick={() => (asking = true)}>Ask for access</button>{/if}
 			</header>
-			<AccessRequest {world} {requests} {busy} ongrant={api.grant} ondeny={api.deny} />
+			<AccessRequest {world} {requests} asked={asks.asked} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 			{#each NAV as [group, items] (group)}
 				<section class="apps" aria-labelledby="apps-{TINTS[group]}">
 					<h2 class="group" id="apps-{TINTS[group]}">{HEADS[group] ?? group}</h2>
@@ -281,12 +301,13 @@
 					As <b>{nameOf(mine)}</b>, its owner: you see and change all of it.
 				{:else if !SETTINGS.includes(tab)}
 					As <b>{nameOf(as)}</b>: you see what {nameOf(here)} shares with {nameOf(as)}.
+					{#if !here.via}<button class="link" onclick={() => (asking = true)}>Ask for access</button>{/if}
 				{:else}
 					As <b>{nameOf(as)}</b>. {nameOf(here)}'s settings show every share and device, as its owners see them.
 				{/if}
 			</p>
 		</header>
-		<AccessRequest {world} {requests} {busy} ongrant={api.grant} ondeny={api.deny} />
+		<AccessRequest {world} {requests} asked={asks.asked} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 		{#if tab === 'sparks'}
 			<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
 		{:else if tab === 'articles'}
@@ -304,7 +325,7 @@
 		{:else if tab === 'jobs'}
 			<Jobs {world} vault={context} {actor} {api} />
 		{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
-			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} />
+			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} {asks} />
 		{:else}
 			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 		{/if}
@@ -317,6 +338,15 @@
 	</div>
 
 	{#if adding}<NewVaults {world} {api} {busy} onclose={() => (adding = false)} />{/if}
+	{#if asking && !here.via}
+		<Panel title="Ask for access" sub={nameOf(here)} onclose={() => (asking = false)}>
+			<p class="soft ask-lead">
+				Ask {nameOf(here)} to share with your aven or a vault of yours. Its owners answer on their consent screen, and
+				you see their answer here once it syncs.
+			</p>
+			<Ask {world} {api} {busy} made={asks.made} to={here.id} />
+		</Panel>
+	{/if}
 </div>
 
 <style>
@@ -445,6 +475,21 @@
 
 	.main-head p {
 		margin: 0 0 1.2rem;
+	}
+
+	.link {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--accent);
+		font: inherit;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	.ask-lead {
+		margin: 0 0 0.8rem;
+		line-height: 1.45;
 	}
 
 	/* the vault's home, on the whole screen: its pages as apps, in a column no wider than a few rows of them */

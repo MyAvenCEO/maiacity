@@ -88,6 +88,9 @@
 	/** in the Mac app, the access requests the agent devices on this Mac left for the person to answer
 	 *  (avendb-device's `agent`, ./AccessRequest.svelte) */
 	let requests = $state(/** @type {import('./vaults.js').AccessRequestView[]} */ ([]));
+	/** the access requests as records (the `requests` op, ./AccessRequest.svelte): those asking a vault the person
+	 *  acts for, which they answer, and those their vaults made, with the answers, in the browser and the Mac app alike */
+	let records = $state.raw(/** @type {import('./vaults.js').Requests} */ ({ asked: [], made: [] }));
 	/** in the Mac app, the volumes plugged into this Mac and the drives joined here, each a device of the person's
 	 *  vault of its own that this Mac's device hosts while it is plugged in (avendb-device's `drive`): null elsewhere */
 	let drives = $state.raw(/** @type {import('./native.js').Drives | null} */ (null));
@@ -176,13 +179,15 @@
 
 	onDestroy(() => device?.close());
 
-	// in the Mac app, while it is open: the access requests on this Mac, looked for every few seconds, as an agent
-	// device leaves its request once its harness starts it, and again as it asks for more; and the drives plugged in and
-	// unplugged. The phase is read first, so that the effect runs again as it changes: `mac` isn't reactive, and is set
-	// before the device opens
+	// while it is open: the access requests as records, looked for every few seconds as well as at each change, in the
+	// browser and the Mac app alike; and in the Mac app, the requests on this Mac, as an agent device leaves its request
+	// once its harness starts it, and again as it asks for more, and the drives plugged in and unplugged. The phase is
+	// read first, so that the effect runs again as it changes: `mac` isn't reactive, and is set before the device opens
 	$effect(() => {
-		if (phase !== 'open' || !mac) return;
+		if (phase !== 'open') return;
 		const look = () => {
+			lookAsks();
+			if (!mac) return;
 			mac
 				.call('agents')
 				.then((/** @type {typeof requests} */ asked) => (requests = asked))
@@ -193,6 +198,15 @@
 		const every = setInterval(look, 3000);
 		return () => clearInterval(every);
 	});
+
+	/** The access requests as records, as the device holds them now (the `requests` op): none where it doesn't say. */
+	const lookAsks = () =>
+		device &&
+		send({ op: 'requests' })
+			.then((/** @type {any} */ out) => {
+				if (out && 'ok' in out) records = out.ok;
+			})
+			.catch(() => {});
 
 	/** In the Mac app: the volumes plugged in and the drives joined, as its device sees them now. */
 	const lookDrives = () =>
@@ -438,6 +452,7 @@
 		if (d !== device) return;
 		world = w;
 		if (!w) return;
+		lookAsks();
 		const mine = w.vaults.find((v) => v.id === w.mine);
 		// its card, so the person's other devices show it by name: once it holds its vault's key, as a device just
 		// linked does soon after; what it writes comes back as a change, and shows
@@ -724,6 +739,7 @@
 		{qr}
 		{sockets}
 		{requests}
+		asks={records}
 		{drives}
 	/>
 {:else}

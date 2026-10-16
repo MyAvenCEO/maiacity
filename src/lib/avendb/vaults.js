@@ -142,6 +142,20 @@ import { fieldPaths, pathWords } from './paths.js';
  *   vaults: string[], online: boolean }} AccessRequestView
  */
 
+/**
+ * An access request, a record of avenDB's `request` schema the asking vault `from` writes in itself and shares with the
+ * vault it asks, `to`, which may read it and set its answer alone (the `ask` op): the level it asks for, a built-in
+ * group; why; the vaults it asks that level on, `to` itself where it names none, as an agent asking its aven names the
+ * person's vaults; the answer, once `to` gave it; and when it was made, in seconds since 1970, where the device says.
+ * @typedef {{ entry: string, from: string, to: string, level: string, why: string, vaults: string[],
+ *   answer: 'granted' | 'denied' | null, created: number | null }} RequestRow
+ */
+/**
+ * The access requests the device knows (the `requests` op): `asked`, those not answered yet that ask a vault it acts
+ * for, the consent screen's; `made`, every one a vault it acts for made, with its answer.
+ * @typedef {{ asked: RequestRow[], made: RequestRow[] }} Requests
+ */
+
 /** The levels in the order the page lists them: the strongest first, then the keep levels, which grant nothing. */
 export const STRONGEST = /** @type {const} */ ([
 	'owner',
@@ -246,6 +260,25 @@ export function kindHint(world, kind) {
 	const each = r.each == null ? '' : `; a vault owns ${r.each === 1 ? 'one' : r.each} of them at most`;
 	const owns = world.kinds.some((k) => k.ownedBy !== 'signers' && k.ownedBy.includes(r.kind)) ? '' : ' It owns no vault.';
 	return `${KIND_IS[kind] ?? ''} ${owners}${each}. ${actsWords(world, kind)}${owns}`.trim();
+}
+
+/**
+ * Whether vault `a` owns vault `b`, directly or through owners of owners, as this device knows them.
+ * @param {WorldView} world @param {string} a @param {string} b
+ */
+export function owns(world, a, b) {
+	const byId = new Map(world.vaults.map((v) => [v.id, v]));
+	const seen = new Set([b]);
+	const up = [b];
+	for (let at = up.pop(); at !== undefined; at = up.pop()) {
+		for (const o of byId.get(at)?.owners ?? []) {
+			if (!('vault' in o) || seen.has(o.vault)) continue;
+			if (o.vault === a) return true;
+			seen.add(o.vault);
+			up.push(o.vault);
+		}
+	}
+	return false;
 }
 
 /**
