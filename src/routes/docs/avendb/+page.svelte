@@ -107,6 +107,11 @@
 			a: 'Your passkey is the root: a device’s keys unlock only with it, at every start. Remove the device from any other one, and your vault’s keys move on without it.'
 		},
 		{
+			short: 'Agents',
+			q: 'An agent never holds more than your aven.',
+			a: 'Each agent is a device vault of your aven, and every share it holds rests on one your aven holds, no stronger and no wider. Take back the aven’s share, and every agent’s share resting on it ends too.'
+		},
+		{
 			short: 'Offline',
 			q: 'Every edit counts the moment you make it.',
 			a: 'Online or not. Edits made at the same time on two devices merge the same way everywhere, and no server orders or approves them.'
@@ -186,6 +191,10 @@
 			'It keeps working on what it holds, and your desktop still shows what it holds, as of when it last checked. Back online, each side sends only what the other lacks, log by log, and both end in the same state.'
 		],
 		[
+			'An agent goes wrong',
+			'Remove its device, or revoke its shares. The other agents keep theirs. Its shares rest on your aven’s, so it never held more than your aven, and a COOP that stops hiring your aven ends every agent’s share with one revocation.'
+		],
+		[
 			'Two devices change the same note at once',
 			'Both changes stay. Text merges character by character, list rows by their id, and any other field takes one value, the same on every device.'
 		],
@@ -233,6 +242,51 @@
 		]
 	];
 
+	// the four primitives every right is built from: what each is, and the question it answers
+	const primitives = [
+		['Vault', 'An identity of one kind: a person, a COOP, an aven or a device vault. It owns its entries.', 'Who'],
+		['Owns', 'A parent vault owns a child vault. The owner approves the child’s changes and acts for it.', 'Who decides'],
+		['Device', 'A key that signs for one vault. It acts with all its vault’s rights, and approves nothing.', 'Who signs'],
+		[
+			'Share',
+			'A named group of ops on a slice of a vault, given to a vault. It may rest on a share its giver holds.',
+			'Who may do what'
+		]
+	];
+
+	// the kind table, as avenDB defines it once (policy::Kind::rules); the app reads the same rows from its device
+	const vaultKinds = [
+		['Human', 'Your passkeys and the master recovery key', 'Any, by threshold', 'Yes: your desktops, phones, browsers and drives', 'Any number'],
+		['COOP', 'Human and COOP vaults', 'Any, by threshold', 'No', 'Any number'],
+		['Aven', 'One human vault', 'Exactly one', 'No', 'One per person'],
+		['Device vault', 'One human, COOP or aven vault', 'Exactly one', 'Yes: the keys of one agent or of the server', 'Any number']
+	];
+
+	// one flow adds every vault that acts by keys of its own
+	const addings = [
+		['Your first agent', 'Your aven, founded in the same prompt', 'The agent harness’s key on your Mac', 'Sub caps of your aven’s shares'],
+		['Another agent', 'Your aven', 'Its harness’s key', 'Sub caps of your aven’s shares'],
+		['The same harness on your other Mac', 'That agent’s device vault', 'That Mac’s harness key', 'What the agent holds already'],
+		['The server', 'avenCEO GmbH, founded with the seed', 'The server’s key', 'Backup or Relay, from each vault over itself']
+	];
+
+	// the one rule a share rests on another by, case by case
+	const passing = [
+		['A COOP hires your aven', 'Maia City gives avenSamuel Editor', 'Maia City gives a share over itself, resting on none'],
+		['Your aven gives an agent a sub cap', 'avenSamuel passes Maia City’s share on to agentClaude', 'avenSamuel owns agentClaude'],
+		['You pass a COOP’s share on to your aven', 'Your vault passes on a share Maia City gave it', 'Your vault owns your aven'],
+		['An Owner of a slice shares it on', 'Whoever holds Owner on the todos tagged garden shares them with Bob', 'It rests on an Owner share']
+	];
+
+	const ASK = `{ "op": "ask", "as": "…", "to": "…",
+  "level": "Editor",
+  "why": "To draft the city's articles" }`;
+
+	const REQUEST = `{ "kind": "request", "to": "…",
+  "level": "Editor",
+  "why": "To draft the city's articles",
+  "vaults": [], "answer": "granted" }`;
+
 	const kinds = [
 		['Genesis', 'A new vault: its kind, owners, threshold and root', 'Its vault'],
 		['Settings', 'How many owners must approve, or handing the root passkey on', 'The vault'],
@@ -276,7 +330,10 @@
 	];
 
 	const who = [
-		['A person, a group or an agent', 'Their vault. It reaches every device that acts for it, so a new phone needs no new share.'],
+		[
+			'A vault: a person, a COOP, an aven or an agent',
+			'It reaches every device that acts for that vault, so a new phone needs no new share.'
+		],
 		['Everyone', 'Read only. Its key is published in the clear, and it goes only to devices with a reason to ask.'],
 		['One of your own devices', 'Only as a keep share: what that device syncs. It grants nothing.']
 	];
@@ -359,6 +416,7 @@
 		'history',
 		'schemas',
 		'groups',
+		'kinds',
 		'world',
 		'jobs',
 		'database',
@@ -367,7 +425,8 @@
 		'read_file',
 		'creatable',
 		'taggable',
-		'limits'
+		'limits',
+		'requests'
 	];
 	const asks = ['may', 'shares'];
 	const changes = [
@@ -393,6 +452,7 @@
 		'settings',
 		'found',
 		'put_file',
+		'ask',
 		'back_up',
 		'mark',
 		'card',
@@ -415,7 +475,7 @@
 		['Card', 'A request for the server’s contact card', 'The vault logs of avenCEO server and every vault that owns it'],
 		[
 			'Claim key, Claim',
-			'Asks an unclaimed server, or a new agent device, for its key to seal to, then claims it',
+			'Asks a device that belongs to no vault yet, an unclaimed server or a new agent, for its key, then adds it to its device vault',
 			'The key; the claim, signed by the claimed device too'
 		]
 	];
@@ -480,7 +540,11 @@
 		['Sync sends only what shares reach, and strangers get nothing', 'T12'],
 		['Frontier sync loses nothing, and two devices that synced once hold the same edits', 'T13, T19'],
 		['An edit backdated past a removal that relied on what it took is cut', 'T16'],
-		['A share never grants more than what it rests on', 'T22'],
+		[
+			'Every vault keeps to its row of the kind table: an aven has one owner, a human vault, and a person owns one aven at most',
+			'T21'
+		],
+		['A share never grants more than what it rests on, and rests on another only by one rule', 'T22'],
 		['The marks on each entry mean exactly what the shares say', 'T23'],
 		['The server decides every edit as an owner does, without reading a selector', 'T25'],
 		['A relay share receives no entry, and files go only with the edits that bring them', 'T26, T27'],
@@ -531,7 +595,7 @@
 		<a class="back" href="{base}/docs">← Docs</a>
 
 		<header class="intro">
-			<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 15 October 2026</p>
+			<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 16 October 2026</p>
 			<h1>avenDB Architecture</h1>
 			<p class="lede">
 				A user-owned, local-first database with post-quantum security. Every write happens on your device first and merges
@@ -664,12 +728,48 @@
 
 		<section id="vaults">
 			<p class="eyebrow">Identity</p>
-			<h2>A vault is an identity</h2>
+			<h2>Vaults, owners, devices and shares</h2>
 			<p class="prose-col">
-				Everything belongs to a vault, the way an account belongs to a person: a vault owns its entries, holds shares in
-				other vaults and has owners who may change it. There are four kinds, and one table says who may own each, how many
-				owners it takes and whether it holds devices; the page reads the same table.
+				Everything belongs to a vault, the way an account belongs to a person. Who may do what is built from four things,
+				and nothing else. Each is defined once, in avenDB’s Lean model, and the code and the app read that one
+				definition. So no screen and no device adds a rule of its own.
 			</p>
+			<div class="table">
+				<table>
+					<thead>
+						<tr><th>Primitive</th><th>What it is</th><th>It answers</th></tr>
+					</thead>
+					<tbody>
+						{#each primitives as [name, is, answers] (name)}
+							<tr><td><b>{name}</b></td><td>{is}</td><td>{answers}</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<p class="prose-col">
+				Two facts follow from the four, and avenDB stores neither. The <b>acting chain</b>: a device acts for its vault,
+				and through owners for every vault they own, up to a passkey. Every edit shows this chain, so you always see whose
+				passkey stands behind it. The <b>effective right</b>: what a vault may do through a chain of shares is what every
+				share of the chain allows, and no more. Revoke a share, and every share that rests on it ends too.
+			</p>
+			<h3>Four kinds of vault, one table</h3>
+			<p class="prose-col">
+				Every vault has a kind. One table says, for each kind, who may own it, how many owners it takes, whether it holds
+				devices, and how many of it one owner may own. Every rule about kinds reads this table, and the app reads the same
+				table from its device. So a kind’s rules live in one place, and nothing else decides them.
+			</p>
+			<div class="table">
+				<table>
+					<thead>
+						<tr><th>Kind</th><th>Owned by</th><th>Owners</th><th>Holds devices</th><th>One owner may own</th></tr>
+					</thead>
+					<tbody>
+						{#each vaultKinds as [kind, by, owners, devices, each] (kind)}
+							<tr><td><b>{kind}</b></td><td>{by}</td><td>{owners}</td><td>{devices}</td><td>{each}</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 			<div class="cards">
 				<div>
 					<h3>Human vault</h3>
@@ -682,34 +782,186 @@
 				<div>
 					<h3>COOP vault</h3>
 					<p>
-						Owned by human vaults and other COOP vaults, with no devices of its own. Its owners act for it from their
-						devices.
+						A company or a group, owned by human vaults and other COOP vaults. It has no devices of its own: its owners
+						act for it from their devices. A COOP hires an aven by sharing with it.
 					</p>
 				</div>
 				<div>
 					<h3>Aven vault</h3>
 					<p>
-						Your one AI identity, owned by your human vault alone: one aven a person. It holds no devices: its agents act
-						for it, each a device vault it owns with sub caps of what it holds. COOPs hire it by sharing with it.
+						Your one AI identity. Only your human vault owns it, and you own one at most, so only you decide what it
+						passes on. It holds no devices: you act as it from your own devices, and its agents work for it with the
+						rights it passes on to them.
 					</p>
 				</div>
 				<div>
 					<h3>Device vault</h3>
 					<p>
-						The keys of one agent, server or drive, owned by one human, COOP or aven vault. Its devices act for it with
-						only the rights its owner passes on, and it owns nothing.
+						The keys of one agent or of the server, owned by exactly one human, COOP or aven vault. Its devices act for
+						it with all its rights and approve nothing. It owns nothing, and holds only what its owner gives it or passes
+						on to it.
 					</p>
 				</div>
 			</div>
+			<figure>
+				<div class="frame">
+					<svg class="fig" viewBox="0 0 960 520" role="img" aria-label="Samuel’s vaults: who owns which, and one share passed on">
+						<path class="own" d="M480 92 V121 M190 150 V121 H750 V150" />
+						<path class="own" d="M190 208 V244 M123 280 V244 H350 V280" />
+						<path class="own" d="M750 208 V280" />
+						<path class="own" d="M750 338 V374 M615 410 V374 H849 V410" />
+						<path class="cap" d="M849 468 V496 H470 V179 H332" />
+						<polygon class="bc" points="334,172 320,179 334,186" />
+						<path class="cap" d="M60 192 H40 V266" />
+						<polygon class="bc" points="33,266 40,280 47,266" />
+						<rect class="k-human" x="340" y="20" width="280" height="72" rx="10" />
+						<rect class="dev" x="596" y="30" width="10" height="10" rx="2" />
+						<text class="h" x="358" y="46">Samuel</text>
+						<text class="s" x="358" y="66">human vault · owned by his passkeys</text>
+						<text class="s" x="358" y="84">devices: Mac, phone, browsers</text>
+						<rect class="k-aven" x="60" y="150" width="260" height="58" rx="10" />
+						<text class="h" x="78" y="174">avenSamuel</text>
+						<text class="s" x="78" y="196">aven · one per person, no devices</text>
+						<rect class="k-coop" x="620" y="150" width="260" height="58" rx="10" />
+						<text class="h" x="638" y="174">Maia Holding GmbH</text>
+						<text class="s" x="638" y="196">COOP</text>
+						<rect class="k-device" x="16" y="280" width="214" height="58" rx="10" />
+						<rect class="dev" x="206" y="290" width="10" height="10" rx="2" />
+						<text class="h" x="34" y="304">agentClaude</text>
+						<text class="s" x="34" y="326">device vault · Claude Code</text>
+						<rect class="k-device" x="250" y="280" width="200" height="58" rx="10" />
+						<rect class="dev" x="426" y="290" width="10" height="10" rx="2" />
+						<text class="h" x="268" y="304">agentCodex</text>
+						<text class="s" x="268" y="326">device vault · Codex</text>
+						<rect class="k-coop" x="620" y="280" width="260" height="58" rx="10" />
+						<text class="h" x="638" y="304">avenCEO GmbH</text>
+						<text class="s" x="638" y="326">COOP</text>
+						<rect class="k-device" x="500" y="410" width="230" height="58" rx="10" />
+						<rect class="dev" x="706" y="420" width="10" height="10" rx="2" />
+						<text class="h" x="518" y="434">avenCEO server</text>
+						<text class="s" x="518" y="456">device vault · the server</text>
+						<rect class="k-coop" x="746" y="410" width="206" height="58" rx="10" />
+						<text class="h" x="764" y="434">Maia City</text>
+						<text class="s" x="764" y="456">COOP · the city’s content</text>
+						<text class="s" x="482" y="296">Editor: Maia City</text>
+						<text class="s" x="482" y="314">hires the aven</text>
+						<text class="s" x="48" y="236">sub cap</text>
+						<g transform="translate(20 410)">
+							<line class="own" x1="0" y1="10" x2="40" y2="10" />
+							<text class="s" x="52" y="14">owns: the owner decides for it</text>
+							<line class="cap" x1="0" y1="40" x2="40" y2="40" />
+							<text class="s" x="52" y="44">a share, and a share passed on from it</text>
+							<rect class="dev" x="15" y="64" width="10" height="10" rx="2" />
+							<text class="s" x="52" y="74">holds devices, which sign for it</text>
+						</g>
+					</svg>
+				</div>
+				<figcaption>
+					Samuel’s vaults. A line runs from an owner down to each vault it owns. The dashed line is a share: Maia City
+					hires avenSamuel, and avenSamuel passes part of that share on to agentClaude as a sub cap. If Maia City revokes
+					its share, agentClaude’s share ends with it. On the right is the seed: avenCEO server is the server’s vault
+					because it ends that chain.
+				</figcaption>
+			</figure>
 			<p class="prose-col">
 				A vault has two settings: how many owners must approve a change, and its root passkey, which approves anything on
 				its own. Adding or removing an owner or a device takes the vault’s approval and the newcomer’s consent; devices
-				approve nothing. A new device joins with your passkey alone, through a QR code on a device you have or by signing
-				in through the server. Set up avenDB on a second device with the same passkey and it joins the vault that passkey
-				already has: one passkey, one human vault. The first person to found a vault through a new server claims it. The
-				same prompt founds four vaults: Maia Holding GmbH and avenCEO GmbH, two COOPs, each owned by the one before;
-				avenCEO server, the device vault avenCEO GmbH owns and the server is a device of; and Maia City, a COOP avenCEO
-				GmbH owns, where the city’s content lives. Each is named as it is founded.
+				approve nothing. An owner that is a vault approves as that vault does, so your passkey approves for every vault
+				your vault owns, down the chain, in one prompt. A new device joins with your passkey alone, through a QR code on a
+				device you have or by signing in through the server. Set up avenDB on a second device with the same passkey and it
+				joins the vault that passkey already has: one passkey, one human vault.
+			</p>
+			<h3>One flow adds a device vault</h3>
+			<p class="prose-col">
+				Everything that acts with keys of its own, an agent or the server, is added the same way, in three steps. First,
+				a device vault is founded under its parent, or the one there already is taken. Second, the device’s key is added
+				to it, and the device signs that edit too, so no key joins a vault without its own consent. Third, the device
+				vault gets its shares: its parent passes on shares it holds, or a vault gives it a share over itself. Your passkey
+				signs the first two steps in one prompt. The shares need no prompt, because a share below Owner changes nobody’s
+				control.
+			</p>
+			<div class="table">
+				<table>
+					<thead>
+						<tr><th>Case</th><th>Parent</th><th>Device</th><th>Shares</th></tr>
+					</thead>
+					<tbody>
+						{#each addings as [what, parent, device, shares] (what)}
+							<tr><td><b>{what}</b></td><td>{parent}</td><td>{device}</td><td>{shares}</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<p class="prose-col">
+				One flow means one set of rules to check and one view to show it. The app lists the vaults each vault owns the
+				same way, each with its devices and the shares it holds: your aven and its agents on your vault, the agents on
+				your aven, and the server on avenCEO GmbH.
+			</p>
+			<h3>The seed and the server</h3>
+			<p class="prose-col">
+				A new server belongs to no vault. The first person to found a vault through it claims it, in the same prompt that
+				founds their vault. That prompt also founds the seed: Maia Holding GmbH, a COOP their vault owns; avenCEO GmbH, a
+				COOP Maia Holding GmbH owns; avenCEO server, a device vault avenCEO GmbH owns, with the server as its device; and
+				Maia City, a COOP avenCEO GmbH owns, where the city’s content lives. Each is named as it is founded. Every device
+				finds the server by this chain, not by a name or a kind: it is the device vault, with a device, at the end of the
+				chain, each vault owned by the one before it alone, the first by a human vault. So an agent or a drive in a device
+				vault never passes for the server.
+			</p>
+			<p class="prose-col">
+				Each vault gives avenCEO server a share on the whole of it: Backup, so the server keeps its ciphertext, or Relay,
+				with backups off. Every vault founded under you follows your setting, your aven and your agents’ device vaults
+				too. Your devices are often away, and the server is always there. So what your aven and its agents write, a
+				request among it, still reaches the people it is for.
+			</p>
+			<h3>Your aven and its agents</h3>
+			<p class="prose-col">
+				Your aven is your one AI identity, and COOPs hire it by sharing with it. You act as your aven from your own
+				devices. Each agent harness is an agent of its own: a device vault your aven owns, named after it, with the
+				harness’s key as its device. The key is who it is, never a token. Claude Code is agentClaude, Codex is
+				agentCodex, and likewise Cursor, Grok and our own native aven. <code>avendb-device agent claude</code> is that
+				device on your desktop, which Claude Code starts as its MCP server. A harness never names or picks an aven: it
+				always joins your one aven, and the first agent you approve founds it.
+			</p>
+			<p class="prose-col">
+				Each agent holds sub caps: shares your aven passes on to it, each resting on one your aven holds, never stronger
+				or wider. So no agent gets more than your aven has. A COOP that revokes its share to your aven ends that share for
+				every agent at once, and removing one agent leaves the others. The same harness on your other Mac is a second
+				device of the same agent. An agent saves a file of your desktop, named by its path, where its shares let it
+				create, as an Editor may. It keeps no file of its own: once your desktop holds a file it saved whole, it lets go
+				of its copy, and it reads your files from your desktop’s one store, so nothing is kept twice.
+			</p>
+			<h3>Asking for access</h3>
+			<p class="prose-col">
+				An access request is a record, not a new kind of message. The vault that asks writes a record of avenDB’s
+				request schema in its own vault: the vault it asks, a level (Viewer, Suggester or Editor), and why. It shares that
+				one record with the vault it asks, in a group of its own, Answer: read the record, and set its answer to granted
+				or denied, and nothing else. Sync carries the record like any other, over avenDB’s own protocol: straight to the
+				devices that act for the vault asked, or through any peer that keeps it, as the server does while it backs up
+				the vault that asks. The server is one more peer, not a mailbox. So a request needs no new rule: it is a record
+				and two shares, the one that carries it and the one that grants it.
+			</p>
+			<div class="codes">
+				<figure>
+					<pre><code>{ASK}</code></pre>
+					<figcaption>avenSamuel asks Maia City for Editor</figcaption>
+				</figure>
+				<figure>
+					<pre><code>{REQUEST}</code></pre>
+					<figcaption>The record it writes in its own vault, once Maia City has answered</figcaption>
+				</figure>
+			</div>
+			<p class="prose-col">
+				Every request your vaults were asked shows on one consent screen, one at a time: who asks, which vaults, the level
+				and why. You may give less than it asks, a level for each vault, never more than the vault asked holds. Approve,
+				and the vault asked gives the share and writes granted into the record. Deny, and it writes denied. The asker sees
+				the answer when the record syncs back.
+			</p>
+			<p class="prose-col">
+				An agent that belongs to no vault yet can write no record, so its first request is a file it leaves on your Mac,
+				shown on the same screen. You pick all your vaults or only some, a level each, and in the vaults of COOPs that
+				hired your aven, up to your aven’s own level there. One prompt of your passkey adds the agent, and founds your
+				aven first where you have none; the shares need no prompt. From then on the agent asks its aven with a record,
+				as any vault asks.
 			</p>
 		</section>
 
@@ -762,6 +1014,17 @@
 				disk can’t protect against: malware on a machine while the device is open, and the site’s own scripts, which may
 				ask your passkey for a prompt as any page of maia.city may. The server is the one device whose secret is on
 				disk, sealed in its bucket, as nobody is there to unlock it.
+			</p>
+			<h3>A drive is a device too</h3>
+			<p class="prose-col">
+				An external drive you use for avenDB is a device of your vault of its own, as a phone is, on the same sync,
+				shares, copy setting and holdings. One prompt of your passkey adds it, in Owners and devices on the desktop app,
+				and it keeps a full copy unless you make it light. It holds only ciphertext, in <code>.avendb</code> on the
+				drive, and its key never in plain: masked by your passkey, as every device’s, and wrapped by each Mac that hosts
+				it under that Mac’s own device key, so plugging it in again asks for nothing. While it is plugged in, the Mac’s
+				device runs it as a second node; unplugged, its last signed statement of what it holds shows when it checked.
+				Eject it in the page, which stops its node before macOS ejects it, so nothing on it is in use. A lost drive is
+				removed like a lost phone.
 			</p>
 		</section>
 
@@ -908,10 +1171,10 @@
 			<p class="eyebrow">Shares</p>
 			<h2>A share says who may do what, on which entries</h2>
 			<p class="prose-col">
-				Every permission in avenDB is a share: <b>who</b>, at which <b>level</b>, on <b>what</b>. People, groups, Everyone,
-				the server and each of your own devices are given shares. A vault’s owners and its devices are shares too, so the
-				device lists them with every other share, and Revoke ends any of them. Every device checks every write against the shares its author
-				relies on, so a write no share allows counts for no one.
+				Every permission in avenDB is a share: <b>who</b>, at which <b>level</b>, on <b>what</b>. People, COOPs, avens and
+				their agents, Everyone, the server and each of your own devices are given shares. On the wire, a vault’s owners and
+				its devices are shares too, so the device lists them with every other share, and Revoke ends any of them. Every
+				device checks every write against the shares its author relies on, so a write no share allows counts for no one.
 			</p>
 			<div class="table">
 				<table>
@@ -959,11 +1222,32 @@
 				a share shows only who holds it and at which level, so the server learns nothing of what it picks or allows. A
 				share may rest on another, and a chain of shares allows only what every share of it allows.
 			</p>
+			<h3>Passing a share on</h3>
+			<p class="prose-col">
+				A share may rest on a share its giver holds over the same vault. It must be no stronger than that share, and
+				cover the whole vault only if that share does. And one of two things must be true: the share it rests on is an
+				Owner share, which lets its holder share on with anyone; or the new share goes to a vault its giver owns. This
+				one rule covers every case. The second part is safe because an owner added every key of the vault it owns and
+				can remove each one, so what it passes on goes nowhere it can’t take back.
+			</p>
+			<div class="table">
+				<table>
+					<thead>
+						<tr><th>Case</th><th>The share</th><th>Why it may</th></tr>
+					</thead>
+					<tbody>
+						{#each passing as [what, share, why] (what)}
+							<tr><td><b>{what}</b></td><td>{share}</td><td>{why}</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 			<h3>Owners and devices</h3>
 			<p class="prose-col">
 				An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only signers own a human vault:
-				its person’s passkeys, and the master recovery key it is founded with. An Owner share on a slice, one todo or one tag, is something else: its holder may share that slice on. A device
-				“acts for” its vault: it writes as the vault and approves nothing.
+				its person’s passkeys, and the master recovery key it is founded with. An aven and a device vault take exactly
+				one owner. An Owner share on a slice, one todo or one tag, is something else: its holder may share that slice on.
+				A device “acts for” its vault: it writes as the vault and approves nothing.
 			</p>
 			<h3>Keep shares: what each of your devices syncs</h3>
 			<p class="prose-col">
@@ -991,15 +1275,17 @@
 			</p>
 			<h3>The server: Backup or Relay</h3>
 			<p class="prose-col">
-				Each vault gives the server’s vault a Backup share on everything when it is founded: the server keeps the
-				ciphertext of every entry, and opens none. With backups off it gives Relay instead: the server learns the vault’s
-				devices, to let them through its relay, and keeps nothing of its entries.
+				Each vault gives avenCEO server, the server’s device vault, a Backup share on everything when it is founded: the
+				server keeps the ciphertext of every entry, and opens none. With backups off it gives Relay instead: the server
+				learns the vault’s devices, to let them through its relay, and keeps nothing of its entries. Every vault founded
+				under you follows your setting, and one switch changes it for all of them.
 			</p>
 			<h3>Revoking</h3>
 			<p class="prose-col">
-				Revoke ends a share and every share resting on it. Whoever gave it may revoke it, so may the vault it is over, and
-				its holder may give it up. The entries it reached move to a new key, sealed only to the shares still live. What was
-				read stays read.
+				Revoke ends a share and every share resting on it, so a COOP that revokes its share to your aven ends every
+				agent’s share resting on it. Whoever gave a share may revoke it, so may the vault it is over, and its holder may
+				give it up. The entries it reached move to a new key, sealed only to the shares still live. What was read stays
+				read.
 			</p>
 		</section>
 
@@ -1173,28 +1459,8 @@
 				whom, and nothing is made until it is signed.
 			</p>
 			<p class="prose-col">
-				Your aven is your one AI identity, a vault your vault owns, and agent harnesses act for it, each as an agent of
-				its own: a device vault the aven owns, with a key of its own, never a token: Claude Code as agentClaude, Codex as
-				agentCodex, and likewise Cursor, Grok and our own native aven. <code>avendb-device agent claude</code> is that
-				device on your desktop, which Claude Code starts as its MCP. Access is asked for and given as any share is, on
-				one consent screen: the agent says what it wants and why, it joins your aven, and you pick all your vaults or
-				only some, a level each, Viewer, Suggester or Editor, and in the vaults of COOPs that hired your aven, up to the
-				aven’s own level there. One prompt of your passkey adds a new agent, founding your aven first where you have
-				none; the shares need none. Each agent holds sub caps, shares resting on the aven’s own, so revoking one of the
-				aven’s ends the agent’s too, and removing one agent leaves the others. An agent saves a file of your desktop,
-				named by its path, where its shares let it create, as an Editor may. It keeps no file of its
-				own: once your desktop holds a file it saved whole, it lets go of its copy, and it reads your files from your
-				desktop’s one store, so nothing is kept twice.
-			</p>
-			<p class="prose-col">
-				An external drive you use for avenDB is a device of your vault of its own, as a phone is, on the same sync,
-				shares, copy setting and holdings. One prompt of your passkey adds it, in Owners and devices on the desktop app,
-				and it keeps a full copy unless you make it light. It holds only ciphertext, in <code>.avendb</code> on the
-				drive, and its key never in plain: masked by your passkey, as every device’s, and wrapped by each Mac that hosts
-				it under that Mac’s own device key, so plugging it in again asks for nothing. While it is plugged in, the Mac’s
-				device runs it as a second node; unplugged, its last signed statement of what it holds shows when it checked.
-				Eject it in the page, which stops its node before macOS ejects it, so nothing on it is in use. A lost drive is
-				removed like a lost phone.
+				An agent speaks the same ops through its MCP tools. It acts as its own device vault, so its shares decide what
+				each op may do, and it asks for more with the <code>ask</code> op, as any vault asks.
 			</p>
 		</section>
 
@@ -1541,7 +1807,7 @@
 			<ul class="prose-col">
 				<li>
 					<b>Put aside, clear at a reset.</b> Forgetting an account, or starting fresh, makes a new generation beside the
-					old one, which is never read again. A reset raises the lowest generation, now 8. As each place opens, it deletes
+					old one, which is never read again. A reset raises the lowest generation, now 10. As each place opens, it deletes
 					every older one: the desktop its folder, a browser its private storage, the server its folder and its bucket.
 				</li>
 				<li>
@@ -1615,7 +1881,7 @@
 		<footer class="note">
 			Sources: Ink &amp; Switch’s <i>Local-first software</i> (2019), Loro 1.16, iroh 1.3, iroh-blobs 0.103.1 and bao-tree
 			0.16.1 source, n0’s blog and docs, Hetzner Object Storage documentation, and avenDB’s code and Lean model for edit
-			format 9, as of 15 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
+			format 10, as of 16 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
 		</footer>
 	</main>
 </div>
@@ -1973,6 +2239,41 @@
 	.fig .band-av {
 		fill: color-mix(in srgb, var(--sage) 32%, var(--paper));
 		stroke: var(--line);
+	}
+	/* the identity diagram: a vault by its kind, who owns it, and a share passed on */
+	.fig .k-human {
+		fill: color-mix(in srgb, var(--sage) 22%, var(--paper));
+		stroke: var(--ink);
+		stroke-width: 1.4;
+	}
+	.fig .k-aven {
+		fill: color-mix(in srgb, var(--terracotta) 14%, var(--paper));
+		stroke: var(--ink);
+		stroke-width: 1.4;
+	}
+	.fig .k-coop {
+		fill: color-mix(in srgb, var(--mustard) 24%, var(--paper));
+		stroke: var(--ink);
+		stroke-width: 1.4;
+	}
+	.fig .k-device {
+		fill: var(--paper);
+		stroke: var(--ink);
+		stroke-width: 1.4;
+	}
+	.fig .dev {
+		fill: var(--ink);
+	}
+	.fig .own {
+		stroke: var(--ink);
+		stroke-width: 1.6;
+		fill: none;
+	}
+	.fig .cap {
+		stroke: var(--terracotta);
+		stroke-width: 2.2;
+		stroke-dasharray: 7 5;
+		fill: none;
 	}
 
 	/* code: JSON as the engine reads it */
