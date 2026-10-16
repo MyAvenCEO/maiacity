@@ -2,7 +2,7 @@
 	What a spark's canvas (./SparkCanvas.svelte) can take, beside it on its page (Note): every artifact of its vault
 	(./artifacts.js), the newest first, and its other sparks, found by their words or by what they are. Each is dragged
 	onto the canvas, to land where it is let go, or put on it under the rest with its own button, where the hand has no
-	pointer to drag with; what the canvas holds already is marked so. Each is one op on the canvas's line, for the
+	pointer to drag with. What the canvas holds already is left out. Each is one op on the canvas's line, for the
 	acting vault, as the device allows it (`may`).
 -->
 <script>
@@ -22,10 +22,18 @@
 	const items = $derived(/** @type {any[]} */ (record?.items ?? []));
 	const onIt = $derived(new Set(items.map((it) => entryOf(it.ref)).filter(Boolean)));
 
-	/** what it can take: the vault's artifacts and its other sparks, the newest first */
+	/** what it can take: the vault's artifacts and its other sparks it doesn't hold yet, the newest first */
 	const all = $derived(
 		world.entries
-			.filter((e) => e.vault === vault && !e.deleted && reads(e, actor) && e.entry !== entry && (isArtifact(e) || (isSpark(e) && e.type === 'spark')))
+			.filter(
+				(e) =>
+					e.vault === vault &&
+					!e.deleted &&
+					reads(e, actor) &&
+					e.entry !== entry &&
+					!onIt.has(e.entry) &&
+					(isArtifact(e) || (isSpark(e) && e.type === 'spark'))
+			)
 			.sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
 	);
 
@@ -118,16 +126,9 @@
 	{#if shown.length}
 		<ul>
 			{#each shown.slice(0, room) as e (e.entry)}
-				{@const on = onIt.has(e.entry)}
 				{@const art = isArtifact(e)}
 				{@const look = lookOf(e)}
-				<li
-					class="piece"
-					class:on
-					class:lifts={edits && !on}
-					draggable={edits && !on ? 'true' : 'false'}
-					ondragstart={(ev) => lift(ev, e)}
-				>
+				<li class="piece" class:lifts={edits} draggable={edits ? 'true' : 'false'} ondragstart={(ev) => lift(ev, e)}>
 					<span class="thumb {art ? look : 'spark'}" aria-hidden="true">
 						{#if pics[e.entry]}<img src={pics[e.entry]} alt="" draggable="false" />{:else}<Icon
 								name={art ? iconOf(look) : 'spark'}
@@ -137,13 +138,13 @@
 					<a class="words" href={art ? `#artifacts/${e.entry}` : `#notes/${e.entry}`} draggable="false">
 						<b>{e.title || 'Untitled'}</b>
 						<small class="soft">
-							{#if on}On the canvas{:else if art}{LOOK_NAME[look]}{fromWords(e.record) ? ` · ${fromWords(e.record)}` : ''}{:else}Spark · {count(
+							{#if art}{LOOK_NAME[look]}{fromWords(e.record) ? ` · ${fromWords(e.record)}` : ''}{:else}Spark · {count(
 									pieces(world, e).artifacts.length,
 									'artifact'
 								)}{/if}
 						</small>
 					</a>
-					{#if edits && !on}
+					{#if edits}
 						<button class="add" title="Put it on the canvas" aria-label="Put “{e.title || 'it'}” on the canvas" onclick={() => put(e)}
 							><Icon name="plus" size={14} /></button
 						>
@@ -159,8 +160,10 @@
 			{find.trim()
 				? 'Nothing matches.'
 				: only === 'sparks'
-					? 'No other sparks in this vault yet.'
-					: 'No artifacts in this vault yet. Paste a link or drop a file on the canvas to make one.'}
+					? 'Every other spark of this vault is on the canvas, or there are none yet.'
+					: all.length || onIt.size
+						? 'Every artifact of this kind is on the canvas.'
+						: 'No artifacts in this vault yet. Paste a link or drop a file on the canvas to make one.'}
 		</p>
 	{/if}
 </section>
@@ -239,12 +242,6 @@
 
 	.piece.lifts:active {
 		cursor: grabbing;
-	}
-
-	.piece.on {
-		opacity: 0.55;
-		box-shadow: none;
-		background: none;
 	}
 
 	.thumb {
