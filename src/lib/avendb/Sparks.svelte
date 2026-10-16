@@ -13,6 +13,7 @@
 	import { addingArtifact, ARTIFACT, fromFile, fromLink } from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Icon from './Icon.svelte';
+	import LegacyCopy from './LegacyCopy.svelte';
 	import { allowed, creatable, may } from './ops.js';
 	import SparkRow from './SparkRow.svelte';
 	import { addingSpark, addingStory, fromLine, grownFrom, isOldNote, isSpark, linkIn, newId, placing, SPARK, sparkRecord, titleOf } from './sparks.js';
@@ -177,6 +178,8 @@
 		onopen(made.entry);
 	}
 </script>
+
+<LegacyCopy {world} {vault} {actor} {api} {busy} />
 
 {#if sparks.length || deleted.length}
 	<nav class="filter" aria-label="Narrow the sparks">
