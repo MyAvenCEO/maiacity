@@ -22,7 +22,8 @@
 	import { treeNow } from './trees.js';
 	import { plantAt } from '$lib/plants/index.js';
 	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
-	import Frame from '$lib/genui/Frame.svelte';
+	import ViewHost from '$lib/sandbox/ViewHost.svelte';
+	import { viewOfCard } from '$lib/sandbox/view-host.js';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
 	import Mark from './Mark.svelte';
@@ -473,14 +474,9 @@
 				}
 			: null
 	);
-	// a view card as the sandboxed frame takes it: the same object while its code is (the game is copied every second,
-	// its cards with it), so its frame never reloads until a MIP changes it
-	const frames = new Map();
-	const frameOf = (c) => {
-		const k = `${c.id}\n${c.code}`;
-		if (!frames.has(k)) frames.set(k, { id: c.id, title: c.name, kind: 'html', spec: { html: c.code, libs: c.data?.libs ?? [], height: c.data?.height ?? 400, data: {} } });
-		return frames.get(k);
-	};
+	// a view card as the view host takes it: the same object while its code is (the game is copied every second, its
+	// cards with it), so its frame never reloads until a MIP changes it
+	const frameOf = (c) => viewOfCard(c, 400);
 	let preview = $state(''); // a proposal's screen being looked at before signing: `${number}:${id}`
 	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
 	const isAssetPanel = (x) => typeof x === 'string' && x.startsWith('asset:');
@@ -698,7 +694,7 @@
 				<div class="w-body">
 					{#if walletCard}
 						{#if !builtIn[WALLET_SLOT[wallet]]}
-							{#key walletCard.id}<Frame view={frameOf(walletCard)} data={screenData} />{/key}
+							{#key frameOf(walletCard)}<ViewHost view={frameOf(walletCard)} data={screenData} />{/key}
 							<p class="small">A MIP stood the screen “{walletCard.name}” here; it only shows, every move stays a button. <button class="link" onclick={() => (builtIn = { ...builtIn, [WALLET_SLOT[wallet]]: true })}>Hide it</button></p>
 						{:else}
 							<p class="small"><button class="link" onclick={() => (builtIn = { ...builtIn, [WALLET_SLOT[wallet]]: false })}>Show the screen “{walletCard.name}”</button></p>
@@ -798,7 +794,7 @@
 			{#if slotCard && !builtIn[panel]}
 				<p class="eyebrow">A screen · an MCP App</p>
 				{#if REPLACES.includes(panel)}<h2>{slotCard.name}</h2>{/if}
-				{#key slotCard.id}<Frame view={frameOf(slotCard)} data={screenData} />{/key}
+				{#key frameOf(slotCard)}<ViewHost view={frameOf(slotCard)} data={screenData} />{/key}
 				<p class="small">A MIP stood the screen “{slotCard.name}” in {SLOT_NAMES[panel]}; it only shows, every move stays a button. <button class="link" onclick={() => (builtIn = { ...builtIn, [panel]: true })}>Show the built-in screen</button></p>
 			{:else if slotCard}
 				<p class="small"><button class="link" onclick={() => (builtIn = { ...builtIn, [panel]: false })}>Show the screen “{slotCard.name}”</button></p>
@@ -924,7 +920,7 @@
 						{#each m.views ?? [] as v (v.id)}
 							{@const key = `${m.number}:${v.id}`}
 							<div class="buttons"><button onclick={() => (preview = preview === key ? '' : key)}>{preview === key ? 'Close the screen' : `Look at the screen “${v.name}”`}</button></div>
-							{#if preview === key}<Frame view={frameOf(v)} data={screenData} />{/if}
+							{#if preview === key}{#key frameOf(v)}<ViewHost view={frameOf(v)} data={screenData} />{/key}{/if}
 						{/each}
 						<p class="sigs">
 							{#each SEATS as s (s)}<span class:ok={m.signatures.includes(s)}>{m.signatures.includes(s) ? '✓' : '○'} {view.players[s].name}</span>{/each}
@@ -950,7 +946,7 @@
 				<h2>{card?.name ?? 'Gone'}</h2>
 				{#if card}
 					{#if card.description}<p class="about">{card.description}</p>{/if}
-					{#key card.id}<Frame view={frameOf(card)} data={screenData} />{/key}
+					{#key frameOf(card)}<ViewHost view={frameOf(card)} data={screenData} />{/key}
 					<p class="small">It runs in a sealed frame: it sees only the game as shown here and can't move for anyone. A MIP changes it.</p>
 				{:else}
 					<p class="about">A MIP took this screen out.</p>

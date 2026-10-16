@@ -611,7 +611,7 @@ pub struct GenuiPut {
     /// one line under the title: what it shows (optional)
     pub note: Option<String>,
     /// "a2ui": declarative JSON drawn by the page's own components (the safest; use it for forms, numbers, lists,
-    /// bars, tables). "html": open code in a sandboxed frame (for three.js scenes, d3 charts, canvas, custom HTML/CSS)
+    /// bars, tables). "html": HTML and CSS, a template or with a draw script (for three.js scenes, d3 charts, canvas)
     pub kind: String,
     /// for "a2ui": { root (a component id), components: [{ id, type, ...props, children?: [ids] }] (a flat list),
     /// data: { the data model }, logic?: a JS module run in QuickJS exporting init(data) and on(event, data), each
@@ -621,11 +621,16 @@ pub struct GenuiPut {
     /// Table {columns, rows}, List {items}, Button {label, event, value, tone}, Slider {label, event, value, min, max,
     /// step, unit}, Divider. Tones: default, accent, good, warn, bad, muted. Any prop may be {"$data": "path.in.data"}.
     /// A Button or Slider sends {name: its event, value} to on(). For "html": { html (the body with its own style and
-    /// script tags, up to 200,000 characters), libs?: ["three"] (import * as THREE from 'three', addons from
-    /// 'three/addons/...', in a script type=module), ["d3"] (the global d3) and/or ["mcp-apps"] (the official MCP Apps
-    /// SDK: import { App } from '@modelcontextprotocol/ext-apps'), height?: 160-1200 px (default 420), data?: {...}
-    /// (handed to the view as its tool result: app.ontoolresult gets { structuredContent: data }), input?: {...} (its
-    /// tool input) }. An html view is an MCP App (spec 2026-01-26) and the page its host: it may send ui/initialize,
+    /// script tags, up to 200,000 characters; without a script it is a template: {{path}} marks filled from data as
+    /// text, <template each="list" as="x"> and <template if="path">, <button data-event="name" data-value="JSON"> and
+    /// inputs with data-event send {name, value} to logic's on(); the components maia-card, maia-metric, maia-badge,
+    /// maia-progress, maia-chart (kind bars|line|area|stack, items or series as JSON), maia-table, maia-list),
+    /// libs?: ["three"] (import * as THREE from 'three', addons from 'three/addons/...', in a script type=module),
+    /// ["d3"] (also the global d3) and/or ["mcp-apps"] (the official MCP Apps SDK: import { App } from
+    /// '@modelcontextprotocol/ext-apps'), height?: 160-1200 px (default 420), data?: {...} (its template's data, and its
+    /// tool result: app.ontoolresult gets { structuredContent: data }), input?: {...} (its tool input), logic?: as for
+    /// a2ui }. A script runs in a worker on a copy of the DOM (no window: no localStorage, alert or navigation; canvases
+    /// and WebGL work). An html view is an MCP App (spec 2026-01-26) and the page its host: it may send ui/initialize,
     /// ui/notifications/size-changed, notifications/message, ui/update-model-context and ui/message (the last three land
     /// in the page's feed); links, tool calls and resource reads are refused. The frame has no network (no fetch, no
     /// images from URLs: use data: or draw them), no storage, no cookies: put all its data in data
@@ -1774,7 +1779,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Make or replace a Generated UI view: a mini app that appears at once on the dashboard's Generated UI page (/app/genui/), for the admin. Prefer kind a2ui (declarative: components from a fixed catalog, its logic in QuickJS) for forms, numbers, tables and bars; use kind html (an MCP App in a sandboxed frame, libraries three, d3 and the MCP Apps SDK) for 3D scenes, rich charts or custom HTML/CSS. The view is checked: a component outside the catalog, a library outside the list or a spec too big is refused with the reason. An html view runs only when the admin presses Run; it has no network, no storage and no reach into the page, so put all its data inside it."
+        description = "Make or replace a Generated UI view: a mini app that appears at once on the dashboard's Generated UI page (/app/genui/), for the admin. Prefer kind a2ui (declarative: components from a fixed catalog, its logic in QuickJS) for forms, numbers, tables and bars; use kind html (an MCP App in a sandboxed frame, libraries three, d3 and the MCP Apps SDK) for 3D scenes, rich charts or custom HTML/CSS. The view is checked: a component outside the catalog, a library outside the list or a spec too big is refused with the reason. Every view shows at once, merged or proposed: our engine makes its HTML safe and runs its script in a worker on a copy of the DOM, with no network, no storage and no reach into the page, so put all its data inside it."
     )]
     async fn genui_put(&self, Parameters(a): Parameters<GenuiPut>) -> String {
         let body = json!({ "title": a.title, "note": a.note.unwrap_or_default(), "kind": a.kind, "spec": a.spec });

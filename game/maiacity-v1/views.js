@@ -1,7 +1,8 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
- * MaiaCity V1's screens as view cards (Samuel, 2026-10-13): MCP Apps the page runs in a sandboxed frame
- * (src/lib/genui/Frame.svelte: no origin, no network, no reach into the page) and hands the game as its tool result.
+ * MaiaCity V1's screens as view cards (Samuel, 2026-10-13): html views (game/genui/views.js) the view host shows
+ * (src/lib/sandbox/ViewHost.svelte: no origin, no network, no reach into the page, its script in a worker) and hands
+ * the game as its data and its MCP Apps tool result.
  * A MIP puts a screen in (`views`, a card with an id already there replaces it) or takes it out (`removeViews`),
  * beside the settings it changes, and both apply when it has its signatures. A screen only shows: every move stays a
  * button of the page, so the game plays exactly as before.

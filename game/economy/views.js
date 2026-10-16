@@ -1,8 +1,8 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
- * The valley's screens as view cards (Samuel, 2026-10-13): each one an MCP App (spec 2026-01-26) the page runs in a
- * sandboxed frame (src/lib/genui/Frame.svelte: no origin, no network, no reach into the page) and hands the valley as
- * its tool result, again as the valley moves on. A config may carry its own view cards (kind 'view'); a card with a
+ * The valley's screens as view cards (Samuel, 2026-10-13): each one an html view (game/genui/views.js) the view host
+ * shows (src/lib/sandbox/ViewHost.svelte: no origin, no network, no reach into the page, its script in a worker) and
+ * hands the valley as its data and its MCP Apps tool result, again as the valley moves on. A config may carry its own view cards (kind 'view'); a card with a
  * default's id replaces that default, so a MIP changes a screen the way it changes a rule, in the same proposal.
  *
  * What a view is handed (structuredContent), every few seconds while it is open:

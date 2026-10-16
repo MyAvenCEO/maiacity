@@ -17,7 +17,8 @@
 	import { seedOf } from '$lib/sandbox/logic.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { viewsOf } from '../../../game/economy/views.js';
-	import Frame from '$lib/genui/Frame.svelte';
+	import ViewHost from '$lib/sandbox/ViewHost.svelte';
+	import { viewOfCard } from '$lib/sandbox/view-host.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
@@ -420,13 +421,6 @@
 			values: { ...RULES }
 		});
 	}
-	// a view card as the sandboxed frame takes it (the same object while the card is, so its frame is never reloaded)
-	const frames = new WeakMap();
-	/** @param {any} c */
-	const frameOf = (c) => {
-		if (!frames.has(c)) frames.set(c, { id: c.id, title: c.name, kind: 'html', spec: { html: c.code, libs: c.data?.libs ?? [], height: c.data?.height ?? 520, data: {} } });
-		return frames.get(c);
-	};
 	/** what a view tells the page: { select: avenId } opens that aven; anything else is only noted */
 	function fromView(/** @type {any} */ v, /** @type {any} */ e) {
 		const id = e?.value?.select;
@@ -1387,7 +1381,7 @@
 		<section class="view-card">
 			{#if card}
 				{#key card}
-					<Frame view={frameOf(card)} data={snap.valley} onevent={(/** @type {any} */ e) => fromView(card, e)} onerror={(/** @type {string} */ m) => console.warn(`view ${card.id}:`, m)} />
+					<ViewHost view={viewOfCard(card, 520)} data={snap.valley} onevent={(/** @type {any} */ e) => fromView(card, e)} onerror={(/** @type {string} */ m) => console.warn(`view ${card.id}:`, m)} />
 				{/key}
 				<p class="sub">A view card: an MCP App in a sandboxed frame. A MIP changes it like any rule.</p>
 			{:else}
