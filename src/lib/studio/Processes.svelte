@@ -6,6 +6,7 @@
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
+	import Tasks from './jobs/Tasks.svelte';
 
 	/** @typedef {{ id: string, kind: string, lane: 'gpu' | 'speech' | 'ai' | 'io', subject: string, name: string, state: 'queued' | 'waiting' | 'running' | 'done' | 'failed' | 'cancelled', stage: string, progress: number, priority: number, queued: string, started: string | null, ended: string | null, error: string | null }} Job */
 	/** @typedef {{ id: string, name: string, when: string, then: string, kind: string, lane: string, watch: string, code: string }} Rule */
@@ -257,6 +258,8 @@
 				</table>
 			</div>
 		{/if}
+
+		<Tasks />
 
 		<div class="block">
 			<div class="hhead">
