@@ -23,6 +23,7 @@
 	import { plantOf } from './plants.js';
 	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
 	import ViewHost from '$lib/sandbox/ViewHost.svelte';
+	import ViewSlot, { standing } from '$lib/sandbox/ViewSlot.svelte';
 	import { viewOfCard } from '$lib/sandbox/view-host.js';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
@@ -448,10 +449,9 @@
 	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
 	const screens = $derived(view ? viewsOf(view).filter((v) => (v.data?.slot ?? 'panel') === 'panel') : []);
 	// a screen a MIP stood in one of the page's panels (views.js SLOTS): it replaces a panel that only shows and stands
-	// over the moves of the others; `builtIn` brings the page's own panel back, for this visit
+	// over the moves of the others; the slot ($lib/sandbox/ViewSlot.svelte) brings the page's own panel back, for this visit
 	const slotted = $derived(view ? slotsOf(view) : {});
 	const slotCard = $derived(panel && !isViewPanel(panel) ? slotted[panel] : null);
-	let builtIn = $state({});
 	const allTools = $derived([...TOOLS, ...screens.map((v) => [`view:${v.id}`, '▦', v.name])]);
 	const isViewPanel = (x) => typeof x === 'string' && x.startsWith('view:');
 	// what a screen is handed: the game as it stands (never a seat's secrets: there are none in the state)
@@ -692,92 +692,86 @@
 					<button class="w-close" aria-label="Close" onclick={() => (wallet = null)}>×</button>
 				</header>
 				<div class="w-body">
-					{#if walletCard}
-						{#if !builtIn[WALLET_SLOT[wallet]]}
-							{#key frameOf(walletCard)}<ViewHost view={frameOf(walletCard)} data={screenData} />{/key}
-							<p class="small">A MIP stood the screen “{walletCard.name}” here; it only shows, every move stays a button. <button class="link" onclick={() => (builtIn = { ...builtIn, [WALLET_SLOT[wallet]]: true })}>Hide it</button></p>
-						{:else}
-							<p class="small"><button class="link" onclick={() => (builtIn = { ...builtIn, [WALLET_SLOT[wallet]]: false })}>Show the screen “{walletCard.name}”</button></p>
-						{/if}
-					{/if}
-					{#if wallet === 'home'}
-						<p class="w-balance">{f(inHearts(view, here.bal, hv))} <span>❤︎</span></p>
-						<p class="w-sub">{isPlayer ? 'Balance, all your HEARTS and MINDs in HEARTS' : here.id === 'pool' ? 'In the pool, in HEARTS' : 'The treasury, in HEARTS'}</p>
-						{#if isPlayer && !here.p.founder}
-							<p class="about">This seat is waiting: the next person to sign in becomes {here.p.name}.</p>
-							{#if mySeat}<button class="primary" onclick={() => startDemo(here.id.slice(7))}>Test run {here.p.name}’s journey</button>{/if}
-						{/if}
-						{#if own && mint.amount > 0.005 && !tour}
-							<div class="w-mint">
-								<span><b>+{f(mint.amount)} ❤︎</b> ready to mint{#if mint.lost > 0.001}<small class="bad">{f(mint.lost)} older than {reach} are lost</small>{/if}</span>
-								<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint</button>
-							</div>
-						{/if}
-						<ul class="hold">
-							{#if isPlayer}
-								{@const hp = here.p}
-								<li><span>{hp.name.charAt(0).toLowerCase() + hp.name.slice(1).replace(/\s+/g, '')}HEARTS<small>your right to own, {f(view.settings.heartsPerDay, 0)} a game day</small></span><strong>{f(hp.wallet.HEARTS)} ❤︎</strong></li>
+					<ViewSlot slot={WALLET_SLOT[wallet]} card={walletCard} data={screenData} where={SLOT_NAMES[WALLET_SLOT[wallet]]} over>
+						{#if wallet === 'home'}
+							<p class="w-balance">{f(inHearts(view, here.bal, hv))} <span>❤︎</span></p>
+							<p class="w-sub">{isPlayer ? 'Balance, all your HEARTS and MINDs in HEARTS' : here.id === 'pool' ? 'In the pool, in HEARTS' : 'The treasury, in HEARTS'}</p>
+							{#if isPlayer && !here.p.founder}
+								<p class="about">This seat is waiting: the next person to sign in becomes {here.p.name}.</p>
+								{#if mySeat}<button class="primary" onclick={() => startDemo(here.id.slice(7))}>Test run {here.p.name}’s journey</button>{/if}
 							{/if}
-							{#each MINDS.filter((t) => isPlayer || here.bal[t] > 0.005 || here.c?.mind === t) as t (t)}
-								<li><span><i class="dot" style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((here.bal[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(here.bal[t] * hv[t])} ❤︎<small>{f(here.bal[t])} {TOKEN_LABEL[t]}</small></strong></li>
-							{/each}
-							{#if here.bal.EURO > 0.005}<li title="System minted: each player's first mint brings €12,500 in (the euro ingest)"><span>€uro<small>the euro ingest</small></span><strong>{f(here.bal.EURO)} €</strong></li>{/if}
-						</ul>
-						{#if isPlayer && here.p.arrears > 0.001}<p class="bad small">{f(here.p.arrears)} tribeMIND home rent owed</p>{/if}
-						<LedgerView {view} who={here.id} show="tx" limit={5} txTitle="Recent transactions" />
-						{#if view.ledger.some((e) => e.from === here.id || e.to === here.id)}<button class="link" onclick={() => (wallet = 'all')}>See every transaction</button>{/if}
-					{:else if wallet === 'all'}
-						<LedgerView {view} who={here.id} show="tx" tall />
-					{:else if wallet === 'invest'}
-						{@const into = here.c ? [here.c.id] : Object.keys(COOPS)}
-						<p class="w-balance small-b">{f(player.wallet.HEARTS)} <span>❤︎ to invest</span></p>
-						<p class="about">Each HEART makes 1 MIND of the COOP: {f(50, 0)} % yours, {f(50 - view.settings.poolShare * 100, 0)} % its treasury, {f(view.settings.poolShare * 100, 0)} % into the city pool.</p>
-						{#if canMove}
-							<div class="row">
-								<input type="number" min="0" step="1" bind:value={amount} aria-label="HEARTS to invest" />
-								<button onclick={() => (amount = Math.floor(player.wallet.HEARTS * 1e6) / 1e6)}>All</button>
-							</div>
-							<div class="buttons col">
-								{#each into as id (id)}
-									<button class="primary" disabled={busy || !(player.wallet.HEARTS > 0) || !(amount > 0)} onclick={() => walletMove({ type: 'invest', coop: id, amount })}>Invest {f(amount, 0)} ❤︎ into the {view.coops[id].name}</button>
+							{#if own && mint.amount > 0.005 && !tour}
+								<div class="w-mint">
+									<span><b>+{f(mint.amount)} ❤︎</b> ready to mint{#if mint.lost > 0.001}<small class="bad">{f(mint.lost)} older than {reach} are lost</small>{/if}</span>
+									<button class="primary" disabled={busy || mint.amount < 0.001} onclick={() => doMove({ type: 'mint' })}>Mint</button>
+								</div>
+							{/if}
+							<ul class="hold">
+								{#if isPlayer}
+									{@const hp = here.p}
+									<li><span>{hp.name.charAt(0).toLowerCase() + hp.name.slice(1).replace(/\s+/g, '')}HEARTS<small>your right to own, {f(view.settings.heartsPerDay, 0)} a game day</small></span><strong>{f(hp.wallet.HEARTS)} ❤︎</strong></li>
+								{/if}
+								{#each MINDS.filter((t) => isPlayer || here.bal[t] > 0.005 || here.c?.mind === t) as t (t)}
+									<li><span><i class="dot" style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>{total?.[t] ? `${f((here.bal[t] / total[t]) * 100, 1)} % of all ${TOKEN_LABEL[t]}` : '—'}</small></span><strong>{f(here.bal[t] * hv[t])} ❤︎<small>{f(here.bal[t])} {TOKEN_LABEL[t]}</small></strong></li>
 								{/each}
-							</div>
-						{:else}
-							<p class="small">Only {player.name} can invest from this seat.</p>
+								{#if here.bal.EURO > 0.005}<li title="System minted: each player's first mint brings €12,500 in (the euro ingest)"><span>€uro<small>the euro ingest</small></span><strong>{f(here.bal.EURO)} €</strong></li>{/if}
+							</ul>
+							{#if isPlayer && here.p.arrears > 0.001}<p class="bad small">{f(here.p.arrears)} tribeMIND home rent owed</p>{/if}
+							<LedgerView {view} who={here.id} show="tx" limit={5} txTitle="Recent transactions" />
+							{#if view.ledger.some((e) => e.from === here.id || e.to === here.id)}<button class="link" onclick={() => (wallet = 'all')}>See every transaction</button>{/if}
+						{:else if wallet === 'all'}
+							<LedgerView {view} who={here.id} show="tx" tall />
+						{:else if wallet === 'invest'}
+							{@const into = here.c ? [here.c.id] : Object.keys(COOPS)}
+							<p class="w-balance small-b">{f(player.wallet.HEARTS)} <span>❤︎ to invest</span></p>
+							<p class="about">Each HEART makes 1 MIND of the COOP: {f(50, 0)} % yours, {f(50 - view.settings.poolShare * 100, 0)} % its treasury, {f(view.settings.poolShare * 100, 0)} % into the city pool.</p>
+							{#if canMove}
+								<div class="row">
+									<input type="number" min="0" step="1" bind:value={amount} aria-label="HEARTS to invest" />
+									<button onclick={() => (amount = Math.floor(player.wallet.HEARTS * 1e6) / 1e6)}>All</button>
+								</div>
+								<div class="buttons col">
+									{#each into as id (id)}
+										<button class="primary" disabled={busy || !(player.wallet.HEARTS > 0) || !(amount > 0)} onclick={() => walletMove({ type: 'invest', coop: id, amount })}>Invest {f(amount, 0)} ❤︎ into the {view.coops[id].name}</button>
+									{/each}
+								</div>
+							{:else}
+								<p class="small">Only {player.name} can invest from this seat.</p>
+							{/if}
+						{:else if wallet === 'cashflow'}
+							<p class="eyebrow">The rent chain · each pay day, a week</p>
+							<ol class="chain">
+								{#each chain as l (l.from + l.to)}
+									{@const on = l.from === here.id || l.to === here.id || l.payers.includes(here.id)}
+									<li class:on>
+										<span class="c-from">{#if l.from === 'players'}<Mark {view} id="player:{seat}" size={26} /><span>Each player<small>{f(l.each, 0)} {TOKEN_LABEL[l.token]} each</small></span>{:else}<Mark {view} id={l.from} size={26} /><span>{nameOf(view, l.from)}</span>{/if}</span>
+										<span class="c-pay"><b>{f(l.weekly, 0)} {TOKEN_LABEL[l.token]}</b><small>{l.what.map((w) => w.replace(/ rent$/, '')).join(', ').toLowerCase()} · ≈ {f(l.weekly * hv[l.token], 0)} ❤︎</small></span>
+										<span class="c-to"><Mark {view} id={l.to} size={26} /><span>{nameOf(view, l.to)}</span></span>
+									</li>
+								{/each}
+							</ol>
+							<p class="small">{f(view.settings.dividendShare * 100, 0)} % of every rent goes on to the holders of the MIND it is paid in: your dividend.</p>
+							<LedgerView {view} who={here.id} show="flow" />
+						{:else if wallet === 'swap'}
+							<p class="about">A Balancer weighted pool of the MaiaCity COOP: one basket of all three MINDs, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}. Any MIND swaps for any other; a {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
+							{#if canMove}
+								<div class="swapbox">
+									<label><span>You pay<small>you hold {f(player.wallet[swapToken], 3)}</small></span>
+										<span class="row"><input type="number" min="0" step="0.1" bind:value={swapAmount} aria-label="Amount to swap" /><select bind:value={swapToken}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></span>
+									</label>
+									<button class="flip" aria-label="Swap the two" onclick={() => ([swapToken, swapTo] = [swapTo, swapToken])}>⇅</button>
+									<label><span>You get<small>≈ {f(swapOut * (hv[swapTo] ?? 0), 2)} ❤︎</small></span>
+										<span class="row"><output>{f(swapOut, 3)}</output><select bind:value={swapTo}>{#each MINDS.filter((t) => t !== swapToken) as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></span>
+									</label>
+								</div>
+								<div class="buttons"><button class="primary wide-b" disabled={busy || !(swapOut > 0)} onclick={() => walletMove({ type: 'swap', token: swapToken, to: swapTo, amount: swapAmount })}>Swap for {f(swapOut, 3)} {TOKEN_LABEL[swapTo]}</button></div>
+							{/if}
+							<dl>
+								{#each MINDS as t (t)}<dt>Pool {TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
+								{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
+							</dl>
 						{/if}
-					{:else if wallet === 'cashflow'}
-						<p class="eyebrow">The rent chain · each pay day, a week</p>
-						<ol class="chain">
-							{#each chain as l (l.from + l.to)}
-								{@const on = l.from === here.id || l.to === here.id || l.payers.includes(here.id)}
-								<li class:on>
-									<span class="c-from">{#if l.from === 'players'}<Mark {view} id="player:{seat}" size={26} /><span>Each player<small>{f(l.each, 0)} {TOKEN_LABEL[l.token]} each</small></span>{:else}<Mark {view} id={l.from} size={26} /><span>{nameOf(view, l.from)}</span>{/if}</span>
-									<span class="c-pay"><b>{f(l.weekly, 0)} {TOKEN_LABEL[l.token]}</b><small>{l.what.map((w) => w.replace(/ rent$/, '')).join(', ').toLowerCase()} · ≈ {f(l.weekly * hv[l.token], 0)} ❤︎</small></span>
-									<span class="c-to"><Mark {view} id={l.to} size={26} /><span>{nameOf(view, l.to)}</span></span>
-								</li>
-							{/each}
-						</ol>
-						<p class="small">{f(view.settings.dividendShare * 100, 0)} % of every rent goes on to the holders of the MIND it is paid in: your dividend.</p>
-						<LedgerView {view} who={here.id} show="flow" />
-					{:else if wallet === 'swap'}
-						<p class="about">A Balancer weighted pool of the MaiaCity COOP: one basket of all three MINDs, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}. Any MIND swaps for any other; a {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
-						{#if canMove}
-							<div class="swapbox">
-								<label><span>You pay<small>you hold {f(player.wallet[swapToken], 3)}</small></span>
-									<span class="row"><input type="number" min="0" step="0.1" bind:value={swapAmount} aria-label="Amount to swap" /><select bind:value={swapToken}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></span>
-								</label>
-								<button class="flip" aria-label="Swap the two" onclick={() => ([swapToken, swapTo] = [swapTo, swapToken])}>⇅</button>
-								<label><span>You get<small>≈ {f(swapOut * (hv[swapTo] ?? 0), 2)} ❤︎</small></span>
-									<span class="row"><output>{f(swapOut, 3)}</output><select bind:value={swapTo}>{#each MINDS.filter((t) => t !== swapToken) as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select></span>
-								</label>
-							</div>
-							<div class="buttons"><button class="primary wide-b" disabled={busy || !(swapOut > 0)} onclick={() => walletMove({ type: 'swap', token: swapToken, to: swapTo, amount: swapAmount })}>Swap for {f(swapOut, 3)} {TOKEN_LABEL[swapTo]}</button></div>
-						{/if}
-						<dl>
-							{#each MINDS as t (t)}<dt>Pool {TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
-							{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
-						</dl>
-					{/if}
+					</ViewSlot>
 				</div>
 				<nav class="w-actions" aria-label="Wallet actions">
 					<button class:on={wallet === 'invest'} disabled={!shows('invest')} onclick={() => walletTo('invest')}><span class="w-ic">↗</span>Invest</button>
@@ -791,178 +785,174 @@
 		<aside class="card panel" class:wide={panel === 'mips' || isViewPanel(panel)}>
 			<button class="close" aria-label="Close" onclick={() => (panel = null)}>×</button>
 
-			{#if slotCard && !builtIn[panel]}
+			{#if standing(panel, slotCard)}
 				<p class="eyebrow">A screen · an MCP App</p>
 				{#if REPLACES.includes(panel)}<h2>{slotCard.name}</h2>{/if}
-				{#key frameOf(slotCard)}<ViewHost view={frameOf(slotCard)} data={screenData} />{/key}
-				<p class="small">A MIP stood the screen “{slotCard.name}” in {SLOT_NAMES[panel]}; it only shows, every move stays a button. <button class="link" onclick={() => (builtIn = { ...builtIn, [panel]: true })}>Show the built-in screen</button></p>
-			{:else if slotCard}
-				<p class="small"><button class="link" onclick={() => (builtIn = { ...builtIn, [panel]: false })}>Show the screen “{slotCard.name}”</button></p>
 			{/if}
-			{#if slotCard && !builtIn[panel] && REPLACES.includes(panel)}
-				<!-- the screen above takes this panel's place -->
-			{:else if panel === 'coops'}
-				<p class="eyebrow">Who owns what</p>
-				<h2>COOPs</h2>
-				<p class="about">Invest your HEARTS into a COOP to own a share of it: its MIND.</p>
-				{#each Object.keys(COOPS) as id (id)}
-					{@const c = view.coops[id]}
-					<button class="coop" onclick={() => (panel = `coop:${id}`)}>
-						<span class="coop-head"><b>{c.name}</b><span class="mind"><i style="background:{TOKEN_COLOUR[c.mind]}"></i>{TOKEN_LABEL[c.mind]}</span></span>
-						<span class="assets">{#each c.assets as a (a.id)}<span class="asset">{a.name}</span>{/each}</span>
-						<span class="treasury">Treasury {[...MINDS.filter((t) => t === c.mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`), ...(c.treasury.EURO > 0.005 ? [`${f(c.treasury.EURO, 0)} €uro`] : [])].join(' · ')}</span>
-					</button>
-				{/each}
-			{:else if isAssetPanel(panel)}
-				{@const id = panel.slice(6)}
-				{@const owner = ownerOf(id)}
-				{@const a = owner?.[1].assets.find((x) => x.id === id)}
-				{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person bell tent, rolled in its bag with its pole, wall poles and pegs, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the ElectroCube’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
-				<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
-				<h2>{a?.name ?? info?.name ?? info?.model}</h2>
-				{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
-				<dl>
-					{#if owner}<dt>Owner</dt><dd>{owner[1].name}</dd><dt>Ownership</dt><dd>{TOKEN_LABEL[owner[1].mind]} holders</dd>{/if}
-					{#if owner && rentOf(id) && owner[0] !== rentOf(id).payer}<dt>Rented to</dt><dd>{view.coops[rentOf(id).payer].name}</dd><dt>Rent</dt><dd>{f(view.settings[rentOf(id).setting] ?? 0)} {TOKEN_LABEL[owner[1].mind]} a week</dd>{/if}
-					{#each info?.specs ?? [] as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
-				</dl>
-				{#if owner}<div class="buttons"><button onclick={() => (panel = `coop:${owner[0]}`)}>Open the {owner[1].name}</button></div>{/if}
-			{:else if isCoopPanel(panel)}
-				{@const c = view.coops[panel.slice(5)]}
-				<button class="link back" onclick={() => (panel = 'coops')}>← All COOPs</button>
-				<p class="eyebrow">COOP · mints {TOKEN_LABEL[c.mind]}</p>
-				<h2>{c.name}</h2>
-				<p class="eyebrow">Assets it owns</p>
-				<ul class="asset-list">
-					{#each c.assets as a (a.id)}
-						<li>
-							<b>{a.name}</b><span>{a.kind}</span>
-							{#if a.id === 'pool'}
-								<dl>
-									{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
-									{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
-								</dl>
-								<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
-							{:else if a.id === 'tent'}
-								<small>{f(view.settings.tentRent)} tribeMIND a week, inside the home rent: each player pays {f(view.settings.homeRent)} tribeMIND a week and uses everything.</small>
-							{:else if rentOf(a.id) && c.id !== rentOf(a.id).payer}
-								<small>Rented to the {view.coops[rentOf(a.id).payer].name} for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a week, paid each pay day.</small>
-							{/if}
-						</li>
+			<ViewSlot slot={panel} card={slotCard} data={screenData} where={SLOT_NAMES[panel]} over={!REPLACES.includes(panel)}>
+				{#if panel === 'coops'}
+					<p class="eyebrow">Who owns what</p>
+					<h2>COOPs</h2>
+					<p class="about">Invest your HEARTS into a COOP to own a share of it: its MIND.</p>
+					{#each Object.keys(COOPS) as id (id)}
+						{@const c = view.coops[id]}
+						<button class="coop" onclick={() => (panel = `coop:${id}`)}>
+							<span class="coop-head"><b>{c.name}</b><span class="mind"><i style="background:{TOKEN_COLOUR[c.mind]}"></i>{TOKEN_LABEL[c.mind]}</span></span>
+							<span class="assets">{#each c.assets as a (a.id)}<span class="asset">{a.name}</span>{/each}</span>
+							<span class="treasury">Treasury {[...MINDS.filter((t) => t === c.mind || c.treasury[t] > 0.005).map((t) => `${f(c.treasury[t], 1)} ${TOKEN_LABEL[t]}`), ...(c.treasury.EURO > 0.005 ? [`${f(c.treasury.EURO, 0)} €uro`] : [])].join(' · ')}</span>
+						</button>
 					{/each}
-				</ul>
-				<p class="eyebrow">Treasury</p>
-				<dl>
-					{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
-					{#if c.treasury.EURO > 0}<dt title="System minted: each player's first mint brings €12,500 in (the euro ingest)">€uro</dt><dd>{f(c.treasury.EURO)}</dd>{/if}
-					{#if c.id === 'tribe'}<dt>Gets home rent, a week</dt><dd>{f(view.settings.homeRent)} × 2 tribeMIND</dd>{/if}
-					{#each RENTED.filter((r) => ownerOf(r.asset)?.[0] === c.id && r.payer !== c.id) as r (r.asset)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}
-					{#each RENTED.filter((r) => r.payer === c.id && ownerOf(r.asset) && ownerOf(r.asset)[0] !== c.id) as r (r.asset)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
-					{#each SUBLET.filter((r) => r.payer === c.id) as r (r.key)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} × 2 {TOKEN_LABEL[view.coops[rentOf(r.asset)?.payer]?.mind ?? 'VILLAGE']}</dd>{/each}
-					{#each SUBLET.filter((r) => rentOf(r.asset)?.payer === c.id && r.payer !== c.id) as r (r.key)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} × 2 {TOKEN_LABEL[c.mind]}</dd>{/each}
-					{#each rents(view).filter((r) => r.from === `coop:${c.id}` && r.owed > 0.001) as r (r.what + r.to)}<dt>Owed: {r.what.toLowerCase()}</dt><dd class="bad">{f(r.owed)} {TOKEN_LABEL[r.token]}</dd>{/each}
-				</dl>
-				<div class="buttons">
-					{#if canMove}<button class="primary" onclick={() => openWallet('invest', panel)}>Invest</button>{/if}
-					{#if canMove}<button onclick={() => newMip({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</button>{/if}
-					<button onclick={() => openWallet('home', panel)}>Its wallet</button>
-					{#if c.id === 'maia'}<button onclick={() => openWallet('swap', '')}>Swap in the pool</button><button onclick={() => openWallet('home', 'pool')}>The pool’s wallet</button>{/if}
-				</div>
-			{:else if panel === 'mips'}
-				<p class="eyebrow">MaiaCity improvement proposals</p>
-				<h2>Proposals</h2>
-				<p class="about">Every decision is a MIP: any setting, a COOP's name and the assets it owns, payouts from a COOP treasury to any wallet, and the game's screens (look at a new one before you sign). It needs {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'} and applies at once, in this same game.</p>
-				{#if draft}
-					<div class="draft">
-						<input class="full" placeholder="Title" bind:value={draft.title} />
-						<textarea class="full" rows="3" placeholder="Why, in prose" bind:value={draft.description}></textarea>
-						<p class="eyebrow">Settings</p>
-						<dl class="settings">
-							{#each Object.keys(SETTING_LIMITS) as k (k)}
-								<dt class:changed={Number(draft.settings[k]) !== view.settings[k]}>{SETTING_NAMES[k]}</dt>
-								<dd><input type="number" step="any" min={SETTING_LIMITS[k][0]} max={SETTING_LIMITS[k][1]} bind:value={draft.settings[k]} /></dd>
-							{/each}
-						</dl>
-						<p class="eyebrow">COOPs and what they own</p>
-						{#each Object.values(view.coops) as c (c.id)}
-							<div class="coopdraft">
-								<input class="full" class:changed={draft.coops[c.id].name.trim() !== c.name} bind:value={draft.coops[c.id].name} />
-								<textarea class="full" rows={Math.max(2, c.assets.length + 1)} placeholder="One asset a line: name | kind" bind:value={draft.coops[c.id].assets}></textarea>
-							</div>
+				{:else if isAssetPanel(panel)}
+					{@const id = panel.slice(6)}
+					{@const owner = ownerOf(id)}
+					{@const a = owner?.[1].assets.find((x) => x.id === id)}
+					{@const info = VILLAGE_INFO[id] ?? WAYSIDE_INFO[id] ?? (id === 'tent' ? { name: 'The tent, packed', note: 'the Tribe COOP’s 2-person bell tent, rolled in its bag with its pole, wall poles and pegs, waiting to be pitched' } : id === 'fuel' ? { name: 'Two jerrycans of petrol', note: '2 × 20 litres for the ElectroCube’s petrol engine: about a day of light loads, a few hours at full power' } : null)}
+					<p class="eyebrow">Asset · {a?.kind ?? (WAYSIDE_INFO[id] ? 'Wayside' : 'Machine')}</p>
+					<h2>{a?.name ?? info?.name ?? info?.model}</h2>
+					{#if info}<p class="about">{info.note[0].toUpperCase() + info.note.slice(1)}.</p>{/if}
+					<dl>
+						{#if owner}<dt>Owner</dt><dd>{owner[1].name}</dd><dt>Ownership</dt><dd>{TOKEN_LABEL[owner[1].mind]} holders</dd>{/if}
+						{#if owner && rentOf(id) && owner[0] !== rentOf(id).payer}<dt>Rented to</dt><dd>{view.coops[rentOf(id).payer].name}</dd><dt>Rent</dt><dd>{f(view.settings[rentOf(id).setting] ?? 0)} {TOKEN_LABEL[owner[1].mind]} a week</dd>{/if}
+						{#each info?.specs ?? [] as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
+					</dl>
+					{#if owner}<div class="buttons"><button onclick={() => (panel = `coop:${owner[0]}`)}>Open the {owner[1].name}</button></div>{/if}
+				{:else if isCoopPanel(panel)}
+					{@const c = view.coops[panel.slice(5)]}
+					<button class="link back" onclick={() => (panel = 'coops')}>← All COOPs</button>
+					<p class="eyebrow">COOP · mints {TOKEN_LABEL[c.mind]}</p>
+					<h2>{c.name}</h2>
+					<p class="eyebrow">Assets it owns</p>
+					<ul class="asset-list">
+						{#each c.assets as a (a.id)}
+							<li>
+								<b>{a.name}</b><span>{a.kind}</span>
+								{#if a.id === 'pool'}
+									<dl>
+										{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
+										{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
+									</dl>
+									<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
+								{:else if a.id === 'tent'}
+									<small>{f(view.settings.tentRent)} tribeMIND a week, inside the home rent: each player pays {f(view.settings.homeRent)} tribeMIND a week and uses everything.</small>
+								{:else if rentOf(a.id) && c.id !== rentOf(a.id).payer}
+									<small>Rented to the {view.coops[rentOf(a.id).payer].name} for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a week, paid each pay day.</small>
+								{/if}
+							</li>
 						{/each}
-						<p class="small">One asset a line, its name and kind split by “|”.</p>
-						<p class="eyebrow">Payouts</p>
-						{#each draft.payouts as x, i (i)}
-							<div class="payout">
-								<select bind:value={x.from}>{#each PAYERS as id (id)}<option value={id}>{nameOf(view, id)}</option>{/each}</select>
-								<span>→</span>
-								<select bind:value={x.to}>{#each PAYEES as id (id)}<option value={id}>{nameOf(view, id)}</option>{/each}</select>
-								<input type="number" min="0" step="0.1" bind:value={x.amount} />
-								<select bind:value={x.token}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select>
-								<button class="link" onclick={() => draft.payouts.splice(i, 1)}>Remove</button>
-							</div>
-						{/each}
-						<button class="link" onclick={() => draft.payouts.push({ from: 'coop:maia', to: `player:${seat}`, token: 'MAIA', amount: 1 })}>+ Add a payout</button>
-						<div class="buttons">
-							<button class="primary" disabled={busy || !draft.title.trim()} onclick={propose}>Propose and sign as {player.name}</button>
-							<button onclick={() => (draft = null)}>Cancel</button>
-						</div>
+					</ul>
+					<p class="eyebrow">Treasury</p>
+					<dl>
+						{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
+						{#if c.treasury.EURO > 0}<dt title="System minted: each player's first mint brings €12,500 in (the euro ingest)">€uro</dt><dd>{f(c.treasury.EURO)}</dd>{/if}
+						{#if c.id === 'tribe'}<dt>Gets home rent, a week</dt><dd>{f(view.settings.homeRent)} × 2 tribeMIND</dd>{/if}
+						{#each RENTED.filter((r) => ownerOf(r.asset)?.[0] === c.id && r.payer !== c.id) as r (r.asset)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}
+						{#each RENTED.filter((r) => r.payer === c.id && ownerOf(r.asset) && ownerOf(r.asset)[0] !== c.id) as r (r.asset)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
+						{#each SUBLET.filter((r) => r.payer === c.id) as r (r.key)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} × 2 {TOKEN_LABEL[view.coops[rentOf(r.asset)?.payer]?.mind ?? 'VILLAGE']}</dd>{/each}
+						{#each SUBLET.filter((r) => rentOf(r.asset)?.payer === c.id && r.payer !== c.id) as r (r.key)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} × 2 {TOKEN_LABEL[c.mind]}</dd>{/each}
+						{#each rents(view).filter((r) => r.from === `coop:${c.id}` && r.owed > 0.001) as r (r.what + r.to)}<dt>Owed: {r.what.toLowerCase()}</dt><dd class="bad">{f(r.owed)} {TOKEN_LABEL[r.token]}</dd>{/each}
+					</dl>
+					<div class="buttons">
+						{#if canMove}<button class="primary" onclick={() => openWallet('invest', panel)}>Invest</button>{/if}
+						{#if canMove}<button onclick={() => newMip({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</button>{/if}
+						<button onclick={() => openWallet('home', panel)}>Its wallet</button>
+						{#if c.id === 'maia'}<button onclick={() => openWallet('swap', '')}>Swap in the pool</button><button onclick={() => openWallet('home', 'pool')}>The pool’s wallet</button>{/if}
 					</div>
-				{:else if canMove}
-					<div class="buttons"><button class="primary" onclick={() => newMip()}>New proposal</button></div>
-				{/if}
-				{#each openMips as m (m.number)}
-					<article class="mip open">
-						<header><b>MIP #{m.number}</b><span class="status">open</span></header>
-						<h3>{m.title}</h3>
-						{#if m.description}<p>{m.description}</p>{/if}
-						<p class="changes">{describe(view, m)}</p>
-						{#each m.views ?? [] as v (v.id)}
-							{@const key = `${m.number}:${v.id}`}
-							<div class="buttons"><button onclick={() => (preview = preview === key ? '' : key)}>{preview === key ? 'Close the screen' : `Look at the screen “${v.name}”`}</button></div>
-							{#if preview === key}{#key frameOf(v)}<ViewHost view={frameOf(v)} data={screenData} />{/key}{/if}
-						{/each}
-						<p class="sigs">
-							{#each SEATS as s (s)}<span class:ok={m.signatures.includes(s)}>{m.signatures.includes(s) ? '✓' : '○'} {view.players[s].name}</span>{/each}
-						</p>
-						{#if canMove}
+				{:else if panel === 'mips'}
+					<p class="eyebrow">MaiaCity improvement proposals</p>
+					<h2>Proposals</h2>
+					<p class="about">Every decision is a MIP: any setting, a COOP's name and the assets it owns, payouts from a COOP treasury to any wallet, and the game's screens (look at a new one before you sign). It needs {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'} and applies at once, in this same game.</p>
+					{#if draft}
+						<div class="draft">
+							<input class="full" placeholder="Title" bind:value={draft.title} />
+							<textarea class="full" rows="3" placeholder="Why, in prose" bind:value={draft.description}></textarea>
+							<p class="eyebrow">Settings</p>
+							<dl class="settings">
+								{#each Object.keys(SETTING_LIMITS) as k (k)}
+									<dt class:changed={Number(draft.settings[k]) !== view.settings[k]}>{SETTING_NAMES[k]}</dt>
+									<dd><input type="number" step="any" min={SETTING_LIMITS[k][0]} max={SETTING_LIMITS[k][1]} bind:value={draft.settings[k]} /></dd>
+								{/each}
+							</dl>
+							<p class="eyebrow">COOPs and what they own</p>
+							{#each Object.values(view.coops) as c (c.id)}
+								<div class="coopdraft">
+									<input class="full" class:changed={draft.coops[c.id].name.trim() !== c.name} bind:value={draft.coops[c.id].name} />
+									<textarea class="full" rows={Math.max(2, c.assets.length + 1)} placeholder="One asset a line: name | kind" bind:value={draft.coops[c.id].assets}></textarea>
+								</div>
+							{/each}
+							<p class="small">One asset a line, its name and kind split by “|”.</p>
+							<p class="eyebrow">Payouts</p>
+							{#each draft.payouts as x, i (i)}
+								<div class="payout">
+									<select bind:value={x.from}>{#each PAYERS as id (id)}<option value={id}>{nameOf(view, id)}</option>{/each}</select>
+									<span>→</span>
+									<select bind:value={x.to}>{#each PAYEES as id (id)}<option value={id}>{nameOf(view, id)}</option>{/each}</select>
+									<input type="number" min="0" step="0.1" bind:value={x.amount} />
+									<select bind:value={x.token}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select>
+									<button class="link" onclick={() => draft.payouts.splice(i, 1)}>Remove</button>
+								</div>
+							{/each}
+							<button class="link" onclick={() => draft.payouts.push({ from: 'coop:maia', to: `player:${seat}`, token: 'MAIA', amount: 1 })}>+ Add a payout</button>
 							<div class="buttons">
-								{#if !m.signatures.includes(seat)}<button class="primary" disabled={busy} onclick={() => doMove({ type: 'sign', number: m.number })}>Sign as {player.name}</button>{/if}
-								<button disabled={busy} onclick={() => doMove({ type: 'reject', number: m.number })}>{m.by === seat ? 'Withdraw' : 'Reject'}</button>
+								<button class="primary" disabled={busy || !draft.title.trim()} onclick={propose}>Propose and sign as {player.name}</button>
+								<button onclick={() => (draft = null)}>Cancel</button>
 							</div>
-						{/if}
-					</article>
-				{/each}
-				{#each decidedMips as m (m.number)}
-					<article class="mip {m.status}">
-						<header><b>MIP #{m.number}</b><span class="status">{m.status}</span></header>
-						<h3>{m.title}</h3>
-						<p class="changes">{describe(view, m)}</p>
-					</article>
-				{/each}
-			{:else if isViewPanel(panel)}
-				{@const card = screens.find((v) => panel === `view:${v.id}`)}
-				<p class="eyebrow">A screen · an MCP App</p>
-				<h2>{card?.name ?? 'Gone'}</h2>
-				{#if card}
-					{#if card.description}<p class="about">{card.description}</p>{/if}
-					{#key frameOf(card)}<ViewHost view={frameOf(card)} data={screenData} />{/key}
-					<p class="small">It runs in a sealed frame: it sees only the game as shown here and can't move for anyone. A MIP changes it.</p>
-				{:else}
-					<p class="about">A MIP took this screen out.</p>
+						</div>
+					{:else if canMove}
+						<div class="buttons"><button class="primary" onclick={() => newMip()}>New proposal</button></div>
+					{/if}
+					{#each openMips as m (m.number)}
+						<article class="mip open">
+							<header><b>MIP #{m.number}</b><span class="status">open</span></header>
+							<h3>{m.title}</h3>
+							{#if m.description}<p>{m.description}</p>{/if}
+							<p class="changes">{describe(view, m)}</p>
+							{#each m.views ?? [] as v (v.id)}
+								{@const key = `${m.number}:${v.id}`}
+								<div class="buttons"><button onclick={() => (preview = preview === key ? '' : key)}>{preview === key ? 'Close the screen' : `Look at the screen “${v.name}”`}</button></div>
+								{#if preview === key}{#key frameOf(v)}<ViewHost view={frameOf(v)} data={screenData} />{/key}{/if}
+							{/each}
+							<p class="sigs">
+								{#each SEATS as s (s)}<span class:ok={m.signatures.includes(s)}>{m.signatures.includes(s) ? '✓' : '○'} {view.players[s].name}</span>{/each}
+							</p>
+							{#if canMove}
+								<div class="buttons">
+									{#if !m.signatures.includes(seat)}<button class="primary" disabled={busy} onclick={() => doMove({ type: 'sign', number: m.number })}>Sign as {player.name}</button>{/if}
+									<button disabled={busy} onclick={() => doMove({ type: 'reject', number: m.number })}>{m.by === seat ? 'Withdraw' : 'Reject'}</button>
+								</div>
+							{/if}
+						</article>
+					{/each}
+					{#each decidedMips as m (m.number)}
+						<article class="mip {m.status}">
+							<header><b>MIP #{m.number}</b><span class="status">{m.status}</span></header>
+							<h3>{m.title}</h3>
+							<p class="changes">{describe(view, m)}</p>
+						</article>
+					{/each}
+				{:else if isViewPanel(panel)}
+					{@const card = screens.find((v) => panel === `view:${v.id}`)}
+					<p class="eyebrow">A screen · an MCP App</p>
+					<h2>{card?.name ?? 'Gone'}</h2>
+					{#if card}
+						{#if card.description}<p class="about">{card.description}</p>{/if}
+						{#key frameOf(card)}<ViewHost view={frameOf(card)} data={screenData} />{/key}
+						<p class="small">It runs in a sealed frame: it sees only the game as shown here and can't move for anyone. A MIP changes it.</p>
+					{:else}
+						<p class="about">A MIP took this screen out.</p>
+					{/if}
+				{:else if panel === 'rules'}
+					<p class="eyebrow">The game’s settings</p>
+					<h2>Rules</h2>
+					<dl class="settings">
+						{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
+					</dl>
+					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a MIP with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}.</p>
+					<div class="buttons">
+						{#if canMove}<button class="primary" onclick={() => newMip()}>Propose a change</button>{/if}
+						{#if admin}<button class="danger" disabled={busy} onclick={() => confirm('Start the game again from year 0? Every balance, MIP and the ledger go.') && run(resetGame)}>Start again from year 0</button>{/if}
+					</div>
 				{/if}
-			{:else if panel === 'rules'}
-				<p class="eyebrow">The game’s settings</p>
-				<h2>Rules</h2>
-				<dl class="settings">
-					{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
-				</dl>
-				<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a MIP with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}.</p>
-				<div class="buttons">
-					{#if canMove}<button class="primary" onclick={() => newMip()}>Propose a change</button>{/if}
-					{#if admin}<button class="danger" disabled={busy} onclick={() => confirm('Start the game again from year 0? Every balance, MIP and the ledger go.') && run(resetGame)}>Start again from year 0</button>{/if}
-				</div>
-			{/if}
+			</ViewSlot>
 			{#if error}<p class="error">{error}</p>{/if}
 		</aside>
 		{:else if error}

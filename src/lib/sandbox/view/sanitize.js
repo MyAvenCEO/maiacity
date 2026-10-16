@@ -39,6 +39,8 @@ const HTML_ATTRS = new Set(
 		' '
 	)
 );
+/** a template's own attributes: `each` and `as` (a loop), `if` (a condition) */
+const TEMPLATE_ATTRS = new Set(['each', 'as', 'if']);
 /** attributes of SVG elements (as written, case kept) */
 const SVG_ATTRS = new Set(
 	'viewBox preserveAspectRatio xmlns d x y x1 x2 y1 y2 cx cy r rx ry fx fy points transform fill fill-opacity fill-rule stroke stroke-width stroke-opacity stroke-dasharray stroke-dashoffset stroke-linecap stroke-linejoin stroke-miterlimit opacity font-size font-family font-weight font-style text-anchor dominant-baseline alignment-baseline baseline-shift dx dy rotate textLength lengthAdjust offset stop-color stop-opacity gradientUnits gradientTransform spreadMethod patternUnits patternContentUnits patternTransform clip-path clipPathUnits clip-rule mask maskUnits maskContentUnits marker-start marker-mid marker-end markerWidth markerHeight markerUnits refX refY orient filter filterUnits primitiveUnits in in2 result stdDeviation mode operator k1 k2 k3 k4 values flood-color flood-opacity color visibility display pointer-events vector-effect shape-rendering text-rendering paint-order letter-spacing word-spacing pathLength overflow cursor color-interpolation-filters baseFrequency numOctaves seed type scale xChannelSelector yChannelSelector radius slope intercept amplitude exponent tableValues width height href xlink:href startOffset method spacing side'.split(
@@ -97,6 +99,8 @@ function allowed(el, name, value, svg) {
 		return real;
 	}
 	if (COMPONENTS.has(tag)) return /^[a-z][a-z0-9-]{0,40}$/.test(name) ? name : null;
+	// a template's loop and condition (./template.js): paths into the view's state, read only by our engine
+	if (tag === 'template') return TEMPLATE_ATTRS.has(name) ? name : null;
 	if (!HTML_ATTRS.has(name)) return null;
 	if (name === 'src') return tag === 'img' && pictureSrc(value) ? name : null;
 	// a name on a picture would shadow the document's own methods (document.createElement...): only form controls keep one

@@ -46,6 +46,13 @@
 			"blake3": "b7716bb1e6a8154a11dd6ef9b525f1758d60ce0c723ea1b322e457310fc57e95",
 			"bytes": 125356,
 			"note": "The first view engine: a view's HTML made safe and drawn from its state, our components, charts and look, its draw script in a worker"
+		},
+		{
+			"v": 2,
+			"date": "2026-10-16",
+			"blake3": "330294d9c2d97f6a2bb754ee29b02d0524e04c162b0503c98a07025b878ce025",
+			"bytes": 125420,
+			"note": "Templates work through the sanitizer: a <template>'s each, as and if attributes are kept (v1 dropped them, so loops and conditions drew nothing)"
 		}
 	],
 	"view-worker": [

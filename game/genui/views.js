@@ -162,9 +162,9 @@ export function check(v) {
 export const VIEW_SLOTS = ['panel'];
 export const MAX_VIEW = 100_000;
 /**
- * `slots`: where a game lets a screen stand (MaiaCity V1 names its own panels, game/maiacity-v1/views.js). In mode
- * 'write' (a MIP bringing it) its HTML is held to the rules every view is (game/code/rules.js); `notes` say what of it
- * will do nothing.
+ * `slots`: where a game lets a screen stand (each game names its own panels: game/economy/views.js,
+ * game/maiacity-v1/views.js). In mode 'write' (a MIP bringing it) its HTML is held to the rules every view is
+ * (game/code/rules.js); `notes` say what of it will do nothing.
  */
 export function checkViewCard(raw, slots = VIEW_SLOTS, { mode = 'write' } = {}) {
 	const id = String(raw?.id ?? '').trim();

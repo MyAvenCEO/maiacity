@@ -10,6 +10,7 @@ import { ENTRIES } from '../../../code/index.js';
 import { cardOfEntry, codeAt, codeIn, parseCodeRef, viewOfEntry } from '../../../game/code/index.js';
 import { checkCode } from '../../../game/code/check.js';
 import { SLOTS } from '../../../game/maiacity-v1/views.js';
+import { SLOTS as VALLEY_SLOTS } from '../../../game/economy/views.js';
 import { HOOKS, SECTIONS, defaultCards } from '../../../game/economy/params.js';
 import { EXAMPLES } from '../../../game/genui/examples.js';
 
@@ -26,7 +27,7 @@ describe('code/', () => {
 					? checkCode('logic', { code: e.files['logic.js'], hooks: e.hooks })
 					: e.for === 'genui'
 						? checkCode('view', viewOfEntry(e))
-						: checkCode('view-card', cardOfEntry(e), { slots: e.for === 'maiacity-v1' ? SLOTS : undefined });
+						: checkCode('view-card', cardOfEntry(e), { slots: e.for === 'maiacity-v1' ? SLOTS : VALLEY_SLOTS });
 			expect([e.ref, r.ok, r.ok ? r.notes : r.errors]).toEqual([e.ref, true, []]);
 		}
 	});
