@@ -41,10 +41,12 @@
 //!   else in memory: what it brings and keeps whole goes onto the shelf. It brings a file sealed as it reads it
 //!   (`Node::store_file`), reads any range of a file its device opens, fetching only the sealed segments that hold it
 //!   (`Node::read_file`), and keeps whole the files its device's keep shares say to keep, or with none over a vault
-//!   but never ones, if it keeps files (`Options::keep`), as the server does, every file of the vault it syncs. It
-//!   fetches blobs, files and McEliece keys alike, over one pool of blob connections, the keys a reply names in one
-//!   request (`blobs`). Its blob gate lets in a blob connection only from an endpoint whose live sync connection a
-//!   hello proved, and hands a file's root or pieces only to a device that may fetch the file (T27).
+//!   but never ones, if it keeps files (`Options::keep`), as the server does, every file of the vault it syncs. A
+//!   file it needn't keep it lets go of when told (`Node::let_go`), as an agent device does once its person's Mac
+//!   holds the file whole by its own word (`Node::holds_whole`). It fetches blobs, files and McEliece keys alike, over
+//!   one pool of blob connections, the keys a reply names in one request (`blobs`). Its blob gate lets in a blob
+//!   connection only from an endpoint whose live sync connection a hello proved, and hands a file's root or pieces
+//!   only to a device that may fetch the file (T27).
 //! - **Keep shares** (blobs B2c, V1c): a node sends a peer's device only the entries it may receive and its keep
 //!   shares want, by the stewards' marks (T28).
 //! - **One API** (V2, `run`): every read and change of a device's database, from its page, the Mac app or an agent, is
@@ -1048,6 +1050,13 @@ impl Node {
     /// The device at endpoint `peer` as its hello proved it, once they are connected.
     pub fn proven(&self, peer: EndpointId) -> Option<SignerId> {
         self.shared.peers.lock().expect("peers").get(&peer).map(|p| p.device)
+    }
+
+    /// The device its device knows at endpoint `endpoint`, the one whose ed25519 key it is (`Lab::peers`), as it last
+    /// worked out whom it tells what: the device a hello there proves, connected or not.
+    pub fn device_at(&self, endpoint: EndpointId) -> Option<SignerId> {
+        let reach = self.shared.reach.lock().expect("reach");
+        reach.iter().find(|(_, r)| r.endpoint == endpoint).map(|(device, _)| *device)
     }
 
     /// What its device holds for good (`Holdings`), as it tells its peers: of each log the frontier of the edits its

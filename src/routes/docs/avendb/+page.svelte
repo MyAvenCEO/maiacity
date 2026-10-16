@@ -1171,8 +1171,10 @@
 				its MCP. Access is asked for and given as any share is, on one consent screen: the agent says what it wants and
 				why, and you pick the aven it joins and all your vaults or only some, a level each, Viewer, Suggester or Editor.
 				One prompt of your passkey adds a new device to the aven, the way a new server is claimed; the shares need none.
-				Every harness of an aven acts with the aven’s access, and removing one device leaves the others. It keeps no
-				file of its own: it reads your files from your desktop’s one store, so nothing is kept twice.
+				Every harness of an aven acts with the aven’s access, and removing one device leaves the others. An agent saves
+				a file of your desktop, named by its path, where its aven may create, as an Editor may. It keeps no file of its
+				own: once your desktop holds a file it saved whole, it lets go of its copy, and it reads your files from your
+				desktop’s one store, so nothing is kept twice.
 			</p>
 			<p class="prose-col">
 				An external drive you use for avenDB is a device of your vault of its own, as a phone is, on the same sync,
