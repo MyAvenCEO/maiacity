@@ -7,6 +7,9 @@
  * comes out of a box (../load.js: the card's schema, ./box/rebuild.js), so an entry spoiled by anyone is refused like a
  * box that lies, dropped and built again. Bounded: past LIMIT bytes the entries used longest ago go first.
  *
+ * Keeping a build costs the page nothing it needs for its frames: its pictures are written as PNG files in a worker
+ * of the cache's own (./png.worker.js), and the builds are kept one after another, in the order they came.
+ *
  *   key = BLAKE3 in its key-derivation mode, context CONTEXT, of [engine, recipe, values]
  *
  * engine: the frozen engine's hash (./engines.json), recipe: the recipe file's hash (./recipes.js), values: what it is
@@ -97,7 +100,7 @@ const LISTS = ['textures', 'images'];
 
 /**
  * A build's data with every picture the box handed over as an ImageBitmap as `picture`: as `encode` makes it of the
- * canvas it is drawn on. Undefined where this browser has no canvas off the page.
+ * picture. Undefined where this browser has no canvas off the page.
  */
 async function pictures(data, encode) {
 	const lists = LISTS.filter((k) => Array.isArray(data[k]) && data[k].some((t) => t?.bitmap));
@@ -109,10 +112,63 @@ async function pictures(data, encode) {
 			data[k].map(async (t) => {
 				if (!t?.bitmap) return t;
 				const { bitmap, ...rest } = t;
-				return { ...rest, picture: { ...(await encode(canvasOf(bitmap))), width: bitmap.width, height: bitmap.height } };
+				return { ...rest, picture: { ...(await encode(bitmap)), width: bitmap.width, height: bitmap.height } };
 			})
 		);
 	return out;
+}
+
+/** the picture worker (./png.worker.js), started when a picture is first kept; null where there is none, or it stopped */
+let encoder;
+let job = 1;
+/** @type {Map<number, { ok: (png: Uint8Array) => void, no: (e: Error) => void }>} */
+const encoding = new Map();
+function encoderOf() {
+	if (encoder !== undefined) return encoder;
+	encoder = null;
+	if (typeof Worker === 'undefined' || typeof OffscreenCanvas !== 'function' || typeof createImageBitmap !== 'function') return null;
+	try {
+		const w = new Worker(new URL('./png.worker.js', import.meta.url), { type: 'module' });
+		w.onmessage = (e) => {
+			const j = encoding.get(e.data.id);
+			encoding.delete(e.data.id);
+			if (e.data.error) j?.no(new Error(e.data.error));
+			else j?.ok(e.data.png);
+		};
+		// a worker that cannot start: the page writes the pictures itself
+		w.onerror = (e) => {
+			e.preventDefault?.();
+			w.terminate();
+			encoder = null;
+			for (const j of encoding.values()) j.no(new Error('the picture worker stopped'));
+			encoding.clear();
+		};
+		encoder = w;
+	} catch {
+		encoder = null;
+	}
+	return encoder;
+}
+
+/** a picture as a PNG file, written in the page (where there is no worker) @param {ImageBitmap} bitmap */
+const pngHere = async (bitmap) => new Uint8Array(await (await canvasOf(bitmap).c.convertToBlob({ type: 'image/png' })).arrayBuffer());
+
+/** a picture as a PNG file, written in the picture worker from a copy of it (the page keeps its own), else here */
+async function pngOf(bitmap) {
+	const w = encoderOf();
+	if (w) {
+		try {
+			const copy = await createImageBitmap(bitmap);
+			return await new Promise((ok, no) => {
+				const id = job++;
+				encoding.set(id, { ok, no });
+				w.postMessage({ id, bitmap: copy }, [copy]);
+			});
+		} catch {
+			// (not written there: written here)
+		}
+	}
+	return pngHere(bitmap);
 }
 
 /**
@@ -120,19 +176,23 @@ async function pictures(data, encode) {
  * as their bytes (WebKit, the Mac app's engine, refuses to keep a Blob in IndexedDB in some windows, which lost every
  * build with a picture there).
  */
-export const storable = (data) => pictures(data, async ({ c }) => ({ png: new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer()) }));
+export const storable = (data) => pictures(data, async (bitmap) => ({ png: await pngOf(bitmap) }));
 
 /** a PNG file's first eight bytes */
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 /** a stored picture as a PNG file: its bytes (or, kept before, a Blob), refused if it is not one */
-function pngOf(png) {
+function pngFile(png) {
 	if (png instanceof Blob && png.type === 'image/png') return png;
 	if (png instanceof Uint8Array && png.length > 8 && PNG.every((b, i) => png[i] === b)) return new Blob([png], { type: 'image/png' });
 	throw new Error('refused: a stored picture that is no PNG');
 }
 
 /** A build's data with its pictures as their pixels, to compare two builds bit for bit (`fingerprint`). */
-export const pixelsOf = (data) => pictures(data, async ({ g, c }) => ({ rgba: new Uint8Array(g.getImageData(0, 0, c.width, c.height).data.buffer) }));
+export const pixelsOf = (data) =>
+	pictures(data, async (bitmap) => {
+		const { g, c } = canvasOf(bitmap);
+		return { rgba: new Uint8Array(g.getImageData(0, 0, c.width, c.height).data.buffer) };
+	});
 
 /** the other way: each stored picture an ImageBitmap again, as the box hands it over (./box/rebuild.js checks it) */
 export async function revive(data) {
@@ -144,7 +204,7 @@ export async function revive(data) {
 			data[k].map(async (t) => {
 				if (!t?.picture) return t;
 				const { png, width, height } = t.picture;
-				const bitmap = await createImageBitmap(pngOf(png));
+				const bitmap = await createImageBitmap(pngFile(png));
 				if (bitmap.width !== width || bitmap.height !== height) throw new Error('refused: a stored picture of another size');
 				const { picture, ...rest } = t;
 				return { ...rest, bitmap };
@@ -201,14 +261,29 @@ export async function get(key) {
 	}
 }
 
+/** the builds being kept, one after another */
+let line = Promise.resolve();
+/** the bytes the cache holds as this page last counted them, and what it kept since (more, if one was kept again);
+ *  null: to be counted */
+let held = null;
+
 /**
  * Keeps a build under `key`, then lets the entries used longest ago go until the cache fits LIMIT. False if it was not
- * kept (no cache, a picture it cannot read, or a build larger than LIMIT alone).
+ * kept (no cache, a picture it cannot read, or a build larger than LIMIT alone). Its pictures are written at once,
+ * beside those of the builds before it; the builds are kept one at a time, in the order they were handed in.
  * @param {string} key @param {{ data: any, card: any }} build
  */
-export async function put(key, { data, card }) {
+export function put(key, { data, card }) {
+	const plain = db().then((d) => d && storable(data));
+	plain.catch(() => {});
+	const turn = line.then(() => keep(key, plain, card));
+	line = turn.catch(() => {});
+	return turn;
+}
+
+async function keep(key, written, card) {
 	const d = await db();
-	const plain = d && (await storable(data));
+	const plain = d && (await written);
 	if (!plain) return false;
 	const bytes = bytesOf(plain);
 	if (bytes > LIMIT) return false;
@@ -217,14 +292,16 @@ export async function put(key, { data, card }) {
 		tx.objectStore('built').put({ data: plain, card }, key);
 		tx.objectStore('meta').put({ key, at: Date.now(), bytes });
 		await done(tx);
-		await trim(d);
+		// counted once a visit, then by what is added: the oldest let go only once it may be over
+		if (held !== null) held += bytes;
+		if (held === null || held > LIMIT) held = await trim(d);
 		return true;
 	} catch {
 		return false;
 	}
 }
 
-/** the oldest entries out until the cache fits LIMIT */
+/** the oldest entries out until the cache fits LIMIT; the bytes it holds then */
 async function trim(d) {
 	const tx = d.transaction(['built', 'meta'], 'readwrite');
 	const metas = await result(tx.objectStore('meta').index('at').getAll());
@@ -236,6 +313,7 @@ async function trim(d) {
 		total -= m.bytes;
 	}
 	await done(tx);
+	return total;
 }
 
 /** drops one entry (one that was refused) @param {string} key */
@@ -246,6 +324,7 @@ export async function drop(key) {
 	tx.objectStore('built').delete(key);
 	tx.objectStore('meta').delete(key);
 	await done(tx).catch(() => {});
+	held = null;
 }
 
 /** puts something in under `key` as it is, unchecked: for the lab, to show a spoiled entry is refused @param {string} key */
@@ -275,4 +354,5 @@ export async function clear() {
 	tx.objectStore('built').clear();
 	tx.objectStore('meta').clear();
 	await done(tx);
+	held = null;
 }

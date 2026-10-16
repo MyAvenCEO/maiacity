@@ -14,8 +14,14 @@
  *   anchor; `cast`: that, kept running in the box ($lib/assets/hero.js, $lib/assets/box/live.js) for what moves by
  *   itself (a machine's clip: the ElectroCube humming), each frame's step asked of the box and followed here.
  *
- * `update` before each frame is drawn; `ready` waits for everything asked for so far. The renderer and the box come in
- * with the first world made (the page's own modules, not the world's: the world's measures are read without them).
+ * Every build goes through the renderer's few boxes, in one line (the people, the tent and the pickup alike), the most
+ * wanted first: what stands in the camera's view, then what is shown elsewhere, then what is hidden; asked again each
+ * time a box is free, so a cut to another place moves its builds up. The same build asked for twice (each player's
+ * backpack) is built once.
+ *
+ * `update` before each frame is drawn; `ready` waits for everything asked for so far, `inView` for what stands in the
+ * camera's view as it is drawn next. The renderer and the box come in with the first world made (the page's own
+ * modules, not the world's: the world's measures are read without them).
  */
 import * as THREE from 'three';
 
@@ -23,12 +29,16 @@ import * as THREE from 'three';
 const AWAY = new THREE.Matrix4().makeScale(0, 0, 0);
 /** what a tap finds a copy by: never drawn */
 const PICK = new THREE.MeshBasicMaterial({ visible: false });
+/** how far round where an anchor stands what goes into it may reach (m): it is in view if that ball is, and as large
+ *  on screen as that ball; and how large it must be to be seen there (px, its radius) */
+const REACH = 8;
+const SEEN = 6;
+/** how many boxes build side by side: one for each core the page leaves, two to four */
+const boxes = () => Math.max(2, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4) - 1));
 
 let mods = null;
 const modules = () =>
-	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('$lib/assets/hero.js'), import('$lib/assets/controls.js'), import('$lib/assets/clips.js'), import('$lib/assets/box/host.js')]).then(([r, l, x, h, c, k, b]) => ({
-		AssetBox: b.AssetBox,
-		engine: x.INDEX.engine,
+	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('$lib/assets/hero.js'), import('$lib/assets/controls.js'), import('$lib/assets/clips.js')]).then(([r, l, x, h, c, k]) => ({
 		createAssets: r.createAssets,
 		loadAsset: l.loadAsset,
 		canonical: l.canonical,
@@ -56,7 +66,7 @@ export function createDrawn({ renderer, camera, scene }) {
 	const up = modules().then((m) => {
 		if (gone) return m;
 		// one shape a kind, its finest, and no picture: nothing made smaller for far off
-		assets = m.createAssets({ renderer, camera, levels: [1] });
+		assets = m.createAssets({ renderer, camera, levels: [1], boxes: boxes() });
 		assets.force(0);
 		scene.add(assets.group);
 		for (const go of waiting.splice(0)) go();
@@ -68,17 +78,9 @@ export function createDrawn({ renderer, camera, scene }) {
 	const loads = [];
 	/** the builds kept running in the box (`cast`) */
 	const heroes = [];
-	/** the boxes the people are built in, beside the page's (one for each core the page and its box leave, up to two),
-	 *  so that the stand-ins (a third of a second each) are not queued behind everything else; none on a machine of two
-	 *  cores or fewer */
-	const crew = [];
-	let turn = 0;
-	const crewBox = (m) => {
-		const most = Math.max(0, Math.min(2, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 2));
-		if (!most) return undefined;
-		if (crew.length < most) crew.push(new m.AssetBox({ engine: m.engine }));
-		return crew[turn++ % crew.length];
-	};
+	/** everything asked for: where it goes, and when it is there (or failed) */
+	/** @type {{ anchor: THREE.Object3D, done: Promise<unknown> }[]} */
+	const asks = [];
 	/** whether an anchor is in the scene and shown, and everything it is in */
 	const shown = (o) => {
 		for (let x = o; x; x = x.parent) {
@@ -87,6 +89,37 @@ export function createDrawn({ renderer, camera, scene }) {
 		}
 		return false;
 	};
+	/** the camera's view as the last frame was drawn: where it is, what it takes in, and how many pixels a metre at a
+	 *  metre's distance covers */
+	const frustum = new THREE.Frustum(), _vp = new THREE.Matrix4(), _ball = new THREE.Sphere(), _eye = new THREE.Vector3();
+	let perMetre = 1;
+	const look = () => {
+		camera.updateMatrixWorld();
+		frustum.setFromProjectionMatrix(_vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+		_eye.setFromMatrixPosition(camera.matrixWorld);
+		perMetre = (renderer.domElement.clientHeight || 720) / 2 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+	};
+	/** how large what goes into an anchor stands on screen (px, its radius), 0 where it is hidden or out of the view
+	 *  (past the fog's end too) */
+	const onScreen = (o) => {
+		if (!shown(o)) return 0;
+		o.getWorldPosition(_ball.center);
+		_ball.radius = REACH;
+		if (!frustum.intersectsSphere(_ball)) return 0;
+		const d = _ball.center.distanceTo(_eye);
+		if (scene.fog?.far && d - REACH > scene.fog.far) return 0;
+		return (REACH * perMetre) / Math.max(d, REACH);
+	};
+	/** whether an anchor is shown and stands in the camera's view, large enough to be seen */
+	const inView = (o) => onScreen(o) >= SEEN;
+	/** how much what goes into an anchor is wanted: in view 2 and more the larger it stands there, shown elsewhere 1,
+	 *  hidden 0 */
+	const rankOf = (o) => {
+		const px = onScreen(o);
+		return px >= SEEN ? 2 + Math.min(1, px / 400) : shown(o) ? 1 : 0;
+	};
+	/** the frames waited for (`inView`): told when the next one is drawn */
+	const frames = [];
 	/** an unseen box over what was built, named for a tap, in the anchor */
 	const pickBox = (anchor, box, name) => {
 		if (!box || box.isEmpty()) return;
@@ -111,6 +144,9 @@ export function createDrawn({ renderer, camera, scene }) {
 			const go = () => {
 				if (c.gone) return built(null);
 				const kind = assets.use(ref, { shadows: true, picture: false, receive });
+				// wanted as much as the most wanted of the copies it is asked for by
+				(kind.anchors ??= new Set()).add(anchor);
+				kind.rank ??= () => Math.max(0, ...[...kind.anchors].map(rankOf));
 				c.copy = assets.place(kind, AWAY);
 				kind.ready.then((k) => {
 					const box = k.ok ? (k.levels[k.base].level?.box ?? null) : null;
@@ -123,6 +159,8 @@ export function createDrawn({ renderer, camera, scene }) {
 			};
 			if (assets) go();
 			else waiting.push(go);
+			c.ask = { anchor, done: c.ready };
+			asks.push(c.ask);
 			return c;
 		},
 		/**
@@ -140,20 +178,26 @@ export function createDrawn({ renderer, camera, scene }) {
 			c.gone = true;
 			const i = copies.indexOf(c);
 			if (i >= 0) copies.splice(i, 1);
+			const j = asks.indexOf(c.ask);
+			if (j >= 0) asks.splice(j, 1);
 			if (c.copy) assets.remove(c.copy);
 		},
 		/**
 		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data, named,
 		 * poser }` ($lib/assets/load.js; `named`: its first node of each name, as its builder named them; `poser`: its
 		 * controls, played from the numbers the box wrote down: $lib/assets/controls.js), once it is there.
-		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean, apart?: boolean }} [o]
+		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o]
 		 *   `pick`: every part of it named so (its bones keep their names); `cast`: every part casting a shadow (false: as
-		 *   built); `apart`: built in one of the people's boxes, beside the page's
+		 *   built)
 		 */
-		load(ref, anchor, { pick, cast = true, apart = false } = {}) {
+		load(ref, anchor, { pick, cast = true } = {}) {
 			let mods;
 			const p = up
-				.then((m) => ((mods = m), m.loadAsset(m.buildAt(ref), { box: apart ? crewBox(m) : undefined })))
+				.then((m) => {
+					mods = m;
+					if (gone) throw new Error('the world is gone');
+					return assets.load(m.buildAt(ref), { rank: () => rankOf(anchor) });
+				})
 				.then((got) => {
 					// its controls played on it (./controls.js), its nodes walked before the world adds any of its own
 					got.poser = mods.poserOf(got.obj);
@@ -166,7 +210,9 @@ export function createDrawn({ renderer, camera, scene }) {
 					if (!gone) anchor.add(got.obj);
 					return got;
 				});
-			loads.push(p.catch((e) => console.warn(`maiacity-v1: ${ref} did not load: ${e?.message ?? e}`)));
+			const done = p.catch((e) => console.warn(`maiacity-v1: ${ref} did not load: ${e?.message ?? e}`));
+			loads.push(done);
+			asks.push({ anchor, done });
 			return p;
 		},
 		/**
@@ -206,7 +252,7 @@ export function createDrawn({ renderer, camera, scene }) {
 		actor(ref, anchor, { pick, shadow = true, receive = false, cycles = {} } = {}, then) {
 			let asked = null;
 			const cast = { ready: false, rig: { object: anchor, bones: {}, pose: (p) => void (asked = p) }, clips: {}, poses: {}, mesh: null, face: null, loaded: null };
-			cast.loaded = this.load(ref, anchor, { pick, cast: shadow, apart: true }).then(async (got) => {
+			cast.loaded = this.load(ref, anchor, { pick, cast: shadow }).then(async (got) => {
 				const m = await up;
 				const view = got.obj.userData.view?.clips;
 				let mesh = null;
@@ -237,6 +283,8 @@ export function createDrawn({ renderer, camera, scene }) {
 		},
 		/** where each copy stands now: before every frame */
 		update() {
+			look();
+			if (frames.length) for (const ok of frames.splice(0)) ok();
 			if (!assets) return;
 			for (const c of copies) {
 				if (!c.copy) continue;
@@ -251,12 +299,19 @@ export function createDrawn({ renderer, camera, scene }) {
 		},
 		/** everything asked for so far, there to draw (or failed) */
 		ready: () => up.then(() => Promise.all([assets?.ready(), ...loads])).then(() => true),
+		/** everything asked for that stands in the camera's view as the next frame is drawn, there to draw (or failed):
+		 *  what the shot on screen shows, while the rest may still be coming */
+		inView: () =>
+			up
+				.then(() => new Promise((ok) => frames.push(ok)))
+				.then(() => Promise.all(asks.filter((a) => inView(a.anchor)).map((a) => a.done)))
+				.then(() => true),
 		stats: () => assets?.stats() ?? null,
 		dispose() {
 			gone = true;
 			for (const h of heroes.splice(0)) h.dispose();
-			for (const b of crew.splice(0)) b.stop('the world is gone');
 			assets?.dispose();
+			for (const ok of frames.splice(0)) ok();
 		}
 	};
 }

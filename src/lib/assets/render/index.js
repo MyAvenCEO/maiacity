@@ -20,7 +20,9 @@
  *   numbers the box wrote down, ../controls.js) leaves the instances and is drawn as a tree of its own, its parts where
  *   its controls put them, at any distance (a picture cannot open a door); back at rest, it joins the others again.
  *
- * Several boxes build side by side while a world loads (`boxes`), each a frame and a worker of its own.
+ * Several boxes build side by side while a world loads (`boxes`), each a frame and a worker of its own, the build
+ * most wanted first (`rank`: what is on screen before what is not, a kind's coarsest shape before its finer ones). A
+ * world that puts a build in its scene itself (`load`) has it built in the same boxes, in the same line.
  */
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
@@ -87,30 +89,90 @@ export function createAssets(o) {
 	const lowering = createLowering();
 	group.add(pictures.group);
 
-	/* ── the boxes, and the builds waiting for one: the coarsest shapes first ── */
-	const pool = Array.from({ length: Math.max(1, o.boxes ?? 3) }, () => ({ box: new AssetBox({ engine: INDEX.engine }), busy: false }));
-	/** @type {{ name: string, first: boolean, ok: Function, no: Function }[]} */
+	/* ── the builds asked for: each read from this device's cache, and those not kept built in the boxes, the most
+	 *    wanted first, else in the order asked ── */
+	const pool = Array.from({ length: Math.max(1, o.boxes ?? 3) }, () => ({ box: new AssetBox({ engine: INDEX.engine }), busy: false, starting: false, up: false }));
+	/** the builds asked for, waiting to be read from the cache (READS at a time) */
+	/** @type {{ name: string, rank: number | (() => number), ok: Function, no: Function }[]} */
 	const queue = [];
-	let loads = 0;
+	/** the builds the cache did not have, waiting for a box that is up and free */
+	/** @type {{ rank: number | (() => number), recipe: any, given: any, ok: Function, no: Function }[]} */
+	const line = [];
+	const READS = 16;
+	/** the builds being loaded (read, built or opened), and those of them reading the cache now */
+	let loads = 0, reading = 0;
+	/** how much a build waiting is wanted now (a rank can change while it waits: what is on screen) */
+	const rankOf = (q) => {
+		const r = typeof q.rank === 'function' ? q.rank() : q.rank;
+		return Number.isFinite(r) ? r : 0;
+	};
+	/** the most wanted of a list taken from it: the first asked of those wanted as much */
+	const take = (list) => {
+		let i = 0;
+		for (let j = 1, best = rankOf(list[0]); j < list.length; j++) {
+			const r = rankOf(list[j]);
+			if (r > best) (i = j), (best = r);
+		}
+		return list.splice(i, 1)[0];
+	};
 	function pump() {
-		for (const p of pool) {
-			if (p.busy || !queue.length) continue;
-			const i = queue.findIndex((q) => q.first);
-			const job = queue.splice(i >= 0 ? i : 0, 1)[0];
-			p.busy = true;
+		while (reading < READS && queue.length) {
+			const job = take(queue);
+			reading++;
 			loads++;
-			loadAsset(job.name, { box: p.box, cache: o.cache !== false })
+			// what the cache does not have goes in line for a box (../load.js builds it there), its read done: the box is
+			// chosen only once one is up and free, so what is wanted most by then is built first
+			let lent = false;
+			const box = {
+				engine: INDEX.engine,
+				build: (recipe, given) =>
+					new Promise((ok, no) => {
+						if (!lent) (lent = true), reading--;
+						line.push({ rank: job.rank, recipe, given, ok, no });
+						pump();
+					})
+			};
+			loadAsset(job.name, { box, cache: o.cache !== false })
 				.then(job.ok, job.no)
 				.finally(() => {
-					p.busy = false;
+					if (!lent) reading--;
 					loads--;
 					pump();
 				});
 		}
+		// the boxes started as builds wait for them, as many as there are (none for a world that finds all it asks for
+		// in the cache)
+		const need = Math.min(pool.length, line.length + pool.filter((p) => p.busy).length);
+		let started = pool.filter((x) => x.starting).length;
+		for (const p of pool) {
+			if (started >= need) break;
+			if (p.starting) continue;
+			p.starting = true;
+			started++;
+			p.box
+				.start()
+				.catch(() => {})
+				.then(() => {
+					p.up = true;
+					pump();
+				});
+		}
+		for (const p of pool) {
+			if (!p.up || p.busy || !line.length) continue;
+			const b = take(line);
+			p.busy = true;
+			p.box
+				.build(b.recipe, b.given)
+				.then(b.ok, b.no)
+				.finally(() => {
+					p.busy = false;
+					pump();
+				});
+		}
 	}
-	const build = (name, first) =>
+	const build = (name, rank) =>
 		new Promise((ok, no) => {
-			queue.push({ name, first, ok, no });
+			queue.push({ name, rank, ok, no });
 			pump();
 		});
 
@@ -126,8 +188,11 @@ export function createAssets(o) {
 	 * A kind: an asset at its version, variant and values, at every level it is drawn at. Asked for again, the same (as
 	 * it was first asked for). `shadows`: true, its shadow cast at every level; false, at none; else as below
 	 * (`meshOf`). `picture: false`, none taken: a kind a world never draws so small. `receive: false`, no shadow falls
-	 * on it (a world that always drew it so: its builder lays none on it).
-	 * @param {string} ref a label or a build @param {{ shadows?: boolean, picture?: boolean, receive?: boolean }} [opts]
+	 * on it (a world that always drew it so: its builder lays none on it). `rank`: how much its builds are wanted while
+	 * they wait for a box (more first; asked again each time a box is free, so it may follow what is on screen), set on
+	 * the kind (`kind.rank`) by whoever asks for it first; its coarsest shape is always wanted a little more.
+	 * @param {string} ref a label or a build
+	 * @param {{ shadows?: boolean, picture?: boolean, receive?: boolean, rank?: () => number }} [opts]
 	 */
 	function use(ref, opts) {
 		const { hash, params } = resolve(ref);
@@ -166,7 +231,9 @@ export function createAssets(o) {
 			alive: new Uint8Array(0),
 			was: new Int8Array(0),
 			/** the copies moved by their controls, by their number: each its values and its own tree */
-			posed: new Map()
+			posed: new Map(),
+			/** how much its builds are wanted (`use`) */
+			rank: opts?.rank ?? null
 		};
 		kinds.set(key, k);
 		// the coarsest shape built first: its measure is the kind's, and its picture is taken from it
@@ -208,7 +275,7 @@ export function createAssets(o) {
 		if (lv.state !== 'idle') return lv.promise;
 		if (!lv.name) return lower(k, L);
 		lv.state = 'loading';
-		lv.promise = build(lv.name, first).then(
+		lv.promise = build(lv.name, () => 2 * (k.rank?.() ?? 0) + (first ? 1 : 0)).then(
 			async (got) => {
 				lv.level = prepare(got.obj, presets);
 				lv.from = got.from;
@@ -751,9 +818,22 @@ export function createAssets(o) {
 		};
 	}
 
+	/**
+	 * A build, as ../load.js `loadAsset` hands it over (from this device's cache, else built in the renderer's boxes,
+	 * in line with the kinds' builds): for a world that puts a build into its scene itself (MaiaCity V1's tent, its
+	 * people), so every build of a page shares the same few boxes, the most wanted first.
+	 * @param {string} name `<recipe hash>?its=values` @param {{ rank?: number | (() => number) }} [opts] `rank`: as `use`,
+	 *   wanted as much as a kind's coarsest shape of that rank
+	 */
+	const load = (name, opts) => {
+		const r = opts?.rank;
+		return build(name, () => 2 * ((typeof r === 'function' ? r() : r) ?? 0) + 1);
+	};
+
 	return {
 		group,
 		use,
+		load,
 		place,
 		move,
 		remove,
@@ -813,7 +893,7 @@ export function createAssets(o) {
 			pictures.dispose();
 			presets.dispose();
 			for (const p of pool) p.box.stop('the renderer was disposed');
-			queue.length = 0;
+			queue.length = line.length = 0;
 			kinds.clear();
 		}
 	};

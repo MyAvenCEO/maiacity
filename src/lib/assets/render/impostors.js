@@ -46,10 +46,16 @@ export function createImpostors(renderer, o = {}) {
 	studio.add(new THREE.AmbientLight('#ffffff', Math.PI * 0.45));
 	const key = new THREE.DirectionalLight('#ffffff', Math.PI * 0.55);
 	studio.add(key, key.target);
-	const pmrem = new THREE.PMREMGenerator(renderer);
-	const env = pmrem.fromScene(new RoomEnvironment(), 0.04);
-	pmrem.dispose();
-	studio.environment = env.texture;
+	// the room's reflections made when the first picture is to be taken, not with the renderer: a world that takes none
+	// (drawing every kind at its finest, as MaiaCity V1 does) never waits for them (seconds on a software GPU)
+	let env = null;
+	const lit = () => {
+		if (env) return;
+		const pmrem = new THREE.PMREMGenerator(renderer);
+		env = pmrem.fromScene(new RoomEnvironment(), 0.04);
+		pmrem.dispose();
+		studio.environment = env.texture;
+	};
 	studio.environmentIntensity = 0.35;
 	const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 	const shot = new THREE.WebGLRenderTarget(px, px, { samples: 4, generateMipmaps: false });
@@ -122,6 +128,7 @@ export function createImpostors(renderer, o = {}) {
 
 	/** a kind's shaders as the studio lights them, made before its picture is taken (./index.js, `compiled`) */
 	async function prepare(level) {
+		lit();
 		const thing = thingOf(level);
 		const clip = renderer.localClippingEnabled;
 		renderer.localClippingEnabled = false;
@@ -137,6 +144,7 @@ export function createImpostors(renderer, o = {}) {
 	 * @returns {Slot}
 	 */
 	function add(level) {
+		lit();
 		let p = pages.findIndex((x) => x.kinds < kindsPerPage);
 		if (p < 0) {
 			pages.push(pageOf());
@@ -246,7 +254,7 @@ export function createImpostors(renderer, o = {}) {
 			}
 			pages.length = 0;
 			shot.dispose();
-			env.dispose();
+			env?.dispose();
 		}
 	};
 }
