@@ -14,8 +14,9 @@ self.onmessage = async (e) => {
 		for (const level of out)
 			for (const d of level.draws) {
 				if (!d || d === 'same') continue;
-				moved.add(d.index.buffer);
-				for (const a of Object.values(d.attributes)) moved.add(a.array.buffer);
+				if (d.index) moved.add(d.index.buffer);
+				for (const a of Object.values(d.attributes ?? {})) moved.add(a.array.buffer);
+				if (d.copies) moved.add(d.copies.buffer);
 			}
 		self.postMessage({ id, out }, [...moved]);
 	} catch (err) {

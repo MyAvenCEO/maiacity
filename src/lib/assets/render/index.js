@@ -113,6 +113,8 @@ export function createAssets(o) {
 	const kinds = new Map();
 	/** something to draw changed; and what casts shadows did */
 	let dirty = true, shadows = true;
+	/** the renderer was disposed */
+	let gone = false;
 
 	/**
 	 * A kind: an asset at its version, variant and values, at every level it is drawn at. Asked for again, the same.
@@ -198,6 +200,7 @@ export function createAssets(o) {
 				// a build with controls is kept whole as well: a copy moved by them is a tree copied from it
 				if (got.obj.userData.controls?.length) lv.obj = got.obj;
 				await show(k, L);
+				if (L > 0 && lv.level.tris > budgetOf(L, Infinity, levels)) lighten(k, L);
 			},
 			(err) => {
 				lv.state = 'failed';
@@ -240,6 +243,34 @@ export function createAssets(o) {
 			lv.promise.catch(() => {});
 		});
 		return k.levels[L].promise;
+	}
+
+	/**
+	 * A level built from its recipe that is over its ceiling (./lod.js: a big tree's crown at detail 0.1, a walnut's
+	 * 18,328 triangles) brought under it by simplifying, every piece of it kept (a crown thinned shows): beside the page,
+	 * after the levels still to be made, and drawn as it came until then. Its picture, already taken, and its kind's
+	 * thresholds stay as its recipe made them.
+	 */
+	function lighten(k, L) {
+		const lv = k.levels[L], from = lv.level;
+		const most = budgetOf(L, Infinity, levels);
+		lowering.lower(from, [{ ...planOf(L, from), budget: most, most, every: true }], true).then(
+			async ([made]) => {
+				if (gone || lv.level !== from) return;
+				const fresh = { level: made, meshes: made.draws.map((d) => meshOf(k, L, d)) };
+				await compiled(fresh, false);
+				// the new drawings take the old ones' place (unless the renderer went meanwhile: then they go)
+				const away = gone || lv.level !== from ? fresh.meshes : lv.meshes;
+				if (away !== fresh.meshes) Object.assign(lv, fresh);
+				for (const { mesh } of away) {
+					mesh.removeFromParent();
+					mesh.geometry.dispose();
+					mesh.dispose();
+				}
+				dirty = shadows = true;
+			},
+			(err) => gone || console.warn(`assets: ${k.label}: level ${L} was not brought under its ceiling: ${err?.message ?? err}`)
+		);
 	}
 
 	/** a level that came: its drawings made, their shaders too, and, the coarsest built, its picture taken */
@@ -724,6 +755,7 @@ export function createAssets(o) {
 			dirty = shadows = true;
 		},
 		dispose() {
+			gone = true;
 			group.removeFromParent();
 			for (const k of kinds.values())
 				for (const lv of k.levels)

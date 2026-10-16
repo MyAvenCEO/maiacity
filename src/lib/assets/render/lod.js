@@ -46,16 +46,19 @@ export const SCREEN = 1080;
  * the next, at its threshold on SCREEN ((LEVELS[L] × SCREEN)²: 91,445 for level 1, 14,113 for level 2): a triangle
  * smaller than a pixel there is never seen, and nearer, where it would be, the finer level is drawn. Nor is it made
  * lighter than `floor`: a few hundred triangles cost little more than the draw call that holds them, and a chair of a
- * thousand is cheap whole. A plant's levels are its recipe's own and are held to their share alone: a big tree's crown
- * at detail 0.1 (a walnut's 18,328, a linden's 20,358) is over its ceiling, but simplifying a crown only takes its
- * leaves away, and a thinned crown reads worse at its distance than the triangles cost.
+ * thousand is cheap whole. A plant's levels are its recipe's own, held to their share by it; one over its ceiling (a
+ * big tree's crown at detail 0.1: a walnut's 18,328, a linden's 20,358, a Korean pine's 24,010) is brought under it by
+ * simplifying, every leaf and needle of it kept (a thinned crown reads worse at its distance than the triangles cost),
+ * and its thresholds stay its recipe's.
  *
  * A level made by simplifying keeps within `px` pixels on SCREEN of the finest where it is drawn biggest (at the
  * threshold before it), as long as its triangles let it: the simplifier takes the edges whose loss shows least first.
  * Only a shape that cannot reach its share so (a machine's parts, hard edges at every corner) goes on to STRETCH times
- * that, and only where that brings it to its share. A part smaller than a pixel there is left out. A shape of many pieces each already as plain as it can be (a
- * coop's planks, a battery's cells, a planter's cards) cannot reach its share without leaving out pieces that show:
- * it keeps them and stays over its share, though never over its ceiling (./simplify.js).
+ * that, and only where that brings it to its share. A part smaller than a pixel there is left out, and one a few
+ * pixels big (a pickup's mirror) is kept, however coarse. What is never seen from outside (a battery's cells inside
+ * their modules) is left out of a shape that cannot reach its share with it. A shape of many pieces each already as
+ * plain as it can be and all seen (a coop's struts, a planter's cards) cannot reach its share without leaving out
+ * pieces that show: it keeps them and stays over its share, though never over its ceiling (./simplify.js).
  */
 export const BUDGETS = [
 	{ share: 1, floor: 0, px: 0 },
