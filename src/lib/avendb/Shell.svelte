@@ -1,7 +1,8 @@
 <!--
 	The person's avenDB once this browser is unlocked: the vault it is looked at in, the person's own or any other this
 	browser knows, picked from an item of the app's nav pill beside You, with a menu of its own, apart from the account
-	signed in to the app ($lib/app/pill.svelte.js `pillContext`); the picked vault's name and its pages, as a database studio lists them: its sparks (thoughts, links, pictures, mood boards,
+	signed in to the app ($lib/app/pill.svelte.js `pillContext`); first its home, on the whole screen, each of its pages an
+	app on a phone's home screen, by group (`#home`, or no address); then the picked vault's name and its pages, as a database studio lists them: its sparks (thoughts, links, pictures, mood boards,
 	others' posts, the notes written before them), its todos, its articles, its stories (each
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
 	songs, its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
@@ -50,7 +51,7 @@
 	/** on a phone, whether the vault's pages slide in from the left */
 	let pages = $state(false);
 
-	/** The vault's pages, in its list: each a group's, by its address, name and icon. */
+	/** The vault's pages, in its list: each a group's, by its address, name and icon; on its home, each an app. */
 	const NAV = /** @type {const} */ ([
 		[
 			'',
@@ -84,6 +85,10 @@
 			]
 		]
 	]);
+	/** each group's name on the home screen, where every group has one */
+	const HEADS = /** @type {Record<string, string>} */ ({ '': 'Workspace' });
+	/** each group's colour on the home screen: its apps' tiles */
+	const TINTS = /** @type {Record<string, string>} */ ({ '': 'work', Database: 'data', Settings: 'set' });
 	/** @typedef {(typeof NAV)[number][1][number]} PageItem */
 	const PAGES = NAV.flatMap(([, items]) => /** @type {readonly PageItem[]} */ (items));
 	/** @typedef {PageItem[0]} Page */
@@ -100,13 +105,14 @@
 
 	/**
 	 * The page an address names: `#todos`, a spark's or a note's `#notes/` and its entry, an article's `#articles/` and
-	 * its entry, to read, and with `/edit`, to edit as a note, a story's `#stories/` and its entry; else the sparks.
+	 * its entry, to read, and with `/edit`, to edit as a note, a story's `#stories/` and its entry; else, as with none or
+	 * `#home`, the vault's home.
 	 * @param {string} hash
 	 */
 	function parse(hash) {
 		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
-		const known = PAGES.find(([id]) => id === page)?.[0] ?? 'sparks';
+		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page)?.[0] ?? 'home');
 		const opens = ['sparks', 'articles', 'stories'].includes(known) && /^[0-9a-f]{64}$/.test(entry ?? '');
 		return { page: known, entry: opens ? entry : '', edit: opens && known === 'articles' && edit === 'edit' };
 	}
@@ -199,6 +205,34 @@
 				<Note {world} {actor} {api} {busy} entry={route.entry} />
 			{/if}
 		{/key}
+	{:else if tab === 'home'}
+		<!-- the vault's home: each of its pages an app, by group, as a phone's home screen shows them -->
+		<section class="main home">
+			<header class="home-head">
+				<small>{KINDS[here.kind]}</small>
+				<h1>{nameOf(here)}</h1>
+				<p class="soft">{owners(here)}</p>
+			</header>
+			<AccessRequest {world} {requests} {busy} ongrant={api.grant} ondeny={api.deny} />
+			{#each NAV as [group, items] (group)}
+				<section class="apps" aria-labelledby="apps-{TINTS[group]}">
+					<h2 class="group" id="apps-{TINTS[group]}">{HEADS[group] ?? group}</h2>
+					<div class="grid">
+						{#each items as [id, label, icon] (id)}
+							<a class="app" href="#{id}">
+								<span class="tile {TINTS[group]}"><Icon name={icon} size={26} /></span>
+								<span class="label">{label}</span>
+							</a>
+						{/each}
+					</div>
+				</section>
+			{/each}
+			<p class="pq">
+				<span class="chip ok" title="Every edit counts by its SLH-DSA signature alone, and every key is sealed post-quantum"
+					>Post-quantum only</span
+				>
+			</p>
+		</section>
 	{:else}
 
 	{#if pages}
@@ -219,6 +253,7 @@
 			<p class="soft">{owners(here)}</p>
 		</header>
 		<nav class="tabs-list" aria-label="{nameOf(here)}'s pages">
+			<a class="item" href="#home"><Icon name="apps" /><span>Home</span></a>
 			{#each NAV as [group, items] (group)}
 				{#if group}<small class="group">{group}</small>{/if}
 				{#each items as [id, label, icon] (id)}
@@ -412,6 +447,122 @@
 		margin: 0 0 1.2rem;
 	}
 
+	/* the vault's home, on the whole screen: its pages as apps, in a column no wider than a few rows of them */
+	.home {
+		grid-column: 1 / -1;
+		padding-bottom: calc(var(--nav-room, 5rem) + 3rem);
+	}
+
+	.home > * {
+		max-width: 46rem;
+		margin-inline: auto;
+	}
+
+	.home-head small {
+		color: var(--accent);
+		font-size: 0.72rem;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+
+	.home-head h1 {
+		margin: 0.2rem 0 0.3rem;
+		font-family: var(--font-body);
+		font-size: 1.6rem;
+		font-weight: 650;
+		font-variation-settings: normal;
+		letter-spacing: -0.01em;
+		line-height: 1.2;
+		overflow-wrap: anywhere;
+	}
+
+	.home-head p {
+		margin: 0 0 0.6rem;
+		font-size: 0.86rem;
+	}
+
+	.apps .group {
+		margin: 1.4rem 0 0.8rem;
+		color: var(--soft);
+		font-family: var(--font-body);
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+		gap: 1.1rem 0.5rem;
+	}
+
+	/* a page as an app: a small round-cornered tile, its name under it */
+	.app {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+		color: inherit;
+		text-decoration: none;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.tile {
+		display: grid;
+		place-items: center;
+		width: 3.6rem;
+		height: 3.6rem;
+		border-radius: 1rem;
+		color: #fff;
+		box-shadow:
+			inset 0 1px 0 rgb(255 255 255 / 0.18),
+			0 2px 6px rgb(30 45 38 / 0.18);
+		transition: transform 120ms ease;
+	}
+
+	.tile.work {
+		background: linear-gradient(160deg, #3d8577, #2a5f55);
+	}
+
+	.tile.data {
+		background: linear-gradient(160deg, #4b6a92, #344e70);
+	}
+
+	.tile.set {
+		background: linear-gradient(160deg, #8a8478, #67625a);
+	}
+
+	.app:hover .tile {
+		transform: translateY(-2px);
+	}
+
+	.app:active .tile {
+		transform: scale(0.94);
+	}
+
+	.app:focus-visible {
+		outline: none;
+	}
+
+	.app:focus-visible .tile {
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
+	}
+
+	.label {
+		max-width: 100%;
+		font-size: 0.74rem;
+		line-height: 1.25;
+		text-align: center;
+		overflow-wrap: anywhere;
+	}
+
+	.home .pq {
+		padding: 2rem 0 0;
+	}
+
 	/* at the foot, in the middle, just above the app's own nav pill (--nav-room, src/app.css) */
 	.toasts {
 		position: fixed;
@@ -517,6 +668,22 @@
 
 		.pq {
 			display: none;
+		}
+
+		/* four apps a row, as a phone's home screen shows them */
+		.grid {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+			gap: 1rem 0.25rem;
+		}
+
+		.tile {
+			width: 3.4rem;
+			height: 3.4rem;
+			border-radius: 0.95rem;
+		}
+
+		.label {
+			font-size: 0.7rem;
 		}
 	}
 
