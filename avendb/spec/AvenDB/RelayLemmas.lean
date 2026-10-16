@@ -27,7 +27,8 @@ def eblind (en : Entry) : Entry := { en with attrs := ⟨0, 0, 0, 0, []⟩, admi
 
 /-- The operational part blinds the shares and the entries and keeps the rest. -/
 theorem ops_eq (st : State) :
-    st.ops = { st with shares := st.shares.map Share.blind, entries := st.entries.map eblind, uncounted := [] } :=
+    st.ops = { st with shares := st.shares.map Share.blind, entries := st.entries.map eblind,
+                       uncounted := [], accepts := [] } :=
   rfl
 
 /-- The operational part keeps the vaults. -/
@@ -430,6 +431,11 @@ theorem ops_with_counted (s : State) (W : List Write) (U : List EditId) :
     ({ s with writes := W, uncounted := U } : State).ops = { s.ops with writes := W } := by
   cases s; rfl
 
+/-- The same, where the write's readers read an accept too. -/
+theorem ops_with_accepts (s : State) (W : List Write) (U A : List EditId) :
+    ({ s with writes := W, uncounted := U, accepts := A } : State).ops = { s.ops with writes := W } := by
+  cases s; rfl
+
 /-- Hiding facts commutes with taking the operational part. -/
 theorem hide_ops (st : State) (fs : List Fact) : (hide st fs).ops = hide st.ops fs := by
   unfold hide; split <;> rfl
@@ -623,7 +629,7 @@ theorem apply_ops (st : State) (edit : Edit) :
           | none => rfl
           | some _ =>
             simp only [ops_writes]
-            simp only [map_ite_none, Option.map_some, ops_with_counted, setEntry_ops, ops_ops]
+            simp only [map_ite_none, Option.map_some, ops_with_accepts, setEntry_ops, ops_ops]
             rfl
       · simp only [apply, hav, ite_false, Bool.false_eq_true, actsVia_ops, entry?_ops]
         simp only [map_ite_none]
@@ -636,7 +642,7 @@ theorem apply_ops (st : State) (edit : Edit) :
           | none => rfl
           | some _ =>
             simp only [ops_writes]
-            simp only [map_ite_none, Option.map_some, ops_with_counted, ops_ops]
+            simp only [map_ite_none, Option.map_some, ops_with_accepts, ops_ops]
     | some p =>
       obtain ⟨x, hdr⟩ := p
       simp only [Option.map_some]

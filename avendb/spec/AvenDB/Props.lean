@@ -121,6 +121,6 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 def State.ops (st : State) : State :=
   { st with shares := st.shares.map Share.blind,
             entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false, blob := 0 },
-            uncounted := [] }
+            uncounted := [], accepts := [] }
 
 end AvenDB

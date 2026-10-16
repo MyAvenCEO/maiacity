@@ -480,7 +480,9 @@ impl Agent {
              the aven it is under, once its person added it, and which vaults it sees. Read with avendb_ask; change \
              with avendb_run, which acts as {name}'s device vault by the shares its aven passed on to it: on a vault \
              where it may only suggest, write on a proposal (`propose`, then ops with its `line`), and its person \
-             merges it. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
+             merges it; where it may merge, its merge into main counts only once the entry's vault accepted the \
+             proposal (one of its owners, by a review), and brings in only the version accepted. Save a file of this \
+             Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
              `media` and `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type \
              file, so only where its shares let it create, as an Editor's do, not where it may only suggest. Read a \
              file of a vault back with avendb_read_file, or a `get_file` op on avendb_run: the file entry's `entry`, \

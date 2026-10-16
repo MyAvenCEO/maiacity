@@ -1368,10 +1368,11 @@ theorem laneOf_settle (pre post : State) : laneOf (settle pre post) = laneOf pos
   laneOf_congr (settle_entries pre post) (settle_writes pre post) (settle_uncounted pre post)
 
 /-- A write that isn't a first write, with a new id, leaves every lane alone, whether its readers count it or not. -/
-theorem laneOf_addWrite {st : State} {w : Write} {ok : Bool} {i : EditId} (hf : w.first = false)
+theorem laneOf_addWrite {st : State} {w : Write} {ok : Bool} {i : EditId} {acc : List EditId} (hf : w.first = false)
     (hfresh : ∀ x ∈ st.writes, x.edit ≠ i) :
-    laneOf { st with writes := st.writes ++ [w], uncounted := st.counting ok i } = laneOf st := by
-  have hin : ∀ v, inLane { st with writes := st.writes ++ [w], uncounted := st.counting ok i } v = inLane st v := by
+    laneOf { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc } = laneOf st := by
+  have hin : ∀ v, inLane { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc } v =
+      inLane st v := by
     intro v
     funext en
     apply Bool.eq_iff_iff.2
@@ -1464,8 +1465,9 @@ theorem LaneKeeps.setEntry {st : State} {en en' : Entry} (hen : st.entry? en'.id
   counted _ hw _ := hw
 
 /-- A write that isn't a first write keeps what the lane reads, while readers keep not counting what they didn't. -/
-theorem LaneKeeps.addWrite {st : State} {w : Write} {u : List EditId} (hf : w.first = false)
-    (hu : ∀ d ∈ st.uncounted, d ∈ u) : LaneKeeps st { st with writes := st.writes ++ [w], uncounted := u } where
+theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} (hf : w.first = false)
+    (hu : ∀ d ∈ st.uncounted, d ∈ u) :
+    LaneKeeps st { st with writes := st.writes ++ [w], uncounted := u, accepts := acc } where
   entries en hen := ⟨en, hen, rfl, rfl, rfl, rfl⟩
   counted x hx hxf := by
     rw [mem_counted] at hx

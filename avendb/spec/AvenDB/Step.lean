@@ -127,6 +127,10 @@ def setVault (st : State) (vt : Vault) : State :=
 def State.counting (st : State) (ok : Bool) (w : EditId) : List EditId :=
   if ok then st.uncounted else st.uncounted ++ [w]
 
+/-- The writes readers read as accepts, with write `w` if it is one (`yes`). -/
+def State.accepting (st : State) (yes : Bool) (w : EditId) : List EditId :=
+  if yes then st.accepts ++ [w] else st.accepts
+
 /-- Entry `e` marked with the wants `rs`. -/
 def State.markWants (st : State) (e : EntryId) (rs : List ShareId) : State :=
   { st with marks := st.marks.filter (·.1 != e) ++ [(e, rs)] }
@@ -372,7 +376,9 @@ def apply (st : State) (edit : Edit) : Option State :=
               -- its readers count it if it fits, its shares' ops allow what it touches and the tags it asks for, and
               -- they count what it builds on
               let ok := counts st actor en deps proof (proposal == .main) (touches ++ tags.touches) fits
-              some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id }
+              -- the vault's own write on a proposal that touches nothing and asks for no tag is its accept
+              some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id,
+                              accepts := st'.accepting (isAccept actor en proposal (touches ++ tags.touches)) edit.id }
   | .mark v e caps wants keep via =>
     match st.entry? e with
     | none => none

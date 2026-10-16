@@ -557,7 +557,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let both = (ids(&held["schemas"]), ids(&held["lenses"]));
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
     let own = "its own kinds, the article's, the spark's and the function's two versions, and the lenses between";
-    assert_eq!((both.0.len(), both.1.len()), (20, 3), "{own}");
+    assert_eq!((both.0.len(), both.1.len()), (23, 3), "{own}");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
@@ -1173,9 +1173,9 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .iter()
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
-    let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views, logic, posts, \
-        cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, artworks";
-    assert_eq!(schemas.len(), 20, "{own}");
+    let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views, logic, reviews, \
+        bundles, policies, posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, artworks";
+    assert_eq!(schemas.len(), 23, "{own}");
     let lenses = db["builtIn"]["lenses"].as_array().map(Vec::len);
     assert_eq!(lenses, Some(3), "the lenses from article, spark and function v1 to v2");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
@@ -1198,7 +1198,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     assert_eq!(one, (1, Some(3), Some(0)), "her card, the note and its variant: no share splits her vault");
     let lenses = db["builtIn"]["lenses"].as_array().expect("the app's own lenses");
     let ends = |l: &avendb::lens::Lens| (l.from().to_hex(), l.to().to_hex());
-    let shipped = [ends(&avendb::lens::ARTICLE_LENS), ends(&avendb::lens::SPARK_LENS), ends(&avendb::lens::FUNCTION_LENS)];
+    let shipped =
+        [ends(&avendb::lens::ARTICLE_LENS), ends(&avendb::lens::SPARK_LENS), ends(&avendb::lens::FUNCTION_LENS)];
     let hex = |l: &Value, end: &str| l[end].as_str().unwrap_or_default().to_string();
     let got: Vec<_> = lenses.iter().map(|l| (hex(l, "from"), hex(l, "to"))).collect();
     assert_eq!(got, shipped, "the lenses avenDB ships, from article, spark and function v1 to v2");

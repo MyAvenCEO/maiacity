@@ -67,6 +67,14 @@ impl AsRef<Write> for Change {
     }
 }
 
+impl Change {
+    /// It is its entry's vault accepting the proposal it is on, as its readers read it (`policy::is_accept`, M2): the
+    /// touches it was read with hold the tags it asks for.
+    pub fn accept(&self) -> bool {
+        policy::is_accept(&self.write, self.touches.as_deref(), &Default::default())
+    }
+}
+
 /// A write a device is about to make on an entry: the line it extends, what it builds on, and what it carries.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Draft {
@@ -135,6 +143,15 @@ impl History {
     /// The writes the entry's readers count, in replay order.
     fn counted(&self) -> impl DoubleEndedIterator<Item = &Change> {
         self.changes.iter().filter(|c| c.counted)
+    }
+
+    /// Write `w`, read with the touches `touches`, passes its entry's merge policy on this history (`policy::passes`,
+    /// M2): a merge into the main line through a share builds on the vault's accept (`Change::accept`), and on nothing
+    /// but accepts and writes on the main line.
+    pub fn passes(&self, w: &Write, touches: Option<&[Touch]>) -> bool {
+        let accept = |d: &EditId| self.get(*d).is_some_and(Change::accept);
+        let main = |d: &EditId| self.get(*d).is_some_and(|c| c.write.proposal == Proposal::Main);
+        policy::passes(w, touches, accept, main)
     }
 
     pub fn get(&self, edit: EditId) -> Option<&Change> {

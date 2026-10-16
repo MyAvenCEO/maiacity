@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 20] = [
+    pub const SHIPPED: [&str; 23] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1348,6 +1348,9 @@ pub mod blobs {
         RECIPE_V1,
         VIEW_V1,
         LOGIC_V1,
+        REVIEW_V1,
+        BUNDLE_V1,
+        POLICY_V1,
         POST_V1,
         CARD_V1,
         PROFILE_V1,
@@ -1951,6 +1954,87 @@ pub mod blobs {
   "required": ["kind", "to", "level"]
 }
 "#;
+
+    /// A review: a vault's answer to a proposal of one of its entries (`entry`, `line`), at the version it answered
+    /// (`heads`), started by `by`: accepted, declined, or sent back to revise, with words (`text`), at a time its
+    /// device gives (`at`, advice only). The same bytes as the page's HITL queue writes into a vault's lane
+    /// (src/lib/avendb/hitl.js), so the same id. An accept is the vault's own write on the proposal, in the entry's
+    /// log, which every reader of the entry reads (`policy::is_accept`); the review is the record people read.
+    pub const REVIEW_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "review" },
+    "entry": { "type": "string", "maxLength": 64 },
+    "line": { "type": "string", "maxLength": 64 },
+    "heads": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 64 },
+    "by": { "type": "string", "maxLength": 64 },
+    "verdict": { "enum": ["accepted", "declined", "revise"] },
+    "text": { "type": "string", "maxLength": 2000, "default": "" },
+    "at": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["kind", "entry", "line", "heads", "verdict"]
+}
+"#;
+
+    /// A bundle: proposals on several entries, of one vault or many, that belong together (an aven's change of a
+    /// recipe, its view and its logic), each by its entry and its line, with the intent that started them (a request or
+    /// a spark). It is a record that links them and nothing else: each proposal is accepted and merged as its own.
+    pub const BUNDLE_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bundle, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "bundle" },
+    "title": { "type": "string", "maxLength": 200, "default": "" },
+    "note": { "type": "string", "x-loro": "text", "maxLength": 4000, "default": "" },
+    "intent": { "x-link": "newest" },
+    "proposals": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "entry": { "x-link": "newest" },
+          "line": { "type": "string", "maxLength": 64 }
+        },
+        "required": ["id", "entry", "line"]
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// A policy: who must accept a proposal before a merge of it into main by anyone but the vault counts, declared,
+    /// so every reader reaches the same verdict. Version 1 holds the one policy avenDB counts by, every vault's
+    /// default: one of the vault's owners (`needs`: `{"of": "owners", "count": 1}`), whose accept is the vault's
+    /// own write on the proposal. Counting reads no policy entry yet: richer policies are new versions, each a rule
+    /// the engine and the Lean model learn first.
+    pub const POLICY_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Policy, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "policy" },
+    "title": { "type": "string", "maxLength": 200, "default": "" },
+    "note": { "type": "string", "x-loro": "text", "maxLength": 4000, "default": "" },
+    "needs": {
+      "type": "object",
+      "properties": {
+        "of": { "const": "owners" },
+        "count": { "const": 1 }
+      },
+      "required": ["of", "count"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["kind", "needs"]
+}
+"#;
 }
 
 fn built_in_schema(blob: &str) -> Schema {
@@ -1967,6 +2051,9 @@ pub static FUNCTION_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blob
 pub static RECIPE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::RECIPE_V1));
 pub static VIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::VIEW_V1));
 pub static LOGIC_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::LOGIC_V1));
+pub static REVIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REVIEW_V1));
+pub static BUNDLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::BUNDLE_V1));
+pub static POLICY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POLICY_V1));
 pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V1));
 pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CARD_V1));
 pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
@@ -1995,6 +2082,9 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*RECIPE_V1,
         &*VIEW_V1,
         &*LOGIC_V1,
+        &*REVIEW_V1,
+        &*BUNDLE_V1,
+        &*POLICY_V1,
         &*POST_V1,
         &*CARD_V1,
         &*PROFILE_V1,

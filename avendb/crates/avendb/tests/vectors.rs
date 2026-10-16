@@ -637,6 +637,10 @@ impl Names {
         let held: HashSet<EditId> = st.all_writes().iter().map(|w| w.edit).collect();
         let want = self.edits(&case["uncounted"]).into_iter().filter(|e| held.contains(e));
         same_set(uncounted.iter().copied(), want, &format!("{name}: uncounted"));
+        // the writes they read as their vaults' accepts (M2), of those the state holds
+        let accepts = st.entries().iter().flat_map(|en| st.accepts_of(en.id, &self.readings)).collect::<Vec<_>>();
+        let want = self.edits(&case["accepts"]).into_iter().filter(|e| held.contains(e));
+        same_set(accepts.into_iter(), want, &format!("{name}: accepts"));
         // each line of each entry, the main line first: its history and its heads, of the writes they count
         type Lines = Vec<(EntryId, Line, Vec<EditId>, Vec<EditId>)>;
         let lines: Lines = list(&case["lines"])

@@ -851,6 +851,7 @@ const WHY = /** @type {Record<string, string>} */ ({
 	DeviceOnlyKeeps: 'only a keep share names a device: share with its vault',
 	NotDevice: 'that device isn’t one of the acting vault’s',
 	NotAllowed: 'the ops of the share it writes through don’t allow that change',
+	NotAccepted: 'one of the vault’s owners accepts the proposal first, as it stands now',
 	UnknownVault: 'this device doesn’t know that vault yet',
 	UnknownCap: 'that share isn’t in force',
 	UnknownEntry: 'this device doesn’t know that entry yet',
