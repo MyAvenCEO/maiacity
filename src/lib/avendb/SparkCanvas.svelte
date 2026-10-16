@@ -2,8 +2,8 @@
 	A spark's canvas, over its words on its page (Note), on the line shown (./sparks.js): an open board where its
 	items sit wherever they were put, artifacts (./artifacts.js) as cards with their picture, text notes to write in
 	place, and other sparks; each dragged by hand to a new place, taken off, or added: a note, artifacts and sparks of
-	its vault picked from a list, a link pasted or files dropped onto the board, each a new artifact where it lands,
-	each file into the Library first. Then the stories that grow from it, and a story to start from it. Each change
+	its vault dragged in from beside it (./SparkShelf.svelte), a link pasted or files dropped onto the board, each a new
+	artifact where it lands, each file into the Library first. Then the stories that grow from it, and a story to start from it. Each change
 	is one op on that line, for the acting vault, as the device allows it (`may`).
 -->
 <script>
@@ -16,16 +16,16 @@
 		fromFile,
 		fromLink,
 		fromWords,
-		isArtifact,
 		LOOK_NAME,
 		LOOKS,
-		lookOf
+		lookOf,
+		youtubePicture
 	} from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, may } from './ops.js';
-	import { addingStory, CARD, grownFrom, isSpark, itemsFor, linkIn, newId, pictureOf, pieces, placing, textItem } from './sparks.js';
-	import { count, nameOf, reads } from './vaults.js';
+	import { addingStory, CARD, grownFrom, itemsFor, linkIn, newId, PIECE, pictureOf, pieces, placing, textItem } from './sparks.js';
+	import { count, nameOf } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string,
@@ -37,21 +37,6 @@
 	const as = $derived(world.vaults.find((v) => v.id === actor));
 	const items = $derived(/** @type {any[]} */ (record?.items ?? []));
 	const stories = $derived(grownFrom(world, entry).filter((e) => e.type === 'story'));
-	/** what of its vault it may hold besides what it does: artifacts, and sparks but itself */
-	const onIt = $derived(new Set(items.map((it) => entryOf(it.ref)).filter(Boolean)));
-	const others = $derived(
-		world.entries
-			.filter(
-				(e) =>
-					e.vault === vault &&
-					!e.deleted &&
-					reads(e, actor) &&
-					e.entry !== entry &&
-					!onIt.has(e.entry) &&
-					(isArtifact(e) || (isSpark(e) && e.type === 'spark'))
-			)
-			.sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
-	);
 
 	/** whether the acting vault's ops let it change the canvas on the line, as the device says */
 	let changes = $state(false);
@@ -164,26 +149,6 @@
 	/** A new text note, under the rest. */
 	const note = () => change('Adding a note', { op: 'insert', path: ['items'], value: textItem(items, '') });
 
-	// what is picked to put on it, from its vault
-	let adding = $state(false);
-	let filter = $state('');
-	let chosen = $state(/** @type {string[]} */ ([]));
-	const listed = $derived.by(() => {
-		const q = filter.trim().toLowerCase();
-		return q ? others.filter((o) => `${o.title ?? ''} ${o.text ?? ''}`.toLowerCase().includes(q)) : others;
-	});
-
-	/** Puts what was chosen on the canvas, in one write. */
-	async function put() {
-		const refs = chosen.flatMap((c) => {
-			const e = byId.get(c);
-			return e ? [{ vault: e.vault, entry: c, what: /** @type {'artifact' | 'spark'} */ (isArtifact(e) ? 'artifact' : 'spark') }] : [];
-		});
-		if (!refs.length) return;
-		const ops = itemsFor(items, refs).map((value) => ({ op: 'insert', path: ['items'], value }));
-		if (await changeAll(`Putting ${count(refs.length, 'piece')} on it`, ops)) [chosen, adding, filter] = [[], false, ''];
-	}
-
 	/**
 	 * New artifacts on the canvas from point `where` on, each in its vault and then on the canvas, in order: the links
 	 * `urls`, and the files `dropped`, each into the Library first.
@@ -230,10 +195,29 @@
 		const r = surface.getBoundingClientRect();
 		const where = { x: Math.max(0, Math.round(e.clientX - r.left - CARD.w / 2)), y: Math.max(0, Math.round(e.clientY - r.top - 20)) };
 		const dt = e.dataTransfer;
+		const piece = dt?.getData(PIECE);
+		if (piece) return land(piece, where);
 		const files = [...(dt?.files ?? [])];
 		const text = dt?.getData('text/uri-list') || dt?.getData('text/plain') || '';
 		const urls = files.length ? [] : text.split(/\s+/).map(linkIn).filter((u) => u !== null);
 		sources(urls, files, where);
+	}
+
+	/**
+	 * Puts the piece dragged in from beside the canvas (./SparkShelf.svelte) where it was let go, unless it is on the
+	 * canvas already. @param {string} piece its vault, entry and what it is, as JSON @param {{ x: number, y: number }} where
+	 */
+	function land(piece, where) {
+		/** @type {{ vault: string, entry: string, what: 'artifact' | 'spark' }} */
+		let p;
+		try {
+			p = JSON.parse(piece);
+		} catch {
+			return;
+		}
+		if (!p?.entry || p.entry === entry || items.some((it) => entryOf(it.ref) === p.entry)) return;
+		const [value] = itemsFor(items, [{ vault: p.vault, entry: p.entry, what: p.what === 'spark' ? 'spark' : 'artifact' }], where);
+		change(`Putting “${byId.get(p.entry)?.title || 'it'}” on the canvas`, { op: 'insert', path: ['items'], value });
 	}
 
 	/** A story that grows from it, opened at once. */
@@ -251,6 +235,11 @@
 		for (const it of items) {
 			const a = byId.get(entryOf(it.ref));
 			if (it.what !== 'artifact' || !a || pics[a.entry]) continue;
+			const yt = youtubePicture(a.record);
+			if (yt) {
+				pics = { ...pics, [a.entry]: yt };
+				continue;
+			}
 			const file = byId.get(entryOf(/** @type {any} */ (a.record)?.files?.[0]));
 			if (file) pictureOf(api, file).then((u) => !gone && u && (pics = { ...pics, [a.entry]: u }));
 		}
@@ -267,9 +256,6 @@
 	<div class="bar">
 		{#if edits}
 			<button class="btn" onclick={note}><Icon name="text" size={14} /> Note</button>
-			<button class="btn" class:primary={!adding} onclick={() => (adding = !adding)}
-				><Icon name={adding ? 'close' : 'artifact'} size={14} /> {adding ? 'Done' : 'Artifacts and sparks'}</button
-			>
 			<form class="quick" onsubmit={(e) => (e.preventDefault(), quick())}>
 				<input class="field" bind:value={typed} placeholder="Paste a link or write a note" aria-label="A link or a note" />
 			</form>
@@ -278,36 +264,6 @@
 		{/if}
 		<span class="soft count">{count(items.length, 'piece')}</span>
 	</div>
-
-	{#if adding}
-		<div class="adding">
-			<input class="field" bind:value={filter} placeholder="Find an artifact or a spark" aria-label="Find an artifact or a spark" />
-			{#if listed.length}
-				<ul class="choose">
-					{#each listed as o (o.entry)}
-						{@const on = chosen.includes(o.entry)}
-						{@const art = isArtifact(o)}
-						<li>
-							<label class:on>
-								<input
-									type="checkbox"
-									checked={on}
-									onchange={(e) => (chosen = e.currentTarget.checked ? [...chosen, o.entry] : chosen.filter((c) => c !== o.entry))}
-								/>
-								<Icon name={art ? iconOf(lookOf(o)) : 'spark'} size={14} />
-								<span><b>{o.title || 'Untitled'}</b><small class="soft">{art ? LOOK_NAME[lookOf(o)] : 'Spark'}</small></span>
-							</label>
-						</li>
-					{/each}
-				</ul>
-			{:else}
-				<p class="soft">{others.length ? 'Nothing matches.' : 'Every artifact and spark of this vault is on it already.'}</p>
-			{/if}
-			<button class="btn primary" disabled={busy || !chosen.length} onclick={put}
-				>Put {chosen.length ? count(chosen.length, 'piece') : 'them'} on it</button
-			>
-		</div>
-	{/if}
 
 	<div
 		class="board"
@@ -393,7 +349,7 @@
 			{/each}
 			{#if !items.length}
 				<p class="empty soft">
-					An empty canvas. {edits ? 'Add a note, put artifacts and sparks on it, or drop pictures and links here.' : ''}
+					An empty canvas. {edits ? 'Add a note, drag artifacts and sparks in from the side, or drop pictures and links here.' : ''}
 				</p>
 			{/if}
 		</div>
@@ -444,56 +400,6 @@
 	.count {
 		margin-left: auto;
 		font-size: 0.78rem;
-	}
-
-	.adding {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding: 0.7rem;
-		border: 1px solid var(--edge);
-		border-radius: 12px;
-		background: #fff;
-	}
-
-	.choose {
-		display: flex;
-		flex-direction: column;
-		max-height: 14rem;
-		overflow: auto;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.choose label {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.35rem 0.4rem;
-		border-radius: 8px;
-		cursor: pointer;
-	}
-
-	.choose label.on {
-		background: #d6e8e4;
-	}
-
-	.choose span {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.choose b,
-	.choose small {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.adding .btn {
-		align-self: flex-start;
 	}
 
 	/* the board: a dotted sheet that scrolls both ways, its items placed on it */

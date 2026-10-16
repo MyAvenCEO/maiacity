@@ -1,11 +1,11 @@
 <!--
-	One artifact as a row of a list (./Artifacts.svelte): a small square of its picture, else its look's icon on its
+	One artifact as a row of a list (./Artifacts.svelte): a small square of its picture (a YouTube video's YouTube shows), else its look's icon on its
 	look's colour (./artifacts.js); its title, and under it what it is, where it is from and how many sparks hold it;
 	its tags at its end, the auto tags `sparks` and `stories` among them. A tap opens it; where the page picks
 	artifacts, the round box at its end picks it.
 -->
 <script>
-	import { entryOf, fromWords, IN_SPARKS, IN_STORIES, LOOK_NAME, LOOKS, lookOf, sparksHolding } from './artifacts.js';
+	import { entryOf, fromWords, IN_SPARKS, IN_STORIES, LOOK_NAME, LOOKS, lookOf, sparksHolding, youtubePicture } from './artifacts.js';
 	import Icon from './Icon.svelte';
 	import { pictureOf } from './sparks.js';
 	import { count } from './vaults.js';
@@ -32,6 +32,11 @@
 	/** its picture, once read */
 	let pic = $state('');
 	$effect(() => {
+		const yt = youtubePicture(record);
+		if (yt) {
+			pic = yt;
+			return;
+		}
 		const file = byId.get(entryOf(record.files?.[0]));
 		if (!file) return;
 		let gone = false;

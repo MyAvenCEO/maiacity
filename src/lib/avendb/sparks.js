@@ -21,6 +21,9 @@ export const isOldNote = (e) => e.type !== SPARK;
 /** What sits on a spark's canvas, its items. @param {any} e @returns {any[]} */
 export const itemsOf = (e) => e?.record?.items ?? [];
 
+/** The type a piece dragged onto a canvas carries (./SparkShelf.svelte): its vault, entry and what it is, as JSON. */
+export const PIECE = 'application/x-avendb-piece';
+
 /** The size a new item takes on a canvas, and the room between items. */
 export const CARD = { w: 220, h: 170, gap: 24, pad: 32 };
 
