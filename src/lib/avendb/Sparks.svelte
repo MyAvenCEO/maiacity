@@ -1,17 +1,18 @@
 <!--
-	A vault's sparks, the one inspiration pad (./sparks.js): at the top a quick capture, to paste a link, type a line or
-	drop files, each a spark of its own at once, several files with a line besides gathered on a mood board of that
-	name; then every spark of the vault the acting vault reads, and the notes written before sparks, as cards, narrowed
+	A vault's sparks, the one inspiration pad (./sparks.js): every spark of the vault the acting vault reads, and the
+	notes written before sparks, as a list (./SparkRow.svelte), narrowed
 	by what they are or a tag, the deleted ones apart. Picking some offers to make a story from them, an idea of the
 	story flow that names them among its sparks, or a mood board that gathers them. A click opens a spark as a note
-	opens (Note). Nothing here names a vault: a vault other than this one adds a spark only through a cap with write on
+	opens (Note). At the foot, docked just above the app's nav pill, one row to capture: paste a link, type a line or
+	drop files, each a spark of its own at once, several files with a line besides gathered on a mood board of that
+	name; with sparks picked, that row offers the story or the board instead. Nothing here names a vault: a vault other than this one adds a spark only through a cap with write on
 	a slice that holds it, tagged as its slice asks (`creatable`), where its ops allow it (`may`), as Notes adds a note.
 -->
 <script>
 	import { mediaOf } from './files.js';
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, may } from './ops.js';
-	import SparkCard from './SparkCard.svelte';
+	import SparkRow from './SparkRow.svelte';
 	import { addingSpark, addingStory, fromLine, isSpark, LOOKS, lookOf, lookOfFile, SPARK, sparkRecord } from './sparks.js';
 	import { count, list, nameOf, reads, tagsIn, tagsOf, why } from './vaults.js';
 
@@ -49,6 +50,8 @@
 	let files = $state(/** @type {File[]} */ ([]));
 	let tagging = $state('');
 	let over = $state(false);
+	/** whether the row shows the field for the tags of what it captures */
+	let tagsOpen = $state(false);
 	const typed = $derived(tagsIn(tagging));
 
 	/** the tags the caps ask a new spark, file and story to carry besides: `null` where nothing lets it add one */
@@ -113,7 +116,7 @@
 		const what = ops.length === 1 ? 'Adding the spark' : `Adding ${count(ops.length, 'spark')}`;
 		const made = await api.runAll(what, ops.map((op) => ({ ...op, as: actor })));
 		if (!made) return;
-		[line, files, tagging] = ['', [], ''];
+		[line, files, tagging, tagsOpen] = ['', [], '', false];
 	}
 
 	/** Takes the files of a drop or a pick. @param {FileList | null | undefined} list */
@@ -152,68 +155,6 @@
 	}
 </script>
 
-{#if asked}
-	<form
-		class="capture"
-		class:over
-		aria-label="Capture a spark"
-		onsubmit={(e) => (e.preventDefault(), capture())}
-		ondragover={(e) => (e.preventDefault(), (over = true))}
-		ondragleave={() => (over = false)}
-		ondrop={(e) => (e.preventDefault(), (over = false), take(e.dataTransfer?.files))}
-	>
-		<span class="mark" aria-hidden="true"><Icon name="spark" size={22} /></span>
-		<div class="say">
-			<input
-				class="line"
-				bind:value={line}
-				placeholder="Paste a link, write a thought, or drop pictures and films here"
-				aria-label="A link or a line"
-				disabled={busy || !!unadded}
-			/>
-			{#if files.length}
-				<p class="dropped">
-					{#each files as f, i (i)}
-						<span class="chip"
-							>{f.name}
-							<button type="button" aria-label="Leave out {f.name}" onclick={() => (files = files.filter((_, j) => j !== i))}
-								><Icon name="close" size={11} /></button
-							></span
-						>
-					{/each}
-					{#if files.length > 1}
-						<small class="soft">
-							{line.trim() ? `A mood board “${line.trim()}” gathers them.` : 'Type a line too to gather them on a mood board.'}
-						</small>
-					{/if}
-				</p>
-			{/if}
-			<p class="soft hint">
-				{#if unadded}
-					{nameOf(as)} can’t add a spark here: {unadded}.
-				{:else}
-					Each one its own spark in {nameOf(here)}, as <b>{nameOf(as)}</b>{asked.length
-						? `, tagged ${list(asked.map((t) => `“${t}”`))} as its share asks`
-						: ''}.
-				{/if}
-			</p>
-		</div>
-		<div class="act">
-			<input class="field tags" bind:value={tagging} placeholder="Tags (optional)" aria-label="Its tags" />
-			<label class="btn files" class:disabled={busy || !!unadded || askedFile === null}>
-				<Icon name="upload" size={15} /> Files
-				<input
-					type="file"
-					multiple
-					disabled={busy || !!unadded || askedFile === null}
-					onchange={(e) => (take(e.currentTarget.files), (e.currentTarget.value = ''))}
-				/>
-			</label>
-			<button class="btn primary" disabled={busy || !!unadded || !capturing}>Add</button>
-		</div>
-	</form>
-{/if}
-
 {#if sparks.length || deleted.length}
 	<nav class="filter" aria-label="Narrow the sparks">
 		<button class="chip" class:on={!only && !binned} aria-pressed={!only && !binned} onclick={() => ([only, bin] = ['', false])}
@@ -250,120 +191,217 @@
 		tagged one way, in <button class="link" onclick={onaccess}>Sharing</button>.
 	</p>
 {:else if shown.length}
-	<div class="grid">
+	<ul class="list">
 		{#each shown as it (it.entry)}
-			<SparkCard
+			<SparkRow
 				{world}
 				{api}
 				item={it}
 				picked={pickedNow.includes(it.entry)}
-				picking={pickedNow.length > 0}
 				onpick={binned ? undefined : (on) => pick(it.entry, on)}
 			/>
 		{/each}
-	</div>
+	</ul>
 {:else}
-	<p class="soft">No spark here{asked ? ' yet: paste a link or write a line above.' : '.'}</p>
+	<p class="soft">No spark here{asked ? ' yet: paste a link or write a line below.' : '.'}</p>
 {/if}
 
 {#if hidden > 0 && seen.length}
 	<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
 {/if}
 
+<!-- docked just above the app's nav pill: the sparks picked, or one row to capture -->
 {#if pickedNow.length}
-	<div class="picked" role="region" aria-label="The sparks picked">
-		<b>{count(pickedNow.length, 'spark')} picked</b>
-		<input class="field" bind:value={storyTitle} placeholder="Its title (optional)" aria-label="The new story’s or board’s title" />
+	<div class="dock picked" role="region" aria-label="The sparks picked">
+		<b>{pickedNow.length} picked</b>
 		<button
 			class="btn primary"
 			disabled={busy || !!nostory}
 			title={nostory ? `${nameOf(as)} can’t add a story here: ${nostory}` : undefined}
-			onclick={story}>Make a story from {pickedNow.length === 1 ? 'it' : 'these'}</button
+			onclick={story}><Icon name="story" size={14} /> Story</button
 		>
 		<button
 			class="btn"
 			disabled={busy || !!unadded || pickedNow.length < 2}
 			title={pickedNow.length < 2 ? 'Pick two or more to gather them' : undefined}
-			onclick={board}>Make a mood board</button
+			onclick={board}><Icon name="board" size={14} /> Mood board</button
 		>
-		<button class="btn quiet" onclick={() => (picked = [])}>Clear</button>
+		<button class="btn quiet round" aria-label="Clear the picked" onclick={() => (picked = [])}
+			><Icon name="close" size={14} /></button
+		>
 	</div>
+{:else if asked}
+	<form
+		class="dock capture"
+		class:over
+		aria-label="Capture a spark"
+		title={unadded ? `${nameOf(as)} can’t add a spark here: ${unadded}` : undefined}
+		onsubmit={(e) => (e.preventDefault(), capture())}
+		ondragover={(e) => (e.preventDefault(), (over = true))}
+		ondragleave={() => (over = false)}
+		ondrop={(e) => (e.preventDefault(), (over = false), take(e.dataTransfer?.files))}
+	>
+		{#if files.length || tagsOpen}
+			<div class="extra">
+				{#each files as f, i (i)}
+					<span class="chip"
+						>{f.name}
+						<button type="button" aria-label="Leave out {f.name}" onclick={() => (files = files.filter((_, j) => j !== i))}
+							><Icon name="close" size={11} /></button
+						></span
+					>
+				{/each}
+				{#if files.length > 1}
+					<small class="soft">
+						{line.trim() ? `A mood board “${line.trim()}” gathers them.` : 'Type a line to gather them on a mood board.'}
+					</small>
+				{/if}
+				{#if tagsOpen}
+					<input class="tags" bind:value={tagging} placeholder="Tags, by commas" aria-label="Its tags" />
+				{/if}
+			</div>
+		{/if}
+		<div class="one">
+			<label class="round attach" class:disabled={busy || !!unadded || askedFile === null} title="Add files">
+				<Icon name="plus" size={18} />
+				<input
+					type="file"
+					multiple
+					aria-label="Add files"
+					disabled={busy || !!unadded || askedFile === null}
+					onchange={(e) => (take(e.currentTarget.files), (e.currentTarget.value = ''))}
+				/>
+			</label>
+			<input
+				class="line"
+				bind:value={line}
+				placeholder={unadded ? `${nameOf(as)} can’t add a spark here` : 'Paste a link, write a thought, drop pictures'}
+				aria-label="A link or a line"
+				disabled={busy || !!unadded}
+			/>
+			<button
+				type="button"
+				class="round hash"
+				class:on={tagsOpen || !!tagging.trim()}
+				aria-pressed={tagsOpen}
+				title="Tags"
+				aria-label="Tags"
+				onclick={() => (tagsOpen = !tagsOpen)}>#</button
+			>
+			<button class="round send" disabled={busy || !!unadded || !capturing} aria-label="Add"
+				><Icon name="check" size={18} /></button
+			>
+		</div>
+	</form>
 {/if}
 
 <style>
-	.capture {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
-		gap: 0.8rem 1rem;
-		margin: 0 0 1.4rem;
-		padding: 1rem 1.1rem;
-		border: 2px dashed transparent;
-		border-radius: 14px;
-		background: #e9e4d9;
-		transition: border-color 0.15s ease;
+	/* one row docked just above the app's nav pill (--nav-room, src/app.css), over the pages' column on a wider screen */
+	.dock {
+		position: fixed;
+		left: 0.5rem;
+		right: 0.5rem;
+		bottom: var(--nav-room, 5rem);
+		z-index: 20;
+		box-sizing: border-box;
+		max-width: 40rem;
+		margin: 0 auto;
+		padding: 0.35rem;
+		border: 1px solid var(--edge);
+		border-radius: 1.6rem;
+		background: rgb(255 255 255 / 0.96);
+		box-shadow: 0 10px 30px rgb(38 56 44 / 0.16);
+		backdrop-filter: blur(10px);
+	}
+
+	@media (min-width: 761px) {
+		.dock {
+			left: calc(15.5rem + 1rem);
+			right: 1rem;
+		}
 	}
 
 	.capture.over {
 		border-color: var(--accent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 	}
 
-	.mark {
-		display: grid;
-		place-items: center;
-		width: 2.6rem;
-		height: 2.6rem;
-		border-radius: 10px;
-		background: #fff;
-		color: #b07a14;
-	}
-
-	.say {
+	.one {
 		display: flex;
-		flex: 1 1 18rem;
-		flex-direction: column;
-		gap: 0.45rem;
-		min-width: 0;
-	}
-
-	.line {
-		width: 100%;
-		box-sizing: border-box;
-		padding: 0.6rem 0.75rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 8px;
-		background: #fff;
-		font: inherit;
-		font-size: 0.95rem;
-	}
-
-	.line:focus {
-		outline: none;
-		border-color: var(--accent);
-	}
-
-	.hint,
-	.dropped {
-		margin: 0;
-		font-size: 0.8rem;
-		line-height: 1.5;
-	}
-
-	.dropped {
-		display: flex;
-		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.3rem;
 	}
 
-	.dropped .chip {
+	.line {
+		flex: 1;
+		min-width: 0;
+		padding: 0.55rem 0.4rem;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 0.95rem;
+		outline: none;
+	}
+
+	.round {
+		position: relative;
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 2.3rem;
+		height: 2.3rem;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: #f1ede4;
+		color: inherit;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.round.disabled,
+	.round:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.attach input {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: inherit;
+	}
+
+	.hash.on {
+		background: #e4e9f3;
+		color: #2b3f63;
+	}
+
+	.send {
+		background: var(--accent);
+		color: #fff;
+	}
+
+	.extra {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.3rem 0.4rem 0.4rem;
+		border-bottom: 1px solid var(--edge);
+		margin-bottom: 0.3rem;
+		font-size: 0.78rem;
+	}
+
+	.extra .chip {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
 		font-size: 0.74rem;
 	}
 
-	.dropped button {
+	.extra .chip button {
 		display: grid;
 		padding: 0;
 		border: 0;
@@ -372,35 +410,38 @@
 		cursor: pointer;
 	}
 
-	.act {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.45rem;
-	}
-
 	.tags {
-		width: 9.5rem;
+		flex: 1 1 10rem;
+		min-width: 0;
+		padding: 0.4rem 0.7rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		font: inherit;
+		font-size: 0.85rem;
+		outline: none;
 	}
 
-	.files {
-		position: relative;
+	.tags:focus {
+		border-color: var(--accent);
+	}
+
+	.picked {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding-left: 1rem;
+	}
+
+	.picked b {
+		flex: 1;
+		font-size: 0.88rem;
+	}
+
+	.picked .btn {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
-		cursor: pointer;
-	}
-
-	.files.disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	.files input {
-		position: absolute;
-		inset: 0;
-		opacity: 0;
-		cursor: inherit;
 	}
 
 	.filter {
@@ -441,46 +482,14 @@
 		font-size: 0.82rem;
 	}
 
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
-		gap: 1rem;
-		padding-bottom: 5rem;
-	}
-
-	.picked {
-		position: sticky;
-		bottom: 4.5rem;
-		z-index: 2;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-		width: fit-content;
-		max-width: 100%;
-		box-sizing: border-box;
-		margin: -4rem auto 1rem;
-		padding: 0.6rem 0.8rem;
+	/* the sparks as a list, clear of the row docked at the foot */
+	.list {
+		margin: 0 0 calc(var(--nav-room, 5rem) + 4rem);
+		padding: 0.2rem 0.5rem;
 		border: 1px solid var(--edge);
 		border-radius: 14px;
 		background: #fff;
-		box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
-	}
-
-	.picked .field {
-		width: 12rem;
-	}
-
-	/* on a phone the bar keeps to its buttons: a story takes its first spark's title, to change on its page */
-	@media (max-width: 520px) {
-		.picked {
-			gap: 0.4rem;
-			padding: 0.5rem 0.6rem;
-		}
-
-		.picked .field {
-			display: none;
-		}
+		list-style: none;
 	}
 
 	.link {

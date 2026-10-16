@@ -21,6 +21,15 @@ export const boxOf = (v = INDEX.engine) => {
 	if (!boxes.has(v)) boxes.set(v, new AssetBox({ engine: v }));
 	return boxes.get(v);
 };
+const running = new Map();
+/**
+ * The page's box for builds kept running (./box/live.js), an engine's second worker: building the next asset never
+ * holds up the steps of the one running, nor the reverse. @param {number} [v]
+ */
+export const liveBoxOf = (v = INDEX.engine) => {
+	if (!running.has(v)) running.set(v, new AssetBox({ engine: v }));
+	return running.get(v);
+};
 
 /**
  * A build of one of our recipes, named as it is kept: its hash and every value it takes, its own where not given, so

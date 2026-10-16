@@ -7,24 +7,19 @@
  * was asked for (`recipeAt`), as it will for a recipe that comes from avenDB.
  *
  * `virtual:asset-recipes` (./box/plugin.js) is the index (each hash's group, asset, version and variant, and the
- * engine our recipes are made for); each group's library is loaded only when one of its recipes is built.
+ * engine our recipes are made for); each asset's library, its own code and nothing of another asset's, is loaded only
+ * when one of its recipes is built (`virtual:asset-recipes/libraries`).
  */
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import INDEX from 'virtual:asset-recipes';
+import LIBRARIES from 'virtual:asset-recipes/libraries';
 import { idOf, slug } from '$lib/ids.js';
 import { RECIPE_HEAD, recipeTail } from './engines.js';
 import { paramsIn, queryOf } from './params.js';
 import { parseRef, refOf } from './refs.js';
 
 export { INDEX };
-
-const LIBRARIES = {
-	things: () => import('virtual:asset-recipes/things'),
-	machines: () => import('virtual:asset-recipes/machines'),
-	actors: () => import('virtual:asset-recipes/actors'),
-	plants: () => import('virtual:asset-recipes/plants')
-};
 
 /** the BLAKE3 hash of a text, in hex @param {string} text */
 export const hashText = (text) => bytesToHex(blake3(utf8ToBytes(text)));
@@ -74,20 +69,24 @@ export const buildAt = (label) => buildOf(hashOf(label) ?? '', parseRef(label).p
 export const recipeInfo = (hash) => INDEX.recipes[hash];
 
 const heads = new Map();
-/** a library's text, and BLAKE3's state after the recipe head and the library, so each recipe hashes in a moment */
-async function library(group) {
-	if (!heads.has(group)) {
+/**
+ * An asset's library (`<group>/<id>`) as text, and BLAKE3's state after the recipe head and the library, so each of
+ * its recipes hashes in a moment. @param {string} name
+ */
+async function library(name) {
+	if (!heads.has(name)) {
+		if (!Object.hasOwn(LIBRARIES, name)) throw new Error(`no recipes of ${name} on this device`);
 		heads.set(
-			group,
-			LIBRARIES[group]().then(({ default: text }) => {
+			name,
+			LIBRARIES[name]().then(({ default: text }) => {
 				const h = blake3.create();
 				h.update(utf8ToBytes(RECIPE_HEAD + text));
 				return { text, h };
 			})
 		);
-		heads.get(group).catch(() => heads.delete(group));
+		heads.get(name).catch(() => heads.delete(name));
 	}
-	return heads.get(group);
+	return heads.get(name);
 }
 
 /**
@@ -98,7 +97,7 @@ async function library(group) {
 export async function recipeAt(hash) {
 	const at = INDEX.recipes[hash];
 	if (!at) throw new Error(`no recipe ${hash.slice(0, 12)}… on this device`);
-	const { text, h } = await library(at.group);
+	const { text, h } = await library(`${at.group}/${at.id}`);
 	const tail = recipeTail(at.id, at.v, at.variant);
 	const named = bytesToHex(h.clone().update(utf8ToBytes(tail)).digest());
 	if (named !== hash) throw new Error(`refused: the recipe for ${hash.slice(0, 12)}… hashes to ${named.slice(0, 12)}…`);

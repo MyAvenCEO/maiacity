@@ -32,10 +32,10 @@ test('the five sample assets: their cards fit, with the values they were built w
 		expect(checkCard(JSON.stringify(card)).ok).toBe(true);
 	}
 	const apple = await cardAt('plants/apple?seed=isar&stage=4');
-	expect(apple.ref).toBe('plants/apple@2?detail=1&seed=isar&stage=4');
+	expect(apple.ref).toBe('plants/apple@2?detail=1&fruit=0&seed=isar&stage=4');
 	expect(apple.recipe).toBe('ab'.repeat(32));
 	expect(checkCard({ ...apple, recipe: 'nope' }).ok).toBe(false);
-	expect(apple.params.map((p) => p.id)).toEqual(['stage', 'seed', 'detail']);
+	expect(apple.params.map((p) => p.id)).toEqual(['stage', 'seed', 'detail', 'fruit']);
 	expect((await cardAt('things/bell-tent')).params).toBeUndefined();
 }, 120000);
 

@@ -24,6 +24,11 @@
  * with one difference that is our law: the asset is never scaled. AirSup shows every machine 2.4 units across; we keep
  * it at its real size and scale the studio to it instead (the floor, the contact shadow, the occlusion radius, the
  * section hatch). The page around it (the turntable's canvas, its camera and controls) is the caller's.
+ *
+ * It shows any build of the box's as well, through ./hero.js, which is a sealed asset made of the build's checked data
+ * (its solver running in the box): with what a rigged one adds, a part found by the group of its skinned mesh
+ * (`partAt`), lit up by it (`highlight`), and found by its bone (`centreOf`); and where its floor is (`show`'s
+ * `ground`, a plant's soil at 0 rather than under its roots).
  */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -157,21 +162,24 @@ export class Stage {
 	}
 
 	/**
-	 * Show an asset (a sealed root, ./parts.js): on its floor, lit, its parts flying in.
+	 * Show an asset (a sealed root, ./parts.js, or a build of the box's as ./hero.js makes it): on its floor, lit, its
+	 * parts flying in.
 	 * @param {THREE.Object3D} root
+	 * @param {{ asset?: any, ground?: number }} [o] the asset, if it is not the root's own; the floor's height, if it is
+	 *   not under the asset's lowest point
 	 * @returns {{ centre: THREE.Vector3, size: THREE.Vector3 }}
 	 */
-	show(root) {
+	show(root, { asset, ground } = {}) {
 		this.clear();
 		this.root = root;
-		this.asset = root.userData.asset;
+		this.asset = asset ?? root.userData.asset;
 		this.scene.add(root);
 		root.updateMatrixWorld(true);
 		const box = new THREE.Box3().setFromObject(root);
 		this.box = box;
 		const centre = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
 		const s = this.s, paper = this.theme === 'paper';
-		this.groundY = box.min.y;
+		this.groundY = ground ?? box.min.y;
 		// the seamless floor: the backdrop's colour far away; shadows and the contact shadow near the asset
 		const fm = new THREE.MeshStandardMaterial({ color: paper ? 0xf0efea : 0x121315, roughness: paper ? 0.92 : 0.55, metalness: 0, envMapIntensity: paper ? 0.25 : 0.6 });
 		const bg = this.bg, fade = new THREE.Vector2(4.5 * s, 16 * s);
@@ -218,6 +226,7 @@ export class Stage {
 		this.move = 'run';
 		this.moveT = 0;
 		this.held = {};
+		this.scrub = null;
 		return { centre, size };
 	}
 
@@ -273,6 +282,19 @@ export class Stage {
 		this.moveT = 0;
 		if (m) for (const id of Object.keys(m.at(0))) if (c[id]) this.held[id] = c[id].value;
 	}
+	/** where Assemble stands now (0 … 1): its move's time, a hand's, or built */
+	builtNow() {
+		if (this.move === 'assemble') {
+			const T = this.asset?.catalog?.seconds ?? 12;
+			return Math.min(1, (this.moveT % (T + 2.5)) / T);
+		}
+		return this.scrub ?? this.built;
+	}
+	/** a hand on the Built slider: the build held there (null lets it go, built); Assemble stops @param {number | null} u */
+	scrubTo(u) {
+		if (this.move === 'assemble') this.play('run');
+		this.scrub = u;
+	}
 	/** does the move playing set this control @param {string} id */
 	drives(id) {
 		return id in this.held;
@@ -324,6 +346,8 @@ export class Stage {
 		// by its steps over the catalog's seconds, holds it built a moment, and again
 		if (this.built < 1) this.built = Math.min(1, (now - this.shownAt) / 2600);
 		let built = this.built;
+		// held by a hand on the Built slider, while no move plays it
+		if (this.scrub != null && this.move !== 'assemble') built = this.scrub;
 		if (this.move === 'assemble') {
 			const T = this.asset.catalog?.seconds ?? 12;
 			built = Math.min(1, (this.moveT % (T + 2.5)) / T);
@@ -407,7 +431,7 @@ export class Stage {
 	}
 	/** the x-ray: the shells by `x`; and, a part shown alone, everything else */
 	_xray(x) {
-		const alone = this.alone && this.picked;
+		const alone = this.alone && this.picked && !this.painted;
 		const now = new Set();
 		if (this._shellsOf !== this.asset) {
 			this._shells = new Set(this.asset.shells);
@@ -435,7 +459,7 @@ export class Stage {
 			if (!hit.object.visible || hit.object.layers.mask !== 1) continue;
 			// seen through the cut, a part cut away is not there
 			if (LAB_PLANES.every((pl) => pl.distanceToPoint(hit.point) < 0)) continue;
-			const part = this.asset.partOf(hit.object);
+			const part = this.asset.partAt?.(hit) ?? this.asset.partOf(hit.object);
 			if (part && (!this.alone || !this.picked || part === this.picked)) return part;
 		}
 		return null;
@@ -445,6 +469,9 @@ export class Stage {
 		this._unpick();
 		this.picked = id;
 		this.alone = !!(id && alone);
+		// an asset that lights its own parts (by the groups of a skinned mesh) does, the rest a ghost if alone
+		this.painted = !!this.asset?.highlight?.(id, this.alone);
+		if (this.painted) return;
 		const obj = id ? this.asset?.objOf(id) : null;
 		if (!obj) return;
 		const lines = [];
@@ -468,6 +495,8 @@ export class Stage {
 	}
 	/** where a part is now (its middle, in the world) @param {string} id */
 	partCentre(id) {
+		const at = this.asset?.centreOf?.(id);
+		if (at) return at;
 		const obj = this.asset?.objOf(id);
 		return obj ? new THREE.Box3().setFromObject(obj).getCenter(new THREE.Vector3()) : null;
 	}

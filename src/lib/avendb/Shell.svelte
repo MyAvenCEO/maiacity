@@ -702,8 +702,9 @@
 			color: #fff;
 		}
 
+		/* clear of the notch and the status bar, now that nothing stands above it */
 		.main {
-			padding-top: 1.2rem;
+			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
 		}
 
 		.shell.reading {
