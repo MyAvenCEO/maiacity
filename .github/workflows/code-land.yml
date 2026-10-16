@@ -5,15 +5,15 @@ name: Land accepted code
 # is what makes it live (the API lands each MIP it finds in code/). Every few minutes it asks the database whether
 # anything waits (deploy/code-export.sh count, a read over SSH), and stops there when nothing does.
 #
-#   workflow_dispatch with full: also every config version the database kept and every Generated UI view (the first
-#   export, when code moved out of Postgres)
+#   workflow_dispatch with full: also every config version the database kept (the first export, when code moved out of
+#   Postgres); a Generated UI view lands only once the admin kept it, in either mode
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       full:
-        description: 'Also every config version and every Generated UI view (the first export)'
+        description: 'Also every config version the database kept (the first export)'
         type: boolean
         default: false
 

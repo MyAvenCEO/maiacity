@@ -4,8 +4,8 @@
 # changes nothing. Run on the server, in /opt/maia-city (the job pipes it over SSH):
 #   bash code-export.sh count   "<MIPs waiting> <views kept>"
 #   bash code-export.sh land    JSON { mips, views }
-#   bash code-export.sh full    JSON { versions, configs, mips, views }: the first time, also every config version the
-#                               database kept and every Generated UI view
+#   bash code-export.sh full    JSON { versions, configs, mips, views }: also every config version the database kept
+#                               (the first export, done 2026-10-16); views stay the kept drafts only, as in land
 set -euo pipefail
 MODE="${1:-count}"
 # only the database's name and user from .env, as backup.sh does: the app's secrets in it stay out of this
@@ -20,7 +20,6 @@ q() {
 WAITING="FROM mips m WHERE m.status = 'accepted' AND m.result->>'landing' = 'waiting'"
 # `keep` is read through to_jsonb: the column comes with the API change that adds drafts
 KEPT="FROM genui_views g WHERE coalesce((to_jsonb(g)->>'keep')::boolean, false)"
-ALL_VIEWS="FROM genui_views g"
 MIPS="(SELECT coalesce(json_agg(json_build_object('number', m.number, 'title', m.title, 'action', m.action, 'config', m.config_id,
   'name', m.name, 'about', m.about, 'from', m.from_id, 'cards', m.cards, 'remove', m.remove, 'world_id', m.world_id,
   'world', m.world, 'decided', m.decided) ORDER BY m.number), '[]'::json) $WAITING)"
@@ -38,7 +37,7 @@ case "$MODE" in
       'versions', (SELECT coalesce(json_agg(json_build_object('config', v.config_id, 'version', v.version, 'body', v.body, 'mip', v.mip, 'at', v.at) ORDER BY v.config_id, v.version), '[]'::json) FROM econ_config_versions v),
       'configs', (SELECT coalesce(json_agg(json_build_object('id', c.id, 'deleted', c.deleted) ORDER BY c.id), '[]'::json) FROM econ_configs c),
       'mips', $MIPS,
-      'views', $(views "$ALL_VIEWS"))"
+      'views', $(views "$KEPT"))"
     ;;
   *)
     echo "usage: bash code-export.sh count|land|full" >&2
