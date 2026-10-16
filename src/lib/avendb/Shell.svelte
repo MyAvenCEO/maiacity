@@ -1,7 +1,7 @@
 <!--
-	The person's avenDB once this browser is unlocked, laid out as a chat app's servers: a bar of vault marks on the
-	left, the person's own first, then every vault this browser knows, each a context to switch to; beside it the picked
-	vault's name and its pages, as a database studio lists them: its sparks (thoughts, links, pictures, mood boards,
+	The person's avenDB once this browser is unlocked: the vault it is looked at in, the person's own or any other this
+	browser knows, picked from an item of the app's nav pill beside You, with a menu of its own, apart from the account
+	signed in to the app ($lib/app/pill.svelte.js `pillContext`); the picked vault's name and its pages, as a database studio lists them: its sparks (thoughts, links, pictures, mood boards,
 	others' posts, the notes written before them), its todos, its articles, its stories (each
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
 	songs, its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
@@ -18,6 +18,7 @@
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
+	import { pillContext } from '$lib/app/pill.svelte.js';
 	import AccessRequest from './AccessRequest.svelte';
 	import Article from './Article.svelte';
 	import Articles from './Articles.svelte';
@@ -27,7 +28,6 @@
 	import Icon from './Icon.svelte';
 	import Jobs from './Jobs.svelte';
 	import Library from './Library.svelte';
-	import Mark from './Mark.svelte';
 	import NewVaults from './NewVaults.svelte';
 	import Note from './Note.svelte';
 	import Settings from './Settings.svelte';
@@ -35,7 +35,7 @@
 	import Stories from './Stories.svelte';
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
-	import { acting, KINDS, list, nameOf, signerName } from './vaults.js';
+	import { acting, hue, initials, KINDS, list, nameOf, signerName } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
@@ -123,6 +123,34 @@
 	const here = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(context) ?? mine));
 	const as = $derived(byId.get(actor) ?? mine);
 
+	// the vaults to look at it in, the person's own first, as an item of the app's nav pill beside You, with a menu of
+	// its own: avenDB's vaults apart from the account signed in to the app
+	$effect(() =>
+		pillContext({
+			title: 'avenDB vaults',
+			get list() {
+				return [mine, ...rest]
+					.filter((v) => !!v)
+					.map((v) => ({
+						id: v.id,
+						label: nameOf(v),
+						sub: KINDS[v.kind],
+						text: initials(v),
+						colour: `hsl(${hue(v.id)} 38% 42%)`,
+						shape: v.kind
+					}));
+			},
+			get current() {
+				return context;
+			},
+			pick: (id) => {
+				picked = id;
+				if (route.entry) go(route.page);
+			},
+			add: { label: 'New vaults…', go: () => (adding = true) }
+		})
+	);
+
 	// the page is the screen, as a chat app's is: it doesn't scroll, each of its columns does (the app keeps no room at
 	// its foot for its nav pill, which floats over the columns' own)
 	$effect(() => enter());
@@ -172,25 +200,6 @@
 			{/if}
 		{/key}
 	{:else}
-	<nav class="bar" aria-label="Vaults">
-		{#each [mine, ...rest] as v, i (v?.id)}
-			{#if v}
-				{@const out = !acting(world, v.id).reaches}
-				{#if i === 1}<hr />{/if}
-				<button
-					class="slot"
-					class:on={v.id === context}
-					title="{nameOf(v)} · {KINDS[v.kind]}{out ? ' · none of your vaults holds anything in it' : ''}"
-					aria-label={nameOf(v)}
-					aria-current={v.id === context ? 'true' : undefined}
-					onclick={() => (picked = v.id)}
-				>
-					<Mark vault={v} dim={out} />
-				</button>
-			{/if}
-		{/each}
-		<button class="slot add" title="New vaults your vault owns" aria-label="New vaults" onclick={() => (adding = true)}>+</button>
-	</nav>
 
 	{#if pages}
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -279,7 +288,7 @@
 	/* the screen, never scrolled: each column scrolls on its own */
 	.shell {
 		display: grid;
-		grid-template-columns: 76px 15.5rem minmax(0, 1fr);
+		grid-template-columns: 15.5rem minmax(0, 1fr);
 		height: 100vh;
 		height: 100dvh;
 		overflow: hidden;
@@ -290,82 +299,12 @@
 		grid-template-columns: minmax(0, 1fr);
 	}
 
-	.bar,
 	.aside,
 	.main {
 		min-height: 0;
 		box-sizing: border-box;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-	}
-
-	.bar {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.55rem;
-		padding: calc(0.9rem + env(safe-area-inset-top, 0px)) 0 7rem;
-		background: #e6e0d4;
-	}
-
-	.bar hr {
-		width: 2rem;
-		margin: 0.1rem 0;
-		border: 0;
-		border-top: 2px solid rgb(0 0 0 / 0.12);
-	}
-
-	.slot {
-		position: relative;
-		display: grid;
-		place-items: center;
-		padding: 0;
-		border: 0;
-		background: none;
-		cursor: pointer;
-	}
-
-	/* the picked vault's marker, at the bar's edge, as a chat app marks the server open */
-	.slot::before {
-		position: absolute;
-		left: -16px;
-		width: 5px;
-		height: 0;
-		border-radius: 0 4px 4px 0;
-		background: #1f2a23;
-		content: '';
-		transition: height 0.15s ease;
-	}
-
-	.slot:hover::before {
-		height: 12px;
-	}
-
-	.slot.on::before {
-		height: 36px;
-	}
-
-	.slot :global(.mark) {
-		transition: transform 0.15s ease;
-	}
-
-	.slot:hover :global(.mark) {
-		transform: scale(1.06);
-	}
-
-	.add {
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		background: #fff;
-		color: var(--ok);
-		font-size: 1.5rem;
-		line-height: 1;
-	}
-
-	.add:hover {
-		background: var(--ok);
-		color: #fff;
 	}
 
 	/* wider, the vault's pages stand in their column: no button to slide them in */
@@ -504,32 +443,8 @@
 
 	@media (max-width: 760px) {
 		.shell {
-			grid-template-columns: 1fr;
-			grid-template-rows: auto minmax(0, 1fr);
-		}
-
-		.bar {
-			z-index: 30;
-			flex-direction: row;
-			overflow-x: auto;
-			overflow-y: hidden;
-			padding: calc(0.6rem + env(safe-area-inset-top, 0px)) 0.8rem 0.6rem;
-		}
-
-		.bar hr {
-			width: 0;
-			height: 2rem;
-			border-top: 0;
-			border-left: 2px solid rgb(0 0 0 / 0.12);
-		}
-
-		.slot::before {
-			display: none;
-		}
-
-		.slot.on :global(.mark) {
-			outline: 3px solid #1f2a23;
-			outline-offset: 2px;
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: minmax(0, 1fr);
 		}
 
 		/* the vault's pages slide in from the left, over a scrim, from the round button at the foot */
