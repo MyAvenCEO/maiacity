@@ -16,8 +16,10 @@
 	import { loadCode } from './sandbox.js';
 	import { seedOf } from '$lib/sandbox/logic.js';
 	import { fullCards } from '../../../game/economy/params.js';
-	import { viewsOf } from '../../../game/economy/views.js';
-	import Frame from '$lib/genui/Frame.svelte';
+	import { SLOT_NAMES, slotsOf, viewsOf } from '../../../game/economy/views.js';
+	import ViewHost from '$lib/sandbox/ViewHost.svelte';
+	import ViewSlot from '$lib/sandbox/ViewSlot.svelte';
+	import { viewOfCard } from '$lib/sandbox/view-host.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
 	import ProposalsView from './ProposalsView.svelte';
@@ -420,22 +422,41 @@
 			values: { ...RULES }
 		});
 	}
-	// a view card as the sandboxed frame takes it (the same object while the card is, so its frame is never reloaded)
-	const frames = new WeakMap();
-	/** @param {any} c */
-	const frameOf = (c) => {
-		if (!frames.has(c)) frames.set(c, { id: c.id, title: c.name, kind: 'html', spec: { html: c.code, libs: c.data?.libs ?? [], height: c.data?.height ?? 520, data: {} } });
-		return frames.get(c);
-	};
-	/** what a view tells the page: { select: avenId } opens that aven; anything else is only noted */
+	/** what a view tells the page: { select: avenId } (or a `select` event naming one) opens that aven; anything else
+	 * is only noted */
 	function fromView(/** @type {any} */ v, /** @type {any} */ e) {
-		const id = e?.value?.select;
-		if (e.name === 'context' && Number.isInteger(id) && world.avens[id]) select(id);
+		const id = e?.name === 'context' ? e.value?.select : e?.name === 'select' ? e.value : null;
+		if (Number.isInteger(id) && world.avens[id]) select(id);
+	}
+	// what a screen standing in one of the page's panels is handed: the valley, and that panel's own numbers
+	// (game/economy/views.js says the shapes), made again only when the valley is
+	/** @type {Record<string, { v: any, d: any }>} */
+	const slotCache = {};
+	function slotData(/** @type {string} */ slot) {
+		const v = snap.valley;
+		if (!v) return undefined;
+		if (slotCache[slot]?.v === v && slotCache[slot].d.picked === selected) return slotCache[slot].d;
+		const more =
+			slot === 'board'
+				? { board: snap.board, coop: snap.coop }
+				: slot === 'activity'
+					? { decisions: snap.decisions, queue: snap.queue, calls: { asked: calls.asked, answered: calls.answered, pending: calls.pending, failed: calls.failed } }
+					: slot === 'prices'
+						? { series: snap.series, market: Object.fromEntries(GOODS.map((g) => [g, { price: snap.market[g].price, avg: snap.market[g].avg, units: snap.market[g].units }])) }
+						: slot === 'stats'
+							? { stats: snap.stats, series: snap.series }
+							: slot === 'avens'
+								? { days: snap.avens?.stats ?? [], feed: snap.avens?.feed ?? [] }
+								: {};
+		const d = { ...v, slot, picked: selected, ...more };
+		slotCache[slot] = { v, d };
+		return d;
 	}
 
 	/** @returns {any} */
 	function snapshot() {
 		const a = world.avens[selected ?? 0];
+		const slots = slotsOf(CONFIG.cards);
 		return {
 			day: world.day,
 			time: clock(world.t),
@@ -457,9 +478,11 @@
 			// every aven's wants right now: per good, what it holds against tonight's need and what it still wants to buy
 			// the valley's activity (economy.js, activity), newest first, only while the Activity tab is open
 			decisions: tab === 'decisions' && page === 'valley' ? (world.decisions ?? []).slice(-200).reverse().map((/** @type {any} */ d) => ({ ...d })) : [],
-			// the valley's screens (view cards: game/economy/views.js), and, while one is open, the valley it is handed
-			views: viewsOf(CONFIG.cards),
-			valley: tab.startsWith('view:') ? valleyForViews() : null,
+			// the valley's screens (view cards: game/economy/views.js): the ones with a tab of their own, the ones standing
+			// in the page's panels, and, while one shows, the valley it is handed
+			views: viewsOf(CONFIG.cards).filter((/** @type {any} */ v) => (v.data?.slot ?? 'panel') === 'panel'),
+			slots,
+			valley: tab.startsWith('view:') || Object.keys(slots).length ? valleyForViews() : null,
 			// the Maia City Coop's ledger: what the avens paid it for their fields, and for what
 			coop: world.coop ? { hearts: world.coop.hearts, from: { ...world.coop.from }, flow: world.layout === 'coop' ? cashFlow(world.coop.days, 3) : null } : null,
 			board: ranking(world).map((o) => ({ id: o.id, name: o.name, colour: o.colour, hearts: o.hearts, health: o.health, stock: world.layout === 'coop' ? { ...o.stock } : null, flow: world.layout === 'coop' && o.cashDays?.length ? cashFlow(o.cashDays, 3).net : null, alive: o.alive, diedOn: o.diedOn, grows: o.grows, source: o.brain.last?.source ?? '—', pending: o.brain.pending })),
@@ -1328,12 +1351,16 @@
 	{/if}
 	{#if page === 'avens' && snap.avens}
 		<div class="statspage">
-			<AvensView data={snap.avens} aven={snap.aven} market={snap.market} names={NAME} trialDays={TRIAL_DAYS} onselect={select} {lineOf} admin={acct.admin} {mindNote} onforget={forgetAll} onforgetone={forgetOne} />
+			<ViewSlot slot="avens" card={snap.slots.avens} data={slotData('avens')} where={SLOT_NAMES.avens} height={640} onevent={(/** @type {any} */ e) => fromView(snap.slots.avens, e)}>
+				<AvensView data={snap.avens} aven={snap.aven} market={snap.market} names={NAME} trialDays={TRIAL_DAYS} onselect={select} {lineOf} admin={acct.admin} {mindNote} onforget={forgetAll} onforgetone={forgetOne} />
+			</ViewSlot>
 		</div>
 	{/if}
 	{#if page === 'stats'}
 		<div class="statspage">
-			<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} market={snap.market} />
+			<ViewSlot slot="stats" card={snap.slots.stats} data={slotData('stats')} where={SLOT_NAMES.stats} height={640} onevent={(/** @type {any} */ e) => fromView(snap.slots.stats, e)}>
+				<StatsView stats={snap.stats} series={snap.series} now={snap.t} avens={[...snap.board].sort((a, b) => a.id - b.id)} market={snap.market} />
+			</ViewSlot>
 		</div>
 	{/if}
 	{#if page === 'policy' || page === 'world'}
@@ -1350,29 +1377,31 @@
 	<aside>
 		<section>
 			<h3>Board</h3>
-			{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
-				<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>Maia City Coop</b><span>{#if snap.coop.flow?.days}<span title="a day over its last 3 days: in from fields {fmt(snap.coop.flow.per.fields ?? 0)} and keep {fmt(snap.coop.flow.per.keep ?? 0)}; out as the dividend {fmt(-(snap.coop.flow.per.dividend ?? 0))}">a day: in {fmt((snap.coop.flow.per.fields ?? 0) + (snap.coop.flow.per.keep ?? 0))}, out {fmt(-(snap.coop.flow.per.dividend ?? 0))} dividend</span>{:else}the valley's ledger: every HEART paid for fields{/if}</span></span>{#if snap.coop.flow?.days}<span class="flow" class:neg={snap.coop.flow.net < 0} title="the Coop's cash flow: HEARTS in less out, a day over its last 3 days">{snap.coop.flow.net >= 0 ? '+' : ''}{fmt(snap.coop.flow.net)}/d</span>{/if}<span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
-			{/if}
-			<ol class="board" class:stocked={snap.board.some((/** @type {any} */ r) => r.stock)}>
-				{#each snap.board as row (row.id)}
-					<li class:sel={row.id === selected} class:dead={!row.alive}>
-						<button onclick={() => select(row.id)}>
-							<i style:background={row.colour}></i>
-							<b>{row.name}</b>
-							<!-- a fields valley (its board shows stores): no land squares (its fields are on the map), and a dead aven's row
-							     is one line, when it died and comes back (Samuel, 2026-10-10) -->
-							{#if row.stock && !row.alive}<span class="num gone">died day {row.diedOn} · back day {row.diedOn + RULES.rebirthDays}</span>
-							{:else}
-							{#if !row.stock}<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>{/if}
-							<span class="hp" title="health {row.alive ? `${row.health} of ${RULES.healthMax}` : '0'}"><i class:low={row.health / RULES.healthMax <= 0.3} style:width="{row.alive ? Math.max(0, Math.min(100, (row.health / RULES.healthMax) * 100)) : 0}%"></i></span>
-							{#if row.stock && row.flow != null}<span class="flow" class:neg={row.flow < 0} title="cash flow: HEARTS in less out, a day over its last 3 days">{row.flow >= 0 ? '+' : ''}{fmt(row.flow)}/d</span>{:else if row.stock}<span></span>{/if}
-							{#if row.stock}<span class="store" title="in store: {GOODS.map((g) => `${row.stock?.[g] ?? 0} ${GOOD_LABEL[g]}`).join(', ')}">{#each GOODS as g (g)}<em class:none={!(row.stock?.[g] > 0)} style:background={GOOD_COLOUR[g]}>{row.stock?.[g] ?? 0}</em>{/each}</span>{/if}
-							<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
-							{/if}
-						</button>
-					</li>
-				{/each}
-			</ol>
+			<ViewSlot slot="board" card={snap.slots.board} data={slotData('board')} where={SLOT_NAMES.board} height={360} onevent={(/** @type {any} */ e) => fromView(snap.slots.board, e)}>
+				{#if snap.coop && (fieldsOn() || snap.coop.hearts > 0)}
+					<div class="coop" title="Paid to it: {Object.entries(snap.coop.from).map(([k, v]) => `${k === 'fields' ? 'opening fields' : k === 'levels' ? 'levelling up' : 'nightly keep'} ${fmt(v)}`).join(' · ') || 'nothing yet'}"><span class="coop-name"><b>Maia City Coop</b><span>{#if snap.coop.flow?.days}<span title="a day over its last 3 days: in from fields {fmt(snap.coop.flow.per.fields ?? 0)} and keep {fmt(snap.coop.flow.per.keep ?? 0)}; out as the dividend {fmt(-(snap.coop.flow.per.dividend ?? 0))}">a day: in {fmt((snap.coop.flow.per.fields ?? 0) + (snap.coop.flow.per.keep ?? 0))}, out {fmt(-(snap.coop.flow.per.dividend ?? 0))} dividend</span>{:else}the valley's ledger: every HEART paid for fields{/if}</span></span>{#if snap.coop.flow?.days}<span class="flow" class:neg={snap.coop.flow.net < 0} title="the Coop's cash flow: HEARTS in less out, a day over its last 3 days">{snap.coop.flow.net >= 0 ? '+' : ''}{fmt(snap.coop.flow.net)}/d</span>{/if}<span class="num">{fmt(snap.coop.hearts)} ♥</span></div>
+				{/if}
+				<ol class="board" class:stocked={snap.board.some((/** @type {any} */ r) => r.stock)}>
+					{#each snap.board as row (row.id)}
+						<li class:sel={row.id === selected} class:dead={!row.alive}>
+							<button onclick={() => select(row.id)}>
+								<i style:background={row.colour}></i>
+								<b>{row.name}</b>
+								<!-- a fields valley (its board shows stores): no land squares (its fields are on the map), and a dead aven's row
+								     is one line, when it died and comes back (Samuel, 2026-10-10) -->
+								{#if row.stock && !row.alive}<span class="num gone">died day {row.diedOn} · back day {row.diedOn + RULES.rebirthDays}</span>
+								{:else}
+								{#if !row.stock}<span class="grows">{#each row.grows as g (g)}<em style:background={GOOD_COLOUR[g]} title={GOOD_LABEL[g]}></em>{/each}</span>{/if}
+								<span class="hp" title="health {row.alive ? `${row.health} of ${RULES.healthMax}` : '0'}"><i class:low={row.health / RULES.healthMax <= 0.3} style:width="{row.alive ? Math.max(0, Math.min(100, (row.health / RULES.healthMax) * 100)) : 0}%"></i></span>
+								{#if row.stock && row.flow != null}<span class="flow" class:neg={row.flow < 0} title="cash flow: HEARTS in less out, a day over its last 3 days">{row.flow >= 0 ? '+' : ''}{fmt(row.flow)}/d</span>{:else if row.stock}<span></span>{/if}
+								{#if row.stock}<span class="store" title="in store: {GOODS.map((g) => `${row.stock?.[g] ?? 0} ${GOOD_LABEL[g]}`).join(', ')}">{#each GOODS as g (g)}<em class:none={!(row.stock?.[g] > 0)} style:background={GOOD_COLOUR[g]}>{row.stock?.[g] ?? 0}</em>{/each}</span>{/if}
+								<span class="num">{row.alive ? `${fmt(row.hearts)} ♥` : `died day ${row.diedOn} · back day ${row.diedOn + RULES.rebirthDays}`}</span>
+								{/if}
+							</button>
+						</li>
+					{/each}
+				</ol>
+			</ViewSlot>
 			<p class="brain">Model <select class="brain-mode" bind:value={brain.mode} onchange={saveBrain} aria-label="Model">{#each Object.entries(BRAINS) as [k, label] (k)}<option value={k}>{label}</option>{/each}</select></p>
 		</section>
 
@@ -1387,7 +1416,7 @@
 		<section class="view-card">
 			{#if card}
 				{#key card}
-					<Frame view={frameOf(card)} data={snap.valley} onevent={(/** @type {any} */ e) => fromView(card, e)} onerror={(/** @type {string} */ m) => console.warn(`view ${card.id}:`, m)} />
+					<ViewHost view={viewOfCard(card, 520)} data={snap.valley} onevent={(/** @type {any} */ e) => fromView(card, e)} onerror={(/** @type {string} */ m) => console.warn(`view ${card.id}:`, m)} />
 				{/key}
 				<p class="sub">A view card: an MCP App in a sandboxed frame. A MIP changes it like any rule.</p>
 			{:else}
@@ -1396,28 +1425,32 @@
 		</section>
 		{:else if tab === 'prices'}
 		<section>
-			<PriceChart series={snap.series} now={snap.t} />
-			<table class="avgs">
-				<thead><tr><th>Good</th><th>Market</th><th>Avg traded, 24 h</th><th>Units, 24 h</th></tr></thead>
-				<tbody>
-					{#each GOODS as g (g)}<tr><td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td><td class="num">{short(snap.market[g].price)}</td><td class="num">{short(snap.market[g].avg)}</td><td class="num">{snap.market[g].units}</td></tr>{/each}
-				</tbody>
-			</table>
+			<ViewSlot slot="prices" card={snap.slots.prices} data={slotData('prices')} where={SLOT_NAMES.prices} height={520} onevent={(/** @type {any} */ e) => fromView(snap.slots.prices, e)}>
+				<PriceChart series={snap.series} now={snap.t} />
+				<table class="avgs">
+					<thead><tr><th>Good</th><th>Market</th><th>Avg traded, 24 h</th><th>Units, 24 h</th></tr></thead>
+					<tbody>
+						{#each GOODS as g (g)}<tr><td><em style:background={GOOD_COLOUR[g]}></em>{GOOD_LABEL[g]}</td><td class="num">{short(snap.market[g].price)}</td><td class="num">{short(snap.market[g].avg)}</td><td class="num">{snap.market[g].units}</td></tr>{/each}
+					</tbody>
+				</table>
+			</ViewSlot>
 		</section>
 		{:else if tab === 'decisions'}
 		<section>
-			<h4>Now <small>{calls.pending} thinking · {calls.answered} answered{calls.failed ? ` · ${calls.failed} failed` : ''}</small></h4>
-			<ul class="entries decisions queue">
-				{#each snap.queue as q (q.id)}
-					<li>
-						<span class="when">{q.thinking ? `${q.waited.toFixed(1)} s` : ''}</span>
-						<span class="what"><button class="who" onclick={() => select(q.id)}><i style:background={q.colour}></i>{q.name}</button> {#if q.thinking}<small>{NAME[q.by] ?? q.by}</small> thinking{:else}queued{/if}</span>
-						<span class="num" title="age of its latest decision, in-game">{q.age == null ? 'no decision yet' : `${q.age < 1 ? '<1' : Math.round(q.age)} h old`}</span>
-					</li>
-				{/each}
-			</ul>
-			<h4>Activity</h4>
-			<ActivityFeed entries={snap.decisions} names={NAME} onselect={select} />
+			<ViewSlot slot="activity" card={snap.slots.activity} data={slotData('activity')} where={SLOT_NAMES.activity} height={520} onevent={(/** @type {any} */ e) => fromView(snap.slots.activity, e)}>
+				<h4>Now <small>{calls.pending} thinking · {calls.answered} answered{calls.failed ? ` · ${calls.failed} failed` : ''}</small></h4>
+				<ul class="entries decisions queue">
+					{#each snap.queue as q (q.id)}
+						<li>
+							<span class="when">{q.thinking ? `${q.waited.toFixed(1)} s` : ''}</span>
+							<span class="what"><button class="who" onclick={() => select(q.id)}><i style:background={q.colour}></i>{q.name}</button> {#if q.thinking}<small>{NAME[q.by] ?? q.by}</small> thinking{:else}queued{/if}</span>
+							<span class="num" title="age of its latest decision, in-game">{q.age == null ? 'no decision yet' : `${q.age < 1 ? '<1' : Math.round(q.age)} h old`}</span>
+						</li>
+					{/each}
+				</ul>
+				<h4>Activity</h4>
+				<ActivityFeed entries={snap.decisions} names={NAME} onselect={select} />
+			</ViewSlot>
 		</section>
 		{/if}
 	</aside>

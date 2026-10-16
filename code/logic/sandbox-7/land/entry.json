@@ -1,0 +1,7 @@
+{
+	"type": "logic",
+	"for": "sandbox-7",
+	"title": "Land and production",
+	"card": "land",
+	"hooks": []
+}

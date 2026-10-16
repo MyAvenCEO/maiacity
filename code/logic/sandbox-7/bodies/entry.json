@@ -1,0 +1,10 @@
+{
+	"type": "logic",
+	"for": "sandbox-7",
+	"title": "Needs and bodies",
+	"card": "bodies",
+	"hooks": [
+		"need",
+		"body"
+	]
+}

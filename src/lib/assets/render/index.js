@@ -532,7 +532,7 @@ export function createAssets(o) {
 		tree.matrixAutoUpdate = false;
 		tree.visible = false;
 		tree.name = `${k.label} · copy ${i}, moved`;
-		Object.assign(p, { tree, L, tris, calls, ready: false, shown: false, poser: poserOf(copy, obj.userData.controls) });
+		Object.assign(p, { tree, L, tris, calls, ready: false, shown: false, poser: poserOf(copy, obj.userData.controls, { own: true }) });
 		p.poser.setMany(p.values);
 		group.add(tree);
 		const scene = worldOf();

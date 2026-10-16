@@ -5,8 +5,10 @@
 //
 //   node scripts/freeze-engine.mjs "what the new engine brings"            the asset box's engine (src/lib/assets/box/engine.js):
 //                                                                          static/engines/engine-v<n>.js, src/lib/assets/engines.json
-//   node scripts/freeze-engine.mjs --logic "what the new engine brings"    the logic host's engine (src/lib/sandbox/logic-engine.js):
-//                                                                          static/engines/logic-v<n>.js, src/lib/sandbox/engines.json
+//   node scripts/freeze-engine.mjs --logic "what the new engine brings"    a kernel engine (src/lib/sandbox/bundle.js SOURCES):
+//                                                                          static/engines/<kind>-v<n>.js, src/lib/sandbox/engines.json
+//     kinds: --logic (the logic host), --view (the view engine in a view's frame), --view-worker (the worker a
+//     view's draw script runs in), --lib-three, --lib-d3, --lib-mcp-apps (the libraries a draw script may import)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -16,7 +18,7 @@ const KERNEL = `${ROOT}src/lib/sandbox/engines.json`;
 
 if (process.argv[2]?.startsWith('--')) {
 	const kind = process.argv[2].slice(2);
-	const { SOURCES, bundleKernel, hashText } = await import(`${ROOT}src/lib/sandbox/bundle.js`);
+	const { SOURCES, bundleKernel, hashText, versionOf } = await import(`${ROOT}src/lib/sandbox/bundle.js`);
 	if (!SOURCES[kind]) {
 		console.error(`no engine of kind ${kind}: one of ${Object.keys(SOURCES).map((k) => `--${k}`).join(', ')}`);
 		process.exit(1);
@@ -35,10 +37,10 @@ if (process.argv[2]?.startsWith('--')) {
 		process.exit(1);
 	}
 	const v = (list.at(-1)?.v ?? 0) + 1;
-	const quickjs = JSON.parse(readFileSync(`${ROOT}node_modules/quickjs-emscripten-core/package.json`, 'utf8')).version;
+	const carries = versionOf(kind);
 	mkdirSync(`${ROOT}static/engines`, { recursive: true });
 	writeFileSync(`${ROOT}static/engines/${kind}-v${v}.js`, code);
-	list.push({ v, date: new Date().toISOString().slice(0, 10), blake3, bytes: Buffer.byteLength(code), quickjs, note });
+	list.push({ v, date: new Date().toISOString().slice(0, 10), blake3, bytes: Buffer.byteLength(code), ...(carries && { [kind === 'logic' ? 'quickjs' : 'version']: carries }), note });
 	writeFileSync(KERNEL, JSON.stringify(manifest, null, '\t') + '\n');
 	console.log(`froze ${kind} engine v${v}: ${blake3}, ${(Buffer.byteLength(code) / 1024).toFixed(0)} KB`);
 	process.exit(0);

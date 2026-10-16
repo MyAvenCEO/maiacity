@@ -79,3 +79,53 @@ export const FIRE_WALK = {
 		{ x: -1.55, z: -0.2, r: 0.45 }
 	]
 };
+
+/** the bell tent's lantern, the build's own light, which the world turns up as the dusk goes: where it hangs (in its
+ *  part `lantern`, the path of children down to it); and the canvas's glow by day (its material's emissive, which the
+ *  world turns warm at night: how it finds that material) */
+export const TENT_LAMP = { part: 'lantern', path: [0, 2] };
+export const TENT_CLOTH = { emissive: 0x5a4c34 };
+
+/** the tent's bag (things/bell-tent-bag@1): what was in it, the last of its build's own parts, in this order */
+export const BAG_PARTS = ['canvas', 'groundsheet', 'pole', 'wallPoles', 'pegs'];
+
+/** the fire place (things/fire-place@1): the stretch of its build (0 … 1) its fire catches over, the last: built that
+ *  far it burns as much as the ease of how far into it it is */
+export const FIRE_CATCHES = [0.86, 1];
+
+/** where the work is as the bell tent is pitched to k (its frame): the groundsheet's edge, a sheet peg, the canvas, the
+ *  pole's foot, a wall pole or peg going in, a guy's peg, the door, a thing being put down. Its builder's `work`, read
+ *  off its places: the pegs and guys each at its turn round the ring (the n-th of `of` round, the door's left out) */
+const round = (of, r, from, to) => Array.from({ length: to - from + 1 }, (_, j) => (((from + j + 0.5) / of) * Math.PI * 2)).map((a) => ({ a, x: Math.sin(a) * r, z: Math.cos(a) * r }));
+export const TENT_WORK = {
+	sheetPegs: round(14, BELL_TENT.R + 0.03, 1, 12),
+	wallPegs: round(22, BELL_TENT.R + 0.04, 1, 20),
+	guys: round(12, 1, 1, 10).map((p) => p.a),
+	spots: [[0, 0.55], [0, -0.6], [0, -0.6], [0, -1.2], [0.75, 0.6], [0.75, 0.6], [0.75, 0.6], [-0.9, 0.3], [0.3, 0.3]]
+};
+export function tentWork(k) {
+	const { R, guyOut, steps } = BELL_TENT, { sheetPegs, wallPegs, guys, spots } = TENT_WORK;
+	const clamp = (x) => Math.min(1, Math.max(0, x)), ease = (x) => x * x * (3 - 2 * x);
+	const span = (x, [a, b]) => clamp((x - a) / (b - a));
+	const at = (x, z) => ({ x, y: 0, z }), ring = (a, r) => at(Math.sin(a) * r, Math.cos(a) * r);
+	const nth = (list, f) => list[Math.min(list.length - 1, Math.floor(f * list.length))];
+	k = clamp(k);
+	if (k <= steps.groundsheet[1]) {
+		const gs = span(k, steps.groundsheet);
+		if (gs < 0.7) return at(0, R - 2 * R * ease(clamp((gs - 0.35) / 0.35)));
+		const p = nth(sheetPegs, clamp((gs - 0.7) / 0.3));
+		return at(p.x, p.z);
+	}
+	if (k <= steps.canvas[1]) return at(0, R * 0.6 * (1 - span(k, steps.canvas)));
+	if (k <= steps.pole[1]) return at(0, 0);
+	if (k <= steps.wall[1]) {
+		const ws = span(k, steps.wall);
+		if (ws < 0.6) return ring(nth(guys, ws / 0.6), R + 0.3);
+		const p = nth(wallPegs, (ws - 0.6) / 0.4);
+		return at(p.x, p.z);
+	}
+	if (k <= steps.guys[1]) return ring(nth(guys, span(k, steps.guys)), R + guyOut - 0.3);
+	if (k <= steps.door[1]) return at(0, R + 0.4);
+	const [x, z] = nth(spots, span(k, steps.inside));
+	return at(x, z);
+}

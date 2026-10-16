@@ -22,7 +22,7 @@ import { LEVELS } from '$lib/assets/render/lod.js'
 import { songbirds } from './birds.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
-import { settled as actorsSettled } from '$lib/actors/build'
+import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
 import { flow, pond, shore, stream } from './water'
 import { createStage } from '$lib/sandbox-kit/stage.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
@@ -1433,7 +1433,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || built.has(dome)} shown ${dome === undefined || shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => built.has(i)).join(',') || 'none'}; building ${now}`)
 				await new Promise((r) => setTimeout(r, 100))
 			}
-			// and every animal's skin, meshed off the page, there before the shot is drawn
+			// and every animal, built in the box (far and near), there before the shot is drawn
 			await actorsSettled()
 			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
 			// one while a finer one is still being built

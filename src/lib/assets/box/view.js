@@ -12,13 +12,16 @@
  *   lab      a machine's solver as data: its hero number and how it reads now, how it is computed, the name of its
  *            break, and its own moves, each played here from 0 to 1 and written down as its sliders' values (the
  *            sliders themselves are on its card, ../card.js)
- *   clips    a rigged actor's clips and held poses, by name, the one it shows first, the poses as data and its bones
+ *   clips    a rigged actor's clips and held poses, by name, the one it shows first, the poses as data and its bones;
+ *            and every clip played here and written down as tables (`motion`, ./clips.js), for the page to play its
+ *            copies by, any number of them, each at its own time (engine 5)
  *   ticks    whether it moves by itself (a solver, a clip, a flame): the page then asks the box to tick it (./live.js)
  *   roof     the nodes a building's roof is made of; `walk` where it is walked in from, and its lamps
  *   note     what it says of itself, when it shows nothing (a fruit that has not set yet)
  *
  * Everything here is checked again in the page (./rebuild.js `viewOf`), as everything that leaves the box is.
  */
+import { motionOf } from './clips.js';
 
 /** steps a machine's own move is written down at, from the start of its loop to its end */
 export const MOVE_SAMPLES = 49;
@@ -56,6 +59,18 @@ const plain = (x, most = 64_000) => {
 	}
 };
 const set = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+
+/** how big a rigged actor is (m): the ball about its mesh as it rests */
+function radiusOf(rig) {
+	const g = rig?.object?.geometry;
+	if (!g?.attributes?.position) return 1;
+	try {
+		g.computeBoundingSphere();
+		return g.boundingSphere?.radius || 1;
+	} catch {
+		return 1;
+	}
+}
 
 /**
  * A build's view.
@@ -120,7 +135,8 @@ export function viewOf(root, cast) {
 		// the poses it holds as data, for a hand to turn a joint of and copy out; its bones by name
 		const held = poses.length ? plain(cast.poses, 64_000) : undefined;
 		const bones = Array.isArray(cast.rig?.names) ? cast.rig.names.slice(0, 512).map((k) => text(k, 40)) : undefined;
-		if (clips.length || poses.length) view.clips = set({ clips, poses, first: text(cast.first, 40), held, bones });
+		const motion = clips.length ? motionOf(cast, radiusOf(cast.rig)) : undefined;
+		if (clips.length || poses.length) view.clips = set({ clips, poses, first: text(cast.first, 40), held, bones, motion });
 	}
 
 	view.ticks = !!(lab || typeof u.tick === 'function' || view.clips);

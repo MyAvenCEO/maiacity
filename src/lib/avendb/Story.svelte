@@ -5,11 +5,13 @@
 	published), the Idea tab the sparks it grows from and its sources (StorySparks), the Hook tab its hooks, the one on the card, its
 	image title, intro and description beside how it looks on YouTube (StoryHook), the Thumbnail tab its cards, one per
 	shape, in layers (StoryThumbnail), the Journey tab where it starts and ends, its question and its beats with their
-	tension (StoryJourney); and on the right its lines and its
+	tension (StoryJourney), the Writing tab its article, an entry of its own beside it, with its variants (StoryWriting);
+	and on the right its lines and its
 	history, as a note's: each proposal, what its title reads there and Merge for whoever may merge it, and every edit of
 	the main line, newest first, who made it and what title it left, to restore. Agents over the Mac app's MCP write on proposals, which the person merges here.
 -->
 <script>
+	import { untrack } from 'svelte';
 	import { flowsFor, moving, STORY, stageOf } from './flows.js';
 	import Icon from './Icon.svelte';
 	import { allowed, may } from './ops.js';
@@ -17,10 +19,12 @@
 	import StoryJourney from './StoryJourney.svelte';
 	import StorySparks from './StorySparks.svelte';
 	import StoryThumbnail from './StoryThumbnail.svelte';
+	import StoryWriting from './StoryWriting.svelte';
 	import { count, nameOf, short } from './vaults.js';
 
-	/** @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string }} */
-	let { world, actor, api, busy, entry } = $props();
+	/** `step` the stage whose tab it opens on, where it isn't the one it is in
+	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string, step?: string }} */
+	let { world, actor, api, busy, entry, step = '' } = $props();
 
 	/** What each stage's tab will hold, and the milestone that brings it. */
 	const STEPS = /** @type {Record<string, [string, string]>} */ ({
@@ -45,8 +49,8 @@
 	const stage = $derived(item ? stageOf(item, flow) : null);
 	const onward = $derived(stage ? flow.stages.filter((s) => stage.next.includes(s.key)) : flow.stages);
 	/** the stage whose tab shows: the one it is in, until the person picks another */
-	let picked = $state('');
-	const tab = $derived(picked || stage?.key || flow.stages[0].key);
+	let picked = $state(untrack(() => step));
+	const tab = $derived((flow.stages.some((s) => s.key === picked) && picked) || stage?.key || flow.stages[0].key);
 	let problem = $state('');
 
 	/** @typedef {{ line: string | null, name: string | null, heads: string[], history: string[], title: string | null,
@@ -171,7 +175,7 @@
 		</nav>
 
 		<div class="body">
-			<section class="step" class:filled={['idea', 'hook', 'thumbnail', 'journey'].includes(tab)} aria-label={flow.stages.find((s) => s.key === tab)?.name}>
+			<section class="step" class:filled={['idea', 'hook', 'thumbnail', 'journey', 'writing'].includes(tab)} aria-label={flow.stages.find((s) => s.key === tab)?.name}>
 				<h2>{flow.stages.find((s) => s.key === tab)?.name}</h2>
 				{#if tab === 'idea'}
 					<p>{STEPS.idea[0]}</p>
@@ -185,6 +189,9 @@
 				{:else if tab === 'journey'}
 					<p>{STEPS.journey[0]}</p>
 					<StoryJourney {world} {actor} {api} {busy} {item} {writes} lines={note?.lines ?? []} />
+				{:else if tab === 'writing'}
+					<p>{STEPS.writing[0]}</p>
+					<StoryWriting {world} {actor} {api} {busy} {item} {writes} />
 				{:else if STEPS[tab]}
 					<p>{STEPS[tab][0]}</p>
 					<p class="soft">This step comes with milestone {STEPS[tab][1]} of the content plan.</p>

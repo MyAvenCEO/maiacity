@@ -1225,10 +1225,11 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 15] = [
+    pub const SHIPPED: [&str; 16] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
+        ARTICLE_V2,
         FLOW_V1,
         FUNCTION_V1,
         POST_V1,
@@ -1246,7 +1247,7 @@ pub mod blobs {
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
     /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
     /// and avenCEO GmbH holds each as a lens entry beside its schemas.
-    pub const LENSES: [&str; 1] = [SPARK_LENS];
+    pub const LENSES: [&str; 2] = [ARTICLE_LENS, SPARK_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -1307,6 +1308,45 @@ pub mod blobs {
     "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
   },
   "required": ["kind"]
+}
+"#;
+
+    /// An article, v2: v1's title, Markdown text and tags, and what used to sit in a frontmatter beside them that its
+    /// text can't hold: the story it is written for (`story`, a link), what a list or a share shows of it where its
+    /// opening words won't do (`excerpt`), the language it is in, and a quote it carries, with whose words they are.
+    /// Its subtitle and cover stay where the article editor and the reader keep them, the text's opening lines; its
+    /// belief shift and categories are its story's. A v1 article opens here through `ARTICLE_LENS`, as it was.
+    pub const ARTICLE_V2: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Article, v2",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "article" },
+    "title": { "type": "string", "default": "" },
+    "text": { "type": "string", "x-loro": "text", "default": "" },
+    "story": { "x-link": "newest" },
+    "excerpt": { "type": "string" },
+    "language": { "type": "string" },
+    "quote": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "by": { "type": "string" }
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// The lens from an article of v1 to v2: v2 adds the story, the excerpt, the language and the quote; the title, the
+    /// text and the tags are the same.
+    pub const ARTICLE_LENS: &str = r#"{
+  "lens": "Article, v1 to v2",
+  "from": "5654ba2b81acb33cca3be119ab373958fe08ba51acce5e9e3a875c384fb6dc33",
+  "to": "fb389c005b037bf862af5ff4403c42131cdc03c532d4651e8da794a6b4fc8116",
+  "steps": [{ "add": "story" }, { "add": "excerpt" }, { "add": "language" }, { "add": "quote" }]
 }
 "#;
 
@@ -1753,6 +1793,7 @@ fn built_in_schema(blob: &str) -> Schema {
 pub static DOCUMENT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::DOCUMENT_V1));
 pub static TODO_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::TODO_V1));
 pub static ARTICLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTICLE_V1));
+pub static ARTICLE_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTICLE_V2));
 pub static FLOW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FLOW_V1));
 pub static FUNCTION_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FUNCTION_V1));
 pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V1));
@@ -1765,6 +1806,8 @@ pub static SPARK_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::
 pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
 pub static ARTIFACT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTIFACT_V1));
 pub static ARTWORK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTWORK_V1));
+pub static ARTICLE_LENS: LazyLock<Lens> =
+    LazyLock::new(|| Lens::parse(blobs::ARTICLE_LENS.as_bytes()).expect("a built-in lens parses"));
 pub static SPARK_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::SPARK_LENS.as_bytes()).expect("a built-in lens parses"));
 
@@ -1773,7 +1816,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
     let shipped = [
         &*DOCUMENT_V1,
         &*TODO_V1,
-        &*ARTICLE_V1,
+        &*ARTICLE_V2,
         &*FLOW_V1,
         &*FUNCTION_V1,
         &*POST_V1,
@@ -2101,6 +2144,18 @@ mod tests {
                 assert!(joined.into_iter().any(|l| (l.from(), l.to()) == (*older, newest)), "{kind}");
             }
         }
+    }
+
+    #[test]
+    fn a_v1_article_opens_in_v2_as_it_was() {
+        assert_eq!((ARTICLE_LENS.from(), ARTICLE_LENS.to()), (ARTICLE_V1.id(), ARTICLE_V2.id()));
+        let lane = Lane::with_built_ins([]);
+        let (view, read_only) = lane.view(&ARTICLE_V2, &BTreeSet::from([ARTICLE_V1.id()]));
+        assert!(!read_only, "the shipped lens joins them");
+        let v1 = serde_json::json!({ "kind": "article", "title": "Seeds", "text": "*Sown in March.*", "tags": ["d1"] });
+        let got = view.get(&v1).expect("it reads");
+        assert_eq!((&got["title"], &got["text"], &got["tags"]), (&v1["title"], &v1["text"], &v1["tags"]));
+        assert!(got.get("story").is_none() && got.get("language").is_none(), "{got}");
     }
 
     #[test]

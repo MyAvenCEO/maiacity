@@ -1,21 +1,20 @@
 <!--
-	Generated UI: mini app views an agent writes on the fly over the MCP (genui_put), drawn here each in its own box
-	(game/genui/views.js says what a view is). A declarative view is drawn by our own components with its logic in
-	QuickJS; a code view runs in a sandboxed frame with no origin and no network, and only when someone presses Run.
-	New and changed views come in as they are written (the page asks every few seconds).
+	Generated UI: mini app views an agent writes on the fly over the MCP (genui_put), drawn here each by the one view
+	host ($lib/sandbox/ViewHost.svelte; game/genui/views.js says what a view is): a frame with no origin and no network
+	where only our engine writes the DOM, a view's own script in a worker inside it, its logic in QuickJS. Nothing a
+	view brings can reach us, so every view shows at once, with no Run button. New and changed views come in as they
+	are written (the page asks every few seconds).
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { apiCall } from '$lib/auth/client';
-	import Frame from '$lib/genui/Frame.svelte';
-	import Surface from '$lib/genui/Surface.svelte';
-	import { check } from '../../../../game/genui/views.js';
+	import ViewHost from '$lib/sandbox/ViewHost.svelte';
+	import { checkCode } from '$lib/code/check.js';
 	import { EXAMPLES } from '../../../../game/genui/examples.js';
 
 	let views = $state([]);
 	let offline = $state('');
-	let running = $state({});
 	let feed = $state([]);
 
 	const log = (view, kind, text) => (feed = [{ at: new Date(), view: view.title, kind, text }, ...feed].slice(0, 30));
@@ -23,20 +22,18 @@
 	async function load() {
 		try {
 			const r = await apiCall('/api/genui');
-			// the API keeps only checked views; checked again here, so a view the page cannot draw safely is never drawn
+			// the API keeps only views the one checker passed (game/code/check.js); its shape is checked again here, as
+			// code already kept: whatever else it holds, the view host's engine drops
 			const next = [];
 			for (const v of r.views) {
-				try {
-					next.push({ ...check(v), version: v.version, via: v.via, updated: v.updated });
-				} catch (e) {
-					next.push({ id: v.id, title: v.title, broken: e.message, version: v.version });
-				}
+				const c = checkCode('view', v, { mode: 'read' });
+				next.push(c.ok ? { ...c.value, version: v.version, via: v.via, updated: v.updated } : { id: v.id, title: v.title, broken: c.errors.join(' '), version: v.version });
 			}
 			const changed = next.length !== views.length || next.some((v, i) => v.id !== views[i]?.id || v.version !== views[i]?.version);
 			if (changed) views = next;
 			offline = '';
 		} catch (e) {
-			if (!views.length) views = EXAMPLES.map((v) => ({ ...check(v), version: 1, via: 'example' }));
+			if (!views.length) views = EXAMPLES.map((v) => ({ ...checkCode('view', v, { mode: 'read' }).value, version: 1, via: 'example' }));
 			offline = e.message || String(e);
 		}
 	}
@@ -64,12 +61,12 @@
 		<summary>Where the line is</summary>
 		<div class="two">
 			<div>
-				<h3>Declarative <span class="tag decl">our components</span></h3>
-				<p>The agent sends JSON from a fixed catalog (like A2UI). Our own components draw it and set every string as text. A button only names an event. Its logic runs in QuickJS, in a sealed worker off the page's thread: no page, no network, no clock, 8 MB, the same answer on every device, and a call that does too much work is stopped.</p>
+				<h3>One frame <span class="tag decl">our engine</span></h3>
+				<p>Every view, declarative or code, shows in a frame with no origin (no cookies, storage, passkeys or API) and no network. The only script in it is our view engine, frozen and checked by its hash: it makes the view's HTML and CSS safe and draws our components, so nothing in the markup can run, load or leave. A declarative view's logic runs in QuickJS, in a sealed worker: the same answer on every device, stopped when it does too much work.</p>
 			</div>
 			<div>
-				<h3>Code <span class="tag code">sandboxed frame</span></h3>
-				<p>HTML and JS (like MCP Apps) in an iframe with only <code>allow-scripts</code>, so it has a "null" origin: no cookies, storage, passkeys or API. Its CSP forbids every connection and loads scripts only from pinned library files. It talks to us only by postMessage, and we take only two shapes. It can still busy the CPU, so it runs only when you press Run.</p>
+				<h3>Its own script <span class="tag code">a worker</span></h3>
+				<p>A view's own JS (an MCP App, three.js, d3) runs in a worker inside the frame, never in a window: it draws on a copy of the DOM and on canvases that come back as pictures, hears only the events it listens for, and speaks to us only as MCP Apps do, of which we answer a few. Its libraries come from our own frozen files, never a CDN. It can loop, and the page stays free.</p>
 			</div>
 		</div>
 	</details>
@@ -89,14 +86,8 @@
 				</div>
 				{#if v.broken}
 					<p class="error">Not drawn: {v.broken}</p>
-				{:else if v.kind === 'a2ui'}
-					<Surface view={v} onevent={(e) => log(v, 'event', `${e.name}: ${JSON.stringify(e.value)}`)} onerror={(m) => log(v, 'error', m)} />
-				{:else if running[v.id]}
-					<Frame view={v} onevent={(e) => log(v, 'event', `${e.name}: ${JSON.stringify(e.value)}`)} onerror={(m) => log(v, 'error', m)} />
 				{:else}
-					<button class="run" style:height="{v.spec.height}px" onclick={() => (running = { ...running, [v.id]: true })}>
-						<b>Run</b><span>Generated code, in a sandboxed frame</span>
-					</button>
+					<ViewHost view={v} onevent={(e) => log(v, 'event', `${e.name}: ${JSON.stringify(e.value)}`)} onerror={(m) => log(v, 'error', m)} />
 				{/if}
 			</article>
 		{/each}
@@ -133,9 +124,6 @@
 	.tag.decl { background: #dbeadf; color: #2f6f5e; }
 	.tag.code { background: #f4e2c4; color: #8a5a12; }
 	.ver { font-size: 0.75rem; color: var(--muted); }
-	.run { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; border-radius: 14px; background: repeating-linear-gradient(135deg, #fff, #fff 12px, #f6f3eb 12px, #f6f3eb 24px); border: 1px dashed var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; }
-	.run b { font-size: 1.1rem; background: var(--ink); color: #fff; padding: 0.55rem 1.4rem; border-radius: 99px; }
-	.run span { font-size: 0.82rem; color: var(--muted); }
 	.error { margin: 0; color: var(--terracotta); }
 	.divider { display: flex; align-items: center; gap: 0.8rem; margin: 2.4rem 0 0.9rem; font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
 	.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }

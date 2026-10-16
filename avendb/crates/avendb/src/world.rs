@@ -229,8 +229,9 @@ pub struct EntryView {
 pub enum What {
     /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
     /// it is a variant of and the version of it it copied, if it is one (`VARIANT`); whether it is deleted (`DELETED`);
-    /// how many edits of it the device counts, and how many proposals it has; and for a spark, its record, each field
-    /// it leaves out at its default, for its look, its link, its source, its files and the sparks it gathers.
+    /// how many edits of it the device counts, and how many proposals it has; and for a spark or an article, its
+    /// record, each field it leaves out at its default: a spark's canvas; an article's story, language and quote, all
+    /// but its text, which `text` is.
     Note {
         title: String,
         text: String,
@@ -238,7 +239,7 @@ pub enum What {
         deleted: bool,
         edits: usize,
         proposals: usize,
-        spark: Option<Value>,
+        record: Option<Value>,
     },
     Todo { title: String, status: Status },
     /// A file (`FILE`): its name, its media type, and whether it is deleted (`DELETED`).
@@ -403,7 +404,7 @@ impl World {
                 "proposals": proposals,
                 "media": media,
                 "record": match &i.what {
-                    What::Record { record, .. } | What::Note { spark: Some(record), .. } => record.clone(),
+                    What::Record { record, .. } | What::Note { record: Some(record), .. } => record.clone(),
                     _ => Value::Null,
                 },
                 "files": i.files.iter().map(file).collect::<Vec<_>>(),
@@ -564,8 +565,12 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
                 let edits = history.map_or(0, |h| h.changes().len());
                 let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
                 let deleted = doc.tags.iter().any(|t| t == DELETED);
-                let spark = View::built_in("spark").and_then(|v| item.read(v));
-                What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), deleted, edits, proposals, spark }
+                let read = |kind: &str| View::built_in(kind).and_then(|v| item.read(v));
+                // an article's text is the entry's text already: its record tells the rest
+                let article = || read("article").map(|mut r| (r.as_object_mut().map(|o| o.remove("text")), r).1);
+                let record = read("spark").or_else(article);
+                let variant_of = variant_of(&doc);
+                What::Note { title: doc.title.clone(), text, variant_of, deleted, edits, proposals, record }
             }
             (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (_, None, None) => record(item.record()),

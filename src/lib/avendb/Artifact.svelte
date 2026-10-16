@@ -27,6 +27,10 @@
 	import { allowed, creatable, DELETED, may } from './ops.js';
 	import { addingSpark, grownFrom, itemsFor, pictureOf, SPARK, sparkRecord } from './sparks.js';
 	import { count, nameOf, signerName } from './vaults.js';
+	import { filling, took, wordsOf, wordsRule, wordsTasks } from './youtube.js';
+	import { nudge } from '$lib/studio/jobs/mac.js';
+	import { lacking } from '$lib/studio/jobs/schemas.js';
+	import { asking, retrying, TRIES } from '$lib/studio/jobs/tasks.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string }}
@@ -85,7 +89,7 @@
 			platform: record.by?.platform ?? '',
 			taken: record.taken ?? '',
 			language: record.language ?? '',
-			duration: record.duration === undefined ? '' : String(record.duration),
+			duration: record.duration === undefined ? '' : clock(record.duration),
 			note: record.note ?? ''
 		});
 		untrack(() => {
@@ -186,6 +190,34 @@
 		change(back ? 'Bringing it back' : 'Deleting it', { op: back ? 'remove' : 'insert', path: ['tags'], value: DELETED });
 
 	const yt = $derived(youtubeId(record.url ?? ''));
+
+	// its words from YouTube (./youtube.js): the studio's `youtube` rule, done on the Mac, its newest task at this link,
+	// and a done task's value, which the page copies into what is empty here once (./Shell.svelte)
+	const rule = $derived(item && look === 'youtube' && yt ? wordsRule(world, item.vault) : null);
+	const job = $derived(item && look === 'youtube' ? wordsTasks(world, item)[0] : undefined);
+	let got = $state(/** @type {any} */ (null));
+	$effect(() => {
+		const t = job;
+		if (t?.status !== 'done') return void (got = null);
+		let gone = false;
+		wordsOf(t, untrack(() => world), api).then((v) => !gone && (got = v));
+		return () => {
+			gone = true;
+		};
+	});
+	const left = $derived(job ? TRIES - job.attempts : 0);
+
+	/** Asks the Mac for its words: the jobs' schemas into its vault where it lacks them, then the task. */
+	async function fetchWords() {
+		if (!item || !rule) return;
+		for (const op of lacking(world, item.vault, actor)) if (!(await api.run('Adding the studio’s job schemas', op))) return;
+		const op = asking(rule, item, world, actor, actor, Math.floor(Date.now() / 1000));
+		if (op && (await api.run('Asking the Mac for its words', op))) nudge();
+	}
+	/** Asks again for words three tries didn't fetch. */
+	const again = async () => job && (await api.run('Asking the Mac again for its words', retrying(job, actor))) && nudge();
+	/** Takes YouTube's words in again, into what is empty now. */
+	const takeAgain = () => item && got && api.run('Taking YouTube’s words', { op: 'batch', as: actor, ops: filling(item, got) });
 </script>
 
 <div class="doc">
@@ -343,10 +375,37 @@
 							<li>{#if timed}<span class="t">{clock(r.t)}</span>{/if}<span>{r.text}</span></li>
 						{/each}
 					</ol>
+				{:else if look === 'youtube' && yt}
+					<div class="fetch">
+						{#if job?.status === 'queued'}
+							<p class="soft">Waiting for the Mac app to fetch its words from YouTube.</p>
+						{:else if job?.status === 'claimed'}
+							<p class="soft">The Mac app is fetching its words from YouTube…</p>
+						{:else if job?.status === 'failed'}
+							<p class="soft">
+								Fetching its words failed: {job.error || 'no reason given'}. The Mac app tries again, {count(left, 'more time')}.
+							</p>
+						{:else if job?.status === 'held'}
+							<p class="soft">Fetching its words failed {TRIES} times: {job.error || 'no reason given'}.</p>
+							{#if edits}<button class="btn" onclick={again}>Try again</button>{/if}
+						{:else if job?.status === 'done' && got?.transcript?.length && !took(item, job)}
+							<p class="soft">YouTube’s words are here; they go in as soon as {nameOf(as)} may write them.</p>
+						{:else if job?.status === 'done' && got?.transcript?.length}
+							<p class="soft">Its words were taken out. YouTube’s are kept with the fetch.</p>
+							{#if edits}<button class="btn" onclick={takeAgain}>Take YouTube’s words again</button>{/if}
+						{:else if job?.status === 'done' && got?.needs_speech}
+							<p class="soft">YouTube has no captions for it. Its words come once the Mac app hears it; until then, paste them here.</p>
+						{:else if job?.status === 'done'}
+							<p class="soft">YouTube gave no words for it. Paste them here.</p>
+						{:else if rule && edits}
+							<button class="btn" disabled={busy} onclick={fetchWords}><Icon name="download" size={14} /> Fetch its words from YouTube</button>
+							<small class="soft">The Mac app fetches its title, channel, chapters and captions, and fills in what is empty here.</small>
+						{:else}
+							<p class="soft">No transcript yet. The Mac app fetches YouTube’s own once the studio has its YouTube rule; until then, paste it here.</p>
+						{/if}
+					</div>
 				{:else}
-					<p class="soft">
-						No transcript yet.{yt ? ' YouTube’s own comes with the next step; until then, paste it here.' : ''}
-					</p>
+					<p class="soft">No transcript yet.</p>
 				{/if}
 				{#if edits}
 					<textarea class="field" rows="3" bind:value={pasted} placeholder="Paste a transcript: a line each, times like 1:05 at their start"></textarea>
@@ -406,6 +465,17 @@
 		max-width: 46rem;
 		margin: 0 auto;
 		padding: 1rem 1rem calc(var(--nav-room, 5rem) + 1.5rem);
+	}
+
+	.fetch {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.4rem;
+	}
+
+	.fetch p {
+		margin: 0;
 	}
 
 	.back {

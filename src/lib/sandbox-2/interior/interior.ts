@@ -26,7 +26,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, workshops, type Kit } from './spaces'
 import { antHills, apiary, fishes, herd, TANK_FISH } from './animals'
-import { settled as actorsSettled } from '$lib/actors/build'
+import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
@@ -2623,7 +2623,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		hold: walker,
 		sky,
 		place: (x, z, yw, p, y) => walker.place(x, z, yw, p, y),
-		// stand where the shot is, and wait for every animal's skin, meshed off the page, to be there
+		// stand where the shot is, and wait for every animal, built in the box, to be there
 		stage: async (w) => {
 			walker.place(w.stand[0], w.stand[1], 0, 0)
 			await actorsSettled()

@@ -1,0 +1,10 @@
+{
+	"type": "logic",
+	"for": "sandbox-7",
+	"title": "Fields",
+	"card": "fields",
+	"hooks": [
+		"capex",
+		"opex"
+	]
+}

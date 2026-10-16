@@ -48,6 +48,13 @@ async function through(label) {
 	return { obj, cast, view, data, root: rebuild(data) };
 }
 
+/** a build's data as the box hands it back */
+async function serializeOf(label) {
+	const { obj, cast } = await made(label);
+	const { data } = await serialize(obj, { controls: bake(obj).controls, view: viewOf(obj, cast) });
+	return data;
+}
+
 test('a Power Cube: its parts, labels, shells, cut and solver leave as data and come back on the same nodes', async () => {
 	const { obj, root } = await through('machines/powercube@3');
 	const v = root.userData.view;
@@ -102,6 +109,64 @@ test('the stand-in: skinned, bound to its own bones, its clips and poses named, 
 	// every node it moved is a bone
 	const nodes = walk(root);
 	for (const n of out.nodes) expect(nodes[n].isBone).toBe(true);
+	live.end(session);
+});
+
+test('engine 5: an animal’s clips written down in the box, played in the page as its own clips pose it', async () => {
+	const THREE = await import('three');
+	const { playerOf } = await import('../clips.js');
+	const { cast, root } = await through('actors/goat:goat-saanen');
+	const c = root.userData.view.clips;
+	expect(c.motion.bones).toBe(cast.rig.names.length);
+	const play = playerOf(c.motion, c.bones);
+	expect(Object.keys(play).sort()).toEqual(Object.keys(cast.clips).sort());
+	const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), e = new THREE.Euler();
+	/** how far its table turns a bone from where its clip does, at the worst bone (rad) */
+	const strays = (a, b, skip) => {
+		let worst = 0;
+		for (const k of Object.keys(a)) {
+			if (k === 'root' || skip.has(k)) continue;
+			const x = a[k], y = b[k] ?? [0, 0, 0];
+			qa.setFromEuler(e.set(x[0], x[1], x[2]));
+			qb.setFromEuler(e.set(y[0], y[1], y[2]));
+			worst = Math.max(worst, qa.angleTo(qb));
+		}
+		return worst;
+	};
+	for (const [name, gear] of [['graze', 0], ['walk', cast.gears.walk]]) {
+		// (a tail that beats faster the faster it goes beats as at the nearest pace written down: in time with
+		// itself, not with the clip's own beat between two paces)
+		const m = c.motion.clips[name];
+		const skip = new Set(m.t.flatMap((T) => [...T.list].filter((_, q) => T.snap[q]).map((j) => c.bones[Math.floor(m.channels[j] / 7)])));
+		const errs = [];
+		for (let s = 0; s < 120; s++) {
+			// within the time a table holds before it repeats (a gait's 16 s, a clip's 32: the wander in an ear does not)
+			const t = s * (gear ? 0.1171 : 0.2371);
+			// a gait at its own pace and a little either side of it, going on, as a herd walks it
+			const mo = gear ? { dist: 0.31 + s * 0.047, speed: gear * [1, 0.92, 0.85][s % 3], turn: 0 } : undefined;
+			errs.push(strays(cast.clips[name](t, mo), play[name](t, mo), skip));
+		}
+		errs.sort((a, b) => a - b);
+		// half within a degree, nearly all within a few
+		expect(errs[60]).toBeLessThan(0.02);
+		expect(errs[108]).toBeLessThan(0.08);
+	}
+	// a refused table: one of the wrong length
+	const bad = await serializeOf('actors/goat:goat-saanen');
+	const first = Object.values(bad.view.clips.motion.clips)[0];
+	first.base = first.base.subarray(1);
+	expect(() => rebuild(bad)).toThrow('refused');
+});
+
+test('engine 5: a fire kept running hands back its light’s flicker, a light on the page', async () => {
+	const { root } = await through('things/fire-place');
+	const box = await made('things/fire-place');
+	const { session } = live.open(box.obj, box.cast, walk(root).length);
+	live.tick(session, { dt: 0.1 });
+	const out = live.tick(session, { dt: 0.1 });
+	expect(out.lights.length).toBeGreaterThan(0);
+	const nodes = walk(root);
+	for (const l of out.lights) expect(nodes[l.node].isLight).toBe(true);
 	live.end(session);
 });
 

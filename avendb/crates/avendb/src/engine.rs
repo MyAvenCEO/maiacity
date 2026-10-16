@@ -409,7 +409,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "stored" => Named::Stored,
             "document" => Named::Id(lens::DOCUMENT_V1.id()),
             "todo" => Named::Id(lens::TODO_V1.id()),
-            "article" => Named::Id(lens::ARTICLE_V1.id()),
+            "article" => Named::Id(lens::ARTICLE_V2.id()),
             "flow" => Named::Id(lens::FLOW_V1.id()),
             "function" => Named::Id(lens::FUNCTION_V1.id()),
             "post" => Named::Id(lens::POST_V1.id()),
