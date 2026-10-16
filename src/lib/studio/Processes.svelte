@@ -399,10 +399,10 @@
 		opacity: 0.55;
 	}
 
-	.dot.gpu { background: #6aa7ff; }
-	.dot.speech { background: #b98cff; }
-	.dot.ai { background: #e8b04a; }
-	.dot.io { background: #5fc4a0; }
+	.dot.gpu { background: #4a86e0; }
+	.dot.speech { background: #9466e0; }
+	.dot.ai { background: #d99a26; }
+	.dot.io { background: #2fa07a; }
 	.dot.all { background: var(--ink-soft); }
 
 	.dot.live {

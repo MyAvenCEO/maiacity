@@ -1,18 +1,19 @@
 <!--
 	PLANT LOOK — the picked plant alone, small, at the top of its card in Sandbox 5: the same plant (its id, version,
-	stage and seed) as it stands in the forest, grown a little finer off the page (./flora.worker.js, the `look` tier of
-	./flora.grow.js) and turning slowly on a patch of soil. Drag to turn it round yourself.
+	stage and seed) as it stands in the forest, built a little finer in the asset box ($lib/assets/load.js, at the
+	`look` tier's detail of ./sandbox5.js `TIERS`), what is under the soil cut away, turning slowly on a patch of soil.
+	Drag to turn it round yourself.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
 
-	/** @type {{ kind: import('./flora.grow.js').Kind }} */
+	/** @type {{ kind: import('./sandbox5.js').Kind }} */
 	let { kind } = $props();
 
 	/** @type {HTMLDivElement} */
 	let box;
 	let growing = $state(true);
-	/** @type {((kind: import('./flora.grow.js').Kind) => void) | null} */
+	/** @type {((kind: import('./sandbox5.js').Kind) => void) | null} */
 	let show = null;
 	/** @type {(() => void) | null} */
 	let stop = null;
@@ -22,8 +23,12 @@
 		(async () => {
 			const THREE = await import('three');
 			const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+			const [{ loadAsset }, { buildAt }, { refOf }, { TIERS }] = await Promise.all([import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('./flora.js'), import('./sandbox5.js')]);
 			if (gone) return;
 			const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+			// what is under the soil cut away, as it is in the forest, where no one sees it
+			renderer.localClippingEnabled = true;
+			const soilLine = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.01)];
 			renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 			renderer.toneMapping = THREE.ACESFilmicToneMapping;
 			box.appendChild(renderer.domElement);
@@ -50,33 +55,57 @@
 				})
 			);
 			scene.add(soil);
-			const materials = {
-				body: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }),
-				sheet: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65, side: THREE.DoubleSide }),
-				gloss: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35 })
-			};
-			/** @type {import('three').Group | null} */
+			/** @type {import('three').Object3D | null} */
 			let plant = null;
+			/** a plant built and its parts' meshes, let go @param {import('three').Object3D} o */
+			const letGo = (o) =>
+				o.traverse((c) => {
+					const mesh = /** @type {import('three').Mesh} */ (c);
+					if (!mesh.isMesh) return;
+					mesh.geometry?.dispose();
+					for (const mt of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) mt?.dispose();
+				});
+			/** how tall it stands and how far it reaches out over the soil @param {import('three').Object3D} o */
+			const measure = (o) => {
+				let height = 0, reach = 0;
+				const v = new THREE.Vector3();
+				o.updateMatrixWorld(true);
+				o.traverse((c) => {
+					const mesh = /** @type {import('three').Mesh} */ (c);
+					const P = mesh.isMesh ? mesh.geometry.attributes.position : null;
+					if (!P) return;
+					for (let i = 0; i < P.count; i++) {
+						v.fromBufferAttribute(P, i).applyMatrix4(mesh.matrixWorld);
+						if (v.y > height) height = v.y;
+						if (v.y > 0) reach = Math.max(reach, Math.hypot(v.x, v.z));
+					}
+				});
+				return { height, reach };
+			};
 
-			const worker = new Worker(new URL('./flora.worker.js', import.meta.url), { type: 'module' });
 			let job = 0;
-			worker.onmessage = (/** @type {MessageEvent<{ job: number, shape?: import('./flora.grow.js').Shape }>} */ e) => {
-				if (e.data.job !== job || !e.data.shape) return;
-				const shape = e.data.shape;
+			show = async (k) => {
+				growing = true;
+				const mine = ++job;
+				let got;
+				try {
+					got = await loadAsset(buildAt(`${refOf(k)}&detail=${TIERS.look.level}`));
+				} catch (err) {
+					console.warn('plant look: not built', err);
+					return;
+				}
+				if (mine !== job || gone) return letGo(got.obj);
 				if (plant) {
-					plant.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
+					letGo(plant);
 					scene.remove(plant);
 				}
-				plant = new THREE.Group();
-				for (const part of shape.parts) {
-					const g = new THREE.BufferGeometry();
-					g.setAttribute('position', new THREE.BufferAttribute(part.position, 3));
-					g.setAttribute('normal', new THREE.BufferAttribute(part.normal, 3));
-					g.setAttribute('color', new THREE.BufferAttribute(part.color, 3));
-					g.setIndex(new THREE.BufferAttribute(part.index, 1));
-					plant.add(new THREE.Mesh(g, materials[part.kind]));
-				}
+				plant = got.obj;
+				plant.traverse((c) => {
+					const mesh = /** @type {import('three').Mesh} */ (c);
+					if (mesh.isMesh) for (const mt of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) mt.clippingPlanes = soilLine;
+				});
 				scene.add(plant);
+				const shape = measure(plant);
 				// framed whole: its height and its reach, from a little above
 				const size = Math.max(0.05, shape.height, shape.reach * 2);
 				soil.scale.setScalar(Math.max(0.1, shape.reach * 1.5, shape.height * 0.35));
@@ -89,11 +118,7 @@
 				controls.update();
 				growing = false;
 			};
-			show = (k) => {
-				growing = true;
-				worker.postMessage({ job: ++job, kind: $state.snapshot(k), tier: 'look' });
-			};
-			show(kind);
+			show($state.snapshot(kind));
 
 			const fit = () => {
 				const w = box.clientWidth, h = box.clientHeight;
@@ -114,12 +139,11 @@
 			stop = () => {
 				cancelAnimationFrame(frame);
 				watch.disconnect();
-				worker.terminate();
+				job++;
 				controls.dispose();
-				plant?.traverse((o) => /** @type {import('three').Mesh} */ (o).geometry?.dispose());
+				if (plant) letGo(plant);
 				soil.geometry.dispose();
 				soil.material.dispose();
-				for (const m of Object.values(materials)) m.dispose();
 				renderer.dispose();
 				renderer.domElement.remove();
 			};

@@ -50,8 +50,8 @@ const EDITS = [
 	{ file: 'plants/trees.js', from: "coat: '#d9c49a'", to: "coat: '#d9c49b'", moves: ['plants/mango'] },
 	// a plant of a list spread into the plants' list from another module (the forest garden's)
 	{ file: 'plants/wald-canopy.js', from: "coat: '#a8875a'", to: "coat: '#a8875b'", moves: ['plants/walnut'] },
-	// one thing of nine in one file
-	{ file: 'models/furniture.ts', from: 'Lb = length + 0.06', to: 'Lb = length + 0.07', moves: ['things/bed'] },
+	// one thing of six in one file (backpack, water bottle, seed packet, marker sticks, plant stake, dug earth)
+	{ file: 'models/planting.js', from: 's.rotation.set(0.04 * sx, 0, -0.06 * sx);', to: 's.rotation.set(0.05 * sx, 0, -0.06 * sx);', moves: ['things/marker-sticks'] },
 	// a machine another carries: the goods pod is loaded by forklifts built into its rig
 	{ file: 'actors/forklift.js', from: 'put(block(0.76, 0.36, 0.86, [0, 0.29, -0.52], 0.08), BODY, body);', to: 'put(block(0.77, 0.36, 0.86, [0, 0.29, -0.52], 0.08), BODY, body);', moves: ['machines/forklift', 'machines/pod'] },
 	// the stand-in

@@ -425,7 +425,7 @@
 	tr.sel td { background: var(--ok-bg); }
 	tbody tr { cursor: pointer; }
 	tbody tr:hover td { background: var(--hover); }
-	tr.open td { background: var(--ok-bg); box-shadow: inset 0 1px 0 #3f8f68, inset 0 -1px 0 #3f8f68; }
+	tr.open td { background: var(--ok-bg); box-shadow: inset 0 1px 0 var(--ok-line), inset 0 -1px 0 var(--ok-line); }
 	tr.short td.n { color: var(--bad); }
 	.r { text-align: right; white-space: nowrap; }
 	.c { text-align: center; }

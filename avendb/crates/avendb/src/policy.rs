@@ -324,13 +324,18 @@ pub enum Action {
     /// A grant, an owner or a device ends.
     Revoke(Revoking),
     /// An encrypted edit of entry `entry` of vault `vault`, on the line `proposal` of its history, under the key of its
-    /// stay `stay` at epoch `epoch` of that stay's audience. `deps` are the entry's writes it builds on (its Loro
-    /// frontier): a write that starts a proposal builds on the version the proposal starts from, and a merge also on
-    /// the heads of the line it brings in. A write that creates its entry names the audience it goes in (`create`, its
-    /// shares in canonical order), and its stay is the one its creation begins (`None`). Its `body` is the update, the
-    /// header of a new entry and the tags it adds and removes, encrypted: the tags count only when it acts for the
-    /// vault, except that a new entry's added tags are its first tags. The files it brings (`sealed`) are named in the
-    /// clear by their roots, smallest first, so whoever may receive it keeps them; their keys are in its body.
+    /// stay `stay` at epoch `epoch` of that stay's audience. The epoch is its writer's to name, the newest it knows
+    /// (T15), and no peer checks it against the epoch it holds: an audience moves on by edits of other entries too, one
+    /// that empties it and one that brings it back into use, which a device the entry is shared with later never
+    /// receives (T12), so such a check would refuse there what every device of the vault accepts. Under an epoch its
+    /// audience hasn't reached, nobody opens it until the audience does. `deps` are the entry's writes it builds on
+    /// (its Loro frontier): a write that starts a proposal builds on the version the proposal starts from, and a merge
+    /// also on the heads of the line it brings in. A write that creates its entry names the audience it goes in
+    /// (`create`, its shares in canonical order), and its stay is the one its creation begins (`None`). Its `body` is
+    /// the update, the header of a new entry and the tags it adds and removes, encrypted: the tags count only when it
+    /// acts for the vault, except that a new entry's added tags are its first tags. The files it brings (`sealed`) are
+    /// named in the clear by their roots, smallest first, so whoever may receive it keeps them; their keys are in its
+    /// body.
     Write {
         vault: VaultId,
         entry: EntryId,
@@ -686,7 +691,7 @@ pub enum Refusal {
     BadMark,
     /// A write under a stay its entry never had.
     UnknownStay,
-    /// A write or a key under an epoch that doesn't exist yet.
+    /// A key of a family under an epoch the family hasn't reached.
     FutureEpoch,
     /// A write builds on a write its entry doesn't have (T14).
     UnknownDep,
@@ -1541,8 +1546,8 @@ impl State {
     }
 
     /// A new entry in audience `x` of vault `v` brings the audience back into use: no entry is in it, and its current
-    /// key was sealed before. Settling then moves the audience to a new epoch, which the creation may name: whoever a
-    /// removal took out while the audience was empty may still hold its current key.
+    /// key was sealed before. Settling then moves the audience to a new epoch, which a device names for the creation
+    /// (`Lab::create`): whoever a removal took out while the audience was empty may still hold its current key.
     pub fn reenters(&self, v: VaultId, x: AudienceId) -> bool {
         let k = KeyFam::Audience(v, x);
         !self.has_fam(k) && self.seals.secrets.contains(&self.current(k))
@@ -1740,8 +1745,10 @@ impl State {
     }
 
     /// Signer `d` may box key `name`: the key of a family that exists, at an epoch it has reached, that `d` should be
-    /// able to open; or the key of one of an entry's stays at an epoch that stay's audience has reached, when `d`
-    /// should be able to open the key of the entry's audience.
+    /// able to open; or the key of one of an entry's stays, when `d` should be able to open the key of the entry's
+    /// audience. An entry key's epoch is its writes' to name: a stay's audience may have moved on by edits of other
+    /// entries that a reader of this one never holds (`Action::Write`), and the boxes go only where the schedule seals
+    /// the key, which only the entry's own writes and stays make it.
     fn may_box(&self, d: SignerId, name: KeyName) -> Result<(), Refusal> {
         match name {
             KeyName::Signer(_) => Err(Refusal::UnknownKey),
@@ -1757,16 +1764,12 @@ impl State {
                 }
                 Ok(())
             }
-            KeyName::Entry(e, s, g) => {
+            KeyName::Entry(e, s, _) => {
                 let en = self.entry(e).ok_or(Refusal::UnknownKey)?;
                 if !self.entitled(d, KeyFam::Audience(en.vault, en.audience())) {
                     return Err(Refusal::NotEntitled);
                 }
-                let x = en.stay_audience(s).ok_or(Refusal::UnknownKey)?;
-                if g > self.epoch(KeyFam::Audience(en.vault, x)) {
-                    return Err(Refusal::FutureEpoch);
-                }
-                Ok(())
+                en.stay_audience(s).map(drop).ok_or(Refusal::UnknownKey)
             }
         }
     }
@@ -2071,8 +2074,8 @@ impl State {
                 }
                 match create {
                     Some(x) => {
-                        // a new entry, with an id never used before, in an audience its actor may create in, under an
-                        // epoch that audience has reached
+                        // a new entry, with an id never used before, in an audience its actor may create in, under
+                        // the epoch it names
                         if self.entry(e).is_some() || self.born.contains(&e) {
                             return Err(Refusal::Reborn);
                         }
@@ -2089,11 +2092,7 @@ impl State {
                         if actor != v && intake.is_empty() {
                             return Err(Refusal::NoCap);
                         }
-                        // or the epoch it moves to as the new entry brings it back into use
                         let audience = AudienceId::of(v, x);
-                        if epoch > self.epoch(KeyFam::Audience(v, audience)) + self.reenters(v, audience) as u64 {
-                            return Err(Refusal::FutureEpoch);
-                        }
                         let w = Write {
                             edit: id,
                             author: edit.author,
@@ -2144,10 +2143,7 @@ impl State {
                             audience: en.audience(),
                             shares,
                         };
-                        let x = en.stay_audience(stay).ok_or(Refusal::UnknownStay)?;
-                        if epoch > self.epoch(KeyFam::Audience(v, x)) {
-                            return Err(Refusal::FutureEpoch);
-                        }
+                        en.stay_audience(stay).ok_or(Refusal::UnknownStay)?;
                         // what it builds on was accepted, so the accepted writes stay causally closed (T14); a write
                         // on a proposal builds on the proposal's start
                         builds_on(&self.entry_writes(e).collect::<Vec<_>>(), &w)?;

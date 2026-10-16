@@ -225,21 +225,20 @@ def mayRevoke (st : State) (a : VaultId) (c : Share) : Bool :=
   if c.level.isKeep then c.issuer == a else mayRevokeN st a (st.shares.length + 1) c
 
 /-- Signer `d` may box key `k`: the key of a family that exists, at an epoch it has reached, that `d` should be able to
-    open; or the key of one of an entry's stays at an epoch that stay's audience has reached, when `d` should be able
-    to open the key of the entry's audience. -/
+    open; or the key of one of an entry's stays, when `d` should be able to open the key of the entry's audience. An
+    entry key's epoch is its writes' to name (`apply`), and its boxes go only where the schedule seals it, which only
+    the entry's own writes and stays make it. -/
 def mayBox (st : State) (d : SignerId) : KeyName → Bool
   | .signer _ => false
   | .scoped k ε => (keyFams st).contains k && entitled st d k && decide (ε ≤ st.epochOf k)
-  | .entry e s g =>
+  | .entry e s _ =>
     match st.entry? e with
-    | some en => entitled st d (.audience en.vault en.audience) && match en.stayAudience s with
-      | some x => decide (g ≤ st.epochOf (.audience en.vault x))
-      | none   => false
+    | some en => entitled st d (.audience en.vault en.audience) && (en.stayAudience s).isSome
     | none => false
 
 /-- A new entry in audience `x` of vault `v` brings the audience back into use: no entry is in it, and its current key
-    was sealed before. Its settle moves the audience to a new epoch (`staleKeys`), so the creation may name that one:
-    whoever a removal took out while the audience was empty may still hold its current key. -/
+    was sealed before. Its settle moves the audience to a new epoch (`staleKeys`), the one a device names for the
+    creation: whoever a removal took out while the audience was empty may still hold its current key. -/
 def reenters (st : State) (v : VaultId) (x : Audience) : Bool :=
   !(keyFams st).contains (.audience v x) && st.seals.any (·.secret == st.curKey (.audience v x))
 
@@ -335,15 +334,17 @@ def apply (st : State) (edit : Edit) : Option State :=
       else some (dropUnseen st { st with revoked := st.revoked ++
         ((st.shares.filter fun x => restsOn st cid x.id && !st.revoked.contains x.id).map (·.id)) } keep)
   | .write v e actor stay epoch deps proposal via create tags proof touches fits =>
+    -- its epoch is its writer's to name, and no peer checks it against the epoch it holds: an audience moves on by
+    -- edits of other entries too, one that empties it and one that brings it back into use, which a device the entry is
+    -- shared with later never receives (T12), so such a check would refuse there what every device of the vault
+    -- accepts. Under an epoch its audience hasn't reached, nobody opens it until the audience does
     if st.writes.any (·.edit == edit.id) || !actsVia st edit.author via actor then none
     else match create with
     | some (x, hdr) =>
-      -- a new entry, with an id never used before, in an audience its actor may create in, under an epoch that audience
-      -- has reached, or the one it moves to as the entry brings it back into use
+      -- a new entry, with an id never used before, in an audience its actor may create in
       if (st.entry? e).isSome || st.born.contains e || (st.vault? v).isNone || stay.isSome || !deps.isEmpty ||
           proposal != .main then none
-      else if !audienceOk st v x || !mayCreate st actor v x ||
-          epoch > st.epochOf (.audience v x) + (reenters st v x).toNat then none
+      else if !audienceOk st v x || !mayCreate st actor v x then none
       else
         let attrs : Attrs := ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩
         let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof, hdr.blob⟩
@@ -359,10 +360,9 @@ def apply (st : State) (edit : Edit) : Option State :=
         if en.vault != v || !mayWrite st actor en then none
         else match en.stayAudience stay with
           | none => none
-          | some x =>
-            if epoch > st.epochOf (.audience v x) then none
+          | some _ =>
             -- what it builds on was accepted, so the accepted writes stay causally closed (T14)
-            else if !depsIn st.writes w then none
+            if !depsIn st.writes w then none
             -- a write on a proposal builds on the proposal's start
             else if !onProposal st.writes w then none
             else

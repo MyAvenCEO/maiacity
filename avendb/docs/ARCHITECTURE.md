@@ -684,7 +684,10 @@ the clear: that is what Public means.
 - **Move links.** A mark that moves an entry wraps its earlier stays' keys under the new one. So whoever reads an entry
   now reads its whole history, and nothing of an entry it can't read now (T24).
 - **Writing.** A device encrypts each write under its entry's key in its stay, at the audience's newest epoch it
-  knows (T15). So once it has seen a removal, the removed can't open what it writes.
+  knows (T15). So once it has seen a removal, the removed can't open what it writes. No peer checks a write's epoch:
+  an audience moves on by edits of other entries too, which a device the entry is shared with later never receives
+  (T12), so it takes the epoch the write names. A write under an epoch its audience hasn't reached opens for nobody
+  until the audience does.
 - **An audience that comes back into use.** An audience no entry is in keeps its key through removals. The entry that
   brings it back moves it to a new epoch, which whoever a removal took out meanwhile can't open.
 

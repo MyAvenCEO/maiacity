@@ -3,8 +3,9 @@
 //! an entry's key derives from its audience's, a move carries the entry's history to its new audience and nothing else
 //! of the audience it left, and a relay share gets no key at all. Since P4b, devices that lock and unlock with the
 //! passkey, and what is left once the curves fall (T18); and since P6, that a device writes under the newest key it
-//! knows (T15). They share one test binary, as the Lab's world makes Classic McEliece keys that take a while, and each
-//! binary makes its own.
+//! knows (T15), and that an entry shared later reaches whoever it is shared with, whatever epoch the audience it was
+//! written in had reached. They share one test binary, as the Lab's world makes Classic McEliece keys that take a
+//! while, and each binary makes its own.
 
 mod common;
 
@@ -227,6 +228,100 @@ fn a_device_writes_under_the_newest_key_it_knows() {
     // both edits stand
     assert_eq!(text(&w.lab, w.mac_b, h.welcome, 1).as_deref(), Some("Welcome, alongside"));
     assert_eq!(text(&w.lab, w.mac_b, h.welcome, 2).as_deref(), Some(AFTER_TEXT));
+}
+
+/// Note `title` of Alice's, which her Mac writes in her own vault, where no share picks it yet: its second block reads
+/// `body`.
+fn note(w: &mut World, title: &str, body: &str) -> EntryId {
+    let (mac, alice) = (w.mac_a, w.alice);
+    w.lab.create(mac, alice, alice, "doc", &[], document(title, body, mac)).unwrap()
+}
+
+/// Alice's Mac shares entry `e` of her vault with vault `who`, read, by the entry's id, and every device syncs: a
+/// steward moves the entry into the share's audience.
+fn share_by_id(w: &mut World, e: EntryId, who: VaultId) -> ShareId {
+    let mac = w.mac_a;
+    let id = w.lab.issue(mac, &[mac], share(w.alice, vault(who), Level::Read, by_id(e))).unwrap();
+    w.lab.sync_all(29);
+    id
+}
+
+/// An entry shared later reaches whoever it is shared with, whatever epoch the audience it was written in had reached:
+/// Alice shares her first note with Bob, by its id, which empties the audience of no shares, and takes the share back;
+/// her second note brings that audience back into use, at a new epoch, and she shares it with Carol, who holds none of
+/// the edits that moved the audience on, and reads it.
+#[test]
+fn a_note_shared_after_a_revocation_reaches_a_newcomer() {
+    let mut w = world();
+    let (alice, bob, carol, mac) = (w.alice, w.bob, w.carol, w.mac_a);
+    let one = note(&mut w, "One", "The first note.");
+    let to_bob = share_by_id(&mut w, one, bob);
+    assert_eq!(text(&w.lab, w.mac_b, one, 2).as_deref(), Some("The first note."));
+    let revoke = Action::Revoke(Revoking::Grant { share: to_bob, actor: alice, keep: vec![], via: vec![] });
+    w.lab.submit(mac, &[mac], revoke).unwrap();
+    w.lab.sync_all(29);
+    let two = note(&mut w, "Two", "The second note.");
+    let own = audience_of(alice, &[]);
+    assert_eq!((audience_key(&w.lab, mac, two), w.lab.state(mac).epoch(own)), (own, 1));
+    share_by_id(&mut w, two, carol);
+    assert_eq!(text(&w.lab, w.mac_c, two, 2).as_deref(), Some("The second note."));
+    // and nothing else: Carol not the first note, Bob not the second
+    assert_eq!(text(&w.lab, w.mac_c, one, 2), None);
+    assert_eq!(text(&w.lab, w.mac_b, two, 2), None);
+}
+
+/// The same with no revocation: the first note shared with Bob leaves the audience of no shares empty, so the second
+/// brings it back into use at a new epoch, and Carol reads it once Alice shares it with her.
+#[test]
+fn a_later_note_shared_by_id_reaches_a_newcomer() {
+    let mut w = world();
+    let (alice, bob, carol) = (w.alice, w.bob, w.carol);
+    let one = note(&mut w, "One", "The first note.");
+    share_by_id(&mut w, one, bob);
+    let two = note(&mut w, "Two", "The second note.");
+    assert_eq!(w.lab.state(w.mac_a).epoch(audience_of(alice, &[])), 1);
+    share_by_id(&mut w, two, carol);
+    assert_eq!(text(&w.lab, w.mac_c, two, 2).as_deref(), Some("The second note."));
+    assert_eq!(text(&w.lab, w.mac_b, one, 2).as_deref(), Some("The first note."));
+}
+
+/// Over many epochs: Alice shares note after note by its id, each with someone new or with someone who read one
+/// before, and loses her iPhone on the way, so the audience of no shares moves on again and again, by edits of entries
+/// and of her vault that none of them holds all of. Each reads what is shared with them alone, and the lost iPhone
+/// nothing Alice wrote after it.
+#[test]
+fn notes_shared_by_id_reach_their_readers_after_many_epochs() {
+    let mut w = world();
+    let (alice, mac, phone) = (w.alice, w.mac_a, w.phone_a);
+    let readers = [(w.bob, w.mac_b), (w.carol, w.mac_c), (w.dave, w.mac_d)];
+    let [(bob, _), (carol, _), (dave, _)] = readers;
+    let give = |w: &mut World, title: &str, who: VaultId| {
+        let body = format!("{title}, for one reader.");
+        let e = note(w, title, &body);
+        share_by_id(w, e, who);
+        (e, body, who)
+    };
+    let mut notes = vec![give(&mut w, "A", bob), give(&mut w, "B", dave)];
+    let remove = Action::Revoke(Revoking::Device { vault: alice, device: phone, keep: vec![] });
+    w.lab.submit(mac, &[w.passkey_a], remove).unwrap();
+    w.lab.sync_all(29);
+    // Carol is new to it, two epochs on; then she, and Bob, who read the first note, are given more, epochs later
+    for (title, who) in [("C", carol), ("D", dave), ("E", carol), ("F", bob)] {
+        notes.push(give(&mut w, title, who));
+    }
+    assert_eq!(w.lab.state(mac).epoch(audience_of(alice, &[])), 5);
+    for (e, body, who) in &notes {
+        for (v, d) in readers {
+            let shown = text(&w.lab, d, *e, 2);
+            assert_eq!(shown.as_deref(), (v == *who).then_some(body.as_str()), "{d:?}: {body}");
+        }
+    }
+    let st = w.lab.state(mac);
+    for (e, ..) in &notes[2..] {
+        let first = st.entry_writes(*e).next().map(|x| x.key()).expect("a creation");
+        assert!(!w.lab.holds_key(phone, first), "the lost iPhone opens {first:?}");
+    }
+    keys_follow_shares(&w, "notes shared one by one");
 }
 
 /// Each device opens the current key of a family exactly when, by every edit the Lab holds, it may: it acts for a vault

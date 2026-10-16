@@ -276,6 +276,22 @@
 		min-height: 0;
 		padding: 0.4rem 1rem 0.7rem;
 		background: var(--abyss);
+		/* the dark surround keeps the dark room's ink and status colours, so what sits on it reads */
+		--ink: #e9e6dd;
+		--ink-soft: #c6cabf;
+		--dim: #9aa39a;
+		--edge: #36443a;
+		--raised: #25312a;
+		--hover: #2e3b33;
+		--ok: #6fd3a0;
+		--ok-bg: rgb(80 200 140 / 0.15);
+		--warn: #f0bd62;
+		--warn-bg: rgb(232 168 58 / 0.16);
+		--bad: #f78f76;
+		--bad-bg: rgb(240 110 80 / 0.17);
+		--info: #93b3ef;
+		--info-bg: rgb(110 150 230 / 0.18);
+		color: var(--ink);
 	}
 
 	.mlabel {
