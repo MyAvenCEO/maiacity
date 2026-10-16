@@ -22,9 +22,9 @@ use crate::wire::Wire;
 /// its keys are derived with BLAKE3 (a file of 2 holds those SHA-3 derived).
 const MAGIC: &[u8] = b"avenDB master recovery key 3\n";
 
-/// The file of avenDB's master recovery key, its public half, as its person made it: empty until they make it again
-/// from its secret (`master-key pub`), as every key of it is derived with BLAKE3 since edit version 10. An empty file
-/// builds avenDB without one.
+/// The file of avenDB's master recovery key, its public half, as its person made it from its secret (`master-key pub`,
+/// again on 2026-10-16, as every key of it is derived with BLAKE3 since edit version 10): signer 05e5bd92…. An empty
+/// file builds avenDB without one.
 const MASTER: &[u8] = include_bytes!("../master-recovery.pub");
 
 /// avenDB's master recovery key, which every human vault adds as an owner while avenDB is bootstrapped (`MASTER`):
