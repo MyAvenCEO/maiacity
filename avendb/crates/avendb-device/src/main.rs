@@ -75,8 +75,8 @@ fn usage() -> Result<Usage> {
     }
 }
 
-/// The app's avenDB folder on this Mac, as the app names it (vault/app/src/avendb.rs).
+/// The app's avenDB folder on this Mac, as the app names it (vault/app/src/avendb.rs): `~/avenDB/mac`.
 fn app_folder() -> Result<PathBuf> {
     let home = std::env::var_os("HOME").context("no HOME to find the app's folder in")?;
-    Ok(PathBuf::from(home).join("Library/Application Support/city.maia.studio/avendb"))
+    Ok(PathBuf::from(home).join("avenDB/mac"))
 }

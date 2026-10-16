@@ -1,7 +1,7 @@
 //! avenDB in the app, natively: its device runs beside the app as its sidecar, `avendb-device` (built from
 //! avendb/crates/avendb-device by build.rs, and bundled beside the app's own binary), so its node reaches the person's
 //! other devices directly, over UDP sockets of its own, and keeps their vault in a folder on this Mac
-//! (~/Library/Application Support/city.maia.studio/avendb/), not in the web view's IndexedDB. The avenDB page calls it
+//! (~/avenDB/mac/, where the person finds all of avenDB's data), not in the web view's IndexedDB. The avenDB page calls it
 //! through `avendb` ($lib/avendb/native.js), in the calls the page's own device answers; each ceremony of the person's
 //! passkey it asks for runs in the sign-in sheet over the window that called last (passkey.rs), what comes back sealed
 //! to a key the device made for that ceremony alone. It starts with the first call, runs on while the app does, its
@@ -102,13 +102,36 @@ pub async fn stop(state: &Avendb) {
     }
 }
 
-/// The device's folder: beside the app's settings.
+/// The device's folder: `~/avenDB/mac`, in the folder that holds all of avenDB's data on this Mac, its agents' folder
+/// beside it (`mac-agents`, avendb-device's `agent::agents`). It keeps the name avendb-device gives it by default.
 fn folder() -> PathBuf {
-    crate::settings_file().with_file_name("avendb")
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    home.join("avenDB/mac")
+}
+
+/// Moves the device's folder, and its agents' beside it, from where the app kept them before (beside its settings,
+/// in ~/Library/Application Support) to `folder()`, once: where the new one is missing and the old one is there. A
+/// rename on the same disk, so nothing is copied and nothing is half moved.
+fn moved() -> Result<(), String> {
+    let new = folder();
+    let old = crate::settings_file().with_file_name("avendb");
+    if new.exists() || !old.exists() {
+        return Ok(());
+    }
+    let parent = new.parent().ok_or("~/avenDB has no parent")?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("{} couldn't be made: {e}", parent.display()))?;
+    std::fs::rename(&old, &new).map_err(|e| format!("avenDB's folder didn't move to {}: {e}", new.display()))?;
+    let (old_agents, new_agents) = (old.with_file_name("avendb-agents"), new.with_file_name("mac-agents"));
+    if old_agents.exists() && !new_agents.exists() {
+        std::fs::rename(&old_agents, &new_agents)
+            .map_err(|e| format!("avenDB's agents didn't move to {}: {e}", new_agents.display()))?;
+    }
+    Ok(())
 }
 
 /// Starts the device, its sheets over `window` until another window calls.
 fn start(window: &tauri::WebviewWindow) -> Result<Sidecar, String> {
+    moved()?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("avendb-device");
     let mut child = Command::new(&exe)
         .arg("--dir")

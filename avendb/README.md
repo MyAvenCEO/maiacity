@@ -164,7 +164,7 @@ and `fileStart`, `fileChunk`, `fileEnd` and `fileDrop` to hand `put_file` a file
 - **Direct.** Its node binds UDP sockets of its own on every interface, IPv4 and IPv6, and maps a port on the router
   where one lets it (UPnP, NAT-PMP, PCP: `Options::direct`), so it reaches the person's other devices directly wherever
   it can, and through the relay only where it must. Its TLS is aws-lc-rs, X25519MLKEM768 only, like the server's.
-- **On disk.** It keeps what it holds on a shelf in a folder (`~/Library/Application Support/city.maia.studio/avendb/`,
+- **On disk.** It keeps what it holds on a shelf in a folder (`~/avenDB/mac/`,
   `avendb_net::disk`), laid out as the page's in OPFS, with what opens it again (`Meta`). No secret: its keys come back
   from the mask and the passkey's PRF output at every unlock, and either alone tells nothing. It runs on while the app
   does, whichever page is open, and opens again in the unlock alone.
