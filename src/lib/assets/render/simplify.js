@@ -8,19 +8,24 @@
  * The drawings of a level cross in as plain arrays (each its attributes and its index, how often it is drawn and how
  * big it is) and come out the same, lighter:
  *
- * - a part smaller than the level draws (a pixel where it is drawn biggest) is left out, and one already tiny (a box,
- *   a card) kept as it is;
+ * - a part smaller than the level draws (a pixel where it is drawn biggest) is left out, and one already tiny and
+ *   drawn once (a box, a card) kept as it is;
  * - the rest share what the level may cost, each as much of it as it has of the triangles;
  * - each drawing's corners are first welded where they are the same corner (the same place, normal, colour and
  *   picture's place, near enough): a build often comes as loose triangles, each with corners of its own, and to a
  *   simplifier every edge of a loose triangle is an edge of the shape it may not take away;
  * - then it is simplified to its share, the edges whose loss shows least taken first, its normals, colours and
- *   picture's places weighed with its shape, a seam where they change kept as a seam, its open edges kept to their
- *   line, and the small loose parts of it (a bolt, a hinge) dropped once they are smaller than the error it may make;
+ *   picture's places weighed with its shape, a seam where they change kept as a seam, its open edges where they are
+ *   (where one drawing meets another, a deck's planks against its rim, neither moves, so no crack opens between
+ *   them), and the small loose parts of it (a bolt, a hinge) dropped once they are smaller than the error it may make;
  * - a drawing whose corners meet so that the careful pass may take little away (a hard edge at every corner, as a
- *   machine's parts have) is passed again allowed across its seams, the attributes still weighed, and only then, if
- *   it must, allowed to stray further (STRETCH); one passed so is shaded again from the faces it has left (`reshade`);
- * - and what one drawing could not give up, the others that could give up a little more of, once.
+ *   machine's parts have) is passed again allowed across its seams, the attributes still weighed, and then allowed to
+ *   stray further (STRETCH), but only if that brings it to its share; one passed so is shaded again from the faces it
+ *   has left (`reshade`);
+ * - what one drawing could not give up, the others that could give up a little more of, once;
+ * - and a level still over its ceiling (a shape of many pieces, each as plain as it can be: a coop's planks, a
+ *   battery's cells) is allowed to stray further, a step at a time, until it is not. Under its ceiling, such a shape
+ *   keeps its pieces and stays over its share: leaving them out would show.
  *
  * What it leaves out: the bones' weights (a copy drawn with its bones is a tree of its own, from level 0's build,
  * ./index.js) and the blend shapes (a pose is baked into the shape before, ./prepare.js).
@@ -41,7 +46,10 @@ export const LEFT = new Set(['skinIndex', 'skinWeight']);
  */
 export const WEIGHTS = { normal: 0.5, color: 0.25, uv: 0.02 };
 
-/** a drawing this light (triangles) or lighter is kept as it is: there is nothing in a box or a card to take away */
+/**
+ * a drawing this light (triangles) or lighter, drawn once, is kept as it is: there is nothing in a box or a card to
+ * take away worth the trouble. One drawn many times (a tent's poles, a pickup's wheel nuts) is weighed by all its copies.
+ */
 export const TINY = 24;
 
 const maxOf = (A) => (A instanceof Uint8Array ? 255 : A instanceof Uint16Array ? 65535 : A instanceof Int8Array ? 127 : A instanceof Int16Array ? 32767 : 1);
@@ -281,22 +289,43 @@ function readied(shape) {
 }
 
 /**
- * A readied shape simplified to `tris` triangles, keeping within `error` metres where it can (see the passes above).
- * @returns {{ index: Uint32Array, error: number, pass: number }}
+ * The simplifier's passes, in turn until one comes near enough its share: each how many times the level's error it
+ * may stray by, how (see above), and whether it is taken only if it does. A level still over its ceiling after them is
+ * passed again, alone, allowed further.
  */
-function simplified(r, tris, error) {
+const PASSES = [
+	[1, []],
+	[1, ['Permissive']],
+	[STRETCH, ['Permissive'], true]
+];
+
+/**
+ * A readied shape simplified to `tris` triangles, keeping within `error` metres where it can (see the passes above);
+ * the number of the pass it came from (`first` the first's), or 0 when nothing could be taken away, and what a pass
+ * allowed further came to though short of its share (`short`).
+ * @returns {{ index: Uint32Array, error: number, pass: number, short?: { index: Uint32Array, error: number, pass: number } }}
+ */
+function simplified(r, tris, error, passes = PASSES, first = 1) {
 	const target = Math.max(3, Math.min(r.welded.index.length, Math.floor(tris) * 3));
 	if (target >= r.welded.index.length) return { index: r.welded.index, error: 0, pass: 0 };
-	const run = (e, flags) => MeshoptSimplifier.simplifyWithAttributes(r.welded.index, r.positions, 3, r.packed, r.width, r.weights, null, target, e, ['ErrorAbsolute', 'Prune', ...flags]);
-	let best = null;
-	const passes = [[error, []], [error, ['Permissive']], [error * STRETCH, ['Permissive']]];
+	const run = (e, flags) => MeshoptSimplifier.simplifyWithAttributes(r.welded.index, r.positions, 3, r.packed, r.width, r.weights, null, target, e, ['ErrorAbsolute', 'Prune', 'LockBorder', ...flags]);
+	let best = null, short = null;
 	for (let p = 0; p < passes.length; p++) {
-		const [index, got] = run(...passes[p]);
-		if (!best || index.length < best.index.length) best = { index, error: got, pass: p + 1 };
+		const [index, got] = run(error * passes[p][0], passes[p][1]);
+		const near = index.length <= target * 1.02 + 3;
+		// one allowed further is taken only when that brings the drawing to its share: short of it, it would lose its
+		// look for little (a bicycle's tyres, a coop's struts); kept aside, for a level over its ceiling
+		if (passes[p][2] && !near) {
+			if (index.length < best.index.length) short = { index, error: got, pass: first + p };
+			continue;
+		}
+		if (!best || index.length < best.index.length) best = { index, error: got, pass: first + p };
 		// near enough its share: done
-		if (index.length <= target * 1.02 + 3) break;
+		if (near) break;
 	}
-	return best;
+	// nothing taken away (a box, a card): kept as it is
+	if (best.index.length >= r.welded.index.length) best = { index: r.welded.index, error: 0, pass: 0 };
+	return short ? { ...best, short } : best;
 }
 
 /**
@@ -304,11 +333,13 @@ function simplified(r, tris, error) {
  * @param {{ attributes: Record<string, any>, index: ArrayLike<number>, tris: number, n: number, size: number }[]} draws
  *   each drawing of the level: its shape, its triangles, how often one copy draws it, and the diameter of its ball at
  *   the biggest it is drawn (m)
- * @param {{ budget: number, error: number, smallest: number }[]} plans each lower level: its triangles at most
- *   (./lod.js `budgetOf`), how far it may stray (m, `errorOf`) and the smallest part it draws (m, `smallestOf`)
+ * @param {{ budget: number, most?: number, error: number, smallest: number }[]} plans each lower level: the triangles it
+ *   is made to (./lod.js `budgetOf`), those it may never have more of (its ceiling, `budgetOf` of a shape without end),
+ *   how far it may stray (m, `errorOf`) and the smallest part it draws (m, `smallestOf`)
  * @param {() => Promise<void>} [pause] waited for between two drawings (in the page, a frame's room)
  * @returns {Promise<{ draws: ('same' | null | { attributes: Record<string, any>, index: Uint16Array | Uint32Array, tris: number })[], tris: number, error: number, passes: number[] }[]>}
- *   'same' a drawing kept as it is, null one left out
+ *   'same' a drawing kept as it is, null one left out; `passes` how many drawings came from each pass (0 none taken
+ *   away, 1 to 3 the passes above, 4 one allowed further for its level's ceiling)
  */
 export async function lowerDraws(draws, plans, pause) {
 	await ready;
@@ -325,10 +356,11 @@ export async function lowerDraws(draws, plans, pause) {
 	for (const plan of plans) {
 		const result = draws.map((d) => (d.size < plan.smallest ? null : 'same'));
 		const cost = (i) => draws[i].tris * draws[i].n;
-		const open = draws.map((_, i) => i).filter((i) => result[i] && draws[i].tris > TINY);
-		const fixed = draws.reduce((s, d, i) => s + (result[i] && d.tris <= TINY ? cost(i) : 0), 0);
+		const tiny = (d) => d.tris <= TINY && d.n === 1;
+		const open = draws.map((_, i) => i).filter((i) => result[i] && !tiny(draws[i]));
+		const fixed = draws.reduce((s, d, i) => s + (result[i] && tiny(d) ? cost(i) : 0), 0);
 		const whole = open.reduce((s, i) => s + cost(i), 0);
-		const level = { draws: result, tris: fixed + whole, error: 0, passes: [0, 0, 0, 0] };
+		const level = { draws: result, tris: fixed + whole, error: 0, passes: Array(PASSES.length + 2).fill(0) };
 		if (fixed + whole > plan.budget && open.length) {
 			const share = Math.max(0, plan.budget - fixed) / whole;
 			const got = new Map();
@@ -345,13 +377,35 @@ export async function lowerDraws(draws, plans, pause) {
 			if (over > 0) {
 				const able = open.filter((i) => got.get(i).pass > 0 && got.get(i).tris <= got.get(i).want * 1.02 + 1);
 				const room = able.reduce((s, i) => s + got.get(i).tris * draws[i].n, 0);
-				if (room > over) for (const i of able) await lower(i, Math.max(1, got.get(i).tris * (1 - over / room)));
+				// (a little under: each may come back as much as 2 % over what it is asked for)
+				if (room > over) for (const i of able) await lower(i, Math.max(1, (got.get(i).tris * (1 - over / room)) / 1.02));
+			}
+			// still over its ceiling: first the drawings that strayed further short of their share take that after all,
+			// those it takes most from first
+			const most = plan.most ?? Infinity;
+			const gain = (i) => (got.get(i).tris - got.get(i).short.index.length / 3) * draws[i].n;
+			for (const i of open.filter((j) => got.get(j).short).sort((a, b) => gain(b) - gain(a))) {
+				if (sum() <= most) break;
+				const g = got.get(i);
+				got.set(i, { ...g.short, want: g.want, tris: g.short.index.length / 3 });
+			}
+			// and then (a shape of many pieces, each as plain as it can be) allowed to stray further, a step at a time,
+			// its smaller pieces left out, until it is not
+			for (let further = 2 * STRETCH; sum() > most && further <= STRETCH ** 3; further *= 2) {
+				const room = Math.max(0, most - fixed) / whole;
+				for (const i of open) {
+					const want = Math.max(1, draws[i].tris * room);
+					if (got.get(i).tris <= want) continue;
+					if (pause) await pause();
+					const g = simplified(made.get(i), want, plan.error, [[further, ['Permissive']]], PASSES.length + 1);
+					if (g.pass && g.index.length / 3 < got.get(i).tris) got.set(i, { ...g, want, tris: g.index.length / 3 });
+				}
 			}
 			for (const i of open) {
 				const g = got.get(i);
 				level.passes[g.pass]++;
 				level.error = Math.max(level.error, g.error);
-				// folded across its seams (the second and third passes): shaded again from its faces
+				// folded across its seams (every pass but the first): shaded again from its faces
 				const shape = g.pass === 0 ? null : g.pass > 1 && made.get(i).welded.attributes.normal ? reshade(made.get(i).welded, g.index) : compact(made.get(i).welded, g.index);
 				result[i] = shape ? { ...shape, tris: g.tris } : 'same';
 			}

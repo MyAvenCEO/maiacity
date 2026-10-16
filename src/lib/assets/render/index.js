@@ -183,7 +183,7 @@ export function createAssets(o) {
 	}
 
 	/** what level L of a kind made from `from` (a level of it, or the source of several) is made to: ./lod.js */
-	const planOf = (L, from) => ({ budget: budgetOf(L, from.tris, levels), error: errorOf(L, from.radius, levels), smallest: smallestOf(L, from.radius, levels) });
+	const planOf = (L, from) => ({ budget: budgetOf(L, from.tris, levels), most: budgetOf(L, Infinity, levels), error: errorOf(L, from.radius, levels), smallest: smallestOf(L, from.radius, levels) });
 
 	/** a level of a kind asked for, once; its drawings made when it comes */
 	function want(k, L, first = false) {

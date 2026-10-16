@@ -1,15 +1,15 @@
 <!--
 	THE LEVELS CHECK (/app/assets/render/levels/) — the gate of phase 5 of the asset pipeline: does each lower level of
 	an asset read like its finest where it takes over? A sample of kinds (a machine of many parts, the biggest machine, a
-	thing, an actor and two plants, or `?refs=a,b,…`), each drawn alone by the universal renderer
-	(src/lib/assets/render) under the lab's sky at its afternoon hour: for each of its lower levels and its picture, the
-	eye stands where that level takes over (the kind's size on screen at the threshold of the level before it, ./lod.js),
-	and the kind is drawn there at its finest and at that level. The two are compared halved, each four pixels one, as a
-	thing a step further off shows them: how much of their outline differs (the pixels covered by one and not the other,
-	as a share of those covered by either) and how far their colours are where both cover; and again pooled four times
-	coarser (`squinting`: the leaves of a crown, each a few pixels, read as the crown). Each pair is shown side by
-	side; the numbers are in `#levels` and window.__levels. Drawn at the size of the window: the levels are made for a
-	screen 1080 pixels high.
+	machine of many plain pieces, things, actors and two plants, or `?refs=a,b,…`), each drawn alone by the universal
+	renderer (src/lib/assets/render) under the lab's sky at its afternoon hour: for each of its lower levels and its
+	picture, the eye stands where that level takes over (the kind's size on screen at the threshold of the level before
+	it, ./lod.js), and the kind is drawn there at its finest and at that level. The two are compared halved, each four
+	pixels one, as a thing a step further off shows them: how much of their outline differs (the pixels covered by one
+	and not the other, as a share of those covered by either) and how far their colours are where both cover; and again
+	pooled four times coarser (`squinting`: the leaves of a crown, each a few pixels, read as the crown). Each pair is
+	shown side by side; the numbers are in `#levels` and window.__levels. Drawn at the size of the window: the levels
+	are made for a screen 1080 pixels high.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -18,7 +18,7 @@
 	import { createSky, createStage, WorldBar } from '$lib/sandbox-kit';
 
 	/** the kinds checked unless the address names others */
-	const SAMPLE = ['machines/pickup', 'machines/lifetrac', 'things/bell-tent', 'things/bistro-chair', 'actors/goat:goat-saanen', 'actors/stand-in', 'plants/walnut?stage=9', 'plants/apple@2?stage=9'];
+	const SAMPLE = ['machines/pickup', 'machines/lifetrac', 'machines/batterycube', 'things/bell-tent', 'things/dome-tent', 'things/chicken-coop', 'things/bistro-chair', 'actors/goat:goat-saanen', 'actors/stand-in', 'plants/walnut?stage=9', 'plants/apple@2?stage=9'];
 	/**
 	 * where the eye looks from: a little to the right of the front, a little above; and for a picture, also from one
 	 * of the eight sides it was photographed from (between two, it shows the nearer: what eight sides cost)

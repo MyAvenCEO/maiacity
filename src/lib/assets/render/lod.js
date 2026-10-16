@@ -53,7 +53,9 @@ export const SCREEN = 1080;
  * A level made by simplifying keeps within `px` pixels on SCREEN of the finest where it is drawn biggest (at the
  * threshold before it), as long as its triangles let it: the simplifier takes the edges whose loss shows least first.
  * Only a shape that cannot reach its share so (a machine's parts, hard edges at every corner) goes on to STRETCH times
- * that. A part smaller than a pixel there is left out.
+ * that, and only where that brings it to its share. A part smaller than a pixel there is left out. A shape of many pieces each already as plain as it can be (a
+ * coop's planks, a battery's cells, a planter's cards) cannot reach its share without leaving out pieces that show:
+ * it keeps them and stays over its share, though never over its ceiling (./simplify.js).
  */
 export const BUDGETS = [
 	{ share: 1, floor: 0, px: 0 },

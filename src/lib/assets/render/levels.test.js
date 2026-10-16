@@ -121,6 +121,38 @@ test('a level of parts: a tiny one kept, one too small to see left out, the rest
 	expect(TINY).toBeGreaterThanOrEqual(12);
 });
 
+test('a drawing drawn many times weighed by all its copies; a shape of plain pieces kept under its ceiling', async () => {
+	const presets = createPresets();
+	const planned = (level) => [1, 2].map((L) => ({ budget: budgetOf(L, level.tris), most: budgetOf(L), error: errorOf(L, level.radius), smallest: smallestOf(L, level.radius) }));
+	// a tent's poles: a closed tube of 24 triangles drawn 240 times, beside a ball
+	const root = new THREE.Group();
+	const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.02, 0.02, 1.3, 6), new THREE.MeshStandardMaterial(), 240);
+	for (let i = 0; i < 240; i++) poles.setMatrixAt(i, new THREE.Matrix4().makeTranslation(Math.cos(i) * 4, 1, Math.sin(i) * 4));
+	root.add(poles, new THREE.Mesh(new THREE.SphereGeometry(4, 48, 32), new THREE.MeshStandardMaterial()));
+	const tent = prepare(root, presets);
+	const at = tent.draws.findIndex((d) => d.n === 240);
+	const [, two] = await lowerDraws(tent.draws.map(plainOf), planned(tent));
+	expect(two.draws[at].tris).toBeLessThan(12);
+	console.log(`240 poles of 24 triangles: ${two.draws[at].tris} each at level 2`);
+	// 6,000 boxes from 5 to 40 cm (72,000 triangles), each as plain as a box can be: level 1 keeps them, over its
+	// share and under its ceiling; level 2 cannot keep them all under its own, and leaves out the smallest
+	const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
+	let seed = 7;
+	const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+	const boxes = Array.from({ length: 6000 }, () => {
+		const a = 0.05 + rnd() * 0.35;
+		return new THREE.BoxGeometry(a, a, a).translate(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
+	});
+	const pieces = prepare(new THREE.Mesh(mergeGeometries(boxes), new THREE.MeshStandardMaterial()), presets);
+	const plans = planned(pieces);
+	const [one, low] = await lowerDraws(pieces.draws.map(plainOf), plans);
+	console.log(`6,000 boxes: ${pieces.tris} → ${one.tris} (share ${plans[0].budget}, ceiling ${plans[0].most}), ${low.tris} (share ${plans[1].budget}, ceiling ${plans[1].most}); passes ${one.passes} | ${low.passes}`);
+	expect(one.tris).toBeGreaterThan(plans[0].budget);
+	expect(one.tris).toBeLessThanOrEqual(plans[0].most);
+	expect(low.tris).toBeLessThanOrEqual(plans[1].most);
+	expect(low.tris).toBeGreaterThan(plans[1].most / 4);
+}, 120000);
+
 /** a build as the page has it: built, sent out of the box as data, checked and rebuilt, prepared */
 async function built(ref) {
 	const obj = await objectAt(ref);
@@ -151,7 +183,9 @@ function check(L0, levels) {
 	const whole = boxOf(L0).getSize(new THREE.Vector3());
 	for (const [j, lv] of levels.entries()) {
 		const L = j + 1;
-		expect(lv.tris).toBeLessThanOrEqual(budgetOf(L, L0.tris));
+		// at its share, near enough (a drawing the stretched pass could not bring to its own keeps its look), and never
+		// over its ceiling
+		expect(lv.tris).toBeLessThanOrEqual(Math.min(budgetOf(L), Math.ceil(budgetOf(L, L0.tris) * 1.05)));
 		expect(lv.tris).toBeLessThan(L0.tris);
 		expect(lv.made.error).toBeLessThanOrEqual(errorOf(L, L0.radius) * STRETCH * 1.01);
 		const size = boxOf(lv).getSize(new THREE.Vector3());
