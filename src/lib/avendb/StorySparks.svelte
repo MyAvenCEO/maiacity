@@ -1,14 +1,15 @@
 <!--
-	A story's Idea tab: the sparks it grows from (its `sparks`, ./sparks.js), as cards, each to open or take out; the
-	sparks of its vault to add, as many as the person picks, or a new one written here; and its sources, the sparks it
-	cites, its own and those its mood boards gather, each with whose it is and its link. Each change is one op on the story's main line, for the acting vault, as
-	the device allows it (`may`).
+	A story's Idea tab: the sparks it grows from (its `sparks`, ./sparks.js), as a list, each to open or take out; the
+	sparks of its vault to add, as many as the person picks, or a new one written here; and its sources, the artifacts
+	(./artifacts.js) on their canvases and on the canvases of the sparks they hold, each with where it is from and its
+	link. Each change is one op on the story's main line, for the acting vault, as the device allows it (`may`).
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, may } from './ops.js';
-	import SparkCard from './SparkCard.svelte';
-	import { addingSpark, byWords, fromLine, hostOf, isSpark, SPARK } from './sparks.js';
+	import { addingArtifact, ARTIFACT, entryOf, fromLink, fromWords, isArtifact } from './artifacts.js';
+	import SparkRow from './SparkRow.svelte';
+	import { addingSpark, fromLine, hostOf, isSpark, itemsOf, linkIn, placing, SPARK, sparkRecord } from './sparks.js';
 	import { count, nameOf, reads } from './vaults.js';
 
 	/**
@@ -24,11 +25,22 @@
 	/** the sparks it names that this browser holds, and how many it doesn't */
 	const sparks = $derived(linked.flatMap((s) => byId.get(s) ?? []));
 	const missing = $derived(linked.length - sparks.length);
-	/** its sources: the sparks it grows from, and those its mood boards gather, that have a link or whose they are */
+	/** its sources: the artifacts on the canvases of the sparks it grows from, and of the sparks those hold, in turn */
 	const sources = $derived.by(() => {
-		const gathered = sparks.flatMap((s) => /** @type {any} */ (s.record)?.sparks ?? []).flatMap((s) => byId.get(s) ?? []);
-		const all = [...new Map([...sparks, ...gathered].map((s) => [s.entry, s])).values()];
-		return all.filter((s) => /** @type {any} */ (s.record)?.url || /** @type {any} */ (s.record)?.by);
+		const seen = new Set();
+		const out = new Map();
+		const stack = [...linked];
+		while (stack.length) {
+			const s = stack.pop() ?? '';
+			if (seen.has(s)) continue;
+			seen.add(s);
+			for (const it of itemsOf(byId.get(s))) {
+				const e = byId.get(entryOf(it.ref));
+				if (it.what === 'spark') stack.push(entryOf(it.ref));
+				else if (it.what === 'artifact' && e && isArtifact(e) && !e.deleted) out.set(e.entry, e);
+			}
+		}
+		return [...out.values()];
 	});
 	/** the sparks of its vault it doesn't grow from yet */
 	const others = $derived(
@@ -40,6 +52,7 @@
 	/** whether the acting vault's ops let it add and take out sparks, and add a new spark, as the device says */
 	let links = $state(false);
 	let asked = $state(/** @type {string[] | null} */ (null));
+	let askedArtifact = $state(/** @type {string[] | null} */ (null));
 	$effect(() => {
 		void world;
 		let gone = false;
@@ -47,6 +60,7 @@
 		if (writes) may(api, actor, [{ op: 'insert', entry, path: ['sparks'], value: probe }]).then(([a]) => !gone && (links = allowed(a)));
 		else links = false;
 		creatable(api, actor, item.vault, SPARK).then((t) => !gone && (asked = t));
+		creatable(api, actor, item.vault, ARTIFACT).then((t) => !gone && (askedArtifact = t));
 		return () => {
 			gone = true;
 		};
@@ -77,10 +91,19 @@
 	async function write() {
 		const t = line.trim();
 		if (!t || !asked) return;
-		const ops = [
-			{ ...addingSpark(item.vault, fromLine(t), asked), as: actor },
-			{ op: 'insert', as: actor, entry, path: ['sparks'], value: '$0' }
-		];
+		const u = linkIn(t);
+		const at = { ...placing([], 1)[0], id: 1 };
+		const ops =
+			u && askedArtifact !== null
+				? [
+						{ ...addingArtifact(item.vault, fromLink(u), askedArtifact), as: actor },
+						{ ...addingSpark(item.vault, sparkRecord(fromLink(u).title, '', [{ ...at, what: 'artifact', ref: { vault: item.vault, entry: '$0' } }]), asked), as: actor },
+						{ op: 'insert', as: actor, entry, path: ['sparks'], value: '$1' }
+					]
+				: [
+						{ ...addingSpark(item.vault, fromLine(t), asked), as: actor },
+						{ op: 'insert', as: actor, entry, path: ['sparks'], value: '$0' }
+					];
 		if (await api.runAll('Adding the spark', ops)) line = '';
 	}
 </script>
@@ -97,14 +120,14 @@
 	</header>
 
 	{#if sparks.length}
-		<div class="linked">
+		<ul class="linked">
 			{#each sparks as s (s.entry)}
-				<SparkCard {world} {api} item={s} small onremove={links && !busy ? () => takeOut(s.entry) : undefined} />
+				<SparkRow {world} {api} item={s} onremove={links && !busy ? () => takeOut(s.entry) : undefined} />
 			{/each}
-		</div>
+		</ul>
 	{:else}
 		<p class="soft">
-			None yet. A story grows from its sparks: thoughts, links, pictures, mood boards, others’ posts.
+			None yet. A story grows from its sparks, each a canvas of artifacts and notes.
 			{links ? 'Add some of the vault’s, or write a new one below.' : ''}
 		</p>
 	{/if}
@@ -154,10 +177,10 @@
 	{#if sources.length}
 		<ol class="sources">
 			{#each sources as s (s.entry)}
-				{@const r = /** @type {any} */ (s.record)}
+				{@const r = /** @type {any} */ (s.record) ?? {}}
 				<li>
-					<a href="#notes/{s.entry}">{s.title || 'Untitled'}</a>
-					{#if byWords(r.by)}<span class="soft"> · {byWords(r.by)}</span>{/if}
+					<a href="#artifacts/{s.entry}">{s.title || 'Untitled'}</a>
+					{#if fromWords(r)}<span class="soft"> · {fromWords(r)}</span>{/if}
 					{#if r.url}
 						<a class="out" href={r.url} target="_blank" rel="noopener noreferrer">{hostOf(r.url)} <Icon name="out" size={12} /></a>
 					{/if}
@@ -165,7 +188,7 @@
 			{/each}
 		</ol>
 	{:else}
-		<p class="soft">Its sparks with a link, or whose they are, are listed here, as the sources it cites.</p>
+		<p class="soft">The artifacts on its sparks’ canvases are listed here, as the sources it cites.</p>
 	{/if}
 </section>
 
@@ -205,9 +228,12 @@
 	}
 
 	.linked {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr));
-		gap: 0.7rem;
+		margin: 0;
+		padding: 0.2rem 0.5rem;
+		border: 1px solid var(--edge);
+		border-radius: 14px;
+		background: #fff;
+		list-style: none;
 	}
 
 	p {

@@ -52,10 +52,11 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         })
     };
     let schemas = lens::blobs::SHIPPED.map(|b| schema(&Schema::parse(b.as_bytes()).expect("a shipped schema parses")));
+    let lenses = lens::blobs::LENSES.map(|b| lens(&Lens::parse(b.as_bytes()).expect("a shipped lens parses")));
     json!({
         "vault": hex(&vault.0),
         "held": { "edits": edits, "keys": keys },
-        "builtIn": { "schemas": schemas, "lenses": [] },
+        "builtIn": { "schemas": schemas, "lenses": lenses },
         "seed": st.epoch(KeyFam::Seed(vault)),
         "edits": counts(lab, me, vault),
         "schemas": lane.schemas().map(schema).collect::<Vec<_>>(),

@@ -556,7 +556,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let held = run(&first, database).await.expect("its database");
     let both = (ids(&held["schemas"]), ids(&held["lenses"]));
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
-    assert_eq!((both.0.len(), both.1.len()), (12, 0), "its own kinds, one version each, and no lens");
+    assert_eq!((both.0.len(), both.1.len()), (14, 1), "its own kinds, the spark's two versions, and the lens between");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
@@ -1172,8 +1172,10 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .iter()
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
-    let own = "documents, todos, articles, flows, functions, posts, cards, profiles, files, stories, sparks, requests";
-    assert_eq!(schemas.len(), 12, "{own}, one version each");
+    let own = "documents, todos, articles, flows, functions, posts, cards, profiles, files, stories, sparks (v1 and v2), \
+        requests, artifacts";
+    assert_eq!(schemas.len(), 14, "{own}");
+    assert_eq!(db["builtIn"]["lenses"].as_array().map(Vec::len), Some(1), "the lens from spark v1 to v2");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
     assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V1.id().to_hex()]), "written under document v1");
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V1.id().to_hex()));
@@ -1192,7 +1194,10 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
     let audiences = db["audiences"].as_array().expect("its audiences");
     let one = (audiences.len(), audiences[0]["entries"].as_u64(), audiences[0]["shares"].as_array().map(Vec::len));
     assert_eq!(one, (1, Some(3), Some(0)), "her card, the note and its variant: no share splits her vault");
-    assert_eq!(db["builtIn"]["lenses"], json!([]), "no record is written under an older version");
+    let lenses = db["builtIn"]["lenses"].as_array().expect("the app's own lenses");
+    let spark = (avendb::lens::SPARK_LENS.from().to_hex(), avendb::lens::SPARK_LENS.to().to_hex());
+    assert_eq!(lenses.len(), 1, "the one lens avenDB ships, from spark v1 to v2");
+    assert_eq!((lenses[0]["from"].as_str(), lenses[0]["to"].as_str()), (Some(spark.0.as_str()), Some(spark.1.as_str())));
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
     // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and SLH-DSA signed
     let log = run(&first, json!({ "op": "log" })).await.expect("its log");

@@ -1,58 +1,69 @@
-// A vault's sparks (./Sparks.svelte): anything that might become something, one small entry each, a record of
-// avenDB's own `spark` schema (avendb's `lens::blobs::SPARK_V1`): a thought, a link, a picture, a mood board, someone
-// else's post, a video or a podcast with its words, a quote, a longer note. Its title and blocks are a document's, so a
-// note's page edits it; beside them what it is (`look`), its link (`url`), whose it is (`by`), its words (`transcript`),
-// its Library files (`files`) and, for a mood board, the sparks it gathers (`sparks`). The notes written before sparks
+// A vault's sparks (./Sparks.svelte): the scratchpads where sources are combined into what might become a story, one
+// small entry each, a record of avenDB's own `spark` schema (avendb's `lens::blobs::SPARK_V2`): an open canvas
+// (./SparkCanvas.svelte) of artifacts (./artifacts.js), text notes and other sparks, each where it was put (`items`),
+// with its title and its own words (`blocks`, a document's, so a note's page edits them). A spark of v1, written
+// before the canvas, opens through the lens avenDB ships, its title and words kept. The notes written before sparks
 // stay entries of type note, documents, and show among the sparks as notes: nothing is moved.
 
+import { entryOf, isArtifact, linkTo } from './artifacts.js';
 import { flowsFor, STORY, stageTag } from './flows.js';
 import { kindOf, whole } from './files.js';
 
 /** The type of a spark's entry, and the kind of its record. */
 export const SPARK = 'spark';
 
-/** What a spark can be, each its look, its name in the plural, and its icon. */
-export const LOOKS = /** @type {const} */ ([
-	['thought', 'Thoughts', 'thought'],
-	['link', 'Links', 'link'],
-	['image', 'Images', 'image'],
-	['moodboard', 'Mood boards', 'board'],
-	['post', 'Posts', 'post'],
-	['video', 'Videos', 'film'],
-	['quote', 'Quotes', 'quote'],
-	['note', 'Notes', 'note']
-]);
-/** @typedef {(typeof LOOKS)[number][0]} Look */
-
-/** A look in the singular, as a spark's card names it. */
-export const LOOK_NAME = /** @type {Record<Look, string>} */ ({
-	thought: 'Thought',
-	link: 'Link',
-	image: 'Image',
-	moodboard: 'Mood board',
-	post: 'Post',
-	video: 'Video',
-	quote: 'Quote',
-	note: 'Note'
-});
-
 /** Whether entry `e` shows among the sparks: a spark, or a note written before them. @param {any} e */
 export const isSpark = (e) => (e.type === SPARK || e.type === 'note') && e.kind === 'note';
 
-/** What spark `e` is: its look, a note written before sparks a note. @param {any} e @returns {Look} */
-export const lookOf = (e) => (e.type === SPARK ? (e.record?.look ?? 'thought') : 'note');
+/** Whether spark `e` is a note written before sparks. @param {any} e */
+export const isOldNote = (e) => e.type !== SPARK;
 
-/** The hosts whose links are someone's post, and those whose links are a video or a podcast. */
-const POSTS = /(^|\.)(x\.com|twitter\.com|instagram\.com|threads\.net|bsky\.app|linkedin\.com|facebook\.com|tiktok\.com|reddit\.com|mastodon\.social)$/;
-const VIDEOS = /(^|\.)(youtube\.com|youtu\.be|vimeo\.com|twitch\.tv|spotify\.com|podcasts\.apple\.com)$/;
+/** What sits on a spark's canvas, its items. @param {any} e @returns {any[]} */
+export const itemsOf = (e) => e?.record?.items ?? [];
 
-/** The platform a link is on, by its host, where it is one we know: `youtube`, `x`, … @param {URL} u */
-function platformOf(u) {
-	const host = u.hostname.replace(/^www\./, '');
-	if (host === 'youtu.be') return 'youtube';
-	if (host === 'twitter.com') return 'x';
-	return POSTS.test(host) || VIDEOS.test(host) ? host.split('.').slice(-2)[0] : '';
+/** The size a new item takes on a canvas, and the room between items. */
+export const CARD = { w: 220, h: 170, gap: 24, pad: 32 };
+
+/** A new id for a row of `rows`, picked at random as avenDB asks, one no row has. @param {{ id: number }[]} rows */
+export function newId(rows) {
+	const taken = new Set(rows.map((r) => r.id));
+	let id = 0;
+	while (!id || taken.has(id)) id = 1 + Math.floor(Math.random() * 2 ** 30);
+	return id;
 }
+
+/**
+ * Where `n` new items go on a canvas that holds `items`: in a row under the lowest one, else from the top left; or
+ * from point `at`, side by side, where they were dropped.
+ * @param {any[]} items @param {number} n @param {{ x: number, y: number }} [at]
+ * @returns {{ x: number, y: number }[]}
+ */
+export function placing(items, n, at) {
+	const across = 4;
+	const top = at ?? { x: CARD.pad, y: items.length ? Math.max(...items.map((i) => (i.y ?? 0) + (i.h ?? CARD.h))) + CARD.gap : CARD.pad };
+	return Array.from({ length: n }, (_, i) => ({
+		x: Math.round(top.x + (i % across) * (CARD.w + CARD.gap)),
+		y: Math.round(top.y + Math.floor(i / across) * (CARD.h + CARD.gap))
+	}));
+}
+
+/**
+ * The rows that put the entries `refs` (each `{ vault, entry, what }`) on a canvas that holds `items`, placed as
+ * `placing` places them, each with an id of its own.
+ * @param {any[]} items @param {{ vault: string, entry: string, what: 'artifact' | 'spark' }[]} refs
+ * @param {{ x: number, y: number }} [at]
+ */
+export function itemsFor(items, refs, at) {
+	const at_ = placing(items, refs.length, at);
+	/** @type {any[]} */
+	const made = [];
+	refs.forEach((r, i) => made.push({ id: newId([...items, ...made]), what: r.what, ref: linkTo(r.vault, r.entry), ...at_[i] }));
+	return made;
+}
+
+/** A text note on a canvas that holds `items`, at `at` or under the rest. @param {any[]} items @param {string} text
+ *  @param {{ x: number, y: number }} [at] */
+export const textItem = (items, text, at) => ({ id: newId(items), what: 'text', text, ...placing(items, 1, at)[0] });
 
 /** Line `line` as a link, where it is one, alone on its line: its URL, else `null`. @param {string} line */
 export function linkIn(line) {
@@ -77,51 +88,39 @@ export function hostOf(url) {
 
 /**
  * A spark as this app writes one, of avenDB's spark schema: titled `title`, its opening heading (block 1) the title
- * too and, where it has `text`, a paragraph (block 2) that reads it, as a note's page writes a note; the fields `more`
- * gives beside.
- * @param {string} title @param {string} text @param {Record<string, unknown>} [more]
+ * too and, where it has `text`, a paragraph (block 2) that reads it, as a note's page writes a note; on its canvas the
+ * items `items`.
+ * @param {string} title @param {string} text @param {any[]} [items]
  */
-export const sparkRecord = (title, text, more = {}) => ({
+export const sparkRecord = (title, text, items = []) => ({
 	kind: SPARK,
 	title,
 	blocks: [
 		{ id: 1, type: 'heading', level: 1, text: title },
 		...(text ? [{ id: 2, type: 'paragraph', text }] : [])
 	],
-	...more
+	items
 });
 
 /** The longest title a spark of one line takes from it, in letters. */
 const TITLE = 80;
 
+/** A line cut to a title, at a word. @param {string} t */
+export const titleOf = (t) => (t.length <= TITLE ? t : `${t.slice(0, TITLE).replace(/\s+\S*$/, '')}…`);
+
 /**
- * The spark one line captures: a link alone on its line a link (someone's post, a video, by its host), its title the
- * link's host and path; anything else a thought, its title the line, cut at a word, its text the whole line.
+ * The spark one line of thought captures: its title the line, cut at a word, and where it is longer, the whole line
+ * as a text note on its canvas.
  * @param {string} line
  */
 export function fromLine(line) {
 	const t = line.trim();
-	const u = linkIn(t);
-	if (u) {
-		const host = u.hostname.replace(/^www\./, '');
-		const look = POSTS.test(host) ? 'post' : VIDEOS.test(host) ? 'video' : 'link';
-		const platform = platformOf(u);
-		const path = u.pathname.replace(/\/$/, '');
-		const by = platform ? { by: { platform } } : {};
-		return sparkRecord(`${host}${path.length > 1 ? path : ''}`.slice(0, TITLE), '', { look, url: u.href, ...by });
-	}
-	const title = t.length <= TITLE ? t : `${t.slice(0, TITLE).replace(/\s+\S*$/, '')}…`;
-	return sparkRecord(title, title === t ? '' : t, { look: 'thought' });
+	const title = titleOf(t);
+	return sparkRecord(title, '', title === t ? [] : [textItem([], t)]);
 }
 
-/**
- * The look of a spark of one file, by its kind: a picture an image, a film or a sound a video, anything else a note.
- * @param {string} media @param {string} name @returns {Look}
- */
-export function lookOfFile(media, name) {
-	const k = kindOf(media, name);
-	return k === 'image' || k === 'svg' ? 'image' : k === 'film' || k === 'audio' ? 'video' : 'note';
-}
+/** Whether a Library file is a picture, by its media type and name. @param {string} media @param {string} name */
+const isPicture = (media, name) => ['image', 'svg'].includes(kindOf(media, name));
 
 /** The op that adds spark `value` to vault `vault`, tagged `tags`. @param {string} vault @param {object} value
  *  @param {string[]} tags */
@@ -140,12 +139,29 @@ export function addingStory(world, vault, title, sparks, asked) {
 }
 
 /**
- * The stories and mood boards that grow from spark `entry`, of those this browser reads: each entry that names it
- * among its sparks.
+ * The stories that grow from spark `entry` and the sparks that hold it on their canvas, of those this browser reads.
  * @param {import('./vaults.js').WorldView} world @param {string} entry
  */
 export const grownFrom = (world, entry) =>
-	world.entries.filter((e) => !e.deleted && /** @type {any} */ (e.record)?.sparks?.includes?.(entry));
+	world.entries.filter(
+		(e) =>
+			!e.deleted &&
+			(/** @type {any} */ (e.record)?.sparks?.includes?.(entry) ||
+				(e.type === SPARK && itemsOf(e).some((it) => it.what === 'spark' && entryOf(it.ref) === entry)))
+	);
+
+/**
+ * What a spark holds, by entry, of those this browser reads: the artifacts on its canvas, its text notes and the
+ * sparks on it.
+ * @param {import('./vaults.js').WorldView} world @param {any} e
+ */
+export function pieces(world, e) {
+	const byId = new Map(world.entries.map((x) => [x.entry, x]));
+	const items = itemsOf(e);
+	const artifacts = items.filter((it) => it.what === 'artifact').flatMap((it) => byId.get(entryOf(it.ref)) ?? []);
+	const sparks = items.filter((it) => it.what === 'spark').flatMap((it) => byId.get(entryOf(it.ref)) ?? []);
+	return { artifacts: artifacts.filter(isArtifact), sparks, notes: items.filter((it) => it.what === 'text') };
+}
 
 /** Whose a spark is, in a line: its name, its platform, where they are. @param {any} by */
 export function byWords(by) {
@@ -168,7 +184,7 @@ const pictures = new Map();
 export function pictureOf(api, file) {
 	const f = file?.files?.[0];
 	const media = file?.media ?? '';
-	if (!f || f.len === null || f.len > PICTURE || lookOfFile(media, file.title ?? '') !== 'image') return Promise.resolve(null);
+	if (!f || f.len === null || f.len > PICTURE || !isPicture(media, file.title ?? '')) return Promise.resolve(null);
 	if (!pictures.has(f.root)) {
 		const read = (/** @type {string} */ root, /** @type {number} */ size, /** @type {number} */ from, /** @type {number} */ to) =>
 			api.readFile(root, size, from, to);
