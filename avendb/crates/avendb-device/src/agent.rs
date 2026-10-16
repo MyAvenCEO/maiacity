@@ -45,7 +45,9 @@
 //! or else from the Mac's one store, and writes it to the `path` beside the op, never over a file there unless
 //! `overwrite` is beside it too; a small text file comes back inline as well. Two named tools do what an agent does
 //! most: `avendb_add_spark` captures a spark as the page's Sparks capture one, the same `create` op run as
-//! `avendb_run` runs it, into its person's own vault unless it names another; and `avendb_read_file` is `get_file`.
+//! `avendb_run` runs it, into its person's own vault unless it names another; `avendb_add_artifact` adds a source fact
+//! as the page's Artifacts add one, a link or a file of this Mac saved to the Library first, and puts it on a spark's
+//! canvas where it names one; and `avendb_read_file` is `get_file`.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -90,6 +92,18 @@ const SPARK: &str = "spark";
 
 /// The longest title a spark takes from the first line of its text, in letters, as the page's Sparks cut one.
 const TITLE: usize = 80;
+
+/// The type of an artifact's entry, and the kind of its record: avenDB's own `artifact` schema.
+const ARTIFACT: &str = "artifact";
+
+/// The type of a Library file's entry, as put_file makes one.
+const FILE: &str = "file";
+
+/// A card on a spark's canvas, as the page's sparks.js lays them out (`CARD`): its height, the gap between cards, and
+/// the room around them.
+const CARD_H: i64 = 170;
+const CARD_GAP: i64 = 24;
+const CARD_PAD: i64 = 32;
 
 /// Claude Code, as a harness: its agent device is agentClaude.
 pub const CLAUDE: &str = "claude";
@@ -475,7 +489,11 @@ impl Agent {
              with no `path` inline alone. Capture a spark, anything that might become a story (a thought, a quote, a \
              note), with avendb_add_spark: its `text`, and its `title` and `tags` if any (a link or a media file goes \
              in as an artifact of its own); it goes in its person's own vault unless it names another `vault`, and \
-             answers its entry. For access it lacks, ask its person with avendb_request_access, saying why: they \
+             answers its entry. Add a source fact, a link, a YouTube video, a picture or a clip, with \
+             avendb_add_artifact: its `url`, or the absolute `path` of a file on this Mac, which it saves to the \
+             Library first, or both; its `title`, `note`, `by`, `taken`, `language` and `transcript` if known; and a \
+             `spark` to put it on that spark's canvas. For access it lacks, ask its person with \
+             avendb_request_access, saying why: they \
              answer in The OS app.",
             name = self.name
         )
@@ -538,6 +556,7 @@ impl Agent {
                 Ok(self.run(op, beside(args)?).await?.to_string())
             }
             "avendb_add_spark" => self.add_spark(vault, args).await,
+            "avendb_add_artifact" => self.add_artifact(vault, args).await,
             "avendb_read_file" => {
                 let named = ["entry", "vault", "name"];
                 let takes = |k: &String| named.contains(&k.as_str()) || k == "path" || k == "overwrite";
@@ -757,12 +776,12 @@ impl Agent {
         let person = self.node.read(move |lab, me| person_of(lab.state(me), mine)).await;
         let into = named.clone().or(person.map(|p| hex(&p.0)));
         let asked = match &into {
-            Some(v) => self.creatable(v, &tags).await?,
+            Some(v) => self.creatable(v, SPARK, &tags).await?,
             None => None,
         };
         let (Some(vault), Some(asked)) = (into.clone(), asked) else {
             let me = &self.name;
-            let (vaults, may) = self.spark_vaults(mine, &tags).await?;
+            let (vaults, may) = self.creatable_in(mine, SPARK, &tags).await?;
             let what = match (&named, &into) {
                 (Some(v), _) => format!("vault {}", label(&vaults, v)),
                 (None, Some(v)) => format!("its person's own vault, {}", label(&vaults, v)),
@@ -788,10 +807,210 @@ impl Agent {
         }
     }
 
-    /// The tags a new spark tagged `tags` in vault `vault` carries besides, as a share it adds through asks for (the
-    /// `creatable` op): none where no share of its lets it create one there. Fails where the vault's id is none.
-    async fn creatable(&self, vault: &str, tags: &[String]) -> Result<Option<Vec<String>>> {
-        let ask = json!({ "op": "creatable", "vault": vault, "type": SPARK, "tags": tags });
+    /// Adds an artifact (`avendb_add_artifact`) as the page's Artifacts add one (src/lib/avendb/artifacts.js): a source
+    /// fact of avenDB's own `artifact` schema, standing on its own. A `url` makes it what the link is (`look_of`): a
+    /// YouTube video, another video or podcast by its host, a picture or a clip by its ending, else a bookmark, on the
+    /// site its host is, by the platform we know it as. A `path` names a file of this Mac, saved to the Library first
+    /// as a put_file saves it, which the artifact shows (`files`), a picture an image and a film or a sound a video.
+    /// Titled `title`, else by its link (`link_title`), else by its file's name; with its `note`, `by`, `taken` and
+    /// `language` where given, and its `transcript`, a paragraph a row, each from the time it starts with, if any
+    /// (`rows_of`). It goes in vault `vault`, else in its person's own vault, as add_spark's does, as a new entry of
+    /// type artifact tagged `tags` and the tags a share it adds through asks for; and where `spark` names a spark, it
+    /// is put on that spark's canvas too, under the rest (`put_on`). `{"entry", "vault", "tags", "look", "file"?,
+    /// "spark"?}`, `spark` what became of the placing. Fails with why, in words, before it saves anything where it may
+    /// add no artifact, or no file, there.
+    async fn add_artifact(&self, mine: VaultId, args: &Value) -> Result<String> {
+        const TAKES: [&str; 11] =
+            ["url", "path", "title", "note", "by", "taken", "language", "transcript", "tags", "vault", "spark"];
+        if let Some(k) = args.as_object().into_iter().flatten().map(|(k, _)| k).find(|k| !TAKES.contains(&k.as_str())) {
+            anyhow::bail!("an artifact has no {k:?}: it takes {}", TAKES.join(", "));
+        }
+        let given = |k: &str| args.get(k).filter(|v| !v.is_null());
+        let text = |k: &str| -> Result<Option<String>> {
+            match given(k) {
+                None => Ok(None),
+                Some(v) => {
+                    let t = v.as_str().with_context(|| format!("an artifact's {k} is some text"))?.trim();
+                    Ok((!t.is_empty()).then(|| t.to_string()))
+                }
+            }
+        };
+        let url = text("url")?;
+        let path = text("path")?.map(PathBuf::from);
+        anyhow::ensure!(
+            url.is_some() || path.is_some(),
+            "an artifact is a link or a file: its url, or the absolute path of a file on this Mac, or both"
+        );
+        let link = match &url {
+            Some(u) => Some(link_of(u).with_context(|| format!("{u:?} is no link: one starts with https://"))?),
+            None => None,
+        };
+        if let Some(path) = &path {
+            anyhow::ensure!(path.is_absolute(), "{} isn't an absolute path", path.display());
+            let meta = tokio::fs::metadata(path).await.with_context(|| format!("no file at {}", path.display()))?;
+            anyhow::ensure!(meta.is_file(), "{} is no file", path.display());
+        }
+        let by = match given("by") {
+            None => None,
+            Some(by) => {
+                let o = by.as_object().context("an artifact's by is who made it: name, url, image, platform")?;
+                let takes = ["name", "url", "image", "platform"];
+                if let Some(k) = o.keys().find(|k| !takes.contains(&k.as_str())) {
+                    anyhow::bail!("by has no {k:?}: it takes {}", takes.join(", "));
+                }
+                anyhow::ensure!(o.values().all(Value::is_string), "by's name, url, image and platform are texts");
+                Some(o.clone())
+            }
+        };
+        let tags: Vec<String> = match given("tags") {
+            None => vec![],
+            Some(t) => {
+                let texts = t.as_array().and_then(|t| t.iter().map(|x| x.as_str().map(String::from)).collect());
+                texts.context("an artifact's tags are a list of texts")?
+            }
+        };
+        let spark = text("spark")?.map(|s| s.to_ascii_lowercase());
+        let named = text("vault")?.map(|v| v.to_ascii_lowercase());
+        let person = self.node.read(move |lab, me| person_of(lab.state(me), mine)).await;
+        let into = named.clone().or(person.map(|p| hex(&p.0)));
+        // where it may add the artifact, and its file first, if it brings one
+        let mut asked = None;
+        if let Some(v) = &into {
+            let file = match &path {
+                Some(_) => self.creatable(v, FILE, &[]).await?,
+                None => Some(vec![]),
+            };
+            asked = match (file, self.creatable(v, ARTIFACT, &tags).await?) {
+                (Some(file), Some(artifact)) => Some((file, artifact)),
+                _ => None,
+            };
+        }
+        let (Some(vault), Some((file_tags, asked))) = (into.clone(), asked) else {
+            let me = &self.name;
+            let (vaults, may) = self.creatable_in(mine, ARTIFACT, &tags).await?;
+            let what = match (&named, &into) {
+                (Some(v), _) => format!("vault {}", label(&vaults, v)),
+                (None, Some(v)) => format!("its person's own vault, {}", label(&vaults, v)),
+                (None, None) => "its person's own vault, which it doesn't know".into(),
+            };
+            let may = if may.is_empty() {
+                "It may add artifacts to no vault: ask its person for Editor access with avendb_request_access".into()
+            } else {
+                format!("It may add artifacts to {}: name one as vault", may.join(", "))
+            };
+            let file = if path.is_some() { " and its file" } else { "" };
+            anyhow::bail!("{me} may add no artifact{file} to {what}: no share of its lets it create one there. {may}.");
+        };
+        // its file, saved to the Library first
+        let mut file = None;
+        if let Some(path) = path {
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).context("the path names no file")?;
+            let media = media_of(&name);
+            let op = json!({ "op": "put_file", "vault": vault, "name": name, "media": media, "tags": file_tags });
+            let answer = self.run(op, Beside { path: Some(path), overwrite: false }).await?;
+            let Some(entry) = answer["ok"]["entry"].as_str() else {
+                let (why, refused) = (answer["why"].as_str(), answer["refused"].as_str());
+                anyhow::bail!("its file isn't saved: {} ({})", why.unwrap_or_default(), refused.unwrap_or_default());
+            };
+            file = Some((entry.to_string(), name, media));
+        }
+        let look = look_of(link.as_ref(), file.as_ref().map(|(_, _, media)| *media));
+        let title = match text("title")? {
+            Some(title) => title,
+            None => match (&link, &file) {
+                (Some(link), _) => link_title(link),
+                (None, Some((_, name, _))) => name.clone(),
+                (None, None) => unreachable!("a link or a file, as checked"),
+            },
+        };
+        let mut value = json!({ "kind": ARTIFACT, "look": look, "title": title });
+        if let (Some(url), Some(link)) = (&url, &link) {
+            value["url"] = url.as_str().into();
+            value["site"] = link.host.as_str().into();
+        }
+        let mut by = by.unwrap_or_default();
+        if let Some(platform) = link.as_ref().and_then(|l| platform_of(&l.host)) {
+            by.entry("platform").or_insert(platform.into());
+        }
+        if !by.is_empty() {
+            value["by"] = by.into();
+        }
+        for k in ["note", "taken", "language"] {
+            if let Some(t) = text(k)? {
+                value[k] = t.into();
+            }
+        }
+        if let Some(t) = text("transcript")? {
+            value["transcript"] = rows_of(&t).into();
+        }
+        if let Some((entry, _, _)) = &file {
+            value["files"] = json!([{ "vault": vault, "entry": entry }]);
+        }
+        let tags = [tags, asked].concat();
+        let op = json!({ "op": "create", "vault": vault, "type": ARTIFACT, "tags": tags, "value": value });
+        let answer = self.run(op, Beside::default()).await?;
+        let entry = match (answer["ok"]["entry"].as_str(), answer.get("refused")) {
+            (Some(entry), _) => entry.to_string(),
+            (None, Some(refused)) => {
+                let (why, refused) = (answer["why"].as_str(), refused.as_str());
+                anyhow::bail!("the artifact isn't added: {} ({})", why.unwrap_or_default(), refused.unwrap_or_default())
+            }
+            (None, None) => anyhow::bail!("the artifact isn't added: its person's passkey would approve it ({answer})"),
+        };
+        let mut made = json!({ "entry": entry, "vault": vault, "tags": tags, "look": look });
+        if let Some((file, _, _)) = file {
+            made["file"] = file.into();
+        }
+        if let Some(spark) = spark {
+            made["spark"] = match self.put_on(&spark, &vault, &entry).await {
+                Ok(()) => json!({ "entry": spark, "placed": true }),
+                Err(why) => json!({ "entry": spark, "placed": false, "why": format!("{why:#}") }),
+            };
+        }
+        Ok(made.to_string())
+    }
+
+    /// Puts artifact `entry` of vault `vault` on the canvas of spark `spark`, as the page puts a piece there: an item
+    /// of its `items` that links to it, under the lowest card, from the left (sparks.js, `placing`), with an id no item
+    /// has. Fails with why where it reads no such spark, or may not change it, as where it may only suggest.
+    async fn put_on(&self, spark: &str, vault: &str, entry: &str) -> Result<()> {
+        let got = self.node.op(json!({ "op": "get", "entry": spark })).await?;
+        if let Some(refused) = got["refused"].as_str() {
+            bail!("{} reads no spark {spark} ({refused})", self.name);
+        }
+        let record = &got["ok"]["record"];
+        anyhow::ensure!(record["kind"] == SPARK, "entry {spark} is no spark");
+        let items = record["items"].as_array().cloned().unwrap_or_default();
+        let y = items
+            .iter()
+            .map(|i| i["y"].as_i64().unwrap_or(0) + i["h"].as_i64().unwrap_or(CARD_H))
+            .max()
+            .map_or(CARD_PAD, |low| low + CARD_GAP);
+        let taken: Vec<u64> = items.iter().filter_map(|i| i["id"].as_u64()).collect();
+        let id = loop {
+            let mut b = [0u8; 4];
+            getrandom::fill(&mut b).map_err(|e| anyhow!("no randomness: {e}"))?;
+            let id = 1 + u64::from(u32::from_le_bytes(b) >> 2);
+            if !taken.contains(&id) {
+                break id;
+            }
+        };
+        let link = json!({ "vault": vault, "entry": entry });
+        let item = json!({ "id": id, "what": ARTIFACT, "ref": link, "x": CARD_PAD, "y": y });
+        let op = json!({ "op": "insert", "entry": spark, "path": ["items"], "value": item });
+        let answer = self.run(op, Beside::default()).await?;
+        if let Some(refused) = answer["refused"].as_str() {
+            let why = answer["why"].as_str().unwrap_or_default();
+            bail!("it isn't on the spark's canvas: {why} ({refused}); where it may only suggest, propose it");
+        }
+        Ok(())
+    }
+
+    /// The tags a new entry of type `kind` tagged `tags` in vault `vault` carries besides, as a share it adds through
+    /// asks for (the `creatable` op): none where no share of its lets it create one there. Fails where the vault's id
+    /// is none.
+    async fn creatable(&self, vault: &str, kind: &str, tags: &[String]) -> Result<Option<Vec<String>>> {
+        let ask = json!({ "op": "creatable", "vault": vault, "type": kind, "tags": tags });
         let answer = self.node.op(ask).await?;
         if answer["refused"] == "BadOp" {
             anyhow::bail!("{}", answer["why"].as_str().unwrap_or_default());
@@ -801,14 +1020,14 @@ impl Agent {
     }
 
     /// The vaults its world shows, and of them, by their names, those but its own device vault `mine` where it may add
-    /// a spark tagged `tags` (`creatable`).
-    async fn spark_vaults(&self, mine: VaultId, tags: &[String]) -> Result<(Vec<Value>, Vec<String>)> {
+    /// an entry of type `kind` tagged `tags` (`creatable`).
+    async fn creatable_in(&self, mine: VaultId, kind: &str, tags: &[String]) -> Result<(Vec<Value>, Vec<String>)> {
         let world = self.node.op(json!({ "op": "world" })).await?;
         let vaults = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
         let mut may = vec![];
         for v in &vaults {
             let Some(id) = v["id"].as_str().filter(|id| *id != hex(&mine.0)) else { continue };
-            if self.creatable(id, tags).await?.is_some() {
+            if self.creatable(id, kind, tags).await?.is_some() {
                 may.push(label(&vaults, id));
             }
         }
@@ -884,6 +1103,37 @@ fn tools() -> Value {
         },
         "required": ["text"],
     });
+    let artifact = json!({
+        "type": "object",
+        "properties": {
+            "url": text("Its link: a web page, a YouTube video, a post, a picture or a clip on the web"),
+            "path": text("The absolute path of a file on this Mac (a picture, a film, a sound), saved to the \
+                          Library first and shown by the artifact"),
+            "title": text("Its title; left out, its link's (a YouTube video by its id) or its file's name"),
+            "note": text("Our note on it: why it matters"),
+            "by": {
+                "type": "object",
+                "description": "Who made it, where it isn't ours",
+                "properties": {
+                    "name": { "type": "string" },
+                    "url": { "type": "string" },
+                    "image": { "type": "string" },
+                    "platform": { "type": "string" },
+                },
+            },
+            "taken": text("When it was made or published, as a date"),
+            "language": text("Its language, as a code such as en or de"),
+            "transcript": text("Its words, as a video's transcript: a paragraph or line a row, each from the time it \
+                                starts with, as 1:05 or [1:05], if any"),
+            "tags": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Its tags; those a share it adds through asks for besides are added",
+            },
+            "vault": text("The id of the vault it goes in (avendb_vaults lists them); left out, its person's own"),
+            "spark": text("The entry id of a spark to put it on, on that spark's canvas"),
+        },
+    });
     let file = json!({
         "type": "object",
         "properties": {
@@ -949,6 +1199,18 @@ fn tools() -> Value {
                             which vaults it may add sparks to. Answers the new spark's entry id, its vault and its \
                             tags.",
             "inputSchema": spark,
+        },
+        {
+            "name": "avendb_add_artifact",
+            "description": "Add an artifact as this agent, as the Artifacts page adds one: a source fact standing \
+                            on its own, a bookmarked link, a YouTube video, a picture or a clip, one entry of \
+                            avenDB's artifact schema. Give its url, or the absolute path of a file on this Mac, which \
+                            it saves to the Library first, or both; and its title, note, by, taken, language and \
+                            transcript if known. It goes in its person's own vault, or in the vault named, where its \
+                            shares let it create, as an Editor's do; a spark named puts it on that spark's canvas \
+                            too. Answers the new artifact's entry id, its vault, tags and look, its file's entry if \
+                            it saved one, and whether it is on the spark.",
+            "inputSchema": artifact,
         },
         {
             "name": "avendb_read_file",
@@ -1090,6 +1352,193 @@ fn label(vaults: &[Value], id: &str) -> String {
         Some(name) => format!("{name:?} ({id})"),
         None => id.to_string(),
     }
+}
+
+/// A link, as an artifact reads it: its host without `www.` or `m.`, lower case; its path; and its query.
+struct Link {
+    host: String,
+    path: String,
+    query: String,
+}
+
+/// Text `url` as a link, where it is one: `http://` or `https://`, a host, and the rest.
+fn link_of(url: &str) -> Option<Link> {
+    let lower = url.to_ascii_lowercase();
+    let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://"))?;
+    let at = url.len() - rest.len();
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..end];
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    let host = host.split(':').next().unwrap_or_default();
+    let host = host.strip_prefix("www.").or_else(|| host.strip_prefix("m.")).unwrap_or(host).to_string();
+    if host.is_empty() || host.contains(char::is_whitespace) {
+        return None;
+    }
+    let tail = &url[at + end..];
+    let tail = tail.split('#').next().unwrap_or_default();
+    let (path, query) = tail.split_once('?').unwrap_or((tail, ""));
+    Some(Link { host, path: path.to_string(), query: query.to_string() })
+}
+
+/// Whether host `host` is `domain` or one under it.
+fn under(host: &str, domain: &str) -> bool {
+    host == domain || host.strip_suffix(domain).is_some_and(|h| h.ends_with('.'))
+}
+
+/// The YouTube video link `link` is, by its id, as artifacts.js finds it (`youtubeId`): none for any other link.
+fn youtube_id(link: &Link) -> Option<String> {
+    let segments: Vec<&str> = link.path.split('/').filter(|s| !s.is_empty()).collect();
+    if link.host == "youtu.be" {
+        return segments.first().map(|s| s.to_string());
+    }
+    if !under(&link.host, "youtube.com") {
+        return None;
+    }
+    if link.path == "/watch" {
+        return link.query.split('&').find_map(|kv| kv.strip_prefix("v=")).filter(|v| !v.is_empty()).map(String::from);
+    }
+    match segments[..] {
+        [kind, id, ..] if ["shorts", "embed", "live", "v"].contains(&kind) => Some(id.to_string()),
+        _ => None,
+    }
+}
+
+/// The platform we know host `host` as, the name a link's `by` gives, as artifacts.js names them (`PLATFORMS`).
+fn platform_of(host: &str) -> Option<&'static str> {
+    const PLATFORMS: [(&str, &str); 13] = [
+        ("youtu.be", "youtube"),
+        ("youtube.com", "youtube"),
+        ("twitter.com", "x"),
+        ("x.com", "x"),
+        ("instagram.com", "instagram"),
+        ("threads.net", "threads"),
+        ("bsky.app", "bluesky"),
+        ("linkedin.com", "linkedin"),
+        ("facebook.com", "facebook"),
+        ("tiktok.com", "tiktok"),
+        ("reddit.com", "reddit"),
+        ("vimeo.com", "vimeo"),
+        ("spotify.com", "spotify"),
+    ];
+    PLATFORMS.iter().find(|(h, _)| *h == host).map(|(_, p)| *p)
+}
+
+/// What an artifact is (its `look`), as artifacts.js says (`fromLink`, `fromFile`): a YouTube video by its link; a
+/// picture or a clip by its file's media type `media`; another video or podcast by its link's host; a picture or a
+/// clip by its link's ending; else a link.
+fn look_of(link: Option<&Link>, media: Option<&str>) -> &'static str {
+    const VIDEOS: [&str; 5] = ["vimeo.com", "twitch.tv", "spotify.com", "podcasts.apple.com", "tiktok.com"];
+    if link.is_some_and(|l| youtube_id(l).is_some()) {
+        return "youtube";
+    }
+    match media.map(|m| m.split('/').next().unwrap_or_default()) {
+        Some("image") => return "image",
+        Some("video" | "audio") => return "video",
+        _ => {}
+    }
+    let Some(link) = link else { return "link" };
+    if VIDEOS.iter().any(|v| under(&link.host, v)) {
+        return "video";
+    }
+    match media_of(&link.path).split('/').next() {
+        Some("image") => "image",
+        Some("video" | "audio") => "video",
+        _ => "link",
+    }
+}
+
+/// The title an artifact takes from link `link` until someone names it, as artifacts.js gives one (`fromLink`): a
+/// YouTube video's by its id, any other's by its host and path, `TITLE` letters at most.
+fn link_title(link: &Link) -> String {
+    if let Some(id) = youtube_id(link) {
+        return format!("YouTube · {id}");
+    }
+    let path = link.path.trim_end_matches('/');
+    format!("{}{path}", link.host).chars().take(TITLE).collect()
+}
+
+/// The media type of a file named `name`, by its ending, as the Library knows the kinds it shows; else bytes.
+fn media_of(name: &str) -> &'static str {
+    let ending = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    match ending.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "avif" => "image/avif",
+        "heic" => "image/heic",
+        "svg" => "image/svg+xml",
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "flac" => "audio/flac",
+        "pdf" => "application/pdf",
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        "vtt" => "text/vtt",
+        "srt" => "application/x-subrip",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Words as an artifact's transcript, as the page reads pasted words (legacy.js, `rowsOf`): a paragraph a row, or a
+/// line a row where the words are timed line by line, each from the time it starts with (`1:05 …`, `[1:05] …`),
+/// else from the last row's.
+fn rows_of(text: &str) -> Vec<Value> {
+    let text = text.replace("\r\n", "\n");
+    let timed = |l: &str| clock_of(l).is_some();
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let pieces: Vec<String> = if lines.len() > 1 && lines.iter().filter(|l| timed(l)).count() * 2 > lines.len() {
+        // timed line by line, as captions are: each timed line starts a row, the lines after it join it
+        let mut rows: Vec<String> = vec![];
+        for l in lines {
+            match rows.last_mut() {
+                Some(last) if !timed(l) => {
+                    last.push(' ');
+                    last.push_str(l);
+                }
+                _ => rows.push(l.to_string()),
+            }
+        }
+        rows
+    } else {
+        text.split("\n\n").map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect()
+    };
+    let mut t = 0.0;
+    pieces
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let words = match clock_of(p) {
+                Some((at, rest)) => {
+                    t = at;
+                    rest
+                }
+                None => p.as_str(),
+            };
+            json!({ "id": i + 1, "t": t, "text": words.trim() })
+        })
+        .collect()
+}
+
+/// The time text `p` starts with, `1:05`, `1:02:03` or either in brackets, in seconds, and the words after it.
+fn clock_of(p: &str) -> Option<(f64, &str)> {
+    let (head, rest) = p.split_once(char::is_whitespace)?;
+    let head = head.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(head);
+    let parts: Vec<&str> = head.split(':').collect();
+    let fits = (2..=3).contains(&parts.len())
+        && parts.iter().all(|x| !x.is_empty() && x.len() <= 2 && x.chars().all(|c| c.is_ascii_digit()))
+        && parts.last().is_some_and(|s| s.len() == 2);
+    if !fits {
+        return None;
+    }
+    let seconds = parts.iter().fold(0.0, |s, x| s * 60.0 + x.parse::<f64>().unwrap_or(0.0));
+    Some((seconds, rest))
 }
 
 /// Put_file op `op` with the file at `path` on this Mac, which the harness names: its length the file's size where the
