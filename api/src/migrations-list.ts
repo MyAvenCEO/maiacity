@@ -968,4 +968,24 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // The repo is the truth for the code that runs (Samuel, 2026-10-16, C4): Sandbox 7's configs moved into code/configs/
+    // (exported by the landing job, .github/workflows/code-land.yml) and an accepted MIP lands there by PR before it
+    // changes anything. Their two tables stay as they were when the code moved, read only, until Samuel says they can
+    // go; a run names its config by the repo's id. Generated UI views an agent writes are drafts here until the admin
+    // keeps one and it lands in code/views/ the same way.
+    id: "0048-code-in-the-repo",
+    sql: `
+      ALTER TABLE econ_runs DROP CONSTRAINT IF EXISTS econ_runs_config_id_fkey;
+      CREATE FUNCTION code_moved_to_repo() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION '% is read only: its code moved to the repo (code/configs/)', TG_TABLE_NAME;
+      END $$;
+      CREATE TRIGGER econ_configs_read_only BEFORE INSERT OR UPDATE OR DELETE ON econ_configs
+        FOR EACH STATEMENT EXECUTE FUNCTION code_moved_to_repo();
+      CREATE TRIGGER econ_config_versions_read_only BEFORE INSERT OR UPDATE OR DELETE ON econ_config_versions
+        FOR EACH STATEMENT EXECUTE FUNCTION code_moved_to_repo();
+      ALTER TABLE genui_views ADD COLUMN keep BOOLEAN NOT NULL DEFAULT false;
+    `,
+  },
 ];

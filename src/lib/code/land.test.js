@@ -170,3 +170,8 @@ describe('Generated UI views', () => {
 		expect(codeIn('views/').filter((e) => e.for === 'genui').map((e) => e.ref.slice(6))).toEqual(['coop-chart', 'dome-planner', 'village-scene']);
 	});
 });
+
+test('a view the database hands back with its keys in another order is the same view: nothing to write', () => {
+	const flip = (o) => (Array.isArray(o) ? o.map(flip) : o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).reverse().map(([k, v]) => [k, flip(v)])) : o);
+	expect(landing({ views: EXAMPLES.map(flip) }, ENTRIES).files).toEqual({});
+});

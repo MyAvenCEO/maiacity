@@ -1,9 +1,11 @@
 <!--
-	Generated UI: mini app views an agent writes on the fly over the MCP (genui_put), drawn here each by the one view
-	host ($lib/sandbox/ViewHost.svelte; game/genui/views.js says what a view is): a frame with no origin and no network
-	where only our engine writes the DOM, a view's own script in a worker inside it, its logic in QuickJS. Nothing a
-	view brings can reach us, so every view shows at once, with no Run button. New and changed views come in as they
-	are written (the page asks every few seconds).
+	Generated UI: mini app views, drawn here each by the one view host ($lib/sandbox/ViewHost.svelte;
+	game/genui/views.js says what a view is): a frame with no origin and no network where only our engine writes the
+	DOM, a view's own script in a worker inside it, its logic in QuickJS. The views are the repo's (code/views/); one an
+	agent writes over the MCP (genui_put) is a draft until the admin keeps it here, and a kept draft lands in the repo by
+	the landing job within minutes. Nothing a view brings can reach us, so every view and every draft shows at once,
+	with no Run button: keeping one asks only whether we want it. New and changed drafts come in as they are written
+	(the page asks every few seconds).
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -14,27 +16,48 @@
 	import { EXAMPLES } from '../../../../game/genui/examples.js';
 
 	let views = $state([]);
+	let drafts = $state([]);
 	let offline = $state('');
 	let feed = $state([]);
+	let busy = $state('');
+	let error = $state('');
 
 	const log = (view, kind, text) => (feed = [{ at: new Date(), view: view.title, kind, text }, ...feed].slice(0, 30));
+
+	// the API keeps only views the one checker passed (game/code/check.js); each is checked again here, as code
+	// already kept: whatever else it holds, the view host's engine drops
+	const shown = (v, more) => {
+		const c = checkCode('view', v, { mode: 'read' });
+		return c.ok ? { ...c.value, ...more } : { id: v.id, title: v.title, broken: c.errors.join(' '), ...more };
+	};
+	const key = (list) => list.map((v) => `${v.id}:${v.hash ?? v.version}:${v.keep ?? ''}`).join(',');
 
 	async function load() {
 		try {
 			const r = await apiCall('/api/genui');
-			// the API keeps only views the one checker passed (game/code/check.js); its shape is checked again here, as
-			// code already kept: whatever else it holds, the view host's engine drops
-			const next = [];
-			for (const v of r.views) {
-				const c = checkCode('view', v, { mode: 'read' });
-				next.push(c.ok ? { ...c.value, version: v.version, via: v.via, updated: v.updated } : { id: v.id, title: v.title, broken: c.errors.join(' '), version: v.version });
-			}
-			const changed = next.length !== views.length || next.some((v, i) => v.id !== views[i]?.id || v.version !== views[i]?.version);
-			if (changed) views = next;
+			const nextViews = r.views.map((v) => shown(v, { hash: v.hash }));
+			const nextDrafts = r.drafts.map((v) => shown(v, { version: v.version, via: v.via, keep: v.keep, changes: r.views.some((x) => x.id === v.id) }));
+			if (key(nextViews) !== key(views)) views = nextViews;
+			if (key(nextDrafts) !== key(drafts)) drafts = nextDrafts;
 			offline = '';
 		} catch (e) {
-			if (!views.length) views = EXAMPLES.map((v) => ({ ...checkCode('view', v, { mode: 'read' }).value, version: 1, via: 'example' }));
+			if (!views.length) views = EXAMPLES.map((v) => shown(v, {}));
 			offline = e.message || String(e);
+		}
+	}
+
+	/** keep a draft (it lands in the repo), take that back, or let it go */
+	async function act(d, what) {
+		busy = d.id;
+		error = '';
+		try {
+			if (what === 'discard') await apiCall(`/api/genui/${encodeURIComponent(d.id)}`, { method: 'DELETE' });
+			else await apiCall(`/api/genui/${encodeURIComponent(d.id)}/keep`, { method: 'POST', body: JSON.stringify({ keep: what === 'keep' }) });
+			await load();
+		} catch (e) {
+			error = `${d.title}: ${e.message || e}`;
+		} finally {
+			busy = '';
 		}
 	}
 
@@ -53,7 +76,7 @@
 	<header>
 		<p class="eyebrow">Admin · agents write these over the MCP</p>
 		<h1>Generated UI</h1>
-		<p class="lede">Mini apps an agent makes on the fly. Each runs in its own box and can't touch this page, your keys or our API.</p>
+		<p class="lede">Mini apps an agent makes on the fly. Each runs in its own box and can't touch this page, your keys or our API. A new one is a draft until you keep it; a kept one lands in the repo within minutes.</p>
 		{#if offline}<p class="offline">Showing the built-in examples: {offline}</p>{/if}
 	</header>
 
@@ -71,8 +94,44 @@
 		</div>
 	</details>
 
+	{#if drafts.length}
+		<p class="divider">Drafts from agents</p>
+		{#if error}<p class="error">{error}</p>{/if}
+		<div class="views">
+			{#each drafts as d (d.id + ':' + d.version)}
+				<article class="view draft">
+					<div class="head">
+						<div>
+							<h2>{d.title}</h2>
+							{#if d.note}<p class="note">{d.note}</p>{/if}
+						</div>
+						<div class="meta">
+							<span class="tag draft-tag">{d.keep ? 'Kept: landing' : d.changes ? 'Draft: a change' : 'Draft'}</span>
+							<span class="ver">v{d.version}{d.via ? ` · ${d.via}` : ''}</span>
+						</div>
+					</div>
+					{#if d.broken}
+						<p class="error">Not drawn: {d.broken}</p>
+					{:else}
+						<ViewHost view={d} onevent={(e) => log(d, 'event', `${e.name}: ${JSON.stringify(e.value)}`)} onerror={(m) => log(d, 'error', m)} />
+					{/if}
+					<div class="actions">
+						{#if d.keep}
+							<span class="quiet">It lands in the repo within minutes{d.changes ? ' and replaces the view of that name' : ''}.</span>
+							<button class="ghost" disabled={busy === d.id} onclick={() => act(d, 'unkeep')}>Don't keep it</button>
+						{:else}
+							<button class="keep" disabled={busy === d.id || d.broken} onclick={() => act(d, 'keep')}>Keep it</button>
+							<button class="ghost" disabled={busy === d.id} onclick={() => act(d, 'discard')}>Discard</button>
+						{/if}
+					</div>
+				</article>
+			{/each}
+		</div>
+		<p class="divider">In the repo</p>
+	{/if}
+
 	<div class="views">
-		{#each views as v (v.id + ':' + v.version)}
+		{#each views as v (v.id + ':' + (v.hash ?? ''))}
 			<article class="view">
 				<div class="head">
 					<div>
@@ -81,7 +140,7 @@
 					</div>
 					<div class="meta">
 						{#if v.kind === 'a2ui'}<span class="tag decl">Declarative</span>{:else if v.kind === 'html'}<span class="tag code">Code{v.spec.libs.length ? ` · ${v.spec.libs.join(', ')}` : ''}</span>{/if}
-						<span class="ver">v{v.version}{v.via ? ` · ${v.via}` : ''}</span>
+						{#if v.hash}<span class="ver">code/views/{v.id} · {v.hash.slice(0, 8)}</span>{/if}
 					</div>
 				</div>
 				{#if v.broken}
@@ -125,6 +184,13 @@
 	.tag.code { background: #f4e2c4; color: #8a5a12; }
 	.ver { font-size: 0.75rem; color: var(--muted); }
 	.error { margin: 0; color: var(--terracotta); }
+	.draft { border: 1px dashed var(--line); }
+	.tag.draft-tag { background: #ece6f6; color: #5b4687; }
+	.actions { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+	.actions button { font: inherit; font-size: 0.9rem; padding: 0.45rem 1rem; border-radius: 99px; cursor: pointer; }
+	.actions .keep { background: var(--ink, #24302a); color: #fff; border: 0; }
+	.actions .ghost { background: transparent; border: 1px solid var(--line); color: var(--ink-soft); }
+	.actions button:disabled { opacity: 0.5; cursor: default; }
 	.divider { display: flex; align-items: center; gap: 0.8rem; margin: 2.4rem 0 0.9rem; font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
 	.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 	.quiet { color: var(--muted); font-size: 0.9rem; }

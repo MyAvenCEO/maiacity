@@ -7,8 +7,15 @@
  * resource or recipe card holds its JSON. A config changes only through a MIP — a MaiaCity improvement proposal: a
  * title, a description in prose, and the cards themselves, complete, as they would be (and the ids of any to take out),
  * or a new config made from another, or a config deleted. Anyone who may play proposes (on the page, or an agent over
- * the studio's MCP); only the admin accepts or rejects, and accepting puts the cards in as they are and writes a new
- * version. Card code is only ever kept here as text: it runs in the page's QuickJS sandbox, never on the server.
+ * the studio's MCP); only the admin accepts or rejects. Card code is only ever kept here as text: it runs in the page's
+ * QuickJS sandbox, never on the server.
+ *
+ * The repo is the truth for the code that runs (Samuel 2026-10-16, "PR after accept"): configs live in code/configs/,
+ * version by version, read through game/code/decided.js, and accepting a MIP changes nothing yet. It waits, accepted,
+ * until the landing job (.github/workflows/code-land.yml) has written it into code/mips/ (and a config MIP's new
+ * version into code/configs/) and merged that by PR; the deploy that follows lands it here (landMips): a config's new
+ * version is then simply there, a new world is made, an amended world takes its new rules. econ_configs and
+ * econ_config_versions are read only since (migration 0048).
  *
  * A run is one valley played: the config it runs on (a full copy, with any local changes the player tried on top), its
  * seed and brain, every day's stats row, trades and decisions, as the page sends them, and the whole valley as it last
@@ -17,6 +24,9 @@
 import { db } from "./pg";
 import { PARAMS, SECTIONS, CARD_KINDS, HOOKS, applyCards, defaultCards, fullCards, paramsOf } from "../../game/economy/params.js";
 import { checkCode } from "../../game/code/check.js";
+import { configIds, configVersions, landedMip } from "../../game/code/decided.js";
+
+const GAME = "sandbox-7";
 
 export class EconomyError extends Error {
   constructor(message, status = 400) {
@@ -38,22 +48,36 @@ const json = (v) => JSON.stringify(v ?? null);
 
 // ─────────────────────────────── configs ───────────────────────────────
 
-const configRow = (r) => ({
-  id: r.id,
-  name: r.name,
-  description: r.description,
-  version: Number(r.version),
-  cards: r.cards,
-  // every value the cards hold, the catalogue's default where none does: what the valley runs on
-  params: paramsOf(r.cards),
-  created: r.created,
-  updated: r.updated,
-});
+/** a config as it stands in code/: its newest version, deleted or not; null when there is none */
+const configNow = (id) => configVersions(GAME, id)[0] ?? null;
+/** a config that is there to run on: its newest version, unless that one deleted it */
+const liveConfig = (id) => {
+  const c = configNow(id);
+  return c && !c.deleted ? c : null;
+};
+
+/** a config's versions (the newest first) as the API answers it */
+const configRow = (versions) => {
+  const [now] = versions;
+  return {
+    id: now.id,
+    name: now.name,
+    description: now.description,
+    version: now.version,
+    cards: now.cards,
+    // every value the cards hold, the catalogue's default where none does: what the valley runs on
+    params: paramsOf(now.cards),
+    created: versions.at(-1).at,
+    updated: now.at,
+  };
+};
 
 /** every config that is not deleted (or, with `deleted`, those too) */
 export async function listConfigs({ deleted = false } = {}) {
-  const { rows } = await db.query(`SELECT * FROM econ_configs ${deleted ? "" : "WHERE deleted IS NULL"} ORDER BY created, id`);
-  return rows.map(configRow);
+  return configIds(GAME)
+    .map((id) => configVersions(GAME, id))
+    .filter((vs) => deleted || !vs[0].deleted)
+    .map(configRow);
 }
 
 /**
@@ -61,19 +85,15 @@ export async function listConfigs({ deleted = false } = {}) {
  * @param {string} id @param {{ version?: number | string }} [opts]
  */
 export async function getConfig(id, { version } = {}) {
-  const { rows } = await db.query("SELECT * FROM econ_configs WHERE id = $1", [id]);
-  if (!rows[0]) throw new EconomyError("No such config.", 404);
-  const { rows: versions } = await db.query(
-    "SELECT version, mip, at, body FROM econ_config_versions WHERE config_id = $1 ORDER BY version DESC",
-    [id],
-  );
-  let cfg = configRow(rows[0]);
+  const versions = configVersions(GAME, String(id));
+  if (!versions.length) throw new EconomyError("No such config.", 404);
+  let cfg = configRow(versions);
   if (version != null && Number(version) !== cfg.version) {
-    const v = versions.find((x) => Number(x.version) === Number(version));
+    const v = versions.find((x) => x.version === Number(version));
     if (!v) throw new EconomyError(`Config ${id} has no version ${version}.`, 404);
-    cfg = { ...cfg, ...v.body, version: Number(v.version), params: paramsOf(v.body.cards) };
+    cfg = { ...cfg, name: v.name, description: v.description, cards: v.cards, version: v.version, params: paramsOf(v.cards) };
   }
-  return { ...cfg, deleted: rows[0].deleted, versions: versions.map((v) => ({ version: Number(v.version), mip: v.mip == null ? null : Number(v.mip), at: v.at })) };
+  return { ...cfg, deleted: versions[0].deleted ? versions[0].at : null, versions: versions.map((v) => ({ version: v.version, mip: v.mip ?? null, at: v.at })) };
 }
 
 /** what a card may hold: every value (key, its card, label, unit, range, default), the cards they sit on, the kinds,
@@ -101,8 +121,7 @@ async function checkMip(body, q = db) {
   const config = text(body?.config, 41) || (body?.action === "world" || body?.action === "amend" ? "valley" : "");
   const action = body?.action ?? "edit";
   if (!ACTIONS.includes(action)) throw new EconomyError(`A MIP's action is one of ${ACTIONS.join(", ")}.`);
-  const { rows } = await q.query("SELECT * FROM econ_configs WHERE id = $1", [config]);
-  const cur = rows[0] ?? null;
+  const cur = configNow(config);
   const live = cur && !cur.deleted ? cur : null;
   const name = body?.name == null ? null : text(body.name, 80) || null;
   const about = body?.about == null ? null : text(body.about, 2000);
@@ -110,7 +129,7 @@ async function checkMip(body, q = db) {
   if (action === "delete") {
     if (!live) throw new EconomyError(`No config ${config} to delete.`);
     if (body?.cards?.length || body?.remove?.length) throw new EconomyError("A MIP that deletes a config carries no cards.");
-    return { config, action, name: null, about: null, from: null, cards: [], remove: [], base: {}, base_version: Number(live.version) };
+    return { config, action, name: null, about: null, from: null, cards: [], remove: [], base: {}, base_version: live.version };
   }
 
   let from = null;
@@ -120,9 +139,9 @@ async function checkMip(body, q = db) {
     if (cur) throw new EconomyError(cur.deleted ? `There was a config ${config} once: pick another id.` : `There is already a config ${config}.`);
     from = body?.from == null || body.from === "" ? null : text(body.from, 41);
     if (from) {
-      const { rows: f } = await q.query("SELECT cards FROM econ_configs WHERE id = $1 AND deleted IS NULL", [from]);
-      if (!f[0]) throw new EconomyError(`No config ${from} to start from.`);
-      baseCards = f[0].cards;
+      const f = liveConfig(from);
+      if (!f) throw new EconomyError(`No config ${from} to start from.`);
+      baseCards = f.cards;
     } else baseCards = defaultCards();
   } else {
     if (!live) throw new EconomyError(`No config ${config}.`);
@@ -161,7 +180,7 @@ async function checkMip(body, q = db) {
   const base = Object.fromEntries([...cards.map((c) => c.id), ...remove].map((id) => [id, baseCards.find((c) => c.id === id) ?? null]));
   const world = action === "world" ? worldSpec(body?.world, applyCards(baseCards, cards, remove), prev) : action === "amend" ? amendSpec(own, applyCards(baseCards, cards, remove)) : null;
   const start = action === "world" ? { cards: applyCards(baseCards, cards, remove), values: { ...worldValues(prevSettings?.local), ...world.values } } : null;
-  return { start, config, action, name: action === "create" ? name || config : action === "world" || action === "amend" ? null : name, about: action === "world" || action === "amend" ? null : about, from, cards, remove, base, base_version: live ? Number(live.version) : null, world };
+  return { start, config, action, name: action === "create" ? name || config : action === "world" || action === "amend" ? null : name, about: action === "world" || action === "amend" ? null : about, from, cards, remove, base, base_version: live ? live.version : null, world };
 }
 
 /**
@@ -292,6 +311,7 @@ export async function createMip(author, body) {
 }
 
 export async function listMips(status) {
+  await landMips(); // what the last deploy brought, in case the API started before the database could take it
   const where = status ? "WHERE m.status = $1" : "";
   const { rows } = await db.query(`${MIP_SELECT} ${where} ORDER BY m.number DESC LIMIT 500`, status ? [status] : []);
   return rows.map(mipRow);
@@ -303,7 +323,10 @@ export async function getMip(number) {
   return mipRow(rows[0]);
 }
 
-/** Accept (put its cards in, as they are, and write a new version) or reject an open MIP. */
+/**
+ * Accept or reject an open MIP. Accepting checks it once more against now and changes nothing else: the MIP waits,
+ * accepted, until it lands from the repo (landMips). Rejecting is final at once.
+ */
 export async function decideMip(number, by, { accept, note } = {}) {
   return db.transaction(async (tx) => {
     const { rows } = await tx.query("SELECT * FROM mips WHERE number = $1 FOR UPDATE", [number]);
@@ -316,42 +339,67 @@ export async function decideMip(number, by, { accept, note } = {}) {
     }
     // the config may have moved on since it was proposed: check again, against now
     const m = await checkMip({ config: row.config_id, action: row.action, name: row.name, about: row.about, from: row.from_id, cards: row.cards, remove: row.remove, world: row.world, world_id: row.world_id }, tx);
-    let result;
-    if (m.action === "amend") {
-      // the world's own rules change, from now on, as it runs: its kept settings take the MIP's cards; an open page
-      // picks them up (the result says which world), and every save from then on keeps them
-      const cards = applyCards((await amended(row.world_id, tx)).state.settings.config.cards, m.cards, m.remove);
-      await tx.query("UPDATE econ_runs SET state = jsonb_set(state, '{settings,config,cards}', ($2::text)::jsonb) WHERE id = $1", [row.world_id, json(cards)]);
-      result = { amended: row.world_id, name: m.world.name, diff: m.world.diff };
-    } else if (m.action === "world") {
-      // the world is made, fresh, with every setting the MIP proposed; it waits in the list until it is opened
-      const w = await createWorld(by, { name: m.world.name, config: m.config, cards: m.start.cards, values: m.start.values, model: m.world.model, seed: m.world.seed, mip: number, after: m.world.after, forget: m.world.forget ?? null }, tx);
-      result = { world: w.id, name: w.name, diff: m.world.diff, after_name: m.world.after_name };
-    } else if (m.action === "delete") {
-      const { rows: n } = await tx.query("SELECT count(*)::int AS n FROM econ_configs WHERE deleted IS NULL");
-      if (Number(n[0].n) <= 1) throw new EconomyError("That is the last config: the valley needs one to run on.", 409);
-      await tx.query("UPDATE econ_configs SET deleted = now(), updated = now() WHERE id = $1", [m.config]);
-      result = { config: m.config, deleted: true };
-    } else {
-      let cfg;
-      if (m.action === "create") {
-        const base = m.from ? (await tx.query("SELECT cards FROM econ_configs WHERE id = $1", [m.from])).rows[0].cards : defaultCards();
-        cfg = { name: m.name, description: m.about ?? "", version: 1, cards: applyCards(base, m.cards, m.remove) };
-        await tx.query("INSERT INTO econ_configs (id, name, description, version, cards) VALUES ($1, $2, $3, 1, ($4::text)::jsonb)", [m.config, cfg.name, cfg.description, json(cfg.cards)]);
-      } else {
-        const { rows: c } = await tx.query("SELECT * FROM econ_configs WHERE id = $1 FOR UPDATE", [m.config]);
-        cfg = { name: m.name ?? c[0].name, description: m.about ?? c[0].description, version: Number(c[0].version) + 1, cards: applyCards(c[0].cards, m.cards, m.remove) };
-        await tx.query("UPDATE econ_configs SET name = $2, description = $3, version = $4, cards = ($5::text)::jsonb, updated = now() WHERE id = $1", [m.config, cfg.name, cfg.description, cfg.version, json(cfg.cards)]);
-      }
-      await tx.query("INSERT INTO econ_config_versions (config_id, version, body, mip) VALUES ($1, $2, ($3::text)::jsonb, $4)", [m.config, cfg.version, json({ name: cfg.name, description: cfg.description, cards: cfg.cards }), number]);
-      result = { config: m.config, version: cfg.version };
-    }
+    if (m.action === "delete" && (await listConfigs()).length <= 1) throw new EconomyError("That is the last config: the valley needs one to run on.", 409);
     await tx.query(
-      "UPDATE mips SET status = 'accepted', decided = now(), decided_by = $2, note = $3, result = ($4::text)::jsonb WHERE number = $1",
-      [number, by, text(note, 2000), json(result)],
+      "UPDATE mips SET status = 'accepted', decided = now(), decided_by = $2, note = $3, cards = ($4::text)::jsonb, remove = ($5::text)::jsonb, result = ($6::text)::jsonb WHERE number = $1",
+      [number, by, text(note, 2000), json(m.cards), json(m.remove), json({ landing: "waiting" })],
     );
-    return { number, status: "accepted", ...result };
+    return { number, status: "accepted", landing: "waiting" };
   });
+}
+
+/**
+ * Land every accepted MIP the repo now holds (code/mips/, merged by the landing job): a config MIP's version is in
+ * code/configs/ already, so it only says which; a world MIP makes its world, from its cards in the repo; an amend MIP
+ * gives the world its new rules. Each MIP lands once, in its own transaction. Run when the API starts (every landing
+ * deploys it) and whenever MIPs are listed; a MIP that can no longer land says why, and nothing of it changes.
+ */
+export async function landMips() {
+  const { rows } = await db.query("SELECT number FROM mips WHERE status = 'accepted' AND result->>'landing' = 'waiting' ORDER BY number");
+  const out = [];
+  for (const r of rows) {
+    const number = Number(r.number);
+    const e = landedMip(GAME, number);
+    if (e) out.push(await landMip(number, e));
+  }
+  return out;
+}
+
+async function landMip(number, e) {
+  try {
+    return await db.transaction(async (tx) => {
+      const { rows } = await tx.query("SELECT * FROM mips WHERE number = $1 FOR UPDATE", [number]);
+      const row = rows[0];
+      if (row?.status !== "accepted" || row.result?.landing !== "waiting") return { number, landing: row?.result?.landing ?? null };
+      let result;
+      if (e.action === "edit" || e.action === "create" || e.action === "delete") {
+        const v = configVersions(GAME, e.config).find((x) => x.mip === number);
+        if (!v) throw new EconomyError(`Config ${e.config} has no version from MIP ${number} in the repo.`);
+        result = v.deleted ? { config: e.config, deleted: true } : { config: e.config, version: v.version };
+      } else {
+        // the world as it is now, with the MIP's cards as the repo holds them
+        const m = await checkMip({ config: e.config, action: e.action, cards: e.cards, remove: e.remove, world: e.world, world_id: e.world_id }, tx);
+        if (m.action === "amend") {
+          // the world's own rules change, from now on, as it runs: its kept settings take the MIP's cards; an open page
+          // picks them up (the result says which world), and every save from then on keeps them
+          const cards = applyCards((await amended(e.world_id, tx)).state.settings.config.cards, m.cards, m.remove);
+          await tx.query("UPDATE econ_runs SET state = jsonb_set(state, '{settings,config,cards}', ($2::text)::jsonb) WHERE id = $1", [e.world_id, json(cards)]);
+          result = { amended: e.world_id, name: m.world.name, diff: m.world.diff };
+        } else {
+          // the world is made, fresh, with every setting the MIP proposed; it waits in the list until it is opened
+          const w = await createWorld(row.decided_by, { name: m.world.name, config: m.config, cards: m.start.cards, values: m.start.values, model: m.world.model, seed: m.world.seed, mip: number, after: m.world.after, forget: m.world.forget ?? null }, tx);
+          result = { world: w.id, name: w.name, diff: m.world.diff, after_name: m.world.after_name };
+        }
+      }
+      await tx.query("UPDATE mips SET result = ($2::text)::jsonb WHERE number = $1", [number, json({ ...result, landing: "landed", landed: new Date().toISOString(), code: e.hash })]);
+      return { number, ...result, landing: "landed" };
+    });
+  } catch (err) {
+    const error = text(err?.message ?? err, 300);
+    await db.query("UPDATE mips SET result = ($2::text)::jsonb WHERE number = $1 AND status = 'accepted' AND result->>'landing' = 'waiting'", [number, json({ landing: "failed", error })]);
+    console.error(`MIP ${number} could not land:`, error);
+    return { number, landing: "failed", error };
+  }
 }
 
 /** Link the GitHub PRs a MIP needs, open or decided: its author or an admin sets the whole list (an empty one clears it).
@@ -399,7 +447,7 @@ export async function startRun(player, body) {
   if (!config || typeof config !== "object" || typeof config.params !== "object") throw new EconomyError("A run needs the config it runs on: { cards, params, local }.");
   if (json(config).length > MAX_JSON) throw new EconomyError("That config is too large.", 413);
   let configId = body?.config_id == null ? null : text(body.config_id, 41);
-  if (configId && !(await db.query("SELECT 1 FROM econ_configs WHERE id = $1", [configId])).rows.length) configId = null;
+  if (configId && !configNow(configId)) configId = null;
   const { rows } = await db.query(
     `INSERT INTO econ_runs (id, config_id, config_version, config, seed, brain, player, summary, name)
      VALUES ($1, $2, $3, ($4::text)::jsonb, $5, $6, $7, ($8::text)::jsonb,
@@ -410,16 +458,14 @@ export async function startRun(player, body) {
 }
 
 /**
- * A new world, made when its MIP is accepted (decideMip): its name, the config it starts from (its current cards, or
+ * A new world, made when its MIP lands from the repo (landMips): its name, the config it starts from (its current cards, or
  * `cards` given whole, resources, recipes and code too), values tried on top (`values`: { key: number }), the model its
  * avens ask (d1 or qwen), a seed and the MIP that made it. It waits in the list of worlds, fresh, until someone opens it
  * on the page and presses Start.
  */
 async function createWorld(player, body, q = db) {
   const configId = text(body?.config ?? body?.config_id ?? "valley", 41) || "valley";
-  // read on `q`: inside the MIP's transaction, never on a second connection
-  const cfg = (await q.query("SELECT name, version, cards FROM econ_configs WHERE id = $1 AND deleted IS NULL", [configId])).rows[0] ?? null;
-  if (cfg) cfg.version = Number(cfg.version);
+  const cfg = liveConfig(configId);
   if (!cfg && !Array.isArray(body?.cards)) throw new EconomyError(`No config ${configId}: name one from economy_configs, or send the cards whole.`, 404);
   let cards = cfg?.cards ?? [];
   if (Array.isArray(body?.cards)) {
