@@ -78,13 +78,25 @@ function geometry(x, i) {
 	return g;
 }
 
+/**
+ * A picture the box handed over, drawn on a canvas of its size. WebGL uploads an ImageBitmap as it is and ignores a
+ * texture's flipY for it, so every recipe's canvas came out upside down (a plant stake's flag, a knot in its wood); a
+ * canvas it turns as the texture asks, as it did the recipe's own canvas.
+ * @param {ImageBitmap} bitmap
+ */
+function onCanvas(bitmap) {
+	const c = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(bitmap.width, bitmap.height) : Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
+	/** @type {any} */ (c.getContext('2d')).drawImage(bitmap, 0, 0);
+	return c;
+}
+
 /** one picture, checked, as the source of every texture that shows it (uploaded once) */
 function image(x, i) {
 	if (!x || typeof x !== 'object') fail(`picture ${i} missing`);
 	if (x.bitmap) {
 		if (!(x.bitmap instanceof ImageBitmap)) fail(`picture ${i} is not a picture`);
 		if (x.bitmap.width > BUDGET.texturePixels || x.bitmap.height > BUDGET.texturePixels) fail(`picture ${i} larger than ${BUDGET.texturePixels} px`);
-		return { source: new THREE.Source(x.bitmap), pixels: false };
+		return { source: new THREE.Source(onCanvas(x.bitmap)), pixels: false };
 	}
 	if (x.pixels) {
 		const { data, width, height } = x.pixels;
