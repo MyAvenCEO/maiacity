@@ -48,3 +48,20 @@ viewer stays to the last line. The hook itself is the `hook-writer`'s; the pictu
    then draft.
 6. Draft in the voice (`writing.md`); a film's script goes to the `director` for its shots.
 7. Check: the retention test (`retention.md`), the scene test (`scenes.md`), the checklist (`writing.md`).
+
+## In avenDB: a story's Journey tab
+
+A story is an avenDB entry of the `story` schema; its Journey tab (`src/lib/avendb/StoryJourney.svelte`) shows the
+transformation, the arching question and the beats along a tension curve. Through the avenDB MCP an agent writes
+there as its shares allow:
+
+- `from`, `to` and `question` are strings on the story.
+- Each beat is a row of `beats`, in order: `{ id, type, title, text, link, feel, tension }`. `id` is a new integer;
+  `type` one of hook, context, problem, intention, obstacle, low, turn, solution, vision; `link` how it follows the
+  beat before, `"but"` or `"therefore"` (none on the first); `feel` what the viewer feels there (`emotion.md`);
+  `tension` 0 calm to 100 the most (`retention.md`).
+- Propose, never change the main line: `avendb_ask` `{ op: "note", entry }` gives the main line's `heads`;
+  `avendb_run` `{ op: "propose", entry, from: <heads>, name: "Beats: <angle>" }` answers its `line`; then one
+  `{ op: "batch", ops: [...] }` of `{ op: "set", entry, line, path: ["from"], value }` and the like, and
+  `{ op: "insert", entry, line, path: ["beats"], value: <row> }` for every beat, in order. The person sees the
+  proposed beats above their own on the Journey tab and merges the proposal there.
