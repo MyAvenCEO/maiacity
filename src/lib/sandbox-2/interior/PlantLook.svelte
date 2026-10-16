@@ -22,24 +22,15 @@
 		let gone = false;
 		(async () => {
 			const THREE = await import('three');
-			const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+			const [{ createStageRenderer }, { disposeObject }] = await Promise.all([import('$lib/render/stage.js'), import('$lib/render/core.js')]);
 			const [{ loadAsset }, { buildAt }, { refOf }, { TIERS }] = await Promise.all([import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('./flora.js'), import('./sandbox5.js')]);
 			if (gone) return;
-			const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-			// what is under the soil cut away, as it is in the forest, where no one sees it
-			renderer.localClippingEnabled = true;
+			// the stage renderer ($lib/render/stage.js), see-through over the card; what is under the soil cut away, as it
+			// is in the forest, where no one sees it
+			const view = createStageRenderer(box, { alpha: true, clipping: true, toneMapping: 'aces', fov: 32, near: 0.01, far: 400, style: false, controls: { enablePan: false, autoRotate: true, autoRotateSpeed: 1.6, maxPolarAngle: Math.PI * 0.55 } });
+			const { renderer, camera, controls } = view;
 			const soilLine = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.01)];
-			renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-			renderer.toneMapping = THREE.ACESFilmicToneMapping;
-			box.appendChild(renderer.domElement);
 			const scene = new THREE.Scene();
-			const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 400);
-			const controls = new OrbitControls(camera, renderer.domElement);
-			controls.enableDamping = true;
-			controls.enablePan = false;
-			controls.autoRotate = true;
-			controls.autoRotateSpeed = 1.6;
-			controls.maxPolarAngle = Math.PI * 0.55;
 			scene.add(new THREE.HemisphereLight('#ffffff', '#b9b2a6', 1.3));
 			const key = new THREE.DirectionalLight('#fff4e6', 2.2);
 			key.position.set(1.2, 2.2, 0.9);
@@ -58,13 +49,7 @@
 			/** @type {import('three').Object3D | null} */
 			let plant = null;
 			/** a plant built and its parts' meshes, let go @param {import('three').Object3D} o */
-			const letGo = (o) =>
-				o.traverse((c) => {
-					const mesh = /** @type {import('three').Mesh} */ (c);
-					if (!mesh.isMesh) return;
-					mesh.geometry?.dispose();
-					for (const mt of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) mt?.dispose();
-				});
+			const letGo = (o) => disposeObject(o, { textures: false });
 			/** how tall it stands and how far it reaches out over the soil @param {import('three').Object3D} o */
 			const measure = (o) => {
 				let height = 0, reach = 0;
@@ -120,15 +105,7 @@
 			};
 			show($state.snapshot(kind));
 
-			const fit = () => {
-				const w = box.clientWidth, h = box.clientHeight;
-				renderer.setSize(w, h, false);
-				camera.aspect = w / Math.max(1, h);
-				camera.updateProjectionMatrix();
-			};
-			const watch = new ResizeObserver(fit);
-			watch.observe(box);
-			fit();
+			view.resize();
 			let frame = 0;
 			const tick = () => {
 				frame = requestAnimationFrame(tick);
@@ -138,14 +115,11 @@
 			tick();
 			stop = () => {
 				cancelAnimationFrame(frame);
-				watch.disconnect();
 				job++;
-				controls.dispose();
 				if (plant) letGo(plant);
 				soil.geometry.dispose();
 				soil.material.dispose();
-				renderer.dispose();
-				renderer.domElement.remove();
+				view.dispose();
 			};
 		})();
 		return () => (gone = true);
