@@ -37,7 +37,7 @@
 	const byId = $derived(new Map(world.vaults.map((x) => [x.id, x])));
 	const v = $derived(/** @type {VaultView} */ (byId.get(vault)));
 	/** where each kind comes in the kind table, which orders them: an aven before the device vaults */
-	const rank = (/** @type {string} */ kind) => world.kinds.findIndex((k) => k.kind === kind);
+	const rank = (/** @type {string} */ kind) => (world.kinds ?? []).findIndex((k) => k.kind === kind);
 	const owns = $derived(ownedBy(world, vault).sort((a, b) => rank(a.kind) - rank(b.kind)));
 	/** the vaults wholly its own, which act for it alone, and the others it owns */
 	const own = $derived(owns.filter((x) => oneOwner(world, x.kind)));
@@ -107,7 +107,7 @@
 			{@const role = roleGroup(world, c.level)}
 			<li>
 				<span>
-					<b>{level}</b>{level === role ? '' : ` (${role})`} · {shareWhat(c, world)} · of
+					<b>{level}</b>{c.group || level === role ? '' : ` (${role})`} · {shareWhat(c, world)} · of
 					<b>{nameOf(byId.get(c.over))}</b>
 					{#if c.parent && c.issuer !== c.over}<small class="soft">· passed on by {nameOf(byId.get(c.issuer))}</small>{/if}
 				</span>

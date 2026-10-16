@@ -19,7 +19,7 @@
 	/** the kinds the person's vault may found here, in the kind table's order: those it may own one more of that hold
 	 *  no devices */
 	const kinds = $derived(
-		mine ? world.kinds.filter((k) => !k.devices && mayOwn(world, mine, k.kind)).map((k) => k.kind) : []
+		mine ? (world.kinds ?? []).filter((k) => !k.devices && mayOwn(world, mine, k.kind)).map((k) => k.kind) : []
 	);
 	/** the kinds their vault may own but owns as many of as one owner may, with those it owns: a second aven */
 	const full = $derived.by(() => {
@@ -27,7 +27,7 @@
 		const owns = ownedBy(world, mine.id);
 		/** @param {import('./vaults.js').KindRules} k */
 		const held = (k) => !k.devices && k.ownedBy !== 'signers' && k.ownedBy.includes(mine.kind) && !kinds.includes(k.kind);
-		return world.kinds
+		return (world.kinds ?? [])
 			.filter(held)
 			.map((k) => ({ kind: k.kind, each: k.each ?? 0, owned: owns.filter((v) => v.kind === k.kind) }))
 			.filter((k) => k.owned.length);
