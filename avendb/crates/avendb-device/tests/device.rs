@@ -635,7 +635,7 @@ async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_a
     let world = world_of(&mut app).await;
     let shown = world["vaults"].as_array().expect("vaults").iter().find(|v| v["id"] == aven).cloned();
     let shown = shown.expect("the aven on her Mac");
-    assert_eq!((&shown["kind"], &shown["name"]), (&json!("aven"), &json!("avenEve")), "{shown}");
+    assert_eq!((&shown["kind"], &shown["name"]), (&json!("device"), &json!("avenEve")), "{shown}");
     assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "none waits any more");
     // agentClaude acts for avenEve by its own key: it reads her note, and edits her vault directly
     let (me, _) = claude.tool("avendb_vaults", json!({})).await;

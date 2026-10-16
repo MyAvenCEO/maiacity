@@ -573,8 +573,10 @@ impl Service {
         let mine = hex(&d.vault().await.context("this Mac belongs to no vault")?.0);
         let world = d.node().op(json!({ "op": "world" })).await?;
         let vaults = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
+        // the device vault an agent joins (`Node::adopt_with`): an aven holds no devices
         let ours = |v: &&Value| {
-            v["kind"] == "aven" && v["owners"].as_array().is_some_and(|o| o.iter().any(|o| o["vault"] == mine.as_str()))
+            let owners = v["owners"].as_array();
+            v["kind"] == "device" && owners.is_some_and(|o| o.iter().any(|o| o["vault"] == mine.as_str()))
         };
         let approver = self.approver().await?;
         let aven = match (aven["id"].as_str(), aven["name"].as_str()) {

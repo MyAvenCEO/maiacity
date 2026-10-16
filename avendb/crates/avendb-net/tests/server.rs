@@ -84,15 +84,15 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     assert!(stranger.claim(&offer, passkey_b).await.is_err(), "a device of no vault");
     assert!(bobs.claim(&alices.offer(), passkey_b).await.is_err(), "Alice's Mac");
     assert_eq!(server::vault(&server).await, None, "and the server is still nobody's");
-    // Bob's vault claims it first: the server is a device of the CEO Aven of the seed Bob's vault founds, owned by
-    // avenCEO GmbH, which Maia Holding GmbH owns, which Bob's vault owns
+    // Bob's vault claims it first: the server is a device of avenCEO server, the device vault of the seed Bob's vault
+    // founds, owned by avenCEO GmbH, which Maia Holding GmbH owns, which Bob's vault owns
     let avenceo = bobs.claim(&offer, passkey_b).await.expect("Bob's vault claims the server");
-    assert_eq!(server::vault(&server).await, Some(avenceo), "the server is the CEO Aven's device");
+    assert_eq!(server::vault(&server).await, Some(avenceo), "the server is avenCEO server's device");
     let shape = move |lab: &Lab, me| {
         let st = lab.state(me);
         st.vault(avenceo).map(|v| (v.kind, v.root, v.devices.clone(), world::seeded(st, bob, avenceo)))
     };
-    let owned = Some((Kind::Aven, None, vec![server.device()], true));
+    let owned = Some((Kind::DeviceVault, None, vec![server.device()], true));
     assert_eq!(server.read(shape).await, owned, "the end of Bob's seed, the server its one device");
     assert_eq!(bobs.read(shape).await, owned, "on Bob's Mac too");
     let opens = move |lab: &Lab, me| lab.opens(me, KeyFam::Seed(avenceo));
@@ -139,7 +139,7 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
     assert!(stranger.contact(mac.id()).await.is_err(), "a person's device hands out no card");
     assert!(mac.contact(server.id()).await.expect("the server hands out its card") > 0, "Alice's Mac takes it");
     let server_d = server.device();
-    assert_eq!(mac.read(move |lab, me| lab.aven_of(me, server_d)).await, Some(v), "it names avenCEO");
+    assert_eq!(mac.read(move |lab, me| lab.server_vault_of(me, server_d)).await, Some(v), "it names avenCEO server");
     assert!(!admission.admits(&mac.id()), "the server knows no device of Alice's yet");
     // on Alice's Mac, the coop gives this avenCEO relay on the whole of it, and Alice writes Welcome into it
     let relayed = move |lab: &mut Lab, me| {
@@ -166,7 +166,7 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_persons_mac_adopts_an_agents_own_device_into_an_aven_vault_their_vault_owns() {
+async fn a_persons_mac_adopts_an_agents_own_device_into_a_device_vault_their_vault_owns() {
     let dir = Folder::new("agent");
     let shelf = disk::open(dir.path()).expect("the agent's shelf");
     let agent = server::open_agent(shelf, "agentClaude", Options::local()).await.expect("the agent's device");
@@ -176,23 +176,24 @@ async fn a_persons_mac_adopts_an_agents_own_device_into_an_aven_vault_their_vaul
     let bobs = node(&mut w, mac_b, &[passkey_b], 2).await;
     bobs.know(agent.addr());
     agent.know(bobs.addr());
-    // Bob's Mac founds an aven, which Bob's vault owns, and adds the agent's device to it, in one ceremony
+    // Bob's Mac founds a device vault, which Bob's vault owns, and adds the agent's device to it, in one ceremony
     let aven = bobs.adopt(&agent.offer(), None, passkey_b).await.expect("Bob's Mac adopts the agent");
-    assert_eq!(server::vault(&agent).await, Some(aven), "agentClaude is a device of the aven");
+    assert_eq!(server::vault(&agent).await, Some(aven), "agentClaude is a device of the device vault");
     let shape = move |lab: &Lab, me| {
         let v = lab.state(me).vault(aven).cloned();
         v.map(|v| (v.kind, v.owners, v.devices))
     };
-    let owned = Some((Kind::Aven, vec![avendb::policy::Principal::Vault(bob)], vec![agent.device()]));
-    assert_eq!(bobs.read(shape).await, owned, "an aven Bob's vault owns, the agent its one device");
-    // the agent acts for the aven by its own key: a story it starts there reaches Bob's Mac, signed by it
+    let owned = Some((Kind::DeviceVault, vec![avendb::policy::Principal::Vault(bob)], vec![agent.device()]));
+    assert_eq!(bobs.read(shape).await, owned, "a device vault Bob's vault owns, the agent its one device");
+    // the agent acts for its device vault by its own key: a story it starts there reaches Bob's Mac, signed by it
     let story = serde_json::json!({ "op": "create", "vault": aven.to_hex(), "type": "story",
         "value": { "kind": "story", "title": "Trailer story", "tags": [] } });
     let made = agent.op(story).await.expect("an answer");
     let entry = made["ok"]["entry"].as_str().and_then(avendb::id::EntryId::from_hex).expect("{made}");
     let by = move |lab: &Lab, me| lab.state(me).entry(entry).map(|en| en.vault);
     until("Bob's Mac holds the agent's story", || async { bobs.read(by).await == Some(aven) }).await;
-    // Bob's vault lets the aven suggest in it, a share its device issues with no ceremony: the agent reads Bob's own
+    // Bob's vault lets the device vault suggest in it, a share its device issues with no ceremony: the agent reads
+    // Bob's own
     let own = serde_json::json!({ "op": "create", "vault": bob.to_hex(), "type": "story",
         "value": { "kind": "story", "title": "Bob's own story", "tags": [] } });
     let own = bobs.op(own).await.expect("an answer");
@@ -203,7 +204,7 @@ async fn a_persons_mac_adopts_an_agents_own_device_into_an_aven_vault_their_vaul
     assert!(shared["ok"]["share"].is_string(), "a Suggester share, issued alone: {shared}");
     let sees = move |lab: &Lab, me| lab.state(me).entry(own).map(|en| en.vault);
     until("the agent reads Bob's story", || async { agent.read(sees).await == Some(bob) }).await;
-    // adopted again, into the same aven: nothing founds a second one
+    // adopted again, into the same device vault: nothing founds a second one
     let again = bobs.adopt(&agent.offer(), Some(aven), passkey_b).await;
     assert!(again.is_err(), "a device of a vault already takes no claim");
 }

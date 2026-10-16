@@ -209,10 +209,10 @@ async fn a_connection_is_served_only_once_its_hello_proves_its_device() {
 async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     let mut w = world();
     let coop = handbook_ready(&mut w);
-    // the coop founds the Garden, an aven vault it owns, on Alice's Mac, Alice and Bob consenting: the public half of
+    // the coop founds the Garden, a coop it owns, on Alice's Mac, Alice and Bob consenting: the public half of
     // its seed, which shares over it are sealed to, is a new McEliece key; and it gives the server relay on all of it
     let (owners, nonce) = (vec![Principal::Vault(coop)], 7);
-    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
     let garden = w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("the Garden");
     let garden = VaultId::from(garden);
     relay_on(&mut w, garden);
