@@ -134,16 +134,20 @@
 
 	/**
 	 * The page an address names: `#todos`, a spark's or a note's `#notes/` and its entry, an article's `#articles/` and
-	 * its entry, to read, and with `/edit`, to edit as a note, a story's `#stories/` and its entry; else, as with none or
-	 * `#home`, the vault's home.
+	 * its entry, to read, and with `/edit`, to edit as a note (and with a story's entry after it, from that story's
+	 * Writing tab, which its back arrow goes back to), a story's `#stories/` and its entry, and the stage whose tab it
+	 * opens on after it, where it names one; else, as with none or `#home`, the vault's home.
 	 * @param {string} hash
 	 */
 	function parse(hash) {
-		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
+		const [at, entry, edit, from] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
 		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page)?.[0] ?? 'home');
-		const opens = ['sparks', 'artifacts', 'articles', 'stories'].includes(known) && /^[0-9a-f]{64}$/.test(entry ?? '');
-		return { page: known, entry: opens ? entry : '', edit: opens && known === 'articles' && edit === 'edit' };
+		const hex = (/** @type {string | undefined} */ x) => /^[0-9a-f]{64}$/.test(x ?? '');
+		const opens = ['sparks', 'artifacts', 'articles', 'stories'].includes(known) && hex(entry);
+		const editing = opens && known === 'articles' && edit === 'edit';
+		const story = editing && hex(from) ? from : '';
+		return { page: known, entry: opens ? entry : '', edit: editing, story, step: opens && known === 'stories' ? (edit ?? '') : '' };
 	}
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
@@ -243,11 +247,13 @@
 	{#if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories'}
-				<Story {world} {actor} {api} {busy} entry={route.entry} />
+				<Story {world} {actor} {api} {busy} entry={route.entry} step={route.step} />
 			{:else if route.page === 'artifacts'}
 				<Artifact {world} {actor} {api} {busy} entry={route.entry} />
 			{:else if route.page === 'articles' && !route.edit}
 				<Article {world} {actor} {api} entry={route.entry} />
+			{:else if route.page === 'articles' && route.story}
+				<Note {world} {actor} {api} {busy} entry={route.entry} back="#stories/{route.story}/writing" backTo="The story" />
 			{:else if route.page === 'articles'}
 				<Note {world} {actor} {api} {busy} entry={route.entry} back="#articles/{route.entry}" backTo="The article" />
 			{:else}

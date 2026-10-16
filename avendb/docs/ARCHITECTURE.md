@@ -1052,7 +1052,8 @@ what changed (T9). So an old app and a new one edit the same todo side by side, 
 
 **Every record has a schema.** avenDB ships the newest schema of each kind of record (`lens::blobs::SHIPPED`), each
 told by its `kind`: a **document** (a note: a title, blocks and tags), a **todo**, an **article** (a title and one
-Markdown text), a **flow** (stages an item can be in, each with whether it is public and where it goes next), a
+Markdown text, its subtitle and cover its opening lines; the story it is written for, by link, its language, an
+excerpt and a quote with whose words they are; a German or a shorter one is a variant of it), a **flow** (stages an item can be in, each with whether it is public and where it goes next), a
 **function** (a script that runs when an item enters or leaves a stage of a flow), a **post** (a public post of a
 stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
 name and its media type), a **story** (one content piece from its first spark to every platform it goes out on:
@@ -1072,7 +1073,8 @@ keeps its type, a document; the page lists notes among the sparks, and the world
 title and text (`world::What::Note`). Every shipped schema starts at v1, and a kind that grew ships its older
 versions beside the newest and the lenses between them (`lens::blobs::LENSES`), so what was written under an older
 one still counts and opens in the newest app: the spark's v1, a document's fields with a look, a link and a mood
-board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`).
+board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`), and the article's v1, a title, a text and
+tags, reads as v2 as it was, with no story yet (`ARTICLE_LENS`).
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 
