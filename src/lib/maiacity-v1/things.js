@@ -139,3 +139,13 @@ export const STAKE_FLAG = { path: [14] };
  *  `water-bottle`, its cap `cap`, what is in it `inside`), and where the bottle pours from, up its own upright */
 export const PACK_PACKETS = ['apple', 'pear', 'cherry', 'plum', 'apricot', 'quince', 'mulberry', 'walnut', 'chestnut', 'hazel'];
 export const BOTTLE_MOUTH = 0.268;
+
+/** the people: the rigged stand-in (actors/stand-in@11), built with how tall they are and their look (./van.js PEOPLE,
+ *  the players in their seat's colours), its moves played from the tables the box wrote down ($lib/assets/clips.js) */
+export const STAND_IN = 'actors/stand-in@11';
+/** a person's ref: their height (m) and what of their look is not the stand-in's, by name, in a steady order */
+export const standInRef = (height, look = {}) =>
+	`${STAND_IN}?${new URLSearchParams(Object.entries({ height, ...look }).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => [k, String(v)]))}`;
+/** the stand-in's walk comes round every 1.05 s of its clip: played within one round of it, so its tables (written over
+ *  32 s, their end blended into their start) are never read across that seam */
+export const WALK_CYCLE = 1.05;

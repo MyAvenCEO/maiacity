@@ -9,7 +9,8 @@
  * the front seats and the gear stick on it; soft bags, a backpack, boxes tied with string, a suitcase and a rolled
  * mattress at the back.
  *
- * And its people, seated stand-ins of every look ($lib/actors/human.ts): the driver with his hands on the wheel, an
+ * And its people, seated stand-ins of every look (actors/stand-in@11, built in the box with their height and look and
+ * posed by our own code: ./drawn.js `actor`): the driver with his hands on the wheel, an
  * older woman beside him looking out, in the middle row the woman beside you who turns to you to talk, and in the back a young
  * man asleep against the window, a child, and an old man watching the steppe go by. They sway with the road.
  *
@@ -18,8 +19,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { human } from '$lib/actors/human.ts';
-import { blend } from '$lib/actors/rig.ts';
+import { blend } from '$lib/assets/clips.js';
+import { standInRef } from './things.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -137,7 +138,7 @@ function seated(cast, sits, side) {
  *  the smile in full and the gaze eased, since the two at full nearly close the eyes; the sleeper's only a soft mouth.
  *  Eased there by ease (1: at once) */
 export function wearFace(face, { joy = 0, sleeper = false, ease = 1 } = {}) {
-	const d = face.morphTargetDictionary, w = face.morphTargetInfluences;
+	const d = face?.morphTargetDictionary, w = face?.morphTargetInfluences;
 	if (!d || !w) return;
 	const to = sleeper ? { joy: 0.1, friendly: 0 } : { joy: 0.25 + 0.75 * joy, friendly: 1 - 0.6 * joy };
 	for (const [k, v] of Object.entries(to)) if (d[k] !== undefined) w[d[k]] += (v - w[d[k]]) * ease;
@@ -173,8 +174,10 @@ export function seeThrough(body) {
 	return body;
 }
 
-/** all that is in the van, and its people: the body itself (seeThrough) goes in beside them */
-export function packedVan() {
+/** all that is in the van, and its people (stand-ins built in the box, each of their height and look: ./things.js
+ *  standInRef; `drawn` puts them in, `pick` what a tap on them finds): the body itself (seeThrough) goes in beside them
+ *  @param {ReturnType<typeof import('./drawn.js').createDrawn>} drawn @param {string} [pick] */
+export function packedVan(drawn, pick) {
 	const van = new THREE.Group();
 	// every fixed piece goes into one mesh a material
 	const bins = new Map();
@@ -351,19 +354,19 @@ export function packedVan() {
 	// the people, seated stand-ins swaying with the road
 	const people = [];
 	for (const [i, p] of PEOPLE.entries()) {
-		const cast = human(p.look, p.h);
 		const side = Math.sign(p.x) || 1;
-		const base = seated(cast, p.sits, side);
-		const o = cast.rig.object;
+		const o = new THREE.Group();
 		o.position.set(p.x, FLOOR, ROW[p.row]);
-		o.userData = { id: p.id, cast, base, i, k: 0, to: 0 };
-		o.castShadow = o.receiveShadow = false; // in the van's shade; a sun's shadow map is far too coarse for a face
-		cast.rig.pose(base);
+		// in the van's shade, no shadow cast or taken: a sun's shadow map is far too coarse for a face
+		const cast = drawn.actor(standInRef(p.h, p.look), o, { pick, shadow: false, receive: false }, (c) => {
+			o.userData.base = seated(c, p.sits, side);
+			c.rig.pose(o.userData.base);
+		});
+		o.userData = { id: p.id, cast, base: null, i, k: 0, to: 0 };
 		inside.add(o);
 		people.push(o);
 	}
 	const her = people.find((o) => o.userData.id === 'her');
-	const herHead = her.userData.cast.rig.bones.head;
 
 	van.add(inside);
 	van.userData = {
@@ -373,12 +376,13 @@ export function packedVan() {
 		nod(t, dt = 1 / 60) {
 			for (const o of people) {
 				const { cast, base, i } = o.userData;
+				if (!cast.ready) continue; // (not here yet)
 				o.userData.k += Math.sign(o.userData.to - o.userData.k) * Math.min(Math.abs(o.userData.to - o.userData.k), dt * 1.4);
 				const k = o.userData.k * o.userData.k * (3 - 2 * o.userData.k);
 				const pose = k > 0 ? blend(base, { ...base, ...TALK }, k) : base;
 				const h = pose.head ?? [0, 0, 0];
 				const says = k * (Math.sin(t * 5.3 + i) * 0.035 + Math.sin(t * 1.7) * 0.025); // the small nods of someone talking
-				wearFace(cast.rig.object, { sleeper: o.userData.id === 'sleeper' });
+				wearFace(cast.face, { sleeper: o.userData.id === 'sleeper' });
 				cast.rig.pose({ ...pose, head: [h[0] + says + (o.userData.lift ?? 0) + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
 			}
 		},
@@ -391,7 +395,7 @@ export function packedVan() {
 			her.userData.lift = v;
 		},
 		/** her face (world) */
-		herFace: () => herHead.localToWorld(V(0, 0.075, 0.08))
+		herFace: () => her.userData.cast.rig.bones.head?.localToWorld(V(0, 0.075, 0.08)) ?? her.localToWorld(V(0, 1.2, 0.08))
 	};
 	return van;
 }

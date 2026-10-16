@@ -103,3 +103,31 @@ test("the plant stake's flag, and the open backpack's bottle, cap and packets, a
 	for (const id of PACK_PACKETS) expect(first(`seed-packet:${id}`)).toBe(pack.userData.packets[id]);
 	expect(Object.keys(pack.userData.packets)).toEqual(PACK_PACKETS);
 });
+
+test("the people: the stand-in's ref, built with their height and look, and its walk's round", async () => {
+	const { STAND_IN, WALK_CYCLE, standInRef } = await import('./things.js');
+	const { FAMILIES } = await import('$lib/actors');
+	const { human } = await import('$lib/actors/human.ts');
+	expect(standInRef(1.8, { trousers: '#5b5145', shirt: '#3f6f9a' })).toBe(`${STAND_IN}?height=1.8&shirt=%233f6f9a&trousers=%235b5145`);
+	// the version it names builds human(look, height): its params in their order, after its height
+	const fam = FAMILIES.find((f) => f.id === 'stand-in');
+	const v = Number(STAND_IN.split('@')[1]);
+	const at = fam.versions.find((x) => x.v === v);
+	expect(at?.kept).toBe(true);
+	expect(fam.params[0]).toMatchObject({ id: 'height', type: 'number', min: 1, max: 2.2 });
+	const look = { face: 'woman', skin: '#b07a56', hair: 'long', hairColour: '#3b2418', shirt: '#4f6b3a' };
+	const args = fam.params.slice(1).map((p) => look[p.id] ?? p.value);
+	const boxed = at.build[0].make(1.66, ...args).rig.object, paged = human(look, 1.66).rig.object;
+	expect(Array.from(boxed.geometry.attributes.position.array)).toEqual(Array.from(paged.geometry.attributes.position.array));
+	expect(Array.from(boxed.geometry.attributes.color?.array ?? [])).toEqual(Array.from(paged.geometry.attributes.color?.array ?? []));
+	expect(boxed.skeleton.bones.map((b) => b.position.toArray())).toEqual(paged.skeleton.bones.map((b) => b.position.toArray()));
+	expect(Object.keys(boxed.morphTargetDictionary)).toEqual(['joy', 'friendly']);
+	// its walk comes round every WALK_CYCLE seconds of its clip: V1 plays it within one round
+	const walk = human({}, 1.8).clips.walk;
+	for (const t of [0, 0.13, 0.5, 0.77, 1.01, 3.3]) {
+		const a = walk(t), b = walk(t + WALK_CYCLE), c = walk(t + 7 * WALK_CYCLE);
+		for (const k of Object.keys(a)) a[k].forEach((x, i) => (expect(b[k][i]).toBeCloseTo(x, 9), expect(c[k][i]).toBeCloseTo(x, 9)));
+	}
+	// and nowhere sooner: half a round on, the legs are the other way round
+	expect(walk(0.25 + WALK_CYCLE / 2).thighL[0]).toBeCloseTo(-walk(0.25).thighL[0], 9);
+}, 60000);
