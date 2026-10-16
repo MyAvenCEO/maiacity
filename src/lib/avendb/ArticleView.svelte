@@ -16,6 +16,7 @@
 	import PostLayout from '$lib/blog/PostLayout.svelte';
 	import {
 		blocks,
+		bodyText,
 		fileNamed,
 		laidOut,
 		PICTURE,
@@ -74,7 +75,7 @@
 	const src = (name) => urls[name] ?? '';
 
 	/** its words after the subtitle and the cover, as one text */
-	const body = $derived(parts.blocks.slice(parts.body).map((b) => b.md + b.gap).join(''));
+	const body = $derived(bodyText(parts));
 	const html = $derived(render(body, src));
 	const missing = $derived(pictures(text).filter((n) => !fileNamed(world, item.vault, n)).length);
 	const date = $derived(
