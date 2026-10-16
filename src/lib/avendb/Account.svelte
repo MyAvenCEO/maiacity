@@ -32,7 +32,7 @@
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { allowed, answer, reads, refs } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { EVERYONE, plain, seeded } from './vaults.js';
+	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
@@ -659,14 +659,19 @@
 		 * person's one aven, named `avenName`, which the Mac founds first where their vault owns no aven yet, as a device
 		 * vault of its own under it, its device in it, in one ceremony of their passkey where it has none yet; and it
 		 * gets each of `shares`, `{over, level}`, a sub cap resting on the aven's own share over that vault
-		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault}`.
+		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault}`. With
+		 * `standing`, a level, it gets all the person's vaults, now and later, too: a standing grant of their vault to
+		 * the aven, and the aven's, resting on it, to the agent's device vault (the `share` op's `standing`), which every
+		 * vault they own follows now and every vault they found follows later.
 		 * @param {string} name @param {string} device @param {{ over: string, level: string }[]} shares
-		 * @param {string} avenName
+		 * @param {string} avenName @param {string} [standing]
 		 */
-		grant: (name, device, shares, avenName) =>
+		grant: (name, device, shares, avenName, standing = '') =>
 			act(`Granting ${name}`, async () => {
-				await mac.call('grant', name, device, shares, avenName);
+				const joined = await mac.call('grant', name, device, shares, avenName);
 				requests = requests.filter((r) => r.device !== device);
+				if (!standing || !world) return;
+				for (const op of standingOps(world.mine, joined.aven, joined.vault, standing)) answer(await send(op));
 			}),
 		/** In the Mac app: denies agent device `name`'s access request, its device `device`'s. @param {string} name
 		 *  @param {string} device */

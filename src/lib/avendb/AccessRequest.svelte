@@ -21,8 +21,12 @@
 	and approving founds it. Then they pick the vaults it works in, a level each, Viewer, Suggester or Editor: every
 	vault they own, or only some, never an aven or a device vault, which act for their one owner alone (the kind table's
 	`most`); and each vault that shared with the aven, as a coop that hired it, up to the aven's own level there.
-	Approving an agent that has no device vault yet takes one touch of their passkey; a share needs none. Each vault's
-	Sharing page shows what the agent holds and takes it back, and revoking the aven's share ends the agent's too.
+	Approving an agent that has no device vault yet takes one touch of their passkey; a share needs none. "All my vaults,
+	now and later" is a standing grant (avendb's `world::STANDING`): their vault gives the aven one, which the aven
+	passes on to the agent, every vault they own follows it now, and every vault they found later follows it as it
+	follows their server setting, the aven's share first and the agent's resting on it. Each vault's Sharing page shows
+	what the agent holds and takes it back, a standing grant for every vault it reached, and revoking the aven's share
+	ends the agent's too.
 
 	It rises as a sheet from the foot of the page, as the passkey's does (./Signing.svelte), one request at a time, the
 	agents' files first, with pills to pick from rather than the browser's own selects and radios. "Later" puts it away
@@ -32,7 +36,7 @@
 	import { fade, fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { ago, avenOf, KINDS, list, nameOf, oneOwner, order, owns, short as shortId } from './vaults.js';
+	import { ago, avenOf, KINDS, list, nameOf, oneOwner, order, owns, short as shortId, standingOps } from './vaults.js';
 
 	/**
 	 * @typedef {import('./vaults.js').AccessRequestView} Request
@@ -43,7 +47,7 @@
 	 */
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, requests: Request[], asked?: Asked[], api: any, busy: boolean,
-	 *   ongrant: (name: string, device: string, shares: Grant[], avenName: string) => void,
+	 *   ongrant: (name: string, device: string, shares: Grant[], avenName: string, standing: string) => void,
 	 *   ondeny: (name: string, device: string) => void }}
 	 */
 	let { world, requests, asked = [], api, busy, ongrant, ondeny } = $props();
@@ -116,6 +120,9 @@
 
 	/** each record request's answer as the person sets it, by its entry: a level for each vault it asks for */
 	let picks = $state(/** @type {Record<string, Record<string, string>>} */ ({}));
+	/** for an agent's record asking its aven, whether the person gives it all their vaults, now and later, and at which
+	 *  level, by its entry */
+	let alls = $state(/** @type {Record<string, { all: boolean, level: string }>} */ ({}));
 	/** The vaults request `q` asks a level on: those it names, else the vault it asks. @param {Asked} q */
 	const over = (q) => (q.vaults.length ? q.vaults : [q.to]);
 	/** Vault `b` is owned by vault `a` directly. @param {string} a @param {string} b */
@@ -170,43 +177,53 @@
 	$effect(() => {
 		for (const r of requests) if (!answers[key(r)]) answers[key(r)] = start(r);
 		for (const q of asked) if (!picks[q.entry]) picks[q.entry] = pick(q);
+		for (const q of asked) {
+			const level = LEVELS.includes(/** @type {any} */ (q.level)) ? q.level : 'Viewer';
+			if (!alls[q.entry]) alls[q.entry] = { all: false, level };
+		}
 	});
 
-	/** What answer `a` gives: a share of each vault picked at its level, those of the vaults that hired the aven
-	 *  besides "All my vaults". @param {Answer} a @returns {Grant[]} */
+	/** What answer `a` gives vault by vault: a share of each vault picked at its level, but for "All my vaults, now and
+	 *  later", a standing grant instead (`standing`); and those of the vaults that hired the aven. @param {Answer} a
+	 *  @returns {Grant[]} */
 	const shares = (a) => [
-		...(a.all
-			? ownable.map((v) => ({ over: v.id, level: a.level }))
-			: ownable.filter((v) => a.levels[v.id]).map((v) => ({ over: v.id, level: a.levels[v.id] }))),
+		...(a.all ? [] : ownable.filter((v) => a.levels[v.id]).map((v) => ({ over: v.id, level: a.levels[v.id] }))),
 		...hired.filter((h) => a.levels[h.v.id]).map((h) => ({ over: h.v.id, level: a.levels[h.v.id] }))
 	];
+	/** The level of the standing grant answer `a` gives, "All my vaults, now and later", or '' for none.
+	 *  @param {Answer} a */
+	const standing = (a) => (a.all ? a.level : '');
 
 	/** The aven answer `a` joins, by its name: the person's one, else the new one they name. @param {Answer} a */
 	const avenName = (a) => (aven ? nameOf(aven) : a.naming.trim());
 	/** A vault by its name, or by the start of its id where this device doesn't know it. @param {string} id */
 	const vaultName = (id) => (byId.has(id) ? nameOf(byId.get(id)) : `Vault ${shortId(id)}`);
 
-	/** Who gets what, in words: "agentClaude gets Viewer on Samuel: it reads it; …". @param {string} who
-	 *  @param {Grant[]} given */
-	function gets(who, given) {
-		if (!given.length) return `${who} gets no vault: it sees only itself.`;
-		const parts = LEVELS.filter((l) => given.some((g) => g.level === l)).map((level) => {
+	/** What shares give, level by level, in words: "Viewer on Samuel: it reads it", … @param {Grant[]} given */
+	const giveWords = (given) =>
+		LEVELS.filter((l) => given.some((g) => g.level === l)).map((level) => {
 			const names = given.filter((g) => g.level === level).map((g) => vaultName(g.over));
 			return `${level} on ${list(names)}: it ${DOES[level]}`;
 		});
-		return `${who} gets ${parts.join('; ')}`;
+	/** Who gets what, in words: "agentClaude gets Viewer on every vault of yours, now and later: it reads it; Editor
+	 *  on Maia City: …", a standing grant at `all` first, if any. @param {string} who @param {Grant[]} given
+	 *  @param {string} [all] */
+	function gets(who, given, all = '') {
+		const later = all ? [`${all} on every vault of yours, now and later: it ${DOES[all]}`] : [];
+		const parts = [...later, ...giveWords(given)];
+		return parts.length ? `${who} gets ${parts.join('; ')}` : `${who} gets no vault: it sees only itself.`;
 	}
 
 	/** What request `r` gets by answer `a`, in words. @param {Request} r @param {Answer} a */
 	function says(r, a) {
-		const given = shares(a);
-		return given.length ? `${gets(r.name, given)}, each resting on ${avenName(a) || 'your aven'}’s own share.` : gets(r.name, given);
+		const words = gets(r.name, shares(a), standing(a));
+		return shares(a).length || a.all ? `${words}, each resting on ${avenName(a) || 'your aven'}’s own share.` : words;
 	}
 
 	/** @param {Request} r */
 	function approve(r) {
 		const a = answers[key(r)];
-		ongrant(r.name, r.device, shares(a), avenName(a));
+		ongrant(r.name, r.device, shares(a), avenName(a), standing(a));
 	}
 
 	/** Who asks `q`, in words: an agent of the person's aven, else its vault's kind; and the vault it asks, where that
@@ -217,15 +234,22 @@
 		const asks = q.to === world.mine || agentAsks(q) ? '' : ` · asks ${vaultName(q.to)}`;
 		return `${who}${asks}${q.created ? ` · ${ago(q.created)}` : ''}`;
 	}
-	/** The shares answer `p` gives `q`'s asker. @param {Asked} q @param {Record<string, string>} p @returns {Grant[]} */
-	const given = (q, p) => over(q).filter((x) => p[x]).map((x) => ({ over: x, level: p[x] }));
+	/** Whether the person gives `q`'s asker, their aven's agent, all their vaults, now and later. @param {Asked} q */
+	const allOf = (q) => agentAsks(q) && !!alls[q.entry]?.all;
+	/** The vaults `q`'s pills offer: those it asks for, but the person's own where it gets all of them.
+	 *  @param {Asked} q */
+	const offered = (q) => over(q).filter((x) => !(allOf(q) && theirs(x)));
+	/** The shares answer `p` gives `q`'s asker, vault by vault. @param {Asked} q @param {Record<string, string>} p
+	 *  @returns {Grant[]} */
+	const given = (q, p) => offered(q).filter((x) => p[x]).map((x) => ({ over: x, level: p[x] }));
 
 	/** the record requests answered here, until the device's list leaves them out */
 	let answered = $state(/** @type {string[]} */ ([]));
 	/** Gives `q`'s asker the shares answer `p` picks, then writes "granted" into it, acting for the vault asked.
 	 *  @param {Asked} q @param {Record<string, string>} p */
 	async function give(q, p) {
-		const ops = [...given(q, p).flatMap((g) => giving(q, g.over, g.level)), answering(q, 'granted')];
+		const all = allOf(q) ? standingOps(world.mine, q.to, q.from, alls[q.entry].level) : [];
+		const ops = [...all, ...given(q, p).flatMap((g) => giving(q, g.over, g.level)), answering(q, 'granted')];
 		if (await api.runAll(`Granting ${vaultName(q.from)} access`, ops)) answered = [...answered, q.entry];
 	}
 	/** Writes "denied" into `q`, acting for the vault asked. @param {Asked} q */
@@ -325,14 +349,16 @@
 		<section>
 			<h3>Which vaults</h3>
 			<div class="switch" role="radiogroup" aria-label="Which vaults">
-				<button role="radio" aria-checked={a.all} class:on={a.all} onclick={() => (a.all = true)}>All my vaults</button>
+				<button role="radio" aria-checked={a.all} class:on={a.all} onclick={() => (a.all = true)}
+					>All my vaults, now and later</button
+				>
 				<button role="radio" aria-checked={!a.all} class:on={!a.all} onclick={() => (a.all = false)}
 					>Only some</button
 				>
 			</div>
 			{#if a.all}
 				<div class="vault">
-					<span>Every vault</span>
+					<span>Every vault, and each you found later</span>
 					<div class="levels" role="radiogroup" aria-label="Every vault's level">
 						{#each LEVELS as l (l)}
 							<button role="radio" aria-checked={a.level === l} class:on={a.level === l} onclick={() => (a.level = l)}
@@ -407,30 +433,63 @@
 			{DOES[q.level] ?? 'works in it'}.
 		</p>
 
-		<section>
-			<h3>What it gets</h3>
-			{#each over(q) as x (x)}
-				{@const can = givable(q, x)}
-				{#if can.length}
-					{@render pills(p, x, ['', ...can])}
-				{:else}
+		{#if agentAsks(q) && alls[q.entry]}
+			{@const al = alls[q.entry]}
+			<section>
+				<h3>Which vaults</h3>
+				<div class="switch" role="radiogroup" aria-label="Which vaults">
+					<button role="radio" aria-checked={al.all} class:on={al.all} onclick={() => (al.all = true)}
+						>All my vaults, now and later</button
+					>
+					<button role="radio" aria-checked={!al.all} class:on={!al.all} onclick={() => (al.all = false)}
+						>Only those it names</button
+					>
+				</div>
+				{#if al.all}
 					<div class="vault">
-						<span>{vaultName(x)}</span>
-						<small class="soft">{to} holds nothing here to give</small>
+						<span>Every vault, and each you found later</span>
+						<div class="levels" role="radiogroup" aria-label="Every vault's level">
+							{#each LEVELS as l (l)}
+								<button role="radio" aria-checked={al.level === l} class:on={al.level === l} onclick={() => (al.level = l)}
+									>{l}</button
+								>
+							{/each}
+						</div>
 					</div>
 				{/if}
-			{/each}
-		</section>
+			</section>
+		{/if}
+
+		{#if offered(q).length}
+			<section>
+				<h3>{allOf(q) ? 'Besides' : 'What it gets'}</h3>
+				{#each offered(q) as x (x)}
+					{@const can = givable(q, x)}
+					{#if can.length}
+						{@render pills(p, x, ['', ...can])}
+					{:else}
+						<div class="vault">
+							<span>{vaultName(x)}</span>
+							<small class="soft">{to} holds nothing here to give</small>
+						</div>
+					{/if}
+				{/each}
+			</section>
+		{/if}
 
 		<p class="says">
-			{grants.length ? `${gets(from, grants)}.` : `${from} gets nothing: pick a level, or deny it.`}
+			{grants.length || allOf(q)
+				? `${gets(from, grants, allOf(q) ? alls[q.entry].level : '')}.`
+				: `${from} gets nothing: pick a level, or deny it.`}
 			Approving shares it as {to} and writes your answer into the request, which {from} sees once it syncs. Each
 			vault's Sharing page shows it and takes it back.
 		</p>
 		<div class="actions">
 			<button class="btn quiet" disabled={busy} onclick={() => (later = [...later, q.entry])}>Later</button>
 			<button class="btn quiet danger" disabled={busy} onclick={() => refuse(q)}>Deny</button>
-			<button class="btn primary" disabled={busy || !grants.length} onclick={() => give(q, p)}>Approve</button>
+			<button class="btn primary" disabled={busy || (!grants.length && !allOf(q))} onclick={() => give(q, p)}
+				>Approve</button
+			>
 		</div>
 	</div>
 {/if}

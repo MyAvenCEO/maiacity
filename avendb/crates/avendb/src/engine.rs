@@ -63,7 +63,7 @@ use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
 use crate::world::{SyncedTo, VARIANT, variant_mark};
 
-pub use vaults::{approve, approved, follow_server, passkey_of, world, Approval, Prepared, Then};
+pub use vaults::{approve, approved, follow_standing, passkey_of, world, Approval, Prepared, Then};
 
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
 /// updates it holds.
@@ -161,10 +161,10 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "read_file" => &["root", "size", "from", "to"],
         "creatable" => &["vault", "type", "tags", "as"],
         "taggable" => &["entry", "as"],
-        "share" => &["over", "who", "level", "what", "as"],
+        "share" => &["over", "who", "level", "what", "standing", "as"],
         "keep" => &["over", "mode", "what", "device", "as"],
         "copy" => &["device", "full"],
-        "revoke" => &["share", "vault", "owner", "device", "as"],
+        "revoke" => &["share", "vault", "owner", "device", "standing", "as"],
         "settings" => &["vault", "threshold", "root"],
         "found" => &["vaults", "kind", "name"],
         "put_file" => &["vault", "name", "media", "tags", "len", "as"],

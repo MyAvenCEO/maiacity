@@ -9,7 +9,8 @@
 	one ceremony of the passkey, and each
 	drive joined, plugged in or, unplugged, when it last checked what it holds), and Sharing, the one place that says who has the vault: each vault
 	it is shared with, and Everyone where it is public, one line each, with its shares (level · what, and what each
-	reaches now; shares on chosen entries folded into one line a level) and the devices of theirs it is on, each opening
+	reaches now; shares on chosen entries folded into one line a level; a standing grant marked "All your vaults, now
+	and later", revoked on every vault it reached) and the devices of theirs it is on, each opening
 	it or only keeping an encrypted copy; the one Share form; what others share with the vault; and asking for access
 	(./Ask.svelte), as the vault where the person acts for it, else asking it, with the requests their vaults made and
 	the answers. All of it is the
@@ -33,6 +34,7 @@
 		count,
 		EVERYONE,
 		groupOf,
+		isStanding,
 		KEEPS,
 		kindHint,
 		kindRules,
@@ -265,10 +267,16 @@
 		return `It acts for it through ${list(chain)}, which ${v.via.length === 1 ? 'owns it' : 'own it in turn'}.`;
 	});
 
-	/** Revokes share `id`, acting for vault `as`. @param {string | null} id @param {string} as */
-	const revokeShare = (id, as) => api.run('Revoking', { op: 'revoke', share: id, as });
+	/**
+	 * Revokes share `id`, acting for vault `as`; a standing grant ("all my vaults, now and later") ends on every vault
+	 * it reached, and no vault founded later follows it.
+	 * @param {string | null} id @param {string} as @param {boolean} [standing]
+	 */
+	const revokeShare = (id, as, standing = false) =>
+		api.run('Revoking', { op: 'revoke', share: id, as, ...(standing ? { standing: true } : {}) });
 	/** Revokes share row `r`: a keep share as its issuer, any other as the acting vault. @param {ShareRow} r */
-	const revoke = (r) => revokeShare(r.id, r.kind === 'keep' ? (r.issuer ?? world.mine) : actor);
+	const revoke = (r) =>
+		revokeShare(r.id, r.kind === 'keep' ? (r.issuer ?? world.mine) : actor, r.kind === 'grant' && isStanding(r.name));
 
 	/** @param {{ vault: string } | { signer: string }} o */
 	const removeOwner = (o) =>
@@ -756,6 +764,11 @@
 										<span class="held">
 											<span>
 												<span title={hint}>{rowLevel(r, world)}</span> · {rowWhat(r, world)}
+												{#if isStanding(r.name)}<span
+														class="chip"
+														title="A standing grant: every vault you found later gets it too, and revoking it ends it on all of them"
+														>All your vaults, now and later</span
+													>{/if}
 												<small class="soft">
 													{KEEPS[r.level] ? `· ${KEEPS[r.level]} ` : ''}· reaches
 													{count(r.reaches, 'entry', 'entries')} now{r.issuer
@@ -770,7 +783,9 @@
 											{/if}
 										</span>
 										{#if allowed(r.revoke)}
-											<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
+											<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}
+												>{isStanding(r.name) ? 'Revoke everywhere' : 'Revoke'}</button
+											>
 										{/if}
 									</li>
 								{/each}

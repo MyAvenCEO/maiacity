@@ -680,3 +680,98 @@ fn creatable_and_taggable_say_what_a_share_lets_a_vault_add_and_tag() {
     let asked = ok(run(&mut w, mac_b, both));
     assert_eq!(asked, json!([true, true]), "the card acts for Bob's Mac's own vault, and takes no as");
 }
+
+/// The live share on the whole of vault `over` to vault `who`, as device `d` sees it, if any: its id, issuer, parent,
+/// level and name.
+fn wide_to(w: &World, d: SignerId, over: VaultId, who: VaultId) -> Option<(ShareId, VaultId, Option<ShareId>, Level, String)> {
+    let st = w.lab.state(d);
+    let named = |cp: &&avendb::policy::Issued| {
+        cp.share.wide && cp.share.who == avendb::policy::Who::Vault(who) && st.live(cp.id)
+    };
+    let cp = st.shares_over(over).find(named)?;
+    let name = w.lab.slice(d, cp.id).map(|s| s.name.clone()).unwrap_or_default();
+    Some((cp.id, cp.share.issuer, cp.share.parent, cp.share.level, name))
+}
+
+#[test]
+fn all_my_vaults_now_and_later_is_a_standing_grant_that_every_vault_founded_later_follows() {
+    let mut w = cast::world();
+    let (mac, alice, passkey, bob, avenceo) = (w.mac_a, w.alice, w.passkey_a, w.bob, w.avenceo);
+    // avenCEO server keeps her vault, and every vault she founds keeps to that setting
+    cast::relay_on(&mut w, alice);
+    let garden = founded(&mut w, "coop", "Garden COOP");
+    let aven = founded(&mut w, "aven", "avenALICE");
+    assert_eq!(wide_to(&w, mac, aven, avenceo).map(|s| s.3), Some(Level::Backup), "the server keeps her aven too");
+    // agentClaude, a device vault her aven owns, as the Mac founds it for an agent
+    let owners = vec![Principal::Vault(aven)];
+    let genesis = Action::Genesis { kind: Kind::DeviceVault, owners, threshold: 1, root: None, nonce: 7, seal_to: vec![] };
+    let claude = VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("agentClaude's device vault"));
+    // a plain grant of her own vault to Bob's, which reaches her vault alone
+    ok(run(&mut w, mac, share(alice, to(bob), json!("Viewer"), json!("everything"))));
+    // all her vaults, now and later: her vault's standing grant to her aven, and her aven's, passed on to agentClaude
+    let standing = |who: VaultId, by: VaultId| {
+        json!({ "op": "share", "over": alice.to_hex(), "who": to(who), "level": "Viewer", "standing": true,
+            "as": by.to_hex() })
+    };
+    assert_eq!(may(&mut w, mac, json!([standing(aven, alice)])), [json!(true)], "no ceremony: a share below Owner");
+    let s1 = ShareId(id(&ok(run(&mut w, mac, standing(aven, alice))), "share"));
+    let s2 = ShareId(id(&ok(run(&mut w, mac, standing(claude, aven))), "share"));
+    let again = ShareId(id(&ok(run(&mut w, mac, standing(aven, alice))), "share"));
+    assert_eq!(again, s1, "a standing grant stands once");
+    let named = world::standing_name("Viewer");
+    assert_eq!(wide_to(&w, mac, alice, aven), Some((s1, alice, None, Level::Read, named.clone())));
+    assert_eq!(wide_to(&w, mac, alice, claude), Some((s2, aven, Some(s1), Level::Read, named.clone())));
+    // the vaults she owns now follow it: the garden gives the aven Viewer, which the aven passes on to agentClaude
+    let (g1, by, _, _, name) = wide_to(&w, mac, garden, aven).expect("the aven's share of the garden");
+    assert_eq!((by, name), (garden, named.clone()), "the garden gives it, named a standing grant");
+    let (_, by, on, _, _) = wide_to(&w, mac, garden, claude).expect("agentClaude's share of the garden");
+    assert_eq!((by, on), (aven, Some(g1)), "passed on by the aven, resting on its own");
+    assert_eq!(wide_to(&w, mac, garden, bob), None, "Bob's plain grant reaches only her vault");
+    for v in world::seed_of(&w.lab, mac) {
+        let coop = vault(&w.lab, mac, v).kind == Kind::Coop;
+        assert_eq!(wide_to(&w, mac, v, aven).is_some(), coop, "her seed's coops too, not avenCEO server's vault");
+    }
+    assert_eq!(wide_to(&w, mac, claude, aven), None, "the aven owns agentClaude's vault: it needs no share");
+    // a coop she founds later follows it the same way, as it follows the server setting
+    let later = founded(&mut w, "coop", "Maia City COOP");
+    let (l1, by, on, level, name) = wide_to(&w, mac, later, aven).expect("the aven's share of the new coop");
+    assert_eq!((by, on, level, name), (later, None, Level::Read, named.clone()));
+    let (_, by, on, level, _) = wide_to(&w, mac, later, claude).expect("agentClaude's share of the new coop");
+    assert_eq!((by, on, level), (aven, Some(l1), Level::Read), "the aven's first, then the agent's resting on it");
+    assert_eq!(wide_to(&w, mac, later, bob), None, "a plain per-vault grant doesn't spread");
+    assert_eq!(wide_to(&w, mac, later, avenceo).map(|s| s.3), Some(Level::Backup), "the server's, one standing grant");
+    // a vault of a kind that acts for its one owner alone takes none that reads: her new device vault, the server's only
+    let drive = founded(&mut w, "device", "Alice's drive");
+    assert_eq!((wide_to(&w, mac, drive, aven), wide_to(&w, mac, drive, claude)), (None, None));
+    assert_eq!(wide_to(&w, mac, drive, avenceo).map(|s| s.3), Some(Level::Backup));
+    // revoking the standing grant ends it for every vault it reached, and agentClaude's with the aven's
+    let ended = ok(run(&mut w, mac, json!({ "op": "revoke", "share": s1.to_hex(), "standing": true })));
+    let seed = world::seed_of(&w.lab, mac);
+    let (holding, gmbh) = (seed[0], seed[1]);
+    let all = [alice, holding, gmbh, garden, later];
+    assert_eq!(ended["edits"].as_array().map(Vec::len), Some(all.len()), "one for each vault it reached: {ended}");
+    for v in all {
+        assert_eq!((wide_to(&w, mac, v, aven), wide_to(&w, mac, v, claude)), (None, None), "ended over {v:?}");
+    }
+    assert!(wide_to(&w, mac, alice, bob).is_some(), "Bob's plain grant stays");
+    // and stops spreading: a coop founded after it gives the aven nothing
+    let last = founded(&mut w, "coop", "Last COOP");
+    assert_eq!((wide_to(&w, mac, last, aven), wide_to(&w, mac, last, claude)), (None, None));
+    assert_eq!(wide_to(&w, mac, last, avenceo).map(|s| s.3), Some(Level::Backup), "the server's still");
+    // what a standing grant is, and isn't
+    let refusals = [
+        json!({ "op": "share", "over": garden.to_hex(), "who": to(aven), "level": "Viewer", "standing": true,
+            "as": garden.to_hex() }),
+        json!({ "op": "share", "over": alice.to_hex(), "who": to(aven), "level": "Owner", "standing": true }),
+        json!({ "op": "share", "over": alice.to_hex(), "who": "everyone", "level": "Viewer", "standing": true }),
+        json!({ "op": "share", "over": alice.to_hex(), "who": to(aven), "level": "Viewer", "standing": true,
+            "what": { "type": ["note"] } }),
+        json!({ "op": "share", "over": alice.to_hex(), "who": to(aven), "level": "Viewer", "standing": "yes" }),
+    ];
+    for op in refusals {
+        assert_eq!(refused(&run(&mut w, mac, op.clone())), "BadOp", "{op}");
+    }
+    let (plain, ..) = wide_to(&w, mac, alice, bob).expect("Bob's");
+    let plain = json!({ "op": "revoke", "share": plain.to_hex(), "standing": true });
+    assert_eq!(refused(&run(&mut w, mac, plain)), "BadOp", "a plain grant is no standing grant");
+}

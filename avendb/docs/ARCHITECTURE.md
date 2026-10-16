@@ -336,14 +336,28 @@ whose claim the server didn't take adds it to the avenCEO server that claim foun
 founding device writes each seed vault's profile with its name (`world::SEED_NAMES`) as it settles, before the page
 opens; the page names a seed that has none the same way.
 
-### Every vault under a person follows their server setting
+### Every vault under a person follows their standing grants
 
-A person's vault gives avenCEO server Backup on the whole of it as it is founded, or Relay with backups off (section
-5). Every vault founded under it follows that setting (`engine::follow_server`): each vault `found` makes, each vault of
-the seed and each vault the flow above founds, an aven and an agent's device vault among them, gives avenCEO server the
-same level on the whole of itself. `back_up` changes it for all of them at once. The person's devices are often away,
-and the server is the one peer that is always there: so what an aven or an agent writes, an access request among it,
-reaches the server, and through it whoever it is for.
+A standing grant is "all my vaults, now and later": a wide share on the whole of the person's own vault, to another
+vault, below Owner, that every vault founded under the person later gives too. It is stored as nothing new: a share
+like any other whose name, sealed in its slice with its ops, is the reserved `avendb:standing:` and its group's name
+(`world::STANDING`; the group a share counts in is read from its ops, so the name is free to mark it). The `share` op
+with `"standing": true` makes one, and gives the same share on each vault the person owns now; `world::standing` lists
+them, the share of the person's vault to avenCEO server among them, Backup or Relay (section 5), whatever its name.
+
+Every vault founded under the person follows them (`engine::follow_standing`, the one helper): each vault `found`
+makes, each vault of the seed and each vault the flow below founds, an aven and an agent's device vault among them,
+gives each grantee the same share of the whole of itself, issued by itself and resting on none, unless the grantee is
+the vault itself or owns it, holds as much there already, or would read a vault of a one-owner kind (an aven or a
+device vault, which shares only what its owner passes on; the server's Backup and Relay read nothing, so they reach
+those too). An aven's standing grant to its agent follows the same way: once the person's share to the aven reaches
+the new vault, the aven passes its own on to the agent's device vault, resting on it, as the one rule says (section 5);
+so a coop the person founds after giving their aven and its agent access gives both, the aven's share first. A share
+of one vault only stays where it is. `back_up` changes the server's level for all the vaults at once. Revoking a
+standing grant (`revoke {share, standing: true}`) revokes it on every vault it reached, each by the cascade, and no
+vault founded after follows it. The person's devices are often away, and the server is the one peer that is always
+there: so what an aven or an agent writes, an access request among it, reaches the server, and through it whoever it
+is for.
 
 ### Your aven and its agents
 
@@ -369,7 +383,14 @@ every device does (`put_file`, the file named by its path beside the op): an Edi
 Suggester's or a Viewer's doesn't. It seals the file onto its own shelf, and lets go of it once the desktop app's
 device, the one whose key is the endpoint of the offer the app leaves it, holds it whole by that device's holdings
 (`Node::holds_whole`, `Node::let_go`): a read of it then fetches it from there. Where the desktop keeps a light copy,
-the agent's copy is the one. A reset clears its folder as the app's, and it asks to join again.
+the agent's copy is the one. It reads a file back with `get_file`, its own op beside the engine's and the mirror of
+`put_file` (the MCP tool `avendb_read_file`): the file named by its entry, or by its vault and name, read as the page's
+Library reads it (`read_file`, a window at a time, from its own shelf or else from the desktop's store), only where its
+shares let it read the entry, and written to the path beside the op, never over a file there unless `overwrite` says
+so; a text file of at most 64 KiB comes back inline too. It captures a spark with `avendb_add_spark`, its text, title
+and tags alone (a link or a media file goes in as an artifact of its own): the `create` the page's Sparks run, run as
+any change of its, into its person's own vault unless it names another, where its shares let it create; where they
+don't, it says which vaults they let it. A reset clears its folder as the app's, and it asks to join again.
 
 ### Asking for access
 
@@ -393,7 +414,8 @@ its offer. Once it is a device of its device vault, its MCP tool `avendb_request
 does, a request its device vault writes to the aven over it, and leaves no file.
 
 The page shows both kinds on its one consent screen, and the person picks all their vaults or only some, a level each,
-and approves or denies; if their vault owns no aven yet, they name the one it founds. Approving an agent's file (`grant
+and approves or denies; "All my vaults, now and later" gives a standing grant (above), to the aven and from the aven
+to the agent, so a vault founded later gives both too. If their vault owns no aven yet, they name the one it founds. Approving an agent's file (`grant
 [name, device, shares, avenName]`) adds the agent by the flow above, in one ceremony at most: the aven, founded and
 named if it is new, the agent's device vault under it, named after the agent, founded if it is new, and the edit that
 adds the device, which the device signs too; for the same harness on their other Mac, only that edit, to the agent's
@@ -403,7 +425,8 @@ the aven first where it holds none at that level; over a coop that hired the ave
 above it is refused before any ceremony. `grant` needs no file for an agent whose device is in its device vault already;
 the page then writes the record's answer acting as the aven. A no to a file is left for the agent (`<device>.denied`),
 which asks no more until it asks again; a no to a record is its answer. A share covers one vault: a share of the
-person's own vault reaches none of the vaults it owns, so "all my vaults" is a share of each.
+person's own vault reaches none of the vaults it owns, so "all my vaults" is a share of each, and "now and later" a
+standing grant that each vault founded later follows.
 
 ## 4. Edits, logs and the replay
 
@@ -552,8 +575,8 @@ A vault gives avenCEO server, the server's device vault, a wide Backup share at 
 ciphertext of all its entries and opens none. With backups off it gives Relay instead: the server learns the vault's
 devices from its log, to let them through its relay, and keeps nothing of its entries (T26). The person switches between
 the two with the `back_up` op, for their vault and the vaults it acts for at once (`world::server_level`). Every vault
-founded under a person gives avenCEO server the same level as the person's vault has (`engine::follow_server`, section
-3). Each of these shares is issued by the vault it is over and rests on none.
+founded under a person gives avenCEO server the same level as the person's vault has: it is one of the person's
+standing grants (`engine::follow_standing`, section 3). Each of these shares is issued by the vault it is over and rests on none.
 
 ### Keep shares
 
@@ -903,12 +926,12 @@ entry of its type (section 9).
 
 | Op | What it makes | Approval |
 |---|---|---|
-| `share {over, who, level, what, as}` | `who` is `{"vault": id}`, `"everyone"`, `{"signer": id}` or `{"device": id}`; `level` a built-in group's name, a group of its own `{name, ops}`, a keep level, or `"actsFor"`; `what` is `"everything"` or a `where` of labels. Owner on everything to a vault or a signer adds a co-owner (`Sharing::Owner`), `actsFor` a device (`Sharing::Device`), a keep level a keep share, anything else a grant (`Sharing::Grant`) resting, where the acting vault isn't the vault itself, on a share it holds that the one rule lets it rest on (section 5, `world::parent`): an owner share first, or, to a vault it owns, one at that level or more. `{"edit"}` or `{"share"}` | Owners, devices, Owner grants |
+| `share {over, who, level, what, as}` | `who` is `{"vault": id}`, `"everyone"`, `{"signer": id}` or `{"device": id}`; `level` a built-in group's name, a group of its own `{name, ops}`, a keep level, or `"actsFor"`; `what` is `"everything"` or a `where` of labels. Owner on everything to a vault or a signer adds a co-owner (`Sharing::Owner`), `actsFor` a device (`Sharing::Device`), a keep level a keep share, anything else a grant (`Sharing::Grant`) resting, where the acting vault isn't the vault itself, on a share it holds that the one rule lets it rest on (section 5, `world::parent`): an owner share first, or, to a vault it owns, one at that level or more. `"standing": true` makes a standing grant, all of the acting vault's own vaults now and later (section 3): a grant on everything, below Owner, to a vault, given on each vault it owns now and followed by each founded later. `{"edit"}` or `{"share"}` | Owners, devices, Owner grants |
 | `keep {over, mode, what, device, as}` | A keep share to one of the acting vault's devices, this one unless named; `mode` is `"whole"`, `"opened"` or `"never"`. `{"share"}` | Never |
 | `copy {device, full}` | The copy setting of one of the person's devices, this one unless named: a wide keep share their vault issues over itself, Whole when `full`, else Opened; the device's other copy shares are revoked. `{"share"}` | Never |
-| `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}` | Owner shares, owners, devices; not a device leaving |
+| `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}`; with `"standing": true`, a standing grant on every vault it reached, `{"edits"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
-| `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then avenCEO server's share and a profile on each. `{"vaults"}` | Always |
+| `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenCEO server's share among them, and a profile on each. `{"vaults"}` | Always |
 | `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}` | Never |
 | `ask {to, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
 | `back_up {on}` | avenCEO server's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |

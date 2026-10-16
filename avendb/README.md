@@ -186,6 +186,10 @@ and `fileStart`, `fileChunk`, `fileEnd` and `fileDrop` to hand `put_file` a file
   agent as a device vault under the person's one aven, founding the aven with their first agent, in one ceremony at
   most, then has the aven pass a share on to it for each vault picked ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). An
   agent that is a device of its device vault asks for more with a record, which the page's consent screen answers.
+  Its tools: `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change (`put_file` saves a file of the Mac
+  by its path; `get_file` reads one back to a path, never over a file there unless `overwrite`, a small text file
+  inline too), `avendb_add_spark` to capture a spark into the person's own vault or the one named, as the Sparks page
+  does, `avendb_read_file` for `get_file`, and `avendb_request_access`.
 
 Passkeys, PRF and a device's secure boundary are in [ARCHITECTURE.md](docs/ARCHITECTURE.md) §11.
 
@@ -206,8 +210,9 @@ opens nothing but what is public.
   serves them to the devices that may hold them, also while the device that wrote them is away. With relay instead
   (backups off, at setup or later with the `back_up` op), the server learns only the vault's devices, from its log, to
   let them through its relay; it keeps none of its entries. Every vault founded under a person, their aven and its
-  agents' device vaults too, gives it the level their own vault does (`avendb::engine::follow_server`), so what an aven
-  or an agent writes, an access request among it, reaches whoever it is for while the person's devices are away.
+  agents' device vaults too, gives it the level their own vault does, as it follows every standing grant of theirs
+  ("all my vaults, now and later", `avendb::engine::follow_standing`), so what an aven or an agent writes, an access
+  request among it, reaches whoever it is for while the person's devices are away.
 - Its relay lets in only the devices the server knows: those of the vaults it relays or backs up, of avenCEO server's
   owners, and itself; while sign-up is open, or until a human vault claims the server, also any passkey's pass, for ten
   minutes. A device taken out of its vault is let go, and turned away when it tries again. A device with no UDP of its

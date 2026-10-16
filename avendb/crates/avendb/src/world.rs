@@ -981,3 +981,60 @@ pub fn parent(st: &State, issuer: VaultId, over: VaultId, who: Who, level: Level
     held.sort_by_key(|cp| (cp.share.level != Level::Owner, !cp.share.wide, std::cmp::Reverse(cp.share.level.rank())));
     held.first().map(|cp| cp.id)
 }
+
+/// What the name of a standing grant starts with, the name of its group following it: a share on the whole of a
+/// person's vault, given for "all my vaults, now and later", which every vault founded under that vault from then on
+/// gives too (`standing`), and every share that followed it, which carries the same name. The name is the share's own,
+/// sealed in its slice beside its ops (`slice::Slice`), so a standing grant is told by what avenDB stores already, and
+/// only the person's vault and its grantee read it.
+pub const STANDING: &str = "avendb:standing:";
+
+/// The name of a standing grant of group `group`: `avendb:standing:Viewer`.
+pub fn standing_name(group: &str) -> String {
+    format!("{STANDING}{group}")
+}
+
+/// A share named `name` is a standing grant, or followed one.
+pub fn is_standing(name: &str) -> bool {
+    name.starts_with(STANDING)
+}
+
+/// A grant a vault founded under a person follows (`standing`): the share it follows, the vault that holds it and its
+/// level, its name and ops, and who issued it, the person's vault itself or a vault it owns passing it on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Standing {
+    pub share: ShareId,
+    pub who: VaultId,
+    pub level: Level,
+    pub name: String,
+    pub ops: Vec<rules::Op>,
+    pub issuer: VaultId,
+}
+
+/// The standing grants of vault `mine`, a person's, as device `me` reads them: each share in force on the whole of it
+/// to a vault that is named a standing grant (`STANDING`), as "all my vaults, now and later" on the consent screen
+/// gives one to their aven and the aven passes one on to its agent; and avenCEO server's, Backup or Relay, which is
+/// the person's server setting (`server_level`), so every vault backs up or relays as theirs does. The strongest first,
+/// then in the order issued, so a share comes after the one it rests on. Each with its slice's name and ops, or, where
+/// the device doesn't read the slice, its level's group's.
+pub fn standing(lab: &Lab, me: SignerId, mine: VaultId) -> Vec<Standing> {
+    let st = lab.state(me);
+    let server = avenceo(st, mine);
+    let mut out = vec![];
+    for cp in st.shares_over(mine).filter(|cp| cp.share.wide && st.live(cp.id)) {
+        let Who::Vault(who) = cp.share.who else { continue };
+        let slice = lab.slice(me, cp.id);
+        let named = slice.is_some_and(|s| is_standing(&s.name));
+        if cp.share.level.is_keep() || !(named || Some(who) == server) {
+            continue;
+        }
+        let (name, ops) = match slice {
+            Some(s) => (s.name.clone(), s.grant.ops.clone()),
+            None => (cp.share.level.group().to_string(), cp.share.level.ops()),
+        };
+        let (level, issuer) = (cp.share.level, cp.share.issuer);
+        out.push(Standing { share: cp.id, who, level, name, ops, issuer });
+    }
+    out.sort_by_key(|s| std::cmp::Reverse(s.level.rank()));
+    out
+}
