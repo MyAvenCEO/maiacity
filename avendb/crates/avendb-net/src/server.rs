@@ -1,11 +1,12 @@
 //! The server peer (P8b): a node on a shelf of its own (`shelf`), its bucket (blobs B3a, `bucket`) or else its folder
 //! (`disk`), with its device's secret on the shelf beside its edits (`SECRET`). At its first start on a shelf it makes
 //! that secret, and belongs to no vault until the first human vault to claim it does (P8f, `Node::claim`,
-//! `Node::found_with`): from then on it is a device of avenCEO, an aven vault that human vault owns, which it acts for
-//! and never governs, and it starts again from what the shelf holds, as the same device, whatever became of its folder
-//! beside a bucket. It hands its contact card, avenCEO's log, to whoever asks, so that a vault can give avenCEO relay
-//! on its entries; it holds only ciphertext, and opens nothing but what is public and avenCEO's own. Its relay (the
-//! `avendb-server` binary) lets in only the devices it knows (`Admission`).
+//! `Node::found_with`): from then on it is a device of avenCEO server, a device vault avenCEO GmbH owns, of the seed
+//! that human vault founds, which it acts as and never governs, and it starts again from what the shelf holds, as the
+//! same device, whatever became of its folder beside a bucket. It hands its contact card, avenCEO server's log and its
+//! owners', to whoever asks, so that a vault can give avenCEO server relay on its entries; it holds only ciphertext,
+//! and opens nothing but what is public and avenCEO server's own. Its relay (the `avendb-server` binary) lets in only
+//! the devices it knows (`Admission`).
 
 use std::io::ErrorKind;
 
@@ -34,8 +35,9 @@ pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
 /// An agent device on `shelf`, named `name`, with `opts` for its network: agentClaude on its person's Mac, as
 /// the server's is, with its secret on the shelf beside its edits, made at its first start; but keeping no file whole
 /// of its own accord (`Options::keep` as `opts` say), so that it reads its person's files from their Mac's one store.
-/// It hands its card to whoever asks and answers claims while it belongs to no vault, so that its person's Mac adopts
-/// it into an aven vault their vault owns (`Node::adopt_with`); from then on it acts for that vault by its own key.
+/// It hands its card to whoever asks and answers claims while it belongs to no vault, so that its person's Mac adds it
+/// to a device vault under their aven (`Node::add_device_vault_with`); from then on it acts as that device vault by its
+/// own key.
 pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node> {
     let secret = secret(&shelf).await?;
     let mut lab = Lab::with_entropy(*random()?);
@@ -43,7 +45,8 @@ pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node>
     Node::spawn(lab, me, Options { shelf: Some(shelf), card: true, ..opts }).await
 }
 
-/// The vault the node's device belongs to, as its view has it: avenCEO, once a device claimed the server.
+/// The vault the node's device belongs to, as its view has it: avenCEO server, once a device claimed the server; an
+/// agent's device vault, once its person's Mac added it.
 pub async fn vault(node: &Node) -> Option<VaultId> {
     node.read(|lab, me| lab.vault_of(me)).await
 }

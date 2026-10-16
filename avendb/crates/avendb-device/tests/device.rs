@@ -8,10 +8,12 @@
 //! vault's owners approve signed in a sheet; a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`),
 //! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and clears what an
 //! earlier avenDB kept in the folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
-//! for access; she denies, it asks again, and the page's consent screen adds both to her one aven avenEve, a sheet
-//! each, whose share they act with. An agent saves a file of her Mac by its path as its aven's share allows, an
-//! Editor's and not a Suggester's, and keeps it while her Mac keeps a light copy, then lets go of it once her Mac keeps
-//! a full one: one copy on her Mac. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
+//! for access; she denies, it asks again, and the page's consent screen adds both under her one aven avenEve, founded
+//! with the first, a device vault and a sheet each, with the shares the aven passes on to them; the same harness on her
+//! other Mac joins its agent's device vault there. An agent saves a file of her Mac by its path as its shares allow,
+//! an Editor's and not a Suggester's, and keeps it while her Mac keeps a light copy, then lets go of it once her Mac
+//! keeps a full one: one copy on her Mac. Her aven passes on no more than it holds of a coop that hired it, and the
+//! coop taking its share back ends its agent's. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
 //! sheet, its key never on it in plain; the Mac it is plugged into hosts it, a full copy; unplugged, its node stops and
 //! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
 //! stays open, and plugged in again it is hosted with no sheet; her other Mac opens it in one; removed like a lost
@@ -25,9 +27,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
-use avendb::id::{EntryId, SignerId, VaultId};
+use avendb::id::{EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
+use avendb::policy::{Action, Kind, Level, Principal, Revoking, Sharing};
+use avendb::slice::Selector;
 use avendb::sign::{Ceremony, DeviceKey, PRF_SALT, Passkey, device_salt};
 use avendb_device::{Config, SHEET, agent, drive, serve};
 use avendb_net::shelf::FLOOR;
@@ -506,12 +510,12 @@ struct Harness {
 }
 
 impl Harness {
-    /// The harness `harness` starts its agent device beside the app's folder `host`, asking to join `aven`, if named.
-    fn start(host: &Path, harness: &str, aven: Option<&str>) -> Harness {
+    /// The harness `harness` starts its agent device beside the app's folder `host`.
+    fn start(host: &Path, harness: &str) -> Harness {
         let (pipe, device) = tokio::io::duplex(1 << 20);
         let (input, output) = tokio::io::split(device);
-        let (host, harness, aven) = (host.to_path_buf(), harness.to_string(), aven.map(String::from));
-        let serving = tokio::spawn(agent::serve(host, harness, aven, input, output));
+        let (host, harness) = (host.to_path_buf(), harness.to_string());
+        let serving = tokio::spawn(agent::serve(host, harness, input, output));
         let (from, to) = tokio::io::split(pipe);
         Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
     }
@@ -573,8 +577,22 @@ async fn reads(h: &mut Harness, entry: &Value) -> (String, bool) {
     read
 }
 
+/// Vault `id` as device `app`'s world shows it, once `check` holds of it, 60 seconds at most.
+async fn vault_shown(app: &mut App, id: &Value, what: &str, check: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let world = world_of(app).await;
+        let vaults = world["vaults"].as_array().expect("its vaults");
+        if let Some(shown) = vaults.iter().find(|v| v["id"] == *id && check(v)) {
+            return shown.clone();
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_and_edit_her_vault() {
+async fn harnesses_ask_for_access_and_join_her_one_aven_as_agents_that_read_and_edit_her_vault() {
     let (_relay, url, server) = server().await;
     // the app's folder and the agents' beside it, both in a folder of the test's own
     let folder = Folder::new("agent");
@@ -587,8 +605,8 @@ async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_a
     let note = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": seeds })).await;
     let entry = note.expect("her note")["entry"].clone();
     assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "no agent on her Mac yet");
-    // Claude Code starts its agent device, agentClaude, which asks to join her aven avenEve: the page shows it
-    let mut claude = Harness::start(&dir, agent::CLAUDE, Some("avenEve"));
+    // Claude Code starts its agent device, agentClaude, which asks for access: the page shows it, with no aven named
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
     let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
     assert_eq!(hello["serverInfo"]["name"], "avendb");
     let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
@@ -598,8 +616,8 @@ async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_a
     assert!(waits.contains("waiting for its person to answer"), "{waits}");
     let asked = requests(&mut app, 1).await;
     let device = asked[0]["device"].clone();
-    assert_eq!(asked[0]["name"], "agentClaude", "{asked}");
-    assert_eq!((&asked[0]["aven"], &asked[0]["level"]), (&json!("avenEve"), &json!("Suggester")));
+    assert_eq!((&asked[0]["name"], &asked[0]["level"]), (&json!("agentClaude"), &json!("Suggester")), "{asked}");
+    assert!(asked[0].get("aven").is_none(), "a harness names no aven: {asked}");
     assert!(asked[0]["offer"].is_string(), "its offer, to join by");
     // the command that runs any harness's agent device, and for Claude Code the line that adds it
     let codex = app.call("agentCommand", json!(["codex"])).await.expect("its command");
@@ -624,42 +642,71 @@ async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_a
     assert!(!error, "{ok}");
     let asked = requests(&mut app, 1).await;
     assert_eq!((&asked[0]["level"], &asked[0]["why"]), (&json!("Editor"), &json!(why)), "{asked}");
-    // one sheet: the device joins her new aven avenEve, which her vault owns and which may edit her vault
+    // never Owner; and with no aven yet, she names the one it founds: no sheet for either
     let shares = json!([{ "over": mine, "level": "Editor" }]);
     let owner = json!([{ "over": mine, "level": "Owner" }]);
-    let refused = app.call("grant", json!(["agentClaude", device, { "name": "avenEve" }, owner])).await;
+    let refused = app.call("grant", json!(["agentClaude", device, owner, "avenEve"])).await;
     assert!(refused.is_err_and(|e| e.contains("isn't a level")), "never Owner");
-    let granted = app.call("grant", json!(["agentClaude", device, { "name": "avenEve" }, shares])).await;
-    let aven = granted.expect("granted")["aven"].clone();
+    let unnamed = app.call("grant", json!(["agentClaude", device, shares])).await;
+    assert!(unnamed.is_err_and(|e| e.contains("no aven yet")), "an aven to found is named");
+    assert!(app.asked().is_empty(), "no sheet");
+    // one sheet: her vault founds her aven avenEve and agentClaude's device vault under it, the agent's device in it;
+    // her vault gives the aven Editor on it, and the aven passes that on to agentClaude
+    let granted = app.call("grant", json!(["agentClaude", device, shares, "avenEve"])).await.expect("granted");
+    let (aven, claudes) = (granted["aven"].clone(), granted["vault"].clone());
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let world = world_of(&mut app).await;
-    let shown = world["vaults"].as_array().expect("vaults").iter().find(|v| v["id"] == aven).cloned();
-    let shown = shown.expect("the aven on her Mac");
-    assert_eq!((&shown["kind"], &shown["name"]), (&json!("device"), &json!("avenEve")), "{shown}");
+    let vaults = world["vaults"].as_array().expect("vaults");
+    let shown = |id: &Value| vaults.iter().find(|v| v["id"] == *id).cloned().expect("on her Mac");
+    let (her_aven, agents) = (shown(&aven), shown(&claudes));
+    assert_eq!((&her_aven["kind"], &her_aven["name"]), (&json!("aven"), &json!("avenEve")), "{her_aven}");
+    assert_eq!((&her_aven["owners"], &her_aven["devices"]), (&json!([{ "vault": mine }]), &json!([])));
+    assert_eq!((&agents["kind"], &agents["name"]), (&json!("device"), &json!("agentClaude")), "{agents}");
+    assert_eq!(agents["owners"], json!([{ "vault": aven }]), "under her aven");
+    assert_eq!(agents["devices"][0]["id"], device, "the agent's device its one device");
+    let shares_of = |who: &Value| {
+        let held = world["shares"].as_array().expect("shares").iter();
+        held.filter(|c| c["who"] == *who && c["over"] == mine).cloned().collect::<Vec<_>>()
+    };
+    let (to_aven, to_agent) = (shares_of(&aven), shares_of(&claudes));
+    assert_eq!((to_aven.len(), &to_aven[0]["issuer"], &to_aven[0]["group"]), (1, &mine, &json!("Editor")));
+    assert_eq!((to_agent.len(), &to_agent[0]["issuer"], &to_agent[0]["group"]), (1, &aven, &json!("Editor")));
+    assert_eq!(to_agent[0]["parent"], to_aven[0]["id"], "agentClaude's resting on the aven's");
     assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "none waits any more");
-    // agentClaude acts for avenEve by its own key: it reads her note, and edits her vault directly
+    // agentClaude acts as its device vault by its own key, under avenEve: it reads her note, and edits her vault
     let (me, _) = claude.tool("avendb_vaults", json!({})).await;
     let me: Value = serde_json::from_str(&me).expect("JSON");
-    assert_eq!((&me["me"]["device"], &me["me"]["aven"]), (&json!("agentClaude"), &aven), "{me}");
+    let who = (&me["me"]["device"], &me["me"]["vault"], &me["me"]["aven"]);
+    assert_eq!(who, (&json!("agentClaude"), &claudes, &aven), "{me}");
+    assert!(me["who"].as_str().is_some_and(|w| w.starts_with("agentClaude is an agent under the aven")), "{me}");
     let read = reads(&mut claude, &entry).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentClaude reads her note: {read:?}");
     let beans = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
     let beans = json!({ "op": beans });
     let (made, error) = claude.tool("avendb_run", beans).await;
     assert!(!error && made.contains("\"ok\""), "an Editor writes: {made}");
-    // Codex starts its own agent device, which joins the same aven in one more sheet, and has its access
-    let mut codex = Harness::start(&dir, "codex", None);
+    // Codex starts its own agent device, added under the same aven in one more sheet, a device vault of its own; the
+    // name she gives is for an aven to found, and she has one
+    let mut codex = Harness::start(&dir, "codex");
     let asked = requests(&mut app, 1).await;
-    assert_eq!((&asked[0]["name"], &asked[0]["aven"]), (&json!("agentCodex"), &Value::Null), "{asked}");
-    let joined = app.call("grant", json!(["agentCodex", asked[0]["device"], { "id": aven }, []])).await;
-    assert_eq!(joined.expect("joined")["aven"], aven, "the same aven");
+    assert_eq!(asked[0]["name"], "agentCodex", "{asked}");
+    let viewer = json!([{ "over": mine, "level": "Viewer" }]);
+    let joined = app.call("grant", json!(["agentCodex", asked[0]["device"], viewer, "avenOther"])).await;
+    let joined = joined.expect("joined");
+    assert_eq!(joined["aven"], aven, "the same aven");
+    assert_ne!(joined["vault"], claudes, "a device vault of its own");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let world = world_of(&mut app).await;
-    let shown = world["vaults"].as_array().expect("vaults").iter().find(|v| v["id"] == aven).cloned();
-    let devices = shown.expect("the aven")["devices"].as_array().map_or(0, Vec::len);
-    assert_eq!(devices, 2, "agentClaude and agentCodex, both devices of avenEve");
+    let vaults = world["vaults"].as_array().expect("vaults");
+    let avens: Vec<&Value> = vaults.iter().filter(|v| v["kind"] == "aven").collect();
+    assert_eq!((avens.len(), &avens[0]["name"]), (1, &json!("avenEve")), "her one aven, named as it was");
+    let codexs = vaults.iter().find(|v| v["id"] == joined["vault"]).expect("agentCodex's vault");
+    assert_eq!((&codexs["name"], &codexs["owners"]), (&json!("agentCodex"), &json!([{ "vault": aven }])));
     let read = reads(&mut codex, &entry).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentCodex reads her note too: {read:?}");
+    let beans = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Peas", "In June.") } });
+    let (no, _) = codex.tool("avendb_run", beans).await;
+    assert!(no.contains("\"refused\""), "a Viewer writes nothing, whatever the aven holds: {no}");
     let (no, error) = claude.tool("avendb_run", json!({ "op": { "op": "world" } })).await;
     assert!(error && no.contains("only reads"), "{no}");
     let put = json!({ "op": { "op": "put_file", "vault": mine, "name": "a.txt", "len": 1 } });
@@ -671,6 +718,140 @@ async fn harnesses_ask_for_access_and_join_one_aven_as_agent_devices_that_read_a
     claude.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_same_harness_on_her_other_mac_joins_its_agents_device_vault_under_her_aven() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("agent-macs");
+    let (dir, other_dir) = (folder.0.join("avendb"), folder.0.join("avendb-b"));
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    let mac = app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await;
+    let mac = mac.expect("her vault");
+    let mine = world_of(&mut app).await["mine"].clone();
+    let seeds = titled("Seeds", "Tomatoes in March.");
+    let note = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": seeds })).await;
+    let entry = note.expect("her note")["entry"].clone();
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let asked = requests(&mut app, 1).await;
+    let (first, viewer) = (asked[0]["device"].clone(), json!([{ "over": mine, "level": "Viewer" }]));
+    let granted = app.call("grant", json!(["agentClaude", first, viewer, "avenEve"])).await;
+    let granted = granted.expect("granted");
+    let (aven, claudes) = (granted["aven"].clone(), granted["vault"].clone());
+    assert_eq!(app.asked(), ["unlock", "found", "approve"]);
+    // her other Mac, linked through this one, holds her aven and agentClaude's device vault
+    let mut other = App::start(&other_dir, Passkey::from_seed([5; 32]), true);
+    other.call("link", json!(["Eve's other Mac", url.to_string(), mac["offer"]])).await.expect("linked");
+    assert_eq!(other.asked(), ["unlock"]);
+    vault_shown(&mut other, &claudes, "agentClaude's device vault, named", |v| v["name"] == "agentClaude").await;
+    let passed = |world: &Value| {
+        let shares = world["shares"].as_array().expect("shares").iter();
+        shares.filter(|c| c["who"] == claudes && c["over"] == mine && c["issuer"] == aven).count()
+    };
+    let end = Instant::now() + Duration::from_secs(60);
+    while passed(&world_of(&mut other).await) == 0 {
+        assert!(Instant::now() < end, "the share her aven passed on to agentClaude, there within 60 s");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // Claude Code there starts agentClaude's device on that Mac, another device of the same agent: one sheet adds it
+    // to the agent's device vault, which her aven passes the same share on to again, and founds nothing
+    let mut there = Harness::start(&other_dir, agent::CLAUDE);
+    let asked = requests(&mut other, 1).await;
+    let (second, viewer) = (asked[0]["device"].clone(), json!([{ "over": mine, "level": "Viewer" }]));
+    assert_ne!(second, first, "a device of its own");
+    let joined = other.call("grant", json!(["agentClaude", second, viewer, "avenEve"])).await.expect("joined");
+    assert_eq!((&joined["aven"], &joined["vault"]), (&aven, &claudes), "the same agent under the same aven");
+    assert_eq!(other.asked(), ["approve"], "one sheet");
+    let both = |v: &Value| v["devices"].as_array().is_some_and(|d| d.len() == 2);
+    let agents = vault_shown(&mut other, &claudes, "agentClaude's two devices", both).await;
+    assert!(agents["devices"].as_array().expect("devices").iter().any(|d| d["id"] == second));
+    let world = world_of(&mut other).await;
+    let avens = world["vaults"].as_array().expect("vaults").iter().filter(|v| v["kind"] == "aven").count();
+    assert_eq!(avens, 1, "her one aven");
+    assert_eq!(passed(&world), 1, "the Viewer's share its aven passed on before stands for it");
+    let read = reads(&mut there, &entry).await;
+    assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentClaude reads her note on her other Mac: {read:?}");
+    // agentClaude on her first Mac asks for more: its device is in its vault already, so granting it takes no sheet
+    let why = "to tidy the seed notes";
+    let (ok, error) = claude.tool("avendb_request_access", json!({ "level": "Editor", "why": why })).await;
+    assert!(!error, "{ok}");
+    let asked = requests(&mut app, 1).await;
+    assert_eq!((&asked[0]["device"], &asked[0]["offer"]), (&first, &Value::Null), "a device of a vault: {asked}");
+    let editor = json!([{ "over": mine, "level": "Editor" }]);
+    let more = app.call("grant", json!(["agentClaude", first, editor, "avenEve"])).await.expect("granted");
+    assert_eq!((&more["aven"], &more["vault"]), (&aven, &claudes));
+    assert!(app.asked().is_empty(), "no sheet");
+    let beans = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") } });
+    let mut made = (String::new(), true);
+    for _ in 0..100 {
+        made = claude.tool("avendb_run", beans.clone()).await;
+        if !made.1 && made.0.contains("\"ok\"") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!made.1 && made.0.contains("\"ok\""), "an Editor once its share reaches it: {made:?}");
+    there.quit().await;
+    claude.quit().await;
+    other.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+/// The share `share`, as device `me`'s view has it: whether it is live.
+fn live(w: &World, me: SignerId, share: ShareId) -> bool {
+    w.lab.state(me).live(share)
+}
+
+#[test]
+fn her_aven_passes_on_no_more_than_a_coop_that_hired_it_gave_and_the_coop_taking_it_back_ends_its_agents() {
+    let mut w = world();
+    let (alice, mac, passkey, bob, bob_mac, bob_key) = (w.alice, w.mac_a, w.passkey_a, w.bob, w.mac_b, w.passkey_b);
+    // Alice's aven and agentClaude's device vault under it, its device in it, as her Mac's grant makes them
+    let found = |lab: &mut Lab, kind: Kind, owner: VaultId, nonce: u64| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+        VaultId::from(lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
+    };
+    let aven = found(&mut w.lab, Kind::Aven, alice, 1);
+    let claudes = found(&mut w.lab, Kind::DeviceVault, aven, 2);
+    let claude = w.lab.device("agentClaude");
+    let add = Action::Share(Sharing::Device { vault: claudes, device: claude, seal_to: None });
+    w.lab.submit(mac, &[passkey, claude], add).expect("its device");
+    assert_eq!(agent::aven_of(w.lab.state(mac), alice), Some(aven), "her one aven");
+    // Bob's coop, his alone, hires her aven, which his Mac knows by its card: a Viewer share on the whole of it
+    w.lab.share_contact(mac, bob_mac, aven);
+    let owners = vec![Principal::Vault(bob)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 3, seal_to: vec![] };
+    let coop = VaultId::from(w.lab.submit(bob_mac, &[bob_key], genesis).expect("Bob's coop"));
+    let hired = w.lab.issue(bob_mac, &[bob_mac], share(coop, vault(aven), Level::Read, Selector::All));
+    let hired = hired.expect("the coop hires her aven");
+    w.lab.sync_all(12);
+    // her aven passes on nothing above its own there, refused before any sheet; a Viewer's it passes on
+    let st = w.lab.state(mac);
+    let above = agent::passable(st, alice, Some(aven), coop, "Editor");
+    assert!(above.is_err_and(|e| e.to_string().contains("holds no share")), "no Editor of the coop's");
+    assert!(agent::passable(st, alice, Some(aven), coop, "Viewer").is_ok());
+    assert!(agent::passable(st, alice, None, coop, "Viewer").is_err(), "an aven still to found holds nothing");
+    assert!(agent::passable(st, alice, None, alice, "Editor").is_ok(), "her own vault gives it what it lacks");
+    let refused = agent::pass_on(&mut w.lab, mac, alice, aven, claudes, coop, "Editor");
+    assert!(refused.is_err(), "nor passes it on after a sheet");
+    let sub = agent::pass_on(&mut w.lab, mac, alice, aven, claudes, coop, "Viewer").expect("a Viewer's");
+    let rests = w.lab.state(mac).share(sub).map(|cp| (cp.share.parent, cp.share.issuer, cp.share.who));
+    assert_eq!(rests, Some((Some(hired), aven, vault(claudes))), "on the coop's share, issued by the aven");
+    // over her own vault, her vault gives the aven its share first, and the aven passes it on
+    let own = agent::pass_on(&mut w.lab, mac, alice, aven, claudes, alice, "Editor").expect("over her vault");
+    let parent = w.lab.state(mac).share(own).and_then(|cp| cp.share.parent).expect("on the aven's share");
+    let given = w.lab.state(mac).share(parent).map(|cp| (cp.share.issuer, cp.share.who, cp.share.level));
+    assert_eq!(given, Some((alice, vault(aven), Level::Write)), "her vault's Editor share to her aven");
+    w.lab.sync_all(12);
+    assert!(live(&w, claude, sub) && live(&w, claude, own), "agentClaude holds both");
+    // Bob's coop takes its share back from her aven: agentClaude's ends with it, and not the other
+    let revoke = Action::Revoke(Revoking::Grant { share: hired, actor: coop, keep: vec![], via: vec![] });
+    w.lab.submit(bob_mac, &[bob_mac], revoke).expect("the coop revokes the aven's share");
+    w.lab.sync_all(12);
+    assert!(!live(&w, claude, hired) && !live(&w, claude, sub), "the agent's ends with the aven's");
+    assert!(live(&w, mac, own), "and its share over her vault stays");
 }
 
 /// Whether `holders`, an entry's or a file's `syncedTo`, has `device` holding any of it.
@@ -701,8 +882,8 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let seeds = titled("Seeds", "Tomatoes in March.");
     let note = run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": seeds })).await;
     let note = note.expect("her note")["entry"].clone();
-    // agentClaude tells its harness how to save a file, and joins her aven avenEve, which may edit her vault
-    let mut claude = Harness::start(&dir, agent::CLAUDE, Some("avenEve"));
+    // agentClaude tells its harness how to save a file, and joins under her aven avenEve, which may edit her vault
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
     let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
     let told = hello["instructions"].as_str().is_some_and(|i| i.contains("`put_file`") && i.contains("`path`"));
     assert!(told, "{hello}");
@@ -712,7 +893,7 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let asked = requests(&mut app, 1).await;
     let claude_device = asked[0]["device"].clone();
     let editor = json!([{ "over": mine, "level": "Editor" }]);
-    app.call("grant", json!(["agentClaude", claude_device, { "name": "avenEve" }, editor])).await.expect("granted");
+    app.call("grant", json!(["agentClaude", claude_device, editor, "avenEve"])).await.expect("granted");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let read = reads(&mut claude, &note).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentClaude reads her note: {read:?}");
@@ -759,13 +940,14 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     until("agentClaude's folder holds none of it", || async { !objects(&claudes, FLOOR, "blobs").contains(&blob) })
         .await;
     assert_eq!(read_back(&mut app, &root, &size, 100, 200).await, harvest[100..200], "her Mac reads it still");
-    // agentCursor joins another aven, avenScout, which may only suggest in her vault: a Suggester creates no entry, so
-    // it saves no file there, refused before it reads a byte, and a put_file has no proposal's line to go on
-    let mut cursor = Harness::start(&dir, "cursor", Some("avenScout"));
+    // agentCursor joins under the same aven, which passes on to it only a Suggester's share of her vault: a Suggester
+    // creates no entry, whatever the aven holds, so it saves no file there, refused before it reads a byte, and a
+    // put_file has no proposal's line to go on
+    let mut cursor = Harness::start(&dir, "cursor");
     let asked = requests(&mut app, 1).await;
     assert_eq!(asked[0]["name"], "agentCursor", "{asked}");
     let suggester = json!([{ "over": mine, "level": "Suggester" }]);
-    let scout = json!(["agentCursor", asked[0]["device"], { "name": "avenScout" }, suggester]);
+    let scout = json!(["agentCursor", asked[0]["device"], suggester, "avenEve"]);
     app.call("grant", scout).await.expect("granted");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let read = reads(&mut cursor, &note).await;

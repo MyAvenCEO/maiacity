@@ -1,11 +1,15 @@
-//! An agent device, as an MCP server on stdio: `avendb-device agent <harness> [--aven <name>]`, which an agent harness
-//! (Claude Code, Codex, Cursor, Grok, or our own native aven) starts on its person's Mac. Claude Code's is
+//! An agent device, as an MCP server on stdio: `avendb-device agent <harness>`, which an agent harness (Claude Code,
+//! Codex, Cursor, Grok, or our own native aven) starts on its person's Mac. Claude Code's is
 //! `claude mcp add --scope user avendb -- <the app's avendb-device> agent claude`, the device agentClaude.
 //!
-//! An aven is an identity, a vault its person's vault owns, which holds the aven's shares; agent devices control it,
-//! one for each harness (agentClaude, agentCodex, agentCursor, agentGrok, agentAven), as a person's Mac and phone are
-//! devices of their one vault. So every harness of an aven acts with the aven's access, signing by its own key, and
-//! one is taken out by removing its device, leaving the others. No token: the device's key is who it is.
+//! A person's aven is their one AI identity, a vault their vault owns alone, which holds no devices and acts through
+//! its agents. Each agent is a device vault the aven owns (agentClaude, agentCodex, agentCursor, agentGrok, agentAven),
+//! the harness's devices its devices, as a person's Mac and phone are devices of their one vault; and each holds sub
+//! shares of what the aven reaches, none more than the aven's own, each resting on one the aven holds, so that taking
+//! the aven's share back ends its agents' too. So every harness acts as its own device vault by its own key, with the
+//! shares its aven passed on to it, and one is taken out by removing its device, or its vault, leaving the others. No
+//! token: the device's key is who it is. The harness never names or picks an aven: the person's one aven is the parent,
+//! and the agent is added under it.
 //!
 //! It is a device of its own (`avendb_net::server::open_agent`), in a folder of its own in the agents' folder beside
 //! the Mac app's (`<app's folder>-agents/<device>`, which the app's device never clears), which keeps its key and its
@@ -18,22 +22,25 @@
 //!
 //! It asks for access as anyone asks avenDB for it, and its person answers on the page's one consent screen: it leaves
 //! an access request for the Mac app (`<app's folder>-agents/<device>.request`, `asking`): who asks, by its device's
-//! name and key, the aven it would join, if it names one, the level it asks for, why, and the vaults it names, if any;
-//! while it belongs to no vault, its offer too. Its person picks the aven it joins, one their vault owns or a new one
-//! they name, then every vault they own or only some, a level each, and approves or denies. Approving adds this device
-//! to that aven, founding it if it is new, in one ceremony of their passkey (`Node::adopt_with`), as a server is
-//! claimed; each vault picked then gives the aven a share at its level, as any share is given. From then on it acts
-//! for its aven by its own key, as the aven's shares allow, and asks for more with `avendb_request_access`. A no is
-//! left for it (`<device>.denied`, the device it said no to), and it asks no more until it asks again.
+//! name and key, the level it asks for, why, and the vaults it names, if any; while it belongs to no vault, its offer
+//! too. Its person picks the vaults their aven passes on to it, a level each, and approves or denies. Approving adds
+//! the agent under their aven, founding the aven too if they have none yet, named as they say, in one ceremony of their
+//! passkey (`Node::add_device_vault_with`): its device vault, named after it, founded under the aven, and its device
+//! added to it, or, where the aven has that agent's device vault already, as the same harness has on their other Mac,
+//! its device added to that one. Then the aven passes a share on to it for each vault picked, as any share is given
+//! (`pass_on`). From then on it acts as its device vault by its own key, as its shares allow, and asks for more with
+//! `avendb_request_access`. A no is left for it (`<device>.denied`, the device it said no to), and it asks no more
+//! until it asks again.
 //!
 //! It finds the Mac's device by the offer the app leaves (`<app's folder>-agents/offer.txt`), the device whose key is
 //! the offer's endpoint, and reaches it directly.
 //!
-//! The MCP is JSON-RPC 2.0, a message a line (`initialize`, `tools/list`, `tools/call`, `ping`): `avendb_vaults`
-//! tells who it is and the vaults it sees, `avendb_ask` runs a read of the ops engine, `avendb_run` a change, each
-//! acting for its aven vault, and `avendb_request_access` asks its person for access. A change runs as on every
-//! device, the aven's shares deciding: `put_file` too, its bytes those of the file on this Mac the harness names by its
-//! `path` beside the op; but not `follow` and `set_limits`, a device's own settings, which an agent keeps nowhere.
+//! The MCP is JSON-RPC 2.0, a message a line (`initialize`, `tools/list`, `tools/call`, `ping`): `avendb_vaults` tells
+//! who it is, its device vault and the aven over it, and the vaults it sees, `avendb_ask` runs a read of the ops
+//! engine, `avendb_run` a change, each acting as its device vault, and `avendb_request_access` asks its person for
+//! access. A change runs as on every device, the shares its aven passed on deciding: `put_file` too, its bytes those of
+//! the file on this Mac the harness names by its `path` beside the op; but not `follow` and `set_limits`, a device's
+//! own settings, which an agent keeps nowhere.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -41,10 +48,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine;
-use avendb::id::SignerId;
+use avendb::id::{ShareId, SignerId, VaultId};
+use avendb::lab::{Lab, NewShare};
+use avendb::policy::{Issued, Kind, Level, Principal, State, Vault, Who};
+use avendb::rules;
+use avendb::slice::Selector;
 use avendb::wire::FileHold;
+use avendb::world;
 use avendb_net::{NoBytes, NoCeremony, Node, Offer, Options, disk, server};
 use bytes::{Bytes, BytesMut};
 use n0_future::{Stream, stream};
@@ -109,7 +121,7 @@ pub fn folder(host: &Path, name: &str) -> PathBuf {
 }
 
 /// The levels an agent asks for, the weakest first: Viewer reads, Suggester reads and writes on proposals its person
-/// merges, Editor reads and changes. A share at any of them its person's vault gives alone, with no ceremony.
+/// merges, Editor reads and changes. A share at any of them its aven passes on alone, with no ceremony (`pass_on`).
 pub const LEVELS: [&str; 3] = ["Viewer", "Suggester", "Editor"];
 
 /// What an agent asks for until it asks for something else.
@@ -125,8 +137,8 @@ pub fn request(host: &Path, name: &str) -> PathBuf {
 }
 
 /// The file in the agents' folder beside the app's `host` folder that agent `name` writes its device's key to every
-/// little while it runs (`LOOK`): the Mac's page knows by it whether the agent is there to join an aven, which its
-/// device cosigns (`online`).
+/// little while it runs (`LOOK`): the Mac's page knows by it whether the agent is there to be added under its person's
+/// aven, which its device cosigns (`online`).
 pub fn alive(host: &Path, name: &str) -> PathBuf {
     agents(host).join(format!("{name}.alive"))
 }
@@ -152,24 +164,126 @@ pub fn denied(host: &Path, name: &str) -> PathBuf {
 /// An access request, as an agent leaves it for its person's page: who asks, agent device `name` by its `device`'s key
 /// in hex, its offer while it belongs to no vault, and what it asks for (`Asking`).
 pub fn asking(name: &str, device: &str, offer: Option<String>, ask: &Asking) -> Value {
-    json!({ "name": name, "kind": "agent", "device": device, "offer": offer, "aven": ask.aven, "level": ask.level,
-        "why": ask.why, "vaults": ask.vaults })
+    json!({ "name": name, "kind": "agent", "device": device, "offer": offer, "level": ask.level, "why": ask.why,
+        "vaults": ask.vaults })
 }
 
-/// What an access request asks for: the aven it would join, by its name, if it names one; a level of `LEVELS`; why;
-/// and the vaults it names, by their ids, if any.
+/// What an access request asks for: a level of `LEVELS`; why; and the vaults it names, by their ids, if any.
 pub struct Asking {
-    pub aven: Option<String>,
     pub level: String,
     pub why: String,
     pub vaults: Vec<String>,
 }
 
-/// An aven's name an agent may name: some text, at most 64 characters. Fails with why not.
+/// An aven's name, as its person gives it on the consent screen as their first agent joins: some text, at most 64
+/// characters. Fails with why not.
 pub fn aven_named(name: &str) -> Result<String> {
     let name = name.trim();
     anyhow::ensure!(!name.is_empty() && name.chars().count() <= 64, "{name:?} names no aven: 1 to 64 characters");
     Ok(name.to_string())
+}
+
+/// The aven vault `mine` owns, by view `st`: a person's one aven, which their vault owns alone (`Kind::rules`).
+pub fn aven_of(st: &State, mine: VaultId) -> Option<VaultId> {
+    let ours = |v: &&Vault| v.kind == Kind::Aven && v.owners == [Principal::Vault(mine)];
+    st.vaults().iter().find(ours).map(|v| v.id)
+}
+
+/// The device vault of agent `name` under aven `aven`, by device `me`'s view: one the aven owns alone whose profile
+/// reads the agent's name, as the agent's device vault was named as it was founded.
+pub fn agent_vault(lab: &Lab, me: SignerId, aven: VaultId, name: &str) -> Option<VaultId> {
+    let st = lab.state(me);
+    let under = |v: &&Vault| v.kind == Kind::DeviceVault && v.owners == [Principal::Vault(aven)];
+    let named = |v: VaultId| world::profile_of(lab, me, v).is_some_and(|(_, title)| title == name);
+    st.vaults().iter().filter(under).map(|v| v.id).find(|&v| named(v))
+}
+
+/// The built-in group of level `level`, one of `LEVELS`, and its class (`rules::level_of`). Fails for another.
+fn group(level: &str) -> Result<(rules::Group, Level)> {
+    let group = rules::groups().into_iter().find(|g| g.name == level && LEVELS.contains(&g.name));
+    let group = group.with_context(|| format!("{level:?} isn't a level to give: {LEVELS:?}"))?;
+    let class = rules::level_of(&group.ops);
+    Ok((group, class))
+}
+
+/// Whether the aven `aven` of the person whose vault is `mine`, or, `None`, the one their vault founds for its first
+/// agent, can pass a share over vault `over` at `level`, one of `LEVELS`, on to an agent of its, by view `st`, as
+/// `pass_on` passes it on: over the aven itself, or over a vault `mine` is or owns, which gives the aven its share
+/// first where it lacks it, always; else over a vault that gave the aven a share at that level or more, such as a coop
+/// that hired it. Fails with why not, before anything is drafted.
+pub fn passable(st: &State, mine: VaultId, aven: Option<VaultId>, over: VaultId, level: &str) -> Result<()> {
+    let (_, class) = group(level)?;
+    if over == mine || st.owns(mine, over) || aven == Some(over) {
+        return Ok(());
+    }
+    let holds = |aven: VaultId| {
+        let at = |cp: &&Issued| {
+            cp.share.over == over && st.live(cp.id) && !cp.share.level.is_keep() && cp.share.level.allows(class)
+        };
+        st.shares_held(aven).any(|cp| at(&cp))
+    };
+    match aven {
+        Some(aven) if holds(aven) => Ok(()),
+        _ => {
+            let over = over.to_hex();
+            bail!("the aven holds no share over {over} at {level} or more to pass on: its owners give it one first")
+        }
+    }
+}
+
+/// Aven `aven` passes a share over vault `over` at `level`, one of `LEVELS`, on to its agent's device vault `vault`, on
+/// device `me` of the person whose vault is `mine`, acting as the aven, with no ceremony: a share resting on one the
+/// aven holds there that lets it (`world::parent`: the grantee is a vault the aven owns, and it is no higher than its
+/// parent, and wide only if it is), so that taking that one back ends it too. Over a vault `mine` is or owns, on one on
+/// the whole of it, which `over` gives the aven first, acting as itself, where the aven holds none at `level` or more;
+/// over another, as a coop that hired the aven, on the share that vault gave it, on the whole of it if one is, else on
+/// the part it gives; over the aven itself, the aven's own. One the aven passed on before stands for it, as for the
+/// same harness's device on the person's other Mac. The share. Fails with why not (`passable`).
+pub fn pass_on(
+    lab: &mut Lab,
+    me: SignerId,
+    mine: VaultId,
+    aven: VaultId,
+    vault: VaultId,
+    over: VaultId,
+    level: &str,
+) -> Result<ShareId> {
+    let (group, class) = group(level)?;
+    let st = lab.state(me);
+    let before = |cp: &&Issued| {
+        cp.share.over == over && cp.share.issuer == aven && st.live(cp.id)
+            && world::group_of(&cp.share, lab.slice(me, cp.id)) == Some(group.name)
+    };
+    if let Some(cp) = st.shares_held(vault).find(before) {
+        return Ok(cp.id);
+    }
+    let who = Who::Vault(vault);
+    let parent = |lab: &Lab, wide| world::parent(lab.state(me), aven, over, who, class, wide);
+    let parent = if over == aven {
+        None
+    } else if over == mine || lab.state(me).owns(mine, over) {
+        if parent(lab, true).is_none() {
+            let (name, ops, select) = (group.name.to_string(), group.ops.clone(), Selector::All);
+            let (who, parent) = (Who::Vault(aven), None);
+            let given = NewShare { over, who, name, select, ops, parent, issuer: over, keep: None };
+            lab.issue(me, &[me], given).map_err(|why| anyhow!("the aven's {level} share is refused: {why:?}"))?;
+        }
+        Some(parent(lab, true).context("the aven's share to pass on")?)
+    } else {
+        passable(lab.state(me), mine, Some(aven), over, level)?;
+        let parent = parent(lab, true).or_else(|| parent(lab, false));
+        Some(parent.with_context(|| format!("the aven's share over {} lets it pass nothing on", over.to_hex()))?)
+    };
+    // on the part of the vault its parent gives, unless that is all of it
+    let select = match parent {
+        Some(p) if !lab.state(me).share(p).is_some_and(|cp| cp.share.wide) => {
+            lab.slice(me, p).context("the part of the vault the aven's share gives")?.select.clone()
+        }
+        _ => Selector::All,
+    };
+    let (name, ops) = (group.name.to_string(), group.ops);
+    let sub = NewShare { over, who, name, select, ops, parent, issuer: aven, keep: None };
+    lab.issue(me, &[me], sub).map_err(|why| anyhow!("the agent's {level} share is refused: {why:?}"))
 }
 
 /// The file in the agents' folder beside the app's `host` folder where the Mac's device leaves its offer for them.
@@ -177,17 +291,15 @@ pub fn host_offer(host: &Path) -> PathBuf {
     agents(host).join("offer.txt")
 }
 
-/// Runs harness `harness`'s agent device beside the app's `host` folder, asking to join the aven named `aven`, if
-/// named, answering MCP on `input` and `output` until `input` ends. Fails if its folder or its node can't be opened.
+/// Runs harness `harness`'s agent device beside the app's `host` folder, answering MCP on `input` and `output` until
+/// `input` ends. Fails if its folder or its node can't be opened.
 pub async fn serve(
     host: PathBuf,
     harness: String,
-    aven: Option<String>,
     input: impl AsyncRead + Unpin,
     mut output: impl AsyncWrite + Unpin,
 ) -> Result<()> {
     named(&harness)?;
-    let aven = aven.as_deref().map(aven_named).transpose()?;
     let name = device_name(&harness);
     let dir = folder(&host, &name);
     std::fs::create_dir_all(&dir).with_context(|| format!("the agent's folder {}", dir.display()))?;
@@ -196,8 +308,8 @@ pub async fn serve(
     let relay = mac.as_ref().and_then(|o| o.addr.relay_urls().next().cloned());
     let opts = Options { bind: None, direct: true, relay, ..Options::local() };
     let node = Arc::new(server::open_agent(shelf, &name, opts).await?);
-    let looking = tokio::spawn(look(node.clone(), host.clone(), name.clone(), aven.clone()));
-    let agent = Agent { node: node.clone(), host, name, aven };
+    let looking = tokio::spawn(look(node.clone(), host.clone(), name.clone()));
+    let agent = Agent { node: node.clone(), host, name };
     let mut lines = BufReader::new(input).lines();
     while let Some(line) = lines.next_line().await? {
         let Ok(message) = serde_json::from_str::<Value>(&line) else {
@@ -225,9 +337,9 @@ fn read_json(file: &Path) -> Option<Value> {
 }
 
 /// Every little while: the Mac's device where its offer says it is, and, until it belongs to a vault, its request to
-/// be adopted left for the Mac's page, its offer as it is now, unless its person said no to this device; and the files
-/// it holds whole that the Mac's device holds whole too, it lets go of (`hand_over`).
-async fn look(node: Arc<Node>, host: PathBuf, name: String, aven: Option<String>) {
+/// be added under its person's aven left for the Mac's page, its offer as it is now, unless its person said no to this
+/// device; and the files it holds whole that the Mac's device holds whole too, it lets go of (`hand_over`).
+async fn look(node: Arc<Node>, host: PathBuf, name: String) {
     let (file, no, mut known) = (request(&host, &name), denied(&host, &name), None);
     let device = hex(&node.device().0);
     loop {
@@ -253,7 +365,7 @@ async fn look(node: Arc<Node>, host: PathBuf, name: String, aven: Option<String>
                 }
                 _ => {
                     let (level, why) = (ASKS.to_string(), WHY.to_string());
-                    let ask = Asking { aven: aven.clone(), level, why, vaults: vec![] };
+                    let ask = Asking { level, why, vaults: vec![] };
                     Some(asking(&name, &device, Some(offer), &ask))
                 }
             };
@@ -287,10 +399,8 @@ struct Agent {
     node: Arc<Node>,
     /// the app's folder, beside which it leaves its requests
     host: PathBuf,
-    /// its device's name, agentClaude
+    /// its device's name, agentClaude, which its device vault's profile reads too
     name: String,
-    /// the aven it asks to join, if it names one
-    aven: Option<String>,
 }
 
 impl Agent {
@@ -330,16 +440,18 @@ impl Agent {
 
     fn instructions(&self) -> String {
         format!(
-            "{name} is an agent device on this Mac: an avenDB device with a key of its own, which controls an aven, \
-             an identity its person's vault owns, as one of that aven's devices, and acts with the aven's access. \
-             Every read and change is one JSON op of avenDB's engine (avendb/docs/ARCHITECTURE.md §8). Call \
-             avendb_vaults first: it says which aven {name} is a device of, if any yet, and which vaults it sees. \
-             Read with avendb_ask; change with avendb_run, which acts for the aven by its shares: on a vault where it \
-             may only suggest, write on a proposal (`propose`, then ops with its `line`), and its person merges it. \
-             Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and `media` and \
-             `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type file, so only \
-             where the aven may create, as an Editor may, not where it may only suggest. For access it lacks, ask its \
-             person with avendb_request_access, saying why: they answer in The OS app.",
+            "{name} is an agent device on this Mac: an avenDB device with a key of its own, a device of {name}, a \
+             device vault its person's aven owns. An aven is its person's one AI identity, a vault their vault owns; \
+             it acts through its agents, each a device vault under it with the shares the aven passes on to it, none \
+             more than the aven's own. Every read and change is one JSON op of avenDB's engine \
+             (avendb/docs/ARCHITECTURE.md §8). Call avendb_vaults first: it says who {name} is, its device vault and \
+             the aven it is under, once its person added it, and which vaults it sees. Read with avendb_ask; change \
+             with avendb_run, which acts as {name}'s device vault by the shares its aven passed on to it: on a vault \
+             where it may only suggest, write on a proposal (`propose`, then ops with its `line`), and its person \
+             merges it. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
+             `media` and `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type \
+             file, so only where its shares let it create, as an Editor's do, not where it may only suggest. For \
+             access it lacks, ask its person with avendb_request_access, saying why: they answer in The OS app.",
             name = self.name
         )
     }
@@ -360,8 +472,8 @@ impl Agent {
             }
             return Ok(format!(
                 "{} is waiting for its person to answer its access request: they open The OS app on this Mac, where \
-                 avenDB shows it, pick the aven it joins and the vaults that aven may work in, and approve with one \
-                 touch of their passkey. Then call this again.",
+                 avenDB shows it, pick the vaults their aven passes on to it, and approve with one touch of their \
+                 passkey. Then call this again.",
                 self.name
             ));
         };
@@ -369,14 +481,22 @@ impl Agent {
             "avendb_vaults" => {
                 let world = self.node.op(json!({ "op": "world" })).await?;
                 let world = &world["ok"];
-                let vaults: Vec<Value> = world["vaults"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(|v| json!({ "id": v["id"], "name": v["name"], "kind": v["kind"] }))
-                    .collect();
-                let me = json!({ "device": self.name, "aven": hex(&vault.0), "key": hex(&self.node.device().0) });
-                Ok(json!({ "me": me, "vaults": vaults }).to_string())
+                let all = world["vaults"].as_array().cloned().unwrap_or_default();
+                let vaults: Vec<Value> =
+                    all.iter().map(|v| json!({ "id": v["id"], "name": v["name"], "kind": v["kind"] })).collect();
+                // the aven over its device vault, its one owner, by its name where the agent reads its profile
+                let over = move |lab: &Lab, me| match lab.state(me).vault(vault)?.owners[..] {
+                    [Principal::Vault(aven)] => Some(aven),
+                    _ => None,
+                };
+                let aven = self.node.read(over).await.map(|a| hex(&a.0));
+                let named = |id: &Option<String>| all.iter().find(|v| v["id"].as_str() == id.as_deref());
+                let aven_name = named(&aven).map_or(Value::Null, |v| v["name"].clone());
+                let me = json!({ "device": self.name, "vault": hex(&vault.0), "aven": aven, "avenName": aven_name,
+                    "key": hex(&self.node.device().0) });
+                let under = aven_name.as_str().map(String::from).or(aven).unwrap_or_else(|| "no aven".into());
+                let who = format!("{} is an agent under the aven {under}, acting as its own device vault", self.name);
+                Ok(json!({ "who": who, "me": me, "vaults": vaults }).to_string())
             }
             "avendb_ask" => {
                 let op = args.get("op").cloned().context("avendb_ask takes an op")?;
@@ -394,7 +514,8 @@ impl Agent {
                     let setting = "a device's own setting, which an agent keeps nowhere";
                     anyhow::bail!("{:?} isn't for an agent: {setting}", op_name(&op));
                 }
-                // as every device runs it, the aven's shares deciding; a file's bytes from the path the harness names
+                // as every device runs it, acting as its device vault, the shares its aven passed on deciding; a
+                // file's bytes from the path the harness names
                 let path = args.get("path").and_then(Value::as_str).map(PathBuf::from);
                 let (answer, _) = match (op_name(&op), path) {
                     (Some("put_file"), Some(path)) => {
@@ -415,16 +536,16 @@ impl Agent {
 
     /// Asks its person for the access `args` name, a level of `LEVELS` and why, and the vaults it names, if any:
     /// leaves its request for their page, in place of any it left before, with its offer while it belongs to no vault
-    /// (`adopted`).
-    fn ask_access(&self, adopted: bool, args: &Value) -> Result<String> {
+    /// (`added`).
+    fn ask_access(&self, added: bool, args: &Value) -> Result<String> {
         let level = args["level"].as_str().unwrap_or(ASKS);
         anyhow::ensure!(LEVELS.contains(&level), "{level:?} is no level to ask for: one of {}", LEVELS.join(", "));
         let why = args["why"].as_str().map(str::trim).unwrap_or_default();
         anyhow::ensure!(!why.is_empty(), "say why: its person reads it before they answer");
         let vaults: Vec<String> =
             args["vaults"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
-        let (device, offer) = (hex(&self.node.device().0), (!adopted).then(|| self.node.offer().to_text()));
-        let ask = Asking { aven: self.aven.clone(), level: level.to_string(), why: why.to_string(), vaults };
+        let (device, offer) = (hex(&self.node.device().0), (!added).then(|| self.node.offer().to_text()));
+        let ask = Asking { level: level.to_string(), why: why.to_string(), vaults };
         let asked = asking(&self.name, &device, offer, &ask);
         std::fs::create_dir_all(agents(&self.host))?;
         std::fs::remove_file(denied(&self.host, &self.name)).ok();
@@ -450,8 +571,9 @@ fn tools() -> Value {
     json!([
         {
             "name": "avendb_vaults",
-            "description": "Who this agent device is (its name, the aven it controls and its key) and the vaults \
-                            it sees, each its id, name and kind; or that its person has yet to answer its request.",
+            "description": "Who this agent device is (its name, its own device vault, the aven it is under and \
+                            its key) and the vaults it sees, each its id, name and kind; or that its person has yet to \
+                            answer its request.",
             "inputSchema": { "type": "object", "properties": {} },
         },
         {
@@ -464,7 +586,8 @@ fn tools() -> Value {
             "name": "avendb_request_access",
             "description": "Ask this agent's person for access it lacks: a level (Viewer reads, Suggester reads and \
                             writes on proposals they merge, Editor reads and changes), why, and optionally the ids of \
-                            the vaults it asks for. They answer in The OS app, picking the vaults and levels.",
+                            the vaults it asks for. They answer in The OS app, picking the vaults and levels their \
+                            aven passes on to it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
