@@ -4,6 +4,7 @@
 	// own page, its text cut short, under its cover where everyone may read it; on that page (`full`) it stands alone,
 	// its title as the page's heading.
 	import { base } from '$app/paths';
+	import { shaped } from '$lib/app/shapes.js';
 	import { ago, postHref } from './posts.js';
 	import { authorOf, like } from './stream.svelte.js';
 
@@ -16,7 +17,7 @@
 </script>
 
 <article class="post" class:full>
-	<span class="avatar" style:background={a.color}>{a.initials}</span>
+	<span class="avatar" style:background={a.color} style={shaped(a.kind)}>{a.initials}</span>
 	<div class="body">
 		<div class="meta">
 			<strong>{a.name}</strong>

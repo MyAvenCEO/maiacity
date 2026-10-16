@@ -10,8 +10,9 @@
 //!
 //! A new server belongs to no vault (P8f). The first human vault to claim it owns it (`avendb_net::Node::claim`), as a
 //! person's first device founds their vault through it (`avendb_net::Node::found_with`): the server becomes a device of
-//! avenCEO, an aven vault that human vault owns, and acts for it without ever governing it. Until then its relay
-//! honours a pass of any passkey, so that the claiming device may be a browser; once claimed, nobody claims it again.
+//! avenCEO server, the device vault avenCEO GmbH owns, of the seed that human vault founds in the same ceremony, and
+//! acts as it without ever governing it. Until then its relay honours a pass of any passkey, so that the claiming
+//! device may be a browser; once claimed, nobody claims it again.
 //!
 //! The relay serves plain HTTP. TLS ends in front of it, at a proxy that must offer X25519MLKEM768, as every device's
 //! TLS offers nothing else (`avendb_net::pq_provider`); and as iroh's relay path is `/relay`, the relay wants a host

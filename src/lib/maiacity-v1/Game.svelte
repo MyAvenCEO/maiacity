@@ -363,7 +363,7 @@
 			const c = view.coops[k];
 			return { id, label: c.name, sub: `Treasury · mints ${TOKEN_LABEL[c.mind]}`, text: c.name.replace(/ COOP$/, '').slice(0, 2), colour: TOKEN_COLOUR[c.mind], shape: 'coop', bal: c.treasury, c };
 		}
-		return { id: 'pool', label: 'AMM pool', sub: 'The MaiaCity COOP’s pool', text: 'AMM', colour: '#8a7a55', shape: 'aven', bal: view.pool };
+		return { id: 'pool', label: 'AMM pool', sub: 'The MaiaCity COOP’s pool', text: 'AMM', colour: '#8a7a55', shape: 'coop', bal: view.pool };
 	};
 	const accounts = $derived(view ? [`player:${seat}`, `player:${otherSeat}`, ...Object.keys(COOPS).map((k) => `coop:${k}`), 'pool'].map(accountOf) : []);
 	const here = $derived(accounts.find((a) => a.id === acct) ?? accounts[0]);

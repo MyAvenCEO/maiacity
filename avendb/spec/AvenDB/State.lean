@@ -22,8 +22,8 @@ structure Vault where
   kind      : Kind
   owners    : List Principal
   threshold : Nat
-  /-- Device signers act for a human or an aven vault but don't govern it: a person's phones and browsers, the
-      servers an aven vault runs on. -/
+  /-- Device signers act for a human or a device vault but don't govern it: a person's phones, computers and
+      browsers, the harness or the server a device vault runs on. -/
   devices   : List SignerId
   /-- A human vault's root: its passkey, named at genesis. It approves anything for its vault on its own, wins every
       clash with the other owners, and only it hands the root on. -/
@@ -47,7 +47,7 @@ structure Share where
   /-- The ops its grantee may make (`Rules.lean`), sealed with its selector, under a commitment in the clear: whoever
       reads a write relying on it reads them, through the write's proof. -/
   ops     : List Op
-  /-- The owner share its issuer relied on; `none` when the vault itself issued it. -/
+  /-- The share its issuer passes on part of (`shareParentOk`); `none` when the vault itself issued it. -/
   parent  : Option ShareId
   issuer  : VaultId
   deriving DecidableEq, Repr

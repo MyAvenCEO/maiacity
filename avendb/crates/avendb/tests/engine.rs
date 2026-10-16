@@ -15,7 +15,7 @@ use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{self, Schema, Status, TypeV1, View};
-use avendb::policy::{Level, Refusal};
+use avendb::policy::{Level, Principal, Refusal};
 use avendb::rules::{self, Op};
 use avendb::world;
 use serde_json::{json, Value};
@@ -376,6 +376,68 @@ fn a_spark_is_a_note_with_its_source_beside_it_and_a_story_grows_from_several() 
 }
 
 #[test]
+fn an_access_request_is_a_record_and_a_share_the_vault_asked_answers() {
+    let mut w = cast::world();
+    w.lab.sync_all(0);
+    let (alice, bob, carol) = (w.alice.to_hex(), w.bob.to_hex(), w.carol.to_hex());
+    let (mac, mac_b, mac_c) = (w.mac_a, w.mac_b, w.mac_c);
+    let ask = |to: &str, level: &str, why: &str| json!({ "op": "ask", "to": to, "level": level, "why": why });
+    // what the request schema doesn't take is refused before anything is written
+    let long = "x".repeat(501);
+    for odd in [ask(&bob, "Owner", "all of it"), ask(&bob, "Editor", &long), ask(&alice, "Viewer", "me")] {
+        assert_eq!(refused(&run(&mut w, mac, odd)), "BadOp");
+    }
+    let bad = json!({ "op": "ask", "to": bob, "level": "Viewer", "vaults": ["nope"] });
+    assert_eq!(refused(&run(&mut w, mac, bad)), "BadOp");
+    let may = json!({ "op": "may", "ops": [ask(&bob, "Editor", "the harvest")] });
+    assert_eq!(ok(run(&mut w, mac, may)), json!([true]));
+    // Alice's vault asks Bob's for Editor: a record in her vault, shared with his alone
+    let asked = ok(run(&mut w, mac, ask(&bob, "Editor", "  To plan the harvest together.  ")));
+    let entry = asked["entry"].as_str().unwrap().to_string();
+    let mine = ok(run(&mut w, mac, json!({ "op": "requests" })));
+    assert_eq!(mine["asked"], json!([]));
+    let made = &mine["made"][0];
+    assert_eq!((&made["entry"], &made["from"], &made["to"]), (&json!(entry), &json!(alice), &json!(bob)));
+    let said = (&made["level"], &made["why"], &made["vaults"], &made["answer"]);
+    assert_eq!(said, (&json!("Editor"), &json!("To plan the harvest together."), &json!([]), &Value::Null));
+    let get = ok(run(&mut w, mac, json!({ "op": "get", "entry": entry })));
+    assert_eq!(get["record"]["kind"], "request");
+    let share = ok(run(&mut w, mac, json!({ "op": "shares", "over": alice })));
+    let answer = share["rows"].as_array().unwrap().iter().find(|r| r["id"] == asked["share"]).cloned();
+    assert_eq!(answer.map(|r| r["name"].clone()), Some(json!(world::ANSWER)), "{share}");
+    // sync carries it to Bob's Mac, which lists it to answer; Carol's sees nothing
+    w.lab.sync_all(1);
+    let theirs = ok(run(&mut w, mac_b, json!({ "op": "requests" })));
+    assert_eq!((theirs["asked"][0]["entry"].clone(), theirs["made"].clone()), (json!(entry), json!([])));
+    assert_eq!(ok(run(&mut w, mac_c, json!({ "op": "requests" }))), json!({ "asked": [], "made": [] }));
+    // Bob's vault may set the answer, to granted or denied, and nothing else of it
+    let set = |at: &str, value: &str| json!({ "op": "set", "entry": entry, "path": [at], "value": value, "as": bob });
+    assert_eq!(refused(&run(&mut w, mac_b, set("why", "Because"))), "NotAllowed");
+    assert_eq!(refused(&run(&mut w, mac_b, set("level", "Viewer"))), "NotAllowed");
+    assert_eq!(refused(&run(&mut w, mac_b, set("answer", "maybe"))), "NotAView", "the schema takes no other answer");
+    // it grants it: its share of the level asked to Alice's vault, and the answer
+    let grant = json!({ "op": "share", "over": bob, "who": { "vault": alice }, "level": "Editor", "as": bob });
+    let granted = ok(run(&mut w, mac_b, grant))["share"].clone();
+    assert!(ok(run(&mut w, mac_b, set("answer", "granted")))["edit"].is_string());
+    assert_eq!(ok(run(&mut w, mac_b, json!({ "op": "requests" })))["asked"], json!([]), "answered, it isn't asked");
+    w.lab.sync_all(2);
+    let mine = ok(run(&mut w, mac, json!({ "op": "requests" })));
+    assert_eq!(mine["made"][0]["answer"], "granted");
+    let shares = ok(run(&mut w, mac, json!({ "op": "world" })))["shares"].clone();
+    let got = shares.as_array().unwrap().iter().find(|s| s["id"] == granted).cloned();
+    assert_eq!(got.map(|s| (s["over"].clone(), s["who"].clone())), Some((json!(bob), json!(alice))));
+    // Carol's vault says no: the answer alone, which Alice sees
+    let to_carol = ok(run(&mut w, mac, ask(&carol, "Viewer", "Your seed list")))["entry"].clone();
+    w.lab.sync_all(3);
+    let deny = json!({ "op": "set", "entry": to_carol, "path": ["answer"], "value": "denied", "as": carol });
+    ok(run(&mut w, mac_c, deny));
+    w.lab.sync_all(4);
+    let mine = ok(run(&mut w, mac, json!({ "op": "requests" })));
+    let answers: Vec<(&Value, &Value)> = list(&mine["made"]).iter().map(|r| (&r["to"], &r["answer"])).collect();
+    assert_eq!(answers, [(&json!(bob), &json!("granted")), (&json!(carol), &json!("denied"))]);
+}
+
+#[test]
 fn lines_merge_restore_undo_and_variants_are_ops() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
@@ -480,11 +542,15 @@ fn an_aven_s_server_traces_back_to_the_vault_that_owns_the_aven() {
     let link = &chain["links"][0];
     let (who, at) = (json!({ "signer": server }), json!(avenceo));
     assert_eq!((&link["who"], &link["in"], &link["as"]), (&who, &at, &json!("device")));
-    // Alice's passkey approved the server's join for avenCEO, which her vault owns, and the server signed it too
+    // Alice's passkey approved the server's join for avenCEO, at the end of the seed her vault owns, and the server
+    // signed it too; avenCEO GmbH owns it
     let signers = list(&link["signers"]);
     assert!(signers.contains(&json!({ "signer": w.passkey_a.to_hex(), "vault": alice, "as": "root" })), "{link}");
     assert!(signers.contains(&json!({ "signer": server, "vault": avenceo, "as": "device" })));
-    assert_eq!(chain["owners"], json!([{ "vault": alice }]));
+    let st = w.lab.state(w.mac_a);
+    let [Principal::Vault(gmbh)] = st.vault(w.avenceo).expect("avenCEO server").owners[..] else { panic!("one owner") };
+    assert_eq!(chain["owners"], json!([{ "vault": gmbh.to_hex() }]));
+    assert_eq!(world::seeder(st, w.avenceo), Some(w.alice), "up the seed her vault founded");
     // a signer that acts for no vault traces back to nothing
     let none = data::Audit::new(&w.lab, w.mac_a).chain(w.stranger, w.avenceo, &[]);
     assert_eq!(none["links"][0]["edit"], Value::Null);
@@ -578,7 +644,8 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "card", "document", "file", "flow", "function", "post", "profile", "spark", "story", "todo"];
+    let own = ["article", "card", "document", "file", "flow", "function", "post", "profile", "request", "spark"];
+    let own = [&own[..], &["story", "todo"]].concat();
     assert_eq!(kinds, own, "its own kinds, each once: every shipped schema starts at v1");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     assert!(list(&schemas["lenses"]).is_empty());

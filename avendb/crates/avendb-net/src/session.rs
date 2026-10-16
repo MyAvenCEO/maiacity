@@ -28,11 +28,11 @@ pub(crate) const CARD: u8 = 2;
 pub(crate) const LINK: u8 = 3;
 /// A new device's join (P8c), answered by nothing once the node accepts it (`Lab::accept_join`).
 pub(crate) const JOIN: u8 = 4;
-/// A request for the server's key to seal to (P8f), answered by it while nobody has claimed the server
-/// (`Lab::claim_key`).
+/// A request for the key to seal to of a device of no vault that answers claims, the server or an agent's (P8f,
+/// `Options::card`), answered while it belongs to no vault (`Lab::claim_key`).
 pub(crate) const CLAIM_KEY: u8 = 5;
-/// A claim of the server (P8f), answered by its join once it takes it (`Lab::accept_claim`): the edit that adds it to
-/// avenCEO, signed by it too, and its McEliece key.
+/// A claim of such a device (P8f, `Node::add_device_vault_with`), answered by its join once it takes it
+/// (`Lab::accept_claim`): the edit that adds it to its device vault, signed by it too, and its McEliece key.
 pub(crate) const CLAIM: u8 = 6;
 /// A request for the logs it names alone (v8 phase H, `only`), answered by a reply as a request is, of those logs
 /// alone: what a node asks a peer whose holdings hold what it lacks there.
@@ -160,8 +160,8 @@ fn scoped(lab: &Lab, me: SignerId, mut request: Request) -> Request {
 /// a request for its card gets its vault logs, if it hands its card out. A
 /// passkey's pass for the device whose hello proved it on this connection, made in its minutes, gets the link card of
 /// each passkey it may be from, and a join the node accepts gets nothing, and the node tells the new device what it
-/// holds. A server nobody has claimed
-/// yet hands its key to seal to whoever asks, and answers the first claim it takes with its join (P8f).
+/// holds. A device of no vault that answers claims, the server or an agent's, hands its key to seal to whoever asks,
+/// and answers the first claim it takes with its join (P8f).
 async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Result<Vec<u8>> {
     let message = recv.read_to_end(MESSAGE_LIMIT).await?;
     let (&kind, body) = message.split_first().context("an empty message")?;
@@ -231,8 +231,8 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
                 let join = lab.accept_claim(me, claim)?;
                 Ok((join, lab.vault_of(me)))
             };
-            let (join, avenceo) = shared.lab(accept).await.map_err(|why| anyhow!("the claim is refused: {why:?}"))?;
-            tracing::info!("avendb: claimed by {device:?}, a device of avenCEO's owner; avenCEO is {avenceo:?}");
+            let (join, vault) = shared.lab(accept).await.map_err(|why| anyhow!("the claim is refused: {why:?}"))?;
+            tracing::info!("avendb: claimed by {device:?}, a device of its owner's; its device vault is {vault:?}");
             shared.changed.notify_one();
             Ok(join.to_wire())
         }

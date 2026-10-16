@@ -160,30 +160,30 @@ theorem append_vault?_new {st : State} {vt : Vault} (h : st.vault? vt.id = none)
   rw [List.find?_append, h]
   simp
 
-/-- A vault that may own vaults exists. -/
-theorem ownsVaults_isSome {st : State} {o : VaultId} (h : ownsVaults st o = true) : (st.vault? o).isSome = true := by
-  unfold ownsVaults at h
+/-- A vault fits as an owner only if it exists. -/
+theorem ownerFits_vault {st : State} {k : Kind} {o : VaultId} (h : ownerFits st k (.vault o) = true) :
+    (st.vault? o).isSome = true := by
+  simp only [ownerFits] at h
   cases ho : st.vault? o with
   | none => rw [ho] at h; cases h
   | some _ => rfl
 
-/-- A vault fits as an owner only if it exists. -/
-theorem ownerFits_vault {st : State} {k : Kind} {o : VaultId} (h : ownerFits st k (.vault o) = true) :
-    (st.vault? o).isSome = true := by
-  cases k with
-  | human => simp [ownerFits] at h
-  | coop => exact ownsVaults_isSome h
-  | aven => exact ownsVaults_isSome h
+/-- What a genesis checks of its first owners by the kind's table: there is one at least, no more than the kind takes,
+    and each may own one more of the kind. -/
+def OwnersFit (st : State) (kind : Kind) (owners : List Principal) : Prop :=
+  owners ≠ [] ∧ kind.rules.takes owners.length = true ∧ ∀ p ∈ owners, roomFor st kind p = true
 
 /-! ## What one step does to the vaults -/
 
 /-- How an accepted edit changes an existing vault `vt` of id `v` into `vt'`, with what the edit had to carry. -/
 inductive VaultChange (st : State) (sigs : List SignerId) (v : VaultId) (vt : Vault) : Vault → Prop where
   | shareOwner (p : Principal) : p ∉ vt.owners → ownerFits st vt.kind p = true →
+      vt.kind.rules.takes (vt.owners.length + 1) = true → roomFor st vt.kind p = true →
       (∀ x, p = .vault x → x ≠ v ∧ owns st v x = false) →
       approves st sigs (.vault v) = true → approves st sigs p = true →
       VaultChange st sigs v vt { vt with owners := vt.owners ++ [p] }
-  | revokeOwner (p : Principal) : (approves st sigs (.vault v) = true ∨ approves st sigs p = true) →
+  | revokeOwner (p : Principal) : p ∈ vt.owners → 1 < vt.owners.length →
+      (approves st sigs (.vault v) = true ∨ approves st sigs p = true) →
       VaultChange st sigs v vt
         { vt with owners := vt.owners.erase p, threshold := min vt.threshold (vt.owners.erase p).length }
   | settingsThreshold (n : Nat) : approves st sigs (.vault v) = true →
@@ -205,22 +205,23 @@ theorem VaultChange.id {st : State} {sigs : List SignerId} {v : VaultId} {vt vt'
 theorem apply_vaults {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.vaults = st.vaults ∨
     (∃ v kind owners threshold root, st.vault? v = none ∧ (∀ p ∈ owners, ownerFits st kind p = true) ∧
-      rootFits kind edit.sigs root = true ∧ post.vaults = st.vaults ++ [⟨v, kind, owners, threshold, [], root⟩]) ∨
+      rootFits kind edit.sigs root = true ∧ OwnersFit st kind owners ∧
+      post.vaults = st.vaults ++ [⟨v, kind, owners, threshold, [], root⟩]) ∨
     (∃ v vt vt', st.vault? v = some vt ∧ VaultChange st edit.sigs v vt vt' ∧
       post.vaults = (setVault st vt').vaults) := by
   unfold apply at h
   split at h
   · -- genesis
     simp at h
-    obtain ⟨⟨⟨hnone, -⟩, -⟩, ⟨hfit, hroot⟩, -, -, rfl⟩ := h
-    exact .inr (.inl ⟨_, _, _, _, _, hnone, hfit, hroot, rfl⟩)
+    obtain ⟨⟨⟨hnone, hne⟩, -⟩, ⟨hfit, hroot⟩, ⟨htakes, hroom⟩, -, -, rfl⟩ := h
+    exact .inr (.inl ⟨_, _, _, _, _, hnone, hfit, hroot, ⟨hne, htakes, hroom⟩, rfl⟩)
   · -- a new owner
     split at h
     · simp at h
     · rename_i v p _ _ vt hv
       simp at h
-      obtain ⟨⟨hnot, hfit⟩, hcyc, ⟨hv', hp⟩, rfl⟩ := h
-      refine .inr (.inr ⟨v, vt, _, hv, .shareOwner p hnot hfit ?_ hv' hp, rfl⟩)
+      obtain ⟨⟨hnot, hfit⟩, ⟨htakes, hroom⟩, hcyc, ⟨hv', hp⟩, rfl⟩ := h
+      refine .inr (.inr ⟨v, vt, _, hv, .shareOwner p hnot hfit htakes hroom ?_ hv' hp, rfl⟩)
       intro x hx
       subst hx
       simpa using hcyc
@@ -229,8 +230,8 @@ theorem apply_vaults {st post : State} {edit : Edit} (h : apply st edit = some p
     · simp at h
     · rename_i v p keep _ _ vt hv
       simp at h
-      obtain ⟨-, happ, rfl⟩ := h
-      refine .inr (.inr ⟨v, vt, _, hv, .revokeOwner p ?_, rfl⟩)
+      obtain ⟨⟨hmem, hlen⟩, happ, rfl⟩ := h
+      refine .inr (.inr ⟨v, vt, _, hv, .revokeOwner p hmem hlen ?_, rfl⟩)
       cases h1 : approves st edit.sigs (.vault v)
       · exact .inr (happ h1)
       · exact .inl rfl
@@ -277,17 +278,17 @@ theorem apply_vaults {st post : State} {edit : Edit} (h : apply st edit = some p
 theorem step_vault? {st st' : State} {edit : Edit} (h : step st edit = some st') :
     (∀ x, st'.vault? x = st.vault? x) ∨
     (∃ v kind owners threshold root, st.vault? v = none ∧ (∀ p ∈ owners, ownerFits st kind p = true) ∧
-      rootFits kind edit.sigs root = true ∧
+      rootFits kind edit.sigs root = true ∧ OwnersFit st kind owners ∧
       ∀ x, st'.vault? x = if x = v then some ⟨v, kind, owners, threshold, [], root⟩ else st.vault? x) ∨
     (∃ v vt vt', st.vault? v = some vt ∧ VaultChange st edit.sigs v vt vt' ∧
       ∀ x, st'.vault? x = if x = v then some vt' else st.vault? x) := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   have hs : ∀ x, (settle st post).vault? x = post.vault? x := vault?_congr (settle_vaults st post)
-  rcases apply_vaults hpost with hv | ⟨v, kind, owners, threshold, root, hnone, hfit, hroot, hv⟩ |
+  rcases apply_vaults hpost with hv | ⟨v, kind, owners, threshold, root, hnone, hfit, hroot, hcount, hv⟩ |
     ⟨v, vt, vt', hvt, hch, hv⟩
   · exact .inl fun x => by rw [hs, vault?_congr hv]
-  · refine .inr (.inl ⟨v, kind, owners, threshold, root, hnone, hfit, hroot, fun x => ?_⟩)
+  · refine .inr (.inl ⟨v, kind, owners, threshold, root, hnone, hfit, hroot, hcount, fun x => ?_⟩)
     rw [hs, vault?_congr (st := { st with vaults := st.vaults ++ [⟨v, kind, owners, threshold, [], root⟩] }) hv]
     split
     · subst x; exact append_vault?_new hnone
@@ -302,7 +303,7 @@ theorem step_vault? {st st' : State} {edit : Edit} (h : step st edit = some st')
 /-- After a step, a vault that existed is as it was, or changed as `VaultChange` says. -/
 theorem step_vault?_old {st st' : State} {edit : Edit} (h : step st edit = some st') {v : VaultId} {vt vt' : Vault}
     (h₁ : st.vault? v = some vt) (h₂ : st'.vault? v = some vt') : vt' = vt ∨ VaultChange st edit.sigs v vt vt' := by
-  rcases step_vault? h with hsame | ⟨w, _, _, _, _, hw, -, -, hlook⟩ | ⟨w, vtw, vtw', hw, hch, hlook⟩
+  rcases step_vault? h with hsame | ⟨w, _, _, _, _, hw, -, -, -, hlook⟩ | ⟨w, vtw, vtw', hw, hch, hlook⟩
   · rw [hsame, h₁] at h₂
     exact .inl (Option.some.inj h₂).symm
   · have hvw : v ≠ w := fun e => by rw [e, hw] at h₁; cases h₁
@@ -476,7 +477,7 @@ theorem step_owners {st st' : State} {edit : Edit}
     (h : step st edit = some st') :
     (∀ y, ¬ Relation.TransGen (OwnerOf st') y y) ∧
     (∀ x vt, st'.vault? x = some vt → ∀ o, Principal.vault o ∈ vt.owners → (st'.vault? o).isSome) := by
-  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, hnone, hfit, -, hlook⟩ |
+  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, hnone, hfit, -, -, hlook⟩ |
     ⟨v, vt, vt', hvt, hch, hlook⟩
   · -- every lookup is as before
     have hsub : ∀ a b, OwnerOf st' a b → OwnerOf st a b := fun a b ⟨u, hu, ha⟩ => ⟨u, hsame b ▸ hu, ha⟩
@@ -531,11 +532,11 @@ theorem step_owners {st st' : State} {edit : Edit}
     have hown : ∀ o, Principal.vault o ∈ vt'.owners → (st.vault? o).isSome := by
       intro o ho
       cases hch with
-      | shareOwner p _ hfit _ _ _ =>
+      | shareOwner p _ hfit _ _ _ _ _ =>
         rcases List.mem_append.1 ho with ho | ho
         · exact hex _ _ hvt _ ho
         · rw [List.mem_singleton] at ho; subst ho; exact ownerFits_vault hfit
-      | revokeOwner p _ => exact hex _ _ hvt _ (List.mem_of_mem_erase ho)
+      | revokeOwner p _ _ _ => exact hex _ _ hvt _ (List.mem_of_mem_erase ho)
       | settingsThreshold _ _ => exact hex _ _ hvt _ ho
       | shareDevice _ _ _ _ => exact hex _ _ hvt _ ho
       | revokeDevice _ _ => exact hex _ _ hvt _ ho
@@ -562,7 +563,7 @@ theorem step_owners {st st' : State} {edit : Edit}
       · exact absurd (hsub _ ha) hna
     refine ⟨?_, fun x u hx o ho => ?_⟩
     · cases hch with
-      | shareOwner p _ _ hcyc _ _ =>
+      | shareOwner p _ _ _ _ hcyc _ _ =>
         cases p with
         | signer s =>
           refine hmono fun a ha => ?_
@@ -590,7 +591,7 @@ theorem step_owners {st st' : State} {edit : Edit}
             · exact h2.trans h1
           rw [owns_of_transGen hacyc hvx] at hnown
           exact Bool.noConfusion hnown
-      | revokeOwner p _ => exact hmono fun a ha => List.mem_of_mem_erase ha
+      | revokeOwner p _ _ _ => exact hmono fun a ha => List.mem_of_mem_erase ha
       | settingsThreshold _ _ => exact hmono fun a ha => ha
       | shareDevice _ _ _ _ => exact hmono fun a ha => ha
       | revokeDevice _ _ => exact hmono fun a ha => ha
@@ -635,7 +636,7 @@ theorem VaultChange.kind {st : State} {sigs : List SignerId} {v : VaultId} {vt v
 /-- After a step every vault that existed still does, of the same kind. -/
 theorem step_kinds {st st' : State} {edit : Edit} (h : step st edit = some st') {o : VaultId} {ot : Vault}
     (ho : st.vault? o = some ot) : ∃ ot', st'.vault? o = some ot' ∧ ot'.kind = ot.kind := by
-  rcases step_vault? h with hsame | ⟨v, _, _, _, _, hnone, -, -, hlook⟩ | ⟨v, vt, vt', hvt, hch, hlook⟩
+  rcases step_vault? h with hsame | ⟨v, _, _, _, _, hnone, -, -, -, hlook⟩ | ⟨v, vt, vt', hvt, hch, hlook⟩
   · exact ⟨ot, by rw [hsame]; exact ho, rfl⟩
   · have hov : o ≠ v := fun e => by rw [e, hnone] at ho; cases ho
     exact ⟨ot, by rw [hlook, ite_eq_right hov]; exact ho, rfl⟩
@@ -649,24 +650,25 @@ theorem step_kinds {st st' : State} {edit : Edit} (h : step st edit = some st') 
 /-- An owner that fits before a step still fits after it: vaults stay, and keep their kinds. -/
 theorem ownerFits_step {st st' : State} {edit : Edit} (h : step st edit = some st') {k : Kind} {p : Principal}
     (hp : ownerFits st k p = true) : ownerFits st' k p = true := by
-  have hown : ∀ o, ownsVaults st o = true → ownsVaults st' o = true := fun o ho => by
-    unfold ownsVaults at ho ⊢
+  cases p with
+  | signer _ => exact hp
+  | vault o =>
+    simp only [ownerFits] at hp ⊢
     cases hv : st.vault? o with
-    | none => rw [hv] at ho; cases ho
+    | none => rw [hv] at hp; cases hp
     | some ot =>
-      rw [hv] at ho
+      rw [hv] at hp
       obtain ⟨ot', hv', hk⟩ := step_kinds h hv
       rw [hv']
-      dsimp only at ho ⊢
+      simp only [Option.any_some] at hp ⊢
       rw [hk]
-      exact ho
-  cases k <;> cases p <;> simp only [ownerFits] at hp ⊢ <;> first | exact hp | exact hown _ hp
+      exact hp
 
 /-- One step keeps every vault the shape of its kind. -/
 theorem kindsFit_step {st st' : State} {edit : Edit} (hk : KindsFit st) (h : step st edit = some st') :
     KindsFit st' := by
   intro x u hx
-  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, -, hfit, hroot, hlook⟩ |
+  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, -, hfit, hroot, -, hlook⟩ |
     ⟨v, vt, vt', hvt, hch, hlook⟩
   · rw [hsame] at hx
     obtain ⟨ho, hd, hr⟩ := hk x u hx
@@ -689,14 +691,14 @@ theorem kindsFit_step {st st' : State} {edit : Edit} (hk : KindsFit st) (h : ste
     · cases hx
       obtain ⟨ho, hd, hr⟩ := hk v vt hvt
       cases hch with
-      | shareOwner p _ hfit _ _ _ =>
+      | shareOwner p _ hfit _ _ _ _ _ =>
         refine ⟨fun q hq => ?_, hd, hr⟩
         rcases List.mem_append.1 hq with hq | hq
         · exact ownerFits_step h (ho q hq)
         · rw [List.mem_singleton] at hq
           subst hq
           exact ownerFits_step h hfit
-      | revokeOwner p _ => exact ⟨fun q hq => ownerFits_step h (ho q (List.mem_of_mem_erase hq)), hd, hr⟩
+      | revokeOwner p _ _ _ => exact ⟨fun q hq => ownerFits_step h (ho q (List.mem_of_mem_erase hq)), hd, hr⟩
       | settingsThreshold _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), hd, hr⟩
       | shareDevice _ hkd _ _ => exact ⟨fun q hq => ownerFits_step h (ho q hq), fun _ => hkd, hr⟩
       | revokeDevice d _ =>
@@ -1110,14 +1112,14 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
   split at h
   · -- genesis
     simp at h
-    obtain ⟨-, -, -, -, rfl⟩ := h
+    obtain ⟨-, -, -, -, -, rfl⟩ := h
     exact .inl ⟨rfl, .addVault _ _, same st⟩
   · -- a new owner
     split at h
     · simp at h
     · rename_i hv
       simp at h
-      obtain ⟨-, -, -, rfl⟩ := h
+      obtain ⟨-, -, -, -, rfl⟩ := h
       exact .inl ⟨rfl, .setVault hv rfl (fun _ hp => List.mem_append_left _ hp) (fun _ hd => hd), same st⟩
   · -- an owner revoked
     split at h
@@ -1641,8 +1643,8 @@ theorem T2_governance {st st' : State} {edit : Edit} (h : step st edit = some st
   rcases step_vault?_old h h₁ h₂ with rfl | hch
   · simp at hchg
   · cases hch with
-    | shareOwner _ _ _ _ happ _ => exact .inl happ
-    | revokeOwner p happ =>
+    | shareOwner _ _ _ _ _ _ happ _ => exact .inl happ
+    | revokeOwner p _ _ happ =>
       rcases happ with happ | happ
       · exact .inl happ
       · exact .inr (.inl ⟨p, rfl, happ⟩)
@@ -1661,13 +1663,13 @@ theorem T2_consent {st st' : State} {edit : Edit} (h : step st edit = some st') 
   rcases step_vault?_old h h₁ h₂ with rfl | hch
   · exact ⟨fun p hp hn => absurd hp hn, fun d hd hn => absurd hd hn⟩
   · cases hch with
-    | shareOwner p _ _ _ _ happ =>
+    | shareOwner p _ _ _ _ _ _ happ =>
       refine ⟨fun q hq hn => ?_, fun d hd hn => absurd hd hn⟩
       rcases List.mem_append.1 hq with hq | hq
       · exact absurd hq hn
       · rw [List.mem_singleton] at hq
         exact hq ▸ happ
-    | revokeOwner _ _ => exact ⟨fun q hq hn => absurd (List.mem_of_mem_erase hq) hn, fun d hd hn => absurd hd hn⟩
+    | revokeOwner _ _ _ _ => exact ⟨fun q hq hn => absurd (List.mem_of_mem_erase hq) hn, fun d hd hn => absurd hd hn⟩
     | settingsThreshold _ _ => exact ⟨fun q hq hn => absurd hq hn, fun d hd hn => absurd hd hn⟩
     | shareDevice d _ _ hd =>
       refine ⟨fun q hq hn => absurd hq hn, fun d' hd' hn => ?_⟩
@@ -1731,6 +1733,154 @@ theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st := by
   refine replay_inv KindsFit (fun _ _ _ hk hs => kindsFit_step hk hs) edits {} ?_
   intro v vt hv
   simp [State.vault?] at hv
+
+/-! ## Owners by the kind table
+
+Every vault keeps at least one owner and no more than its kind takes, and where the table lets one owner own one vault
+of a kind, none owns two: an aven has one owner, a human vault, and a human vault owns one aven at most. -/
+
+/-- Fewer owners than a kind takes are taken too. -/
+theorem takes_mono {r : KindRules} {m n : Nat} (hmn : m ≤ n) (h : r.takes n = true) : r.takes m = true := by
+  unfold KindRules.takes at *
+  cases hm : r.most with
+  | none => rfl
+  | some k =>
+    rw [hm] at h
+    simp only [Option.all_some, decide_eq_true_eq] at h ⊢
+    omega
+
+/-- A change keeps a vault's owners at least one and no more than its kind takes. -/
+theorem VaultChange.count {st : State} {sigs : List SignerId} {v : VaultId} {vt vt' : Vault}
+    (h : VaultChange st sigs v vt vt') (hne : vt.owners ≠ []) (ht : vt.kind.rules.takes vt.owners.length = true) :
+    vt'.owners ≠ [] ∧ vt'.kind.rules.takes vt'.owners.length = true := by
+  cases h with
+  | shareOwner q _ _ htakes _ _ _ _ => exact ⟨by simp, by simpa using htakes⟩
+  | revokeOwner q hq hlen _ =>
+    have hl := List.length_erase_of_mem hq
+    refine ⟨fun he => ?_, takes_mono (by simp only; omega) ht⟩
+    have : (vt.owners.erase q).length = 0 := by simp only at he; rw [he]; rfl
+    omega
+  | settingsThreshold _ _ => exact ⟨hne, ht⟩
+  | shareDevice _ _ _ _ => exact ⟨hne, ht⟩
+  | revokeDevice _ _ => exact ⟨hne, ht⟩
+  | settingsRoot _ _ _ => exact ⟨hne, ht⟩
+
+/-- An owner a change adds may own one more vault of the vault's kind; every other owner was there. -/
+theorem VaultChange.owners_new {st : State} {sigs : List SignerId} {v : VaultId} {vt vt' : Vault}
+    (h : VaultChange st sigs v vt vt') : ∀ p ∈ vt'.owners, p ∈ vt.owners ∨ roomFor st vt.kind p = true := by
+  intro p hp
+  cases h with
+  | shareOwner q _ _ _ hroom _ _ _ =>
+    rcases List.mem_append.1 hp with hp | hp
+    · exact .inl hp
+    · rw [List.mem_singleton] at hp; subst hp; exact .inr hroom
+  | revokeOwner q _ _ _ => exact .inl (List.mem_of_mem_erase hp)
+  | settingsThreshold _ _ => exact .inl hp
+  | shareDevice _ _ _ _ => exact .inl hp
+  | revokeDevice _ _ => exact .inl hp
+  | settingsRoot _ _ _ => exact .inl hp
+
+/-- One step keeps every vault's owners at least one and no more than its kind takes. -/
+theorem ownersCount_step {st st' : State} {edit : Edit} (hc : OwnersCount st) (h : step st edit = some st') :
+    OwnersCount st' := by
+  intro x u hx
+  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, -, -, -, ⟨hne, htakes, -⟩, hlook⟩ |
+    ⟨v, vt, vt', hvt, hch, hlook⟩
+  · rw [hsame] at hx; exact hc x u hx
+  · rw [hlook] at hx
+    split at hx
+    · cases hx; exact ⟨hne, htakes⟩
+    · exact hc x u hx
+  · rw [hlook] at hx
+    split at hx
+    · cases hx
+      obtain ⟨hne, ht⟩ := hc v vt hvt
+      exact hch.count hne ht
+    · exact hc x u hx
+
+/-- Where one owner may own one vault of kind `k`, an owner with room for one more owns none of them yet. -/
+theorem roomFor_one {st : State} {k : Kind} {p : Principal} (he : k.rules.each = some 1)
+    (h : roomFor st k p = true) : ∀ x ∈ st.vaults, x.kind = k → p ∉ x.owners := by
+  intro x hx hk hp
+  unfold roomFor at h
+  rw [he] at h
+  simp only [Option.all_some, decide_eq_true_eq, Nat.lt_one_iff, List.length_eq_zero_iff,
+    List.filter_eq_nil_iff] at h
+  have := h x hx
+  simp [hk, hp] at this
+
+/-- One step keeps every owner owning one vault at most of a kind the table lets one owner own one of. -/
+theorem oneEach_step {st st' : State} {edit : Edit} (ho : OneEach st) (h : step st edit = some st') :
+    OneEach st' := by
+  intro k he x y vx vy p hx hy hkx hky hpx hpy
+  have mem : ∀ z vz, st.vault? z = some vz → vz ∈ st.vaults := fun _ _ hz => List.mem_of_find?_eq_some hz
+  rcases step_vault? h with hsame | ⟨v, kind, owners, threshold, root, -, -, -, ⟨-, -, hroom⟩, hlook⟩ |
+    ⟨v, vt, vt', hvt, hch, hlook⟩
+  · rw [hsame] at hx hy; exact ho k he x y vx vy p hx hy hkx hky hpx hpy
+  · -- a new vault: its owners owned none of its kind before
+    rw [hlook] at hx hy
+    have hnew : ∀ z vz, st.vault? z = some vz → vz.kind = k → kind = k → p ∈ owners → p ∈ vz.owners → False :=
+      fun z vz hz hzk hk hpo hpz => roomFor_one he (hk ▸ hroom p hpo) vz (mem z vz hz) hzk hpz
+    split at hx <;> split at hy
+    · rename_i h1 h2; exact h1.trans h2.symm
+    · cases hx; exact (hnew y vy hy hky hkx hpx hpy).elim
+    · cases hy; exact (hnew x vx hx hkx hky hpy hpx).elim
+    · exact ho k he x y vx vy p hx hy hkx hky hpx hpy
+  · -- a changed vault: an owner it adds owned none of its kind before
+    rw [hlook] at hx hy
+    have hk' : vt'.kind = vt.kind := hch.kind
+    have hold : ∀ z vz, z ≠ v → st.vault? z = some vz → vz.kind = k → vt'.kind = k → p ∈ vt'.owners →
+        p ∈ vz.owners → z = v := fun z vz _ hz hzk hk hp' hpz => by
+      rcases hch.owners_new p hp' with hpo | hroom
+      · exact ho k he z v vz vt p hz hvt hzk (hk'.symm.trans hk) hpz hpo
+      · exact (roomFor_one he ((hk'.symm.trans hk) ▸ hroom) vz (mem z vz hz) hzk hpz).elim
+    split at hx <;> split at hy
+    · rename_i h1 h2; exact h1.trans h2.symm
+    · rename_i h1 h2; cases hx; exact h1.trans (hold y vy h2 hy hky hkx hpx hpy).symm
+    · rename_i h1 h2; cases hy; exact (hold x vx h1 hx hkx hky hpy hpx).trans h2.symm
+    · exact ho k he x y vx vy p hx hy hkx hky hpx hpy
+
+/-- In every reachable state every vault has an owner, and no more owners than its kind takes. -/
+theorem ownersCount_reachable {st : State} (hr : Reachable st) : OwnersCount st := by
+  obtain ⟨edits, rfl⟩ := hr
+  refine replay_inv OwnersCount (fun _ _ _ hc hs => ownersCount_step hc hs) edits {} ?_
+  intro v vt hv
+  simp [State.vault?] at hv
+
+/-- In every reachable state no owner owns two vaults of a kind the table lets one owner own one of. -/
+theorem oneEach_reachable {st : State} (hr : Reachable st) : OneEach st := by
+  obtain ⟨edits, rfl⟩ := hr
+  refine replay_inv OneEach (fun _ _ _ ho hs => oneEach_step ho hs) edits {} ?_
+  intro _ _ x _ vx _ _ hx
+  simp [State.vault?] at hx
+
+/-- In every reachable state an aven has exactly one owner, and it is a human vault. -/
+theorem aven_owner {st : State} (hr : Reachable st) {v : VaultId} {vt : Vault} (hv : st.vault? v = some vt)
+    (hk : vt.kind = .aven) : ∃ h ht, vt.owners = [.vault h] ∧ st.vault? h = some ht ∧ ht.kind = .human := by
+  obtain ⟨hne, ht⟩ := ownersCount_reachable hr v vt hv
+  have hfit := (T21_vault_kinds hr v vt hv).1
+  rw [hk] at ht hfit
+  match ho : vt.owners with
+  | [] => exact absurd ho hne
+  | [q] =>
+    have hq := hfit q (by rw [ho]; exact List.mem_singleton_self q)
+    cases q with
+    | signer s => simp [ownerFits, Kind.rules, OwnedBy.bySigners] at hq
+    | vault h =>
+      simp only [ownerFits] at hq
+      cases hh : st.vault? h with
+      | none => rw [hh] at hq; cases hq
+      | some ht' =>
+        rw [hh] at hq
+        simp [Kind.rules, OwnedBy.byKind] at hq
+        exact ⟨h, ht', rfl, hh, hq⟩
+  | _ :: _ :: _ => rw [ho] at ht; simp [KindRules.takes, Kind.rules] at ht
+
+/-- In every reachable state a human vault, or any vault, owns one aven at most. -/
+theorem one_aven {st : State} (hr : Reachable st) {o x y : VaultId} {vx vy : Vault} (hx : st.vault? x = some vx)
+    (hy : st.vault? y = some vy) (hkx : vx.kind = .aven) (hky : vy.kind = .aven)
+    (hox : Principal.vault o ∈ vx.owners) (hoy : Principal.vault o ∈ vy.owners) : x = y :=
+  oneEach_reachable hr .aven rfl x y vx vy _ hx hy hkx hky hox hoy
 
 theorem T3_no_cycles (edits : List Edit) : Acyclic (replay {} edits) := by
   suffices h : ∀ st, Acyclic st → OwnersExist st → Acyclic (replay st edits) ∧ OwnersExist (replay st edits) by

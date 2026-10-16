@@ -333,7 +333,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let eve = VaultId(id(&first, "vault"));
     let seeded = move |lab: &Lab, me| lab.vault_of(me).is_some_and(|v| avendb::world::seeded(lab.state(me), eve, v));
     let seeded = server.read(seeded);
-    assert!(seeded.await, "the server is a device of the CEO Aven of the seed her vault founded");
+    assert!(seeded.await, "the server is a device of avenCEO server, of the seed her vault founded");
     let endpoint = EndpointId::from_bytes(&id(&first, "endpoint")).expect("an endpoint");
     until("the server learns her browser from what it relays", || async { admission.admits(&endpoint) }).await;
     let entry = EntryId(id(&first, "entry"));
@@ -356,9 +356,9 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let passkey = passkey.expect("her vault's root, her passkey").to_hex();
     let approves = json!({ "approve": { "signers": [passkey] } });
     assert_eq!((&ops["mayFound"], &ops["foundCeremonies"]), (&approves, &json!(1)), "one ceremony for both: {ops}");
-    let [aven, coop] = [&ops["vaults"][0], &ops["vaults"][1]];
+    let [farm, coop] = [&ops["vaults"][0], &ops["vaults"][1]];
     let mine = json!([{ "vault": first["vault"] }]);
-    let made = json!([["aven", "avenEVE", aven, mine], ["coop", "Eve COOP", coop, mine]]);
+    let made = json!([["coop", "Eve Farm COOP", farm, mine], ["coop", "Eve COOP", coop, mine]]);
     assert_eq!(ops["made"], made, "each named, her vault its owner, the device acting as it there");
     assert_eq!(ops["mayShare"], true, "a read share by id, alone");
     assert!(ops["share"].is_string() && ops["revoke"]["edit"].is_string() && ops["keep"].is_string(), "{ops}");
@@ -376,8 +376,8 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     assert_eq!(ops["may"][2], approves, "a threshold her passkey approves");
     let limits = json!({ "depth": 9, "default": 16, "ceiling": 256 });
     assert_eq!(ops["limits"], limits, "its queries 9 levels down at most");
-    let aven = VaultId(aven.as_str().and_then(BlobId::from_hex).expect("the new vault's id").0);
-    let threshold = move |lab: &Lab, me| lab.state(me).vault(aven).map(|v| v.threshold);
+    let farm = VaultId(farm.as_str().and_then(BlobId::from_hex).expect("the new vault's id").0);
+    let threshold = move |lab: &Lab, me| lab.state(me).vault(farm).map(|v| v.threshold);
     until("the server sees the new threshold", || async { server.read(threshold).await == Some(2) }).await;
 
     // her second browser links through the first one's code, in one ceremony, and edits the note

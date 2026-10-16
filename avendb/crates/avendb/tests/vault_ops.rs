@@ -12,10 +12,12 @@ use avendb::engine::{self, Prepared};
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::lens::example::blobs::TODO_LENS;
-use avendb::policy::{KeepMode, Kind, Level, Principal};
+use avendb::policy::{Action, KeepMode, Kind, Level, Principal, Sharing};
 use avendb::recovery::RecoveryKey;
 use avendb::sealed::{Brought, FileKey, seal};
 use avendb::sign;
+use avendb::slice::Selector;
+use avendb::world;
 use serde_json::{Value, json};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
@@ -83,7 +85,8 @@ fn the_world_is_the_devices_view_and_null_for_a_device_of_no_vault() {
     let (mac, alice, stranger, passkey) = (w.mac_a, w.alice, w.stranger, w.passkey_a);
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
     assert_eq!((&seen["me"], &seen["mine"]), (&json!(mac.to_hex()), &json!(alice.to_hex())));
-    assert_eq!(seen["ownsAven"], true, "Alice's vault claimed the server");
+    assert_eq!(seen["ownsServer"], true, "Alice's vault claimed the server");
+    assert_eq!(seen["kinds"], avendb::words::kinds_json(), "the kind table, for the page to read");
     let mine = shown(&seen, alice);
     assert_eq!(mine["acting"], json!({ "as": alice.to_hex(), "reaches": true, "shares": true }));
     assert_eq!((&mine["kind"], &mine["root"]), (&json!("human"), &json!(passkey.to_hex())));
@@ -97,6 +100,44 @@ fn the_world_is_the_devices_view_and_null_for_a_device_of_no_vault() {
     // a node's jobs read nothing of the Lab: a node answers them (avendb-net's Node::run)
     let jobs = json!({ "op": "jobs" });
     assert!(engine::reads(&jobs) && refused(&engine::read(&w.lab, mac, &jobs)) == "BadOp");
+}
+
+#[test]
+fn the_server_is_read_from_the_seed_and_a_coops_drive_is_no_server() {
+    let mut w = cast::world();
+    let (mac, passkey, bob, avenceo) = (w.mac_b, w.passkey_b, w.bob, w.avenceo);
+    let st = w.lab.state(mac);
+    assert_eq!(world::seeder(st, avenceo), Some(w.alice), "avenCEO server ends the seed Alice's vault founded");
+    let owners = |v: VaultId| st.vault(v).map(|v| v.owners.clone()).expect("the vault");
+    let [Principal::Vault(gmbh)] = owners(avenceo)[..] else { panic!("one owner, avenCEO GmbH") };
+    let [Principal::Vault(holding)] = owners(gmbh)[..] else { panic!("one owner, Maia Holding GmbH") };
+    assert_eq!(owners(holding), [Principal::Vault(w.alice)], "which her vault owns");
+    // Bob's coop, his alone, and its drive: a device vault under it, the drive its one device, which his vault gives
+    // backup on the whole of it
+    let found = |lab: &mut Lab, kind: Kind, owner: VaultId, nonce: u64| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+        VaultId::from(lab.submit(mac, &[passkey], genesis).expect("his passkey founds it"))
+    };
+    let coop = found(&mut w.lab, Kind::Coop, bob, 1);
+    let drives = found(&mut w.lab, Kind::DeviceVault, coop, 2);
+    let drive = w.lab.device("Bob's drive");
+    let add = Action::Share(Sharing::Device { vault: drives, device: drive, seal_to: None });
+    w.lab.submit(mac, &[passkey, drive], add).expect("its drive");
+    let backup = cast::share(bob, cast::vault(drives), Level::Backup, Selector::All);
+    w.lab.issue(mac, &[mac], backup).expect("his vault gives the drive backup");
+    // the drive's device vault ends no seed: no server, so Bob's vault owns none and relays to none
+    let st = w.lab.state(mac);
+    assert_eq!(world::seeder(st, drives), None, "a coop's drive's vault ends no seed");
+    assert_eq!(world::avenceo(st, bob), None, "his vault relays to no server");
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    assert_eq!((&seen["ownsServer"], &seen["backsUp"]), (&json!(false), &Value::Null), "nor owns one");
+    // once his vault gives avenCEO server relay, that is his server
+    let relay = cast::share(bob, cast::vault(avenceo), Level::Relay, Selector::All);
+    w.lab.issue(mac, &[mac], relay).expect("his vault gives the server relay");
+    assert_eq!(world::avenceo(w.lab.state(mac), bob), Some(avenceo));
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    assert_eq!((&seen["ownsServer"], &seen["backsUp"]), (&json!(false), &json!(false)), "Alice's, relay alone");
 }
 
 #[test]
@@ -236,15 +277,19 @@ fn owner_of_everything_makes_a_co_owner_once_the_passkey_approves() {
     // a human vault has no vault among its owners
     let vaults = share(alice, to(bob), json!("Owner"), json!("everything"));
     assert_eq!(refused(&may(&mut w, mac, json!([vaults]))[0]), "WrongOwnerKind");
-    // a vault her vault founds takes another of hers as a co-owner, which her passkey consents for too; Bob's vault
+    // a coop her vault founds takes another of hers as a co-owner, which her passkey consents for too; Bob's vault
     // would have to consent itself
-    let (x, coop) = (founded(&mut w, "aven", "avenALICE"), founded(&mut w, "coop", "Maia City COOP"));
+    let (x, coop) = (founded(&mut w, "coop", "Garden COOP"), founded(&mut w, "coop", "Maia City COOP"));
     let co = share(x, to(coop), json!("Owner"), json!("everything"));
     assert_eq!(may(&mut w, mac, json!([co])), [approves(&[passkey])]);
     assert!(approved(&mut w, mac, passkey, co)["edit"].is_string());
     assert_eq!(vault(&w.lab, mac, x).owners, [Principal::Vault(alice), Principal::Vault(coop)]);
     let bobs = share(x, to(bob), json!("Owner"), json!("everything"));
     assert_eq!(refused(&may(&mut w, mac, json!([bobs]))[0]), "NoConsent");
+    // her aven has her vault as its one owner: no other joins it
+    let aven = founded(&mut w, "aven", "avenALICE");
+    let bobs = share(aven, to(bob), json!("Owner"), json!("everything"));
+    assert_eq!(refused(&may(&mut w, mac, json!([bobs]))[0]), "OneOwner");
 }
 
 /// A vault's id, as an answer names it.
@@ -263,7 +308,7 @@ fn founded(w: &mut World, kind: &str, name: &str) -> VaultId {
 fn a_vaults_threshold_changes_once_the_passkey_approves() {
     let mut w = cast::world();
     let (mac, alice, passkey, stranger) = (w.mac_a, w.alice, w.passkey_a, w.stranger);
-    let (x, y) = (founded(&mut w, "aven", "avenALICE"), founded(&mut w, "coop", "Maia City COOP"));
+    let (x, y) = (founded(&mut w, "coop", "Garden COOP"), founded(&mut w, "coop", "Maia City COOP"));
     approved(&mut w, mac, passkey, share(x, to(y), json!("Owner"), json!("everything")));
     let two = json!({ "op": "settings", "vault": x.to_hex(), "threshold": 2 });
     assert_eq!(may(&mut w, mac, json!([two])), [approves(&[passkey])]);
@@ -300,7 +345,7 @@ fn new_vaults_are_founded_in_one_ceremony_each_with_its_profile() {
     let (mac, alice, passkey) = (w.mac_a, w.alice, w.passkey_a);
     let four = json!({ "op": "found", "vaults": [
         { "kind": "aven", "name": "avenALICE" },
-        { "kind": "aven", "name": "avenBOB" },
+        { "kind": "device", "name": "Alice's server" },
         { "kind": "coop", "name": "Maia City COOP" },
     ] });
     assert_eq!(may(&mut w, mac, json!([four])), [approves(&[passkey])]);
@@ -319,16 +364,22 @@ fn new_vaults_are_founded_in_one_ceremony_each_with_its_profile() {
     let ids: Vec<VaultId> = made["vaults"].as_array().expect("the vaults").iter().map(vault_id).collect();
     assert_eq!(ids.len(), 3);
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
-    for (v, (kind, name)) in ids.iter().zip([("aven", "avenALICE"), ("aven", "avenBOB"), ("coop", "Maia City COOP")]) {
+    let named = [("aven", "avenALICE"), ("device", "Alice's server"), ("coop", "Maia City COOP")];
+    for (v, (kind, name)) in ids.iter().zip(named) {
         let x = shown(&seen, *v);
         assert_eq!((&x["kind"], &x["name"]), (&json!(kind), &json!(name)), "{x}");
         assert_eq!((&x["owners"], &x["root"]), (&json!([to(alice)]), &Value::Null), "her vault owns it");
         assert_eq!(x["via"], json!([alice.to_hex()]), "her Mac acts for it through her vault");
     }
     let kinds: Vec<Kind> = ids.iter().map(|&v| vault(&w.lab, mac, v).kind).collect();
-    assert_eq!(kinds, [Kind::Aven, Kind::Aven, Kind::Coop]);
+    assert_eq!(kinds, [Kind::Aven, Kind::DeviceVault, Kind::Coop]);
+    // the kind table says what her vault founds: no human vault, and no second aven
+    let human = json!({ "op": "found", "kind": "human", "name": "Me" });
+    assert_eq!(refused(&run(&mut w, mac, human)), "WrongOwnerKind");
+    let second = json!({ "op": "found", "kind": "aven", "name": "avenBOB" });
+    assert_eq!(refused(&run(&mut w, mac, second)), "SecondAven");
     let refusals = [
-        json!({ "op": "found", "kind": "human", "name": "Me" }),
+        json!({ "op": "found", "kind": "ghost", "name": "Boo" }),
         json!({ "op": "found", "kind": "aven" }),
         json!({ "op": "found", "vaults": [] }),
         json!({ "op": "found", "vaults": [{ "kind": "aven", "name": "x" }], "kind": "aven" }),

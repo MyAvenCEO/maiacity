@@ -146,7 +146,7 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     let mac = node(&mut w, mac_a, &[passkey_a], 1, opts).await;
     mac.know(server.addr());
     assert!(!relay.admission().admits(&mac.id()), "the new server knows no device of Alice's");
-    // Alice's vault claims it first: the server is a device of the CEO Aven of the seed her vault founds
+    // Alice's vault claims it first: the server is a device of avenCEO server, of the seed her vault founds
     let v = mac.claim(&started.offer, passkey_a).await.expect("Alice's vault claims the server");
     assert_eq!(server::vault(server).await, Some(v), "the server is avenCEO's device");
     until("the server knows Alice's Mac", || async { relay.admission().admits(&mac.id()) }).await;
@@ -510,7 +510,7 @@ async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_stra
     assert_eq!(server::vault(server).await, Some(avenceo), "the server is avenCEO's device");
     assert!(relay.serves(&browser.id()), "through the relay");
     let seeded = browser.read(move |lab, me| avendb::world::seeded(lab.state(me), eve, avenceo)).await;
-    assert!(seeded, "the CEO Aven of Eve's seed, owned through Maia Holding GmbH and avenCEO GmbH");
+    assert!(seeded, "avenCEO server of Eve's seed, owned through Maia Holding GmbH and avenCEO GmbH");
     until("claimed, its relay honours no stranger's pass", || async { !relay.admission().honours(&stranger_key) })
         .await;
     assert!(relay.admission().honours(&eve_key), "but Eve's, whose vault owns avenCEO");

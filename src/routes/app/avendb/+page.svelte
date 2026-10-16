@@ -1,8 +1,8 @@
 <!--
 	avenDB: the user-owned, end-to-end encrypted database (avendb/), quantum-proof on every device. It opens on the
-	person's own account ($lib/avendb/Account.svelte): unlocked, the vaults it knows, their own human vault and the aven
-	and coop vaults it owns, each of which they act as, on the network for real, with avenDB's server relaying what each
-	vault grants it. An admin's.
+	person's own account ($lib/avendb/Account.svelte): unlocked, the vaults it knows, their own human vault and the coops,
+	the one aven and the device vaults it owns, each of which they act as, on the network for real, with avenDB's server
+	relaying what each vault grants it. An admin's.
 -->
 <script>
 	import Account from '$lib/avendb/Account.svelte';

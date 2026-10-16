@@ -21,17 +21,65 @@ abbrev FileId   := Nat
 /-- A type (`note`, `todo`, …) or a tag: a short name. -/
 abbrev Sym      := Nat
 
-/-- A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
-    devices act for it. A coop vault is owned by human and coop vaults. An aven vault, an agent such as the relay
-    server, is owned by human and coop vaults too, and its devices (the servers it runs on) act for it but never
-    govern it. -/
+/-- A vault is an identity, like a smart account, of one of four kinds. What each kind may be is one table
+    (`Kind.rules`), which every rule about kinds reads. -/
 inductive Kind where
+  /-- A person's vault: owned by their passkeys, with their phones, computers, browsers and drives as its devices. -/
   | human
+  /-- A group's vault: owned by human and coop vaults. It has no devices, and acts through its owners. -/
   | coop
+  /-- An agent's identity: owned by one human vault alone, and a human vault owns one at most. It has no devices: it
+      acts through its owner's devices, and its agents, the device vaults it owns, act for themselves through the sub
+      caps it passes on to them. -/
   | aven
+  /-- A vault for devices: owned by one human, coop or aven vault, which governs it. Its devices (an agent's harness,
+      a server, a drive) act for it but never govern it, and it owns nothing. -/
+  | deviceVault
   deriving DecidableEq, Repr
 
-/-- Who can own a vault: signers own human vaults, vaults own coop and aven vaults. -/
+/-- Who may own a vault of a kind: signers (a person's passkeys), or vaults of the kinds listed. -/
+inductive OwnedBy where
+  | signers
+  | vaults (ks : List Kind)
+  deriving DecidableEq, Repr
+
+/-- Signers own a vault of the kind. -/
+def OwnedBy.bySigners : OwnedBy → Bool
+  | .signers  => true
+  | .vaults _ => false
+
+/-- A vault of kind `k` may own a vault of the kind. -/
+def OwnedBy.byKind (o : OwnedBy) (k : Kind) : Bool :=
+  match o with
+  | .signers   => false
+  | .vaults ks => ks.contains k
+
+/-- What a vault of one kind may be: who may own it (`ownedBy`), how many owners it takes at most (`most`, `none` for
+    any number), whether it has devices (`devices`), which act for it but never govern it, and how many vaults of the
+    kind one owner may own (`each`, `none` for any number). -/
+structure KindRules where
+  ownedBy : OwnedBy
+  most    : Option Nat
+  devices : Bool
+  each    : Option Nat
+  deriving DecidableEq, Repr
+
+/-- The one table of vault kinds, which every rule about kinds reads (`ownerFits`, `Kind.hasDevices`, `roomFor`), the
+    Rust core's `Kind::rules` mirrors and the page reads (the `kinds` op). A human vault is owned by signers and has
+    devices. A coop is owned by human and coop vaults, and has none. An aven is owned by one human vault alone, a
+    human vault owning one at most, and has none. A device vault is owned by one human, coop or aven vault, and has
+    devices. No kind lists a device vault among its owners, so a device vault owns nothing; only a device vault lists
+    an aven, so an aven owns device vaults alone, its agents. -/
+def Kind.rules : Kind → KindRules
+  | .human       => ⟨.signers, none, true, none⟩
+  | .coop        => ⟨.vaults [.human, .coop], none, false, none⟩
+  | .aven        => ⟨.vaults [.human], some 1, false, some 1⟩
+  | .deviceVault => ⟨.vaults [.human, .coop, .aven], some 1, true, none⟩
+
+/-- A vault of the kind may have `n` owners. -/
+def KindRules.takes (r : KindRules) (n : Nat) : Bool := r.most.all (n ≤ ·)
+
+/-- Who can own a vault: signers own human vaults, vaults own the other kinds (`Kind.rules`). -/
 inductive Principal where
   | signer (s : SignerId)
   | vault  (v : VaultId)

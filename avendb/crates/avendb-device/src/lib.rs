@@ -45,11 +45,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine;
-use avendb::id::VaultId;
+use avendb::id::{SignerId, VaultId};
+use avendb::lab::Lab;
+use avendb::policy::Kind;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
 use avendb_browser::{Device, Fresh, Meta, Start, Unlock, steps_json};
-use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Offer, Progress, Shelf, Step, disk};
+use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Offer, Place, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -206,11 +208,11 @@ impl Service {
     /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileAgain [n]` once every
     /// chunk is in, whether the device reads the file again (once for its key, once to seal it: the page then hands
     /// every chunk over again, from 0), `fileEnd [n]` the op's answer, `fileDrop [n]` none, the file dropped.
-    /// `agents` the access requests the agent devices on this Mac left, `grant [name, device, aven, shares]` one of
-    /// them granted, its device added to aven `aven` (`{id}` of one the person's vault owns, or `{name}` of a new one)
-    /// unless it is one of its devices already, and each of `shares` `{over, level}` a share that aven gets,
-    /// `deny [name, device]` one denied (`agent`), and `agentCommand [harness?]` the command that runs a harness's
-    /// agent device, Claude Code's unless named, and for Claude Code the line that adds it.
+    /// `agents` the access requests the agent devices on this Mac left, `grant [name, device, shares, avenName]` one of
+    /// them granted, the agent added under the person's one aven unless it is there already, the aven founded and named
+    /// `avenName` if their vault owns none yet, and each of `shares` `{over, level}` a share the aven passes on to it
+    /// (`grant`), `deny [name, device]` one denied (`agent`), and `agentCommand [harness?]` the command that runs a
+    /// harness's agent device, Claude Code's unless named, and for Claude Code the line that adds it.
     /// `drives` the volumes plugged in and the drives joined here, `joinDrive [volume, name]` a drive used for avenDB as
     /// a device of the person's vault, `openDrive [volume]` one another Mac of theirs joined, opened here, and
     /// `ejectDrive [volume]` one hosted here, its node stopped and the volume ejected (`drive`).
@@ -255,8 +257,8 @@ impl Service {
             "openDrive" => self.open_drive(&a.text(0)?).await?,
             "ejectDrive" => self.eject_drive(&a.text(0)?).await?,
             "grant" => {
-                let shares = a.get(3).as_array().cloned().unwrap_or_default();
-                self.grant(&d, &a.text(0)?, &a.text(1)?, a.get(2), &shares).await?
+                let shares = a.get(2).as_array().cloned().unwrap_or_default();
+                self.grant(&d, &a.text(0)?, &a.text(1)?, &shares, a.get(3).as_str()).await?
             }
             "deny" => {
                 self.deny(&a.text(0)?, &a.text(1)?)?;
@@ -507,8 +509,8 @@ impl Service {
     }
 
     /// The access requests the agents on this Mac left (`agent::asking`), each as it asks: its name, its kind, its
-    /// device, its offer while it belongs to no vault, the level it asks for, why, and the vaults it names; this
-    /// device's own offer left for them as it is now.
+    /// device, its offer while it belongs to no vault, the level it asks for, why, and the vaults it names, and whether
+    /// it runs now (`online`); this device's own offer left for them as it is now.
     fn agents(&self, d: &Device) -> Value {
         self.leave_offer(d);
         let dir = agent::agents(&self.config.dir);
@@ -527,8 +529,7 @@ impl Service {
     }
 
     /// Agent device `name`'s access request as it left it, checked: its device's key, its offer if any naming that
-    /// device, the aven it names, if any, a level of `agent::LEVELS`, why in at most 500 characters, and the vaults it
-    /// names; or none.
+    /// device, a level of `agent::LEVELS`, why in at most 500 characters, and the vaults it names; or none.
     fn request(&self, name: &str) -> Option<Value> {
         let text = std::fs::read_to_string(agent::request(&self.config.dir, name)).ok()?;
         let asked: Value = serde_json::from_str(&text).ok()?;
@@ -541,80 +542,102 @@ impl Service {
         let why: String = asked["why"].as_str().unwrap_or_default().chars().take(500).collect();
         let vaults: Vec<String> =
             asked["vaults"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
-        let aven = asked["aven"].as_str().and_then(|a| agent::aven_named(a).ok());
-        let mut asking = agent::asking(name, device, offer, &agent::Asking { aven, level, why, vaults });
-        // whether it runs now, to cosign its joining an aven
+        let mut asking = agent::asking(name, device, offer, &agent::Asking { level, why, vaults });
+        // whether it runs now, to cosign its being added under the aven
         asking["online"] = agent::online(&self.config.dir, name, device).into();
         Some(asking)
     }
 
-    /// Grants agent device `name`'s access request (`agents`), the one its device `device` left: the device joins
-    /// aven `aven`, `{"id"}` of an aven the person's vault owns or `{"name"}` of a new one their vault founds, in one
-    /// ceremony of their passkey in the sheet (`Node::adopt_with`), unless it is one of that aven's devices already;
-    /// then each of `shares`, `{over, level}`, gives the aven a share of vault `over` at `level`, one of
-    /// `agent::LEVELS`, over all of it, as any share is (`share`), acting for that vault, with no ceremony. The aven.
+    /// Grants agent device `name`'s access request (`agents`), the one its device `device` left; or, for an agent whose
+    /// device is in its device vault already, one it made as a record (the ops engine's `ask`, to its aven), which
+    /// leaves no file. The agent is a device vault under the person's one aven, the aven their vault owns
+    /// (`agent::aven_of`), named after the agent (`agent::agent_vault`). Where their vault owns no aven yet, it founds
+    /// one, named `aven_name`, which it must then be given; where the aven has no device vault of that name, it founds
+    /// one under it, and adds the agent's device to it; where it has one that lacks this device, as for the same
+    /// harness on their other Mac, it adds the device to that one: whatever of it there is to do, in one ceremony of
+    /// their passkey in the sheet, which the agent's device cosigns (`Node::add_device_vault_with`), and the new vaults
+    /// named by their profiles. Then for each of `shares`, `{over, level}`, a level of `agent::LEVELS`, the aven passes
+    /// a share over vault `over` at that level on to the agent's device vault, resting on one the aven holds there,
+    /// acting as the aven, with no ceremony (`agent::pass_on`): over a vault their vault is or owns, one that vault
+    /// gives the aven first, where it holds none at that level; over another, as a coop that hired the aven, the one it
+    /// gave. Each share is checked before anything is signed (`agent::passable`). `{aven, vault}`: the aven, and the
+    /// agent's device vault.
     async fn grant(
         self: &Arc<Self>,
         d: &Arc<Device>,
         name: &str,
         device: &str,
-        aven: &Value,
         shares: &[Value],
+        aven_name: Option<&str>,
     ) -> Result<Value> {
         agent::named(name)?;
-        let asked = self.request(name).filter(|a| a["device"] == device).context("no such request: it changed")?;
-        // joining an aven takes the agent's own device, which cosigns it: say so rather than wait for it in vain
-        let offline = || anyhow!("{name} isn't running: open a Claude Code session (or its harness), then approve");
+        let asked = self.request(name).filter(|a| a["device"] == device);
+        let agent = SignerId::from_hex(device).context("a device's key in hex")?;
+        let mut asks = vec![];
         for share in shares {
-            let level = share["level"].as_str().unwrap_or_default();
-            anyhow::ensure!(share["over"].is_string(), "a share is {{over, level}}: {share}");
-            anyhow::ensure!(agent::LEVELS.contains(&level), "{level:?} isn't a level to give: {:?}", agent::LEVELS);
+            let over = share["over"].as_str().and_then(VaultId::from_hex);
+            let level = share["level"].as_str().unwrap_or_default().to_string();
+            let over = over.with_context(|| format!("a share is {{over, level}}, over a vault's id: {share}"))?;
+            let levels = agent::LEVELS;
+            anyhow::ensure!(levels.contains(&level.as_str()), "{level:?} isn't a level to give: {levels:?}");
+            asks.push((over, level));
         }
-        let mine = hex(&d.vault().await.context("this Mac belongs to no vault")?.0);
-        let world = d.node().op(json!({ "op": "world" })).await?;
-        let vaults = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
-        let ours = |v: &&Value| {
-            v["kind"] == "aven" && v["owners"].as_array().is_some_and(|o| o.iter().any(|o| o["vault"] == mine.as_str()))
+        let mine = d.vault().await.context("this Mac belongs to no vault")?;
+        let (named, checked) = (name.to_string(), asks.clone());
+        let found = d.node().read(move |lab, me| {
+            let aven = agent::aven_of(lab.state(me), mine);
+            let vault = aven.and_then(|aven| agent::agent_vault(lab, me, aven, &named));
+            let joined = vault.is_some_and(|v| lab.state(me).is_device(agent, v));
+            let checked: Result<Vec<()>> =
+                checked.iter().map(|(over, level)| agent::passable(lab.state(me), mine, aven, *over, level)).collect();
+            (aven, vault, joined, checked)
+        });
+        let (aven, vault, joined, checked) = found.await;
+        checked?;
+        let aven_name = match (aven, aven_name) {
+            (None, Some(named)) => Some(agent::aven_named(named)?),
+            (None, None) => bail!("your vault has no aven yet: name the aven {name} joins"),
+            (Some(_), _) => None,
         };
-        let approver = self.approver().await?;
-        let aven = match (aven["id"].as_str(), aven["name"].as_str()) {
-            (Some(id), _) => {
-                let v = vaults.iter().filter(ours).find(|v| v["id"] == id).context("no aven your vault owns")?;
-                let into = VaultId::from_hex(id).context("an aven's id")?;
-                let devices = v["devices"].as_array().into_iter().flatten();
-                if !devices.clone().any(|x| x["id"] == device) {
-                    anyhow::ensure!(asked["online"] == true, offline());
-                    let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
-                    d.node().adopt_with(&Offer::from_text(offer)?, Some(into), d.passkey(), &approver).await?;
-                }
-                into
-            }
-            (None, Some(named)) => {
-                let named = agent::aven_named(named)?;
-                anyhow::ensure!(asked["online"] == true, offline());
+        let place = match (aven, vault) {
+            (_, Some(_)) if joined => None,
+            (_, Some(vault)) => Some(Place::Vault(vault)),
+            (Some(aven), None) => Some(Place::Under(aven)),
+            (None, None) => Some(Place::UnderNew(Kind::Aven)),
+        };
+        let (aven, vault) = match place {
+            None => (aven.context("an agent's vault has its aven")?, vault.context("the agent's vault")?),
+            Some(place) => {
+                // the agent's own device cosigns its being added: say so rather than wait for it in vain
+                let asked = asked.context("no such request: it changed")?;
+                let offline = "isn't running: open a Claude Code session (or its harness), then approve";
+                anyhow::ensure!(asked["online"] == true, "{name} {offline}");
                 let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
-                let aven = d.node().adopt_with(&Offer::from_text(offer)?, None, d.passkey(), &approver).await?;
-                let profile = d.node().op(json!({ "op": "profile", "vault": hex(&aven.0), "name": named })).await?;
-                if profile.get("ok").is_none() {
-                    tracing::warn!("{named}'s profile isn't written: {profile}");
+                let (offer, approver) = (Offer::from_text(offer)?, self.approver().await?);
+                let (aven, vault) = d.node().add_device_vault_with(&offer, place, d.passkey(), &approver).await?;
+                // the new vaults named by their profiles: the aven as its person named it, the agent's after the agent
+                let mut names: Vec<(VaultId, String)> = aven_name.map(|named| (aven, named)).into_iter().collect();
+                if !matches!(place, Place::Vault(_)) {
+                    names.push((vault, name.to_string()));
                 }
-                aven
+                for (v, named) in names {
+                    let profile = d.node().op(json!({ "op": "profile", "vault": hex(&v.0), "name": named })).await?;
+                    if profile.get("ok").is_none() {
+                        tracing::warn!("{named}'s profile isn't written: {profile}");
+                    }
+                }
+                (aven, vault)
             }
-            _ => bail!("an aven to join is {{id}} or {{name}}: {aven}"),
         };
-        let aven_hex = hex(&aven.0);
-        for share in shares {
-            let (over, level) = (&share["over"], &share["level"]);
-            // acting for the vault itself, as the person's vault owns it, directly or through owners of owners
-            let share = json!({ "op": "share", "over": over, "who": { "vault": aven_hex }, "level": level,
-                "what": "everything", "as": over });
-            let (shared, _) = d.run(share, None::<NoBytes>, Some(&approver)).await?;
-            if shared.get("ok").is_none() {
-                bail!("the aven's {level} share over {over} is refused: {shared}");
+        let pass = move |lab: &mut Lab, me| -> Result<()> {
+            for (over, level) in asks {
+                agent::pass_on(lab, me, mine, aven, vault, over, &level)?;
             }
-        }
+            Ok(())
+        };
+        d.node().act(pass).await?;
         std::fs::remove_file(agent::request(&self.config.dir, name)).ok();
-        Ok(json!({ "aven": aven_hex }))
+        Ok(json!({ "aven": hex(&aven.0), "vault": hex(&vault.0) }))
     }
 
     /// Denies agent `name`'s access request, the one its device `device` left: it is taken away, and the no left for

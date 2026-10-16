@@ -412,7 +412,7 @@
 		['Ask logs', 'A request for some logs alone, those whose heads it lacks', 'A page of edits'],
 		['Link', 'A passkey’s pass, for a new device', 'The vault logs of that passkey'],
 		['Join', 'The edit that adds the new device', 'Nothing, once taken'],
-		['Card', 'A request for the server’s contact card', 'The vault logs of CEO Aven and every vault that owns it'],
+		['Card', 'A request for the server’s contact card', 'The vault logs of avenCEO server and every vault that owns it'],
 		[
 			'Claim key, Claim',
 			'Asks an unclaimed server, or a new agent device, for its key to seal to, then claims it',
@@ -435,7 +435,7 @@
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
-	const LAYOUT = `g9/                 one generation, 9 or later since the last reset; starting fresh makes g10
+	const LAYOUT = `g10/                one generation, 10 or later since the last reset; starting fresh makes g11
   meta/<n>          what opens the device again, its follow list and query limit too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
@@ -610,7 +610,7 @@
 			<p class="prose-col">
 				Every change happens on your device first: it is signed, encrypted, saved, and counts at once, online or not.
 				Devices then sync with each other, directly when they can and through the server when they can’t. The server is one
-				more peer: an always-online device of CEO Aven, an agent vault, that relays, syncs and keeps an encrypted backup, under the
+				more peer: an always-online device of avenCEO server, a device vault, that relays, syncs and keeps an encrypted backup, under the
 				same rules as every other device and with no say over them.
 			</p>
 			<div class="table">
@@ -667,7 +667,8 @@
 			<h2>A vault is an identity</h2>
 			<p class="prose-col">
 				Everything belongs to a vault, the way an account belongs to a person: a vault owns its entries, holds shares in
-				other vaults and has owners who may change it. There are three kinds.
+				other vaults and has owners who may change it. There are four kinds, and one table says who may own each, how many
+				owners it takes and whether it holds devices; the page reads the same table.
 			</p>
 			<div class="cards">
 				<div>
@@ -688,8 +689,15 @@
 				<div>
 					<h3>Aven vault</h3>
 					<p>
-						An agent’s identity, such as CEO Aven or your own aven. Owned like a COOP; its devices, a server or the agent
-						devices of the harnesses that control it, act for it but never govern it.
+						Your one AI identity, owned by your human vault alone: one aven a person. It holds no devices: its agents act
+						for it, each a device vault it owns with sub caps of what it holds. COOPs hire it by sharing with it.
+					</p>
+				</div>
+				<div>
+					<h3>Device vault</h3>
+					<p>
+						The keys of one agent, server or drive, owned by one human, COOP or aven vault. Its devices act for it with
+						only the rights its owner passes on, and it owns nothing.
 					</p>
 				</div>
 			</div>
@@ -699,9 +707,9 @@
 				approve nothing. A new device joins with your passkey alone, through a QR code on a device you have or by signing
 				in through the server. Set up avenDB on a second device with the same passkey and it joins the vault that passkey
 				already has: one passkey, one human vault. The first person to found a vault through a new server claims it. The
-				same prompt founds four vaults: Maia Holding GmbH and avenCEO GmbH, two COOPs, each owned by the one before; CEO
-				Aven, the agent the server is a device of; and Maia City, a COOP avenCEO GmbH owns, where the city’s content
-				lives. Each is named as it is founded.
+				same prompt founds four vaults: Maia Holding GmbH and avenCEO GmbH, two COOPs, each owned by the one before;
+				avenCEO server, the device vault avenCEO GmbH owns and the server is a device of; and Maia City, a COOP avenCEO
+				GmbH owns, where the city’s content lives. Each is named as it is founded.
 			</p>
 		</section>
 
@@ -1165,14 +1173,16 @@
 				whom, and nothing is made until it is signed.
 			</p>
 			<p class="prose-col">
-				An aven is an identity your vault owns, and agent harnesses control it, each as an agent device with a key of its
-				own, never a token: Claude Code as agentClaude, Codex as agentCodex, and likewise Cursor, Grok and our own
-				native aven. <code>avendb-device agent claude</code> is that device on your desktop, which Claude Code starts as
-				its MCP. Access is asked for and given as any share is, on one consent screen: the agent says what it wants and
-				why, and you pick the aven it joins and all your vaults or only some, a level each, Viewer, Suggester or Editor.
-				One prompt of your passkey adds a new device to the aven, the way a new server is claimed; the shares need none.
-				Every harness of an aven acts with the aven’s access, and removing one device leaves the others. An agent saves
-				a file of your desktop, named by its path, where its aven may create, as an Editor may. It keeps no file of its
+				Your aven is your one AI identity, a vault your vault owns, and agent harnesses act for it, each as an agent of
+				its own: a device vault the aven owns, with a key of its own, never a token: Claude Code as agentClaude, Codex as
+				agentCodex, and likewise Cursor, Grok and our own native aven. <code>avendb-device agent claude</code> is that
+				device on your desktop, which Claude Code starts as its MCP. Access is asked for and given as any share is, on
+				one consent screen: the agent says what it wants and why, it joins your aven, and you pick all your vaults or
+				only some, a level each, Viewer, Suggester or Editor, and in the vaults of COOPs that hired your aven, up to the
+				aven’s own level there. One prompt of your passkey adds a new agent, founding your aven first where you have
+				none; the shares need none. Each agent holds sub caps, shares resting on the aven’s own, so revoking one of the
+				aven’s ends the agent’s too, and removing one agent leaves the others. An agent saves a file of your desktop,
+				named by its path, where its shares let it create, as an Editor may. It keeps no file of its
 				own: once your desktop holds a file it saved whole, it lets go of its copy, and it reads your files from your
 				desktop’s one store, so nothing is kept twice.
 			</p>
@@ -1224,7 +1234,7 @@
 						<text class="s" x="410" y="300">its shelf is the bucket;</text>
 						<text class="s" x="410" y="322">its disk, a cache it can lose:</text>
 						<text class="s" x="410" y="344">parts read lately, blobs in transit</text>
-						<text class="m" x="410" y="380">a device of CEO Aven</text>
+						<text class="m" x="410" y="380">a device of avenCEO server</text>
 						<path class="bkt" d="M770 170 v210 a80 18 0 0 0 160 0 v-210" />
 						<ellipse class="bkt" cx="850" cy="170" rx="80" ry="18" />
 						<text class="h" x="850" y="214" text-anchor="middle">Object storage</text>

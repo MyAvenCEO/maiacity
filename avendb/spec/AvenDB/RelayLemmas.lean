@@ -143,6 +143,10 @@ theorem owns_ops (st : State) : owns st.ops = owns st := by
 theorem ownerFits_ops (st : State) : ownerFits st.ops = ownerFits st := by
   funext k p; cases k <;> cases p <;> rfl
 
+/-- How many vaults of a kind an owner owns reads only the vaults. -/
+theorem roomFor_ops (st : State) : roomFor st.ops = roomFor st := by
+  funext k p; simp only [roomFor, ops_vaults]
+
 /-- A vault's tier reads only the vaults. -/
 theorem tierN_ops (st : State) : tierN st.ops = tierN st := by
   funext n
@@ -543,7 +547,7 @@ theorem apply_ops (st : State) (edit : Edit) :
   cases action with
   | genesis v kind owners threshold root =>
     simp only [Edit.blind, Action.blind]
-    simp only [apply, sigs_mk, vault?_ops, ownerFits_ops, approves_ops, ops_vaults]
+    simp only [apply, sigs_mk, vault?_ops, ownerFits_ops, roomFor_ops, approves_ops, ops_vaults]
     simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, blind_comp_blind, eblind_comp_eblind]
   | settings v s =>
     cases s with
@@ -570,7 +574,7 @@ theorem apply_ops (st : State) (edit : Edit) :
         eblind_comp_eblind, List.map_cons, List.map_nil, blind_blind]
     | owner v p =>
       simp only [Edit.blind, Action.blind]
-      simp only [apply, sigs_mk, vault?_ops, ownerFits_ops, approves_ops, owns_ops]
+      simp only [apply, sigs_mk, vault?_ops, ownerFits_ops, roomFor_ops, approves_ops, owns_ops]
       cases st.vault? v with
       | none => rfl
       | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]

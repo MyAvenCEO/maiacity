@@ -50,25 +50,86 @@ use crate::sealed::FileRoot;
 use crate::slice::{Attrs, Header, Select, Selector, TagDelta};
 use crate::wire::Wire;
 
-/// A vault is an identity, like a smart account. A human vault is owned by signers, its person's passkeys, and its
-/// devices act for it. A coop vault is owned by human and coop vaults. An aven vault, an agent such as the relay
-/// server, is owned by human and coop vaults too, and its devices (the servers it runs on) act for it but never govern
-/// it.
+/// A vault is an identity, like a smart account, of one of four kinds. What each kind may be is one row of the kind
+/// table (`Kind::rules`), the model's `Kind.rules`, which every rule and the page read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
+    /// A person's vault: owned by signers, their passkeys, with the person's devices, which act for it.
     Human,
+    /// A vault owned together by human and coop vaults: a cooperative, a company, a household. It has no devices and
+    /// acts through its owners.
     Coop,
+    /// A person's own agent: owned by that person's human vault alone, one to a person, with no devices of its own. It
+    /// acts through its owner's devices, and owns the device vaults its agents run in.
     Aven,
+    /// A vault for the devices of one machine or agent, a server or an agent's harness: owned by exactly one human,
+    /// coop or aven vault, and owning nothing. Its devices act for it but never govern it.
+    DeviceVault,
 }
 
-impl Kind {
-    /// Human and aven vaults have devices, coops don't: a coop acts only through its owners.
-    pub fn has_devices(self) -> bool {
-        self != Kind::Coop
+/// Who may own a vault of a kind: signers, the passkeys of a person, or vaults of the kinds listed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnedBy {
+    Signers,
+    Vaults(&'static [Kind]),
+}
+
+/// A kind's row of the kind table: who may own a vault of the kind, how many owners it has at most (`None`: any
+/// number), whether it holds devices, and how many vaults of the kind one owner may own (`None`: any number).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KindRules {
+    pub owned_by: OwnedBy,
+    pub most: Option<usize>,
+    pub devices: bool,
+    pub each: Option<usize>,
+}
+
+impl KindRules {
+    /// A vault of the kind may have `n` owners: no more than the most it takes.
+    pub fn takes(&self, n: usize) -> bool {
+        self.most.is_none_or(|m| n <= m)
+    }
+
+    /// An owner that is a vault of kind `of`, or a signer (`None`), may own a vault of the kind.
+    pub fn fits(&self, of: Option<Kind>) -> bool {
+        match (self.owned_by, of) {
+            (OwnedBy::Signers, None) => true,
+            (OwnedBy::Vaults(ks), Some(k)) => ks.contains(&k),
+            _ => false,
+        }
     }
 }
 
-/// An owner of a vault: a signer (of a human vault) or a vault (of a coop or an aven vault).
+impl Kind {
+    /// Every kind, in the order of its byte on the wire.
+    pub const ALL: [Kind; 4] = [Kind::Human, Kind::Coop, Kind::Aven, Kind::DeviceVault];
+
+    /// The kind table, defined here once: signers own human vaults, which hold devices; human and coop vaults own
+    /// coops, which hold none; one human vault owns an aven, which holds none, and owns one aven at most; one human,
+    /// coop or aven vault owns a device vault, which holds devices. A kind no row lists as an owner owns nothing: a
+    /// device vault.
+    pub const fn rules(self) -> KindRules {
+        const COOP: &[Kind] = &[Kind::Human, Kind::Coop];
+        const AVEN: &[Kind] = &[Kind::Human];
+        const DEVICE_VAULT: &[Kind] = &[Kind::Human, Kind::Coop, Kind::Aven];
+        match self {
+            Kind::Human => KindRules { owned_by: OwnedBy::Signers, most: None, devices: true, each: None },
+            Kind::Coop => KindRules { owned_by: OwnedBy::Vaults(COOP), most: None, devices: false, each: None },
+            Kind::Aven => KindRules { owned_by: OwnedBy::Vaults(AVEN), most: Some(1), devices: false, each: Some(1) },
+            Kind::DeviceVault => {
+                KindRules { owned_by: OwnedBy::Vaults(DEVICE_VAULT), most: Some(1), devices: true, each: None }
+            }
+        }
+    }
+
+    /// Its vaults hold devices, which act for them: human and device vaults do; a coop and an aven act only through
+    /// their owners.
+    pub fn has_devices(self) -> bool {
+        self.rules().devices
+    }
+}
+
+/// An owner of a vault: a signer (of a human vault) or a vault (of any other).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Principal {
     Signer(SignerId),
@@ -203,8 +264,8 @@ pub enum Sharing {
     /// An owner of vault `vault`, by the vault's approval; the newcomer signs too, and a signer brings the key it has
     /// keys sealed to.
     Owner { vault: VaultId, owner: Principal, seal_to: Option<PublicKey> },
-    /// A device of a human vault (a phone, a browser) or of an aven vault (a server), by the vault's approval; the
-    /// device signs too, and brings the key it has keys sealed to.
+    /// A device of a human vault (a phone, a browser) or of a device vault (a server, an agent's harness), by the
+    /// vault's approval; the device signs too, and brings the key it has keys sealed to.
     Device { vault: VaultId, device: SignerId, seal_to: Option<PublicKey> },
 }
 
@@ -431,8 +492,8 @@ pub struct Vault {
     pub kind: Kind,
     pub owners: Vec<Principal>,
     pub threshold: u32,
-    /// Device signers act for a human or an aven vault but don't govern it: a person's phones and browsers, the
-    /// servers an aven vault runs on.
+    /// Device signers act for a human or a device vault but don't govern it: a person's phones and browsers, the
+    /// server or the agent's harness a device vault is for.
     pub devices: Vec<SignerId>,
     /// A human vault's root: its passkey, named at genesis. It approves anything for its vault on its own, wins every
     /// clash with the other owners, and only it hands the root on.
@@ -560,15 +621,21 @@ pub enum Refusal {
     BelowThreshold,
     /// The threshold would be 0 or more than the number of owners.
     BadThreshold,
-    /// A human vault's owners are signers; a coop's and an aven vault's owners are human or coop vaults.
+    /// The owner isn't of a kind the vault's row of the kind table lets own it (`Kind::rules`): a human vault's owners
+    /// are signers, a coop's human or coop vaults, an aven's a human vault, a device vault's a human, coop or aven
+    /// vault.
     WrongOwnerKind,
+    /// The vault would have more owners than its kind takes: an aven and a device vault have exactly one.
+    OneOwner,
+    /// The owner already owns as many vaults of the kind as one owner may: a person owns one aven at most.
+    SecondAven,
     /// A vault keeps at least one owner.
     LastOwner,
     /// The vault would own itself, directly or through other vaults (T3).
     Cycle,
     /// Only a human vault has a root.
     NotHuman,
-    /// A coop has no devices: it acts only through its owners.
+    /// Only human and device vaults hold devices: a coop and an aven act only through their owners.
     NoDevices,
     /// Only a vault's root hands the root on.
     NotRoot,
@@ -597,9 +664,10 @@ pub enum Refusal {
     /// Owner of a whole vault is an owner of it (`Sharing::Owner`), which no grant makes: a grant of owner is on a
     /// slice.
     WideOwner,
-    /// The parent share isn't a live owner share over the same vault held by the issuer, or a wide share rests on one
-    /// that isn't, or a root share is issued by another vault than the one it is over, or a keep share rests on a
-    /// share.
+    /// The share rests on one that isn't a live share over the same vault held by its issuer, or is a keep share, or
+    /// is at a lower level, or isn't wide where it is; or on one that is neither an owner share nor lets it go to a
+    /// vault its issuer owns; or a root share is issued by another vault than the one it is over, or a keep share
+    /// rests on a share.
     BadParent,
     /// The share was revoked already.
     Revoked,
@@ -652,7 +720,7 @@ pub enum Refusal {
     /// adds no device, or another device than itself.
     NotJoining,
     /// Not a rule of the edits but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
-    /// device of an aven vault.
+    /// device of a device vault.
     NotClaiming,
 }
 
@@ -1074,19 +1142,39 @@ impl State {
         vt.owners.iter().any(|p| matches!(*p, Principal::Vault(o) if o == a || self.owns_n(a, n - 1, o)))
     }
 
-    /// Human vaults are owned by signers, their person's passkeys; coop and aven vaults by existing human and coop
-    /// vaults, never by a signer directly.
+    /// Principal `p` may own a vault of kind `kind`, as the kind table says (`Kind::rules`): a signer where signers own
+    /// the kind, an existing vault of a kind its row lists. So signers own human vaults alone, an aven is owned by a
+    /// human vault, and a device vault owns nothing.
     fn owner_fits(&self, kind: Kind, p: Principal) -> Result<(), Refusal> {
-        match (kind, p) {
-            (Kind::Human, Principal::Signer(_)) => Ok(()),
-            (Kind::Coop | Kind::Aven, Principal::Vault(o)) => match self.vault(o) {
-                None => Err(Refusal::UnknownVault),
-                // an aven vault owns nothing (yet)
-                Some(ot) if ot.kind == Kind::Aven => Err(Refusal::WrongOwnerKind),
-                Some(_) => Ok(()),
+        let of = match p {
+            Principal::Signer(_) => None,
+            Principal::Vault(o) => match (self.vault(o), kind.rules().owned_by) {
+                (Some(ot), _) => Some(ot.kind),
+                (None, OwnedBy::Vaults(_)) => return Err(Refusal::UnknownVault),
+                (None, OwnedBy::Signers) => return Err(Refusal::WrongOwnerKind),
             },
-            _ => Err(Refusal::WrongOwnerKind),
+        };
+        if kind.rules().fits(of) { Ok(()) } else { Err(Refusal::WrongOwnerKind) }
+    }
+
+    /// Principal `p` may own one more vault of kind `kind`: the kind table sets no limit to how many one owner owns
+    /// (`KindRules::each`), or `p` owns fewer. So a human vault owns one aven at most.
+    fn room_for(&self, kind: Kind, p: Principal) -> bool {
+        kind.rules().each.is_none_or(|n| {
+            self.vaults.iter().filter(|x| x.kind == kind && x.owners.contains(&p)).count() < n
+        })
+    }
+
+    /// The owners of a vault of kind `kind` fit the kind table in number: no more than the kind takes
+    /// (`Refusal::OneOwner`), each of which may own one more of the kind (`Refusal::SecondAven`).
+    fn owners_count(&self, kind: Kind, owners: &[Principal]) -> Result<(), Refusal> {
+        if !kind.rules().takes(owners.len()) {
+            return Err(Refusal::OneOwner);
         }
+        if !owners.iter().all(|&p| self.room_for(kind, p)) {
+            return Err(Refusal::SecondAven);
+        }
+        Ok(())
     }
 
     /// Vault `a` holds share `cp` with level `r` or more: the share is live and names `a`.
@@ -1149,17 +1237,30 @@ impl State {
                 .is_some_and(|en| self.may_write_in(w.actor, en.id, en.vault, self.shares_of(w.audience)))
     }
 
-    /// A share's parent is a live owner share over the same vault that its issuer holds, and a wide share rests only on
-    /// a wide one (so a wide share's whole chain is wide); a root share is issued by the vault it is over.
-    fn share_parent_ok(&self, c: &Share) -> bool {
+    /// Share `c` goes from its issuer to its own: it names a vault its issuer owns directly, as an aven's share to one
+    /// of its agents' device vaults, a coop's to its server's, a person's to their aven.
+    fn to_own(&self, c: &Share) -> bool {
+        let owned = |g: VaultId| self.vault(g).is_some_and(|gt| gt.owners.contains(&Principal::Vault(c.issuer)));
+        matches!(c.who, Who::Vault(g) if owned(g))
+    }
+
+    /// The one rule a share rests on another by (`shareParentOk`): its parent is a live share over the same vault that
+    /// its issuer holds, other than a keep share; it is at a level no higher than that one's, and wide only if that
+    /// one is (so a wide share's whole chain is wide); and either the parent is an owner share, whose `share` op lets
+    /// its holder share on with anyone, or the share goes to a vault its issuer owns directly (`to_own`). So a person
+    /// passes a coop's share on to their aven, and an aven to its agents. A root share is issued by the vault it is
+    /// over.
+    pub fn share_parent_ok(&self, c: &Share) -> bool {
         match c.parent {
             None => c.issuer == c.over,
             Some(p) => self.share(p).is_some_and(|pc| {
                 self.live(p)
                     && pc.share.over == c.over
-                    && pc.share.level == Level::Owner
                     && pc.share.who == Who::Vault(c.issuer)
+                    && !pc.share.level.is_keep()
+                    && pc.share.level.allows(c.level)
                     && (!c.wide || pc.share.wide)
+                    && (pc.share.level == Level::Owner || self.to_own(c))
             }),
         }
     }
@@ -1258,8 +1359,7 @@ impl State {
         canonical(x) && x.iter().all(|&c| self.share(c).is_some_and(fits))
     }
 
-    /// How far below the human vaults vault `v` sits: a human vault at 0, a coop or an aven vault one below its lowest
-    /// owner.
+    /// How far below the human vaults vault `v` sits: a human vault at 0, any other one below its lowest owner.
     fn tier(&self, v: VaultId) -> usize {
         self.tier_n(v, self.depth())
     }
@@ -1760,6 +1860,8 @@ impl State {
                         return Err(Refusal::NoConsent);
                     }
                 }
+                // no more owners than its kind takes, each of which may own one more of its kind
+                self.owners_count(*kind, owners)?;
                 if *threshold == 0 || *threshold as usize > owners.len() {
                     return Err(Refusal::BadThreshold);
                 }
@@ -1780,6 +1882,13 @@ impl State {
                     return Err(Refusal::AlreadyMember);
                 }
                 self.owner_fits(vt.kind, owner)?;
+                // no more owners than its kind takes, and the newcomer may own one more of its kind
+                if !vt.kind.rules().takes(vt.owners.len() + 1) {
+                    return Err(Refusal::OneOwner);
+                }
+                if !self.room_for(vt.kind, owner) {
+                    return Err(Refusal::SecondAven);
+                }
                 // no cycles: the newcomer must not be the vault itself or something the vault owns
                 if matches!(owner, Principal::Vault(x) if x == v || self.owns(v, x)) {
                     return Err(Refusal::Cycle);

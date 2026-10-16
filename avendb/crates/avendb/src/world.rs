@@ -6,8 +6,8 @@
 //! its writes bring, each with where it is synced to (`SyncedTo`).
 //!
 //! Also the entries a device writes itself, by their types: its card in its person's vault (`CARD`), a vault's profile
-//! (`PROFILE`), a file it brings (`FILE`); and how avenCEO, the aven vault avenDB's server is a device of, keeps or
-//! relays a person's vaults (`avenceo`, `server_level`).
+//! (`PROFILE`), a file it brings (`FILE`), an access request (`REQUEST`); and how avenCEO server, the device vault
+//! avenDB's server is a device of, keeps or relays a person's vaults (`avenceo`, `server_level`).
 
 use std::collections::BTreeMap;
 
@@ -22,7 +22,7 @@ use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Principal, Share, Stat
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
 use crate::slice::{LENS_TYPE, Selector, Slice};
-use crate::words::{hex, kind_name, level_name, status_name, who_name};
+use crate::words::{hex, kind_name, kinds_json, level_name, status_name, who_name};
 
 /// The type of a device's card: an entry of its person's human vault, a record of avenDB's own `card` schema
 /// (`lens::CARD_V1`) titled with the device's name, that the device wrote itself (the ops engine's `card`).
@@ -46,6 +46,23 @@ pub const POST: &str = "post";
 /// `media` the media type the page shows and plays it as, whose next write brings the file, sealed (the ops engine's
 /// `put_file`).
 pub const FILE: &str = "file";
+
+/// The type of an access request: a record of avenDB's own `request` schema (`lens::REQUEST_V1`) that the asking vault
+/// writes in its own vault and shares, that entry alone, with the vault it asks, by a share of the group `ANSWER` (the
+/// ops engine's `ask`). So a request is a record and a share, which sync carries like any other, and its answer the
+/// share the vault asked gives, if it grants it, and the answer it sets (`requests`).
+pub const REQUEST: &str = "request";
+
+/// The name of the group of ops an access request goes to the vault it asks by (`answering`).
+pub const ANSWER: &str = "Answer";
+
+/// The ops an access request goes to the vault it asks by (`ANSWER`): read it, and set its `answer`, on its main line,
+/// to "granted" or "denied"; nothing else.
+pub fn answering() -> Vec<rules::Op> {
+    let answers = ["granted", "denied"].map(|a| rules::Scalar::Text(a.into())).to_vec();
+    let answer = vec![rules::Step::Field("answer".into())];
+    vec![rules::Op::Read, rules::Op::Set { path: answer, to: Some(answers), on: Some(rules::On::Main) }]
+}
 
 /// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
 /// one line of another shows (the ops engine's `variant`), marked with that note's entry and the version it copied, the
@@ -99,9 +116,9 @@ pub struct World {
     pub mine: VaultId,
     /// The master recovery key it adds (`Lab::set_recovery`), if any.
     pub recovery: Option<SignerId>,
-    /// Its vault owns avenCEO (`owns_aven`).
-    pub owns_aven: bool,
-    /// avenCEO keeps a backup of its vault (`backs_up`).
+    /// Its vault owns avenCEO server (`owns_server`).
+    pub owns_server: bool,
+    /// avenCEO server keeps a backup of its vault (`backs_up`).
     pub backs_up: Option<bool>,
     pub vaults: Vec<VaultView>,
     pub shares: Vec<ShareView>,
@@ -172,7 +189,7 @@ pub struct AudienceView {
 
 /// A device that receives an audience's edits: the vault it receives them through, the one of those it acts for that
 /// holds the strongest level on the audience, that level, and whether it opens any of what they hold, or only keeps
-/// ciphertext, as the server for avenCEO.
+/// ciphertext, as avenDB's server does.
 pub struct Syncing {
     pub device: SignerId,
     pub through: VaultId,
@@ -231,13 +248,14 @@ pub enum What {
 impl World {
     /// The world as device `me`'s page reads it: ids in 64 hex digits, kinds, levels and statuses by their lowercase
     /// names, a share's slice as the core writes it (`{name, where, ops, above}`, `slice::Slice::to_json`), `null`
-    /// where the device doesn't read it, a vault's `via` `null` where the device doesn't act for it, a share's
-    /// `who` `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's `type`, `tags` and `created` `null`
-    /// where the device doesn't read them and its levels by vault; the built-in groups of ops the page offers when it
-    /// shares (`rules::groups`), each with its level; and the master recovery key it adds, `recovery`, `null` for none,
-    /// which a vault's owners mark as such. As the device works it out, so the page keeps no rule:
+    /// where the device doesn't read it, a vault's `via` `null` where the device doesn't act for it, a share's `who`
+    /// `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's `type`, `tags` and `created` `null` where the
+    /// device doesn't read them and its levels by vault; the built-in groups of ops the page offers when it shares
+    /// (`rules::groups`), each with its level; the kind table, what each kind of vault may be owned by and hold
+    /// (`kinds`, `words::kinds_json`); and the master recovery key it adds, `recovery`, `null` for none, which a
+    /// vault's owners mark as such. As the device works it out, so the page keeps no rule:
     ///
-    /// - `ownsAven` and `backsUp` (`owns_aven`, `backs_up`, `null` while it knows no avenCEO);
+    /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenCEO server);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
     /// - each share's `group`, the built-in group whose ops its ops are and whose `everyone` matches its who, or a
     ///   keep share's mode's (`Level::group`), `null` for one of its own or one whose slice the device doesn't read;
@@ -389,13 +407,14 @@ impl World {
             "me": hex(&me.0),
             "mine": hex(&self.mine.0),
             "recovery": self.recovery.map(|r| hex(&r.0)),
-            "ownsAven": self.owns_aven,
+            "ownsServer": self.owns_server,
             "backsUp": self.backs_up,
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
             "shares": self.shares.iter().map(share).collect::<Vec<_>>(),
             "audiences": self.audiences.iter().map(audience).collect::<Vec<_>>(),
             "entries": self.entries.iter().map(entry).collect::<Vec<_>>(),
             "groups": rules::groups().iter().map(rules::Group::to_json).collect::<Vec<_>>(),
+            "kinds": kinds_json(),
         })
     }
 }
@@ -466,9 +485,9 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
         });
     }
     let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
-    let (owns_aven, backs_up) = (owns_aven(lab, me), backs_up(lab, me));
+    let (owns_server, backs_up) = (owns_server(lab, me), backs_up(lab, me));
     let synced_to = SyncedTo::default();
-    Some(World { mine, recovery: lab.recovery(), owns_aven, backs_up, vaults, shares, audiences, entries, synced_to })
+    Some(World { mine, recovery: lab.recovery(), owns_server, backs_up, vaults, shares, audiences, entries, synced_to })
 }
 
 /// As which vault device `me`, of vault `mine`, has its person act in vault `v`, and what that vault may there: the
@@ -673,6 +692,60 @@ pub fn file(title: &str, media: &str, device: SignerId) -> Item {
     own(FILE, json!({ "title": title, "media": media }), device)
 }
 
+/// An access request as a device reads it (`requests`): its entry, the vault that asks, the one it asks, the level it
+/// asks for (a built-in group's name), why, the vaults it asks that level on (none: `to` itself), the answer `to` set,
+/// if it did, and when it was asked, in seconds since 1970.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Request {
+    pub entry: EntryId,
+    pub from: VaultId,
+    pub to: VaultId,
+    pub level: String,
+    pub why: String,
+    pub vaults: Vec<VaultId>,
+    pub answer: Option<String>,
+    pub created: u64,
+}
+
+impl Request {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "entry": hex(&self.entry.0),
+            "from": hex(&self.from.0),
+            "to": hex(&self.to.0),
+            "level": self.level,
+            "why": self.why,
+            "vaults": self.vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+            "answer": self.answer,
+            "created": self.created,
+        })
+    }
+}
+
+/// The access requests device `me` reads, in the order they were made: each entry of type `REQUEST` a vault wrote in
+/// itself, read through the `request` schema; one whose vaults aren't vaults' ids is left out.
+pub fn requests(lab: &Lab, me: SignerId) -> Vec<Request> {
+    let st = lab.state(me);
+    let vault = |v: &Value| v.as_str().and_then(VaultId::from_hex);
+    let read = |en: &Entry| -> Option<Request> {
+        let meaning = lab.meaning(me, en.id).filter(|m| m.attrs.ty.as_str() == REQUEST)?;
+        let r = lab.item(me, en.id)?.read(View::built_in(REQUEST)?)?;
+        let text = |k: &str| r.get(k).and_then(Value::as_str).map(str::to_string);
+        let vaults = r.get("vaults")?.as_array()?.iter().map(vault).collect::<Option<Vec<_>>>()?;
+        Some(Request {
+            entry: en.id,
+            from: en.vault,
+            to: vault(r.get("to")?)?,
+            level: text("level")?,
+            why: text("why").unwrap_or_default(),
+            vaults,
+            answer: text("answer"),
+            created: meaning.attrs.created,
+        })
+    };
+    st.entries().iter().filter(|en| en.creator == en.vault).filter_map(read).collect()
+}
+
 /// The title of record `item` of avenDB's own kind `kind`, a card's or a profile's: `None` for another kind.
 pub fn title_of(item: &Item, kind: &str) -> Option<String> {
     Some(item.read(View::built_in(kind)?)?.get("title")?.as_str()?.to_string())
@@ -804,8 +877,8 @@ fn files_everyone_reads(
 
 /// The vaults a person's claim of avenDB's server founds beside their human vault (`avendb_net`'s `Node::found_with`,
 /// `Node::claim_with`), each owned by the one before alone, the first by the human vault: Maia Holding GmbH and
-/// avenCEO GmbH, two coops, and the CEO Aven, the aven vault the server becomes a device of.
-pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::Aven];
+/// avenCEO GmbH, two coops, and avenCEO server, the device vault the server becomes a device of.
+pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::DeviceVault];
 
 /// The coop the same claim founds beside `SEED`'s chain, owned alone by the vault of the chain at this place,
 /// avenCEO GmbH: Maia City, where the content lives (Samuel 2026-10-15). Nothing names it in code but the seed.
@@ -814,17 +887,17 @@ pub const SEED_COOP_OF: usize = 1;
 /// The names of the seed's vaults, in `SEED`'s order and then the coop beside it (`SEED_COOP_OF`), which their
 /// profiles read from the start (`avendb_browser::Device::found`); the page names a seed that has none yet the same
 /// (vaults.js's `SEED`).
-pub const SEED_NAMES: [&str; 4] = ["Maia Holding GmbH", "avenCEO GmbH", "CEO Aven", "Maia City"];
+pub const SEED_NAMES: [&str; 4] = ["Maia Holding GmbH", "avenCEO GmbH", "avenCEO server", "Maia City"];
 
 /// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia Holding
-/// GmbH, avenCEO GmbH, the CEO Aven (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one.
+/// GmbH, avenCEO GmbH, avenCEO server (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one.
 /// None if it founded none.
 pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     let Some(mine) = lab.vault_of(me) else { return vec![] };
     let st = lab.state(me);
-    let avens = st.vaults().iter().filter(|v| v.kind == Kind::Aven && !v.devices.is_empty());
-    let Some(aven) = avens.map(|v| v.id).find(|&aven| seeded(st, mine, aven)) else { return vec![] };
-    let mut chain = vec![aven];
+    let servers = st.vaults().iter().filter(|v| v.kind == Kind::DeviceVault && !v.devices.is_empty());
+    let Some(server) = servers.map(|v| v.id).find(|&server| seeded(st, mine, server)) else { return vec![] };
+    let mut chain = vec![server];
     while chain.len() < SEED.len() {
         let Some([Principal::Vault(owner)]) = st.vault(chain[0]).map(|v| &v.owners[..]) else { return vec![] };
         chain.insert(0, *owner);
@@ -835,39 +908,51 @@ pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     chain
 }
 
-/// Whether vault `aven` ends a seed founded from vault `mine`, by view `st` (`SEED`): its kind, its owner's and its
-/// owner's owner's are the seed's, each owned by the one before alone, the first by `mine`.
-pub fn seeded(st: &State, mine: VaultId, aven: VaultId) -> bool {
-    let mut at = aven;
+/// Whether vault `server` ends a seed founded from vault `mine`, by view `st` (`seeder`).
+pub fn seeded(st: &State, mine: VaultId, server: VaultId) -> bool {
+    seeder(st, server) == Some(mine)
+}
+
+/// The human vault whose seed vault `server` ends, by view `st` (`SEED`): its kind, its owner's and its owner's
+/// owner's are the seed's, avenCEO server's, avenCEO GmbH's and Maia Holding GmbH's, each owned by the one before
+/// alone, the first by that human vault. None for any other vault.
+pub fn seeder(st: &State, server: VaultId) -> Option<VaultId> {
+    let mut at = server;
     for kind in SEED.iter().rev() {
-        let Some(v) = st.vault(at).filter(|v| v.kind == *kind) else { return false };
-        let [Principal::Vault(owner)] = v.owners[..] else { return false };
+        let v = st.vault(at).filter(|v| v.kind == *kind)?;
+        let [Principal::Vault(owner)] = v.owners[..] else { return None };
         at = owner;
     }
-    at == mine
+    st.vault(at).is_some_and(|v| v.kind == Kind::Human).then_some(at)
 }
 
-/// Whether device `me`'s vault owns avenCEO, directly or through owners of owners, by its view: an aven vault with a
-/// device, the server, as once its person's vault claimed the server and founded the CEO Aven (`SEED`).
-pub fn owns_aven(lab: &Lab, me: SignerId) -> bool {
+/// A server's vault by view `st`, read from the seed: the device vault of a seed, avenCEO server, which avenCEO GmbH
+/// owns (`seeder`), with a device, the server. A device vault the shape of no seed's end is none, as a coop's drive's
+/// or an aven's agent's.
+fn is_server(st: &State, v: &Vault) -> bool {
+    v.kind == Kind::DeviceVault && !v.devices.is_empty() && seeder(st, v.id).is_some()
+}
+
+/// Whether device `me`'s vault owns avenCEO server, directly or through owners of owners, by its view: a server's
+/// vault (`is_server`), as once its person's vault claimed the server and founded its seed (`SEED`).
+pub fn owns_server(lab: &Lab, me: SignerId) -> bool {
     let Some(mine) = lab.vault_of(me) else { return false };
     let st = lab.state(me);
-    st.vaults().iter().any(|v| v.kind == Kind::Aven && !v.devices.is_empty() && st.owns(mine, v.id))
+    st.vaults().iter().any(|v| is_server(st, v) && st.owns(mine, v.id))
 }
 
-/// Whether avenDB's server keeps a backup of device `me`'s person's vault: avenCEO holds backup on the whole of it
-/// (`server_level`). `None` while it knows no avenCEO.
+/// Whether avenDB's server keeps a backup of device `me`'s person's vault: avenCEO server holds backup on the whole of
+/// it (`server_level`). `None` while it knows no avenCEO server.
 pub fn backs_up(lab: &Lab, me: SignerId) -> Option<bool> {
     let mine = lab.vault_of(me)?;
     let st = lab.state(me);
     Some(server_level(st, mine, avenceo(st, mine)?) == Level::Backup)
 }
 
-/// avenCEO by this view: the aven vault with a device, the server, that vault `mine` gives relay on the whole of it, as
-/// its person's first device did as it founded it.
+/// avenCEO server by this view: a server's vault (`is_server`) that vault `mine` gives relay on the whole of it, as its
+/// person's first device did as it founded it.
 pub fn avenceo(st: &State, mine: VaultId) -> Option<VaultId> {
-    let server = |v: &&Vault| v.kind == Kind::Aven && !v.devices.is_empty() && relays(st, mine, v.id);
-    st.vaults().iter().find(server).map(|v| v.id)
+    st.vaults().iter().find(|v| is_server(st, v) && relays(st, mine, v.id)).map(|v| v.id)
 }
 
 /// Vault `to` holds a share in force on the whole of vault `over`, relay or more.
@@ -882,15 +967,17 @@ pub fn server_level(st: &State, mine: VaultId, avenceo: VaultId) -> Level {
     if backs_up { Level::Backup } else { Level::Relay }
 }
 
-/// The owner share vault `issuer`'s right to share a slice of vault `over` rests on: none if it is the vault itself,
-/// else one in force over the vault that it holds, a share on the whole vault first, and only such a one if the new
-/// share is on the whole vault (`wide`), as a share on the whole vault rests only on another.
-pub fn parent(st: &State, issuer: VaultId, over: VaultId, wide: bool) -> Option<ShareId> {
+/// The share vault `issuer`'s right to share a slice of vault `over` with `who` at level `level` rests on: none if it
+/// is the vault itself, else one in force over the vault that it holds which the one rule lets the new share rest on
+/// (`State::share_parent_ok`): an owner share, or, for a share to a vault `issuer` owns, as an aven's to its agent, one
+/// at `level` or more; and only one on the whole vault if the new share is (`wide`). An owner share first, then one on
+/// the whole vault, then the highest.
+pub fn parent(st: &State, issuer: VaultId, over: VaultId, who: Who, level: Level, wide: bool) -> Option<ShareId> {
     if issuer == over {
         return None;
     }
-    let owner = |cp: &&Issued| cp.share.over == over && st.holds(issuer, cp, Level::Owner) && (cp.share.wide || !wide);
-    let mut held: Vec<&Issued> = st.shares_held(issuer).filter(owner).collect();
-    held.sort_by_key(|cp| !cp.share.wide);
+    let probe = |cp: &Issued| Share { over, who, level, wide, select: vec![], parent: Some(cp.id), issuer, nonce: 0 };
+    let mut held: Vec<&Issued> = st.shares_held(issuer).filter(|cp| st.share_parent_ok(&probe(cp))).collect();
+    held.sort_by_key(|cp| (cp.share.level != Level::Owner, !cp.share.wide, std::cmp::Reverse(cp.share.level.rank())));
     held.first().map(|cp| cp.id)
 }

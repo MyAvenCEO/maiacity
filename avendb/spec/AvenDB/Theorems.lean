@@ -85,12 +85,30 @@ theorem devices_cannot_govern {st : State} {sigs : List SignerId}
     (hth : ∀ v vt, st.vault? v = some vt → 0 < vt.threshold) : ∀ n v, approvesN st sigs n (.vault v) = false :=
   Core.devices_cannot_govern hnone hth
 
-/-- T21 (vaults by kind): in every reachable state, signers own human vaults only; coop and aven vaults are owned by
-    human and coop vaults; a coop has no devices; and only a human vault has a root. So an edit for a coop always goes
-    through a human vault its device or passkey belongs to, and so does an edit for an aven vault that none of its own
-    servers signs. -/
+/-- T21 (vaults by kind): in every reachable state every vault keeps to its kind's table (`Kind.rules`): signers own
+    human vaults only; coops are owned by human and coop vaults, avens by human vaults, device vaults by human, coop
+    and aven vaults, so a device vault owns nothing; only human and device vaults have devices; and only a human vault
+    has a root. So an edit for a coop or an aven always goes through a human vault its device or passkey belongs to,
+    and so does an edit for a device vault that none of its own devices signs. -/
 theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st :=
   Core.T21_vault_kinds hr
+
+/-- T21, owners by count: in every reachable state every vault has an owner, and no more owners than its kind takes,
+    so an aven and a device vault have exactly one. -/
+theorem T21_owners_count {st : State} (hr : Reachable st) : OwnersCount st :=
+  Core.ownersCount_reachable hr
+
+/-- T21, an aven's owner: in every reachable state an aven has exactly one owner, and it is a human vault. -/
+theorem T21_aven_owner {st : State} (hr : Reachable st) {v : VaultId} {vt : Vault} (hv : st.vault? v = some vt)
+    (hk : vt.kind = .aven) : ∃ h ht, vt.owners = [.vault h] ∧ st.vault? h = some ht ∧ ht.kind = .human :=
+  Core.aven_owner hr hv hk
+
+/-- T21, one aven per human: in every reachable state two avens with an owner in common are one, so a human vault owns
+    one aven at most; and so for any kind the table lets one owner own one of (`OneEach`). -/
+theorem T21_one_aven {st : State} (hr : Reachable st) {o x y : VaultId} {vx vy : Vault} (hx : st.vault? x = some vx)
+    (hy : st.vault? y = some vy) (hkx : vx.kind = .aven) (hky : vy.kind = .aven)
+    (hox : Principal.vault o ∈ vx.owners) (hoy : Principal.vault o ∈ vy.owners) : x = y :=
+  Core.one_aven hr hx hy hkx hky hox hoy
 
 /-- T3 (no ownership cycles): in every reachable state the vault graph is acyclic, so every chain ends in signers. -/
 theorem T3_no_cycles (edits : List Edit) : Acyclic (replay {} edits) :=
@@ -113,23 +131,30 @@ theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneRea
     (h : step st edit = some st') : EveryoneReadOnly st' :=
   Core.T8_everyone_read_only hinv h
 
-/-- T22 (a share grants no more than the shares it rests on): in every reachable state a share that rests on another is
-    over the same vault, rests on an owner share issued to its own issuer, and whatever its slice holds, the slice of
-    the share it rests on holds too; and a wide share rests only on a wide share. No owner share is wide
-    (`T22_wide_shares`), so the last clause holds only vacuously: a wide share rests on none. -/
+/-- T22 (a share grants no more than the shares it rests on): in every reachable state a share that rests on another, a
+    sub cap, is over the same vault, rests on a share issued to its own issuer, at a level no higher than that share's
+    (a delegated share's level is at most its parent's), and whatever its slice holds, the slice of the share it rests
+    on holds too; and a wide share rests only on a wide share. -/
 theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
     (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) :
-    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .vault c.issuer ∧
+    pc.over = c.over ∧ pc.who = .vault c.issuer ∧ c.level.rank ≤ pc.level.rank ∧
       (∀ a, effSelects st c a = true → effSelects st pc a = true) ∧ (c.wide = true → pc.wide = true) :=
   Shares.T22_slices_narrow hr hc hp hpc
 
+/-- T22, sub caps: in every reachable state a share resting on another, as an aven's sub cap to one of its agents
+    resting on a share a coop gave the aven, has a level no higher than that share's. -/
+theorem T22_sub_cap_level {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
+    (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) : c.level.rank ≤ pc.level.rank :=
+  (Shares.T22_slices_narrow hr hc hp hpc).2.2.1
+
 /-- T22, wide shares: in every reachable state no owner share is wide, since owner of a whole vault is an owner of it,
     which only an owner edit makes, with the vault's approval and the newcomer's consent (T2), and never a share
-    (WideOwner). So a wide share rests on no share, and the vault it is over issued it, unless it is a keep share, which
-    grants nothing. -/
+    (WideOwner). A wide share that rests on none, unless it is a keep share, which grants nothing, was issued by the
+    vault it is over; and a wide share rests only on a wide one (`T22_slices_narrow`), so a wide sub cap passes on a
+    wide share its vault issued, down a chain of wide shares. -/
 theorem T22_wide_shares {st : State} (hr : Reachable st) {c : Share} (hc : c ∈ st.shares) :
     (c.level = .owner → c.wide = false) ∧
-      (c.wide = true → c.parent = none ∧ (c.level.isKeep = false → c.issuer = c.over)) :=
+      (c.wide = true → c.parent = none → c.level.isKeep = false → c.issuer = c.over) :=
   Shares.T22_wide_shares hr c hc
 
 /-- T23 (marks mean what the shares say): where an entry's marks, what isn't live left aside, are what its vault's

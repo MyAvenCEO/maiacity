@@ -1,8 +1,8 @@
 //! A device on a machine of its own (P8b): randomness drawn from the machine, a device that keeps a secret of its own
-//! (the server), claimed once by the first human vault to claim it, as a device of avenCEO (P8f), in the same ceremony
-//! that founds that vault, which then acts for avenCEO and never governs it; the contact card the server hands out,
-//! avenCEO's vault log, which another vault needs before it gives avenCEO a share; and a store reopened from what the
-//! device saved, which shows and sends the device's writes as before.
+//! (the server), claimed once by the first human vault to claim it, as a device of avenCEO server, a device vault
+//! (P8f), in the same ceremony that founds that vault, which then acts for it and never governs it; the contact card
+//! the server hands out, its vault's log, which another vault needs before it gives the server's vault a share; and a
+//! store reopened from what the device saved, which shows and sends the device's writes as before.
 
 mod common;
 
@@ -12,6 +12,7 @@ use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Refusal, Sharing};
 use avendb::sign::{Signed, WebAuthn};
 use avendb::slice::Selector;
+use avendb::world;
 use avendb::sync::{log_of, LogId};
 use avendb::wire::Claim;
 use common::*;
@@ -62,8 +63,11 @@ fn the_first_human_vault_to_claim_the_server_owns_it_for_good() {
     let avenceo = claim_on(&mut lab, mac, passkey, alice, server);
     assert_eq!(lab.vault_of(server), Some(avenceo), "the server is a device of avenCEO");
     let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
-    assert_eq!((vault.kind, &vault.owners[..], vault.root), (Kind::Aven, &[Principal::Vault(alice)][..], None));
-    assert_eq!(vault.devices, vec![server], "owned by Alice's vault, with the server its one device");
+    let [Principal::Vault(gmbh)] = vault.owners[..] else { panic!("one owner, avenCEO GmbH: {vault:?}") };
+    let gmbh = lab.state(server).vault(gmbh).map(|v| v.kind);
+    assert_eq!((vault.kind, vault.root, gmbh), (Kind::DeviceVault, None, Some(Kind::Coop)), "a coop's device vault");
+    assert_eq!(world::seeder(lab.state(server), avenceo), Some(alice), "the end of the seed Alice's vault founded");
+    assert_eq!(vault.devices, vec![server], "with the server its one device");
     assert_eq!(lab.state(mac).vault(avenceo).map(|v| v.devices.clone()), Some(vec![server]), "on her Mac too");
     // the server opens avenCEO's key, which Alice's Mac boxed for it, and nothing of Alice's own
     assert!(lab.opens(server, KeyFam::Seed(avenceo)) && !lab.opens(server, KeyFam::Seed(alice)));
@@ -80,14 +84,15 @@ fn the_first_human_vault_to_claim_the_server_owns_it_for_good() {
 }
 
 #[test]
-fn a_server_takes_only_a_claim_that_makes_it_a_device_of_an_aven_vault() {
+fn a_server_takes_only_a_claim_that_makes_it_a_device_of_a_device_vault() {
     let (mut lab, server, passkey, mac, alice) = unclaimed(3);
     let key = lab.claim_key(server).expect("its key");
     let owners = vec![Principal::Vault(alice)];
-    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
-    let avenceo = VaultId::from(lab.submit(mac, &[passkey], genesis).expect("avenCEO"));
+    let kind = Kind::DeviceVault;
+    let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+    let avenceo = VaultId::from(lab.submit(mac, &[passkey], genesis).expect("avenCEO server"));
     let adds = |vault, device, key| Action::Share(Sharing::Device { vault, device, seal_to: Some(key) });
-    // the claiming device claims an aven vault alone
+    // the claiming device claims a device vault alone
     let draft = lab.draft(mac, &[passkey, server], adds(alice, server, key.clone())).expect("a draft");
     assert!(matches!(lab.claim(mac, draft, &[]), Err(Refusal::NotClaiming)));
     // and the server checks for itself: never a device of a human vault, which would open that person's keys
@@ -125,7 +130,7 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     let passkey = lab.passkey("Eve");
     let mac = lab.device_of(passkey, "Eve's Mac");
     let key = lab.claim_key(server).expect("a server nobody has claimed hands its key");
-    // four edits drafted one on top of the other: Eve's vault, her Mac in it, avenCEO, and the server in avenCEO
+    // four edits drafted one on top of the other: Eve's vault, her Mac in it, avenCEO server, and the server in it
     let mut drafting = lab.drafting(mac);
     let owners = vec![Principal::Signer(passkey)];
     let root = Some(passkey);
@@ -134,8 +139,9 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     let add = Action::Share(Sharing::Device { vault: eve, device: mac, seal_to: None });
     drafting.draft(&[passkey, mac], add).expect("her Mac in it");
     let owners = vec![Principal::Vault(eve)];
-    let aven = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
-    let avenceo = VaultId::from(drafting.draft(&[passkey], aven).expect("avenCEO"));
+    let kind = Kind::DeviceVault;
+    let server_vault = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+    let avenceo = VaultId::from(drafting.draft(&[passkey], server_vault).expect("avenCEO server"));
     let add = Action::Share(Sharing::Device { vault: avenceo, device: server, seal_to: Some(key) });
     drafting.draft(&[passkey, server], add).expect("the server in it");
     let mut drafts = drafting.done();
@@ -153,7 +159,8 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
     lab.receive(mac, vec![join.edit], join.blobs.into_iter().map(Into::into).collect());
     assert_eq!((lab.vault_of(mac), lab.vault_of(server)), (Some(eve), Some(avenceo)));
     let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
-    assert_eq!((vault.kind, &vault.owners[..]), (Kind::Aven, &[Principal::Vault(eve)][..]), "Eve's vault owns it");
+    let owned = (Kind::DeviceVault, &[Principal::Vault(eve)][..]);
+    assert_eq!((vault.kind, &vault.owners[..]), owned, "Eve's vault owns it");
     let batched = |id| match &lab.signed_edit(mac, id).expect("held").sigs[0].webauthn {
         Some(WebAuthn::Batch { edits, .. }) => edits.len(),
         _ => 0,
@@ -171,8 +178,11 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
     let card = lab.card(server);
     let log = |s: &Signed| log_of(&s.edit, s.edit.id());
     assert!(card.iter().any(|s| log(s) == Some(LogId::Vault(avenceo))), "the card holds avenCEO's log");
-    let ours = |s: &Signed| matches!(log(s), Some(LogId::Vault(v)) if v == avenceo || v == alice);
-    assert!(card.iter().all(ours), "and its owner's, and nothing else: no cap, cell or entry");
+    let st = lab.state(server);
+    let up = |v: VaultId| v == avenceo || st.owns(v, avenceo);
+    let ours = |s: &Signed| matches!(log(s), Some(LogId::Vault(v)) if up(v));
+    assert!(card.iter().all(ours), "and its owners', up the seed to Alice's vault, and nothing else: no cap or entry");
+    assert!(card.iter().any(|s| log(s) == Some(LogId::Vault(alice))), "hers among them");
     // someone else, who knows nothing of this avenCEO, gives it relay on their whole vault once they hold the card
     let mut w = world();
     let bob = w.bob;

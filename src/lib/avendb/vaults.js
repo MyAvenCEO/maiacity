@@ -10,7 +10,15 @@
 
 import { fieldPaths, pathWords } from './paths.js';
 
-/** @typedef {'human' | 'coop' | 'aven'} Kind */
+/** @typedef {'human' | 'coop' | 'aven' | 'device'} Kind */
+/**
+ * A kind's row of the kind table, as the world carries it (avendb's `Kind::rules`, `words::kinds_json`): who may own a
+ * vault of it, `"signers"` (passkeys) or the kinds of vault that may; how many owners it takes at most, `null` for any
+ * number; whether it holds devices; and how many vaults of it one owner may own, `null` for any number. The page reads
+ * every kind rule here, and decides none.
+ * @typedef {{ kind: Kind, ownedBy: 'signers' | Kind[], most: number | null, devices: boolean, each: number | null }}
+ *   KindRules
+ */
 /**
  * A share's level, the class of its strongest op (avendb's `words::level_name`); a keep share's, its mode, which grants
  * nothing: it says only what one of the vault's devices keeps of it.
@@ -99,10 +107,12 @@ import { fieldPaths, pathWords } from './paths.js';
  *   record: Record<string, any> | null, files: import('./files.js').FileView[] }} EntryView
  */
 /**
- * The device's world (avendb-browser's `World::to_json`): `ownsAven` whether the person's vault owns an aven,
- * `backsUp` whether avenDB's server keeps an encrypted copy of it, `null` where it holds no share on it.
+ * The device's world (avendb-browser's `World::to_json`): `ownsServer` whether the person's vault owns avenCEO server,
+ * the device vault avenCEO GmbH owns and the server is a device of, directly or through owners of owners; `backsUp`
+ * whether avenDB's server keeps an encrypted copy of it, `null` where it holds no share on it; `kinds` the kind table.
  * @typedef {{ me: string, mine: string, recovery: string | null, vaults: VaultView[], shares: CapView[],
- *   audiences: CellView[], entries: EntryView[], groups: Group[], ownsAven: boolean, backsUp: boolean | null }} WorldView
+ *   audiences: CellView[], entries: EntryView[], groups: Group[], kinds: KindRules[], ownsServer: boolean,
+ *   backsUp: boolean | null }} WorldView
  */
 /**
  * What the device answers `may` for one op: it would make it, it would once those signers approve it, or why not.
@@ -125,10 +135,25 @@ import { fieldPaths, pathWords } from './paths.js';
 
 /**
  * An access request an agent device on the Mac left (avendb-device's `agent`, ./AccessRequest.svelte): its device's
- * name (agentClaude) and key, its offer while it is no aven's device yet, the aven it names, if any, the level it asks
- * for, why, the vaults it names, and whether its device runs now, to cosign its joining an aven.
- * @typedef {{ name: string, kind: string, device: string, offer: string | null, aven: string | null,
- *   level: string, why: string, vaults: string[], online: boolean }} AccessRequestView
+ * name (agentClaude) and key, its offer while it belongs to no vault yet, the level it asks for, why, the vaults it
+ * names, and whether its device runs now, to cosign its joining. It names no aven: an agent always joins its person's
+ * one aven.
+ * @typedef {{ name: string, kind: string, device: string, offer: string | null, level: string, why: string,
+ *   vaults: string[], online: boolean }} AccessRequestView
+ */
+
+/**
+ * An access request, a record of avenDB's `request` schema the asking vault `from` writes in itself and shares with the
+ * vault it asks, `to`, which may read it and set its answer alone (the `ask` op): the level it asks for, a built-in
+ * group; why; the vaults it asks that level on, `to` itself where it names none, as an agent asking its aven names the
+ * person's vaults; the answer, once `to` gave it; and when it was made, in seconds since 1970, where the device says.
+ * @typedef {{ entry: string, from: string, to: string, level: string, why: string, vaults: string[],
+ *   answer: 'granted' | 'denied' | null, created: number | null }} RequestRow
+ */
+/**
+ * The access requests the device knows (the `requests` op): `asked`, those not answered yet that ask a vault it acts
+ * for, the consent screen's; `made`, every one a vault it acts for made, with its answer.
+ * @typedef {{ asked: RequestRow[], made: RequestRow[] }} Requests
  */
 
 /** The levels in the order the page lists them: the strongest first, then the keep levels, which grant nothing. */
@@ -150,15 +175,117 @@ export const order = (role) => {
 };
 
 /** The kinds, as a person reads them. */
-export const KINDS = /** @type {const} */ ({ human: 'Human vault', coop: 'Coop vault', aven: 'Aven vault' });
-
-/** What each kind is. */
-export const KIND_HINTS = /** @type {const} */ ({
-	human:
-		"A person's vault. Its root is their passkey, which approves every change to it; the master recovery key can also recover it while avenDB is young. Its devices act for it.",
-	aven: "An aven: an agent's or a server's own vault, owned by human or coop vaults. It owns no vault itself.",
-	coop: 'A coop: owned by human or coop vaults, with no devices of its own. It acts only through its owners.'
+export const KINDS = /** @type {const} */ ({
+	human: 'Human vault',
+	coop: 'Coop vault',
+	aven: 'Aven vault',
+	device: 'Device vault'
 });
+
+/** Each kind as one word, which a rule's words list. */
+const KIND_WORDS = /** @type {Record<string, string>} */ ({ human: 'human', coop: 'coop', aven: 'aven', device: 'device' });
+
+/** What each kind is for, before the kind table's rules for it. */
+const KIND_IS = /** @type {Record<string, string>} */ ({
+	human:
+		"A person's vault. Its root is their passkey, which approves every change to it; the master recovery key can also recover it while avenDB is young.",
+	coop: 'A coop: a company or a group, which hires avens by sharing with them.',
+	aven: "A person's aven: the one identity their agents act as, which coops hire by sharing with it.",
+	device: 'A device vault: the keys of one agent, server or drive, with only the rights its owner passes on to it.'
+});
+
+/** Kind `kind`'s row of the kind table. @param {WorldView} world @param {string} kind @returns {KindRules | undefined} */
+export const kindRules = (world, kind) => world.kinds?.find((k) => k.kind === kind);
+
+/** The vaults vault `id` owns directly, as this device knows them. @param {WorldView} world @param {string} id */
+export const ownedBy = (world, id) => world.vaults.filter((v) => v.owners.some((o) => 'vault' in o && o.vault === id));
+
+/**
+ * Whether a vault of kind `kind` acts for its one owner alone, as the kind table says (`most` 1): an aven, a device
+ * vault, never a vault to work in or co-own.
+ * @param {WorldView} world @param {string} kind
+ */
+export const oneOwner = (world, kind) => kindRules(world, kind)?.most === 1;
+
+/**
+ * Whether vault `owner` may own one more vault of kind `kind`, as the kind table says: the kind is owned by vaults of
+ * `owner`'s kind, and `owner` owns fewer of it than one owner may (`each`), of those this device knows.
+ * @param {WorldView} world @param {VaultView} owner @param {string} kind
+ */
+export function mayOwn(world, owner, kind) {
+	const r = kindRules(world, kind);
+	if (!r || r.ownedBy === 'signers' || !r.ownedBy.includes(owner.kind)) return false;
+	return r.each == null || ownedBy(world, owner.id).filter((v) => v.kind === kind).length < r.each;
+}
+
+/**
+ * Whether vault `x` may become an owner of vault `v` too, as the kind table says: `v`'s kind takes one more owner
+ * (`most`), and `x` may own one more of it (`mayOwn`).
+ * @param {WorldView} world @param {VaultView} v @param {VaultView} x
+ */
+export function mayCoOwn(world, v, x) {
+	const r = kindRules(world, v.kind);
+	return !!r && (r.most == null || v.owners.length < r.most) && mayOwn(world, x, v.kind);
+}
+
+/**
+ * How a vault of kind `kind` acts, by the kind table: its devices act for it; or it holds none, and its owners act for
+ * it, and where it may own a kind that holds devices, those vaults act with what it passes on to them.
+ * @param {WorldView} world @param {string} kind
+ */
+export function actsWords(world, kind) {
+	const r = kindRules(world, kind);
+	if (!r) return '';
+	if (r.devices) return 'Its devices act for it.';
+	const delegates = world.kinds.some((k) => k.devices && k.ownedBy !== 'signers' && k.ownedBy.includes(r.kind));
+	const owners = r.most === 1 ? 'its owner acts' : 'its owners act';
+	return `It holds no devices: ${owners} for it${delegates ? ', and the device vaults it owns act with what it passes on to them' : ''}.`;
+}
+
+/**
+ * What a vault of kind `kind` is, in words: what it is for, then the kind table's rules for it, who may own it and how
+ * many, how it acts, and whether it owns anything.
+ * @param {WorldView} world @param {string} kind
+ */
+export function kindHint(world, kind) {
+	const r = kindRules(world, kind);
+	if (!r) return KIND_IS[kind] ?? '';
+	const by = r.ownedBy === 'signers' ? [] : r.ownedBy.map((k) => KIND_WORDS[k] ?? k);
+	const owners =
+		r.ownedBy === 'signers'
+			? 'Owned by its passkeys'
+			: r.most === 1
+				? `Owned by one ${list(by, 'or')} vault alone`
+				: `Owned by ${list(by, 'or')} vaults${r.most == null ? '' : `, ${r.most} at most`}`;
+	const each = r.each == null ? '' : `; a vault owns ${r.each === 1 ? 'one' : r.each} of them at most`;
+	const owns = world.kinds.some((k) => k.ownedBy !== 'signers' && k.ownedBy.includes(r.kind)) ? '' : ' It owns no vault.';
+	return `${KIND_IS[kind] ?? ''} ${owners}${each}. ${actsWords(world, kind)}${owns}`.trim();
+}
+
+/**
+ * Whether vault `a` owns vault `b`, directly or through owners of owners, as this device knows them.
+ * @param {WorldView} world @param {string} a @param {string} b
+ */
+export function owns(world, a, b) {
+	const byId = new Map(world.vaults.map((v) => [v.id, v]));
+	const seen = new Set([b]);
+	const up = [b];
+	for (let at = up.pop(); at !== undefined; at = up.pop()) {
+		for (const o of byId.get(at)?.owners ?? []) {
+			if (!('vault' in o) || seen.has(o.vault)) continue;
+			if (o.vault === a) return true;
+			seen.add(o.vault);
+			up.push(o.vault);
+		}
+	}
+	return false;
+}
+
+/**
+ * The person's one aven, the aven vault their vault owns, if it owns one.
+ * @param {WorldView} world @returns {VaultView | undefined}
+ */
+export const avenOf = (world) => ownedBy(world, world.mine).find((v) => v.kind === 'aven');
 
 /** The first characters of an id, enough to tell two apart. @param {string | null | undefined} id */
 export const short = (id) => (id ? `${id.slice(0, 4)} ${id.slice(4, 8)}` : '');
@@ -261,9 +388,10 @@ export const acting = (world, v) =>
 	};
 
 /**
- * Who signer `id` is, as a person reads it: a device by its card's name, else as a device of its vault, an aven's as
- * its server; a vault's root as its passkey; the master recovery key; a passkey that owns a vault; else a key by the
- * start of its id. `lead` capitalises what starts a line, where it isn't a name.
+ * Who signer `id` is, as a person reads it: a device by its card's name, else as a device of its vault, a device
+ * vault's by the vault's own name, as avenCEO server's server or agentClaude's agent; a vault's root as its passkey;
+ * the master recovery key; a passkey that owns a vault; else a key by the start of its id. `lead` capitalises what
+ * starts a line, where it isn't a name.
  * @param {WorldView} world @param {string} id @param {boolean} [lead]
  */
 export function signerName(world, id, lead = false) {
@@ -271,7 +399,7 @@ export function signerName(world, id, lead = false) {
 	if (id === world.recovery) return say('the master recovery key');
 	for (const v of world.vaults) {
 		const d = v.devices.find((x) => x.id === id);
-		if (d) return d.name ?? (v.kind === 'aven' ? `${nameOf(v)}’s server` : say(`a device of ${nameOf(v)}`));
+		if (d) return d.name ?? (v.kind === 'device' && v.name ? v.name : say(`a device of ${nameOf(v)}`));
 		if (v.root === id) return `${nameOf(v)}’s passkey`;
 	}
 	const owned = world.vaults.find((v) => v.owners.some((o) => 'signer' in o && o.signer === id));
@@ -331,15 +459,19 @@ export function chainSteps(world, chain) {
 
 /**
  * The names of the seed a person's claim of avenDB's server founds (avendb's `world::SEED_NAMES`): Maia Holding GmbH, a
- * coop their vault owns, avenCEO GmbH, a coop Maia Holding owns, the CEO Aven, the aven vault avenCEO GmbH owns and the
- * server is a device of, and Maia City, a coop avenCEO GmbH owns, where the content lives.
+ * coop their vault owns, avenCEO GmbH, a coop Maia Holding owns, avenCEO server, the device vault avenCEO GmbH owns and
+ * the server is a device of, and Maia City, a coop avenCEO GmbH owns, where the content lives.
  */
-export const SEED = /** @type {const} */ (['Maia Holding GmbH', 'avenCEO GmbH', 'CEO Aven', 'Maia City']);
+export const SEED = /** @type {const} */ (['Maia Holding GmbH', 'avenCEO GmbH', 'avenCEO server', 'Maia City']);
+
+/** The kinds of the seed's chain, the person's vault owning the first (avendb's `world::SEED`). */
+const SEED_KINDS = /** @type {const} */ (['coop', 'coop', 'device']);
 
 /**
  * The seed of the person's vault, each vault of it with its name in `SEED`, if their claim of the server founded one:
- * an aven with a device, owned alone by a coop owned alone by a coop their vault owns alone (avendb's
- * `world::seeded`), then Maia City, a coop the aven's owner owns alone, where there is one. None otherwise.
+ * a device vault with a device, the server, at the end of a chain of `SEED_KINDS`, each owned alone by the one before,
+ * the first by their vault (avendb's `world::seeded`); then Maia City, a coop avenCEO GmbH owns alone, where there is
+ * one. None otherwise.
  * @param {WorldView} world
  * @returns {[VaultView, string][]}
  */
@@ -347,17 +479,16 @@ export function seeded(world) {
 	const byId = new Map(world.vaults.map((v) => [v.id, v]));
 	/** the one vault that owns `v`, if one alone does @param {VaultView | undefined} v */
 	const owner = (v) => (v?.owners.length === 1 && 'vault' in v.owners[0] ? byId.get(v.owners[0].vault) : undefined);
-	for (const aven of world.vaults.filter((v) => v.kind === 'aven' && v.devices.length)) {
-		const avenceo = owner(aven);
-		const holding = owner(avenceo);
-		if (avenceo?.kind === 'coop' && holding?.kind === 'coop' && owner(holding)?.id === world.mine) {
-			const city = world.vaults.find((v) => v.kind === 'coop' && owner(v)?.id === avenceo.id);
-			/** @type {[VaultView, string][]} */
-			const seed = [
-				[holding, SEED[0]],
-				[avenceo, SEED[1]],
-				[aven, SEED[2]]
-			];
+	const last = SEED_KINDS.at(-1);
+	for (const server of world.vaults.filter((v) => v.kind === last && v.devices.length)) {
+		/** @type {VaultView[]} */
+		const chain = [server];
+		for (let up = owner(server); up && chain.length < SEED_KINDS.length; up = owner(up)) chain.unshift(up);
+		const kinds = chain.length === SEED_KINDS.length && chain.every((v, i) => v.kind === SEED_KINDS[i]);
+		if (kinds && owner(chain[0])?.id === world.mine) {
+			const company = chain[1];
+			const city = world.vaults.find((v) => v.kind === 'coop' && owner(v)?.id === company.id);
+			const seed = /** @type {[VaultView, string][]} */ (chain.map((v, i) => [v, SEED[i]]));
 			return city ? [...seed, [city, SEED[3]]] : seed;
 		}
 	}
@@ -591,8 +722,8 @@ export function fieldsOf(lane, type) {
 }
 
 /**
- * A cap in words, as a share, who · level · what: "avenBOB · Viewer · todos tagged “work”", "avenCEO · Backup ·
- * Everything", "avenBOB · Tick done · “Fix the door”: read and set its status to “done”"; a built-in group's ops go
+ * A cap in words, as a share, who · level · what: "avenBOB · Viewer · todos tagged “work”", "avenCEO server ·
+ * Backup · Everything", "avenBOB · Tick done · “Fix the door”: read and set its status to “done”"; a built-in group's ops go
  * without saying.
  * @param {CapView} c @param {WorldView} world
  */
@@ -666,7 +797,7 @@ export const sharedWith = (world, vault, entry) =>
 	sharedThrough(world, vault, world.shares.filter((c) => c.over === vault && c.entries.includes(entry)).map((c) => c.id));
 
 /**
- * One who entries are shared with, in words: "avenBOB (Editor)", "avenCEO (keeps an encrypted copy)".
+ * One who entries are shared with, in words: "avenBOB (Editor)", "avenCEO server (keeps an encrypted copy)".
  * @param {Sharer} x
  */
 export const sharerWords = (x) => `${x.name} (${x.levels.join(', ') || KEEPS.backup})`;
@@ -708,6 +839,10 @@ const WHY = /** @type {Record<string, string>} */ ({
 	Locked: 'this device is locked',
 	BadSignature: 'a signature didn’t check',
 	WrongOwnerKind: 'that vault may not own it',
+	OneOwner: 'an aven or a device vault has one owner alone',
+	SecondAven: 'that vault owns as many of its kind as one owner may: a person owns one aven',
+	NoDevices: 'only a human or a device vault holds devices: a coop or an aven acts through others',
+	NotHuman: 'only a person’s vault has a root passkey',
 	Cycle: 'a vault would own itself'
 });
 

@@ -636,6 +636,7 @@ impl Decode for Kind {
             0 => Ok(Kind::Human),
             1 => Ok(Kind::Coop),
             2 => Ok(Kind::Aven),
+            3 => Ok(Kind::DeviceVault),
             _ => Err(WireError::Unknown),
         }
     }

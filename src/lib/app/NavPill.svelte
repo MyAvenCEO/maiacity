@@ -16,6 +16,7 @@
 	import Icon from './Icon.svelte';
 	import { back, upFrom } from './back.svelte.js';
 	import { pill } from './pill.svelte.js';
+	import { shaped } from './shapes.js';
 
 	/** @type {{ founder: import('$lib/auth/client').Founder, onsignout: () => void }} */
 	let { founder, onsignout } = $props();
@@ -56,12 +57,12 @@
 		</button>
 	{/if}
 	<button class="item" class:on={open} onclick={() => ((open = !open), (ctx = false))} aria-expanded={open} aria-haspopup="true" title={acting ? `${founder.name}, as ${acting.label}` : founder.name}>
-		{#if acting}<span class="avatar {acting.shape ?? 'human'}" style="background:{acting.colour}; color:#fff">{acting.text}</span><span>{acting.label.replace(/ COOP$/, '')}</span>
+		{#if acting}<span class="avatar {acting.shape ?? 'human'}" style="background:{acting.colour}; color:#fff; {shaped(acting.shape)}">{acting.text}</span><span>{acting.label.replace(/ COOP$/, '')}</span>
 		{:else}<span class="avatar">{initials}</span><span>You</span>{/if}
 	</button>
 	{#if pill.context && here}
 		<button class="item" class:on={ctx} onclick={() => ((ctx = !ctx), (open = false))} aria-expanded={ctx} aria-haspopup="true" title="{pill.context.title}: {here.label}">
-			<span class="avatar {here.shape ?? 'human'}" style="background:{here.colour}; color:#fff">{here.text}</span><span class="ctx-name">{here.label}</span>
+			<span class="avatar {here.shape ?? 'human'}" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{here.text}</span><span class="ctx-name">{here.label}</span>
 		</button>
 	{/if}
 	{#if ctx && pill.context}
@@ -69,7 +70,7 @@
 			<p class="group">{pill.context.title}</p>
 			{#each pill.context.list as a (a.id)}
 				<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), (ctx = false))}>
-					<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff">{a.text}</span>
+					<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
 					<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
 					{#if a.id === pill.context.current}<span class="tick" aria-hidden="true">✓</span>{/if}
 				</button>
@@ -87,7 +88,7 @@
 				<p class="group">{pill.accounts.title}</p>
 				{#each pill.accounts.list as a (a.id)}
 					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.accounts.current} onclick={() => (pill.accounts?.pick(a.id), (open = false))}>
-						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff">{a.text}</span>
+						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
 						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
 						{#if a.id === pill.accounts.current}<span class="tick" aria-hidden="true">✓</span>{/if}
 					</button>
@@ -204,10 +205,6 @@
 		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 	}
 
-	.avatar.coop {
-		border-radius: 7px;
-	}
-
 	/* the context's name under its mark, cut to the item's width */
 	.ctx-name {
 		max-width: 4.5rem;
@@ -215,8 +212,8 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.avatar.aven {
-		border-radius: 4px;
+	.avatar.aven,
+	.avatar.device {
 		font-size: 0.5rem;
 	}
 

@@ -13,6 +13,7 @@ export const READS = [
 	'history',
 	'schemas',
 	'groups',
+	'kinds',
 	'world',
 	'jobs',
 	'shares',
@@ -23,6 +24,7 @@ export const READS = [
 	'creatable',
 	'taggable',
 	'limits',
+	'requests',
 	'may'
 ];
 
@@ -47,7 +49,8 @@ const ACTING = [
 	'share',
 	'keep',
 	'revoke',
-	'put_file'
+	'put_file',
+	'ask'
 ];
 
 /** Whether change op `op` takes the vault it acts for (`as`). @param {any} op */

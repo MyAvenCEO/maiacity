@@ -78,9 +78,9 @@ async fn a_node_has_the_passkey_approve_what_its_vault_approves_and_else_answers
     let alices = Software(Mutex::new((Passkey::from_seed(*secret), vec![])));
     // a read, and its world
     let seen = run(&mac, json!({ "op": "world" })).await.expect("her world");
-    assert_eq!((&seen["mine"], &seen["ownsAven"]), (&json!(alice.to_hex()), &json!(true)));
+    assert_eq!((&seen["mine"], &seen["ownsServer"]), (&json!(alice.to_hex()), &json!(true)));
     // new vaults: without a ceremony the op answers its draft and makes nothing; with one, they are made
-    let found = json!({ "op": "found", "vaults": [{ "kind": "aven", "name": "avenALICE" },
+    let found = json!({ "op": "found", "vaults": [{ "kind": "coop", "name": "Garden COOP" },
         { "kind": "coop", "name": "Maia City COOP" }] });
     let asked = run(&mac, found.clone()).await.expect_err("it waits for her passkey");
     assert_eq!(asked["approve"]["signers"], json!([passkey.to_hex()]));
@@ -90,7 +90,7 @@ async fn a_node_has_the_passkey_approve_what_its_vault_approves_and_else_answers
     let ids: Vec<VaultId> = made["vaults"].as_array().expect("the vaults").iter().map(vault_id).collect();
     let [x, coop] = ids[..] else { panic!("two vaults: {made}") };
     assert_eq!(mac.read(|lab, me| lab.state(me).vaults().len()).await, vaults + 2);
-    // owner of everything: the coop a co-owner of avenALICE, in a ceremony
+    // owner of everything: the coop a co-owner of the Garden, in a ceremony
     let owner = json!({ "op": "share", "over": x.to_hex(), "who": { "vault": coop.to_hex() }, "level": "Owner",
         "what": "everything" });
     let asked = run(&mac, json!({ "op": "may", "ops": [owner] })).await.expect("an answer");

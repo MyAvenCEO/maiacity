@@ -2,11 +2,12 @@
 
 The user-owned, end-to-end encrypted, local-first database of maia.city. Every identity is a vault, like a smart
 account: a human vault is a person's, owned by their passkeys, with their devices; a coop vault is owned by human and
-coop vaults; an aven vault, an agent's such as the CEO Aven, the server's, is owned the same way, and its servers act
-for it but never govern it. A vault is a flat library of entries, each a Loro document whose type and tags travel
-sealed inside its writes. Shares give a vault, or everyone, a level on any slice of a vault: relay, backup, read, write
-or owner, each a named group of ops; a keep share tells one device what to sync. Least access is the default, and the
-server and relays only ever see ciphertext.
+coop vaults; an aven vault, the person's one agent identity, is owned by their human vault alone; and a device vault,
+owned by one human, coop or aven vault, holds the devices that act for that owner but never govern: an agent's harness,
+or the server as avenCEO server. One kind table says all of it (`policy::Kind::rules`). A vault is a flat library of
+entries, each a Loro document whose type and tags travel sealed inside its writes. Shares give a vault, or everyone, a
+level on any slice of a vault: relay, backup, read, write or owner, each a named group of ops; a keep share tells one
+device what to sync. Least access is the default, and the server and relays only ever see ciphertext.
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the one reference for how avenDB works, from first principles, and
 [`spec/README.md`](spec/README.md) lists every theorem with the Rust tests that guard it. This file says how to build,
@@ -99,15 +100,15 @@ A device starts in one of three ways; everything after is one op through `PageDe
 ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §8).
 
 - **Found** (`Device::found`, `Node::found_with`): a new person's first browser founds their human vault with the
-  passkey they signed up to maiaCITY with, or one it makes, gives the CEO Aven, the server's vault, backup on the whole
-  of it, so the server keeps its ciphertext, or, if the person turned backups off at setup, relay, so the server only
-  lets their devices through and helps them find each other, and writes its card there, in two ceremonies: the unlock,
-  which is the pass to the relay, and one for the vault's genesis and the edit that adds the device together (three
-  with a new passkey). The server's relay lets any passkey's pass in while it is open to sign-up (`AVENDB_SIGNUP`, open
-  by default), so a person with no device yet gets in. The first person to found their vault through a server nobody
-  has claimed yet claims it in that same ceremony, founding the seed, Maia Holding GmbH, avenCEO GmbH and the CEO Aven,
-  each owned by the one before, the first by their vault, the server the CEO Aven's device
-  ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3).
+  passkey they signed up to maiaCITY with, or one it makes, gives avenCEO server, the server's vault, backup on the
+  whole of it, so the server keeps its ciphertext, or, if the person turned backups off at setup, relay, so the server
+  only lets their devices through and helps them find each other, and writes its card there, in two ceremonies: the
+  unlock, which is the pass to the relay, and one for the vault's genesis and the edit that adds the device together
+  (three with a new passkey). The server's relay lets any passkey's pass in while it is open to sign-up
+  (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in. The first person to found their vault
+  through a server nobody has claimed yet claims it in that same ceremony, founding the seed, Maia Holding GmbH, avenCEO
+  GmbH and avenCEO server, a device vault, each owned by the one before, the first by their vault, the server avenCEO
+  server's device ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3).
 - **Link** (`Device::link`, `Node::link_by_pass`): a browser of a person who has a device already links through the
   code that device shows, in one ceremony: the unlock, which is the pass and signs the join too. Of the keys the
   unlock's assertion recovers to, its passkey's is the one whose vault the peer hands over.
@@ -123,7 +124,7 @@ A device starts in one of three ways; everything after is one op through `PageDe
   (`src/lib/avendb/Signing.svelte`): every step with its seconds, the passkey's prompts marked as the person's turn.
 
 The page opens on **Your account**, this browser as a device of its person. A new person founds their vault there, with
-the maiaCITY passkey or a new one, and claims the server if nobody has yet, so their vault owns the CEO Aven. A person
+the maiaCITY passkey or a new one, and claims the server if nobody has yet, so their vault owns avenCEO server. A person
 with an account signs in on a new browser with their passkey alone, linking through the server's offer, as after
 losing every device, or links it through the code another of their devices shows (a QR code that a phone's camera
 opens as a link, `?link=`). It comes with avenDB's server's relay and code filled in (`avendb.maia.city`, see
@@ -188,11 +189,11 @@ opens nothing but what is public.
   `crates/avendb-browser/js/store.worker.js` with it), the generation every place's shelf is at least. What an earlier
   avenDB kept in its bucket or its folder, it clears (`bucket::clear`, `disk::clear`): its first start after a reset
   makes a new shelf generation, with a new device's secret, so a new offer, nobody's until a human vault claims it.
-- A vault gives the CEO Aven backup on the whole of it, and the server keeps the vault's edits and McEliece keys and
+- A vault gives avenCEO server backup on the whole of it, and the server keeps the vault's edits and McEliece keys and
   serves them to the devices that may hold them, also while the device that wrote them is away. With relay instead
   (backups off, at setup or later with the `back_up` op), the server learns only the vault's devices, from its log, to
   let them through its relay; it keeps none of its entries.
-- Its relay lets in only the devices the server knows: those of the vaults it relays or backs up, of the CEO Aven's
+- Its relay lets in only the devices the server knows: those of the vaults it relays or backs up, of avenCEO server's
   owners, and itself; while sign-up is open, or until a human vault claims the server, also any passkey's pass, for ten
   minutes. A device taken out of its vault is let go, and turned away when it tries again. A device with no UDP of its
   own, behind a strict firewall say, reaches the server and every other device through the relay alone.
@@ -239,8 +240,8 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
 4. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) is filled
    in on **Your account** (`SERVER` in `src/lib/avendb/Account.svelte`), beside its relay. It stays the same as long
    as the server keeps its device secret; after a reset it is a new one, filled in again once that is deployed.
-5. **The claim**: the first person to found their vault on **Your account** claims the server, founding the seed,
-   Maia Holding GmbH, avenCEO GmbH and the CEO Aven, and makes it the CEO Aven's device, so whoever runs a new server
+5. **The claim**: the first person to found their vault on **Your account** claims the server, founding the seed, Maia
+   Holding GmbH, avenCEO GmbH and avenCEO server, and makes it avenCEO server's device, so whoever runs a new server
    founds their vault there first. Both workflows log whether it is claimed yet.
 6. **Its bucket** ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §14): with `AVENDB_BUCKET`, `AVENDB_BUCKET_ENDPOINT`,
    `AVENDB_BUCKET_REGION`, `AVENDB_BUCKET_ACCESS_KEY`, `AVENDB_BUCKET_SECRET_KEY` and `AVENDB_BUCKET_SEAL` (64 hex
@@ -253,9 +254,9 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
 
 Its shelf and its device's secret live in its bucket, or on the Hetzner volume where it keeps none, so a rebuilt server
 is still the same device, even with its folder lost; the database backups don't hold them. Losing them makes a new
-server, a device of nobody: the CEO Aven's owners remove the lost device from it, then claim the new server
-(`Node::claim`), which adds it to the same CEO Aven, as it has no device left (`Lab::unclaimed_aven`), so every
-vault's share to the CEO Aven stands.
+server, a device of nobody: avenCEO server's owner removes the lost device from it, then claims the new server
+(`Node::claim`), which adds it to the same device vault, as it has no device left (`Lab::unclaimed_server`), so every
+vault's share to avenCEO server stands.
 
 ## History
 
@@ -286,4 +287,5 @@ and lens entries, added holdings, one `run(op)` API and one shelf per place, as
 | P8f, real vaults | Real vaults the person controls instead of the simulated Lab: the vaults this browser knows as a chat app's servers, each by the name on its profile; new aven and coop vaults their vault owns in one ceremony; acting as any of them, its caps deciding what the page shows and does; each vault's owners, devices, access and syncing devices; every node post-quantum only | Merged |
 | Two prompts | Setup and sign-in in two passkey prompts each: a new device makes its own secret, kept masked by the PRF output on its salt, so the ceremony that unlocks it is its passkey's pass for it, to the relay and to the peer it links through (no hello of the passkey's any more); a device that doesn't know its passkey's key yet drafts its vault for each key the unlock recovers to, in one batch, and keeps the one the next ceremony verifies under | Merged |
 | Flat vaults | No spaces: entries straight in their vault, their type and tags sealed in their writes; caps on any slice (types, tags, authors, entries, creation time, any AND and OR of those), in chains that only narrow (T22); cells, the entries the same caps reach, one key per cell and a key per entry derived from it (T24), kept to what the caps say by the vault's own devices, who move entries as tags change and answer other vaults' tag asks (T23); relays that route by cells and never see a selector, a type or a tag (T25); the page's sharing by rule, tags, Access, Sync and Cells; the server's data started fresh | Merged |
+| A, one aven | Four kinds of vault by one kind table (T21): human, coop, aven (a person's one agent identity, owned by their human vault alone) and device vault (owned by one human, coop or aven vault; with human vaults, the only kind that holds devices); sub caps by one rule (T22), so an aven passes a coop's share on to its agents' device vaults, and a coop's revoking it ends theirs; the server the device of avenCEO server, a device vault avenCEO GmbH owns; access requests as records, each a `request` its vault writes and shares with the vault asked, answered there (`ask`, `requests`); scenarios 27 and 28. The core and the spec; the net, server, browser and device crates: one flow adds a device vault (the server's claim, an agent under its person's one aven, founded with their first agent), and the aven passes its shares on to its agents; the page next | In progress |
 | P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |
