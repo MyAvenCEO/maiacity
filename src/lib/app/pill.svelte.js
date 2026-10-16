@@ -10,7 +10,7 @@
 import { untrack } from 'svelte';
 
 /** @typedef {{ label: string, readonly on: boolean, go: () => void }} Center */
-/** @typedef {{ id: string, label: string, sub?: string, text: string, colour: string, shape?: 'human' | 'coop' | 'aven' | 'device' }} Account */
+/** @typedef {{ id: string, label: string, sub?: string, text: string, colour: string, shape?: 'human' | 'coop' | 'aven' | 'device', badge?: number }} Account */
 /** @typedef {{ title: string, readonly list: Account[], readonly current: string, pick: (id: string) => void }} Accounts */
 /**
  * @typedef {{ title: string, readonly list: Account[], readonly current: string, pick: (id: string) => void,
