@@ -36,6 +36,26 @@ export function lite(o, make) {
 		Object.assign(DETAIL, keep);
 	}
 }
+/**
+ * The detail of one number, 1 as built down to 0.05, as a world asks for a plant's levels ($lib/assets/render): at
+ * 0.25 and 0.1 the same as Sandbox 4's forest grows its near and far plants (src/lib/sandbox-2/interior/flora.grow.js),
+ * at 0.5 its plant card's, and between them in step; roots only at 1.
+ * @param {number} d @returns {Partial<typeof DETAIL>}
+ */
+export function detailAt(d) {
+	const AT = [
+		[0.1, 0.12, 1.6, 0.006],
+		[0.25, 0.45, 1.3, 0.0016],
+		[0.5, 0.6, 1.2, 0.0008],
+		[1, 1, 1, 0]
+	];
+	const level = Math.min(1, Math.max(0.05, d));
+	const j = Math.max(1, AT.findIndex((x) => x[0] >= level));
+	const [l0, t0, f0, n0] = /** @type {number[]} */ (AT[j - 1]), [l1, t1, f1, n1] = /** @type {number[]} */ (AT[j]);
+	const k = Math.min(1, Math.max(0, (level - l0) / (l1 - l0)));
+	return { level, roots: level >= 1, thin: t0 + (t1 - t0) * k, fill: f0 + (f1 - f0) * k, finest: n0 + (n1 - n0) * k };
+}
+
 /** a count of divisions at the present detail, never under `least` */
 const fewer = (/** @type {number} */ n, least = 1) => (DETAIL.level >= 1 ? n : Math.max(least, Math.round(n * DETAIL.level)));
 
