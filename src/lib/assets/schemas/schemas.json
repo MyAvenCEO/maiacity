@@ -1,0 +1,22 @@
+{
+	"schemas": [
+		{
+			"name": "asset",
+			"v": 1,
+			"date": "2026-10-15",
+			"blake3": "459af77f1a06c30d74bcccb91db6acf44910e3d60974177b26afe134f5c13fdd",
+			"bytes": 1127,
+			"title": "Asset, v1",
+			"note": "An asset as an avenDB entry of kind asset, in avenDB's own schema subset: title, group, name, version, note, licence, its files by role, tags (avendb/crates/avendb/tests/assets.rs reads these bytes with avenDB's parser)"
+		},
+		{
+			"name": "card",
+			"v": 1,
+			"date": "2026-10-16",
+			"blake3": "b2a4f99e22030df58d62c95f9daca043c3b39efabbbfa79ec3c46efabf703ab6",
+			"bytes": 7297,
+			"title": "Asset card, v1",
+			"note": "What an asset's build says of it: its ref, recipe hash and engine, group, id, version, variant, label, real size, triangles, catalog of parts, declared parameters, solver sliders, measures, levels of detail and impostor; read by our checker (./check.js), never by avenDB"
+		}
+	]
+}
