@@ -110,6 +110,18 @@ export const BUILT_IN = [
 		off: false
 	},
 	{
+		key: 'youtube',
+		name: 'YouTube',
+		version: 1,
+		lane: 'net',
+		when: { all: [{ type: ['artifact'] }, { record: { look: 'youtube' } }] },
+		inputs: { artifact: '$entry' },
+		params: ['url'],
+		makes: [{ value: 'youtube' }],
+		about: "A YouTube video's title, channel, length, chapters and words with their times, from YouTube through yt-dlp on the Mac.",
+		off: false
+	},
+	{
 		key: 'render',
 		name: 'Render',
 		version: 1,

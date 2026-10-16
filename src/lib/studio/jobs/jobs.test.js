@@ -211,3 +211,13 @@ test('an optional input never holds a task back, and moves its key once it is ma
 	expect(JSON.parse(after[0].value.params)['analysis.hero.t']).toBe(7.5);
 	expect(after[0].value.key).not.toBe(first[0].value.key);
 });
+
+test('the youtube rule wants each YouTube artifact once, its url part of the key', () => {
+	const rule = BUILT_IN.find((r) => r.key === 'youtube');
+	const a = (entry, url) => ({ entry, vault: 'V', type: 'artifact', tags: [], deleted: false, edits: 1, files: [], record: { look: 'youtube', url } });
+	const world = { entries: [a('a1', 'https://youtu.be/x'), { ...a('a2', 'https://x'), record: { look: 'web', url: 'https://x' } }] };
+	const ops = reconcile([rule], world, 'V', 'V', 1);
+	expect(ops).toHaveLength(1);
+	expect(JSON.parse(ops[0].value.params).url).toBe('https://youtu.be/x');
+	expect(ops[0].value.lane).toBe('net');
+});

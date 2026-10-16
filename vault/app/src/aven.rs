@@ -588,6 +588,7 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
         "render" => Kind::Render,
         "frame" => Kind::Frame,
         "world-proxy" => Kind::WorldProxy,
+        "youtube" => Kind::Fetch,
         other => return Err(format!("no Rust executor for rule {other}")),
     };
     let library = library.unwrap_or_default();
@@ -604,6 +605,7 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
         "render" => render(&job, &id).await,
         "frame" => frame(&job, &id).await,
         "world-proxy" => world_proxy(&job, &id).await,
+        "youtube" => youtube(&job).await,
         _ => unreachable!(),
     };
     let made = match made {
@@ -717,6 +719,91 @@ async fn world_proxy(job: &Job<'_>, id: &str) -> Result<Value, String> {
     let result = json!({ "shot": format!("shot:{shot}"), "shotVersion": version, "shape": shape, "width": proxy.width, "height": proxy.height,
         "fps": fps, "seconds": (proxy.seconds * 1000.0).round() / 1000.0, "world": info });
     Ok(json!({ "outputs": [entry], "result": result }))
+}
+
+/// Where yt-dlp is on this Mac: on the app's PATH, else where Homebrew puts it (an app opened from the Finder or a
+/// LaunchAgent has a short PATH).
+fn yt_dlp() -> Result<std::path::PathBuf, String> {
+    let on_path = std::env::var_os("PATH").into_iter().flat_map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).map(|d| d.join("yt-dlp"));
+    on_path
+        .chain(["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"].map(std::path::PathBuf::from))
+        .find(|p| p.is_file())
+        .ok_or_else(|| "yt-dlp isn't on this Mac: install it with `brew install yt-dlp`, then try again".into())
+}
+
+/// The `youtube` rule (content v2): what a YouTube video is, from YouTube itself through yt-dlp: its title, channel,
+/// length, upload day (YYYYMMDD), language and chapters, and its words with their times from its captions (its own,
+/// else YouTube's automatic ones in its language). `needs_speech` when it has none: the Mac hears it once its sound is
+/// here. The page (src/lib/avendb/youtube.js) fills the artifact's empty fields from it.
+async fn youtube(job: &Job<'_>) -> Result<Value, String> {
+    let url = job.param("url").as_str().filter(|u| u.starts_with("https://")).ok_or("the artifact names no https url")?.to_string();
+    let bin = yt_dlp()?;
+    job.stage("asking YouTube", 0.1);
+    let out = tokio::process::Command::new(&bin)
+        .args(["-J", "--skip-download", "--no-playlist", "--no-warnings", "--", &url])
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(std::time::Duration::from_secs(120), out).await.map_err(|_| "YouTube didn't answer within two minutes")?.map_err(|e| format!("yt-dlp: {e}"))?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("yt-dlp: {}", why.lines().rfind(|l| !l.trim().is_empty()).unwrap_or("it failed")));
+    }
+    let info: Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("yt-dlp's answer: {e}"))?;
+    let (mut result, captions) = youtube_of(&info);
+    let mut words = vec![];
+    if let Some(at) = captions {
+        job.stage("reading its captions", 0.6);
+        let got = reqwest::Client::new().get(&at).timeout(std::time::Duration::from_secs(60)).send().await.map_err(|e| format!("its captions: {e}"))?;
+        let json3: Value = got.error_for_status().map_err(|e| format!("its captions: {e}"))?.json().await.map_err(|e| format!("its captions: {e}"))?;
+        words = words_of(&json3);
+    }
+    result["needs_speech"] = json!(words.is_empty());
+    result["transcript"] = json!(words);
+    Ok(json!({ "outputs": [], "result": result }))
+}
+
+/// What yt-dlp's `-J` says of a video, as the `youtube` rule's value (its words aside), and where its captions are as
+/// json3: its own in its language, else YouTube's automatic ones in its spoken language (`<lang>-orig`, else `<lang>`).
+fn youtube_of(v: &Value) -> (Value, Option<String>) {
+    let chapters: Vec<Value> = v["chapters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| json!({ "t": c["start_time"].as_f64().unwrap_or(0.0), "title": c["title"].as_str().unwrap_or("") }))
+        .collect();
+    let own = v["subtitles"].as_object();
+    let auto = v["automatic_captions"].as_object();
+    // its language: as YouTube says, else its own captions' first, else the automatic captions' original
+    let language = v["language"]
+        .as_str()
+        .map(String::from)
+        .or_else(|| own.and_then(|o| o.keys().find(|k| *k != "live_chat").cloned()))
+        .or_else(|| auto.and_then(|a| a.keys().find_map(|k| k.strip_suffix("-orig").map(String::from))));
+    let json3 = |track: &Value| track.as_array().into_iter().flatten().find(|f| f["ext"] == "json3").and_then(|f| f["url"].as_str()).map(String::from);
+    let captions = language.as_deref().and_then(|lang| {
+        let base = lang.split('-').next().unwrap_or(lang);
+        let mine = own.and_then(|o| o.get(lang).or_else(|| o.iter().find(|(k, _)| k.split('-').next() == Some(base)).map(|(_, t)| t))).and_then(json3);
+        mine.or_else(|| auto.and_then(|a| a.get(&format!("{lang}-orig")).or_else(|| a.get(lang)).or_else(|| a.get(base))).and_then(json3))
+    });
+    let result = json!({
+        "title": v["title"], "channel": v["channel"].as_str().or(v["uploader"].as_str()), "channel_url": v["channel_url"].as_str().or(v["uploader_url"].as_str()),
+        "duration": v["duration"], "upload_date": v["upload_date"], "language": language, "chapters": chapters,
+    });
+    (result, captions)
+}
+
+/// The words of YouTube's json3 captions, each with the second it starts at (`[{t, text}]`); none for an empty event.
+fn words_of(json3: &Value) -> Vec<Value> {
+    json3["events"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let text: String = e["segs"].as_array()?.iter().filter_map(|s| s["utf8"].as_str()).collect::<String>();
+            let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            (!text.is_empty()).then(|| json!({ "t": (e["tStartMs"].as_f64().unwrap_or(0.0) / 10.0).round() / 100.0, "text": text }))
+        })
+        .collect()
 }
 
 /// How long a value may be and still go on its task: a longer one (a long recording's words, an analysis) goes into a

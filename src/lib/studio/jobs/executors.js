@@ -91,5 +91,6 @@ export const NATIVE = {
 	analysis: native('analysis'),
 	render: native('render'),
 	frame: native('frame'),
-	'world-proxy': native('world-proxy')
+	'world-proxy': native('world-proxy'),
+	youtube: native('youtube')
 };
