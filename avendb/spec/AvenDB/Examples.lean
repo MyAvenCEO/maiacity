@@ -343,6 +343,28 @@ def subRevoked : List Edit := subCaps ++ chain 430 [
 #guard refused subRevoked == [] && [60, 61].all (!(view subRevoked).live ·)
 #guard writable subRevoked agentVault == [] && writable subRevoked avenA == []
 
+/-! ## Scenario 28: an access request is a record and a share
+
+No new kind of edit asks for access. Alice's vault shares one new entry, its request to Bob's vault, by a share whose
+ops read it and set its `answer` to granted or denied (`answering`), and creates the entry straight in that share's
+audience: Bob's Mac reads it, Carol's doesn't. Bob's vault writes the answer through the share, which its readers
+count; a write through it that touches anything else counts for none. Granting is then a share of Bob's vault to
+Alice's, as any share. -/
+
+def accessRequest := 30
+def requestType : Sym := 4
+def asking : List Edit := s2 ++ chain 800 [
+  (macA, [], .share (.grant { shareOf 63 alice bob .write (byId accessRequest) with ops := answering })),
+  (macA, [], create alice accessRequest alice [63] requestType)]
+def answered (touch : Touch) : List Edit := asking ++ chain 810 [
+  (macB, [], .write alice accessRequest bob none 0 [801] (proof := some 63) (touches := [touch]))]
+#guard refused asking == [] && tidy asking
+#guard readable asking macB == [accessRequest] && readable asking macC == []
+-- Bob's answer counts; a write of its why, or of another answer, stands and counts for no reader
+#guard let st := view (answered (.set [.field "answer"] (some (.str "granted")))); st.counted.any (·.edit == 810)
+#guard let st := view (answered (.set [.field "why"] (some (.str "because")))); !st.counted.any (·.edit == 810)
+#guard let st := view (answered (.set [.field "answer"] (some (.str "maybe")))); !st.counted.any (·.edit == 810)
+
 /-! ## Scenarios 4 to 7: entries, writes, one document via a share, public
 
 The coop's Handbook is the coop's documents, in its vault. An entry no share selects is in the audience of no shares,

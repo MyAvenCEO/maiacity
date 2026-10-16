@@ -563,6 +563,19 @@ async fn requests(app: &mut App, n: usize) -> Value {
     panic!("{n} requests, not {asked}");
 }
 
+/// The one request device `app` is asked (the ops engine's `requests`), once it is there, 60 seconds at most.
+async fn asked_of(app: &mut App) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let open = run(app, json!({ "op": "requests" })).await.expect("its requests");
+        if let [one] = &open["asked"].as_array().expect("those it is asked")[..] {
+            return one.clone();
+        }
+        assert!(Instant::now() < end, "a request, within 60 s: {open}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// What harness `h` reads of entry `entry`, once it reads it: its text, and whether it is an error.
 async fn reads(h: &mut Harness, entry: &Value) -> (String, bool) {
     let get = json!({ "op": { "op": "get", "entry": entry } });
@@ -771,16 +784,23 @@ async fn the_same_harness_on_her_other_mac_joins_its_agents_device_vault_under_h
     assert_eq!(passed(&world), 1, "the Viewer's share its aven passed on before stands for it");
     let read = reads(&mut there, &entry).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentClaude reads her note on her other Mac: {read:?}");
-    // agentClaude on her first Mac asks for more: its device is in its vault already, so granting it takes no sheet
+    // agentClaude on her first Mac asks for more: its device is in its vault already, so it asks as anyone does, a
+    // request its vault writes and shares with her aven, and leaves no file; granting it takes no sheet
     let why = "to tidy the seed notes";
     let (ok, error) = claude.tool("avendb_request_access", json!({ "level": "Editor", "why": why })).await;
     assert!(!error, "{ok}");
-    let asked = requests(&mut app, 1).await;
-    assert_eq!((&asked[0]["device"], &asked[0]["offer"]), (&first, &Value::Null), "a device of a vault: {asked}");
+    let record = asked_of(&mut app).await;
+    assert_eq!((&record["from"], &record["to"], &record["level"]), (&claudes, &aven, &json!("Editor")), "{record}");
+    assert_eq!(record["why"], why);
+    assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "no file");
     let editor = json!([{ "over": mine, "level": "Editor" }]);
     let more = app.call("grant", json!(["agentClaude", first, editor, "avenEve"])).await.expect("granted");
     assert_eq!((&more["aven"], &more["vault"]), (&aven, &claudes));
     assert!(app.asked().is_empty(), "no sheet");
+    let answer = json!({ "op": "set", "entry": record["entry"], "path": ["answer"], "value": "granted", "as": aven });
+    run(&mut app, answer).await.expect("her aven answers it");
+    let open = run(&mut app, json!({ "op": "requests" })).await.expect("her requests");
+    assert_eq!(open["asked"], json!([]), "answered");
     let beans = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") } });
     let mut made = (String::new(), true);
     for _ in 0..100 {

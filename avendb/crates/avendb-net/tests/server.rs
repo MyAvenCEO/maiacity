@@ -9,11 +9,11 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use avendb::cast::*;
-use avendb::id::{ShareId, SignerId, VaultId};
+use avendb::id::{EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::world;
-use avendb::policy::{Kind, Level, Principal};
+use avendb::policy::{Action, Kind, Level, Principal, Sharing};
 use avendb::slice::Selector;
 use avendb_net::{Admission, Node, Options, Place, disk, server, shelf};
 use common::Folder;
@@ -251,5 +251,114 @@ async fn a_persons_mac_adds_agents_as_device_vaults_under_their_one_aven_which_p
     until("both end on agentClaude's device", || claude.read(ended)).await;
     for n in [bobs, claude, codex, second] {
         n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// The access requests device `node` reads (the ops engine's `requests`): `{asked, made}`.
+async fn requests(node: &Node) -> serde_json::Value {
+    let answer = node.op(serde_json::json!({ "op": "requests" })).await.expect("an answer");
+    answer["ok"].clone()
+}
+
+/// The entries of the requests `node` is asked, in order.
+async fn asked(node: &Node) -> Vec<serde_json::Value> {
+    let asked = requests(node).await["asked"].as_array().cloned().unwrap_or_default();
+    asked.into_iter().map(|r| r["entry"].clone()).collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_avens_access_request_reaches_the_coop_it_asks_directly_and_through_the_server_while_its_person_is_away() {
+    let dir = Folder::new("asker");
+    let claude = agent(&dir, "agentClaude").await;
+    let mut w = world();
+    let (alice, bob) = (w.alice, w.bob);
+    let (mac_a, passkey_a, mac_b, passkey_b, server_d) = (w.mac_a, w.passkey_a, w.mac_b, w.passkey_b, w.server);
+    // Alice's vault has avenCEO server keep a backup of it; Bob has an iPhone beside his Mac, and a garden, a coop of
+    // his alone, whose card Alice's Mac takes
+    relay_on(&mut w, alice);
+    let phone_b = w.lab.device_of(passkey_b, "Bob's iPhone");
+    let add = Action::Share(Sharing::Device { vault: bob, device: phone_b, seal_to: None });
+    w.lab.submit(mac_b, &[passkey_b, phone_b], add).expect("Bob's passkey adds his iPhone");
+    let genesis = Action::Genesis {
+        kind: Kind::Coop,
+        owners: vec![Principal::Vault(bob)],
+        threshold: 1,
+        root: None,
+        nonce: 0,
+        seal_to: vec![],
+    };
+    let garden = VaultId::from(w.lab.submit(mac_b, &[passkey_b], genesis).expect("Bob's garden"));
+    w.lab.share_contact(mac_b, mac_a, garden);
+    w.lab.sync_all(0);
+    let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
+    let bobs = node(&mut w, mac_b, &[passkey_b], 2).await;
+    for (a, b) in [(&mac, &bobs), (&bobs, &mac), (&mac, &claude), (&claude, &mac)] {
+        a.know(b.addr());
+    }
+    // her Mac founds her aven as it adds agentClaude under it: each new vault has the server keep it too, as hers does
+    let (aven, claudes) =
+        mac.add_device_vault(&claude.offer(), Place::UnderNew(Kind::Aven), passkey_a).await.expect("her aven");
+    let kept = move |v: VaultId| {
+        move |lab: &Lab, me| {
+            let st = lab.state(me);
+            st.shares_over(v).any(|cp| cp.share.wide && cp.share.level == Level::Backup && st.live(cp.id))
+        }
+    };
+    assert!(mac.read(kept(aven)).await && mac.read(kept(claudes)).await, "the server keeps the aven and the agent's");
+    // her aven asks Bob's garden for Editor, both Macs online: a record in the aven, and a share of it to the garden
+    let ask = |why: &str| {
+        serde_json::json!({ "op": "ask", "to": garden.to_hex(), "level": "Editor", "why": why, "as": aven.to_hex() })
+    };
+    let first = mac.op(ask("To plan the harvest")).await.expect("an answer");
+    let first = first["ok"]["entry"].clone();
+    assert!(first.is_string(), "the request: {first}");
+    let near = || async {
+        bobs.sync_with(mac.id()).await.ok();
+        asked(&bobs).await == [first.clone()]
+    };
+    until("Bob's Mac is asked, straight from Alice's", near).await;
+    let request = requests(&bobs).await["asked"][0].clone();
+    let said = (&request["from"], &request["to"], &request["level"], &request["why"]);
+    let want = (&serde_json::json!(aven.to_hex()), &serde_json::json!(garden.to_hex()), &serde_json::json!("Editor"));
+    assert_eq!(said, (want.0, want.1, want.2, &serde_json::json!("To plan the harvest")));
+    // Bob grants it: the garden's share to the aven, and the answer, which Alice's Mac sees
+    let grant = serde_json::json!({ "op": "share", "over": garden.to_hex(), "who": { "vault": aven.to_hex() },
+        "level": "Editor", "as": garden.to_hex() });
+    assert!(bobs.op(grant).await.expect("an answer")["ok"]["share"].is_string(), "granted");
+    let answer = serde_json::json!({ "op": "set", "entry": first, "path": ["answer"], "value": "granted",
+        "as": garden.to_hex() });
+    assert!(bobs.op(answer).await.expect("an answer")["ok"]["edit"].is_string(), "answered");
+    let seen = || async {
+        mac.sync_with(bobs.id()).await.ok();
+        requests(&mac).await["made"][0]["answer"] == "granted"
+    };
+    until("Alice's Mac sees it granted", seen).await;
+    // Bob's Mac goes away; the server comes, and her aven asks again: the server keeps the request, then she goes too
+    bobs.shutdown().await.expect("Bob's Mac stops");
+    let server = node(&mut w, server_d, &[], 9).await;
+    mac.know(server.addr());
+    server.know(mac.addr());
+    let second = mac.op(ask("To sow the beans")).await.expect("an answer")["ok"]["entry"].clone();
+    let entry = second.as_str().and_then(EntryId::from_hex).expect("the second request");
+    let holds = || async {
+        server.sync_with(mac.id()).await.ok();
+        server.read(move |lab, me| lab.fetched(me, entry) > 0).await
+    };
+    until("the server holds the second request", holds).await;
+    assert!(!server.read(move |lab, me| lab.reads(me, entry)).await, "and reads none of it");
+    for n in [mac, claude] {
+        n.shutdown().await.expect("the node stops");
+    }
+    // Bob's iPhone, which never met Alice's Mac, with neither her Mac nor her agent online: it is asked through the
+    // server
+    let phone = node(&mut w, phone_b, &[passkey_b], 3).await;
+    phone.know(server.addr());
+    let far = || async {
+        phone.sync_with(server.id()).await.ok();
+        asked(&phone).await.contains(&second)
+    };
+    until("Bob's iPhone is asked through the server, Alice away", far).await;
+    for n in [phone, server] {
+        n.shutdown().await.expect("the node stops");
     }
 }

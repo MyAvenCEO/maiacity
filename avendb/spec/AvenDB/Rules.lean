@@ -174,6 +174,20 @@ def Op.allows (main : Bool) : Op → Touch → Bool
 /-- Ops allow a write: each of its touches is allowed by one of them. -/
 def allowsAll (rs : List Op) (main : Bool) (ts : List Touch) : Bool := ts.all fun t => rs.any (·.allows main t)
 
+/-- The ops an access request goes to the vault it asks by (the Rust engine's `ask`, `world::answering`): an access
+    request is a record the asking vault writes in its own vault and shares, that entry alone, with the vault it asks,
+    which reads it and sets its `answer`, on the main line, to granted or denied, and nothing else. -/
+def answering : List Op := [.read, .set [.field "answer"] (some [.str "granted", .str "denied"]) (some .main)]
+
+-- a write share, as the class of its set says, that writes one place to one of two values on the main line
+#guard levelOf answering == .write
+#guard allowsAll answering true [.set [.field "answer"] (some (.str "granted"))]
+#guard allowsAll answering true [.set [.field "answer"] (some (.str "denied"))]
+#guard !allowsAll answering true [.set [.field "answer"] (some (.str "maybe"))]
+#guard !allowsAll answering true [.set [.field "why"] (some (.str "because"))]
+#guard !allowsAll answering false [.set [.field "answer"] (some (.str "granted"))]
+#guard !allowsAll answering true [.create] && !allowsAll answering true [.tag 1]
+
 /-- The tags a write asks for, added or removed, as touches. -/
 def TagDelta.touches (d : TagDelta) : List Touch := (d.add ++ d.remove).map .tag
 

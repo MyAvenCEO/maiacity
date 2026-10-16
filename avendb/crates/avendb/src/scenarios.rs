@@ -122,7 +122,7 @@ impl Run {
 }
 
 /// Every scenario, in the plan's order.
-pub static SCENARIOS: [Scenario; 30] = [
+pub static SCENARIOS: [Scenario; 31] = [
     Scenario { number: "1", title: "Alice's vault", phase: "P1", play: alices_vault },
     Scenario { number: "1b", title: "A new device reaches every device", phase: "P2", play: a_new_device_reaches_all },
     Scenario { number: "2", title: "Bob, Carol and Dave", phase: "P1", play: bob_carol_and_dave },
@@ -158,6 +158,7 @@ pub static SCENARIOS: [Scenario; 30] = [
     Scenario { number: "25", title: "Wide caps, relays and Public", phase: "F2", play: wide_shares },
     Scenario { number: "26", title: "A cell that comes back into use moves on", phase: "F2", play: comeback },
     Scenario { number: "27", title: "An aven's agent works within a coop's cap", phase: "A", play: an_avens_agent },
+    Scenario { number: "28", title: "An access request is a record and a share", phase: "A", play: an_access_request },
 ];
 
 /// The scenario numbered `number`.
@@ -1239,5 +1240,57 @@ fn an_avens_agent(run: &mut Run) -> Done {
     run.check("which ends the agent's with it", !v.live(to_aven) && !v.live(sub));
     let after = w.lab.edit(agent, harness, harvest, note("Sold the tractor")).is_err();
     run.check("and the agent writes the work todo no more", after);
+    Ok(())
+}
+
+/// An op of the ops engine run on device `d`: its answer, `{"ok": ...}` or a refusal.
+fn op(w: &mut World, d: SignerId, v: Value) -> Value {
+    crate::engine::run(&mut w.lab, d, &v)
+}
+
+fn an_access_request(run: &mut Run) -> Done {
+    let mut w = world();
+    let (alice, bob, mac, mac_b, mac_c, mac_d) = (w.alice, w.bob, w.mac_a, w.mac_b, w.mac_c, w.mac_d);
+    let aven = w.lab.submit(mac, &[w.passkey_a], founded(Kind::Aven, alice, 0));
+    let aven = VaultId::from(run.ok("Alice's passkey founds her aven", aven)?);
+    let garden = w.lab.submit(mac_b, &[w.passkey_b], founded(Kind::Coop, bob, 0));
+    let garden = VaultId::from(run.ok("and Bob's his garden, a coop", garden)?);
+    // Alice's Mac learns of the garden as from Bob's contact card
+    w.lab.share_contact(mac_b, mac, garden);
+    let (a, g) = (aven.to_hex(), garden.to_hex());
+    let ask = json!({ "op": "ask", "to": g, "level": "Editor", "why": "To plan the harvest", "as": a });
+    let asked = op(&mut w, mac, ask);
+    let asked = run.some("Alice's Mac, acting for her aven, asks the garden for Editor", asked.get("ok").cloned())?;
+    let entry = asked["entry"].clone();
+    w.lab.sync_all(28);
+    let requests = |w: &mut World, d| op(w, d, json!({ "op": "requests" }))["ok"].clone();
+    let theirs = requests(&mut w, mac_b);
+    run.same("Bob's Mac lists the request its garden was asked", theirs["asked"][0]["entry"].clone(), entry.clone());
+    let said = (&theirs["asked"][0]["from"], &theirs["asked"][0]["level"], &theirs["asked"][0]["why"]);
+    run.same("from the aven, for Editor, and why", said, (&json!(a), &json!("Editor"), &json!("To plan the harvest")));
+    let carol = requests(&mut w, mac_c);
+    run.same("Carol's Mac, asked nothing, sees none", carol, json!({ "asked": [], "made": [] }));
+    let why = json!({ "op": "set", "entry": entry, "path": ["why"], "value": "Because", "as": g });
+    run.same("the garden may change nothing of it", op(&mut w, mac_b, why)["refused"].clone(), json!("NotAllowed"));
+    let grant = json!({ "op": "share", "over": g, "who": { "vault": a }, "level": "Editor", "as": g });
+    run.check("Bob grants it: the garden's share to the aven", op(&mut w, mac_b, grant).get("ok").is_some());
+    let answer = json!({ "op": "set", "entry": entry, "path": ["answer"], "value": "granted", "as": g });
+    run.check("and the answer, which the request lets it set", op(&mut w, mac_b, answer).get("ok").is_some());
+    w.lab.sync_all(28);
+    let mine = requests(&mut w, mac);
+    run.same("Alice's Mac sees it granted", mine["made"][0]["answer"].clone(), json!("granted"));
+    let todo = Item::todo("Sow the beans", mac);
+    run.ok("and the aven adds a todo to the garden", w.lab.create(mac, aven, garden, "todo", &[], todo))?;
+    let ask = json!({ "op": "ask", "to": w.dave.to_hex(), "level": "Viewer", "why": "Your seed list", "as": a });
+    let to_dave = op(&mut w, mac, ask)["ok"]["entry"].clone();
+    w.lab.sync_all(28);
+    let deny = json!({ "op": "set", "entry": to_dave, "path": ["answer"], "value": "denied", "as": w.dave.to_hex() });
+    run.check("Dave says no: the answer alone", op(&mut w, mac_d, deny).get("ok").is_some());
+    w.lab.sync_all(28);
+    let mine = requests(&mut w, mac);
+    let answers: Vec<Value> = mine["made"].as_array().into_iter().flatten().map(|r| r["answer"].clone()).collect();
+    run.same("which Alice's Mac sees beside the grant", answers, vec![json!("granted"), json!("denied")]);
+    let none = !w.lab.state(mac).shares_over(w.dave).any(|cp| cp.share.who == Who::Vault(aven));
+    run.check("and her aven holds no share over Dave's vault", none);
     Ok(())
 }

@@ -460,7 +460,7 @@ impl Agent {
     async fn call(&self, name: &str, args: &Value) -> Result<String> {
         let vault = self.node.read(|lab, me| lab.vault_of(me)).await;
         if name == "avendb_request_access" {
-            return self.ask_access(vault.is_some(), args);
+            return self.ask_access(vault, args).await;
         }
         let Some(vault) = vault else {
             let device = hex(&self.node.device().0);
@@ -534,27 +534,40 @@ impl Agent {
         }
     }
 
-    /// Asks its person for the access `args` name, a level of `LEVELS` and why, and the vaults it names, if any:
-    /// leaves its request for their page, in place of any it left before, with its offer while it belongs to no vault
-    /// (`added`).
-    fn ask_access(&self, added: bool, args: &Value) -> Result<String> {
+    /// Asks its person for the access `args` name, a level of `LEVELS` and why, and the vaults it names, if any. Once
+    /// it is a device of its device vault `vault`, as anyone asks: a request its vault writes and shares with the aven
+    /// over it, its one owner (the ops engine's `ask`), which sync carries to its person's devices, through the server
+    /// too. Before, as it can write nothing yet: a request left for their page, in place of any it left before, with
+    /// its offer.
+    async fn ask_access(&self, vault: Option<VaultId>, args: &Value) -> Result<String> {
         let level = args["level"].as_str().unwrap_or(ASKS);
         anyhow::ensure!(LEVELS.contains(&level), "{level:?} is no level to ask for: one of {}", LEVELS.join(", "));
         let why = args["why"].as_str().map(str::trim).unwrap_or_default();
         anyhow::ensure!(!why.is_empty(), "say why: its person reads it before they answer");
         let vaults: Vec<String> =
             args["vaults"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
-        let (device, offer) = (hex(&self.node.device().0), (!added).then(|| self.node.offer().to_text()));
+        let answers = "Its person sees the request in The OS app and answers it there; avendb_ask with \
+                       {\"op\": \"requests\"} shows its answer once it comes, and avendb_vaults what it has.";
+        if let Some(vault) = vault {
+            let over = move |lab: &Lab, me| match lab.state(me).vault(vault)?.owners[..] {
+                [Principal::Vault(aven)] => Some(aven),
+                _ => None,
+            };
+            let aven = self.node.read(over).await.context("its device vault has its aven, its one owner")?;
+            let ask = json!({ "op": "ask", "to": hex(&aven.0), "level": level, "why": why, "vaults": vaults });
+            let asked = self.node.op(ask).await?;
+            if let Some(refused) = asked.get("refused") {
+                bail!("the request is refused ({refused}): {}", asked["why"]);
+            }
+            return Ok(format!("Asked its aven for {level} access, as a request in {}'s vault. {answers}", self.name));
+        }
+        let (device, offer) = (hex(&self.node.device().0), Some(self.node.offer().to_text()));
         let ask = Asking { level: level.to_string(), why: why.to_string(), vaults };
         let asked = asking(&self.name, &device, offer, &ask);
         std::fs::create_dir_all(agents(&self.host))?;
         std::fs::remove_file(denied(&self.host, &self.name)).ok();
         std::fs::write(request(&self.host, &self.name), asked.to_string())?;
-        Ok(format!(
-            "Asked for {level} access. {}'s person sees the request in The OS app on this Mac and answers it there; \
-             call avendb_vaults to see what it has.",
-            self.name
-        ))
+        Ok(format!("Asked for {level} access. {answers}"))
     }
 }
 
@@ -579,15 +592,15 @@ fn tools() -> Value {
         {
             "name": "avendb_ask",
             "description": "Run a read op of avenDB's engine as this agent: query, get, history, schemas, groups, \
-                            world, jobs, shares, database, note, creatable, taggable, may.",
+                            world, jobs, shares, database, note, creatable, taggable, requests, may.",
             "inputSchema": op,
         },
         {
             "name": "avendb_request_access",
             "description": "Ask this agent's person for access it lacks: a level (Viewer reads, Suggester reads and \
                             writes on proposals they merge, Editor reads and changes), why, and optionally the ids of \
-                            the vaults it asks for. They answer in The OS app, picking the vaults and levels their \
-                            aven passes on to it.",
+                            the vaults it asks for. Once it is added, a request its vault shares with its aven. They \
+                            answer in The OS app, picking the vaults and levels their aven passes on to it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

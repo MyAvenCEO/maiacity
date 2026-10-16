@@ -548,18 +548,20 @@ impl Service {
         Some(asking)
     }
 
-    /// Grants agent device `name`'s access request (`agents`), the one its device `device` left. The agent is a device
-    /// vault under the person's one aven, the aven their vault owns (`agent::aven_of`), named after the agent
-    /// (`agent::agent_vault`). Where their vault owns no aven yet, it founds one, named `aven_name`, which it must
-    /// then be given; where the aven has no device vault of that name, it founds one under it, and adds the agent's
-    /// device to it; where it has one that lacks this device, as for the same harness on their other Mac, it adds the
-    /// device to that one: whatever of it there is to do, in one ceremony of their passkey in the sheet, which the
-    /// agent's device cosigns (`Node::add_device_vault_with`), and the new vaults named by their profiles. Then for
-    /// each of `shares`, `{over, level}`, a level of `agent::LEVELS`, the aven passes a share over vault `over` at that
-    /// level on to the agent's device vault, resting on one the aven holds there, acting as the aven, with no ceremony
-    /// (`agent::pass_on`): over a vault their vault is or owns, one that vault gives the aven first, where it holds
-    /// none at that level; over another, as a coop that hired the aven, the one it gave. Each share is checked before
-    /// anything is signed (`agent::passable`). `{aven, vault}`: the aven, and the agent's device vault.
+    /// Grants agent device `name`'s access request (`agents`), the one its device `device` left; or, for an agent whose
+    /// device is in its device vault already, one it made as a record (the ops engine's `ask`, to its aven), which
+    /// leaves no file. The agent is a device vault under the person's one aven, the aven their vault owns
+    /// (`agent::aven_of`), named after the agent (`agent::agent_vault`). Where their vault owns no aven yet, it founds
+    /// one, named `aven_name`, which it must then be given; where the aven has no device vault of that name, it founds
+    /// one under it, and adds the agent's device to it; where it has one that lacks this device, as for the same
+    /// harness on their other Mac, it adds the device to that one: whatever of it there is to do, in one ceremony of
+    /// their passkey in the sheet, which the agent's device cosigns (`Node::add_device_vault_with`), and the new vaults
+    /// named by their profiles. Then for each of `shares`, `{over, level}`, a level of `agent::LEVELS`, the aven passes
+    /// a share over vault `over` at that level on to the agent's device vault, resting on one the aven holds there,
+    /// acting as the aven, with no ceremony (`agent::pass_on`): over a vault their vault is or owns, one that vault
+    /// gives the aven first, where it holds none at that level; over another, as a coop that hired the aven, the one it
+    /// gave. Each share is checked before anything is signed (`agent::passable`). `{aven, vault}`: the aven, and the
+    /// agent's device vault.
     async fn grant(
         self: &Arc<Self>,
         d: &Arc<Device>,
@@ -569,7 +571,7 @@ impl Service {
         aven_name: Option<&str>,
     ) -> Result<Value> {
         agent::named(name)?;
-        let asked = self.request(name).filter(|a| a["device"] == device).context("no such request: it changed")?;
+        let asked = self.request(name).filter(|a| a["device"] == device);
         let agent = SignerId::from_hex(device).context("a device's key in hex")?;
         let mut asks = vec![];
         for share in shares {
@@ -607,6 +609,7 @@ impl Service {
             None => (aven.context("an agent's vault has its aven")?, vault.context("the agent's vault")?),
             Some(place) => {
                 // the agent's own device cosigns its being added: say so rather than wait for it in vain
+                let asked = asked.context("no such request: it changed")?;
                 let offline = "isn't running: open a Claude Code session (or its harness), then approve";
                 anyhow::ensure!(asked["online"] == true, "{name} {offline}");
                 let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;

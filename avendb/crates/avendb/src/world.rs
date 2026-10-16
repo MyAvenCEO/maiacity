@@ -6,8 +6,8 @@
 //! its writes bring, each with where it is synced to (`SyncedTo`).
 //!
 //! Also the entries a device writes itself, by their types: its card in its person's vault (`CARD`), a vault's profile
-//! (`PROFILE`), a file it brings (`FILE`); and how avenCEO server, the device vault avenDB's server is a device of,
-//! keeps or relays a person's vaults (`avenceo`, `server_level`).
+//! (`PROFILE`), a file it brings (`FILE`), an access request (`REQUEST`); and how avenCEO server, the device vault
+//! avenDB's server is a device of, keeps or relays a person's vaults (`avenceo`, `server_level`).
 
 use std::collections::BTreeMap;
 
@@ -46,6 +46,23 @@ pub const POST: &str = "post";
 /// `media` the media type the page shows and plays it as, whose next write brings the file, sealed (the ops engine's
 /// `put_file`).
 pub const FILE: &str = "file";
+
+/// The type of an access request: a record of avenDB's own `request` schema (`lens::REQUEST_V1`) that the asking vault
+/// writes in its own vault and shares, that entry alone, with the vault it asks, by a share of the group `ANSWER` (the
+/// ops engine's `ask`). So a request is a record and a share, which sync carries like any other, and its answer the
+/// share the vault asked gives, if it grants it, and the answer it sets (`requests`).
+pub const REQUEST: &str = "request";
+
+/// The name of the group of ops an access request goes to the vault it asks by (`answering`).
+pub const ANSWER: &str = "Answer";
+
+/// The ops an access request goes to the vault it asks by (`ANSWER`): read it, and set its `answer`, on its main line,
+/// to "granted" or "denied"; nothing else.
+pub fn answering() -> Vec<rules::Op> {
+    let answers = ["granted", "denied"].map(|a| rules::Scalar::Text(a.into())).to_vec();
+    let answer = vec![rules::Step::Field("answer".into())];
+    vec![rules::Op::Read, rules::Op::Set { path: answer, to: Some(answers), on: Some(rules::On::Main) }]
+}
 
 /// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
 /// one line of another shows (the ops engine's `variant`), marked with that note's entry and the version it copied, the
@@ -673,6 +690,60 @@ pub fn profile(title: &str, device: SignerId) -> Item {
 /// A file's record, made on device `device`: its name `title` and media type `media`.
 pub fn file(title: &str, media: &str, device: SignerId) -> Item {
     own(FILE, json!({ "title": title, "media": media }), device)
+}
+
+/// An access request as a device reads it (`requests`): its entry, the vault that asks, the one it asks, the level it
+/// asks for (a built-in group's name), why, the vaults it asks that level on (none: `to` itself), the answer `to` set,
+/// if it did, and when it was asked, in seconds since 1970.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Request {
+    pub entry: EntryId,
+    pub from: VaultId,
+    pub to: VaultId,
+    pub level: String,
+    pub why: String,
+    pub vaults: Vec<VaultId>,
+    pub answer: Option<String>,
+    pub created: u64,
+}
+
+impl Request {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "entry": hex(&self.entry.0),
+            "from": hex(&self.from.0),
+            "to": hex(&self.to.0),
+            "level": self.level,
+            "why": self.why,
+            "vaults": self.vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+            "answer": self.answer,
+            "created": self.created,
+        })
+    }
+}
+
+/// The access requests device `me` reads, in the order they were made: each entry of type `REQUEST` a vault wrote in
+/// itself, read through the `request` schema; one whose vaults aren't vaults' ids is left out.
+pub fn requests(lab: &Lab, me: SignerId) -> Vec<Request> {
+    let st = lab.state(me);
+    let vault = |v: &Value| v.as_str().and_then(VaultId::from_hex);
+    let read = |en: &Entry| -> Option<Request> {
+        let meaning = lab.meaning(me, en.id).filter(|m| m.attrs.ty.as_str() == REQUEST)?;
+        let r = lab.item(me, en.id)?.read(View::built_in(REQUEST)?)?;
+        let text = |k: &str| r.get(k).and_then(Value::as_str).map(str::to_string);
+        let vaults = r.get("vaults")?.as_array()?.iter().map(vault).collect::<Option<Vec<_>>>()?;
+        Some(Request {
+            entry: en.id,
+            from: en.vault,
+            to: vault(r.get("to")?)?,
+            level: text("level")?,
+            why: text("why").unwrap_or_default(),
+            vaults,
+            answer: text("answer"),
+            created: meaning.attrs.created,
+        })
+    };
+    st.entries().iter().filter(|en| en.creator == en.vault).filter_map(read).collect()
 }
 
 /// The title of record `item` of avenDB's own kind `kind`, a card's or a profile's: `None` for another kind.

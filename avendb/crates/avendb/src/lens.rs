@@ -1045,7 +1045,8 @@ impl View {
     }
 
     /// The app of built-in kind `kind`, of its one shipped schema alone (`blobs::SHIPPED`): a document's, a todo's, an
-    /// article's, a flow's, a function's, a post's, a card's, a profile's, a file's, a story's or a spark's.
+    /// article's, a flow's, a function's, a post's, a card's, a profile's, a file's, a story's, a spark's or an access
+    /// request's.
     pub fn built_in(kind: &str) -> Option<&'static View> {
         BUILT_IN.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
     }
@@ -1222,7 +1223,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 11] = [
+    pub const SHIPPED: [&str; 12] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1234,6 +1235,7 @@ pub mod blobs {
         FILE_V1,
         STORY_V1,
         SPARK_V1,
+        REQUEST_V1,
     ];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
@@ -1537,6 +1539,26 @@ pub mod blobs {
   "required": ["kind"]
 }
 "#;
+
+    /// An access request: a record the asking vault writes in its own vault and shares, that entry alone, with the
+    /// vault it asks (`to`, its id in hex), which may read it and set its answer alone (`engine`'s `ask`): the level it
+    /// asks for, the name of a built-in group; why, in a few words; the vaults it asks that level on, where `to` holds
+    /// shares over others to pass on, as an aven to its agent (none: `to` itself); and the answer, once `to` gave it.
+    pub const REQUEST_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Access request, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "request" },
+    "to": { "type": "string", "maxLength": 64 },
+    "level": { "enum": ["Viewer", "Suggester", "Editor"] },
+    "why": { "type": "string", "maxLength": 500, "default": "" },
+    "vaults": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "answer": { "enum": ["granted", "denied"] }
+  },
+  "required": ["kind", "to", "level"]
+}
+"#;
 }
 
 fn built_in_schema(blob: &str) -> Schema {
@@ -1554,6 +1576,7 @@ pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs
 pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
 pub static STORY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::STORY_V1));
 pub static SPARK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V1));
+pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
 
 /// The app of each kind avenDB ships, of its one schema alone, by its kind.
 static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
@@ -1569,6 +1592,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*FILE_V1,
         &*STORY_V1,
         &*SPARK_V1,
+        &*REQUEST_V1,
     ];
     shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });

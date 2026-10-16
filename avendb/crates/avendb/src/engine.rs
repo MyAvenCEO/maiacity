@@ -19,17 +19,18 @@
 //!   table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to say what each kind of vault
 //!   may own and hold, and never decides itself. `limits`: how deep
 //!   the device's queries read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`,
-//!   `creatable`, `taggable`; `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
+//!   `creatable`, `taggable`, `requests` (the access requests its person answers, and those its vaults made);
+//!   `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
 //!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `restore`,
 //!   `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make one write. Each acts for a
 //!   vault (`"as"`, the device's own by default), as every edit does, and the rules judge it as they judge any peer's.
 //!   A write through a share carries the proof that the ops of the shares of its chain allow what it touches and the
-//!   tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`). And
-//!   the changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
-//!   `back_up`, `mark`, `card`, `profile`, `follow`, `set_limits`. One its vault's owners approve the device drafts
-//!   for its person's passkey (`prepare`, `Prepared::Approve`): without a ceremony it answers `approve` and makes
-//!   nothing; with one, `approve` keeps it.
+//!   tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`). And the
+//!   changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
+//!   `back_up`, `mark`, `card`, `profile`, `follow`, `set_limits`, and `ask`, an access request: a record and a share.
+//!   One its vault's owners approve the device drafts for its person's passkey (`prepare`, `Prepared::Approve`):
+//!   without a ceremony it answers `approve` and makes nothing; with one, `approve` keeps it.
 //! - **Asking** (`may`, `shares`). Whether each of some change ops would be made, by a dry run of each that checks,
 //!   proves and refuses as `run` does and makes nothing: what a page asks before it offers a button; `true`, or
 //!   `{"approve": {signers}}` where the passkey would approve it. `shares` lists the shares over a vault, owners and
@@ -62,7 +63,7 @@ use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
 use crate::world::{SyncedTo, VARIANT, variant_mark};
 
-pub use vaults::{approve, approved, passkey_of, world, Approval, Prepared, Then};
+pub use vaults::{approve, approved, follow_server, passkey_of, world, Approval, Prepared, Then};
 
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
 /// updates it holds.
@@ -141,7 +142,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "get" => &["entry", "schema", "line", "at"],
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
-        "groups" | "kinds" | "limits" => &[],
+        "groups" | "kinds" | "limits" | "requests" => &[],
         "create" => &["vault", "type", "tags", "schema", "value", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
@@ -173,12 +174,13 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "profile" => &["vault", "name"],
         "follow" => &["vault", "on"],
         "set_limits" => &["depth"],
+        "ask" => &["to", "level", "why", "vaults", "as"],
         _ => return None,
     })
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 15] = [
+const READS: [&str; 16] = [
     "query",
     "get",
     "history",
@@ -194,6 +196,7 @@ const READS: [&str; 15] = [
     "creatable",
     "taggable",
     "limits",
+    "requests",
 ];
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
@@ -266,6 +269,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "database" | "note" | "log" => vaults::data(lab, me, name, o),
         "creatable" => vaults::creatable(lab, me, o),
         "taggable" => vaults::taggable(lab, me, o),
+        "requests" => Ok(vaults::requests(lab, me)),
         "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
         "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
@@ -396,7 +400,7 @@ enum Named {
 
 fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
     let bad = || {
-        let kinds = "document, todo, article, flow, function, post, card, profile, file, story or spark";
+        let kinds = "document, todo, article, flow, function, post, card, profile, file, story, spark or request";
         bad(format!("schema is a built-in kind ({kinds}), \"stored\" or a schema's id, 64 hex digits"))
     };
     Ok(match o.get("schema") {
@@ -414,6 +418,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "file" => Named::Id(lens::FILE_V1.id()),
             "story" => Named::Id(lens::STORY_V1.id()),
             "spark" => Named::Id(lens::SPARK_V1.id()),
+            "request" => Named::Id(lens::REQUEST_V1.id()),
             s => Named::Id(BlobId::from_hex(s).ok_or_else(bad)?),
         },
         Some(_) => return Err(bad()),

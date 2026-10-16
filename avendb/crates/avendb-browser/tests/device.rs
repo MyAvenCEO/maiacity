@@ -556,7 +556,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let held = run(&first, database).await.expect("its database");
     let both = (ids(&held["schemas"]), ids(&held["lenses"]));
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
-    assert_eq!((both.0.len(), both.1.len()), (11, 0), "its own kinds, one version each, and no lens");
+    assert_eq!((both.0.len(), both.1.len()), (12, 0), "its own kinds, one version each, and no lens");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
@@ -1171,8 +1171,8 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .iter()
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
-    let own = "documents, todos, articles, flows, functions, posts, cards, profiles, files, stories and sparks";
-    assert_eq!(schemas.len(), 11, "{own}, one version each");
+    let own = "documents, todos, articles, flows, functions, posts, cards, profiles, files, stories, sparks, requests";
+    assert_eq!(schemas.len(), 12, "{own}, one version each");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
     assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V1.id().to_hex()]), "written under document v1");
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V1.id().to_hex()));

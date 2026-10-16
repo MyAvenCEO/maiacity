@@ -234,22 +234,36 @@ the device's key added to it, the edit sealed to the device's key and signed by 
 while it is no vault's device; then shares its parent passes on to it, each resting on one the parent holds. The
 passkey signs whatever of it needs the person's vault in one ceremony, with any vault its parent needs founded first:
 the server's claim founds the seed with avenCEO server (`Place::Seed`), and a person's first agent founds their aven
-with its own device vault (`Place::UnderNew`).
+with its own device vault (`Place::UnderNew`). Each vault it founds under a person follows their vault's server
+setting, as a vault `found` makes does (`engine::follow_server`): avenCEO server's wide share on it, Backup or Relay as
+on their vault, so what their aven and its agents write reaches the server while their devices are away.
 
-**Asking for access.** Access is asked for and given as any share is, on one consent screen. An agent device leaves an
-access request for the desktop app (`<device>.request`): who asks, by its device's name and key, a level (Viewer,
-Suggester or Editor), why, and the vaults it names, if any; while it is no vault's device, its offer too. It asks again
-for more with its MCP tool `avendb_request_access`. The page shows the request and the person picks all their vaults or
-only some, a level each, and approves or denies; if their vault owns no aven yet, they name the one it founds. Approving
-(`grant [name, device, shares, avenName]`) adds the agent under their one aven in one ceremony at most: the aven,
-founded and named if it is new, the agent's device vault under it, named after the agent, founded if it is new, and the
-edit that adds the device, which the device signs too; for the same harness on their other Mac, only that edit, to the
-agent's device vault there already. Then for each vault picked the aven passes a share at its level on to the agent's
-device vault, acting as the aven, with no ceremony: over a vault their vault is or owns, resting on a share that vault
-gives the aven first where it holds none at that level; over a coop that hired the aven, on the coop's share, and a
-share above it is refused before any ceremony. A no is left for the agent (`<device>.denied`), which asks no more until
-it asks again. A share covers one vault: a share of the person's own vault reaches none of the vaults it owns, so "all
-my vaults" is a share of each.
+**Asking for access.** Access is asked for and given as any share is, on one consent screen. A request is a record, not
+a message of its own: the vault that asks writes a record of the built-in `request` schema in its own vault (`ask {to,
+level, why, vaults}`, section 8), the vault asked (`to`), a level (Viewer, Suggester or Editor), why, and the vaults it
+names, if any, and shares that one record with the vault asked, in a group of its own, `Answer` (`world::answering`):
+read, and set `answer` to `"granted"` or `"denied"` and nothing else, on the main line. Sync carries it as any record,
+straight to the devices of the asked vault's owners or through a peer that keeps it for them, avenCEO server among them,
+and the answer back. The page reads the open ones with `requests`. Approving is the `share` the vault asked gives, then
+`set ["answer"]` to `"granted"`, acting as it; denying is only the set, to `"denied"`. So a request is a record and two
+shares.
+
+An agent device that is no vault's device yet can write no record, so it leaves an access request for the desktop app
+(`<device>.request`): who asks, by its device's name and key, a level, why, the vaults it names, if any, and its offer.
+Once it is a device of its device vault, its MCP tool `avendb_request_access` asks for more as any vault does, a request
+its device vault writes to the aven over it, and leaves no file. The page shows both kinds on its one consent screen,
+and the person picks all their vaults or only some, a level each, and approves or denies; if their vault owns no aven
+yet, they name the one it founds. Approving (`grant [name, device, shares, avenName]`) adds the agent under their one
+aven in one ceremony at most: the aven, founded and named if it is new, the agent's device vault under it, named after
+the agent, founded if it is new, and the edit that adds the device, which the device signs too; for the same harness on
+their other Mac, only that edit, to the agent's device vault there already. Then for each vault picked the aven passes a
+share at its level on to the agent's device vault, acting as the aven, with no ceremony: over a vault their vault is or
+owns, resting on a share that vault gives the aven first where it holds none at that level; over a coop that hired the
+aven, on the coop's share, and a share above it is refused before any ceremony. `grant` needs no file for an agent whose
+device is in its device vault already; the page then writes the record's answer acting as the aven. A no to a file is
+left for the agent (`<device>.denied`), which asks no more until it asks again; a no to a record is its answer. A share
+covers one vault: a share of the person's own vault reaches none of the vaults it owns, so "all my vaults" is a share of
+each.
 
 **A drive's own device.** Each external drive the person uses for avenDB is a device of their own vault, as a phone
 is, on the same sync, shares, copy setting and holdings as every other: nothing in sync knows it is a drive
@@ -721,6 +735,7 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
 | `may` | `ops`, `as` | For each change op: `true`, `{"approve": {signers}}`, or the refusal |
 | `shares` | `over`, `as` | Every share over a vault, owners and devices among them, each with `may` of its revocation |
+| `requests` | none | The access requests the device knows (section 3): `{asked, made}`, those still unanswered that a vault it acts for is asked, and those a vault it acts for made, each `{entry, from, to, level, why, vaults, answer, created}` |
 
 A job (`crates/avendb-net/src/jobs.rs`) is a file brought into the store as its bytes are sealed (`bring`, in bytes), a
 file kept whole as its pieces come from its holders (`keep`, in pieces), or the edits a peer holds for the device,
@@ -769,6 +784,7 @@ entry of its type (section 9).
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
 | `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then avenCEO server's share and a profile on each. `{"vaults"}` | Always |
 | `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}` | Never |
+| `ask {to, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
 | `back_up {on}` | avenCEO server's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
 | `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
 | `card {name}`, `profile {vault, name}` | The device's card in its person's vault; a vault's profile. `{"wrote"}` | Never |
@@ -913,15 +929,16 @@ told by its `kind`: a **document** (a note: a title, blocks and tags), a **todo*
 Markdown text), a **flow** (stages an item can be in, each with whether it is public and where it goes next), a
 **function** (a script that runs when an item enters or leaves a stage of a flow), a **post** (a public post of a
 stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
-name and its media type), and a **story** (one content piece from its first spark to every platform it goes out on:
+name and its media type), a **story** (one content piece from its first spark to every platform it goes out on:
 its title and format, the sparks it grew from, its journey's beats and its hook variants as rows, its intro,
-description and launch; the story flow's tag says which of its stages it is in), and a **spark** (anything that might
+description and launch; the story flow's tag says which of its stages it is in), a **spark** (anything that might
 become something, a thought, a link, a picture, a mood board, someone else's post, a video with its words, a quote: a
 document's title and blocks, so a note's page edits it, and beside them its look, its link, whose it is, its language,
 its transcript, its files and, for a mood board, the sparks it gathers; a story names the sparks it grows from, and
-those with a link or whose they are are its sources). A note keeps its type, a document; the page lists notes among
-the sparks, and the world gives a spark's record beside its title and text (`world::What::Note`). Every shipped
-schema starts at v1.
+those with a link or whose they are are its sources), and an access **request** (the vault asked, a level, why, the
+vaults it names and, once given, its answer: `"granted"` or `"denied"`, section 3). A note keeps its type, a
+document; the page lists notes among the sparks, and the world gives a spark's record beside its title and text
+(`world::What::Note`). Every shipped schema starts at v1.
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 

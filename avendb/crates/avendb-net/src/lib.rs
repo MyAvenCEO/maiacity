@@ -122,6 +122,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
+use avendb::engine::follow_server;
 use avendb::id::{BlobId, EditId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Drafting, Lab, Unsigned};
@@ -905,9 +906,11 @@ impl Node {
     /// new one their vault founds, as their aven (`Place`). The passkey `passkey` approves it all in one ceremony, and
     /// the device signs the edit that adds it too, as a server's claim goes (`claim_with`, `add`): an agent device,
     /// such as agentClaude on the person's Mac, which acts as its device vault by its own key from then on, with the
-    /// shares its parent passes on to it. The device vault's parent and the device vault. Fails if this device belongs
-    /// to no vault, the device offered isn't the one answering or takes no claim, the passkey isn't at hand, the vaults'
-    /// rules refuse it (a second aven, a parent their vault doesn't own), or the device refuses the edit.
+    /// shares its parent passes on to it. Each vault it founds then follows the person's server setting, backup or
+    /// relay, as their own vault does (`avendb::engine::follow_server`). The device vault's parent and the device
+    /// vault. Fails if this device belongs to no vault, the device offered isn't the one answering or takes no claim,
+    /// the passkey isn't at hand, the vaults' rules refuse it (a second aven, a parent their vault doesn't own), or the
+    /// device refuses the edit.
     pub async fn add_device_vault_with(
         &self,
         offer: &Offer,
@@ -922,6 +925,13 @@ impl Node {
             _ => None,
         };
         let parent = self.read(parent).await.context("a device vault has one owner, its parent")?;
+        let founded = match place {
+            Place::UnderNew(_) => vec![parent, vault],
+            Place::Under(_) => vec![vault],
+            Place::Vault(_) | Place::Seed => vec![],
+        };
+        let follow = move |lab: &mut Lab, me| founded.into_iter().try_for_each(|v| follow_server(lab, me, v).map(drop));
+        self.act(follow).await.map_err(|why| anyhow!("the server's share of a new vault is refused: {why:?}"))?;
         Ok((parent, vault))
     }
 
