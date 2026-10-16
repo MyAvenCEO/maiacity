@@ -23,6 +23,7 @@
 import { checkCode } from './check.js';
 import { applyCards, defaultCards } from '../economy/params.js';
 import { canonical, cardsOfFiles, cardsToFiles, jsonFile, viewToFiles } from './files.js';
+import { viewOfEntry } from './index.js';
 
 export const GAME = 'sandbox-7';
 const CONFIG_ID = /^[a-z][a-z0-9-]{1,40}$/;
@@ -181,17 +182,12 @@ export function landing(exported, have = {}) {
 			refused.push(`view ${id}: that id is ${there.for}'s screen`);
 			continue;
 		}
-		const made = viewToFiles(r.value);
-		const { 'entry.json': entryText, ...own } = made;
-		if (there && canonical(JSON.parse(entryText)) === canonical(entryOf(there)) && canonical(own) === canonical(there.files)) continue;
-		Object.assign(files, prefix(`views/${id}`, made));
+		// the same view as the repo's, whatever order its keys come in (the database keeps JSON in its own order)
+		const was = there ? checkCode('view', viewOfEntry(there), { mode: 'read' }) : null;
+		if (was?.ok && canonical(was.value) === canonical(r.value)) continue;
+		Object.assign(files, prefix(`views/${id}`, viewToFiles(r.value)));
 		landed.push(`View ${id} “${line(r.value.title, 80)}” (Generated UI)${there ? ', changed' : ''}`);
 	}
 	return { files, landed, refused };
 }
 
-/** an entry's entry.json as it was written: without what the index adds */
-const entryOf = (e) => {
-	const { ref, files, hash, ...entry } = e;
-	return entry;
-};

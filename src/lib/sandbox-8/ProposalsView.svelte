@@ -33,10 +33,20 @@
 	const madeBy = $derived(here ? mips.find((m) => m.action === 'world' && m.status === 'accepted' && m.result?.world === here) : null);
 	const hereName = $derived(worlds.find((w) => w.id === here)?.name ?? 'this world');
 
+	// accepted MIPs that wait to land from the repo (the landing job writes them into code/ and the deploy lands them):
+	// when one lands while the page is open, the page takes it in, as it did the moment it was accepted before
+	let waiting = /** @type {Set<number>} */ (new Set());
 	async function refresh() {
 		if (!acct?.play) return;
 		try {
-			mips = (await loadMips()).mips;
+			const next = (await loadMips()).mips;
+			for (const m of next) {
+				if (!waiting.has(m.number) || m.result?.landing !== 'landed') continue;
+				if (m.result.amended) onamend({ number: m.number, ...m.result });
+				else onreload();
+			}
+			waiting = new Set(next.filter((/** @type {any} */ m) => m.result?.landing === 'waiting').map((/** @type {any} */ m) => m.number));
+			mips = next;
 			error = '';
 		} catch (e) {
 			error = /** @type {any} */ (e)?.message || 'The MIPs could not be loaded.';
@@ -67,11 +77,9 @@
 	async function judge(m, accept) {
 		busy = true;
 		try {
-			const r = await decide(m.number, accept, notes[m.number] ?? '');
+			// accepting changes nothing yet: the MIP lands from the repo within minutes (refresh takes it in then)
+			await decide(m.number, accept, notes[m.number] ?? '');
 			await refresh();
-			if (accept && r?.world) onworld(r);
-			if (accept && r?.amended) onamend(r);
-			else if (accept) onreload();
 		} catch (e) {
 			error = /** @type {any} */ (e)?.message || 'It could not be decided.';
 		} finally {
@@ -173,7 +181,7 @@
 	<header class="top">
 		<div>
 			<h2>Proposals</h2>
-			<p>MIPs, MaiaCity improvement proposals: one list, numbered in order, each belonging to the world it was proposed in. A config is everything the valley runs on, as config cards: values, data and the QuickJS code that goes with them. A MIP is a title, a description and the cards as they would be; a new world is a MIP too, with every setting it starts with, and so is a change to a running world's own rules (amend). MIPs are proposed over the studio's MCP. Once the admin accepts one here, its cards go into the config as a new version, the new world appears under Worlds, or the world amended plays on its new rules.</p>
+			<p>MIPs, MaiaCity improvement proposals: one list, numbered in order, each belonging to the world it was proposed in. A config is everything the valley runs on, as config cards: values, data and the QuickJS code that goes with them. A MIP is a title, a description and the cards as they would be; a new world is a MIP too, with every setting it starts with, and so is a change to a running world's own rules (amend). MIPs are proposed over the studio's MCP. Once the admin accepts one here, it lands in the repo (code/) within minutes, and then its cards go into the config as a new version, the new world appears under Worlds, or the world amended plays on its new rules.</p>
 		</div>
 	</header>
 
@@ -296,7 +304,7 @@
 				{#if !acct.admin}<small>Only the admin accepts MIPs for now.</small>{/if}
 			</div>
 		{:else}
-			<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : m.result?.world ? `: ${m.result.name} is made` : m.result?.amended ? `: ${m.result.name}'s rules are amended` : ''}{m.note ? ` · "${m.note}"` : ''} <button class="link" onclick={() => (unfolded[m.number] = !unfolded[m.number])}>{unfolded[m.number] ? 'Fold' : 'What it changed'}</button>{#if m.result?.world && m.result.world !== here} · <button class="link" onclick={() => onworld(m.result)}>Open it</button>{/if}</div>
+			<div class="decided">{m.status === 'withdrawn' ? 'Withdrawn' : m.status === 'accepted' ? 'Accepted' : 'Rejected'} {when(m.decided)}{m.result?.landing === 'waiting' ? ': it lands from the repo within minutes' : m.result?.landing === 'failed' ? `, but it could not land: ${m.result.error}` : m.result?.version ? `: ${m.result.config} is now version ${m.result.version}` : m.result?.deleted ? `: ${m.result.config} is deleted` : m.result?.world ? `: ${m.result.name} is made` : m.result?.amended ? `: ${m.result.name}'s rules are amended` : ''}{m.note ? ` · "${m.note}"` : ''} <button class="link" onclick={() => (unfolded[m.number] = !unfolded[m.number])}>{unfolded[m.number] ? 'Fold' : 'What it changed'}</button>{#if m.result?.world && m.result.world !== here} · <button class="link" onclick={() => onworld(m.result)}>Open it</button>{/if}</div>
 		{/if}
 	</article>
 {/snippet}

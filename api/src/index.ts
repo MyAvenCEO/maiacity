@@ -27,8 +27,8 @@ import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, K
 import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
-import { ViewError, deleteView, listViews, putView } from "./genui.js";
-import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
+import { ViewError, deleteView, dropLandedDrafts, keepView, listViews, putView } from "./genui.js";
+import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, landMips, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -149,6 +149,9 @@ const publicFounder = (f: { id: string; number: number | bigint; name: string; c
 
 await migrate();
 useDb(fromBunSql(sql));
+// what the last deploy brought from the repo: accepted MIPs that landed in code/, Generated UI drafts that were kept
+await landMips().catch((e) => console.error("landing MIPs:", e));
+await dropLandedDrafts().catch((e) => console.error("dropping landed drafts:", e));
 await migrateLedger();
 await initSessions();
 await initRoles();
@@ -237,15 +240,16 @@ const server = Bun.serve({
       },
     },
 
-    // Generated UI (api/src/genui.js): mini app views an agent writes over the MCP (the app's key) and /app/genui/
-    // draws, each in its own box. An admin's, like the other tools: reading and writing both need media:admin.
+    // Generated UI (api/src/genui.js): the repo's views, and the drafts an agent writes over the MCP (the app's key)
+    // until the admin keeps one and it lands in the repo; /app/genui/ draws them all, each in its own box. An admin's,
+    // like the other tools: reading and writing both need media:admin; keeping a draft is the admin's own, on the page.
     "/api/genui": {
       OPTIONS: preflight,
       GET: async (req) => {
         const me = await allowed(req, "media:admin");
         if (me instanceof Response) return me;
         try {
-          return json(req, { views: await listViews(), now: Date.now() });
+          return json(req, { ...(await listViews()), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -269,6 +273,21 @@ const server = Bun.serve({
         try {
           await deleteView(req.params.id);
           return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    // keeping a draft ({ keep: true }, or false to take it back) is the admin's, on the page (the Mac app's page asks
+    // with the app's key, so its MCP refuses this path to agents, as it refuses deciding a MIP)
+    "/api/genui/:id/keep": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "media:admin");
+        if (me instanceof Response) return me;
+        try {
+          const body = await readJson(req);
+          return json(req, { view: await keepView(req.params.id, body?.keep !== false) });
         } catch (e) {
           return fail(req, e);
         }
@@ -335,7 +354,7 @@ const server = Bun.serve({
         }
       },
     },
-    // POST { accept: true | false, note } — the admin's decision; accepting puts the MIP's cards in and versions the config
+    // POST { accept: true | false, note } — the admin's decision; an accepted MIP lands from the repo once the landing job merged it
     "/api/economy/mips/:number/decide": {
       OPTIONS: preflight,
       POST: async (req) => {

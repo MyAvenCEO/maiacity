@@ -1667,7 +1667,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code, and view cards (the valley's screens, MCP Apps: change a rule and the screen that shows it in one MIP). Or create a new config from another, or delete one, or amend a running world's own rules (action amend: its cards on top of the world's own, the world plays on them once accepted), or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here."
+        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code, and view cards (the valley's screens, MCP Apps: change a rule and the screen that shows it in one MIP). Or create a new config from another, or delete one, or amend a running world's own rules (action amend: its cards on top of the world's own, the world plays on them once accepted), or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here. An accepted MIP lands from the repo: the landing job writes its cards into code/ and merges that within minutes, and only then does it change anything (its result says landing: waiting, landed or failed, and why)."
     )]
     async fn economy_mip_create(&self, Parameters(a): Parameters<EconomyMip>) -> String {
         let mut mip = a.mip;
@@ -1774,21 +1774,21 @@ impl Studio {
     // ── Generated UI (/app/genui/): mini app views an agent writes on the fly, each drawn in its own box ──
 
     #[tool(
-        description = "The Generated UI views on the dashboard's Generated UI page (/app/genui/), newest change first: id, title, note, kind (a2ui = declarative JSON drawn by the page's own components, html = code in a sandboxed frame), spec, version and who wrote it. Read this before changing one."
+        description = "The Generated UI views on the dashboard's Generated UI page (/app/genui/): `views`, the repo's (code/views/, the ones kept), and `drafts`, the ones agents wrote that the admin has not kept yet, newest change first (keep: true once the admin kept it; it lands in the repo within minutes). Each: id, title, note, kind (a2ui = declarative JSON drawn by the page's own components, html = code in a sandboxed frame), spec, and for a draft its version and who wrote it. Read this before changing one."
     )]
     async fn genui_views(&self) -> String {
         text(self.api("GET", "/api/genui", None).await)
     }
 
     #[tool(
-        description = "Make or replace a Generated UI view: a mini app that appears at once on the dashboard's Generated UI page (/app/genui/), for the admin. Prefer kind a2ui (declarative: components from a fixed catalog, its logic in QuickJS) for forms, numbers, tables and bars; use kind html (an MCP App in a sandboxed frame, libraries three, d3 and the MCP Apps SDK) for 3D scenes, rich charts or custom HTML/CSS. The view is checked by the one checker (game/code/check.js): a component outside the catalog, a library outside the list, a spec too big, anything that loads from an address (img src, CSS url(), script src, link, iframe), a handler written into the markup (onclick=), a script import its libs don't name, or logic that imports is refused with the reason; the answer's notes say what is kept but does nothing (fetch, storage). Every view shows at once, merged or proposed: our engine makes its HTML safe and runs its script in a worker on a copy of the DOM, with no network, no storage and no reach into the page, so put all its data inside it."
+        description = "Make or replace a Generated UI draft: a mini app that appears at once on the dashboard's Generated UI page (/app/genui/), as a draft, for the admin; the admin keeps it there, and a kept draft lands in the repo (code/views/) by PR within minutes. Using the id of a view in the repo makes a draft that changes it. Prefer kind a2ui (declarative: components from a fixed catalog, its logic in QuickJS) for forms, numbers, tables and bars; use kind html (an MCP App in a sandboxed frame, libraries three, d3 and the MCP Apps SDK) for 3D scenes, rich charts or custom HTML/CSS. The view is checked by the one checker (game/code/check.js): a component outside the catalog, a library outside the list, a spec too big, anything that loads from an address (img src, CSS url(), script src, link, iframe), a handler written into the markup (onclick=), a script import its libs don't name, or logic that imports is refused with the reason; the answer's notes say what is kept but does nothing (fetch, storage). Every view shows at once, merged or proposed: our engine makes its HTML safe and runs its script in a worker on a copy of the DOM, with no network, no storage and no reach into the page, so put all its data inside it."
     )]
     async fn genui_put(&self, Parameters(a): Parameters<GenuiPut>) -> String {
         let body = json!({ "title": a.title, "note": a.note.unwrap_or_default(), "kind": a.kind, "spec": a.spec });
         text(self.api("PUT", &format!("/api/genui/{}", a.id), Some(body)).await)
     }
 
-    #[tool(description = "Delete a Generated UI view by its id. With none left, the page starts again from its three examples.")]
+    #[tool(description = "Delete a Generated UI draft by its id. A view in the repo (code/views/) is changed or removed only by PR.")]
     async fn genui_delete(&self, Parameters(a): Parameters<GenuiDelete>) -> String {
         text(self.api("DELETE", &format!("/api/genui/{}", a.id), None).await.map(|_| json!({ "deleted": a.id })))
     }
@@ -1800,9 +1800,21 @@ impl Studio {
         if !a.path.starts_with("/api/") {
             return "error: only paths under /api/".into();
         }
+        // the path as the API routes it: its segments, without a query or empty ones (so `?x` or `//` hides nothing)
+        let route = a.path.split(['?', '#']).next().unwrap_or("");
+        let parts: Vec<&str> = route.split('/').filter(|s| !s.is_empty()).collect();
+        // and as written: no `.`/`..` segment the URL would fold, no escape or backslash the server would read otherwise
+        if parts.iter().any(|s| *s == "." || *s == "..") || route.contains(['%', '\\']) {
+            return "error: write the path plainly: no . or .. segments, no % escapes or backslashes".into();
+        }
+        let under = |root: &[&str], last: &str| parts.starts_with(root) && parts.last() == Some(&last);
         // a MIP is accepted or rejected by the admin, on the page — never by an agent
-        if a.path.starts_with("/api/economy/mips/") && a.path.trim_end_matches('/').ends_with("/decide") {
+        if under(&["api", "economy", "mips"], "decide") {
             return "error: only the admin accepts or rejects a MIP, on the page".into();
+        }
+        // and a Generated UI draft is kept by the admin, on the page: an agent's view never keeps itself
+        if under(&["api", "genui"], "keep") {
+            return "error: only the admin keeps a Generated UI view, on the page".into();
         }
         // and a MaiaCity V1 MIP is signed or rejected by a player, on the page (the server refuses a key's too)
         if a.path.starts_with("/api/maiacity-v1/move") {
