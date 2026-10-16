@@ -16,11 +16,23 @@ def Reachable (st : State) : Prop := ∃ edits, st = replay {} edits
 
 /-! ## Vaults -/
 
-/-- Every vault has the shape of its kind: a human vault is owned by signers, its person's passkeys; a coop or an aven
-    vault by human and coop vaults, never a signer; a coop has no devices; and only a human vault has a root. -/
+/-- Every vault has the shape of its kind (`Kind.rules`): its owners are of the kinds its kind's table lists (a human
+    vault's signers, its person's passkeys; never a signer for any other kind; an aven's a human vault), it has
+    devices only where its kind does, and only a human vault has a root. -/
 def KindsFit (st : State) : Prop :=
   ∀ v vt, st.vault? v = some vt → (∀ p ∈ vt.owners, ownerFits st vt.kind p = true) ∧
     (vt.devices ≠ [] → vt.kind.hasDevices = true) ∧ (vt.root ≠ none → vt.kind = .human)
+
+/-- Every vault has an owner, and no more owners than its kind takes (`KindRules.most`): an aven and a device vault
+    have one. -/
+def OwnersCount (st : State) : Prop :=
+  ∀ v vt, st.vault? v = some vt → vt.owners ≠ [] ∧ vt.kind.rules.takes vt.owners.length = true
+
+/-- Where the kind table lets one owner own one vault of a kind (`KindRules.each`), no owner owns two: a human vault
+    owns one aven at most. -/
+def OneEach (st : State) : Prop :=
+  ∀ k, k.rules.each = some 1 → ∀ x y vx vy p, st.vault? x = some vx → st.vault? y = some vy → vx.kind = k →
+    vy.kind = k → p ∈ vx.owners → p ∈ vy.owners → x = y
 
 /-- `OwnsPlus st a x`: vault `a` owns vault `x`, directly or through a chain. -/
 inductive OwnsPlus (st : State) : VaultId → VaultId → Prop where

@@ -292,11 +292,31 @@ theorem narrow_reachable {st : State} (hr : Reachable st) : st.narrow = [] := by
 /-! ## Share chains -/
 
 /-- The shares of a state are well formed: no two share an id, and a share resting on another names one that comes
-    before it, over the same vault, an owner share granted to its issuer, wide if it is. -/
+    before it, over the same vault, granted to its issuer, no keep share, at a level no lower than its own, and wide if
+    it is. -/
 def SharesWell (st : State) : Prop :=
   (st.shares.map (·.id)).Nodup ∧
   ∀ c ∈ st.shares, ∀ p, c.parent = some p → ∃ pc, st.share? p = some pc ∧ st.shares.idxOf pc < st.shares.idxOf c ∧
-    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .vault c.issuer ∧ (c.wide = true → pc.wide = true)
+    pc.over = c.over ∧ pc.who = .vault c.issuer ∧ pc.level.isKeep = false ∧ c.level.rank ≤ pc.level.rank ∧
+    (c.wide = true → pc.wide = true)
+
+/-- What a share that rests on another checked of it (`shareParentOk`): the share it rests on is live, over the same
+    vault, granted to its issuer and no keep share; its level is no lower and it is wide if the new one is; and it is
+    an owner share, or the new share goes to a vault its issuer owns directly. -/
+theorem shareParentOk_some {st : State} {c : Share} {p : ShareId} (hp : c.parent = some p)
+    (hok : shareParentOk st c = true) : ∃ pc, st.share? p = some pc ∧ st.live p = true ∧ pc.over = c.over ∧
+      pc.who = .vault c.issuer ∧ pc.level.isKeep = false ∧ c.level.rank ≤ pc.level.rank ∧
+      (c.wide = true → pc.wide = true) ∧ (pc.level = .owner ∨ toOwn st c = true) := by
+  unfold shareParentOk at hok
+  rw [hp] at hok
+  dsimp only at hok
+  cases hpc : st.share? p with
+  | none => rw [hpc] at hok; cases hok
+  | some pc =>
+    rw [hpc] at hok
+    simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hok
+    obtain ⟨⟨⟨⟨⟨⟨hlive, hover⟩, hgr⟩, hkeep⟩, hrank⟩, hwide⟩, hpass⟩ := hok
+    exact ⟨pc, rfl, hlive, hover, hgr, hkeep, hrank, fun h => by simpa [h] using hwide, hpass⟩
 
 /-- Two members of a list with one id are one, where ids come once: two shares, keep shares among them. -/
 theorem eq_of_id {α β : Type} {xs : List α} {id : α → β} (hnd : (xs.map id).Nodup) {a b : α} (ha : a ∈ xs)
@@ -350,20 +370,12 @@ theorem sharesWell_add {st st' : State} (hw : SharesWell st) {c : Share} (hshare
         split at hok
         · simp [hp] at hok
         · exact hok
-      unfold shareParentOk at hok
-      rw [hp] at hok
-      dsimp only at hok
-      cases hpc : st.share? p with
-      | none => rw [hpc] at hok; cases hok
-      | some pc =>
-        rw [hpc] at hok
-        simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true'] at hok
-        obtain ⟨⟨⟨⟨_, hover⟩, hlevel⟩, hgr⟩, hwide⟩ := hok
-        have hpcm := List.mem_of_find?_eq_some hpc
-        refine ⟨pc, hlook p pc hpc, ?_, hover, hlevel, hgr, fun h => by simpa [h] using hwide⟩
-        rw [hidx pc hpcm]
-        simp only [hshares, List.idxOf_append, hc, ↓reduceIte, List.idxOf_cons_self, Nat.zero_add]
-        exact List.idxOf_lt_length_of_mem hpcm
+      obtain ⟨pc, hpc, -, hover, hgr, hkeep, hrank, hwide, -⟩ := shareParentOk_some hp hok
+      have hpcm := List.mem_of_find?_eq_some hpc
+      refine ⟨pc, hlook p pc hpc, ?_, hover, hgr, hkeep, hrank, hwide⟩
+      rw [hidx pc hpcm]
+      simp only [hshares, List.idxOf_append, hc, ↓reduceIte, List.idxOf_cons_self, Nat.zero_add]
+      exact List.idxOf_lt_length_of_mem hpcm
 
 /-- In every reachable state the shares are well formed. -/
 theorem sharesWell_reachable {st : State} (hr : Reachable st) : SharesWell st := by
@@ -425,27 +437,27 @@ theorem chain_parent {st : State} (hw : SharesWell st) {c pc : Share} {p : Share
 
 theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
     (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) :
-    pc.over = c.over ∧ pc.level = .owner ∧ pc.who = .vault c.issuer ∧
+    pc.over = c.over ∧ pc.who = .vault c.issuer ∧ c.level.rank ≤ pc.level.rank ∧
       (∀ a, effSelects st c a = true → effSelects st pc a = true) ∧ (c.wide = true → pc.wide = true) := by
   have hw := sharesWell_reachable hr
-  obtain ⟨pc', hpc', -, hover, hlevel, hgr, hwide⟩ := hw.2 c hc pc.id hp
+  obtain ⟨pc', hpc', -, hover, hgr, -, hrank, hwide⟩ := hw.2 c hc pc.id hp
   -- ids come once, so the parent found is `pc`
   have hid : pc'.id = pc.id := by simpa using List.find?_some hpc'
   obtain rfl := eq_of_id hw.1 (List.mem_of_find?_eq_some hpc') hpc hid
-  refine ⟨hover, hlevel, hgr, fun a ha => ?_, hwide⟩
+  refine ⟨hover, hgr, hrank, fun a ha => ?_, hwide⟩
   unfold effSelects at ha ⊢
   rw [chain_parent hw hp hpc', List.all_append, Bool.and_eq_true] at ha
   exact ha.1
 
 /-- In every reachable state no owner share is wide, since owner of a whole vault is an owner of it, which no share
-    makes (WideOwner); so a wide share rests on no share, as a share rests only on an owner share and is wide only if
-    that one is, and the vault it is over issued it, unless it is a keep share. -/
+    makes (WideOwner); and a wide share that rests on none, but a keep share, was issued by the vault it is over. A wide
+    share rests only on a wide one (T22), so every wide chain starts with a share its vault issued. -/
 theorem T22_wide_shares {st : State} (hr : Reachable st) :
     ∀ c ∈ st.shares, (c.level = .owner → c.wide = false) ∧
-      (c.wide = true → c.parent = none ∧ (c.level.isKeep = false → c.issuer = c.over)) := by
+      (c.wide = true → c.parent = none → c.level.isKeep = false → c.issuer = c.over) := by
   obtain ⟨edits, rfl⟩ := hr
   refine replay_inv (fun st => ∀ c ∈ st.shares, (c.level = .owner → c.wide = false) ∧
-      (c.wide = true → c.parent = none ∧ (c.level.isKeep = false → c.issuer = c.over)))
+      (c.wide = true → c.parent = none → c.level.isKeep = false → c.issuer = c.over))
     (fun st st' edit hinv h => ?_) edits {} (fun _ h => by cases h)
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -457,30 +469,16 @@ theorem T22_wide_shares {st : State} (hr : Reachable st) :
     rcases hx with hx | hx
     · exact hinv x hx
     · rw [hx]
-      refine ⟨hwo, fun hw => ?_⟩
+      refine ⟨hwo, fun _ hp hk => ?_⟩
       unfold restsOk at hok
       split at hok
-      · -- a keep share rests on nothing
-        rename_i hk
-        simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hok
-        exact ⟨hok.1, fun h => by simp [h] at hk⟩
+      · -- a keep share is none of these
+        rename_i hk'
+        rw [hk] at hk'
+        cases hk'
       unfold shareParentOk at hok
-      cases hp : c.parent with
-      | none =>
-        rw [hp] at hok
-        exact ⟨rfl, fun _ => by simpa using hok⟩
-      | some p =>
-        -- the share it rests on would be a wide owner share
-        rw [hp] at hok
-        dsimp only at hok
-        cases hpc : st.share? p with
-        | none => rw [hpc] at hok; cases hok
-        | some pc =>
-          rw [hpc] at hok
-          simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true'] at hok
-          obtain ⟨⟨⟨⟨-, -⟩, hlevel⟩, -⟩, hwide⟩ := hok
-          have := (hinv pc (List.mem_of_find?_eq_some hpc)).1 hlevel
-          simp [hw, this] at hwide
+      rw [hp] at hok
+      simpa using hok
 
 /-- Two tests that agree on every member of a list agree on whether some member passes. -/
 theorem any_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x ∈ l, p x = q x) : l.any p = l.any q := by
@@ -890,13 +888,13 @@ theorem keep_revocation_cuts_nothing {st post : State} (hr : Reachable st)
   obtain ⟨hcc, hord⟩ := writes_reachable hr
   have hkm := List.mem_of_find?_eq_some hk
   have hkid : k.id = c := by simpa using List.find?_some hk
-  -- the share with id `c` is `k`, and no share rests on it, as a share rests only on an owner share
+  -- the share with id `c` is `k`, and no share rests on it, as no share rests on a keep share
   have hone : ∀ x ∈ st.shares, x.id = c → x = k := fun x hx hxc => eq_of_id hw.1 hx hkm (hxc.trans hkid.symm)
   have hnp : ∀ y ∈ st.shares, y.parent ≠ some c := fun y hy hyp => by
-    obtain ⟨pc, hpc, -, -, hlevel, -⟩ := hw.2 y hy c hyp
+    obtain ⟨pc, hpc, -, -, -, hnk, -⟩ := hw.2 y hy c hyp
     rw [hk] at hpc
     cases hpc
-    rw [hlevel] at hkeep
+    rw [hnk] at hkeep
     cases hkeep
   unfold apply at h
   rw [ha] at h

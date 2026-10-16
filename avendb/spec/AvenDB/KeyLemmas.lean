@@ -202,7 +202,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   dsimp only at h
   split at h <;> (repeat' split at h) <;> (try (cases h; done))
   · -- genesis
-    rename_i hfree hfit _ _
+    rename_i hfree hfit _ _ _
     cases h
     refine Change.applied (.genesis _ ?_ ?_)
     · simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
@@ -211,7 +211,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     · simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false, List.all_eq_true] at hfit
       exact hfit.1
   · -- a new owner, a vault
-    rename_i hv _ _ _ hfit _ _
+    rename_i hv _ _ _ hfit _ _ _
     cases h
     refine Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => ?_)
     rcases List.mem_append.1 hp with hp | hp
@@ -221,7 +221,7 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
       simp only [Bool.or_eq_true, Bool.not_eq_true', not_or, Bool.not_eq_false] at hfit
       exact .inr hfit.2
   · -- a new owner, a signer
-    rename_i hv _ _ _ hfit _ _
+    rename_i hv _ _ _ hfit _ _ _
     cases h
     refine Change.applied (.setVault _ _ _ hv (by rfl) fun p hp => ?_)
     rcases List.mem_append.1 hp with hp | hp
@@ -316,13 +316,10 @@ edit keeps this. -/
 /-- A vault that may own vaults exists. -/
 theorem ownerFits_vault {st : State} {k : Kind} {o : VaultId} (h : ownerFits st k (.vault o) = true) :
     (st.vault? o).isSome = true := by
-  cases k with
-  | human => simp [ownerFits] at h
-  | coop | aven =>
-    simp only [ownerFits, ownsVaults] at h
-    cases ho : st.vault? o with
-    | none => rw [ho] at h; cases h
-    | some _ => rfl
+  simp only [ownerFits] at h
+  cases ho : st.vault? o with
+  | none => rw [ho] at h; cases h
+  | some _ => rfl
 
 /-- Lookups only read the vaults. -/
 theorem vault?_congr {st st' : State} (h : st'.vaults = st.vaults) (x : VaultId) : st'.vault? x = st.vault? x := by

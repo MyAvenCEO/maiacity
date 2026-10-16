@@ -21,7 +21,7 @@ inductive Setting where
 
 /-- What a share edit gives: a grant, share `c`, issued by `c.issuer`, or a keep share, which grants nothing and names
     one of its issuer's devices; or a place in vault `v`, as an owner `p`, or as a device `d` (a phone or a browser of a
-    human vault, a server of an aven vault). Owner of the whole vault is an owner of it: a grant never makes anyone
+    human vault, a harness or a server of a device vault). Owner of the whole vault is an owner of it: a grant never makes anyone
     that (WideOwner). -/
 inductive Sharing where
   | grant  (c : Share) (via : List VaultId := [])
@@ -134,29 +134,26 @@ def State.markWants (st : State) (e : EntryId) (rs : List ShareId) : State :=
 def setEntry (st : State) (en : Entry) : State :=
   { st with entries := st.entries.map fun x => if x.id == en.id then en else x }
 
-/-- A vault that may own coop and aven vaults: a human or a coop vault, never an aven vault (yet). -/
-def ownsVaults (st : State) (o : VaultId) : Bool :=
-  match st.vault? o with
-  | some vt => vt.kind != .aven
-  | none    => false
+/-- Principal `p` may own a vault of kind `k`, as the kind's table says (`Kind.rules`): a signer where signers own the
+    kind, an existing vault of a kind the table lists. So signers own human vaults alone, and never a vault directly
+    otherwise; an aven is owned by a human vault, and a device vault owns nothing. -/
+def ownerFits (st : State) (k : Kind) : Principal → Bool
+  | .signer _ => k.rules.ownedBy.bySigners
+  | .vault o  => (st.vault? o).any fun vt => k.rules.ownedBy.byKind vt.kind
 
-/-- Human vaults are owned by signers, their person's passkeys; coop and aven vaults by existing human and coop vaults,
-    never by a signer directly. -/
-def ownerFits (st : State) : Kind → Principal → Bool
-  | .human, .signer _ => true
-  | .coop,  .vault o  => ownsVaults st o
-  | .aven,  .vault o  => ownsVaults st o
-  | _, _ => false
+/-- Principal `p` may own one more vault of kind `k`: the kind's table sets no limit to how many one owner owns
+    (`KindRules.each`), or `p` owns fewer. So a human vault owns one aven at most. -/
+def roomFor (st : State) (k : Kind) (p : Principal) : Bool :=
+  k.rules.each.all fun n => decide ((st.vaults.filter fun x => x.kind == k && x.owners.contains p).length < n)
 
 /-- Only a human vault has a root, and the root signs its genesis. -/
 def rootFits (kind : Kind) (sigs : List SignerId) : Option SignerId → Bool
   | none   => true
   | some r => kind == .human && sigs.contains r
 
-/-- Human and aven vaults have devices, coops don't: a coop acts only through its owners. -/
-def Kind.hasDevices : Kind → Bool
-  | .coop => false
-  | _     => true
+/-- A vault of the kind has devices, as the kind's table says: human and device vaults do; a coop acts only through its
+    owners, and an aven through its owner's devices and its agents. -/
+def Kind.hasDevices (k : Kind) : Bool := k.rules.devices
 
 /-- Write `w` builds only on writes of its own entry among `ws`. -/
 def depsIn (ws : List Write) (w : Write) : Bool :=
@@ -187,16 +184,26 @@ def dropUnseen (pre post : State) (keep : List EditId) : State :=
   let es := post.entries.filter fun en => ws.any fun w => w.entry == en.id && w.first
   { post with entries := es, writes := ws.filter fun w => es.any (·.id == w.entry) }
 
-/-- A root share is issued by the vault it is over; a share resting on another is issued by that share's grantee, from a
-    live owner share over the same vault, and is wide only if that one is (so a wide share's whole chain is wide). -/
+/-- Share `c` goes from its issuer to its own: it names a vault its issuer owns directly, as an aven's share to one of
+    its agents, a coop's to its server, a person's to their aven. -/
+def toOwn (st : State) (c : Share) : Bool :=
+  match c.who with
+  | .vault g => ownerOf st c.issuer g
+  | _ => false
+
+/-- A share rests where it may, by one rule for every vault. A root share is issued by the vault it is over. A share
+    that rests on another, a sub cap, is issued by that one's grantee, from a live share over the same vault that is no
+    keep share; its level is no higher than that one's, and it is wide only if that one is (so a wide share's whole
+    chain is wide); and either the share it rests on is an owner share, whose `share` op lets its holder share on with
+    anyone, or the issuer passes it on to its own (`toOwn`). -/
 def shareParentOk (st : State) (c : Share) : Bool :=
   match c.parent with
   | none => c.issuer == c.over
   | some p =>
     match st.share? p with
     | none    => false
-    | some pc => st.live p && pc.over == c.over && pc.level == Level.owner && pc.who == .vault c.issuer &&
-        (!c.wide || pc.wide)
+    | some pc => st.live p && pc.over == c.over && pc.who == .vault c.issuer && !pc.level.isKeep &&
+        decide (c.level.rank ≤ pc.level.rank) && (!c.wide || pc.wide) && (pc.level == Level.owner || toOwn st c)
 
 /-- A share rests where it may: a keep share on nothing, over a vault whose entries its issuer may hold, so no stranger
     has a vault's stewards mark entries for it; any other share as `shareParentOk` says. -/
@@ -243,6 +250,8 @@ def apply (st : State) (edit : Edit) : Option State :=
   | .genesis v kind owners threshold root =>
     if (st.vault? v).isSome || owners.isEmpty || !nodup owners then none
     else if !owners.all (ownerFits st kind) || !rootFits kind sigs root then none
+    -- no more owners than its kind takes (OneOwner), each of which may own one more of its kind (SecondAven)
+    else if !kind.rules.takes owners.length || !owners.all (roomFor st kind) then none
     else if threshold == 0 || threshold > owners.length then none
     -- every first owner consents
     else if !owners.all (approves st sigs) then none
@@ -252,6 +261,8 @@ def apply (st : State) (edit : Edit) : Option State :=
     | none => none
     | some vt =>
       if vt.owners.contains p || !ownerFits st vt.kind p then none
+      -- no more owners than its kind takes (OneOwner), and the newcomer may own one more of its kind (SecondAven)
+      else if !vt.kind.rules.takes (vt.owners.length + 1) || !roomFor st vt.kind p then none
       -- no cycles: the newcomer must not be the vault itself or something the vault owns
       else if (match p with | .vault x => x == v || owns st v x | .signer _ => false) then none
       -- the vault's threshold, plus the newcomer's consent
@@ -518,7 +529,7 @@ def runFrom (rem : List Edit) (cs : List (Nat × List EditId × List Fact)) :
 /-- Replay `edits`, in this order, with the removals of `rem` and no others. -/
 def runWith (edits rem : List Edit) : State × List Edit := runFrom rem (cuts edits rem) {} edits.zipIdx
 
-/-- How far below the human vaults vault `v` sits: a human vault at 0, a coop or an aven vault one below its lowest
+/-- How far below the human vaults vault `v` sits: a human vault at 0, any other vault one below its lowest
     owner. -/
 def tierN (st : State) : Nat → VaultId → Nat
   | 0, _ => 0
