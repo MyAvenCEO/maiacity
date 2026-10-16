@@ -420,6 +420,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "spark" => Named::Id(lens::SPARK_V2.id()),
             "request" => Named::Id(lens::REQUEST_V1.id()),
             "artifact" => Named::Id(lens::ARTIFACT_V1.id()),
+            "artwork" => Named::Id(lens::ARTWORK_V1.id()),
             s => Named::Id(BlobId::from_hex(s).ok_or_else(bad)?),
         },
         Some(_) => return Err(bad()),

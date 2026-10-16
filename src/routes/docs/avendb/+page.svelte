@@ -1376,11 +1376,12 @@
 					entry, or a row of one, at its newest or at the version it is pinned at.
 				</li>
 				<li>
-					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, flows,
+					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, artworks, flows,
 					functions, posts, and a device’s card, a vault’s profile and a file, each starting at version 1. A kind that grew
 					ships its older versions too, with the lenses between them, so a spark written as version 1 opens on version 2’s
 					canvas. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
-					chapters and words; a spark is a canvas of artifacts, sparks and free notes. Every vault
+					chapters and words; a spark is a canvas of artifacts, sparks and free notes; an artwork is a story’s card of one
+					shape, in layers, rendered into the Library. Every vault
 					reads and writes them offline, and avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so
 					the same id. The todo’s version 0 above is the lens engine’s worked example, which lives only in its tests.
 				</li>
