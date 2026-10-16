@@ -691,6 +691,8 @@ export function createAssets(o) {
 	 * Draws what the camera should see: each copy at its level, the pictures turned to it. Cheap when nothing moved.
 	 */
 	function update() {
+		// the pictures taken since the last frame: their pages' smaller copies made, once for all of them
+		pictures.settle();
 		camera.updateMatrixWorld();
 		const world = camera.matrixWorld.elements, proj = camera.projectionMatrix.elements;
 		if (!dirty && same(world, last.world) && same(proj, last.proj)) return false;

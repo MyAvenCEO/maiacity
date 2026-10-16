@@ -84,7 +84,7 @@ export function createImpostors(renderer, o = {}) {
 		mesh.receiveShadow = true;
 		mesh.customDepthMaterial = depth;
 		group.add(mesh);
-		const page = { target, quad, geo, material, depth, mesh, kinds: 0, n: 0, cap: 0, attrs: null };
+		const page = { target, quad, geo, material, depth, mesh, kinds: 0, n: 0, cap: 0, attrs: null, stale: false };
 		grow(page, 64);
 		clip(page);
 		return page;
@@ -170,6 +170,11 @@ export function createImpostors(renderer, o = {}) {
 		renderer.autoClear = false;
 		renderer.localClippingEnabled = false;
 		const to = new THREE.Vector2();
+		// the page's smaller copies are not made here (three makes them again after every copy onto a page that has
+		// them: the whole page, 2048 pixels a side, nine times a kind, seconds of a software GPU that every frame of the
+		// world waits behind), but once a frame for every picture taken since (`settle`)
+		const mips = page.target.texture.generateMipmaps;
+		page.target.texture.generateMipmaps = false;
 		for (let f = 0; f < FRAMES; f++) {
 			const a = (f / FRAMES) * Math.PI * 2, c = cell + f;
 			camera.position.set(Math.sin(a) * D, mid, Math.cos(a) * D);
@@ -183,11 +188,10 @@ export function createImpostors(renderer, o = {}) {
 			renderer.render(studio, camera);
 			renderer.copyTextureToTexture(shot.texture, page.target.texture, null, to.set((c % cols) * px, Math.floor(c / cols) * px));
 		}
+		page.target.texture.generateMipmaps = mips;
+		page.stale = true;
 		studio.remove(thing);
 		for (const m of thing.children) m.dispose();
-		// and the page's smaller copies for afar, made again now it has more (drawing nothing into it makes them)
-		renderer.setRenderTarget(page.target);
-		renderer.render(new THREE.Scene(), camera);
 		renderer.setRenderTarget(was.target);
 		renderer.setClearColor(was.color, was.alpha);
 		renderer.autoClear = was.autoClear;
@@ -195,10 +199,31 @@ export function createImpostors(renderer, o = {}) {
 		return { page: p, cell, size, foot };
 	}
 
+	/** nothing, drawn into a page: its smaller copies made again (`settle`) */
+	const blank = new THREE.Scene();
+
 	return {
 		group,
 		prepare,
 		add,
+		/**
+		 * The smaller copies of each page that has new pictures, made again (for afar, where a picture is averaged
+		 * down): once for all the pictures taken since they were last made. Before a frame draws any card.
+		 */
+		settle() {
+			const stale = pages.filter((p) => p.stale);
+			if (!stale.length) return;
+			const was = { target: renderer.getRenderTarget(), autoClear: renderer.autoClear };
+			renderer.autoClear = false;
+			for (const page of stale) {
+				// drawing nothing into it makes them
+				renderer.setRenderTarget(page.target);
+				renderer.render(blank, camera);
+				page.stale = false;
+			}
+			renderer.setRenderTarget(was.target);
+			renderer.autoClear = was.autoClear;
+		},
 		/** starts a frame's cards: none on any page */
 		begin() {
 			for (const page of pages) page.n = 0;
