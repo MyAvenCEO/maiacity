@@ -20,7 +20,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { backpack, dugEarth, plantStake } from '$lib/models/planting.js';
-import { bellTent, bellTentBag, firePlace } from '$lib/models/belltent.js';
+import { bellTent } from '$lib/models/belltent.js';
 import { human } from '$lib/actors/human.ts';
 import { blend } from '$lib/actors/rig.ts';
 import { SPEED } from '$lib/models/units.js';
@@ -28,7 +28,7 @@ import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
-import { BELL_TENT, CENTRE_AT, PICKUP, RAMP, THINGS } from './things.js';
+import { BAG_PARTS, BELL_TENT, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PICKUP, RAMP, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
 import { plantRef } from './plants.js';
 
@@ -618,15 +618,66 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		shown = level;
 	}
 	reveal(0);
-	const home = tent();
-	home.traverse((c) => (c.name = 'asset:tent'));
-	overLand(home);
+	// our tent: the bell tent (things/bell-tent@1, built in the box), pitched by its control `pitch` (its canvas hung,
+	// raised and draped as the box wrote it down: engine 5), its lantern the build's own light, turned up at dusk and
+	// its canvas warmed at night (light)
+	const home = new THREE.Group();
+	home.name = 'asset:tent';
 	world.add(home);
-	// its fire place in front of it, where the Buildings' bell tent has it: lit as the light goes (light)
-	const fire = firePlace({ lit: 0 });
+	/** the tent as the box built it, once it is here: its controls, its packs, its canvas and its lantern */
+	let pitched = null;
+	let homePitch = 1;
+	drawn.load(THINGS.tent, home, { pick: 'asset:tent', cast: false }).then(
+		(got) => {
+			overLand(got.obj);
+			const lamp = TENT_LAMP.path.reduce((x, i) => x?.children[i], got.named.get(TENT_LAMP.part));
+			let canvas = null;
+			got.obj.traverse((o) => o.isMesh && [].concat(o.material).forEach((m) => m.emissive?.getHex() === TENT_CLOTH.emissive && (canvas = m)));
+			pitched = { obj: got.obj, poser: got.poser, packs: got.named.get('packs'), canvas, lamp: lamp?.isLight ? lamp : null };
+			// the bell tent's own two packs stand in for ours: hidden
+			for (const c of pitched.packs?.children ?? []) for (const pk of c.children) pk.visible = false;
+			if (homePitch !== 1) pitched.poser.set('pitch', homePitch);
+		},
+		() => {}
+	);
+	/** the tent pitched as far as e (0 … 1) */
+	function setPitch(e) {
+		if (e === homePitch) return;
+		homePitch = e;
+		pitched?.poser.set('pitch', e);
+	}
+	/** whether the tent's own packs are in it yet, as far as it is pitched */
+	const packsIn = () => homePitch >= 1 || !!pitched?.packs?.children[0]?.visible;
+	// its fire place in front of it, where the Buildings' bell tent has it (things/fire-place@1, built in the box and
+	// kept running there while it burns): built by its control `build`, and lit as the light goes (light) by the last
+	// stretch of it, where its fire catches (FIRE_CATCHES): its flames, their light and its embers as the box has them,
+	// flickering in the box
+	const fire = new THREE.Group();
 	fire.position.set(BELL_TENT.fire.x, 0, BELL_TENT.fire.z);
-	overLand(fire);
 	world.add(fire);
+	/** how far it is built and lit (0 … 1), and the control's value they come to */
+	const hearth = { built: 1, lit: 0, b: -1, hero: null, t: null };
+	drawn.cast(THINGS.fire, fire, { cast: false }, (got) => overLand(got.obj)).then(
+		(h) => {
+			hearth.hero = h;
+			hearth.b = -1;
+			burnTo();
+		},
+		() => {}
+	);
+	/** the build's `build` for what is asked: built as far as where its fire catches; built in full, lit as much as
+	 *  `lit` by how far into that last stretch it goes (it burns as much as the ease of it: undone here) */
+	const unease = (f) => 0.5 - Math.sin(Math.asin(1 - 2 * f) / 3);
+	function burnTo() {
+		const [c0, c1] = FIRE_CATCHES;
+		const b = hearth.built < 1 ? Math.min(hearth.built, c0) : c0 + (c1 - c0) * unease(Math.min(1, Math.max(0, hearth.lit)));
+		if (!hearth.hero || b === hearth.b) return;
+		hearth.b = b;
+		hearth.hero.set('build', b);
+		hearth.hero.build(b);
+	}
+	/** the fire place built as far as k (0 … 1) */
+	const buildFire = (k) => ((hearth.built = k), burnTo());
 
 	const named = (o, name) => (o.traverse((c) => { c.name = name; if (c.isMesh) c.castShadow = true; }), o);
 	/** where a library asset the renderer draws stands (./drawn.js): a group the story moves as it moved the asset */
@@ -685,8 +736,30 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		},
 		() => {}
 	);
-	const bundle = named(bellTentBag(), 'asset:tent');
-	overLand(bundle, true); // its canvas lies flat on the ground once it is opened
+	// the tent in its bag (things/bell-tent-bag@1, built in the box), opened by its control `open`: its straps undone,
+	// its cover laid out flat (as the box wrote it down: engine 5), what was in it settled on it (BAG_PARTS)
+	const bundle = new THREE.Group();
+	bundle.name = 'asset:tent';
+	/** the bag as the box built it, once it is here: its controls and what is in it */
+	let bag = null;
+	let bagOpen = 0;
+	drawn.load(THINGS.bag, bundle, { pick: 'asset:tent' }).then(
+		(got) => {
+			overLand(got.obj, true); // its canvas lies flat on the ground once it is opened
+			const kids = got.obj.children.slice(-BAG_PARTS.length);
+			bag = { poser: got.poser, parts: Object.fromEntries(BAG_PARTS.map((id, i) => [id, kids[i]])) };
+			if (bagOpen) bag.poser.set('open', bagOpen);
+		},
+		() => {}
+	);
+	/** the bag opened as far as k (0 … 1) */
+	function openBag(k) {
+		if (k === bagOpen) return;
+		bagOpen = k;
+		bag?.poser.set('open', k);
+	}
+	/** what was in the bag, each part (none until it is here) */
+	const bagParts = () => bag?.parts ?? {};
 	world.add(truck, cube, bundle);
 	// the loading ramp behind it while a machine goes on or off, its lip on the tailgate let down flat
 	const ramp = anchor(THINGS.ramp, 'asset:pickup');
@@ -798,7 +871,6 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the bell tent's own two packs stand in for ours: hidden, our players' backpacks leant on its wall where they
 	 *  stand (the tent's frame) */
 	const TENT_PACKS = { A: [-1.3, 0.1, -1.2], B: [-1.25, 0.55, -1.4] };
-	for (const c of home.userData.parts.packs.children) for (const pk of c.children) pk.visible = false;
 	function packInTent(seat) {
 		const pk = packs[seat], [x, z, ry] = TENT_PACKS[seat];
 		if (pk.parent !== world) world.attach(pk);
@@ -912,7 +984,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			people[me].userData.pack.visible = false;
 		}
 		// a pack not on its player's back nor out at the spot is in the tent, once the tent stands
-		for (const k of ['A', 'B']) if (homed(people[k]) && !people[k].userData.pack.visible && !packs[k].visible && home.visible && home.userData.pitch >= 1) packInTent(k);
+		for (const k of ['A', 'B']) if (homed(people[k]) && !people[k].userData.pack.visible && !packs[k].visible && home.visible && homePitch >= 1) packInTent(k);
 	}
 	/** still on the road (at 'van'): the van rolls on down the highway at its real speed, the camera in its back seat,
 	 *  while the story tells what lies ahead; the road loops far out on the steppe, so the van never reaches the stop */
@@ -1023,10 +1095,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the tent: packed in the shed, packed on the pickup's bed, or pitched at the middle of our hex */
 	function placeTent(where) {
 		home.visible = fire.visible = where === 'up';
-		if (where === 'up') (home.userData.setPitch(1), fire.userData.setBuild(1));
+		if (where === 'up') (setPitch(1), buildFire(1));
 		bundle.visible = where !== 'up';
-		bundle.userData.setOpen(0);
-		for (const o of Object.values(bundle.userData.parts)) o.visible = true;
+		openBag(0);
 		if (bundle.parent !== world) world.attach(bundle);
 		bundle.scale.setScalar(1);
 		bundle.rotation.set(0, 0.3, 0);
@@ -2185,7 +2256,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const p = home.worldToLocal(from.clone()).setY(0);
 		let e = 0, yaw = Math.atan2(-p.x, -p.z);
 		for (let i = 0; i < 9000 && e < 1; i++) {
-			const j = job(e, home.userData.work(e));
+			const w = tentWork(e), j = job(e, V(w.x, w.y, w.z));
 			const d = Math.hypot(j.at.x - p.x, j.at.z - p.z);
 			let what = j.act;
 			if (d > 0.06) {
@@ -2263,17 +2334,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const FIRE_KNEEL = V(BELL_TENT.fire.x + 0.75, 0, BELL_TENT.fire.z - 0.6);
 		/** the tent and its bag at pitch e: what was in the bag goes into the tent as each step takes it */
 		const pitchTo = (e) => {
-			home.userData.setPitch(e);
+			setPitch(e);
 			// the backpack off and put down in the tent as the packs' turn comes (the tent's own stand in for ours)
-			const me = people[stage.me], pk = packs[stage.me], down = !!home.userData.parts.packs.children[0]?.visible;
+			const me = people[stage.me], pk = packs[stage.me], down = packsIn();
 			if (down && !pk.userData.inTent) ((me.userData.pack.visible = false), packInTent(stage.me));
 			else if (!down && pk.userData.inTent) ((pk.visible = false), (pk.userData.inTent = false), (me.userData.pack.visible = true));
-			const { parts } = bundle.userData;
-			parts.groundsheet.visible = e <= S.groundsheet[0];
-			parts.canvas.visible = e < S.canvas[0];
-			parts.pole.visible = e < S.pole[0];
-			parts.wallPoles.visible = e < S.wall[0];
-			parts.pegs.visible = e < S.guys[1];
+			const parts = bagParts();
+			if (parts.canvas) {
+				parts.groundsheet.visible = e <= S.groundsheet[0];
+				parts.canvas.visible = e < S.canvas[0];
+				parts.pole.visible = e < S.pole[0];
+				parts.wallPoles.visible = e < S.wall[0];
+				parts.pegs.visible = e < S.guys[1];
+			}
 		};
 		let shown = -1;
 		return play(told([
@@ -2309,12 +2382,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// the bag opened; the tent pitched step by step, one shot each (WINDOWS); the fire place built; they stand back
 			...cutsOf(RAISE, [WINDOWS[2].at, WINDOWS[4].at, start], (s) => {
 				if (s < OPEN) {
-					bundle.userData.setOpen(s / OPEN);
+					openBag(s / OPEN);
 					pitchTo(0);
 					(me.position.copy(KNEEL), face(me, BAG_AT), act(me, 'press'));
 					return void camLerp(KNEEL.clone().add(V(1.9, 1.3, 1.6)), BAG_AT.clone().setY(0.2), 0.12);
 				}
-				bundle.userData.setOpen(1);
+				openBag(1);
 				const i = WINDOWS.findIndex((w) => s < w.at + w.len);
 				if (i >= 0) {
 					const w = WINDOWS[i];
@@ -2341,14 +2414,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				fire.visible = true;
 				if (s < start + FIRE) {
 					// the fire place: the stones set round, the woodpile stacked, the logs laid, the chairs unfolded
-					fire.userData.setBuild(0.86 * ease((s - start) / FIRE));
+					buildFire(0.86 * ease((s - start) / FIRE));
 					(me.position.copy(FIRE_KNEEL), face(me, fire.position), act(me, 'press'));
 					const eye = V(BELL_TENT.fire.x + 2.9, 1.2, BELL_TENT.fire.z + 3), at = fire.position.clone().setY(0.35);
 					if (shown !== 'fire') ((shown = 'fire'), lensFor({ fov: 42 }), camera.position.copy(eye), controls.target.copy(at));
 					return void still(eye, at);
 				}
 				// stood back, looking at it
-				fire.userData.setBuild(0.86);
+				buildFire(0.86);
 				me.position.set(BELL_TENT.fire.x + 1.8, 0, BELL_TENT.fire.z + 1.2);
 				face(me, V(0, 1.4, 0));
 				act(me, 'idle');
@@ -2363,10 +2436,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				world.attach(bundle);
 				bundle.position.copy(BAG_AT);
 				bundle.rotation.set(0, 0, 0);
-				for (const o of Object.values(bundle.userData.parts)) o.visible = true;
+				for (const o of Object.values(bagParts())) o.visible = true;
 				home.visible = true;
 				fire.visible = false;
-				fire.userData.setBuild(0);
+				buildFire(0);
 				pitchTo(0);
 				shown = -1;
 				camera.position.copy(KNEEL.clone().add(V(1.9, 1.3, 1.6)));
@@ -2897,7 +2970,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  tent comes down to 1.8 m 1.3 m from its pole); all in the tent's own frame, as the tent gives them
 	 *  (userData.walk: { r, door, headroom, colliders }; a tent without it is not walked into or round) */
 	const BODY = 0.25; // how far a walker keeps from a wall or a thing (m)
-	const tentWalk = () => (home.visible && home.userData.walk) || null;
+	const tentWalk = () => (home.visible && TENT_WALK) || null;
 	const inside = (w, p) => Math.hypot(p.x, p.z) < w.r;
 	/** how far from the pole a grown-up stands upright in it */
 	const upright = (w) => Math.min(w.headroom ?? w.r - BODY, w.r - BODY);
@@ -2905,7 +2978,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const things = (w) => {
 		if (!fire.visible) return w.colliders ?? [];
 		const f = home.worldToLocal(fire.position.clone());
-		return [...(w.colliders ?? []), ...fire.userData.walk.colliders.map((c) => ({ x: c.x + f.x, z: c.z + f.z, r: c.r }))];
+		return [...(w.colliders ?? []), ...FIRE_WALK.colliders.map((c) => ({ x: c.x + f.x, z: c.z + f.z, r: c.r }))];
 	};
 	/** where a step from `from` to `to` (world) may end: through the door, slid along the wall, round the things */
 	function walkable(from, to) {
@@ -3088,15 +3161,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// the tent glows from within once it has power, more as the light goes: its lantern turned up, the canvas warm
 		// with it (the bell tent's own night glow); and the fire in front of it lit at dusk, flickering
 		const glow = (lit ? Math.min(1, Math.max(0, (0.8 - up) / 0.55)) : 0) * (cold ? 0.35 : 1);
-		const { canvas: cloth, lamp } = home.userData;
 		// seen from inside, the canvas is lit by the lantern only, not glowing as it does to whoever is outside
 		const within = roam && inTent ? 0.3 : 1;
-		cloth.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow * within);
-		cloth.emissiveIntensity = (0.35 + 0.2 * glow) * within;
-		if (home.userData.pitch >= 1) lamp.intensity = LANTERN * (1 + 3 * glow); // while it is pitched, its own
-		const flame = fire.visible && fire.userData.built >= 1 ? Math.min(1, Math.max(0, (0.62 - up) / 0.3)) : 0;
-		if (Math.abs(flame - fire.userData.fire.lit) > 0.005) fire.userData.fire.setLit(flame);
-		fire.userData.tick(t);
+		if (pitched?.canvas) {
+			pitched.canvas.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow * within);
+			pitched.canvas.emissiveIntensity = (0.35 + 0.2 * glow) * within;
+		}
+		if (pitched?.lamp && homePitch >= 1) pitched.lamp.intensity = LANTERN * (1 + 3 * glow); // while it is pitched, its own
+		const flame = fire.visible && hearth.built >= 1 ? Math.min(1, Math.max(0, (0.62 - up) / 0.3)) : 0;
+		if (Math.abs(flame - hearth.lit) > 0.005) ((hearth.lit = flame), burnTo());
+		// its burning: its flames and their light flicker in the box while it burns
+		const burns = hearth.built >= 1 ? hearth.lit : 0;
+		hearth.hero?.tick(burns > 0.01 && fire.visible ? Math.min(0.25, Math.max(0, t - (hearth.t ?? t))) : 0);
+		hearth.t = t;
 		scene.background.copy(c);
 		scene.fog.color.copy(c);
 		// the haze keeps its distance from the camera, so the far view of the whole city still reads

@@ -52,3 +52,32 @@ test('the bell tent and its fire place measure what their builders say', async (
 	near(ours.TENT_WALK.colliders, walk.colliders);
 	near(ours.FIRE_WALK.colliders, firePlace().userData.walk.colliders);
 });
+
+test("the bell tent's lantern and canvas, its bag's parts and where the fire place catches, as their builders make them", async () => {
+	const { TENT_LAMP, TENT_CLOTH, BAG_PARTS, FIRE_CATCHES } = await import('./things.js');
+	const { bellTent, bellTentBag, FIRE_PLACE } = await import('$lib/models/belltent.js');
+	const down = (o, path) => path.reduce((x, i) => x.children[i], o);
+	const tent = bellTent();
+	expect(down(tent.getObjectByName(TENT_LAMP.part), TENT_LAMP.path)).toBe(tent.userData.lamp);
+	expect(tent.userData.canvas.emissive.getHex()).toBe(TENT_CLOTH.emissive);
+	// only the canvas glows so by day
+	const cloths = new Set();
+	tent.traverse((o) => o.isMesh && [].concat(o.material).forEach((m) => m.emissive?.getHex() === TENT_CLOTH.emissive && cloths.add(m)));
+	expect([...cloths]).toEqual([tent.userData.canvas]);
+	const bag = bellTentBag();
+	expect(bag.children.slice(-BAG_PARTS.length)).toEqual(BAG_PARTS.map((id) => bag.userData.parts[id]));
+	expect(FIRE_PLACE.steps.light).toEqual(FIRE_CATCHES);
+	expect(Math.max(...Object.values(FIRE_PLACE.steps).map((s) => s[1]))).toBe(1);
+});
+
+test("the bell tent's work as it is pitched, where its builder has it", async () => {
+	const { tentWork } = await import('./things.js');
+	const { bellTent } = await import('$lib/models/belltent.js');
+	const work = bellTent().userData.work;
+	for (let i = 0; i <= 20000; i++) {
+		const k = i / 20000, a = tentWork(k), b = work(k);
+		expect(a.x).toBeCloseTo(b.x, 9);
+		expect(a.y).toBeCloseTo(b.y, 9);
+		expect(a.z).toBeCloseTo(b.z, 9);
+	}
+});
