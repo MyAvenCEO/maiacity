@@ -21,15 +21,23 @@
  *   apart for it, so none takes another's corners, and where two of them meet (a deck's planks against its rim) the
  *   corners on that edge do not move, so no crack opens between them; an open edge that meets nothing (a panel's
  *   rim, a cloth's hem) may move along itself as any other;
- * - its normals, colours and picture's places are weighed with its shape as meshoptimizer weighs them, but each loose
- *   piece's against its own size, not the whole drawing's: a wiper's shading counts for as much on a wiper as a door's
- *   on a door, so a small part is neither kept round at any cost nor folded flat for free;
+ * - its normals, colours and picture's places are weighed with its shape as meshoptimizer weighs them, against the
+ *   size of the drawing they are on (a picture's place heavier on a drawing a picture is painted on, PAINTED). A
+ *   level is first made with its normals SHADED times heavier, its panels and lamps lit as they were; only one that
+ *   cannot come to its share so, or comes to it only by leaving pieces out, is made again with them lighter, and a
+ *   kind with no hard edges at all (an animal's coat, a person's skin: EDGED) is made with them lighter from the
+ *   first, its outline being what shows. A crown
+ *   kept whole (a plant's) weighs each loose piece's against its own size (`relative`): a leaf's shading counts on a
+ *   leaf as a branch's on a branch, so the wood gives up its triangles before the leaves;
  * - each loose piece at least KEEP pixels across keeps its outer corners (the furthest along each axis): it may come
- *   out coarse, never gone. One the simplifier still folds to nothing (a thin rod, flattened to a line) is put back
- *   alone, as plain as the level's error lets it (`survived`);
+ *   out coarse, never gone, and one of BOX places or fewer (a box, a thin strut) is kept whole, under its ceiling. One
+ *   the simplifier still folds to nothing (a thin rod, flattened to a line) is put back alone, as plain as the level's
+ *   error lets it (`survived`);
  * - a shape whose corners meet so that the careful pass may take little away (a hard edge at every corner, as a
  *   machine's parts have) is passed again allowed across its seams, and then allowed to stray further (STRETCH), but
- *   only if that brings it to its share; one passed so is shaded again from the faces it has left (`reshade`);
+ *   only if that brings it to its share and its outline holds as the careful pass left it (LOOK, `outlinesOf`); one
+ *   passed so is shaded again from the faces it has left (`reshade`), each place that was no hard edge keeping its
+ *   normal;
  * - a level still over its share after that (a shape of many pieces, each as plain as it can be) is looked at from
  *   all round (`seenOf`): the pieces never seen from outside it (a battery's cells inside their modules, a tent's frame
  *   under its cover) are left out, and it is made again without them;
@@ -50,10 +58,30 @@ export const LEFT = new Set(['skinIndex', 'skinWeight']);
 
 /**
  * How much a change in each attribute weighs against a change of the shape, as meshoptimizer weighs them (a change of
- * 1 in the attribute as much as one of the size of the loose piece it is on, `weighed`): a normal turned the most, a
+ * 1 in the attribute as much as one of the size of the drawing it is on, `weighed`): a normal turned the most, a
  * colour less, a picture's place least (a texture's tiling runs to many units).
  */
 export const WEIGHTS = { normal: 0.5, color: 0.25, uv: 0.02 };
+
+/**
+ * How much a change of a picture's place weighs on a drawing a picture is painted on (its colour map: a van's two
+ * colours, a tent's canvas), as a normal does: a corner moved across it shows another colour, not a texture's tiling.
+ */
+export const PAINTED = 0.5;
+
+/**
+ * How many times more a normal weighs in a level's first making: its shading kept as it was (a van's panels, a
+ * pickup's lamps, a hutch's round struts). A level that cannot come to its share so is made again with WEIGHTS as they
+ * are, lighter (`lowerDraws`); and so is every level of a kind smooth all through (EDGED).
+ */
+export const SHADED = 4;
+
+/**
+ * A drawing with at least this share of its places a hard edge (a panel's rim, a box's corners) has edges to keep lit.
+ * A kind none of whose drawings has (a goat's coat, a person's skin) has no panels: its outline is what shows, and it
+ * is weighed as WEIGHTS are from the first.
+ */
+export const EDGED = 0.01;
 
 /**
  * a drawing this light (triangles) or lighter, drawn once, is kept as it is: there is nothing in a box or a card to
@@ -71,6 +99,9 @@ const floats = (a) => (a.array instanceof Float32Array && !a.normalized ? a.arra
  * back if the simplifier folds it away: a part several pixels big there (a mirror, a wiper, a lamp) is seen
  */
 export const KEEP = 3;
+
+/** a piece kept whole, when it is kept (`levelAt`), of so many places or fewer: a box's */
+export const BOX = 12;
 
 /**
  * How a kind is looked at to find the pieces of it never seen (`seenOf`): from SIDES directions spread over the sphere,
@@ -190,8 +221,8 @@ export function weldCorners(shape) {
 
 /**
  * A welded shape's loose pieces: the corners its triangles join (at one place, whatever their attributes) are one
- * piece. Each corner's piece, and each piece's box (of the corners its triangles use), its size (the box's diagonal)
- * and its extent (the box's longest side).
+ * piece. Each corner's piece, and each piece's box (of the corners its triangles use), its size (the box's diagonal),
+ * its extent (the box's longest side) and how many places its corners stand at (`places`: a box's eight).
  */
 export function piecesOf(welded) {
 	const { place, places, index } = welded;
@@ -235,7 +266,9 @@ export function piecesOf(welded) {
 		size[k] = dx >= 0 ? Math.hypot(dx, dy, dz) : 0;
 		extent[k] = dx >= 0 ? Math.max(dx, dy, dz) : 0;
 	}
-	return { piece, count, box, size, extent };
+	const corners = new Int32Array(count);
+	for (let p = 0; p < places; p++) if (id[find(p)] >= 0) corners[id[find(p)]]++;
+	return { piece, count, box, size, extent, places: corners };
 }
 
 /** the box round some pieces of a shape (all of them, or those `which` says), as [x0, y0, z0, x1, y1, z1] */
@@ -249,29 +282,27 @@ function boxOfPieces(pieces, which) {
 }
 
 /**
- * The attributes the simplifier weighs, side by side as floats, and their weights: each corner's scaled by its piece's
- * extent against `whole` (the extent of all the simplifier is given at once), so a change on a small piece weighs
- * against that piece's own size, as it would on its own.
+ * The attributes the simplifier weighs, side by side as floats, and their weights (a picture's place heavier on a
+ * drawing `painted`), and so with a normal SHADED times heavier (`shaded`): a change weighs against the size of the
+ * drawing, as meshoptimizer weighs it. (Weighed against each loose piece's own size, a small part's shading came
+ * cheap, and a coop's struts and a van's lamps lost theirs first.)
  */
-function weighed(attributes, count, pieces, whole) {
+function weighed(attributes, count, painted) {
 	const parts = [];
 	for (const [k, w] of Object.entries(WEIGHTS)) {
 		const a = attributes[k];
-		if (a && w) parts.push({ a: floats(a), size: Math.min(3, a.itemSize), stride: a.itemSize, w });
+		if (a && w) parts.push({ k, a: floats(a), size: Math.min(3, a.itemSize), stride: a.itemSize, w: k === 'uv' && painted ? PAINTED : w });
 	}
 	const width = parts.reduce((s, p) => s + p.size, 0);
 	const packed = new Float32Array(count * width);
-	const weights = [];
+	const weights = [], shaded = [];
 	let o = 0;
 	for (const p of parts) {
-		for (let i = 0; i < count; i++) {
-			const s = whole > 0 ? Math.min(1, pieces.extent[pieces.piece[i]] / whole) : 1;
-			for (let c = 0; c < p.size; c++) packed[i * width + o + c] = p.a[i * p.stride + c] * s;
-		}
-		for (let c = 0; c < p.size; c++) weights.push(p.w);
+		for (let i = 0; i < count; i++) for (let c = 0; c < p.size; c++) packed[i * width + o + c] = p.a[i * p.stride + c];
+		for (let c = 0; c < p.size; c++) weights.push(p.w), shaded.push(p.k === 'normal' ? p.w * SHADED : p.w);
 		o += p.size;
 	}
-	return { packed, width, weights };
+	return { packed, width, weights, shaded };
 }
 
 /** a welded shape's triangles `index` as a shape of its own, with only the corners they use */
@@ -297,12 +328,33 @@ function compact(welded, index) {
 export const CREASE = (50 * Math.PI) / 180;
 
 /**
+ * The places of a shape that are a hard edge: two of their corners' normals more than CREASE apart (a box's corners, a
+ * panel's rim). @param {Int32Array} place each corner's place, of `places`
+ */
+function hardPlaces(normal, place, places) {
+	const hard = new Uint8Array(places);
+	if (!normal) return hard;
+	const N = floats(normal), s = normal.itemSize, cos = Math.cos(CREASE), first = new Int32Array(places).fill(-1);
+	for (let v = 0; v < place.length; v++) {
+		const p = place[v], u = first[p];
+		if (u < 0) {
+			first[p] = v;
+			continue;
+		}
+		const x = N[v * s], y = N[v * s + 1], z = N[v * s + 2], x2 = N[u * s], y2 = N[u * s + 1], z2 = N[u * s + 2];
+		if (x * x2 + y * y2 + z * z2 < cos * Math.hypot(x, y, z) * Math.hypot(x2, y2, z2)) hard[p] = 1;
+	}
+	return hard;
+}
+
+/**
  * A welded shape's triangles `index`, simplified across its seams, shaded again where what is left of it calls for: a
  * corner where two faces were once a hard edge (a machine's panel against the next) may have been folded across it,
  * and its old normal then lights the faces on the other side wrongly (a dark crease, a pale band). A corner of a
  * triangle whose normal still lies within CREASE of the triangle's own keeps it (a curved panel keeps the smooth
- * shading it was made with); any other takes the faces round its place that meet its own at less than CREASE, weighed
- * by their area. The corners of one welded corner with the same normal are one corner again, keeping its colour and
+ * shading it was made with), and so does one at a place that was no hard edge (a strut's round side, folded thinner,
+ * still lit as round); any other takes the faces round its place that meet its own at less than CREASE, weighed by
+ * their area. The corners of one welded corner with the same normal are one corner again, keeping its colour and
  * picture's place.
  */
 export function reshade(welded, index) {
@@ -353,6 +405,8 @@ export function reshade(welded, index) {
 	// each corner's normal, and the corners kept: one for each welded corner and normal
 	const cos = Math.cos(CREASE);
 	const was = welded.attributes.normal ? floats(welded.attributes.normal) : null, stride = welded.attributes.normal?.itemSize ?? 3;
+	// the places that were a hard edge
+	const hard = hardPlaces(welded.attributes.normal, place, places);
 	const key = new Map();
 	const from = [], normals = [];
 	const out = new Uint32Array(index.length);
@@ -360,7 +414,7 @@ export function reshade(welded, index) {
 		const f = Math.floor(i / 3), v = index[i], p = place[v];
 		if (was) {
 			const x = was[v * stride], y = was[v * stride + 1], z = was[v * stride + 2], l = Math.hypot(x, y, z);
-			if (l > 0 && (x * unit[f * 3] + y * unit[f * 3 + 1] + z * unit[f * 3 + 2]) / l >= cos) {
+			if (l > 0 && (!hard[p] || (x * unit[f * 3] + y * unit[f * 3 + 1] + z * unit[f * 3 + 2]) / l >= cos)) {
 				const k = `${v}`;
 				let at = key.get(k);
 				if (at === undefined) {
@@ -403,13 +457,30 @@ export function reshade(welded, index) {
 	return { attributes, index: from.length <= 65535 ? Uint16Array.from(out) : out };
 }
 
-/** a shape made ready to simplify, once for all its levels: welded, its pieces found, its attributes weighed */
+/**
+ * A shape made ready to simplify, once for all its levels: welded, its pieces found, whether it has hard edges
+ * (`edged`, EDGED), its attributes weighed, and how big each corner's loose piece is against the whole drawing
+ * (`small`, see `relative`).
+ */
 function readied(shape) {
 	const welded = weldCorners(shape);
 	const pieces = piecesOf(welded);
-	const b = boxOfPieces(pieces);
-	const whole = Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2], 0);
-	return { welded, pieces, positions: floats(welded.attributes.position), ...weighed(welded.attributes, welded.count, pieces, whole) };
+	const b = boxOfPieces(pieces), own = Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2], 0);
+	const small = new Float32Array(welded.count);
+	for (let v = 0; v < welded.count; v++) small[v] = own > 0 ? Math.min(1, pieces.extent[pieces.piece[v]] / own) : 1;
+	const edged = hardPlaces(welded.attributes.normal, welded.place, welded.places).reduce((s, h) => s + h, 0) >= EDGED * welded.places;
+	return { welded, pieces, small, edged, painted: !!shape.painted, positions: floats(welded.attributes.position), ...weighed(welded.attributes, welded.count, shape.painted) };
+}
+
+/**
+ * A shape's weighed attributes (a readied drawing's, or the drawings' together), each corner's scaled by how big its
+ * loose piece is against its drawing: a leaf's shading weighs on a leaf as a branch's on a branch, so a crown kept
+ * whole (`every`) gives up its wood's triangles before its leaves'.
+ */
+function relative(g) {
+	const out = new Float32Array(g.packed.length);
+	for (let v = 0; v < g.small.length; v++) for (let c = 0; c < g.width; c++) out[v * g.width + c] = g.packed[v * g.width + c] * g.small[v];
+	return out;
 }
 
 /** a welded shape's open edges: each place at either end of an edge (between two places) only one triangle has */
@@ -463,21 +534,22 @@ function together(rs) {
 		positions.set(r.positions, offset[j] * 3);
 		for (let v = 0; v < r.welded.count; v++) positions[(offset[j] + v) * 3] += shift[j];
 	});
-	// the extent the simplifier sees: the drawings' row
+	// the extent the simplifier sees: the drawings' row; each drawing's attributes weighed against its own size, as
+	// it would be alone (a picture's place heavier on one painted)
 	const whole = Math.max(at, all[4] - all[1], all[5] - all[2]);
 	const width = LAYOUT.reduce((s, l) => s + l[1], 0);
 	const packed = new Float32Array(count * width);
 	const weights = LAYOUT.flatMap(([k, n]) => Array(n).fill(WEIGHTS[k]));
+	const shaded = LAYOUT.flatMap(([k, n]) => Array(n).fill(k === 'normal' ? WEIGHTS[k] * SHADED : WEIGHTS[k]));
 	rs.forEach((r, j) => {
+		const b = boxes[j], own = b[3] >= b[0] ? Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) : 0;
 		let o = 0;
 		for (const [k, n] of LAYOUT) {
 			const a = r.welded.attributes[k];
 			if (a) {
 				const F = floats(a), m = Math.min(n, a.itemSize);
-				for (let v = 0; v < r.welded.count; v++) {
-					const s = Math.min(1, r.pieces.extent[r.pieces.piece[v]] / whole);
-					for (let c = 0; c < m; c++) packed[(offset[j] + v) * width + o + c] = F[v * a.itemSize + c] * s;
-				}
+				const s = Math.min(1, own / whole) * (k === 'uv' && r.painted ? PAINTED / WEIGHTS.uv : 1);
+				for (let v = 0; v < r.welded.count; v++) for (let c = 0; c < m; c++) packed[(offset[j] + v) * width + o + c] = F[v * a.itemSize + c] * s;
 			}
 			o += n;
 		}
@@ -496,7 +568,9 @@ function together(rs) {
 			else if (was[0] !== j) shared[offset[j] + v] = shared[was[1]] = 1;
 		}
 	});
-	return { offset, count, positions, packed, width, weights, shared };
+	const small = new Float32Array(count);
+	rs.forEach((r, j) => small.set(r.small, offset[j]));
+	return { offset, count, positions, packed, width, weights, shaded, shared, small };
 }
 
 /**
@@ -566,12 +640,22 @@ function levelAt(r, d, plan, seen) {
 		}
 		for (let i = 0; i < ends.length; i++) if (ends[i] >= 0) (at[welded.place[ends[i]]] = 1), (any = true);
 	} else for (let i = 0; i < ext.length; i++) if (ext[i] >= 0) (at[welded.place[ext[i]]] = 1), (any = true);
-	let lock = null;
+	// and every corner of a piece of BOX places or fewer (a strut, a plank, a slat): any it gave up would fold it flat,
+	// and shade it as something else. A level over its ceiling locks the outer corners only (`loose`): flatter boxes are
+	// better than fewer
+	const boxed = new Uint8Array(pieces.count);
+	let boxes = false;
+	if (!plan.every) for (let k = 0; k < pieces.count; k++) if (ext[k * 6] >= 0 && pieces.places[k] <= BOX) boxed[k] = 1, boxes = true;
+	let lock = null, loose = null;
 	if (any) {
-		lock = new Uint8Array(welded.count);
-		for (let v = 0; v < welded.count; v++) lock[v] = at[welded.place[v]];
+		loose = new Uint8Array(welded.count);
+		for (let v = 0; v < welded.count; v++) loose[v] = at[welded.place[v]];
 	}
-	return { index, lock, scale, keep };
+	if (boxes) {
+		lock = new Uint8Array(welded.count);
+		for (let v = 0; v < welded.count; v++) lock[v] = at[welded.place[v]] | boxed[pieces.piece[v]];
+	} else lock = loose;
+	return { index, lock, loose, scale, keep };
 }
 
 /**
@@ -788,11 +872,116 @@ async function seenOf(draws, rs, pause) {
 }
 
 /**
+ * How a lighter level is looked at for its outline (`outlinesOf`): from `sides` directions spread over the sphere, each
+ * a picture as many pixels across the kind's ball as the level is drawn at its biggest, halved (as the levels check
+ * compares them), and `px` at most. One brought to its share by straying further (STRETCH) is taken only if its
+ * outline strays (a share of what either covers) `most` at most, the worst a level read as before this check, or no
+ * more than `more` further than its careful pass's.
+ */
+export const LOOK = { sides: 10, px: 512, more: 0.01, most: 0.03 };
+
+/**
+ * How far some lighter levels of a kind stray from the outline of the first (`sets`, each for each drawing its welded
+ * triangles, or null): each drawn at every place it is drawn, both sides, from LOOK.sides directions, and each pixel
+ * only covered or not; for each, the pixels it and the first do not share against those either covers.
+ * @param {number} smallest a pixel where the level is drawn biggest (m, ./lod.js `smallestOf`)
+ * @returns {Promise<number[]>}
+ */
+async function outlinesOf(draws, rs, sets, smallest, pause) {
+	let verts = 0;
+	const base = draws.map((d, i) => {
+		const o = verts;
+		if (sets.some((set) => set[i])) verts += rs.get(i).welded.count * d.n;
+		return o;
+	});
+	const V = new Float32Array(verts * 3);
+	draws.forEach((d, i) => {
+		if (!sets.some((set) => set[i])) return;
+		const r = rs.get(i), P = r.positions, M = d.locals, count = r.welded.count;
+		for (let c = 0; c < d.n; c++) {
+			const m = c * 16, vb = base[i] + c * count;
+			for (let v = 0; v < count; v++) {
+				const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2], w = (vb + v) * 3;
+				V[w] = M ? M[m] * x + M[m + 4] * y + M[m + 8] * z + M[m + 12] : x;
+				V[w + 1] = M ? M[m + 1] * x + M[m + 5] * y + M[m + 9] * z + M[m + 13] : y;
+				V[w + 2] = M ? M[m + 2] * x + M[m + 6] * y + M[m + 10] * z + M[m + 14] : z;
+			}
+		}
+	});
+	const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+	for (let v = 0; v < verts; v++) for (let c = 0; c < 3; c++) (lo[c] = Math.min(lo[c], V[v * 3 + c])), (hi[c] = Math.max(hi[c], V[v * 3 + c]));
+	const mid = [0, 1, 2].map((c) => (lo[c] + hi[c]) / 2);
+	const R = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 || 1;
+	// as many pixels across its ball as it is drawn with at its biggest, halved
+	const N = Math.max(32, Math.min(LOOK.px, Math.round(smallest > 0 ? R / smallest : LOOK.px))), k = N / (2 * R);
+	const sx = new Float32Array(verts), sy = new Float32Array(verts);
+	const covers = sets.map(() => new Uint8Array(N * N));
+	const differ = sets.map(() => 0), either = sets.map(() => 0);
+	/** a triangle's pixels (those whose middles it covers) covered */
+	const fill = (cover, a, b, c) => {
+		const ax = sx[a], ay = sy[a];
+		let area = (sx[b] - ax) * (sy[c] - ay) - (sy[b] - ay) * (sx[c] - ax);
+		if (area < 0) {
+			const t = b;
+			b = c;
+			c = t;
+			area = -area;
+		} else if (!(area > 0)) return;
+		const bx = sx[b], by = sy[b], cx = sx[c], cy = sy[c];
+		const x0 = Math.max(0, Math.ceil(Math.min(ax, bx, cx) - 0.5)), x1 = Math.min(N - 1, Math.floor(Math.max(ax, bx, cx) - 0.5));
+		const y0 = Math.max(0, Math.ceil(Math.min(ay, by, cy) - 0.5)), y1 = Math.min(N - 1, Math.floor(Math.max(ay, by, cy) - 0.5));
+		if (x0 > x1 || y0 > y1) return;
+		const qx = x0 + 0.5, qy = y0 + 0.5;
+		let e0r = (bx - qx) * (cy - qy) - (by - qy) * (cx - qx), e1r = (cx - qx) * (ay - qy) - (cy - qy) * (ax - qx);
+		const e0x = by - cy, e0y = cx - bx, e1x = cy - ay, e1y = ax - cx;
+		for (let py = y0; py <= y1; py++, e0r += e0y, e1r += e1y) {
+			let e0 = e0r, e1 = e1r;
+			for (let px = x0, o = py * N + x0; px <= x1; px++, o++, e0 += e0x, e1 += e1x) if (e0 >= 0 && e1 >= 0 && area - e0 - e1 >= 0) cover[o] = 1;
+		}
+	};
+	for (let s = 0; s < LOOK.sides; s++) {
+		if (pause) await pause();
+		const y = 1 - (2 * (s + 0.5)) / LOOK.sides, ring = Math.sqrt(1 - y * y), turn = s * Math.PI * (3 - Math.sqrt(5));
+		const D = [Math.cos(turn) * ring, y, Math.sin(turn) * ring];
+		const A = Math.abs(D[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+		const U = [A[1] * D[2] - A[2] * D[1], A[2] * D[0] - A[0] * D[2], A[0] * D[1] - A[1] * D[0]];
+		const ul = Math.hypot(U[0], U[1], U[2]);
+		for (let c = 0; c < 3; c++) U[c] /= ul;
+		const Up = [D[1] * U[2] - D[2] * U[1], D[2] * U[0] - D[0] * U[2], D[0] * U[1] - D[1] * U[0]];
+		for (let v = 0; v < verts; v++) {
+			const x = V[v * 3] - mid[0], yy = V[v * 3 + 1] - mid[1], z = V[v * 3 + 2] - mid[2];
+			sx[v] = (x * U[0] + yy * U[1] + z * U[2]) * k + N / 2;
+			sy[v] = (x * Up[0] + yy * Up[1] + z * Up[2]) * k + N / 2;
+		}
+		sets.forEach((set, j) => {
+			const cover = covers[j];
+			cover.fill(0);
+			draws.forEach((d, i) => {
+				const I = set[i];
+				if (!I) return;
+				const count = rs.get(i).welded.count;
+				for (let c = 0; c < d.n; c++) {
+					const vb = base[i] + c * count;
+					for (let t = 0; t < I.length; t += 3) fill(cover, vb + I[t], vb + I[t + 1], vb + I[t + 2]);
+				}
+			});
+			if (j)
+				for (let o = 0; o < N * N; o++) {
+					differ[j] += covers[0][o] ^ cover[o];
+					either[j] += covers[0][o] | cover[o];
+				}
+		});
+	}
+	return differ.map((x, j) => (either[j] ? x / either[j] : 0));
+}
+
+/**
  * A level's drawings lowered to each plan: for each, every drawing kept, left out or lighter, and what it came to.
- * @param {{ attributes: Record<string, any>, index: ArrayLike<number>, tris: number, n: number, size: number, scale?: number, locals?: Float32Array, side?: number, see?: boolean }[]} draws
+ * @param {{ attributes: Record<string, any>, index: ArrayLike<number>, tris: number, n: number, size: number, scale?: number, locals?: Float32Array, side?: number, see?: boolean, painted?: boolean }[]} draws
  *   each drawing of the level: its shape, its triangles, how often one copy draws it, the diameter of its ball at the
  *   biggest it is drawn (m) and how much bigger that is than it is made; where it is drawn (its `locals`, as
- *   ./prepare.js has them), on which side (a material's `side`) and whether it is seen through
+ *   ./prepare.js has them), on which side (a material's `side`), whether it is seen through and whether a picture is
+ *   painted on it (a colour map)
  * @param {{ budget: number, most?: number, error: number, smallest: number, every?: boolean }[]} plans each lower level:
  *   the triangles it is made to (./lod.js `budgetOf`), those it may never have more of (its ceiling, `budgetOf` of a
  *   shape without end), how far it may stray (m, `errorOf`) and the smallest part it draws (m, `smallestOf`); `every`
@@ -817,8 +1006,13 @@ export async function lowerDraws(draws, plans, pause) {
 	/** the drawings drawn once, together, for the set of them a level simplifies */
 	let group = null;
 
-	/** one level, its never seen pieces left out when `seen` says which */
-	async function lowered(plan, seen) {
+	/**
+	 * One level, its never seen pieces left out when `seen` says which, its normals weighed SHADED times heavier when
+	 * `shaded`.
+	 */
+	async function lowered(plan, seen, shaded) {
+		/** a readied drawing, or the drawings together, weighed as this making weighs them */
+		const W = (g) => (shaded ? { ...g, weights: g.shaded } : plan.every ? { ...g, packed: (g.relative ??= relative(g)) } : g);
 		const result = draws.map((d) => (d.size < plan.smallest && !plan.every ? null : 'same'));
 		const tiny = (d) => d.tris <= TINY && d.n === 1;
 		// the copies of each drawing drawn: those ever seen; a drawing never seen at all, left out
@@ -835,21 +1029,46 @@ export async function lowerDraws(draws, plans, pause) {
 			const whole = open.reduce((s, i) => s + own(i) * drawn[i], 0) || 1;
 			const most = plan.most ?? Infinity;
 			const many = open.filter((i) => draws[i].n > 1), once = open.filter((i) => draws[i].n === 1);
-			// the drawings drawn once, together: their triangles and the corners none may move
-			let G = null, index = null, lock = null;
+			// the drawings drawn once, together: their triangles and the corners none may move (`loose`: over its ceiling)
+			let G = null, index = null, lock = null, loose = null;
 			if (once.length) {
 				if (group?.key !== once.join()) group = { key: once.join(), ...together(once.map((i) => made.get(i))) };
 				G = group;
 				index = new Uint32Array(once.reduce((s, i) => s + ats.get(i).index.length, 0));
 				lock = new Uint8Array(G.count);
+				loose = new Uint8Array(G.count);
 				let m = 0;
 				once.forEach((i, j) => {
 					const at = ats.get(i), o = G.offset[j];
 					for (let t = 0; t < at.index.length; t++) index[m++] = at.index[t] + o;
-					if (at.lock) for (let v = 0; v < at.lock.length; v++) lock[o + v] = at.lock[v];
+					if (at.lock) lock.set(at.lock, o);
+					if (at.loose) loose.set(at.loose, o);
 				});
-				for (let v = 0; v < G.count; v++) lock[v] |= G.shared[v];
+				for (let v = 0; v < G.count; v++) (lock[v] |= G.shared[v]), (loose[v] |= G.shared[v]);
 			}
+			/** the drawings drawn once, simplified together (`g`), each its own triangles again */
+			const apart = (g) => {
+				const parts = once.map(() => []);
+				const ends = G.offset.slice(1).concat([G.count]);
+				for (let t = 0; t < g.index.length; t += 3) {
+					let j = 0;
+					while (g.index[t] >= ends[j]) j++;
+					const o = G.offset[j];
+					parts[j].push(g.index[t] - o, g.index[t + 1] - o, g.index[t + 2] - o);
+				}
+				return parts.map((p) => Uint32Array.from(p));
+			};
+			/** how far the level made so (`got`, `g`) and so (`got2`, `g2`) stray from level 0's outline (`outlinesOf`) */
+			const outlines = async (got, g, got2, g2) => {
+				for (let i = 0; i < draws.length; i++) if (result[i]) await readyOf(i);
+				const setOf = (got, g) => {
+					const parts = g ? apart(g) : [];
+					return draws.map((_, i) => (!result[i] ? null : got.has(i) ? got.get(i).index : once.includes(i) ? parts[once.indexOf(i)] : made.get(i).welded.index));
+				};
+				const all = draws.map((_, i) => (result[i] ? made.get(i).welded.index : null));
+				const [, a, b] = await outlinesOf(draws, made, [all, setOf(got, g), setOf(got2, g2)], plan.smallest, pause);
+				return [a, b];
+			};
 			/**
 			 * Every drawing simplified to the level, `less` triangles under what it may cost and its ceiling (the room
 			 * for the pieces put back after): each drawing's triangles, how far it strays, and its pass.
@@ -863,14 +1082,14 @@ export async function lowerDraws(draws, plans, pause) {
 				for (const i of many) {
 					if (pause) await pause();
 					const at = ats.get(i);
-					got.set(i, simplified(made.get(i), at.index, at.lock, Math.max(1, own(i) * share), plan.error));
+					got.set(i, simplified(W(made.get(i)), at.index, at.lock, Math.max(1, own(i) * share), plan.error));
 				}
 				const manyTris = () => many.reduce((s, i) => s + (got.get(i).index.length / 3) * drawn[i], 0);
 				// those drawn once, together, at what is left
 				let g = null;
 				if (G) {
 					if (pause) await pause();
-					g = simplified(G, index, lock, Math.max(1, budget - fixed - manyTris()), plan.error);
+					g = simplified(W(G), index, lock, Math.max(1, budget - fixed - manyTris()), plan.error);
 				}
 				const total = () => fixed + manyTris() + (g ? g.index.length / 3 : 0);
 				// a level the others keep from its share (a coop's struts beside a bicycle's tyres) is not worth a look
@@ -888,16 +1107,30 @@ export async function lowerDraws(draws, plans, pause) {
 						if (total() > top) got.set(i, h);
 					}
 				}
+				// one brought to its share so keeps its outline (a bicycle's tyres folded flat, a lamp's cage gone
+				// thin, show): else its careful pass, under its ceiling
+				if (g?.careful || many.some((i) => got.get(i).careful)) {
+					const near = new Map(many.map((i) => [i, got.get(i).careful ?? got.get(i)]));
+					const gn = g?.careful ?? g;
+					const tris = fixed + many.reduce((s, i) => s + (near.get(i).index.length / 3) * drawn[i], 0) + (gn ? gn.index.length / 3 : 0);
+					if (tris <= top) {
+						const [further, careful] = await outlines(got, g, near, gn);
+						if (further > LOOK.most && further > careful + LOOK.more) {
+							g = gn;
+							for (const i of many) got.set(i, near.get(i));
+						}
+					}
+				}
 				// over its ceiling by the little a pass may come over what it is asked (a level made to its ceiling, a
 				// big tree's crown): asked again for that much less
 				if (total() > top) {
 					const room = Math.max(0, top - fixed) / whole / 1.03;
 					for (const i of many) {
-						const at = ats.get(i), h = simplified(made.get(i), at.index, at.lock, Math.max(1, own(i) * room), plan.error);
+						const at = ats.get(i), h = simplified(W(made.get(i)), at.index, at.lock, Math.max(1, own(i) * room), plan.error);
 						if (h.index.length < got.get(i).index.length) got.set(i, h);
 					}
 					if (g) {
-						const h = simplified(G, index, lock, Math.max(1, (top - fixed - manyTris()) / 1.03), plan.error);
+						const h = simplified(W(G), index, lock, Math.max(1, (top - fixed - manyTris()) / 1.03), plan.error);
 						if (h.index.length < g.index.length) g = h;
 					}
 				}
@@ -912,26 +1145,19 @@ export async function lowerDraws(draws, plans, pause) {
 						const at = ats.get(i), want = Math.max(1, own(i) * room);
 						if (got.get(i).index.length / 3 <= want) continue;
 						if (pause) await pause();
-						const h = simplified(made.get(i), at.index, at.lock, want, plan.error, pass, PASSES.length + 1);
+						const h = simplified(W(made.get(i)), at.index, at.loose, want, plan.error, pass, PASSES.length + 1);
 						if (h.pass && h.index.length < got.get(i).index.length) got.set(i, h);
 					}
 					if (g && total() > top) {
 						if (pause) await pause();
-						const h = simplified(G, index, lock, Math.max(1, top - fixed - manyTris()), plan.error, pass, PASSES.length + 1);
+						const h = simplified(W(G), index, loose, Math.max(1, top - fixed - manyTris()), plan.error, pass, PASSES.length + 1);
 						if (h.pass && h.index.length < g.index.length) g = h;
 					}
 				}
 				// back into the drawings
 				if (g) {
-					const parts = once.map(() => []);
-					const ends = G.offset.slice(1).concat([G.count]);
-					for (let t = 0; t < g.index.length; t += 3) {
-						let j = 0;
-						while (g.index[t] >= ends[j]) j++;
-						const o = G.offset[j];
-						parts[j].push(g.index[t] - o, g.index[t + 1] - o, g.index[t + 2] - o);
-					}
-					once.forEach((i, j) => got.set(i, { index: Uint32Array.from(parts[j]), error: g.error, pass: g.pass }));
+					const parts = apart(g);
+					once.forEach((i, j) => got.set(i, { index: parts[j], error: g.error, pass: g.pass }));
 				}
 				return got;
 			};
@@ -944,7 +1170,7 @@ export async function lowerDraws(draws, plans, pause) {
 				for (const i of open) {
 					const h = got.get(i);
 					if (h.pass > PASSES.length) continue;
-					const put = survived(made.get(i), ats.get(i), h.index, plan.error);
+					const put = survived(W(made.get(i)), ats.get(i), h.index, plan.error);
 					if (put.index !== h.index) all.set(i, { ...h, index: put.index, error: Math.max(h.error, put.error) });
 				}
 				if (sum(all) <= most) {
@@ -978,14 +1204,32 @@ export async function lowerDraws(draws, plans, pause) {
 	/** which pieces are ever seen, once looked for: null not yet, false every one */
 	let seen = null;
 	const out = [];
+	/** whether the kind is smooth all through, none of its drawings with hard edges (EDGED): once known */
+	let smooth = null;
+	/**
+	 * One level as its shading is kept, or, when that cannot come to its share by the passes (only by pruning its
+	 * pieces for its ceiling, or not at all), lighter; a crown kept whole, or a kind smooth all through, lighter from
+	 * the first
+	 */
+	const best = async (plan, seen) => {
+		if (plan.every) return lowered(plan, seen, false);
+		if (smooth === null) {
+			smooth = true;
+			for (let i = 0; i < draws.length && smooth; i++) if ((await readyOf(i)).edged) smooth = false;
+		}
+		if (smooth) return lowered(plan, seen, false);
+		const level = await lowered(plan, seen, true);
+		const pruned = level.passes.slice(PASSES.length + 1).some((n) => n > 0);
+		return level.tris > plan.budget * OVER || pruned ? lowered(plan, seen, false) : level;
+	};
 	for (const plan of plans) {
-		let level = await lowered(plan, seen || null);
+		let level = await best(plan, seen || null);
 		// a shape that cannot reach its share: what of it is never seen left out, and made again
 		if (seen === null && !plan.every && level.tris > plan.budget * OVER) {
 			const rs = [];
 			for (let i = 0; i < draws.length; i++) rs.push(await readyOf(i));
 			seen = await seenOf(draws, rs, pause);
-			if (seen) level = await lowered(plan, seen);
+			if (seen) level = await best(plan, seen);
 		}
 		out.push(level);
 	}

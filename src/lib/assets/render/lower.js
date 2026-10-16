@@ -20,7 +20,8 @@ const through = (m) => !!(m.transparent || m.opacity < 1 || m.transmission > 0 |
 
 /**
  * A level's drawing as plain arrays, with how big it is drawn at the most (its ball's diameter, m) and how much bigger
- * that is than it is made (`scale`), where it is drawn (`locals`), on which side, and whether it is seen through.
+ * that is than it is made (`scale`), where it is drawn (`locals`), on which side, whether it is seen through, and
+ * whether a picture is painted on it (`painted`, its colour map).
  */
 export function plainOf(d) {
 	const g = d.geometry;
@@ -37,7 +38,7 @@ export function plainOf(d) {
 		_m.fromArray(d.locals, k * 16).decompose(_p, _q, _s);
 		scale = Math.max(scale, Math.abs(_s.x), Math.abs(_s.y), Math.abs(_s.z));
 	}
-	return { attributes, index, tris: d.tris, n: d.n, size: 2 * g.boundingSphere.radius * scale, scale, locals: d.locals.slice(0, d.n * 16), side: d.material.side, see: through(d.material) };
+	return { attributes, index, tris: d.tris, n: d.n, size: 2 * g.boundingSphere.radius * scale, scale, locals: d.locals.slice(0, d.n * 16), side: d.material.side, see: through(d.material), painted: !!d.material.map };
 }
 
 /** the items of an array of `size` numbers each that `pick` names, in its order */
