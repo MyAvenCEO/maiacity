@@ -3241,8 +3241,10 @@ fn show_items(d: SignerId, store: &mut Store) {
                 false => history.reading_on(&mut scratch, w, content, d, lane),
             });
             let fits = read.as_ref().is_none_or(|r| r.fits);
-            let counted = read.is_some_and(|r| r.fits && st.lets(w, proof, r.touches.as_deref(), asks));
-            let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, counted };
+            let counted = read.as_ref().is_some_and(|r| r.fits && st.lets(w, proof, r.touches.as_deref(), asks));
+            // what it touches and asks for, as a merge that brings it in reads it
+            let touches = read.and_then(|r| r.touches).map(|ts| ts.into_iter().chain(rules::asked(asks)).collect());
+            let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted };
             history.push(change).expect("the view's writes are causally closed");
         }
         let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();

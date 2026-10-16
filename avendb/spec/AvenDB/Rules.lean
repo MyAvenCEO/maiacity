@@ -5,12 +5,13 @@ import AvenDB.Ops
 
 `avendb/docs/ARCHITECTURE.md` §8. A share is a name and the ops its grantee may make, on the slice its selector picks:
 relay, backup and read (keep, pass on and open the slice's edits), the write ops (create an entry, set a value, add,
-delete or move rows, ask for tags, start a proposal, merge a line) and share (issue shares resting on it). Its level,
+delete or move rows, ask for tags, start a proposal, merge a line, only where all it brings in lies under its path) and
+share (issue shares resting on it). Its level,
 which relays and every operational rule read in the clear, is the class of its strongest op (`levelOf`). Every reader of
 an entry judges each write by its touches, what its Loro ops did, place by place, read off the write imported on the
 version it builds on, and the tags it asks for: a value set at a place, rows of a list added, deleted or moved, the
-entry created, a proposal started, another line merged in, a tag asked for. A share's ops allow a write when each touch
-is allowed by one of them.
+entry created, a proposal started, another line merged in and each place that line changed since their base, a tag asked
+for. A share's ops allow a write when each touch is allowed by one of them.
 
 What an op allows reads only the op, the touch and whether the write is on the main line. The state's part, which share
 a write relies on and the ops of its chain, is in `State.lean`; C1 to C4 are proven in `RuleLemmas.lean`, but for the
@@ -37,8 +38,9 @@ inductive On where
 /-- What a write did, one op at a time: a value set or removed, a text edited or a list of values changed at a place
     (`to`: its new value, where one op set one value); a row of the list of records at a place added, deleted or moved
     (what a write does inside a row it adds is part of adding it), at any depth; the entry created; a tag asked for,
-    added or removed; a proposal started; another line merged in. An op a reader can't place touches the whole record
-    (`[]`). -/
+    added or removed; a proposal started; another line merged in (`merge`), and each place where the writes it brings
+    in, those its line's history didn't hold, changed the record (`merged`), read off those writes' touches. An op a
+    reader can't place touches the whole record (`[]`). -/
 inductive Touch where
   | set     (l : Loc) (to : Option Val)
   | insert  (l : Loc)
@@ -48,12 +50,14 @@ inductive Touch where
   | tag     (t : Sym)
   | propose
   | merge
+  | merged  (l : Loc)
   deriving DecidableEq, Repr
 
 /-- An op a share names, in the order shares list them: `relay`, `backup` and `read` its slice's edits; `create`
     entries; `set` any change at or under `path` (only to the values `to`, if it lists them), `insert`, `remove` or
-    `move` the rows of a list, `merge` another line, each on the lines `on` names (either, if none); ask for the tags
-    `tag` lists (any, if none); `propose`; and `share`, issue shares resting on it. -/
+    `move` the rows of a list, `merge` another line whose changes since their base all lie at or under `path`
+    (anywhere, for `[]`), each on the lines `on` names (either, if none); ask for the tags `tag` lists (any, if none);
+    `propose`; and `share`, issue shares resting on it. -/
 inductive Op where
   | relay
   | backup
@@ -65,7 +69,7 @@ inductive Op where
   | move    (path : List Step) (on : Option On)
   | tag     (ts : Option (List Sym))
   | propose
-  | merge   (on : Option On)
+  | merge   (on : Option On) (path : List Step)
   | share
   deriving DecidableEq, Repr
 
@@ -90,8 +94,8 @@ def Level.ops : Level → List Op
   | .relay  => [.relay]
   | .backup => [.backup]
   | .read   => [.read]
-  | .write  => [.read, .create, .set [] none none, .tag none, .propose, .merge none]
-  | .owner  => [.read, .create, .set [] none none, .tag none, .propose, .merge none, .share]
+  | .write  => [.read, .create, .set [] none none, .tag none, .propose, .merge none []]
+  | .owner  => [.read, .create, .set [] none none, .tag none, .propose, .merge none [], .share]
 
 /-- A built-in group: a name, the ops its shares name, and whether it goes to everyone (Public). The page offers them
     when it shares, and anyone may name their own. -/
@@ -104,7 +108,7 @@ structure Group where
 def groups : List Group := [
   ⟨"Owner", Level.owner.ops, false⟩,
   ⟨"Editor", Level.write.ops, false⟩,
-  ⟨"Suggester", [.read, .set [] none (some .proposals), .propose, .merge (some .proposals)], false⟩,
+  ⟨"Suggester", [.read, .set [] none (some .proposals), .propose, .merge (some .proposals) []], false⟩,
   ⟨"Viewer", Level.read.ops, false⟩,
   ⟨"Public", Level.read.ops, true⟩,
   ⟨"Backup", Level.backup.ops, false⟩,
@@ -151,7 +155,8 @@ def Op.allows (main : Bool) : Op → Touch → Bool
   | .set p none o, .insert l | .set p none o, .remove l | .set p none o, .move l =>
     onLine main o && reaches p l.steps
   | .insert p o, .insert l | .remove p o, .remove l | .move p o, .move l => onLine main o && reaches p l.steps
-  | .merge o, .merge => onLine main o
+  | .merge o _, .merge => onLine main o
+  | .merge o p, .merged l => onLine main o && reaches p l.steps
   | .tag none, .tag _ => true
   | .tag (some ts), .tag t => ts.contains t
   | .propose, .propose => true
@@ -170,6 +175,17 @@ def Op.allows (main : Bool) : Op → Touch → Bool
 #guard [Touch.set [.field "blocks", .row 1, .field "children", .row 2, .field "text"] none,
   .insert [.field "blocks", .row 1, .field "children"], .move [.field "blocks", .row 1, .field "children"]].all
   fun t => (Op.set [.field "blocks", .row 1] none none).allows true t
+
+-- a merge with a path brings in only changes at or under it: a tuner merges new defaults of its params into main, and
+-- nothing else; a merge without one brings in anything
+#guard (Op.merge (some .main) [.field "params", .any, .field "default"]).allows true
+  (.merged [.field "params", .row 2, .field "default"])
+#guard !(Op.merge (some .main) [.field "params", .any, .field "default"]).allows true (.merged [.field "source"])
+#guard !(Op.merge (some .main) [.field "params", .any, .field "default"]).allows false
+  (.merged [.field "params", .row 2, .field "default"])
+#guard (Op.merge (some .main) [.field "params", .any, .field "default"]).allows true .merge
+#guard (Op.merge none []).allows false (.merged [])
+#guard !(Op.set [] none none).allows true (.merged [.field "title"])
 
 /-- Ops allow a write: each of its touches is allowed by one of them. -/
 def allowsAll (rs : List Op) (main : Bool) (ts : List Touch) : Bool := ts.all fun t => rs.any (·.allows main t)
@@ -196,13 +212,21 @@ def answering : List Op :=
 /-- The tags a write asks for, added or removed, as touches. -/
 def TagDelta.touches (d : TagDelta) : List Touch := (d.add ++ d.remove).map .tag
 
-/-- The place a touch may change: where it sets, the list whose rows it changes, the whole record for a creation;
-    none for a tag, a proposal's start or a merge, which change nothing of the record. -/
+/-- The place a touch may change: where it sets, the list whose rows it changes, the place a merge brings a change to,
+    the whole record for a creation; none for a tag, a proposal's start or a merge itself, which change nothing of the
+    record. -/
 def Touch.loc : Touch → Option Loc
   | .set l _ => some l
-  | .insert l | .remove l | .move l => some l
+  | .insert l | .remove l | .move l | .merged l => some l
   | .create => some []
   | .tag _ | .propose | .merge => none
+
+/-- M1, the op: only a merge allows a place a merge brings in, and only one on the write's line whose path reaches it. -/
+theorem merged_within {main : Bool} {r : Op} {l : Loc} (h : r.allows main (.merged l) = true) :
+    ∃ o p, r = .merge o p ∧ onLine main o = true ∧ reaches p l.steps = true := by
+  cases r with
+  | merge o p => exact ⟨o, p, rfl, by simpa [Op.allows] using h⟩
+  | _ => simp [Op.allows] at h
 
 /-- Only ops that write allow a touch: relay, backup, read and share allow none. -/
 theorem level_of_allows {main : Bool} {r : Op} {t : Touch} (h : r.allows main t = true) : r.level = .write := by

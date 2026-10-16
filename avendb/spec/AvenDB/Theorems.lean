@@ -232,6 +232,16 @@ theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List Edit
       o.level = .write :=
   Ruling.counted_writes hc hv
 
+/-- M1 (merges by path): each place a counted merge by anyone but the entry's vault brings a change to, every place the
+    line it merges in changed since their base, is reached by the path of a merge op on the write's line, in every share
+    of the chain it relies on: a merge share with a path merges a line only where all it changed lies under the path. -/
+theorem M1_merges_within {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault) {l : Ops.Loc} (hl : Touch.merged l ∈ ts) :
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∃ o p, Op.merge o p ∈ c.ops ∧ onLine main o = true ∧
+      reaches p l.steps = true :=
+  Ruling.counted_merges_within hc hv hl
+
 /-- C4 (allowed writes count): a write that fits, builds on writes its readers count, whose proof names a share its
     actor holds with write or more that reaches the entry, and whose chain allows every touch of it, counts. -/
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}

@@ -39,6 +39,7 @@ use crate::doc::Item;
 use crate::id::{AudienceId, BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lens::Lane;
 use crate::merge::{self, Merged, Place};
+use crate::ops::Loc;
 use crate::policy::{self, Line, Proposal, Refusal, Write};
 use crate::rules::{self, Touch};
 
@@ -49,12 +50,14 @@ pub const MAIN: Line = None;
 /// Loro update, nothing for a merge Loro's merged item already shows, or for a write that starts a proposal, the
 /// proposal's name), whether it fits the
 /// schemas its entry was written under as far as the entry's readers judged it (`History::reading`, which they read
-/// only where what it builds on counts), and whether they count it (`policy::State::lets`).
+/// only where what it builds on counts), what it touches and the tags it asks for as they read them (`None` where they
+/// couldn't, or didn't, as what it builds on doesn't count), and whether they count it (`policy::State::lets`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Change {
     pub write: Write,
     pub body: Option<Vec<u8>>,
     pub fits: bool,
+    pub touches: Option<Vec<Touch>>,
     pub counted: bool,
 }
 
@@ -206,9 +209,9 @@ impl History {
     /// holds the writes before it, judging it by the schemas `lane` holds.
     ///
     /// What it touches: its creation; a proposal's start; another line merged in, where it builds on a write its line's
-    /// history doesn't hold; and what its update's ops touch, imported on the version it builds on
-    /// (`doc::Item::footprint`). `None` where it carries an update they can't open or that doesn't import there whole:
-    /// no rule allows what they can't read.
+    /// history doesn't hold, and each place the writes it brings in changed (`brought`); and what its update's ops
+    /// touch, imported on the version it builds on (`doc::Item::footprint`). `None` where it carries an update they
+    /// can't open or that doesn't import there whole: no rule allows what they can't read.
     ///
     /// Whether it fits (`lens::Lane::fits`): what its update changes, from the record of that version (nothing, for a
     /// creation) to the record after it, under the schemas the entry was written under once it is in. A proposal's
@@ -235,6 +238,7 @@ impl History {
             out.push(Touch::Create);
         } else if !self.on_its_line(w) {
             out.push(Touch::Merge);
+            out.extend(self.brought(w));
         }
         // a creation touches its creation alone, whatever it holds
         let unread = |out: Vec<Touch>| Reading { touches: w.first.then_some(out), fits: false };
@@ -274,6 +278,27 @@ impl History {
             out.extend(footprint.touches);
         }
         Reading { touches: Some(rules::dedup(out)), fits }
+    }
+
+    /// What merge `w` brings in, place by place (`Touch::Merged`), each place once: every place a write it builds on,
+    /// that its line's history doesn't hold, changed, by what its readers read it touched (`Change::touches`), the
+    /// place it set or the list whose rows it changed; the whole record for a write they couldn't read. A proposal's
+    /// start, a merge itself and a tag change no place, and the creation is on every line. So a merge's touches name
+    /// every place the line it merges in changed since their base, and a merge op's path judges them.
+    fn brought(&self, w: &Write) -> Vec<Touch> {
+        let held: HashSet<EditId> = self.history(w.line()).iter().map(|c| c.write.edit).collect();
+        let mut out = vec![];
+        for c in self.version(&w.deps).into_iter().filter(|c| !held.contains(&c.write.edit)) {
+            let Some(ts) = &c.touches else {
+                out.push(Touch::Merged(Loc::root()));
+                continue;
+            };
+            out.extend(ts.iter().filter_map(|t| match t {
+                Touch::Set(l, _) | Touch::Insert(l) | Touch::Remove(l) | Touch::Move(l) => Some(Touch::Merged(l.clone())),
+                Touch::Merged(_) | Touch::Merge | Touch::Propose | Touch::Tag(_) | Touch::Create => None,
+            }));
+        }
+        rules::dedup(out)
     }
 
     /// Write `w` builds only on writes its line's history holds: no other line's writes come in with it.
@@ -554,7 +579,7 @@ impl Repo {
         let (stay, epoch, audience, first) = (None, 0, AudienceId::of(actor, &[]), self.history.changes.is_empty());
         let (deps, proposal, via, shares) = (d.deps, d.proposal, vec![], vec![]);
         let write = Write { edit, author, actor, entry, stay, epoch, deps, proposal, via, first, audience, shares };
-        self.history.push(Change { write, body: Some(d.body), fits: true, counted: true })?;
+        self.history.push(Change { write, body: Some(d.body), fits: true, touches: None, counted: true })?;
         Ok(edit)
     }
 }

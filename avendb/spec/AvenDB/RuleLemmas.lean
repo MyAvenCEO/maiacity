@@ -176,6 +176,23 @@ theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List Edit
   obtain ⟨o, ho, hoa⟩ := this t ht
   exact ⟨o, ho, hoa, level_of_allows hoa⟩
 
+/-! ## M1: a counted merge brings in only what its merge ops' paths reach -/
+
+/-- M1: each place a counted write by anyone but the entry's vault brings a change to by a merge is reached by the path
+    of a merge op on the write's line, in every share of the chain it relies on. -/
+theorem counted_merges_within {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault) {l : Ops.Loc} (hl : Touch.merged l ∈ ts) :
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∃ o p, Op.merge o p ∈ c.ops ∧ onLine main o = true ∧
+      reaches p l.steps = true := by
+  obtain ⟨cp, hcp, hp, -, -, hall⟩ := counted_allowed hc hv
+  refine ⟨cp, hcp, hp, fun c hc' => ?_⟩
+  have := (hall c hc').2
+  simp only [allowsAll, List.all_eq_true, List.any_eq_true] at this
+  obtain ⟨r, hr, hra⟩ := this _ hl
+  obtain ⟨o, p, rfl, ho, hp'⟩ := merged_within hra
+  exact ⟨o, p, hr, ho, hp'⟩
+
 /-! ## C4: allowed writes count -/
 
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}

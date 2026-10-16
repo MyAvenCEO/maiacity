@@ -1,12 +1,13 @@
 //! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`docs/ARCHITECTURE.md` §8). A share is a
 //! name and the ops its grantee may make on the slice its selector picks: relay, backup and read (keep, pass on and
 //! open the slice's edits), the write ops (create an entry, set a value, add, delete or move rows, ask for tags, start
-//! a proposal, merge a line) and share (issue shares resting on it). Its level, which relays and every operational rule
+//! a proposal, merge a line, only where all it brings in lies under its path) and share (issue shares resting on it). Its level, which relays and every operational rule
 //! read in the clear (`policy::Share::level`), is the class of its strongest op (`level_of`). Every reader of an entry
 //! judges each write by its touches, what its Loro ops did, place by place, read off the write imported on the version
 //! it builds on (`doc::Item::footprint`, `history::History::reading`), and the tags it asks for: a value set at a
-//! place, rows of a list added, deleted or moved, the entry created, a proposal started, another line merged in, a tag
-//! asked for. A share's ops allow a write when each touch is allowed by one of them.
+//! place, rows of a list added, deleted or moved, the entry created, a proposal started, another line merged in and each
+//! place that line changed since their base, a tag asked for. A share's ops allow a write when each touch is allowed by
+//! one of them.
 //!
 //! The ops travel sealed in the share's slice, beside its selector, with a salt (`Grant`); the share's `select` carries
 //! their hash in the clear (`Grant::commitment`, `slice::Select`), which tells a relay nothing of them. A write through
@@ -21,7 +22,7 @@
 //! {"op": "set", "path": Pattern, "to": [v]?, "on": On?}     any change at or under the path; to: only to these values
 //! {"op": "insert" | "remove" | "move", "path": Pattern?, "on": On?}   rows of a list of records
 //! {"op": "tag", "tags": [tag]?}                              ask for these tags, added or removed; left out: any
-//! {"op": "merge", "on": On?}
+//! {"op": "merge", "on": On?, "path": Pattern?}              a line whose changes all lie at or under the path; left out: any
 //! Pattern = a path whose steps may be "*": any one field or any one row; [] is the whole record
 //! On      = "main" | "proposals"                                     left out: either
 //! ```
@@ -72,8 +73,9 @@ pub enum Scalar {
 /// What a write did, one op at a time: a value set or removed, a text edited or a list of values changed at a place
 /// (with the value set, where one op set one plain value, `null` where it removed one); a row of a list of records
 /// added, deleted or moved, the list named by its place, at any depth (what a write does inside a row it adds is part
-/// of adding it); the entry created; a tag asked for, added or removed; a proposal started; another line merged in. An
-/// op a reader can't place touches the whole record (`Loc::root`).
+/// of adding it); the entry created; a tag asked for, added or removed; a proposal started; another line merged in,
+/// and each place where the writes it brings in changed the record (`Merged`, `history::History::reading`). An op a
+/// reader can't place touches the whole record (`Loc::root`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Touch {
     Set(Loc, Option<Scalar>),
@@ -84,12 +86,14 @@ pub enum Touch {
     Tag(Sym),
     Propose,
     Merge,
+    Merged(Loc),
 }
 
 /// An op a share names, in the order shares list them (`normalize`): `Relay`, `Backup` and `Read` its slice's edits;
 /// `Create` entries; `Set` any change at or under `path` (only to the values `to`, if it lists them), `Insert`,
-/// `Remove` or `Move` the rows of a list, `Merge` another line, each on the lines `on` names (either, if none); ask for
-/// the tags `Tag` lists (any, if none); `Propose`; and `Share`, issue shares resting on it. A share with `Share` is an
+/// `Remove` or `Move` the rows of a list, `Merge` another line whose changes since their base all lie at or under
+/// `path` (anywhere, for `[]`), each on the lines `on` names (either, if none); ask for the tags `Tag` lists (any, if
+/// none); `Propose`; and `Share`, issue shares resting on it. A share with `Share` is an
 /// owner's, never on the whole vault (`policy::Refusal::WideOwner`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
@@ -103,7 +107,7 @@ pub enum Op {
     Move { path: Vec<Step>, on: Option<On> },
     Tag(Option<Vec<Sym>>),
     Propose,
-    Merge { on: Option<On> },
+    Merge { on: Option<On>, path: Vec<Step> },
     Share,
 }
 
@@ -269,7 +273,8 @@ impl Op {
             | (Op::Insert { path, on }, Touch::Insert(f))
             | (Op::Remove { path, on }, Touch::Remove(f))
             | (Op::Move { path, on }, Touch::Move(f)) => on_line(main, *on) && reaches(path, &steps(f)),
-            (Op::Merge { on }, Touch::Merge) => on_line(main, *on),
+            (Op::Merge { on, .. }, Touch::Merge) => on_line(main, *on),
+            (Op::Merge { on, path }, Touch::Merged(l)) => on_line(main, *on) && reaches(path, &steps(l)),
             (Op::Tag(tags), Touch::Tag(t)) => tags.as_ref().is_none_or(|ts| ts.contains(t)),
             (Op::Propose, Touch::Propose) | (Op::Create, Touch::Create) => true,
             _ => false,
@@ -289,7 +294,8 @@ impl Op {
             Op::Insert { path: p, .. } => json!({ "op": "insert", "path": path(p) }),
             Op::Remove { path: p, .. } => json!({ "op": "remove", "path": path(p) }),
             Op::Move { path: p, .. } => json!({ "op": "move", "path": path(p) }),
-            Op::Merge { .. } => json!({ "op": "merge" }),
+            Op::Merge { path: p, .. } if p.is_empty() => json!({ "op": "merge" }),
+            Op::Merge { path: p, .. } => json!({ "op": "merge", "path": path(p) }),
             Op::Tag(None) => return json!({ "op": "tag" }),
             Op::Tag(Some(ts)) => {
                 return json!({ "op": "tag", "tags": ts.iter().map(Sym::as_str).collect::<Vec<_>>() });
@@ -305,7 +311,7 @@ impl Op {
         | Op::Insert { on: Some(on), .. }
         | Op::Remove { on: Some(on), .. }
         | Op::Move { on: Some(on), .. }
-        | Op::Merge { on: Some(on) } = self
+        | Op::Merge { on: Some(on), .. } = self
         {
             out["on"] = match on {
                 On::Main => "main",
@@ -322,7 +328,7 @@ impl Op {
         let fields: &[&str] = match name {
             "set" => &["op", "path", "to", "on"],
             "insert" | "remove" | "move" => &["op", "path", "on"],
-            "merge" => &["op", "on"],
+            "merge" => &["op", "on", "path"],
             "tag" => &["op", "tags"],
             "relay" | "backup" | "read" | "create" | "propose" | "share" => &["op"],
             other => {
@@ -368,7 +374,7 @@ impl Op {
             "insert" => Op::Insert { path: path(false)?, on },
             "remove" => Op::Remove { path: path(false)?, on },
             "move" => Op::Move { path: path(false)?, on },
-            "merge" => Op::Merge { on },
+            "merge" => Op::Merge { on, path: path(false)? },
             "tag" => {
                 let names = |xs: &Vec<Value>| xs.iter().map(|x| x.as_str().map(Sym::new)).collect::<Option<Vec<_>>>();
                 Op::Tag(match o.get("tags") {
@@ -436,7 +442,7 @@ pub fn groups() -> Vec<Group> {
         Op::Read,
         Op::Set { path: vec![], to: None, on: Some(On::Proposals) },
         Op::Propose,
-        Op::Merge { on: Some(On::Proposals) },
+        Op::Merge { on: Some(On::Proposals), path: vec![] },
     ];
     let g = |name, hint, ops, everyone| Group { name, hint, ops, everyone };
     let level = |r: Level, hint| g(r.group(), hint, r.ops(), false);
@@ -476,7 +482,7 @@ impl Level {
                 Op::Set { path: vec![], to: None, on: None },
                 Op::Tag(None),
                 Op::Propose,
-                Op::Merge { on: None },
+                Op::Merge { on: None, path: vec![] },
             ]
         };
         match self {
@@ -525,7 +531,7 @@ pub fn asked(d: &TagDelta) -> impl Iterator<Item = Touch> + '_ {
 impl Touch {
     /// `{"set": path, "to": v}` (no `to` where no one plain value was set), `{"insert": list}`, `{"remove": list}`,
     /// `{"move": list}` (a list of the record by its field, one in a row by its path), `"create"`, `{"tag": tag}`,
-    /// `"propose"` or `"merge"`.
+    /// `"propose"`, `"merge"` or `{"merged": path}`.
     pub fn to_json(&self) -> Value {
         let list = |l: &Loc| match l.0.as_slice() {
             [Seg::Field(f)] => f.as_str().into(),
@@ -541,15 +547,17 @@ impl Touch {
             Touch::Tag(t) => json!({ "tag": t.as_str() }),
             Touch::Propose => "propose".into(),
             Touch::Merge => "merge".into(),
+            Touch::Merged(l) => json!({ "merged": l.to_json() }),
         }
     }
 
-    /// The place it may change (`Rules.lean`'s `Touch.loc`): where it sets, the list whose rows it changes, the whole
-    /// record for a creation; none for a tag, a proposal's start or a merge, which change nothing of the record.
+    /// The place it may change (`Rules.lean`'s `Touch.loc`): where it sets, the list whose rows it changes, the place a
+    /// merge brings a change to, the whole record for a creation; none for a tag, a proposal's start or a merge itself,
+    /// which change nothing of the record.
     pub fn loc(&self) -> Option<Loc> {
         match self {
             Touch::Set(l, _) => Some(l.clone()),
-            Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f) => Some(f.clone()),
+            Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f) | Touch::Merged(f) => Some(f.clone()),
             Touch::Create => Some(Loc::root()),
             Touch::Tag(_) | Touch::Propose | Touch::Merge => None,
         }
@@ -578,6 +586,7 @@ impl Touch {
             Value::Object(o) if o.len() == 1 && o.contains_key("insert") => Ok(Touch::Insert(field(o, "insert")?)),
             Value::Object(o) if o.len() == 1 && o.contains_key("remove") => Ok(Touch::Remove(field(o, "remove")?)),
             Value::Object(o) if o.len() == 1 && o.contains_key("move") => Ok(Touch::Move(field(o, "move")?)),
+            Value::Object(o) if o.len() == 1 && o.contains_key("merged") => Ok(Touch::Merged(Loc::of_json(&o["merged"])?)),
             Value::Object(o) if o.len() == 1 && o.contains_key("tag") => {
                 Ok(Touch::Tag(Sym::new(o["tag"].as_str().ok_or("a tag is a name")?)))
             }
@@ -621,6 +630,7 @@ mod tests {
             json!({ "op": "move", "path": ["blocks"], "on": "main" }),
             json!({ "op": "merge", "on": "proposals" }),
             json!({ "op": "merge" }),
+            json!({ "op": "merge", "on": "main", "path": ["params", "*", "default"] }),
             json!({ "op": "propose" }),
             json!({ "op": "create" }),
             json!({ "op": "tag" }),
@@ -668,6 +678,8 @@ mod tests {
             json!({ "tag": "urgent" }),
             json!("propose"),
             json!("merge"),
+            json!({ "merged": ["params", { "id": 2 }, "default"] }),
+            json!({ "merged": [] }),
         ];
         for v in touches {
             assert_eq!(touch(v.clone()).to_json(), v);
@@ -710,6 +722,17 @@ mod tests {
         assert!(!suggest.allows(true, &touch(json!({ "set": ["title"], "to": "x" }))));
         let merge = op(json!({ "op": "merge", "on": "main" }));
         assert!(merge.allows(true, &Touch::Merge) && !merge.allows(false, &Touch::Merge));
+        // a merge without a path brings in anything; with one, only changes at or under it
+        assert!(merge.allows(true, &touch(json!({ "merged": [] }))));
+        let tune = op(json!({ "op": "merge", "on": "main", "path": ["params", "*", "default"] }));
+        assert!(tune.allows(true, &Touch::Merge));
+        assert!(tune.allows(true, &touch(json!({ "merged": ["params", { "id": 3 }, "default"] }))));
+        assert!(!tune.allows(false, &touch(json!({ "merged": ["params", { "id": 3 }, "default"] }))));
+        assert!(!tune.allows(true, &touch(json!({ "merged": ["params", { "id": 3 }, "name"] }))));
+        assert!(!tune.allows(true, &touch(json!({ "merged": ["source"] }))));
+        assert!(!tune.allows(true, &touch(json!({ "merged": ["params"] }))));
+        assert!(!tune.allows(true, &touch(json!({ "set": ["params", { "id": 3 }, "default"] }))));
+        assert_eq!(touch(json!({ "merged": ["source"] })).loc(), Some(Loc::field("source")));
         assert!(op(json!({ "op": "create" })).allows(true, &Touch::Create));
         assert!(!op(json!({ "op": "create" })).allows(true, &Touch::Propose));
         // tags: those it lists, or any
@@ -779,8 +802,9 @@ mod tests {
     #[test]
     fn ops_go_in_order_with_read_beside_every_write() {
         let set = op(json!({ "op": "set", "path": ["status"] }));
-        let ops = normalize(vec![Op::Merge { on: None }, set.clone(), Op::Relay, set.clone()]).expect("ops");
-        assert_eq!(ops, vec![Op::Read, set.clone(), Op::Merge { on: None }]);
+        let merge = Op::Merge { on: None, path: vec![] };
+        let ops = normalize(vec![merge.clone(), set.clone(), Op::Relay, set.clone()]).expect("ops");
+        assert_eq!(ops, vec![Op::Read, set.clone(), merge]);
         assert_eq!(normalize(vec![Op::Relay, Op::Backup]).expect("ops"), vec![Op::Backup]);
         assert_eq!(normalize(vec![Op::Read, Op::Relay]).expect("ops"), vec![Op::Read]);
         assert!(normalize(vec![]).is_err());

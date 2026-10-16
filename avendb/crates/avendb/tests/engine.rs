@@ -937,6 +937,77 @@ fn a_share_that_only_suggests_writes_on_proposals_an_owner_merges() {
     }
 }
 
+/// A tunable: a source and the params it reads, each with a default.
+const TUNABLE: &str = r##"{ "title": "Tunable", "type": "object",
+  "properties": {
+    "kind": { "const": "tunable" },
+    "source": { "type": "string", "x-loro": "text", "default": "" },
+    "params": { "type": "array", "default": [], "items": { "type": "object", "properties": {
+      "id": { "type": "integer" }, "name": { "type": "string" }, "default": { "type": "integer" } },
+      "required": ["id"] } } },
+  "required": ["kind"] }"##;
+
+/// M1 (merges by path): a tuner may merge into main only a line whose changes since their base all lie under its
+/// merge's path, the defaults of the params. Its merge of a proposal that only tunes counts; of one that changes the
+/// source too, its device refuses, a patched app's counts for no reader, and an owner merges it as ever.
+#[test]
+fn a_tuner_merges_new_defaults_and_nothing_else() {
+    let mut w = cast::world();
+    let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
+    ok(run(&mut w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "schema", "value": TUNABLE })));
+    let lamp = json!({ "kind": "tunable", "source": "glow(brightness)",
+        "params": [{ "id": 1, "name": "brightness", "default": 2 }] });
+    let made = ok(run(&mut w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "note", "value": lamp })));
+    let e = EntryId::from_hex(made["entry"].as_str().expect("its id")).expect("an entry");
+    let tuner = ops_of(json!([
+        { "op": "propose" },
+        { "op": "set", "path": [], "on": "proposals" },
+        { "op": "merge", "on": "main", "path": ["params", "*", "default"] },
+    ]));
+    w.lab.issue(mac, &[mac], on_entry(alice, bob, e, tuner)).expect("Alice lets Bob tune the lamp");
+    w.lab.sync_all(0);
+    let lamp = hex(e);
+    let set = |line: &Value, path: Value, value: Value| {
+        json!({ "op": "set", "entry": lamp, "line": line, "path": path, "value": value })
+    };
+    let brightness = json!(["params", { "id": 1 }, "default"]);
+    let main = |w: &mut World, d: SignerId| ok(run(w, d, json!({ "op": "get", "entry": hex(e) })))["record"].clone();
+    // a proposal that only tunes: Bob merges it, and every reader counts the merge
+    let tune = ok(run(&mut w, mac_b, json!({ "op": "propose", "entry": lamp, "name": "Brighter" })))["line"].clone();
+    ok(run(&mut w, mac_b, set(&tune, brightness.clone(), json!(3))));
+    ok(run(&mut w, mac_b, json!({ "op": "merge", "entry": lamp, "from": tune })));
+    w.lab.sync_all(1);
+    for d in [mac, mac_b] {
+        assert!(counted(&mut w, d, e).iter().all(|c| c.1));
+        assert_eq!(main(&mut w, d)["params"][0]["default"], 3);
+    }
+    // a proposal that changes the source too: his device refuses his merge, into main or into another proposal
+    let rewrite = ok(run(&mut w, mac_b, json!({ "op": "propose", "entry": lamp, "name": "Rewrite" })))["line"].clone();
+    ok(run(&mut w, mac_b, set(&rewrite, brightness.clone(), json!(5))));
+    ok(run(&mut w, mac_b, set(&rewrite, json!(["source"]), json!("flash(brightness)"))));
+    let merge = json!({ "op": "merge", "entry": lamp, "from": rewrite });
+    assert_eq!(refused(&run(&mut w, mac_b, merge.clone())), "NotAllowed");
+    let other = ok(run(&mut w, mac_b, json!({ "op": "propose", "entry": lamp, "name": "Other" })))["line"].clone();
+    let sideways = json!({ "op": "merge", "entry": lamp, "from": rewrite, "into": other });
+    assert_eq!(refused(&run(&mut w, mac_b, sideways)), "NotAllowed");
+    // a patched app makes it all the same, and no reader counts it: main keeps the tuned lamp
+    let patched = w.lab.patched(|lab| engine::run(lab, mac_b, &merge));
+    let patched = ok(patched)["edit"].as_str().expect("its id").to_string();
+    w.lab.sync_all(2);
+    for d in [mac, mac_b] {
+        assert_eq!(counted(&mut w, d, e).last(), Some(&(patched.clone(), false)));
+        let record = main(&mut w, d);
+        assert_eq!((record["source"].as_str(), &record["params"][0]["default"]), (Some("glow(brightness)"), &json!(3)));
+    }
+    // Alice merges anything
+    ok(run(&mut w, mac, merge));
+    w.lab.sync_all(3);
+    for d in [mac, mac_b] {
+        let record = main(&mut w, d);
+        assert_eq!((record["source"].as_str(), &record["params"][0]["default"]), (Some("flash(brightness)"), &json!(5)));
+    }
+}
+
 /// S3: a write whose record breaks the schemas its entry was written under counts for no reader, nor anything built
 /// on it; a device refuses to make one, and one a patched app makes all the same changes no record anyone shows.
 #[test]
