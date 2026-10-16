@@ -326,53 +326,84 @@ fn a_story_is_a_kind_of_its_own_proposed_to_and_merged_by_its_title() {
 }
 
 #[test]
-fn a_spark_is_a_note_with_its_source_beside_it_and_a_story_grows_from_several() {
+fn an_artifact_is_one_source_and_a_spark_a_canvas_of_them_a_story_grows_from() {
     let mut w = cast::world();
     cast::library(&mut w);
     let (mac, alice) = (w.mac_a, w.alice.to_hex());
     let create = |ty: &str, value: Value| json!({ "op": "create", "vault": alice, "type": ty, "value": value });
-    // a link someone else posted, with whose it is and its words; a thought of one line
-    let blocks = [json!({ "id": 1, "type": "heading", "level": 1, "text": "Morning light" })];
-    let by = json!({ "name": "Ana", "url": "https://example.org/@ana", "platform": "youtube" });
-    let mut link = json!({ "kind": "spark", "title": "Morning light", "look": "video", "blocks": blocks, "by": by });
-    link["url"] = json!("https://example.org/watch/1");
-    link["transcript"] = json!("The light comes in at six.");
-    let link = ok(run(&mut w, mac, create("spark", link)))["entry"].as_str().unwrap().to_string();
-    let thought = json!({ "kind": "spark", "title": "Wake up before the town does" });
-    let thought = ok(run(&mut w, mac, create("spark", thought)))["entry"].as_str().unwrap().to_string();
-    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": thought, "schema": "spark" })));
-    let defaults = (&got["record"]["look"], &got["record"]["files"], &got["record"]["sparks"]);
-    assert_eq!(defaults, (&json!("thought"), &json!([]), &json!([])), "what it doesn't hold reads as its default");
-    // what doesn't fit its schema is refused: a look it doesn't know
-    let odd = json!({ "kind": "spark", "look": "rumour" });
-    assert_eq!(refused(&run(&mut w, mac, create("spark", odd))), "NotAView");
-    // a note's page reads it as a document, its title and blocks, and its source beside in its record
-    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": link })));
-    assert_eq!((&note["kind"], &note["lines"][0]["title"]), (&json!("spark"), &json!("Morning light")));
-    assert_eq!(note["lines"][0]["blocks"][0]["text"], "Morning light");
-    assert_eq!(note["lines"][0]["record"]["by"]["name"], "Ana");
-    // its text is written as a note's is, block 2
-    let text = json!({ "id": 2, "type": "paragraph", "text": "Shot it from the window." });
-    ok(run(&mut w, mac, json!({ "op": "insert", "entry": link, "path": ["blocks"], "value": text })));
-    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": link })));
-    assert_eq!(note["lines"][0]["text"], "Shot it from the window.");
-    // a mood board gathers both, and a story grows from the board and the thought
-    let board = json!({ "kind": "spark", "title": "Mornings", "look": "moodboard", "sparks": [link, thought] });
-    let board = ok(run(&mut w, mac, create("spark", board)))["entry"].as_str().unwrap().to_string();
-    let story = json!({ "kind": "story", "title": "Trailer story", "sparks": [board, thought] });
-    let story = ok(run(&mut w, mac, create("story", story)))["entry"].as_str().unwrap().to_string();
-    let more = json!({ "op": "insert", "entry": story, "path": ["sparks"], "value": link });
-    ok(run(&mut w, mac, more));
+    let made = |w: &mut World, op: Value| ok(run(w, mac, op))["entry"].as_str().unwrap().to_string();
+    let link = |e: &str| json!({ "vault": alice, "entry": e });
+    // a picture someone else posted, its Library file linked; a YouTube video with its chapters and words
+    let picture = made(&mut w, create("file", json!({ "kind": "file", "title": "light.jpg", "media": "image/jpeg" })));
+    let by = json!({ "name": "Ana", "url": "https://example.org/@ana", "platform": "instagram" });
+    let image = json!({ "kind": "artifact", "look": "image", "title": "Morning light", "by": by, "files": [link(&picture)] });
+    let image = made(&mut w, create("artifact", image));
+    let mut video = json!({ "kind": "artifact", "look": "youtube", "title": "Wake up early", "duration": 612.5 });
+    video["url"] = json!("https://www.youtube.com/watch?v=abc");
+    video["chapters"] = json!([{ "id": 1, "t": 0, "title": "Why" }, { "id": 2, "t": 95, "title": "How" }]);
+    video["transcript"] = json!([{ "id": 1, "t": 0, "text": "The light comes in at six." }]);
+    let video = made(&mut w, create("artifact", video));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": image, "schema": "artifact" })));
+    let defaults = (&got["record"]["note"], &got["record"]["chapters"], &got["record"]["transcript"]);
+    assert_eq!(defaults, (&json!(""), &json!([]), &json!([])), "what it doesn't hold reads as its default");
+    // what doesn't fit its schema is refused: a look it doesn't know, a file that isn't a link
+    for odd in [json!({ "kind": "artifact", "look": "rumour" }), json!({ "kind": "artifact", "files": ["light.jpg"] })] {
+        assert_eq!(refused(&run(&mut w, mac, create("artifact", odd.clone()))), "NotAView", "{odd}");
+    }
+    // a spark is a canvas: the two artifacts and a text note, each where it was put
+    let items = json!([
+        { "id": 1, "what": "artifact", "ref": link(&image), "x": 40, "y": 20, "w": 240 },
+        { "id": 2, "what": "artifact", "ref": link(&video), "x": 320, "y": 20 },
+        { "id": 3, "what": "text", "text": "Open on the window, then the street.", "x": 40, "y": 300 }
+    ]);
+    let spark = json!({ "kind": "spark", "title": "Mornings", "items": items });
+    let spark = made(&mut w, create("spark", spark));
+    let moved = json!({ "op": "set", "entry": spark, "path": ["items", { "id": 3 }, "y"], "value": 340 });
+    ok(run(&mut w, mac, moved));
+    // a query of the canvas follows its links to the artifacts on it, and on to their files
+    let q = json!({ "op": "query", "where": { "path": ["title"], "eq": "Mornings" },
+        "follow": [["items", "*", "ref"], ["files"]] });
+    let found = ok(run(&mut w, mac, q));
+    let canvas = &found["rows"][0]["record"];
+    assert_eq!(canvas["items"][2]["y"], 340);
+    assert_eq!(canvas["items"][0]["ref"]["to"]["title"], "Morning light");
+    assert_eq!(canvas["items"][0]["ref"]["to"]["files"][0]["to"]["media"], "image/jpeg");
+    assert_eq!(canvas["items"][1]["ref"]["to"]["chapters"][1]["t"], 95);
+    // a note's page still reads it as a document, its record beside, its items in it
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": spark })));
+    assert_eq!((&note["kind"], &note["lines"][0]["title"]), (&json!("spark"), &json!("Mornings")));
+    assert_eq!(note["lines"][0]["record"]["items"][1]["what"], "artifact");
+    // a story grows from the spark
+    let story = made(&mut w, create("story", json!({ "kind": "story", "title": "Trailer story", "sparks": [spark] })));
     let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": story, "schema": "story" })));
-    assert_eq!(got["record"]["sparks"], json!([board, thought, link]));
-    // the world lists a spark as a note, its record beside, for the page's Sparks; a plain note has none
+    assert_eq!(got["record"]["sparks"], json!([spark]));
+    // the world lists the spark as a note with its record, the artifacts as records of their own
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
     let of = |e: &str| seen["entries"].as_array().unwrap().iter().find(|x| x["entry"] == e).unwrap().clone();
-    let (b, t) = (of(&board), of(&thought));
-    assert_eq!((&b["kind"], &b["title"], &b["record"]["look"]), (&json!("note"), &json!("Mornings"), &json!("moodboard")));
-    assert_eq!((&b["record"]["sparks"], &t["record"]["look"]), (&json!([link, thought]), &json!("thought")));
-    let plain = seen["entries"].as_array().unwrap().iter().find(|x| x["type"] == "note" && x["kind"] == "note");
-    assert_eq!(plain.map(|x| &x["record"]), Some(&Value::Null));
+    let (s, v) = (of(&spark), of(&video));
+    assert_eq!((&s["kind"], &s["record"]["items"][0]["what"]), (&json!("note"), &json!("artifact")));
+    assert_eq!((&v["type"], &v["record"]["look"], &v["record"]["duration"]), (&json!("artifact"), &json!("youtube"), &json!(612.5)));
+}
+
+/// A spark written under v1, as the page wrote them before the canvas, opens in the spark app of v2 through the lens
+/// avenDB ships, its title and words kept, and edits on there: the canvas's items go beside what v1 held.
+#[test]
+fn a_spark_of_v1_opens_on_the_canvas_and_edits_on() {
+    let mut w = cast::world();
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let blocks = [json!({ "id": 1, "type": "heading", "level": 1, "text": "Morning light" })];
+    let old = json!({ "kind": "spark", "title": "Morning light", "look": "video", "url": "https://example.org/1",
+        "blocks": blocks });
+    let op = json!({ "op": "create", "vault": alice, "type": "spark", "schema": lens::SPARK_V1.id().to_hex(), "value": old });
+    let spark = ok(run(&mut w, mac, op))["entry"].as_str().unwrap().to_string();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": spark, "schema": "spark" })));
+    assert_eq!((&got["record"]["title"], &got["record"]["items"]), (&json!("Morning light"), &json!([])));
+    let note = json!({ "id": 1, "what": "text", "text": "From the window.", "x": 10, "y": 10 });
+    ok(run(&mut w, mac, json!({ "op": "insert", "entry": spark, "path": ["items"], "value": note })));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": spark, "schema": "spark" })));
+    assert_eq!(got["record"]["items"][0]["text"], "From the window.");
+    let v1 = ok(run(&mut w, mac, json!({ "op": "get", "entry": spark, "schema": lens::SPARK_V1.id().to_hex() })));
+    assert_eq!(v1["record"]["url"], "https://example.org/1", "what v1 held stays");
 }
 
 #[test]
@@ -644,11 +675,13 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "card", "document", "file", "flow", "function", "post", "profile", "request", "spark"];
-    let own = [&own[..], &["story", "todo"]].concat();
-    assert_eq!(kinds, own, "its own kinds, each once: every shipped schema starts at v1");
+    let own = ["article", "artifact", "card", "document", "file", "flow", "function", "post", "profile", "request"];
+    let own = [&own[..], &["spark", "spark", "story", "todo"]].concat();
+    assert_eq!(kinds, own, "its own kinds, each once but the spark's two versions");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
-    assert!(list(&schemas["lenses"]).is_empty());
+    let lenses = list(&schemas["lenses"]);
+    assert_eq!(lenses.len(), 1, "the lens from spark v1 to v2");
+    assert_eq!((&lenses[0]["from"], &lenses[0]["builtIn"]), (&json!(lens::SPARK_V1.id().to_hex()), &json!(true)));
 }
 
 /// Ops from their JSON.

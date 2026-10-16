@@ -1,43 +1,49 @@
 <!--
-	One spark as a row of a list (./Sparks.svelte): a small square of what it shows by its look (./sparks.js), its
-	picture, else its look's icon on its look's colour; its title, and under it what it is, its link's host or whose it
-	is, and how many stories and mood boards grow from it. A tap opens it as a note opens; where the page picks sparks,
-	the round box at its end picks it.
+	One spark as a row of a list (./Sparks.svelte): a small square of the first picture on its canvas, else a spark's
+	icon (a note's, for a note written before sparks); its title, and under it what its canvas holds, its artifacts,
+	notes and sparks, and how many stories and sparks grow from it. A tap opens it as a note opens; where the page
+	picks sparks, the round box at its end picks it, and where it lists a story's sparks, a button takes it out.
 -->
 <script>
+	import { entryOf } from './artifacts.js';
 	import Icon from './Icon.svelte';
-	import { byWords, grownFrom, hostOf, LOOK_NAME, LOOKS, lookOf, pictureOf } from './sparks.js';
+	import { grownFrom, isOldNote, pictureOf, pieces } from './sparks.js';
 	import { count } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, item: import('./vaults.js').EntryView,
-	 *   picked?: boolean, onpick?: (on: boolean) => void }}
+	 *   picked?: boolean, onpick?: (on: boolean) => void, onremove?: () => void, removeLabel?: string }}
 	 */
-	let { world, api, item, picked = false, onpick } = $props();
+	let { world, api, item, picked = false, onpick, onremove, removeLabel = 'Take it out' } = $props();
 
-	const record = $derived(/** @type {any} */ (item.record) ?? {});
-	const look = $derived(lookOf(item));
-	const icon = $derived(LOOKS.find(([l]) => l === look)?.[2] ?? 'spark');
+	const old = $derived(isOldNote(item));
 	const byId = $derived(new Map(world.entries.map((e) => [e.entry, e])));
-	/** what it is besides its look: its link's host, whose it is, else its first words */
+	const held = $derived(pieces(world, item));
+	/** what its canvas holds, in words, else its first words */
 	const about = $derived(
-		hostOf(record.url ?? '') || byWords(record.by) || (look === 'thought' || look === 'note' ? (item.text ?? '') : '')
+		[
+			held.artifacts.length ? count(held.artifacts.length, 'artifact') : '',
+			held.notes.length ? count(held.notes.length, 'note') : '',
+			held.sparks.length ? count(held.sparks.length, 'spark') : ''
+		]
+			.filter(Boolean)
+			.join(' · ') || (item.text ?? '')
 	);
-	/** where it grows into: the stories and the mood boards that name it among their sparks */
+	/** where it grows into: the stories that name it among their sparks, and the sparks that hold it */
 	const grows = $derived.by(() => {
 		const all = grownFrom(world, item.entry);
 		const stories = all.filter((e) => e.type === 'story').length;
-		const boards = all.length - stories;
-		return [stories ? `in ${count(stories, 'story', 'stories')}` : '', boards ? `on ${count(boards, 'board')}` : '']
+		const sparks = all.length - stories;
+		return [stories ? `in ${count(stories, 'story', 'stories')}` : '', sparks ? `on ${count(sparks, 'spark')}` : '']
 			.filter(Boolean)
 			.join(' · ');
 	});
 
-	/** its own picture, or a mood board's first, once read */
+	/** the first picture on its canvas, once read */
 	let pic = $state('');
 	$effect(() => {
-		const first = look === 'moodboard' ? byId.get(record.sparks?.[0] ?? '') : item;
-		const file = byId.get(/** @type {any} */ (first?.record)?.files?.[0] ?? '');
+		const files = held.artifacts.flatMap((a) => /** @type {any} */ (a.record)?.files ?? []);
+		const file = files.map((f) => byId.get(entryOf(f))).find(Boolean);
 		if (!file) return;
 		let gone = false;
 		pictureOf(api, file).then((url) => !gone && url && (pic = url));
@@ -48,19 +54,27 @@
 </script>
 
 <li class="row" class:picked class:deleted={item.deleted}>
-	<a class="open" href="#notes/{item.entry}" aria-label="{LOOK_NAME[look]}: {item.title || 'untitled'}">
-		<span class="thumb {look}" aria-hidden="true">
-			{#if pic}<img src={pic} alt="" />{:else}<Icon name={icon} size={18} />{/if}
+	<a class="open" href="#notes/{item.entry}" aria-label="{old ? 'Note' : 'Spark'}: {item.title || 'untitled'}">
+		<span class="thumb" class:old aria-hidden="true">
+			{#if pic}<img src={pic} alt="" />{:else}<Icon name={old ? 'note' : 'spark'} size={18} />{/if}
 		</span>
 		<span class="words">
 			<b>{item.title || 'Untitled'}</b>
 			<small>
-				<span class="kind">{LOOK_NAME[look]}</span>
+				<span class="kind">{old ? 'Note' : 'Spark'}</span>
 				{#if grows}<span class="grows">· {grows}</span>{/if}
 				{#if about}<span class="about">· {about}</span>{/if}
 			</small>
 		</span>
+		{#if item.tags?.length}
+			<span class="tags">{#each item.tags.filter((t) => !t.includes(':')).slice(0, 3) as t (t)}<span class="chip tag">#{t}</span>{/each}</span>
+		{/if}
 	</a>
+	{#if onremove}
+		<button class="pick remove" title={removeLabel} aria-label="{removeLabel}: “{item.title}”" onclick={onremove}
+			><Icon name="close" size={14} /></button
+		>
+	{/if}
 	{#if onpick}
 		<label class="pick" title={picked ? 'Picked' : 'Pick it'}>
 			<input type="checkbox" checked={picked} onchange={(e) => onpick(e.currentTarget.checked)} aria-label="Pick “{item.title}”" />
@@ -119,25 +133,28 @@
 		object-fit: cover;
 	}
 
-	.thumb.link,
-	.thumb.post {
+	.thumb.old {
 		background: #e3eaf3;
 		color: #2b3f63;
 	}
 
-	.thumb.video {
-		background: #2a2f2c;
-		color: #fff;
+	.tags {
+		display: none;
+		flex: none;
+		gap: 0.2rem;
+		margin-left: auto;
 	}
 
-	.thumb.quote {
-		background: #efe6f3;
-		color: #5e3d75;
+	.tags .chip {
+		background: #e4e9f3;
+		color: #2b3f63;
+		font-size: 0.7rem;
 	}
 
-	.thumb.moodboard {
-		background: #e2ece7;
-		color: var(--accent);
+	@media (min-width: 761px) {
+		.tags {
+			display: flex;
+		}
 	}
 
 	.words {
@@ -183,6 +200,19 @@
 		width: 2.4rem;
 		height: 2.4rem;
 		cursor: pointer;
+	}
+
+	.remove {
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: none;
+		color: var(--soft);
+	}
+
+	.remove:hover {
+		background: rgb(0 0 0 / 0.05);
+		color: inherit;
 	}
 
 	.pick input {

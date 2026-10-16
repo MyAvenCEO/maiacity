@@ -2,15 +2,16 @@
 	The person's avenDB once this browser is unlocked: the vault it is looked at in, the person's own or any other this
 	browser knows, picked from an item of the app's nav pill beside You, with a menu of its own, apart from the account
 	signed in to the app ($lib/app/pill.svelte.js `pillContext`); first its home, on the whole screen, each of its pages an
-	app on a phone's home screen, by group (`#home`, or no address); then the picked vault's name and its pages, as a database studio lists them: its sparks (thoughts, links, pictures, mood boards,
-	others' posts, the notes written before them), its todos, its articles, its stories (each
+	app on a phone's home screen, by group (`#home`, or no address); then the picked vault's name and its pages, as a database studio lists them: its sparks (each an open canvas of
+	artifacts, text notes and other sparks, and the notes written before them), its artifacts (one source fact each: a
+	link, a picture, a clip, a YouTube video), its todos, its articles, its stories (each
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
 	songs, its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
 	next; its database (the query console, the table editor, its schemas and lenses, its history, every signed edit, and
 	the device's jobs, what it syncs in the background); then its settings (About, Owners and devices, and Sharing, the
 	one place that says who it is shared with); and the page picked in the middle. Each page has an address of its own
 	(`#todos`), and so has each spark and note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
-	screen, and each article (`#articles/` and its entry), to read, and to edit as a note (`/edit`). The device picks
+	screen, each artifact (`#artifacts/` and its entry), and each article (`#articles/` and its entry), to read, and to edit as a note (`/edit`). The device picks
 	who the person acts as in each vault, with no switch to flip (its world's `acting`): in a vault their vault owns,
 	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
 	theirs that holds the strongest cap over it, whose caps then decide what the page shows and what it may do. At the
@@ -24,6 +25,9 @@
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import AccessRequest from './AccessRequest.svelte';
 	import Article from './Article.svelte';
+	import Artifact from './Artifact.svelte';
+	import Artifacts from './Artifacts.svelte';
+	import { retagging } from './artifacts.js';
 	import Ask from './Ask.svelte';
 	import Articles from './Articles.svelte';
 	import Flows from './Flows.svelte';
@@ -40,7 +44,8 @@
 	import Stories from './Stories.svelte';
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
-	import { acting, hue, initials, KINDS, list, nameOf, signerName } from './vaults.js';
+	import { may } from './ops.js';
+	import { acting, count, hue, initials, KINDS, list, nameOf, signerName } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
@@ -76,6 +81,7 @@
 			'',
 			[
 				['sparks', 'Sparks', 'spark'],
+				['artifacts', 'Artifacts', 'artifact'],
 				['todos', 'Todos', 'todo'],
 				['articles', 'Articles', 'article'],
 				['stories', 'Stories', 'story'],
@@ -132,7 +138,7 @@
 		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
 		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page)?.[0] ?? 'home');
-		const opens = ['sparks', 'articles', 'stories'].includes(known) && /^[0-9a-f]{64}$/.test(entry ?? '');
+		const opens = ['sparks', 'artifacts', 'articles', 'stories'].includes(known) && /^[0-9a-f]{64}$/.test(entry ?? '');
 		return { page: known, entry: opens ? entry : '', edit: opens && known === 'articles' && edit === 'edit' };
 	}
 
@@ -147,6 +153,23 @@
 	const rest = $derived(world.vaults.filter((v) => v.id !== world.mine));
 	const here = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(context) ?? mine));
 	const as = $derived(byId.get(actor) ?? mine);
+
+	// the auto tags (./artifacts.js `retagging`): each artifact a spark holds, and each Library file it shows, carries
+	// `sparks`, and `stories` once a story grows from such a spark, kept up as the world changes by whichever page
+	// looks at the vault, where the acting vault may tag them; the same ops are never tried twice in a row
+	let tagged = '';
+	$effect(() => {
+		const ops = retagging(world, context, actor);
+		if (busy || !ops.length) return;
+		const key = JSON.stringify([actor, ops]);
+		if (key === tagged) return;
+		tagged = key;
+		may(api, actor, ops).then((verdicts) => {
+			const go = ops.filter((_, i) => verdicts[i] === true);
+			if (!go.length || doing) return;
+			api.run(`Tagging ${count(go.length, 'piece')} by the sparks and stories that hold them`, { op: 'batch', as: actor, ops: go });
+		});
+	});
 
 	// the vaults to look at it in, the person's own first, as an item of the app's nav pill beside You, with a menu of
 	// its own: avenDB's vaults apart from the account signed in to the app
@@ -216,6 +239,8 @@
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories'}
 				<Story {world} {actor} {api} {busy} entry={route.entry} />
+			{:else if route.page === 'artifacts'}
+				<Artifact {world} {actor} {api} {busy} entry={route.entry} />
 			{:else if route.page === 'articles' && !route.edit}
 				<Article {world} {actor} {api} entry={route.entry} />
 			{:else if route.page === 'articles'}
@@ -316,6 +341,8 @@
 			<Stories {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openStory} />
 		{:else if tab === 'todos'}
 			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+		{:else if tab === 'artifacts'}
+			<Artifacts {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
 		{:else if tab === 'library'}
 			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 		{:else if tab === 'flows'}

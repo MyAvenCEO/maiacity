@@ -1053,14 +1053,19 @@ Markdown text), a **flow** (stages an item can be in, each with whether it is pu
 stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
 name and its media type), a **story** (one content piece from its first spark to every platform it goes out on:
 its title and format, the sparks it grew from, its journey's beats and its hook variants as rows, its intro,
-description and launch; the story flow's tag says which of its stages it is in), a **spark** (anything that might
-become something, a thought, a link, a picture, a mood board, someone else's post, a video with its words, a quote: a
-document's title and blocks, so a note's page edits it, and beside them its look, its link, whose it is, its language,
-its transcript, its files and, for a mood board, the sparks it gathers; a story names the sparks it grows from, and
-those with a link or whose they are are its sources), and an access **request** (the vault asked, a level, why, the
-vaults it names and, once given, its answer: `"granted"` or `"denied"`, section 3). A note keeps its type, a
-document; the page lists notes among the sparks, and the world gives a spark's record beside its title and text
-(`world::What::Note`). Every shipped schema starts at v1.
+description and launch; the story flow's tag says which of its stages it is in), an **artifact** (one source fact
+standing on its own: what it looks like, a link, a picture, a clip or a YouTube video, where it is from, whose it is
+and when, its language and length, the Library files it shows as links, and a video's chapters and transcript as
+rows; a Library file is only bytes, an artifact is what they are), a **spark** (anything that might become something:
+a scratchpad, an open canvas whose items are rows, each an artifact or a spark it links to or a free text note, with
+where it sits and how big it is, beside a document's title and blocks, so a note's page edits it; a story names the
+sparks it grows from, and the artifacts on their canvases are its sources), and an access **request** (the vault
+asked, a level, why, the vaults it names and, once given, its answer: `"granted"` or `"denied"`, section 3). A note
+keeps its type, a document; the page lists notes among the sparks, and the world gives a spark's record beside its
+title and text (`world::What::Note`). Every shipped schema starts at v1, and a kind that grew ships its older
+versions beside the newest and the lenses between them (`lens::blobs::LENSES`), so what was written under an older
+one still counts and opens in the newest app: the spark's v1, a document's fields with a look, a link and a mood
+board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`).
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 

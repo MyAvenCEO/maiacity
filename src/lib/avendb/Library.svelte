@@ -28,8 +28,10 @@
 		size,
 		syncedWords,
 		tagsIn,
+		tagsOf,
 		why
 	} from './vaults.js';
+	import { IN_SPARKS, IN_STORIES } from './artifacts.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -61,12 +63,22 @@
 	/** Entry `e`'s file: the first its edits bring. @param {EntryView} e */
 	const fileOf = (e) => e.files?.[0];
 	const kinds = $derived(KINDS.map(([k, label, icon]) => ({ k, label, icon, n: live.filter((e) => kind(e) === k).length })));
-	/** the kind the files are narrowed to: '' for all of them */
-	let only = $state(/** @type {Kind | ''} */ (''));
+	/** the tags of its files, the auto tags `sparks` and `stories` (./artifacts.js) among them, flow stages left out */
+	const tags = $derived(tagsOf(live).filter((t) => !t.tag.includes(':')));
+	/** the kind the files are narrowed to, or a tag (`#` and it): '' for all of them */
+	let only = $state(/** @type {string} */ (''));
 	/** the deleted files shown instead of the others */
 	let bin = $state(false);
 	const binned = $derived(bin && deleted.length > 0);
-	const shown = $derived(binned ? deleted : only ? live.filter((e) => kind(e) === only) : live);
+	const shown = $derived(
+		binned
+			? deleted
+			: only.startsWith('#')
+				? live.filter((e) => e.tags?.includes(only.slice(1)))
+				: only
+					? live.filter((e) => kind(e) === only)
+					: live
+	);
 
 	/** the new files' tags, as the person types them, and those the acting vault's cap asks for besides */
 	let tagging = $state('');
@@ -332,6 +344,16 @@
 						><Icon name={k.icon} size={12} /> {k.label} <small>{k.n}</small></button
 					>
 				{/each}
+				{#each tags as t (t.tag)}
+					{@const on = only === `#${t.tag}` && !binned}
+					<button
+						class="chip tag"
+						class:on
+						class:auto={t.tag === IN_SPARKS || t.tag === IN_STORIES}
+						aria-pressed={on}
+						onclick={() => ([only, bin] = [on ? '' : `#${t.tag}`, false])}>#{t.tag} <small>{t.uses}</small></button
+					>
+				{/each}
 				{#if deleted.length}
 					<button class="chip" class:on={binned} aria-pressed={binned} onclick={() => (bin = !binned)}
 						><Icon name="trash" size={12} /> Deleted <small>{deleted.length}</small></button
@@ -552,6 +574,16 @@
 	.filter button.on {
 		border-color: var(--accent);
 		background: #d6e8e4;
+		color: #1f4f47;
+	}
+
+	.filter .tag {
+		background: #e4e9f3;
+		color: #2b3f63;
+	}
+
+	.filter .tag.auto {
+		background: #e2ece7;
 		color: #1f4f47;
 	}
 

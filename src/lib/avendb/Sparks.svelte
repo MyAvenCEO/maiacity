@@ -1,20 +1,22 @@
 <!--
-	A vault's sparks, the one inspiration pad (./sparks.js): every spark of the vault the acting vault reads, and the
-	notes written before sparks, as a list (./SparkRow.svelte), narrowed
-	by what they are or a tag, the deleted ones apart. Picking some offers to make a story from them, an idea of the
-	story flow that names them among its sparks, or a mood board that gathers them. A click opens a spark as a note
-	opens (Note). At the foot, docked just above the app's nav pill, one row to capture: paste a link, type a line or
-	drop files, each a spark of its own at once, several files with a line besides gathered on a mood board of that
-	name; with sparks picked, that row offers the story or the board instead. Nothing here names a vault: a vault other than this one adds a spark only through a cap with write on
-	a slice that holds it, tagged as its slice asks (`creatable`), where its ops allow it (`may`), as Notes adds a note.
+	A vault's sparks, its scratchpads (./sparks.js): every spark of the vault the acting vault reads, each an open canvas
+	of artifacts, text notes and other sparks, and the notes written before sparks, as a list (./SparkRow.svelte),
+	narrowed to those a story grows from, the old notes or a tag, the deleted ones apart. Picking some offers to make a
+	story from them, an idea of the story flow that names them among its sparks, or a spark that holds them all on its
+	canvas. A click opens a spark as a note opens (Note), its canvas first. At the foot, docked just above the app's
+	nav pill, one row to capture: a line of thought a spark of its own; links and dropped files each an artifact
+	(./artifacts.js), each file into the Library first, all held by one new spark, titled by the line's other words.
+	Nothing here names a vault: a vault other than this one adds a spark only through a cap with write on a slice that
+	holds it, tagged as its slice asks (`creatable`), where its ops allow it (`may`), as Notes adds a note.
 -->
 <script>
+	import { addingArtifact, ARTIFACT, fromFile, fromLink } from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, may } from './ops.js';
 	import SparkRow from './SparkRow.svelte';
-	import { addingSpark, addingStory, fromLine, isSpark, LOOKS, lookOf, lookOfFile, SPARK, sparkRecord } from './sparks.js';
-	import { count, list, nameOf, reads, tagsIn, tagsOf, why } from './vaults.js';
+	import { addingSpark, addingStory, fromLine, grownFrom, isOldNote, isSpark, linkIn, newId, placing, SPARK, sparkRecord, titleOf } from './sparks.js';
+	import { count, nameOf, reads, tagsIn, tagsOf, why } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -31,18 +33,19 @@
 	const all = $derived(seen.filter(isSpark).sort((a, b) => (b.created ?? 0) - (a.created ?? 0)));
 	const sparks = $derived(all.filter((e) => !e.deleted));
 	const deleted = $derived(all.filter((e) => e.deleted));
-	const tags = $derived(tagsOf(sparks));
-	/** how many sparks of each look there are */
-	const looks = $derived(LOOKS.map(([l, name, icon]) => ({ l, name, icon, n: sparks.filter((e) => lookOf(e) === l).length })));
+	const tags = $derived(tagsOf(sparks).filter((t) => !t.tag.includes(':')));
+	/** the sparks a story grows from, and the notes written before sparks */
+	const storied = $derived(sparks.filter((e) => grownFrom(world, e.entry).some((g) => g.type === 'story')));
+	const notes = $derived(sparks.filter(isOldNote));
 
-	/** what the sparks are narrowed to: a look, a tag (`#` and it), or '' for all of them; or the deleted ones */
+	/** what the sparks are narrowed to: `stories`, `notes`, a tag (`#` and it), or '' for all of them; or the deleted */
 	let only = $state('');
 	let bin = $state(false);
 	const binned = $derived(bin && deleted.length > 0);
 	const shown = $derived.by(() => {
 		if (binned) return deleted;
 		if (only.startsWith('#')) return sparks.filter((e) => e.tags?.includes(only.slice(1)));
-		return only ? sparks.filter((e) => lookOf(e) === only) : sparks;
+		return only === 'stories' ? storied : only === 'notes' ? notes : sparks;
 	});
 
 	/** the line typed, the files dropped, and the tags typed for what they capture */
@@ -53,15 +56,21 @@
 	/** whether the row shows the field for the tags of what it captures */
 	let tagsOpen = $state(false);
 	const typed = $derived(tagsIn(tagging));
+	/** the line's words, its links apart */
+	const words = $derived(line.split(/\s+/).filter(Boolean));
+	const links = $derived(words.map(linkIn).filter((u) => u !== null));
+	const rest = $derived(words.filter((w) => !linkIn(w)).join(' '));
 
-	/** the tags the caps ask a new spark, file and story to carry besides: `null` where nothing lets it add one */
+	/** the tags the caps ask a new spark, artifact, file and story to carry besides: `null` where nothing lets it */
 	let asked = $state(/** @type {string[] | null} */ (null));
+	let askedArtifact = $state(/** @type {string[] | null} */ (null));
 	let askedFile = $state(/** @type {string[] | null} */ (null));
 	let askedStory = $state(/** @type {string[] | null} */ (null));
 	$effect(() => {
 		void world;
 		let gone = false;
 		creatable(api, actor, vault, SPARK, typed).then((t) => !gone && (asked = t));
+		creatable(api, actor, vault, ARTIFACT, typed).then((t) => !gone && (askedArtifact = t));
 		creatable(api, actor, vault, 'file').then((t) => !gone && (askedFile = t));
 		creatable(api, actor, vault, 'story').then((t) => !gone && (askedStory = t));
 		return () => {
@@ -90,33 +99,43 @@
 	});
 
 	const capturing = $derived(!!line.trim() || files.length > 0);
+	/** whether what is captured makes artifacts besides the spark, and whether the acting vault may add them */
+	const sources = $derived(links.length + files.length);
 
 	/**
-	 * Captures what is typed and dropped: a line alone one spark, a link or a thought; each file a spark of its own
-	 * (a picture, a video, a note), titled by the line where it is one file; and several files with a line besides,
-	 * gathered on a mood board the line names. Each file goes into the Library first.
+	 * Captures what is typed and dropped: a line of thought alone one spark; each link and each dropped file an
+	 * artifact (each file into the Library first), all of them held by one new spark on its canvas, titled by the
+	 * line's other words, else by the one source it holds, else by how many.
 	 */
 	async function capture() {
 		if (!asked || !capturing) return;
-		const [text, dropped] = [line.trim(), files];
-		/** @type {object[]} */
-		const ops = [];
-		if (!dropped.length) ops.push(addingSpark(vault, fromLine(text), sparkTags));
-		for (const f of dropped) {
+		if (!sources) {
+			const made = await api.run('Adding the spark', { ...addingSpark(vault, fromLine(line), sparkTags), as: actor });
+			if (made) [line, tagging, tagsOpen] = ['', '', false];
+			return;
+		}
+		if (askedArtifact === null) return;
+		const atags = [...typed, ...askedArtifact];
+		const ops = links.map((u) => addingArtifact(vault, fromLink(u), atags));
+		for (const f of files) {
 			const media = mediaOf(f);
 			const put = await api.putFile(actor, vault, f, media, askedFile ?? []);
 			if (!put) return;
-			const title = dropped.length === 1 && text ? text : f.name;
-			ops.push(addingSpark(vault, sparkRecord(title, '', { look: lookOfFile(media, f.name), files: [put.entry] }), sparkTags));
+			ops.push(addingArtifact(vault, fromFile(vault, put.entry, media, f.name, sources === 1 ? rest : ''), atags));
 		}
-		if (dropped.length > 1 && text) {
-			const gathers = ops.map((_, i) => `$${i}`);
-			ops.push(addingSpark(vault, sparkRecord(text, '', { look: 'moodboard', sparks: gathers }), sparkTags));
-		}
-		const what = ops.length === 1 ? 'Adding the spark' : `Adding ${count(ops.length, 'spark')}`;
+		const one = sources === 1 ? (links[0] ? fromLink(links[0]).title : files[0].name) : `${count(sources, 'source')}`;
+		const title = titleOf(rest || one);
+		/** @type {any[]} */
+		const items = [];
+		placing([], ops.length).forEach((at, i) =>
+			items.push({ id: newId(items), what: 'artifact', ref: { vault, entry: `$${i}` }, ...at })
+		);
+		ops.push(addingSpark(vault, sparkRecord(title, '', items), sparkTags));
+		const what = `Adding ${count(ops.length - 1, 'artifact')} on a spark`;
 		const made = await api.runAll(what, ops.map((op) => ({ ...op, as: actor })));
 		if (!made) return;
 		[line, files, tagging, tagsOpen] = ['', [], '', false];
+		onopen(made[made.length - 1].entry);
 	}
 
 	/** Takes the files of a drop or a pick. @param {FileList | null | undefined} list */
@@ -143,12 +162,16 @@
 		onstory(made.entry);
 	}
 
-	/** A mood board gathering the sparks picked, opened at once. */
-	async function board() {
+	/** A spark that holds the sparks picked on its canvas, opened at once. */
+	async function combine() {
 		if (!asked || pickedNow.length < 2) return;
-		const title = storyTitle.trim() || 'Mood board';
-		const value = sparkRecord(title, '', { look: 'moodboard', sparks: pickedNow });
-		const made = await api.run('Making the mood board', { ...addingSpark(vault, value, sparkTags), as: actor });
+		const title = storyTitle.trim() || 'Combined sparks';
+		/** @type {any[]} */
+		const items = [];
+		placing([], pickedNow.length).forEach((at, i) =>
+			items.push({ id: newId(items), what: 'spark', ref: { vault, entry: pickedNow[i] }, ...at })
+		);
+		const made = await api.run('Combining the sparks', { ...addingSpark(vault, sparkRecord(title, '', items), sparkTags), as: actor });
 		if (!made) return;
 		[picked, storyTitle] = [[], ''];
 		onopen(made.entry);
@@ -160,12 +183,18 @@
 		<button class="chip" class:on={!only && !binned} aria-pressed={!only && !binned} onclick={() => ([only, bin] = ['', false])}
 			>All {sparks.length}</button
 		>
-		{#each looks.filter((x) => x.n) as x (x.l)}
-			{@const on = only === x.l && !binned}
-			<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : x.l, false])}
-				><Icon name={x.icon} size={12} /> {x.name} <small>{x.n}</small></button
+		{#if storied.length}
+			{@const on = only === 'stories' && !binned}
+			<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : 'stories', false])}
+				><Icon name="story" size={12} /> In stories <small>{storied.length}</small></button
 			>
-		{/each}
+		{/if}
+		{#if notes.length}
+			{@const on = only === 'notes' && !binned}
+			<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : 'notes', false])}
+				><Icon name="note" size={12} /> Notes <small>{notes.length}</small></button
+			>
+		{/if}
 		{#each tags as t (t.tag)}
 			{@const on = only === `#${t.tag}` && !binned}
 			<button class="chip tag" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : `#${t.tag}`, false])}
@@ -203,7 +232,10 @@
 		{/each}
 	</ul>
 {:else}
-	<p class="soft">No spark here{asked ? ' yet: paste a link or write a line below.' : '.'}</p>
+	<p class="soft">
+		No spark here{asked ? ' yet: write a line, paste links or drop pictures below.' : '.'} A spark is a scratchpad: its
+		canvas holds artifacts, text notes and other sparks, wherever you put them.
+	</p>
 {/if}
 
 {#if hidden > 0 && seen.length}
@@ -223,8 +255,8 @@
 		<button
 			class="btn"
 			disabled={busy || !!unadded || pickedNow.length < 2}
-			title={pickedNow.length < 2 ? 'Pick two or more to gather them' : undefined}
-			onclick={board}><Icon name="board" size={14} /> Mood board</button
+			title={pickedNow.length < 2 ? 'Pick two or more to combine them' : 'A spark that holds them all on its canvas'}
+			onclick={combine}><Icon name="board" size={14} /> Combine</button
 		>
 		<button class="btn quiet round" aria-label="Clear the picked" onclick={() => (picked = [])}
 			><Icon name="close" size={14} /></button
@@ -251,9 +283,9 @@
 						></span
 					>
 				{/each}
-				{#if files.length > 1}
+				{#if sources}
 					<small class="soft">
-						{line.trim() ? `A mood board “${line.trim()}” gathers them.` : 'Type a line to gather them on a mood board.'}
+						{count(sources, 'artifact')} on a new spark{rest ? ` “${titleOf(rest)}”` : ''}.
 					</small>
 				{/if}
 				{#if tagsOpen}
@@ -275,7 +307,7 @@
 			<input
 				class="line"
 				bind:value={line}
-				placeholder={unadded ? `${nameOf(as)} can’t add a spark here` : 'Paste a link, write a thought, drop pictures'}
+				placeholder={unadded ? `${nameOf(as)} can’t add a spark here` : 'Write a thought, paste links, drop pictures'}
 				aria-label="A link or a line"
 				disabled={busy || !!unadded}
 			/>

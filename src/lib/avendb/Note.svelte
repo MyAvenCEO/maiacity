@@ -28,7 +28,7 @@
 	import { allowed, blockText, deleting, may, read } from './ops.js';
 	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
 	import Share from './Share.svelte';
-	import SparkFields from './SparkFields.svelte';
+	import SparkCanvas from './SparkCanvas.svelte';
 	import Tags from './Tags.svelte';
 	import {
 		actingWords,
@@ -845,9 +845,9 @@
 						/>
 					{/if}
 				{:else}
-				<!-- a spark's fields come first, what it is and whose; its words on the page under them -->
+				<!-- a spark's canvas comes first, the artifacts, notes and sparks it holds; its words on the page under it -->
 				{#if spark && item && !seen}
-					<SparkFields
+					<SparkCanvas
 						{world}
 						{actor}
 						{api}

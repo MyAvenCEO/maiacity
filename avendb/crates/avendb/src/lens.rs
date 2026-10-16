@@ -18,8 +18,9 @@
 //! doesn't allow, drops a field it requires, or tags an item with another kind's schema changes no record anyone
 //! shows, and every device keeps the last record that fit.
 //!
-//! Every schema avenDB ships starts at v1, one version of each kind (`blobs::SHIPPED`). The lens engine's worked
-//! example, documents and todos in a v0 with a lens from each to v1, is for the tests and the Lean model alone
+//! Every kind avenDB ships starts at v1 (`blobs::SHIPPED`); where a kind has a newer version, the newest is its app and
+//! avenDB ships a lens to it from each older one (`blobs::LENSES`), so nothing written before is lost. The lens
+//! engine's worked example, documents and todos in a v0 with a lens from each to v1, is for the tests and the Lean model alone
 //! (`example`): no device ships it or reads through it.
 //!
 //! Records in a list (a document's blocks) are matched by their `id`, which apps pick at random, so that two devices
@@ -1044,9 +1045,9 @@ impl View {
         View::built_in("todo").expect("a built-in todo app")
     }
 
-    /// The app of built-in kind `kind`, of its one shipped schema alone (`blobs::SHIPPED`): a document's, a todo's, an
-    /// article's, a flow's, a function's, a post's, a card's, a profile's, a file's, a story's, a spark's or an access
-    /// request's.
+    /// The app of built-in kind `kind`, of its newest shipped schema alone (`blobs::SHIPPED`): a document's, a todo's,
+    /// an article's, a flow's, a function's, a post's, a card's, a profile's, a file's, a story's, a spark's, an access
+    /// request's or an artifact's.
     pub fn built_in(kind: &str) -> Option<&'static View> {
         BUILT_IN.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
     }
@@ -1073,10 +1074,11 @@ impl Lane {
         lane
     }
 
-    /// The lane of the blobs `lane` and of the shipped schemas, which apps read through before a vault creates any
-    /// schema or lens (`blobs::SHIPPED`): what a device reads and judges a vault's entries by.
+    /// The lane of the blobs `lane` and of the shipped schemas and lenses, which apps read through before a vault
+    /// creates any schema or lens (`blobs::SHIPPED`, `blobs::LENSES`): what a device reads and judges a vault's entries
+    /// by.
     pub fn with_built_ins<'a>(lane: impl IntoIterator<Item = &'a [u8]>) -> Lane {
-        Lane::new(blobs::SHIPPED.iter().map(|b| b.as_bytes()).chain(lane))
+        Lane::new(blobs::SHIPPED.iter().chain(&blobs::LENSES).map(|b| b.as_bytes()).chain(lane))
     }
 
     pub fn schema(&self, id: BlobId) -> Option<&Schema> {
@@ -1217,13 +1219,13 @@ impl Fit<'_> {
     }
 }
 
-/// The blobs of avenDB's own schemas, exactly as the apps ship them and a vault holds them as entries. Every one starts
-/// at v1, avenDB's genesis.
+/// The blobs of avenDB's own schemas and the lenses between their versions, exactly as the apps ship them and a vault
+/// holds them as entries. Every kind starts at v1, avenDB's genesis.
 pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 12] = [
+    pub const SHIPPED: [&str; 14] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1235,8 +1237,15 @@ pub mod blobs {
         FILE_V1,
         STORY_V1,
         SPARK_V1,
+        SPARK_V2,
         REQUEST_V1,
+        ARTIFACT_V1,
     ];
+
+    /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
+    /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
+    /// and avenCEO GmbH holds each as a lens entry beside its schemas.
+    pub const LENSES: [&str; 1] = [SPARK_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -1540,6 +1549,130 @@ pub mod blobs {
 }
 "#;
 
+    /// A spark, v2: an open canvas, the scratchpad where sources are combined into what might become a story. Its
+    /// title, blocks (its own words) and tags are v1's; its items are what sits on the canvas, each where it was put
+    /// (`x`, `y` and, where it was sized, `w` and `h`): an artifact (`ref`, a link to it), a text note (`text`) or
+    /// another spark (`ref`). What v1 held of a source (its look, link, whose it is, its words and files) is an
+    /// artifact's now (`ARTIFACT_V1`); a v1 spark opens here through `SPARK_LENS`, with its title, words and tags.
+    pub const SPARK_V2: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spark, v2",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "spark" },
+    "title": { "type": "string", "default": "" },
+    "blocks": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "type": { "enum": ["heading", "paragraph", "item", "code"] },
+          "level": { "type": "integer", "minimum": 0 },
+          "checked": { "type": "boolean" },
+          "lang": { "type": "string" },
+          "text": { "type": "string", "x-loro": "text", "default": "" }
+        },
+        "required": ["id", "type"]
+      }
+    },
+    "items": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "what": { "enum": ["artifact", "text", "spark"], "default": "text" },
+          "ref": { "x-link": "newest" },
+          "text": { "type": "string", "x-loro": "text", "default": "" },
+          "x": { "type": "number", "default": 0 },
+          "y": { "type": "number", "default": 0 },
+          "w": { "type": "number", "minimum": 0 },
+          "h": { "type": "number", "minimum": 0 },
+          "color": { "type": "string" }
+        },
+        "required": ["id"]
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// The lens from a spark of v1 to v2: v2 adds the canvas's items; the title, blocks and tags are the same.
+    pub const SPARK_LENS: &str = r#"{
+  "lens": "Spark, v1 to v2",
+  "from": "e175461f62bcd26c7f843ff184679cbb34b0c47e3bf675f47b638452265cb0f9",
+  "to": "dfc1cb7add7231ae4694356348503508567ec601bc8b5de004ef0c7cfc88e092",
+  "steps": [{ "add": "items" }]
+}
+"#;
+
+    /// An artifact: one source fact standing on its own, which sparks place on their canvas and stories grow from (a
+    /// bookmarked link, a picture, a clip, a YouTube video with its words). What it is (`look`), its title and our own
+    /// words about it (`note`), its link and the site it is on, whose it is where it isn't ours (`by`), when it was made
+    /// or published (`taken`), its language; the Library files it shows (`files`, links: a picture, a clip, a link's
+    /// preview), a video's length in seconds, its chapters and its transcript, each row from second `t`. A Library
+    /// file is only bytes; what they are and where they come from is the artifact's.
+    pub const ARTIFACT_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Artifact, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "artifact" },
+    "look": { "enum": ["link", "image", "video", "youtube"], "default": "link" },
+    "title": { "type": "string", "default": "" },
+    "note": { "type": "string", "x-loro": "text", "default": "" },
+    "url": { "type": "string" },
+    "site": { "type": "string" },
+    "by": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "image": { "type": "string" },
+        "platform": { "type": "string" }
+      }
+    },
+    "taken": { "type": "string" },
+    "language": { "type": "string" },
+    "files": { "type": "array", "items": { "x-link": "newest" }, "default": [] },
+    "duration": { "type": "number", "minimum": 0 },
+    "chapters": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "t": { "type": "number", "minimum": 0, "default": 0 },
+          "title": { "type": "string", "default": "" }
+        },
+        "required": ["id"]
+      }
+    },
+    "transcript": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "t": { "type": "number", "minimum": 0, "default": 0 },
+          "text": { "type": "string", "default": "" }
+        },
+        "required": ["id"]
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
     /// An access request: a record the asking vault writes in its own vault and shares, that entry alone, with the
     /// vault it asks (`to`, its id in hex), which may read it and set its answer alone (`engine`'s `ask`): the level it
     /// asks for, the name of a built-in group; why, in a few words; the vaults it asks that level on, where `to` holds
@@ -1576,9 +1709,13 @@ pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs
 pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
 pub static STORY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::STORY_V1));
 pub static SPARK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V1));
+pub static SPARK_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V2));
 pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
+pub static ARTIFACT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTIFACT_V1));
+pub static SPARK_LENS: LazyLock<Lens> =
+    LazyLock::new(|| Lens::parse(blobs::SPARK_LENS.as_bytes()).expect("a built-in lens parses"));
 
-/// The app of each kind avenDB ships, of its one schema alone, by its kind.
+/// The app of each kind avenDB ships, of its newest schema alone, by its kind.
 static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
     let shipped = [
         &*DOCUMENT_V1,
@@ -1591,8 +1728,9 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*PROFILE_V1,
         &*FILE_V1,
         &*STORY_V1,
-        &*SPARK_V1,
+        &*SPARK_V2,
         &*REQUEST_V1,
+        &*ARTIFACT_V1,
     ];
     shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });
@@ -1890,11 +2028,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_shipped_schema_starts_at_v1() {
+    fn every_shipped_kind_counts_its_versions_from_v1_and_its_app_is_the_newest() {
+        let mut versions: BTreeMap<String, Vec<(u32, BlobId)>> = BTreeMap::new();
         for blob in blobs::SHIPPED {
-            let title = serde_json::from_str::<Value>(blob).expect("JSON")["title"].as_str().map(str::to_string);
-            assert!(title.as_deref().is_some_and(|t| t.ends_with(", v1")), "{title:?}");
+            let s = built_in_schema(blob);
+            let title = s.title().to_string();
+            let n = title.rsplit_once(", v").and_then(|(_, n)| n.parse().ok()).unwrap_or_else(|| panic!("{title}"));
+            versions.entry(s.kind().expect("its kind").to_string()).or_default().push((n, s.id()));
         }
+        for (kind, mut vs) in versions {
+            vs.sort();
+            assert_eq!(vs.iter().map(|v| v.0).collect::<Vec<_>>(), (1..=vs.len() as u32).collect::<Vec<_>>(), "{kind}");
+            let newest = vs.last().expect("one").1;
+            assert_eq!(View::built_in(&kind).map(|v| v.schema().id()), Some(newest), "{kind}'s app");
+            // each older version has a shipped lens to the newest
+            for (_, older) in &vs[..vs.len() - 1] {
+                let joined = blobs::LENSES.iter().map(|b| Lens::parse(b.as_bytes()).expect("a lens"));
+                assert!(joined.into_iter().any(|l| (l.from(), l.to()) == (*older, newest)), "{kind}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_v1_spark_opens_on_the_canvas_with_its_title_words_and_tags() {
+        assert_eq!((SPARK_LENS.from(), SPARK_LENS.to()), (SPARK_V1.id(), SPARK_V2.id()));
+        let lane = Lane::with_built_ins([]);
+        let authored = BTreeSet::from([SPARK_V1.id()]);
+        let (view, read_only) = lane.view(&SPARK_V2, &authored);
+        assert!(!read_only, "the shipped lens joins them");
+        let v1 = serde_json::json!({ "kind": "spark", "title": "Mornings", "look": "moodboard", "tags": ["light"],
+            "blocks": [{ "id": 1, "type": "heading", "level": 1, "text": "Mornings" }] });
+        let got = view.get(&v1).expect("it reads");
+        assert_eq!((&got["title"], &got["tags"], &got["items"]), (&v1["title"], &v1["tags"], &serde_json::json!([])));
+        assert_eq!(got["blocks"], v1["blocks"]);
     }
 
     #[test]

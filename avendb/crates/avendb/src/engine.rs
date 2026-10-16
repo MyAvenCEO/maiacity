@@ -400,7 +400,7 @@ enum Named {
 
 fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
     let bad = || {
-        let kinds = "document, todo, article, flow, function, post, card, profile, file, story, spark or request";
+        let kinds = "document, todo, article, flow, function, post, card, profile, file, story, spark, request or artifact";
         bad(format!("schema is a built-in kind ({kinds}), \"stored\" or a schema's id, 64 hex digits"))
     };
     Ok(match o.get("schema") {
@@ -417,8 +417,9 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "profile" => Named::Id(lens::PROFILE_V1.id()),
             "file" => Named::Id(lens::FILE_V1.id()),
             "story" => Named::Id(lens::STORY_V1.id()),
-            "spark" => Named::Id(lens::SPARK_V1.id()),
+            "spark" => Named::Id(lens::SPARK_V2.id()),
             "request" => Named::Id(lens::REQUEST_V1.id()),
+            "artifact" => Named::Id(lens::ARTIFACT_V1.id()),
             s => Named::Id(BlobId::from_hex(s).ok_or_else(bad)?),
         },
         Some(_) => return Err(bad()),
@@ -863,7 +864,8 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
 /// and its JSON, each lens's id, title, the schemas it joins and its JSON.
 fn schemas(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let vault = vault_of(o, "vault")?;
-    let built_in: Vec<BlobId> = lens::blobs::SHIPPED.iter().map(|b| BlobId::of(b.as_bytes())).collect();
+    let shipped = lens::blobs::SHIPPED.iter().chain(&lens::blobs::LENSES);
+    let built_in: Vec<BlobId> = shipped.map(|b| BlobId::of(b.as_bytes())).collect();
     let lane = lane(lab, me, vault);
     let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
     let schema = |s: &Schema| {
