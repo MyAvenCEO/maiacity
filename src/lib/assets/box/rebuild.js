@@ -115,6 +115,8 @@ function material(x, i, textures) {
 		else if (typeof m[k] === typeof v && (typeof v === 'number' ? Number.isFinite(v) : typeof v === 'boolean')) m[k] = v;
 	}
 	m.name = String(x.name ?? '').slice(0, 80);
+	// it had a shader of its own in the box, which never crosses (the kit's section caps): our renderer gives it ours
+	if (x.custom === true) m.userData.custom = true;
 	return m;
 }
 

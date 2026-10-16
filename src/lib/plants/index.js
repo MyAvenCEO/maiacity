@@ -37,6 +37,7 @@ import { CHARD_STAGES, KALE_STAGES, chard, kale } from './greens.js';
 import { BEAN_STAGES, beans } from './beans.js';
 
 import { FIRST, at, versioned } from '../app/versions.js';
+import { detailAt, lite } from './grow.js';
 import { orchard as orchardV1 } from './orchard.v1.js';
 import { WALD as WALD_CANOPY } from './wald-canopy.js';
 import { WALD as WALD_LOWTREES } from './wald-lowtrees.js';
@@ -736,8 +737,18 @@ export const SEEDS = ['maia', 'isar', 'samuel', 'backyard', 'seed-0042', 'sun', 
  */
 const paramsOf = (p) => [
 	{ id: 'stage', label: 'Stage', type: 'number', min: 0, max: p.stages.length - 1, value: p.stages.length - 1, names: p.stages.map((s) => s.name) },
-	{ id: 'seed', label: 'Seed', type: 'string', value: SEEDS[0], maxLength: 40 }
+	{ id: 'seed', label: 'Seed', type: 'string', value: SEEDS[0], maxLength: 40 },
+	// how finely it is grown, 1 as built (./grow.js `detailAt`): a world's renderer asks for its coarser levels by it
+	{ id: 'detail', label: 'Detail', type: 'number', min: 0.05, max: 1, step: 0.05, value: 1 }
 ];
+
+/**
+ * A version's grow, taking a detail as well: at 1 (or none) grown as it always was, below grown lighter (./grow.js
+ * `lite`). Every version takes it, as every version grows through the same detail.
+ * @param {(stage: number, seed: string) => any} grow
+ */
+const detailed = (grow) => (/** @type {number} */ stage, /** @type {string} */ seed, /** @type {number} */ detail) =>
+	detail === undefined || detail >= 1 ? grow(stage, seed) : lite(detailAt(detail), () => grow(stage, seed));
 
 /**
  * every plant, layer by layer from the canopy down (in each layer as they were added), with its versions and what it
@@ -748,7 +759,7 @@ export const PLANTS = versioned(
 	LAYERS.flatMap((l) => [...ALL, ...WALD, ...FIELDS].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id, params: paramsOf(p) }))),
 	'grow',
 	HISTORY
-);
+).map((p) => ({ ...p, versions: p.versions.map((ver) => (typeof ver.build === 'function' ? { ...ver, build: detailed(ver.build) } : ver)) }));
 
 /**
  * A plant as it was at version `v` (its latest when not given): its `grow` that version's. Undefined if it has no such
