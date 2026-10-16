@@ -393,9 +393,17 @@ export function createAssets(o) {
 	function treeOf(k, i, p, L) {
 		const obj = k.levels[L].obj;
 		p.tree?.removeFromParent();
-		const tree = SkeletonUtils.clone(obj);
+		// copied without the build's own notes: its controls' numbers are many, and the copy plays the build's
+		const notes = obj.userData;
+		obj.userData = {};
+		let copy;
+		try {
+			copy = SkeletonUtils.clone(obj);
+		} finally {
+			obj.userData = notes;
+		}
 		let tris = 0, calls = 0;
-		tree.traverse((o) => {
+		copy.traverse((o) => {
 			if (o.isMesh) {
 				const many = Array.isArray(o.material);
 				o.material = many ? o.material.map((m) => presets.of(m)) : presets.of(o.material);
@@ -407,10 +415,13 @@ export function createAssets(o) {
 				calls += many ? Math.max(1, g.groups.length) : 1;
 			} else if (o.isLine || o.isPoints || o.isSprite || o.isLight) o.layers.disableAll();
 		});
+		// held where the copy stands: the build's own root keeps its own place, as in the level's drawings, and may move
+		const tree = new THREE.Group();
+		tree.add(copy);
 		tree.matrixAutoUpdate = false;
 		tree.visible = false;
 		tree.name = `${k.label} · copy ${i}, moved`;
-		Object.assign(p, { tree, L, tris, calls, ready: false, shown: false, poser: poserOf(tree, obj.userData.controls) });
+		Object.assign(p, { tree, L, tris, calls, ready: false, shown: false, poser: poserOf(copy, obj.userData.controls) });
 		p.poser.setMany(p.values);
 		group.add(tree);
 		const scene = worldOf();
