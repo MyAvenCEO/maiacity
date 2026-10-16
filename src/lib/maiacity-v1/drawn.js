@@ -26,7 +26,7 @@ const PICK = new THREE.MeshBasicMaterial({ visible: false });
 
 let mods = null;
 const modules = () =>
-	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('$lib/assets/hero.js')]).then(([r, l, x, h]) => ({
+	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('$lib/assets/hero.js'), import('$lib/assets/controls.js')]).then(([r, l, x, h, c]) => ({
 		createAssets: r.createAssets,
 		loadAsset: l.loadAsset,
 		canonical: l.canonical,
@@ -34,7 +34,8 @@ const modules = () =>
 		buildAt: x.buildAt,
 		recipeAt: x.recipeAt,
 		heroOf: h.heroOf,
-		runner: h.runner
+		runner: h.runner,
+		poserOf: c.poserOf
 	})));
 // in a page, fetched as soon as the world's code is: the box is asked for the first builds before the world's first
 // frame (its shaders compiled, seconds on a slow machine) holds the page up
@@ -127,15 +128,19 @@ export function createDrawn({ renderer, camera, scene }) {
 			if (c.copy) assets.remove(c.copy);
 		},
 		/**
-		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data, named }`
-		 * ($lib/assets/load.js; `named`: its first node of each name, as its builder named them), once it is there.
+		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data, named,
+		 * poser }` ($lib/assets/load.js; `named`: its first node of each name, as its builder named them; `poser`: its
+		 * controls, played from the numbers the box wrote down: $lib/assets/controls.js), once it is there.
 		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o] `pick`: every
 		 *   part of it named so; `cast`: every part casting a shadow (false: as built)
 		 */
 		load(ref, anchor, { pick, cast = true } = {}) {
+			let mods;
 			const p = up
-				.then((m) => m.loadAsset(m.buildAt(ref)))
+				.then((m) => ((mods = m), m.loadAsset(m.buildAt(ref))))
 				.then((got) => {
+					// its controls played on it (./controls.js), its nodes walked before the world adds any of its own
+					got.poser = mods.poserOf(got.obj);
 					got.named = new Map();
 					got.obj.traverse((c) => {
 						if (c.name && !got.named.has(c.name)) got.named.set(c.name, c);
