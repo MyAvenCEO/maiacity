@@ -361,7 +361,8 @@ def cases : List Case := [
     (6, [], wr 200 1 102 [22] (stay := some 14)),
     (5, [], .move 200 1 [30, 34, 36, 37] [] [101]),
     (6, [], wr 200 1 102 [22] (stay := some 24) (proof := some 37)),
-    -- each write builds on writes that were accepted, in a stay of its entry, at an epoch that stay's audience reached
+    -- each write builds on writes that were accepted, in a stay of its entry, under the epoch it names: one that
+    -- stay's audience hasn't reached too, which nobody opens until the audience does
     (6, [], wr 200 1 102 [99] (stay := some 24) (proof := some 37)),
     (6, [], wr 200 1 102 [25] (stay := some 99) (proof := some 37)),
     (6, [], wr 200 1 102 [25] (stay := some 24) (epoch := 1) (proof := some 37)),
@@ -581,15 +582,28 @@ def cases : List Case := [
     (2, [], wr 100 21 100 [7] (stay := some 9) (remove := [work])),
     (2, [], .move 100 21 [] [10]),
     (6, [], .revoke (.owner 200 (.vault 102) [])),
-    -- a new work todo, created straight into the empty audience, may name the epoch the audience moves to as it comes
-    -- back into use, which Carol can't open, and no later one; so may the next, the audience in use by then
-    (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (epoch := 2)),
+    -- a new work todo, created straight into the empty audience, names the epoch the audience moves to as it comes
+    -- back into use, which Carol can't open; so does the next, the audience in use by then. One under a later epoch is
+    -- taken too, as no peer checks a write's epoch, and nobody opens it
     (2, [], newEntry 100 22 100 [30] todo (tags := [work]) (epoch := 1)),
-    (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (epoch := 2)),
     (2, [], newEntry 100 23 100 [30] todo (tags := [work]) (epoch := 1)),
+    (2, [], newEntry 100 24 100 [30] todo (tags := [work]) (epoch := 3)),
     (5, [], .keys (audienceKey 100 [30] 1) [shareKey 100 30 1]),
     (6, [], .keys (audienceKey 100 [30] 1) []),
     (6, [], .keys (audienceKey 100 [30] 0) [])] },
+  { name := "an entry shared later reaches a copy that never held the audience it was written in", edits := humans ++ [
+    -- Carol's copy of what Alice's Mac sends her: Alice wrote her note under epoch 1 of her audience of no shares,
+    -- which another note had emptied by going to Bob, and shared it with Carol, by its id. The other note's edits never
+    -- reach Carol, so in her copy that audience never had a key and is at epoch 0: she takes the note's writes under
+    -- the epoch they name all the same, and Alice's link of their key to the note's key now
+    (2, [], newEntry 100 3 100 [] note (epoch := 1)),
+    (2, [], wr 100 3 100 [6] (epoch := 1)),
+    (2, [], newShare 30 100 (toVault 102) .read 100 (only 3)),
+    (2, [], .move 100 3 [30] [6, 7]),
+    (2, [], .keys (.entry 3 none 1) [.entry 3 (some 9) 0]),
+    (2, [], .keys (audienceKey 100 [30] 0) [seedKey 100 0, shareKey 100 30 0]),
+    -- a link under an epoch no write of that stay names is sealed nowhere
+    (2, [], .keys (.entry 3 none 2) [.entry 3 (some 9) 0])] },
   { name := "the schema lane", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     -- Carol may write the whole coop; with its first schema, the coop shares its schemas and lenses with everyone

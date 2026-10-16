@@ -38,9 +38,9 @@ import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
-import { createForest, type Forest } from './flora.js'
+import { createForest, type FloraDrawn, type Forest } from './flora.js'
 import { BIOMES, groundMaterial } from '$lib/biomes'
-import { coverStream } from '$lib/biomes/stream.js'
+import { createCover, type Cover } from './cover.js'
 import { swapLegacy } from './legacy.js'
 import { pick as pickPlant, type Garden } from './sandbox5.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
@@ -517,8 +517,11 @@ export type InteriorHandle = {
 /** Where to come in, and what to do on walking back out (Sandbox 4's village). */
 export type InteriorOptions = {
 	entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean; hurry?: () => boolean; background?: () => boolean
-	/** Sandbox 5: the food forest inside grown from our plants ($lib/plants, ./flora.js), from this garden (./sandbox5.js) */
-	flora?: { garden: Garden; seed: string }
+	/** Sandbox 5: the food forest inside grown from our plants ($lib/plants, ./flora.js), from this garden (./sandbox5.js),
+	 *  drawn by the host's renderer of plants (`flora`, ./drawn.js `createFlora`, at the distances under the glass:
+	 *  ./flora.js `INSIDE`), and its floor's cover by the host's renderer of the library (`drawn`, ./drawn.js
+	 *  `createDrawn`, every copy at its finest), both of which the host updates every frame */
+	flora?: { garden: Garden; seed: string; flora: FloraDrawn; drawn: Parameters<typeof createCover>[0]['drawn'] }
 }
 /**
  * Building a dome into someone else's world (Sandbox 4's village): its scene,
@@ -541,10 +544,23 @@ export type EmbeddedDome = {
 	setHour: (hour: number) => void
 	/** Sandbox 5: the plant of its forest a ray (in the dome's own ground) meets first, if any */
 	pickPlant?: Forest['pick']
+	/** shown in full, or not (its root hidden): what of it the host's renderers draw (its plants) shown with it */
+	show: (on: boolean) => void
 	dispose: () => void
 }
 
 export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void, opts: InteriorOptions = {}): Promise<InteriorHandle> {
+	/** what it put into the host's renderers, taken out again if it never stands (a build cancelled, or failed) */
+	const drop: (() => void)[] = []
+	try {
+		return await raiseInterior(container, kind, onProgress, opts, drop)
+	} catch (err) {
+		for (const d of drop) d()
+		throw err
+	}
+}
+
+async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress: ((label: string) => void) | undefined, opts: InteriorOptions, drop: (() => void)[]): Promise<InteriorHandle> {
 	/** Let the page paint between the heavy steps, so the loading screen keeps moving. */
 	let lastYield = performance.now()
 	/** a build no longer wanted stops at its next breath, and leaves the page to the next one */
@@ -734,26 +750,25 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	const herds: Parameters<typeof levelsAt>[4] = {}
 	/** the small plants of each forest sector, hidden when you are far from them */
 	const detail: { group: THREE.Object3D; x: number; z: number }[] = []
-	/** Sandbox 5: the forest inside grown from our plants, drawn as the eye moves and looks round (./flora.js); every
-	 *  stand-in plant of Sandbox 4's (in a bed, a pot, on a pergola) traded for one of them (./legacy.js) */
-	const forest: Forest | null = opts.flora ? createForest({ tree: [28, 75], shrub: [16, 40], cover: [9, 22] }) : null
+	/** Sandbox 5: the forest inside grown from our plants, drawn by the host's renderer as the eye moves and looks round
+	 *  (./flora.js), in the dome's own ground; every stand-in plant of Sandbox 4's (in a bed, a pot, on a pergola) traded
+	 *  for one of them (./legacy.js). Built into a host's world, none of it shows until the dome joins it */
+	const forest: Forest | null = opts.flora ? createForest({ flora: opts.flora.flora, origin: host ? [host.x, 0.03, host.z] : [0, 0, 0], hidden: !!host }) : null
+	if (forest) drop.push(() => forest.dispose())
 	const swapR = seeded(kind.length * 97 + 13)
 	const swap = (root: THREE.Object3D) => {
 		if (forest && opts.flora) swapLegacy(root, scene, forest, { warm: true, seed: opts.flora.seed, r: swapR })
 	}
-	const looking = new THREE.Vector3()
 	/** Sandbox 5's trees, to stand in the way by their trunks once grown */
 	const floraTreesAll: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
-	/** Sandbox 5: the floor's cover, streamed round the eye (made once the forest inside is planted) */
-	let floorCover: ReturnType<typeof coverStream> | null = null
+	/** Sandbox 5: the floor's cover, laid round the eye and drawn by the host's renderer (made once the forest inside is
+	 *  planted) */
+	let floorCover: Cover | null = null
 	const keepDetail = (cx: number, cz: number) => {
 		// on film every tile in reach is built for the frame it is first seen in
 		floorCover?.update(cx, cz, filmDraws() ? 999 : 1)
 		for (const d of detail) d.group.visible = Math.hypot(d.x - cx, d.z - cz) < Math.max(30, R * 0.45)
-		if (forest) {
-			camera.getWorldDirection(looking)
-			forest.update(cx, cz, looking.x, looking.z)
-		}
+		forest?.update(cx, cz)
 	}
 
 	/* the land outside, seen through the glass */
@@ -1677,8 +1692,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 				if (rr > rIn - 0.6) return lush && rr > r0b - 0.3 && !paved(a) && !doors.some((d) => Math.abs(adiff(a, d)) * rr < 1.7)
 				return !onStone(rr, a, 0.1) && !nearStream(x, z, width / 2 + 0.3) && !inTrunk(x, z)
 			}
-			floorCover = coverStream({ recipe: WARM_BIOME, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0] })
-			scene.add(floorCover.object)
+			// in the dome's own ground, which lies where the dome stands (a hair above the host's ground); hidden until it joins
+			floorCover = createCover({ drawn: flora.drawn, recipe: WARM_BIOME, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0], at: host ? [host.x, 0.03, host.z] : [0, 0, 0], hidden: !!host })
+			drop.push(() => floorCover?.dispose())
 		}
 		await pause('Planting the forest inside')
 
@@ -2377,12 +2393,11 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 	}
 
 	if (forest) {
-		// the stand-ins put straight into the scene (not baked) traded too; then every kind grown (in workers, side by
-		// side), and each tree stands in the walker's way by its trunk
+		// the stand-ins put straight into the scene (not baked) traded too; then every kind built (in the asset box, side
+		// by side), and each tree stands in the walker's way by its trunk
 		swap(scene)
 		await forest.grown()
 		for (const t of floraTreesAll) t.c.r = Math.min(0.6, (forest.shape(t.kind)?.foot ?? 0.3) * t.s) + 0.2
-		scene.add(forest.group)
 	}
 
 	// the lamps are all in place: set them for the hour
@@ -2396,8 +2411,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		const stands = createObstacles([...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[])
 		const disposeAll = () => {
 			host.scene.remove(scene)
-			// the forest's plants are shared with the rest of the page: only its own instances go
+			// the renderers its plants and its cover are drawn by are the host's: their copies handed back for the next dome
 			forest?.dispose()
+			floorCover?.dispose()
 			scene.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
 		}
 		const embedded: EmbeddedDome = {
@@ -2422,6 +2438,10 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			},
 			setHour: (hour) => setSun(hour),
 			pickPlant: (o, d, far) => forest?.pick(o, d, far) ?? null,
+			show: (on) => {
+				forest?.show(on)
+				floorCover?.show(on)
+			},
 			dispose: disposeAll
 		}
 		/* before it joins the village, ready everything the graphics card will need, a little at
@@ -2474,6 +2494,9 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 			})
 		}
 		host.scene.add(scene)
+		// its plants and its floor's cover with it
+		forest?.show(true)
+		floorCover?.show(true)
 		// about a quarter of a million vertices a frame: small pieces come in dozens, a big merged forest alone
 		let budget = 0
 		for (const p of pieces) {
@@ -2651,6 +2674,8 @@ export async function mountInterior(container: HTMLElement, kind: DomeKind, onPr
 		look: walker.look,
 		dispose() {
 			cancelAnimationFrame(frame)
+			forest?.dispose()
+			floorCover?.dispose()
 			sound.dispose()
 			world.disconnect()
 			walker.dispose()

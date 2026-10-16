@@ -1178,7 +1178,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       · -- a new entry, with its first write
         rename_i x hdr
         simp at h
-        obtain ⟨-, ⟨⟨-, hmc⟩, -⟩, rfl⟩ := h
+        obtain ⟨-, ⟨-, hmc⟩, rfl⟩ := h
         refine .inr (.inl ⟨_, _, rfl, rfl, .of_entries rfl rfl rfl rfl fun e' en' he => ?_, rfl, rfl, rfl, rfl,
           hact, hmc⟩)
         simp only [State.entry?, List.find?_append] at he ⊢
@@ -1195,7 +1195,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
             split at h
             · cases h
             · simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
-              obtain ⟨-, hdeps, -, rfl⟩ := h
+              obtain ⟨hdeps, -, rfl⟩ := h
               refine .inr (.inr (.inl ⟨⟨edit.id, edit.author, actor, e, stay, epoch, deps, proposal, via, false,
                 en.audience⟩, ?_, ?_, ?_, rfl, ?_, of_not_not hdeps⟩))
               · split <;> rfl

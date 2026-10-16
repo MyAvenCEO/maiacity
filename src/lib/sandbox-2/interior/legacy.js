@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 
 /** @typedef {import('./flora.js').Forest} Forest */
-/** @typedef {import('./flora.grow.js').Kind} Kind */
+/** @typedef {import('./sandbox5.js').Kind} Kind */
 /** @typedef {import('./flora.js').Reach} Reach */
 
 /** the herbs a tuft of herbs becomes */

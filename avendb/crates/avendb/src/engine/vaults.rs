@@ -836,9 +836,10 @@ fn ask(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
     let refused = |_| bad("a request asks for Viewer, Suggester or Editor (level), and says why in 500 characters");
     let value = super::full(view.schema(), &fields).map_err(refused)?;
     let item = Item::made(view, &value, me).ok_or(Refusal::NotAView)?;
-    let (name, ops, who, issuer) = (world::ANSWER.to_string(), world::answering(), Who::Vault(to), actor);
-    let answer = |e| NewShare { over: actor, who, name, select: cast::by_id(e), ops, parent: None, issuer, keep: None };
-    let (entry, share) = lab.create_shared(me, actor, actor, world::REQUEST, &[], item, answer)?;
+    let entry = lab.create(me, actor, actor, world::REQUEST, &[], item)?;
+    let (who, name, select, ops) = (Who::Vault(to), world::ANSWER.to_string(), cast::by_id(entry), world::answering());
+    let answer = NewShare { over: actor, who, name, select, ops, parent: None, issuer: actor, keep: None };
+    let share = lab.issue(me, &[me], answer)?;
     Ok(json!({ "entry": entry.to_hex(), "share": share.to_hex() }))
 }
 

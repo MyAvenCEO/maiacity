@@ -158,7 +158,7 @@ test('materials the same are kept once; a different setting is another; the kit\
 
 test('a plant takes a detail: at 0.25 and 0.1 grown as Sandbox 4 grows its near and far plants', async () => {
 	const { detailAt } = await import('$lib/plants/grow.js');
-	const { TIERS } = await import('$lib/sandbox-2/interior/flora.grow.js');
+	const { TIERS } = await import('$lib/sandbox-2/interior/sandbox5.js');
 	for (const tier of [TIERS.near, TIERS.mid, TIERS.look]) {
 		const d = detailAt(tier.level);
 		expect(d.roots).toBe(tier.roots);

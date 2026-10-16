@@ -29,7 +29,7 @@ import { FIRST, versioned, type Change, type Version } from '$lib/app/versions.j
 export type Actor = { id: string; label: string; note: string; make: () => Cast; ready?: () => Promise<void> };
 /** a kind of actor and its variants (the first shown first), with its version and history: a kind is versioned as a
  * whole (its species is one body plan), each version bringing the variants it made ($lib/app/versions.js) */
-export type Family = { id: string; label: string; note: string; from: string; variants: Actor[]; versions: Version<Actor[]>[]; version: number };
+export type Family = { id: string; label: string; note: string; from: string; params?: import('$lib/assets/params.js').Param[]; variants: Actor[]; versions: Version<Actor[]>[]; version: number };
 
 /** a four-legged kind as it moved at v1: its breeds, grazing with the head folded back between the forelegs */
 const quadV1 = <T extends string>(kind: string, ids: readonly T[], make: (id: T, moves: typeof quadMovesV1) => Cast): Actor[] =>

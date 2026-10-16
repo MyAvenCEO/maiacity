@@ -2,14 +2,19 @@
  * THE TIRED LAND as a world of its own — the fields of one crop, the highway, the power lines and the trucks driving
  * it (./tiredLandSet.js, the same set Sandbox 4's Day 19 shots are filmed in), alone under the kit's sky: walked on
  * foot across the fields and along the road, the trucks going by on the world's clock, and shot like every sandbox
- * (`world.sandbox: 'tired-land'`). The set's own coordinates: the highway runs north–south at x = −470.
+ * (`world.sandbox: 'tired-land'`). The set's own coordinates: the highway runs north–south at x = −470. Its trucks are
+ * the library's (`machines/truck@1`, each in its colours), built in the asset box and drawn by the renderer
+ * (./assets.js), moved along the road each frame.
  */
 import * as THREE from 'three';
 import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit';
 import { buildTiredLand } from './tiredLandSet.js';
+import { withValues, worldAssets } from './assets.js';
 
 export type TiredLandHandle = { move: (x: number, y: number, hurry: boolean) => void; look: (dx: number, dy: number) => void; dispose: () => void };
 
+/** the truck, by its ref in the library */
+const TRUCK = 'machines/truck@1';
 /** where the fields reach (the set's plane: x −2698 … −398, z ±1300), a little inside */
 const FIELDS = { x0: -2690, x1: -402, z: 1290 } as const;
 
@@ -24,8 +29,15 @@ export async function mountTiredLand(container: HTMLElement, onProgress: (label:
 	land.rotation.x = -Math.PI / 2;
 	land.receiveShadow = true;
 	scene.add(land);
-	const { set, drive } = buildTiredLand(1);
+	// the trucks: each a copy of the library's, in its colours, moved where the clock has it
+	const lib = worldAssets({ renderer, camera, scene });
+	const { set, drive } = buildTiredLand(1, (cab: string, box: string) => {
+		const copy = lib.put(withValues(TRUCK, { cab, box }), 0, 0);
+		return (x: number, z: number, turn: number) => lib.move(copy, { x, y: 0, z, turn });
+	});
 	scene.add(set);
+	onProgress('Bringing the trucks');
+	await lib.ready();
 
 	// on the verge east of the highway, looking north up the road
 	const walker = createWalker(camera, renderer.domElement, {
@@ -49,6 +61,7 @@ export async function mountTiredLand(container: HTMLElement, onProgress: (label:
 		sky.tick(now);
 		// the trucks on the world's clock (on film: the shot's); 0:32 is where the film's trucks are at its 32nd second
 		drive(worldTime() ?? 32 + (now - start) / 1000);
+		lib.update();
 		if (!filmDraws()) renderer.render(scene, camera);
 		stage.adapt(now, filmHoldsSize());
 		last = now;
@@ -56,7 +69,7 @@ export async function mountTiredLand(container: HTMLElement, onProgress: (label:
 	};
 	tick();
 
-	const film = connectFilm({ sandbox: 'tired-land', renderer, scene, camera, hold: walker, sky, animate: drive, place: walker.place });
+	const film = connectFilm({ sandbox: 'tired-land', renderer, scene, camera, hold: walker, sky, animate: drive, advance: () => lib.update(), place: walker.place, extra: { assets: lib } });
 
 	return {
 		move: walker.move,
@@ -65,6 +78,7 @@ export async function mountTiredLand(container: HTMLElement, onProgress: (label:
 			cancelAnimationFrame(frame);
 			film.disconnect();
 			walker.dispose();
+			lib.dispose();
 			sky.dispose();
 			stage.dispose();
 		}

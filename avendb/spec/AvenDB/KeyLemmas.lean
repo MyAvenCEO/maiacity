@@ -287,11 +287,11 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     exact Change.applied (.create _ _ _ _ hfresh.1.1.1.1.1 hfresh.1.1.1.1.2
       (Option.isSome_iff_ne_none.2 hfresh.1.1.1.2) rfl rfl rfl)
   · -- a write to an entry, by its own vault
-    rename_i he _ _ _ hx _ _ _ _
+    rename_i he _ _ _ hx _ _ _
     cases h
     exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inr ⟨_, rfl⟩))
   · -- a write to an entry, by another vault
-    rename_i he _ _ _ hx _ _ _ _
+    rename_i he _ _ _ hx _ _ _
     cases h
     exact Change.applied (.write _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inl rfl))
   · -- a mark that takes the entry to another audience and marks its wants

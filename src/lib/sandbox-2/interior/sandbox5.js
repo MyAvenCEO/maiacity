@@ -19,6 +19,19 @@
  *   (herbs, vegetables, the ground layer and the fungi)
  */
 
+/** @typedef {{ id: string, v: number, stage: number, seed: string }} Kind a plant at its version, stage and seed */
+
+/**
+ * How finely Sandbox 4 has always grown its plants (DETAIL in $lib/plants/grow.js: `detailAt` of each level is these):
+ * near you, further off, and one alone in the picked plant's card (./PlantLook.svelte), finer than any in the forest.
+ * Its forest asks the asset box for its plants at these levels, as their `detail` (./flora.js `DETAILS`).
+ */
+export const TIERS = {
+	near: { level: 0.25, roots: false, thin: 0.45, fill: 1.3, finest: 0.0016 },
+	mid: { level: 0.1, roots: false, thin: 0.12, fill: 1.6, finest: 0.006 },
+	look: { level: 0.5, roots: false, thin: 0.6, fill: 1.2, finest: 0.0008 }
+};
+
 /** the stages a fruit tree is planted at: young, in flower, its fruit green, ripe — the ripe ones the most */
 const TREE = [4, 5, 7, 9];
 /** a shrub's: in flower, in green fruit, ripe */
@@ -192,7 +205,7 @@ export const SANDBOX_5 = {
 /**
  * One planting of a layer, drawn by its weight, at one of its stages: the kind to grow.
  * @param {Planting[]} layer @param {() => number} r @param {string} seed
- * @returns {import('./flora.grow.js').Kind}
+ * @returns {Kind}
  */
 export function pick(layer, r, seed) {
 	return stageOf(planting(layer, r), r, seed);
@@ -212,7 +225,7 @@ export function planting(layer, r) {
 
 /**
  * A planting at one of its stages: the kind to grow.
- * @param {Planting} p @param {() => number} r @param {string} seed @returns {import('./flora.grow.js').Kind}
+ * @param {Planting} p @param {() => number} r @param {string} seed @returns {Kind}
  */
 export function stageOf(p, r, seed) {
 	// the later stages a little more often: a food forest is mostly grown
