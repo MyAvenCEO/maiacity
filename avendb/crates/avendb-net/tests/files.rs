@@ -5,7 +5,8 @@
 //! either file, and nobody a HashSeq with its children. And keep shares (blobs B2c): Alice's iPhone syncs only her
 //! proxies and keeps their films whole, while the server keeps every film. And shelves (blobs B2d, B3b): a page brings
 //! files onto its shelf, the server keeps them in its bucket, and serves them from the bucket alone once its folder is
-//! lost.
+//! lost. And letting go: Alice's Mac lets go of its photo once the server holds it whole, and reads it through the
+//! server.
 
 mod common;
 
@@ -317,6 +318,54 @@ async fn the_iphone_keeps_the_proxies_its_keep_share_picks() {
     let raw = GetRequest::blob(Hash::from_bytes(original_root.hash));
     assert!(by_hand(phone.endpoint(), &server, raw).await.is_none(), "nor may it fetch the original's film");
     for n in [mac, phone, server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// The names of the blobs the shelf in folder `dir` holds whole.
+fn shelved(dir: &Folder) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir.path().join(format!("g{FLOOR}/blobs"))) else { return Vec::new() };
+    entries.map(|e| e.expect("a blob").file_name().into_string().expect("a name")).collect()
+}
+
+/// Alice's Mac brings a photo onto the shelf in its folder, and lets go of it once the server, which keeps every file,
+/// holds it whole by its own word: its folder holds none of it, its holdings name it no more, the server hears so,
+/// and it reads the photo through the server, holding what it read in memory alone. The server, which keeps it, lets
+/// go of nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_node_lets_go_of_a_file_a_peer_holds_whole() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac_a, passkey_a, server_d, mac_c) = (w.mac_a, w.passkey_a, w.server, w.mac_c);
+    let (coop, welcome) = (h.coop, h.welcome);
+    let (at_mac, at_server) = (Folder::new("let-go-mac"), Folder::new("let-go-server"));
+    let mac = node(&mut w, mac_a, &[passkey_a], 1, on_disk(&at_mac)).await;
+    let server = node(&mut w, server_d, &[], 2, Options { keep: true, ..on_disk(&at_server) }).await;
+    mac.know(server.addr());
+    server.know(mac.addr());
+    let photo_len = 300_000;
+    let photo = mac.store_file(photo_len, reading(1, photo_len)).await.expect("Alice's Mac seals the photo");
+    let root = photo.root;
+    let blob = Hash::from_bytes(root.hash).to_hex();
+    assert!(shelved(&at_mac).contains(&blob), "whole in its folder");
+    mac.act(move |lab, me| lab.bring(me, coop, welcome, vec![photo], |_| {})).await.expect("brought into Welcome");
+    until("the server keeps it whole", || server.holds_file(root)).await;
+    // the server's device, by the endpoint its key is, holds it whole as it announced
+    until("Alice's Mac knows the server's device", || async { mac.device_at(server.id()).is_some() }).await;
+    assert_eq!(mac.device_at(server.id()), Some(server_d), "the device whose key the endpoint is");
+    until("the server holds the photo whole, by its own word", || async { mac.holds_whole(server_d, root) }).await;
+    assert!(!mac.holds_whole(mac_c, root), "Carol's Mac, which may know nothing of it, holds none of it");
+    assert!(!server.let_go(root).await.expect("its store"), "the server keeps every file: it lets go of none");
+    assert!(shelved(&at_server).contains(&blob) && server.holds_file(root).await, "as it was");
+    assert!(mac.let_go(root).await.expect("its store"), "Alice's Mac lets go of it");
+    assert!(!shelved(&at_mac).contains(&blob) && !mac.holds_file(root).await, "none of it in its folder");
+    assert!(!mac.holdings().await.files.contains_key(&root), "nor in its holdings");
+    let told = || async { server.holdings_of(mac_a).is_some_and(|h| !h.files.contains_key(&root)) };
+    until("the server hears that Alice's Mac holds it no more", told).await;
+    let all = mac.read_file(root, 0..u64::MAX).await.expect("Alice's Mac reads the photo, through the server");
+    assert_eq!(all, bytes(1, 0, photo_len), "every byte");
+    assert!(!shelved(&at_mac).contains(&blob) && !mac.holds_file(root).await, "held in memory alone");
+    for n in [mac, server] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

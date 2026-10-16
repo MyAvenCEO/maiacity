@@ -9,8 +9,12 @@
 //!
 //! It is a device of its own (`avendb_net::server::open_agent`), in a folder of its own in the agents' folder beside
 //! the Mac app's (`<app's folder>-agents/<device>`, which the app's device never clears), which keeps its key and its
-//! edits and no file whole: it reads its person's files from the Mac's one store, over iroh, so that nothing is kept
-//! twice. A reset clears its folder as it does the app's (`disk::open`), and it asks to join again.
+//! edits and no file whole of its own accord: it reads its person's files from the Mac's one store, over iroh, so that
+//! nothing is kept twice. A file it saves (`put_file`) it seals onto its own shelf, as every device does, and lets go
+//! of once the Mac's device holds it whole, as that device's holdings say (`Node::holds_whole`, `Node::let_go`): from
+//! then on the Mac's one store keeps it, and a read of it fetches it from there. Where the Mac keeps a light copy, the
+//! agent keeps its own, the one copy on the Mac. A reset clears its folder as it does the app's (`disk::open`), and it
+//! asks to join again.
 //!
 //! It asks for access as anyone asks avenDB for it, and its person answers on the page's one consent screen: it leaves
 //! an access request for the Mac app (`<app's folder>-agents/<device>.request`, `asking`): who asks, by its device's
@@ -22,28 +26,40 @@
 //! for its aven by its own key, as the aven's shares allow, and asks for more with `avendb_request_access`. A no is
 //! left for it (`<device>.denied`, the device it said no to), and it asks no more until it asks again.
 //!
-//! It finds the Mac's device by the offer the app leaves (`<app's folder>-agents/offer.txt`), and reaches it
-//! directly.
+//! It finds the Mac's device by the offer the app leaves (`<app's folder>-agents/offer.txt`), the device whose key is
+//! the offer's endpoint, and reaches it directly.
 //!
 //! The MCP is JSON-RPC 2.0, a message a line (`initialize`, `tools/list`, `tools/call`, `ping`): `avendb_vaults`
 //! tells who it is and the vaults it sees, `avendb_ask` runs a read of the ops engine, `avendb_run` a change, each
-//! acting for its aven vault, and `avendb_request_access` asks its person for access.
+//! acting for its aven vault, and `avendb_request_access` asks its person for access. A change runs as on every
+//! device, the aven's shares deciding: `put_file` too, its bytes those of the file on this Mac the harness names by its
+//! `path` beside the op; but not `follow` and `set_limits`, a device's own settings, which an agent keeps nowhere.
 
+use std::io;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use avendb::engine;
+use avendb::id::SignerId;
+use avendb::wire::FileHold;
 use avendb_net::{NoBytes, NoCeremony, Node, Offer, Options, disk, server};
+use bytes::{Bytes, BytesMut};
+use n0_future::{Stream, stream};
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
+use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader};
 
 /// The MCP version it speaks, unless its client asks for another.
 const PROTOCOL: &str = "2025-06-18";
 
-/// How often it looks for the Mac's offer and leaves its own.
-const LOOK: Duration = Duration::from_secs(3);
+/// How often it looks for the Mac's offer, leaves its own, and lets go of the files the Mac's device holds whole.
+pub const LOOK: Duration = Duration::from_secs(3);
+
+/// How many bytes of a file it saves it reads at a time.
+const CHUNK: usize = 1 << 20;
 
 /// Claude Code, as a harness: its agent device is agentClaude.
 pub const CLAUDE: &str = "claude";
@@ -209,18 +225,20 @@ fn read_json(file: &Path) -> Option<Value> {
 }
 
 /// Every little while: the Mac's device where its offer says it is, and, until it belongs to a vault, its request to
-/// be adopted left for the Mac's page, its offer as it is now, unless its person said no to this device.
+/// be adopted left for the Mac's page, its offer as it is now, unless its person said no to this device; and the files
+/// it holds whole that the Mac's device holds whole too, it lets go of (`hand_over`).
 async fn look(node: Arc<Node>, host: PathBuf, name: String, aven: Option<String>) {
     let (file, no, mut known) = (request(&host, &name), denied(&host, &name), None);
     let device = hex(&node.device().0);
     loop {
         // that it runs, for the Mac's page (`online`)
         std::fs::write(alive(&host, &name), &device).ok();
-        if let Some(mac) = read_offer(&host_offer(&host))
+        let mac = read_offer(&host_offer(&host));
+        if let Some(mac) = &mac
             && known.as_ref() != Some(&mac.to_text())
         {
             known = Some(mac.to_text());
-            node.know(mac.addr);
+            node.know(mac.addr.clone());
         }
         let said_no = std::fs::read_to_string(&no).is_ok_and(|d| d.trim() == device);
         if node.read(|lab, me| lab.vault_of(me)).await.is_none() && !said_no {
@@ -243,7 +261,24 @@ async fn look(node: Arc<Node>, host: PathBuf, name: String, aven: Option<String>
                 std::fs::write(&file, asked.to_string()).ok();
             }
         }
+        // the Mac's device, the one whose key is the offer's endpoint
+        if let Some(mac) = mac.and_then(|mac| node.device_at(mac.addr.id)) {
+            hand_over(&node, mac).await;
+        }
         tokio::time::sleep(LOOK).await;
+    }
+}
+
+/// Lets go of each file `node` holds whole that the Mac's device `mac` holds whole too, by its own word
+/// (`Node::holds_whole`): the Mac's one store keeps it from then on, and a read of it fetches it from there. Of a file
+/// the Mac keeps light, it keeps its own copy, the one on the Mac.
+async fn hand_over(node: &Node, mac: SignerId) {
+    let held = node.holdings().await.files;
+    let both = held.into_iter().filter(|(root, hold)| *hold == FileHold::Whole && node.holds_whole(mac, *root));
+    for (root, _) in both {
+        if let Err(e) = node.let_go(root).await {
+            tracing::warn!("the file {} isn't let go of: {e:#}", hex(&root.hash));
+        }
     }
 }
 
@@ -301,7 +336,10 @@ impl Agent {
              avendb_vaults first: it says which aven {name} is a device of, if any yet, and which vaults it sees. \
              Read with avendb_ask; change with avendb_run, which acts for the aven by its shares: on a vault where it \
              may only suggest, write on a proposal (`propose`, then ops with its `line`), and its person merges it. \
-             For access it lacks, ask its person with avendb_request_access, saying why: they answer in The OS app.",
+             Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and `media` and \
+             `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type file, so only \
+             where the aven may create, as an Editor may, not where it may only suggest. For access it lacks, ask its \
+             person with avendb_request_access, saying why: they answer in The OS app.",
             name = self.name
         )
     }
@@ -352,10 +390,23 @@ impl Agent {
                 if engine::reads(&op) || engine::asks(&op) {
                     anyhow::bail!("{:?} only reads: read with avendb_ask", engine::name(&op));
                 }
-                if matches!(op_name(&op), Some("put_file" | "follow" | "set_limits")) {
-                    anyhow::bail!("{:?} isn't for an agent yet", op_name(&op));
+                if matches!(op_name(&op), Some("follow" | "set_limits")) {
+                    let setting = "a device's own setting, which an agent keeps nowhere";
+                    anyhow::bail!("{:?} isn't for an agent: {setting}", op_name(&op));
                 }
-                let (answer, _) = self.node.run(op, None::<NoBytes>, None::<&NoCeremony>).await?;
+                // as every device runs it, the aven's shares deciding; a file's bytes from the path the harness names
+                let path = args.get("path").and_then(Value::as_str).map(PathBuf::from);
+                let (answer, _) = match (op_name(&op), path) {
+                    (Some("put_file"), Some(path)) => {
+                        let (op, bytes) = with_file(op, path).await?;
+                        self.node.run(op, Some(bytes), None::<&NoCeremony>).await?
+                    }
+                    (Some("put_file"), None) => {
+                        anyhow::bail!("put_file saves a file of this Mac: give its absolute path beside the op")
+                    }
+                    (_, Some(_)) => anyhow::bail!("a path goes beside put_file alone"),
+                    (_, None) => self.node.run(op, None::<NoBytes>, None::<&NoCeremony>).await?,
+                };
                 Ok(answer.to_string())
             }
             other => anyhow::bail!("no tool {other:?}"),
@@ -388,9 +439,12 @@ impl Agent {
 
 /// The tools it offers.
 fn tools() -> Value {
-    let op = json!({
+    let one = json!({ "type": "object", "description": "One op of avenDB's engine, as JSON" });
+    let op = json!({ "type": "object", "properties": { "op": one }, "required": ["op"] });
+    let path = "For put_file alone: the absolute path of the file on this Mac it saves";
+    let run = json!({
         "type": "object",
-        "properties": { "op": { "type": "object", "description": "One op of avenDB's engine, as JSON" } },
+        "properties": { "op": one, "path": { "type": "string", "description": path } },
         "required": ["op"],
     });
     json!([
@@ -424,11 +478,50 @@ fn tools() -> Value {
         {
             "name": "avendb_run",
             "description": "Run a change op of avenDB's engine as this agent, as its shares allow: create, set, \
-                            unset, insert, remove, move, tag, propose, merge, restore, undo, variant, batch. Where it \
-                            may only suggest, write on a proposal.",
-            "inputSchema": op,
+                            unset, insert, remove, move, tag, propose, merge, restore, undo, variant, batch, \
+                            put_file. Where it may only suggest, write on a proposal. put_file saves a file of this \
+                            Mac into a vault as a new entry of type file, where the agent may create: the op names \
+                            its vault and name, and media and tags if any, and the file's absolute path goes beside \
+                            the op as path; its len is the file's size unless the op gives one.",
+            "inputSchema": run,
         },
     ])
+}
+
+/// Put_file op `op` with the file at `path` on this Mac, which the harness names: its length the file's size where the
+/// op gives none, and its bytes as the node reads them (`read_path`). Fails if `path` names no file, or isn't absolute,
+/// as the harness's folder needn't be the agent's.
+async fn with_file(mut op: Value, path: PathBuf) -> Result<(Value, impl FnMut() -> Chunks + Send)> {
+    anyhow::ensure!(path.is_absolute(), "{} isn't an absolute path", path.display());
+    let meta = tokio::fs::metadata(&path).await.with_context(|| format!("no file at {}", path.display()))?;
+    anyhow::ensure!(meta.is_file(), "{} is no file", path.display());
+    if let Some(o) = op.as_object_mut() {
+        o.entry("len").or_insert(meta.len().into());
+    }
+    Ok((op, read_path(path)))
+}
+
+/// A pass of a file's bytes, as the node reads it (`avendb_net::Source`).
+type Chunks = Pin<Box<dyn Stream<Item = io::Result<Bytes>> + Send>>;
+
+/// The file at `path` as the node reads it (`avendb_net::Source`), twice, for its key and then to seal it: opened
+/// again each time and read from its start, a mebibyte at a time.
+fn read_path(path: PathBuf) -> impl FnMut() -> Chunks + Send {
+    move || -> Chunks {
+        let path = path.clone();
+        Box::pin(stream::try_unfold(None, move |file: Option<File>| {
+            let path = path.clone();
+            async move {
+                let mut file = match file {
+                    Some(file) => file,
+                    None => File::open(&path).await?,
+                };
+                let mut chunk = BytesMut::with_capacity(CHUNK);
+                while chunk.len() < CHUNK && file.read_buf(&mut chunk).await? > 0 {}
+                Ok::<_, io::Error>((!chunk.is_empty()).then(|| (chunk.freeze(), Some(file))))
+            }
+        }))
+    }
 }
 
 /// The name op `op` gives itself, as it is or not.

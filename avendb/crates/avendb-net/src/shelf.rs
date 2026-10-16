@@ -717,6 +717,12 @@ impl ShelfStore {
     pub(crate) fn shelved(&self, hash: &Hash) -> bool {
         matches!(self.0.lock().blobs.get(hash), Some(Blob::Shelved { .. } | Blob::Small { shelved: true, .. }))
     }
+
+    /// Lets go of each of `hashes`, from memory and from the shelf, as a node lets go of a file (`Node::let_go`): of
+    /// one a tag keeps, only if `force`.
+    pub(crate) async fn delete(&self, hashes: Vec<Hash>, force: bool) -> io::Result<()> {
+        self.0.delete(hashes, force).await
+    }
 }
 
 /// Handles each command on a task of its own, until it is shut down.

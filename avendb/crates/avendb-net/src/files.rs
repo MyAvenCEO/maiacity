@@ -8,7 +8,9 @@
 //! hold the range, which it keeps (`Node::read_file`); and keeps whole every file its device's keep shares say to keep,
 //! fetched from its peers as soon as it learns of them: where its device has none over a vault but never ones, every
 //! file of the vault it syncs if the node keeps files (`Options::keep`), as the server does, and none otherwise
-//! (`Lab::kept_files`). It drops no file it kept.
+//! (`Lab::kept_files`). It drops no file it kept. A file it holds whole but needn't keep it lets go of when told
+//! (`Node::let_go`), as an agent device does once its person's Mac holds the file whole by its own word
+//! (`Node::holds_whole`): so one Mac keeps one copy.
 //!
 //! The blob gate (`blobs::gate`) hands a peer a blob only if the peer may fetch it: a McEliece key by `Lab::may_fetch`,
 //! a file's root or one of its pieces by `Lab::may_fetch_file` (T27). Every request names one blob, never a HashSeq
@@ -105,6 +107,23 @@ impl Node {
     /// the server is its bucket.
     pub async fn holds_file(&self, root: FileRoot) -> bool {
         self.shared.holds(root).await
+    }
+
+    /// Whether device `device` holds every sealed byte of file `root` for good, by its own word as Synced to reads it
+    /// (`Node::synced_to`): on a live connection, or with no statement of it kept, as it announced; else as its newest
+    /// statement says. Only a file within its reach counts, one its edits by this device's view bring. Its word routes,
+    /// shows and lets this node let go of its own copy (`let_go`), and never lets anyone fetch anything (T27).
+    pub fn holds_whole(&self, device: SignerId, root: FileRoot) -> bool {
+        self.shared.word_of(device, root) == Some(FileHold::Whole)
+    }
+
+    /// Lets go of file `root`, which this node keeps on its shelf: no tag keeps it any more, its pieces and its HashSeq
+    /// go from its blob store, and so from its shelf, and it works out again what it holds of it for good, for its
+    /// holdings: none. A read of it later fetches what it reads from a peer, as of any file it doesn't keep. Whether it
+    /// let go: not of a file its device keeps whole (`Lab::kept_files`), which its keeper would only fetch again, nor
+    /// with no shelf, as it keeps nothing past its end anyway. Fails if its store does.
+    pub async fn let_go(&self, root: FileRoot) -> Result<bool> {
+        self.shared.let_go(root).await
     }
 }
 
@@ -451,5 +470,37 @@ impl Shared {
         if changed {
             self.changed.notify_one();
         }
+    }
+
+    /// What `device` holds of file `root` for good by its own word, as `synced_to` reads it: as it announced, on a live
+    /// connection or with no statement of it kept; else as its newest statement says. Nothing of a file outside its
+    /// reach (`Reach`).
+    fn word_of(&self, device: SignerId, root: FileRoot) -> Option<FileHold> {
+        let endpoint = self.reach.lock().expect("reach").get(&device).filter(|r| r.files.contains(&root))?.endpoint;
+        let live = self.live(endpoint).is_some_and(|p| p.device == device);
+        match (!live).then(|| self.statement_of(device)).flatten() {
+            Some(stated) => stated.files.into_iter().find(|(r, _)| *r == root).map(|(_, hold)| hold),
+            None => self.held.lock().expect("held").get(&device)?.files.get(&root).cloned(),
+        }
+    }
+
+    /// `Node::let_go`.
+    async fn let_go(self: &Arc<Self>, root: FileRoot) -> Result<bool> {
+        let Some(shelf) = &self.shelf else { return Ok(false) };
+        let keep = self.opts.keep;
+        if self.lab(move |lab, me| lab.kept_files(me, keep).contains(&root)).await {
+            return Ok(false);
+        }
+        // its pieces, as the HashSeq it holds names them, and the HashSeq itself; or its one piece
+        let hash = Hash::from_bytes(root.hash);
+        let mut blobs: Vec<Hash> = match root.pieced() {
+            true => self.store.get_bytes(hash).await.ok().and_then(HashSeq::new).into_iter().flatten().collect(),
+            false => Vec::new(),
+        };
+        blobs.push(hash);
+        self.store.tags().delete(tag(&root)).await?;
+        shelf.delete(blobs, true).await?;
+        self.refresh_file(root).await;
+        Ok(true)
     }
 }

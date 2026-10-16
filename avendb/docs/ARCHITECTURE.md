@@ -204,8 +204,13 @@ is taken out by removing its device, leaving the others. `avendb-device agent <h
 (`crates/avendb-device/src/agent.rs`) runs an agent device as the harness's MCP server on its stdin and stdout, in a
 folder beside the desktop app's that the app never clears (`<app folder>-agents/<device>`). It keeps its secret on its
 shelf, as the server does (`server::open_agent`), and its iroh key derives from it. It keeps no file whole of its own
-and reads its person's files from their desktop's one store, so nothing is kept twice. A reset clears its folder as the
-app's, and it asks to join again.
+accord and reads its person's files from their desktop's one store, so nothing is kept twice. It saves a file of the
+desktop as every device does, the aven's shares deciding (`put_file`, the file named by its path beside the op): an
+Editor share creates its entry, a Suggester's or a Viewer's doesn't. It seals the file onto its own shelf, and lets go
+of it once the desktop app's device, the one whose key is the endpoint of the offer the app leaves it, holds it whole
+by that device's holdings (`Node::holds_whole`, `Node::let_go`): a read of it then fetches it from there. Where the
+desktop keeps a light copy, the agent's copy is the one. A reset clears its folder as the app's, and it asks to join
+again.
 
 **Asking for access.** Access is asked for and given as any share is, on one consent screen. An agent device leaves an
 access request for the desktop app (`<device>.request`): who asks, by its device's name and key, the aven it would
@@ -638,7 +643,7 @@ Every caller goes through `Node::run`:
 |---|---|
 | A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
 | The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, aven, shares]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
-| An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, each acting for its aven, whose shares decide, and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
+| An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` too with the absolute `path` of a file on the desktop beside the op, each acting for its aven, whose shares decide, and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
 A device's lifecycle stays outside `run`: founding, linking and opening a device (`Device.found`, `Device.link`,
