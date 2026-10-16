@@ -16,7 +16,7 @@ import { human as humanV2 } from './human.v2';
 import { human as humanV3 } from './human.v3';
 import { human as humanV4 } from './human.v4';
 import { human as humanV5 } from './human.v5';
-import type { Cast } from './rig';
+import { lowDetail, type Cast } from './rig';
 import { goat, GOAT_BREEDS } from './species/goat';
 import { sheep, SHEEP_BREEDS } from './species/sheep';
 import { rabbit, RABBIT_COATS } from './species/rabbit';
@@ -193,4 +193,18 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 	}
 ];
 
-export const FAMILIES: Family[] = versioned(LIST, 'variants', HISTORY);
+/**
+ * How finely an animal is built (1: as it is; a world draws its far-off flocks at a fifth, ./crowd.ts `FAR`): its
+ * shapes coarser and its smallest parts left off, its bones and its clips the same. Every version of every kind but
+ * the stand-in takes it.
+ */
+const DETAIL = { id: 'detail', label: 'Detail', type: 'number', min: 0.05, max: 1, step: 0.01, value: 1 } as const;
+const detailed = new WeakMap<Actor[], Actor[]>();
+const withDetail = (list: Actor[]) => {
+	if (!detailed.has(list)) detailed.set(list, list.map((a) => ({ ...a, make: (detail?: number) => (detail === undefined || !(detail < 1) ? a.make() : lowDetail(() => a.make(), detail)) })));
+	return detailed.get(list)!;
+};
+
+export const FAMILIES: Family[] = versioned(LIST, 'variants', HISTORY).map((f) =>
+	f.id === 'stand-in' ? f : { ...f, params: [{ ...DETAIL }], variants: withDetail(f.variants), versions: f.versions.map((v) => ({ ...v, build: withDetail(v.build) })) }
+);
