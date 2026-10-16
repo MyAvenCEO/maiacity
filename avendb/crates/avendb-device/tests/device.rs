@@ -12,8 +12,12 @@
 //! with the first, a device vault and a sheet each, with the shares the aven passes on to them; the same harness on her
 //! other Mac joins its agent's device vault there. An agent saves a file of her Mac by its path as its shares allow,
 //! an Editor's and not a Suggester's, and keeps it while her Mac keeps a light copy, then lets go of it once her Mac
-//! keeps a full one: one copy on her Mac. Her aven passes on no more than it holds of a coop that hired it, and the
-//! coop taking its share back ends its agent's. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
+//! keeps a full one: one copy on her Mac. It reads a file back to a path on her Mac, every byte, from its own shelf
+//! or else from her Mac, never over a file there unless it says so, a small text file inline; a Suggester reads it
+//! too, and no agent reads a file of a vault none of its shares reaches. An agent adds a spark to her own vault by
+//! its fields' plain names, as the page captures one, and her Mac reads it; one that may add a spark nowhere says so,
+//! and where it may. Her aven passes on no more than it holds of a coop that hired it, and the coop taking its share
+//! back ends its agent's. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
 //! sheet, its key never on it in plain; the Mac it is plugged into hosts it, a full copy; unplugged, its node stops and
 //! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
 //! stays open, and plugged in again it is hosted with no sheet; her other Mac opens it in one; removed like a lost
@@ -590,6 +594,20 @@ async fn reads(h: &mut Harness, entry: &Value) -> (String, bool) {
     read
 }
 
+/// What harness `h` answers reading a file back (`avendb_read_file`) with `args`, once the file's entry reached it: its
+/// text, and whether it is an error.
+async fn reads_file(h: &mut Harness, args: Value) -> (String, bool) {
+    let mut read = (String::new(), true);
+    for _ in 0..100 {
+        read = h.tool("avendb_read_file", args.clone()).await;
+        if !read.0.ends_with("(NoEntry)") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    read
+}
+
 /// Vault `id` as device `app`'s world shows it, once `check` holds of it, 60 seconds at most.
 async fn vault_shown(app: &mut App, id: &Value, what: &str, check: impl Fn(&Value) -> bool) -> Value {
     let end = Instant::now() + Duration::from_secs(60);
@@ -624,7 +642,8 @@ async fn harnesses_ask_for_access_and_join_her_one_aven_as_agents_that_read_and_
     assert_eq!(hello["serverInfo"]["name"], "avendb");
     let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
     let names: Vec<&str> = tools.as_array().expect("tools").iter().filter_map(|t| t["name"].as_str()).collect();
-    assert_eq!(names, ["avendb_vaults", "avendb_ask", "avendb_request_access", "avendb_run"]);
+    let named = ["avendb_vaults", "avendb_ask", "avendb_request_access", "avendb_run", "avendb_add_spark"];
+    assert_eq!(names, [&named[..], &["avendb_read_file"]].concat());
     let (waits, _) = claude.tool("avendb_vaults", json!({})).await;
     assert!(waits.contains("waiting for its person to answer"), "{waits}");
     let asked = requests(&mut app, 1).await;
@@ -934,7 +953,7 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     }
     let create = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
     let (no, error) = claude.tool("avendb_run", json!({ "op": create, "path": at(&path) })).await;
-    assert!(error && no.contains("beside put_file alone"), "{no}");
+    assert!(error && no.contains("beside put_file or get_file alone"), "{no}");
     // and saves it into her vault, as an Editor creates an entry: its length the file's size, sealed onto its own shelf
     let (made, error) = claude.tool("avendb_run", json!({ "op": op, "path": at(&path) })).await;
     assert!(!error && made.contains("\"ok\""), "an Editor saves a file: {made}");
@@ -942,6 +961,45 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let (file, root, size) = (made["ok"]["entry"].clone(), made["ok"]["root"].clone(), made["ok"]["size"].clone());
     let (claudes, blob) = (agent::folder(&dir, "agentClaude"), root.as_str().expect("its root in hex").to_string());
     assert!(objects(&claudes, FLOOR, "blobs").contains(&blob), "in agentClaude's folder");
+    // it reads the file back by its entry (`avendb_read_file`), every byte, from its own shelf to a new path on her Mac
+    let back = folder.0.join("Harvest back.csv");
+    let (read, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;
+    assert!(!error, "{read}");
+    let read: Value = serde_json::from_str(&read).expect("JSON");
+    let said = (&read["entry"], &read["name"], &read["media"], &read["len"], &read["path"]);
+    assert_eq!(said, (&file, &json!("Harvest.csv"), &json!("text/csv"), &json!(harvest.len()), &at(&back)));
+    assert!(read.get("text").is_none(), "nothing inline past 64 KiB: {read}");
+    assert_eq!(std::fs::read(&back).expect("read back"), harvest, "every byte");
+    // never over a file there, unless it says so, as a get_file op on avendb_run by the file's vault and name does
+    std::fs::write(&back, b"hers").expect("a file of hers");
+    let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;
+    assert!(error && no.contains("overwrite: true"), "{no}");
+    assert_eq!(std::fs::read(&back).expect("her file"), b"hers", "hers, as it was");
+    let get = json!({ "op": "get_file", "vault": mine, "name": "Harvest.csv" });
+    let (done, error) = claude.tool("avendb_run", json!({ "op": get, "path": at(&back), "overwrite": true })).await;
+    assert!(!error && done.contains("\"ok\""), "{done}");
+    assert_eq!(std::fs::read(&back).expect("read back"), harvest, "over hers, as it said");
+    let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file })).await;
+    assert!(error && no.contains("give an absolute path"), "a file past 64 KiB comes back to a path: {no}");
+    let raw = json!({ "op": { "op": "read_file", "root": root, "size": size } });
+    let (no, error) = claude.tool("avendb_ask", raw).await;
+    assert!(error && no.contains("avendb_read_file"), "{no}");
+    let (no, error) = claude.tool("avendb_run", json!({ "op": create, "overwrite": true })).await;
+    assert!(error && no.contains("beside get_file alone"), "{no}");
+    // a small text file comes back inline, with no path
+    let notes = folder.0.join("Seeds.md");
+    std::fs::write(&notes, "# Seeds\n\nTomatoes in March.\n").expect("her notes");
+    let put = json!({ "op": "put_file", "vault": mine, "name": "Seeds.md", "media": "text/markdown" });
+    let (made, error) = claude.tool("avendb_run", json!({ "op": put, "path": at(&notes) })).await;
+    assert!(!error && made.contains("\"ok\""), "{made}");
+    let (read, error) = claude.tool("avendb_read_file", json!({ "vault": mine, "name": "Seeds.md" })).await;
+    assert!(!error, "{read}");
+    let read: Value = serde_json::from_str(&read).expect("JSON");
+    assert_eq!((&read["text"], &read["path"]), (&json!("# Seeds\n\nTomatoes in March.\n"), &Value::Null), "{read}");
+    // and nothing it wrote beside the paths stays
+    let left = std::fs::read_dir(&folder.0).expect("her folder").map(|e| e.expect("one").file_name());
+    let left: Vec<String> = left.map(|n| n.to_string_lossy().into_owned()).collect();
+    assert!(!left.iter().any(|n| n.contains(".avendb-")), "{left:?}");
     // her Mac shows it and reads it back, fetched from agentClaude
     let shown_file = shown(&mut app, &file, "the agent's file in her vault", |f| f["kind"] == "file").await;
     assert_eq!((&shown_file["title"], &shown_file["files"][0]["len"]), (&json!("Harvest.csv"), &json!(harvest.len())));
@@ -960,6 +1018,11 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     until("agentClaude's folder holds none of it", || async { !objects(&claudes, FLOOR, "blobs").contains(&blob) })
         .await;
     assert_eq!(read_back(&mut app, &root, &size, 100, 200).await, harvest[100..200], "her Mac reads it still");
+    // and agentClaude reads it back still, fetched from her Mac's one store
+    let again = folder.0.join("Harvest again.csv");
+    let (read, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&again) })).await;
+    assert!(!error, "{read}");
+    assert_eq!(std::fs::read(&again).expect("read again"), harvest, "every byte, from her Mac");
     // agentCursor joins under the same aven, which passes on to it only a Suggester's share of her vault: a Suggester
     // creates no entry, whatever the aven holds, so it saves no file there, refused before it reads a byte, and a
     // put_file has no proposal's line to go on
@@ -972,6 +1035,11 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let read = reads(&mut cursor, &note).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentCursor reads her note: {read:?}");
+    // it reads her files back as it reads her notes
+    let cursors = folder.0.join("Harvest for Cursor.csv");
+    let read = reads_file(&mut cursor, json!({ "entry": file, "path": at(&cursors) })).await;
+    assert!(!read.1, "a Suggester reads her file: {read:?}");
+    assert_eq!(std::fs::read(&cursors).expect("read back"), harvest, "every byte");
     let (no, error) = cursor.tool("avendb_run", json!({ "op": op, "path": at(&path) })).await;
     let no: Value = serde_json::from_str(&no).expect("JSON");
     assert!(!error && no["refused"] == "NotAllowed", "a Suggester's ops create no entry: {no}");
@@ -984,10 +1052,122 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let (no, error) = cursor.tool("avendb_run", json!({ "op": on_line, "path": at(&path) })).await;
     let no: Value = serde_json::from_str(&no).expect("JSON");
     assert!(!error && no["why"] == "put_file takes no field \"line\"", "{no}");
+    // a file of a vault no share of agentClaude's reaches, her studio's, it reads by neither its entry nor its name,
+    // and writes nothing
+    let studio = run(&mut app, json!({ "op": "found", "kind": "coop", "name": "Studio" })).await;
+    let studio = studio.expect("her studio")["vaults"][0].clone();
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let plan: Vec<u8> = (0..20_000u32).map(|i| (i * 17 % 239) as u8).collect();
+    let put = json!({ "op": "put_file", "vault": studio, "name": "Plan.jpg", "len": plan.len(), "as": studio });
+    let plan = bring(&mut app, put, &plan).await;
+    let plan = plan["ok"]["entry"].as_str().map(Value::from).unwrap_or_else(|| panic!("her studio's plan: {plan}"));
+    shown(&mut app, &plan, "her studio's plan", |f| f["kind"] == "file").await;
+    let nowhere = folder.0.join("Plan.jpg");
+    let (no, error) = claude.tool("avendb_read_file", json!({ "entry": plan, "path": at(&nowhere) })).await;
+    assert!(error && no.contains("agentClaude reads no entry") && no.ends_with("(NoEntry)"), "{no}");
+    let by_name = json!({ "vault": studio, "name": "Plan.jpg", "path": at(&nowhere) });
+    let (no, error) = claude.tool("avendb_read_file", by_name).await;
+    assert!(error && no.contains("reads no file named \"Plan.jpg\""), "{no}");
+    assert!(!nowhere.exists(), "nothing written");
     cursor.quit().await;
     claude.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_agent_adds_a_spark_to_her_own_vault_and_her_mac_reads_it() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("agent-sparks");
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let mine = world_of(&mut app).await["mine"].clone();
+    // agentClaude tells its harness how to add a spark, by its fields' plain names
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    let told = hello["instructions"].as_str().is_some_and(|i| i.contains("avendb_add_spark") && i.contains("`text`"));
+    assert!(told, "{hello}");
+    let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
+    let spark = tools.as_array().expect("tools").iter().find(|t| t["name"] == "avendb_add_spark").cloned();
+    let schema = spark.expect("avendb_add_spark")["inputSchema"].clone();
+    assert_eq!(schema["required"], json!(["text"]));
+    let fields: Vec<&String> = schema["properties"].as_object().expect("its fields").keys().collect();
+    assert_eq!(fields, ["tags", "text", "title", "vault"], "a spark's own fields, kind, title and blocks, and where");
+    assert!(spark_tool_says_artifacts(&tools), "links and media go in as artifacts");
+    let (waits, error) = claude.tool("avendb_add_spark", json!({ "text": "Too soon." })).await;
+    assert!(!error && waits.contains("waiting for its person to answer"), "{waits}");
+    // she adds it under her aven avenEve, which may edit her vault
+    let asked = requests(&mut app, 1).await;
+    let editor = json!([{ "over": mine, "level": "Editor" }]);
+    let granted = app.call("grant", json!(["agentClaude", asked[0]["device"], editor, "avenEve"])).await;
+    let aven = granted.expect("granted")["aven"].clone();
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    // a thought, as the page captures one: no vault named, so into her own, once its share reaches it; its one line
+    // its title
+    let thought = json!({ "text": "Tomatoes like the warm wall.", "tags": ["garden"] });
+    let mut made = (String::new(), true);
+    for _ in 0..100 {
+        made = claude.tool("avendb_add_spark", thought.clone()).await;
+        if !made.0.contains("waiting for its person") && !made.0.contains("may add no spark") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!made.1, "{made:?}");
+    let made: Value = serde_json::from_str(&made.0).expect("JSON");
+    assert_eq!((&made["vault"], &made["tags"]), (&mine, &json!(["garden"])), "{made}");
+    let thought = |s: &Value| s["type"] == "spark" && s["title"] == "Tomatoes like the warm wall.";
+    let shown_spark = shown(&mut app, &made["entry"], "agentClaude's spark on her Mac", thought).await;
+    assert_eq!(shown_spark["tags"], json!(["garden"]));
+    assert_eq!(shown_spark["text"], "", "its words all its title");
+    // one titled, its words beside
+    let words = "Sow them under glass in March, and plant them out once the nights stay warm.";
+    let (made, error) = claude.tool("avendb_add_spark", json!({ "text": words, "title": "Sowing tomatoes" })).await;
+    assert!(!error, "{made}");
+    let entry = serde_json::from_str::<Value>(&made).expect("JSON")["entry"].clone();
+    let sowing = shown(&mut app, &entry, "the titled one, on her Mac", |s| s["title"] == "Sowing tomatoes").await;
+    assert_eq!((&sowing["text"], &sowing["record"]["blocks"][0]["text"]), (&json!(words), &json!("Sowing tomatoes")));
+    // a longer one, titled by its first line cut at a word
+    let long = "Grow a wall of tomatoes along the south side of the shed, where the old bricks hold the warmth of the \
+                day well into the night.\nPinch out the side shoots.";
+    let (made, error) = claude.tool("avendb_add_spark", json!({ "text": long })).await;
+    assert!(!error, "{made}");
+    let entry = serde_json::from_str::<Value>(&made).expect("JSON")["entry"].clone();
+    let title = "Grow a wall of tomatoes along the south side of the shed, where the old bricks…";
+    let wall = shown(&mut app, &entry, "the long one, on her Mac", |s| s["title"] == title).await;
+    assert_eq!(wall["text"], long);
+    // its refusals read plainly: her aven shares nothing with it; a link goes in as an artifact, not on a spark
+    let (no, error) = claude.tool("avendb_add_spark", json!({ "text": "x", "vault": aven })).await;
+    let mine_id = mine.as_str().expect("her vault's id");
+    let may = format!("may add sparks to {mine_id}");
+    assert!(error && no.starts_with("agentClaude may add no spark to vault") && no.contains(&may), "{no}");
+    let (no, error) = claude.tool("avendb_add_spark", json!({ "text": "x", "url": "https://example.com/sow" })).await;
+    assert!(error && no.starts_with("a spark has no \"url\"") && no.contains("as an artifact"), "{no}");
+    let (no, error) = claude.tool("avendb_add_spark", json!({ "title": "No words" })).await;
+    assert!(error && no.contains("text"), "{no}");
+    // agentCodex, a Viewer of her vault, may add a spark nowhere, and says so
+    let mut codex = Harness::start(&dir, "codex");
+    let asked = requests(&mut app, 1).await;
+    let viewer = json!([{ "over": mine, "level": "Viewer" }]);
+    app.call("grant", json!(["agentCodex", asked[0]["device"], viewer, "avenEve"])).await.expect("granted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let read = reads(&mut codex, &entry).await;
+    assert!(!read.1 && read.0.contains("Pinch out the side shoots."), "agentCodex reads her spark: {read:?}");
+    let (no, error) = codex.tool("avendb_add_spark", json!({ "text": "Beans in May." })).await;
+    let own = format!("may add no spark to its person's own vault, {mine_id}");
+    assert!(error && no.contains(&own) && no.contains("avendb_request_access"), "{no}");
+    codex.quit().await;
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+/// Whether the description of `avendb_add_spark` among `tools` says a link or a media file goes in as an artifact.
+fn spark_tool_says_artifacts(tools: &Value) -> bool {
+    let spark = tools.as_array().into_iter().flatten().find(|t| t["name"] == "avendb_add_spark");
+    spark.and_then(|t| t["description"].as_str()).is_some_and(|d| d.contains("goes in as an artifact"))
 }
 
 /// What the Mac's device says of its volumes and drives (`drives`), once `check` holds of it, 60 seconds at most.
@@ -1045,6 +1225,11 @@ fn files_in(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 async fn put_file(app: &mut App, vault: &Value, name: &str, bytes: &[u8]) -> Value {
     let put = json!({ "op": "put_file", "vault": vault, "name": name, "media": "image/jpeg", "tags": [],
         "len": bytes.len() });
+    bring(app, put, bytes).await["ok"].clone()
+}
+
+/// Put_file op `put` with the file's `bytes`, a chunk at a time in base64, as native.js hands one over: its answer.
+async fn bring(app: &mut App, put: Value, bytes: &[u8]) -> Value {
     let n = app.call("fileStart", json!([put])).await.expect("a file's number");
     loop {
         let mut at = 0;
@@ -1056,7 +1241,7 @@ async fn put_file(app: &mut App, vault: &Value, name: &str, bytes: &[u8]) -> Val
             break;
         }
     }
-    app.call("fileEnd", json!([n])).await.expect("the op's answer")["ok"].clone()
+    app.call("fileEnd", json!([n])).await.expect("the op's answer")
 }
 
 /// The files in folder `dir` this process holds open, as Linux names them in /proc/self/fd; none known elsewhere.
