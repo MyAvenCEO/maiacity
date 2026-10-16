@@ -17,7 +17,7 @@ const { rebuild } = await import('../box/rebuild.js');
 const { prepare } = await import('./prepare.js');
 const { createPresets } = await import('./presets.js');
 const { BUDGETS, LEVELS, SCREEN, STRETCH, budgetOf, errorOf, smallestOf } = await import('./lod.js');
-const { CREASE, TINY, lowerDraws, reshade, weldCorners } = await import('./simplify.js');
+const { CREASE, KEEP, TINY, lowerDraws, piecesOf, reshade, weldCorners } = await import('./simplify.js');
 const { createLowering, levelOf, plainOf } = await import('./lower.js');
 
 test('what each level may cost: a share of the finest, never under its floor, never over its ceiling', () => {
@@ -43,6 +43,34 @@ const loose = (g) => {
 	const s = g.toNonIndexed();
 	return { attributes: Object.fromEntries(Object.entries(s.attributes).map(([k, a]) => [k, { array: a.array, itemSize: a.itemSize, normalized: a.normalized }])), index: Uint32Array.from({ length: s.attributes.position.count }, (_, i) => i) };
 };
+
+/**
+ * The pieces of a level's drawings at least KEEP pixels across where level L is drawn biggest that the level made from
+ * it has nothing of: each its drawing and its size (px).
+ */
+function lostPieces(level, made, L) {
+	const lost = [];
+	const px = smallestOf(L, level.radius);
+	level.draws.forEach((d, i) => {
+		const r = made.draws[i];
+		if (r === 'same' || !r?.index) return;
+		const p = plainOf(d);
+		const w = weldCorners(p);
+		const pc = piecesOf(w);
+		const P = w.attributes.position.array, R = r.attributes.position.array;
+		const at = new Map();
+		for (let v = 0; v < w.count; v++) at.set(`${P[v * 3]},${P[v * 3 + 1]},${P[v * 3 + 2]}`, pc.piece[v]);
+		const kept = new Set();
+		for (let t = 0; t < r.index.length; t++) {
+			const v = r.index[t];
+			kept.add(at.get(`${R[v * 3]},${R[v * 3 + 1]},${R[v * 3 + 2]}`));
+		}
+		const has = new Set();
+		for (let t = 0; t < w.index.length; t += 3) has.add(pc.piece[w.index[t]]);
+		for (const k of has) if (!kept.has(k) && (pc.size[k] * p.scale) / px >= KEEP) lost.push({ draw: i, px: +((pc.size[k] * p.scale) / px).toFixed(1) });
+	});
+	return lost;
+}
 
 test('loose triangles welded where their corners are the same corner: a seam where the normal turns is kept', () => {
 	// a box: 36 loose corners, 24 once welded (each face's own four: its normal is its own)
@@ -132,10 +160,13 @@ test('a drawing drawn many times weighed by all its copies; a shape of plain pie
 	const tent = prepare(root, presets);
 	const at = tent.draws.findIndex((d) => d.n === 240);
 	const [, two] = await lowerDraws(tent.draws.map(plainOf), planned(tent));
-	expect(two.draws[at].tris).toBeLessThan(12);
+	// each pole kept (46 pixels long where level 2 is drawn biggest), as plain as its outer corners let it
+	expect(two.draws[at].tris).toBeGreaterThan(0);
+	expect(two.draws[at].tris).toBeLessThanOrEqual(12);
 	console.log(`240 poles of 24 triangles: ${two.draws[at].tris} each at level 2`);
-	// 6,000 boxes from 5 to 40 cm (72,000 triangles), each as plain as a box can be: level 1 keeps them, over its
-	// share and under its ceiling; level 2 cannot keep them all under its own, and leaves out the smallest
+	// 6,000 glass boxes from 5 to 40 cm (72,000 triangles), each as plain as a box can be and seen through, so none
+	// hides another: level 1 keeps them, over its share and under its ceiling; level 2 cannot keep them all under its
+	// own, and leaves out the smallest
 	const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
 	let seed = 7;
 	const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -143,14 +174,20 @@ test('a drawing drawn many times weighed by all its copies; a shape of plain pie
 		const a = 0.05 + rnd() * 0.35;
 		return new THREE.BoxGeometry(a, a, a).translate(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
 	});
-	const pieces = prepare(new THREE.Mesh(mergeGeometries(boxes), new THREE.MeshStandardMaterial()), presets);
+	const merged = mergeGeometries(boxes);
+	const pieces = prepare(new THREE.Mesh(merged, new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.5 })), presets);
 	const plans = planned(pieces);
 	const [one, low] = await lowerDraws(pieces.draws.map(plainOf), plans);
-	console.log(`6,000 boxes: ${pieces.tris} → ${one.tris} (share ${plans[0].budget}, ceiling ${plans[0].most}), ${low.tris} (share ${plans[1].budget}, ceiling ${plans[1].most}); passes ${one.passes} | ${low.passes}`);
+	console.log(`6,000 glass boxes: ${pieces.tris} → ${one.tris} (share ${plans[0].budget}, ceiling ${plans[0].most}), ${low.tris} (share ${plans[1].budget}, ceiling ${plans[1].most}); passes ${one.passes} | ${low.passes}`);
 	expect(one.tris).toBeGreaterThan(plans[0].budget);
 	expect(one.tris).toBeLessThanOrEqual(plans[0].most);
 	expect(low.tris).toBeLessThanOrEqual(plans[1].most);
 	expect(low.tris).toBeGreaterThan(plans[1].most / 4);
+	// the same boxes solid hide most of each other: those never seen left out, and the rest within its share
+	const solid = prepare(new THREE.Mesh(merged, new THREE.MeshStandardMaterial()), presets);
+	const [inner] = await lowerDraws(solid.draws.map(plainOf), [plans[0]]);
+	console.log(`6,000 solid boxes: ${solid.tris} → ${inner.tris} at level 1`);
+	expect(inner.tris).toBeLessThanOrEqual(Math.ceil(plans[0].budget * 1.05));
 }, 120000);
 
 /** a build as the page has it: built, sent out of the box as data, checked and rebuilt, prepared */
@@ -172,10 +209,10 @@ function boxOf(level) {
 
 /** levels 1 and 2 of a kind built once, made as the renderer makes them */
 async function lowered(L0) {
-	const plans = [1, 2].map((L) => ({ budget: budgetOf(L, L0.tris), error: errorOf(L, L0.radius), smallest: smallestOf(L, L0.radius) }));
+	const plans = [1, 2].map((L) => ({ budget: budgetOf(L, L0.tris), most: budgetOf(L), error: errorOf(L, L0.radius), smallest: smallestOf(L, L0.radius) }));
 	const t0 = performance.now();
 	const made = await lowerDraws(L0.draws.map(plainOf), plans);
-	return { levels: made.map((m) => levelOf(L0, m)), ms: performance.now() - t0 };
+	return { levels: made.map((m) => levelOf(L0, m)), made, ms: performance.now() - t0 };
 }
 
 /** each level within its budget and its error, its outline the finest's within its error */
@@ -200,11 +237,13 @@ for (const [ref, what] of [
 	['things/bell-tent', 'a thing (27 drawings)'],
 	['actors/goat:goat-saanen', 'an actor (a skinned body and its eyes)']
 ])
-	test(`${what}: ${ref}, each level within its budget, its outline kept`, async () => {
+	test(`${what}: ${ref}, each level within its budget, its outline and its parts kept`, async () => {
 		const L0 = await built(ref);
-		const { levels, ms } = await lowered(L0);
+		const { levels, made, ms } = await lowered(L0);
 		console.log(`${ref}: ${L0.tris} → ${levels.map((l, j) => `${l.tris} (${((l.made.error / (2 * L0.radius)) * LEVELS[j] * SCREEN).toFixed(1)} px where it takes over)`).join(', ')} in ${Math.round(ms)} ms`);
 		check(L0, levels);
+		// every part several pixels big where a level is drawn biggest (a pickup's mirrors, wipers and lamps) is there
+		for (const [j, m] of made.entries()) expect(lostPieces(L0, m, j + 1)).toEqual([]);
 	}, 120000);
 
 test('the biggest one-shape machine (the LifeTrac, 437,713 corners) made in a few seconds at most', async () => {
@@ -213,6 +252,66 @@ test('the biggest one-shape machine (the LifeTrac, 437,713 corners) made in a fe
 	console.log(`machines/lifetrac: ${L0.tris} → ${levels.map((l) => l.tris).join(', ')} in ${Math.round(ms)} ms`);
 	check(L0, levels);
 	expect(ms).toBeLessThan(15000);
+}, 120000);
+
+test("a level that cannot reach its share leaves out what is never seen: a closed box's insides, not a glass box's", async () => {
+	const presets = createPresets();
+	const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
+	let seed = 3;
+	const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+	const balls = (x) => mergeGeometries(Array.from({ length: 300 }, () => new THREE.SphereGeometry(0.05, 8, 6).translate(x + rnd() * 1.6 - 0.8, rnd() * 1.6 - 0.8, rnd() * 1.6 - 0.8)));
+	const root = new THREE.Group();
+	// a closed box with balls and bolts inside it, a glass one beside it with balls inside it, and bolts outside both
+	root.add(new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial({ color: 0x777777 })));
+	root.add(new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2).translate(3, 0, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 })));
+	root.add(new THREE.Mesh(balls(0), new THREE.MeshStandardMaterial({ color: 0xff0000 })));
+	root.add(new THREE.Mesh(balls(3), new THREE.MeshStandardMaterial({ color: 0x0000ff })));
+	const bolts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.04, 0.04, 0.1, 12), new THREE.MeshStandardMaterial({ color: 0x00ff00 }), 40);
+	for (let i = 0; i < 40; i++) bolts.setMatrixAt(i, new THREE.Matrix4().makeTranslation(i < 20 ? rnd() - 0.5 : 1.5, i < 20 ? rnd() - 0.5 : 1.2 + i * 0.02, 0));
+	root.add(bolts);
+	const level = prepare(root, presets);
+	const plan = { budget: budgetOf(2, level.tris), most: budgetOf(2), error: errorOf(2, level.radius), smallest: smallestOf(2, level.radius) };
+	const [two] = await lowerDraws(level.draws.map(plainOf), [plan]);
+	const of = (hex) => level.draws.findIndex((d) => d.material.color?.getHex() === hex);
+	// the balls in the closed box: never seen, left out; those in the glass one all there; the bolts inside, left out
+	expect(two.draws[of(0xff0000)]).toBe(null);
+	const blue = of(0x0000ff);
+	expect(lostPieces(level, { draws: level.draws.map((_, i) => (i === blue ? two.draws[blue] : 'same')) }, 2)).toEqual([]);
+	const green = two.draws[of(0x00ff00)];
+	expect(green.copies.length).toBe(20);
+	expect(Math.min(...green.copies)).toBe(20);
+	expect(levelOf(level, two).draws.find((d) => d.material.color?.getHex() === 0x00ff00).n).toBe(20);
+	console.log(`balls in a box and in a glass box, bolts in and out: ${level.tris} → ${two.tris} (share ${plan.budget})`);
+}, 60000);
+
+test("a plant's level over its ceiling (a big tree's crown) brought under it, every leaf kept", async () => {
+	const { plantAt } = await import('$lib/plants/index.js');
+	const presets = createPresets();
+	const piecesIn = (shape) => {
+		const w = weldCorners(shape);
+		const pc = piecesOf(w);
+		const has = new Set();
+		for (let t = 0; t < w.index.length; t += 3) has.add(pc.piece[w.index[t]]);
+		return has.size;
+	};
+	for (const name of ['linden', 'korean-pine']) {
+		const lv = prepare(plantAt(name).grow(9, 'maia', 0.1), presets);
+		const most = budgetOf(2, Infinity);
+		expect(lv.tris).toBeGreaterThan(most);
+		const plains = lv.draws.map(plainOf);
+		const [m] = await lowerDraws(plains, [{ budget: most, most, error: errorOf(2, lv.radius), smallest: smallestOf(2, lv.radius), every: true }]);
+		const out = levelOf(lv, m);
+		expect(out.tris).toBeLessThanOrEqual(most);
+		expect(m.error).toBeLessThanOrEqual(errorOf(2, lv.radius));
+		let before = 0, after = 0;
+		lv.draws.forEach((d, i) => {
+			before += piecesIn(plains[i]) * d.n;
+			const r = m.draws[i];
+			after += (r === 'same' ? piecesIn(plains[i]) : piecesIn(r)) * d.n;
+		});
+		expect(after).toBe(before);
+		console.log(`plants/${name} at detail 0.1: ${lv.tris} → ${out.tris} (ceiling ${most}), ${((m.error / (2 * lv.radius)) * LEVELS[1] * SCREEN).toFixed(2)} px, its ${before} pieces kept`);
+	}
 }, 120000);
 
 test('a plant keeps its own detail: each level its recipe at a lower detail, within its share', async () => {
@@ -244,4 +343,13 @@ test('the renderer\'s maker of levels: one kind at a time, beside the page, the 
 		expect(lowering.busy).toBe(0);
 		lowering.dispose();
 	}
+	// one that can wait (a recipe's level made lighter) waits for those asked for after it
+	const lowering = createLowering({ worker: false });
+	const order = [];
+	const first = lowering.lower(level, plans).then(() => order.push('first'));
+	const later = lowering.lower(level, plans, true).then(() => order.push('later'));
+	const next = lowering.lower(level, plans).then(() => order.push('next'));
+	await Promise.all([first, later, next]);
+	expect(order).toEqual(['first', 'next', 'later']);
+	lowering.dispose();
 }, 60000);

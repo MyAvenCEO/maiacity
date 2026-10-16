@@ -207,7 +207,7 @@
 				const d = k.radius / (size * tanHalf);
 				const lv = k.levels[L];
 				const picture = L === k.levels.length;
-				levels.push({ L, what: picture ? 'its picture' : lv.from === 'made' ? (lv.as >= 0 ? 'as level 0' : 'simplified') : 'its recipe at a lower detail', size: +size.toFixed(4), distance: +d.toFixed(2), tris: picture ? 2 : lv.level.tris, ...against(L, d, YAW), ...(picture && { side: against(L, d, SIDE) }) });
+				levels.push({ L, what: picture ? 'its picture' : lv.from === 'made' ? (lv.as >= 0 ? 'as level 0' : 'simplified') : lv.level.made ? 'its recipe at a lower detail, simplified under its ceiling' : 'its recipe at a lower detail', size: +size.toFixed(4), distance: +d.toFixed(2), tris: picture ? 2 : lv.level.tris, ...against(L, d, YAW), ...(picture && { side: against(L, d, SIDE) }) });
 			}
 			assets.force(null);
 			assets.remove(copy);
