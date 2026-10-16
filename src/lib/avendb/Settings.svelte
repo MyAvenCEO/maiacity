@@ -1,6 +1,8 @@
 <!--
-	A vault's settings, as its aside lists them: About (what it is, who approves a change to it and how many of its
-	owners, how this browser acts for it), Owners and devices (who owns it, what it owns, the devices that act for it,
+	A vault's settings, as its aside lists them: About (what it is, by the kind table, who approves a change to it and
+	how many of its owners, how this browser acts for it), Owners and devices (who owns it, and which vault may own it
+	too, as the kind table says; what it owns, each vault with its devices and shares (./Owned.svelte): the person's
+	aven and its agents, an aven's agents, avenCEO GmbH's server; the devices that act for it,
 	each removed as a lost one is, and for the person's own vault what each of their devices keeps, a full copy or a
 	light one, this browser's name, how deep its queries read (Query limits), linking the next device and forgetting
 	this one; in the Mac app, its Drives: each volume plugged in, used for avenDB as a device of the vault of its own in
@@ -19,18 +21,22 @@
 	import Mark from './Mark.svelte';
 	import { allowed, may, read } from './ops.js';
 	import Ops from './Ops.svelte';
+	import Owned from './Owned.svelte';
 	import Share from './Share.svelte';
 	import {
 		acting,
+		actsWords,
 		ago,
 		count,
 		EVERYONE,
 		groupOf,
 		KEEPS,
-		KIND_HINTS,
+		kindHint,
+		kindRules,
 		KINDS,
 		levelName,
 		list,
+		mayCoOwn,
 		nameOf,
 		roleGroup,
 		rowLevel,
@@ -74,7 +80,8 @@
 	const v = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(vault)));
 	const as = $derived(byId.get(actor));
 	const mine = $derived(byId.get(world.mine));
-	const owned = $derived(world.vaults.filter((x) => x.owners.some((o) => 'vault' in o && o.vault === vault)));
+	/** whether vaults of its kind hold devices, as the kind table says */
+	const holds = $derived(!!kindRules(world, v.kind)?.devices);
 	/** the person's own vault lacks the master recovery key this device adds */
 	const recoveryMissing = $derived(
 		vault === world.mine && !!world.recovery && !v.owners.some((o) => 'signer' in o && o.signer === world.recovery)
@@ -177,11 +184,12 @@
 	let naming = $state(/** @type {string | null} */ (null));
 	/** how many of its owners a change needs, as the person picks it */
 	let threshold = $state(0);
-	/** the vault picked to become an owner too: a human or coop vault this device knows that doesn't own it yet */
+	/** the vault picked to become an owner too: one this device knows that doesn't own it yet and that the kind table
+	 *  lets own it, where its kind takes one more owner (none for an aven or a device vault, which have one alone) */
 	let newOwner = $state('');
 	const ownable = $derived(
 		world.vaults.filter(
-			(x) => x.id !== vault && x.kind !== 'aven' && !v.owners.some((o) => 'vault' in o && o.vault === x.id)
+			(x) => x.id !== vault && !v.owners.some((o) => 'vault' in o && o.vault === x.id) && mayCoOwn(world, v, x)
 		)
 	);
 	/** Makes vault `id` an owner of this one too, as its owners approve. @param {string} id */
@@ -241,9 +249,10 @@
 		return `It acts for it through ${list(chain)}, which ${v.via.length === 1 ? 'owns it' : 'own it in turn'}.`;
 	});
 
+	/** Revokes share `id`, acting for vault `as`. @param {string | null} id @param {string} as */
+	const revokeShare = (id, as) => api.run('Revoking', { op: 'revoke', share: id, as });
 	/** Revokes share row `r`: a keep share as its issuer, any other as the acting vault. @param {ShareRow} r */
-	const revoke = (r) =>
-		api.run('Revoking', { op: 'revoke', share: r.id, as: r.kind === 'keep' ? (r.issuer ?? world.mine) : actor });
+	const revoke = (r) => revokeShare(r.id, r.kind === 'keep' ? (r.issuer ?? world.mine) : actor);
 
 	/** @param {{ vault: string } | { signer: string }} o */
 	const removeOwner = (o) =>
@@ -264,13 +273,13 @@
 	const removable = (id) =>
 		rows.some((r) => r.kind === 'device' && r.who !== EVERYONE && 'device' in r.who && r.who.device === id && allowed(r.revoke));
 	/**
-	 * Removes device `id` from the vault, as a lost phone is (`revoke`): its peers refuse it from then on, and what the
-	 * vault holds moves to keys it doesn't have. The vault's owners approve it.
-	 * @param {string} id @param {string} name
+	 * Removes device `id` from vault `of`, this one unless named, as a lost phone is (`revoke`): its peers refuse it from
+	 * then on, and what the vault holds moves to keys it doesn't have. The vault's owners approve it.
+	 * @param {string} id @param {string} name @param {string} [of]
 	 */
-	const removeDevice = (id, name) =>
-		confirm(`Remove ${name} from ${nameOf(v)}? It syncs nothing more, and what it holds stays on it as ciphertext.`) &&
-		api.run(`Removing ${name}`, { op: 'revoke', vault, device: id });
+	const removeDevice = (id, name, of = vault) =>
+		confirm(`Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more, and what it holds stays on it as ciphertext.`) &&
+		api.run(`Removing ${name}`, { op: 'revoke', vault: of, device: id });
 
 	/** the drives joined here, by their device: in the Mac app alone */
 	const drivesById = $derived(new Map((drives?.drives ?? []).map((x) => [x.device, x])));
@@ -335,7 +344,7 @@
 					<span class="chip accent">{KINDS[v.kind]}</span>
 				</div>
 			</div>
-			<p class="soft">{KIND_HINTS[v.kind]}</p>
+			<p class="soft">{kindHint(world, v.kind)}</p>
 			{#if v.via}
 				{#if naming === null}
 					<button class="btn" disabled={busy} onclick={() => (naming = v.name ?? '')}>Rename</button>
@@ -455,7 +464,7 @@
 				{/each}
 			</ul>
 			<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
-			{#if v.kind !== 'human' && actor === vault && ownable.length}
+			{#if actor === vault && ownable.length}
 				<div class="add-owner">
 					<select class="field" bind:value={newOwner} aria-label="A vault to make an owner too">
 						<option value="">A vault to make an owner too…</option>
@@ -489,21 +498,12 @@
 			{/if}
 		</article>
 
-		{#if owned.length}
-			<article class="card">
-				<h3>It owns</h3>
-				<ul class="list">
-					{#each owned as x (x.id)}
-						<li><Mark vault={x} size={28} /><b>{nameOf(x)}</b><span class="soft">{KINDS[x.kind]}</span></li>
-					{/each}
-				</ul>
-			</article>
-		{/if}
+		<Owned {world} {vault} {api} {busy} onrevoke={revokeShare} onremove={removeDevice} />
 
 		<article class="card">
 			<h3>Devices</h3>
-			{#if v.kind === 'coop'}
-				<p class="soft">A coop has no devices: it acts only through its owners' devices.</p>
+			{#if !holds}
+				<p class="soft">{actsWords(world, v.kind)}</p>
 			{:else if !v.devices.length}
 				<p class="soft">
 					No device of its own yet: {v.via ? `${here} acts for it through its owners` : 'its owners act for it'}.
@@ -628,10 +628,10 @@
 				<article class="card">
 					<h3>Agents on {here}</h3>
 					<p class="soft">
-						An aven is an identity your vault owns; agent harnesses control it, each as an agent device with a key of its
-						own: Claude Code as agentClaude, Codex as agentCodex, and so on. Once a harness runs its device, this page asks
-						you which aven it joins and which vaults that aven may work in. It reads your files from this Mac's one
-						store, so nothing is kept twice.
+						Your aven is your one AI identity, a vault your vault owns. Each agent harness joins it as an agent of its
+						own, a device vault under it with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so
+						on. Once a harness runs its device, this page asks you which vaults it may work in, and it gets sub caps of
+						what your aven holds there. It reads your files from this Mac's one store, so nothing is kept twice.
 					</p>
 					<label class="harness">
 						<span>Harness</span>

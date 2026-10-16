@@ -219,6 +219,11 @@
 		border-radius: 4px;
 		font-size: 0.5rem;
 	}
+	.avatar.device {
+		border-radius: 0;
+		clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+		font-size: 0.5rem;
+	}
 
 	.group {
 		margin: 0.2rem 0.6rem 0.2rem;

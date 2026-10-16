@@ -1,6 +1,7 @@
 <!--
 	A vault's mark: its initials on its colour, shaped by its kind, a circle for a person's vault, a hexagon for an aven,
-	a rounded square for a coop. The same vault looks the same on every device, its colour drawn from its id.
+	a rounded square for a coop, an octagon for a device vault. The same vault looks the same on every device, its colour
+	drawn from its id.
 -->
 <script>
 	import { hue, initials, nameOf } from './vaults.js';
@@ -43,6 +44,11 @@
 	.mark.aven {
 		border-radius: 0;
 		clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
+	}
+
+	.mark.device {
+		border-radius: 0;
+		clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
 	}
 
 	.mark.dim {
