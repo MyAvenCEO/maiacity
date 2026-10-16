@@ -20,7 +20,7 @@ How the 3D worlds are lit: the sun by the hour, the sky, the practical lamps, an
 - Looks for the low and the night are grade presets in the studio (`cold`, `night`, `dip`, `bright`, `warm` in
   `game/film/color.js`, ASC CDL in ACEScct) — not filters on the shot.
 
-## The room's light (`src/lib/worlds/room.ts`)
+## Lighting a real room (lessons from the room world, removed 2026-10-16)
 
 - **The sky is turned to the room's north** (`createSky({ north: π/2 })`): the window looks north and never gets the
   sun. The sun rises behind the bed, stands over the door's side at noon and sets behind the front wall; its shadows

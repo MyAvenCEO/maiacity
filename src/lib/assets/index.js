@@ -40,7 +40,7 @@ export const GROUPS = {
 		label: 'Worlds',
 		list: async () => {
 			const { PLAY, WORLDS } = await import('$lib/app/places');
-			// a world's id is the last part of its address: sandbox-5, isar
+			// a world's id is the last part of its address: sandbox-5, tired-land
 			return [...PLAY, ...WORLDS].filter((p) => p.versions).map((p) => ({ ...p, id: idOfHref(p.href), versions: /** @type {AnyVersion[]} */ (p.versions), version: p.version ?? 1 }));
 		}
 	}
