@@ -1,6 +1,6 @@
 ---
 name: asset-producer
-description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($lib/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test), the order of work, how we check (checking.md) and which sub skill to load, one per group in the dashboard's order — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
+description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($lib/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test, where an asset is kept: recipes and schemas by hash, the box and the device cache, avenDB recipe entries later), the order of work, how we check (checking.md) and which sub skill to load, one per group in the dashboard's order — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
 ---
 
 # Asset producer
@@ -54,7 +54,7 @@ to the asset, never the asset to the studio.
 - `stage.js`: AirSup's Lab studio and post (softbox environment, key shadow, contact shadow, a floor fading into the
   paper, GTAO, bloom, neutral tone mapping, grade) and its modes: Explode, Cut away, X-ray, Labels, Slow and the
   break.
-- `index.js`: every group behind one name, `GROUPS`, `parseRef`, `refOf`, `assetAt`, `objectAt` (below).
+- `index.js`: every group behind one name, `GROUPS`, `parseRef`, `refOf`, `readRef`, `assetAt`, `objectAt` (below).
 
 ### One contract: an asset in its parts
 
@@ -102,6 +102,42 @@ version of the host.
 - `bun test src/lib/assets/versions.test.js` holds every group to it: versions in order, dated, every older one kept,
   every one found again by its ref.
 - One ask, one step, one version, one dated note. Never fold two asks into one version.
+
+### Where an asset is kept: by hash in the repo, as recipe entries in avenDB
+
+- **Today, everything by hash.** Each asset, version and variant is a recipe file named by the BLAKE3 hash of its
+  bytes (`recipes.js`), made for a frozen engine (`engines.json`). Its schemas are frozen the same way
+  (`schemas/schemas.json`: `asset.v1.json`, `card.v1.json`); a change to one is a new version beside it. A device loads
+  a build (`<recipe hash>?values`) through one door (`load.js`): its own cache first (`cache.js`, keyed by BLAKE3 of
+  the engine's hash, the recipe's hash and the values; never synced), else the box runs the recipe on its engine. Either
+  way the card is checked against its schema, and our own code rebuilds the data within the box's budgets.
+- **Refs name where an asset is kept.** `plants/fern@2` is the repo's;
+  `vault:<vault id>/plants/fern@2[:variant][?values]` is a vault's, its version always named (`sources/avendb.js`).
+  `readRef` reads both. Every loader (`assetAt`, `objectAt`, `hashOf`, `buildAt`, `loadAsset`, the renderer's `use`)
+  refuses a vault's with one error, "avenDB storage is not switched on" (`repoRef`).
+- **In avenDB, an asset is one `recipe` entry in the Maia City COOP vault** (avenCEO GmbH's), of avenDB's `Recipe, v1`:
+  the code entry base that views and logic share, plus the card (`recipeEntryOf` maps ours onto it). `source` is the
+  recipe file byte for byte (at most 200,000 characters), so its BLAKE3 is the hash the card names and every build is
+  named by. `engine` is `{ host: 'box', version, hash }` from `engines.json`. `manifest.libs` lists the engine modules
+  it requires. `params` has one row for each number parameter; text parameters (a seed, a name) stay in the card and
+  the recipe. `contract` holds the box's time limit and the checks a build passes (`hash`, `card`, `budget`). `card` is
+  the card of a build at its declared values: a plain object to avenDB, checked by our checker against `card.v1.json`,
+  which stays in the repo with the engine. The COOP creates `asset.v1.json` as a `schema` entry of the same bytes
+  (avenDB's own test reads it with its parser), so its blob id is the frozen hash.
+- **Versions, variants and changes are avenDB's.** `@v` is the point in the entry's history whose card says version v.
+  The versions go in in order, each as its recipe file reads in the repo, so a frozen version builds what it always
+  built. A variant is an avenDB variant, an entry linked to the version it came from. A change is a proposal merged
+  under the vault's policy. Only a new engine capability (a kit op, a material preset, a control kind, a budget) still
+  goes in by repo PR.
+- **Nothing built is stored.** No meshes and no pictures go into avenDB. A device reads the recipe entry, synced from
+  the COOP's vault by its keep shares, checks that its source hashes to its card's recipe and that the engine is one it
+  has frozen, and then takes the same path as today: box, checks, our rebuild, its own cache under the same key. A
+  build cached from the repo seed is the same build from the vault, because the bytes are the same.
+- **C10 switches it on** (the code architecture plan): `sources/avendb.js` reads the COOP's recipe entry for a vault
+  ref (as `game/code/sources/avendb.js` will read code entries), and the loaders hand vault refs to it instead of
+  refusing them. Our recipes and the asset schema are copied into the COOP, and the repo copy stays as the offline
+  seed. Its gate is a fresh device that draws every world with the seed removed from the bundle. Until then, nothing
+  writes to avenDB.
 
 ## The workshop: one sub skill per asset group
 
