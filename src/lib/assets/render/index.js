@@ -102,7 +102,8 @@ export function createAssets(o) {
 	/* ── the kinds ── */
 	/** @type {Map<string, any>} */
 	const kinds = new Map();
-	let dirty = true;
+	/** something to draw changed; and what casts shadows did */
+	let dirty = true, shadows = true;
 
 	/**
 	 * A kind: an asset at its version, variant and values, at every level it is drawn at. Asked for again, the same.
@@ -147,7 +148,7 @@ export function createAssets(o) {
 				k.center.copy(L.center);
 				k.thresholds = thresholdsOf(names.length, L.tris, levels);
 				k.ok = true;
-				dirty = true;
+				dirty = shadows = true;
 				return k;
 			},
 			(err) => {
@@ -175,7 +176,7 @@ export function createAssets(o) {
 				// wants it: a copy whose picture is missing draws that whole shape in its place
 				if (last && !k.slot) k.slot = pictures.add(lv.level);
 				lv.state = 'ready';
-				dirty = true;
+				dirty = shadows = true;
 			},
 			(err) => {
 				lv.state = 'failed';
@@ -282,7 +283,7 @@ export function createAssets(o) {
 		set(k, i, at);
 		k.alive[i] = 1;
 		k.was[i] = -1;
-		dirty = true;
+		dirty = shadows = true;
 		return { kind: k, i };
 	}
 
@@ -305,12 +306,12 @@ export function createAssets(o) {
 	/** a copy moved */
 	const move = (copy, at) => {
 		set(copy.kind, copy.i, at);
-		dirty = true;
+		dirty = shadows = true;
 	};
 	/** a copy taken away */
 	const remove = (copy) => {
 		copy.kind.alive[copy.i] = 0;
-		dirty = true;
+		dirty = shadows = true;
 	};
 
 	/* ── each frame ── */
@@ -392,11 +393,16 @@ export function createAssets(o) {
 				ball.radius = k.radius * k.S[i];
 				if (!frustum.intersectsSphere(ball)) {
 					counted.culled++;
+					if (k.was[i] !== -1) (k.was[i] = -1), (shadows = true);
 					continue;
 				}
 				const size = sizeOn(ball.radius, ball.center.distanceTo(eye), tanHalf);
-				if (size < SMALLEST) continue;
+				if (size < SMALLEST) {
+					if (k.was[i] !== -1) (k.was[i] = -1), (shadows = true);
+					continue;
+				}
 				const { level, fade } = choose(size, k.thresholds, k.was[i]);
+				if (level !== k.was[i]) shadows = true;
 				k.was[i] = level;
 				const drawn = draw(k, i, level, 1);
 				// the coarser one fading in under it, unless it already stands in whole
@@ -426,6 +432,9 @@ export function createAssets(o) {
 		counted.pictures = pictures.drawn;
 		counted.tris = tris;
 		counted.calls = calls;
+		// what casts a shadow changed: the shadows drawn again (a world whose sky draws them only when it must)
+		if (shadows) renderer.shadowMap.needsUpdate = true;
+		shadows = false;
 		return true;
 	}
 
@@ -475,7 +484,7 @@ export function createAssets(o) {
 		cut(/** @type {THREE.Plane | null} */ plane) {
 			presets.cut(plane);
 			pictures.cut(plane);
-			dirty = true;
+			dirty = shadows = true;
 		},
 		/** asks again, the next frame, what to draw (after something changed that the renderer cannot see) */
 		touch: () => (dirty = true),

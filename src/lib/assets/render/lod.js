@@ -6,12 +6,15 @@
  * (./impostors.js). Each level is drawn while the thing looks at least as big as its threshold; a coarser one fades in
  * under it (the dither of ./presets.js) over the last stretch before, so when it takes over it is already there.
  *
- * The thresholds are the ones Sandbox 4's forest draws its trees by (src/lib/sandbox-2/interior/flora.js: fine to
- * 16 m, coarse to 40 m, a picture beyond, for a tree 12 m across), as shares of the view, so every asset gets the same.
+ * The thresholds are the ones Sandbox 4's forest draws its trees by (src/lib/sandbox-2/interior/flora.js: its near
+ * shape to 32 m, its middle one to 80 m, a picture beyond, for a tree 12 m across), as shares of the view, so every
+ * asset gets the same; the whole shape, which Sandbox 4 never draws, only when it fills the view. A picture
+ * (128 pixels a side) then never shows bigger than it was taken on a screen 720 pixels high, and little bigger on one
+ * twice that.
  */
 
 /** the sizes on screen down to which each level of a shape is drawn, finest first; smaller than the last, its picture */
-export const LEVELS = [2.4, 1.2, 0.45];
+export const LEVELS = [1.2, 0.28, 0.11];
 /**
  * a shape this heavy (triangles) or more takes the picture at the last threshold; a lighter one keeps its shape until
  * it looks smaller, down to PICTURE (a chair of a thousand triangles costs nothing drawn whole, and looks crisper)
