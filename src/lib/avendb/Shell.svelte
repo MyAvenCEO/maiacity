@@ -15,9 +15,10 @@
 	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
 	theirs that holds the strongest cap over it, whose caps then decide what the page shows and what it may do. At the
 	foot, in the middle above the app's own buttons, what the page is doing, and why not. Marks of the vaults none of
-	theirs holds anything in are faded. Over it all, the consent screen, for every access request a vault of theirs was
-	asked (./AccessRequest.svelte); and in a vault they don't act for, Ask for access, which opens the form that asks it
-	(./Ask.svelte) in a drawer.
+	theirs holds anything in are faded. Over it all, the HITL cards (./Hitl.svelte): the changes waiting for the yes of
+	the vault looked at, each vault in the nav pill with a bubble of how many wait in it; and the consent screen, for
+	every access request a vault of theirs was asked (./AccessRequest.svelte); and in a vault they don't act for, Ask
+	for access, which opens the form that asks it (./Ask.svelte) in a drawer.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
@@ -27,6 +28,7 @@
 	import Ask from './Ask.svelte';
 	import Articles from './Articles.svelte';
 	import Flows from './Flows.svelte';
+	import Hitl from './Hitl.svelte';
 	import Functions from './Functions.svelte';
 	import Database from './Database.svelte';
 	import Icon from './Icon.svelte';
@@ -69,6 +71,8 @@
 	let asking = $state(false);
 	/** on a phone, whether the vault's pages slide in from the left */
 	let pages = $state(false);
+	/** how many changes wait for each vault's yes (./Hitl.svelte), for the bubbles on the vaults in the nav pill */
+	let waiting = $state(/** @type {Record<string, number>} */ ({}));
 
 	/** The vault's pages, in its list: each a group's, by its address, name and icon; on its home, each an app. */
 	const NAV = /** @type {const} */ ([
@@ -162,7 +166,8 @@
 						sub: KINDS[v.kind],
 						text: initials(v),
 						colour: `hsl(${hue(v.id)} 38% 42%)`,
-						shape: v.kind
+						shape: v.kind,
+						badge: waiting[v.id] ?? 0
 					}));
 			},
 			get current() {
@@ -336,6 +341,8 @@
 		{#if doing}<p class="toast" role="status">{doing}…</p>{/if}
 		{#if error}<p class="toast bad" role="alert">{error}</p>{/if}
 	</div>
+
+	<Hitl {world} {api} vault={context} {busy} onopen={open} oncounts={(c) => (waiting = c)} />
 
 	{#if adding}<NewVaults {world} {api} {busy} onclose={() => (adding = false)} />{/if}
 	{#if asking && !here.via}

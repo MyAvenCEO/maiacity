@@ -26,6 +26,10 @@
 	/** whether the page's context menu (avenDB's vaults) is open, apart from the You menu */
 	let ctx = $state(false);
 	const here = $derived(pill.context ? (pill.context.list.find((a) => a.id === pill.context?.current) ?? null) : null);
+	/** what waits in the context's other entries (avenDB: the changes waiting for each other vault's yes) */
+	const elsewhere = $derived(
+		pill.context?.list.reduce((n, a) => n + (a.id === pill.context?.current ? 0 : (a.badge ?? 0)), 0) ?? 0
+	);
 	const path = $derived(page.url.pathname);
 	const up = $derived(upFrom(path.slice(base.length)));
 	const initials = $derived(founder.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase());
@@ -63,6 +67,7 @@
 	{#if pill.context && here}
 		<button class="item" class:on={ctx} onclick={() => ((ctx = !ctx), (open = false))} aria-expanded={ctx} aria-haspopup="true" title="{pill.context.title}: {here.label}">
 			<span class="avatar {here.shape ?? 'human'}" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{here.text}</span><span class="ctx-name">{here.label}</span>
+			{#if elsewhere}<span class="bubble" title="{elsewhere} waiting in your other vaults">{elsewhere}</span>{/if}
 		</button>
 	{/if}
 	{#if ctx && pill.context}
@@ -72,6 +77,7 @@
 				<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), (ctx = false))}>
 					<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
 					<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
+					{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
 					{#if a.id === pill.context.current}<span class="tick" aria-hidden="true">✓</span>{/if}
 				</button>
 			{/each}
@@ -90,6 +96,7 @@
 					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.accounts.current} onclick={() => (pill.accounts?.pick(a.id), (open = false))}>
 						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
 						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
+					{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
 						{#if a.id === pill.accounts.current}<span class="tick" aria-hidden="true">✓</span>{/if}
 					</button>
 				{/each}
@@ -128,6 +135,7 @@
 	.item {
 		display: flex;
 		flex: 0 1 auto;
+		position: relative;
 		flex-direction: column;
 		align-items: center;
 		gap: 1px;
@@ -203,6 +211,28 @@
 		border-radius: 16px;
 		background: var(--paper);
 		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+	}
+
+	/* how many wait in an entry of a menu, or in the context's other entries */
+	.bubble {
+		display: inline-grid;
+		place-items: center;
+		min-width: 1.1rem;
+		height: 1.1rem;
+		padding: 0 0.3rem;
+		box-sizing: border-box;
+		border-radius: 999px;
+		background: #c2412d;
+		color: #fff;
+		font-size: 0.68rem;
+		font-weight: 650;
+		line-height: 1;
+	}
+
+	.item .bubble {
+		position: absolute;
+		top: 0.15rem;
+		right: 0.35rem;
 	}
 
 	/* the context's name under its mark, cut to the item's width */

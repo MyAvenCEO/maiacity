@@ -712,6 +712,10 @@
 			})
 	};
 
+	// on a dev server only: the walks (scripts/avendb-hitl.mjs) act as an aven through the page's own api, as its agent
+	// device would over MCP
+	if (import.meta.env.DEV) /** @type {any} */ (globalThis).avendb = { api, world: () => world };
+
 	const forget = () => {
 		const mine = world?.vaults.find((v) => v.id === world?.mine);
 		const ask =
