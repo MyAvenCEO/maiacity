@@ -16,6 +16,12 @@
 //! While the device starts (`found`, `link`, `open`), the page asks `steps` for each step of its start so far,
 //! with how long it took (`avendb_browser::steps_json`), and shows them as they happen.
 //!
+//! The app may host the device in its own process instead (`host`): the same calls, each answered as its line would
+//! be but with no id around it (`Host::call`), the sheets to show as they come (`Lines`), each answered as its line
+//! would be (`Host::answer`), and the open device's node at hand (`Host::node`), so the app's own Rust reads a file's
+//! bytes by range and posts its jobs with no JSON and no base64. `serve` is that host behind lines on a pipe: the
+//! sidecar and the app's own process run the device one way.
+//!
 //! The passkey's ceremonies run in the sign-in sheet as the page's do (vault/app/src/passkey.rs,
 //! src/routes/app/avendb/sheet/): for each, the device makes an X-Wing key of its own (`keys::Secret`), names it in the
 //! sheet's URL, and opens what the sheet's page sealed to it (`keys::open_once`), so nothing crosses the app open.
@@ -51,7 +57,7 @@ use avendb::policy::Kind;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
 use avendb_browser::{Device, Fresh, Meta, Start, Unlock, steps_json};
-use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Offer, Place, Progress, Shelf, Step, disk};
+use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Node, Offer, Place, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -79,21 +85,72 @@ pub struct Config {
 
 /// Runs the device for the app until `input` ends, the app gone: each line of `input` a call or a sheet's answer, each
 /// line of `output` an answer or a sheet to show. Then it closes the device. Fails if the folder's shelf can't be
-/// opened.
+/// opened. It is the host the app may run in its own process (`host`), behind lines: a call's answer is its host's
+/// (`Host::call`) with the call's id first, and a sheet is a line as it comes (`Lines`).
 pub async fn serve(
     config: Config,
     input: impl AsyncRead + Unpin,
     mut output: impl AsyncWrite + Unpin + Send + 'static,
 ) -> Result<()> {
-    let (out, mut outgoing) = mpsc::unbounded_channel::<String>();
+    let (host, mut asks) = host(config)?;
+    let (answers, mut answered) = mpsc::unbounded_channel::<Value>();
     tokio::spawn(async move {
-        while let Some(mut line) = outgoing.recv().await {
-            line.push('\n');
+        loop {
+            // what the device asks first, so that a sheet a call asked for goes out before the call's answer
+            let line = tokio::select! {
+                biased;
+                Some(line) = asks.recv() => line,
+                Some(line) = answered.recv() => line,
+                else => break,
+            };
+            let line = format!("{line}\n");
             if output.write_all(line.as_bytes()).await.is_err() || output.flush().await.is_err() {
                 break;
             }
         }
     });
+    let mut lines = BufReader::new(input).lines();
+    while let Some(line) = lines.next_line().await? {
+        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+            tracing::warn!("a line from the app that isn't JSON");
+            continue;
+        };
+        if message.get("sheet").is_some_and(Value::is_u64) {
+            host.answer(&message);
+        } else if let Some(id) = message.get("id").and_then(Value::as_u64) {
+            let call = message.get("call").and_then(Value::as_str).unwrap_or_default().to_string();
+            let args = message.get("args").and_then(Value::as_array).cloned().unwrap_or_default();
+            let (host, answers) = (host.clone(), answers.clone());
+            tokio::spawn(async move {
+                let mut line = serde_json::Map::from_iter([("id".to_string(), Value::from(id))]);
+                if let Value::Object(answer) = host.call(&call, args).await {
+                    line.extend(answer);
+                }
+                let _ = answers.send(Value::Object(line));
+            });
+        }
+    }
+    host.close().await;
+    Ok(())
+}
+
+/// The device, hosted in the app's own process, on the shelf in use in `config`'s folder, as `serve` runs it behind
+/// lines: the host the app calls (`Host`), and the lines the device sends the app unprompted (`Lines`). Fails if the
+/// folder's shelf can't be opened, or if it isn't called on a tokio runtime.
+///
+/// It runs on the tokio runtime it is called on. avendb-device's own `main` sets its process up for it; an app that
+/// hosts it in its own:
+///
+/// - calls it on a runtime whose threads have 8 MiB stacks, as `main` builds its own: a Classic McEliece key pair's
+///   public matrix, over a megabyte, is made on the stack. Every call runs on that runtime (`Host::call`), whichever
+///   runtime asks;
+/// - installs its own default TLS provider (rustls's `CryptoProvider::install_default`) before anything of its own
+///   speaks TLS, if anything does: the host installs none, where `main` installs avenDB's, and needs none, as avenDB's
+///   endpoint names its own, X25519MLKEM768 only (`avendb_net::pq_provider`);
+/// - starts no second tracing subscriber for it: the device logs through `tracing`, into the app's own.
+pub fn host(config: Config) -> Result<(Host, Lines)> {
+    let runtime = tokio::runtime::Handle::try_current().context("avenDB's device is hosted on a tokio runtime")?;
+    let (out, asks) = mpsc::unbounded_channel();
     let shelf = Mutex::new(disk::open(&config.dir)?);
     let service = Arc::new(Service {
         config,
@@ -107,22 +164,73 @@ pub async fn serve(
         files: Mutex::default(),
         drives: drive::Drives::default(),
     });
-    let mut lines = BufReader::new(input).lines();
-    while let Some(line) = lines.next_line().await? {
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
-            tracing::warn!("a line from the app that isn't JSON");
-            continue;
-        };
-        if let Some(n) = message.get("sheet").and_then(Value::as_u64) {
-            service.answered(n, &message);
-        } else if let Some(id) = message.get("id").and_then(Value::as_u64) {
-            let call = message.get("call").and_then(Value::as_str).unwrap_or_default().to_string();
-            let args = message.get("args").and_then(Value::as_array).cloned().unwrap_or_default();
-            tokio::spawn(service.clone().run(id, call, args));
+    Ok((Host { service, runtime }, asks))
+}
+
+/// The lines the device sends the app unprompted (`host`), in order, each as `serve` writes it: for now, each a sheet
+/// to show, `{"sheet": n, "url": url}`, for the app to answer (`Host::answer`). They end once the host, every clone of
+/// it, and every call under way are gone.
+pub type Lines = mpsc::UnboundedReceiver<Value>;
+
+/// avenDB's device hosted in the app's own process (`host`): cheap to clone, each clone the same device.
+#[derive(Clone)]
+pub struct Host {
+    service: Arc<Service>,
+    /// The runtime it was hosted on, where every call runs.
+    runtime: tokio::runtime::Handle,
+}
+
+impl Host {
+    /// Answers `call` with `args`, as `serve` answers the line `{"id", "call", "args"}`: its answer, that line's answer
+    /// with no `id`, `{"ok": value}`, or `{"error": why}`. It runs in a task of its own on the host's runtime, so that
+    /// even a panic gets its answer, and goes on if the caller stops waiting for it. The sheets its ceremonies ask for
+    /// meanwhile come on the host's `Lines`, and it waits until each is answered (`answer`).
+    pub async fn call(&self, call: &str, args: Vec<Value>) -> Value {
+        let (service, call) = (self.service.clone(), call.to_string());
+        let done = self.runtime.spawn(async move { service.call(&call, Args(&args)).await }).await;
+        match done {
+            Ok(Ok(value)) => json!({ "ok": value }),
+            Ok(Err(e)) => json!({ "error": format!("{e:#}") }),
+            Err(e) => json!({ "error": format!("the device failed: {e}") }),
         }
     }
-    service.close().await;
-    Ok(())
+
+    /// The app's answer to a sheet, as `serve` reads its line: `{"sheet": n, "back": url}`, the URL the sheet's page
+    /// sent back, or `{"sheet": n, "error": why}`. One that names no sheet awaited is let go.
+    pub fn answer(&self, message: &Value) {
+        if let Some(n) = message.get("sheet").and_then(Value::as_u64) {
+            self.service.answered(n, message);
+        }
+    }
+
+    /// The open device's node, for the app's own Rust to read a file's bytes by range (`Node::read_file`) and post its
+    /// jobs (`Node::jobs`) with no JSON between: none until a call opens the device (`found`, `link`, `open`), and none
+    /// once it is forgotten or closed.
+    pub fn node(&self) -> Option<OpenNode> {
+        self.service.device.lock().expect("the device").clone().map(OpenNode)
+    }
+
+    /// What `serve` does as its input ends, the app gone: the drives it hosts stop, the device closes, its shelf
+    /// holding what it holds, and every sheet still awaited ends. The app closes it before it quits.
+    pub async fn close(&self) {
+        let service = self.service.clone();
+        if let Err(e) = self.runtime.spawn(async move { service.close().await }).await {
+            tracing::warn!("closing the device failed: {e}");
+        }
+    }
+}
+
+/// The node of the device open in a host (`Host::node`): it derefs to the node (`avendb_net::Node`), and keeps the
+/// device it is the node of while it is held. Once the host closes the device, or forgets it, the node is shut down.
+#[derive(Clone)]
+pub struct OpenNode(Arc<Device>);
+
+impl std::ops::Deref for OpenNode {
+    type Target = Node;
+
+    fn deref(&self) -> &Node {
+        self.0.node()
+    }
 }
 
 /// The device and what it waits on.
@@ -130,8 +238,8 @@ struct Service {
     config: Config,
     /// The shelf in use in its folder.
     shelf: Mutex<Shelf>,
-    /// Lines to the app, in order.
-    out: mpsc::UnboundedSender<String>,
+    /// The lines the device sends the app unprompted, in order (`Lines`).
+    out: mpsc::UnboundedSender<Value>,
     /// The sheets the app shows, each awaited by the ceremony that asked for it.
     sheets: Mutex<HashMap<u64, oneshot::Sender<Result<String, String>>>>,
     next: AtomicU64,
@@ -171,20 +279,9 @@ const DONE: u8 = u8::MAX;
 type Pass = std::pin::Pin<Box<dyn n0_future::Stream<Item = io::Result<Bytes>> + Send>>;
 
 impl Service {
-    /// Answers call `id`, `call` with `args`, in a task of its own, so that even a panic gets its answer.
-    async fn run(self: Arc<Self>, id: u64, call: String, args: Vec<Value>) {
-        let service = self.clone();
-        let done = tokio::spawn(async move { service.call(&call, Args(&args)).await }).await;
-        let answer = match done {
-            Ok(Ok(value)) => json!({ "id": id, "ok": value }),
-            Ok(Err(e)) => json!({ "id": id, "error": format!("{e:#}") }),
-            Err(e) => json!({ "id": id, "error": format!("the device failed: {e}") }),
-        };
-        self.send(answer);
-    }
-
+    /// Sends the app line `message` unprompted (`Lines`).
     fn send(&self, message: Value) {
-        let _ = self.out.send(message.to_string());
+        let _ = self.out.send(message);
     }
 
     async fn call(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {

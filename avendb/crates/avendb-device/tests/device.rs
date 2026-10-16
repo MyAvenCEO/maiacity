@@ -7,7 +7,9 @@
 //! shelf aside when she forgets it there, deleting nothing. Every read and change is an op (`run`, V2), what her
 //! vault's owners approve signed in a sheet; a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`),
 //! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and clears what an
-//! earlier avenDB kept in the folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
+//! earlier avenDB kept in the folder. The app may host the same device in its own process (`host`): the same calls and
+//! sheets with no lines between, and the open device's node at hand, which reads her film back by range itself; closed,
+//! it opens again from its folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
 //! for access; she denies, it asks again, and the page's consent screen adds both under her one aven avenEve, founded
 //! with the first, a device vault and a sheet each, with the shares the aven passes on to them; the same harness on her
 //! other Mac joins its agent's device vault there. An agent saves a file of her Mac by its path as its shares allow,
@@ -35,9 +37,10 @@ use avendb::id::{EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Revoking, Sharing};
+use avendb::sealed::FileRoot;
 use avendb::slice::Selector;
 use avendb::sign::{Ceremony, DeviceKey, PRF_SALT, Passkey, device_salt};
-use avendb_device::{Config, SHEET, agent, drive, serve};
+use avendb_device::{Config, Host, SHEET, agent, drive, host, serve};
 use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, Node, Options, disk};
 use avendb_server::Relay;
@@ -116,40 +119,14 @@ impl App {
         to.write_all(format!("{message}\n").as_bytes()).await.expect("the device's stdin");
     }
 
-    /// Sheet `n` at `url`, as maia.city's sheet page runs it: the ceremony the fragment asks for, sealed to its key and
-    /// bound to its challenge, sent back to the app's scheme; or the person closed it.
+    /// Sheet `n` at `url`, as maia.city's sheet page runs it (`sheet_page`); or the person closed it.
     fn sheet(&mut self, n: u64, url: &str) -> Value {
-        let fragment = url.strip_prefix(SHEET).and_then(|u| u.strip_prefix('#')).expect("maia.city's sheet page");
-        // every value is base64url or a word, which a URL holds as it is
-        let asked: HashMap<&str, &str> = fragment.split('&').map(|p| p.split_once('=').expect("a pair")).collect();
-        let bytes = |k: &str| BASE64URL_NOPAD.decode(asked[k].as_bytes()).expect("base64url");
+        let asked = asked_in(url);
         self.asked.push(asked["what"].to_string());
         if std::mem::take(&mut self.cancel) {
             return json!({ "sheet": n, "error": "You closed the sign-in sheet." });
         }
-        assert_eq!(bytes("salt"), PRF_SALT, "the app's PRF salt");
-        assert!(asked.get("id").is_none_or(|id| *id == CREDENTIAL), "her passkey's credential, if any");
-        let challenge: [u8; 32] = bytes("challenge").try_into().expect("a challenge of 32 bytes");
-        let Ceremony { assertion, .. } = self.passkey.ceremony(challenge);
-        let prf = self.passkey.prf(PRF_SALT);
-        let device = asked.contains_key("device").then(|| self.passkey.prf(&bytes("device")));
-        let parts: [&[u8]; 6] = [
-            CREDENTIAL.as_bytes(),
-            &assertion.authenticator_data,
-            &assertion.client_data_json,
-            &assertion.signature,
-            &prf[..],
-            device.as_ref().map_or(&[][..], |d| &d[..]),
-        ];
-        let mut plain = vec![];
-        for part in parts {
-            plain.extend_from_slice(&u32::try_from(part.len()).expect("a short part").to_le_bytes());
-            plain.extend_from_slice(part);
-        }
-        let info = [&b"avenDB sign-in sheet "[..], &challenge].concat();
-        let mut rng = SeededRng::new("the test's sign-in sheet", &challenge);
-        let sealed = keys::seal_once(&bytes("key"), &plain, &info, &mut rng).expect("an X-Wing key");
-        json!({ "sheet": n, "back": format!("city.maia.studio://avendb#sealed={}", BASE64URL_NOPAD.encode(&sealed)) })
+        sheet_page(&mut self.passkey, n, &asked)
     }
 
     /// What the sheets since the last ask were for.
@@ -163,6 +140,91 @@ impl App {
         to.shutdown().await.expect("the device's stdin ends");
         let done = tokio::time::timeout(Duration::from_secs(60), &mut self.serving).await;
         done.expect("the device stops within 60 s").expect("the device's task").expect("the device stops cleanly");
+    }
+}
+
+/// What the sign-in sheet at `url` asks, by name: the fragment of maia.city's sheet page.
+fn asked_in(url: &str) -> HashMap<&str, &str> {
+    let fragment = url.strip_prefix(SHEET).and_then(|u| u.strip_prefix('#')).expect("maia.city's sheet page");
+    // every value is base64url or a word, which a URL holds as it is
+    fragment.split('&').map(|p| p.split_once('=').expect("a pair")).collect()
+}
+
+/// Sheet `n`'s answer, as maia.city's sheet page runs it with `passkey`: the ceremony `asked` asks for, sealed to its
+/// key and bound to its challenge, sent back to the app's scheme.
+fn sheet_page(passkey: &mut Passkey, n: u64, asked: &HashMap<&str, &str>) -> Value {
+    let bytes = |k: &str| BASE64URL_NOPAD.decode(asked[k].as_bytes()).expect("base64url");
+    assert_eq!(bytes("salt"), PRF_SALT, "the app's PRF salt");
+    assert!(asked.get("id").is_none_or(|id| *id == CREDENTIAL), "her passkey's credential, if any");
+    let challenge: [u8; 32] = bytes("challenge").try_into().expect("a challenge of 32 bytes");
+    let Ceremony { assertion, .. } = passkey.ceremony(challenge);
+    let prf = passkey.prf(PRF_SALT);
+    let device = asked.contains_key("device").then(|| passkey.prf(&bytes("device")));
+    let parts: [&[u8]; 6] = [
+        CREDENTIAL.as_bytes(),
+        &assertion.authenticator_data,
+        &assertion.client_data_json,
+        &assertion.signature,
+        &prf[..],
+        device.as_ref().map_or(&[][..], |d| &d[..]),
+    ];
+    let mut plain = vec![];
+    for part in parts {
+        plain.extend_from_slice(&u32::try_from(part.len()).expect("a short part").to_le_bytes());
+        plain.extend_from_slice(part);
+    }
+    let info = [&b"avenDB sign-in sheet "[..], &challenge].concat();
+    let mut rng = SeededRng::new("the test's sign-in sheet", &challenge);
+    let sealed = keys::seal_once(&bytes("key"), &plain, &info, &mut rng).expect("an X-Wing key");
+    json!({ "sheet": n, "back": format!("city.maia.studio://avendb#sealed={}", BASE64URL_NOPAD.encode(&sealed)) })
+}
+
+/// The Mac app with avenDB's device in its own process (`avendb_device::host`), in place of the sidecar: each call
+/// straight to the host, and each sheet the device asks for meanwhile shown, the person's passkey answering in it, its
+/// answer handed to the host (`Host::answer`).
+struct InApp {
+    host: Host,
+    sheets: avendb_device::Lines,
+    passkey: Passkey,
+    /// What each sheet was for, since the test last asked.
+    asked: Vec<String>,
+    /// Whether the person closes the next sheet instead of using their passkey.
+    cancel: bool,
+}
+
+impl InApp {
+    /// The app hosts the device on folder `dir`, Eve's passkey answering its sheets.
+    fn start(dir: &Path, passkey: Passkey) -> InApp {
+        let (host, sheets) = host(Config { dir: dir.to_path_buf(), direct: true, volumes: None }).expect("hosted");
+        InApp { host, sheets, passkey, asked: vec![], cancel: false }
+    }
+
+    /// Call `call` with `args` on the device, showing each sheet it asks for meanwhile: its answer, `{"ok": value}` or
+    /// `{"error": why}`.
+    async fn call(&mut self, call: &str, args: Value) -> Value {
+        let (host, call, args) = (self.host.clone(), call.to_string(), args.as_array().cloned().expect("its args"));
+        let mut answer = tokio::spawn(async move { host.call(&call, args).await });
+        let end = Instant::now() + Duration::from_secs(120);
+        loop {
+            let sheet = tokio::select! {
+                done = &mut answer => return done.expect("the call's task"),
+                sheet = self.sheets.recv() => sheet.expect("the device's sheets"),
+                () = tokio::time::sleep_until(end.into()) => panic!("an answer within 120 s"),
+            };
+            let n = sheet["sheet"].as_u64().expect("a sheet, all the device sends unprompted");
+            let asked = asked_in(sheet["url"].as_str().expect("the sheet's URL"));
+            self.asked.push(asked["what"].to_string());
+            let back = match std::mem::take(&mut self.cancel) {
+                true => json!({ "sheet": n, "error": "You closed the sign-in sheet." }),
+                false => sheet_page(&mut self.passkey, n, &asked),
+            };
+            self.host.answer(&back);
+        }
+    }
+
+    /// What the sheets since the last ask were for.
+    fn asked(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.asked)
     }
 }
 
@@ -502,6 +564,76 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_av
     }
     let left: Vec<_> = std::fs::read_dir(&dir).expect("its folder").map(|e| e.expect("one").file_name()).collect();
     assert_eq!(left.len(), 2, "its two shelves alone: {left:?}");
+    server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_mac_app_hosts_the_device_in_its_own_process_and_reads_a_file_from_its_node() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("hosted");
+    let dir = folder.0.clone();
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    // nothing open yet: no node, and each call answers as its line would, with no id
+    assert!(app.host.node().is_none(), "no node before the device opens");
+    let nothing = json!({ "ok": { "meta": null, "open": false, "device": null } });
+    assert_eq!(app.call("status", json!([])).await, nothing);
+    assert_eq!(app.call("open", json!([])).await, json!({ "error": "this Mac holds no avenDB account yet" }));
+    // she closes the first sheet, and the call says so
+    app.cancel = true;
+    let offer = server.offer().to_text();
+    let found = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await;
+    assert_eq!(found, json!({ "error": "You closed the sign-in sheet." }));
+    assert_eq!(app.asked(), ["unlock"]);
+    // she founds her vault in two sheets, each answered through the host; then its node is at hand, the device's own
+    let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await["ok"].clone();
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let node = app.host.node().expect("its node, once open");
+    assert_eq!(json!(hex(&node.device().0)), device["id"], "the device the call opened");
+    // an op, and a change her vault's owners approve, in a sheet answered through the host too
+    let vault = app.call("run", json!([{ "op": "world" }])).await["ok"]["ok"]["mine"].clone();
+    let aven = app.call("run", json!([{ "op": "found", "kind": "aven", "name": "avenEVE" }])).await;
+    assert_eq!(aven["ok"]["ok"]["vaults"].as_array().map(Vec::len), Some(1), "a new vault: {aven}");
+    assert_eq!(app.asked(), ["approve"]);
+    // a film, a chunk at a time in base64, as native.js hands it over
+    let film: Vec<u8> = (0..300_000u32).map(|i| (i * 13 % 251) as u8).collect();
+    let put = json!({ "op": "put_file", "vault": vault, "name": "Film.mp4", "media": "video/mp4", "tags": [],
+        "len": film.len() });
+    let n = app.call("fileStart", json!([put])).await["ok"].clone();
+    loop {
+        let mut at = 0;
+        for chunk in film.chunks(100_000) {
+            assert_eq!(app.call("fileChunk", json!([n, at, BASE64.encode(chunk)])).await, json!({ "ok": null }));
+            at += chunk.len();
+        }
+        if app.call("fileAgain", json!([n])).await != json!({ "ok": true }) {
+            break;
+        }
+    }
+    let made = app.call("fileEnd", json!([n])).await["ok"]["ok"].clone();
+    // its bytes read back by range from the node itself, with no JSON and no base64 between
+    let root = FileRoot { hash: id(&made["root"]), size: made["size"].as_u64().expect("its sealed size") };
+    assert_eq!(node.read_file(root, 1_000..250_000).await.expect("a range"), film[1_000..250_000]);
+    assert_eq!(node.read_file(root, 0..film.len() as u64).await.expect("all of it"), film);
+    assert!(node.jobs().to_json().is_object(), "its jobs at hand too");
+    assert_eq!(app.call("nope", json!([])).await, json!({ "error": "no call \"nope\"" }));
+    app.host.answer(&json!({ "sheet": 999, "back": "city.maia.studio://avendb#sealed=x" }));
+    assert!(app.asked().is_empty(), "no other sheet");
+    // the app closes it as it quits: the host holds no node, and its sheets end once it is gone
+    app.host.close().await;
+    assert!(app.host.node().is_none(), "no node once closed");
+    drop(node);
+    let InApp { host, mut sheets, .. } = app;
+    drop(host);
+    let ended = tokio::time::timeout(Duration::from_secs(60), sheets.recv()).await;
+    assert_eq!(ended.expect("within 60 s"), None, "no line more");
+    // hosted again, it opens from its folder in the unlock's sheet alone, the same device, and reads the film it kept
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    let opened = app.call("open", json!([])).await["ok"].clone();
+    assert_eq!((&opened["id"], app.asked()), (&device["id"], vec!["unlock".to_string()]), "the same device");
+    let node = app.host.node().expect("its node");
+    assert_eq!(node.read_file(root, 0..10).await.expect("its first bytes"), film[..10], "kept on its shelf");
+    drop(node);
+    app.host.close().await;
     server.shutdown().await.expect("the server's node stops");
 }
 
