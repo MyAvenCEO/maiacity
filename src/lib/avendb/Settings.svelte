@@ -310,6 +310,21 @@
 	};
 </script>
 
+<!-- what a device keeps, one switch: the chosen half filled -->
+{#snippet keeps(/** @type {any} */ d)}
+	<span class="keeps" role="group" aria-label="What it keeps">
+		{#each [['full', 'Full copy'], ['light', 'Light']] as [copy, label] (copy)}
+			{@const chosen = (d.copy === 'full') === (copy === 'full')}
+			<button
+				class:chosen
+				aria-pressed={chosen}
+				disabled={busy || !lets('copy') || d.copy === copy}
+				onclick={() => keepCopy(d, copy === 'full')}>{label}</button
+			>
+		{/each}
+	</span>
+{/snippet}
+
 {#if tab === 'about'}
 	<div class="cards">
 		<article class="card">
@@ -496,7 +511,7 @@
 			{/if}
 			<ul class="list">
 				{#each v.devices as d (d.id)}
-					<li>
+					<li class="device">
 						{#if d.me && renaming !== null}
 							<input class="field" bind:value={renaming} aria-label={`${Here}'s name`} />
 							<button
@@ -508,36 +523,26 @@
 							</button>
 							<button class="btn quiet" onclick={() => (renaming = null)}>Cancel</button>
 						{:else}
-							<b>{d.me ? (d.name ?? thisName) : deviceName(d.id)}</b>
-							{#if d.me}
-								<span class="chip accent">{here}</span>
-								<button class="btn quiet" disabled={busy} onclick={() => (renaming = d.name ?? thisName)}>Rename</button>
-							{:else}
-								{#if drivesById.has(d.id)}<span class="chip">Drive</span>{/if}
-								<span class="soft mono">{short(d.id)}</span>
-								{#if removable(d.id)}
-									<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(d.id, deviceName(d.id))}
-										>Remove</button
-									>
-								{/if}
-							{/if}
-							{#if vault === world.mine}
-								<span class="copy" role="group" aria-label="What it keeps">
-									<button
-										class="btn quiet"
-										class:on={d.copy === 'full'}
-										aria-pressed={d.copy === 'full'}
-										disabled={busy || !lets('copy') || d.copy === 'full'}
-										onclick={() => keepCopy(d, true)}>Full copy</button
-									>
-									<button
-										class="btn quiet"
-										class:on={d.copy !== 'full'}
-										aria-pressed={d.copy !== 'full'}
-										disabled={busy || !lets('copy') || d.copy === 'light'}
-										onclick={() => keepCopy(d, false)}>Light</button
-									>
+							<span class="who">
+								<b>{d.me ? (d.name ?? thisName) : deviceName(d.id)}</b>
+								<span class="meta">
+									{#if d.me}
+										<span class="chip accent">{here}</span>
+									{:else}
+										{#if drivesById.has(d.id)}<span class="chip">Drive</span>{/if}
+										<span class="soft mono">{short(d.id)}</span>
+									{/if}
 								</span>
+							</span>
+							{#if vault === world.mine}
+								{@render keeps(d)}
+							{/if}
+							{#if d.me}
+								<button class="btn quiet" disabled={busy} onclick={() => (renaming = d.name ?? thisName)}>Rename</button>
+							{:else if removable(d.id)}
+								<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(d.id, deviceName(d.id))}
+									>Remove</button
+								>
 							{/if}
 						{/if}
 					</li>
@@ -563,33 +568,19 @@
 					{#each drives.drives as x (x.device)}
 						{@const d = v.devices.find((y) => y.id === x.device)}
 						{@const name = d?.name ?? x.name ?? 'A drive'}
-						<li>
-							<span class="key">💽</span>
-							<b>{name}</b>
-							{#if x.plugged}
-								<span class="chip ok">Plugged in</span>
-							{:else}
-								<span class="chip">Unplugged</span>
-								<span class="soft">{x.checked == null ? 'not checked yet' : `checked ${ago(x.checked)}`}</span>
-							{/if}
-							{#if d}
-								<span class="copy" role="group" aria-label="What it keeps">
-									<button
-										class="btn quiet"
-										class:on={d.copy === 'full'}
-										aria-pressed={d.copy === 'full'}
-										disabled={busy || !lets('copy') || d.copy === 'full'}
-										onclick={() => keepCopy(d, true)}>Full copy</button
-									>
-									<button
-										class="btn quiet"
-										class:on={d.copy !== 'full'}
-										aria-pressed={d.copy !== 'full'}
-										disabled={busy || !lets('copy') || d.copy === 'light'}
-										onclick={() => keepCopy(d, false)}>Light</button
-									>
+						<li class="device">
+							<span class="who">
+								<b>💽 {name}</b>
+								<span class="meta">
+									{#if x.plugged}
+										<span class="chip ok">Plugged in</span>
+									{:else}
+										<span class="chip">Unplugged</span>
+										<span class="soft">{x.checked == null ? 'not checked yet' : `checked ${ago(x.checked)}`}</span>
+									{/if}
 								</span>
-							{/if}
+							</span>
+							{#if d}{@render keeps(d)}{/if}
 							{#if x.plugged && x.volume}
 								<button class="btn quiet" disabled={busy} onclick={() => api.ejectDrive(x.volume, name)}>Eject</button>
 							{/if}
@@ -972,23 +963,78 @@
 		margin: 0 0 0.6rem;
 	}
 
-	.copy {
+	/* a device on one row: who it is, what it keeps, what to do with it */
+	.list li.device {
+		flex-wrap: nowrap;
+	}
+
+	/* the name, and under it what tells it apart */
+	.who {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+
+	.who b {
+		overflow-wrap: anywhere;
+	}
+
+	.meta {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.8rem;
+		white-space: nowrap;
+	}
+
+	.meta:empty {
+		display: none;
+	}
+
+	/* what a device keeps: a full copy or a light one, the chosen half filled */
+	.keeps {
 		display: inline-flex;
-		margin-left: auto;
+		flex: none;
+		padding: 2px;
 		border: 1px solid var(--edge);
 		border-radius: 999px;
-		overflow: hidden;
+		background: #f4f1eb;
 	}
 
-	.copy .btn {
-		border-radius: 0;
-		font-size: 0.82rem;
+	.keeps button {
+		padding: 0.22rem 0.7rem;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		font: inherit;
+		font-size: 0.78rem;
+		font-weight: 500;
+		color: var(--soft);
+		white-space: nowrap;
+		cursor: pointer;
 	}
 
-	.copy .btn.on {
+	.keeps button:hover:not(:disabled) {
+		color: var(--accent);
+	}
+
+	.keeps button.chosen {
 		background: var(--accent);
 		color: #fff;
-		opacity: 1;
+		cursor: default;
+	}
+
+	.keeps button:disabled:not(.chosen) {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	@media (max-width: 520px) {
+		.list li.device {
+			flex-wrap: wrap;
+		}
 	}
 
 	.mine {
