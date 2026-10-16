@@ -40,13 +40,14 @@ export const plain = (md) =>
 
 const COLORS = ['#c8744f', '#2f6fbf', '#1f7a52', '#8a5fb0', '#6b8a3a', '#b0703a', '#3b7d8c'];
 
-// the voice of avenDB vault `vault`, named `name` (by its profile, or none) and of kind `kind`
+// the voice of avenDB vault `vault`, named `name` (by its profile, or none) and of kind `kind`: an aven's, or a device
+// vault's, an agent's or a server's, is no person's but AI's
 export function voiceOf(vault, name, kind) {
 	const called = name || `Vault ${vault.slice(0, 4)}`;
 	const words = called.split(/\s+/).filter(Boolean);
 	const initials = (words.length > 1 ? words[0][0] + words[1][0] : called.slice(0, 2)).toUpperCase();
 	const color = COLORS[parseInt(vault.slice(0, 2), 16) % COLORS.length];
-	return { name: called, handle: slug(called), initials, color, ai: kind === 'aven', coop: kind === 'coop', avendb: true };
+	return { name: called, handle: slug(called), initials, color, ai: kind === 'aven' || kind === 'device', coop: kind === 'coop', avendb: true };
 }
 
 // The cover of a post's article text `md`, as avenDB lays it out, where everyone may read it, among `pictures`: its
