@@ -313,6 +313,10 @@ export function createAssets(o) {
 	 */
 	async function compiled(lv, studio) {
 		const scene = worldOf();
+		// three draws a soft (PCF-soft) shadow as PCF from its first shadow pass on, and a shader made before that pass
+		// would read the shadow as a plain texture: WebGL then refuses every draw of it (a world's near plants left out
+		// until its lights next change). Made as it will be drawn.
+		if (renderer.shadowMap.type === THREE.PCFSoftShadowMap) renderer.shadowMap.type = THREE.PCFShadowMap;
 		compiling++;
 		try {
 			if (scene) await Promise.all(lv.meshes.map(({ mesh }) => renderer.compileAsync(mesh, camera, scene)));
