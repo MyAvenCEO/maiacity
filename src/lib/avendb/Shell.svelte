@@ -18,8 +18,9 @@
 	foot, in the middle above the app's own buttons, what the page is doing, and why not. Marks of the vaults none of
 	theirs holds anything in are faded. Over it all, the HITL cards (./Hitl.svelte): the changes waiting for the yes of
 	the vault looked at, each vault in the nav pill with a bubble of how many wait in it; and the consent screen, for
-	every access request a vault of theirs was asked (./AccessRequest.svelte); and in a vault they don't act for, Ask
-	for access, which opens the form that asks it (./Ask.svelte) in a drawer.
+	every access request a vault of theirs was asked, and every owner add one of theirs asked for that waits on their
+	passkey to finish it (./AccessRequest.svelte); and in a vault they don't act for, Ask for access, which opens the
+	form that asks it (./Ask.svelte) in a drawer.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
@@ -289,7 +290,7 @@
 				<p class="soft">{owners(here)}</p>
 				{#if !here.via}<button class="btn" onclick={() => (asking = true)}>Ask for access</button>{/if}
 			</header>
-			<AccessRequest {world} {requests} asked={asks.asked} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
+			<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 			{#each NAV as [group, items] (group)}
 				<section class="apps" aria-labelledby="apps-{TINTS[group]}">
 					<h2 class="group" id="apps-{TINTS[group]}">{HEADS[group] ?? group}</h2>
@@ -363,7 +364,7 @@
 				{/if}
 			</p>
 		</header>
-		<AccessRequest {world} {requests} asked={asks.asked} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
+		<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 		{#if tab === 'sparks'}
 			<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
 		{:else if tab === 'articles'}

@@ -7,12 +7,16 @@
 	server, the device vault of the seed (vaults.js's `seeded`); and "It owns" anywhere else. Remove and Revoke are the
 	settings' own (`onremove`, `onrevoke`), and each shows only where the device answers a dry run of it (`may`): a
 	device taken out of its vault as a lost one is, and a share given up by the vault that holds it, which ends every
-	share resting on it.
+	share resting on it. A standing grant, "all my vaults, now and later" (avendb's `world::STANDING`), shows as one
+	line however many vaults it reached, and Revoke ends it for each of them (the `revoke` op's `standing`), so no vault
+	founded later follows it.
 -->
 <script>
 	import Mark from './Mark.svelte';
 	import { allowed, may } from './ops.js';
 	import {
+		count,
+		isStanding,
 		KINDS,
 		kindRules,
 		levelName,
@@ -20,6 +24,7 @@
 		oneOwner,
 		order,
 		ownedBy,
+		plainName,
 		roleGroup,
 		seeded,
 		shareWhat,
@@ -29,7 +34,7 @@
 	/** @typedef {import('./vaults.js').VaultView} VaultView */
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, api: any, busy: boolean,
-	 *   onrevoke: (share: string, as: string) => unknown,
+	 *   onrevoke: (share: string, as: string, standing?: boolean) => unknown,
 	 *   onremove: (device: string, name: string, of: string) => unknown }}
 	 */
 	let { world, vault, api, busy, onrevoke, onremove } = $props();
@@ -44,9 +49,30 @@
 	const others = $derived(owns.filter((x) => !oneOwner(world, x.kind)));
 	/** The vaults vault `x` owns in turn that hold devices: an aven's agents. @param {VaultView} x */
 	const under = (x) => ownedBy(world, x.id).filter((y) => kindRules(world, y.kind)?.devices);
-	/** The shares vault `x` holds in other vaults, the strongest first. @param {VaultView} x */
+	/** The shares vault `x` holds in other vaults, the strongest first: those of a standing grant apart.
+	 *  @param {VaultView} x */
 	const held = (x) =>
-		world.shares.filter((c) => c.who === x.id && c.over !== x.id).sort((a, b) => order(a.level) - order(b.level));
+		world.shares
+			.filter((c) => c.who === x.id && c.over !== x.id && !isStanding(c.slice?.name))
+			.sort((a, b) => order(a.level) - order(b.level));
+	/**
+	 * The standing grants vault `x` holds, "all my vaults, now and later", one each however many vaults it reached: by
+	 * its name and whether each vault gives it itself or a vault passes it on, the share over the person's own vault
+	 * first, the one Revoke names, and how many vaults it reached.
+	 * @param {VaultView} x @returns {{ share: import('./vaults.js').CapView, level: string, reached: number }[]}
+	 */
+	const standing = (x) => {
+		/** @type {Map<string, import('./vaults.js').CapView[]>} */
+		const by = new Map();
+		for (const c of world.shares.filter((c) => c.who === x.id && isStanding(c.slice?.name))) {
+			const k = `${c.slice?.name} ${c.issuer === c.over ? '' : c.issuer}`;
+			by.set(k, [...(by.get(k) ?? []), c]);
+		}
+		return [...by.values()].map((cs) => {
+			const share = cs.find((c) => c.over === world.mine) ?? cs[0];
+			return { share, level: share.group ?? plainName(share.slice?.name) ?? '', reached: cs.length };
+		});
+	};
 
 	/** the person's aven and its agents, an aven's agents, avenCEO GmbH's server, or what any other vault owns */
 	const company = $derived(seeded(world)[1]?.[0].id);
@@ -72,7 +98,11 @@
 		/** @type {[string, object][]} */
 		const asks = listed.flatMap((x) => [
 			...x.devices.map((d) => /** @type {[string, object]} */ ([`device ${x.id} ${d.id}`, { op: 'revoke', vault: x.id, device: d.id }])),
-			...held(x).map((c) => /** @type {[string, object]} */ ([`share ${c.id}`, { op: 'revoke', share: c.id, as: x.id }]))
+			...held(x).map((c) => /** @type {[string, object]} */ ([`share ${c.id}`, { op: 'revoke', share: c.id, as: x.id }])),
+			...standing(x).map(
+				({ share: c }) =>
+					/** @type {[string, object]} */ ([`standing ${c.id}`, { op: 'revoke', share: c.id, standing: true }])
+			)
 		]);
 		let gone = false;
 		may(api, world.mine, asks.map(([, op]) => op)).then((answers) => {
@@ -102,6 +132,26 @@
 				{/if}
 			</li>
 		{/each}
+		{#each standing(x) as g (g.share.id)}
+			<li>
+				<span>
+					<b>{g.level}</b> · all your vaults, now and later
+					<small class="soft"
+						>· {count(g.reached, 'vault')} now{g.share.issuer !== g.share.over
+							? ` · passed on by ${nameOf(byId.get(g.share.issuer))}`
+							: ''}</small
+					>
+				</span>
+				{#if lets(`standing ${g.share.id}`)}
+					<button
+						class="btn quiet danger"
+						disabled={busy}
+						title="Ends it for every vault it reached, and for every vault founded later"
+						onclick={() => onrevoke(g.share.id, x.id, true)}>Revoke</button
+					>
+				{/if}
+			</li>
+		{/each}
 		{#each held(x) as c (c.id)}
 			{@const level = levelName(c, world)}
 			{@const role = roleGroup(world, c.level)}
@@ -116,7 +166,7 @@
 				{/if}
 			</li>
 		{:else}
-			<li class="soft">No share in another vault: it sees only itself.</li>
+			{#if !standing(x).length}<li class="soft">No share in another vault: it sees only itself.</li>{/if}
 		{/each}
 	</ul>
 {/snippet}

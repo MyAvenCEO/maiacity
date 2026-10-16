@@ -176,8 +176,11 @@ def allowsAll (rs : List Op) (main : Bool) (ts : List Touch) : Bool := ts.all fu
 
 /-- The ops an access request goes to the vault it asks by (the Rust engine's `ask`, `world::answering`): an access
     request is a record the asking vault writes in its own vault and shares, that entry alone, with the vault it asks,
-    which reads it and sets its `answer`, on the main line, to granted or denied, and nothing else. -/
-def answering : List Op := [.read, .set [.field "answer"] (some [.str "granted", .str "denied"]) (some .main)]
+    which reads it and sets, on the main line, its `answer` to granted or denied, and its `part`, its part of the owner
+    add a request to co-own asks for, signed for the asker to finish; and nothing else. -/
+def answering : List Op :=
+  [.read, .set [.field "answer"] (some [.str "granted", .str "denied"]) (some .main),
+    .set [.field "part"] none (some .main)]
 
 -- a write share, as the class of its set says, that writes one place to one of two values on the main line
 #guard levelOf answering == .write
@@ -185,6 +188,8 @@ def answering : List Op := [.read, .set [.field "answer"] (some [.str "granted",
 #guard allowsAll answering true [.set [.field "answer"] (some (.str "denied"))]
 #guard !allowsAll answering true [.set [.field "answer"] (some (.str "maybe"))]
 #guard !allowsAll answering true [.set [.field "why"] (some (.str "because"))]
+#guard allowsAll answering true [.set [.field "part"] (some (.str "AQID"))]
+#guard !allowsAll answering false [.set [.field "part"] (some (.str "AQID"))]
 #guard !allowsAll answering false [.set [.field "answer"] (some (.str "granted"))]
 #guard !allowsAll answering true [.create] && !allowsAll answering true [.tag 1]
 

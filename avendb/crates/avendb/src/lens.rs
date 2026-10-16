@@ -1761,9 +1761,12 @@ pub mod blobs {
 "#;
 
     /// An access request: a record the asking vault writes in its own vault and shares, that entry alone, with the
-    /// vault it asks (`to`, its id in hex), which may read it and set its answer alone (`engine`'s `ask`): the level it
-    /// asks for, the name of a built-in group; why, in a few words; the vaults it asks that level on, where `to` holds
-    /// shares over others to pass on, as an aven to its agent (none: `to` itself); and the answer, once `to` gave it.
+    /// vault it asks (`to`, its id in hex), which may read it and set its answer and its part alone (`engine`'s `ask`):
+    /// what it asks for, a share ("share"), to co-own `to` ("owner") or, an invitation, for `to` to co-own the vault
+    /// that asks ("invite"); the level, the name of a built-in group, Owner for the two others; why, in a few words;
+    /// the vaults it asks that level on, where `to` holds shares over others to pass on, as an aven to its agent (none:
+    /// `to` itself); the answer, once `to` gave it; and, granting an owner add, `to`'s part of the edit, signed by the
+    /// passkey that signs first, as a signed edit is on the wire, in base64url, which the vault that asked finishes.
     pub const REQUEST_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Access request, v1",
@@ -1771,10 +1774,12 @@ pub mod blobs {
   "properties": {
     "kind": { "const": "request" },
     "to": { "type": "string", "maxLength": 64 },
-    "level": { "enum": ["Viewer", "Suggester", "Editor"] },
+    "asks": { "enum": ["share", "owner", "invite"], "default": "share" },
+    "level": { "enum": ["Viewer", "Suggester", "Editor", "Owner"] },
     "why": { "type": "string", "maxLength": 500, "default": "" },
     "vaults": { "type": "array", "items": { "type": "string" }, "default": [] },
-    "answer": { "enum": ["granted", "denied"] }
+    "answer": { "enum": ["granted", "denied"] },
+    "part": { "type": "string", "default": "" }
   },
   "required": ["kind", "to", "level"]
 }

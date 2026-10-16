@@ -1207,6 +1207,64 @@ impl Lab {
         Ok(id)
     }
 
+    /// Device `on`'s part of `draft` (`draft`): its edit signed by its first `signers` signers alone, each by its
+    /// ceremony among `ceremonies` or by its key at hand, for a device of the others to sign and keep (`finish`). So
+    /// two people sign one edit one after the other, as an owner add a person's vault consents to and a coop's owners
+    /// approve: the first signs here, and the part goes to the other in a record (`engine`'s `share` with a request).
+    /// Nothing is kept. `on`'s view checks the edit again if edits arrived since the draft; `Locked` if a signer's key
+    /// isn't at hand, `BadSignature` if a ceremony isn't its signer's over the draft's challenge.
+    pub fn part(
+        &mut self,
+        on: SignerId,
+        draft: Unsigned,
+        signers: usize,
+        ceremonies: &[(SignerId, &Ceremony)],
+    ) -> Result<Signed, Refusal> {
+        let Unsigned { edit, held, batch, .. } = draft;
+        if self.held(on).log.ids().len() != held {
+            self.held(on).view().step(&edit)?;
+        }
+        let (id, standing) = (edit.id(), sign::standing(&edit));
+        let first: Vec<SignerId> = edit.sigs().take(signers).collect();
+        let signature = |s| self.sign_by(s, id, ceremonies, &batch, None, &standing);
+        let sigs = first.into_iter().map(signature).collect::<Result<_, _>>()?;
+        Ok(Signed { edit, sigs })
+    }
+
+    /// Part `part`'s edit (`part`) drafted on device `on`, for the passkeys of the signers it lacks to sign in their
+    /// ceremonies, over the edit's id: what `finish` keeps.
+    pub fn parted(&self, on: SignerId, part: &Signed) -> Unsigned {
+        let held = self.held(on).log.ids().len();
+        Unsigned { edit: part.edit.clone(), blobs: Blobs::new(), held, batch: vec![], pass: None }
+    }
+
+    /// Part `part` (`part`) finished on device `on` and kept: each signer it lacks signs in its place after those that
+    /// signed, by its ceremony among `ceremonies` or by its key at hand, and `on` keeps the edit if every signature
+    /// verifies and `on`'s view accepts it; in a dry run, checked and then not made. `BadSignature` if a signature
+    /// doesn't verify, `Locked` if a signer's key isn't at hand.
+    pub fn finish(
+        &mut self,
+        on: SignerId,
+        part: Signed,
+        ceremonies: &[(SignerId, &Ceremony)],
+    ) -> Result<EditId, Refusal> {
+        let Signed { edit, mut sigs } = part;
+        self.held(on).view().step(&edit)?;
+        if self.dry {
+            return Ok(edit.id());
+        }
+        let (id, standing) = (edit.id(), sign::standing(&edit));
+        let rest: Vec<SignerId> = edit.sigs().skip(sigs.len()).collect();
+        for s in rest {
+            sigs.push(self.sign_by(s, id, ceremonies, &[], None, &standing)?);
+        }
+        let signed = Signed { edit, sigs };
+        signed.verify()?;
+        self.keep(on, vec![signed], &Blobs::new());
+        self.refresh(on, &[]);
+        Ok(id)
+    }
+
     /// Fill in the keys to seal to that `action` brings for signers the Lab holds, and return the McEliece blobs they
     /// name.
     fn fill_seal_to(&self, action: &mut Action) -> Blobs {

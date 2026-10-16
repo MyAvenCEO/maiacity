@@ -144,11 +144,15 @@ import { fieldPaths, pathWords } from './paths.js';
 
 /**
  * An access request, a record of avenDB's `request` schema the asking vault `from` writes in itself and shares with the
- * vault it asks, `to`, which may read it and set its answer alone (the `ask` op): the level it asks for, a built-in
- * group; why; the vaults it asks that level on, `to` itself where it names none, as an agent asking its aven names the
- * person's vaults; the answer, once `to` gave it; and when it was made, in seconds since 1970, where the device says.
- * @typedef {{ entry: string, from: string, to: string, level: string, why: string, vaults: string[],
- *   answer: 'granted' | 'denied' | null, created: number | null }} RequestRow
+ * vault it asks, `to`, which may read it and set its answer and its part alone (the `ask` op): what it asks for, a
+ * share (`share`), to co-own `to` (`owner`) or, an invitation, for `to` to co-own `from` (`invite`); the level, a
+ * built-in group, Owner for the two others; why; the vaults it asks that level on, `to` itself where it names none, as
+ * an agent asking its aven names the person's vaults; the answer, once `to` gave it; for an owner add, whether `to`
+ * wrote its part of the edit, signed by its passkey, for `from` to finish (`part`), and whether the owner is added
+ * (`done`); and when it was made, in seconds since 1970, where the device says.
+ * @typedef {{ entry: string, from: string, to: string, asks?: 'share' | 'owner' | 'invite', level: string, why: string,
+ *   vaults: string[], answer: 'granted' | 'denied' | null, part?: boolean, done?: boolean, created: number | null }}
+ *   RequestRow
  */
 /**
  * The access requests the device knows (the `requests` op): `asked`, those not answered yet that ask a vault it acts
@@ -526,6 +530,30 @@ const day = (at) => new Date(at * 1000).toLocaleDateString('en-GB', { day: 'nume
 export const EVERYONE = 'everyone';
 
 /**
+ * What the name of a standing grant starts with (avendb's `world::STANDING`): a share on the whole of the person's
+ * vault given for "all my vaults, now and later", which every vault founded under it from then on gives too, and every
+ * share that followed it, named the same. Its group's name follows.
+ */
+export const STANDING = 'avendb:standing:';
+
+/** Whether a share named `name` is a standing grant, or followed one. @param {string | null | undefined} name */
+export const isStanding = (name) => !!name?.startsWith(STANDING);
+
+/** A share's name as a person reads it: a standing grant's without its mark. @param {string | null | undefined} name */
+export const plainName = (name) => (isStanding(name) ? (name ?? '').slice(STANDING.length) : name);
+
+/**
+ * The ops of a standing grant at `level`, all of person `mine`'s vaults, now and later, to `agent`, a device vault of
+ * their aven `aven`: their vault's to the aven, then the aven's, resting on it, to the agent (the `share` op's
+ * `standing`). Every vault they own follows both now, and every vault they found later follows them as it is founded.
+ * @param {string} mine @param {string} aven @param {string} agent @param {string} level
+ */
+export const standingOps = (mine, aven, agent, level) => [
+	{ op: 'share', over: mine, who: { vault: aven }, level, standing: true, as: mine },
+	{ op: 'share', over: mine, who: { vault: agent }, level, standing: true, as: aven }
+];
+
+/**
  * A `where` of labels as the entries that pass every test of one of its conjunctions, for its words: `'all'` for the
  * whole vault (avendb's `ops::Where::cover`).
  * @param {Where} w @returns {'all' | Atom[][]}
@@ -674,7 +702,7 @@ export const roleGroup = (world, role) =>
 export function levelName(c, world) {
 	const g = groupOf(c, world);
 	if (g) return g.everyone ? roleGroup(world, g.level) : g.name;
-	return c.group ?? c.slice?.name ?? roleGroup(world, c.level);
+	return c.group ?? plainName(c.slice?.name) ?? roleGroup(world, c.level);
 }
 
 /** What a share does that opens nothing, beside its level's name. */
@@ -741,7 +769,7 @@ export function rowLevel(r, world) {
 	if (r.level === 'actsFor') return 'Acts for it';
 	const g = r.group ? world.groups.find((x) => x.name === r.group) : undefined;
 	if (g) return g.everyone ? roleGroup(world, g.level) : g.name;
-	return r.group ?? r.name ?? roleGroup(world, r.level);
+	return r.group ?? plainName(r.name) ?? roleGroup(world, r.level);
 }
 
 /** What a row of the `shares` op is on, in words. @param {ShareRow} r @param {WorldView} world */

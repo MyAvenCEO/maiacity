@@ -283,7 +283,7 @@
   "why": "To draft the city's articles" }`;
 
 	const REQUEST = `{ "kind": "request", "to": "…",
-  "level": "Editor",
+  "asks": "share", "level": "Editor",
   "why": "To draft the city's articles",
   "vaults": [], "answer": "granted" }`;
 
@@ -910,8 +910,9 @@
 			<p class="prose-col">
 				Each vault gives avenCEO server a share on the whole of it: Backup, so the server keeps its ciphertext, or Relay,
 				with backups off. Every vault founded under you follows your setting, your aven and your agents’ device vaults
-				too. Your devices are often away, and the server is always there. So what your aven and its agents write, a
-				request among it, still reaches the people it is for.
+				too: it is one of your standing grants, as “All my vaults, now and later” is, which every vault you found later
+				gives too. Your devices are often away, and the server is always there. So what your aven and its agents write,
+				a request among it, still reaches the people it is for.
 			</p>
 			<h3>Your aven and its agents</h3>
 			<p class="prose-col">
@@ -933,9 +934,10 @@
 			<h3>Asking for access</h3>
 			<p class="prose-col">
 				An access request is a record, not a new kind of message. The vault that asks writes a record of avenDB’s
-				request schema in its own vault: the vault it asks, a level (Viewer, Suggester or Editor), and why. It shares that
-				one record with the vault it asks, in a group of its own, Answer: read the record, and set its answer to granted
-				or denied, and nothing else. Sync carries the record like any other, over avenDB’s own protocol: straight to the
+				request schema in its own vault: the vault it asks, what it asks for, and why. That is a share at a level (Viewer,
+				Suggester or Editor), to co-own the vault it asks, or, from a COOP, an invitation to co-own it. It shares that one
+				record with the vault it asks, in a group of its own, Answer: read the record, set its answer to granted or
+				denied, and write its part of an owner add, and nothing else. Sync carries the record like any other, over avenDB’s own protocol: straight to the
 				devices that act for the vault asked, or through any peer that keeps it, as the server does while it backs up
 				the vault that asks. The server is one more peer, not a mailbox. So a request needs no new rule: it is a record
 				and two shares, the one that carries it and the one that grants it.
@@ -961,7 +963,16 @@
 				shown on the same screen. You pick all your vaults or only some, a level each, and in the vaults of COOPs that
 				hired your aven, up to your aven’s own level there. One prompt of your passkey adds the agent, and founds your
 				aven first where you have none; the shares need no prompt. From then on the agent asks its aven with a record,
-				as any vault asks.
+				as any vault asks. All my vaults, now and later, is a standing grant: every vault you found afterwards gives your
+				aven and the agent the same share, and revoking it ends it on all of them.
+			</p>
+			<p class="prose-col">
+				A new owner takes two passkeys: the vault’s approval, and the newcomer’s consent. So a request to co-own, or an
+				invitation, carries the edit between the two people. The one asked approves, or accepts, with their passkey,
+				which signs their part of the edit, and writes it into the record with granted. The one who asked finishes it
+				with theirs, a next step on their consent screen. Neither adds anyone alone. And a new browser, opened on the
+				link one of your devices shows, asks to join your vault on the same screen: its Approve is the one touch of your
+				passkey that unlocks it and adds it.
 			</p>
 		</section>
 

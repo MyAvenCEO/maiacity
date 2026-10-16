@@ -17,7 +17,9 @@
 	City, a coop avenCEO GmbH owns. A person
 	with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log
 	as ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or
-	it links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once
+	it links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=), which
+	asks to join on the one consent sheet every request rises on ($lib/avendb/AccessRequest.svelte): approving it is the
+	passkey's one touch that unlocks this browser and adds it to their vault, and denying it puts the link away. Once
 	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and those their vault
 	founds and owns, each of which they act as: coops, their one aven, and the device vaults of its agents, which join
 	it from the consent screen ($lib/avendb/AccessRequest.svelte). avenDB's server runs at avendb.maia.city: its
@@ -27,12 +29,13 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { me } from '$lib/auth/client';
 	import { native } from '$lib/native';
+	import AccessRequest from './AccessRequest.svelte';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { allowed, answer, reads, refs } from './ops.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { EVERYONE, plain, seeded } from './vaults.js';
+	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
 
 	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
@@ -659,14 +662,19 @@
 		 * person's one aven, named `avenName`, which the Mac founds first where their vault owns no aven yet, as a device
 		 * vault of its own under it, its device in it, in one ceremony of their passkey where it has none yet; and it
 		 * gets each of `shares`, `{over, level}`, a sub cap resting on the aven's own share over that vault
-		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault}`.
+		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault}`. With
+		 * `standing`, a level, it gets all the person's vaults, now and later, too: a standing grant of their vault to
+		 * the aven, and the aven's, resting on it, to the agent's device vault (the `share` op's `standing`), which every
+		 * vault they own follows now and every vault they found follows later.
 		 * @param {string} name @param {string} device @param {{ over: string, level: string }[]} shares
-		 * @param {string} avenName
+		 * @param {string} avenName @param {string} [standing]
 		 */
-		grant: (name, device, shares, avenName) =>
+		grant: (name, device, shares, avenName, standing = '') =>
 			act(`Granting ${name}`, async () => {
-				await mac.call('grant', name, device, shares, avenName);
+				const joined = await mac.call('grant', name, device, shares, avenName);
 				requests = requests.filter((r) => r.device !== device);
+				if (!standing || !world) return;
+				for (const op of standingOps(world.mine, joined.aven, joined.vault, standing)) answer(await send(op));
 			}),
 		/** In the Mac app: denies agent device `name`'s access request, its device `device`'s. @param {string} name
 		 *  @param {string} device */
@@ -775,17 +783,20 @@
 		{:else}
 			<div class="cards">
 				{#if arrived}
-					<article class="card">
-						<h3>Link {here}</h3>
-						<p>Your other device sent you here: confirm with your passkey, and {here} joins your vault.</p>
-						<div class="row">
-							<button class="btn primary" disabled={!!doing || !code.trim() || !relay.trim() || !name.trim()} onclick={() => linkHere(code)}>
-								Link {here}
-							</button>
-							<button class="btn quiet" disabled={!!doing} onclick={() => ([arrived, code] = [false, ''])}>Not now</button>
-						</div>
-					</article>
-				{:else}
+					<AccessRequest
+						world={null}
+						api={null}
+						busy={!!doing}
+						joining={{
+							name,
+							ready: !!code.trim() && !!relay.trim(),
+							rename: (/** @type {string} */ n) => (name = n),
+							onjoin: () => linkHere(code),
+							ondeny: () => ([arrived, code] = [false, ''])
+						}}
+					/>
+				{/if}
+				{#if !arrived}
 					<article class="card">
 						<h3>New to avenDB?</h3>
 						<p>
