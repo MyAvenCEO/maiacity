@@ -20,7 +20,7 @@
  */
 import * as THREE from 'three';
 import { atOrLatest } from '$lib/app/versions.js';
-import { disposeObject } from '$lib/app/view3d.js';
+import { disposeObject } from '$lib/render/core.js';
 import { groundRadius, roundGround } from './ground.js';
 
 /** how many steps a dome's build reports, for a bar of how far it is */

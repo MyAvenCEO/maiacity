@@ -12,7 +12,8 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import * as THREE from 'three';
-	import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+	import { disposeObject } from '$lib/render/core.js';
+	import { createStageRenderer } from '$lib/render/stage.js';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -80,22 +81,20 @@
 	// the build's controls, and each one's value now
 	let poser = $state.raw(null);
 	let pose = $state({});
-	let renderer, scene, camera, controls, grid, shown, frame;
+	let view, renderer, scene, camera, controls, grid, shown, frame;
 	let asking = 0;
 
 	onMount(() => {
-		renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-		renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+		// the stage renderer ($lib/render/stage.js) on the page's canvas, fitted to it as it is drawn (below)
+		view = createStageRenderer(canvas, { canvas, fov: 40, near: 0.01, far: 500, style: false });
+		({ renderer, camera, controls } = view);
 		scene = new THREE.Scene();
 		scene.background = new THREE.Color(0xefeadf);
 		scene.add(new THREE.HemisphereLight(0xf4f1ff, 0x6b5a40, 1.7));
 		const sun = new THREE.DirectionalLight(0xffffff, 2.2);
 		sun.position.set(4, 8, 5);
 		scene.add(sun);
-		camera = new THREE.PerspectiveCamera(40, 1, 0.01, 500);
 		camera.position.set(4, 3, 6);
-		controls = new OrbitControls(camera, canvas);
-		controls.enableDamping = true;
 		const loop = () => {
 			frame = requestAnimationFrame(loop);
 			const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -115,8 +114,7 @@
 			asking++;
 			if (shown) dispose(shown);
 			grid?.geometry.dispose();
-			controls.dispose();
-			renderer.dispose();
+			view.dispose();
 			boxOf().stop('the page was left');
 		};
 	});
@@ -145,15 +143,7 @@
 		if (mine === asking) busy = false;
 	}
 
-	function dispose(obj) {
-		obj.traverse((o) => {
-			o.geometry?.dispose();
-			for (const m of [o.material].flat().filter(Boolean)) {
-				for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
-				m.dispose();
-			}
-		});
-	}
+	const dispose = (obj) => disposeObject(obj);
 
 	function show(obj) {
 		const first = !shown;

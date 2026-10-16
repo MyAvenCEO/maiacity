@@ -56,22 +56,16 @@
 
 	onMount(async () => {
 		const THREE = await import('three');
-		const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+		const { createStageRenderer } = await import('$lib/render/stage.js');
 		const [{ createAssets }, { LEVELS }] = await Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/render/lod.js')]);
 		const box = /** @type {HTMLDivElement} */ (canvasBox);
-		const renderer = new THREE.WebGLRenderer({ antialias: true });
-		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-		renderer.shadowMap.enabled = true;
-		renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		box.appendChild(renderer.domElement);
+		// the stage renderer ($lib/render/stage.js): the canvas in the box, the camera (its field of view widened on an
+		// upright canvas, $lib/app/turntable.js), the controls, kept to the box's size
+		const view = createStageRenderer(box, { shadows: true, toneMapping: 'aces', fov: 50, near: 0.05, far: 200, turntable: true, fit, controls: { maxPolarAngle: Math.PI / 2 - 0.05 } });
+		const { renderer, camera, controls } = view;
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#cfdbe0');
 		scene.fog = new THREE.Fog('#cfdbe0', 14, 34);
-		const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
-		camera.userData.fov = 50; // widened on an upright canvas ($lib/app/turntable.js)
-		const controls = new OrbitControls(camera, renderer.domElement);
-		controls.enableDamping = true;
-		controls.maxPolarAngle = Math.PI / 2 - 0.05;
 		scene.add(new THREE.HemisphereLight('#e8f0ff', '#5a4a34', 1.1));
 		const sun = new THREE.DirectionalLight('#fff1dc', 2.6);
 		sun.position.set(6, 12, 4);
@@ -160,14 +154,7 @@
 			else camera.position.set(5.5, 1.65, 7.5);
 			camera.updateProjectionMatrix();
 		};
-		const resize = () => {
-			const w = box.clientWidth, h = box.clientHeight;
-			renderer.setSize(w, h);
-			fit(camera, w, h);
-		};
-		const ro = new ResizeObserver(resize);
-		ro.observe(box);
-		resize();
+		view.resize();
 		look(false);
 		show(recipe, $state.snapshot(hiddenSurfaces), $state.snapshot(hiddenCover));
 		let raf = 0;
@@ -180,13 +167,10 @@
 		tick();
 		dispose = () => {
 			cancelAnimationFrame(raf);
-			ro.disconnect();
 			asked++;
 			assets.dispose();
 			delete (/** @type {any} */ (window).__biome);
-			controls.dispose();
-			renderer.dispose();
-			renderer.domElement.remove();
+			view.dispose();
 		};
 	});
 	onDestroy(() => dispose?.());

@@ -28,7 +28,7 @@
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
 	import { atOrLatest } from '$lib/app/versions.js';
-	import { adaptiveResolution, lowPower, topPixelRatio } from '$lib/app/view3d.js';
+	import { adaptiveResolution, disposeObject, lowPower, topPixelRatio } from '$lib/render/core.js';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
 	import { walk } from './controls.js';
@@ -220,24 +220,15 @@
 
 	onMount(async () => {
 		const THREE = await import('three');
-		const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+		const { createStageRenderer } = await import('$lib/render/stage.js');
 		const { Stage } = await import('./stage.js');
 		const { createWalker, PACE } = await import('$lib/sandbox-kit/walker.js');
 		const box = canvasBox;
 		const low = lowPower();
-		const renderer = new THREE.WebGLRenderer({ antialias: true });
-		renderer.setPixelRatio(topPixelRatio(low));
-		renderer.domElement.addEventListener('webglcontextlost', (e) => {
-			e.preventDefault();
-			lost = true;
-		});
-		renderer.shadowMap.enabled = true;
-		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-		box.appendChild(renderer.domElement);
-		const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 200);
-		camera.userData.fov = 40; // widened on an upright canvas ($lib/app/turntable.js)
-		const controls = new OrbitControls(camera, renderer.domElement);
-		controls.enableDamping = true;
+		// the stage renderer ($lib/render/stage.js): the canvas in the box, the camera (its field of view widened on an
+		// upright canvas, $lib/app/turntable.js), the controls; the canvas kept to the box, and the studio with it
+		const view = createStageRenderer(box, { pixelRatio: topPixelRatio(low), shadows: 'soft', onLost: () => (lost = true), fov: 40, turntable: true, fit, onResize: (w, h) => stage.resize(w, h) });
+		const { renderer, camera, controls } = view;
 		stage = new Stage(renderer, camera, { low });
 		const earth = soil ? soilOf() : null;
 		// the Buildings' round ground, laid under each build as it is shown
@@ -269,10 +260,7 @@
 			if (!h) return;
 			h.dispose();
 			if (stage.root === h.root) stage.clear();
-			h.root.traverse((o) => {
-				o.geometry?.dispose();
-				for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) m.dispose();
-			});
+			disposeObject(h.root, { textures: false });
 		};
 		let asked = 0;
 		let shownHash = null;
@@ -314,7 +302,7 @@
 		const layGround = (b) => {
 			if (ground) {
 				stage.scene.remove(ground.obj);
-				ground.obj.traverse((o) => (o.geometry?.dispose(), o.material?.dispose()));
+				disposeObject(ground.obj, { textures: false });
 				ground = null;
 			}
 			if (!grounds) return;
@@ -503,14 +491,7 @@
 			frame();
 		};
 
-		const resize = () => {
-			const w = box.clientWidth, h = box.clientHeight;
-			renderer.setSize(w, h);
-			fit(camera, w, h);
-			stage.resize(w, h);
-		};
-		const ro = new ResizeObserver(resize);
-		ro.observe(box);
+		const resize = view.resize;
 		resize();
 		const adapt = adaptiveResolution(renderer, { top: topPixelRatio(low), hold: () => building, onChange: resize });
 		shown = build ?? '';
@@ -585,10 +566,7 @@
 			hero = null;
 			earth?.dispose();
 			stage.dispose();
-			ro.disconnect();
-			controls.dispose();
-			renderer.dispose();
-			renderer.domElement.remove();
+			view.dispose();
 			boxOf().stop('the viewer was left');
 			liveBoxOf().stop('the viewer was left');
 		};
