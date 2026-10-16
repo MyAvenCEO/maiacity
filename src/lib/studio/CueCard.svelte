@@ -36,7 +36,7 @@
 		border: 1px solid var(--edge);
 		border-radius: 8px;
 		background: var(--panel, #0b1626);
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+		box-shadow: 0 8px 24px rgb(38 56 44 / 0.16);
 		font-size: 0.75rem;
 		line-height: 1.35;
 		pointer-events: none;

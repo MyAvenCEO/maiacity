@@ -115,8 +115,8 @@
 	}
 
 	.pill.warn {
-		border-color: #d9a441;
-		color: #f0c36a;
+		border-color: var(--warn-line);
+		color: var(--warn);
 	}
 
 	.pill:disabled {

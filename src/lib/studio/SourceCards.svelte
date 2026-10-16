@@ -323,8 +323,8 @@
 	.release:disabled { border-color: var(--edge); background: none; color: var(--dim); cursor: default; }
 	.bad { color: var(--bad); }
 	.quiet { color: var(--dim); }
-	.veil { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; background: rgb(2 6 12 / 0.65); }
-	.dialog { width: min(34rem, 92vw); padding: 1.2rem 1.4rem; border-radius: 14px; background: var(--panel); box-shadow: 0 20px 60px rgb(0 0 0 / 0.6); }
+	.veil { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; background: rgb(38 56 44 / 0.4); }
+	.dialog { width: min(34rem, 92vw); padding: 1.2rem 1.4rem; border-radius: 14px; background: var(--panel); box-shadow: 0 20px 60px rgb(38 56 44 / 0.25); }
 	.dialog h3 { font-size: 1.15rem; }
 	.dialog code { padding: 0.2rem 0.4rem; border-radius: 6px; background: var(--bg); font-size: 0.74rem; word-break: break-all; }
 	.dialog p { font-size: 0.84rem; }

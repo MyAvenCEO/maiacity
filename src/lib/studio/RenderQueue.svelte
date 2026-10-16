@@ -205,7 +205,7 @@
 
 	.render.busy {
 		/* the button fills as the film renders */
-		background: linear-gradient(90deg, var(--accent) var(--p), #9c7c46 var(--p));
+		background: linear-gradient(90deg, var(--accent) var(--p), var(--warn-line) var(--p));
 		cursor: default;
 	}
 

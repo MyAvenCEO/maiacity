@@ -94,7 +94,7 @@
 		border: 1px solid var(--edge);
 		border-radius: 10px;
 		background: var(--raised);
-		box-shadow: 0 12px 40px rgb(0 0 0 / 0.55);
+		box-shadow: 0 12px 40px rgb(38 56 44 / 0.18);
 	}
 
 	.proj {

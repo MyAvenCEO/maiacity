@@ -105,7 +105,7 @@
 		height: 7rem;
 		border: 1px solid var(--edge);
 		border-radius: 6px;
-		background: var(--panel-2, rgba(0, 0, 0, 0.25));
+		background: var(--panel-2, rgb(38 56 44 / 0.06));
 	}
 
 	.grid {

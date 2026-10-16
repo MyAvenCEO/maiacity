@@ -211,7 +211,7 @@
 		min-height: 0;
 		overflow: auto;
 		padding: 1.6rem 2.4rem 3rem;
-		background: #0f2136;
+		background: var(--paper);
 		font-family: 'Courier Prime', 'Courier New', Courier, monospace;
 		font-size: 0.86rem;
 		line-height: 1.45;
