@@ -21,7 +21,9 @@ import * as THREE from 'three';
 /** @typedef {{ geometry: THREE.BufferGeometry, material: THREE.Material, locals: Float32Array, colors: Float32Array | null, n: number, cast: boolean, tris: number }} Draw */
 /**
  * @typedef {{ draws: Draw[], tris: number, box: THREE.Box3, center: THREE.Vector3, radius: number, height: number,
- *   bottom: number, reach: number, colour: THREE.Color, left: { lines: number, points: number } }} Level
+ *   bottom: number, reach: number, colour: THREE.Color, left: { lines: number, points: number }, same?: boolean,
+ *   made?: { error: number, passes: number[] } }} Level a level made from another by simplifying it (./lower.js) keeps
+ *   that one's measure, and says how far it strays (`made.error`, m) and whether nothing was taken away (`same`)
  */
 
 const IDENTITY = new THREE.Matrix4().toArray();

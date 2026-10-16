@@ -6,10 +6,12 @@
  *
  * - Every build comes the one way any build comes (../load.js): from this device's cache, else from the asset box,
  *   checked. Nothing of an asset runs here; what it made is only data, and our code draws it.
- * - Each kind is drawn at the level of detail its size on screen calls for (./lod.js): up to three shapes (its recipe
- *   built at a lower `detail`, for the recipes that take one; phase 5 gives every asset its levels) and, smallest, its
- *   picture (./impostors.js). The coarsest shape comes first, so a world stands as soon as it has it; a finer one is
- *   asked for only once a copy is near enough to want it.
+ * - Each kind is drawn at the level of detail its size on screen calls for (./lod.js): three shapes and, smallest, its
+ *   picture (./impostors.js). A recipe that takes a `detail` (the plants) is built at a lower detail for each, its
+ *   coarsest first, so a world stands as soon as it has it, and a finer one is asked for only once a copy is near
+ *   enough to want it. Every other kind is built once, at its finest, and its two lower levels are made from that
+ *   build's own geometry by simplifying it (./lower.js, ./simplify.js), beside the page, in a worker of their own,
+ *   each within what it may cost. Its picture is taken from the coarsest shape it was built at.
  * - Every copy of a kind at one level is one more instance of the same few drawings (./prepare.js): a forest of a
  *   thousand trees of forty kinds is a few hundred draw calls, the pictures a handful.
  * - Every material is the renderer's own (./presets.js), with the shader code only we add: the dither a level fades
@@ -28,7 +30,8 @@ import { canonical, loadAsset } from '../load.js';
 import { INDEX, buildOf, hashOf, parseBuild } from '../recipes.js';
 import { parseRef } from '../refs.js';
 import { createImpostors } from './impostors.js';
-import { LEVELS, SMALLEST, choose, sizeOn, thresholdsOf } from './lod.js';
+import { LEVELS, SMALLEST, budgetOf, choose, errorOf, sizeOn, smallestOf, thresholdsOf } from './lod.js';
+import { createLowering } from './lower.js';
 import { prepare } from './prepare.js';
 import { createPresets } from './presets.js';
 
@@ -75,6 +78,7 @@ export function createAssets(o) {
 	group.name = 'assets';
 	const presets = createPresets();
 	const pictures = createImpostors(renderer, { px: o.px });
+	const lowering = createLowering();
 	group.add(pictures.group);
 
 	/* ── the boxes, and the builds waiting for one: the coarsest shapes first ── */
@@ -120,7 +124,7 @@ export function createAssets(o) {
 		if (!at) throw new Error(`no recipe ${hash.slice(0, 12)}… on this device`);
 		const takes = at.params?.some((p) => p.id === 'detail');
 		// each named as it is kept, its own values filled in, so two refs of one build are one kind
-		const names = (takes ? details.map((d) => buildOf(hash, { ...params, detail: String(d) })) : [buildOf(hash, params)]).map((n) => canonical(n).name);
+		const names = (takes ? details.slice(0, levels.length).map((d) => buildOf(hash, { ...params, detail: String(d) })) : [buildOf(hash, params)]).map((n) => canonical(n).name);
 		const key = names[0];
 		let k = kinds.get(key);
 		if (k) return k;
@@ -128,12 +132,15 @@ export function createAssets(o) {
 			key,
 			label: at.label,
 			names,
-			levels: names.map(() => ({ state: 'idle', level: null, meshes: null })),
+			// each level of its shape: built from its recipe (`name`), or made from the coarsest one built (none)
+			levels: levels.map((_, L) => ({ state: 'idle', level: null, meshes: null, name: names[L] ?? null, as: -1 })),
+			/** the coarsest level built: its measure is the kind's, and its picture is taken from it */
+			base: names.length - 1,
 			ok: false,
 			error: null,
 			radius: 1,
 			center: new THREE.Vector3(),
-			thresholds: thresholdsOf(names.length, undefined, levels),
+			thresholds: thresholdsOf(levels.length, undefined, levels),
 			slot: null,
 			n: 0,
 			cap: 0,
@@ -146,16 +153,17 @@ export function createAssets(o) {
 			posed: new Map()
 		};
 		kinds.set(key, k);
-		// the coarsest shape first: its measure is the kind's, and its picture is taken from it
-		const last = names.length - 1;
-		k.ready = want(k, last, true).then(
+		// the coarsest shape built first: its measure is the kind's, and its picture is taken from it
+		k.ready = want(k, k.base, true).then(
 			() => {
-				const L = k.levels[last].level;
+				const L = k.levels[k.base].level;
 				k.radius = L.radius;
 				k.center.copy(L.center);
-				k.thresholds = thresholdsOf(names.length, L.tris, levels);
+				retune(k);
 				k.ok = true;
 				dirty = shadows = true;
+				// and the levels made from it, made now, beside the frames: most of a world's copies want those first
+				if (k.base < k.levels.length - 1) want(k, k.levels.length - 1);
 				return k;
 			},
 			(err) => {
@@ -167,25 +175,29 @@ export function createAssets(o) {
 		return k;
 	}
 
+	/** a kind's thresholds by its coarsest shape: as it came, or, while it is being made, by what it may cost */
+	function retune(k) {
+		const last = k.levels.length - 1;
+		const tris = k.levels[last].level?.tris ?? budgetOf(last, k.levels[k.base].level.tris, levels);
+		k.thresholds = thresholdsOf(k.levels.length, tris, levels);
+	}
+
+	/** what level L of a kind made from `from` (a level of it, or the source of several) is made to: ./lod.js */
+	const planOf = (L, from) => ({ budget: budgetOf(L, from.tris, levels), error: errorOf(L, from.radius, levels), smallest: smallestOf(L, from.radius, levels) });
+
 	/** a level of a kind asked for, once; its drawings made when it comes */
 	function want(k, L, first = false) {
 		const lv = k.levels[L];
 		if (lv.state !== 'idle') return lv.promise;
+		if (!lv.name) return lower(k, L);
 		lv.state = 'loading';
-		lv.promise = build(k.names[L], first).then(
+		lv.promise = build(lv.name, first).then(
 			async (got) => {
 				lv.level = prepare(got.obj, presets);
 				lv.from = got.from;
 				// a build with controls is kept whole as well: a copy moved by them is a tree copied from it
 				if (got.obj.userData.controls?.length) lv.obj = got.obj;
-				lv.meshes = lv.level.draws.map((d) => meshOf(k, L, d));
-				const last = L === k.levels.length - 1;
-				await compiled(lv, last);
-				// its picture taken as soon as its coarsest shape is here, while the world loads, not by a frame that
-				// wants it: a copy whose picture is missing draws that whole shape in its place
-				if (last && !k.slot) k.slot = pictures.add(lv.level);
-				lv.state = 'ready';
-				dirty = shadows = true;
+				await show(k, L);
 			},
 			(err) => {
 				lv.state = 'failed';
@@ -194,6 +206,53 @@ export function createAssets(o) {
 		);
 		lv.promise.catch(() => {});
 		return lv.promise;
+	}
+
+	/**
+	 * The levels of a kind made from its coarsest build (every one not asked for yet, together: its corners welded once
+	 * for all), once that build is here.
+	 */
+	function lower(k, L) {
+		const list = k.levels.map((_, j) => j).filter((j) => !k.levels[j].name && k.levels[j].state === 'idle');
+		const made = want(k, k.base).then(() => {
+			const from = k.levels[k.base].level;
+			return lowering.lower(from, list.map((j) => planOf(j, from)));
+		});
+		list.forEach((j, n) => {
+			const lv = k.levels[j];
+			lv.state = 'loading';
+			lv.promise = made.then(
+				async (out) => {
+					lv.level = out[n];
+					lv.from = 'made';
+					// nothing taken away (a kiosk of sixty triangles): drawn as the level it was made from
+					if (lv.level.same) lv.as = k.base;
+					await show(k, j);
+					if (j === k.levels.length - 1) retune(k);
+				},
+				(err) => {
+					lv.state = 'failed';
+					// its build's own failure is told once, by `use`
+					if (k.levels[k.base].state === 'ready') console.warn(`assets: ${k.label}: level ${j} was not made: ${err?.message ?? err}`);
+					throw err;
+				}
+			);
+			lv.promise.catch(() => {});
+		});
+		return k.levels[L].promise;
+	}
+
+	/** a level that came: its drawings made, their shaders too, and, the coarsest built, its picture taken */
+	async function show(k, L) {
+		const lv = k.levels[L];
+		lv.meshes = lv.as >= 0 ? [] : lv.level.draws.map((d) => meshOf(k, L, d));
+		const base = L === k.base;
+		await compiled(lv, base);
+		// its picture taken as soon as its coarsest built shape is here, while the world loads, not by a frame that
+		// wants it: a copy whose picture is missing draws that whole shape in its place
+		if (base && !k.slot) k.slot = pictures.add(lv.level);
+		lv.state = 'ready';
+		dirty = shadows = true;
 	}
 
 	/** the world the renderer's group stands in: its lights and fog are in every shader its drawings get */
@@ -236,7 +295,8 @@ export function createAssets(o) {
 		mesh.visible = false;
 		// which copies are drawn is chosen here, never by three's culling, which would see only the first
 		mesh.frustumCulled = false;
-		// the coarsest shape of a kind with finer ones casts no shadow: its picture's and the finer ones' are enough
+		// the coarsest shape of a plant casts no shadow, its picture's and its finer shapes' are enough; a kind built
+		// once casts one at every level, as it did when it had only the one
 		mesh.castShadow = d.cast && (k.names.length === 1 || L < k.names.length - 1);
 		mesh.receiveShadow = true;
 		mesh.name = `${k.label} · level ${L}`;
@@ -454,6 +514,8 @@ export function createAssets(o) {
 	}
 
 	/* ── each frame ── */
+	/** the level every copy is drawn at, whatever its size (a film's, or a check's), or -1: each by its size */
+	let forced = -1;
 	const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), ball = new THREE.Sphere(), eye = new THREE.Vector3();
 	const last = { world: new Float32Array(16), proj: new Float32Array(16) };
 	const counted = { levels: [0, 0, 0], pictures: 0, posed: 0, tris: 0, calls: 0, culled: 0 };
@@ -468,6 +530,9 @@ export function createAssets(o) {
 		for (let j = L - 1; j >= 0; j--) if (k.levels[j].state === 'ready') return j;
 		return -1;
 	}
+
+	/** the level a ready level L is drawn as: itself, or the one it was made from when nothing was taken away */
+	const as = (k, L) => (L >= 0 && L < k.levels.length && k.levels[L].as >= 0 && k.levels[L].state === 'ready' ? k.levels[L].as : L);
 
 	/**
 	 * Copy i of kind k drawn at level L (a shape, or its picture past the last), `fade` of it showing; the level it was
@@ -487,7 +552,7 @@ export function createAssets(o) {
 		if (k.levels[L].state === 'idle') want(k, L);
 		const R = readyNear(k, L);
 		if (R < 0 || (R !== L && fade < 1)) return -1;
-		const lv = k.levels[R];
+		const lv = k.levels[as(k, R)];
 		for (const d of lv.meshes) {
 			const n = d.draw.n;
 			room(d, d.used + n);
@@ -542,15 +607,15 @@ export function createAssets(o) {
 					if (k.was[i] !== -1) (k.was[i] = -1), (shadows = true);
 					continue;
 				}
-				const { level, fade } = choose(size, k.thresholds, k.was[i]);
+				const { level, fade } = forced >= 0 ? { level: Math.min(forced, k.levels.length), fade: 0 } : choose(size, k.thresholds, k.was[i]);
 				if (level !== k.was[i]) shadows = true;
 				k.was[i] = level;
 				// moved by its controls: its own tree, once it is ready
 				const p = k.posed.size ? k.posed.get(i) : undefined;
 				if (p && drawPosed(k, i, p, level)) continue;
 				const drawn = draw(k, i, level, 1);
-				// the coarser one fading in under it, unless it already stands in whole
-				if (fade > 0 && drawn !== level + 1) draw(k, i, level + 1, fade);
+				// the coarser one fading in under it, unless it already stands in whole, or is the same drawing
+				if (fade > 0 && drawn !== level + 1 && as(k, drawn) !== as(k, level + 1)) draw(k, i, level + 1, fade);
 			}
 		}
 		pictures.end();
@@ -615,8 +680,11 @@ export function createAssets(o) {
 			calls: counted.calls,
 			materials: presets.size,
 			pages: pictures.pages,
-			building: queue.length + loads + compiling,
-			builds: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready').length, 0)
+			building: queue.length + loads + compiling + lowering.busy,
+			builds: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && l.from !== 'made').length, 0),
+			/** the levels made by simplifying a build, and those of them it took nothing from */
+			made: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && l.from === 'made').length, 0),
+			same: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && l.as >= 0).length, 0)
 		};
 	}
 
@@ -646,6 +714,15 @@ export function createAssets(o) {
 		},
 		/** asks again, the next frame, what to draw (after something changed that the renderer cannot see) */
 		touch: () => (dirty = true),
+		/**
+		 * Draws every copy at level L whatever its size (0 its finest shape, as a film wants; past its shapes, its
+		 * picture), or each at the level its size calls for again (null).
+		 * @param {number | null} L
+		 */
+		force(L) {
+			forced = L === null || L === undefined ? -1 : Math.max(0, Math.floor(L));
+			dirty = shadows = true;
+		},
 		dispose() {
 			group.removeFromParent();
 			for (const k of kinds.values())
@@ -656,6 +733,7 @@ export function createAssets(o) {
 					}
 			for (const k of kinds.values()) for (const lv of k.levels) for (const d of lv.level?.draws ?? []) d.geometry.dispose();
 			for (const k of kinds.values()) for (const lv of k.levels) lv.obj?.traverse((o) => o.geometry?.dispose());
+			lowering.dispose();
 			pictures.dispose();
 			presets.dispose();
 			for (const p of pool) p.box.stop('the renderer was disposed');
