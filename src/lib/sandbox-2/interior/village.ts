@@ -15,12 +15,11 @@
  */
 import * as THREE from 'three'
 import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
-import { cafes, coops, coopsAround, henPatches, playground, rabbitPatches, squaresAround, type Kit } from './spaces'
+import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { BIOMES, groundMaterial } from '$lib/biomes'
 import { LEVELS } from '$lib/assets/render/lod.js'
 import { songbirds } from './birds.js'
-import { playDome } from '$lib/models/minidomes.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
 import { settled as actorsSettled } from '$lib/actors/build'
@@ -34,6 +33,7 @@ import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
 import { createDrawn, createFlora } from './drawn.js'
 import { createCover } from './cover.js'
+import { THINGS, coopsOf, putThings } from './things.js'
 import { swapLegacy } from './legacy.js'
 import { DRIFT, FIELDS, OUTDOOR_SPACING, pick, planting, stageOf, type Flora } from './sandbox5.js'
 
@@ -109,7 +109,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// its trees in full near you, coarser to 40 m, and beyond that each a picture of itself
 	const forest: Forest | null = plantsOut ? createForest({ flora: plantsOut }) : null
 	/** the library's assets the village puts down, each built in the asset box and drawn at its finest however far off,
-	 *  as the village always drew what it baked (./drawn.js): Sandbox 5's floor cover, outside and in the domes */
+	 *  as the village always drew what it baked (./drawn.js): its playgrounds, Sandbox 5's coops and hutches, and Sandbox
+	 *  5's floor cover, outside and in the domes */
 	const library = createDrawn({ renderer, camera, scene, boxes: 1, levels: [LEVELS[0]!], force: 0, shadows: staleShadows })
 	const swapR = seeded(707)
 	const swap = (root: THREE.Object3D) => {
@@ -603,21 +604,18 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			oak: m.oak(1), lime: m.lime(1), stone: (rep) => m.stone(rep), dark: m.dark, steel: m.steel, counter: m.counter,
 			timber: m.timberFrame, linen: m.linen, cushion: m.cushion, rug: m.rug, paper: m.paper
 		}
-		// in Sandbox 5 the coops, hutches and playgrounds are mini domes ($lib/models/minidomes.js)
+		// in Sandbox 5 the coops and hutches are mini domes: Things of the library, as the playgrounds are in both
+		// (./things.js), each built in the asset box and drawn by the renderer; the timber coops of the village without
+		// them are its own, in its kit's colours (./spaces.ts), not the library's
 		const mini = !!flora
-		for (const sq of [...cafes(kit, SQUARE_R), ...coops(kit, SQUARE_R, mini)]) {
+		for (const sq of [...cafes(kit, SQUARE_R), ...(mini ? [] : coops(kit, SQUARE_R))]) {
 			swap(sq.group)
 			scene.add(bake(sq.group))
 			colliders.push(...sq.colliders)
 		}
-		for (const [i, pg] of PLAYGROUNDS.entries()) {
-			const p = mini ? playDome(90 + i) : playground(90 + i)
-			p.group.position.set(pg.x, 0, pg.z)
-			p.group.rotation.y = Math.atan2(pg.x, pg.z)
-			scene.add(bake(p.group))
-			const c = Math.cos(p.group.rotation.y), sn = Math.sin(p.group.rotation.y)
-			for (const q of p.colliders) colliders.push({ x: pg.x + q.x * c + q.z * sn, z: pg.z - q.x * sn + q.z * c, r: q.r })
-		}
+		// the playgrounds facing out from the master dome; in Sandbox 5 with a climbing dome
+		const things = putThings(library, [...(mini ? coopsOf(SQUARE_R) : []), ...PLAYGROUNDS.map((pg) => ({ ref: mini ? THINGS.playDome : THINGS.playground, x: pg.x, z: pg.z, turn: Math.atan2(pg.x, pg.z) }))])
+		colliders.push(...things.colliders)
 		const hens = herd('hen', henPatches(SQUARE_R), 73, eye)
 		herds.hens = hens.where
 		// and in every other coop's place, a hutch of rabbits
@@ -987,8 +985,6 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		;(window as unknown as { __birds?: typeof birds }).__birds = birds
 		// for a look at its weight from the console: __forest.weight()
 		;(window as unknown as { __forest?: Forest }).__forest = forest
-		// and at what its renderers draw and hold: __assets.stats()
-		;(window as unknown as { __assets?: unknown }).__assets = { stats: () => ({ out: plantsOut!.assets.stats(), in: plantsIn!.assets.stats(), library: library.assets.stats() }) }
 		await pause('Growing the forest')
 	}
 	{
@@ -1351,6 +1347,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	sky.follow(camera.position.x, camera.position.z)
 	// what the library's assets are built from, there before the first frame
 	await library.ready()
+	// for a look from the console at what the renderers draw and hold: __assets.stats()
+	;(window as unknown as { __assets?: unknown }).__assets = { stats: () => ({ out: plantsOut?.assets.stats(), in: plantsIn?.assets.stats(), library: library.assets.stats() }) }
 	// Sandbox 5: the plants near where you stand at their finer shapes before the first frame, as they always were
 	if (plantsOut) {
 		onProgress('Growing the forest: the plants near you')
