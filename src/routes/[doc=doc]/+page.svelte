@@ -9,6 +9,7 @@
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import Cover from '$lib/blog/Cover.svelte';
 	import PostLayout from '$lib/blog/PostLayout.svelte';
 	import { laidOut, render } from '$lib/avendb/article.js';
 	import { ago, pictureUrl, postHref, slug } from '$lib/universe/posts.js';
@@ -58,7 +59,7 @@
 {#snippet back()}<a class="back" href="{base}/universe/">← Maia Universe</a>{/snippet}
 
 {#snippet hero()}
-	<img class="cover" src={post.cover.src} alt={post.cover.alt || post.title} fetchpriority="high" />
+	<Cover src={post.cover.src} alt={post.cover.alt || post.title} />
 {/snippet}
 
 {#snippet avatar()}
@@ -134,13 +135,6 @@
 		font-size: 1rem;
 		font-weight: 600;
 		letter-spacing: 0.02em;
-	}
-
-	.cover {
-		display: block;
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
 	}
 
 	.doc {
