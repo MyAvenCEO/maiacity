@@ -11,7 +11,7 @@
 	import { page } from '$app/state';
 	import Cover from '$lib/blog/Cover.svelte';
 	import PostLayout from '$lib/blog/PostLayout.svelte';
-	import { laidOut, render } from '$lib/avendb/article.js';
+	import { bodyText, laidOut, render } from '$lib/avendb/article.js';
 	import { ago, pictureUrl, postHref, slug } from '$lib/universe/posts.js';
 	import { authorOf, findPost, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
@@ -36,8 +36,7 @@
 	const PICTURES = /!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)/g;
 	const html = $derived.by(() => {
 		if (!post) return '';
-		const body = parts.blocks.slice(parts.body).map((b) => b.md + b.gap).join('');
-		const shown = body.replace(PICTURES, (md, name) => (post.pictures.includes(name) ? md : ''));
+		const shown = bodyText(parts).replace(PICTURES, (md, name) => (post.pictures.includes(name) ? md : ''));
 		return render(shown, (name) => pictureUrl(post.vault, name));
 	});
 	const meta = $derived(post ? `@${author.handle}${post.ago == null ? '' : ` · ${post.ago === 0 ? 'now' : ago(post.ago)}`} · Published in avenDB` : '');
@@ -71,18 +70,12 @@
 {/snippet}
 
 {#snippet onward()}
-	<p class="doc">
-		<span>avenDB entry</span>
-		<code>{post.entry}</code>
-	</p>
-	{#if more.length}
-		<p class="eyebrow">More in the stream</p>
-		<div class="more">
-			{#each more as p (p.id)}
-				<PostCard post={p} />
-			{/each}
-		</div>
-	{/if}
+	<p class="eyebrow">More in the stream</p>
+	<div class="more">
+		{#each more as p (p.id)}
+			<PostCard post={p} />
+		{/each}
+	</div>
 {/snippet}
 
 {#if data.asset}
@@ -98,7 +91,7 @@
 		author={author.name}
 		{meta}
 		{body}
-		{onward}
+		onward={more.length ? onward : undefined}
 	/>
 {:else}
 	<main class="wrap page">
@@ -135,26 +128,6 @@
 		font-size: 1rem;
 		font-weight: 600;
 		letter-spacing: 0.02em;
-	}
-
-	.doc {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.3rem 0.6rem;
-		margin: 0 0 2.5rem;
-		font-size: 0.75rem;
-		color: var(--muted);
-	}
-
-	.doc span {
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-	}
-
-	.doc code {
-		overflow-wrap: anywhere;
-		font-size: 0.75rem;
 	}
 
 	.more {

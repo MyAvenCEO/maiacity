@@ -173,6 +173,25 @@ export function laidOut(md) {
 	};
 }
 
+/** Where a blog post was first published: the note its import once closed an article with, under a rule. */
+const IMPORTED = /^First published on the maiaCITY blog\b/;
+const RULE = /^(?:-{3,}|\*{3,}|_{3,})$/;
+
+/**
+ * The body of article `parts` (`laidOut`) as one text, as its readers see it: without the note on where a blog post
+ * was first published, nor the rule above it, that an article imported from the blog was once closed with.
+ * @param {ReturnType<typeof laidOut>} parts
+ */
+export function bodyText(parts) {
+	const shown = parts.blocks.slice(parts.body);
+	const i = shown.findLastIndex((b) => IMPORTED.test(b.md.trim()));
+	if (i >= 0) {
+		const ruled = i > 0 && RULE.test(shown[i - 1].md.trim());
+		shown.splice(ruled ? i - 1 : i, ruled ? 2 : 1);
+	}
+	return shown.map((b) => b.md + b.gap).join('');
+}
+
 /** About how long text `md` takes to read, in minutes, as the journal counts: 200 words a minute. @param {string} md */
 export const readingMinutes = (md) => Math.max(1, Math.round((md ?? '').split(/\s+/).filter(Boolean).length / 200));
 
@@ -226,8 +245,7 @@ export const blogPosts = () =>
 export const EXAMPLE = 'day-10-a-heart-every-two-minutes';
 
 /**
- * Blog post `slug` as an article: its title, and its text, its subtitle and cover first and where it was first
- * published last, with the pictures it names.
+ * Blog post `slug` as an article: its title, and its text, its subtitle and cover first, with the pictures it names.
  * @param {string} slug
  * @returns {Promise<{ title: string, text: string, pictures: string[] }>}
  */
@@ -240,16 +258,7 @@ export async function fromBlog(slug) {
 	const fm = /** @type {Record<string, unknown>} */ ((m ? parse(m[1]) : null) ?? {});
 	const str = (/** @type {unknown} */ v) => (v == null ? '' : String(v).trim());
 	const [title, subtitle, cover, alt] = [str(fm.title) || slug, str(fm.subtitle), str(fm.cover), str(fm.coverAlt)];
-	const day = str(fm.day);
-	const date = fm.date instanceof Date ? fm.date.toISOString().slice(0, 10) : str(fm.date);
-	const where = `First published on the maiaCITY blog${day ? ` as Day ${day}` : ''}${date ? `, ${date}` : ''}`;
-	const text = [
-		subtitle && `*${subtitle}*`,
-		PICTURE.test(cover) && `![${alt}](${cover})`,
-		(m ? m[2] : raw).trim(),
-		'---',
-		`${where}: [read it there](/blog/${slug}/).`
-	]
+	const text = [subtitle && `*${subtitle}*`, PICTURE.test(cover) && `![${alt}](${cover})`, (m ? m[2] : raw).trim()]
 		.filter(Boolean)
 		.join('\n\n');
 	return { title, text, pictures: pictures(text) };
