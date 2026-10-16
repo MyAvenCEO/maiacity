@@ -11,9 +11,10 @@
 	let stage = $state<HTMLDivElement>();
 	let land: TiredLandHandle | null = null;
 	let destroyed = false;
+	let status = $state('Loading the tired land…');
 	onMount(async () => {
 		const { mountTiredLand } = await import('$lib/worlds/tired-land');
-		const r = await mountTiredLand(stage!);
+		const r = await mountTiredLand(stage!, (label) => (status = label === 'ready' ? '' : `${label}…`));
 		if (destroyed) return r.dispose();
 		land = r;
 	});
@@ -30,6 +31,7 @@
 <div class="world">
 	<div class="stage" bind:this={stage}></div>
 	<WorldBar title="The tired land" subtitle="Day 19 · a highway through fields of one crop" />
+	{#if status}<p class="status">{status}</p>{/if}
 	<WalkHint />
 	<TouchStick move={(x, y, hurry) => land?.move(x, y, hurry)} look={(dx, dy) => land?.look(dx, dy)} {stage} taps=".bar a, .bar button" />
 </div>
@@ -45,5 +47,19 @@
 		position: absolute;
 		inset: 0;
 		cursor: grab;
+	}
+
+	.status {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		margin: 0;
+		padding: 0.5rem 0.9rem;
+		border-radius: 999px;
+		background: rgb(250 248 242 / 0.7);
+		color: #2c2a1e;
+		font-size: 0.85rem;
+		z-index: 2;
 	}
 </style>

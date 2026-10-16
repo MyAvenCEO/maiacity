@@ -3,14 +3,31 @@
 // horizon, a highway running north–south through them (x = −470), power lines beside it, dead trees, trucks on it.
 // Built once here, for two places: Sandbox 4's film set (src/lib/film/sets.js, `world.props: 'tired-land'`, Day 19)
 // and the tired land as a world of its own (./tired-land.ts, the Worlds grid). Its randomness is seeded: the same
-// fields every time; `drive(clock)` puts every truck where it is at that second.
+// fields every time; `drive(clock)` puts every truck where it is at that second. Who puts a truck down is the caller's
+// to say (`lorry`): the tired land's world puts the library's truck down by its ref, drawn by its renderer of assets
+// (./tired-land.ts); Sandbox 4's set (../film/sets.js) builds it here.
 import * as THREE from 'three';
 import { seededRandom } from '../film/clock.js';
 import { truck } from '../models/furniture';
 
 /** The world as it was: beyond the city's western edge (x ≈ −390), ploughed fields of one crop to the horizon, a
  *  highway running north–south through them (x = −470), power lines beside it, trucks on it. */
-export function buildTiredLand(seed = 1) {
+/**
+ * One truck of the fleet, built here and put in the set: how to move it (x, z, turned about the upright).
+ * @param {string} cab @param {string} box @param {THREE.Group} set
+ * @returns {(x: number, z: number, turn: number) => void}
+ */
+const builtLorry = (cab, box, set) => {
+	const t = truck({ cab, box });
+	set.add(t);
+	return (x, z, turn) => {
+		t.position.set(x, 0, z);
+		t.rotation.y = turn;
+	};
+};
+
+/** @param {number} [seed] @param {(cab: string, box: string, set: THREE.Group) => (x: number, z: number, turn: number) => void} [lorry] */
+export function buildTiredLand(seed = 1, lorry = builtLorry) {
 	const T = THREE;
 	const rand = seededRandom(seed);
 	const set = new T.Group();
@@ -102,13 +119,8 @@ export function buildTiredLand(seed = 1) {
 		set.add(tree);
 	}
 
-	// the trucks (the model: src/lib/models/furniture.ts): each drives its lane at its speed, `z32` = where it is at
-	// 0:32 on the film
-	const lorry = (cab, box) => {
-		const t = truck({ cab, box });
-		set.add(t);
-		return t;
-	};
+	// the trucks (the model: things/truck@1, src/lib/models/furniture.ts): each drives its lane at its speed, `z32` =
+	// where it is at 0:32 on the film
 	const fleet = [
 		{ dir: 1, speed: 22, z32: 5, cab: '#c8c4bc', box: '#dcdad4' }, // the one the camera rides beside (0:32)
 		{ dir: -1, speed: 21, z32: 180, cab: '#8a2d24', box: '#cfcac0' },
@@ -118,13 +130,12 @@ export function buildTiredLand(seed = 1) {
 		{ dir: 1, speed: 24, z32: 120, cab: '#a33a2a', box: '#e0ddd6' },
 		{ dir: -1, speed: 22, z32: -40, cab: '#3d4a3a', box: '#c4c0b6' },
 		{ dir: 1, speed: 20, z32: -420, cab: '#c8c4bc', box: '#9a968c' }
-	].map((f) => ({ ...f, body: lorry(f.cab, f.box) }));
+	].map((f) => ({ ...f, move: lorry(f.cab, f.box, set) }));
 	/** the trucks where they are at `clock` seconds (the world's clock, or the shot's) */
 	const drive = (clock) => {
 		for (const f of fleet) {
 			const z = f.z32 + f.dir * f.speed * (clock - 32);
-			f.body.position.set(ROAD + (f.dir > 0 ? -2.4 : 2.4), 0, z);
-			f.body.rotation.y = f.dir > 0 ? 0 : Math.PI;
+			f.move(ROAD + (f.dir > 0 ? -2.4 : 2.4), z, f.dir > 0 ? 0 : Math.PI);
 		}
 	};
 	return { set, drive };

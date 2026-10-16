@@ -74,6 +74,10 @@ export function createAssets(o) {
 	const details = o.details ?? DETAILS;
 	const levels = o.levels ?? LEVELS;
 	renderer.localClippingEnabled = true;
+	// three turns a PCFSoftShadowMap (gone from it) into a PCFShadowMap at its first shadow pass; a shader made before
+	// that samples its shadow plainly and is never drawn (GL_INVALID_OPERATION). Ours are made early, while a world
+	// loads, so it is turned here first: the shadows three draws are the same
+	if (renderer.shadowMap.type === THREE.PCFSoftShadowMap) renderer.shadowMap.type = THREE.PCFShadowMap;
 	const group = new THREE.Group();
 	group.name = 'assets';
 	const presets = createPresets();
