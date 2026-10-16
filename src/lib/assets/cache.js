@@ -8,7 +8,9 @@
  * box that lies, dropped and built again. Bounded: past LIMIT bytes the entries used longest ago go first.
  *
  * Keeping a build costs the page nothing it needs for its frames: its pictures are written as PNG files in a worker
- * of the cache's own (./png.worker.js), and the builds are kept one after another, in the order they came.
+ * of the cache's own (./png.worker.js), and the builds are kept one after another, in the order they came, once the
+ * builds stop coming in (QUIET): a world that is loading has the graphics card for its frames and its shaders, and a
+ * picture is copied and read back off it to be written.
  *
  *   key = BLAKE3 in its key-derivation mode, context CONTEXT, of [engine, recipe, values]
  *
@@ -245,11 +247,13 @@ export async function get(key) {
 	const d = await db();
 	if (!d) return undefined;
 	try {
-		const tx = d.transaction(['built', 'meta'], 'readwrite');
+		// read only, so a world's reads go side by side (a transaction that writes waits for every other on its
+		// stores, and reading a build out is most of the time it takes); when it was used is kept apart, after
+		const tx = d.transaction(['built', 'meta'], 'readonly');
 		const [got, meta] = await Promise.all([result(tx.objectStore('built').get(key)), result(tx.objectStore('meta').get(key))]);
-		if (got && meta) tx.objectStore('meta').put({ ...meta, at: Date.now() });
 		await done(tx);
 		if (!got) return undefined;
+		if (meta) used(d, key);
 		// a picture that will not open is a spoiled entry, refused like any other (../load.js drops it)
 		try {
 			return { ...got, data: await revive(got.data) };
@@ -261,20 +265,51 @@ export async function get(key) {
 	}
 }
 
+/** when an entry was last used, kept (the oldest go first: `trim`), if it is still there */
+function used(d, key) {
+	try {
+		const tx = d.transaction('meta', 'readwrite');
+		const metas = tx.objectStore('meta');
+		const r = metas.get(key);
+		r.onsuccess = () => r.result && metas.put({ ...r.result, at: Date.now() });
+		done(tx).catch(() => {});
+	} catch {
+		// (not kept: it goes a little sooner)
+	}
+}
+
 /** the builds being kept, one after another */
 let line = Promise.resolve();
+/** how long no build has to come in before those that came are kept (ms), and how long one waits for that at most */
+const QUIET = 2000, LATEST = 20000;
+/** the builds waiting for a quiet moment, and the timer that ends the wait */
+let calm = [], timer = 0;
+/** settles once no build has been handed in for QUIET ms (each one handed in starts that wait again), or LATEST ms on */
+function quiet() {
+	clearTimeout(timer);
+	timer = setTimeout(() => {
+		for (const ok of calm.splice(0)) ok();
+	}, QUIET);
+	return new Promise((ok) => {
+		calm.push(ok);
+		setTimeout(ok, LATEST);
+	});
+}
 /** the bytes the cache holds as this page last counted them, and what it kept since (more, if one was kept again);
  *  null: to be counted */
 let held = null;
 
 /**
  * Keeps a build under `key`, then lets the entries used longest ago go until the cache fits LIMIT. False if it was not
- * kept (no cache, a picture it cannot read, or a build larger than LIMIT alone). Its pictures are written at once,
- * beside those of the builds before it; the builds are kept one at a time, in the order they were handed in.
+ * kept (no cache, a picture it cannot read, or a build larger than LIMIT alone). Its pictures are written once the
+ * builds stop coming in (`quiet`), beside those of the builds before it; the builds are kept one at a time, in the
+ * order they were handed in.
  * @param {string} key @param {{ data: any, card: any }} build
  */
 export function put(key, { data, card }) {
-	const plain = db().then((d) => d && storable(data));
+	const plain = quiet()
+		.then(() => db())
+		.then((d) => d && storable(data));
 	plain.catch(() => {});
 	const turn = line.then(() => keep(key, plain, card));
 	line = turn.catch(() => {});
