@@ -1506,31 +1506,6 @@ impl Lab {
         self.create_as(on, actor, vault, entry, audience, header, tags, item)
     }
 
-    /// `create`, with a share of the new entry alone, `share` of its id, which `on` issues first: so the entry starts
-    /// in the share's audience, one never used before, and whoever the share names takes its first write. Created in
-    /// the vault's own audience and moved after, as `create` and a share would, its first write could name an epoch
-    /// the grantee can't follow, should that audience have come back into use since (`State::reenters`). The entry
-    /// and the share.
-    #[allow(clippy::too_many_arguments)]
-    pub fn create_shared(
-        &mut self,
-        on: SignerId,
-        actor: VaultId,
-        vault: VaultId,
-        ty: &str,
-        tags: &[&str],
-        item: Item,
-        share: impl FnOnce(EntryId) -> NewShare,
-    ) -> Result<(EntryId, ShareId), Refusal> {
-        self.unlocked(on)?;
-        let entry = self.new_entry_id();
-        let shared = self.issue(on, &[on], share(entry))?;
-        let header = Header { ty: Sym::new(ty), created: self.now };
-        let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
-        let audience = self.intake(on, actor, vault, entry, &header, &tags)?;
-        Ok((self.create_as(on, actor, vault, entry, audience, header, tags, item)?, shared))
-    }
-
     /// `create` in the audience of the shares `audience`, whatever their slices say: what a device that ignores where
     /// its entry belongs does, which the rules check by the audience alone.
     #[allow(clippy::too_many_arguments)]
