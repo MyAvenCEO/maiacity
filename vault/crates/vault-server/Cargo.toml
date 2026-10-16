@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 vault-color = { path = "../vault-color" }
-iroh.workspace = true
+iroh = { workspace = true, features = ["metrics", "fast-apple-datapath", "portmapper", "tls-ring"] }
 noq-proto.workspace = true
 iroh-blobs.workspace = true
 # iroh-blobs' provider events answer on irpc channels (the version iroh-blobs itself uses)

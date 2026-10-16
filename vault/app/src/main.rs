@@ -456,7 +456,47 @@ fn vault_dir() -> PathBuf {
         .unwrap_or_else(|| home.join("Library/Application Support/city.maia.vault"))
 }
 
+/// Runs harness `args[0]`'s agent device beside the app's avenDB folder (or `--dir <folder>`), as an MCP server on its
+/// stdin and stdout, logging on its stderr (`avendb_device::agent`). What the process exits with.
+fn agent(args: &[String]) -> i32 {
+    tracing_subscriber::fmt()
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into()))
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
+    let (harness, dir) = match args {
+        [harness] => (harness.clone(), avendb::folder()),
+        [harness, flag, dir] if flag == "--dir" => (harness.clone(), PathBuf::from(dir)),
+        _ => {
+            eprintln!("usage: maiacity-studio agent <harness> [--dir <folder>]");
+            return 2;
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().thread_stack_size(8 << 20).build() {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    match runtime.block_on(avendb_device::agent::serve(dir, harness, tokio::io::stdin(), tokio::io::stdout())) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("{e:#}");
+            1
+        }
+    }
+}
+
 fn main() {
+    // the TLS of whatever names none: aws-lc-rs, the provider the app's legacy node uses too (vault-core's
+    // `tls-aws-lc-rs`); avenDB's node names its own, post-quantum only
+    rustls::crypto::aws_lc_rs::default_provider().install_default().expect("no TLS provider before the app's");
+    // `agent <harness> [--dir <folder>]`: a harness's agent device, the command avenDB's device names for it
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "agent") {
+        std::process::exit(agent(&args[1..]));
+    }
     tracing_subscriber::fmt().with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into())).init();
 
     tauri::Builder::default()

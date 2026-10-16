@@ -11,7 +11,11 @@ publish.workspace = true
 tauri-build = { version = "2.5", features = [] }
 
 [dependencies]
-vault-core = { path = "../crates/vault-core" }
+vault-core = { path = "../crates/vault-core", default-features = false, features = ["tls-aws-lc-rs"] }
+# avenDB's device, in the app's own process (avendb.rs): its node, its store in ~/avenDB/mac and its drives
+avendb-device = { path = "../../avendb/crates/avendb-device" }
+# the app's TLS for whatever names none: aws-lc-rs, as avenDB's (which names its own, post-quantum only)
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2"
 tokio.workspace = true

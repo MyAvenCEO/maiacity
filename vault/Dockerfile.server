@@ -1,16 +1,19 @@
 # vault-server — the media vault's peer on the Hetzner server (built by .github/workflows/api.yml).
-# Only this crate is compiled; the Mac-only crates (app, vault-media) are never built here.
+# Only this crate is compiled; the Mac-only crates (app, vault-media) are never built here. avenDB's crates sit beside
+# the workspace at /avendb only because the app names avendb-device by path and cargo loads every member's manifest.
 # cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crate
 # (the layers are cached between CI runs).
 FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
 WORKDIR /src
 
 FROM chef AS planner
+COPY avendb/ /avendb/
 COPY vault/ ./
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /src/recipe.json recipe.json
+COPY avendb/ /avendb/
 RUN cargo chef cook --release --locked --package vault-server --recipe-path recipe.json
 COPY vault/ ./
 RUN cargo build --release --locked -p vault-server && cp target/release/vault-server /vault-server

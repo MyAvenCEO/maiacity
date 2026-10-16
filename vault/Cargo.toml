@@ -12,10 +12,11 @@ publish = false
 
 [workspace.dependencies]
 # iroh-blobs is pre-1.0 ("not yet production quality"): pinned exactly, upgraded on purpose
-iroh = "=1.3.0"
+# no default features: each crate names its TLS (vault-core: ring by default, aws-lc-rs in the Mac app beside avenDB)
+iroh = { version = "=1.3.0", default-features = false }
 # iroh's QUIC; only for its congestion controllers (BBR), as iroh's own docs pair them with QuicTransportConfig
 noq-proto = { version = "=1.3.0", default-features = false }
-iroh-blobs = "=0.103.0"
+iroh-blobs = "=0.103.1"
 iroh-docs = "=0.101.0"
 iroh-gossip = "=0.101.0"
 blake3 = { version = "1.8", features = ["rayon"] }
@@ -54,3 +55,8 @@ opt-level = 2
 
 [profile.dev.package.vault-media]
 opt-level = 2
+
+# avenDB's device, built into the app (avendb.rs): Classic McEliece makes a key pair in about 0.6 s at opt-level 3
+# and twice that at 2 (avendb/Cargo.toml)
+[profile.dev.package.classic-mceliece-rust]
+opt-level = 3
