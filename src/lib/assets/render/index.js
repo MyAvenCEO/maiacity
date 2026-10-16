@@ -166,10 +166,11 @@ export function createAssets(o) {
 		if (lv.state !== 'idle') return lv.promise;
 		lv.state = 'loading';
 		lv.promise = build(k.names[L], first).then(
-			(got) => {
+			async (got) => {
 				lv.level = prepare(got.obj, presets);
 				lv.from = got.from;
 				lv.meshes = lv.level.draws.map((d) => meshOf(k, L, d));
+				await compiled(lv, L === k.levels.length - 1);
 				lv.state = 'ready';
 				dirty = true;
 			},
@@ -180,6 +181,29 @@ export function createAssets(o) {
 		);
 		lv.promise.catch(() => {});
 		return lv.promise;
+	}
+
+	/** the world the renderer's group stands in: its lights and fog are in every shader its drawings get */
+	const worldOf = () => {
+		let s = group;
+		while (s.parent) s = s.parent;
+		return s.isScene ? s : null;
+	};
+	let compiling = 0;
+	/**
+	 * A level's shaders made before it is first drawn, beside the frames and not in one (where the browser can, else
+	 * while the world loads): each new shader takes the GPU a while to make, and a frame that waits for it stalls the
+	 * view. The coarsest level's for the picture studio too, which lights it otherwise.
+	 */
+	async function compiled(lv, studio) {
+		const scene = worldOf();
+		compiling++;
+		try {
+			if (scene) await Promise.all(lv.meshes.map(({ mesh }) => renderer.compileAsync(mesh, camera, scene)));
+			if (studio) await pictures.prepare(lv.level);
+		} finally {
+			compiling--;
+		}
 	}
 
 	/** one drawing of a level, as the instances of all its copies */
@@ -441,7 +465,7 @@ export function createAssets(o) {
 			calls: counted.calls,
 			materials: presets.size,
 			pages: pictures.pages,
-			building: queue.length + loads,
+			building: queue.length + loads + compiling,
 			builds: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready').length, 0)
 		};
 	}

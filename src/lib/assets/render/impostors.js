@@ -107,6 +107,30 @@ export function createImpostors(renderer, o = {}) {
 		}
 	};
 
+	/** the asset as it stands in the studio: its drawings, each at its places */
+	function thingOf(level) {
+		const thing = new THREE.Group();
+		for (const d of level.draws) {
+			const m = new THREE.InstancedMesh(d.geometry, d.material, d.n);
+			m.instanceMatrix.array.set(d.locals);
+			if (d.colors) m.instanceColor = new THREE.InstancedBufferAttribute(d.colors, 3);
+			m.frustumCulled = false;
+			thing.add(m);
+		}
+		return thing;
+	}
+
+	/** a kind's shaders as the studio lights them, made before its picture is taken (./index.js, `compiled`) */
+	async function prepare(level) {
+		const thing = thingOf(level);
+		const clip = renderer.localClippingEnabled;
+		renderer.localClippingEnabled = false;
+		const made = renderer.compileAsync(thing, camera, studio);
+		renderer.localClippingEnabled = clip;
+		await made;
+		for (const m of thing.children) m.dispose();
+	}
+
 	/**
 	 * A kind photographed from its eight sides onto a page.
 	 * @param {import('./prepare.js').Level} level the shape it is photographed from (its coarsest)
@@ -124,14 +148,7 @@ export function createImpostors(renderer, o = {}) {
 		const size = Math.max(0.05, Math.max(level.reach * 2, level.height - Math.min(0, level.bottom)) * 1.06);
 		const mid = (Math.min(0, level.bottom) + level.height) / 2;
 		const foot = mid - size / 2;
-		const thing = new THREE.Group();
-		for (const d of level.draws) {
-			const m = new THREE.InstancedMesh(d.geometry, d.material, d.n);
-			m.instanceMatrix.array.set(d.locals);
-			if (d.colors) m.instanceColor = new THREE.InstancedBufferAttribute(d.colors, 3);
-			m.frustumCulled = false;
-			thing.add(m);
-		}
+		const thing = thingOf(level);
 		studio.add(thing);
 		const D = level.reach + size + 10;
 		camera.left = -size / 2;
@@ -172,6 +189,7 @@ export function createImpostors(renderer, o = {}) {
 
 	return {
 		group,
+		prepare,
 		add,
 		/** starts a frame's cards: none on any page */
 		begin() {
