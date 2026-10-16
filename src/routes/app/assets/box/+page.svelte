@@ -401,9 +401,10 @@
 		return a.length ? a[Math.floor(a.length / 2)] : 0;
 	};
 
-	// what the box refuses on purpose: frozen versions with a fault their own notes name (the stand-in's back teeth had no
-	// colour from v6 to v9, NaN in its colours, put right in v10), refused as any data out of shape is
-	const FAULTY = [{ label: /^actors\/stand-in@[6-9]:/, error: 'color has a value that is not a number', why: 'the stand-ins v6 to v9, whose back teeth have no colour (fixed in v10)' }];
+	// what the box refuses on purpose: frozen versions with a fault their own notes name, refused as any data out of
+	// shape is (none now: the stand-in's back teeth, NaN from v6 to v9, are kept black, as the screen drew them)
+	/** @type {{ label: RegExp, error: string, why: string }[]} */
+	const FAULTY = [];
 	const faulty = (r) => FAULTY.find((f) => f.label.test(r.label) && r.error?.includes(f.error));
 
 	// phase 3: every recipe of ours, each version and variant at its own values, built in the box and in the page, the
