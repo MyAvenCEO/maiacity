@@ -9,7 +9,7 @@ globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContex
 globalThis.$state ??= (x) => x;
 const { checkCode, TYPES } = await import('./check.js');
 const { EXAMPLES } = await import('../../../game/genui/examples.js');
-const { DEFAULT_VIEWS: VALLEY_VIEWS } = await import('../../../game/economy/views.js');
+const { DEFAULT_VIEWS: VALLEY_VIEWS, SLOTS: VALLEY_SLOTS, slotsOf: valleySlots } = await import('../../../game/economy/views.js');
 const { DEFAULT_VIEWS: V1_VIEWS, SLOTS } = await import('../../../game/maiacity-v1/views.js');
 const { defaultCards } = await import('../../../game/economy/params.js');
 const { hostileCards } = await import('../assets/schemas/hostile.js');
@@ -31,6 +31,14 @@ describe('what we ship passes', () => {
 	test('a template view with logic, and a script view with its libraries', () => {
 		expect(checkCode('view', html('<p>{{n}}</p><button data-event="add">+</button>', [], { data: { n: 1 }, logic: 'export function on(e, d) { return { n: d.n + 1 }; }' }))).toMatchObject({ ok: true, notes: [] });
 		expect(checkCode('view', html('<canvas></canvas><script type="module">import * as THREE from "three"; import { OrbitControls } from "three/addons/controls/OrbitControls.js"; // fetch("x") in a comment\nconst s = "import x from \'y\'";</script>', ['three']))).toMatchObject({ ok: true, notes: [] });
+	});
+	test("a screen takes one of its game's panels, never one where a person decides", () => {
+		const card = (id, slot) => ({ id, kind: 'view', name: id, data: { slot }, code: '<template each="board" as="r"><button data-event="select" data-value="{{r.id}}">{{r.name}}</button></template>' });
+		for (const slot of VALLEY_SLOTS) expect(checkCode('rule-card', card('screen', slot))).toMatchObject({ ok: true, value: { data: { slot } } });
+		expect(refused(checkCode('rule-card', card('screen', 'proposals')))).toBe(`Card screen: a view's slot is one of ${VALLEY_SLOTS.join(', ')}.`);
+		expect(refused(checkCode('view-card', card('screen', 'prices'), { slots: SLOTS }))).toBe(`Card screen: a view's slot is one of ${SLOTS.join(', ')}.`);
+		const slots = valleySlots([card('a', 'prices'), card('b', 'board'), card('c', 'prices'), card('d', 'panel')]);
+		expect(Object.fromEntries(Object.entries(slots).map(([k, v]) => [k, v.id]))).toEqual({ prices: 'c', board: 'b' });
 	});
 	test('read mode: a view already kept is drawn whatever the rules now say', () => {
 		expect(checkCode('view', html('<img src="https://evil.example/p.png">'), { mode: 'read' })).toMatchObject({ ok: true });

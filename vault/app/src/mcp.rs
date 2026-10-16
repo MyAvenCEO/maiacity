@@ -524,11 +524,13 @@ pub struct EconomyMip {
     /// (policy, world, resource, recipe or view), name, description, values: { key: number } (keys from economy_configs'
     /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }];
     /// a view card is one of the valley's screens, an MCP App: { id, kind: "view", name, description, data: { slot:
-    /// "panel" (a tab of the valley's side panel), libs?: ["three" | "d3" | "mcp-apps"], height?: 160-1200 }, code: its
-    /// HTML (up to 100,000 characters) }; it runs in a sandboxed frame with no network and gets the valley as its tool
-    /// result every 1.5 s ({ day, time, goods, avens with stock/need/buy, market, values }: game/economy/views.js), and
-    /// may send ui/update-model-context { structuredContent: { select: avenId } }; the default Wants screen is the view
-    /// card view-wants, which a card of that id replaces,
+    /// "panel" (a tab of the valley's side panel) | "board" | "activity" | "prices" | "avens" | "stats" (takes that
+    /// panel's place; the built-in one stays a tap away), libs?: ["three" | "d3" | "mcp-apps"], height?: 160-1200 },
+    /// code: its HTML (up to 100,000 characters) }; it runs in a sandboxed frame with no network and gets the valley as
+    /// its tool result every 1.5 s ({ day, time, goods, avens with stock/need/buy, market, values, and in a slot: slot,
+    /// picked, and that panel's numbers }: game/economy/views.js), and may send ui/update-model-context
+    /// { structuredContent: { select: avenId } } (or, without a script, a data-event="select" button); the default Wants
+    /// screen is the view card view-wants, which a card of that id replaces,
     /// remove: [ids of cards to take out], prs: [the GitHub PRs whose engine changes in code it needs (a hook its card code
     /// calls, a rule the page runs): { number, title }, at most 10; shown on the proposal as links] }
     pub mip: Value,

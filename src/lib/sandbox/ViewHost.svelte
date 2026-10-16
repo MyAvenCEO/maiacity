@@ -55,9 +55,16 @@
 		if (ready) rpc({ method: 'ui/notifications/tool-result', params: { content: [], structuredContent: plain(shown) } });
 	}
 	const input = () => plain(data === undefined ? v.data : $state.snapshot(data));
+	// the data as last shown: the same data handed again (a page copies its state every few hundred ms) is not
+	// shown again, so a view's logic keeps what it made of it until the data moves on
+	let sent = '';
 	$effect(() => {
 		const d = data === undefined ? undefined : $state.snapshot(data);
-		if (booted && d !== undefined) show(plain(d));
+		if (!booted || d === undefined) return;
+		const json = JSON.stringify(d ?? null);
+		if (json === sent) return;
+		sent = json;
+		show(JSON.parse(json));
 	});
 
 	async function event(e) {
@@ -139,6 +146,7 @@
 			if (v.logic) logic = await loadLogic(v.logic);
 			const worker = scripted ? await workerOf(v) : null;
 			const first = input();
+			if (data !== undefined) sent = JSON.stringify(first);
 			if (logic) {
 				const r = await logic.init(first);
 				if (r.error) onerror(r.error);

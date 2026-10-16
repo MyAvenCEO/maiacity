@@ -11,6 +11,21 @@
  *               goods: { good: { has, need, buy } } }],
  *     market: { good: { price } }, values: { key: number } }
  * What it may tell the page: ui/update-model-context with structuredContent { select: avenId } opens that aven.
+ *
+ * Where a screen stands (data.slot): 'panel' gives it a tab of its own beside Activity and Prices; any other slot is
+ * one of the page's panels, which the screen takes the place of (SLOTS). The page's built-in panel stays one tap
+ * away, and a MIP that takes the card out brings it back. A screen never stands where a person decides (the Policies
+ * and World editors, Proposals, the model picker), so no screen can dress up a choice.
+ *
+ * What a screen in a slot is handed besides the valley: `slot` (which), `picked` (the aven open on the page), and:
+ *   board     board: [{ id, name, colour, alive, hearts, health, diedOn, grows, stock?, flow? }] (ranked, richest first),
+ *             coop: { hearts, from: { fields, levels, nights }, flow? } | null
+ *   activity  decisions: [{ n, day, t, kind, id?, name?, colour?, source?, changes }] (the last 200, newest first),
+ *             queue: [{ id, name, colour, thinking, by, waited, age }], calls: { asked, answered, pending, failed }
+ *   prices    series: { good: [{ t, price }] } (at most ~300 points a good), market: { good: { price, avg, units } }
+ *   stats     stats: [the daily rows: { day, price, avg, units, deals, hearts, total, minted, decayed, rotted, harvest,
+ *             stock, alive, ate, short, health, body, dry, rain }], series (as for prices)
+ *   avens     days: [{ day, hearts, health, water, food, dry }] (the picked aven's), feed: [its activity, newest first]
  */
 
 import { cardOfEntry, codeAt } from '../code/index.js';
@@ -18,8 +33,19 @@ import { cardOfEntry, codeAt } from '../code/index.js';
 /** the valley's own screens, each a view card (its code in code/views/); a config's card with the same id replaces it */
 export const DEFAULT_VIEWS = [cardOfEntry(codeAt('views/view-wants'))];
 
+/** the slots a screen may take, and their names in words */
+export const SLOTS = ['panel', 'board', 'activity', 'prices', 'avens', 'stats'];
+export const SLOT_NAMES = { panel: 'a tab of its own', board: 'the Board', activity: 'Activity', prices: 'Prices', avens: 'the Avens page', stats: 'the Stats page' };
+
 /** the view cards a config shows, in order: its own, and every default it does not replace */
 export function viewsOf(cards) {
 	const own = (cards ?? []).filter((c) => c?.kind === 'view');
 	return [...DEFAULT_VIEWS.map((d) => own.find((c) => c.id === d.id) ?? d), ...own.filter((c) => !DEFAULT_VIEWS.some((d) => d.id === c.id))];
+}
+
+/** the screen standing in each of the page's panels, by slot (the config's last card wins when two take one) */
+export function slotsOf(cards) {
+	const out = {};
+	for (const v of viewsOf(cards)) if (v.data?.slot && v.data.slot !== 'panel') out[v.data.slot] = v;
+	return out;
 }

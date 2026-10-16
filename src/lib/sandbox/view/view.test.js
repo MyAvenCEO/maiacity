@@ -95,6 +95,14 @@ describe('templates put values in as text', () => {
 		div.append(out);
 		expect(div.innerHTML).toBe('<p>&lt;script&gt;x&lt;/script&gt; and 1,234.57</p><i>u·0</i><i>v·1</i><b>here</b><maia-chart items="[{&quot;n&quot;:&quot;u&quot;},{&quot;n&quot;:&quot;v&quot;}]"></maia-chart><input value="1500">');
 	});
+	test('loops and conditions come through the sanitizer whole', () => {
+		const body = tpl('<template each="rows" as="r" onclick="x"><button data-event="select" data-value="{{r.id}}">{{r.name}}</button></template><template if="rows"><b>some</b></template><template if="!rows"><b>none</b></template>');
+		sanitize(body);
+		expect([...body.querySelectorAll('template')].map((t) => [...t.attributes].map((a) => a.name).join(' '))).toEqual(['each as', 'if', 'if']);
+		const div = document.createElement('div');
+		div.append(render(document, body, { rows: [{ id: 3, name: 'Ada' }] }));
+		expect(div.innerHTML).toBe('<button data-value="3" data-event="select" type="button">Ada</button><b>some</b>');
+	});
 	test('an event: a button names it, a range hands its number', () => {
 		const body = tpl('<button data-event="dome" data-value="&quot;Small&quot;"><span>Small</span></button><input type="range" data-event="people" value="24">');
 		expect(eventOf(body.querySelector('span'), 'click')).toEqual({ name: 'dome', value: 'Small' });

@@ -6,6 +6,7 @@
 
 import { DEFAULT_CODE } from './rules-code.js';
 import { checkViewCard } from '../genui/views.js';
+import { SLOTS } from './views.js';
 
 export { DEFAULT_CODE };
 export const GOODS = ['water', 'fruits', 'vegetables', 'legumes', 'chicken'];
@@ -217,7 +218,7 @@ export function checkCard(raw, { mode = 'write' } = {}) {
 		if (ok == null) return { error: `Card ${id}: ${k} is not a value the valley has (or ${JSON.stringify(v)} is not a number).` };
 		values[k] = ok;
 	}
-	if (kind === 'view') return checkViewCard({ ...raw, id, name, description }, undefined, { mode });
+	if (kind === 'view') return checkViewCard({ ...raw, id, name, description }, SLOTS, { mode });
 	const data = raw?.data == null ? undefined : raw.data;
 	if (data !== undefined && (typeof data !== 'object' || JSON.stringify(data).length > MAX_DATA)) return { error: `Card ${id}: its data is a JSON object of at most ${MAX_DATA} characters.` };
 	const code = String(raw?.code ?? '');
