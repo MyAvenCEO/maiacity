@@ -1045,7 +1045,7 @@ impl View {
     }
 
     /// The app of built-in kind `kind`, of its one shipped schema alone (`blobs::SHIPPED`): a document's, a todo's, an
-    /// article's, a flow's, a function's, a post's, a card's, a profile's, a file's or a story's.
+    /// article's, a flow's, a function's, a post's, a card's, a profile's, a file's, a story's or a spark's.
     pub fn built_in(kind: &str) -> Option<&'static View> {
         BUILT_IN.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
     }
@@ -1222,8 +1222,19 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 10] =
-        [DOCUMENT_V1, TODO_V1, ARTICLE_V1, FLOW_V1, FUNCTION_V1, POST_V1, CARD_V1, PROFILE_V1, FILE_V1, STORY_V1];
+    pub const SHIPPED: [&str; 11] = [
+        DOCUMENT_V1,
+        TODO_V1,
+        ARTICLE_V1,
+        FLOW_V1,
+        FUNCTION_V1,
+        POST_V1,
+        CARD_V1,
+        PROFILE_V1,
+        FILE_V1,
+        STORY_V1,
+        SPARK_V1,
+    ];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -1474,6 +1485,58 @@ pub mod blobs {
   "required": ["kind"]
 }
 "#;
+
+    /// A spark: anything that might become something, the raw material of a story, one small entry each (a thought, a
+    /// link, a picture, a mood board, someone else's post, a video or a podcast with its words, a quote, a longer
+    /// note). Its title and blocks are a Markdown document's, so a note's editor writes it; what it is (`look`), the
+    /// link or the original post (`url`), whose it is where it isn't ours (`by`), its language and a transcript beside
+    /// them; its files are the entries of the Library files it shows, and a mood board's sparks the entries it gathers.
+    pub const SPARK_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spark, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "spark" },
+    "title": { "type": "string", "default": "" },
+    "look": {
+      "enum": ["thought", "link", "image", "moodboard", "post", "video", "quote", "note"],
+      "default": "thought"
+    },
+    "blocks": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "type": { "enum": ["heading", "paragraph", "item", "code"] },
+          "level": { "type": "integer", "minimum": 0 },
+          "checked": { "type": "boolean" },
+          "lang": { "type": "string" },
+          "text": { "type": "string", "x-loro": "text", "default": "" }
+        },
+        "required": ["id", "type"]
+      }
+    },
+    "url": { "type": "string" },
+    "by": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "image": { "type": "string" },
+        "platform": { "type": "string" }
+      }
+    },
+    "language": { "type": "string" },
+    "transcript": { "type": "string", "x-loro": "text", "default": "" },
+    "files": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "sparks": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
 }
 
 fn built_in_schema(blob: &str) -> Schema {
@@ -1490,6 +1553,7 @@ pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::C
 pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
 pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
 pub static STORY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::STORY_V1));
+pub static SPARK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V1));
 
 /// The app of each kind avenDB ships, of its one schema alone, by its kind.
 static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
@@ -1504,6 +1568,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*PROFILE_V1,
         &*FILE_V1,
         &*STORY_V1,
+        &*SPARK_V1,
     ];
     shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });

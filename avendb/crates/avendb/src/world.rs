@@ -205,7 +205,8 @@ pub struct EntryView {
 pub enum What {
     /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
     /// it is a variant of and the version of it it copied, if it is one (`VARIANT`); whether it is deleted (`DELETED`);
-    /// how many edits of it the device counts, and how many proposals it has.
+    /// how many edits of it the device counts, and how many proposals it has; and for a spark, its record, each field
+    /// it leaves out at its default, for its look, its link, its source, its files and the sparks it gathers.
     Note {
         title: String,
         text: String,
@@ -213,6 +214,7 @@ pub enum What {
         deleted: bool,
         edits: usize,
         proposals: usize,
+        spark: Option<Value>,
     },
     Todo { title: String, status: Status },
     /// A file (`FILE`): its name, its media type, and whether it is deleted (`DELETED`).
@@ -375,7 +377,10 @@ impl World {
                 "edits": edits,
                 "proposals": proposals,
                 "media": media,
-                "record": match &i.what { What::Record { record, .. } => record.clone(), _ => Value::Null },
+                "record": match &i.what {
+                    What::Record { record, .. } | What::Note { spark: Some(record), .. } => record.clone(),
+                    _ => Value::Null,
+                },
                 "files": i.files.iter().map(file).collect::<Vec<_>>(),
                 "syncedTo": holders(synced.entries.get(&i.entry)),
             })
@@ -533,7 +538,8 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
                 let edits = history.map_or(0, |h| h.changes().len());
                 let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
                 let deleted = doc.tags.iter().any(|t| t == DELETED);
-                What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), deleted, edits, proposals }
+                let spark = View::built_in("spark").and_then(|v| item.read(v));
+                What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), deleted, edits, proposals, spark }
             }
             (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (_, None, None) => record(item.record()),

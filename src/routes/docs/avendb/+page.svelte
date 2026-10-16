@@ -641,7 +641,7 @@
 				<div>
 					<h3>Entry: what</h3>
 					<p>
-						All data is an entry in a vault: notes, todos, articles, files, a device’s card, a vault’s profile, and the schemas and
+						All data is an entry in a vault: sparks and notes, todos, articles, stories, files, a device’s card, a vault’s profile, and the schemas and
 						lenses too. An entry changes only by signed writes.
 					</p>
 				</div>
@@ -1082,8 +1082,8 @@
 					entry, or a row of one, at its newest or at the version it is pinned at.
 				</li>
 				<li>
-					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, flows, functions, posts,
-					and a device’s card, a vault’s profile and a file, one version each, and each starts at version 1. Every vault
+					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, flows, functions,
+					posts, and a device’s card, a vault’s profile and a file, one version each, and each starts at version 1. Every vault
 					reads and writes them offline, and avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so
 					the same id. The todo’s version 0 above is the lens engine’s worked example, which lives only in its tests.
 				</li>

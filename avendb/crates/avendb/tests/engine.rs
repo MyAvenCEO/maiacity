@@ -326,6 +326,56 @@ fn a_story_is_a_kind_of_its_own_proposed_to_and_merged_by_its_title() {
 }
 
 #[test]
+fn a_spark_is_a_note_with_its_source_beside_it_and_a_story_grows_from_several() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let create = |ty: &str, value: Value| json!({ "op": "create", "vault": alice, "type": ty, "value": value });
+    // a link someone else posted, with whose it is and its words; a thought of one line
+    let blocks = [json!({ "id": 1, "type": "heading", "level": 1, "text": "Morning light" })];
+    let by = json!({ "name": "Ana", "url": "https://example.org/@ana", "platform": "youtube" });
+    let mut link = json!({ "kind": "spark", "title": "Morning light", "look": "video", "blocks": blocks, "by": by });
+    link["url"] = json!("https://example.org/watch/1");
+    link["transcript"] = json!("The light comes in at six.");
+    let link = ok(run(&mut w, mac, create("spark", link)))["entry"].as_str().unwrap().to_string();
+    let thought = json!({ "kind": "spark", "title": "Wake up before the town does" });
+    let thought = ok(run(&mut w, mac, create("spark", thought)))["entry"].as_str().unwrap().to_string();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": thought, "schema": "spark" })));
+    let defaults = (&got["record"]["look"], &got["record"]["files"], &got["record"]["sparks"]);
+    assert_eq!(defaults, (&json!("thought"), &json!([]), &json!([])), "what it doesn't hold reads as its default");
+    // what doesn't fit its schema is refused: a look it doesn't know
+    let odd = json!({ "kind": "spark", "look": "rumour" });
+    assert_eq!(refused(&run(&mut w, mac, create("spark", odd))), "NotAView");
+    // a note's page reads it as a document, its title and blocks, and its source beside in its record
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": link })));
+    assert_eq!((&note["kind"], &note["lines"][0]["title"]), (&json!("spark"), &json!("Morning light")));
+    assert_eq!(note["lines"][0]["blocks"][0]["text"], "Morning light");
+    assert_eq!(note["lines"][0]["record"]["by"]["name"], "Ana");
+    // its text is written as a note's is, block 2
+    let text = json!({ "id": 2, "type": "paragraph", "text": "Shot it from the window." });
+    ok(run(&mut w, mac, json!({ "op": "insert", "entry": link, "path": ["blocks"], "value": text })));
+    let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": link })));
+    assert_eq!(note["lines"][0]["text"], "Shot it from the window.");
+    // a mood board gathers both, and a story grows from the board and the thought
+    let board = json!({ "kind": "spark", "title": "Mornings", "look": "moodboard", "sparks": [link, thought] });
+    let board = ok(run(&mut w, mac, create("spark", board)))["entry"].as_str().unwrap().to_string();
+    let story = json!({ "kind": "story", "title": "Trailer story", "sparks": [board, thought] });
+    let story = ok(run(&mut w, mac, create("story", story)))["entry"].as_str().unwrap().to_string();
+    let more = json!({ "op": "insert", "entry": story, "path": ["sparks"], "value": link });
+    ok(run(&mut w, mac, more));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": story, "schema": "story" })));
+    assert_eq!(got["record"]["sparks"], json!([board, thought, link]));
+    // the world lists a spark as a note, its record beside, for the page's Sparks; a plain note has none
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    let of = |e: &str| seen["entries"].as_array().unwrap().iter().find(|x| x["entry"] == e).unwrap().clone();
+    let (b, t) = (of(&board), of(&thought));
+    assert_eq!((&b["kind"], &b["title"], &b["record"]["look"]), (&json!("note"), &json!("Mornings"), &json!("moodboard")));
+    assert_eq!((&b["record"]["sparks"], &t["record"]["look"]), (&json!([link, thought]), &json!("thought")));
+    let plain = seen["entries"].as_array().unwrap().iter().find(|x| x["type"] == "note" && x["kind"] == "note");
+    assert_eq!(plain.map(|x| &x["record"]), Some(&Value::Null));
+}
+
+#[test]
 fn lines_merge_restore_undo_and_variants_are_ops() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
@@ -528,7 +578,7 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "card", "document", "file", "flow", "function", "post", "profile", "story", "todo"];
+    let own = ["article", "card", "document", "file", "flow", "function", "post", "profile", "spark", "story", "todo"];
     assert_eq!(kinds, own, "its own kinds, each once: every shipped schema starts at v1");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     assert!(list(&schemas["lenses"]).is_empty());
