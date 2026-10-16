@@ -1,7 +1,7 @@
-//! Ids, all 32 bytes. A signer is its public key. Everything an edit creates is named by that edit's id, the hash of
-//! the signed edit: a vault by its genesis, a share by the edit that issued it. An entry's id is drawn at random by
-//! whoever creates it. An audience, the entries of a vault that the same shares select, is named by the hash of its
-//! vault and its shares (`AudienceId::of`).
+//! Ids, all 32 bytes. A signer is named by the hash of its keys. Everything an edit creates is named by that edit's
+//! id, the hash of the signed edit: a vault by its genesis, a share by the edit that issued it. An entry's id is drawn
+//! at random by whoever creates it. An audience, the entries of a vault that the same shares select, is named by the
+//! hash of its vault and its shares (`AudienceId::of`).
 
 macro_rules! ids {
     ($($(#[$doc:meta])* $name:ident),* $(,)?) => {$(
@@ -67,7 +67,7 @@ macro_rules! ids {
 }
 
 ids! {
-    /// A key that signs: a passkey (P-256) or a device key (ed25519, the device's iroh endpoint key).
+    /// A signer, a passkey or a device: the hash of its keys (`sign::SignerKeys::id`).
     SignerId,
     /// A human, coop or aven vault: the id of its genesis edit.
     VaultId,
