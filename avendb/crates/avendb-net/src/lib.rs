@@ -435,9 +435,10 @@ fn add_device_vault(
                 let owner = *chain.last().expect("the human vault first");
                 chain.push(found(kind, owner)?);
             }
-            // the chain's vaults follow the human vault's place 0
+            let server = found(last, *chain.last().expect("avenCEO GmbH last"))?;
+            // beside the chain, Maia City; the chain's vaults follow the human vault's place 0
             found(Kind::Coop, chain[1 + avendb::world::SEED_COOP_OF])?;
-            found(last, *chain.last().expect("avenCEO GmbH last"))?
+            server
         }
     };
     let add = Action::Share(Sharing::Device { vault, device, seal_to: Some(key) });

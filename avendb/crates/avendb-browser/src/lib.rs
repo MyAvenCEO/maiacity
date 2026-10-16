@@ -10,14 +10,14 @@
 //! (`avendb::sign::RelayPass`), to the server's relay and to the peer it links through. Then a device starts in one of
 //! three ways:
 //!
-//! - `Device::found`: a new person's first device founds their human vault, gives avenCEO, the aven vault the server is
-//!   a device of, backup on the whole of it, or relay with backups off, and writes its card there, in two ceremonies:
-//!   the unlock, and one that signs the vault's genesis and the edit that adds the device together
+//! - `Device::found`: a new person's first device founds their human vault, gives avenCEO server, the device vault the
+//!   server is a device of, backup on the whole of it, or relay with backups off, and writes its card there, in two
+//!   ceremonies: the unlock, and one that signs the vault's genesis and the edit that adds the device together
 //!   (`avendb_net::Node::found_with`). The passkey may be one the page just made, its P-256 key in its public key info,
 //!   or one made before for the same relying party, maiaCITY's from its sign-up: then the device drafts it all for each
 //!   key the unlock's assertion recovers to, in one batch, and keeps what the second ceremony's assertion verifies
 //!   under. The first person to found their vault through a server nobody has claimed yet claims it in that same
-//!   ceremony (P8f): their vault owns avenCEO.
+//!   ceremony (P8f): their vault owns avenCEO server, through the seed it founds.
 //! - `Device::link`: a device of a person who has one already links through the code it shows
 //!   (`avendb_net::Node::link_by_pass`), in one ceremony, the unlock, which is its passkey's pass for it and signs the
 //!   edit that adds it too: its passkey is the key, of those the unlock's assertion recovers to, whose vault the peer
