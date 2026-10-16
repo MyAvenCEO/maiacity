@@ -47,6 +47,12 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 	let stopped = false, building = true, frames = 0, done = 0;
 	/** @type {import('$lib/sandbox-2/interior/interior').EmbeddedDome | null} */
 	let dome = null;
+	/** a dome planted with our real plants: the renderers they and its floor's cover are drawn by in this scene
+	 *  ($lib/sandbox-2/interior/drawn.js) */
+	/** @type {ReturnType<typeof import('$lib/sandbox-2/interior/drawn.js').createFlora> | null} */
+	let plants = null;
+	/** @type {ReturnType<typeof import('$lib/sandbox-2/interior/drawn.js').createDrawn> | null} */
+	let laid = null;
 
 	/** the round ground under a building of this measure, and the key light over it, its shadow framed to it @param {THREE.Box3} b */
 	const place = (b) => {
@@ -108,6 +114,8 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 			dome?.update(t);
 		},
 		draw() {
+			plants?.update();
+			laid?.update();
 			renderer.render(scene, camera);
 		},
 		dispose() {
@@ -115,6 +123,10 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 			stopped = true;
 			dome?.dispose();
 			dome = null;
+			plants?.dispose();
+			plants = null;
+			laid?.dispose();
+			laid = null;
 			if (ground) disposeObject(ground);
 			ground = null;
 			renderer.toneMapping = was.tm;
@@ -135,7 +147,22 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 		handle.ghost = new THREE.Box3(new THREE.Vector3(-r, 0, -r), new THREE.Vector3(r, r * (kind === 'tent' ? 1.2 : 0.55), r));
 		place(handle.ghost);
 		onGhost?.(handle.ghost);
-		const flora = item.flora ? await import('$lib/sandbox-2/interior/sandbox5.js').then(({ SANDBOX_5 }) => ({ garden: SANDBOX_5.flora.inside, seed: SANDBOX_5.flora.seed })) : undefined;
+		// a dome planted with our real plants grows the warm garden Sandbox 4 grows under its glass, drawn by the
+		// universal renderer at the distances Sandbox 4 draws it at under the glass
+		let flora;
+		if (item.flora) {
+			const [{ SANDBOX_5 }, { createDrawn, createFlora }, { INSIDE }, { LEVELS }] = await Promise.all([
+				import('$lib/sandbox-2/interior/sandbox5.js'),
+				import('$lib/sandbox-2/interior/drawn.js'),
+				import('$lib/sandbox-2/interior/flora.js'),
+				import('$lib/assets/render/lod.js')
+			]);
+			if (stopped) return null;
+			plants = createFlora({ renderer, camera, scene, reach: INSIDE });
+			// its floor's cover, every copy at its finest shape, as the cover always was
+			laid = createDrawn({ renderer, camera, scene, boxes: 1, levels: [LEVELS[0]], force: 0 });
+			flora = { garden: SANDBOX_5.flora.inside, seed: SANDBOX_5.flora.seed, flora: plants, drawn: laid };
+		}
 		if (stopped) return null;
 		const h = await interior
 			.mountInterior(
@@ -149,7 +176,6 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 					host: { scene, camera, renderer, x: 0, z: 0 },
 					cancelled: () => stopped,
 					hurry: () => true,
-					// a dome planted with our real plants grows the warm garden Sandbox 4 grows under its glass
 					flora
 				}
 			)

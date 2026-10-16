@@ -65,9 +65,11 @@ function resolve(ref) {
  * A renderer of assets for one scene.
  * @param {{
  *   renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, boxes?: number, details?: number[],
- *   levels?: number[], px?: number, cache?: boolean
+ *   levels?: number[], px?: number, cache?: boolean, onShadows?: () => void
  * }} o `boxes` how many build side by side; `details` and `levels` the details a recipe is built at and the sizes on
- *   screen each is drawn to (./lod.js); `px` each picture's pixels a side; `cache: false` builds everything afresh
+ *   screen each is drawn to (./lod.js); `px` each picture's pixels a side; `cache: false` builds everything afresh;
+ *   `onShadows` told when what casts a shadow changed, for a world that draws its shadows again only every so often
+ *   (else they are drawn again with the next frame)
  */
 export function createAssets(o) {
 	const { renderer, camera } = o;
@@ -121,10 +123,12 @@ export function createAssets(o) {
 	let gone = false;
 
 	/**
-	 * A kind: an asset at its version, variant and values, at every level it is drawn at. Asked for again, the same.
-	 * @param {string} ref a label or a build
+	 * A kind: an asset at its version, variant and values, at every level it is drawn at. Asked for again, the same (as
+	 * it was first asked for). `shadows`: true, its shadow cast at every level; false, at none; else as below
+	 * (`meshOf`). `picture: false`, none taken: a kind a world never draws so small.
+	 * @param {string} ref a label or a build @param {{ shadows?: boolean, picture?: boolean }} [opts]
 	 */
-	function use(ref) {
+	function use(ref, opts) {
 		const { hash, params } = resolve(ref);
 		const at = INDEX.recipes[hash];
 		if (!at) throw new Error(`no recipe ${hash.slice(0, 12)}… on this device`);
@@ -147,6 +151,10 @@ export function createAssets(o) {
 			radius: 1,
 			center: new THREE.Vector3(),
 			thresholds: thresholdsOf(levels.length, undefined, levels),
+			/** its thresholds the world's own (`tune`), not its shape's */
+			tuned: false,
+			shadows: opts?.shadows,
+			picture: opts?.picture !== false,
 			slot: null,
 			n: 0,
 			cap: 0,
@@ -183,6 +191,7 @@ export function createAssets(o) {
 
 	/** a kind's thresholds by its coarsest shape: as it came, or, while it is being made, by what it may cost */
 	function retune(k) {
+		if (k.tuned) return;
 		const last = k.levels.length - 1;
 		const tris = k.levels[last].level?.tris ?? budgetOf(last, k.levels[k.base].level.tris, levels);
 		k.thresholds = thresholdsOf(k.levels.length, tris, levels);
@@ -282,10 +291,10 @@ export function createAssets(o) {
 		const lv = k.levels[L];
 		lv.meshes = lv.as >= 0 ? [] : lv.level.draws.map((d) => meshOf(k, L, d));
 		const base = L === k.base;
-		await compiled(lv, base);
+		await compiled(lv, base && k.picture);
 		// its picture taken as soon as its coarsest built shape is here, while the world loads, not by a frame that
 		// wants it: a copy whose picture is missing draws that whole shape in its place
-		if (base && !k.slot) k.slot = pictures.add(lv.level);
+		if (base && !k.slot && k.picture) k.slot = pictures.add(lv.level);
 		lv.state = 'ready';
 		dirty = shadows = true;
 	}
@@ -304,6 +313,10 @@ export function createAssets(o) {
 	 */
 	async function compiled(lv, studio) {
 		const scene = worldOf();
+		// three draws a soft (PCF-soft) shadow as PCF from its first shadow pass on, and a shader made before that pass
+		// would read the shadow as a plain texture: WebGL then refuses every draw of it (a world's near plants left out
+		// until its lights next change). Made as it will be drawn.
+		if (renderer.shadowMap.type === THREE.PCFSoftShadowMap) renderer.shadowMap.type = THREE.PCFShadowMap;
 		compiling++;
 		try {
 			if (scene) await Promise.all(lv.meshes.map(({ mesh }) => renderer.compileAsync(mesh, camera, scene)));
@@ -331,8 +344,9 @@ export function createAssets(o) {
 		// which copies are drawn is chosen here, never by three's culling, which would see only the first
 		mesh.frustumCulled = false;
 		// the coarsest shape of a plant casts no shadow, its picture's and its finer shapes' are enough; a kind built
-		// once casts one at every level, as it did when it had only the one
-		mesh.castShadow = d.cast && (k.names.length === 1 || L < k.names.length - 1);
+		// once casts one at every level, as it did when it had only the one; a kind asked for with its shadows (`use`)
+		// casts them at every level, or at none
+		mesh.castShadow = k.shadows ?? (d.cast && (k.names.length === 1 || L < k.names.length - 1));
 		mesh.receiveShadow = true;
 		mesh.name = `${k.label} · level ${L}`;
 		group.add(mesh);
@@ -683,19 +697,31 @@ export function createAssets(o) {
 		counted.tris = tris;
 		counted.calls = calls;
 		// what casts a shadow changed: the shadows drawn again (a world whose sky draws them only when it must)
-		if (shadows) renderer.shadowMap.needsUpdate = true;
+		if (shadows) {
+			if (o.onShadows) o.onShadows();
+			else renderer.shadowMap.needsUpdate = true;
+		}
 		shadows = false;
 		return true;
 	}
 
 	/**
 	 * Waits for every kind used so far to have its coarsest shape (or to have failed); `onKind` hears each one come.
-	 * @param {(done: number, of: number) => void} [onKind]
+	 * `every`: and each of its other levels too, asked for now (for a film, whose frames must never draw a shape while
+	 * a finer one is still coming).
+	 * @param {(done: number, of: number) => void} [onKind] @param {boolean} [every]
 	 */
-	async function ready(onKind) {
+	async function ready(onKind, every = false) {
 		const list = [...kinds.values()];
 		let done = 0;
-		await Promise.all(list.map((k) => k.ready.then(() => onKind?.(++done, list.length))));
+		await Promise.all(
+			list.map((k) =>
+				k.ready.then(async () => {
+					if (every && k.ok) await Promise.all(k.levels.map((_, L) => want(k, L).catch(() => {})));
+					onKind?.(++done, list.length);
+				})
+			)
+		);
 		return list;
 	}
 
@@ -749,6 +775,18 @@ export function createAssets(o) {
 		},
 		/** asks again, the next frame, what to draw (after something changed that the renderer cannot see) */
 		touch: () => (dirty = true),
+		/**
+		 * A kind's levels drawn down to these sizes on screen (one for each of its shapes, finest first; smaller than the
+		 * last, its picture): a world that changes a kind's detail where it always has, not where its shape would. Null:
+		 * by its shape again.
+		 * @param {any} k @param {number[] | null} thresholds
+		 */
+		tune(k, thresholds) {
+			k.tuned = !!thresholds;
+			if (thresholds) k.thresholds = thresholds.slice();
+			else if (k.ok) retune(k);
+			dirty = shadows = true;
+		},
 		/**
 		 * Draws every copy at level L whatever its size (0 its finest shape, as a film wants; past its shapes, its
 		 * picture), or each at the level its size calls for again (null).
