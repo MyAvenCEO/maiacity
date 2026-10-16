@@ -1,6 +1,6 @@
 ---
 name: neewer-cb60
-description: Samuel's Neewer CB60 RGB — a 70 W RGB COB light (2700–6500 K with ±50 G/M, HSI, 17 effects, CRI 97+, 18,000 lux at 1 m with its 18 cm reflector, Bowens mount) on a black light stand in his 14 m² room. How to operate it (the back panel, CCT, HSI and FX modes, the NEEWER app over Infinity Bluetooth, 2.4G channels), its modifiers, recipes for the room (a soft key at 45°, a wall or ceiling bounce, a rim, motivated window daylight, a warm match to the Edison bulb, a coloured background wash, the effects), safety, and its twin in the room world (the shot's `cb60` light). Use it whenever the CB60 is set up, dialled in, chosen for a scene by the gaffer, or lit in a world shot.
+description: Samuel's Neewer CB60 RGB — a 70 W RGB COB light (2700–6500 K with ±50 G/M, HSI, 17 effects, CRI 97+, 18,000 lux at 1 m with its 18 cm reflector, Bowens mount) on a black light stand in his 14 m² room. How to operate it (the back panel, CCT, HSI and FX modes, the NEEWER app over Infinity Bluetooth, 2.4G channels), its modifiers, recipes for the room (a soft key at 45°, a wall or ceiling bounce, a rim, motivated window daylight, a warm match to the Edison bulb, a coloured background wash, the effects), safety, and its twin as the room world had it (the model and that world removed 2026-10-16; the shot's `cb60` light). Use it whenever the CB60 is set up, dialled in, chosen for a scene by the gaffer, or lit in a world shot.
 ---
 
 # Neewer CB60 RGB
@@ -40,7 +40,7 @@ can't carry alone (`gaffer`).
 |---|---|---|
 | `controls.md` | operating it | the back panel, the modes (CCT, HSI, FX) and how to drive each, the 17 effects, the display, the NEEWER app and 2.4G |
 | `recipes.md` | lighting with it | the modifiers it takes, seven recipes for Samuel's room with the settings to dial, safety and care |
-| `twin.md` | its twin in the room (that world removed 2026-10-16) | where it stood, switching it on in a shot (`cb60`), its beam and colour, matching the real set-up |
+| `twin.md` | its twin in the room (that world and the model removed 2026-10-16) | how the model was built and where it stood, switching it on in a shot (`cb60`), its beam and colour, matching the real set-up |
 
 ## Measure it once (15 minutes with a lux meter)
 

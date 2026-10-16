@@ -35,7 +35,7 @@ be *based on* a true story, re-enacted, never made up), **full conviction** (a v
 | `director` | the director | what each scene is about, the shots for each line, the shot list and storyboard, staging and continuity, directing yourself on camera |
 | `cinematographer` | the director of photography | composition, shot sizes and angles, lenses, camera movement, exposure for log, the virtual camera of the worlds, filming yourself alone |
 | `gaffer` | the light | motivated light, ratios, windows and practicals, colour temperature, time of day — in the room and in the worlds |
-| `neewer-cb60` | one fixture | the Neewer CB60 RGB: its controls, modes and recipes, and its twin in the room |
+| `neewer-cb60` | one fixture | the Neewer CB60 RGB: its controls, modes and recipes, and how its twin in the room world was built (both removed 2026-10-16) |
 | `production-designer` | worlds, sets, things | the worlds and their sets, the 3D models library, art direction |
 | `editor` | the cut | cutting on the word, the transitions, pacing and its alternatives, the process, the audit before a render |
 | `colorist` | the grade | the base correction, then the look; colour across the arc; rendered shots beside camera footage |

@@ -55,14 +55,16 @@ test('a host carried in turn keeps the refs its parts came with', async () => {
 });
 
 test('any other object is carried whole, as one part with its card', async () => {
-	const crate = await objectAt('things/wine-crate');
+	// the solar panel, a load on the pickup's bed in MaiaCity V1: an older thing, with no parts of its own
+	const panel = await objectAt('things/solar-panel');
+	expect(panel.userData.asset).toBeUndefined();
 	const { root, kit } = host();
-	kit.carry(crate, { at: [0.5, 0.05, 0], prefix: 'crate-', card: { label: 'Wine crate', what: 'the load' } });
+	kit.carry(panel, { at: [0.5, 0.05, 0], prefix: 'panel-', card: { label: 'Solar panel', what: 'the load' } });
 	const asset = kit.seal();
-	const card = asset.catalog.parts.find((p) => p.id === 'crate');
-	expect(card?.ref).toMatch(/^things\/wine-crate@\d+$/);
-	expect(card?.label).toBe('Wine crate');
-	expect(root.userData.parts.crate).toBe(crate);
+	const card = asset.catalog.parts.find((p) => p.id === 'panel');
+	expect(card?.ref).toMatch(/^things\/solar-panel@\d+$/);
+	expect(card?.label).toBe('Solar panel');
+	expect(root.userData.parts.panel).toBe(panel);
 	asset.explode(1);
-	expect(crate.position.y).toBeGreaterThan(0.05);
+	expect(panel.position.y).toBeGreaterThan(0.05);
 });

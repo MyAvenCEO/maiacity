@@ -1,34 +1,23 @@
 # The 3D models: built once, placed anywhere
 
-Every reusable thing — a bed, a chair, a crate shelf, a light on its stand, a truck — is a function in the 3D models
-library, shown on its own in the 3D models viewer and placed in any world.
+Every reusable thing — a tent, a backpack, a solar panel, a pickup — is a function in the 3D models library, shown
+on its own in the 3D models viewer and placed in any world.
 
 ## Where they live
 
-- `src/lib/models/furniture.ts` — the models: `bed`, `wineCrate`, `crateTower`, `chair`, `edisonBulb`,
-  `framedPicture`, `sheepskin`, `truck`, and the fixtures (the CB60 light on its stand, `neewer-cb60`).
-- `src/lib/models/outdoor.ts` — under the open sky: trees (`broadleaf`, `willow`, `poplar`, `shrub`; the garden's
-  `lilac`, `corkscrew`, `maple`, `privet`, `sapling`), a park bench, the Wittelsbacherbrücke's lamp, a limestone
-  block, the bronze rider. A world plants many trees, so a tree is two geometries for instancing (`treeParts`: its
-  wood and its leaves, full or light); `tree()` puts them together for the viewer. Small plants: `bush` (leaf cards
-  through a dome — herbs, shrubs, a crown), `stems` (hanging or climbing: ivy, a trailing herb, a creeper),
-  `scatterLeaves` (leaves on a surface of their own: a hedge's, an ivy cone's), each in a leaf and a tint
-  (`plantLeaves`; a gain over 1 lightens it, an olive's silver).
-- `src/lib/models/terrace.ts` — the backyard's terrace: the club sofa, the bamboo table, the bistro table and its
-  moulded chairs, paper lanterns (one paper for all: `userData.glass`), ribbed planters and their herbs, the olive
-  tree, terracotta pots, the bird of paradise, the monstera, the ficus, a geranium, festoon lights, the toy monkey and
-  the toy bee.
-- `src/lib/models/yard.ts` — the backyard's courtyard and garden: the steel window and the casement window, the front
-  door, the workshop door, the door canopy, the barn lamp, the letterbox on its post, window boxes, the city bike, the
-  rain barrel, the insect hotel, the floodlight, the station clock, the teak table and recliners, the folding chair,
-  the stoneware crock, the red tin, the ashtray, the clipped hedge, the ivy cone.
+- One file per family (`thing-skill`, "Where it lives"): `village.js` (the pickup, the loading ramp, the solar
+  panel), `planting.js` (the backpack, the bottle, the seed packets, the marker sticks, the plant stake, dug earth),
+  `tent.js` and `belltent.js` (the tents, their bags, the fire place), `wayside.js` (the travel van), `minidomes.js`
+  (the coop, the hutch, the playground) and `domerooms.js` (what furnishes the domes). `furniture.ts` keeps only the
+  truck (the Machines' `machines/truck`); the room's, the apartment's, the Isar's and the backyard's things went with
+  those worlds on 2026-10-16.
 - `src/lib/models/containers.js` — Sandbox 1's settlement containers, 40-foot high cubes (12.19 × 2.44 × 2.90 m) fitted
   out and walkable: the kitchen (range, combi steamer, sinks, fridges, the serving hatch, the pantry behind a
   partition), the workshop (bench and pegboard, timber rack, the machines and power tools), the tech container (solar on
   the roof and fold-out wings, batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, the AI server
-  room) and the sanitary container (washers and dryers, basins, three showers and three toilets). The open cargo end is
-  the way in; each has `userData.roof` (the viewer lifts it off) and `userData.walk` (where to start, `canStand`,
-  `floorAt`, the ceiling lamps) for the walker.
+  room) and the sanitary container (washers and dryers, basins, three showers and three toilets; its WC and basin
+  from `bathroom.ts`). The open cargo end is the way in; each has `userData.roof` (the viewer lifts it off) and
+  `userData.walk` (where to start, `canStand`, `floorAt`, the ceiling lamps) for the walker.
 - `src/lib/biomes/` — the floors the worlds stand on, as recipes that mix (`/app/biomes`, admin): **surfaces**
   (`surfaces.js`: leaf litter, humus, needles, moss carpet, the living mat, bare soil) blended by one shader in
   patches of their own size, and **cover** (`cover.js`: grasses, sedge, moss cushions, low flowers, woodruff, wood
@@ -44,10 +33,10 @@ library, shown on its own in the 3D models viewer and placed in any world.
   and beyond that as an impostor (`impostors.js`): each kind photographed from eight sides into one texture once
   grown, each far tree one card turned to the eye that also throws the tree's shadow. `forest.mask(circles)` leaves
   out ground whose own forest is shown (a dome's full inside).
-- `src/lib/models/textures.ts` — their surfaces, drawn once on a canvas and shared: limed oak, pine (fresh and aged),
-  painted pine, plaster (as a bump map), wool, the face on the wall.
+- `src/lib/models/textures.ts` — `canvasTexture`: a surface drawn once on a canvas, seeded by its key and shared;
+  each family paints its own with it (the tents' canvas, the seed packets' prints, the containers' stencils).
 - `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,
-  and the function that makes it. A new model is a function in `furniture.ts` and a line here.
+  and the function that makes it. A new model is a function in its family's file and a line here.
 - `/app/models` (admin; on the dashboard the Things) — the viewer: every model on a turntable on a grid of 10 cm squares, with its width × depth ×
   height in centimetres. Check every new model there before placing it. A model with `userData.walk` can be walked
   inside (the sandboxes' walker, Esc to walk out); one with `userData.roof` can have its roof lifted; one with
@@ -55,17 +44,18 @@ library, shown on its own in the 3D models viewer and placed in any world.
 
 ## The conventions every model keeps
 
-- **Metres, to its real measure.** The bed is 140 × 200; the wine crate 50 × 33 × 42 cm.
-- **It stands on the floor at its origin** (y 0 is the floor), its middle over x = 0, z = 0. A thing that hangs (the
-  bulb) hangs from its origin.
+- **Metres, to its real measure.** The bell tent is 4.2 m across on a 3 m pole; the water bottle 7.7 cm across and
+  30 cm to its cap's loop.
+- **It stands on the floor at its origin** (y 0 is the floor), its middle over x = 0, z = 0. A thing that hangs (a
+  lamp) hangs from its origin.
 - **Its back towards −z, its front towards +z** (a bed's head, a crate's back boards, a chair's backrest, a light's
   rear panel).
 - **Shared materials:** one material per surface for every copy, so a room full of models costs little.
 - **Shadows:** parts cast; big surfaces also catch.
 - **Seeded randomness:** a texture or a crumple is the same every time, so a film renders the same pixels on every
   machine.
-- **Handles for the world:** whatever a world needs to drive (a bulb's glass, its filament, where its light sits) is
-  in `userData`.
+- **Handles for the world:** whatever a world needs to drive (a lamp's glass, where its light sits, how far a tent
+  is pitched) is in `userData`.
 
 ## The actors: rigged to move (`src/lib/actors`)
 
@@ -115,9 +105,10 @@ its matrices, read the bones' world positions (an elbow on a knee, a hand at the
    light); estimate the rest from the photos against those, and say which are estimates.
 2. **Block it out in parts:** boxes for boards and beams (`part`), rounded boxes for soft things (`soft`), bars for
    legs and tubes (`bar`), lathes for turned shapes (a bulb's glass, a reflector bowl).
-3. **Cloth is a displaced surface, never a slab.** The duvet is a thick sheet of 84 × 72 segments, flat on the
-   mattress, bent round its edge with a radius and hanging down, crumpled by a few waves of different sizes, rolled up
-   where it was thrown back. A rounded box only shows folds at its edges: its middle is one flat quad.
+3. **Cloth is a displaced surface, never a slab.** The room's duvet (gone with the room's Things) was a thick sheet
+   of 84 × 72 segments, flat on the mattress, bent round its edge with a radius and hanging down, crumpled by a few
+   waves of different sizes, rolled up where it was thrown back. A rounded box only shows folds at its edges: its
+   middle is one flat quad.
 4. **Keep it on top of what it lies on.** Compute the lowest point of every soft thing (its middle minus its half
    thickness minus the deepest crumple) and keep it above the surface under it. A duvet whose folds dip below the
    mattress top vanishes into the mattress.

@@ -1,12 +1,20 @@
 # Its twin in the room
 
-The room world was removed on 2026-10-16. The CB60's 3D model stays in the Things library, and the shot's `cb60`
-light is kept so old shots still read, but it lights nothing now. What follows is how the twin stood and was lit, for
-a world that places it again.
+The room world was removed on 2026-10-16, and with it the CB60's 3D model (the Things' `neewer-cb60`). The shot's
+`cb60` light is kept so old shots still read, but it lights nothing now. What follows is how the twin was built, stood
+and was lit, for a world that builds and places it again: the model's code is in the history
+(`git show 618bfa4c:src/lib/models/furniture.ts`, `neewerCb60`).
 
-The CB60 stands in the room world too: the 3D model on its stand (`neewerCb60` in `src/lib/models/furniture.ts`, built
-to Neewer's measures, in the 3D models viewer) and its beam at the reflector (`src/lib/worlds/room.ts`), so a world shot
-is lit the way the real room is.
+The twin was the 3D model on its stand and its beam at the reflector, so a world shot was lit the way the real room is.
+
+## Its model
+
+- Built to Neewer's drawings and specs: the body 12.5 × 12.3 cm with rounded corners, 20 cm from the back panel to the
+  Bowens flange; the LED module 4.8 cm in front of it; the stock reflector 18 cm across and 14 cm deep on a 10 cm
+  collar; the tilt axis 8.9 cm under the beam.
+- On a black three-legged stand with leg braces, the light pointing towards +z: `height` the beam's height above the
+  floor when level (1.5 m), `tilt` in radians (negative = down).
+- Its handles: `userData.face` (the LED's material, to glow), `beam` (where the light leaves) and `aim` (its direction).
 
 ## Where it stands
 
