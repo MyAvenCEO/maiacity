@@ -19,7 +19,7 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { backpack, dugEarth, plantStake } from '$lib/models/planting.js';
+import { backpack } from '$lib/models/planting.js';
 import { bellTent } from '$lib/models/belltent.js';
 import { human } from '$lib/actors/human.ts';
 import { blend } from '$lib/actors/rig.ts';
@@ -28,7 +28,7 @@ import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
-import { BAG_PARTS, BELL_TENT, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PICKUP, RAMP, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, tentWork } from './things.js';
+import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, stakeRef, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
 import { plantRef } from './plants.js';
 
@@ -430,37 +430,126 @@ const rampTip = (z) => Math.min(1, Math.max(0, (Math.min(z - FOOT_Z, LIP_Z - z) 
  *  the plant stake the tree will grow by pushed in beside it, 75 cm of it standing; its little flag printed with the
  *  tree's name and its plant, tied on once the seed is picked */
 const STAKE_AT = V(0.13, -0.25, -0.12);
-function spotKit({ name = '', seed = '' } = {}) {
+/**
+ * The kit of a tree's spot: the dug earth (things/dug-earth@1, built in the box), wetted by its control `wet`, and the
+ * tree's plant stake (labelKit), each put in as it comes. `pick`: what a tap on it finds (none: no name, its shadows
+ * as built).
+ * @param {ReturnType<typeof createDrawn>} drawn
+ */
+function spotKit(drawn, { name = '', seed = '', pick } = {}) {
 	const g = new THREE.Group();
-	const earth = dugEarth();
+	const earth = new THREE.Group();
 	g.add(earth);
-	g.userData = { earth, stake: null };
+	let wet = 0, poser = null;
+	drawn.load(THINGS.earth, earth, { pick, cast: !!pick }).then(
+		(got) => {
+			poser = got.poser;
+			if (wet) poser.set('wet', wet);
+		},
+		() => {}
+	);
+	/** the earth as wet as k (0 dry … 1 soaked) */
+	const setWet = (k) => {
+		if (k === wet) return;
+		wet = k;
+		poser?.set('wet', k);
+	};
+	g.userData = { earth, setWet, stake: null, drawn, pick };
 	labelKit(g, name, seed);
 	return g;
 }
-/** the stake of a kit for a tree of that name and seed: a new one when either changes (its print is made with it),
- *  its flag shown once there is a seed */
+/** the stake of a kit for a tree of that name and seed (things/plant-stake@2, its print made with them): a new one
+ *  when either changes, its flag shown once there is a seed */
 function labelKit(kit, name, seed) {
 	let stake = kit.userData.stake;
 	if (!stake || stake.userData.seed !== (seed || 'apple') || stake.userData.name !== name) {
 		if (stake) kit.remove(stake);
-		stake = plantStake({ name, seed: seed || 'apple' });
+		stake = new THREE.Group();
+		stake.userData = { seed: seed || 'apple', name, flag: null, flown: !!seed };
+		const { drawn, pick } = kit.userData;
+		drawn.load(stakeRef(name, seed || 'apple'), stake, { pick, cast: true }).then(
+			(got) => {
+				stake.userData.flag = STAKE_FLAG.path.reduce((x, i) => x?.children[i], got.obj) ?? null;
+				if (stake.userData.flag) stake.userData.flag.visible = stake.userData.flown;
+			},
+			() => {}
+		);
 		stake.position.copy(STAKE_AT);
 		stake.rotation.set(0.03, 0, -0.04);
 		kit.add(stake);
 		kit.userData.stake = stake;
 	}
-	stake.userData.flag.visible = !!seed;
+	stake.userData.flown = !!seed;
+	if (stake.userData.flag) stake.userData.flag.visible = !!seed;
 	return stake;
 }
-/** the backpack off the back and open (Samuel 2026-10-14: the five seeds and a 1 l bottle in it), with where the
- *  bottle and each seed's packet sit in it, so they go back there */
-function openPack() {
-	const g = backpack({ open: 1 });
-	const { bottle, packets } = g.userData;
-	g.userData.bottleAt = { p: bottle.position.clone(), r: bottle.rotation.clone() };
-	// the packets leaned back against the clothes, their fronts up to whoever looks in
-	for (const p of Object.values(packets)) ((p.rotation.x -= 0.6), (p.userData.y0 = p.position.y));
+/**
+ * A player's backpack off their back and open (Samuel 2026-10-14: the seeds and a 1 l bottle in it; things/backpack@2,
+ * built in the box), opened and shut by its control `open`, with where the bottle and each seed's packet sit in it,
+ * so they go back there. Until it is here the story moves stand-ins for its bottle, its packets and what is in it;
+ * once it is, the build's own take over where those were put.
+ * @param {ReturnType<typeof createDrawn>} drawn @param {string} pick
+ */
+function openPack(drawn, pick) {
+	const g = new THREE.Group();
+	const inside = new THREE.Group(), bottle = new THREE.Group(), cap = new THREE.Group();
+	bottle.add(cap);
+	bottle.userData = { cap, mouth: V(0, BOTTLE_MOUTH, 0) };
+	inside.add(bottle);
+	const packets = {};
+	for (const id of PACK_PACKETS) {
+		const p = (packets[id] = new THREE.Group());
+		p.userData.y0 = 0;
+		inside.add(p);
+	}
+	g.add(inside);
+	let open = 1, poser = null;
+	g.userData = {
+		inside,
+		bottle,
+		packets,
+		bottleAt: { p: bottle.position.clone(), r: bottle.rotation.clone() },
+		setOpen(k) {
+			if (k === open) return;
+			open = k;
+			poser?.set('open', k);
+		}
+	};
+	drawn.load(THINGS.pack, g, { pick }).then(
+		(got) => {
+			const u = g.userData, at = (n) => got.named.get(n);
+			const real = { inside: at('inside'), bottle: at('water-bottle'), cap: at('cap') };
+			if (!real.inside || !real.bottle || !real.cap) return;
+			real.bottle.userData = { cap: real.cap, mouth: V(0, BOTTLE_MOUTH, 0) };
+			const bottleAt = { p: real.bottle.position.clone(), r: real.bottle.rotation.clone() };
+			// the packets leaned back against the clothes, their fronts up to whoever looks in
+			const mine = {};
+			for (const id of PACK_PACKETS) {
+				const p = at(`seed-packet:${id}`);
+				if (!p) continue;
+				p.rotation.x -= 0.6;
+				p.userData.y0 = p.position.y;
+				// raised as its stand-in was, shown as it was
+				p.position.y += u.packets[id].position.y - u.packets[id].userData.y0;
+				p.visible = u.packets[id].visible;
+				mine[id] = p;
+			}
+			// the bottle where its stand-in was taken, if it was, its cap as it was
+			if (u.bottle.parent && u.bottle.parent !== u.inside) {
+				u.bottle.parent.add(real.bottle);
+				real.bottle.position.copy(u.bottle.position);
+				real.bottle.quaternion.copy(u.bottle.quaternion);
+			}
+			real.bottle.visible = u.bottle.visible;
+			real.cap.visible = u.bottle.userData.cap.visible;
+			u.bottle.removeFromParent();
+			g.remove(u.inside);
+			Object.assign(u, { inside: real.inside, bottle: real.bottle, packets: mine, bottleAt });
+			poser = got.poser;
+			if (open !== 1) poser.set('open', open);
+		},
+		() => {}
+	);
 	return g;
 }
 /** the bottle back in its pack, its cap on */
@@ -775,14 +864,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const tipOn = (o, yaw, k) => o.quaternion.copy(truck.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-SLOPE * k, yaw, 0)));
 	// each player's backpack off their back and open, the seeds and the bottle in it; the dug earth and the stake at
 	// the spot marked
-	const packs = { A: openPack(), B: openPack() };
+	const packs = { A: openPack(drawn, 'asset:pack:A'), B: openPack(drawn, 'asset:pack:B') };
 	for (const k of ['A', 'B']) (packs[k].visible = false), world.add(named(packs[k], `asset:pack:${k}`));
 	// the seed itself as it is planted, as long as the seed picked (cm, a pip a little larger than life so it reads):
 	// a pip, a stone or a nut
 	const SEED_CM = { apple: 1.2, pear: 1.2, quince: 1.2, mulberry: 0.8, cherry: 1.4, plum: 2, apricot: 2.4, hazel: 1.8, chestnut: 2.8, walnut: 3.4 };
 	const seed = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8).scale(0.006, 0.0045, 0.01), new THREE.MeshStandardMaterial({ color: '#3a2010', roughness: 0.3 }));
 	seed.visible = false;
-	const myKit = spotKit();
+	const myKit = spotKit(drawn);
 	myKit.visible = false;
 	world.add(myKit);
 	// the water poured from the bottle: a thin clear stream down to the earth
@@ -1153,8 +1242,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// stands (./plants.js)
 			const plant = new THREE.Group();
 			const copy = drawn.follow(plantRef(t.plant, t.stage, t.seed), plant, { pick: `tree:${seat}`, receive: true });
-			const kit = spotKit({ name: t.name ?? '', seed: t.plant.id });
-			kit.userData.earth.userData.setWet(0.6);
+			const kit = spotKit(drawn, { name: t.name ?? '', seed: t.plant.id, pick: `tree:${seat}` });
+			kit.userData.setWet(0.6);
 			g.add(plant, kit);
 			g.position.set(t.x, 0, t.z);
 			g.rotation.y = spotYaw(t);
@@ -2513,7 +2602,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				myKit.position.set(x, 0, z);
 				myKit.rotation.y = spotYaw(S);
 				labelKit(myKit, stage.name, '');
-				myKit.userData.earth.userData.setWet(0);
+				myKit.userData.setWet(0);
 				myKit.visible = true;
 				seatOut(me);
 				me.visible = true;
@@ -2534,7 +2623,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (!S) return Promise.resolve();
 		const L = spotAt(S);
 		const pk = packs[stage.me];
-		const { setWet } = myKit.userData.earth.userData;
+		const { setWet } = myKit.userData;
 		// the seed from the packet in their fingers, down into the hollow and pressed under: from the side, kneeling at
 		// it, then close on the earth as it goes in (Samuel 2026-10-14: the planting was not seen, and oddly framed)
 		const hand = me.userData.cast.rig.bones.handR, IN = L(0, 0.025, 0); // on the hollow's floor, 2 cm up

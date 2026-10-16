@@ -24,7 +24,7 @@ export const THINGS = {
 	fire: 'things/fire-place@1',
 	bag: 'things/bell-tent-bag@1',
 	pack: 'things/backpack@2',
-	stake: 'things/plant-stake@1',
+	stake: 'things/plant-stake@2',
 	earth: 'things/dug-earth@1',
 	van: 'things/travel-van@1'
 };
@@ -129,3 +129,13 @@ export function tentWork(k) {
 	const [x, z] = nth(spots, span(k, steps.inside));
 	return at(x, z);
 }
+
+/** a tree's plant stake, its flag printed with the tree's name and its plant (things/plant-stake@2) */
+export const stakeRef = (name, seed) => `${THINGS.stake}?${new URLSearchParams({ name, seed })}`;
+/** the stake's flag (the cloth on its wire, shown once a seed is picked): the path of children down to it */
+export const STAKE_FLAG = { path: [14] };
+
+/** the open backpack (things/backpack@2): the seeds' packets in it, each its node `seed-packet:<id>` (its bottle is
+ *  `water-bottle`, its cap `cap`, what is in it `inside`), and where the bottle pours from, up its own upright */
+export const PACK_PACKETS = ['apple', 'pear', 'cherry', 'plum', 'apricot', 'quince', 'mulberry', 'walnut', 'chestnut', 'hazel'];
+export const BOTTLE_MOUTH = 0.268;
