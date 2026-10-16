@@ -48,7 +48,7 @@ test('each asset, version and variant is a recipe of its own, named by the hash 
 	expect(new Set(Object.values(index.labels)).size).toBe(hashes.length);
 	expect(index.engine).toBe(LATEST.v);
 	for (const [hash, at] of Object.entries(index.recipes).slice(0, 40)) {
-		expect(hashText(recipeFile(libraries[at.group], at.id, at.v, at.variant))).toBe(hash);
+		expect(hashText(recipeFile(libraries[`${at.group}/${at.id}`], at.id, at.v, at.variant))).toBe(hash);
 		expect(index.labels[at.label]).toBe(hash);
 	}
 	expect(index.recipes[index.labels['plants/apple@2']].params.map((p) => p.id)).toEqual(['stage', 'seed', 'detail', 'fruit']);
@@ -58,7 +58,7 @@ test('each asset, version and variant is a recipe of its own, named by the hash 
 async function start(hash) {
 	const at = made.index.recipes[hash];
 	let f;
-	new Function('defineRecipe', recipeFile(made.libraries[at.group], at.id, at.v, at.variant))((x) => (f = x));
+	new Function('defineRecipe', recipeFile(made.libraries[`${at.group}/${at.id}`], at.id, at.v, at.variant))((x) => (f = x));
 	return f((id) => {
 		if (!Object.hasOwn(MODULES, id)) throw new Error(`no module ${id}`);
 		return MODULES[id];
