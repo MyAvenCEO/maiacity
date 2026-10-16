@@ -22,13 +22,14 @@ import { rng } from './noise.js';
  *   recipe: import('./index.js').Recipe,
  *   open?: (x: number, z: number) => boolean,
  *   tile?: number, reach?: number, near?: number, thin?: number, perFrame?: number, seed?: number, shadows?: boolean,
- *   hidden?: Set<number>, density?: number, origin?: [number, number]
+ *   hidden?: Set<number>, density?: number, origin?: [number, number], scale?: number
  * }} o
  *   recipe: the biome; open: whether cover may stand at x, z (not on a path, in the water, in a trunk…); tile: a tile's
  *   size (m); reach: how far from the eye it is drawn (m); near: how far every plant of it stands, beyond which it
  *   thins out; thin: how much of it is left at its reach (0…1); perFrame: how many tiles may be built a frame;
  *   density: the biome's, if it should be other (fewer on a slow device); origin: where this ground's 0, 0 lies in
- *   the world (for a dome's floor laid in its own ground), so its colonies stand on the surfaces its ground is painted with
+ *   the world (for a dome's floor laid in its own ground), so its colonies stand on the surfaces its ground is painted with;
+ *   scale: how big its plants grow against the biome's own (lusher, under glass)
  */
 export function coverStream(o) {
 	const tile = o.tile ?? 12, reach = o.reach ?? 30, perFrame = o.perFrame ?? 1, seed = o.seed ?? 1, shadows = o.shadows ?? false;
@@ -59,7 +60,7 @@ export function coverStream(o) {
 			for (let z = z0; z < z0 + tile; z += s) {
 				const px = x + r() * s, pz = z + r() * s;
 				const k = coverAt(recipe, r, px + ox, pz + oz, hidden);
-				const turn = r() * Math.PI * 2, size = 0.75 + r() * 0.6, rank = r();
+				const turn = r() * Math.PI * 2, size = (0.75 + r() * 0.6) * (o.scale ?? 1), rank = r();
 				if (k < 0 || (o.open && !o.open(px, pz))) continue;
 				at[k]?.push({ rank, m: new THREE.Matrix4().compose(p.set(px, 0, pz), q.setFromAxisAngle(up, turn), sc.setScalar(size)) });
 			}
