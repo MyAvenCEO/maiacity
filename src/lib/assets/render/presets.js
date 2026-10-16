@@ -131,6 +131,16 @@ void labClip(vec4 P, vec3 ro, vec3 rd, inout float t0, inout float t1, inout int
 	if (labCap) { vec3 nw = normalize(-labN); normal = normalize((viewMatrix * vec4(nw, 0.0)).xyz); if (dot(normal, normalize(vViewPosition)) > 0.0) normal = -normal; }`
 				);
 		};
+		// glass that bends the light behind it (transmission) draws the whole world once more every frame just for
+		// itself: ours lets the light through as plain see-through glass
+		if (m.transmission > 0) {
+			m.opacity = Math.min(m.opacity, 1 - 0.7 * m.transmission);
+			m.transparent = true;
+			m.depthWrite = false;
+			m.transmission = 0;
+		}
+		// and a see-through part seen from both sides is drawn in one pass, not its back and then its front
+		if (m.transparent && m.side === THREE.DoubleSide) m.forceSinglePass = true;
 		m.customProgramCacheKey = () => (cap ? 'asset-preset-cap' : 'asset-preset');
 		if (cap) m.shadowSide = THREE.FrontSide;
 		clip(m);

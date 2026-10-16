@@ -129,7 +129,6 @@ export function createAssets(o) {
 			center: new THREE.Vector3(),
 			thresholds: thresholdsOf(names.length, undefined, levels),
 			slot: null,
-			bake: false,
 			n: 0,
 			cap: 0,
 			M: new Float32Array(0),
@@ -170,7 +169,11 @@ export function createAssets(o) {
 				lv.level = prepare(got.obj, presets);
 				lv.from = got.from;
 				lv.meshes = lv.level.draws.map((d) => meshOf(k, L, d));
-				await compiled(lv, L === k.levels.length - 1);
+				const last = L === k.levels.length - 1;
+				await compiled(lv, last);
+				// its picture taken as soon as its coarsest shape is here, while the world loads, not by a frame that
+				// wants it: a copy whose picture is missing draws that whole shape in its place
+				if (last && !k.slot) k.slot = pictures.add(lv.level);
 				lv.state = 'ready';
 				dirty = true;
 			},
@@ -314,8 +317,6 @@ export function createAssets(o) {
 	const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), ball = new THREE.Sphere(), eye = new THREE.Vector3();
 	const last = { world: new Float32Array(16), proj: new Float32Array(16) };
 	const counted = { levels: [0, 0, 0], pictures: 0, tris: 0, calls: 0, culled: 0 };
-	/** kinds whose picture is wanted and not yet taken */
-	const toBake = new Set();
 	const same = (a, b) => {
 		for (let i = 0; i < 16; i++) if (Math.abs(a[i] - b[i]) > 1e-5) return false;
 		return true;
@@ -339,7 +340,6 @@ export function createAssets(o) {
 				pictures.push(k.slot, k.M[i * 16 + 12], k.M[i * 16 + 13], k.M[i * 16 + 14], k.T[i], k.S[i], fade);
 				return m;
 			}
-			if (!k.bake) toBake.add(k);
 			// no picture yet: its coarsest shape stands in, whole
 			if (fade < 1) return -1;
 			L = m - 1;
@@ -369,16 +369,6 @@ export function createAssets(o) {
 	 */
 	function update() {
 		camera.updateMatrixWorld();
-		// a picture a frame at most, so taking them never stalls the view
-		for (const k of toBake) {
-			toBake.delete(k);
-			const lv = k.levels[k.levels.length - 1];
-			if (lv.state !== 'ready' || k.slot) continue;
-			k.bake = true;
-			k.slot = pictures.add(lv.level);
-			dirty = true;
-			break;
-		}
 		const world = camera.matrixWorld.elements, proj = camera.projectionMatrix.elements;
 		if (!dirty && same(world, last.world) && same(proj, last.proj)) return false;
 		dirty = false;
