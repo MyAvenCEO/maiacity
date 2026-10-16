@@ -581,23 +581,12 @@
 		</div>
 		<div class="tools">
 			{#if here}
-				<span class="drawers">
-					<button
-						class="btn quiet"
-						aria-pressed={drawer === 'versions'}
-						title="Main, proposals and variants"
-						onclick={() => (drawer = drawer === 'versions' ? '' : 'versions')}
-						><Icon name="proposal" size={15} /> <span class="label">Versions</span></button
-					>
-					<button
-						class="btn quiet"
-						aria-pressed={drawer === 'history'}
-						title="History"
-						onclick={() => (drawer = drawer === 'history' ? '' : 'history')}
-						><Icon name="history" size={15} /> <span class="label">History</span></button
-					>
-				</span>
-				<span class="mode chip" class:warn={!!seen} class:accent={!seen && writes && !viewOnly}>
+				<span
+					class="mode chip"
+					class:warn={!!seen}
+					class:accent={!seen && writes && !viewOnly}
+					class:main={!seen && writes && !viewOnly && here.line === null}
+				>
 					{#if seen}
 						Viewing version #{seen.n}
 					{:else if !writes}
@@ -637,6 +626,22 @@
 			{/if}
 		</div>
 	</header>
+
+	{#if here}
+		<!-- narrower: the sides' own buttons, either side of the nav pill -->
+		<button
+			class="drawer left"
+			aria-pressed={drawer === 'versions'}
+			aria-label="Main, proposals and variants"
+			onclick={() => (drawer = drawer === 'versions' ? '' : 'versions')}><Icon name="proposal" size={20} /></button
+		>
+		<button
+			class="drawer right"
+			aria-pressed={drawer === 'history'}
+			aria-label="History"
+			onclick={() => (drawer = drawer === 'history' ? '' : 'history')}><Icon name="history" size={20} /></button
+		>
+	{/if}
 
 	{#if item?.deleted}
 		<div class="gone" role="status">
@@ -1657,7 +1662,7 @@
 	}
 
 	/* the drawers' toggles and close buttons show only where the sides slide in */
-	.drawers,
+	.drawer,
 	.shut,
 	.scrim {
 		display: none;
@@ -1676,14 +1681,38 @@
 			padding-bottom: 8rem;
 		}
 
-		.drawers {
-			display: inline-flex;
-			gap: 0.2rem;
+		/* round, as tall as the nav pill and at its foot, one at each side of the screen */
+		.drawer {
+			display: grid;
+			place-items: center;
+			position: fixed;
+			bottom: var(--nav-foot, 14px);
+			z-index: 50;
+			box-sizing: border-box;
+			width: var(--nav-height, 52px);
+			height: var(--nav-height, 52px);
+			padding: 0;
+			border: 1px solid var(--line, var(--edge));
+			border-radius: 50%;
+			background: rgb(250 248 242 / 0.94);
+			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+			backdrop-filter: blur(10px);
+			color: inherit;
+			cursor: pointer;
 		}
 
-		.drawers .btn[aria-pressed='true'] {
-			background: color-mix(in srgb, var(--accent) 12%, transparent);
-			color: var(--accent);
+		.drawer.left {
+			left: max(12px, env(safe-area-inset-left, 0px));
+		}
+
+		.drawer.right {
+			right: max(12px, env(safe-area-inset-right, 0px));
+		}
+
+		.drawer[aria-pressed='true'] {
+			border-color: var(--accent);
+			background: var(--accent);
+			color: #fff;
 		}
 
 		.scrim {
@@ -1738,7 +1767,7 @@
 		}
 	}
 
-	/* a phone: a compact head, one line of tools that scrolls sideways, buttons by their icons */
+	/* a phone: a compact head in one row, buttons by their icons */
 	@media (max-width: 640px) {
 		.top {
 			gap: 0.4rem 0.5rem;
@@ -1754,33 +1783,40 @@
 			display: none;
 		}
 
+		/* one row: back, the title with its line under it, then the tools */
+		.top {
+			flex-wrap: nowrap;
+		}
+
 		.heading {
-			flex-basis: 0;
+			flex: 1 1 0;
 		}
 
 		.title {
-			font-size: 1.05rem;
+			padding: 0 0.3rem;
+			font-size: 1rem;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 
 		.meta {
-			margin-left: 0.35rem;
-			font-size: 0.72rem;
+			margin-left: 0.3rem;
+			overflow: hidden;
+			font-size: 0.7rem;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 
-		.meta.shared {
+		.meta.shared,
+		.mode.main {
 			display: none;
 		}
 
 		.tools {
-			flex: 1 1 100%;
+			flex: none;
 			flex-wrap: nowrap;
-			gap: 0.35rem;
-			overflow-x: auto;
-			scrollbar-width: none;
-		}
-
-		.tools::-webkit-scrollbar {
-			display: none;
+			gap: 0.25rem;
 		}
 
 		.tools > * {
@@ -1792,7 +1828,14 @@
 		}
 
 		.tools .btn {
-			padding: 0.32rem 0.55rem;
+			padding: 0.3rem 0.45rem;
+		}
+
+		.tools .mode {
+			max-width: 7rem;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 
 		.person :global(.mark) {
