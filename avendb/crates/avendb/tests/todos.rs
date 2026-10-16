@@ -77,7 +77,8 @@ fn todo_shared_per_item_levels() {
         let share = share_edit(alice, c.dave, Level::Read, Some(t.coop_owner), t.coop);
         assert!(c.log.check(d, &[], share).is_ok());
     }
-    // Bob's own write share doesn't let him share: only an owner share is one to issue shares on
+    // Bob's own write share doesn't let him share it with Dave: only an owner share lets its holder share with anyone,
+    // and a share no higher than one's own goes only to a vault one owns
     let reshare = share_edit(alice, c.dave, Level::Read, Some(t.bob_write), c.bob);
     assert_eq!(c.log.check(MAC_B, &[], reshare).err(), Some(Refusal::BadParent));
     // and a device alone can't make anyone owner of a todo

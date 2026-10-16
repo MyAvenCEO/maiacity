@@ -83,7 +83,8 @@ fn the_world_is_the_devices_view_and_null_for_a_device_of_no_vault() {
     let (mac, alice, stranger, passkey) = (w.mac_a, w.alice, w.stranger, w.passkey_a);
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
     assert_eq!((&seen["me"], &seen["mine"]), (&json!(mac.to_hex()), &json!(alice.to_hex())));
-    assert_eq!(seen["ownsAven"], true, "Alice's vault claimed the server");
+    assert_eq!(seen["ownsServer"], true, "Alice's vault claimed the server");
+    assert_eq!(seen["kinds"], avendb::words::kinds_json(), "the kind table, for the page to read");
     let mine = shown(&seen, alice);
     assert_eq!(mine["acting"], json!({ "as": alice.to_hex(), "reaches": true, "shares": true }));
     assert_eq!((&mine["kind"], &mine["root"]), (&json!("human"), &json!(passkey.to_hex())));
@@ -236,15 +237,19 @@ fn owner_of_everything_makes_a_co_owner_once_the_passkey_approves() {
     // a human vault has no vault among its owners
     let vaults = share(alice, to(bob), json!("Owner"), json!("everything"));
     assert_eq!(refused(&may(&mut w, mac, json!([vaults]))[0]), "WrongOwnerKind");
-    // a vault her vault founds takes another of hers as a co-owner, which her passkey consents for too; Bob's vault
+    // a coop her vault founds takes another of hers as a co-owner, which her passkey consents for too; Bob's vault
     // would have to consent itself
-    let (x, coop) = (founded(&mut w, "aven", "avenALICE"), founded(&mut w, "coop", "Maia City COOP"));
+    let (x, coop) = (founded(&mut w, "coop", "Garden COOP"), founded(&mut w, "coop", "Maia City COOP"));
     let co = share(x, to(coop), json!("Owner"), json!("everything"));
     assert_eq!(may(&mut w, mac, json!([co])), [approves(&[passkey])]);
     assert!(approved(&mut w, mac, passkey, co)["edit"].is_string());
     assert_eq!(vault(&w.lab, mac, x).owners, [Principal::Vault(alice), Principal::Vault(coop)]);
     let bobs = share(x, to(bob), json!("Owner"), json!("everything"));
     assert_eq!(refused(&may(&mut w, mac, json!([bobs]))[0]), "NoConsent");
+    // her aven has her vault as its one owner: no other joins it
+    let aven = founded(&mut w, "aven", "avenALICE");
+    let bobs = share(aven, to(bob), json!("Owner"), json!("everything"));
+    assert_eq!(refused(&may(&mut w, mac, json!([bobs]))[0]), "OneOwner");
 }
 
 /// A vault's id, as an answer names it.
@@ -263,7 +268,7 @@ fn founded(w: &mut World, kind: &str, name: &str) -> VaultId {
 fn a_vaults_threshold_changes_once_the_passkey_approves() {
     let mut w = cast::world();
     let (mac, alice, passkey, stranger) = (w.mac_a, w.alice, w.passkey_a, w.stranger);
-    let (x, y) = (founded(&mut w, "aven", "avenALICE"), founded(&mut w, "coop", "Maia City COOP"));
+    let (x, y) = (founded(&mut w, "coop", "Garden COOP"), founded(&mut w, "coop", "Maia City COOP"));
     approved(&mut w, mac, passkey, share(x, to(y), json!("Owner"), json!("everything")));
     let two = json!({ "op": "settings", "vault": x.to_hex(), "threshold": 2 });
     assert_eq!(may(&mut w, mac, json!([two])), [approves(&[passkey])]);
@@ -300,7 +305,7 @@ fn new_vaults_are_founded_in_one_ceremony_each_with_its_profile() {
     let (mac, alice, passkey) = (w.mac_a, w.alice, w.passkey_a);
     let four = json!({ "op": "found", "vaults": [
         { "kind": "aven", "name": "avenALICE" },
-        { "kind": "aven", "name": "avenBOB" },
+        { "kind": "device", "name": "Alice's server" },
         { "kind": "coop", "name": "Maia City COOP" },
     ] });
     assert_eq!(may(&mut w, mac, json!([four])), [approves(&[passkey])]);
@@ -319,16 +324,22 @@ fn new_vaults_are_founded_in_one_ceremony_each_with_its_profile() {
     let ids: Vec<VaultId> = made["vaults"].as_array().expect("the vaults").iter().map(vault_id).collect();
     assert_eq!(ids.len(), 3);
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
-    for (v, (kind, name)) in ids.iter().zip([("aven", "avenALICE"), ("aven", "avenBOB"), ("coop", "Maia City COOP")]) {
+    let named = [("aven", "avenALICE"), ("device", "Alice's server"), ("coop", "Maia City COOP")];
+    for (v, (kind, name)) in ids.iter().zip(named) {
         let x = shown(&seen, *v);
         assert_eq!((&x["kind"], &x["name"]), (&json!(kind), &json!(name)), "{x}");
         assert_eq!((&x["owners"], &x["root"]), (&json!([to(alice)]), &Value::Null), "her vault owns it");
         assert_eq!(x["via"], json!([alice.to_hex()]), "her Mac acts for it through her vault");
     }
     let kinds: Vec<Kind> = ids.iter().map(|&v| vault(&w.lab, mac, v).kind).collect();
-    assert_eq!(kinds, [Kind::Aven, Kind::Aven, Kind::Coop]);
+    assert_eq!(kinds, [Kind::Aven, Kind::DeviceVault, Kind::Coop]);
+    // the kind table says what her vault founds: no human vault, and no second aven
+    let human = json!({ "op": "found", "kind": "human", "name": "Me" });
+    assert_eq!(refused(&run(&mut w, mac, human)), "WrongOwnerKind");
+    let second = json!({ "op": "found", "kind": "aven", "name": "avenBOB" });
+    assert_eq!(refused(&run(&mut w, mac, second)), "SecondAven");
     let refusals = [
-        json!({ "op": "found", "kind": "human", "name": "Me" }),
+        json!({ "op": "found", "kind": "ghost", "name": "Boo" }),
         json!({ "op": "found", "kind": "aven" }),
         json!({ "op": "found", "vaults": [] }),
         json!({ "op": "found", "vaults": [{ "kind": "aven", "name": "x" }], "kind": "aven" }),

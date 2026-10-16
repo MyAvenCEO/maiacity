@@ -682,10 +682,10 @@ fn settings(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepa
 
 /// `{"op": "found", "vaults": [{"kind", "name"}, ...]}`, or `{"op": "found", "kind", "name"}` for one: new vaults
 /// device `me`'s own vault founds and owns alone, each of a kind by its name (`words::kind_name`) and named, their
-/// geneses drafted together for one ceremony of the passkey; the kind table says which kinds a vault may found, and
-/// how many (`Kind::rules`): a person's vault founds coops, one aven and device vaults. Once it signed them, the device acting for each through its vault gives avenCEO the
-/// level it holds on the person's vault, backup or relay (`world::server_level`), and writes its profile (`approved`):
-/// `{"vaults": [id, ...]}`, in the order named.
+/// geneses drafted together for one ceremony of the passkey; the kind table says which kinds a vault may found, and how
+/// many (`Kind::rules`): a person's vault founds coops, one aven and device vaults. Once it signed them, the device
+/// acting for each through its vault gives avenCEO server the level it holds on the person's vault, backup or relay
+/// (`world::server_level`), and writes its profile (`approved`): `{"vaults": [id, ...]}`, in the order named.
 fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let one = |v: &Map<String, Value>| -> Result<(Kind, String), Refused> {
         let kind = v.get("kind").and_then(Value::as_str).and_then(words::kind_of);

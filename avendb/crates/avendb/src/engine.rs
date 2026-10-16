@@ -16,8 +16,8 @@
 //!   lines and every write of it, each with the changes it made to the entry's stored record (`ops::diff`), as every
 //!   reader sees them alike. `schemas`: the schemas and lenses a vault's entries are read through. `groups`: the
 //!   built-in groups of ops a share names (`rules::groups`), which the page offers when it shares. `kinds`: the kind
-//!   table (`Kind::rules`, `words::kinds_json`), which the page reads to say what each kind of vault may own and hold
-//!   and never decides itself. `limits`: how deep
+//!   table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to say what each kind of vault
+//!   may own and hold, and never decides itself. `limits`: how deep
 //!   the device's queries read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`,
 //!   `creatable`, `taggable`; `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the

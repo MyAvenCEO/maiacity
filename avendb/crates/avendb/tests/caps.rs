@@ -44,14 +44,15 @@ fn alices_library() -> Cast {
     c
 }
 
-/// An aven vault owned by Alice's vault, as avenCEO is, with the server as its device.
-fn aven_of_alice(c: &mut Cast) -> VaultId {
+/// A device vault owned by Alice's vault, as avenCEO server is owned through its seed, with the server as its device.
+fn server_of_alice(c: &mut Cast) -> VaultId {
     let owners = vec![Principal::Vault(c.alice)];
-    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
-    let aven = VaultId::from(c.log.append(PASSKEY_A, &[], genesis).unwrap());
-    let server = Action::Share(Sharing::Device { vault: aven, device: SERVER, seal_to: None });
+    let kind = Kind::DeviceVault;
+    let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+    let vault = VaultId::from(c.log.append(PASSKEY_A, &[], genesis).unwrap());
+    let server = Action::Share(Sharing::Device { vault, device: SERVER, seal_to: None });
     c.log.append(PASSKEY_A, &[SERVER], server).unwrap();
-    aven
+    vault
 }
 
 /// A share over vault `over` naming vault `who`, resting on `parent` and issued by `issuer`: what `Cast::issue_on`
@@ -309,7 +310,8 @@ fn a_share_on_an_owner_share_grants_no_more_than_it() {
     let (home, notes) = (tagged("todo", "home"), of_type("note"));
     let home = c.issue_on(MAC_C, &[], alice, vault(dave), Level::Read, home, Some(owner), carol, 0).unwrap();
     let notes = c.issue_on(MAC_C, &[], alice, vault(dave), Level::Read, notes, Some(owner), carol, 1).unwrap();
-    // only the grantee of an owner share issues on it, only on an owner share, and a wide share only on a wide one
+    // only the grantee of a share issues on it, on an owner share unless to a vault it owns, and a wide share only on a
+    // wide one
     let on = |parent, issuer, wide| share_edit(alice, bob, Level::Read, wide, Some(parent), issuer);
     assert_eq!(c.log.check(MAC_B, &[], on(owner, bob, false)).err(), Some(Refusal::BadParent));
     assert_eq!(c.log.check(MAC_D, &[], on(home, dave, false)).err(), Some(Refusal::BadParent));
@@ -348,8 +350,52 @@ fn a_share_on_an_owner_share_grants_no_more_than_it() {
     assert!(LIBRARY.iter().all(|&e| !reads(&v, MAC_C, e) && !reads(&v, MAC_D, e)));
 }
 
-/// Examples.lean's `wideShares`: Alice gives Dave, her backup, read on her whole vault, and avenCEO, the server's
-/// vault, relay on it.
+/// T22, sub caps (Examples.lean's `subCaps`): a share that isn't an owner share is passed on only to a vault its holder
+/// owns, as Alice's aven passes the coop's write share on to its agent's device vault, no higher and no wider than it.
+/// The agent writes what both select, and its share ends with the aven's.
+#[test]
+fn an_aven_passes_a_coops_share_on_to_its_agent_until_the_coop_revokes_it() {
+    let mut c = cast();
+    let coop = with_coop(&mut c);
+    let founded = |kind, owner| {
+        let owners = vec![Principal::Vault(owner)];
+        Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] }
+    };
+    let aven = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::Aven, c.alice)).unwrap());
+    let agent = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::DeviceVault, aven)).unwrap());
+    let harness = Action::Share(Sharing::Device { vault: agent, device: NEW_DEVICE, seal_to: None });
+    c.log.append(PASSKEY_A, &[NEW_DEVICE], harness).unwrap();
+    c.create(MAC_A, coop, DOOR, coop, &[], "todo", &["work"]).unwrap();
+    c.create(MAC_A, coop, SEEDS, coop, &[], "todo", &["home"]).unwrap();
+    let to_aven = c.issue(MAC_A, &[], coop, vault(aven), Level::Write, of_type("todo")).unwrap();
+    let work = tagged("todo", "work");
+    let sub = c.issue_on(MAC_A, &[], coop, vault(agent), Level::Write, work, Some(to_aven), aven, 0).unwrap();
+    // no higher, no wider, to no vault the aven doesn't own; the agent's vault, which owns nothing, passes nothing on
+    let on = |who, level, wide, parent, issuer| share_edit(coop, who, level, wide, Some(parent), issuer);
+    let refused = |signer, share| c.log.check(signer, &[], share).err();
+    assert_eq!(refused(PASSKEY_A, on(agent, Level::Owner, false, to_aven, aven)), Some(Refusal::BadParent));
+    assert_eq!(refused(MAC_A, on(agent, Level::Read, true, to_aven, aven)), Some(Refusal::BadParent));
+    assert_eq!(refused(MAC_A, on(c.carol, Level::Read, false, to_aven, aven)), Some(Refusal::BadParent));
+    assert_eq!(refused(NEW_DEVICE, on(aven, Level::Read, false, sub, agent)), Some(Refusal::BadParent));
+    // a steward moves the work todo into the audience of both shares, the other into the aven's alone
+    c.tidy(MAC_A);
+    let v = c.log.view();
+    assert_eq!([DOOR, SEEDS].map(|e| v.may_write(agent, e)), [true, false]);
+    assert_eq!([DOOR, SEEDS].map(|e| v.may_write(aven, e)), [true, true]);
+    c.log.append(NEW_DEVICE, &[], write_now(&c.log, DOOR, agent)).expect("the agent writes the work todo");
+    let beyond = c.log.append(NEW_DEVICE, &[], write_now(&c.log, SEEDS, agent)).err();
+    assert_eq!(beyond, Some(Refusal::NoCap), "and not the other");
+    // the coop revokes the aven's share, which ends the agent's
+    let revoke = Action::Revoke(Revoking::Grant { share: to_aven, actor: coop, keep: vec![], via: vec![] });
+    c.log.append(MAC_A, &[], revoke).unwrap();
+    let v = c.log.view();
+    assert!(!v.live(to_aven) && !v.live(sub));
+    let after = c.log.append(NEW_DEVICE, &[], write_now(&c.log, DOOR, agent)).err();
+    assert_eq!(after, Some(Refusal::NoCap), "the agent writes the work todo no more");
+}
+
+/// Examples.lean's `wideShares`: Alice gives Dave, her backup, read on her whole vault, and avenCEO server, the
+/// server's device vault, backup on it.
 #[test]
 fn a_wide_share_reaches_every_audience_and_splits_none() {
     let mut c = alices_library();
@@ -357,7 +403,7 @@ fn a_wide_share_reaches_every_audience_and_splits_none() {
     // Bob writes Alice's todos tagged work: her Mac moves them into his share's audience
     let work = c.issue(MAC_A, &[], alice, vault(bob), Level::Write, tagged("todo", "work")).unwrap();
     c.tidy(MAC_A);
-    let ceo = aven_of_alice(&mut c);
+    let ceo = server_of_alice(&mut c);
     let backup = c.issue(MAC_A, &[], alice, vault(dave), Level::Read, Selector::All).unwrap();
     let relay = c.issue(MAC_A, &[], alice, vault(ceo), Level::Backup, Selector::All).unwrap();
     // the wide shares split no audience: no entry has anywhere to move, and no audience may name one
@@ -376,14 +422,14 @@ fn a_wide_share_reaches_every_audience_and_splits_none() {
     assert!(v.has_fam(KeyFam::Share(alice, backup)) && !v.has_fam(KeyFam::Share(alice, relay)));
 }
 
-/// Relay alone (T26): Alice gives avenCEO relay on her whole vault, no backup. The server learns her vault's devices,
-/// from her vault's log, so its relay lets them through and they find each other there, and receives none of her
-/// entries; backup on top of it brings them.
+/// Relay alone (T26): Alice gives avenCEO server relay on her whole vault, no backup. The server learns her vault's
+/// devices, from her vault's log, so its relay lets them through and they find each other there, and receives none of
+/// her entries; backup on top of it brings them.
 #[test]
 fn a_relay_share_keeps_nothing() {
     let mut c = alices_library();
     let alice = c.alice;
-    let ceo = aven_of_alice(&mut c);
+    let ceo = server_of_alice(&mut c);
     let relay = c.issue(MAC_A, &[], alice, vault(ceo), Level::Relay, Selector::All).unwrap();
     let sent = respond(c.log.edits(), SERVER, &[]);
     assert!(entries_in(&sent).is_empty(), "no entry of Alice's");

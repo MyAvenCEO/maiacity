@@ -1,7 +1,7 @@
 //! The Lab: in-process devices on a network the test controls. Each device has its own keys, its own edits and its own
 //! store, exactly what a real device would hold; there is also a relay server, a device of the device vault avenCEO
-//! server, which holds relay shares and never reads, and any number of strangers. The scenario tests run on it, and so do the
-//! nodes: a device split off to run on its own (`split`) is what `avendb-net` puts on iroh.
+//! server, which holds relay shares and never reads, and any number of strangers. The scenario tests run on it, and so
+//! do the nodes: a device split off to run on its own (`split`) is what `avendb-net` puts on iroh.
 //!
 //! A vault is a flat library of entries (notes, todos, profiles), each with a type and tags, and shares grant relay,
 //! read, write or owner on any slice of it (`slice::Selector`): the whole vault, a type, a tag, an author, one entry,
@@ -800,8 +800,8 @@ impl Lab {
 
     /// Device `on`'s claim of a server no vault has claimed yet (P8f): `draft` (`draft`, `drafting`) adds the server's
     /// device to a device vault `on`'s view holds, avenCEO server, the last of the seed `on`'s human vault founds
-    /// (`world::SEED`), its key to seal to the one the server handed (`claim_key`). Every signer but the server signs it
-    /// here, each by its ceremony among `ceremonies` or by its key at hand, and the claim brings the logs the server
+    /// (`world::SEED`), its key to seal to the one the server handed (`claim_key`). Every signer but the server signs
+    /// it here, each by its ceremony among `ceremonies` or by its key at hand, and the claim brings the logs the server
     /// checks it by, and no others: the device vault's and its owners', up the chains (`sync::vault_logs`). The server
     /// signs last, and keeps it all (`accept_claim`). `NotClaiming` if `draft` adds no device to a device vault,
     /// `Locked` if a signer's key isn't at hand, `BadSignature` if a ceremony isn't its signer's over the draft's
@@ -838,8 +838,8 @@ impl Lab {
     }
 
     /// The avenCEO server of a seed device `d`'s own vault founded that has no device yet, by `d`'s view
-    /// (`world::seeded`): the one a claim founded that the server didn't take, which a claim tried again adds the server
-    /// to rather than found another seed.
+    /// (`world::seeded`): the one a claim founded that the server didn't take, which a claim tried again adds the
+    /// server to rather than found another seed.
     pub fn unclaimed_server(&self, d: SignerId) -> Option<VaultId> {
         let mine = self.vault_of(d)?;
         let st = self.held(d).view();

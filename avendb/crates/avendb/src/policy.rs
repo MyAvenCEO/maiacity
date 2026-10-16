@@ -62,8 +62,8 @@ pub enum Kind {
     /// A person's own agent: owned by that person's human vault alone, one to a person, with no devices of its own. It
     /// acts through its owner's devices, and owns the device vaults its agents run in.
     Aven,
-    /// A vault for the devices of one machine or agent, a server or an agent's harness: owned by exactly one human, coop
-    /// or aven vault, and owning nothing. Its devices act for it but never govern it.
+    /// A vault for the devices of one machine or agent, a server or an agent's harness: owned by exactly one human,
+    /// coop or aven vault, and owning nothing. Its devices act for it but never govern it.
     DeviceVault,
 }
 
@@ -1142,8 +1142,8 @@ impl State {
         vt.owners.iter().any(|p| matches!(*p, Principal::Vault(o) if o == a || self.owns_n(a, n - 1, o)))
     }
 
-    /// Principal `p` may own a vault of kind `kind`, as the kind table says (`Kind::rules`): a signer where signers
-    /// own the kind, an existing vault of a kind its row lists. So signers own human vaults alone, an aven is owned by a
+    /// Principal `p` may own a vault of kind `kind`, as the kind table says (`Kind::rules`): a signer where signers own
+    /// the kind, an existing vault of a kind its row lists. So signers own human vaults alone, an aven is owned by a
     /// human vault, and a device vault owns nothing.
     fn owner_fits(&self, kind: Kind, p: Principal) -> Result<(), Refusal> {
         let of = match p {
@@ -1240,7 +1240,8 @@ impl State {
     /// Share `c` goes from its issuer to its own: it names a vault its issuer owns directly, as an aven's share to one
     /// of its agents' device vaults, a coop's to its server's, a person's to their aven.
     fn to_own(&self, c: &Share) -> bool {
-        matches!(c.who, Who::Vault(g) if self.vault(g).is_some_and(|gt| gt.owners.contains(&Principal::Vault(c.issuer))))
+        let owned = |g: VaultId| self.vault(g).is_some_and(|gt| gt.owners.contains(&Principal::Vault(c.issuer)));
+        matches!(c.who, Who::Vault(g) if owned(g))
     }
 
     /// The one rule a share rests on another by (`shareParentOk`): its parent is a live share over the same vault that

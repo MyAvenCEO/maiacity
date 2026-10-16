@@ -133,8 +133,8 @@ pub fn world() -> World {
 }
 
 /// The world made a step at a time: every signer first, whose McEliece pairs a page then makes in its workers, then
-/// Alice's vault, avenCEO server as Alice's vault claims the server, the other people's vaults, and the contact cards they
-/// exchange.
+/// Alice's vault, avenCEO server as Alice's vault claims the server, the other people's vaults, and the contact cards
+/// they exchange.
 pub struct Making {
     lab: Lab,
     /// Each person's passkey and devices, then the server and the stranger.
@@ -204,8 +204,8 @@ impl Making {
                 "Bob's, Carol's and Dave's vaults"
             }
             4 => {
-                // they all know each other's vaults and avenCEO server, as after exchanging contact cards; Alice's iPhone
-                // holds the same contacts as Alice's Mac
+                // they all know each other's vaults and avenCEO server, as after exchanging contact cards; Alice's
+                // iPhone holds the same contacts as Alice's Mac
                 let (s, v) = (&self.signers, &self.vaults);
                 let macs = [(s[1], v[0]), (s[2], v[0]), (s[4], v[2]), (s[6], v[3]), (s[8], v[4]), (s[9], v[1])];
                 for &(from, v) in &macs {
@@ -256,8 +256,8 @@ pub fn coop_on(w: &mut World) -> VaultId {
     VaultId::from(w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("Alice and Bob found the coop"))
 }
 
-/// Vault `v` gives avenCEO server relay on all its entries, on Alice's Mac, for the server to hold and pass them on: a wide
-/// share, which reaches every audience and splits none.
+/// Vault `v` gives avenCEO server relay on all its entries, on Alice's Mac, for the server to hold and pass them on: a
+/// wide share, which reaches every audience and splits none.
 pub fn relay_on(w: &mut World, v: VaultId) -> ShareId {
     let relay = share(v, vault(w.avenceo), Level::Backup, Selector::All);
     w.lab.issue(w.mac_a, &[w.mac_a], relay).expect("the vault gives the server relay")

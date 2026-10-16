@@ -710,10 +710,11 @@ fn vault_action(rng: &mut Rng, vaults: &[VaultId]) -> Action {
             Action::Settings { vault: rng.pick(vaults), set: Setting::Root { root, keep: vec![] } }
         }
         _ => {
-            // a third human vaults, a twelfth aven vaults
+            // a third human vaults, a twelfth avens, a twelfth device vaults
             let x = rng.next();
             let kind = match x % 12 {
                 0 | 3 | 6 | 9 => Kind::Human,
+                10 => Kind::DeviceVault,
                 11 => Kind::Aven,
                 _ => Kind::Coop,
             };
@@ -964,33 +965,37 @@ fn t2_governance() {
     assert!(themselves > 0);
 }
 
-/// T21: in every state the rules reach, each vault keeps to its kind: a human vault's owners are signers, a coop's and
-/// an aven vault's are human or coop vaults; only human and aven vaults have devices, and only human vaults a root.
+/// T21: in every state the rules reach, each vault keeps to its row of the kind table (`Kind::rules`): its owners are
+/// of the kinds that may own it, signers only for a human vault, and no more of them than it takes, so an aven and a
+/// device vault have one; no owner owns more of a kind than the table lets it, so a person one aven; only human and
+/// device vaults have devices, and only human vaults a root.
 #[test]
 fn t21_vault_kinds() {
-    let mut avens = 0;
+    let (mut avens, mut device_vaults) = (0, 0);
     for (seed, h) in vault_histories().chain(every_history()) {
         let sts = states(h.log.edits());
         for st in &sts {
             for v in st.vaults() {
+                let rules = v.kind.rules();
                 for p in &v.owners {
-                    let fits = match (v.kind, *p) {
-                        (Kind::Human, Principal::Signer(_)) => true,
-                        (Kind::Coop | Kind::Aven, Principal::Vault(o)) => {
-                            st.vault(o).is_some_and(|o| o.kind != Kind::Aven)
-                        }
-                        _ => false,
+                    let of = match *p {
+                        Principal::Signer(_) => None,
+                        Principal::Vault(o) => Some(st.vault(o).map(|o| o.kind).expect("an owner that exists")),
                     };
-                    assert!(fits, "seed {seed}: {v:?}");
+                    assert!(rules.fits(of), "seed {seed}: {v:?}");
+                    let owned = st.vaults().iter().filter(|x| x.kind == v.kind && x.owners.contains(p)).count();
+                    assert!(rules.each.is_none_or(|n| owned <= n), "seed {seed}: {p:?} owns {owned} of {v:?}");
                 }
+                assert!(rules.takes(v.owners.len()), "seed {seed}: {v:?}");
                 assert!(v.devices.is_empty() || v.kind.has_devices(), "seed {seed}: {v:?}");
                 assert!(v.root.is_none() || v.kind == Kind::Human, "seed {seed}: {v:?}");
             }
         }
-        avens += sts.last().map_or(0, |st| st.vaults().iter().filter(|v| v.kind == Kind::Aven).count());
+        let count = |k| sts.last().map_or(0, |st| st.vaults().iter().filter(|v| v.kind == k).count());
+        (avens, device_vaults) = (avens + count(Kind::Aven), device_vaults + count(Kind::DeviceVault));
     }
-    // the histories do found aven vaults
-    assert!(avens > 0);
+    // the histories do found avens and device vaults
+    assert!(avens > 0 && device_vaults > 0, "{avens} avens, {device_vaults} device vaults");
 }
 
 /// Devices never govern: a signer that owns no vault and is no vault's root approves for no vault, whatever it acts

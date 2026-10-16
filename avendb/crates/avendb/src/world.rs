@@ -22,7 +22,7 @@ use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Principal, Share, Stat
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
 use crate::slice::{LENS_TYPE, Selector, Slice};
-use crate::words::{hex, kind_name, level_name, status_name, who_name};
+use crate::words::{hex, kind_name, kinds_json, level_name, status_name, who_name};
 
 /// The type of a device's card: an entry of its person's human vault, a record of avenDB's own `card` schema
 /// (`lens::CARD_V1`) titled with the device's name, that the device wrote itself (the ops engine's `card`).
@@ -231,11 +231,12 @@ pub enum What {
 impl World {
     /// The world as device `me`'s page reads it: ids in 64 hex digits, kinds, levels and statuses by their lowercase
     /// names, a share's slice as the core writes it (`{name, where, ops, above}`, `slice::Slice::to_json`), `null`
-    /// where the device doesn't read it, a vault's `via` `null` where the device doesn't act for it, a share's
-    /// `who` `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's `type`, `tags` and `created` `null`
-    /// where the device doesn't read them and its levels by vault; the built-in groups of ops the page offers when it
-    /// shares (`rules::groups`), each with its level; and the master recovery key it adds, `recovery`, `null` for none,
-    /// which a vault's owners mark as such. As the device works it out, so the page keeps no rule:
+    /// where the device doesn't read it, a vault's `via` `null` where the device doesn't act for it, a share's `who`
+    /// `"everyone"` for `Who::Everyone` (`words::who_name`), an entry's `type`, `tags` and `created` `null` where the
+    /// device doesn't read them and its levels by vault; the built-in groups of ops the page offers when it shares
+    /// (`rules::groups`), each with its level; the kind table, what each kind of vault may be owned by and hold
+    /// (`kinds`, `words::kinds_json`); and the master recovery key it adds, `recovery`, `null` for none, which a
+    /// vault's owners mark as such. As the device works it out, so the page keeps no rule:
     ///
     /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenCEO server);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
@@ -396,6 +397,7 @@ impl World {
             "audiences": self.audiences.iter().map(audience).collect::<Vec<_>>(),
             "entries": self.entries.iter().map(entry).collect::<Vec<_>>(),
             "groups": rules::groups().iter().map(rules::Group::to_json).collect::<Vec<_>>(),
+            "kinds": kinds_json(),
         })
     }
 }
@@ -850,7 +852,8 @@ pub fn seeded(st: &State, mine: VaultId, server: VaultId) -> bool {
 /// A server's vault by view `st`: a device vault with a device, the server, owned by no aven, as avenCEO GmbH owns
 /// avenCEO server; an aven's device vaults are its agents'.
 fn is_server(st: &State, v: &Vault) -> bool {
-    let by_aven = |p: &Principal| matches!(*p, Principal::Vault(o) if st.vault(o).is_some_and(|o| o.kind == Kind::Aven));
+    let aven = |o: VaultId| st.vault(o).is_some_and(|o| o.kind == Kind::Aven);
+    let by_aven = |p: &Principal| matches!(*p, Principal::Vault(o) if aven(o));
     v.kind == Kind::DeviceVault && !v.devices.is_empty() && !v.owners.iter().any(by_aven)
 }
 
