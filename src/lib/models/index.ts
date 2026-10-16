@@ -36,6 +36,10 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 		{ ...FIRST, build: timberHutch },
 		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome of wire on grass, a little shingled dome inside to sleep in' }
 	],
+	'plant-stake': [
+		{ ...FIRST, date: '2026-10-14', build: () => plantStake({ name: 'Samuel', seed: 'apple' }) },
+		{ v: 2, date: '2026-10-16', note: 'Built with the tree’s name and its plant (`name`, `seed`), printed on its flag: MaiaCity V1 puts one by every tree it grows; the stake itself as v1' }
+	],
 	backpack: [
 		{ ...FIRST, date: '2026-10-14', build: () => backpack({ v: 1 }) },
 		{ v: 2, date: '2026-10-14', note: 'Ten seed packets in it, one for each of V1’s ten trees: six along the front wall, four behind them standing higher, each a little in front of the one before so all ten read from above; the bottle in the corner behind' }
@@ -79,7 +83,18 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 		variants: Object.entries(ALL_PACKETS).map(([id, p]) => ({ id: `seed-packet-${id}`, label: p.label, note: `${p.label}, ${p.latin}`, make: () => seedPacket(id) }))
 	},
 	{ id: 'marker-sticks', label: 'Marker sticks', note: 'two sticks of square pine, 35 cm long and 12 mm across, pointed, their tops painted orange, pushed into the ground half a metre apart', usedIn: 'MaiaCity V1', make: () => markerSticks() },
-	{ id: 'plant-stake', label: 'Plant stake', note: 'a young tree’s stake of round peeled pine, 1 m long and 32 mm thick, axe-pointed, pushed in beside the seed; on a wire tied to its top a 10 × 7 cm waxed-cloth flag printed on both sides with the tree’s name and its plant', usedIn: 'MaiaCity V1', make: () => plantStake({ name: 'Samuel', seed: 'apple' }) },
+	{
+		id: 'plant-stake',
+		label: 'Plant stake',
+		note: 'a young tree’s stake of round peeled pine, 1 m long and 32 mm thick, axe-pointed, pushed in beside the seed; on a wire tied to its top a 10 × 7 cm waxed-cloth flag printed on both sides with the tree’s name and its plant',
+		usedIn: 'MaiaCity V1',
+		// v2: the tree's name and its plant printed on the flag are what it is built with (v1 is Samuel's apple)
+		params: [
+			{ id: 'name', label: 'Name on its flag', type: 'string', value: 'Samuel' },
+			{ id: 'seed', label: 'Its plant', type: 'string', value: 'apple', maxLength: 24 }
+		],
+		make: (name = 'Samuel', seed = 'apple') => plantStake({ name: String(name), seed: String(seed) })
+	},
 	{ id: 'dug-earth', label: 'Dug earth', note: 'a patch of turned soil 60 cm across, heaped a little, crumbs and clods on it, a hollow for the seed; it darkens and shines as it is watered', usedIn: 'MaiaCity V1', make: () => dugEarth() },
 	{
 		id: 'dome-tent',

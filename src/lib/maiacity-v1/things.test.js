@@ -81,3 +81,25 @@ test("the bell tent's work as it is pitched, where its builder has it", async ()
 		expect(a.z).toBeCloseTo(b.z, 9);
 	}
 });
+
+test("the plant stake's flag, and the open backpack's bottle, cap and packets, as their builders make them", async () => {
+	const { STAKE_FLAG, PACK_PACKETS, BOTTLE_MOUTH, stakeRef } = await import('./things.js');
+	const { plantStake, backpack, SEED_PACKETS, BOTTLE } = await import('$lib/models/planting.js');
+	const stake = plantStake({ name: 'Samuel', seed: 'apple' });
+	expect(STAKE_FLAG.path.reduce((x, i) => x.children[i], stake)).toBe(stake.userData.flag);
+	expect(stakeRef('Ana Lu', 'pear')).toBe('things/plant-stake@2?name=Ana+Lu&seed=pear');
+	expect(PACK_PACKETS).toEqual(Object.keys(SEED_PACKETS));
+	expect(BOTTLE_MOUTH).toBe(BOTTLE.mouth);
+	const pack = backpack();
+	const first = (n) => {
+		let f = null;
+		pack.traverse((o) => !f && o.name === n && (f = o));
+		return f;
+	};
+	expect(first('inside')).toBe(pack.userData.inside);
+	expect(first('water-bottle')).toBe(pack.userData.bottle);
+	expect(first('cap')).toBe(pack.userData.bottle.userData.cap);
+	expect(pack.userData.bottle.userData.mouth.toArray()).toEqual([0, BOTTLE_MOUTH, 0]);
+	for (const id of PACK_PACKETS) expect(first(`seed-packet:${id}`)).toBe(pack.userData.packets[id]);
+	expect(Object.keys(pack.userData.packets)).toEqual(PACK_PACKETS);
+});
