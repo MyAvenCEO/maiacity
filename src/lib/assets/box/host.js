@@ -3,6 +3,7 @@ import { base } from '$app/paths';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { LATEST, engineAt, enginePath } from '../engines.js';
+import { DENY, SANDBOX } from '../../sandbox/policy.js';
 /*
  * THE ASSET BOX — where an asset's builder runs when we cannot trust it: a worker inside a frame with no origin. The
  * same boundary as a Generated UI code view ($lib/genui/Frame.svelte), one step further: the frame does nothing but
@@ -21,7 +22,6 @@ import { LATEST, engineAt, enginePath } from '../engines.js';
  */
 
 const CSP = ["default-src 'none'", "script-src 'unsafe-inline' blob:", 'worker-src blob:', "connect-src 'none'", "img-src 'none'", "style-src 'none'", "font-src 'none'", "media-src 'none'", "frame-src 'none'", "object-src 'none'", "form-action 'none'", "base-uri 'none'"].join('; ');
-const DENY = ['camera', 'microphone', 'geolocation', 'display-capture', 'clipboard-read', 'clipboard-write', 'payment', 'usb', 'serial', 'hid', 'bluetooth', 'publickey-credentials-get', 'publickey-credentials-create', 'storage-access', 'fullscreen'].map((f) => `${f} 'none'`).join('; ');
 
 // the frame: starts the worker from the code it is handed, then passes messages both ways, the arrays moved
 const FRAME = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${CSP}"><script>
@@ -75,7 +75,7 @@ export class AssetBox {
 		this.ready = (async () => {
 			const code = await engineCode(this.engine);
 			const frame = document.createElement('iframe');
-			frame.setAttribute('sandbox', 'allow-scripts');
+			frame.setAttribute('sandbox', SANDBOX);
 			frame.setAttribute('allow', DENY);
 			frame.setAttribute('referrerpolicy', 'no-referrer');
 			frame.setAttribute('aria-hidden', 'true');
