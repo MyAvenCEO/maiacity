@@ -24,7 +24,7 @@ const MOST = 4_000_000;
 const EPS = 1e-5;
 
 /** the controls an object offers: each an id, the function that sets it (0 … 1), how many samples, whether a choice */
-function offered(u) {
+export function offered(u) {
 	const out = [];
 	const fn = (f) => (typeof f === 'function' ? f : null);
 	const one = (id, set, samples = SAMPLES, choice = false) => set && out.push({ id, set, samples, choice });
@@ -47,7 +47,7 @@ const walk = (root) => {
 };
 
 /** a node's own place, turn and size, as it stands now (written into `out` at `at`) */
-function trsOf(o, out, at) {
+export function trsOf(o, out, at) {
 	if (!o.matrixAutoUpdate) {
 		o.matrix.decompose(o.position, o.quaternion, o.scale);
 	}
@@ -110,6 +110,18 @@ function restore(nodes, s) {
 	});
 }
 
+/** an attribute's numbers, and how often a builder has marked them changed (three counts it) */
+const numbersOf = (a) => a.array ?? a.data?.array;
+const versionOf = (a) => a.version ?? a.data?.version;
+/** a list of numbers summed, each weighted by its place: two lists alike only if every number is */
+const sumOf = (x) => {
+	let s = 0;
+	for (let i = 0; i < x.length; i++) s += x[i] * ((i % 7) + 1);
+	return s;
+};
+/** each mesh's attributes as built: the attribute, its version, its sum */
+const shapesOf = (nodes) => nodes.flatMap((o) => (o.geometry ? Object.values(o.geometry.attributes).map((a) => ({ a, version: versionOf(a), sum: sumOf(numbersOf(a)) })) : []));
+
 /** the tree is still the one it was: the same nodes, each under the same parent */
 const intact = (root, nodes) => {
 	const now = walk(root);
@@ -120,13 +132,14 @@ const intact = (root, nodes) => {
  * Plays an object's controls and writes them down.
  * @param {import('three').Object3D} root an object as its builder made it
  * @returns {{ controls: object[], intact: boolean }} its controls as data, and whether the object is still the one
- *   that was built (false: a control changed its tree; build it again before it leaves)
+ *   that was built (false: a control changed its tree or reshaped a mesh; build it again before it leaves)
  */
 export function bake(root) {
 	const list = offered(root.userData ?? {});
 	if (!list.length) return { controls: [], intact: true };
 	const nodes = walk(root);
 	const rest = snapshot(nodes);
+	const shaped = shapesOf(nodes);
 	const t0 = performance.now();
 	const controls = [];
 	const cur = new Float32Array(10);
@@ -193,6 +206,16 @@ export function bake(root) {
 		} catch {
 			ok = false;
 		}
+		// its rest: the sample nearest the object as built; of several as near, an end (a build is whole before its last
+		// step, a door shut at 0). It is set there again, so a mesh it reshapes (a canvas unrolled) is shaped as built
+		const least = Math.min(...off);
+		const ties = [...off.keys()].filter((s) => off[s] === least);
+		const best = ties.includes(S - 1) ? S - 1 : ties[0];
+		try {
+			c.set(best / (S - 1));
+		} catch {
+			ok = false;
+		}
 		if (!intact(root, nodes)) return { controls, intact: false };
 		restore(nodes, rest);
 		if (!ok || !moved.size) continue;
@@ -211,15 +234,14 @@ export function bake(root) {
 			if (t.morph) out.morph.push({ node: i, weights: t.morph });
 			if (t.instances) out.instances.push({ node: i, count: t.instances.length / S / 16, matrices: t.instances });
 		});
-		// its rest: the sample nearest the object as built; of several as near, an end (a build is whole before its last
-		// step, a door shut at 0)
-		const least = Math.min(...off);
-		const ties = [...off.keys()].filter((s) => off[s] === least);
-		const best = ties.includes(S - 1) ? S - 1 : ties[0];
 		out.rest = best / (S - 1);
 		controls.push(out);
 	}
 	restore(nodes, rest);
 	root.updateMatrixWorld(true);
-	return { controls, intact: true };
+	// a mesh a control reshaped and its rest did not shape back as built (putting the nodes back does not undo it): its
+	// moves are kept, the object is built again
+	const now = shapesOf(nodes.filter((o) => o.geometry));
+	const same = now.length === shaped.length && now.every((x, i) => x.a === shaped[i].a && (x.version === shaped[i].version || x.sum === shaped[i].sum));
+	return { controls, intact: same };
 }

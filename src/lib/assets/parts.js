@@ -314,7 +314,7 @@ export function assetKit(root, { assemblies = [], steps = [], sources = [] } = {
  */
 
 /**
- * An asset as the turntable of rigged kinds shows it ($lib/app/ActorsView.svelte): a cast with no bones, its moves
+ * An asset as the machines list it ($lib/machines): a cast with no bones, its moves
  * played by its own solver.
  * @param {THREE.Object3D} root a sealed asset
  * @returns {import('$lib/actors/rig').Cast}

@@ -29,7 +29,7 @@ test('a ref names its parameters after a question mark, sorted when written', ()
 test('every plant declares its stage, its seed and its detail, in the order it grows by', () => {
 	expect(PLANTS.length).toBeGreaterThan(50);
 	for (const p of PLANTS) {
-		expect(p.params.map((x) => x.id)).toEqual(['stage', 'seed', 'detail']);
+		expect(p.params.map((x) => x.id)).toEqual(['stage', 'seed', 'detail', 'fruit']);
 		expect(p.params[2]).toMatchObject({ type: 'number', min: 0.05, max: 1, value: 1 });
 		expect(p.params[0]).toMatchObject({ type: 'number', min: 0, max: p.stages.length - 1, value: p.stages.length - 1 });
 		expect(p.params[0].names).toEqual(p.stages.map((s) => s.name));
@@ -38,10 +38,10 @@ test('every plant declares its stage, its seed and its detail, in the order it g
 
 test('what a ref says is checked against what the recipe declares', () => {
 	const { params } = PLANTS.find((x) => x.id === 'apple');
-	expect(valuesOf(params)).toEqual({ stage: 9, seed: 'maia', detail: 1 });
-	expect(valuesOf(params, { stage: '4.5' })).toEqual({ stage: 4.5, seed: 'maia', detail: 1 });
-	expect(valuesOf(params, {}, [3, 'isar'])).toEqual({ stage: 3, seed: 'isar', detail: 1 });
-	for (const given of [{ stage: '12' }, { stage: '-1' }, { stage: 'x' }, { stage: '' }, { stage: 'Infinity' }, { colour: 'red' }, { seed: 'x'.repeat(41) }, { detail: '0' }, { detail: '1.5' }]) expect(() => valuesOf(params, given)).toThrow();
+	expect(valuesOf(params)).toEqual({ stage: 9, seed: 'maia', detail: 1, fruit: 0 });
+	expect(valuesOf(params, { stage: '4.5' })).toEqual({ stage: 4.5, seed: 'maia', detail: 1, fruit: 0 });
+	expect(valuesOf(params, {}, [3, 'isar'])).toEqual({ stage: 3, seed: 'isar', detail: 1, fruit: 0 });
+	for (const given of [{ stage: '12' }, { stage: '-1' }, { stage: 'x' }, { stage: '' }, { stage: 'Infinity' }, { colour: 'red' }, { seed: 'x'.repeat(41) }, { detail: '0' }, { detail: '1.5' }, { fruit: '2' }, { fruit: '0.5' }]) expect(() => valuesOf(params, given)).toThrow();
 	expect(() => valuesOf(params, {}, [1, 'a', 0.5, 'b'])).toThrow();
 });
 
@@ -49,10 +49,10 @@ test('a ref with parameters builds what the same arguments build, and an asset t
 	const named = await objectAt('plants/apple?seed=isar&stage=6');
 	const passed = await objectAt('plants/apple', 6, 'isar');
 	expect(trianglesOf(named)).toBe(trianglesOf(passed));
-	expect(named.userData.ref).toBe('plants/apple@2?detail=1&seed=isar&stage=6');
-	expect(passed.userData.ref).toBe('plants/apple@2?detail=1&seed=isar&stage=6');
+	expect(named.userData.ref).toBe('plants/apple@2?detail=1&fruit=0&seed=isar&stage=6');
+	expect(passed.userData.ref).toBe('plants/apple@2?detail=1&fruit=0&seed=isar&stage=6');
 	// the latest, at its own values, unless asked
-	expect((await objectAt('plants/apple')).userData.ref).toBe('plants/apple@2?detail=1&seed=maia&stage=9');
+	expect((await objectAt('plants/apple')).userData.ref).toBe('plants/apple@2?detail=1&fruit=0&seed=maia&stage=9');
 	await expect(objectAt('plants/apple?stage=99')).rejects.toThrow();
 	await expect(objectAt('things/bell-tent?size=2')).rejects.toThrow();
 	expect((await objectAt('things/bell-tent')).userData.ref).toBe('things/bell-tent@1');

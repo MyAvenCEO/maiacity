@@ -126,3 +126,16 @@ test("the kit's cut faces cross with the colours it gave them, not one red for a
 		expect(c.rough).toBeLessThanOrEqual(1);
 	}
 });
+
+test('a bag whose canvas unrolls as it opens: its moves kept, and the bag left packed, as it was built', async () => {
+	for (const ref of ['things/bell-tent-bag', 'things/tent-bag']) {
+		const obj = await objectAt(ref);
+		const size = () => new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3()).toArray();
+		const packed = size();
+		const baked = bake(obj);
+		expect(baked.controls.map((c) => c.id)).toContain('open');
+		// its canvas shaped back by its own function at its rest, not only its nodes put back
+		expect(baked.intact).toBe(true);
+		expect(near(size(), packed, 1e-6)).toBe(true);
+	}
+});

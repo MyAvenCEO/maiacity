@@ -130,7 +130,7 @@ export function setCaps(style, color) { CAPS.style = style; if (color) CAPS.red 
  * seen through the opening are drawn as a flat machined cap on the cut plane: plane normal,
  * plane depth, the cap colour and a faint hatch. Every solid stays closed, no cap geometry.
  */
-function capPatch(m, capColor, capRough = 0.38, capMetal = null) {
+export function capPatch(m, capColor, capRough = 0.38, capMetal = null) {
   m.userData.capColor = new THREE.Color(capColor)
   const uCap = { value: m.userData.capColor }
   const uCapR = { value: capRough }

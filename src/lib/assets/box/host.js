@@ -112,12 +112,19 @@ export class AssetBox {
 		else job.no(new Error(String(msg.error ?? 'the box failed')));
 	}
 
-	/** one job: { op, …args } answered with { data, ms } */
-	async ask(op, payload = {}, { timeout = this.timeout } = {}) {
+	/**
+	 * one job: { op, …args } answered with { data, ms }. One that runs longer than `timeout` tears the box down, unless
+	 * it is `soft`: a step waiting behind a build is late, not lost, so only it fails and the box goes on.
+	 */
+	async ask(op, payload = {}, { timeout = this.timeout, soft = false } = {}) {
 		await this.start();
 		const id = this.next++;
 		return new Promise((ok, no) => {
-			const timer = setTimeout(() => this.stop(`${op} ran longer than ${timeout} ms`), timeout);
+			const timer = setTimeout(() => {
+				if (!soft) return this.stop(`${op} ran longer than ${timeout} ms`);
+				this.jobs.delete(id);
+				no(new Error(`${op} ran longer than ${timeout} ms`));
+			}, timeout);
 			this.jobs.set(id, { ok, no, timer });
 			this.frame.contentWindow.postMessage({ id, op, ...payload }, '*');
 		});
@@ -132,12 +139,39 @@ export class AssetBox {
 		return this.ask('build', { recipe, given, engine: this.engine }, o);
 	}
 
+	/**
+	 * A build kept running in the box (engine 4 on, ./live.js): `{ session, nodes }`. `nodes` is how many nodes the page
+	 * built of it, which the box's build must have too.
+	 * @param {{ hash: string, code: string }} recipe @param {Record<string, string> | undefined} given @param {number} nodes
+	 */
+	live(recipe, given, nodes, o) {
+		return this.ask('live', { recipe, given, nodes }, o);
+	}
+
+	/** one step of a running build: what changed, as numbers, and what its solver reads (unchecked; ../hero.js checks it) */
+	tick(session, ask, o = { timeout: 5000, soft: true }) {
+		return this.ask('tick', { session, ask }, o);
+	}
+
+	/** a running machine broken its own way (`on`), or mended */
+	breakIt(session, on) {
+		return this.ask(on ? 'break' : 'mend', { session }, { timeout: 5000, soft: true });
+	}
+
+	/** a running build let go of (nothing to answer if the box is gone) */
+	end(session) {
+		if (!this.frame) return Promise.resolve();
+		return this.ask('end', { session }, { timeout: 5000, soft: true }).catch(() => {});
+	}
+
 	/** tears the box down: the frame and its worker are gone, every job open fails with `why` */
 	stop(why = 'the box was stopped') {
 		removeEventListener('message', this.onmessage);
 		this.frame?.remove();
 		this.frame = null;
 		this.ready = null;
+		// its running builds went with it
+		this.generation = (this.generation ?? 0) + 1;
 		for (const job of this.jobs.values()) {
 			clearTimeout(job.timer);
 			job.no(new Error(why));

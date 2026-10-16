@@ -36,8 +36,10 @@ import { CLOVER_STAGES, COMFREY_STAGES, clover, comfrey } from './allies.js';
 import { CHARD_STAGES, KALE_STAGES, chard, kale } from './greens.js';
 import { BEAN_STAGES, beans } from './beans.js';
 
+import * as THREE from 'three';
 import { FIRST, at, versioned } from '../app/versions.js';
 import { detailAt, lite } from './grow.js';
+import { oneFruit, ripeOf } from './fruit.js';
 import { orchard as orchardV1 } from './orchard.v1.js';
 import { WALD as WALD_CANOPY } from './wald-canopy.js';
 import { WALD as WALD_LOWTREES } from './wald-lowtrees.js';
@@ -739,16 +741,36 @@ const paramsOf = (p) => [
 	{ id: 'stage', label: 'Stage', type: 'number', min: 0, max: p.stages.length - 1, value: p.stages.length - 1, names: p.stages.map((s) => s.name) },
 	{ id: 'seed', label: 'Seed', type: 'string', value: SEEDS[0], maxLength: 40 },
 	// how finely it is grown, 1 as built (./grow.js `detailAt`): a world's renderer asks for its coarser levels by it
-	{ id: 'detail', label: 'Detail', type: 'number', min: 0.05, max: 1, step: 0.05, value: 1 }
+	{ id: 'detail', label: 'Detail', type: 'number', min: 0.05, max: 1, step: 0.05, value: 1 },
+	// the whole plant, or one of its fruit on its own (./fruit.js): the one its seed picks, hung by its stalk
+	{ id: 'fruit', label: 'View', type: 'integer', min: 0, max: 1, value: 0, names: ['Plant', 'Fruit'] }
 ];
 
 /**
  * A version's grow, taking a detail as well: at 1 (or none) grown as it always was, below grown lighter (./grow.js
- * `lite`). Every version takes it, as every version grows through the same detail.
- * @param {(stage: number, seed: string) => any} grow
+ * `lite`); and with `fruit` 1, one of its fruit on its own instead of the whole plant (./fruit.js: the one its seed
+ * picks of the fruit it bears ripe at its `last` stage, as it is at `stage`). Every version takes both, as every
+ * version grows through the same detail and bears its fruit the same way.
+ * @param {(stage: number, seed: string) => any} grow @param {number} last
  */
-const detailed = (grow) => (/** @type {number} */ stage, /** @type {string} */ seed, /** @type {number} */ detail) =>
-	detail === undefined || detail >= 1 ? grow(stage, seed) : lite(detailAt(detail), () => grow(stage, seed));
+const detailed = (grow, last) => (/** @type {number} */ stage, /** @type {string} */ seed, /** @type {number} */ detail, /** @type {number} */ fruit) => {
+	const made = fruit ? () => fruitOf(grow, last, stage, seed) : () => grow(stage, seed);
+	return detail === undefined || detail >= 1 ? made() : lite(detailAt(detail), made);
+};
+
+/**
+ * One fruit of a plant on its own, or, when there is none to show, nothing with a note saying why.
+ * @param {(stage: number, seed: string) => any} grow @param {number} last @param {number} stage @param {string} seed
+ */
+function fruitOf(grow, last, stage, seed) {
+	const { plant, fruit } = ripeOf(grow, last, seed);
+	plant.traverse((/** @type {any} */ o) => o.geometry?.dispose());
+	const one = fruit && oneFruit(grow, stage, seed, fruit.pick);
+	if (one) return one;
+	const none = new THREE.Group();
+	none.userData.note = fruit ? 'This fruit has not set yet.' : 'This plant bears no fruit.';
+	return none;
+}
 
 /**
  * every plant, layer by layer from the canopy down (in each layer as they were added), with its versions and what it
@@ -759,7 +781,7 @@ export const PLANTS = versioned(
 	LAYERS.flatMap((l) => [...ALL, ...WALD, ...FIELDS].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id, params: paramsOf(p) }))),
 	'grow',
 	HISTORY
-).map((p) => ({ ...p, versions: p.versions.map((ver) => (typeof ver.build === 'function' ? { ...ver, build: detailed(ver.build) } : ver)) }));
+).map((p) => ({ ...p, versions: p.versions.map((ver) => (typeof ver.build === 'function' ? { ...ver, build: detailed(ver.build, p.stages.length - 1) } : ver)) }));
 
 /**
  * A plant as it was at version `v` (its latest when not given): its `grow` that version's. Undefined if it has no such
