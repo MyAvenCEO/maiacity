@@ -31,7 +31,8 @@ import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { ambience, levelsAt } from './ambience'
-import { createForest, type Forest } from './flora.js'
+import { createForest, INSIDE, type Forest } from './flora.js'
+import { createFlora } from './drawn.js'
 import { swapLegacy } from './legacy.js'
 import { DRIFT, FIELDS, OUTDOOR_SPACING, pick, planting, stageOf, type Flora } from './sandbox5.js'
 
@@ -94,10 +95,18 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const eye = () => camera.position
 	const m = mats()
 	const domes = layout()
-	/** Sandbox 5: the cell's forest grown from our plants (./flora.js), planted below with the food forest; the stand-in
-	 *  plants of Sandbox 4's squares traded for its plants too (./legacy.js) */
-	// its trees in full near you, coarser to 40 m, and beyond that each a picture of itself (./impostors.js)
-	const forest: Forest | null = flora ? createForest({ tree: [16, 40], shrub: [10, 26], cover: [6, 13], renderer }) : null
+	/** what the renderers draw (their copies' levels change as you walk) casts its shadows anew: drawn again with the
+	 *  next look at the level of detail (below), not every frame */
+	let shadowsStale = false
+	const staleShadows = () => void (shadowsStale = true)
+	/** Sandbox 5: our plants drawn by the universal renderer (./drawn.js, $lib/assets/render), each kind built in the asset
+	 *  box: the cell's at the village's distances, and the domes' insides' at the nearer ones under their glass */
+	const plantsOut = flora ? createFlora({ renderer, camera, scene, shadows: staleShadows }) : null
+	const plantsIn = flora ? createFlora({ renderer, camera, scene, reach: INSIDE, boxes: 2, shadows: staleShadows }) : null
+	/** Sandbox 5: the cell's forest of our plants (./flora.js), planted below with the food forest; the stand-in plants of
+	 *  Sandbox 4's squares traded for its plants too (./legacy.js) */
+	// its trees in full near you, coarser to 40 m, and beyond that each a picture of itself
+	const forest: Forest | null = plantsOut ? createForest({ flora: plantsOut }) : null
 	const swapR = seeded(707)
 	const swap = (root: THREE.Object3D) => {
 		if (forest && flora) swapLegacy(root, scene, forest, { warm: false, seed: flora.seed, r: swapR })
@@ -956,7 +965,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	await pause('Planting the edges')
 	if (forest) {
 		await plantGarden()
-		// every kind grown (in workers, side by side), then each tree stands in the walker's way by its trunk
+		// every kind built (in the asset box, side by side), then each tree stands in the walker's way by its trunk
 		await forest.grown((done, of) => {
 			if (done === of || done % 10 === 0) onProgress(`Growing the forest: ${done} of ${of} kinds`)
 		})
@@ -972,9 +981,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		animated.push(birds.update)
 		// where they are, for a look from the console: __birds.where()
 		;(window as unknown as { __birds?: typeof birds }).__birds = birds
-		scene.add(forest.group)
 		// for a look at its weight from the console: __forest.weight()
 		;(window as unknown as { __forest?: Forest }).__forest = forest
+		// and at what its renderers draw and hold: __assets.stats()
+		;(window as unknown as { __assets?: unknown }).__assets = { stats: () => ({ out: plantsOut!.assets.stats(), in: plantsIn!.assets.stats() }) }
 		await pause('Growing the forest')
 	}
 	{
@@ -1012,12 +1022,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	/** Near you the forest in full, further off its stand-ins. */
 	const NEAR = 72
-	const look = new THREE.Vector3()
-	/** Sandbox 5's forest: what is drawn how, for where the eye is and where it looks (cheap unless it moved) */
+	/** Sandbox 5's forest: its small plants put down round the eye (cheap unless it moved), then what the renderers draw
+	 *  of it and of the domes' insides, for where the eye is and where it looks (cheap unless it moved or turned) */
 	const forestTick = () => {
 		if (!forest) return
-		camera.getWorldDirection(look)
-		forest.update(camera.position.x, camera.position.z, look.x, look.z)
+		forest.update(camera.position.x, camera.position.z)
+		plantsOut!.update()
+		plantsIn!.update()
 	}
 	const levelOfDetail = (x: number, z: number, all = false) => {
 		forestTick()
@@ -1198,7 +1209,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const job = { i, cancelled: false }
 		building = job
 		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), flora: flora ? { garden: flora.inside, seed: flora.seed } : undefined })
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn! } : undefined })
 			.then((h) => {
 				if (building === job) building = null
 				if (job.cancelled || !h.embedded) return h.dispose()
@@ -1218,6 +1229,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const near = gapTo(i) < SHOW_WITHIN || i === nearestBuilt()
 		if (dm.root.visible !== near) renderer.shadowMap.needsUpdate = true
 		dm.root.visible = near
+		dm.show(near)
 		show(i, !near)
 		if (near) shown.add(i)
 		else shown.delete(i)
@@ -1309,6 +1321,10 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		sky.tick(now)
 		if (now - lodChecked > 400) {
 			lodChecked = now
+			if (shadowsStale) {
+				shadowsStale = false
+				renderer.shadowMap.needsUpdate = true
+			}
 			levelOfDetail(camera.position.x, camera.position.z)
 			if (!walker.flying()) manageDomes()
 			lightNearest()
@@ -1328,6 +1344,15 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	walker.update(0)
 	sky.follow(camera.position.x, camera.position.z)
+	// Sandbox 5: the plants near where you stand at their finer shapes before the first frame, as they always were
+	if (plantsOut) {
+		onProgress('Growing the forest: the plants near you')
+		forestTick()
+		for (let waited = 0; waited < 120000 && !(plantsOut.settled() && plantsIn!.settled()); waited += 100) {
+			await new Promise((r) => setTimeout(r, 100))
+			forestTick()
+		}
+	}
 	onProgress('ready')
 	tick()
 
@@ -1358,6 +1383,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			levelOfDetail(camera.position.x, camera.position.z, true)
 			lightNearest()
 			for (const i of shown) built.get(i)!.update(t)
+			// what the renderers draw of the domes' insides too, now their plants round the camera are put down
+			forestTick()
 			glowMat.emissive.set(GLOW)
 			for (const p of pool) p.color.set(LAMP)
 			// the glass's sun sheen: off unless the shot turns it up, always towards where the sun is now
@@ -1402,6 +1429,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			}
 			// and every animal's skin, meshed off the page, there before the shot is drawn
 			await actorsSettled()
+			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
+			// one while a finer one is still being built
+			if (plantsOut) await Promise.all([plantsOut.assets.ready(undefined, true), plantsIn!.assets.ready(undefined, true)])
 			settle()
 		},
 		holds: (w) => w.dome === undefined || shown.has(w.dome),
@@ -1470,6 +1500,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			cancelAnimationFrame(frame)
 			if (building) building.cancelled = true
 			for (const dm of built.values()) dm.dispose()
+			plantsOut?.dispose()
+			plantsIn?.dispose()
 			sound.dispose()
 			world.disconnect()
 			walker.dispose()
