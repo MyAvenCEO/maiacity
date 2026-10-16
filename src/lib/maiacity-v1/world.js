@@ -32,6 +32,7 @@ import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 import { BELL_TENT, CENTRE_AT, PICKUP, RAMP, THINGS } from './things.js';
 import { createDrawn } from './drawn.js';
+import { plantRef } from './plants.js';
 
 /** the hex's radius in metres: 114.75, one and a half times 76.5 again (Samuel 2026-10-13, 17:49) */
 const HEX_R = 114.75;
@@ -1046,6 +1047,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// the first trees, each named after the player who planted it, where they planted it, beside its stake, as
 	// it stands on its watered months now; a watering grows it in place (grows)
 	const trees = {};
+	/** the trees a new one takes the place of, standing till it is drawn */
+	const standing = { A: [], B: [] };
 	const grows = [];
 	/** the players' trees (list: { seat, plant, seed, stage, x, z, grown }), regrown when a stage moves on */
 	function setTrees(list = []) {
@@ -1054,17 +1057,27 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const had = trees[seat];
 			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}:${t.name}` : '';
 			if (had?.userData.key === key) continue;
-			if (had) (world.remove(had), had.traverse((o) => o.geometry?.dispose?.()), delete trees[seat]);
-			if (!t) continue;
+			// the one it takes the place of stands until it is there to draw (no gap while it is built)
+			const away = () => {
+				for (const o of standing[seat].splice(0)) (world.remove(o), o.traverse((c) => c.geometry?.dispose?.()), drawn.drop(o.userData.drawn));
+			};
+			if (had) standing[seat].push(had);
+			delete trees[seat];
+			if (!t) {
+				away();
+				continue;
+			}
 			const g = new THREE.Group();
-			const plant = t.plant.grow(t.stage, t.seed);
+			// the plant at its stage from its seed, built in the asset box and drawn by the renderer where this anchor
+			// stands (./plants.js)
+			const plant = new THREE.Group();
+			const copy = drawn.follow(plantRef(t.plant, t.stage, t.seed), plant, { pick: `tree:${seat}`, receive: true });
 			const kit = spotKit({ name: t.name ?? '', seed: t.plant.id });
 			kit.userData.earth.userData.setWet(0.6);
 			g.add(plant, kit);
 			g.position.set(t.x, 0, t.z);
 			g.rotation.y = spotYaw(t);
 			g.traverse((o) => o.isMesh && ((o.castShadow = true), (o.name = `tree:${seat}`)));
-			const height = Math.max(0, new THREE.Box3().setFromObject(plant).max.y);
 			// a ring on the ground round it, drawn over the grass, while a spot is chosen: a tree already grows here, its
 			// name over it (Samuel 2026-10-14: the trees the first settlers planted marked in the later ones' stories)
 			const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.2, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xa8e07a, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false }));
@@ -1072,9 +1085,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			ring.renderOrder = 5;
 			ring.visible = false;
 			g.add(ring);
-			g.userData = { key, top: Math.max(0.7, height + 0.35), grown: t.grown, height, ring };
-			// watered: it grows in place, from the height it had to its new one (Samuel 2026-10-14)
-			if (had && t.grown > had.userData.grown && height > 0.002) grows.push({ plant, t0: performance.now() / 1000, from: Math.min(1, had.userData.height / height) });
+			// how tall it stands is read off the build once it is there
+			g.userData = { key, top: 0.7, grown: t.grown, height: 0, ring, drawn: copy };
+			const was = had?.userData;
+			copy.ready.then((box) => {
+				const height = Math.max(0, box?.max.y ?? 0);
+				Object.assign(g.userData, { top: Math.max(0.7, height + 0.35), height });
+				if (trees[seat] !== g) return;
+				away();
+				// watered: it grows in place, from the height it had to its new one (Samuel 2026-10-14)
+				if (was && t.grown > was.grown && height > 0.002) grows.push({ plant, t0: performance.now() / 1000, from: Math.min(1, was.height / height) });
+			});
 			world.add(g);
 			trees[seat] = g;
 		}

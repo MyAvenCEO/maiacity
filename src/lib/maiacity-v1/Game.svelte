@@ -20,7 +20,7 @@
 	import LedgerView from './LedgerView.svelte';
 	import { AT_HOME, STORY_INVESTS, story } from './tour.js';
 	import { treeNow } from './trees.js';
-	import { plantAt } from '$lib/plants/index.js';
+	import { plantOf } from './plants.js';
 	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
 	import Frame from '$lib/genui/Frame.svelte';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
@@ -152,7 +152,7 @@
 		world.sticks(at).then(() => (playing = ''));
 		doMove({ type: 'mark', x: at.x, z: at.z }).then(() => (chosen = null));
 	}
-	const plantIt = () => doMove({ type: 'plant', v: plantAt(player.seedling)?.version });
+	const plantIt = () => doMove({ type: 'plant', v: plantOf(player.seedling)?.version });
 	const myTree = $derived(trees.find((x) => x.seat === seat));
 	const shownMonths = $derived(growth ?? player?.tree?.grown ?? 0);
 	const stepPreview = (d) => (growth = Math.max(0, Math.min(400, shownMonths + d)));
