@@ -317,6 +317,10 @@
 			'Merge into main',
 			'As a pull request merges: what only the proposal changed lands, and nothing main changed is lost. Where both changed the same place, you pick which value main keeps. Rows inside a row join by id at any depth; a clash anywhere inside makes that row the place you pick, and the page says where under it both changed it.'
 		],
+		[
+			'Accept',
+			'One of the vault’s owners accepts a proposal as it stands, with a review: accepted, declined, or sent back to revise with a few words. Anyone else merges a proposal into main only once the vault accepted it, and only the version it accepted; the vault’s own merges need no review.'
+		],
 		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
 		[
@@ -439,6 +443,7 @@
 		'tag',
 		'propose',
 		'merge',
+		'review',
 		'restore',
 		'undo',
 		'variant',
@@ -564,7 +569,11 @@
 			'A query shows through links only what its reader opened, says why where it opened nothing, and a cycle of links ends at its depth',
 			'L1, L2, L3'
 		],
-		['Merging a proposal loses nothing: what main changed stays, and what only the proposal changed lands', 'T10']
+		['Merging a proposal loses nothing: what main changed stays, and what only the proposal changed lands', 'T10'],
+		[
+			'A merge through a share brings in only the places its merge op names, and into main only what the vault accepted',
+			'M1, M2'
+		]
 	];
 </script>
 
@@ -1214,7 +1223,9 @@
 				An op names its place at any depth, and <code>"*"</code> stands for any row or any field:
 				<code>["nodes", "*", "kids", "*", "text"]</code> is the text of any row under any node. An op on a row covers
 				everything under it. The Share form offers every field of the schema at any depth, in words, and each list of
-				rows to add to, delete from or reorder.
+				rows to add to, delete from or reorder. A merge op may name a place too: a tuner that may merge
+				<code>["params", "*", "default"]</code> into main merges a proposal that only changes the defaults of the params,
+				and not one that also changes the code.
 			</p>
 			<div class="table">
 				<table>
@@ -1388,7 +1399,9 @@
 				</li>
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, artworks, flows,
-					functions, posts, and a device’s card, a vault’s profile and a file, each starting at version 1. A kind that grew
+					functions, posts, reviews, bundles of proposals, policies, the code entries (recipes, views and logic: their
+					source, the engine they run on, a manifest of the names they use, their params and a contract), and a device’s
+					card, a vault’s profile and a file, each starting at version 1. A kind that grew
 					ships its older versions too, with the lenses between them, so a spark written as version 1 opens on version 2’s
 					canvas, and an article written as version 1 opens as it was, ready to be linked to its story. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
 					chapters and words; a spark is a canvas of artifacts, sparks and free notes; an artwork is a story’s card of one
