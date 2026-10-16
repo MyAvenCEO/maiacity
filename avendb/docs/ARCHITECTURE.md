@@ -47,6 +47,10 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 | Share | Who may do what on which entries of a vault: who, level, what. |
 | Sub cap | A share that rests on another: no stronger, no wider, and ended with it. |
 | Request | An access request: a record of the `request` schema, shared with the vault asked, which writes its answer in it. |
+| Proposal | A line of an entry's history beside its main line, started from any version, which a merge brings into another. |
+| Accept | A write of an entry's vault on one of its proposals that changes nothing: the vault accepts it as it stands, so anyone else may merge it into main. |
+| Review | A vault's answer to a proposal, accepted, declined or revise: a record of the `review` schema in the vault. |
+| Code entry | A recipe, a view, a logic or a function: code as an entry, its source, its engine, a manifest of the names it uses and its params. |
 | Level | Keep, Relay, Backup, Read, Write or Owner, in that rank order. |
 | Keep share | A share to one device of the issuer: which entries it syncs, and whether it keeps files whole. |
 | Audience | The shares that pick an entry, in the clear. It carries the entry's key. |
@@ -812,6 +816,7 @@ the start cuts the whole proposal (`spec/AvenDB/Proposals.lean`).
 |---|---|
 | Propose | A write that starts a line from any version |
 | Merge | A write on the target that builds on both lines' heads: the union of both histories (T10g), reading as the three-way merge of both lines from their base (T10h) |
+| Accept | A write of the entry's vault on a proposal that builds on its heads and changes nothing: the vault accepts the proposal as it stands (section 8) |
 | Restore | A new write that puts back an older version |
 | Undo | A new write that takes out one older write, by a three-way merge of records |
 | Variant | A new entry with what a line reads now and its tags, linked to that version of the original |
@@ -850,8 +855,9 @@ itself, restore the version before it.
 
 **Whether a write counts** is decided by every reader the same way. It counts when it fits its schemas (section 8),
 builds only on writes that count, and its actor is the entry's vault or its proof names a live share whose chain
-allows what it touched. A write that doesn't count stays in the log, sealed, and shows on no line, nor does anything
-built on it. So an app patched to skip the checks writes nothing anyone reads.
+allows what it touched; and a merge into main through a share, only on top of the vault's accept (section 8, M2). A
+write that doesn't count stays in the log, sealed, and shows on no line, nor does anything built on it. So an app
+patched to skip the checks writes nothing anyone reads.
 
 ## 8. One API: run(op), op groups and fit
 
@@ -957,7 +963,8 @@ reads a kind's rules and never decides them. Its JSON names everything as the co
 **Entries.** `create {vault, type, tags, schema, value, as}`; the record ops `set`, `unset`, `insert`, `remove`,
 `move` `{entry, line, schema, path, value, at, to, as}`; `tag {entry, add, remove, as}`; `propose`;
 `merge {entry, from, into, take, as}`, `take` the conflicts where the target takes the other line's value, each
-`{at: path, what: value | row | order}`, as `note` lists a proposal's `conflicts`; `restore`, `undo`, `variant`; and
+`{at: path, what: value | row | order}`, as `note` lists a proposal's `conflicts`; `review {entry, line, verdict,
+text, as}`, the vault's answer to a proposal (below, "Merges by policy"); `restore`, `undo`, `variant`; and
 `batch {ops, as}`, whose record ops in a row on one entry's line make one write. A schema or a lens is created as an
 entry of its type (section 9).
 
@@ -1051,7 +1058,7 @@ Op      = {"op": "relay" | "backup" | "read" | "create" | "propose" | "share"}
         | {"op": "set", "path": Pattern, "to": [v]?, "on": On?}
         | {"op": "insert" | "remove" | "move", "path": Pattern?, "on": On?}
         | {"op": "tag", "tags": [tag]?}
-        | {"op": "merge", "on": On?}
+        | {"op": "merge", "on": On?, "path": Pattern?}
 Pattern = a path whose steps may be "*", at any depth; [] is the whole record
 On      = "main" | "proposals"
 ```
@@ -1060,6 +1067,16 @@ A pattern names places at any depth, as a path does: `["nodes", "*", "kids", "*"
 the kids of any node. An op on a row covers everything under it, its fields and its lists of rows at any depth. The
 page's Share dialog offers each field of the newest schema at any depth, in words ("the text of any row of the kids of
 any row of its nodes"), and each list of records to add, delete or reorder rows of.
+
+**Merges by path.** A merge op may name a path: then it merges a line only where all that line changed since the base
+lies under it. A Tuner that may merge `["params", "*", "default"]` into main merges a proposal that only tunes the
+defaults of a code entry's params, and not one that also changes its source. Readers read a merge's touches as before,
+and also each place the writes it brings in changed since the base (`Touch::Merged`, read off the touches each of
+those writes was counted with, the whole record where they couldn't read them); a merge op on the write's line whose
+path reaches that place allows it (M1). A merge op with no path merges anything, as before. In a sealed grant a merge
+op with no path keeps its bytes, and one with a path is a new kind of op (`encode.rs`), so every grant made before
+reads as it did; an app built before reads a grant that names a merge path as one it can't open. The page's Share
+dialog offers "may merge changes to one field".
 
 The level is the class of the strongest op (`rules::level_of`): relay, backup, read, write (any op that writes) or
 owner (`share`). A keep share has no ops. The built-in groups (`rules::groups`):
@@ -1082,17 +1099,48 @@ Anyone may name a group of their own. "Bob may set the status of the todos tagge
   "ops": [{ "op": "read" }, { "op": "set", "path": ["status"], "to": ["doing", "done"] }] }
 ```
 
-**Proof-carrying writes.** A write through a share carries in its encrypted body a proof (`rules::Proof`): the share
-it relies on, and the ops and salt of each share of its chain. Readers check them against each share's commitment and
+**Proof-carrying writes.** A write through a share carries in its encrypted body a proof (`rules::Proof`): the share it
+relies on, and the ops and salt of each share of its chain. Readers check them against each share's commitment and
 level. They read the write's **touches** off its Loro ops, imported on the version it builds on
-(`doc::Item::footprint`): each place set, row added, removed or moved, the creation, a proposal started, a merge, a
-tag asked. A chain allows a write when every share of it allows every touch. A device refuses to make a write its
-chain doesn't allow (NotAllowed), as its readers wouldn't count it.
+(`doc::Item::footprint`): each place set, row added, removed or moved, the creation, a proposal started, a merge and
+each place the line it brings in changed, a tag asked. A chain allows a write when every share of it allows every touch.
+A device refuses to make a write its chain doesn't allow (NotAllowed), as its readers wouldn't count it.
 
 - **C1** chains narrow: a chain allows nothing one of its shares forbids.
 - **C2** readers agree: whether a write counts reads no selector, type or tag.
 - **C3** counted writes do what they may.
 - **C4** allowed writes count, and nothing built on an uncounted write does.
+- **M1** a counted merge brings in only what its merge ops' paths reach.
+- **M2** a merge into main through a share counts only on top of the vault's accept; the vault's own merges count as
+  any write of its does.
+
+### Merges by policy: accepts and reviews
+
+Who must accept a proposal before anyone but the vault merges it into main is the vault's policy. avenDB counts by
+one, every vault's default: **one of the vault's owners**. So the vault answers for itself, and an aven, an agent or
+an Editor merges nothing into main alone, however wide its share.
+
+- **The accept** is a write of the entry's vault on the proposal, acting for itself, that builds on the proposal's
+  heads and changes nothing, no field and no tag (`policy::is_accept`). It is in the entry's own log, so every reader
+  of the entry reads it, offline, and reaches the same verdict, as C2 asks.
+- **A merge into main through a share** counts only where it builds on an accept and on nothing else but accepts and
+  writes on main (`policy::passes`). So it brings in exactly what the vault accepted: whatever is written on the
+  proposal after the accept needs an accept again. A device refuses to make one that wouldn't count (NotAccepted), and
+  one a patched app makes all the same counts for no reader, nor anything built on it (the history says why:
+  `policy`). A merge into a proposal needs no accept.
+- **The vault's own merges** count as every write of the vault does, by what they build on and whether they fit, with
+  no accept: the owner's workflow is as it was.
+- **A review** is the record people read: `{kind: "review", entry, line, heads, by, verdict, text, at}`, in the vault,
+  the verdict `accepted`, `declined` or `revise`, the version it answers (`heads`), who started the proposal (`by`) and,
+  for a revision, the words that go back. The `review` op writes it acting for the entry's vault (NoCap for anyone
+  else); for `accepted` it writes the accept first, and the review names the version the accept makes. The HITL queue
+  on the page writes the same record, of the same schema bytes, when an owner answers there and merges.
+- **A bundle** links proposals on several entries that belong together, an aven's change of a recipe, its view and its
+  logic, with the intent that started them. Each proposal is still accepted and merged as its own.
+- **A policy** entry declares a policy (`policy`, section 9). Version 1 holds the default alone, `{"needs": {"of":
+  "owners", "count": 1}}`, and counting reads no policy entry yet. A richer policy, n of m owners, named groups,
+  vetoes, is a new rule the engine and the Lean model learn first, then a new version of the schema; every reader must
+  reach it the way it reaches the accepts, from what it holds.
 
 ### Writes that fit their schemas
 
@@ -1131,28 +1179,40 @@ thumbnail of one shape, 16:9, 9:16, 1:1, 4:5 or 5:2, in layers as rows, a pictur
 placed in percent of its canvas, its pictures and the card rendered from them Library files by link, the story it
 belongs to and the hook it carries; an A/B card is a variant of another), and an access **request** (the vault
 asked, what it asks for, a share, to co-own or an invitation, a level, why, the vaults it names and, once given, its
-answer: `"granted"` or `"denied"`, and the part of an owner add the vault asked signed, section 3). A note
+answer: `"granted"` or `"denied"`, and the part of an owner add the vault asked signed, section 3), a **review**, a
+**bundle** and a **policy** (section 8, "Merges by policy"), and the **code entries** below. A note
 keeps its type, a document; the page lists notes among the sparks, and the world gives a spark's record beside its
 title and text (`world::What::Note`). Every shipped schema starts at v1, and a kind that grew ships its older
 versions beside the newest and the lenses between them (`lens::blobs::LENSES`), so what was written under an older
 one still counts and opens in the newest app: the spark's v1, a document's fields with a look, a link and a mood
 board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`), and the article's v1, a title, a text and
-tags, reads as v2 as it was, with no story yet (`ARTICLE_LENS`).
+tags, reads as v2 as it was, with no story yet (`ARTICLE_LENS`); and the function's v1 reads as v2 with no engine and
+no manifest yet (`FUNCTION_LENS`).
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 
-**What a schema can say** (`lens::Schema`). An object's `properties` and `required`; each property a `const`, an
-`enum`, or a `type`: a string (with `maxLength`, counted in characters), an integer or a number (any finite one, each
-with `minimum` and `maximum`), a boolean, an object (its own `properties`, `required` and `additionalProperties:
-false`, nested to any depth) or an array. An array of `items` is a list of values (with `minItems` and `maxItems`) or
-of records (objects with a required integer `id`); one of `prefixItems` is a tuple of so many values, a position `[x,
-y, z]`. A list of records may sit in a row of a list of records, at any depth (section 7). `$ref` names a shape of the
-schema's own `$defs`; one that names no shape makes it no schema. A shape may hold a list of rows of its own shape,
-an outline whose nodes hold nodes: a `$ref` that goes round through a list of records resolves lazily, one row at a
-time. One that goes round through plain objects or values would be a value with no end, and makes it no schema.
-`"x-loro": "text"` marks free text, and `default` what a field reads as when it is absent. `"x-link"` marks a link
-(section 8): `true` any link, `"newest"` one that follows its entry's newest version, `"pinned"` one pinned at a
-version; a property is one link, or an array of them. A field whose value doesn't fit reads as absent, and a record
+**Code entries.** A **recipe** (a 3D asset's code, and its card), a **view** (a screen's) and a **logic** (a game's
+rules) share one base (`lens::blobs::code_entry!`): a title, a note and tags; the source as Loro text, at most 200,000
+characters; the engine it runs on, `{host: box | logic | view, version, hash}`; a manifest of the names it uses, lists
+of `kit`, `presets`, `controls`, `messages`, `slots`, `events`, `hooks`, `ops` and `libs`; its params as rows, `{id,
+name, kind: number | integer | toggle | choice | color, range: {min, max, step, options}, default}`; and a contract,
+its `budgets` (`bytes`, `ms`, `memory`, `ops`) and `invariants`. A function of v2 adds the engine and the manifest to
+v1. They are records like any other, of the shipped-schema mechanism as it is, written, proposed, reviewed and merged
+through `run(op)`; nothing in the app loads or runs them yet. A merge path reaches into them as into any record, so a
+Tuner merges the defaults of their params and nothing else.
+
+**What a schema can say** (`lens::Schema`). An object's `properties` and `required`; each property a `const`, an `enum`,
+or a `type`: a string (with `maxLength`, counted in characters), an integer or a number (any finite one, each with
+`minimum` and `maximum`), a boolean, an object (its own `properties`, `required` and `additionalProperties: false`,
+nested to any depth) or an array. An array of `items` is a list of values (with `minItems` and `maxItems`) or of records
+(objects with a required integer `id`); one of `prefixItems` is a tuple of so many values, a position `[x, y, z]`. A
+list of records may sit in a row of a list of records, at any depth (section 7). `$ref` names a shape of the schema's
+own `$defs`; one that names no shape makes it no schema. A shape may hold a list of rows of its own shape, an outline
+whose nodes hold nodes: a `$ref` that goes round through a list of records resolves lazily, one row at a time. One that
+goes round through plain objects or values would be a value with no end, and makes it no schema. `"x-loro": "text"`
+marks free text, which its `maxLength` bounds too, and `default` what a field reads as when it is absent. `"x-link"`
+marks a link (section 8): `true` any link, `"newest"` one that follows its entry's newest version, `"pinned"` one pinned
+at a version; a property is one link, or an array of them. A field whose value doesn't fit reads as absent, and a record
 that lacks a required one doesn't read. Other keywords change nothing.
 
 **A lens reads rows of rows.** A lens's steps reach into the rows of a list of records (`in`), and into the rows of
@@ -1683,6 +1743,8 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | C2 | Readers agree whether a write counts | `counts_seen`, `creates_seen` |
 | C3 | Counted writes do what they may | `counted_allowed`, `counted_writes`, and `changes_allowed` in `Rules.lean` |
 | C4 | Allowed writes count, and nothing built on an uncounted one does | `allowed_counts`, `allowed_creates`, `uncounted_closed` |
+| M1 | A counted merge brings in only what its merge ops' paths reach | `M1_merges_within`, with `merged_within` in `Rules.lean` |
+| M2 | A merge into main through a share counts only on top of the vault's accept; the vault's own merges count as before | `M2_merges_accepted`, `M2_owner_counts` |
 | S1 | A write is judged by what it changed | `S1_judged_by_changes` |
 | S2 | Records that fit stay so; no write reaches deeper than the ceiling | `S2_clean_stays_clean`, `S2_first_write`, `S2_ceiling`, with `capped_change`, `capped_fits`, `capped_deep` and `capped_clean` in `Schemas.lean` |
 | S3 | Writes that don't fit count for no reader | `S3_unfit_uncounted`, `S3_step` |

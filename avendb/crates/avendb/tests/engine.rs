@@ -187,7 +187,7 @@ fn creation_fills_defaults_and_refuses_what_doesnt_fit() {
     assert_eq!(row["record"]["notes"], "");
     let later = create(json!({ "kind": "todo", "title": "x", "status": "later" }));
     assert_eq!(refused(&run(&mut w, mac, later)), "NotAView");
-    assert_eq!(refused(&run(&mut w, mac, create(json!({ "kind": "recipe", "title": "Soup" })))), "NoSchema");
+    assert_eq!(refused(&run(&mut w, mac, create(json!({ "kind": "potion", "title": "Soup" })))), "NoSchema");
     let value = json!({ "kind": "document" });
     let named = json!({ "op": "create", "vault": alice, "type": "note", "schema": "document", "value": value });
     assert!(ok(run(&mut w, mac, named))["entry"].is_string());
@@ -770,15 +770,16 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "article", "artifact", "artwork", "card", "document", "file", "flow", "function", "post"];
-    let own = [&own[..], &["profile", "request"]].concat();
-    let own = [&own[..], &["spark", "spark", "story", "todo"]].concat();
-    assert_eq!(kinds, own, "its own kinds, each once but the article's and the spark's two versions");
+    let own = ["article", "article", "artifact", "artwork", "bundle", "card", "document", "file", "flow", "function"];
+    let own = [&own[..], &["function", "logic", "policy", "post", "profile", "recipe", "request", "review"]].concat();
+    let own = [&own[..], &["spark", "spark", "story", "todo", "view"]].concat();
+    assert_eq!(kinds, own, "its own kinds, each once but the article's, the function's and the spark's two versions");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     let lenses = list(&schemas["lenses"]);
     let from = |l: &Value| (l["from"].clone(), l["builtIn"].clone());
-    let older = [lens::ARTICLE_V1.id(), lens::SPARK_V1.id()].map(|id| (json!(id.to_hex()), json!(true)));
-    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "the lenses from article and spark v1 to v2");
+    let older = [lens::ARTICLE_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id()];
+    let older = older.map(|id| (json!(id.to_hex()), json!(true)));
+    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "the lenses from article, function and spark v1 to v2");
 }
 
 /// Ops from their JSON.
@@ -935,6 +936,276 @@ fn a_share_that_only_suggests_writes_on_proposals_an_owner_merges() {
         let texts: Vec<&str> = doc.blocks.iter().map(|b| b.text.as_str()).collect();
         assert_eq!((doc.title.as_str(), texts), ("Spring plan", vec!["Plan", "Spring first.", "Sow beans"]));
     }
+}
+
+/// A code entry of each kind, as JSON: its title, note and tags, its source, its engine and manifest, a param, its
+/// contract, and for a recipe its card.
+fn code_entry(kind: &str) -> Value {
+    let (host, manifest) = match kind {
+        "recipe" => ("box", json!({ "kit": ["box", "cylinder"], "presets": ["brass"], "controls": ["slider"] })),
+        "view" => ("view", json!({ "messages": ["state", "resize"], "slots": ["panel"], "libs": ["d3"] })),
+        "function" => ("logic", json!({ "ops": ["tag", "set"] })),
+        _ => ("logic", json!({ "hooks": ["tick", "trade"], "ops": ["set"] })),
+    };
+    let mut entry = json!({
+        "kind": kind, "title": format!("A {kind}"), "note": "Made for the test.", "tags": ["code"],
+        "source": format!("// the {kind}\nexport default (x) => x;"),
+        "engine": { "host": host, "version": 4, "hash": "ab".repeat(32) },
+        "manifest": manifest,
+        "params": [{ "id": 1, "name": "height", "kind": "number", "range": { "min": 0.2, "max": 2, "step": 0.1 },
+            "default": 0.6 }, { "id": 2, "name": "lit", "kind": "toggle", "default": 1 }],
+        "contract": { "budgets": { "bytes": 200000, "ms": 2000, "memory": 64000000 }, "invariants": ["replay-equal"] },
+    });
+    if kind == "recipe" {
+        entry["card"] = json!({ "format": "asset-card", "v": 1, "group": "machines", "label": "Lamp", "size": [0.3, 0.6, 0.3] });
+    }
+    if kind == "function" {
+        let o = entry.as_object_mut().expect("an object");
+        for k in ["title", "note", "source", "params", "contract"] {
+            o.remove(k);
+        }
+        entry["name"] = json!("Tidy");
+        entry["code"] = json!("return [];");
+    }
+    entry
+}
+
+/// Code as entries (Scion B): recipes, views and logic, one base each with what a host needs to run it, and a function
+/// of v2 with an engine and a manifest. Each reads back as written; a source longer than its schema lets it be, an
+/// engine of no host, a param of no kind, a manifest naming what no host knows or a card that is no object fits none;
+/// a function written under v1 opens through the shipped lens and edits on in v2.
+#[test]
+fn code_entries_are_kinds_of_their_own() {
+    let mut w = cast::world();
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let create = |kind: &str, value: Value| json!({ "op": "create", "vault": alice, "type": kind, "value": value });
+    for kind in ["recipe", "view", "logic", "function"] {
+        let made = ok(run(&mut w, mac, create(kind, code_entry(kind))));
+        let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made["entry"], "schema": kind })));
+        let mut want = code_entry(kind);
+        if kind == "function" {
+            for (k, v) in [("about", json!("")), ("on", json!("enter")), ("flow", json!("")), ("stage", json!(""))] {
+                want[k] = v;
+            }
+            want["enabled"] = json!(true);
+        }
+        assert_eq!(got["record"], want, "{kind}");
+    }
+    let with = |kind: &str, change: &dyn Fn(&mut Value)| {
+        let mut v = code_entry(kind);
+        change(&mut v);
+        v
+    };
+    let bad = [
+        ("logic", with("logic", &|v| v["source"] = json!("x".repeat(200_001)))),
+        ("view", with("view", &|v| v["engine"]["host"] = json!("gpu"))),
+        ("recipe", with("recipe", &|v| v["engine"] = json!({ "host": "box", "version": 4 }))),
+        ("logic", with("logic", &|v| v["params"][0]["kind"] = json!("slider"))),
+        ("logic", with("logic", &|v| v["params"][0]["default"] = json!("tall"))),
+        ("view", with("view", &|v| v["manifest"]["net"] = json!(["fetch"]))),
+        ("recipe", with("recipe", &|v| v["card"] = json!("lamp.json"))),
+        ("function", with("function", &|v| v["manifest"] = json!({ "kit": "box" }))),
+    ];
+    for (kind, value) in bad {
+        assert_eq!(refused(&run(&mut w, mac, create(kind, value.clone()))), "NotAView", "{kind}: {value}");
+    }
+    // a function written under v1 reads in v2, with no engine and no manifest, and takes one on
+    let v1 = json!({ "kind": "function", "name": "Publish", "code": "return [];" });
+    let v1 = json!({ "op": "create", "vault": alice, "type": "function", "schema": lens::FUNCTION_V1.id().to_hex(),
+        "value": v1 });
+    let made = ok(run(&mut w, mac, v1))["entry"].clone();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made })));
+    assert_eq!((got["record"]["name"].as_str(), got["record"].get("engine")), (Some("Publish"), None));
+    let engine = json!({ "host": "logic", "version": 4, "hash": "cd".repeat(32) });
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": made, "path": ["engine"], "value": engine })));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made })));
+    assert_eq!((&got["record"]["engine"], got["record"]["code"].as_str()), (&engine, Some("return [];")));
+}
+
+/// M1 (merges by path) and M2 (merges by policy): a tuner may merge into main only a line Alice accepted, whose changes
+/// since their base all lie under its merge's path, the defaults of the params. Its merge of a proposal that only
+/// tunes counts once she accepts it; of one that changes the source too, its device refuses, accepted or not, a patched
+/// app's counts for no reader, and an owner merges it as ever.
+#[test]
+fn a_tuner_merges_new_defaults_and_nothing_else() {
+    let mut w = cast::world();
+    let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
+    // a lamp's logic, a code entry: its source and a param it reads
+    let lamp = json!({ "kind": "logic", "source": "glow(brightness)",
+        "params": [{ "id": 1, "name": "brightness", "kind": "number", "range": { "min": 0, "max": 10 }, "default": 2 }] });
+    let made = ok(run(&mut w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "logic", "value": lamp })));
+    let e = EntryId::from_hex(made["entry"].as_str().expect("its id")).expect("an entry");
+    let tuner = ops_of(json!([
+        { "op": "propose" },
+        { "op": "set", "path": [], "on": "proposals" },
+        { "op": "merge", "on": "main", "path": ["params", "*", "default"] },
+    ]));
+    w.lab.issue(mac, &[mac], on_entry(alice, bob, e, tuner)).expect("Alice lets Bob tune the lamp");
+    w.lab.sync_all(0);
+    let lamp = hex(e);
+    let set = |line: &Value, path: Value, value: Value| {
+        json!({ "op": "set", "entry": lamp, "line": line, "path": path, "value": value })
+    };
+    let brightness = json!(["params", { "id": 1 }, "default"]);
+    let main = |w: &mut World, d: SignerId| ok(run(w, d, json!({ "op": "get", "entry": hex(e) })))["record"].clone();
+    // a proposal that only tunes: Bob merges it once Alice accepts it, and every reader counts the merge
+    let tune = ok(run(&mut w, mac_b, json!({ "op": "propose", "entry": lamp, "name": "Brighter" })))["line"].clone();
+    ok(run(&mut w, mac_b, set(&tune, brightness.clone(), json!(3))));
+    let merge_tune = json!({ "op": "merge", "entry": lamp, "from": tune });
+    assert_eq!(refused(&run(&mut w, mac_b, merge_tune.clone())), "NotAccepted");
+    w.lab.sync_all(1);
+    let accept = |line: &Value| json!({ "op": "review", "entry": lamp, "line": line, "verdict": "accepted" });
+    ok(run(&mut w, mac, accept(&tune)));
+    w.lab.sync_all(1);
+    ok(run(&mut w, mac_b, merge_tune));
+    w.lab.sync_all(1);
+    for d in [mac, mac_b] {
+        assert!(counted(&mut w, d, e).iter().all(|c| c.1));
+        assert_eq!(main(&mut w, d)["params"][0]["default"], 3);
+    }
+    // a proposal that changes the source too: his device refuses his merge, into main or into another proposal
+    let rewrite = ok(run(&mut w, mac_b, json!({ "op": "propose", "entry": lamp, "name": "Rewrite" })))["line"].clone();
+    ok(run(&mut w, mac_b, set(&rewrite, brightness.clone(), json!(5))));
+    ok(run(&mut w, mac_b, set(&rewrite, json!(["source"]), json!("flash(brightness)"))));
+    w.lab.sync_all(2);
+    ok(run(&mut w, mac, accept(&rewrite)));
+    w.lab.sync_all(2);
+    let merge = json!({ "op": "merge", "entry": lamp, "from": rewrite });
+    assert_eq!(refused(&run(&mut w, mac_b, merge.clone())), "NotAllowed");
+    let other = ok(run(&mut w, mac_b, json!({ "op": "propose", "entry": lamp, "name": "Other" })))["line"].clone();
+    let sideways = json!({ "op": "merge", "entry": lamp, "from": rewrite, "into": other });
+    assert_eq!(refused(&run(&mut w, mac_b, sideways)), "NotAllowed");
+    // a patched app makes it all the same, and no reader counts it: main keeps the tuned lamp
+    let patched = w.lab.patched(|lab| engine::run(lab, mac_b, &merge));
+    let patched = ok(patched)["edit"].as_str().expect("its id").to_string();
+    w.lab.sync_all(2);
+    for d in [mac, mac_b] {
+        assert_eq!(counted(&mut w, d, e).last(), Some(&(patched.clone(), false)));
+        let record = main(&mut w, d);
+        assert_eq!((record["source"].as_str(), &record["params"][0]["default"]), (Some("glow(brightness)"), &json!(3)));
+    }
+    // Alice merges anything
+    ok(run(&mut w, mac, merge));
+    w.lab.sync_all(3);
+    for d in [mac, mac_b] {
+        let record = main(&mut w, d);
+        assert_eq!((record["source"].as_str(), &record["params"][0]["default"]), (Some("flash(brightness)"), &json!(5)));
+    }
+}
+
+/// The edits of entry `e` device `d` holds, by their ids: each one's kind, whether it counts and why not.
+fn edits_of(w: &mut World, d: SignerId, e: EntryId) -> Vec<(String, String, bool, Value)> {
+    let history = ok(run(w, d, json!({ "op": "history", "entry": hex(e) })));
+    let edit = |x: &Value| {
+        let id = x["id"].as_str().expect("an id").to_string();
+        (id, x["kind"].as_str().expect("its kind").to_string(), x["counted"] == true, x["why"].clone())
+    };
+    list(&history["edits"]).iter().map(edit).collect()
+}
+
+/// M2 (merges by policy): a merge into main through a share counts only on top of the vault's accept, every vault's
+/// default policy being one of its owners. Bob, an editor of Alice's plan, proposes; his device refuses his merge
+/// until Alice accepts by a review, which writes her accept on the proposal and a review record in her vault, and a
+/// patched app's counts for no reader. Asking him to revise writes the review alone; what he writes on the proposal
+/// after her accept she accepts again; only the vault reviews; and Alice merges as ever, with no review.
+#[test]
+fn a_merge_into_main_through_a_share_counts_on_top_of_the_vaults_accept() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
+    let editor = on_entry(alice, bob, l.plan, Level::Write.ops());
+    w.lab.issue(mac, &[mac], editor).expect("Alice makes Bob an editor of the plan");
+    w.lab.sync_all(0);
+    let plan = hex(l.plan);
+    let retitle = |line: &Value, title: &str| {
+        json!({ "op": "set", "entry": plan, "line": line, "path": ["title"], "value": title })
+    };
+    let line = ok(run(&mut w, mac_b, json!({ "op": "propose", "entry": plan, "name": "Spring" })))["line"].clone();
+    ok(run(&mut w, mac_b, retitle(&line, "Spring plan")));
+    let merge = json!({ "op": "merge", "entry": plan, "from": line });
+    assert_eq!(may(&mut w, mac_b, bob, std::slice::from_ref(&merge)), [json!("NotAccepted")]);
+    assert_eq!(refused(&run(&mut w, mac_b, merge.clone())), "NotAccepted");
+    // a patched app merges all the same, and no reader counts it: the policy holds it back
+    let patched = w.lab.patched(|lab| engine::run(lab, mac_b, &merge));
+    let patched = ok(patched)["edit"].as_str().expect("its id").to_string();
+    w.lab.sync_all(1);
+    for d in [mac, mac_b] {
+        let last = edits_of(&mut w, d, l.plan).pop().expect("the patched merge");
+        assert_eq!(last, (patched.clone(), "merge".into(), false, json!("policy")));
+        assert_eq!(w.lab.item(d, l.plan).unwrap().as_document().unwrap().title, "Plan");
+    }
+    // only the vault answers; asking Bob to revise writes the review alone, which accepts nothing
+    let review = |line: &Value, verdict: &str| json!({ "op": "review", "entry": plan, "line": line, "verdict": verdict,
+        "text": "Say which spring" });
+    assert_eq!(refused(&run(&mut w, mac_b, review(&line, "accepted"))), "NoCap");
+    assert_eq!(refused(&run(&mut w, mac, review(&Value::Null, "accepted"))), "BadOp");
+    assert_eq!(refused(&run(&mut w, mac, review(&line, "maybe"))), "BadOp");
+    let heads = ok(run(&mut w, mac, json!({ "op": "get", "entry": plan, "line": line })))["heads"].clone();
+    let revise = ok(run(&mut w, mac, review(&line, "revise")));
+    assert_eq!(revise["accept"], Value::Null);
+    let record = ok(run(&mut w, mac, json!({ "op": "get", "entry": revise["review"] })))["record"].clone();
+    let asked = json!({ "kind": "review", "entry": plan, "line": line, "heads": heads, "by": bob.to_hex(),
+        "verdict": "revise", "text": "Say which spring", "at": 0 });
+    assert_eq!(record, asked, "a review in Alice's vault, of the version she answered");
+    w.lab.sync_all(2);
+    assert_eq!(refused(&run(&mut w, mac_b, merge.clone())), "NotAccepted");
+    // she accepts: a write of her vault on the proposal that changes nothing, and the review names the version it makes
+    let yes = ok(run(&mut w, mac, review(&line, "accepted")));
+    let accept = yes["accept"].as_str().expect("her accept").to_string();
+    let record = ok(run(&mut w, mac, json!({ "op": "get", "entry": yes["review"] })))["record"].clone();
+    assert_eq!((&record["verdict"], &record["heads"]), (&json!("accepted"), &json!([accept])));
+    w.lab.sync_all(3);
+    for d in [mac, mac_b] {
+        let last = edits_of(&mut w, d, l.plan).pop().expect("her accept");
+        assert_eq!(last, (accept.clone(), "accept".into(), true, Value::Null));
+    }
+    // Bob's merge on top of it counts for every reader
+    ok(run(&mut w, mac_b, merge.clone()));
+    w.lab.sync_all(4);
+    for d in [mac, mac_b] {
+        assert_eq!(w.lab.item(d, l.plan).unwrap().as_document().unwrap().title, "Spring plan");
+        assert!(edits_of(&mut w, d, l.plan).iter().filter(|x| x.0 != patched).all(|x| x.2));
+    }
+    // what he writes on the proposal after her accept, his merge can't bring in; Alice merges it herself, no review
+    ok(run(&mut w, mac_b, retitle(&line, "Spring plan, v2")));
+    assert_eq!(refused(&run(&mut w, mac_b, merge.clone())), "NotAccepted");
+    w.lab.sync_all(5);
+    ok(run(&mut w, mac, merge));
+    w.lab.sync_all(6);
+    for d in [mac, mac_b] {
+        assert_eq!(w.lab.item(d, l.plan).unwrap().as_document().unwrap().title, "Spring plan, v2");
+    }
+}
+
+/// A bundle links proposals on several entries, and a policy declares who accepts: version 1 holds one policy alone,
+/// one of the vault's owners, which every vault counts by.
+#[test]
+fn bundles_and_policies_are_records_of_their_own() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let (alice, mac) = (w.alice, w.mac_a);
+    let (plan, door) = (hex(l.plan), hex(l.door));
+    let spring = ok(run(&mut w, mac, json!({ "op": "propose", "entry": plan, "name": "Spring" })))["line"].clone();
+    let hinge = ok(run(&mut w, mac, json!({ "op": "propose", "entry": door, "name": "Hinge" })))["line"].clone();
+    let link = |e: &str| json!({ "vault": alice.to_hex(), "entry": e });
+    let bundle = json!({ "kind": "bundle", "title": "Spring", "intent": link(&plan), "proposals": [
+        { "id": 1, "entry": link(&plan), "line": spring },
+        { "id": 2, "entry": link(&door), "line": hinge },
+    ] });
+    let create =
+        |ty: &str, value: &Value| json!({ "op": "create", "vault": alice.to_hex(), "type": ty, "value": value });
+    let made = ok(run(&mut w, mac, create("bundle", &bundle)))["entry"].clone();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made })))["record"].clone();
+    assert_eq!((&got["proposals"][1]["line"], &got["proposals"][0]["entry"]), (&hinge, &link(&plan)));
+    let owners = json!({ "kind": "policy", "title": "One owner", "needs": { "of": "owners", "count": 1 } });
+    ok(run(&mut w, mac, create("policy", &owners)));
+    let wrong = [json!({ "of": "owners", "count": 2 }), json!({ "of": "avens", "count": 1 }), json!({ "of": "owners" })];
+    for needs in wrong {
+        let value = json!({ "kind": "policy", "needs": needs });
+        assert_eq!(refused(&run(&mut w, mac, create("policy", &value))), "NotAView", "{value}");
+    }
+    let bad = json!({ "kind": "bundle", "proposals": [{ "id": 1, "entry": "plan", "line": spring }] });
+    assert_eq!(refused(&run(&mut w, mac, create("bundle", &bad))), "NotAView");
 }
 
 /// S3: a write whose record breaks the schemas its entry was written under counts for no reader, nor anything built

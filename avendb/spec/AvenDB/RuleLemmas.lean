@@ -133,7 +133,10 @@ theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (dep
       counts st a en deps proof main ts fits := by
   unfold counts
   rw [seen_shares, List.any_map]
-  congr 2
+  -- what the vault accepted reads the writes and the accepts, which every reader holds alike
+  have ha : accepted (st.seen (proofShares st proof)) { en with attrs } deps = accepted st en deps := rfl
+  rw [ha]
+  congr 3
   refine Shares.any_congr_mem fun cp hcp => ?_
   simp only [Function.comp_def, holdsShare_seen, inAudience_seen, lets_seen st hcp]
 
@@ -155,10 +158,13 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
     ∃ cp ∈ st.shares, proof = some cp.id ∧ holdsShare st a cp .write = true ∧ inAudience st cp en = true ∧
       ∀ c ∈ chain st cp, c.level = levelOf c.ops ∧ allowsAll c.ops main ts = true := by
   unfold counts at hc
-  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.any_eq_true] at hc
-  obtain ⟨-, hc | ⟨cp, hcp, ⟨hh, hi⟩, hl⟩⟩ := hc
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+  obtain ⟨-, hc | ⟨hany, -⟩⟩ := hc
   · exact absurd hc hv
-  · unfold lets at hl
+  · obtain ⟨cp, hcp, hcl⟩ := List.any_eq_true.1 hany
+    simp only [Bool.and_eq_true] at hcl
+    obtain ⟨⟨hh, hi⟩, hl⟩ := hcl
+    unfold lets at hl
     simp only [Bool.and_eq_true, beq_iff_eq] at hl
     exact ⟨cp, hcp, hl.1, hh, hi, fun c hc' => chain_narrows hl.2 hc'⟩
 
@@ -176,18 +182,60 @@ theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List Edit
   obtain ⟨o, ho, hoa⟩ := this t ht
   exact ⟨o, ho, hoa, level_of_allows hoa⟩
 
+/-! ## M1: a counted merge brings in only what its merge ops' paths reach -/
+
+/-- M1: each place a counted write by anyone but the entry's vault brings a change to by a merge is reached by the path
+    of a merge op on the write's line, in every share of the chain it relies on. -/
+theorem counted_merges_within {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault) {l : Ops.Loc} (hl : Touch.merged l ∈ ts) :
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∃ o p, Op.merge o p ∈ c.ops ∧ onLine main o = true ∧
+      reaches p l.steps = true := by
+  obtain ⟨cp, hcp, hp, -, -, hall⟩ := counted_allowed hc hv
+  refine ⟨cp, hcp, hp, fun c hc' => ?_⟩
+  have := (hall c hc').2
+  simp only [allowsAll, List.all_eq_true, List.any_eq_true] at this
+  obtain ⟨r, hr, hra⟩ := this _ hl
+  obtain ⟨o, p, rfl, ho, hp'⟩ := merged_within hra
+  exact ⟨o, p, hr, ho, hp'⟩
+
 /-! ## C4: allowed writes count -/
 
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
-    (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true) :
+    (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true)
+    (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true) :
     counts st a en deps (some cp.id) main ts true = true := by
   unfold counts
-  simp only [Bool.true_and, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true, Bool.not_eq_true', beq_iff_eq,
-    List.any_eq_true]
-  refine ⟨fun d hd' => ?_, .inr ⟨cp, hcp, ⟨hh, hi⟩, ?_⟩⟩
+  simp only [Bool.true_and, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true, Bool.not_eq_true', beq_iff_eq]
+  refine ⟨fun d hd' => ?_, .inr ⟨List.any_eq_true.2 ⟨cp, hcp, ?_⟩, ?_⟩⟩
   · simpa using hd d hd'
-  · simp [lets, ha]
+  · simp [lets, ha, hh, hi]
+  · cases main
+    · exact .inl rfl
+    · by_cases hm : Touch.merge ∈ ts
+      · exact .inr (hacc rfl hm)
+      · exact .inl (by simpa using hm)
+
+/-! ## M2: a merge into main by anyone but the vault counts once the vault accepted what it brings in -/
+
+/-- M2, the default policy (1 of the vault's owners): a counted merge into the main line by anyone but the entry's
+    vault builds on an accept of the vault, and on nothing but accepts and writes on the main line. -/
+theorem counted_merges_accepted {st : State} {a : VaultId} {en : Entry} {deps : List EditId}
+    {proof : Option ShareId} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof true ts fits = true)
+    (hv : a ≠ en.vault) (hm : Touch.merge ∈ ts) : accepted st en deps = true := by
+  unfold counts at hc
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+  obtain ⟨-, hc | ⟨-, hacc⟩⟩ := hc
+  · exact absurd hc hv
+  · simpa [hm] using hacc
+
+/-- M2, the vault's own writes: its merges count as every write of it does, by what it builds on and whether it fits,
+    and need no accept but their own. -/
+theorem owner_counts (st : State) (en : Entry) (deps : List EditId) (proof : Option ShareId) (main : Bool)
+    (ts : List Touch) (fits : Bool) :
+    counts st en.vault en deps proof main ts fits = (fits && deps.all fun d => !st.uncounted.contains d) := by
+  simp [counts]
 
 theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} (hcp : cp ∈ st.shares) (hv : cp.over = v)
     (hh : holdsShare st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :

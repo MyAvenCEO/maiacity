@@ -54,7 +54,7 @@ import { fieldPaths, pathWords } from './paths.js';
  * An op a share names (avendb's `rules`, avendb/docs/ARCHITECTURE.md §8): relay, back up or read its slice; add
  * entries; change a value at or under a path whose steps may be "*" (any one field or row), only to some values; add,
  * delete or reorder rows; ask for tags (any, or those listed); start proposals; merge, on the main line or on
- * proposals; share it on.
+ * proposals, only lines whose changes all lie at or under a path, if it names one; share it on.
  * @typedef {{ op: 'relay' | 'backup' | 'read' | 'create' | 'set' | 'insert' | 'remove' | 'move' | 'tag' | 'propose' |
  *   'merge' | 'share', path?: (string | { id: number })[], to?: (string | number | boolean | null)[],
  *   on?: 'main' | 'proposals', tags?: string[] }} Op
@@ -651,9 +651,11 @@ export function opWords(r) {
 			return `delete rows of ${rows}${on}`;
 		case 'move':
 			return `reorder the rows of ${rows}${on}`;
-		case 'merge':
-			if (r.on === 'main') return 'merge proposals into the main line';
-			return r.on === 'proposals' ? 'bring the main line into a proposal' : 'merge one line into another';
+		case 'merge': {
+			const only = r.path?.length ? `, changes to ${placeWords(r.path)} only` : '';
+			if (r.on === 'main') return `merge proposals into the main line${only}`;
+			return `${r.on === 'proposals' ? 'bring the main line into a proposal' : 'merge one line into another'}${only}`;
+		}
 		case 'propose':
 			return 'start proposals';
 		case 'create':
@@ -849,6 +851,7 @@ const WHY = /** @type {Record<string, string>} */ ({
 	DeviceOnlyKeeps: 'only a keep share names a device: share with its vault',
 	NotDevice: 'that device isn’t one of the acting vault’s',
 	NotAllowed: 'the ops of the share it writes through don’t allow that change',
+	NotAccepted: 'one of the vault’s owners accepts the proposal first, as it stands now',
 	UnknownVault: 'this device doesn’t know that vault yet',
 	UnknownCap: 'that share isn’t in force',
 	UnknownEntry: 'this device doesn’t know that entry yet',

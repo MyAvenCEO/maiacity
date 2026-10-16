@@ -653,6 +653,10 @@ pub enum Refusal {
     /// Not a rule of the edits but of a device: no share the vault writes through names ops that allow what the write
     /// does (`rules`), so its readers wouldn't count it, and the device doesn't make it.
     NotAllowed,
+    /// Not a rule of the edits but of a device: a merge into the main line through a share builds on no accept of the
+    /// entry's vault, or brings in more than it accepted (`passes`, M2), so its readers wouldn't count it, and the
+    /// device doesn't make it.
+    NotAccepted,
     /// Not a rule of the edits but of a device: a share to issue names no op or more than a share names, has a blank or
     /// long name, a selector beyond the bounds a peer accepts, or rests on a chain too long to prove
     /// (`rules::normalize`, `rules::name_ok`, `rules::MAX_GRANTS`).
@@ -1484,20 +1488,37 @@ impl State {
     }
 
     /// The writes of entry `e` its readers don't count, by the proofs, touches, tags and fits `r` holds, in the order
-    /// they were accepted (`State.lean`'s `uncounted`): a write that doesn't fit, one no share of its lets through, and
-    /// every write that builds on one.
+    /// they were accepted (`State.lean`'s `uncounted`): a write that doesn't fit, one no share of its lets through, a
+    /// merge into the main line through a share that the vault's accepts don't let through (`passes`, M2), and every
+    /// write that builds on one.
     pub fn uncounted(&self, e: EntryId, r: &Readings) -> Vec<EditId> {
-        let mut out = vec![];
+        let (mut out, mut accepts) = (vec![], HashSet::new());
         let none = TagDelta::default();
+        let main = |d: &EditId| self.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
         for w in self.entry_writes(e) {
             let touches = r.touches.get(&w.edit).map(Vec::as_slice);
             let asks = r.tags.get(&w.edit).unwrap_or(&none);
-            let lets = !r.unfit.contains(&w.edit) && self.lets(w, r.proofs.get(&w.edit), touches, asks);
+            let lets = !r.unfit.contains(&w.edit)
+                && self.lets(w, r.proofs.get(&w.edit), touches, asks)
+                && passes(w, touches, |d| accepts.contains(d), main);
             if w.deps.iter().any(|d| out.contains(d)) || !lets {
                 out.push(w.edit);
             }
+            if is_accept(w, touches, asks) {
+                accepts.insert(w.edit);
+            }
         }
         out
+    }
+
+    /// The writes of entry `e` its readers read as its vault's accepts, by the touches and tags `r` holds, in the order
+    /// they were accepted (`State.lean`'s `accepts`, M2; `is_accept`).
+    pub fn accepts_of(&self, e: EntryId, r: &Readings) -> Vec<EditId> {
+        let none = TagDelta::default();
+        let accept = |w: &&Write| {
+            is_accept(w, r.touches.get(&w.edit).map(Vec::as_slice), r.tags.get(&w.edit).unwrap_or(&none))
+        };
+        self.entry_writes(e).filter(accept).map(|w| w.edit).collect()
     }
 
     /// Vault `v`'s schema lane, as a reader holding `r` reads it off the entries (`State.lean`'s `laneOf`, T17): of
@@ -2598,6 +2619,41 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
             seals.add(Seal { secret: w.key(), to: key });
         }
     }
+}
+
+/// Write `w`, read with the touches `touches` and asking for the tags `asks`, is its entry's vault accepting the
+/// proposal it is on (M2; `State.lean`'s `isAccept`): a write of the vault for itself, relying on no share, on a
+/// proposal, that changes nothing and asks for no tag. The only policy so far, every vault's default, is one of the
+/// vault's owners: whoever acts for the vault as its owner accepts for it. The accept is in the entry's own log, so
+/// every reader of the entry reads it, offline, and reaches the same verdict; touches its readers couldn't read
+/// (`None`) accept nothing.
+pub fn is_accept(w: &Write, touches: Option<&[rules::Touch]>, asks: &TagDelta) -> bool {
+    w.shares.is_empty()
+        && matches!(w.proposal, Proposal::On(_))
+        && touches.is_some_and(<[rules::Touch]>::is_empty)
+        && asks.add.is_empty()
+        && asks.remove.is_empty()
+}
+
+/// Write `w`, read with the touches `touches`, merges into the main line relying on a share, so it counts only on top
+/// of its vault's accept (M2; `passes`). The vault's own merges need none, as before.
+pub fn needs_accept(w: &Write, touches: Option<&[rules::Touch]>) -> bool {
+    !w.shares.is_empty()
+        && w.proposal == Proposal::Main
+        && touches.is_some_and(|ts| ts.contains(&rules::Touch::Merge))
+}
+
+/// Write `w`, read with the touches `touches`, passes its entry's merge policy (M2; `State.lean`'s `counts` and
+/// `accepted`): where it needs an accept (`needs_accept`), it builds on one (`accept`), and on nothing but accepts and
+/// writes on the main line (`main`), so all it brings in is what the vault accepted, and a proposal that moved on
+/// since asks again. Any other write passes.
+pub fn passes(
+    w: &Write,
+    touches: Option<&[rules::Touch]>,
+    accept: impl Fn(&EditId) -> bool,
+    main: impl Fn(&EditId) -> bool,
+) -> bool {
+    !needs_accept(w, touches) || (w.deps.iter().any(&accept) && w.deps.iter().all(|d| accept(d) || main(d)))
 }
 
 /// What an entry's readers and its vault's stewards read where no relay can: each share's selector, a keep share's too,

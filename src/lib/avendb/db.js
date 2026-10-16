@@ -40,7 +40,7 @@ import {
  *   batch: number | null, pq: number }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
  *   parents: string[], depth: number, bytes: number, vaults: string[], counted: boolean | null,
- *   allowed: boolean | null, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null,
+ *   allowed: boolean | null, why: 'builds-on' | 'sealed' | 'unfit' | 'policy' | 'ops' | null,
  *   chain: import('./vaults.js').Chain | null }} SignedEdit
  * @typedef {{ name: string, type: string, hint: string, required: boolean, fallback: string | null,
  *   fields: Field[] }} Field

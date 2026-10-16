@@ -27,9 +27,10 @@ readers see it, its attributes, whether its creation was let in, its semantic au
 would mark it with, and for each device a keep share over its vault names, whether the device wants the entry and keeps
 its files whole; the key schedule (each family's epoch where it isn't 0, every seal and every published key, all three
 compared as sets); each vault's schema lane, as its readers read it off the vault's schema and lens entries (`laneOf`),
-vault by vault in the order the vaults came; the writes its readers don't count (`uncounted`); and each line of each
-entry's history, of the writes they count: its writes and its heads, the main line first and then each proposal in the
-order it started. A write carries its proof and its touches, as its readers read them off its body, and a share its ops.
+vault by vault in the order the vaults came; the writes its readers don't count (`uncounted`); the writes they read as
+the vault's accepts of a proposal (`accepts`); and each line of each entry's history, of the writes they count: its
+writes and its heads, the main line first and then each proposal in the order it started. A write carries its proof
+and its touches, as its readers read them off its body, and a share its ops.
 The file starts with the built-in groups (`groups`), which the Rust core offers as they are.
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
@@ -137,6 +138,13 @@ def sets (f x : String) : Touch := .set [.field f] (some (.str x))
 
 /-- Setting a todo's status, to open or done only. -/
 def statusOp : Op := .set [.field "status"] (some [.str "open", .str "done"]) none
+
+/-- The default of a code entry's param 1. -/
+def paramDefault : Ops.Loc := [.field "params", .row 1, .field "default"]
+
+/-- A tuner's ops: write on proposals, start them, and merge into main what changes the defaults of params alone. -/
+def tuner : List Op :=
+  [.read, .set [] none (some .proposals), .propose, .merge (some .main) [.field "params", .any, .field "default"]]
 
 def seedKey (v ε : Nat) : KeyName := .scoped (.seed v) ε
 def shareKey (v c ε : Nat) : KeyName := .scoped (.share v c) ε
@@ -411,7 +419,7 @@ def cases : List Case := [
     (2, [], newEntry 100 22 100 [] todo (tags := [home])),
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newShare 30 100 (toVault 101) .write 100 workTodos
-      (ops := some [.read, .create, .set [] none none, .tag (some [work, home]), .propose, .merge none])),
+      (ops := some [.read, .create, .set [] none none, .tag (some [work, home]), .propose, .merge none []])),
     (2, [], newShare 31 100 (toVault 102) .read 100 todos),
     -- the stewards mark each todo with the audience of the shares that select it; the note is where it belongs
     (2, [], .move 100 21 [30, 31] []),
@@ -739,6 +747,65 @@ def cases : List Case := [
     (5, [], wr 100 21 101 [19] (stay := some 26) (proof := some 35) (touches := [sets "status" "open"])),
     (5, [], wr 100 21 101 [19] (stay := some 26) (proof := some 37) (touches := [sets "status" "open"])),
     (6, [], wr 100 21 102 [19] (stay := some 26) (proof := some 36) (touches := [sets "status" "open"]))] },
+  { name := "ops: a tuner merges new defaults of its params into main, and nothing else", edits := humans ++ [
+    (2, [], newEntry 100 1 100 [] note),
+    -- Bob tunes Alice's note: he may write on proposals and merge into main what changes the defaults of its params
+    (2, [], newShare 30 100 (toVault 101) .write 100 (only 1) (ops := some tuner)),
+    (2, [], .move 100 1 [30] []),
+    -- he proposes a new default, Alice accepts it, and he merges it: all it brings in is under his merge's path
+    (5, [], wr 100 1 101 [6] (stay := some 8) (proposal := .new) (proof := some 30) (touches := [.propose])),
+    (5, [], wr 100 1 101 [9] (stay := some 8) (proposal := .on 9) (proof := some 30)
+      (touches := [.set paramDefault (some (.int 3))])),
+    (2, [], wr 100 1 100 [10] (stay := some 8) (proposal := .on 9)),
+    (5, [], wr 100 1 101 [6, 11] (stay := some 8) (proof := some 30) (touches := [.merge, .merged paramDefault])),
+    -- a proposal that changes the source too he writes, and Alice accepts, but his merge of it counts for no reader
+    (5, [], wr 100 1 101 [12] (stay := some 8) (proposal := .new) (proof := some 30) (touches := [.propose])),
+    (5, [], wr 100 1 101 [13] (stay := some 8) (proposal := .on 13) (proof := some 30)
+      (touches := [.set paramDefault (some (.int 4)), sets "source" "fn main"])),
+    (2, [], wr 100 1 100 [14] (stay := some 8) (proposal := .on 13)),
+    (5, [], wr 100 1 101 [12, 15] (stay := some 8) (proof := some 30)
+      (touches := [.merge, .merged paramDefault, .merged [.field "source"]])),
+    -- nor does a merge of the first into a proposal, which his merge's line doesn't name
+    (5, [], wr 100 1 101 [12] (stay := some 8) (proposal := .new) (proof := some 30) (touches := [.propose])),
+    (5, [], wr 100 1 101 [17, 11] (stay := some 8) (proposal := .on 17) (proof := some 30)
+      (touches := [.merge, .merged paramDefault])),
+    -- Alice merges anything; nobody merges what the entry doesn't hold, which every peer refuses
+    (2, [], wr 100 1 100 [12, 15] (stay := some 8)
+      (touches := [.merge, .merged paramDefault, .merged [.field "source"]])),
+    (5, [], wr 100 1 101 [12, 99] (stay := some 8) (proof := some 30) (touches := [.merge, .merged paramDefault]))] },
+  { name := "merges by policy: one of the vault's owners accepts what anyone else merges into main",
+    edits := humans ++ [
+    (2, [], newEntry 100 1 100 [] note),
+    -- Bob edits Alice's note: his share lets him merge, on any line
+    (2, [], newShare 30 100 (toVault 101) .write 100 (only 1)),
+    (2, [], .move 100 1 [30] []),
+    -- he proposes a title and merges it, which counts for no reader until Alice accepts it, by a write on it that
+    -- changes nothing; then his merge on top of her accept counts
+    (5, [], wr 100 1 101 [6] (stay := some 8) (proposal := .new) (proof := some 30) (touches := [.propose])),
+    (5, [], wr 100 1 101 [9] (stay := some 8) (proposal := .on 9) (proof := some 30)
+      (touches := [sets "title" "Lamp"])),
+    (5, [], wr 100 1 101 [6, 10] (stay := some 8) (proof := some 30) (touches := [.merge])),
+    (2, [], wr 100 1 100 [10] (stay := some 8) (proposal := .on 9)),
+    (5, [], wr 100 1 101 [6, 12] (stay := some 8) (proof := some 30) (touches := [.merge])),
+    -- his own write that changes nothing accepts nothing, nor does a write of Alice's that changes the proposal
+    (5, [], wr 100 1 101 [13] (stay := some 8) (proposal := .new) (proof := some 30) (touches := [.propose])),
+    (5, [], wr 100 1 101 [14] (stay := some 8) (proposal := .on 14) (proof := some 30)),
+    (5, [], wr 100 1 101 [13, 15] (stay := some 8) (proof := some 30) (touches := [.merge])),
+    (2, [], wr 100 1 100 [15] (stay := some 8) (proposal := .on 14) (touches := [sets "title" "Desk lamp"])),
+    (5, [], wr 100 1 101 [13, 17] (stay := some 8) (proof := some 30) (touches := [.merge])),
+    -- Alice accepts it; what Bob writes on it after her accept, his merge can't bring in
+    (2, [], wr 100 1 100 [17] (stay := some 8) (proposal := .on 14)),
+    (5, [], wr 100 1 101 [19] (stay := some 8) (proposal := .on 14) (proof := some 30)
+      (touches := [sets "title" "Desk"])),
+    (5, [], wr 100 1 101 [13, 20] (stay := some 8) (proof := some 30) (touches := [.merge])),
+    (5, [], wr 100 1 101 [13, 19] (stay := some 8) (proof := some 30) (touches := [.merge])),
+    -- a merge into a proposal needs no accept; Alice's own merge of what came after needs none either
+    (5, [], wr 100 1 101 [20, 22] (stay := some 8) (proposal := .on 14) (proof := some 30) (touches := [.merge])),
+    (2, [], wr 100 1 100 [22, 23] (stay := some 8) (touches := [.merge])),
+    -- a write of Alice's on main that changes nothing accepts nothing; a stranger's merge every peer refuses
+    (2, [], wr 100 1 100 [24] (stay := some 8)),
+    (5, [], wr 100 1 101 [25, 23] (stay := some 8) (proof := some 30) (touches := [.merge])),
+    (555, [], wr 100 1 103 [24, 23] (stay := some 8) (touches := [.merge]))] },
   { name := "schemas: a write whose result doesn't fit its schemas counts for no reader", edits := humans ++ [
     -- Alice's todo, which Bob may write
     (2, [], newEntry 100 21 100 [] todo),
@@ -1379,7 +1446,7 @@ def opJson : Op → String
   | .insert p o => obj ([("op", str "insert"), ("path", path p)] ++ onJson o)
   | .remove p o => obj ([("op", str "remove"), ("path", path p)] ++ onJson o)
   | .move p o => obj ([("op", str "move"), ("path", path p)] ++ onJson o)
-  | .merge o => obj ([("op", str "merge")] ++ onJson o)
+  | .merge o p => obj ([("op", str "merge")] ++ onJson o ++ if p.isEmpty then [] else [("path", path p)])
   | .propose => obj [("op", str "propose")]
   | .create => obj [("op", str "create")]
 
@@ -1400,6 +1467,7 @@ def touch : Touch → String
   | .tag t => obj [("tag", nat t)]
   | .propose => str "propose"
   | .merge => str "merge"
+  | .merged l => obj [("merged", path l.steps)]
 
 /-- A share, with its ops. -/
 def shareJson (c : Share) : String :=
@@ -1515,6 +1583,7 @@ def state (st : State) : String :=
     str "lane" ++ ": " ++ arr (st.vaults.flatMap fun vt => (laneOf st vt.id).map fun b =>
       obj [("vault", nat vt.id), ("blob", nat b)]),
     str "uncounted" ++ ": " ++ ids st.uncounted,
+    str "accepts" ++ ": " ++ ids st.accepts,
     str "lines" ++ ": " ++ lines st]
 
 def case (c : Case) : String :=
@@ -1671,6 +1740,23 @@ def allActions : List Action :=
   acc.drop humans.length == [true, true, true, true, true, true, true, true, true, true, true, true, false, false,
     false, false, false, true, true, true, true, true] &&
     [100, 200, 102].map (laneOf st) == [[1], [1, 2, 3], []] && st.uncounted == [10, 27]
+-- a tuner's merge counts on top of Alice's accept and under its path alone (M1, M2); a merge into a proposal his
+-- merge op's line doesn't name counts for no reader either
+#guard (cases.find? (·.name == "ops: a tuner merges new defaults of its params into main, and nothing else")).all
+  fun c =>
+  let (acc, st) := run c.edits
+  acc.drop humans.length == [true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+    false] &&
+    st.accepts == [11, 15] && st.uncounted == [16, 18]
+-- Bob's merges into main count only on top of Alice's accept, and bring in nothing written after it (M2); his own
+-- write that changes nothing, hers that changes the proposal, and hers on main accept nothing; her own merge and his
+-- merge into a proposal need no accept
+#guard (cases.find? (·.name ==
+    "merges by policy: one of the vault's owners accepts what anyone else merges into main")).all fun c =>
+  let (acc, st) := run c.edits
+  acc.drop humans.length == [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, false] &&
+    st.accepts == [12, 19] && st.uncounted == [11, 16, 18, 21, 26]
 -- a removed owner's back-dated schema entry falls, and what it held leaves the lane
 #guard (views.find? (·.name == "a removed owner's back-dated schema entry is cut")).all fun c =>
   let (stood, st) := runView c

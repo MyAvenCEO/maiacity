@@ -172,7 +172,7 @@ fn tick_todos() -> Slice {
         Op::Read,
         Op::Set { path: vec![done], to: Some(vec![Scalar::Bool(true)]), on: Some(On::Main) },
         Op::Insert { path: vec![items.clone()], on: None },
-        Op::Merge { on: Some(On::Proposals) },
+        Op::Merge { on: Some(On::Proposals), path: vec![] },
         Op::Propose,
     ];
     let to = vec![Scalar::Null, Scalar::Int(-7), Scalar::Text("ok".into()), Scalar::Bool(false)];
@@ -181,7 +181,8 @@ fn tick_todos() -> Slice {
         Op::Set { path: vec![], to: None, on: Some(On::Proposals) },
         Op::Remove { path: vec![items.clone()], on: Some(On::Main) },
         Op::Move { path: vec![Step::Any], on: None },
-        Op::Merge { on: None },
+        Op::Merge { on: None, path: vec![] },
+        Op::Merge { on: Some(On::Main), path: vec![Step::Field("params".into()), Step::Any, Step::Row(2)] },
         Op::Create,
         Op::Tag(None),
         Op::Relay,

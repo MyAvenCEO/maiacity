@@ -474,9 +474,10 @@ fn titled(record: &Value) -> Option<String> {
 /// One edit of a note as its page shows it: its id, its device and the vault it acted for, the owners it acted through
 /// (`via`) and who stands behind it (`chain`, `Audit::chain`), the line it extends, what it builds on, and what it is,
 /// as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the start of a proposal (`propose`,
-/// with its name), a `merge` of two lines, or `sealed`; and the line it brought in, or for a proposal the line it
-/// started from (`from`); and whether the note's readers count it, as it fits the note's schemas, the ops of the shares
-/// it relies on allow it and what it builds on counts (`Change::counted`), and why not (`why`). With `shown`, the
+/// with its name), a `merge` of two lines, the vault's `accept` of a proposal, or `sealed`; and the line it brought
+/// in, or for a proposal the line it started from (`from`); and whether the note's readers count it, as it fits the
+/// note's schemas, the ops of the shares it relies on allow it, a merge into main through a share builds on the
+/// vault's accept and what it builds on counts (`Change::counted`), and why not (`why`). With `shown`, the
 /// note's title and text at its version, and the text at the one it changed, so the page's diff shows what it brought.
 fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, shown: bool) -> Value {
     let (w, Wrote { kind, from, base, why }) = (&c.write, wrote(h, c));
