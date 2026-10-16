@@ -1,4 +1,97 @@
 {
+	"rows": [
+		{
+			"maia": 945,
+			"month": 1,
+			"tribe": 438,
+			"hearts": 1447,
+			"village": 673
+		},
+		{
+			"maia": 1034,
+			"month": 2,
+			"tribe": 480,
+			"hearts": 1650,
+			"village": 729
+		},
+		{
+			"maia": 1132,
+			"month": 3,
+			"tribe": 535,
+			"hearts": 1655,
+			"village": 791
+		},
+		{
+			"maia": 1244,
+			"month": 4,
+			"tribe": 588,
+			"hearts": 1716,
+			"village": 834
+		},
+		{
+			"maia": 1359,
+			"month": 5,
+			"tribe": 655,
+			"hearts": 1684,
+			"village": 863
+		},
+		{
+			"maia": 1502,
+			"month": 6,
+			"tribe": 711,
+			"hearts": 1738,
+			"village": 959
+		},
+		{
+			"maia": 1660,
+			"month": 7,
+			"tribe": 791,
+			"hearts": 1797,
+			"village": 1053
+		},
+		{
+			"maia": 1834,
+			"month": 8,
+			"tribe": 869,
+			"hearts": 1765,
+			"village": 1181
+		},
+		{
+			"maia": 2018,
+			"month": 9,
+			"tribe": 945,
+			"hearts": 1793,
+			"village": 1255
+		},
+		{
+			"maia": 2170,
+			"month": 10,
+			"tribe": 1065,
+			"hearts": 1911,
+			"village": 1330
+		},
+		{
+			"maia": 2374,
+			"month": 11,
+			"tribe": 1153,
+			"hearts": 1866,
+			"village": 1487
+		},
+		{
+			"maia": 2572,
+			"month": 12,
+			"tribe": 1270,
+			"hearts": 1882,
+			"village": 1607
+		},
+		{
+			"maia": 2841,
+			"month": 13,
+			"tribe": 1395,
+			"hearts": 1967,
+			"village": 1664
+		}
+	],
 	"coops": [
 		{
 			"key": "maia",
@@ -14,99 +107,6 @@
 			"key": "tribe",
 			"name": "Tribe COOP",
 			"color": "#7b5ea7"
-		}
-	],
-	"rows": [
-		{
-			"month": 1,
-			"maia": 945,
-			"village": 673,
-			"tribe": 438,
-			"hearts": 1447
-		},
-		{
-			"month": 2,
-			"maia": 1034,
-			"village": 729,
-			"tribe": 480,
-			"hearts": 1650
-		},
-		{
-			"month": 3,
-			"maia": 1132,
-			"village": 791,
-			"tribe": 535,
-			"hearts": 1655
-		},
-		{
-			"month": 4,
-			"maia": 1244,
-			"village": 834,
-			"tribe": 588,
-			"hearts": 1716
-		},
-		{
-			"month": 5,
-			"maia": 1359,
-			"village": 863,
-			"tribe": 655,
-			"hearts": 1684
-		},
-		{
-			"month": 6,
-			"maia": 1502,
-			"village": 959,
-			"tribe": 711,
-			"hearts": 1738
-		},
-		{
-			"month": 7,
-			"maia": 1660,
-			"village": 1053,
-			"tribe": 791,
-			"hearts": 1797
-		},
-		{
-			"month": 8,
-			"maia": 1834,
-			"village": 1181,
-			"tribe": 869,
-			"hearts": 1765
-		},
-		{
-			"month": 9,
-			"maia": 2018,
-			"village": 1255,
-			"tribe": 945,
-			"hearts": 1793
-		},
-		{
-			"month": 10,
-			"maia": 2170,
-			"village": 1330,
-			"tribe": 1065,
-			"hearts": 1911
-		},
-		{
-			"month": 11,
-			"maia": 2374,
-			"village": 1487,
-			"tribe": 1153,
-			"hearts": 1866
-		},
-		{
-			"month": 12,
-			"maia": 2572,
-			"village": 1607,
-			"tribe": 1270,
-			"hearts": 1882
-		},
-		{
-			"month": 13,
-			"maia": 2841,
-			"village": 1664,
-			"tribe": 1395,
-			"hearts": 1967
 		}
 	]
 }
