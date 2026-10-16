@@ -29,6 +29,21 @@
 				"three/addons/utils/SkeletonUtils.js"
 			],
 			"note": "Each picture goes out once (box data format 1): textures name the picture they show in images, so a picture shared by many textures, as the kit's are, crosses once and is kept once"
+		},
+		{
+			"v": 3,
+			"date": "2026-10-16",
+			"blake3": "4e8d02639276617d848f8e596dd3d5300fa7bb567387f7f65db37fc64416f32d",
+			"bytes": 773429,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "Controls: each control a built object offers (a tent's pitch, a pickup's doors and tailgate, a bag's open, a fire lit, a sealed asset's explode and build) is played in the box from 0 to 1 and leaves as numbers (box data format 2), with the object as built put back first"
 		}
 	]
 }

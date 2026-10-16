@@ -1,0 +1,111 @@
+// @ts-nocheck — plain JS
+// Phase 4b of the asset pipeline: an asset's controls played in the box and written down (./bake.js), carried out as
+// data (./serialize.js, format 2), checked and rebuilt in the page (./rebuild.js), and played back from the numbers
+// (../controls.js) where its builder's own function would have put it.
+// Run: bun test src/lib/assets/box/bake.test.js
+import { expect, test } from 'bun:test';
+
+// outside a page: textures draw on a stand-in canvas, and a module's runes are plain values
+const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop, set: () => true });
+globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop }) };
+globalThis.$state ??= (x) => x;
+const THREE = await import('three');
+const { objectAt } = await import('../index.js');
+const { bake, SAMPLES } = await import('./bake.js');
+const { serialize } = await import('./serialize.js');
+const { rebuild } = await import('./rebuild.js');
+const { poserOf, walk, labelOf } = await import('../controls.js');
+
+/** every node's place in its root, as one list of numbers */
+const placesOf = (root) => {
+	root.updateMatrixWorld(true);
+	return walk(root).flatMap((o) => [...o.matrixWorld.elements, o.visible ? 1 : 0]);
+};
+const near = (a, b, eps = 1e-4) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < eps);
+
+/** an asset baked, sent through the page's side, and its poser */
+async function through(ref) {
+	const obj = await objectAt(ref);
+	const before = placesOf(obj);
+	const baked = bake(obj);
+	expect(baked.intact).toBe(true);
+	// put back as it was built
+	expect(near(placesOf(obj), before)).toBe(true);
+	const { data } = await serialize(obj, { controls: baked.controls });
+	const root = rebuild(data);
+	return { obj, baked, root, poser: poserOf(root) };
+}
+
+test('a pickup: its doors and its tailgate, each shut as built, opened as its own function opens them', async () => {
+	const { baked, root, poser } = await through('things/pickup');
+	const ids = baked.controls.map((c) => c.id);
+	expect(ids).toContain('tailgate');
+	expect(ids).toContain('door.driver');
+	expect(poser.get('tailgate')).toBe(0);
+	expect(labelOf('door.driver')).toBe("Driver's door open");
+	// played back at a sample and between two: where the builder puts it
+	for (const v of [1, 0.5, 0.37]) {
+		const fresh = await objectAt('things/pickup');
+		fresh.userData.setTailgate(v);
+		fresh.userData.setDoor('driver', v);
+		poser.set('tailgate', v);
+		poser.set('door.driver', v);
+		// a turn between two samples is near the builder's, not exact
+		expect(near(placesOf(root), placesOf(fresh), v === 0.37 ? 2e-3 : 1e-4)).toBe(true);
+	}
+	poser.reset();
+	expect(poser.moved).toBe(false);
+	expect(near(placesOf(root), placesOf(await objectAt('things/pickup')))).toBe(true);
+});
+
+test('a sealed machine: drawn apart and built up from its parts, its rest where it was built', async () => {
+	const { baked, poser, root } = await through('machines/powercube@3');
+	const ids = baked.controls.map((c) => c.id);
+	expect(ids).toEqual(expect.arrayContaining(['explode', 'build']));
+	expect(poser.get('explode')).toBe(0);
+	expect(poser.get('build')).toBe(1);
+	const fresh = await objectAt('machines/powercube@3');
+	fresh.userData.explode(0.5);
+	poser.set('explode', 0.5);
+	expect(near(placesOf(root), placesOf(fresh))).toBe(true);
+	// half built: the parts not yet come are hidden, as the builder hides them
+	const half = await objectAt('machines/powercube@3');
+	half.userData.setBuild(0.25);
+	poser.reset();
+	poser.set('build', 0.25);
+	expect(near(placesOf(root), placesOf(half))).toBe(true);
+	const c = baked.controls.find((x) => x.id === 'build');
+	expect(c.samples).toBe(SAMPLES);
+	expect(c.trs.length).toBe(SAMPLES * c.nodes.length * 10);
+});
+
+test('a bell tent pitched from its groundsheet up', async () => {
+	const { baked, poser, root } = await through('things/bell-tent');
+	expect(baked.controls.map((c) => c.id)).toContain('pitch');
+	expect(poser.get('pitch')).toBe(1);
+	const fresh = await objectAt('things/bell-tent');
+	fresh.userData.setPitch(0.5);
+	poser.set('pitch', 0.5);
+	expect(near(placesOf(root), placesOf(fresh), 1e-3)).toBe(true);
+});
+
+test('what the page refuses: a control naming a node there is not, or numbers that do not fit', async () => {
+	const obj = await objectAt('things/pickup');
+	const { controls } = bake(obj);
+	const { data } = await serialize(obj, { controls });
+	const bad = (f) => {
+		const d = structuredClone(data);
+		f(d.controls[0]);
+		return () => rebuild(d);
+	};
+	expect(bad((c) => (c.nodes[0] = 1e6))).toThrow('refused');
+	expect(bad((c) => (c.trs = c.trs.subarray(1)))).toThrow('refused');
+	expect(bad((c) => (c.trs[0] = NaN))).toThrow('refused');
+	expect(bad((c) => (c.id = '__proto__'))).toThrow('refused');
+	expect(bad((c) => (c.rest = 2))).toThrow('refused');
+	// an older engine's build has none, and is read as before
+	const old = structuredClone(data);
+	old.format = 1;
+	delete old.controls;
+	expect(rebuild(old).userData.controls).toEqual([]);
+});

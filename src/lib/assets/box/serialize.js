@@ -7,10 +7,12 @@
  *
  * Format 0 (engine 1): each texture carried its own pixels, so a picture shared by many textures (the kit's, one per
  * material for its own tiling) went out once for each. Format 1 (engine 2): each picture goes out once, in `images`,
- * and a texture names the one it shows (`image`).
+ * and a texture names the one it shows (`image`). Format 2 (engine 3): and its controls, played and written down in
+ * the box (./bake.js), each naming the parts it moves by their place in the walk of the tree (each node before its
+ * children, the order `nodes` is in).
  */
 
-export const FORMAT = 1;
+export const FORMAT = 2;
 
 /** the material settings that go out as they are (numbers, booleans, colours) */
 const PLAIN = ['roughness', 'metalness', 'opacity', 'transparent', 'side', 'vertexColors', 'flatShading', 'alphaTest', 'depthWrite', 'depthTest', 'transmission', 'ior', 'thickness', 'clearcoat', 'clearcoatRoughness', 'sheen', 'sheenRoughness', 'envMapIntensity', 'emissiveIntensity', 'bumpScale', 'wireframe', 'size', 'sizeAttenuation', 'linewidth', 'shininess', 'specularIntensity', 'iridescence', 'anisotropy', 'dispersion', 'aoMapIntensity', 'lightMapIntensity', 'displacementScale', 'displacementBias', 'toneMapped', 'fog'];
@@ -20,9 +22,10 @@ export const MATERIALS = ['MeshStandardMaterial', 'MeshPhysicalMaterial', 'MeshB
 
 /**
  * @param {import('three').Object3D} root
+ * @param {{ controls?: object[] }} [o] its controls, as ./bake.js wrote them down
  * @returns {Promise<{ data: object, transfer: Transferable[] }>}
  */
-export async function serialize(root) {
+export async function serialize(root, { controls = [] } = {}) {
 	root.updateMatrixWorld(true);
 	const nodes = [];
 	const geometries = [];
@@ -115,8 +118,13 @@ export async function serialize(root) {
 		return i;
 	};
 	visit(root);
+	for (const c of controls) {
+		for (const a of [c.nodes, c.trs, c.visible]) array(a);
+		for (const x of c.morph) array(x.weights);
+		for (const x of c.instances) array(x.matrices);
+	}
 	await Promise.all(pending);
 	stats.tris = Math.round(stats.tris);
 	const transfer = [...buffers, ...images.flatMap((x) => (x.bitmap ? [x.bitmap] : []))];
-	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, images, stats }, transfer };
+	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, images, controls, stats }, transfer };
 }
