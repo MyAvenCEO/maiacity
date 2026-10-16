@@ -29,6 +29,7 @@
 	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
 	import Share from './Share.svelte';
 	import SparkCanvas from './SparkCanvas.svelte';
+	import SparkShelf from './SparkShelf.svelte';
 	import Tags from './Tags.svelte';
 	import {
 		actingWords,
@@ -87,6 +88,8 @@
 	let sharing = $state(false);
 	/** narrower, the side the lines and variants (left) or the history (right) slide in from, if open */
 	let drawer = $state(/** @type {'' | 'versions' | 'history'} */ (''));
+	/** on a spark, what its left side shows: what its canvas can take (./SparkShelf.svelte), or its lines and variants */
+	let side = $state(/** @type {'pieces' | 'lines'} */ ('pieces'));
 	/** the conflicts where the person takes the proposal's value, by place (`place`) */
 	let taking = $state(/** @type {Record<string, boolean>} */ ({}));
 
@@ -189,6 +192,8 @@
 		return numbered.filter((e) => on.has(e.id)).reverse();
 	});
 	const seen = $derived(viewing ? history.find((e) => e.id === viewing) : undefined);
+	/** whether its left side lists what its canvas can take: a spark's latest, not a version of it looked back at */
+	const shelf = $derived(spark && !seen);
 	/** the line's one latest edit, which restoring changes nothing */
 	const latest = $derived(here?.heads.length === 1 ? here.heads[0] : '');
 	/** the vaults the acting vault may add the variant to, as the device answers a dry run of making it in each */
@@ -632,8 +637,8 @@
 		<button
 			class="drawer left"
 			aria-pressed={drawer === 'versions'}
-			aria-label="Main, proposals and variants"
-			onclick={() => (drawer = drawer === 'versions' ? '' : 'versions')}><Icon name="proposal" size={20} /></button
+			aria-label={shelf ? 'Artifacts, proposals and variants' : 'Main, proposals and variants'}
+			onclick={() => (drawer = drawer === 'versions' ? '' : 'versions')}><Icon name={shelf ? 'artifact' : 'proposal'} size={20} /></button
 		>
 		<button
 			class="drawer right"
@@ -673,10 +678,23 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div class="scrim" onclick={() => (drawer = '')}></div>
 			{/if}
-			<aside class="versions" class:open={drawer === 'versions'} aria-label="Main, proposals and variants">
+			<aside class="versions" class:open={drawer === 'versions'} aria-label={shelf ? 'Artifacts, proposals and variants' : 'Main, proposals and variants'}>
 				<button class="btn quiet shut" aria-label="Close" onclick={() => (drawer = '')}
 					><Icon name="close" size={16} /></button
 				>
+				{#if shelf}
+					<div class="sides" role="tablist" aria-label="What the side shows">
+						<button role="tab" class="side" class:on={side === 'pieces'} aria-selected={side === 'pieces'} onclick={() => (side = 'pieces')}
+							><Icon name="artifact" size={14} /> Artifacts</button
+						>
+						<button role="tab" class="side" class:on={side === 'lines'} aria-selected={side === 'lines'} onclick={() => (side = 'lines')}
+							><Icon name="proposal" size={14} /> Versions</button
+						>
+					</div>
+				{/if}
+				{#if shelf && side === 'pieces' && item}
+					<SparkShelf {world} {actor} {api} {busy} {entry} vault={item.vault} line={here.line} record={here.record} {writes} />
+				{:else}
 				<section>
 					<h4>Main</h4>
 					<button
@@ -771,6 +789,7 @@
 						{/if}
 					{/if}
 				</section>
+				{/if}
 			</aside>
 
 			<main class="canvas" class:sheet={article}>
@@ -1187,6 +1206,39 @@
 
 	.versions section + section {
 		margin-top: 1.3rem;
+	}
+
+	/* a spark's side: what its canvas can take, or its lines and variants */
+	.sides {
+		display: flex;
+		gap: 0.25rem;
+		margin: 0 0 0.8rem;
+		padding: 0.2rem;
+		border-radius: 10px;
+		background: rgb(0 0 0 / 0.05);
+	}
+
+	.side {
+		display: inline-flex;
+		flex: 1 1 0;
+		align-items: center;
+		justify-content: center;
+		gap: 0.3rem;
+		padding: 0.35rem 0.4rem;
+		border: 0;
+		border-radius: 8px;
+		background: none;
+		color: var(--soft);
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.side.on {
+		background: #fff;
+		color: inherit;
+		box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
 	}
 
 	h4 {

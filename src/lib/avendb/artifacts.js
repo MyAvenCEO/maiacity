@@ -83,6 +83,12 @@ export function youtubeId(url) {
 	}
 }
 
+/** The picture YouTube shows of a YouTube artifact, from its link alone: `null` for any other. @param {any} record */
+export function youtubePicture(record) {
+	const id = record?.look === 'youtube' && record?.url ? youtubeId(record.url) : null;
+	return id ? `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg` : null;
+}
+
 /** The longest title an artifact takes from its link, in letters. */
 const TITLE = 80;
 

@@ -19,7 +19,8 @@
 		LOOKS,
 		lookOf,
 		sparksHolding,
-		youtubeId
+		youtubeId,
+		youtubePicture
 	} from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Icon from './Icon.svelte';
@@ -138,7 +139,7 @@
 			gone = true;
 		};
 	});
-	const cover = $derived(files.map((l) => pics[entryOf(l)]).find(Boolean));
+	const cover = $derived(files.map((l) => pics[entryOf(l)]).find(Boolean) ?? youtubePicture(item?.record));
 
 	/** A new chapter at the time typed. */
 	let chapterAt = $state('');
