@@ -13,12 +13,14 @@
 	founds their vault here with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or
 	one they make here; the first to found a vault through a server nobody has claimed yet claims it in the same
 	ceremony and founds the seed (avendb's `world::SEED`): Maia Holding GmbH, a coop their vault owns, avenCEO GmbH, a
-	coop Maia Holding owns, and the CEO Aven, the aven vault avenCEO GmbH owns and the server is a device of. A person
+	coop Maia Holding owns, avenCEO server, the device vault avenCEO GmbH owns and the server is a device of, and Maia
+	City, a coop avenCEO GmbH owns. A person
 	with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log
 	as ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or
 	it links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=). Once
-	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and the aven and
-	coop vaults their vault founds and owns, each of which they act as. avenDB's server runs at avendb.maia.city: its
+	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and those their vault
+	founds and owns, each of which they act as: coops, their one aven, and the device vaults of its agents, which join
+	it from the consent screen ($lib/avendb/AccessRequest.svelte). avenDB's server runs at avendb.maia.city: its
 	relay and its code are filled in, and in a dev build a test server’s can take their place (?relay=, ?server=).
 -->
 <script>
@@ -638,15 +640,17 @@
 			}),
 		forget: () => forget(),
 		/**
-		 * In the Mac app: grants agent device `name`'s access request, the one its device `device` left: it joins aven
-		 * `aven` (`{id}` of one the person's vault owns, or `{name}` of a new one), in one ceremony of their passkey if
-		 * it is none of its devices yet, and the aven gets each of `shares` (avendb-device's `grant`).
-		 * @param {string} name @param {string} device @param {{ id: string } | { name: string }} aven
-		 * @param {{ over: string, level: string }[]} shares
+		 * In the Mac app: grants agent device `name`'s access request, the one its device `device` left: it joins the
+		 * person's one aven, named `avenName`, which the Mac founds first where their vault owns no aven yet, as a device
+		 * vault of its own under it, its device in it, in one ceremony of their passkey where it has none yet; and it
+		 * gets each of `shares`, `{over, level}`, a sub cap resting on the aven's own share over that vault
+		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault}`.
+		 * @param {string} name @param {string} device @param {{ over: string, level: string }[]} shares
+		 * @param {string} avenName
 		 */
-		grant: (name, device, aven, shares) =>
+		grant: (name, device, shares, avenName) =>
 			act(`Granting ${name}`, async () => {
-				await mac.call('grant', name, device, aven, shares);
+				await mac.call('grant', name, device, shares, avenName);
 				requests = requests.filter((r) => r.device !== device);
 			}),
 		/** In the Mac app: denies agent device `name`'s access request, its device `device`'s. @param {string} name
@@ -809,7 +813,7 @@
 						<input class="field" placeholder="The server’s code: AVENDB1…" bind:value={server} />
 						<p class="soft">
 							The first person to found their vault through a server owns it: their vault founds Maia Holding GmbH, which
-							owns avenCEO GmbH, which owns the CEO Aven, the aven vault the server is a device of.
+							owns avenCEO GmbH, which owns avenCEO server, the device vault the server is a device of.
 						</p>
 					</details>
 					<label class="check">
