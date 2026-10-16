@@ -85,6 +85,8 @@
 	let into = $state('');
 	let made = $state('');
 	let sharing = $state(false);
+	/** narrower, the side the lines and variants (left) or the history (right) slide in from, if open */
+	let drawer = $state(/** @type {'' | 'versions' | 'history'} */ (''));
 	/** the conflicts where the person takes the proposal's value, by place (`place`) */
 	let taking = $state(/** @type {Record<string, boolean>} */ ({}));
 
@@ -341,7 +343,7 @@
 
 	/** Pick line `l` to show and edit. @param {string | null} l */
 	function pick(l) {
-		[line, viewing, naming] = [l, '', null];
+		[line, viewing, naming, drawer] = [l, '', null, ''];
 	}
 
 	/** Name a new proposal from version `from`, `words` saying which. @param {string[]} from @param {string} words */
@@ -574,11 +576,27 @@
 				{#if unsaved}<b class="unsaved">Unsaved changes</b>{:else}Every edit signed and saved{/if}
 			</p>
 			{#if item}
-				<p class="meta">Shared with {sharedWords(shared)}{item.public ? ' · Public' : ''}</p>
+				<p class="meta shared">Shared with {sharedWords(shared)}{item.public ? ' · Public' : ''}</p>
 			{/if}
 		</div>
 		<div class="tools">
 			{#if here}
+				<span class="drawers">
+					<button
+						class="btn quiet"
+						aria-pressed={drawer === 'versions'}
+						title="Main, proposals and variants"
+						onclick={() => (drawer = drawer === 'versions' ? '' : 'versions')}
+						><Icon name="proposal" size={15} /> <span class="label">Versions</span></button
+					>
+					<button
+						class="btn quiet"
+						aria-pressed={drawer === 'history'}
+						title="History"
+						onclick={() => (drawer = drawer === 'history' ? '' : 'history')}
+						><Icon name="history" size={15} /> <span class="label">History</span></button
+					>
+				</span>
 				<span class="mode chip" class:warn={!!seen} class:accent={!seen && writes && !viewOnly}>
 					{#if seen}
 						Viewing version #{seen.n}
@@ -604,7 +622,7 @@
 			</span>
 			{#if owns}
 				<button class="btn share" class:primary={!sharing} onclick={() => (sharing = !sharing)}>
-					<Icon name="share" size={15} /> Share
+					<Icon name="share" size={15} /> <span class="label">Share</span>
 				</button>
 			{/if}
 			{#if writes && item && !item.deleted}
@@ -614,7 +632,7 @@
 					title={barred('delete') ?? 'Delete it: Sparks lists it apart, and every edit stays'}
 					onclick={() => remove(false)}
 				>
-					<Icon name="trash" size={15} /> Delete
+					<Icon name="trash" size={15} /> <span class="label">Delete</span>
 				</button>
 			{/if}
 		</div>
@@ -646,7 +664,14 @@
 		<div class="empty pad">This browser holds no edit of this note {nameOf(as)} may read.</div>
 	{:else}
 		<div class="body">
-			<aside class="versions" aria-label="Main, proposals and variants">
+			{#if drawer}
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+				<div class="scrim" onclick={() => (drawer = '')}></div>
+			{/if}
+			<aside class="versions" class:open={drawer === 'versions'} aria-label="Main, proposals and variants">
+				<button class="btn quiet shut" aria-label="Close" onclick={() => (drawer = '')}
+					><Icon name="close" size={16} /></button
+				>
 				<section>
 					<h4>Main</h4>
 					<button
@@ -896,7 +921,10 @@
 				{/if}
 			</main>
 
-			<aside class="history" aria-label="History">
+			<aside class="history" class:open={drawer === 'history'} aria-label="History">
+				<button class="btn quiet shut" aria-label="Close" onclick={() => (drawer = '')}
+					><Icon name="close" size={16} /></button
+				>
 				<header>
 					<h4>History</h4>
 					<small class="soft">{count(history.length, 'edit')} of {at(here.line)}, newest first</small>
@@ -1628,8 +1656,14 @@
 		font-size: 0.76rem;
 	}
 
-	/* narrower: one column, the lines and variants above the page, its history below */
-	/* one column under another, scrolled as one: each as tall as what it holds */
+	/* the drawers' toggles and close buttons show only where the sides slide in */
+	.drawers,
+	.shut,
+	.scrim {
+		display: none;
+	}
+
+	/* narrower: the page alone, the lines and variants sliding in from the left and the history from the right */
 	@media (max-width: 1100px) {
 		.body {
 			display: block;
@@ -1637,37 +1671,139 @@
 			overscroll-behavior: contain;
 		}
 
-		.versions,
-		.canvas,
-		.history {
+		.canvas {
 			overflow: visible;
+			padding-bottom: 8rem;
+		}
+
+		.drawers {
+			display: inline-flex;
+			gap: 0.2rem;
+		}
+
+		.drawers .btn[aria-pressed='true'] {
+			background: color-mix(in srgb, var(--accent) 12%, transparent);
+			color: var(--accent);
+		}
+
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 40;
+			background: rgb(20 28 24 / 0.28);
+		}
+
+		.versions,
+		.history {
+			position: fixed;
+			top: 0;
+			bottom: 0;
+			z-index: 41;
+			width: min(22rem, 86vw);
+			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+			box-shadow: 0 0 40px rgb(0 0 0 / 0.18);
+			visibility: hidden;
+			transition:
+				transform 240ms ease,
+				visibility 0s linear 240ms;
 		}
 
 		.versions {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 0.6rem 1.4rem;
-			padding: 0.8rem 1rem;
+			left: 0;
 			border-right: 0;
-			border-bottom: 1px solid var(--edge);
-		}
-
-		.versions section {
-			flex: 1 1 14rem;
-		}
-
-		.versions section + section {
-			margin-top: 0;
-		}
-
-		.canvas {
-			padding-bottom: 2rem;
+			transform: translateX(-100%);
 		}
 
 		.history {
-			padding-bottom: 10rem;
+			right: 0;
 			border-left: 0;
-			border-top: 1px solid var(--edge);
+			transform: translateX(100%);
+		}
+
+		.versions.open,
+		.history.open {
+			visibility: visible;
+			transform: none;
+			transition: transform 240ms ease;
+		}
+
+		.shut {
+			display: grid;
+			place-items: center;
+			float: right;
+			width: 2rem;
+			height: 2rem;
+			padding: 0;
+		}
+	}
+
+	/* a phone: a compact head, one line of tools that scrolls sideways, buttons by their icons */
+	@media (max-width: 640px) {
+		.top {
+			gap: 0.4rem 0.5rem;
+			padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.6rem 0.5rem;
+		}
+
+		.back {
+			width: 2rem;
+			height: 2rem;
+		}
+
+		.docicon {
+			display: none;
+		}
+
+		.heading {
+			flex-basis: 0;
+		}
+
+		.title {
+			font-size: 1.05rem;
+		}
+
+		.meta {
+			margin-left: 0.35rem;
+			font-size: 0.72rem;
+		}
+
+		.meta.shared {
+			display: none;
+		}
+
+		.tools {
+			flex: 1 1 100%;
+			flex-wrap: nowrap;
+			gap: 0.35rem;
+			overflow-x: auto;
+			scrollbar-width: none;
+		}
+
+		.tools::-webkit-scrollbar {
+			display: none;
+		}
+
+		.tools > * {
+			flex: none;
+		}
+
+		.tools .label {
+			display: none;
+		}
+
+		.tools .btn {
+			padding: 0.32rem 0.55rem;
+		}
+
+		.person :global(.mark) {
+			transform: scale(0.85);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.versions,
+		.history {
+			transition: none;
 		}
 	}
 </style>
