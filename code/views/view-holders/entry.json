@@ -1,0 +1,10 @@
+{
+	"type": "view",
+	"for": "maiacity-v1",
+	"title": "Holders",
+	"note": "Every wallet, COOP treasury and the pool, side by side, in ❤︎.",
+	"kind": "html",
+	"slot": "panel",
+	"libs": [],
+	"height": 300
+}

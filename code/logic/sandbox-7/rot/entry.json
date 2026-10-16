@@ -1,0 +1,9 @@
+{
+	"type": "logic",
+	"for": "sandbox-7",
+	"title": "Rot",
+	"card": "rot",
+	"hooks": [
+		"rot"
+	]
+}

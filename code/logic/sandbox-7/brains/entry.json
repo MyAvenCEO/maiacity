@@ -1,0 +1,13 @@
+{
+	"type": "logic",
+	"for": "sandbox-7",
+	"title": "Brains",
+	"card": "brains",
+	"hooks": [
+		"see",
+		"ask",
+		"prompt",
+		"traits",
+		"score"
+	]
+}

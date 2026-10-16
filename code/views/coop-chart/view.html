@@ -1,0 +1,66 @@
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #fbfaf6; font: 12px system-ui, sans-serif; color: #24302a; }
+  svg { display: block; }
+  .legend { display: flex; gap: 14px; padding: 10px 14px 0; flex-wrap: wrap; }
+  .legend button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .legend .off { opacity: .35; }
+  #tip { position: absolute; pointer-events: none; background: #fff; border: 1px solid #d9d6cc; border-radius: 8px; padding: 6px 9px; box-shadow: 0 4px 14px #0001; display: none; }
+  .axis text { fill: #6b736d; } .axis path, .axis line { stroke: #cfccc2; }
+</style>
+<div class="legend" id="legend"></div>
+<svg id="c"></svg>
+<div id="tip"></div>
+<script type="module">
+  // an MCP App built with the official SDK: the host hands it its data as the tool result
+  import { App } from '@modelcontextprotocol/ext-apps';
+  const app = new App({ name: 'COOP chart', version: '1.0.0' }, {}, { autoResize: false }); // it fills its frame, so it asks for no size
+  let coops = [], rows = [];
+  app.ontoolresult = (r) => { ({ coops, rows } = r.structuredContent); for (const c of coops) on.add(c.key); drawLegend(); draw(); };
+  const on = new Set();
+  const svg = d3.select('#c'), tip = d3.select('#tip');
+  const M = { t: 16, r: 54, b: 30, l: 54 };
+
+  function draw() {
+    const W = innerWidth, H = innerHeight - 34;
+    svg.attr('width', W).attr('height', H).selectAll('*').remove();
+    const keys = coops.filter((c) => on.has(c.key)).map((c) => c.key);
+    const stack = d3.stack().keys(keys)(rows);
+    const x = d3.scaleLinear().domain([1, 13]).range([M.l, W - M.r]);
+    const y = d3.scaleLinear().domain([0, d3.max(stack.at(-1) ?? [[0, 1]], (d) => d[1]) || 1]).nice().range([H - M.b, M.t]);
+    const y2 = d3.scaleLinear().domain([0, d3.max(rows, (d) => d.hearts) * 1.1]).range([H - M.b, M.t]);
+    svg.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + (H - M.b) + ')').call(d3.axisBottom(x).ticks(13).tickFormat((m) => 'M' + m));
+    svg.append('g').attr('class', 'axis').attr('transform', 'translate(' + M.l + ',0)').call(d3.axisLeft(y).ticks(5).tickFormat(d3.format('~s')));
+    svg.append('g').attr('class', 'axis').attr('transform', 'translate(' + (W - M.r) + ',0)').call(d3.axisRight(y2).ticks(5).tickFormat(d3.format('~s')));
+    svg.append('g').selectAll('line').data(y.ticks(5)).join('line').attr('x1', M.l).attr('x2', W - M.r).attr('y1', y).attr('y2', y).attr('stroke', '#0000000d');
+    const area = d3.area().x((d) => x(d.data.month)).y0((d) => y(d[0])).y1((d) => y(d[1])).curve(d3.curveMonotoneX);
+    svg.append('g').selectAll('path').data(stack).join('path')
+      .attr('fill', (s) => coops.find((c) => c.key === s.key).color).attr('fill-opacity', 0.78).attr('d', area);
+    const line = d3.line().x((d) => x(d.month)).y((d) => y2(d.hearts)).curve(d3.curveMonotoneX);
+    svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', '#d2453b').attr('stroke-width', 2).attr('stroke-dasharray', '5 4').attr('d', line);
+    const cross = svg.append('line').attr('stroke', '#24302a').attr('stroke-opacity', 0.4).attr('y1', M.t).attr('y2', H - M.b).style('display', 'none');
+    svg.append('rect').attr('x', M.l).attr('y', M.t).attr('width', W - M.l - M.r).attr('height', H - M.t - M.b).attr('fill', 'transparent')
+      .on('mousemove', (e) => {
+        const m = Math.round(x.invert(d3.pointer(e)[0])), r = rows[m - 1];
+        cross.style('display', null).attr('x1', x(m)).attr('x2', x(m));
+        tip.style('display', 'block').style('left', Math.min(e.clientX + 14, W - 170) + 'px').style('top', e.clientY + 'px')
+          .html('<b>Month ' + m + '</b><br>' + coops.filter((c) => on.has(c.key)).map((c) => '<span style="color:' + c.color + '">■</span> ' + c.name + ': ' + d3.format(',.0f')(r[c.key])).join('<br>') + '<br><span style="color:#d2453b">- -</span> HEARTS minted: ' + d3.format(',.0f')(r.hearts));
+      })
+      .on('mouseleave', () => { cross.style('display', 'none'); tip.style('display', 'none'); })
+      .on('click', (e) => app.updateModelContext({ structuredContent: { month: Math.round(x.invert(d3.pointer(e)[0])) } }));
+  }
+
+  function drawLegend() {
+  const legend = d3.select('#legend');
+  legend.selectAll('*').remove();
+  for (const c of coops)
+    legend.append('button').html('<i style="background:' + c.color + '"></i>' + c.name).on('click', function () {
+      on.has(c.key) ? on.delete(c.key) : on.add(c.key);
+      this.classList.toggle('off', !on.has(c.key));
+      draw();
+    });
+  legend.append('span').html('<i style="background:#d2453b"></i> HEARTS minted (right axis)');
+  }
+  addEventListener('resize', () => rows.length && draw());
+  await app.connect();
+</script>

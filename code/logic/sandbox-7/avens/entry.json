@@ -1,0 +1,10 @@
+{
+	"type": "logic",
+	"for": "sandbox-7",
+	"title": "Avens",
+	"card": "avens",
+	"hooks": [
+		"rebirth",
+		"events"
+	]
+}

@@ -1,0 +1,12 @@
+{
+	"type": "view",
+	"for": "genui",
+	"title": "COOP treasuries over a year",
+	"note": "An MCP App (built with the official SDK): a d3 stacked area of MIND per COOP and HEARTS minted, its numbers handed in as the tool result.",
+	"kind": "html",
+	"libs": [
+		"d3",
+		"mcp-apps"
+	],
+	"height": 400
+}
