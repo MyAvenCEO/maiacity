@@ -127,17 +127,20 @@ export function createDrawn({ renderer, camera, scene }) {
 			if (c.copy) assets.remove(c.copy);
 		},
 		/**
-		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data }`
-		 * ($lib/assets/load.js), once it is there.
-		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string }} [o] `pick`: every part of it named so
+		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data, named }`
+		 * ($lib/assets/load.js; `named`: its first node of each name, as its builder named them), once it is there.
+		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o] `pick`: every
+		 *   part of it named so; `cast`: every part casting a shadow (false: as built)
 		 */
-		load(ref, anchor, { pick } = {}) {
+		load(ref, anchor, { pick, cast = true } = {}) {
 			const p = up
 				.then((m) => m.loadAsset(m.buildAt(ref)))
 				.then((got) => {
+					got.named = new Map();
 					got.obj.traverse((c) => {
+						if (c.name && !got.named.has(c.name)) got.named.set(c.name, c);
 						if (pick) c.name = pick;
-						if (c.isMesh) c.castShadow = true;
+						if (cast && c.isMesh) c.castShadow = true;
 					});
 					if (!gone) anchor.add(got.obj);
 					return got;
@@ -149,10 +152,12 @@ export function createDrawn({ renderer, camera, scene }) {
 		 * The build of `ref` put into `anchor` (as `load`) and kept running in the box: what the stage calls a hero
 		 * ($lib/assets/hero.js `heroOf`): `play(clip)`, `hold(pose)`, and `tick(dt)` each frame it moves. Until the box
 		 * has it running, it stands as built.
-		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string }} [o]
+		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o]
+		 * @param {(got: any) => void} [first] what is done with the build before it runs (its parts found by name)
 		 */
-		cast(ref, anchor, o) {
+		cast(ref, anchor, o, first) {
 			return this.load(ref, anchor, o).then(async (got) => {
+				first?.(got);
 				const m = await up;
 				const c = m.canonical(m.buildAt(ref));
 				const values = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
