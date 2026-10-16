@@ -151,10 +151,16 @@
 				{#if !member}One touch of your passkey adds this device to {avenName(a) || 'the aven'}.{/if}
 				Each vault's Sharing page shows it and takes it back.
 			</p>
+			{#if !member && !r.online}
+				<p class="offline">
+					{r.name} isn't running right now. Joining an aven takes its own device, which signs it too: open a Claude
+					Code session (or the harness it belongs to), and Approve turns on.
+				</p>
+			{/if}
 			<div class="actions">
 				<button
 					class="btn primary"
-					disabled={busy || (a.aven === NEW && !a.naming.trim())}
+					disabled={busy || (a.aven === NEW && !a.naming.trim()) || (!member && !r.online)}
 					onclick={() => approve(r)}>Approve</button
 				>
 				<button class="btn quiet" disabled={busy} onclick={() => ondeny(r.name, r.device)}>Deny</button>
@@ -164,6 +170,14 @@
 {/each}
 
 <style>
+	.offline {
+		margin: 0;
+		padding: 0.5rem 0.75rem;
+		border-radius: 8px;
+		background: #f6efe0;
+		font-size: 0.88rem;
+	}
+
 	.request {
 		display: flex;
 		flex-direction: column;

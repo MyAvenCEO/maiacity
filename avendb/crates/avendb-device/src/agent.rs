@@ -108,6 +108,25 @@ pub fn request(host: &Path, name: &str) -> PathBuf {
     agents(host).join(format!("{name}.request"))
 }
 
+/// The file in the agents' folder beside the app's `host` folder that agent `name` writes its device's key to every
+/// little while it runs (`LOOK`): the Mac's page knows by it whether the agent is there to join an aven, which its
+/// device cosigns (`online`).
+pub fn alive(host: &Path, name: &str) -> PathBuf {
+    agents(host).join(format!("{name}.alive"))
+}
+
+/// Whether agent `name`'s device `device` runs now: it wrote its key to its `alive` file within the last few looks.
+/// An agent harness such as Claude Code starts it with each of its sessions, and it stops with them.
+pub fn online(host: &Path, name: &str, device: &str) -> bool {
+    let file = alive(host, name);
+    let fresh = std::fs::metadata(&file)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age <= LOOK * 5);
+    fresh && std::fs::read_to_string(&file).is_ok_and(|d| d.trim() == device)
+}
+
 /// The file in the agents' folder beside the app's `host` folder where its person's no to agent `name` is left: the
 /// device it said no to.
 pub fn denied(host: &Path, name: &str) -> PathBuf {
@@ -195,6 +214,8 @@ async fn look(node: Arc<Node>, host: PathBuf, name: String, aven: Option<String>
     let (file, no, mut known) = (request(&host, &name), denied(&host, &name), None);
     let device = hex(&node.device().0);
     loop {
+        // that it runs, for the Mac's page (`online`)
+        std::fs::write(alive(&host, &name), &device).ok();
         if let Some(mac) = read_offer(&host_offer(&host))
             && known.as_ref() != Some(&mac.to_text())
         {

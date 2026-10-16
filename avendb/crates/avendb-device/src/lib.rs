@@ -542,7 +542,10 @@ impl Service {
         let vaults: Vec<String> =
             asked["vaults"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
         let aven = asked["aven"].as_str().and_then(|a| agent::aven_named(a).ok());
-        Some(agent::asking(name, device, offer, &agent::Asking { aven, level, why, vaults }))
+        let mut asking = agent::asking(name, device, offer, &agent::Asking { aven, level, why, vaults });
+        // whether it runs now, to cosign its joining an aven
+        asking["online"] = agent::online(&self.config.dir, name, device).into();
+        Some(asking)
     }
 
     /// Grants agent device `name`'s access request (`agents`), the one its device `device` left: the device joins
@@ -560,6 +563,8 @@ impl Service {
     ) -> Result<Value> {
         agent::named(name)?;
         let asked = self.request(name).filter(|a| a["device"] == device).context("no such request: it changed")?;
+        // joining an aven takes the agent's own device, which cosigns it: say so rather than wait for it in vain
+        let offline = || anyhow!("{name} isn't running: open a Claude Code session (or its harness), then approve");
         for share in shares {
             let level = share["level"].as_str().unwrap_or_default();
             anyhow::ensure!(share["over"].is_string(), "a share is {{over, level}}: {share}");
@@ -578,6 +583,7 @@ impl Service {
                 let into = VaultId::from_hex(id).context("an aven's id")?;
                 let devices = v["devices"].as_array().into_iter().flatten();
                 if !devices.clone().any(|x| x["id"] == device) {
+                    anyhow::ensure!(asked["online"] == true, offline());
                     let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
                     d.node().adopt_with(&Offer::from_text(offer)?, Some(into), d.passkey(), &approver).await?;
                 }
@@ -585,6 +591,7 @@ impl Service {
             }
             (None, Some(named)) => {
                 let named = agent::aven_named(named)?;
+                anyhow::ensure!(asked["online"] == true, offline());
                 let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
                 let aven = d.node().adopt_with(&Offer::from_text(offer)?, None, d.passkey(), &approver).await?;
                 let profile = d.node().op(json!({ "op": "profile", "vault": hex(&aven.0), "name": named })).await?;
