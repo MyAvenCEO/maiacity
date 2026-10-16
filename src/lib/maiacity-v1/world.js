@@ -19,19 +19,19 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { PICKUP, RAMP, loadingRamp, pickup, solarPanel } from '$lib/models/village.js';
+import { pickup } from '$lib/models/village.js';
 import { backpack, dugEarth, plantStake } from '$lib/models/planting.js';
-import { BELL_TENT, bellTent, bellTentBag, firePlace } from '$lib/models/belltent.js';
+import { bellTent, bellTentBag, firePlace } from '$lib/models/belltent.js';
 import { electroCube } from '$lib/actors/electrocube.js';
-import { batteryCube } from '$lib/actors/batterycube.js';
 import { human } from '$lib/actors/human.ts';
 import { blend } from '$lib/actors/rig.ts';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, wearFace } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
-import { maiaCentre, oldShed } from '$lib/models/wayside.js';
 import { look, pathOf } from '../../../game/film/camera.js';
+import { BELL_TENT, CENTRE_AT, PICKUP, RAMP, THINGS } from './things.js';
+import { createDrawn } from './drawn.js';
 
 /** the hex's radius in metres: 114.75, one and a half times 76.5 again (Samuel 2026-10-13, 17:49) */
 const HEX_R = 114.75;
@@ -599,6 +599,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 
 	const world = new THREE.Group();
 	scene.add(world);
+	// the library's assets, built in the asset box and drawn by the universal renderer (./drawn.js, ./things.js)
+	const drawn = createDrawn({ renderer, camera, scene });
 	const { group: ground, rims } = land();
 	world.add(ground, highway(), steppe(), gravel(), bushes(), tallGrass());
 	const fore = clump(); // the grass close in front of a low camera
@@ -628,20 +630,31 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	world.add(fire);
 
 	const named = (o, name) => (o.traverse((c) => { c.name = name; if (c.isMesh) c.castShadow = true; }), o);
-	// the MaiaCity centre: the bus stop and the abandoned gas station by the highway
-	const centre = maiaCentre({ withVan: false, withRoad: false });
+	/** where a library asset the renderer draws stands (./drawn.js): a group the story moves as it moved the asset */
+	const anchor = (ref, pick) => {
+		const g = new THREE.Group();
+		drawn.follow(ref, g, { pick });
+		return g;
+	};
+	// the MaiaCity centre: the bus stop and the abandoned gas station by the highway, where the library's maia-centre
+	// stands them
+	const centre = new THREE.Group();
 	centre.position.set(CENTRE.x, 0, CENTRE.z);
-	centre.children.forEach((c, i) => named(c, i === 0 ? 'asset:busStop' : 'asset:gasStation'));
+	for (const [id, pick] of [['busStop', 'asset:busStop'], ['gasStation', 'asset:gasStation']]) {
+		const at = CENTRE_AT[id], o = anchor(THINGS[id], pick);
+		o.position.set(at.x, 0, at.z);
+		o.rotation.y = at.turn;
+		centre.add(o);
+	}
 	world.add(centre);
 	// the village store: the old shed, the solar row and the battery the Village COOP keeps at its centre hex
-	const shed = named(oldShed(), 'asset:shed');
+	const shed = anchor(THINGS.shed, 'asset:shed');
 	shed.position.set(STORE.x, 0, STORE.z);
 	// the Village COOP's solar panel on its rack and its BatteryCube (four BatteryPacks and an inverter in the Power
-	// Cube's frame) beside the shed: the second player fetches them home (placeBattery, placePanel)
-	const solar = named(solarPanel(), 'asset:solar');
-	const batteryCast = batteryCube();
-	batteryCast.rig.pose(batteryCast.clips.off(0));
-	const battery = named(batteryCast.rig.object, 'asset:battery');
+	// Cube's frame, standing off as it is built) beside the shed: the second player fetches them home (placeBattery,
+	// placePanel)
+	const solar = anchor(THINGS.solar, 'asset:solar');
+	const battery = anchor(THINGS.battery, 'asset:battery');
 	world.add(shed, solar, battery);
 	// once both are home: one cable from the panel to the BatteryCube, and one on to the tent
 	const cables = new THREE.Group();
@@ -666,7 +679,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	overLand(bundle, true); // its canvas lies flat on the ground once it is opened
 	world.add(truck, cube, bundle);
 	// the loading ramp behind it while a machine goes on or off, its lip on the tailgate let down flat
-	const ramp = named(loadingRamp(), 'asset:pickup');
+	const ramp = anchor(THINGS.ramp, 'asset:pickup');
 	ramp.position.z = FOOT_Z;
 	ramp.visible = false;
 	truck.add(ramp);
@@ -3161,6 +3174,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// shot's pose for a frame
 		for (const p of Object.values(people)) if (p.visible) (stride(p, p.parent === world), acting(p, (p.userData.t += step)), busy && (p.userData.glow.visible = false));
 		light(t);
+		drawn.update();
 		renderer.render(scene, camera);
 		if (++frame % 4 === 0) {
 			const w = canvas.clientWidth;
@@ -3212,8 +3226,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		get busy() {
 			return busy;
 		},
+		/** settles once every library asset asked for so far is there to draw (or failed) */
+		get ready() {
+			return drawn.ready();
+		},
+		/** what the renderer draws of the library */
+		stats: () => drawn.stats(),
 		dispose() {
 			cancelAnimationFrame(raf);
+			drawn.dispose();
 			ro.disconnect();
 			canvas.removeEventListener('pointerdown', onDown);
 			canvas.removeEventListener('pointerup', onUp);
