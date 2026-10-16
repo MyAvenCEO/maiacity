@@ -1,5 +1,7 @@
 <!--
-	avenDB's consent screen: every access request a vault the person acts for was asked, one at a time, whoever asks.
+	avenDB's consent screen: every access request a vault the person acts for was asked, one at a time, whoever asks,
+	in one card layout and with the same Approve and Deny: a share, to co-own a vault, an invitation to co-own one, an
+	agent wanting to work for them, and a new device asking to join their vault.
 
 	A request is a record (the design's "one request, one consent screen"): the asking vault writes it in itself, of
 	avenDB's `request` schema, and shares that one entry with the vault it asks, which may write its answer into it
@@ -12,6 +14,18 @@
 	asker sees the answer once the record syncs back. An agent asking its own aven for the person's vaults gets its
 	share passed on by the aven, which gets one from that vault first where it holds none at that level, as the Mac's
 	`pass_on` does (avendb-device's `agent`).
+
+	A request may ask to co-own the vault asked ("owner", a person's vault asking a coop), or invite the vault asked to
+	co-own the one asking ("invite", a coop asking a person). Either adds an owner, which takes two passkeys: the vault
+	asked approves it with its passkey, which signs its part of the edit and writes it into the request with "granted"
+	(a `share` of Owner naming the request), and the vault that asked finishes it with its own passkey once the answer
+	syncs back, a next step this sheet shows from the requests its vaults made (the `requests` op's `made`). Neither
+	adds anyone alone: the rules check the edit as every owner add, the vault's approval and the newcomer's consent.
+
+	A new device, a browser opened on the link another of the person's devices shows (./Account.svelte's ?link=),
+	belongs to no vault and reads none of this: its request is that link, the offer of the device that shows it, and
+	approving it on this same sheet is the passkey's one touch that unlocks the new device and adds it to their vault
+	(`joining`); denying puts the link away.
 
 	In the Mac app, before an agent belongs to any vault, its request is a file it left on the Mac (avendb-device's
 	`agent`), as a harness such as Claude Code or Codex starts its own device (agentClaude, agentCodex): it says who asks,
@@ -46,11 +60,31 @@
 	 * @typedef {{ naming: string, all: boolean, level: string, levels: Record<string, string> }} Answer
 	 */
 	/**
-	 * @type {{ world: import('./vaults.js').WorldView, requests: Request[], asked?: Asked[], api: any, busy: boolean,
-	 *   ongrant: (name: string, device: string, shares: Grant[], avenName: string, standing: string) => void,
-	 *   ondeny: (name: string, device: string) => void }}
+	 * @typedef {{ name: string, ready: boolean, rename: (name: string) => void, onjoin: () => unknown,
+	 *   ondeny: () => void }} Joining a new device asking to join the person's vault, by the link it opened
 	 */
-	let { world, requests, asked = [], api, busy, ongrant, ondeny } = $props();
+	/**
+	 * @type {{ world: import('./vaults.js').WorldView | null, requests?: Request[], asked?: Asked[], made?: Asked[],
+	 *   joining?: Joining | null, api: any, busy: boolean,
+	 *   ongrant?: (name: string, device: string, shares: Grant[], avenName: string, standing: string) => void,
+	 *   ondeny?: (name: string, device: string) => void }}
+	 */
+	let {
+		world: shown,
+		requests = [],
+		asked = [],
+		made = [],
+		joining = null,
+		api,
+		busy,
+		ongrant = () => {},
+		ondeny = () => {}
+	} = $props();
+	/** what the device shows of its world; nothing yet on a new device that belongs to no vault */
+	const NOWORLD = /** @type {import('./vaults.js').WorldView} */ (
+		/** @type {unknown} */ ({ mine: '', vaults: [], shares: [], groups: [], kinds: [] })
+	);
+	const world = $derived(shown ?? NOWORLD);
 
 	/** The levels the page gives, the weakest first, and what each lets the vault given it do in a vault. */
 	const LEVELS = /** @type {const} */ (['Viewer', 'Suggester', 'Editor']);
@@ -243,6 +277,18 @@
 	 *  @returns {Grant[]} */
 	const given = (q, p) => offered(q).filter((x) => p[x]).map((x) => ({ over: x, level: p[x] }));
 
+	/** Request `q` asks for an owner add: to co-own the vault asked, or an invitation to co-own the one asking.
+	 *  @param {Asked} q */
+	const owning = (q) => q.asks === 'owner' || q.asks === 'invite';
+	/** The owner add `q` asks for: the vault that takes an owner, and the vault that becomes one. @param {Asked} q */
+	const adds = (q) => (q.asks === 'invite' ? { vault: q.from, owner: q.to } : { vault: q.to, owner: q.from });
+	/** The op that signs the person's part of `q`'s owner add, or finishes it, acting for `as`: a share of Owner that
+	 *  names the request. @param {Asked} q @param {string} as */
+	const owner = (q, as) => {
+		const { vault, owner } = adds(q);
+		return { op: 'share', over: vault, who: { vault: owner }, level: 'Owner', request: q.entry, as };
+	};
+
 	/** the record requests answered here, until the device's list leaves them out */
 	let answered = $state(/** @type {string[]} */ ([]));
 	/** Gives `q`'s asker the shares answer `p` picks, then writes "granted" into it, acting for the vault asked.
@@ -251,6 +297,18 @@
 		const all = allOf(q) ? standingOps(world.mine, q.to, q.from, alls[q.entry].level) : [];
 		const ops = [...all, ...given(q, p).flatMap((g) => giving(q, g.over, g.level)), answering(q, 'granted')];
 		if (await api.runAll(`Granting ${vaultName(q.from)} access`, ops)) answered = [...answered, q.entry];
+	}
+	/** Grants `q`'s owner add, acting for the vault asked: its passkey's part, and "granted". @param {Asked} q */
+	async function cosign(q) {
+		const words = q.asks === 'invite' ? `Accepting ${vaultName(q.from)}’s invitation` : `Approving ${vaultName(q.from)}`;
+		if (await api.run(words, owner(q, q.to))) answered = [...answered, q.entry];
+	}
+	/** Finishes `f`'s owner add, granted, acting for the vault that asked: its passkey signs the rest, and the edit is
+	 *  made. @param {Asked} f */
+	async function finish(f) {
+		const { vault, owner: who } = adds(f);
+		if (await api.run(`Adding ${vaultName(who)} as an owner of ${vaultName(vault)}`, owner(f, f.from)))
+			answered = [...answered, f.entry];
 	}
 	/** Writes "denied" into `q`, acting for the vault asked. @param {Asked} q */
 	async function refuse(q) {
@@ -263,20 +321,33 @@
 
 	/** the requests put away for later, by their key, until the page opens again */
 	let later = $state(/** @type {string[]} */ ([]));
-	/** the requests to answer now, the agents' on this Mac first, then those as records: the first of them shown */
-	const queue = $derived([
-		...requests
-			.filter((r) => !later.includes(key(r)) && answers[key(r)])
-			.map((r) => ({ key: key(r), r, q: /** @type {Asked | null} */ (null) })),
-		...asked
-			.filter((q) => !later.includes(q.entry) && !answered.includes(q.entry) && picks[q.entry])
-			.map((q) => ({ key: q.entry, r: /** @type {Request | null} */ (null), q }))
-	]);
+	/** the owner adds the person's vaults asked for, granted, that wait on their passkey to finish them */
+	const finishing = $derived(
+		made.filter((m) => owning(m) && m.answer === 'granted' && m.part && !m.done && !answered.includes(m.entry))
+	);
+	/** what this sheet's queue holds: a new device's join, an agent's file, a request asked, an owner add to finish
+	 *  @typedef {{ key: string, j?: Joining, r?: Request, q?: Asked, f?: Asked }} Item */
+	/** the requests to answer now, a new device first, the agents' on this Mac next, then those as records, then the
+	 *  owner adds to finish: the first of them shown */
+	const queue = $derived(
+		/** @type {Item[]} */ ([
+			...(joining && !later.includes('join') ? [{ key: 'join', j: joining }] : []),
+			...requests.filter((r) => !later.includes(key(r)) && answers[key(r)]).map((r) => ({ key: key(r), r })),
+			...asked
+				.filter((q) => !later.includes(q.entry) && !answered.includes(q.entry) && picks[q.entry])
+				.map((q) => ({ key: q.entry, q })),
+			...finishing.filter((f) => !later.includes(`finish ${f.entry}`)).map((f) => ({ key: `finish ${f.entry}`, f }))
+		])
+	);
+	const j = $derived(queue[0]?.j);
 	const r = $derived(queue[0]?.r);
 	const a = $derived(r && answers[key(r)]);
 	const member = $derived(r && joined(r));
 	const q = $derived(queue[0]?.q);
 	const p = $derived(q && picks[q.entry]);
+	const f = $derived(queue[0]?.f);
+	/** "· 1 of n" where more wait */
+	const more = $derived(queue.length > 1 ? ` · 1 of ${queue.length}` : '');
 	/** the levels a vault's pills offer: none, then each level */
 	const PICKS = /** @type {const} */ (['', ...LEVELS]);
 </script>
@@ -303,7 +374,52 @@
 	</div>
 {/snippet}
 
-{#if r && a}
+{#if j}
+	<div class="scrim" transition:fade={{ duration: 180 }}></div>
+	<div
+		class="sheet"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="request-title"
+		transition:fly={{ y: 640, duration: 280, opacity: 1 }}
+	>
+		<div class="grip" aria-hidden="true"></div>
+		<header>
+			<span class="badge" aria-hidden="true"><Icon name="link" size={18} /></span>
+			<div>
+				<h2 id="request-title">{j.name || 'This device'} asks to join your vault</h2>
+				<p class="soft">A new device · through the link your other device shows{more}</p>
+			</div>
+			<span class="state">New device</span>
+		</header>
+
+		<p class="soft">
+			It asks to act for your vault as one of your devices: it reads and changes what your vault holds, and keeps
+			it in sync with your other devices.
+		</p>
+		<section>
+			<h3>Its name</h3>
+			<input
+				class="name"
+				value={j.name}
+				oninput={(e) => j.rename(e.currentTarget.value)}
+				aria-label="This device's name"
+				placeholder="Its name, which your other devices show it by"
+			/>
+		</section>
+
+		<p class="says">
+			One touch of your passkey adds it: the touch unlocks it and signs the edit that adds it to your vault. Your other
+			devices list it under Owners & devices, and remove it there as they would a lost one.
+		</p>
+		<div class="actions">
+			<button class="btn quiet danger" disabled={busy} onclick={() => j.ondeny()}>Deny</button>
+			<button class="btn primary" disabled={busy || !j.ready || !j.name.trim()} onclick={() => j.onjoin()}
+				>Approve</button
+			>
+		</div>
+	</div>
+{:else if r && a}
 	<div class="scrim" transition:fade={{ duration: 180 }}></div>
 	<div
 		class="sheet"
@@ -321,8 +437,7 @@
 					{member ? 'asks for more access' : 'wants to work for you'}
 				</h2>
 				<p class="soft">
-					An agent device on this Mac · its key <span class="mono">{short(r.device)}</span>
-					{#if queue.length > 1}· 1 of {queue.length}{/if}
+					An agent device on this Mac · its key <span class="mono">{short(r.device)}</span>{more}
 				</p>
 			</div>
 			<span class="state" class:on={member || r.online}>{member || r.online ? 'Running' : 'Not running'}</span>
@@ -403,6 +518,51 @@
 			>
 		</div>
 	</div>
+{:else if q && owning(q)}
+	{@const from = vaultName(q.from)}
+	{@const to = vaultName(q.to)}
+	{@const invite = q.asks === 'invite'}
+	<div class="scrim" transition:fade={{ duration: 180 }}></div>
+	<div
+		class="sheet"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="request-title"
+		transition:fly={{ y: 640, duration: 280, opacity: 1 }}
+	>
+		<div class="grip" aria-hidden="true"></div>
+		<header>
+			<Mark vault={byId.get(q.from)} size={36} />
+			<div>
+				<h2 id="request-title">
+					{invite ? `${from} invites ${q.to === world.mine ? 'you' : to} to co-own it` : `${from} asks to co-own ${to}`}
+				</h2>
+				<p class="soft">{whoAsks(q)}{more}</p>
+			</div>
+		</header>
+
+		{#if q.why}<blockquote>“{q.why}”</blockquote>{/if}
+		<p class="soft">
+			{#if invite}
+				Accepting makes {q.to === world.mine ? 'you' : to} an owner of {from}: {q.to === world.mine ? 'you act' : 'it acts'}
+				for it as its owners do, add and remove its owners and devices, and may close it.
+			{:else}
+				Approving makes {from} an owner of {to}: it acts for {to} as its owners do, adds and removes its owners and
+				devices, and may close it.
+			{/if}
+		</p>
+		<p class="says">
+			One touch of your passkey signs your part. Then {byId.get(q.from)?.kind === 'human'
+				? `${from} finishes it with their own passkey`
+				: `${from}’s owners finish it with their passkey`}, once your answer reaches them: an owner is added only with
+			both. Owners & devices lists the new owner, and removes it there.
+		</p>
+		<div class="actions">
+			<button class="btn quiet" disabled={busy} onclick={() => (later = [...later, q.entry])}>Later</button>
+			<button class="btn quiet danger" disabled={busy} onclick={() => refuse(q)}>Deny</button>
+			<button class="btn primary" disabled={busy} onclick={() => cosign(q)}>{invite ? 'Accept' : 'Approve'}</button>
+		</div>
+	</div>
 {:else if q && p}
 	{@const from = vaultName(q.from)}
 	{@const to = vaultName(q.to)}
@@ -420,10 +580,7 @@
 			<Mark vault={byId.get(q.from)} size={36} />
 			<div>
 				<h2 id="request-title">{from} asks for access</h2>
-				<p class="soft">
-					{whoAsks(q)}
-					{#if queue.length > 1}· 1 of {queue.length}{/if}
-				</p>
+				<p class="soft">{whoAsks(q)}{more}</p>
 			</div>
 		</header>
 
@@ -490,6 +647,43 @@
 			<button class="btn primary" disabled={busy || (!grants.length && !allOf(q))} onclick={() => give(q, p)}
 				>Approve</button
 			>
+		</div>
+	</div>
+{:else if f}
+	{@const { vault, owner: newcomer } = adds(f)}
+	<div class="scrim" transition:fade={{ duration: 180 }}></div>
+	<div
+		class="sheet"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="request-title"
+		transition:fly={{ y: 640, duration: 280, opacity: 1 }}
+	>
+		<div class="grip" aria-hidden="true"></div>
+		<header>
+			<Mark vault={byId.get(vault)} size={36} />
+			<div>
+				<h2 id="request-title">
+					{f.asks === 'invite'
+						? `${vaultName(f.to)} accepted: add it as an owner of ${vaultName(vault)}`
+						: `${vaultName(f.to)} said yes: co-own it`}
+				</h2>
+				<p class="soft">
+					Your next step · {f.asks === 'invite' ? `your invitation, as ${vaultName(f.from)}` : `your request, as ${vaultName(f.from)}`}{f.created
+						? ` · ${ago(f.created)}`
+						: ''}{more}
+				</p>
+			</div>
+		</header>
+
+		{#if f.why}<blockquote>“{f.why}”</blockquote>{/if}
+		<p class="soft">
+			{vaultName(f.to)} signed its part with its passkey. One touch of yours finishes it: {vaultName(newcomer)} becomes an
+			owner of {vaultName(vault)}, and acts for it as its owners do.
+		</p>
+		<div class="actions">
+			<button class="btn quiet" disabled={busy} onclick={() => (later = [...later, `finish ${f.entry}`])}>Later</button>
+			<button class="btn primary" disabled={busy} onclick={() => finish(f)}>Finish</button>
 		</div>
 	</div>
 {/if}

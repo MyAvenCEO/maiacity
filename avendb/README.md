@@ -11,7 +11,8 @@ is a device vault under its person's aven, holding sub caps of the aven's shares
 server, the device vault at the end of the seed. A vault is a flat library of entries, each a Loro document whose type
 and tags travel sealed inside its writes. Shares give a vault, or everyone, a level on any slice of a vault: relay,
 backup, read, write or owner; a keep share tells one device what to sync; an access request is a record shared with
-the vault asked. Least access is the default, and the server and relays only ever see ciphertext.
+the vault asked, for a share, to co-own it, or inviting it to co-own, each answered on one consent screen, where a new
+device asks to join too. Least access is the default, and the server and relays only ever see ciphertext.
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the one reference for how avenDB works, from first principles, and
 [`spec/README.md`](spec/README.md) lists every theorem with the Rust tests that guard it. This file says how to build,

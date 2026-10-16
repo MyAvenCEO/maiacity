@@ -43,6 +43,7 @@
 		list,
 		mayCoOwn,
 		nameOf,
+		owns,
 		roleGroup,
 		rowLevel,
 		rowWhat,
@@ -210,16 +211,55 @@
 			(x) => x.id !== vault && !v.owners.some((o) => 'vault' in o && o.vault === x.id) && mayCoOwn(world, v, x)
 		)
 	);
-	/** Makes vault `id` an owner of this one too, as its owners approve. @param {string} id */
+	/** whether the vault takes one more owner that is a vault, as the kind table says: a coop does */
+	const takesOwner = $derived.by(() => {
+		const r = kindRules(world, v.kind);
+		return !!r && r.ownedBy !== 'signers' && (r.most == null || v.owners.length < r.most);
+	});
+	/** the picker's value for a person's vault named by its id, and the id typed */
+	const BY_ID = 'id';
+	let ownerId = $state('');
+	/** the vault to make an owner: the one picked, or the one whose id is typed */
+	const newcomer = $derived(newOwner === BY_ID ? ownerId.trim().toLowerCase() : newOwner);
+	/** Whether vault `id` is the person's own, or one their vault owns: their passkey alone adds it. @param {string} id */
+	const theirs = (id) => id === world.mine || owns(world, world.mine, id);
+	/**
+	 * Makes vault `id` an owner of this one too: one of the person's own as its owners approve; anyone else's by an
+	 * invitation, a request this vault makes (`ask`, "invite"), which they accept with their passkey, and the person's
+	 * passkey finishes from the consent screen (./AccessRequest.svelte): an owner is added only with both.
+	 * @param {string} id
+	 */
 	const addOwner = (id) =>
-		api.run(`Making ${nameOf(byId.get(id))} an owner`, {
-			op: 'share',
-			over: vault,
-			who: { vault: id },
-			level: 'Owner',
-			what: 'everything',
-			as: actor
-		});
+		theirs(id)
+			? api.run(`Making ${nameOf(byId.get(id))} an owner`, {
+					op: 'share',
+					over: vault,
+					who: { vault: id },
+					level: 'Owner',
+					what: 'everything',
+					as: actor
+				})
+			: api.run(`Inviting ${byId.has(id) ? nameOf(byId.get(id)) : `vault ${short(id)}`} to co-own it`, {
+					op: 'ask',
+					to: id,
+					asks: 'invite',
+					why: `To co-own ${nameOf(v)}`,
+					as: vault
+				});
+	/** the invitations this vault made, the newest first: pending, accepted and waiting on the person's passkey, or
+	 *  done */
+	const invited = $derived(
+		asks.made.filter((m) => m.from === vault && m.asks === 'invite').sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
+	);
+	/** What an invitation came to, in words. @param {import('./vaults.js').RequestRow} m */
+	const invitedWords = (m) =>
+		m.done
+			? 'an owner now'
+			: m.answer === 'denied'
+				? 'declined'
+				: m.answer === 'granted'
+					? 'accepted: finish it on the consent screen'
+					: 'invited, not answered yet';
 	const needs = $derived(v.threshold);
 	$effect.pre(() => {
 		threshold = needs;
@@ -488,19 +528,41 @@
 				{/each}
 			</ul>
 			<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
-			{#if actor === vault && ownable.length}
+			{#if actor === vault && takesOwner}
 				<div class="add-owner">
 					<select class="field" bind:value={newOwner} aria-label="A vault to make an owner too">
 						<option value="">A vault to make an owner too…</option>
 						{#each ownable as x (x.id)}<option value={x.id}>{nameOf(x)} · {KINDS[x.kind]}</option>{/each}
+						<option value={BY_ID}>A person’s vault by its id…</option>
 					</select>
-					<button class="btn" disabled={busy || !newOwner} onclick={() => addOwner(newOwner).then(() => (newOwner = ''))}
-						>Add as owner</button
+					<button
+						class="btn"
+						disabled={busy || !/^[0-9a-f]{64}$/.test(newcomer)}
+						onclick={() => addOwner(newcomer).then(() => ([newOwner, ownerId] = ['', '']))}
+						>{!newcomer || theirs(newcomer) ? 'Add as owner' : 'Invite'}</button
 					>
 				</div>
+				{#if newOwner === BY_ID}
+					<input class="field" bind:value={ownerId} placeholder="Their vault's id: 64 hex digits" aria-label="Their vault's id" />
+				{/if}
 				<p class="soft">
-					A new owner acts for it as you do. To hand it over, add the new owner first, then remove the old one.
+					A new owner acts for it as you do. One of your own vaults is added at once; anyone else's is invited, and
+					added once they accept with their passkey and you finish it with yours. To hand it over, add the new owner
+					first, then remove the old one.
 				</p>
+			{/if}
+			{#if invited.length}
+				<ul class="list grants">
+					{#each invited as m (m.entry)}
+						<li>
+							<span class="cap">
+								<Mark vault={byId.get(m.to)} size={28} />
+								<b>{byId.has(m.to) ? nameOf(byId.get(m.to)) : `Vault ${short(m.to)}`}</b>
+								<span class="soft">{invitedWords(m)}{m.created ? ` · ${ago(m.created)}` : ''}</span>
+							</span>
+						</li>
+					{/each}
+				</ul>
 			{/if}
 			{#if recoveryMissing && lets('recovery')}
 				<p class="soft">

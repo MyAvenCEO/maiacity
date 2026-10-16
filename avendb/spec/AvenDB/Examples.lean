@@ -360,8 +360,8 @@ def subRevoked : List Edit := subCaps ++ chain 430 [
 /-! ## Scenario 28: an access request is a record and a share
 
 No new kind of edit asks for access. Alice's vault shares one new entry, its request to Bob's vault, by a share whose
-ops read it and set its `answer` to granted or denied (`answering`), and creates the entry straight in that share's
-audience: Bob's Mac reads it, Carol's doesn't. Bob's vault writes the answer through the share, which its readers
+ops read it and set its `answer` to granted or denied and its `part` (`answering`), and creates the entry straight in
+that share's audience: Bob's Mac reads it, Carol's doesn't. Bob's vault writes the answer through the share, which its readers
 count; a write through it that touches anything else counts for none. Granting is then a share of Bob's vault to
 Alice's, as any share. -/
 
@@ -378,6 +378,9 @@ def answered (touch : Touch) : List Edit := asking ++ chain 810 [
 #guard let st := view (answered (.set [.field "answer"] (some (.str "granted")))); st.counted.any (·.edit == 810)
 #guard let st := view (answered (.set [.field "why"] (some (.str "because")))); !st.counted.any (·.edit == 810)
 #guard let st := view (answered (.set [.field "answer"] (some (.str "maybe")))); !st.counted.any (·.edit == 810)
+-- and its part of an owner add it grants, which counts too
+#guard let st := view (answered (.set [.field "part"] (some (.str "AQID"))))
+  st.counted.any (·.edit == 810)
 
 /-! ## Scenarios 4 to 7: entries, writes, one document via a share, public
 

@@ -161,7 +161,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "read_file" => &["root", "size", "from", "to"],
         "creatable" => &["vault", "type", "tags", "as"],
         "taggable" => &["entry", "as"],
-        "share" => &["over", "who", "level", "what", "standing", "as"],
+        "share" => &["over", "who", "level", "what", "standing", "request", "as"],
         "keep" => &["over", "mode", "what", "device", "as"],
         "copy" => &["device", "full"],
         "revoke" => &["share", "vault", "owner", "device", "standing", "as"],
@@ -174,7 +174,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "profile" => &["vault", "name"],
         "follow" => &["vault", "on"],
         "set_limits" => &["depth"],
-        "ask" => &["to", "level", "why", "vaults", "as"],
+        "ask" => &["to", "asks", "level", "why", "vaults", "as"],
         _ => return None,
     })
 }

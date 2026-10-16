@@ -144,11 +144,15 @@ import { fieldPaths, pathWords } from './paths.js';
 
 /**
  * An access request, a record of avenDB's `request` schema the asking vault `from` writes in itself and shares with the
- * vault it asks, `to`, which may read it and set its answer alone (the `ask` op): the level it asks for, a built-in
- * group; why; the vaults it asks that level on, `to` itself where it names none, as an agent asking its aven names the
- * person's vaults; the answer, once `to` gave it; and when it was made, in seconds since 1970, where the device says.
- * @typedef {{ entry: string, from: string, to: string, level: string, why: string, vaults: string[],
- *   answer: 'granted' | 'denied' | null, created: number | null }} RequestRow
+ * vault it asks, `to`, which may read it and set its answer and its part alone (the `ask` op): what it asks for, a
+ * share (`share`), to co-own `to` (`owner`) or, an invitation, for `to` to co-own `from` (`invite`); the level, a
+ * built-in group, Owner for the two others; why; the vaults it asks that level on, `to` itself where it names none, as
+ * an agent asking its aven names the person's vaults; the answer, once `to` gave it; for an owner add, whether `to`
+ * wrote its part of the edit, signed by its passkey, for `from` to finish (`part`), and whether the owner is added
+ * (`done`); and when it was made, in seconds since 1970, where the device says.
+ * @typedef {{ entry: string, from: string, to: string, asks?: 'share' | 'owner' | 'invite', level: string, why: string,
+ *   vaults: string[], answer: 'granted' | 'denied' | null, part?: boolean, done?: boolean, created: number | null }}
+ *   RequestRow
  */
 /**
  * The access requests the device knows (the `requests` op): `asked`, those not answered yet that ask a vault it acts

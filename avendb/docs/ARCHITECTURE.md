@@ -396,17 +396,28 @@ don't, it says which vaults they let it. A reset clears its folder as the app's,
 
 An access request is a record, not a message of its own, so it needs no fifth primitive: it is a record and two shares.
 
-- **The ask.** The vault that asks writes a record of the built-in `request` schema in its own vault (`ask {to, level,
-  why, vaults}`, section 8): the vault asked (`to`), a level (Viewer, Suggester or Editor), why, in 500 characters, and
-  the vaults it names, if any. It shares that one record with the vault asked, in a group of its own, `Answer`
-  (`world::answering`): read, and set `answer` to `"granted"` or `"denied"` and nothing else, on the main line. A write
-  through it that changes anything else counts for no reader (C3, Lab scenario 28).
+- **The ask.** The vault that asks writes a record of the built-in `request` schema in its own vault (`ask {to, asks,
+  level, why, vaults}`, section 8): the vault asked (`to`), what it asks for (`asks`: a share, `"share"`, at a level,
+  Viewer, Suggester or Editor; to co-own the vault asked, `"owner"`; or, an invitation, for the vault asked to co-own
+  the one asking, `"invite"`, both at Owner), why, in 500 characters, and the vaults it names, if any. It shares that
+  one record with the vault asked, in a group of its own, `Answer` (`world::answering`): read, and set `answer` to
+  `"granted"` or `"denied"`, and `part`, on the main line, and nothing else. A write through it that changes anything
+  else counts for no reader (C3, Lab scenario 28).
 - **Delivery.** Sync carries the record as any other, over avenDB's own ALPN: straight to the devices that act for the
   asked vault, through the relay where it must, or from any peer that keeps the asking vault, as avenCEO server does
   while it backs that vault up. The answer comes back the same way. The server is one such peer, not a mailbox.
 - **The answer.** The `requests` op lists the requests a vault the device acts for was asked and hasn't answered
   (`asked`), and those such a vault made (`made`). Approving is the `share` the vault asked gives, then `set
   ["answer"]` to `"granted"`, acting as it; denying is the set alone, to `"denied"`.
+- **An owner add.** Adding an owner takes the vault's approval and the newcomer's consent (T2), so two people's
+  passkeys sign one edit, one after the other, and the request carries it between them. Granting a request to co-own,
+  or accepting an invitation, is a `share` of Owner to the newcomer that names the request (`request`): the passkey of
+  the vault asked signs its part of the edit that adds the owner (`Lab::part`), which the device writes into the
+  request (`part`, the signed edit's wire bytes in base64url, with the signatures so far) with `"granted"`. Once that
+  syncs back, the vault that asked finishes it with the same op: its passkey signs the rest of a part that adds exactly
+  the owner the request names and waits on that passkey alone (`Lab::finish`), and the edit is kept. The rules check it
+  as every owner add, so a request adds nobody by itself. The `requests` op says of each such request whether it holds
+  a part and whether the owner is added (`done`); the consent screen shows the finish as the asker's next step.
 
 An agent device that is no vault's device yet can write no record, so its first request is a file it leaves for the
 desktop app (`<device>.request`): who asks, by its device's name and key, a level, why, the vaults it names, if any, and
@@ -415,7 +426,11 @@ does, a request its device vault writes to the aven over it, and leaves no file.
 
 The page shows both kinds on its one consent screen, and the person picks all their vaults or only some, a level each,
 and approves or denies; "All my vaults, now and later" gives a standing grant (above), to the aven and from the aven
-to the agent, so a vault founded later gives both too. If their vault owns no aven yet, they name the one it founds. Approving an agent's file (`grant
+to the agent, so a vault founded later gives both too. If their vault owns no aven yet, they name the one it founds.
+The same screen, in the same card, asks a person to approve a request to co-own, to accept an invitation, to finish
+an owner add, and, on a new browser opened on a device's link, to let that browser join their vault: its offer stays
+how it reaches the vault, and Approve is the passkey's one touch that unlocks it and adds it. Approving an agent's file
+(`grant
 [name, device, shares, avenName]`) adds the agent by the flow above, in one ceremony at most: the aven, founded and
 named if it is new, the agent's device vault under it, named after the agent, founded if it is new, and the edit that
 adds the device, which the device signs too; for the same harness on their other Mac, only that edit, to the agent's
@@ -576,7 +591,8 @@ ciphertext of all its entries and opens none. With backups off it gives Relay in
 devices from its log, to let them through its relay, and keeps nothing of its entries (T26). The person switches between
 the two with the `back_up` op, for their vault and the vaults it acts for at once (`world::server_level`). Every vault
 founded under a person gives avenCEO server the same level as the person's vault has: it is one of the person's
-standing grants (`engine::follow_standing`, section 3). Each of these shares is issued by the vault it is over and rests on none.
+standing grants (`engine::follow_standing`, section 3). Each of these shares is issued by the vault it is over and
+rests on none.
 
 ### Keep shares
 
@@ -884,7 +900,7 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
 | `may` | `ops`, `as` | For each change op: `true`, `{"approve": {signers}}`, or the refusal |
 | `shares` | `over`, `as` | Every share over a vault, owners and devices among them, each with `may` of its revocation |
-| `requests` | none | The access requests the device knows (section 3): `{asked, made}`, those still unanswered that a vault it acts for is asked, and those a vault it acts for made, each `{entry, from, to, level, why, vaults, answer, created}` |
+| `requests` | none | The access requests the device knows (section 3): `{asked, made}`, those still unanswered that a vault it acts for is asked, and those a vault it acts for made, each `{entry, from, to, asks, level, why, vaults, answer, part, created}`, `part` whether the vault asked signed its part of an owner add, and for one `done`, whether the owner is added |
 
 A job (`crates/avendb-net/src/jobs.rs`) is a file brought into the store as its bytes are sealed (`bring`, in bytes), a
 file kept whole as its pieces come from its holders (`keep`, in pieces), or the edits a peer holds for the device,
@@ -926,14 +942,14 @@ entry of its type (section 9).
 
 | Op | What it makes | Approval |
 |---|---|---|
-| `share {over, who, level, what, as}` | `who` is `{"vault": id}`, `"everyone"`, `{"signer": id}` or `{"device": id}`; `level` a built-in group's name, a group of its own `{name, ops}`, a keep level, or `"actsFor"`; `what` is `"everything"` or a `where` of labels. Owner on everything to a vault or a signer adds a co-owner (`Sharing::Owner`), `actsFor` a device (`Sharing::Device`), a keep level a keep share, anything else a grant (`Sharing::Grant`) resting, where the acting vault isn't the vault itself, on a share it holds that the one rule lets it rest on (section 5, `world::parent`): an owner share first, or, to a vault it owns, one at that level or more. `"standing": true` makes a standing grant, all of the acting vault's own vaults now and later (section 3): a grant on everything, below Owner, to a vault, given on each vault it owns now and followed by each founded later. `{"edit"}` or `{"share"}` | Owners, devices, Owner grants |
+| `share {over, who, level, what, as}` | `who` is `{"vault": id}`, `"everyone"`, `{"signer": id}` or `{"device": id}`; `level` a built-in group's name, a group of its own `{name, ops}`, a keep level, or `"actsFor"`; `what` is `"everything"` or a `where` of labels. Owner on everything to a vault or a signer adds a co-owner (`Sharing::Owner`), `actsFor` a device (`Sharing::Device`), a keep level a keep share, anything else a grant (`Sharing::Grant`) resting, where the acting vault isn't the vault itself, on a share it holds that the one rule lets it rest on (section 5, `world::parent`): an owner share first, or, to a vault it owns, one at that level or more. `"standing": true` makes a standing grant, all of the acting vault's own vaults now and later (section 3): a grant on everything, below Owner, to a vault, given on each vault it owns now and followed by each founded later. With `request`, Owner on everything to a vault is the owner add that request asks for, signed in part as the vault asked grants it (`{"entry", "part"}`) and finished by the vault that asked (`{"edit"}`), section 3. `{"edit"}` or `{"share"}` | Owners, devices, Owner grants |
 | `keep {over, mode, what, device, as}` | A keep share to one of the acting vault's devices, this one unless named; `mode` is `"whole"`, `"opened"` or `"never"`. `{"share"}` | Never |
 | `copy {device, full}` | The copy setting of one of the person's devices, this one unless named: a wide keep share their vault issues over itself, Whole when `full`, else Opened; the device's other copy shares are revoked. `{"share"}` | Never |
 | `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}`; with `"standing": true`, a standing grant on every vault it reached, `{"edits"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
 | `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenCEO server's share among them, and a profile on each. `{"vaults"}` | Always |
 | `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}` | Never |
-| `ask {to, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
+| `ask {to, asks, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; or, `asks` `"owner"`, to co-own `to`, or `"invite"`, for `to` to co-own the acting vault, at Owner, as the kind table lets it; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
 | `back_up {on}` | avenCEO server's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
 | `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
 | `card {name}`, `profile {vault, name}` | The device's card in its person's vault; a vault's profile. `{"wrote"}` | Never |
@@ -1090,7 +1106,8 @@ sparks it grows from, and the artifacts on their canvases are its sources), an *
 thumbnail of one shape, 16:9, 9:16, 1:1, 4:5 or 5:2, in layers as rows, a picture, a cut-out, words or a badge, each
 placed in percent of its canvas, its pictures and the card rendered from them Library files by link, the story it
 belongs to and the hook it carries; an A/B card is a variant of another), and an access **request** (the vault
-asked, a level, why, the vaults it names and, once given, its answer: `"granted"` or `"denied"`, section 3). A note
+asked, what it asks for, a share, to co-own or an invitation, a level, why, the vaults it names and, once given, its
+answer: `"granted"` or `"denied"`, and the part of an owner add the vault asked signed, section 3). A note
 keeps its type, a document; the page lists notes among the sparks, and the world gives a spark's record beside its
 title and text (`world::What::Note`). Every shipped schema starts at v1, and a kind that grew ships its older
 versions beside the newest and the lenses between them (`lens::blobs::LENSES`), so what was written under an older

@@ -50,18 +50,25 @@ pub const FILE: &str = "file";
 /// The type of an access request: a record of avenDB's own `request` schema (`lens::REQUEST_V1`) that the asking vault
 /// writes in its own vault and shares, that entry alone, with the vault it asks, by a share of the group `ANSWER` (the
 /// ops engine's `ask`). So a request is a record and a share, which sync carries like any other, and its answer the
-/// share the vault asked gives, if it grants it, and the answer it sets (`requests`).
+/// share the vault asked gives, if it grants it, and the answer it sets (`requests`). It asks for a share, to co-own
+/// the vault asked, or, as an invitation, for the vault asked to co-own the asking one (`Request::adds`): granting one
+/// of those two writes the asked vault's part of the edit that adds the owner, which the vault that asked finishes.
 pub const REQUEST: &str = "request";
 
 /// The name of the group of ops an access request goes to the vault it asks by (`answering`).
 pub const ANSWER: &str = "Answer";
 
-/// The ops an access request goes to the vault it asks by (`ANSWER`): read it, and set its `answer`, on its main line,
-/// to "granted" or "denied"; nothing else.
+/// The ops an access request goes to the vault it asks by (`ANSWER`): read it, set its `answer`, on its main line, to
+/// "granted" or "denied", and its `part`, the asked vault's part of an owner add it grants; nothing else.
 pub fn answering() -> Vec<rules::Op> {
     let answers = ["granted", "denied"].map(|a| rules::Scalar::Text(a.into())).to_vec();
-    let answer = vec![rules::Step::Field("answer".into())];
-    vec![rules::Op::Read, rules::Op::Set { path: answer, to: Some(answers), on: Some(rules::On::Main) }]
+    let (answer, part) = (vec![rules::Step::Field("answer".into())], vec![rules::Step::Field("part".into())]);
+    let main = Some(rules::On::Main);
+    vec![rules::Op::Read, rules::Op::Set { path: answer, to: Some(answers), on: main }, rules::Op::Set {
+        path: part,
+        to: None,
+        on: main,
+    }]
 }
 
 /// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
@@ -692,31 +699,46 @@ pub fn file(title: &str, media: &str, device: SignerId) -> Item {
     own(FILE, json!({ "title": title, "media": media }), device)
 }
 
-/// An access request as a device reads it (`requests`): its entry, the vault that asks, the one it asks, the level it
-/// asks for (a built-in group's name), why, the vaults it asks that level on (none: `to` itself), the answer `to` set,
-/// if it did, and when it was asked, in seconds since 1970.
+/// An access request as a device reads it (`requests`): its entry, the vault that asks, the one it asks, what it asks
+/// for (`asks`: "share", "owner" or "invite"), the level (a built-in group's name, Owner for the two others), why, the
+/// vaults it asks that level on (none: `to` itself), the answer `to` set, if it did, the part of the owner add `to`
+/// signed as it granted it (`part`, base64url; empty for none), and when it was asked, in seconds since 1970.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     pub entry: EntryId,
     pub from: VaultId,
     pub to: VaultId,
+    pub asks: String,
     pub level: String,
     pub why: String,
     pub vaults: Vec<VaultId>,
     pub answer: Option<String>,
+    pub part: String,
     pub created: u64,
 }
 
 impl Request {
+    /// The owner add it asks for: the vault that takes an owner, and the vault that becomes one. To co-own (`"owner"`),
+    /// the vault asked takes the one that asks; invited (`"invite"`), the other way round. None for a share.
+    pub fn adds(&self) -> Option<(VaultId, VaultId)> {
+        match self.asks.as_str() {
+            "owner" => Some((self.to, self.from)),
+            "invite" => Some((self.from, self.to)),
+            _ => None,
+        }
+    }
+
     pub fn to_json(&self) -> Value {
         json!({
             "entry": hex(&self.entry.0),
             "from": hex(&self.from.0),
             "to": hex(&self.to.0),
+            "asks": self.asks,
             "level": self.level,
             "why": self.why,
             "vaults": self.vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
             "answer": self.answer,
+            "part": !self.part.is_empty(),
             "created": self.created,
         })
     }
@@ -736,10 +758,12 @@ pub fn requests(lab: &Lab, me: SignerId) -> Vec<Request> {
             entry: en.id,
             from: en.vault,
             to: vault(r.get("to")?)?,
+            asks: text("asks").unwrap_or_else(|| "share".into()),
             level: text("level")?,
             why: text("why").unwrap_or_default(),
             vaults,
             answer: text("answer"),
+            part: text("part").unwrap_or_default(),
             created: meaning.attrs.created,
         })
     };
@@ -1037,4 +1061,32 @@ pub fn standing(lab: &Lab, me: SignerId, mine: VaultId) -> Vec<Standing> {
     }
     out.sort_by_key(|s| std::cmp::Reverse(s.level.rank()));
     out
+}
+
+/// The passkey that approves for vault `v` alone, as `st` reads it: its root; else, where one owner approves a change
+/// (its threshold one), its first owner that is a signer, or that of its first owner that is a vault, up the chain.
+/// So a person's passkey approves for their vault and for a coop it owns alone. None where it takes more than one.
+pub fn approver(st: &State, v: VaultId) -> Option<SignerId> {
+    let mut at = v;
+    for _ in 0..=st.vaults().len() {
+        let vault = st.vault(at)?;
+        if let Some(root) = vault.root {
+            return Some(root);
+        }
+        if vault.threshold != 1 {
+            return None;
+        }
+        let signer = vault.owners.iter().find_map(|o| match o {
+            Principal::Signer(s) => Some(*s),
+            Principal::Vault(_) => None,
+        });
+        if signer.is_some() {
+            return signer;
+        }
+        at = vault.owners.iter().find_map(|o| match o {
+            Principal::Vault(x) => Some(*x),
+            Principal::Signer(_) => None,
+        })?;
+    }
+    None
 }

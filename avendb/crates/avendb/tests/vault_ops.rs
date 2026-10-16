@@ -775,3 +775,96 @@ fn all_my_vaults_now_and_later_is_a_standing_grant_that_every_vault_founded_late
     let plain = json!({ "op": "revoke", "share": plain.to_hex(), "standing": true });
     assert_eq!(refused(&run(&mut w, mac, plain)), "BadOp", "a plain grant is no standing grant");
 }
+
+/// A coop of Bob's vault alone, founded on his Mac, whose card Alice's and Carol's Macs take.
+fn bobs_coop(w: &mut World, nonce: u64) -> VaultId {
+    let owners = vec![Principal::Vault(w.bob)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+    let coop = VaultId::from(w.lab.submit(w.mac_b, &[w.passkey_b], genesis).expect("Bob's coop"));
+    for d in [w.mac_a, w.mac_c] {
+        w.lab.share_contact(w.mac_b, d, coop);
+    }
+    w.lab.sync_all(0);
+    coop
+}
+
+#[test]
+fn a_request_to_co_own_and_an_invitation_are_each_signed_by_both_passkeys_one_after_the_other() {
+    let mut w = cast::world();
+    w.lab.sync_all(0);
+    let (mac, passkey, alice, mac_b, passkey_b, bob) = (w.mac_a, w.passkey_a, w.alice, w.mac_b, w.passkey_b, w.bob);
+    let (mac_c, passkey_c, carol) = (w.mac_c, w.passkey_c, w.carol);
+    let garden = bobs_coop(&mut w, 0);
+    let ask = |to: VaultId, asks: &str, by: VaultId| {
+        json!({ "op": "ask", "to": to.to_hex(), "asks": asks, "why": "To keep it with you", "as": by.to_hex() })
+    };
+    let requests = |w: &mut World, d: SignerId| ok(run(w, d, json!({ "op": "requests" })));
+    let owner = |over: VaultId, who: VaultId, entry: &Value, by: VaultId| {
+        json!({ "op": "share", "over": over.to_hex(), "who": to(who), "level": "Owner", "request": entry,
+            "as": by.to_hex() })
+    };
+    let owns =
+        |w: &World, d: SignerId, v: VaultId, who: VaultId| vault(&w.lab, d, v).owners.contains(&Principal::Vault(who));
+    // what a request to co-own is not: at a level of its own, of no kind avenDB knows, or of a vault no person co-owns
+    let at_editor = json!({ "op": "ask", "to": garden.to_hex(), "asks": "owner", "level": "Editor", "why": "x" });
+    let leased = json!({ "op": "ask", "to": garden.to_hex(), "asks": "lease", "why": "x" });
+    assert_eq!([refused(&run(&mut w, mac, at_editor)), refused(&run(&mut w, mac, leased))], ["BadOp", "BadOp"]);
+    assert_eq!(refused(&run(&mut w, mac_b, ask(alice, "invite", bob))), "WrongOwnerKind", "passkeys own a person");
+
+    // Alice asks to co-own Bob's garden: a request at Owner, which his Mac lists to answer
+    let entry = ok(run(&mut w, mac, ask(garden, "owner", alice)))["entry"].clone();
+    w.lab.sync_all(1);
+    let q = requests(&mut w, mac_b)["asked"][0].clone();
+    let said = (&q["entry"], &q["asks"], &q["level"], &q["part"], &q["done"]);
+    assert_eq!(said, (&entry, &json!("owner"), &json!("Owner"), &json!(false), &json!(false)));
+    // an Owner share alone adds no other person: she hasn't consented to it
+    let mut plain = share(garden, to(alice), json!("Owner"), json!("everything"));
+    plain["as"] = json!(garden.to_hex());
+    assert_eq!(refused(&run(&mut w, mac_b, plain)), "NoConsent");
+    // granting it, Bob's passkey signs its part of the edit, which goes into the request with "granted": she owns
+    // nothing yet, and nobody but her passkey finishes it
+    let grant = owner(garden, alice, &entry, garden);
+    assert_eq!(may(&mut w, mac_b, json!([grant.clone()])), [approves(&[passkey_b])], "his passkey, alone");
+    assert_eq!(refused(&run(&mut w, mac, owner(garden, alice, &entry, alice))), "BadOp", "it waits on Bob");
+    assert_eq!(approved(&mut w, mac_b, passkey_b, grant.clone()), json!({ "entry": entry, "part": true }));
+    assert!(!owns(&w, mac_b, garden, alice), "a part adds nobody");
+    assert_eq!(requests(&mut w, mac_b)["asked"], json!([]), "answered, it isn't asked");
+    assert_eq!(refused(&run(&mut w, mac_b, grant)), "NotActing", "the vault that asked finishes it");
+    w.lab.sync_all(2);
+    let made = requests(&mut w, mac)["made"][0].clone();
+    assert_eq!((&made["answer"], &made["part"], &made["done"]), (&json!("granted"), &json!(true), &json!(false)));
+    // she finishes it with her passkey: the edit the rules check as every owner add, now with both signatures
+    assert_eq!(refused(&run(&mut w, mac, owner(garden, carol, &entry, alice))), "BadOp", "only the owner it asks");
+    let finish = owner(garden, alice, &entry, alice);
+    assert_eq!(may(&mut w, mac, json!([finish.clone()])), [approves(&[passkey])]);
+    assert!(approved(&mut w, mac, passkey, finish)["edit"].is_string());
+    assert!(owns(&w, mac, garden, alice));
+    w.lab.sync_all(3);
+    assert!(owns(&w, mac_b, garden, alice), "Bob's Mac takes it too");
+    assert_eq!(requests(&mut w, mac)["made"][0]["done"], true);
+
+    // Bob's orchard invites Carol: accepting, her passkey signs its part; then Bob's passkey finishes it
+    let orchard = bobs_coop(&mut w, 1);
+    let entry = ok(run(&mut w, mac_b, ask(carol, "invite", orchard)))["entry"].clone();
+    w.lab.sync_all(4);
+    let q = requests(&mut w, mac_c)["asked"][0].clone();
+    assert_eq!((&q["from"], &q["asks"], &q["level"]), (&json!(orchard.to_hex()), &json!("invite"), &json!("Owner")));
+    let accept = owner(orchard, carol, &entry, carol);
+    assert_eq!(approved(&mut w, mac_c, passkey_c, accept), json!({ "entry": entry, "part": true }));
+    assert!(!owns(&w, mac_c, orchard, carol));
+    w.lab.sync_all(5);
+    assert_eq!(requests(&mut w, mac_b)["made"].as_array().map(|m| m.last().cloned()).flatten().unwrap()["part"], true);
+    assert!(approved(&mut w, mac_b, passkey_b, owner(orchard, carol, &entry, orchard))["edit"].is_string());
+    assert!(owns(&w, mac_b, orchard, carol));
+    w.lab.sync_all(6);
+    assert!(owns(&w, mac_c, orchard, carol), "Carol co-owns the orchard");
+
+    // a request denied finishes nothing
+    let entry = ok(run(&mut w, mac_c, ask(garden, "owner", carol)))["entry"].clone();
+    w.lab.sync_all(7);
+    let deny = json!({ "op": "set", "entry": entry, "path": ["answer"], "value": "denied", "as": garden.to_hex() });
+    assert!(ok(run(&mut w, mac_b, deny))["edit"].is_string());
+    w.lab.sync_all(8);
+    assert_eq!(refused(&run(&mut w, mac_c, owner(garden, carol, &entry, carol))), "BadOp");
+    assert!(!owns(&w, mac_c, garden, carol));
+}
