@@ -1,0 +1,11 @@
+{
+	"type": "view",
+	"for": "genui",
+	"title": "A village in three.js",
+	"note": "An MCP App in plain JS: seven hexes, a dome on each. Click a dome: it tells the page over JSON-RPC.",
+	"kind": "html",
+	"libs": [
+		"three"
+	],
+	"height": 460
+}

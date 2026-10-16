@@ -1,0 +1,7 @@
+{
+	"type": "view",
+	"for": "genui",
+	"title": "Dome planner",
+	"note": "Declarative JSON drawn by our components; its logic runs in QuickJS.",
+	"kind": "a2ui"
+}

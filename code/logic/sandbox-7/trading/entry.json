@@ -1,0 +1,13 @@
+{
+	"type": "logic",
+	"for": "sandbox-7",
+	"title": "Trading",
+	"card": "trading",
+	"hooks": [
+		"want",
+		"spare",
+		"haggle",
+		"match",
+		"price"
+	]
+}
