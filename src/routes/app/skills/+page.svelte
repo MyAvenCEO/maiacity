@@ -4,7 +4,7 @@
 	links between the skills, and a search through all of them. An admin's. ?skill=<id>&file=<file> opens one page.
 -->
 <script lang="ts">
-	import { marked } from 'marked';
+	import { markdown } from '$lib/markdown/index.js';
 	import { onMount, tick } from 'svelte';
 	import { CREW, SKILLS, skillById, slug, type Doc, type Skill } from '$lib/skills';
 
@@ -22,9 +22,6 @@
 	});
 	const GROUP_COLOUR: Record<string, string> = { Producer: '#b8893f', Story: '#c4622d', Picture: '#4f7a55', Post: '#5d73a6', Out: '#8d6a99' };
 
-	const renderer = new marked.Renderer();
-	renderer.heading = ({ tokens, depth, text }) => `<h${depth} id="${slug(text)}">${marked.Parser.parseInline(tokens)}</h${depth}>`;
-
 	const link = (skill: string, file: string, inner: string) =>
 		`<a class="wiki" data-skill="${skill}" data-file="${file}" href="?skill=${skill}${file === 'SKILL.md' ? '' : `&file=${file}`}">${inner}</a>`;
 	/**
@@ -32,7 +29,7 @@
 	 * skill named just before it ("`storyteller`, `retention.md`")
 	 */
 	function html(s: Skill, d: Doc): string {
-		const raw = marked.parse(d.body.replace(/^# .+\n+/, ''), { gfm: true, renderer, async: false }) as string;
+		const raw = markdown(d.body.replace(/^# .+\n+/, ''), { ids: slug }) as string;
 		let out = '', last = 0, named: { id: string; end: number } | null = null;
 		for (const m of raw.matchAll(/<code>([a-z0-9-]+(?:\.md)?)<\/code>/g)) {
 			const [whole, name] = m as unknown as [string, string];
