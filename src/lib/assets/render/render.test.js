@@ -138,6 +138,18 @@ test('materials the same are kept once; a different setting is another; the kit\
 		return s;
 	};
 	expect(sh(kept).fragmentShader).toContain('labCap');
+	// a cut face in the colour the kit gave it (engine 3), told apart from the same solid with another
+	const brass = new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide });
+	brass.userData.custom = true;
+	brass.userData.cap = { color: 0xc8a050, rough: 0.3, metal: 1 };
+	const keptBrass = presets.of(brass);
+	expect(keptBrass).not.toBe(kept);
+	const u = sh(keptBrass).uniforms;
+	expect(u.uCapColor.value.getHex()).toBe(0xc8a050);
+	expect(u.uCapMetal.value).toBe(1);
+	expect(sh(kept).uniforms.uCapColor.value.getHex()).toBe(new THREE.Color(0.56, 0.085, 0.045).getHex());
+	// one of ours handed back is itself (a moved copy wears what its level wears)
+	expect(presets.of(keptBrass)).toBe(keptBrass);
 	expect(sh(kept).fragmentShader).toContain('discard');
 	const plain = sh(presets.of(a));
 	expect(plain.fragmentShader).not.toContain('labCap');

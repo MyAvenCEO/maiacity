@@ -5,7 +5,8 @@
  * budget is refused with the reason, so an asset can be no more than geometry, plain materials and pictures.
  *
  * It reads every format a frozen engine still in use hands back (./serialize.js): 0 from engine 1, each texture with
- * its own picture; 1 from engine 2 on, each picture once in `images`, named by the textures that show it.
+ * its own picture; 1 from engine 2, each picture once in `images`, named by the textures that show it; 2 from engine 3
+ * on, and its controls as numbers (./bake.js), kept on the root's `userData.controls` for ../controls.js to play.
  */
 import * as THREE from 'three';
 import { FORMAT, MATERIALS } from './serialize.js';
@@ -15,10 +16,10 @@ import { FORMAT, MATERIALS } from './serialize.js';
  * picture it names, so there may be one per material map; the pictures are what weigh (`images`, each at most
  * `texturePixels` a side; in format 0 each texture its own picture, so both counts hold for engine 1 as before).
  */
-export const BUDGET = { nodes: 20000, geometries: 20000, materials: 2000, textures: 2000, images: 64, texturePixels: 4096, tris: 2_000_000, vertices: 4_000_000, instances: 100_000 };
+export const BUDGET = { nodes: 20000, geometries: 20000, materials: 2000, textures: 2000, images: 64, texturePixels: 4096, tris: 2_000_000, vertices: 4_000_000, instances: 100_000, controls: 32, controlNumbers: 8_000_000 };
 
-/** the formats it reads: engine 1's and the one ./serialize.js writes now */
-export const FORMATS = [0, FORMAT];
+/** the formats it reads: engine 1's, engine 2's and the one ./serialize.js writes now */
+export const FORMATS = [0, 1, FORMAT];
 
 const ARRAYS = [Float32Array, Uint8Array, Uint16Array, Uint32Array, Int8Array, Int16Array, Int32Array];
 const fail = (why) => {
@@ -115,8 +116,11 @@ function material(x, i, textures) {
 		else if (typeof m[k] === typeof v && (typeof v === 'number' ? Number.isFinite(v) : typeof v === 'boolean')) m[k] = v;
 	}
 	m.name = String(x.name ?? '').slice(0, 80);
-	// it had a shader of its own in the box, which never crosses (the kit's section caps): our renderer gives it ours
+	// it had a shader of its own in the box, which never crosses (the kit's section caps): our renderer gives it ours,
+	// with the cut face it said it has (format 2)
 	if (x.custom === true) m.userData.custom = true;
+	if (x.custom === true && x.cap && typeof x.cap === 'object')
+		m.userData.cap = { color: int(x.cap.color, 0x1000000, `material ${i} cap`), rough: Math.min(1, Math.max(0, num(x.cap.rough, 'cap'))), metal: Math.min(1, Math.max(0, num(x.cap.metal, 'cap'))) };
 	return m;
 }
 
@@ -193,5 +197,57 @@ export function rebuild(data) {
 	const root = objs[0];
 	root.userData.ref = typeof data.ref === 'string' ? data.ref.slice(0, 200) : '';
 	root.userData.stats = { tris: Math.round(tris), vertices };
+	root.userData.controls = data.format >= 2 ? controlsOf(data.controls, objs, root) : [];
 	return root;
+}
+
+/**
+ * Its controls, checked: each moves only nodes there are, with as many finite numbers as its samples call for, and
+ * names them anew by their place in the walk of the tree as built here (each node before its children), which a copy
+ * of the tree (`clone`) walks the same.
+ */
+function controlsOf(list, objs, root) {
+	if (list == null) return [];
+	if (!Array.isArray(list) || list.length > BUDGET.controls) fail('controls');
+	const walked = new Map();
+	root.traverse((o) => walked.set(o, walked.size));
+	const seen = new Set();
+	let numbers = 0;
+	return list.map((c, i) => {
+		const id = typeof c?.id === 'string' && /^[a-z][a-zA-Z0-9]{0,23}(\.[a-zA-Z0-9]{1,24})?$/.test(c.id) && !seen.has(c.id) ? c.id : fail(`control ${i}: its name`);
+		seen.add(id);
+		const S = int(c.samples, 130, `control ${id} samples`);
+		if (S < 2) fail(`control ${id} samples`);
+		const from = num(c.from, `control ${id} from`), to = num(c.to, `control ${id} to`), rest = num(c.rest, `control ${id} rest`);
+		if (from === to || rest < Math.min(from, to) || rest > Math.max(from, to)) fail(`control ${id} range`);
+		const nodes = typed(c.nodes, `control ${id} nodes`);
+		if (!(nodes instanceof Uint32Array)) fail(`control ${id} nodes`);
+		const m = nodes.length;
+		const trs = typed(c.trs, `control ${id} places`);
+		if (!(trs instanceof Float32Array) || trs.length !== S * m * 10) fail(`control ${id} places`);
+		finite(trs, `control ${id} places`);
+		const visible = typed(c.visible, `control ${id} showing`);
+		if (!(visible instanceof Uint8Array) || visible.length !== S * m) fail(`control ${id} showing`);
+		numbers += trs.length + visible.length;
+		const node = (k, what) => objs[int(k, objs.length, `control ${id} ${what}`)];
+		const morph = (Array.isArray(c.morph) ? c.morph : []).map((x) => {
+			const o = node(x?.node, 'blend shapes');
+			const w = typed(x.weights, `control ${id} blend shapes`);
+			const k = o.morphTargetInfluences?.length ?? 0;
+			if (!(w instanceof Float32Array) || !k || w.length !== S * k) fail(`control ${id} blend shapes`);
+			finite(w, `control ${id} blend shapes`);
+			numbers += w.length;
+			return { node: walked.get(o), weights: w };
+		});
+		const instances = (Array.isArray(c.instances) ? c.instances : []).map((x) => {
+			const o = node(x?.node, 'instances');
+			const a = typed(x.matrices, `control ${id} instances`);
+			if (!o.isInstancedMesh || !(a instanceof Float32Array) || a.length !== S * o.count * 16) fail(`control ${id} instances`);
+			finite(a, `control ${id} instances`);
+			numbers += a.length;
+			return { node: walked.get(o), matrices: a };
+		});
+		if (numbers > BUDGET.controlNumbers) fail(`controls hold more than ${BUDGET.controlNumbers} numbers`);
+		return { id, from, to, rest, samples: S, choice: c.choice === true, nodes: Uint32Array.from(nodes, (k) => walked.get(node(k, 'node'))), trs, visible, morph, instances };
+	});
 }

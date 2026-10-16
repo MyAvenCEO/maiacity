@@ -7,10 +7,13 @@
  *
  * Format 0 (engine 1): each texture carried its own pixels, so a picture shared by many textures (the kit's, one per
  * material for its own tiling) went out once for each. Format 1 (engine 2): each picture goes out once, in `images`,
- * and a texture names the one it shows (`image`).
+ * and a texture names the one it shows (`image`). Format 2 (engine 3): and its controls, played and written down in
+ * the box (./bake.js), each naming the parts it moves by their place in the walk of the tree (each node before its
+ * children, the order `nodes` is in); and a material with the kit's section caps says how its cut face looks (`cap`:
+ * its colour, roughness and metalness, as the kit gave them), where its shader code, which stays, drew it.
  */
 
-export const FORMAT = 1;
+export const FORMAT = 2;
 
 /** the material settings that go out as they are (numbers, booleans, colours) */
 const PLAIN = ['roughness', 'metalness', 'opacity', 'transparent', 'side', 'vertexColors', 'flatShading', 'alphaTest', 'depthWrite', 'depthTest', 'transmission', 'ior', 'thickness', 'clearcoat', 'clearcoatRoughness', 'sheen', 'sheenRoughness', 'envMapIntensity', 'emissiveIntensity', 'bumpScale', 'wireframe', 'size', 'sizeAttenuation', 'linewidth', 'shininess', 'specularIntensity', 'iridescence', 'anisotropy', 'dispersion', 'aoMapIntensity', 'lightMapIntensity', 'displacementScale', 'displacementBias', 'toneMapped', 'fog'];
@@ -19,10 +22,29 @@ const MAPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'b
 export const MATERIALS = ['MeshStandardMaterial', 'MeshPhysicalMaterial', 'MeshBasicMaterial', 'MeshLambertMaterial', 'MeshPhongMaterial', 'MeshToonMaterial', 'LineBasicMaterial', 'LineDashedMaterial', 'PointsMaterial', 'MeshMatcapMaterial', 'ShadowMaterial'];
 
 /**
+ * How a material's cut face looks, as the kit's section caps gave it (../kit.js `capPatch`: its colour on
+ * `userData.capColor`, its roughness and metalness only in the shader code it adds, so that code is asked for them on a
+ * shader of nothing); null for a material without.
+ */
+function capOf(m) {
+	const sh = { uniforms: {}, vertexShader: '', fragmentShader: '', defines: {} };
+	try {
+		m.onBeforeCompile(sh, null);
+	} catch {
+		// its code wanted a real shader: its colour alone, if it has one
+	}
+	const color = sh.uniforms.uCapColor?.value?.isColor ? sh.uniforms.uCapColor.value : m.userData?.capColor?.isColor ? m.userData.capColor : null;
+	if (!color) return null;
+	const unit = (v, or) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : or);
+	return { color: color.getHex(), rough: unit(sh.uniforms.uCapRough?.value, 0.55), metal: unit(sh.uniforms.uCapMetal?.value, 0) };
+}
+
+/**
  * @param {import('three').Object3D} root
+ * @param {{ controls?: object[] }} [o] its controls, as ./bake.js wrote them down
  * @returns {Promise<{ data: object, transfer: Transferable[] }>}
  */
-export async function serialize(root) {
+export async function serialize(root, { controls = [] } = {}) {
 	root.updateMatrixWorld(true);
 	const nodes = [];
 	const geometries = [];
@@ -92,7 +114,8 @@ export async function serialize(root) {
 		for (const k of COLORS) if (m[k]?.isColor) params[k] = m[k].getHex(); else if (Array.isArray(m.uniforms?.[k]?.value)) params[k] = m.uniforms[k].value;
 		if (type !== 'MeshStandardMaterial' || !m.isShaderMaterial) for (const k of MAPS) if (m[k]?.isTexture) params[k] = texture(m[k]);
 		if (m.normalScale?.isVector2) params.normalScale = [m.normalScale.x, m.normalScale.y];
-		materials.push({ type, params, name: m.name, custom: !!custom });
+		const cap = custom ? capOf(m) : null;
+		materials.push({ type, params, name: m.name, custom: !!custom, ...(cap && { cap }) });
 		matAt.set(m, materials.length - 1);
 		return materials.length - 1;
 	};
@@ -115,8 +138,13 @@ export async function serialize(root) {
 		return i;
 	};
 	visit(root);
+	for (const c of controls) {
+		for (const a of [c.nodes, c.trs, c.visible]) array(a);
+		for (const x of c.morph) array(x.weights);
+		for (const x of c.instances) array(x.matrices);
+	}
 	await Promise.all(pending);
 	stats.tris = Math.round(stats.tris);
 	const transfer = [...buffers, ...images.flatMap((x) => (x.bitmap ? [x.bitmap] : []))];
-	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, images, stats }, transfer };
+	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, images, controls, stats }, transfer };
 }

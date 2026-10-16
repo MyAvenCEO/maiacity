@@ -14,6 +14,10 @@
  *   rig that carries it, at once or in time;
  * - what leaves is plain data (./serialize.js) and the asset's card (../card.js), and nothing else.
  *
+ * Version 3 adds: the controls a built object offers (a tent's pitch, a pickup's doors, a sealed asset's explode and
+ * build: the functions ./bake.js knows on its userData) are played in the box from 0 to 1 and leave as numbers, with
+ * the object as built put back first (format 2).
+ *
  * Messages: { id, op: 'build', recipe: { hash, code }, given?, args?, engine } is answered with
  * { id, ok: true, data, card, ms } or { id, ok: false, error }.
  */
@@ -22,6 +26,7 @@ import './lockdown.js';
 import './shim.js';
 import { cardOf } from '../card.js';
 import { buildWith, refOf } from '../refs.js';
+import { bake } from './bake.js';
 import { MODULES } from './modules.js';
 import { serialize } from './serialize.js';
 
@@ -59,11 +64,22 @@ self.onmessage = async (e) => {
 		const t0 = performance.now();
 		const { meta, build } = await recipeOf(recipe);
 		const t1 = performance.now();
-		const obj = await buildWith({ build, params: meta.params, ref: refOf(meta.group, meta.id, meta.version, meta.variant) }, given, args ?? []);
+		const made = () => buildWith({ build, params: meta.params, ref: refOf(meta.group, meta.id, meta.version, meta.variant) }, given, args ?? []);
+		let obj = await made();
 		const t2 = performance.now();
 		const card = cardOf(obj, meta, { recipe: recipe.hash, engine });
-		const { data, transfer } = await serialize(obj);
-		reply({ id, ok: true, data, card, ms: { start: Math.round(t1 - t0), build: Math.round(t2 - t1), serialize: Math.round(performance.now() - t2) } }, transfer);
+		let baked;
+		try {
+			baked = bake(obj);
+		} catch {
+			// a control that broke midway left the object as it was then: it leaves with none, as built a second time
+			baked = { controls: [], intact: false };
+		}
+		// a control that changed its tree left it changed: it leaves as built, a second time
+		if (!baked.intact) obj = await made();
+		const t3 = performance.now();
+		const { data, transfer } = await serialize(obj, { controls: baked.controls });
+		reply({ id, ok: true, data, card, ms: { start: Math.round(t1 - t0), build: Math.round(t2 - t1), bake: Math.round(t3 - t2), serialize: Math.round(performance.now() - t3) } }, transfer);
 	} catch (err) {
 		reply({ id, ok: false, error: String(err?.message ?? err) });
 	}

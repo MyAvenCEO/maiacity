@@ -14,11 +14,16 @@
  *   thousand trees of forty kinds is a few hundred draw calls, the pictures a handful.
  * - Every material is the renderer's own (./presets.js), with the shader code only we add: the dither a level fades
  *   in by, and the kit's section caps when the world is cut open (`cut`).
+ * - A copy moved by its controls (a tent half pitched, a pickup's door open, a machine drawn apart: `pose`, from the
+ *   numbers the box wrote down, ../controls.js) leaves the instances and is drawn as a tree of its own, its parts where
+ *   its controls put them, at any distance (a picture cannot open a door); back at rest, it joins the others again.
  *
  * Several boxes build side by side while a world loads (`boxes`), each a frame and a worker of its own.
  */
 import * as THREE from 'three';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { AssetBox } from '../box/host.js';
+import { labelOf, poserOf } from '../controls.js';
 import { canonical, loadAsset } from '../load.js';
 import { INDEX, buildOf, hashOf, parseBuild } from '../recipes.js';
 import { parseRef } from '../refs.js';
@@ -136,7 +141,9 @@ export function createAssets(o) {
 			T: new Float32Array(0),
 			S: new Float32Array(0),
 			alive: new Uint8Array(0),
-			was: new Int8Array(0)
+			was: new Int8Array(0),
+			/** the copies moved by their controls, by their number: each its values and its own tree */
+			posed: new Map()
 		};
 		kinds.set(key, k);
 		// the coarsest shape first: its measure is the kind's, and its picture is taken from it
@@ -169,6 +176,8 @@ export function createAssets(o) {
 			async (got) => {
 				lv.level = prepare(got.obj, presets);
 				lv.from = got.from;
+				// a build with controls is kept whole as well: a copy moved by them is a tree copied from it
+				if (got.obj.userData.controls?.length) lv.obj = got.obj;
 				lv.meshes = lv.level.draws.map((d) => meshOf(k, L, d));
 				const last = L === k.levels.length - 1;
 				await compiled(lv, last);
@@ -311,13 +320,143 @@ export function createAssets(o) {
 	/** a copy taken away */
 	const remove = (copy) => {
 		copy.kind.alive[copy.i] = 0;
+		unpose(copy.kind, copy.i);
 		dirty = shadows = true;
 	};
+
+	/* ── the copies moved by their controls ── */
+	/** the level nearest `L` that is ready and has its controls: coarser first, then finer; -1 for none */
+	function controlledNear(k, L) {
+		const ok = (j) => k.levels[j].state === 'ready' && k.levels[j].obj;
+		for (let j = L; j < k.levels.length; j++) if (ok(j)) return j;
+		for (let j = L - 1; j >= 0; j--) if (ok(j)) return j;
+		return -1;
+	}
+
+	/**
+	 * The controls a kind's copies have (a level of it must be here): each its id, its name, its ends, its rest, whether
+	 * it is a choice. None for a kind without.
+	 * @param {any} k a kind (`use`), a copy (`place`) or a ref
+	 */
+	function controlsOf(k) {
+		if (typeof k === 'string') k = use(k);
+		if (k?.kind) k = k.kind;
+		const L = controlledNear(k, 0);
+		if (L < 0) return [];
+		return k.levels[L].obj.userData.controls.map((c) => ({ id: c.id, label: labelOf(c.id), from: c.from, to: c.to, rest: c.rest, choice: !!c.choice }));
+	}
+
+	/**
+	 * A copy's control set to `v` (kept between its ends): the copy is drawn with its parts where that puts them; every
+	 * control back at its rest, it is drawn with the others again.
+	 * @param {{ kind: any, i: number }} copy
+	 * @param {string} id
+	 * @param {number} v
+	 */
+	function pose(copy, id, v) {
+		const { kind: k, i } = copy;
+		const c = controlsOf(k).find((x) => x.id === id);
+		if (!c || !k.alive[i] || !Number.isFinite(Number(v))) return;
+		const at = Math.min(Math.max(c.from, c.to), Math.max(Math.min(c.from, c.to), Number(v)));
+		let p = k.posed.get(i);
+		if (!p) k.posed.set(i, (p = { values: new Map(), tree: null, L: -1, poser: null, ready: false, shown: false, tris: 0, calls: 0 }));
+		if (at === c.rest) p.values.delete(id);
+		else p.values.set(id, at);
+		if (!p.values.size) unpose(k, i);
+		else if (p.poser) {
+			p.poser.reset();
+			p.poser.setMany(p.values);
+		}
+		dirty = shadows = true;
+	}
+
+	/** a copy's controls now, by id: each at its value, or at its rest */
+	function poseOf(copy) {
+		const p = copy.kind.posed.get(copy.i);
+		return Object.fromEntries(controlsOf(copy.kind).map((c) => [c.id, p?.values.get(c.id) ?? c.rest]));
+	}
+
+	/** a copy's controls all back at rest: its tree taken away */
+	function unpose(k, i) {
+		const p = k.posed.get(i);
+		if (!p) return;
+		p.tree?.removeFromParent();
+		k.posed.delete(i);
+		dirty = shadows = true;
+	}
+
+	/**
+	 * A copy's own tree, copied from level L's build: its materials the renderer's (those the level wears), what the
+	 * instanced drawings leave out left out here too (lines, points, lights), its controls set, and its shaders made
+	 * before it shows (until then the copy is drawn at rest with the others).
+	 */
+	function treeOf(k, i, p, L) {
+		const obj = k.levels[L].obj;
+		p.tree?.removeFromParent();
+		// copied without the build's own notes: its controls' numbers are many, and the copy plays the build's
+		const notes = obj.userData;
+		obj.userData = {};
+		let copy;
+		try {
+			copy = SkeletonUtils.clone(obj);
+		} finally {
+			obj.userData = notes;
+		}
+		let tris = 0, calls = 0;
+		copy.traverse((o) => {
+			if (o.isMesh) {
+				const many = Array.isArray(o.material);
+				o.material = many ? o.material.map((m) => presets.of(m)) : presets.of(o.material);
+				o.receiveShadow = true;
+				// a part whose shape its controls bend or spread is never culled by a ball that holds it at rest
+				if (o.isInstancedMesh || o.isSkinnedMesh || o.morphTargetInfluences?.length) o.frustumCulled = false;
+				const g = o.geometry, n = (g.index ? g.index.count : g.attributes.position?.count ?? 0) / 3;
+				tris += n * (o.isInstancedMesh ? o.count : 1);
+				calls += many ? Math.max(1, g.groups.length) : 1;
+			} else if (o.isLine || o.isPoints || o.isSprite || o.isLight) o.layers.disableAll();
+		});
+		// held where the copy stands: the build's own root keeps its own place, as in the level's drawings, and may move
+		const tree = new THREE.Group();
+		tree.add(copy);
+		tree.matrixAutoUpdate = false;
+		tree.visible = false;
+		tree.name = `${k.label} · copy ${i}, moved`;
+		Object.assign(p, { tree, L, tris, calls, ready: false, shown: false, poser: poserOf(copy, obj.userData.controls) });
+		p.poser.setMany(p.values);
+		group.add(tree);
+		const scene = worldOf();
+		compiling++;
+		(scene ? renderer.compileAsync(tree, camera, scene) : Promise.resolve())
+			.catch(() => {})
+			.finally(() => {
+				compiling--;
+				if (p.tree !== tree) return;
+				p.ready = true;
+				dirty = shadows = true;
+			});
+	}
+
+	/** copy i of kind k, moved by its controls, drawn as its own tree at the shape level L asks for; false: not yet */
+	function drawPosed(k, i, p, L) {
+		let T = Math.min(L, k.levels.length - 1);
+		if (k.levels[T].state === 'idle') want(k, T);
+		T = controlledNear(k, T);
+		if (T < 0) return false;
+		if (p.L !== T) treeOf(k, i, p, T);
+		if (!p.ready) return false;
+		p.tree.matrix.fromArray(k.M, i * 16);
+		p.tree.matrixWorldNeedsUpdate = true;
+		p.tree.visible = true;
+		counted.posed++;
+		counted.tris += p.tris;
+		counted.calls += p.calls;
+		return true;
+	}
 
 	/* ── each frame ── */
 	const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), ball = new THREE.Sphere(), eye = new THREE.Vector3();
 	const last = { world: new Float32Array(16), proj: new Float32Array(16) };
-	const counted = { levels: [0, 0, 0], pictures: 0, tris: 0, calls: 0, culled: 0 };
+	const counted = { levels: [0, 0, 0], pictures: 0, posed: 0, tris: 0, calls: 0, culled: 0 };
 	const same = (a, b) => {
 		for (let i = 0; i < 16; i++) if (Math.abs(a[i] - b[i]) > 1e-5) return false;
 		return true;
@@ -380,17 +519,19 @@ export function createAssets(o) {
 		eye.setFromMatrixPosition(camera.matrixWorld);
 		const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / (camera.zoom || 1);
 		counted.levels.fill(0);
-		counted.culled = 0;
+		counted.culled = counted.posed = counted.tris = counted.calls = 0;
 		pictures.begin();
 		for (const k of kinds.values()) {
 			for (const lv of k.levels) for (const d of lv.meshes ?? []) d.used = 0;
+			for (const p of k.posed.values()) if (p.tree) p.tree.visible = false;
 			if (!k.ok) continue;
 			const c = k.center;
 			for (let i = 0; i < k.n; i++) {
 				if (!k.alive[i]) continue;
 				const M = k.M, o = i * 16;
 				ball.center.set(M[o] * c.x + M[o + 4] * c.y + M[o + 8] * c.z + M[o + 12], M[o + 1] * c.x + M[o + 5] * c.y + M[o + 9] * c.z + M[o + 13], M[o + 2] * c.x + M[o + 6] * c.y + M[o + 10] * c.z + M[o + 14]);
-				ball.radius = k.radius * k.S[i];
+				// moved by its controls, it may reach further than it does at rest (a machine drawn apart): twice as far
+				ball.radius = k.radius * k.S[i] * (k.posed.size && k.posed.has(i) ? 2 : 1);
 				if (!frustum.intersectsSphere(ball)) {
 					counted.culled++;
 					if (k.was[i] !== -1) (k.was[i] = -1), (shadows = true);
@@ -404,13 +545,22 @@ export function createAssets(o) {
 				const { level, fade } = choose(size, k.thresholds, k.was[i]);
 				if (level !== k.was[i]) shadows = true;
 				k.was[i] = level;
+				// moved by its controls: its own tree, once it is ready
+				const p = k.posed.size ? k.posed.get(i) : undefined;
+				if (p && drawPosed(k, i, p, level)) continue;
 				const drawn = draw(k, i, level, 1);
 				// the coarser one fading in under it, unless it already stands in whole
 				if (fade > 0 && drawn !== level + 1) draw(k, i, level + 1, fade);
 			}
 		}
 		pictures.end();
-		let tris = pictures.drawn * 2, calls = pictures.pages && pictures.drawn ? 1 : 0;
+		for (const k of kinds.values())
+			for (const p of k.posed.values())
+				if (p.tree && p.tree.visible !== p.shown) {
+					p.shown = p.tree.visible;
+					shadows = true;
+				}
+		let tris = counted.tris + pictures.drawn * 2, calls = counted.calls + (pictures.pages && pictures.drawn ? 1 : 0);
 		for (const k of kinds.values())
 			for (const lv of k.levels)
 				for (const d of lv.meshes ?? []) {
@@ -459,6 +609,7 @@ export function createAssets(o) {
 			copies: list.reduce((a, k) => a + k.alive.subarray(0, k.n).reduce((x, y) => x + y, 0), 0),
 			levels: counted.levels.slice(0, Math.max(...list.map((k) => k.levels.length), 1)),
 			pictures: counted.pictures,
+			posed: counted.posed,
 			culled: counted.culled,
 			tris: counted.tris,
 			calls: counted.calls,
@@ -478,6 +629,13 @@ export function createAssets(o) {
 		update,
 		ready,
 		stats,
+		controlsOf,
+		pose,
+		poseOf,
+		/** a copy's controls all back at rest */
+		rest: (copy) => unpose(copy.kind, copy.i),
+		/** whether a copy is moved from its rest by its controls */
+		posed: (copy) => copy.kind.posed.has(copy.i),
 		/** every kind used, with its levels */
 		kinds: () => [...kinds.values()],
 		/** cuts everything open along a plane (what is on its negative side taken away), or closes it (null) */
@@ -497,6 +655,7 @@ export function createAssets(o) {
 						d.mesh.dispose();
 					}
 			for (const k of kinds.values()) for (const lv of k.levels) for (const d of lv.level?.draws ?? []) d.geometry.dispose();
+			for (const k of kinds.values()) for (const lv of k.levels) lv.obj?.traverse((o) => o.geometry?.dispose());
 			pictures.dispose();
 			presets.dispose();
 			for (const p of pool) p.box.stop('the renderer was disposed');
