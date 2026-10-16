@@ -47,7 +47,7 @@ export function voiceOf(vault, name, kind) {
 	const words = called.split(/\s+/).filter(Boolean);
 	const initials = (words.length > 1 ? words[0][0] + words[1][0] : called.slice(0, 2)).toUpperCase();
 	const color = COLORS[parseInt(vault.slice(0, 2), 16) % COLORS.length];
-	return { name: called, handle: slug(called), initials, color, ai: kind === 'aven' || kind === 'device', coop: kind === 'coop', avendb: true };
+	return { name: called, handle: slug(called), initials, color, kind, ai: kind === 'aven' || kind === 'device', coop: kind === 'coop', avendb: true };
 }
 
 // The cover of a post's article text `md`, as avenDB lays it out, where everyone may read it, among `pictures`: its

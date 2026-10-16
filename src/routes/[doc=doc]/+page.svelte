@@ -12,6 +12,7 @@
 	import Cover from '$lib/blog/Cover.svelte';
 	import PostLayout from '$lib/blog/PostLayout.svelte';
 	import { bodyText, laidOut, render } from '$lib/avendb/article.js';
+	import { shaped } from '$lib/app/shapes.js';
 	import { ago, pictureUrl, postHref, slug } from '$lib/universe/posts.js';
 	import { authorOf, findPost, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
@@ -62,7 +63,7 @@
 {/snippet}
 
 {#snippet avatar()}
-	<span class="avatar initials" style:background={author.color}>{author.initials}</span>
+	<span class="avatar initials" style:background={author.color} style={shaped(author.kind)}>{author.initials}</span>
 {/snippet}
 
 {#snippet body()}

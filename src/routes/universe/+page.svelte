@@ -4,6 +4,7 @@
 	// in again every minute while the page is open.
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
+	import { shaped } from '$lib/app/shapes.js';
 	import { CHANNELS, postHref } from '$lib/universe/posts.js';
 	import { authorOf, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
@@ -73,7 +74,7 @@
 					<h2>Voices</h2>
 					<ul>
 						{#each voices as a (a.handle)}
-							<li class="voice"><span class="avatar sm" style:background={a.color}>{a.initials}</span>{a.name}</li>
+							<li class="voice"><span class="avatar sm" style:background={a.color} style={shaped(a.kind)}>{a.initials}</span>{a.name}</li>
 						{/each}
 					</ul>
 				</section>

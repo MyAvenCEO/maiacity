@@ -1,9 +1,10 @@
 <!--
-	A vault's mark: its initials on its colour, shaped by its kind, a circle for a person's vault, a hexagon for an aven,
-	a rounded square for a coop, an octagon for a device vault. The same vault looks the same on every device, its colour
-	drawn from its id.
+	A vault's mark: its initials on its colour, shaped by its kind as every profile is ($lib/app/shapes.js), a circle for
+	a person's vault, a sun of 12 rays for an aven, a hexagon for a coop, a square for a device vault. The same vault
+	looks the same on every device, its colour drawn from its id.
 -->
 <script>
+	import { shaped } from '$lib/app/shapes.js';
 	import { hue, initials, nameOf } from './vaults.js';
 
 	/** @type {{ vault: import('./vaults.js').VaultView | undefined, size?: number, dim?: boolean }} */
@@ -13,7 +14,7 @@
 <span
 	class="mark {vault?.kind ?? 'human'}"
 	class:dim
-	style="--size: {size}px; --hue: {vault ? hue(vault.id) : 0}"
+	style="--size: {size}px; --hue: {vault ? hue(vault.id) : 0}; {shaped(vault?.kind)}"
 	role="img"
 	aria-label={nameOf(vault)}
 >
@@ -27,7 +28,6 @@
 		place-items: center;
 		width: var(--size);
 		height: var(--size);
-		border-radius: 50%;
 		background: hsl(var(--hue) 38% 42%);
 		color: #fff;
 		font-size: calc(var(--size) * 0.36);
@@ -37,18 +37,8 @@
 		user-select: none;
 	}
 
-	.mark.coop {
-		border-radius: 28%;
-	}
-
 	.mark.aven {
-		border-radius: 0;
-		clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
-	}
-
-	.mark.device {
-		border-radius: 0;
-		clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+		font-size: calc(var(--size) * 0.3);
 	}
 
 	.mark.dim {
