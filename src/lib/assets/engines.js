@@ -4,10 +4,11 @@
  * file of ours (./recipe.js), written the same in Vite's build (./box/plugin.js) and in the page (./recipes.js), so its
  * BLAKE3 hash names the same bytes in both.
  *
- * One of our recipe files is its group's library (every asset of the group and what they share, bundled with
- * three.js left to the engine) and one line naming the asset it builds. So each asset, version and variant has a file
- * and a hash of its own; for now the hash moves when anything in its group changes, and narrows to the asset's own
- * code once each asset is its own module.
+ * One of our recipe files is its asset's library (its group's list narrowed to that one asset: its builders, every
+ * version's, and what they share with other assets, bundled with three.js left to the engine) and one line naming
+ * the version and variant it builds. So each asset, version and variant has a file and a hash of its own, and the
+ * hash moves only when the asset's own code changes, or code it shares: never with another asset's. The versions of
+ * one asset share its library, so a change to one moves the hashes of all.
  */
 import manifest from './engines.json' with { type: 'json' };
 
@@ -44,7 +45,7 @@ export const recipeTail = (id, v, variant) => `\nreturn module.exports.recipe(${
 export const RECIPE_END = '\nreturn module.exports.recipe();\n});\n';
 
 /**
- * One asset's recipe file. @param {string} library its group's library @param {string} id @param {number} v
+ * One asset's recipe file. @param {string} library the asset's library @param {string} id @param {number} v
  * @param {string | null} [variant]
  */
 export const recipeFile = (library, id, v, variant) => RECIPE_HEAD + library + recipeTail(id, v, variant);
