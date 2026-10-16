@@ -518,7 +518,7 @@ export function createAssets(o) {
 			if (o.isMesh) {
 				const many = Array.isArray(o.material);
 				o.material = many ? o.material.map((m) => presets.of(m)) : presets.of(o.material);
-				o.receiveShadow = true;
+				o.receiveShadow = k.receive;
 				// a part whose shape its controls bend or spread is never culled by a ball that holds it at rest
 				if (o.isInstancedMesh || o.isSkinnedMesh || o.morphTargetInfluences?.length) o.frustumCulled = false;
 				const g = o.geometry, n = (g.index ? g.index.count : g.attributes.position?.count ?? 0) / 3;

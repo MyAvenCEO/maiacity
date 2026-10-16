@@ -7,9 +7,12 @@
  *   stands (a plain group the story moves, parents and hides as it moved the builder's object), at its finest shape
  *   only (a world this small always drew all of it: no coarser shapes and no pictures are made), casting its shadow. A box the size of the copy in the anchor, unseen,
  *   carries the name a tap finds it by.
- * - `load`: the build itself, as the box made it (its nodes, its materials, its controls as numbers:
- *   $lib/assets/controls.js), put into an anchor, for what the story moves part by part (a door, a tailgate, a tent
- *   pitched) or touches (a flame, a canvas glowing).
+ *   What the story moves part by part (a tailgate let down, a door opened) is moved by its controls (`pose`): the
+ *   renderer draws that copy as its own tree, its parts where the numbers the box wrote down put them
+ *   ($lib/assets/controls.js), and with the others again once every control is back at rest.
+ * - `load`: the build itself, as the box made it (its nodes, its materials, its controls as numbers), put into an
+ *   anchor; `cast`: that, kept running in the box ($lib/assets/hero.js, $lib/assets/box/live.js) for what moves by
+ *   itself (a machine's clip: the ElectroCube humming), each frame's step asked of the box and followed here.
  *
  * `update` before each frame is drawn; `ready` waits for everything asked for so far. The renderer and the box come in
  * with the first world made (the page's own modules, not the world's: the world's measures are read without them).
@@ -23,10 +26,15 @@ const PICK = new THREE.MeshBasicMaterial({ visible: false });
 
 let mods = null;
 const modules = () =>
-	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js')]).then(([r, l, x]) => ({
+	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('$lib/assets/hero.js')]).then(([r, l, x, h]) => ({
 		createAssets: r.createAssets,
 		loadAsset: l.loadAsset,
-		buildAt: x.buildAt
+		canonical: l.canonical,
+		liveBoxOf: l.liveBoxOf,
+		buildAt: x.buildAt,
+		recipeAt: x.recipeAt,
+		heroOf: h.heroOf,
+		runner: h.runner
 	})));
 // in a page, fetched as soon as the world's code is: the box is asked for the first builds before the world's first
 // frame (its shaders compiled, seconds on a slow machine) holds the page up
@@ -53,6 +61,8 @@ export function createDrawn({ renderer, camera, scene }) {
 	const copies = [];
 	/** @type {Promise<any>[]} */
 	const loads = [];
+	/** the builds kept running in the box (`cast`) */
+	const heroes = [];
 	/** whether an anchor is in the scene and shown, and everything it is in */
 	const shown = (o) => {
 		for (let x = o; x; x = x.parent) {
@@ -80,7 +90,7 @@ export function createDrawn({ renderer, camera, scene }) {
 		 */
 		follow(ref, anchor, { pick, receive = false } = {}) {
 			let built;
-			const c = { copy: null, anchor, m: AWAY.clone(), gone: false, ready: new Promise((ok) => (built = ok)) };
+			const c = { copy: null, anchor, m: AWAY.clone(), gone: false, on: false, values: new Map(), ready: new Promise((ok) => (built = ok)) };
 			copies.push(c);
 			const go = () => {
 				if (c.gone) return built(null);
@@ -89,12 +99,25 @@ export function createDrawn({ renderer, camera, scene }) {
 				kind.ready.then((k) => {
 					const box = k.ok ? (k.levels[k.base].level?.box ?? null) : null;
 					if (pick && !c.gone) pickBox(anchor, box, pick);
+					// its controls as the story set them before it was here
+					c.on = k.ok && !c.gone;
+					if (c.on) for (const [id, v] of c.values) assets.pose(c.copy, id, v);
 					built(box);
 				});
 			};
 			if (assets) go();
 			else waiting.push(go);
 			return c;
+		},
+		/**
+		 * A control of a copy `follow` put down set to `v` (a tailgate's `tailgate`, a door's `door.<name>`: 0 … 1), kept
+		 * until its kind is here if it is not yet.
+		 * @param {any} c @param {string} id @param {number} v
+		 */
+		pose(c, id, v) {
+			if (c.values.get(id) === v) return;
+			c.values.set(id, v);
+			if (c.on && !c.gone) assets.pose(c.copy, id, v);
 		},
 		/** a copy `follow` put down, taken away again @param {any} c */
 		drop(c) {
@@ -122,6 +145,24 @@ export function createDrawn({ renderer, camera, scene }) {
 			loads.push(p.catch((e) => console.warn(`maiacity-v1: ${ref} did not load: ${e?.message ?? e}`)));
 			return p;
 		},
+		/**
+		 * The build of `ref` put into `anchor` (as `load`) and kept running in the box: what the stage calls a hero
+		 * ($lib/assets/hero.js `heroOf`): `play(clip)`, `hold(pose)`, and `tick(dt)` each frame it moves. Until the box
+		 * has it running, it stands as built.
+		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string }} [o]
+		 */
+		cast(ref, anchor, o) {
+			return this.load(ref, anchor, o).then(async (got) => {
+				const m = await up;
+				const c = m.canonical(m.buildAt(ref));
+				const values = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
+				const code = await m.recipeAt(c.hash).catch(() => null);
+				const hero = m.heroOf(got, { start: code && !gone ? m.runner(m.liveBoxOf(), code, values) : undefined });
+				if (gone) hero.dispose();
+				else heroes.push(hero);
+				return hero;
+			});
+		},
 		/** where each copy stands now: before every frame */
 		update() {
 			if (!assets) return;
@@ -141,6 +182,7 @@ export function createDrawn({ renderer, camera, scene }) {
 		stats: () => assets?.stats() ?? null,
 		dispose() {
 			gone = true;
+			for (const h of heroes.splice(0)) h.dispose();
 			assets?.dispose();
 		}
 	};
