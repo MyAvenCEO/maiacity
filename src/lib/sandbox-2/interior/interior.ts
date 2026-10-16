@@ -183,17 +183,23 @@ function meadow(): THREE.MeshStandardMaterial {
 	return (meadowCache = mat)
 }
 
+/**
+ * The surfaces a dome is made of. The painted ones are painted when first asked for (the flagstone, the solar glass,
+ * the meadow): a sofa or a lantern on its own then paints only what it is made of, not the whole dome's, which made
+ * every dome-room thing take about three seconds to build from cold.
+ */
 export const mats = () => {
-	const flag = flagstone()
 	return {
-		stone: (rx: number, ry = rx) => surface(`stone ${k2(rx)} ${k2(ry)}`, () => new THREE.MeshStandardMaterial({ map: tiled(flag.map, k2(rx), k2(ry)), bumpMap: tiled(flag.bump, k2(rx), k2(ry)), bumpScale: 2, roughness: 0.85 })),
+		stone: (rx: number, ry = rx) => surface(`stone ${k2(rx)} ${k2(ry)}`, () => new THREE.MeshStandardMaterial({ map: tiled(flagstone().map, k2(rx), k2(ry)), bumpMap: tiled(flagstone().bump, k2(rx), k2(ry)), bumpScale: 2, roughness: 0.85 })),
 		lime: (rx: number, ry = rx) => surface(`lime ${k2(rx)} ${k2(ry)}`, () => new THREE.MeshStandardMaterial({ map: tiled(limestone(), k2(rx), k2(ry)), roughness: 0.9 })),
 		oak: (rx: number, ry = rx) => surface(`oak ${k2(rx)} ${k2(ry)}`, () => new THREE.MeshStandardMaterial({ map: tiled(oak(), k2(rx), k2(ry)), roughness: 0.82, envMapIntensity: 0.4 })),
 		soil: (rep: number) => surface(`soil ${k2(rep)}`, () => new THREE.MeshStandardMaterial({ map: tiled(soil(), k2(rep)), roughness: 1 })),
 		water: (rep: number) => surface(`water ${k2(rep)}`, () => new THREE.MeshPhysicalMaterial({ map: tiled(water(), k2(rep)), roughness: 0.08, metalness: 0, transparent: true, opacity: 0.88, envMapIntensity: 1.4 })),
 		steel: new THREE.MeshStandardMaterial({ color: '#2e3236', roughness: 0.4, metalness: 0.7 }),
 		timberFrame: new THREE.MeshStandardMaterial({ color: '#9c6b3f', roughness: 0.6 }),
-		solar: solarGlass(),
+		get solar() {
+			return solarGlass()
+		},
 		glass: withSheen(new THREE.MeshPhysicalMaterial({ color: '#eef6f4', roughness: 0.04, metalness: 0, transparent: true, opacity: 0.1, envMapIntensity: 1.5, side: THREE.DoubleSide, depthWrite: false })),
 		canvas: new THREE.MeshStandardMaterial({ color: '#efe8da', roughness: 0.95, side: THREE.DoubleSide }),
 		linen: new THREE.MeshStandardMaterial({ color: '#f1ece2', roughness: 0.95 }),
@@ -205,7 +211,9 @@ export const mats = () => {
 		rug: new THREE.MeshStandardMaterial({ color: '#b9a589', roughness: 1 }),
 		pebble: new THREE.MeshStandardMaterial({ color: '#8d8a83', roughness: 0.9 }),
 		tank: new THREE.MeshStandardMaterial({ color: '#56666b', roughness: 0.5, metalness: 0.3 }),
-		grass: meadow()
+		get grass() {
+			return meadow()
+		}
 	}
 }
 export type Mats = ReturnType<typeof mats>

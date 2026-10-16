@@ -107,24 +107,41 @@ export class AssetBox {
 		const job = this.jobs.get(msg.id);
 		if (!job) return;
 		this.jobs.delete(msg.id);
-		clearTimeout(job.timer);
+		clearInterval(job.timer);
 		if (msg.ok === true) job.ok(msg);
 		else job.no(new Error(String(msg.error ?? 'the box failed')));
 	}
 
 	/**
 	 * one job: { op, …args } answered with { data, ms }. One that runs longer than `timeout` tears the box down, unless
-	 * it is `soft`: a step waiting behind a build is late, not lost, so only it fails and the box goes on.
+	 * it is `soft`: a step waiting behind a build is late, not lost, so only it fails and the box goes on. The jobs that
+	 * are not soft go into the box one at a time, so each one's time is its own and not the jobs' asked before it (a
+	 * page that asks for seventy builds at once no longer tears the box down at the twentieth second).
 	 */
-	async ask(op, payload = {}, { timeout = this.timeout, soft = false } = {}) {
+	ask(op, payload = {}, { timeout = this.timeout, soft = false } = {}) {
+		if (soft) return this.#post(op, payload, timeout, soft);
+		const turn = (this.queue ?? Promise.resolve()).then(() => this.#post(op, payload, timeout, soft));
+		this.queue = turn.catch(() => {});
+		return turn;
+	}
+
+	async #post(op, payload, timeout, soft) {
 		await this.start();
 		const id = this.next++;
 		return new Promise((ok, no) => {
-			const timer = setTimeout(() => {
+			// its time counted a second at a time, and at most a second and a half for each: a page too busy to listen
+			// (compiling a world's shaders on a slow machine) does not use up the box's time, only the box itself does
+			let had = 0, last = performance.now();
+			const timer = setInterval(() => {
+				const t = performance.now();
+				had += Math.min(t - last, 1500);
+				last = t;
+				if (had < timeout) return;
+				clearInterval(timer);
 				if (!soft) return this.stop(`${op} ran longer than ${timeout} ms`);
 				this.jobs.delete(id);
 				no(new Error(`${op} ran longer than ${timeout} ms`));
-			}, timeout);
+			}, Math.min(1000, timeout));
 			this.jobs.set(id, { ok, no, timer });
 			this.frame.contentWindow.postMessage({ id, op, ...payload }, '*');
 		});
@@ -173,7 +190,7 @@ export class AssetBox {
 		// its running builds went with it
 		this.generation = (this.generation ?? 0) + 1;
 		for (const job of this.jobs.values()) {
-			clearTimeout(job.timer);
+			clearInterval(job.timer);
 			job.no(new Error(why));
 		}
 		this.jobs.clear();

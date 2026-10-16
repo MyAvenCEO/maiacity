@@ -430,7 +430,11 @@ function teeth(p, upper, edge, front, ver) {
 	const up = upper ? p.y - edge : edge - p.y; // from the biting edge to the root
 	const c = ENAMEL.clone().lerp(GAP, 0.75 * smooth(0.1, 0.0, Math.min(u, 1 - u)));
 	c.lerp(GUM, smooth(crown - 0.0005, crown + 0.0007, up));
-	return c.lerp(BACK, smooth(0.012, 0.04, front - p.z));
+	c.lerp(BACK, smooth(0.012, 0.04, front - p.z));
+	// before v10 the molars past the table took no colour (NaN), which the screen drew black: black it stays, as a
+	// number, so the asset box takes the skin
+	if (ver < 10 && !(Number.isFinite(c.r) && Number.isFinite(c.g) && Number.isFinite(c.b))) c.setRGB(0, 0, 0);
+	return c;
 }
 
 /** a little random, the same each time @param {number} seed */
