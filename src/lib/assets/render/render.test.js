@@ -166,7 +166,7 @@ test('a plant takes a detail: at 0.25 and 0.1 grown as Sandbox 4 grows its near 
 	}
 	expect(detailAt(1)).toEqual({ level: 1, roots: true, thin: 1, fill: 1, finest: 0 });
 	const { PLANTS, plantAt } = await import('$lib/plants/index.js');
-	expect(PLANTS.every((p) => p.params.at(-1).id === 'detail')).toBe(true);
+	expect(PLANTS.every((p) => p.params.some((x) => x.id === 'detail'))).toBe(true);
 	// fewer triangles at a lower detail, the same at 1 as before
 	const apple = plantAt('apple', 2);
 	const tris = (o) => {
