@@ -187,7 +187,7 @@ fn creation_fills_defaults_and_refuses_what_doesnt_fit() {
     assert_eq!(row["record"]["notes"], "");
     let later = create(json!({ "kind": "todo", "title": "x", "status": "later" }));
     assert_eq!(refused(&run(&mut w, mac, later)), "NotAView");
-    assert_eq!(refused(&run(&mut w, mac, create(json!({ "kind": "recipe", "title": "Soup" })))), "NoSchema");
+    assert_eq!(refused(&run(&mut w, mac, create(json!({ "kind": "potion", "title": "Soup" })))), "NoSchema");
     let value = json!({ "kind": "document" });
     let named = json!({ "op": "create", "vault": alice, "type": "note", "schema": "document", "value": value });
     assert!(ok(run(&mut w, mac, named))["entry"].is_string());
@@ -770,15 +770,16 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "article", "artifact", "artwork", "card", "document", "file", "flow", "function", "post"];
-    let own = [&own[..], &["profile", "request"]].concat();
-    let own = [&own[..], &["spark", "spark", "story", "todo"]].concat();
-    assert_eq!(kinds, own, "its own kinds, each once but the article's and the spark's two versions");
+    let own = ["article", "article", "artifact", "artwork", "card", "document", "file", "flow", "function", "function"];
+    let own = [&own[..], &["logic", "post", "profile", "recipe", "request"]].concat();
+    let own = [&own[..], &["spark", "spark", "story", "todo", "view"]].concat();
+    assert_eq!(kinds, own, "its own kinds, each once but the article's, the function's and the spark's two versions");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     let lenses = list(&schemas["lenses"]);
     let from = |l: &Value| (l["from"].clone(), l["builtIn"].clone());
-    let older = [lens::ARTICLE_V1.id(), lens::SPARK_V1.id()].map(|id| (json!(id.to_hex()), json!(true)));
-    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "the lenses from article and spark v1 to v2");
+    let older = [lens::ARTICLE_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id()];
+    let older = older.map(|id| (json!(id.to_hex()), json!(true)));
+    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "the lenses from article, function and spark v1 to v2");
 }
 
 /// Ops from their JSON.
@@ -937,15 +938,89 @@ fn a_share_that_only_suggests_writes_on_proposals_an_owner_merges() {
     }
 }
 
-/// A tunable: a source and the params it reads, each with a default.
-const TUNABLE: &str = r##"{ "title": "Tunable", "type": "object",
-  "properties": {
-    "kind": { "const": "tunable" },
-    "source": { "type": "string", "x-loro": "text", "default": "" },
-    "params": { "type": "array", "default": [], "items": { "type": "object", "properties": {
-      "id": { "type": "integer" }, "name": { "type": "string" }, "default": { "type": "integer" } },
-      "required": ["id"] } } },
-  "required": ["kind"] }"##;
+/// A code entry of each kind, as JSON: its title, note and tags, its source, its engine and manifest, a param, its
+/// contract, and for a recipe its card.
+fn code_entry(kind: &str) -> Value {
+    let (host, manifest) = match kind {
+        "recipe" => ("box", json!({ "kit": ["box", "cylinder"], "presets": ["brass"], "controls": ["slider"] })),
+        "view" => ("view", json!({ "messages": ["state", "resize"], "slots": ["panel"], "libs": ["d3"] })),
+        "function" => ("logic", json!({ "ops": ["tag", "set"] })),
+        _ => ("logic", json!({ "hooks": ["tick", "trade"], "ops": ["set"] })),
+    };
+    let mut entry = json!({
+        "kind": kind, "title": format!("A {kind}"), "note": "Made for the test.", "tags": ["code"],
+        "source": format!("// the {kind}\nexport default (x) => x;"),
+        "engine": { "host": host, "version": 4, "hash": "ab".repeat(32) },
+        "manifest": manifest,
+        "params": [{ "id": 1, "name": "height", "kind": "number", "range": { "min": 0.2, "max": 2, "step": 0.1 },
+            "default": 0.6 }, { "id": 2, "name": "lit", "kind": "toggle", "default": 1 }],
+        "contract": { "budgets": { "bytes": 200000, "ms": 2000, "memory": 64000000 }, "invariants": ["replay-equal"] },
+    });
+    if kind == "recipe" {
+        entry["card"] = json!({ "format": "asset-card", "v": 1, "group": "machines", "label": "Lamp", "size": [0.3, 0.6, 0.3] });
+    }
+    if kind == "function" {
+        let o = entry.as_object_mut().expect("an object");
+        for k in ["title", "note", "source", "params", "contract"] {
+            o.remove(k);
+        }
+        entry["name"] = json!("Tidy");
+        entry["code"] = json!("return [];");
+    }
+    entry
+}
+
+/// Code as entries (Scion B): recipes, views and logic, one base each with what a host needs to run it, and a function
+/// of v2 with an engine and a manifest. Each reads back as written; a source longer than its schema lets it be, an
+/// engine of no host, a param of no kind, a manifest naming what no host knows or a card that is no object fits none;
+/// a function written under v1 opens through the shipped lens and edits on in v2.
+#[test]
+fn code_entries_are_kinds_of_their_own() {
+    let mut w = cast::world();
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let create = |kind: &str, value: Value| json!({ "op": "create", "vault": alice, "type": kind, "value": value });
+    for kind in ["recipe", "view", "logic", "function"] {
+        let made = ok(run(&mut w, mac, create(kind, code_entry(kind))));
+        let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made["entry"], "schema": kind })));
+        let mut want = code_entry(kind);
+        if kind == "function" {
+            for (k, v) in [("about", json!("")), ("on", json!("enter")), ("flow", json!("")), ("stage", json!(""))] {
+                want[k] = v;
+            }
+            want["enabled"] = json!(true);
+        }
+        assert_eq!(got["record"], want, "{kind}");
+    }
+    let with = |kind: &str, change: &dyn Fn(&mut Value)| {
+        let mut v = code_entry(kind);
+        change(&mut v);
+        v
+    };
+    let bad = [
+        ("logic", with("logic", &|v| v["source"] = json!("x".repeat(200_001)))),
+        ("view", with("view", &|v| v["engine"]["host"] = json!("gpu"))),
+        ("recipe", with("recipe", &|v| v["engine"] = json!({ "host": "box", "version": 4 }))),
+        ("logic", with("logic", &|v| v["params"][0]["kind"] = json!("slider"))),
+        ("logic", with("logic", &|v| v["params"][0]["default"] = json!("tall"))),
+        ("view", with("view", &|v| v["manifest"]["net"] = json!(["fetch"]))),
+        ("recipe", with("recipe", &|v| v["card"] = json!("lamp.json"))),
+        ("function", with("function", &|v| v["manifest"] = json!({ "kit": "box" }))),
+    ];
+    for (kind, value) in bad {
+        assert_eq!(refused(&run(&mut w, mac, create(kind, value.clone()))), "NotAView", "{kind}: {value}");
+    }
+    // a function written under v1 reads in v2, with no engine and no manifest, and takes one on
+    let v1 = json!({ "kind": "function", "name": "Publish", "code": "return [];" });
+    let v1 = json!({ "op": "create", "vault": alice, "type": "function", "schema": lens::FUNCTION_V1.id().to_hex(),
+        "value": v1 });
+    let made = ok(run(&mut w, mac, v1))["entry"].clone();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made })));
+    assert_eq!((got["record"]["name"].as_str(), got["record"].get("engine")), (Some("Publish"), None));
+    let engine = json!({ "host": "logic", "version": 4, "hash": "cd".repeat(32) });
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": made, "path": ["engine"], "value": engine })));
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made })));
+    assert_eq!((&got["record"]["engine"], got["record"]["code"].as_str()), (&engine, Some("return [];")));
+}
 
 /// M1 (merges by path): a tuner may merge into main only a line whose changes since their base all lie under its
 /// merge's path, the defaults of the params. Its merge of a proposal that only tunes counts; of one that changes the
@@ -954,10 +1029,10 @@ const TUNABLE: &str = r##"{ "title": "Tunable", "type": "object",
 fn a_tuner_merges_new_defaults_and_nothing_else() {
     let mut w = cast::world();
     let (alice, bob, mac, mac_b) = (w.alice, w.bob, w.mac_a, w.mac_b);
-    ok(run(&mut w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "schema", "value": TUNABLE })));
-    let lamp = json!({ "kind": "tunable", "source": "glow(brightness)",
-        "params": [{ "id": 1, "name": "brightness", "default": 2 }] });
-    let made = ok(run(&mut w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "note", "value": lamp })));
+    // a lamp's logic, a code entry: its source and a param it reads
+    let lamp = json!({ "kind": "logic", "source": "glow(brightness)",
+        "params": [{ "id": 1, "name": "brightness", "kind": "number", "range": { "min": 0, "max": 10 }, "default": 2 }] });
+    let made = ok(run(&mut w, mac, json!({ "op": "create", "vault": alice.to_hex(), "type": "logic", "value": lamp })));
     let e = EntryId::from_hex(made["entry"].as_str().expect("its id")).expect("an entry");
     let tuner = ops_of(json!([
         { "op": "propose" },
