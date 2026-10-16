@@ -17,7 +17,9 @@ import LIBRARIES from 'virtual:asset-recipes/libraries';
 import { idOf, slug } from '$lib/ids.js';
 import { RECIPE_HEAD, recipeTail } from './engines.js';
 import { paramsIn, queryOf } from './params.js';
-import { parseRef, refOf } from './refs.js';
+import { refOf } from './refs.js';
+import { VAULT, parseVaultRef, refusal } from './sources/avendb.js';
+import { repoRef } from './sources/index.js';
 
 export { INDEX };
 
@@ -25,10 +27,12 @@ export { INDEX };
 export const hashText = (text) => bytesToHex(blake3(utf8ToBytes(text)));
 
 /**
- * A build's name as its parts: the recipe's hash and the values, as text. Throws for anything else.
+ * A build's name as its parts: the recipe's hash and the values, as text. Throws for anything else; a vault's ref with
+ * the one error every loader gives it while avenDB storage is not switched on (./sources/avendb.js).
  * @param {string} ref @returns {{ hash: string, params?: Record<string, string> }}
  */
 export function parseBuild(ref) {
+	if (typeof ref === 'string' && ref.startsWith(VAULT)) throw refusal(parseVaultRef(ref));
 	const m = /^([0-9a-f]{64})(?:\?(.*))?$/.exec(ref);
 	if (!m) throw new Error(`not a build: ${String(ref).slice(0, 80)} (a recipe's hash, then ?its=values)`);
 	const params = paramsIn(m[2]);
@@ -57,13 +61,13 @@ export const pageOf = (base, hash, values) => {
  * @param {string} label
  */
 export function hashOf(label) {
-	const { group, id, v, variant } = parseRef(label);
+	const { group, id, v, variant } = repoRef(label);
 	const latest = v ?? INDEX.latest[`${group}/${id}`];
 	return INDEX.labels[refOf(group, id, latest, variant)] ?? INDEX.labels[refOf(group, id, latest, INDEX.first[refOf(group, id, latest)])];
 }
 
 /** A build named from a label and its values: the label's hash, the same values. @param {string} label */
-export const buildAt = (label) => buildOf(hashOf(label) ?? '', parseRef(label).params);
+export const buildAt = (label) => buildOf(hashOf(label) ?? '', repoRef(label).params);
 
 /** What a hash names in our index: its group, id, version, variant and label; undefined if it is not one of ours. */
 export const recipeInfo = (hash) => INDEX.recipes[hash];
