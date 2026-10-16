@@ -163,7 +163,7 @@ devices, and how many of the kind one owner may own.
 | Human | Signers: the person's passkeys and the master recovery key | Any, by threshold | Yes: the person's desktops, phones, browsers and drives | Any number | Samuel |
 | Coop | Human and coop vaults | Any, by threshold | No: it acts through its owners | Any number | Maia Holding GmbH, avenCEO GmbH, Maia City |
 | Aven | One human vault | Exactly one | No | One: one aven per human | avenSamuel |
-| Device vault | One human, coop or aven vault | Exactly one | Yes: the keys of one agent's harness or of the server | Any number | agentClaude, agentCodex, avenCEO server |
+| Device vault | One human, coop or aven vault | Exactly one | Yes: the keys of one agent's harness, of the server or of a studio worker | Any number | agentClaude, agentCodex, avenCEO server, a studio's Render Mac |
 
 The owner rules, the device rules and the one-aven limit read this table, and nothing checks a kind anywhere else. The
 engine answers it to the page as it answers the built-in groups (the `kinds` op, and `kinds` in the world), so the page
@@ -212,7 +212,8 @@ So a write from a person's Mac for a coop shows the passkey that added the Mac t
 that made the person an owner of the coop. The server signs on its own, yet its chain leads to the coop that owns its
 device vault: the edit that added the server as that vault's device is signed by an owner's passkey and by the server
 itself. An agent's chain shows the same: the passkey that added its device, cosigned by the device, and the aven that
-owns its device vault. The `history`, `note` and `log` ops carry it as `chain`, and the page shows it under each edit.
+owns its device vault; a studio worker's, its own device vault and the vault whose media it works on, which owns it.
+The `history`, `note` and `log` ops carry it as `chain`, and the page shows it under each edit.
 
 **The master recovery key.** One master recovery key is a way back in beside the passkeys. It is a signer like any
 other, a passkey kept in software (`crates/avendb/src/recovery.rs`), whose keys all derive from 32 secret bytes kept
@@ -231,8 +232,8 @@ every owner. So only the `.pub` file is handed on. The tool is `cargo run -p ave
 A device is one key in one vault: it signs for that vault, acts with all its rights, and approves nothing (T2). Only
 human and device vaults hold devices. A human vault's devices are its person's installs: each browser on maia.city,
 the desktop app and each drive (below; device keys in section 11). A device vault's devices are the keys of one
-agent's harness or of the server. Whatever acts for a coop or an aven signs on a device of a human vault, through
-owners.
+agent's harness, of the server or of a studio worker (below). Whatever acts for a coop or an aven signs on a device of
+a human vault, through owners.
 
 **One passkey, one human vault.** A device that founds asks the server first, with the passkey's pass, for the vault
 that passkey roots (`Node::rejoin_by_pass`, the same card as linking). If the server knows one, the device joins it
@@ -256,6 +257,26 @@ checked; plugged in again, it is hosted again without a ceremony. The page's Eje
 nothing on the drive stays open, then has macOS eject the volume (`diskutil eject`), so Finder never finds it in use;
 an Eject in Finder itself isn't heard, and the drive's node stops as the volume goes. A lost drive is revoked like a
 lost phone, and its peers refuse it from then on.
+
+**A studio worker.** A machine that works on a vault's media for the studio's jobs, rendering a film or making a proxy,
+is a device vault of its own, owned by the vault whose media it works on: the person's own vault, or a coop they own or
+co-own, such as Maia City (`crates/avendb-device/src/worker.rs`). It has a key of its own and only the shares that vault
+gives it, so every task it claims and every entry it makes is signed by its own key, and its acting chain shows which
+machine made it, for which vault. It never acts with the Mac's own rights. The desktop app adds one by the flow below
+(`addWorker [vault, name, shares]`, section 8), in one ceremony of the passkey at most: a device vault under the vault,
+named after the worker, and a new key the app makes added to it; or, where the vault has a worker of that name already,
+as on the person's other Mac, the new key added to that one. Then the vault gives it each share, `{name, where, ops}`
+as every share is written (section 8): the studio composes its own Worker group, and avenDB has no built-in group for
+it. A share over the vault itself the vault issues, resting on none; one over another vault, named by `over` beside it,
+rests on a share the vault holds there, by the one rule below, as the worker is a vault it owns; one above what the
+vault holds is refused before any ceremony, and a worker shares nothing on. The Mac hosts it as it hosts a drive: its
+key is kept on the Mac's shelf wrapped under a key the Mac's device alone derives from its own (`workers/<device>`), so
+the Mac opens it silently whenever its own device opens, and it goes with that shelf when the Mac forgets its device;
+its node runs beside the Mac's own, on a shelf in a folder beside the app's (`<app folder>-workers/<device>`), a light
+copy: it keeps what it makes, and reads every other file from the Mac's store or over the network, as its shares let
+it. The studio runs an op as the worker by naming its device (`run [op, node]`), and its own Rust takes the worker's
+node (`Host::node_of`) to read a file by range and post its jobs by the worker's rights. A worker is taken out like a
+lost phone, its device revoked from its device vault, and the Mac hosts it no more.
 
 ### Passing a right on
 
@@ -298,9 +319,10 @@ needs no ceremony, as a share below Owner is no governance.
 | Another agent | Their aven | The harness's key | Sub caps of the aven's shares | `Under` |
 | The same harness on their other Mac | The agent's device vault there already | That Mac's harness key | Those the vault holds already | `Vault` |
 | The server | avenCEO GmbH, founded with the seed | The server's key | Each vault's Backup or Relay over itself | `Seed` |
+| A studio worker | The vault whose media it works on, the person's or a coop such as Maia City | A key the desktop app makes and hosts | That vault's Worker shares over itself, or resting on those it holds | `Under`, or `Vault` on their other Mac |
 
 Nothing in the flow is particular to an agent or the server: `Place::Under` takes any vault the person's vault owns, so
-a coop's drive can go under its coop the same way.
+a studio worker goes under the coop whose media it works on the same way, and a coop's drive could too.
 
 ### The seed and the server
 
@@ -852,8 +874,9 @@ Every caller goes through `Node::run`:
 | Caller | How it calls |
 |---|---|
 | A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
-| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
-| The desktop app, in its own process | The same device hosted in the app's process in place of the sidecar (`avendb_device::host`), on one code path with it: the same calls through `Host::call(call, args)`, each answering `{"ok"}` or `{"error"}` as its line would with no id; each sheet to show on its `Lines`, answered by `Host::answer`; and `Host::node()`, the open device's node, for the app's own Rust to `read_file` by range and post `jobs()` with no JSON or base64. |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it; `addWorker [vault, name, shares]` (each share `{name, where, ops}`, and `over` for one over another vault) and `workers` for the studio workers it hosts, and `run [op, node]`, an op run on the worker whose device `node` names, as that worker (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
+| The desktop app, in its own process | The same device hosted in the app's process in place of the sidecar (`avendb_device::host`), on one code path with it: the same calls through `Host::call(call, args)`, each answering `{"ok"}` or `{"error"}` as its line would with no id; each sheet to show on its `Lines`, answered by `Host::answer`; and `Host::node()`, the open device's node, for the app's own Rust to `read_file` by range and post `jobs()` with no JSON or base64; `Host::node_of(device)` the same of a studio worker it hosts, by that worker's own key and shares, never the desktop's. |
+| A studio worker on the desktop | Its own node, hosted by the desktop app beside its own (section 3): `run [op, node]` through the app's lines, or `Host::node_of(device)` in its process, each acting for its device vault, whose shares decide. It has no passkey, so a change the owners approve answers `approve`. |
 | An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` too with the absolute `path` of a file on the desktop beside the op, and its own `get_file {entry}` or `{vault, name}`, which reads a file back through `read_file` to the `path` beside the op (never over a file there unless `overwrite`), each acting for its device vault, whose shares decide; `avendb_add_spark` for a spark, the page's `create`; `avendb_add_artifact` for an artifact, a link or a file of the desktop saved by `put_file` first, put on a spark's canvas where it names one; and `avendb_read_file` for `get_file`; and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
@@ -1539,6 +1562,7 @@ Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-bl
 | Browser | OPFS `avendb/<name>/`, run by `crates/avendb-browser/js/store.worker.js` | OPFS | Memory windows |
 | Desktop | A folder (`crates/avendb-net/src/disk.rs`), on a Mac in Application Support | The folder | Memory windows |
 | Drive | A folder on the drive, `<volume>/.avendb/`, laid out as the desktop's | The folder | Memory windows |
+| Studio worker | A folder beside the desktop's, `<app folder>-workers/<device>`, laid out as the desktop's; its key on the desktop's shelf, wrapped | The folder | Memory windows |
 | Server | An S3 bucket, every object sealed (`crates/avendb-net/src/bucket.rs`) | The bucket | Its folder |
 
 A browser tab's worker holds the store's lock, so one device never runs in two tabs at once.
