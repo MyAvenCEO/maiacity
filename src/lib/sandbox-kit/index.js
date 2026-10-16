@@ -2,7 +2,8 @@
  * THE SANDBOX KIT — what every avenCITY sandbox world is made with, taken out of Sandbox 4.
  *
  * In the world (three.js):
- *   createStage   the canvas, the scene and the camera, kept to their container's size and smooth on a slow phone
+ *   createStage   the canvas, the scene and the camera, kept to their container's size and smooth on a slow phone:
+ *                 the world renderer ($lib/render/world.js `createWorldRenderer`), under its kit name
  *   createSky     the one sky of every world, a view of one universe (./universe.js): from the ground, or round a
  *                 planet from space; the sun and moon on the hour, shadows, fog in the horizon's colour, the stars
  *   createWalker  the first-person camera: WASD and drag to look, a joystick and a finger on a phone
@@ -20,7 +21,7 @@
  *
  * How to build a new sandbox with it: ./README.md.
  */
-export { createStage } from './stage.js';
+export { createWorldRenderer as createStage } from '$lib/render/world.js';
 export { createSky, createSkyClock, lightAt, sunAt } from './sky.js';
 export { celestial, createUniverse, horizonAt } from './universe.js';
 export { automatic, manual, skyHour, skyTime, NOON } from './skyTime.svelte.js';

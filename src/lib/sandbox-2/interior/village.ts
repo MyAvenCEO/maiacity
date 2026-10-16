@@ -24,7 +24,7 @@ import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm,
 import { antHills, apiary, fishes, herd } from './animals'
 import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
 import { flow, pond, shore, stream } from './water'
-import { createStage } from '$lib/sandbox-kit/stage.js'
+import { createWorldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
@@ -90,7 +90,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
 	}
 	// the canvas, the camera and the sky are every sandbox's own ($lib/sandbox-kit)
-	const stage = createStage(container)
+	const stage = createWorldRenderer(container)
 	const { renderer, scene, camera } = stage
 	// where the eye is (the walker's, or the film camera's): the animals near it move every bone
 	const eye = () => camera.position

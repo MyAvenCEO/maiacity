@@ -38,13 +38,8 @@ import * as THREE from 'three';
  * @typedef {{ sandbox: string, area?: string, stand: [number, number], dome?: number, props?: string, seed: number }} FilmWorldSpec
  */
 
-const win = () => /** @type {{ __filmDraw?: boolean, __worldTime?: number, __film?: { virtual?: boolean }, __world?: unknown }} */ (/** @type {unknown} */ (window));
-/** True while the film draws the canvas itself: the world must not spend a frame drawing for nobody. */
-export const filmDraws = () => !!win().__filmDraw;
-/** The world's clock in seconds while a film sets it (the shot's clock), else undefined: run animations on the world's own. */
-export const worldTime = () => win().__worldTime;
-/** True while a film holds the page's clock or draws: keep the resolution it asked for. */
-export const filmHoldsSize = () => !!win().__film?.virtual || !!win().__filmDraw;
+// the three rules of a world under the film camera are the film renderer's
+export { filmDraws, filmHoldsSize, worldTime } from '$lib/render/film.js';
 
 /**
  * A bare hold on a camera, for a world whose camera controls are its own (the planet's).
