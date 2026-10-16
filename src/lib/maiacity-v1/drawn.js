@@ -12,7 +12,9 @@
  *   ($lib/assets/controls.js), and with the others again once every control is back at rest.
  * - `load`: the build itself, as the box made it (its nodes, its materials, its controls as numbers), put into an
  *   anchor; `cast`: that, kept running in the box ($lib/assets/hero.js, $lib/assets/box/live.js) for what moves by
- *   itself (a machine's clip: the ElectroCube humming), each frame's step asked of the box and followed here.
+ *   itself (a machine's clip: the ElectroCube humming), each frame's step asked of the box and followed here, from the
+ *   first frame it is seen (what never comes into view runs nothing in the box: a second visit to the opening runs no
+ *   recipe at all).
  *
  * Every build goes through the renderer's few boxes, in one line (the people, the tent and the pickup alike), the most
  * wanted first: what stands in the camera's view, then what is shown elsewhere, then what is hidden; asked again each
@@ -120,6 +122,10 @@ export function createDrawn({ renderer, camera, scene }) {
 	};
 	/** the frames waited for (`inView`): told when the next one is drawn */
 	const frames = [];
+	/** what waits to be seen (`cast`): told on the first frame it stands in the camera's view (false: the world went) */
+	/** @type {{ anchor: THREE.Object3D, ok: (yes: boolean) => void }[]} */
+	const watched = [];
+	const seen = (anchor) => new Promise((ok) => watched.push({ anchor, ok }));
 	/** an unseen box over what was built, named for a tap, in the anchor */
 	const pickBox = (anchor, box, name) => {
 		if (!box || box.isEmpty()) return;
@@ -217,8 +223,9 @@ export function createDrawn({ renderer, camera, scene }) {
 		},
 		/**
 		 * The build of `ref` put into `anchor` (as `load`) and kept running in the box: what the stage calls a hero
-		 * ($lib/assets/hero.js `heroOf`): `play(clip)`, `hold(pose)`, and `tick(dt)` each frame it moves. Until the box
-		 * has it running, it stands as built.
+		 * ($lib/assets/hero.js `heroOf`): `play(clip)`, `hold(pose)`, and `tick(dt)` each frame it moves. It is started
+		 * there on the first frame it stands in the camera's view (a world that never looks at it runs no recipe for it,
+		 * on a first visit or a second); until the box has it running, it stands as built, its controls played here.
 		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o]
 		 * @param {(got: any) => void} [then] what is done with the build once it is ready to run (its parts found by
 		 *   name; anything the world hangs on it is added only now, so its nodes stay the box's, one for one)
@@ -230,7 +237,8 @@ export function createDrawn({ renderer, camera, scene }) {
 				const values = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
 				const code = await m.recipeAt(c.hash).catch(() => null);
 				// its nodes walked here, each the box's of the same place in its tree: before anything is added to it
-				const hero = m.heroOf(got, { start: code && !gone ? m.runner(m.liveBoxOf(), code, values) : undefined });
+				const start = code && !gone ? (nodes) => seen(anchor).then((yes) => (yes && !gone ? m.runner(m.liveBoxOf(), code, values)(nodes) : null)) : undefined;
+				const hero = m.heroOf(got, { start });
 				then?.(got);
 				if (gone) hero.dispose();
 				else heroes.push(hero);
@@ -285,6 +293,7 @@ export function createDrawn({ renderer, camera, scene }) {
 		update() {
 			look();
 			if (frames.length) for (const ok of frames.splice(0)) ok();
+			for (let i = watched.length; i--; ) if (inView(watched[i].anchor)) watched.splice(i, 1)[0].ok(true);
 			if (!assets) return;
 			for (const c of copies) {
 				if (!c.copy) continue;
@@ -312,6 +321,7 @@ export function createDrawn({ renderer, camera, scene }) {
 			for (const h of heroes.splice(0)) h.dispose();
 			assets?.dispose();
 			for (const ok of frames.splice(0)) ok();
+			for (const w of watched.splice(0)) w.ok(false);
 		}
 	};
 }
