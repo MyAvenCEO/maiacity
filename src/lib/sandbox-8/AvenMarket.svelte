@@ -14,6 +14,7 @@
 	import { wayBack } from '$lib/app/back.svelte.js';
 	import { createWorld, saveWorld, loadWorld, step, ranking, want, fieldGrown, fieldYield, fieldsOn, COOP_SPOT, edgeAlong, wedgeHome, ROT, GOODS_SHOWN as GOODS, GOOD_LABEL, GOOD_COLOUR, NEED, WORLD, DAY_S, CODE, seeValley, activity, changeText, cashFlow } from './economy.js'; // GOODS: listed in rainbow order
 	import { loadCode } from './sandbox.js';
+	import { seedOf } from '$lib/sandbox/logic.js';
 	import { fullCards } from '../../../game/economy/params.js';
 	import { viewsOf } from '../../../game/economy/views.js';
 	import Frame from '$lib/genui/Frame.svelte';
@@ -203,7 +204,8 @@
 		CODE.run = null;
 		codeNote = '';
 		codeWait = true;
-		loadCode(CONFIG.cards)
+		// the world's seed seeds its cards' random too, so a world decides the same wherever it is played
+		loadCode(CONFIG.cards, { seed: seedOf(String(world?.seed ?? '')) })
 			.then((run) => {
 				if (gen !== codeGen) return run?.dispose();
 				CODE.run = run;

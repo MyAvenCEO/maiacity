@@ -65,7 +65,7 @@
 		<div class="two">
 			<div>
 				<h3>Declarative <span class="tag decl">our components</span></h3>
-				<p>The agent sends JSON from a fixed catalog (like A2UI). Our own components draw it and set every string as text. A button only names an event. Its logic runs in QuickJS: no page, no network, no clock, 8 MB, and a call that runs too long is stopped.</p>
+				<p>The agent sends JSON from a fixed catalog (like A2UI). Our own components draw it and set every string as text. A button only names an event. Its logic runs in QuickJS, in a sealed worker off the page's thread: no page, no network, no clock, 8 MB, the same answer on every device, and a call that does too much work is stopped.</p>
 			</div>
 			<div>
 				<h3>Code <span class="tag code">sandboxed frame</span></h3>
