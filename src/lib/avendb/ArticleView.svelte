@@ -12,6 +12,7 @@
 	The title is a field only where the person may also rename it (`renames`).
 -->
 <script>
+	import Cover from '$lib/blog/Cover.svelte';
 	import PostLayout from '$lib/blog/PostLayout.svelte';
 	import {
 		blocks,
@@ -175,7 +176,7 @@
 
 {#snippet hero()}
 	{#if src(parts.coverName)}
-		<img class="cover" src={src(parts.coverName)} alt={parts.coverAlt || title} />
+		<Cover src={src(parts.coverName)} alt={parts.coverAlt || title} />
 	{/if}
 {/snippet}
 
@@ -308,13 +309,6 @@
 		font-family: var(--font-body);
 		font-size: 17px;
 		line-height: 1.55;
-	}
-
-	.cover {
-		display: block;
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
 	}
 
 	.missing {
