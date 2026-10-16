@@ -561,7 +561,8 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
     };
-    until("her phone reads them, each Public", || async { public(&world_of(&phone).await) == 10 }).await;
+    let n = both.0.len();
+    until("her phone reads them all, each Public", || async { public(&world_of(&phone).await) == n }).await;
     let seen = world_of(&first).await;
     assert_eq!(seen["ownsServer"], true, "as her browser shows");
     let (hers, masters) = (Principal::Signer(Passkey::from_seed([5; 32]).id()), Principal::Signer(master.id()));

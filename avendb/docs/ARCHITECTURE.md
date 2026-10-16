@@ -190,7 +190,11 @@ seed (`world::SEED`), each vault owned by the one before alone:
 | Maia City | Coop | avenCEO GmbH; the city's content lives here |
 
 So the server acts for avenCEO server on its own, and every edit it makes traces back through avenCEO GmbH and Maia
-Holding GmbH to the person's passkey. The claim:
+Holding GmbH to the person's passkey. Every device reads the server from the seed (`world::seeder`): a vault is a
+server's only as the device vault, with a device, at the end of that chain, owned alone by a coop owned alone by a coop
+owned alone by a human vault. So a coop's drive, in a device vault under the coop, or an aven's agent passes for none;
+`ownsServer` is whether the person's vault founded such a seed, and avenCEO server, for a vault, is such a device vault
+that the vault gives relay or more on the whole of it (`world::avenceo`). The claim:
 
 1. The device takes the server's card (`Lab::card`). If it names no device vault the server belongs to, nobody has
    claimed the server, and the device asks it for its key to seal to (`Lab::claim_key`).

@@ -149,11 +149,13 @@ coop vaults, never by a signer, and has no devices: it acts through the vaults t
 agent: owned by their human vault alone, one to a person, with no devices; it acts through its owner's devices, and owns
 the device vaults its agents run in. A device vault is owned by one human, coop or aven vault and owns nothing; its
 devices, a server or an agent's harness, act for it but never govern it (T2): the server of avenDB runs in one, owned by
-the coop that runs it. Shares name vaults or everyone (T4): only a keep share names a device, one of its issuer's, and
-it grants nothing. Every edit for a vault other than a human vault names the chain of owners it goes through (`via`):
-from an owner of the vault it acts for down, each an owner of the one before, to the vault its device or passkey belongs
-to. The rules check that chain alone, so the edit says how it was entitled, and a removal anywhere along it cuts the
-edit the same way on every device (T1, T16, T17).
+the coop that runs it, avenCEO GmbH, at the end of the seed a person's vault founds as it claims the server (Maia
+Holding GmbH, then avenCEO GmbH, then avenCEO server): the Rust core reads the server so, from the seed, and the
+Examples found it so. Shares name vaults or everyone (T4): only a keep share names a device, one of its issuer's, and it
+grants nothing. Every edit for a vault other than a human vault names the chain of owners it goes through (`via`): from
+an owner of the vault it acts for down, each an owner of the one before, to the vault its device or passkey belongs to.
+The rules check that chain alone, so the edit says how it was entitled, and a removal anywhere along it cuts the edit
+the same way on every device (T1, T16, T17).
 
 A human vault's passkey is its root, named at genesis: it approves anything for its vault on its own, wins every
 clash, and only it hands the root on (a settings edit, which cuts what the old passkey signs on an old copy). Passkeys

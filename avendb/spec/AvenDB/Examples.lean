@@ -221,25 +221,37 @@ def s3 : List Edit := s2 ++ chain 20 [
 
 The vault is the identity. A human vault is owned by its person's passkeys, and its devices act for it. A coop vault
 is owned by human and coop vaults. A device vault is owned by one human, coop or aven vault, and its devices, a server
-or an agent's harness, act for it but never govern it: the relay server's vault is one. An aven, a person's own agent,
-is owned by that person's human vault alone, one aven to a person; it holds no devices, and owns the device vaults its
-agents run in. No signer owns any vault but a human vault. Each kind's rules are one row of the kind table,
-`Kind.rules`. -/
+or an agent's harness, act for it but never govern it: the relay server's vault is one, avenCEO server, at the end of
+the seed Alice's vault founds as it claims the server: Maia Holding GmbH, a coop her vault owns alone, avenCEO GmbH, a
+coop Maia Holding owns alone, and avenCEO server, which avenCEO GmbH owns. An aven, a person's own agent, is owned by
+that person's human vault alone, one aven to a person; it holds no devices, and owns the device vaults its agents run
+in. No signer owns any vault but a human vault. Each kind's rules are one row of the kind table, `Kind.rules`. -/
 
+def holding := 210
+def gmbh := 211
 def serverVault := 300
 def server := 600
 
-def sServer : List Edit := s3 ++ chain 400 [
-  (passkeyA, [], .genesis serverVault .deviceVault [.vault alice] 1),
+/-- The seed Alice's vault founds as it claims the server, from edit `n` on, with the server added to its device
+vault. -/
+def seed (n : Nat) : List Edit := chain n [
+  (passkeyA, [], .genesis holding .coop [.vault alice] 1),
+  (passkeyA, [], .genesis gmbh .coop [.vault holding] 1),
+  (passkeyA, [], .genesis serverVault .deviceVault [.vault gmbh] 1),
   (passkeyA, [server], .share (.device serverVault server))]
+
+def sServer : List Edit := s3 ++ seed 400
 #guard refused sServer == []
 
--- the server acts for its vault, and so do Alice's devices, through Alice's vault; Bob's don't
+-- the server acts for its vault, and so do Alice's devices, through Alice's vault and the two coops; Bob's don't
 #guard actsFor (view sServer) server serverVault && actsFor (view sServer) macA serverVault &&
   !actsFor (view sServer) macB serverVault
--- the vault's key opens on the server and on Alice's devices; Alice's vault's key doesn't open on the server
+#guard actsFor (view sServer) macA gmbh && !actsFor (view sServer) server gmbh
+-- the vault's key opens on the server and on Alice's devices; neither Alice's vault's key nor the coops' opens on the
+-- server
 #guard opens' sServer server (.seed serverVault) && opens' sServer phoneA (.seed serverVault)
 #guard !opens' sServer server (.seed alice) && !opens' sServer macB (.seed serverVault)
+#guard !opens' sServer server (.seed gmbh) && !opens' sServer server (.seed holding)
 -- the server doesn't govern its vault: it adds no device; Alice's passkey does, through Alice's vault
 #guard !accepted sServer (attempt server [77] (.share (.device serverVault 77)))
 #guard accepted sServer (attempt passkeyA [77] (.share (.device serverVault 77)))
@@ -295,9 +307,11 @@ belong to, is refused. -/
 #guard !accepted s3 (attempt macA [] (create coop welcome coop [] doc (via := [bob])))
 -- nor through Carol's vault, which doesn't own the coop
 #guard !accepted s3 (attempt macC [] (create coop welcome coop [] doc (via := [carol])))
--- the server creates an entry for its vault directly, Alice's Mac through Alice's vault
+-- the server creates an entry for its vault directly, Alice's Mac through the two coops and Alice's vault
 #guard accepted sServer (attempt server [] (create serverVault status serverVault [] note))
-#guard accepted sServer (attempt macA [] (create serverVault status serverVault [] note (via := [alice])))
+#guard accepted sServer
+  (attempt macA [] (create serverVault status serverVault [] note (via := [gmbh, holding, alice])))
+#guard !accepted sServer (attempt macA [] (create serverVault status serverVault [] note (via := [alice])))
 #guard !accepted sServer (attempt macA [] (create serverVault status serverVault [] note))
 
 -- a coop of the coop: Bob's Mac acts for it through the coop and Bob's vault, and may skip neither
@@ -606,9 +620,7 @@ A wide share selects the whole vault, in the clear: it reaches every audience, a
 nothing. Alice gives Dave, her backup, a wide read share, and everyone her plan; the server's device vault gets a
 wide backup share: its server holds and passes on every entry of Alice's, and opens no key of hers. -/
 
-def wideShares : List Edit := shared ++ chain 540 [
-  (passkeyA, [], .genesis serverVault .deviceVault [.vault alice] 1),
-  (passkeyA, [server], .share (.device serverVault server)),
+def wideShares : List Edit := shared ++ seed 540 ++ chain 544 [
   (macA, [], .share (.grant (shareOf 50 alice dave .read .all))),
   (macA, [], .share (.grant (shareOf 51 alice serverVault .backup .all)))]
 -- a wide share splits no audience: there is nothing to move
@@ -620,7 +632,7 @@ def wideShares : List Edit := shared ++ chain 540 [
 #guard [door, seeds, solar, plan, diary].all fun e => (respond wideShares server).any (entryLog? · == some e)
 #guard readable wideShares server == []
 -- everyone reads the plan, the server too, once a steward has moved it to the public share's audience
-def withPublic : List Edit := wideShares ++ chain 544 [
+def withPublic : List Edit := wideShares ++ chain 548 [
   (macA, [], .share (.grant (publicShare 52 alice (byId plan)))),
   (macA, [], .move alice plan [52] [503])]
 #guard refused withPublic == [] && tidy withPublic

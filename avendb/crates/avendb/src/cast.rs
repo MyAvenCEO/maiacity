@@ -1,8 +1,9 @@
 //! The people, devices and vaults of the plan's scenarios, on the Lab: Alice with a passkey, a Mac and an iPhone; Bob,
 //! Carol and Dave with a passkey and a Mac each; the relay server and a stranger. Alice's vault is the first to claim
-//! the server: the server is a device of avenCEO server, a device vault Alice's vault owns. The scenarios (`scenarios`)
-//! and the tests start from them, and so does a page's Lab, which makes the world a step at a time (`Making`) so that
-//! it makes the McEliece pairs of each step in its workers before the next step needs them.
+//! the server: the server is a device of avenCEO server, the device vault at the end of the seed Alice's vault founds
+//! (`world::SEED`), which avenCEO GmbH owns, which Maia Holding GmbH owns, which her vault owns. The scenarios
+//! (`scenarios`) and the tests start from them, and so does a page's Lab, which makes the world a step at a time
+//! (`Making`) so that it makes the McEliece pairs of each step in its workers before the next step needs them.
 //! `avendb/spec/AvenDB/Examples.lean` has the same cast on the Lean model.
 //!
 //! A vault holds its entries itself, each with a type (`doc`, `note`, `todo`) and tags; the coop's documents are in the
@@ -78,7 +79,7 @@ pub struct World {
     pub passkey_d: SignerId,
     pub mac_d: SignerId,
     pub server: SignerId,
-    /// avenCEO server, the device vault the server is a device of, which Alice's vault owns.
+    /// avenCEO server, the device vault the server is a device of, at the end of the seed Alice's vault founds.
     pub avenceo: VaultId,
     pub stranger: SignerId,
     pub alice: VaultId,
@@ -107,15 +108,18 @@ pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> Vault
 }
 
 /// The server claimed by human vault `human`, the first to (`Lab::claim`, P8f), its passkey `passkey` signing on its
-/// device `on`: the server hands its key to seal to, the passkey founds avenCEO server, a device vault `human` owns,
-/// and adds the server as its device; the server signs last and keeps it all, `on` keeps the server's join, and syncs
-/// the server the key it boxed for it. avenCEO server.
+/// device `on`: the server hands its key to seal to, the passkey founds the seed (`world::SEED`), Maia Holding GmbH, a
+/// coop `human` owns, avenCEO GmbH, a coop Maia Holding owns, and avenCEO server, a device vault avenCEO GmbH owns, and
+/// adds the server as its device; the server signs last and keeps it all, `on` keeps the server's join, and syncs the
+/// server the key it boxed for it. avenCEO server.
 pub fn claim_on(lab: &mut Lab, on: SignerId, passkey: SignerId, human: VaultId, server: SignerId) -> VaultId {
     let key = lab.claim_key(server).expect("a server nobody has claimed hands its key");
-    let owners = vec![Principal::Vault(human)];
-    let kind = Kind::DeviceVault;
-    let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
-    let avenceo = VaultId::from(lab.submit(on, &[passkey], genesis).expect("the passkey founds avenCEO server"));
+    let mut avenceo = human;
+    for kind in crate::world::SEED {
+        let owners = vec![Principal::Vault(avenceo)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] };
+        avenceo = VaultId::from(lab.submit(on, &[passkey], genesis).expect("the passkey founds the seed"));
+    }
     let add = Action::Share(Sharing::Device { vault: avenceo, device: server, seal_to: Some(key) });
     let draft = lab.draft(on, &[passkey, server], add).expect("avenCEO server adds the server");
     let claim = lab.claim(on, draft, &[]).expect("the passkey signs the claim");
@@ -194,7 +198,7 @@ impl Making {
                 let (s, v) = (&self.signers, &self.vaults);
                 let avenceo = claim_on(lab, s[1], s[0], v[0], s[9]);
                 self.vaults.push(avenceo);
-                "avenCEO server, as Alice's vault claims the server"
+                "avenCEO server, the end of the seed Alice's vault founds as it claims the server"
             }
             3 => {
                 let s = &self.signers;

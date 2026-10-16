@@ -12,10 +12,12 @@ use avendb::engine::{self, Prepared};
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::lens::example::blobs::TODO_LENS;
-use avendb::policy::{KeepMode, Kind, Level, Principal};
+use avendb::policy::{Action, KeepMode, Kind, Level, Principal, Sharing};
 use avendb::recovery::RecoveryKey;
 use avendb::sealed::{Brought, FileKey, seal};
 use avendb::sign;
+use avendb::slice::Selector;
+use avendb::world;
 use serde_json::{Value, json};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
@@ -98,6 +100,44 @@ fn the_world_is_the_devices_view_and_null_for_a_device_of_no_vault() {
     // a node's jobs read nothing of the Lab: a node answers them (avendb-net's Node::run)
     let jobs = json!({ "op": "jobs" });
     assert!(engine::reads(&jobs) && refused(&engine::read(&w.lab, mac, &jobs)) == "BadOp");
+}
+
+#[test]
+fn the_server_is_read_from_the_seed_and_a_coops_drive_is_no_server() {
+    let mut w = cast::world();
+    let (mac, passkey, bob, avenceo) = (w.mac_b, w.passkey_b, w.bob, w.avenceo);
+    let st = w.lab.state(mac);
+    assert_eq!(world::seeder(st, avenceo), Some(w.alice), "avenCEO server ends the seed Alice's vault founded");
+    let owners = |v: VaultId| st.vault(v).map(|v| v.owners.clone()).expect("the vault");
+    let [Principal::Vault(gmbh)] = owners(avenceo)[..] else { panic!("one owner, avenCEO GmbH") };
+    let [Principal::Vault(holding)] = owners(gmbh)[..] else { panic!("one owner, Maia Holding GmbH") };
+    assert_eq!(owners(holding), [Principal::Vault(w.alice)], "which her vault owns");
+    // Bob's coop, his alone, and its drive: a device vault under it, the drive its one device, which his vault gives
+    // backup on the whole of it
+    let found = |lab: &mut Lab, kind: Kind, owner: VaultId, nonce: u64| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+        VaultId::from(lab.submit(mac, &[passkey], genesis).expect("his passkey founds it"))
+    };
+    let coop = found(&mut w.lab, Kind::Coop, bob, 1);
+    let drives = found(&mut w.lab, Kind::DeviceVault, coop, 2);
+    let drive = w.lab.device("Bob's drive");
+    let add = Action::Share(Sharing::Device { vault: drives, device: drive, seal_to: None });
+    w.lab.submit(mac, &[passkey, drive], add).expect("its drive");
+    let backup = cast::share(bob, cast::vault(drives), Level::Backup, Selector::All);
+    w.lab.issue(mac, &[mac], backup).expect("his vault gives the drive backup");
+    // the drive's device vault ends no seed: no server, so Bob's vault owns none and relays to none
+    let st = w.lab.state(mac);
+    assert_eq!(world::seeder(st, drives), None, "a coop's drive's vault ends no seed");
+    assert_eq!(world::avenceo(st, bob), None, "his vault relays to no server");
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    assert_eq!((&seen["ownsServer"], &seen["backsUp"]), (&json!(false), &Value::Null), "nor owns one");
+    // once his vault gives avenCEO server relay, that is his server
+    let relay = cast::share(bob, cast::vault(avenceo), Level::Relay, Selector::All);
+    w.lab.issue(mac, &[mac], relay).expect("his vault gives the server relay");
+    assert_eq!(world::avenceo(w.lab.state(mac), bob), Some(avenceo));
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    assert_eq!((&seen["ownsServer"], &seen["backsUp"]), (&json!(false), &json!(false)), "Alice's, relay alone");
 }
 
 #[test]

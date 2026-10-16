@@ -12,6 +12,7 @@ use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Refusal, Sharing};
 use avendb::sign::{Signed, WebAuthn};
 use avendb::slice::Selector;
+use avendb::world;
 use avendb::sync::{log_of, LogId};
 use avendb::wire::Claim;
 use common::*;
@@ -62,9 +63,11 @@ fn the_first_human_vault_to_claim_the_server_owns_it_for_good() {
     let avenceo = claim_on(&mut lab, mac, passkey, alice, server);
     assert_eq!(lab.vault_of(server), Some(avenceo), "the server is a device of avenCEO");
     let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
-    let owned = (Kind::DeviceVault, &[Principal::Vault(alice)][..], None);
-    assert_eq!((vault.kind, &vault.owners[..], vault.root), owned);
-    assert_eq!(vault.devices, vec![server], "owned by Alice's vault, with the server its one device");
+    let [Principal::Vault(gmbh)] = vault.owners[..] else { panic!("one owner, avenCEO GmbH: {vault:?}") };
+    let gmbh = lab.state(server).vault(gmbh).map(|v| v.kind);
+    assert_eq!((vault.kind, vault.root, gmbh), (Kind::DeviceVault, None, Some(Kind::Coop)), "a coop's device vault");
+    assert_eq!(world::seeder(lab.state(server), avenceo), Some(alice), "the end of the seed Alice's vault founded");
+    assert_eq!(vault.devices, vec![server], "with the server its one device");
     assert_eq!(lab.state(mac).vault(avenceo).map(|v| v.devices.clone()), Some(vec![server]), "on her Mac too");
     // the server opens avenCEO's key, which Alice's Mac boxed for it, and nothing of Alice's own
     assert!(lab.opens(server, KeyFam::Seed(avenceo)) && !lab.opens(server, KeyFam::Seed(alice)));
@@ -175,8 +178,11 @@ fn the_server_hands_out_avenceos_log_as_its_contact_card() {
     let card = lab.card(server);
     let log = |s: &Signed| log_of(&s.edit, s.edit.id());
     assert!(card.iter().any(|s| log(s) == Some(LogId::Vault(avenceo))), "the card holds avenCEO's log");
-    let ours = |s: &Signed| matches!(log(s), Some(LogId::Vault(v)) if v == avenceo || v == alice);
-    assert!(card.iter().all(ours), "and its owner's, and nothing else: no cap, cell or entry");
+    let st = lab.state(server);
+    let up = |v: VaultId| v == avenceo || st.owns(v, avenceo);
+    let ours = |s: &Signed| matches!(log(s), Some(LogId::Vault(v)) if up(v));
+    assert!(card.iter().all(ours), "and its owners', up the seed to Alice's vault, and nothing else: no cap or entry");
+    assert!(card.iter().any(|s| log(s) == Some(LogId::Vault(alice))), "hers among them");
     // someone else, who knows nothing of this avenCEO, gives it relay on their whole vault once they hold the card
     let mut w = world();
     let bob = w.bob;

@@ -908,24 +908,29 @@ pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     chain
 }
 
-/// Whether vault `server` ends a seed founded from vault `mine`, by view `st` (`SEED`): its kind, its owner's and its
-/// owner's owner's are the seed's, each owned by the one before alone, the first by `mine`.
+/// Whether vault `server` ends a seed founded from vault `mine`, by view `st` (`seeder`).
 pub fn seeded(st: &State, mine: VaultId, server: VaultId) -> bool {
-    let mut at = server;
-    for kind in SEED.iter().rev() {
-        let Some(v) = st.vault(at).filter(|v| v.kind == *kind) else { return false };
-        let [Principal::Vault(owner)] = v.owners[..] else { return false };
-        at = owner;
-    }
-    at == mine
+    seeder(st, server) == Some(mine)
 }
 
-/// A server's vault by view `st`: a device vault with a device, the server, owned by no aven, as avenCEO GmbH owns
-/// avenCEO server; an aven's device vaults are its agents'.
+/// The human vault whose seed vault `server` ends, by view `st` (`SEED`): its kind, its owner's and its owner's
+/// owner's are the seed's, avenCEO server's, avenCEO GmbH's and Maia Holding GmbH's, each owned by the one before
+/// alone, the first by that human vault. None for any other vault.
+pub fn seeder(st: &State, server: VaultId) -> Option<VaultId> {
+    let mut at = server;
+    for kind in SEED.iter().rev() {
+        let v = st.vault(at).filter(|v| v.kind == *kind)?;
+        let [Principal::Vault(owner)] = v.owners[..] else { return None };
+        at = owner;
+    }
+    st.vault(at).is_some_and(|v| v.kind == Kind::Human).then_some(at)
+}
+
+/// A server's vault by view `st`, read from the seed: the device vault of a seed, avenCEO server, which avenCEO GmbH
+/// owns (`seeder`), with a device, the server. A device vault the shape of no seed's end is none, as a coop's drive's
+/// or an aven's agent's.
 fn is_server(st: &State, v: &Vault) -> bool {
-    let aven = |o: VaultId| st.vault(o).is_some_and(|o| o.kind == Kind::Aven);
-    let by_aven = |p: &Principal| matches!(*p, Principal::Vault(o) if aven(o));
-    v.kind == Kind::DeviceVault && !v.devices.is_empty() && !v.owners.iter().any(by_aven)
+    v.kind == Kind::DeviceVault && !v.devices.is_empty() && seeder(st, v.id).is_some()
 }
 
 /// Whether device `me`'s vault owns avenCEO server, directly or through owners of owners, by its view: a server's

@@ -15,7 +15,7 @@ use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{self, Schema, Status, TypeV1, View};
-use avendb::policy::{Level, Refusal};
+use avendb::policy::{Level, Principal, Refusal};
 use avendb::rules::{self, Op};
 use avendb::world;
 use serde_json::{json, Value};
@@ -542,11 +542,15 @@ fn an_aven_s_server_traces_back_to_the_vault_that_owns_the_aven() {
     let link = &chain["links"][0];
     let (who, at) = (json!({ "signer": server }), json!(avenceo));
     assert_eq!((&link["who"], &link["in"], &link["as"]), (&who, &at, &json!("device")));
-    // Alice's passkey approved the server's join for avenCEO, which her vault owns, and the server signed it too
+    // Alice's passkey approved the server's join for avenCEO, at the end of the seed her vault owns, and the server
+    // signed it too; avenCEO GmbH owns it
     let signers = list(&link["signers"]);
     assert!(signers.contains(&json!({ "signer": w.passkey_a.to_hex(), "vault": alice, "as": "root" })), "{link}");
     assert!(signers.contains(&json!({ "signer": server, "vault": avenceo, "as": "device" })));
-    assert_eq!(chain["owners"], json!([{ "vault": alice }]));
+    let st = w.lab.state(w.mac_a);
+    let [Principal::Vault(gmbh)] = st.vault(w.avenceo).expect("avenCEO server").owners[..] else { panic!("one owner") };
+    assert_eq!(chain["owners"], json!([{ "vault": gmbh.to_hex() }]));
+    assert_eq!(world::seeder(st, w.avenceo), Some(w.alice), "up the seed her vault founded");
     // a signer that acts for no vault traces back to nothing
     let none = data::Audit::new(&w.lab, w.mac_a).chain(w.stranger, w.avenceo, &[]);
     assert_eq!(none["links"][0]["edit"], Value::Null);
