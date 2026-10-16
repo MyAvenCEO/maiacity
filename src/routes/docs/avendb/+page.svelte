@@ -464,7 +464,7 @@
 		],
 		[
 			'Hashes',
-			'BLAKE3 for every hash of avenDB’s own: an id is the plain hash of the bytes, the name iroh gives them, and every other hash derives its own key for its purpose.'
+			'BLAKE3 for every hash of avenDB’s own: an edit’s or a blob’s id is the plain hash of its bytes, the name iroh gives them, and every other hash, a signer’s id among them, derives its own key for its purpose. An entry’s id is 32 random bytes.'
 		],
 		['The bucket', 'Every object sealed again with a 256-bit key of the server’s, since the link to it is classical.']
 	];
