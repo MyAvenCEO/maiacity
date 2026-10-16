@@ -21,6 +21,8 @@ data-encoding = "2.11"
 getrandom = "0.4"
 # the relay's URL
 iroh = { version = "=1.3.0", default-features = false }
+# whether a volume is mounted read-only, as an installer's disk image is: no drive for avenDB
+libc = "0.2"
 n0-future = "0.3.2"
 # the device's code as a QR code, for the next device's camera
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }

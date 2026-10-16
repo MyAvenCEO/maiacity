@@ -1048,7 +1048,7 @@ Your passkey stands for you and is the same on every device it syncs to: its key
   put once, the newest that reads counting): its name, relay and id, the 32 bytes of its salt, the passkey's
   credential and P-256 key, the vaults it follows, and its secret XORed with the PRF output on its salt
   (`Fresh::mask`). None of it is a secret. A browser keeps the shelf in `maia.city`'s OPFS, the desktop app in
-  `~/Library/Application Support/city.maia.studio/avendb/`.
+  `~/avenDB/mac/`.
 - **Kept safe.** Unmasking the secret takes the PRF output on the device's salt, which only the person's
   authenticator gives, with user verification and to `maia.city` alone; the device checks that the unmasked secret
   is the key of its id before it touches its shelf. While open, the key is in memory only and wiped as the device

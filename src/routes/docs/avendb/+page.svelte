@@ -745,7 +745,7 @@
 			<h3>Where it lives, and how it is kept</h3>
 			<p class="prose-col">
 				A browser keeps its device in maia.city’s private storage (OPFS); the desktop app in its folder,
-				<code>~/Library/Application Support/city.maia.studio/avendb/</code>. Beside the signed, sealed edits, public keys
+				<code>~/avenDB/mac/</code>. Beside the signed, sealed edits, public keys
 				and file pieces, the device keeps one small record that opens it again: its name, its id, its relay, the 32
 				bytes of its salt, the passkey’s credential and public key, the vaults it follows, and its secret XORed with
 				your passkey’s PRF output on that salt. Nothing on disk is a secret: whoever copies it gets only noise, as

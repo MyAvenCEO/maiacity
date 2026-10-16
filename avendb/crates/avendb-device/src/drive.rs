@@ -73,8 +73,9 @@ pub fn store(volume: &Path) -> PathBuf {
     volume.join(STORE)
 }
 
-/// The volumes mounted in folder `root`: each folder in it, but a hidden one, the system's own (`com.apple.…`) and a
-/// link, as macOS links the startup disk there; by name.
+/// The volumes mounted in folder `root` that could be a drive: each folder in it, but a hidden one, the system's own
+/// (`com.apple.…`), a link, as macOS links the startup disk there, and one mounted read-only, as an installer's disk
+/// image is, which can hold no store; by name.
 pub fn volumes(root: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(root) else { return vec![] };
     let mut found: Vec<PathBuf> = entries
@@ -86,9 +87,28 @@ pub fn volumes(root: &Path) -> Vec<PathBuf> {
             !name.starts_with('.') && !name.starts_with("com.apple.") && e.file_type().is_ok_and(|t| t.is_dir())
         })
         .map(|e| e.path())
+        .filter(|path| !read_only(path))
         .collect();
     found.sort();
     found
+}
+
+/// Whether the volume at `path` is mounted read-only, as a disk image an installer comes on is.
+#[cfg(unix)]
+fn read_only(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt as _;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else { return false };
+    let mut fs: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `c` is a valid C string, `fs` a statvfs for the call to fill
+    if unsafe { libc::statvfs(c.as_ptr(), &mut fs) } != 0 {
+        return false;
+    }
+    (fs.f_flag as u64) & (libc::ST_RDONLY as u64) != 0
+}
+
+#[cfg(not(unix))]
+fn read_only(_: &Path) -> bool {
+    false
 }
 
 /// The drives of the Mac's device: the volumes it looked at, and each drive it hosts.

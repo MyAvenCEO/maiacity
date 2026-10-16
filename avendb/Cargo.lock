@@ -322,6 +322,7 @@ dependencies = [
  "data-encoding",
  "getrandom 0.4.3",
  "iroh",
+ "libc",
  "n0-future",
  "qrcode",
  "serde_json",
