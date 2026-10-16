@@ -327,10 +327,6 @@ theorem holderEntitled_ops (st : State) : Holder.entitled st.ops = Holder.entitl
 theorem keyFams_ops (st : State) : keyFams st.ops = keyFams st := by
   simp only [keyFams, ops_vaults, ops_shares, ops_entries, List.filter_map, List.map_map, live_ops]; rfl
 
-/-- A relay sees whether a new entry brings its audience back into use. -/
-theorem reenters_ops (st : State) (v : VaultId) (x : Audience) : reenters st.ops v x = reenters st v x := by
-  simp only [reenters, keyFams_ops, ops_seals, curKey_ops]
-
 /-- Whom a key is sealed to reads no selector. -/
 theorem targets_ops (st : State) : targets st.ops = targets st := by
   funext k
@@ -385,7 +381,7 @@ theorem mayBox_ops (st : State) : mayBox st.ops = mayBox st := by
   cases k with
   | signer s => rfl
   | «scoped» k ε => simp only [mayBox, keyFams_ops, entitled_ops]; rfl
-  | entry e s g => simp only [mayBox, entry?_ops, entitled_ops, epochOf_ops]; cases st.entry? e <;> rfl
+  | entry e s _ => simp only [mayBox, entry?_ops, entitled_ops]; cases st.entry? e <;> rfl
 
 /-- How senior a revoker is reads only the share's chain of issuers. -/
 theorem seniority_ops (st : State) (a : VaultId) (c : Share) : seniority st.ops a c.blind = seniority st a c := by
@@ -625,8 +621,8 @@ theorem apply_ops (st : State) (edit : Edit) :
           simp only [map_ite_none]
           cases en.stayAudience stay with
           | none => rfl
-          | some x =>
-            simp only [epochOf_ops, ops_writes]
+          | some _ =>
+            simp only [ops_writes]
             simp only [map_ite_none, Option.map_some, ops_with_counted, setEntry_ops, ops_ops]
             rfl
       · simp only [apply, hav, ite_false, Bool.false_eq_true, actsVia_ops, entry?_ops]
@@ -638,14 +634,14 @@ theorem apply_ops (st : State) (edit : Edit) :
           simp only [map_ite_none]
           cases en.stayAudience stay with
           | none => rfl
-          | some x =>
-            simp only [epochOf_ops, ops_writes]
+          | some _ =>
+            simp only [ops_writes]
             simp only [map_ite_none, Option.map_some, ops_with_counted, ops_ops]
     | some p =>
       obtain ⟨x, hdr⟩ := p
       simp only [Option.map_some]
       simp only [apply, ops_writes, actsVia_ops, entry?_ops, Option.isSome_map, ops_born, vault?_ops, audienceOk_ops,
-        mayCreate_ops, epochOf_ops, reenters_ops]
+        mayCreate_ops]
       simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
         eblind_comp_eblind, List.map_cons, List.map_nil]
       rfl

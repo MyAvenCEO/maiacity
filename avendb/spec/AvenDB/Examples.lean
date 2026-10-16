@@ -400,9 +400,11 @@ def s5 : List Edit := s4 ++ chain 40 [
   (macB, [], .write coop welcome coop none 0 [30] (via := [bob]))]
 #guard refused s5 == []
 
--- a write names a stay its entry has been in, at an epoch that stay's audience has reached
+-- a write names a stay its entry has been in, under the epoch its writer names: under one its stay's audience hasn't
+-- reached, it stands, and nobody opens it until the audience does
 #guard !accepted s5 (attempt macB [] (.write coop welcome coop (some 77) 0 [40] (via := [bob])))
-#guard !accepted s5 (attempt macB [] (.write coop welcome coop none 1 [40] (via := [bob])))
+#guard ((step (view s5) (attempt macB [] (.write coop welcome coop none 1 [40] (via := [bob])))).map fun st =>
+  !knows st [.signer macB] (.entry welcome none 1)) == some true
 -- and builds only on writes of its own entry
 #guard !accepted s5 (attempt macB [] (.write coop onboarding coop none 0 [40] (via := [bob])))
 
@@ -909,9 +911,10 @@ def s16 : List Edit := s16b ++ chain 120 [
 #guard !accepted s6 (attempt macD [] (.keys (.entry welcome (some 51) 0) []))
 -- Carol may pass on the boxes of what she reads
 #guard accepted s6 (attempt macC [] (.keys (.scoped (.audience coop [1]) 0) [.scoped (.share coop 1) 0]))
--- a box the schedule doesn't seal is refused, and so is a key of an epoch that doesn't exist yet
+-- a box the schedule doesn't seal is refused, as is a family's key of an epoch the family hasn't reached; an entry's
+-- key under an epoch no write names is sealed nowhere, so no box of it goes anywhere
 #guard !accepted s6 (attempt macA [] (.keys (.entry welcome (some 51) 0) [.signer macD]))
-#guard !accepted s6 (attempt macA [] (.keys (.entry welcome (some 51) 1) []))
+#guard !accepted s6 (attempt macA [] (.keys (.entry welcome (some 51) 1) [.scoped (.audience coop [1]) 1]))
 #guard !accepted s6 (attempt macA [] (.keys (.scoped (.audience coop [1]) 1) []))
 -- only a public key is published
 #guard !accepted s6 (attempt macA [] (.keys (.scoped (.audience coop [1]) 0) [] true))
@@ -964,16 +967,18 @@ def comeback (n : Nat := 8) : List Edit := lib ++ chain 600 ([
 #guard (view (comeback)).epochOf (.audience alice [34]) == 1
 #guard reads (comeback) passkeyB seeds && !reads (comeback) macB seeds
 
--- an entry created in the empty audience brings it back into use too: its first write may name the epoch the audience
--- moves to, which the lost Mac doesn't open, and no later one
+-- an entry created in the empty audience brings it back into use too: a device names for its first write the epoch the
+-- audience moves to, which the lost Mac doesn't open; one under a later epoch stands too, and opens for nobody until the
+-- audience reaches it
 def lampTodo (g : Nat) : Edit := attempt macA [] (.write alice lamp alice none g (create := some ([34], ⟨todo, 0, 0⟩))
   (tags := { add := [urgent] }))
 #guard reenters (view (comeback 6)) alice [34]
-#guard accepted (comeback 6) (lampTodo 1) && !accepted (comeback 6) (lampTodo 2)
 #guard ((step (view (comeback 6)) (lampTodo 1)).map fun st =>
   st.epochOf (.audience alice [34]) == 1 && !knows st [.signer macB] (.entry lamp none 1) &&
     knows st [.signer passkeyB] (.entry lamp none 1)) == some true
--- an audience in use, or one whose key was never sealed, has no epoch ahead to name
+#guard ((step (view (comeback 6)) (lampTodo 2)).map fun st =>
+  st.epochOf (.audience alice [34]) == 1 && !knows st [.signer passkeyB] (.entry lamp none 2)) == some true
+-- an audience in use, or one whose key was never sealed, moves to no new epoch
 #guard !reenters (view (comeback 3)) alice [34] && !reenters (view (comeback 6)) alice [34, 99]
 
 /-! ## Scenario 17: each todo syncs on its own -/
@@ -1008,6 +1013,32 @@ def carolMac' := receive carolMac (respond bobMac macC)
 #guard entryWrites (view carolMac') door == entryWrites (view bobMac') door
 -- and neither learned anything about the other todos
 #guard entryWrites (view carolMac') seeds == [] && entryWrites (view bobMac') solar == []
+
+/-! ## A later entry shared by its id reaches a newcomer
+
+Alice shares her plan with Bob by its id, which empties her audience of no shares, and takes the share back. Her diary
+brings that audience back into use, at a new epoch, and she shares the diary with Carol by its id. Carol's Mac is sent
+the diary's log and the share's, never the plan's, whose edits moved the audience on: so it can't tell which epoch that
+audience reached, and takes the diary's first write under the epoch Alice's Mac named, and reads it. -/
+
+def later : List Edit := s2 ++ chain 700 [
+  (macA, [], create alice plan alice [] note),
+  (macA, [], .share (.grant (shareOf 40 alice bob .read (byId plan)))),
+  (macA, [], .move alice plan [40] [700]),
+  (macA, [], .revoke (.grant 40 alice [700, 702])),
+  (macA, [], .write alice diary alice none 1 (create := some ([], ⟨note, 0, 0⟩))),
+  (macA, [], .share (.grant (shareOf 41 alice carol .read (byId diary)))),
+  (macA, [], .move alice diary [41] [704])]
+#guard refused later == [] && tidy later
+#guard (view later).epochOf (.audience alice []) == 1 && reads later macC diary
+
+-- Carol's Mac holds its own vault and what Alice's Mac sent it, none of the plan's edits; there the audience of no
+-- shares never had a key, yet it takes the diary and reads it, its first write too, as Bob's Mac reads neither
+def carolsCopy : List Edit := receive (ownVault carol) (respond later macC)
+#guard !carolsCopy.any (entryLog? · == some plan) && (view carolsCopy).epochOf (.audience alice []) == 0
+#guard refused carolsCopy == [] && reads carolsCopy macC diary
+#guard knows (view carolsCopy) [.signer macC] (.entry diary none 1)
+#guard !reads later macB diary && !reads later macB plan
 
 /-! ## Linking a new device
 
