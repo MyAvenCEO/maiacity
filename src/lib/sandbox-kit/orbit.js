@@ -15,13 +15,13 @@
  * takes over from wherever the camera was left, looking where it looked.
  */
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createControls } from '$lib/render/core.js';
 
 /** @typedef {import('./film.js').Pose} Pose */
 
 /**
  * @typedef {object} OrbitRig
- * @property {OrbitControls} controls
+ * @property {import('three/addons/controls/OrbitControls.js').OrbitControls} controls
  * @property {(x: number, y: number, hurry: boolean) => void} move travel from a touch joystick: x to the right, y ahead, each -1…1; hurry when pushed to the edge
  * @property {(dt: number) => void} update call once per frame with the frame delta in seconds
  * @property {(x: number, y: number, z: number, yaw: number, pitch: number) => void} fly hold the camera at a pose, free of the controls
@@ -51,20 +51,20 @@ export function createOrbitRig(camera, dom, options = {}) {
 	const floorY = options.floorY ?? 0;
 	const speed = options.moveSpeed ?? 26;
 
-	const controls = new OrbitControls(camera, dom);
-	controls.enableDamping = true;
-	controls.dampingFactor = 0.08;
-	controls.minDistance = minDistance;
-	controls.maxDistance = maxDistance;
-	controls.minPolarAngle = 0.05;
-	controls.maxPolarAngle = Math.PI * 0.495;
-	controls.screenSpacePanning = false;
-	// zoom lands where you are pointing, the way every map does
-	controls.zoomToCursor = true;
-	// drag turns and tilts; right-drag slides the map; a click is still a click
-	controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
-	controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-	if (options.target) controls.target.copy(options.target);
+	const controls = createControls(camera, dom, {
+		dampingFactor: 0.08,
+		minDistance,
+		maxDistance,
+		minPolarAngle: 0.05,
+		maxPolarAngle: Math.PI * 0.495,
+		screenSpacePanning: false,
+		// zoom lands where you are pointing, the way every map does
+		zoomToCursor: true,
+		// drag turns and tilts; right-drag slides the map; a click is still a click
+		mouseButtons: { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN },
+		touches: { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN },
+		target: options.target
+	});
 
 	if (!freeMove) {
 		// a specimen turntable: look at it from any angle, never leave it
