@@ -1323,7 +1323,7 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 8 since every hash of avenDB's own is BLAKE3, the last reset.
+it runs (`bucket::clear`). `FLOOR` is 9 since the master recovery key is built in again, so every human vault starts with it, the last reset.
 
 ### Layout of one generation
 

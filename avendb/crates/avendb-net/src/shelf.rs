@@ -131,8 +131,9 @@ fn listable(prefix: &str) -> bool {
 /// named as it is founded; 4 since later still, as every device tells its jobs; 5 since later again, as the server
 /// serves its feed; 6 since later that evening, as SLH-DSA signs every edit and every record has a schema; 7 since
 /// 2026-10-15, as each device has a copy setting, a full copy or a light one; 8 since later that day, as every id and
-/// every hash of avenDB's own is BLAKE3 (edit version 10) and every shipped schema starts at v1.
-pub const FLOOR: u64 = 8;
+/// every hash of avenDB's own is BLAKE3 (edit version 10) and every shipped schema starts at v1; 9 since 2026-10-16, as
+/// the master recovery key is built in again, so every human vault is founded with it as a co-owner from the start.
+pub const FLOOR: u64 = 9;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.

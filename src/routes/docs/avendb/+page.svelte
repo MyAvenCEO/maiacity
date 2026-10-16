@@ -435,7 +435,7 @@
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
-	const LAYOUT = `g8/                 one generation, 8 or later since the last reset; starting fresh makes g9
+	const LAYOUT = `g9/                 one generation, 9 or later since the last reset; starting fresh makes g10
   meta/<n>          what opens the device again, its follow list and query limit too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
