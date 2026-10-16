@@ -19,7 +19,6 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { bellTent } from '$lib/models/belltent.js';
 import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
@@ -401,10 +400,6 @@ function clump() {
 	g.visible = false;
 	return g;
 }
-
-/** the Tribe COOP's tent pitched: our bell tent from the Models ($lib/models/belltent.js), 4.2 m across on one centre
- *  pole, pitched step by step (setPitch); its lantern lit, the canvas glowing warm at dusk once it has power (light) */
-export const tent = () => bellTent();
 
 /** where the ElectroCube (0.75 × 1 m) and the packed tent ride in the pickup's bed (1.55 m long, its floor 1.16 m up):
  *  side by side, the cube behind the tool box, the tent by the tailgate */
