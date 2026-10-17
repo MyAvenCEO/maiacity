@@ -474,6 +474,19 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!(answer["ok"], json!({ "root": root, "from": 10, "to": 20, "len": 10 }));
     let bytes = BASE64.decode(answer["bytes"].as_str().expect("its bytes").as_bytes()).expect("base64");
     assert_eq!(bytes, film[10..20], "the bytes beside, in base64");
+    // a note that brings its file in its creation, one write, and a newer file brought into it, the same way
+    let notes: Vec<u8> = (0..60_000u32).map(|i| (i * 13 % 251) as u8).collect();
+    let create = json!({ "op": "create", "vault": vault, "type": "note", "value": titled("Notes", "Sown."),
+        "file": { "len": notes.len(), "name": "notes.bin" } });
+    let made = bring(&mut app, create, &notes).await["ok"].clone();
+    let row = shown(&mut app, &made["entry"], "the note", |f| f["files"][0]["len"] == notes.len()).await;
+    let said = (&row["kind"], &row["edits"], &row["files"][0]["root"]);
+    assert_eq!(said, (&json!("note"), &json!(1), &made["root"]), "one write, which brings it");
+    let into = json!({ "op": "put_file", "entry": made["entry"], "len": 5 });
+    let newer = bring(&mut app, into, b"newer").await["ok"].clone();
+    assert!(newer["edit"].is_string() && newer["entry"] == made["entry"], "{newer}");
+    let row = shown(&mut app, &made["entry"], "its newer file", |f| f["edits"] == 2).await;
+    assert_eq!((&row["files"][1]["root"], &row["files"][1]["len"]), (&newer["root"], &json!(5)));
     let dropped = app.call("fileStart", json!([{ "op": "put_file", "vault": vault, "name": "x", "len": 4 }])).await;
     let dropped = dropped.expect("a file's number");
     assert_eq!(app.call("fileDrop", json!([dropped])).await, Ok(Value::Null));
@@ -1359,7 +1372,11 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     }
     let create = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
     let (no, error) = claude.tool("avendb_run", json!({ "op": create, "path": at(&path) })).await;
-    assert!(error && no.contains("beside put_file or get_file alone"), "{no}");
+    assert!(error && no.contains("beside put_file, a create with a file or get_file alone"), "{no}");
+    let mut bringing = create.clone();
+    bringing["file"] = json!({ "name": "Harvest.csv" });
+    let (no, error) = claude.tool("avendb_run", json!({ "op": bringing })).await;
+    assert!(error && no.contains("give its absolute path beside the op"), "{no}");
     // and saves it into her vault, as an Editor creates an entry: its length the file's size, sealed onto its own shelf
     let (made, error) = claude.tool("avendb_run", json!({ "op": op, "path": at(&path) })).await;
     assert!(!error && made.contains("\"ok\""), "an Editor saves a file: {made}");
@@ -1367,6 +1384,16 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let (file, root, size) = (made["ok"]["entry"].clone(), made["ok"]["root"].clone(), made["ok"]["size"].clone());
     let (claudes, blob) = (agent::folder(&dir, "agentClaude"), root.as_str().expect("its root in hex").to_string());
     assert!(objects(&claudes, FLOOR, "blobs").contains(&blob), "in agentClaude's folder");
+    // a note that brings the same file in its creation, one write, and the file brought into it again, path beside
+    let mut bringing = create.clone();
+    bringing["file"] = json!({ "name": "Harvest.csv", "media": "text/csv" });
+    let (noted, error) = claude.tool("avendb_run", json!({ "op": bringing, "path": at(&path) })).await;
+    assert!(!error && noted.contains("\"root\""), "a note with its file: {noted}");
+    let noted: Value = serde_json::from_str(&noted).expect("JSON");
+    assert_eq!(noted["ok"]["root"], root, "the same file, sealed alike");
+    let into = json!({ "op": "put_file", "entry": noted["ok"]["entry"], "name": "Harvest.csv" });
+    let (again, error) = claude.tool("avendb_run", json!({ "op": into, "path": at(&path) })).await;
+    assert!(!error && again.contains("\"edit\""), "brought into it: {again}");
     // it reads the file back by its entry (`avendb_read_file`), every byte, from its own shelf to a new path on her Mac
     let back = folder.0.join("Harvest back.csv");
     let (read, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;

@@ -333,8 +333,8 @@ async function refresh() {
  * Op `op` on the device: the one way a page reads or changes the database (./ops.js, avendb/docs/ARCHITECTURE.md
  * §8), on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device
  * runs only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device says
- * whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file`. The
- * device's answer: `{ ok }`, or `{ refused, why }`.
+ * whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file` and a
+ * `create` that brings a file (./ops.js `brings`). The device's answer: `{ ok }`, or `{ refused, why }`.
  * @param {any} op @param {(at: number, n: number) => Promise<Uint8Array>} [read]
  */
 async function send(op, read) {
@@ -373,6 +373,23 @@ async function change(what, work) {
 	const ok = await attempt(what, work);
 	if (ok) await refresh();
 	return ok;
+}
+
+/**
+ * Runs op `op` as `what`, a change that brings file `file` (./ops.js `brings`), its length set in the op and its bytes
+ * handed over a megabyte at a time, whatever its size: what it did, or `null` if it didn't go through.
+ * @param {string} what @param {any} op @param {Blob} file
+ */
+async function bring(what, op, file) {
+	/** @param {number} at @param {number} n */
+	const read = async (at, n) => {
+		if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
+		return new Uint8Array(await file.slice(at, at + n).arrayBuffer());
+	};
+	const sized = op.op === 'create' ? { ...op, file: { ...op.file, len: file.size } } : { ...op, len: file.size };
+	let done = null;
+	const ok = await change(what, async () => (done = answer(await send(sized, read))));
+	return ok ? done : null;
 }
 
 /** Renames this device, its card's title, which the person's other devices show it by. @param {string} name */
@@ -441,18 +458,16 @@ const api = {
 	 * made, `{ entry, root, size }`, or `null`.
 	 * @param {string} actor @param {string} vault @param {File} file @param {string} media @param {string[]} tags
 	 */
-	putFile: async (actor, vault, file, media, tags) => {
-		const what = `Adding ${file.name}`;
-		/** @param {number} at @param {number} n */
-		const read = async (at, n) => {
-			if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
-			return new Uint8Array(await file.slice(at, at + n).arrayBuffer());
-		};
-		const op = { op: 'put_file', vault, name: file.name, media, tags, len: file.size, as: actor };
-		let done = null;
-		const ok = await change(what, async () => (done = answer(await send(op, read))));
-		return ok ? done : null;
-	},
+	putFile: (actor, vault, file, media, tags) =>
+		bring(`Adding ${file.name}`, { op: 'put_file', vault, name: file.name, media, tags, as: actor }, file),
+	/**
+	 * Runs op `op` as `what`, bringing file `file` as `putFile` does, its length set in the op: a `create` whose entry
+	 * and file are one edit (`file: { name?, media? }`), answering `{ entry, root, size }`, or a `put_file` into the
+	 * entry it names (`entry`), one edit on its main line, answering `{ entry, edit, root, size }`. What it did, or
+	 * `null` if it didn't go through.
+	 * @param {string} what @param {object} op @param {Blob} file
+	 */
+	bring: (what, op, file) => bring(what, op, file),
 	/**
 	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
 	 * store or fetched from a peer that may hand them over.

@@ -471,6 +471,145 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
     started.shutdown().await.expect("the server stops");
 }
 
+/// Op `op` on `node` with the bytes of `text` beside it, as a page hands a file's bytes over (`Node::run`), which it
+/// must answer: what it made.
+async fn brought(node: &Node, op: Value, text: &str) -> Value {
+    use http_body_util::{BodyExt as _, Full};
+    use hyper::body::Bytes;
+    let text = Bytes::from(text.to_string());
+    let bytes = move || Full::new(text.clone()).map_err(|e: std::convert::Infallible| -> std::io::Error { match e {} });
+    let bytes = move || bytes().into_data_stream();
+    let (answer, _) = node.run(op, Some(bytes), None::<&avendb_net::NoCeremony>).await.expect("an answer");
+    assert!(answer.get("ok").is_some(), "refused: {answer}");
+    answer["ok"].clone()
+}
+
+/// A public code entry's file, over HTTP, as a page with no device reads a recipe's source: Maia City creates a
+/// recipe with its source, one write, and brings a newer one into it; each row of it lists both, and
+/// `/feed/entry/<vault>/<entry>/file` serves the newest whole, as plain text no page runs, `seed=1` holding as ever.
+/// An entry with no file, a private one, one that isn't code, and one `seed=1` leaves out are not found; a query it
+/// can't read is a bad request.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_server_serves_a_public_code_entrys_newest_file_whole_as_plain_text() {
+    let dir = Folder::new("source");
+    let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
+    let (signup, bucket, cache) = (false, None, 0);
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
+    let (server, addr) = (&started.node, started.feed.addr());
+    let mut w = world();
+    let (mac_a, passkey, alice) = (w.mac_a, w.passkey_a, w.alice);
+    let opts = Options { relay: Some(started.relay.url()), ..Options::local() };
+    let mac = node(&mut w, mac_a, &[passkey], 1, opts).await;
+    mac.know(server.addr());
+    // Alice's vault claims the server, whose seed holds Maia City; both give avenCEO server backup
+    let avenceo = mac.claim(&started.offer, passkey).await.expect("Alice's vault claims the server");
+    let coop_of = move |lab: &Lab, me| {
+        let st = lab.state(me);
+        let Some([Principal::Vault(company)]) = st.vault(avenceo).map(|v| &v.owners[..]) else { return None };
+        let coop = |v: &&avendb::policy::Vault| v.kind == Kind::Coop && v.owners == [Principal::Vault(*company)];
+        st.vaults().iter().find(coop).map(|v| v.id)
+    };
+    let city = mac.read(coop_of).await.expect("Maia City, founded with the seed");
+    for v in [city, alice] {
+        let backup = share(v, vault(avenceo), Level::Backup, Selector::All);
+        mac.act(move |lab, me| lab.issue(me, &[me], backup)).await.expect("it gives avenCEO server backup");
+    }
+    let seeded = || async { server.read(world::seed_of).await.last() == Some(&city) };
+    until("the server knows its seed's coop", seeded).await;
+    // each Public on a tag
+    let tag = "code:public";
+    for v in [city, alice] {
+        let public = json!({ "op": "share", "over": v.to_hex(), "who": "everyone", "level": "Public",
+            "what": { "tag": tag }, "as": v.to_hex() });
+        ran(&mac, public).await;
+    }
+    let recipe = |label: &str| {
+        json!({ "kind": "recipe", "title": label, "source": "",
+            "engine": { "host": "box", "version": 4, "hash": "ab".repeat(32) }, "manifest": { "kit": ["box"] },
+            "card": { "format": "asset-card", "v": 1, "group": "machines", "label": label } })
+    };
+    let create = |v: VaultId, ty: &str, tags: Value, value: Value, text: &str| {
+        let file = json!({ "len": text.len(), "name": "source.js", "media": "text/javascript" });
+        json!({ "op": "create", "vault": v.to_hex(), "type": ty, "tags": tags, "value": value, "file": file,
+            "as": v.to_hex() })
+    };
+    // Maia City's lamp, with its source, then a newer source brought into it
+    let (old, new) = ("export default (kit) => kit.box(1);\n", "export default (kit) => kit.box(2); // newer\n");
+    let lamp = brought(&mac, create(city, "recipe", json!([tag]), recipe("Lamp"), old), old).await;
+    let e = lamp["entry"].as_str().expect("its entry").to_string();
+    let into = json!({ "op": "put_file", "entry": e, "len": new.len(), "name": "source.js", "as": city.to_hex() });
+    let newer = brought(&mac, into, new).await;
+    assert_eq!(newer["entry"], json!(e), "brought into it");
+    // Alice's own lantern, public too; Maia City's view, with no file; a private logic and a public post, each with one
+    let lantern = create(alice, "recipe", json!([tag]), recipe("Lantern"), "lantern\n");
+    let lantern = brought(&mac, lantern, "lantern\n").await;
+    let view = json!({ "kind": "view", "title": "Holders", "source": "<p>{{n}}</p>", "data": { "n": 1 } });
+    let create_view = json!({ "op": "create", "vault": city.to_hex(), "type": "view", "tags": [tag], "value": view,
+        "as": city.to_hex() });
+    let view = ran(&mac, create_view).await;
+    let logic = json!({ "kind": "logic", "source": "export function tick() {}" });
+    let logic = brought(&mac, create(city, "logic", json!([]), logic, "private\n"), "private\n").await;
+    let post = json!({ "kind": "post", "title": "Harvest", "text": "Out now.", "channel": "Devlog" });
+    let post = brought(&mac, create(city, "post", json!([tag]), post, "a post's file\n"), "a post's file\n").await;
+    let file = |v: VaultId, made: &Value, query: &str| {
+        format!("/feed/entry/{}/{}/file{query}", v.to_hex(), made["entry"].as_str().expect("an entry"))
+    };
+    let lamps = file(city, &lamp, "");
+    let served = || async { http(addr, "GET", &lamps).await.0.starts_with("http/1.1 200") };
+    until("the server serves the lamp's newest source", served).await;
+    // its row lists both files, the newest last, as the code and the entry's own row do
+    let listed = |made: &Value, text: &str| json!({ "root": made["root"], "size": made["size"], "len": text.len() });
+    let row = got(addr, &format!("/feed/entry/{}/{e}", city.to_hex())).await;
+    assert_eq!(row["files"], json!([listed(&lamp, old), listed(&newer, new)]), "{row}");
+    let code = got(addr, "/feed/code?seed=1&type=recipe").await;
+    assert_eq!(code["code"], json!([row]), "Maia City's recipe alone, the same row");
+    let views = got(addr, "/feed/code?seed=1&type=view").await;
+    assert_eq!(views["code"][0]["files"], json!([]), "a view with no file lists none");
+    let posts = format!("/feed/entry/{}/{}", city.to_hex(), post["entry"].as_str().expect("an entry"));
+    let public = || async { http(addr, "GET", &posts).await.0.starts_with("http/1.1 200") };
+    until("the server serves the post", public).await;
+    let posted = "a post's file\n";
+    assert_eq!(got(addr, &posts).await["files"], json!([listed(&post, posted)]), "a public post lists its file");
+    // the newest, whole, as plain text that no page runs
+    let (head, body) = http(addr, "GET", &lamps).await;
+    assert_eq!(body, new);
+    for want in ["content-type: text/plain; charset=utf-8", "x-content-type-options: nosniff",
+        "access-control-allow-origin: *", &format!("content-length: {}", new.len())]
+    {
+        assert!(head.contains(want), "{want}: {head}");
+    }
+    let (head, body) = http(addr, "HEAD", &lamps).await;
+    assert!(head.starts_with("http/1.1 200") && body.is_empty(), "{head}");
+    let (head, _) = http(addr, "OPTIONS", &lamps).await;
+    assert!(head.starts_with("http/1.1 204"), "a page may ask for it: {head}");
+    // seed=1 as ever: Maia City's lamp, never Alice's own lantern, which is served without it
+    assert_eq!(http(addr, "GET", &file(city, &lamp, "?seed=1&type=recipe")).await.1, new);
+    let (head, body) = http(addr, "GET", &file(alice, &lantern, "")).await;
+    assert!(head.starts_with("http/1.1 200") && body == "lantern\n", "{head}");
+    // and none of these
+    let none = [
+        (file(alice, &lantern, "?seed=1"), "a vault seed=1 leaves out"),
+        (file(city, &view, ""), "an entry with no file"),
+        (file(city, &logic, ""), "a private logic"),
+        (file(city, &post, ""), "a post, which is no code"),
+        (format!("/feed/entry/{}/{}/file", city.to_hex(), "cd".repeat(32)), "an entry the server doesn't hold"),
+        (format!("/feed/entry/{}/file", city.to_hex()), "no entry named"),
+        (format!("/feed/entry/{}/{e}/files", city.to_hex()), "no such route"),
+    ];
+    for (path, why) in none {
+        let (head, body) = http(addr, "GET", &path).await;
+        assert!(head.starts_with("http/1.1 404") && head.contains("access-control-allow-origin: *"), "{why}: {head}");
+        assert!(!body.contains("kit.box") && !body.contains("private") && !body.contains("post's"), "{why}: {body}");
+    }
+    let (head, body) = http(addr, "GET", &file(city, &lamp, "?vault=Maia%20City")).await;
+    assert!(head.starts_with("http/1.1 400") && head.contains("content-type: text/plain"), "{head}");
+    assert!(body.contains("vault is a vault's id"), "{body}");
+    mac.shutdown().await.expect("Alice's Mac stops");
+    started.shutdown().await.expect("the server stops");
+}
+
 #[test]
 fn the_server_is_configured_by_its_environment() {
     let defaults = Config::from_vars(|_| None).expect("the defaults");

@@ -893,13 +893,16 @@ fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
 /// acting for `as`, a record of avenDB's own `file` schema with the file's name and media type (`world::file`), whose
 /// next write brings the file. Whoever may receive the write may fetch the file's sealed
 /// bytes, and who reads the entry opens them (T27). `{"entry", "root", "size"}`, the file's root and sealed size.
-/// Without the bytes, as `may` asks, the entry alone: `{"entry"}`.
+/// Without the bytes, as `may` asks, the entry alone: `{"entry"}`. With `entry`, into that entry (`bring_file`).
 pub fn put_file(
     lab: &mut Lab,
     me: SignerId,
     o: &Map<String, Value>,
     brought: Option<Brought>,
 ) -> Result<Value, Refused> {
+    if o.contains_key("entry") {
+        return bring_file(lab, me, o, brought);
+    }
     let (actor, vault, name) = (actor_of(lab, me, o)?, vault_of(o, "vault")?, name_of(o, "name", "a file")?);
     let media = match o.get("media") {
         None => "application/octet-stream",
@@ -914,9 +917,54 @@ pub fn put_file(
     Ok(json!({ "entry": entry.to_hex(), "root": hex(&root.hash), "size": root.size }))
 }
 
+/// `{"op": "put_file", "entry", "len", "name"?, "media"?, "as"?}` and the file's bytes, `brought` into the node's
+/// store: entry `entry`, which the device shows on its main line, brings the file, by one write on that line that
+/// changes nothing of its record (`Lab::bring_into`), acting for `as`, made where that vault may set the entry's whole
+/// record, as its readers count a file as the entry's (`Lab::line_files`); its newest file is the one avenDB's server
+/// serves of it where everyone reads it (avendb-server's `feed`). `name` and `media` say what the file is to the node
+/// bringing it, as its job shows it, never to the entry, whose record says what its files are. `{"entry", "edit",
+/// "root", "size"}`. Without the bytes, as `may` asks, the write checked and not made: `{"entry"}`. A schema or lens
+/// entry, which holds its JSON alone, brings none.
+fn bring_file(lab: &mut Lab, me: SignerId, o: &Map<String, Value>, brought: Option<Brought>) -> Result<Value, Refused> {
+    if let Some(k) = ["vault", "tags"].iter().find(|k| o.contains_key(**k)) {
+        return Err(bad(format!("put_file into an entry takes no {k:?}: the entry has its vault and its tags")));
+    }
+    for field in ["name", "media"] {
+        if o.get(field).is_some_and(|v| !v.is_string()) {
+            return Err(bad(format!("put_file takes a text {field}")));
+        }
+    }
+    file_len(o)?;
+    let (actor, entry) = (actor_of(lab, me, o)?, entry_of(o)?);
+    if lab.meaning(me, entry).is_some_and(|m| m.attrs.ty.of_lane()) {
+        return Err(bad("a schema or lens entry holds its JSON and nothing else: it brings no file"));
+    }
+    if lab.item(me, entry).is_none() || !lab.landed(me, entry) {
+        return Err(Refused::NoEntry);
+    }
+    let root = brought.as_ref().map(|b| b.root);
+    let edit = lab.bring_into(me, actor, entry, brought.into_iter().collect())?;
+    let Some(root) = root else { return Ok(json!({ "entry": entry.to_hex() })) };
+    Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "root": hex(&root.hash), "size": root.size }))
+}
+
 /// How many bytes put_file op `o` brings: its `len`.
 pub fn file_len(o: &Map<String, Value>) -> Result<u64, Refused> {
     bytes_of(o, "len")?.ok_or_else(|| bad("put_file takes the file's length in bytes: len"))
+}
+
+/// How many bytes create op `o` brings beside its record, where it brings a file (`file`, `{len, name?, media?}`):
+/// `name` and `media`, texts, say what the file is to the node bringing it, as its job shows it, never to the entry,
+/// whose record says what its files are.
+pub(super) fn create_file(o: &Map<String, Value>) -> Result<Option<u64>, Refused> {
+    let Some(file) = o.get("file") else { return Ok(None) };
+    let why = "a create's file is {len, name?, media?}: its length in bytes, and its name and media type as text";
+    let file = file.as_object().ok_or_else(|| bad(why))?;
+    let texts = ["name", "media"].iter().all(|k| file.get(*k).is_none_or(Value::is_string));
+    if !texts || file.keys().any(|k| !["len", "name", "media"].contains(&k.as_str())) {
+        return Err(bad(why));
+    }
+    bytes_of(file, "len")?.map(Some).ok_or_else(|| bad(why))
 }
 
 /// `{"op": "back_up", "on"}`: avenDB's server keeps a backup of the person's vault and of every vault it holds a share

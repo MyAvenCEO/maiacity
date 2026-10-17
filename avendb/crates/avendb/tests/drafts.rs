@@ -14,11 +14,12 @@ use avendb::cast::{self, World};
 use avendb::doc::{Item, Peer};
 use avendb::engine;
 use avendb::history::MAIN;
-use avendb::id::{EditId, EntryId, SignerId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lens::{self, Schema};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing, Who};
 use avendb::rules;
+use avendb::sealed::{Brought, FileKey, seal};
 use avendb::slice::SCHEMA_TYPE;
 use avendb::world;
 use serde_json::{Value, json};
@@ -811,4 +812,61 @@ fn a_standing_suggester_made_before_drafts_is_granted_again_in_its_new_form() {
     w.lab.sync_all(2);
     let e = text(&made["entry"]);
     assert!(!w.lab.landed(mac, entry_id(&e)), "a draft of the coop's, on her Mac");
+}
+
+/// A logic's source, sealed under a key of its own, as a node's store seals it (`Node::store_file`).
+fn source(text: &str) -> Brought {
+    let (key, plain) = (FileKey::from_bytes([5; 32]), text.repeat(200).into_bytes());
+    let root = avendb::hash::hash("a test file's root", &seal(&key, &plain));
+    Brought::new(root, key, plain.len() as u64)
+}
+
+/// A draft brings its file in its creation (`create` with `draft` and a `file`), one write that starts its line: every
+/// reader of the draft opens the file, as a file of that line alone, and Dave's Mac, which keeps it, opens none. Its
+/// main line brings none and the feed lists none until her vault lands it, when the file is main's, as all the line
+/// holds, and the feed lists it with the entry. agentClaude brings no file into the draft's main line meanwhile, which
+/// holds nothing, nor into main once it landed, which a Suggester never sets.
+#[test]
+fn a_draft_brings_its_file_on_its_line_and_lands_it_with_the_line() {
+    let mut g = gate();
+    let (a, c) = (g.alice.to_hex(), g.agent.to_hex());
+    let file = source("export default (x) => x;\n");
+    let (root, len) = (file.root, file.len);
+    let op = json!({ "op": "create", "vault": a, "type": "logic", "tags": [GAME], "value": logic("Harvest rules"),
+        "draft": true, "file": { "len": len, "name": "rules.js", "media": "text/javascript" }, "as": c });
+    assert_eq!(ok(g.run(g.claude, json!({ "op": "may", "ops": [op] }))), json!([true]), "it may draft one");
+    let made = ok(engine::put_file(&mut g.w.lab, g.claude, &op, file));
+    let (e, line) = (text(&made["entry"]), text(&made["line"]));
+    assert_eq!((&made["root"], &made["size"]), (&json!(BlobId(root.hash).to_hex()), &json!(root.size)));
+    let writes = g.history(g.claude, &e);
+    assert_eq!(writes.len(), 1, "one write: {writes:?}");
+    assert_eq!((&writes[0]["id"], &writes[0]["kind"]), (&json!(line), &json!("draft")));
+    g.sync(1);
+    let (entry, on) = (entry_id(&e), Some(edit_id(&line)));
+    for d in g.readers() {
+        assert_eq!(g.w.lab.line_files(d, entry, on), [(root, Some(len))], "its line's, on {d:?}");
+        assert!(g.w.lab.line_files(d, entry, MAIN).is_empty(), "none of main's yet, on {d:?}");
+        assert_eq!(g.w.lab.file(d, &root).map(|b| b.len), Some(len), "opened on {d:?}");
+        let rows = world::public_entries(&g.w.lab, d, None);
+        assert!(!rows.iter().any(|r| r["entry"] == e.as_str()), "the feed lists none, on {d:?}");
+    }
+    assert_eq!(g.w.lab.file(g.backup, &root), None, "kept, never opened");
+    let into = json!({ "op": "put_file", "entry": e, "len": 1, "as": c });
+    let asked = ok(g.run(g.claude, json!({ "op": "may", "ops": [into] })));
+    assert_eq!(refused(&asked[0]), "NoEntry", "its main line holds nothing yet");
+    // her vault accepts it: the line lands, and its file is main's
+    let (aip, _) = g.propose("Harvest rules, with their source", &[(&e, &line)]);
+    g.sync(2);
+    let heads = g.aip(g.mac, &aip)["lines"][0]["heads"].clone();
+    ok(g.review(&aip, "accepted", Some(heads)));
+    g.sync(3);
+    for d in g.readers() {
+        assert!(g.landed(d, &e), "on {d:?}");
+        assert_eq!(g.w.lab.line_files(d, entry, MAIN), [(root, Some(len))], "main's now, on {d:?}");
+    }
+    let rows = world::public_entries(&g.w.lab, g.mac, Some(&world::CODE_KINDS[..]));
+    let row = rows.into_iter().find(|r| r["entry"] == e.as_str()).expect("in the feed of code once landed");
+    assert_eq!(row["files"], json!([{ "root": BlobId(root.hash).to_hex(), "size": root.size, "len": len }]));
+    let asked = ok(g.run(g.claude, json!({ "op": "may", "ops": [into] })));
+    assert_eq!(refused(&asked[0]), "NotAllowed", "a Suggester sets nothing on main");
 }

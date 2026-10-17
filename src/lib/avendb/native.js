@@ -7,6 +7,7 @@
 // calls (avendb/docs/ARCHITECTURE.md §8).
 
 import { command } from '$lib/native';
+import { brings } from './ops.js';
 
 /**
  * Calls `name` with `args` on the app's device: what it answered, or an error saying why not.
@@ -107,29 +108,31 @@ export class NativeDevice {
 	/**
 	 * Op `op`, any read or change of the database (avendb/docs/ARCHITECTURE.md §8): its answer, `{ ok }` or
 	 * `{ refused, why }`; the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so
-	 * `ceremony` goes unused. A `put_file` op's bytes come from `read(at, n)`, a megabyte at a time, each in base64 to
-	 * the app's device, which reads them twice, for the file's key and to seal them into its store; a `read_file` op's
-	 * come back as `bytes`, as the page's device hands them.
+	 * `ceremony` goes unused. The bytes of a `put_file` op's file, or of the file a `create` op brings (its `file`),
+	 * come from `read(at, n)`, a megabyte at a time, each in base64 to the app's device, which reads them twice, for the
+	 * file's key and to seal them into its store; a `read_file` op's come back as `bytes`, as the page's device hands
+	 * them.
 	 * @param {any} op @param {unknown} [ceremony] @param {(at: number, n: number) => Promise<Uint8Array>} [read]
 	 */
 	async run(op, ceremony, read) {
-		if (op?.op === 'put_file' && read) return this.putFile(op, read);
+		if (brings(op) && read) return this.putFile(op, read);
 		const out = await call('run', op);
 		if (op?.op === 'read_file' && typeof out?.bytes === 'string') return { ...out, bytes: unbase64(out.bytes) };
 		return out;
 	}
 
 	/**
-	 * A `put_file` op, its bytes handed over as `read` reads them, as often as the device reads the file (twice: once
-	 * for its key, derived from what it holds, then to seal it): the op's answer.
-	 * @param {{ len: number }} op @param {(at: number, n: number) => Promise<Uint8Array>} read
+	 * A `put_file` op, or a `create` op that brings a file, its bytes handed over as `read` reads them, as often as the
+	 * device reads the file (twice: once for its key, derived from what it holds, then to seal it): the op's answer.
+	 * @param {any} op @param {(at: number, n: number) => Promise<Uint8Array>} read
 	 */
 	async putFile(op, read) {
+		const len = op.op === 'create' ? op.file.len : op.len;
 		const n = await call('fileStart', op);
 		try {
 			do {
-				for (let at = 0; at < op.len; ) {
-					const bytes = await read(at, Math.min(CHUNK, op.len - at));
+				for (let at = 0; at < len; ) {
+					const bytes = await read(at, Math.min(CHUNK, len - at));
 					if (!bytes.length) throw new Error('the file ends early');
 					await call('fileChunk', n, at, base64(bytes));
 					at += bytes.length;

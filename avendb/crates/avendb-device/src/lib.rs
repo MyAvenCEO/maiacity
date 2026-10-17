@@ -286,8 +286,8 @@ struct Service {
     workers: worker::Workers,
 }
 
-/// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the new entry
-/// that brings it: a `put_file` op (`Device::run`).
+/// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the write that
+/// brings it: a `put_file` op, or a `create` with a `file` (`Device::run`, `avendb::engine::brings`).
 struct Incoming {
     /// The chunks of the pass under way, for its stream; none between two passes.
     chunks: Option<mpsc::Sender<io::Result<Bytes>>>,
@@ -332,10 +332,11 @@ impl Service {
 
     /// A call on the open device, as the page's device answers it: `run` an op (`Device::run`), its answer as the
     /// page's device gives it, a `read_file`'s bytes beside in base64 (`bytes`); a change its vault's owners approve
-    /// signed in the passkey's ceremony in the sheet (`approver`). A `put_file` op's bytes come a chunk at a time:
-    /// `fileStart [op]` a file's number, `fileChunk [n, at, base64]` each chunk in order, `fileAgain [n]` once every
-    /// chunk is in, whether the device reads the file again (once for its key, once to seal it: the page then hands
-    /// every chunk over again, from 0), `fileEnd [n]` the op's answer, `fileDrop [n]` none, the file dropped.
+    /// signed in the passkey's ceremony in the sheet (`approver`). The bytes of a `put_file` op, or of a `create` that
+    /// brings a file (`file`), come a chunk at a time: `fileStart [op]` a file's number, `fileChunk [n, at, base64]`
+    /// each chunk in order, `fileAgain [n]` once every chunk is in, whether the device reads the file again (once for
+    /// its key, once to seal it: the page then hands every chunk over again, from 0), `fileEnd [n]` the op's answer,
+    /// `fileDrop [n]` none, the file dropped.
     /// `agents` the access requests the agent devices on this Mac left, `grant [name, device, shares, avenName]` one of
     /// them granted, the agent added under the person's one aven unless it is there already, the aven founded and named
     /// `avenName` if their vault owns none yet, and each of `shares` `{over, level}` a share the aven passes on to it
@@ -507,8 +508,8 @@ impl Service {
         self.sheets.lock().expect("the sheets").clear();
     }
 
-    /// `put_file` op `op` under way (`Device::run`), its file's chunks still to come in order (`fileChunk`), then its
-    /// end (`fileEnd`), which answers the op: the file's number.
+    /// Op `op` that brings a file under way, a `put_file` or a `create` with a `file` (`Device::run`), its file's
+    /// chunks still to come in order (`fileChunk`), then its end (`fileEnd`), which answers the op: the file's number.
     fn file_start(&self, d: &Arc<Device>, op: Value) -> u64 {
         let (chunks, first) = mpsc::channel(2);
         let (passes, waiting) = mpsc::unbounded_channel();

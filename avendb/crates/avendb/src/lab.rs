@@ -90,6 +90,7 @@ use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId}
 use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, SeededRng, Secret};
 use crate::lens::{self, Lane, Lens, Schema};
 use crate::merge;
+use crate::ops::Loc;
 use crate::policy::{
     mk_audience, replay, Action, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
     Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
@@ -1495,7 +1496,9 @@ impl Lab {
     /// it doesn't fit the schemas the entry was written under, of the vault's lane and the built-in ones, and
     /// `NotAccepted` if it merges into main through a share on top of no accept of the vault's (`History::passes`, M2),
     /// and `NotLanded`, before anything else, if it writes on main through a share of a draft its vault hasn't landed
-    /// (`History::lands`), unless the device is a patched app's (`patched`).
+    /// (`History::lands`), unless the device is a patched app's (`patched`). The proof lets the touches `needs`
+    /// through too, which its readers don't read off it, as a write that brings files into an entry needs to set its
+    /// whole record (`bring_into`).
     fn proven(
         &self,
         on: SignerId,
@@ -1503,13 +1506,15 @@ impl Lab {
         (vault, h): (VaultId, &History),
         w: &Write,
         (content, asks): (&[u8], &TagDelta),
+        needs: &[Touch],
     ) -> Result<Option<Proof>, Refusal> {
         if !(h.lands(w) || self.lawless) {
             return Err(Refusal::NotLanded);
         }
         let lane = Lane::with_built_ins(view.lane_of(vault, &self.held(on).readings));
         let read = h.reading(w, Some(content), on, &lane);
-        let proof = self.prove(on, view, w, read.touches.as_deref(), asks)?;
+        let touches = read.touches.as_deref().map(|ts| [ts, needs].concat());
+        let proof = self.prove(on, view, w, touches.as_deref(), asks)?;
         if !(read.fits || self.lawless) {
             return Err(Refusal::NotAView);
         }
@@ -1567,12 +1572,31 @@ impl Lab {
         tags: &[&str],
         item: Item,
     ) -> Result<EntryId, Refusal> {
+        self.create_bringing(on, actor, vault, ty, tags, item, vec![])
+    }
+
+    /// `create`, its first write bringing the files `files` too, as `bring`'s write does: one signed edit makes the
+    /// entry and brings them, judged as a creation alone, by the `create` op of the shares it goes through. Whoever may
+    /// receive it may fetch their sealed bytes (T27), and who opens it opens them (`file`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_bringing(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        ty: &str,
+        tags: &[&str],
+        item: Item,
+        files: Vec<Brought>,
+    ) -> Result<EntryId, Refusal> {
         self.unlocked(on)?;
         let entry = self.new_entry_id();
         let header = Header { ty: Sym::new(ty), created: self.now };
         let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
         let audience = self.intake(on, actor, vault, entry, &header, &tags, true)?;
-        self.create_as(on, actor, vault, entry, audience, header, tags, item)
+        let content = item.export(&Version::default());
+        self.create_with(on, actor, vault, (entry, audience), header, tags, (content, files), Proposal::Main)?;
+        Ok(entry)
     }
 
     /// Draft an entry of vault `vault` of type `ty` with tags `tags`, on device `on`, acting for `actor`: a creation
@@ -1595,6 +1619,23 @@ impl Lab {
         tags: &[&str],
         content: impl FnOnce(EntryId) -> Option<Vec<u8>>,
     ) -> Result<(EntryId, EditId), Refusal> {
+        self.create_draft_bringing(on, actor, vault, ty, tags, content, vec![])
+    }
+
+    /// `create_draft`, its creation bringing the files `files` too (`create_bringing`): they are on the draft's line,
+    /// as its first content is, and on its main line once its vault lands it, with all the line holds
+    /// (`line_files`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_draft_bringing(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        ty: &str,
+        tags: &[&str],
+        content: impl FnOnce(EntryId) -> Option<Vec<u8>>,
+        files: Vec<Brought>,
+    ) -> Result<(EntryId, EditId), Refusal> {
         self.unlocked(on)?;
         let entry = self.new_entry_id();
         let header = Header { ty: Sym::new(ty), created: self.now };
@@ -1605,7 +1646,7 @@ impl Lab {
         let audience = self.intake(on, actor, vault, entry, &header, &tags, false)?;
         let content = content(entry).ok_or(Refusal::NotAView)?;
         let at = (entry, audience);
-        let line = self.create_with(on, actor, vault, at, header, tags, content, Proposal::New)?;
+        let line = self.create_with(on, actor, vault, at, header, tags, (content, files), Proposal::New)?;
         Ok((entry, line))
     }
 
@@ -1643,15 +1684,15 @@ impl Lab {
         item: Item,
     ) -> Result<EntryId, Refusal> {
         let content = item.export(&Version::default());
-        self.create_with(on, actor, vault, (entry, audience), header, tags, content, Proposal::Main)?;
+        self.create_with(on, actor, vault, (entry, audience), header, tags, (content, vec![]), Proposal::Main)?;
         Ok(entry)
     }
 
-    /// The first write of entry `entry`, holding `content`, in the audience of the shares `audience`, under the epoch
-    /// the audience is at, or the one it moves to as the entry brings it back into use (`policy::State::reenters`), on
-    /// the main line or, for a draft, starting its own (`proposal`). A schema or lens entry's content is its schema or
-    /// lens, and nothing else (`add_schema`): `NotAView` where it isn't one, unless the device is a patched app's. Its
-    /// id.
+    /// The first write of entry `entry`, holding `content` and bringing the files `files` (`make_bringing`), in the
+    /// audience of the shares `audience`, under the epoch the audience is at, or the one it moves to as the entry
+    /// brings it back into use (`policy::State::reenters`), on the main line or, for a draft, starting its own
+    /// (`proposal`). A schema or lens entry's content is its schema or lens, and nothing else (`add_schema`):
+    /// `NotAView` where it isn't one, unless the device is a patched app's. Its id.
     #[allow(clippy::too_many_arguments)]
     fn create_with(
         &mut self,
@@ -1661,9 +1702,12 @@ impl Lab {
         (entry, audience): (EntryId, Vec<ShareId>),
         header: Header,
         tags: Vec<Sym>,
-        content: Vec<u8>,
+        (content, mut files): (Vec<u8>, Vec<Brought>),
         proposal: Proposal,
     ) -> Result<EditId, Refusal> {
+        files.sort_by_key(|f| f.root);
+        files.dedup_by_key(|f| f.root);
+        let roots = files.iter().map(|f| f.root).collect();
         let view = self.latest(on).clone();
         let x = AudienceId::of(vault, &audience);
         let epoch = view.epoch(KeyFam::Audience(vault, x)) + view.reenters(vault, x) as u64;
@@ -1677,7 +1721,7 @@ impl Lab {
             proposal,
             via: vec![],
             create: Some(audience),
-            files: vec![],
+            files: roots,
             body: vec![],
         };
         let (edit, w) = self.check_write(on, &view, action)?;
@@ -1685,9 +1729,9 @@ impl Lab {
         let proof = match header.ty.of_lane() {
             true if !(lane_fits(&header.ty, &content) || self.lawless) => return Err(Refusal::NotAView),
             true => self.prove(on, &view, &w, Some(&[Touch::Create]), &tags)?,
-            false => self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags))?,
+            false => self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags), &[])?,
         };
-        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof, files: vec![] }, x)
+        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof, files }, x)
     }
 
     /// Create a schema or lens entry of vault `vault` holding `blob`, on device `on`, acting for `actor`: of the type
@@ -1721,7 +1765,8 @@ impl Lab {
             x if x.is_empty() => shared.into_iter().collect(),
             x => x,
         };
-        self.create_with(on, actor, vault, (entry, audience), header, vec![], blob.to_vec(), Proposal::Main)?;
+        let content = (blob.to_vec(), vec![]);
+        self.create_with(on, actor, vault, (entry, audience), header, vec![], content, Proposal::Main)?;
         Ok(entry)
     }
 
@@ -1829,7 +1874,24 @@ impl Lab {
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
         let draft = self.shown(on, entry).edit(MAIN, on, change);
-        self.make_bringing(on, actor, entry, draft, TagDelta::default(), files)
+        self.make_bringing(on, actor, entry, draft, TagDelta::default(), (files, &[]))
+    }
+
+    /// Bring the files `files` into an entry, on device `on`, acting for `actor`, as one who may set its whole record:
+    /// `bring`, changing nothing of the item, made only where the write acts for the entry's vault or a share it relies
+    /// on lets it set the record at its root on the main line (`NotAllowed` else), as the entry's readers count a file
+    /// as its own (`line_files`). So `set` decides who brings a file into an entry, as `create` decides who creates one
+    /// with a file (`create_bringing`): a Suggester's share, which writes on proposals alone, brings none.
+    pub fn bring_into(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        entry: EntryId,
+        files: Vec<Brought>,
+    ) -> Result<EditId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, entry).edit(MAIN, on, |_| {});
+        self.make_bringing(on, actor, entry, draft, TagDelta::default(), (files, &[whole()]))
     }
 
     /// Add the tags `add` to an entry and remove the tags `remove`, on device `on`, acting for `actor`: a write on its
@@ -1980,10 +2042,11 @@ impl Lab {
         draft: Draft,
         tags: TagDelta,
     ) -> Result<EditId, Refusal> {
-        self.make_bringing(on, actor, entry, draft, tags, vec![])
+        self.make_bringing(on, actor, entry, draft, tags, (vec![], &[]))
     }
 
-    /// `make`, bringing the files `files`: named in the clear by their roots, their keys and lengths in its body.
+    /// `make`, bringing the files `files`: named in the clear by their roots, their keys and lengths in its body. Its
+    /// proof lets the touches `needs` through too (`proven`).
     fn make_bringing(
         &mut self,
         on: SignerId,
@@ -1991,7 +2054,7 @@ impl Lab {
         entry: EntryId,
         draft: Draft,
         tags: TagDelta,
-        mut files: Vec<Brought>,
+        (mut files, needs): (Vec<Brought>, &[Touch]),
     ) -> Result<EditId, Refusal> {
         files.sort_by_key(|f| f.root);
         files.dedup_by_key(|f| f.root);
@@ -2005,7 +2068,7 @@ impl Lab {
         let action =
             Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: vec![] };
         let (edit, w) = self.check_write(on, &view, action)?;
-        let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags))?;
+        let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags), needs)?;
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files }, x)
     }
 
@@ -2709,6 +2772,29 @@ impl Lab {
         files.map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
     }
 
+    /// The files the writes of line `line` of entry `entry` bring that device `d` counts as the entry's, in the order
+    /// the line's history holds them, oldest first, each once, with its plaintext length where `d` opens it (`file`):
+    /// of the writes it counts on that line's history (`History::history`), those that create the entry, act for its
+    /// vault, or rely on a share whose chain lets them set the whole record on their line (`bring_into`). So `create`
+    /// decides who brings a file with a new entry and `set` who brings one into an entry, and a write that changes
+    /// nothing its readers read, as a Suggester may make one on main, brings in none they count; a draft's files are
+    /// its line's, and its main line's once its vault lands it. What avenDB's server's feed lists of an entry, and of
+    /// which it serves the newest (`world::public_entries`).
+    pub fn line_files(&self, d: SignerId, entry: EntryId, line: Line) -> Vec<(FileRoot, Option<u64>)> {
+        let Some(h) = self.history(d, entry) else { return vec![] };
+        let store = self.held(d);
+        let (st, need) = (store.view(), [whole()]);
+        let may = |w: &&Write| {
+            let (proof, main) = (store.readings.proofs.get(&w.edit), w.proposal == Proposal::Main);
+            let lets = |c: &ShareId| st.share(*c).is_some_and(|cp| st.lets_through(cp, proof, main, &need));
+            w.first || w.shares.is_empty() || w.shares.iter().any(lets)
+        };
+        let mut seen = BTreeSet::new();
+        let writes = h.history(line).into_iter().map(|c| &c.write).filter(may);
+        let files = writes.filter_map(|w| store.signed.get(&w.edit)).flat_map(|s| s.edit.files().iter().copied());
+        files.filter(|f| seen.insert(*f)).map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
+    }
+
     /// The key and length of file `root`, from a write device `d` opened that brings it, if any: what it opens the file
     /// with. Only a write that names the file in the clear counts, and only with the length its sealed size says.
     pub fn file(&self, d: SignerId, root: &FileRoot) -> Option<Brought> {
@@ -3285,6 +3371,12 @@ fn key_box(
     let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
     let bytes = keys::seal(secret, pk, blob, &info(&to), rng)?;
     Some(KeyBox { to, bytes })
+}
+
+/// What a write that brings files into an entry needs a share it relies on to let it do, as it changes nothing its
+/// readers read: set the whole record (`Lab::bring_into`, `Lab::line_files`).
+fn whole() -> Touch {
+    Touch::Set(Loc::root(), None)
 }
 
 /// Whether entry `e` has landed as the device holding `store` shows it (`Lab::landed`): it is no draft, which every

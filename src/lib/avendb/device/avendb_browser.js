@@ -217,9 +217,10 @@ export class Device {
      * Runs op `op`, an object of the ops engine's (`Device::run`, `docs/ARCHITECTURE.md` §8): a promise of its
      * answer, `{ok}`, `{refused, why}`, or for a change its vault's owners approve when no `ceremony` is passed,
      * `{approve}`, which makes nothing. `ceremony(challenge, step)` is the passkey's, for such a change, as a start
-     * takes it. `read(at, n)` hands over a `put_file`'s bytes from `at` on, `n` of them, as a promise of a
-     * `Uint8Array`, a megabyte at a time (`CHUNK`), so that a file of any size passes through a little memory; it
-     * reads the file twice, from the start each time, once for its key and once to seal it.
+     * takes it. `read(at, n)` hands over the bytes of a `put_file`'s file, or of the file a `create` brings (its
+     * `file`, `{len, name?, media?}`), from `at` on, `n` of them, as a promise of a `Uint8Array`, a megabyte at a time
+     * (`CHUNK`), so that a file of any size passes through a little memory; it reads the file twice, from the start
+     * each time, once for its key and once to seal it.
      * `read_file`'s answer carries the bytes it read beside, as `bytes`, a `Uint8Array`. Rejected only where no answer
      * comes: a ceremony cancelled, the store or the network failing, a file's bytes more or fewer than its length.
      * @param {any} op

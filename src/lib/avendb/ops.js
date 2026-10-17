@@ -64,6 +64,13 @@ const ACTING = [
 export const acts = (op) => ACTING.includes(op?.op);
 
 /**
+ * Whether op `op` brings a file, its bytes handed over beside it (avendb's `engine::brings`): a `put_file`, or a
+ * `create` whose entry and its file are one edit (`file: { len, name?, media? }`).
+ * @param {any} op
+ */
+export const brings = (op) => op?.op === 'put_file' || (op?.op === 'create' && !!op.file);
+
+/**
  * What an op did, from the device's answer; a refusal throws, in the page's words where it has them, and for a batch,
  * which op it stopped at.
  * @param {any} out

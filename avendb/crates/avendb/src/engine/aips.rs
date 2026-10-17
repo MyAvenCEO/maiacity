@@ -560,7 +560,7 @@ pub(super) fn open(
         .map(|(i, (e, line))| json!({ "id": i + 1, "entry": link(e), "line": line.to_hex() }))
         .collect();
     let value = json!({ "kind": AIP, "key": key, "title": title, "note": note, "proposals": rows, "stage": "idea" });
-    let create = Step::Create { vault, ty: AIP.into(), tags, schema: schema(), value, draft: false };
+    let create = Step::Create { vault, ty: AIP.into(), tags, schema: schema(), value, draft: false, file: None };
     let made = step(lab, me, actor, create)?;
     Ok(json!({ "entry": made["entry"], "key": key }))
 }
@@ -737,7 +737,7 @@ fn answer(
         "at": lab.now(),
     });
     let (vault, ty, tags) = (a.vault, REVIEW.into(), vec![]);
-    let create = Step::Create { vault, ty, tags, schema: Named::Own, value, draft: false };
+    let create = Step::Create { vault, ty, tags, schema: Named::Own, value, draft: false, file: None };
     let made = step(lab, me, actor, create)?;
     if verdict == "revise" {
         edits(lab, me, actor, (a.entry, MAIN), &schema(), &[set("stage", "idea")])?;
