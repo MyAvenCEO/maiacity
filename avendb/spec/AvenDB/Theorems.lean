@@ -160,7 +160,8 @@ theorem T22_wide_shares {st : State} (hr : Reachable st) {c : Share} (hc : c ∈
 /-- T23 (marks mean what the shares say): where an entry's marks, what isn't live left aside, are what its vault's
     stewards mark it with (`desiredMark`), the rules every peer checks without reading a selector, a type or a tag mean
     what the selectors say. Its audience: where it is the entry's semantic audience, the write rule allows exactly the
-    vaults the shares' selectors allow. Its wants: where they are the keep shares that pick the entry (`semWants`), a
+    vaults the shares' selectors allow; a share to everyone, which a draft's semantic audience leaves out until it
+    lands, holds no write. Its wants: where they are the keep shares that pick the entry (`semWants`), a
     device wants it, and keeps its files whole, exactly as its keep shares for the entry's vault say (`wantsWith`,
     `keepsWith`) when each of them picks the entry where it is wide or its selector picks it, a whole or opened share
     picking every schema and lens entry too and a never share none (`keepPicks`). So a relay, which reads only the
@@ -172,9 +173,10 @@ theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
       keeps st d en = keepsWith (keepsFor st d en.vault) (fun k => k.wide || keepPicks k en.attrs)) :=
   Shares.T23_marks_mean_shares hr en
 
-/-- T23, new entries: the rule every peer checks never refuses a creation that stays inside its creator's slice. -/
+/-- T23, new entries: the rule every peer checks never refuses a creation, on the main line or as a draft, that stays
+    inside its creator's slice. -/
 theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}
-    (h : admits st a v x attrs proof = true) :
+    {main : Bool} (h : admits st a v x attrs proof main = true) :
     mayCreate st a v x = true :=
   Shares.T23_creations st a v x attrs h
 
@@ -207,11 +209,11 @@ theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (dep
       counts st a en deps proof main ts fits :=
   Ruling.counts_seen st a en attrs deps proof main ts fits
 
-/-- C2, creations: whether the readers of an entry count its creation reads no selector and no ops but those of the
-    chain the creation's proof names. -/
-theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (fits : Bool) :
-    creates (st.seen (proofShares st proof)) a v x proof fits = creates st a v x proof fits :=
-  Ruling.creates_seen st a v x proof fits
+/-- C2, creations: whether the readers of an entry count its creation, on the main line or as a draft, reads no
+    selector and no ops but those of the chain the creation's proof names. -/
+theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (main fits : Bool) :
+    creates (st.seen (proofShares st proof)) a v x proof main fits = creates st a v x proof main fits :=
+  Ruling.creates_seen st a v x proof main fits
 
 /-- C3 (counted writes do what they may): a counted write whose actor isn't the entry's vault relies on the share its
     proof names, which its actor holds with write or more and which reaches the entry, and every share of that share's
@@ -259,19 +261,21 @@ theorem M2_owner_counts (st : State) (en : Entry) (deps : List EditId) (proof : 
 
 /-- C4 (allowed writes count): a write that fits, builds on writes its readers count, whose proof names a share its
     actor holds with write or more that reaches the entry, and whose chain allows every touch of it, counts, if it
-    merges into main on top of the vault's accept (M2). -/
+    merges into main on top of the vault's accept (M2), and if it is on main, of an entry that has landed (D1). -/
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
     (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true)
-    (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true) :
+    (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true)
+    (hland : main = true → landed st en = true) :
     counts st a en deps (some cp.id) main ts true = true :=
-  Ruling.allowed_counts hd hcp hh hi ha hacc
+  Ruling.allowed_counts hd hcp hh hi ha hacc hland
 
-/-- C4, creations: a creation that fits, in the intake audience of a share over the vault that its actor holds with
-    write or more, whose proof names that share and whose chain allows `create`, counts. -/
-theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} (hcp : cp ∈ st.shares) (hv : cp.over = v)
-    (hh : holdsShare st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :
-    creates st a v (intake st cp) (some cp.id) true = true :=
+/-- C4, creations: a creation that fits, on the main line or as a draft (`main`), in the intake audience of a share over
+    the vault that its actor holds with write or more, whose proof names that share and whose chain allows `create` on
+    that line, counts. -/
+theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} {main : Bool} (hcp : cp ∈ st.shares)
+    (hv : cp.over = v) (hh : holdsShare st a cp .write = true) (ha : chainAllows st cp main [.create] = true) :
+    creates st a v (intake st cp) (some cp.id) main true = true :=
   Ruling.allowed_creates hcp hv hh ha
 
 /-- C4, what builds on writes that don't count: in every reachable state the readers of an entry count no write that
@@ -279,6 +283,50 @@ theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} (hcp : cp ∈ 
     don't count or anything built on it. -/
 theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st :=
   Ruling.uncounted_closed hr
+
+/-! ## Drafts
+
+A draft is a new entry proposed on a line of its own: a creation whose line is `Proposal.new`, so the entry's main line
+holds nothing. It lands (`landed`) once a counted write on main builds on its creation, in practice the vault's merge
+of its line after its accept. A `create` op names the lines it creates on (`Op.create on`), and a Suggester creates
+drafts alone. -/
+
+/-- D1 (only the vault lands a draft): a counted write on the main line of a draft that hasn't landed is the vault's
+    own. A share's merge into main, even on top of the vault's accept, or its direct write there, counts for no reader
+    until the vault's own write brings the draft's line in. -/
+theorem D1_drafts_land_by_their_vault {st : State} {a : VaultId} {en : Entry} {deps : List EditId}
+    {proof : Option ShareId} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof true ts fits = true)
+    (hl : landed st en = false) : a = en.vault :=
+  Ruling.drafts_land_by_their_vault hc hl
+
+/-- D2 (C3 and C4 for drafts): the readers of an entry count its creation as a draft by anyone but its vault exactly
+    when it fits and its proof names a share over the vault that its creator holds with write or more, in whose intake
+    audience it was created, every share of whose chain is the class of its ops and names `create` on no line or on
+    proposals (`allowed_creates` with `main = false`, read back). -/
+theorem D2_draft_creations {st : State} {a v : VaultId} {x : Audience} {proof : Option ShareId} {fits : Bool}
+    (hv : a ≠ v) :
+    creates st a v x proof false fits = true ↔ fits = true ∧ ∃ cp ∈ st.shares, proof = some cp.id ∧ cp.over = v ∧
+      holdsShare st a cp .write = true ∧ intake st cp = x ∧ ∀ c ∈ chain st cp, c.level = levelOf c.ops ∧
+        (Op.create none ∈ c.ops ∨ Op.create (some .proposals) ∈ c.ops) :=
+  Ruling.draft_creations hv
+
+/-- D2, a step: a step that takes in a draft records its creation as the start of its own line, and its readers count
+    it exactly as `creates` says of a creation on a proposal. -/
+theorem D2_draft_step {st st' : State} {edit : Edit} (h : step st edit = some st')
+    {v e a epoch via x hdr tags proof touches fits}
+    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits) :
+    (⟨edit.id, edit.author, a, e, none, epoch, [], .new, via, true, x⟩ : Write) ∈ st'.writes ∧
+      st'.uncounted = st.counting (creates st a v x proof false fits) edit.id :=
+  Ruling.draft_step h ha
+
+/-- D3 (drafts aren't public): in every reachable state, where the live part of an entry's audience is its semantic
+    audience, as its stewards mark it, a draft that hasn't landed is in no audience a share to everyone reaches, unless
+    a live wide share to everyone is over its vault: everyone opens no key of its audience. -/
+theorem D3_drafts_not_public {st : State} (hr : Reachable st) {en : Entry}
+    (haud : liveAudience st en = semAudience st en) (hl : landed st en = false)
+    (hwide : ¬∃ cp ∈ st.shares, cp.over = en.vault ∧ cp.wide = true ∧ cp.who = .everyone ∧ st.live cp.id = true) :
+    publicKey st (.audience en.vault en.audience) = false :=
+  Ruling.drafts_not_public hr haud hl hwide
 
 /-! ## Writes that fit their schemas
 
@@ -319,7 +367,7 @@ theorem S2_ceiling {V : Type} [DecidableEq V] {fit : Ops.Fit V} {n : Nat} {ps : 
     whatever its shares and their ops, and so (C4) nothing built on it. -/
 theorem S3_unfit_uncounted (st : State) (a v : VaultId) (en : Entry) (deps : List EditId) (proof : Option ShareId)
     (main : Bool) (ts : List Touch) (x : Audience) :
-    counts st a en deps proof main ts false = false ∧ creates st a v x proof false = false := by
+    counts st a en deps proof main ts false = false ∧ creates st a v x proof main false = false := by
   simp [counts, creates]
 
 /-- S3, a step: a write accepted whose result doesn't fit is one its readers don't count. -/
@@ -346,9 +394,10 @@ A vault's schemas and lenses are entries of type schema or lens that it shares w
 readers read off them (`laneOf`): no edit publishes into it, and no peer checks it. -/
 
 /-- T17 (the lane is read off the vault's own creations): a schema or a lens counts in vault `v`'s lane only if it is
-    the creation of an entry of `v` of type schema or lens, made by a device acting for `v` itself through the owners it
-    names, and one that fits, so that its readers count it. A step adds a blob to a lane only by such a creation: one
-    made by anyone else through a share, a write to an existing entry, or any other edit adds nothing. -/
+    the creation of an entry of `v` of type schema or lens, on the main line, made by a device acting for `v` itself
+    through the owners it names, and one that fits, so that its readers count it. A step adds a blob to a lane only by
+    such a creation: one made by anyone else through a share, a draft, a write to an existing entry, or any other edit
+    adds nothing. -/
 theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
     {v : VaultId} {b : BlobId} (hb : b ∈ laneOf st' v) :
     b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches,

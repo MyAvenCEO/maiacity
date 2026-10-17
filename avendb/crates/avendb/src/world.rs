@@ -119,7 +119,9 @@ impl Holder {
 }
 
 /// A device's world by its view (`world`): every vault it knows, in the order they were founded; every share in force,
-/// in the order they were issued; every audience an entry is in; and every entry, in the order they were created.
+/// in the order they were issued; every audience an entry is in; and every entry, in the order they were created. A
+/// draft its vault hasn't landed is in none of them (`Lab::landed`): it has no main line yet, and is read on its own
+/// line alone (`note`, `history`, the AIPs).
 pub struct World {
     /// Its own vault, its person's.
     pub mine: VaultId,
@@ -176,6 +178,14 @@ pub struct ShareView {
     /// The entries it reaches now: every entry of its vault for a share on the whole vault, else those in an audience
     /// of shares it is one of.
     pub entries: Vec<EntryId>,
+}
+
+impl ShareView {
+    /// Whether its ops let its grantee draft new entries, by its slice as the device reads it (`drafts`): `None` where
+    /// it doesn't read it.
+    pub fn drafts(&self) -> Option<bool> {
+        drafts(self.slice.as_ref()?)
+    }
 }
 
 /// An audience as a device shows it: the entries of a vault that the same shares reach, under one key.
@@ -268,7 +278,9 @@ impl World {
     /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenCEO server);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
     /// - each share's `group`, the built-in group whose ops its ops are and whose `everyone` matches its who, or a
-    ///   keep share's mode's (`Level::group`), `null` for one of its own or one whose slice the device doesn't read;
+    ///   keep share's mode's (`Level::group`), `null` for one of its own or one whose slice the device doesn't read; a
+    ///   Suggester's made before drafts still names Suggester; `drafts`, whether its ops let its grantee draft new
+    ///   entries (`create` on proposals, or on either line), `null` where the device doesn't read its slice;
     ///   `whole`, whether it is on the whole vault; `reads`, whether its who reads what it reaches; `gets`, whether
     ///   its who's devices receive it, neither for a keep share;
     /// - each entry's `readers`, `writers` and `sharers`: the vaults whose level on it allows read, write, or is owner,
@@ -326,6 +338,7 @@ impl World {
                 "revokers": ids(&c.revokers),
                 "entries": c.entries.iter().map(|e| hex(&e.0)).collect::<Vec<_>>(),
                 "group": group_of(&c.share, c.slice.as_ref()),
+                "drafts": c.drafts(),
                 "whole": whole,
                 "reads": !keep && level.allows(Level::Read),
                 "gets": !keep && level.allows(Level::Backup),
@@ -430,8 +443,9 @@ impl World {
 }
 
 /// The built-in group share `share` is, as a device reads its slice `slice`: the group whose ops its ops are and whose
-/// `everyone` matches its who (`rules::groups`); for a keep share, its mode's (`Level::group`); none for a group of
-/// its own, or where the device doesn't read its slice.
+/// `everyone` matches its who (`rules::groups`), a Suggester's made before drafts among them
+/// (`rules::suggester_before_drafts`), which `drafts` tells apart; for a keep share, its mode's (`Level::group`); none
+/// for a group of its own, or where the device doesn't read its slice.
 pub fn group_of(share: &Share, slice: Option<&Slice>) -> Option<&'static str> {
     if share.level.is_keep() {
         return Some(share.level.group());
@@ -439,7 +453,15 @@ pub fn group_of(share: &Share, slice: Option<&Slice>) -> Option<&'static str> {
     let ops = &slice?.grant.ops;
     let everyone = share.who == Who::Everyone;
     let same = |g: &rules::Group| g.everyone == everyone && rules::normalize(g.ops.clone()).is_ok_and(|o| o == *ops);
-    rules::groups().into_iter().find(same).map(|g| g.name)
+    let before = !everyone && rules::normalize(rules::suggester_before_drafts()).is_ok_and(|o| o == *ops);
+    rules::groups().into_iter().find(same).map(|g| g.name).or(before.then_some("Suggester"))
+}
+
+/// Whether the ops of a share with slice `slice` let its grantee draft new entries: each grant of its chain creates on
+/// proposals, as a Suggester's does since drafts, or on either line, as an Editor's (`rules::Op::Create`). A share is
+/// judged by its whole chain, so one resting on a share that drafts nothing drafts nothing either.
+pub fn drafts(slice: &Slice) -> Option<bool> {
+    Some(slice.grants().iter().all(|g| rules::allows_all(&g.ops, false, &[rules::Touch::Create])))
 }
 
 /// Device `me`'s world by its view: `None` while it belongs to no vault. Where its entries and files are synced to it
@@ -447,6 +469,8 @@ pub fn group_of(share: &Share, slice: Option<&Slice>) -> Option<&'static str> {
 pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
     let st = lab.state(me);
     let mine = lab.vault_of(me)?;
+    // the entries it shows: every one but a draft its vault hasn't landed, which has no main line yet
+    let shown: Vec<&Entry> = st.entries().iter().filter(|en| lab.landed(me, en.id)).collect();
     let vault = |v: &Vault| {
         let names = cards(lab, me, v.id).into_iter().map(|(d, (_, name))| (d, name)).collect();
         let name = profile_of(lab, me, v.id).map(|(_, name)| name);
@@ -469,14 +493,14 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
             chain: cp.chain.to_vec(),
             slice: lab.slice(me, cp.id).cloned(),
             revokers: st.vaults().iter().map(|v| v.id).filter(|&a| st.may_revoke(a, cp)).collect(),
-            entries: st.entries().iter().filter(reaches).map(|en| en.id).collect(),
+            entries: shown.iter().copied().filter(reaches).map(|en| en.id).collect(),
         }
     };
     let shares = st.shares().iter().filter(|cp| st.live(cp.id)).map(share).collect();
     let devices: Vec<(SignerId, VaultId)> =
         st.vaults().iter().flat_map(|v| v.devices.iter().map(move |&d| (d, v.id))).collect();
     let mut audiences: Vec<AudienceView> = vec![];
-    for en in st.entries() {
+    for en in &shown {
         let (v, x) = (en.vault, en.audience());
         if let Some(c) = audiences.iter_mut().find(|c| c.id == x) {
             c.entries.push(en.id);
@@ -494,7 +518,7 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
             syncs: syncing(st, &devices, v, x),
         });
     }
-    let entries = st.entries().iter().map(|en| entry(lab, me, en)).collect();
+    let entries = shown.iter().map(|en| entry(lab, me, en)).collect();
     let (owns_server, backs_up) = (owns_server(lab, me), backs_up(lab, me));
     let synced_to = SyncedTo::default();
     Some(World { mine, recovery: lab.recovery(), owns_server, backs_up, vaults, shares, audiences, entries, synced_to })
@@ -774,7 +798,7 @@ pub fn requests(lab: &Lab, me: SignerId) -> Vec<Request> {
             created: meaning.attrs.created,
         })
     };
-    st.entries().iter().filter(|en| en.creator == en.vault).filter_map(read).collect()
+    st.entries().iter().filter(|en| en.creator == en.vault && lab.landed(me, en.id)).filter_map(read).collect()
 }
 
 /// The title of record `item` of avenDB's own kind `kind`, a card's or a profile's: `None` for another kind.
@@ -795,7 +819,7 @@ pub fn retitle(item: &mut Item, kind: &str, title: &str) -> bool {
 pub fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (EntryId, String)> {
     let st = lab.state(me);
     let mut cards = BTreeMap::new();
-    for en in st.entries().iter().filter(|en| en.vault == vault && en.creator == vault) {
+    for en in st.entries().iter().filter(|en| en.vault == vault && en.creator == vault && lab.landed(me, en.id)) {
         let author = st.write(en.creation).map(|w| w.author);
         let title = || title_of(lab.item(me, en.id)?, CARD);
         if let Some(author) = author.filter(|_| typed(lab, me, en.id, CARD))
@@ -811,7 +835,7 @@ pub fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (Ent
 /// name it reads.
 pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, String)> {
     let st = lab.state(me);
-    let profiles = st.entries().iter().filter(|en| en.vault == vault && en.creator == vault);
+    let profiles = st.entries().iter().filter(|en| en.vault == vault && en.creator == vault && lab.landed(me, en.id));
     profiles.filter(|en| typed(lab, me, en.id, PROFILE)).find_map(|en| {
         Some((en.id, title_of(lab.item(me, en.id)?, PROFILE)?))
     })
@@ -827,13 +851,13 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
 /// read that its text shows (`public_files`). A field its schema doesn't name, as `published` before a post's schema
 /// names it, reads as the record stores it. What avenDB's server serves as its feed, of what it keeps (avendb-server's
 /// `feed`): a post leaves it once its tag no longer reaches a Public share, as when its article goes back to a draft,
-/// and a picture once its own does.
+/// and a picture once its own does. A draft its vault hasn't landed is never among them (`Lab::landed`).
 pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
     let st = lab.state(me);
     let files = public_files(lab, me);
     let mut names: BTreeMap<VaultId, Option<String>> = BTreeMap::new();
     let mut posts = vec![];
-    for en in st.entries().iter().filter(|en| everyone_reads(st, en)) {
+    for en in st.entries().iter().filter(|en| lab.landed(me, en.id) && everyone_reads(st, en)) {
         let Some(attrs) = lab.meaning(me, en.id).map(|m| m.attrs).filter(|a| a.ty.as_str() == POST) else { continue };
         let Some(stored) = lab.item(me, en.id).map(|i| i.record()) else { continue };
         let What::Record { title, text, record, deleted: false } = record(stored.clone()) else { continue };
@@ -883,14 +907,15 @@ pub const CODE_KINDS: [&str; 5] = ["recipe", "view", "logic", "function", "confi
 ///
 /// Anyone may found a vault, call it Maia City and make its views public, so a row tells the seed's vaults by where
 /// they stand in the seed (`seed_of`), never by a name: its `seed` is its vault's name in `SEED_NAMES` where its vault
-/// is one of the seed's, `null` for any other. A page that loads code reads Maia City's alone (`SEED_COOP`).
+/// is one of the seed's, `null` for any other. A page that loads code reads Maia City's alone (`SEED_COOP`). A draft
+/// its vault hasn't landed is never among them (`Lab::landed`), so no agent's new code runs before the vault took it.
 pub fn public_entries(lab: &Lab, me: SignerId, kinds: Option<&[&str]>) -> Vec<Value> {
     let st = lab.state(me);
     let seed: Vec<(VaultId, &str)> = seed_of(lab, me).into_iter().zip(SEED_NAMES).collect();
     let of = |kind: &str| kinds.is_none_or(|ks| ks.contains(&kind));
     let mut vaults = BTreeMap::new();
     let mut rows = vec![];
-    for en in st.entries().iter().filter(|en| everyone_reads(st, en)) {
+    for en in st.entries().iter().filter(|en| lab.landed(me, en.id) && everyone_reads(st, en)) {
         let Some((kind, false, row)) = public_row(lab, me, en, &seed, &mut vaults, of) else { continue };
         rows.push(((en.vault, kind, en.id), row));
     }
@@ -963,7 +988,8 @@ pub struct PublicFile {
 /// audience is public and that isn't deleted (`DELETED`), by the name its record reads, with the first file its writes
 /// bring that the device opens; of two of a vault named alike, the first. An article shows a picture of its vault's
 /// Library by its name (`<hash>.jpg`), so a public post names the pictures it shows that are among these
-/// (`public_posts`), which avenDB's server serves (avendb-server's `feed`).
+/// (`public_posts`), which avenDB's server serves (avendb-server's `feed`). A draft its vault hasn't landed is never
+/// among them (`Lab::landed`).
 pub fn public_files(lab: &Lab, me: SignerId) -> BTreeMap<(VaultId, String), PublicFile> {
     files_everyone_reads(lab, me, |_| true)
 }
@@ -981,7 +1007,8 @@ fn files_everyone_reads(
 ) -> BTreeMap<(VaultId, String), PublicFile> {
     let st = lab.state(me);
     let mut files = BTreeMap::new();
-    let public = st.entries().iter().filter(|en| of(en) && st.public_key(KeyFam::Audience(en.vault, en.audience())));
+    let landed = |en: &&Entry| lab.landed(me, en.id);
+    let public = st.entries().iter().filter(landed).filter(|en| of(en) && everyone_reads(st, en));
     for en in public.filter(|en| typed(lab, me, en.id, FILE)) {
         let Some(What::Record { title, record, deleted: false, .. }) = lab.item(me, en.id).map(|i| record(i.record()))
         else {
@@ -1137,6 +1164,7 @@ pub fn parent_giving(
 pub fn gives(lab: &Lab, me: SignerId, share: ShareId, ops: &[rules::Op]) -> bool {
     use rules::Op;
     let widest = |o: &Op| match o {
+        Op::Create { .. } => Op::Create { on: None },
         Op::Set { .. } => Op::Set { path: vec![], to: None, on: None },
         Op::Insert { .. } => Op::Insert { path: vec![], on: None },
         Op::Remove { .. } => Op::Remove { path: vec![], on: None },
@@ -1184,7 +1212,9 @@ pub struct Standing {
 /// gives one to their aven and the aven passes one on to its agent; and avenCEO server's, Backup or Relay, which is
 /// the person's server setting (`server_level`), so every vault backs up or relays as theirs does. The strongest first,
 /// then in the order issued, so a share comes after the one it rests on. Each with its slice's name and ops, or, where
-/// the device doesn't read the slice, its level's group's.
+/// the device doesn't read the slice, its level's group's. Of two the same vault issued to the same vault by the same
+/// name, the later alone: one issued again as its group grew, as a Suggester's did with drafts (`engine`'s
+/// `standing`), stands for the one before it.
 pub fn standing(lab: &Lab, me: SignerId, mine: VaultId) -> Vec<Standing> {
     let st = lab.state(me);
     let server = avenceo(st, mine);
@@ -1201,6 +1231,7 @@ pub fn standing(lab: &Lab, me: SignerId, mine: VaultId) -> Vec<Standing> {
             None => (cp.share.level.group().to_string(), cp.share.level.ops()),
         };
         let (level, issuer) = (cp.share.level, cp.share.issuer);
+        out.retain(|s: &Standing| !(s.who == who && s.issuer == issuer && s.name == name && named));
         out.push(Standing { share: cp.id, who, level, name, ops, issuer });
     }
     out.sort_by_key(|s| std::cmp::Reverse(s.level.rank()));

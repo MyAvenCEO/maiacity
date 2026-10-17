@@ -336,7 +336,9 @@ pub fn file_range(o: &Map<String, Value>) -> Result<(FileRoot, std::ops::Range<u
 /// screens list them, for vault `as` (the op's, else the world's `acting.as`): its owners, in the order they joined,
 /// its devices, then the grants and keep shares in force, the strongest first, then in the order issued, each with
 /// whether `as` may revoke it (a dry run of the revocation; a keep share's, as its issuer, who alone revokes it); and
-/// whether `as` may share some of it on (a dry run of a read share to everyone it would issue).
+/// whether `as` may share some of it on (a dry run of a read share to everyone it would issue). A grant's row says
+/// whether its ops let its grantee draft new entries (`drafts`, `world::drafts`), so a Suggester's made before drafts
+/// reads apart; `null` for an owner's or a device's, and where the device doesn't read its slice.
 pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let over = vault_of(o, "over")?;
     let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
@@ -346,15 +348,18 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
         Some(_) => vault_of(o, "as")?,
         None => world::acting(st, me, mine, over).actor,
     };
-    let all = st.entries().iter().filter(|en| en.vault == over).count();
+    // a draft its vault hasn't landed is no entry of it yet (`Lab::landed`)
+    let entries: Vec<&crate::policy::Entry> =
+        st.entries().iter().filter(|en| en.vault == over && lab.landed(me, en.id)).collect();
+    let all = entries.len();
     let (id, recovery) = (over.to_hex(), lab.recovery());
     // each row, and the revocation that ends it, which `may` judges
     let mut rows: Vec<(Value, Value)> = vec![];
     let member = |kind: &str, who: Value, level: &str, group: Option<&str>, (recovery, root): (bool, bool)| {
         json!({
             "kind": kind, "id": null, "over": id, "who": who, "level": level, "group": group, "name": null,
-            "what": "everything", "ops": null, "above": null, "issuer": null, "parent": null, "reaches": all,
-            "recovery": recovery, "root": root,
+            "drafts": null, "what": "everything", "ops": null, "above": null, "issuer": null, "parent": null,
+            "reaches": all, "recovery": recovery, "root": root,
         })
     };
     for &p in &vault.owners {
@@ -377,7 +382,7 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
         let whole = s.wide || slice.is_some_and(|x| x.select == Selector::All);
         let what = if whole { json!("everything") } else { read.as_ref().map_or(Value::Null, |x| x["where"].clone()) };
         let reached = |en: &&crate::policy::Entry| s.wide || world::in_audience(st, en.audience(), cp.id);
-        let reaches = st.entries().iter().filter(|en| en.vault == over).filter(reached).count();
+        let reaches = entries.iter().copied().filter(reached).count();
         let keep = s.level.is_keep();
         let row = json!({
             "kind": if keep { "keep" } else { "grant" },
@@ -387,6 +392,7 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
             "level": words::level_name(s.level),
             "group": world::group_of(s, slice),
             "name": slice.map(|x| x.name.clone()),
+            "drafts": slice.and_then(world::drafts),
             "what": what,
             "ops": read.as_ref().map(|x| x["ops"].clone()),
             "above": read.as_ref().map(|x| x["above"].clone()),
@@ -439,16 +445,27 @@ fn writing<'a>(
     st.shares_over(over).filter(named).filter_map(move |cp| Some((cp, lab.slice(me, cp.id)?)))
 }
 
-/// `{"op": "creatable", "vault", "type", "tags"?, "as"?}`: whether vault `as` may add an entry of type `type` tagged
-/// `tags` to vault `vault`, and with which tags besides: none for the vault itself, or through a share of `as` on the
-/// whole vault; else, of the live shares over it naming `as` with write or more whose ops, and those of every share
-/// they rest on, add entries, the first whose selector holds the new entry (by `as`, created now) once it carries the
-/// tags a `tag` test of one of its conjunctions asks for: those, each once, but those given. `NoCap` where no share
-/// lets it. Whether the ops allow the creation itself, `may` answers.
+/// `{"op": "creatable", "vault", "type", "tags"?, "draft"?, "as"?}`: whether vault `as` may add an entry of type `type`
+/// tagged `tags` to vault `vault`, or with `draft`, draft one there (`Lab::create_draft`), and with which tags besides:
+/// none for the vault itself, or through a share of `as` on the whole vault; else, of the live shares over it naming
+/// `as` with write or more whose ops, and those of every share they rest on, add entries, on main or for a draft on
+/// proposals (`rules::Op::Create`, as a Suggester's do), the first whose selector holds the new entry (by `as`, created
+/// now) once it carries the tags a `tag` test of one of its conjunctions asks for: those, each once, but those given.
+/// `NoCap` where no share lets it, and `BadOp` for a draft of a schema or lens, which joins the vault's lane by a
+/// creation on main alone. Whether the ops allow the creation itself, `may` answers.
 pub(super) fn creatable(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let vault = vault_of(o, "vault")?;
     let ty = o.get("type").and_then(Value::as_str).ok_or_else(|| bad("creatable takes the entry's type: type"))?;
     let given: Vec<Sym> = texts_of(o, "tags")?.iter().map(|t| Sym::new(t)).collect();
+    let draft = match o.get("draft") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(_) => return Err(bad("draft is true or false")),
+    };
+    if draft && Sym::new(ty).of_lane() {
+        let why = "a schema or lens is never a draft: it joins its vault's lane by the vault's own creation on main";
+        return Err(bad(why));
+    }
     let actor = actor_of(lab, me, o)?;
     if actor == vault {
         return Ok(json!({ "tags": [] }));
@@ -456,7 +473,7 @@ pub(super) fn creatable(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resu
     let (entry, created) = (EntryId([0; 32]), lab.now());
     let attrs = |tags: Vec<Sym>| Attrs { ty: Sym::new(ty), author: actor, entry, created, tags };
     for (cp, slice) in writing(lab, me, vault, actor) {
-        if !slice.grants().iter().all(|g| rules::allows_all(&g.ops, true, &[Touch::Create])) {
+        if !slice.grants().iter().all(|g| rules::allows_all(&g.ops, !draft, &[Touch::Create])) {
             continue;
         }
         let ds = match &slice.select {
@@ -665,7 +682,9 @@ fn share(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
 /// below Owner, named a standing grant, resting where `as` isn't `over` on a share it holds, as `share` does: so the
 /// person's vault gives their aven one, and the aven passes one on to its agent. Then every vault their vault owns now
 /// follows it as each one it founds later will (`follow_one`), and the device answers the standing grant: `{"share":
-/// id}`, the same one where it stands already.
+/// id}`, the same one where it stands already with the same ops. One of a group whose ops grew since, as a Suggester's
+/// made before drafts (`rules::suggester_before_drafts`), stands no more: it is issued again in the group's form now,
+/// resting on a share that gives all it gives (`world::parent_giving`), and every vault follows that one.
 fn standing(
     lab: &mut Lab,
     me: SignerId,
@@ -683,15 +702,16 @@ fn standing(
     }
     let name = world::standing_name(group);
     let st = lab.state(me);
+    let normal = rules::normalize(ops.clone()).ok();
     let same = |cp: &&Issued| {
         cp.share.wide && cp.share.who == Who::Vault(to) && cp.share.issuer == actor && st.live(cp.id)
-            && lab.slice(me, cp.id).is_some_and(|x| x.name == name)
+            && lab.slice(me, cp.id).is_some_and(|x| x.name == name && Some(&x.grant.ops) == normal.as_ref())
     };
     if let Some(cp) = st.shares_over(over).find(same) {
         return Ok(Prepared::Done(json!({ "share": cp.id.to_hex() })));
     }
-    let (who, level) = (Who::Vault(to), rules::level_of(&ops));
-    let parent = world::parent(st, actor, over, who, level, true);
+    let who = Who::Vault(to);
+    let parent = world::parent_giving(lab, me, actor, over, who, &ops, true);
     let new = NewShare { over, who, name, select: Selector::All, ops, parent, issuer: actor, keep: None };
     let id = lab.issue(me, &[me], new)?;
     let grant = world::standing(lab, me, mine).into_iter().find(|s| s.share == id);
@@ -1168,20 +1188,24 @@ pub fn follow_standing(lab: &mut Lab, me: SignerId, vault: VaultId) -> Result<bo
 /// an aven passes a coop's share on to its agent; so the aven's share comes first and the agent's after it. Not where
 /// its who is `v` or owns it, holds that level or more on the whole of `v` already, or nothing over `v` lets the issuer
 /// pass it on, nor a share that reads to an aven or a device vault, which acts for its one owner alone (the kind
-/// table's `most`) and which "all my vaults" never lists: their server share alone. Whether it gave it: a refusal gives
-/// nothing, and leaves the vault founded as it is.
+/// table's `most`) and which "all my vaults" never lists: their server share alone. A share at just its level that
+/// doesn't give all its ops, as a Suggester's made before drafts, holds it no more (`world::gives`), and the vault
+/// gives it again, resting on a share that does (`world::parent_giving`). Whether it gave it: a refusal gives nothing,
+/// and leaves the vault founded as it is.
 fn follow_one(lab: &mut Lab, me: SignerId, mine: VaultId, s: &world::Standing, v: VaultId) -> bool {
     let st = lab.state(me);
     let Some(kind) = st.vault(v).map(|x| x.kind) else { return false };
     let alone = kind.rules().most == Some(1) && s.level.allows(Level::Read);
-    let holds = st.shares_over(v).any(|cp| cp.share.wide && st.holds(s.who, cp, s.level));
+    let gives = |cp: &Issued| lab.slice(me, cp.id).is_none_or(|_| world::gives(lab, me, cp.id, &s.ops));
+    let held = |cp: &Issued| st.holds(s.who, cp, s.level) && (cp.share.level != s.level || gives(cp));
+    let holds = st.shares_over(v).any(|cp| cp.share.wide && held(cp));
     if s.who == v || st.owns(s.who, v) || alone || holds {
         return false;
     }
     let who = Who::Vault(s.who);
     let (issuer, parent) = match s.issuer == mine {
         true => (v, None),
-        false if st.acts_for(me, s.issuer) => match world::parent(st, s.issuer, v, who, s.level, true) {
+        false if st.acts_for(me, s.issuer) => match world::parent_giving(lab, me, s.issuer, v, who, &s.ops, true) {
             Some(p) => (s.issuer, Some(p)),
             None => return false,
         },

@@ -50,14 +50,16 @@ export const REVIEW_V1 = `{
  * An AIP as the `aips` read lists it (avendb's `engine::aips`): its entry (`null` for a bare proposal), its vault,
  * key, number and label (`AIP-n`, `null` for an idea), title and note, stage (`idea`, `proposed` or `archived`) and
  * outcome (`applied`, `rejected` or `null`), its tags and author, its lines, its reviews newest first (`current` where
- * one answers every line as it stands), the signatures so far, and a summary line per part.
+ * one answers every line as it stands), the signatures so far, and a summary line per part. A line that is `new` is a
+ * draft, a new entry proposed inside the AIP: its main line holds nothing until the vault accepts it, which lands it;
+ * `public` where a share to everyone picks it once it lands, by its type or its `tags`.
  * @typedef {{ bare: boolean, entry: string | null, vault: string, key: string | null, number: number | null,
  *   label: string | null, title: string, note: string, stage: 'idea' | 'proposed' | 'archived',
  *   outcome: 'applied' | 'rejected' | null, why: string | null, was: string | null, tags: string[],
  *   author: string | null, intent: { vault: string, entry: string } | null,
  *   links: { id: number, name: string, url: string }[],
  *   lines: { entry: string, line: string, type: string | null, title: string | null, name: string | null,
- *     heads: string[], merged: boolean }[],
+ *     heads: string[], merged: boolean, new: boolean, tags: string[], public: boolean }[],
  *   reviews: { review: string, verdict: Verdict, text: string, heads: string[], by: string | null, at: number,
  *     current: boolean }[],
  *   signatures: { have: number, need: number, of: string }, summary: string[] }} Aip
@@ -88,12 +90,34 @@ export const revisionsOf = (vault, aips) =>
 export const countsOf = (vaults, aips) => Object.fromEntries(vaults.map((v) => [v, asksOf(v, aips).length]));
 
 /**
- * The op that answers AIP `aip` with `verdict`, acting for `as`, its vault: one `aip_review`, over every line.
+ * The op that answers AIP `aip` with `verdict`, acting for `as`, its vault: one `aip_review`, over every line. It names
+ * the heads of every line as the card showed them, so avenDB refuses it where a line moved since: nothing written
+ * after the card was drawn is accepted unseen.
  * @param {Aip} aip @param {Verdict} verdict @param {string} text @param {string} as
  */
 export const answering = (aip, verdict, text, as) => [
-	{ op: 'aip_review', entry: aip.entry, verdict, text: text.slice(0, 2000), as }
+	{
+		op: 'aip_review',
+		entry: aip.entry,
+		verdict,
+		text: text.slice(0, 2000),
+		heads: aip.lines.flatMap((l) => l.heads),
+		as
+	}
 ];
+
+/**
+ * The new entries an AIP proposes, its drafts, each as its card's badge reads: "New logic", and where a share to
+ * everyone picks it once accepted, "New logic · goes public on Accept (tag game:sandbox-7)", with the tags it carries.
+ * @param {Aip} aip @returns {string[]}
+ */
+export const newsOf = (aip) =>
+	aip.lines
+		.filter((l) => l.new)
+		.map((l) => {
+			const tags = l.tags.length ? ` (tag${l.tags.length === 1 ? '' : 's'} ${l.tags.join(', ')})` : '';
+			return `New ${l.type ?? 'entry'}${l.public ? ` · goes public on Accept${tags}` : ''}`;
+		});
 
 /** The Proposals app's page of AIP `entry`, which shows it whole: its text, every line's diff, its reviews. */
 export const detail = (/** @type {string} */ entry) => `/app/aips/?aip=${encodeURIComponent(entry)}`;

@@ -531,6 +531,10 @@ theorem audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
   have hnk : cp.level.isKeep = false := by
     simp only [holdsShare, Bool.and_eq_true] at hh
     exact not_keep_of_allows hh.2 rfl
+  -- and it names a vault, never everyone, so whether a draft has landed changes nothing of it
+  have hwho : cp.who = .vault a := by
+    simp only [holdsShare, Bool.and_eq_true, beq_iff_eq] at hh
+    exact hh.1.2
   cases ho : cp.over == en.vault
   · simp
   cases hwd : cp.wide
@@ -545,7 +549,7 @@ theorem audiences_mean_slices {st : State} (hr : Reachable st) (en : Entry)
     · simp only [liveAudience, semAudience, had, ↓reduceIte] at haudience
       rw [Bool.true_and]
       exact mark_means (sel := fun cp => effSelects st cp en.attrs) hw.1 haudience hcp hlive
-        (by simp [ho, hlive, hwd, hnk])
+        (by simp [ho, hlive, hwd, hnk, hwho])
   · simp
 
 /-! ## Keep shares -/
@@ -603,7 +607,7 @@ theorem T23_marks_mean_shares {st : State} (hr : Reachable st) (en : Entry) :
   ⟨fun h a => audiences_mean_slices hr en h a, fun h d => wants_mean_keeps hr d en h⟩
 
 theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) {proof : Option ShareId}
-    (h : admits st a v x attrs proof = true) :
+    {main : Bool} (h : admits st a v x attrs proof main = true) :
     mayCreate st a v x = true := by
   unfold admits at h
   unfold mayCreate

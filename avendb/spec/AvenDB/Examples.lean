@@ -88,12 +88,13 @@ def publicShare (id : ShareId) (over : VaultId) (sel : Selector) : Share :=
 
 /-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in audience `x`, through the share
     `proof` names, if it isn't the vault, holding the content `blob` (for a schema or a lens entry, the schema or the
-    lens), whose record fits its schemas or not (`fits`). -/
+    lens), whose record fits its schemas or not (`fits`), on the main line or, as a draft, on a line of its own
+    (`proposal`). -/
 def create (v : VaultId) (e : EntryId) (actor : VaultId) (x : Audience) (t : Sym) (tags : List Sym := [])
-    (via : List VaultId := []) (proof : Option ShareId := none) (blob : BlobId := 0) (fits : Bool := true) :
-    Action :=
-  .write v e actor none 0 (via := via) (create := some (x, ⟨t, 0, blob⟩)) (tags := { add := tags }) (proof := proof)
-    (fits := fits)
+    (via : List VaultId := []) (proof : Option ShareId := none) (blob : BlobId := 0) (fits : Bool := true)
+    (proposal : Proposal := .main) : Action :=
+  .write v e actor none 0 (proposal := proposal) (via := via) (create := some (x, ⟨t, 0, blob⟩))
+    (tags := { add := tags }) (proof := proof) (fits := fits)
 
 /-- Edits in sequence: each builds on the one before, ids count from `start`. -/
 def chain (start : Nat) (steps : List (SignerId × List SignerId × Action)) : List Edit :=
@@ -104,6 +105,10 @@ def attempt (author : SignerId) (co : List SignerId) (a : Action) : Edit :=
   { id := 9999, depth := 9999, author, cosigners := co, action := a }
 
 def accepted (edits : List Edit) (edit : Edit) : Bool := (step (view edits) edit).isSome
+
+/-- The edit a scenario tries next is accepted, and its readers count it. -/
+def counted (edits : List Edit) (edit : Edit) : Bool :=
+  (step (view edits) edit).any fun st => !st.uncounted.contains edit.id
 
 /-- Device `d` opens the current key of family `k`, in what a peer holding `edits` knows. -/
 def opens' (edits : List Edit) (d : SignerId) (k : KeyFam) : Bool :=
@@ -553,7 +558,7 @@ def intake : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob 
 #guard !accepted shared (attempt macB [] (create alice lamp bob [] todo [work]))
 #guard !accepted shared (attempt macB [] (create alice lamp bob [31, 32] todo [work]))
 -- it lies in his slice; Carol's share selects it too, but she reads it only once a steward has moved it
-#guard admits (view shared) bob alice [32] ⟨todo, bob, lamp, 0, [work]⟩ (some 32)
+#guard admits (view shared) bob alice [32] ⟨todo, bob, lamp, 0, [work]⟩ (some 32) true
 #guard ((view intake).entry? lamp).map (·.admitted) == some true
 #guard upkeep intake lamp == some [31, 32] && !reads intake macC lamp && reads intake macB lamp
 def intake' : List Edit := intake ++ chain 521 [(macA, [], .move alice lamp [31, 32] [520])]
@@ -565,7 +570,7 @@ def intake' : List Edit := intake ++ chain 521 [(macA, [], .move alice lamp [31,
 -- of no shares, where only Alice reads it, keeping what Bob wrote
 def outside : List Edit := shared ++ chain 520 [(macB, [], create alice lamp bob [32] note [work] (proof := some 32))]
 #guard refused outside == []
-#guard !admits (view shared) bob alice [32] ⟨note, bob, lamp, 0, [work]⟩ (some 32)
+#guard !admits (view shared) bob alice [32] ⟨note, bob, lamp, 0, [work]⟩ (some 32) true
 #guard ((view outside).entry? lamp).map (·.admitted) == some false && upkeep outside lamp == some []
 def outside' : List Edit := outside ++ chain 521 [(macA, [], .move alice lamp [] [520])]
 -- moved, Bob neither reads nor writes it, and it stays
@@ -689,6 +694,83 @@ def headsOf (edits : List Edit) (l : Option EditId) : List EditId := heads (view
 #guard !accepted (s8) (attempt macA [] (.write coop welcome coop (some 51) 0 [306] (.on 302) [alice]))
 #guard !accepted (s8) (attempt macA [] (.write coop onboarding coop none 0 [31] (.on 300) [alice]))
 #guard !accepted (s8) (attempt macA [] (.write coop welcome coop (some 51) 0 [] (.on 999) [alice]))
+
+/-! ## Drafts: a new entry proposed on a line of its own
+
+Bob may only suggest on Alice's notes (the Suggester group): read them, create drafts, write on proposals, start them
+and merge into them. Carol edits Alice's notes, and everyone reads them. Bob drafts the harvest rules: one write that
+creates the entry and starts its own line, so its main line holds nothing. A steward marks it into the audience its
+shares select, but for the share to everyone, until it lands; no write on its main line counts but the vault's own.
+Alice accepts the line and merges it into main, which lands it: the steward then marks it public, and Carol writes on
+main as on any note. -/
+
+def harvest := 40
+def idea := 41
+def suggests : List Op := ((groups.find? (·.name == "Suggester")).map (·.ops)).getD []
+
+def notesShared : List Edit := lib ++ chain 900 [
+  (macA, [], .share (.grant { shareOf 60 alice bob .write notes with ops := suggests })),
+  (macA, [], .share (.grant (shareOf 61 alice carol .write notes))),
+  (macA, [], .share (.grant (publicShare 62 alice notes))),
+  (macA, [], .move alice plan [60, 61, 62] [503]),
+  (macA, [], .move alice diary [60, 61, 62] [504])]
+#guard refused notesShared == [] && tidy notesShared
+
+-- Bob drafts the harvest rules, in his share's intake audience, and writes on its line; a creation on a line that
+-- already is, nobody takes, and his creation on main is taken but counted by no reader, as he may only suggest
+def drafted : List Edit := notesShared ++ chain 905 [
+  (macB, [], create alice harvest bob [60] note (proof := some 60) (proposal := .new)),
+  (macB, [], .write alice harvest bob none 0 [905] (.on 905) (proof := some 60)
+    (touches := [.set [.field "title"] (some (.str "Harvest rules"))]))]
+#guard refused drafted == [] && counted notesShared (attempt macB [] (create alice harvest bob [60] note
+  (proof := some 60) (proposal := .new)))
+#guard !accepted drafted (attempt macB [] (create alice idea bob [60] note (proof := some 60) (proposal := .on 905)))
+#guard accepted drafted (attempt macB [] (create alice idea bob [60] note (proof := some 60))) &&
+  !counted drafted (attempt macB [] (create alice idea bob [60] note (proof := some 60)))
+-- its creation starts its own line; its main line holds nothing, and it hasn't landed
+#guard (history (view drafted).counted harvest (some 905)).map (·.edit) == [905, 906]
+#guard (history (view drafted).counted harvest none).isEmpty
+#guard ((view drafted).entry? harvest).any fun en => isDraft (view drafted) en && !landed (view drafted) en
+-- a steward marks it into the audience its shares select, the share to everyone left out: Carol reads it, a stranger
+-- doesn't, while he reads every other note of Alice's
+#guard upkeep drafted harvest == some [60, 61] && !reads drafted macC harvest
+def drafted' : List Edit := drafted ++ chain 907 [(macA, [], .move alice harvest [60, 61] [905, 906])]
+#guard refused drafted' == [] && tidy drafted'
+#guard reads drafted' macC harvest && reads drafted' macB harvest && !reads drafted' stranger harvest
+#guard reads drafted' stranger plan && !publicKey (view drafted') (.audience alice [60, 61])
+-- before it lands, no write on its main line counts but the vault's own: not Bob's merge, nor Carol's write building
+-- on nothing; the vault's own such write counts, but doesn't build on its creation, so lands nothing
+#guard !counted drafted' (attempt macB [] (.write alice harvest bob (some 907) 0 [906] (proof := some 60)
+  (touches := [.merge])))
+#guard !counted drafted' (attempt macC [] (.write alice harvest carol (some 907) 0 [] (proof := some 61)
+  (touches := [.set [.field "title"] (some (.str "Mine"))])))
+#guard (step (view drafted') (attempt macA [] (.write alice harvest alice (some 907) 0 []
+  (touches := [.set [.field "title"] (some (.str "Ours"))])))).any fun st =>
+    !st.uncounted.contains 9999 && (st.entry? harvest).any (!landed st ·)
+
+-- Alice accepts the line; Carol's merge on top of the accept counts for no reader, as only the vault lands a draft
+def acceptedDraft : List Edit := drafted' ++ chain 908 [
+  (macA, [], .write alice harvest alice (some 907) 0 [906] (.on 905))]
+#guard refused acceptedDraft == [] && (view acceptedDraft).accepts == [908]
+#guard !counted acceptedDraft (attempt macC [] (.write alice harvest carol (some 907) 0 [908] (proof := some 61)
+  (touches := [.merge])))
+-- Alice's merge lands it: main's history holds its creation, and the steward marks it public
+def landedDraft : List Edit := acceptedDraft ++ chain 909 [
+  (macA, [], .write alice harvest alice (some 907) 0 [908] (touches := [.merge]))]
+#guard refused landedDraft == []
+#guard (history (view landedDraft).counted harvest none).map (·.edit) == [905, 906, 908, 909]
+#guard ((view landedDraft).entry? harvest).any (landed (view landedDraft))
+#guard upkeep landedDraft harvest == some [60, 61, 62]
+def landedDraft' : List Edit := landedDraft ++ chain 910 [
+  (macA, [], .move alice harvest [60, 61, 62] [905, 906, 907, 908, 909])]
+#guard refused landedDraft' == [] && tidy landedDraft' && reads landedDraft' stranger harvest
+-- once landed it is an ordinary note: Carol's writes on main count, and a relay has the same edits stand (T25)
+#guard counted landedDraft' (attempt macC [] (.write alice harvest carol (some 910) 0 [909] (proof := some 61)
+  (touches := [.set [.field "title"] (some (.str "Harvest"))])))
+#guard (standing (landedDraft'.map Edit.blind)).map (·.id) == (standing landedDraft').map (·.id)
+-- a draft of a schema joins no lane, even once the vault lands it
+#guard (step (view landedDraft') (attempt macA [] (create alice idea alice [] schemaType (blob := 9)
+  (proposal := .new)))).map (laneOf · alice) == some []
 
 /-! ## Scenario 9: schema v1
 

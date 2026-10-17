@@ -18,6 +18,12 @@
 //!   replays edits in (`aip::labels`): `AIP-n` first, then `AIP-n.2`.
 //! - **What it changes is derived** (`aip::diff`): each line's record, read through its entry's own schema, against
 //!   main's, as the vault's acceptance would merge it; once merged, against the version the proposal started from.
+//! - **New entries** are drafts (`Lab::create_draft`): a line that is an entry's own creation, `new`, whose main line
+//!   holds nothing until the vault's acceptance merges it, which lands it. Its diff adds every field; its summary
+//!   reads `New <what>: <title> (+N fields)`; `public` says whether a share to everyone picks it once it lands, as
+//!   the stewards then mark it into that audience.
+//! - **An answer pins what it answers**: `aip_review` may name the heads of the lines as the person saw them, and is
+//!   refused where any line moved since, so nothing written after the card was drawn is accepted unseen.
 //!
 //! The honest limit: each line's merge still counts on its own. One review accepts every line and merges them in one
 //! go, but a reader that holds only some of the merges reads only those; all or none for every reader would need the
@@ -149,28 +155,39 @@ fn order_of(lab: &Lab, me: SignerId, edit: EditId) -> (u64, EditId) {
     (lab.signed_edit(me, edit).map_or(0, |s| s.edit.depth), edit)
 }
 
-/// One proposal line as device `me` holds it: its entry's type, its title on the line and its name, its heads, and
-/// whether they are all on main (`merged`); `known` once the device shows the proposal.
+/// One proposal line as device `me` holds it: its entry's type and tags, its title on the line and its name, its
+/// heads, and whether they are all on main (`merged`); `known` once the device shows the proposal; `new` where it is
+/// a new entry, a draft whose creation started the line, and `public` where a share to everyone picks that entry once
+/// it lands (`Lab::public_once_landed`).
 struct Line {
     entry: EntryId,
     line: EditId,
     ty: Option<String>,
+    tags: Vec<String>,
     title: Option<String>,
     name: Option<String>,
     heads: Vec<EditId>,
     merged: bool,
     known: bool,
+    new: bool,
+    public: bool,
 }
 
 impl Line {
     fn of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, (entry, line): (EntryId, EditId)) -> Line {
-        let ty = lab.meaning(me, entry).map(|m| m.attrs.ty.as_str().to_string());
-        let mut out = Line { entry, line, ty, title: None, name: None, heads: vec![], merged: false, known: false };
+        let m = lab.meaning(me, entry);
+        let ty = m.as_ref().map(|m| m.attrs.ty.as_str().to_string());
+        let tags = m.iter().flat_map(|m| m.attrs.tags.iter().map(|t| t.as_str().to_string())).collect();
+        let (title, name, heads) = (None, None, vec![]);
+        let mut out =
+            Line { entry, line, ty, tags, title, name, heads, merged: false, known: false, new: false, public: false };
         let Some(h) = lab.history(me, entry).filter(|h| h.lines().contains(&Some(line))) else { return out };
         let main: HashSet<EditId> = h.history(MAIN).iter().map(|c| c.write.edit).collect();
         out.heads = h.heads(Some(line));
         out.merged = !out.heads.is_empty() && out.heads.iter().all(|e| main.contains(e));
         out.known = true;
+        out.new = h.get(line).is_some_and(|c| c.write.first);
+        out.public = out.new && lab.public_once_landed(me, entry);
         out.name = h.name(line).filter(|n| !n.trim().is_empty());
         let vault = lab.vault_of_entry(me, entry);
         let item = lab.item_on(me, entry, Some(line));
@@ -188,7 +205,19 @@ impl Line {
             "name": self.name,
             "heads": hexes(self.heads.iter().copied()),
             "merged": self.merged,
+            "new": self.new,
+            "tags": self.tags,
+            "public": self.public,
         })
+    }
+
+    /// Its summary, of the parts of its diff of a schema whose title names it by `what` (`aip::summary`): a new
+    /// entry's by its title and how many fields it holds (`aip::summary_new`).
+    fn summary(&self, what: &str, parts: &[aip::Part]) -> String {
+        match self.new {
+            true => aip::summary_new(what, self.title.as_deref().unwrap_or("untitled"), parts),
+            false => aip::summary(what, parts),
+        }
     }
 }
 
@@ -360,7 +389,7 @@ impl<'a> Book<'a> {
             let mut line = l.to_json();
             match parts_of(lab, me, &mut self.lanes, l) {
                 Some((what, parts)) => {
-                    summary.push(aip::summary(&what, &parts));
+                    summary.push(l.summary(&what, &parts));
                     if diff {
                         line["diff"] = parts.iter().map(aip::Part::to_json).collect();
                     }
@@ -417,7 +446,7 @@ impl<'a> Book<'a> {
                 let reviews = self.reviews_of(entry, &line.to_hex()).to_vec();
                 let have = reviews.iter().filter(|r| r.verdict == "accepted" && r.covers(lines)).count();
                 let summary = match parts_of(lab, me, &mut self.lanes, &l) {
-                    Some((what, parts)) => aip::summary(&what, &parts),
+                    Some((what, parts)) => l.summary(&what, &parts),
                     None => format!("{}: unread", l.ty.as_deref().unwrap_or("entry")),
                 };
                 let by = h.get(line).map(|c| c.write.actor.to_hex());
@@ -454,7 +483,9 @@ impl<'a> Book<'a> {
 /// `{"op": "aips", "vault"?}`: every AIP device `me` holds, of vault `vault` alone if it names one, as people read it:
 /// its entry, vault, key, number and label (`AIP-n`, `AIP-n.2` where two of one vault hold one number, `null` for an
 /// idea), title, note, stage (`idea`, `proposed` or `archived`), outcome (`applied`, `rejected` or `null`), why, was,
-/// entry tags, author, intent and links; its lines, each `{entry, line, type, title, name, heads, merged}`; its
+/// entry tags, author, intent and links; its lines, each `{entry, line, type, title, name, heads, merged, new, tags,
+/// public}`, `new` for a new entry, a draft, `tags` its entry's tags and `public` whether a share to everyone picks a
+/// new entry once it lands (advice: only the vault's stewards read every selector); its
 /// reviews, newest first, each `{review, verdict, text, heads, by, at, current}`, `current` where it answers every
 /// line's heads now; its signatures against the default policy, `{have, need: 1, of: "owners"}`, the accepted reviews
 /// that are current (no policy entry is read); and its summary, a line per part. Then each open proposal line no AIP
@@ -529,7 +560,8 @@ pub(super) fn open(
         .map(|(i, (e, line))| json!({ "id": i + 1, "entry": link(e), "line": line.to_hex() }))
         .collect();
     let value = json!({ "kind": AIP, "key": key, "title": title, "note": note, "proposals": rows, "stage": "idea" });
-    let made = step(lab, me, actor, Step::Create { vault, ty: AIP.into(), tags, schema: schema(), value })?;
+    let create = Step::Create { vault, ty: AIP.into(), tags, schema: schema(), value, draft: false };
+    let made = step(lab, me, actor, create)?;
     Ok(json!({ "entry": made["entry"], "key": key }))
 }
 
@@ -598,14 +630,17 @@ pub(super) fn withdraw(
     Ok(json!({ "entry": entry.to_hex(), "edit": made["edit"] }))
 }
 
-/// `{"op": "aip_review", "entry", "verdict", "text"?, "as"?}`: the answer of AIP `entry`'s vault, `actor`, to it as it
-/// stands, over every line at once (`NoCap` acting for anyone else; `BadOp` unless it is proposed). `accepted`: for
-/// each line, the vault's accept at its heads (`Lab::accept`, M2), then its merge into main as the vault, taking the
-/// proposal's side wherever both lines changed one place; then one review (`lens::blobs::REVIEW_V1`) of the AIP,
-/// `line` `""`, whose `heads` are every accept, sorted, `by` the AIP's author. `declined`: the review alone, its heads
-/// every line's heads. `revise`: the review, and the AIP an idea again, keeping its number. Every write is the
-/// device's own, as any write is, so no passkey is asked; all are tried dry first, so one that would be refused makes
-/// nothing. Answers `{entry, review, verdict, accepts, merges}`.
+/// `{"op": "aip_review", "entry", "verdict", "text"?, "heads"?, "as"?}`: the answer of AIP `entry`'s vault, `actor`,
+/// to it as it stands, over every line at once (`NoCap` acting for anyone else; `BadOp` unless it is proposed). With
+/// `heads`, the heads of its lines as whoever answers saw them, every line's in one list as `aips` lists them: `BadOp`
+/// where they aren't the heads its lines have now, as a line moved since, so nothing written after a card was drawn is
+/// accepted unseen; the page always names them. `accepted`: for each line, the vault's accept at its heads
+/// (`Lab::accept`, M2), then its merge into main as the vault, taking the proposal's side wherever both lines changed
+/// one place, which lands a draft (`History::landed`); then one review (`lens::blobs::REVIEW_V1`) of the AIP, `line`
+/// `""`, whose `heads` are every accept, sorted, `by` the AIP's author. `declined`: the review alone, its heads every
+/// line's heads. `revise`: the review, and the AIP an idea again, keeping its number. Every write is the device's own,
+/// as any write is, so no passkey is asked; all are tried dry first, so one that would be refused makes nothing.
+/// Answers `{entry, review, verdict, accepts, merges}`.
 pub(super) fn review(
     lab: &mut Lab,
     me: SignerId,
@@ -613,6 +648,7 @@ pub(super) fn review(
     entry: EntryId,
     verdict: &str,
     text: String,
+    heads: Option<&[EditId]>,
 ) -> Result<Value, Refused> {
     let (a, lines) = {
         let mut lanes = HashMap::new();
@@ -633,12 +669,37 @@ pub(super) fn review(
         }
         let lines: Vec<(EntryId, EditId, Vec<EditId>)> =
             d.lines.into_iter().map(|l| (l.entry, l.line, l.heads)).collect();
+        if let Some(seen) = heads {
+            pinned(&lines, seen)?;
+        }
         (a, lines)
     };
     if !lab.is_dry() {
         lab.dry(|lab| answer(lab, me, actor, &a, &lines, verdict, &text))?;
     }
     answer(lab, me, actor, &a, &lines, verdict, &text)
+}
+
+/// The heads of the lines `lines` are those `seen` names, every line's, and no others: else `BadOp`, naming each line
+/// that moved since it was seen.
+fn pinned(lines: &[(EntryId, EditId, Vec<EditId>)], seen: &[EditId]) -> Result<(), Refused> {
+    let seen: BTreeSet<EditId> = seen.iter().copied().collect();
+    let now: BTreeSet<EditId> = lines.iter().flat_map(|(_, _, heads)| heads.iter().copied()).collect();
+    if seen == now {
+        return Ok(());
+    }
+    let short = |hex: String| hex[..8].to_string();
+    let moved: Vec<String> = (lines.iter())
+        .filter(|(_, _, heads)| !heads.iter().all(|h| seen.contains(h)))
+        .map(|(e, line, _)| format!("line {} of entry {}", short(line.to_hex()), short(e.to_hex())))
+        .collect();
+    let which = match moved.is_empty() {
+        true => "a line".to_string(),
+        false => moved.join(", "),
+    };
+    Err(bad(format!(
+        "the AIP moved since it was shown: {which} has another version now; read it again and answer what it shows"
+    )))
 }
 
 /// The writes of `review`, in order.
@@ -675,7 +736,8 @@ fn answer(
         "text": text,
         "at": lab.now(),
     });
-    let create = Step::Create { vault: a.vault, ty: REVIEW.into(), tags: vec![], schema: Named::Own, value };
+    let (vault, ty, tags) = (a.vault, REVIEW.into(), vec![]);
+    let create = Step::Create { vault, ty, tags, schema: Named::Own, value, draft: false };
     let made = step(lab, me, actor, create)?;
     if verdict == "revise" {
         edits(lab, me, actor, (a.entry, MAIN), &schema(), &[set("stage", "idea")])?;

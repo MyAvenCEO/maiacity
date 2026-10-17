@@ -4,9 +4,9 @@ import AvenDB.Ops
 # Shares are named groups of ops
 
 `avendb/docs/ARCHITECTURE.md` §8. A share is a name and the ops its grantee may make, on the slice its selector picks:
-relay, backup and read (keep, pass on and open the slice's edits), the write ops (create an entry, set a value, add,
-delete or move rows, ask for tags, start a proposal, merge a line, only where all it brings in lies under its path) and
-share (issue shares resting on it). Its level,
+relay, backup and read (keep, pass on and open the slice's edits), the write ops (create an entry, on the main line or
+as a draft on a line of its own, set a value, add, delete or move rows, ask for tags, start a proposal, merge a line,
+only where all it brings in lies under its path) and share (issue shares resting on it). Its level,
 which relays and every operational rule read in the clear, is the class of its strongest op (`levelOf`). Every reader of
 an entry judges each write by its touches, what its Loro ops did, place by place, read off the write imported on the
 version it builds on, and the tags it asks for: a value set at a place, rows of a list added, deleted or moved, the
@@ -54,15 +54,16 @@ inductive Touch where
   deriving DecidableEq, Repr
 
 /-- An op a share names, in the order shares list them: `relay`, `backup` and `read` its slice's edits; `create`
-    entries; `set` any change at or under `path` (only to the values `to`, if it lists them), `insert`, `remove` or
-    `move` the rows of a list, `merge` another line whose changes since their base all lie at or under `path`
-    (anywhere, for `[]`), each on the lines `on` names (either, if none); ask for the tags `tag` lists (any, if none);
-    `propose`; and `share`, issue shares resting on it. -/
+    entries, on the main line or as drafts, each starting a line of its own; `set` any change at or under `path` (only
+    to the values `to`, if it lists them), `insert`, `remove` or `move` the rows of a list, `merge` another line whose
+    changes since their base all lie at or under `path` (anywhere, for `[]`), each of these on the lines `on` names
+    (either, if none); ask for the tags `tag` lists (any, if none); `propose`; and `share`, issue shares resting on
+    it. -/
 inductive Op where
   | relay
   | backup
   | read
-  | create
+  | create  (on : Option On)
   | set     (path : List Step) (to : Option (List Val)) (on : Option On)
   | insert  (path : List Step) (on : Option On)
   | remove  (path : List Step) (on : Option On)
@@ -94,8 +95,8 @@ def Level.ops : Level → List Op
   | .relay  => [.relay]
   | .backup => [.backup]
   | .read   => [.read]
-  | .write  => [.read, .create, .set [] none none, .tag none, .propose, .merge none []]
-  | .owner  => [.read, .create, .set [] none none, .tag none, .propose, .merge none [], .share]
+  | .write  => [.read, .create none, .set [] none none, .tag none, .propose, .merge none []]
+  | .owner  => [.read, .create none, .set [] none none, .tag none, .propose, .merge none [], .share]
 
 /-- A built-in group: a name, the ops its shares name, and whether it goes to everyone (Public). The page offers them
     when it shares, and anyone may name their own. -/
@@ -108,7 +109,8 @@ structure Group where
 def groups : List Group := [
   ⟨"Owner", Level.owner.ops, false⟩,
   ⟨"Editor", Level.write.ops, false⟩,
-  ⟨"Suggester", [.read, .set [] none (some .proposals), .propose, .merge (some .proposals) []], false⟩,
+  ⟨"Suggester", [.read, .create (some .proposals), .set [] none (some .proposals), .propose,
+    .merge (some .proposals) []], false⟩,
   ⟨"Viewer", Level.read.ops, false⟩,
   ⟨"Public", Level.read.ops, true⟩,
   ⟨"Backup", Level.backup.ops, false⟩,
@@ -160,7 +162,7 @@ def Op.allows (main : Bool) : Op → Touch → Bool
   | .tag none, .tag _ => true
   | .tag (some ts), .tag t => ts.contains t
   | .propose, .propose => true
-  | .create, .create => true
+  | .create o, .create => onLine main o
   | _, _ => false
 
 -- the same patterns at any depth: a field of any row of the lists in any row, a row's list's rows, and a cap on a
@@ -189,6 +191,14 @@ def Op.allows (main : Bool) : Op → Touch → Bool
 
 /-- Ops allow a write: each of its touches is allowed by one of them. -/
 def allowsAll (rs : List Op) (main : Bool) (ts : List Touch) : Bool := ts.all fun t => rs.any (·.allows main t)
+
+-- a Suggester creates drafts alone, each starting a line of its own; an Editor creates on either line, and a create op
+-- that names a line creates on that line alone
+#guard (groups.find? (·.name == "Suggester")).any fun g =>
+  allowsAll g.ops false [.create] && !allowsAll g.ops true [.create]
+#guard (groups.find? (·.name == "Editor")).any fun g =>
+  allowsAll g.ops false [.create] && allowsAll g.ops true [.create]
+#guard !(Op.create (some .main)).allows false .create && (Op.create (some .main)).allows true .create
 
 /-- The ops an access request goes to the vault it asks by (the Rust engine's `ask`, `world::answering`): an access
     request is a record the asking vault writes in its own vault and shares, that entry alone, with the vault it asks,

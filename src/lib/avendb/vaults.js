@@ -71,11 +71,13 @@ import { fieldPaths, pathWords } from './paths.js';
 /**
  * A share in force: `who` a vault's id, `"everyone"`, or for a keep share one of its vault's devices; `level` its
  * level; `slice` `null` where the device doesn't read it. As the device says: `group` the built-in group it is, if any;
+ * `drafts` whether its ops let its who propose new entries (`create` on proposals, in every share of its chain),
+ * `null` where the device doesn't read its slice, so a Suggester's made before drafts reads apart (`OLD_SUGGESTER`);
  * `whole` whether it is on the whole vault; `reads` whether its who reads what it reaches; `gets` whether its
  * who's devices receive it. A keep share does neither: it never counts as access.
  * @typedef {{ id: string, over: string, issuer: string, who: string, level: Role, wide: boolean,
  *   parent: string | null, chain: string[], slice: Slice | null, revokers: string[], entries: string[],
- *   group: string | null, whole: boolean, reads: boolean, gets: boolean }} CapView
+ *   group: string | null, drafts: boolean | null, whole: boolean, reads: boolean, gets: boolean }} CapView
  */
 /**
  * A device that gets a cell's edits: the vault it gets them through, whether it opens them, and the level it holds
@@ -120,13 +122,14 @@ import { fieldPaths, pathWords } from './paths.js';
  */
 /**
  * A share over a vault as the `shares` op lists them, owners and devices among them: who holds it, its level and
- * group, what it is on (`"everything"`, a `where`, or `null` where the device doesn't read it), how many entries it
- * reaches now, and whether the acting vault may revoke it.
+ * group, whether it lets its who propose new entries (`drafts`, as a CapView's), what it is on (`"everything"`, a
+ * `where`, or `null` where the device doesn't read it), how many entries it reaches now, and whether the acting vault
+ * may revoke it.
  * @typedef {{ kind: 'owner' | 'device' | 'grant' | 'keep', id: string | null, over: string,
  *   who: { vault: string } | { signer: string } | { device: string } | 'everyone', level: Role | 'actsFor',
- *   group: string | null, name: string | null, what: 'everything' | Where | null, ops: Op[] | null,
- *   above: Op[][] | null, issuer: string | null, parent: string | null, reaches: number, recovery: boolean,
- *   root: boolean, revoke: Verdict }} ShareRow
+ *   group: string | null, name: string | null, drafts: boolean | null, what: 'everything' | Where | null,
+ *   ops: Op[] | null, above: Op[][] | null, issuer: string | null, parent: string | null, reaches: number,
+ *   recovery: boolean, root: boolean, revoke: Verdict }} ShareRow
  */
 /**
  * Every share over vault `over`, for vault `as`: whether it may share some of it on, and the rows.
@@ -556,8 +559,25 @@ export const standingOps = (world, aven, agent, level) => [
 	...(level === SUGGESTS ? theirsNow(world).flatMap((v) => aipAuthorOps(world, v, aven, agent)) : [])
 ];
 
-/** The level whose agents also open AIPs: a Suggester writes only on proposals, and bundles its lines in an AIP. */
+/**
+ * The level whose agents also open AIPs: a Suggester writes only on proposals, where it may propose new entries too
+ * (drafts, which its vault lands as it accepts them), and bundles its lines in an AIP.
+ */
 export const SUGGESTS = 'Suggester';
+
+/**
+ * What a Suggester's share made before drafts is called (avendb's `rules::suggester_before_drafts`): avenDB still
+ * names it Suggester, and it still reads, writes on proposals and starts them, but it proposes no new entry, as it
+ * lacks `create` on proposals (`drafts` false). The Mac's agent grant passes its agents' on again in the new form; one
+ * given by hand is given again to propose new entries.
+ */
+export const OLD_SUGGESTER = 'Suggester (before drafts)';
+
+/**
+ * A group's name, a Suggester's made before drafts told apart.
+ * @param {string} name @param {boolean | null} [drafts]
+ */
+const groupName = (name, drafts) => (name === SUGGESTS && drafts === false ? OLD_SUGGESTER : name);
 
 /**
  * The group of its own an agent given Suggester over a vault gets there besides (avendb-device's `agent::aip_author`):
@@ -705,7 +725,7 @@ export function opWords(r) {
 		case 'propose':
 			return 'start proposals';
 		case 'create':
-			return 'add new entries';
+			return r.on === 'proposals' ? 'propose new entries' : `add new entries${on}`;
 		case 'tag':
 			return r.tags ? `ask for the tags ${list(r.tags.map(quote), 'or')}` : 'ask for any tag';
 		case 'read':
@@ -721,7 +741,11 @@ export function opWords(r) {
 	}
 }
 
-/** Ops in words: "read, set its status to “done” and add new entries". @param {Op[]} ops */
+/**
+ * Ops in words: "read, set its status to “done” and add new entries"; a Suggester's "read, propose new entries, change
+ * anything on a proposal, start proposals and bring the main line into a proposal".
+ * @param {Op[]} ops
+ */
 export const opsWords = (ops) => list(ops.map(opWords)) || 'nothing';
 
 /** The built-in group a cap is, as the device says, for its hint. @param {CapView} c @param {WorldView} world */
@@ -749,7 +773,7 @@ export const roleGroup = (world, role) =>
  */
 export function levelName(c, world) {
 	const g = groupOf(c, world);
-	if (g) return g.everyone ? roleGroup(world, g.level) : g.name;
+	if (g) return g.everyone ? roleGroup(world, g.level) : groupName(g.name, c.drafts);
 	return c.group ?? plainName(c.slice?.name) ?? roleGroup(world, c.level);
 }
 
@@ -816,8 +840,20 @@ export function shareWords(c, world) {
 export function rowLevel(r, world) {
 	if (r.level === 'actsFor') return 'Acts for it';
 	const g = r.group ? world.groups.find((x) => x.name === r.group) : undefined;
-	if (g) return g.everyone ? roleGroup(world, g.level) : g.name;
+	if (g) return g.everyone ? roleGroup(world, g.level) : groupName(g.name, r.drafts);
 	return r.group ?? plainName(r.name) ?? roleGroup(world, r.level);
+}
+
+/**
+ * What a row of the `shares` op's level does, for its title: its built-in group's hint; a Suggester's made before
+ * drafts says it may not propose new entries yet; a share of its own that may propose them says so.
+ * @param {ShareRow} r @param {WorldView} world
+ */
+export function rowHint(r, world) {
+	const hint = r.group ? world.groups.find((g) => g.name === r.group)?.hint : undefined;
+	if (r.group === SUGGESTS && r.drafts === false)
+		return 'Reads it and suggests changes to merge; given before drafts, it may not propose new entries yet';
+	return hint ?? (r.drafts ? 'May propose new entries' : undefined);
 }
 
 /** What a row of the `shares` op is on, in words. @param {ShareRow} r @param {WorldView} world */

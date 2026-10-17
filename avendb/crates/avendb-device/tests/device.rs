@@ -1221,6 +1221,84 @@ fn a_suggester_agent_opens_aips_over_its_proposals_which_her_vault_accepts_and_a
     }
 }
 
+/// Her Mac's grant again, once Suggesters draft new entries: agentClaude holds a Suggester's share made before drafts,
+/// resting on one her vault gave her aven then, and her grant passes it on in the group's form now, with no sheet,
+/// resting on one her vault gives the aven first in that form, as the old one gives no `create` on proposals; asked
+/// again, that one stands. agentClaude then drafts a logic in her vault on its own device, which her vault's AIP review
+/// lands. Over Bob's coop, which gave the aven a Suggester's share made before drafts, the one the agent holds stands.
+#[test]
+fn her_grant_passes_a_suggesters_share_made_before_drafts_on_again_in_its_new_form() {
+    let mut w = world();
+    let (alice, mac, passkey, bob, bob_mac, bob_key) = (w.alice, w.mac_a, w.passkey_a, w.bob, w.mac_b, w.passkey_b);
+    let found = |lab: &mut Lab, kind: Kind, owner: VaultId, nonce: u64| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+        VaultId::from(lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
+    };
+    let aven = found(&mut w.lab, Kind::Aven, alice, 1);
+    let claudes = found(&mut w.lab, Kind::DeviceVault, aven, 2);
+    let claude = w.lab.device("agentClaude");
+    let add = Action::Share(Sharing::Device { vault: claudes, device: claude, seal_to: None });
+    w.lab.submit(mac, &[passkey, claude], add).expect("its device");
+    // the shares her grant made before drafts: her vault's Suggester to the aven, and the aven's on to its agent
+    let before = avendb::rules::suggester_before_drafts();
+    let old = |over: VaultId, who: VaultId, parent: Option<ShareId>, issuer: VaultId| NewShare {
+        name: "Suggester".into(),
+        ops: before.clone(),
+        parent,
+        issuer,
+        ..share(over, vault(who), Level::Write, Selector::All)
+    };
+    let avens = w.lab.issue(mac, &[mac], old(alice, aven, None, alice)).expect("the aven's, as it was");
+    let agents = w.lab.issue(mac, &[mac], old(alice, claudes, Some(avens), aven)).expect("the agent's, as it was");
+    // her grant now: a Suggester's in the group's form, on one her vault gives the aven in that form first
+    let new = agent::pass_on(&mut w.lab, mac, alice, aven, claudes, alice, agent::SUGGESTS).expect("passed on again");
+    assert_ne!(new, agents, "passed on again");
+    let group = avendb::rules::groups().into_iter().find(|g| g.name == "Suggester").expect("the group").ops;
+    let group = avendb::rules::normalize(group).expect("its ops");
+    let st = w.lab.state(mac);
+    let parent = st.share(new).and_then(|cp| cp.share.parent).expect("it rests on the aven's");
+    assert_ne!(parent, avens, "not on the aven's share made before drafts");
+    for s in [new, parent] {
+        assert_eq!(w.lab.slice(mac, s).map(|x| &x.grant.ops), Some(&group), "the group's ops now");
+    }
+    let seen = avendb::world::world(&w.lab, mac).expect("her world");
+    let drafts = |s: ShareId| seen.shares.iter().find(|x| x.id == s).and_then(|x| x.drafts());
+    assert_eq!((drafts(new), drafts(agents)), (Some(true), Some(false)), "it drafts; the one before drafts nothing");
+    let again = agent::pass_on(&mut w.lab, mac, alice, aven, claudes, alice, agent::SUGGESTS).expect("passed on");
+    assert_eq!(again, new, "one passed on in the group's form stands for it");
+    w.lab.sync_all(21);
+    // it drafts a logic in her vault on its own device, and puts it to her in an AIP, which her vault accepts
+    agent::pass_on_aips(&mut w.lab, mac, alice, aven, claudes, alice).expect("passed on").expect("an AIP author's");
+    w.lab.sync_all(22);
+    let (a, c) = (alice.to_hex(), claudes.to_hex());
+    let value = json!({ "kind": "logic", "title": "Harvest rules", "source": "export default (x) => x;" });
+    let draft = json!({ "op": "create", "vault": a, "type": "logic", "value": value, "draft": true, "as": c });
+    let made = done(&mut w, claude, draft);
+    let (e, line) = (made["entry"].clone(), made["line"].clone());
+    let open = json!({ "op": "aip_open", "vault": a, "title": "Harvest rules", "note": "Why: the harvest.",
+        "proposals": [{ "entry": e, "line": line }], "as": c });
+    let aip = done(&mut w, claude, open)["entry"].clone();
+    done(&mut w, claude, json!({ "op": "aip_promote", "entry": aip, "as": c }));
+    w.lab.sync_all(23);
+    done(&mut w, mac, json!({ "op": "aip_review", "entry": aip, "verdict": "accepted", "text": "", "as": a }));
+    w.lab.sync_all(24);
+    for d in [mac, claude] {
+        let main = done(&mut w, d, json!({ "op": "get", "entry": e }));
+        assert_eq!(main["record"]["title"], "Harvest rules", "landed on {d:?}");
+    }
+    // over Bob's coop, which gave the aven a Suggester's made before drafts, the agent's made before stands
+    w.lab.share_contact(mac, bob_mac, aven);
+    let owners = vec![Principal::Vault(bob)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 4, seal_to: vec![] };
+    let coop = VaultId::from(w.lab.submit(bob_mac, &[bob_key], genesis).expect("Bob's coop"));
+    let hired = w.lab.issue(bob_mac, &[bob_mac], old(coop, aven, None, coop)).expect("the coop hires her aven");
+    w.lab.sync_all(25);
+    let there = w.lab.issue(mac, &[mac], old(coop, claudes, Some(hired), aven)).expect("the agent's there");
+    let kept = agent::pass_on(&mut w.lab, mac, alice, aven, claudes, coop, agent::SUGGESTS).expect("passed on");
+    assert_eq!(kept, there, "the coop gave the aven nothing a share in the new form rests on");
+}
+
 /// Whether `holders`, an entry's or a file's `syncedTo`, has `device` holding any of it.
 fn holds_some(holders: &Value, device: &Value) -> bool {
     holders.as_array().into_iter().flatten().any(|h| h["device"] == *device)

@@ -3,7 +3,7 @@
 // wait, the one op that answers, and the card's words.
 // Run: bun test src/lib/avendb/hitl.test.js
 import { expect, test } from 'bun:test';
-import { REVIEW_V1, answering, asksOf, countsOf, detail, lead, revisionsOf, signed, top } from './hitl.js';
+import { REVIEW_V1, answering, asksOf, countsOf, detail, lead, newsOf, revisionsOf, signed, top } from './hitl.js';
 
 const hex = (n) => n.toString(16).padStart(64, '0');
 const ALICE = hex(1);
@@ -27,7 +27,9 @@ const aip = (n, more = {}) => ({
 	tags: [],
 	author: AGENT,
 	links: [],
-	lines: [{ entry: hex(200 + n), line: hex(300 + n), type: 'note', title: 'Note', name: null, heads: [], merged: false }],
+	lines: [
+		{ entry: hex(200 + n), line: hex(300 + n), type: 'note', title: 'Note', name: null, heads: [hex(500 + n)] }
+	].map((l) => ({ ...l, merged: false, new: false, tags: [], public: false })),
 	reviews: [],
 	signatures: { have: 0, need: 1, of: 'owners' },
 	summary: [],
@@ -62,12 +64,35 @@ test("a revise goes back to the AIP's author while it is an idea again", () => {
 	expect(revisionsOf(ALICE, aips)).toEqual([]);
 });
 
-test('an answer is one aip_review over every line, acting for the vault', () => {
-	const a = aip(1, { lines: [...aip(1).lines, { ...aip(1).lines[0], line: hex(301) }] });
+test('an answer is one aip_review over every line, acting for the vault, pinned to the heads the card showed', () => {
+	const two = { ...aip(1).lines[0], line: hex(301), heads: [hex(502), hex(503)] };
+	const a = aip(1, { lines: [...aip(1).lines, two] });
+	const heads = [hex(501), hex(502), hex(503)];
 	expect(answering(a, 'accepted', 'Yes', ALICE)).toEqual([
-		{ op: 'aip_review', entry: a.entry, verdict: 'accepted', text: 'Yes', as: ALICE }
+		{ op: 'aip_review', entry: a.entry, verdict: 'accepted', text: 'Yes', heads, as: ALICE }
 	]);
 	expect(answering(a, 'revise', 'x'.repeat(2500), ALICE)[0].text).toHaveLength(2000);
+});
+
+test('the new entries an AIP proposes are its drafts, each with its type, and whether it goes public on Accept', () => {
+	const line = aip(1).lines[0];
+	const draft = { ...line, type: 'logic', title: 'Harvest rules', new: true };
+	const a = aip(1, {
+		lines: [
+			line,
+			{ ...draft, line: hex(302), public: true, tags: ['game:sandbox-7'] },
+			{ ...draft, line: hex(303), public: true },
+			{ ...draft, line: hex(304), tags: ['game:sandbox-7'] },
+			{ ...draft, line: hex(305), type: null, public: true, tags: ['a', 'b'] }
+		]
+	});
+	expect(newsOf(a)).toEqual([
+		'New logic · goes public on Accept (tag game:sandbox-7)',
+		'New logic · goes public on Accept',
+		'New logic',
+		'New entry · goes public on Accept (tags a, b)'
+	]);
+	expect(newsOf(aip(2))).toEqual([]);
 });
 
 test("the card's words: More detail in the Proposals app, the note's lead, the top of the summary, the signatures", () => {

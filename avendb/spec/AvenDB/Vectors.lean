@@ -23,13 +23,15 @@ bytes. An audience is a set of shares, which the model keeps sorted by number an
 a case names is in the model's order (an audience in another order is refused by the model and could be taken by the
 Rust core), and the Rust side compares the audiences of the state as sets. A blob is named by the hash of its bytes: the
 Rust side maps blob number `b` to the bytes `blob b`. The state includes each entry's stays and wants and, as its
-readers see it, its attributes, whether its creation was let in, its semantic audience and wants, and what a steward
-would mark it with, and for each device a keep share over its vault names, whether the device wants the entry and keeps
-its files whole; the key schedule (each family's epoch where it isn't 0, every seal and every published key, all three
-compared as sets); each vault's schema lane, as its readers read it off the vault's schema and lens entries (`laneOf`),
-vault by vault in the order the vaults came; the writes its readers don't count (`uncounted`); the writes they read as
-the vault's accepts of a proposal (`accepts`); and each line of each entry's history, of the writes they count: its
-writes and its heads, the main line first and then each proposal in the order it started. A write carries its proof
+readers see it, its attributes, whether its creation was let in, whether it has landed (a draft, a creation that starts
+a line of its own, lands once main's counted history holds its creation), its semantic audience and wants, and what a
+steward would mark it with, and for each device a keep share over its vault names, whether the device wants the entry
+and keeps its files whole; the key schedule (each family's epoch where it isn't 0, every seal and every published key,
+all three compared as sets); each vault's schema lane, as its readers read it off the vault's schema and lens entries
+(`laneOf`), vault by vault in the order the vaults came; the writes its readers don't count (`uncounted`); the writes
+they read as the vault's accepts of a proposal (`accepts`); and each line of each entry's history, of the writes they
+count: its writes and its heads, the main line first and then each proposal in the order it started, a draft's own
+line among them. A write carries its proof
 and its touches, as its readers read them off its body, and a share its ops.
 The file starts with the built-in groups (`groups`), which the Rust core offers as they are.
 
@@ -118,12 +120,13 @@ def keepShare (id over : Nat) (d : SignerId) (m : KeepMode) (issuer : VaultId) (
   newShare id over (.device d) (.keep m) issuer select wide (via := via)
 
 /-- A write that creates entry `e` of vault `v` in audience `x`, holding the content `blob`, with the proof `proof`,
-    whose record fits its schemas or not (`fits`). -/
+    whose record fits its schemas or not (`fits`), on the main line or, as a draft, starting a line of its own
+    (`proposal`). -/
 def newEntry (v e : Nat) (actor : VaultId) (x : Audience) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
     (via : List VaultId := []) (epoch : Nat := 0) (proof : Option ShareId := none) (fits : Bool := true)
-    (blob : BlobId := 0) : Action :=
-  .write v e actor none epoch (via := via) (create := some (x, ⟨type, created, blob⟩)) (tags := { add := tags })
-    (proof := proof) (fits := fits)
+    (blob : BlobId := 0) (proposal : Proposal := .main) : Action :=
+  .write v e actor none epoch (proposal := proposal) (via := via) (create := some (x, ⟨type, created, blob⟩))
+    (tags := { add := tags }) (proof := proof) (fits := fits)
 
 /-- A write of entry `e`, in its stay `stay` at epoch `epoch` of that stay's audience, with the proof `proof`, touching
     `touches`, whose result fits the entry's schemas or not (`fits`). -/
@@ -141,6 +144,14 @@ def statusOp : Op := .set [.field "status"] (some [.str "open", .str "done"]) no
 
 /-- The default of a code entry's param 1. -/
 def paramDefault : Ops.Loc := [.field "params", .row 1, .field "default"]
+
+/-- A Suggester's ops, as the built-in group names them: read, create drafts, write on proposals, start them and merge
+    into them. -/
+def suggester : List Op := [.read, .create (some .proposals), .set [] none (some .proposals), .propose,
+  .merge (some .proposals) []]
+
+/-- A Suggester's ops as they were before drafts: no `create` at all. -/
+def oldSuggester : List Op := [.read, .set [] none (some .proposals), .propose, .merge (some .proposals) []]
 
 /-- A tuner's ops: write on proposals, start them, and merge into main what changes the defaults of params alone. -/
 def tuner : List Op :=
@@ -419,7 +430,7 @@ def cases : List Case := [
     (2, [], newEntry 100 22 100 [] todo (tags := [home])),
     (2, [], newEntry 100 1 100 [] note),
     (2, [], newShare 30 100 (toVault 101) .write 100 workTodos
-      (ops := some [.read, .create, .set [] none none, .tag (some [work, home]), .propose, .merge none []])),
+      (ops := some [.read, .create none, .set [] none none, .tag (some [work, home]), .propose, .merge none []])),
     (2, [], newShare 31 100 (toVault 102) .read 100 todos),
     -- the stewards mark each todo with the audience of the shares that select it; the note is where it belongs
     (2, [], .move 100 21 [30, 31] []),
@@ -695,7 +706,7 @@ def cases : List Case := [
     -- Bob's share has no op to create: his todo is accepted, but not counted, and not let into his slice
     (5, [], newEntry 100 22 101 [30] todo (proof := some 30)),
     -- a second share lets him create todos, add their items and set their status; not edit an item or remove one
-    (2, [], newShare 32 100 (toVault 101) .write 100 todos (ops := some [.read, .create, statusOp,
+    (2, [], newShare 32 100 (toVault 101) .write 100 todos (ops := some [.read, .create none, statusOp,
       .insert [.field "items"] none])),
     (5, [], newEntry 100 23 101 [32] todo (proof := some 32)),
     (5, [], wr 100 23 101 [19] (proof := some 32) (touches := [.insert [.field "items"]])),
@@ -713,7 +724,7 @@ def cases : List Case := [
     (2, [], newEntry 100 21 100 [] todo),
     -- Alice's passkey makes Dave owner of her todos, narrowed: he may set their status, create them and share
     (1, [], newShare 30 100 (toVault 103) .owner 100 todos
-      (ops := some [.read, .create, .set [.field "status"] none none, .share])),
+      (ops := some [.read, .create none, .set [.field "status"] none none, .share])),
     -- Dave lets Carol set anything, which his own ops still narrow, and Bob edit, as his level's group says
     (8, [], newShare 31 100 (toVault 102) .write 103 todos (parent := some 30)
       (ops := some [.read, .set [] none none])),
@@ -806,6 +817,45 @@ def cases : List Case := [
     (2, [], wr 100 1 100 [24] (stay := some 8)),
     (5, [], wr 100 1 101 [25, 23] (stay := some 8) (proof := some 30) (touches := [.merge])),
     (555, [], wr 100 1 103 [24, 23] (stay := some 8) (touches := [.merge]))] },
+  { name := "drafts: a suggester proposes a new entry on a line of its own, and only the vault lands it",
+    edits := humans ++ [
+    -- Bob suggests on Alice's notes, Carol edits them, everyone reads them, and Dave holds a Suggester share made
+    -- before drafts, with no create
+    (2, [], newShare 30 100 (toVault 101) .write 100 notes (ops := some suggester)),
+    (2, [], newShare 31 100 (toVault 102) .write 100 notes),
+    (2, [], newShare 32 100 .everyone .read 100 notes),
+    (2, [], newShare 33 100 (toVault 103) .write 100 notes (ops := some oldSuggester)),
+    -- Bob drafts a note: one write that creates the entry and starts its own line, in his share's intake audience,
+    -- which every reader counts; a creation on a line that already is, every peer refuses
+    (5, [], newEntry 100 1 101 [30] note (proof := some 30) (proposal := .new)),
+    (5, [], newEntry 100 2 101 [30] note (proof := some 30) (proposal := .on 10)),
+    -- his creation on main, and Dave's draft through the old share, are accepted but counted by no reader
+    (5, [], newEntry 100 2 101 [30] note (proof := some 30)),
+    (8, [], newEntry 100 3 103 [33] note (proof := some 33) (proposal := .new)),
+    -- Bob writes on his draft's line
+    (5, [], wr 100 1 101 [10] (proposal := .on 10) (proof := some 30) (touches := [sets "title" "Harvest rules"])),
+    -- a steward marks the draft into the audience its shares select, the share to everyone left out until it lands
+    (2, [], .move 100 1 [30, 31, 33] [10, 14]),
+    -- before it lands, no share's write on its main line counts: Bob's merge, Carol's own write building on nothing,
+    -- nor Carol's merge on top of Alice's accept
+    (5, [], wr 100 1 101 [14] (stay := some 15) (proof := some 30) (touches := [.merge])),
+    (6, [], wr 100 1 102 [] (stay := some 15) (proof := some 31) (touches := [sets "title" "Mine"])),
+    (2, [], wr 100 1 100 [14] (stay := some 15) (proposal := .on 10)),
+    (6, [], wr 100 1 102 [18] (stay := some 15) (proof := some 31) (touches := [.merge])),
+    -- Alice's merge on top of her accept lands it: main's history now holds its creation
+    (2, [], wr 100 1 100 [18] (stay := some 15) (touches := [.merge])),
+    -- a steward marks it into its whole audience, everyone's share too, and Carol's writes on main count again
+    (2, [], .move 100 1 [30, 31, 32, 33] [10, 14, 16, 17, 18, 19, 20]),
+    (6, [], wr 100 1 102 [20] (stay := some 21) (proof := some 31) (touches := [sets "title" "Harvest"])),
+    -- Alice shares her schemas with everyone; a draft of a schema, even once her own merge lands it, joins no lane,
+    -- where a schema created on main does
+    (2, [], newShare 34 100 .everyone .read 100 schemas),
+    (2, [], newEntry 100 4 100 [34] schemaType (blob := 1) (proposal := .new)),
+    (2, [], wr 100 4 100 [24] (touches := [.merge])),
+    (2, [], newEntry 100 5 100 [34] schemaType (blob := 2)),
+    -- a draft of Bob's and one of Alice's that never land: their semantic audiences leave everyone out
+    (5, [], newEntry 100 6 101 [30] note (proof := some 30) (proposal := .new)),
+    (2, [], newEntry 100 7 100 [34] schemaType (blob := 3) (proposal := .new))] },
   { name := "schemas: a write whose result doesn't fit its schemas counts for no reader", edits := humans ++ [
     -- Alice's todo, which Bob may write
     (2, [], newEntry 100 21 100 [] todo),
@@ -1448,7 +1498,7 @@ def opJson : Op → String
   | .move p o => obj ([("op", str "move"), ("path", path p)] ++ onJson o)
   | .merge o p => obj ([("op", str "merge")] ++ onJson o ++ if p.isEmpty then [] else [("path", path p)])
   | .propose => obj [("op", str "propose")]
-  | .create => obj [("op", str "create")]
+  | .create o => obj ([("op", str "create")] ++ onJson o)
 
 /-- A list of records a touch names: a field of the record by its name, one in a row by its path. -/
 def list : Ops.Loc → String
@@ -1547,6 +1597,7 @@ def entryJson (st : State) (en : Entry) : String :=
   obj [("id", nat en.id), ("vault", nat en.vault),
        ("stays", arr (en.stays.map fun (s, x) => obj [("stay", opt nat s), ("audience", ids x)])),
        ("wants", ids (st.wantsOf en.id)), ("attrs", attrs en.attrs), ("admitted", bool en.admitted),
+       ("landed", bool (landed st en)),
        ("semAudience", ids (semAudience st en)), ("semWants", ids (semWants st en)),
        ("desiredMark", opt (fun (caps, wants) => obj (markJson caps wants)) (desiredMark st en)),
        ("devices", arr ((keepDevices st en.vault).map fun d =>
@@ -1757,6 +1808,24 @@ def allActions : List Action :=
   acc.drop humans.length == [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true,
     true, true, true, true, true, true, false] &&
     st.accepts == [12, 19] && st.uncounted == [11, 16, 18, 21, 26]
+-- a draft: Bob's is accepted and counted, a creation on a line that already is refused, his creation on main and
+-- Dave's draft through a Suggester share made before drafts counted by no reader; no share's write on the main line of
+-- the draft counts before it lands, Carol's merge on top of Alice's accept neither, and Alice's merge lands it, after
+-- which Carol's writes on main count; until then its semantic audience leaves everyone out, and no draft of a schema,
+-- landed or not, joins the lane
+#guard (cases.find? (·.name ==
+    "drafts: a suggester proposes a new entry on a line of its own, and only the vault lands it")).all fun c =>
+  let (acc, st) := run c.edits
+  acc.drop humans.length == [true, true, true, true, true, false, true, true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true, true] &&
+    st.uncounted == [12, 13, 16, 17, 19] && st.accepts == [18] &&
+    [1, 2, 3, 4, 5, 6, 7].map (fun e => (st.entry? e).map (landed st)) ==
+      [true, true, false, true, true, false, false].map some &&
+    (history st.counted 1 none).map (·.edit) == [10, 14, 18, 20, 22] &&
+    [1, 6, 4, 7].map (fun e => (st.entry? e).map (semAudience st)) ==
+      [[30, 31, 32, 33], [30, 31, 33], [34], []].map some &&
+    (st.entry? 1).any (desired st · == none) &&
+    laneOf st 100 == [2] && st.writes.any (fun w => w.edit == 10 && w.first && w.proposal == .new)
 -- a removed owner's back-dated schema entry falls, and what it held leaves the lane
 #guard (views.find? (·.name == "a removed owner's back-dated schema entry is cut")).all fun c =>
   let (stood, st) := runView c

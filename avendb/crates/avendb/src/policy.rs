@@ -233,7 +233,9 @@ pub enum Proposal {
     #[default]
     Main,
     /// A new proposal, which this write starts: its id names the proposal, its `deps` are the version the proposal
-    /// starts from, and its body holds the proposal's name, encrypted.
+    /// starts from, and its body holds the proposal's name, encrypted. Or, for a write that creates its entry, a
+    /// draft: the entry and its own line at once, its body the entry's first content, its main line empty until its
+    /// vault lands it (`history::History::landed`).
     New,
     /// The proposal that write started.
     On(EditId),
@@ -657,6 +659,10 @@ pub enum Refusal {
     /// entry's vault, or brings in more than it accepted (`passes`, M2), so its readers wouldn't count it, and the
     /// device doesn't make it.
     NotAccepted,
+    /// Not a rule of the edits but of a device: a write on the main line of a draft that hasn't landed relies on a
+    /// share, as only the entry's vault lands a draft (`history::History::lands`), so its readers wouldn't count it,
+    /// and the device doesn't make it.
+    NotLanded,
     /// Not a rule of the edits but of a device: a share to issue names no op or more than a share names, has a blank or
     /// long name, a selector beyond the bounds a peer accepts, or rests on a chain too long to prove
     /// (`rules::normalize`, `rules::name_ok`, `rules::MAX_GRANTS`).
@@ -682,7 +688,8 @@ pub enum Refusal {
     Revoked,
     /// An entry id is created once: this one exists, or existed and fell.
     Reborn,
-    /// A write that creates its entry names no stay, builds on nothing and is on the main line.
+    /// A write that creates its entry names no stay, builds on nothing, and is on the main line or starts its own (a
+    /// draft): it is on no proposal another write started.
     NotFirst,
     /// The entry is another vault's.
     WrongVault,
@@ -1405,17 +1412,26 @@ impl State {
 
     /// What entry `e` means to whoever reads it, by the selectors, headers and tags `r` holds: its attributes, whether
     /// its creation was let in, its semantic audience, the keep shares that pick it, and what a steward would mark it
-    /// with. `None` for an entry that doesn't exist, or whose header `r` doesn't hold.
+    /// with. `None` for an entry that doesn't exist, or whose header `r` doesn't hold. Whether a draft has landed is
+    /// read off the writes `r` reads (`landed`).
     pub fn meaning(&self, e: EntryId, r: &Readings) -> Option<Meaning> {
+        let landed = !self.is_draft(e) || self.landed(e, r);
+        self.meaning_landed(e, r, landed)
+    }
+
+    /// `meaning`, where whoever reads entry `e` knows whether it has `landed` (`history::History::landed`), as a device
+    /// does off the history it shows: while a draft hasn't, no share to everyone is in its semantic audience, so the
+    /// stewards never mark it public (`State.lean`'s `semAudience`), and its creation is judged as made on a proposal.
+    pub fn meaning_landed(&self, e: EntryId, r: &Readings, landed: bool) -> Option<Meaning> {
         let en = self.entry(e)?;
         let header = r.headers.get(&en.creation)?;
         let first = r.tags.get(&en.creation).map(|d| d.apply(&[])).unwrap_or_default();
         let mut attrs =
             Attrs { ty: header.ty.clone(), author: en.creator, entry: en.id, created: header.created, tags: first };
         // its creator was the vault, or created it in the intake audience of a share whose slice held it then, and
-        // whose ops let a creation through
-        let proof = r.proofs.get(&en.creation);
-        let through = |cp: &Issued| self.lets_through(cp, proof, true, &[rules::Touch::Create]);
+        // whose ops let a creation through, on main or, for a draft, on a proposal
+        let (proof, main) = (r.proofs.get(&en.creation), !self.is_draft(e));
+        let through = |cp: &Issued| self.lets_through(cp, proof, main, &[rules::Touch::Create]);
         let admitted = en.creator == en.vault
             || en
                 .intake
@@ -1427,8 +1443,10 @@ impl State {
             }
         }
         let audience: Vec<ShareId> = if admitted {
+            let public = |cp: &Issued| cp.share.who == Who::Everyone && !landed;
             let selects = |cp: &&Issued| {
-                self.live(cp.id) && !cp.share.wide && !cp.share.level.is_keep() && self.eff_selects(cp, &attrs, r)
+                self.live(cp.id) && !cp.share.wide && !cp.share.level.is_keep() && !public(cp)
+                    && self.eff_selects(cp, &attrs, r)
             };
             mk_audience(&self.shares_over(en.vault).filter(selects).map(|cp| cp.id).collect::<Vec<_>>())
         } else {
@@ -1489,26 +1507,50 @@ impl State {
 
     /// The writes of entry `e` its readers don't count, by the proofs, touches, tags and fits `r` holds, in the order
     /// they were accepted (`State.lean`'s `uncounted`): a write that doesn't fit, one no share of its lets through, a
-    /// merge into the main line through a share that the vault's accepts don't let through (`passes`, M2), and every
-    /// write that builds on one.
+    /// merge into the main line through a share that the vault's accepts don't let through (`passes`, M2), a write on
+    /// the main line of a draft not yet landed through a share (only its vault lands it, `history::History::lands`),
+    /// and every write that builds on one.
     pub fn uncounted(&self, e: EntryId, r: &Readings) -> Vec<EditId> {
+        self.counting(e, r).0
+    }
+
+    /// Entry `e` has landed, by what `r` holds (`State.lean`'s `landed`): it is no draft, or a write its readers count
+    /// on the main line builds on its creation (`history::History::landed`).
+    pub fn landed(&self, e: EntryId, r: &Readings) -> bool {
+        self.counting(e, r).1
+    }
+
+    /// Entry `e` is a draft: its creation, which every peer reads in the clear, started its own line.
+    pub fn is_draft(&self, e: EntryId) -> bool {
+        self.entry(e).and_then(|en| self.write(en.creation)).is_some_and(|w| w.proposal == Proposal::New)
+    }
+
+    /// `uncounted` and `landed`, in one pass over entry `e`'s writes in the order they were accepted: each judged on
+    /// what came before it, as its readers judge it.
+    fn counting(&self, e: EntryId, r: &Readings) -> (Vec<EditId>, bool) {
         let (mut out, mut accepts) = (vec![], HashSet::new());
         let none = TagDelta::default();
         let main = |d: &EditId| self.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
+        // the counted writes that hold the creation, it and those that build on one
+        let (mut landed, mut holding) = (!self.is_draft(e), HashSet::new());
         for w in self.entry_writes(e) {
             let touches = r.touches.get(&w.edit).map(Vec::as_slice);
             let asks = r.tags.get(&w.edit).unwrap_or(&none);
             let lets = !r.unfit.contains(&w.edit)
                 && self.lets(w, r.proofs.get(&w.edit), touches, asks)
-                && passes(w, touches, |d| accepts.contains(d), main);
+                && passes(w, touches, |d| accepts.contains(d), main)
+                && (w.shares.is_empty() || w.proposal != Proposal::Main || landed);
             if w.deps.iter().any(|d| out.contains(d)) || !lets {
                 out.push(w.edit);
+            } else if w.first || w.deps.iter().any(|d| holding.contains(d)) {
+                holding.insert(w.edit);
+                landed |= w.proposal == Proposal::Main;
             }
             if is_accept(w, touches, asks) {
                 accepts.insert(w.edit);
             }
         }
-        out
+        (out, landed)
     }
 
     /// The writes of entry `e` its readers read as its vault's accepts, by the touches and tags `r` holds, in the order
@@ -1522,15 +1564,17 @@ impl State {
     }
 
     /// Vault `v`'s schema lane, as a reader holding `r` reads it off the entries (`State.lean`'s `laneOf`, T17): of
-    /// each entry of `v` whose type is schema or lens and whose creation acted for `v` itself and counts, the content
-    /// of that creation (`Readings::blobs`), in the order the entries were created, each blob once (`BlobId::of`). A
-    /// creation that acts for its own vault relies on no share, so it counts where it fits. Nothing else adds to it:
-    /// not an entry another vault created through a share, which acts for its creator, nor any later write or tag; and
-    /// when a removal cuts a creation, its blob leaves with its entry.
+    /// each entry of `v` whose type is schema or lens and whose creation acted for `v` itself on its main line and
+    /// counts, the content of that creation (`Readings::blobs`), in the order the entries were created, each blob once
+    /// (`BlobId::of`). A creation that acts for its own vault relies on no share, so it counts where it fits. Nothing
+    /// else adds to it: not an entry another vault created through a share, which acts for its creator, nor a draft,
+    /// nor any later write or tag; and when a removal cuts a creation, its blob leaves with its entry.
     pub fn lane_of<'a>(&'a self, v: VaultId, r: &'a Readings) -> Vec<&'a [u8]> {
         let mut seen = HashSet::new();
         let counts = |en: &&Entry| {
-            self.write(en.creation).is_some_and(|w| w.first && w.actor == v && !r.unfit.contains(&w.edit))
+            self.write(en.creation).is_some_and(|w| {
+                w.first && w.actor == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit)
+            })
         };
         self.entries
             .iter()
@@ -2103,7 +2147,8 @@ impl State {
                         if self.vault(v).is_none() {
                             return Err(Refusal::UnknownVault);
                         }
-                        if stay.is_some() || !deps.is_empty() || proposal != Proposal::Main {
+                        // on main, or a draft that starts its own line, read in the clear as an owner reads it (T25)
+                        if stay.is_some() || !deps.is_empty() || matches!(proposal, Proposal::On(_)) {
                             return Err(Refusal::NotFirst);
                         }
                         if !self.audience_ok(v, x) {

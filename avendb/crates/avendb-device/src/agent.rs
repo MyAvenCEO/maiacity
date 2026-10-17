@@ -304,8 +304,13 @@ pub fn passable(st: &State, mine: VaultId, aven: Option<VaultId>, over: VaultId,
 /// parent, and wide only if it is), so that taking that one back ends it too. Over a vault `mine` is or owns, on one on
 /// the whole of it, which `over` gives the aven first, acting as itself, where the aven holds none at `level` or more;
 /// over another, as a coop that hired the aven, on the share that vault gave it, on the whole of it if one is, else on
-/// the part it gives; over the aven itself, the aven's own. One the aven passed on before stands for it, as for the
-/// same harness's device on the person's other Mac. The share. Fails with why not (`passable`).
+/// the part it gives; over the aven itself, the aven's own. One the aven passed on before with the group's ops stands
+/// for it, as for the same harness's device on the person's other Mac. One of a group whose ops grew since, as a
+/// Suggester's made before drafts (`rules::suggester_before_drafts`), is passed on again in the group's form now,
+/// resting on a share of the aven's that gives all it gives (`world::gives`): over a vault `mine` is or owns, `over`
+/// gives the aven one first where it holds none such, as `pass_on_aips` does, with no ceremony, as the share is below
+/// Owner; over a coop, only where the coop gave the aven one, else the one passed on before stands. The share. Fails
+/// with why not (`passable`).
 pub fn pass_on(
     lab: &mut Lab,
     me: SignerId,
@@ -317,29 +322,43 @@ pub fn pass_on(
 ) -> Result<ShareId> {
     let (group, class) = group(level)?;
     let st = lab.state(me);
-    let before = |cp: &&Issued| {
-        cp.share.over == over && cp.share.issuer == aven && st.live(cp.id)
-            && world::group_of(&cp.share, lab.slice(me, cp.id)) == Some(group.name)
-    };
-    if let Some(cp) = st.shares_held(vault).find(before) {
+    let ops = rules::normalize(group.ops.clone()).ok();
+    let passed = |cp: &&Issued| cp.share.over == over && cp.share.issuer == aven && st.live(cp.id);
+    let now = |cp: &&Issued| passed(cp) && lab.slice(me, cp.id).is_some_and(|s| Some(&s.grant.ops) == ops.as_ref());
+    if let Some(cp) = st.shares_held(vault).find(now) {
         return Ok(cp.id);
     }
+    // one passed on in the group's form before it grew, as a Suggester's made before drafts
+    let old = |cp: &&Issued| passed(cp) && world::group_of(&cp.share, lab.slice(me, cp.id)) == Some(group.name);
+    let old = st.shares_held(vault).find(old).map(|cp| cp.id);
     let who = Who::Vault(vault);
-    let parent = |lab: &Lab, wide| world::parent(lab.state(me), aven, over, who, class, wide);
+    // a share of the aven's this one may rest on that gives all it gives
+    let giving = |lab: &Lab, wide| {
+        let held = world::parents(lab.state(me), aven, over, who, class, wide);
+        held.into_iter().find(|&p| world::gives(lab, me, p, &group.ops))
+    };
     let parent = if over == aven {
         None
     } else if over == mine || lab.state(me).owns(mine, over) {
-        if parent(lab, true).is_none() {
+        if giving(lab, true).is_none() {
             let (name, ops, select) = (group.name.to_string(), group.ops.clone(), Selector::All);
             let (who, parent) = (Who::Vault(aven), None);
             let given = NewShare { over, who, name, select, ops, parent, issuer: over, keep: None };
             lab.issue(me, &[me], given).map_err(|why| anyhow!("the aven's {level} share is refused: {why:?}"))?;
         }
-        Some(parent(lab, true).context("the aven's share to pass on")?)
+        Some(giving(lab, true).context("the aven's share to pass on")?)
     } else {
         passable(lab.state(me), mine, Some(aven), over, level)?;
-        let parent = parent(lab, true).or_else(|| parent(lab, false));
-        Some(parent.with_context(|| format!("the aven's share over {} lets it pass nothing on", over.to_hex()))?)
+        match (giving(lab, true).or_else(|| giving(lab, false)), old) {
+            (Some(p), _) => Some(p),
+            (None, Some(old)) => return Ok(old),
+            (None, None) => {
+                let parent = |wide| world::parent(lab.state(me), aven, over, who, class, wide);
+                let parent = parent(true).or_else(|| parent(false));
+                let none = || format!("the aven's share over {} lets it pass nothing on", over.to_hex());
+                Some(parent.with_context(none)?)
+            }
+        }
     };
     // on the part of the vault its parent gives, unless that is all of it
     let select = match parent {
@@ -370,7 +389,8 @@ const AIP: &str = "aip";
 /// (`aip_promote`, `aip_withdraw`), and changes nothing else: the vault alone reviews it, and its acceptance merges the
 /// lines.
 pub fn aip_author() -> (Vec<rules::Op>, Selector) {
-    let ops = vec![rules::Op::Read, rules::Op::Create, rules::Op::Set { path: vec![], to: None, on: None }];
+    let set = rules::Op::Set { path: vec![], to: None, on: None };
+    let ops = vec![rules::Op::Read, rules::Op::Create { on: None }, set];
     (ops, Selector::AnyOf(vec![vec![Atom::TypeIn(vec![AIP.into()])]]))
 }
 
@@ -857,8 +877,12 @@ impl Agent {
              each `{{entry, line}}` of that vault; it makes an entry of type aip, so only where its shares let it \
              create: a Suggester agent may, as its person's grant gives it an AIP author's share on the vault's AIPs \
              beside its Suggester's, and an Editor may), then `aip_promote` (`entry`), which gives it the vault's next \
-             number, AIP-n. Only a promoted AIP reaches a person, who answers it whole in The OS app or at \
-             /app/aips/?aip=<entry>; an agent never \
+             number, AIP-n. To propose a new entry where it may only suggest, draft it: `create` with `draft: true` \
+             (`vault`, `type`, `tags`, `value`) answers its `entry` and `line`, a line of its own; write on that line \
+             as on any proposal, then name it in `aip_open`'s `proposals` as `{{entry, line}}` and `aip_promote`. A \
+             draft shows nowhere on the vault's main line, nor to everyone, until its person accepts the AIP; a \
+             schema or lens is never a draft. Only a promoted AIP reaches a person, who answers it whole in The OS \
+             app or at /app/aips/?aip=<entry>; an agent never \
              reviews one, since `aip_review` is the vault's own. Read them with avendb_ask, `aips` or `aip` (`entry`, \
              with its diff); after a revise, write again on the same lines and promote it again: it keeps its \
              number. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
@@ -1562,13 +1586,14 @@ fn tools() -> Value {
             "description": "Run a change op of avenDB's engine as this agent, as its shares allow: create, set, unset, \
                             insert, remove, move, tag, propose, merge, restore, undo, variant, batch, aip_open, \
                             aip_promote, aip_withdraw, put_file, get_file. Where it may only suggest, write on a \
-                            proposal; put proposals to its person in an AIP: aip_open over their lines, then \
-                            aip_promote. put_file saves a file of this Mac into a vault as a new entry of type file, \
-                            where the agent may create: the op names its vault and name, and media and tags if any, \
-                            and the file's absolute path goes beside the op as path; its len is the file's size unless \
-                            the op gives one. get_file reads a file of a vault back, as avendb_read_file does: the op \
-                            names its entry, or its vault and name, and the absolute path it writes to goes beside the \
-                            op, with overwrite: true to replace a file there.",
+                            proposal, or draft a new entry: create with draft: true, which answers its entry and the \
+                            line it starts; put proposals and drafts to its person in an AIP: aip_open over their \
+                            lines, then aip_promote. put_file saves a file of this Mac into a vault as a new entry of \
+                            type file, where the agent may create: the op names its vault and name, and media and tags \
+                            if any, and the file's absolute path goes beside the op as path; its len is the file's \
+                            size unless the op gives one. get_file reads a file of a vault back, as avendb_read_file \
+                            does: the op names its entry, or its vault and name, and the absolute path it writes to \
+                            goes beside the op, with overwrite: true to replace a file there.",
             "inputSchema": run,
         },
         {

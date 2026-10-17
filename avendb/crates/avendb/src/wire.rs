@@ -560,7 +560,7 @@ impl Decode for Op {
             0 => Op::Relay,
             1 => Op::Backup,
             2 => Op::Read,
-            3 => Op::Create,
+            3 => Op::Create { on: None },
             4 => Op::Set { path: path(r)?, to: values(r, 1)?, on: r.option()? },
             5 => Op::Insert { path: path(r)?, on: r.option()? },
             6 => Op::Remove { path: path(r)?, on: r.option()? },
@@ -574,6 +574,8 @@ impl Decode for Op {
                 true => Err(WireError::Unknown),
                 false => Ok(p),
             })? },
+            // a creation's lines, named: one with none is the creation of kind 3
+            13 => Op::Create { on: Some(On::decode(r)?) },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -1504,6 +1506,46 @@ mod tests {
         let mut x = bytes.clone();
         x[caps] = 1;
         assert!(Edit::from_wire(&x).is_err());
+    }
+
+    #[test]
+    fn create_on_a_line_is_grant_kind_13_and_old_grants_keep_their_bytes() {
+        let read = |bytes: &[u8]| {
+            let mut r = Reader { bytes, at: 0 };
+            let grant = Grant::decode(&mut r)?;
+            if r.at == bytes.len() { Ok(grant) } else { Err(WireError::Trailing) }
+        };
+        let grant = |ops: Vec<Op>| Grant { ops, salt: [9; 32] };
+        let bytes = |g: &Grant| {
+            let mut out = vec![];
+            g.encode(&mut out);
+            out
+        };
+        // a grant made before drafts, an Editor's, keeps its bytes: create is kind 3 alone, and its commitment stands
+        let editor = grant(Level::Write.ops());
+        let b = bytes(&editor);
+        // after the count of its ops, read, then create, kind 3 with nothing after it, then set
+        assert_eq!(&b[4..7], [2, 3, 4]);
+        assert_eq!(read(&b), Ok(editor.clone()));
+        // a creation on a line is kind 13, then the line: 0 main, 1 proposals
+        for (on, byte) in [(On::Main, 0), (On::Proposals, 1)] {
+            let g = grant(vec![Op::Read, Op::Create { on: Some(on) }]);
+            let b = bytes(&g);
+            assert_eq!(&b[4..7], [2, 13, byte]);
+            assert_eq!(read(&b), Ok(g));
+        }
+        // the Suggester's new group reads back, and so does one made before drafts
+        let suggester = crate::rules::groups().into_iter().find(|g| g.name == "Suggester").expect("Suggester").ops;
+        for ops in [suggester, crate::rules::suggester_before_drafts()] {
+            assert_eq!(read(&bytes(&grant(ops.clone()))), Ok(grant(ops)));
+        }
+        // a line the format lacks is no grant, and nor is a kind past 13
+        let mut b = bytes(&grant(vec![Op::Create { on: Some(On::Proposals) }]));
+        b[5] = 2;
+        assert_eq!(read(&b), Err(WireError::Unknown));
+        b[5] = 1;
+        b[4] = 14;
+        assert_eq!(read(&b), Err(WireError::Unknown));
     }
 
     #[test]

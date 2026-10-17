@@ -3,7 +3,9 @@
 	that rises from the foot of the page by itself, as the passkey's sheet does (./Signing.svelte). Only a promoted AIP
 	asks; ideas and proposals no AIP names never do. The top card is a summary of it: who proposes it, its label and
 	title, the first lines of its note, the top three parts of what it changes ("+2 more"), each in a line its entry's
-	schema derives, and the signatures so far against the policy, one owner for now. More detail opens the AIP whole in
+	schema derives, and the signatures so far against the policy, one owner for now. A part that is a new entry, a draft
+	proposed inside the AIP, wears a "New" badge with its type, and says so where it goes public on Accept, with its
+	tags: no share to everyone reaches a draft until its vault accepts it. More detail opens the AIP whole in
 	the Proposals app. At its foot, in the middle: Decline, Revise and Accept, one review over every part. Revise asks
 	for a few words that go back to whoever proposed. On a touch screen a swipe answers too: right accepts, left
 	declines, up revises. Accepting applies every part at once. "Later" puts the stack away until a new AIP arrives; a
@@ -19,7 +21,7 @@
 	import { fade, fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { answering, asksOf, countsOf, detail, lead, revisionsOf, signed, top as topOf } from './hitl.js';
+	import { answering, asksOf, countsOf, detail, lead, newsOf, revisionsOf, signed, top as topOf } from './hitl.js';
 	import { nameOf } from './vaults.js';
 
 	/**
@@ -122,6 +124,7 @@
 		{#if top}
 			{@const from = byId.get(top.author ?? '')}
 			{@const parts = topOf(top.summary)}
+			{@const news = newsOf(top)}
 			<article
 				class="card"
 				style="transform: translate({dx}px, {Math.min(dy, 0)}px) rotate({dx / 30}deg)"
@@ -144,6 +147,11 @@
 
 				<div class="view">
 					<h3 class="title">{top.title}</h3>
+					{#if news.length}
+						<p class="news">
+							{#each news as n, i (i)}<span class="new">{n}</span>{/each}
+						</p>
+					{/if}
 					{#if top.note}
 						<p class="text">{lead(top.note)}</p>
 					{/if}
@@ -308,6 +316,22 @@
 		line-height: 1.5;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+
+	/* the new entries it proposes, its drafts, a badge each */
+	.news {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+		margin: 0 0 0.5rem;
+	}
+
+	.new {
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		font-size: 0.76rem;
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		color: var(--accent);
 	}
 
 	/* what it changes, a line per part, each as its entry's schema derives it */

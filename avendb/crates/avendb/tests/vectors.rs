@@ -3,11 +3,11 @@
 //! accepted or refused exactly as the model says. A view case's edits, each at the depth it claims, must stand or be
 //! cut exactly as in the model's view: that is where removals cut what they hadn't seen. Both must end with the same
 //! vaults, shares, entries (their stays and their wants, and as their readers see them their attributes, whether their
-//! creation was let in, their semantic audience, the keep shares that pick them and what a steward would mark them
-//! with, and whether each device a keep share over their vault names wants them and keeps them whole), writes, key
-//! schedule (each family's epoch, every seal, every published key), schema lanes, and the writes their readers count,
-//! line by line. The lens vectors hold each app's view of many stored blocks and todos, and what each edit through a
-//! view stores.
+//! creation was let in, whether they landed, a draft by its vault's merge, their semantic audience, the keep shares
+//! that pick them and what a steward would mark them with, and whether each device a keep share over their vault names
+//! wants them and keeps them whole), writes, key schedule (each family's epoch, every seal, every published key),
+//! schema lanes, and the writes their readers count, line by line. The lens vectors hold each app's view of many stored
+//! blocks and todos, and what each edit through a view stores.
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -554,6 +554,8 @@ impl Names {
             let m = st.meaning(en.id, &self.readings).expect("an entry's meaning");
             assert_eq!(m.attrs, self.attrs(&v["attrs"]), "{what}: attributes");
             assert_eq!(m.admitted, v["admitted"].as_bool().unwrap(), "{what}: let in");
+            // landed: no draft, or its main line's counted history holds its creation, as only its vault lands it
+            assert_eq!(st.landed(en.id, &self.readings), v["landed"].as_bool().unwrap(), "{what}: landed");
             let audience: BTreeSet<ShareId> = m.audience.iter().copied().collect();
             assert_eq!(audience, self.audience_set(&v["semAudience"]), "{what}: semantic audience");
             let marked: BTreeSet<ShareId> = st.wants_of(en.id).iter().copied().collect();

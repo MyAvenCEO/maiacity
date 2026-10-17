@@ -398,7 +398,8 @@ An agent holds sub caps: shares the aven passes on to it, each resting on one th
 ends every agent's share resting on it. An agent given Suggester over a vault gets a second sub cap there beside it, a
 group of its own, "AIP author" (`create` and `set`, on `{"type": ["aip"]}` alone), resting on one the aven holds that
 gives as much, so that it opens AIPs over its own proposal lines and promotes them as their author, while the vault
-alone reviews them (section 8, "AIPs"). Each harness signs by its own key with no more than its aven gives it, and one
+alone reviews them (section 8, "AIPs"); a new entry it proposes is a draft, on a line of its own that the vault's
+acceptance lands (section 8, "Drafts"). Each harness signs by its own key with no more than its aven gives it, and one
 is taken out by removing its device or revoking its shares, leaving the others. The same harness on the person's second
 Mac is a second device of the same agent's device vault. A harness never names or picks an aven: the person's one aven
 is the parent, and the agent is added under it, the aven founded with the person's first agent.
@@ -830,6 +831,7 @@ the start cuts the whole proposal (`spec/AvenDB/Proposals.lean`).
 | Action | What it writes |
 |---|---|
 | Propose | A write that starts a line from any version |
+| Draft | A new entry's creation on a line of its own, its main line empty until the vault lands it (section 8) |
 | Merge | A write on the target that builds on both lines' heads: the union of both histories (T10g), reading as the three-way merge of both lines from their base (T10h) |
 | Accept | A write of the entry's vault on a proposal that builds on its heads and changes nothing: the vault accepts the proposal as it stands (section 8) |
 | Restore | A new write that puts back an older version |
@@ -870,7 +872,8 @@ itself, restore the version before it.
 
 **Whether a write counts** is decided by every reader the same way. It counts when it fits its schemas (section 8),
 builds only on writes that count, and its actor is the entry's vault or its proof names a live share whose chain
-allows what it touched; and a merge into main through a share, only on top of the vault's accept (section 8, M2). A
+allows what it touched; a merge into main through a share, only on top of the vault's accept (section 8, M2); and a
+write on main of a draft its vault hasn't landed, only where it is the vault's own (section 8, "Drafts", D1). A
 write that doesn't count stays in the log, sealed, and shows on no line, nor does anything built on it. So an app
 patched to skip the checks writes nothing anyone reads.
 
@@ -1072,7 +1075,8 @@ A share, as the page writes it, is `{name, where, ops}` and nothing else (`slice
 rests on ride along (`above`), so its grantee can prove a write against the whole chain:
 
 ```
-Op      = {"op": "relay" | "backup" | "read" | "create" | "propose" | "share"}
+Op      = {"op": "relay" | "backup" | "read" | "propose" | "share"}
+        | {"op": "create", "on": On?}
         | {"op": "set", "path": Pattern, "to": [v]?, "on": On?}
         | {"op": "insert" | "remove" | "move", "path": Pattern?, "on": On?}
         | {"op": "tag", "tags": [tag]?}
@@ -1102,8 +1106,8 @@ owner (`share`). A keep share has no ops. The built-in groups (`rules::groups`):
 | Group | Ops | Level |
 |---|---|---|
 | Owner | Everything, and share on | Owner |
-| Editor | Read, create, set, any tag, propose, merge | Write |
-| Suggester | Read, set on proposals, propose, merge on proposals | Write |
+| Editor | Read, create (on either line, so it drafts too), set, any tag, propose, merge | Write |
+| Suggester | Read, create on proposals (drafts alone), set on proposals, propose, merge on proposals | Write |
 | Viewer | Read | Read |
 | Public | Read, to Everyone | Read |
 | Backup | Keep and pass on the ciphertext | Backup |
@@ -1180,14 +1184,17 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
   every reader labels them alike, by where the write that set each number stands in the one order every device
   replays edits in (depth, then edit id): the first is `AIP-n`, the others `AIP-n.2`, `AIP-n.3`. An idea has no label.
-- **One review over every line.** `aip_review {entry, verdict, text}` is the vault's answer to a proposed AIP, acting
-  for the vault itself (NoCap for anyone else, so an aven or an agent never reviews; BadOp unless it is proposed).
-  `accepted` writes, for each line, the vault's accept at its heads, then its merge into main as the vault, taking the
-  proposal's side wherever both lines changed one place, then one review, `line` `""`, whose `heads` are every
-  accept; `declined` writes the review alone, its heads every line's heads; `revise` writes it, with the words that go
-  back, and the AIP is an idea again, keeping its number. Each line still needs its own accept, so nobody but the
-  vault merges any of them before the review. The writes are the device's own, signed as any write is, so no passkey
-  is asked; they are tried dry first, so a review that would be refused makes nothing.
+- **One review over every line.** `aip_review {entry, verdict, text, heads?}` is the vault's answer to a proposed AIP,
+  acting for the vault itself (NoCap for anyone else, so an aven or an agent never reviews; BadOp unless it is
+  proposed). `accepted` writes, for each line, the vault's accept at its heads, then its merge into main as the vault,
+  taking the proposal's side wherever both lines changed one place, then one review, `line` `""`, whose `heads` are
+  every accept; `declined` writes the review alone, its heads every line's heads; `revise` writes it, with the words
+  that go back, and the AIP is an idea again, keeping its number. Each line still needs its own accept, so nobody but
+  the vault merges any of them before the review. `heads`, every line's heads in one list as `aips` lists them, pins
+  the answer to the version the person saw: BadOp where a line moved since, so nothing written after a card was drawn
+  is accepted unseen; the page always names them, and an answer without them answers the lines as they stand. The
+  writes are the device's own, signed as any write is, so no passkey is asked; they are tried dry first, so a review
+  that would be refused makes nothing.
 - **The outcome is derived**, the same on every reader: **applied** once every line's heads are on main, **rejected**
   once it is withdrawn or its newest review declined it; either way archived. An AIP merged in part is never applied,
   and its lines show which are merged. Its signatures count against the default policy, one owner: the accepted
@@ -1199,15 +1206,64 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   `set`. Labels are the schema's titles, else the field's key made readable. Each line's summary reads
   `<schema title or type>: <first change> (+N more)`, values cut to 40 characters. The diff is computed, never typed.
 - **Reading them.** `aips` lists every AIP the device holds, with its label, stage, outcome, lines (`{entry, line,
-  type, title, name, heads, merged}`), reviews newest first, signatures and summary; and every open proposal line no
-  AIP names, as a bare idea (`bare: true`), so nothing written before AIPs is left out. `aip {entry}` adds each line's
-  diff. The page's HITL queue asks a person only for promoted AIPs of the vault they act for, not its own, with no
-  review that covers them as they stand; a card is a summary, and the Proposals app shows the whole AIP at
-  `/app/aips/?aip=<entry>`.
+  type, title, name, heads, merged, new, tags, public}`, the last three for drafts, below), reviews newest first,
+  signatures and summary; and every open proposal line no AIP names, as a bare idea (`bare: true`), so nothing
+  written before AIPs is left out. `aip {entry}` adds each line's diff. The page's HITL queue asks a person only for
+  promoted AIPs of the vault they act for, not its own, with no review that covers them as they stand; a card is a
+  summary, and the Proposals app shows the whole AIP at `/app/aips/?aip=<entry>`.
 
 **The honest limit.** Each line's merge still counts on its own. One review accepts every line and merges them in one
 go, but a reader that holds only some of those merges reads only those: all or none for every reader would need the
 merge writes to name their AIP, a change on the wire left for the next reset.
+
+### Drafts: new entries an AIP proposes
+
+A **draft** is a new entry proposed inside an AIP, by whoever may only suggest (`Lab::create_draft`,
+`crates/avendb/tests/drafts.rs`, D1 to D3). It is a creation that starts a line of its own: `create` with `"draft":
+true` writes the entry's first write on a proposal, `Proposal::New`, with no deps and no stay, and answers `{entry,
+line}`, the line named by that write. Its main line holds nothing until the vault lands it. Nothing new is on the wire
+but one kind of grant op: an edit's `New` was already a proposal byte.
+
+- **Who may draft.** `{"op": "create", "on": "proposals"}` creates drafts alone, `"on": "main"` plain creations alone,
+  and `create` with no `on`, either, so an Editor drafts too. A Suggester's share names `create` on proposals. In a
+  sealed grant, `create` with an `on` is grant op kind 13 (`13, on`: 0 main, 1 proposals), and `create` with none keeps
+  kind 3 and its bytes, so every grant made before reads as it did; an app built before reads one that names kind 13 as
+  a grant it can't open. A share is judged by its whole chain, so a draft counts only where every share of it lets a
+  creation on a proposal through (D2). A relay sees `create` and `New` in the clear and judges a draft as an owner
+  would: it refuses a creation with a stay, with deps, or on a proposal that already is (`NotFirst`, T25).
+- **Only the vault lands it.** A draft has **landed** once its creation is in its main line's counted history
+  (`History::landed`, Lean's `landed`): once a write of the vault itself brings that line into main, in practice the
+  merge the vault's `aip_review` accepted writes. Until then a write on its main line counts only where its actor is
+  the entry's vault, so no share's merge, even on top of the vault's accept, nor a share's write on main, counts for
+  any reader (D1). A device refuses to make one (NotLanded); one a patched app makes all the same counts for no reader,
+  and the history says why: `landing`. Every reader reaches the same verdict on its own, from the entry's log. A device
+  that opens none of the draft, a Backup's, reads it in the clear: landed once a main write that relies on no share
+  holds the creation in what it builds on (`Lab::landed`).
+- **Until it lands it is no entry of the vault's main line.** It has no main item: `get`, `set`, `tag` and the other
+  record ops on main answer NoEntry; `query`, the world, feeds, cards, requests, profiles and the counts of `database`
+  and `shares` leave it out. Its stewards leave every share to everyone out of its semantic audience, so no public key
+  opens it (D3); once it lands, they mark it into its whole audience, and the AIP line's `public` says beforehand
+  whether a share to everyone picks it then, by its type or its tags. Its line works as any proposal's: it is written
+  on, named in an AIP, and accepted. `propose` on an unlanded draft starts from the draft line's heads, and refuses
+  (BadOp) a `from` that doesn't hold the creation.
+- **In an AIP.** A draft's line is `new`: its diff adds every field, and its summary reads `New <what>: <title> (+N
+  fields)`. The HITL card shows a "New" badge with its type, and where it goes public on Accept, with its tags.
+  Withdrawn or declined, it stays unlanded for good: hidden from main and from everyone, its log kept, and the AIP
+  archived as rejected; whoever proposed it may name the same line in a new AIP. A draft no AIP names shows as a bare
+  idea.
+- **Schemas and lenses are never drafts.** The `create` op refuses one (BadOp), as the device does a write that
+  would make one (NotAView), and a draft schema never joins the lane, even once landed: the lane reads only schema
+  and lens entries created on main (T17).
+- **Shares made before drafts.** A Suggester's share made before drafts lacks `create` on proposals. It still reads as
+  a Suggester's (`world::group_of`), and still allows all it did, but drafts nothing (`drafts: false` in the world and
+  in `shares`; the page names it "Suggester (before drafts)"). The Mac's agent grant passes its agents' Suggester
+  shares on again in the new form, the aven's own first where it lacks the op, each resting on a share that gives all
+  its ops (`agent::pass_on`); standing Suggester grants and the vaults that follow them are given again the same way,
+  the later grant of one name standing for the earlier. None of this needs a passkey, as these shares are below Owner.
+  The old shares aren't revoked, which would rotate keys: they stay, drafting nothing.
+
+A plain creation, on main, counts exactly as it did before drafts: landing reads only drafts, and counting gains one
+conjunct, `!(main && !landed) || actor == entry's vault`, which every plain creation meets.
 
 ### Writes that fit their schemas
 

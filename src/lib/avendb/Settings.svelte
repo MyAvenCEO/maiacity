@@ -45,6 +45,7 @@
 		nameOf,
 		owns,
 		roleGroup,
+		rowHint,
 		rowLevel,
 		rowWhat,
 		shareWhat,
@@ -821,7 +822,7 @@
 							<ul class="theirs">
 								{#if p.owner}<li><span>{roleGroup(world, 'owner')} · Everything</span></li>{/if}
 								{#each p.grants as r (r.id)}
-									{@const hint = world.groups.find((g) => g.name === r.group)?.hint}
+									{@const hint = rowHint(r, world)}
 									<li>
 										<span class="held">
 											<span>

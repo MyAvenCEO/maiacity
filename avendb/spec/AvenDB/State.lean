@@ -322,6 +322,35 @@ def chainAllows (st : State) (cp : Share) (main : Bool) (ts : List Touch) : Bool
 def lets (st : State) (cp : Share) (proof : Option ShareId) (main : Bool) (ts : List Touch) : Bool :=
   proof == some cp.id && chainAllows st cp main ts
 
+/-! ## Lines and drafts
+
+Every write extends one line of its entry's history (`Write.line`): the main line, or a proposal (`Proposals.lean`).
+A line's history is its own writes and every write they build on. A draft is an entry whose creation starts a line of
+its own (`Proposal.new`), so its main line holds nothing. It lands once a counted write on main builds, through any
+chain of writes, on its creation, and only the entry's vault itself writes on main before then (`counts`); until it
+lands, the stewards keep it out of every share to everyone (`semAudience`). -/
+
+/-- The writes of entry `e` among `ws` that are seeds (`s`), and every write of the entry those build on,
+    transitively, in the order of `ws`. Each write comes after what it builds on, so one pass from the end collects
+    them. -/
+def reach (ws : List Write) (e : EntryId) (s : Write → Bool) : List Write :=
+  ws.foldr (fun w acc =>
+    if w.entry == e && (s w || acc.any (·.deps.contains w.edit)) then w :: acc else acc) []
+
+/-- The history of line `l` of entry `e`: the line's own writes and everything they build on. -/
+def history (ws : List Write) (e : EntryId) (l : Option EditId) : List Write :=
+  reach ws e (·.line == l)
+
+/-- Entry `en` is a draft: its creation started a line of its own (`Proposal.new`) rather than its main line. -/
+def isDraft (st : State) (en : Entry) : Bool :=
+  st.writes.any fun w => w.entry == en.id && w.first && w.proposal == .new
+
+/-- Entry `en` has landed: it is no draft, or its creation is in its main line's history of the writes its readers
+    count. An entry created on main has landed from its creation on; a draft lands when a counted write on main builds
+    on its creation, in practice the vault's merge of its line. -/
+def landed (st : State) (en : Entry) : Bool :=
+  !isDraft st en || (history st.counted en.id none).any (·.first)
+
 /-! ## Policies
 
 Every vault starts with the default policy, 1 of its owners (Scion phase I): a merge into the main line by anyone but
@@ -343,37 +372,43 @@ def accepted (st : State) (en : Entry) (deps : List EditId) : Bool :=
 
 /-- The readers of entry `en` count a write of it by vault `a` that builds on `deps`, carries the proof `proof` and
     touches `ts`, on the main line (`main`) or on a proposal, and whose result fits the entry's schemas or not
-    (`fits`): it fits, they count what it builds on, and `a` is the entry's vault or holds a share with write or more
+    (`fits`): it fits, they count what it builds on, a write on the main line of a draft that hasn't landed is the
+    vault's own (only the vault lands a draft), and `a` is the entry's vault or holds a share with write or more
     reaching the entry whose ops let the write through, and, for a merge into the main line, the vault accepted what
     it brings in (`accepted`). -/
 def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof : Option ShareId) (main : Bool)
     (ts : List Touch) (fits : Bool) : Bool :=
-  fits && deps.all (fun d => !st.uncounted.contains d) &&
+  fits && deps.all (fun d => !st.uncounted.contains d) && (!(main && !landed st en) || a == en.vault) &&
     (a == en.vault || (st.shares.any fun cp =>
       holdsShare st a cp .write && inAudience st cp en && lets st cp proof main ts) &&
       (!(main && ts.contains .merge) || accepted st en deps))
 
-/-- The readers of an entry of vault `v` count its creation in audience `x` by vault `a`, with the proof `proof`, whose
-    record fits its schemas or not (`fits`): it fits, and `a` is `v`, or `x` is the intake audience of a share over `v`
-    that `a` holds with write or more whose ops let a creation through. -/
-def creates (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (fits : Bool) : Bool :=
+/-- The readers of an entry of vault `v` count its creation in audience `x` by vault `a`, with the proof `proof`, on
+    the main line (`main`) or as a draft starting a line of its own, whose record fits its schemas or not (`fits`): it
+    fits, and `a` is `v`, or `x` is the intake audience of a share over `v` that `a` holds with write or more whose ops
+    let a creation on that line through. -/
+def creates (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (main : Bool) (fits : Bool) : Bool :=
   fits && (a == v || st.shares.any fun cp =>
-    cp.over == v && holdsShare st a cp .write && intake st cp == x && lets st cp proof true [.create])
+    cp.over == v && holdsShare st a cp .write && intake st cp == x && lets st cp proof main [.create])
 
-/-- Vault `a` creating an entry of vault `v` in audience `x` with attributes `attrs`, with the proof `proof`, stays
-    inside its own slice: it is `v`, or `x` is the intake audience of a share over `v` it holds with write or more whose
-    slice holds the new entry and whose ops let a creation through. -/
-def admits (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) (proof : Option ShareId := none) : Bool :=
+/-- Vault `a` creating an entry of vault `v` in audience `x` with attributes `attrs`, with the proof `proof`, on the
+    main line (`main`) or as a draft, stays inside its own slice: it is `v`, or `x` is the intake audience of a share
+    over `v` it holds with write or more whose slice holds the new entry and whose ops let a creation on that line
+    through. -/
+def admits (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) (proof : Option ShareId) (main : Bool) :
+    Bool :=
   a == v || st.shares.any fun cp =>
     cp.over == v && holdsShare st a cp .write && intake st cp == x && effSelects st cp attrs &&
-      lets st cp proof true [.create]
+      lets st cp proof main [.create]
 
 /-- An entry's semantic audience: the live shares over its vault that aren't wide nor keep shares and whose slice holds
-    it; none for an entry whose creator made it outside its own slice. -/
+    it, but a share to everyone while the entry is a draft that hasn't landed; none for an entry whose creator made it
+    outside its own slice. -/
 def semAudience (st : State) (en : Entry) : Audience :=
   if en.admitted then
     mkAudience ((st.shares.filter fun cp =>
-      cp.over == en.vault && st.live cp.id && !cp.wide && !cp.level.isKeep && effSelects st cp en.attrs).map (·.id))
+      cp.over == en.vault && st.live cp.id && !cp.wide && !cp.level.isKeep && effSelects st cp en.attrs &&
+        (cp.who != .everyone || landed st en)).map (·.id))
   else []
 
 /-- The live part of an entry's audience. -/
@@ -491,11 +526,12 @@ Its readers read the lane off the entries alone (T17), and the lane is all that 
 stands for: what the schemas the write's entry was written under let it hold (`Schemas.lean`). -/
 
 /-- Entry `en` puts its blob in vault `v`'s lane: it is an entry of `v` of type schema or lens, whose creation acted for
-    `v` itself and counts. One that anyone else created, through a share, acts for its creator and puts nothing there;
-    what later writes make of the entry, and its tags, are never read. -/
+    `v` itself, on the main line, and counts. One that anyone else created, through a share, acts for its creator and
+    puts nothing there, nor does a draft, landed or not; what later writes make of the entry, and its tags, are never
+    read. -/
 def inLane (st : State) (v : VaultId) (en : Entry) : Bool :=
   en.vault == v && schemaTypes.contains en.attrs.type &&
-    st.counted.any fun w => w.entry == en.id && w.first && w.actor == v
+    st.counted.any fun w => w.entry == en.id && w.first && w.actor == v && w.proposal == .main
 
 /-- Vault `v`'s schema lane, as its readers read it: the blob of each entry that puts one there, in the order the
     entries were created, each blob once, so a blob created again adds nothing. -/

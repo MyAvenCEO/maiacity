@@ -1,7 +1,8 @@
 //! AIPs, Aven Improvement Proposals (`docs/ARCHITECTURE.md` §8, "AIPs"): the one proposal standard of every vault,
 //! for every type of entry, a layer read off what avenDB already holds, proposals, reviews and merges. This module is
 //! the part on records alone, as `ops` is beside `engine`: the readable diff a schema derives of two records (`diff`),
-//! its summary in one line (`summary`), an idea's key (`key`) and the labels of AIPs that hold one number (`labels`).
+//! its summary in one line (`summary`, and `summary_new` for a new entry, a draft), an idea's key (`key`) and the
+//! labels of AIPs that hold one number (`labels`).
 //! The ops that open, promote, withdraw, review and read AIPs are the engine's (`engine`'s `aips`).
 //!
 //! **The diff is computed, never typed.** It names each place two records of one schema differ, field by field, at any
@@ -122,6 +123,14 @@ pub fn summary(what: &str, parts: &[Part]) -> String {
         Some((first, [])) => format!("{what}: {}", first.words()),
         Some((first, more)) => format!("{what}: {} (+{} more)", first.words(), more.len()),
     }
+}
+
+/// The summary of a part of an AIP that is a new entry, a draft (`engine`'s `aips`): `New <what>: <title> (+N fields)`,
+/// N the fields it holds beside its title and its kind, as every part of its diff adds one.
+pub fn summary_new(what: &str, title: &str, parts: &[Part]) -> String {
+    let field = |p: &&Part| !matches!(p.path.get(0).and_then(Value::as_str), Some("title" | "kind"));
+    let n = parts.iter().filter(field).count();
+    format!("New {what}: {title} (+{n} field{})", if n == 1 { "" } else { "s" })
 }
 
 /// What a schema's title names a part by: `Markdown document, v1` is `Markdown document`.
@@ -449,6 +458,18 @@ mod tests {
         assert_eq!(words, ["Params: − width", "Params: + depth", "Params › height › Default: 0.6 → 0.8"]);
         assert_eq!(parts[2].path, json!(["params", { "id": 1 }, "default"]));
         assert_eq!(summary("Logic", &parts), "Logic: Params: − width (+2 more)");
+    }
+
+    #[test]
+    fn a_new_entry_reads_by_its_title_and_how_many_fields_it_holds() {
+        let schema = json!({ "type": "object", "properties": {
+            "kind": { "const": "logic" }, "title": { "type": "string" }, "source": { "type": "string" },
+            "note": { "type": "string" } } });
+        let new = rec(json!({ "kind": "logic", "title": "Harvest rules", "source": "x", "note": "y" }));
+        let parts = diff(Some(&schema), &Record::new(), &new);
+        assert_eq!(summary_new("Logic", "Harvest rules", &parts), "New Logic: Harvest rules (+2 fields)");
+        let one = rec(json!({ "kind": "logic", "title": "T", "note": "y" }));
+        assert_eq!(summary_new("Logic", "T", &diff(Some(&schema), &Record::new(), &one)), "New Logic: T (+1 field)");
     }
 
     #[test]
