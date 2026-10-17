@@ -83,3 +83,22 @@ emphasised line it opens with and its cover the picture alone after it; `story` 
 - A story with no article yet: write it only where the share allows creating articles, as `{ op: "create", vault,
   type: "article", value: { kind: "article", title, text, story: { vault, entry }, language } }`; else propose its
   text in the reply and let the person start it from the Writing tab.
+
+## In avenDB: a story's Movie tab (the script)
+
+A film's script is an entry of its own, of type `script` (schema "Script, v1", `src/lib/studio/scripts.js`), beside
+the story: its Movie tab (`src/lib/avendb/StoryMovie.svelte`) shows it. The record: `{ kind: "script", title, story:
+{ vault, entry }, article: <the article's entry>, pinned, language, scenes }`. Each scene is a row of `scenes`, in
+order: `{ id, name, beat, lines, shots }`, `beat` the id of the story's beat it serves. Each line a row of its
+`lines`: `{ id, who, text, quote }`, `who` `"voice"` (the voice-over) or `"dialogue"` (said on screen), `quote` the
+article's paragraph it was drawn from (leave it out on a line of your own). The shot list is the director's
+(`director` skill).
+
+- Find it: `avendb_run` `{ op: "query", where: { type: ["script"] } }`, the rows whose `story.entry` is the story's.
+  None yet: the person makes the first from the article on the Movie tab (a scene per heading, a line per paragraph).
+- Propose, never change the main line: the `heads` from `{ op: "note", entry }`, then `{ op: "propose", entry, from,
+  name: "Scenes: <angle>" }`, then one batch of `{ op: "set", entry, line, path: ["scenes", { id }, "name"], value }`,
+  `{ op: "insert", entry, line, path: ["scenes", { id }, "lines"], value: <row> }`, `{ op: "move", ... , to }` and
+  the like. The person merges it from the Movie tab's "Proposals and history".
+- `pinned` is the article version the script follows; never set it by hand. When the article moves on, the person
+  takes the change on the Movie tab.

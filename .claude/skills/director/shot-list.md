@@ -20,3 +20,14 @@ A world film is written as a shot list (`scripts/film/<film>.mjs`) before anythi
 
 Voice takes and music are named by CID (`{ take, cid, pause }`, `music: { cid, chunks, cues }`). Each shot runs from its
 start to the next shot's start; the last to `total` = the last line's end + `TAIL`.
+
+## The shot list in avenDB: a story's Movie tab
+
+Before a shoot, a story's planned shots live in its script (`src/lib/studio/scripts.js`, the Movie tab in
+`src/lib/avendb/StoryMovie.svelte`; the storyteller skill names the record). Each scene's `shots` are rows, in order:
+`{ id, size, angle, move, shows, line, take, shot }`. `size` is one of `ews`, `ws`, `ms`, `mcu`, `cu`, `ecu`, `insert`;
+`angle` one of `eye`, `high`, `low`, `overhead`, `dutch`; `move` one of `static`, `pan`, `tilt`, `push`, `pull`,
+`track`, `handheld`, `orbit`. `shows` is what the frame holds, in a sentence; `line` is the id of the scene's line it
+covers. `take` (the artifact or Library file of the footage) and `shot` (a world shot, `shot:<entry>`) are set once
+something covers it. Propose the shot list as the storyteller proposes scenes: `{ op: "propose", ... name: "Shots:
+<angle>" }`, then `{ op: "insert", entry, line, path: ["scenes", { id }, "shots"], value: <row> }` for each shot.
