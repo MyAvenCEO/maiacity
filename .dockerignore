@@ -6,6 +6,8 @@
 !api/src
 !game
 !code
+# the frozen engines the repo ships, which game/code/sources/avendb.js holds code entries to
+!src/lib/sandbox/engines.json
 # the vault's Rust workspace, for vault-server (never its build output)
 !vault
 vault/target
