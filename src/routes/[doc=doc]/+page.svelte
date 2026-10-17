@@ -1,6 +1,6 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// A post of the Maia Universe on its own page (or, when the name is an asset recipe's hash, that asset's build:
+	// A post of the Maia Universe on its own page (an inspire post as its report card, $lib/universe/InspirePost.svelte) (or, when the name is an asset recipe's hash, that asset's build:
 	// $lib/assets/AssetPage.svelte, as ./+page.js finds), laid out as the journal lays out every article on the site
 	// ($lib/blog/PostLayout.svelte): its cover, its channel, its title, its subtitle, who wrote it and when, its words,
 	// then more of the stream. Its Markdown reads as avenDB lays it out ($lib/avendb/article.js), with the pictures
@@ -17,6 +17,8 @@
 	import { ago, pictureOf, postHref, slug } from '$lib/universe/posts.js';
 	import { authorOf, findPost, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
+	import InspirePost from '$lib/universe/InspirePost.svelte';
+	import { inspireOf } from '$lib/universe/inspire.js';
 
 	let { data } = $props();
 
@@ -26,6 +28,8 @@
 	});
 
 	const post = $derived(findPost(data.doc));
+	// an inspire post opens as its report card, the inspire delivery's own layout
+	const inspire = $derived(post && inspireOf(post, stream.entries));
 	const author = $derived(post && authorOf(post));
 	const waiting = $derived(!post && (stream.feed === 'idle' || stream.feed === 'loading'));
 	// more from the same channel, then the rest of the stream
@@ -82,6 +86,8 @@
 
 {#if data.asset}
 	<data.AssetPage hash={data.asset} />
+{:else if inspire}
+	<InspirePost entry={inspire} />
 {:else if post}
 	<PostLayout
 		hero={post.cover ? hero : undefined}
