@@ -17,7 +17,11 @@
 	import Sandbox7Aip from '$lib/proposals/Sandbox7Aip.svelte';
 	import V1Aip from '$lib/proposals/V1Aip.svelte';
 	import V1Draft from '$lib/proposals/V1Draft.svelte';
+	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { HOOKS } from '../../../../game/economy/params.js';
+	import { session } from '$lib/avendb/session.svelte.js';
+	import Unlock from '$lib/avendb/Unlock.svelte';
+	import { nameOf } from '$lib/avendb/vaults.js';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let game = $state(q.get('game') ?? '');
@@ -44,6 +48,20 @@
 			s7Note = `Sandbox 7's proposals could not be read (${e?.message || e}).`;
 		}
 	}
+	// avenDB's AIPs: every vault this device holds, read again each time its world changes (as the HITL stack reads them)
+	let avendb = $state([]);
+	let reading = 0;
+	function loadAvendb() {
+		if (session.phase !== 'open') return;
+		const n = ++reading;
+		session.ask({ op: 'aips' }).then((got) => n === reading && Array.isArray(got?.ok) && (avendb = got.ok));
+	}
+	$effect(() => {
+		session.world;
+		loadAvendb();
+	});
+	onMount(() => session.boot());
+
 	onMount(() => {
 		me()
 			.then((f) => {
@@ -58,8 +76,10 @@
 		return () => (clearInterval(every), removeEventListener('focus', loadS7));
 	});
 
-	const all = $derived(allOf(s7, g.view));
-	const inGame = $derived(all.filter((a) => !game || a.game === game));
+	const all = $derived(allOf(s7, g.view, avendb, session.world));
+	// the filter: a game ('sandbox-8'), or an avenDB vault ('vault:<id>') for AIPs about anything
+	const inGame = $derived(all.filter((a) => !game || (game.startsWith('vault:') ? a.vault === game.slice(6) : a.game === game)));
+	const vaults = $derived([...new Set(avendb.map((a) => a.vault))].map((id) => ({ id, name: nameOf(session.world?.vaults.find((v) => v.id === id)) })));
 	const shown = $derived(inGame.filter((a) => a.stage === stage));
 	const count = (id) => inGame.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
@@ -100,6 +120,7 @@
 	<nav class="filters" aria-label="Game">
 		<button class:on={!game} onclick={() => ((game = ''), (open = ''))}>All games</button>
 		{#each Object.entries(GAMES) as [id, x] (id)}<button class:on={game === id} onclick={() => ((game = id), (open = ''))}>{x.label}</button>{/each}
+		{#each vaults as v (v.id)}<button class:on={game === `vault:${v.id}`} onclick={() => ((game = `vault:${v.id}`), (open = ''))}>{v.name}</button>{/each}
 		{#if canDraft && !drafting}<button class="new" onclick={() => ((drafting = true), (open = ''))}>New proposal</button>{/if}
 	</nav>
 
@@ -115,7 +136,7 @@
 	{#if current}
 		<section class="detail">
 			<button class="back link" onclick={() => (open = '')}>← All {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}</button>
-			<p class="eyebrow">{GAMES[current.game].label} · was {current.was}</p>
+			<p class="eyebrow">{current.where} · {current.label}{current.was && current.was !== current.label ? ` · was ${current.was}` : ''}</p>
 			<h2>{current.title} <span class="status {outcome(current)}">{outcome(current)}</span></h2>
 			<p class="by">By {current.author}{current.via === 'mcp' ? ', through the MCP' : ''} · {when(current.created)}{current.decided ? ` · decided ${when(current.decided)}` : ''} · {current.policy}{current.stage === 'proposed' ? ` (${current.signed} of ${current.needs} so far)` : ''}</p>
 			{#if current.text}<p class="prose">{current.text}</p>{/if}
@@ -123,7 +144,9 @@
 				<h3>What it changes</h3>
 				<ul class="changes">{#each current.changes as c, i (i)}<li>{c}</li>{/each}</ul>
 			{/if}
-			{#if current.game === 'sandbox-8'}
+			{#if current.source === 'avendb'}
+				<AvendbAip a={current} onchanged={loadAvendb} />
+			{:else if current.source === 'sandbox-8'}
 				{#key current.key}<Sandbox7Aip m={current.mip} {acct} {configs} onchanged={loadS7} />{/key}
 			{:else if g.view}
 				<V1Aip m={current.mip} {g} />
@@ -136,22 +159,23 @@
 		{#if loading}
 			<p class="dim">One moment…</p>
 		{:else if stage === 'idea' && !shown.length}
-			<p class="dim">No ideas yet. Ideas arrive with proposals in avenDB, the next step: anyone who plays a game, and their agents, gather and edit them freely, each with an id of its own, until they are proposed and get their number. Until then Sandbox 7's proposals come over the MCP and MaiaCity V1's are proposed straight away.</p>
+			<p class="dim">No ideas yet. An idea is an AIP in avenDB not yet proposed: anyone with a share to suggest in a vault, and their agents, gather and edit it freely under an id of its own until it is proposed and gets its number. Today's MIPs have no ideas: Sandbox 7's come over the MCP and MaiaCity V1's are proposed straight away.</p>
 		{:else}
 			<ul class="list">
 				{#each shown as a (a.key)}
 					<li>
 						<button onclick={() => show(a)}>
 							<span class="head"><b>{a.title}</b><span class="status {outcome(a)}">{outcome(a)}</span></span>
-							<span class="meta">{GAMES[a.game].label} · was {a.was} · by {a.author} · {when(a.decided || a.created)}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signatures` : ''}</span>
+							<span class="meta">{a.where} · {a.label}{a.source === 'avendb' ? '' : ` (was ${a.was})`} · by {a.author}{a.decided || a.created ? ` · ${when(a.decided || a.created)}` : ''}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signatures` : ''}</span>
 							{#if a.changes.length}<span class="sum">{a.changes.slice(0, 3).join(' · ')}{a.changes.length > 3 ? ` · +${a.changes.length - 3} more` : ''}</span>{/if}
 						</button>
 					</li>
 				{:else}
-					<li class="dim">Nothing here{game ? ` for ${GAMES[game].label}` : ''}.</li>
+					<li class="dim">Nothing here{game && GAMES[game] ? ` for ${GAMES[game].label}` : ''}.</li>
 				{/each}
 			</ul>
 		{/if}
+		{#if session.phase !== 'open' && session.phase !== 'loading'}<div class="unlock"><p class="dim small">The AIPs of your avenDB vaults show here once avenDB is open in this tab.</p><Unlock /></div>{/if}
 		{#if s7Note && (!game || game === 'sandbox-8')}<p class="dim small">{s7Note}</p>{/if}
 		{#if g.error && (!game || game === 'maiacity-v1')}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
 		{#if game === 'sandbox-8' && configs.length}
@@ -323,6 +347,9 @@
 		margin: 0;
 		padding-left: 1.1rem;
 		font-size: 0.9rem;
+	}
+	.unlock {
+		margin-top: 1.2rem;
 	}
 	.about {
 		margin-top: 1.4rem;
