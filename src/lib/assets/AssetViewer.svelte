@@ -18,8 +18,8 @@
 
 	The Buildings add three things: every building stands on the same round ground ($lib/buildings/ground.js, `round`)
 	and is walked there, the list kept beside it (`inPlace`); and an item that is a world in disguise (a dome: Sandbox
-	3's interior, `inside`) is built by that world's own code into a scene of its own on this canvas, not in the box
-	($lib/buildings/inside.js), and stepped inside the same way.
+	3's interior, `inside`), at a version that is no recipe, is built by that world's own code into a scene of its own on
+	this canvas, not in the box ($lib/buildings/inside.js), and stepped inside the same way.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -135,8 +135,8 @@
 	let step = $state('');
 	let steps = $state(0);
 	let worldUp = $state(false);
-	/** whether what is chosen is a world in disguise */
-	const worldly = $derived(!!inside?.is(chosen));
+	/** whether what is chosen is a world in disguise: at a version that is no recipe (the tent is one from its v2) */
+	const worldly = $derived(!hash && !!inside?.is(chosen));
 
 	const catalog = $derived(hero?.catalog?.parts?.length ? hero.catalog : null);
 	const card = $derived(catalog && picked ? (catalog.parts.find((p) => p.id === picked) ?? null) : null);
