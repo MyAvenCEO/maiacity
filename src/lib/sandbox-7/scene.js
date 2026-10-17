@@ -16,18 +16,13 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { materialCache } from '$lib/render/core.js';
 import { BATTERY_KWH, capOf, CORE_R, DF, FACADE, FACTORIES, INSIDES, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, siteHall, towerGridOf, towerLevels, towerRadius } from './specs.js';
 import { CELL, HEX_S, HEX_W, USES, USE_IDS, corners, landOf } from './layout.js';
 
-/** @type {Map<string, THREE.MeshStandardMaterial>} */
-const mats = new Map();
-/** one material per colour */
-const mat = (/** @type {string} */ color, rough = 0.85, flat = true) => {
-	const k = `${color}/${rough}/${flat}`;
-	let m = mats.get(k);
-	if (!m) mats.set(k, (m = new THREE.MeshStandardMaterial({ color, roughness: rough, flatShading: flat })));
-	return m;
-};
+/** one material per colour (the core's material cache) */
+const mats = materialCache();
+const mat = (/** @type {string} */ color, rough = 0.85, flat = true) => mats(`${color}/${rough}/${flat}`, () => new THREE.MeshStandardMaterial({ color, roughness: rough, flatShading: flat }));
 /** the three kinds of panel: clear glass (the plants' daylight), solar panels (dark blue, their cells see-through), white hemp */
 const GLASS = new THREE.MeshStandardMaterial({ color: '#d4ecf0', transparent: true, opacity: 0.17, roughness: 0.06, metalness: 0.25, side: THREE.DoubleSide, depthWrite: false });
 const SOLAR = new THREE.MeshStandardMaterial({ color: '#1f3a5c', transparent: true, opacity: 0.8, roughness: 0.22, metalness: 0.45, side: THREE.DoubleSide, depthWrite: false });

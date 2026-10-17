@@ -10,7 +10,7 @@
  *   fitTo            a canvas kept to its element's size (and the camera's aspect)
  *   disposeObject    the one way to let go of what a model holds on the graphics card
  *   createControls   the one OrbitControls setup (damped)
- *   materials        the one page-side material cache, by scope (recipe code keeps its own: it is hashed with its recipe)
+ *   materialCache    the one page-side material cache (recipe code keeps its own: it is hashed with its recipe)
  *
  * The post stack (render target, ambient occlusion, bloom, output, a page's own passes) is ./post.js.
  *
@@ -221,20 +221,33 @@ export function createControls(camera, dom, { target, ...set } = {}) {
 	return controls;
 }
 
-/** @type {Map<string, THREE.Material>} */
-const kept = new Map();
+/**
+ * @typedef {(<M extends THREE.Material>(key: string, make: () => M) => M) & { dispose: () => void, readonly size: number }} MaterialCache
+ */
 
 /**
- * The page's one material cache: one material per key in a scope (a world's own colours, the Factories' paints), made
- * by `make` the first time. Scopes keep worlds apart, so one world changing its material never changes another's.
- * @param {string} scope
- * @returns {<M extends THREE.Material>(key: string, make: () => M) => M}
+ * A material cache: one material per key (a world's colours), made by `make` the first time it is asked for and shared
+ * by every mesh that asks again, so the graphics card compiles and holds each once. A module's cache lives as long as
+ * the page (its worlds' disposeObject keeps shared materials, `materials: false`); `dispose()` lets one go with what
+ * used it.
+ * @returns {MaterialCache}
  */
-export function materials(scope) {
-	return (key, make) => {
-		const k = `${scope}\u0000${key}`;
-		let m = kept.get(k);
-		if (!m) kept.set(k, (m = make()));
-		return /** @type {any} */ (m);
+export function materialCache() {
+	/** @type {Map<string, THREE.Material>} */
+	const kept = new Map();
+	const get = /** @type {MaterialCache} */ (
+		/** @type {unknown} */ (
+			(/** @type {string} */ key, /** @type {() => THREE.Material} */ make) => {
+				let m = kept.get(key);
+				if (!m) kept.set(key, (m = make()));
+				return m;
+			}
+		)
+	);
+	Object.defineProperty(get, 'size', { get: () => kept.size });
+	get.dispose = () => {
+		for (const m of kept.values()) m.dispose();
+		kept.clear();
 	};
+	return get;
 }
