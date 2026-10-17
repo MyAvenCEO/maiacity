@@ -28,6 +28,7 @@ import { format, gameClock, calendar, parse } from "../../game/time";
 import { relayDecision } from "./liquid.js";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
 import { ViewError, deleteView, dropLandedDrafts, keepView, listViews, putView } from "./genui.js";
+import { published } from "./games";
 import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, landMips, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -117,6 +118,16 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
   if (!me) return json(req, { error: "Please sign in." }, { status: 401 });
   if (!can(me, cap)) return json(req, { error: `This needs the right to ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
   return me;
+}
+
+/**
+ * Whoever may read game `game` here: whoever holds `cap`, else anyone at all, signed out too, while the game is
+ * published (./games.ts; public is watch and read only); otherwise the response that says why not. Only reads ask this.
+ */
+async function watching(req: Request, cap: string, game: string): Promise<{ id: string | null; role: string } | Response> {
+  const me = await allowed(req, cap);
+  if (!(me instanceof Response)) return me;
+  return (await published(game)) ? { id: null, role: "watcher" } : me;
 }
 
 /** The signed-in founder (or a terminal's key holder), whatever they hold — or the response that says why not. */
@@ -299,7 +310,7 @@ const server = Bun.serve({
     "/api/economy/configs": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "economy:play");
+        const me = await watching(req, "economy:play", "sandbox-7");
         if (me instanceof Response) return me;
         try {
           return json(req, { configs: await listConfigs({ deleted: new URL(req.url).searchParams.has("deleted") }), catalogue: catalogue() });
@@ -311,7 +322,7 @@ const server = Bun.serve({
     "/api/economy/configs/:id": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "economy:play");
+        const me = await watching(req, "economy:play", "sandbox-7");
         if (me instanceof Response) return me;
         try {
           return json(req, await getConfig(req.params.id, { version: new URL(req.url).searchParams.get("version") ?? undefined }));
@@ -324,7 +335,7 @@ const server = Bun.serve({
     "/api/economy/mips": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "economy:play");
+        const me = await watching(req, "economy:play", "sandbox-7");
         if (me instanceof Response) return me;
         try {
           return json(req, { mips: await listMips(new URL(req.url).searchParams.get("status") ?? undefined) });
@@ -345,7 +356,7 @@ const server = Bun.serve({
     "/api/economy/mips/:number": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "economy:play");
+        const me = await watching(req, "economy:play", "sandbox-7");
         if (me instanceof Response) return me;
         try {
           return json(req, await getMip(Number(req.params.number)));
@@ -411,7 +422,7 @@ const server = Bun.serve({
     "/api/economy/runs": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "economy:play");
+        const me = await watching(req, "economy:play", "sandbox-7");
         if (me instanceof Response) return me;
         try {
           return json(req, { runs: await listRuns(Number(new URL(req.url).searchParams.get("limit") ?? 100)) });
@@ -434,7 +445,7 @@ const server = Bun.serve({
     "/api/economy/runs/:id": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "economy:play");
+        const me = await watching(req, "economy:play", "sandbox-7");
         if (me instanceof Response) return me;
         try {
           const u = new URL(req.url).searchParams;
@@ -485,7 +496,7 @@ const server = Bun.serve({
     "/api/economy/brains/:config": {
       OPTIONS: preflight,
       GET: async (req) => {
-        const me = await allowed(req, "economy:play");
+        const me = await watching(req, "economy:play", "sandbox-7");
         if (me instanceof Response) return me;
         try {
           return json(req, { brains: await getBrains(req.params.config) });

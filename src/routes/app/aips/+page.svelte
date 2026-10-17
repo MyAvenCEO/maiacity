@@ -14,6 +14,7 @@
 	import { loadMips, loadConfigs } from '$lib/sandbox-8/store.js';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
 	import { GAMES, STAGES, allOf, when } from '$lib/proposals/aips.js';
+	import { isPublished, loadGames } from '$lib/app/games.svelte.js';
 	import Sandbox7Aip from '$lib/proposals/Sandbox7Aip.svelte';
 	import V1Aip from '$lib/proposals/V1Aip.svelte';
 	import V1Draft from '$lib/proposals/V1Draft.svelte';
@@ -37,8 +38,10 @@
 	let configs = $state([]);
 	let s7Note = $state('');
 
+	// Sandbox 7's proposals: for whoever plays it, and for everyone, signed out too, once it is published (read only)
+	const s7Open = $derived(acct.play || isPublished('sandbox-7', false));
 	async function loadS7() {
-		if (!acct.play) return;
+		if (!s7Open) return;
 		try {
 			const [m, c] = await Promise.all([loadMips(), loadConfigs()]);
 			s7 = m.mips;
@@ -66,10 +69,11 @@
 		me()
 			.then((f) => {
 				acct = { id: f.id, play: may(f, 'economy:play'), admin: may(f, 'economy:admin') };
-				if (!acct.play) s7Note = "Sandbox 7's proposals are open to whoever plays it.";
+				if (!s7Open) s7Note = "Sandbox 7's proposals are open to whoever plays it, and to everyone once it is published.";
 				return loadS7();
 			})
-			.catch(() => (s7Note = 'Sign in to see the proposals.'));
+			.catch(() => (s7Open ? loadS7() : (s7Note = 'Sign in to see the proposals. A published game’s are open to everyone.')));
+		void loadGames().then(loadS7);
 		// an agent proposes over the MCP while the app is open: the list reloads every 15 s, and when the window is back
 		const every = setInterval(loadS7, 15000);
 		addEventListener('focus', loadS7);
@@ -77,13 +81,13 @@
 	});
 
 	const all = $derived(allOf(s7, g.view, avendb, session.world));
-	// the filter: a game ('sandbox-8'), or an avenDB vault ('vault:<id>') for AIPs about anything
+	// the filter: a game ('sandbox-7'), or an avenDB vault ('vault:<id>') for AIPs about anything
 	const inGame = $derived(all.filter((a) => !game || (game.startsWith('vault:') ? a.vault === game.slice(6) : a.game === game)));
 	const vaults = $derived([...new Set(avendb.map((a) => a.vault))].map((id) => ({ id, name: nameOf(session.world?.vaults.find((v) => v.id === id)) })));
 	const shown = $derived(inGame.filter((a) => a.stage === stage));
 	const count = (id) => inGame.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
-	const loading = $derived(!g.loaded || (acct.play && !s7 && !s7Note));
+	const loading = $derived((acct.id && !g.loaded) || (s7Open && !s7 && !s7Note));
 
 	// the filter, the tab and the AIP open are kept in the address, so a link (a game's, a HITL card's) opens on them
 	$effect(() => {
@@ -176,9 +180,9 @@
 			</ul>
 		{/if}
 		{#if session.phase !== 'open' && session.phase !== 'loading'}<div class="unlock"><p class="dim small">The AIPs of your avenDB vaults show here once avenDB is open in this tab.</p><Unlock /></div>{/if}
-		{#if s7Note && (!game || game === 'sandbox-8')}<p class="dim small">{s7Note}</p>{/if}
+		{#if s7Note && (!game || game === 'sandbox-7')}<p class="dim small">{s7Note}</p>{/if}
 		{#if g.error && (!game || game === 'maiacity-v1')}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
-		{#if game === 'sandbox-8' && configs.length}
+		{#if game === 'sandbox-7' && configs.length}
 			<details class="about">
 				<summary>Sandbox 7's configs, and what a proposal's card code can change</summary>
 				<p>A world keeps the cards it started with. A new world starts from the world it follows: every card and value it played with, and its avens' brains; its proposal changes only the cards it carries.</p>
