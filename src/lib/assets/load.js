@@ -53,6 +53,22 @@ export const keyOf = (name) => {
 
 const now = () => performance.now();
 
+/** the builds the box is making now, by their cache key: one asked for again meanwhile waits for it */
+const building = new Map();
+
+/**
+ * A build's data copied for another copy of it: its arrays its own (a control may reshape them), its pictures shared
+ * (each texture is drawn from its own canvas, and a picture copied would be read back off the graphics card).
+ */
+function copyOf(v) {
+	if (ArrayBuffer.isView(v)) return v instanceof DataView ? new DataView(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength)) : v.slice();
+	if (v instanceof ArrayBuffer) return v.slice(0);
+	if (typeof ImageBitmap !== 'undefined' && v instanceof ImageBitmap) return v;
+	if (Array.isArray(v)) return v.map(copyOf);
+	if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copyOf(x)]));
+	return v;
+}
+
 /** a box's or the cache's build, checked and built into objects; throws with the reason it was refused */
 function open({ data, card }, hash) {
 	const verdict = checkCard(card);
@@ -87,13 +103,33 @@ export async function loadAsset(name, { box, cache: useCache = true } = {}) {
 		}
 	}
 	const t1 = now();
-	const recipe = await recipeAt(c.hash);
-	const t2 = now();
-	const given = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
-	const built = await (box ?? boxOf(INDEX.engine)).build(recipe, given);
+	// the same build asked for again while the box makes it (four backpacks of one world): made once, each its own copy
+	const same = useCache ? building.get(key) : undefined;
+	if (same) {
+		const { built, stored, t2 } = await same;
+		const t3 = now();
+		const got = open({ ...built, data: copyOf(built.data) }, c.hash);
+		const t4 = now();
+		return { ...got, ...said, from: 'box', stored, ms: { read: Math.round(t1 - t0), recipe: 0, start: built.ms.start, build: built.ms.build, bake: built.ms.bake, serialize: built.ms.serialize, box: Math.round(t3 - Math.max(t1, t2)), rebuild: Math.round(t4 - t3), total: Math.round(t4 - t0), shared: true } };
+	}
+	const making = (async () => {
+		const recipe = await recipeAt(c.hash);
+		const t2 = now();
+		const given = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
+		const built = await (box ?? boxOf(INDEX.engine)).build(recipe, given);
+		const stored = useCache ? cache.put(key, built).catch(() => false) : Promise.resolve(false);
+		return { built, stored, t2 };
+	})();
+	if (useCache) {
+		building.set(key, making);
+		making.then(
+			() => building.delete(key),
+			() => building.delete(key)
+		);
+	}
+	const { built, stored, t2 } = await making;
 	const t3 = now();
 	const got = open(built, c.hash);
 	const t4 = now();
-	const stored = useCache ? cache.put(key, built).catch(() => false) : Promise.resolve(false);
-	return { ...got, ...said, from: 'box', stored, ms: { read: Math.round(t1 - t0), recipe: Math.round(t2 - t1), start: built.ms.start, build: built.ms.build, serialize: built.ms.serialize, box: Math.round(t3 - t2), rebuild: Math.round(t4 - t3), total: Math.round(t4 - t0) } };
+	return { ...got, ...said, from: 'box', stored, ms: { read: Math.round(t1 - t0), recipe: Math.round(t2 - t1), start: built.ms.start, build: built.ms.build, bake: built.ms.bake, serialize: built.ms.serialize, box: Math.round(t3 - t2), rebuild: Math.round(t4 - t3), total: Math.round(t4 - t0) } };
 }

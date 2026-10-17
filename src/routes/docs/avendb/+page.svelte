@@ -283,7 +283,7 @@
   "why": "To draft the city's articles" }`;
 
 	const REQUEST = `{ "kind": "request", "to": "…",
-  "level": "Editor",
+  "asks": "share", "level": "Editor",
   "why": "To draft the city's articles",
   "vaults": [], "answer": "granted" }`;
 
@@ -316,6 +316,10 @@
 		[
 			'Merge into main',
 			'As a pull request merges: what only the proposal changed lands, and nothing main changed is lost. Where both changed the same place, you pick which value main keeps. Rows inside a row join by id at any depth; a clash anywhere inside makes that row the place you pick, and the page says where under it both changed it.'
+		],
+		[
+			'Accept',
+			'One of the vault’s owners accepts a proposal as it stands, with a review: accepted, declined, or sent back to revise with a few words. Anyone else merges a proposal into main only once the vault accepted it, and only the version it accepted; the vault’s own merges need no review.'
 		],
 		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
@@ -439,6 +443,7 @@
 		'tag',
 		'propose',
 		'merge',
+		'review',
 		'restore',
 		'undo',
 		'variant',
@@ -564,7 +569,11 @@
 			'A query shows through links only what its reader opened, says why where it opened nothing, and a cycle of links ends at its depth',
 			'L1, L2, L3'
 		],
-		['Merging a proposal loses nothing: what main changed stays, and what only the proposal changed lands', 'T10']
+		['Merging a proposal loses nothing: what main changed stays, and what only the proposal changed lands', 'T10'],
+		[
+			'A merge through a share brings in only the places its merge op names, and into main only what the vault accepted',
+			'M1, M2'
+		]
 	];
 </script>
 
@@ -910,8 +919,9 @@
 			<p class="prose-col">
 				Each vault gives avenCEO server a share on the whole of it: Backup, so the server keeps its ciphertext, or Relay,
 				with backups off. Every vault founded under you follows your setting, your aven and your agents’ device vaults
-				too. Your devices are often away, and the server is always there. So what your aven and its agents write, a
-				request among it, still reaches the people it is for.
+				too: it is one of your standing grants, as “All my vaults, now and later” is, which every vault you found later
+				gives too. Your devices are often away, and the server is always there. So what your aven and its agents write,
+				a request among it, still reaches the people it is for.
 			</p>
 			<h3>Your aven and its agents</h3>
 			<p class="prose-col">
@@ -933,9 +943,10 @@
 			<h3>Asking for access</h3>
 			<p class="prose-col">
 				An access request is a record, not a new kind of message. The vault that asks writes a record of avenDB’s
-				request schema in its own vault: the vault it asks, a level (Viewer, Suggester or Editor), and why. It shares that
-				one record with the vault it asks, in a group of its own, Answer: read the record, and set its answer to granted
-				or denied, and nothing else. Sync carries the record like any other, over avenDB’s own protocol: straight to the
+				request schema in its own vault: the vault it asks, what it asks for, and why. That is a share at a level (Viewer,
+				Suggester or Editor), to co-own the vault it asks, or, from a COOP, an invitation to co-own it. It shares that one
+				record with the vault it asks, in a group of its own, Answer: read the record, set its answer to granted or
+				denied, and write its part of an owner add, and nothing else. Sync carries the record like any other, over avenDB’s own protocol: straight to the
 				devices that act for the vault asked, or through any peer that keeps it, as the server does while it backs up
 				the vault that asks. The server is one more peer, not a mailbox. So a request needs no new rule: it is a record
 				and two shares, the one that carries it and the one that grants it.
@@ -961,7 +972,16 @@
 				shown on the same screen. You pick all your vaults or only some, a level each, and in the vaults of COOPs that
 				hired your aven, up to your aven’s own level there. One prompt of your passkey adds the agent, and founds your
 				aven first where you have none; the shares need no prompt. From then on the agent asks its aven with a record,
-				as any vault asks.
+				as any vault asks. All my vaults, now and later, is a standing grant: every vault you found afterwards gives your
+				aven and the agent the same share, and revoking it ends it on all of them.
+			</p>
+			<p class="prose-col">
+				A new owner takes two passkeys: the vault’s approval, and the newcomer’s consent. So a request to co-own, or an
+				invitation, carries the edit between the two people. The one asked approves, or accepts, with their passkey,
+				which signs their part of the edit, and writes it into the record with granted. The one who asked finishes it
+				with theirs, a next step on their consent screen. Neither adds anyone alone. And a new browser, opened on the
+				link one of your devices shows, asks to join your vault on the same screen: its Approve is the one touch of your
+				passkey that unlocks it and adds it.
 			</p>
 		</section>
 
@@ -1203,7 +1223,9 @@
 				An op names its place at any depth, and <code>"*"</code> stands for any row or any field:
 				<code>["nodes", "*", "kids", "*", "text"]</code> is the text of any row under any node. An op on a row covers
 				everything under it. The Share form offers every field of the schema at any depth, in words, and each list of
-				rows to add to, delete from or reorder.
+				rows to add to, delete from or reorder. A merge op may name a place too: a tuner that may merge
+				<code>["params", "*", "default"]</code> into main merges a proposal that only changes the defaults of the params,
+				and not one that also changes the code.
 			</p>
 			<div class="table">
 				<table>
@@ -1377,9 +1399,11 @@
 				</li>
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, artworks, flows,
-					functions, posts, and a device’s card, a vault’s profile and a file, each starting at version 1. A kind that grew
+					functions, posts, reviews, bundles of proposals, policies, the code entries (recipes, views and logic: their
+					source, the engine they run on, a manifest of the names they use, their params and a contract), and a device’s
+					card, a vault’s profile and a file, each starting at version 1. A kind that grew
 					ships its older versions too, with the lenses between them, so a spark written as version 1 opens on version 2’s
-					canvas. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
+					canvas, and an article written as version 1 opens as it was, ready to be linked to its story. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
 					chapters and words; a spark is a canvas of artifacts, sparks and free notes; an artwork is a story’s card of one
 					shape, in layers, rendered into the Library. Every vault
 					reads and writes them offline, and avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so

@@ -50,18 +50,25 @@ pub const FILE: &str = "file";
 /// The type of an access request: a record of avenDB's own `request` schema (`lens::REQUEST_V1`) that the asking vault
 /// writes in its own vault and shares, that entry alone, with the vault it asks, by a share of the group `ANSWER` (the
 /// ops engine's `ask`). So a request is a record and a share, which sync carries like any other, and its answer the
-/// share the vault asked gives, if it grants it, and the answer it sets (`requests`).
+/// share the vault asked gives, if it grants it, and the answer it sets (`requests`). It asks for a share, to co-own
+/// the vault asked, or, as an invitation, for the vault asked to co-own the asking one (`Request::adds`): granting one
+/// of those two writes the asked vault's part of the edit that adds the owner, which the vault that asked finishes.
 pub const REQUEST: &str = "request";
 
 /// The name of the group of ops an access request goes to the vault it asks by (`answering`).
 pub const ANSWER: &str = "Answer";
 
-/// The ops an access request goes to the vault it asks by (`ANSWER`): read it, and set its `answer`, on its main line,
-/// to "granted" or "denied"; nothing else.
+/// The ops an access request goes to the vault it asks by (`ANSWER`): read it, set its `answer`, on its main line, to
+/// "granted" or "denied", and its `part`, the asked vault's part of an owner add it grants; nothing else.
 pub fn answering() -> Vec<rules::Op> {
     let answers = ["granted", "denied"].map(|a| rules::Scalar::Text(a.into())).to_vec();
-    let answer = vec![rules::Step::Field("answer".into())];
-    vec![rules::Op::Read, rules::Op::Set { path: answer, to: Some(answers), on: Some(rules::On::Main) }]
+    let (answer, part) = (vec![rules::Step::Field("answer".into())], vec![rules::Step::Field("part".into())]);
+    let main = Some(rules::On::Main);
+    vec![rules::Op::Read, rules::Op::Set { path: answer, to: Some(answers), on: main }, rules::Op::Set {
+        path: part,
+        to: None,
+        on: main,
+    }]
 }
 
 /// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
@@ -222,8 +229,9 @@ pub struct EntryView {
 pub enum What {
     /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
     /// it is a variant of and the version of it it copied, if it is one (`VARIANT`); whether it is deleted (`DELETED`);
-    /// how many edits of it the device counts, and how many proposals it has; and for a spark, its record, each field
-    /// it leaves out at its default, for its look, its link, its source, its files and the sparks it gathers.
+    /// how many edits of it the device counts, and how many proposals it has; and for a spark or an article, its
+    /// record, each field it leaves out at its default: a spark's canvas; an article's story, language and quote, all
+    /// but its text, which `text` is.
     Note {
         title: String,
         text: String,
@@ -231,7 +239,7 @@ pub enum What {
         deleted: bool,
         edits: usize,
         proposals: usize,
-        spark: Option<Value>,
+        record: Option<Value>,
     },
     Todo { title: String, status: Status },
     /// A file (`FILE`): its name, its media type, and whether it is deleted (`DELETED`).
@@ -396,7 +404,7 @@ impl World {
                 "proposals": proposals,
                 "media": media,
                 "record": match &i.what {
-                    What::Record { record, .. } | What::Note { spark: Some(record), .. } => record.clone(),
+                    What::Record { record, .. } | What::Note { record: Some(record), .. } => record.clone(),
                     _ => Value::Null,
                 },
                 "files": i.files.iter().map(file).collect::<Vec<_>>(),
@@ -557,8 +565,12 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
                 let edits = history.map_or(0, |h| h.changes().len());
                 let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
                 let deleted = doc.tags.iter().any(|t| t == DELETED);
-                let spark = View::built_in("spark").and_then(|v| item.read(v));
-                What::Note { title: doc.title.clone(), text, variant_of: variant_of(&doc), deleted, edits, proposals, spark }
+                let read = |kind: &str| View::built_in(kind).and_then(|v| item.read(v));
+                // an article's text is the entry's text already: its record tells the rest
+                let article = || read("article").map(|mut r| (r.as_object_mut().map(|o| o.remove("text")), r).1);
+                let record = read("spark").or_else(article);
+                let variant_of = variant_of(&doc);
+                What::Note { title: doc.title.clone(), text, variant_of, deleted, edits, proposals, record }
             }
             (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (_, None, None) => record(item.record()),
@@ -692,31 +704,46 @@ pub fn file(title: &str, media: &str, device: SignerId) -> Item {
     own(FILE, json!({ "title": title, "media": media }), device)
 }
 
-/// An access request as a device reads it (`requests`): its entry, the vault that asks, the one it asks, the level it
-/// asks for (a built-in group's name), why, the vaults it asks that level on (none: `to` itself), the answer `to` set,
-/// if it did, and when it was asked, in seconds since 1970.
+/// An access request as a device reads it (`requests`): its entry, the vault that asks, the one it asks, what it asks
+/// for (`asks`: "share", "owner" or "invite"), the level (a built-in group's name, Owner for the two others), why, the
+/// vaults it asks that level on (none: `to` itself), the answer `to` set, if it did, the part of the owner add `to`
+/// signed as it granted it (`part`, base64url; empty for none), and when it was asked, in seconds since 1970.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     pub entry: EntryId,
     pub from: VaultId,
     pub to: VaultId,
+    pub asks: String,
     pub level: String,
     pub why: String,
     pub vaults: Vec<VaultId>,
     pub answer: Option<String>,
+    pub part: String,
     pub created: u64,
 }
 
 impl Request {
+    /// The owner add it asks for: the vault that takes an owner, and the vault that becomes one. To co-own (`"owner"`),
+    /// the vault asked takes the one that asks; invited (`"invite"`), the other way round. None for a share.
+    pub fn adds(&self) -> Option<(VaultId, VaultId)> {
+        match self.asks.as_str() {
+            "owner" => Some((self.to, self.from)),
+            "invite" => Some((self.from, self.to)),
+            _ => None,
+        }
+    }
+
     pub fn to_json(&self) -> Value {
         json!({
             "entry": hex(&self.entry.0),
             "from": hex(&self.from.0),
             "to": hex(&self.to.0),
+            "asks": self.asks,
             "level": self.level,
             "why": self.why,
             "vaults": self.vaults.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
             "answer": self.answer,
+            "part": !self.part.is_empty(),
             "created": self.created,
         })
     }
@@ -736,10 +763,12 @@ pub fn requests(lab: &Lab, me: SignerId) -> Vec<Request> {
             entry: en.id,
             from: en.vault,
             to: vault(r.get("to")?)?,
+            asks: text("asks").unwrap_or_else(|| "share".into()),
             level: text("level")?,
             why: text("why").unwrap_or_default(),
             vaults,
             answer: text("answer"),
+            part: text("part").unwrap_or_default(),
             created: meaning.attrs.created,
         })
     };
@@ -980,4 +1009,89 @@ pub fn parent(st: &State, issuer: VaultId, over: VaultId, who: Who, level: Level
     let mut held: Vec<&Issued> = st.shares_held(issuer).filter(|cp| st.share_parent_ok(&probe(cp))).collect();
     held.sort_by_key(|cp| (cp.share.level != Level::Owner, !cp.share.wide, std::cmp::Reverse(cp.share.level.rank())));
     held.first().map(|cp| cp.id)
+}
+
+/// What the name of a standing grant starts with, the name of its group following it: a share on the whole of a
+/// person's vault, given for "all my vaults, now and later", which every vault founded under that vault from then on
+/// gives too (`standing`), and every share that followed it, which carries the same name. The name is the share's own,
+/// sealed in its slice beside its ops (`slice::Slice`), so a standing grant is told by what avenDB stores already, and
+/// only the person's vault and its grantee read it.
+pub const STANDING: &str = "avendb:standing:";
+
+/// The name of a standing grant of group `group`: `avendb:standing:Viewer`.
+pub fn standing_name(group: &str) -> String {
+    format!("{STANDING}{group}")
+}
+
+/// A share named `name` is a standing grant, or followed one.
+pub fn is_standing(name: &str) -> bool {
+    name.starts_with(STANDING)
+}
+
+/// A grant a vault founded under a person follows (`standing`): the share it follows, the vault that holds it and its
+/// level, its name and ops, and who issued it, the person's vault itself or a vault it owns passing it on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Standing {
+    pub share: ShareId,
+    pub who: VaultId,
+    pub level: Level,
+    pub name: String,
+    pub ops: Vec<rules::Op>,
+    pub issuer: VaultId,
+}
+
+/// The standing grants of vault `mine`, a person's, as device `me` reads them: each share in force on the whole of it
+/// to a vault that is named a standing grant (`STANDING`), as "all my vaults, now and later" on the consent screen
+/// gives one to their aven and the aven passes one on to its agent; and avenCEO server's, Backup or Relay, which is
+/// the person's server setting (`server_level`), so every vault backs up or relays as theirs does. The strongest first,
+/// then in the order issued, so a share comes after the one it rests on. Each with its slice's name and ops, or, where
+/// the device doesn't read the slice, its level's group's.
+pub fn standing(lab: &Lab, me: SignerId, mine: VaultId) -> Vec<Standing> {
+    let st = lab.state(me);
+    let server = avenceo(st, mine);
+    let mut out = vec![];
+    for cp in st.shares_over(mine).filter(|cp| cp.share.wide && st.live(cp.id)) {
+        let Who::Vault(who) = cp.share.who else { continue };
+        let slice = lab.slice(me, cp.id);
+        let named = slice.is_some_and(|s| is_standing(&s.name));
+        if cp.share.level.is_keep() || !(named || Some(who) == server) {
+            continue;
+        }
+        let (name, ops) = match slice {
+            Some(s) => (s.name.clone(), s.grant.ops.clone()),
+            None => (cp.share.level.group().to_string(), cp.share.level.ops()),
+        };
+        let (level, issuer) = (cp.share.level, cp.share.issuer);
+        out.push(Standing { share: cp.id, who, level, name, ops, issuer });
+    }
+    out.sort_by_key(|s| std::cmp::Reverse(s.level.rank()));
+    out
+}
+
+/// The passkey that approves for vault `v` alone, as `st` reads it: its root; else, where one owner approves a change
+/// (its threshold one), its first owner that is a signer, or that of its first owner that is a vault, up the chain.
+/// So a person's passkey approves for their vault and for a coop it owns alone. None where it takes more than one.
+pub fn approver(st: &State, v: VaultId) -> Option<SignerId> {
+    let mut at = v;
+    for _ in 0..=st.vaults().len() {
+        let vault = st.vault(at)?;
+        if let Some(root) = vault.root {
+            return Some(root);
+        }
+        if vault.threshold != 1 {
+            return None;
+        }
+        let signer = vault.owners.iter().find_map(|o| match o {
+            Principal::Signer(s) => Some(*s),
+            Principal::Vault(_) => None,
+        });
+        if signer.is_some() {
+            return signer;
+        }
+        at = vault.owners.iter().find_map(|o| match o {
+            Principal::Vault(x) => Some(*x),
+            Principal::Signer(_) => None,
+        })?;
+    }
+    None
 }

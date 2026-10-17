@@ -104,6 +104,11 @@ structure Write where
   audience : Audience
   deriving DecidableEq, Repr
 
+/-- A write on a proposal: neither on the main line nor one that starts a proposal. -/
+def Proposal.isOn : Proposal → Bool
+  | .on _ => true
+  | _ => false
+
 /-- The line a write is on: `none` for the main line, else the write that started its proposal. -/
 def Write.line (w : Write) : Option EditId :=
   match w.proposal with
@@ -137,6 +142,10 @@ structure State where
       the ops of its actor's shares don't allow it, or it builds on one they don't count (`counts`). Known to the
       entry's readers only. -/
   uncounted : List EditId := []
+  /-- The accepted writes an entry's readers read as accepts: its vault's own writes on a proposal that touch nothing
+      and ask for no tag, the vault's yes to the proposal as it stands, which its policy reads (`accepted`). Known to
+      the entry's readers only, as what a write touches is. -/
+  accepts   : List EditId := []
   /-- The keep shares that pick each entry, as its vault's stewards last marked them (`mark`): its wants. -/
   marks     : List (EntryId × List ShareId) := []
   deriving Repr
@@ -313,15 +322,36 @@ def chainAllows (st : State) (cp : Share) (main : Bool) (ts : List Touch) : Bool
 def lets (st : State) (cp : Share) (proof : Option ShareId) (main : Bool) (ts : List Touch) : Bool :=
   proof == some cp.id && chainAllows st cp main ts
 
+/-! ## Policies
+
+Every vault starts with the default policy, 1 of its owners (Scion phase I): a merge into the main line by anyone but
+the entry's vault counts only once the vault accepted what it brings in. An accept is the vault's own write on a
+proposal that touches nothing (`isAccept`), its yes to the proposal at the version it builds on, in the entry's own
+log: so every reader of the entry reads it, offline, and reaches the same verdict (C2). The vault's own merges count
+as they always did, with no accept but their own. A merge into a proposal needs none. -/
+
+/-- The vault's own write on a proposal that touches nothing, `ts` its touches and the tags it asks for, is an
+    accept. -/
+def isAccept (a : VaultId) (en : Entry) (proposal : Proposal) (ts : List Touch) : Bool :=
+  a == en.vault && proposal.isOn && ts.isEmpty
+
+/-- What a write of entry `en` builds on, `deps`, was accepted: it builds on an accept, and on nothing but accepts and
+    writes on the main line, so a merge of it brings in only what the vault accepted. -/
+def accepted (st : State) (en : Entry) (deps : List EditId) : Bool :=
+  deps.any st.accepts.contains && deps.all fun d =>
+    st.accepts.contains d || st.writes.any fun x => x.edit == d && x.entry == en.id && x.proposal == .main
+
 /-- The readers of entry `en` count a write of it by vault `a` that builds on `deps`, carries the proof `proof` and
     touches `ts`, on the main line (`main`) or on a proposal, and whose result fits the entry's schemas or not
     (`fits`): it fits, they count what it builds on, and `a` is the entry's vault or holds a share with write or more
-    reaching the entry whose ops let the write through. -/
+    reaching the entry whose ops let the write through, and, for a merge into the main line, the vault accepted what
+    it brings in (`accepted`). -/
 def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof : Option ShareId) (main : Bool)
     (ts : List Touch) (fits : Bool) : Bool :=
   fits && deps.all (fun d => !st.uncounted.contains d) &&
-    (a == en.vault || st.shares.any fun cp =>
-      holdsShare st a cp .write && inAudience st cp en && lets st cp proof main ts)
+    (a == en.vault || (st.shares.any fun cp =>
+      holdsShare st a cp .write && inAudience st cp en && lets st cp proof main ts) &&
+      (!(main && ts.contains .merge) || accepted st en deps))
 
 /-- The readers of an entry of vault `v` count its creation in audience `x` by vault `a`, with the proof `proof`, whose
     record fits its schemas or not (`fits`): it fits, and `a` is `v`, or `x` is the intake audience of a share over `v`

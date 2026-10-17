@@ -121,3 +121,37 @@ describe('our own Markdown reads as before', () => {
 		expect(markdown('## How to rerun it', { ids: true })).toBe('<h2 id="how-to-rerun-it">How to rerun it</h2>\n');
 	});
 });
+
+// Raw HTML on our pages ({@html}) comes only from an engine that makes it safe, or from strings of our own: each place
+// is named here with what feeds it. A new {@html} fails until its HTML comes through one of these (for Markdown:
+// $lib/markdown, or $lib/admin/markdown's renderMarkdown on top of it) and is added below.
+const RAW_HTML = {
+	'src/lib/admin/PostCard.svelte': 'renderMarkdown ($lib/markdown)',
+	'src/lib/stories/WritingTab.svelte': 'renderMarkdown ($lib/markdown)',
+	'src/lib/stories/Pad.svelte': 'renderMarkdown ($lib/markdown)',
+	'src/lib/blog/PostLayout.svelte': 'its html prop: blog posts through journalHtml ($lib/markdown, $lib/server/blog.ts)',
+	'src/routes/blog/inspire-me/[slug]/+page.svelte': '$lib/markdown, at build time',
+	'src/routes/app/skills/+page.svelte': '$lib/markdown, our links around its <code>',
+	'src/lib/avendb/ArticleView.svelte': "avenDB's escaping article renderer (render)",
+	'src/routes/[doc=doc]/+page.svelte': "avenDB's escaping article renderer (render)",
+	'src/lib/theos/Tex.svelte': "KaTeX's own output for the paper's formulas (no \\href, no HTML extension)",
+	'src/lib/aven-city/components/ResourceIcon.svelte': 'our own SVG icons (ICONS)',
+	'src/lib/avendb/Settings.svelte': 'a QR code drawn here as SVG'
+};
+describe('raw HTML on our pages', () => {
+	test('every {@html} is fed by a safe engine or our own strings', async () => {
+		const { readdirSync, readFileSync, statSync } = await import('node:fs');
+		const root = new URL('../../../', import.meta.url).pathname;
+		const found = [];
+		const walk = (dir) => {
+			for (const name of readdirSync(root + dir)) {
+				const path = `${dir}/${name}`;
+				if (statSync(root + path).isDirectory()) walk(path);
+				else if (name.endsWith('.svelte') && readFileSync(root + path, 'utf8').includes('{@html')) found.push(path);
+			}
+		};
+		walk('src');
+		expect(found.filter((p) => !RAW_HTML[p])).toEqual([]);
+		expect(Object.keys(RAW_HTML).filter((p) => !found.includes(p))).toEqual([]);
+	});
+});

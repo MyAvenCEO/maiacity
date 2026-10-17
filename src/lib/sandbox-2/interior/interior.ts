@@ -26,13 +26,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, workshops, type Kit } from './spaces'
 import { antHills, apiary, fishes, herd, TANK_FISH } from './animals'
-import { settled as actorsSettled } from '$lib/actors/build'
+import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt, nearness } from './ambience'
 import { flow, pond as pondShape, shore, stream as streamShape, waterMaterial } from './water'
-import { createStage, type StageHandle } from '$lib/sandbox-kit/stage.js'
+import { createWorldRenderer, type StageHandle } from '$lib/render/world.js'
 import { createSky, type SkyHandle } from '$lib/sandbox-kit/sky.js'
 import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
@@ -604,7 +604,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 	const lite = kind === 'glamp' || kind === 'tent'
 	// standing alone (Sandbox 3) the dome has the kit's stage, sky and walker ($lib/sandbox-kit); built into a host's
 	// world (Sandbox 4) it draws with the host's
-	const stage: StageHandle | null = host ? null : createStage(container, { maxPixelRatio: huge ? 1.25 : 1.5, near: 0.05, far: R * 30 + 500 })
+	const stage: StageHandle | null = host ? null : createWorldRenderer(container, { maxPixelRatio: huge ? 1.25 : 1.5, near: 0.05, far: R * 30 + 500 })
 	const renderer = host?.renderer ?? stage!.renderer
 
 	// built into a host's world, the dome is a scene of its own standing in it
@@ -2623,7 +2623,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		hold: walker,
 		sky,
 		place: (x, z, yw, p, y) => walker.place(x, z, yw, p, y),
-		// stand where the shot is, and wait for every animal's skin, meshed off the page, to be there
+		// stand where the shot is, and wait for every animal, built in the box, to be there
 		stage: async (w) => {
 			walker.place(w.stand[0], w.stand[1], 0, 0)
 			await actorsSettled()

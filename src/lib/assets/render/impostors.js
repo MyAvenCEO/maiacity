@@ -46,10 +46,16 @@ export function createImpostors(renderer, o = {}) {
 	studio.add(new THREE.AmbientLight('#ffffff', Math.PI * 0.45));
 	const key = new THREE.DirectionalLight('#ffffff', Math.PI * 0.55);
 	studio.add(key, key.target);
-	const pmrem = new THREE.PMREMGenerator(renderer);
-	const env = pmrem.fromScene(new RoomEnvironment(), 0.04);
-	pmrem.dispose();
-	studio.environment = env.texture;
+	// the room's reflections made when the first picture is to be taken, not with the renderer: a world that takes none
+	// (drawing every kind at its finest, as MaiaCity V1 does) never waits for them (seconds on a software GPU)
+	let env = null;
+	const lit = () => {
+		if (env) return;
+		const pmrem = new THREE.PMREMGenerator(renderer);
+		env = pmrem.fromScene(new RoomEnvironment(), 0.04);
+		pmrem.dispose();
+		studio.environment = env.texture;
+	};
 	studio.environmentIntensity = 0.35;
 	const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 	const shot = new THREE.WebGLRenderTarget(px, px, { samples: 4, generateMipmaps: false });
@@ -78,7 +84,7 @@ export function createImpostors(renderer, o = {}) {
 		mesh.receiveShadow = true;
 		mesh.customDepthMaterial = depth;
 		group.add(mesh);
-		const page = { target, quad, geo, material, depth, mesh, kinds: 0, n: 0, cap: 0, attrs: null };
+		const page = { target, quad, geo, material, depth, mesh, kinds: 0, n: 0, cap: 0, attrs: null, stale: false };
 		grow(page, 64);
 		clip(page);
 		return page;
@@ -122,6 +128,7 @@ export function createImpostors(renderer, o = {}) {
 
 	/** a kind's shaders as the studio lights them, made before its picture is taken (./index.js, `compiled`) */
 	async function prepare(level) {
+		lit();
 		const thing = thingOf(level);
 		const clip = renderer.localClippingEnabled;
 		renderer.localClippingEnabled = false;
@@ -137,6 +144,7 @@ export function createImpostors(renderer, o = {}) {
 	 * @returns {Slot}
 	 */
 	function add(level) {
+		lit();
 		let p = pages.findIndex((x) => x.kinds < kindsPerPage);
 		if (p < 0) {
 			pages.push(pageOf());
@@ -162,6 +170,11 @@ export function createImpostors(renderer, o = {}) {
 		renderer.autoClear = false;
 		renderer.localClippingEnabled = false;
 		const to = new THREE.Vector2();
+		// the page's smaller copies are not made here (three makes them again after every copy onto a page that has
+		// them: the whole page, 2048 pixels a side, nine times a kind, seconds of a software GPU that every frame of the
+		// world waits behind), but once a frame for every picture taken since (`settle`)
+		const mips = page.target.texture.generateMipmaps;
+		page.target.texture.generateMipmaps = false;
 		for (let f = 0; f < FRAMES; f++) {
 			const a = (f / FRAMES) * Math.PI * 2, c = cell + f;
 			camera.position.set(Math.sin(a) * D, mid, Math.cos(a) * D);
@@ -175,11 +188,10 @@ export function createImpostors(renderer, o = {}) {
 			renderer.render(studio, camera);
 			renderer.copyTextureToTexture(shot.texture, page.target.texture, null, to.set((c % cols) * px, Math.floor(c / cols) * px));
 		}
+		page.target.texture.generateMipmaps = mips;
+		page.stale = true;
 		studio.remove(thing);
 		for (const m of thing.children) m.dispose();
-		// and the page's smaller copies for afar, made again now it has more (drawing nothing into it makes them)
-		renderer.setRenderTarget(page.target);
-		renderer.render(new THREE.Scene(), camera);
 		renderer.setRenderTarget(was.target);
 		renderer.setClearColor(was.color, was.alpha);
 		renderer.autoClear = was.autoClear;
@@ -187,10 +199,31 @@ export function createImpostors(renderer, o = {}) {
 		return { page: p, cell, size, foot };
 	}
 
+	/** nothing, drawn into a page: its smaller copies made again (`settle`) */
+	const blank = new THREE.Scene();
+
 	return {
 		group,
 		prepare,
 		add,
+		/**
+		 * The smaller copies of each page that has new pictures, made again (for afar, where a picture is averaged
+		 * down): once for all the pictures taken since they were last made. Before a frame draws any card.
+		 */
+		settle() {
+			const stale = pages.filter((p) => p.stale);
+			if (!stale.length) return;
+			const was = { target: renderer.getRenderTarget(), autoClear: renderer.autoClear };
+			renderer.autoClear = false;
+			for (const page of stale) {
+				// drawing nothing into it makes them
+				renderer.setRenderTarget(page.target);
+				renderer.render(blank, camera);
+				page.stale = false;
+			}
+			renderer.setRenderTarget(was.target);
+			renderer.autoClear = was.autoClear;
+		},
 		/** starts a frame's cards: none on any page */
 		begin() {
 			for (const page of pages) page.n = 0;
@@ -246,7 +279,7 @@ export function createImpostors(renderer, o = {}) {
 			}
 			pages.length = 0;
 			shot.dispose();
-			env.dispose();
+			env?.dispose();
 		}
 	};
 }

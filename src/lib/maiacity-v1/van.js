@@ -1,15 +1,16 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * The travel van as MaiaCity V1's story rides in it (Samuel 2026-10-13: far more detail, real people, no ball heads):
- * the old minibus of $lib/models/wayside.js with see-through glass, and inside it all that a packed van on a long road
- * holds. A ribbed rubber floor; three rows of worn striped moquette seats with their headrests (two buckets in front,
+ * the old minibus of $lib/models/wayside.js (things/travel-van@1, built in the asset box and put in by the world:
+ * seeThrough) with see-through glass, and inside it all that a packed van on a long road holds. A ribbed rubber floor; three rows of worn striped moquette seats with their headrests (two buckets in front,
  * two benches behind) on steel frames; door cards with a handle and window winders; window sills; curtains tied back at
  * every side window; a roof lining with its ribs, grab handles and a dome light; sun visors; a dashboard with two
  * gauges in their binnacle, a radio, vents and a glovebox; the steering wheel on its column, the engine cover between
  * the front seats and the gear stick on it; soft bags, a backpack, boxes tied with string, a suitcase and a rolled
  * mattress at the back.
  *
- * And its people, seated stand-ins of every look ($lib/actors/human.ts): the driver with his hands on the wheel, an
+ * And its people, seated stand-ins of every look (actors/stand-in@11, built in the box with their height and look and
+ * posed by our own code: ./drawn.js `actor`): the driver with his hands on the wheel, an
  * older woman beside him looking out, in the middle row the woman beside you who turns to you to talk, and in the back a young
  * man asleep against the window, a child, and an old man watching the steppe go by. They sway with the road.
  *
@@ -18,9 +19,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { human } from '$lib/actors/human.ts';
-import { blend } from '$lib/actors/rig.ts';
-import { travelVan } from '$lib/models/wayside.js';
+import { blend } from '$lib/assets/clips.js';
+import { standInRef } from './things.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -138,7 +138,7 @@ function seated(cast, sits, side) {
  *  the smile in full and the gaze eased, since the two at full nearly close the eyes; the sleeper's only a soft mouth.
  *  Eased there by ease (1: at once) */
 export function wearFace(face, { joy = 0, sleeper = false, ease = 1 } = {}) {
-	const d = face.morphTargetDictionary, w = face.morphTargetInfluences;
+	const d = face?.morphTargetDictionary, w = face?.morphTargetInfluences;
 	if (!d || !w) return;
 	const to = sleeper ? { joy: 0.1, friendly: 0 } : { joy: 0.25 + 0.75 * joy, friendly: 1 - 0.6 * joy };
 	for (const [k, v] of Object.entries(to)) if (d[k] !== undefined) w[d[k]] += (v - w[d[k]]) * ease;
@@ -147,19 +147,38 @@ export function wearFace(face, { joy = 0, sleeper = false, ease = 1 } = {}) {
  *  forward, as people sit when they tell each other something on a long ride (Samuel 2026-10-13: a conversation, no phone) */
 const TALK = { spine: [0.06, 0.1, 0], chest: [0.04, 0.16, 0], neck: [0.02, 0.26, 0], head: [0.04, 0.42, 0.02] };
 
-export function packedVan() {
-	const van = travelVan();
-	van.traverse((o) => {
-		if (o.isMesh && o.material?.color?.getHex() === 0x27323a) {
+/** the minibus's lower body (wayside.js travelVan): 1.9 × 0.9 × 4.9 m, its middle 0.85 m up */
+export const LOWER_BODY = { y: 0.85, size: [1.9, 0.9, 4.9] };
+const _size = new THREE.Vector3();
+
+/**
+ * The minibus's body as the box built it (things/travel-van@1), made the van the story rides in: its glass
+ * see-through, and its lower body's lid cut away (from inside it would hide all below the window line: the seats, the
+ * laps, the floor), under the upper body where no one outside sees it.
+ * @param {THREE.Object3D} body
+ */
+export function seeThrough(body) {
+	body.traverse((o) => {
+		if (!o.isMesh) return;
+		if (o.material?.color?.getHex() === 0x27323a) {
 			o.material = o.material.clone();
 			o.material.transparent = true;
 			o.material.opacity = 0.12;
 			o.material.depthWrite = false;
 		}
-		// the lower body's lid: from inside it would hide all below the window line (the seats, the laps, the floor),
-		// so its top is cut away, under the upper body where no one outside sees it
-		if (o.isMesh && o.geometry.type === 'RoundedBoxGeometry' && Math.abs(o.position.y - 0.85) < 1e-6) o.geometry = lidless(o.geometry, 0.3);
+		if (Math.abs(o.position.y - LOWER_BODY.y) > 1e-5) return;
+		if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+		o.geometry.boundingBox.getSize(_size);
+		if (LOWER_BODY.size.every((v, i) => Math.abs(_size.getComponent(i) - v) < 1e-3)) o.geometry = lidless(o.geometry, 0.3);
 	});
+	return body;
+}
+
+/** all that is in the van, and its people (stand-ins built in the box, each of their height and look: ./things.js
+ *  standInRef; `drawn` puts them in, `pick` what a tap on them finds): the body itself (seeThrough) goes in beside them
+ *  @param {ReturnType<typeof import('./drawn.js').createDrawn>} drawn @param {string} [pick] */
+export function packedVan(drawn, pick) {
+	const van = new THREE.Group();
 	// every fixed piece goes into one mesh a material
 	const bins = new Map();
 	const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
@@ -335,19 +354,19 @@ export function packedVan() {
 	// the people, seated stand-ins swaying with the road
 	const people = [];
 	for (const [i, p] of PEOPLE.entries()) {
-		const cast = human(p.look, p.h);
 		const side = Math.sign(p.x) || 1;
-		const base = seated(cast, p.sits, side);
-		const o = cast.rig.object;
+		const o = new THREE.Group();
 		o.position.set(p.x, FLOOR, ROW[p.row]);
-		o.userData = { id: p.id, cast, base, i, k: 0, to: 0 };
-		o.castShadow = o.receiveShadow = false; // in the van's shade; a sun's shadow map is far too coarse for a face
-		cast.rig.pose(base);
+		// in the van's shade, no shadow cast or taken: a sun's shadow map is far too coarse for a face
+		const cast = drawn.actor(standInRef(p.h, p.look), o, { pick, shadow: false, receive: false }, (c) => {
+			o.userData.base = seated(c, p.sits, side);
+			c.rig.pose(o.userData.base);
+		});
+		o.userData = { id: p.id, cast, base: null, i, k: 0, to: 0 };
 		inside.add(o);
 		people.push(o);
 	}
 	const her = people.find((o) => o.userData.id === 'her');
-	const herHead = her.userData.cast.rig.bones.head;
 
 	van.add(inside);
 	van.userData = {
@@ -357,12 +376,13 @@ export function packedVan() {
 		nod(t, dt = 1 / 60) {
 			for (const o of people) {
 				const { cast, base, i } = o.userData;
+				if (!cast.ready) continue; // (not here yet)
 				o.userData.k += Math.sign(o.userData.to - o.userData.k) * Math.min(Math.abs(o.userData.to - o.userData.k), dt * 1.4);
 				const k = o.userData.k * o.userData.k * (3 - 2 * o.userData.k);
 				const pose = k > 0 ? blend(base, { ...base, ...TALK }, k) : base;
 				const h = pose.head ?? [0, 0, 0];
 				const says = k * (Math.sin(t * 5.3 + i) * 0.035 + Math.sin(t * 1.7) * 0.025); // the small nods of someone talking
-				wearFace(cast.rig.object, { sleeper: o.userData.id === 'sleeper' });
+				wearFace(cast.face, { sleeper: o.userData.id === 'sleeper' });
 				cast.rig.pose({ ...pose, head: [h[0] + says + (o.userData.lift ?? 0) + Math.sin(t * 9 + i) * 0.02 + Math.sin(t * 2.3 + i) * 0.015, h[1] + Math.sin(t * 0.3 + i * 2) * 0.04, h[2]] });
 			}
 		},
@@ -375,7 +395,7 @@ export function packedVan() {
 			her.userData.lift = v;
 		},
 		/** her face (world) */
-		herFace: () => herHead.localToWorld(V(0, 0.075, 0.08))
+		herFace: () => her.userData.cast.rig.bones.head?.localToWorld(V(0, 0.075, 0.08)) ?? her.localToWorld(V(0, 1.2, 0.08))
 	};
 	return van;
 }

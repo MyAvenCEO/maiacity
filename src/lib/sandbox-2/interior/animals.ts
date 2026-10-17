@@ -2,23 +2,31 @@
  * The animals of the land outside: hens scratching in their runs and out
  * under the trees, rabbits in theirs, goats and sheep browsing the forest,
  * geese along the stream, frogs by the ponds, bees round their hives, fish in
- * the ponds and the tanks. Every one is a rigged actor ($lib/actors/casts), of
- * its breed: near the eye it moves every bone as its kind does — walks with its
- * feet set down and kept there, pecks, scratches, grazes, hops, flies, swims —
- * and further off the same animal stands in for itself, a hundred of them a
- * draw call ($lib/actors/crowd). Every animal wanders on its own: it walks,
+ * the ponds and the tanks. Every one is a rigged actor of its breed, built in
+ * the asset box as every asset is (the Actors, `actors/goat:goat-saanen`): near
+ * the eye it moves every bone as its kind does — walks with its feet set down
+ * and kept there, pecks, scratches, grazes, hops, flies, swims — from the clips
+ * the box wrote down, and further off a coarser build of it stands in for
+ * itself, a hundred of them a draw call ($lib/assets/render/crowd.js). Every
+ * animal wanders on its own: it walks,
  * turns, slows, stops to peck or graze, and walks on, always inside its own
  * patch of ground; no two quite the same size.
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { CASTS } from '$lib/actors/casts'
-import { prepare, ready } from '$lib/actors/build'
-import { crowd, FAR, type Eye } from '$lib/actors/crowd'
-import { blend, lowDetail, type Clip, type Motion, type Pose } from '$lib/actors/rig'
+import { actor, blend, crowd } from '$lib/assets/render/crowd.js'
 import { seeded } from './plants'
 
-export type { Eye }
+/** where the eye stands (in the crowd's own frame) */
+export type Eye = () => { x: number; z: number }
+/** how an animal moves, for a gait: how far it has come, how fast, how fast it turns */
+type Motion = { dist: number; speed: number; turn?: number }
+/** a pose: each bone's turn (and size, offset), the root's place */
+type Pose = Record<string, number[]>
+type Clip = (t: number, m?: Motion) => Pose
+
+/** an actor of the Actors by its cast's name: `goat-saanen` is `actors/goat:goat-saanen` */
+export const actorRef = (id: string) => `actors/${id.startsWith('bird-') ? 'songbird' : id === 'ant-hill' ? 'ant' : id.split('-')[0]}:${id}`
 
 type Part = { geo: THREE.BufferGeometry; color: string; at: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number] }
 
@@ -40,23 +48,8 @@ const block = new THREE.BoxGeometry(1, 1, 1)
 
 export type Patch = { x: number; z: number; r: number; n: number }
 
-/** the actors of a crowd, one a coat: built from their casts, their skins meshed off the page first (far and near) */
-function cast(ids: string[]) {
-	for (const id of ids) {
-		void prepare(id, FAR)
-		void prepare(id, 1)
-	}
-	const clips: Record<string, Clip>[] = []
-	return {
-		make: (c: number) => {
-			const made = CASTS[ids[c]!]!()
-			clips[c] = made.clips
-			return made
-		},
-		ready: (c: number, detail: number) => ready(ids[c]!, detail),
-		clips
-	}
-}
+/** the clips of a crowd's coats, once each is built */
+const clipsOf = (c: { clips: (Record<string, Clip> | undefined)[] }) => c.clips
 
 type Kind = 'hen' | 'goat' | 'goose' | 'frog' | 'sheep' | 'rabbit'
 /** a breed of a kind: its cast, how often it is met, its own pace (m/s), and its stride if it moves in whole ones */
@@ -123,8 +116,8 @@ export function herd(kind: Kind, patches: Patch[], seed: number, eye?: Eye): { o
 			}
 	}
 	born()
-	const actors = cast(spec.breeds.map((b) => b.id))
-	const flock = crowd(actors.make, spec.breeds.map((_, c) => animals.filter((an) => an.coat === c).length), { near: spec.near, max: spec.max, ready: actors.ready })
+	const flock = crowd(spec.breeds.map((b) => actorRef(b.id)), spec.breeds.map((_, c) => animals.filter((an) => an.coat === c).length), { near: spec.near, max: spec.max })
+	const actors = { clips: clipsOf(flock) }
 	const pace = (an: Animal) => spec.breeds[an.coat]!.speed ?? spec.speed
 	/* They wander in fixed steps of 1/60 s counted from the world's time 0, so where each one is at time t depends on
 	   t alone — never on how often frames came — and a film shot renders the same flock every time. Asked for an
@@ -243,13 +236,13 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 		{ geo: new THREE.SphereGeometry(1, 6, 4), color: '#2a2218', at: [0, 0.012, 0.0015], scale: [0.0024, 0.0024, 0.003] },
 		{ geo: block, color: '#e6ecf2', at: [0, 0.0148, -0.0012], scale: [0.013, 0.0003, 0.0035] }
 	])
-	const bees = cast(['bee'])
 	const swarm = crowd(
-		bees.make,
+		[actorRef('bee')],
 		[paths.length],
 		// (rigged only the few nearest, close by: a bee in full is thousands of faces for a centimetre and a half)
-		{ near: 4, max: 10, scale: 1.6, lift: 0.012, shadows: false, ready: bees.ready, farShape: () => ({ geometry: speck, material: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }) }
+		{ near: 4, max: 10, scale: 1.6, lift: 0.012, shadows: false, farShape: () => ({ geometry: speck, material: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }) }
 	)
+	const bees = { clips: clipsOf(swarm) }
 	object.add(swarm.object)
 	const update = (t: number) => {
 		const at = eye?.()
@@ -286,13 +279,13 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 	const fish: F[] = []
 	for (const pool of pools) for (let i = 0; i < pool.n; i++) fish.push({ pool, rad: pool.r * (0.3 + r() * 0.6), speed: (0.3 + r() * 0.5) * (r() < 0.5 ? -1 : 1), phase: r() * 10, coat: Math.floor(r() * COATS) })
 	for (const line of streams) for (let i = 0; i < line.n; i++) fish.push({ line, rad: 0, speed: 0.02 + r() * 0.03, phase: r() * 10, coat: Math.floor(r() * COATS) })
-	const swimmers = cast(kinds)
 	const school = crowd(
-		swimmers.make,
+		kinds.map(actorRef),
 		Array.from({ length: COATS }, (_, c) => fish.filter((f) => f.coat === c).length),
-		// a fish's middle is 0.15 m over its origin (./species/fish.ts): the pool gives where its middle swims
-		{ near: 18, max: 20, lift: 0.15, ready: swimmers.ready }
+		// a fish's middle is 0.15 m over its origin ($lib/actors/species/fish.ts): the pool gives where its middle swims
+		{ near: 18, max: 20, lift: 0.15 }
 	)
+	const swimmers = { clips: clipsOf(school) }
 	const update = (t: number) => {
 		const at = eye?.()
 		school.begin()
@@ -345,20 +338,23 @@ export function antHills(
 ): { object: THREE.Group; update: (t: number) => void; where: () => { x: number; z: number }[] } {
 	const object = new THREE.Group()
 	const NEAR = 22
-	const make = CASTS['ant-hill']!
 	// the mound from afar: the hill built coarse, its ants (each far smaller than the mound) left off — every far hill
 	// one instance of it, all in one draw call, and none at all past FAR (a mound a metre across is lost in the floor)
 	const FAR_HILLS = 70
-	const farShape = lowDetail(make, 0.22).rig.object as THREE.Mesh
-	const far = new THREE.InstancedMesh(farShape.geometry, farShape.material, Math.max(1, spots.length))
-	far.castShadow = far.receiveShadow = true
-	far.frustumCulled = false
-	far.count = 0
-	object.add(far)
+	const hill = actor(actorRef('ant-hill'), 0.22)
+	let far: THREE.InstancedMesh | null = null
+	void hill.ready.then(() => {
+		if (!hill.far) return
+		far = new THREE.InstancedMesh(hill.far.geometry, hill.far.material, Math.max(1, spots.length))
+		far.castShadow = far.receiveShadow = true
+		far.frustumCulled = false
+		far.count = 0
+		object.add(far)
+	})
 	const placed = new THREE.Matrix4(), turnQ = new THREE.Quaternion(), at3 = new THREE.Vector3(), size3 = new THREE.Vector3(), up3 = new THREE.Vector3(0, 1, 0)
 	/** a road: its points, and how far along it each one is */
 	type Road = { pts: THREE.Vector2[]; at: number[]; len: number }
-	type Hill = { s: (typeof spots)[number]; near?: ReturnType<typeof make>; holder?: THREE.Group; roads: Road[] }
+	type Hill = { s: (typeof spots)[number]; near?: { object: THREE.Object3D; pose: (p: Pose) => void }; holder?: THREE.Group; roads: Road[] }
 	const hills: Hill[] = spots.map((s) => {
 		// its roads: off the mound's foot, each its own way, wandering as an ant road does, until it is long enough or meets
 		// a path or the water
@@ -438,23 +434,23 @@ export function antHills(
 		for (const h of hills) {
 			const d2 = at ? (h.s.x - at.x) ** 2 + (h.s.z - at.z) ** 2 : 0
 			const near = !!at && d2 < NEAR * NEAR
-			if (!near && (!at || d2 < FAR_HILLS * FAR_HILLS))
+			if (far && !near && (!at || d2 < FAR_HILLS * FAR_HILLS))
 				far.setMatrixAt(nf++, placed.compose(at3.set(h.s.x, 0, h.s.z), turnQ.setFromAxisAngle(up3, h.s.rot), size3.setScalar(h.s.size)))
-			if (near && !h.near) {
-				h.near = make()
+			if (near && !h.near && hill.model) {
+				h.near = hill.copy()
 				// the rig's pose sets its own root where the clip says, so it stands in a holder placed at its spot: posed
 				// bare, the hill would end up at the middle of the world (the master dome's stage)
 				const holder = new THREE.Group()
 				holder.position.set(h.s.x, 0, h.s.z)
 				holder.rotation.y = h.s.rot
 				holder.scale.setScalar(h.s.size)
-				holder.add(h.near.rig.object)
+				holder.add(h.near.object)
 				h.holder = holder
 				object.add(holder)
 			}
 			if (h.near && h.holder) {
 				h.holder.visible = near
-				if (near) h.near.rig.pose(h.near.clips.busy!(t + h.s.x))
+				if (near) h.near.pose(hill.clips?.busy?.(t + h.s.x) ?? {})
 			}
 			if (!near) continue
 			// the streams of ants: each at its own place in the stream, moving at about 3 cm a second, out on one side of
@@ -479,9 +475,11 @@ export function antHills(
 		ants.count = n
 		ants.visible = n > 0
 		ants.instanceMatrix.needsUpdate = true
-		far.count = nf
-		far.visible = nf > 0
-		far.instanceMatrix.needsUpdate = true
+		if (far) {
+			far.count = nf
+			far.visible = nf > 0
+			far.instanceMatrix.needsUpdate = true
+		}
 	}
 	update(0)
 	return { object, update, where: () => spots }

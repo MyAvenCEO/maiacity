@@ -8,13 +8,11 @@
  */
 import * as THREE from 'three';
 import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit';
-import { buildTiredLand } from './tiredLandSet.js';
-import { withValues, worldAssets } from './assets.js';
+import { buildTiredLand, libraryLorry } from './tiredLandSet.js';
+import { worldAssets } from './assets.js';
 
 export type TiredLandHandle = { move: (x: number, y: number, hurry: boolean) => void; look: (dx: number, dy: number) => void; dispose: () => void };
 
-/** the truck, by its ref in the library */
-const TRUCK = 'machines/truck@1';
 /** where the fields reach (the set's plane: x −2698 … −398, z ±1300), a little inside */
 const FIELDS = { x0: -2690, x1: -402, z: 1290 } as const;
 
@@ -31,10 +29,7 @@ export async function mountTiredLand(container: HTMLElement, onProgress: (label:
 	scene.add(land);
 	// the trucks: each a copy of the library's, in its colours, moved where the clock has it
 	const lib = worldAssets({ renderer, camera, scene });
-	const { set, drive } = buildTiredLand(1, (cab: string, box: string) => {
-		const copy = lib.put(withValues(TRUCK, { cab, box }), 0, 0);
-		return (x: number, z: number, turn: number) => lib.move(copy, { x, y: 0, z, turn });
-	});
+	const { set, drive } = buildTiredLand(1, libraryLorry(lib.assets));
 	scene.add(set);
 	onProgress('Bringing the trucks');
 	await lib.ready();

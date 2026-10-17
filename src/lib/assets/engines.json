@@ -59,6 +59,21 @@
 				"three/addons/utils/SkeletonUtils.js"
 			],
 			"note": "Engine 4: what a viewer needs of a build as data (format 3: parts, labels, shells, cut, solver readings and moves, clips and poses), skinned actors with their skins, builds kept running in the box (live, tick, break, mend, end), rig catalogs on cards (their ids written as a card's); each control set back to its rest after its bake, so a mesh it reshapes leaves as built"
+		},
+		{
+			"v": 5,
+			"date": "2026-10-16",
+			"blake3": "5b5da70cccf275e1ea1d8c39175524568551584915bff6b087badfa42bb6990d",
+			"bytes": 800991,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "Engine 5 (format 4): an actor's clips played in the box and written down as tables on its view (box/clips.js: clips in time over 32 s, gaits by pace, distance and turn), for the page to play any number of copies by (../clips.js playerOf); lights leave as lights; and what else a control or a running build's step changes, only where it changes: the meshes it reshapes (positions and normals), material looks (colour, glow, opacity, roughness, metalness) and lights (colour, brightness, reach, fall-off); a dug patch's setWet a control (wet)"
 		}
 	]
 }

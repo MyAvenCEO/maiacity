@@ -22,9 +22,9 @@ import { LEVELS } from '$lib/assets/render/lod.js'
 import { songbirds } from './birds.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
-import { settled as actorsSettled } from '$lib/actors/build'
+import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
 import { flow, pond, shore, stream } from './water'
-import { createStage } from '$lib/sandbox-kit/stage.js'
+import { createWorldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
@@ -90,7 +90,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
 	}
 	// the canvas, the camera and the sky are every sandbox's own ($lib/sandbox-kit)
-	const stage = createStage(container)
+	const stage = createWorldRenderer(container)
 	const { renderer, scene, camera } = stage
 	// where the eye is (the walker's, or the film camera's): the animals near it move every bone
 	const eye = () => camera.position
@@ -1433,7 +1433,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || built.has(dome)} shown ${dome === undefined || shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => built.has(i)).join(',') || 'none'}; building ${now}`)
 				await new Promise((r) => setTimeout(r, 100))
 			}
-			// and every animal's skin, meshed off the page, there before the shot is drawn
+			// and every animal, built in the box (far and near), there before the shot is drawn
 			await actorsSettled()
 			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
 			// one while a finer one is still being built
@@ -1452,7 +1452,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				for (const i of set) if (pinned.size < KEEP - 1) pinned.add(i)
 			while (recent.length > KEEP) recent.shift()
 		},
-		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS }
+		// the library: the film's sets put their assets in it (src/lib/film/sets.js, the tired land's trucks)
+		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS, library }
 	})
 	// Sandbox 4's older name for it (the shot lists and the story producer's notes use it)
 	;(window as unknown as { __village: unknown }).__village = world

@@ -1,23 +1,31 @@
 /**
  * Scene shell: renderer, camera, lights, sea, world mounting and picking.
  *
+ * One island for two sandboxes: Sandbox 1's, and every city's island in Sandbox 2. They differ only in how a
+ * settlement grows (`settlements`: Sandbox 1's levels by default, a city's villages from
+ * $lib/sandbox-2/island/villages.js) and in who owns what stands (`buildings`: the server's, in Sandbox 2).
+ *
  * Client-only — import dynamically from onMount. The sky color here must
  * match --color-sky in tokens.css so canvas and page blend seamlessly.
  */
 import * as THREE from 'three'
-import { AXIAL_DIRS, generateMap, type HexTile, key, MAP_SIZE } from '../hexmap'
-import { makeRng } from '../rng'
+import { AXIAL_DIRS, generateMap, type HexTile, key, MAP_SIZE } from '../../../../../game/island/hexmap'
+import { makeRng } from '../../../../../game/island/rng'
 import {
-	BUILD_ORDER,
+	type BuildingKind,
 	buildWorld,
 	canBuildOnTile,
 	EMPTY_STATS,
 	FACTORY_KINDS,
-	type PlacedKind,
+	type FactoryKind,
+	SANDBOX_1,
+	type Settlements,
 	type WorldApi,
 	type WorldStats
 } from './buildWorld'
 import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
+import { disposeObject } from '$lib/render/core.js'
+import { worldRenderer } from '$lib/render/world.js'
 import { createSky, sunAt } from '$lib/sandbox-kit/sky.js'
 import { connectFilm, filmDraws } from '$lib/sandbox-kit/film.js'
 
@@ -67,12 +75,12 @@ function buildSimpleSea(size: number): THREE.Mesh {
 	return mesh
 }
 
-export interface SceneApi {
+export interface SceneApi<K extends string = BuildingKind> {
 	setWorld(seed: number): void
 	/** Founds a settlement level or a works on a hex, replacing what stood. */
-	placeBuilding(tile: HexTile, kind: PlacedKind): void
+	placeBuilding(tile: HexTile, kind: K | FactoryKind): void
 	removeBuilding(tile: HexTile): void
-	buildingAt(tile: HexTile): PlacedKind | null
+	buildingAt(tile: HexTile): K | FactoryKind | null
 	/** Everyone housed across the island. */
 	population(): number
 	/** What has been built across the island, in people and hectares. */
@@ -81,24 +89,30 @@ export interface SceneApi {
 	 * makes the designation readable on the island. */
 	/** Travels the map from a touch joystick: x to the right, y ahead, each -1…1. */
 	move(x: number, y: number, hurry: boolean): void
+	/** Replaces everything standing with exactly these, by "q,r" — the server owns them. */
+	setBuildings(buildings: Record<string, K | FactoryKind>): void
+	/** Brings a hex to the middle of the view, keeping the camera's angle. */
+	frame(cell: string): void
+	/** Stops drawing while another view covers the island (a dome walked into), and starts again. */
+	setPaused(on: boolean): void
 	dispose(): void
 }
 
-export interface SceneOptions {
+export interface SceneOptions<K extends string = BuildingKind> {
 	/** Fires with everything currently selected — empty when nothing is. */
 	onSelect?(tiles: HexTile[]): void
 	/** On film (src/lib/film): the island as its seed grows it, every time — nothing read from or kept in the browser. */
 	film?: boolean
-}
-
-function disposeObject(root: THREE.Object3D): void {
-	root.traverse((obj) => {
-		if (obj instanceof THREE.Mesh) {
-			obj.geometry.dispose()
-			const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
-			for (const m of mats) m.dispose()
-		}
-	})
+	/** What stands on the island, by "q,r" — from the server; nothing is seeded or saved in the browser. */
+	buildings?: Record<string, K | FactoryKind>
+	/** The hex the opening shot frames, "q,r". */
+	focus?: string
+	/** How the island's settlements grow: Sandbox 1's levels (the default), or a city's villages in Sandbox 2
+	 * ($lib/sandbox-2/island/villages.js). */
+	settlements?: Settlements<K>
+	/** Whose island it is, for the film camera: Sandbox 1's (the default; its page grows its one island), or a city's in
+	 * Sandbox 2 (a shot names it by its seed, world.seed, and it is grown for the shot). */
+	sandbox?: 'sandbox-1' | 'sandbox-2'
 }
 
 /** Slim, semi-transparent ring around a selected hex — present, not loud. */
@@ -146,10 +160,16 @@ function makeMarquee(parent: HTMLElement): HTMLDivElement {
 	return box
 }
 
-export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {}): SceneApi {
-	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-	// 1.25 is where the extra pixels stop showing and keep costing
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25))
+export function createScene<K extends string = BuildingKind>(
+	canvas: HTMLCanvasElement,
+	options: SceneOptions<K> = {}
+): SceneApi<K> {
+	/** what a hex carries: a settlement of this island's kinds, or a works */
+	type Placed = K | FactoryKind
+	const settlements = options.settlements ?? (SANDBOX_1 as unknown as Settlements<K>)
+	// the world renderer ($lib/render/world.js): plain shadows, the island's lens, and at most 1.25 pixels per CSS
+	// pixel (where the extra pixels stop showing and keep costing)
+	const renderer = worldRenderer({ canvas, shadows: 'pcf', exposure: 1.05 })
 	if (import.meta.env.DEV) {
 		// a dev-only handle for reading draw counts from the console
 		;(globalThis as { __avencity?: unknown }).__avencity = {
@@ -160,10 +180,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			get world() { return world }
 		}
 	}
-	renderer.shadowMap.enabled = true
-	renderer.shadowMap.type = THREE.PCFShadowMap
-	renderer.toneMapping = THREE.ACESFilmicToneMapping
-	renderer.toneMappingExposure = 1.05
 
 	const scene = new THREE.Scene()
 
@@ -182,6 +198,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		moveSpeed: 30
 	})
 	const controls = rig.controls
+	/* a dev hook, like the planet's __world: inspect the island camera from the console */
+	;(window as unknown as { __island: unknown }).__island = { camera, controls }
 
 	// the one sky of every world ($lib/sandbox-kit/sky), at the island's size: the shadow box only has to cover the
 	// island (a tight box spends its texels on the domes instead of the sea, so a smaller map looks the same), the fog
@@ -245,20 +263,24 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		options.onSelect?.(selection)
 	}
 
-	let world: WorldApi | null = null
+	let world: WorldApi<K> | null = null
 
 	// --- settlements survive a reload -----------------------------------
 	// every dome is written to localStorage per island, so a city you
 	// founded is still standing when you come back. Keyed by seed AND size:
 	// a resized island has different hexes, and old saves must not land on it.
 	interface Saved {
-		buildings: Record<string, PlacedKind>
+		buildings: Record<string, Placed>
 	}
 	let saved: Saved = { buildings: {} }
 	let saveKey = ''
 
+	/* In Sandbox 2 the server owns what stands: nothing is seeded, nothing saved here. */
+	const managed = options.buildings !== undefined
+
 	function persist(): void {
 		if (options.film) return
+		if (managed) return
 		try {
 			localStorage.setItem(saveKey, JSON.stringify(saved))
 		} catch {
@@ -271,7 +293,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	 * from the seed so every visitor starts from the same one. Eighty dome
 	 * cells at every level, and twenty works — four of each trade.
 	 */
-	function seedSettlements(seed: number, tiles: readonly HexTile[]): Record<string, PlacedKind> {
+	function seedSettlements(seed: number, tiles: readonly HexTile[]): Record<string, Placed> {
 		const rng = makeRng((seed ^ 0x5eed5) >>> 0)
 		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
 		const buildable = (q: number, r: number) => {
@@ -284,7 +306,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			const j = rng.int(0, i)
 			;[open[i], open[j]] = [open[j], open[i]]
 		}
-		const out: Record<string, PlacedKind> = {}
+		const out: Record<string, Placed> = {}
 
 		// The hero: a level 5 dome cell with a neighbourhood around it — the
 		// opening shot frames it, so the hexes behind it can't be empty. It is
@@ -292,19 +314,15 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		const hero = open.find(
 			(t) => AXIAL_DIRS.filter(([dq, dr]) => buildable(t.q + dq, t.r + dr)).length === 6
 		)
+		const { ring1, ring2 } = settlements.demo
 		if (hero) {
-			out[key(hero.q, hero.r)] = 'FOREST'
-			const ring1: PlacedKind[] = ['DOME4', 'SOLAR', 'DOME3', 'HEMP', 'GLAMP', 'LIFETRAC']
+			out[key(hero.q, hero.r)] = settlements.demo.hero
 			for (const [i, [dq, dr]] of AXIAL_DIRS.entries()) {
 				const t = buildable(hero.q + dq, hero.r + dr)
 				if (t) out[key(t.q, t.r)] = ring1[i]
 			}
 			// the second ring, walked hex by hex: a mix of levels and factories,
 			// with a few hexes left open so it reads as a neighbourhood, not a grid
-			const ring2: Array<PlacedKind | null> = [
-				'POWER_CUBE', 'DOME3', null, 'BAMBOO', 'DOME4', 'TENT',
-				null, 'FOREST', 'GLAMP', 'SOLAR', null, 'DOME3'
-			]
 			let q = hero.q + AXIAL_DIRS[4][0] * 2
 			let r = hero.r + AXIAL_DIRS[4][1] * 2
 			let n = 0
@@ -321,8 +339,8 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 
 		// then the rest of the island: dome cells at every level and five
 		// factories of each trade, wherever the shuffle lands them
-		const kinds: PlacedKind[] = [
-			...Array.from({ length: 100 }, () => rng.pick(BUILD_ORDER)),
+		const kinds: Placed[] = [
+			...Array.from({ length: 100 }, () => rng.pick(settlements.demo.any)),
 			...FACTORY_KINDS.flatMap((k) => [k, k, k, k, k])
 		]
 		let i = 0
@@ -343,11 +361,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	function frameOpening(tiles: readonly HexTile[]): void {
 		if (!world) return
 		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
-		const pick =
-			Object.entries(saved.buildings).find(([, kind]) => kind === 'FOREST') ??
-			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME5') ??
-			Object.entries(saved.buildings).find(([, kind]) => kind === 'DOME4')
-		const tile = pick ? byKey.get(pick[0]) : undefined
+		// the hex asked for, or the first standing of the settlements' own picks, in order
+		let pick = options.focus && byKey.has(options.focus) ? options.focus : undefined
+		for (const kind of settlements.demo.focus) pick ??= Object.entries(saved.buildings).find(([, k]) => k === kind)?.[0]
+		const tile = pick ? byKey.get(pick) : undefined
 		const gx = world.group.position.x
 		const gz = world.group.position.z
 		const target = new THREE.Vector3(tile ? tile.x + gx : 0, 0.75, tile ? tile.z + gz : 0)
@@ -363,6 +380,11 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	function restore(seed: number, tiles: readonly HexTile[]): void {
 		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v6`
 		saved = { buildings: {} }
+		if (managed) {
+			saved.buildings = { ...options.buildings }
+			placeAll(tiles)
+			return
+		}
 		let fresh = true
 		try {
 			const raw = options.film ? null : localStorage.getItem(saveKey)
@@ -378,6 +400,12 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			saved.buildings = seedSettlements(seed, tiles)
 			persist()
 		}
+		placeAll(tiles)
+	}
+
+	let tilesNow: readonly HexTile[] = []
+	function placeAll(tiles: readonly HexTile[]): void {
+		if (!world) return
 		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
 		for (const [k, kind] of Object.entries(saved.buildings)) {
 			const tile = byKey.get(k)
@@ -390,7 +418,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		}
 	}
 
+	/** the island's seed now (null before one is grown) */
+	let seedNow: number | null = null
 	function setWorld(seed: number): void {
+		seedNow = seed
 		if (world) {
 			scene.remove(world.group)
 			world.dispose()
@@ -398,7 +429,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		const t0 = performance.now()
 		const map = generateMap(seed)
 		const t1 = performance.now()
-		world = buildWorld(map)
+		world = buildWorld(map, settlements)
 		if (import.meta.env.DEV) {
 			console.log(
 				`[perf] map ${(t1 - t0) | 0} ms · build ${(performance.now() - t1) | 0} ms · ${map.tiles.length} tiles`
@@ -415,6 +446,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		world.group.position.x = -(minX + maxX) / 2
 		world.group.position.z = -(minZ + maxZ) / 2
 		scene.add(world.group)
+		tilesNow = map.tiles
 		restore(seed, map.tiles)
 		frameOpening(map.tiles)
 		selection = []
@@ -578,8 +610,11 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 
 	const clock = new THREE.Clock()
 	let raf = 0
+	/** a dome walked into covers the island: nothing of it is drawn, for every frame of it would hold up the dome's */
+	let paused = false
 	function animate(): void {
 		raf = requestAnimationFrame(animate)
+		if (paused) return
 		// while the film camera holds the island it draws the canvas itself, at the size it asks for
 		if (!filmDraws()) resize()
 		// the map camera, or where the film camera holds it
@@ -593,8 +628,9 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 	animate()
 
 	/* the film camera's hold on the island (src/lib/film, $lib/sandbox-kit/film) */
+	const bySeed = options.sandbox === 'sandbox-2'
 	const film = connectFilm({
-		sandbox: 'sandbox-1',
+		sandbox: options.sandbox ?? 'sandbox-1',
 		area: 'island',
 		renderer,
 		scene,
@@ -602,10 +638,18 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		hold: rig,
 		sky,
 		place: () => rig.release(),
-		advance: () => world?.updateLod(camera.position)
+		advance: () => world?.updateLod(camera.position),
+		// a city's island: a shot names it by its seed (world.seed), grown for it and again only for another
+		stage: bySeed
+			? async (w) => {
+					if (w.seed !== seedNow) setWorld(w.seed)
+					rig.release()
+				}
+			: undefined,
+		holds: bySeed ? (w) => w.seed === seedNow : undefined
 	})
 
-	return {
+	const api: SceneApi<K> = {
 		setWorld,
 		placeBuilding(tile, kind) {
 			world?.placeBuilding(tile, kind)
@@ -629,6 +673,33 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 		move(x, y, hurry) {
 			rig.move(x, y, hurry)
 		},
+		setBuildings(buildings) {
+			if (!world) return
+			const byKey = new Map(tilesNow.map((t) => [key(t.q, t.r), t]))
+			for (const [k, kind] of Object.entries(saved.buildings)) {
+				const tile = byKey.get(k)
+				if (tile && buildings[k] !== kind) world.removeBuilding(tile)
+			}
+			for (const [k, kind] of Object.entries(buildings)) {
+				const tile = byKey.get(k)
+				if (tile && saved.buildings[k] !== kind) world.placeBuilding(tile, kind)
+			}
+			saved.buildings = { ...buildings }
+		},
+		frame(cell) {
+			const tile = tilesNow.find((t) => key(t.q, t.r) === cell)
+			if (!tile || !world) return
+			const target = new THREE.Vector3(tile.x + world.group.position.x, 0.75, tile.z + world.group.position.z)
+			const offset = camera.position.clone().sub(controls.target)
+			controls.target.copy(target)
+			camera.position.copy(target).add(offset)
+			controls.update()
+		},
+		setPaused(on) {
+			paused = on
+			// the time away is no step for the camera
+			if (!on) clock.getDelta()
+		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
 			canvas.removeEventListener('pointerdown', onPointerDown)
@@ -640,8 +711,10 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			rig.dispose()
 			sky.dispose()
 			if (world) world.dispose()
-			disposeObject(scene)
+			disposeObject(scene, { textures: false })
 			renderer.dispose()
 		}
 	}
+	;(window as unknown as { __island: Record<string, unknown> }).__island.api = api
+	return api
 }

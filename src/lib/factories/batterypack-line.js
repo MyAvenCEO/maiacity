@@ -131,7 +131,7 @@ export const SPEC = {
 		}
 	],
 	/** what each stage looks like on the belts: our own shapes at their real size (kit.js, "maiaCITY additions"), and
-	 *  the finished pack our own BatteryPack by its ref, built with objectAt; `airsup` is the kit shape AirSup's own
+	 *  the finished pack our own BatteryPack by its ref, built in the asset box; `airsup` is the kit shape AirSup's own
 	 *  page falls back to, `pallet` how the finished product stacks on a Euro pallet */
 	stages: {
 		cells: { shape: 'celltray', color: '#2f6fb5', airsup: 'cell' },

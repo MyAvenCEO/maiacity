@@ -1,16 +1,12 @@
 // @ts-nocheck — plain JS
-// The logic core and its frozen engine: code we cannot trust decides the same on every device (seeded random, frozen
-// clock, work counted in ticks), reaches nothing but the language, and is stopped when it loops, eats memory or
-// throws; every logic engine is frozen by its hash, and the source as it is now is the latest one.
+// The logic core: code we cannot trust decides the same on every device (seeded random, frozen clock, work counted
+// in ticks), reaches nothing but the language, and is stopped when it loops, eats memory or throws. Its engine is
+// frozen like every kernel engine (./engines.test.js).
 // Run: bun test src/lib/sandbox/logic.test.js
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { LIMITS, open, quickjs, seedOf } from './logic.js';
 import { load, runOnce } from './logic-host.js';
-import { enginesOf, latestOf } from './engines.js';
-import { bundleKernel, hashText } from './bundle.js';
 
-const ROOT = new URL('../../../', import.meta.url).pathname;
 const QJS = await quickjs();
 const one = (code, json = '{}', o = {}) => {
 	const u = open(QJS, { code, ...o });
@@ -115,23 +111,4 @@ describe('the host, outside a page: the core in the process', () => {
 		expect(a.x).toBe(1);
 		await p.end();
 	});
-});
-
-describe('the logic engine is frozen', () => {
-	test('every logic engine: its file is the bytes its hash names, versions in order', () => {
-		const list = enginesOf('logic');
-		expect(list.length).toBeGreaterThan(0);
-		list.forEach((e, i) => {
-			expect(e.v).toBe(i + 1);
-			const bytes = readFileSync(`${ROOT}static/engines/logic-v${e.v}.js`);
-			expect(bytes.length).toBe(e.bytes);
-			expect(hashText(bytes.toString('utf8'))).toBe(e.blake3);
-			expect(e.note.length).toBeGreaterThan(10);
-		});
-	});
-	test('the engine as its source is now is the latest frozen one (else: node scripts/freeze-engine.mjs --logic "…")', async () => {
-		const now = hashText(await bundleKernel('logic'));
-		const latest = latestOf('logic');
-		if (now !== latest.blake3) throw new Error(`the logic engine's source changed since v${latest.v} was frozen: freeze v${latest.v + 1}, or undo the change`);
-	}, 60000);
 });

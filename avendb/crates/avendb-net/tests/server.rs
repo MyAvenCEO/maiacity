@@ -295,16 +295,23 @@ async fn an_avens_access_request_reaches_the_coop_it_asks_directly_and_through_t
     for (a, b) in [(&mac, &bobs), (&bobs, &mac), (&mac, &claude), (&claude, &mac)] {
         a.know(b.addr());
     }
+    // all her vaults, now and later, for Bob to read: a standing grant, which a vault of one owner doesn't follow
+    let standing = serde_json::json!({ "op": "share", "over": alice.to_hex(), "who": { "vault": bob.to_hex() },
+        "level": "Viewer", "standing": true, "as": alice.to_hex() });
+    assert!(mac.op(standing).await.expect("an answer")["ok"]["share"].is_string(), "her standing grant");
     // her Mac founds her aven as it adds agentClaude under it: each new vault has the server keep it too, as hers does
     let (aven, claudes) =
         mac.add_device_vault(&claude.offer(), Place::UnderNew(Kind::Aven), passkey_a).await.expect("her aven");
-    let kept = move |v: VaultId| {
+    let given = move |v: VaultId, level: Level| {
         move |lab: &Lab, me| {
             let st = lab.state(me);
-            st.shares_over(v).any(|cp| cp.share.wide && cp.share.level == Level::Backup && st.live(cp.id))
+            st.shares_over(v).any(|cp| cp.share.wide && cp.share.level == level && st.live(cp.id))
         }
     };
+    let kept = |v| given(v, Level::Backup);
     assert!(mac.read(kept(aven)).await && mac.read(kept(claudes)).await, "the server keeps the aven and the agent's");
+    let read = mac.read(given(aven, Level::Read)).await || mac.read(given(claudes, Level::Read)).await;
+    assert!(!read, "Bob reads neither: an aven and an agent share only what their owner passes on");
     // her aven asks Bob's garden for Editor, both Macs online: a record in the aven, and a share of it to the garden
     let ask = |why: &str| {
         serde_json::json!({ "op": "ask", "to": garden.to_hex(), "level": "Editor", "why": why, "as": aven.to_hex() })

@@ -14,10 +14,15 @@
  * Format 3 (engine 4): what a viewer needs of it (`view`, ./view.js: its parts, labels, shells, cut, solver, clips);
  * a skinned mesh with its skin (`skin`: its bones by their nodes, their inverses, its bind matrix, whether it bends by
  * dual quaternions, as our actors do), each bone node marked (`bone`), and each blend shape's name.
+ * Format 4 (engine 5): a light as a light (`light`: its kind, colour, brightness, reach, fall-off, a spot's cone and
+ * where it points), not a bare node; its controls with what else they change (./bake.js: each mesh reshaped, each
+ * material's look, each light); and an actor's clips written down as tables (`view.clips.motion`, ./clips.js).
  */
-import { ShaderChunk } from 'three';
+import { ShaderChunk, Vector3 } from 'three';
 
-export const FORMAT = 3;
+export const FORMAT = 4;
+/** the lights that go out as lights */
+export const LIGHTS = { PointLight: 'point', SpotLight: 'spot', DirectionalLight: 'directional', AmbientLight: 'ambient', HemisphereLight: 'hemisphere' };
 
 /** the material settings that go out as they are (numbers, booleans, colours) */
 const PLAIN = ['roughness', 'metalness', 'opacity', 'transparent', 'side', 'vertexColors', 'flatShading', 'alphaTest', 'depthWrite', 'depthTest', 'transmission', 'ior', 'thickness', 'clearcoat', 'clearcoatRoughness', 'sheen', 'sheenRoughness', 'envMapIntensity', 'emissiveIntensity', 'bumpScale', 'wireframe', 'size', 'sizeAttenuation', 'linewidth', 'shininess', 'specularIntensity', 'iridescence', 'anisotropy', 'dispersion', 'aoMapIntensity', 'lightMapIntensity', 'displacementScale', 'displacementBias', 'toneMapped', 'fog'];
@@ -41,6 +46,20 @@ function capOf(m) {
 	if (!color) return null;
 	const unit = (v, or) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : or);
 	return { color: color.getHex(), rough: unit(sh.uniforms.uCapRough?.value, 0.55), metal: unit(sh.uniforms.uCapMetal?.value, 0) };
+}
+
+/** a light as plain numbers: where a spot or the sun points, in its own frame */
+function lightOf(o, kind) {
+	const L = { kind, color: o.color.getHex(), intensity: o.intensity, castShadow: !!o.castShadow };
+	if (kind === 'point' || kind === 'spot') Object.assign(L, { distance: o.distance, decay: o.decay });
+	if (kind === 'spot') Object.assign(L, { angle: o.angle, penumbra: o.penumbra });
+	if (kind === 'hemisphere') L.ground = o.groundColor.getHex();
+	if ((kind === 'spot' || kind === 'directional') && o.target) {
+		const at = o.target.getWorldPosition(new Vector3());
+		o.updateWorldMatrix(true, false);
+		L.target = o.worldToLocal(at).toArray();
+	}
+	return L;
 }
 
 /** whether this engine's skinned meshes bend by dual quaternions ($lib/actors/dqs.ts puts its code in three's chunks) */
@@ -132,6 +151,8 @@ export async function serialize(root, { controls = [], view } = {}) {
 		const i = nodes.length;
 		const n = { name: o.name, matrix: o.matrix.toArray(), visible: o.visible, children: [] };
 		if (o.isBone) n.bone = true;
+		const kind = o.isLight ? LIGHTS[o.type] : null;
+		if (kind) n.light = lightOf(o, kind);
 		nodes.push(n);
 		nodeAt.set(o, i);
 		if ((o.isMesh || o.isLine || o.isPoints) && o.geometry) {
@@ -164,10 +185,18 @@ export async function serialize(root, { controls = [], view } = {}) {
 		for (const a of [c.nodes, c.trs, c.visible]) array(a);
 		for (const x of c.morph) array(x.weights);
 		for (const x of c.instances) array(x.matrices);
+		for (const x of c.shapes ?? []) for (const a of [x.position, x.normal]) if (a) array(a);
+		for (const x of [...(c.looks ?? []), ...(c.lights ?? [])]) array(x.values);
 	}
 	await Promise.all(pending);
 	stats.tris = Math.round(stats.tris);
 	const transfer = [...buffers, ...images.flatMap((x) => (x.bitmap ? [x.bitmap] : []))];
 	for (const m of Object.values(view?.lab?.moves ?? {})) array(m.table);
+	for (const c of Object.values(view?.clips?.motion?.clips ?? {})) for (const a of tablesOf(c)) array(a);
 	return { data: { format: FORMAT, ref: root.userData.ref ?? '', nodes, geometries, materials, textures, images, controls, ...(view && { view }), stats }, transfer };
+}
+
+/** every typed array of a clip's tables (./clips.js `written`) */
+export function tablesOf(c) {
+	return [c.channels, c.base, ...c.t.flatMap((T) => [T.list, T.table, T.drift, T.snap]), ...(c.d ? [c.d.list, c.d.table, c.d.drift, c.d.k] : []), ...(c.rch ? [c.rch] : []), ...(c.turn ? [c.turn] : [])].filter(Boolean);
 }

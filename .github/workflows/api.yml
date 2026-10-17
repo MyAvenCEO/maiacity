@@ -18,6 +18,7 @@ on:
     paths:
       - 'api/**'
       - 'game/**'
+      - 'code/**'
       - 'infra/**'
       - 'deploy/**'
       - 'docker-compose*.yml'

@@ -31,12 +31,7 @@
  * `ground`, a plant's soil at 0 rather than under its roots).
  */
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { ShaderPass, createPost } from '$lib/render/post.js';
 import { CUT, ContactShadow, LAB_PLANES, LAYER_FX, approach, clamp, ease, ghostMaterial, lerp, studioEnvironment, untonemap } from './kit.js';
 
 export const MODES = /** @type {const} */ (['explode', 'cut', 'xray', 'labels', 'slow']);
@@ -46,7 +41,7 @@ export class Stage {
 	 * @param {THREE.WebGLRenderer} renderer the page's renderer (its tone mapping is set while the stage draws)
 	 * @param {THREE.PerspectiveCamera} camera
 	 * @param {{ theme?: 'paper' | 'night', low?: boolean }} [o] `low`: a phone's budget (no occlusion pass, 2× multisampling,
-	 *   a smaller, softer-sampled shadow), so it draws smoothly and fits in a phone's memory ($lib/app/view3d.js)
+	 *   a smaller, softer-sampled shadow), so it draws smoothly and fits in a phone's memory ($lib/render/core.js)
 	 */
 	constructor(renderer, camera, { theme = 'paper', low = false } = {}) {
 		this.renderer = renderer;
@@ -90,21 +85,15 @@ export class Stage {
 		this.edges = null;
 	}
 
-	/** the post stack, made at the canvas's size (AirSup's: MSAA HDR, GTAO, bloom, tone map, grade; on a phone no GTAO) */
+	/**
+	 * the post stack, made at the canvas's size (AirSup's: MSAA HDR, GTAO, bloom, tone map, grade; on a phone no GTAO):
+	 * the renderer's one ($lib/render/post.js)
+	 */
 	_post() {
 		const r = this.renderer, size = r.getDrawingBufferSize(new THREE.Vector2());
-		const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: this.low ? 2 : 4 });
-		const comp = new EffectComposer(r, rt);
 		// at the canvas's own pixels (a composer given its target counts them 1:1 until told the ratio)
 		const css = r.getSize(new THREE.Vector2());
-		comp.setPixelRatio(r.getPixelRatio());
-		comp.setSize(css.x, css.y);
-		comp.addPass(new RenderPass(this.scene, this.camera));
-		if (!this.low) this._ao(comp, size);
 		const paper = this.theme === 'paper';
-		const bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), paper ? 0.22 : 0.42, 0.55, paper ? 1.6 : 1.0);
-		comp.addPass(bloom);
-		comp.addPass(new OutputPass());
 		const grade = new ShaderPass({
 			uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: paper ? 0.1 : 0.32 }, uGrain: { value: paper ? 0.012 : 0.02 }, uSat: { value: 1.06 }, uRes: { value: new THREE.Vector2(size.x, size.y) } },
 			vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -116,17 +105,25 @@ export class Stage {
 					c += (h(vUv * uRes + fract(uTime) * 91.7) - 0.5) * uGrain;
 					gl_FragColor = vec4(c, 1.0); }`
 		});
-		comp.addPass(grade);
-		this.composer = comp;
+		const post = createPost(r, this.scene, this.camera, {
+			target: [size.x, size.y],
+			samples: this.low ? 2 : 4,
+			size: { pixelRatio: r.getPixelRatio(), width: css.x, height: css.y },
+			ao: !this.low && ((ao) => this._ao(ao)),
+			bloom: { strength: paper ? 0.22 : 0.42, radius: 0.55, threshold: paper ? 1.6 : 1.0 },
+			after: [grade]
+		});
+		this.post = post;
+		this.composer = post.composer;
+		this.ao = post.ao;
 		this.grade = grade;
 		this._fitAO();
 	}
 	/**
 	 * the ambient occlusion (GTAO) after the render pass: on a desktop only, the heaviest pass for a phone's GPU
-	 * @param {EffectComposer} comp @param {THREE.Vector2} size
+	 * @param {any} ao the GTAO pass, before it is added
 	 */
-	_ao(comp, size) {
-		const ao = new GTAOPass(this.scene, this.camera, size.x, size.y);
+	_ao(ao) {
 		ao.blendIntensity = this.theme === 'paper' ? 0.85 : 1;
 		ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
 		// effects and see-through parts are not solid: keep them out of the normal and depth pass
@@ -149,8 +146,6 @@ export class Stage {
 			ao.normalMaterial.clipIntersection = true;
 			ao.normalMaterial.side = THREE.DoubleSide;
 		}
-		comp.addPass(ao);
-		this.ao = ao;
 	}
 	_fitAO() {
 		if (this.ao) this.ao.updateGtaoMaterial({ radius: 0.35 * this.s, distanceExponent: 1.6, thickness: 1.2 * this.s, scale: 1, samples: 16 });
@@ -611,15 +606,14 @@ export class Stage {
 	/** the canvas changed size @param {number} w @param {number} h */
 	resize(w, h) {
 		if (!this.composer) return;
-		this.composer.setPixelRatio(this.renderer.getPixelRatio()); // the page may lower it while frames are slow
-		this.composer.setSize(w, h);
+		this.post.setSize(w, h, this.renderer.getPixelRatio()); // the page may lower its pixel ratio while frames are slow
 		const s = this.renderer.getDrawingBufferSize(new THREE.Vector2());
 		this.grade.uniforms.uRes.value.set(s.x, s.y);
 	}
 
 	dispose() {
 		this.clear();
-		this.composer?.dispose();
+		this.post?.dispose();
 		this.scene.environment?.dispose();
 	}
 }

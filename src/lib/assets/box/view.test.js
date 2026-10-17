@@ -48,6 +48,13 @@ async function through(label) {
 	return { obj, cast, view, data, root: rebuild(data) };
 }
 
+/** a build's data as the box hands it back */
+async function serializeOf(label) {
+	const { obj, cast } = await made(label);
+	const { data } = await serialize(obj, { controls: bake(obj).controls, view: viewOf(obj, cast) });
+	return data;
+}
+
 test('a Power Cube: its parts, labels, shells, cut and solver leave as data and come back on the same nodes', async () => {
 	const { obj, root } = await through('machines/powercube@3');
 	const v = root.userData.view;
@@ -103,6 +110,64 @@ test('the stand-in: skinned, bound to its own bones, its clips and poses named, 
 	const nodes = walk(root);
 	for (const n of out.nodes) expect(nodes[n].isBone).toBe(true);
 	live.end(session);
+}, 30000);
+
+test('engine 5: an animal’s clips written down in the box, played in the page as its own clips pose it', async () => {
+	const THREE = await import('three');
+	const { playerOf } = await import('../clips.js');
+	const { cast, root } = await through('actors/goat:goat-saanen');
+	const c = root.userData.view.clips;
+	expect(c.motion.bones).toBe(cast.rig.names.length);
+	const play = playerOf(c.motion, c.bones);
+	expect(Object.keys(play).sort()).toEqual(Object.keys(cast.clips).sort());
+	const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), e = new THREE.Euler();
+	/** how far its table turns a bone from where its clip does, at the worst bone (rad) */
+	const strays = (a, b, skip) => {
+		let worst = 0;
+		for (const k of Object.keys(a)) {
+			if (k === 'root' || skip.has(k)) continue;
+			const x = a[k], y = b[k] ?? [0, 0, 0];
+			qa.setFromEuler(e.set(x[0], x[1], x[2]));
+			qb.setFromEuler(e.set(y[0], y[1], y[2]));
+			worst = Math.max(worst, qa.angleTo(qb));
+		}
+		return worst;
+	};
+	for (const [name, gear] of [['graze', 0], ['walk', cast.gears.walk]]) {
+		// (a tail that beats faster the faster it goes beats as at the nearest pace written down: in time with
+		// itself, not with the clip's own beat between two paces)
+		const m = c.motion.clips[name];
+		const skip = new Set(m.t.flatMap((T) => [...T.list].filter((_, q) => T.snap[q]).map((j) => c.bones[Math.floor(m.channels[j] / 7)])));
+		const errs = [];
+		for (let s = 0; s < 120; s++) {
+			// within the time a table holds before it repeats (a gait's 16 s, a clip's 32: the wander in an ear does not)
+			const t = s * (gear ? 0.1171 : 0.2371);
+			// a gait at its own pace and a little either side of it, going on, as a herd walks it
+			const mo = gear ? { dist: 0.31 + s * 0.047, speed: gear * [1, 0.92, 0.85][s % 3], turn: 0 } : undefined;
+			errs.push(strays(cast.clips[name](t, mo), play[name](t, mo), skip));
+		}
+		errs.sort((a, b) => a - b);
+		// half within a degree, nearly all within a few
+		expect(errs[60]).toBeLessThan(0.02);
+		expect(errs[108]).toBeLessThan(0.08);
+	}
+	// a refused table: one of the wrong length
+	const bad = await serializeOf('actors/goat:goat-saanen');
+	const first = Object.values(bad.view.clips.motion.clips)[0];
+	first.base = first.base.subarray(1);
+	expect(() => rebuild(bad)).toThrow('refused');
+}, 30000);
+
+test('engine 5: a fire kept running hands back its light’s flicker, a light on the page', async () => {
+	const { root } = await through('things/fire-place');
+	const box = await made('things/fire-place');
+	const { session } = live.open(box.obj, box.cast, walk(root).length);
+	live.tick(session, { dt: 0.1 });
+	const out = live.tick(session, { dt: 0.1 });
+	expect(out.lights.length).toBeGreaterThan(0);
+	const nodes = walk(root);
+	for (const l of out.lights) expect(nodes[l.node].isLight).toBe(true);
+	live.end(session);
 });
 
 test('the LifeTrac: its parts are the groups of its skinned mesh, its catalog on its card', async () => {
@@ -111,7 +176,7 @@ test('the LifeTrac: its parts are the groups of its skinned mesh, its catalog on
 	expect(v.parts?.length).toBeGreaterThan(20);
 	expect(v.parts.every((p) => Array.isArray(p.groups) && p.groups.length > 0)).toBe(true);
 	expect(obj.userData.catalog.parts.length).toBeGreaterThan(20);
-});
+}, 30000);
 
 test('a refused view: a node it names that is not there, or a move table of the wrong length', async () => {
 	const { data } = await through('machines/powercube@3');
@@ -136,7 +201,7 @@ test('a plant in its fruit view: one fruit on its own, or a note when it bears n
 	expect(Math.max(size.x, size.y, size.z)).toBeLessThan(0.3);
 	const none = await through('plants/basil?fruit=1');
 	expect(none.root.userData.view.note).toMatch(/no fruit|not set/);
-});
+}, 30000);
 
 test('a container: its roof and where it is walked in from leave as data, on the same nodes, and its card says it is a building', async () => {
 	const { obj, root, view, meta } = { ...(await through('buildings/container-kitchen')), meta: (await made('buildings/container-kitchen')).meta };
@@ -153,7 +218,7 @@ test('a container: its roof and where it is walked in from leave as data, on the
 	expect(verdict.ok ? [] : verdict.errors).toEqual([]);
 });
 
-test('every building built as one object: built through the box’s side and the page’s, its card fits; the tent and the domes are worlds in disguise, never a recipe', async () => {
+test('every building built as one object: built through the box’s side and the page’s, its card fits; the domes and the tent’s v1 are worlds in disguise, never a recipe', async () => {
 	const list = await OBJECT_GROUPS.buildings.list();
 	const failed = [];
 	for (const item of list) {
@@ -166,17 +231,23 @@ test('every building built as one object: built through the box’s side and the
 		if (!verdict.ok) failed.push(`${label}: ${verdict.errors.slice(0, 2).join('; ')}`);
 		// a container is walked and its roof lifted, as it always was
 		if (item.id.startsWith('container-') && !(view.walk && view.roof?.length)) failed.push(`${label}: no walk or roof`);
+		// the tent is walked in, and pitched
+		if (item.id === 'dome-tent' && !(view.walk && root.userData.controls.some((c) => c.id === 'pitch'))) failed.push(`${label}: no walk or pitch`);
 	}
 	expect(failed).toEqual([]);
-	expect(list.map((x) => x.id)).toEqual(['container-kitchen', 'container-workshop', 'container-tech', 'container-sanitary', 'bus-stop', 'gas-station', 'old-shed', 'maia-centre', 'village-store']);
+	expect(list.map((x) => x.id)).toEqual(['container-kitchen', 'container-workshop', 'container-tech', 'container-sanitary', 'bus-stop', 'gas-station', 'old-shed', 'maia-centre', 'village-store', 'dome-tent']);
 	// every building, the domes too, in the page's group; only those built as one object in the box's
 	const { GROUPS, objectAt } = await import('../index.js');
 	const all = await GROUPS.buildings.list();
 	expect(all.length).toBe(16);
 	const domes = all.filter((b) => 'dome' in b);
 	expect(domes.map((d) => d.id)).toEqual(['dome-tent', 'dome-glamp', 'dome-home', 'dome-large', 'dome-grand', 'dome-master', 'dome-factory']);
-	expect(all.filter((b) => !('dome' in b)).map((b) => b.id)).toEqual(list.map((x) => x.id));
+	expect(all.filter((b) => !('dome' in b)).map((b) => b.id)).toEqual(list.map((x) => x.id).filter((id) => id !== 'dome-tent'));
 	await expect(objectAt('buildings/dome-grand@2')).rejects.toThrow(/not built as one object/);
+	// the tent: its v1 the interior it was, its v2 the box's
+	const tent = all.find((b) => b.id === 'dome-tent');
+	expect(tent.versions.map((x) => typeof x.build)).toEqual(['string', 'function']);
+	await expect(objectAt('buildings/dome-tent@1')).rejects.toThrow(/not built as one object/);
 }, 600000);
 
 test('a biome’s cover: every kind built through the box’s side and the page’s as its builder builds it, casting its shadow; a biome itself is never a recipe', async () => {

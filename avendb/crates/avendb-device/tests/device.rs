@@ -23,7 +23,13 @@
 //! sheet, its key never on it in plain; the Mac it is plugged into hosts it, a full copy; unplugged, its node stops and
 //! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
 //! stays open, and plugged in again it is hosted with no sheet; her other Mac opens it in one; removed like a lost
-//! phone, her vault's peers refuse it.
+//! phone, her vault's peers refuse it. A studio worker (`worker`) she adds under her studio coop in one sheet is a
+//! device vault of its own with a key of its own, given only the narrow shares her studio issues it, nothing above
+//! what the studio holds; her Mac keeps its key wrapped and hosts it beside its own device. An op run through it
+//! lands signed by its key, its acting chain showing its device vault under her studio; one outside its shares is
+//! refused; its node at hand reads a file its shares reach by range, and none they don't, and makes a render of its
+//! own; her Mac closed and opened again hosts it again with no sheet; taken out like a lost phone, it is hosted no
+//! more.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -40,9 +46,9 @@ use avendb::policy::{Action, Kind, Level, Principal, Revoking, Sharing};
 use avendb::sealed::FileRoot;
 use avendb::slice::Selector;
 use avendb::sign::{Ceremony, DeviceKey, PRF_SALT, Passkey, device_salt};
-use avendb_device::{Config, Host, SHEET, agent, drive, host, serve};
+use avendb_device::{Config, Host, SHEET, agent, drive, host, serve, worker};
 use avendb_net::shelf::FLOOR;
-use avendb_net::{Admission, Node, Options, disk};
+use avendb_net::{Admission, NoCeremony, Node, Options, disk};
 use avendb_server::Relay;
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
@@ -1703,6 +1709,254 @@ async fn eves_drive_is_a_device_of_her_vault_hosted_by_the_mac_it_is_plugged_int
     let shelves = disk::generations(&photo.join(".avendb")).expect("its shelves");
     assert_eq!(shelves, [FLOOR, FLOOR + 1], "what it held put aside");
     app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+/// Op `op` run on the device hosted in `app` (`run [op, node]`), on the Mac's own node with `node` null, else on the
+/// node of the worker whose device `node` names: what the op answers, `{"ok"}` or its refusal, whole.
+async fn ran(app: &mut InApp, op: Value, node: &Value) -> Value {
+    let out = app.call("run", json!([op, node])).await;
+    out.get("ok").cloned().unwrap_or_else(|| panic!("an answer: {out}"))
+}
+
+/// Op `op` run on worker `node` as `ran` runs it, once it is done rather than refused, as once the shares it needs
+/// reach the worker, 60 seconds at most: what it did.
+async fn ran_once(app: &mut InApp, op: Value, node: &Value, what: &str) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let out = ran(app, op.clone(), node).await;
+        if let Some(ok) = out.get("ok") {
+            return ok.clone();
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s: {out}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// A file named `name` into vault `vault` through the device hosted in `app`, acting for it, a chunk at a time in
+/// base64, as native.js hands one over: what the op made.
+async fn put_in(app: &mut InApp, vault: &Value, name: &str, bytes: &[u8]) -> Value {
+    let put = json!({ "op": "put_file", "vault": vault, "name": name, "media": "video/mp4", "tags": [],
+        "len": bytes.len(), "as": vault });
+    let n = app.call("fileStart", json!([put])).await["ok"].clone();
+    loop {
+        let mut at = 0;
+        for chunk in bytes.chunks(40_000) {
+            let out = app.call("fileChunk", json!([n, at, BASE64.encode(chunk)])).await;
+            if out != json!({ "ok": null }) {
+                panic!("{name}'s chunk at {at}: {out}; its op: {}", app.call("fileEnd", json!([n])).await);
+            }
+            at += chunk.len();
+        }
+        if app.call("fileAgain", json!([n])).await != json!({ "ok": true }) {
+            break;
+        }
+    }
+    let made = app.call("fileEnd", json!([n])).await["ok"]["ok"].clone();
+    assert!(made["entry"].is_string(), "{name} in: {made}");
+    made
+}
+
+/// What the device hosted in `app` says of its workers (`workers`), once `check` holds of it, 60 seconds at most.
+async fn workers_of(app: &mut InApp, what: &str, check: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let workers = app.call("workers", json!([])).await["ok"].clone();
+        if check(&workers) {
+            return workers;
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s: {workers}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Vault `id` as the world of the device hosted in `app` shows it, once `check` holds of it, 60 seconds at most.
+async fn vault_in(app: &mut InApp, id: &Value, what: &str, check: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let world = ran(app, json!({ "op": "world" }), &Value::Null).await["ok"].clone();
+        let vault = world["vaults"].as_array().expect("its vaults").iter().find(|v| v["id"] == *id).cloned();
+        if let Some(vault) = vault.as_ref().filter(|v| check(v)) {
+            return vault.clone();
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s: {vault:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// File `root` of `size` sealed bytes, bytes `range`, as `node` reads them, once it reads them, 60 seconds at most.
+async fn read_once(node: &Node, root: FileRoot, range: std::ops::Range<u64>, what: &str) -> Vec<u8> {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        match node.read_file(root, range.clone()).await {
+            Ok(bytes) => return bytes,
+            Err(e) => assert!(Instant::now() < end, "{what}, within 60 s: {e:#}"),
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// File `made` as its put_file answered it: its root.
+fn root_of(made: &Value) -> FileRoot {
+    FileRoot { hash: id(&made["root"]), size: made["size"].as_u64().expect("its sealed size") }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_studio_worker_works_for_her_coop_by_its_own_key_hosted_beside_her_mac() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("worker");
+    let dir = folder.0.join("avendb");
+    let passkey = || Passkey::from_seed([5; 32]);
+    let mut app = InApp::start(&dir, passkey());
+    let found = json!(["Eve's Mac", url.to_string(), server.offer().to_text()]);
+    let mac = app.call("found", found).await["ok"]["id"].clone();
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    let none = Value::Null;
+    let mine = ran(&mut app, json!({ "op": "world" }), &none).await["ok"]["mine"].clone();
+    // her studio, a coop her vault owns, holds the take a worker renders and the job that asks for it, and a plan; her
+    // own vault her diary
+    let studio = ran(&mut app, json!({ "op": "found", "kind": "coop", "name": "Studio" }), &none).await;
+    let studio = studio["ok"]["vaults"][0].clone();
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let take: Vec<u8> = (0..120_000u32).map(|i| (i * 7 % 251) as u8).collect();
+    let take_in = put_in(&mut app, &studio, "Take 1.mov", &take).await;
+    let render = json!({ "kind": "todo", "title": "Render" });
+    let job = json!({ "op": "create", "vault": studio, "type": "todo", "value": render, "as": studio });
+    let job = ran(&mut app, job, &none).await["ok"]["entry"].clone();
+    let plan = titled("Plan", "Shoot at dawn.");
+    let plan = json!({ "op": "create", "vault": studio, "type": "note", "value": plan, "as": studio });
+    let plan = ran(&mut app, plan, &none).await["ok"]["entry"].clone();
+    let diary = put_in(&mut app, &mine, "Diary.mov", b"hers alone").await;
+    // the studio's own Worker group, narrow: create Library files, and set the status of the one job
+    let (read, create) = (json!({ "op": "read" }), json!({ "op": "create" }));
+    let files = json!({ "name": "Worker", "where": { "type": ["file"] }, "ops": [read, create] });
+    let status = json!({ "name": "Worker", "where": { "entry": [job] }, "ops": [{ "op": "set", "path": ["status"] }] });
+    // refused before any sheet: a share above what her studio holds, over her own vault, of which it holds nothing; a
+    // share that shares on; a vault not hers
+    let above = json!({ "over": mine, "name": "Worker", "where": { "type": ["file"] }, "ops": [{ "op": "read" }] });
+    let no = app.call("addWorker", json!([studio, "Render Mac", [files, above]])).await;
+    assert!(no["error"].as_str().is_some_and(|e| e.contains("above what it holds")), "{no}");
+    let on = json!({ "name": "Worker", "where": { "type": ["file"] }, "ops": [{ "op": "read" }, { "op": "share" }] });
+    let no = app.call("addWorker", json!([studio, "Render Mac", [on]])).await;
+    assert!(no["error"].as_str().is_some_and(|e| e.contains("shares nothing on")), "{no}");
+    let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("avenCEO server");
+    let no = app.call("addWorker", json!([hex(&avenceo.0), "Render Mac", [files]])).await;
+    assert!(no["error"].is_string(), "not her vault: {no}");
+    assert!(app.asked().is_empty(), "no sheet");
+    // one sheet: a device vault under her studio, Render Mac, with a key of its own; her studio gives it both shares
+    let added = app.call("addWorker", json!([studio, "Render Mac", [files, status]])).await["ok"].clone();
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    let (worker, renders) = (added["device"].clone(), added["vault"].clone());
+    assert_eq!((&added["name"], &added["for"]), (&json!("Render Mac"), &studio), "{added}");
+    assert_ne!(worker, mac, "a key of its own");
+    let light = |v: &Value| v["devices"][0]["copy"] == "light" && v["devices"][0]["name"] == "Render Mac";
+    let what = "its device vault, its device a light copy named by its card";
+    let vault = vault_in(&mut app, &renders, what, light).await;
+    assert_eq!((&vault["kind"], &vault["name"]), (&json!("device"), &json!("Render Mac")), "{vault}");
+    assert_eq!((&vault["owners"], &vault["devices"][0]["id"]), (&json!([{ "vault": studio }]), &worker));
+    let world = ran(&mut app, json!({ "op": "world" }), &none).await["ok"].clone();
+    let shares = world["shares"].as_array().expect("shares");
+    let given: Vec<&Value> = shares.iter().filter(|c| c["who"] == renders).collect();
+    let issued: Vec<(&Value, &Value, &Value, &Value)> =
+        given.iter().map(|c| (&c["over"], &c["issuer"], &c["parent"], &c["slice"]["name"])).collect();
+    assert_eq!(issued, vec![(&studio, &studio, &none, &json!("Worker")); 2], "both its studio's own, resting on none");
+    // its key is on her Mac's shelf, wrapped, and nowhere in plain: its own folder keeps its edits alone
+    assert_eq!(objects(&dir, FLOOR, "workers"), [worker.as_str().expect("hex")], "her Mac keeps it wrapped");
+    let its_folder = worker::folder(&dir, SignerId(id(&worker)));
+    assert!(its_folder.join(format!("g{FLOOR}")).is_dir(), "its shelf beside the app's folder");
+    assert!(!its_folder.join(format!("g{FLOOR}/device.key")).exists(), "no secret of its own on it");
+    let listed = workers_of(&mut app, "the worker, hosted", |w| w[0]["hosted"] == true).await;
+    let one = json!([{ "device": worker, "name": "Render Mac", "vault": renders, "for": studio, "hosted": true }]);
+    assert_eq!(listed, one);
+    // an op run through its node lands, signed by its own key: the job's status, which its share lets it set
+    let done = json!({ "op": "set", "entry": job, "path": ["status"], "value": "done" });
+    ran_once(&mut app, done, &worker, "the job done, once its share reaches it").await;
+    let job_done = |j: &Value| j["status"] == "done";
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let world = ran(&mut app, json!({ "op": "world" }), &none).await["ok"].clone();
+        if world["entries"].as_array().expect("entries").iter().any(|e| e["entry"] == job && job_done(e)) {
+            break;
+        }
+        assert!(Instant::now() < end, "her Mac shows the job done, within 60 s");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // and its acting chain, on her Mac, shows the worker's device in its own device vault, under her studio: added by
+    // her passkey, and cosigned by its own key
+    let history = ran(&mut app, json!({ "op": "history", "entry": job }), &none).await["ok"].clone();
+    let last = history["edits"].as_array().and_then(|e| e.last()).cloned().expect("its last write");
+    assert_eq!((&last["author"], &last["actor"], &last["via"]), (&worker, &renders, &json!([])), "{last}");
+    let link = &last["chain"]["links"][0];
+    let who = json!({ "signer": worker });
+    assert_eq!((&link["who"], &link["in"], &link["as"]), (&who, &renders, &json!("device")), "{link}");
+    let cosigned = json!({ "signer": worker, "vault": renders, "as": "device" });
+    assert!(link["signers"].as_array().expect("its signers").contains(&cosigned), "{link}");
+    assert_eq!(last["chain"]["owners"], json!([{ "vault": studio }]), "under her studio");
+    // an op outside its share is refused: the job's title, a note in her studio, her plan
+    let title = json!({ "op": "set", "entry": job, "path": ["title"], "value": "Mine now" });
+    assert_eq!(ran(&mut app, title, &worker).await["refused"], "NotAllowed");
+    let note = json!({ "op": "create", "vault": studio, "type": "note", "value": titled("Mine", "Not hers.") });
+    assert!(ran(&mut app, note, &worker).await["refused"].is_string(), "a note is no file");
+    let read = ran(&mut app, json!({ "op": "get", "entry": plan }), &worker).await;
+    assert_eq!(read["refused"], "NoEntry", "its share reaches no plan: {read}");
+    // nor does it keep a setting of its own, nor does a run name the Mac's own node or any but a worker's
+    let follow = json!({ "op": "follow", "vault": studio, "on": true });
+    let no = app.call("run", json!([follow, worker])).await;
+    assert!(no["error"].as_str().is_some_and(|e| e.contains("isn't for a worker")), "{no}");
+    let no = app.call("run", json!([{ "op": "world" }, mac])).await;
+    assert!(no["error"].as_str().is_some_and(|e| e.contains("hosts no worker")), "{no}");
+    // the studio's own Rust has its node at hand, never the Mac's by it: it reads the take by range, from her Mac's
+    // store, and not her diary, which no share of its reaches
+    assert!(app.host.node_of(SignerId(id(&mac))).is_none(), "never the Mac's own");
+    let node = app.host.node_of(SignerId(id(&worker))).expect("its node");
+    assert_eq!(json!(hex(&node.device().0)), worker);
+    let some = read_once(&node, root_of(&take_in), 1_000..90_000, "the take, as its share reaches it").await;
+    assert_eq!(some, take[1_000..90_000], "the take by range");
+    let refused = node.read_file(root_of(&diary), 0..10).await;
+    assert!(refused.is_err(), "her diary it opens not");
+    // it makes its render, a Library file of her studio, by its own key, and keeps it; and posts its jobs
+    let render: Vec<u8> = (0..70_000u32).map(|i| (i * 11 % 241) as u8).collect();
+    let put = json!({ "op": "put_file", "vault": studio, "name": "Take 1.mp4", "media": "video/mp4", "tags": [],
+        "len": render.len() });
+    let bytes = Bytes::from(render.clone());
+    let source = move || n0_future::stream::iter([Ok::<_, std::io::Error>(bytes.clone())]);
+    let (made, _) = node.run(put, Some(source), None::<&NoCeremony>).await.expect("an answer");
+    let made = made["ok"].clone();
+    assert!(made["entry"].is_string(), "its render: {made}");
+    let jobs = node.jobs().to_json();
+    let ended = jobs["ended"].as_array().cloned().unwrap_or_default();
+    assert!(ended.iter().any(|j| j["kind"] == "bring"), "its jobs: {jobs}");
+    let history = json!({ "op": "history", "entry": made["entry"] });
+    let history = ran_once(&mut app, history, &none, "her Mac shows the render").await;
+    assert_eq!(history["edits"][0]["author"], worker, "made by its key: {history}");
+    let mac_node = app.host.node().expect("her Mac's node");
+    let back = read_once(&mac_node, root_of(&made), 0..render.len() as u64, "her Mac reads the render").await;
+    assert_eq!(back, render, "every byte");
+    drop((node, mac_node));
+    // her Mac closes and opens again: the worker comes back with no sheet but the unlock
+    app.host.close().await;
+    assert!(app.host.node_of(SignerId(id(&worker))).is_none(), "no worker once closed");
+    drop(app);
+    let mut app = InApp::start(&dir, passkey());
+    assert!(app.call("open", json!([])).await["ok"].is_object(), "it opens again");
+    assert_eq!(app.asked(), ["unlock"]);
+    workers_of(&mut app, "the worker, back", |w| w[0]["hosted"] == true).await;
+    let node = app.host.node_of(SignerId(id(&worker))).expect("its node, again");
+    let kept = read_once(&node, root_of(&made), 0..render.len() as u64, "its render, kept").await;
+    assert_eq!(kept, render, "what it made, kept");
+    let doing = json!({ "op": "set", "entry": job, "path": ["status"], "value": "doing" });
+    ran_once(&mut app, doing, &worker, "the job doing, once it syncs again").await;
+    assert!(app.asked().is_empty(), "no sheet");
+    drop(node);
+    // she takes it out, as a lost phone, in one sheet: her Mac hosts it no more
+    let removed = ran(&mut app, json!({ "op": "revoke", "vault": renders, "device": worker }), &none).await;
+    assert!(removed["ok"]["edit"].is_string(), "{removed}");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    workers_of(&mut app, "no worker", |w| *w == json!([])).await;
+    assert!(app.host.node_of(SignerId(id(&worker))).is_none(), "hosted no more");
+    let no = app.call("run", json!([{ "op": "world" }, worker])).await;
+    assert!(no["error"].as_str().is_some_and(|e| e.contains("hosts no worker")), "{no}");
+    app.host.close().await;
     server.shutdown().await.expect("the server's node stops");
 }
 

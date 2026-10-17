@@ -567,8 +567,13 @@ impl Decode for Op {
             7 => Op::Move { path: path(r)?, on: r.option()? },
             8 => Op::Tag(values(r, 4)?),
             9 => Op::Propose,
-            10 => Op::Merge { on: r.option()? },
+            10 => Op::Merge { on: r.option()?, path: vec![] },
             11 => Op::Share,
+            // a merge's path has a step at least: `[]` is the merge of kind 10
+            12 => Op::Merge { on: r.option()?, path: r.bounded(1, MAX_STEPS).and_then(|p: Vec<Step>| match p.is_empty() {
+                true => Err(WireError::Unknown),
+                false => Ok(p),
+            })? },
             _ => return Err(WireError::Unknown),
         })
     }

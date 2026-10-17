@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { CASTS } from '../src/lib/actors/casts';
 import { lowDetail, type Cast } from '../src/lib/actors/rig';
-import { FAR } from '../src/lib/actors/crowd';
+import { FAR } from '../src/lib/assets/render/crowd.js';
 
 /** the most vertices an animal may be near the eye, and from afar (one of a hundred in a draw call) */
 const NEAR_MAX = 20000, FAR_MAX = 2500;

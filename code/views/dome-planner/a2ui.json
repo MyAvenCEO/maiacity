@@ -1,0 +1,154 @@
+{
+	"root": "page",
+	"components": [
+		{
+			"id": "page",
+			"type": "Column",
+			"gap": "m",
+			"children": [
+				"head",
+				"controls",
+				"metrics",
+				"fillcard",
+				"bars"
+			]
+		},
+		{
+			"id": "head",
+			"type": "Card",
+			"title": "Dome planner",
+			"subtitle": "How many domes, and how much land, for a tribe",
+			"children": [
+				"intro"
+			]
+		},
+		{
+			"id": "intro",
+			"type": "Text",
+			"text": "Declarative: our own components draw this JSON, and its logic runs in QuickJS.",
+			"tone": "muted",
+			"size": "s"
+		},
+		{
+			"id": "controls",
+			"type": "Card",
+			"children": [
+				"people",
+				"sizes"
+			]
+		},
+		{
+			"id": "people",
+			"type": "Slider",
+			"label": "People",
+			"event": "people",
+			"value": {
+				"$data": "people"
+			},
+			"min": 12,
+			"max": 1500,
+			"step": 12
+		},
+		{
+			"id": "sizes",
+			"type": "Row",
+			"gap": "s",
+			"wrap": true,
+			"children": [
+				"small",
+				"medium",
+				"large"
+			]
+		},
+		{
+			"id": "small",
+			"type": "Button",
+			"label": "Small dome · 12",
+			"event": "dome",
+			"value": "Small"
+		},
+		{
+			"id": "medium",
+			"type": "Button",
+			"label": "Medium dome · 24",
+			"event": "dome",
+			"value": "Medium",
+			"tone": "accent"
+		},
+		{
+			"id": "large",
+			"type": "Button",
+			"label": "Large dome · 48",
+			"event": "dome",
+			"value": "Large"
+		},
+		{
+			"id": "metrics",
+			"type": "Grid",
+			"columns": 3,
+			"gap": "s",
+			"children": [
+				"m1",
+				"m2",
+				"m3"
+			]
+		},
+		{
+			"id": "m1",
+			"type": "Metric",
+			"label": "Domes",
+			"value": {
+				"$data": "domes"
+			},
+			"unit": {
+				"$data": "dome"
+			},
+			"tone": "accent"
+		},
+		{
+			"id": "m2",
+			"type": "Metric",
+			"label": "Food forest",
+			"value": {
+				"$data": "forest"
+			},
+			"unit": "ha"
+		},
+		{
+			"id": "m3",
+			"type": "Metric",
+			"label": "Water a day",
+			"value": {
+				"$data": "water"
+			},
+			"unit": "m³"
+		},
+		{
+			"id": "fillcard",
+			"type": "Card",
+			"children": [
+				"fill"
+			]
+		},
+		{
+			"id": "fill",
+			"type": "Progress",
+			"label": "Beds filled",
+			"value": {
+				"$data": "fill"
+			},
+			"max": 100,
+			"tone": {
+				"$data": "tone"
+			}
+		},
+		{
+			"id": "bars",
+			"type": "Bars",
+			"label": "Domes needed by size",
+			"items": {
+				"$data": "beds"
+			}
+		}
+	]
+}

@@ -1,26 +1,36 @@
 /*
  * THE BUILDINGS BUILT AS ONE OBJECT — the shipping containers fitted out as the crew's kitchen, workshop, power and
- * washroom (Sandbox 1's, $lib/models/containers.js) and the wayside of MaiaCity V1 ($lib/models/wayside.js): each
- * made by a builder that hands back one three.js object, so each is a recipe of the `buildings` group the asset box
- * builds ($lib/assets/groups.js), `buildings/container-kitchen@1`, and the Buildings viewer (/app/buildings/) shows
- * it from the box like any thing or machine. The tents and domes are not here: each is a world in disguise (Sandbox
- * 3's interiors, $lib/sandbox-2/interior, a sky, lamps, animals and a forest of its own), built by that world's code
- * (./inside.js); ./index.js lists them all.
+ * washroom (Sandbox 1's, $lib/models/containers.js), the wayside of MaiaCity V1 ($lib/models/wayside.js) and, from
+ * its v2, the bell tent (./tent.js): each made by a builder that hands back one three.js object, so each is a recipe
+ * of the `buildings` group the asset box builds ($lib/assets/groups.js), `buildings/container-kitchen@1`, and the
+ * Buildings viewer (/app/buildings/) shows it from the box like any thing or machine. The domes are not here, nor the
+ * tent's v1: each is a world in disguise (Sandbox 3's interiors, $lib/sandbox-2/interior, a sky, lamps, animals and a
+ * forest of its own), built by that world's code (./inside.js); ./index.js lists them all.
  *
  * Each has its version and history ($lib/app/versions.js): a changed building goes up a version, its old builder kept
- * in HISTORY below (all at v1 so far).
+ * in HISTORY below. The tent's v1 has no builder here: it is Sandbox 3's interior, kept as its kind (./index.js).
+ *
+ * The lists are the box's: each asset's recipe is made of its own entry in them (../assets/box/narrow.js), so a new
+ * building is one more entry, written out, never a list spread into one (that would move every other one's recipe).
  */
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from '$lib/models/containers.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, villageStore } from '$lib/models/wayside.js';
+import { tentSite } from './tent.js';
 import { versioned } from '$lib/app/versions.js';
 
 /** @typedef {import('$lib/models').Model} Model */
 
 /**
- * the buildings' older versions, by id, each with its frozen builder (none yet: every one is at v1)
+ * the buildings' older versions, by id, each with its frozen builder (the tent's v1, Sandbox 3's interior, has none
+ * here; every other one is at v1)
  * @type {Record<string, (import('$lib/app/versions.js').Change & { build?: () => import('three').Object3D })[]>}
  */
-const HISTORY = {};
+const HISTORY = {
+	'dome-tent': [
+		{ v: 1, date: '2026-10-05', note: 'Sandbox 3’s tent: its interior, raised by that world’s own code (./inside.js)' },
+		{ v: 2, date: '2026-10-17', note: 'Built in the asset box: the Things’ bell tent, pitched, and its fire place lit in front of its door; walked in by its own shape, pitched again, the fire lit or put out' }
+	]
+};
 
 /** the shipping containers, fitted out to walk in */
 /** @type {Omit<Model, 'versions' | 'version'>[]} */
@@ -33,14 +43,16 @@ const CONTAINER_LIST = [
 /** @type {Model[]} */
 export const CONTAINERS = versioned(CONTAINER_LIST, 'make', HISTORY);
 
-/** the wayside of MaiaCity V1: buildings on the dusty highway and at the village centre, and the places they make together */
+/** the wayside of MaiaCity V1: buildings on the dusty highway and at the village centre, and the places they make
+ *  together; and at its end the bell tent from its v2 (./tent.js), which the Buildings list with the domes (./index.js) */
 /** @type {(Omit<Model, 'versions' | 'version'> & { group: string })[]} */
 const WAYSIDE_LIST = [
 	{ id: 'bus-stop', label: 'Bus stop', group: 'Wayside', note: `${WAYSIDE_INFO.busStop.note}. Where every newcomer steps off`, usedIn: 'MaiaCity V1', make: () => busStop() },
 	{ id: 'gas-station', label: 'Abandoned gas station', group: 'Wayside', note: `${WAYSIDE_INFO.gasStation.note}. The old world, left behind at the city's centre`, usedIn: 'MaiaCity V1', make: () => gasStation() },
 	{ id: 'old-shed', label: 'Old shed', group: 'Wayside', note: WAYSIDE_INFO.shed.note, usedIn: 'MaiaCity V1', make: () => oldShed() },
 	{ id: 'maia-centre', label: 'MaiaCity centre', group: 'Places', note: 'the centre of the city plot today, where the sand highway ends: the abandoned gas station at the road’s end, the bus stop, the travel van pulling in. Where the story starts', usedIn: 'MaiaCity V1', make: () => maiaCentre() },
-	{ id: 'village-store', label: 'Village store', group: 'Places', note: "the village centre's future storage area: the broken shed with the powercube inside, the solar row and the battery beside it. All the Village COOP's", usedIn: 'MaiaCity V1', make: () => villageStore() }
+	{ id: 'village-store', label: 'Village store', group: 'Places', note: "the village centre's future storage area: the broken shed with the powercube inside, the solar row and the battery beside it. All the Village COOP's", usedIn: 'MaiaCity V1', make: () => villageStore() },
+	{ id: 'dome-tent', label: 'Bell tent', group: 'Tents and domes', note: 'the bell tent pitched, its fire place lit in front of its door. Walk in', usedIn: 'Sandbox 3', make: () => tentSite() }
 ];
 /** @type {(Model & { group: string })[]} */
 export const WAYSIDE = versioned(WAYSIDE_LIST, 'make', HISTORY);

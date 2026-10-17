@@ -225,8 +225,8 @@ struct Field {
 /// What a field holds, and so how an item stores it.
 #[derive(Clone, Debug)]
 enum Type {
-    /// Free text: a Loro text.
-    Text,
+    /// Free text: a Loro text, of at most so many characters if its schema says (`maxLength`).
+    Text(Option<usize>),
     /// One value.
     Value(Check),
     /// A list of values.
@@ -409,7 +409,8 @@ impl Type {
         }
         let string = p.get("type").and_then(Value::as_str) == Some("string");
         if string && p.get("x-loro").and_then(Value::as_str) == Some("text") {
-            return Some(Of::Type(Type::Text));
+            let most = p.get("maxLength").and_then(Value::as_u64).map(|n| n as usize);
+            return Some(Of::Type(Type::Text(most)));
         }
         Some(Of::Type(Type::Value(Check::of(p, defs)?)))
     }
@@ -418,7 +419,7 @@ impl Type {
     /// rows are read row by row (`Schema::seen`).
     fn read(&self, v: &Value) -> Option<Value> {
         match self {
-            Type::Text => v.is_string().then(|| v.clone()),
+            Type::Text(_) => v.is_string().then(|| v.clone()),
             Type::Value(c) => c.holds(v).then(|| v.clone()),
             Type::List(c) => Some(v.as_array()?.iter().filter(|x| c.holds(x)).cloned().collect()),
             Type::Records(_) => None,
@@ -427,18 +428,18 @@ impl Type {
 
     fn stored(&self) -> Stored {
         match self {
-            Type::Text => Stored::Text,
+            Type::Text(_) => Stored::Text,
             Type::Value(_) => Stored::Value,
             Type::List(_) => Stored::List,
             Type::Records(_) => Stored::Records,
         }
     }
 
-    /// Whether `v` fits here as one value: a text, a value the check holds, a list of values each of which it holds. A
-    /// list of records holds rows, never one value.
+    /// Whether `v` fits here as one value: a text no longer than its schema lets it be, a value the check holds, a
+    /// list of values each of which it holds. A list of records holds rows, never one value.
     fn fits(&self, v: &Value) -> bool {
         match self {
-            Type::Text => v.is_string(),
+            Type::Text(most) => v.as_str().is_some_and(|s| most.is_none_or(|m| s.chars().count() <= m)),
             Type::Value(c) => c.holds(v),
             Type::List(c) => v.as_array().is_some_and(|xs| xs.iter().all(|x| c.holds(x))),
             Type::Records(_) => false,
@@ -1046,8 +1047,8 @@ impl View {
     }
 
     /// The app of built-in kind `kind`, of its newest shipped schema alone (`blobs::SHIPPED`): a document's, a todo's,
-    /// an article's, a flow's, a function's, a post's, a card's, a profile's, a file's, a story's, a spark's, an access
-    /// request's or an artifact's.
+    /// an article's, a flow's, a function's, a recipe's, a view's, a logic's, a post's, a card's, a profile's, a file's,
+    /// a story's, a spark's, an access request's, an artifact's or an artwork's.
     pub fn built_in(kind: &str) -> Option<&'static View> {
         BUILT_IN.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
     }
@@ -1221,16 +1222,135 @@ impl Fit<'_> {
 
 /// The blobs of avenDB's own schemas and the lenses between their versions, exactly as the apps ship them and a vault
 /// holds them as entries. Every kind starts at v1, avenDB's genesis.
+/// A code entry's engine and manifest, as two properties of a schema (`code_entry!`, `blobs::FUNCTION_V2`): which
+/// frozen engine runs it (its host, its version and the hash of its code) and what it may use, lists of names the host
+/// refuses any other call than: kit ops, material presets, control kinds, host messages, slots, events, hooks, the ops
+/// it may ask for, and libraries. Each is one value, so a merge path names it whole (`["engine"]`, `["manifest"]`).
+macro_rules! engine_and_manifest {
+    () => {
+        r#"
+    "engine": {
+      "type": "object",
+      "properties": {
+        "host": { "enum": ["box", "logic", "view"] },
+        "version": { "type": "integer", "minimum": 1 },
+        "hash": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["host", "version", "hash"],
+      "additionalProperties": false
+    },
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "kit": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "presets": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "controls": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "messages": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "slots": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "events": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "hooks": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "ops": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 },
+        "libs": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 256 }
+      },
+      "additionalProperties": false
+    }"#
+    };
+}
+
+/// The schema of a code entry (docs/ARCHITECTURE.md §9): code that one of the hosts runs, with what it needs beside it,
+/// one base for every kind, so one checker, one proposal diff and one review card serve them all. Its title, a note
+/// and tags; its source, a Loro text of at most 200,000 characters; its engine and manifest (`engine_and_manifest!`);
+/// its params, rows of a name, a kind, a range and a default, each a number (a toggle 0 or 1, a choice its option's
+/// index, a colour 0xRRGGBB), so a tuner merges new defaults by path (`["params", "*", "default"]`); and its contract,
+/// the budgets and the invariants its check runs. `more` adds the properties of one kind.
+macro_rules! code_entry {
+    ($title:literal, $kind:literal, $more:literal) => {
+        concat!(
+            r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": ""#,
+            $title,
+            r#"",
+  "type": "object",
+  "properties": {
+    "kind": { "const": ""#,
+            $kind,
+            r#"" },
+    "title": { "type": "string", "maxLength": 200, "default": "" },
+    "note": { "type": "string", "x-loro": "text", "maxLength": 4000, "default": "" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "source": { "type": "string", "x-loro": "text", "maxLength": 200000, "default": "" },"#,
+            engine_and_manifest!(),
+            r#",
+    "params": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string", "maxLength": 64, "default": "" },
+          "kind": { "enum": ["number", "integer", "toggle", "choice", "color"], "default": "number" },
+          "range": {
+            "type": "object",
+            "properties": {
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "step": { "type": "number", "minimum": 0 },
+              "options": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 64 }
+            },
+            "additionalProperties": false
+          },
+          "default": { "type": "number" }
+        },
+        "required": ["id"]
+      }
+    },
+    "contract": {
+      "type": "object",
+      "properties": {
+        "budgets": {
+          "type": "object",
+          "properties": {
+            "bytes": { "type": "integer", "minimum": 0 },
+            "ms": { "type": "integer", "minimum": 0 },
+            "memory": { "type": "integer", "minimum": 0 },
+            "ops": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "invariants": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 64 }
+      },
+      "additionalProperties": false
+    }"#,
+            $more,
+            r#"
+  },
+  "required": ["kind"]
+}
+"#
+        )
+    };
+}
+
 pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 15] = [
+    pub const SHIPPED: [&str; 23] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
+        ARTICLE_V2,
         FLOW_V1,
         FUNCTION_V1,
+        FUNCTION_V2,
+        RECIPE_V1,
+        VIEW_V1,
+        LOGIC_V1,
+        REVIEW_V1,
+        BUNDLE_V1,
+        POLICY_V1,
         POST_V1,
         CARD_V1,
         PROFILE_V1,
@@ -1246,7 +1366,7 @@ pub mod blobs {
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
     /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
     /// and avenCEO GmbH holds each as a lens entry beside its schemas.
-    pub const LENSES: [&str; 1] = [SPARK_LENS];
+    pub const LENSES: [&str; 3] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -1310,6 +1430,45 @@ pub mod blobs {
 }
 "#;
 
+    /// An article, v2: v1's title, Markdown text and tags, and what used to sit in a frontmatter beside them that its
+    /// text can't hold: the story it is written for (`story`, a link), what a list or a share shows of it where its
+    /// opening words won't do (`excerpt`), the language it is in, and a quote it carries, with whose words they are.
+    /// Its subtitle and cover stay where the article editor and the reader keep them, the text's opening lines; its
+    /// belief shift and categories are its story's. A v1 article opens here through `ARTICLE_LENS`, as it was.
+    pub const ARTICLE_V2: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Article, v2",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "article" },
+    "title": { "type": "string", "default": "" },
+    "text": { "type": "string", "x-loro": "text", "default": "" },
+    "story": { "x-link": "newest" },
+    "excerpt": { "type": "string" },
+    "language": { "type": "string" },
+    "quote": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "by": { "type": "string" }
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// The lens from an article of v1 to v2: v2 adds the story, the excerpt, the language and the quote; the title, the
+    /// text and the tags are the same.
+    pub const ARTICLE_LENS: &str = r#"{
+  "lens": "Article, v1 to v2",
+  "from": "5654ba2b81acb33cca3be119ab373958fe08ba51acce5e9e3a875c384fb6dc33",
+  "to": "fb389c005b037bf862af5ff4403c42131cdc03c532d4651e8da794a6b4fc8116",
+  "steps": [{ "add": "story" }, { "add": "excerpt" }, { "add": "language" }, { "add": "quote" }]
+}
+"#;
+
     /// A flow: the stages an item of any type moves through, each a node with the stages it leads on to, and whether
     /// an item in it is public. An item is in a stage while it carries the flow's key and the stage's, `content:draft`.
     pub const FLOW_V1: &str = r#"{
@@ -1365,6 +1524,57 @@ pub mod blobs {
   "required": ["kind"]
 }
 "#;
+
+    /// A function of v2: v1's fields, and a code entry's `engine` and `manifest` (`code_entry!`), so the logic host
+    /// runs it as any other code.
+    pub const FUNCTION_V2: &str = concat!(
+        r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Function, v2",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "function" },
+    "name": { "type": "string", "default": "" },
+    "about": { "type": "string", "x-loro": "text", "default": "" },
+    "on": { "enum": ["enter", "leave"], "default": "enter" },
+    "flow": { "type": "string", "default": "" },
+    "stage": { "type": "string", "default": "" },
+    "code": { "type": "string", "x-loro": "text", "default": "" },
+    "enabled": { "type": "boolean", "default": true },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] },"#,
+        engine_and_manifest!(),
+        r#"
+  },
+  "required": ["kind"]
+}
+"#
+    );
+
+    /// The lens from a function of v1 to v2: v2 adds the engine and the manifest; everything else is the same.
+    pub const FUNCTION_LENS: &str = r#"{
+  "lens": "Function, v1 to v2",
+  "from": "22bbe5ff67fb2b604e386b2706f20dd9e6404231bc980694e69e33bb3296d514",
+  "to": "e9eed3e7aa96678199eab2d671f2e5f54df094abb1c81abf3e4f7d7021cffc15",
+  "steps": [{ "add": "engine" }, { "add": "manifest" }]
+}
+"#;
+
+    /// A recipe: code the box runs to make an asset (its meshes, card, controls and view tables), a code entry
+    /// (`code_entry!`) with the asset's card beside it, which the box checks against its own card schema.
+    pub const RECIPE_V1: &str = code_entry!(
+        "Recipe, v1",
+        "recipe",
+        r#",
+    "card": { "type": "object" }"#
+    );
+
+    /// A view: what a frame shows (its HTML and CSS, an MCP App, our components' JSON), and its logic, if any, run by
+    /// the logic host; a code entry (`code_entry!`) whose manifest names the host messages, slots and events it uses.
+    pub const VIEW_V1: &str = code_entry!("View, v1", "view", "");
+
+    /// Logic: code the logic host runs for named hooks, as a game's rules, answering JSON; a code entry
+    /// (`code_entry!`) whose manifest names its hooks and the ops it may ask for.
+    pub const LOGIC_V1: &str = code_entry!("Logic, v1", "logic", "");
 
     /// A post of the Maia Universe stream: a title, its text, its channel, and the entry it tells of, if one.
     pub const POST_V1: &str = r#"{
@@ -1721,9 +1931,12 @@ pub mod blobs {
 "#;
 
     /// An access request: a record the asking vault writes in its own vault and shares, that entry alone, with the
-    /// vault it asks (`to`, its id in hex), which may read it and set its answer alone (`engine`'s `ask`): the level it
-    /// asks for, the name of a built-in group; why, in a few words; the vaults it asks that level on, where `to` holds
-    /// shares over others to pass on, as an aven to its agent (none: `to` itself); and the answer, once `to` gave it.
+    /// vault it asks (`to`, its id in hex), which may read it and set its answer and its part alone (`engine`'s `ask`):
+    /// what it asks for, a share ("share"), to co-own `to` ("owner") or, an invitation, for `to` to co-own the vault
+    /// that asks ("invite"); the level, the name of a built-in group, Owner for the two others; why, in a few words;
+    /// the vaults it asks that level on, where `to` holds shares over others to pass on, as an aven to its agent (none:
+    /// `to` itself); the answer, once `to` gave it; and, granting an owner add, `to`'s part of the edit, signed by the
+    /// passkey that signs first, as a signed edit is on the wire, in base64url, which the vault that asked finishes.
     pub const REQUEST_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Access request, v1",
@@ -1731,12 +1944,95 @@ pub mod blobs {
   "properties": {
     "kind": { "const": "request" },
     "to": { "type": "string", "maxLength": 64 },
-    "level": { "enum": ["Viewer", "Suggester", "Editor"] },
+    "asks": { "enum": ["share", "owner", "invite"], "default": "share" },
+    "level": { "enum": ["Viewer", "Suggester", "Editor", "Owner"] },
     "why": { "type": "string", "maxLength": 500, "default": "" },
     "vaults": { "type": "array", "items": { "type": "string" }, "default": [] },
-    "answer": { "enum": ["granted", "denied"] }
+    "answer": { "enum": ["granted", "denied"] },
+    "part": { "type": "string", "default": "" }
   },
   "required": ["kind", "to", "level"]
+}
+"#;
+
+    /// A review: a vault's answer to a proposal of one of its entries (`entry`, `line`), at the version it answered
+    /// (`heads`), started by `by`: accepted, declined, or sent back to revise, with words (`text`), at a time its
+    /// device gives (`at`, advice only). The same bytes as the page's HITL queue writes into a vault's lane
+    /// (src/lib/avendb/hitl.js), so the same id. An accept is the vault's own write on the proposal, in the entry's
+    /// log, which every reader of the entry reads (`policy::is_accept`); the review is the record people read.
+    pub const REVIEW_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "review" },
+    "entry": { "type": "string", "maxLength": 64 },
+    "line": { "type": "string", "maxLength": 64 },
+    "heads": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 64 },
+    "by": { "type": "string", "maxLength": 64 },
+    "verdict": { "enum": ["accepted", "declined", "revise"] },
+    "text": { "type": "string", "maxLength": 2000, "default": "" },
+    "at": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["kind", "entry", "line", "heads", "verdict"]
+}
+"#;
+
+    /// A bundle: proposals on several entries, of one vault or many, that belong together (an aven's change of a
+    /// recipe, its view and its logic), each by its entry and its line, with the intent that started them (a request or
+    /// a spark). It is a record that links them and nothing else: each proposal is accepted and merged as its own.
+    pub const BUNDLE_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bundle, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "bundle" },
+    "title": { "type": "string", "maxLength": 200, "default": "" },
+    "note": { "type": "string", "x-loro": "text", "maxLength": 4000, "default": "" },
+    "intent": { "x-link": "newest" },
+    "proposals": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "entry": { "x-link": "newest" },
+          "line": { "type": "string", "maxLength": 64 }
+        },
+        "required": ["id", "entry", "line"]
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// A policy: who must accept a proposal before a merge of it into main by anyone but the vault counts, declared,
+    /// so every reader reaches the same verdict. Version 1 holds the one policy avenDB counts by, every vault's
+    /// default: one of the vault's owners (`needs`: `{"of": "owners", "count": 1}`), whose accept is the vault's
+    /// own write on the proposal. Counting reads no policy entry yet: richer policies are new versions, each a rule
+    /// the engine and the Lean model learn first.
+    pub const POLICY_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Policy, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "policy" },
+    "title": { "type": "string", "maxLength": 200, "default": "" },
+    "note": { "type": "string", "x-loro": "text", "maxLength": 4000, "default": "" },
+    "needs": {
+      "type": "object",
+      "properties": {
+        "of": { "const": "owners" },
+        "count": { "const": 1 }
+      },
+      "required": ["of", "count"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["kind", "needs"]
 }
 "#;
 }
@@ -1748,8 +2044,16 @@ fn built_in_schema(blob: &str) -> Schema {
 pub static DOCUMENT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::DOCUMENT_V1));
 pub static TODO_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::TODO_V1));
 pub static ARTICLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTICLE_V1));
+pub static ARTICLE_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTICLE_V2));
 pub static FLOW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FLOW_V1));
 pub static FUNCTION_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FUNCTION_V1));
+pub static FUNCTION_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FUNCTION_V2));
+pub static RECIPE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::RECIPE_V1));
+pub static VIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::VIEW_V1));
+pub static LOGIC_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::LOGIC_V1));
+pub static REVIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REVIEW_V1));
+pub static BUNDLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::BUNDLE_V1));
+pub static POLICY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POLICY_V1));
 pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V1));
 pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CARD_V1));
 pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
@@ -1760,17 +2064,27 @@ pub static SPARK_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::
 pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
 pub static ARTIFACT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTIFACT_V1));
 pub static ARTWORK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTWORK_V1));
+pub static ARTICLE_LENS: LazyLock<Lens> =
+    LazyLock::new(|| Lens::parse(blobs::ARTICLE_LENS.as_bytes()).expect("a built-in lens parses"));
 pub static SPARK_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::SPARK_LENS.as_bytes()).expect("a built-in lens parses"));
+pub static FUNCTION_LENS: LazyLock<Lens> =
+    LazyLock::new(|| Lens::parse(blobs::FUNCTION_LENS.as_bytes()).expect("a built-in lens parses"));
 
 /// The app of each kind avenDB ships, of its newest schema alone, by its kind.
 static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
     let shipped = [
         &*DOCUMENT_V1,
         &*TODO_V1,
-        &*ARTICLE_V1,
+        &*ARTICLE_V2,
         &*FLOW_V1,
-        &*FUNCTION_V1,
+        &*FUNCTION_V2,
+        &*RECIPE_V1,
+        &*VIEW_V1,
+        &*LOGIC_V1,
+        &*REVIEW_V1,
+        &*BUNDLE_V1,
+        &*POLICY_V1,
         &*POST_V1,
         &*CARD_V1,
         &*PROFILE_V1,
@@ -2099,6 +2413,18 @@ mod tests {
     }
 
     #[test]
+    fn a_v1_article_opens_in_v2_as_it_was() {
+        assert_eq!((ARTICLE_LENS.from(), ARTICLE_LENS.to()), (ARTICLE_V1.id(), ARTICLE_V2.id()));
+        let lane = Lane::with_built_ins([]);
+        let (view, read_only) = lane.view(&ARTICLE_V2, &BTreeSet::from([ARTICLE_V1.id()]));
+        assert!(!read_only, "the shipped lens joins them");
+        let v1 = serde_json::json!({ "kind": "article", "title": "Seeds", "text": "*Sown in March.*", "tags": ["d1"] });
+        let got = view.get(&v1).expect("it reads");
+        assert_eq!((&got["title"], &got["text"], &got["tags"]), (&v1["title"], &v1["text"], &v1["tags"]));
+        assert!(got.get("story").is_none() && got.get("language").is_none(), "{got}");
+    }
+
+    #[test]
     fn a_v1_spark_opens_on_the_canvas_with_its_title_words_and_tags() {
         assert_eq!((SPARK_LENS.from(), SPARK_LENS.to()), (SPARK_V1.id(), SPARK_V2.id()));
         let lane = Lane::with_built_ins([]);
@@ -2110,6 +2436,50 @@ mod tests {
         let got = view.get(&v1).expect("it reads");
         assert_eq!((&got["title"], &got["tags"], &got["items"]), (&v1["title"], &v1["tags"], &serde_json::json!([])));
         assert_eq!(got["blocks"], v1["blocks"]);
+    }
+
+    #[test]
+    fn a_v1_function_opens_in_v2_with_no_engine_and_no_manifest() {
+        assert_eq!((FUNCTION_LENS.from(), FUNCTION_LENS.to()), (FUNCTION_V1.id(), FUNCTION_V2.id()));
+        let lane = Lane::with_built_ins([]);
+        let (view, read_only) = lane.view(&FUNCTION_V2, &BTreeSet::from([FUNCTION_V1.id()]));
+        assert!(!read_only, "the shipped lens joins them");
+        let v1 = serde_json::json!({ "kind": "function", "name": "Publish", "flow": "content", "stage": "live",
+            "code": "return [];", "tags": ["flow"] });
+        let got = view.get(&v1).expect("it reads");
+        assert_eq!((&got["name"], &got["code"], &got["tags"]), (&v1["name"], &v1["code"], &v1["tags"]));
+        assert!(got.get("engine").is_none() && got.get("manifest").is_none(), "{got}");
+    }
+
+    /// Recipes, views and logic share one base (`code_entry!`), and a recipe adds its card; a function of v2 carries
+    /// the same engine and manifest.
+    #[test]
+    fn code_entries_share_one_base() {
+        let names = |s: &Schema| s.shapes[0].fields.iter().map(|f| f.name.clone()).collect::<BTreeSet<_>>();
+        let base = names(&VIEW_V1);
+        assert_eq!(names(&LOGIC_V1), base);
+        let card: BTreeSet<String> = ["card".to_string()].into();
+        assert_eq!(names(&RECIPE_V1), base.union(&card).cloned().collect());
+        for f in ["kind", "title", "note", "tags", "source", "engine", "manifest", "params", "contract"] {
+            assert!(base.contains(f), "{f}");
+        }
+        assert!(["engine", "manifest"].iter().all(|f| names(&FUNCTION_V2).contains(*f)));
+        assert_eq!([&*RECIPE_V1, &*VIEW_V1, &*LOGIC_V1].map(|s| s.kind()), [Some("recipe"), Some("view"), Some("logic")]);
+    }
+
+    /// A code entry's source and note are Loro texts its schema bounds (`maxLength`): a write past the bound fits
+    /// nothing, so it counts for no reader.
+    #[test]
+    fn a_text_longer_than_its_schema_lets_it_be_fits_nothing() {
+        let lane = Lane::with_built_ins([]);
+        let under = BTreeSet::from([LOGIC_V1.id()]);
+        let before = serde_json::json!({ "kind": "logic", "source": "" });
+        let at = |n: usize| serde_json::json!({ "kind": "logic", "source": "x".repeat(n) });
+        assert!(lane.fits(&under, &before, &at(200_000)));
+        assert!(!lane.fits(&under, &before, &at(200_001)));
+        let long_note = serde_json::json!({ "kind": "logic", "note": "é".repeat(4001) });
+        assert!(!lane.fits(&under, &before, &long_note), "characters, not bytes");
+        assert!(lane.fits(&under, &before, &serde_json::json!({ "kind": "logic", "note": "é".repeat(4000) })));
     }
 
     #[test]

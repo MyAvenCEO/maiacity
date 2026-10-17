@@ -46,6 +46,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "geneses",
  "edits": [
@@ -70,6 +71,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "a coop's governance",
  "edits": [
@@ -105,6 +107,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "no ownership cycles",
  "edits": [
@@ -134,6 +137,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "concurrent changes, in replay order",
  "edits": [
@@ -165,6 +169,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "the passkey as root",
  "edits": [
@@ -195,6 +200,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "four kinds of vault, and acts that name their chain",
  "edits": [
@@ -243,6 +249,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 13, "line": null, "history": [9], "heads": [9]}, {"entry": 14, "line": null, "history": [10], "heads": [10]}, {"entry": 16, "line": null, "history": [26], "heads": [26]}, {"entry": 19, "line": null, "history": [30], "heads": [30]}]},
 {"name": "an aven: one human owner, one per human, its agents' device vaults",
  "edits": [
@@ -280,6 +287,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [19], "heads": [19]}, {"entry": 2, "line": null, "history": [20], "heads": [20]}]},
 {"name": "sub caps: an aven passes on to its agents what a coop gave it",
  "edits": [
@@ -323,6 +331,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [10, 20], "heads": [20]}, {"entry": 22, "line": null, "history": [11, 22], "heads": [22]}]},
 {"name": "shares and everyone",
  "edits": [
@@ -369,6 +378,7 @@
  "published": [{"key": {"share": {"vault": 200, "share": 34}}, "epoch": 0}, {"key": {"audience": {"vault": 200, "shares": [30, 34]}}, "epoch": 0}, {"key": {"audience": {"vault": 200, "shares": [30, 34, 36, 37]}}, "epoch": 0}],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [7, 22, 25, 28, 29], "heads": [28, 29]}]},
 {"name": "settings, shares and revocations, kind by kind",
  "edits": [
@@ -416,6 +426,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "tags, marks and stewards",
  "edits": [
@@ -464,6 +475,7 @@
  "published": [],
  "lane": [],
  "uncounted": [30],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [6, 16, 18, 19, 20], "heads": [20]}, {"entry": 22, "line": null, "history": [7, 31], "heads": [31]}, {"entry": 1, "line": null, "history": [8], "heads": [8]}, {"entry": 23, "line": null, "history": [23], "heads": [23]}, {"entry": 2, "line": null, "history": [24], "heads": [24]}]},
 {"name": "selectors pick by type, author, entry, time and tags",
  "edits": [
@@ -500,6 +512,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [6], "heads": [6]}, {"entry": 21, "line": null, "history": [7], "heads": [7]}, {"entry": 22, "line": null, "history": [8], "heads": [8]}, {"entry": 23, "line": null, "history": [9], "heads": [9]}, {"entry": 24, "line": null, "history": [15], "heads": [15]}]},
 {"name": "revocation, cascades and keep lists",
  "edits": [
@@ -542,6 +555,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [7, 13], "heads": [13]}]},
 {"name": "keys go only where the schedule seals them",
  "edits": [
@@ -593,6 +607,7 @@
  "published": [{"key": {"share": {"vault": 200, "share": 31}}, "epoch": 0}, {"key": {"audience": {"vault": 200, "shares": [30, 31]}}, "epoch": 0}],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [7], "heads": [7]}]},
 {"name": "a removed device's vault keys all move on",
  "edits": [
@@ -627,6 +642,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [7, 10], "heads": [10]}]},
 {"name": "an audience an entry comes back into moves on",
  "edits": [
@@ -660,6 +676,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [7, 10, 13], "heads": [13]}]},
 {"name": "a new entry brings an empty audience back into use at the epoch it moves to",
  "edits": [
@@ -694,6 +711,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [7, 10], "heads": [10]}, {"entry": 22, "line": null, "history": [13], "heads": [13]}, {"entry": 23, "line": null, "history": [14], "heads": [14]}, {"entry": 24, "line": null, "history": [15], "heads": [15]}]},
 {"name": "an entry shared later reaches a copy that never held the audience it was written in",
  "edits": [
@@ -722,6 +740,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 3, "line": null, "history": [6, 7], "heads": [7]}]},
 {"name": "the schema lane",
  "edits": [
@@ -765,6 +784,7 @@
  "published": [{"key": {"share": {"vault": 200, "share": 31}}, "epoch": 0}, {"key": {"audience": {"vault": 200, "shares": [31]}}, "epoch": 0}, {"key": {"share": {"vault": 100, "share": 34}}, "epoch": 0}, {"key": {"audience": {"vault": 100, "shares": [34]}}, "epoch": 0}],
  "lane": [{"vault": 100, "blob": 1}, {"vault": 200, "blob": 1}, {"vault": 200, "blob": 2}, {"vault": 200, "blob": 3}],
  "uncounted": [10, 27],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [9, 13], "heads": [13]}, {"entry": 2, "line": null, "history": [11, 14], "heads": [14]}, {"entry": 3, "line": null, "history": [12], "heads": [12]}, {"entry": 4, "line": null, "history": [15], "heads": [15]}, {"entry": 5, "line": null, "history": [16], "heads": [16]}, {"entry": 6, "line": null, "history": [17], "heads": [17]}, {"entry": 7, "line": null, "history": [24], "heads": [24]}, {"entry": 8, "line": null, "history": [26], "heads": [26]}, {"entry": 9, "line": null, "history": [], "heads": []}]},
 {"name": "proposals of an entry",
  "edits": [
@@ -804,6 +824,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [6, 10, 11, 19], "heads": [19]}, {"entry": 1, "line": 10, "history": [6, 10, 11, 19, 20, 21], "heads": [21]}, {"entry": 1, "line": 22, "history": [6, 10, 11, 19, 22, 23], "heads": [23]}, {"entry": 2, "line": null, "history": [17], "heads": [17]}]},
 {"name": "ops: a write share that may only set a todo's status",
  "edits": [
@@ -846,6 +867,7 @@
  "published": [],
  "lane": [],
  "uncounted": [11, 12, 13, 14, 15, 17, 21, 22, 25, 26],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [6, 10, 16], "heads": [16]}, {"entry": 22, "line": null, "history": [], "heads": []}, {"entry": 23, "line": null, "history": [19, 20, 24], "heads": [24]}]},
 {"name": "ops: a chain narrows the shares resting on it, and a suggester writes on proposals",
  "edits": [
@@ -891,7 +913,89 @@
  "published": [],
  "lane": [],
  "uncounted": [13, 15, 18, 21, 27, 28, 29],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [6, 12, 14, 16, 17, 19], "heads": [19]}, {"entry": 21, "line": 16, "history": [6, 12, 14, 16, 17], "heads": [17]}, {"entry": 22, "line": null, "history": [20], "heads": [20]}, {"entry": 24, "line": null, "history": [], "heads": []}]},
+{"name": "ops: a tuner merges new defaults of its params into main, and nothing else",
+ "edits": [
+  {"author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
+  {"author": 1, "cosigners": [2], "action": {"share": {"device": {"vault": 100, "device": 2}}}},
+  {"author": 4, "cosigners": [], "action": {"genesis": {"vault": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "root": null}}},
+  {"author": 4, "cosigners": [5], "action": {"share": {"device": {"vault": 101, "device": 5}}}},
+  {"author": 6, "cosigners": [], "action": {"genesis": {"vault": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "root": null}}},
+  {"author": 8, "cosigners": [], "action": {"genesis": {"vault": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "root": null}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": null, "epoch": 0, "deps": [], "proposal": "main", "via": [], "create": {"audience": [], "header": {"type": 1, "created": 0, "blob": 0}}, "tags": {"add": [], "remove": []}}}},
+  {"author": 2, "cosigners": [], "action": {"share": {"grant": {"share": {"id": 30, "over": 100, "who": {"vault": 101}, "level": "write", "wide": false, "select": {"anyOf": [[{"entryIn": [1]}]]}, "ops": [{"op": "read"}, {"op": "set", "path": [], "on": "proposals"}, {"op": "propose"}, {"op": "merge", "on": "main", "path": ["params", "*", "default"]}], "parent": null, "issuer": 100}, "via": []}}}},
+  {"author": 2, "cosigners": [], "action": {"mark": {"vault": 100, "entry": 1, "caps": [30], "wants": null, "keep": [], "via": []}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [6], "proposal": "new", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["propose"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [9], "proposal": {"on": 9}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": [{"set": ["params", {"id": 1}, "default"], "to": 3}]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [10], "proposal": {"on": 9}, "via": [], "create": null, "tags": {"add": [], "remove": []}}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [6, 11], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge", {"merged": ["params", {"id": 1}, "default"]}]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [12], "proposal": "new", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["propose"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [13], "proposal": {"on": 13}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": [{"set": ["params", {"id": 1}, "default"], "to": 4}, {"set": ["source"], "to": "fn main"}]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [14], "proposal": {"on": 13}, "via": [], "create": null, "tags": {"add": [], "remove": []}}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [12, 15], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge", {"merged": ["params", {"id": 1}, "default"]}, {"merged": ["source"]}]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [12], "proposal": "new", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["propose"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [17, 11], "proposal": {"on": 17}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge", {"merged": ["params", {"id": 1}, "default"]}]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [12, 15], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "touches": ["merge", {"merged": ["params", {"id": 1}, "default"]}, {"merged": ["source"]}]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [12, 99], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge", {"merged": ["params", {"id": 1}, "default"]}]}}}],
+ "accepted": [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false],
+ "vaults": [{"id": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "devices": [2], "root": null}, {"id": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "devices": [5], "root": null}, {"id": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "devices": [], "root": null}, {"id": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "devices": [], "root": null}],
+ "shares": [{"id": 30, "over": 100, "who": {"vault": 101}, "level": "write", "wide": false, "select": {"anyOf": [[{"entryIn": [1]}]]}, "ops": [{"op": "read"}, {"op": "set", "path": [], "on": "proposals"}, {"op": "propose"}, {"op": "merge", "on": "main", "path": ["params", "*", "default"]}], "parent": null, "issuer": 100}],
+ "revoked": [],
+ "entries": [{"id": 1, "vault": 100, "stays": [{"stay": 8, "audience": [30]}, {"stay": null, "audience": []}], "wants": [], "attrs": {"type": 1, "author": 100, "entry": 1, "created": 0, "tags": []}, "admitted": true, "semAudience": [30], "semWants": [], "desiredMark": null, "devices": []}],
+ "born": [1],
+ "writes": [{"edit": 6, "author": 2, "actor": 100, "entry": 1, "stay": null, "epoch": 0, "deps": [], "proposal": "main", "via": [], "first": true, "audience": []}, {"edit": 9, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [6], "proposal": "new", "via": [], "first": false, "audience": [30]}, {"edit": 10, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [9], "proposal": {"on": 9}, "via": [], "first": false, "audience": [30]}, {"edit": 11, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [10], "proposal": {"on": 9}, "via": [], "first": false, "audience": [30]}, {"edit": 12, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [6, 11], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 13, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [12], "proposal": "new", "via": [], "first": false, "audience": [30]}, {"edit": 14, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [13], "proposal": {"on": 13}, "via": [], "first": false, "audience": [30]}, {"edit": 15, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [14], "proposal": {"on": 13}, "via": [], "first": false, "audience": [30]}, {"edit": 16, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [12, 15], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 17, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [12], "proposal": "new", "via": [], "first": false, "audience": [30]}, {"edit": 18, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [17, 11], "proposal": {"on": 17}, "via": [], "first": false, "audience": [30]}, {"edit": 19, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [12, 15], "proposal": "main", "via": [], "first": false, "audience": [30]}],
+ "epochs": [],
+ "seals": [{"secret": {"key": {"seed": 100}, "epoch": 0}, "to": {"signer": 1}}, {"secret": {"key": {"seed": 100}, "epoch": 0}, "to": {"signer": 2}}, {"secret": {"key": {"seed": 101}, "epoch": 0}, "to": {"signer": 4}}, {"secret": {"key": {"seed": 101}, "epoch": 0}, "to": {"signer": 5}}, {"secret": {"key": {"seed": 102}, "epoch": 0}, "to": {"signer": 6}}, {"secret": {"key": {"seed": 103}, "epoch": 0}, "to": {"signer": 8}}, {"secret": {"key": {"audience": {"vault": 100, "shares": []}}, "epoch": 0}, "to": {"key": {"seed": 100}, "epoch": 0}}, {"secret": {"entry": 1, "stay": null, "epoch": 0}, "to": {"key": {"audience": {"vault": 100, "shares": []}}, "epoch": 0}}, {"secret": {"key": {"share": {"vault": 100, "share": 30}}, "epoch": 0}, "to": {"key": {"seed": 100}, "epoch": 0}}, {"secret": {"key": {"share": {"vault": 100, "share": 30}}, "epoch": 0}, "to": {"key": {"seed": 101}, "epoch": 0}}, {"secret": {"key": {"audience": {"vault": 100, "shares": [30]}}, "epoch": 0}, "to": {"key": {"seed": 100}, "epoch": 0}}, {"secret": {"key": {"audience": {"vault": 100, "shares": [30]}}, "epoch": 0}, "to": {"key": {"share": {"vault": 100, "share": 30}}, "epoch": 0}}, {"secret": {"entry": 1, "stay": 8, "epoch": 0}, "to": {"key": {"audience": {"vault": 100, "shares": [30]}}, "epoch": 0}}, {"secret": {"entry": 1, "stay": null, "epoch": 0}, "to": {"entry": 1, "stay": 8, "epoch": 0}}],
+ "published": [],
+ "lane": [],
+ "uncounted": [16, 18],
+ "accepts": [11, 15],
+ "lines": [{"entry": 1, "line": null, "history": [6, 9, 10, 11, 12, 13, 14, 15, 19], "heads": [19]}, {"entry": 1, "line": 9, "history": [6, 9, 10, 11], "heads": [11]}, {"entry": 1, "line": 13, "history": [6, 9, 10, 11, 12, 13, 14, 15], "heads": [15]}, {"entry": 1, "line": 17, "history": [6, 9, 10, 11, 12, 17], "heads": [17]}]},
+{"name": "merges by policy: one of the vault's owners accepts what anyone else merges into main",
+ "edits": [
+  {"author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
+  {"author": 1, "cosigners": [2], "action": {"share": {"device": {"vault": 100, "device": 2}}}},
+  {"author": 4, "cosigners": [], "action": {"genesis": {"vault": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "root": null}}},
+  {"author": 4, "cosigners": [5], "action": {"share": {"device": {"vault": 101, "device": 5}}}},
+  {"author": 6, "cosigners": [], "action": {"genesis": {"vault": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "root": null}}},
+  {"author": 8, "cosigners": [], "action": {"genesis": {"vault": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "root": null}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": null, "epoch": 0, "deps": [], "proposal": "main", "via": [], "create": {"audience": [], "header": {"type": 1, "created": 0, "blob": 0}}, "tags": {"add": [], "remove": []}}}},
+  {"author": 2, "cosigners": [], "action": {"share": {"grant": {"share": {"id": 30, "over": 100, "who": {"vault": 101}, "level": "write", "wide": false, "select": {"anyOf": [[{"entryIn": [1]}]]}, "ops": [{"op": "read"}, {"op": "create"}, {"op": "set", "path": []}, {"op": "tag"}, {"op": "propose"}, {"op": "merge"}], "parent": null, "issuer": 100}, "via": []}}}},
+  {"author": 2, "cosigners": [], "action": {"mark": {"vault": 100, "entry": 1, "caps": [30], "wants": null, "keep": [], "via": []}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [6], "proposal": "new", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["propose"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [9], "proposal": {"on": 9}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": [{"set": ["title"], "to": "Lamp"}]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [6, 10], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [10], "proposal": {"on": 9}, "via": [], "create": null, "tags": {"add": [], "remove": []}}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [6, 12], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [13], "proposal": "new", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["propose"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [14], "proposal": {"on": 14}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [13, 15], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [15], "proposal": {"on": 14}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "touches": [{"set": ["title"], "to": "Desk lamp"}]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [13, 17], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [17], "proposal": {"on": 14}, "via": [], "create": null, "tags": {"add": [], "remove": []}}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [19], "proposal": {"on": 14}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": [{"set": ["title"], "to": "Desk"}]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [13, 20], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [13, 19], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [20, 22], "proposal": {"on": 14}, "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [22, 23], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "touches": ["merge"]}}},
+  {"author": 2, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 100, "stay": 8, "epoch": 0, "deps": [24], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}}}},
+  {"author": 5, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 101, "stay": 8, "epoch": 0, "deps": [25, 23], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "proof": 30, "touches": ["merge"]}}},
+  {"author": 555, "cosigners": [], "action": {"write": {"vault": 100, "entry": 1, "actor": 103, "stay": 8, "epoch": 0, "deps": [24, 23], "proposal": "main", "via": [], "create": null, "tags": {"add": [], "remove": []}, "touches": ["merge"]}}}],
+ "accepted": [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false],
+ "vaults": [{"id": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "devices": [2], "root": null}, {"id": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "devices": [5], "root": null}, {"id": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "devices": [], "root": null}, {"id": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "devices": [], "root": null}],
+ "shares": [{"id": 30, "over": 100, "who": {"vault": 101}, "level": "write", "wide": false, "select": {"anyOf": [[{"entryIn": [1]}]]}, "ops": [{"op": "read"}, {"op": "create"}, {"op": "set", "path": []}, {"op": "tag"}, {"op": "propose"}, {"op": "merge"}], "parent": null, "issuer": 100}],
+ "revoked": [],
+ "entries": [{"id": 1, "vault": 100, "stays": [{"stay": 8, "audience": [30]}, {"stay": null, "audience": []}], "wants": [], "attrs": {"type": 1, "author": 100, "entry": 1, "created": 0, "tags": []}, "admitted": true, "semAudience": [30], "semWants": [], "desiredMark": null, "devices": []}],
+ "born": [1],
+ "writes": [{"edit": 6, "author": 2, "actor": 100, "entry": 1, "stay": null, "epoch": 0, "deps": [], "proposal": "main", "via": [], "first": true, "audience": []}, {"edit": 9, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [6], "proposal": "new", "via": [], "first": false, "audience": [30]}, {"edit": 10, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [9], "proposal": {"on": 9}, "via": [], "first": false, "audience": [30]}, {"edit": 11, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [6, 10], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 12, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [10], "proposal": {"on": 9}, "via": [], "first": false, "audience": [30]}, {"edit": 13, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [6, 12], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 14, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [13], "proposal": "new", "via": [], "first": false, "audience": [30]}, {"edit": 15, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [14], "proposal": {"on": 14}, "via": [], "first": false, "audience": [30]}, {"edit": 16, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [13, 15], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 17, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [15], "proposal": {"on": 14}, "via": [], "first": false, "audience": [30]}, {"edit": 18, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [13, 17], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 19, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [17], "proposal": {"on": 14}, "via": [], "first": false, "audience": [30]}, {"edit": 20, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [19], "proposal": {"on": 14}, "via": [], "first": false, "audience": [30]}, {"edit": 21, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [13, 20], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 22, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [13, 19], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 23, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [20, 22], "proposal": {"on": 14}, "via": [], "first": false, "audience": [30]}, {"edit": 24, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [22, 23], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 25, "author": 2, "actor": 100, "entry": 1, "stay": 8, "epoch": 0, "deps": [24], "proposal": "main", "via": [], "first": false, "audience": [30]}, {"edit": 26, "author": 5, "actor": 101, "entry": 1, "stay": 8, "epoch": 0, "deps": [25, 23], "proposal": "main", "via": [], "first": false, "audience": [30]}],
+ "epochs": [],
+ "seals": [{"secret": {"key": {"seed": 100}, "epoch": 0}, "to": {"signer": 1}}, {"secret": {"key": {"seed": 100}, "epoch": 0}, "to": {"signer": 2}}, {"secret": {"key": {"seed": 101}, "epoch": 0}, "to": {"signer": 4}}, {"secret": {"key": {"seed": 101}, "epoch": 0}, "to": {"signer": 5}}, {"secret": {"key": {"seed": 102}, "epoch": 0}, "to": {"signer": 6}}, {"secret": {"key": {"seed": 103}, "epoch": 0}, "to": {"signer": 8}}, {"secret": {"key": {"audience": {"vault": 100, "shares": []}}, "epoch": 0}, "to": {"key": {"seed": 100}, "epoch": 0}}, {"secret": {"entry": 1, "stay": null, "epoch": 0}, "to": {"key": {"audience": {"vault": 100, "shares": []}}, "epoch": 0}}, {"secret": {"key": {"share": {"vault": 100, "share": 30}}, "epoch": 0}, "to": {"key": {"seed": 100}, "epoch": 0}}, {"secret": {"key": {"share": {"vault": 100, "share": 30}}, "epoch": 0}, "to": {"key": {"seed": 101}, "epoch": 0}}, {"secret": {"key": {"audience": {"vault": 100, "shares": [30]}}, "epoch": 0}, "to": {"key": {"seed": 100}, "epoch": 0}}, {"secret": {"key": {"audience": {"vault": 100, "shares": [30]}}, "epoch": 0}, "to": {"key": {"share": {"vault": 100, "share": 30}}, "epoch": 0}}, {"secret": {"entry": 1, "stay": 8, "epoch": 0}, "to": {"key": {"audience": {"vault": 100, "shares": [30]}}, "epoch": 0}}, {"secret": {"entry": 1, "stay": null, "epoch": 0}, "to": {"entry": 1, "stay": 8, "epoch": 0}}],
+ "published": [],
+ "lane": [],
+ "uncounted": [11, 16, 18, 21, 26],
+ "accepts": [12, 19],
+ "lines": [{"entry": 1, "line": null, "history": [6, 9, 10, 12, 13, 14, 15, 17, 19, 20, 22, 23, 24, 25], "heads": [25]}, {"entry": 1, "line": 9, "history": [6, 9, 10, 12], "heads": [12]}, {"entry": 1, "line": 14, "history": [6, 9, 10, 12, 13, 14, 15, 17, 19, 20, 22, 23], "heads": [23]}]},
 {"name": "schemas: a write whose result doesn't fit its schemas counts for no reader",
  "edits": [
   {"author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
@@ -923,6 +1027,7 @@
  "published": [],
  "lane": [],
  "uncounted": [10, 11, 12, 14, 15],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [6, 9, 13], "heads": [13]}, {"entry": 22, "line": null, "history": [], "heads": []}]},
 {"name": "keep shares: each device syncs what its keep shares pick",
  "edits": [
@@ -970,6 +1075,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [8], "heads": [8]}, {"entry": 21, "line": null, "history": [9], "heads": [9]}]},
 {"name": "marks, part by part",
  "edits": [
@@ -1013,6 +1119,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [7], "heads": [7]}]},
 {"name": "keep shares: modes, refusals and a device that leaves",
  "edits": [
@@ -1061,6 +1168,7 @@
  "published": [],
  "lane": [{"vault": 100, "blob": 0}],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [9], "heads": [9]}, {"entry": 21, "line": null, "history": [10], "heads": [10]}, {"entry": 22, "line": null, "history": [11], "heads": [11]}, {"entry": 2, "line": null, "history": [12], "heads": [12]}]}
 ],
 "views": [
@@ -1088,6 +1196,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "a removal keeps what it had seen",
  "edits": [
@@ -1114,6 +1223,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "the senior owner wins a clash",
  "edits": [
@@ -1138,6 +1248,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "removals that don't clash both stand",
  "edits": [
@@ -1163,6 +1274,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "the root outranks a stolen second passkey",
  "edits": [
@@ -1183,6 +1295,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "a revoked writer's unseen edits are cut, with what builds on them",
  "edits": [
@@ -1213,6 +1326,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [6, 10, 14], "heads": [14]}]},
 {"name": "a revocation cuts a proposal it hadn't seen, with every write on it",
  "edits": [
@@ -1245,6 +1359,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [6, 10, 11, 15], "heads": [15]}, {"entry": 21, "line": 10, "history": [6, 10, 11], "heads": [11]}]},
 {"name": "a revocation cuts a creation it hadn't seen",
  "edits": [
@@ -1272,6 +1387,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [7, 10], "heads": [10]}]},
 {"name": "a mark cuts a write it hadn't seen into the audience it left",
  "edits": [
@@ -1301,6 +1417,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [6, 9, 11], "heads": [11]}]},
 {"name": "a lost device's back-dated edits are cut",
  "edits": [
@@ -1327,6 +1444,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [7, 8], "heads": [8]}]},
 {"name": "handing the root on cuts the old passkey's back-dated edits",
  "edits": [
@@ -1347,6 +1465,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "a revoked reader's back-dated keys are cut",
  "edits": [
@@ -1375,6 +1494,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [7], "heads": [7]}]},
 {"name": "a removed owner's back-dated schema entry is cut",
  "edits": [
@@ -1403,6 +1523,7 @@
  "published": [{"key": {"share": {"vault": 200, "share": 30}}, "epoch": 0}, {"key": {"audience": {"vault": 200, "shares": [30]}}, "epoch": 0}, {"key": {"share": {"vault": 200, "share": 30}}, "epoch": 1}, {"key": {"audience": {"vault": 200, "shares": [30]}}, "epoch": 1}],
  "lane": [{"vault": 200, "blob": 1}, {"vault": 200, "blob": 2}],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [8], "heads": [8]}, {"entry": 3, "line": null, "history": [11], "heads": [11]}]},
 {"name": "a removed owner's back-dated writes for the coop are cut",
  "edits": [
@@ -1431,6 +1552,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [7, 8, 11], "heads": [11]}]},
 {"name": "the senior revoker ranks first",
  "edits": [
@@ -1458,6 +1580,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [6], "heads": [6]}]},
 {"name": "a vault settles before the coops it owns",
  "edits": [
@@ -1484,6 +1607,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "a vault's removals outrank a revoked grant",
  "edits": [
@@ -1513,6 +1637,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "handing the root on outranks a revoked grant",
  "edits": [
@@ -1535,6 +1660,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": []},
 {"name": "a mark of the wants alone puts back no audience",
  "edits": [
@@ -1566,6 +1692,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 1, "line": null, "history": [7], "heads": [7]}, {"entry": 21, "line": null, "history": [8], "heads": [8]}]},
 {"name": "a mark stands after what it names is revoked",
  "edits": [
@@ -1596,6 +1723,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [7], "heads": [7]}]},
 {"name": "revoking a keep share cuts nothing",
  "edits": [
@@ -1627,6 +1755,7 @@
  "published": [],
  "lane": [],
  "uncounted": [],
+ "accepts": [],
  "lines": [{"entry": 21, "line": null, "history": [7, 11, 12], "heads": [12]}]}
 ],
 "syncs": [

@@ -4,9 +4,11 @@
  * preview per-biome upgrade-level styling variants.
  */
 import * as THREE from 'three'
-import type { BiomeId } from '../hexmap'
+import type { BiomeId } from '../../../../../game/island/hexmap'
 import { buildBiomeTile, type PlacedKind } from './buildWorld'
 import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
+import { disposeObject } from '$lib/render/core.js'
+import { worldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 
 export interface SandboxApi {
@@ -15,12 +17,8 @@ export interface SandboxApi {
 }
 
 export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
-	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-	renderer.shadowMap.enabled = true
-	renderer.shadowMap.type = THREE.PCFSoftShadowMap
-	renderer.toneMapping = THREE.ACESFilmicToneMapping
-	renderer.toneMappingExposure = 1.05
+	// the world renderer ($lib/render/world.js), at up to twice the pixels: one small specimen
+	const renderer = worldRenderer({ canvas, maxPixelRatio: 2, exposure: 1.05 })
 
 	const scene = new THREE.Scene()
 
@@ -55,13 +53,7 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 	function disposeSpecimen(): void {
 		if (!specimen) return
 		scene.remove(specimen)
-		specimen.traverse((o) => {
-			if (o instanceof THREE.Mesh) {
-				o.geometry.dispose()
-				const mats = Array.isArray(o.material) ? o.material : [o.material]
-				for (const m of mats) m.dispose()
-			}
-		})
+		disposeObject(specimen, { textures: false })
 		specimen = null
 	}
 

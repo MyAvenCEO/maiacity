@@ -1,0 +1,10 @@
+{
+	"type": "view",
+	"for": "sandbox-7",
+	"title": "Wants",
+	"note": "What every aven holds against tonight's needs, and what it still wants to buy.",
+	"kind": "html",
+	"slot": "panel",
+	"libs": [],
+	"height": 520
+}

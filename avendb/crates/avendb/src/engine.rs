@@ -22,11 +22,13 @@
 //!   `creatable`, `taggable`, `requests` (the access requests its person answers, and those its vaults made);
 //!   `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
-//!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `restore`,
-//!   `undo`, `variant`; and `batch`, whose record ops in a row on one entry's line make one write. Each acts for a
-//!   vault (`"as"`, the device's own by default), as every edit does, and the rules judge it as they judge any peer's.
-//!   A write through a share carries the proof that the ops of the shares of its chain allow what it touches and the
-//!   tags it asks for, and is refused (`NotAllowed`) where they don't: its readers wouldn't count it (`rules`). And the
+//!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `review`
+//!   (the vault's answer to a proposal, its accept with it: `review`), `restore`, `undo`, `variant`; and `batch`,
+//!   whose record ops in a row on one entry's line make one write. Each acts for a vault (`"as"`, the device's own by
+//!   default), as every edit does, and the rules judge it as they judge any peer's. A write through a share carries
+//!   the proof that the ops of the shares of its chain allow what it touches and the tags it asks for, and is refused
+//!   (`NotAllowed`) where they don't, as is a merge into main through a share on top of no accept of the vault's
+//!   (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`). And the
 //!   changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
 //!   `back_up`, `mark`, `card`, `profile`, `follow`, `set_limits`, and `ask`, an access request: a record and a share.
 //!   One its vault's owners approve the device drafts for its person's passkey (`prepare`, `Prepared::Approve`):
@@ -63,7 +65,7 @@ use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
 use crate::world::{SyncedTo, VARIANT, variant_mark};
 
-pub use vaults::{approve, approved, follow_server, passkey_of, world, Approval, Prepared, Then};
+pub use vaults::{approve, approved, follow_standing, passkey_of, world, Approval, Prepared, Then};
 
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
 /// updates it holds.
@@ -118,6 +120,9 @@ fn rule(r: &Refusal) -> String {
     let why = match r {
         Refusal::NoCap => "the vault it acts for holds no share that allows this",
         Refusal::NotAllowed => "the ops of the shares the vault acts through don't allow what it does",
+        Refusal::NotAccepted => {
+            "the entry's vault hasn't accepted what this merges into main: one of its owners accepts it first"
+        }
         Refusal::BadCap => "a share has a name, at least one op, and a selector and a chain within bounds",
         Refusal::NotActing => "the device doesn't act for that vault",
         Refusal::ReadOnly => "the entry opens read-only: no lens reaches every schema it was written under",
@@ -150,6 +155,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "tag" => &["entry", "add", "remove", "as"],
         "propose" => &["entry", "from", "name", "as"],
         "merge" => &["entry", "from", "into", "take", "as"],
+        "review" => &["entry", "line", "verdict", "text", "as"],
         "restore" => &["entry", "line", "at", "as"],
         "undo" => &["entry", "line", "edit", "as"],
         "variant" => &["entry", "line", "into", "schema", "ops", "as"],
@@ -161,10 +167,10 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "read_file" => &["root", "size", "from", "to"],
         "creatable" => &["vault", "type", "tags", "as"],
         "taggable" => &["entry", "as"],
-        "share" => &["over", "who", "level", "what", "as"],
+        "share" => &["over", "who", "level", "what", "standing", "request", "as"],
         "keep" => &["over", "mode", "what", "device", "as"],
         "copy" => &["device", "full"],
-        "revoke" => &["share", "vault", "owner", "device", "as"],
+        "revoke" => &["share", "vault", "owner", "device", "standing", "as"],
         "settings" => &["vault", "threshold", "root"],
         "found" => &["vaults", "kind", "name"],
         "put_file" => &["vault", "name", "media", "tags", "len", "as"],
@@ -174,7 +180,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "profile" => &["vault", "name"],
         "follow" => &["vault", "on"],
         "set_limits" => &["depth"],
-        "ask" => &["to", "level", "why", "vaults", "as"],
+        "ask" => &["to", "asks", "level", "why", "vaults", "as"],
         _ => return None,
     })
 }
@@ -400,7 +406,8 @@ enum Named {
 
 fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
     let bad = || {
-        let kinds = "document, todo, article, flow, function, post, card, profile, file, story, spark, request or artifact";
+        let kinds = "document, todo, article, flow, function, recipe, view, logic, review, bundle, policy, post, card, \
+            profile, file, story, spark, request, artifact or artwork";
         bad(format!("schema is a built-in kind ({kinds}), \"stored\" or a schema's id, 64 hex digits"))
     };
     Ok(match o.get("schema") {
@@ -409,9 +416,15 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "stored" => Named::Stored,
             "document" => Named::Id(lens::DOCUMENT_V1.id()),
             "todo" => Named::Id(lens::TODO_V1.id()),
-            "article" => Named::Id(lens::ARTICLE_V1.id()),
+            "article" => Named::Id(lens::ARTICLE_V2.id()),
             "flow" => Named::Id(lens::FLOW_V1.id()),
-            "function" => Named::Id(lens::FUNCTION_V1.id()),
+            "function" => Named::Id(lens::FUNCTION_V2.id()),
+            "recipe" => Named::Id(lens::RECIPE_V1.id()),
+            "view" => Named::Id(lens::VIEW_V1.id()),
+            "logic" => Named::Id(lens::LOGIC_V1.id()),
+            "review" => Named::Id(lens::REVIEW_V1.id()),
+            "bundle" => Named::Id(lens::BUNDLE_V1.id()),
+            "policy" => Named::Id(lens::POLICY_V1.id()),
             "post" => Named::Id(lens::POST_V1.id()),
             "card" => Named::Id(lens::CARD_V1.id()),
             "profile" => Named::Id(lens::PROFILE_V1.id()),
@@ -754,7 +767,8 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
 /// What one write of an entry's history is, as `history` and the note page show it.
 pub struct Wrote {
     /// `edit`; `propose`, the start of a proposal; `merge` of two lines, with the change, if any, that brings Loro's
-    /// merged item to the three-way merge of both; or `sealed`, a write the device can't open.
+    /// merged item to the three-way merge of both; `accept`, the vault's accept of the proposal it is on (M2,
+    /// `policy::is_accept`); or `sealed`, a write the device can't open.
     pub kind: &'static str,
     /// The other line it builds on: for a merge, the line it brought in; for a proposal, the line it started from.
     pub from: Option<Line>,
@@ -762,8 +776,9 @@ pub struct Wrote {
     /// what it brought.
     pub base: Vec<EditId>,
     /// Why its readers don't count it, if they don't: it builds on a write they don't count (`builds-on`); they can't
-    /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); or the ops of
-    /// the shares it relies on don't allow what it touches or the tags it asks for (`ops`, C1 to C4).
+    /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); it merges into
+    /// main through a share on top of no accept of the vault's, or brings in more than it accepted (`policy`, M2); or
+    /// the ops of the shares it relies on don't allow what it touches or the tags it asks for (`ops`, C1 to C4).
     pub why: Option<&'static str>,
 }
 
@@ -775,6 +790,7 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
     let kind = match &c.body {
         _ if w.proposal == Proposal::New => "propose",
         None => "sealed",
+        Some(_) if c.accept() => "accept",
         Some(change) if change.is_empty() || from.is_some() => "merge",
         Some(_) => "edit",
     };
@@ -789,6 +805,8 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
         Some("sealed")
     } else if !c.fits {
         Some("unfit")
+    } else if !h.passes(w, c.touches.as_deref()) {
+        Some("policy")
     } else {
         Some("ops")
     };
@@ -915,6 +933,8 @@ enum Step {
     Tag { entry: EntryId, add: Vec<String>, remove: Vec<String> },
     Propose { entry: EntryId, from: Option<Vec<EditId>>, name: String },
     Merge { entry: EntryId, from: Line, into: Line, take: BTreeSet<Place> },
+    /// The vault's answer to proposal `line` of `entry` (`review`).
+    Review { entry: EntryId, line: EditId, verdict: String, text: String },
     Restore { entry: EntryId, line: Line, at: Vec<EditId> },
     Undo { entry: EntryId, line: Line, edit: EditId },
     Variant { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<RecordOp> },
@@ -1000,6 +1020,19 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
                 }
             };
             Step::Merge { entry: entry_of(o)?, from: line_of(o, "from")?, into: line_of(o, "into")?, take }
+        }
+        "review" => {
+            let line = line_of(o, "line")?.ok_or_else(|| bad("a review answers a proposal: line, not the main line"))?;
+            let verdict = text("verdict")?;
+            if !VERDICTS.contains(&verdict.as_str()) {
+                return Err(bad("verdict is accepted, declined or revise"));
+            }
+            let text = match o.get("text") {
+                None | Some(Value::Null) => String::new(),
+                Some(Value::String(t)) => t.clone(),
+                Some(_) => return Err(bad("review takes its words as a text: text")),
+            };
+            Step::Review { entry: entry_of(o)?, line, verdict, text }
         }
         "restore" => {
             let at = edits_of(o.get("at").ok_or_else(|| bad("restore takes the version it puts back: at"))?, "at")?;
@@ -1129,6 +1162,7 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let edit = lab.merge(me, actor, entry, from, into, &take)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(into) }))
         }
+        Step::Review { entry, line, verdict, text } => review(lab, me, actor, (entry, line), &verdict, text),
         Step::Restore { entry, line, at } => {
             let edit = lab.restore(me, actor, entry, line, &at)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(line) }))
@@ -1163,6 +1197,57 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             Ok(json!({ "entry": made.to_hex() }))
         }
     }
+}
+
+/// The verdicts a review gives (`lens::blobs::REVIEW_V1`).
+const VERDICTS: [&str; 3] = ["accepted", "declined", "revise"];
+
+/// `{"op": "review", "entry", "line", "verdict", "text"?, "as"?}`: the answer of entry `entry`'s vault, `actor`, to its
+/// proposal `line` as it stands: a review record in the vault (`lens::blobs::REVIEW_V1`), naming the proposal, the
+/// version it answers (`heads`), the vault that started it (`by`), the verdict, the words (`text`) and the device's
+/// time (`at`, advice only). An acceptance first writes the vault's accept on the proposal (`Lab::accept`, M2), and
+/// the review names the version that accept makes, so whoever may merge the proposal into main merges what was
+/// accepted and nothing written after; `declined` and `revise` write the review alone. The policy is every vault's
+/// default, one of its owners: the vault answers for itself (`NoCap` acting for another), and its merges need no
+/// review. Answers the review entry, and the accept, if any.
+fn review(
+    lab: &mut Lab,
+    me: SignerId,
+    actor: VaultId,
+    (entry, line): (EntryId, EditId),
+    verdict: &str,
+    text: String,
+) -> Result<Value, Refused> {
+    let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
+    if actor != vault {
+        return Err(Refusal::NoCap.into());
+    }
+    let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
+    let start = h.get(line).filter(|c| c.write.proposal == Proposal::New).ok_or(Refused::NoEntry)?;
+    let (by, heads) = (start.write.actor, h.heads(Some(line)));
+    let accept = match verdict {
+        "accepted" => Some(lab.accept(me, actor, entry, line)?),
+        _ => None,
+    };
+    let heads = accept.map_or(heads, |a| vec![a]);
+    let value = json!({
+        "kind": "review",
+        "entry": entry.to_hex(),
+        "line": line.to_hex(),
+        "heads": ids(&heads),
+        "by": by.to_hex(),
+        "verdict": verdict,
+        "text": text,
+        "at": lab.now(),
+    });
+    let create = Step::Create { vault, ty: "review".into(), tags: vec![], schema: Named::Own, value };
+    let made = step(lab, me, actor, create)?;
+    Ok(json!({
+        "entry": entry.to_hex(),
+        "line": line.to_hex(),
+        "review": made["entry"],
+        "accept": accept.map(|a| a.to_hex()),
+    }))
 }
 
 /// Record ops `ops` run on what item `item` shows through `schema`: the record after them, each field they leave out

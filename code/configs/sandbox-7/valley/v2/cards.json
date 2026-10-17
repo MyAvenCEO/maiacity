@@ -1,0 +1,101 @@
+[
+	{
+		"id": "hearts",
+		"kind": "policy",
+		"name": "HEARTS",
+		"description": "",
+		"values": {
+			"mint": 24,
+			"decay": 7,
+			"startHearts": 1000
+		}
+	},
+	{
+		"id": "trading",
+		"kind": "policy",
+		"name": "Trading",
+		"description": "",
+		"values": {
+			"haggleMax": 100,
+			"clearHours": 1,
+			"reserveDays": 3
+		}
+	},
+	{
+		"id": "avens",
+		"kind": "world",
+		"name": "Avens",
+		"description": "",
+		"values": {
+			"walk": 600,
+			"avens": 10,
+			"startDays": 0
+		}
+	},
+	{
+		"id": "bodies",
+		"kind": "world",
+		"name": "Needs and bodies",
+		"description": "",
+		"values": {
+			"foodDays": 21,
+			"mendFood": 5,
+			"needFood": 2,
+			"mendWater": 34,
+			"needWater": 3,
+			"waterDays": 2
+		}
+	},
+	{
+		"id": "rot",
+		"kind": "world",
+		"name": "Rot",
+		"description": "",
+		"values": {
+			"rot_water": 0,
+			"rot_fruits": 25,
+			"rot_chicken": 30,
+			"rot_legumes": 5,
+			"rot_vegetables": 15
+		}
+	},
+	{
+		"id": "land",
+		"kind": "world",
+		"name": "Land and production",
+		"description": "",
+		"values": {
+			"uneven": 2,
+			"growers": 2,
+			"oneGood": 30,
+			"overFood": 17,
+			"overWater": 10,
+			"threeGoods": 30
+		}
+	},
+	{
+		"id": "harvests",
+		"kind": "world",
+		"name": "Harvests",
+		"description": "",
+		"values": {
+			"swing": 25,
+			"badChance": 5,
+			"richChance": 5
+		}
+	},
+	{
+		"id": "weather",
+		"kind": "world",
+		"name": "Weather",
+		"description": "",
+		"values": {
+			"dryMax": 7,
+			"dryMin": 3,
+			"rainMax": 2,
+			"dryWells": 55,
+			"dryChance": 2.5,
+			"rainChance": 33
+		}
+	}
+]

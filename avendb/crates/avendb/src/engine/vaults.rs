@@ -27,7 +27,7 @@ use crate::lens::View;
 use crate::policy::{Action, Issued, KeepMode, Kind, Level, Principal, Refusal, Revoking, Setting, Sharing, Who};
 use crate::rules::{self, Op, Touch};
 use crate::sealed::{Brought, FileRoot};
-use crate::sign::{self, Ceremony, SignerKeys};
+use crate::sign::{self, Ceremony, Signature, Signed, SignerKeys};
 use crate::slice::{Atom, Attrs, Selector, Sym};
 use crate::wire::Wire as _;
 use crate::words::{self, hex, principal_json, who_json};
@@ -57,12 +57,18 @@ pub struct Approval {
 }
 
 /// What an approved op answers once its edits are kept: its edit (`{"edit": id}`), the share it issued (`{"share":
-/// id}`), or the new vaults, each with a profile of the name it was given (`{"vaults": [id, ...]}`).
+/// id}`), or the new vaults, each with a profile of the name it was given (`{"vaults": [id, ...]}`). An owner add a
+/// request asks for (`owning`) is signed by two people one after the other: granting it, the passkey signs its part
+/// of the edit, kept nowhere but in the request `Part` names, which it answers "granted" acting for its vault asked
+/// (`{"entry": id, "part": true}`); finishing it, the passkey signs the rest of the part `Finish` holds the
+/// signatures of, and the edit is kept (`{"edit": id}`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Then {
     Edit,
     Share,
     Found(Vec<String>),
+    Part { entry: EntryId, by: VaultId },
+    Finish(Vec<Signature>),
 }
 
 impl Approval {
@@ -92,9 +98,31 @@ impl Approval {
 }
 
 /// Approval `a` signed by the passkey's ceremony `ceremony` over its challenge, and kept on device `me` in order: the
-/// op's answer. `BadSignature` if the ceremony isn't the passkey's over that challenge.
+/// op's answer; an owner add a request asks for signed in part, or finished (`Then::Part`, `Then::Finish`).
+/// `BadSignature` if the ceremony isn't the passkey's over that challenge.
 pub fn approve(lab: &mut Lab, me: SignerId, a: Approval, ceremony: &Ceremony) -> Result<Value, Refused> {
-    let Approval { passkey, drafts, then, .. } = a;
+    let Approval { passkey, mut drafts, then, .. } = a;
+    let ceremonies = [(passkey, ceremony)];
+    match (then, drafts.len()) {
+        (Then::Part { entry, by }, 1) => granted(lab, me, drafts.remove(0), entry, by, &ceremonies),
+        (Then::Finish(sigs), 1) => {
+            let part = Signed { edit: drafts[0].edit().clone(), sigs };
+            Ok(json!({ "edit": lab.finish(me, part, &ceremonies)?.to_hex() }))
+        }
+        (then, _) => approve_all(lab, me, passkey, drafts, then, ceremony),
+    }
+}
+
+/// Approval's drafts `drafts` signed by the passkey's ceremony `ceremony` and kept on device `me` in order: what
+/// `then` answers.
+fn approve_all(
+    lab: &mut Lab,
+    me: SignerId,
+    passkey: SignerId,
+    drafts: Vec<Unsigned>,
+    then: Then,
+    ceremony: &Ceremony,
+) -> Result<Value, Refused> {
     let mut ids = vec![];
     for draft in drafts {
         ids.push(lab.complete(me, draft, &[(passkey, ceremony)])?);
@@ -107,8 +135,9 @@ pub fn approve(lab: &mut Lab, me: SignerId, a: Approval, ceremony: &Ceremony) ->
 pub fn approved(lab: &mut Lab, me: SignerId, then: &Then, ids: &[EditId]) -> Result<Value, Refused> {
     let first = ids.first().map(EditId::to_hex);
     Ok(match then {
-        Then::Edit => json!({ "edit": first }),
+        Then::Edit | Then::Finish(_) => json!({ "edit": first }),
         Then::Share => json!({ "share": first }),
+        Then::Part { entry, .. } => json!({ "entry": entry.to_hex(), "part": true }),
         Then::Found(names) => {
             for (&id, name) in ids.iter().zip(names) {
                 written(lab, me, VaultId::from(id), name)?;
@@ -258,18 +287,24 @@ pub fn world(lab: &Lab, me: SignerId, synced: &SyncedTo) -> Value {
     json!({ "ok": world.map(|w| w.to_json(me)) })
 }
 
-/// `{"op": "requests"}`: the access requests device `me` reads (`world::requests`), each `{entry, from, to, level, why,
-/// vaults, answer, created}`: `asked`, those to a vault it acts for, directly or through owners, that have no answer
-/// yet, which its person answers; and `made`, those of a vault it acts for, answered or not. `{"asked", "made"}`.
+/// `{"op": "requests"}`: the access requests device `me` reads (`world::requests`), each `{entry, from, to, asks,
+/// level, why, vaults, answer, part, created}`, `part` whether the vault asked wrote its part of the owner add it
+/// granted, and for an owner add `done`, whether the newcomer owns the vault now: `asked`, those to a vault it acts
+/// for, directly or through owners, that have no answer yet, which its person answers; and `made`, those of a vault
+/// it acts for, answered or not, an owner add granted for its person to finish. `{"asked", "made"}`.
 pub(super) fn requests(lab: &Lab, me: SignerId) -> Value {
     let st = lab.state(me);
     let (mut asked, mut made) = (vec![], vec![]);
     for r in world::requests(lab, me) {
+        let mut row = r.to_json();
+        if let Some((vault, newcomer)) = r.adds() {
+            row["done"] = st.vault(vault).is_some_and(|v| v.owners.contains(&Principal::Vault(newcomer))).into();
+        }
         if r.answer.is_none() && st.acts_for(me, r.to) {
-            asked.push(r.to_json());
+            asked.push(row.clone());
         }
         if st.acts_for(me, r.from) {
-            made.push(r.to_json());
+            made.push(row);
         }
     }
     json!({ "asked": asked, "made": made })
@@ -567,11 +602,25 @@ fn what_of(o: &Map<String, Value>) -> Result<Selector, Refused> {
 /// A keep level to a device is a keep share `as` issues; anything else a share of the group named, or of its own, on
 /// what `what` picks, resting where `as` isn't `over` on a share `as` holds that the rules let it rest on, an owner
 /// share or, to a vault `as` owns, one at its level or more (`world::parent`), approved by the owners where its level
-/// is owner: `{"share": id}`. The rules refuse whatever else.
+/// is owner: `{"share": id}`. With `"standing": true`, a grant below Owner on everything of the person's own vault to
+/// a vault is a standing grant (`standing`). The rules refuse whatever else.
 fn share(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let (over, whom, giving, select) = (vault_of(o, "over")?, whom(o)?, giving(o)?, what_of(o)?);
     let actor = actor_of(lab, me, o)?;
     let everything = select == Selector::All;
+    if let Some(entry) = o.get("request") {
+        let entry = id_of(Some(entry), "request", EntryId::from_hex)?;
+        return match (whom, giving) {
+            (Whom::Vault(who), Giving::Group("Owner", _)) if everything => owning(lab, me, over, who, entry, actor),
+            _ => Err(bad("a request's owner add is Owner on everything to a vault: who a vault, level Owner")),
+        };
+    }
+    if o.contains_key("standing") && bool_of(o, "standing", "share")? {
+        if !everything {
+            return Err(bad("a standing grant is on everything: all your vaults, now and later"));
+        }
+        return standing(lab, me, over, whom, giving, actor);
+    }
     let owner = |p| Action::Share(Sharing::Owner { vault: over, owner: p, seal_to: None });
     let (who, name, ops) = match (whom, giving) {
         (Whom::Vault(v), Giving::Group("Owner", _)) if everything => {
@@ -609,6 +658,51 @@ fn share(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
     let level = rules::level_of(&ops);
     let parent = world::parent(lab.state(me), actor, over, who, level, everything);
     issued(lab, me, NewShare { over, who, name, select, ops, parent, issuer: actor, keep: None })
+}
+
+/// `{"op": "share", "over", "who", "level", "standing": true, "as"?}`: a standing grant, "all my vaults, now and later"
+/// (`world::STANDING`): vault `as` shares the whole of `over`, the person's own vault, with vault `who`, by a group
+/// below Owner, named a standing grant, resting where `as` isn't `over` on a share it holds, as `share` does: so the
+/// person's vault gives their aven one, and the aven passes one on to its agent. Then every vault their vault owns now
+/// follows it as each one it founds later will (`follow_one`), and the device answers the standing grant: `{"share":
+/// id}`, the same one where it stands already.
+fn standing(
+    lab: &mut Lab,
+    me: SignerId,
+    over: VaultId,
+    whom: Whom,
+    giving: Giving,
+    actor: VaultId,
+) -> Result<Prepared, Refused> {
+    let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+    let (Whom::Vault(to), Giving::Group(group, ops)) = (whom, giving) else {
+        return Err(bad("a standing grant is a built-in group to a vault, on everything"));
+    };
+    if over != mine || rules::level_of(&ops).allows(Level::Owner) {
+        return Err(bad("a standing grant shares all of your own vault, below Owner: all your vaults, now and later"));
+    }
+    let name = world::standing_name(group);
+    let st = lab.state(me);
+    let same = |cp: &&Issued| {
+        cp.share.wide && cp.share.who == Who::Vault(to) && cp.share.issuer == actor && st.live(cp.id)
+            && lab.slice(me, cp.id).is_some_and(|x| x.name == name)
+    };
+    if let Some(cp) = st.shares_over(over).find(same) {
+        return Ok(Prepared::Done(json!({ "share": cp.id.to_hex() })));
+    }
+    let (who, level) = (Who::Vault(to), rules::level_of(&ops));
+    let parent = world::parent(st, actor, over, who, level, true);
+    let new = NewShare { over, who, name, select: Selector::All, ops, parent, issuer: actor, keep: None };
+    let id = lab.issue(me, &[me], new)?;
+    let grant = world::standing(lab, me, mine).into_iter().find(|s| s.share == id);
+    if let Some(grant) = grant.filter(|_| !lab.is_dry()) {
+        let st = lab.state(me);
+        let now: Vec<VaultId> = st.vaults().iter().map(|v| v.id).filter(|&v| st.owns(mine, v)).collect();
+        for v in now {
+            follow_one(lab, me, mine, &grant, v);
+        }
+    }
+    Ok(Prepared::Done(json!({ "share": id.to_hex() })))
 }
 
 /// `{"op": "keep", "over", "mode", "what", "device"?, "as"?}`: a keep share `as` issues over vault `over` to `device`
@@ -662,6 +756,9 @@ fn revoke(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepare
     let revoking = match (o.get("share"), o.get("vault"), o.get("owner"), o.get("device")) {
         (Some(_), None, None, None) => {
             let share = id_of(o.get("share"), "share", ShareId::from_hex)?;
+            if o.contains_key("standing") && bool_of(o, "standing", "revoke")? {
+                return revoke_standing(lab, me, share).map(Prepared::Done);
+            }
             Revoking::Grant { share, actor: actor_of(lab, me, o)?, keep: vec![], via: vec![] }
         }
         (None, Some(_), Some(owner), None) => {
@@ -674,6 +771,37 @@ fn revoke(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepare
         _ => return Err(bad("revoke ends a share, or takes a vault's owner or device out: {share} or {vault, owner}")),
     };
     governed(lab, me, Action::Revoke(revoking))
+}
+
+/// `{"op": "revoke", "share", "standing": true}`: ends standing grant `share` (`world::STANDING`), or the standing
+/// grant share `share` followed, for every vault it reached: that share, and each in force on the whole of the person's
+/// vault or of a vault it owns that followed the same grant, to the same vault by the same name, issued alike, by the
+/// vault it is over or by the same vault passing it on; each acting for its issuer, and every share resting on it
+/// ending with it, as an agent's on its aven's. So no vault founded later follows it. `{"edits": [id, ...]}`, one
+/// revocation each, none for a share that ended with one before it.
+fn revoke_standing(lab: &mut Lab, me: SignerId, share: ShareId) -> Result<Value, Refused> {
+    let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+    let st = lab.state(me);
+    let cp = st.share(share).filter(|cp| st.live(cp.id)).ok_or(Refusal::UnknownCap)?;
+    let name = lab.slice(me, share).map(|x| x.name.clone()).filter(|n| world::is_standing(n));
+    let name = name.ok_or_else(|| bad("that share is no standing grant, nor followed one"))?;
+    let (who, issuer, itself) = (cp.share.who, cp.share.issuer, cp.share.issuer == cp.share.over);
+    let ours = |v: VaultId| v == mine || st.owns(mine, v);
+    let alike = |x: &Issued| {
+        x.share.wide && x.share.who == who && ours(x.share.over) && st.live(x.id)
+            && if itself { x.share.issuer == x.share.over } else { x.share.issuer == issuer }
+            && lab.slice(me, x.id).is_some_and(|s| s.name == name)
+    };
+    let ending: Vec<(ShareId, VaultId)> =
+        st.shares().iter().filter(|x| alike(x)).map(|x| (x.id, x.share.issuer)).collect();
+    let mut edits = vec![];
+    for (share, actor) in ending {
+        if lab.state(me).live(share) {
+            let revoking = Revoking::Grant { share, actor, keep: vec![], via: vec![] };
+            edits.push(lab.submit(me, &[me], Action::Revoke(revoking))?.to_hex());
+        }
+    }
+    Ok(json!({ "edits": edits }))
 }
 
 /// `{"op": "settings", "vault", "threshold"}` or `{"op": "settings", "vault", "root"}`: how many of vault `vault`'s
@@ -809,8 +937,126 @@ fn back_up(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value,
     Ok(json!({ "changed": changed }))
 }
 
-/// `{"op": "ask", "to", "level", "why", "vaults"?, "as"?}`: `as` asks vault `to` for `level`, a built-in group of the
-/// request schema's (Viewer, Suggester or Editor), on itself or on each of `vaults` it holds shares over, saying why.
+/// `{"op": "share", "over", "who": {"vault"}, "level": "Owner", "request", "as"?}`: the owner add request `request`
+/// asks for (`world::Request::adds`): `who` co-owns `over`, as it asked to (`"owner"`) or was invited to
+/// (`"invite"`). One edit, signed by two people: the passkey that approves for the vault asked signs it first, as it
+/// grants the request acting for that vault, and writes its part and "granted" into the request (`Then::Part`); then
+/// the passkey that approves for the vault that asked signs the rest and keeps it (`Lab::finish`, `Then::Finish`), a
+/// part that adds exactly that owner and waits on that passkey alone. The rules check the edit as they check every
+/// owner add, the vault's approval and the newcomer's consent, so a request adds nobody by itself.
+fn owning(
+    lab: &mut Lab,
+    me: SignerId,
+    over: VaultId,
+    who: VaultId,
+    entry: EntryId,
+    actor: VaultId,
+) -> Result<Prepared, Refused> {
+    let r = world::requests(lab, me).into_iter().find(|r| r.entry == entry);
+    let r = r.ok_or_else(|| bad("request names no request this device reads"))?;
+    if r.adds() != Some((over, who)) {
+        return Err(bad("the request asks for another owner add: over and who are as it names them"));
+    }
+    // the vault asked grants it first, then the vault that asked finishes it
+    let granting = match (r.answer.as_deref(), r.part.is_empty()) {
+        (None, true) if actor == r.from => return Err(bad("the request waits on the vault it asks")),
+        (None, true) => true,
+        (Some("granted"), false) => false,
+        (Some("denied"), _) => return Err(bad("the request was denied")),
+        _ => return Err(bad("the request waits on the vault it asks")),
+    };
+    let by = if granting { r.to } else { r.from };
+    if actor != by || !lab.state(me).acts_for(me, by) {
+        return Err(Refusal::NotActing.into());
+    }
+    let passkey = passkey_of(lab, me).ok_or(Refusal::NotActing)?;
+    let action = Action::Share(Sharing::Owner { vault: over, owner: Principal::Vault(who), seal_to: None });
+    let (then, draft) = match granting {
+        true => {
+            let first = world::approver(lab.state(me), r.from);
+            let first = first.ok_or_else(|| bad("no one passkey approves for the vault asking"))?;
+            let signers: Vec<SignerId> = [passkey].into_iter().chain(Some(first).filter(|&f| f != passkey)).collect();
+            (Then::Part { entry, by }, lab.draft(me, &signers, action)?)
+        }
+        false => {
+            let part = sign::unbase64url(&r.part).and_then(|b| Signed::from_wire(&b).ok());
+            let part = part.ok_or_else(|| bad("the request's part is no signed edit"))?;
+            let rest: Vec<SignerId> = part.edit.sigs().skip(part.sigs.len()).collect();
+            if part.edit.action != action || rest != [passkey] {
+                return Err(bad("the request's part adds another owner, or waits on another passkey than this one"));
+            }
+            (Then::Finish(part.sigs.clone()), lab.parted(me, &part))
+        }
+    };
+    Ok(Prepared::Approve(Approval { passkey, signers: vec![passkey], drafts: vec![draft], then }))
+}
+
+/// Request `entry` granted on device `me` acting for `by`, the vault it asks: the passkey's part of `draft`, the owner
+/// add it asks for, written into the request with the answer "granted", for the vault that asked to finish; or, where
+/// the passkey signs all of it, the edit kept at once. `{"entry": id, "part": bool}`.
+fn granted(
+    lab: &mut Lab,
+    me: SignerId,
+    draft: Unsigned,
+    entry: EntryId,
+    by: VaultId,
+    ceremonies: &[(SignerId, &Ceremony)],
+) -> Result<Value, Refused> {
+    let part = lab.part(me, draft, 1, ceremonies)?;
+    let whole = part.sigs.len() == part.edit.sigs().count();
+    let text = match whole {
+        true => {
+            lab.finish(me, part, &[])?;
+            None
+        }
+        false => Some(sign::base64url(&part.to_wire())),
+    };
+    let (entry_, as_) = (entry.to_hex(), by.to_hex());
+    let set = |at: &str, value: &str| json!({ "op": "set", "entry": entry_, "path": [at], "value": value, "as": as_ });
+    for op in text.iter().map(|t| set("part", t)).chain([set("answer", "granted")]) {
+        super::change(lab, me, &op)?;
+    }
+    Ok(json!({ "entry": entry_, "part": text.is_some() }))
+}
+
+/// What request op `o` asks for: a share at its `level` (`asks` "share", or left out), else to co-own a vault
+/// (`"owner"`, `"invite"`), at Owner.
+fn asks_of(o: &Map<String, Value>) -> Result<(&str, Value), Refused> {
+    let level = o.get("level").cloned().unwrap_or(Value::Null);
+    match o.get("asks").map(Value::as_str) {
+        None | Some(Some("share")) if level != "Owner" => Ok(("share", level)),
+        None | Some(Some("share")) => Err(bad("to co-own a vault, a request asks for it: asks owner or invite")),
+        Some(Some(asks @ ("owner" | "invite"))) if level.is_null() || level == "Owner" => Ok((asks, json!("Owner"))),
+        _ => Err(bad("asks is share, owner (to co-own the vault asked) or invite (for it to co-own the vault asking)")),
+    }
+}
+
+/// Request `asks` of `actor` to `to`, as the kind table and device `me`'s view let it: to co-own, the vault taking an
+/// owner takes more than one, holds no such owner yet, and its kind is one the newcomer may own, where `me` reads them.
+fn asking<'a>(lab: &Lab, me: SignerId, asks: &'a str, to: VaultId, actor: VaultId) -> Result<&'a str, Refused> {
+    let (vault, newcomer) = match asks {
+        "owner" => (to, actor),
+        "invite" => (actor, to),
+        _ => return Ok(asks),
+    };
+    let st = lab.state(me);
+    let Some(v) = st.vault(vault) else { return Ok(asks) };
+    let rules = v.kind.rules();
+    if !rules.takes(v.owners.len() + 1) {
+        return Err(Refusal::OneOwner.into());
+    }
+    if v.owners.contains(&Principal::Vault(newcomer)) {
+        return Err(Refusal::AlreadyMember.into());
+    }
+    match st.vault(newcomer) {
+        Some(n) if !rules.fits(Some(n.kind)) => Err(Refusal::WrongOwnerKind.into()),
+        _ => Ok(asks),
+    }
+}
+
+/// `{"op": "ask", "to", "asks"?, "level", "why", "vaults"?, "as"?}`: `as` asks vault `to` for `level`, a built-in
+/// group of the request schema's (Viewer, Suggester or Editor), on itself or on each of `vaults` it holds shares over,
+/// saying why; or, `asks` "owner", to co-own `to`, or, "invite", invites `to` to co-own `as` (`owning`).
 /// The request is a record of avenDB's own `request` schema (`world::REQUEST`) that `as` writes in its own vault, and a
 /// share of that entry alone to `to`, which may read it and set its answer alone (`world::ANSWER`); sync carries both,
 /// straight to `to`'s devices or through any peer that keeps `as`'s vault for it, as avenCEO server does. `to`
@@ -830,8 +1076,10 @@ fn ask(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             vs.ok_or_else(|| bad("vaults is a list of vaults' ids, 64 hex digits each"))?
         }
     };
-    let (why, level) = (o.get("why").and_then(Value::as_str).map(str::trim).unwrap_or_default(), o.get("level"));
-    let fields = json!({ "kind": world::REQUEST, "to": to.to_hex(), "level": level, "why": why, "vaults": vaults });
+    let (why, (asks, level)) = (o.get("why").and_then(Value::as_str).map(str::trim).unwrap_or_default(), asks_of(o)?);
+    let (to_, asks) = (to.to_hex(), asking(lab, me, asks, to, actor)?);
+    let fields =
+        json!({ "kind": world::REQUEST, "to": to_, "asks": asks, "level": level, "why": why, "vaults": vaults });
     let view = View::built_in(world::REQUEST).ok_or_else(|| bad("avenDB ships the request schema"))?;
     let refused = |_| bad("a request asks for Viewer, Suggester or Editor (level), and says why in 500 characters");
     let value = super::full(view.schema(), &fields).map_err(refused)?;
@@ -882,7 +1130,7 @@ fn profile(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value,
 }
 
 /// Vault `vault`'s profile reads `name`, written by device `me` acting for the vault; or, if it has a profile, its
-/// title set. A vault that has none yet first follows its person's server setting (`follow_server`). Whether it
+/// title set. A vault that has none yet first follows its person's standing grants (`follow_standing`). Whether it
 /// wrote: not if the profile reads `name` already.
 fn written(lab: &mut Lab, me: SignerId, vault: VaultId, name: &str) -> Result<bool, Refused> {
     if let Some((entry, title)) = world::profile_of(lab, me, vault) {
@@ -893,26 +1141,54 @@ fn written(lab: &mut Lab, me: SignerId, vault: VaultId, name: &str) -> Result<bo
         lab.edit(me, vault, entry, move |item| _ = world::retitle(item, PROFILE, &name))?;
         return Ok(true);
     }
-    follow_server(lab, me, vault)?;
+    follow_standing(lab, me, vault)?;
     lab.create(me, vault, vault, PROFILE, &[], world::profile(name, me))?;
     Ok(true)
 }
 
-/// Vault `vault`, new under device `me`'s person's vault, gives avenCEO server, on the whole of it, the level it holds
-/// on the person's vault: backup, so the server keeps its ciphertext and passes it on while its devices are away, or
-/// relay alone (`world::server_level`), as `back_up` sets it for all of them; unless it is avenCEO server itself, the
-/// server holds a share on the whole of it already, or the device knows no avenCEO server. Every vault founded under a
-/// person does, once it is founded (`written`, avendb-net's `Node::add_device_vault_with`): so what it writes, such as
-/// an access request (`ask`), reaches whoever it is for through the server. Whether it gave one.
-pub fn follow_server(lab: &mut Lab, me: SignerId, vault: VaultId) -> Result<bool, Refused> {
+/// Vault `vault`, new under device `me`'s person's vault, follows each of that vault's standing grants
+/// (`world::standing`), the strongest first: avenCEO server's, backup, so the server keeps its ciphertext and passes it
+/// on while its devices are away, or relay alone, as `back_up` sets it for all of them; and each given for "all my
+/// vaults, now and later", as to the person's aven and, resting on it, to the aven's agent (`follow`). Every vault
+/// founded under a person does, once it is founded (`written`, avendb-net's `Node::add_device_vault_with`): so what it
+/// writes, such as an access request (`ask`), reaches whoever it is for through the server, and their aven works in a
+/// coop they found as in every other vault of theirs. Whether it gave any.
+pub fn follow_standing(lab: &mut Lab, me: SignerId, vault: VaultId) -> Result<bool, Refused> {
     let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+    let mut gave = false;
+    for standing in world::standing(lab, me, mine) {
+        gave |= follow_one(lab, me, mine, &standing, vault);
+    }
+    Ok(gave)
+}
+
+/// Vault `v` gives the share standing grant `s` of vault `mine`, a person's, names, on the whole of itself, as device
+/// `me` issues it: by `v` itself where `mine` issued the grant, else by the grant's issuer, a vault the person's vault
+/// owns, passing it on resting on the share it holds over `v` that the one rule lets it rest on (`world::parent`), as
+/// an aven passes a coop's share on to its agent; so the aven's share comes first and the agent's after it. Not where
+/// its who is `v` or owns it, holds that level or more on the whole of `v` already, or nothing over `v` lets the issuer
+/// pass it on, nor a share that reads to an aven or a device vault, which acts for its one owner alone (the kind
+/// table's `most`) and which "all my vaults" never lists: their server share alone. Whether it gave it: a refusal gives
+/// nothing, and leaves the vault founded as it is.
+fn follow_one(lab: &mut Lab, me: SignerId, mine: VaultId, s: &world::Standing, v: VaultId) -> bool {
     let st = lab.state(me);
-    let Some(avenceo) = world::avenceo(st, mine).filter(|&a| a != vault && !world::relays(st, vault, a)) else {
-        return Ok(false);
+    let Some(kind) = st.vault(v).map(|x| x.kind) else { return false };
+    let alone = kind.rules().most == Some(1) && s.level.allows(Level::Read);
+    let holds = st.shares_over(v).any(|cp| cp.share.wide && st.holds(s.who, cp, s.level));
+    if s.who == v || st.owns(s.who, v) || alone || holds {
+        return false;
+    }
+    let who = Who::Vault(s.who);
+    let (issuer, parent) = match s.issuer == mine {
+        true => (v, None),
+        false if st.acts_for(me, s.issuer) => match world::parent(st, s.issuer, v, who, s.level, true) {
+            Some(p) => (s.issuer, Some(p)),
+            None => return false,
+        },
+        false => return false,
     };
-    let level = world::server_level(st, mine, avenceo);
-    lab.issue(me, &[me], cast::share(vault, cast::vault(avenceo), level, Selector::All))?;
-    Ok(true)
+    let (name, ops, select) = (s.name.clone(), s.ops.clone(), Selector::All);
+    lab.issue(me, &[me], NewShare { over: v, who, name, select, ops, parent, issuer, keep: None }).is_ok()
 }
 
 /// `{"op": "follow", "vault", "on"}`: device `me` follows vault `vault` from now on, if `on`, or no longer: it names

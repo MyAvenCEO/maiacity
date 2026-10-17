@@ -29,9 +29,10 @@
 
 	onMount(() => {
 		let stage, cancelled = false;
-		import('./stage.js').then(({ createStage }) => {
+		// the diagram renderer ($lib/render/diagram.js)
+		import('$lib/render/diagram.js').then(({ createDiagram }) => {
 			if (cancelled) return;
-			stage = createStage(box, { fov: 38, position: [0, 12, 21] });
+			stage = createDiagram(box, { fov: 38, position: [0, 12, 21] });
 			const { THREE, scene } = stage;
 
 			const R_PEOPLE = 9, R_COOP = 3.6, N_PEOPLE = 54;

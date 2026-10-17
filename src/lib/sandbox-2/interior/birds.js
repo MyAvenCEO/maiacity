@@ -2,18 +2,19 @@
  * THE SONGBIRDS OF THE FOOD FOREST (Sandbox 5) — robins, blackbirds, great tits, house sparrows and chaffinches, each
  * living round a few trees of its own: it sits up in a crown and sings, or settles there a while; drops down to the
  * floor beside the tree and forages there — hops, pecks, looks round; and flies up again to that tree or the next,
- * in a songbird's bounding flight. Every one is a rigged actor ($lib/actors/species/songbird.js), drawn as the other
- * animals are ($lib/actors/crowd): near you every bone moving, further off the bird at rest, a hundred a draw call.
+ * in a songbird's bounding flight. Every one is a rigged actor (the Actors' songbirds, built in the asset box), drawn
+ * as the other animals are ($lib/assets/render/crowd.js): near you every bone moving, further off a coarser build of
+ * the bird at rest, a hundred a draw call.
  *
  * Where a bird is and what it does is worked out from the world's time alone — each bird's round is laid out once
  * from the seed and repeats — so a film shot draws the same birds every time.
  */
 import * as THREE from 'three';
-import { CASTS } from '$lib/actors/casts';
-import { prepare, ready } from '$lib/actors/build';
-import { crowd, FAR } from '$lib/actors/crowd';
-import { SONGBIRDS } from '$lib/actors/species/songbird.js';
+import { crowd } from '$lib/assets/render/crowd.js';
 import { seeded } from './plants';
+
+/** the five kinds, in the Actors' order */
+const SONGBIRDS = /** @type {const} */ (['robin', 'blackbird', 'greattit', 'sparrow', 'chaffinch']);
 
 /** @typedef {{ x: number, z: number, height: number, reach: number }} Tree a tree a bird can sit in */
 /** @typedef {{ kind: 'perch' | 'ground' | 'fly', t0: number, t1: number, from: THREE.Vector3, to: THREE.Vector3, act: string, yaw: number }} Leg one stretch of a bird's round */
@@ -31,13 +32,7 @@ const OFTEN = { robin: 3, blackbird: 3, greattit: 3, sparrow: 4, chaffinch: 3 };
  */
 export function songbirds(trees, count, seed, open, eye) {
 	const r = seeded(seed);
-	const ids = SONGBIRDS.map((k) => `bird-${k}`);
-	for (const id of ids) {
-		void prepare(id, FAR);
-		void prepare(id, 1);
-	}
-	/** @type {Record<string, import('$lib/actors/rig').Clip>[]} */
-	const clips = [];
+	const refs = SONGBIRDS.map((k) => `actors/songbird:bird-${k}`);
 	const total = Object.values(OFTEN).reduce((a, b) => a + b, 0);
 	const coatOf = () => {
 		let x = r() * total;
@@ -97,14 +92,11 @@ export function songbirds(trees, count, seed, open, eye) {
 	}
 
 	const flock = crowd(
-		(c) => {
-			const made = CASTS[/** @type {string} */ (ids[c])]();
-			clips[c] = made.clips;
-			return made;
-		},
+		refs,
 		SONGBIRDS.map((_, c) => birds.filter((b) => b.coat === c).length),
-		{ near: 28, max: 18, ready: (c, d) => ready(/** @type {string} */ (ids[c]), d), shadows: false }
+		{ near: 28, max: 18, shadows: false }
 	);
+	const clips = flock.clips;
 	const p = new THREE.Vector3();
 	/** where a bird is at time t, which way it faces, and what it is doing @param {Bird} b @param {number} time */
 	const state = (b, time) => {

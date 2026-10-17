@@ -51,9 +51,10 @@
 	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null, record?: any }} LineView
 	 * @typedef {{ id: string, author: string, actor: string, via: string[], chain: import('./vaults.js').Chain,
 	 *   line: string | null, deps: string[],
-	 *   kind: 'edit' | 'propose' | 'merge' | 'sealed', name: string | null,
+	 *   kind: 'edit' | 'propose' | 'merge' | 'accept' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
-	 *   before: string | null, counted: boolean, why: 'builds-on' | 'sealed' | 'unfit' | 'ops' | null }} EditView
+	 *   before: string | null, counted: boolean,
+	 *   why: 'builds-on' | 'sealed' | 'unfit' | 'policy' | 'ops' | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
 	 * @typedef {{ vault: string | null, entry: string, kind: string | null, lines: LineView[],
 	 *   edits: EditView[] }} NoteData
@@ -237,13 +238,21 @@
 	 * propose, merge the proposal into main, update it from main, restore or undo the version
 	 * shown, make a variant in each vault it may add one to (`variant` and the vault, which only a dry run the device
 	 * would make offers), and delete the note or bring it back (`delete`, `back`). Elsewhere only the ops' refusal
-	 * (`NotAllowed`) holds a button back: what the person then does is the device's to refuse, as any op.
+	 * (`NotAllowed`) holds a button back, and a merge into main the vault hasn't accepted (`NotAccepted`, `waits`):
+	 * what the person then does is the device's to refuse, as any op.
 	 */
 	let can = $state(/** @type {Record<string, boolean>} */ ({}));
+	/** what waits for the vault's accept: a merge into main through a share */
+	let waits = $state(/** @type {Record<string, boolean>} */ ({}));
 	/** The ops let the acting vault do `what` (`can`), as they do until the device answers. @param {string} what */
 	const lets = (what) => can[what] !== false;
 	/** Why a button doesn't offer `what`, for its title: nothing where the ops allow it. @param {string} what */
-	const barred = (what) => (lets(what) ? undefined : `${nameOf(as)}’s share doesn’t allow it`);
+	const barred = (what) =>
+		lets(what)
+			? undefined
+			: waits[what]
+				? 'one of the vault’s owners accepts the proposal first'
+				: `${nameOf(as)}’s share doesn’t allow it`;
 	/** what the acting vault may do on the line, in words, where it writes the note and the ops allow no change */
 	const viewOnly = $derived.by(() => {
 		if (!writes || lets('write') || lets('title')) return '';
@@ -274,9 +283,14 @@
 		const names = Object.keys(asks);
 		let gone = false;
 		may(api, actor, Object.values(asks)).then((answers) => {
+			/** what the device refuses, if it does @param {any} a @returns {string | null} */
+			const refused = (a) => a?.refused ?? null;
 			/** a variant where the device would make it; else all the ops allow @param {string} n @param {any} a */
-			const offers = (n, a) => allowed(a) || (!n.startsWith('variant ') && a.refused !== 'NotAllowed');
-			if (!gone) can = Object.fromEntries(names.map((n, i) => [n, offers(n, answers[i])]));
+			const offers = (n, a) =>
+				allowed(a) || (!n.startsWith('variant ') && !['NotAllowed', 'NotAccepted'].includes(refused(a) ?? ''));
+			if (gone) return;
+			can = Object.fromEntries(names.map((n, i) => [n, offers(n, answers[i])]));
+			waits = Object.fromEntries(names.map((n, i) => [n, refused(answers[i]) === 'NotAccepted']));
 		});
 		return () => {
 			gone = true;
@@ -320,6 +334,8 @@
 				if (e.line === null) return `Merged ${at(from)} into main`;
 				if (from === null) return `Updated ${at(e.line)} from main`;
 				return `Merged ${at(from)} into ${at(e.line)}`;
+			case 'accept':
+				return `Accepted ${at(e.line)} as it stood`;
 			case 'sealed':
 				return `An edit this browser can’t open${elsewhere}`;
 			default: {
@@ -340,6 +356,8 @@
 				return `Proposed “${e.name ?? '…'}”`;
 			case 'merge':
 				return e.line === null ? `Merged ${name(e.from?.line ?? null)} into main` : `Updated ${name(e.line)} from main`;
+			case 'accept':
+				return `Accepted ${name(e.line)} as it stood`;
 			case 'sealed':
 				return 'An edit this browser can’t open';
 			default:

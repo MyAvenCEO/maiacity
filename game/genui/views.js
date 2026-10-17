@@ -8,16 +8,23 @@
  *   Nothing the agent wrote runs in the page. Its logic (`logic`, a JS module exporting `init(data)` and
  *   `on(event, data)`) runs in a QuickJS engine (src/lib/genui/logic.js, the same box as Sandbox 7's card code):
  *   no page, no network, no clock, 8 MB, a few ms a call. It only ever hands back a new data model.
- * - `html`: OPEN CODE, an MCP App (the MCP Apps standard, spec 2026-01-26: text/html;profile=mcp-app). HTML, CSS and
- *   JS for what no catalog can hold (a three.js scene, a d3 chart). The page runs it in an iframe sandboxed WITHOUT
- *   allow-same-origin (a throwaway "null" origin: no cookies, no storage, no passkeys, no reach into the page or our
- *   API) with a CSP that forbids every connection and loads scripts only inline or from the pinned library files in
- *   LIBS (src/lib/genui/Frame.svelte). It speaks to the page only as an MCP App speaks to its host: JSON-RPC over
- *   postMessage (ui/initialize, then the view's `data` as its tool result), and of those only the METHODS below.
- *   A view built with the official SDK (libs: ['mcp-apps']) runs here unchanged.
+ * - `html`: HTML and CSS, after MCP Apps (spec 2026-01-26: text/html;profile=mcp-app), for what no catalog can hold.
+ *   Without a script it is a template: {{path}} marks filled from its data (as text, always), <template each|if>,
+ *   and buttons or controls with data-event that name an event; it may carry `logic` as an a2ui view does. With a
+ *   script (a three.js scene, a d3 chart, a canvas, the official MCP Apps SDK), the script draws: it runs in a worker
+ *   on a copy of the DOM, never in a window, with the libraries in LIBS from our own frozen files (no CDN).
  *
+ * Both kinds are ONE kind to the page: the view host (src/lib/sandbox/ViewHost.svelte) reads an a2ui view as HTML with
+ * our components (src/lib/sandbox/view/a2ui.js) and shows every view the same way, merged or only proposed: a frame
+ * with no origin and no connection, where only our frozen view engine writes the DOM, from HTML it made safe. Nothing
+ * a view brings can reach the page, so there is nothing to trust and no Run button. A view speaks to the page only
+ * as an MCP App speaks to its host: JSON-RPC (ui/initialize, then the view's `data` as its tool result), and of
+ * those only the METHODS below.
+
  * The API (api/src/genui.js) and the page both check a view with `check` before keeping or drawing it.
  */
+
+import { viewHtml } from '../code/rules.js';
 
 /** the components an a2ui view may use, and the props each takes (anything else is dropped) */
 export const CATALOG = {
@@ -42,22 +49,16 @@ export const CATALOG = {
 export const TONES = ['default', 'accent', 'good', 'warn', 'bad', 'muted'];
 
 /**
- * The libraries an html view may load: exact, pinned files on one CDN, nothing else. `three` is a module (import
- * map: `import * as THREE from 'three'`, addons from 'three/addons/…'); `d3` a classic script (the global `d3`).
+ * The libraries an html view's script may use, each a frozen engine of ours (src/lib/sandbox/engines.json, built from
+ * the npm package at this version): nothing else, and nothing from a CDN. A module script imports them by name:
+ * `import * as THREE from 'three'` (addons from 'three/addons/…'), `import { App } from '@modelcontextprotocol/ext-apps'`;
+ * d3 is also the global `d3`.
  */
 export const LIBS = {
-	three: {
-		version: '0.186.0',
-		allow: 'https://cdn.jsdelivr.net/npm/three@0.186.0/',
-		imports: { three: 'https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js', 'three/addons/': 'https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/' }
-	},
-	d3: { version: '7.9.0', allow: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js', script: 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js' },
-	// the MCP Apps SDK, its dependencies bundled: import { App } from '@modelcontextprotocol/ext-apps'
-	'mcp-apps': {
-		version: '2.0.3',
-		allow: 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/dist/src/app-with-deps.js',
-		imports: { '@modelcontextprotocol/ext-apps': 'https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.3/dist/src/app-with-deps.js' }
-	}
+	three: { version: '0.186.0', engine: 'lib-three' },
+	d3: { version: '7.9.0', engine: 'lib-d3' },
+	// the MCP Apps SDK: import { App } from '@modelcontextprotocol/ext-apps'
+	'mcp-apps': { version: '2.0.3', engine: 'lib-mcp-apps' }
 };
 
 /** the MCP Apps version this page speaks as a host */
@@ -134,7 +135,9 @@ function checkHtml(spec) {
 	const input = plain(spec.input ?? {});
 	const data = plain(spec.data ?? {});
 	if (JSON.stringify({ input, data }).length > LIMITS.json) throw new ViewError('Its data is too big.');
-	return { html, libs: [...new Set(libs)], height: Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], h)), input, data };
+	const logic = str(spec.logic, LIMITS.logic + 1);
+	if (logic.length > LIMITS.logic) throw new ViewError(`Its logic is longer than ${LIMITS.logic} characters.`);
+	return { html, libs: [...new Set(libs)], height: Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], h)), input, data, ...(logic.trim() ? { logic } : {}) };
 }
 
 /** a whole view, as an agent sends it: { id, title, note?, kind, spec } -> the clean one, or a ViewError */
@@ -150,15 +153,20 @@ export function check(v) {
 }
 
 /**
- * A view card (Samuel, 2026-10-13): a game's screen that a proposal carries beside its rules, an MCP App run like an
- * html view (Frame.svelte) and handed the game's state as its tool result. { id, kind: 'view', name, description,
+ * A view card (Samuel, 2026-10-13): a game's screen that a proposal carries beside its rules, an html view the view
+ * host shows (src/lib/sandbox/ViewHost.svelte) and hands the game's state: as its template's data, and as its tool
+ * result. { id, kind: 'view', name, description,
  * data: { slot: 'panel', libs, height }, code: its HTML }. Sandbox 7's config cards (game/economy/params.js) and
  * MaiaCity V1's MIPs (game/maiacity-v1/engine.js) both check theirs here: { card } or { error } in a sentence.
  */
 export const VIEW_SLOTS = ['panel'];
 export const MAX_VIEW = 100_000;
-/** `slots`: where a game lets a screen stand (MaiaCity V1 names its own panels, game/maiacity-v1/views.js) */
-export function checkViewCard(raw, slots = VIEW_SLOTS) {
+/**
+ * `slots`: where a game lets a screen stand (each game names its own panels: game/economy/views.js,
+ * game/maiacity-v1/views.js). In mode 'write' (a MIP bringing it) its HTML is held to the rules every view is
+ * (game/code/rules.js); `notes` say what of it will do nothing.
+ */
+export function checkViewCard(raw, slots = VIEW_SLOTS, { mode = 'write' } = {}) {
 	const id = String(raw?.id ?? '').trim();
 	if (!/^[a-z][a-z0-9_-]{1,40}$/.test(id)) return { error: `A view card's id is lowercase letters, digits, - and _, 2 to 41 long (got "${id.slice(0, 40)}").` };
 	const name = String(raw?.name ?? '').trim().slice(0, 80) || id;
@@ -173,5 +181,9 @@ export function checkViewCard(raw, slots = VIEW_SLOTS) {
 	const bad = libs.find((l) => !LIBS[l]);
 	if (bad) return { error: `Card ${id}: no library "${bad.slice(0, 30)}"; a view may load ${Object.keys(LIBS).join(', ')}.` };
 	const height = Math.min(LIMITS.height[1], Math.max(LIMITS.height[0], Math.round(Number(d.height) || 520)));
-	return { card: { id, kind: 'view', name, description, values: {}, data: { slot, libs: [...new Set(libs)], height }, code } };
+	const card = { id, kind: 'view', name, description, values: {}, data: { slot, libs: [...new Set(libs)], height }, code };
+	if (mode === 'read') return { card };
+	const h = viewHtml(code, { what: `Card ${id}`, libs: card.data.libs });
+	if (h.errors.length) return { error: h.errors[0] };
+	return { card, notes: h.notes };
 }

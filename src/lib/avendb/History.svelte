@@ -66,9 +66,16 @@
 		'the ops of the shares it relies on don’t allow what it changes, or what it builds on: no reader counts it';
 	/** why they don't, where what it makes of the entry's record breaks the schemas the entry was written under */
 	const UNFIT = 'what it makes of its entry’s record breaks the entry’s schema: no reader counts it';
+	/** why they don't, where it merges into main through a share and the vault hasn't accepted what it brings in */
+	const NOT_ACCEPTED =
+		'it merges into main through a share, and the vault hasn’t accepted what it brings in: no reader counts it';
 	/** what an edit its readers don't count shows, and why @param {import('./db.js').SignedEdit} e */
 	const uncounted = (e) =>
-		e.why === 'unfit' ? { chip: 'breaks its schema', why: UNFIT } : { chip: 'not allowed', why: NOT_ALLOWED };
+		e.why === 'unfit'
+			? { chip: 'breaks its schema', why: UNFIT }
+			: e.why === 'policy'
+				? { chip: 'not accepted', why: NOT_ACCEPTED }
+				: { chip: 'not allowed', why: NOT_ALLOWED };
 </script>
 
 {#if failed}

@@ -405,9 +405,16 @@ impl Encode for Op {
                 tags.as_deref().encode(out);
             }
             Op::Propose => out.push(9),
-            Op::Merge { on } => {
+            // a merge with no path keeps the bytes it always had; one with a path is one more kind, so every grant
+            // made before paths reads as it did
+            Op::Merge { on, path } if path.is_empty() => {
                 out.push(10);
                 on.encode(out);
+            }
+            Op::Merge { on, path } => {
+                out.push(12);
+                on.encode(out);
+                path.encode(out);
             }
             Op::Share => out.push(11),
         }

@@ -1,10 +1,11 @@
 // @ts-nocheck — plain JS, trusted: world code, runs in the page
 /*
- * A BUILDING THAT IS A WORLD IN DISGUISE — the tent and the domes of the Buildings (./index.js) are no single object a
- * recipe could hand back: each is Sandbox 3's interior of its kind ($lib/sandbox-2/interior: its floors, rooms, lamps,
- * water, animals and a forest of our real plants, ticking as it is walked). So the asset box does not build them; the
- * viewer (/app/buildings/, $lib/assets/AssetViewer.svelte) has this build one, alone, as Sandbox 3's village builds it
- * into its own world (mountInterior with a host), and as the Buildings viewer always has:
+ * A BUILDING THAT IS A WORLD IN DISGUISE — the domes of the Buildings (./index.js), and the tent at its v1, are no
+ * single object a recipe could hand back (the tent from v2 is one: ./tent.js): each is Sandbox 3's interior of its
+ * kind ($lib/sandbox-2/interior: its floors, rooms, lamps, water, animals and a forest of our real plants, ticking as
+ * it is walked). So the asset box does not build them; the viewer (/app/buildings/, $lib/assets/AssetViewer.svelte)
+ * has this build one, alone, as Sandbox 3's village builds it into its own world (mountInterior with a host), and as
+ * the Buildings viewer always has:
  *
  * - in a scene of its own, drawn on the viewer's canvas with its camera: the light and the ground every building has
  *   always stood in here (a soft sky light, a key with its shadow, the round ground of ./ground.js, no land round it);
@@ -20,7 +21,7 @@
  */
 import * as THREE from 'three';
 import { atOrLatest } from '$lib/app/versions.js';
-import { disposeObject } from '$lib/app/view3d.js';
+import { disposeObject } from '$lib/render/core.js';
 import { groundRadius, roundGround } from './ground.js';
 
 /** how many steps a dome's build reports, for a bar of how far it is */

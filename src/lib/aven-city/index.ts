@@ -11,5 +11,5 @@
  */
 export { default as AvenCityGame } from './AvenCityGame.svelte'
 export { default as AvenCitySandbox } from './AvenCitySandbox.svelte'
-export type { BiomeId, HexTile } from './game/hexmap'
-export { BIOME_IDS, BIOME_RESOURCES, tileResources } from './game/hexmap'
+export type { BiomeId, HexTile } from '../../../game/island/hexmap'
+export { BIOME_IDS, BIOME_RESOURCES, tileResources } from '../../../game/island/hexmap'

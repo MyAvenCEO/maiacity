@@ -232,13 +232,40 @@ theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List Edit
       o.level = .write :=
   Ruling.counted_writes hc hv
 
+/-- M1 (merges by path): each place a counted merge by anyone but the entry's vault brings a change to, every place the
+    line it merges in changed since their base, is reached by the path of a merge op on the write's line, in every share
+    of the chain it relies on: a merge share with a path merges a line only where all it changed lies under the path. -/
+theorem M1_merges_within {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault) {l : Ops.Loc} (hl : Touch.merged l ∈ ts) :
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∃ o p, Op.merge o p ∈ c.ops ∧ onLine main o = true ∧
+      reaches p l.steps = true :=
+  Ruling.counted_merges_within hc hv hl
+
+/-- M2 (merges by policy): a merge into main by anyone but the entry's vault counts only on top of the vault's accept:
+    it builds on an accept of the vault and on nothing else but accepts and writes on main. The only policy so far is
+    one of the vault's owners, so the vault accepts a proposal by a write of its own on it that changes nothing. -/
+theorem M2_merges_accepted {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
+    {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof true ts fits = true) (hv : a ≠ en.vault)
+    (hm : Touch.merge ∈ ts) : accepted st en deps = true :=
+  Ruling.counted_merges_accepted hc hv hm
+
+/-- M2, the vault's own writes: its merges count as every write of it does, by what it builds on and whether it fits,
+    with no accept but their own. -/
+theorem M2_owner_counts (st : State) (en : Entry) (deps : List EditId) (proof : Option ShareId) (main : Bool)
+    (ts : List Touch) (fits : Bool) :
+    counts st en.vault en deps proof main ts fits = (fits && deps.all fun d => !st.uncounted.contains d) :=
+  Ruling.owner_counts st en deps proof main ts fits
+
 /-- C4 (allowed writes count): a write that fits, builds on writes its readers count, whose proof names a share its
-    actor holds with write or more that reaches the entry, and whose chain allows every touch of it, counts. -/
+    actor holds with write or more that reaches the entry, and whose chain allows every touch of it, counts, if it
+    merges into main on top of the vault's accept (M2). -/
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
-    (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true) :
+    (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true)
+    (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true) :
     counts st a en deps (some cp.id) main ts true = true :=
-  Ruling.allowed_counts hd hcp hh hi ha
+  Ruling.allowed_counts hd hcp hh hi ha hacc
 
 /-- C4, creations: a creation that fits, in the intake audience of a share over the vault that its actor holds with
     write or more, whose proof names that share and whose chain allows `create`, counts. -/

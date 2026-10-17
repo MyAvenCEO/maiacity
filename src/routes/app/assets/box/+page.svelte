@@ -15,7 +15,8 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import * as THREE from 'three';
-	import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+	import { disposeObject } from '$lib/render/core.js';
+	import { createStageRenderer } from '$lib/render/stage.js';
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
 	import { OBJECT_GROUPS } from '$lib/assets/groups.js';
@@ -72,29 +73,18 @@
 	let still = false;
 
 	onMount(() => {
-		renderer = new THREE.WebGLRenderer({ antialias: true });
-		renderer.setPixelRatio(Math.min(2, devicePixelRatio));
-		renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		canvasBox.appendChild(renderer.domElement);
+		// the stage renderer ($lib/render/stage.js): the canvas in the box, the camera (its field of view widened on an
+		// upright canvas, $lib/app/turntable.js), the controls, kept to the box's size
+		const view = createStageRenderer(canvasBox, { toneMapping: 'aces', fov: 40, near: 0.01, far: 500, turntable: true, fit });
+		({ renderer, camera, controls } = view);
 		scene = new THREE.Scene();
 		scene.background = new THREE.Color('#e9e6e0');
 		scene.add(new THREE.HemisphereLight('#ffffff', '#b9b2a6', 1.25));
 		const sun = new THREE.DirectionalLight('#fff4e6', 2.3);
 		sun.position.set(4, 8, 5);
 		scene.add(sun);
-		camera = new THREE.PerspectiveCamera(40, 1, 0.01, 500);
-		camera.userData.fov = 40; // widened on an upright canvas ($lib/app/turntable.js)
 		camera.position.set(4, 3, 6);
-		controls = new OrbitControls(camera, renderer.domElement);
-		controls.enableDamping = true;
-		const resize = () => {
-			const w = canvasBox.clientWidth, h = canvasBox.clientHeight;
-			renderer.setSize(w, h);
-			fit(camera, w, h);
-		};
-		const ro = new ResizeObserver(resize);
-		ro.observe(canvasBox);
-		resize();
+		view.resize();
 		const loop = () => {
 			frame = requestAnimationFrame(loop);
 			if (still) return;
@@ -105,10 +95,8 @@
 		void count();
 		return () => {
 			cancelAnimationFrame(frame);
-			ro.disconnect();
 			box.stop();
-			controls.dispose();
-			renderer.dispose();
+			view.dispose();
 		};
 	});
 
@@ -386,15 +374,7 @@
 	}
 
 	/** a built object's geometry, materials and pictures let go, once it has been compared */
-	function dispose(obj) {
-		obj.traverse((o) => {
-			o.geometry?.dispose();
-			for (const m of [o.material].flat().filter(Boolean)) {
-				for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
-				m.dispose?.();
-			}
-		});
-	}
+	const dispose = (obj) => disposeObject(obj);
 
 	const median = (xs) => {
 		const a = xs.filter((x) => typeof x === 'number').sort((x, y) => x - y);

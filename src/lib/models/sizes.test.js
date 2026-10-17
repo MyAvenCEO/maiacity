@@ -13,7 +13,9 @@ import { backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle }
 import { domeTent, packedTent, storageTent, storageTentBag } from './tent.js';
 import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { busStop, gasStation, oldShed, travelVan } from './wayside.js';
-import { person, tent } from '../maiacity-v1/world.js';
+import { pallet } from './pallet.js';
+import { PLAYER_HEIGHT, wearPack } from '../maiacity-v1/world.js';
+import { human } from '../actors/human.ts';
 import { powerCube } from '../actors/powercube.js';
 import { powerCube as powerCubeV3 } from '../machines/powercube.js';
 import { van as vanMachine } from '../machines/van.js';
@@ -23,11 +25,16 @@ import { batteryCube } from '../actors/batterycube.js';
 import { batteryPack as packModule } from '../actors/batterypack.js';
 import { batteryPack as batteryPackV10 } from '../machines/batterypack.js';
 
-// a player is measured without the heart that floats over them
-const bare = (o) => (o.remove(o.userData.glow), o);
+// a MaiaCity V1 player as its world puts them together (the stand-in at their height, their backpack shut on its
+// chest bone), without the heart that floats over them
+const player = () => {
+	const c = human({}, PLAYER_HEIGHT);
+	wearPack(c.rig.bones.chest, backpack({ open: 0 }), c.rig.object);
+	return c.rig.object;
+};
 const still = (c) => (c.rig.pose(c.clips.off(0)), c.rig.object);
 const ose = () => still(powerCube());
-const BUILD = { pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), batteryPackV10: () => batteryPackV10(), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: () => bare(person('A')), tent, loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag };
+const BUILD = { pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), batteryPackV10: () => batteryPackV10(), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: player, tent: () => bellTent(), loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag, euroPallet: pallet };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {

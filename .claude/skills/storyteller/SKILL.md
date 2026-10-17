@@ -65,3 +65,21 @@ there as its shares allow:
   `{ op: "batch", ops: [...] }` of `{ op: "set", entry, line, path: ["from"], value }` and the like, and
   `{ op: "insert", entry, line, path: ["beats"], value: <row> }` for every beat, in order. The person sees the
   proposed beats above their own on the Journey tab and merges the proposal there.
+
+## In avenDB: a story's Writing tab
+
+The story's article is an entry of its own, of the `article` schema, beside the story: its Writing tab
+(`src/lib/avendb/StoryWriting.svelte`) shows it as the journal lays it out, with its variants. The article's record:
+`{ title, text, story, language, excerpt, quote: { text, by }, tags }`. `text` is the Markdown, its subtitle the
+emphasised line it opens with and its cover the picture alone after it; `story` links the story,
+`{ vault, entry }`; `language` a code such as `en` or `de`.
+
+- Find it: `avendb_run` `{ op: "query", where: { type: ["article"] } }` and take the rows whose `story.entry` is the
+  story's. A variant (`variantOf` set) is a German or a shorter one.
+- Propose, never change the main line: `avendb_ask` `{ op: "note", entry: <article> }` gives the `heads`;
+  `avendb_run` `{ op: "propose", entry, from: <heads>, name: "Tighter: <angle>" }` answers its `line`; then
+  `{ op: "set", entry, line, path: ["text"], value: <the whole text> }`. The person merges it in the article editor,
+  where the Writing tab links.
+- A story with no article yet: write it only where the share allows creating articles, as `{ op: "create", vault,
+  type: "article", value: { kind: "article", title, text, story: { vault, entry }, language } }`; else propose its
+  text in the reply and let the person start it from the Writing tab.

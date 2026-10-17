@@ -20,8 +20,8 @@
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { AXIAL_DIRS, type BiomeId, type HexTile, type HexWorld, key, WATER_BIOME } from '../hexmap'
-import { hash2, makeRng, type Rng } from '../rng'
+import { AXIAL_DIRS, type BiomeId, type HexTile, type HexWorld, key, WATER_BIOME } from '../../../../../game/island/hexmap'
+import { hash2, makeRng, type Rng } from '../../../../../game/island/rng'
 import {
 	berryBush,
 	birchTree,
@@ -1231,7 +1231,7 @@ export function buildBiomeTile(
 		options.building && canBuildOn(biome)
 			? isFactory(options.building)
 				? makeFactory(tile, options.building)
-				: makeSettlement(tile, BUILDINGS[options.building].level)
+				: makeSettlement(tile, BUILDINGS[options.building].level, SANDBOX_1)
 			: null
 	const clearings = settlement?.clearings ?? []
 	for (const p of planTileDeco(tile, makeRng(seed ^ 0xdec0))) {
@@ -1410,6 +1410,8 @@ interface SitePiece {
 	scatter?: boolean
 	/** sit in the GAPS of another level's ring, at its radius */
 	between?: BuildingKind
+	/** the pieces another sandbox's settlements keep through other stages (Settlements.pieces) */
+	name?: 'fire' | 'pavilion'
 	/** the levels this piece stands through, inclusive */
 	fromLevel: number
 	untilLevel: number
@@ -1451,6 +1453,7 @@ const SITE_PIECES: SitePiece[] = [
 	},
 	{
 		// the fire everyone gathers at, in the middle of the camp
+		name: 'fire',
 		count: 1,
 		radius: 0,
 		scale: 0.055,
@@ -1493,6 +1496,7 @@ const SITE_PIECES: SitePiece[] = [
 	{
 		// the fire has become a place to gather: a stage under a canopy, with
 		// the hearth still burning at its foot
+		name: 'pavilion',
 		count: 1,
 		radius: 0,
 		scale: 0.075,
@@ -1725,7 +1729,7 @@ export const FACTORY_KINDS = Object.keys(FACTORIES) as FactoryKind[]
 /** Anything a hex can carry: a settlement level, or a works. */
 export type PlacedKind = BuildingKind | FactoryKind
 
-export function isFactory(kind: PlacedKind): kind is FactoryKind {
+export function isFactory(kind: string): kind is FactoryKind {
 	return kind in FACTORIES
 }
 
@@ -1911,10 +1915,12 @@ export function settlementKinds(level: number): BuildingKind[] {
 
 /** Ground the domes themselves stand on at `level`, in hectares. */
 export function domesHa(level: number): number {
-	return settlementKinds(level).reduce(
-		(sum, k) => sum + BUILDINGS[k].count * ((Math.PI * (BUILDINGS[k].diameterM / 2) ** 2) / 10_000),
-		0
-	)
+	return ringsHa(SANDBOX_1.rings(level))
+}
+
+/** Ground these rings of domes stand on, in hectares. */
+export function ringsHa(rings: ReadonlyArray<[BuildingKind, number]>): number {
+	return rings.reduce((sum, [k, n]) => sum + n * ((Math.PI * (BUILDINGS[k].diameterM / 2) ** 2) / 10_000), 0)
 }
 
 /** People housed by a settlement built up to and including `level`. */
@@ -1927,6 +1933,63 @@ export function settlementCapacity(level: number): number {
 
 export function buildingForLevel(level: number): BuildingKind | null {
 	return BUILD_ORDER.find((k) => BUILDINGS[k].level === level) ?? null
+}
+
+/**
+ * HOW A SANDBOX'S SETTLEMENTS GROW. The island is one (this module and ./scene.ts), for Sandbox 1 and for every city's
+ * island in Sandbox 2; how a settlement on it grows is the sandbox's. Both lay the ring buildings above (BUILDINGS)
+ * and the shared camp (SITE_PIECES); Sandbox 1's settlements are its six levels (SANDBOX_1), a city's are villages
+ * that level up on the Fibonacci numbers ($lib/sandbox-2/island/villages.js). Kinds are pooled by name, so no two
+ * sandboxes' kinds share one.
+ */
+export interface Settlements<K extends string = BuildingKind> {
+	/** whose they are: their builds of a level are pooled apart */
+	id: string
+	/** the level a kind of settlement stands for */
+	levelOf(kind: K): number
+	/** the kind that stands for a level */
+	kindFor(level: number): K | null
+	/** the ring buildings standing at a level, outside in, and how many of each */
+	rings(level: number): Array<[BuildingKind, number]>
+	/** people a settlement at a level houses */
+	capacity(level: number): number
+	/** the shared camp's stage at a level: its pieces stand by stage (Sandbox 1's stage is its level) */
+	stage(level: number): number
+	/** the food forest is grown in round everything */
+	forest(level: number): boolean
+	/** how a ring is laid: 'aligned', each turned half a step against the one outside it, or on another ring's spots
+	 * (Sandbox 1); 'clear', evenly spaced and turned as one until it clears whatever already stands (Sandbox 2) */
+	layout: 'aligned' | 'clear'
+	/** named camp pieces kept through other stages than Sandbox 1's: [from, until], or null for never */
+	pieces?: Partial<Record<'fire' | 'pavilion', [number, number] | null>>
+	/** a fresh island's own settlements (no save, or on film): the hero cell and the two rings round it, the rest
+	 * picked from `any`; the opening shot frames the first standing of `focus` */
+	demo: {
+		hero: K
+		ring1: Array<K | FactoryKind>
+		ring2: Array<K | FactoryKind | null>
+		any: readonly K[]
+		focus: readonly K[]
+	}
+}
+
+/** Sandbox 1's settlements: the six levels, laid cumulatively, the temporary housing retired as people move up. */
+export const SANDBOX_1: Settlements<BuildingKind> = {
+	id: 'sandbox-1',
+	levelOf: (kind) => BUILDINGS[kind].level,
+	kindFor: buildingForLevel,
+	rings: (level) => settlementKinds(level).map((k): [BuildingKind, number] => [k, BUILDINGS[k].count]),
+	capacity: settlementCapacity,
+	stage: (level) => level,
+	forest: (level) => level >= 6,
+	layout: 'aligned',
+	demo: {
+		hero: 'FOREST',
+		ring1: ['DOME4', 'SOLAR', 'DOME3', 'HEMP', 'GLAMP', 'LIFETRAC'],
+		ring2: ['POWER_CUBE', 'DOME3', null, 'BAMBOO', 'DOME4', 'TENT', null, 'FOREST', 'GLAMP', 'SOLAR', null, 'DOME3'],
+		any: BUILD_ORDER,
+		focus: ['FOREST', 'DOME5', 'DOME4']
+	}
 }
 
 /**
@@ -2026,17 +2089,35 @@ function flattenSettlement(root: THREE.Object3D): THREE.Group {
  */
 function buildSettlementAtOrigin(
 	seed: number,
-	level: number
+	level: number,
+	model: Settlements<string>
 ): { object: THREE.Object3D; clearings: Clearing[] } {
 	const tile = { x: 0, z: 0, seed } as HexTile
 	const group = new THREE.Group()
 	const clearings: Clearing[] = []
 	const rng = makeRng(seed ^ 0x5e77)
 
-	for (const kind of settlementKinds(level)) {
+	const stage = model.stage(level)
+	for (const [kind, n] of model.rings(level)) {
 		const spec = BUILDINGS[kind]
+		/* Laid 'clear': a ring of n, evenly spaced, turned as one until it clears whatever already stands. */
+		let phase = (spec.level * Math.PI) / Math.max(1, n)
+		if (model.layout === 'clear' && !spec.scatter && spec.radius > 0 && clearings.length) {
+			let best = -Infinity
+			for (let step = 0; step < 36; step++) {
+				const tryPhase = (step * Math.PI * 2) / (36 * n)
+				let worst = Infinity
+				for (let i = 0; i < n; i++) {
+					const a = (Math.PI * 2 * i) / n + tryPhase
+					const x = Math.cos(a) * spec.radius * SITE_SCALE
+					const z = Math.sin(a) * spec.radius * SITE_SCALE
+					for (const c of clearings) worst = Math.min(worst, Math.hypot(x - c.x, z - c.z) - c.extent - spec.extent * SITE_SCALE)
+				}
+				if (worst > best) [best, phase] = [worst, tryPhase]
+			}
+		}
 
-		for (let i = 0; i < spec.count; i++) {
+		for (let i = 0; i < n; i++) {
 			let px = 0
 			let pz = 0
 
@@ -2057,6 +2138,10 @@ function buildSettlementAtOrigin(
 							!clearings.some((c) => Math.hypot(px - c.x, pz - c.z) < c.extent + specExtent)
 					}
 					if (!placed) continue
+				} else if (model.layout === 'clear') {
+					const a = (Math.PI * 2 * i) / n + phase
+					px = Math.cos(a) * spec.radius * SITE_SCALE
+					pz = Math.sin(a) * spec.radius * SITE_SCALE
 				} else {
 					// each ring is turned half a step against the one outside it,
 					// so domes sit in the gaps rather than lining up radially —
@@ -2117,7 +2202,8 @@ function buildSettlementAtOrigin(
 		!clearings.some((c) => Math.hypot(px - c.x, pz - c.z) < c.extent + extent)
 
 	for (const piece of SITE_PIECES) {
-		if (level < piece.fromLevel || level > piece.untilLevel) continue
+		const stands = piece.name && model.pieces && piece.name in model.pieces ? model.pieces[piece.name] : [piece.fromLevel, piece.untilLevel]
+		if (!stands || stage < stands[0] || stage > stands[1]) continue
 		const rng = makeRng(tile.seed ^ (0xc0de + piece.fromLevel * 64))
 		const pieceRadius = piece.radius * SITE_SCALE
 		const pieceExtent = piece.extent * SITE_SCALE
@@ -2189,8 +2275,8 @@ function buildSettlementAtOrigin(
 		}
 	}
 
-	// level 6: the food forest grows in around everything, right to the rim
-	if (level >= 6) {
+	// the last level: the food forest grows in around everything, right to the rim
+	if (model.forest(level)) {
 		const reach = clearings.reduce((m, c) => (c.shape ? Math.max(m, Math.hypot(c.x, c.z) + c.extent) : m), 0)
 		growForest(group, makeRng(seed ^ 0xf00d), clearings, reach + 0.06, tile.x, tile.z)
 	}
@@ -2209,11 +2295,11 @@ function buildSettlementAtOrigin(
 const SETTLEMENT_VARIANTS = 8
 const settlementPool = new Map<string, ReturnType<typeof buildSettlementAtOrigin>>()
 
-function settlementVariant(level: number, variant: number) {
-	const key = `${level}#${variant}`
+function settlementVariant(level: number, variant: number, model: Settlements<string>) {
+	const key = `${model.id}:${level}#${variant}`
 	const cached = settlementPool.get(key)
 	if (cached) return cached
-	const built = buildSettlementAtOrigin(0x5e771 + variant * 7919 + level * 131, level)
+	const built = buildSettlementAtOrigin(0x5e771 + variant * 7919 + level * 131, level, model)
 	settlementPool.set(key, built)
 	return built
 }
@@ -2221,10 +2307,11 @@ function settlementVariant(level: number, variant: number) {
 /** Places a settlement of the given level on a hex, reusing a pooled build. */
 function makeSettlement(
 	tile: HexTile,
-	level: number
+	level: number,
+	model: Settlements<string>
 ): { object: THREE.Object3D; clearings: Clearing[] } {
 	const variant = Math.abs(tile.seed) % SETTLEMENT_VARIANTS
-	const built = settlementVariant(level, variant)
+	const built = settlementVariant(level, variant, model)
 	// the pooled build owns its geometry; every hex gets its own light node
 	// pointing at it, positioned over the tile
 	const group = new THREE.Group()
@@ -2280,17 +2367,17 @@ export const EMPTY_STATS: WorldStats = {
 	densityPerKm2: 0
 }
 
-export interface WorldApi {
+export interface WorldApi<K extends string = BuildingKind> {
 	group: THREE.Group
 	/** The hex under a world-space point, for picking. */
 	tileAt(point: THREE.Vector3): HexTile | null
 	/** Frees what this world owns — never the shared decoration pool. */
 	dispose(): void
 	/** Builds a settlement level, or a works, on a hex — a hex carries one. */
-	placeBuilding(tile: HexTile, kind: PlacedKind): void
+	placeBuilding(tile: HexTile, kind: K | FactoryKind): void
 	/** Removes the building and lets nature grow back over the clearing. */
 	removeBuilding(tile: HexTile): void
-	buildingAt(tile: HexTile): PlacedKind | null
+	buildingAt(tile: HexTile): K | FactoryKind | null
 	/** Everyone housed across every settlement standing on the island. */
 	population(): number
 	/** What has been built across the island, in people and hectares. */
@@ -2507,7 +2594,7 @@ if (import.meta.env.DEV) {
 	;(globalThis as { __avencityPlaced?: unknown }).__avencityPlaced = placedPool
 }
 
-function placedVariant(kind: PlacedKind, variant: number): PlacedBuild {
+function placedVariant(kind: string, variant: number, model: Settlements<string>): PlacedBuild {
 	const poolKey = `${kind}#${variant}`
 	const cached = placedPool.get(poolKey)
 	if (cached) return cached
@@ -2519,14 +2606,14 @@ function placedVariant(kind: PlacedKind, variant: number): PlacedBuild {
 		parts = built.object.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh)
 		clearings = built.clearings
 	} else {
-		const built = settlementVariant(BUILDINGS[kind].level, variant)
+		const built = settlementVariant(model.levelOf(kind), variant, model)
 		parts = built.object.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh)
 		clearings = built.clearings
 	}
 
 	const build: PlacedBuild = {
 		parts,
-		impostor: impostorFor(poolKey, clearings, isFactory(kind) || BUILDINGS[kind].level >= 6),
+		impostor: impostorFor(poolKey, clearings, isFactory(kind) || model.forest(model.levelOf(kind))),
 		clearings
 	}
 	placedPool.set(poolKey, build)
@@ -2558,7 +2645,10 @@ interface Chunk {
 	tier: Tier
 }
 
-export function buildWorld(world: HexWorld): WorldApi {
+export function buildWorld<K extends string = BuildingKind>(
+	world: HexWorld,
+	model: Settlements<K> = SANDBOX_1 as unknown as Settlements<K>
+): WorldApi<K> {
 	const group = new THREE.Group()
 
 	/**
@@ -2751,7 +2841,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 
 	for (const chunk of chunks) chunk.farGroup.visible = false
 
-	const buildings = new Map<string, { kind: PlacedKind; variant: number }>()
+	const buildings = new Map<string, { kind: K | FactoryKind; variant: number }>()
 
 	/** Hides or restores a hex's pieces so a settlement has room to stand. */
 	function setDeco(tile: HexTile, clearings: readonly Clearing[]): void {
@@ -2875,8 +2965,9 @@ export function buildWorld(world: HexWorld): WorldApi {
 					cropHa += Math.max(0, HEX_HA - dome)
 				} else {
 					settlements++
-					const housed = settlementCapacity(BUILDINGS[kind].level)
-					settledHa += domesHa(BUILDINGS[kind].level)
+					const level = model.levelOf(kind)
+					const housed = model.capacity(level)
+					settledHa += ringsHa(model.rings(level))
 					// the food forest each person is owed, from the base calculation
 					permacultureHa += (housed * FOOD_FOREST_M2_PER_PERSON) / 10_000
 					citizens += housed
@@ -2898,10 +2989,10 @@ export function buildWorld(world: HexWorld): WorldApi {
 		},
 		population(): number {
 			// works house nobody; every settlement counts what actually stands
-			// on it, which settlementCapacity already resolves from the level
+			// on it, which its sandbox's capacity resolves from the level
 			let total = 0
 			for (const { kind } of buildings.values()) {
-				if (!isFactory(kind)) total += settlementCapacity(BUILDINGS[kind].level)
+				if (!isFactory(kind)) total += model.capacity(model.levelOf(kind))
 			}
 			return total
 		},
@@ -2914,7 +3005,7 @@ export function buildWorld(world: HexWorld): WorldApi {
 			if (!chunk) return
 
 			const variant = Math.abs(tile.seed) % SETTLEMENT_VARIANTS
-			const build = placedVariant(kind, variant)
+			const build = placedVariant(kind, variant, model)
 			place.makeTranslation(tile.x, 0, tile.z)
 
 			for (const [i, part] of build.parts.entries()) {
@@ -2954,13 +3045,4 @@ function axialRound(qf: number, rf: number): [number, number] {
 	else if (dy > dz) y = -x - z
 	else z = -x - y
 	return [x, z]
-}
-
-/**
- * Removes a placed structure from the scene. It disposes NOTHING: every mesh
- * points at pooled geometry and materials shared with every other hex, so
- * freeing them here would blank the next settlement placed.
- */
-function disposeTree(root: THREE.Object3D): void {
-	root.clear()
 }

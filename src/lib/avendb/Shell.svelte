@@ -18,8 +18,9 @@
 	foot, in the middle above the app's own buttons, what the page is doing, and why not. Marks of the vaults none of
 	theirs holds anything in are faded. Over it all, the HITL cards (./Hitl.svelte): the changes waiting for the yes of
 	the vault looked at, each vault in the nav pill with a bubble of how many wait in it; and the consent screen, for
-	every access request a vault of theirs was asked (./AccessRequest.svelte); and in a vault they don't act for, Ask
-	for access, which opens the form that asks it (./Ask.svelte) in a drawer.
+	every access request a vault of theirs was asked, and every owner add one of theirs asked for that waits on their
+	passkey to finish it (./AccessRequest.svelte); and in a vault they don't act for, Ask for access, which opens the
+	form that asks it (./Ask.svelte) in a drawer.
 -->
 <script>
 	import { enter } from '$lib/app/immersive.svelte';
@@ -48,6 +49,7 @@
 	import Todos from './Todos.svelte';
 	import { may } from './ops.js';
 	import { acting, count, hue, initials, KINDS, list, nameOf, signerName } from './vaults.js';
+	import { wordsFilling } from './youtube.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
@@ -134,16 +136,20 @@
 
 	/**
 	 * The page an address names: `#todos`, a spark's or a note's `#notes/` and its entry, an article's `#articles/` and
-	 * its entry, to read, and with `/edit`, to edit as a note, a story's `#stories/` and its entry; else, as with none or
-	 * `#home`, the vault's home.
+	 * its entry, to read, and with `/edit`, to edit as a note (and with a story's entry after it, from that story's
+	 * Writing tab, which its back arrow goes back to), a story's `#stories/` and its entry, and the stage whose tab it
+	 * opens on after it, where it names one; else, as with none or `#home`, the vault's home.
 	 * @param {string} hash
 	 */
 	function parse(hash) {
-		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
+		const [at, entry, edit, from] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
 		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page)?.[0] ?? 'home');
-		const opens = ['sparks', 'artifacts', 'articles', 'stories'].includes(known) && /^[0-9a-f]{64}$/.test(entry ?? '');
-		return { page: known, entry: opens ? entry : '', edit: opens && known === 'articles' && edit === 'edit' };
+		const hex = (/** @type {string | undefined} */ x) => /^[0-9a-f]{64}$/.test(x ?? '');
+		const opens = ['sparks', 'artifacts', 'articles', 'stories'].includes(known) && hex(entry);
+		const editing = opens && known === 'articles' && edit === 'edit';
+		const story = editing && hex(from) ? from : '';
+		return { page: known, entry: opens ? entry : '', edit: editing, story, step: opens && known === 'stories' ? (edit ?? '') : '' };
 	}
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
@@ -172,6 +178,25 @@
 			const go = ops.filter((_, i) => verdicts[i] === true);
 			if (!go.length || doing) return;
 			api.run(`Tagging ${count(go.length, 'piece')} by the sparks and stories that hold them`, { op: 'batch', as: actor, ops: go });
+		});
+	});
+
+	// a YouTube video's words (./youtube.js): the newest done task of the studio's `youtube` rule an artifact hasn't
+	// taken yet fills what it has empty, once, by whichever page looks at the vault where the acting vault may write it
+	let filled = '';
+	$effect(() => {
+		const [w, vault, as] = [world, context, actor];
+		if (busy) return;
+		wordsFilling(w, vault, as, api).then((ops) => {
+			const key = JSON.stringify([as, ops]);
+			if (!ops.length || key === filled) return;
+			filled = key;
+			return may(api, as, ops).then((verdicts) => {
+				const go = ops.filter((_, i) => verdicts[i] === true);
+				if (!go.length || doing) return;
+				const videos = new Set(go.map((o) => /** @type {any} */ (o).entry)).size;
+				api.run(`Taking YouTube’s words into ${count(videos, 'artifact')}`, { op: 'batch', as, ops: go });
+			});
 		});
 	});
 
@@ -243,11 +268,13 @@
 	{#if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories'}
-				<Story {world} {actor} {api} {busy} entry={route.entry} />
+				<Story {world} {actor} {api} {busy} entry={route.entry} step={route.step} />
 			{:else if route.page === 'artifacts'}
 				<Artifact {world} {actor} {api} {busy} entry={route.entry} />
 			{:else if route.page === 'articles' && !route.edit}
 				<Article {world} {actor} {api} entry={route.entry} />
+			{:else if route.page === 'articles' && route.story}
+				<Note {world} {actor} {api} {busy} entry={route.entry} back="#stories/{route.story}/writing" backTo="The story" />
 			{:else if route.page === 'articles'}
 				<Note {world} {actor} {api} {busy} entry={route.entry} back="#articles/{route.entry}" backTo="The article" />
 			{:else}
@@ -263,7 +290,7 @@
 				<p class="soft">{owners(here)}</p>
 				{#if !here.via}<button class="btn" onclick={() => (asking = true)}>Ask for access</button>{/if}
 			</header>
-			<AccessRequest {world} {requests} asked={asks.asked} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
+			<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 			{#each NAV as [group, items] (group)}
 				<section class="apps" aria-labelledby="apps-{TINTS[group]}">
 					<h2 class="group" id="apps-{TINTS[group]}">{HEADS[group] ?? group}</h2>
@@ -337,7 +364,7 @@
 				{/if}
 			</p>
 		</header>
-		<AccessRequest {world} {requests} asked={asks.asked} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
+		<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 		{#if tab === 'sparks'}
 			<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
 		{:else if tab === 'articles'}

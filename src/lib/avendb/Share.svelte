@@ -182,6 +182,7 @@
 		propose: 'start proposals',
 		proposals: 'change anything on a proposal',
 		merge: 'merge proposals into the main line',
+		...(fields.length ? { mergeto: 'merge changes to one field' } : {}),
 		share: 'share it on'
 	});
 
@@ -199,6 +200,7 @@
 		if (adding === 'tag') return tagsIn(asks).length ? { op: 'tag', tags: tagsIn(asks) } : { op: 'tag' };
 		if (adding === 'proposals') return { op: 'set', on: 'proposals' };
 		if (adding === 'merge') return { op: 'merge', on: 'main' };
+		if (adding === 'mergeto') return theField ? { op: 'merge', on: 'main', path: theField.path } : null;
 		return /** @type {import('./vaults.js').Op} */ ({ op: adding });
 	});
 
@@ -310,7 +312,7 @@
 			<select class="field" bind:value={adding} aria-label="An op to add">
 				{#each Object.entries(ADD) as [k, words] (k)}<option value={k}>{words}</option>{/each}
 			</select>
-			{#if (adding === 'field' || adding === 'values' || ROWS.includes(adding)) && theField}
+			{#if (adding === 'field' || adding === 'values' || adding === 'mergeto' || ROWS.includes(adding)) && theField}
 				<select
 					class="field place"
 					value={theField.name}

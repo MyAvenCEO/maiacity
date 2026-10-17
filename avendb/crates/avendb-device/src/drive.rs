@@ -61,12 +61,58 @@ pub const LOOK: Duration = Duration::from_secs(3);
 const EJECT_TRIES: usize = 3;
 const EJECT_AGAIN: Duration = Duration::from_millis(700);
 
-/// Where the Mac's shelf keeps the key of each drive it hosts, wrapped under a key of its device's own:
+/// Where the Mac's shelf keeps the key of each drive it hosts, and what it is wrapped under (`Kept`):
 /// `drives/<device>`.
-const WRAPPED: &str = "drives/";
+const KEY: Kept = Kept { under: "drives/", purpose: "drive key", info: b"avenDB drive " };
 
-/// What the key a drive's key is wrapped under is derived for (`Lab::own_key`), beside the drive's device.
-const PURPOSE: &str = "drive key";
+/// The key of a device the Mac hosts beside its own, a drive's (`KEY`) or a studio worker's (`worker::KEY`), as the
+/// Mac's shelf keeps it: wrapped under a key the Mac's device alone derives from its own (`Lab::own_key`), so that the
+/// Mac opens it silently while its own device is open (`Service::wrap_key`).
+pub(crate) struct Kept {
+    /// Where on the Mac's shelf, before the device's id in hex: `drives/<device>`.
+    pub(crate) under: &'static str,
+    /// What the key it is wrapped under is derived for (`Lab::own_key`), beside the device.
+    pub(crate) purpose: &'static str,
+    /// What it is bound to as it is wrapped, before the device's id.
+    pub(crate) info: &'static [u8],
+}
+
+impl Kept {
+    /// The name on the Mac's shelf of device `device`'s key, wrapped.
+    fn name(&self, device: SignerId) -> String {
+        format!("{}{}", self.under, device.to_hex())
+    }
+
+    /// What device `device`'s key is bound to as it is wrapped.
+    fn info(&self, device: SignerId) -> Vec<u8> {
+        [self.info, &device.0].concat()
+    }
+
+    /// The devices whose keys shelf `shelf` keeps, wrapped.
+    pub(crate) async fn on(&self, shelf: &Shelf) -> Result<Vec<SignerId>> {
+        let names = shelf.names(self.under).await?;
+        Ok(names.iter().filter_map(|n| n.strip_prefix(self.under).and_then(SignerId::from_hex)).collect())
+    }
+}
+
+/// A Lab for a device the Mac hosts beside its own, a drive's or a worker's, by its key `secret`, named `name`, which
+/// knows the master recovery key, as every device's Lab does (`Start::recovery`): the Lab, and the device.
+pub(crate) fn lab_of(name: &str, secret: &[u8; 32]) -> Result<(Lab, SignerId)> {
+    let mut lab = Lab::with_entropy(random()?);
+    if let Some(key) = Start::recovery() {
+        lab.set_recovery(key);
+    }
+    let me = lab.device_with(name, *secret);
+    Ok((lab, me))
+}
+
+/// Node `node`, hosted beside the Mac's own device `d`: each knows where the other is, and they sync at once.
+pub(crate) fn beside(d: &Arc<Device>, node: &Node) {
+    node.know(d.node().addr());
+    d.node().know(node.addr());
+    let (mac, endpoint) = (d.clone(), node.id());
+    tokio::spawn(async move { mac.node().sync_with(endpoint).await.ok() });
+}
 
 /// The store on `volume`.
 pub fn store(volume: &Path) -> PathBuf {
@@ -185,16 +231,6 @@ impl Drives {
     }
 }
 
-/// The name on a Mac's shelf of drive `drive`'s key, wrapped.
-fn wrapped_as(drive: SignerId) -> String {
-    format!("{WRAPPED}{}", drive.to_hex())
-}
-
-/// What drive `drive`'s key is bound to as it is wrapped.
-fn wrap_info(drive: SignerId) -> Vec<u8> {
-    [&b"avenDB drive "[..], &drive.0].concat()
-}
-
 /// The XOR of `a` and `b`: a device's secret masked by the PRF output on its salt, or a mask unmasked by it.
 fn xor(a: &[u8; 32], b: &[u8; 32]) -> Zeroizing<[u8; 32]> {
     let mut out = Zeroizing::new([0; 32]);
@@ -292,7 +328,7 @@ impl Service {
             if !theirs || self.drives.hosts(meta.device) || left {
                 continue;
             }
-            if let Some(secret) = self.unwrap_key(&d, meta.device).await
+            if let Some(secret) = self.unwrap_key(&d, &KEY, meta.device).await
                 && let Err(e) = self.host(&d, volume, shelf, &meta, secret).await
             {
                 tracing::warn!("the drive {} isn't hosted: {e:#}", meta.name);
@@ -359,11 +395,7 @@ impl Service {
                 "device": device.map(|x| hex(&x.0)),
             }));
         }
-        let mut known: Vec<SignerId> = vec![];
-        for name in self.shelf().names(WRAPPED).await? {
-            let id = name.strip_prefix(WRAPPED).and_then(SignerId::from_hex);
-            known.extend(id.filter(|id| mine.contains(id)));
-        }
+        let known: Vec<SignerId> = KEY.on(&self.shelf()).await?.into_iter().filter(|id| mine.contains(id)).collect();
         let mut drives_json = vec![];
         for drive in known {
             let on = seen.iter().find(|(_, s)| s.meta.as_ref().is_some_and(|m| m.device == drive));
@@ -430,11 +462,7 @@ impl Service {
         let unlock = sheets.unlock("drive", nonce, fresh.challenge(now)).await?;
         let mask = fresh.mask(&unlock);
         let Unlock { ceremony, .. } = unlock;
-        let mut lab = Lab::with_entropy(random()?);
-        if let Some(key) = Start::recovery() {
-            lab.set_recovery(key);
-        }
-        let me = lab.device_with(&name, *secret);
+        let (mut lab, me) = lab_of(&name, &secret)?;
         lab.web_passkey("the person", d.p256(), &ceremony).context("the sheet's passkey isn't this Mac's")?;
         let pass = ceremony.pass(fresh.keys(), now).context("the sheet's ceremony isn't over the drive's challenge")?;
         let relay: RelayUrl = host.relay.parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
@@ -456,7 +484,7 @@ impl Service {
         let (p256, follow, query_depth) = (d.p256(), vec![], None);
         let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256, device: me, follow, query_depth };
         meta.keep(&shelf).await?;
-        self.wrap_key(&d, me, &secret).await?;
+        self.wrap_key(&d, &KEY, me, &secret).await?;
         let _one = self.drives.looking.lock().await;
         self.drives.seen.lock().expect("seen").insert(volume.clone(), Seen { shelf, meta: Some(meta) });
         self.hosting(&d, volume, name, node);
@@ -488,7 +516,7 @@ impl Service {
             bail!("this drive was taken out of your vault: use it for avenDB again");
         }
         if !self.drives.hosts(meta.device) {
-            let secret = match self.unwrap_key(&d, meta.device).await {
+            let secret = match self.unwrap_key(&d, &KEY, meta.device).await {
                 Some(secret) => secret,
                 None => {
                     let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
@@ -497,7 +525,7 @@ impl Service {
                     if DeviceKey::from_secret(*secret).id() != meta.device {
                         bail!("your passkey doesn't open this drive");
                     }
-                    self.wrap_key(&d, meta.device, &secret).await?;
+                    self.wrap_key(&d, &KEY, meta.device, &secret).await?;
                     secret
                 }
             };
@@ -537,11 +565,7 @@ impl Service {
 
     /// Drive `meta.device` hosted here from now on: its node on its shelf on `volume`, its key `secret`.
     async fn host(&self, d: &Arc<Device>, volume: PathBuf, shelf: Shelf, meta: &Meta, secret: Zeroizing<[u8; 32]>) -> Result<()> {
-        let mut lab = Lab::with_entropy(random()?);
-        if let Some(key) = Start::recovery() {
-            lab.set_recovery(key);
-        }
-        let me = lab.device_with(&meta.name, *secret);
+        let (mut lab, me) = lab_of(&meta.name, &secret)?;
         drop(secret);
         if me != meta.device {
             bail!("the key opens another device than this drive's");
@@ -560,36 +584,35 @@ impl Service {
     /// Drive node `node`, on `volume`, named `name`, hosted from now on: it and the Mac's own device know where each
     /// other is, and sync at once.
     fn hosting(&self, d: &Arc<Device>, volume: PathBuf, name: String, node: Arc<Node>) {
-        node.know(d.node().addr());
-        d.node().know(node.addr());
-        let (mac, endpoint) = (d.clone(), node.id());
-        tokio::spawn(async move { mac.node().sync_with(endpoint).await.ok() });
+        beside(d, &node);
         let carded = Arc::new(AtomicBool::new(false));
         let hosted = Hosted { node: node.clone(), volume, name, carded };
         self.drives.hosted.lock().expect("hosted").insert(node.device(), hosted);
     }
 
-    /// Keeps drive `drive`'s key `secret` on this Mac's shelf, wrapped under a key this Mac's device alone derives from
-    /// its own (`Lab::own_key`), bound to the drive: what opens the drive here with no ceremony. One kept already
-    /// counts.
-    async fn wrap_key(&self, d: &Device, drive: SignerId, secret: &[u8; 32]) -> Result<()> {
-        let key = d.node().read(move |lab, me| lab.own_key(me, PURPOSE, &drive.0)).await;
+    /// Keeps device `device`'s key `secret`, a drive's or a worker's (`Kept`), on this Mac's shelf, wrapped under a key
+    /// this Mac's device alone derives from its own (`Lab::own_key`), bound to the device: what opens it here with no
+    /// ceremony. One kept already counts.
+    pub(crate) async fn wrap_key(&self, d: &Device, kept: &Kept, device: SignerId, secret: &[u8; 32]) -> Result<()> {
+        let purpose = kept.purpose;
+        let key = d.node().read(move |lab, me| lab.own_key(me, purpose, &device.0)).await;
         let key = key.context("this Mac's device is locked")?;
-        let mut rng = SeededRng::new("a drive's key, wrapped", &random()?);
-        let wrapped = keys::wrap(&Secret::from_bytes(*secret), &key, &wrap_info(drive), &mut rng);
-        match self.shelf().put(&wrapped_as(drive), Bytes::from(wrapped)).await {
+        let mut rng = SeededRng::new("a hosted device's key, wrapped", &random()?);
+        let wrapped = keys::wrap(&Secret::from_bytes(*secret), &key, &kept.info(device), &mut rng);
+        match self.shelf().put(&kept.name(device), Bytes::from(wrapped)).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
-            Err(e) => Err(anyhow::Error::from(e).context("keeping the drive's key on this Mac")),
+            Err(e) => Err(anyhow::Error::from(e).context("keeping the device's key on this Mac")),
         }
     }
 
-    /// Drive `drive`'s key, as this Mac's shelf keeps it wrapped (`wrap_key`): none if it keeps none, or this Mac's
+    /// Device `device`'s key, as this Mac's shelf keeps it wrapped (`wrap_key`): none if it keeps none, or this Mac's
     /// device doesn't open it.
-    async fn unwrap_key(&self, d: &Device, drive: SignerId) -> Option<Zeroizing<[u8; 32]>> {
-        let wrapped = self.shelf().get(&wrapped_as(drive)).await.ok()??;
-        let key = d.node().read(move |lab, me| lab.own_key(me, PURPOSE, &drive.0)).await?;
-        let secret = keys::open(&wrapped, &key, &wrap_info(drive))?;
+    pub(crate) async fn unwrap_key(&self, d: &Device, kept: &Kept, device: SignerId) -> Option<Zeroizing<[u8; 32]>> {
+        let wrapped = self.shelf().get(&kept.name(device)).await.ok()??;
+        let purpose = kept.purpose;
+        let key = d.node().read(move |lab, me| lab.own_key(me, purpose, &device.0)).await?;
+        let secret = keys::open(&wrapped, &key, &kept.info(device))?;
         Some(Zeroizing::new(secret.bytes()))
     }
 }

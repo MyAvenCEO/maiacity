@@ -1207,6 +1207,64 @@ impl Lab {
         Ok(id)
     }
 
+    /// Device `on`'s part of `draft` (`draft`): its edit signed by its first `signers` signers alone, each by its
+    /// ceremony among `ceremonies` or by its key at hand, for a device of the others to sign and keep (`finish`). So
+    /// two people sign one edit one after the other, as an owner add a person's vault consents to and a coop's owners
+    /// approve: the first signs here, and the part goes to the other in a record (`engine`'s `share` with a request).
+    /// Nothing is kept. `on`'s view checks the edit again if edits arrived since the draft; `Locked` if a signer's key
+    /// isn't at hand, `BadSignature` if a ceremony isn't its signer's over the draft's challenge.
+    pub fn part(
+        &mut self,
+        on: SignerId,
+        draft: Unsigned,
+        signers: usize,
+        ceremonies: &[(SignerId, &Ceremony)],
+    ) -> Result<Signed, Refusal> {
+        let Unsigned { edit, held, batch, .. } = draft;
+        if self.held(on).log.ids().len() != held {
+            self.held(on).view().step(&edit)?;
+        }
+        let (id, standing) = (edit.id(), sign::standing(&edit));
+        let first: Vec<SignerId> = edit.sigs().take(signers).collect();
+        let signature = |s| self.sign_by(s, id, ceremonies, &batch, None, &standing);
+        let sigs = first.into_iter().map(signature).collect::<Result<_, _>>()?;
+        Ok(Signed { edit, sigs })
+    }
+
+    /// Part `part`'s edit (`part`) drafted on device `on`, for the passkeys of the signers it lacks to sign in their
+    /// ceremonies, over the edit's id: what `finish` keeps.
+    pub fn parted(&self, on: SignerId, part: &Signed) -> Unsigned {
+        let held = self.held(on).log.ids().len();
+        Unsigned { edit: part.edit.clone(), blobs: Blobs::new(), held, batch: vec![], pass: None }
+    }
+
+    /// Part `part` (`part`) finished on device `on` and kept: each signer it lacks signs in its place after those that
+    /// signed, by its ceremony among `ceremonies` or by its key at hand, and `on` keeps the edit if every signature
+    /// verifies and `on`'s view accepts it; in a dry run, checked and then not made. `BadSignature` if a signature
+    /// doesn't verify, `Locked` if a signer's key isn't at hand.
+    pub fn finish(
+        &mut self,
+        on: SignerId,
+        part: Signed,
+        ceremonies: &[(SignerId, &Ceremony)],
+    ) -> Result<EditId, Refusal> {
+        let Signed { edit, mut sigs } = part;
+        self.held(on).view().step(&edit)?;
+        if self.dry {
+            return Ok(edit.id());
+        }
+        let (id, standing) = (edit.id(), sign::standing(&edit));
+        let rest: Vec<SignerId> = edit.sigs().skip(sigs.len()).collect();
+        for s in rest {
+            sigs.push(self.sign_by(s, id, ceremonies, &[], None, &standing)?);
+        }
+        let signed = Signed { edit, sigs };
+        signed.verify()?;
+        self.keep(on, vec![signed], &Blobs::new());
+        self.refresh(on, &[]);
+        Ok(id)
+    }
+
     /// Fill in the keys to seal to that `action` brings for signers the Lab holds, and return the McEliece blobs they
     /// name.
     fn fill_seal_to(&self, action: &mut Action) -> Blobs {
@@ -1431,8 +1489,9 @@ impl Lab {
     /// The proof write `w` of device `on` carries (`prove`), with what it touches as its readers will read it off
     /// `content` on the history `h` holds before it, of an entry of vault `vault` (`History::reading`), and the tags it
     /// asks for, `asks`. `NotAView` if
-    /// it doesn't fit the schemas the entry was written under, of the vault's lane and the built-in ones, unless the
-    /// device is a patched app's (`patched`).
+    /// it doesn't fit the schemas the entry was written under, of the vault's lane and the built-in ones, and
+    /// `NotAccepted` if it merges into main through a share on top of no accept of the vault's (`History::passes`, M2),
+    /// unless the device is a patched app's (`patched`).
     fn proven(
         &self,
         on: SignerId,
@@ -1446,6 +1505,9 @@ impl Lab {
         let proof = self.prove(on, view, w, read.touches.as_deref(), asks)?;
         if !(read.fits || self.lawless) {
             return Err(Refusal::NotAView);
+        }
+        if !(h.passes(w, read.touches.as_deref()) || self.lawless) {
+            return Err(Refusal::NotAccepted);
         }
         Ok(proof)
     }
@@ -1753,6 +1815,25 @@ impl Lab {
         self.unlocked(on)?;
         let draft = self.shown(on, entry).propose(from, name);
         self.make(on, actor, entry, draft, TagDelta::default())
+    }
+
+    /// Accept proposal `line` of an entry as it stands, on device `on`, acting for `actor`, the entry's vault: a write on
+    /// the proposal that builds on its heads and changes nothing, which every reader of the entry reads as the vault's
+    /// accept (`policy::is_accept`, M2). A merge of the proposal into main by anyone else counts only on top of it, and
+    /// brings in nothing written on the proposal after it. `NoCap` if `actor` isn't the entry's vault, whose accept
+    /// alone counts (the default policy, one of its owners), `NotOnProposal` if the device shows no such proposal.
+    pub fn accept(&mut self, on: SignerId, actor: VaultId, entry: EntryId, line: EditId) -> Result<EditId, Refusal> {
+        self.unlocked(on)?;
+        let vault = self.latest(on).entry(entry).ok_or(Refusal::UnknownEntry)?.vault;
+        if actor != vault {
+            return Err(Refusal::NoCap);
+        }
+        let h = self.shown(on, entry);
+        if !h.get(line).is_some_and(|c| c.write.proposal == Proposal::New) {
+            return Err(Refusal::NotOnProposal);
+        }
+        let deps = h.heads(Some(line));
+        self.make(on, actor, entry, Draft { proposal: Proposal::On(line), deps, body: vec![] }, TagDelta::default())
     }
 
     /// Merge line `from` of an entry into line `into`: a write on `into` building on the heads of both, which brings
@@ -3166,10 +3247,11 @@ fn show_items(d: SignerId, store: &mut Store) {
             shown.insert(en.id, s);
             continue;
         }
-        // each write counted where what it builds on counts, it fits the schemas the entry was written under, and its
-        // shares let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`): the
-        // first two read off it on one scratch item (`History::reading_on`); but a schema or lens entry's creation
-        // holds the schema or the lens itself, no update, and fits where it is one of its type (`lane_fits`)
+        // each write counted where what it builds on counts, it fits the schemas the entry was written under, its
+        // shares let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`), and a
+        // merge into main through a share builds on the vault's accept (`History::passes`, M2): the first two read
+        // off it on one scratch item (`History::reading_on`); but a schema or lens entry's creation holds the schema
+        // or the lens itself, no update, and fits where it is one of its type (`lane_fits`)
         let lane = lane.get_or_insert_with(|| Lane::with_built_ins(blobs.iter().copied()));
         let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
         let (mut history, mut scratch) = (History::default(), None);
@@ -3183,8 +3265,12 @@ fn show_items(d: SignerId, store: &mut Store) {
                 false => history.reading_on(&mut scratch, w, content, d, lane),
             });
             let fits = read.as_ref().is_none_or(|r| r.fits);
-            let counted = read.is_some_and(|r| r.fits && st.lets(w, proof, r.touches.as_deref(), asks));
-            let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, counted };
+            let counted = read.as_ref().is_some_and(|r| {
+                r.fits && st.lets(w, proof, r.touches.as_deref(), asks) && history.passes(w, r.touches.as_deref())
+            });
+            // what it touches and asks for, as a merge that brings it in reads it
+            let touches = read.and_then(|r| r.touches).map(|ts| ts.into_iter().chain(rules::asked(asks)).collect());
+            let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted };
             history.push(change).expect("the view's writes are causally closed");
         }
         let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();

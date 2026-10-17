@@ -1,7 +1,7 @@
 /*
  * THE MODELS — every reusable still model, as the Things viewer (/app/models/) lists it (the containers and the wayside are the Buildings', $lib/buildings/built.js): its name, what it is, where
  * it is used, and the function that builds it (./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js,
- * ./belltent.js, ./wayside.js; a machine that works or has moving parts is a machine, $lib/machines (/app/machines/), and never listed here too). A world places
+ * ./belltent.js, ./wayside.js, ./pallet.js; a machine that works or has moving parts is a machine, $lib/machines (/app/machines/), and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
@@ -12,6 +12,7 @@ import { ALL_PACKETS, backpack, dugEarth, markerSticks, plantStake, seedPacket, 
 import { domeTent, packedTent, storageTent, storageTentBag } from './tent.js';
 import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { WAYSIDE_INFO, travelVan } from './wayside.js';
+import { pallet } from './pallet.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
@@ -35,6 +36,10 @@ const HISTORY: Record<string, (Change & { build?: Make })[]> = {
 	'rabbit-hutch': [
 		{ ...FIRST, build: timberHutch },
 		{ v: 2, date: '2026-10-06', note: 'A mini geodesic dome of wire on grass, a little shingled dome inside to sleep in' }
+	],
+	'plant-stake': [
+		{ ...FIRST, date: '2026-10-14', build: () => plantStake({ name: 'Samuel', seed: 'apple' }) },
+		{ v: 2, date: '2026-10-16', note: 'Built with the tree’s name and its plant (`name`, `seed`), printed on its flag: MaiaCity V1 puts one by every tree it grows; the stake itself as v1' }
 	],
 	backpack: [
 		{ ...FIRST, date: '2026-10-14', build: () => backpack({ v: 1 }) },
@@ -79,7 +84,18 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 		variants: Object.entries(ALL_PACKETS).map(([id, p]) => ({ id: `seed-packet-${id}`, label: p.label, note: `${p.label}, ${p.latin}`, make: () => seedPacket(id) }))
 	},
 	{ id: 'marker-sticks', label: 'Marker sticks', note: 'two sticks of square pine, 35 cm long and 12 mm across, pointed, their tops painted orange, pushed into the ground half a metre apart', usedIn: 'MaiaCity V1', make: () => markerSticks() },
-	{ id: 'plant-stake', label: 'Plant stake', note: 'a young tree’s stake of round peeled pine, 1 m long and 32 mm thick, axe-pointed, pushed in beside the seed; on a wire tied to its top a 10 × 7 cm waxed-cloth flag printed on both sides with the tree’s name and its plant', usedIn: 'MaiaCity V1', make: () => plantStake({ name: 'Samuel', seed: 'apple' }) },
+	{
+		id: 'plant-stake',
+		label: 'Plant stake',
+		note: 'a young tree’s stake of round peeled pine, 1 m long and 32 mm thick, axe-pointed, pushed in beside the seed; on a wire tied to its top a 10 × 7 cm waxed-cloth flag printed on both sides with the tree’s name and its plant',
+		usedIn: 'MaiaCity V1',
+		// v2: the tree's name and its plant printed on the flag are what it is built with (v1 is Samuel's apple)
+		params: [
+			{ id: 'name', label: 'Name on its flag', type: 'string', value: 'Samuel' },
+			{ id: 'seed', label: 'Its plant', type: 'string', value: 'apple', maxLength: 24 }
+		],
+		make: (name = 'Samuel', seed = 'apple') => plantStake({ name: String(name), seed: String(seed) })
+	},
 	{ id: 'dug-earth', label: 'Dug earth', note: 'a patch of turned soil 60 cm across, heaped a little, crumbs and clods on it, a hollow for the seed; it darkens and shines as it is watered', usedIn: 'MaiaCity V1', make: () => dugEarth() },
 	{
 		id: 'dome-tent',
@@ -147,7 +163,8 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 		]
 	},
 	{ id: 'solar-panel', label: 'Solar panel', note: `${VILLAGE_INFO.solar.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => solarPanel() },
-	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() }
+	{ id: 'travel-van', label: 'Travel van', note: `${WAYSIDE_INFO.van.note}. It brings every newcomer to MaiaCity`, usedIn: 'MaiaCity V1', make: () => travelVan() },
+	{ id: 'euro-pallet', label: 'Euro pallet', note: 'an empty EPAL, 1200 × 800 mm and 144 mm high: five top boards on three cross boards, nine blocks under them and three bottom boards, in two woods. The machines carry it loaded (the goods pod, the forklift); a factory’s line stacks its raw material and its product on it', usedIn: 'Factories', make: () => pallet() }
 ];
 
 export const MODELS: Model[] = versioned([...LIST, ...DOME_ROOMS], 'make', HISTORY);
