@@ -1,5 +1,5 @@
 /**
- * THE ORBIT RIG — the map camera of a sandbox seen from above (Sandbox 1's island, Sandbox 2's city islands).
+ * THE ORBIT RIG — the map camera of a sandbox seen from above (Sandbox 1's island).
  *
  * One scheme, the city-builder one, after Age of Empires, Anno and Cities: Skylines:
  *   · WASD / arrow keys travel the map, and so does a phone's joystick ($lib/touch/TouchStick: `move`)

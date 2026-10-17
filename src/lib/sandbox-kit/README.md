@@ -6,7 +6,6 @@ What every avenCITY sandbox world is made with — the same sky and universe, th
 |---|---|---|---|---|
 | 1 · the island (`src/lib/aven-city`) | its own canvas | `createSky` (island size) | `createOrbitRig` | the island from its seed |
 | 2 · the planet (`src/lib/sandbox-2/world`) | its own | `createSky({ view: 'planet' })` + `createAirShell`: the universe from space, day and night sides | its own globe rig + `createCameraHold` | `&area=planet` |
-| 2 · a city's island (Sandbox 1's, `src/lib/aven-city/game/three`, with the city's villages, `src/lib/sandbox-2/island/villages.js`) | its own canvas | `createSky` (island size) | `createOrbitRig` | `&area=island`, grown from `world.seed` |
 | 3 · inside a dome (`src/lib/sandbox-2/interior`) | `createStage` | `createSky` (dome size) | `createWalker` | `&area=home` … `factory` |
 | 4 · a dome cell (`src/lib/sandbox-2/interior/village.ts`) | `createStage` | `createSky` | `createWalker` | the cell, its domes built as the camera comes |
 | 6 · a valley of settlers (`src/lib/sandbox-6`) | `createStage` | `createSky` (its own day on Auto) | `createOrbitRig` | the valley played by its autoplayer from one seed (trade with three neighbours, no war) |

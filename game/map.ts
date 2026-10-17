@@ -24,7 +24,7 @@ export const loadMountainMask = (url = '/map/mountains.geojson') => loadMask(url
 
 type LandFile = { width: number; height: number; rows: string[] }
 
-/** `public/map/land.json`: the coastline as a quarter-degree mask (scripts/map-land.ts) — the same file the server reads, so both agree on what is land. */
+/** `public/map/land.json`: the coastline as a quarter-degree mask (scripts/map-land.ts). */
 export async function loadLandMask(url = '/map/land.json'): Promise<LandMask> {
 	const res = await fetch(url)
 	if (!res.ok) throw new Error(`No land mask at ${url}: ${res.status}`)

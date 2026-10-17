@@ -79,7 +79,7 @@ const WHY = {
  * @type {Record<string, { imports: Record<string, string>, owner: string }>}
  */
 const ALLOWED = {
-	// Sandbox 3's domes (also Sandbox 4's, Sandbox 2's walk into one, the Buildings' domes and the film's): raised in
+	// Sandbox 3's domes (also Sandbox 4's, the Buildings' domes and the film's): raised in
 	// the page, by code that is itself recipe code (the dome rooms' Things are built from its furniture)
 	'src/lib/sandbox-2/interior/interior.ts': {
 		imports: { './textures': WHY.shell, './spaces': `${WHY.squares}; ${WHY.coops}`, './rooms': WHY.rooms, './plants': WHY.plants, '$lib/biomes': WHY.ground },
@@ -89,7 +89,6 @@ const ALLOWED = {
 		imports: { './interior': "Sandbox 3 and 4's village: its domes raised in the page, as ./interior.ts is", './spaces': `${WHY.squares}; ${WHY.coops}`, './textures': WHY.shell, './plants': WHY.plants, '$lib/biomes': WHY.ground },
 		owner: ASSET
 	},
-	'src/lib/sandbox-2/DomeInterior.svelte': { imports: { './interior/interior': "Sandbox 2's walk into a dome: Sandbox 3's dome, raised in the page" }, owner: ASSET },
 	'src/lib/buildings/inside.js': { imports: { '$lib/sandbox-2/interior/interior': "the Buildings' domes: Sandbox 3's, raised in the page" }, owner: ASSET },
 	'src/routes/games/sandbox-3/+page.svelte': { imports: { '$lib/sandbox-2/interior/interior': "Sandbox 3's domes on film: each raised in the page" }, owner: ASSET },
 	'src/lib/sandbox-2/interior/spaces.ts': {

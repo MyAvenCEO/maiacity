@@ -1,9 +1,5 @@
 /**
- * Scene shell: renderer, camera, lights, sea, world mounting and picking.
- *
- * One island for two sandboxes: Sandbox 1's, and every city's island in Sandbox 2. They differ only in how a
- * settlement grows (`settlements`: Sandbox 1's levels by default, a city's villages from
- * $lib/sandbox-2/island/villages.js) and in who owns what stands (`buildings`: the server's, in Sandbox 2).
+ * Scene shell: renderer, camera, lights, sea, world mounting and picking — Sandbox 1's island.
  *
  * Client-only — import dynamically from onMount. The sky color here must
  * match --color-sky in tokens.css so canvas and page blend seamlessly.
@@ -89,12 +85,6 @@ export interface SceneApi<K extends string = BuildingKind> {
 	 * makes the designation readable on the island. */
 	/** Travels the map from a touch joystick: x to the right, y ahead, each -1…1. */
 	move(x: number, y: number, hurry: boolean): void
-	/** Replaces everything standing with exactly these, by "q,r" — the server owns them. */
-	setBuildings(buildings: Record<string, K | FactoryKind>): void
-	/** Brings a hex to the middle of the view, keeping the camera's angle. */
-	frame(cell: string): void
-	/** Stops drawing while another view covers the island (a dome walked into), and starts again. */
-	setPaused(on: boolean): void
 	dispose(): void
 }
 
@@ -103,16 +93,6 @@ export interface SceneOptions<K extends string = BuildingKind> {
 	onSelect?(tiles: HexTile[]): void
 	/** On film (src/lib/film): the island as its seed grows it, every time — nothing read from or kept in the browser. */
 	film?: boolean
-	/** What stands on the island, by "q,r" — from the server; nothing is seeded or saved in the browser. */
-	buildings?: Record<string, K | FactoryKind>
-	/** The hex the opening shot frames, "q,r". */
-	focus?: string
-	/** How the island's settlements grow: Sandbox 1's levels (the default), or a city's villages in Sandbox 2
-	 * ($lib/sandbox-2/island/villages.js). */
-	settlements?: Settlements<K>
-	/** Whose island it is, for the film camera: Sandbox 1's (the default; its page grows its one island), or a city's in
-	 * Sandbox 2 (a shot names it by its seed, world.seed, and it is grown for the shot). */
-	sandbox?: 'sandbox-1' | 'sandbox-2'
 }
 
 /** Slim, semi-transparent ring around a selected hex — present, not loud. */
@@ -166,7 +146,7 @@ export function createScene<K extends string = BuildingKind>(
 ): SceneApi<K> {
 	/** what a hex carries: a settlement of this island's kinds, or a works */
 	type Placed = K | FactoryKind
-	const settlements = options.settlements ?? (SANDBOX_1 as unknown as Settlements<K>)
+	const settlements = SANDBOX_1 as unknown as Settlements<K>
 	// the world renderer ($lib/render/world.js): plain shadows, the island's lens, and at most 1.25 pixels per CSS
 	// pixel (where the extra pixels stop showing and keep costing)
 	const renderer = worldRenderer({ canvas, shadows: 'pcf', exposure: 1.05 })
@@ -275,12 +255,8 @@ export function createScene<K extends string = BuildingKind>(
 	let saved: Saved = { buildings: {} }
 	let saveKey = ''
 
-	/* In Sandbox 2 the server owns what stands: nothing is seeded, nothing saved here. */
-	const managed = options.buildings !== undefined
-
 	function persist(): void {
 		if (options.film) return
-		if (managed) return
 		try {
 			localStorage.setItem(saveKey, JSON.stringify(saved))
 		} catch {
@@ -361,8 +337,8 @@ export function createScene<K extends string = BuildingKind>(
 	function frameOpening(tiles: readonly HexTile[]): void {
 		if (!world) return
 		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
-		// the hex asked for, or the first standing of the settlements' own picks, in order
-		let pick = options.focus && byKey.has(options.focus) ? options.focus : undefined
+		// the first standing of the settlements' own picks, in order
+		let pick: string | undefined
 		for (const kind of settlements.demo.focus) pick ??= Object.entries(saved.buildings).find(([, k]) => k === kind)?.[0]
 		const tile = pick ? byKey.get(pick) : undefined
 		const gx = world.group.position.x
@@ -380,11 +356,6 @@ export function createScene<K extends string = BuildingKind>(
 	function restore(seed: number, tiles: readonly HexTile[]): void {
 		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v6`
 		saved = { buildings: {} }
-		if (managed) {
-			saved.buildings = { ...options.buildings }
-			placeAll(tiles)
-			return
-		}
 		let fresh = true
 		try {
 			const raw = options.film ? null : localStorage.getItem(saveKey)
@@ -403,7 +374,6 @@ export function createScene<K extends string = BuildingKind>(
 		placeAll(tiles)
 	}
 
-	let tilesNow: readonly HexTile[] = []
 	function placeAll(tiles: readonly HexTile[]): void {
 		if (!world) return
 		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
@@ -418,10 +388,7 @@ export function createScene<K extends string = BuildingKind>(
 		}
 	}
 
-	/** the island's seed now (null before one is grown) */
-	let seedNow: number | null = null
 	function setWorld(seed: number): void {
-		seedNow = seed
 		if (world) {
 			scene.remove(world.group)
 			world.dispose()
@@ -446,7 +413,6 @@ export function createScene<K extends string = BuildingKind>(
 		world.group.position.x = -(minX + maxX) / 2
 		world.group.position.z = -(minZ + maxZ) / 2
 		scene.add(world.group)
-		tilesNow = map.tiles
 		restore(seed, map.tiles)
 		frameOpening(map.tiles)
 		selection = []
@@ -610,11 +576,8 @@ export function createScene<K extends string = BuildingKind>(
 
 	const clock = new THREE.Clock()
 	let raf = 0
-	/** a dome walked into covers the island: nothing of it is drawn, for every frame of it would hold up the dome's */
-	let paused = false
 	function animate(): void {
 		raf = requestAnimationFrame(animate)
-		if (paused) return
 		// while the film camera holds the island it draws the canvas itself, at the size it asks for
 		if (!filmDraws()) resize()
 		// the map camera, or where the film camera holds it
@@ -628,9 +591,8 @@ export function createScene<K extends string = BuildingKind>(
 	animate()
 
 	/* the film camera's hold on the island (src/lib/film, $lib/sandbox-kit/film) */
-	const bySeed = options.sandbox === 'sandbox-2'
 	const film = connectFilm({
-		sandbox: options.sandbox ?? 'sandbox-1',
+		sandbox: 'sandbox-1',
 		area: 'island',
 		renderer,
 		scene,
@@ -638,15 +600,7 @@ export function createScene<K extends string = BuildingKind>(
 		hold: rig,
 		sky,
 		place: () => rig.release(),
-		advance: () => world?.updateLod(camera.position),
-		// a city's island: a shot names it by its seed (world.seed), grown for it and again only for another
-		stage: bySeed
-			? async (w) => {
-					if (w.seed !== seedNow) setWorld(w.seed)
-					rig.release()
-				}
-			: undefined,
-		holds: bySeed ? (w) => w.seed === seedNow : undefined
+		advance: () => world?.updateLod(camera.position)
 	})
 
 	const api: SceneApi<K> = {
@@ -672,33 +626,6 @@ export function createScene<K extends string = BuildingKind>(
 		},
 		move(x, y, hurry) {
 			rig.move(x, y, hurry)
-		},
-		setBuildings(buildings) {
-			if (!world) return
-			const byKey = new Map(tilesNow.map((t) => [key(t.q, t.r), t]))
-			for (const [k, kind] of Object.entries(saved.buildings)) {
-				const tile = byKey.get(k)
-				if (tile && buildings[k] !== kind) world.removeBuilding(tile)
-			}
-			for (const [k, kind] of Object.entries(buildings)) {
-				const tile = byKey.get(k)
-				if (tile && saved.buildings[k] !== kind) world.placeBuilding(tile, kind)
-			}
-			saved.buildings = { ...buildings }
-		},
-		frame(cell) {
-			const tile = tilesNow.find((t) => key(t.q, t.r) === cell)
-			if (!tile || !world) return
-			const target = new THREE.Vector3(tile.x + world.group.position.x, 0.75, tile.z + world.group.position.z)
-			const offset = camera.position.clone().sub(controls.target)
-			controls.target.copy(target)
-			camera.position.copy(target).add(offset)
-			controls.update()
-		},
-		setPaused(on) {
-			paused = on
-			// the time away is no step for the camera
-			if (!on) clock.getDelta()
 		},
 		dispose(): void {
 			cancelAnimationFrame(raf)
