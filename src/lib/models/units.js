@@ -54,5 +54,6 @@ export const REAL_SIZES = {
 	seedPacket: { size: [0.07, 0.1, 0.005], what: 'a 7 × 10 cm seed packet' },
 	markerSticks: { size: [0.54, 0.35, 0.04], what: 'two 35 cm marker sticks (5 cm of it in the ground), half a metre apart, leaning a little' },
 	plantStake: { size: [0.14, 1.13, 0.04], what: 'a 1 m plant stake, its 10 × 7 cm name flag on a wire past its top' },
-	dugEarth: { size: [0.64, 0.09, 0.64], what: 'a patch of dug earth about 60 cm across, its hollow 3 cm down, clods on it' }
+	dugEarth: { size: [0.64, 0.09, 0.64], what: 'a patch of dug earth about 60 cm across, its hollow 3 cm down, clods on it' },
+	euroPallet: { size: [1.2, 0.144, 0.8], what: 'an empty Euro pallet (EPAL), 1200 × 800 × 144 mm, lying along x (models/pallet.js)' }
 };

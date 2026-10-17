@@ -13,6 +13,7 @@ import { backpack, dugEarth, markerSticks, plantStake, seedPacket, waterBottle }
 import { domeTent, packedTent, storageTent, storageTentBag } from './tent.js';
 import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { busStop, gasStation, oldShed, travelVan } from './wayside.js';
+import { pallet } from './pallet.js';
 import { PLAYER_HEIGHT, wearPack } from '../maiacity-v1/world.js';
 import { human } from '../actors/human.ts';
 import { powerCube } from '../actors/powercube.js';
@@ -33,7 +34,7 @@ const player = () => {
 };
 const still = (c) => (c.rig.pose(c.clips.off(0)), c.rig.object);
 const ose = () => still(powerCube());
-const BUILD = { pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), batteryPackV10: () => batteryPackV10(), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: player, tent: () => bellTent(), loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag };
+const BUILD = { pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), batteryPackV10: () => batteryPackV10(), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: player, tent: () => bellTent(), loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag, euroPallet: pallet };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {
