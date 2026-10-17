@@ -1,16 +1,16 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 // An inspire post's report card, as the Universe lays it out (./InspirePost.svelte), drawn from the entries everyone
-// may read in its vault: the post, its delivery (the report, an article tagged `delivery:inspire`), the delivery's
-// story (the shift, the hook, the categories) and the story's spark, whose source artifact is what inspired it (the
-// link, whose words, its picture, its transcript). The story is the source of truth; the report card is how an inspire
-// delivery is laid out (Samuel 2026-10-17: each delivery type has its own template layout).
+// may read in its vault: the post (the report, of post type `inspire`: its text, its quote), the story it was drawn
+// from (the shift, the hook, the categories) and the story's spark, whose source artifact is what inspired it (the
+// link, whose words, its picture, its transcript). The story is the source of truth; the report card is how a post of
+// type inspire is laid out (Samuel 2026-10-17: only stories and their posts, each post type its own layout).
 import { base } from '$app/paths';
 import { entryOf, youtubeId } from '$lib/avendb/artifacts.js';
 import { journalHtml } from '$lib/markdown/journal.js';
 import { asset } from '$lib/media/url';
 
-/** The tag of an inspire delivery and its post ($lib/avendb/seed.js `deliveryTag('inspire')`). */
-export const INSPIRE_DELIVERY = 'delivery:inspire';
+/** The tag of an inspire post ($lib/avendb/posttypes.js `postTag('inspire')`). */
+export const INSPIRE_POST = 'post:inspire';
 
 // a report links its own sections with absolute paths, under the site's base
 const toHtml = (md) => journalHtml(md, base);
@@ -52,15 +52,15 @@ export const youtubePictures = (id) => [
 ];
 
 /**
- * Post `post`'s report card, where it is an inspire post and `entries` (the feed's public entries, by id) hold its
- * delivery; `null` for any other post. What its story or source doesn't give, it goes without.
+ * Post `post`'s report card, where it is an inspire post and `entries` (the feed's public entries, by id) hold it
+ * and its story; `null` for any other post. What its story or source doesn't give, it goes without.
  */
 export function inspireOf(post, entries) {
-	if (!post?.tags?.includes(INSPIRE_DELIVERY)) return null;
+	if (!post?.tags?.includes(INSPIRE_POST)) return null;
 	const record = (id) => (id ? entries.get(entryOf(id))?.record : null) ?? null;
-	const report = record(post.about);
-	if (!report) return null;
-	const story = record(report.story) ?? {};
+	const report = record(post.entry);
+	const story = record(report?.story ?? post.about);
+	if (!report || !story) return null;
 	const spark = record(story.sparks?.[0]) ?? {};
 	const source = record((spark.items ?? []).find((i) => i.what === 'artifact')?.ref) ?? {};
 	const id = source.url ? youtubeId(source.url) : null;
@@ -83,7 +83,7 @@ export function inspireOf(post, entries) {
 		quoteBy: report.quote?.by || by.name || '',
 		language: report.language || source.language || '',
 		thumbnails: id ? youtubePictures(id) : [],
-		sections: sectionsOf(report.text ?? ''),
+		sections: sectionsOf(report.text || story.text || ''),
 		sourceHtml: words.length ? toHtml(words.join('\n\n')) : null,
 		sourceWords: words.join(' ').split(/\s+/).filter(Boolean).length
 	};

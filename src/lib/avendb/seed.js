@@ -9,19 +9,17 @@
 //              it keeps, so without it the feeds have nothing of the vault's to show
 //   code       each view and logic module of code/ (game/code/sources/avendb.js `recordOf`), found by its `ref:` tag,
 //              and one Public share of the vault's views and logic, so the server's code feed serves them
-//   templates  each delivery type's writing guide, a note tagged `template:<type>` (article: blog/TEMPLATE.md,
-//              inspire: inspire-me/FORMAT.md)
-//   journal    each journal day (blog/day-NN-…/post.md): a story, its source of truth; its article, the story's
-//              delivery as the journal writes it (`delivery:article`); and the post that publishes it on the Maia
-//              Universe stream (channel Journal), on the day it was first published
+//   post types each post type, a schema of the vault's own with its template inside (./posttypes.js): journal
+//              (blog/TEMPLATE.md) and inspire (inspire-me/FORMAT.md)
+//   journal    each journal day (blog/day-NN-…/post.md): a story, its source of truth, with its full text; and its
+//              journal post (`post:journal`) on the Maia Universe stream, on the day it was first published
 //   inspire    each inspire-me report: its source an artifact on a spark (./legacy.js), the story grown from the spark,
-//              the report as its delivery (`delivery:inspire`), and its post (channel Inspire me), on the day it was
-//              added
+//              with the report's text, and its inspire post (`post:inspire`), on the day it was added
 //   inspire    (after the published share) one Public share of every inspire-me piece (`INSPIRE`), so the Universe lays
 //              an inspire post out as its report card; ./Account.svelte then brings each copied source up to date
 //              (`touchingUp`): its author's portrait, and the tag
 //   published  one Public share of the vault's published entries (`content:published`), as the content flow's
-//              published stage is public: the posts and their articles go on the stream
+//              published stage is public: the posts and their stories go on the stream
 //   pads       the journal's sources and each story's idea pad, sparks as ./legacy.js copies them
 //   games      the Games area (game/games.js): the vault's own schema "Game, v1", then each game's entry, of type `game`,
 //              tagged `game` and `game:<id>`; a game the repo released (places.ts, no `release: 'draft'`) also gets
@@ -29,34 +27,29 @@
 //              later is never published again by a seed
 //   retire     every entry of a game the repo let go (`RETIRED`: Sandboxes 7 and 8), deleted
 //
-// The story is the source of truth; an article, a script or an inspire piece is a delivery of it, an entry of its own
-// that links it (`story`) and says which delivery it is by its tag. The notebook's ideas live on maia.city's server,
+// There are only stories and their posts (Samuel 2026-10-17): the story is the source of truth, and each post one way
+// it goes out, of a post type, linking it (`story`). No articles, no notes, no templates of their own. The notebook's ideas live on maia.city's server,
 // not in the repository: ./LegacyCopy.svelte still copies those by hand.
 
 import { parse as parseYaml } from 'yaml';
 import { ENTRIES } from '../../../code/index.js';
 import { recordOf } from '../../../game/code/sources/avendb.js';
-import { ARTICLE, PICTURE } from './article.js';
+import { PICTURE } from './article.js';
 import { stageTag } from './flows.js';
 import { copying, legacyTag, pieces as legacyPieces } from './legacy.js';
 import { EVERYONE } from './vaults.js';
+import { POST_TYPES, postTag, postTypeSchema, postTypeTitle } from './posttypes.js';
 import { GAME, GAMES, gameTag } from '../../../game/games.js';
 
 /** The types of the code entries the vault holds, which everyone reads, as the repo's code/ is open to everyone. */
 export const CODE_TYPES = ['view', 'logic'];
 
-/** The tag that says which delivery of its story an entry is. @param {string} type */
-export const deliveryTag = (type) => `delivery:${type}`;
-
 /** The tag of the content flow's published stage, which everyone reads. */
 export const PUBLISHED = stageTag('content', 'published');
 
-/** The tag every inspire-me piece carries, its story, delivery, post, spark and source, which everyone reads: the
+/** The tag every inspire-me piece carries, its story, post, spark and source, which everyone reads: the
  *  Universe lays an inspire post out as its report card from them all. */
 export const INSPIRE = 'inspire-me';
-
-/** The channel of the Maia Universe stream each delivery type's posts go out on. */
-export const CHANNEL = /** @type {Record<string, string>} */ ({ article: 'Journal', inspire: 'Inspire me' });
 
 /** The title of the Maia City vault's own schema of a game's entry. */
 export const GAME_SCHEMA = 'Game, v1';
@@ -82,24 +75,16 @@ export const GAME_V1 = JSON.stringify({
 /** The games the repository released, by id: those every founder plays today (places.ts), published at the seed. */
 const RELEASED = new Set(['maiacity-v1']);
 
-/** The tag of a delivery type's template. @param {string} type */
-export const templateTag = (type) => `template:${type}`;
-
 const POSTS = /** @type {Record<string, () => Promise<string>>} */ (
 	import.meta.glob('/blog/day-*/post.md', { query: '?raw', import: 'default' })
 );
 const REPORTS = /** @type {Record<string, () => Promise<string>>} */ (
 	import.meta.glob('/inspire-me/*/README.md', { query: '?raw', import: 'default' })
 );
+/** Each post type's template, by the file that holds it (./posttypes.js `POST_TYPES`). */
 const TEMPLATES = /** @type {Record<string, () => Promise<string>>} */ ({
 	...import.meta.glob('/blog/TEMPLATE.md', { query: '?raw', import: 'default' }),
 	...import.meta.glob('/inspire-me/FORMAT.md', { query: '?raw', import: 'default' })
-});
-
-/** Each delivery type's template, by the file that holds it. */
-const TEMPLATE_OF = /** @type {Record<string, { type: string, title: string }>} */ ({
-	'/blog/TEMPLATE.md': { type: 'article', title: 'Template: a journal article' },
-	'/inspire-me/FORMAT.md': { type: 'inspire', title: 'Template: an inspire-me report' }
 });
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
@@ -130,7 +115,7 @@ const filled = (o) =>
 const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
- * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'template' | 'journal' | 'inspire' | 'pad' | 'published' |
+ * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
  *   'inspire-share' | 'game-schema' | 'game', name: string, mark: string, server?: string }} Piece
  */
 
@@ -146,9 +131,7 @@ export function seedPieces(server = null) {
 		.sort((a, b) => a.ref.localeCompare(b.ref))
 		.map((e) => ({ key: e.ref, kind: /** @type {const} */ ('code'), name: e.ref, mark: `ref:${e.ref}` }));
 	const share = code.length ? [{ key: 'code-share', kind: /** @type {const} */ ('share'), name: 'Everyone reads its code', mark: '' }] : [];
-	const templates = Object.keys(TEMPLATES)
-		.sort()
-		.map((p) => ({ key: `template-${TEMPLATE_OF[p].type}`, kind: /** @type {const} */ ('template'), name: p, mark: legacyTag(`template-${TEMPLATE_OF[p].type}`) }));
+	const types = Object.keys(POST_TYPES).map((t) => ({ key: `post-type/${t}`, kind: /** @type {const} */ ('post-type'), name: t, mark: '' }));
 	const journal = Object.keys(POSTS)
 		.sort()
 		.map((p) => ({ key: `blog/${folderOf(p)}`, kind: /** @type {const} */ ('journal'), name: folderOf(p), mark: legacyTag(`blog/${folderOf(p)}`) }));
@@ -166,7 +149,7 @@ export function seedPieces(server = null) {
 		{ key: 'game-schema', kind: /** @type {const} */ ('game-schema'), name: GAME_SCHEMA, mark: '' },
 		...GAMES.map((g) => ({ key: `game/${g.id}`, kind: /** @type {const} */ ('game'), name: g.id, mark: gameTag(g.id) }))
 	];
-	return [...keep, ...code, ...share, ...templates, ...published, ...games, ...journal, ...inspire, ...pads];
+	return [...keep, ...code, ...share, ...types, ...published, ...games, ...journal, ...inspire, ...pads];
 }
 
 /**
@@ -257,19 +240,10 @@ export function unseeded(world, vault, all) {
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
 		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
 		p.kind === 'game-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === GAME_SCHEMA) :
+		p.kind === 'post-type' ? !mine.some((e) => e.kind === 'schema' && e.title === postTypeTitle(p.name)) :
 		p.kind === 'game' ? !games.has(p.mark) : !have.has(p.mark)
 	);
 }
-
-/** The record of a note that holds Markdown `md`, titled `title`. @param {string} title @param {string} md */
-const noteRecord = (title, md) => ({
-	kind: 'document',
-	title,
-	blocks: [
-		{ id: 1, type: 'heading', level: 1, text: title },
-		{ id: 2, type: 'paragraph', text: md }
-	]
-});
 
 /**
  * A journal day's article text, as the journal shows it: its subtitle and cover first, then its body.
@@ -304,10 +278,9 @@ export async function seeding(p, vault) {
 		const publish = RELEASED.has(g.id) ? [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: p.mark }, as }] : [];
 		return [...publish, { op: 'create', vault, type: GAME, tags: [GAME, p.mark], value, as }];
 	}
-	if (p.kind === 'template') {
-		const { type, title } = TEMPLATE_OF[p.name];
-		const md = (await TEMPLATES[p.name]()).trim();
-		return [{ op: 'create', vault, type: 'note', tags: [templateTag(type), p.mark], value: noteRecord(title, md), as }];
+	if (p.kind === 'post-type') {
+		const read = TEMPLATES[POST_TYPES[p.name]?.template];
+		return read ? [{ op: 'create', vault, type: 'schema', value: postTypeSchema(p.name, (await read()).trim()), as }] : [];
 	}
 	if (p.kind === 'pad') {
 		const legacy = legacyPieces([]).find((x) => x.key === p.key);
@@ -317,10 +290,11 @@ export async function seeding(p, vault) {
 		const { fm, body } = split(await POSTS[`/blog/${p.name}/post.md`]());
 		const title = str(fm.title) || p.name;
 		const day = Number(fm.day);
+		const text = journalText(fm, body);
 		const story = filled({
 			kind: 'story',
 			title,
-			format: 'article',
+			text,
 			series: 'Journal',
 			episode: Number.isInteger(day) && day >= 0 ? day : undefined,
 			description: str(fm.excerpt),
@@ -329,23 +303,13 @@ export async function seeding(p, vault) {
 			sparks: [],
 			tags: []
 		});
-		const text = journalText(fm, body);
-		const article = filled({
-			kind: ARTICLE,
-			title,
-			text,
-			story: { vault, entry: '$0' },
-			excerpt: str(fm.excerpt),
-			language: 'en',
-			tags: []
-		});
+		const words = { excerpt: str(fm.excerpt), language: 'en' };
 		return [
 			{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'published'), 'journal'], value: story, as },
-			{ op: 'create', vault, type: ARTICLE, tags: [PUBLISHED, deliveryTag('article'), 'journal'], value: article, as },
-			posting(vault, title, text, 'article', '$1', str(fm.date), p.mark)
+			posting(vault, 'journal', title, text, '$0', str(fm.date), words, p.mark)
 		];
 	}
-	// an inspire-me report: its source an artifact on a spark, as ./legacy.js copies one, then its story and delivery
+	// an inspire-me report: its source an artifact on a spark, as ./legacy.js copies one, then its story and its post
 	const legacy = legacyPieces([]).find((x) => x.kind === 'report' && x.name === p.name);
 	const spark = legacy ? await copying(legacy, vault, vault, { spark: [], artifact: [INSPIRE] }) : [];
 	const { fm, body } = split(await REPORTS[`/inspire-me/${p.name}/README.md`]());
@@ -354,7 +318,7 @@ export async function seeding(p, vault) {
 	const story = filled({
 		kind: 'story',
 		title,
-		format: 'inspire',
+		text: body,
 		sparks: spark.length ? [`$${at - 1}`] : [],
 		from: str(fm.shift?.from),
 		to: str(fm.shift?.to),
@@ -364,32 +328,32 @@ export async function seeding(p, vault) {
 		tags: []
 	});
 	const quote = str(fm.quote) ? filled({ text: str(fm.quote), by: str(fm.quoteBy) || str(fm.author) }) : undefined;
-	const article = filled({
-		kind: ARTICLE,
-		title,
-		text: body,
-		story: { vault, entry: `$${at}` },
-		excerpt: str(fm.hook),
-		language: str(fm.language) || 'en',
-		quote,
-		tags: []
-	});
+	const words = { excerpt: str(fm.hook), language: str(fm.language) || 'en', quote };
 	return [
 		...spark,
-		{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'published'), 'inspire-me'], value: story, as },
-		{ op: 'create', vault, type: ARTICLE, tags: [PUBLISHED, deliveryTag('inspire'), 'inspire-me'], value: article, as },
-		posting(vault, title, body, 'inspire', `$${at + 1}`, str(fm.added), p.mark)
+		{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'published'), INSPIRE], value: story, as },
+		posting(vault, 'inspire', title, body, `$${at}`, str(fm.added), words, p.mark)
 	];
 }
 
 /**
- * The op that posts a delivery of type `type`, article `about`, titled `title` with text `text`, on the Maia Universe
- * stream, as the content flow's Publish function does (./flows.js), on day `published`: public with its stage's tag,
- * and the piece's own tag `mark`, as its last op.
- * @param {string} vault @param {string} title @param {string} text @param {string} type @param {string} about
- * @param {string} published @param {string} mark
+ * The op that posts story `story` as a post of type `type` (./posttypes.js), titled `title` with text `text` and its
+ * type's own fields `own`, on the Maia Universe stream, as the content flow's Publish function does (./flows.js), on
+ * day `published`: public with its stage's tag, its type's tag, and the piece's own tag `mark`, as its last op. The
+ * stream's feed reads a post's story as its `about`.
+ * @param {string} vault @param {string} type @param {string} title @param {string} text @param {string} story
+ * @param {string} published @param {Record<string, any>} own @param {string} mark
  */
-function posting(vault, title, text, type, about, published, mark) {
-	const value = filled({ kind: 'post', title, text, channel: CHANNEL[type], about, published, tags: [] });
-	return { op: 'create', vault, type: 'post', tags: [PUBLISHED, deliveryTag(type), mark], value, as: vault };
+function posting(vault, type, title, text, story, published, own, mark) {
+	const value = filled({
+		kind: postTag(type),
+		title,
+		text,
+		story: { vault, entry: story },
+		channel: POST_TYPES[type].channel,
+		published,
+		...filled(own),
+		tags: []
+	});
+	return { op: 'create', vault, type: 'post', tags: [PUBLISHED, postTag(type), mark], value, as: vault };
 }

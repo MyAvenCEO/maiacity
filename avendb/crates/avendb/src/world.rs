@@ -820,7 +820,8 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
 /// The posts device `me` opens that everyone may read, newest first: each entry of type `POST` whose audience is
 /// public and that isn't deleted (`DELETED`), as the Maia Universe stream shows it, `{entry, vault, name, kind,
 /// created, title, text, channel, about, published, tags, pictures}`, its vault's name as its profile reads (`null`
-/// where it has none) and kind, when it was created, in seconds since 1970, the entry it is about (`null` for none),
+/// where it has none) and kind, when it was created, in seconds since 1970, the entry it is about, its `about` or else
+/// the story it links (`null` for none),
 /// when it says it was published, as its record's own `published` reads, an ISO 8601 date or time passed on as it is
 /// (`null` where it says none), its tags as its header reads them, and the names of the files of its vault everyone may
 /// read that its text shows (`public_files`). A field its schema doesn't name, as `published` before a post's schema
@@ -839,6 +840,10 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
         let name = names.entry(en.vault).or_insert_with(|| profile_of(lab, me, en.vault).map(|(_, name)| name));
         let kind = st.vault(en.vault).map(|v| kind_name(v.kind));
         let field = |k: &str| record.get(k).or(stored.get(k)).and_then(Value::as_str).filter(|v| !v.is_empty());
+        // a post of a post type links the story it came from (`story`): the entry it is about
+        fn story(l: Option<&Value>) -> Option<&str> {
+            l?.get("entry")?.as_str().filter(|v| !v.is_empty())
+        }
         let text = text.unwrap_or_default();
         let ours = files.keys().filter(|(v, name)| *v == en.vault && text.contains(name.as_str()));
         let pictures: Vec<&str> = ours.map(|(_, name)| name.as_str()).collect();
@@ -851,7 +856,7 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
             "title": title,
             "text": text,
             "channel": field("channel"),
-            "about": field("about"),
+            "about": field("about").or_else(|| story(record.get("story")).or_else(|| story(stored.get("story")))),
             "published": field("published"),
             "tags": attrs.tags.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
             "pictures": pictures,

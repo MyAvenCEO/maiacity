@@ -38,7 +38,7 @@ fn the_repo_seed_fits_its_schemas() {
     cast::library(&mut w);
     let (mac, alice) = (w.mac_a, w.alice.to_hex());
     let from = pieces.iter().flat_map(|p| p["ops"].as_array().unwrap()).find_map(|o| o["vault"].as_str()).unwrap().to_string();
-    let (mut made, mut articles, mut code, mut refused) = (0, vec![], vec![], vec![]);
+    let (mut made, mut posts, mut code, mut refused) = (0, vec![], vec![], vec![]);
     'pieces: for p in &pieces {
         let mut done: Vec<Value> = vec![];
         for op in p["ops"].as_array().unwrap() {
@@ -55,7 +55,7 @@ fn the_repo_seed_fits_its_schemas() {
                 continue 'pieces;
             };
             match op["type"].as_str() {
-                Some("article") => articles.push((p["key"].clone(), ok["entry"].clone())),
+                Some("post") => posts.push((p["key"].clone(), ok["entry"].clone())),
                 Some("view" | "logic") => code.push((p["key"].clone(), ok["entry"].clone())),
                 _ => {}
             }
@@ -65,10 +65,10 @@ fn the_repo_seed_fits_its_schemas() {
     }
     assert!(refused.is_empty(), "every piece fits its schemas:\n{}", refused.join("\n"));
     assert!(made > 200, "the seed writes its pieces: {made} entries");
-    for (key, entry) in &articles {
-        let got = engine::run(&mut w.lab, mac, &json!({ "op": "get", "entry": entry, "schema": "article" }));
+    for (key, entry) in &posts {
+        let got = engine::run(&mut w.lab, mac, &json!({ "op": "get", "entry": entry }));
         let story = got["ok"]["record"]["story"]["entry"].clone();
-        assert!(story.is_string(), "{key}: its article links its story: {got}");
+        assert!(story.is_string(), "{key}: its post links its story: {got}");
         let story = engine::run(&mut w.lab, mac, &json!({ "op": "get", "entry": story, "schema": "story" }));
         assert_eq!(story["ok"]["record"]["kind"], "story", "{key}: its story reads back: {story}");
     }
@@ -77,5 +77,5 @@ fn the_repo_seed_fits_its_schemas() {
         let tags = got["ok"]["tags"].as_array().cloned().unwrap_or_default();
         assert!(tags.contains(&json!(format!("ref:{}", key.as_str().unwrap()))), "{key}: its ref tag: {got}");
     }
-    assert_eq!(articles.len(), 68, "18 journal days and 50 inspire-me reports, each a delivery of its story");
+    assert_eq!(posts.len(), 68, "18 journal days and 50 inspire-me reports, each a post of its story");
 }

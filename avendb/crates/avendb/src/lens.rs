@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 26] = [
+    pub const SHIPPED: [&str; 27] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1359,6 +1359,7 @@ pub mod blobs {
         PROFILE_V1,
         FILE_V1,
         STORY_V1,
+        STORY_V2,
         SPARK_V1,
         SPARK_V2,
         REQUEST_V1,
@@ -1369,7 +1370,7 @@ pub mod blobs {
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
     /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
     /// and avenCEO GmbH holds each as a lens entry beside its schemas.
-    pub const LENSES: [&str; 5] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS, VIEW_LENS, POST_LENS];
+    pub const LENSES: [&str; 6] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS, VIEW_LENS, POST_LENS, STORY_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -1762,6 +1763,88 @@ pub mod blobs {
     "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
   },
   "required": ["kind"]
+}
+"#;
+
+    /// A story, v2: the single source of truth of a content piece (Samuel 2026-10-17), and its full written text
+    /// (`text`, Markdown), the base every post of it is drawn from. Its posts are its only deliveries, each of a post
+    /// type of its vault; `format` stays for the stories written before, and says nothing now.
+    pub const STORY_V2: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Story, v2",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "story" },
+    "title": { "type": "string", "default": "" },
+    "format": { "enum": ["film", "reel", "article", "post", "thread", "inspire", "newsletter", "podcast"] },
+    "sparks": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "from": { "type": "string", "default": "" },
+    "to": { "type": "string", "default": "" },
+    "question": { "type": "string", "default": "" },
+    "beats": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string", "default": "" },
+          "type": {
+            "enum": ["hook", "context", "problem", "intention", "obstacle", "low", "turn", "solution", "vision"]
+          },
+          "text": { "type": "string", "x-loro": "text", "default": "" },
+          "link": { "enum": ["but", "therefore"] },
+          "feel": { "type": "string" },
+          "tension": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["id"]
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "text": { "type": "string", "default": "" },
+          "subject": { "type": "string" },
+          "action": { "type": "string" },
+          "end": { "type": "string" },
+          "contrast": { "type": "string" },
+          "proof": { "type": "string" },
+          "time": { "type": "string" },
+          "anchor": { "type": "string" },
+          "promise": { "type": "string" },
+          "objection": { "type": "string" },
+          "dial": { "type": "integer", "minimum": 1 },
+          "note": { "type": "string" },
+          "image_title": { "type": "array", "items": { "type": "string" }, "default": [] }
+        },
+        "required": ["id"]
+      }
+    },
+    "hook": { "type": "integer", "minimum": 0 },
+    "intro": { "type": "string", "x-loro": "text", "default": "" },
+    "description": { "type": "string", "x-loro": "text", "default": "" },
+    "text": { "type": "string", "x-loro": "text", "default": "" },
+    "image_title": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "categories": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "series": { "type": "string", "default": "" },
+    "episode": { "type": "integer", "minimum": 0 },
+    "launch": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// The lens from a story of v1 to v2: v2 adds its full written text; the rest is the same.
+    pub const STORY_LENS: &str = r#"{
+  "lens": "Story, v1 to v2",
+  "from": "7a42b1e13313cf3bd4910f06997eb0d697dff961863d96a39ab042e5ef8ee48e",
+  "to": "57bccd021f6467fce53d7530646adbdb6363e554517f7cba4dada518e5ee4528",
+  "steps": [{ "add": "text" }]
 }
 "#;
 
@@ -2171,6 +2254,7 @@ pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::C
 pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
 pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
 pub static STORY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::STORY_V1));
+pub static STORY_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::STORY_V2));
 pub static SPARK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V1));
 pub static SPARK_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V2));
 pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
@@ -2186,6 +2270,8 @@ pub static VIEW_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::VIEW_LENS.as_bytes()).expect("a built-in lens parses"));
 pub static POST_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::POST_LENS.as_bytes()).expect("a built-in lens parses"));
+pub static STORY_LENS: LazyLock<Lens> =
+    LazyLock::new(|| Lens::parse(blobs::STORY_LENS.as_bytes()).expect("a built-in lens parses"));
 
 /// The app of each kind avenDB ships, of its newest schema alone, by its kind.
 static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
@@ -2206,7 +2292,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*CARD_V1,
         &*PROFILE_V1,
         &*FILE_V1,
-        &*STORY_V1,
+        &*STORY_V2,
         &*SPARK_V2,
         &*REQUEST_V1,
         &*ARTIFACT_V1,

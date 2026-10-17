@@ -1257,7 +1257,13 @@ older one still counts and opens in the newest app: the spark's v1, a document's
 board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`), and the article's v1, a title, a text and tags,
 reads as v2 as it was, with no story yet (`ARTICLE_LENS`); the function's v1 reads as v2 with no engine and no manifest
 yet (`FUNCTION_LENS`); and the view's v1 reads as v2, an HTML view with no data, no input and no logic of its own
-(`VIEW_LENS`).
+(`VIEW_LENS`); and the story's v1 reads as v2 with no full text yet (`STORY_LENS`).
+
+**Stories and their posts.** There are only stories and the posts drawn from them (2026-10-17). A story is the single
+source of truth, its full written text (`text`) the base; each post is one way it goes out, an entry of type `post`
+that links its story (`story`), of a post type of its vault: a schema of the vault's own, "Post: <name>, v1", whose
+records are of the kind `post:<name>` and which holds the type's own fields and its template (`x-template`, the
+Markdown a writer or an agent fills in from the story). The feed reads a post's story as the entry it is `about`.
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 
@@ -1741,8 +1747,8 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 11 since the last reset (2026-10-17), to check that Maia City comes back from the
-repository's seed.
+it runs (`bucket::clear`). `FLOOR` is 12 since the last reset (2026-10-17), as Maia City holds only stories and the posts of a post type drawn
+from them, and comes back so from the repository's seed.
 
 ### Layout of one generation
 
