@@ -4,8 +4,10 @@
 // everyone may read too (`FILES`).
 import { laidOut } from '$lib/avendb/article.js';
 import { idOf, slug } from '$lib/ids.js';
+import { asset, media } from '$lib/media/url';
 
-export const CHANNELS = ['All', 'Devlog', 'theOS', 'Village', 'Food', 'Energy'];
+// the journal's days and the inspire-me reports are posts of their own channels (src/lib/avendb/seed.js `CHANNEL`)
+export const CHANNELS = ['All', 'Journal', 'Inspire me', 'Devlog', 'theOS', 'Village', 'Food', 'Energy'];
 
 // A post's page lives on the root, at /<doc>/?t=<slug of the title>, `doc` its avenDB entry as an iroh doc id reads.
 // `ago` is in minutes.
@@ -23,6 +25,11 @@ export const FILES = 'https://avendb.maia.city/feed/files';
 
 // where picture `name` of vault `vault` is read, which everyone may read
 export const pictureUrl = (vault, name) => `${FILES}/${vault}/${name}`;
+
+// where post `p` shows picture `name` from, where everyone may read it: its vault's own, from avenDB's server, else one
+// of the media vault's public files, from its gateway, as a post brought in from before avenDB names them; null for none
+export const pictureOf = (p, name) =>
+	p.pictures.includes(name) ? pictureUrl(p.vault, name) : media(name) ? asset(name) : null;
 
 // the doc id of an avenDB post: its entry's 32 bytes as an address reads them ($lib/ids.js)
 export const docOf = (entry) => idOf(entry);
@@ -50,33 +57,50 @@ export function voiceOf(vault, name, kind) {
 	return { name: called, handle: slug(called), initials, color, kind, ai: kind === 'aven' || kind === 'device', coop: kind === 'coop', avendb: true };
 }
 
-// The cover of a post's article text `md`, as avenDB lays it out, where everyone may read it, among `pictures`: its
-// address and its words, or null.
-function coverOf(md, vault, pictures) {
-	const { coverName, coverAlt } = laidOut(md);
-	return coverName && pictures.includes(coverName) ? { src: pictureUrl(vault, coverName), alt: coverAlt } : null;
+// The cover of post `p`'s article text, as avenDB lays it out, where everyone may read it (`pictureOf`): its address
+// and its words, or null.
+function coverOf(p) {
+	const { coverName, coverAlt } = laidOut(p.md);
+	const src = coverName ? pictureOf(p, coverName) : null;
+	return src ? { src, alt: coverAlt } : null;
 }
+
+// when a post went out, in seconds since 1970: the day it was first published, where it says one (a post brought in
+// from before avenDB), else its entry's time; 0 for none
+const sentAt = (p) => {
+	const day = p.published ? Date.parse(p.published) / 1000 : NaN;
+	return Number.isFinite(day) ? day : p.created > 0 ? p.created : 0;
+};
 
 // a post of avenDB's feed as the stream holds it, `now` in seconds since 1970: its id its entry, its author its vault,
 // the pictures it shows that everyone may read, by the names it gives them, and its cover where it is one of them
-export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictures : []) => ({
-	id: p.entry,
-	entry: p.entry,
-	doc: docOf(p.entry),
-	title: p.title || 'Untitled',
-	author: p.vault,
-	// none for a post whose entry says no time (`created` 0, as before avenDB's devices set their clock)
-	ago: p.created > 0 ? Math.max(0, Math.round((now - p.created) / 60)) : null,
-	channel: p.channel || 'Devlog',
-	text: plain(p.text ?? ''),
-	// its Markdown as written, for its own page, which lays it out as the journal does
-	md: p.text ?? '',
-	vault: p.vault,
-	pictures,
-	cover: coverOf(p.text ?? '', p.vault, pictures),
-	likes: 0,
-	replies: 0,
-	liked: false
-});
+export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictures : []) => {
+	const post = {
+		id: p.entry,
+		entry: p.entry,
+		doc: docOf(p.entry),
+		title: p.title || 'Untitled',
+		author: p.vault,
+		// none for a post that says no time (`created` 0, as before avenDB's devices set their clock)
+		ago: sentAt(p) > 0 ? Math.max(0, Math.round((now - sentAt(p)) / 60)) : null,
+		channel: p.channel || 'Devlog',
+		text: plain(p.text ?? ''),
+		// its Markdown as written, for its own page, which lays it out as the journal does
+		md: p.text ?? '',
+		vault: p.vault,
+		pictures,
+		// its tags, as the feed hands them out: one brought in from before avenDB names where it was (`legacy:…`)
+		tags: Array.isArray(p.tags) ? p.tags : [],
+		cover: null,
+		likes: 0,
+		replies: 0,
+		liked: false
+	};
+	post.cover = coverOf(post);
+	return post;
+};
 
 export const postHref = (base, p) => `${base}/${p.doc}/?t=${slug(p.title)}`;
+
+// the post brought in from the old address `from` (`blog/<day>`, `inspire-me/<slug>`), among `posts`, if one is
+export const postFrom = (posts, from) => posts.find((p) => p.tags.includes(`legacy:${from}`));

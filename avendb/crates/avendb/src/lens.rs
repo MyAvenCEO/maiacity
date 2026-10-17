@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 23] = [
+    pub const SHIPPED: [&str; 24] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1352,6 +1352,7 @@ pub mod blobs {
         BUNDLE_V1,
         POLICY_V1,
         POST_V1,
+        POST_V2,
         CARD_V1,
         PROFILE_V1,
         FILE_V1,
@@ -1366,7 +1367,7 @@ pub mod blobs {
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
     /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
     /// and avenCEO GmbH holds each as a lens entry beside its schemas.
-    pub const LENSES: [&str; 3] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS];
+    pub const LENSES: [&str; 4] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS, POST_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -1590,6 +1591,34 @@ pub mod blobs {
     "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
   },
   "required": ["kind"]
+}
+"#;
+
+    /// A post of v2: v1 and the day it first went out (`published`, an ISO 8601 date or time), which the stream
+    /// orders it by where it has one, as a post brought in from before avenDB keeps the day it was first published.
+    pub const POST_V2: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Post, v2",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "post" },
+    "title": { "type": "string", "default": "" },
+    "text": { "type": "string", "x-loro": "text", "default": "" },
+    "channel": { "type": "string", "default": "" },
+    "about": { "type": "string", "default": "" },
+    "published": { "type": "string", "maxLength": 32 },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["kind"]
+}
+"#;
+
+    /// The lens from a post of v1 to v2: v2 adds the day it went out; the rest is the same.
+    pub const POST_LENS: &str = r#"{
+  "lens": "Post, v1 to v2",
+  "from": "2ffad009829f5033473a1911e658e54aa366df44484fc3b388d26fe3c21b5575",
+  "to": "d2ab8c7d22f02a1a5cf36717ce9c71da3fdf0a34506617413f671f7d2a53cb2e",
+  "steps": [{ "add": "published" }]
 }
 "#;
 
@@ -2055,6 +2084,7 @@ pub static REVIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs:
 pub static BUNDLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::BUNDLE_V1));
 pub static POLICY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POLICY_V1));
 pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V1));
+pub static POST_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V2));
 pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CARD_V1));
 pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
 pub static FILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FILE_V1));
@@ -2070,6 +2100,8 @@ pub static SPARK_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::SPARK_LENS.as_bytes()).expect("a built-in lens parses"));
 pub static FUNCTION_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::FUNCTION_LENS.as_bytes()).expect("a built-in lens parses"));
+pub static POST_LENS: LazyLock<Lens> =
+    LazyLock::new(|| Lens::parse(blobs::POST_LENS.as_bytes()).expect("a built-in lens parses"));
 
 /// The app of each kind avenDB ships, of its newest schema alone, by its kind.
 static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
@@ -2085,7 +2117,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*REVIEW_V1,
         &*BUNDLE_V1,
         &*POLICY_V1,
-        &*POST_V1,
+        &*POST_V2,
         &*CARD_V1,
         &*PROFILE_V1,
         &*FILE_V1,
@@ -2436,6 +2468,18 @@ mod tests {
         let got = view.get(&v1).expect("it reads");
         assert_eq!((&got["title"], &got["tags"], &got["items"]), (&v1["title"], &v1["tags"], &serde_json::json!([])));
         assert_eq!(got["blocks"], v1["blocks"]);
+    }
+
+    #[test]
+    fn a_v1_post_opens_in_v2_as_it_was() {
+        assert_eq!((POST_LENS.from(), POST_LENS.to()), (POST_V1.id(), POST_V2.id()));
+        let lane = Lane::with_built_ins([]);
+        let (view, read_only) = lane.view(&POST_V2, &BTreeSet::from([POST_V1.id()]));
+        assert!(!read_only, "the shipped lens joins them");
+        let v1 = serde_json::json!({ "kind": "post", "title": "Seeds", "text": "Sown.", "channel": "Devlog", "tags": [] });
+        let got = view.get(&v1).expect("it reads");
+        assert_eq!((&got["title"], &got["channel"]), (&v1["title"], &v1["channel"]));
+        assert!(got.get("published").is_none(), "{got}");
     }
 
     #[test]

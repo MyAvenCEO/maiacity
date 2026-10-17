@@ -1,7 +1,7 @@
-<!-- Inspire me moved into the blog: an old address goes on to /blog/inspire-me/…, its query kept. -->
+<!-- The inspire-me's old addresses: on to Maia Universe ($lib/universe/OldAddress.svelte). -->
 <script lang="ts">
 	import { page } from '$app/state';
-	import Moved from '$lib/app/Moved.svelte';
+	import OldAddress from '$lib/universe/OldAddress.svelte';
 </script>
 
-<Moved to="/blog/inspire-me/{page.params.rest?.replace(/\/+$/, '') ? `${page.params.rest.replace(/\/+$/, '')}/` : ''}" />
+<OldAddress path="inspire-me/{page.params.rest ?? ''}" />

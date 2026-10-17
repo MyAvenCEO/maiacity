@@ -4,7 +4,8 @@
 	// $lib/assets/AssetPage.svelte, as ./+page.js finds), laid out as the journal lays out every article on the site
 	// ($lib/blog/PostLayout.svelte): its cover, its channel, its title, its subtitle, who wrote it and when, its words,
 	// then more of the stream. Its Markdown reads as avenDB lays it out ($lib/avendb/article.js), with the pictures
-	// everyone may read, from avenDB's server; one only its vault's readers hold is left out.
+	// everyone may read, from avenDB's server or, for a post from before avenDB, the media vault's gateway; one only its
+	// vault's readers hold is left out.
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
@@ -13,7 +14,7 @@
 	import PostLayout from '$lib/blog/PostLayout.svelte';
 	import { bodyText, laidOut, render } from '$lib/avendb/article.js';
 	import { shaped } from '$lib/app/shapes.js';
-	import { ago, pictureUrl, postHref, slug } from '$lib/universe/posts.js';
+	import { ago, pictureOf, postHref, slug } from '$lib/universe/posts.js';
 	import { authorOf, findPost, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 
@@ -37,8 +38,8 @@
 	const PICTURES = /!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)/g;
 	const html = $derived.by(() => {
 		if (!post) return '';
-		const shown = bodyText(parts).replace(PICTURES, (md, name) => (post.pictures.includes(name) ? md : ''));
-		return render(shown, (name) => pictureUrl(post.vault, name));
+		const shown = bodyText(parts).replace(PICTURES, (md, name) => (pictureOf(post, name) ? md : ''));
+		return render(shown, (name) => pictureOf(post, name) ?? '');
 	});
 	const meta = $derived(post ? `@${author.handle}${post.ago == null ? '' : ` · ${post.ago === 0 ? 'now' : ago(post.ago)}`} · Published in avenDB` : '');
 

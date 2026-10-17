@@ -16,7 +16,6 @@
 
 	const links = [
 		{ href: base || '/', label: 'Home' },
-		{ href: `${base}/blog`, label: 'Blog' },
 		// the theOS paper keeps its own spelling, not the nav's capitals
 		{ href: `${base}/theos`, label: 'theOS', asIs: true },
 		{ href: `${base}/universe`, label: 'Universe' },

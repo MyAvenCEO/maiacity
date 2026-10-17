@@ -130,7 +130,6 @@ const RAW_HTML = {
 	'src/lib/stories/WritingTab.svelte': 'renderMarkdown ($lib/markdown)',
 	'src/lib/stories/Pad.svelte': 'renderMarkdown ($lib/markdown)',
 	'src/lib/blog/PostLayout.svelte': 'its html prop: blog posts through journalHtml ($lib/markdown, $lib/server/blog.ts)',
-	'src/routes/blog/inspire-me/[slug]/+page.svelte': '$lib/markdown, at build time',
 	'src/routes/app/skills/+page.svelte': '$lib/markdown, our links around its <code>',
 	'src/lib/avendb/ArticleView.svelte': "avenDB's escaping article renderer (render)",
 	'src/routes/[doc=doc]/+page.svelte': "avenDB's escaping article renderer (render)",
