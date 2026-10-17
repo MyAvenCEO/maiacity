@@ -25,13 +25,10 @@ import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } fro
 import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queueStillsOf, RenderError, rendersOf, reportRender } from "./renders";
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format, gameClock, calendar, parse } from "../../game/time";
-import { relayDecision } from "./liquid.js";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
 import { ViewError, deleteView, dropLandedDrafts, keepView, listViews, putView } from "./genui.js";
-import { published } from "./games";
 import { loadCode } from "../../game/code/index.js";
 import { feedOf } from "../../game/code/sources/avendb.js";
-import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, landMips, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -54,14 +51,6 @@ function cors(req: Request): Record<string, string> {
   };
 }
 
-// The avens' Liquid relay also answers a local dev build (vite on :5173, which the Mac app loads): it carries no
-// cookie and no account, only game state, and is rate limited per address.
-const LIQUID_ORIGINS = [...ORIGINS, "http://localhost:5173", "http://127.0.0.1:5173"];
-function liquidCors(req: Request): Record<string, string> {
-  const origin = req.headers.get("origin") ?? "";
-  if (!LIQUID_ORIGINS.includes(origin)) return {};
-  return { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "content-type", "Access-Control-Allow-Methods": "POST,OPTIONS", Vary: "Origin" };
-}
 
 const json = (req: Request, body: unknown, init: ResponseInit = {}) =>
   Response.json(body, { ...init, headers: { ...cors(req), ...(init.headers ?? {}) } });
@@ -122,16 +111,6 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
   return me;
 }
 
-/**
- * Whoever may read game `game` here: whoever holds `cap`, else anyone at all, signed out too, while the game is
- * published (./games.ts; public is watch and read only); otherwise the response that says why not. Only reads ask this.
- */
-async function watching(req: Request, cap: string, game: string): Promise<{ id: string | null; role: string } | Response> {
-  const me = await allowed(req, cap);
-  if (!(me instanceof Response)) return me;
-  return (await published(game)) ? { id: null, role: "watcher" } : me;
-}
-
 /** The signed-in founder (or a terminal's key holder), whatever they hold — or the response that says why not. */
 async function signedIn(req: Request): Promise<{ id: string; role: string } | Response> {
   const key = await keyHolder(req);
@@ -142,7 +121,7 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof EconomyError || e instanceof GameError || e instanceof ViewError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof GameError || e instanceof ViewError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -173,8 +152,7 @@ const loadVaultCode = () =>
   );
 await loadVaultCode();
 setInterval(loadVaultCode, 60_000);
-// what the last deploy brought from the repo: accepted MIPs that landed in code/, Generated UI drafts that were kept
-await landMips().catch((e) => console.error("landing MIPs:", e));
+// what the last deploy brought from the repo: Generated UI drafts that were kept
 await dropLandedDrafts().catch((e) => console.error("dropping landed drafts:", e));
 await migrateLedger();
 await initSessions();
@@ -192,19 +170,6 @@ const server = Bun.serve({
   routes: {
     // Health, for the container and for the deploy job.
     "/api/health": (req) => json(req, { ok: true }),
-
-    // Sandbox 7's avens ask Liquid's free decision model through here: browsers can't reach it themselves.
-    // Only pages on our own origins (and a local dev build) may use it, so it is no open proxy.
-    "/api/liquid/decide": {
-      OPTIONS: (req) => new Response(null, { status: 204, headers: liquidCors(req) }),
-      POST: async (req, srv) => {
-        const headers = liquidCors(req);
-        if (!Object.keys(headers).length) return Response.json({ error: "unknown origin" }, { status: 403 });
-        const who = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || srv.requestIP(req)?.address || "?";
-        const { status, body } = await relayDecision(req, who);
-        return Response.json(body, { status, headers });
-      },
-    },
 
     // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it; the first
     // two to sign in take seat A and seat B, and only the founder in a seat moves for it.
@@ -312,238 +277,6 @@ const server = Bun.serve({
         try {
           const body = await readJson(req);
           return json(req, { view: await keepView(req.params.id, body?.keep !== false) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // The economy sandbox (Sandbox 7): its configs, its game runs day by day, and MIPs (api/src/economy.js). Playing
-    // (saving runs, reading, proposing) needs economy:play; accepting or rejecting a MIP, or deleting a run, economy:admin.
-    "/api/economy/configs": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await watching(req, "economy:play", "sandbox-7");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, { configs: await listConfigs({ deleted: new URL(req.url).searchParams.has("deleted") }), catalogue: catalogue() });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/economy/configs/:id": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await watching(req, "economy:play", "sandbox-7");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await getConfig(req.params.id, { version: new URL(req.url).searchParams.get("version") ?? undefined }));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // POST { title, description, config, action: edit | create | delete, name, about, from, cards: [card], remove: [id] }
-    "/api/economy/mips": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await watching(req, "economy:play", "sandbox-7");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, { mips: await listMips(new URL(req.url).searchParams.get("status") ?? undefined) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await createMip(me.id, await readJson(req)), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/economy/mips/:number": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await watching(req, "economy:play", "sandbox-7");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await getMip(Number(req.params.number)));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // POST { accept: true | false, note } — the admin's decision; an accepted MIP lands from the repo once the landing job merged it
-    "/api/economy/mips/:number/decide": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:admin");
-        if (me instanceof Response) return me;
-        try {
-          const body = ((await readJson(req)) ?? {}) as { accept?: boolean; note?: string };
-          return json(req, await decideMip(Number(req.params.number), me.id, { accept: body.accept === true, note: body.note }));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // POST { prs: [{ number, title }] } — the GitHub PRs a MIP needs (its engine changes in code); its author or an admin
-    "/api/economy/mips/:number/prs": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          const body = ((await readJson(req)) ?? {}) as { prs?: unknown };
-          return json(req, await linkMipPrs(Number(req.params.number), me.id, can(me, "economy:admin"), body.prs));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // POST { forget: { aven: [{ list, ref }] } } — what a new world's copied brains forget as it begins; an open world MIP's author or an admin
-    "/api/economy/mips/:number/forget": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          const body = ((await readJson(req)) ?? {}) as { forget?: unknown };
-          return json(req, await setMipForget(Number(req.params.number), me.id, can(me, "economy:admin"), body.forget));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/economy/mips/:number/withdraw": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await withdrawMip(Number(req.params.number), me.id));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/economy/runs": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await watching(req, "economy:play", "sandbox-7");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, { runs: await listRuns(Number(new URL(req.url).searchParams.get("limit") ?? 100)) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await startRun(me.id, await readJson(req)), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // GET ?from=&to=&detail=1&state=1 — its days (stats; with detail, trades and decisions too; with state, the valley as
-    // it last stood)
-    "/api/economy/runs/:id": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await watching(req, "economy:play", "sandbox-7");
-        if (me instanceof Response) return me;
-        try {
-          const u = new URL(req.url).searchParams;
-          return json(req, await getRun(req.params.id, { from: u.get("from") ?? undefined, to: u.get("to") ?? undefined, detail: u.get("detail") === "1", state: u.get("state") === "1" }));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      DELETE: async (req) => {
-        const me = await allowed(req, "economy:admin");
-        if (me instanceof Response) return me;
-        try {
-          await deleteRun(req.params.id);
-          return new Response(null, { status: 204, headers: cors(req) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // PUT { state, name }: the valley as it stands now, to open again and play on
-    "/api/economy/runs/:id/state": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await saveState(req.params.id, await readJson(req)));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // POST { days: [{ day, stats, trades, decisions }], alive, summary, ended }
-    "/api/economy/runs/:id/days": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await addDays(req.params.id, await readJson(req)));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // Each aven's brain, kept per world, under its run id (src/lib/sandbox-8/mind.js): GET { brains: { aven: brain } }, PUT { brains }
-    // (the page, each night), DELETE (the admin) forgets them all
-    "/api/economy/brains/:config": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await watching(req, "economy:play", "sandbox-7");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, { brains: await getBrains(req.params.config) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      PUT: async (req) => {
-        const me = await allowed(req, "economy:play");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await putBrains(req.params.config, await readJson(req)));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      DELETE: async (req) => {
-        const me = await allowed(req, "economy:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await forgetBrains(req.params.config));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // POST { dials, wants, lesson, forget_lesson, forget: [{ list, ref }], note }: an edit to one aven's brain, taken in on its next night
-    "/api/economy/brains/:config/:aven": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await editBrain(req.params.config, decodeURIComponent(req.params.aven), me.id, await readJson(req)));
         } catch (e) {
           return fail(req, e);
         }

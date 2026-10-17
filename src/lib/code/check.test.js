@@ -9,38 +9,25 @@ globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContex
 globalThis.$state ??= (x) => x;
 const { checkCode, TYPES } = await import('./check.js');
 const EXAMPLES = (await import('../../../game/genui/examples.js')).examples();
-const { defaultViews: valleyViews, SLOTS: VALLEY_SLOTS, slotsOf: valleySlots } = await import('../../../game/economy/views.js');
-const VALLEY_VIEWS = valleyViews();
 const { defaultViews: v1Views, SLOTS } = await import('../../../game/maiacity-v1/views.js');
 const V1_VIEWS = v1Views();
-const { defaultCards } = await import('../../../game/economy/params.js');
 const { hostileCards } = await import('../assets/schemas/hostile.js');
 
 const html = (body, libs = [], extra = {}) => ({ id: 'v', title: 'V', kind: 'html', spec: { html: body, libs, ...extra } });
 const refused = (r) => (r.ok ? 'ACCEPTED' : r.errors[0]);
 
 describe('what we ship passes', () => {
-	test('the types', () => expect(Object.keys(TYPES).sort()).toEqual(['asset-card', 'logic', 'rule-card', 'view', 'view-card']));
+	test('the types', () => expect(Object.keys(TYPES).sort()).toEqual(['asset-card', 'logic', 'view', 'view-card']));
 	for (const v of EXAMPLES) test(`the example view ${v.id}`, () => expect(checkCode('view', v)).toMatchObject({ ok: true }));
-	for (const c of VALLEY_VIEWS) test(`Sandbox 7's screen ${c.id}`, () => expect(checkCode('view-card', c)).toMatchObject({ ok: true, notes: [] }));
 	for (const c of V1_VIEWS) test(`V1's screen ${c.id}`, () => expect(checkCode('view-card', c, { slots: SLOTS })).toMatchObject({ ok: true, notes: [] }));
-	test("every Sandbox 7 rule card, its default code included", () => {
-		for (const c of defaultCards()) {
-			const r = checkCode('rule-card', c);
-			expect([c.id, r.ok, r.ok ? r.notes : r.errors]).toEqual([c.id, true, []]);
-		}
-	});
 	test('a template view with logic, and a script view with its libraries', () => {
 		expect(checkCode('view', html('<p>{{n}}</p><button data-event="add">+</button>', [], { data: { n: 1 }, logic: 'export function on(e, d) { return { n: d.n + 1 }; }' }))).toMatchObject({ ok: true, notes: [] });
 		expect(checkCode('view', html('<canvas></canvas><script type="module">import * as THREE from "three"; import { OrbitControls } from "three/addons/controls/OrbitControls.js"; // fetch("x") in a comment\nconst s = "import x from \'y\'";</script>', ['three']))).toMatchObject({ ok: true, notes: [] });
 	});
 	test("a screen takes one of its game's panels, never one where a person decides", () => {
 		const card = (id, slot) => ({ id, kind: 'view', name: id, data: { slot }, code: '<template each="board" as="r"><button data-event="select" data-value="{{r.id}}">{{r.name}}</button></template>' });
-		for (const slot of VALLEY_SLOTS) expect(checkCode('rule-card', card('screen', slot))).toMatchObject({ ok: true, value: { data: { slot } } });
-		expect(refused(checkCode('rule-card', card('screen', 'proposals')))).toBe(`Card screen: a view's slot is one of ${VALLEY_SLOTS.join(', ')}.`);
+		for (const slot of SLOTS) expect(checkCode('view-card', card('screen', slot), { slots: SLOTS })).toMatchObject({ ok: true, value: { data: { slot } } });
 		expect(refused(checkCode('view-card', card('screen', 'prices'), { slots: SLOTS }))).toBe(`Card screen: a view's slot is one of ${SLOTS.join(', ')}.`);
-		const slots = valleySlots([card('a', 'prices'), card('b', 'board'), card('c', 'prices'), card('d', 'panel')]);
-		expect(Object.fromEntries(Object.entries(slots).map(([k, v]) => [k, v.id]))).toEqual({ prices: 'c', board: 'b' });
 	});
 	test('read mode: a view already kept is drawn whatever the rules now say', () => {
 		expect(checkCode('view', html('<img src="https://evil.example/p.png">'), { mode: 'read' })).toMatchObject({ ok: true });
@@ -80,7 +67,7 @@ describe('views that try to reach out are refused, with and without a script', (
 	});
 	test("a game's screen is held to the same rules", () => {
 		expect(refused(checkCode('view-card', { id: 'evil', kind: 'view', name: 'E', data: {}, code: '<img src="https://evil.example/p">' }))).toContain('loads a file from an address');
-		expect(refused(checkCode('rule-card', { id: 'evil', kind: 'view', name: 'E', data: {}, code: '<script src="https://evil.example/x.js"></script>' }))).toContain('loads a script');
+		expect(refused(checkCode('view-card', { id: 'evil', kind: 'view', name: 'E', data: {}, code: '<script src="https://evil.example/x.js"></script>' }))).toContain('loads a script');
 	});
 	test('notes: kept, but doing nothing', () => {
 		const r = checkCode('view', html('<script>fetch("https://evil.example/x").then(() => localStorage.x = 1)</script>', ['d3']));
@@ -91,18 +78,16 @@ describe('views that try to reach out are refused, with and without a script', (
 });
 
 describe('logic that could never run alone is refused', () => {
-	const card = (code, more = {}) => ({ id: 'trading', kind: 'policy', name: 'T', values: {}, code, ...more });
+	const card = (code) => ({ code, hooks: ['want'] });
 	const HOSTILE = {
 		'an import': card('import { x } from "./rules.js";\nexport function want() { return 1; }'),
 		'a dynamic import': card('export async function want() { return (await import("x")).y; }'),
 		'require': card('export function want() { return require("x"); }'),
-		'too long': card('export function want() { return 1; }\n//' + 'x'.repeat(20_000)),
-		'data that is no JSON': card('', { data: { at: Infinity } }),
-		'data with a prototype key': card('', { data: JSON.parse('{"a": {"constructor": {"prototype": {}}}}') })
+		'too long': card('export function want() { return 1; }\n//' + 'x'.repeat(20_000))
 	};
-	for (const [what, c] of Object.entries(HOSTILE)) test(what, () => expect(refused(checkCode('rule-card', c))).not.toBe('ACCEPTED'));
+	for (const [what, c] of Object.entries(HOSTILE)) test(what, () => expect(refused(checkCode('logic', c))).not.toBe('ACCEPTED'));
 	test('a word in a comment or a string is not taken for code', () => {
-		expect(checkCode('rule-card', card('// import x from "y"\nexport function want() { const s = "require(\'x\')"; return 1; }'))).toMatchObject({ ok: true });
+		expect(checkCode('logic', card('// import x from "y"\nexport function want() { const s = "require(\'x\')"; return 1; }'))).toMatchObject({ ok: true });
 	});
 	test('a bare logic module: its hooks', () => {
 		expect(checkCode('logic', { code: 'export function init(d) { return d; }', hooks: ['init', 'on'] })).toMatchObject({ ok: true });

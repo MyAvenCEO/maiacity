@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * THE ONE CHECKER — every kind of code we keep, checked one way before it is kept, wherever it comes in: the API (an
- * agent over the MCP, a MIP, a world's cards), the pages, and later avenDB proposals. One verdict for all of them:
+ * agent over the MCP), the pages, and avenDB proposals. One verdict for all of them:
  *
  *   checkCode(type, raw, { mode }) -> { ok: true, value, notes } | { ok: false, errors }
  *
@@ -13,11 +13,9 @@
  * The types (each type's owner may add one with `define`, as the asset schemas do for asset cards, $lib/code/check.js):
  *   view       a Generated UI view: { id, title, note?, kind: a2ui | html, spec }      (game/genui/views.js)
  *   view-card  a game's screen: { id, kind: 'view', name, data: { slot, libs, height }, code }, with `slots`
- *   rule-card  a Sandbox 7 config card, its code a logic module of HOOKS                 (game/economy/params.js)
  *   logic      a bare logic module: { code, hooks?, max? }
  */
 import { ViewError, check as checkView, checkViewCard } from '../genui/views.js';
-import { HOOK_NAMES, checkCard as checkRuleCard } from '../economy/params.js';
 import { logicSource, plainJson, viewHtml } from './rules.js';
 
 const verdict = (value, errors = [], notes = []) => (errors.length ? { ok: false, errors: errors.slice(0, 12) } : { ok: true, value, notes: notes.slice(0, 12) });
@@ -55,24 +53,11 @@ export const TYPES = {
 		}
 	},
 	'view-card': {
-		what: "A game's screen (Sandbox 7, MaiaCity V1): an html view the game hands its state",
+		what: "A game's screen (MaiaCity V1): an html view the game hands its state",
 		check(raw, { slots, mode }) {
 			const r = checkViewCard(raw, slots, { mode });
 			if (r.error) return verdict(null, [r.error]);
 			return verdict(r.card, [], r.notes ?? []);
-		}
-	},
-	'rule-card': {
-		what: "A Sandbox 7 config card: values, data and code (a logic module of the valley's hooks)",
-		check(raw, { mode }) {
-			const r = checkRuleCard(raw, { mode });
-			if (r.error) return verdict(null, [r.error]);
-			if (mode === 'read' || r.card.kind === 'view') return verdict(r.card, [], r.notes ?? []);
-			const errors = [];
-			const data = r.card.data === undefined ? '' : plainJson(r.card.data, `card ${r.card.id}'s data`);
-			if (data) errors.push(data);
-			const l = r.card.code.trim() ? logicSource(r.card.code, { what: `card ${r.card.id}'s code`, hooks: HOOK_NAMES }) : { errors: [], notes: [] };
-			return verdict(r.card, [...errors, ...l.errors], l.notes);
 		}
 	},
 	logic: {

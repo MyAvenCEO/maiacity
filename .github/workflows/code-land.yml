@@ -1,21 +1,13 @@
 name: Land accepted code
 
-# The repo is the truth for the code that runs (Samuel 2026-10-16, C4): the admin accepts a Sandbox 7 MIP in the app,
-# or keeps an agent's Generated UI draft, and this job writes it into code/ and merges it by PR; the deploy it starts
-# is what makes it live (the API lands each MIP it finds in code/). Every few minutes it asks the database whether
-# anything waits (deploy/code-export.sh count, a read over SSH), and stops there when nothing does.
-#
-#   workflow_dispatch with full: also every config version the database kept (the first export, when code moved out of
-#   Postgres); a Generated UI view lands only once the admin kept it, in either mode
+# The repo is the truth for the code that runs (Samuel 2026-10-16, C4): the admin keeps an agent's Generated UI draft,
+# and this job writes it into code/ and merges it by PR; the deploy it starts is what makes it live. Every few minutes
+# it asks the database whether anything waits (deploy/code-export.sh count, a read over SSH), and stops there when
+# nothing does.
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
-    inputs:
-      full:
-        description: 'Also every config version the database kept (the first export)'
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -52,10 +44,9 @@ jobs:
       - name: Anything waiting?
         id: count
         run: |
-          if [ "${{ inputs.full }}" = "true" ]; then echo "mode=full" >> "$GITHUB_OUTPUT"; exit 0; fi
-          read -r MIPS VIEWS < <(ssh prod "cd $APP_DIR && bash -s -- count" < deploy/code-export.sh)
-          echo "MIPs waiting: $MIPS, views kept: $VIEWS"
-          if [ "$MIPS" = "0" ] && [ "$VIEWS" = "0" ]; then echo "mode=none" >> "$GITHUB_OUTPUT"; else echo "mode=land" >> "$GITHUB_OUTPUT"; fi
+          read -r VIEWS < <(ssh prod "cd $APP_DIR && bash -s -- count" < deploy/code-export.sh)
+          echo "views kept: $VIEWS"
+          if [ "$VIEWS" = "0" ]; then echo "mode=none" >> "$GITHUB_OUTPUT"; else echo "mode=land" >> "$GITHUB_OUTPUT"; fi
 
       - uses: oven-sh/setup-bun@v2
         if: steps.count.outputs.mode != 'none'
