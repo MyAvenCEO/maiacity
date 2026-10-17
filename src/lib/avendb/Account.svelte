@@ -102,9 +102,13 @@
 	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
 	let standardizing = false;
 	const standardized = new Set();
-	/** whether the device is writing the repo seed into Maia City, and the vaults it wrote it into */
+	/** whether the device is writing the repo seed into Maia City, and the vaults it wrote it into, or failed to:
+	 *  each tried once a visit, the next visit writing what is left */
 	let bringing = false;
 	const seededInto = new Set();
+	const seedFailed = /** @type {Map<string, string>} */ (new Map());
+	/** how far the repo seed has come: the pieces written of those it is writing, while it writes them */
+	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
 
 	/** A name for this browser that tells it from the person's other devices: its browser, on its system; or the app. */
 	function deviceName() {
@@ -211,10 +215,15 @@
 
 	/** What each step of a start shows in the sheet. */
 	const words = stepWords(here);
-	/** The sheet's rows: the steps begun, by the page and the device, then those to come. */
+	/** The sheet's rows: the steps begun, by the page and the device, then those to come; the seed's with its count. */
+	const seedWords = $derived(
+		seedAt
+			? { ...words, seed: { ...words.seed, does: `${seedAt.done} of ${seedAt.of} written: code, stories, asset recipes` } }
+			: words
+	);
 	const shown = $derived(
 		signing
-			? rows([...signing.own, ...reported(signing.report, signing.t0)], signing.plan, words, {
+			? rows([...signing.own, ...reported(signing.report, signing.t0)], signing.plan, seedWords, {
 					now: clock,
 					ended: signing.ended,
 					failed: !!signing.error
@@ -275,9 +284,38 @@
 	 *  gives avenDB's server a backup cap, keeping its ciphertext, unless the person turned `backup` off: then a relay
 	 *  cap, which lets their devices through and keeps nothing (the session's `found`). @param {boolean} fresh */
 	const found = (fresh) =>
-		signs('Setting up your account', plan('found', { mac: !!mac, make: fresh }), (at) =>
-			session.found(fresh, { name: name.trim(), relay, server, backup, person }, at)
-		);
+		signs('Setting up your account', plan('found', { mac: !!mac, make: fresh }), async (at) => {
+			await session.found(fresh, { name: name.trim(), relay, server, backup, person }, at);
+			await seeds(at);
+		});
+
+	/**
+	 * The last step of a founding that claimed the server: the repo seed brought into the Maia City it founded, as
+	 * this page's upkeep writes it (`upkeep`, `seed`), so the setup is over only once the seed is there (Samuel
+	 * 2026-10-17: no seeding step of its own after the setup). It waits for the device's world to show the person's
+	 * vault; a founding whose world shows no Maia City of theirs, the server being someone else's, leaves the step out.
+	 * A seed that fails fails the setup, naming what Maia City refused; the next visit writes what is left.
+	 * @param {import('./session.svelte.js').Steps} at
+	 */
+	async function seeds(at) {
+		const s = signing;
+		const by = performance.now() + 60_000;
+		for (;;) {
+			const w = world;
+			const mine = w?.vaults.find((v) => v.id === w.mine);
+			if (w && mine) {
+				const city = seeded(w)[3]?.[0];
+				if (!city || mine.devices[0]?.me !== true) {
+					if (s) s.plan = s.plan.filter((step) => step !== 'seed');
+					return;
+				}
+				if (!s?.own.some((o) => o.step === 'seed')) at.step('seed');
+				if (seedFailed.has(city.id)) throw new Error(seedFailed.get(city.id));
+				if (seededInto.has(city.id)) return;
+			} else if (performance.now() > by) throw new Error('Your vault didn’t show on this device after a minute');
+			await new Promise((r) => setTimeout(r, 250));
+		}
+	}
 
 	/** Links this browser to the person's vault through `through`: the code another of their devices shows, or
 	 *  avenDB's server's, which hands over their vault for their passkey alone. One ceremony, the unlock, which is the
@@ -357,15 +395,19 @@
 		// later might not have synced what the first wrote yet, and would write it all again
 		const city = seeded(w)[3]?.[0];
 		const first = mine?.devices[0]?.me === true;
-		if (city && company && first && standardized.has(company.id) && !bringing && !seededInto.has(city.id)) {
+		const tried = seededInto.has(city?.id) || seedFailed.has(city?.id ?? '');
+		if (city && company && first && standardized.has(company.id) && !bringing && !tried) {
 			bringing = true;
 			seed(w, city.id)
-				.catch(
-					(/** @type {Error} */ e) => (session.error = `Bringing the repo’s seed into Maia City failed: ${plain(e.message)}`)
-				)
+				.then(() => seededInto.add(city.id))
+				.catch((/** @type {Error} */ e) => {
+					const said = `Bringing the repo’s seed into Maia City failed: ${plain(e.message)}`;
+					seedFailed.set(city.id, said);
+					session.error = said;
+				})
 				.finally(() => {
 					bringing = false;
-					seededInto.add(city.id);
+					seedAt = null;
 				});
 		}
 	}
@@ -382,6 +424,7 @@
 		const left = unseeded(w, city, seedPieces(seeded(w)[2]?.[0]?.id ?? null));
 		/** @type {string[]} */
 		const failed = [];
+		seedAt = { done: 0, of: left.length };
 		for (const p of left) {
 			/** @type {any[]} */
 			const done = [];
@@ -395,6 +438,7 @@
 			} catch {
 				failed.push(p.name);
 			}
+			seedAt = { done: (seedAt?.done ?? 0) + 1, of: left.length };
 		}
 		// the inspire-me sources it copied before, brought up to date as their report cards show them
 		for (const ops of await touchingUp(w, city)) {
