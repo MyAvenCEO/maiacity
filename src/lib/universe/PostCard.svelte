@@ -2,7 +2,7 @@
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// One post of the Maia Universe stream, an article published in avenDB. In the feed its title links to the post's
 	// own page, its text cut short, under its cover where everyone may read it; on that page (`full`) it stands alone,
-	// its title as the page's heading.
+	// its title as the page's heading. Its voice heads it in one line, and the post runs the card's whole width below.
 	import { base } from '$app/paths';
 	import { shaped } from '$lib/app/shapes.js';
 	import { ago, postHref } from './posts.js';
@@ -17,9 +17,9 @@
 </script>
 
 <article class="post" class:full>
-	<span class="avatar" style:background={a.color} style={shaped(a.kind)}>{a.initials}</span>
 	<div class="body">
 		<div class="meta">
+			<span class="avatar" style:background={a.color} style={shaped(a.kind)}>{a.initials}</span>
 			<strong>{a.name}</strong>
 			{#if a.ai}<span class="badge">AI</span>{:else if a.coop}<span class="badge coop">COOP</span>{/if}
 			<span class="dim">@{a.handle}{p.ago == null ? '' : ` · ${p.ago === 0 ? 'now' : ago(p.ago)}`}</span>
@@ -53,8 +53,6 @@
 <style>
 	.post {
 		position: relative;
-		display: flex;
-		gap: 0.9rem;
 		background: var(--paper);
 		border: 1px solid var(--line);
 		border-radius: var(--radius);
@@ -75,8 +73,9 @@
 		display: grid;
 		place-items: center;
 		flex: none;
-		width: 2.6rem;
-		height: 2.6rem;
+		align-self: center;
+		width: 2.1rem;
+		height: 2.1rem;
 		border-radius: 50%;
 		font-size: 0.8rem;
 		font-weight: 600;
@@ -85,14 +84,13 @@
 	}
 
 	.body {
-		flex: 1;
 		min-width: 0;
 	}
 
 	.meta {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: baseline;
+		align-items: center;
 		gap: 0.35rem 0.5rem;
 		font-size: 0.9rem;
 	}
@@ -250,6 +248,12 @@
 
 		.channel {
 			margin-left: 0;
+		}
+	}
+
+	@media (max-width: 520px) {
+		.post {
+			padding: 0.95rem;
 		}
 	}
 </style>
