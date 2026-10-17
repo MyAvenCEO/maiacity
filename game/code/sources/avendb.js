@@ -1,17 +1,186 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
- * avenDB AS A SOURCE OF CODE ENTRIES — written, and switched off (Samuel 2026-10-16: prepare avenDB loading, don't do
- * it yet). A ref `vault:<vault id>/<entry id>@<heads>` names an entry at a version (its heads, as avenDB pins one); the
- * loader (../index.js) reads such refs today and this source refuses them. Turning it on (C10, the Maia City COOP's
- * vault) is the one change: `at` reads the entry with run(op) and its files with read_file, checks them with the one
- * checker, and hands back the same shape the repo source does.
+ * avenDB AS THE SOURCE OF CODE ENTRIES (C10; Samuel 2026-10-17: every dynamic config and every piece of code our hosts
+ * run goes through avenDB, engine code only by GitHub commits). The code lives in the seed's flat "Maia City" vault, a
+ * code entry per view or logic module (avenDB's shipped "View" and "Logic" schemas, #830), found by its tags:
+ *
+ *   ref:<code path>     the path the loader names it by: ref:views/coop-chart, ref:logic/sandbox-7/hearts
+ *   game:<id>           the game it belongs to (sandbox-7, maiacity-v1); none for a Generated UI view
+ *   legacy:<hash>       on what was copied from the repo: the repo entry's hash at the copy
+ *
+ * The loader (../index.js) reads them through this source once they are loaded (`loadCode`), and the repo's code/ is
+ * the seed: what every page and the API run offline, before the first load, and for any path the vault does not hold.
+ * Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }), with its vault,
+ * entry and heads beside, checked by the one checker and held to an engine version the repo ships; what fails either
+ * is left out and the seed's stays. Nothing here writes: `copyOf` makes the one batch the vault's owner runs to copy
+ * the repo in.
+ *
+ * A ref `vault:<vault id>/<entry id>@<heads>` names one entry at one version, as avenDB pins one: it is served only
+ * while the loaded entry is at those heads.
  */
+import { blake3 } from '@noble/hashes/blake3.js';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { canonical, jsonFile } from '../files.js';
+import { checkCode } from '../check.js';
+import ENGINES from '../../../src/lib/sandbox/engines.json' with { type: 'json' };
+
 export const AVENDB_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([A-Za-z0-9_-]{8,128})@([0-9a-f]{8,128}(?:,[0-9a-f]{8,128})*)$/;
 
+/** where the server serves the Maia City vault's public code entries (avenDB's feed, as /feed/posts serves posts) */
+export const CODE_FEED = 'https://avendb.maia.city/feed/code';
+
+/** the kinds of code entry this source carries, and the host each runs in */
+const HOSTS = { view: 'view', logic: 'logic' };
+const PATH = /^(views|logic)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/;
+
+export const hashOf = (text) => bytesToHex(blake3(utf8ToBytes(text)));
+const tagged = (tags, key) => (tags ?? []).find((t) => typeof t === 'string' && t.startsWith(`${key}:`))?.slice(key.length + 1);
+const textOf = (v) => (v == null ? undefined : typeof v === 'string' ? v : jsonFile(v));
+const objectOf = (text) => (text == null ? undefined : JSON.parse(text));
+const shipped = (host, e) => (ENGINES[host] ?? []).some((x) => x.v === e?.version && x.blake3 === e?.hash);
+
+/**
+ * A repo entry as the record, type and tags the vault keeps it under: { type, tags, value }, value a code entry of
+ * avenDB's View or Logic schema. `engine` is the engine version it is written for (the latest the repo ships).
+ */
+export function recordOf(e) {
+	const host = HOSTS[e.type];
+	if (!host) throw new Error(`${e.ref}: only views and logic modules are code entries, not ${e.type}`);
+	const latest = (ENGINES[host] ?? []).at(-1);
+	const tags = [`ref:${e.ref}`, ...(e.for && e.for !== 'genui' ? [`game:${e.for}`] : []), ...(e.hash ? [`legacy:${e.hash}`] : [])];
+	const base = { kind: e.type, title: e.title ?? '', note: e.note ?? '', engine: { host, version: latest.v, hash: latest.blake3 } };
+	if (e.type === 'logic') return { type: 'logic', tags, value: { ...base, source: e.files['logic.js'] ?? '', manifest: { hooks: e.hooks ?? [] } } };
+	const form = e.kind ?? 'html';
+	const value = {
+		...base,
+		form,
+		source: (form === 'a2ui' ? e.files['a2ui.json'] : e.files['view.html']) ?? '',
+		manifest: { libs: e.libs ?? [], slots: e.slot ? [e.slot] : [] },
+		...(e.height != null ? { height: e.height } : {}),
+		...(e.files['data.json'] != null ? { data: objectOf(e.files['data.json']) } : {}),
+		...(e.files['input.json'] != null ? { input: objectOf(e.files['input.json']) } : {}),
+		...(e.files['logic.js'] != null ? { logic: e.files['logic.js'] } : {})
+	};
+	return { type: 'view', tags, value };
+}
+
+/**
+ * A row the vault hands out ({ entry, vault, type, tags, heads, record }) as a repo entry, or `{ error }`: the path its
+ * ref tag names, its files as the repo keeps them, its hash as the repo makes one, and where in the vault it is.
+ */
+export function entryOf(row) {
+	const r = row?.record ?? {};
+	const ref = tagged(row?.tags, 'ref');
+	const where = `entry ${String(row?.entry ?? '?').slice(0, 12)}…`;
+	if (!ref || !PATH.test(ref)) return { error: `${where}: no ref:<views/… or logic/…> tag` };
+	const type = ref.startsWith('views/') ? 'view' : 'logic';
+	if (row.type !== type || r.kind !== type) return { error: `${ref}: a ${row.type ?? r.kind} entry under a ${type} path` };
+	if (r.engine?.host !== HOSTS[type] || !shipped(HOSTS[type], r.engine)) return { error: `${ref}: written for ${HOSTS[type]} engine ${r.engine?.version ?? '?'}, which the repo does not ship` };
+	const game = tagged(row.tags, 'game');
+	const entry = { type, for: game ?? (type === 'view' ? 'genui' : undefined), title: r.title ?? '' };
+	if (!entry.for) return { error: `${ref}: a logic module names its game (game:<id>)` };
+	if (r.note) entry.note = r.note;
+	const files = {};
+	if (type === 'logic') {
+		entry.card = ref.split('/').at(-1);
+		entry.hooks = r.manifest?.hooks ?? [];
+		files['logic.js'] = r.source ?? '';
+	} else {
+		entry.kind = r.form === 'a2ui' ? 'a2ui' : 'html';
+		if (r.manifest?.slots?.[0]) entry.slot = r.manifest.slots[0];
+		if (entry.kind === 'html') {
+			entry.libs = r.manifest?.libs ?? [];
+			if (r.height != null) entry.height = r.height;
+			files['view.html'] = r.source ?? '';
+		} else files['a2ui.json'] = r.source ?? '';
+		for (const [name, v] of [['data.json', textOf(r.data)], ['input.json', textOf(r.input)], ['logic.js', r.logic || undefined]]) if (v != null) files[name] = v;
+	}
+	const hash = hashOf(canonical({ entry: JSON.parse(JSON.stringify(entry)), files }));
+	return { entry: { ref, ...JSON.parse(JSON.stringify(entry)), files, hash, source: 'avendb', vault: row.vault, entry: row.entry, heads: row.heads } };
+}
+
+/**
+ * What the one checker says of an entry: in write mode, as at the API's door, since nothing checked it on its way into
+ * the vault (avenDB keeps what fits its schema; what our hosts may run is ours to say)
+ */
+function checked(e, viewOf) {
+	if (e.type === 'logic') return checkCode('logic', { code: e.files['logic.js'], hooks: e.hooks });
+	return checkCode('view', viewOf(e));
+}
+
+/** the loaded entries, by path; empty until `use` or `loadCode` fills them */
+let loaded = {};
+
 export const avendb = {
+	/** whether code is loaded from the vault: false until the server serves it (avenDB's /feed/code) */
 	on: false,
-	/** @param {{ vault: string, entry: string, heads: string }} ref */
+	/** the loaded entry at `path`, or null @param {string} path */
+	byPath: (path) => loaded[path] ?? null,
+	/** every loaded entry @returns {Record<string, any>} */
+	all: () => loaded,
+	/**
+	 * Take in the rows the vault handed out: each becomes a repo-shaped entry if it maps, checks and names an engine the
+	 * repo ships; returns what was taken and what was left out (and why). `viewOf` is ../index.js `viewOfEntry`.
+	 */
+	use(rows, viewOf) {
+		const next = {};
+		const twice = new Set();
+		const refused = [];
+		for (const row of rows ?? []) {
+			const m = entryOf(row);
+			if (m.error) {
+				refused.push(m.error);
+				continue;
+			}
+			const c = checked(m.entry, viewOf);
+			if (!c.ok) refused.push(`${m.entry.ref}: ${c.errors.join(' ')}`);
+			else if (next[m.entry.ref] || twice.has(m.entry.ref)) {
+				// which of two is meant, no reader could say: neither runs, and the seed's stays
+				refused.push(`${m.entry.ref}: held twice in the vault (entries ${(next[m.entry.ref]?.entry ?? '?').slice(0, 8)}…, ${m.entry.entry.slice(0, 8)}…)`);
+				twice.add(m.entry.ref);
+				delete next[m.entry.ref];
+			} else next[m.entry.ref] = m.entry;
+		}
+		loaded = next;
+		return { taken: Object.keys(next).sort(), refused };
+	},
+	/** the entry a vault ref names, at its heads @param {{ vault: string, entry: string, heads: string }} ref */
 	at(ref) {
-		throw new Error(`code from avenDB (${ref.vault.slice(0, 12)}…/${ref.entry.slice(0, 12)}…) is not switched on yet: until then code comes from the repo (code/)`);
+		const e = Object.values(loaded).find((x) => x.vault === ref.vault && x.entry === ref.entry);
+		if (!e) throw new Error(`code entry ${ref.entry.slice(0, 12)}… of vault ${ref.vault.slice(0, 12)}… is not loaded`);
+		const heads = (Array.isArray(e.heads) ? e.heads : String(e.heads ?? '').split(',')).filter(Boolean).sort().join(',');
+		if (heads !== ref.heads.split(',').sort().join(',')) throw new Error(`${e.ref} is at other heads now than ${ref.heads.slice(0, 12)}…`);
+		return e;
 	}
 };
+
+/**
+ * Load the vault's code entries from the server's feed, once: { taken, refused } or { error } (offline, or no feed
+ * yet), and on any failure the seed stays. `viewOf` is ../index.js `viewOfEntry`.
+ */
+export async function loadCode(viewOf, { url = CODE_FEED, fetch: get = globalThis.fetch, timeout = 4000 } = {}) {
+	if (!avendb.on && url === CODE_FEED) return { error: 'code from avenDB is not switched on yet' };
+	try {
+		const ctl = new AbortController();
+		const t = setTimeout(() => ctl.abort(), timeout);
+		const res = await get(url, { signal: ctl.signal }).finally(() => clearTimeout(t));
+		if (!res.ok) return { error: `${url} answered ${res.status}` };
+		const body = await res.json();
+		return avendb.use(Array.isArray(body) ? body : body.entries, viewOf);
+	} catch (e) {
+		return { error: e?.message || String(e) };
+	}
+}
+
+/**
+ * The one batch the Maia City vault's owner runs (one ceremony) to copy the repo's code entries in: a create per
+ * entry, acting as the vault. `entries` are the repo's (../index.js ENTRIES' values).
+ */
+export function copyOf(entries, vault) {
+	if (!/^[0-9a-f]{64}$/.test(String(vault))) throw new Error('the vault is its id, 64 hex digits');
+	const ops = entries
+		.filter((e) => HOSTS[e.type])
+		.map((e) => recordOf(e))
+		.map(({ type, tags, value }) => ({ op: 'create', vault, type, tags, schema: type, value }));
+	return { op: 'batch', ops, as: vault };
+}

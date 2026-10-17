@@ -13,7 +13,7 @@
 	import { apiCall } from '$lib/auth/client';
 	import ViewHost from '$lib/sandbox/ViewHost.svelte';
 	import { checkCode } from '$lib/code/check.js';
-	import { EXAMPLES } from '../../../../game/genui/examples.js';
+	import { examples } from '../../../../game/genui/examples.js';
 
 	let views = $state([]);
 	let drafts = $state([]);
@@ -41,7 +41,7 @@
 			if (key(nextDrafts) !== key(drafts)) drafts = nextDrafts;
 			offline = '';
 		} catch (e) {
-			if (!views.length) views = EXAMPLES.map((v) => shown(v, {}));
+			if (!views.length) views = examples().map((v) => shown(v, {}));
 			offline = e.message || String(e);
 		}
 	}
