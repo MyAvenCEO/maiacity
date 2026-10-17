@@ -5,7 +5,8 @@
 	move, what it shows, the line it covers). A story with no script draws its first from its beats; its lines and shots
 	can be adapted from the story's full text, the lines then quoting it. When the beats or that text move on, the
 	script says it is behind and takes the change. A script makes a first cut for the studio: a slate for each shot and a
-	line for each line, the story listing its cuts. Agents propose on the script's lines, as on any entry; each change
+	line for each line, the story listing its cuts; and once a cut is rendered, each film it made can go out as a film post
+	($lib/studio/films.js), the story's post of type `film`. Agents propose on the script's lines, as on any entry; each change
 	here is one op on its main line, as the device allows it.
 -->
 <script>
@@ -30,8 +31,11 @@
 		storyBehindOf,
 		storyTakingOps
 	} from '$lib/studio/scripts.js';
+	import { filmPost, filmsOf, postsOfFilm } from '$lib/studio/films.js';
+	import FILM_TEMPLATE from '/films/TEMPLATE.md?raw';
 	import { entryOf } from './artifacts.js';
 	import { allowed, may } from './ops.js';
+	import { postTag, postTypeSchema } from './posttypes.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
@@ -55,6 +59,32 @@
 	const storyWhere = $derived(script ? storyBehindOf(record, beats) : { behind: false, changed: [], added: [], gone: [] });
 	const where = $derived(script && source ? articleBehindOf(record, source.text ?? '') : { behind: false, changed: [], added: [] });
 	const cuts = $derived(cutsOf(world, item.entry));
+	/** the reports of renders too long to keep in their task, read from their files, by task entry */
+	let reports = $state(/** @type {Record<string, any>} */ ({}));
+	/** the tasks whose reports were asked for already */
+	const asked = new Set();
+	/** the films its cuts' renders made, each with its cut and the film posts made of it */
+	const films = $derived(
+		cuts.flatMap((c) => filmsOf(world, c.entry, reports).map((f) => ({ ...f, cut: c, posts: postsOfFilm(world, f.file.entry) })))
+	);
+	$effect(() => {
+		const ids = new Set(cuts.map((c) => c.entry));
+		const kept = world.entries.filter((e) => e.type === 'task' && /** @type {any} */ (e.record)?.rule === 'render' && ids.has(/** @type {any} */ (e.record)?.inputs?.[0]?.entry));
+		for (const t of kept) {
+			let file = '';
+			try {
+				file = JSON.parse(/** @type {any} */ (t.record).result || '{}').file ?? '';
+			} catch {
+				file = '';
+			}
+			if (!file || asked.has(t.entry)) continue;
+			asked.add(t.entry);
+			import('$lib/studio/aven.js')
+				.then((m) => m.valueOfFile(world, file))
+				.then((v) => v && (reports = { ...reports, [t.entry]: v }))
+				.catch(() => {});
+		}
+	});
 
 	/** whether it may change the script, as the device answers a dry run */
 	let changes = $state(false);
@@ -125,7 +155,18 @@
 		await api.run('Making a cut of the script', { op: 'create', vault: item.vault, type: CUT, value, as: actor });
 	}
 
-/** @param {number} scene */
+	/**
+	 * A film post of film `f`, the story gone out as that film: the film post type added to the vault where it has
+	 * none, with its template. @param {any} f
+	 */
+	async function post(f) {
+		const cut = world.entries.find((e) => e.entry === f.cut.entry);
+		if (!cut) return;
+		await schema(postTypeSchema('film', FILM_TEMPLATE.trim()), 'Adding the film post type');
+		await api.run('Making a film post', { op: 'create', vault: item.vault, type: 'post', tags: [postTag('film')], value: filmPost(item, cut, f), as: actor });
+	}
+
+	/** @param {number} scene */
 	const sceneAt = (scene) => ['scenes', { id: scene }];
 	/** An id none of `rows` has. @param {{ id: number }[]} rows */
 	const next = (rows) => rows.reduce((m, r) => Math.max(m, r.id ?? 0), 0) + 1;
@@ -197,6 +238,22 @@
 			{#if writer}<button class="ghost" disabled={busy} onclick={cut}>Make a cut of this script</button>{/if}
 			<span class="tally">The studio opens avenDB cuts in the Mac app.</span>
 		</section>
+
+		{#if films.length}
+			<section class="cuts" aria-label="Its films">
+				<p class="cap">Films</p>
+				{#each films as f (f.file.entry)}
+					<span class="cut">
+						{[f.name, f.aspect, f.seconds ? minutes(Math.round(f.seconds)) : '', `from ${f.cut.name}`].filter(Boolean).join(' · ')}
+						{#if f.posts.length}
+							· posted as a film (Derivatives tab)
+						{:else if writer}
+							<button class="ghost" disabled={busy} onclick={() => post(f)}>Make a film post</button>
+						{/if}
+					</span>
+				{/each}
+			</section>
+		{/if}
 
 		{#if storyWhere.behind}
 			<aside class="behind" aria-label="The story moved on">

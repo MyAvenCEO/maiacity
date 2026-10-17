@@ -84,7 +84,8 @@ const REPORTS = /** @type {Record<string, () => Promise<string>>} */ (
 /** Each post type's template, by the file that holds it (./posttypes.js `POST_TYPES`). */
 const TEMPLATES = /** @type {Record<string, () => Promise<string>>} */ ({
 	...import.meta.glob('/blog/TEMPLATE.md', { query: '?raw', import: 'default' }),
-	...import.meta.glob('/inspire-me/FORMAT.md', { query: '?raw', import: 'default' })
+	...import.meta.glob('/inspire-me/FORMAT.md', { query: '?raw', import: 'default' }),
+	...import.meta.glob('/films/TEMPLATE.md', { query: '?raw', import: 'default' })
 });
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
