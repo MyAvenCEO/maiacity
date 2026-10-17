@@ -166,7 +166,10 @@ export async function loadCode(viewOf, { url = CODE_FEED, fetch: get = globalThi
 		const res = await get(url, { signal: ctl.signal }).finally(() => clearTimeout(t));
 		if (!res.ok) return { error: `${url} answered ${res.status}` };
 		const body = await res.json();
-		return avendb.use(Array.isArray(body) ? body : body.entries, viewOf);
+		const rows = (Array.isArray(body) ? body : (body?.entries ?? body?.rows)) ?? [];
+		// the code our hosts run comes from the one vault: a feed handing out more than one is not what was asked for
+		if (new Set(rows.map((r) => r?.vault)).size > 1) return { error: `${url} handed out code of more than one vault` };
+		return avendb.use(rows, viewOf);
 	} catch (e) {
 		return { error: e?.message || String(e) };
 	}
@@ -174,13 +177,20 @@ export async function loadCode(viewOf, { url = CODE_FEED, fetch: get = globalThi
 
 /**
  * The one batch the Maia City vault's owner runs (one ceremony) to copy the repo's code entries in: a create per
- * entry, acting as the vault. `entries` are the repo's (../index.js ENTRIES' values).
+ * entry, acting as the vault. `entries` are the repo's (../index.js ENTRIES' values). A batch is not atomic (avenDB
+ * runs its ops one by one), so a rerun must not copy twice: `have` is what the vault already holds (the feed's rows,
+ * or any { tags }), and every path one of them names by its ref tag is left out, whatever it holds now, since from
+ * the copy on the vault is where that code changes. The first copy (`have` null) starts by opening the vault's views
+ * and logic modules to everyone, by type, now and later, as the feed reads them (the repo they come from is public),
+ * so whatever of it went in before a stop shows on the feed, and a rerun reads it there.
  */
-export function copyOf(entries, vault) {
+export function copyOf(entries, vault, { have = null } = {}) {
 	if (!/^[0-9a-f]{64}$/.test(String(vault))) throw new Error('the vault is its id, 64 hex digits');
+	const held = new Set((have ?? []).map((r) => tagged(r?.tags, 'ref')).filter(Boolean));
 	const ops = entries
-		.filter((e) => HOSTS[e.type])
+		.filter((e) => HOSTS[e.type] && !held.has(e.ref))
 		.map((e) => recordOf(e))
 		.map(({ type, tags, value }) => ({ op: 'create', vault, type, tags, schema: type, value }));
-	return { op: 'batch', ops, as: vault };
+	const share = { op: 'share', over: vault, who: 'everyone', level: 'Public', what: { type: Object.keys(HOSTS) }, as: vault };
+	return { op: 'batch', ops: have ? ops : [share, ...ops], as: vault };
 }

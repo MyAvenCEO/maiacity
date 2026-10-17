@@ -28,16 +28,25 @@ describe('the copy', () => {
 			expect(strip(entry)).toEqual(ENTRIES[entry.ref]);
 		}
 	});
-	test('is one batch of creates acting as the vault, tagged by path, game and the repo hash', () => {
+	test('is one batch acting as the vault: the Public share first, then a create per entry, tagged by path, game and the repo hash', () => {
 		const b = copyOf(repo, VAULT);
-		expect([b.op, b.as, b.ops.length]).toEqual(['batch', VAULT, repo.length]);
-		const wants = b.ops.find((o) => o.tags.includes('ref:views/view-wants'));
+		expect([b.op, b.as, b.ops.length]).toEqual(['batch', VAULT, repo.length + 1]);
+		expect(b.ops[0]).toEqual({ op: 'share', over: VAULT, who: 'everyone', level: 'Public', what: { type: ['view', 'logic'] }, as: VAULT });
+		const wants = b.ops.find((o) => o.tags?.includes('ref:views/view-wants'));
 		expect(wants).toMatchObject({ op: 'create', vault: VAULT, type: 'view', schema: 'view' });
 		expect(wants.tags).toEqual(['ref:views/view-wants', 'game:sandbox-7', `legacy:${ENTRIES['views/view-wants'].hash}`]);
-		expect(b.ops.find((o) => o.tags.includes('ref:views/coop-chart')).tags.some((t) => t.startsWith('game:'))).toBe(false);
-		const hearts = b.ops.find((o) => o.tags.includes('ref:logic/sandbox-7/hearts')).value;
+		expect(b.ops.find((o) => o.tags?.includes('ref:views/coop-chart')).tags.some((t) => t.startsWith('game:'))).toBe(false);
+		const hearts = b.ops.find((o) => o.tags?.includes('ref:logic/sandbox-7/hearts')).value;
 		expect([hearts.kind, hearts.engine.host, hearts.manifest.hooks]).toEqual(['logic', 'logic', ['mint', 'decay']]);
 		expect(() => copyOf(repo, 'maia-city')).toThrow(/64 hex/);
+	});
+	test('a rerun copies only the paths the vault does not hold, whatever they hold now, and shares nothing again', () => {
+		const have = rowsOf(repo.slice(0, 4)).map((r, i) => (i ? r : { ...r, record: { ...r.record, title: 'changed in the vault' } }));
+		const b = copyOf(repo, VAULT, { have });
+		expect(b.ops.map((o) => o.op)).toEqual(repo.slice(4).map(() => 'create'));
+		expect(b.ops.map((o) => o.tags[0])).toEqual(repo.slice(4).map((e) => `ref:${e.ref}`));
+		expect(copyOf(repo, VAULT, { have: rowsOf(repo) }).ops).toEqual([]);
+		expect(copyOf(repo, VAULT, { have: [] }).ops).toHaveLength(repo.length);
 	});
 });
 
@@ -98,6 +107,12 @@ describe('loading', () => {
 		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { entries: rowsOf([ENTRIES['views/view-holders']]) }) });
 		expect(r).toEqual({ taken: ['views/view-holders'], refused: [] });
 		expect(codeAt('views/view-holders').source).toBe('avendb');
+	});
+	test('a feed handing out code of more than one vault is not taken', async () => {
+		const other = { ...rowsOf([ENTRIES['views/view-wants']])[0], vault: 'b'.repeat(64) };
+		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, [...rowsOf([ENTRIES['views/view-holders']]), other]) });
+		expect(r).toEqual({ error: 'https://feed.example/code handed out code of more than one vault' });
+		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
 	test('no feed, or no network: the seed stays, and nothing throws', async () => {
 		expect(await loadCode({ url: 'https://feed.example/code', fetch: reply(404, {}) })).toEqual({ error: 'https://feed.example/code answered 404' });
