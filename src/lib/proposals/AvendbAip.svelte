@@ -3,7 +3,8 @@
 	entry), each with what it changes field by field as its schema reads it (the `aip` read's diff, derived, never
 	typed), the reviews so far, and what the person may do with it, acting as the vault the device says: promote an idea
 	and withdraw it (its author or its vault), and accept, decline or ask for a revision of a proposed one (its vault
-	alone, and only that review counts). Accepting merges every line at once.
+	alone, and only that review counts). Accepting merges every line at once; a new entry's line (a draft) lands in main
+	only then, every field of it shown as added.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -37,6 +38,8 @@
 		const done = await session.run(what, { ...op, entry: aip.entry, as });
 		if (done) (text = ''), onchanged();
 	}
+	// a review names every line's heads as the page shows them, so a line written after it was drawn is never accepted unseen
+	const review = (what, verdict) => act(what, { op: 'aip_review', verdict, text, heads: shown.flatMap((l) => l.heads ?? []) });
 	const show = (v) => (v == null ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
 	const VERDICT = { accepted: 'Accepted', declined: 'Declined', revise: 'Asked for a revision' };
 </script>
@@ -44,13 +47,14 @@
 <div class="av">
 	{#each shown as l, i (i)}
 		<section class="line">
-			<p class="head"><b>{l.title ?? l.name ?? 'An entry'}</b> <small>{l.type ?? 'entry'}{l.merged ? ' · merged' : ''}</small></p>
+			<p class="head"><b>{l.title ?? l.name ?? 'An entry'}</b> <small>{l.type ?? 'entry'}{l.new ? ' · new' : ''}{l.merged ? ' · merged' : ''}{l.public && !l.merged ? ' · goes public on Accept' : ''}</small></p>
 			{#if l.diff?.length}
 				<ul class="diff">
 					{#each l.diff as d, j (j)}
 						<li class={d.kind}>
 							<span class="label">{d.label ?? d.path?.join(' › ')}</span>
-							{#if d.kind === 'text'}<span class="old">{show(d.old)}</span><span class="new">{show(d.new)}</span>
+							{#if l.new}<span class="new">+ {show(d.new)}</span>
+							{:else if d.kind === 'text'}<span class="old">{show(d.old)}</span><span class="new">{show(d.new)}</span>
 							{:else if d.kind === 'add'}<span class="new">+ {show(d.new)}</span>
 							{:else if d.kind === 'remove'}<span class="old">− {show(d.old)}</span>
 							{:else}<span class="old">{show(d.old)}</span> → <span class="new">{show(d.new)}</span>{/if}
@@ -80,9 +84,9 @@
 		<div class="actions">
 			{#if aip.stage === 'proposed' && ownVault}
 				<input placeholder="A note (needed for a revision)" bind:value={text} />
-				<button class="go" disabled={!!session.doing} onclick={() => act('Accepting the AIP', { op: 'aip_review', verdict: 'accepted', text })}>Accept</button>
-				<button disabled={!!session.doing} onclick={() => act('Declining the AIP', { op: 'aip_review', verdict: 'declined', text })}>Decline</button>
-				<button disabled={!!session.doing || !text.trim()} onclick={() => act('Asking for a revision', { op: 'aip_review', verdict: 'revise', text })}>Revise</button>
+				<button class="go" disabled={!!session.doing} onclick={() => review('Accepting the AIP', 'accepted')}>Accept</button>
+				<button disabled={!!session.doing} onclick={() => review('Declining the AIP', 'declined')}>Decline</button>
+				<button disabled={!!session.doing || !text.trim()} onclick={() => review('Asking for a revision', 'revise')}>Revise</button>
 			{/if}
 			{#if aip.stage === 'idea' && (mine || ownVault)}
 				<button class="go" disabled={!!session.doing} onclick={() => act('Promoting the AIP', { op: 'aip_promote' })}>Propose it</button>
