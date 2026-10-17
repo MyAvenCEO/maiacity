@@ -250,7 +250,8 @@
 		gap: 1rem;
 		height: 100%;
 		overflow-y: auto;
-		padding: 1rem clamp(1rem, 3vw, 2rem) 5rem;
+		/* clear of the notch and the status bar: the story stands on the whole screen */
+		padding: calc(1rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2rem) 5rem;
 	}
 
 	.top {

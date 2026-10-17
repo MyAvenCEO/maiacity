@@ -464,7 +464,7 @@
 		gap: 0.9rem;
 		max-width: 46rem;
 		margin: 0 auto;
-		padding: 1rem 1rem calc(var(--nav-room, 5rem) + 1.5rem);
+		padding: calc(1rem + env(safe-area-inset-top, 0px)) 1rem calc(var(--nav-room, 5rem) + 1.5rem);
 	}
 
 	.fetch {
