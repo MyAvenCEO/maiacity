@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /*
- * THE LOGIC CORE — the one way code we cannot trust decides anything: a game rule, a view's logic (Generated UI),
- * an avenDB function. Whoever wrote it, a person, an agent or an aven, it runs here, in its own
+ * THE LOGIC CORE — the one way code we cannot trust decides anything: a game rule (Sandbox 7's card code), a view's
+ * logic (Generated UI), an avenDB function. Whoever wrote it, a person, an agent or an aven, it runs here, in its own
  * QuickJS engine (quickjs-emscripten, compiled to WebAssembly), and nowhere else.
  *
  * - The engine has no page, no network, no keys, no storage and no clock to wait on: only the language. What a call
@@ -56,10 +56,13 @@ export const steady = (seed, now) => `(() => {
  * How a call crosses into the engine, by its kind: each a function evaluated in the engine, given the exported
  * function and one JSON text, handing back JSON text (or nothing).
  * - `call`: f(input) (an avenDB function's `run(event)`, a check);
+ * - `see` / `hook`: Sandbox 7's valley, set once a night (`see`), then each hook given its arguments with the valley;
  * - `view`: a view's `init(data)` / `on(event, data)`.
  */
 export const GLUE = {
 	call: '(f, s) => { const r = f(JSON.parse(s)); return r === undefined ? undefined : JSON.stringify(r); }',
+	see: '(f, s) => { globalThis.valley = JSON.parse(s); }',
+	hook: '(f, s) => { const x = JSON.parse(s); x.valley = globalThis.valley; const r = f(x); return r === undefined ? undefined : JSON.stringify(r); }',
 	view: '(f, s) => { const x = JSON.parse(s); const r = x.on ? f(x.e, x.d) : f(x.d); return r === undefined ? undefined : JSON.stringify(r); }'
 };
 const NAMES = '(m) => JSON.stringify(Object.keys(m).filter((k) => typeof m[k] === "function"))';
