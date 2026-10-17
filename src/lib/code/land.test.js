@@ -10,7 +10,7 @@ import { codeIn, viewOfEntry } from '../../../game/code/index.js';
 import { ENTRIES } from '../../../code/index.js';
 import { checkCode } from '../../../game/code/check.js';
 import { applyCards, defaultCards } from '../../../game/economy/params.js';
-import { EXAMPLES } from '../../../game/genui/examples.js';
+import { examples } from '../../../game/genui/examples.js';
 
 afterAll(() => useDecided());
 
@@ -42,7 +42,7 @@ describe('files', () => {
 		expect(cardsOfFiles(files)).toEqual(cards);
 	});
 	test('the Generated UI examples land as the entries they already are: nothing to write', () => {
-		const { files, landed, refused } = landing({ views: EXAMPLES }, ENTRIES);
+		const { files, landed, refused } = landing({ views: examples() }, ENTRIES);
 		expect([files, landed, refused]).toEqual([{}, [], []]);
 	});
 });
@@ -173,5 +173,5 @@ describe('Generated UI views', () => {
 
 test('a view the database hands back with its keys in another order is the same view: nothing to write', () => {
 	const flip = (o) => (Array.isArray(o) ? o.map(flip) : o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).reverse().map(([k, v]) => [k, flip(v)])) : o);
-	expect(landing({ views: EXAMPLES.map(flip) }, ENTRIES).files).toEqual({});
+	expect(landing({ views: examples().map(flip) }, ENTRIES).files).toEqual({});
 });

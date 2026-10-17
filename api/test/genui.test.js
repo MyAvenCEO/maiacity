@@ -6,7 +6,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { deleteView, keepView, listViews, putView } from "../src/genui.js";
-import { EXAMPLES } from "../../game/genui/examples.js";
+import { examples } from "../../game/genui/examples.js";
 
 beforeAll(async () => {
   const pg = new PGlite();
@@ -56,9 +56,9 @@ test("only a view with nothing that does nothing is kept; a game's screen id is 
 });
 
 test("a draft the repo holds as it is goes; a change to a repo view stays a draft; the repo's views go only by PR", async () => {
-  const [scene] = EXAMPLES;
+  const [scene] = examples();
   await putView(scene);
-  await putView({ ...EXAMPLES[1], title: "COOP treasuries, by month" });
+  await putView({ ...examples()[1], title: "COOP treasuries, by month" });
   const { views, drafts } = await listViews();
   expect(drafts.map((d) => d.id)).toEqual(["coop-chart"]);
   expect(views.length).toBe(3);
@@ -68,8 +68,8 @@ test("a draft the repo holds as it is goes; a change to a repo view stays a draf
 
 test("a view card is a screen a MIP may carry: checked, pinned libraries only", async () => {
   const { checkCard } = await import("../../game/economy/params.js");
-  const { DEFAULT_VIEWS, viewsOf } = await import("../../game/economy/views.js");
-  expect(checkCard(DEFAULT_VIEWS[0]).card.data).toEqual({ slot: "panel", libs: [], height: 520 });
+  const { defaultViews, viewsOf } = await import("../../game/economy/views.js");
+  expect(checkCard(defaultViews()[0]).card.data).toEqual({ slot: "panel", libs: [], height: 520 });
   expect(checkCard({ id: "vw", kind: "view", code: "<p>hi</p>", data: { libs: ["evil"] } }).error).toMatch(/no library/);
   expect(checkCard({ id: "vw", kind: "view", code: "" }).error).toMatch(/HTML/);
   const mine = { id: "view-wants", kind: "view", name: "Wants 2", code: "<p>2</p>" };

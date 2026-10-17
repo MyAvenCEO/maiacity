@@ -8,9 +8,11 @@ const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitiv
 globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop, style: {} }) };
 globalThis.$state ??= (x) => x;
 const { checkCode, TYPES } = await import('./check.js');
-const { EXAMPLES } = await import('../../../game/genui/examples.js');
-const { DEFAULT_VIEWS: VALLEY_VIEWS, SLOTS: VALLEY_SLOTS, slotsOf: valleySlots } = await import('../../../game/economy/views.js');
-const { DEFAULT_VIEWS: V1_VIEWS, SLOTS } = await import('../../../game/maiacity-v1/views.js');
+const EXAMPLES = (await import('../../../game/genui/examples.js')).examples();
+const { defaultViews: valleyViews, SLOTS: VALLEY_SLOTS, slotsOf: valleySlots } = await import('../../../game/economy/views.js');
+const VALLEY_VIEWS = valleyViews();
+const { defaultViews: v1Views, SLOTS } = await import('../../../game/maiacity-v1/views.js');
+const V1_VIEWS = v1Views();
 const { defaultCards } = await import('../../../game/economy/params.js');
 const { hostileCards } = await import('../assets/schemas/hostile.js');
 

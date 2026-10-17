@@ -13,5 +13,5 @@
 
 import { codeIn } from '../code/index.js';
 
-/** each section card's default code, by its card's id */
-export const DEFAULT_CODE = Object.fromEntries(codeIn('logic/sandbox-7/').map((e) => [e.card, e.files['logic.js']]));
+/** each section card's default code, by its card's id, as the loader has it now (the vault's once loaded, else the seed's) */
+export const defaultCode = () => Object.fromEntries(codeIn('logic/sandbox-7/').map((e) => [e.card, e.files['logic.js']]));
