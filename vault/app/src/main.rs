@@ -586,7 +586,6 @@ fn main() {
             auth::auth_sign_out,
             auth::auth_open,
             auth::api,
-            auth::brain,
             passkey::passkey_sheet,
             avendb::avendb,
             aven::studio_ingest,

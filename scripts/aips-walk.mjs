@@ -1,11 +1,9 @@
 /*
  * The Proposals app's walk through (/app/aips/, AIPs on today's MIPs): a headless Chrome against the dev server, every
- * /api/ request answered here (a founder who plays Sandbox 7 as its admin and sits at MaiaCity V1's seat A; two Sandbox
- * 7 MIPs and two V1 MIPs). It checks the stages, the game filter, a Sandbox 7 detail, a V1 detail with its signatures,
- * a new V1 proposal from a COOP's "Propose a payout" link, and that neither game shows a proposal on its own screen.
- * avenDB's public feed is answered too: the Maia City COOP vault shares Sandboxes 5 and 7 and MaiaCity V1 with
- * everyone (A2), so the Sandboxes list shows Sandbox 5 without Draft; Sandbox 7 plays only in Samuel's tailnet and stays
- * a draft whatever is shared, and signed out, its proposals stay closed.
+ * /api/ request answered here (a founder who sits at MaiaCity V1's seat A; two V1 MIPs). It checks the stages, the game
+ * filter, a V1 detail with its signatures, a new V1 proposal from a COOP's "Propose a payout" link, and that the game
+ * shows no proposal on its own screen. avenDB's public feed is answered too: the Maia City COOP vault shares Sandbox 5
+ * and MaiaCity V1 with everyone (A2), so the Sandboxes list shows Sandbox 5 without Draft.
  * Each step is screenshot, wide and on a phone.
  *
  *   BASE=http://localhost:5173 node scripts/aips-walk.mjs [--out dir]
@@ -43,24 +41,16 @@ game.coops.maia.treasury.MAIA = 50; // so a payout from it can be proposed
 game = act(game, 'A', { type: 'propose', mip: { title: 'Cheaper tent rent', description: 'The tent costs too much in the first months.', settings: { tentRent: 40 }, coops: {}, payouts: [] } }, now - 1800e3);
 game = act(game, 'B', { type: 'propose', mip: { title: 'A faster calendar', description: '', settings: { hoursPerMonth: 12 }, coops: {}, payouts: [] } }, now - 1200e3);
 game = act(game, 'A', { type: 'reject', number: 2 }, now - 600e3);
-const founder = { id: 'samuel', number: 1, name: 'Samuel', since: '2026-01-01', role: 'admin', caps: ['economy:play', 'economy:admin', 'media:admin'] };
-const card = { id: 'policy', kind: 'policy', name: 'Policy', values: { mint: 24 }, code: '' };
-const mips = [
-	{ number: 41, title: 'World 36', description: 'Slower steps.', action: 'world', config: 'base', status: 'accepted', cards: [], remove: [], base: {}, world: { name: 'World 36', diff: ['Step a day: 0.2 → 0.15'], after: 'w35', after_name: 'World 35' }, result: { world: 'w36', name: 'World 36' }, author: 'samuel', author_name: 'Samuel', via: 'mcp', created: new Date(now - 86400e3).toISOString(), decided: new Date(now - 80000e3).toISOString(), prs: [{ number: 494, title: 'buffer price' }] },
-	{ number: 42, title: 'World 37', description: 'Keep World 36 and try a lower mint.', action: 'world', config: 'base', status: 'open', cards: [{ ...card, values: { mint: 20 } }], remove: [], base: { policy: card }, world: { name: 'World 37', diff: ['Mint: 24 → 20 HEARTS'], after: 'w36', after_name: 'World 36' }, author: 'agent', author_name: 'avenMaia', via: 'mcp', created: new Date(now - 3600e3).toISOString(), prs: [] }
-];
+const founder = { id: 'samuel', number: 1, name: 'Samuel', since: '2026-01-01', role: 'admin', caps: ['economy:admin', 'media:admin'] };
 const answers = {
 	'/api/me': founder,
-	'/api/economy/mips': { mips },
-	'/api/economy/configs': { configs: [{ id: 'base', name: 'Base valley', description: 'The defaults', version: 3, cards: [card] }] },
-	'/api/economy/runs': { runs: [] },
 	'/api/maiacity-v1': { game, me: 'samuel', admin: true, now }
 };
 let moves = [];
 let signedOut = false;
 // avenDB's public feed: the game entries everyone may read, those the Maia City COOP vault published
 const gameRow = (id) => ({ entry: id, vault: 'c'.repeat(64), name: 'Maia City', seed: 'Maia City', type: 'game', tags: ['game', `game:${id}`] });
-const feed = { entries: [gameRow('sandbox-5'), gameRow('sandbox-7'), gameRow('maiacity-v1')] };
+const feed = { entries: [gameRow('sandbox-5'), gameRow('maiacity-v1')] };
 
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
@@ -71,15 +61,14 @@ page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 // the game's first-run story told already, so its tools show
 await page.evaluateOnNewDocument((key) => localStorage.setItem(key, JSON.stringify({ off: true })), `v1-story-${game.started}-A`);
 const cdp = await page.createCDPSession();
-// and Sandbox 7's GPU machine in Samuel's tailnet, which unlocks the sandbox: it serves d1 and Qwen
-await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*' }, { urlPattern: 'http://100.96.61.57*' }, { urlPattern: 'https://avendb.maia.city/feed/entries*' }] });
+await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*' }, { urlPattern: 'https://avendb.maia.city/feed/entries*' }] });
 cdp.on('Fetch.requestPaused', (r) => {
 	const url = new URL(r.request.url);
 	const headers = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'content-type': 'application/json' };
-	let body = url.hostname === '100.96.61.57' ? { data: [{ id: 'd1' }, { id: 'qwen' }] } : url.hostname === 'avendb.maia.city' ? feed : (answers[url.pathname] ?? {});
+	let body = url.hostname === 'avendb.maia.city' ? feed : (answers[url.pathname] ?? {});
 	let status = 200;
-	// signed out: the API knows nobody, and answers only what a published game lets everyone read
-	if (signedOut && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/economy/')) (body = { error: 'Please sign in.' }), (status = 401);
+	// signed out: the API knows nobody
+	if (signedOut && url.pathname.startsWith('/api/')) (body = { error: 'Please sign in.' }), (status = 401);
 	if (url.hostname === 'avendb.maia.city') headers['access-control-allow-origin'] = '*';
 	if (url.pathname === '/api/maiacity-v1/move' && r.request.method === 'POST') {
 		const { seat, action } = JSON.parse(r.request.postData ?? '{}');
@@ -125,29 +114,23 @@ async function shot(name) {
 }
 
 await page.goto(`${base}/app/aips/`, { waitUntil: 'networkidle2' });
-check('the app opens on the proposed ones of every game', await until(async () => (await text()).includes('World 37') && (await text()).includes('Cheaper tent rent')), (await text()).slice(0, 300));
-check('a proposed one shows its signatures so far', (await text()).includes('1 of 2 signatures') && (await text()).includes('0 of 1 signatures'));
+check('the app opens on the proposed ones of every game', await until(async () => (await text()).includes('Cheaper tent rent')), (await text()).slice(0, 300));
+check('a proposed one shows its signatures so far', (await text()).includes('1 of 2 signatures'));
 await shot('1-proposed');
 await click('Archive');
-await until(async () => (await text()).includes('World 36'), 5000);
+await until(async () => (await text()).includes('A faster calendar'), 5000);
 const archive = await text();
-check('the archive holds the applied and the rejected', archive.includes('World 36') && archive.includes('A faster calendar') && archive.includes('applied') && archive.includes('rejected'), archive.slice(380, 900));
+check('the archive holds the rejected', archive.includes('A faster calendar') && archive.includes('rejected'), archive.slice(380, 900));
 await click('Ideas');
 check('ideas are empty and say why', (await text()).includes('No ideas yet'));
 await click('Proposed');
-await click('Sandbox 7');
-check('the game filter keeps only that game', !(await text()).includes('Cheaper tent rent') && (await text()).includes('World 37'));
-await click('World 37');
-const s7 = await text();
-check('a Sandbox 7 detail: text, changes, cards, Accept for the admin', s7.includes('Keep World 36 and try a lower mint') && s7.includes('Mint: 24 → 20 HEARTS') && s7.includes('Accept') && s7.includes('MIP-42'), s7.slice(0, 500));
-check('the address names the open one', page.url().includes('aip=s7-42') && page.url().includes('game=sandbox-7'));
-await shot('2-sandbox7-detail');
 await click('MaiaCity V1');
+check('the game filter keeps only that game', (await text()).includes('Cheaper tent rent'));
 await click('Cheaper tent rent');
 const v1 = await text();
 check('a V1 detail: text, changes, who signed', v1.includes('The tent costs too much') && v1.includes('Tent price') && v1.includes('✓ Samuel') && v1.includes('○ Lena'), v1.slice(380, 1100));
 check('the proposer sees Withdraw, not Sign', v1.includes('Withdraw') && !v1.includes('Sign as'));
-await shot('3-v1-detail');
+await shot('2-v1-detail');
 
 // MaiaCity V1's own screen: no proposal on it, only the way to the app
 await page.goto(`${base}/app/maiacity-v1/`, { waitUntil: 'domcontentloaded' });
@@ -159,7 +142,7 @@ check('the V1 game shows no proposal of its own', !(await page.evaluate(() => do
 // a payout proposed from a COOP lands in the app on a new proposal, filled in
 await page.goto(`${base}/app/aips/?game=maiacity-v1&new=1&from=coop%3Amaia&to=player%3AA&token=MAIA&amount=1`, { waitUntil: 'networkidle2' });
 check('a new V1 proposal opens filled in', await until(async () => (await text()).includes('Propose and sign as Samuel')));
-await shot('4-v1-new');
+await shot('3-v1-new');
 await page.evaluate(() => {
 	const t = document.querySelector('.draft input');
 	t.value = 'Pay the first player';
@@ -169,32 +152,22 @@ await click('Propose and sign as Samuel');
 check('proposing sends one propose move with the payout', await until(async () => moves.some((m) => m.type === 'propose' && m.mip?.payouts?.length === 1)), JSON.stringify(moves));
 check('the new one is listed under Proposed', await until(async () => (await text()).includes('Pay the first player')));
 
-// Sandbox 7's own screen: no Proposals page, a link with how many wait
-await page.goto(`${base}/app/games/sandbox-8/`, { waitUntil: 'domcontentloaded' });
-check('Sandbox 7 links to the Proposals app with the count', await until(async () => (await page.evaluate(() => document.querySelector('a.open-mips')?.textContent ?? '')).includes('1 waiting')));
-await shot('5-sandbox7-home');
-
 await page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
 check('the dashboard has the Proposals app next to Ledger and Coops', await until(async () => (await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => a.getAttribute('href')?.endsWith('/app/aips/')))) ));
-await shot('6-dashboard');
+await shot('4-dashboard');
 
 // the Sandboxes: published by the Maia City COOP vault's Public share, as its feed lists them
 await page.goto(`${base}/app/games/`, { waitUntil: 'domcontentloaded' });
 const rowOf = (label) => page.evaluate((label) => [...document.querySelectorAll('.list li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim() ?? '').find((t) => t.startsWith(label)) ?? '', label);
 check('a published sandbox shows no Draft', await until(async () => { const r = await rowOf('Sandbox 5'); return r && !r.includes('Draft'); }), await rowOf('Sandbox 5'));
 check('one the vault does not publish still shows Draft', (await rowOf('Sandbox 6')).includes('Draft'), await rowOf('Sandbox 6'));
-check('a tailnet sandbox stays a draft though shared', (await rowOf('Sandbox 7')).includes('Draft'), await rowOf('Sandbox 7'));
-await shot('7-sandboxes');
+await shot('5-sandboxes');
 
-// signed out: the Proposals app opens, read only; a tailnet game's proposals stay closed
+// signed out: the Proposals app opens, read only
 signedOut = true;
-await page.goto(`${base}/app/aips/?game=sandbox-7&stage=proposed`, { waitUntil: 'domcontentloaded' });
-check('signed out, the Proposals app opens', await until(async () => (await text()).includes('Sign in to see the proposals')), await text());
-await sleep(1500);
-check('signed out, a tailnet game’s proposals stay closed', !(await text()).includes('World 37'));
-await shot('8-signed-out');
-await page.goto(`${base}/app/games/sandbox-8/`, { waitUntil: 'domcontentloaded' });
-check('signed out, the game itself still asks for a sign-in', await until(async () => (await page.evaluate(() => document.body.textContent ?? '')).includes('Sign in with your passkey')));
+await page.goto(`${base}/app/aips/?stage=proposed`, { waitUntil: 'domcontentloaded' });
+check('signed out, the Proposals app opens', await until(async () => (await text()).includes('Aven Improvement Proposals')), await text());
+await shot('6-signed-out');
 
 await browser.close();
 const failed = checks.filter((c) => !c.ok);

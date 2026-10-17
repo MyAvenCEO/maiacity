@@ -1,7 +1,6 @@
 // The schema's history, as data. Kept apart from the runner so the tests can
 // build the same database in PGlite without a live Postgres.
 import { CID_MAP } from "./cid-map";
-import { defaultCards } from "../../game/economy/params.js";
 
 export type Migration = { id: string; sql: string };
 
@@ -802,7 +801,7 @@ export const MIGRATIONS: Migration[] = [
         PRIMARY KEY (run_id, day)
       );
       INSERT INTO econ_configs (id, name, description, cards)
-        VALUES ('valley', 'The valley', 'Ten avens, five goods, HEARTS: the sandbox as first played.', '${JSON.stringify(defaultCards()).replace(/'/g, "''")}'::jsonb);
+        VALUES ('valley', 'The valley', 'Ten avens, five goods, HEARTS: the sandbox as first played.', '[]'::jsonb);
       INSERT INTO econ_config_versions (config_id, version, body)
         SELECT id, 1, jsonb_build_object('name', name, 'description', description, 'cards', cards)
           FROM econ_configs WHERE id = 'valley';
@@ -986,6 +985,16 @@ export const MIGRATIONS: Migration[] = [
       CREATE TRIGGER econ_config_versions_read_only BEFORE INSERT OR UPDATE OR DELETE ON econ_config_versions
         FOR EACH STATEMENT EXECUTE FUNCTION code_moved_to_repo();
       ALTER TABLE genui_views ADD COLUMN keep BOOLEAN NOT NULL DEFAULT false;
+    `,
+  },
+  {
+    // Sandboxes 7 and 8 are gone (Samuel, 2026-10-17: "delete Sandbox 7 and 8 all together, incl all its related
+    // proposals and worlds"): Sandbox 7's configs, MIPs, worlds, their days and the avens' brains go with it. 0033's seed
+    // of the valley's cards is empty since: what it wrote is dropped here anyway. Generated UI views keep their tables.
+    id: "0049-drop-sandbox-7",
+    sql: `
+      DROP TABLE IF EXISTS econ_run_days, econ_runs, econ_brains, econ_config_versions, mips, econ_configs CASCADE;
+      DROP FUNCTION IF EXISTS code_moved_to_repo();
     `,
   },
 ];

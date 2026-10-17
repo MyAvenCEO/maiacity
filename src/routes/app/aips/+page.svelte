@@ -10,16 +10,12 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
-	import { me, may } from '$lib/auth/client';
-	import { loadMips, loadConfigs } from '$lib/sandbox-8/store.js';
+	import { me } from '$lib/auth/client';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
 	import { GAMES, STAGES, allOf, when } from '$lib/proposals/aips.js';
-	import { isPublished, loadGames } from '$lib/app/games.svelte.js';
-	import Sandbox7Aip from '$lib/proposals/Sandbox7Aip.svelte';
 	import V1Aip from '$lib/proposals/V1Aip.svelte';
 	import V1Draft from '$lib/proposals/V1Draft.svelte';
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
-	import { HOOKS } from '../../../../game/economy/params.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import Unlock from '$lib/avendb/Unlock.svelte';
 	import { nameOf } from '$lib/avendb/vaults.js';
@@ -33,24 +29,7 @@
 	const payout = q.get('from') ? { from: q.get('from'), to: q.get('to'), token: q.get('token'), amount: Number(q.get('amount') ?? 1) } : null;
 
 	const g = liveGame();
-	let acct = $state({ id: null, play: false, admin: false });
-	let s7 = $state(null);
-	let configs = $state([]);
-	let s7Note = $state('');
-
-	// Sandbox 7's proposals: for whoever plays it, and for everyone, signed out too, once it is published (read only)
-	const s7Open = $derived(acct.play || isPublished('sandbox-7', false));
-	async function loadS7() {
-		if (!s7Open) return;
-		try {
-			const [m, c] = await Promise.all([loadMips(), loadConfigs()]);
-			s7 = m.mips;
-			configs = c.configs ?? [];
-			s7Note = '';
-		} catch (e) {
-			s7Note = `Sandbox 7's proposals could not be read (${e?.message || e}).`;
-		}
-	}
+	let acct = $state({ id: null });
 	// avenDB's AIPs: every vault this device holds, read again each time its world changes (as the HITL stack reads them)
 	let avendb = $state([]);
 	let reading = 0;
@@ -67,27 +46,18 @@
 
 	onMount(() => {
 		me()
-			.then((f) => {
-				acct = { id: f.id, play: may(f, 'economy:play'), admin: may(f, 'economy:admin') };
-				if (!s7Open) s7Note = "Sandbox 7's proposals are open to whoever plays it, and to everyone once it is published.";
-				return loadS7();
-			})
-			.catch(() => (s7Open ? loadS7() : (s7Note = 'Sign in to see the proposals. A published game’s are open to everyone.')));
-		void loadGames().then(loadS7);
-		// an agent proposes over the MCP while the app is open: the list reloads every 15 s, and when the window is back
-		const every = setInterval(loadS7, 15000);
-		addEventListener('focus', loadS7);
-		return () => (clearInterval(every), removeEventListener('focus', loadS7));
+			.then((f) => (acct = { id: f.id }))
+			.catch(() => {});
 	});
 
-	const all = $derived(allOf(s7, g.view, avendb, session.world));
-	// the filter: a game ('sandbox-7'), or an avenDB vault ('vault:<id>') for AIPs about anything
+	const all = $derived(allOf(g.view, avendb, session.world));
+	// the filter: a game ('maiacity-v1'), or an avenDB vault ('vault:<id>') for AIPs about anything
 	const inGame = $derived(all.filter((a) => !game || (game.startsWith('vault:') ? a.vault === game.slice(6) : a.game === game)));
 	const vaults = $derived([...new Set(avendb.map((a) => a.vault))].map((id) => ({ id, name: nameOf(session.world?.vaults.find((v) => v.id === id)) })));
 	const shown = $derived(inGame.filter((a) => a.stage === stage));
 	const count = (id) => inGame.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
-	const loading = $derived((acct.id && !g.loaded) || (s7Open && !s7 && !s7Note));
+	const loading = $derived(acct.id && !g.loaded);
 
 	// the filter, the tab and the AIP open are kept in the address, so a link (a game's, a HITL card's) opens on them
 	$effect(() => {
@@ -150,8 +120,6 @@
 			{/if}
 			{#if current.source === 'avendb'}
 				<AvendbAip a={current} onchanged={loadAvendb} />
-			{:else if current.source === 'sandbox-8'}
-				{#key current.key}<Sandbox7Aip m={current.mip} {acct} {configs} onchanged={loadS7} />{/key}
 			{:else if g.view}
 				<V1Aip m={current.mip} {g} />
 			{/if}
@@ -163,7 +131,7 @@
 		{#if loading}
 			<p class="dim">One moment…</p>
 		{:else if stage === 'idea' && !shown.length}
-			<p class="dim">No ideas yet. An idea is an AIP in avenDB not yet proposed: anyone with a share to suggest in a vault, and their agents, gather and edit it freely under an id of its own until it is proposed and gets its number. Today's MIPs have no ideas: Sandbox 7's come over the MCP and MaiaCity V1's are proposed straight away.</p>
+			<p class="dim">No ideas yet. An idea is an AIP in avenDB not yet proposed: anyone with a share to suggest in a vault, and their agents, gather and edit it freely under an id of its own until it is proposed and gets its number. Today's MIPs have no ideas: MaiaCity V1's are proposed straight away.</p>
 		{:else}
 			<ul class="list">
 				{#each shown as a (a.key)}
@@ -180,17 +148,7 @@
 			</ul>
 		{/if}
 		{#if session.phase !== 'open' && session.phase !== 'loading'}<div class="unlock"><p class="dim small">The AIPs of your avenDB vaults show here once avenDB is open in this tab.</p><Unlock /></div>{/if}
-		{#if s7Note && (!game || game === 'sandbox-7')}<p class="dim small">{s7Note}</p>{/if}
 		{#if g.error && (!game || game === 'maiacity-v1')}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
-		{#if game === 'sandbox-7' && configs.length}
-			<details class="about">
-				<summary>Sandbox 7's configs, and what a proposal's card code can change</summary>
-				<p>A world keeps the cards it started with. A new world starts from the world it follows: every card and value it played with, and its avens' brains; its proposal changes only the cards it carries.</p>
-				<table><tbody>{#each configs as c (c.id)}<tr><td><b>{c.name}</b> <code>{c.id}</code><br /><small>{c.description}</small></td><td class="num">v{c.version}</td><td class="num">{c.cards.length} cards</td></tr>{/each}</tbody></table>
-				<p>Every rule of the valley is a hook in a card's code, and each card's code runs in its own QuickJS sandbox: no page, no network, no keys, 8 MB and 25 ms a call. A hook returns plain JSON, which the valley checks and keeps within bounds.</p>
-				<table><tbody>{#each HOOKS as h (h.name)}<tr><td><code>{h.name}</code></td><td>{h.when}; given <code>{h.given}</code></td><td>returns {h.returns}</td></tr>{/each}</tbody></table>
-			</details>
-		{/if}
 	{/if}
 </main>
 
@@ -354,28 +312,6 @@
 	}
 	.unlock {
 		margin-top: 1.2rem;
-	}
-	.about {
-		margin-top: 1.4rem;
-		font-size: 0.82rem;
-		color: var(--muted);
-	}
-	.about summary {
-		cursor: pointer;
-		color: var(--ink);
-	}
-	table {
-		width: 100%;
-		border-collapse: collapse;
-	}
-	td {
-		padding: 0.3rem 0.4rem;
-		border-top: 1px solid #1f2a2312;
-		vertical-align: top;
-	}
-	td.num {
-		text-align: right;
-		white-space: nowrap;
 	}
 	@media (max-width: 600px) {
 		.filters .new {

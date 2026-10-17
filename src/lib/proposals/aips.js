@@ -1,15 +1,14 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 // AIPs, Aven Improvement Proposals (Samuel 2026-10-17; /mnt/project-files/game-caps/plan.md): one proposal flow for
 // every vault and every game, idea → propose → archive (applied | rejected), each a readable text plus the changes it
-// makes. The Proposals app reads them from three sources and each turns its own into the same shape here: avenDB's
+// makes. The Proposals app reads them from two sources and each turns its own into the same shape here: avenDB's
 // AIPs (the `aips` read, every vault this tab's device holds), and, until games keep their configs in avenDB, today's
-// MIPs where they are kept: Sandbox 7's from the economy API, MaiaCity V1's from its one game.
+// MIPs where they are kept: MaiaCity V1's, from its one game.
 import { describe, signaturesOf } from '../../../game/maiacity-v1/engine.js';
 import { nameOf } from '$lib/avendb/vaults.js';
 
 /** the games that have proposals, by their id in the Maia City COOP vault (game/games.js): the game filter's names */
 export const GAMES = {
-	'sandbox-7': { label: 'Sandbox 7', href: '/app/games/sandbox-8/' },
 	'maiacity-v1': { label: 'MaiaCity V1', href: '/app/maiacity-v1/' }
 };
 
@@ -25,34 +24,6 @@ function staged(status) {
 	if (status === 'open') return { stage: 'proposed', outcome: null, why: null };
 	if (status === 'accepted') return { stage: 'archived', outcome: 'applied', why: null };
 	return { stage: 'archived', outcome: 'rejected', why: status === 'withdrawn' ? 'withdrawn' : 'declined' };
-}
-
-/** a Sandbox 7 MIP (api/src/economy.js) as an AIP */
-export function fromSandbox7(m) {
-	const changes = m.world?.diff?.length
-		? m.world.diff
-		: [...(m.cards ?? []).map((c) => `card ${c.name || c.id}`), ...(m.remove ?? []).map((id) => `card ${id} taken out`)];
-	return {
-		key: `s7-${m.number}`,
-		source: 'sandbox-8',
-		game: 'sandbox-7',
-		where: 'Sandbox 7',
-		label: `MIP-${m.number}`,
-		was: `MIP-${m.number}`,
-		title: m.title,
-		text: m.description ?? '',
-		changes,
-		...staged(m.status),
-		author: m.author_name ?? m.author ?? 'someone',
-		via: m.via,
-		created: m.created ? Date.parse(m.created) : 0,
-		decided: m.decided ? Date.parse(m.decided) : 0,
-		signed: m.status === 'accepted' ? 1 : 0,
-		needs: 1,
-		policy: 'the admin accepts',
-		prs: m.prs ?? [],
-		mip: m
-	};
 }
 
 /** a MaiaCity V1 MIP (game/maiacity-v1/engine.js, inside the game) as an AIP */
@@ -120,9 +91,9 @@ export function fromAvendb(a, world) {
 }
 
 /** every AIP of the sources, the newest first (avenDB's in the order the device lists them, after) */
-export const allOf = (s7, view, avendb = [], world = null) => [
-	...avendb.map((a) => fromAvendb(a, world)),
-	...[...(s7 ?? []).map(fromSandbox7), ...(view?.mips ?? []).map((m) => fromV1(view, m))].sort((a, b) => (b.decided || b.created) - (a.decided || a.created))
+export const allOf = (view, avendb = [], world = null) => [
+	...avendb.filter((a) => !(a.tags ?? []).includes('avendb:deleted')).map((a) => fromAvendb(a, world)),
+	...(view?.mips ?? []).map((m) => fromV1(view, m)).sort((a, b) => (b.decided || b.created) - (a.decided || a.created))
 ];
 
 /** a time in ms (an avenDB time in seconds is taken as such) */

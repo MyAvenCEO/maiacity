@@ -6,7 +6,7 @@
  * - `a2ui`: DECLARATIVE. JSON only: a flat list of components from OUR catalog (below), each with an id, the root's
  *   id, a data model, and optional logic. The page draws it with its own Svelte components; text is always text.
  *   Nothing the agent wrote runs in the page. Its logic (`logic`, a JS module exporting `init(data)` and
- *   `on(event, data)`) runs in a QuickJS engine (src/lib/genui/logic.js, the same box as Sandbox 7's card code):
+ *   `on(event, data)`) runs in a QuickJS engine (src/lib/genui/logic.js):
  *   no page, no network, no clock, 8 MB, a few ms a call. It only ever hands back a new data model.
  * - `html`: HTML and CSS, after MCP Apps (spec 2026-01-26: text/html;profile=mcp-app), for what no catalog can hold.
  *   Without a script it is a template: {{path}} marks filled from its data (as text, always), <template each|if>,
@@ -156,14 +156,13 @@ export function check(v) {
  * A view card (Samuel, 2026-10-13): a game's screen that a proposal carries beside its rules, an html view the view
  * host shows (src/lib/sandbox/ViewHost.svelte) and hands the game's state: as its template's data, and as its tool
  * result. { id, kind: 'view', name, description,
- * data: { slot: 'panel', libs, height }, code: its HTML }. Sandbox 7's config cards (game/economy/params.js) and
- * MaiaCity V1's MIPs (game/maiacity-v1/engine.js) both check theirs here: { card } or { error } in a sentence.
+ * data: { slot: 'panel', libs, height }, code: its HTML }. MaiaCity V1's MIPs
+ * (game/maiacity-v1/engine.js) check theirs here: { card } or { error } in a sentence.
  */
 export const VIEW_SLOTS = ['panel'];
 export const MAX_VIEW = 100_000;
 /**
- * `slots`: where a game lets a screen stand (each game names its own panels: game/economy/views.js,
- * game/maiacity-v1/views.js). In mode 'write' (a MIP bringing it) its HTML is held to the rules every view is
+ * `slots`: where a game lets a screen stand (each game names its own panels: game/maiacity-v1/views.js). In mode 'write' (a MIP bringing it) its HTML is held to the rules every view is
  * (game/code/rules.js); `notes` say what of it will do nothing.
  */
 export function checkViewCard(raw, slots = VIEW_SLOTS, { mode = 'write' } = {}) {

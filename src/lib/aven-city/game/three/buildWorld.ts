@@ -1936,11 +1936,10 @@ export function buildingForLevel(level: number): BuildingKind | null {
 }
 
 /**
- * HOW A SANDBOX'S SETTLEMENTS GROW. The island is one (this module and ./scene.ts), for Sandbox 1 and for every city's
- * island in Sandbox 2; how a settlement on it grows is the sandbox's. Both lay the ring buildings above (BUILDINGS)
- * and the shared camp (SITE_PIECES); Sandbox 1's settlements are its six levels (SANDBOX_1), a city's are villages
- * that level up on the Fibonacci numbers ($lib/sandbox-2/island/villages.js). Kinds are pooled by name, so no two
- * sandboxes' kinds share one.
+ * HOW A SANDBOX'S SETTLEMENTS GROW. The island is one (this module and ./scene.ts); how a settlement on it grows is
+ * the sandbox's. Every way lays the ring buildings above (BUILDINGS) and the shared camp (SITE_PIECES); Sandbox 1's
+ * settlements are its six levels (SANDBOX_1), the only way that stands on it now (Sandbox 2's cities and their
+ * villages are gone; it is the planet alone). Kinds are pooled by name, so no two sandboxes' kinds share one.
  */
 export interface Settlements<K extends string = BuildingKind> {
 	/** whose they are: their builds of a level are pooled apart */
@@ -1958,7 +1957,7 @@ export interface Settlements<K extends string = BuildingKind> {
 	/** the food forest is grown in round everything */
 	forest(level: number): boolean
 	/** how a ring is laid: 'aligned', each turned half a step against the one outside it, or on another ring's spots
-	 * (Sandbox 1); 'clear', evenly spaced and turned as one until it clears whatever already stands (Sandbox 2) */
+	 * (Sandbox 1); 'clear', evenly spaced and turned as one until it clears whatever already stands */
 	layout: 'aligned' | 'clear'
 	/** named camp pieces kept through other stages than Sandbox 1's: [from, until], or null for never */
 	pieces?: Partial<Record<'fire' | 'pavilion', [number, number] | null>>

@@ -1,9 +1,0 @@
-{
-	"type": "logic",
-	"for": "sandbox-7",
-	"title": "Harvests",
-	"card": "harvests",
-	"hooks": [
-		"harvest"
-	]
-}

@@ -38,7 +38,7 @@
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { answer, refs } from './ops.js';
-	import { seeding, seedPieces, touchingUp, unseeded } from './seed.js';
+	import { retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
@@ -396,6 +396,14 @@
 				for (const op of ops) answer(await send(op));
 			} catch {
 				failed.push('an inspire-me source');
+			}
+		}
+		// and what the repo let go (Sandboxes 7 and 8), deleted
+		for (const op of retiring(w, city)) {
+			try {
+				answer(await send(op));
+			} catch {
+				failed.push('a retired entry');
 			}
 		}
 		if (failed.length) throw new Error(`Maia City refused ${failed.length} of them: ${failed.join(', ')}`);

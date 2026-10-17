@@ -110,7 +110,8 @@ describe("the shot record", () => {
     const at = (world: Record<string, unknown>) => normalize(spec({ world: { stand: [0, 0], ...world } })).world;
     // a sandbox with areas always names one, its first by default; Sandbox 4 is one place, and stays as it was
     expect(at({ sandbox: "sandbox-3" })).toEqual({ sandbox: "sandbox-3", area: "home", build: null, seed: 1, stand: [0, 0], clock: 0 });
-    expect(at({ sandbox: "sandbox-2", area: "island", seed: 812 })).toEqual({ sandbox: "sandbox-2", area: "island", build: null, seed: 812, stand: [0, 0], clock: 0 });
+    expect(at({ sandbox: "sandbox-2", seed: 812 })).toEqual({ sandbox: "sandbox-2", area: "planet", build: null, seed: 812, stand: [0, 0], clock: 0 });
+    expect(() => at({ sandbox: "sandbox-2", area: "island" })).toThrow("world.area");
     expect(at({ sandbox: "sandbox-1" }).area).toBe("island");
     expect(at({}).sandbox).toBe("sandbox-4");
     expect("area" in at({ sandbox: "sandbox-4", dome: 3 })).toBe(false);
@@ -122,7 +123,7 @@ describe("the shot record", () => {
     expect(() => at({ dome: 13 })).toThrow("world.dome");
     expect(filmPath(at({ sandbox: "sandbox-3", area: "master" }))).toBe("/games/sandbox-3/?film&area=master");
     expect(filmPath(at({}))).toBe("/games/sandbox-4/?film");
-    expect(worldOfPath("/base/games/sandbox-2/?film&area=island")).toEqual({ sandbox: "sandbox-2", area: "island" });
+    expect(worldOfPath("/base/games/sandbox-2/?film&area=planet")).toEqual({ sandbox: "sandbox-2", area: "planet" });
   });
 
   test("normalize refuses what cannot be rendered", () => {

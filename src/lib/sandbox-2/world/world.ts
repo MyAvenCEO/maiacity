@@ -18,15 +18,11 @@ import { disposeRenderer } from '$lib/render/core.js'
 import { worldRenderer } from '$lib/render/world.js'
 import { CameraRig } from './camera'
 import { BIOMES, TREE } from './biomes'
-import { buildGlobe, FREQUENCY, LAND, WATER, type Tile, type Vec3 } from '../../../../game/globe'
+import { buildGlobe, FREQUENCY, LAND, type Tile, type Vec3 } from '../../../../game/globe'
 import type { BiomeMap, DepthMap, LandMask } from '../../../../game/map'
 
-/** A coop as the world places it. */
-/** A city on its card, and the coops standing inside it. */
-export type CityMarker = { slug: string; tile: number; citizens: number; milestone: number; coops: { slug: string; slot: number; milestone: number }[] }
-export type TilePick = { tile: number; biome: 'land' | 'water'; coop: string | null }
-export type WorldOptions = { cities: CityMarker[]; onTile?: (pick: TilePick) => void; /** The map: where the land is. Without it, the noise invents continents. */ isLand?: LandMask; /** The map: what kind of land is where. */ kindOf?: BiomeMap; /** The map: where the mountain ranges are. */ isMountain?: LandMask; /** The map: how deep the sea is. */ depthOf?: DepthMap }
-export type WorldHandle = { setCities: (cities: CityMarker[]) => void; /** Hold the camera and give the mouse back, while a sheet is open. */ setFrozen: (on: boolean) => void; /** Walk from a touch joystick: x to the right, y ahead, each -1…1. */ move: (x: number, y: number, hurry: boolean) => void; /** Mark a card as chosen (-1 clears it). */ setChosen: (tile: number) => void; /** Fly the camera to a card and mark it; `at` is where on the screen it should land (-1..1, 0 is the middle); `zoom` how close. */ focus: (tile: number, at?: { x: number; y: number }, zoom?: number) => void; /** Stop drawing while another view has the screen. */ setPaused: (on: boolean) => void; dispose: () => void }
+export type WorldOptions = { /** The map: where the land is. Without it, the noise invents continents. */ isLand?: LandMask; /** The map: what kind of land is where. */ kindOf?: BiomeMap; /** The map: where the mountain ranges are. */ isMountain?: LandMask; /** The map: how deep the sea is. */ depthOf?: DepthMap }
+export type WorldHandle = { /** Walk from a touch joystick: x to the right, y ahead, each -1…1. */ move: (x: number, y: number, hurry: boolean) => void; dispose: () => void }
 
 const RADIUS = 120 // the globe — twice the old one, the cards the same size
 const DEPTH = 1.8 // how far a card's sides drop
@@ -145,7 +141,7 @@ function forests(tiles: Tile[]): THREE.Object3D {
 	return group
 }
 
-export function mountWorld(container: HTMLElement, options: WorldOptions = { cities: [] }): WorldHandle {
+export function mountWorld(container: HTMLElement, options: WorldOptions = {}): WorldHandle {
 
 	// the world renderer ($lib/render/world.js), with the same lens as every world ($lib/sandbox-kit/sky): the
 	// universe's light and the planet's in one picture; no shadows on a planet seen from space
@@ -168,276 +164,6 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 	const { geometry } = globeGeometry(tiles)
 	const globe = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 }))
 	scene.add(globe)
-
-	/* ── cities: from afar a tower, close up a cluster of domes ─────────────
-	   Seen from high up, every city is one hex tower whose height counts its
-	   citizens: a band per step, alternating light and dark. Come down low
-	   enough and the tower gives way to what stands inside the card: the city
-	   itself as the centre dome, and every coop as a smaller dome on its slot
-	   around it, growing with its milestone. A card is about two units across. */
-	const cityGroups = new THREE.Group()
-	scene.add(cityGroups)
-	const storeyGeo = new THREE.CylinderGeometry(1, 1, 1, 6)
-	storeyGeo.rotateY(Math.PI / 6)
-	storeyGeo.translate(0, 0.5, 0)
-	const domeGeo = new THREE.SphereGeometry(1, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2)
-	const STOREY = 0.16
-	/** Below this zoom the towers give way to the domes. */
-	const DOMES_BELOW = 0.55
-	/** Where a coop stands inside its city's card: six around the centre, twelve further out. */
-	const SLOTS: [number, number][] = [
-		...Array.from({ length: 6 }, (_, i) => [0.44, ((i * 60 + 30) * Math.PI) / 180] as [number, number]),
-		...Array.from({ length: 12 }, (_, i) => [0.74, ((i * 30) * Math.PI) / 180] as [number, number])
-	].map(([r, a]) => [Math.cos(a) * r, Math.sin(a) * r])
-	const hue = (slug: string) => {
-		let h = 0
-		for (const ch of slug) h = (h * 31 + ch.charCodeAt(0)) % 360
-		return h
-	}
-	/* Warm, bright bands, so a city never melts into the forest or the grass around it. */
-	const material = (slug: string, step: number, light = 0.62) =>
-		new THREE.MeshStandardMaterial({
-			color: new THREE.Color().setHSL(((20 + (hue(slug) % 40) + step * 3) % 360) / 360, 0.72, step % 2 ? light - 0.1 : light + 0.12),
-			roughness: 0.55,
-			metalness: 0.05,
-			flatShading: true
-		})
-	/** Storeys for a head count: quick at first, slower as the city grows — 1 citizen is 3, 7 are 9, 1,000 are 30. */
-	const storeysFor = (citizens: number) => Math.max(1, Math.ceil(Math.log2(citizens + 1) * 3))
-	const clear = (group: THREE.Group) => {
-		for (const child of [...group.children]) {
-			group.remove(child)
-			;((child as THREE.Mesh).material as THREE.Material).dispose()
-		}
-	}
-	const buildCity = (group: THREE.Group, c: CityMarker) => {
-		const tower = group.userData.tower as THREE.Group
-		const domes = group.userData.domes as THREE.Group
-		clear(tower)
-		clear(domes)
-		const storeys = storeysFor(c.citizens)
-		for (let level = 1; level <= storeys; level++) {
-			const storey = new THREE.Mesh(storeyGeo, material(c.slug, level))
-			storey.userData.slug = c.slug
-			const radius = Math.min(0.75, 0.42 + level * 0.006)
-			storey.position.y = (level - 1) * STOREY
-			storey.scale.set(radius, STOREY, radius)
-			tower.add(storey)
-		}
-		const centre = new THREE.Mesh(domeGeo, material(c.slug, 0, 0.6))
-		centre.userData.slug = c.slug
-		const r = Math.min(0.42, 0.3 + c.milestone * 0.004)
-		centre.scale.set(r, r * 0.9, r)
-		domes.add(centre)
-		for (const coop of c.coops) {
-			const at = SLOTS[coop.slot]
-			if (!at) continue
-			const dome = new THREE.Mesh(domeGeo, material(coop.slug, 1, 0.55))
-			dome.userData.slug = coop.slug
-			const d = Math.min(0.22, 0.12 + coop.milestone * 0.005)
-			dome.scale.set(d, d * 0.9, d)
-			dome.position.set(at[0], 0, at[1])
-			domes.add(dome)
-		}
-		group.userData.signature = JSON.stringify([c.citizens, c.milestone, c.coops])
-	}
-	const groupByCity = new Map<string, THREE.Group>()
-	const setCityMarkers = (cities: CityMarker[]) => {
-		const seen = new Set<string>()
-		for (const c of cities) {
-			seen.add(c.slug)
-			const t = tiles[c.tile]
-			if (!t) continue
-			let group = groupByCity.get(c.slug)
-			if (!group) {
-				group = new THREE.Group()
-				const tower = new THREE.Group()
-				const domes = new THREE.Group()
-				group.add(tower, domes)
-				group.userData = { slug: c.slug, tower, domes }
-				cityGroups.add(group)
-				groupByCity.set(c.slug, group)
-				const up = new THREE.Vector3(...t.centre)
-				group.position.copy(up).multiplyScalar(cardTop(t))
-				group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up)
-			}
-			if (group.userData.signature !== JSON.stringify([c.citizens, c.milestone, c.coops])) buildCity(group, c)
-		}
-		for (const [slug, group] of groupByCity) if (!seen.has(slug)) {
-			clear(group.userData.tower)
-			clear(group.userData.domes)
-			cityGroups.remove(group)
-			groupByCity.delete(slug)
-		}
-	}
-	/** Tower or domes, by how close the camera is. From high up the tower grows
-	    with the altitude, so a city stays readable from orbit. */
-	const showDetail = () => {
-		const near = rig.zoom < DOMES_BELOW
-		const grow = Math.min(9, Math.max(1, rig.altitude / 14))
-		for (const group of groupByCity.values()) {
-			const tower = group.userData.tower as THREE.Group
-			tower.visible = !near
-			/* Taller from afar so a city stays readable, but never wider than its own card. */
-			const girth = Math.min(1.5, 1 + (grow - 1) * 0.08)
-			tower.scale.set(girth, grow, girth)
-			;(group.userData.domes as THREE.Group).visible = near
-		}
-	}
-	setCityMarkers(options.cities)
-
-	/* ── picking: a click (not a drag) on a card ─────────────────────────── */
-	/* ── finding the card under a point ──────────────────────────────────
-	   The globe is 933k triangles; a ray through them all is too slow for
-	   every frame. The cards are the cells around their centres, so the card
-	   under a point on the sphere is the nearest centre — found through a
-	   grid of latitude and longitude buckets, two degrees a side. */
-	const BUCKET = 2
-	const buckets = new Map<number, number[]>()
-	const latLon = (p: Vec3 | THREE.Vector3) => {
-		const [x, y, z] = p instanceof THREE.Vector3 ? [p.x, p.y, p.z] : p
-		return [(Math.asin(Math.max(-1, Math.min(1, y))) * 180) / Math.PI, (Math.atan2(x, z) * 180) / Math.PI] as const
-	}
-	const bucketKey = (latB: number, lonB: number) => latB * 1000 + ((lonB % (360 / BUCKET)) + 360 / BUCKET) % (360 / BUCKET)
-	tiles.forEach((t, i) => {
-		const [lat, lon] = latLon(t.centre)
-		const k = bucketKey(Math.floor((lat + 90) / BUCKET), Math.floor((lon + 180) / BUCKET))
-		const list = buckets.get(k)
-		if (list) list.push(i)
-		else buckets.set(k, [i])
-	})
-	const tileAt = (p: THREE.Vector3): number => {
-		const [lat, lon] = latLon(p)
-		const latB = Math.floor((lat + 90) / BUCKET), lonB = Math.floor((lon + 180) / BUCKET)
-		/* Near the poles the longitude buckets pinch together: search the whole ring. */
-		const span = Math.abs(lat) > 80 ? 360 / BUCKET / 2 : 1
-		let best = -1, bestDot = -2
-		for (let dl = -1; dl <= 1; dl++)
-			for (let dn = -span; dn <= span; dn++) {
-				const list = buckets.get(bucketKey(latB + dl, lonB + dn))
-				if (!list) continue
-				for (const i of list) {
-					const c = tiles[i]!.centre
-					const d = p.x * c[0] + p.y * c[1] + p.z * c[2]
-					if (d > bestDot) { bestDot = d; best = i }
-				}
-			}
-		return best
-	}
-	const raycaster = new THREE.Raycaster()
-	const pointer = new THREE.Vector2()
-	const sphere = new THREE.Sphere(new THREE.Vector3(), RADIUS)
-	const hitPoint = new THREE.Vector3()
-	/** The card under a point of the view, in normalised device coordinates. */
-	const pick = (ndc: THREE.Vector2): { tile: number; coop: string | null } | null => {
-		raycaster.setFromCamera(ndc, camera)
-		/* Only what is drawn can be hit: the tower from afar, the domes up close. */
-		const shown = (o: THREE.Object3D | null): boolean => !o || (o.visible && shown(o.parent))
-		const hit = raycaster.intersectObjects(cityGroups.children, true).find((h) => shown(h.object))
-		if (hit) {
-			const slug = (hit.object as THREE.Mesh).userData.slug as string
-			const c = currentCities.find((x) => x.slug === slug || x.coops.some((k) => k.slug === slug))
-			if (c) return { tile: c.tile, coop: slug }
-		}
-		if (!raycaster.ray.intersectSphere(sphere, hitPoint)) return null
-		let tile = tileAt(hitPoint.normalize())
-		if (tile < 0) return null
-		/* Cards stand above the sphere; seen from low and at a slant, the ray meets
-		   the card's top before the sphere. Once more, at that card's height. */
-		sphere.radius = cardTop(tiles[tile]!)
-		if (raycaster.ray.intersectSphere(sphere, hitPoint)) tile = tileAt(hitPoint.normalize())
-		sphere.radius = RADIUS
-		if (tile < 0) return null
-		return { tile, coop: currentCities.find((c) => c.tile === tile)?.slug ?? null }
-	}
-
-	/* ── the rings: a light band around the card under the pointer, a warm
-	   one around the card that is chosen — it stays while its sheet is open ── */
-	const ring = (color: number, width: number, lift: number) => {
-		const geo = new THREE.BufferGeometry()
-		const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false }))
-		mesh.visible = false
-		mesh.renderOrder = 2
-		scene.add(mesh)
-		let current = -1
-		return (tile: number) => {
-			if (tile === current) return
-			current = tile
-			if (tile < 0) {
-				mesh.visible = false
-				return
-			}
-			const t = tiles[tile]!
-			const r = cardTop(t) + lift
-			const n = t.corners.length
-			const pos: number[] = []
-			const at = (p: Vec3, inset: number) => [p[0] + (t.centre[0] - p[0]) * inset, p[1] + (t.centre[1] - p[1]) * inset, p[2] + (t.centre[2] - p[2]) * inset].map((v) => v * r)
-			for (let k = 0; k < n; k++) {
-				const a = t.corners[k]!, b = t.corners[(k + 1) % n]!
-				const oa = at(a, 0), ob = at(b, 0), ia = at(a, width), ib = at(b, width)
-				pos.push(...oa, ...ob, ...ib, ...oa, ...ib, ...ia)
-			}
-			geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-			geo.computeBoundingSphere()
-			mesh.visible = true
-		}
-	}
-	const setHover = ring(0xfff6dc, 0.14, 0.06)
-	const setChosen = ring(0xe8743b, 0.26, 0.08)
-	let mouse: { x: number; y: number } | null = null
-	renderer.domElement.addEventListener('pointermove', (e) => { mouse = { x: e.clientX, y: e.clientY } })
-	renderer.domElement.addEventListener('pointerleave', () => { mouse = null })
-	/** Where the pointer points: the reticle while the pointer is locked, else the mouse (a visible crosshair when it steers the gaze unlocked). */
-	const aim = (): THREE.Vector2 | null => {
-		if (rig.lockedGaze) return pointer.set(0, 0)
-		if (!mouse) return null
-		const rect = renderer.domElement.getBoundingClientRect()
-		return pointer.set(((mouse.x - rect.left) / rect.width) * 2 - 1, -((mouse.y - rect.top) / rect.height) * 2 + 1)
-	}
-	const updateHover = () => {
-		const ndc = rig.frozen ? null : aim()
-		setHover(ndc ? (pick(ndc)?.tile ?? -1) : -1)
-	}
-
-	/* ── a click: the card, or the coop standing on it ─────────────────── */
-	let downAt: { x: number; y: number } | null = null
-	/* a pinch on a phone picks nothing, whichever finger lifts last */
-	let fingersDown = 0
-	let pinched = false
-	renderer.domElement.addEventListener('pointerdown', (e) => {
-		downAt = { x: e.clientX, y: e.clientY }
-		if (++fingersDown > 1) pinched = true
-	})
-	renderer.domElement.addEventListener('pointercancel', () => {
-		fingersDown = Math.max(0, fingersDown - 1)
-		if (!fingersDown) pinched = false
-		downAt = null
-	})
-	renderer.domElement.addEventListener('pointerup', (e) => {
-		fingersDown = Math.max(0, fingersDown - 1)
-		const wasPinch = pinched
-		if (!fingersDown) pinched = false
-		if (wasPinch) downAt = null
-		if (!downAt) return
-		const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y)
-		downAt = null
-		if (moved > 6 || rig.frozen) return
-		/* The click that handed the gaze to the mouse picks nothing; with the lock, the reticle picks. */
-		if (rig.consumeLockClick()) return
-		mouse = { x: e.clientX, y: e.clientY }
-		const ndc = aim()
-		const hit = ndc && pick(ndc)
-		if (!hit) return
-		const t = tiles[hit.tile]!
-		lastPick = { tile: hit.tile, biome: hit.coop ? 'land' : WATER.has(t.biome) ? 'water' : 'land', coop: hit.coop }
-		setChosen(lastPick.biome === 'land' ? hit.tile : -1)
-		/* The sheet that opens wants the mouse back: a locked gaze lets go. */
-		if (rig.lockedGaze) document.exitPointerLock()
-		options.onTile?.(lastPick)
-	})
-	let lastPick: TilePick | null = null
-	let currentCities: CityMarker[] = options.cities
-	const updateCities = (cities: CityMarker[]) => { currentCities = cities; setCityMarkers(cities) }
 
 	/* The core: a dark sphere just under the lowest tops, so a seam between
 	   two cards shows the deep instead of the sky. */
@@ -478,27 +204,17 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 		hold,
 		sky,
 		// the universe for where the camera is (the film pins the hour; the sky sets the sun and the fill)
-		advance: () => {
-			showDetail()
-			placeSky()
-		},
-		extra: { rig, globe, tiles, setCities: updateCities, pick, lastPick: () => lastPick }
+		advance: () => placeSky(),
+		extra: { rig, globe, tiles }
 	})
 
 	let frame = 0
 	let last = performance.now()
-	let paused = false
 	const tick = () => {
-		if (paused) {
-			frame = requestAnimationFrame(tick)
-			return
-		}
 		const now = performance.now()
 		// the rig, or where the film camera holds the camera
 		if (!hold.apply()) rig.update(Math.min(0.1, (now - last) / 1000))
 		last = now
-		updateHover()
-		showDetail()
 		sky.tick(now)
 		placeSky()
 		if (!filmDraws()) renderer.render(scene, camera)
@@ -516,23 +232,7 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 	window.addEventListener('resize', onResize)
 
 	return {
-		setCities: updateCities,
-		setFrozen: (on) => {
-			rig.freeze(on)
-			if (on) setHover(-1)
-		},
-		setChosen,
 		move: (x, y, hurry) => rig.move(x, y, hurry),
-		focus: (tile, at, zoom = 0.5) => {
-			const t = tiles[tile]
-			if (!t) return
-			setChosen(tile)
-			rig.flyTo(new THREE.Vector3(...t.centre), zoom, new THREE.Vector2(at?.x ?? 0, at?.y ?? 0))
-		},
-		setPaused: (on) => {
-			paused = on
-			if (!on) last = performance.now()
-		},
 		dispose: () => {
 			cancelAnimationFrame(frame)
 			window.removeEventListener('resize', onResize)

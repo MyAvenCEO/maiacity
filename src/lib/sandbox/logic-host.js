@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 /*
- * THE LOGIC HOST — how the page runs logic we cannot trust (a view's logic, an avenDB function; Sandbox 7's rules
- * move here with its valley): the logic core (./logic.js) in the logic engine (./logic-engine.js), in the shell's
+ * THE LOGIC HOST — how the page runs logic we cannot trust (a view's logic, an avenDB function): the logic
+ * core (./logic.js) in the logic engine (./logic-engine.js), in the shell's
  * worker (./frame.js). Two walls: QuickJS, then a worker in a frame with no origin, no connection and nothing of
  * ours in reach; and never on the page's thread, so a call that runs long cannot hold the page.
  *

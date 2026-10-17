@@ -7,9 +7,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { avendb, copyOf, entryOf, feedOf, recordOf } from '../../../game/code/sources/avendb.js';
 import { codeAt, codeIn, loadCode, viewOfEntry } from '../../../game/code/index.js';
 import { ENTRIES } from '../../../code/index.js';
-import { defaultViews } from '../../../game/economy/views.js';
+import { defaultViews } from '../../../game/maiacity-v1/views.js';
 import { examples } from '../../../game/genui/examples.js';
-import { defaultCards } from '../../../game/economy/params.js';
 
 const VAULT = 'a'.repeat(64);
 const repo = Object.values(ENTRIES);
@@ -21,7 +20,7 @@ afterEach(() => avendb.use([], viewOfEntry));
 
 describe('the copy', () => {
 	test('every view and logic module of the repo comes back from the vault as the same entry, with the same hash', () => {
-		expect(repo.length).toBeGreaterThan(10);
+		expect(repo.length).toBeGreaterThan(3);
 		for (const row of rowsOf(repo)) {
 			const { entry, error } = entryOf(row);
 			expect(error).toBeUndefined();
@@ -32,12 +31,10 @@ describe('the copy', () => {
 		const b = copyOf(repo, VAULT);
 		expect([b.op, b.as, b.ops.length]).toEqual(['batch', VAULT, repo.length + 1]);
 		expect(b.ops[0]).toEqual({ op: 'share', over: VAULT, who: 'everyone', level: 'Public', what: { type: ['view', 'logic'] }, as: VAULT });
-		const wants = b.ops.find((o) => o.tags?.includes('ref:views/view-wants'));
-		expect(wants).toMatchObject({ op: 'create', vault: VAULT, type: 'view', schema: 'view' });
-		expect(wants.tags).toEqual(['ref:views/view-wants', 'game:sandbox-7', `legacy:${ENTRIES['views/view-wants'].hash}`]);
+		const holders = b.ops.find((o) => o.tags?.includes('ref:views/view-holders'));
+		expect(holders).toMatchObject({ op: 'create', vault: VAULT, type: 'view', schema: 'view' });
+		expect(holders.tags).toEqual(['ref:views/view-holders', 'game:maiacity-v1', `legacy:${ENTRIES['views/view-holders'].hash}`]);
 		expect(b.ops.find((o) => o.tags?.includes('ref:views/coop-chart')).tags.some((t) => t.startsWith('game:'))).toBe(false);
-		const hearts = b.ops.find((o) => o.tags?.includes('ref:logic/sandbox-7/hearts')).value;
-		expect([hearts.kind, hearts.engine.host, hearts.manifest.hooks]).toEqual(['logic', 'logic', ['mint', 'decay']]);
 		expect(() => copyOf(repo, 'maia-city')).toThrow(/64 hex/);
 	});
 	test("with the server's vault, the first copy gives it a Backup share before anything else", () => {
@@ -68,27 +65,22 @@ describe('loaded entries', () => {
 		expect([r.taken.length, r.refused]).toEqual([repo.length, []]);
 	});
 	test('a loaded view is what codeAt, codeIn and the defaults read; the seed serves every other path', () => {
-		const wants = changed('views/view-wants', { title: 'Wants, from the vault' });
-		expect(avendb.use([wants], viewOfEntry)).toEqual({ taken: ['views/view-wants'], refused: [] });
-		expect(codeAt('views/view-wants')).toMatchObject({ title: 'Wants, from the vault', source: 'avendb', vault: VAULT });
-		expect(codeIn('views/').find((e) => e.ref === 'views/view-wants').title).toBe('Wants, from the vault');
-		expect(defaultViews()[0].name).toBe('Wants, from the vault');
+		const holders = changed('views/view-holders', { title: 'Holders, from the vault' });
+		expect(avendb.use([holders], viewOfEntry)).toEqual({ taken: ['views/view-holders'], refused: [] });
+		expect(codeAt('views/view-holders')).toMatchObject({ title: 'Holders, from the vault', source: 'avendb', vault: VAULT });
+		expect(codeIn('views/').find((e) => e.ref === 'views/view-holders').title).toBe('Holders, from the vault');
+		expect(defaultViews()[0].name).toBe('Holders, from the vault');
 		expect(codeAt('views/coop-chart')).toBe(ENTRIES['views/coop-chart']);
 		expect(examples().map((v) => v.id)).toEqual(['village-scene', 'coop-chart', 'dome-planner']);
 		expect(codeIn('views/').length).toBe(Object.keys(ENTRIES).filter((k) => k.startsWith('views/')).length);
 	});
-	test("a loaded rule module is the valley's default code", () => {
-		const code = 'export function mint({ value }) { return value + 1; }\nexport function decay({ value }) { return value; }\n';
-		avendb.use([changed('logic/sandbox-7/hearts', { source: code })], viewOfEntry);
-		expect(defaultCards().find((c) => c.id === 'hearts').code).toBe(code);
-	});
 	test('what the checker refuses, an engine the repo does not ship, a wrong kind or a path twice is left out, and the seed stays', () => {
 		const r = avendb.use(
 			[
-				changed('views/view-wants', { source: '<img src="https://x.example/a.png">' }),
+				changed('views/view-holders', { source: '<img src="https://x.example/a.png">' }),
 				changed('views/coop-chart', { engine: { host: 'view', version: 99, hash: 'f'.repeat(64) } }),
-				{ ...row('logic/sandbox-7/rot'), type: 'view' },
-				{ ...row('views/village-scene'), tags: ['game:sandbox-7'] },
+				{ ...row('views/village-scene'), type: 'logic' },
+				{ ...row('views/coop-chart'), tags: ['game:maiacity-v1'] },
 				row('views/dome-planner'),
 				{ ...row('views/dome-planner'), entry: 'e99999999999' }
 			],
@@ -96,10 +88,10 @@ describe('loaded entries', () => {
 		);
 		expect(r.taken).toEqual([]);
 		expect(r.refused).toHaveLength(5);
-		expect(r.refused.join('\n')).toMatch(/views\/view-wants: .*address/);
+		expect(r.refused.join('\n')).toMatch(/views\/view-holders: .*address/);
 		expect(r.refused.join('\n')).toMatch(/views\/coop-chart: written for view engine 99, which the repo does not ship/);
 		expect(r.refused.join('\n')).toMatch(/held twice/);
-		expect(codeAt('views/view-wants')).toBe(ENTRIES['views/view-wants']);
+		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
 	test('a vault ref is served at the heads it names, and only then', () => {
 		const r = row('views/village-scene');
@@ -123,7 +115,7 @@ describe('loading', () => {
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
 	test('a feed handing out code of more than one vault is not taken', async () => {
-		const other = { ...rowsOf([ENTRIES['views/view-wants']])[0], vault: 'b'.repeat(64) };
+		const other = { ...rowsOf([ENTRIES['views/coop-chart']])[0], vault: 'b'.repeat(64) };
 		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, [...rowsOf([ENTRIES['views/view-holders']]), other]) });
 		expect(r).toEqual({ error: 'https://feed.example/code handed out code of more than one vault' });
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);

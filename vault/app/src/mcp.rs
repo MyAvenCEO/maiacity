@@ -496,63 +496,6 @@ pub struct Range {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyRun {
-    /// the run's id, from economy_runs
-    pub id: String,
-    /// the first and last day to read (default: every day)
-    pub from: Option<u32>,
-    pub to: Option<u32>,
-    /// true: each day's trades and the avens' Liquid decisions too, not only its stats row
-    pub detail: Option<bool>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyMips {
-    /// open, accepted, rejected or withdrawn (default: every MIP)
-    pub status: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyMip {
-    /// the MIP: { title, description (prose: what and why), world_id (required: the id of the world it is proposed in,
-    /// from economy_runs; MIPs are one global list, each belonging to a world), config (the config's id), action ("edit" the default,
-    /// "create" a new config, "delete" it, "amend": change the running world world_id's own rules (cards on top of its own, from when it is accepted; config ignored), or "world": a new world, made fresh on the config once accepted, with
-    /// world: { name, values ({ key: number } tried on top), model ("d1" or "qwen"), seed, after (the id of the world
-    /// it follows, from economy_runs; default its world_id) }; the answer lists every setting that differs from
-    /// that world), name and about (a new config's name and description; on edit, a rename), from (create: the config
-    /// it starts from), cards: [whole config cards as they will be once accepted (for a world: on top of the world it follows, its cards and values as played; send only what changes): { id, kind
-    /// (policy, world, resource, recipe or view), name, description, values: { key: number } (keys from economy_configs'
-    /// catalogue), data (JSON, for resource and recipe cards), code (JavaScript for the page's QuickJS sandbox) }];
-    /// a view card is one of the valley's screens, an MCP App: { id, kind: "view", name, description, data: { slot:
-    /// "panel" (a tab of the valley's side panel) | "board" | "activity" | "prices" | "avens" | "stats" (takes that
-    /// panel's place; the built-in one stays a tap away), libs?: ["three" | "d3" | "mcp-apps"], height?: 160-1200 },
-    /// code: its HTML (up to 100,000 characters) }; it runs in a sandboxed frame with no network and gets the valley as
-    /// its tool result every 1.5 s ({ day, time, goods, avens with stock/need/buy, market, values, and in a slot: slot,
-    /// picked, and that panel's numbers }: game/economy/views.js), and may send ui/update-model-context
-    /// { structuredContent: { select: avenId } } (or, without a script, a data-event="select" button); the default Wants
-    /// screen is the view card view-wants, which a card of that id replaces,
-    /// remove: [ids of cards to take out], prs: [the GitHub PRs whose engine changes in code it needs (a hook its card code
-    /// calls, a rule the page runs): { number, title }, at most 10; shown on the proposal as links] }
-    pub mip: Value,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyMipPrs {
-    /// the MIP's number
-    pub number: u64,
-    /// the whole list, replacing what it links now (empty clears it): [{ number, title }], at most 10, PRs of MyAvenCEO/maiacity
-    pub prs: Value,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyWorldDelete {
-    /// the worlds' ids, from economy_runs
-    pub ids: Vec<String>,
-    /// why they should go, shown to the person who confirms
-    pub why: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct V1Mips {
     /// open, accepted or rejected (default: every MIP)
     pub status: Option<String>,
@@ -578,23 +521,6 @@ pub struct V1Propose {
     pub mip: Value,
     /// the seat it is proposed from, "A" or "B" (default: the seat this Mac's founder plays)
     pub seat: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyBrains {
-    /// the world's id, from economy_runs
-    pub world: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct EconomyBrainEdit {
-    /// the world's id, from economy_runs
-    pub world: String,
-    /// the aven's name, e.g. Ama (names from economy_brains)
-    pub aven: String,
-    /// the edit: { dials: { the dials its world declares, e.g. greed, thrift: 0-10 }, wants: { water, food: days of stock 1-10 }, lesson: a short
-    /// rule to add (at most 110 characters), forget_lesson: a lesson's id, note: why }
-    pub edit: Value,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1643,109 +1569,6 @@ impl Studio {
         text(self.api("PUT", &format!("/api/content/{}", a.id), Some(a.patch)).await)
     }
 
-    // ── the economy sandbox (Sandbox 7, the avens trading): its configs, its runs' stats, and MIPs ──
-
-    #[tool(
-        description = "The economy sandbox's configs (Sandbox 7: ten avens trade WATER and four foods for HEARTS, each deciding its own prices with Liquid's d1): each one's id, name, version, its config cards (policy and world cards hold values; any card may hold data and QuickJS code) and params (every value the valley runs on), and the catalogue — every value a card may hold, with its card, label, unit, range and default, and the hooks card code may export (when each runs, what it is given, what it returns). A config changes only through a MIP the admin accepts."
-    )]
-    async fn economy_configs(&self) -> String {
-        text(self.api("GET", "/api/economy/configs", None).await)
-    }
-
-    #[tool(description = "The economy sandbox's worlds (game runs), newest first: id, name, when it was last kept whole (saved; a world without it is history only), the config and version it ran on, seed, brain, days played, avens alive, and its summary (each aven's name, goods grown, HEARTS and health; the leader; total HEARTS)")]
-    async fn economy_runs(&self) -> String {
-        text(self.api("GET", "/api/economy/runs?limit=100", None).await)
-    }
-
-    #[tool(
-        description = "One run of the economy sandbox: the config as played (cards, every value, the player's own changes on top) and its days — each day's stats row (market price and average traded price per good, units traded, deals, every aven's HEARTS, health, body reserves, what it ate and went short of, harvests, rot, stock, minted and decayed HEARTS, weather) and with detail its trades (seller, buyer, good, qty, price, haggling) and the avens' Liquid decisions."
-    )]
-    async fn economy_run(&self, Parameters(a): Parameters<EconomyRun>) -> String {
-        let mut q = vec![];
-        if let Some(f) = a.from {
-            q.push(format!("from={f}"));
-        }
-        if let Some(t) = a.to {
-            q.push(format!("to={t}"));
-        }
-        if a.detail == Some(true) {
-            q.push("detail=1".to_string());
-        }
-        let q = if q.is_empty() { String::new() } else { format!("?{}", q.join("&")) };
-        text(self.api("GET", &format!("/api/economy/runs/{}{q}", a.id), None).await)
-    }
-
-    #[tool(description = "MIPs, MaiaCity improvement proposals for the economy sandbox, newest first: title, description, the config it changes, creates or deletes, its cards (and each card as it was: base), status (open, accepted, rejected, withdrawn), author, and the admin's note")]
-    async fn economy_mips(&self, Parameters(a): Parameters<EconomyMips>) -> String {
-        let q = a.status.map(|s| format!("?status={s}")).unwrap_or_default();
-        text(self.api("GET", &format!("/api/economy/mips{q}"), None).await)
-    }
-
-    #[tool(
-        description = "Propose a MIP, in the world it belongs to (world_id; MIPs are one global list): a title, a description in prose, and the config cards as they would be — whole cards (read the config's own first with economy_configs, change what the MIP changes, send each touched card complete), with any QuickJS code, and view cards (the valley's screens, MCP Apps: change a rule and the screen that shows it in one MIP). Or create a new config from another, or delete one, or amend a running world's own rules (action amend: its cards on top of the world's own, the world plays on them once accepted), or start a new world (action world) with all its settings: the answer shows what differs from the world it follows, and once accepted the world waits in the page's list of worlds, fresh, to be opened and started; set its avens' brains first with economy_brain_edit and its id (each starts as a copy of its latest brain). It is checked at once and waits, open, for the admin, who accepts or rejects it on the page; it is never accepted from here. An accepted MIP lands from the repo: the landing job writes its cards into code/ and merges that within minutes, and only then does it change anything (its result says landing: waiting, landed or failed, and why)."
-    )]
-    async fn economy_mip_create(&self, Parameters(a): Parameters<EconomyMip>) -> String {
-        let mut mip = a.mip;
-        if let Some(o) = mip.as_object_mut() {
-            o.insert("via".to_string(), json!("mcp"));
-        }
-        text(self.api("POST", "/api/economy/mips", Some(mip)).await)
-    }
-
-    #[tool(
-        description = "Link the GitHub PRs a MIP needs: the engine changes in code its cards rely on (a hook their code calls, a rule the page runs), shown on the proposal as links beside what it changes in the cards. Open or decided MIPs; its author or an admin; the list replaces what it links now. Only a link: the code ships by merging the PR."
-    )]
-    async fn economy_mip_prs(&self, Parameters(a): Parameters<EconomyMipPrs>) -> String {
-        text(self.api("POST", &format!("/api/economy/mips/{}/prs", a.number), Some(json!({ "prs": a.prs }))).await)
-    }
-
-    #[tool(
-        description = "Delete economy worlds (runs) for good: each one's days, trades, decisions and its avens' brains. Nothing goes until the person confirms the list in the studio's window; a world MIP's link to a deleted world stays, nameless."
-    )]
-    async fn economy_world_delete(&self, Parameters(a): Parameters<EconomyWorldDelete>) -> String {
-        let r = async {
-            if a.ids.is_empty() {
-                return Err("name at least one world".to_string());
-            }
-            let all = self.api("GET", "/api/economy/runs?limit=500", None).await?;
-            let runs = all["runs"].as_array().cloned().unwrap_or_default();
-            let mut worlds = Vec::new();
-            for id in &a.ids {
-                let w = runs.iter().find(|r| r["id"].as_str() == Some(id.as_str())).ok_or_else(|| format!("no world {id}"))?;
-                worlds.push(json!({ "id": id, "name": w["name"], "config": w["config_id"], "version": w["config_version"],
-                    "days": w["days"], "alive": w["alive"], "saved": w["saved"] }));
-            }
-            let question = json!({ "kind": "worlds", "why": a.why, "worlds": worlds });
-            match crate::asks::ask(&self.handle, question).await {
-                Some(true) => {
-                    let mut done = Vec::new();
-                    for id in &a.ids {
-                        self.api("DELETE", &format!("/api/economy/runs/{id}"), None).await.map_err(|e| format!("{id}: {e} (deleted before it: {done:?})"))?;
-                        done.push(id.clone());
-                    }
-                    Ok::<_, String>(json!({ "approved": true, "deleted": done }))
-                }
-                Some(false) => Ok(json!({ "approved": false, "deleted": [], "note": "the person said no: nothing was deleted" })),
-                None => Ok(json!({ "approved": false, "deleted": [], "note": "nobody answered in 15 minutes: nothing was deleted" })),
-            }
-        };
-        text(r.await)
-    }
-
-    #[tool(
-        description = "Every aven's brain in one world (each world is a capsule with its own brains): its character (the dials its world's Brains card declares in its traits: by default greed and thrift, and haggle where haggling is on, 0-10; a dial the world doesn't declare stays stored but plays no part), its wants (days of water and of food it keeps in stock), runs, days lived, deaths, the trials it ran (one change at a time, kept only if its game score beat the last stretch), its lessons (each with how often the next stretch bore it out), its death lines, and edits waiting to be taken in"
-    )]
-    async fn economy_brains(&self, Parameters(a): Parameters<EconomyBrains>) -> String {
-        text(self.api("GET", &format!("/api/economy/brains/{}", a.world), None).await)
-    }
-
-    #[tool(
-        description = "Change one aven's brain: set its character dials (those its world declares: by default greed, thrift, and haggle where haggling is on, 0-10) or wants (days of water and of food in stock, 1-10), add a lesson or forget one, with a note why. It is taken in on the aven's next night while the world plays, or when the world is next opened, and shows in its trial log and the page's decisions."
-    )]
-    async fn economy_brain_edit(&self, Parameters(a): Parameters<EconomyBrainEdit>) -> String {
-        text(self.api("POST", &format!("/api/economy/brains/{}/{}", a.world, a.aven), Some(a.edit)).await)
-    }
-
     // ── MaiaCity V1 (the two-player HEARTS game, /app/maiacity-v1/): its settings, COOPs and MIPs ──
 
     #[tool(
@@ -1823,11 +1646,7 @@ impl Studio {
             return "error: write the path plainly: no . or .. segments, no % escapes or backslashes".into();
         }
         let under = |root: &[&str], last: &str| parts.starts_with(root) && parts.last() == Some(&last);
-        // a MIP is accepted or rejected by the admin, on the page — never by an agent
-        if under(&["api", "economy", "mips"], "decide") {
-            return "error: only the admin accepts or rejects a MIP, on the page".into();
-        }
-        // and a Generated UI draft is kept by the admin, on the page: an agent's view never keeps itself
+        // a Generated UI draft is kept by the admin, on the page: an agent's view never keeps itself
         if under(&["api", "genui"], "keep") {
             return "error: only the admin keeps a Generated UI view, on the page".into();
         }
@@ -2030,8 +1849,7 @@ impl ServerHandler for Studio {
              a phrase to cut by words), every picture's shot analysis (tags, takes, cues, highlights — find_shots pulls \
              the best parts of shots), timelines (edit, audio), grades, renders and hero frames (rendered \
              natively on this Mac), and the content board's deliveries in draft and publish mode. Files are named by \
-             hash only. Also the economy sandbox (Sandbox 7, the avens trading): its configs, every run's stats day by \
-             day, and MIPs (proposals that change a config, which only the admin accepts). And Generated UI: mini app \
+             hash only. And Generated UI: mini app \
              views (declarative or sandboxed code) an agent puts on the dashboard's Generated UI page on the fly. \
              avenDB is not here: an agent reaches it as an agent device of an aven, by its own device's key (the \
              avendb MCP, `avendb-device agent claude`), never by this token.",

@@ -12,9 +12,9 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
 const SERVICE: &str = "city.maia.studio";
-/// What the studio needs: the media library, the content calendar it publishes to, and the economy sandbox (its runs,
-/// configs and MIPs — the MCP proposes; only the admin accepts, on the page).
-const SCOPE: &str = "media:admin,content:admin,economy:play,economy:admin";
+/// What the studio needs: the media library, the content calendar it publishes to, and MaiaCity V1's admin (its MIPs:
+/// the MCP proposes; only the players sign, on the page).
+const SCOPE: &str = "media:admin,content:admin,economy:admin";
 /// A key must be able to do this to open the studio — the admin gate.
 const GATE: &str = "/api/vault/join";
 
@@ -220,28 +220,6 @@ pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Opti
         req = req.json(&body);
     }
     let res = req.send().await.map_err(|e| format!("The API cannot be reached: {e}"))?;
-    let status = res.status().as_u16();
-    let body = res.json::<Value>().await.unwrap_or(Value::Null);
-    Ok(Answer { status, body })
-}
-
-/// The economy sandbox's own brain on Samuel's GPU machine (Qwen, OpenAI-style, plain http over Tailscale): a page in
-/// the app may not call plain http itself, so its asks go out natively. Only to this Mac or the tailnet, only `/v1/…`.
-#[tauri::command]
-pub async fn brain(auth: State<'_, Auth>, url: String, body: Option<Value>) -> Result<Answer, String> {
-    let url = reqwest::Url::parse(&url).map_err(|e| e.to_string())?;
-    let host = url.host_str().unwrap_or_default();
-    // 100.64.0.0/10 is Tailscale's range
-    let near = host == "localhost"
-        || host.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback() || (ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64));
-    if !matches!(url.scheme(), "http" | "https") || !near || !(url.path().starts_with("/v1/") || url.path() == "/decide") {
-        return Err("Only a brain on this Mac or the tailnet (…/v1/… or …/decide).".into());
-    }
-    let req = match body {
-        Some(body) => auth.http.post(url).json(&body),
-        None => auth.http.get(url),
-    };
-    let res = req.timeout(Duration::from_secs(90)).send().await.map_err(|e| format!("The brain cannot be reached: {e}"))?;
     let status = res.status().as_u16();
     let body = res.json::<Value>().await.unwrap_or(Value::Null);
     Ok(Answer { status, body })

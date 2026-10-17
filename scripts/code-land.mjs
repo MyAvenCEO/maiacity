@@ -1,8 +1,7 @@
 // @ts-nocheck — plain JS, run by node only
-// Land what was decided: write into code/ what the database says waits to land (an accepted MIP's cards, a Generated
-// UI view the admin kept; the first time also every config version), then rebuild code/index.js and code/decided.js.
-// game/code/land.js decides what to write; the landing job (.github/workflows/code-land.yml) runs this and merges the
-// result by PR. A MIP already in code/ is never written again.
+// Land what was decided: write into code/ what the database says waits to land (a Generated UI view the admin kept),
+// then rebuild code/index.js. game/code/land.js decides what to write; the landing job
+// (.github/workflows/code-land.yml) runs this and merges the result by PR.
 //
 //   node scripts/code-land.mjs export.json [summary.md]
 //
@@ -15,7 +14,7 @@ import { landing } from '../game/code/land.js';
 import { entries, moduleTexts } from './code-index.mjs';
 
 const ROOT = fileURLToPath(new URL('../code/', import.meta.url));
-const SAFE = /^(views|configs|mips)\/[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*\/[a-z0-9][a-z0-9_.-]*$/;
+const SAFE = /^views\/[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*\/[a-z0-9][a-z0-9_.-]*$/;
 
 const [input, summary] = process.argv.slice(2);
 if (!input) {
@@ -23,7 +22,7 @@ if (!input) {
 	process.exit(2);
 }
 const exported = JSON.parse(readFileSync(input, 'utf8'));
-const have = entries(ROOT, ['views', 'logic', 'configs', 'mips']);
+const have = entries(ROOT, ['views', 'logic']);
 const { files, landed, refused } = landing(exported, have);
 
 for (const [path, text] of Object.entries(files)) {

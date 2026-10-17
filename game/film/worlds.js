@@ -16,9 +16,8 @@
 export const WORLDS = {
 	// the hex island of the city-builder, seen from above; always the same island
 	'sandbox-1': { label: 'Sandbox 1 · the island', areas: ['island'] },
-	// the planet of cities, and a city's island (world.seed is the island's seed); the procedural world alone, without
-	// the live settlements, so a shot renders the same every time
-	'sandbox-2': { label: 'Sandbox 2 · the planet', areas: ['planet', 'island'] },
+	// the planet itself, drawn from its map, so a shot renders the same every time
+	'sandbox-2': { label: 'Sandbox 2 · the planet', areas: ['planet'] },
 	// one dome's whole inside, walked at eye height, with its forest round it
 	'sandbox-3': { label: 'Sandbox 3 · inside a dome', areas: ['home', 'tent', 'glamp', 'large', 'master', 'factory'] },
 	// a whole dome cell: thirteen domes, their insides built as the camera comes

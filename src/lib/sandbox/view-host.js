@@ -5,7 +5,7 @@
  * engines it hands the frame, each checked against its hash, and the frame's first document.
  *
  *   viewOf(view)        a Generated UI view (a2ui or html) as the one kind
- *   viewOfCard(card)    a game's view card (Sandbox 7's configs, MaiaCity V1's MIPs) as the one kind, the same object
+ *   viewOfCard(card)    a game's view card (MaiaCity V1's MIPs) as the one kind, the same object
  *                       while its code is, so its frame is never made again until a proposal changes it
  *   engineCode(kind)    a frozen engine's code: 'view', 'view-worker', or a library ('lib-three' ...)
  *   bootDoc(key, nonce) the frame's first document: its policy, and the one script that takes in our engine

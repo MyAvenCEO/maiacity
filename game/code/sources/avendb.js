@@ -135,6 +135,8 @@ export const avendb = {
 		const twice = new Set();
 		const refused = [];
 		for (const row of rows ?? []) {
+			// an entry the vault deleted (tagged so: src/lib/avendb/seed.js GONE) runs nowhere
+			if ((row?.tags ?? []).includes('avendb:deleted')) continue;
 			const m = entryOf(row);
 			if (m.error) {
 				refused.push(m.error);

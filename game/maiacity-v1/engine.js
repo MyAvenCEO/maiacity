@@ -22,7 +22,7 @@
  * - Time: one virtual month per real day, from virtual year 0, on the 13-month calendar: 13 months of 28 days, the
  *   year begins with Sol (from 21 March, the new year) and ends with March; every month starts on a Sunday. Every balance (HEARTS, wallets, treasuries, the pool)
  *   melts continuously at the rate of 7 % a year of virtual time (b·e^(-0.07 t), as in the theOS paper).
- * - Every decision (the settings, and payouts of MIND from a COOP's treasury to any wallet) is a MIP, as in Sandbox 7.
+ * - Every decision (the settings, and payouts of MIND from a COOP's treasury to any wallet) is a MIP.
  *   It needs two signatures, and applies at once in this same game (no new world).
  * - The first mint (Samuel 2026-10-15): the starter pack is the whole 7 % equilibrium at once, the balance at which a
  *   year of HEARTS grown equals the year's melt (heartsPerDay a game day over the 7 % rate: 8,736 / 0.07 = 124,800 HEARTS).
@@ -504,7 +504,7 @@ export const PAYEES = [...SEATS.map((s) => `player:${s}`), ...PAYERS];
 const balanceOf = (s, who) => (who.startsWith('player:') ? s.players[who.slice(7)]?.wallet : s.coops[who.slice(5)]?.treasury);
 
 /**
- * A MIP (MaiaCity improvement proposal), as in Sandbox 7: a title, a description in prose, and what it changes — any of
+ * A MIP (MaiaCity improvement proposal): a title, a description in prose, and what it changes — any of
  * the game's settings, the COOPs (a new name, the list of assets each owns), and payouts of MIND out of a COOP's
  * treasury into any wallet. The proposer signs it; with two
  * signatures it is accepted and applies at once, in this same game. Either player may reject it; the proposer withdraws.

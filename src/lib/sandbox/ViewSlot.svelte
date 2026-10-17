@@ -1,6 +1,6 @@
 <!--
-	A SLOT — one of a page's panels a view may take the place of (Sandbox 7's Board, Activity, Prices, Avens and Stats;
-	MaiaCity V1's COOPs, Ledger and Rules) or stand over (V1's panels with moves: the view on top, the panel's buttons
+	A SLOT — one of a page's panels a view may take the place of (MaiaCity V1's COOPs,
+	Ledger and Rules) or stand over (V1's panels with moves: the view on top, the panel's buttons
 	below it). The page's own panel is the slot's default: it shows while no view stands there, and stays one tap away
 	while one does. The view shows through the one view host (./ViewHost.svelte), so a slot asks nothing of whoever
 	made it. A page never makes a slot where a person decides (accepting, signing, a setting), so a view can't dress up

@@ -2,7 +2,7 @@
 // The Proposals app's sources in one shape ($lib/proposals/aips.js): an avenDB AIP as the `aips` read lists it, and
 // today's MIPs, side by side.
 import { describe, expect, test } from 'bun:test';
-import { allOf, fromAvendb, fromSandbox7, ms } from './aips.js';
+import { allOf, fromAvendb, ms } from './aips.js';
 
 const world = { vaults: [{ id: 'coop', name: 'Maia City COOP' }, { id: 'aven', name: 'avenMaia' }] };
 const line = { entry: 'e1', line: 'p1', type: 'config', title: 'V1 settings', name: null, heads: ['h'], merged: false };
@@ -32,9 +32,6 @@ describe('an avenDB AIP', () => {
 	});
 });
 
-test("avenDB's AIPs come first, then today's MIPs, newest first", () => {
-	const mip = (number, decided) => ({ number, title: `MIP ${number}`, status: 'accepted', cards: [], remove: [], created: decided, decided });
-	const all = allOf([mip(1, '2026-10-01T00:00:00Z'), mip(2, '2026-10-02T00:00:00Z')], null, [aip()], world);
-	expect(all.map((a) => a.key)).toEqual(['a1', 's7-2', 's7-1']);
-	expect(fromSandbox7(mip(2, '2026-10-02T00:00:00Z'))).toMatchObject({ label: 'MIP-2', where: 'Sandbox 7', stage: 'archived', outcome: 'applied' });
+test("avenDB's AIPs come first, then today's MIPs", () => {
+	expect(allOf(null, [aip()], world).map((a) => a.key)).toEqual(['a1']);
 });
