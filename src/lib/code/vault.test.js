@@ -133,10 +133,22 @@ describe('loading', () => {
 		expect(await loadCode({ url: 'https://feed.example/code', fetch: async () => { throw new Error('offline'); } })).toEqual({ error: 'offline' });
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
-	test("the live feed is read for the seed's views and logic modules, and stays off until switched on", async () => {
+	test('an empty feed (a vault reset and not seeded yet): the seed runs', async () => {
+		expect(await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { code: [] }) })).toEqual({ taken: [], refused: [] });
+		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+	});
+	test("the live feed is read for the seed's views and logic modules; switched off, nothing is asked and the seed runs", async () => {
 		expect(feedOf()).toBe('https://avendb.maia.city/feed/code?seed=1&type=view,logic');
 		expect(feedOf('http://avendb:3351/feed/code')).toBe('http://avendb:3351/feed/code?seed=1&type=view,logic');
-		expect(avendb.on).toBe(false);
-		expect(await loadCode()).toEqual({ error: 'code from avenDB is not switched on yet' });
+		expect(avendb.on).toBe(true);
+		avendb.on = false;
+		try {
+			let asked = false;
+			const fetch = async () => ((asked = true), { ok: true, status: 200, json: async () => ({ code: [] }) });
+			expect(await loadCode({ url: 'https://feed.example/code', fetch })).toEqual({ error: 'code from avenDB is switched off' });
+			expect(asked).toBe(false);
+		} finally {
+			avendb.on = true;
+		}
 	});
 });

@@ -11,6 +11,7 @@ import { db } from "./pg";
 import { ViewError } from "../../game/genui/views.js";
 import { checkCode } from "../../game/code/check.js";
 import { codeIn, viewOfEntry } from "../../game/code/index.js";
+import { avendb } from "../../game/code/sources/avendb.js";
 import { canonical } from "../../game/code/files.js";
 
 export { ViewError };
@@ -53,6 +54,8 @@ export async function keepView(id, keep = true) {
   const { rows } = await db.query("SELECT * FROM genui_views WHERE id = $1", [String(id)]);
   if (!rows[0]) throw new ViewError("No such draft.", 404);
   if (keep) {
+    // a view the Maia City vault holds runs from there (C10): it changes by an avenDB proposal, not by landing in the repo
+    if (avendb.byPath(`views/${id}`)) throw new ViewError("This view lives in the Maia City vault now: change it there, by an avenDB proposal.", 409);
     // what lands in the repo holds nothing the rules refuse, and nothing that would only do nothing there
     const r = checkCode("view", viewOf(rows[0]));
     if (!r.ok) throw new ViewError(r.errors.join(" "));

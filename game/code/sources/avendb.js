@@ -117,8 +117,11 @@ function checked(e, viewOf) {
 let loaded = {};
 
 export const avendb = {
-	/** whether code is loaded from the vault's feed (avenDB's /feed/code, #862): off until Samuel switches it on */
-	on: false,
+	/**
+	 * whether code is loaded from the vault's feed (avenDB's /feed/code, #862): on since Samuel switched it on
+	 * (2026-10-17); false sends every page and the API back to the seed alone
+	 */
+	on: true,
 	/** the loaded entry at `path`, or null @param {string} path */
 	byPath: (path) => loaded[path] ?? null,
 	/** every loaded entry @returns {Record<string, any>} */
@@ -165,7 +168,7 @@ export const avendb = {
  * `viewOfEntry`; `url` the feed's query (`feedOf`), on the API the server's own feed inside (AVENDB_FEED).
  */
 export async function loadCode(viewOf, { url = feedOf(), fetch: get = globalThis.fetch, timeout = 4000 } = {}) {
-	if (!avendb.on && url === feedOf()) return { error: 'code from avenDB is not switched on yet' };
+	if (!avendb.on) return { error: 'code from avenDB is switched off' };
 	try {
 		const ctl = new AbortController();
 		const t = setTimeout(() => ctl.abort(), timeout);
