@@ -38,7 +38,7 @@
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { answer, refs } from './ops.js';
-	import { retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
+	import { beside, retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
@@ -372,8 +372,9 @@
 
 	/**
 	 * Each piece of the repo seed vault `city` holds no copy of yet (./seed.js), written into it acting for it, one
-	 * piece after another, each op of a piece naming the entries the ones before it made (`refs`). A piece the vault
-	 * refuses is left out, and the rest go on: what was left out is said at the end, and the next visit tries it again.
+	 * piece after another, each op of a piece naming the entries the ones before it made (`refs`); a recipe's create
+	 * with its file beside it, as the session brings one (`beside`). A piece the vault refuses is left out, and the rest
+	 * go on: what was left out is said at the end, and the next visit tries it again.
 	 * @param {import('./vaults.js').WorldView} w @param {string} city
 	 */
 	async function seed(w, city) {
@@ -385,7 +386,12 @@
 			/** @type {any[]} */
 			const done = [];
 			try {
-				for (const op of await seeding(p, city)) done.push(answer(await send(refs(op, done))));
+				for (const op of await seeding(p, city)) {
+					const { op: ready, file } = beside(refs(op, done));
+					const made = file ? await session.api.bring(`Adding ${p.name}`, ready, file) : answer(await send(ready));
+					if (file && !made) throw new Error(`${p.name} didn’t go in`);
+					done.push(made);
+				}
 			} catch {
 				failed.push(p.name);
 			}
