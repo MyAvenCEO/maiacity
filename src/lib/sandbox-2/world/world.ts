@@ -14,6 +14,8 @@ import * as THREE from 'three'
 import { connectFilm, createCameraHold, filmDraws } from '$lib/sandbox-kit/film.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createAirShell } from '$lib/sandbox-kit/universe.js'
+import { disposeRenderer } from '$lib/render/core.js'
+import { worldRenderer } from '$lib/render/world.js'
 import { CameraRig } from './camera'
 import { BIOMES, TREE } from './biomes'
 import { buildGlobe, FREQUENCY, LAND, WATER, type Tile, type Vec3 } from '../../../../game/globe'
@@ -145,12 +147,10 @@ function forests(tiles: Tile[]): THREE.Object3D {
 
 export function mountWorld(container: HTMLElement, options: WorldOptions = { cities: [] }): WorldHandle {
 
-	const renderer = new THREE.WebGLRenderer({ antialias: true })
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+	// the world renderer ($lib/render/world.js), with the same lens as every world ($lib/sandbox-kit/sky): the
+	// universe's light and the planet's in one picture; no shadows on a planet seen from space
+	const renderer = worldRenderer({ maxPixelRatio: 2, shadows: false, colorSpace: THREE.SRGBColorSpace })
 	renderer.setSize(container.clientWidth, container.clientHeight)
-	renderer.outputColorSpace = THREE.SRGBColorSpace
-	// the same lens as every world ($lib/sandbox-kit/sky): the universe's light and the planet's in one picture
-	renderer.toneMapping = THREE.ACESFilmicToneMapping
 	container.appendChild(renderer.domElement)
 
 	const scene = new THREE.Scene()
@@ -543,8 +543,7 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = { cit
 			rig.dispose()
 			reticle.remove()
 			geometry.dispose()
-			renderer.dispose()
-			renderer.domElement.remove()
+			disposeRenderer(renderer)
 		}
 	}
 }
