@@ -20,8 +20,8 @@
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { AXIAL_DIRS, type BiomeId, type HexTile, type HexWorld, key, WATER_BIOME } from '../hexmap'
-import { hash2, makeRng, type Rng } from '../rng'
+import { AXIAL_DIRS, type BiomeId, type HexTile, type HexWorld, key, WATER_BIOME } from '../../../../../game/island/hexmap'
+import { hash2, makeRng, type Rng } from '../../../../../game/island/rng'
 import {
 	berryBush,
 	birchTree,

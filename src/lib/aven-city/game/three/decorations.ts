@@ -7,7 +7,7 @@
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import type { Rng } from '../rng'
+import type { Rng } from '../../../../../game/island/rng'
 
 function clay(color: string | THREE.Color): THREE.MeshStandardMaterial {
 	return new THREE.MeshStandardMaterial({

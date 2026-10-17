@@ -10,7 +10,7 @@
  * ramp and the shoreline foam band that laps against the island walls.
  */
 import * as THREE from 'three'
-import type { HexTile } from '../hexmap'
+import type { HexTile } from '../../../../../game/island/hexmap'
 
 /* --- GLSL chunks (from WaterThreeJS common.js, trimmed) ------------------ */
 

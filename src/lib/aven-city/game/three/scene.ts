@@ -5,8 +5,8 @@
  * match --color-sky in tokens.css so canvas and page blend seamlessly.
  */
 import * as THREE from 'three'
-import { AXIAL_DIRS, generateMap, type HexTile, key, MAP_SIZE } from '../hexmap'
-import { makeRng } from '../rng'
+import { AXIAL_DIRS, generateMap, type HexTile, key, MAP_SIZE } from '../../../../../game/island/hexmap'
+import { makeRng } from '../../../../../game/island/rng'
 import {
 	BUILD_ORDER,
 	buildWorld,
