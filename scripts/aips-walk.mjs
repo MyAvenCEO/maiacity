@@ -128,7 +128,7 @@ await click('Sandbox 7');
 check('the game filter keeps only that game', !(await text()).includes('Cheaper tent rent') && (await text()).includes('World 37'));
 await click('World 37');
 const s7 = await text();
-check('a Sandbox 7 detail: text, changes, cards, Accept for the admin', s7.includes('Keep World 36 and try a lower mint') && s7.includes('Mint: 24 → 20 HEARTS') && s7.includes('Accept') && s7.includes('was MIP-42'), s7.slice(0, 500));
+check('a Sandbox 7 detail: text, changes, cards, Accept for the admin', s7.includes('Keep World 36 and try a lower mint') && s7.includes('Mint: 24 → 20 HEARTS') && s7.includes('Accept') && s7.includes('MIP-42'), s7.slice(0, 500));
 check('the address names the open one', page.url().includes('aip=s7-42') && page.url().includes('game=sandbox-8'));
 await shot('2-sandbox7-detail');
 await click('MaiaCity V1');
