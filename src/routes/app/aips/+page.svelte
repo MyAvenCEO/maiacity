@@ -1,0 +1,354 @@
+<!--
+	Proposals: the AIPs, Aven Improvement Proposals, of every game, in one app of their own next to Ledger and Coops
+	(Samuel 2026-10-17: proposals leave the game and sandbox screens completely). Every AIP goes the same way: an idea,
+	then proposed (waiting for the signatures its game's policy asks for), then archived as applied or rejected; each is
+	a readable text plus the changes it makes. Until they live in avenDB (plan: /mnt/project-files/game-caps/plan.md),
+	the app reads today's MIPs where they are kept ($lib/proposals/aips.js) and shows each the AIP way, with the number
+	it had ("was MIP-42"). A game links here; its own screens show no proposal.
+-->
+<script>
+	// @ts-nocheck — plain JS
+	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
+	import { me, may } from '$lib/auth/client';
+	import { loadMips, loadConfigs } from '$lib/sandbox-8/store.js';
+	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
+	import { GAMES, STAGES, allOf, when } from '$lib/proposals/aips.js';
+	import Sandbox7Aip from '$lib/proposals/Sandbox7Aip.svelte';
+	import V1Aip from '$lib/proposals/V1Aip.svelte';
+	import V1Draft from '$lib/proposals/V1Draft.svelte';
+	import { HOOKS } from '../../../../game/economy/params.js';
+
+	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+	let game = $state(q.get('game') ?? '');
+	let stage = $state(q.get('stage') ?? 'proposed');
+	let open = $state(q.get('aip') ?? '');
+	// "Propose a change" or "Propose a payout" in MaiaCity V1 lands here on a new proposal
+	let drafting = $state(q.get('new') === '1' && q.get('game') === 'maiacity-v1');
+	const payout = q.get('from') ? { from: q.get('from'), to: q.get('to'), token: q.get('token'), amount: Number(q.get('amount') ?? 1) } : null;
+
+	const g = liveGame();
+	let acct = $state({ id: null, play: false, admin: false });
+	let s7 = $state(null);
+	let configs = $state([]);
+	let s7Note = $state('');
+
+	async function loadS7() {
+		if (!acct.play) return;
+		try {
+			const [m, c] = await Promise.all([loadMips(), loadConfigs()]);
+			s7 = m.mips;
+			configs = c.configs ?? [];
+			s7Note = '';
+		} catch (e) {
+			s7Note = `Sandbox 7's proposals could not be read (${e?.message || e}).`;
+		}
+	}
+	onMount(() => {
+		me()
+			.then((f) => {
+				acct = { id: f.id, play: may(f, 'economy:play'), admin: may(f, 'economy:admin') };
+				if (!acct.play) s7Note = "Sandbox 7's proposals are open to whoever plays it.";
+				return loadS7();
+			})
+			.catch(() => (s7Note = 'Sign in to see the proposals.'));
+		// an agent proposes over the MCP while the app is open: the list reloads every 15 s, and when the window is back
+		const every = setInterval(loadS7, 15000);
+		addEventListener('focus', loadS7);
+		return () => (clearInterval(every), removeEventListener('focus', loadS7));
+	});
+
+	const all = $derived(allOf(s7, g.view));
+	const inGame = $derived(all.filter((a) => !game || a.game === game));
+	const shown = $derived(inGame.filter((a) => a.stage === stage));
+	const count = (id) => inGame.filter((a) => a.stage === id).length;
+	const current = $derived(all.find((a) => a.key === open) ?? null);
+	const loading = $derived(!g.loaded || (acct.play && !s7 && !s7Note));
+
+	// the filter, the tab and the AIP open are kept in the address, so a link (a game's, a HITL card's) opens on them
+	$effect(() => {
+		const p = new URLSearchParams();
+		if (game) p.set('game', game);
+		if (stage !== 'proposed') p.set('stage', stage);
+		if (open) p.set('aip', open);
+		history.replaceState(history.state, '', `${location.pathname}${p.size ? `?${p}` : ''}`);
+	});
+	function show(a) {
+		open = a.key;
+		stage = a.stage;
+		scrollTo({ top: 0 });
+	}
+	const outcome = (a) => (a.stage !== 'archived' ? (a.stage === 'proposed' ? 'proposed' : 'idea') : a.outcome === 'applied' ? 'applied' : a.why === 'withdrawn' ? 'withdrawn' : 'rejected');
+	const canDraft = $derived(!!g.view && !!g.mySeat && (!game || game === 'maiacity-v1'));
+	function drafted(done) {
+		drafting = false;
+		if (done) (game = 'maiacity-v1'), (stage = 'proposed');
+	}
+</script>
+
+<svelte:head>
+	<title>Proposals · maiaCITY</title>
+</svelte:head>
+
+<main class="app-page">
+	<header>
+		<p class="eyebrow">AIPs · Aven Improvement Proposals</p>
+		<h1>Proposals</h1>
+		<p class="dim">Every change to a game's rules, settings or screens is a proposal: a text to read, plus exactly what it changes. It starts as an idea, is proposed and waits for the signatures its game asks for, and ends in the archive, applied or rejected. Today's MIPs are shown here the same way, each with the number it had.</p>
+	</header>
+
+	<nav class="filters" aria-label="Game">
+		<button class:on={!game} onclick={() => ((game = ''), (open = ''))}>All games</button>
+		{#each Object.entries(GAMES) as [id, x] (id)}<button class:on={game === id} onclick={() => ((game = id), (open = ''))}>{x.label}</button>{/each}
+		{#if canDraft && !drafting}<button class="new" onclick={() => ((drafting = true), (open = ''))}>New proposal</button>{/if}
+	</nav>
+
+	{#if drafting && g.view && g.mySeat}
+		<section class="detail">
+			<p class="eyebrow">New proposal · MaiaCity V1</p>
+			<V1Draft {g} {payout} ondone={drafted} />
+		</section>
+	{:else if drafting && g.loaded}
+		<p class="dim">Only the two players of MaiaCity V1 propose for it. Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> first.</p>
+	{/if}
+
+	{#if current}
+		<section class="detail">
+			<button class="back link" onclick={() => (open = '')}>← All {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}</button>
+			<p class="eyebrow">{GAMES[current.game].label} · was {current.was}</p>
+			<h2>{current.title} <span class="status {outcome(current)}">{outcome(current)}</span></h2>
+			<p class="by">By {current.author}{current.via === 'mcp' ? ', through the MCP' : ''} · {when(current.created)}{current.decided ? ` · decided ${when(current.decided)}` : ''} · {current.policy}{current.stage === 'proposed' ? ` (${current.signed} of ${current.needs} so far)` : ''}</p>
+			{#if current.text}<p class="prose">{current.text}</p>{/if}
+			{#if current.changes.length}
+				<h3>What it changes</h3>
+				<ul class="changes">{#each current.changes as c, i (i)}<li>{c}</li>{/each}</ul>
+			{/if}
+			{#if current.game === 'sandbox-8'}
+				{#key current.key}<Sandbox7Aip m={current.mip} {acct} {configs} onchanged={loadS7} />{/key}
+			{:else if g.view}
+				<V1Aip m={current.mip} {g} />
+			{/if}
+		</section>
+	{:else if !drafting}
+		<nav class="tabs" aria-label="Stage">
+			{#each STAGES as s (s.id)}<button class:on={stage === s.id} onclick={() => (stage = s.id)}>{s.label} <small>{count(s.id)}</small></button>{/each}
+		</nav>
+		{#if loading}
+			<p class="dim">One moment…</p>
+		{:else if stage === 'idea' && !shown.length}
+			<p class="dim">No ideas yet. Ideas arrive with proposals in avenDB, the next step: anyone who plays a game, and their agents, gather and edit them freely, each with an id of its own, until they are proposed and get their number. Until then Sandbox 7's proposals come over the MCP and MaiaCity V1's are proposed straight away.</p>
+		{:else}
+			<ul class="list">
+				{#each shown as a (a.key)}
+					<li>
+						<button onclick={() => show(a)}>
+							<span class="head"><b>{a.title}</b><span class="status {outcome(a)}">{outcome(a)}</span></span>
+							<span class="meta">{GAMES[a.game].label} · was {a.was} · by {a.author} · {when(a.decided || a.created)}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signatures` : ''}</span>
+							{#if a.changes.length}<span class="sum">{a.changes.slice(0, 3).join(' · ')}{a.changes.length > 3 ? ` · +${a.changes.length - 3} more` : ''}</span>{/if}
+						</button>
+					</li>
+				{:else}
+					<li class="dim">Nothing here{game ? ` for ${GAMES[game].label}` : ''}.</li>
+				{/each}
+			</ul>
+		{/if}
+		{#if s7Note && (!game || game === 'sandbox-8')}<p class="dim small">{s7Note}</p>{/if}
+		{#if g.error && (!game || game === 'maiacity-v1')}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
+		{#if game === 'sandbox-8' && configs.length}
+			<details class="about">
+				<summary>Sandbox 7's configs, and what a proposal's card code can change</summary>
+				<p>A world keeps the cards it started with. A new world starts from the world it follows: every card and value it played with, and its avens' brains; its proposal changes only the cards it carries.</p>
+				<table><tbody>{#each configs as c (c.id)}<tr><td><b>{c.name}</b> <code>{c.id}</code><br /><small>{c.description}</small></td><td class="num">v{c.version}</td><td class="num">{c.cards.length} cards</td></tr>{/each}</tbody></table>
+				<p>Every rule of the valley is a hook in a card's code, and each card's code runs in its own QuickJS sandbox: no page, no network, no keys, 8 MB and 25 ms a call. A hook returns plain JSON, which the valley checks and keeps within bounds.</p>
+				<table><tbody>{#each HOOKS as h (h.name)}<tr><td><code>{h.name}</code></td><td>{h.when}; given <code>{h.given}</code></td><td>returns {h.returns}</td></tr>{/each}</tbody></table>
+			</details>
+		{/if}
+	{/if}
+</main>
+
+<style>
+	.app-page {
+		max-width: 60rem;
+		margin: 0 auto;
+		padding: 1.6rem clamp(1rem, 4vw, 2rem) 6rem;
+	}
+	.dim {
+		color: var(--muted);
+	}
+	.small {
+		font-size: 0.85rem;
+	}
+	a {
+		color: var(--ink);
+		text-decoration-color: var(--mustard);
+		text-underline-offset: 3px;
+	}
+	.eyebrow {
+		margin: 0;
+		font-size: 0.72rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	h1 {
+		margin: 0.2rem 0 0.4rem;
+		font-family: var(--font-display);
+		font-size: clamp(2rem, 5vw, 2.8rem);
+	}
+	h2 {
+		margin: 0.2rem 0 0.4rem;
+		font-family: var(--font-display);
+		font-size: 1.6rem;
+	}
+	h3 {
+		margin: 1rem 0 0.3rem;
+		font-size: 0.95rem;
+	}
+	button {
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
+	.filters,
+	.tabs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin: 1.2rem 0 0.4rem;
+	}
+	.filters button,
+	.tabs button {
+		padding: 0.4rem 0.85rem;
+		border: 1px solid rgb(31 42 35 / 0.15);
+		border-radius: 999px;
+		background: #fff;
+	}
+	.filters button.on,
+	.tabs button.on {
+		background: #24452f;
+		border-color: #24452f;
+		color: #f4f1e8;
+	}
+	.filters .new {
+		margin-left: auto;
+		background: #24452f;
+		border-color: #24452f;
+		color: #f4f1e8;
+	}
+	.tabs small {
+		opacity: 0.7;
+	}
+	.list {
+		list-style: none;
+		margin: 0.6rem 0;
+		padding: 0;
+		display: grid;
+		gap: 0.5rem;
+	}
+	.list li > button {
+		display: grid;
+		gap: 0.2rem;
+		width: 100%;
+		text-align: left;
+		padding: 0.7rem 0.9rem;
+		border: 1px solid rgb(31 42 35 / 0.1);
+		border-radius: 12px;
+		background: #fff;
+	}
+	.list li > button:hover {
+		border-color: #24452f;
+	}
+	.head {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.6rem;
+		align-items: baseline;
+	}
+	.meta,
+	.sum {
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.sum {
+		color: #24452f;
+	}
+	.status {
+		flex: none;
+		padding: 0.05rem 0.5rem;
+		border-radius: 999px;
+		font-size: 0.68rem;
+		font-family: inherit;
+		font-weight: 400;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		vertical-align: middle;
+		background: #eda10022;
+		color: #8a5a00;
+	}
+	.status.applied {
+		background: #1baf7a22;
+		color: #136b4b;
+	}
+	.status.rejected,
+	.status.withdrawn {
+		background: #1f2a2314;
+		color: #6b6a66;
+	}
+	.detail {
+		margin-top: 1rem;
+		padding: 1rem 1.1rem;
+		border-radius: 14px;
+		background: #fff;
+		border: 1px solid rgb(31 42 35 / 0.1);
+	}
+	.back {
+		margin-bottom: 0.6rem;
+	}
+	.link {
+		border: 0;
+		background: none;
+		padding: 0;
+		text-decoration: underline;
+	}
+	.by {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.prose {
+		white-space: pre-wrap;
+		margin: 0.8rem 0;
+	}
+	.changes {
+		margin: 0;
+		padding-left: 1.1rem;
+		font-size: 0.9rem;
+	}
+	.about {
+		margin-top: 1.4rem;
+		font-size: 0.82rem;
+		color: var(--muted);
+	}
+	.about summary {
+		cursor: pointer;
+		color: var(--ink);
+	}
+	table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+	td {
+		padding: 0.3rem 0.4rem;
+		border-top: 1px solid #1f2a2312;
+		vertical-align: top;
+	}
+	td.num {
+		text-align: right;
+		white-space: nowrap;
+	}
+	@media (max-width: 600px) {
+		.filters .new {
+			margin-left: 0;
+		}
+	}
+</style>

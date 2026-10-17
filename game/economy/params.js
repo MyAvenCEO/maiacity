@@ -4,11 +4,11 @@
 // range and a plain sentence; and the config cards a config is made of. Shared by the page (src/lib/sandbox-8) and the
 // API, which checks every card a MIP (a MaiaCity improvement proposal) puts in against it.
 
-import { DEFAULT_CODE } from './rules-code.js';
+import { defaultCode } from './rules-code.js';
 import { checkViewCard } from '../genui/views.js';
 import { SLOTS } from './views.js';
 
-export { DEFAULT_CODE };
+export { defaultCode };
 export const GOODS = ['water', 'fruits', 'vegetables', 'legumes', 'chicken'];
 /** @type {Record<string, string>} */
 export const GOOD_LABEL = { water: 'WATER', fruits: 'FRUITS', vegetables: 'VEGETABLES', legumes: 'LEGUMES', chicken: 'CHICKEN' };
@@ -177,15 +177,16 @@ export const CARD_OF = Object.fromEntries(PARAMS.map((p) => [p.key, SECTIONS.fin
 
 /** the catalogue as cards, with its default values and the code of its rules */
 export function defaultCards() {
-	return SECTIONS.map((s) => ({ ...s, description: '', values: Object.fromEntries(PARAMS.filter((p) => CARD_OF[p.key] === s.id).map((p) => [p.key, p.value])), code: DEFAULT_CODE[s.id] ?? '' }));
+	return SECTIONS.map((s) => ({ ...s, description: '', values: Object.fromEntries(PARAMS.filter((p) => CARD_OF[p.key] === s.id).map((p) => [p.key, p.value])), code: defaultCode()[s.id] ?? '' }));
 }
 
 /** a section card's code as it runs: its own, else its rules' default (rules-code.js) */
-export const codeOf = (card) => (card?.code?.trim() ? card.code : (DEFAULT_CODE[card?.id] ?? ''));
+export const codeOf = (card) => (card?.code?.trim() ? card.code : (defaultCode()[card?.id] ?? ''));
 /** a config's cards with every rule written out: each section card without code of its own gets its default, and a
  * section the config lacks is added, so a world keeps its whole rulebook with it */
 export function fullCards(cards) {
-	const out = (cards ?? []).map((c) => (SECTIONS.some((s) => s.id === c.id) && !c.code?.trim() ? { ...c, code: DEFAULT_CODE[c.id] ?? '' } : c));
+	const code = defaultCode();
+	const out = (cards ?? []).map((c) => (SECTIONS.some((s) => s.id === c.id) && !c.code?.trim() ? { ...c, code: code[c.id] ?? '' } : c));
 	for (const d of defaultCards()) if (!out.some((c) => c.id === d.id)) out.push({ ...d, values: {} });
 	return out;
 }

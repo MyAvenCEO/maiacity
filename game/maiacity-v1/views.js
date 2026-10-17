@@ -29,13 +29,14 @@ export const SLOT_NAMES = { panel: 'a tool of its own', you: 'the player card', 
 /** the panels that only show, which a screen replaces; in the others it stands over the moves */
 export const REPLACES = ['coops', 'ledger', 'rules'];
 
-/** the game's own screens (their code in code/views/); a MIP's view card with the same id replaces one */
-export const DEFAULT_VIEWS = [cardOfEntry(codeAt('views/view-holders'))];
+/** the game's own screens (their code entries by the one loader); a MIP's view card with the same id replaces one */
+export const defaultViews = () => [cardOfEntry(codeAt('views/view-holders'))];
 
 /** the screens a game shows, in order: the defaults (or the MIPs' versions of them), then the MIPs' own */
 export function viewsOf(s) {
 	const own = s?.views ?? [];
-	return [...DEFAULT_VIEWS.map((d) => own.find((v) => v.id === d.id) ?? d), ...own.filter((v) => !DEFAULT_VIEWS.some((d) => d.id === v.id))];
+	const defaults = defaultViews();
+	return [...defaults.map((d) => own.find((v) => v.id === d.id) ?? d), ...own.filter((v) => !defaults.some((d) => d.id === v.id))];
 }
 
 /** the screen standing in each panel, by slot (the last MIP's wins when two take one) */

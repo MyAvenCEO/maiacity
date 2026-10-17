@@ -1,60 +1,40 @@
-//! avenDB in the app, natively: its device runs inside the app's own process (`avendb_device::serve`, on a runtime of
+//! avenDB in the app, natively: its device runs inside the app's own process (`avendb_device::host`, on a runtime of
 //! its own whose threads have room on their stacks), so its node reaches the person's other devices directly, over UDP
 //! sockets of its own, and keeps their vault in a folder on this Mac (~/avenDB/mac/, where the person finds all of
-//! avenDB's data), not in the web view's IndexedDB. The app speaks to it as it spoke to the sidecar it was before: lines
-//! of JSON, now over in-process pipes. The avenDB page calls it through `avendb` ($lib/avendb/native.js), in the calls
-//! the page's own device answers; each ceremony of the person's passkey it asks for runs in the sign-in sheet over the
-//! window that called last (passkey.rs), what comes back sealed to a key the device made for that ceremony alone. It
-//! starts with the first call, runs on while the app does, its node syncing whichever page is open, and stops as the
-//! app quits (`stop`): its input ends, and it closes its store.
+//! avenDB's data), not in the web view's IndexedDB. Each call the app makes is
+//! answered by the device itself, with no lines of JSON between. The avenDB page calls it through `avendb`
+//! ($lib/avendb/native.js), in the calls the page's own device answers; each ceremony of the person's passkey it asks
+//! for runs in the sign-in sheet over the window that called last (passkey.rs), what comes back sealed to a key the
+//! device made for that ceremony alone. The app's own Rust takes the node of a studio worker it hosts (`worker`), to
+//! put what a job made by the worker's own key. It starts with the first call, runs on while the app does, its node
+//! syncing whichever page is open, and stops as the app quits (`stop`), closing its store.
 //!
 //! A harness's agent device still runs as a process of its own, the app's binary run as `agent <harness>` (`agent`,
 //! from main.rs), the command the device names for it (`agentCommand`).
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use avendb_device::{Host, OpenNode};
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, DuplexStream};
 use tokio::sync::oneshot;
-
-/// What a call comes back with: what the device answered, or why there is no answer.
-type Answer = Result<Value, String>;
 
 /// The window the sheets show over.
 type Window = Arc<Mutex<Option<tauri::WebviewWindow>>>;
 
-/// The device's input, shared by the calls and the sheets' answers; gone once the app quits.
-type Stdin = Arc<tokio::sync::Mutex<Option<DuplexStream>>>;
-
-/// How much a pipe between the app and its device holds before the writer waits. Each way is a pipe of its own, so
-/// that the end dropped on one side ends the other's reading: the app's input as it quits, the device's output as it
-/// stops.
-const PIPE: usize = 1 << 20;
-
 /// avenDB's device in the app, once a call started it.
 #[derive(Default)]
-pub struct Avendb(tokio::sync::Mutex<Option<Sidecar>>);
+pub struct Avendb(tokio::sync::Mutex<Option<Hosted>>);
 
-struct Sidecar {
-    stdin: Stdin,
-    calls: Arc<Mutex<Calls>>,
+struct Hosted {
+    host: Host,
     /// The window whose page called last, which its sheets show over; none while only the app's own Rust called.
     window: Window,
-    /// Comes once the device has closed its store and its thread has ended.
+    /// Ends the device's runtime once it has closed (`stop`).
+    quit: oneshot::Sender<()>,
+    /// Comes once its runtime has ended.
     ended: oneshot::Receiver<()>,
-}
-
-/// The calls awaiting the device's answer, by id; or why it stopped answering.
-#[derive(Default)]
-struct Calls {
-    next: u64,
-    waiting: HashMap<u64, oneshot::Sender<Answer>>,
-    ended: Option<String>,
-    /// Why the device's thread ended, if it failed, for `read` to end its calls with.
-    failed: Option<String>,
 }
 
 /// Calls `call` with `args` on avenDB's device, as the page's own device answers it, starting the device if it isn't
@@ -77,49 +57,52 @@ pub async fn call(app: &tauri::AppHandle, call: &str, args: Vec<Value>) -> Resul
     call_on(&app.state::<Avendb>(), None, call.to_string(), args).await
 }
 
+/// The node of the studio worker whose device is `device` (hex), which this Mac hosts, for the studio's jobs to put
+/// what they make by the worker's own key (`Host::node_of`): none where it hosts no such worker.
+pub async fn worker(app: &tauri::AppHandle, device: &str) -> Result<OpenNode, String> {
+    use tauri::Manager as _;
+    let id = ::avendb::id::SignerId::from_hex(device).ok_or_else(|| format!("{device} names no worker's device"))?;
+    let host = host_of(&app.state::<Avendb>(), None).await?;
+    host.node_of(id).ok_or_else(|| "this Mac hosts no such worker (yet): its node opens a few seconds after avenDB does".into())
+}
+
 async fn call_on(
     state: &Avendb,
     window: Option<tauri::WebviewWindow>,
     call: String,
     args: Vec<Value>,
 ) -> Result<Value, String> {
-    let (answer, stdin, line) = {
-        let mut held = state.0.lock().await;
-        if held.as_ref().is_none_or(|s| s.calls.lock().expect("the calls").ended.is_some()) {
-            // a device that stopped has closed its store already: its thread ends as its output does
-            held.take();
-            *held = Some(start()?);
-        }
-        let sidecar = held.as_ref().expect("started");
-        if let Some(window) = window {
-            *sidecar.window.lock().expect("the window") = Some(window);
-        }
-        let (tx, rx) = oneshot::channel();
-        let id = {
-            let mut calls = sidecar.calls.lock().expect("the calls");
-            if let Some(why) = &calls.ended {
-                return Err(why.clone());
-            }
-            calls.next += 1;
-            let id = calls.next;
-            calls.waiting.insert(id, tx);
-            id
-        };
-        (rx, sidecar.stdin.clone(), json!({ "id": id, "call": call, "args": args }))
-    };
-    // a device that stopped answers every call that awaits it with why, as its output ends
-    if let Err(e) = write(&stdin, &line).await {
-        tracing::warn!("avenDB's device: {e}");
+    let host = host_of(state, window).await?;
+    let answer = host.call(&call, args).await;
+    match answer.get("ok") {
+        Some(ok) => Ok(ok.clone()),
+        None => Err(answer.get("error").and_then(Value::as_str).unwrap_or("no answer").to_string()),
     }
-    answer.await.map_err(|_| "avenDB's device stopped".to_string())?
 }
 
-/// Stops avenDB's device as the app quits: its input ends, and it closes its node and its store, for five seconds at
-/// most; then the app quits whether it is done or not.
+/// The device's host, started if it isn't; the window that called kept for its sheets.
+async fn host_of(state: &Avendb, window: Option<tauri::WebviewWindow>) -> Result<Host, String> {
+    let mut held = state.0.lock().await;
+    if held.is_none() {
+        *held = Some(start()?);
+    }
+    let hosted = held.as_ref().expect("started");
+    if let Some(window) = window {
+        *hosted.window.lock().expect("the window") = Some(window);
+    }
+    Ok(hosted.host.clone())
+}
+
+/// Stops avenDB's device as the app quits: it closes its drives, workers, node and store, for five seconds at most;
+/// then the app quits whether it is done or not.
 pub async fn stop(state: &Avendb) {
-    let Some(sidecar) = state.0.lock().await.take() else { return };
-    sidecar.stdin.lock().await.take();
-    if tokio::time::timeout(Duration::from_secs(5), sidecar.ended).await.is_err() {
+    let Some(hosted) = state.0.lock().await.take() else { return };
+    let closed = async {
+        hosted.host.close().await;
+        let _ = hosted.quit.send(());
+        let _ = hosted.ended.await;
+    };
+    if tokio::time::timeout(Duration::from_secs(5), closed).await.is_err() {
         tracing::warn!("avenDB's device didn't close its store in five seconds");
     }
 }
@@ -151,112 +134,68 @@ fn moved() -> Result<(), String> {
     Ok(())
 }
 
-/// Starts the device on a thread of its own, its sheets over the window that calls (`call_on`).
-fn start() -> Result<Sidecar, String> {
+/// Starts the device on a runtime of its own, on a thread of its own, its sheets over the window that calls
+/// (`call_on`).
+fn start() -> Result<Hosted, String> {
     moved()?;
     let dir = folder();
     std::fs::create_dir_all(&dir).map_err(|e| format!("avenDB's folder {} couldn't be made: {e}", dir.display()))?;
     // the drives the Mac mounts, which it hosts
     let volumes = cfg!(target_os = "macos").then(|| avendb_device::drive::VOLUMES.into());
     let config = avendb_device::Config { dir, direct: true, volumes };
-    let (stdin, input) = tokio::io::duplex(PIPE);
-    let (output, stdout) = tokio::io::duplex(PIPE);
-    let calls = Arc::new(Mutex::new(Calls::default()));
+    let (hosted, made) = std::sync::mpsc::channel();
+    let (quit, quitting) = oneshot::channel::<()>();
     let (done, ended) = oneshot::channel();
-    let failed = calls.clone();
     std::thread::Builder::new()
         .name("avendb-device".into())
         .spawn(move || {
             // threads with room on their stacks: a Classic McEliece key pair's public matrix, over a megabyte, is
-            // made there
-            let runtime = match tokio::runtime::Builder::new_multi_thread()
+            // made there; the host runs every call on this runtime, whichever runtime asks
+            let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .thread_name("avendb-device")
                 .thread_stack_size(8 << 20)
-                .build()
-            {
+                .build();
+            let runtime = match runtime {
                 Ok(runtime) => runtime,
                 Err(e) => {
-                    failed.lock().expect("the calls").failed = Some(format!("avenDB's device didn't start: {e}"));
+                    let _ = hosted.send(Err(format!("avenDB's device didn't start: {e}")));
                     return;
                 }
             };
-            if let Err(e) = runtime.block_on(avendb_device::serve(config, input, output)) {
-                tracing::warn!("avenDB's device: {e:#}");
-                failed.lock().expect("the calls").failed = Some(format!("avenDB's device stopped: {e:#}"));
+            let host = runtime.block_on(async { avendb_device::host(config) });
+            let ok = host.is_ok();
+            let _ = hosted.send(host.map_err(|e| format!("avenDB's device didn't start: {e:#}")));
+            if ok {
+                // the runtime lives until the app quits, the device closed (`stop`)
+                let _ = runtime.block_on(quitting);
             }
-            // its tasks end with it, its output among them, which ends `read`
             drop(runtime);
             let _ = done.send(());
         })
         .map_err(|e| format!("avenDB's device didn't start: {e}"))?;
-    let stdin: Stdin = Arc::new(tokio::sync::Mutex::new(Some(stdin)));
+    let (host, lines) = made.recv().map_err(|_| "avenDB's device didn't start".to_string())??;
     let window: Window = Arc::new(Mutex::new(None));
-    tauri::async_runtime::spawn(read(stdout, calls.clone(), stdin.clone(), window.clone()));
-    Ok(Sidecar { stdin, calls, window, ended })
+    tauri::async_runtime::spawn(sheets(lines, host.clone(), window.clone()));
+    Ok(Hosted { host, window, quit, ended })
 }
 
-/// Reads the device's answers, each to the call awaiting it, and its asks for the sign-in sheet, each shown over the
-/// window that called last and answered; until its output ends, or it says why it can't run (`fatal`). Then every
-/// call still awaiting it ends with why.
-async fn read(
-    stdout: DuplexStream,
-    calls: Arc<Mutex<Calls>>,
-    stdin: Stdin,
-    window: Window,
-) {
-    let mut lines = BufReader::new(stdout).lines();
-    let why = loop {
-        let message = match lines.next_line().await {
-            Ok(Some(line)) => match serde_json::from_str::<Value>(&line) {
-                Ok(message) => message,
-                Err(_) => continue,
-            },
-            Ok(None) => {
-                break calls.lock().expect("the calls").failed.take().unwrap_or("avenDB's device stopped".into());
-            }
-            Err(e) => break format!("avenDB's device: {e}"),
-        };
-        if let Some(why) = message.get("fatal").and_then(Value::as_str) {
-            break why.to_string();
-        } else if let Some(n) = message.get("sheet").and_then(Value::as_u64) {
-            let url = message.get("url").and_then(Value::as_str).unwrap_or_default().to_string();
-            let (stdin, window) = (stdin.clone(), window.lock().expect("the window").clone());
-            tauri::async_runtime::spawn(async move {
-                let shown = match &window {
-                    Some(window) => crate::passkey::sheet(window, url).await,
-                    None => Err("no window to show the sign-in sheet over: open avenDB's page first".into()),
-                };
-                let answer = match shown {
-                    Ok(back) => json!({ "sheet": n, "back": back }),
-                    Err(why) => json!({ "sheet": n, "error": why }),
-                };
-                if let Err(e) = write(&stdin, &answer).await {
-                    tracing::warn!("avenDB's device: {e}");
-                }
-            });
-        } else if let Some(id) = message.get("id").and_then(Value::as_u64) {
-            let answer = match message.get("ok") {
-                Some(ok) => Ok(ok.clone()),
-                None => Err(message.get("error").and_then(Value::as_str).unwrap_or("no answer").to_string()),
+/// Shows each sheet the device asks for over the window that called last, and gives it the sheet's answer; until the
+/// host is gone.
+async fn sheets(mut lines: avendb_device::Lines, host: Host, window: Window) {
+    while let Some(message) = lines.recv().await {
+        let Some(n) = message.get("sheet").and_then(Value::as_u64) else { continue };
+        let url = message.get("url").and_then(Value::as_str).unwrap_or_default().to_string();
+        let (host, window) = (host.clone(), window.lock().expect("the window").clone());
+        tauri::async_runtime::spawn(async move {
+            let shown = match &window {
+                Some(window) => crate::passkey::sheet(window, url).await,
+                None => Err("no window to show the sign-in sheet over: open avenDB's page first".into()),
             };
-            if let Some(tx) = calls.lock().expect("the calls").waiting.remove(&id) {
-                let _ = tx.send(answer);
-            }
-        }
-    };
-    let mut calls = calls.lock().expect("the calls");
-    for (_, tx) in calls.waiting.drain() {
-        let _ = tx.send(Err(why.clone()));
+            host.answer(&match shown {
+                Ok(back) => json!({ "sheet": n, "back": back }),
+                Err(why) => json!({ "sheet": n, "error": why }),
+            });
+        });
     }
-    calls.ended = Some(why);
-}
-
-/// Writes `message` to the device, a line of JSON.
-async fn write(stdin: &Stdin, message: &Value) -> Result<(), String> {
-    let mut stdin = stdin.lock().await;
-    let stdin = stdin.as_mut().ok_or("the app is quitting")?;
-    let line = format!("{message}\n");
-    stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
-    stdin.flush().await.map_err(|e| e.to_string())
 }

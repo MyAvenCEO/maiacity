@@ -22,7 +22,6 @@
 	import { viewOfCard } from '$lib/sandbox/view-host.js';
 	import { RULES, CONFIG, DEFAULTS, PARAMS, changedRules, useConfig } from './rules.js';
 	import RulesView from './RulesView.svelte';
-	import ProposalsView from './ProposalsView.svelte';
 	import { loadConfigs, loadRuns, loadMips, loadWorldRun, saveWorldState, recorder, loadMinds, saveMinds, forgetMinds } from './store.js';
 	import { wholeMind, beginRun, wear, night, editMind, keepMind, worldStamp, enterWorld, traits, TRIAL_DAYS, forgetMemory } from './mind.js';
 	import AvensView from './AvensView.svelte';
@@ -55,6 +54,8 @@
 			}
 			await reloadConfigs(true);
 			await loadWorlds();
+			await watchLanding();
+			await openAsked();
 		} catch (e) {
 			acct.note = `Not connected (${/** @type {any} */ (e)?.message || 'the API cannot be reached'}): sign in on maia.city to save runs and see the proposals. The valley runs on the catalogue's defaults.`;
 			loadAllMinds();
@@ -227,8 +228,7 @@
 	let worlds = $state(/** @type {any[]} */ ([]));
 	let here = $state({ id: /** @type {string | null} */ (null), name: '', after: /** @type {string | null} */ (null), forget: /** @type {Record<string, any[]> | null} */ (null) }); // the world on the page, the world it follows, and what its copied brains forget
 	let worldNote = $state('');
-	let openMips = $state(/** @type {any[]} */ ([])); // MIPs waiting for a decision, listed in the welcome screen's aside
-	let focusMip = $state(/** @type {number | null} */ (null)); // the proposal the Proposals page opens on, picked from that aside
+	let openMips = $state(/** @type {any[]} */ ([])); // MIPs waiting for a decision: a count on the link to the Proposals app
 	async function loadWorlds() {
 		if (!acct.play) return;
 		try {
@@ -239,13 +239,34 @@
 			worldNote = `The worlds could not be read (${/** @type {any} */ (e)?.message || e}).`;
 		}
 	}
-	/** the Proposals page, scrolled to one proposal (Samuel, 2026-10-10: the welcome screen lists the open ones in an aside) */
-	function openMip(/** @type {number | null} */ n) {
-		focusMip = n;
-		setView('mips');
+	// proposals live in the Proposals app, next to Ledger and Coops (Samuel 2026-10-17); the page only links there
+	const AIPS = `${base}/app/aips/?game=sandbox-8`;
+	// an accepted MIP lands from the repo within minutes (code/, the landing job): while the page is open, one that
+	// lands is taken in as the Proposals page did when it lived here: a new world shows in the list, an amended one
+	// open here plays on its new rules from then on
+	let landing = /** @type {Set<number>} */ (new Set());
+	async function watchLanding() {
+		if (!acct.play) return;
+		const all = (await loadMips().catch(() => null))?.mips;
+		if (!all) return;
+		for (const m of all) {
+			if (!landing.has(m.number) || m.result?.landing !== 'landed') continue;
+			if (m.result.amended) amendedWorld({ number: m.number, ...m.result });
+			else reloadConfigs().then(loadWorlds).catch(() => {});
+		}
+		landing = new Set(all.filter((/** @type {any} */ m) => m.result?.landing === 'waiting').map((/** @type {any} */ m) => m.number));
+		openMips = all.filter((/** @type {any} */ m) => m.status === 'open');
 	}
-	const whenMip = (/** @type {string} */ t) => (t ? new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
-	const worldOfMip = (/** @type {any} */ m) => (m.world_id ? m.world_name ?? 'a deleted world' : m.action === 'world' ? m.world?.name ?? 'a new world' : m.config ?? '');
+	onMount(() => {
+		const every = setInterval(watchLanding, 15000);
+		return () => clearInterval(every);
+	});
+	/** opened from the Proposals app on one world (?world=<id>, its "Open it"): that world, once the list is in */
+	async function openAsked() {
+		const id = new URLSearchParams(location.search).get('world');
+		const w = id && worlds.find((x) => x.id === id);
+		if (w) await openWorld(w);
+	}
 	/** what this world runs on: its config (cards and values), the changes tried on top, and the model its avens ask */
 	const settingsOf = () => ({ config: { id: CONFIG.id, name: CONFIG.name, version: CONFIG.version, cards: fullCards(CONFIG.cards), params: { ...DEFAULTS } }, local: changedRules(), model: brain.mode });
 	let keeping = false;
@@ -379,7 +400,7 @@
 	let tab = $state('decisions');
 	let selected = $state(0);
 	let panelOpen = $state(true);
-	let page = $state('home'); // the main view: 'home' (the worlds), 'valley', 'stats', 'policy', 'world', 'mips'
+	let page = $state('home'); // the main view: 'home' (the worlds), 'valley', 'stats', 'policy', 'world'
 	let snap = $state.raw(snapshot());
 	const blankCalls = () => ({ asked: 0, answered: 0, pending: 0, by: /** @type {Record<string, number>} */ ({ d1: 0, qwen: 0, liquid: 0 }), failed: 0, limited: 0, lastError: '', errors: /** @type {Record<string, string>} */ ({ d1: '', qwen: '', liquid: '' }) });
 	let calls = $state(blankCalls());
@@ -738,9 +759,9 @@
 	// are proposed over the studio's MCP, never here; once accepted under Proposals they appear in the list
 	let trial = $state(false); // signed out, nothing is kept: a valley to try here
 	const inWorld = $derived(!!here.id || trial);
-	/** the welcome screen and the Proposals stand outside every world: no world's views, no clock */
-	const outside = $derived(page === 'home' || page === 'mips');
-	// out of a world, or out of the Proposals, the nav pill's Back leads to the welcome screen (Samuel, 2026-10-10)
+	/** the welcome screen stands outside every world: no world's views, no clock */
+	const outside = $derived(page === 'home');
+	// out of a world, the nav pill's Back leads to the welcome screen (Samuel, 2026-10-10)
 	$effect(() => {
 		if (page !== 'home') return wayBack('Back to the worlds', home);
 	});
@@ -755,11 +776,6 @@
 		trial = true;
 		reset();
 		setView('valley');
-	}
-	/** a world MIP accepted: the world is made; open it, ready to start */
-	async function madeWorld(/** @type {any} */ r) {
-		await loadWorlds();
-		await openWorld({ id: r.world, name: r.name });
 	}
 	/** an amend MIP accepted: where it amends the world open here, that world plays on its new rules from now on (its
 	 * kept settings in the database already have them; this brings the open valley in step, so the next save keeps them) */
@@ -1248,11 +1264,11 @@
 				<span>Day {snap.day} · {snap.time} · month {snap.month}</span>
 			{:else}
 				<b>Sandbox 7</b>
-				<span>{page === 'mips' ? 'Proposals' : 'Pick a world'}</span>
+				<span>Pick a world</span>
 			{/if}
 		</div>
-		<!-- a world's own views; the welcome screen and the Proposals have none (Samuel, 2026-10-10): the nav pill's Back
-		     leads out of a world, or out of the Proposals, to the welcome screen -->
+		<!-- a world's own views; the welcome screen has none (Samuel, 2026-10-10): the nav pill's Back leads out of a
+		     world to the welcome screen -->
 		{#if inWorld && !outside}
 			<nav class="views" aria-label="View">
 				<button class:on={page === 'valley'} onclick={() => setView('valley')}>Valley</button>
@@ -1330,21 +1346,11 @@
 							</details>
 						{/if}
 					</div>
-					<!-- the open proposals, each a click to its detail on the Proposals page, and the whole list behind "See all" -->
-					<div class="open-mips">
-						<div class="head">
-							<h3>Open proposals</h3>
-							<button class="link" onclick={() => openMip(null)}>See all</button>
-						</div>
-						{#each openMips as m (m.number)}
-							<button class="omip" onclick={() => openMip(m.number)}>
-								<b>MIP-{m.number} · {m.title}</b>
-								<span>{worldOfMip(m)} · by {m.author_name ?? m.author ?? 'someone'} · {whenMip(m.created)}</span>
-							</button>
-						{:else}
-							<p class="sub none">Nothing waits for a decision.</p>
-						{/each}
-					</div>
+					<!-- the proposals are the Proposals app's (Samuel 2026-10-17): here only the way there, with how many wait -->
+					<a class="open-mips" href={AIPS}>
+						<b>Proposals</b>
+						<span>{openMips.length ? `${openMips.length} waiting for a decision` : 'Nothing waits for a decision'} · new worlds and rule changes are proposed and decided in the Proposals app</span>
+					</a>
 				</div>
 			{/if}
 		</div>
@@ -1366,11 +1372,6 @@
 	{#if page === 'policy' || page === 'world'}
 		<div class="statspage">
 			{#key page}<RulesView view={page} />{/key}
-		</div>
-	{/if}
-	{#if page === 'mips'}
-		<div class="statspage">
-			<ProposalsView {acct} {configs} {worlds} here={null} playing={null} focus={focusMip} onworld={madeWorld} onamend={amendedWorld} onreload={() => reloadConfigs().catch(() => {})} />
 		</div>
 	{/if}
 
@@ -1563,14 +1564,6 @@
 		background: transparent;
 		border-radius: 8px;
 		padding: 0.25rem 0.8rem;
-	}
-	.link {
-		border: 0;
-		background: none;
-		padding: 0;
-		text-decoration: underline;
-		font-size: inherit;
-		color: inherit;
 	}
 	.warn {
 		color: #a03224;
@@ -1959,54 +1952,18 @@
 		position: sticky;
 		top: 0;
 	}
-	.open-mips .head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 8px;
-		margin-bottom: 6px;
+	.open-mips {
+		display: grid;
+		gap: 4px;
+		color: inherit;
+		text-decoration: none;
 	}
-	.open-mips h3 {
-		margin: 0;
-		font-size: 14px;
-	}
-	.open-mips .link {
-		background: none;
-		border: 0;
-		padding: 0;
-		color: #2f6b46;
-		font-size: 13px;
-		font-weight: 600;
-		cursor: pointer;
+	.open-mips:hover b {
 		text-decoration: underline;
 	}
-	.open-mips .omip {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		width: 100%;
-		padding: 8px 0;
-		text-align: left;
-		border: 0;
-		border-top: 1px solid rgb(38 56 44 / 0.12);
-		background: none;
-		cursor: pointer;
-		color: inherit;
-	}
-	.open-mips .omip:hover b {
-		color: #2f6b46;
-	}
-	.open-mips .omip b {
-		font-size: 13px;
-		line-height: 1.3;
-	}
-	.open-mips .omip span {
-		font-size: 12px;
-		opacity: 0.65;
-	}
-	.open-mips .none {
-		margin: 4px 0 0;
-		font-size: 13px;
+	.open-mips span {
+		font-size: 0.8rem;
+		opacity: 0.7;
 	}
 	@media (max-width: 900px) {
 		.home {

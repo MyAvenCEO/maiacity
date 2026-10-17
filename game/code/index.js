@@ -1,9 +1,10 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * THE ONE LOADER for code entries: codeAt(ref) for every view and logic module our pages and the API run, wherever
- * it is kept. Today that is the repo (code/, Samuel 2026-10-16: the source of truth until avenDB carries code; its
- * files bundled as code/index.js by scripts/code-index.mjs). avenDB's source is written and switched off
- * (./sources/avendb.js): its refs are read, and refused, until C10 turns it on.
+ * it is kept. Their home is the Maia City vault in avenDB (./sources/avendb.js, C10; Samuel 2026-10-17: every dynamic
+ * config and every piece of code our hosts run goes through avenDB), loaded once with `loadCode()`; the repo's code/
+ * (bundled as code/index.js by scripts/code-index.mjs) is the seed, served offline, before that load, and for any path
+ * the vault does not hold. Reading stays synchronous: what was loaded is read as the seed is.
  *
  *   codeAt('views/village-scene')            the entry: { ref, type, title, ..., files, hash }
  *   codeAt('views/village-scene@3f2a…')       the same, only while its hash starts so (a ref pinned to a version)
@@ -14,7 +15,7 @@
  * input.json and logic.js; a logic module's logic.js. Every one passes the one checker (./check.js) in a test.
  */
 import { ENTRIES } from '../../code/index.js';
-import { AVENDB_REF, avendb } from './sources/avendb.js';
+import { AVENDB_REF, avendb, loadCode as load } from './sources/avendb.js';
 
 export class CodeError extends Error {}
 
@@ -34,18 +35,27 @@ export function parseCodeRef(ref) {
 export function codeAt(ref) {
 	const r = parseCodeRef(ref);
 	if (r.source === 'avendb') return avendb.at(r);
-	const e = ENTRIES[r.path];
+	const e = avendb.byPath(r.path) ?? ENTRIES[r.path];
 	if (!e) throw new CodeError(`no code entry ${r.path}`);
 	if (r.hash && !e.hash.startsWith(r.hash)) throw new CodeError(`${r.path} is ${e.hash.slice(0, 12)}… now, not ${r.hash.slice(0, 12)}…`);
 	return e;
 }
 
 /** every entry under `prefix`, in the order of their refs */
-export const codeIn = (prefix) =>
-	Object.keys(ENTRIES)
+export const codeIn = (prefix) => {
+	const all = { ...ENTRIES, ...avendb.all() };
+	return Object.keys(all)
 		.filter((k) => k.startsWith(prefix))
 		.sort()
-		.map((k) => ENTRIES[k]);
+		.map((k) => all[k]);
+};
+
+/**
+ * Load the vault's code entries once (./sources/avendb.js `loadCode`); every later codeAt and codeIn reads them, the
+ * seed's where they are not. Resolves to what was taken and left out, or why nothing was loaded; never throws.
+ */
+let loading = null;
+export const loadCode = (opts) => (opts ? load(viewOfEntry, opts) : (loading ??= load(viewOfEntry)));
 
 const json = (e, name, fallback) => (e.files[name] != null ? JSON.parse(e.files[name]) : fallback);
 const idOf = (e) => e.ref.split('/').at(-1);

@@ -664,6 +664,10 @@ impl Studio {
     }
 
     async fn api(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+        // a cut of avenDB (`cut:<entry>`) is read and saved in avenDB, as the studio's own page does (aven.rs)
+        if let Some(cut) = crate::aven::cut_path(path) {
+            return crate::aven::cut_api(&self.handle, method, cut, body).await;
+        }
         self.signed_in()?;
         self.auth.get_ok(method, path, body).await
     }
@@ -986,9 +990,17 @@ impl Studio {
 
     // ── the studio: timelines (edit), renders (grade, render), jobs ──
 
-    #[tool(description = "Every timeline (edits of the journal films), with its stage: edit, locked, graded, rendered")]
+    #[tool(
+        description = "Every timeline (edits of the journal films), with its stage: edit, locked, graded, rendered. The cuts of avenDB come after the legacy ones, each id cut:<entry>: every timeline tool reads and saves them in avenDB."
+    )]
     async fn timelines_list(&self) -> String {
-        text(self.api("GET", "/api/timelines", None).await)
+        let mut all = match self.api("GET", "/api/timelines", None).await {
+            Ok(Value::Array(all)) => all,
+            Ok(other) => return text(Ok(other)),
+            Err(e) => return text(Err(e)),
+        };
+        all.extend(crate::aven::cuts(&self.handle).await.unwrap_or_default());
+        text(Ok(Value::Array(all)))
     }
 
     #[tool(
@@ -1360,14 +1372,14 @@ impl Studio {
     }
 
     #[tool(
-        description = "Queue a timeline's final render — rendered natively on this Mac by maiaCITY Studio (Core Image on Metal, VideoToolbox; world clips as ACEScct plates in its own world): every delivery shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1, 4:5), or with delivery \"youtube-4k\" the 16:9 4K master for YouTube alone (HEVC 10-bit 80 Mb/s), colour-managed through ACES 2.0, levelled to −14 LUFS, QC'd, into the vault as deliveries and onto the calendar. One render per timeline at a time; follow it with renders_list."
+        description = "Queue a timeline's final render — rendered natively on this Mac by maiaCITY Studio (Core Image on Metal, VideoToolbox; world clips as ACEScct plates in its own world): every delivery shape (16:9 4K HEVC master + 1080 H.264, 9:16, 1:1, 4:5), or with delivery \"youtube-4k\" the 16:9 4K master for YouTube alone (HEVC 10-bit 80 Mb/s), colour-managed through ACES 2.0, levelled to −14 LUFS, QC'd, into the vault as deliveries and onto the calendar. One render per timeline at a time; follow it with renders_list. An avenDB cut (id cut:<entry>) is asked as a task of its render rule, through the app's open page, and this Mac's studio worker renders it."
     )]
     async fn render_queue(&self, Parameters(a): Parameters<RenderArgs>) -> String {
         let body = a.delivery.map(|d| json!({ "delivery": d })).unwrap_or_else(|| json!({}));
         text(self.api("POST", &format!("/api/timelines/{}/renders", a.id), Some(body)).await)
     }
 
-    #[tool(description = "A timeline's renders (and hero frames) as this Mac renders them: status, progress, note, the film's hash, the report (colour transforms, conform, plates, QC and loudness per delivery)")]
+    #[tool(description = "A timeline's renders (and hero frames) as this Mac renders them: status, progress, note, the film's hash, the report (colour transforms, conform, plates, QC and loudness per delivery). Of an avenDB cut (cut:<entry>): its render and frame tasks read as jobs, newest first.")]
     async fn renders_list(&self, Parameters(a): Parameters<IdArg>) -> String {
         text(self.api("GET", &format!("/api/timelines/{}/renders", a.id), None).await)
     }
@@ -1488,7 +1500,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Every process this Mac runs, in one place (the studio's Processes tab): proxies, grading stills, world proxies, renders and hero frames, transcripts, analyses, sound records, files kept, ingests — each with its lane (gpu, speech, ai, io: one at a time in each), state (queued, waiting and why, running, done, failed, cancelled), stage, progress and times; the running and queued first, then the history. Also: cancel a queued job, bump one to the front of its lane, retry a failed one."
+        description = "Every process this Mac runs, in one place (the studio's Processes tab): proxies, grading stills, world proxies, renders and hero frames, transcripts, analyses, sound records, files kept, ingests — each with its lane (gpu, speech, ai, io: one at a time in each), state (queued, waiting and why, running, done, failed, cancelled), stage, progress and times; the running and queued first, then the history. Also: cancel a queued job, bump one to the front of its lane, retry a failed one. tasks: the studio's tasks of avenDB (id task:<entry>), each a rule asked of pinned inputs, with its status (queued, claimed, done, failed, held after three tries), lane, worker and error, the open ones first; retry a held one by its task id."
     )]
     async fn jobs(&self, Parameters(a): Parameters<JobsArgs>) -> String {
         let id = a.id.clone().unwrap_or_default();
@@ -1496,6 +1508,8 @@ impl Studio {
             "list" => None,
             "cancel" => Some(crate::jobs::jobs_cancel(id)),
             "bump" => Some(crate::jobs::jobs_bump(id)),
+            // a studio task of avenDB, held after its tries: queued again by the app's page, as its Retry button does
+            "retry" if id.starts_with("task:") => Some(crate::page::call(&self.handle, "retryTask", json!({ "id": id })).await.map(|_| ())),
             "retry" => Some(match crate::jobs::list(400).history.into_iter().find(|j| j.id == id) {
                 Some(j) => crate::jobs::retry(&self.handle, &self.vault, &j).await,
                 None => Err("no such job in the history".into()),
@@ -1506,7 +1520,8 @@ impl Studio {
             return e;
         }
         let j = crate::jobs::list(a.history.unwrap_or(30));
-        serde_json::to_string_pretty(&json!({ "active": j.active, "history": j.history, "holds": self.vault.hold.now() })).unwrap_or_default()
+        let tasks = crate::aven::tasks(&self.handle, a.history.unwrap_or(30)).await.unwrap_or_default();
+        serde_json::to_string_pretty(&json!({ "active": j.active, "history": j.history, "holds": self.vault.hold.now(), "tasks": tasks })).unwrap_or_default()
     }
 
     #[tool(
@@ -1599,7 +1614,7 @@ impl Studio {
     }
 
     #[tool(
-        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → its stacks of tools: base, clip, scene, timeline → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture."
+        description = "Queue a frame of a timeline at t seconds, rendered natively on this Mac. Of a media clip it is that file's graded still: its grading still (the ACEScct frame it is graded on) through the clip's whole chain (16:9 framing → its stacks of tools: base, clip, scene, timeline → ACES 2.0 output), 1920×1080 JPEG, set as the file's preview and replacing the one before (a timeline save that changes a file's look queues this by itself). Of a world clip: a hero frame in the shape asked for, a 16-bit PNG (role:frame), replacing that clip's previous one. Follow it with renders_list: the job's output_hash is the picture. Of an avenDB cut (cut:<entry>): a task of its frame rule, asked through the app's open page."
     )]
     async fn render_frame(&self, Parameters(a): Parameters<FrameArgs>) -> String {
         let shape = a.shape.unwrap_or_else(|| "16:9".into());
