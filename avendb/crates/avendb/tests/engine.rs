@@ -372,7 +372,7 @@ fn the_entries_everyone_reads_are_served_and_maia_city_told_by_the_seed() {
     assert_eq!(listed(&all), want, "every public entry, of whatever kind");
     let posts = world::public_entries(&w.lab, mac, Some(&["post", "story"][..]));
     assert_eq!(each(&json!(posts), |r| &r["entry"]), [post.clone()]);
-    let schema = lens::POST_V1.id().to_hex();
+    let schema = lens::POST_V2.id().to_hex();
     assert_eq!((&posts[0]["schema"], &posts[0]["record"]["title"]), (&json!(schema), &json!("Out")));
     assert!(world::public_entries(&w.lab, mac, Some(&["story"][..])).is_empty(), "no public story");
     // deleted, a view leaves the code and every listing
@@ -866,17 +866,17 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
     let own = ["aip", "article", "article", "artifact", "artwork", "bundle", "card", "document", "file", "flow"];
-    let own = [&own[..], &["function", "function", "logic", "policy", "post", "profile", "recipe", "request"]].concat();
+    let own = [&own[..], &["function", "function", "logic", "policy", "post", "post", "profile", "recipe", "request"]].concat();
     let own = [&own[..], &["review", "spark", "spark", "story", "todo", "view", "view"]].concat();
-    let two = "its own kinds, each once but the article's, the function's, the spark's and the view's two versions";
+    let two = "its own kinds, each once but the article's, the function's, the post's, the spark's and the view's two versions";
     assert_eq!(kinds, own, "{two}");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     let lenses = list(&schemas["lenses"]);
     let from = |l: &Value| (l["from"].clone(), l["builtIn"].clone());
-    let older = [lens::ARTICLE_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id(), lens::VIEW_V1.id()];
+    let older = [lens::ARTICLE_V1.id(), lens::POST_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id(), lens::VIEW_V1.id()];
     let older = older.map(|id| (json!(id.to_hex()), json!(true)));
-    let four = "the lenses from article, function, spark and view v1 to v2";
-    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "{four}");
+    let five = "the lenses from article, post, function, spark and view v1 to v2";
+    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "{five}");
 }
 
 /// Ops from their JSON.

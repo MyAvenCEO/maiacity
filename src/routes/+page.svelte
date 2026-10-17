@@ -74,7 +74,7 @@
 
 				<div class="actions">
 					<a class="pill-btn" href={postHref(post)}>Read day {post.day ?? ''} →</a>
-					<a class="ghost-btn" href="{base}/blog">All days</a>
+					<a class="ghost-btn" href="{base}/universe/?c=Journal">All days</a>
 				</div>
 			</div>
 		</article>

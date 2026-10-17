@@ -1,7 +1,7 @@
 <!--
-	An article as the journal lays it out, the one layout every article on the site reads in: a blog post
-	(./PostView.svelte), an article in avenDB ($lib/avendb/ArticleView.svelte) and a post of the Maia Universe
-	(src/routes/[doc=doc]). Its header picture edge to edge, then the way back, the eyebrow, the title and its subtitle,
+	An article as the journal lays it out, the one layout every article on the site reads in: an article in avenDB
+	($lib/avendb/ArticleView.svelte) and a post of the Maia Universe (src/routes/[doc=doc]), the journal's days and the
+	inspire-me reports among them. Its header picture edge to edge, then the way back, the eyebrow, the title and its subtitle,
 	who wrote it and when, its tags, a film, the words, with their figures wider than the text, and the door onward.
 
 	Each part is the post's own: `hero`, `back` (a link with the class `back`), `avatar` (with the class `avatar`),
