@@ -20,6 +20,8 @@
 //              (`touchingUp`): its author's portrait, and the tag
 //   published  one Public share of the vault's published entries (`content:published`), as the content flow's
 //              published stage is public: the posts and their stories go on the stream
+//   name       one Public share of the vault's profile, by type, so its posts on the stream go out under its name
+//              ("Maia City"), not a stand-in from its id
 //   pads       the journal's sources and each story's idea pad, sparks as ./legacy.js copies them
 //   games      the Games area (game/games.js): the vault's own schema "Game, v1", then each game's entry, of type `game`,
 //              tagged `game` and `game:<id>`; a game the repo released (places.ts, no `release: 'draft'`) also gets
@@ -54,6 +56,9 @@ export const CODE_TYPES = ['view', 'logic'];
 
 /** The types of the asset recipes the vault holds, which everyone reads, as the repo's assets are open to everyone. */
 export const RECIPE_TYPES = ['recipe'];
+
+/** The types of the entries that name a vault, which everyone reads (its profile). */
+export const NAME_TYPES = ['profile'];
 
 /** The tag of the content flow's published stage, which everyone reads. */
 export const PUBLISHED = stageTag('content', 'published');
@@ -132,7 +137,7 @@ const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
  * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
- *   'inspire-share' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
+ *   'inspire-share' | 'name-share' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
  */
 
 /**
@@ -159,7 +164,8 @@ export function seedPieces(server = null) {
 		.map((p) => ({ key: p.key, kind: /** @type {const} */ ('pad'), name: p.name, mark: legacyTag(p.key) }));
 	const published = [
 		{ key: 'published-share', kind: /** @type {const} */ ('published'), name: 'Everyone reads what it published', mark: '' },
-		{ key: 'inspire-share', kind: /** @type {const} */ ('inspire-share'), name: 'Everyone reads its inspire-me pieces', mark: '' }
+		{ key: 'inspire-share', kind: /** @type {const} */ ('inspire-share'), name: 'Everyone reads its inspire-me pieces', mark: '' },
+		{ key: 'name-share', kind: /** @type {const} */ ('name-share'), name: 'Everyone reads its name', mark: '' }
 	];
 	const games = [
 		{ key: 'game-schema', kind: /** @type {const} */ ('game-schema'), name: GAME_SCHEMA, mark: '' },
@@ -262,6 +268,7 @@ export function unseeded(world, vault, all) {
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
 		p.kind === 'recipe-share' ? !codeShared(world, vault, RECIPE_TYPES) :
 		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
+		p.kind === 'name-share' ? !codeShared(world, vault, NAME_TYPES) :
 		p.kind === 'game-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === GAME_SCHEMA) :
 		p.kind === 'post-type' ? !mine.some((e) => e.kind === 'schema' && e.title === postTypeTitle(p.name)) :
 		p.kind === 'game' ? !games.has(p.mark) : !have.has(p.mark)
@@ -295,6 +302,7 @@ export async function seeding(p, vault) {
 	if (p.kind === 'recipe') return [await recipeCreate(p.name, vault)];
 	if (p.kind === 'published') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: PUBLISHED }, as }];
 	if (p.kind === 'inspire-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: INSPIRE }, as }];
+	if (p.kind === 'name-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: NAME_TYPES }, as }];
 	if (p.kind === 'game-schema') return [{ op: 'create', vault, type: 'schema', value: GAME_V1, as }];
 	if (p.kind === 'game') {
 		const g = GAMES.find((x) => x.id === p.name);
