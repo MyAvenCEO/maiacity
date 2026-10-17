@@ -82,7 +82,7 @@ import {
 	tuft,
 	twigSticks,
 	van
-} from './decorations'
+} from '$lib/aven-city/game/three/decorations'
 
 const HEX_RADIUS = 1.0 // flush — tiles form one continuous ground
 const HEX_HEIGHT = 0.5 // uniform — the board is flat

@@ -4,7 +4,7 @@
  * preview per-biome upgrade-level styling variants.
  */
 import * as THREE from 'three'
-import type { BiomeId } from '../hexmap'
+import type { BiomeId } from '../../../../../game/island/hexmap'
 import { buildBiomeTile, type PlacedKind } from './buildWorld'
 import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
 import { disposeObject } from '$lib/render/core.js'

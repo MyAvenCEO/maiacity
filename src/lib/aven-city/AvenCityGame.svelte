@@ -4,7 +4,7 @@ import { SkyControl } from '$lib/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
 import Icon, { type IconName } from './components/Icon.svelte'
 import ResourceIcon from './components/ResourceIcon.svelte'
-import { type HexTile, tileResources } from './game/hexmap'
+import { type HexTile, tileResources } from '../../../game/island/hexmap'
 import {
 	BUILDINGS,
 	canBuildOnTile,
