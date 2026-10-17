@@ -109,3 +109,6 @@ was adapted from (leave it out on a line of your own). The shot list is the dire
   moves on, the person takes the change on the Movie tab.
 - A script makes a first cut for the studio ("Make a cut of this script"): a slate per shot, a line per line, timed at
   150 words a minute. The cut names the script and the story in its timeline (`script`, `story`).
+- Once a cut is rendered, each film it made can go out as a post of type `film` ("Make a film post"): `media` links
+  the film, `cut` and `script` the workshop behind it, `story` the story. Its words are written from the type's
+  template (`films/TEMPLATE.md`): the hook as its title, the first two lines, chapters from the script's scenes.

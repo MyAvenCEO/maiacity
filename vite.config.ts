@@ -37,7 +37,7 @@ export default defineConfig({
 		// game/ holds the rules the site and the API share (policies, the calendar,
 		// the cap table, the globe); it sits beside src/, so Vite has to be told. So do the journal, the inspire-me
 		// library and the journal's sources, which avenDB's pages read in the browser (src/lib/avendb/legacy.js, article.js).
-		fs: { allow: ['game', 'blog', 'inspire-me', 'sources'] },
+		fs: { allow: ['game', 'blog', 'inspire-me', 'sources', 'films'] },
 		// other sessions' worktrees and the Mac app's build folder change all day: watched, each one reloaded the
 		// studio in the middle of a session
 		watch: { ignored: ['**/.claude/**', '**/.cargo/**', '**/vault/target/**', '**/avendb/target/**'] },

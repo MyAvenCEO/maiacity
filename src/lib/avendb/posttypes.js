@@ -7,6 +7,10 @@
 //
 // Its posts are entries of type `post`, of the record kind `post:<type>` and tagged `post:<type>`, so the Maia
 // Universe stream lists them all, and a page lays each out by its type (./../universe/inspire.js for `inspire`).
+//
+// A film post (`film`) is the story gone out as a film: its rendered master (`media`, a Library file the render made),
+// the cut it was rendered from and that cut's script (the film workshop behind it, $lib/studio/scripts.js), its shape
+// and its length.
 
 /** The tag, and the record's kind, of a post of type `type`. @param {string} type */
 export const postTag = (type) => `post:${type}`;
@@ -34,6 +38,18 @@ const WORDS = {
  */
 export const POST_TYPES = {
 	journal: { channel: 'Journal', template: '/blog/TEMPLATE.md', fields: { ...WORDS } },
+	film: {
+		channel: 'Film',
+		template: '/films/TEMPLATE.md',
+		fields: {
+			...WORDS,
+			media: { 'x-link': 'newest' },
+			cut: { 'x-link': 'newest' },
+			script: { 'x-link': 'newest' },
+			shape: { type: 'string', maxLength: 16, default: '16:9' },
+			seconds: { type: 'number', minimum: 0 }
+		}
+	},
 	inspire: {
 		channel: 'Inspire me',
 		template: '/inspire-me/FORMAT.md',
