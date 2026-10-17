@@ -215,9 +215,9 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 ];
 
 /**
- * How finely an animal is built (1: as it is; a world draws its far-off flocks at a fifth, ./crowd.ts `FAR`): its
- * shapes coarser and its smallest parts left off, its bones and its clips the same. Every version of every kind but
- * the stand-in takes it.
+ * How finely an animal is built (1: as it is; a world draws its far-off flocks at a fifth,
+ * $lib/assets/render/crowd.js `FAR`): its shapes coarser and its smallest parts left off, its bones and its clips the
+ * same. Every version of every kind but the stand-in takes it.
  */
 const DETAIL = { id: 'detail', label: 'Detail', type: 'number', min: 0.05, max: 1, step: 0.01, value: 1 } as const;
 const detailed = new WeakMap<Actor[], Actor[]>();
