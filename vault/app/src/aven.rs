@@ -197,6 +197,83 @@ pub async fn put_path(app: &AppHandle, op: Value, path: &Path, done: impl Fn(u64
     put_source(app, op, &Source::from(path), done).await
 }
 
+/// `put_path` by the key of studio worker `worker` (its device, in hex), which this Mac hosts (`avendb::worker`):
+/// the file at `path` brought in on the worker's own node, which reads it twice, once for its key and once to seal
+/// it, each pass hashed and the two compared; then read back from the worker's node and compared again, so that what
+/// a job made counts as in only once its bytes are known to be. The op's answer, with `blake3` added.
+async fn put_by(app: &AppHandle, worker: &str, mut op: Value, path: &Path) -> Result<Value, String> {
+    use avendb_net::{NoBytes, NoCeremony};
+    use futures_lite::Stream;
+    type Chunks = std::pin::Pin<Box<dyn Stream<Item = io::Result<bytes::Bytes>> + Send>>;
+    let node = crate::avendb::worker(app, worker).await?;
+    let len = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?.len();
+    op["len"] = json!(len);
+    if let Some(o) = op.as_object_mut() {
+        o.remove("as");
+    }
+    // each pass the node reads, hashed as it goes
+    let passes: Arc<Mutex<Vec<blake3::Hasher>>> = Arc::default();
+    let (from, sums) = (path.to_path_buf(), passes.clone());
+    let source = move || -> Chunks {
+        let pass = {
+            let mut sums = sums.lock().unwrap_or_else(|p| p.into_inner());
+            sums.push(blake3::Hasher::new());
+            sums.len() - 1
+        };
+        let (from, sums) = (from.clone(), sums.clone());
+        Box::pin(futures_lite::stream::unfold((None::<tokio::fs::File>, false), move |(file, done)| {
+            let (from, sums) = (from.clone(), sums.clone());
+            async move {
+                if done {
+                    return None;
+                }
+                let mut file = match file {
+                    Some(file) => file,
+                    None => match tokio::fs::File::open(&from).await {
+                        Ok(file) => file,
+                        Err(e) => return Some((Err(e), (None, true))),
+                    },
+                };
+                let mut buf = vec![0u8; CHUNK];
+                match tokio::io::AsyncReadExt::read(&mut file, &mut buf).await {
+                    Ok(0) => None,
+                    Ok(n) => {
+                        buf.truncate(n);
+                        sums.lock().unwrap_or_else(|p| p.into_inner())[pass].update(&buf);
+                        Some((Ok(bytes::Bytes::from(buf)), (Some(file), false)))
+                    }
+                    Err(e) => Some((Err(e), (None, true))),
+                }
+            }
+        }))
+    };
+    let (put, _) = node.run(op, Some(source), None::<&NoCeremony>).await.map_err(|e| format!("{e:#}"))?;
+    let mut put = answer(put)?;
+    let sums: Vec<_> = passes.lock().unwrap_or_else(|p| p.into_inner()).iter().map(blake3::Hasher::finalize).collect();
+    let sum = *sums.first().ok_or("the worker never read the file")?;
+    if sums.iter().any(|s| *s != sum) {
+        return Err(format!("{} changed while it came in", path.display()));
+    }
+    // read back: the worker's sealed bytes, opened again, must be the disk's
+    let (root, size) = (put["root"].as_str().unwrap_or_default().to_string(), put["size"].as_u64().unwrap_or(0));
+    let mut back = blake3::Hasher::new();
+    let mut at = 0;
+    while at < len {
+        let to = (at + WINDOW).min(len);
+        let op = json!({ "op": "read_file", "root": root, "size": size, "from": at, "to": to });
+        let (out, bytes) = node.run(op, None::<NoBytes>, None::<&NoCeremony>).await.map_err(|e| format!("{e:#}"))?;
+        answer(out)?;
+        let bytes = bytes.filter(|b| !b.is_empty()).ok_or("the worker's copy ends early")?;
+        back.update(&bytes);
+        at += bytes.len() as u64;
+    }
+    if back.finalize() != sum {
+        return Err(format!("the worker's copy of {} doesn't match the disk's: not counted", path.display()));
+    }
+    put["blake3"] = json!(sum.to_hex().to_string());
+    Ok(put)
+}
+
 /// `n` bytes of `src` from `at` (fewer at its end), read on a thread of the blocking pool (a legacy vault file is read
 /// in place, by waiting on its store).
 async fn chunk_of(src: &Source, at: u64, n: usize) -> Result<Vec<u8>, String> {
@@ -355,7 +432,8 @@ pub async fn studio_ingest(
 
 /// What a task of a rule the page's worker claimed reads and does (`studio_job`): the task itself, the entries its
 /// inputs name and, for an input another rule made, the files that task made, all as the device's world shows them
-/// (`EntryView`), by entry; and the vault the worker acts as in the task's vault, which what it makes is put as.
+/// (`EntryView`), by entry; and who puts what it makes: the studio worker the Mac hosts for the task's vault, by its
+/// own key (`worker`), or where the vault has none yet, the Mac's own device acting as `actor`.
 pub struct Job<'a> {
     app: &'a AppHandle,
     task: &'a Value,
@@ -363,6 +441,8 @@ pub struct Job<'a> {
     /// a cut's rules only: the studio's library items of avenDB's footage (src/lib/studio/aven.js `libraryOf`)
     library: &'a [Value],
     actor: &'a str,
+    /// the device of the vault's studio worker, in hex, which this Mac hosts
+    worker: Option<&'a str>,
     kind: crate::jobs::Kind,
     subject: String,
 }
@@ -425,12 +505,28 @@ impl Job<'_> {
     async fn put_file(&self, path: &Path, name: &str, media: &str, tags: &[&str]) -> Result<(String, File), String> {
         let len = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?.len();
         let op = json!({ "op": "put_file", "vault": self.vault()?, "name": name, "media": media, "tags": tags, "as": self.actor });
-        let put = put_path(self.app, op, path, |_| {}).await;
+        let put = match self.worker {
+            Some(worker) => put_by(self.app, worker, op, path).await,
+            None => put_path(self.app, op, path, |_| {}).await,
+        };
         std::fs::remove_file(path).ok();
         let put = put?;
         let entry = put["entry"].as_str().map(str::to_string).ok_or("the device named no entry")?;
         let file = File { root: put["root"].as_str().ok_or("the device named no root")?.to_string(), size: put["size"].as_u64().unwrap_or(0), len };
         Ok((entry, file))
+    }
+
+    /// Runs op `op` as the worker, or as `actor` where there is none: what it answered.
+    async fn run(&self, mut op: Value) -> Result<Value, String> {
+        let Some(worker) = self.worker else {
+            op["as"] = json!(self.actor);
+            return run(self.app, op).await;
+        };
+        // a worker acts as its own device vault, as its shares let it
+        if let Some(o) = op.as_object_mut() {
+            o.remove("as");
+        }
+        answer(crate::avendb::call(self.app, "run", vec![op, json!(worker)]).await?)
     }
 
     /// The task's vault.
@@ -462,8 +558,8 @@ impl Job<'_> {
                 continue;
             }
             for out in r["outputs"].as_array().into_iter().flatten().filter(|o| !gone(o)) {
-                let op = json!({ "op": "insert", "entry": out, "path": ["tags"], "value": DELETED, "as": self.actor });
-                if let Err(e) = run(self.app, op).await {
+                let op = json!({ "op": "insert", "entry": out, "path": ["tags"], "value": DELETED });
+                if let Err(e) = self.run(op).await {
                     tracing::warn!("a replaced file stays: {e}");
                 }
             }
@@ -570,10 +666,11 @@ fn stem(name: &str) -> String {
 }
 
 /// Does task `task` of a rule the page's worker claimed (src/lib/studio/jobs/executors.js `NATIVE`), with `entries`
-/// what it reads (`Job`), acting as `actor`: what it made, `{outputs, result}`, as the worker writes it back. It holds
+/// what it reads (`Job`), as the vault's studio worker `worker` where the Mac hosts one, else acting as `actor`: what
+/// it made, `{outputs, result}`, as the worker writes it back. It holds
 /// its rule's lane in the Mac's jobs while it runs, so the Processes tab shows it.
 #[tauri::command]
-pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<String, Value>, library: Option<Vec<Value>>, actor: String) -> Result<Value, String> {
+pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<String, Value>, library: Option<Vec<Value>>, actor: String, worker: Option<String>) -> Result<Value, String> {
     use crate::jobs::Kind;
     let rule = task["rule"].as_str().unwrap_or_default().to_string();
     let id = task["entry"].as_str().unwrap_or_default().to_string();
@@ -592,7 +689,7 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
         other => return Err(format!("no Rust executor for rule {other}")),
     };
     let library = library.unwrap_or_default();
-    let job = Job { app: &app, task: &task, entries: &entries, library: &library, actor: &actor, kind, subject: format!("aven:{id}") };
+    let job = Job { app: &app, task: &task, entries: &entries, library: &library, actor: &actor, worker: worker.as_deref(), kind, subject: format!("aven:{id}") };
     crate::jobs::queue(kind, &job.subject, &name);
     let turn = crate::jobs::turn(kind, &job.subject).await.map_err(|_| "cancelled".to_string())?;
     job.stage("starting", 0.0);
@@ -616,6 +713,123 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
     std::fs::remove_dir_all(std::env::temp_dir().join("maiacity-jobs").join(&id)).ok();
     crate::jobs::end(kind, &job.subject, made.as_ref().map(|_| ()).map_err(Clone::clone));
     made
+}
+
+/// The fields a cut's record holds apart from its timeline's JSON (src/lib/studio/cuts.js `FIELDS`).
+const CUT_FIELDS: [&str; 7] = ["name", "project", "variant", "description", "stage", "version", "legacy"];
+
+/// Cut entry `e` as the API answers a timeline, as the studio reads it (src/lib/studio/cuts.js `timelineOf`): its
+/// timeline's JSON, its record's own fields over it, named `cut:<entry>`, and `updated` the count of its edits.
+fn cut_json(e: &Value) -> Value {
+    let r = &e["record"];
+    let mut t = serde_json::from_str::<Value>(r["timeline"].as_str().unwrap_or("{}")).ok().filter(Value::is_object).unwrap_or_else(|| json!({}));
+    let o = t.as_object_mut().expect("an object");
+    for (k, v) in [("aspect", json!("16:9")), ("tags", json!([])), ("clips", json!([]))] {
+        o.entry(k).or_insert(v);
+    }
+    let text = |k: &str| r[k].as_str().filter(|s| !s.is_empty()).map_or(Value::Null, |s| json!(s));
+    let when = |s: i64| chrono_like(s);
+    o.insert("id".into(), json!(format!("cut:{}", e["entry"].as_str().unwrap_or_default())));
+    o.insert("name".into(), json!(r["name"].as_str().unwrap_or("A cut")));
+    for k in ["project", "variant", "legacy"] {
+        o.insert(k.into(), text(k));
+    }
+    o.insert("description".into(), json!(r["description"].as_str().unwrap_or_default()));
+    o.insert("stage".into(), json!(r["stage"].as_str().unwrap_or("edit")));
+    o.insert("version".into(), json!(r["version"].as_u64().unwrap_or(1)));
+    o.insert("created".into(), json!(when(e["created"].as_i64().unwrap_or(0))));
+    o.insert("updated".into(), json!(e["edits"].as_u64().unwrap_or(0).to_string()));
+    o.insert("at".into(), json!(when(r["at"].as_i64().or(e["created"].as_i64()).unwrap_or(0))));
+    o.insert("vault".into(), e["vault"].clone());
+    t
+}
+
+/// Seconds since 1970 as the API writes a time, `2026-10-17T06:00:00.000Z`.
+fn chrono_like(s: i64) -> String {
+    let (days, rest) = (s.div_euclid(86_400), s.rem_euclid(86_400));
+    // the civil date of a day count (Howard Hinnant's days_from_civil, inverted)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.000Z", rest / 3600, rest % 3600 / 60, rest % 60)
+}
+
+/// Whether entry `e` is a cut the studio shows: not deleted.
+fn is_cut(e: &Value) -> bool {
+    e["type"] == "cut" && e["record"]["kind"] == "cut" && e["deleted"] != json!(true) && !e["tags"].as_array().is_some_and(|t| t.contains(&json!(DELETED)))
+}
+
+/// Every cut this Mac's device holds, as the API lists timelines (the MCP's `timelines_list`).
+pub async fn cuts(app: &AppHandle) -> Result<Vec<Value>, String> {
+    let world = world(app).await?;
+    Ok(world["entries"].as_array().into_iter().flatten().filter(|e| is_cut(e)).map(cut_json).collect())
+}
+
+/// The cut entry an API path names, `/api/timelines/cut:<entry>` and anything under it: the rest of the path after
+/// `/api/timelines/`.
+pub fn cut_path(path: &str) -> Option<&str> {
+    path.strip_prefix("/api/timelines/").filter(|rest| rest.starts_with("cut:"))
+}
+
+/// A timeline call of the API on a cut of avenDB (`cut_path`), for the MCP's timeline tools: `GET` the cut as a
+/// timeline, `PUT` a patch of it saved (its record's own fields set, the rest into its timeline's JSON), only over the
+/// version it was read at where the patch names one (`if_updated`). Renders and frames of a cut are the studio's to
+/// ask for, on its page.
+pub async fn cut_api(app: &AppHandle, method: &str, cut: &str, body: Option<Value>) -> Result<Value, String> {
+    let (entry, rest) = cut.trim_start_matches("cut:").split_once('/').unwrap_or((cut.trim_start_matches("cut:"), ""));
+    if !rest.is_empty() {
+        return Err(format!("a cut of avenDB is rendered and framed from the studio's page, not over the MCP yet ({rest})"));
+    }
+    let world = world(app).await?;
+    let entries = world["entries"].as_array().cloned().unwrap_or_default();
+    let e = entries.iter().find(|e| e["entry"] == entry && is_cut(e)).ok_or("no such cut on this Mac")?;
+    match method {
+        "GET" => Ok(cut_json(e)),
+        "PUT" => {
+            let patch = body.unwrap_or_default();
+            let patch = patch.as_object().ok_or("a timeline's changes are an object")?;
+            let was = cut_json(e);
+            if let Some(v) = patch.get("if_updated").and_then(Value::as_str)
+                && v != was["updated"]
+            {
+                return Err("the cut was changed elsewhere: read it again".into());
+            }
+            let mut now = was.as_object().cloned().unwrap_or_default();
+            for (k, v) in patch {
+                now.insert(k.clone(), v.clone());
+            }
+            let mut timeline = serde_json::Map::new();
+            let mut ops = vec![];
+            for (k, v) in now {
+                if ["id", "created", "updated", "at", "vault", "if_updated"].contains(&k.as_str()) {
+                    continue;
+                }
+                if CUT_FIELDS.contains(&k.as_str()) {
+                    let v = if v.is_null() { if k == "version" { json!(1) } else { json!("") } } else { v };
+                    ops.push(json!({ "op": "set", "entry": entry, "path": [k], "value": v }));
+                } else {
+                    timeline.insert(k, v);
+                }
+            }
+            let now_s = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            ops.push(json!({ "op": "set", "entry": entry, "path": ["timeline"], "value": Value::Object(timeline).to_string() }));
+            ops.push(json!({ "op": "set", "entry": entry, "path": ["at"], "value": now_s }));
+            let vault = e["vault"].as_str().unwrap_or_default();
+            let vaults = world["vaults"].as_array().cloned().unwrap_or_default();
+            let actor = vaults.iter().find(|v| v["id"] == vault).and_then(|v| v["acting"]["as"].as_str()).unwrap_or(vault);
+            run(app, json!({ "op": "batch", "ops": ops, "as": actor })).await?;
+            let world = self::world(app).await?;
+            let saved = world["entries"].as_array().into_iter().flatten().find(|x| x["entry"] == entry).cloned().ok_or("the cut was saved but this Mac does not show it yet")?;
+            Ok(cut_json(&saved))
+        }
+        other => Err(format!("a cut of avenDB takes GET and PUT, not {other}")),
+    }
 }
 
 /// A cut of avenDB (src/lib/studio/cuts.js) as the render reads a timeline: its record's fields, and the rest of it

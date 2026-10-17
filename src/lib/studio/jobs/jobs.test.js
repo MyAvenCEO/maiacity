@@ -221,3 +221,27 @@ test('the youtube rule wants each YouTube artifact once, its url part of the key
 	expect(JSON.parse(ops[0].value.params).url).toBe('https://youtu.be/x');
 	expect(ops[0].value.lane).toBe('net');
 });
+
+test('in a vault whose studio worker this Mac hosts, the worker queues, claims and finishes as it, reading through the Mac', async () => {
+	const { Worker, WORKER_SHARES } = await import('./worker.js');
+	const { EXECUTORS } = await import('./executors.js');
+	const data = new Uint8Array(1000).map((_, i) => i % 251);
+	const f = { ...file(9, 'text/plain', ['jobs:test']), files: [{ root: 'r9', size: data.length + 64, len: data.length }] };
+	const d = fakeDevice([f], { r9: data });
+	/** @type {{ op: any, node: string | undefined }[]} */
+	const routed = [];
+	const send = (/** @type {any} */ op, /** @type {string | undefined} */ node) => (routed.push({ op, node }), d.send(op));
+	const w = new Worker({ send, hosted: async () => [{ device: 'wk1', vault: V, hosted: true }], executors: EXECUTORS, now: () => 1000 });
+	await w.tick();
+	await new Promise((r) => setTimeout(r, 50));
+	const t = d.entries.find((e) => e.type === 'task').record;
+	expect([t.status, t.worker]).toEqual(['done', 'wk1']);
+	const by = (/** @type {(o: any) => boolean} */ pick) => routed.filter((r) => pick(r.op));
+	// the schemas are the vault's own; tasks go by the worker, with no `as`; reads go through the Mac
+	expect(by((o) => o.type === 'schema').every((r) => !r.node)).toBe(true);
+	expect(by((o) => o.type === 'task' || o.op === 'batch').every((r) => r.node === 'wk1' && !('as' in r.op))).toBe(true);
+	expect(by((o) => o.op === 'read_file').every((r) => !r.node)).toBe(true);
+	// its shares name only tasks and files, and nothing to share on
+	expect(WORKER_SHARES.flatMap((s) => s.where.type)).toEqual(['task', 'file']);
+	expect(WORKER_SHARES.flatMap((s) => s.ops.map((o) => o.op))).not.toContain('share');
+});

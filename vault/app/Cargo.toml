@@ -14,6 +14,10 @@ tauri-build = { version = "2.5", features = [] }
 vault-core = { path = "../crates/vault-core", default-features = false, features = ["tls-aws-lc-rs"] }
 # avenDB's device, in the app's own process (avendb.rs): its node, its store in ~/avenDB/mac and its drives
 avendb-device = { path = "../../avendb/crates/avendb-device" }
+# a studio worker's node, which the studio's jobs put what they make on by the worker's own key (aven.rs)
+avendb = { path = "../../avendb/crates/avendb" }
+avendb-net = { path = "../../avendb/crates/avendb-net" }
+bytes = "1.12"
 # the app's TLS for whatever names none: aws-lc-rs, as avenDB's (which names its own, post-quantum only)
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 # avenDB's file bytes over the device's calls (aven.rs), as the page sends them

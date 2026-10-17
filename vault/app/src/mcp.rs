@@ -664,6 +664,10 @@ impl Studio {
     }
 
     async fn api(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+        // a cut of avenDB (`cut:<entry>`) is read and saved in avenDB, as the studio's own page does (aven.rs)
+        if let Some(cut) = crate::aven::cut_path(path) {
+            return crate::aven::cut_api(&self.handle, method, cut, body).await;
+        }
         self.signed_in()?;
         self.auth.get_ok(method, path, body).await
     }
@@ -986,9 +990,17 @@ impl Studio {
 
     // ── the studio: timelines (edit), renders (grade, render), jobs ──
 
-    #[tool(description = "Every timeline (edits of the journal films), with its stage: edit, locked, graded, rendered")]
+    #[tool(
+        description = "Every timeline (edits of the journal films), with its stage: edit, locked, graded, rendered. The cuts of avenDB come after the legacy ones, each id cut:<entry>: every timeline tool reads and saves them in avenDB."
+    )]
     async fn timelines_list(&self) -> String {
-        text(self.api("GET", "/api/timelines", None).await)
+        let mut all = match self.api("GET", "/api/timelines", None).await {
+            Ok(Value::Array(all)) => all,
+            Ok(other) => return text(Ok(other)),
+            Err(e) => return text(Err(e)),
+        };
+        all.extend(crate::aven::cuts(&self.handle).await.unwrap_or_default());
+        text(Ok(Value::Array(all)))
     }
 
     #[tool(
