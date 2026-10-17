@@ -26,12 +26,14 @@ export { blend };
 /** how coarse an actor is drawn from afar */
 export const FAR = 0.2;
 
-/** the loader and the boxes crowds are built in, a few side by side (one for each spare core, up to three): fetched
- *  when a crowd first builds, so a world's module can be read where there is no page (a test, a recipe's library) */
+/** the loader and the boxes crowds are built in, a few side by side (one for each spare core, up to three), and the
+ *  Maia City vault's recipes they are built from (../vault.js): fetched when a crowd first builds, so a world's module
+ *  can be read where there is no page (a test, a recipe's library) */
 let loader = null;
 let turn = 0;
 const loaderOf = () =>
-	(loader ??= Promise.all([import('../box/host.js'), import('../load.js'), import('../recipes.js')]).then(([{ AssetBox }, { loadAsset }, { INDEX, buildAt }]) => {
+	(loader ??= Promise.all([import('../box/host.js'), import('../load.js'), import('../vault.js')]).then(async ([{ AssetBox }, { loadAsset }, { INDEX, buildAt, loadRecipes }]) => {
+		await loadRecipes();
 		const n = Math.max(1, Math.min(3, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4) - 1));
 		const boxes = Array.from({ length: n }, () => new AssetBox({ engine: INDEX.engine }));
 		return { loadAsset, buildAt, box: () => boxes[turn++ % boxes.length] };

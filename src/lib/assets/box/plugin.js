@@ -14,7 +14,12 @@
  *   virtual:asset-recipes                  the index: each recipe's hash, what it builds and takes, the labels at it
  *   virtual:asset-recipes/libraries        how to load each asset's library, by `<group>/<id>`: each its own chunk
  *   virtual:asset-recipes/<group>/<id>     that asset's library, as text, loaded when one of its recipes is built
- *   virtual:asset-recipes/trials           recipes made to do harm (./probe.js), as recipe files, for the box's lab
+ *   virtual:box-trials                     recipes made to do harm (./probe.js), as recipe files, for the box's lab
+ *
+ * The recipes only feed the seed that writes them into the Maia City vault (src/lib/avendb/seed.js, through
+ * ../recipes.js), the tests, and, on a dev server started with VITE_RECIPE_FEED=dev, a stand-in for the vault's feed
+ * made from them (../sources/devfeed.js) where avenDB's server can't be reached: every page reads the vault's
+ * (../vault.js). The trials are no asset's, and only the box's lab builds them.
  *
  * To list a group's recipes and hash them, a library is run here in a context of its own (node:vm), with nothing but
  * three.js and stand-ins for a page: it is our own code, and only its list is read, nothing is built. The group's
@@ -22,7 +27,7 @@
  * meta, or it is refused. Each is made again only when a file it was made of has changed (or a list it read without
  * bundling it lists other ids), the assets a few at once.
  */
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -33,10 +38,14 @@ import { LATEST, RECIPE_END, RECIPE_HEAD, recipeTail } from '../engines.js';
 import { listsKeyOf, narrowTo } from './narrow.js';
 
 const ID = 'virtual:asset-recipes';
+const TRIALS = 'virtual:box-trials';
 const LIB = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const ENGINE = fileURLToPath(new URL('./engine.js', import.meta.url));
 const PROBE = fileURLToPath(new URL('./probe.js', import.meta.url));
 const RECIPE = fileURLToPath(new URL('../recipe.js', import.meta.url));
+const CARDS = fileURLToPath(new URL('../sources/cards.json', import.meta.url));
+/** where a dev server started with VITE_RECIPE_FEED=dev serves its stand-in for the vault's feed (../vault.js `feedOf`) */
+const DEV_FEED = '/__recipe-feed';
 
 /** the object groups (../groups.js), loaded when first asked for, so Vite's config, which loads this file, does not take in what their lists load */
 const groups = async () => (await import(/* @vite-ignore */ new URL('../groups.js', import.meta.url).href)).OBJECT_GROUPS;
@@ -294,17 +303,45 @@ export function assetBox() {
 	const trials = memo(() => bundleTrials());
 	return {
 		name: 'asset-box',
-		resolveId: (id) => (id === ID || id.startsWith(`${ID}/`) ? '\0' + id : undefined),
+		resolveId: (id) => (id === ID || id.startsWith(`${ID}/`) || id === TRIALS ? '\0' + id : undefined),
 		async load(id) {
+			if (id === '\0' + TRIALS) {
+				const made = await trials();
+				for (const f of made.files) this.addWatchFile(f);
+				return `export default ${JSON.stringify(made.trials)};`;
+			}
 			if (!id.startsWith('\0' + ID)) return;
 			const part = id.slice(ID.length + 2);
-			const made = part === 'trials' ? await trials() : await recipes();
+			const made = await recipes();
 			for (const f of made.files) this.addWatchFile(f);
 			if (part === '') return `export default ${JSON.stringify(made.index)};`;
-			if (part === 'trials') return `export default ${JSON.stringify(made.trials)};`;
 			if (part === 'libraries') return `export default {\n${Object.keys(made.libraries).map((n) => `\t${JSON.stringify(n)}: () => import(${JSON.stringify(`${ID}/${n}`)})`).join(',\n')}\n};`;
 			if (!(part in made.libraries)) throw new Error(`no recipes of ${part}`);
 			return `export default ${JSON.stringify(made.libraries[part])};`;
+		},
+		/**
+		 * Only on a dev server a developer started with VITE_RECIPE_FEED=dev, where avenDB's server can't be reached: a
+		 * stand-in for the Maia City vault's recipe feed, made from these recipes as the seed writes them (../sources/devfeed.js),
+		 * which that server's pages read in its place (../vault.js `feedOf`). Never a build's, nor a preview's.
+		 */
+		configureServer(server) {
+			if (process.env.VITE_RECIPE_FEED !== 'dev') return;
+			let kept = null;
+			const feed = async () => {
+				const made = await recipes();
+				if (kept?.from !== made) {
+					const { devFeedOf } = await server.ssrLoadModule('/src/lib/assets/sources/devfeed.js');
+					kept = { from: made, ...devFeedOf(made, JSON.parse(readFileSync(CARDS, 'utf8')).cards) };
+					server.config.logger.info(`asset recipes: the dev feed serves ${kept.rows.length} of the repo's recipes at ${DEV_FEED}/code${kept.missing.length ? `, not ${kept.missing.join('; ')}` : ''}`);
+				}
+				return kept;
+			};
+			server.config.logger.warn(`asset recipes: VITE_RECIPE_FEED=dev, so this dev server's pages read a stand-in for the Maia City vault made from the repo (${DEV_FEED}/code), never avenDB's feed`);
+			server.middlewares.use(async (req, res, next) => {
+				if (!req.url?.startsWith(`${DEV_FEED}/`)) return next();
+				const { serveDevFeed } = await server.ssrLoadModule('/src/lib/assets/sources/devfeed.js');
+				return serveDevFeed(DEV_FEED, feed)(req, res, next);
+			});
 		}
 	};
 }

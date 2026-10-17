@@ -23,7 +23,9 @@
 		(async () => {
 			const THREE = await import('three');
 			const [{ createStageRenderer }, { disposeObject }] = await Promise.all([import('$lib/render/stage.js'), import('$lib/render/core.js')]);
-			const [{ loadAsset }, { buildAt }, { refOf }, { TIERS }] = await Promise.all([import('$lib/assets/load.js'), import('$lib/assets/recipes.js'), import('./flora.js'), import('./sandbox5.js')]);
+			const [{ loadAsset }, { buildAt, loadRecipes }, { refOf }, { TIERS }] = await Promise.all([import('$lib/assets/load.js'), import('$lib/assets/vault.js'), import('./flora.js'), import('./sandbox5.js')]);
+			// the plant's recipe is the Maia City vault's ($lib/assets/vault.js)
+			await loadRecipes();
 			if (gone) return;
 			// the stage renderer ($lib/render/stage.js), see-through over the card; what is under the soil cut away, as it
 			// is in the forest, where no one sees it

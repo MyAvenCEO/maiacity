@@ -1,12 +1,14 @@
 <!--
 	A sandbox's old address (/games/<sandbox>/): it passes on to the sandbox in the app — except with ?film, when it is
 	the film camera (FilmWorld): the world alone, for the area the address names (&area=…, game/film/worlds.js), under
-	the film's clocks, for the studio's world viewer and the plate renderers.
+	the film's clocks, for the studio's world viewer and the plate renderers. Its assets' recipes are the Maia City
+	vault's: the world is raised once they are in, and a film says so when they can't be ($lib/assets/VaultRecipes.svelte).
 -->
 <script>
 	import Moved from '$lib/app/Moved.svelte';
 	import { onMount } from 'svelte';
 	import FilmWorld from './FilmWorld.svelte';
+	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
 	import { WORLDS } from '../../../game/film/worlds.js';
 
 	/**
@@ -31,7 +33,7 @@
 </script>
 
 {#if film && known}
-	<FilmWorld title="{WORLDS[sandbox]?.label ?? sandbox}{area ? ` · ${area}` : ''}" mount={(stage, onProgress) => mount(stage, area, onProgress)} />
+	<VaultRecipes><FilmWorld title="{WORLDS[sandbox]?.label ?? sandbox}{area ? ` · ${area}` : ''}" mount={(stage, onProgress) => mount(stage, area, onProgress)} /></VaultRecipes>
 {:else if film}
 	<p>{sandbox} has no area “{area}”: one of {WORLDS[sandbox]?.areas?.join(', ')}.</p>
 {:else if film === false}

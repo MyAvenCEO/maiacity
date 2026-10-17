@@ -9,9 +9,11 @@ export const prerender = false;
 
 export const load = async ({ params }) => {
 	const hash = hexOf(params.doc);
-	// a recipe of ours, by its BLAKE3 hash; only then the asset's page and three.js load
-	const { default: INDEX } = await import('virtual:asset-recipes');
-	if (!hash || !INDEX.recipes[hash]) return { doc: params.doc };
+	// a recipe of the Maia City vault, by its BLAKE3 hash ($lib/assets/vault.js, its recipes loaded first); only then the
+	// asset's page and three.js load. A vault whose recipes can't be loaded says so on the page, where no post is found
+	const { INDEX, loadRecipes } = await import('$lib/assets/vault.js');
+	const recipes = hash ? await loadRecipes() : null;
+	if (!hash || !INDEX.recipes[hash]) return { doc: params.doc, ...(recipes?.phase === 'failed' ? { recipes: recipes.error } : {}) };
 	const { default: AssetPage } = await import('$lib/assets/AssetPage.svelte');
 	return { doc: params.doc, asset: hash, AssetPage };
 };
