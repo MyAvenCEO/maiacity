@@ -929,11 +929,14 @@ fn everyone_reads(st: &State, en: &Entry) -> bool {
 }
 
 /// Entry `en` as the feed serves it (`public_entries`), where its record is of a kind `of` takes:
-/// `{entry, vault, name, seed, type, schema, tags, heads, created, record}`, its vault's name as its profile reads
-/// (`null` where it has none) and as the seed names it (`seed`: its name in `SEED_NAMES`, of the seed's vaults alone),
-/// its type the kind of its record, the schema it reads through and the heads of its main line in hex, its tags as its
-/// header reads them, when it was created, in seconds since 1970, and its record as device `me` counts it on its main
-/// line, the version every reader agrees on, its Loro texts plain text. The record reads through the schema its kind
+/// `{entry, vault, name, seed, type, schema, tags, heads, created, record, files}`, its vault's name as its profile
+/// reads (`null` where it has none) and as the seed names it (`seed`: its name in `SEED_NAMES`, of the seed's vaults
+/// alone), its type the kind of its record, the schema it reads through and the heads of its main line in hex, its tags
+/// as its header reads them, when it was created, in seconds since 1970, its record as device `me` counts it on its
+/// main line, the version every reader agrees on, its Loro texts plain text, and the files that line brings that `me`
+/// counts as the entry's and opens (`Lab::line_files`), oldest first, each `{root, size, len}`, its root in hex, its
+/// sealed size and its plaintext length: the last is its newest, which the feed serves whole as text where the entry is
+/// code (avendb-server's `feed`). The record reads through the schema its kind
 /// names in its vault's lane, the newest, as the ops engine's `get` reads it (`engine::own`), each field it leaves out
 /// at its default: so a view of v1 reads as one of v2, as the schema it names says. With its kind, and whether it is
 /// deleted (`DELETED`). None where `me` opens none of it, or no schema reads it. `vaults` holds each vault's lane and
@@ -972,8 +975,15 @@ fn public_row(
         "heads": history.heads(MAIN).iter().map(EditId::to_hex).collect::<Vec<_>>(),
         "created": meaning.attrs.created,
         "record": record,
+        "files": lab.line_files(me, en.id, MAIN).into_iter().filter_map(file_json).collect::<Vec<_>>(),
     });
     Some((kind, deleted, row))
+}
+
+/// A file an entry everyone reads brings, as its feed's row lists it (`public_row`), where the device opens it: `{root,
+/// size, len}`.
+fn file_json((root, len): (FileRoot, Option<u64>)) -> Option<Value> {
+    Some(json!({ "root": hex(&root.hash), "size": root.size, "len": len? }))
 }
 
 /// A file everyone may read, as a device opens it (`public_files`): its root, its plaintext length and its media type.

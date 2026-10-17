@@ -2,7 +2,8 @@
 //! or an agent, is one JSON op of avendb's engine (`avendb::engine`), run on the node (`Node::run`) and answered as
 //! JSON: `{"ok": ...}`, a refusal, or for a change its vault's owners approve with no ceremony at hand,
 //! `{"approve": ...}`. What the engine can't do on a Lab alone, the node does around it: it shows where each entry and
-//! file is synced to (`world`), reads and brings a file's bytes (`read_file`, `put_file`), tells what it does in the
+//! file is synced to (`world`), reads and brings a file's bytes (`read_file`, and `put_file` or a `create` that brings
+//! a file: `engine::brings`), tells what it does in the
 //! background (`jobs`), has the passkey sign what its vault approves in a ceremony, and asks its peers again once the
 //! vaults it follows change (`follow`).
 
@@ -13,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, bail};
 use avendb::engine::{self, Prepared, Refused};
-use avendb::id::BlobId;
+use avendb::id::{BlobId, EntryId};
 use avendb::lab::Lab;
 use avendb::policy::Refusal;
 use avendb::sign::Ceremony;
@@ -24,7 +25,7 @@ use serde_json::{Value, json};
 
 use crate::{Authenticator, Node, Shared, Source, Step};
 
-/// No bytes beside an op: what `Node::run` takes for every op but `put_file`.
+/// No bytes beside an op: what `Node::run` takes for every op but one that brings a file (`engine::brings`).
 pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
 
 /// No ceremony at hand, as for an agent: an op its vault's owners approve answers `approve` and makes nothing
@@ -44,8 +45,10 @@ impl Node {
     /// (`Step::Approve`), and it is made: else it answers `{"approve": {challenge, signers, draft}}` and makes nothing.
     /// `world` shows where each entry and file is synced to (`synced_to`); `read_file` reads from the device's store,
     /// or else from a peer that may hand the bytes over (`read_file`), a file the device doesn't open refused
-    /// (`NoCap`); `put_file` checks the entry it would create before it reads a byte of `bytes`, which it seals into
-    /// the store as they come (`store_file`), a `bring` job; `jobs` tells the node's jobs (`Node::jobs`); `follow`
+    /// (`NoCap`); `put_file`, and a `create` with a `file` (`engine::brings`), checks the write it would make before
+    /// it reads a byte of `bytes`, which it seals into the store as they come (`store_file`), a `bring` job, then
+    /// makes it: put_file's new entry, or the write that brings the file into the `entry` it names, or the creation
+    /// that brings it, one write; `jobs` tells the node's jobs (`Node::jobs`); `follow`
     /// asks every peer again once the vaults the device follows changed, each request naming them. Fails only where no
     /// answer comes: a ceremony that failed, the store or the network failing, a file's bytes more or fewer than its
     /// length.
@@ -66,7 +69,7 @@ impl Node {
                 self.read(move |lab, me| engine::world(lab, me, &synced)).await
             }
             Some("read_file") => return self.read_bytes(&op).await,
-            Some("put_file") => self.put(op, bytes).await?,
+            _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json() }),
             Some("follow") => self.follow(op).await,
             _ if engine::asks(&op) => self.dry(move |lab, me| engine::run(lab, me, &op)).await,
@@ -97,7 +100,8 @@ impl Node {
         Ok((json!({ "ok": { "root": hash, "from": from, "to": from + len, "len": len } }), Some(bytes)))
     }
 
-    /// `put_file`: the entry it would create checked, then the bytes stored, then the entry made.
+    /// `put_file`, or a `create` that brings a file: the write it would make checked, then the bytes stored, then the
+    /// write made (`engine::put_file`).
     async fn put<B: Source>(&self, op: Value, bytes: Option<B>) -> Result<Value> {
         let len = match engine::len_of(&op) {
             Ok(len) => len,
@@ -110,11 +114,20 @@ impl Node {
         if checked != Value::Bool(true) {
             return Ok(checked);
         }
-        let bytes = bytes.context("put_file brings the file's bytes beside it")?;
-        // a job of its own, its bytes told as they come
-        let name = op.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+        let bytes = bytes.context("the op brings the file's bytes beside it")?;
+        // a job of its own, its bytes told as they come, named as the op names its file, a create's in its `file`
+        let named = |o: &Value| o.get("name").and_then(Value::as_str).map(str::to_string);
+        let name = op.get("file").map_or_else(|| named(&op), named).unwrap_or_default();
         let mut job = self.jobs().begin("bring", String::new(), name, len, "bytes");
-        let vault = op.get("vault").and_then(Value::as_str).map(|v| (v.to_string(), len));
+        let vault = match op.get("vault").and_then(Value::as_str) {
+            Some(vault) => Some(vault.to_string()),
+            // brought into an entry it names: that entry's vault's
+            None => {
+                let entry = op.get("entry").and_then(Value::as_str).and_then(EntryId::from_hex);
+                self.read(move |lab, me| entry.and_then(|e| lab.vault_of_entry(me, e))).await.map(|v| v.to_hex())
+            }
+        };
+        let vault = vault.map(|v| (v, len));
         job.about(vault.clone().into_iter().collect(), BTreeMap::new());
         job.stage("sealing");
         // read twice, for the file's key and then to seal it: each byte counts half

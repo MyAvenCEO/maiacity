@@ -97,7 +97,8 @@ use zeroize::Zeroizing;
 
 pub use avendb::world::{CARD, DELETED, FILE, NOTE, PROFILE, TODO, VARIANT};
 
-/// How many bytes of a file the page hands its device at a time (`PageDevice::run`'s `read`, for `put_file`).
+/// How many bytes of a file the page hands its device at a time (`PageDevice::run`'s `read`, for `put_file` and a
+/// `create` that brings a file).
 const CHUNK: u64 = 1 << 20;
 
 /// What the ceremony that unlocks a device brings back: the ceremony itself, over a new device's challenge
@@ -510,7 +511,8 @@ impl Device {
     /// (`avendb_net::Node::run`): every read and change of the database it holds, whatever their schema, and of its
     /// vaults, as JSON. Its answer, `{"ok": ...}`, `{"refused": ..., "why": ...}`, or for a change its vault's owners
     /// approve with no `authenticator` at hand, `{"approve": ...}`; and for `read_file` the bytes it read, beside.
-    /// `put_file` reads its bytes from `bytes`, twice (`avendb_net::Source`). The vaults it follows (`follow`) and how
+    /// `put_file`, and a `create` with a `file` (`engine::brings`), reads its bytes from `bytes`, twice
+    /// (`avendb_net::Source`). The vaults it follows (`follow`) and how
     /// deep its queries read (`set_limits`) it keeps on its shelf too, in what opens it again (`Meta`), so it follows
     /// them again and reads as deep once it opens.
     pub async fn run<B, A>(
@@ -784,9 +786,10 @@ impl PageDevice {
     /// Runs op `op`, an object of the ops engine's (`Device::run`, `docs/ARCHITECTURE.md` §8): a promise of its
     /// answer, `{ok}`, `{refused, why}`, or for a change its vault's owners approve when no `ceremony` is passed,
     /// `{approve}`, which makes nothing. `ceremony(challenge, step)` is the passkey's, for such a change, as a start
-    /// takes it. `read(at, n)` hands over a `put_file`'s bytes from `at` on, `n` of them, as a promise of a
-    /// `Uint8Array`, a megabyte at a time (`CHUNK`), so that a file of any size passes through a little memory; it
-    /// reads the file twice, from the start each time, once for its key and once to seal it.
+    /// takes it. `read(at, n)` hands over the bytes of a `put_file`'s file, or of the file a `create` brings (its
+    /// `file`, `{len, name?, media?}`), from `at` on, `n` of them, as a promise of a `Uint8Array`, a megabyte at a time
+    /// (`CHUNK`), so that a file of any size passes through a little memory; it reads the file twice, from the start
+    /// each time, once for its key and once to seal it.
     /// `read_file`'s answer carries the bytes it read beside, as `bytes`, a `Uint8Array`. Rejected only where no answer
     /// comes: a ceremony cancelled, the store or the network failing, a file's bytes more or fewer than its length.
     pub fn run(&self, op: JsValue, ceremony: Option<Function>, read: Option<Function>) -> Promise {
@@ -794,7 +797,7 @@ impl PageDevice {
         future_to_promise(async move {
             let op = String::from(js_sys::JSON::stringify(&op)?);
             let op: Value = serde_json::from_str(&op).map_err(|e| JsError::new(&format!("no op: {e}")))?;
-            let len = op.get("len").and_then(Value::as_u64).unwrap_or(0);
+            let len = engine::len_of(&op).unwrap_or(0);
             let (bytes, ceremony) = (read.map(|read| move || chunks(read.clone(), len)), ceremony.map(Js));
             let (answer, bytes) = device.run(op, bytes, ceremony.as_ref()).await.map_err(js_value)?;
             let answer = js_sys::JSON::parse(&answer.to_string())?;
@@ -1189,8 +1192,9 @@ fn hex_bytes(s: &str) -> Option<Vec<u8>> {
     s.len().is_multiple_of(2).then(|| s.as_bytes().chunks(2).map(pair).collect()).flatten()
 }
 
-/// The `len` bytes of a file as the page's `read(at, n)` hands them over (`PageDevice::run`, for `put_file`), a
-/// megabyte at a time (`CHUNK`): a chunk of other than `n` bytes, or a read that fails, ends them with an error.
+/// The `len` bytes of a file as the page's `read(at, n)` hands them over (`PageDevice::run`, for an op that brings a
+/// file), a megabyte at a time (`CHUNK`): a chunk of other than `n` bytes, or a read that fails, ends them with an
+/// error.
 fn chunks(read: Function, len: u64) -> impl Stream<Item = io::Result<Bytes>> + Unpin {
     Box::pin(stream::unfold((0, read), move |(at, read)| async move {
         if at >= len {

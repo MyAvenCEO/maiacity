@@ -23,7 +23,10 @@
 //! a listing for when they grow big (`Asked`). Beside them, any one entry everyone may read, whole, in the same shape
 //! (`GET /feed/entry/<vault>/<entry>`, `ENTRY`), and not found, as JSON, for one that isn't public, that the server
 //! doesn't hold, or that the query doesn't ask for. The server works all the entries out at most every few seconds
-//! too, once for the three, and takes what each asks from that.
+//! too, once for the three, and takes what each asks from that. Each row lists the files its entry's main line brings
+//! that every reader counts as the entry's (`files`, `{root, size, len}`, oldest first, `Lab::line_files`), and the
+//! newest of a code entry's is served whole at `GET /feed/entry/<vault>/<entry>/file` (`OF_ENTRY`, `source`): a
+//! recipe's source, say, as plain text that no page runs as a script, which its loader checks against its hash.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -31,7 +34,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
-use avendb::id::{EntryId, VaultId};
+use avendb::id::{BlobId, EntryId, VaultId};
+use avendb::sealed::FileRoot;
 use avendb::world;
 use avendb_net::Node;
 use http_body_util::Full;
@@ -62,10 +66,14 @@ pub const CODE: &str = "/feed/code";
 /// Where one entry everyone may read is served, at `ENTRY` `<vault>/<entry>`, each in 64 hex digits (`entry`).
 pub const ENTRY: &str = "/feed/entry/";
 
+/// Where the newest file of a code entry everyone may read is served, after its entry's place: `ENTRY`
+/// `<vault>/<entry>` `OF_ENTRY` (`source`).
+pub const OF_ENTRY: &str = "/file";
+
 /// The most kinds one query names.
 const MOST_KINDS: usize = 16;
 
-/// The most bytes of a picture the feed serves, which it reads whole.
+/// The most bytes of a picture or of a code entry's file the feed serves, which it reads whole.
 const LARGEST: u64 = 32 << 20;
 
 /// How long a picture is served again from a cache: it is named by its content, but may stop being public.
@@ -141,8 +149,8 @@ impl Feed {
 }
 
 /// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), the entries of
-/// `ENTRIES` or the code of `CODE` (`listed`), or an entry of `ENTRY` (`entry`); nothing for a browser's OPTIONS before
-/// any of them; and not found for anything else.
+/// `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY` (`entry`), or its file (`OF_ENTRY`, `source`);
+/// nothing for a browser's OPTIONS before any of them; and not found for anything else.
 async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
@@ -154,6 +162,9 @@ async fn answer(
         return Ok(picture(at, &node).await);
     }
     let query = request.uri().query().unwrap_or_default();
+    if let Some(at) = path.strip_prefix(ENTRY).and_then(|at| at.strip_suffix(OF_ENTRY)).filter(|_| reads) {
+        return Ok(source(at, query, &node, &feeds.entries).await);
+    }
     let ours = [PATH, ENTRIES, CODE].contains(&path) || path.starts_with(FILES) || path.starts_with(ENTRY);
     let (status, body) = match path.strip_prefix(ENTRY) {
         Some(at) if reads => entry(at, query, &node, &feeds.entries).await,
@@ -385,6 +396,53 @@ async fn picture(at: &str, node: &Node) -> Response<Full<Bytes>> {
     response
 }
 
+/// The answer to a GET or HEAD of `ENTRY` `at` `OF_ENTRY`, `<vault>/<entry>/file`, asking `query`: the newest file of
+/// that entry (`newest`), where it is a row of the code everyone may read (`entries`, `of_code`), the same rows
+/// `ENTRY` serves, that the query asks for (`Asked`: `seed=1` keeps Maia City's alone, as ever), whole, as the server
+/// opens it, as plain text (`text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff`), so that no page runs it
+/// as a script, nor takes it for anything else, whatever it holds: a loader checks it against its hash before a
+/// sandboxed host runs it. A bad request for a query it can't read; not found for any other entry, one that brings no
+/// file or whose newest is larger than `LARGEST`; and unavailable while the server can't read its bytes.
+async fn source(at: &str, query: &str, node: &Node, kept: &Kept<Listed>) -> Response<Full<Bytes>> {
+    let asked = match Asked::of(query, false) {
+        Ok(asked) => asked,
+        Err(why) => return plain(StatusCode::BAD_REQUEST, why),
+    };
+    let named = at.split_once('/').and_then(|(v, e)| Some((VaultId::from_hex(v)?, EntryId::from_hex(e)?)));
+    let Some((vault, entry)) = named.map(|(v, e)| (v.to_hex(), e.to_hex())) else {
+        return plain(StatusCode::NOT_FOUND, "no such entry");
+    };
+    let listed = entries(node, kept).await;
+    let is = |row: &&Value| row["vault"].as_str() == Some(&vault) && row["entry"].as_str() == Some(&entry);
+    let row = listed.rows.iter().find(is).filter(|row| of_code(row) && asked.keeps(row));
+    let Some((root, len)) = row.and_then(newest) else {
+        return plain(StatusCode::NOT_FOUND, "no file of an entry everyone may read here");
+    };
+    let bytes = match node.read_file(root, 0..len).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::debug!("avenDB feed: the file of {vault}/{entry}: {e:#}");
+            return plain(StatusCode::SERVICE_UNAVAILABLE, "the server can't read this file yet");
+        }
+    };
+    let mut response = Response::new(Full::new(Bytes::from(bytes)));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=10"));
+    response
+}
+
+/// The newest file of row `row` (`world::public_entries`), as the feed serves it (`source`): the last of its `files`,
+/// its root and plaintext length, where it is at most `LARGEST` bytes.
+fn newest(row: &Value) -> Option<(FileRoot, u64)> {
+    let file = row["files"].as_array()?.last()?;
+    let hash = BlobId::from_hex(file["root"].as_str()?)?.0;
+    let (size, len) = (file["size"].as_u64()?, file["len"].as_u64()?);
+    (len <= LARGEST).then_some((FileRoot { hash, size }, len))
+}
+
 /// An answer of `status` that says `why`, as text.
 fn plain(status: StatusCode, why: &'static str) -> Response<Full<Bytes>> {
     let mut response = Response::new(Full::new(Bytes::from_static(why.as_bytes())));
@@ -393,4 +451,34 @@ fn plain(status: StatusCode, why: &'static str) -> Response<Full<Bytes>> {
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A row whose files are `files`, each `(root, size, len)`.
+    fn row(files: &[(&str, u64, u64)]) -> Value {
+        let file = |(root, size, len): &(&str, u64, u64)| json!({ "root": root, "size": size, "len": len });
+        let files: Vec<Value> = files.iter().map(file).collect();
+        json!({ "type": "recipe", "files": files })
+    }
+
+    /// The newest file of a row is the last it lists, served up to `LARGEST` bytes and no further; a row with none, or
+    /// whose file the server doesn't open, has none to serve.
+    #[test]
+    fn a_rows_newest_file_is_its_last_up_to_the_largest() {
+        let (a, b) = ("ab".repeat(32), "cd".repeat(32));
+        let root = |hex: &str, size| FileRoot { hash: BlobId::from_hex(hex).expect("a root").0, size };
+        let two = row(&[(&a, 100, 40), (&b, 200, 120)]);
+        assert_eq!(newest(&two), Some((root(&b, 200), 120)), "the last it lists");
+        let edge = row(&[(&a, LARGEST + 1024, LARGEST)]);
+        assert_eq!(newest(&edge), Some((root(&a, LARGEST + 1024), LARGEST)), "as large as the feed serves");
+        let over = row(&[(&b, 300, 30), (&a, LARGEST + 2048, LARGEST + 1)]);
+        assert_eq!(newest(&over), None, "its newest is too large, and an older one is no stand-in");
+        assert_eq!(newest(&row(&[])), None, "no file");
+        assert_eq!(newest(&json!({ "type": "recipe" })), None, "no files at all");
+        let unopened = json!({ "files": [{ "root": a, "size": 100, "len": null }] });
+        assert_eq!(newest(&unopened), None, "none the server opens");
+    }
 }

@@ -46,8 +46,9 @@
 //! The MCP is JSON-RPC 2.0, a message a line (`initialize`, `tools/list`, `tools/call`, `ping`): `avendb_vaults` tells
 //! who it is, its device vault and the aven over it, and the vaults it sees, `avendb_ask` runs a read of the ops
 //! engine, `avendb_run` a change, each acting as its device vault, and `avendb_request_access` asks its person for
-//! access. A change runs as on every device, the shares its aven passed on deciding: `put_file` too, its bytes those of
-//! the file on this Mac the harness names by its `path` beside the op; but not `follow` and `set_limits`, a device's
+//! access. A change runs as on every device, the shares its aven passed on deciding: `put_file` too, and a `create`
+//! that brings a file (`file`), its bytes those of the file on this Mac the harness names by its `path` beside the op,
+//! a draft's too, so an agent proposes a new entry with its file; but not `follow` and `set_limits`, a device's
 //! own settings, which an agent keeps nowhere. `get_file`, the mirror of `put_file` and the agent's own op, reads a
 //! file of a vault's Library back as the page's Library reads it (`read_file`), a window at a time, from its own shelf
 //! or else from the Mac's one store, and writes it to the `path` beside the op, never over a file there unless
@@ -887,7 +888,10 @@ impl Agent {
              with its diff); after a revise, write again on the same lines and promote it again: it keeps its \
              number. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
              `media` and `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type \
-             file, so only where its shares let it create, as an Editor's do, not where it may only suggest. Read a \
+             file, so only where its shares let it create, as an Editor's do, not where it may only suggest. An \
+             entry of any other type brings its file in its creation, one write: `create` with `file` (an object, \
+             `name` and `media` if any) and the `path` beside it, a draft too; `put_file` with `entry` brings a file \
+             into an entry it may edit on main. Read a \
              file of a vault back with avendb_read_file, or a `get_file` op on avendb_run: the file entry's `entry`, \
              or a `vault` and the file's `name`, and an absolute `path` on this Mac to write it to, never over a file \
              there unless `overwrite` is true; a text file of at most 64 KiB comes back inline too, as `text`, and \
@@ -988,10 +992,10 @@ impl Agent {
     }
 
     /// Change op `op` as avendb_run runs it, as every device runs it, acting as its device vault, the shares its aven
-    /// passed on deciding: the engine's answer. A put_file's bytes are those of the file at the path beside it; a
-    /// get_file, its own op, reads a file back to the path beside it (`get_file`). Fails before anything runs for a
-    /// read, which avendb_ask runs, for a device's own setting, which an agent keeps nowhere, and for a path or
-    /// `overwrite` beside an op that takes none.
+    /// passed on deciding: the engine's answer. The bytes of a put_file, or of a create with a `file`
+    /// (`engine::brings`), are those of the file at the path beside it; a get_file, its own op, reads a file back to
+    /// the path beside it (`get_file`). Fails before anything runs for a read, which avendb_ask runs, for a device's
+    /// own setting, which an agent keeps nowhere, and for a path or `overwrite` beside an op that takes none.
     async fn run(&self, op: Value, beside: Beside) -> Result<Value> {
         let Beside { path, overwrite } = beside;
         if op_name(&op) == Some("get_file") {
@@ -1005,16 +1009,17 @@ impl Agent {
             let setting = "a device's own setting, which an agent keeps nowhere";
             anyhow::bail!("{:?} isn't for an agent: {setting}", op_name(&op));
         }
-        let (answer, _) = match (op_name(&op), path) {
-            (Some("put_file"), Some(path)) => {
+        let (answer, _) = match (engine::brings(&op), path) {
+            (true, Some(path)) => {
                 let (op, bytes) = with_file(op, path).await?;
                 self.node.run(op, Some(bytes), None::<&NoCeremony>).await?
             }
-            (Some("put_file"), None) => {
-                anyhow::bail!("put_file saves a file of this Mac: give its absolute path beside the op")
+            (true, None) => {
+                let what = op_name(&op).unwrap_or_default();
+                anyhow::bail!("{what} saves a file of this Mac here: give its absolute path beside the op")
             }
-            (_, Some(_)) => anyhow::bail!("a path goes beside put_file or get_file alone"),
-            (_, None) => self.node.run(op, None::<NoBytes>, None::<&NoCeremony>).await?,
+            (false, Some(_)) => anyhow::bail!("a path goes beside put_file, a create with a file or get_file alone"),
+            (false, None) => self.node.run(op, None::<NoBytes>, None::<&NoCeremony>).await?,
         };
         Ok(answer)
     }
@@ -1480,8 +1485,8 @@ impl Agent {
 fn tools() -> Value {
     let one = json!({ "type": "object", "description": "One op of avenDB's engine, as JSON" });
     let op = json!({ "type": "object", "properties": { "op": one }, "required": ["op"] });
-    let path = "For put_file: the absolute path of the file on this Mac it saves; for get_file: the absolute path on \
-                this Mac it writes the file it reads to";
+    let path = "For put_file, or a create with a file: the absolute path of the file on this Mac it saves; for \
+                get_file: the absolute path on this Mac it writes the file it reads to";
     let overwrite = "For get_file alone: true to replace a file at path, which it never does otherwise";
     let run = json!({
         "type": "object",
@@ -1591,7 +1596,10 @@ fn tools() -> Value {
                             lines, then aip_promote. put_file saves a file of this Mac into a vault as a new entry of \
                             type file, where the agent may create: the op names its vault and name, and media and tags \
                             if any, and the file's absolute path goes beside the op as path; its len is the file's \
-                            size unless the op gives one. get_file reads a file of a vault back, as avendb_read_file \
+                            size unless the op gives one. A create with file (an object, name and media if any) and \
+                            a path beside it brings that file in the new entry's creation, a draft's too; put_file \
+                            with entry in place of vault and name brings the file into that entry, where the agent \
+                            may edit it on main. get_file reads a file of a vault back, as avendb_read_file \
                             does: the op names its entry, or its vault and name, and the absolute path it writes to \
                             goes beside the op, with overwrite: true to replace a file there.",
             "inputSchema": run,
@@ -1632,8 +1640,9 @@ fn tools() -> Value {
     ])
 }
 
-/// What goes beside an op on avendb_run: an absolute `path` on this Mac, the file put_file saves or where get_file
-/// writes the file it reads; and for get_file, whether it may replace a file there (`overwrite`).
+/// What goes beside an op on avendb_run: an absolute `path` on this Mac, the file put_file, or a create with a file,
+/// saves, or where get_file writes the file it reads; and for get_file, whether it may replace a file there
+/// (`overwrite`).
 #[derive(Default)]
 struct Beside {
     path: Option<PathBuf>,
@@ -1948,14 +1957,17 @@ fn clock_of(p: &str) -> Option<(f64, &str)> {
     Some((seconds, rest))
 }
 
-/// Put_file op `op` with the file at `path` on this Mac, which the harness names: its length the file's size where the
-/// op gives none, and its bytes as the node reads them (`read_path`). Fails if `path` names no file, or isn't absolute,
-/// as the harness's folder needn't be the agent's.
+/// Op `op`, a put_file or a create with a `file` (`engine::brings`), with the file at `path` on this Mac, which the
+/// harness names: its length the file's size where the op gives none, and its bytes as the node reads them
+/// (`read_path`). Fails if `path` names no file, or isn't absolute, as the harness's folder needn't be the agent's.
 async fn with_file(mut op: Value, path: PathBuf) -> Result<(Value, impl FnMut() -> Chunks + Send)> {
     anyhow::ensure!(path.is_absolute(), "{} isn't an absolute path", path.display());
     let meta = tokio::fs::metadata(&path).await.with_context(|| format!("no file at {}", path.display()))?;
     anyhow::ensure!(meta.is_file(), "{} is no file", path.display());
-    if let Some(o) = op.as_object_mut() {
+    // its length the file's size unless the op gives one: put_file's own, a create's in its file
+    let create = op_name(&op) == Some("create");
+    let at = if create { op.get_mut("file") } else { Some(&mut op) };
+    if let Some(o) = at.and_then(Value::as_object_mut) {
         o.entry("len").or_insert(meta.len().into());
     }
     Ok((op, read_path(path)))

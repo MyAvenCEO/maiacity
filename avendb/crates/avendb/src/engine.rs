@@ -155,7 +155,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
         "groups" | "kinds" | "limits" | "requests" => &[],
-        "create" => &["vault", "type", "tags", "schema", "value", "draft", "as"],
+        "create" => &["vault", "type", "tags", "schema", "value", "draft", "file", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
         }
@@ -186,7 +186,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "revoke" => &["share", "vault", "owner", "device", "standing", "as"],
         "settings" => &["vault", "threshold", "root"],
         "found" => &["vaults", "kind", "name"],
-        "put_file" => &["vault", "name", "media", "tags", "len", "as"],
+        "put_file" => &["vault", "entry", "name", "media", "tags", "len", "as"],
         "back_up" => &["on"],
         "mark" => &["entry"],
         "card" => &["name"],
@@ -340,19 +340,44 @@ pub fn file_of(v: &Value) -> Result<(FileRoot, Range<u64>), Refused> {
     }
 }
 
-/// How many bytes change op `v`, a `put_file`, brings beside it.
+/// Whether change op `v` brings a file's bytes beside it, which a node reads (avendb-net's `Node::run`): a `put_file`,
+/// or a `create` with a `file`.
+pub fn brings(v: &Value) -> bool {
+    let o = v.as_object();
+    match o.and_then(|o| o.get("op")).and_then(Value::as_str) {
+        Some("put_file") => true,
+        Some("create") => o.is_some_and(|o| o.contains_key("file")),
+        _ => false,
+    }
+}
+
+/// How many bytes change op `v`, a `put_file` or a `create` with a `file` (`brings`), brings beside it.
 pub fn len_of(v: &Value) -> Result<u64, Refused> {
     match op_of(v)? {
         ("put_file", o) => vaults::file_len(o),
+        ("create", o) => vaults::create_file(o)?.ok_or_else(|| bad("this create brings no file: it names none")),
         (name, _) => Err(bad(format!("{name} brings no file"))),
     }
 }
 
-/// Change op `v`, a `put_file`, run on device `me` with its bytes, `brought` into its node's store
-/// (`vaults::put_file`): its answer.
+/// Change op `v`, a `put_file` or a `create` with a `file` (`brings`), run on device `me` with its bytes, `brought`
+/// into its node's store (`vaults::put_file`, `create`): its answer.
 pub fn put_file(lab: &mut Lab, me: SignerId, v: &Value, brought: Brought) -> Value {
     answer(op_of(v).and_then(|(name, o)| match name {
         "put_file" => vaults::put_file(lab, me, o, Some(brought)),
+        "create" if o.contains_key("file") => {
+            let act = act_of(v)?;
+            let Act { actor, step: Step::Create { vault, ty, tags, schema, value, draft, file: Some(file) } } = act
+            else {
+                return Err(bad("create brings a file into an entry it creates of a schema, not a schema or lens"));
+            };
+            if file.len != brought.len {
+                return Err(bad(format!("the file is {} bytes, not the {} its len says", brought.len, file.len)));
+            }
+            let actor = actor.or_else(|| lab.vault_of(me)).ok_or(Refusal::NotActing)?;
+            let file = Some(Bringing { len: file.len, brought: Some(brought) });
+            step(lab, me, actor, Step::Create { vault, ty, tags, schema, value, draft, file })
+        }
         _ => Err(bad(format!("{name} brings no file"))),
     }))
 }
@@ -381,6 +406,16 @@ fn line_of(o: &Map<String, Value>, field: &str) -> Result<Line, Refused> {
 
 fn line_json(line: Line) -> Value {
     line.map_or(Value::Null, |b| b.to_hex().into())
+}
+
+/// Answer `out` of a change that brought file `root`, where it brought one, with its root and sealed size, as
+/// `put_file` answers: `{..., "root", "size"}`.
+fn with_file(mut out: Value, root: Option<FileRoot>) -> Value {
+    if let Some(root) = root {
+        out["root"] = BlobId(root.hash).to_hex().into();
+        out["size"] = root.size.into();
+    }
+    out
 }
 
 /// A version: writes of the entry, by their ids.
@@ -958,9 +993,25 @@ struct Act {
     step: Step,
 }
 
+/// A file a creation brings beside its record (`create`'s `file`): its length, as the op names it, and its bytes, once
+/// a node brought them into its store (`put_file`); a dry run checks the creation without them.
+struct Bringing {
+    len: u64,
+    brought: Option<Brought>,
+}
+
 enum Step {
-    /// A new entry, or with `draft`, a draft that starts its own line (`Lab::create_draft`).
-    Create { vault: VaultId, ty: String, tags: Vec<String>, schema: Named, value: Value, draft: bool },
+    /// A new entry, or with `draft`, a draft that starts its own line (`Lab::create_draft`), its first write bringing
+    /// `file`, where it names one (`Lab::create_bringing`).
+    Create {
+        vault: VaultId,
+        ty: String,
+        tags: Vec<String>,
+        schema: Named,
+        value: Value,
+        draft: bool,
+        file: Option<Bringing>,
+    },
     /// A schema or lens entry holding `blob`, a schema or lens of type `ty` (`Lab::add_schema`).
     AddSchema { vault: VaultId, ty: String, blob: Vec<u8> },
     /// Record ops on one entry's line, through one schema: one write.
@@ -1026,7 +1077,7 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
     };
     let step = match name {
         "create" if o.get("type").and_then(Value::as_str).is_some_and(|t| Sym::new(t).of_lane()) => {
-            if let Some(k) = ["tags", "schema"].iter().find(|k| o.contains_key(**k)) {
+            if let Some(k) = ["tags", "schema", "file"].iter().find(|k| o.contains_key(**k)) {
                 return Err(bad(format!("a schema or lens entry takes no {k:?}: it holds its JSON and nothing else")));
             }
             if draft_of(o)? {
@@ -1044,7 +1095,9 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
         "create" => {
             let value = o.get("value").filter(|v| v.is_object()).ok_or_else(|| bad("create takes a record: value"))?;
             let (tags, schema, draft) = (texts_of(o, "tags")?, named(o)?, draft_of(o)?);
-            Step::Create { vault: vault_of(o, "vault")?, ty: text("type")?, tags, schema, value: value.clone(), draft }
+            let file = vaults::create_file(o)?.map(|len| Bringing { len, brought: None });
+            let (vault, ty, value) = (vault_of(o, "vault")?, text("type")?, value.clone());
+            Step::Create { vault, ty, tags, schema, value, draft, file }
         }
         "set" | "unset" | "insert" | "remove" | "move" => {
             let op = RecordOp::of_json(v).map_err(bad)?;
@@ -1150,6 +1203,10 @@ fn change(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
     let refused = |at, done: &[Value], why| Refused::Batch { at, done: done.to_vec(), why: Box::new(why) };
     for (i, op) in ops.iter().enumerate() {
         let act = act_of(op).map_err(|why| refused(i, &[], why))?;
+        if let Step::Create { file: Some(_), .. } = act.step {
+            let why = bad("a create that brings a file runs alone, its bytes beside it, never in a batch");
+            return Err(refused(i, &[], why));
+        }
         let actor = act.actor.or(actor).or_else(|| lab.vault_of(me));
         let actor = actor.ok_or_else(|| refused(i, &[], Refusal::NotActing.into()))?;
         let next = match steps.last_mut() {
@@ -1198,7 +1255,18 @@ pub fn verdict(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
 /// Step `s`, acting for `actor`, on device `me`.
 fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, Refused> {
     match s {
-        Step::Create { vault, ty, tags, schema, value, draft } => {
+        Step::Create { vault, ty, tags, schema, value, draft, file } => {
+            // its file's bytes come beside the op, which a node reads; a dry run checks the creation alone, as the
+            // rules judge a creation by what it creates and never by the files it brings
+            let files: Vec<Brought> = match file {
+                Some(Bringing { brought: Some(b), .. }) => vec![b],
+                Some(_) if !lab.is_dry() => {
+                    let why = "a create that brings a file brings its bytes beside it: a node runs it (Node::run)";
+                    return Err(bad(why));
+                }
+                _ => vec![],
+            };
+            let root = files.first().map(|b| b.root);
             let lane = lane(lab, me, vault);
             let app = match schema {
                 Named::Own => own(&lane, &value),
@@ -1213,12 +1281,12 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
                     let mut item = Item::draft(me, entry);
                     item.write(&view, &value).then(|| item.export(&Version::default()))
                 };
-                let (entry, line) = lab.create_draft(me, actor, vault, &ty, &strs(&tags), content)?;
-                return Ok(json!({ "entry": entry.to_hex(), "line": line.to_hex() }));
+                let (entry, line) = lab.create_draft_bringing(me, actor, vault, &ty, &strs(&tags), content, files)?;
+                return Ok(with_file(json!({ "entry": entry.to_hex(), "line": line.to_hex() }), root));
             }
             let item = Item::made(&view, &value, me).ok_or(Refusal::NotAView)?;
-            let entry = lab.create(me, actor, vault, &ty, &strs(&tags), item)?;
-            Ok(json!({ "entry": entry.to_hex() }))
+            let entry = lab.create_bringing(me, actor, vault, &ty, &strs(&tags), item, files)?;
+            Ok(with_file(json!({ "entry": entry.to_hex() }), root))
         }
         Step::AddSchema { vault, ty, blob } => {
             // the type its JSON reads as, as `Lab::add_schema` reads it, which must be the one asked for
@@ -1351,7 +1419,8 @@ fn review(
         "text": text,
         "at": lab.now(),
     });
-    let create = Step::Create { vault, ty: "review".into(), tags: vec![], schema: Named::Own, value, draft: false };
+    let (ty, tags, schema) = ("review".into(), vec![], Named::Own);
+    let create = Step::Create { vault, ty, tags, schema, value, draft: false, file: None };
     let made = step(lab, me, actor, create)?;
     Ok(json!({
         "entry": entry.to_hex(),

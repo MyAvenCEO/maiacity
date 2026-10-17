@@ -409,18 +409,19 @@ on its stdin and stdout, in a folder beside the desktop app's that the app never
 (`<app folder>-agents/<device>`). It keeps its secret on its shelf, as the server does (`server::open_agent`), and its
 iroh key derives from it. It acts as its device vault, its shares deciding. It keeps no file whole of its own accord and
 reads its person's files from their desktop's one store, so nothing is kept twice. It saves a file of the desktop as
-every device does (`put_file`, the file named by its path beside the op): an Editor share creates its entry, a
-Suggester's or a Viewer's doesn't. It seals the file onto its own shelf, and lets go of it once the desktop app's
-device, the one whose key is the endpoint of the offer the app leaves it, holds it whole by that device's holdings
-(`Node::holds_whole`, `Node::let_go`): a read of it then fetches it from there. Where the desktop keeps a light copy,
-the agent's copy is the one. It reads a file back with `get_file`, its own op beside the engine's and the mirror of
-`put_file` (the MCP tool `avendb_read_file`): the file named by its entry, or by its vault and name, read as the page's
-Library reads it (`read_file`, a window at a time, from its own shelf or else from the desktop's store), only where its
-shares let it read the entry, and written to the path beside the op, never over a file there unless `overwrite` says
-so; a text file of at most 64 KiB comes back inline too. It captures a spark with `avendb_add_spark`, its text, title
-and tags alone (a link or a media file goes in as an artifact of its own): the `create` the page's Sparks run, run as
-any change of its, into its person's own vault unless it names another, where its shares let it create; where they
-don't, it says which vaults they let it. A reset clears its folder as the app's, and it asks to join again.
+every device does (`put_file`, or a `create` with a `file`, the file named by its path beside the op): an Editor share
+creates its entry, a Suggester's or a Viewer's doesn't. It seals the file onto its own shelf, and lets go of it once the
+desktop app's device, the one whose key is the endpoint of the offer the app leaves it, holds it whole by that device's
+holdings (`Node::holds_whole`, `Node::let_go`): a read of it then fetches it from there. Where the desktop keeps a light
+copy, the agent's copy is the one. It reads a file back with `get_file`, its own op beside the engine's and the mirror
+of `put_file` (the MCP tool `avendb_read_file`): the file named by its entry, or by its vault and name, read as the
+page's Library reads it (`read_file`, a window at a time, from its own shelf or else from the desktop's store), only
+where its shares let it read the entry, and written to the path beside the op, never over a file there unless
+`overwrite` says so; a text file of at most 64 KiB comes back inline too. It captures a spark with `avendb_add_spark`,
+its text, title and tags alone (a link or a media file goes in as an artifact of its own): the `create` the page's
+Sparks run, run as any change of its, into its person's own vault unless it names another, where its shares let it
+create; where they don't, it says which vaults they let it. A reset clears its folder as the app's, and it asks to join
+again.
 
 Each session of a harness starts its own `avendb-device agent`, yet one device is one node, one shelf and one iroh
 endpoint, never two of the same key at once. So of an agent's sessions on a desktop, one runs its device: the one that
@@ -889,19 +890,20 @@ asks `may` before it shows a button, and words what comes back.
   device's state: a read on what the device holds, an ask as a dry run that checks, proves and refuses as a change
   would and makes nothing (`Lab::dry`), and a change as signed edits.
 - **On a node.** `Node::run(op, bytes, authenticator)` (`crates/avendb-net/src/run.rs`) runs it on a node, and does
-  what a Lab alone can't: `world` adds where each entry and file is synced to, `read_file` and `put_file` carry the
-  file's bytes beside the op, `jobs` tells its background work, a change the vault's owners approve has the passkey
-  sign it in a ceremony, every change is told to the device's peers, and `follow` asks every peer again at once.
+  what a Lab alone can't: `world` adds where each entry and file is synced to, `read_file`, `put_file` and a `create`
+  with a `file` (`engine::brings`) carry the file's bytes beside the op, `jobs` tells its background work, a change the
+  vault's owners approve has the passkey sign it in a ceremony, every change is told to the device's peers, and `follow`
+  asks every peer again at once.
 
 Every caller goes through `Node::run`:
 
 | Caller | How it calls |
 |---|---|
-| A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file` its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
-| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it; `addWorker [vault, name, shares]` (each share `{name, where, ops}`, and `over` for one over another vault) and `workers` for the studio workers it hosts, and `run [op, node]`, an op run on the worker whose device `node` names, as that worker (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
+| A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file`, or a `create` with a `file`, its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file` and a `create` with a `file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it; `addWorker [vault, name, shares]` (each share `{name, where, ops}`, and `over` for one over another vault) and `workers` for the studio workers it hosts, and `run [op, node]`, an op run on the worker whose device `node` names, as that worker (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
 | The desktop app, in its own process | The same device hosted in the app's process in place of the sidecar (`avendb_device::host`), on one code path with it: the same calls through `Host::call(call, args)`, each answering `{"ok"}` or `{"error"}` as its line would with no id; each sheet to show on its `Lines`, answered by `Host::answer`; and `Host::node()`, the open device's node, for the app's own Rust to `read_file` by range and post `jobs()` with no JSON or base64; `Host::node_of(device)` the same of a studio worker it hosts, by that worker's own key and shares, never the desktop's. |
 | A studio worker on the desktop | Its own node, hosted by the desktop app beside its own (section 3): `run [op, node]` through the app's lines, or `Host::node_of(device)` in its process, each acting for its device vault, whose shares decide. It has no passkey, so a change the owners approve answers `approve`. |
-| An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` too with the absolute `path` of a file on the desktop beside the op, and its own `get_file {entry}` or `{vault, name}`, which reads a file back through `read_file` to the `path` beside the op (never over a file there unless `overwrite`), each acting for its device vault, whose shares decide; `avendb_add_spark` for a spark, the page's `create`; `avendb_add_artifact` for an artifact, a link or a file of the desktop saved by `put_file` first, put on a spark's canvas where it names one; and `avendb_read_file` for `get_file`; and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
+| An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` and a `create` with a `file` too with the absolute `path` of a file on the desktop beside the op, and its own `get_file {entry}` or `{vault, name}`, which reads a file back through `read_file` to the `path` beside the op (never over a file there unless `overwrite`), each acting for its device vault, whose shares decide; `avendb_add_spark` for a spark, the page's `create`; `avendb_add_artifact` for an artifact, a link or a file of the desktop saved by `put_file` first, put on a spark's canvas where it names one; and `avendb_read_file` for `get_file`; and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
 A device's lifecycle stays outside `run`: founding, linking and opening a device (`Device.found`, `Device.link`,
@@ -980,7 +982,10 @@ reads a kind's rules and never decides them. Its JSON names everything as the co
 
 ### Changes
 
-**Entries.** `create {vault, type, tags, schema, value, as}`; the record ops `set`, `unset`, `insert`, `remove`,
+**Entries.** `create {vault, type, tags, schema, value, draft, file, as}`, where `file` is `{len, name, media}` and
+the file's bytes come beside the op, as `put_file`'s do: the entry and its file are one signed edit, its creation's
+write brings it (`Lab::create_bringing`), alone, never in a batch, and it answers `{"entry", "root", "size"}`; a schema
+or a lens brings none. The record ops `set`, `unset`, `insert`, `remove`,
 `move` `{entry, line, schema, path, value, at, to, as}`; `tag {entry, add, remove, as}`; `propose`;
 `merge {entry, from, into, take, as}`, `take` the conflicts where the target takes the other line's value, each
 `{at: path, what: value | row | order}`, as `note` lists a proposal's `conflicts`; `review {entry, line, verdict,
@@ -999,7 +1004,7 @@ line make one write. A schema or a lens is created as an entry of its type (sect
 | `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}`; with `"standing": true`, a standing grant on every vault it reached, `{"edits"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
 | `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenCEO server's share among them, and a profile on each. `{"vaults"}` | Always |
-| `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}` | Never |
+| `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}`. With `entry` in place of `vault` and `tags`, `put_file {entry, name, media, len, as}` brings them into that entry instead, landed on its main line, by one write there (`Lab::bring_into`), as a new default of a recipe's source. `{"entry", "edit", "root", "size"}` | Never |
 | `ask {to, asks, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; or, `asks` `"owner"`, to co-own `to`, or `"invite"`, for `to` to co-own the acting vault, at Owner, as the kind table lets it; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
 | `back_up {on}` | avenCEO server's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
 | `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
@@ -1008,7 +1013,9 @@ line make one write. A schema or a lens is created as an entry of its type (sect
 | `set_limits {depth}` | The most rows and links down the device's queries read, 1 to 256, kept in its shelf's meta. Its `limits` | Never |
 
 **Who may.** `share` and `revoke` through a share need the `share` op in the chain the acting vault holds. `put_file`
-and a schema's creation are creations, under the `create` and `set` ops. `read_file` needs read reach (T27). `mark`,
+and a schema's creation are creations, under the `create` and `set` ops, and a create's file comes with its creation.
+`put_file` into an entry is a `set` of its whole record, so a Suggester's empty write, which every reader counts, never
+gives an entry a file (`Lab::line_files`). `read_file` needs read reach (T27). `mark`,
 `settings`, `found`, `keep`, `copy`, `back_up`, `card` and `profile` are only for devices acting for the vault itself,
 never through a share. `follow` and `set_limits` need nothing: any device follows any vault, and sets its own
 limits. An agent device runs neither (section 3).
@@ -1424,17 +1431,23 @@ view, logic, function and config (a record of a vault's own schema whose `kind` 
 through the newest schema of its kind in its vault's lane (`schema`, in hex), each field it leaves out at its default,
 Loro texts as plain text, and `heads` that version's heads, so a loader pins it; its `type` is its record's kind, its
 `tags` its entry's tags, its `name` its vault's profile where everyone may read it. An entry whose record names no kind
-a schema of its vault reads, a schema's or a lens's, is in none. Anyone may found a vault and call it Maia City, so
+a schema of its vault reads, a schema's or a lens's, is in none. Each row lists `files`, `[{root, size, len}]` oldest
+first: the files its main line brings that every reader counts as the entry's (`Lab::line_files`), those of its
+creation and of writes by its vault or by a share that may set its whole record, that the server opens, each its root
+in hex, its sealed size and its length. Anyone may found a vault and call it Maia City, so
 `seed` names a row's vault only where it stands in the server's seed (`world::seed_of`, `SEED_NAMES`), `null` for every
 other, and `?seed=1` keeps Maia City's alone, the coop avenCEO GmbH owns alone, none while the server knows no such
 coop: it knows it once Maia City gives avenCEO server backup or relay, as every vault founded under a person does by
 their server setting. `?vault=<64 hex>` keeps one vault's and `?bare=1` leaves the records out, a listing for when they
 grow big. `GET avendb.maia.city/feed/entry/<vault>/<entry>` serves any one of those rows on its own, and
-`{"error": ...}`, not found, for an entry that isn't public, that is deleted or that the server doesn't hold. The three
-take the same `?vault=`, `?seed=1` and `?bare=1`; the server works the whole list out at most every 5 s and serves each
-from it. A loader checks what it takes with its own checker before a sandboxed host runs it: the server vouches for
-nothing but what everyone may read. Every route of the feed answers any page (`Access-Control-Allow-Origin: *`), and
-Caddy forwards all of `/feed/*` to it.
+`{"error": ...}`, not found, for an entry that isn't public, that is deleted or that the server doesn't hold.
+`GET avendb.maia.city/feed/entry/<vault>/<entry>/file` serves the newest of a code row's `files` whole, a recipe's
+source, say, up to 32 MiB (`LARGEST`), as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`, so no
+page runs it as a script; not found, as text, for any other entry, or one that brings no file. The three take the same
+`?vault=`, `?seed=1` and `?bare=1`, the file's `?vault=` and `?seed=1`; the server works the whole list out at most
+every 5 s and serves each from it. A loader checks what it takes with its own checker before a sandboxed host runs it:
+the server vouches for nothing but what everyone may read. Every route of the feed answers any page
+(`Access-Control-Allow-Origin: *`), and Caddy forwards all of `/feed/*` to it.
 
 An article shows the pictures of its vault's Library by their names (`<hash>.jpg`), and a post lists those of them
 everyone may read (`pictures`): each a `file` entry of the vault, public and not deleted (`world::public_files`). The
@@ -1731,7 +1744,8 @@ members learn each other's addresses, and its 4 KiB messages can't carry one SLH
 
 A file enters avenDB with a write of the entry it belongs to. A file in a vault's Library is an entry of type `file`,
 a record of the `file` schema with the file's name and media type, made by one write and brought by the next (the
-`put_file` op). Shares, sync and deletion work on it as on a note.
+`put_file` op). Shares, sync and deletion work on it as on a note. An entry of any other kind brings one in its
+creation's own write (a `create` with a `file`), or by one write on its main line later (`put_file` with `entry`).
 
 **Sealed blob, version 2** (`crates/avendb/src/sealed.rs`, its bytes pinned by vectors):
 
@@ -1756,10 +1770,10 @@ fetches and opens, Backup fetches the ciphertext, Relay fetches nothing.
 
 **Bringing, reading, keeping** (`crates/avendb-net/src/files.rs`):
 
-- `put_file` checks the entry it would create before it reads a byte. `Node::store_file` reads the file twice: once
-  to derive its key, once to seal it, checking the key again over the bytes it seals, so two different files never
-  share a key. It streams each piece onto the shelf, so a file of any size passes through a few segments of memory;
-  then the entry and the write that brings it are made.
+- `put_file`, and a `create` with a `file`, check the entry they would create or bring into before they read a byte.
+  `Node::store_file` reads the file twice: once to derive its key, once to seal it, checking the key again over the
+  bytes it seals, so two different files never share a key. It streams each piece onto the shelf, so a file of any size
+  passes through a few segments of memory; then the entry and the write that brings it are made.
 - `read_file` (`Node::read_file`) reads any range: the segments that hold it, from its own shelf, or fetched from a
   peer, 4 MiB at a time, verified and opened. Pieces read but not kept stay in memory windows, 64 MiB at most, oldest
   out first.
