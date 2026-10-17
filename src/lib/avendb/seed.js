@@ -26,6 +26,11 @@
 //              the Public share on its tag that publishes it, written with its entry, once: a game its owner withdrew
 //              later is never published again by a seed
 //   retire     every entry of a game the repo let go (`RETIRED`: Sandboxes 7 and 8), deleted
+//   recipes    last, as their files are most of the seed's bytes (V5 of the avenDB migration): one Public share of the
+//              vault's recipes, by type, so the server's feed serves them and their files; then each recipe of the
+//              asset box (src/lib/assets/box/plugin.js), every kept version and variant, a `recipe` entry of its own
+//              (src/lib/assets/sources/avendb.js `recipeEntryOf`, its card from src/lib/assets/sources/cards.json)
+//              created with its file, the recipe byte for byte, in one write (`beside`), found by its `ref:` tag
 //
 // There are only stories and their posts (Samuel 2026-10-17): the story is the source of truth, and each post one way
 // it goes out, of a post type, linking it (`story`). No articles, no notes, no templates of their own. The notebook's ideas live on maia.city's server,
@@ -39,10 +44,16 @@ import { stageTag } from './flows.js';
 import { copying, legacyTag, pieces as legacyPieces } from './legacy.js';
 import { EVERYONE } from './vaults.js';
 import { POST_TYPES, postTag, postTypeSchema, postTypeTitle } from './posttypes.js';
+import { brings } from './ops.js';
 import { GAME, GAMES, gameTag } from '../../../game/games.js';
+import { INDEX, recipeAt } from '../assets/recipes.js';
+import { recipeEntryOf, refTag } from '../assets/sources/avendb.js';
 
 /** The types of the code entries the vault holds, which everyone reads, as the repo's code/ is open to everyone. */
 export const CODE_TYPES = ['view', 'logic'];
+
+/** The types of the asset recipes the vault holds, which everyone reads, as the repo's assets are open to everyone. */
+export const RECIPE_TYPES = ['recipe'];
 
 /** The tag of the content flow's published stage, which everyone reads. */
 export const PUBLISHED = stageTag('content', 'published');
@@ -87,6 +98,10 @@ const TEMPLATES = /** @type {Record<string, () => Promise<string>>} */ ({
 	...import.meta.glob('/inspire-me/FORMAT.md', { query: '?raw', import: 'default' }),
 	...import.meta.glob('/films/TEMPLATE.md', { query: '?raw', import: 'default' })
 });
+/** Every recipe's card, by its hash (src/lib/assets/sources/cards.json, 1 MB), loaded once a recipe is written. */
+const CARDS = /** @type {Record<string, () => Promise<{ cards: Record<string, any> }>>} */ (
+	import.meta.glob('/src/lib/assets/sources/cards.json', { import: 'default' })
+);
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
@@ -117,7 +132,7 @@ const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
  * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
- *   'inspire-share' | 'game-schema' | 'game', name: string, mark: string, server?: string }} Piece
+ *   'inspire-share' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
  */
 
 /**
@@ -150,16 +165,22 @@ export function seedPieces(server = null) {
 		{ key: 'game-schema', kind: /** @type {const} */ ('game-schema'), name: GAME_SCHEMA, mark: '' },
 		...GAMES.map((g) => ({ key: `game/${g.id}`, kind: /** @type {const} */ ('game'), name: g.id, mark: gameTag(g.id) }))
 	];
-	return [...keep, ...code, ...share, ...types, ...published, ...games, ...journal, ...inspire, ...pads];
+	const recipes = Object.values(INDEX.recipes)
+		.map((/** @type {any} */ r) => /** @type {string} */ (r.label))
+		.sort()
+		.map((label) => ({ key: label, kind: /** @type {const} */ ('recipe'), name: label, mark: refTag(label) }));
+	const recipeShare = recipes.length ? [{ key: 'recipe-share', kind: /** @type {const} */ ('recipe-share'), name: 'Everyone reads its recipes', mark: '' }] : [];
+	return [...keep, ...code, ...share, ...types, ...published, ...games, ...journal, ...inspire, ...pads, ...recipeShare, ...recipes];
 }
 
 /**
- * Whether vault `vault` gives everyone a Public share of its code entries, as world `world` shows its shares.
- * @param {import('./vaults.js').WorldView} world @param {string} vault
+ * Whether vault `vault` gives everyone a Public share of its code entries (or of those of types `of`, as its recipes,
+ * `RECIPE_TYPES`), as world `world` shows its shares.
+ * @param {import('./vaults.js').WorldView} world @param {string} vault @param {string[]} [of]
  */
-export function codeShared(world, vault) {
+export function codeShared(world, vault, of = CODE_TYPES) {
 	const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
-	return world.shares.some((c) => c.over === vault && c.who === EVERYONE && types(c) === [...CODE_TYPES].sort().join());
+	return world.shares.some((c) => c.over === vault && c.who === EVERYONE && types(c) === [...of].sort().join());
 }
 
 /**
@@ -239,6 +260,7 @@ export function unseeded(world, vault, all) {
 	return all.filter((p) =>
 		p.kind === 'keep' ? !serverKeeps(world, vault, p.server ?? '') :
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
+		p.kind === 'recipe-share' ? !codeShared(world, vault, RECIPE_TYPES) :
 		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
 		p.kind === 'game-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === GAME_SCHEMA) :
 		p.kind === 'post-type' ? !mine.some((e) => e.kind === 'schema' && e.title === postTypeTitle(p.name)) :
@@ -269,6 +291,8 @@ export async function seeding(p, vault) {
 	}
 	if (p.kind === 'keep') return [{ op: 'share', over: vault, who: { vault: p.server }, level: 'Backup', as }];
 	if (p.kind === 'share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CODE_TYPES }, as }];
+	if (p.kind === 'recipe-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: RECIPE_TYPES }, as }];
+	if (p.kind === 'recipe') return [await recipeCreate(p.name, vault)];
 	if (p.kind === 'published') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: PUBLISHED }, as }];
 	if (p.kind === 'inspire-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: INSPIRE }, as }];
 	if (p.kind === 'game-schema') return [{ op: 'create', vault, type: 'schema', value: GAME_V1, as }];
@@ -335,6 +359,38 @@ export async function seeding(p, vault) {
 		{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'published'), INSPIRE], value: story, as },
 		posting(vault, 'inspire', title, body, `$${at}`, str(fm.added), words, p.mark)
 	];
+}
+
+/**
+ * The create that writes recipe `label` of the asset box into vault `vault`, acting for it: a `recipe` entry
+ * (src/lib/assets/sources/avendb.js `recipeEntryOf`) with its card from the repo's (src/lib/assets/sources/cards.json)
+ * and its file the recipe byte for byte, as src/lib/assets/recipes.js hands it out checked against its hash; the
+ * file's text in `file.text`, which goes beside the op, never in it (`beside`). A kind's first variant is tagged with
+ * the ref that names no variant too, as the repo's index names it.
+ * @param {string} label @param {string} vault
+ */
+async function recipeCreate(label, vault) {
+	const hash = INDEX.labels[label];
+	const at = INDEX.recipes[hash];
+	if (!at) throw new Error(`${label}: no recipe of the repo's`);
+	const [{ code }, { cards }] = await Promise.all([recipeAt(hash), CARDS['/src/lib/assets/sources/cards.json']()]);
+	const card = cards[hash];
+	if (!card) throw new Error(`${label}: src/lib/assets/sources/cards.json has no card of it (bun scripts/recipe-cards.mjs)`);
+	const first = !!at.variant && INDEX.first[`${at.group}/${at.id}@${at.v}`] === at.variant;
+	const { type, tags, value, file } = recipeEntryOf({ code, card, first });
+	return { op: 'create', vault, type, tags, schema: type, value, file: { name: `${label}.js`, media: file.media, text: file.text }, as: vault };
+}
+
+/**
+ * Op `op` of a piece as the device takes it, and the file it brings beside it, if any: a recipe's create carries its
+ * file's text in `file.text` (`seeding`), which goes beside the op as its bytes (./ops.js `brings`, the session's
+ * `bring`), never in it.
+ * @param {any} op @returns {{ op: any, file: Blob | null }}
+ */
+export function beside(op) {
+	if (!brings(op) || typeof op.file?.text !== 'string') return { op, file: null };
+	const { text, ...file } = op.file;
+	return { op: { ...op, file }, file: new Blob([text], { type: file.media ?? '' }) };
 }
 
 /**
