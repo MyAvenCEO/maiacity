@@ -1174,8 +1174,9 @@ async fn a_note_takes_proposals_merges_and_variants_and_the_database_shows_every
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
     let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views, logic, reviews, \
-        bundles, policies, posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, artworks";
-    assert_eq!(schemas.len(), 23, "{own}");
+        bundles, policies, AIPs, posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
+        artworks";
+    assert_eq!(schemas.len(), 24, "{own}");
     let lenses = db["builtIn"]["lenses"].as_array().map(Vec::len);
     assert_eq!(lenses, Some(3), "the lenses from article, spark and function v1 to v2");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));

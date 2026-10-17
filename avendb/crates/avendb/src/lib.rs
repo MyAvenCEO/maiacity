@@ -36,6 +36,7 @@
 //! | Bootstrap | `recovery`: the master recovery key, a passkey kept in software that every human vault adds as an owner while avenDB is bootstrapped, for emergencies; its public half as a file; `bin/master-key`, which makes it | |
 //! | V2 one API | `engine`: every read and change the page and the Mac app make as one op, shares, keeps, revocations, settings, new vaults, files, marks, cards and profiles too, each answered done, refused or to approve, and `may` of each; `world`, `words`, `data`: a device's world, its names for the core's words, its database and its history as the page reads them | |
 
+pub mod aip;
 pub mod cast;
 pub mod data;
 pub mod doc;
