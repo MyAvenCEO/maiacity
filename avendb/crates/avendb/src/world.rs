@@ -14,10 +14,12 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 
 use crate::doc::Item;
+use crate::engine;
+use crate::history::MAIN;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
-use crate::lens::{DocV1, Lens, Schema, Status, View};
+use crate::lens::{DocV1, Lane, Lens, Schema, Status, View};
 use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
@@ -817,28 +819,26 @@ pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, S
 
 /// The posts device `me` opens that everyone may read, newest first: each entry of type `POST` whose audience is
 /// public and that isn't deleted (`DELETED`), as the Maia Universe stream shows it, `{entry, vault, name, kind,
-/// created, title, text, channel, about, pictures}`, its vault's name as its profile reads (`null` where it has none)
-/// and kind, when it was created, in seconds since 1970, the entry it is about (`null` for none), and the names of the
-/// files of its vault everyone may read that its text shows (`public_files`). What avenDB's server serves as its feed,
-/// of what it keeps (avendb-server's `feed`): a post leaves it once its tag no longer reaches a Public share, as when
-/// its article goes back to a draft, and a picture once its own does.
+/// created, title, text, channel, about, published, tags, pictures}`, its vault's name as its profile reads (`null`
+/// where it has none) and kind, when it was created, in seconds since 1970, the entry it is about (`null` for none),
+/// when it says it was published, as its record's own `published` reads, an ISO 8601 date or time passed on as it is
+/// (`null` where it says none), its tags as its header reads them, and the names of the files of its vault everyone may
+/// read that its text shows (`public_files`). A field its schema doesn't name, as `published` before a post's schema
+/// names it, reads as the record stores it. What avenDB's server serves as its feed, of what it keeps (avendb-server's
+/// `feed`): a post leaves it once its tag no longer reaches a Public share, as when its article goes back to a draft,
+/// and a picture once its own does.
 pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
     let st = lab.state(me);
     let files = public_files(lab, me);
     let mut names: BTreeMap<VaultId, Option<String>> = BTreeMap::new();
     let mut posts = vec![];
-    for en in st.entries().iter().filter(|en| st.public_key(KeyFam::Audience(en.vault, en.audience()))) {
-        let Some(created) = lab.meaning(me, en.id).filter(|m| m.attrs.ty.as_str() == POST).map(|m| m.attrs.created)
-        else {
-            continue;
-        };
-        let Some(What::Record { title, text, record, deleted: false }) = lab.item(me, en.id).map(|i| record(i.record()))
-        else {
-            continue;
-        };
+    for en in st.entries().iter().filter(|en| everyone_reads(st, en)) {
+        let Some(attrs) = lab.meaning(me, en.id).map(|m| m.attrs).filter(|a| a.ty.as_str() == POST) else { continue };
+        let Some(stored) = lab.item(me, en.id).map(|i| i.record()) else { continue };
+        let What::Record { title, text, record, deleted: false } = record(stored.clone()) else { continue };
         let name = names.entry(en.vault).or_insert_with(|| profile_of(lab, me, en.vault).map(|(_, name)| name));
         let kind = st.vault(en.vault).map(|v| kind_name(v.kind));
-        let field = |k: &str| record.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
+        let field = |k: &str| record.get(k).or(stored.get(k)).and_then(Value::as_str).filter(|v| !v.is_empty());
         let text = text.unwrap_or_default();
         let ours = files.keys().filter(|(v, name)| *v == en.vault && text.contains(name.as_str()));
         let pictures: Vec<&str> = ours.map(|(_, name)| name.as_str()).collect();
@@ -847,17 +847,103 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
             "vault": en.vault.to_hex(),
             "name": name,
             "kind": kind,
-            "created": created,
+            "created": attrs.created,
             "title": title,
             "text": text,
             "channel": field("channel"),
             "about": field("about"),
+            "published": field("published"),
+            "tags": attrs.tags.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
             "pictures": pictures,
         });
-        posts.push((created, en.id, post));
+        posts.push((attrs.created, en.id, post));
     }
     posts.sort_by_key(|p| std::cmp::Reverse((p.0, p.1)));
     posts.into_iter().map(|(_, _, post)| post).collect()
+}
+
+/// The kinds of record that are code: a recipe, a view, a logic and a function, the code entries avenDB ships
+/// (`lens::blobs::code_entry!`), and a config, a record of a schema of a vault's own whose kind is `config`, as avenDB
+/// ships none. What avenDB's server serves as its code (avendb-server's `feed`), of `public_entries`.
+pub const CODE_KINDS: [&str; 5] = ["recipe", "view", "logic", "function", "config"];
+
+/// The entries device `me` opens that everyone may read, of the kinds `kinds` names, or of every kind for none: each
+/// entry whose audience is public, as `public_posts` takes them, whose record isn't deleted (`DELETED`), as
+/// `public_row` shows it, by its vault, then its kind, then its entry. What avenDB's server serves as its entries and,
+/// of `CODE_KINDS`, its code (avendb-server's `feed`), so that a page nobody signed in to, and the API, which holds no
+/// device, read a vault's stories and articles and load its views, logic, recipes and configs, each checked again by
+/// their own checker against its schema before a sandboxed host runs it. An entry leaves it as its tag no longer
+/// reaches a Public share, as a post does. An entry whose record names no kind a schema of its vault's lane reads, a
+/// schema's or a lens's, say, is of none.
+///
+/// Anyone may found a vault, call it Maia City and make its views public, so a row tells the seed's vaults by where
+/// they stand in the seed (`seed_of`), never by a name: its `seed` is its vault's name in `SEED_NAMES` where its vault
+/// is one of the seed's, `null` for any other. A page that loads code reads Maia City's alone (`SEED_COOP`).
+pub fn public_entries(lab: &Lab, me: SignerId, kinds: Option<&[&str]>) -> Vec<Value> {
+    let st = lab.state(me);
+    let seed: Vec<(VaultId, &str)> = seed_of(lab, me).into_iter().zip(SEED_NAMES).collect();
+    let of = |kind: &str| kinds.is_none_or(|ks| ks.contains(&kind));
+    let mut vaults = BTreeMap::new();
+    let mut rows = vec![];
+    for en in st.entries().iter().filter(|en| everyone_reads(st, en)) {
+        let Some((kind, false, row)) = public_row(lab, me, en, &seed, &mut vaults, of) else { continue };
+        rows.push(((en.vault, kind, en.id), row));
+    }
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    rows.into_iter().map(|(_, row)| row).collect()
+}
+
+/// Everyone may read entry `en`, by view `st`: a Public share reaches its audience, whose key is everyone's.
+fn everyone_reads(st: &State, en: &Entry) -> bool {
+    st.public_key(KeyFam::Audience(en.vault, en.audience()))
+}
+
+/// Entry `en` as the feed serves it (`public_entries`), where its record is of a kind `of` takes:
+/// `{entry, vault, name, seed, type, schema, tags, heads, created, record}`, its vault's name as its profile reads
+/// (`null` where it has none) and as the seed names it (`seed`: its name in `SEED_NAMES`, of the seed's vaults alone),
+/// its type the kind of its record, the schema it reads through and the heads of its main line in hex, its tags as its
+/// header reads them, when it was created, in seconds since 1970, and its record as device `me` counts it on its main
+/// line, the version every reader agrees on, its Loro texts plain text. The record reads through the schema its kind
+/// names in its vault's lane, the newest, as the ops engine's `get` reads it (`engine::own`), each field it leaves out
+/// at its default: so a view of v1 reads as one of v2, as the schema it names says. With its kind, and whether it is
+/// deleted (`DELETED`). None where `me` opens none of it, or no schema reads it. `vaults` holds each vault's lane and
+/// name, read once however many of its entries are shown.
+fn public_row(
+    lab: &Lab,
+    me: SignerId,
+    en: &Entry,
+    seed: &[(VaultId, &str)],
+    vaults: &mut BTreeMap<VaultId, (Lane, Option<String>)>,
+    of: impl Fn(&str) -> bool,
+) -> Option<(String, bool, Value)> {
+    let item = lab.item(me, en.id)?;
+    let stored = item.record();
+    if !of(stored.get("kind")?.as_str()?) {
+        return None;
+    }
+    let (meaning, history) = (lab.meaning(me, en.id)?, lab.history(me, en.id)?);
+    let (lane, name) = vaults.entry(en.vault).or_insert_with(|| {
+        let name = profile_of(lab, me, en.vault).map(|(_, name)| name);
+        (Lane::with_built_ins(lab.lane_of(me, en.vault)), name)
+    });
+    let app = engine::own(lane, &stored)?;
+    let record = lane.view(&app, &item.authored()).0.get(&stored)?;
+    let kind = app.kind()?.to_string();
+    let tags = record.get("tags").and_then(Value::as_array);
+    let deleted = tags.is_some_and(|ts| ts.iter().any(|t| t.as_str() == Some(DELETED)));
+    let row = json!({
+        "entry": en.id.to_hex(),
+        "vault": en.vault.to_hex(),
+        "name": name,
+        "seed": seed.iter().find(|(v, _)| *v == en.vault).map(|(_, name)| name),
+        "type": kind,
+        "schema": app.id().to_hex(),
+        "tags": meaning.attrs.tags.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
+        "heads": history.heads(MAIN).iter().map(EditId::to_hex).collect::<Vec<_>>(),
+        "created": meaning.attrs.created,
+        "record": record,
+    });
+    Some((kind, deleted, row))
 }
 
 /// A file everyone may read, as a device opens it (`public_files`): its root, its plaintext length and its media type.
@@ -918,14 +1004,20 @@ pub const SEED_COOP_OF: usize = 1;
 /// (vaults.js's `SEED`).
 pub const SEED_NAMES: [&str; 4] = ["Maia Holding GmbH", "avenCEO GmbH", "avenCEO server", "Maia City"];
 
+/// The seed's coop by its name in `SEED_NAMES`, after `SEED`'s chain: Maia City, whose code alone a page loads
+/// (`public_entries`' `seed`), whatever another vault calls itself.
+pub const SEED_COOP: &str = SEED_NAMES[SEED.len()];
+
 /// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia Holding
-/// GmbH, avenCEO GmbH, avenCEO server (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one.
-/// None if it founded none.
+/// GmbH, avenCEO GmbH, avenCEO server (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one;
+/// for avenDB's server itself, a device of avenCEO server, the seed that ends in its vault (`seeder`). None if it
+/// founded none.
 pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     let Some(mine) = lab.vault_of(me) else { return vec![] };
     let st = lab.state(me);
     let servers = st.vaults().iter().filter(|v| v.kind == Kind::DeviceVault && !v.devices.is_empty());
-    let Some(server) = servers.map(|v| v.id).find(|&server| seeded(st, mine, server)) else { return vec![] };
+    let ours = |server: VaultId| seeded(st, mine, server) || (server == mine && seeder(st, server).is_some());
+    let Some(server) = servers.map(|v| v.id).find(|&server| ours(server)) else { return vec![] };
     let mut chain = vec![server];
     while chain.len() < SEED.len() {
         let Some([Principal::Vault(owner)]) = st.vault(chain[0]).map(|v| &v.owners[..]) else { return vec![] };

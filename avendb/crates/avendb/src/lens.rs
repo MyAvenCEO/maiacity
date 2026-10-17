@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 24] = [
+    pub const SHIPPED: [&str; 25] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1347,6 +1347,7 @@ pub mod blobs {
         FUNCTION_V2,
         RECIPE_V1,
         VIEW_V1,
+        VIEW_V2,
         LOGIC_V1,
         REVIEW_V1,
         BUNDLE_V1,
@@ -1367,7 +1368,7 @@ pub mod blobs {
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
     /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
     /// and avenCEO GmbH holds each as a lens entry beside its schemas.
-    pub const LENSES: [&str; 3] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS];
+    pub const LENSES: [&str; 4] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS, VIEW_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -1572,6 +1573,32 @@ pub mod blobs {
     /// A view: what a frame shows (its HTML and CSS, an MCP App, our components' JSON), and its logic, if any, run by
     /// the logic host; a code entry (`code_entry!`) whose manifest names the host messages, slots and events it uses.
     pub const VIEW_V1: &str = code_entry!("View, v1", "view", "");
+
+    /// A view of v2: v1's fields, and what a view of the repo's code carries beside its source (`code/views/`): the
+    /// data it shows until its host gives it other (`data`), the input it takes (`input`), the height its frame starts
+    /// at, in pixels (`height`), the form its source is in, HTML or A2UI's components as JSON (`form`), and the source
+    /// of its own logic, for the few views that have one (`logic`), a Loro text bounded as its source is. A view of v1
+    /// opens here through `VIEW_LENS` as it was: an HTML view with no data, no input and no logic of its own.
+    pub const VIEW_V2: &str = code_entry!(
+        "View, v2",
+        "view",
+        r#",
+    "data": { "type": "object", "default": {} },
+    "input": { "type": "object", "default": {} },
+    "height": { "type": "integer", "minimum": 0 },
+    "form": { "enum": ["html", "a2ui"], "default": "html" },
+    "logic": { "type": "string", "x-loro": "text", "maxLength": 200000, "default": "" }"#
+    );
+
+    /// The lens from a view of v1 to v2: v2 adds the data, the input, the height, the form and the logic; everything
+    /// else is the same.
+    pub const VIEW_LENS: &str = r#"{
+  "lens": "View, v1 to v2",
+  "from": "96bb13af7061afa2804525e9c5bd72f646e7549339aeb260def7ccf18e31cc54",
+  "to": "dfdf0d09c2f2e2e066a008bdea312b67eb1492e046dc348839c1eada3a17dcfc",
+  "steps": [{ "add": "data" }, { "add": "input" }, { "add": "height" }, { "add": "form" }, { "add": "logic" }]
+}
+"#;
 
     /// Logic: code the logic host runs for named hooks, as a game's rules, answering JSON; a code entry
     /// (`code_entry!`) whose manifest names its hooks and the ops it may ask for.
@@ -2103,6 +2130,7 @@ pub static FUNCTION_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blob
 pub static FUNCTION_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::FUNCTION_V2));
 pub static RECIPE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::RECIPE_V1));
 pub static VIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::VIEW_V1));
+pub static VIEW_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::VIEW_V2));
 pub static LOGIC_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::LOGIC_V1));
 pub static REVIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REVIEW_V1));
 pub static BUNDLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::BUNDLE_V1));
@@ -2124,6 +2152,8 @@ pub static SPARK_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::SPARK_LENS.as_bytes()).expect("a built-in lens parses"));
 pub static FUNCTION_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::FUNCTION_LENS.as_bytes()).expect("a built-in lens parses"));
+pub static VIEW_LENS: LazyLock<Lens> =
+    LazyLock::new(|| Lens::parse(blobs::VIEW_LENS.as_bytes()).expect("a built-in lens parses"));
 
 /// The app of each kind avenDB ships, of its newest schema alone, by its kind.
 static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
@@ -2134,7 +2164,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*FLOW_V1,
         &*FUNCTION_V2,
         &*RECIPE_V1,
-        &*VIEW_V1,
+        &*VIEW_V2,
         &*LOGIC_V1,
         &*REVIEW_V1,
         &*BUNDLE_V1,
@@ -2506,8 +2536,30 @@ mod tests {
         assert!(got.get("engine").is_none() && got.get("manifest").is_none(), "{got}");
     }
 
-    /// Recipes, views and logic share one base (`code_entry!`), and a recipe adds its card; a function of v2 carries
-    /// the same engine and manifest.
+    /// A view of v1 opens in v2 as it was, an HTML view with no data, no input and no logic of its own, and an edit in
+    /// v2 writes only what it adds.
+    #[test]
+    fn a_v1_view_opens_in_v2_as_an_html_view() {
+        assert_eq!((VIEW_LENS.from(), VIEW_LENS.to()), (VIEW_V1.id(), VIEW_V2.id()));
+        let lane = Lane::with_built_ins([]);
+        let (view, read_only) = lane.view(&VIEW_V2, &BTreeSet::from([VIEW_V1.id()]));
+        assert!(!read_only, "the shipped lens joins them");
+        let v1 = serde_json::json!({ "kind": "view", "title": "Holders", "source": "<p>{{n}}</p>", "tags": ["code"] });
+        let got = view.get(&v1).expect("it reads");
+        assert_eq!((&got["title"], &got["source"], &got["tags"]), (&v1["title"], &v1["source"], &v1["tags"]));
+        let added = ["data", "input", "form", "logic"].map(|k| got[k].clone());
+        assert_eq!(added, [serde_json::json!({}), serde_json::json!({}), "html".into(), "".into()], "{got}");
+        assert!(got.get("height").is_none(), "no height until one is set: {got}");
+        let mut taller = got.clone();
+        taller["height"] = 420.into();
+        let stored = view.put(&v1, &taller).expect("an edit in v2");
+        let mut want = v1.clone();
+        want["height"] = 420.into();
+        assert_eq!(stored, want, "the height alone, and no default written");
+    }
+
+    /// Recipes, views and logic share one base (`code_entry!`), and a recipe adds its card, a view of v2 its data,
+    /// input, height, form and logic; a function of v2 carries the same engine and manifest.
     #[test]
     fn code_entries_share_one_base() {
         let names = |s: &Schema| s.shapes[0].fields.iter().map(|f| f.name.clone()).collect::<BTreeSet<_>>();
@@ -2515,11 +2567,15 @@ mod tests {
         assert_eq!(names(&LOGIC_V1), base);
         let card: BTreeSet<String> = ["card".to_string()].into();
         assert_eq!(names(&RECIPE_V1), base.union(&card).cloned().collect());
+        let view: BTreeSet<String> = ["data", "input", "height", "form", "logic"].map(String::from).into();
+        assert_eq!(names(&VIEW_V2), base.union(&view).cloned().collect());
+        assert_eq!(VIEW_V2.stored(&[], "logic"), Some(Stored::Text), "its logic a Loro text, as its source");
         for f in ["kind", "title", "note", "tags", "source", "engine", "manifest", "params", "contract"] {
             assert!(base.contains(f), "{f}");
         }
         assert!(["engine", "manifest"].iter().all(|f| names(&FUNCTION_V2).contains(*f)));
-        assert_eq!([&*RECIPE_V1, &*VIEW_V1, &*LOGIC_V1].map(|s| s.kind()), [Some("recipe"), Some("view"), Some("logic")]);
+        let kinds = [&*RECIPE_V1, &*VIEW_V1, &*VIEW_V2, &*LOGIC_V1].map(|s| s.kind());
+        assert_eq!(kinds, [Some("recipe"), Some("view"), Some("view"), Some("logic")]);
     }
 
     /// A code entry's source and note are Loro texts its schema bounds (`maxLength`): a write past the bound fits

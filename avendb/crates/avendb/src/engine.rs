@@ -442,7 +442,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "flow" => Named::Id(lens::FLOW_V1.id()),
             "function" => Named::Id(lens::FUNCTION_V2.id()),
             "recipe" => Named::Id(lens::RECIPE_V1.id()),
-            "view" => Named::Id(lens::VIEW_V1.id()),
+            "view" => Named::Id(lens::VIEW_V2.id()),
             "logic" => Named::Id(lens::LOGIC_V1.id()),
             "review" => Named::Id(lens::REVIEW_V1.id()),
             "bundle" => Named::Id(lens::BUNDLE_V1.id()),
@@ -470,8 +470,9 @@ fn lane(lab: &Lab, me: SignerId, v: VaultId) -> Lane {
 }
 
 /// The schema a record's kind names: of those in the lane whose `kind` is that constant, the newest, the one no lens
-/// leads on from, and of several such the first by id.
-fn own(lane: &Lane, stored: &Value) -> Option<Schema> {
+/// leads on from, and of several such the first by id. What the feed reads the entries everyone may read through too
+/// (`world::public_entries`).
+pub(crate) fn own(lane: &Lane, stored: &Value) -> Option<Schema> {
     let kind = stored.get("kind")?.as_str()?;
     let of_kind: Vec<&Schema> = lane.schemas().filter(|s| s.kind() == Some(kind)).collect();
     let newer = |s: &Schema| lane.lenses().any(|l| l.from() == s.id() && of_kind.iter().any(|t| t.id() == l.to()));
