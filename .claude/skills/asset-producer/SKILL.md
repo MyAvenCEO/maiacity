@@ -133,6 +133,9 @@ version of the host.
   the COOP's vault by its keep shares, checks that its source hashes to its card's recipe and that the engine is one it
   has frozen, and then takes the same path as today: box, checks, our rebuild, its own cache under the same key. A
   build cached from the repo seed is the same build from the vault, because the bytes are the same.
+- **Every recipe's card is made in the repo** (`sources/cards.json`, by `bun scripts/recipe-cards.mjs`): the card of
+  a build at its own values, as the box hands it back, which the COOP keeps beside the recipe. **After changing an
+  asset, run it**: `sources/cards.test.js` fails while a recipe's hash has no card there (only what moved is built).
 - **C10 switches it on** (the code architecture plan): `sources/avendb.js` reads the COOP's recipe entry for a vault
   ref (as `game/code/sources/avendb.js` will read code entries), and the loaders hand vault refs to it instead of
   refusing them. Our recipes and the asset schema are copied into the COOP, and the repo copy stays as the offline
