@@ -270,7 +270,7 @@ test('nothing here writes to avenDB: no module of the assets imports its client 
 		expect(text).not.toMatch(/avendb\.maia\.city|\/api\/avendb/i);
 	}
 	const source = readFileSync(`${lib}/sources/avendb.js`, 'utf8');
-	expect([...source.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort()).toEqual(['../engines.js', '../params.js', '../refs.js', '../schemas/asset.v1.json', '@noble/hashes/blake3.js', '@noble/hashes/utils.js']);
+	expect([...source.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort()).toEqual(['../engines.js', '../params.js', '../refs.js', '../schemas/asset.v1.json', '../schemas/index.js', '@noble/hashes/blake3.js', '@noble/hashes/utils.js']);
 	expect(source).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|WebSocket|indexedDB/);
 	expect(VAULT_REF.source.startsWith('^vault:')).toBe(true);
 });
