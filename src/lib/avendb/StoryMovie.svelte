@@ -13,6 +13,7 @@
 	import { CUT, CUT_V1, fieldsOf } from '$lib/studio/cuts.js';
 	import {
 		ANGLES,
+		DELIVERY,
 		MOVES,
 		SCRIPT,
 		SCRIPT_V2,
@@ -103,7 +104,7 @@
 	async function make() {
 		await schema(SCRIPT_V2, 'Adding the script schema');
 		const value = draftFrom(item, Math.floor(Date.now() / 1000), label);
-		const made = await api.run('Drawing the script from the story', { op: 'create', vault: item.vault, type: SCRIPT, value, as: actor });
+		const made = await api.run('Drawing the script from the story', { op: 'create', vault: item.vault, type: SCRIPT, tags: [DELIVERY], value, as: actor });
 		if (made?.entry) picked = made.entry;
 	}
 
