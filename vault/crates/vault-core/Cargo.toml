@@ -6,8 +6,15 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# The TLS of the vault's node: ring by default (the server, the CLI); aws-lc-rs in the Mac app, which runs avenDB's
+# device in its own process and whose iroh must then name one provider only (vault/app/src/avendb.rs)
+default = ["tls-ring"]
+tls-ring = ["iroh/tls-ring"]
+tls-aws-lc-rs = ["iroh/tls-aws-lc-rs"]
+
 [dependencies]
-iroh.workspace = true
+iroh = { workspace = true, features = ["metrics", "fast-apple-datapath", "portmapper"] }
 noq-proto.workspace = true
 iroh-blobs.workspace = true
 iroh-docs.workspace = true

@@ -159,7 +159,17 @@ impl Progress {
     fn named(&self, name: &str) {
         jobs::name(self.kind, &self.id, name);
     }
+
+    /// The same, as a plain teller (`Told`).
+    fn told(&self) -> Told {
+        let p = self.clone();
+        Arc::new(move |x, what| p.set(x, what))
+    }
 }
+
+/// Whoever hears how far a render is (0…1) and what it is doing: an API job's `Progress`, or a task's stage in the
+/// Mac's jobs (aven.rs).
+pub(crate) type Told = Arc<dyn Fn(f64, &str) + Send + Sync>;
 
 /// One job, start to report.
 async fn run(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: Value) {
@@ -281,6 +291,25 @@ impl Vaulted {
         Ok(Self { vault: vault.clone(), rt: tokio::runtime::Handle::current(), media, ext, story, originals, files: Mutex::new(HashMap::new()) })
     }
 
+    /// avenDB's footage beside the vault's (Jobs and studio 2.0): the studio's library items for it the page named
+    /// (src/lib/studio/aven.js `libraryOf`), each by its reference (`aven:…`), its bytes read in place from avenDB's
+    /// device (aven.rs) — a cut may play both.
+    fn with_aven(mut self, items: &[Value]) -> Self {
+        for v in items {
+            let Ok(m) = serde_json::from_value::<Media>(v.clone()) else { continue };
+            if crate::aven::file_of_ref(&m.hash).is_none() {
+                continue;
+            }
+            if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
+                self.originals.insert(p.to_string(), m.hash.clone());
+            }
+            let about = vault_core::Meta { original_name: m.title.clone(), mime: m.mime.clone(), meta: m.meta.clone(), ..Default::default() };
+            self.ext.insert(m.hash.clone(), extension(&about));
+            self.media.insert(m.hash.clone(), m);
+        }
+        self
+    }
+
     /// The story most of the timeline's files live in; None (the inbox) when most are in the inbox.
     fn story_of(&self, t: &Timeline) -> Option<String> {
         let mut hashes: Vec<&str> = t.clips.iter().filter(|c| !c.is_world()).filter_map(|c| c.hash.as_deref()).collect();
@@ -334,9 +363,11 @@ impl Library for Vaulted {
         }
         let m = self.media.get(hash).with_context(|| format!("{hash} is not in the vault's catalog"))?;
         let name = if m.title.is_empty() { hash.to_string() } else { m.title.clone() };
-        let blob: iroh_blobs::Hash = hash.parse()?;
         let ext = self.ext.get(hash).map(String::as_str).unwrap_or("bin");
-        let src = crate::blob::source_blocking(&self.vault, &self.rt, blob, &format!("{name}.{ext}"))?;
+        let src = match crate::aven::file_of_ref(hash) {
+            Some(f) => crate::aven::source_on(&self.rt, f.map_err(anyhow::Error::msg)?, &format!("{name}.{ext}")).map_err(anyhow::Error::msg)?,
+            None => crate::blob::source_blocking(&self.vault, &self.rt, hash.parse()?, &format!("{name}.{ext}"))?,
+        };
         self.files.lock().unwrap().insert(hash.to_string(), src.clone());
         Ok(src)
     }
@@ -584,9 +615,14 @@ pub async fn sound_measure(app: tauri::State<'_, crate::App>, timeline: Value) -
 
 // ── world plates ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/// A world clip's shot record's spec (the version the clip names).
-async fn spec_of(auth: &Auth, c: &Clip) -> Res<(String, Value)> {
+/// A world clip's shot record's spec (the version the clip names): avenDB's (`shot:<entry>`), or the API's.
+async fn spec_of(handle: &AppHandle, auth: &Auth, c: &Clip) -> Res<(String, Value)> {
     let shot = c.shot.clone().ok_or_else(|| format!("world clip {} names no shot", c.id))?;
+    if shot.starts_with("shot:") {
+        let version = c.shot_version.ok_or_else(|| format!("world clip {} names no version of its shot", c.id))?;
+        // named by its entry alone: the name goes into file and run labels
+        return Ok((shot.trim_start_matches("shot:").to_string(), world::aven_shot(handle, &shot, version as u64).await?.1));
+    }
     let q = c.shot_version.map(|v| format!("?version={v}")).unwrap_or_default();
     let r = auth.get_ok("GET", &format!("/api/shots/{shot}{q}"), None).await.map_err(|e| format!("shot {shot}: {e}"))?;
     let spec = r.get("spec").filter(|s| s.is_object()).cloned().ok_or_else(|| format!("shot {shot} v{} has no spec", c.shot_version.unwrap_or(0)))?;
@@ -595,7 +631,7 @@ async fn spec_of(auth: &Auth, c: &Clip) -> Res<(String, Value)> {
 
 /// Every world clip's plate for every shape: `frames` of its stretch (clip.in … clip.in + dur, a frame over), at the
 /// shape's render size and the film's rate.
-async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline, shapes: &[Shape], progress: &Progress, span: (f64, f64)) -> Res<HashMap<(String, String), Plate>> {
+async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline, shapes: &[Shape], told: &Told, span: (f64, f64)) -> Res<HashMap<(String, String), Plate>> {
     let clips: Vec<&Clip> = t.clips.iter().filter(|c| c.is_world() && c.track == "V1").collect();
     let mut out = HashMap::new();
     if clips.is_empty() {
@@ -605,16 +641,16 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
     let frames_of = |c: &Clip| ((c.dur * fps).ceil() as u32 + 1).max(2);
     let total: f64 = clips.iter().map(|c| frames_of(c) as f64 * shapes.len() as f64).sum();
     let mut done = 0.0;
-    progress.set(span.0, "rendering world plates");
+    told(span.0, "rendering world plates");
     for c in clips {
-        let (shot, spec) = spec_of(auth, c).await?;
+        let (shot, spec) = spec_of(handle, auth, c).await?;
         let version = c.shot_version.unwrap_or(0);
         for s in shapes {
             let (width, height) = s.render_size();
             let frames = frames_of(c);
             let ask = world::Frames { spec: spec.clone(), shape: s.aspect, width, height, fps, from: c.in_, frames, bitrate: Some(world::plate_bitrate(width, height, fps)) };
-            let (p, base, of) = (progress.clone(), done, frames as f64);
-            let told = move |x: f64| p.set(span.0 + (span.1 - span.0) * (base + x * of) / total, "rendering world plates");
+            let (p, base, of) = (told.clone(), done, frames as f64);
+            let told = move |x: f64| p(span.0 + (span.1 - span.0) * (base + x * of) / total, "rendering world plates");
             let label = format!("plate-{}-v{version}-{}", &shot[..8.min(shot.len())], s.tag());
             let made = world::plate(handle, vault, &label, &ask, told)
                 .await
@@ -646,26 +682,7 @@ async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &V
     progress.set(0.02, "fetching files");
     let lib = Arc::new(Vaulted::new(vault).await?);
     let story = lib.story_of(&t);
-    // `params.delivery` "youtube-4k": the 16:9 4K master alone, at YouTube's best; none: every delivery
-    let youtube = job["params"]["delivery"].as_str() == Some(YOUTUBE_4K);
-    let shapes: Vec<Shape> = shapes_of(&t).into_iter().filter(|s| !youtube || s.aspect == "16:9").collect();
-    let plates = plates_for(handle, vault, auth, &t, &shapes, progress, (0.03, 0.3)).await?;
-    let (from, span) = if plates.is_empty() { (0.03, 0.9) } else { (0.3, 0.63) };
-
-    let (t2, lib2, out, p) = (t.clone(), lib.clone(), work.0.join("out"), progress.clone());
-    let made = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<vault_render::Render> {
-        let mut opts = Options::new(out);
-        opts.target = Some(LOUDNESS);
-        if youtube {
-            opts.shapes = Some(vec!["16:9".into()]);
-            opts.master_only = true;
-        }
-        let plate = |c: &Clip, s: &Shape| -> anyhow::Result<Option<Plate>> { Ok(plates.get(&(c.id.clone(), s.aspect.to_string())).cloned()) };
-        vault_render::render(&t2, &*lib2, &plate, odt(), &opts, &mut |x, what| p.set(from + span * x, what))
-    })
-    .await
-    .map_err(err)?
-    .map_err(err)?;
+    let made = render_into(handle, vault, auth, &t, lib, job["params"]["delivery"].as_str(), work.0.join("out"), &progress.told()).await?;
 
     // each file into the vault, described — tagged by what it is (the name it came in as is only a fact)
     progress.set(0.94, "into the vault");
@@ -697,8 +714,38 @@ async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &V
     made.job_result(&t).map_err(err)
 }
 
+/// Timeline `t` rendered into `out` from library `lib`, every delivery, or with `delivery` "youtube-4k" the 16:9 4K
+/// master for YouTube alone: what it made, its files still on the disk (the caller puts them where they go).
+async fn render_into(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, t: &Timeline, lib: Arc<Vaulted>, delivery: Option<&str>, out: PathBuf, told: &Told) -> Res<vault_render::Render> {
+    let youtube = delivery == Some(YOUTUBE_4K);
+    let shapes: Vec<Shape> = shapes_of(t).into_iter().filter(|s| !youtube || s.aspect == "16:9").collect();
+    let plates = plates_for(handle, vault, auth, t, &shapes, told, (0.03, 0.3)).await?;
+    let (from, span) = if plates.is_empty() { (0.03, 0.9) } else { (0.3, 0.63) };
+
+    let (t2, p) = (t.clone(), told.clone());
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<vault_render::Render> {
+        let mut opts = Options::new(out);
+        opts.target = Some(LOUDNESS);
+        if youtube {
+            opts.shapes = Some(vec!["16:9".into()]);
+            opts.master_only = true;
+        }
+        let plate = |c: &Clip, s: &Shape| -> anyhow::Result<Option<Plate>> { Ok(plates.get(&(c.id.clone(), s.aspect.to_string())).cloned()) };
+        vault_render::render(&t2, &*lib, &plate, odt(), &opts, &mut |x, what| p(from + span * x, what))
+    })
+    .await
+    .map_err(err)?
+    .map_err(err)
+}
+
 /// How wide a file's graded still is (16:9, so 1920×1080).
 const GRADED_WIDTH: u32 = 1920;
+
+/// What a `frame` made, still on the disk: a file's graded still (`rep.of` the file), or a hero frame.
+pub(crate) enum Framed {
+    Graded { file: PathBuf, rep: Value, clip: String },
+    Hero { file: PathBuf, rep: Value, at: f64, aspect: String, width: u32, height: u32 },
+}
 
 /// A `frame` job into the vault: the job's result. Of a media clip — named (`params.clip`, queued when a timeline
 /// save changed how its file looks) or on screen at `params.t` (an agent's ask) — it is that file's graded still,
@@ -707,49 +754,19 @@ const GRADED_WIDTH: u32 = 1920;
 async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Value, work: &Work, progress: &Progress) -> Res<Value> {
     let at = job["params"]["t"].as_f64().filter(|t| *t >= 0.0).unwrap_or(0.0);
     let aspect = job["params"]["shape"].as_str().unwrap_or("16:9").to_string();
-    let s = Shape::of(&aspect).ok_or_else(|| format!("no such shape: {aspect}"))?;
     let t = timeline_of(auth, job).await?;
     progress.named(&format!("Frame · {} · {at:.2} s", t.name));
     progress.set(0.05, "fetching files");
     let lib = Arc::new(Vaulted::new(vault).await?);
     let story = lib.story_of(&t);
-    // the clip on screen, as hero_frame picks it: a world clip gets a plate of that one frame
-    let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(Value::is_object));
-    let named = job["params"]["clip"].as_str().map(|id| t.clips.iter().find(|c| c.id == id).ok_or_else(|| format!("no clip {id} on the timeline any more")));
-    let clip = match named {
-        Some(c) => Some(c?),
-        None => t
-            .clips
-            .iter()
-            .filter(|c| c.track == "V1" && (c.is_world() || (c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) && !has_cards(c))))
-            .rfind(|c| c.start <= at && at < c.end()),
+    let (file, rep, w, h) = match frame_into(handle, auth, &t, lib, job["params"]["clip"].as_str(), at, &aspect, &work.0, &progress.told()).await? {
+        Framed::Graded { file, rep, clip } => {
+            progress.set(0.9, "into the vault");
+            return graded_still_in(vault, &t, clip, file, rep).await;
+        }
+        Framed::Hero { file, rep, width, height, .. } => (file, rep, width, height),
     };
-    if let Some(c) = clip.filter(|c| !c.is_world()) {
-        return graded_still_job(vault, &t, lib.clone(), c.id.clone(), work, progress).await;
-    }
-    let mut plates = HashMap::new();
-    if let Some(c) = clip.filter(|c| c.is_world()) {
-        progress.set(0.1, "rendering world plates");
-        let (shot, spec) = spec_of(auth, c).await?;
-        let (width, height) = s.render_size();
-        let fps = FPS as f64;
-        let ask = world::Frames { spec, shape: s.aspect, width, height, fps, from: c.in_ + (at - c.start), frames: 1, bitrate: Some(world::plate_bitrate(width, height, fps)) };
-        let label = format!("frame-{}-{}", &shot[..8.min(shot.len())], s.tag());
-        let made = world::plate(handle, vault, &label, &ask, |_| {}).await.map_err(|e| format!("world clip {}: its frame: {e}", c.id))?;
-        plates.insert((c.id.clone(), aspect.clone()), Plate { file: made.file, offset: at - c.start, key: Some(made.key), fingerprint: Some(made.fingerprint), reused: Some(made.reused) });
-    }
-    progress.set(0.5, "rendering the frame");
-    let png = work.0.join(format!("frame-{at:.2}s-{}.png", s.tag()));
-    let (t2, lib2, file, shape) = (t.clone(), lib.clone(), png.clone(), aspect.clone());
-    let rep = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Value> {
-        let plate = |c: &Clip, s: &Shape| -> anyhow::Result<Option<Plate>> { Ok(plates.get(&(c.id.clone(), s.aspect.to_string())).cloned()) };
-        vault_render::hero_frame(&t2, &*lib2, &plate, odt(), at, &shape, &file)
-    })
-    .await
-    .map_err(err)?
-    .map_err(err)?;
     progress.set(0.9, "into the vault");
-    let (w, h) = s.render_size();
     let what = rep["what"].as_str().unwrap_or("").to_string();
     let batch = Batch {
         session: format!("hero frame {}", job["id"].as_str().unwrap_or_default()),
@@ -760,7 +777,7 @@ async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Va
         story,
         ..Default::default()
     };
-    let o = vault.ingest_file(&png, &batch).await.map_err(err)?;
+    let o = vault.ingest_file(&file, &batch).await.map_err(err)?;
     if o.verdict == Verdict::Mismatch {
         return Err("the hero frame's copy in the vault is not what was rendered (hash mismatch)".into());
     }
@@ -776,6 +793,96 @@ async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Va
     Ok(json!({ "status": "done", "progress": 1, "note": format!("hero frame ready · {at:.2} s · {aspect}"), "output_hash": o.hash, "report": rep }))
 }
 
+/// A frame of timeline `t` made into `work` from library `lib`: of media clip `clip`, or of the one on screen at `at`,
+/// its file's graded still; of a world clip or a gap, a hero frame at `at` in shape `aspect`.
+async fn frame_into(handle: &AppHandle, auth: &Auth, t: &Timeline, lib: Arc<Vaulted>, clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: &Told) -> Res<Framed> {
+    let s = Shape::of(aspect).ok_or_else(|| format!("no such shape: {aspect}"))?;
+    // the clip on screen, as hero_frame picks it: a world clip gets a plate of that one frame
+    let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(Value::is_object));
+    let named = clip.map(|id| t.clips.iter().find(|c| c.id == id).ok_or_else(|| format!("no clip {id} on the timeline any more")));
+    let clip = match named {
+        Some(c) => Some(c?),
+        None => t
+            .clips
+            .iter()
+            .filter(|c| c.track == "V1" && (c.is_world() || (c.hash.as_deref().is_some_and(|h| lib.media(h).is_some()) && !has_cards(c))))
+            .rfind(|c| c.start <= at && at < c.end()),
+    };
+    if let Some(c) = clip.filter(|c| !c.is_world()) {
+        told(0.3, "rendering the graded still");
+        let file = work.join(format!("graded-{}.jpg", c.id));
+        let (t2, f2, c2) = (t.clone(), file.clone(), c.id.clone());
+        let rep = tauri::async_runtime::spawn_blocking(move || vault_render::graded_still(&t2, &*lib, odt(), &c2, GRADED_WIDTH, &f2))
+            .await
+            .map_err(err)?
+            .map_err(err)?;
+        return Ok(Framed::Graded { file, rep, clip: c.id.clone() });
+    }
+    let mut plates = HashMap::new();
+    if let Some(c) = clip.filter(|c| c.is_world()) {
+        told(0.1, "rendering world plates");
+        let vault = handle.state::<crate::App>().vault.clone();
+        let (shot, spec) = spec_of(handle, auth, c).await?;
+        let (width, height) = s.render_size();
+        let fps = FPS as f64;
+        let ask = world::Frames { spec, shape: s.aspect, width, height, fps, from: c.in_ + (at - c.start), frames: 1, bitrate: Some(world::plate_bitrate(width, height, fps)) };
+        let label = format!("frame-{}-{}", &shot[..8.min(shot.len())], s.tag());
+        let made = world::plate(handle, &vault, &label, &ask, |_| {}).await.map_err(|e| format!("world clip {}: its frame: {e}", c.id))?;
+        plates.insert((c.id.clone(), aspect.to_string()), Plate { file: made.file, offset: at - c.start, key: Some(made.key), fingerprint: Some(made.fingerprint), reused: Some(made.reused) });
+    }
+    told(0.5, "rendering the frame");
+    let file = work.join(format!("frame-{at:.2}s-{}.png", s.tag()));
+    let (t2, f2, shape) = (t.clone(), file.clone(), aspect.to_string());
+    let rep = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Value> {
+        let plate = |c: &Clip, s: &Shape| -> anyhow::Result<Option<Plate>> { Ok(plates.get(&(c.id.clone(), s.aspect.to_string())).cloned()) };
+        vault_render::hero_frame(&t2, &*lib, &plate, odt(), at, &shape, &f2)
+    })
+    .await
+    .map_err(err)?
+    .map_err(err)?;
+    let (width, height) = s.render_size();
+    Ok(Framed::Hero { file, rep, at, aspect: aspect.to_string(), width, height })
+}
+
+// ── cuts of avenDB (Jobs and studio 2.0, J12-J13: aven.rs `studio_job`) ────────────────────────────────────────
+
+/// The library a cut of avenDB reads: the legacy vault's catalog, and avenDB's footage the page named (`aven`).
+async fn cut_library(handle: &AppHandle, aven: &[Value]) -> Res<(Arc<Vault>, Auth, Arc<Vaulted>)> {
+    let vault = handle.state::<crate::App>().vault.clone();
+    let auth = handle.state::<Auth>().inner().clone();
+    let lib = Arc::new(Vaulted::new(&vault).await?.with_aven(aven));
+    Ok((vault, auth, lib))
+}
+
+/// Cut `t` of avenDB rendered into `out` (every delivery, or `delivery` "youtube-4k" alone), its files read from the
+/// legacy vault and avenDB (`aven`, the page's library items of its footage): what it made, its files still on the
+/// disk for aven.rs to put into the cut's vault. The uploads wait while it renders, as for a job of the API's.
+pub(crate) async fn render_cut(handle: &AppHandle, t: &Timeline, aven: &[Value], delivery: Option<&str>, out: PathBuf, told: Told) -> Res<vault_render::Render> {
+    told(0.02, "fetching files");
+    let (vault, auth, lib) = cut_library(handle, aven).await?;
+    let made = {
+        let _held = vault.hold.take("render");
+        let _awake = world::Awake::begin("rendering a film");
+        let _kept = world::keep();
+        render_into(handle, &vault, &auth, t, lib, delivery, out, &told).await
+    };
+    world::close_if_idle(handle);
+    made
+}
+
+/// A frame of cut `t` of avenDB made into `work` (`frame_into`), its files read as `render_cut` reads them.
+pub(crate) async fn frame_cut(handle: &AppHandle, t: &Timeline, aven: &[Value], clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: Told) -> Res<Framed> {
+    told(0.05, "fetching files");
+    let (_, auth, lib) = cut_library(handle, aven).await?;
+    let made = {
+        let _awake = world::Awake::begin("rendering a frame");
+        let _kept = world::keep();
+        frame_into(handle, &auth, t, lib, clip, at, aspect, work, &told).await
+    };
+    world::close_if_idle(handle);
+    made
+}
+
 /// A hero frame: a frame of a timeline the render worker made (`role: frame`, or the tag `role:frame` with the
 /// timeline it is of). The old library's story frames carry the tag too, without a timeline: they are art, not this.
 pub fn is_frame(m: &vault_core::Meta) -> bool {
@@ -783,22 +890,15 @@ pub fn is_frame(m: &vault_core::Meta) -> bool {
         || (m.tags.iter().any(|t| t == "role:frame") && m.meta.get("timeline").and_then(Value::as_str).is_some())
 }
 
-/// A file's graded still into the vault, as its preview (`meta.preview`): the one it replaces goes.
-async fn graded_still_job(vault: &Arc<Vault>, t: &Timeline, lib: Arc<Vaulted>, clip: String, work: &Work, progress: &Progress) -> Res<Value> {
-    progress.set(0.3, "rendering the graded still");
-    let jpg = work.0.join(format!("graded-{clip}.jpg"));
-    let (t2, file, c2) = (t.clone(), jpg.clone(), clip.clone());
-    let rep = tauri::async_runtime::spawn_blocking(move || vault_render::graded_still(&t2, &*lib, odt(), &c2, GRADED_WIDTH, &file))
-        .await
-        .map_err(err)?
-        .map_err(err)?;
-    progress.set(0.9, "into the vault");
+/// A file's graded still (`jpg`, made of clip `clip`) into the vault, as its preview (`meta.preview`): the one it
+/// replaces goes.
+async fn graded_still_in(vault: &Arc<Vault>, t: &Timeline, clip: String, jpg: PathBuf, rep: Value) -> Res<Value> {
     let of = rep["of"].as_str().unwrap_or_default().to_string();
     let hash: iroh_blobs::Hash = of.parse().map_err(err)?;
     let original = vault.catalog.meta(hash).await.map_err(err)?.ok_or("the clip's file is not in the vault's catalog")?;
     let stem = Path::new(&original.original_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| of[..12].to_string());
     // named like every file made of an original: `<its name>.preview.jpg` (graded or not, it is the file's preview)
-    let named = work.0.join(format!("{stem}.preview.jpg"));
+    let named = jpg.with_file_name(format!("{stem}.preview.jpg"));
     std::fs::rename(&jpg, &named).map_err(err)?;
     let batch = Batch {
         session: format!("graded still of {of}"),

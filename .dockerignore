@@ -9,4 +9,7 @@
 # the vault's Rust workspace, for vault-server (never its build output)
 !vault
 vault/target
+# avenDB's crates, which the vault's Mac app links by path: present so cargo can load the workspace, never built
+!avendb
+avendb/target
 vault/app/gen

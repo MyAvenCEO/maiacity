@@ -52,6 +52,8 @@ pub enum Kind {
     Sound,
     Keep,
     Ingest,
+    /// a page fetched from the web for a task of avenDB's (a YouTube video's words: aven.rs `youtube`)
+    Fetch,
 }
 
 impl Kind {
@@ -60,14 +62,14 @@ impl Kind {
             Kind::Proxy | Kind::Still | Kind::WorldProxy | Kind::Render | Kind::Frame => Lane::Gpu,
             Kind::Transcript => Lane::Speech,
             Kind::Analysis => Lane::Ai,
-            Kind::Sound | Kind::Keep | Kind::Ingest => Lane::Io,
+            Kind::Sound | Kind::Keep | Kind::Ingest | Kind::Fetch => Lane::Io,
         }
     }
     /// how urgent: lower first (a film someone waits for before a file's proxy, a proxy before its still)
     fn priority(self) -> i32 {
         match self {
             Kind::Render | Kind::Frame | Kind::Ingest => 0,
-            Kind::Proxy | Kind::WorldProxy | Kind::Transcript | Kind::Sound | Kind::Keep => 2,
+            Kind::Proxy | Kind::WorldProxy | Kind::Transcript | Kind::Sound | Kind::Keep | Kind::Fetch => 2,
             Kind::Still | Kind::Analysis => 3,
         }
     }
@@ -620,6 +622,7 @@ pub async fn retry(handle: &AppHandle, vault: &std::sync::Arc<vault_core::Vault>
         Kind::Sound => crate::sound::wake(),
         Kind::WorldProxy => crate::world::wake(),
         Kind::Keep => {}
+        Kind::Fetch => return Err("a fetch is asked again from its task (Jobs, avenDB tasks: Again)".into()),
         Kind::Render | Kind::Frame | Kind::Ingest => return Err("a render or a hero frame is queued again from the Render tab (or the MCP); an ingest from the Ingest tab".into()),
     }
     Ok(())

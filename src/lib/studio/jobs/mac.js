@@ -1,13 +1,13 @@
 /*
- * The worker on this Mac (plan J0d-J0f): one for the app, started the first time the studio asks for it while the
- * app's avenDB device is open, rounds every minute, a round at once when asked (`nudge`). It works on the person's own
- * vault, through the app's device (src/lib/avendb/native.js), until the device hosts a worker device vault of its own
- * (J0c).
+ * The worker on this Mac (plan J0d-J0f): one for the app, started by the app's layout (src/routes/app/+layout.svelte) once
+ * the app's avenDB device is open, rounds every minute, a round at once when asked (`nudge`). It works on every vault
+ * the person reaches, acting as each vault's acting vault, through the app's device (src/lib/avendb/native.js), until
+ * the device hosts a worker device vault of its own (J0c).
  */
 
 import { native } from '$lib/native';
 import { Worker } from './worker.js';
-import { EXECUTORS } from './executors.js';
+import { EXECUTORS, NATIVE } from './executors.js';
 
 /** @type {Worker | null} */
 let worker = null;
@@ -29,7 +29,9 @@ export async function macWorker() {
 	if (!d) return null;
 	worker = new Worker({
 		send: (op) => d.call('run', op),
-		executors: EXECUTORS,
+		// every vault the person reaches but a device's: the Maia City vault's footage as much as their own
+		vaults: (w) => (w.vaults ?? []).filter((/** @type {any} */ v) => v.kind !== 'device' && v.acting?.reaches).map((/** @type {any} */ v) => v.id),
+		executors: { ...EXECUTORS, ...NATIVE },
 		log: (line) => {
 			lines.unshift(`${new Date().toLocaleTimeString()} ${line}`);
 			lines.length = Math.min(lines.length, 50);
@@ -39,5 +41,8 @@ export async function macWorker() {
 	return worker;
 }
 
-/** A round now, as when a test file was just added or a task held is asked again. */
-export const nudge = () => void worker?.tick().catch(() => {});
+/** A round now, as when a file was just brought in or a task held is asked again; the worker started if it wasn't. */
+export const nudge = () =>
+	void macWorker()
+		.then((w) => w?.tick())
+		.catch(() => {});

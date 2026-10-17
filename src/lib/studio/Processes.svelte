@@ -28,7 +28,8 @@
 		analysis: 'Analysis',
 		sound: 'Sound record',
 		keep: 'Kept',
-		ingest: 'Ingest'
+		ingest: 'Ingest',
+		fetch: 'Fetch'
 	};
 	const FINISHED = ['done', 'failed', 'cancelled'];
 

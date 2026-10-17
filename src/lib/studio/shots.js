@@ -1,7 +1,9 @@
 // World shots as data (contract C2): the records a world clip names, their versions, and what a shot is at a moment.
 // Every save of a changed spec is a new version; a clip names the version it was cut with and follows a new one only
-// when the studio says so.
+// when the studio says so. A shot of avenDB's (`shot:<entry>`, ./avenshots.js) is read and saved there, the API's in
+// the API; a new shot made for a cut of avenDB goes into avenDB too.
 import { createShot, getShot, listShots, missing, saveShot } from '$lib/auth/client';
+import { createAvenShot, getAvenShot, isAvenShot, listAvenShots, saveAvenShot } from './avenshots.js';
 
 /** @typedef {import('$lib/auth/client').CameraKey} CameraKey */
 /** @typedef {import('$lib/auth/client').Shape} Shape */
@@ -66,7 +68,8 @@ const keep = (s) => (cache.set(key(s.id, s.version), s), s);
  * @param {string} [project] @returns {Promise<Shot[]>}
  */
 export async function allShots(project) {
-	return (await listShots(project)).map(keep);
+	const [aven, api] = await Promise.all([listAvenShots(project).catch(() => []), listShots(project)]);
+	return [...aven, ...api].map(keep);
 }
 
 /**
@@ -77,9 +80,9 @@ export async function shotAt(id, version) {
 	const hit = version ? cache.get(key(id, version)) : undefined;
 	if (hit) return hit;
 	try {
-		return keep(await getShot(id, version));
+		return keep(await (isAvenShot(id) ? getAvenShot(id, version) : getShot(id, version)));
 	} catch (e) {
-		if (missing(e)) return null;
+		if (missing(e) || /** @type {any} */ (e)?.status === 404) return null;
 		throw e;
 	}
 }
@@ -93,7 +96,10 @@ export const cached = (id, version) => (id && version ? (cache.get(key(id, versi
  * A changed spec: a new version of the shot.
  * @param {Shot} s @param {ShotSpec} spec @returns {Promise<Shot>}
  */
-export const saveSpec = async (s, spec) => keep(await saveShot(s.id, { spec }));
+export const saveSpec = async (s, spec) => keep(await (isAvenShot(s.id) ? saveAvenShot(s.id, { spec }) : saveShot(s.id, { spec })));
 
-/** @param {string} name @param {string | null} project @param {ShotSpec} spec @returns {Promise<Shot>} */
-export const newShot = async (name, project, spec) => keep(await createShot({ name, project, spec }));
+/**
+ * A new shot: in avenDB when it is for a cut of avenDB's (`aven`), else in the API.
+ * @param {string} name @param {string | null} project @param {ShotSpec} spec @param {boolean} [aven] @returns {Promise<Shot>}
+ */
+export const newShot = async (name, project, spec, aven = false) => keep(await (aven ? createAvenShot({ name, project, spec }) : createShot({ name, project, spec })));

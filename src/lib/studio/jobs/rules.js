@@ -6,10 +6,11 @@
  * its key, the newest version of a key winning within one holder (`layered`).
  *
  * `when` picks the entries a rule wants something for, in avenDB's selector words (`type`, `tag`, `noTag`, `all`,
- * `any`) plus `media`, a file's media type, `*` at its end matching any subtype. A rule with no `when` runs only when
+ * `any`) plus `media`, a file's media type, `*` at its end matching any subtype, and `record`, fields its record holds
+ * exactly (`{ record: { look: 'youtube' } }`). A rule with no `when` runs only when
  * asked (a button, an agent, a function on a stage move): renders and hero frames are asked for, not missing.
  * `inputs` names what a task reads: `$entry` the entry picked, or `{ made, from }` what another rule made of it, which
- * the task waits for. `params` are the input places whose values change the result, so they are part of its key.
+ * the task waits for (`optional`: it doesn't wait, and is made again once the other is made). `params` are the input places whose values change the result, so they are part of its key.
  * `makes` says what it makes: Library files with role tags, or a value (`{ value: name }`) that goes on the task.
  */
 
@@ -18,7 +19,7 @@ import { RULE } from './schemas.js';
 /**
  * A rule as the page reads it, its JSON fields parsed.
  * @typedef {{ key: string, name: string, version: number, lane: import('./schemas.js').Lane, when: any,
- *   inputs: Record<string, '$entry' | { made: string, from: '$entry' }>, params: string[],
+ *   inputs: Record<string, '$entry' | { made: string, from: '$entry', optional?: boolean }>, params: string[],
  *   makes: ({ type: 'file', tags: string[] } | { value: string })[], about: string, off: boolean }} Rule
  */
 
@@ -66,10 +67,10 @@ export const BUILT_IN = [
 		version: 1,
 		lane: 'gpu',
 		when: { all: [{ type: ['file'] }, { tag: 'media:original' }, { media: 'video/*' }] },
-		inputs: { original: '$entry', probe: { made: 'probe', from: '$entry' } },
-		params: ['probe.journey', 'hero'],
+		inputs: { original: '$entry', probe: { made: 'probe', from: '$entry' }, analysis: { made: 'analysis', from: '$entry', optional: true } },
+		params: ['probe.journey', 'analysis.hero.t'],
 		makes: [{ type: 'file', tags: ['media:still'] }, { type: 'file', tags: ['media:preview'] }],
-		about: 'A 4K ACEScct still and its preview at the hero frame, the middle until one is picked.',
+		about: "A 4K ACEScct still and its preview at the hero frame: the middle until the analysis picks one, then there.",
 		off: false
 	},
 	{
@@ -97,6 +98,30 @@ export const BUILT_IN = [
 		off: false
 	},
 	{
+		key: 'world-proxy',
+		name: 'World proxy',
+		version: 1,
+		lane: 'gpu',
+		when: null,
+		inputs: { shot: '$entry' },
+		params: [],
+		makes: [{ type: 'file', tags: ['media:proxy'] }],
+		about: "A world shot version's HD proxy in ACEScct, rendered in the unseen world, when a cut plays it.",
+		off: false
+	},
+	{
+		key: 'youtube',
+		name: 'YouTube',
+		version: 1,
+		lane: 'net',
+		when: { all: [{ type: ['artifact'] }, { record: { look: 'youtube' } }] },
+		inputs: { artifact: '$entry' },
+		params: ['url'],
+		makes: [{ value: 'youtube' }],
+		about: "A YouTube video's title, channel, length, chapters and words with their times, from YouTube through yt-dlp on the Mac.",
+		off: false
+	},
+	{
 		key: 'render',
 		name: 'Render',
 		version: 1,
@@ -115,9 +140,9 @@ export const BUILT_IN = [
 		lane: 'gpu',
 		when: null,
 		inputs: { cut: '$entry' },
-		params: ['clip'],
+		params: ['clip', 't', 'shape'],
 		makes: [{ type: 'file', tags: ['media:preview'] }],
-		about: "A clip's grading still through its grade, as its preview, when a cut changes how it looks.",
+		about: "A clip's grading still through its grade, as its file's preview, when a cut changes how it looks; of a world clip or a gap, a hero frame at a time in a shape.",
 		off: false
 	}
 ];

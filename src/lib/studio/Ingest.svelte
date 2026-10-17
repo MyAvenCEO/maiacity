@@ -5,6 +5,11 @@
 	own. Its class is told from the file (camera and recorder files: original; the rest: default) — everything else
 	about it comes later, in a second step. Below, each source ingested into the story as a card: what came in, and for
 	every destination how far its copies are, live — until the source may be released.
+
+	Studio 2.0 (plan J1): by default a batch goes into one of the person's avenDB vaults instead, through avenDB's
+	device inside the app (vault/app/src/aven.rs `studio_ingest`): each file a `file` entry tagged `media:original`,
+	read back from avenDB and compared with the disk before it counts; then the Mac's worker probes it (J2). The legacy
+	vault stays one click away until the new studio does everything.
 -->
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
@@ -41,6 +46,27 @@
 	let openCopies = $state<Copies | undefined>(undefined);
 	const unlisten: Array<() => void> = [];
 
+	type AvenVault = { id: string; name: string; as: string };
+	/** where a batch goes: one of the person's avenDB vaults (the default once avenDB is open here), or the legacy vault */
+	let into = $state<'avendb' | 'legacy'>('legacy');
+	let avenVaults = $state<AvenVault[]>([]);
+	let avenVault = $state('');
+	let avenNow = $state<{ path: string; done: number; len: number } | null>(null);
+	const avenName = $derived(avenVaults.find((v) => v.id === avenVault)?.name ?? 'avenDB');
+
+	/** The vaults this Mac's avenDB may bring files into, Maia City first if it is one. */
+	async function lookAvendb() {
+		const { call, status } = await import('$lib/avendb/native.js');
+		if (!(await status().catch(() => null))?.open) return;
+		const { answer } = await import('$lib/avendb/ops.js');
+		const world = answer(await call('run', { op: 'world' }));
+		avenVaults = (world.vaults ?? [])
+			.filter((v: any) => v.kind !== 'device' && v.acting?.reaches)
+			.map((v: any) => ({ id: v.id, name: v.name ?? v.id.slice(0, 8), as: v.acting.as }));
+		avenVault = (avenVaults.find((v) => /maia city/i.test(v.name)) ?? avenVaults.find((v) => v.id === world.mine) ?? avenVaults[0])?.id ?? '';
+		if (avenVault) into = 'avendb';
+	}
+
 	const chosenStory = $derived(storyList.find((s) => s.id === story) ?? null);
 	const storyName = $derived(chosenStory ? (chosenStory.inbox ? 'the Inbox' : chosenStory.title) : 'the Inbox');
 	// another story on the left: its own panel again, not the last file
@@ -75,6 +101,7 @@
 		if (!picked.length || running) return;
 		running = true;
 		error = '';
+		if (into === 'avendb') return startAvendb();
 		try {
 			const s = await command<Summary>('vault_ingest', { paths: picked, tags: [], story });
 			if (s.mismatches) error = `${s.mismatches} files did not hash the same on the way in — keep the source and ingest again.`;
@@ -90,10 +117,31 @@
 		}
 	}
 
+	async function startAvendb() {
+		const v = avenVaults.find((x) => x.id === avenVault);
+		try {
+			if (!v) throw new Error('no avenDB vault to bring it into');
+			const out = await command<{ path: string; entry: string | null; error: string | null }[]>('studio_ingest', { vault: v.id, paths: picked, tags: [], actor: v.as });
+			const failed = out.filter((o) => o.error);
+			if (failed.length) error = `${failed.length} of ${out.length} files did not come in: ${failed[0].error}. Keep the source and try again.`;
+			const { nudge } = await import('./jobs/mac.js');
+			nudge();
+			clear();
+			onDone();
+		} catch (e) {
+			error = String(e);
+		} finally {
+			running = false;
+			avenNow = null;
+		}
+	}
+
 	onMount(async () => {
 		const { listen } = await import('@tauri-apps/api/event');
 		const { getCurrentWebview } = await import('@tauri-apps/api/webview');
 		unlisten.push(await listen<Progress>('ingest', ({ payload }) => void (!payload.outcome && (current = payload))));
+		unlisten.push(await listen<{ path: string; done: number; len: number }>('studio-ingest', ({ payload }) => void (avenNow = payload)));
+		lookAvendb().catch(() => {});
 		unlisten.push(
 			await getCurrentWebview().onDragDropEvent((e) => {
 				if (e.payload.type === 'enter' || e.payload.type === 'over') dragging = true;
@@ -116,7 +164,13 @@
 
 	<div class="main">
 		<div class="bar" class:ready={picked.length && !running} class:busy={running}>
-			{#if running && current}
+			{#if running && into === 'avendb'}
+				<div class="line">
+					<span>Bringing into {avenName} and reading it back</span>
+					{#if avenNow}<strong title={avenNow.path}>{name(avenNow.path)}</strong>{/if}
+				</div>
+				<div class="progress"><i style:width="{avenNow ? (avenNow.done / avenNow.len) * 100 : 0}%"></i></div>
+			{:else if running && current}
 				<div class="line">
 					<span>Copying and hashing into {storyName} · {current.index + 1} / {current.total}</span>
 					<strong title={current.path}>{name(current.path)}</strong>
@@ -129,11 +183,22 @@
 					{#if scan}<small>{scan.files} files · {gb(scan.bytes)}</small>{/if}
 					<span class="grow"></span>
 					<button class="link" onclick={clear}>Clear</button>
-					<button class="go" onclick={start} disabled={!scan?.files}>Ingest {scan?.files ?? ''} files into {storyName}</button>
+					{#if avenVaults.length}
+						<select bind:value={into} aria-label="Into">
+							<option value="avendb">avenDB</option>
+							<option value="legacy">the legacy vault</option>
+						</select>
+						{#if into === 'avendb'}
+							<select bind:value={avenVault} aria-label="avenDB vault">
+								{#each avenVaults as v (v.id)}<option value={v.id}>{v.name}</option>{/each}
+							</select>
+						{/if}
+					{/if}
+					<button class="go" onclick={start} disabled={!scan?.files}>Ingest {scan?.files ?? ''} files into {into === 'avendb' ? avenName : storyName}</button>
 				</div>
 			{:else}
 				<div class="line">
-					<span class="hint">⇣ Drop a card, a drive or a folder — it goes into <strong>{storyName}</strong></span>
+					<span class="hint">⇣ Drop a card, a drive or a folder — it goes into <strong>{into === 'avendb' ? avenName : storyName}</strong></span>
 					<span class="grow"></span>
 					{#each sources as s (s.path)}<button class="chip drive" onclick={() => pick([s.path])} title="{gb(s.total - s.free)} of {gb(s.total)}">{s.name}</button>{/each}
 					<button class="choose" onclick={chooseFolder}>Choose a folder…</button>
@@ -194,6 +259,7 @@
 	.grow { flex: 1; }
 	.go { padding: 0.45rem 1rem; border: 0; border-radius: 999px; background: var(--accent); font: inherit; font-size: 0.84rem; color: var(--on-accent); cursor: pointer; }
 	.go:disabled { opacity: 0.5; }
+	.line select { padding: 0.3rem 0.5rem; border: 1px solid var(--edge); border-radius: 8px; background: var(--raised); font: inherit; font-size: 0.8rem; color: var(--ink); }
 	.hint { font-size: 0.86rem; color: var(--dim); }
 	.progress { overflow: hidden; height: 5px; margin-top: 0.5rem; border-radius: 3px; background: var(--edge); }
 	.progress i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }

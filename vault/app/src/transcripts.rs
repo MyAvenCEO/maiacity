@@ -33,7 +33,7 @@ pub const TRIES: u64 = 3;
 pub const STALE_HOURS: i64 = 6;
 
 /// the loaded model, kept for a run of recordings
-static RECOGNIZER: Mutex<Option<vault_asr::Recognizer>> = Mutex::new(None);
+pub(crate) static RECOGNIZER: Mutex<Option<vault_asr::Recognizer>> = Mutex::new(None);
 
 /// Its words made, but by another model than Phonon (Nemotron, Deepgram — before): made again. Never words a person
 /// put right, nor a voice take's own.

@@ -1,6 +1,7 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
 import { PROFILES, profileOf, ODT } from '../../../game/film/color.js';
+import { isAven } from './avenref.js';
 
 export { PROFILES, profileOf, ODT };
 
@@ -98,7 +99,7 @@ export function proxyFor(m, find) {
 	// movies, EXR sequences and stills (a float still gets a 16-bit ACEScct PNG; a display still is its own picture)
 	if (!m || !(isVideo(m) || m.kind === 'image')) return { hash: null, state: 'n/a' };
 	const p = m.meta?.proxy;
-	if (typeof p === 'string' && /^[0-9a-f]{64}$/.test(p)) return colorOf(find(p))?.profile === WORKING ? { hash: p, state: 'ready' } : { hash: null, state: 'none' };
+	if (typeof p === 'string' && (/^[0-9a-f]{64}$/.test(p) || isAven(p))) return colorOf(find(p))?.profile === WORKING ? { hash: p, state: 'ready' } : { hash: null, state: 'none' };
 	if (typeof p === 'string' && p.startsWith('failed')) return { hash: null, state: 'failed' };
 	return { hash: null, state: 'none' };
 }

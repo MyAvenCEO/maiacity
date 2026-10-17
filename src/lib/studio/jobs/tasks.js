@@ -34,10 +34,10 @@ export const TRIES = 3;
  */
 /** An input, pinned: its name in the rule, its entry, and what it was read at. @typedef {{ id: number, name: string, entry: string, at: string[] }} Input */
 
-/** The tasks the world holds, those deleted left out. @param {import('../../avendb/vaults.js').WorldView} world */
+/** The tasks the world holds, those deleted (or tagged deleted: a graded still a newer look replaced) left out. @param {import('../../avendb/vaults.js').WorldView} world */
 export function tasksOf(world) {
 	return world.entries
-		.filter((e) => e.type === TASK && e.record?.kind === TASK && !e.deleted)
+		.filter((e) => e.type === TASK && e.record?.kind === TASK && !e.deleted && !(e.tags ?? []).includes('avendb:deleted'))
 		.map((e) => /** @type {Task} */ ({ ...e.record, entry: e.entry, vault: e.vault }));
 }
 
@@ -72,6 +72,10 @@ export function picks(when, e) {
 	if (when.type) return when.type.includes(e.type);
 	if (when.tag) return (e.tags ?? []).includes(when.tag);
 	if (when.noTag) return !(e.tags ?? []).some((t) => when.noTag.includes(t));
+	if (when.record) {
+		const r = e.record ?? {};
+		return Object.entries(when.record).every(([k, v]) => r[k] === v);
+	}
 	if (when.media) {
 		const m = e.media ?? e.record?.media ?? '';
 		return when.media.endsWith('*') ? m.startsWith(when.media.slice(0, -1)) : m === when.media;
@@ -117,6 +121,11 @@ export function pin(rule, e, made) {
 			values[name] = e.record ?? {};
 		} else {
 			const t = made.get(`${from.made}:${e.entry}`);
+			// an optional input not made yet: the task goes on without it, and is made again once it is (its key moves)
+			if (!t && from.optional) {
+				values[name] = null;
+				continue;
+			}
 			if (!t) return null;
 			inputs.push({ id: id++, name, entry: t.entry, at: [t.key] });
 			values[name] = parse(t.result);

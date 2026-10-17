@@ -4,22 +4,24 @@
 import {
 	API,
 	fileUrl,
-	createTimeline,
-	deleteTimeline,
+	createTimeline as createLegacy,
+	deleteTimeline as deleteLegacy,
 	describeMedia,
-	getTimeline,
+	getTimeline as getLegacy,
 	listContent,
 	listJobs,
 	listMedia,
-	listRenders,
-	listTimelines,
+	listRenders as listRendersLegacy,
+	listTimelines as listLegacy,
 	may,
 	me,
 	missing,
-	queueRender,
-	saveTimeline
+	queueRender as queueRenderLegacy,
+	saveTimeline as saveLegacy
 } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
+import { avenLibrary, withGraded } from './aven.js';
+import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, renderCut, saveCut } from './cuts.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
@@ -108,6 +110,27 @@ export const FPS = 30;
 export const UNLINKED = '-';
 /** A file's bytes, from this Mac's vault (with Range). @param {string} hash */
 export const raw = (hash) => fileUrl(hash);
+
+/**
+ * The studio's timelines: avenDB's cuts (./cuts.js, J9) and the legacy timelines in the API, side by side, each read and
+ * saved where it lives (a cut by its `cut:` id); a new one is a cut wherever avenDB is open here.
+ */
+const listTimelines = () => Promise.all([listCuts().catch(() => []), listLegacy()]).then(([cuts, legacy]) => [...cuts, ...legacy]);
+/** @param {Partial<Timeline>} t */
+const createTimeline = async (t) => ((await cutsHere().catch(() => false)) ? createCut(t) : createLegacy(t));
+/** @param {string} id */
+const getTimeline = (id) => (isCut(id) ? getCut(id) : getLegacy(id));
+/** @param {string} id @param {Partial<Timeline> & { if_updated?: string }} t */
+const saveTimeline = (id, t) => (isCut(id) ? saveCut(id, t) : saveLegacy(id, t));
+/** @param {string} id */
+const deleteTimeline = (id) => (isCut(id) ? deleteCut(id) : deleteLegacy(id));
+
+/** The studio's library: the legacy vault's files and avenDB's footage (./aven.js), side by side. */
+const allMedia = () => Promise.all([listMedia(), avenLibrary().catch(() => [])]).then(([legacy, aven]) => asStudio(withGraded([...legacy, ...aven])));
+/** A timeline's renders: a cut's are its tasks in avenDB (./cuts.js), a legacy timeline's the API's jobs. @param {string} id */
+const listRenders = (id) => (isCut(id) ? cutJobs(id) : listRendersLegacy(id));
+/** @param {string} id @param {'youtube-4k'} [delivery] */
+const queueRender = (id, delivery) => (isCut(id) ? renderCut(id, delivery) : queueRenderLegacy(id, delivery));
 /** @param {MediaItem} m */
 export const thumb = (m) => raw(m.hash);
 /** @param {MediaItem | undefined} m */
@@ -510,9 +533,10 @@ export class Studio {
 			return void (this.phase = 'signed-out');
 		}
 		try {
-			const [media, tls] = await Promise.all([listMedia().then(asStudio), listTimelines()]);
+			const [media, tls, here] = await Promise.all([allMedia(), listTimelines(), cutsHere().catch(() => false)]);
 			this.library = media;
 			this.timelines = tls;
+			this.avenHere = here;
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;
 		}
@@ -640,6 +664,33 @@ export class Studio {
 		const t = (await createTimeline({ name: `Timeline ${this.timelines.length + 1}`, aspect: '16:9', tags: [], clips: made, stage: 'edit', version: 1, color: { working: 'acescct', output: 'odt-rec709' }, grade: null }));
 		this.timelines = [t, ...this.timelines];
 		await this.openTimeline(t);
+	}
+
+	/** Whether new cuts go into avenDB on this Mac (and legacy timelines can be brought there, `importTimeline`). */
+	avenHere = $state(false);
+	/** What bringing a legacy timeline into avenDB is doing now; '' when nothing. */
+	importing = $state('');
+
+	/**
+	 * Legacy timeline `t` brought into avenDB as a cut, by hand (plan JI: ./importer.js), and opened; the legacy one
+	 * stays as it is.
+	 * @param {Timeline} t
+	 */
+	async importTimeline(t) {
+		if (this.importing || isCut(t.id)) return;
+		this.importing = 'Starting…';
+		try {
+			const { importTimeline } = await import('./importer.js');
+			const cut = await importTimeline(t.id, (line) => (this.importing = line));
+			const [media, tls] = await Promise.all([allMedia(), listTimelines()]);
+			this.library = media;
+			this.timelines = tls;
+			await this.openTimeline(this.timelines.find((x) => x.id === cut.id) ?? cut);
+		} catch (e) {
+			this.error = `Import: ${/** @type {Error} */ (e).message}`;
+		} finally {
+			this.importing = '';
+		}
 	}
 
 	/** @param {Timeline} t */
@@ -1068,7 +1119,7 @@ export class Studio {
 	}
 	/** The library read again (a proxy or a transcript came in), and the sounds waiting on it tried. */
 	async reloadLibrary() {
-		this.library = await listMedia().then(asStudio).catch(() => this.library);
+		this.library = await allMedia().catch(() => this.library);
 		this.retrySounds();
 	}
 
@@ -1903,7 +1954,7 @@ export class Studio {
 		if (ended.length) {
 			this.showRenders = true;
 			if (ended.some((r) => r.status === 'done')) {
-				this.library = await listMedia().then(asStudio).catch(() => this.library);
+				this.library = await allMedia().catch(() => this.library);
 				if (this.stage === 'locked' || this.stage === 'graded') this.setMeta({ stage: 'rendered' });
 			}
 		}
@@ -1925,6 +1976,12 @@ export class Studio {
 	async refreshDeliveries() {
 		const id = this.current?.id;
 		if (!id || !this.lastRender) return void (this.deliveries = []);
+		// a cut's deliveries are in its render's report (its films are in avenDB, no content item carries them)
+		if (isCut(id)) {
+			const name = this.current?.name;
+			const ds = /** @type {any} */ (this.lastRender).deliveries ?? [];
+			return void (this.deliveries = /** @type {DeliveryRecord[]} */ (ds.map((/** @type {any} */ d) => ({ ...d, timeline: id, cut: name }))));
+		}
 		const items = await listContent().then((r) => r.items).catch(() => []);
 		if (this.current?.id !== id) return;
 		const fromReport = this.lastReport?.deliveries ?? [];
@@ -1979,7 +2036,7 @@ export class Studio {
 		if (!hash) return;
 		let m = this.byHash.get(hash);
 		if (!m) {
-			this.library = await listMedia().then(asStudio).catch(() => this.library);
+			this.library = await allMedia().catch(() => this.library);
 			m = this.library.find((x) => x.hash === hash);
 		}
 		if (m) this.pick(m);

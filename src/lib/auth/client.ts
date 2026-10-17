@@ -2,6 +2,7 @@
 // site on the CDN; only these calls reach a server, and only when somebody
 // actually signs up.
 import { dev } from '$app/environment';
+import { avenUrl, isAven } from '$lib/studio/avenref.js';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { APP_API, command, native } from '$lib/native';
 
@@ -26,8 +27,10 @@ export type Founder = {
 export const may = (founder: Founder | null | undefined, cap: string) => !!founder?.caps?.includes(cap);
 
 /** A file's address, by its BLAKE3 hash: in maiaCITY Studio from this Mac's vault (with Range); on the web from the
- *  vault's gateway (a public file; a private one answers only the app). */
-export const fileUrl = (hash: string) => (native() ? `vault://localhost/${hash}` : `https://api.maia.city/vault/files/${hash}`);
+ *  vault's gateway (a public file; a private one answers only the app). An avenDB file (studio 2.0) by its reference,
+ *  from avenDB's device in the app ($lib/studio/aven.js). */
+export const fileUrl = (hash: string) =>
+	isAven(hash) ? avenUrl(hash) : native() ? `vault://localhost/${hash}` : `https://api.maia.city/vault/files/${hash}`;
 
 /** Every call carries the session cookie, and every failure carries a sentence
  *  a person can read rather than a status code. In the Mac app the call goes out natively, with the app's key. */

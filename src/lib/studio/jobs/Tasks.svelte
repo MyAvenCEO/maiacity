@@ -6,7 +6,8 @@
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import { answer } from '$lib/avendb/ops.js';
-	import { BUILT_IN } from './rules.js';
+	import { BUILT_IN, held, toRecord } from './rules.js';
+	import { RULE } from './schemas.js';
 	import { retrying, tasksOf } from './tasks.js';
 	import { lines, macWorker, nudge } from './mac.js';
 
@@ -20,6 +21,8 @@
 	let log = $state(/** @type {string[]} */ ([]));
 	let error = $state('');
 	let adding = $state(false);
+	/** @type {{ vault: string, name: string, rules: (import('./rules.js').Rule & { own: string | null })[] }[]} each vault the worker works on, with the rules in force there */
+	let ruled = $state([]);
 
 	const RULE_NAMES = Object.fromEntries(BUILT_IN.map((r) => [r.key, r.name]));
 	const ORDER = { claimed: 0, queued: 1, failed: 2, held: 3, done: 4 };
@@ -29,7 +32,16 @@
 		try {
 			const world = await worker.world();
 			tasks = tasksOf(world).sort((a, b) => ORDER[a.status] - ORDER[b.status] || b.at - a.at);
-			names = Object.fromEntries(world.entries.map((/** @type {any} */ e) => [e.entry, e.title || e.record?.title || '']));
+			names = Object.fromEntries(world.entries.map((/** @type {any} */ e) => [e.entry, e.title || e.record?.title || e.record?.name || '']));
+			ruled = worker.vaults(world).map((v) => {
+				const own = held(world, v);
+				const entryOf = (/** @type {string} */ key) => world.entries.find((/** @type {any} */ e) => e.vault === v && e.type === RULE && e.record?.key === key && !e.deleted)?.entry ?? null;
+				const rules = BUILT_IN.map((b) => {
+					const mine = own.filter((r) => r.key === b.key).sort((x, y) => y.version - x.version)[0];
+					return { ...(mine ?? b), own: mine ? entryOf(b.key) : null };
+				});
+				return { vault: v, name: world.vaults?.find((/** @type {any} */ x) => x.id === v)?.name ?? v.slice(0, 8), rules };
+			});
 			log = [...lines];
 			error = '';
 		} catch (e) {
@@ -40,10 +52,32 @@
 	/** @param {import('./tasks.js').Task} t */
 	async function again(t) {
 		if (!worker) return;
-		answer(await worker.send(retrying(t, t.vault)));
+		answer(await worker.send(retrying(t, worker.as(t.vault))));
 		nudge();
 		await load();
 	}
+
+	/**
+	 * Rule `r` turned on or off in vault `vault`: the vault's own rule record says so (made from the app's own the
+	 * first time), so the app's rule stays as it is everywhere else.
+	 * @param {string} vault @param {import('./rules.js').Rule & { own: string | null }} r
+	 */
+	async function toggle(vault, r) {
+		if (!worker) return;
+		try {
+			const as = worker.as(vault);
+			const op = r.own
+				? { op: 'batch', ops: [{ op: 'set', entry: r.own, path: ['off'], value: !r.off }], as }
+				: { op: 'create', vault, type: RULE, value: toRecord({ ...r, off: !r.off }), as };
+			answer(await worker.send(op));
+			nudge();
+			await load();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		}
+	}
+	/** When a rule makes its tasks, in a few words. @param {import('./rules.js').Rule} r */
+	const fires = (r) => (r.when ? 'by itself' : 'when asked');
 
 	/** A 3 MB file of known bytes, tagged jobs:test, into the person's own vault. */
 	async function test() {
@@ -118,6 +152,21 @@
 			</tbody>
 		</table>
 		{#if log.length}<p class="log">{log[0]}</p>{/if}
+		{#each ruled as v (v.vault)}
+			<p class="cap rules-cap">Rules in {v.name}</p>
+			<table>
+				<tbody>
+					{#each v.rules as r (r.key)}
+						<tr class:off={r.off}>
+							<td><span class="kind">{r.name}</span></td>
+							<td class="when">v{r.version} · {r.lane} · {fires(r)}{r.own ? ' · this vault’s own' : ''}</td>
+							<td class="name" title={r.about}>{r.about}</td>
+							<td class="acts"><button class="ghost small" onclick={() => toggle(v.vault, r)}>{r.off ? 'Turn on' : 'Turn off'}</button></td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		{/each}
 	{/if}
 </div>
 
@@ -192,6 +241,14 @@
 
 	.acts {
 		text-align: right;
+	}
+
+	.rules-cap {
+		margin-top: 0.9rem;
+	}
+
+	tr.off td {
+		opacity: 0.55;
 	}
 
 	.log {

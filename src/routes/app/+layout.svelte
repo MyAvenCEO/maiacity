@@ -35,6 +35,23 @@
 		remember(!!founder);
 	});
 
+	// on the Mac, the studio's worker (Jobs and studio 2.0) runs while the app does, once its avenDB is open: what a rule
+	// wants is made whichever page is open; tried again every two minutes until avenDB opens
+	$effect(() => {
+		if (!native() || phase !== 'ready') return;
+		let stopped = false;
+		const tryStart = async () => {
+			const { macWorker } = await import('$lib/studio/jobs/mac.js');
+			const w = await macWorker().catch(() => null);
+			if (!w && !stopped) timer = setTimeout(tryStart, 120_000);
+		};
+		let timer = setTimeout(tryStart, 5_000);
+		return () => {
+			stopped = true;
+			clearTimeout(timer);
+		};
+	});
+
 	// maiaCITY Studio (the Mac app) cannot hold maia.city's passkey: it asks for a key, the browser opens the approval
 	// page, the admin says yes with the passkey there, and the app is in
 	let device = $state<{ user_code: string; url: string } | null>(null);

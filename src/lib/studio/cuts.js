@@ -1,0 +1,393 @@
+/*
+ * Cuts in avenDB (Jobs and studio 2.0, J9): a studio timeline kept as a `cut` entry of a vault of the person's instead
+ * of a row of the API's Postgres. The studio opens and saves one exactly as it does a legacy timeline (./studio.svelte.js
+ * routes by id: `cut:<entry>`); the legacy timelines stay where they are, untouched, until J15.
+ *
+ * A cut's record holds its name, stage and version as fields and the rest of the timeline (clips, grade, colour,
+ * shape, tags) as one JSON text, `timeline`: the whole of it is saved at once, as the API saved it. Its version is the
+ * number of edits the device holds of it (`updated`), so a save over a copy read before someone else's edit is refused,
+ * as the API refused it ("changed elsewhere").
+ *
+ * What a cut is made into is asked of its rules (./jobs/rules.js `render`, `frame`), as tasks on the cut that the Mac's
+ * worker does (vault/app/src/aven.rs): a render when asked, a file's graded still whenever a save changes how the file
+ * looks on screen (as the API queued it). The studio reads them as it read the API's render jobs (`cutJobs`).
+ */
+
+import { answer, DELETED } from '$lib/avendb/ops.js';
+import { BUILT_IN, held, layered } from './jobs/rules.js';
+import { madeIndex, newTask, pin, retrying, tasksOf } from './jobs/tasks.js';
+
+export const CUT = 'cut';
+
+/** The `cut` record's schema, in the vault's own lane, as the job schemas are (./jobs/schemas.js). */
+export const CUT_V1 = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cut, v1",
+  "description": "A film's cut as the studio edits it: its name, stage and version, and its timeline as JSON text.",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "cut" },
+    "name": { "type": "string", "maxLength": 200 },
+    "project": { "type": "string", "maxLength": 200, "default": "" },
+    "variant": { "type": "string", "maxLength": 200, "default": "" },
+    "description": { "type": "string", "maxLength": 4000, "default": "" },
+    "stage": { "type": "string", "maxLength": 32, "default": "edit" },
+    "version": { "type": "integer", "minimum": 1, "default": 1 },
+    "timeline": { "type": "string", "maxLength": 4000000, "default": "{}" },
+    "legacy": { "type": "string", "maxLength": 64, "default": "" },
+    "at": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["kind", "name", "at"]
+}
+`;
+
+/** @typedef {import('$lib/auth/client').Timeline} Timeline */
+
+/** Whether timeline `id` is a cut in avenDB. @param {unknown} id */
+export const isCut = (id) => typeof id === 'string' && id.startsWith('cut:');
+
+/** The fields the record holds apart from the timeline's JSON. */
+const FIELDS = ['name', 'project', 'variant', 'description', 'stage', 'version', 'legacy'];
+
+/** @param {string} s */
+const parse = (s) => {
+	try {
+		return s ? JSON.parse(s) : {};
+	} catch {
+		return {};
+	}
+};
+
+/**
+ * Cut entry `e` as the studio's timeline.
+ * @param {import('../avendb/vaults.js').EntryView} e @returns {Timeline}
+ */
+export function timelineOf(e) {
+	const r = e.record ?? {};
+	const rest = parse(r.timeline ?? '');
+	const at = new Date((r.at ?? e.created ?? 0) * 1000).toISOString();
+	return /** @type {Timeline} */ ({
+		aspect: '16:9',
+		tags: [],
+		clips: [],
+		...rest,
+		id: `cut:${e.entry}`,
+		name: r.name ?? 'A cut',
+		project: r.project || null,
+		variant: r.variant || null,
+		description: r.description ?? '',
+		stage: r.stage ?? 'edit',
+		version: r.version ?? 1,
+		legacy: r.legacy || null,
+		created: new Date((e.created ?? 0) * 1000).toISOString(),
+		updated: String(e.edits ?? 0),
+		at,
+		vault: e.vault
+	});
+}
+
+/**
+ * Timeline `t`'s record fields: its own fields, and the rest as JSON text.
+ * @param {Partial<Timeline>} t
+ */
+export function fieldsOf(t) {
+	/** @type {Record<string, any>} */
+	const rest = {};
+	/** @type {Record<string, any>} */
+	const own = {};
+	for (const [k, v] of Object.entries(t)) {
+		if (['id', 'created', 'updated', 'at', 'vault', 'if_updated'].includes(k)) continue;
+		if (FIELDS.includes(k)) own[k] = v ?? (k === 'version' ? 1 : '');
+		else rest[k] = v;
+	}
+	return { ...own, timeline: JSON.stringify(rest), at: Math.floor(Date.now() / 1000) };
+}
+
+/** The app's avenDB device, or `null` off the Mac app or while it isn't open. */
+export async function device() {
+	const { native } = await import('$lib/native');
+	if (!native()) return null;
+	const { call, status } = await import('$lib/avendb/native.js');
+	return (await status().catch(() => null))?.open ? call : null;
+}
+
+/**
+ * The device's world.
+ * @param {(c: string, ...a: any[]) => Promise<any>} call @returns {Promise<import('../avendb/vaults.js').WorldView>}
+ */
+export const worldOf = async (call) => answer(await call('run', { op: 'world' }));
+
+/**
+ * The vault new cuts go into, and the vault the person acts as there: the Maia City vault if they reach it, else their
+ * own.
+ * @param {import('../avendb/vaults.js').WorldView} world
+ */
+export function homeOf(world) {
+	const vaults = (world.vaults ?? []).filter((v) => v.kind !== 'device' && v.acting?.reaches);
+	const v = vaults.find((x) => /maia city/i.test(x.name ?? '')) ?? vaults.find((x) => x.id === world.mine) ?? vaults[0];
+	return v ? { vault: v.id, as: v.acting.as } : null;
+}
+
+/** The vault the person acts as in vault `vault`. @param {import('../avendb/vaults.js').WorldView} world @param {string} vault */
+export const asIn = (world, vault) => world.vaults?.find((v) => v.id === vault)?.acting?.as ?? vault;
+
+/** Whether new cuts go into avenDB here: on the Mac app with avenDB open and a vault to put them in. */
+export async function cutsHere() {
+	const call = await device();
+	return !!call && !!homeOf(await worldOf(call));
+}
+
+/** Every cut this device holds, newest first; none off the Mac app. @returns {Promise<Timeline[]>} */
+export async function listCuts() {
+	const call = await device();
+	if (!call) return [];
+	const world = await worldOf(call);
+	return world.entries
+		.filter((e) => e.type === CUT && e.record?.kind === CUT && !e.deleted && !(e.tags ?? []).includes(DELETED))
+		.map(timelineOf)
+		.sort((a, b) => (/** @type {any} */ (b).at < /** @type {any} */ (a).at ? -1 : 1));
+}
+
+/** Cut `id` as it is now. @param {string} id @returns {Promise<Timeline>} */
+export async function getCut(id) {
+	const call = await device();
+	if (!call) throw new Error('This cut lives in avenDB, which is open only in the Mac app.');
+	const e = (await worldOf(call)).entries.find((x) => x.entry === id.slice(4));
+	if (!e) throw new Error('No such cut on this Mac.');
+	return timelineOf(e);
+}
+
+/** A new cut of timeline `t` in the person's home vault (`homeOf`), its schema added first if the vault lacks it. @param {Partial<Timeline>} t */
+export async function createCut(t) {
+	const call = await device();
+	if (!call) throw new Error('avenDB is not open in this app.');
+	let world = await worldOf(call);
+	const home = homeOf(world);
+	if (!home) throw new Error('No avenDB vault to keep the cut in.');
+	await schemaIn(call, world, home.vault, CUT_V1, home.as);
+	const made = answer(await call('run', { op: 'create', vault: home.vault, type: CUT, value: { kind: CUT, ...fieldsOf(t) }, as: home.as }));
+	world = await worldOf(call);
+	const e = world.entries.find((x) => x.entry === made.entry);
+	if (!e) throw new Error('The cut was made but this Mac does not show it yet.');
+	const cut = timelineOf(e);
+	await proxiesOf(call, world, cut);
+	return cut;
+}
+
+/**
+ * Schema `text` added to vault `vault` unless it holds one of its title already.
+ * @param {(c: string, ...a: any[]) => Promise<any>} call @param {import('../avendb/vaults.js').WorldView} world
+ * @param {string} vault @param {string} text @param {string} as
+ */
+export async function schemaIn(call, world, vault, text, as) {
+	const title = JSON.parse(text).title;
+	const has = world.entries.some((e) => e.vault === vault && e.type === 'schema' && !e.deleted && e.title === title);
+	if (!has) answer(await call('run', { op: 'create', vault, type: 'schema', value: text, as }));
+}
+
+/**
+ * Cut `id` saved as `t`, only over the version it was read at (`t.if_updated`): else refused, as the API refuses.
+ * @param {string} id @param {Partial<Timeline> & { if_updated?: string }} t @returns {Promise<Timeline>}
+ */
+export async function saveCut(id, t) {
+	const call = await device();
+	if (!call) throw new Error('avenDB is not open in this app.');
+	const entry = id.slice(4);
+	let world = await worldOf(call);
+	const e = world.entries.find((x) => x.entry === entry);
+	if (!e) throw new Error('No such cut on this Mac.');
+	if (t.if_updated && t.if_updated !== String(e.edits ?? 0)) throw new Error('The cut was changed elsewhere.');
+	const fields = fieldsOf({ ...timelineOf(e), ...t });
+	const ops = Object.entries(fields).map(([k, value]) => ({ op: 'set', entry, path: [k], value }));
+	answer(await call('run', { op: 'batch', ops, as: asIn(world, e.vault) }));
+	world = await worldOf(call);
+	const saved = timelineOf(world.entries.find((x) => x.entry === entry) ?? e);
+	// every file whose look on screen changed: its graded still made again (never failing the save itself)
+	const before = timelineOf(e);
+	for (const clip of restill(before, saved)) await ask(call, world, e, 'frame', { clip }).catch(() => null);
+	await proxiesOf(call, world, saved);
+	return saved;
+}
+
+/**
+ * Each world shot version cut `t` plays that has no proxy yet, its proxy asked for (the `world-proxy` rule, J10):
+ * avenDB's shots only, the API's are the legacy app's to make.
+ * @param {(c: string, ...a: any[]) => Promise<any>} call @param {import('../avendb/vaults.js').WorldView} world @param {any} t
+ */
+async function proxiesOf(call, world, t) {
+	const { versionEntry } = await import('./avenshots.js');
+	const seen = new Set();
+	for (const c of t.clips ?? []) {
+		if (c.kind !== 'world' || typeof c.shot !== 'string' || !c.shot.startsWith('shot:') || seen.has(`${c.shot}@${c.shotVersion}`)) continue;
+		seen.add(`${c.shot}@${c.shotVersion}`);
+		const v = versionEntry(world, c.shot, c.shotVersion);
+		if (v) await ask(call, world, v, 'world-proxy', {}).catch(() => null);
+	}
+}
+
+/** @typedef {{ id: string, track: string, kind?: string, hash?: string, stacks?: unknown, frame?: Record<string, unknown>, script?: { scene?: string } }} Graded */
+
+/**
+ * Per file, the first picture clip that plays it, and what its graded still is made of (its look on screen), as the
+ * API reads it (api/src/renders.ts `gradesOf`).
+ * @param {any} t
+ */
+function gradesOf(t) {
+	/** @type {Map<string, { clip: string, of: string, graded: boolean }>} */
+	const out = new Map();
+	for (const c of /** @type {Graded[]} */ (t.clips ?? [])) {
+		if (c.track !== 'V1' || (c.kind && c.kind !== 'media') || !c.hash || out.has(c.hash)) continue;
+		const own = { stacks: c.stacks ?? null, frame: c.frame?.['16:9'] ?? null, scene: c.script?.scene ?? null };
+		out.set(c.hash, { clip: c.id, of: JSON.stringify({ own, grade: t.grade ?? null, color: t.color ?? null }), graded: !!(c.stacks || c.frame?.['16:9'] || t.grade) });
+	}
+	return out;
+}
+
+/**
+ * The clips whose files' graded stills a save from `before` to `after` makes again: each file whose look changed (a
+ * file never graded, and graded now by nothing, keeps the preview it has).
+ * @param {any} before @param {any} after
+ */
+export function restill(before, after) {
+	const was = gradesOf(before);
+	const clips = [];
+	for (const [hash, now] of gradesOf(after)) {
+		const then = was.get(hash);
+		if (then?.of === now.of || (!now.graded && !then?.graded)) continue;
+		clips.push(now.clip);
+	}
+	return clips;
+}
+
+/**
+ * Rule `key` asked of entry `e` (a cut, a shot version), with the params the asker names (`given`: a render's
+ * delivery, a frame's clip): its task's key, a new task or the one with the same key already there (a held one asked
+ * again).
+ * @param {(c: string, ...a: any[]) => Promise<any>} call @param {import('../avendb/vaults.js').WorldView} world
+ * @param {import('../avendb/vaults.js').EntryView} e @param {string} key @param {Record<string, any>} given
+ */
+async function ask(call, world, e, key, given) {
+	const rule = layered(BUILT_IN, held(world, e.vault)).find((r) => r.key === key);
+	if (!rule) throw new Error(`The ${key} rule is off in this cut's vault.`);
+	const as = asIn(world, e.vault);
+	const tasks = tasksOf(world).filter((t) => t.vault === e.vault);
+	const pinned = pin(rule, e, madeIndex(tasks));
+	if (!pinned) throw new Error(`The cut can't be made into a ${key} yet.`);
+	for (const p of rule.params) if (p in given) pinned.params[p] = given[p] ?? null;
+	const value = newTask(rule, pinned, as, Math.floor(Date.now() / 1000));
+	const known = tasks.find((t) => t.key === value.key);
+	// a graded still still queued for an earlier look of the same clip is not made at all: this one replaces it
+	if (key === 'frame' && given.clip) {
+		const stale = tasks.filter((t) => t.rule === 'frame' && t.status === 'queued' && t.key !== value.key && t.inputs[0]?.entry === e.entry && JSON.parse(t.params || '{}').clip === given.clip);
+		for (const t of stale) await call('run', { op: 'insert', entry: t.entry, path: ['tags'], value: DELETED, as }).catch(() => null);
+	}
+	if (known?.status === 'held') answer(await call('run', retrying(known, as)));
+	if (!known) answer(await call('run', { op: 'create', vault: e.vault, type: 'task', value, as }));
+	const { nudge } = await import('./jobs/mac.js');
+	nudge();
+	return known?.key ?? value.key;
+}
+
+/** @typedef {import('$lib/auth/client').RenderJob} RenderJob */
+
+/** Cut `id`'s entry. @param {import('../avendb/vaults.js').WorldView} world @param {string} id */
+function cutIn(world, id) {
+	const e = world.entries.find((x) => x.entry === id.slice(4));
+	if (!e) throw new Error('No such cut on this Mac.');
+	return e;
+}
+
+/**
+ * Cut `id` rendered (`delivery` "youtube-4k": YouTube's 4K master alone; none: every delivery): its job, as the
+ * studio shows the API's.
+ * @param {string} id @param {'youtube-4k'} [delivery] @returns {Promise<RenderJob>}
+ */
+export async function renderCut(id, delivery) {
+	const call = await device();
+	if (!call) throw new Error('This cut lives in avenDB, which is open only in the Mac app.');
+	const world = await worldOf(call);
+	const key = await ask(call, world, cutIn(world, id), 'render', { delivery: delivery ?? null });
+	const job = (await cutJobs(id)).find((j) => j.key === key);
+	if (!job) throw new Error('The render was asked for, but this Mac does not show it yet.');
+	return job;
+}
+
+/**
+ * A hero frame of cut `id`: one frame at `t` seconds in a delivery shape.
+ * @param {string} id @param {{ t: number, shape: string }} at @returns {Promise<RenderJob>}
+ */
+export async function frameCut(id, at) {
+	const call = await device();
+	if (!call) throw new Error('This cut lives in avenDB, which is open only in the Mac app.');
+	const world = await worldOf(call);
+	const key = await ask(call, world, cutIn(world, id), 'frame', { t: at.t, shape: at.shape, clip: null });
+	const job = (await cutJobs(id)).find((j) => j.key === key);
+	if (!job) throw new Error('The frame was asked for, but this Mac does not show it yet.');
+	return job;
+}
+
+/** How a task's status reads as a render job's. @type {Record<string, RenderJob['status']>} */
+const STATUS = { queued: 'queued', claimed: 'rendering', done: 'done', failed: 'queued', held: 'failed' };
+
+/**
+ * The renders and frames asked of cut `id`, newest first, as the studio reads the API's render jobs: how far each is
+ * from this Mac's jobs (the lanes, vault/app/src/jobs.rs), and a done one's report from its file when it is long.
+ * @param {string} id @returns {Promise<(RenderJob & { key: string })[]>}
+ */
+export async function cutJobs(id) {
+	const call = await device();
+	if (!call) return [];
+	const world = await worldOf(call);
+	const tasks = tasksOf(world)
+		.filter((t) => (t.rule === 'render' || t.rule === 'frame') && t.inputs[0]?.entry === id.slice(4))
+		.sort((a, b) => b.at - a.at)
+		.slice(0, 10);
+	/** @type {Map<string, any>} */
+	const running = new Map();
+	try {
+		const { command } = await import('$lib/native');
+		const jobs = /** @type {{ active: any[] }} */ (await command('jobs_list', { limit: 0 }));
+		for (const j of jobs.active ?? []) running.set(j.subject, j);
+	} catch {
+		// the lanes unread: the tasks' own state alone
+	}
+	const { valueOfFile } = await import('./aven.js');
+	return Promise.all(
+		tasks.map(async (t) => {
+			let v = t.result ? JSON.parse(t.result) : null;
+			if (v?.file) v = { ...v, ...((await valueOfFile(world, v.file)) ?? {}) };
+			const live = running.get(`aven:${t.entry}`);
+			const status = STATUS[t.status] ?? 'queued';
+			const stage = String(live?.stage ?? '');
+			const note = t.status === 'done' ? (v?.note ?? 'done') : t.error ? (t.status === 'held' ? t.error : `tried again: ${t.error}`) : stage.startsWith('rendering') && stage !== 'rendering world plates' && stage !== 'rendering the frame' ? 'rendering' : stage || (status === 'queued' ? 'queued' : 'starting');
+			const at = new Date(t.at * 1000).toISOString();
+			const params = t.params ? JSON.parse(t.params) : {};
+			return {
+				id: `task:${t.entry}`,
+				key: t.key,
+				timeline_id: id,
+				status,
+				progress: t.status === 'done' ? 1 : Number(live?.progress ?? 0),
+				note,
+				output_hash: v?.output_hash ?? null,
+				created: at,
+				updated: live?.ended ?? live?.started ?? at,
+				kind: /** @type {'render' | 'frame'} */ (t.rule),
+				params: t.rule === 'frame' ? { t: params.t ?? undefined, shape: params.shape ?? undefined } : null,
+				report: v?.report ?? (v?.deliveries ? { deliveries: v.deliveries } : null),
+				deliveries: v?.deliveries ?? []
+			};
+		})
+	);
+}
+
+/** Cut `id` deleted (avenDB's deleted tag: it can come back). @param {string} id */
+export async function deleteCut(id) {
+	const call = await device();
+	if (!call) throw new Error('avenDB is not open in this app.');
+	const entry = id.slice(4);
+	const world = await worldOf(call);
+	const e = world.entries.find((x) => x.entry === entry);
+	if (!e) return;
+	answer(await call('run', { op: 'insert', entry, path: ['tags'], value: DELETED, as: asIn(world, e.vault) }));
+}
