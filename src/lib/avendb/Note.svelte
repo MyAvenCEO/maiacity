@@ -31,6 +31,10 @@
 	import SparkCanvas from './SparkCanvas.svelte';
 	import SparkShelf from './SparkShelf.svelte';
 	import Tags from './Tags.svelte';
+
+	/** Whether a record of kind `kind` keeps its text in one field, `text`: an article, a story or a post.
+	 *  @param {string | null | undefined} kind */
+	const textual = (kind) => kind === 'article' || kind === 'story' || !!kind?.startsWith('post');
 	import {
 		actingWords,
 		chainSteps,
@@ -124,7 +128,7 @@
 	let changed = $state(/** @type {Record<string, string[]>} */ ({}));
 	$effect(() => {
 		const [e, kind] = [entry, note?.kind];
-		if (!note || kind === 'document' || kind === 'article') return void (changed = {});
+		if (!note || kind === 'document' || (textual(kind) && kind !== 'story')) return void (changed = {});
 		let gone = false;
 		read(api, { op: 'history', entry: e }, null).then((/** @type {any} */ h) => {
 			/** @type {Record<string, string[]>} */
@@ -165,8 +169,9 @@
 	const key = (/** @type {string | null} */ l) => l ?? '';
 	const lines = $derived(note?.lines ?? []);
 	const here = $derived(lines.find((l) => l.line === line) ?? lines[0]);
-	/** whether it is an article of avenDB's article schema, its text one field, its title no heading */
-	const article = $derived(note?.kind === 'article');
+	/** whether its text is one field of its record, its title no heading: an article of avenDB's article schema, a story's
+	 *  full text, or a post's */
+	const article = $derived(textual(note?.kind));
 	/** whether it is a spark (./sparks.js), its fields beside its text */
 	const spark = $derived(note?.kind === 'spark' || item?.type === 'spark');
 	/** an article's stage in its flow (./flows.js), its eyebrow as it is read */

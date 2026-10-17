@@ -1,12 +1,12 @@
 <!--
-	One story, the whole screen: its title and format, the stages of the story flow (./flows.js) with the one it is in
+	One story, the whole screen: its title, the stages of the story flow (./flows.js) with the one it is in
 	marked and, for whoever may change it, the stages it goes on to; a tab for each stage, each the step of its journey
 	the next milestones fill (sparks and idea, hook, thumbnail, journey, writing, movie, derivatives, scheduled,
 	published), the Idea tab the sparks it grows from and its sources (StorySparks), the Hook tab its hooks, the one on the card, its
 	image title, intro and description beside how it looks on YouTube (StoryHook), the Thumbnail tab its cards, one per
 	shape, in layers (StoryThumbnail), the Journey tab where it starts and ends, its question and its beats with their
-	tension (StoryJourney), the Writing tab its article, an entry of its own beside it, with its variants (StoryWriting),
-	the Movie tab its script, its scenes, lines and shot list, made from the article (StoryMovie);
+	tension (StoryJourney), the Writing tab its full text, the base of every post of it (StoryWriting), the Movie tab its
+	script, its scenes, lines and shot list (StoryMovie), the Derivatives tab its posts, each of a post type (StoryPosts);
 	and on the right its lines and its
 	history, as a note's: each proposal, what its title reads there and Merge for whoever may merge it, and every edit of
 	the main line, newest first, who made it and what title it left, to restore. Agents over the Mac app's MCP write on proposals, which the person merges here.
@@ -19,6 +19,7 @@
 	import StoryHook from './StoryHook.svelte';
 	import StoryJourney from './StoryJourney.svelte';
 	import StoryMovie from './StoryMovie.svelte';
+	import StoryPosts from './StoryPosts.svelte';
 	import StorySparks from './StorySparks.svelte';
 	import StoryThumbnail from './StoryThumbnail.svelte';
 	import StoryWriting from './StoryWriting.svelte';
@@ -34,13 +35,12 @@
 		hook: ['Its hook variants side by side, the one chosen, its image title, intro and description.', 'M2'],
 		thumbnail: ['Its title cards in layers, one per shape, each rendered into the Library.', 'M3'],
 		journey: ['From → to, the question it asks, and its beats with their tension.', 'M4'],
-		writing: ['Its article, with proposals and variants (a German one, a shorter one).', 'M5'],
+		writing: ['Its full text, written out: the base every post of it is drawn from.', 'M5'],
 		movie: ['Its script: a scene for each of the journey’s beats, the lines they say and the shots they need, and its first cut for the studio.', 'M6 · M7'],
-		derivatives: ['Its master post, and every piece cut from it for each platform.', 'M8 · M9'],
+		derivatives: ['Its posts, each one way it goes out, of a post type with its own template.', 'M8 · M9'],
 		scheduled: ['When each piece goes out, platform by platform, and again.', 'M10'],
 		published: ['Live on the Maia Universe and every platform, each with its link.', 'M11']
 	});
-	const FORMATS = ['film', 'reel', 'article', 'post', 'thread', 'inspire', 'newsletter', 'podcast'];
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const item = $derived(world.entries.find((e) => e.entry === entry));
@@ -142,16 +142,6 @@
 				disabled={!writes || busy || can.title === false}
 				onchange={(ev) => set('title', /** @type {HTMLInputElement} */ (ev.target).value.trim())}
 			/>
-			<select
-				class="field"
-				value={record.format ?? ''}
-				aria-label="What it is"
-				disabled={!writes || busy}
-				onchange={(ev) => set('format', /** @type {HTMLSelectElement} */ (ev.target).value)}
-			>
-				<option value="" disabled>What it is…</option>
-				{#each FORMATS as f (f)}<option value={f}>{f}</option>{/each}
-			</select>
 			<p class="where soft">{nameOf(byId.get(item.vault))}</p>
 		{:else}
 			<p class="soft">This device holds no story {short(entry)}.</p>
@@ -177,7 +167,7 @@
 		</nav>
 
 		<div class="body">
-			<section class="step" class:filled={['idea', 'hook', 'thumbnail', 'journey', 'writing', 'movie'].includes(tab)} aria-label={flow.stages.find((s) => s.key === tab)?.name}>
+			<section class="step" class:filled={['idea', 'hook', 'thumbnail', 'journey', 'writing', 'movie', 'derivatives'].includes(tab)} aria-label={flow.stages.find((s) => s.key === tab)?.name}>
 				<h2>{flow.stages.find((s) => s.key === tab)?.name}</h2>
 				{#if tab === 'idea'}
 					<p>{STEPS.idea[0]}</p>
@@ -197,6 +187,9 @@
 				{:else if tab === 'movie'}
 					<p>{STEPS.movie[0]}</p>
 					<StoryMovie {world} {actor} {api} {busy} {item} {writes} />
+				{:else if tab === 'derivatives'}
+					<p>{STEPS.derivatives[0]}</p>
+					<StoryPosts {world} {actor} {api} {busy} {item} {writes} />
 				{:else if STEPS[tab]}
 					<p>{STEPS[tab][0]}</p>
 					<p class="soft">This step comes with milestone {STEPS[tab][1]} of the content plan.</p>

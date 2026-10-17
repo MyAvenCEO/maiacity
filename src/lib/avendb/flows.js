@@ -34,15 +34,15 @@ const PROFILE = 'profile';
  *   code: string, enabled: boolean, tags: string[], entry?: string, vault?: string }} Fn
  */
 
-/** @type {Flow} the content flow: an idea, a draft, then published on the Maia Universe stream */
+/** @type {Flow} the content flow: a post's idea, its draft, then published on the Maia Universe stream */
 export const CONTENT = {
 	kind: 'flow',
 	key: 'content',
 	name: 'Content',
 	about:
-		'An article from its idea to a draft to published. Idea and draft stay with whoever its vault shares them ' +
+		'A post from its idea to a draft to published. Idea and draft stay with whoever its vault shares them ' +
 		'with; published is public, and goes on the Maia Universe stream.',
-	types: ['article'],
+	types: ['post'],
 	stages: [
 		{ id: 1, key: 'idea', name: 'Idea', public: false, next: ['draft'], x: 0, y: 0 },
 		{ id: 2, key: 'draft', name: 'Draft', public: false, next: ['idea', 'published'], x: 1, y: 0 },
@@ -93,25 +93,16 @@ export const STORY = {
 /** @type {Flow[]} the flows every app knows by heart */
 export const FLOWS = [CONTENT, STORY];
 
-const PUBLISH = `// As an article enters Published: a post about it on the Maia Universe stream, and the pictures it shows that
-// go public with it. Each carries the stage's tag too, so the same Public share reaches it.
+const PUBLISH = `// As a post enters Published: the pictures it shows go public with it. Each carries the stage's tag too, so the
+// same Public share reaches it.
 export function run(event) {
-  const pictures = event.pictures.map((entry) => ({ op: 'tag', entry, add: [event.tag] }));
-  if (event.posts.length) return pictures;
-  const { entry, title, text } = event.item;
-  const post = { kind: 'post', title, text, channel: 'Devlog', about: entry, tags: [] };
-  return [{ op: 'create', type: 'post', tags: [event.tag], value: post }, ...pictures];
+  return event.pictures.map((entry) => ({ op: 'tag', entry, add: [event.tag] }));
 }
 `;
 
-const UNPUBLISH = `// As an article leaves Published: its posts deleted, and they and the pictures only it shows no longer public.
+const UNPUBLISH = `// As a post leaves Published: the pictures only it shows are no longer public.
 export function run(event) {
-  const off = (entry) => ({ op: 'tag', entry, remove: [event.tag] });
-  const posts = event.posts.flatMap((post) => [
-    { op: 'insert', entry: post, path: ['tags'], value: 'avendb:deleted' },
-    off(post)
-  ]);
-  return [...posts, ...event.pictures.map(off)];
+  return event.pictures.map((entry) => ({ op: 'tag', entry, remove: [event.tag] }));
 }
 `;
 
@@ -122,6 +113,16 @@ export function run(event) {
  */
 export const RETIRED = {
 	'Publish to Maia Universe': [
+		`// As an article enters Published: a post about it on the Maia Universe stream, and the pictures it shows that
+// go public with it. Each carries the stage's tag too, so the same Public share reaches it.
+export function run(event) {
+  const pictures = event.pictures.map((entry) => ({ op: 'tag', entry, add: [event.tag] }));
+  if (event.posts.length) return pictures;
+  const { entry, title, text } = event.item;
+  const post = { kind: 'post', title, text, channel: 'Devlog', about: entry, tags: [] };
+  return [{ op: 'create', type: 'post', tags: [event.tag], value: post }, ...pictures];
+}
+`,
 		`// As an article enters Published: a post about it on the Maia Universe stream. The post carries the stage's
 // tag too, so the same Public share reaches it.
 export function run(event) {
@@ -133,6 +134,16 @@ export function run(event) {
 `
 	],
 	'Take it off Maia Universe': [
+		`// As an article leaves Published: its posts deleted, and they and the pictures only it shows no longer public.
+export function run(event) {
+  const off = (entry) => ({ op: 'tag', entry, remove: [event.tag] });
+  const posts = event.posts.flatMap((post) => [
+    { op: 'insert', entry: post, path: ['tags'], value: 'avendb:deleted' },
+    off(post)
+  ]);
+  return [...posts, ...event.pictures.map(off)];
+}
+`,
 		`// As an article leaves Published: its posts deleted, and no longer public.
 export function run(event) {
   return event.posts.flatMap((post) => [
@@ -149,7 +160,7 @@ export const FUNCTIONS = [
 	{
 		kind: 'function',
 		name: 'Publish to Maia Universe',
-		about: 'A post on the Maia Universe stream, as an article is published, and its pictures public with it.',
+		about: 'The pictures a post shows public with it, as it is published on the Maia Universe stream.',
 		on: 'enter',
 		flow: 'content',
 		stage: 'published',
@@ -160,7 +171,7 @@ export const FUNCTIONS = [
 	{
 		kind: 'function',
 		name: 'Take it off Maia Universe',
-		about: 'Its posts deleted, and the pictures only it shows private again, as an article goes back from Published.',
+		about: 'The pictures only it shows private again, as a post goes back from Published.',
 		on: 'leave',
 		flow: 'content',
 		stage: 'published',

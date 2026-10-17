@@ -4,14 +4,15 @@
 	signed in to the app ($lib/app/pill.svelte.js `pillContext`); first its home, on the whole screen, each of its pages an
 	app on a phone's home screen, by group (`#home`, or no address); then the picked vault's name and its pages, as a database studio lists them: its sparks (each an open canvas of
 	artifacts, text notes and other sparks, and the notes written before them), its artifacts (one source fact each: a
-	link, a picture, a clip, a YouTube video), its todos, its articles, its stories (each
+	link, a picture, a clip, a YouTube video), its todos, its stories (each
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
 	songs, its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
 	next; its database (the query console, the table editor, its schemas and lenses, its history, every signed edit, and
 	the device's jobs, what it syncs in the background); then its settings (About, Owners and devices, and Sharing, the
 	one place that says who it is shared with); and the page picked in the middle. Each page has an address of its own
 	(`#todos`), and so has each spark and note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
-	screen, each artifact (`#artifacts/` and its entry), and each article (`#articles/` and its entry), to read, and to edit as a note (`/edit`). The device picks
+	screen, each artifact (`#artifacts/` and its entry), and each story (`#stories/` and its entry), its text edited as a note
+	(`/edit`). The device picks
 	who the person acts as in each vault, with no switch to flip (its world's `acting`): in a vault their vault owns,
 	directly or through owners of owners, they act as it, as its owners need no cap there; elsewhere as the vault of
 	theirs that holds the strongest cap over it, whose caps then decide what the page shows and what it may do. At the
@@ -26,12 +27,10 @@
 	import { enter } from '$lib/app/immersive.svelte';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import AccessRequest from './AccessRequest.svelte';
-	import Article from './Article.svelte';
 	import Artifact from './Artifact.svelte';
 	import Artifacts from './Artifacts.svelte';
 	import { retagging } from './artifacts.js';
 	import Ask from './Ask.svelte';
-	import Articles from './Articles.svelte';
 	import Flows from './Flows.svelte';
 	import Hitl from './Hitl.svelte';
 	import Functions from './Functions.svelte';
@@ -91,7 +90,6 @@
 				['sparks', 'Sparks', 'spark'],
 				['artifacts', 'Artifacts', 'artifact'],
 				['todos', 'Todos', 'todo'],
-				['articles', 'Articles', 'article'],
 				['stories', 'Stories', 'story'],
 				['library', 'Library', 'library'],
 				['flows', 'Flows', 'flow'],
@@ -133,25 +131,25 @@
 		sync: 'sharing',
 		cells: 'sharing',
 		shares: 'sharing',
-		notes: 'sparks'
+		notes: 'sparks',
+		articles: 'stories'
 	});
 
 	/**
-	 * The page an address names: `#todos`, a spark's or a note's `#notes/` and its entry, an article's `#articles/` and
-	 * its entry, to read, and with `/edit`, to edit as a note (and with a story's entry after it, from that story's
-	 * Writing tab, which its back arrow goes back to), a story's `#stories/` and its entry, and the stage whose tab it
-	 * opens on after it, where it names one; else, as with none or `#home`, the vault's home.
+	 * The page an address names: `#todos`, a spark's or a note's `#notes/` and its entry, a story's `#stories/` and its
+	 * entry, and the stage whose tab it opens on after it, where it names one, or with `/edit`, its text to edit as a
+	 * note, whose back arrow goes back to its Writing tab (`#articles/` is an older address of the stories: there are only
+	 * stories and their posts now); else, as with none or `#home`, the vault's home.
 	 * @param {string} hash
 	 */
 	function parse(hash) {
-		const [at, entry, edit, from] = hash.replace(/^#/, '').split('/');
+		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
 		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page)?.[0] ?? 'home');
 		const hex = (/** @type {string | undefined} */ x) => /^[0-9a-f]{64}$/.test(x ?? '');
-		const opens = ['sparks', 'artifacts', 'articles', 'stories'].includes(known) && hex(entry);
-		const editing = opens && known === 'articles' && edit === 'edit';
-		const story = editing && hex(from) ? from : '';
-		return { page: known, entry: opens ? entry : '', edit: editing, story, step: opens && known === 'stories' ? (edit ?? '') : '' };
+		const opens = ['sparks', 'artifacts', 'stories'].includes(known) && hex(entry);
+		const editing = opens && known === 'stories' && edit === 'edit';
+		return { page: known, entry: opens ? entry : '', edit: editing, step: opens && known === 'stories' && !editing ? (edit ?? '') : '' };
 	}
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
@@ -244,7 +242,6 @@
 	const open = (entry) => go(`notes/${entry}`);
 
 	/** Open article `entry` to read, on the whole screen. @param {string} entry */
-	const openArticle = (entry) => go(`articles/${entry}`);
 
 	/** Open story `entry`, on the whole screen. @param {string} entry */
 	const openStory = (entry) => go(`stories/${entry}`);
@@ -269,16 +266,12 @@
 <div class="shell" class:reading={!!route.entry}>
 	{#if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
-			{#if route.page === 'stories'}
+			{#if route.page === 'stories' && route.edit}
+				<Note {world} {actor} {api} {busy} entry={route.entry} back="#stories/{route.entry}/writing" backTo="The story" />
+			{:else if route.page === 'stories'}
 				<Story {world} {actor} {api} {busy} entry={route.entry} step={route.step} />
 			{:else if route.page === 'artifacts'}
 				<Artifact {world} {actor} {api} {busy} entry={route.entry} />
-			{:else if route.page === 'articles' && !route.edit}
-				<Article {world} {actor} {api} entry={route.entry} />
-			{:else if route.page === 'articles' && route.story}
-				<Note {world} {actor} {api} {busy} entry={route.entry} back="#stories/{route.story}/writing" backTo="The story" />
-			{:else if route.page === 'articles'}
-				<Note {world} {actor} {api} {busy} entry={route.entry} back="#articles/{route.entry}" backTo="The article" />
 			{:else}
 				<Note {world} {actor} {api} {busy} entry={route.entry} />
 			{/if}
@@ -369,8 +362,6 @@
 		<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 		{#if tab === 'sparks'}
 			<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
-		{:else if tab === 'articles'}
-			<Articles {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openArticle} />
 		{:else if tab === 'stories'}
 			<Stories {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openStory} />
 		{:else if tab === 'todos'}
