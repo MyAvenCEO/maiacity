@@ -12,7 +12,7 @@
 <script>
 	import Icon from './Icon.svelte';
 	import { vaultSource } from './assets.js';
-	import { count, nameOf, short } from './vaults.js';
+	import { count, nameOf, seeded, short } from './vaults.js';
 	import { groupName, refusedOf, shelfOf } from '$lib/assets/sources/shelf.js';
 
 	/**
@@ -48,6 +48,9 @@
 	const read = (root, size, from, to) => api.readFile(root, size, from, to);
 
 	const here = $derived(world.vaults.find((v) => v.id === vault));
+	/** the Maia City vault, where the asset recipes are kept, as this person's world knows it: the seed's coop where
+	 *  they founded it, else a coop of that name */
+	const city = $derived(seeded(world)[3]?.[0] ?? world.vaults.find((v) => v.kind === 'coop' && v.name === 'Maia City'));
 	const held = $derived(db?.vault === vault ? db : null);
 	/** the vault's recipes, read from its entries as the acting vault opens them, each file only when it is built */
 	const source = $derived(vaultSource(world, held, vault, actor, read));
@@ -159,13 +162,22 @@
 						<h3>{chosen.title}</h3>
 						{#if chosen.note}<p>{chosen.note}</p>{/if}
 					</header>
-					{#await viewer}
-						<p class="soft">Opening the stage…</p>
-					{:then { default: VaultAsset }}
-						<VaultAsset {source} hash={chosen.hash} />
-					{:catch e}
-						<p class="error">The stage could not be opened: {e?.message ?? e}</p>
-					{/await}
+					<!-- a stage that fails says so here, and the list beside it stays -->
+					<svelte:boundary onerror={(e) => console.error(e)}>
+						{#await viewer}
+							<p class="soft">Opening the stage…</p>
+						{:then { default: VaultAsset }}
+							<VaultAsset {source} hash={chosen.hash} />
+						{:catch e}
+							<p class="error">The stage could not be opened: {e?.message ?? e}</p>
+						{/await}
+						{#snippet failed(e, reset)}
+							<p class="error" role="alert">
+								Showing {chosen.label} failed: {/** @type {any} */ (e)?.message ?? e}
+								<button class="btn quiet" onclick={reset}>Try again</button>
+							</p>
+						{/snippet}
+					</svelte:boundary>
 					<dl>
 						<dt>Ref</dt>
 						<dd class="mono">{chosen.label}</dd>
@@ -198,7 +210,12 @@
 	{:else}
 		<p class="empty">
 			<Icon name="asset" size={18} />
-			Once the Maia City vault’s recipes are seeded into {nameOf(here)}, each shows here, built from its own entry.
+			{#if here?.id === city?.id}
+				{nameOf(here)} holds no asset recipes yet. Setting up the account that founded it writes them in.
+			{:else}
+				{nameOf(here)} holds no asset recipes: they are kept in {city ? nameOf(city) : 'the Maia City vault'}. Open it
+				to see each one, built from its own entry.
+			{/if}
 		</p>
 	{/if}
 {/if}

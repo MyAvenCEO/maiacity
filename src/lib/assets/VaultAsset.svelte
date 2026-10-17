@@ -102,9 +102,19 @@
 		const box = canvasBox;
 		if (!box || gone) return;
 		const low = lowPower();
-		const view = createStageRenderer(box, { pixelRatio: topPixelRatio(low), shadows: 'soft', onLost: () => (lost = true), fov: 40, turntable: true, fit, onResize: (w, h) => stage.resize(w, h) });
+		/** @type {any} */
+		let view;
+		try {
+			view = createStageRenderer(box, { pixelRatio: topPixelRatio(low), shadows: 'soft', onLost: () => (lost = true), fov: 40, turntable: true, fit, onResize: (w, h) => stage?.resize(w, h) });
+			stage = new Stage(view.renderer, view.camera, { low });
+		} catch (e) {
+			// a browser that gives this page no 3D drawing: said on the stage, the rest of the page goes on
+			view?.dispose?.();
+			error = `This browser couldn’t open the 3D stage: ${String(e?.message ?? e)}`;
+			console.error(e);
+			return;
+		}
 		const { renderer, camera, controls } = view;
-		stage = new Stage(renderer, camera, { low });
 
 		/** the build shown: let go of, on the stage and on the graphics card */
 		const letGo = (h) => {
