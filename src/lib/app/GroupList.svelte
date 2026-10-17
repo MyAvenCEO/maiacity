@@ -10,7 +10,6 @@
 	import { me } from '$lib/auth/client';
 	import { holds, isAdmin, published, released } from '$lib/app/places';
 	import { cityOf, loadGames, publish } from '$lib/app/games.svelte.js';
-	import { publishable } from '../../../game/games.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { asset } from '$lib/media/url';
 	import Icon from '$lib/app/Icon.svelte';
@@ -78,7 +77,7 @@
 						</span>
 						<span class="go" aria-hidden="true">›</span>
 					</a>
-					{#if city && p.game && publishable(p.game)}
+					{#if city && p.game}
 						{@const on = published(p)}
 						<button class="publish" class:on disabled={!!session.doing} onclick={() => publish(p.game, !on)} title={on ? 'Everyone may watch and read it: withdraw it' : 'Only the admins open it: publish it to everyone'}>{on ? 'Withdraw' : 'Publish'}</button>
 					{/if}

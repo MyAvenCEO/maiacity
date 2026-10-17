@@ -8,11 +8,8 @@
  * alike. Withdrawing it is revoking that share. Nothing here writes: the page's seed writes the entries
  * (src/lib/avendb/seed.js), the vault's owner publishes (src/lib/app/games.svelte.js).
  *
- * A game's id is the one its code already carries (code/ `for`): its name's number, not its address's, so Sandbox 7
- * (at /app/games/sandbox-8/) is `sandbox-7`.
- *
- * A game that plays only in Samuel's tailnet (`tailnet`: Sandboxes 7 and 8, Samuel 2026-10-17) is never public: it
- * can't be published, and a Public share on its tag is not taken as publishing it.
+ * A game's id is the one its code already carries (code/ `for`): its name's number, not its address's, so Sandbox 6
+ * (at /app/games/sandbox-7/) is `sandbox-6`.
  */
 
 /** every game, by its id: its name and where it is played (under the site's base) */
@@ -23,16 +20,11 @@ export const GAMES = [
 	{ id: 'sandbox-4', label: 'Sandbox 4', route: '/app/games/sandbox-5/' },
 	{ id: 'sandbox-5', label: 'Sandbox 5', route: '/app/games/sandbox-6/' },
 	{ id: 'sandbox-6', label: 'Sandbox 6', route: '/app/games/sandbox-7/' },
-	{ id: 'sandbox-7', label: 'Sandbox 7', route: '/app/games/sandbox-8/', tailnet: true },
-	{ id: 'sandbox-8', label: 'Sandbox 8', route: '/app/games/sandbox-9/', tailnet: true },
 	{ id: 'maiacity-v1', label: 'MaiaCity V1', route: '/app/maiacity-v1/' }
 ];
 
 /** the game played at `route` (without the base), if any */
 export const gameOfRoute = (route) => GAMES.find((g) => route === g.route)?.id ?? null;
-
-/** whether game `id` may be published: not one that plays only in Samuel's tailnet */
-export const publishable = (id) => !GAMES.find((g) => g.id === id)?.tailnet;
 
 /** the tag every entry of game `id` carries, and that its Public share names */
 export const gameTag = (id) => `game:${id}`;
@@ -50,8 +42,8 @@ export const GAMES_FEED = 'https://avendb.maia.city/feed/entries?seed=1&type=gam
 export function publishedOf(rows) {
 	const ids = new Set();
 	for (const r of rows ?? []) {
-		if (r?.type !== GAME && !(r?.tags ?? []).includes(GAME)) continue;
-		for (const t of r?.tags ?? []) if (typeof t === 'string' && t.startsWith('game:') && publishable(t.slice(5))) ids.add(t.slice(5));
+		if ((r?.type !== GAME && !(r?.tags ?? []).includes(GAME)) || (r?.tags ?? []).includes('avendb:deleted')) continue;
+		for (const t of r?.tags ?? []) if (typeof t === 'string' && t.startsWith('game:')) ids.add(t.slice(5));
 	}
 	return ids.size ? ids : null;
 }

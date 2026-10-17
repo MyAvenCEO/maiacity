@@ -4,12 +4,8 @@
  * later move to avenDB is a copy (each folder with an entry.json is one entry; its other files are its files):
  *
  *   views/<id>/                        a view: entry.json, view.html or a2ui.json, data.json, input.json, logic.js
- *   logic/sandbox-7/<card>/            a rule card's default code: entry.json, logic.js
- *   configs/sandbox-7/<id>/v<n>/       one version of a Sandbox 7 config: entry.json, cards.json, a file a card's code
- *   mips/sandbox-7/<number>/           an accepted MIP as it landed: entry.json, cards.json, a file a card's code
  *
- * Cards keep their code in a file of its own (<card id>.js, or .html for a view card), named in cards.json by `file`,
- * so a PR shows a rule's change as code, not as an escaped string. Nothing here touches a disk: scripts/code-index.mjs
+ * Nothing here touches a disk: scripts/code-index.mjs
  * and scripts/code-land.mjs read and write, game/code/land.js decides what to write.
  */
 
@@ -18,25 +14,6 @@ export const jsonFile = (v) => `${JSON.stringify(v, null, '\t')}\n`;
 
 /** JSON with its keys in order, so the same entry always hashes the same */
 export const canonical = (v) => (Array.isArray(v) ? `[${v.map(canonical).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}` : JSON.stringify(v));
-
-/** cards as files: cards.json (each card without its code; `file` names the file that holds it) and one file a code */
-export function cardsToFiles(cards) {
-	const files = {};
-	const list = (cards ?? []).map((c) => {
-		const { code, ...rest } = c;
-		if (typeof code !== 'string' || !code.trim()) return rest;
-		const file = `${c.id}.${c.kind === 'view' ? 'html' : 'js'}`;
-		files[file] = code;
-		return { ...rest, file };
-	});
-	files['cards.json'] = jsonFile(list);
-	return files;
-}
-
-/** cards read back from their files, each with its code (empty where it has none: its rules' default runs) */
-export function cardsOfFiles(files) {
-	return JSON.parse(files['cards.json'] ?? '[]').map(({ file, ...c }) => ({ ...c, code: file ? (files[file] ?? '') : '' }));
-}
 
 /** a Generated UI view (as the one checker keeps it) as an entry and its files; viewOfEntry (./index.js) reads it back */
 export function viewToFiles(v, place = 'genui') {

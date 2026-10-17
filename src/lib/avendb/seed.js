@@ -27,6 +27,7 @@
 //              tagged `game` and `game:<id>`; a game the repo released (places.ts, no `release: 'draft'`) also gets
 //              the Public share on its tag that publishes it, written with its entry, once: a game its owner withdrew
 //              later is never published again by a seed
+//   retire     every entry of a game the repo let go (`RETIRED`: Sandboxes 7 and 8), deleted
 //
 // The story is the source of truth; an article, a script or an inspire piece is a delivery of it, an entry of its own
 // that links it (`story`) and says which delivery it is by its tag. The notebook's ideas live on maia.city's server,
@@ -221,6 +222,25 @@ export async function touchingUp(world, vault) {
 		]);
 	}
 	return out;
+}
+
+/** The tags of what the vault let go (Samuel 2026-10-17: Sandboxes 7 and 8 deleted, with their proposals, worlds and
+ * code): every entry carrying one is deleted (`retiring`). A tag ending in `/` names every tag it starts. */
+export const RETIRED = ['game:sandbox-7', 'game:sandbox-8', 'ref:logic/sandbox-7/', 'ref:views/view-wants'];
+
+/** The tag a deleted entry carries among its own tags: no feed reader takes it in (game/code/sources/avendb.js, game/games.js). */
+export const GONE = 'avendb:deleted';
+
+/**
+ * The ops that delete what vault `vault` still holds of a game the repo let go (`RETIRED`): its game entry, its AIPs,
+ * its code, each tagged `GONE`. Its edits stay in the vault's history, as every edit does.
+ * @param {import('./vaults.js').WorldView} world @param {string} vault
+ */
+export function retiring(world, vault) {
+	const gone = (/** @type {string} */ t) => RETIRED.some((r) => (r.endsWith('/') ? t.startsWith(r) : t === r));
+	return world.entries
+		.filter((e) => e.vault === vault && !e.deleted && !(e.tags ?? []).includes(GONE) && (e.tags ?? []).some(gone))
+		.map((e) => ({ op: 'tag', entry: e.entry, add: [GONE], as: vault }));
 }
 
 /**

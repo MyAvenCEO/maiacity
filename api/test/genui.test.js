@@ -52,7 +52,7 @@ test("only a view with nothing that does nothing is kept; a game's screen id is 
   await putView({ id: "fetchy", title: "Fetchy", kind: "html", spec: { html: "<script>fetch('/x')</script>" } });
   await expect(keepView("fetchy")).rejects.toThrow(/does nothing/);
   await deleteView("fetchy");
-  await expect(putView({ id: "view-wants", title: "Mine", kind: "html", spec: { html: "<p>hi</p>" } })).rejects.toThrow(/sandbox-7's screen/);
+  await expect(putView({ id: "view-holders", title: "Mine", kind: "html", spec: { html: "<p>hi</p>" } })).rejects.toThrow(/maiacity-v1's screen/);
 });
 
 test("a draft the repo holds as it is goes; a change to a repo view stays a draft; the repo's views go only by PR", async () => {
@@ -67,12 +67,9 @@ test("a draft the repo holds as it is goes; a change to a repo view stays a draf
 });
 
 test("a view card is a screen a MIP may carry: checked, pinned libraries only", async () => {
-  const { checkCard } = await import("../../game/economy/params.js");
-  const { defaultViews, viewsOf } = await import("../../game/economy/views.js");
-  expect(checkCard(defaultViews()[0]).card.data).toEqual({ slot: "panel", libs: [], height: 520 });
-  expect(checkCard({ id: "vw", kind: "view", code: "<p>hi</p>", data: { libs: ["evil"] } }).error).toMatch(/no library/);
-  expect(checkCard({ id: "vw", kind: "view", code: "" }).error).toMatch(/HTML/);
-  const mine = { id: "view-wants", kind: "view", name: "Wants 2", code: "<p>2</p>" };
-  expect(viewsOf([mine]).map((v) => v.name)).toEqual(["Wants 2"]);
-  expect(viewsOf([]).map((v) => v.id)).toEqual(["view-wants"]);
+  const { checkViewCard } = await import("../../game/genui/views.js");
+  const { SLOTS, defaultViews } = await import("../../game/maiacity-v1/views.js");
+  expect(checkViewCard(defaultViews()[0], SLOTS).card.data.slot).toBeTruthy();
+  expect(checkViewCard({ id: "vw", kind: "view", code: "<p>hi</p>", data: { libs: ["evil"] } }, SLOTS).error).toMatch(/no library/);
+  expect(checkViewCard({ id: "vw", kind: "view", code: "" }, SLOTS).error).toMatch(/HTML/);
 });

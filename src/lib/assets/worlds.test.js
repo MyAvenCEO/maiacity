@@ -43,8 +43,6 @@ const WORLDS = [
 	'src/lib/sandbox-2/',
 	'src/lib/sandbox-6/',
 	'src/lib/sandbox-7/',
-	'src/lib/sandbox-8/',
-	'src/lib/sandbox-9/',
 	'src/lib/maiacity-v1/',
 	'src/lib/worlds/',
 	'src/lib/factories/',

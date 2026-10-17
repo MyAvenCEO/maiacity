@@ -18,10 +18,9 @@ services:
     expose:
       - "3000"
     environment:
-      # avenDB's feeds of code and of published games, read inside the compose network (avendb.maia.city takes only
+      # avenDB's feed of code, read inside the compose network (avendb.maia.city takes only
       # post-quantum TLS)
       AVENDB_FEED: http://avendb:3351/feed/code
-      AVENDB_GAMES_FEED: http://avendb:3351/feed/entries?seed=1&type=game
 
   # the vault's peer: its image from GHCR; UDP 7400 open to the Macs, the relay and gateway only through Caddy
   vault:

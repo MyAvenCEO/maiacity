@@ -612,5 +612,5 @@ export const saveShot = (id: string, s: { name?: string; spec?: ShotSpec }) => c
 /** Every version of a shot, oldest first. */
 export const shotVersions = (id: string) => call<{ version: number; spec: ShotSpec; created: string }[]>(`/api/shots/${id}/versions`);
 
-/** Any API call, the same way as every helper here (the economy sandbox's store, src/lib/sandbox-8/store.js, uses it). */
+/** Any API call, the same way as every helper here. */
 export const apiCall = <T>(path: string, init: RequestInit = {}) => call<T>(path, init);
