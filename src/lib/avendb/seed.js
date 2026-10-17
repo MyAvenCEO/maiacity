@@ -5,6 +5,8 @@
 // holds already is left out, and seeding again writes only what is new. The repository stays as it is: it is the seed
 // pages read offline, and what a reset brings back.
 //
+//   keep       a Backup share to avenCEO server's vault, where the vault gives it none yet: the server serves only what
+//              it keeps, so without it the feeds have nothing of the vault's to show
 //   code       each view and logic module of code/ (game/code/sources/avendb.js `recordOf`), found by its `ref:` tag,
 //              and one Public share of the vault's views and logic, so the server's code feed serves them
 //   templates  each delivery type's writing guide, a note tagged `template:<type>` (article: blog/TEMPLATE.md,
@@ -91,12 +93,17 @@ const filled = (o) =>
 const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
- * @typedef {{ key: string, kind: 'code' | 'share' | 'template' | 'journal' | 'inspire' | 'pad' | 'published', name: string,
- *   mark: string }} Piece
+ * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'template' | 'journal' | 'inspire' | 'pad' | 'published',
+ *   name: string, mark: string, server?: string }} Piece
  */
 
-/** Every piece of the repo seed, each with the tag its copy carries (`mark`). @returns {Piece[]} */
-export function seedPieces() {
+/**
+ * Every piece of the repo seed, each with the tag its copy carries (`mark`); with `server`, the id of avenCEO server's
+ * vault, first the Backup share that makes it keep the vault.
+ * @param {string | null} [server] @returns {Piece[]}
+ */
+export function seedPieces(server = null) {
+	const keep = server ? [{ key: 'server-keep', kind: /** @type {const} */ ('keep'), name: 'The server keeps it', mark: '', server }] : [];
 	const code = Object.values(ENTRIES)
 		.filter((e) => CODE_TYPES.includes(e.type))
 		.sort((a, b) => a.ref.localeCompare(b.ref))
@@ -115,7 +122,7 @@ export function seedPieces() {
 		.filter((p) => p.kind === 'journal' || p.kind === 'pad')
 		.map((p) => ({ key: p.key, kind: /** @type {const} */ ('pad'), name: p.name, mark: legacyTag(p.key) }));
 	const published = [{ key: 'published-share', kind: /** @type {const} */ ('published'), name: 'Everyone reads what it published', mark: '' }];
-	return [...code, ...share, ...templates, ...published, ...journal, ...inspire, ...pads];
+	return [...keep, ...code, ...share, ...templates, ...published, ...journal, ...inspire, ...pads];
 }
 
 /**
@@ -126,6 +133,14 @@ export function codeShared(world, vault) {
 	const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
 	return world.shares.some((c) => c.over === vault && c.who === EVERYONE && types(c) === [...CODE_TYPES].sort().join());
 }
+
+/**
+ * Whether vault `vault` gives vault `server` a share on the whole of it that keeps it there (Backup, or one that reads
+ * or writes it), as world `world` shows its shares.
+ * @param {import('./vaults.js').WorldView} world @param {string} vault @param {string} server
+ */
+export const serverKeeps = (world, vault, server) =>
+	world.shares.some((c) => c.over === vault && c.who === server && c.whole && ['backup', 'read', 'write', 'owner'].includes(c.level));
 
 /**
  * Whether vault `vault` gives everyone a Public share of what it published (`PUBLISHED`).
@@ -142,6 +157,7 @@ export const publishedShared = (world, vault) =>
 export function unseeded(world, vault, all) {
 	const have = new Set(world.entries.filter((e) => e.vault === vault && !e.deleted).flatMap((e) => e.tags ?? []));
 	return all.filter((p) =>
+		p.kind === 'keep' ? !serverKeeps(world, vault, p.server ?? '') :
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) : !have.has(p.mark)
 	);
 }
@@ -177,6 +193,7 @@ export async function seeding(p, vault) {
 		const { type, tags, value } = recordOf(/** @type {Record<string, any>} */ (ENTRIES)[p.key]);
 		return [{ op: 'create', vault, type, tags, schema: type, value, as }];
 	}
+	if (p.kind === 'keep') return [{ op: 'share', over: vault, who: { vault: p.server }, level: 'Backup', as }];
 	if (p.kind === 'share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CODE_TYPES }, as }];
 	if (p.kind === 'published') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: PUBLISHED }, as }];
 	if (p.kind === 'template') {
