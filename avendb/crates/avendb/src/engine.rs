@@ -452,7 +452,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "card" => Named::Id(lens::CARD_V1.id()),
             "profile" => Named::Id(lens::PROFILE_V1.id()),
             "file" => Named::Id(lens::FILE_V1.id()),
-            "story" => Named::Id(lens::STORY_V1.id()),
+            "story" => Named::Id(lens::STORY_V2.id()),
             "spark" => Named::Id(lens::SPARK_V2.id()),
             "request" => Named::Id(lens::REQUEST_V1.id()),
             "artifact" => Named::Id(lens::ARTIFACT_V1.id()),
