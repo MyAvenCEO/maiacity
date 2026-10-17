@@ -20,10 +20,10 @@
 	/** @param {HTMLElement} stage @param {string | undefined} area @param {(label: string) => void} onProgress */
 	async function mount(stage, area, onProgress) {
 		if (area === 'island') {
-			// the island is grown when a shot is staged: its seed is the shot's
-			const { createScene } = await import('$lib/sandbox-2/island/scene');
+			// Sandbox 1's island with the city's villages, grown when a shot is staged: its seed is the shot's
+			const [{ createScene }, { VILLAGES }] = await Promise.all([import('$lib/aven-city/game/three/scene'), import('$lib/sandbox-2/island/villages.js')]);
 			const canvas = canvasIn(stage);
-			const island = createScene(canvas, { film: true });
+			const island = createScene(canvas, { film: true, sandbox: 'sandbox-2', settlements: VILLAGES });
 			onProgress('ready');
 			return { dispose: () => (island.dispose(), canvas.remove()) };
 		}
