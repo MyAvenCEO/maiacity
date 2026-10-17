@@ -44,10 +44,10 @@
 			<div class="story">
 				<h1 class="cover">
 					<span class="opening">This is the story</span>
-					<span class="founders"><span class="light">how</span> <FounderCounter /> <span class="light">of</span> 1,346,269 founders build their own <em>solarpunk</em> city,</span>
+					<span class="founders"><span class="light">how</span> <FounderCounter /> <span class="light">of</span> 1,346,269 founders build their own <em>solarpunk</em> city</span>
 					<span class="deck">
-						<span class="when">first in game, then in real,</span>
-						<span class="years">in just <span class="number">16</span> years.</span>
+						<span class="years">in just <span class="number">16</span> years,</span>
+						<span class="when">first in game, then in real.</span>
 					</span>
 				</h1>
 			</div>
@@ -197,12 +197,12 @@
 	.opening {
 		justify-self: start;
 		margin-bottom: 1.4rem;
-		padding: 0.45rem 0.95rem;
+		padding: 0.55rem 1.2rem;
 		border-radius: 999px;
 		background: color-mix(in srgb, var(--paper) 90%, transparent);
 		color: var(--ink);
 		font-family: var(--font-body);
-		font-size: 0.72rem;
+		font-size: clamp(0.8rem, 1.2vw, 1rem);
 		font-weight: 500;
 		letter-spacing: 0.22em;
 		text-transform: uppercase;
@@ -230,7 +230,7 @@
 		color: var(--mustard);
 	}
 
-	/* the deck under a hairline, one line: how it happens on the left, how long on the right */
+	/* the deck under a hairline, one line: how long on the left, how it happens on the right */
 	.deck {
 		display: flex;
 		flex-wrap: wrap;
@@ -240,14 +240,14 @@
 		margin-top: clamp(1.25rem, 3vh, 2rem);
 		padding-top: 0.8rem;
 		border-top: 1px solid rgb(255 250 240 / 0.55);
-		font-size: clamp(1.15rem, 2.2vw, 1.7rem);
+		font-size: clamp(1.5rem, 3.2vw, 2.6rem);
 		font-weight: 300;
 		line-height: 1.15;
 		letter-spacing: -0.015em;
 	}
 
 	.number {
-		font-size: 1.9em;
+		font-size: 1.6em;
 		font-weight: 600;
 		line-height: 0.8;
 		letter-spacing: -0.04em;
