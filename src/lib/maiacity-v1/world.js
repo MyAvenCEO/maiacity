@@ -18,7 +18,8 @@
  * the ground while a spot is chosen goes to onGround, and every frame the players' labels' places go to onLabels.
  */
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createControls } from '$lib/render/core.js';
+import { worldRenderer } from '$lib/render/world.js';
 import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
@@ -660,20 +661,16 @@ const VAN_SEAT = V(0.2, 1.8, 0.26);
 const VAN_LOOK = V(0.0, 1.45, 14);
 
 export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {}, onGround = () => {}, onRoam = () => {} } = {}) {
-	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-	renderer.shadowMap.enabled = true;
-	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	// the world renderer ($lib/render/world.js): soft shadows, V1's own colours (no tone mapping), at most 1.5 pixels
+	// per CSS pixel
+	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5, toneMapping: 'none' });
 	const scene = new THREE.Scene();
 	const sky = new THREE.Color(0xd8e2e2);
 	scene.background = sky;
 	scene.fog = new THREE.Fog(sky, 380, 2200);
 	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 6400);
 	camera.position.set(138, 118, 170);
-	const controls = new OrbitControls(camera, canvas);
-	controls.target.set(2, 1, 3);
-	controls.enableDamping = true;
-	controls.minDistance = 12;
+	const controls = createControls(camera, canvas, { target: new THREE.Vector3(2, 1, 3), minDistance: 12 });
 	/** how close the orbit may come at a place: 12 m, or nearer where the place is seen close */
 	const nearest = (offset) => Math.min(12, offset.length() * 0.8);
 	controls.maxDistance = 2700; // far enough out to see the whole city plot
