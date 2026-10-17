@@ -44,13 +44,12 @@
 			<div class="story">
 				<h1 class="cover">
 					<span class="opening">This is the story</span>
-					<span class="founders"><span class="light">how</span> 1 million founders build their own <em>solarpunk</em> city,</span>
+					<span class="founders"><span class="light">how</span> <FounderCounter /> <span class="light">of</span> 1,346,269 founders build their own <em>solarpunk</em> city,</span>
 					<span class="deck">
 						<span class="when">first in game, then in real,</span>
 						<span class="years">in just <span class="number">16</span> years.</span>
 					</span>
 				</h1>
-				<FounderCounter />
 			</div>
 		</header>
 	{/if}
@@ -210,7 +209,7 @@
 	}
 
 	.founders {
-		max-width: 16ch;
+		max-width: 19ch;
 		font-size: clamp(2.5rem, 6.6vw, 5.8rem);
 		font-weight: 600;
 		line-height: 0.98;
