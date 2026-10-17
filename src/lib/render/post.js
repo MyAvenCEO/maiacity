@@ -2,8 +2,9 @@
 /*
  * THE POST STACK — the one way a page draws through post-processing: the scene into a half-float, multisampled target,
  * then ambient occlusion (GTAO), bloom, the output pass (tone mapping and colour space) and a page's own passes (a
- * grade, a tilt shift), each only where it is asked for. The asset stage (../assets/stage.js) and the Factories' look
- * (../factories/look.js) draw through it; the film camera's darkroom (../film/pipeline.js) is the film's own.
+ * grade, a tilt shift), each only where it is asked for. The asset stage (../assets/stage.js) draws through it; the
+ * Factories' look (../factories/look.js, AirSup's, line for line) lays its own passes on the composer made here
+ * (`createComposer`, its `T.EffectComposer`); the film camera's darkroom (../film/pipeline.js) is the film's own.
  */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -14,6 +15,13 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 export { ShaderPass };
+
+/**
+ * The one EffectComposer: `renderer` drawing through `target` (the composer's own when not given).
+ * @param {THREE.WebGLRenderer} renderer
+ * @param {THREE.WebGLRenderTarget} [target]
+ */
+export const createComposer = (renderer, target) => new EffectComposer(renderer, target);
 
 /**
  * @typedef {object} PostOptions
@@ -34,7 +42,7 @@ export { ShaderPass };
  */
 export function createPost(renderer, scene, camera, o = {}) {
 	const [w, h] = o.target ?? [1, 1];
-	const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: o.samples ?? 4 }));
+	const composer = createComposer(renderer, new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: o.samples ?? 4 }));
 	if (o.size) {
 		// at the canvas's own pixels (a composer given its target counts them 1:1 until told the ratio)
 		composer.setPixelRatio(o.size.pixelRatio);
