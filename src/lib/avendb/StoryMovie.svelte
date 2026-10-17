@@ -1,16 +1,36 @@
 <!--
-	A story's Movie tab (./Story.svelte, plan J8): its script, the writing made into a film plan ($lib/studio/scripts.js),
-	an entry of its own beside the story that links it and the article it is made from. Its scenes in order, each
-	serving a beat of the journey, with its lines (the voice-over and what is said on screen, a line drawn from the
-	article quoting it) and its shot list (size, angle, move, what it shows, the line it covers). When the article moves
-	on, the script says it is behind and takes the change: the article's new words where a line still said what it
-	quoted, its new paragraphs as lines in place. A story with no script makes its first from its article. Agents
-	propose on the script's lines, as on any entry; each change here is one op on its main line, as the device allows it.
+	A story's Movie tab (./Story.svelte, plan J8, J9): its script ($lib/studio/scripts.js), a delivery of the story beside
+	its article, an entry of its own that links the story. Its scenes in order, each drawn from a beat of the journey and
+	saying what happens there, with its lines (the voice-over and what is said on screen) and its shot list (size, angle,
+	move, what it shows, the line it covers). A story with no script draws its first from its beats; its lines and shots
+	can be adapted from the story's article, the lines then quoting it. When the beats or that article move on, the
+	script says it is behind and takes the change. A script makes a first cut for the studio: a slate for each shot and a
+	line for each line, the story listing its cuts. Agents propose on the script's lines, as on any entry; each change
+	here is one op on its main line, as the device allows it.
 -->
 <script>
+	import { BEAT_LABEL } from '$lib/stories/stories.js';
+	import { CUT, CUT_V1, fieldsOf } from '$lib/studio/cuts.js';
+	import {
+		ANGLES,
+		MOVES,
+		SCRIPT,
+		SCRIPT_V2,
+		SIZES,
+		WHO,
+		adaptOps,
+		articleBehindOf,
+		articleTakingOps,
+		cutFrom,
+		cutsOf,
+		draftFrom,
+		scriptsOf,
+		spokenSeconds,
+		storyBehindOf,
+		storyTakingOps
+	} from '$lib/studio/scripts.js';
 	import { entryOf } from './artifacts.js';
 	import { allowed, may } from './ops.js';
-	import { ANGLES, MOVES, SCRIPT, SCRIPT_V1, SIZES, WHO, behindOf, draftFrom, scriptsOf, spokenSeconds, takingOps } from '$lib/studio/scripts.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
@@ -18,6 +38,8 @@
 	 */
 	let { world, actor, api, busy, item } = $props();
 
+	/** a beat kind's name, for a beat with no title @param {string} t */
+	const label = (t) => /** @type {Record<string, string>} */ (BEAT_LABEL)[t] ?? t;
 	const story = $derived(/** @type {any} */ (item.record) ?? {});
 	const beats = $derived(/** @type {any[]} */ (story.beats ?? []));
 	/** the story's main article: the one written first, no variant */
@@ -31,9 +53,11 @@
 	const script = $derived(scripts.find((s) => s.entry === picked) ?? scripts[0]);
 	const record = $derived(/** @type {any} */ (script?.record) ?? {});
 	const scenes = $derived(/** @type {import('$lib/studio/scripts.js').Scene[]} */ (record.scenes ?? []));
-	/** the article the script is made from, which may not be the main one */
-	const source = $derived(world.entries.find((e) => e.entry === record.article) ?? article);
-	const where = $derived(script && source ? behindOf(record, source.text ?? '') : { behind: false, changed: [], added: [] });
+	/** the delivery the script was adapted from, if any */
+	const source = $derived(record.from ? world.entries.find((e) => e.entry === entryOf(record.from)) : undefined);
+	const storyWhere = $derived(script ? storyBehindOf(record, beats) : { behind: false, changed: [], added: [], gone: [] });
+	const where = $derived(script && source ? articleBehindOf(record, source.text ?? '') : { behind: false, changed: [], added: [] });
+	const cuts = $derived(cutsOf(world, item.entry));
 
 	/** whether it may change the script, as the device answers a dry run */
 	let changes = $state(false);
@@ -47,6 +71,7 @@
 		};
 	});
 	const edits = $derived(changes && !busy && (script?.writers ?? []).includes(actor));
+	const writer = $derived((item.writers ?? []).includes(actor));
 
 	/** the script's proposals, as its note's lines name them: an agent's, merged on its page */
 	let proposals = $state(/** @type {{ line: string, name: string | null }[]} */ ([]));
@@ -67,22 +92,43 @@
 	/** Runs change `op` on the script's main line as `what`. @param {string} what @param {object} op */
 	const change = (what, op) => api.run(what, { ...op, entry: script?.entry, as: actor });
 
-	/** The script's first version, from the article; the schema added to the vault where it has none. */
+	/** Schema `text` added to the story's vault where it has none of its title. @param {string} text @param {string} what */
+	async function schema(text, what) {
+		const title = JSON.parse(text).title;
+		const has = world.entries.some((e) => e.vault === item.vault && e.type === 'schema' && !e.deleted && e.title === title);
+		if (!has) await api.run(what, { op: 'create', vault: item.vault, type: 'schema', value: text, as: actor });
+	}
+
+	/** The script's first version, from the story's beats. */
 	async function make() {
-		if (!article) return;
-		const has = world.entries.some((e) => e.vault === item.vault && e.type === 'schema' && !e.deleted && e.title === 'Script, v1');
-		if (!has) await api.run('Adding the script schema', { op: 'create', vault: item.vault, type: 'schema', value: SCRIPT_V1, as: actor });
-		const value = draftFrom(item, article, Math.floor(Date.now() / 1000));
-		const made = await api.run('Making the script from its article', { op: 'create', vault: item.vault, type: SCRIPT, value, as: actor });
+		await schema(SCRIPT_V2, 'Adding the script schema');
+		const value = draftFrom(item, Math.floor(Date.now() / 1000), label);
+		const made = await api.run('Drawing the script from the story', { op: 'create', vault: item.vault, type: SCRIPT, value, as: actor });
 		if (made?.entry) picked = made.entry;
 	}
 
-	function take() {
-		if (!script || !source) return;
-		return api.run('Taking the article’s change', { op: 'batch', as: actor, ops: takingOps(script.entry, record, source.text ?? '') });
+	/** The script's lines and shots adapted from the story's article. */
+	function adapt() {
+		if (!script || !article) return;
+		return api.run('Adapting the lines from the article', { op: 'batch', as: actor, ops: adaptOps(script.entry, record, article, beats) });
 	}
 
-	/** @param {number} scene */
+	const takeStory = () => script && api.run('Taking the story’s change', { op: 'batch', as: actor, ops: storyTakingOps(script.entry, record, beats, label) });
+
+	function take() {
+		if (!script || !source) return;
+		return api.run('Taking the article’s change', { op: 'batch', as: actor, ops: articleTakingOps(script.entry, record, source.text ?? '') });
+	}
+
+	/** A first cut of the script, in the story's vault, for the studio. */
+	async function cut() {
+		if (!script) return;
+		await schema(CUT_V1, 'Adding the cut schema');
+		const value = { kind: CUT, ...fieldsOf(cutFrom(record, script.vault, script.entry)) };
+		await api.run('Making a cut of the script', { op: 'create', vault: item.vault, type: CUT, value, as: actor });
+	}
+
+/** @param {number} scene */
 	const sceneAt = (scene) => ['scenes', { id: scene }];
 	/** An id none of `rows` has. @param {{ id: number }[]} rows */
 	const next = (rows) => rows.reduce((m, r) => Math.max(m, r.id ?? 0), 0) + 1;
@@ -123,12 +169,12 @@
 
 {#if !script}
 	<div class="blank">
-		{#if article}
-			<p>No script yet. The script turns the article into a film plan: a scene for each of its headings, on the beat of the same name, each paragraph a line of the voice-over and each picture a planned shot. Then it is yours and the agents’ to shape.</p>
-			{#if (item.writers ?? []).includes(actor)}<button class="add" disabled={busy} onclick={make}>Make the script from “{article.title || 'its article'}”</button>{/if}
+		{#if beats.length}
+			<p>No script yet. The script is the story told as a film: a scene for each beat of its journey, saying what happens there, then the lines said and the shots they need. Its lines can be adapted from the article. Then it is yours and the agents’ to shape.</p>
 		{:else}
-			<p>No article yet. A film’s script is made from the story’s article: write it in the Writing tab first.</p>
+			<p>No script yet, and the story has no beats. Lay them out in the Journey tab first, or start from one opening scene.</p>
 		{/if}
+		{#if writer}<button class="add" disabled={busy} onclick={make}>Draw the script from the story</button>{/if}
 	</div>
 {:else}
 	<div class="movie">
@@ -140,8 +186,37 @@
 			{/if}
 			<input class="title" value={script.title ?? ''} disabled={!edits} aria-label="The script's name" onchange={(e) => e.currentTarget.value.trim() && change('Renaming the script', { op: 'set', path: ['title'], value: e.currentTarget.value.trim() })} />
 			<a class="ghost" href="#notes/{script.entry}">Proposals and history</a>
-			<p class="tally">{scenes.length} {scenes.length === 1 ? 'scene' : 'scenes'} · {shotCount} {shotCount === 1 ? 'shot' : 'shots'} · about {minutes(spokenSeconds(record))} read aloud · from “{source?.title ?? 'its article'}”</p>
+			<p class="tally">{scenes.length} {scenes.length === 1 ? 'scene' : 'scenes'} · {shotCount} {shotCount === 1 ? 'shot' : 'shots'} · about {minutes(spokenSeconds(record))} read aloud{#if source}{' · '}lines adapted from “{source.title ?? 'its article'}”{/if}</p>
+			{#if edits && !record.from && article}<button class="ghost" onclick={adapt}>Adapt the lines from “{article.title || 'the article'}”</button>{/if}
 		</header>
+
+		<section class="cuts" aria-label="Its cuts">
+			<p class="cap">Cuts</p>
+			{#each cuts as c (c.entry)}
+				<a class="cut" href="/app/studio/?timeline=cut:{c.entry}">{c.name} · {c.clips} {c.clips === 1 ? 'clip' : 'clips'}{#if c.script && c.script !== script.entry} · of another script{/if}</a>
+			{:else}
+				<span class="tally">No cut yet. A first cut lays a slate for each shot and a line for each line, timed to be said, for the studio to fill.</span>
+			{/each}
+			{#if writer}<button class="ghost" disabled={busy} onclick={cut}>Make a cut of this script</button>{/if}
+			<span class="tally">The studio opens avenDB cuts in the Mac app.</span>
+		</section>
+
+		{#if storyWhere.behind}
+			<aside class="behind" aria-label="The story moved on">
+				<p>
+					<b>The story’s beats changed since this script was drawn.</b>
+					{#if storyWhere.changed.length}{storyWhere.changed.length} {storyWhere.changed.length === 1 ? 'beat says' : 'beats say'} new words.{/if}
+					{#if storyWhere.added.length}{storyWhere.added.length} new {storyWhere.added.length === 1 ? 'beat has' : 'beats have'} no scene yet.{/if}
+					{#if storyWhere.gone.length}{storyWhere.gone.length} {storyWhere.gone.length === 1 ? 'scene’s beat is' : 'scenes’ beats are'} gone.{/if}
+				</p>
+				<ul>
+					{#each storyWhere.changed as c (c.scene.id)}<li>{c.scene.name}: <s>{c.was}</s> → {c.now}</li>{/each}
+					{#each storyWhere.added as a (a.beat.id)}<li>+ {a.beat.title || label(a.beat.type ?? '')}{#if a.beat.text}: {a.beat.text}{/if}</li>{/each}
+					{#each storyWhere.gone as g (g.scene.id)}<li>{g.scene.name} (its beat is gone; the scene stays)</li>{/each}
+				</ul>
+				{#if edits}<button class="add" onclick={takeStory}>Take the change</button>{/if}
+			</aside>
+		{/if}
 
 		{#if proposals.length}
 			<p class="tally">
@@ -174,7 +249,7 @@
 					<input class="name" value={s.name ?? ''} disabled={!edits} aria-label="The scene's name" onchange={(e) => edit(s, 'name', e.currentTarget.value.trim())} />
 					<select value={s.beat ?? ''} disabled={!edits} aria-label="The beat it serves" onchange={(e) => edit(s, 'beat', e.currentTarget.value === '' ? '' : Number(e.currentTarget.value))}>
 						<option value="">No beat</option>
-						{#each beats as b (b.id)}<option value={b.id}>{b.title || b.type}</option>{/each}
+						{#each beats as b (b.id)}<option value={b.id}>{b.title || label(b.type ?? '')}</option>{/each}
 					</select>
 					{#if edits}
 						<button class="mini" disabled={k === 0} onclick={() => shift(s, -1)} aria-label="Earlier">‹</button>
@@ -182,6 +257,9 @@
 						<button class="mini x" onclick={() => drop(s)} aria-label="Take the scene out">×</button>
 					{/if}
 				</header>
+
+				<textarea class="action" rows="2" value={s.action ?? ''} disabled={!edits} placeholder="What happens in this scene" aria-label="What happens" onchange={(e) => edit(s, 'action', e.currentTarget.value)}></textarea>
+				{#if s.feel}<p class="tally">The viewer should feel: {s.feel}</p>{/if}
 
 				<div class="cols">
 					<div class="lines">
@@ -364,6 +442,26 @@
 		color: var(--ok, #2f7d4f);
 	}
 
+	.cuts {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem 0.8rem;
+	}
+	.cuts .cap {
+		flex-basis: 100%;
+	}
+	.cut {
+		padding: 0.3rem 0.7rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		font-size: 0.84rem;
+		color: var(--ink);
+		text-decoration: none;
+	}
+	.scene .action {
+		margin-bottom: 0.6rem;
+	}
 	.mini {
 		padding: 0.1rem 0.45rem;
 		border: 1px solid var(--line);

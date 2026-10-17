@@ -31,3 +31,6 @@ Before a shoot, a story's planned shots live in its script (`src/lib/studio/scri
 covers. `take` (the artifact or Library file of the footage) and `shot` (a world shot, `shot:<entry>`) are set once
 something covers it. Propose the shot list as the storyteller proposes scenes: `{ op: "propose", ... name: "Shots:
 <angle>" }`, then `{ op: "insert", entry, line, path: ["scenes", { id }, "shots"], value: <row> }` for each shot.
+Each scene is drawn from a beat of the story and says what happens (`action`): plan the shots that show it. A cut
+made from the script (the Movie tab's "Make a cut of this script") lays each shot as a slate on V1, its number
+`<scene>.<shot>`, its size, and its angle and move as notes, for the studio to fill with takes.
