@@ -7,9 +7,15 @@ const row = (id: string, extra = {}) => ({ entry: "e", vault: "v", seed: "Maia C
 const feed = (rows: unknown[], status = 200) => (async () => new Response(JSON.stringify({ entries: rows }), { status })) as unknown as typeof fetch;
 
 test("a game the feed lists is published, one it doesn't isn't", async () => {
-  useGamesFetch(feed([row("sandbox-7")]));
-  expect(await published("sandbox-7")).toBe(true);
-  expect(await published("maiacity-v1")).toBe(false);
+  useGamesFetch(feed([row("maiacity-v1")]));
+  expect(await published("maiacity-v1")).toBe(true);
+  expect(await published("sandbox-5")).toBe(false);
+});
+
+test("a tailnet game is never published, even with a Public share", async () => {
+  useGamesFetch(feed([row("sandbox-7"), row("sandbox-8"), row("maiacity-v1")]));
+  expect(await published("sandbox-7")).toBe(false);
+  expect(await published("sandbox-8")).toBe(false);
 });
 
 test("a feed that can't be read publishes nothing", async () => {
@@ -21,5 +27,5 @@ test("a feed that can't be read publishes nothing", async () => {
 
 test("only game entries count: a code entry tagged with the game publishes nothing", () => {
   expect(publishedOf([{ type: "view", tags: ["ref:views/x", "game:sandbox-7"] }])).toBeNull();
-  expect([...(publishedOf([row("sandbox-7"), row("maiacity-v1")]) ?? [])].sort()).toEqual(["maiacity-v1", "sandbox-7"]);
+  expect([...(publishedOf([row("sandbox-5"), row("maiacity-v1")]) ?? [])].sort()).toEqual(["maiacity-v1", "sandbox-5"]);
 });
