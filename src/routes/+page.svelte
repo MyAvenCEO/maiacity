@@ -91,7 +91,7 @@
 
 <style>
 	main {
-		padding-block: 2.5rem 6rem;
+		padding-block: 0 6rem;
 	}
 
 	.start {
