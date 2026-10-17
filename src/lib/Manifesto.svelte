@@ -39,10 +39,14 @@
 				src={asset(BANNER)}
 				alt="A woman on a mountain top at sunrise, arms wide open over the sea."
 			/>
+			<!-- set like a magazine cover: a kicker, the headline in two weights, a rule, the deck beside a big number -->
 			<h1 class="story">
 				<span class="opening">This is the story</span>
-				<span class="founders">of how 1 million founders build their own solarpunk city,</span>
-				<span class="when">first in game, then in real life, in just <mark>16 years.</mark></span>
+				<span class="founders"><span class="light">how</span> 1 million founders build their own <em>solarpunk</em> city,</span>
+				<span class="deck">
+					<span class="when">first in game,<br />then in real,</span>
+					<span class="years"><span class="just">in just</span><span class="number">16</span><span class="unit">years.</span></span>
+				</span>
 			</h1>
 		</header>
 	{/if}
@@ -175,45 +179,98 @@
 	.story {
 		position: relative;
 		z-index: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 0.35em;
+		display: grid;
 		width: 100%;
 		max-width: 1180px;
 		margin: 0 auto;
-		padding: 0 clamp(1.5rem, 4vw, 3rem) clamp(3rem, 9vh, 6rem);
+		padding: 0 1.5rem clamp(2.5rem, 7vh, 4.5rem);
 		color: #fffaf0;
-		text-shadow: 0 2px 24px rgb(0 0 0 / 0.25);
 	}
 
 	.opening {
+		justify-self: start;
+		margin-bottom: 1.4rem;
+		padding: 0.45rem 0.95rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--paper) 90%, transparent);
+		color: var(--ink);
 		font-family: var(--font-body);
-		font-size: clamp(0.8rem, 1.3vw, 1rem);
+		font-size: 0.72rem;
 		font-weight: 500;
 		letter-spacing: 0.22em;
 		text-transform: uppercase;
 	}
 
 	.founders {
-		max-width: 18ch;
-		font-size: clamp(2.3rem, 6.4vw, 5.4rem);
+		max-width: 16ch;
+		font-size: clamp(2.5rem, 6.6vw, 5.8rem);
 		font-weight: 600;
-		line-height: 1;
+		line-height: 0.98;
 		letter-spacing: -0.035em;
 		text-wrap: balance;
+		text-shadow: 0 2px 30px rgb(0 0 0 / 0.2);
+	}
+
+	.founders .light {
+		font-weight: 300;
+	}
+
+	.founders em {
+		/* the italic leans into the next word without a little room */
+		padding-right: 0.12em;
+		font-style: italic;
+		font-weight: 400;
+		color: var(--mustard);
+	}
+
+	/* the deck under a hairline: how it happens on the left, how long on the right */
+	.deck {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: 1.5rem;
+		margin-top: clamp(1.5rem, 3.5vh, 2.5rem);
+		padding-top: 1.1rem;
+		border-top: 1px solid rgb(255 250 240 / 0.55);
 	}
 
 	.when {
-		font-size: clamp(1.25rem, 2.6vw, 2rem);
+		font-size: clamp(1.25rem, 2.4vw, 1.9rem);
 		font-weight: 300;
-		line-height: 1.2;
+		line-height: 1.15;
 		letter-spacing: -0.015em;
 	}
 
-	.story mark {
-		background: none;
-		color: inherit;
+	.years {
+		display: grid;
+		grid-template-columns: auto auto;
+		align-items: end;
+		column-gap: 0.6rem;
+		line-height: 1;
+	}
+
+	.just {
+		grid-column: 1 / -1;
+		margin-bottom: 0.3rem;
+		font-family: var(--font-body);
+		font-size: 0.72rem;
+		font-weight: 500;
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+	}
+
+	.number {
+		font-size: clamp(3.6rem, 8vw, 6.5rem);
 		font-weight: 600;
+		line-height: 0.8;
+		letter-spacing: -0.05em;
+		color: var(--mustard);
+	}
+
+	.unit {
+		padding-bottom: 0.15em;
+		font-size: clamp(1.25rem, 2.4vw, 1.9rem);
+		font-weight: 300;
 	}
 
 	.kicker {
