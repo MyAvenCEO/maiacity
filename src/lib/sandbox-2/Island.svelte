@@ -1,14 +1,15 @@
 <!--
-	A city's island, opened from a card of the planet: Sandbox 1's island world,
-	copied into Sandbox 2 (./island) with the generator in game/island. What stands on
-	it comes from the server: every settlement at its cell, at the level its
-	headcount has reached. Nothing is kept in the browser.
+	A city's island, opened from a card of the planet: Sandbox 1's island world
+	($lib/aven-city/game/three, the generator in game/island), its settlements the
+	city's villages (./island/villages.js). What stands on it comes from the server:
+	every settlement at its cell, at the level its headcount has reached. Nothing is
+	kept in the browser.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { HexTile } from '../../../game/island/hexmap';
-	import { buildingForLevel, type PlacedKind } from './island/buildWorld';
-	import type { SceneApi } from './island/scene';
+	import type { SceneApi } from '$lib/aven-city/game/three/scene';
+	import { villageKind, VILLAGES, type VillageKind, type VillagePlacedKind } from './island/villages.js';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 
 	let {
@@ -31,16 +32,11 @@
 	} = $props();
 
 	let canvas: HTMLCanvasElement | undefined = $state();
-	let api: SceneApi | undefined = $state();
+	let api: SceneApi<VillageKind> | undefined = $state();
 	let loading = $state(true);
 
 	const buildings = $derived(
-		Object.fromEntries(
-			settlements.flatMap((s) => {
-				const kind = buildingForLevel(s.level);
-				return kind ? [[s.cell, kind as PlacedKind]] : [];
-			})
-		)
+		Object.fromEntries(settlements.map((s): [string, VillagePlacedKind] => [s.cell, villageKind(s.level)]))
 	);
 
 	/* The parent hands in a fresh expression on every data refresh; a derived only
@@ -57,11 +53,17 @@
 		loading = true;
 		// read once, untracked: new settlement data updates the island below, it never rebuilds it
 		const first = untrack(() => $state.snapshot(buildings));
-		void import('./island/scene').then(async ({ createScene }) => {
+		void import('$lib/aven-city/game/three/scene').then(async ({ createScene }) => {
 			if (disposed) return;
 			// Growing the island clears its selection; only picks after that are the player's.
 			let ready = false;
-			const scene = createScene(el, { buildings: first, focus, onSelect: (tiles) => ready && onpick(tiles[0] ?? null) });
+			const scene = createScene(el, {
+				settlements: VILLAGES,
+				sandbox: 'sandbox-2',
+				buildings: first,
+				focus,
+				onSelect: (tiles) => ready && onpick(tiles[0] ?? null)
+			});
 			// growing the island takes a moment: let the loading word paint first
 			await twoFrames();
 			if (disposed) return scene.dispose();
