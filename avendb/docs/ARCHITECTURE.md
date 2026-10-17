@@ -1165,7 +1165,7 @@ told by its `kind`: a **document** (a note: a title, blocks and tags), a **todo*
 Markdown text, its subtitle and cover its opening lines; the story it is written for, by link, its language, an
 excerpt and a quote with whose words they are; a German or a shorter one is a variant of it), a **flow** (stages an item can be in, each with whether it is public and where it goes next), a
 **function** (a script that runs when an item enters or leaves a stage of a flow), a **post** (a public post of a
-stream, about an entry), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
+stream, about an entry, with the day it first went out where it is one brought in from before avenDB), a device's **card** and a vault's **profile** (each a title, its name), a **file** (its
 name and its media type), a **story** (one content piece from its first spark to every platform it goes out on:
 its title and format, the sparks it grew from, its journey's beats and its hook variants as rows, its intro,
 description and launch; the story flow's tag says which of its stages it is in), an **artifact** (one source fact
