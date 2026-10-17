@@ -240,7 +240,7 @@
 		}
 	}
 	// proposals live in the Proposals app, next to Ledger and Coops (Samuel 2026-10-17); the page only links there
-	const AIPS = `${base}/app/aips/?game=sandbox-8`;
+	const AIPS = `${base}/app/aips/?game=sandbox-7`;
 	// an accepted MIP lands from the repo within minutes (code/, the landing job): while the page is open, one that
 	// lands is taken in as the Proposals page did when it lived here: a new world shows in the list, an amended one
 	// open here plays on its new rules from then on

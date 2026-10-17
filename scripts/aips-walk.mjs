@@ -3,6 +3,8 @@
  * /api/ request answered here (a founder who plays Sandbox 7 as its admin and sits at MaiaCity V1's seat A; two Sandbox
  * 7 MIPs and two V1 MIPs). It checks the stages, the game filter, a Sandbox 7 detail, a V1 detail with its signatures,
  * a new V1 proposal from a COOP's "Propose a payout" link, and that neither game shows a proposal on its own screen.
+ * avenDB's public feed is answered too: the Maia City COOP vault publishes Sandbox 7 and MaiaCity V1 (A2), so the
+ * Sandboxes list shows Sandbox 7 without Draft, and signed out, the Proposals app shows Sandbox 7's, read only.
  * Each step is screenshot, wide and on a phone.
  *
  *   BASE=http://localhost:5173 node scripts/aips-walk.mjs [--out dir]
@@ -54,6 +56,10 @@ const answers = {
 	'/api/maiacity-v1': { game, me: 'samuel', admin: true, now }
 };
 let moves = [];
+let signedOut = false;
+// avenDB's public feed: the game entries everyone may read, those the Maia City COOP vault published
+const gameRow = (id) => ({ entry: id, vault: 'c'.repeat(64), name: 'Maia City', seed: 'Maia City', type: 'game', tags: ['game', `game:${id}`] });
+const feed = { entries: [gameRow('sandbox-7'), gameRow('maiacity-v1')] };
 
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
@@ -65,11 +71,15 @@ page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 await page.evaluateOnNewDocument((key) => localStorage.setItem(key, JSON.stringify({ off: true })), `v1-story-${game.started}-A`);
 const cdp = await page.createCDPSession();
 // and Sandbox 7's GPU machine in Samuel's tailnet, which unlocks the sandbox: it serves d1 and Qwen
-await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*' }, { urlPattern: 'http://100.96.61.57*' }] });
+await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*' }, { urlPattern: 'http://100.96.61.57*' }, { urlPattern: 'https://avendb.maia.city/feed/entries*' }] });
 cdp.on('Fetch.requestPaused', (r) => {
 	const url = new URL(r.request.url);
 	const headers = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'content-type': 'application/json' };
-	let body = url.hostname === '100.96.61.57' ? { data: [{ id: 'd1' }, { id: 'qwen' }] } : (answers[url.pathname] ?? {});
+	let body = url.hostname === '100.96.61.57' ? { data: [{ id: 'd1' }, { id: 'qwen' }] } : url.hostname === 'avendb.maia.city' ? feed : (answers[url.pathname] ?? {});
+	let status = 200;
+	// signed out: the API knows nobody, and answers only what a published game lets everyone read
+	if (signedOut && url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/economy/')) (body = { error: 'Please sign in.' }), (status = 401);
+	if (url.hostname === 'avendb.maia.city') headers['access-control-allow-origin'] = '*';
 	if (url.pathname === '/api/maiacity-v1/move' && r.request.method === 'POST') {
 		const { seat, action } = JSON.parse(r.request.postData ?? '{}');
 		moves.push(action);
@@ -81,7 +91,7 @@ cdp.on('Fetch.requestPaused', (r) => {
 			body = { error: e.message };
 		}
 	}
-	cdp.send('Fetch.fulfillRequest', { requestId: r.requestId, responseCode: r.request.method === 'OPTIONS' ? 204 : 200, responseHeaders: Object.entries(headers).map(([name, value]) => ({ name, value })), body: Buffer.from(JSON.stringify(body)).toString('base64') });
+	cdp.send('Fetch.fulfillRequest', { requestId: r.requestId, responseCode: r.request.method === 'OPTIONS' ? 204 : status, responseHeaders: Object.entries(headers).map(([name, value]) => ({ name, value })), body: Buffer.from(JSON.stringify(body)).toString('base64') });
 });
 
 const text = () => page.evaluate(() => document.querySelector('main')?.textContent?.replace(/\s+/g, ' ').trim() ?? '');
@@ -129,7 +139,7 @@ check('the game filter keeps only that game', !(await text()).includes('Cheaper 
 await click('World 37');
 const s7 = await text();
 check('a Sandbox 7 detail: text, changes, cards, Accept for the admin', s7.includes('Keep World 36 and try a lower mint') && s7.includes('Mint: 24 → 20 HEARTS') && s7.includes('Accept') && s7.includes('MIP-42'), s7.slice(0, 500));
-check('the address names the open one', page.url().includes('aip=s7-42') && page.url().includes('game=sandbox-8'));
+check('the address names the open one', page.url().includes('aip=s7-42') && page.url().includes('game=sandbox-7'));
 await shot('2-sandbox7-detail');
 await click('MaiaCity V1');
 await click('Cheaper tent rent');
@@ -166,6 +176,23 @@ await shot('5-sandbox7-home');
 await page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
 check('the dashboard has the Proposals app next to Ledger and Coops', await until(async () => (await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => a.getAttribute('href')?.endsWith('/app/aips/')))) ));
 await shot('6-dashboard');
+
+// the Sandboxes: published by the Maia City COOP vault's Public share, as its feed lists them
+await page.goto(`${base}/app/games/`, { waitUntil: 'domcontentloaded' });
+const rowOf = (label) => page.evaluate((label) => [...document.querySelectorAll('.list li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim() ?? '').find((t) => t.startsWith(label)) ?? '', label);
+check('a published sandbox shows no Draft', await until(async () => { const r = await rowOf('Sandbox 7'); return r && !r.includes('Draft'); }), await rowOf('Sandbox 7'));
+check('one the vault does not publish still shows Draft', (await rowOf('Sandbox 6')).includes('Draft'), await rowOf('Sandbox 6'));
+await shot('7-sandboxes');
+
+// signed out: the Proposals app is open, read only, with the published Sandbox 7's proposals
+signedOut = true;
+await page.goto(`${base}/app/aips/?game=sandbox-7&stage=proposed`, { waitUntil: 'domcontentloaded' });
+check('signed out, a published game’s proposals show', await until(async () => (await text()).includes('World 37')), await text());
+await click('World 37');
+check('signed out, nothing can be accepted or withdrawn', await until(async () => (await text()).includes('Keep World 36')) && !(await page.evaluate(() => [...document.querySelectorAll('button')].some((b) => ['Accept', 'Withdraw', 'Reject'].includes(b.textContent?.trim() ?? '')))));
+await shot('8-signed-out');
+await page.goto(`${base}/app/games/sandbox-8/`, { waitUntil: 'domcontentloaded' });
+check('signed out, the game itself still asks for a sign-in', await until(async () => (await page.evaluate(() => document.body.textContent ?? '')).includes('Sign in with your passkey')));
 
 await browser.close();
 const failed = checks.filter((c) => !c.ok);

@@ -1,3 +1,4 @@
+// @ts-nocheck — plain JS test, run by bun
 // The Proposals app's sources in one shape ($lib/proposals/aips.js): an avenDB AIP as the `aips` read lists it, and
 // today's MIPs, side by side.
 import { describe, expect, test } from 'bun:test';

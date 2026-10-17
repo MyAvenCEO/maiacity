@@ -17,6 +17,7 @@
 	import AskModal from '$lib/app/AskModal.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, released } from '$lib/app/places';
+	import { loadGames } from '$lib/app/games.svelte.js';
 
 	let { children } = $props();
 
@@ -26,6 +27,7 @@
 	let error = $state('');
 
 	onMount(async () => {
+		void loadGames();
 		try {
 			founder = await me();
 			phase = 'ready';
@@ -123,17 +125,24 @@
 	// a draft game is the admins' only; anyone else with its link is told so
 	const game = $derived(gameAt(page.url.pathname));
 	const closed = $derived(!!game && !released(founder, game));
+	// the Proposals app is open signed out too: public is watch and read only (Samuel 2026-10-17), so it shows the
+	// proposals of the published games, and nothing there writes without a sign-in
+	const watching = $derived(phase === 'signed-out' && rel.startsWith('/app/aips/'));
 </script>
 
 <svelte:head>
 	<meta name="robots" content="noindex" />
-	{#if phase !== 'ready'}<title>Sign in · maiaCITY</title>{:else if closed}<title>Not released yet · maiaCITY</title>{/if}
+	{#if phase !== 'ready' && !watching}<title>Sign in · maiaCITY</title>{:else if closed}<title>Not released yet · maiaCITY</title>{/if}
 </svelte:head>
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}
 {#if phase === 'loading'}
 	<div class="gate"><p class="quiet">One moment…</p></div>
+{:else if watching}
+	<div class="app">
+		{@render children()}
+	</div>
 {:else if phase === 'signed-out' || !founder}
 	<div class="gate">
 		<a class="logo" href="{base}/">maia<strong>CITY</strong></a>

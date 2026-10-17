@@ -7,9 +7,9 @@
 import { describe, signaturesOf } from '../../../game/maiacity-v1/engine.js';
 import { nameOf } from '$lib/avendb/vaults.js';
 
-/** the games that have proposals, by their route's id: the game filter's names */
+/** the games that have proposals, by their id in the Maia City COOP vault (game/games.js): the game filter's names */
 export const GAMES = {
-	'sandbox-8': { label: 'Sandbox 7', href: '/app/games/sandbox-8/' },
+	'sandbox-7': { label: 'Sandbox 7', href: '/app/games/sandbox-8/' },
 	'maiacity-v1': { label: 'MaiaCity V1', href: '/app/maiacity-v1/' }
 };
 
@@ -35,7 +35,7 @@ export function fromSandbox7(m) {
 	return {
 		key: `s7-${m.number}`,
 		source: 'sandbox-8',
-		game: 'sandbox-8',
+		game: 'sandbox-7',
 		where: 'Sandbox 7',
 		label: `MIP-${m.number}`,
 		was: `MIP-${m.number}`,

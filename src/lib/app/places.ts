@@ -1,16 +1,22 @@
 // The places of the signed-in app (/app/): what the dashboard shows as tiles and the nav pill links to. A place
-// with a capability is only for whoever holds it (the admin's tools). A game has a release: "published" is open to
-// every founder; a "draft" only to the admins (marked Draft), and anyone else who has its link is told it is not
-// released yet. Flip it here to publish or withdraw a sandbox.
+// with a capability is only for whoever holds it (the admin's tools). A game (`game`, its id in the Maia City COOP
+// vault's Games area, game/games.js) is published while that vault gives everyone a Public share on its tag: then it
+// is open to every founder; else it is a draft, only the admins' (marked Draft), and anyone else who has its link is
+// told it is not released yet. Its owner publishes or withdraws it on the Sandboxes list ($lib/app/games.svelte.js);
+// `release` is what the repo said, kept until the vault's feed answers.
 import { base } from '$app/paths';
 import type { Founder } from '$lib/auth/client';
 import { FIRST, latestOf, versionsOf, type Change, type Version } from '$lib/app/versions.js';
+import { isPublished } from '$lib/app/games.svelte.js';
+import { gameOfRoute } from '../../../game/games.js';
 
 export type Release = 'draft' | 'published';
 export type Place = {
 	href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string; release?: Release
 	/** a world's or sandbox's versions and history ($lib/app/versions.js), the latest its own; and what it is anchored to */
 	versions?: Version<string>[]; version?: number; anchors?: string
+	/** a game's id in the Maia City COOP vault (game/games.js), from its address */
+	game?: string
 };
 export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'proposals' | 'leaf' | 'database' | 'universe' | 'gear';
 
@@ -35,8 +41,13 @@ const HISTORY: Record<string, (Change & { build?: string })[]> = {
 const withVersions = (list: Place[]): Place[] =>
 	list.map((p) => {
 		const versions = versionsOf(p.href, HISTORY[p.href]);
-		return { ...p, versions, version: latestOf(versions) };
+		return { ...p, versions, version: latestOf(versions), ...gameOf(p) };
 	});
+/** a game's id, from its address */
+const gameOf = (p: Place) => {
+	const id = gameOfRoute(p.href.slice(base.length));
+	return id ? { game: id } : {};
+};
 
 export const PLAY: Place[] = withVersions([
 	{ href: `${base}/app/games/sandbox-1/`, label: 'Sandbox 1', icon: 'play', release: 'draft', note: 'A hex island to settle', cover: '6a08f524a54384aa2c902b0e19f3d01b0264f1c218f62a7c47c2950ed0a0b620.jpg' },
@@ -55,9 +66,9 @@ export const WORLDS: Place[] = withVersions([
 ]);
 
 // MaiaCity itself, as games of its own, apart from the sandboxes: two players, HEARTS, COOPs and their MINDs
-export const CITY: Place[] = [
+export const CITY: Place[] = ([
 	{ href: `${base}/app/maiacity-v1/`, label: 'MaiaCity V1', icon: 'coops', note: 'Two players, three COOPs, one hex, one tent, one Balancer pool', cover: `${base}/maiacity-v1/cover.jpg` }
-];
+] as Place[]).map((p) => ({ ...p, ...gameOf(p) }));
 
 
 /** the game's building blocks, one group on the dashboard (Game Assets, /app/assets/), listed with a picture each, in
@@ -105,8 +116,11 @@ export const holds = (founder: Founder | null, p: Place) => !p.cap || !!founder?
 /** An admin: holds any of the admin's capabilities. */
 export const isAdmin = (founder: Founder | null) => !!founder?.caps?.some((c) => c.endsWith(':admin'));
 
+/** Whether a place is published: a game as the Maia City COOP vault says, else as the repo says. */
+export const published = (p: Place) => isPublished(p.game, p.release !== 'draft');
+
 /** Whether this founder may open a place: a draft only an admin. */
-export const released = (founder: Founder | null, p: Place) => p.release !== 'draft' || isAdmin(founder);
+export const released = (founder: Founder | null, p: Place) => published(p) || isAdmin(founder);
 
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
 export const gameAt = (path: string) =>

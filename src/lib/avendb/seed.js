@@ -20,6 +20,10 @@
 //   published  one Public share of the vault's published entries (`content:published`), as the content flow's
 //              published stage is public: the posts and their articles go on the stream
 //   pads       the journal's sources and each story's idea pad, sparks as ./legacy.js copies them
+//   games      the Games area (game/games.js): the vault's own schema "Game, v1", then each game's entry, of type `game`,
+//              tagged `game` and `game:<id>`; a game the repo released (places.ts, no `release: 'draft'`) also gets
+//              the Public share on its tag that publishes it, written with its entry, once: a game its owner withdrew
+//              later is never published again by a seed
 //
 // The story is the source of truth; an article, a script or an inspire piece is a delivery of it, an entry of its own
 // that links it (`story`) and says which delivery it is by its tag. The notebook's ideas live on maia.city's server,
@@ -32,6 +36,7 @@ import { ARTICLE, PICTURE } from './article.js';
 import { stageTag } from './flows.js';
 import { copying, legacyTag, pieces as legacyPieces } from './legacy.js';
 import { EVERYONE } from './vaults.js';
+import { GAME, GAMES, gameTag } from '../../../game/games.js';
 
 /** The types of the code entries the vault holds, which everyone reads, as the repo's code/ is open to everyone. */
 export const CODE_TYPES = ['view', 'logic'];
@@ -44,6 +49,30 @@ export const PUBLISHED = stageTag('content', 'published');
 
 /** The channel of the Maia Universe stream each delivery type's posts go out on. */
 export const CHANNEL = /** @type {Record<string, string>} */ ({ article: 'Journal', inspire: 'Inspire me' });
+
+/** The title of the Maia City vault's own schema of a game's entry. */
+export const GAME_SCHEMA = 'Game, v1';
+
+/**
+ * The schema of a game's entry in the Games area: its id (as its `game:<id>` tag names it), its name, where it is
+ * played and what it is, as the dashboard lists it. Whether it is published is no field: a Public share says it.
+ */
+export const GAME_V1 = JSON.stringify({
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	title: GAME_SCHEMA,
+	type: 'object',
+	properties: {
+		kind: { const: GAME },
+		id: { type: 'string', maxLength: 64, pattern: '^[a-z0-9][a-z0-9-]*$' },
+		title: { type: 'string', maxLength: 160 },
+		route: { type: 'string', maxLength: 200, default: '' },
+		note: { type: 'string', maxLength: 2000, default: '' }
+	},
+	required: ['kind', 'id', 'title']
+});
+
+/** The games the repository released, by id: those every founder plays today (places.ts), published at the seed. */
+const RELEASED = new Set(['maiacity-v1']);
 
 /** The tag of a delivery type's template. @param {string} type */
 export const templateTag = (type) => `template:${type}`;
@@ -93,8 +122,8 @@ const filled = (o) =>
 const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
- * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'template' | 'journal' | 'inspire' | 'pad' | 'published',
- *   name: string, mark: string, server?: string }} Piece
+ * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'template' | 'journal' | 'inspire' | 'pad' | 'published' |
+ *   'game-schema' | 'game', name: string, mark: string, server?: string }} Piece
  */
 
 /**
@@ -122,7 +151,11 @@ export function seedPieces(server = null) {
 		.filter((p) => p.kind === 'journal' || p.kind === 'pad')
 		.map((p) => ({ key: p.key, kind: /** @type {const} */ ('pad'), name: p.name, mark: legacyTag(p.key) }));
 	const published = [{ key: 'published-share', kind: /** @type {const} */ ('published'), name: 'Everyone reads what it published', mark: '' }];
-	return [...keep, ...code, ...share, ...templates, ...published, ...journal, ...inspire, ...pads];
+	const games = [
+		{ key: 'game-schema', kind: /** @type {const} */ ('game-schema'), name: GAME_SCHEMA, mark: '' },
+		...GAMES.map((g) => ({ key: `game/${g.id}`, kind: /** @type {const} */ ('game'), name: g.id, mark: gameTag(g.id) }))
+	];
+	return [...keep, ...code, ...share, ...templates, ...published, ...games, ...journal, ...inspire, ...pads];
 }
 
 /**
@@ -156,9 +189,13 @@ export const publishedShared = (world, vault) =>
  */
 export function unseeded(world, vault, all) {
 	const have = new Set(world.entries.filter((e) => e.vault === vault && !e.deleted).flatMap((e) => e.tags ?? []));
+	const mine = world.entries.filter((e) => e.vault === vault && !e.deleted);
+	const games = new Set(mine.filter((e) => e.type === GAME).flatMap((e) => e.tags ?? []));
 	return all.filter((p) =>
 		p.kind === 'keep' ? !serverKeeps(world, vault, p.server ?? '') :
-		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) : !have.has(p.mark)
+		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
+		p.kind === 'game-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === GAME_SCHEMA) :
+		p.kind === 'game' ? !games.has(p.mark) : !have.has(p.mark)
 	);
 }
 
@@ -196,6 +233,14 @@ export async function seeding(p, vault) {
 	if (p.kind === 'keep') return [{ op: 'share', over: vault, who: { vault: p.server }, level: 'Backup', as }];
 	if (p.kind === 'share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CODE_TYPES }, as }];
 	if (p.kind === 'published') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: PUBLISHED }, as }];
+	if (p.kind === 'game-schema') return [{ op: 'create', vault, type: 'schema', value: GAME_V1, as }];
+	if (p.kind === 'game') {
+		const g = GAMES.find((x) => x.id === p.name);
+		if (!g) return [];
+		const value = { kind: GAME, id: g.id, title: g.label, route: g.route, note: '' };
+		const publish = RELEASED.has(g.id) ? [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: p.mark }, as }] : [];
+		return [...publish, { op: 'create', vault, type: GAME, tags: [GAME, p.mark], value, as }];
+	}
 	if (p.kind === 'template') {
 		const { type, title } = TEMPLATE_OF[p.name];
 		const md = (await TEMPLATES[p.name]()).trim();
