@@ -3,7 +3,8 @@
 	(src/routes/[doc=doc], $lib/ids.js). The address names the build and nothing else: the recipe by the BLAKE3 hash of
 	its bytes, read in base32, and the values it is built with; `?t=` is only its label (plants/apple@2) in words, so
 	the address reads, and is never one of its values. The build loads as every build does (./load.js): from this
-	device's cache when it was built here before, else in the box, checked either way. Each value the recipe declares
+	device's cache when it was built here before, else in the box, checked either way, its recipe the Maia City vault's
+	(./vault.js, loaded before this page is: src/routes/[doc=doc]/+page.js). Each value the recipe declares
 	can be changed here, and the address follows, written the one way that build is named: every value, sorted. Its
 	controls (a tent's pitch, a pickup's doors, a machine drawn apart or built up) move the build in the view, played
 	from the numbers the box wrote down when it played its builder's own (./controls.js); they change no address.
@@ -22,7 +23,7 @@
 	import { OBJECT_GROUPS } from './groups.js';
 	import { boxOf, canonical, loadAsset } from './load.js';
 	import { valuesOf } from './params.js';
-	import { INDEX, pageOf } from './recipes.js';
+	import { INDEX, pageOf } from './vault.js';
 
 	let { hash } = $props();
 

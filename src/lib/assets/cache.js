@@ -17,6 +17,10 @@
  * engine: the frozen engine's hash (./engines.json), recipe: the recipe file's hash (./recipes.js), values: what it is
  * built with, sorted (`seed=maia&stage=9`). The same recipe with the same values on the same engine is the same build,
  * so it is kept once; a recipe changed is another hash, so another build, and the old ones fade out by LIMIT.
+ *
+ * Beside the builds, each recipe's file as the Maia City vault handed it out (./vault.js), under its own hash (`fileAt`,
+ * `keepFile`): what runs in the box after a build came out of here (a machine's clip) needs its recipe, and a second
+ * visit reads it from here, not off the feed again. Held to its hash again whenever it is read back.
  */
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
@@ -373,7 +377,54 @@ export async function putRaw(key, value) {
 	return true;
 }
 
-/** how many builds the cache holds, and their bytes */
+/** where a recipe's file is kept: never a build's key (64 hex digits alone) */
+const FILE = 'recipe file ';
+
+/**
+ * A recipe's file kept on this device by the recipe's hash (the BLAKE3 of its bytes), as the vault handed it out;
+ * undefined if there is none (or no cache). Not checked here: ./vault.js holds it to its hash before it is used.
+ * @param {string} hash @returns {Promise<Uint8Array | undefined>}
+ */
+export async function fileAt(hash) {
+	if (!HASH.test(hash)) return undefined;
+	const d = await db();
+	if (!d) return undefined;
+	try {
+		const tx = d.transaction('built', 'readonly');
+		const got = await result(tx.objectStore('built').get(FILE + hash));
+		await done(tx);
+		if (!(got?.file instanceof Uint8Array)) return undefined;
+		used(d, FILE + hash);
+		return got.file;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Keeps a recipe's file under its hash (what ./vault.js read off the feed and held to it), then lets the entries used
+ * longest ago go until the cache fits LIMIT, as a build kept does. False if it was not kept.
+ * @param {string} hash @param {Uint8Array} bytes
+ */
+export async function keepFile(hash, bytes) {
+	if (!HASH.test(hash) || !(bytes instanceof Uint8Array) || bytes.byteLength > LIMIT) return false;
+	const d = await db();
+	if (!d) return false;
+	try {
+		const key = FILE + hash;
+		const tx = d.transaction(['built', 'meta'], 'readwrite');
+		tx.objectStore('built').put({ file: bytes }, key);
+		tx.objectStore('meta').put({ key, at: Date.now(), bytes: bytes.byteLength });
+		await done(tx);
+		if (held !== null) held += bytes.byteLength;
+		if (held === null || held > LIMIT) held = await trim(d);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** how many builds (and recipe files) the cache holds, and their bytes */
 export async function usage() {
 	const d = await db();
 	if (!d) return { count: 0, bytes: 0, kept: false };

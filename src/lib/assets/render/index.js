@@ -29,7 +29,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { AssetBox } from '../box/host.js';
 import { labelOf, poserOf } from '../controls.js';
 import { canonical, loadAsset } from '../load.js';
-import { INDEX, buildOf, hashOf, parseBuild } from '../recipes.js';
+import { INDEX, buildOf, hashOf, heldAt, parseBuild } from '../vault.js';
 import { parseRef } from '../refs.js';
 import { createImpostors } from './impostors.js';
 import { LEVELS, SMALLEST, budgetOf, choose, errorOf, sizeOn, smallestOf, thresholdsOf } from './lod.js';
@@ -52,13 +52,13 @@ function multiply(a, ai, b, bi, out, oi) {
 }
 
 /**
- * What a ref names: a recipe's hash and the values it is built with, as text.
+ * What a ref names in the Maia City vault (../vault.js): a recipe's hash and the values it is built with, as text.
+ * Throws NotInVault naming the ref for one the vault doesn't hold.
  * @param {string} ref a label (`plants/apple@2?stage=9`) or a build (`<hash>?stage=9`)
  */
 function resolve(ref) {
 	if (/^[0-9a-f]{64}(\?|$)/.test(ref)) return parseBuild(ref);
 	const hash = hashOf(ref);
-	if (!hash) throw new Error(`no asset ${ref}`);
 	const params = parseRef(ref).params;
 	return { hash, ...(params && { params }) };
 }
@@ -196,8 +196,7 @@ export function createAssets(o) {
 	 */
 	function use(ref, opts) {
 		const { hash, params } = resolve(ref);
-		const at = INDEX.recipes[hash];
-		if (!at) throw new Error(`no recipe ${hash.slice(0, 12)}… on this device`);
+		const at = heldAt(hash);
 		const takes = at.params?.some((p) => p.id === 'detail');
 		// each named as it is kept, its own values filled in, so two refs of one build are one kind
 		const names = (takes ? details.slice(0, levels.length).map((d) => buildOf(hash, { ...params, detail: String(d) })) : [buildOf(hash, params)]).map((n) => canonical(n).name);

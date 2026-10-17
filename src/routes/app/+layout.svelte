@@ -3,7 +3,10 @@
 	is asked who they are first (their passkey); then the dashboard, the games and — for whoever holds them — the
 	admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
 	you): no top bar, and no page has a back button of its own. A sandbox, a world and the studio's editor run full
-	screen, the pill over them — and so does a game gone full screen over its own page (Sandbox 3's domes).
+	screen, the pill over them — and so does a game gone full screen over its own page (Sandbox 3's domes). A page that
+	builds assets (a world, a viewer, the box's lab: $lib/assets/vault.js ASSET_PAGES) opens once the Maia City vault's
+	recipes are in, and says so on the page when they can't be, or when one it asks for is not in the vault
+	($lib/assets/VaultRecipes.svelte).
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
@@ -19,6 +22,8 @@
 	import { gameAt, released } from '$lib/app/places';
 	import { loadGames } from '$lib/app/games.svelte.js';
 	import { loadCode } from '../../../game/code/index.js';
+	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import { ASSET_PAGES } from '$lib/assets/vault.js';
 
 	let { children } = $props();
 
@@ -133,6 +138,8 @@
 	// the Proposals app is open signed out too: public is watch and read only (Samuel 2026-10-17), so it shows the
 	// proposals of the published games, and nothing there writes without a sign-in
 	const watching = $derived(phase === 'signed-out' && rel.startsWith('/app/aips/'));
+	// a page that builds assets waits for the Maia City vault's recipes, loaded once, the first time one is opened
+	const assetPage = $derived(ASSET_PAGES.test(rel));
 </script>
 
 <svelte:head>
@@ -171,7 +178,7 @@
 		</div>
 	{:else}
 		<div class="app" class:immersive>
-			{@render children()}
+			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
 		</div>
 	{/if}
 	<NavPill {founder} onsignout={leave} />

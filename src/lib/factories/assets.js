@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { loadAsset } from '$lib/assets/load.js';
-import { buildAt, hashOf } from '$lib/assets/recipes.js';
+import { buildAt, loadRecipes } from '$lib/assets/vault.js';
 import { PALLET } from './pallet.js';
 
 /** @typedef {{ ref: string, geometry: THREE.BufferGeometry, material: THREE.Material, object: THREE.Object3D }} Token */
@@ -18,9 +18,12 @@ import { PALLET } from './pallet.js';
 
 const KEEP = new Set(['position', 'normal', 'color', 'uv']);
 
-/** An asset built by its ref, in the box or from the cache; throws when there is no such asset or it was refused. @param {string} ref */
+/**
+ * An asset built by its ref, its recipe the Maia City vault's ($lib/assets/vault.js), in the box or from the cache;
+ * throws when the vault holds no such asset (NotInVault, naming it) or its build was refused. @param {string} ref
+ */
 async function built(ref) {
-	if (!hashOf(ref)) throw new Error(`${ref}: no such asset`);
+	await loadRecipes();
 	const { obj } = await loadAsset(buildAt(ref));
 	obj.updateMatrixWorld(true);
 	return obj;

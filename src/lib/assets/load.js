@@ -1,18 +1,19 @@
 // @ts-nocheck — plain JS, trusted: runs in the page
 /*
- * LOADING AN ASSET — the one way a page gets a build, by its name, `<recipe hash>?its=values` (./recipes.js), as
+ * LOADING AN ASSET — the one way a page gets a build, by its name, `<recipe hash>?its=values` (./builds.js), as
  * anyone's would be got: from this device's cache (./cache.js) when it was built here before, else from the asset box
  * (./box/host.js), which runs the recipe on the frozen engine it was made for. Either way it is checked (its card
  * against the card's schema, its data by ./box/rebuild.js) and built into three.js objects by our own code. The recipe
- * is the only truth; what it made stays on this device, so a page that finds it in the cache loads no recipe and
- * starts no box.
+ * is the only truth, and it is the Maia City vault's (./vault.js): its index names the hash, and its entry's file, read
+ * off avenDB's feed and held to that hash, is what the box runs. What it made stays on this device, so a page that
+ * finds it in the cache reads no recipe's file and starts no box.
  */
 import { AssetBox } from './box/host.js';
 import { rebuild } from './box/rebuild.js';
 import * as cache from './cache.js';
 import { engineAt } from './engines.js';
 import { valuesOf } from './params.js';
-import { INDEX, buildOf, parseBuild, recipeAt } from './recipes.js';
+import { INDEX, buildOf, heldAt, loadRecipes, parseBuild, recipeAt } from './vault.js';
 import { checkCard } from './schemas/index.js';
 
 const boxes = new Map();
@@ -32,14 +33,14 @@ export const liveBoxOf = (v = INDEX.engine) => {
 };
 
 /**
- * A build of one of our recipes, named as it is kept: its hash and every value it takes, its own where not given, so
- * two names of one build are one. Throws for a value its recipe does not take.
+ * A build of one of the vault's recipes, named as it is kept: its hash and every value it takes, its own where not
+ * given, so two names of one build are one. Throws for a value its recipe does not take, and NotInVault for a hash the
+ * vault doesn't hold (or while its recipes aren't in: ./vault.js `loadRecipes`).
  * @param {string} name `<hash>?its=values`
  */
 export function canonical(name) {
 	const { hash, params } = parseBuild(name);
-	const at = INDEX.recipes[hash];
-	if (!at) throw new Error(`no recipe ${hash.slice(0, 12)}… on this device`);
+	const at = heldAt(hash);
 	const values = at.params?.length ? valuesOf(at.params, params) : undefined;
 	if (params && !values) throw new Error(`${at.label} takes no parameters`);
 	return { hash, at, values, name: buildOf(hash, values), engine: engineAt(INDEX.engine) };
@@ -82,15 +83,19 @@ function open({ data, card }, hash) {
  * its `name` and `key`, its times in ms, and `stored`, which settles once a box's build is kept in the cache (true) or
  * was not (false).
  * @param {string} name `<recipe hash>?its=values`
- * @param {{ box?: AssetBox, cache?: boolean }} [o] `cache: false` builds in the box and keeps nothing
+ * @param {{ box?: AssetBox, cache?: boolean, store?: Pick<typeof cache, 'get' | 'put' | 'drop'> }} [o] `cache: false`
+ *   builds in the box and keeps nothing; `store` the cache it reads and keeps to (this device's; a test's stand-in)
  */
-export async function loadAsset(name, { box, cache: useCache = true } = {}) {
+export async function loadAsset(name, { box, cache: useCache = true, store = cache } = {}) {
 	const t0 = now();
+	// what is no build at all, or a vault's ref, is refused before the recipes are asked for
+	parseBuild(name);
+	await loadRecipes();
 	const c = canonical(name);
 	const key = cache.keyOf({ engine: c.engine.blake3, recipe: c.hash, params: c.values });
 	const said = { name: c.name, key, label: c.at.label };
 	if (useCache) {
-		const hit = await cache.get(key);
+		const hit = await store.get(key);
 		const t1 = now();
 		if (hit) {
 			try {
@@ -98,7 +103,7 @@ export async function loadAsset(name, { box, cache: useCache = true } = {}) {
 				return { ...got, ...said, from: 'cache', stored: Promise.resolve(true), ms: { read: Math.round(t1 - t0), rebuild: Math.round(now() - t1), total: Math.round(now() - t0) } };
 			} catch {
 				// spoiled, or kept by an older page: gone, and built anew
-				await cache.drop(key);
+				await store.drop(key);
 			}
 		}
 	}
@@ -117,7 +122,7 @@ export async function loadAsset(name, { box, cache: useCache = true } = {}) {
 		const t2 = now();
 		const given = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
 		const built = await (box ?? boxOf(INDEX.engine)).build(recipe, given);
-		const stored = useCache ? cache.put(key, built).catch(() => false) : Promise.resolve(false);
+		const stored = useCache ? store.put(key, built).catch(() => false) : Promise.resolve(false);
 		return { built, stored, t2 };
 	})();
 	if (useCache) {

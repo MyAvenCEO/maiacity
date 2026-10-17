@@ -9,7 +9,9 @@
 	second button builds every asset of ours (every version and variant, phase 3) in the box and in the page, compares
 	the two and times both.
 	Laid out as every asset library of the app is ($lib/app/Turntable.svelte): the builds down the left, the asset on its
-	turntable, the actions across the top, the build's name, the cache and the checks down the right.
+	turntable, the actions across the top, the build's name, the cache and the checks down the right. Every recipe built
+	here is the Maia City vault's ($lib/assets/vault.js), so the page's own build of each (objectAt) holds the vault's
+	recipes to the repo's code; the trials, made to do harm, are the box's own (`virtual:box-trials`), never a vault's.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -20,7 +22,7 @@
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
 	import { OBJECT_GROUPS } from '$lib/assets/groups.js';
-	import TRIALS from 'virtual:asset-recipes/trials';
+	import TRIALS from 'virtual:box-trials';
 	import { AssetBox, engineCode } from '$lib/assets/box/host.js';
 	import { rebuild } from '$lib/assets/box/rebuild.js';
 	import { FORMAT } from '$lib/assets/box/serialize.js';
@@ -29,7 +31,7 @@
 	import { ENGINES, LATEST } from '$lib/assets/engines.js';
 	import { boxOf, keyOf, loadAsset } from '$lib/assets/load.js';
 	import { base as root } from '$app/paths';
-	import { INDEX, buildAt, checked, hashText, pageOf, parseBuild, recipeAt } from '$lib/assets/recipes.js';
+	import { INDEX, buildAt, checked, hashText, pageOf, parseBuild, recipeAt } from '$lib/assets/vault.js';
 	import { valuesOf } from '$lib/assets/params.js';
 	import { checkCard } from '$lib/assets/schemas/index.js';
 	import { hostileCards } from '$lib/assets/schemas/hostile.js';

@@ -19,6 +19,7 @@
 	import PostCard from '$lib/universe/PostCard.svelte';
 	import InspirePost from '$lib/universe/InspirePost.svelte';
 	import { inspireOf } from '$lib/universe/inspire.js';
+	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
 
 	let { data } = $props();
 
@@ -85,7 +86,7 @@
 {/snippet}
 
 {#if data.asset}
-	<data.AssetPage hash={data.asset} />
+	<VaultRecipes><data.AssetPage hash={data.asset} /></VaultRecipes>
 {:else if inspire}
 	<InspirePost entry={inspire} />
 {:else if post}
@@ -110,6 +111,9 @@
 			{:else}
 				<h1>This post is not in the stream</h1>
 				<p>It may have been taken off avenDB, as its article went back to a draft.</p>
+				<!-- an asset's own page is found among the Maia City vault's recipes ($lib/assets/vault.js): when they can't be
+				     loaded, which this name may be is not known, and the page says why -->
+				{#if data.recipes}<p class="bad" role="alert">If it is an asset's page: {data.recipes}</p>{/if}
 			{/if}
 		</div>
 	</main>
@@ -157,5 +161,9 @@
 
 	.missing p {
 		color: var(--ink-soft);
+	}
+
+	.missing p.bad {
+		color: var(--terracotta);
 	}
 </style>

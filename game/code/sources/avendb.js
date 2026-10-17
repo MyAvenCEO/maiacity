@@ -22,6 +22,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
+import { CODE_FEED, seedFeedOf, seedRows } from './feed.js';
 import ENGINES from '../../../src/lib/sandbox/engines.json' with { type: 'json' };
 
 /** the kinds of code entry this source carries, and the host each runs in */
@@ -30,11 +31,11 @@ const HOSTS = { view: 'view', logic: 'logic' };
 export const AVENDB_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([A-Za-z0-9_-]{8,128})@([0-9a-f]{8,128}(?:,[0-9a-f]{8,128})*)$/;
 
 /** where avenDB's server serves public code entries (its feed, as /feed/posts serves posts): { code: [row] } */
-export const CODE_FEED = 'https://avendb.maia.city/feed/code';
+export { CODE_FEED };
 
 /** the code entries the loader reads there: views and logic modules of the server's own seed's Maia City vault, which
- * the server names by where it sits in the seed it was founded with (`seed=1`), never by its name */
-export const feedOf = (feed = CODE_FEED) => `${feed}?seed=1&type=${Object.keys(HOSTS).join(',')}`;
+ * the server names by where it sits in the seed it was founded with (`seed=1`), never by its name (./feed.js) */
+export const feedOf = (feed = CODE_FEED) => seedFeedOf(Object.keys(HOSTS), feed);
 
 const PATH = /^(views|logic)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/;
 
@@ -171,22 +172,8 @@ export const avendb = {
  */
 export async function loadCode(viewOf, { url = feedOf(), fetch: get = globalThis.fetch, timeout = 4000 } = {}) {
 	if (!avendb.on) return { error: 'code from avenDB is switched off' };
-	try {
-		const ctl = new AbortController();
-		const t = setTimeout(() => ctl.abort(), timeout);
-		const res = await get(url, { signal: ctl.signal }).finally(() => clearTimeout(t));
-		if (!res.ok) return { error: `${url} answered ${res.status}` };
-		const body = await res.json();
-		const rows = Array.isArray(body) ? body : (body?.code ?? body?.entries);
-		if (!Array.isArray(rows)) return { error: `${url} answered no rows` };
-		// the code our hosts run comes from the one vault, the seed's: a feed handing out more than one, or another's, is
-		// not what was asked for
-		if (new Set(rows.map((r) => r?.vault)).size > 1) return { error: `${url} handed out code of more than one vault` };
-		if (rows.some((r) => r && 'seed' in r && r.seed !== 'Maia City')) return { error: `${url} handed out code of a vault that is not the seed's Maia City` };
-		return avendb.use(rows, viewOf);
-	} catch (e) {
-		return { error: e?.message || String(e) };
-	}
+	const got = await seedRows(url, { fetch: get, timeout });
+	return 'error' in got ? got : avendb.use(got.rows, viewOf);
 }
 
 /**

@@ -13,8 +13,9 @@
 	           pickup) under that asset, linked to its own page; tap one, on it or in the list, for its card
 
 	Every build comes from the asset box or this device's cache, checked ($lib/assets/load.js), and is shown from its
-	data alone ($lib/assets/hero.js): what moves by itself runs in the box, and only numbers come back. Drag to turn round
-	it, scroll to come closer. An admin's.
+	data alone ($lib/assets/hero.js): what moves by itself runs in the box, and only numbers come back. Its recipe is the
+	Maia City vault's ($lib/assets/vault.js), with no repo fallback: a version whose recipe the vault doesn't hold, or
+	holds otherwise, says so on the stage, naming its ref. Drag to turn round it, scroll to come closer. An admin's.
 
 	The Buildings add three things: every building stands on the same round ground ($lib/buildings/ground.js, `round`)
 	and is walked there, the list kept beside it (`inPlace`); and an item that is a world in disguise (a dome: Sandbox
@@ -34,7 +35,7 @@
 	import { walk } from './controls.js';
 	import { forStage, heroOf, runner, walkOf } from './hero.js';
 	import { boxOf, canonical, liveBoxOf, loadAsset } from './load.js';
-	import { INDEX, buildOf, hashOf, pageOf, recipeAt } from './recipes.js';
+	import { INDEX, buildOf, hashOf, pageOf, recipeAt } from './vault.js';
 	import { parseRef, refOf } from './refs.js';
 	import { soilOf } from './soil.js';
 
@@ -76,9 +77,24 @@
 	});
 	let variantId = $state(/** @type {string | null} */ (null));
 	const variant = $derived(variants.find((v) => v.id === variantId) ?? variants[0] ?? null);
-	/** the recipe of what is chosen, by its hash; undefined if only its note was kept */
+	/** the recipe of what is chosen, by its hash in the Maia City vault; undefined if only its note was kept, or the vault lacks it */
 	const hash = $derived(INDEX.labels[refOf(group, chosen.id, version, variant?.id)]);
 	const recipe = $derived(hash ? INDEX.recipes[hash] : null);
+	/** whether the version chosen is a recipe: kept with a builder of its own, its own or its variants' (./recipe.js `recipesIn`) */
+	const recipeWanted = $derived.by(() => {
+		const at = atOrLatest(chosen.versions, version);
+		return !!at?.kept && (typeof at.build === 'function' || Array.isArray(at.build));
+	});
+	/** why there is no recipe of a version that is one: the vault holds none, as it says, naming its ref */
+	const missing = $derived.by(() => {
+		if (hash || !recipeWanted) return '';
+		try {
+			hashOf(refOf(group, chosen.id, version, variant?.id));
+			return '';
+		} catch (e) {
+			return String(e?.message ?? e);
+		}
+	});
 	/** what its recipe is built with, as text, beyond its own values (a plant's stage, seed, fruit); detail is the renderer's */
 	let given = $state(/** @type {Record<string, string>} */ ({}));
 	const params = $derived((recipe?.params ?? []).filter((p) => p.id !== 'detail'));
@@ -136,7 +152,7 @@
 	let steps = $state(0);
 	let worldUp = $state(false);
 	/** whether what is chosen is a world in disguise: at a version that is no recipe (the tent is one from its v2) */
-	const worldly = $derived(!hash && !!inside?.is(chosen));
+	const worldly = $derived(!hash && !recipeWanted && !!inside?.is(chosen));
 
 	const catalog = $derived(hero?.catalog?.parts?.length ? hero.catalog : null);
 	const card = $derived(catalog && picked ? (catalog.parts.find((p) => p.id === picked) ?? null) : null);
@@ -942,6 +958,8 @@
 			{#if typeof chosen.size === 'string'}<span>{chosen.size}</span>{/if}
 			{#if worldly}
 				{#if building}<span class="soft">{step || 'Opening the doors'}…</span>{:else if size}<span>{measure(Math.max(size[0], size[2]))} across · {measure(size[1])} high</span>{/if}
+			{:else if missing}
+				<span class="missing">{missing}</span>
 			{:else if !hash}
 				<span>Only its note was kept of this version, not how it was built.</span>
 			{:else if size}
@@ -969,6 +987,8 @@
 		<button class="canvas-note lost" onclick={() => location.reload()}>This device’s graphics ran out of room. Tap to load it again.</button>
 	{:else if error}
 		<div class="canvas-note error" role="alert">{error}</div>
+	{:else if missing}
+		<div class="canvas-note error" role="alert">{missing}</div>
 	{:else if building && world}
 		<div class="canvas-note" role="status">{step || 'Opening the doors'}… <i class="steps"><i style:width="{Math.min(100, (steps / STEPS) * 100)}%"></i></i></div>
 	{:else if building}
@@ -1211,7 +1231,8 @@
 		pointer-events: auto;
 		cursor: pointer;
 	}
-	.canvas-note.error {
+	.canvas-note.error,
+	.missing {
 		color: #b3261e;
 	}
 
