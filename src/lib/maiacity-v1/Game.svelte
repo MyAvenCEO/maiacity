@@ -14,7 +14,7 @@
 	import { onMount } from 'svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
-	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, PAYEES, PAYERS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, describe, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
+	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
@@ -25,6 +25,8 @@
 	import ViewHost from '$lib/sandbox/ViewHost.svelte';
 	import ViewSlot, { standing } from '$lib/sandbox/ViewSlot.svelte';
 	import { viewOfCard } from '$lib/sandbox/view-host.js';
+	import { screenDataOf } from './screen.js';
+	import { base } from '$app/paths';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
 	import { rents } from '../../../game/maiacity-v1/engine.js';
 	import Mark from './Mark.svelte';
@@ -52,7 +54,6 @@
 	let swapToken = $state('MAIA');
 	let swapTo = $state('TRIBE');
 	let swapAmount = $state(1);
-	let draft = $state(null);
 	let labels = $state({});
 	let canvas;
 	let world;
@@ -74,9 +75,8 @@
 	const hrs = (h) => (h === 24 ? 'a real day' : h % 24 === 0 ? `${h / 24} real days` : `${h} real hours`);
 	const speed = $derived(view ? `a month ${view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}` : '');
 	const reach = $derived(view ? hrs(view.settings.mintWindowHours) : '');
-	const mips = $derived(view?.mips ?? []);
-	const openMips = $derived(mips.filter((m) => m.status === 'open'));
-	const decidedMips = $derived(mips.filter((m) => m.status !== 'open').reverse());
+	// the proposals waiting for signatures: a count on the link to the Proposals app, where they are read and signed
+	const openMips = $derived((view?.mips ?? []).filter((m) => m.status === 'open'));
 
 	$effect(() => {
 		const v = view, h = hour; // read first: the world is made after the first run
@@ -403,31 +403,6 @@
 		if (playing) wallet = null;
 	});
 
-	function newMip(payout) {
-		draft = { title: payout ? `Payout from the ${nameOf(view, payout.from)}` : '', description: '', settings: { ...view.settings }, coops: Object.fromEntries(Object.values(view.coops).map((c) => [c.id, { name: c.name, assets: c.assets.map((x) => `${x.name} | ${x.kind}`).join('\n') }])), payouts: payout ? [payout] : [] };
-		panel = 'mips';
-	}
-
-	async function propose() {
-		const settings = Object.fromEntries(Object.entries(draft.settings).filter(([k, v]) => Number(v) !== view.settings[k]));
-		const payouts = draft.payouts.filter((x) => Number(x.amount) > 0);
-		// a COOP's assets are written one a line, "name | kind"; only what differs goes into the MIP
-		const coops = {};
-		for (const [id, c] of Object.entries(draft.coops)) {
-			const now = view.coops[id];
-			const assets = c.assets.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
-				const [name, ...kind] = l.split('|');
-				const known = now.assets.find((x) => x.name === name.trim());
-				return { id: known?.id ?? '', name: name.trim(), kind: kind.join('|').trim() };
-			});
-			const change = {};
-			if (c.name.trim() !== now.name) change.name = c.name.trim();
-			if (JSON.stringify(assets.map((x) => [x.name, x.kind])) !== JSON.stringify(now.assets.map((x) => [x.name, x.kind]))) change.assets = assets;
-			if (Object.keys(change).length) coops[id] = change;
-		}
-		if (await doMove({ type: 'propose', mip: { title: draft.title, description: draft.description, settings, coops, payouts } })) draft = null;
-	}
-
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 	const dur = (ms) => {
 		if (!Number.isFinite(ms)) return '—';
@@ -438,14 +413,15 @@
 	};
 	const pad = (n) => String(n).padStart(2, '0');
 	const vdate = (vm) => dateText(dateOf(vm));
-	const holdersList = $derived(view ? [...SEATS.map((s) => [`player:${s}`, view.players[s].name]), ...Object.keys(COOPS).map((id) => [`coop:${id}`, view.coops[id].name]), ['pool', 'AMM pool (MaiaCity COOP)']] : []);
 	// the tools down the left: the wallet (your HEARTS and MINDs, investing, the cash flow, swapping, every
-	// transaction) is the nav pill's "+", not a tool
+	// transaction) is the nav pill's "+", not a tool. Proposals are not a tool either: they live in the Proposals app,
+	// next to Ledger and Coops (Samuel 2026-10-17), and its link stands at the end of the tools
 	const TOOLS = [
 		['coops', '◇', 'COOPs'],
-		['mips', '✎', 'Proposals'],
 		['rules', '⚙', 'Rules']
 	];
+	/** the Proposals app, on this game's AIPs; with `draft`, on a new one for it (a payout already filled in) */
+	const aipsLink = (draft) => `${base}/app/aips/?game=maiacity-v1${draft ? `&new=1${draft.from ? `&from=${encodeURIComponent(draft.from)}&to=${encodeURIComponent(draft.to)}&token=${draft.token}&amount=${draft.amount}` : ''}` : ''}`;
 	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
 	const screens = $derived(view ? viewsOf(view).filter((v) => (v.data?.slot ?? 'panel') === 'panel') : []);
 	// a screen a MIP stood in one of the page's panels (views.js SLOTS): it replaces a panel that only shows and stands
@@ -454,30 +430,11 @@
 	const slotCard = $derived(panel && !isViewPanel(panel) ? slotted[panel] : null);
 	const allTools = $derived([...TOOLS, ...screens.map((v) => [`view:${v.id}`, '▦', v.name])]);
 	const isViewPanel = (x) => typeof x === 'string' && x.startsWith('view:');
-	// what a screen is handed: the game as it stands (never a seat's secrets: there are none in the state)
-	const screenData = $derived(
-		view
-			? {
-					date: dateText(cal),
-					month: view.month,
-					seat,
-					minds: MINDS.map((t) => ({ id: t, label: TOKEN_LABEL[t], colour: TOKEN_COLOUR[t] })),
-					hearts: heartsValue(view),
-					players: SEATS.map((k) => ({ seat: k, name: view.players[k].name, wallet: { ...view.players[k].wallet }, worth: inHearts(view, view.players[k].wallet), arrears: view.players[k].arrears ?? 0 })),
-					coops: Object.values(view.coops).map((c) => ({ id: c.id, name: c.name, mind: c.mind, treasury: { ...c.treasury }, worth: inHearts(view, c.treasury), assets: c.assets.map((a) => ({ ...a })) })),
-					pool: { ...view.pool },
-					poolWorth: inHearts(view, view.pool),
-					settings: { ...view.settings },
-					rents: rents(view),
-					names: Object.fromEntries(holdersList),
-					ledger: view.ledger.slice(-80).reverse().map((e) => ({ ...e }))
-				}
-			: null
-	);
+	// what a screen is handed: the game as it stands ($lib/maiacity-v1/screen.js, the same as the Proposals app hands)
+	const screenData = $derived(screenDataOf(view, seat, now));
 	// a view card as the view host takes it: the same object while its code is (the game is copied every second, its
 	// cards with it), so its frame never reloads until a MIP changes it
 	const frameOf = (c) => viewOfCard(c, 400);
-	let preview = $state(''); // a proposal's screen being looked at before signing: `${number}:${id}`
 	const isCoopPanel = (x) => typeof x === 'string' && x.startsWith('coop:');
 	const isAssetPanel = (x) => typeof x === 'string' && x.startsWith('asset:');
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
@@ -581,8 +538,9 @@
 
 		{#if shows('mint')}<nav class="tools" class:open={tools}>
 			{#each allTools.filter(([id]) => shows(id)) as [id, ic, label] (id)}
-				<button class:on={panel === id} class:hint={tour?.hint === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}{#if id === 'mips' && openMips.length}<span class="badge">{openMips.length}</span>{/if}</button>
+				<button class:on={panel === id} class:hint={tour?.hint === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}</button>
 			{/each}
+			{#if shows('coops')}<a href={aipsLink()} title="This game's proposals, in the Proposals app"><span class="ic">✎</span>Proposals{#if openMips.length}<span class="badge">{openMips.length}</span>{/if}</a>{/if}
 			{#if shows('you')}<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>{/if}
 		</nav>{/if}
 		{#if canMove && shows('mint') && !tour && !wallet}
@@ -782,7 +740,7 @@
 		{/if}
 
 		{#if panel && shows(panel) && (!tour || chose)}
-		<aside class="card panel" class:wide={panel === 'mips' || isViewPanel(panel)}>
+		<aside class="card panel" class:wide={isViewPanel(panel)}>
 			<button class="close" aria-label="Close" onclick={() => (panel = null)}>×</button>
 
 			{#if standing(panel, slotCard)}
@@ -853,82 +811,10 @@
 					</dl>
 					<div class="buttons">
 						{#if canMove}<button class="primary" onclick={() => openWallet('invest', panel)}>Invest</button>{/if}
-						{#if canMove}<button onclick={() => newMip({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</button>{/if}
+						{#if canMove}<a class="button" href={aipsLink({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</a>{/if}
 						<button onclick={() => openWallet('home', panel)}>Its wallet</button>
 						{#if c.id === 'maia'}<button onclick={() => openWallet('swap', '')}>Swap in the pool</button><button onclick={() => openWallet('home', 'pool')}>The pool’s wallet</button>{/if}
 					</div>
-				{:else if panel === 'mips'}
-					<p class="eyebrow">MaiaCity improvement proposals</p>
-					<h2>Proposals</h2>
-					<p class="about">Every decision is a MIP: any setting, a COOP's name and the assets it owns, payouts from a COOP treasury to any wallet, and the game's screens (look at a new one before you sign). It needs {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'} and applies at once, in this same game.</p>
-					{#if draft}
-						<div class="draft">
-							<input class="full" placeholder="Title" bind:value={draft.title} />
-							<textarea class="full" rows="3" placeholder="Why, in prose" bind:value={draft.description}></textarea>
-							<p class="eyebrow">Settings</p>
-							<dl class="settings">
-								{#each Object.keys(SETTING_LIMITS) as k (k)}
-									<dt class:changed={Number(draft.settings[k]) !== view.settings[k]}>{SETTING_NAMES[k]}</dt>
-									<dd><input type="number" step="any" min={SETTING_LIMITS[k][0]} max={SETTING_LIMITS[k][1]} bind:value={draft.settings[k]} /></dd>
-								{/each}
-							</dl>
-							<p class="eyebrow">COOPs and what they own</p>
-							{#each Object.values(view.coops) as c (c.id)}
-								<div class="coopdraft">
-									<input class="full" class:changed={draft.coops[c.id].name.trim() !== c.name} bind:value={draft.coops[c.id].name} />
-									<textarea class="full" rows={Math.max(2, c.assets.length + 1)} placeholder="One asset a line: name | kind" bind:value={draft.coops[c.id].assets}></textarea>
-								</div>
-							{/each}
-							<p class="small">One asset a line, its name and kind split by “|”.</p>
-							<p class="eyebrow">Payouts</p>
-							{#each draft.payouts as x, i (i)}
-								<div class="payout">
-									<select bind:value={x.from}>{#each PAYERS as id (id)}<option value={id}>{nameOf(view, id)}</option>{/each}</select>
-									<span>→</span>
-									<select bind:value={x.to}>{#each PAYEES as id (id)}<option value={id}>{nameOf(view, id)}</option>{/each}</select>
-									<input type="number" min="0" step="0.1" bind:value={x.amount} />
-									<select bind:value={x.token}>{#each MINDS as t (t)}<option value={t}>{TOKEN_LABEL[t]}</option>{/each}</select>
-									<button class="link" onclick={() => draft.payouts.splice(i, 1)}>Remove</button>
-								</div>
-							{/each}
-							<button class="link" onclick={() => draft.payouts.push({ from: 'coop:maia', to: `player:${seat}`, token: 'MAIA', amount: 1 })}>+ Add a payout</button>
-							<div class="buttons">
-								<button class="primary" disabled={busy || !draft.title.trim()} onclick={propose}>Propose and sign as {player.name}</button>
-								<button onclick={() => (draft = null)}>Cancel</button>
-							</div>
-						</div>
-					{:else if canMove}
-						<div class="buttons"><button class="primary" onclick={() => newMip()}>New proposal</button></div>
-					{/if}
-					{#each openMips as m (m.number)}
-						<article class="mip open">
-							<header><b>MIP #{m.number}</b><span class="status">open</span></header>
-							<h3>{m.title}</h3>
-							{#if m.description}<p>{m.description}</p>{/if}
-							<p class="changes">{describe(view, m)}</p>
-							{#each m.views ?? [] as v (v.id)}
-								{@const key = `${m.number}:${v.id}`}
-								<div class="buttons"><button onclick={() => (preview = preview === key ? '' : key)}>{preview === key ? 'Close the screen' : `Look at the screen “${v.name}”`}</button></div>
-								{#if preview === key}{#key frameOf(v)}<ViewHost view={frameOf(v)} data={screenData} />{/key}{/if}
-							{/each}
-							<p class="sigs">
-								{#each SEATS as s (s)}<span class:ok={m.signatures.includes(s)}>{m.signatures.includes(s) ? '✓' : '○'} {view.players[s].name}</span>{/each}
-							</p>
-							{#if canMove}
-								<div class="buttons">
-									{#if !m.signatures.includes(seat)}<button class="primary" disabled={busy} onclick={() => doMove({ type: 'sign', number: m.number })}>Sign as {player.name}</button>{/if}
-									<button disabled={busy} onclick={() => doMove({ type: 'reject', number: m.number })}>{m.by === seat ? 'Withdraw' : 'Reject'}</button>
-								</div>
-							{/if}
-						</article>
-					{/each}
-					{#each decidedMips as m (m.number)}
-						<article class="mip {m.status}">
-							<header><b>MIP #{m.number}</b><span class="status">{m.status}</span></header>
-							<h3>{m.title}</h3>
-							<p class="changes">{describe(view, m)}</p>
-						</article>
-					{/each}
 				{:else if isViewPanel(panel)}
 					{@const card = screens.find((v) => panel === `view:${v.id}`)}
 					<p class="eyebrow">A screen · an MCP App</p>
@@ -946,9 +832,9 @@
 					<dl class="settings">
 						{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
 					</dl>
-					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a MIP with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}.</p>
+					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a proposal with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}, made and signed in the Proposals app.</p>
 					<div class="buttons">
-						{#if canMove}<button class="primary" onclick={() => newMip()}>Propose a change</button>{/if}
+						{#if canMove}<a class="button primary" href={aipsLink({})}>Propose a change</a>{/if}
 						{#if admin}<button class="danger" disabled={busy} onclick={() => confirm('Start the game again from year 0? Every balance, MIP and the ledger go.') && run(resetGame)}>Start again from year 0</button>{/if}
 					</div>
 				{/if}
@@ -983,6 +869,7 @@
 	}
 	.panel,
 	.tools button,
+	.tools a,
 	.tag {
 		background: rgb(250 248 242 / 0.86);
 		border: 1px solid rgb(255 255 255 / 0.5);
@@ -1425,13 +1312,16 @@
 		gap: 0.4rem;
 		width: 8rem;
 	}
-	.tools > button {
+	.tools > button,
+	.tools > a {
 		display: flex;
 		align-items: center;
 		gap: 0.45rem;
 		padding: 0.5rem 0.7rem;
 		border-radius: 999px;
 		text-align: left;
+		color: inherit;
+		text-decoration: none;
 	}
 	.tools .ic {
 		width: 1rem;
@@ -1539,10 +1429,6 @@
 		margin: 0.15rem 0 0.3rem;
 		font-size: 1.15rem;
 	}
-	h3 {
-		margin: 0.2rem 0;
-		font-size: 0.95rem;
-	}
 	.about {
 		margin: 0 0 0.6rem;
 		font-size: 0.78rem;
@@ -1562,19 +1448,10 @@
 	dt {
 		opacity: 0.65;
 	}
-	dt.changed {
-		opacity: 1;
-		font-weight: 600;
-		color: #c87a4f;
-	}
 	dd {
 		margin: 0;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
-	}
-	.settings dd input {
-		width: 5.5rem;
-		text-align: right;
 	}
 	.bad {
 		color: #b5523a;
@@ -1589,13 +1466,19 @@
 		flex-direction: column;
 	}
 	.buttons button,
+	.buttons a.button,
 	.row button {
 		padding: 0.5rem 0.8rem;
 		border: 1px solid rgb(31 42 35 / 0.15);
 		border-radius: 999px;
 		background: #fff;
 	}
-	.buttons button.primary {
+	.buttons a.button {
+		color: inherit;
+		text-decoration: none;
+	}
+	.buttons button.primary,
+	.buttons a.button.primary {
 		background: #24452f;
 		border-color: #24452f;
 		color: #f4f1e8;
@@ -1628,8 +1511,7 @@
 		min-width: 0;
 	}
 	input,
-	select,
-	textarea {
+	select {
 		padding: 0.4rem 0.55rem;
 		border: 1px solid rgb(31 42 35 / 0.18);
 		border-radius: 10px;
@@ -1637,116 +1519,6 @@
 		color: inherit;
 		font: inherit;
 		font-size: 0.82rem;
-	}
-	.full {
-		width: 100%;
-		box-sizing: border-box;
-		margin-bottom: 0.35rem;
-	}
-	.payout {
-		display: grid;
-		grid-template-columns: 1fr auto 1fr;
-		gap: 0.3rem;
-		align-items: center;
-		margin-bottom: 0.4rem;
-		padding-bottom: 0.4rem;
-		border-bottom: 1px solid rgb(31 42 35 / 0.08);
-	}
-	.payout input,
-	.payout select {
-		min-width: 0;
-	}
-	.coopdraft {
-		display: grid;
-		gap: 0.25rem;
-		margin-bottom: 0.5rem;
-	}
-	.coopdraft input.changed {
-		outline: 2px solid #d7a53a;
-	}
-	.draft {
-		margin: 0.4rem 0 0.6rem;
-		padding: 0.6rem;
-		border-radius: 12px;
-		background: rgb(31 42 35 / 0.05);
-	}
-	.mip {
-		margin-top: 0.5rem;
-		padding: 0.55rem 0.65rem;
-		border-radius: 12px;
-		border: 1px solid rgb(31 42 35 / 0.1);
-		background: #fff;
-	}
-	.mip header {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.75rem;
-	}
-	.mip p {
-		margin: 0.2rem 0;
-		font-size: 0.78rem;
-	}
-	.changes {
-		opacity: 0.75;
-	}
-	.status {
-		padding: 0 0.45rem;
-		border-radius: 999px;
-		background: #f0c49a;
-		font-size: 0.68rem;
-	}
-	.accepted .status {
-		background: #b9d4b3;
-	}
-	.rejected .status,
-	.withdrawn .status {
-		background: rgb(31 42 35 / 0.1);
-	}
-	.mip:not(.open) {
-		opacity: 0.75;
-	}
-	.sigs {
-		display: flex;
-		gap: 0.7rem;
-	}
-	.sigs .ok {
-		color: #3d7a4a;
-		font-weight: 600;
-	}
-	.ledger {
-		max-height: 40dvh;
-		overflow-y: auto;
-	}
-	.subs {
-		margin-bottom: 0.6rem;
-	}
-	.line.total {
-		border-top: 1px solid rgb(31 42 35 / 0.25);
-		font-weight: 600;
-	}
-	.line {
-		display: grid;
-		grid-template-columns: 5.2rem 1fr auto;
-		gap: 0.5rem;
-		align-items: baseline;
-		padding: 0.4rem 0;
-		border-top: 1px solid rgb(31 42 35 / 0.08);
-		font-size: 0.76rem;
-	}
-	.when {
-		font-variant-numeric: tabular-nums;
-		opacity: 0.75;
-	}
-	.amt {
-		text-align: right;
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-	}
-	.amt.plus {
-		color: #3d7a4a;
-	}
-	.amt.minus {
-		color: #b5523a;
 	}
 	.error {
 		margin: 0.6rem 0 0;
@@ -1757,11 +1529,6 @@
 	}
 	.fab {
 		display: none;
-	}
-	.arrow {
-		align-self: center;
-		padding: 0 0.3rem;
-		opacity: 0.6;
 	}
 	.coop {
 		display: flex;
@@ -2208,9 +1975,6 @@
 			box-shadow: 0 -8px 28px rgb(0 0 0 / 0.16);
 			animation: sheet 240ms ease-out;
 			overscroll-behavior: contain;
-		}
-		.ledger {
-			max-height: none;
 		}
 		.wallet {
 			max-height: 50dvh;
