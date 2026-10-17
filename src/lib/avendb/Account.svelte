@@ -2,14 +2,17 @@
 	Your account (P8e, P8f): the person's own avenDB. Their account is their human vault: its root is their passkey,
 	which stays in the browser's authenticator, with the master recovery key as a way back while avenDB is young, and
 	this browser is one of its devices, its keys unmasked by the passkey at every unlock, what it holds kept on its
-	shelf in the browser's private file system (OPFS) so that it opens again in one ceremony. Every device of the vault
+	shelf in the browser's private file system (OPFS) so that it opens again in one ceremony, and kept open as long as
+	the tab lives (`kept`): leaving avenDB for another page of the site and coming back asks for no second unlock.
+	Every device of the vault
 	shows by the name on its card, an entry of the vault the device writes itself, end-to-end encrypted like its notes
 	(avendb-browser's `Device::card`), and every vault by the name on its profile, an entry this browser writes into it
 	(`Device::profile`): the person's own by their maiaCITY name, the seed's by theirs. In the Mac app the device runs
 	natively beside the app ($lib/avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
 	Mac; and it hosts each of the person's drives plugged into the Mac, a device of their vault of its own, which the
-	page lists and joins in Owners & devices ($lib/avendb/Settings.svelte). A device forgotten here, or what an
-	earlier avenDB kept, is put aside and never read again. A new person
+	page lists and joins in Owners & devices ($lib/avendb/Settings.svelte), where alone the person forgets their
+	account here. A device forgotten there, one taken out of its vault, or what an earlier avenDB kept, is put aside and
+	never read again. A new person
 	founds their vault here with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or
 	one they make here; the first to found a vault through a server nobody has claimed yet claims it in the same
 	ceremony and founds the seed (avendb's `world::SEED`): Maia Holding GmbH, a coop their vault owns, avenCEO GmbH, a
@@ -25,6 +28,15 @@
 	it from the consent screen ($lib/avendb/AccessRequest.svelte). avenDB's server runs at avendb.maia.city: its
 	relay and its code are filled in, and in a dev build a test server’s can take their place (?relay=, ?server=).
 -->
+<script module>
+	/** This browser's device once unlocked, as long as the tab lives: what runs it again (its WebAssembly, its shelf,
+	 *  what opens it), taken up when the person comes back to avenDB from another page of the site, so one unlock lasts
+	 *  the tab. The device runs on meanwhile, syncing; forgetting the account here lets go of it. The Mac app's device
+	 *  runs in the app and opens again without a ceremony, so it is never kept here.
+	 *  @type {{ avendb: any, store: any, meta: any, device: any } | null} */
+	let kept = null;
+</script>
+
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import { me } from '$lib/auth/client';
@@ -166,6 +178,11 @@
 			});
 			return;
 		}
+		if (kept) {
+			({ avendb, store, meta } = kept);
+			running(kept.device);
+			return;
+		}
 		try {
 			const pkg = await import('./device/avendb_browser.js');
 			await pkg.default();
@@ -180,7 +197,14 @@
 		}
 	});
 
-	onDestroy(() => device?.close());
+	// the Mac app's device runs on in the app, and the page lets go of it; this browser's runs on as long as the tab
+	// does (`kept`). Either way what watched it here stops (`watch`, `refresh`)
+	let gone = false;
+	onDestroy(() => {
+		gone = true;
+		if (mac) device?.close();
+		device = null;
+	});
 
 	// while it is open: the access requests as records, looked for every few seconds as well as at each change, in the
 	// browser and the Mac app alike; and in the Mac app, the requests on this Mac, as an agent device leaves its request
@@ -396,10 +420,13 @@
 			try {
 				await unlocking(at);
 			} catch (e) {
-				// a store of the device taken out of its vault, or kept before avenDB started fresh with flat vaults
+				// a store of the device taken out of its vault, or kept before avenDB started fresh: it opens nothing, so
+				// it is put aside, never deleted, and this browser signs in or sets up again
 				if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
+				await (mac ? mac.call('forget') : store.aside());
+				[meta, phase] = [null, 'new'];
 				throw new Error(
-					`What ${here} kept holds no vault of yours: it was taken out of your vault, or kept before avenDB started fresh. Forget it here, then sign in or set up your account again with your passkey.`
+					`What ${here} kept holds no vault of yours: it was taken out of your vault, or kept before avenDB started fresh, so it is put aside. Sign in or set up your account again with your passkey.`
 				);
 			}
 		});
@@ -422,10 +449,14 @@
 		meta = { name: name.trim(), relay };
 		running(d);
 		meta = await d.keep(hex(nonce), credential);
+		if (kept && kept.device === d) kept.meta = meta;
 	}
 
 	/** @param {any} d */
 	function running(d) {
+		// kept for the tab's next visit to avenDB, even where the person left before it opened
+		if (!mac) kept = { avendb, store, meta, device: d };
+		if (gone) return void (mac && d.close());
 		device = d;
 		phase = 'open';
 		sockets = mac ? d.sockets() : null;
@@ -733,6 +764,7 @@
 		if (!confirm(ask)) return;
 		return run(`Forgetting ${here}`, async () => {
 			await device?.close();
+			kept = null;
 			// its shelf is put aside, never deleted, and a new one is in use: in the app's folder, or in OPFS
 			await (mac ? mac.call('forget') : store.aside());
 			[device, meta, world, phase] = [null, null, null, 'new'];
@@ -776,7 +808,6 @@
 					<p>Your account is on {here}, as {meta?.name}. Unlock it with your passkey.</p>
 					<div class="row">
 						<button class="btn primary" disabled={!!doing} onclick={unlockHere}>Unlock</button>
-						<button class="btn quiet" disabled={!!doing} onclick={forget}>Forget it here</button>
 					</div>
 				</article>
 			</div>
