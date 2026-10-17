@@ -852,7 +852,8 @@ try {
 	await shot('13-signed-in');
 
 	// an earlier avenDB's store, as when avenDB started fresh: the app starts again, the device puts the store aside,
-	// and the page says what it kept holds no vault, and offers to forget it here
+	// and the page says what it kept holds no vault, puts it aside too and offers to sign in again (the only Forget
+	// button is in Owners & devices)
 	await app.quit();
 	const ops = join(folder, 'store', 'ops');
 	const earlier = readFileSync(ops);
@@ -865,9 +866,7 @@ try {
 	check('it says what this Mac kept holds no vault', await waitText('kept holds no vault of yours'), await problem());
 	const put = existsSync(join(folder, 'store', 'aside')) ? readdirSync(join(folder, 'store', 'aside')) : [];
 	check('the earlier store put aside, not deleted', put.length === 1, put.join(', '));
-	page.once('dialog', (d) => d.accept());
-	await click('Forget it here', '.account button');
-	check('forgotten, it offers to sign in again', await waitText('Sign in with my passkey'));
+	check('put aside, it offers to sign in again', await waitText('Sign in with my passkey'));
 	await shot('14-earlier-store');
 } catch (e) {
 	check(`the walk through finishes: ${e instanceof Error ? e.message : e}`, false);
