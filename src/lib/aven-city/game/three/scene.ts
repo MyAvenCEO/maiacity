@@ -18,6 +18,8 @@ import {
 	type WorldStats
 } from './buildWorld'
 import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
+import { disposeObject } from '$lib/render/core.js'
+import { worldRenderer } from '$lib/render/world.js'
 import { createSky, sunAt } from '$lib/sandbox-kit/sky.js'
 import { connectFilm, filmDraws } from '$lib/sandbox-kit/film.js'
 
@@ -91,16 +93,6 @@ export interface SceneOptions {
 	film?: boolean
 }
 
-function disposeObject(root: THREE.Object3D): void {
-	root.traverse((obj) => {
-		if (obj instanceof THREE.Mesh) {
-			obj.geometry.dispose()
-			const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
-			for (const m of mats) m.dispose()
-		}
-	})
-}
-
 /** Slim, semi-transparent ring around a selected hex — present, not loud. */
 function makeSelectionRingGeometry(): THREE.BufferGeometry {
 	const shape = new THREE.Shape()
@@ -147,9 +139,9 @@ function makeMarquee(parent: HTMLElement): HTMLDivElement {
 }
 
 export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {}): SceneApi {
-	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-	// 1.25 is where the extra pixels stop showing and keep costing
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25))
+	// the world renderer ($lib/render/world.js): plain shadows, the island's lens, and at most 1.25 pixels per CSS
+	// pixel (where the extra pixels stop showing and keep costing)
+	const renderer = worldRenderer({ canvas, shadows: 'pcf', exposure: 1.05 })
 	if (import.meta.env.DEV) {
 		// a dev-only handle for reading draw counts from the console
 		;(globalThis as { __avencity?: unknown }).__avencity = {
@@ -160,10 +152,6 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			get world() { return world }
 		}
 	}
-	renderer.shadowMap.enabled = true
-	renderer.shadowMap.type = THREE.PCFShadowMap
-	renderer.toneMapping = THREE.ACESFilmicToneMapping
-	renderer.toneMappingExposure = 1.05
 
 	const scene = new THREE.Scene()
 
@@ -640,7 +628,7 @@ export function createScene(canvas: HTMLCanvasElement, options: SceneOptions = {
 			rig.dispose()
 			sky.dispose()
 			if (world) world.dispose()
-			disposeObject(scene)
+			disposeObject(scene, { textures: false })
 			renderer.dispose()
 		}
 	}
