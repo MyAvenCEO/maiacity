@@ -37,7 +37,8 @@
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
-	import { answer } from './ops.js';
+	import { answer, refs } from './ops.js';
+	import { seeding, seedPieces, unseeded } from './seed.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
@@ -101,6 +102,9 @@
 	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
 	let standardizing = false;
 	const standardized = new Set();
+	/** whether the device is writing the repo seed into Maia City, and the vaults it wrote it into */
+	let bringing = false;
+	const seededInto = new Set();
 
 	/** A name for this browser that tells it from the person's other devices: its browser, on its system; or the app. */
 	function deviceName() {
@@ -348,6 +352,45 @@
 				.catch((/** @type {Error} */ e) => (session.error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
 				.finally(() => (standardizing = false));
 		}
+		// the repo seed (./seed.js): the code, templates, stories and their deliveries the repository holds, each
+		// written into Maia City once avenCEO GmbH holds its schemas, by the person's first device alone: one that joins
+		// later might not have synced what the first wrote yet, and would write it all again
+		const city = seeded(w)[3]?.[0];
+		const first = mine?.devices[0]?.me === true;
+		if (city && company && first && standardized.has(company.id) && !bringing && !seededInto.has(city.id)) {
+			bringing = true;
+			seed(w, city.id)
+				.catch(
+					(/** @type {Error} */ e) => (session.error = `Bringing the repo’s seed into Maia City failed: ${plain(e.message)}`)
+				)
+				.finally(() => {
+					bringing = false;
+					seededInto.add(city.id);
+				});
+		}
+	}
+
+	/**
+	 * Each piece of the repo seed vault `city` holds no copy of yet (./seed.js), written into it acting for it, one
+	 * piece after another, each op of a piece naming the entries the ones before it made (`refs`). A piece the vault
+	 * refuses is left out, and the rest go on: what was left out is said at the end, and the next visit tries it again.
+	 * @param {import('./vaults.js').WorldView} w @param {string} city
+	 */
+	async function seed(w, city) {
+		const send = session.ask;
+		const left = unseeded(w, city, seedPieces(seeded(w)[2]?.[0]?.id ?? null));
+		/** @type {string[]} */
+		const failed = [];
+		for (const p of left) {
+			/** @type {any[]} */
+			const done = [];
+			try {
+				for (const op of await seeding(p, city)) done.push(answer(await send(refs(op, done))));
+			} catch {
+				failed.push(p.name);
+			}
+		}
+		if (failed.length) throw new Error(`Maia City refused ${failed.length} of them: ${failed.join(', ')}`);
 	}
 
 	/**

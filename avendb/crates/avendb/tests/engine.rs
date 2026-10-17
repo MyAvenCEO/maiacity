@@ -15,7 +15,7 @@ use avendb::id::{BlobId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{self, Schema, Status, TypeV1, View};
-use avendb::policy::{Level, Principal, Refusal};
+use avendb::policy::{Action, Kind, Level, Principal, Refusal};
 use avendb::rules::{self, Op};
 use avendb::world;
 use serde_json::{json, Value};
@@ -258,13 +258,24 @@ fn the_posts_everyone_reads_are_the_feed_newest_first() {
         es
     };
     ok(run(&mut w, mac, json!({ "op": "profile", "vault": alice, "name": "Alice" })));
+    // a schema of hers for posts that say when they were published, which the feed passes on though avenDB's doesn't
+    let dated = lens::blobs::POST_V1.replace("Post, v1", "Post, dated").replace(
+        r#""channel""#,
+        r#""published": { "type": "string", "default": "" },
+    "channel""#,
+    );
+    ok(run(&mut w, mac, json!({ "op": "create", "vault": alice, "type": "schema", "value": dated })));
+    let dated = Schema::parse(dated.as_bytes()).expect("a schema").id().to_hex();
     // a post tagged as the content flow's published stage is hers alone until a Public share reaches the tag
     let tag = "content:published";
     let post = |title: &str, tags: &[&str]| {
         let value = json!({ "kind": "post", "title": title, "text": "Out now.", "channel": "Devlog" });
         json!({ "op": "create", "vault": alice, "type": "post", "tags": tags, "value": value })
     };
-    let harvest = id(ok(run(&mut w, mac, post("Harvest", &[tag]))));
+    let mut harvest = post("Harvest", &[tag]);
+    harvest["schema"] = json!(dated);
+    harvest["value"]["published"] = json!("2026-10-17T09:00:00Z");
+    let harvest = id(ok(run(&mut w, mac, harvest)));
     assert!(feed(&w).is_empty(), "hers alone");
     let public = json!({ "op": "share", "over": alice, "who": "everyone", "level": "Public", "what": { "tag": tag } });
     ok(run(&mut w, mac, public));
@@ -281,12 +292,96 @@ fn the_posts_everyone_reads_are_the_feed_newest_first() {
     let want = [json!(alice), json!("Alice"), json!("human"), json!("Harvest"), json!("Out now."), json!("Devlog")];
     assert_eq!(fields[..6], want, "{first}");
     assert_eq!(fields[6], Value::Null, "about nothing");
+    assert_eq!((&first["published"], &first["tags"]), (&json!("2026-10-17T09:00:00Z"), &json!([tag])), "as it says");
+    let second = posts.iter().find(|p| p["entry"] == hex(rain)).unwrap();
+    assert_eq!((&second["published"], &second["tags"]), (&Value::Null, &json!([tag])), "it says none");
     // deleted, or untagged as its article goes back to a draft, it leaves the feed
     let delete = json!({ "op": "insert", "entry": hex(rain), "path": ["tags"], "value": world::DELETED });
     ok(run(&mut w, mac, delete));
     assert_eq!(listed(&feed(&w)), [hex(harvest)]);
     ok(run(&mut w, mac, json!({ "op": "tag", "entry": hex(harvest), "remove": [tag] })));
     assert!(feed(&w).is_empty(), "no longer public");
+}
+
+/// The entries everyone reads (`world::public_entries`), of every kind or of the kinds asked, the code's
+/// (`world::CODE_KINDS`) among them: each a Public share reaches, with its record as its main line counts it, the schema
+/// that reads it and that version's heads, by vault, kind and entry; never a private one or a deleted one. The seed's
+/// coop, Maia City, is told by where it stands in the seed: a coop of Alice's own that calls itself Maia City too is no
+/// part of it.
+#[test]
+fn the_entries_everyone_reads_are_served_and_maia_city_told_by_the_seed() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, passkey, alice) = (w.mac_a, w.passkey_a, w.alice);
+    // Maia City, the coop avenCEO GmbH owns alone beside the seed, and a coop of Alice's that calls itself so too
+    let company = world::seed_of(&w.lab, mac)[1];
+    let owners = vec![Principal::Vault(company)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 31, seal_to: vec![] };
+    let city = VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("Maia City"));
+    let fake = coop_of_alice(&mut w, 32);
+    assert_eq!(world::seed_of(&w.lab, mac).last(), Some(&city), "the seed's coop");
+    let tag = "code:public";
+    let entry = |made: Value| made["entry"].as_str().expect("its id").to_string();
+    let mut views = vec![];
+    for v in [city, fake] {
+        let v = v.to_hex();
+        ok(run(&mut w, mac, json!({ "op": "profile", "vault": v, "name": world::SEED_COOP })));
+        let public = json!({ "op": "share", "over": v, "who": "everyone", "level": "Public", "what": { "tag": tag },
+            "as": v });
+        ok(run(&mut w, mac, public));
+        let view = json!({ "kind": "view", "title": "Holders", "source": "<p>{{n}}</p>", "data": { "n": 1 } });
+        let create = json!({ "op": "create", "vault": v, "type": "view", "tags": [tag], "value": view, "as": v });
+        views.push(entry(ok(run(&mut w, mac, create))));
+    }
+    let made = |w: &mut World, v: VaultId, ty: &str, tags: &[&str], value: Value| {
+        let create = json!({ "op": "create", "vault": v.to_hex(), "type": ty, "tags": tags, "value": value,
+            "as": v.to_hex() });
+        entry(ok(run(w, mac, create)))
+    };
+    made(&mut w, city, "logic", &[], json!({ "kind": "logic", "source": "export function tick() {}" }));
+    let post = made(&mut w, city, "post", &[tag], json!({ "kind": "post", "title": "Out", "text": "Now." }));
+    made(&mut w, alice, "view", &[], json!({ "kind": "view", "source": "<p>mine</p>" }));
+    // the code: the two public views, Maia City's by the seed's name, the other's by none, whatever it calls itself
+    let code = world::public_entries(&w.lab, mac, Some(&world::CODE_KINDS[..]));
+    let text = |r: &Value, k: &str| r[k].as_str().expect("a text").to_string();
+    let listed = |rows: &[Value]| -> Vec<(String, String, String)> {
+        rows.iter().map(|r| (text(r, "vault"), text(r, "type"), text(r, "entry"))).collect()
+    };
+    let (view, city_hex, fake_hex) = ("view".to_string(), city.to_hex(), fake.to_hex());
+    let mut want = vec![(city_hex.clone(), view.clone(), views[0].clone()), (fake_hex, view, views[1].clone())];
+    want.sort();
+    assert_eq!(listed(&code), want, "the public views, by vault: no private logic, no post, nothing of Alice's own");
+    let row = code.iter().find(|r| r["entry"] == views[0]).expect("Maia City's view").clone();
+    let other = code.iter().find(|r| r["entry"] == views[1]).expect("the other view");
+    assert_eq!((&row["seed"], &row["name"]), (&json!(world::SEED_COOP), &json!(world::SEED_COOP)));
+    assert_eq!((&other["seed"], &other["name"]), (&Value::Null, &json!(world::SEED_COOP)), "a name is no seed");
+    let e = EntryId::from_hex(&views[0]).expect("an entry");
+    let heads = w.lab.history(mac, e).expect("its history").heads(None);
+    let heads: Vec<String> = heads.iter().map(|h| h.to_hex()).collect();
+    let fields = ["type", "schema", "tags", "heads"].map(|k| row[k].clone());
+    let v2 = lens::VIEW_V2.id().to_hex();
+    assert_eq!(fields, [json!("view"), json!(v2), json!([tag]), json!(heads)], "{row}");
+    let record = json!({ "kind": "view", "title": "Holders", "note": "", "tags": [], "source": "<p>{{n}}</p>",
+        "params": [], "data": { "n": 1 }, "input": {}, "form": "html", "logic": "" });
+    assert_eq!(row["record"], record, "its record on main, each field it leaves out at its default");
+    assert!(row["created"].is_u64());
+    // of every kind, the post too, in the same order; of the kinds asked alone
+    let all = world::public_entries(&w.lab, mac, None);
+    want.push((city_hex, "post".to_string(), post.clone()));
+    want.sort();
+    assert_eq!(listed(&all), want, "every public entry, of whatever kind");
+    let posts = world::public_entries(&w.lab, mac, Some(&["post", "story"][..]));
+    assert_eq!(each(&json!(posts), |r| &r["entry"]), [post.clone()]);
+    let schema = lens::POST_V2.id().to_hex();
+    assert_eq!((&posts[0]["schema"], &posts[0]["record"]["title"]), (&json!(schema), &json!("Out")));
+    assert!(world::public_entries(&w.lab, mac, Some(&["story"][..])).is_empty(), "no public story");
+    // deleted, a view leaves the code and every listing
+    let delete = json!({ "op": "insert", "entry": views[0], "path": ["tags"], "value": world::DELETED,
+        "as": city.to_hex() });
+    ok(run(&mut w, mac, delete));
+    let code = world::public_entries(&w.lab, mac, Some(&world::CODE_KINDS[..]));
+    assert_eq!(each(&json!(code), |r| &r["entry"]), [views[1].clone()], "the deleted view leaves");
+    assert_eq!(world::public_entries(&w.lab, mac, None).len(), 2, "the post and the other view");
 }
 
 #[test]
@@ -771,15 +866,17 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
     let own = ["aip", "article", "article", "artifact", "artwork", "bundle", "card", "document", "file", "flow"];
-    let own = [&own[..], &["function", "function", "logic", "policy", "post", "profile", "recipe", "request"]].concat();
-    let own = [&own[..], &["review", "spark", "spark", "story", "todo", "view"]].concat();
-    assert_eq!(kinds, own, "its own kinds, each once but the article's, the function's and the spark's two versions");
+    let own = [&own[..], &["function", "function", "logic", "policy", "post", "post", "profile", "recipe", "request"]].concat();
+    let own = [&own[..], &["review", "spark", "spark", "story", "todo", "view", "view"]].concat();
+    let two = "its own kinds, each once but the article's, the function's, the post's, the spark's and the view's two versions";
+    assert_eq!(kinds, own, "{two}");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     let lenses = list(&schemas["lenses"]);
     let from = |l: &Value| (l["from"].clone(), l["builtIn"].clone());
-    let older = [lens::ARTICLE_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id()];
+    let older = [lens::ARTICLE_V1.id(), lens::POST_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id(), lens::VIEW_V1.id()];
     let older = older.map(|id| (json!(id.to_hex()), json!(true)));
-    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "the lenses from article, function and spark v1 to v2");
+    let five = "the lenses from article, post, function, spark and view v1 to v2";
+    assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "{five}");
 }
 
 /// Ops from their JSON.
@@ -989,6 +1086,12 @@ fn code_entries_are_kinds_of_their_own() {
             }
             want["enabled"] = json!(true);
         }
+        if kind == "view" {
+            // a view of v2: what it wasn't given reads at its defaults, and it has no height until one is set
+            for (k, v) in [("data", json!({})), ("input", json!({})), ("form", json!("html")), ("logic", json!(""))] {
+                want[k] = v;
+            }
+        }
         assert_eq!(got["record"], want, "{kind}");
     }
     let with = |kind: &str, change: &dyn Fn(&mut Value)| {
@@ -1020,6 +1123,73 @@ fn code_entries_are_kinds_of_their_own() {
     ok(run(&mut w, mac, json!({ "op": "set", "entry": made, "path": ["engine"], "value": engine })));
     let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": made })));
     assert_eq!((&got["record"]["engine"], got["record"]["code"].as_str()), (&engine, Some("return [];")));
+}
+
+/// A coop Alice's vault founds and owns alone, nonce `nonce`, approved by her passkey.
+fn coop_of_alice(w: &mut World, nonce: u64) -> VaultId {
+    let owners = vec![Principal::Vault(w.alice)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+    VaultId::from(w.lab.submit(w.mac_a, &[w.passkey_a], genesis).expect("Alice's vault founds a coop"))
+}
+
+/// A vault founded before views had a v2 holds the schemas and lenses avenDB shipped then, as avenCEO GmbH holds them
+/// (the page's `standardize`), and neither View v2 nor its lens: `create` naming `"view"` makes a view of v2 there all
+/// the same, as every app reads through its own shipped schemas beside the vault's lane (`Lane::with_built_ins`), and
+/// a view of v1 written before opens in v2 through the shipped lens and edits on. The vault's database shows the two
+/// among the built-in ones it doesn't hold, which the founder's page adds as it adds every one it lacks; once they are
+/// in its lane, every view reads as before.
+#[test]
+fn a_vault_founded_before_views_of_v2_makes_them_all_the_same() {
+    let mut w = cast::world();
+    let mac = w.mac_a;
+    let old = coop_of_alice(&mut w, 21);
+    let v = old.to_hex();
+    let new = [lens::blobs::VIEW_V2, lens::blobs::VIEW_LENS];
+    let schemas = lens::blobs::SHIPPED.iter().map(|b| ("schema", *b));
+    let then = schemas.chain(lens::blobs::LENSES.iter().map(|b| ("lens", *b)));
+    for (ty, blob) in then.filter(|(_, b)| !new.contains(b)) {
+        ok(run(&mut w, mac, json!({ "op": "create", "vault": v, "type": ty, "value": blob, "as": v })));
+    }
+    let lane = w.lab.lane(mac, old);
+    assert!(lane.schema(lens::VIEW_V1.id()).is_some() && lane.schema(lens::VIEW_V2.id()).is_none(), "the old set");
+    // a view of v1, as an app before v2 wrote one
+    let v1 = json!({ "kind": "view", "title": "Holders", "source": "<p>{{n}}</p>" });
+    let v1 = json!({ "op": "create", "vault": v, "type": "view", "schema": lens::VIEW_V1.id().to_hex(), "value": v1,
+        "as": v });
+    let holders = ok(run(&mut w, mac, v1))["entry"].clone();
+    // a view of v2, by the built-in name, as the page and an aven ask for one
+    let value = json!({ "kind": "view", "title": "Wants", "source": "{\"root\": \"list\"}", "form": "a2ui",
+        "data": { "wants": [] }, "input": { "slot": "board" }, "height": 300,
+        "logic": "export function on(e, d) { return d; }" });
+    let create = json!({ "op": "create", "vault": v, "type": "view", "schema": "view", "value": value, "as": v });
+    let wants = ok(run(&mut w, mac, create))["entry"].clone();
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": wants })));
+    let v2 = lens::VIEW_V2.id().to_hex();
+    assert_eq!((&got["schema"], &got["authored"]), (&json!(v2), &json!([v2])), "written and read under v2");
+    for k in ["form", "data", "input", "height", "logic", "source"] {
+        assert_eq!(got["record"][k], value[k], "{k}");
+    }
+    assert!(w.lab.lane(mac, old).schema(lens::VIEW_V2.id()).is_none(), "the app's own copy reads it");
+    // the view of v1 opens in v2, at v2's defaults, and takes a height
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": holders })));
+    assert_eq!((&got["schema"], &got["readOnly"]), (&json!(v2), &json!(false)), "through the shipped lens");
+    assert_eq!((&got["record"]["form"], &got["record"]["source"]), (&json!("html"), &json!("<p>{{n}}</p>")));
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": holders, "path": ["height"], "value": 420, "as": v })));
+    // what the founder's page adds, as it adds every built-in one the vault lacks: View v2 and its lens, schema first
+    let db = ok(run(&mut w, mac, json!({ "op": "database", "vault": v })));
+    let ids = |xs: &Value| each(xs, |x| &x["id"]);
+    let missing = |all: &Value, held: &Value| -> Vec<String> {
+        let held = ids(held);
+        ids(all).into_iter().filter(|id| !held.contains(id)).collect()
+    };
+    let lacks = (missing(&db["builtIn"]["schemas"], &db["schemas"]), missing(&db["builtIn"]["lenses"], &db["lenses"]));
+    assert_eq!(lacks, (vec![v2.clone()], vec![lens::VIEW_LENS.id().to_hex()]), "View v2 and its lens alone");
+    for (ty, blob) in [("schema", lens::blobs::VIEW_V2), ("lens", lens::blobs::VIEW_LENS)] {
+        ok(run(&mut w, mac, json!({ "op": "create", "vault": v, "type": ty, "value": blob, "as": v })));
+    }
+    let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": holders })));
+    assert_eq!((&got["schema"], &got["record"]["height"]), (&json!(v2), &json!(420)), "read as before");
+    assert_eq!(ok(run(&mut w, mac, json!({ "op": "get", "entry": wants })))["record"]["form"], "a2ui");
 }
 
 /// M1 (merges by path) and M2 (merges by policy): a tuner may merge into main only a line Alice accepted, whose changes

@@ -10,6 +10,9 @@
 	import PostCard from '$lib/universe/PostCard.svelte';
 
 	onMount(() => {
+		// a channel the address names (`?c=Journal`), as the journal's and inspire-me's old addresses lead here
+		const asked = new URLSearchParams(location.search).get('c');
+		if (asked && CHANNELS.includes(asked)) channel = asked;
 		loadFeed();
 		const again = setInterval(loadFeed, 60_000);
 		return () => clearInterval(again);

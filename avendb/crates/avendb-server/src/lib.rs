@@ -23,8 +23,10 @@
 //! bucket has it, and a server whose folder is lost starts again from the bucket alone, as the same device. Without a
 //! bucket, its shelf is its folder (`avendb_net::disk`).
 //!
-//! Beside them, the Maia Universe's feed (`feed`): the posts the server keeps that everyone may read, as JSON over
-//! plain HTTP on a socket of its own, behind the same proxy at avendb.maia.city/feed/.
+//! Beside them, the Maia Universe's feed (`feed`): the posts the server keeps that everyone may read, the pictures they
+//! show, and every entry everyone may read, the code among them, views, logic, recipes, functions and configs, Maia
+//! City's told apart, each listed or whole, as JSON over plain HTTP on a socket of its own, behind the same proxy at
+//! avendb.maia.city/feed/.
 
 pub mod bucket;
 pub mod feed;

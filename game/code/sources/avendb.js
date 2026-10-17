@@ -24,13 +24,18 @@ import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
 import ENGINES from '../../../src/lib/sandbox/engines.json' with { type: 'json' };
 
-export const AVENDB_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([A-Za-z0-9_-]{8,128})@([0-9a-f]{8,128}(?:,[0-9a-f]{8,128})*)$/;
-
-/** where the server serves the Maia City vault's public code entries (avenDB's feed, as /feed/posts serves posts) */
-export const CODE_FEED = 'https://avendb.maia.city/feed/code';
-
 /** the kinds of code entry this source carries, and the host each runs in */
 const HOSTS = { view: 'view', logic: 'logic' };
+
+export const AVENDB_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([A-Za-z0-9_-]{8,128})@([0-9a-f]{8,128}(?:,[0-9a-f]{8,128})*)$/;
+
+/** where avenDB's server serves public code entries (its feed, as /feed/posts serves posts): { code: [row] } */
+export const CODE_FEED = 'https://avendb.maia.city/feed/code';
+
+/** the code entries the loader reads there: views and logic modules of the server's own seed's Maia City vault, which
+ * the server names by where it sits in the seed it was founded with (`seed=1`), never by its name */
+export const feedOf = (feed = CODE_FEED) => `${feed}?seed=1&type=${Object.keys(HOSTS).join(',')}`;
+
 const PATH = /^(views|logic)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/;
 
 export const hashOf = (text) => bytesToHex(blake3(utf8ToBytes(text)));
@@ -112,7 +117,7 @@ function checked(e, viewOf) {
 let loaded = {};
 
 export const avendb = {
-	/** whether code is loaded from the vault: false until the server serves it (avenDB's /feed/code) */
+	/** whether code is loaded from the vault's feed (avenDB's /feed/code, #862): off until Samuel switches it on */
 	on: false,
 	/** the loaded entry at `path`, or null @param {string} path */
 	byPath: (path) => loaded[path] ?? null,
@@ -155,20 +160,24 @@ export const avendb = {
 };
 
 /**
- * Load the vault's code entries from the server's feed, once: { taken, refused } or { error } (offline, or no feed
- * yet), and on any failure the seed stays. `viewOf` is ../index.js `viewOfEntry`.
+ * Load the vault's code entries from the server's feed: { taken, refused } or { error } (offline, a feed that answers
+ * something else), and on any failure what was loaded before stays, else the seed. `viewOf` is ../index.js
+ * `viewOfEntry`; `url` the feed's query (`feedOf`), on the API the server's own feed inside (AVENDB_FEED).
  */
-export async function loadCode(viewOf, { url = CODE_FEED, fetch: get = globalThis.fetch, timeout = 4000 } = {}) {
-	if (!avendb.on && url === CODE_FEED) return { error: 'code from avenDB is not switched on yet' };
+export async function loadCode(viewOf, { url = feedOf(), fetch: get = globalThis.fetch, timeout = 4000 } = {}) {
+	if (!avendb.on && url === feedOf()) return { error: 'code from avenDB is not switched on yet' };
 	try {
 		const ctl = new AbortController();
 		const t = setTimeout(() => ctl.abort(), timeout);
 		const res = await get(url, { signal: ctl.signal }).finally(() => clearTimeout(t));
 		if (!res.ok) return { error: `${url} answered ${res.status}` };
 		const body = await res.json();
-		const rows = (Array.isArray(body) ? body : (body?.entries ?? body?.rows)) ?? [];
-		// the code our hosts run comes from the one vault: a feed handing out more than one is not what was asked for
+		const rows = Array.isArray(body) ? body : (body?.code ?? body?.entries);
+		if (!Array.isArray(rows)) return { error: `${url} answered no rows` };
+		// the code our hosts run comes from the one vault, the seed's: a feed handing out more than one, or another's, is
+		// not what was asked for
 		if (new Set(rows.map((r) => r?.vault)).size > 1) return { error: `${url} handed out code of more than one vault` };
+		if (rows.some((r) => r && 'seed' in r && r.seed !== 'Maia City')) return { error: `${url} handed out code of a vault that is not the seed's Maia City` };
 		return avendb.use(rows, viewOf);
 	} catch (e) {
 		return { error: e?.message || String(e) };
@@ -182,15 +191,21 @@ export async function loadCode(viewOf, { url = CODE_FEED, fetch: get = globalThi
  * or any { tags }), and every path one of them names by its ref tag is left out, whatever it holds now, since from
  * the copy on the vault is where that code changes. The first copy (`have` null) starts by opening the vault's views
  * and logic modules to everyone, by type, now and later, as the feed reads them (the repo they come from is public),
- * so whatever of it went in before a stop shows on the feed, and a rerun reads it there.
+ * so whatever of it went in before a stop shows on the feed, and a rerun reads it there; with `server`, the id of
+ * avenCEO server's vault, it first gives the server a Backup share, without which the feed has nothing to show (the
+ * page's "server keeps a copy" does the same).
  */
-export function copyOf(entries, vault, { have = null } = {}) {
-	if (!/^[0-9a-f]{64}$/.test(String(vault))) throw new Error('the vault is its id, 64 hex digits');
+export function copyOf(entries, vault, { have = null, server = null } = {}) {
+	const hex = (id) => /^[0-9a-f]{64}$/.test(String(id));
+	if (!hex(vault)) throw new Error('the vault is its id, 64 hex digits');
+	if (server != null && !hex(server)) throw new Error("the server's vault is its id, 64 hex digits");
 	const held = new Set((have ?? []).map((r) => tagged(r?.tags, 'ref')).filter(Boolean));
 	const ops = entries
 		.filter((e) => HOSTS[e.type] && !held.has(e.ref))
 		.map((e) => recordOf(e))
 		.map(({ type, tags, value }) => ({ op: 'create', vault, type, tags, schema: type, value }));
 	const share = { op: 'share', over: vault, who: 'everyone', level: 'Public', what: { type: Object.keys(HOSTS) }, as: vault };
-	return { op: 'batch', ops: have ? ops : [share, ...ops], as: vault };
+	// the server serves only what it holds: a Backup share to its vault (avenCEO server) makes it keep the vault's entries
+	const keep = server ? [{ op: 'share', over: vault, who: { vault: server }, level: 'Backup', as: vault }] : [];
+	return { op: 'batch', ops: have ? ops : [...keep, share, ...ops], as: vault };
 }

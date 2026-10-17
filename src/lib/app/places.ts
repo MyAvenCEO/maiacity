@@ -85,8 +85,8 @@ export const MY_DATA: Place[] = [
 	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki", cover: `${base}/app/covers/skills.jpg` },
 	{ href: `${base}/app/genui/`, label: 'Generated UI', icon: 'spark', cap: 'media:admin', note: 'Mini apps agents make on the fly, each in its own box', cover: `${base}/app/covers/genui.jpg` },
 	{ href: `${base}/app/stories/`, label: 'Stories', icon: 'board', cap: 'content:admin', note: 'Every story, idea to published, and when it goes out', cover: `${base}/app/covers/stories.jpg` },
-	{ href: `${base}/blog/`, label: 'Journal', icon: 'journal', note: 'Day by day', cover: `${base}/app/covers/journal.jpg` },
-	{ href: `${base}/blog/inspire-me/`, label: 'Inspire me', icon: 'spark', note: 'Ideas we learn from', cover: `${base}/app/covers/inspire.jpg` }
+	{ href: `${base}/universe/?c=Journal`, label: 'Journal', icon: 'journal', note: 'Day by day', cover: `${base}/app/covers/journal.jpg` },
+	{ href: `${base}/universe/?c=Inspire%20me`, label: 'Inspire me', icon: 'spark', note: 'Ideas we learn from', cover: `${base}/app/covers/inspire.jpg` }
 ];
 
 /** a dashboard tile that opens a list of places: the sandboxes, the game assets, my data */

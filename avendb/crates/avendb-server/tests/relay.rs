@@ -15,16 +15,18 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
-use avendb::id::SignerId;
+use avendb::id::{SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Action, Level, Revoking};
-use avendb::slice::Selector;
+use avendb::policy::{Action, Kind, Level, Principal, Revoking};
 use avendb::sign::PASS_LIFE;
+use avendb::slice::Selector;
+use avendb::{engine, lens, world};
 use avendb_net::{Admission, Node, Offer, Options, server};
 use avendb_server::{Config, Relay};
 use common::Folder;
 use iroh::{EndpointId, RelayUrl, SecretKey};
+use serde_json::{Value, json};
 
 /// A socket of the system's choosing on this machine.
 const LOOPBACK: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
@@ -296,8 +298,176 @@ async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() 
     }
     let (head, _) = http(addr, "OPTIONS", &picture).await;
     assert!(head.starts_with("http/1.1 204"), "a page may ask for one: {head}");
+    // no entry nor code anyone may read yet, however a query asks for it, nor any one entry; a query it can't read is a
+    // bad request
+    let empty = [
+        ("/feed/entries", r#"{"entries":[]}"#),
+        ("/feed/entries?type=story,article&seed=1", r#"{"entries":[]}"#),
+        ("/feed/entries?type=story%2Cpotion&t=1", r#"{"entries":[]}"#),
+        ("/feed/code", r#"{"code":[]}"#),
+        ("/feed/code?seed=1&type=view,logic&bare=1", r#"{"code":[]}"#),
+        ("/feed/code?kind=view%2Clogic&t=1", r#"{"code":[]}"#),
+    ];
+    for (path, want) in empty {
+        let (head, body) = http(addr, "GET", path).await;
+        assert!(head.starts_with("http/1.1 200") && head.contains("access-control-allow-origin: *"), "{path}: {head}");
+        assert!(head.contains("content-type: application/json"), "{path}: {head}");
+        assert_eq!(body, want, "{path}");
+    }
+    let many = format!("/feed/entries?type={}", ["story"; 17].join(","));
+    let entry = format!("/feed/entry/{vault}/{}", "cd".repeat(32));
+    let asked = format!("{entry}?vault=Maia%20City");
+    for path in ["/feed/code?type=potion", "/feed/code?vault=Maia%20City", &many, &asked] {
+        let (head, body) = http(addr, "GET", path).await;
+        assert!(head.starts_with("http/1.1 400") && head.contains("content-type: application/json"), "{path}: {head}");
+        assert!(body.starts_with(r#"{"error":"#), "{path}: {body}");
+    }
+    for path in [entry.as_str(), "/feed/entry/nobody", "/feed/entry/"] {
+        let (head, body) = http(addr, "GET", path).await;
+        assert!(head.starts_with("http/1.1 404") && head.contains("access-control-allow-origin: *"), "{path}: {head}");
+        assert!(body.starts_with(r#"{"error":"#), "{path}: {body}");
+    }
+    for path in ["/feed/entries", "/feed/code", entry.as_str()] {
+        let (head, _) = http(addr, "OPTIONS", path).await;
+        assert!(head.starts_with("http/1.1 204"), "a page may ask for {path}: {head}");
+    }
     let (head, _) = http(addr, "GET", "/relay").await;
     assert!(head.starts_with("http/1.1 404"), "nothing else: {head}");
+    started.shutdown().await.expect("the server stops");
+}
+
+/// What the server at `addr` answers a GET of `path`, which must be found: its body, as JSON.
+async fn got(addr: SocketAddr, path: &str) -> Value {
+    let (head, body) = http(addr, "GET", path).await;
+    assert!(head.starts_with("http/1.1 200"), "{path}: {head}");
+    serde_json::from_str(&body).unwrap_or_else(|e| panic!("{path}: {e}: {body}"))
+}
+
+/// What device `me`'s node answers op `op`, run as the page runs it (`engine::run`), which it must answer.
+async fn ran(node: &Node, op: Value) -> Value {
+    let answer = node.act(move |lab, me| engine::run(lab, me, &op)).await;
+    assert!(answer.get("ok").is_some(), "refused: {answer}");
+    answer["ok"].clone()
+}
+
+/// The entries and the code everyone may read, over HTTP, as a page nobody signed in to and the API read them: Maia
+/// City, the coop of the seed Alice's claim of the server founds, and a coop of her own that calls itself Maia City
+/// too, each make a view and their profile Public, and keep a logic to themselves. The server serves both views, by its
+/// seed's name for Maia City's alone; `seed=1` keeps Maia City's, whatever the other calls itself; a page asks for the
+/// kinds it wants; and each public entry reads whole on its own, as the same query asks for it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed_1() {
+    let dir = Folder::new("code");
+    let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
+    let (signup, bucket, cache) = (false, None, 0);
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
+    let (server, addr) = (&started.node, started.feed.addr());
+    let mut w = world();
+    let (mac_a, passkey) = (w.mac_a, w.passkey_a);
+    let opts = Options { relay: Some(started.relay.url()), ..Options::local() };
+    let mac = node(&mut w, mac_a, &[passkey], 1, opts).await;
+    mac.know(server.addr());
+    // Alice's vault claims the server: the seed it founds holds Maia City, the coop avenCEO GmbH owns alone, which
+    // gives avenCEO server backup, as every vault founded under her follows her server setting; so the server knows it
+    // as its seed's coop
+    let avenceo = mac.claim(&started.offer, passkey).await.expect("Alice's vault claims the server");
+    let coop_of = move |lab: &Lab, me| {
+        let st = lab.state(me);
+        let Some([Principal::Vault(company)]) = st.vault(avenceo).map(|v| &v.owners[..]) else { return None };
+        let coop = |v: &&avendb::policy::Vault| v.kind == Kind::Coop && v.owners == [Principal::Vault(*company)];
+        st.vaults().iter().find(coop).map(|v| v.id)
+    };
+    let city = mac.read(coop_of).await.expect("Maia City, founded with the seed");
+    let seed = || server.read(world::seed_of);
+    let backup = move |v: VaultId| {
+        move |lab: &mut Lab, me| lab.issue(me, &[me], share(v, vault(avenceo), Level::Backup, Selector::All))
+    };
+    mac.act(backup(city)).await.expect("Maia City gives avenCEO server backup");
+    until("the server knows its seed's coop", || async { seed().await.last() == Some(&city) }).await;
+    assert_eq!(seed().await.len(), world::SEED_NAMES.len(), "Maia Holding, avenCEO GmbH, avenCEO server and Maia City");
+    // a coop of her own, which she calls Maia City too
+    let owners = vec![Principal::Vault(w.alice)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 41, seal_to: vec![] };
+    let found = mac.act(move |lab, me| lab.submit(me, &[passkey], genesis)).await;
+    let fake = VaultId::from(found.expect("Alice's vault founds a coop"));
+    // each named Maia City, its name Public, as everyone may read who published, and Public on a tag, with a public
+    // view and a private logic
+    let tag = "code:public";
+    let (mut views, mut logics) = (vec![], vec![]);
+    mac.act(backup(fake)).await.expect("her coop gives avenCEO server backup too");
+    for v in [city, fake] {
+        let v = v.to_hex();
+        ran(&mac, json!({ "op": "profile", "vault": v, "name": world::SEED_COOP })).await;
+        for what in [json!({ "tag": tag }), json!({ "type": [world::PROFILE] })] {
+            let public = json!({ "op": "share", "over": v, "who": "everyone", "level": "Public", "what": what,
+                "as": v });
+            ran(&mac, public).await;
+        }
+        let view = json!({ "kind": "view", "title": "Holders", "source": "<p>{{n}}</p>",
+            "data": { "n": 1 }, "height": 300 });
+        let create = json!({ "op": "create", "vault": v, "type": "view", "tags": [tag], "value": view,
+            "as": v });
+        views.push(ran(&mac, create).await["entry"].as_str().expect("its id").to_string());
+        let logic = json!({ "op": "create", "vault": v, "type": "logic",
+            "value": { "kind": "logic", "source": "export function tick() {}" }, "as": v });
+        logics.push(ran(&mac, logic).await["entry"].as_str().expect("its id").to_string());
+    }
+    let entries = |code: &Value| -> Vec<String> {
+        let rows = code["code"].as_array().expect("its rows");
+        rows.iter().map(|r| r["entry"].as_str().expect("an entry").to_string()).collect()
+    };
+    let mut both = views.clone();
+    both.sort();
+    let listed = || async {
+        let mut listed = entries(&got(addr, "/feed/code").await);
+        listed.sort();
+        listed == both
+    };
+    until("the server serves both public views, and no private logic", listed).await;
+    // seed=1: Maia City's alone, by where it stands in the seed, never by the name another vault gives itself
+    let ours = got(addr, "/feed/code?seed=1").await;
+    assert_eq!(entries(&ours), [views[0].clone()], "Maia City's view alone");
+    let row = &ours["code"][0];
+    let named = [&row["seed"], &row["name"], &row["vault"]].map(Value::clone);
+    assert_eq!(named, [json!(world::SEED_COOP), json!(world::SEED_COOP), json!(city.to_hex())]);
+    let typed = [&row["type"], &row["schema"], &row["tags"]].map(Value::clone);
+    assert_eq!(typed, [json!("view"), json!(lens::VIEW_V2.id().to_hex()), json!([tag])], "a view of v2");
+    let record = [&row["record"]["source"], &row["record"]["height"], &row["record"]["form"]].map(Value::clone);
+    assert_eq!(record, [json!("<p>{{n}}</p>"), json!(300), json!("html")], "its record on main");
+    assert!(row["heads"].as_array().is_some_and(|hs| hs.len() == 1), "the heads of that version: {row}");
+    let theirs = got(addr, &format!("/feed/code?vault={}", fake.to_hex())).await;
+    assert_eq!(entries(&theirs), [views[1].clone()]);
+    let named = [&theirs["code"][0]["seed"], &theirs["code"][0]["name"]].map(Value::clone);
+    assert_eq!(named, [Value::Null, json!(world::SEED_COOP)], "a name is no seed");
+    // bare: every row as it was but its record
+    let bare = got(addr, "/feed/code?seed=1&type=view&bare=1").await;
+    let mut want = row.clone();
+    want.as_object_mut().expect("a row").remove("record");
+    assert_eq!(bare["code"], json!([want]), "its entry, vault, type, schema, tags and heads, no record");
+    assert_eq!(got(addr, "/feed/code?seed=1&kind=logic").await, json!({ "code": [] }), "no public logic");
+    // the entries of the kinds a page asks for, of whatever kind: Maia City's profile and view, by kind; both views
+    let kinds = got(addr, "/feed/entries?type=view,profile&seed=1").await;
+    let rows = kinds["entries"].as_array().expect("its rows");
+    let typed: Vec<&Value> = rows.iter().map(|r| &r["type"]).collect();
+    assert_eq!(typed, [&json!("profile"), &json!("view")], "{kinds}");
+    assert_eq!((&rows[0]["record"]["title"], &rows[1]), (&json!(world::SEED_COOP), row), "its name, and the same row");
+    let views_of = got(addr, "/feed/entries?type=view").await;
+    assert_eq!(views_of["entries"], got(addr, "/feed/code").await["code"], "the views are all the code");
+    let all = got(addr, "/feed/entries").await;
+    let all = all["entries"].as_array().expect("its rows");
+    assert!(all.len() >= 4 && all.iter().all(|r| r["entry"] != logics[0] && r["entry"] != logics[1]), "{all:?}");
+    // one public entry, whole, as its row, and as a query asks for it; a private one is not found, nor one the query
+    // doesn't ask for
+    let at = |v: VaultId, e: &str, query: &str| format!("/feed/entry/{}/{e}{query}", v.to_hex());
+    assert_eq!(&got(addr, &at(city, &views[0], "")).await, row, "the same row");
+    assert_eq!(got(addr, &at(city, &views[0], "?seed=1&bare=1")).await, want, "bare");
+    for (path, why) in [(at(city, &logics[0], ""), "a private logic"), (at(fake, &views[1], "?seed=1"), "no seed's")] {
+        let (head, body) = http(addr, "GET", &path).await;
+        assert!(head.starts_with("http/1.1 404") && body.starts_with(r#"{"error":"#), "{why}: {head}");
+    }
+    mac.shutdown().await.expect("Alice's Mac stops");
     started.shutdown().await.expect("the server stops");
 }
 

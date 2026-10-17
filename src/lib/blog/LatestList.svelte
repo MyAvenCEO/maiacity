@@ -15,7 +15,7 @@
 	<section class="latest" aria-label={title}>
 		<div class="latest-head">
 			<p class="eyebrow">{title}</p>
-			<a href="{base}/blog">All days →</a>
+			<a href="{base}/universe/?c=Journal">All days →</a>
 		</div>
 		<ul>
 			{#each posts as day (day.slug)}

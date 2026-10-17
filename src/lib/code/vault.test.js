@@ -4,7 +4,7 @@
 // ships; the loader prefers what it loaded and keeps the seed for the rest.
 // Run: bun test src/lib/code
 import { afterEach, describe, expect, test } from 'bun:test';
-import { avendb, copyOf, entryOf, recordOf } from '../../../game/code/sources/avendb.js';
+import { avendb, copyOf, entryOf, feedOf, recordOf } from '../../../game/code/sources/avendb.js';
 import { codeAt, codeIn, loadCode, viewOfEntry } from '../../../game/code/index.js';
 import { ENTRIES } from '../../../code/index.js';
 import { defaultViews } from '../../../game/economy/views.js';
@@ -39,6 +39,14 @@ describe('the copy', () => {
 		const hearts = b.ops.find((o) => o.tags?.includes('ref:logic/sandbox-7/hearts')).value;
 		expect([hearts.kind, hearts.engine.host, hearts.manifest.hooks]).toEqual(['logic', 'logic', ['mint', 'decay']]);
 		expect(() => copyOf(repo, 'maia-city')).toThrow(/64 hex/);
+	});
+	test("with the server's vault, the first copy gives it a Backup share before anything else", () => {
+		const SERVER = 'b'.repeat(64);
+		const b = copyOf(repo, VAULT, { server: SERVER });
+		expect(b.ops.slice(0, 2).map((o) => [o.op, o.who, o.level])).toEqual([['share', { vault: SERVER }, 'Backup'], ['share', 'everyone', 'Public']]);
+		expect(b.ops).toHaveLength(repo.length + 2);
+		expect(copyOf(repo, VAULT, { have: [], server: SERVER }).ops.every((o) => o.op === 'create')).toBe(true);
+		expect(() => copyOf(repo, VAULT, { server: 'avenCEO server' })).toThrow(/64 hex/);
 	});
 	test('a rerun copies only the paths the vault does not hold, whatever they hold now, and shares nothing again', () => {
 		const have = rowsOf(repo.slice(0, 4)).map((r, i) => (i ? r : { ...r, record: { ...r.record, title: 'changed in the vault' } }));
@@ -104,9 +112,15 @@ describe('loaded entries', () => {
 describe('loading', () => {
 	const reply = (status, body) => async () => ({ ok: status === 200, status, json: async () => body });
 	test('takes what the feed hands out', async () => {
-		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { entries: rowsOf([ENTRIES['views/view-holders']]) }) });
+		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { code: rowsOf([ENTRIES['views/view-holders']]).map((r) => ({ ...r, seed: 'Maia City' })) }) });
 		expect(r).toEqual({ taken: ['views/view-holders'], refused: [] });
 		expect(codeAt('views/view-holders').source).toBe('avendb');
+	});
+	test("a feed handing out code of a vault that is not the seed's Maia City is not taken", async () => {
+		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { code: rowsOf([ENTRIES['views/view-holders']]).map((r) => ({ ...r, seed: null })) }) });
+		expect(r).toEqual({ error: "https://feed.example/code handed out code of a vault that is not the seed's Maia City" });
+		expect(await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { posts: [] }) })).toEqual({ error: 'https://feed.example/code answered no rows' });
+		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
 	test('a feed handing out code of more than one vault is not taken', async () => {
 		const other = { ...rowsOf([ENTRIES['views/view-wants']])[0], vault: 'b'.repeat(64) };
@@ -119,7 +133,9 @@ describe('loading', () => {
 		expect(await loadCode({ url: 'https://feed.example/code', fetch: async () => { throw new Error('offline'); } })).toEqual({ error: 'offline' });
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
-	test('the live feed stays off until the server serves code', async () => {
+	test("the live feed is read for the seed's views and logic modules, and stays off until switched on", async () => {
+		expect(feedOf()).toBe('https://avendb.maia.city/feed/code?seed=1&type=view,logic');
+		expect(feedOf('http://avendb:3351/feed/code')).toBe('http://avendb:3351/feed/code?seed=1&type=view,logic');
 		expect(avendb.on).toBe(false);
 		expect(await loadCode()).toEqual({ error: 'code from avenDB is not switched on yet' });
 	});

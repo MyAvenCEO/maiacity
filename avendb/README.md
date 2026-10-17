@@ -219,10 +219,14 @@ opens nothing but what is public.
   minutes. A device taken out of its vault is let go, and turned away when it tries again. A device with no UDP of its
   own, behind a strict firewall say, reaches the server and every other device through the relay alone.
 
-- Its feed serves the Maia Universe the posts it keeps that everyone may read, newest first, as JSON
-  (`GET /feed/posts`, `avendb::world::public_posts`): a post an article's content flow made as it was published,
-  public while a Public share of its vault reaches it; and the pictures everyone may read that a post shows
-  (`GET /feed/files/<vault>/<name>`).
+- Its feed serves the Maia Universe the posts it keeps that everyone may read, newest first, as JSON (`GET /feed/posts`,
+  `avendb::world::public_posts`), each with its tags and when it says it was published: a post an article's content flow
+  made as it was published, public while a Public share of its vault reaches it; and the pictures everyone may read that
+  a post shows (`GET /feed/files/<vault>/<name>`). Beside them, every entry everyone may read, for pages nobody signed
+  in to and the API (`GET /feed/entries?type=story,article`, `avendb::world::public_entries`), each with its record, its
+  schema and its heads; the code among them, views, logic, recipes, functions and configs (`GET /feed/code`); and any
+  one of them whole (`GET /feed/entry/<vault>/<entry>`). Each takes `?seed=1` for Maia City's alone, `?vault=` and
+  `?bare=1`.
 
 On this machine: `docker compose -f compose.yml up --build` in `avendb/` runs it with iroh on UDP 7401, the relay's
 plain HTTP on port 3350 and the feed's on port 3351. Its environment:
