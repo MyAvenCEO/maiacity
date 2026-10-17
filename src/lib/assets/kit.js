@@ -559,6 +559,15 @@ export class ContactShadow {
     this.vb = new THREE.ShaderMaterial(VerticalBlurShader); this.vb.depthTest = false
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(W, W).rotateX(Math.PI / 2), this.hb); this.quad.frustumCulled = false; this.quad.position.y = lab.groundY + 0.01 * scale
   }
+  // off the stage and off the graphics card: its targets, its planes and its materials (a stage shows a new one with
+  // each asset, and a plant growing is shown anew many times a second)
+  dispose() {
+    this.lab.scene.remove(this.plane, this.cam)
+    this.rt.dispose(); this.rtB.dispose()
+    this.plane.geometry.dispose(); this.plane.material.dispose()
+    this.quad.geometry.dispose()
+    this.depthMat.dispose(); this.hb.dispose(); this.vb.dispose()
+  }
   blur(amount) {
     const r = this.lab.renderer
     this.quad.material = this.hb; this.hb.uniforms.tDiffuse.value = this.rt.texture; this.hb.uniforms.h.value = amount / 256

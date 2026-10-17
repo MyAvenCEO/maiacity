@@ -2,8 +2,10 @@
 	A vault's assets: the recipes of the vault looked at, its `recipe` entries (avenDB's `Recipe, v1`, one for each
 	version or variant of an asset, the Maia City vault's seed writes them), listed by group, by asset, then its versions
 	and variants, from the entries alone ($lib/assets/sources/shelf.js), and the one picked shown in 3D, built in the box
-	from its entry's own file ($lib/assets/VaultAsset.svelte), beside its card as the entry holds it: its title, note,
-	ref, measure and what it is built with. Everything comes from the vault as this browser's device holds it
+	from its entry's own file ($lib/assets/VaultAsset.svelte), in the turntable every asset viewer of the app has (its
+	name, its note and its measure under it, what it is built with and its entry, ref and recipe beside it). The list
+	looks as the app's viewers' list does ($lib/app/PickList.svelte): down the left, and on a phone folded to one line,
+	the asset shown, to tap for the whole list. Everything comes from the vault as this browser's device holds it
 	(./assets.js): the rows from the database op, a file from the device when a build needs it, held to the hash its ref
 	names. Nothing comes from the repo's recipes, cards or libraries, so what the vault lacks, or holds otherwise, shows
 	here, naming its ref and why, and is never stood in for. Each recipe has an address of its own, `#assets/` and its
@@ -61,6 +63,8 @@
 	const sealed = $derived((held?.rows ?? []).filter((r) => r.type === 'recipe' && r.record === null).length);
 
 	let query = $state('');
+	/** on a phone: the whole list unfolded, over the asset */
+	let open = $state(false);
 	/** the shelf as searched: an asset by its title or ref, a group by its name */
 	const found = $derived.by(() => {
 		const q = query.trim().toLowerCase();
@@ -70,6 +74,8 @@
 			.filter((g) => g.assets.length);
 	});
 
+	/** what a recipe is called: its asset's title, and its variant's name where it has one of its own (`Ant · Wood ant`) */
+	const nameOfRecipe = (/** @type {any} */ r) => (r.variant && r.name !== r.asset.title ? `${r.asset.title} · ${r.name}` : r.asset.title);
 	const all = $derived(shelf.flatMap((g) => g.assets.flatMap((a) => a.versions.flatMap((v) => v.recipes.map((r) => ({ ...r, asset: a, group: g.group }))))));
 	/** the recipe shown: the one the address names, else the newest of the first asset listed */
 	const chosen = $derived(entry ? all.find((r) => r.entry === entry) : all[0]);
@@ -91,8 +97,9 @@
 		return { ref, why };
 	});
 
-	const metres = (/** @type {number[]} */ s) => s.map((x) => (x >= 10 ? x.toFixed(1) : x >= 0.1 ? x.toFixed(2) : x.toFixed(3))).join(' × ') + ' m';
 </script>
+
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} />
 
 {#if failed}
 	<p class="error">Reading the vault’s entries failed: {failed}</p>
@@ -119,35 +126,48 @@
 
 	{#if recipes || unnamed}
 		<div class="assets">
-			<nav class="shelf" aria-label="{nameOf(here)}’s assets">
-				<input class="field" type="search" placeholder="Find an asset" bind:value={query} aria-label="Find an asset" />
-				{#each found as g (g.group)}
-					<section>
-						<h3>{groupName(g.group)} <small class="soft">{g.assets.length}</small></h3>
-						{#each g.assets as a (a.ref)}
-							<details open={chosen?.asset.ref === a.ref}>
-								<summary class:on={chosen?.asset.ref === a.ref}>{a.title} <small class="soft mono">{a.ref}</small></summary>
-								{#each a.versions as v (v.v)}
-									<div class="version">
-										<span class="v">v{v.v}</span>
-										{#each v.recipes as r (r.hash)}
-											<a
-												class="pick"
-												class:on={chosen?.hash === r.hash}
-												href="#assets/{r.entry}"
-												title={r.label}
-												aria-current={chosen?.hash === r.hash ? 'page' : undefined}>{r.variant ? r.name : 'This version'}</a
-											>
+			<nav class="shelf" class:open aria-label="{nameOf(here)}’s assets">
+				<button class="fold" onclick={() => (open = !open)} aria-expanded={open} aria-label="{nameOf(here)}’s assets: {open ? 'close the list' : 'open the list'}">
+					<b>{chosen ? nameOfRecipe(chosen) : 'Assets'}</b>{#if chosen}<em class="v">v{chosen.v}</em>{/if}
+					<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+				</button>
+				<div class="list">
+					<input class="field" type="search" placeholder="Find an asset" bind:value={query} aria-label="Find an asset" />
+					{#each found as g (g.group)}
+						<section>
+							<h3 class="group">{groupName(g.group)} <small>{g.assets.length}</small></h3>
+							{#each g.assets as a (a.ref)}
+								{@const on = chosen?.asset.ref === a.ref}
+								<details open={on}>
+									<summary class:on title={a.ref}>
+										<span class="row"><b>{a.title}</b><em class="v">v{a.versions[0].v}</em>{#if a.versions.length > 1}<small>{a.versions.length} versions</small>{/if}</span>
+									</summary>
+									<ol class="history" aria-label="{a.title}: versions">
+										{#each a.versions as v (v.v)}
+											<li>
+												<span class="v">v{v.v}</span>
+												{#each v.recipes as r (r.hash)}
+													<a
+														class="pick"
+														class:on={chosen?.hash === r.hash}
+														href="#assets/{r.entry}"
+														title={r.label}
+														onclick={() => (open = false)}
+														aria-current={chosen?.hash === r.hash ? 'page' : undefined}>{r.variant ? r.name : 'This version'}</a
+													>
+												{/each}
+											</li>
 										{/each}
-									</div>
-								{/each}
-							</details>
-						{/each}
-					</section>
-				{:else}
-					<p class="soft">No asset is called that.</p>
-				{/each}
+									</ol>
+								</details>
+							{/each}
+						</section>
+					{:else}
+						<p class="soft">No asset is called that.</p>
+					{/each}
+				</div>
 			</nav>
+			{#if open}<button class="scrim" aria-label="Close the list" onclick={() => (open = false)}></button>{/if}
 
 			<article class="shown">
 				{#if unnamed}
@@ -157,17 +177,30 @@
 						<p class="soft">Nothing stands in for it: an asset is shown only from its own entry and file in the vault.</p>
 					</div>
 				{:else if chosen}
-					<header>
-						<small>{groupName(chosen.group)}</small>
-						<h3>{chosen.title}</h3>
-						{#if chosen.note}<p>{chosen.note}</p>{/if}
-					</header>
 					<!-- a stage that fails says so here, and the list beside it stays -->
 					<svelte:boundary onerror={(e) => console.error(e)}>
 						{#await viewer}
 							<p class="soft">Opening the stage…</p>
 						{:then { default: VaultAsset }}
-							<VaultAsset {source} hash={chosen.hash} />
+							<VaultAsset {source} hash={chosen.hash} title={nameOfRecipe(chosen)} note={chosen.note}>
+								{#snippet about()}
+									<span class="label">In {nameOf(here)}</span>
+									<dl>
+										<dt>Ref</dt>
+										<dd class="mono">{chosen.label}</dd>
+										<dt>Entry</dt>
+										<dd class="mono" title={chosen.entry}>{short(chosen.entry)}</dd>
+										<dt>Recipe</dt>
+										<dd class="mono" title={chosen.hash}>BLAKE3 {short(chosen.hash)}</dd>
+										<dt>Engine</dt>
+										<dd>Box engine {chosen.card.engine}</dd>
+										{#if Number.isFinite(chosen.card.triangles)}
+											<dt>Triangles</dt>
+											<dd>{chosen.card.triangles.toLocaleString('en-GB')}{chosen.card.skinned ? ', skinned' : ''}</dd>
+										{/if}
+									</dl>
+								{/snippet}
+							</VaultAsset>
 						{:catch e}
 							<p class="error">The stage could not be opened: {e?.message ?? e}</p>
 						{/await}
@@ -178,32 +211,6 @@
 							</p>
 						{/snippet}
 					</svelte:boundary>
-					<dl>
-						<dt>Ref</dt>
-						<dd class="mono">{chosen.label}</dd>
-						<dt>Entry</dt>
-						<dd class="mono" title={chosen.entry}>{short(chosen.entry)}</dd>
-						<dt>Recipe</dt>
-						<dd class="mono" title={chosen.hash}>BLAKE3 {short(chosen.hash)}, its entry’s file</dd>
-						<dt>Engine</dt>
-						<dd>Box engine {chosen.card.engine}</dd>
-						{#if Array.isArray(chosen.card.size)}
-							<dt>Size</dt>
-							<dd>{metres(chosen.card.size)}</dd>
-						{/if}
-						{#if Number.isFinite(chosen.card.triangles)}
-							<dt>Triangles</dt>
-							<dd>{chosen.card.triangles.toLocaleString('en-GB')}{chosen.card.skinned ? ', skinned' : ''}</dd>
-						{/if}
-						{#if chosen.card.params?.length}
-							<dt>Built with</dt>
-							<dd>
-								{#each chosen.card.params as p (p.id)}
-									<span class="chip" title={p.id}>{p.label}: {p.names?.[Number(p.value)] ?? p.value}</span>{' '}
-								{/each}
-							</dd>
-						{/if}
-					</dl>
 				{/if}
 			</article>
 		</div>
@@ -243,115 +250,167 @@
 
 	.assets {
 		display: grid;
-		grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
-		gap: 1.2rem;
+		grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
+		gap: 1rem;
 		align-items: start;
 	}
 
+	/* the list, as the app's viewers' list looks (PickList): a narrow column of one-line rows under small-capital group
+	   headings, the asset shown opened to its versions */
 	.shelf {
-		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
-		max-height: calc(100dvh - 12rem);
+		position: sticky;
+		top: 0;
+		max-height: calc(100dvh - 9rem);
 		overflow-y: auto;
 		overscroll-behavior: contain;
 	}
 
-	.shelf h3 {
-		margin: 0.4rem 0 0.2rem;
-	}
-
-	.shelf details summary {
-		padding: 0.3rem 0.45rem;
-		border-radius: 7px;
-		font-size: 0.86rem;
-		cursor: pointer;
-	}
-
-	.shelf details summary:hover {
-		background: rgb(0 0 0 / 0.05);
-	}
-
-	.shelf details summary.on {
-		background: #fff;
-		font-weight: 600;
-	}
-
-	.shelf summary small {
-		font-weight: 400;
-	}
-
-	.version {
+	.list {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.3rem;
-		padding: 0.25rem 0 0.25rem 1.1rem;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.list .field {
+		margin: 0 0 0.4rem;
+	}
+
+	.fold,
+	.scrim {
+		display: none;
+	}
+
+	/* (held against the avenDB app's own look of a heading) */
+	.shelf .group {
+		margin: 0.7rem 0.5rem 0.15rem;
+		font-size: 0.68rem;
+		font-weight: 400;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		opacity: 0.55;
+	}
+
+	.shelf .group small {
+		margin-left: 0.2rem;
+		letter-spacing: 0;
+	}
+
+	summary {
+		display: block;
+		padding: 0.4rem 0.5rem;
+		border: 1px solid transparent;
+		border-radius: 8px;
+		font-size: 0.82rem;
+		line-height: 1.3;
+		cursor: pointer;
+		list-style: none;
+	}
+
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	summary:hover {
+		background: rgb(0 0 0 / 0.04);
+	}
+
+	summary.on {
+		border-color: rgb(0 0 0 / 0.12);
+		background: #fff;
+	}
+
+	/* the name, its newest version and its ref on one line; the name gives way first */
+	.row {
+		display: flex;
+		flex-wrap: nowrap;
+		align-items: baseline;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+
+	.row b {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		font-weight: 600;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.row small {
+		flex: none;
+		max-width: 45%;
+		overflow: hidden;
+		font-size: 0.66rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		opacity: 0.5;
 	}
 
 	.v {
-		min-width: 1.8rem;
-		color: var(--soft);
-		font-size: 0.74rem;
+		flex: none;
+		font-size: 0.66rem;
+		font-style: normal;
 		font-variant-numeric: tabular-nums;
+		opacity: 0.55;
+	}
+
+	/* an asset's versions, newest first, each with its variants, under it */
+	.history {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		margin: 0.15rem 0 0.4rem 0.9rem;
+		padding: 0 0 0 0.5rem;
+		border-left: 2px solid rgb(0 0 0 / 0.08);
+		list-style: none;
+	}
+
+	.history li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.history .v {
+		min-width: 1.6rem;
 	}
 
 	.pick {
-		padding: 0.12rem 0.55rem;
+		padding: 0.15rem 0.55rem;
 		border: 1px solid rgb(0 0 0 / 0.12);
 		border-radius: 999px;
-		background: #fff;
-		font-size: 0.76rem;
+		background: rgb(255 255 255 / 0.7);
+		font-size: 0.74rem;
 		color: inherit;
 		text-decoration: none;
 	}
 
 	.pick:hover {
-		border-color: var(--accent);
-		color: var(--accent);
+		background: #fff;
 	}
 
 	.pick.on {
-		border-color: var(--accent);
-		background: var(--accent);
+		border-color: #1f2a23;
+		background: #1f2a23;
 		color: #fff;
 	}
 
 	.shown {
-		display: flex;
-		flex-direction: column;
-		gap: 0.7rem;
 		min-width: 0;
-	}
-
-	.shown header small {
-		color: var(--accent);
-		font-size: 0.72rem;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-	}
-
-	.shown header h3 {
-		margin: 0.15rem 0 0.25rem;
-		font-size: 1.2rem;
-	}
-
-	.shown header p {
-		margin: 0;
-		font-size: 0.88rem;
-		line-height: 1.5;
 	}
 
 	dl {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);
-		gap: 0.35rem 1rem;
+		gap: 0.2rem 0.8rem;
 		margin: 0;
-		font-size: 0.84rem;
+		font-size: 0.78rem;
 	}
 
 	dt {
-		color: var(--soft);
+		opacity: 0.6;
 	}
 
 	dd {
@@ -374,14 +433,89 @@
 		gap: 0.4rem;
 	}
 
-	/* a phone: the list above the asset */
+	/* a phone: the list folded to one line above the asset, the asset shown, to tap for the whole list over it */
 	@media (max-width: 760px) {
 		.assets {
 			grid-template-columns: minmax(0, 1fr);
+			gap: 0.6rem;
 		}
 
 		.shelf {
-			max-height: 40dvh;
+			position: relative;
+			z-index: 3;
+			max-height: none;
+			overflow: visible;
+		}
+
+		.fold {
+			display: flex;
+			align-items: center;
+			gap: 0.4rem;
+			width: 100%;
+			min-height: 2.6rem;
+			padding: 0.35rem 0.9rem;
+			border: 1px solid rgb(0 0 0 / 0.12);
+			border-radius: 999px;
+			background: #fff;
+			font: inherit;
+			font-size: 0.9rem;
+			color: inherit;
+			cursor: pointer;
+		}
+
+		.fold b {
+			min-width: 0;
+			overflow: hidden;
+			font-weight: 600;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.fold svg {
+			flex: none;
+			width: 0.8rem;
+			height: 0.8rem;
+			margin-left: auto;
+			opacity: 0.6;
+			transition: transform 0.15s;
+		}
+
+		.open .fold svg {
+			transform: rotate(180deg);
+		}
+
+		.list {
+			display: none;
+		}
+
+		/* unfolded: the whole list over the asset, scrolling, clear of the nav pill */
+		.open .list {
+			display: flex;
+			position: absolute;
+			top: calc(100% + 0.3rem);
+			left: 0;
+			right: 0;
+			max-height: min(70vh, calc(100dvh - 9rem));
+			overflow: auto;
+			overscroll-behavior: contain;
+			padding: 0.6rem 0.6rem 0.8rem;
+			border-radius: 14px;
+			background: #f4f1eb;
+			box-shadow: 0 12px 24px rgb(0 0 0 / 0.16);
+		}
+
+		.open summary {
+			padding: 0.6rem 0.5rem;
+			font-size: 0.9rem;
+		}
+
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 2;
+			border: 0;
+			background: rgb(0 0 0 / 0.2);
 		}
 	}
 </style>

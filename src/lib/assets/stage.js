@@ -160,11 +160,13 @@ export class Stage {
 	 * Show an asset (a sealed root, ./parts.js, or a build of the box's as ./hero.js makes it): on its floor, lit, its
 	 * parts flying in.
 	 * @param {THREE.Object3D} root
-	 * @param {{ asset?: any, ground?: number }} [o] the asset, if it is not the root's own; the floor's height, if it is
-	 *   not under the asset's lowest point
+	 * @param {{ asset?: any, ground?: number, keep?: boolean }} [o] the asset, if it is not the root's own; the floor's
+	 *   height, if it is not under the asset's lowest point; `keep`: the same asset built anew with other values (a plant
+	 *   a little further grown), so its views stay as they were and its parts stand built, not flying in again
 	 * @returns {{ centre: THREE.Vector3, size: THREE.Vector3 }}
 	 */
-	show(root, { asset, ground } = {}) {
+	show(root, { asset, ground, keep = false } = {}) {
+		const views = keep && this.root ? { state: { ...this.state }, target: { ...this.target } } : null;
 		this.clear();
 		this.root = root;
 		this.asset = asset ?? root.userData.asset;
@@ -211,10 +213,10 @@ export class Stage {
 		this.rim.position.copy(centre).add(new THREE.Vector3(4, 3, -5).multiplyScalar(s));
 		CUT.hatch.value = 0.0015 * this.asset.size;
 		this._fitAO();
-		this.built = 0;
+		this.built = views ? 1 : 0;
 		this.shownAt = performance.now();
-		this.state = { explode: 0, cut: 0, xray: 0, labels: 0, slow: 0 };
-		this.target = { explode: 0, cut: 0, xray: 0, labels: 0, slow: 0 };
+		this.state = views?.state ?? { explode: 0, cut: 0, xray: 0, labels: 0, slow: 0 };
+		this.target = views?.target ?? { explode: 0, cut: 0, xray: 0, labels: 0, slow: 0 };
 		this.broken = false;
 		this.picked = null;
 		this.alone = false;
@@ -239,11 +241,7 @@ export class Stage {
 			this.floor.geometry.dispose();
 			this.floor.material.dispose();
 		}
-		if (this.contact) {
-			this.scene.remove(this.contact.plane, this.contact.cam);
-			this.contact.rt.dispose();
-			this.contact.rtB.dispose();
-		}
+		this.contact?.dispose();
 		this._unpick();
 		this.root = this.asset = this.floor = this.contact = this.box = null;
 	}
