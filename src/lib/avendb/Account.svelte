@@ -44,10 +44,10 @@
 	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
 
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
-	 *  logs it at every start; the same as long as its shelf (g11, since the reset of #870) keeps its device's key */
+	 *  logs it at every start; the same as long as its shelf (g12, since the reset of #877) keeps its device's key */
 	const RELAY = 'https://avendb.maia.city';
 	const SERVER =
-		'AVENDB17BCMDAUQ4AFFYRP3CY6U66FSOWGGTTI4MQTGLSLARDA2DZ6A7BAG7NHEVUNHG67PMZFDQO74UUFRSPVO7MMYJ56SYWG3VIITTCXMIEIBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+		'AVENDB1ZMXCR2M74AZXOOZOLT5FTPBOHEIR2HL6PIFRPA32NWIBLF6FNA2ZOJLCF2UHN3U3GCC6MN34K374RO2LH3RO2CBVEWFHDQ4BWGU5HLIBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 
 	// the tab's device, as the session holds it (./session.svelte.js): what it is now, and what it shows of its world
 	const phase = $derived(session.phase);
