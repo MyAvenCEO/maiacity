@@ -14,7 +14,7 @@ import { checkCode } from '../../../game/code/check.js';
 import { SLOTS } from '../../../game/maiacity-v1/views.js';
 import { SLOTS as VALLEY_SLOTS } from '../../../game/economy/views.js';
 import { HOOKS, SECTIONS, defaultCards } from '../../../game/economy/params.js';
-import { EXAMPLES } from '../../../game/genui/examples.js';
+import { examples } from '../../../game/genui/examples.js';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
 
@@ -58,14 +58,14 @@ describe('one loader', () => {
 		expect(() => codeAt('views/nothing-here')).toThrow(/no code entry/);
 		for (const bad of ['views/../game/x', '/etc/passwd', 'views/village-scene/../../x', 'https://cdn.example/x', 'views/Village']) expect(() => codeAt(bad)).toThrow(/no code ref/);
 	});
-	test('avenDB refs are read, and refused until that source is switched on', () => {
+	test('avenDB refs are read, and refused while that entry is not loaded (src/lib/code/vault.test.js loads some)', () => {
 		const ref = 'vault:ab12cd34ef56gh78/entry0001abcd@0123456789abcdef';
 		expect(parseCodeRef(ref)).toEqual({ source: 'avendb', vault: 'ab12cd34ef56gh78', entry: 'entry0001abcd', heads: '0123456789abcdef' });
-		expect(() => codeAt(ref)).toThrow(/not switched on yet/);
+		expect(() => codeAt(ref)).toThrow(/is not loaded/);
 	});
 	test("the games' defaults come from code/", () => {
-		expect(EXAMPLES.map((v) => v.id)).toEqual(['village-scene', 'coop-chart', 'dome-planner']);
-		expect(EXAMPLES[0].spec.html).toBe(e.files['view.html']);
+		expect(examples().map((v) => v.id)).toEqual(['village-scene', 'coop-chart', 'dome-planner']);
+		expect(examples()[0].spec.html).toBe(e.files['view.html']);
 		for (const c of defaultCards()) if (ENTRIES[`logic/sandbox-7/${c.id}`]) expect(c.code).toBe(codeAt(`logic/sandbox-7/${c.id}`).files['logic.js']);
 	});
 });

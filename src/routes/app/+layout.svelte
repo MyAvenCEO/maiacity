@@ -52,6 +52,22 @@
 		};
 	});
 
+	// on the Mac, the page answers what the MCP asks of an avenDB cut (a render, a frame, its jobs) with the studio's own
+	// code (vault/app/src/page.rs, $lib/studio/pagecalls.js)
+	$effect(() => {
+		if (!native() || phase !== 'ready') return;
+		let stop: (() => void) | null = null;
+		let gone = false;
+		import('$lib/studio/pagecalls.js')
+			.then((m) => m.servePageCalls())
+			.then((s) => (gone ? s() : (stop = s)))
+			.catch(() => {});
+		return () => {
+			gone = true;
+			stop?.();
+		};
+	});
+
 	// maiaCITY Studio (the Mac app) cannot hold maia.city's passkey: it asks for a key, the browser opens the approval
 	// page, the admin says yes with the passkey there, and the app is in
 	let device = $state<{ user_code: string; url: string } | null>(null);

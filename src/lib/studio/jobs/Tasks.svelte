@@ -1,7 +1,9 @@
 <!--
 	avenDB tasks (plan J0e): the work studio 2.0's rules want, as this Mac's device holds it: each task's rule, what it
 	works on, where it stands, and for a held one, Again. The worker on this Mac (./mac.js) starts with it. "Checksum
-	test" adds a small file tagged jobs:test to the person's vault, which the test rule picks up (J0f).
+	test" adds a small file tagged jobs:test to the person's vault, which the test rule picks up (J0f). Each vault shows
+	its rules, and whether this Mac is its studio worker (J0c): "Make this Mac its worker" adds one, in one passkey
+	sheet at most, and from then on this Mac does the vault's tasks by the worker's own key and its Worker shares.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -10,6 +12,7 @@
 	import { RULE } from './schemas.js';
 	import { retrying, tasksOf } from './tasks.js';
 	import { lines, macWorker, nudge } from './mac.js';
+	import { WORKER_NAME, WORKER_SHARES } from './worker.js';
 
 	/** @type {import('./worker.js').Worker | null} */
 	let worker = $state(null);
@@ -21,8 +24,10 @@
 	let log = $state(/** @type {string[]} */ ([]));
 	let error = $state('');
 	let adding = $state(false);
-	/** @type {{ vault: string, name: string, rules: (import('./rules.js').Rule & { own: string | null })[] }[]} each vault the worker works on, with the rules in force there */
+	/** @type {{ vault: string, name: string, worker: string | null, rules: (import('./rules.js').Rule & { own: string | null })[] }[]} each vault the worker works on, with the rules in force there and its studio worker on this Mac */
 	let ruled = $state([]);
+	/** @type {string | null} the vault this Mac is being made the worker of */
+	let hiring = $state(null);
 
 	const RULE_NAMES = Object.fromEntries(BUILT_IN.map((r) => [r.key, r.name]));
 	const ORDER = { claimed: 0, queued: 1, failed: 2, held: 3, done: 4 };
@@ -31,6 +36,7 @@
 		if (!worker) return;
 		try {
 			const world = await worker.world();
+			const hosted = await worker.hosted().catch(() => []);
 			tasks = tasksOf(world).sort((a, b) => ORDER[a.status] - ORDER[b.status] || b.at - a.at);
 			names = Object.fromEntries(world.entries.map((/** @type {any} */ e) => [e.entry, e.title || e.record?.title || e.record?.name || '']));
 			ruled = worker.vaults(world).map((v) => {
@@ -40,7 +46,8 @@
 					const mine = own.filter((r) => r.key === b.key).sort((x, y) => y.version - x.version)[0];
 					return { ...(mine ?? b), own: mine ? entryOf(b.key) : null };
 				});
-				return { vault: v, name: world.vaults?.find((/** @type {any} */ x) => x.id === v)?.name ?? v.slice(0, 8), rules };
+				const name = world.vaults?.find((/** @type {any} */ x) => x.id === v)?.name ?? v.slice(0, 8);
+				return { vault: v, name, worker: hosted.find((w) => w.vault === v)?.device ?? null, rules };
 			});
 			log = [...lines];
 			error = '';
@@ -76,6 +83,25 @@
 			error = e instanceof Error ? e.message : String(e);
 		}
 	}
+	/**
+	 * This Mac made vault `vault`'s studio worker: a device vault of the vault's own, with a key this Mac keeps and the
+	 * Worker shares (./worker.js), or this Mac's key added to the worker the vault has on another Mac of theirs.
+	 * @param {string} vault
+	 */
+	async function hire(vault) {
+		hiring = vault;
+		try {
+			const { call } = await import('$lib/avendb/native.js');
+			await call('addWorker', vault, WORKER_NAME, WORKER_SHARES);
+			nudge();
+			await load();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			hiring = null;
+		}
+	}
+
 	/** When a rule makes its tasks, in a few words. @param {import('./rules.js').Rule} r */
 	const fires = (r) => (r.when ? 'by itself' : 'when asked');
 
@@ -153,7 +179,14 @@
 		</table>
 		{#if log.length}<p class="log">{log[0]}</p>{/if}
 		{#each ruled as v (v.vault)}
-			<p class="cap rules-cap">Rules in {v.name}</p>
+			<div class="hhead rules-cap">
+				<p class="cap">Rules in {v.name}</p>
+				{#if v.worker}
+					<span class="dim small" title={v.worker}>This Mac is its studio worker</span>
+				{:else}
+					<button class="ghost small" disabled={hiring !== null} onclick={() => hire(v.vault)}>{hiring === v.vault ? 'Adding…' : 'Make this Mac its worker'}</button>
+				{/if}
+			</div>
 			<table>
 				<tbody>
 					{#each v.rules as r (r.key)}
@@ -245,6 +278,10 @@
 
 	.rules-cap {
 		margin-top: 0.9rem;
+	}
+
+	span.small {
+		font-size: 0.7rem;
 	}
 
 	tr.off td {

@@ -929,6 +929,8 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
 | `may` | `ops`, `as` | For each change op: `true`, `{"approve": {signers}}`, or the refusal |
 | `shares` | `over`, `as` | Every share over a vault, owners and devices among them, each with `may` of its revocation |
+| `aips` | `vault` | Every AIP the device holds, of `vault` alone if it names one, and every open proposal no AIP names, as a bare idea (below, "AIPs") |
+| `aip` | `entry` | One AIP as `aips` lists it, and each line with its `diff`, derived from its entry's schema |
 | `requests` | none | The access requests the device knows (section 3): `{asked, made}`, those still unanswered that a vault it acts for is asked, and those a vault it acts for made, each `{entry, from, to, asks, level, why, vaults, answer, part, created}`, `part` whether the vault asked signed its part of an owner add, and for one `done`, whether the owner is added |
 
 A job (`crates/avendb-net/src/jobs.rs`) is a file brought into the store as its bytes are sealed (`bring`, in bytes), a
@@ -964,9 +966,10 @@ reads a kind's rules and never decides them. Its JSON names everything as the co
 `move` `{entry, line, schema, path, value, at, to, as}`; `tag {entry, add, remove, as}`; `propose`;
 `merge {entry, from, into, take, as}`, `take` the conflicts where the target takes the other line's value, each
 `{at: path, what: value | row | order}`, as `note` lists a proposal's `conflicts`; `review {entry, line, verdict,
-text, as}`, the vault's answer to a proposal (below, "Merges by policy"); `restore`, `undo`, `variant`; and
-`batch {ops, as}`, whose record ops in a row on one entry's line make one write. A schema or a lens is created as an
-entry of its type (section 9).
+text, as}`, the vault's answer to a proposal (below, "Merges by policy"); the AIP ops `aip_open {vault, title, note,
+proposals, tags, as}`, `aip_promote {entry, as}`, `aip_withdraw {entry, why, as}` and `aip_review {entry, verdict, text,
+as}` (below, "AIPs"); `restore`, `undo`, `variant`; and `batch {ops, as}`, whose record ops in a row on one entry's
+line make one write. A schema or a lens is created as an entry of its type (section 9).
 
 **Vaults.** Each runs alone, never in a batch, and `may` covers each:
 
@@ -1133,14 +1136,63 @@ an Editor merges nothing into main alone, however wide its share.
 - **A review** is the record people read: `{kind: "review", entry, line, heads, by, verdict, text, at}`, in the vault,
   the verdict `accepted`, `declined` or `revise`, the version it answers (`heads`), who started the proposal (`by`) and,
   for a revision, the words that go back. The `review` op writes it acting for the entry's vault (NoCap for anyone
-  else); for `accepted` it writes the accept first, and the review names the version the accept makes. The HITL queue
-  on the page writes the same record, of the same schema bytes, when an owner answers there and merges.
+  else); for `accepted` it writes the accept first, and the review names the version the accept makes. An AIP's
+  review (`aip_review`, below) is the same record, of the same schema bytes, written once over all of its lines.
 - **A bundle** links proposals on several entries that belong together, an aven's change of a recipe, its view and its
-  logic, with the intent that started them. Each proposal is still accepted and merged as its own.
+  logic, with the intent that started them. Each proposal is still accepted and merged as its own. An AIP (below)
+  takes a bundle's fields and adds what a person reads and answers.
 - **A policy** entry declares a policy (`policy`, section 9). Version 1 holds the default alone, `{"needs": {"of":
   "owners", "count": 1}}`, and counting reads no policy entry yet. A richer policy, n of m owners, named groups,
   vetoes, is a new rule the engine and the Lean model learn first, then a new version of the schema; every reader must
   reach it the way it reaches the accepts, from what it holds.
+
+### AIPs: one proposal standard
+
+An **AIP**, an Aven Improvement Proposal, is how every change is put to a vault, whoever writes it, an aven, an agent,
+an Editor or a person, and whatever the entries it changes, notes, logic, recipes, any type
+(`crates/avendb/src/engine/aips.rs`). It is a record of the shipped schema "AIP, v1" (section 9) in the vault, which
+names proposal lines of that vault's entries, of any types, beside the text a person reads: a title and a note, why
+and what changes. AIPs are a layer read off what avenDB already holds, proposals, accepts, merges and reviews: no rule
+of the edits is new, nothing new is on the wire, and every write counts as any write does.
+
+- **Stages.** `aip_open {vault, title, note, proposals: [{entry, line}], tags}` writes an **idea**, named by a key of
+  eight random letters and digits from the device's own randomness, which names it for good; every line must be a
+  proposal of an entry of `vault` (BadOp for another vault's: one vault per AIP, so one policy decides it). Games
+  find theirs by entry tags (`game:<id>`). `aip_promote {entry}` makes it **proposed**, and gives it a number where it
+  has none (BadOp for one with no lines, or one archived). `aip_withdraw {entry, why}` takes it back. Both are its
+  author's or its vault's alone (NoCap for anyone else). **Archived** is never typed: it is derived, below.
+- **Numbers count per vault.** Promote gives one more than the highest number of the vault's AIPs the device holds,
+  and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
+  every reader labels them alike, by where the write that set each number stands in the one order every device
+  replays edits in (depth, then edit id): the first is `AIP-n`, the others `AIP-n.2`, `AIP-n.3`. An idea has no label.
+- **One review over every line.** `aip_review {entry, verdict, text}` is the vault's answer to a proposed AIP, acting
+  for the vault itself (NoCap for anyone else, so an aven or an agent never reviews; BadOp unless it is proposed).
+  `accepted` writes, for each line, the vault's accept at its heads, then its merge into main as the vault, taking the
+  proposal's side wherever both lines changed one place, then one review, `line` `""`, whose `heads` are every
+  accept; `declined` writes the review alone, its heads every line's heads; `revise` writes it, with the words that go
+  back, and the AIP is an idea again, keeping its number. Each line still needs its own accept, so nobody but the
+  vault merges any of them before the review. The writes are the device's own, signed as any write is, so no passkey
+  is asked; they are tried dry first, so a review that would be refused makes nothing.
+- **The outcome is derived**, the same on every reader: **applied** once every line's heads are on main, **rejected**
+  once it is withdrawn or its newest review declined it; either way archived. An AIP merged in part is never applied,
+  and its lines show which are merged. Its signatures count against the default policy, one owner: the accepted
+  reviews that cover every line as it stands (`{have, need: 1, of: "owners"}`); no policy entry is read.
+- **What it changes is derived from the schema** (`crates/avendb/src/aip.rs`): each line's record, read through its
+  entry's own schema, against main's as the acceptance would merge it (once merged, against the version it started
+  from), as parts `{path, label, kind, old, new}`. Rows are matched by their `id`, added, removed, or changed field by
+  field at any depth; lists of plain values gain and lose values; Loro text is one `text` part; anything else is a
+  `set`. Labels are the schema's titles, else the field's key made readable. Each line's summary reads
+  `<schema title or type>: <first change> (+N more)`, values cut to 40 characters. The diff is computed, never typed.
+- **Reading them.** `aips` lists every AIP the device holds, with its label, stage, outcome, lines (`{entry, line,
+  type, title, name, heads, merged}`), reviews newest first, signatures and summary; and every open proposal line no
+  AIP names, as a bare idea (`bare: true`), so nothing written before AIPs is left out. `aip {entry}` adds each line's
+  diff. The page's HITL queue asks a person only for promoted AIPs of the vault they act for, not its own, with no
+  review that covers them as they stand; a card is a summary, and the Proposals app shows the whole AIP at
+  `/app/aips/?aip=<entry>`.
+
+**The honest limit.** Each line's merge still counts on its own. One review accepts every line and merges them in one
+go, but a reader that holds only some of those merges reads only those: all or none for every reader would need the
+merge writes to name their AIP, a change on the wire left for the next reset.
 
 ### Writes that fit their schemas
 
@@ -1180,15 +1232,17 @@ placed in percent of its canvas, its pictures and the card rendered from them Li
 belongs to and the hook it carries; an A/B card is a variant of another), and an access **request** (the vault
 asked, what it asks for, a share, to co-own or an invitation, a level, why, the vaults it names and, once given, its
 answer: `"granted"` or `"denied"`, and the part of an owner add the vault asked signed, section 3), a **review**, a
-**bundle** and a **policy** (section 8, "Merges by policy"), and the **code entries** below. A note
-keeps its type, a document; the page lists notes among the sparks, and the world gives a spark's record beside its
-title and text (`world::What::Note`). Every shipped schema starts at v1, and a kind that grew ships its older
-versions beside the newest and the lenses between them (`lens::blobs::LENSES`), so what was written under an older
-one still counts and opens in the newest app: the spark's v1, a document's fields with a look, a link and a mood
-board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`), and the article's v1, a title, a text and
-tags, reads as v2 as it was, with no story yet (`ARTICLE_LENS`); the function's v1 reads as v2 with no engine and
-no manifest yet (`FUNCTION_LENS`); and the view's v1 reads as v2, an HTML view with no data, no input and no logic of
-its own (`VIEW_LENS`).
+**bundle** and a **policy** (section 8, "Merges by policy"), an **AIP** (section 8, "AIPs": its key, number, title,
+note as Loro text, intent by link, proposal rows `{id, entry, line}` of any types, `stage` `idea`, `proposed` or
+`withdrawn`, the `why` of a withdrawal, where it `was` before, and links as rows `{id, name, url}`), and the **code
+entries** below. A note keeps its type, a document; the page lists notes among the sparks, and the world gives a spark's
+record beside its title and text (`world::What::Note`). Every shipped schema starts at v1, and a kind that grew ships
+its older versions beside the newest and the lenses between them (`lens::blobs::LENSES`), so what was written under an
+older one still counts and opens in the newest app: the spark's v1, a document's fields with a look, a link and a mood
+board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`), and the article's v1, a title, a text and tags,
+reads as v2 as it was, with no story yet (`ARTICLE_LENS`); the function's v1 reads as v2 with no engine and no manifest
+yet (`FUNCTION_LENS`); and the view's v1 reads as v2, an HTML view with no data, no input and no logic of its own
+(`VIEW_LENS`).
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 

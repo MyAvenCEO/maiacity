@@ -30,8 +30,8 @@
 
 import { cardOfEntry, codeAt } from '../code/index.js';
 
-/** the valley's own screens, each a view card (its code in code/views/); a config's card with the same id replaces it */
-export const DEFAULT_VIEWS = [cardOfEntry(codeAt('views/view-wants'))];
+/** the valley's own screens, each a view card (its code entry by the one loader); a config's card with the same id replaces it */
+export const defaultViews = () => [cardOfEntry(codeAt('views/view-wants'))];
 
 /** the slots a screen may take, and their names in words */
 export const SLOTS = ['panel', 'board', 'activity', 'prices', 'avens', 'stats'];
@@ -40,7 +40,8 @@ export const SLOT_NAMES = { panel: 'a tab of its own', board: 'the Board', activ
 /** the view cards a config shows, in order: its own, and every default it does not replace */
 export function viewsOf(cards) {
 	const own = (cards ?? []).filter((c) => c?.kind === 'view');
-	return [...DEFAULT_VIEWS.map((d) => own.find((c) => c.id === d.id) ?? d), ...own.filter((c) => !DEFAULT_VIEWS.some((d) => d.id === c.id))];
+	const defaults = defaultViews();
+	return [...defaults.map((d) => own.find((c) => c.id === d.id) ?? d), ...own.filter((c) => !defaults.some((d) => d.id === c.id))];
 }
 
 /** the screen standing in each of the page's panels, by slot (the config's last card wins when two take one) */

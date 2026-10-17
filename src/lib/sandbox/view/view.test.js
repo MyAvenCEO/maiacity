@@ -9,7 +9,7 @@ import { cleanCss, sanitize } from './sanitize.js';
 import { eventOf, render } from './template.js';
 import { fromA2ui } from './a2ui.js';
 import { classic } from './imports.js';
-import { EXAMPLES } from '../../../../game/genui/examples.js';
+import { examples } from '../../../../game/genui/examples.js';
 
 const clean = (html) => {
 	const doc = new DOMParser().parseFromString(`<!doctype html><html><head></head><body>${html}</body></html>`, 'text/html');
@@ -112,7 +112,7 @@ describe('templates put values in as text', () => {
 });
 
 describe('the a2ui lens', () => {
-	const planner = EXAMPLES.find((v) => v.id === 'dome-planner').spec;
+	const planner = examples().find((v) => v.id === 'dome-planner').spec;
 	test('the dome planner as HTML with our components and marks, its logic and data kept', () => {
 		const v = fromA2ui(planner);
 		expect(v.logic).toBe(planner.logic);

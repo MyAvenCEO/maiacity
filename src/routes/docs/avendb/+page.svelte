@@ -321,6 +321,10 @@
 			'Accept',
 			'One of the vault’s owners accepts a proposal as it stands, with a review: accepted, declined, or sent back to revise with a few words. Anyone else merges a proposal into main only once the vault accepted it, and only the version it accepted; the vault’s own merges need no review.'
 		],
+		[
+			'Put it in an AIP',
+			'Every change is put to a vault the same way, whatever entries it touches: an AIP, an Aven Improvement Proposal, names proposals on the vault’s entries, of any types, with a title and a note on why. Promoted, it takes the vault’s next number, AIP-1, AIP-2, and one owner’s review answers every proposal in it at once: accepted merges them all into main, declined or withdrawn merges nothing, and revise sends it back as an idea that keeps its number. What it changes is read off its proposals through each entry’s schema, never typed. Each merge still counts on its own, so a device that holds only some of them shows only those.'
+		],
 		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
 		[
@@ -430,7 +434,9 @@
 		'creatable',
 		'taggable',
 		'limits',
-		'requests'
+		'requests',
+		'aips',
+		'aip'
 	];
 	const asks = ['may', 'shares'];
 	const changes = [
@@ -444,6 +450,10 @@
 		'propose',
 		'merge',
 		'review',
+		'aip_open',
+		'aip_promote',
+		'aip_withdraw',
+		'aip_review',
 		'restore',
 		'undo',
 		'variant',
@@ -1399,7 +1409,7 @@
 				</li>
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, artworks, flows,
-					functions, posts, reviews, bundles of proposals, policies, the code entries (recipes, views and logic: their
+					functions, posts, reviews, bundles of proposals, policies, AIPs, the code entries (recipes, views and logic: their
 					source, the engine they run on, a manifest of the names they use, their params and a contract; a view also its
 					data, its input, its height, its form, HTML or A2UI, and its own logic), and a device’s
 					card, a vault’s profile and a file, each starting at version 1. A kind that grew

@@ -2,7 +2,7 @@
  * The worker on this Mac (plan J0d-J0f): one for the app, started by the app's layout (src/routes/app/+layout.svelte) once
  * the app's avenDB device is open, rounds every minute, a round at once when asked (`nudge`). It works on every vault
  * the person reaches, acting as each vault's acting vault, through the app's device (src/lib/avendb/native.js), until
- * the device hosts a worker device vault of its own (J0c).
+ * the person makes this Mac a vault's studio worker (J0c, ./Tasks.svelte), and then as that worker there.
  */
 
 import { native } from '$lib/native';
@@ -28,7 +28,8 @@ export async function macWorker() {
 	const d = await device();
 	if (!d) return null;
 	worker = new Worker({
-		send: (op) => d.call('run', op),
+		send: (op, node) => (node ? d.call('run', op, node) : d.call('run', op)),
+		hosted: () => d.call('workers'),
 		// every vault the person reaches but a device's: the Maia City vault's footage as much as their own
 		vaults: (w) => (w.vaults ?? []).filter((/** @type {any} */ v) => v.kind !== 'device' && v.acting?.reaches).map((/** @type {any} */ v) => v.id),
 		executors: { ...EXECUTORS, ...NATIVE },
