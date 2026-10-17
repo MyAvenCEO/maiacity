@@ -715,6 +715,123 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
     made
 }
 
+/// The fields a cut's record holds apart from its timeline's JSON (src/lib/studio/cuts.js `FIELDS`).
+const CUT_FIELDS: [&str; 7] = ["name", "project", "variant", "description", "stage", "version", "legacy"];
+
+/// Cut entry `e` as the API answers a timeline, as the studio reads it (src/lib/studio/cuts.js `timelineOf`): its
+/// timeline's JSON, its record's own fields over it, named `cut:<entry>`, and `updated` the count of its edits.
+fn cut_json(e: &Value) -> Value {
+    let r = &e["record"];
+    let mut t = serde_json::from_str::<Value>(r["timeline"].as_str().unwrap_or("{}")).ok().filter(Value::is_object).unwrap_or_else(|| json!({}));
+    let o = t.as_object_mut().expect("an object");
+    for (k, v) in [("aspect", json!("16:9")), ("tags", json!([])), ("clips", json!([]))] {
+        o.entry(k).or_insert(v);
+    }
+    let text = |k: &str| r[k].as_str().filter(|s| !s.is_empty()).map_or(Value::Null, |s| json!(s));
+    let when = |s: i64| chrono_like(s);
+    o.insert("id".into(), json!(format!("cut:{}", e["entry"].as_str().unwrap_or_default())));
+    o.insert("name".into(), json!(r["name"].as_str().unwrap_or("A cut")));
+    for k in ["project", "variant", "legacy"] {
+        o.insert(k.into(), text(k));
+    }
+    o.insert("description".into(), json!(r["description"].as_str().unwrap_or_default()));
+    o.insert("stage".into(), json!(r["stage"].as_str().unwrap_or("edit")));
+    o.insert("version".into(), json!(r["version"].as_u64().unwrap_or(1)));
+    o.insert("created".into(), json!(when(e["created"].as_i64().unwrap_or(0))));
+    o.insert("updated".into(), json!(e["edits"].as_u64().unwrap_or(0).to_string()));
+    o.insert("at".into(), json!(when(r["at"].as_i64().or(e["created"].as_i64()).unwrap_or(0))));
+    o.insert("vault".into(), e["vault"].clone());
+    t
+}
+
+/// Seconds since 1970 as the API writes a time, `2026-10-17T06:00:00.000Z`.
+fn chrono_like(s: i64) -> String {
+    let (days, rest) = (s.div_euclid(86_400), s.rem_euclid(86_400));
+    // the civil date of a day count (Howard Hinnant's days_from_civil, inverted)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.000Z", rest / 3600, rest % 3600 / 60, rest % 60)
+}
+
+/// Whether entry `e` is a cut the studio shows: not deleted.
+fn is_cut(e: &Value) -> bool {
+    e["type"] == "cut" && e["record"]["kind"] == "cut" && e["deleted"] != json!(true) && !e["tags"].as_array().is_some_and(|t| t.contains(&json!(DELETED)))
+}
+
+/// Every cut this Mac's device holds, as the API lists timelines (the MCP's `timelines_list`).
+pub async fn cuts(app: &AppHandle) -> Result<Vec<Value>, String> {
+    let world = world(app).await?;
+    Ok(world["entries"].as_array().into_iter().flatten().filter(|e| is_cut(e)).map(cut_json).collect())
+}
+
+/// The cut entry an API path names, `/api/timelines/cut:<entry>` and anything under it: the rest of the path after
+/// `/api/timelines/`.
+pub fn cut_path(path: &str) -> Option<&str> {
+    path.strip_prefix("/api/timelines/").filter(|rest| rest.starts_with("cut:"))
+}
+
+/// A timeline call of the API on a cut of avenDB (`cut_path`), for the MCP's timeline tools: `GET` the cut as a
+/// timeline, `PUT` a patch of it saved (its record's own fields set, the rest into its timeline's JSON), only over the
+/// version it was read at where the patch names one (`if_updated`). Renders and frames of a cut are the studio's to
+/// ask for, on its page.
+pub async fn cut_api(app: &AppHandle, method: &str, cut: &str, body: Option<Value>) -> Result<Value, String> {
+    let (entry, rest) = cut.trim_start_matches("cut:").split_once('/').unwrap_or((cut.trim_start_matches("cut:"), ""));
+    if !rest.is_empty() {
+        return Err(format!("a cut of avenDB is rendered and framed from the studio's page, not over the MCP yet ({rest})"));
+    }
+    let world = world(app).await?;
+    let entries = world["entries"].as_array().cloned().unwrap_or_default();
+    let e = entries.iter().find(|e| e["entry"] == entry && is_cut(e)).ok_or("no such cut on this Mac")?;
+    match method {
+        "GET" => Ok(cut_json(e)),
+        "PUT" => {
+            let patch = body.unwrap_or_default();
+            let patch = patch.as_object().ok_or("a timeline's changes are an object")?;
+            let was = cut_json(e);
+            if let Some(v) = patch.get("if_updated").and_then(Value::as_str)
+                && v != was["updated"]
+            {
+                return Err("the cut was changed elsewhere: read it again".into());
+            }
+            let mut now = was.as_object().cloned().unwrap_or_default();
+            for (k, v) in patch {
+                now.insert(k.clone(), v.clone());
+            }
+            let mut timeline = serde_json::Map::new();
+            let mut ops = vec![];
+            for (k, v) in now {
+                if ["id", "created", "updated", "at", "vault", "if_updated"].contains(&k.as_str()) {
+                    continue;
+                }
+                if CUT_FIELDS.contains(&k.as_str()) {
+                    let v = if v.is_null() { if k == "version" { json!(1) } else { json!("") } } else { v };
+                    ops.push(json!({ "op": "set", "entry": entry, "path": [k], "value": v }));
+                } else {
+                    timeline.insert(k, v);
+                }
+            }
+            let now_s = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            ops.push(json!({ "op": "set", "entry": entry, "path": ["timeline"], "value": Value::Object(timeline).to_string() }));
+            ops.push(json!({ "op": "set", "entry": entry, "path": ["at"], "value": now_s }));
+            let vault = e["vault"].as_str().unwrap_or_default();
+            let vaults = world["vaults"].as_array().cloned().unwrap_or_default();
+            let actor = vaults.iter().find(|v| v["id"] == vault).and_then(|v| v["acting"]["as"].as_str()).unwrap_or(vault);
+            run(app, json!({ "op": "batch", "ops": ops, "as": actor })).await?;
+            let world = self::world(app).await?;
+            let saved = world["entries"].as_array().into_iter().flatten().find(|x| x["entry"] == entry).cloned().ok_or("the cut was saved but this Mac does not show it yet")?;
+            Ok(cut_json(&saved))
+        }
+        other => Err(format!("a cut of avenDB takes GET and PUT, not {other}")),
+    }
+}
+
 /// A cut of avenDB (src/lib/studio/cuts.js) as the render reads a timeline: its record's fields, and the rest of it
 /// from its JSON text, named `cut:<entry>` as the studio names it.
 fn cut_of(e: &Value) -> Result<vault_render::timeline::Timeline, String> {
