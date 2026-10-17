@@ -57,7 +57,7 @@ every asset group.
 - **Loading on a phone**: shoot the page at 390 × 844 with `deviceScaleFactor: 3, isMobile: true, hasTouch: true`;
   the canvas says "Building the …" while a model is built and its shaders compiled. Pick ten models in a row and count
   the live WebGL buffers (wrap `createBuffer`/`deleteBuffer` in an init script): the count must stay bounded, or a
-  phone loses its canvas after a few (`src/lib/app/view3d.js` lets each model go).
+  phone loses its canvas after a few (`createStageRenderer` in `src/lib/render/stage.js` lets each model go).
 
 ## Seen before
 
