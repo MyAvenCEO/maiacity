@@ -173,6 +173,16 @@
 	const here = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(context) ?? mine));
 	const as = $derived(byId.get(actor) ?? mine);
 
+	// a page that stops on an error shows the error in its place, the vault bar and the pages kept (no blank screen),
+	// and opens again as soon as another page or vault is picked
+	let retry = /** @type {(() => void) | null} */ (null);
+	$effect(() => {
+		void [tab, context];
+		const again = retry;
+		retry = null;
+		again?.();
+	});
+
 	// the auto tags (./artifacts.js `retagging`): each artifact a spark holds, and each Library file it shows, carries
 	// `sparks`, and `stories` once a story grows from such a spark, kept up as the world changes by whichever page
 	// looks at the vault, where the acting vault may tag them; the same ops are never tried twice in a row
@@ -369,29 +379,42 @@
 			</p>
 		</header>
 		<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
-		{#if tab === 'sparks'}
-			<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
-		{:else if tab === 'stories'}
-			<Stories {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openStory} />
-		{:else if tab === 'todos'}
-			<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
-		{:else if tab === 'artifacts'}
-			<Artifacts {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
-		{:else if tab === 'library'}
-			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
-		{:else if tab === 'assets'}
-			<Assets {world} vault={context} {actor} {api} entry={route.asset} />
-		{:else if tab === 'flows'}
-			<Flows {world} vault={context} {actor} />
-		{:else if tab === 'functions'}
-			<Functions {world} vault={context} />
-		{:else if tab === 'jobs'}
-			<Jobs {world} vault={context} {actor} {api} />
-		{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
-			<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} {asks} />
-		{:else}
-			<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
-		{/if}
+		<svelte:boundary
+			onerror={(e, reset) => {
+				console.error(e);
+				retry = reset;
+			}}
+		>
+			{#if tab === 'sparks'}
+				<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
+			{:else if tab === 'stories'}
+				<Stories {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openStory} />
+			{:else if tab === 'todos'}
+				<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+			{:else if tab === 'artifacts'}
+				<Artifacts {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
+			{:else if tab === 'library'}
+				<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+			{:else if tab === 'assets'}
+				<Assets {world} vault={context} {actor} {api} entry={route.asset} />
+			{:else if tab === 'flows'}
+				<Flows {world} vault={context} {actor} />
+			{:else if tab === 'functions'}
+				<Functions {world} vault={context} />
+			{:else if tab === 'jobs'}
+				<Jobs {world} vault={context} {actor} {api} />
+			{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
+				<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} {asks} />
+			{:else}
+				<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
+			{/if}
+			{#snippet failed(e, reset)}
+				<div class="card" role="alert">
+					<p class="error">This page stopped on an error: {e instanceof Error ? e.message : String(e)}</p>
+					<button class="btn" onclick={reset}>Try again</button>
+				</div>
+			{/snippet}
+		</svelte:boundary>
 	</section>
 	{/if}
 
