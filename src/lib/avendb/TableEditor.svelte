@@ -1,29 +1,32 @@
 <!--
 	The studio's table editor: a vault's entries as tables, as a database studio shows Postgres's: who they are shared
-	with to pick, or all of them, and its tables on the left, each entry in the one of its type (notes, todos, devices'
-	cards, vaults' profiles, other records, and what the acting vault doesn't open, sealed); the table picked as a grid,
-	its columns the fields of its schema, newest version first, each with its type, then what avenDB keeps of each row
-	(who it is shared with, the devices it is synced to, the tags shares select it by, which its record's own fields
-	don't hold, its schemas, edits, proposals and who wrote it first, and with the studio's internals shown its key's
-	generation and size); sorted by a column, searched, and each row opened in a drawer, its record field by field, a
-	list of records' rows each opened in turn, at any depth, and each link followed to the record or row it leads to,
-	a level at a time, as the device's query follows it (./RecordView.svelte), and with the internals shown, its mark to
-	run now (the `mark` op). Files are entries too: the files table is the vault's
-	file entries, shared, synced and searched as every table's rows are, with the file each brings beside its fields (its
-	root, its length, its sealed size and its pieces).
+	with to pick, or all of them, and its tables on the left, every one a schema's (db.js `tables`): one for each family
+	of the schemas this device holds, the versions its lenses join, each entry in the one it was written under; one for
+	each type no schema held here names; what the acting vault doesn't open sealed in its type's, or where it can't read
+	its type either, in sealed. The table picked as a grid, its columns the fields of its schema, newest version first,
+	each with its type, then what avenDB keeps of each row (who it is shared with, the devices it is synced to, the tags
+	shares select it by, which its record's own fields don't hold, its schemas, edits, proposals and who wrote it first,
+	and with the studio's internals shown its key's generation and size), SEALED where a row's record would tell and the
+	acting vault doesn't open it; sorted by a column, searched, and each row opened in a drawer, its record field by
+	field, a list of records' rows each opened in turn, at any depth, and each link followed to the record or row it
+	leads to, a level at a time, as the device's query follows it (./RecordView.svelte), and with the internals shown,
+	its mark to run now (the `mark` op). Files are entries too: a table whose entries bring files, as the File schema's
+	do, shows the file each brings beside its fields (its root, its length, its sealed size and its pieces), and they
+	are shared, synced and searched as every table's rows are.
 -->
 <script>
 	import Icon from './Icon.svelte';
 	import Panel from './Panel.svelte';
 	import RecordView from './RecordView.svelte';
 	import { isLink, isLinks, isRows, valueWords } from './paths.js';
-	import { cell, families, familyOf, hint, parsed, pgType, tables, typeOf } from './db.js';
+	import { cell, hint, parsed, pgType, tables, typeOf } from './db.js';
 	import { allowed, may } from './ops.js';
 	import { count, nameOf, sharerWords, short, size, syncedWords } from './vaults.js';
 
 	/**
 	 * @typedef {import('./db.js').RowView} Row
-	 * @typedef {{ name: string, type: string, hint: string, pk?: boolean, sys?: boolean, get: (r: Row) => unknown }} Column
+	 * @typedef {{ name: string, type: string, hint: string, pk?: boolean, sys?: boolean, seals?: boolean,
+	 *   get: (r: Row) => unknown }} Column
 	 */
 
 	/**
@@ -32,7 +35,8 @@
 	 */
 	let { s, cell: within = $bindable(''), actor, api, internals, onopen } = $props();
 
-	let picked = $state('notes');
+	/** the table picked, by its id: none at first, so the first */
+	let picked = $state('');
 	let query = $state('');
 	/** the column the rows are sorted by, and which way: none at first, in the order the vault holds them */
 	let sort = $state({ by: '', down: false });
@@ -56,14 +60,17 @@
 	/** The file row `r` brings, as the device's world says, if it brings one. @param {Row} r */
 	const fileOf = (r) => s.known.get(r.entry)?.files?.[0];
 
-	const family = $derived(table?.family ? familyOf(families(s.schemas, s.lenses), table.family) : undefined);
+	/** the family of the schemas the table's rows are written under, its versions the lenses join */
+	const family = $derived(table?.family ?? undefined);
 
 	/** The table's columns: its key, its schema's fields, newest version first, then what avenDB keeps of each row. */
 	const columns = $derived.by(() => {
 		if (!table) return [];
 		/** @type {Column[]} */
 		const cols = [{ name: 'entry', type: 'bytea', hint: 'Its id, 32 bytes: the primary key', pk: true, get: (r) => short(r.entry) }];
+		// the rows of a type it reads have their schema's columns, sealed in the rows it doesn't open; the rest, none
 		const sealed = table.id === 'sealed';
+		const opened = table.rows.filter(s.opens);
 		if (!sealed) {
 			const seen = new Set();
 			const versions = [...(family?.schemas ?? [])].reverse();
@@ -73,25 +80,25 @@
 				for (const [name, p] of Object.entries(json?.properties ?? {})) {
 					if (seen.has(name)) continue;
 					// an older version's field shows where a row still holds it
-					if (sc !== versions[0] && !table.rows.some((r) => r.record && name in r.record)) continue;
+					if (sc !== versions[0] && !opened.some((r) => r.record && name in r.record)) continue;
 					seen.add(name);
 					const notes = [hint(p), required.has(name) ? 'not null' : '', `in ${sc.title}`].filter(Boolean);
-					cols.push({ name, type: pgType(p), hint: notes.join('; '), get: (r) => r.record?.[name] });
+					cols.push({ name, type: pgType(p), hint: notes.join('; '), seals: true, get: (r) => r.record?.[name] });
 				}
 			}
-			for (const r of table.rows)
+			for (const r of opened)
 				for (const [name, v] of Object.entries(r.record ?? {}))
 					if (!seen.has(name)) {
 						seen.add(name);
-						cols.push({ name, type: typeOf(v), hint: 'A field no schema here names', get: (x) => x.record?.[name] });
+						cols.push({ name, type: typeOf(v), hint: 'A field no schema here names', seals: true, get: (x) => x.record?.[name] });
 					}
 		}
-		if (table.id === 'files') {
+		if (opened.some(fileOf)) {
 			cols.push(
-				{ name: 'file_root', type: 'bytea', hint: 'The root of the file it brings: the hash its pieces are checked by', get: (r) => short(fileOf(r)?.root ?? '') || null },
-				{ name: 'bytes', type: 'int8', hint: 'The file’s length, where this browser opens it', get: (r) => fileOf(r)?.len ?? null },
-				{ name: 'sealed_bytes', type: 'int8', hint: 'The file’s sealed size', get: (r) => fileOf(r)?.size ?? null },
-				{ name: 'pieces', type: 'int4', hint: 'How many pieces it is sealed in, of up to a GiB each', get: (r) => fileOf(r)?.pieces ?? null }
+				{ name: 'file_root', type: 'bytea', hint: 'The root of the file it brings: the hash its pieces are checked by', seals: true, get: (r) => short(fileOf(r)?.root ?? '') || null },
+				{ name: 'bytes', type: 'int8', hint: 'The file’s length, where this browser opens it', seals: true, get: (r) => fileOf(r)?.len ?? null },
+				{ name: 'sealed_bytes', type: 'int8', hint: 'The file’s sealed size', seals: true, get: (r) => fileOf(r)?.size ?? null },
+				{ name: 'pieces', type: 'int4', hint: 'How many pieces it is sealed in, of up to a GiB each', seals: true, get: (r) => fileOf(r)?.pieces ?? null }
 			);
 		}
 		/** @type {Column[]} */
@@ -105,34 +112,51 @@
 			},
 			...(sealed
 				? []
-				: [{ name: 'entry_tags', type: 'text[]', hint: 'Its tags now, outside its record: what shares select it by', get: (/** @type {Row} */ r) => r.tags }]),
+				: [{ name: 'entry_tags', type: 'text[]', hint: 'Its tags now, outside its record: what shares select it by', seals: true, get: (/** @type {Row} */ r) => r.tags }]),
 			...(sealed
 				? []
 				: [
-						{ name: 'schemas', type: 'text[]', hint: 'The schemas its edits were written under', get: (/** @type {Row} */ r) => r.authored.map(s.schemaName).join(', ') }
+						{ name: 'schemas', type: 'text[]', hint: 'The schemas its edits were written under', seals: true, get: (/** @type {Row} */ r) => r.authored.map(s.schemaName).join(', ') }
 					]),
-			{ name: 'edits', type: 'int4', hint: sealed ? 'The edits of it this browser holds, sealed' : 'The edits of it this browser counts', get: (r) => (sealed ? r.held : r.edits) },
-			...(sealed ? [] : [{ name: 'proposals', type: 'int4', hint: 'Its proposals: lines besides main', get: (/** @type {Row} */ r) => Math.max(0, r.lines - 1) }]),
+			{
+				name: 'edits',
+				type: 'int4',
+				hint: sealed ? 'The edits of it this browser holds, sealed' : 'The edits of it this browser counts, or holds where it is sealed',
+				get: (r) => (s.opens(r) ? r.edits : r.held)
+			},
+			...(sealed ? [] : [{ name: 'proposals', type: 'int4', hint: 'Its proposals: lines besides main', seals: true, get: (/** @type {Row} */ r) => Math.max(0, r.lines - 1) }]),
 			...(internals
 				? [{ name: 'key_generation', type: 'int4', hint: 'Its key’s generation: it moves on when a reader may no longer read it', get: (/** @type {Row} */ r) => r.epoch }]
 				: []),
-			...(internals && !sealed ? [{ name: 'loro_bytes', type: 'int8', hint: 'The size of its Loro document', get: (/** @type {Row} */ r) => r.bytes }] : []),
+			...(internals && !sealed ? [{ name: 'loro_bytes', type: 'int8', hint: 'The size of its Loro document', seals: true, get: (/** @type {Row} */ r) => r.bytes }] : []),
 			{ name: 'first_by', type: 'text', hint: 'The device and the vault of its first edit', get: first }
 		];
 		return [...cols, ...kept.map((c) => ({ ...c, sys: true }))];
 	});
 
-	/** The rows as shown: searched, then sorted. */
+	/** What a sealed row's cell shows. */
+	const SEALED = /** @type {const} */ ({ text: 'SEALED', kind: 'sealed' });
+
+	/** Whether column `c` of row `r` is sealed: it tells of a record the acting vault doesn't open. @param {Column} c @param {Row} r */
+	const seals = (c, r) => !!c.seals && !s.opens(r);
+
+	/** Column `c` of row `r`, as its cell shows it. @param {Column} c @param {Row} r */
+	const shown = (c, r) => (seals(c, r) ? SEALED : cell(c.get(r)));
+
+	/** The rows as shown: searched, then sorted, what is sealed in them neither found nor ranked. */
 	const rows = $derived.by(() => {
 		const q = query.trim().toLowerCase();
-		const text = (/** @type {Row} */ r) => columns.map((c) => cell(c.get(r)).text).join(' ').toLowerCase() + r.entry;
+		const text = (/** @type {Row} */ r) => columns.map((c) => shown(c, r).text).join(' ').toLowerCase() + r.entry;
 		const found = (table?.rows ?? []).filter((r) => !q || text(r).includes(q));
 		const by = columns.find((c) => c.name === sort.by);
 		if (!by) return found;
-		/** @param {unknown} v */
-		const rank = (v) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : v);
+		/** @param {Row} r */
+		const rank = (r) => {
+			const v = seals(by, r) ? null : by.get(r);
+			return v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : v;
+		};
 		const sorted = [...found].sort((a, b) => {
-			const [x, y] = [rank(by.get(a)), rank(by.get(b))];
+			const [x, y] = [rank(a), rank(b)];
 			return typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
 		});
 		return sort.down ? sorted.reverse() : sorted;
@@ -207,7 +231,11 @@
 		{#if table}
 			<header class="bar">
 				<h3 class="mono">{table.label}</h3>
-				{#if family}<span class="chip accent" title="The schema family its rows are written under">{family.name}</span>{/if}
+				{#if family}
+					<span class="chip accent" title="The versions of the schema its rows are written under, each joined to the next by a lens"
+						>{family.schemas.map((sc) => sc.title).join(' ⇄ ')}</span
+					>
+				{/if}
 				<span class="soft hint">{table.hint}</span>
 				<label class="search">
 					<Icon name="search" size={14} />
@@ -237,7 +265,7 @@
 							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 							<tr class="rec" class:on={open === r.entry} onclick={() => (open = r.entry)}>
 								{#each columns as c ((c.sys || c.pk ? 'avendb:' : '') + c.name)}
-									{@const v = cell(c.get(r))}
+									{@const v = shown(c, r)}
 									<td class={v.kind} class:pk={c.pk} class:sys={c.sys} data-col={c.name} title={c.pk ? r.entry : undefined}>
 										{#if c.pk}<button class="open mono" aria-label="Open the row {short(r.entry)}">{v.text}</button>{:else}{v.text}{/if}
 									</td>
@@ -253,14 +281,14 @@
 			<footer class="foot">
 				<span>{count(rows.length, 'row')}{query ? ` of ${table.rows.length}` : ''}</span>
 				<span class="soft">{within ? `Shared with ${within}` : 'Every entry'} · {nameOf(s.here)}</span>
-				<span class="soft">As {nameOf(s.as)}: what is shared with it shows; the rest is in sealed.</span>
+				<span class="soft">As {nameOf(s.as)}: what is shared with it shows; the rest shows sealed.</span>
 			</footer>
 		{/if}
 	</section>
 </div>
 
 {#if row && table}
-	{@const opened = table.id !== 'sealed'}
+	{@const opened = s.opens(row)}
 	<Panel title="{table.label} · {short(row.entry)}" sub={row.entry} onclose={() => (open = '')}>
 		{#if opened && trail.length}
 			<RecordView {api} entry={row.entry} record={row.record} bind:trail />
@@ -588,7 +616,8 @@
 	}
 
 	td.null,
-	td.empty {
+	td.empty,
+	td.sealed {
 		color: rgb(0 0 0 / 0.32);
 		font-size: 0.72rem;
 		letter-spacing: 0.04em;

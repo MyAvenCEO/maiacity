@@ -1,7 +1,7 @@
 <!--
 	A vault's database studio, as this browser holds it and the acting vault opens it (db.js `studio`), each page its
 	own item in the vault's list: the query console (any op of the ops engine), the table editor (its entries as tables,
-	by type, of all of them or of those shared with the same vaults alike), its schemas, its lenses, and the database's
+	by schema, of all of them or of those shared with the same vaults alike), its schemas, its lenses, and the database's
 	history, every signed edit. Who a vault is shared with is the vault's Sharing page, the one place for it. The table
 	editor shows the studio's internals, what this browser holds, keys' ids and generations, documents' sizes and the
 	mark of an entry to run now, only once the person asks. It reads the database again whenever what the device holds

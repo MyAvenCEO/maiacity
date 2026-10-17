@@ -248,10 +248,10 @@ async function onEdit(what, label = '', ins = null) {
 	await sleep(250);
 	if (label) await click(label, '.doc .history li.on .actions button');
 }
-/** The studio's tables, each with its count of rows. */
+/** The studio's tables, by their names (each its schema's, or its type's), each with its count of rows. */
 const tablesShown = () =>
 	page.$$eval('.main .tables button.t[data-table]', (els) =>
-		Object.fromEntries(els.map((e) => [e.getAttribute('data-table'), Number(e.querySelector('small')?.textContent ?? 0)]))
+		Object.fromEntries(els.map((e) => [e.querySelector('.mono')?.textContent ?? '', Number(e.querySelector('small')?.textContent ?? 0)]))
 	);
 /** The table editor's rows, each as its columns name its cells. */
 const gridRows = () =>
@@ -260,9 +260,18 @@ const gridRows = () =>
 			Object.fromEntries([...r.querySelectorAll('td[data-col]')].map((c) => [c.getAttribute('data-col'), c.textContent?.replace(/\s+/g, ' ').trim()]))
 		)
 	);
-/** Pick the table `id` of the table editor. */
-async function pickTable(id) {
-	await page.click(`.main .tables button.t[data-table="${id}"]`).catch(() => check(`there is a ${id} table`, false));
+/** Pick the table named `name` of the table editor. */
+async function pickTable(name) {
+	const picked = await page.$$eval(
+		'.main .tables button.t[data-table]',
+		(els, n) => {
+			const b = /** @type {HTMLElement | undefined} */ (els.find((e) => e.querySelector('.mono')?.textContent === n));
+			b?.click();
+			return !!b;
+		},
+		name
+	);
+	if (!picked) check(`there is a ${name} table`, false);
 	await sleep(250);
 }
 
@@ -406,10 +415,10 @@ try {
 	check('the table editor, at an address of its own', (await hash()) === '#tables', await hash());
 	const held = async () => {
 		const t = await tablesShown();
-		return t.notes === 2 && t.device_cards >= 1 && t.vault_profiles >= 1;
+		return t['Markdown document'] === 2 && t.Card >= 1 && t.Profile >= 1 && !('records' in t);
 	};
-	check('its tables: the two notes, this browser’s card, the vault’s profile', await until(held, 20000), JSON.stringify(await tablesShown()));
-	await pickTable('notes');
+	check('its tables, a schema’s each: the two notes, this browser’s card, the vault’s profile', await until(held, 20000), JSON.stringify(await tablesShown()));
+	await pickTable('Markdown document');
 	const planRow = async () => (await gridRows()).findIndex((r) => r.title === 'Plan' && r.proposals === '1');
 	check('the note with its proposal', (await until(async () => (await planRow()) >= 0, 10000)), JSON.stringify(await gridRows()));
 	const types = await shown('.main .grid th[data-col] .type');

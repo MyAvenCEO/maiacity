@@ -1,9 +1,9 @@
 /*
  * What the database studio's views share (Database.svelte and the views it shows): a vault's database as the acting
- * vault opens it (`studio`), its tables, a JSON Schema field's type as Postgres would name its like, a value as a
- * grid's cell shows it, the families of schemas the lenses join version by version, a lens's steps, and what each
- * signed edit of the database's history does, in words. The device decides all of it (the `database` and `log` ops,
- * avendb-browser's `data`); these only lay it out.
+ * vault opens it (`studio`), its tables, one for each of its schemas, a JSON Schema field's type as Postgres would name
+ * its like, a value as a grid's cell shows it, the families of schemas the lenses join version by version, a lens's
+ * steps, and what each signed edit of the database's history does, in words. The device decides all of it (the
+ * `database` and `log` ops, avendb-browser's `data`); these only lay it out.
  */
 import {
 	count,
@@ -45,7 +45,7 @@ import {
  * @typedef {{ name: string, type: string, hint: string, required: boolean, fallback: string | null,
  *   fields: Field[] }} Field
  * @typedef {{ schemas: SchemaView[], lenses: (LensView | null)[], name: string }} Family
- * @typedef {{ id: string, label: string, hint: string, family: string | null, rows: RowView[] }} Table
+ * @typedef {{ id: string, label: string, hint: string, family: Family | null, rows: RowView[] }} Table
  */
 
 /**
@@ -166,55 +166,96 @@ function byIds(all) {
 	return map;
 }
 
-/** The tables of a vault's database: its entries, by their type, as the acting vault sees them. */
-const TABLES = /** @type {const} */ ([
-	['notes', 'Notes: Markdown documents', 'document'],
-	['todos', 'Todos', 'todo'],
-	['articles', 'Articles: a title and one Markdown text each, their pictures files of the vault by content hash', 'article'],
-	['files', 'Files: each a document of the Library naming the file it brings, sealed in pieces of up to a GiB', 'document'],
-	['device_cards', 'Each device’s card: a document of its vault, named for the device', 'document'],
-	['vault_profiles', 'The vault’s profile: a document of it, titled with its name', 'document'],
-	['flows', 'Flows: the stages an item of any type moves through, each with the stages it leads on to', 'flow'],
-	['functions', 'Functions: code that runs as an item enters or leaves a stage of a flow', 'function'],
-	['posts', 'Posts of the Maia Universe stream', 'post'],
-	['lane', 'The vault’s schemas and lenses: shared with Everyone, as every device that follows it reads them', null],
-	['records', 'Entries of any other type', null],
-	['sealed', 'What the acting vault doesn’t open: no share it holds opens it, or its key hasn’t come here yet', null]
-]);
-
-/** The table of each type. */
-const BY_TYPE = /** @type {Record<string, string>} */ ({
-	note: 'notes',
-	todo: 'todos',
-	article: 'articles',
-	file: 'files',
-	card: 'device_cards',
-	profile: 'vault_profiles',
-	flow: 'flows',
-	function: 'functions',
-	post: 'posts',
-	schema: 'lane',
-	lens: 'lane'
+/**
+ * The hint of the table of each type of the vault's lane, its schema and lens entries: each holds its JSON as written
+ * (JSON Schema, a lens), no record of a schema of its own.
+ */
+const LANE = /** @type {Record<string, string>} */ ({
+	schema: 'The vault’s schemas, each a JSON Schema its entries are written under: shared with Everyone, as every device that follows the vault reads them',
+	lens: 'The vault’s lenses, each joining two versions of a schema, both ways: shared with Everyone, as its schemas are'
 });
 
-/** The tables shown only when they have rows. */
-const SPARSE = ['flows', 'functions', 'posts', 'lane', 'records'];
+/** The hint of the sealed table. */
+const SEALED = 'What the acting vault doesn’t open, of a type it can’t read: no share it holds opens it, or its key hasn’t come here yet';
+
+/** The kind a schema's records name, its `kind` const. @param {SchemaView} sc @returns {string | undefined} */
+const kindOf = (sc) => parsed(sc.json)?.properties?.kind?.const;
+
+/**
+ * What a family's table holds, for its hint: its newest version's description, or an older one's, else the versions
+ * its rows are written under.
+ * @param {Family} f
+ */
+function about(f) {
+	const said = [...f.schemas].reverse().map((sc) => parsed(sc.json)?.description).find((d) => typeof d === 'string' && d.trim());
+	if (said) return said.trim();
+	const joined = f.lenses.length ? `, ${f.lenses.length === 1 ? 'which a lens joins' : 'which lenses join'}` : '';
+	return `Entries written under ${list(f.schemas.map((sc) => sc.title), 'or')}${joined}`;
+}
 
 /**
  * The tables of the vault's entries, of those shared with the same vaults alike (`s.byWho`) or of all of them, each
- * with its rows, as `s.opens` says the acting vault opens them: flows, functions, posts, `lane` and `records` only
- * when they have any.
+ * with its rows, as `s.opens` says the acting vault opens them. Every table is a schema's: one for each family of the
+ * schemas this device holds (`families`, avenDB's own and the vault's lane), named for it, of the rows written under
+ * one of its versions, or else whose kind or type its `kind` names; and one for each type no schema held here names,
+ * named for the type (the lane's own schema and lens entries too, each JSON as written). A row the acting vault doesn't
+ * open shows sealed in its type's table, or in `sealed` where it can't read its type either. Only the tables with rows
+ * show, or while none has any, every family's, empty.
  * @param {Studio} s @param {string} only who they are shared with, in words, or '' for every entry
  * @returns {Table[]}
  */
 export function tables(s, only) {
 	const ids = only ? new Set(s.byWho.find((g) => g.words === only)?.ids ?? []) : null;
 	const rows = s.rows.filter((r) => !ids || ids.has(r.audience));
-	/** @param {RowView} r */
-	const table = (r) => (!s.opens(r) ? 'sealed' : (BY_TYPE[r.type ?? ''] ?? 'records'));
-	return TABLES.map(([id, hint, family]) => ({ id, label: id, hint, family, rows: rows.filter((r) => table(r) === id) })).filter(
-		(t) => !SPARSE.includes(t.id) || t.rows.length
-	);
+	const fams = families(s.schemas, s.lenses);
+	/** @type {Table[]} */
+	const byFamily = fams.map((f) => ({ id: f.schemas[0].id, label: f.name, hint: about(f), family: f, rows: [] }));
+	// two families of one name, as a vault's own version no lens joins to avenDB's: each by its id too
+	const twice = new Set(byFamily.filter((t, i) => byFamily.findIndex((x) => x.label === t.label) !== i).map((t) => t.label));
+	for (const t of byFamily) if (twice.has(t.label)) t.label = `${t.label} ${short(t.id)}`;
+	/** each family's kinds, as its versions name them */
+	const kinds = fams.map((f) => new Set(f.schemas.map(kindOf)));
+	/** the family each schema is a version of, by its place */
+	const version = new Map(fams.flatMap((f, i) => f.schemas.map((sc) => /** @type {[string, number]} */ ([sc.id, i]))));
+	/** the table of the family whose versions name kind `kind`, if one does @param {string | null} kind */
+	const ofKind = (kind) => (kind ? byFamily[kinds.findIndex((k) => k.has(kind))] : undefined);
+	/** @type {Map<string, Table>} the tables of the types no schema here names, by type */
+	const typed = new Map();
+	/** the table of type `type`'s own @param {string} type */
+	const own = (type) => {
+		const t = typed.get(type) ?? { id: `type:${type}`, label: type, hint: '', family: null, rows: [] };
+		typed.set(type, t);
+		return t;
+	};
+	/** @type {Table} */
+	const sealed = { id: 'sealed', label: 'sealed', hint: SEALED, family: null, rows: [] };
+	/**
+	 * The table of row `r`, which the acting vault opens: its family's, by the schemas it was written under, its kind
+	 * among them first, else by its kind or its type; else its type's own.
+	 * @param {RowView} r
+	 */
+	const written = (r) => {
+		const under = r.authored.flatMap((id) => version.get(id) ?? []);
+		const i = under.find((x) => kinds[x].has(r.kind)) ?? under[0];
+		return (i === undefined ? null : byFamily[i]) ?? ofKind(r.kind) ?? ofKind(r.type) ?? own(r.type ?? r.kind);
+	};
+	const placed = new Map(rows.filter(s.opens).map((r) => [r, written(r)]));
+	/** @type {Map<string, Table>} the table of each type, as the first row of it the acting vault opens says */
+	const ofType = new Map();
+	for (const [r, t] of placed) if (r.type && !ofType.has(r.type)) ofType.set(r.type, t);
+	for (const r of rows) {
+		const t = placed.get(r) ?? (r.type === null ? sealed : (ofType.get(r.type) ?? ofKind(r.type) ?? own(r.type)));
+		t.rows.push(r);
+	}
+	for (const [type, t] of typed)
+		t.hint =
+			LANE[type] ??
+			(t.rows.some(s.opens)
+				? `Schema not held here: no schema this device holds names the kind of the entries of type “${type}”, so their columns are the fields their records hold`
+				: `Entries of type “${type}” the acting vault doesn’t open, so it can’t tell the schema they were written under`);
+	const listed = [...byFamily, ...[...typed.values()].sort((a, b) => a.label.localeCompare(b.label)), sealed];
+	const filled = listed.filter((t) => t.rows.length);
+	return filled.length ? filled : byFamily;
 }
 
 /** A JSON Schema field's type, as Postgres names its like. @param {any} p @returns {string} */
@@ -337,9 +378,6 @@ export function families(schemas, lenses) {
 	}
 	return out;
 }
-
-/** The family a table's rows belong to: the one whose schemas' `kind` is `kind`. @param {Family[]} all @param {string} kind */
-export const familyOf = (all, kind) => all.find((f) => f.schemas.some((s) => parsed(s.json)?.properties?.kind?.const === kind));
 
 /**
  * @typedef {{ add: string } | { in: string, steps: Step[] } |
