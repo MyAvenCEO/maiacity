@@ -1400,10 +1400,13 @@
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, artworks, flows,
 					functions, posts, reviews, bundles of proposals, policies, the code entries (recipes, views and logic: their
-					source, the engine they run on, a manifest of the names they use, their params and a contract), and a device’s
+					source, the engine they run on, a manifest of the names they use, their params and a contract; a view also its
+					data, its input, its height, its form, HTML or A2UI, and its own logic), and a device’s
 					card, a vault’s profile and a file, each starting at version 1. A kind that grew
 					ships its older versions too, with the lenses between them, so a spark written as version 1 opens on version 2’s
-					canvas, and an article written as version 1 opens as it was, ready to be linked to its story. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
+					canvas, an article written as version 1 opens as it was, ready to be linked to its story, and a view of version
+					1 opens as version 2’s HTML view. A vault founded before a version shipped takes it at once, as every app reads
+					through its own copies. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
 					chapters and words; a spark is a canvas of artifacts, sparks and free notes; an artwork is a story’s card of one
 					shape, in layers, rendered into the Library. Every vault
 					reads and writes them offline, and avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so
@@ -1415,6 +1418,14 @@
 					move: each runs in QuickJS on the device that moves the entry and asks for changes, which its vault’s shares
 					still decide. Publishing an article makes a public post about it, which the server’s feed serves to the
 					Maia Universe stream, and asks whether the pictures it shows go public too, so the stream shows them.
+				</li>
+				<li>
+					<b>Public entries and code, for pages nobody signed in to.</b> The same feed serves every entry everyone may
+					read, of the kinds a page asks for, with its record, its schema and the version every reader agrees on
+					(<code>/feed/entries?type=story,article</code>), the views, logic, recipes, functions and configs among them
+					(<code>/feed/code</code>), and any one of them whole (<code>/feed/entry/&lt;vault&gt;/&lt;entry&gt;</code>).
+					Anyone can call a vault Maia City, so the feed names Maia City only where it stands in the server’s seed, and
+					<code>?seed=1</code> keeps its entries alone. Whoever loads code checks it again before a sandbox runs it.
 				</li>
 			</ul>
 		</section>

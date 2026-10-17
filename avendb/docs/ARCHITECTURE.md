@@ -1186,8 +1186,9 @@ title and text (`world::What::Note`). Every shipped schema starts at v1, and a k
 versions beside the newest and the lenses between them (`lens::blobs::LENSES`), so what was written under an older
 one still counts and opens in the newest app: the spark's v1, a document's fields with a look, a link and a mood
 board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`), and the article's v1, a title, a text and
-tags, reads as v2 as it was, with no story yet (`ARTICLE_LENS`); and the function's v1 reads as v2 with no engine and
-no manifest yet (`FUNCTION_LENS`).
+tags, reads as v2 as it was, with no story yet (`ARTICLE_LENS`); the function's v1 reads as v2 with no engine and
+no manifest yet (`FUNCTION_LENS`); and the view's v1 reads as v2, an HTML view with no data, no input and no logic of
+its own (`VIEW_LENS`).
 The lens engine's worked example, a v0 of documents and todos and the lenses from it to v1 (`lens::example`), lives
 only in the tests; nothing ships it, and no record is written under it.
 
@@ -1197,9 +1198,14 @@ characters; the engine it runs on, `{host: box | logic | view, version, hash}`; 
 of `kit`, `presets`, `controls`, `messages`, `slots`, `events`, `hooks`, `ops` and `libs`; its params as rows, `{id,
 name, kind: number | integer | toggle | choice | color, range: {min, max, step, options}, default}`; and a contract,
 its `budgets` (`bytes`, `ms`, `memory`, `ops`) and `invariants`. A function of v2 adds the engine and the manifest to
-v1. They are records like any other, of the shipped-schema mechanism as it is, written, proposed, reviewed and merged
-through `run(op)`; nothing in the app loads or runs them yet. A merge path reaches into them as into any record, so a
-Tuner merges the defaults of their params and nothing else.
+v1. A view of v2 adds what a view of the repo's code carries beside its source (`code/views/`): the `data` it shows
+and the `input` it takes (objects, `{}` by default), the `height` its frame starts at, in pixels, its `form`, `html` (by
+default) or `a2ui`, A2UI's components as JSON, and its own `logic`'s source, a Loro text bounded as its source is, for
+the few views that have one. The built-in name `view` names v2, and v1 still ships, so a view written under it counts
+and opens in v2 (`VIEW_LENS`). They are records like any other, of the shipped-schema mechanism as it is, written,
+proposed, reviewed and merged through `run(op)`; the server serves those everyone may read (below), and nothing in the
+app runs them yet. A merge path reaches into them as into any record, so a Tuner merges the defaults of their params
+and nothing else.
 
 **What a schema can say** (`lens::Schema`). An object's `properties` and `required`; each property a `const`, an `enum`,
 or a `type`: a string (with `maxLength`, counted in characters), an integer or a number (any finite one, each with
@@ -1224,6 +1230,15 @@ before the lens translates anything, then taken out of what the app reads (`engi
 offline. Beside that, avenCEO GmbH holds each as an entry of its own, of the very same bytes and so of the same id,
 shared with Everyone: the founder's page adds those it lacks once their seed is there. A vault's lane doesn't reach
 into another's, so any other vault's records still read through the copies every app ships.
+
+**A newer version needs nothing of an older vault.** Every app reads a vault's entries through its own shipped schemas
+and lenses beside the vault's lane (`Lane::with_built_ins`), so a vault founded before a version shipped, holding only
+what shipped then, takes records of it at once: `create` naming `view` writes a view of v2 there, and a view of v1
+written before opens in v2 and edits on. No schema entry is made on demand. The founder's page adds the new schema and
+its lens to avenCEO GmbH as it adds every built-in one it lacks (its `database` lists the app's own beside those the
+vault holds), the schema first, so the lens joins two it holds; the page's HITL queue adds the Review schema to a vault
+that answers a proposal the same way, for apps that shipped before it. A device whose app is older than the version
+counts no write made under it until it updates, as a write counts once its reader holds its schema (below).
 
 **Schemas and lenses are entries.** A vault's schema or lens is an entry of the built-in type `schema` or `lens`
 (`slice::SCHEMA_TYPE`, `LENS_TYPE`), whose creation holds the schema's or lens's JSON alone, as its content, with no
@@ -1262,10 +1277,33 @@ then avenCEO GmbH's, come before the app's, never anyone else's.
 
 **The Maia Universe's feed.** avenDB's server keeps the vaults that give avenCEO server backup, the seed's among them,
 and opens what everyone may read. Its feed (`GET avendb.maia.city/feed/posts`, `world::public_posts`) lists the `post`
-entries it opens that are public and not deleted, newest first, each with its vault's name and kind, as JSON any page
-may read; the Maia Universe page takes it in and shows each post under the vault that published it. A post leaves the
-feed as its article goes back from Published: its function deletes it and takes its tag off, so no Public share reaches
-it.
+entries it opens that are public and not deleted, newest first, each with its vault's name and kind, its entry's tags
+and `published`, when its record says it was published (an ISO 8601 date or time, passed on as the record holds it, read
+from the stored record where the post's schema doesn't name it, `null` where it says none; the order stays by when the
+entry was created), as JSON any page may read; the Maia Universe page takes it in and shows each post under the vault
+that published it. A post leaves the feed as its article goes back from Published: its function deletes it and takes its
+tag off, so no Public share reaches it.
+
+Beside it, every entry everyone may read (`GET avendb.maia.city/feed/entries`, `world::public_entries`), for a page
+nobody signed in to and for the API, which hold no device: each entry a Public share reaches whose record isn't deleted,
+of whatever kind, as `{"entries": [{entry, vault, name, seed, type, schema, tags, heads, created, record}]}`, by vault,
+then kind, then entry, and `?type=story,article` keeps the kinds a page asks for. The code among them, each recipe,
+view, logic, function and config (a record of a vault's own schema whose `kind` is `config`, `world::CODE_KINDS`), is at
+`GET avendb.maia.city/feed/code`, as `{"code": [...]}`. A row's `record` is its main line as every reader counts it,
+through the newest schema of its kind in its vault's lane (`schema`, in hex), each field it leaves out at its default,
+Loro texts as plain text, and `heads` that version's heads, so a loader pins it; its `type` is its record's kind, its
+`tags` its entry's tags, its `name` its vault's profile where everyone may read it. An entry whose record names no kind
+a schema of its vault reads, a schema's or a lens's, is in none. Anyone may found a vault and call it Maia City, so
+`seed` names a row's vault only where it stands in the server's seed (`world::seed_of`, `SEED_NAMES`), `null` for every
+other, and `?seed=1` keeps Maia City's alone, the coop avenCEO GmbH owns alone, none while the server knows no such
+coop: it knows it once Maia City gives avenCEO server backup or relay, as every vault founded under a person does by
+their server setting. `?vault=<64 hex>` keeps one vault's and `?bare=1` leaves the records out, a listing for when they
+grow big. `GET avendb.maia.city/feed/entry/<vault>/<entry>` serves any one of those rows on its own, and
+`{"error": ...}`, not found, for an entry that isn't public, that is deleted or that the server doesn't hold. The three
+take the same `?vault=`, `?seed=1` and `?bare=1`; the server works the whole list out at most every 5 s and serves each
+from it. A loader checks what it takes with its own checker before a sandboxed host runs it: the server vouches for
+nothing but what everyone may read. Every route of the feed answers any page (`Access-Control-Allow-Origin: *`), and
+Caddy forwards all of `/feed/*` to it.
 
 An article shows the pictures of its vault's Library by their names (`<hash>.jpg`), and a post lists those of them
 everyone may read (`pictures`): each a `file` entry of the vault, public and not deleted (`world::public_files`). The
