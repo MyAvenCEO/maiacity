@@ -481,8 +481,15 @@ impl Agent {
              with avendb_run, which acts as {name}'s device vault by the shares its aven passed on to it: on a vault \
              where it may only suggest, write on a proposal (`propose`, then ops with its `line`), and its person \
              merges it; where it may merge, its merge into main counts only once the entry's vault accepted the \
-             proposal (one of its owners, by a review), and brings in only the version accepted. Save a file of this \
-             Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
+             proposal (one of its owners, by a review), and brings in only the version accepted. To put changes to \
+             its person, write them on proposals, then bundle those lines in an AIP (an Aven Improvement Proposal) \
+             with avendb_run: `aip_open` (`vault`, `title`, a `note` saying why and what changes, and `proposals`, \
+             each `{{entry, line}}` of that vault; it makes an entry of type aip, so only where its shares let it \
+             create), then `aip_promote` (`entry`), which gives it the vault's next number, AIP-n. Only a promoted \
+             AIP reaches a person, who answers it whole in The OS app or at /app/aips/?aip=<entry>; an agent never \
+             reviews one, since `aip_review` is the vault's own. Read them with avendb_ask, `aips` or `aip` (`entry`, \
+             with its diff); after a revise, write again on the same lines and promote it again: it keeps its \
+             number. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
              `media` and `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type \
              file, so only where its shares let it create, as an Editor's do, not where it may only suggest. Read a \
              file of a vault back with avendb_read_file, or a `get_file` op on avendb_run: the file entry's `entry`, \
@@ -1180,15 +1187,16 @@ fn tools() -> Value {
         },
         {
             "name": "avendb_run",
-            "description": "Run a change op of avenDB's engine as this agent, as its shares allow: create, set, \
-                            unset, insert, remove, move, tag, propose, merge, restore, undo, variant, batch, \
-                            put_file, get_file. Where it may only suggest, write on a proposal. put_file saves a file \
-                            of this Mac into a vault as a new entry of type file, where the agent may create: the op \
-                            names its vault and name, and media and tags if any, and the file's absolute path goes \
-                            beside the op as path; its len is the file's size unless the op gives one. get_file reads \
-                            a file of a vault back, as avendb_read_file does: the op names its entry, or its vault \
-                            and name, and the absolute path it writes to goes beside the op, with overwrite: true to \
-                            replace a file there.",
+            "description": "Run a change op of avenDB's engine as this agent, as its shares allow: create, set, unset, \
+                            insert, remove, move, tag, propose, merge, restore, undo, variant, batch, aip_open, \
+                            aip_promote, aip_withdraw, put_file, get_file. Where it may only suggest, write on a \
+                            proposal; put proposals to its person in an AIP: aip_open over their lines, then \
+                            aip_promote. put_file saves a file of this Mac into a vault as a new entry of type file, \
+                            where the agent may create: the op names its vault and name, and media and tags if any, \
+                            and the file's absolute path goes beside the op as path; its len is the file's size unless \
+                            the op gives one. get_file reads a file of a vault back, as avendb_read_file does: the op \
+                            names its entry, or its vault and name, and the absolute path it writes to goes beside the \
+                            op, with overwrite: true to replace a file there.",
             "inputSchema": run,
         },
         {
