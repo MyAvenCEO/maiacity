@@ -770,9 +770,9 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let schemas = ok(run(&mut w, mac, json!({ "op": "schemas", "vault": alice })));
     let mut kinds = each(&schemas["schemas"], |s| &s["kind"]);
     kinds.sort();
-    let own = ["article", "article", "artifact", "artwork", "bundle", "card", "document", "file", "flow", "function"];
-    let own = [&own[..], &["function", "logic", "policy", "post", "profile", "recipe", "request", "review"]].concat();
-    let own = [&own[..], &["spark", "spark", "story", "todo", "view"]].concat();
+    let own = ["aip", "article", "article", "artifact", "artwork", "bundle", "card", "document", "file", "flow"];
+    let own = [&own[..], &["function", "function", "logic", "policy", "post", "profile", "recipe", "request"]].concat();
+    let own = [&own[..], &["review", "spark", "spark", "story", "todo", "view"]].concat();
     assert_eq!(kinds, own, "its own kinds, each once but the article's, the function's and the spark's two versions");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     let lenses = list(&schemas["lenses"]);

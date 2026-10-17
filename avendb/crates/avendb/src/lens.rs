@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 23] = [
+    pub const SHIPPED: [&str; 24] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1351,6 +1351,7 @@ pub mod blobs {
         REVIEW_V1,
         BUNDLE_V1,
         POLICY_V1,
+        AIP_V1,
         POST_V1,
         CARD_V1,
         PROFILE_V1,
@@ -2035,6 +2036,58 @@ pub mod blobs {
   "required": ["kind", "needs"]
 }
 "#;
+
+    /// An AIP, an Aven Improvement Proposal (docs/ARCHITECTURE.md §8, "AIPs"): the one proposal standard of every
+    /// vault, a bundle of proposal lines of any types, all in its own vault (`proposals`, by Bundle's field names),
+    /// with the text a person reads (`note`: why, what changes, what we expect). It is named by `key`, eight random
+    /// letters and digits, from the idea on, and by `number`, AIP-n, once it is promoted, counted per vault. `stage` is
+    /// what its author and its vault typed, an idea, proposed or withdrawn (with `why`); archived, applied or
+    /// rejected, is read off the merges and reviews, never typed (`engine`'s `aips`). `was` names what it was imported
+    /// from ("Sandbox 7 MIP #42"), `links` the PRs or worlds beside it. A game is an entry tag (`game:<id>`).
+    pub const AIP_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AIP, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "aip" },
+    "key": { "type": "string", "maxLength": 8, "pattern": "^[A-Za-z0-9]{8}$" },
+    "number": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string", "maxLength": 160 },
+    "note": { "type": "string", "x-loro": "text", "maxLength": 20000, "default": "" },
+    "intent": { "x-link": "newest" },
+    "proposals": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "entry": { "x-link": "newest" },
+          "line": { "type": "string", "maxLength": 64 }
+        },
+        "required": ["id", "entry", "line"]
+      }
+    },
+    "stage": { "enum": ["idea", "proposed", "withdrawn"], "default": "idea" },
+    "why": { "type": "string", "maxLength": 2000 },
+    "was": { "type": "string", "maxLength": 120 },
+    "links": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string", "maxLength": 120, "default": "" },
+          "url": { "type": "string", "maxLength": 2000, "default": "" }
+        },
+        "required": ["id"]
+      }
+    }
+  },
+  "required": ["kind", "key", "title"]
+}
+"#;
 }
 
 fn built_in_schema(blob: &str) -> Schema {
@@ -2054,6 +2107,7 @@ pub static LOGIC_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::
 pub static REVIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REVIEW_V1));
 pub static BUNDLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::BUNDLE_V1));
 pub static POLICY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POLICY_V1));
+pub static AIP_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::AIP_V1));
 pub static POST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POST_V1));
 pub static CARD_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CARD_V1));
 pub static PROFILE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::PROFILE_V1));
@@ -2085,6 +2139,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*REVIEW_V1,
         &*BUNDLE_V1,
         &*POLICY_V1,
+        &*AIP_V1,
         &*POST_V1,
         &*CARD_V1,
         &*PROFILE_V1,
