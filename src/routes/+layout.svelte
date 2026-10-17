@@ -111,6 +111,8 @@
 <style>
 	/* pinned to the home screen, the status bar is see-through over the page: the header keeps below it */
 	header {
+		position: relative;
+		z-index: 2;
 		padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
 	}
 

@@ -32,21 +32,28 @@
 </script>
 
 <article class="manifesto">
-	<header class="spread" class:with-banner={banner}>
-		{#if banner}
-			<div class="banner">
-				<img
-					src={asset(BANNER)}
-					alt="A woman on a mountain top at sunrise, arms wide open over the sea."
-				/>
-			</div>
-		{/if}
+	<!-- the banner fills the screen edge to edge, the story told on top of it -->
+	{#if banner}
+		<header class="banner">
+			<img
+				src={asset(BANNER)}
+				alt="A woman on a mountain top at sunrise, arms wide open over the sea."
+			/>
+			<h1 class="story">
+				<span class="opening">This is the story</span>
+				<span class="founders">of how 1 million founders build their own solarpunk city,</span>
+				<span class="when">first in game, then in real life, in just <mark>16 years.</mark></span>
+			</h1>
+		</header>
+	{/if}
+
+	<section class="spread">
 		<p class="kicker"><span>Manifesto</span></p>
-		<h1>
+		<svelte:element this={banner ? 'h2' : 'h1'} class="headline">
 			<span class="survive">We were never built to survive.</span>
 			<span class="thrive">We were built to <mark>thrive.</mark></span>
-		</h1>
-	</header>
+		</svelte:element>
+	</section>
 
 	<!-- whatever the page wants seen before the first chapter — the Day 01 film -->
 	{#if afterHero}<div class="after-hero">{@render afterHero()}</div>{/if}
@@ -115,12 +122,10 @@
 	/* ── the spread ─────────────────────────────────────────── */
 	.spread {
 		position: relative;
-		padding-block: 1rem 3.5rem;
+		padding-block: 4rem 3.5rem;
 		border-bottom: 1px solid var(--ink);
 	}
 
-	/* The illustration melts into the page: its lower half fades to the page
-	   colour, and the headline is pulled up into that fade. */
 	.after-hero {
 		margin: 2.5rem 0 1rem;
 	}
@@ -129,56 +134,86 @@
 		margin: 0;
 	}
 
+	/* Full height and full width: the banner breaks out of the page's column
+	   and slides up under the nav pill, which floats on it. */
 	.banner {
 		position: relative;
+		display: flex;
+		align-items: flex-end;
+		width: 100vw;
+		height: calc(100svh + 0.4rem);
+		min-height: 32rem;
+		/* the header's height (its padding, the safe area, the pill), a touch over so no cream shows above */
+		margin-top: calc(-1 * (1.25rem + env(safe-area-inset-top, 0px) + 3.6rem));
+		margin-left: calc(50% - 50vw);
 		overflow: hidden;
-		border-radius: var(--radius);
-		aspect-ratio: 16 / 9;
-		max-height: 74vh;
-		width: 100%;
 	}
 
 	.banner img {
+		position: absolute;
+		inset: 0;
 		display: block;
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		object-position: center 35%;
+		object-position: 40% 40%;
 	}
 
+	/* the lower part darkens so the story reads in white over the hills */
 	.banner::after {
 		content: '';
 		position: absolute;
 		inset: 0;
 		background: linear-gradient(
 			to bottom,
-			transparent 38%,
-			color-mix(in srgb, var(--cream) 70%, transparent) 68%,
-			var(--cream) 90%
+			transparent 35%,
+			rgb(16 32 30 / 0.45) 62%,
+			rgb(16 32 30 / 0.78) 100%
 		);
 	}
 
-	.with-banner .kicker {
-		position: absolute;
-		top: 2.25rem;
-		left: 1.75rem;
-		z-index: 1;
-		margin: 0;
-		padding: 0.45rem 0.95rem;
-		border-radius: 999px;
-		background: color-mix(in srgb, var(--paper) 88%, transparent);
-		color: var(--ink);
-	}
-
-	.with-banner .kicker::after {
-		display: none;
-	}
-
-	.with-banner h1 {
+	.story {
 		position: relative;
 		z-index: 1;
-		margin-top: clamp(-10rem, -11vw, -3rem);
-		padding-inline: clamp(0.5rem, 3vw, 2.5rem);
+		display: flex;
+		flex-direction: column;
+		gap: 0.35em;
+		width: 100%;
+		max-width: 1180px;
+		margin: 0 auto;
+		padding: 0 clamp(1.5rem, 4vw, 3rem) clamp(3rem, 9vh, 6rem);
+		color: #fffaf0;
+		text-shadow: 0 2px 24px rgb(0 0 0 / 0.25);
+	}
+
+	.opening {
+		font-family: var(--font-body);
+		font-size: clamp(0.8rem, 1.3vw, 1rem);
+		font-weight: 500;
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+	}
+
+	.founders {
+		max-width: 18ch;
+		font-size: clamp(2.3rem, 6.4vw, 5.4rem);
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: -0.035em;
+		text-wrap: balance;
+	}
+
+	.when {
+		font-size: clamp(1.25rem, 2.6vw, 2rem);
+		font-weight: 300;
+		line-height: 1.2;
+		letter-spacing: -0.015em;
+	}
+
+	.story mark {
+		background: none;
+		color: inherit;
+		font-weight: 600;
 	}
 
 	.kicker {
@@ -200,7 +235,7 @@
 		background: var(--line);
 	}
 
-	h1 {
+	.headline {
 		display: flex;
 		flex-direction: column;
 		gap: 0.1em;
@@ -433,13 +468,12 @@
 	}
 
 	@media (max-width: 760px) {
-		.banner {
-			aspect-ratio: 4 / 3;
+		.banner img {
+			object-position: 30% 40%;
 		}
 
-		.with-banner .kicker {
-			top: 1.75rem;
-			left: 1rem;
+		.spread {
+			padding-top: 3rem;
 		}
 
 		.chapter {

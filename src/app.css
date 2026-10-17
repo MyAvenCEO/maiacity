@@ -27,6 +27,11 @@ body {
 	margin: 0;
 }
 
+/* a full-width banner breaks out of its column with 100vw, which counts the scrollbar: never scroll sideways for it */
+html {
+	overflow-x: clip;
+}
+
 /* The page runs edge to edge on a phone (viewport-fit=cover, src/app.html): its words keep clear of the notch and the
    home bar in landscape. A full-screen world (position: fixed) still reaches every edge, and keeps its own controls
    clear with env(safe-area-inset-*). */
