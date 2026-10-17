@@ -16,7 +16,7 @@ export const INVESTOR_SHARE = 0.5;
 export const POOL_SHARE = 0.1;
 export const TREASURY_SHARE = 1 - INVESTOR_SHARE - POOL_SHARE;
 /** the old pool rule of the paper's earlier version: 0.05 of each HEART to the pools (a tenth of the treasury's half);
- *  the simulation keeps it as a variation (LADDER 'pool05'), and the test city ran it up to round 5 (SIM_HISTORY) */
+ *  the simulation keeps it as a variation (LADDER 'pool05') and as the comparison of SAME_SHOCK.pool */
 export const OLD_POOL_SHARE = 0.05;
 export const SECONDS_YEAR = 31_536_000;
 
@@ -96,14 +96,11 @@ export const ACCEPTED = {
 };
 
 /** the version of the paper being published, for the masthead and the cite-as line */
-export const VERSION = { n: 'v7', date: 'October 2026' };
+export const VERSION = { n: 'v8', date: 'October 2026' };
 
-/** the names of our simulations (Section 11), in one place, so that a rename is one edit here */
+/** the name of our simulation and of its versions (Section 11), in one place, so that a rename is one edit here */
 export const SIM_NAMES = {
 	model: 'the economic model',
-	testCity: 'the test city',
-	round: (n) => `the test city, round ${n}`,
-	roundShort: (n) => `round ${n}`,
 	// the economic model's versions (MODEL_VERSIONS ids)
 	versions: {
 		static: 'the static world',
@@ -118,9 +115,8 @@ export const SIM_NAMES = {
 
 /** part 3 of Proposition 3, the rule for every tenth (Section 11.1): each basic at need every year (within `basics`); no
  *  extra down more than `fall` over any window of `years` years; and each tenth's basket up over the run: one extra up
- *  `rise` or more. source: the test city's part-3 rule (test city, round 6, engine e27378ed, proof report "Proposition 3
- *  in real units, per tenth"); the economic model's check by tenths uses the same rule (research/e2e/round-next,
- *  measures-main.md section 1) */
+ *  `rise` or more. source: the economic model's check by tenths (research/e2e/round-next, measures-main.md section 1),
+ *  as research/e2e/round-next-2/verdict.md ("The rule") restates it under the verdict */
 export const P3_RULE = { basics: 0.01, fall: 0.02, years: 5, rise: 0.05 };
 
 /** how part 3 judges a single extra that falls (Section 11.1). Samuel chose the verdict on a card on 2026-10-14 (17:31):
@@ -129,9 +125,8 @@ export const P3_RULE = { basics: 0.01, fall: 0.02, years: 5, rise: 0.05 };
  *  the good is at its natural or physical limit (the cap excuse); 'a': each extra: a fall counts unless the extra is at
  *  satiation or a physical limit binds that year; 'b': taste-adjusted without the cap excuse; 'c': one basket: the
  *  extras together, valued at fixed day-1 prices. The three side readings stay beside the verdict. mark: the letter the
- *  paper prints (none for the verdict). source: the test city's src/lib/sandbox-9/yardstick.js (P3_VERDICT 'taste', its
- *  keys each, tasteNoCap and basket) and round 6's engine notes, "Part 3's verdict: taste-adjusted"; the economic
- *  model's research/e2e/round-next-2, verdict.md and yardsticks.md (p3=2, the script's default) */
+ *  paper prints (none for the verdict). source: the economic model's check, research/e2e/round-next-2, verdict.md (the
+ *  rule, its two excuses and the side columns) and yardsticks.md; scripts/theos-e2e-sim.mjs p3=2, the script's default */
 export const YARDSTICK = 'taste';
 export const YARDSTICKS = {
 	taste: { name: 'Taste-adjusted', mark: '', verdict: true },
@@ -1108,37 +1103,26 @@ export const livingSeries = () =>
 	].map((s) => ({ ...s, points: LIVING[s.id].map((v, i) => [i + 1, v]) }));
 
 // ── Energy and physical limits (Sections 8.4, 12.5, Appendix H) ─────────────────────────────────────────────────────
-// Source: world-model research §5.1–5.5 (design numbers for the test city; "estimate" marks a number nobody has checked).
+// Design numbers for maiaCITY's first village, not simulation results. They come from maiaCITY's own design research
+// (the energy files energy/village-energy.md and energy/energy.md, the dome files dome-research/dome-sizes.md, and the
+// village's food, water and timber plans) and from the outside studies that refs.js cites where the paper prints them.
+// "Estimate" marks a number that nobody has checked.
 
-/** source: world-model research §5.2 (a full village), §5.3 (recipes and floors), §5.5 (what binds first) */
+/** a full village and its geothermal plant; one great dome of about 250 people and what binds first there; the recipes
+ *  and the physical floor of each material; the food forest, water and timber of the village's plans */
 export const ENERGY = {
-	village: { people: 1_488, el: 35.8, heat: 104, useEl: 12, useHeat: 6 }, // GWh a year (§5.2)
-	smilGJ: [50, 70], // Smil's plateau, GJ of primary energy a person a year (§5.1)
-	dome: { people: 250, harvest: 1.3, use: 0.39, build: 3.0, decHarvest: 27, decUse: 33 }, // GWh a year; December MWh, use at least (§5.5)
-	pvPayback: 1.1, // years, Northern Europe (§5.2, Fraunhofer ISE)
-	pvMunich: 1, // MWh a year per kWp in Munich (§5.3)
-	recipes: { glulam: 0.5, steel: 3.6, glass: 1.3, clay: 0.5, panels: 2.0 }, // MWh a tonne (§5.3)
-	floors: { sq: 0.33, photosynthesis: 0.046, photosynthesisC4: 0.06, steelMin: 2.9, glassMin: 0.69 }, // one single-junction cell; C3 and C4 plants (Zhu et al.); steel from ore, the practical minimum on a fuel basis, MWh a tonne (§5.3)
-	forest: { y1: 0.1, fullYear: 10, kgM2: 0.74 }, // food forest: share of food in year 1, full in year 10, kg/m² a year (§5.3)
-	water: { supply: 140, need: 100, dry: 0.3, dryYear: 0.98 }, // L a bed a day; a year 30 % drier gives 0.98 of need (§5.3)
-	wood: { t: 150, ha: 10, tPerBed: 6, beds: 25 }, // t a year from 10 ha; t a bed; beds a year (§5.5)
-	compute: [9, 37], // kWh a person a year, estimate (§5.3)
-	geo: { el: 3.4, heat: 12.6, carnot: 0.36, eroiHeat: [15, 35] }, // MW a plant; Carnot limit; EROI with heat, estimate (§5.2)
-	foodStockDays: 5, // days of food in hand (§2.2, §4.4)
-	// the test city's physics audit (2026-10-13), of round 5's engine (20dd2478): what the engine used, what measured
-	// systems give, and the verdict (ok, estimate, wrong). forest: the food forest, kg/m² a year at year 10 and from
-	// fromYear on (150 %); measured food forests (the Netherlands and Belgium, plots); intensive farming for this diet,
-	// before losses; the audit's proposed value at maturity, with no 150 % stage; person-days short in the base world at a
-	// mature yield of short.at. wood: t of logs a ha a year in the engine and t of glued timber from them; a realistic
-	// yield, t of glued timber a ha; at collapse.logs t of logs a ha the base world collapses from collapse.year, with
-	// collapse.personDays short of every basic. compute: kWh an Aven service-hour; service-hours a person a day (the
-	// ceiling of taste); MWh of exported electricity that pays for one imported accelerator (a euro price), against the
-	// MWh that making one takes; the share of the living-standard index that Aven services make up
-	audit: {
-		forest: { verdict: 'wrong', engine: [0.485, 0.727], fromYear: 14, measured: 0.1, plots: 22, farm: [0.55, 0.65], proposed: [0.45, 0.55], short: { at: [0.58, 0.5], personDays: [38_500, 414_000] } },
-		wood: { verdict: 'wrong', logs: 15, glulam: 7.5, realistic: [1, 2.5], collapse: { logs: 5, year: 9, personDays: 476_000 } },
-		compute: { verdict: 'estimate', kwhHour: 0.2, hours: 24, chipMwh: 400, chipMake: [0.3, 0.5], index: 0.82 }
-	}
+	village: { people: 1_488, el: 35.8, heat: 104, useEl: 12, useHeat: 6 }, // GWh a year: six great domes and the centre (village-energy.md)
+	smilGJ: [50, 70], // Smil's plateau, GJ of primary energy a person a year (refs.js smil)
+	dome: { people: 250, harvest: 1.3, use: 0.39, build: 3.0, decHarvest: 27, decUse: 33 }, // one great dome: GWh a year harvested, used at home and to build another; December MWh, use at least (village-energy.md, dome-sizes.md)
+	pvPayback: 1.1, // years, Northern Europe (refs.js fraunhofer)
+	pvMunich: 1, // MWh a year per kWp in Munich (village-energy.md)
+	recipes: { glulam: 0.5, steel: 3.6, glass: 1.3, clay: 0.5, panels: 2.0 }, // MWh a tonne (energy.md and the village's works)
+	floors: { sq: 0.33, photosynthesis: 0.046, photosynthesisC4: 0.06, steelMin: 2.9, glassMin: 0.69 }, // one single-junction cell (refs.js shockley); C3 and C4 plants (refs.js zhu); steel from ore, the practical minimum on a fuel basis, and glass, MWh a tonne
+	forest: { y1: 0.1, fullYear: 10, kgM2: 0.74 }, // food forest: share of food in year 1, full in year 10, kg/m² a year (the village's food plan); the riskiest number (refs.js peters)
+	water: { supply: 140, need: 100, dry: 0.3, dryYear: 0.98 }, // L a bed a day from rain; a year 30 % drier gives 0.98 of need (the village's water plan)
+	wood: { t: 150, ha: 10, tPerBed: 6, beds: 25 }, // t a year from 10 ha, an estimate (it needs fast hemp and bamboo); t a bed; beds a year (the village's timber plan)
+	geo: { el: 3.4, heat: 12.6, carnot: 0.36, eroiHeat: [15, 35] }, // MW a plant; Carnot limit; EROI with heat, estimate (village-energy.md; refs.js atlason)
+	foodStockDays: 5 // days of food in hand (the fix that Section 11.2.6 proposes)
 };
 
 /** average power a person, kW, from GWh a year for n people */
@@ -1147,214 +1131,13 @@ export const kwPerPerson = (gwh, n = ENERGY.village.people) => (gwh * 1e6) / 8_7
 /** GJ a year as average power, kW */
 export const gjToKw = (gj) => (gj * 1e9) / (365.25 * 86_400) / 1_000;
 
-/** years until a dome's yearly surplus of energy builds the materials of one more dome. Computed from §5.5's 1.3 and
- *  0.39 GWh, it gives 3.3; §5.5 prints "about 3.4 years" because it rounds the surplus to ~0.9 GWh */
+/** years until a dome's yearly surplus of energy builds the materials of one more dome. Computed from ENERGY.dome's 1.3
+ *  and 0.39 GWh, it gives 3.3; a rounded surplus of ~0.9 GWh would give about 3.4 years */
 export const domeYears = (d = ENERGY.dome) => d.build / (d.harvest - d.use);
 /** beds a year that the energy surplus alone could build (a dome a domeYears()), against ENERGY.wood.beds from wood */
 export const bedsFromEnergy = (d = ENERGY.dome) => d.people / domeYears(d);
 /** December's energy deficit, MWh: at least the use, less the harvest */
 export const decemberGap = (d = ENERGY.dome) => d.decUse - d.decHarvest;
-
-// ── The test city (Section 11.3.3) ──────────────────────────────────────────────────────────────────────────────────
-// Source: the test city, round 6, engine e27378ed (its proof report, engine notes and pond trace, run 2026-10-14; the
-// simulation files merged at ff0ba54). A village of 1,500 residents over 60 years, built from day 0 with euro advances
-// from the City COOP; the rules of this paper: Law 4's 0.5 / 0.4 / 0.1, Law 5 at 20 % paid to every holder but the
-// seller's own treasury (the pools by their reserves), the pools' LP tokens with the City COOP, the Tribe COOP, work
-// proposals; the 7 % melt, 24 HEARTS a day. Proposition 3 is claimed from the end of the founding (the build-out), and
-// the founding is reported apart.
-
-// part 3 after the founding, seed by seed: tenths failing (of 20) under the verdict and each side reading (YARDSTICKS:
-// the test city's keys taste, each, tasteNoCap and basket). The verdict excuses every warm-pond fall at nature's limit;
-// under 'b', which has no cap excuse, every failure is warm-pond hours (static/sandbox-9/proof.json, suite.seeds[i].
-// yardsticks.after.failing; round 6's engine notes, "Part 3's verdict: taste-adjusted")
-const TC_P3 = { taste: [0, 0, 0, 0, 0], a: [0, 0, 0, 0, 0], b: [11, 12, 12, 12, 12], c: [0, 0, 0, 0, 0] };
-
-/** what the test city found in round 6, on the five base seeds (each part per seed in that order), from the end of the
- *  founding. founding: the build-out, from the two settlers to the last newcomer: it ends on day `day` (year `year`) on
- *  every seed, and the first full year judged is `firstYear`; p1, p3 (by yardstick) and abundance are its own numbers.
- *  p1 = person-days short of a basic; p2normal = owner-only person-days failing the normal test, and normalSeeds the
- *  seeds on which it held (the lowest holding never runs out at its trend); p2strict = the lowest owner-only resident's
- *  dividends ÷ basic bundle in the last year (it holds at 1 or more on every day; it never held); p3 = tenths failing
- *  part 3 in real units (of 20: ten by holdings, ten by Aven output), by YARDSTICK, with the basics failing, the extras'
- *  falls and the baskets not rising under 'a'; coopPart: the COOP part passed (no COOP left a bill unpaid); abundance
- *  = day-goods (a day and a basic) on which MIND, not physics, bound a basic. headline: the test city's own verdict
- *  (scenario S00), whose part 2 needs the strict test, which Proposition 3 does not claim. more: seeds 5 to 9 (S04),
- *  with part 3 judged by `yardstick`. suite: experiments and scenarios run, and how many pass, fail or only compare.
- *  ownerOnlyEvery: every twentieth newcomer is owner-only (ownerOnly: how many in the base world) */
-export const TEST_CITY = {
-	round: 6,
-	engine: 'e27378ed',
-	people: 1_500,
-	years: 60,
-	seeds: [20261012, 1, 2, 3, 4],
-	poolShare: POOL_SHARE,
-	law5Pools: true,
-	ownerOnlyEvery: 20,
-	ownerOnly: 75,
-	founding: { day: 1_672, year: 5, firstYear: 6, p1: [0, 1, 0, 0, 0], p3: { taste: [6, 5, 6, 5, 7], a: [6, 5, 6, 5, 7], b: [6, 5, 6, 5, 7], c: [1, 0, 0, 0, 0] }, abundance: [0, 2, 0, 0, 0] },
-	p1: [0, 0, 0, 0, 0],
-	p2normal: [0, 0, 0, 0, 0],
-	normalSeeds: 5,
-	p2strict: [0.32, 0.3, 0.32, 0.3, 0.33],
-	p3: { of: 20, byYardstick: TC_P3, failing: TC_P3[YARDSTICK], basics: [0, 0, 0, 0, 0], extrasFalls: [0, 0, 0, 0, 0], baskets: [0, 0, 0, 0, 0] },
-	coopPart: [true, true, true, true, true],
-	abundance: [0, 0, 0, 0, 0],
-	headline: { of: 5, all: 0, p1: 5, p2: 0, p3: 5 },
-	more: { seeds: [5, 6, 7, 8, 9], p1: 5, p2strict: 0, p2normal: 5, p3: 5, yardstick: YARDSTICK },
-	suite: { experiments: 18, scenarios: 39, pass: 20, fail: 25, compare: 12 },
-	// the bank at the border (the City COOP): the bootstrap number (the most the village owed outside at any moment,
-	// seed 20261012, in year 60), each seed's, and their range; the build-out bill; euros advanced to COOPs and repaid in
-	// their own MIND by year 60, still owed, and its range over the seeds; exports and imports a year over the last ten
-	// years; the balance at the end; all bought and sold abroad; each seed's best year (exports less imports, €). Loans
-	// are repaid weekly, a 26th of what is owed, at most 5 % of the COOP's own treasury MIND that week, with no interest.
-	// The running balance never turned positive on any seed (positiveYear null)
-	bank: {
-		bootstrap: 487.19e6,
-		bySeed: [487.19e6, 483.54e6, 490.26e6, 484.97e6, 508.5e6],
-		range: [483.54e6, 508.5e6],
-		buildout: 405.15e6,
-		advanced: 476.53e6,
-		repaidMind: 448.04e6,
-		owed: 28.49e6,
-		owedRange: [27.15e6, 99.76e6],
-		exports: 5.66e6,
-		imports: 5.92e6,
-		balance: -486.95e6,
-		bought: 771.47e6,
-		sold: 284.52e6,
-		bestYear: [-0.14e6, -0.13e6, -0.16e6, -0.21e6, -0.39e6],
-		positiveYear: null,
-		repayWeeks: 26,
-		repayCap: 0.05,
-		repaid: false
-	},
-	// the bound that Law 5 sets on the strict test, in the last year, seed by seed: all sales ÷ everyone's basic bundle,
-	// the lowest owner-only resident's share of all holdings times the people (N × share), the bound λ × N × share ×
-	// sales ÷ basics, and the sales ÷ basics at which dividends alone would pay that resident's bundle
-	strictBound: { sales: [5.51, 5.23, 5.19, 5.44, 5.61], share: [0.33, 0.34, 0.34, 0.33, 0.33], bound: [0.37, 0.36, 0.35, 0.36, 0.38], needed: [15.0, 14.7, 14.8, 15.0, 15.1] },
-	// the pools: baskets whose loss to arbitrage (LVR) stayed below their fee income over the run, of all baskets, by seed
-	lvr: { below: [8, 7, 7, 8, 8], of: [8, 7, 7, 8, 8] },
-	// the warm ponds, rationed by nature: sites, hours a site a week, hours a person a week that they allow, hours a
-	// person orders at satiation, and the share of orders filled; the owner-only people's hours a week in years 10, 30
-	// and 60 of seed 20261012, against everyone else's (lowest, highest), and with the fix ownerDefer (trace report)
-	ponds: { sites: 12, siteHours: 150, capacity: 8.4, satiation: 14, filled: [0.6, 0.62], ownerOnly: { years: [10, 30, 60], hours: [8.4, 6.2, 3.3] }, others: [8.3, 8.7], deferred: 8.4 },
-	// round 6 against round 5 (R56): seeds 20261012 and 1 to 9, 60 years, each under both rule sets with the same weather
-	// and draws, from the end of the founding. better / worse / same: seeds; p: the two-sided sign test. r6 and r5: the
-	// lowest and highest seed under each
-	r56: {
-		n: 10,
-		tests: {
-			gini: { better: 10, worse: 0, same: 0, p: 0.002, r6: [0.23, 0.26], r5: [0.26, 0.28] },
-			poorest: { better: 10, worse: 0, same: 0, p: 0.002, r6: [7.98, 8.04], r5: [7.95, 7.99] },
-			ownerOnly: { better: 10, worse: 0, same: 0, p: 0.002, r6: [7.6, 7.72], r5: [7.53, 7.61] },
-			foundingP3: { better: 10, worse: 0, same: 0, p: 0.002, r6: [3, 16], r5: [9, 18] },
-			strictLast: { better: 0, worse: 10, same: 0, p: 0.002, r6: [0.27, 0.33], r5: [0.34, 0.38] },
-			p1Day1: { better: 5, worse: 0, same: 5, p: 0.063 },
-			// after the founding, under both rule sets: no person-day short, no owner-only person-day failing the normal
-			// test, and no tenth failing part 3, on any seed
-			p1After: { better: 0, worse: 0, same: 10, p: 1, r6: [0, 0], r5: [0, 0] },
-			normalAfter: { better: 0, worse: 0, same: 10, p: 1, r6: [0, 0], r5: [0, 0] },
-			p3After: { better: 0, worse: 0, same: 10, p: 1, r6: [0, 0], r5: [0, 0] },
-			bank: { better: 5, worse: 5, same: 0, p: 1 }
-		}
-	},
-	// Law 5 with and without the pools (L5P): seed 20261012, 30 years. pools: their share of all holdings in the last
-	// year; strictLast: the lowest owner-only dividends ÷ bundle in the last year; p3: tenths failing; each [with, without]
-	l5p: { years: 30, pools: [0.149, 0.138], strictLast: [0.233, 0.261], p3: [0, 0] },
-	// the six fixes of round 6, each a switch tried on seeds 20261012, 1 and 2 for 30 years against the base; none helped
-	// its target without making another check worse, so all are off (engine notes, Part 2)
-	fixRuns: { seeds: [20261012, 1, 2], years: 30 },
-	fixes: {
-		ownerDefer: { hours: 8.4, ratio: [[0.233, 0.219], [0.225, 0.219], [0.251, 0.242]] },
-		holdingFloor: { days: 30, unpaid: 1.37 },
-		foundingSignal: { foundingP3: [[6, 0], [5, 1], [6, 0]], riseFail: [18, 19] },
-		newcomerStart: { days: 7, short: [0, 40], foundingP3: [6, 17] },
-		basicsWork: { waterDays: [45, 0], unpaid: 0.78 },
-		lineMw: { mw: 20, from: [21, 22], baseMw: 10 }
-	},
-	// the scenarios and experiments the paper cites, each with its ids and verdict (pass: true, false, or null for a
-	// comparison without a verdict)
-	scenarios: {
-		// the founding rule (bootstrap) in year 1: person-days short with it and without it; the share short on day 0 without it
-		founding: { ids: ['X14', 'B14'], pass: true, shortWith: 0, shortWithout: 68_855, day0Without: 0.007 },
-		// a food COOP fails: person-days short of food (one or two food COOPs); days until receivership
-		foodFails: { ids: ['X5', 'B10'], pass: true, short: 0, receivershipDays: 29 },
-		// newcomers in a slowly growing village: person-days short in their first three years, of how many
-		newcomers: { ids: ['X12'], pass: true, short: 0, personDays: 64_705, from: 1_500, to: 1_606, years: 3 },
-		// people arrive faster than beds are built
-		bedsOutrun: { ids: ['B15'], pass: false, from: 1_500, to: 2_494, short: 763_834, personDays: 1_008_298, years: 3 },
-		// a founder ring of four: its share of the people, the share of others' HEARTS it drew, and its members' holding
-		// at the end against the others' mean, under the Avens' output rule and under the price rule
-		ring: { ids: ['X6', 'B11'], pass: true, people: 0.01, drew: 0.002, endOutput: 1.51, endPrice: 1.11 },
-		// sellers a basic (1, 2, 4): basics' price ÷ full cost, and the share of basics revenue sellers keep above
-		// variable cost; X7: two sellers against one
-		sellers: { ids: ['B31', 'X7'], pass: false, per: [1, 2, 4], cost: [0.98, 1.0, 1.01], keep: [0.531, 0.543, 0.549], two: { cost: 1.09, keep: 0.658 }, one: { cost: 1.07, keep: 0.644 } },
-		// the melt rate swept over 15 years: Proposition 3 fails at each, because the strict test fails; parts 1 and 3 held
-		// at every rate (p1, p3, strict: one per rate); the Gini of holdings
-		rates: { ids: ['B22'], pass: false, years: 15, rates: [0.03, 0.05, 0.07, 0.1, 0.12], p1: [true, true, true, true, true], p3: [true, true, true, true, true], strict: [false, false, false, false, false], gini: [0.28, 0.28, 0.27, 0.27, 0.27] },
-		// all land in the City COOP against private land: the Gini of holdings, and person-days short
-		land: { ids: ['X13', 'B09'], pass: true, years: 8, giniCity: 0.31, giniPrivate: 0.33, shortCity: 0, shortPrivate: 54 },
-		// a closed border: Aven service hours a person a day, person-days short, the mean living standard in the last
-		// year, and tenths failing part 3 (open base against closed; 30 years)
-		closed: { ids: ['B23'], pass: false, years: 30, hoursOpen: 23.75, hoursClosed: 0, shortOpen: 0, shortClosed: 14_951_097, livingOpen: 8.33, livingClosed: 0.79, p3Open: 0, p3Closed: 20 },
-		// a drought, a dark winter, two failing COOPs and a failing well
-		shocks: { ids: ['SH'], pass: false, short: 174_623, p3Failing: 20 },
-		// the food forest at half, the same and one and a half times its yield
-		forest: { ids: ['S02', 'B33'], pass: true, yields: [0.5, 1, 1.5], short: 0 },
-		// surplus energy (geothermal and R&D) against none: person-days short, and the poorest tenth's living standard
-		energy: { ids: ['X10'], pass: true, short: 0, shortWithout: 798_000, poorest: 8.32, poorestWithout: 7.01 },
-		// twice the HEARTS: prices in the old index rose this many times; the largest change of what people got on any of
-		// the seeds (X9), and of real consumption (B28)
-		money: { ids: ['X9', 'B28'], pass: true, seeds: 5, prices: 2.0, largest: 0.009, consumption: 0.0008 },
-		// only physics limits abundance: the scenarios that the test city judges this by, and their verdicts. Without the
-		// geothermal plant, MIND bound a basic on noGeo day-goods (X11: 1,500 residents, 6 years; B29: 30 years)
-		abundance: { tests: { X9: true, AB1: true, X11: false, B14: true, B28: true, B29: false }, noGeo: { X11: 60, B29: 911 } },
-		// Anna's lamp: the melt index after 30 years, 100 idle MIND after 10 years, the half-life (A04); a person's share
-		// of all MIND after 30 years against the resting level (A05 fails: 85.1 % of it)
-		melt: { ids: ['A04', 'A05'], pass: [true, false], years: 30, index30: 0.122456, idle: 100, idleYears: 10, keep10: 49.66, halfLife: 9.9, level30: 106_558, rest: 125_155 },
-		// food bought abroad as a share of what was eaten, in the years of `at` and the last year; the first year the
-		// village grew all it needs (comparison)
-		food: { ids: ['F02', 'F03'], pass: null, bought: [0.76, 0.1, 0.05], at: [1, 10], selfYear: 9 },
-		// treasuries pay out against keep their surplus: people's share of all MIND (X3 after 8 years, B02 after 30)
-		payout: { ids: ['X3', 'B02'], pass: [true, false], years: [8, 30], x3: [0.81, 0.379], b02: [0.837, 0.416] },
-		// holdings made as unequal as Germany's, then the melt: the Gini before, after the shock, and 10 years later
-		germany: { ids: ['B05', 'X4'], pass: true, gini: [0.29, 0.7, 0.33], years: 10 },
-		// Aven skills spread 0, 0.6 and 1.2: the Gini of holdings after 30 years
-		avenSpread: { ids: ['B04'], pass: false, years: 30, spread: [0, 0.6, 1.2], gini: [0.04, 0.26, 0.44] },
-		// Law 5 at 20, 35 and 50 %: the year from which the dividend yield stayed under the 7 % melt
-		law5: { ids: ['B03'], pass: false, shares: [0.2, 0.35, 0.5], belowMeltFrom: [6, 8, 9] }
-	}
-};
-
-/** the names of round 6's six fixes, what each did, and why it is off, in words built from TEST_CITY.fixes */
-export function fixWords() {
-	const f = TEST_CITY.fixes;
-	const pairs = (xs, d = 3) => xs.map(([a, b]) => `${fmt(a, d)} to ${fmt(b, d)}`).join(', ');
-	return [
-		{ id: 'ownerDefer', name: "An owner-only Aven counts what a rationed extra left unspent as income it meant to spend", did: `the owner-only people kept ${fmt(f.ownerDefer.hours, 1)} pond hours a week, like everyone else`, why: `the strict test's last-year ratio fell on every seed tried (${pairs(f.ownerDefer.ratio)})` },
-		{ id: 'holdingFloor', name: "Every Aven keeps a floor of the basic sellers' MIND", did: `with ${f.holdingFloor.days} days of the bundle, it did not reach the cause of the pond falls`, why: 'on one seed, a food COOP left a bill unpaid, so the COOP part failed' },
-		{ id: 'foundingSignal', name: 'A goods COOP short of demand builds on its own in the founding', did: `the founding's failing tenths went from ${pairs(f.foundingSignal.foundingP3, 0)}`, why: `after the founding, part 3 failed ${f.foundingSignal.riseFail[0]} to ${f.foundingSignal.riseFail[1]} tenths, because no extra was left to rise` },
-		{ id: 'newcomerStart', name: "A newcomer's first HEARTS go to the basic sellers", did: `with ${f.newcomerStart.days} days, ${f.newcomerStart.short[1]} person-days of the founding were short, against ${f.newcomerStart.short[0]}`, why: `the founding's failing tenths rose from ${f.newcomerStart.foundingP3[0]} to ${f.newcomerStart.foundingP3[1]}` },
-		{ id: 'basicsWork', name: "The Aven hours that run the basics' plants come first", did: `through the shocks, days short of water went from ${f.basicsWork.waterDays[0]} to ${f.basicsWork.waterDays[1]}`, why: 'on one seed, a food COOP left a bill unpaid, so the COOP part failed' },
-		{ id: 'lineMw', name: 'A larger line to the grid', did: `with ${f.lineMw.mw} MW instead of ${f.lineMw.baseMw}, the bank's yearly balance turned positive from year ${f.lineMw.from[0]} or ${f.lineMw.from[1]}`, why: 'its substation is not in the bill, so it is a test, not a rule' }
-	];
-}
-
-/** the seeds of the test city's latest round on which all three parts of Proposition 3 held: part 1, part 2 by the normal
- *  test and part 3 by YARDSTICK (the strict test is not claimed, so it does not count) */
-export const tcAllThree = (tc = TEST_CITY) => tc.seeds.filter((_, i) => tc.p1[i] === 0 && tc.p2normal[i] === 0 && tc.p3.failing[i] === 0).length;
-
-/** the euro border (Section 8.3): the test village's people, the euros it needed from outside (the bootstrap number)
- *  and their range over five seeds, the build-out bill, and the years within which its exports did not repay them.
- *  An alias of TEST_CITY.bank */
-export const EURO_BORDER = {
-	people: TEST_CITY.people,
-	euros: TEST_CITY.bank.bootstrap,
-	range: TEST_CITY.bank.range,
-	buildout: TEST_CITY.bank.buildout,
-	years: TEST_CITY.years,
-	repaid: TEST_CITY.bank.repaid
-};
 
 /** a p value of a sign test in words */
 export const pWords = (p) => (p < 0.001 ? 'p < 0.001' : `p = ${fmt(p, 3)}`);
@@ -1648,90 +1431,25 @@ export const MODEL_VERSIONS = [
 /** this paper's main run among the versions */
 export const mainVersion = () => MODEL_VERSIONS.find((v) => v.main);
 
-/** the test city's rounds, in order (Section 11.3.2). Each round ran the five seeds 20261012, 1, 2, 3 and 4 for 60
- *  years; Avens follow fixed rules. Per seed: p1, person-days short; p2strict, the lowest owner-only dividends ÷ the
- *  basic bundle in the last year (1 or more passes) and strictFrom, the day from which dividends alone paid the bundle
- *  every day (null: never); p2normal, owner-only person-days failing the normal test, and normalSeeds, the seeds on
- *  which it held (it also needs the lowest holding to last over 100 years at its trend); p3, the tenths failing part 3
- *  (of p3of: ten by holdings and ten by Aven output), judged in real units from round 3 on and before that in a money
- *  index (p3unit); p3by: the yardstick that judged it (YARDSTICK: the verdict; null: the round's own rule, before the
- *  verdict was chosen, so the round is not judged under the verdict); abundance, the day-goods on which MIND, not physics, bound a basic; bank, the bootstrap number on
- *  seed 20261012 and its range over the seeds (from round 3, which added the border); suite, the experiments and
- *  scenarios, with how many passed, failed or only compared. poolShare: the pools' part of each HEART; claimFrom: 'day1'
- *  when the round judged every check from day 1, 'founding' from the end of the founding (round 6: then its numbers are
- *  those after the founding, and part 3 is judged by YARDSTICK). pr: null until the round is merged.
- *  sources: the test city's proof.json at each round's merge commit: round 1 #525 (bcc3ef2), round 2 #526 (d9d48db),
- *  round 3 #528 (8e513a1), round 4 #538 (431be78), round 5 #613 and #621 (acca3c0; engine 20dd2478); round 6 is
- *  TEST_CITY (ff0ba54) */
-export const SIM_HISTORY = [
-	{
-		round: 1, pr: [525], date: '2026-10-13', engine: 'b76e0243', people: 250, poolShare: OLD_POOL_SHARE, claimFrom: 'day1',
-		added: 'the economy alone, growing until physics binds, with Proposition 3 checked per person',
-		p1: [0, 0, 0, 0, 0], p2strict: [0.48, 0.49, 0.48, 0.5, 0.46], strictFrom: [null, null, null, null, null],
-		p2normal: [0, 0, 0, 0, 0], normalSeeds: 4, p3: [20, 20, 20, 20, 20], p3of: 20, p3unit: 'index', p3by: null,
-		abundance: [0, 0, 0, 0, 0], bank: null,
-		suite: { experiments: 16, scenarios: 28, pass: 19, fail: 25, compare: 0 }
-	},
-	{
-		round: 2, pr: [526], date: '2026-10-13', engine: 'ed8f7071', people: 250, poolShare: OLD_POOL_SHARE, claimFrom: 'day1',
-		added: 'an energy order for the plants, and fixes to round 1',
-		p1: [0, 0, 0, 0, 0], p2strict: [2.3, 2.81, 2.56, 3.18, 3.15], strictFrom: [1, 1, 1, 1, 1],
-		p2normal: [0, 0, 0, 0, 0], normalSeeds: 5, p3: [20, 20, 20, 20, 20], p3of: 20, p3unit: 'index', p3by: null,
-		abundance: [0, 0, 0, 0, 0], bank: null,
-		suite: { experiments: 16, scenarios: 30, pass: 20, fail: 25, compare: 1 }
-	},
-	{
-		round: 3, pr: [528], date: '2026-10-13', engine: 'e5239873', people: 1_500, poolShare: OLD_POOL_SHARE, claimFrom: 'day1',
-		added: 'the village built up from its first settlers, the euro border, and part 3 judged in real units',
-		p1: [108, 95, 123, 148, 110], p2strict: [1.25, 1.26, 1.27, 1.34, 1.24], strictFrom: [4_355, 5_100, 4_391, 7_021, 4_411],
-		p2normal: [0, 0, 0, 3, 0], normalSeeds: 3, p3: [20, 20, 20, 20, 20], p3of: 20, p3unit: 'real', p3by: null,
-		abundance: [14, 12, 18, 45, 18], bank: { bootstrap: 724.6e6, range: [722.8e6, 731.1e6] },
-		suite: { experiments: 17, scenarios: 36, pass: 10, fail: 35, compare: 8 }
-	},
-	{
-		round: 4, pr: [538], date: '2026-10-13', engine: '1c0bea6c', people: 1_500, poolShare: OLD_POOL_SHARE, claimFrom: 'day1',
-		added: 'the AI market, audited prices for the village, and fixes to round 3',
-		p1: [545, 408, 505, 432, 300], p2strict: [0.27, 0.25, 0.25, 0.27, 0.26], strictFrom: [null, null, null, null, null],
-		p2normal: [238, 128, 195, 135, 82], normalSeeds: 0, p3: [20, 20, 20, 20, 19], p3of: 20, p3unit: 'real', p3by: null,
-		abundance: [401, 350, 424, 390, 305], bank: { bootstrap: 602.29e6, range: [587.5e6, 603.8e6] },
-		suite: { experiments: 18, scenarios: 36, pass: 14, fail: 31, compare: 9 }
-	},
-	{
-		round: 5, pr: [613, 621], date: '2026-10-13', engine: '20dd2478', people: 1_500, poolShare: OLD_POOL_SHARE, claimFrom: 'day1',
-		added: 'the dome factory in the village, and fixes to round 4',
-		p1: [0, 424, 1, 0, 1], p2strict: [0.36, 0.35, 0.33, 0.35, 0.38], strictFrom: [null, null, null, null, null],
-		p2normal: [0, 21, 0, 0, 0], normalSeeds: 4, p3: [17, 13, 12, 18, 16], p3of: 20, p3unit: 'real', p3by: null,
-		abundance: [0, 3, 2, 0, 2], bank: { bootstrap: 487.87e6, range: [478.04e6, 507.01e6] },
-		suite: { experiments: 18, scenarios: 36, pass: 20, fail: 25, compare: 9 }
-	},
-	{
-		round: TEST_CITY.round, pr: null, date: '2026-10-14', engine: TEST_CITY.engine, people: TEST_CITY.people, poolShare: TEST_CITY.poolShare, claimFrom: 'founding',
-		added: "this paper's rules: the pools' part, Law 5 paid to the pools, the City COOP's LP tokens, the Tribe COOP, work proposals, and the claim from the end of the founding",
-		p1: TEST_CITY.p1, p2strict: TEST_CITY.p2strict, strictFrom: [null, null, null, null, null],
-		p2normal: TEST_CITY.p2normal, normalSeeds: TEST_CITY.normalSeeds, p3: TEST_CITY.p3.failing, p3of: TEST_CITY.p3.of, p3unit: 'real', p3by: YARDSTICK,
-		abundance: TEST_CITY.abundance, bank: { bootstrap: TEST_CITY.bank.bootstrap, range: TEST_CITY.bank.range },
-		suite: { experiments: TEST_CITY.suite.experiments, scenarios: TEST_CITY.suite.scenarios, pass: TEST_CITY.suite.pass, fail: TEST_CITY.suite.fail, compare: TEST_CITY.suite.compare }
-	}
-];
-
-/** how many per-seed values pass `ok` (by default: the value is 0, as for person-days short) */
-export const holdsCount = (xs, ok = (v) => v === 0) => xs.filter(ok).length;
-
 /** a hypothesis's status from how many runs held, of how many: all → 'supported', none → 'failing', some → 'mixed',
  *  no run → 'open'. 'proven' is kept for mathematics */
 export const statusFrom = (held, of) => (!of ? 'open' : held === of ? 'supported' : held === 0 ? 'failing' : 'mixed');
 
+/** the same from a list of tests, each true (held), false (failed) or null (no simulation measures it yet): only the
+ *  tests with a result count, so a hypothesis with no evidence at all comes out 'open' */
+export const statusOf = (tests) => {
+	const run = tests.filter((t) => t != null);
+	return statusFrom(run.filter(Boolean).length, run.length);
+};
+
 /** the band around full cost within which Section 10's H6 calls a price "near cost" (audit B13: within 10 %) */
 export const COST_BAND = 0.1;
 
-const tcN = TEST_CITY.seeds.length;
-const tcScen = TEST_CITY.scenarios;
 const mainChecks = LADDER.find((v) => v.id === 'main').checks;
 const infraBelow = INFRA_MINDS.filter((k) => MIND_RETURNS.byMind[k].mean < RATE);
 const infraWon = INFRA_MINDS.filter((k) => MIND_RETURNS.byMind[k].share60 === 1);
-const nearCost = tcScen.sellers.cost.every((c) => Math.abs(c - 1) <= COST_BAND);
-const payoutHeld = [DYN.people > 0.5, ...tcScen.payout.pass].filter(Boolean).length;
-const abundanceTests = Object.values(tcScen.abundance.tests);
+// H6: the economic model records no price against full cost, so that half of H6 has no result yet (null)
+const nearCost = null;
 // H11 and H15: the upgrades of round 1 that tested them, each run on UPGRADES.same.n seeds. H11 (spread ownership pays
 // the basics): the seeds on which dividends alone paid every owner-only person-day from day 8 (the strict test), under
 // the holding floor and under paying first with the MIND that earns least (holdFloor.md and payLeast.md: 0 under each).
@@ -1744,54 +1462,45 @@ const rentTargets = [UPGRADES.notKept.rentLaw5].flatMap((r) => [
 ]);
 
 /** the hypotheses of Section 10 and their status, derived from the numbers where they can be, so that new numbers
- *  update them. Each part of Proposition 3 counts the 8-seed check of the economic model's main run (SEEDS.new) and the
- *  base seeds of the test city's latest round (TEST_CITY); `model` and `city` are [held, of]. Part 3 and "all three"
- *  are judged by YARDSTICK in both, and part 2 by the normal test. A status the numbers cannot give yet is 'open', with
- *  `untested` saying why. The words of each hypothesis are in the page (Section 10) */
+ *  update them. The evidence is the economic model's: each part of Proposition 3 counts the 8-seed check of its main
+ *  run (SEEDS.new); `model` is [held, of]. Part 3 and "all three" are judged by YARDSTICK, and part 2 by the normal
+ *  test. A hypothesis that no simulation tests yet comes out 'open' through statusOf, with `untested` saying why. The
+ *  words of each hypothesis are in the page (Section 10) */
 export const HYPOTHESES = {
 	H1: { status: 'proven' }, // Proposition 1, Section 5.3
 	H2: { status: 'proven' }, // Proposition 2, Section 9.2 (its condition is H4)
 	H3: {
 		yardstick: YARDSTICK,
 		model: [allThreeHeld(SEEDS.new), SEEDS.n],
-		city: [tcAllThree(), tcN],
 		main: mainChecks,
-		status: statusFrom(allThreeHeld(SEEDS.new) + tcAllThree(), SEEDS.n + tcN),
+		status: statusFrom(allThreeHeld(SEEDS.new), SEEDS.n),
 		parts: [
-			{ model: [SEEDS.new.check1, SEEDS.n], city: [holdsCount(TEST_CITY.p1), tcN] },
-			{ model: [SEEDS.new.check2, SEEDS.n], city: [holdsCount(TEST_CITY.p2normal), tcN] },
-			{ model: [p3Held(SEEDS.new), SEEDS.n], city: [holdsCount(TEST_CITY.p3.failing), tcN] }
-		].map((p) => ({ ...p, status: statusFrom(p.model[0] + p.city[0], p.model[1] + p.city[1]) })),
-		// the strict test, not claimed: dividends alone, on every owner-only person-day after year 10 of the model's main
-		// run, and in the last year on the test city's base seeds
-		strict: { model: [PROOF.strict.shareAfter10 >= 1 ? 1 : 0, 1], city: [holdsCount(TEST_CITY.p2strict, (v) => v >= 1), tcN] }
+			{ model: [SEEDS.new.check1, SEEDS.n] },
+			{ model: [SEEDS.new.check2, SEEDS.n] },
+			{ model: [p3Held(SEEDS.new), SEEDS.n] }
+		].map((p) => ({ ...p, status: statusFrom(p.model[0], p.model[1]) })),
+		// the strict test, not claimed: dividends alone, on every owner-only person-day after year 10 of the main run
+		strict: { model: [PROOF.strict.shareAfter10 >= 1 ? 1 : 0, 1] }
 	},
 	// μ below the melt: the 8-seed check and the 24 same-shock seeds
 	H4: { model: [SEEDS.new.below, SEEDS.n], same: [SAME_SHOCK.new.below, SAME_SHOCK.n], status: statusFrom(SEEDS.new.below + SAME_SHOCK.new.below, SEEDS.n + SAME_SHOCK.n) },
 	// long-lived projects get built (they made all of their good by the last year) and their rise is shared (their
 	// MINDs returned less than the melt)
 	H5: { won: infraWon, below: infraBelow, of: INFRA_MINDS.length, status: infraWon.length && infraBelow.length === INFRA_MINDS.length ? 'supported' : infraWon.length || infraBelow.length ? 'mixed' : 'failing' },
-	// rivals keep basics near cost: the test city's sellers within COST_BAND of full cost; no basic but water with one
-	// seller in the model's last year
-	H6: { nearCost, sole: soleMakers(), status: nearCost && !soleMakers().length ? 'supported' : nearCost || !soleMakers().length ? 'mixed' : 'failing' },
-	// only physics limits abundance: base seeds on which MIND never bound a basic after the founding, and the scenarios
-	// that the test city judges this part by (tcScen.abundance: twice the HEARTS among them)
-	H7: {
-		city: [holdsCount(TEST_CITY.abundance), tcN],
-		tests: [abundanceTests.filter(Boolean).length, abundanceTests.length],
-		money: tcScen.money.pass,
-		status: statusFrom(holdsCount(TEST_CITY.abundance) + abundanceTests.filter(Boolean).length, tcN + abundanceTests.length)
-	},
+	// rivals keep basics near cost: prices within COST_BAND of full cost (no result: nearCost is null) and no basic but
+	// water with one seller in the model's last year
+	H6: { nearCost, sole: soleMakers(), status: statusOf([nearCost, !soleMakers().length]) },
+	// only physics limits abundance: the economic model does not record what binds a basic, so nothing tests it yet
+	H7: { status: statusOf([]), untested: 'binding' },
 	// energy binds growth: the model assumes productivity growth and has no energy limit
-	H8: { energy: tcScen.energy.pass, status: 'open', untested: 'model' },
-	// the euro border balances: exports repay the euros the city needed
-	H9: { repaid: TEST_CITY.bank.repaid, status: TEST_CITY.bank.repaid ? 'supported' : 'failing' },
-	// the founding leaves no one short: the model's main run (its founding week invests in the sellers of the four
-	// basics, SIM.switches.founding) and the test city's base seeds, each with no person-day short in its founding
+	H8: { status: statusOf([]), untested: 'energy' },
+	// the euro border balances: exports repay the euros the city needed. The economic model is a closed city (A1)
+	H9: { status: statusOf([]), untested: 'border' },
+	// the founding leaves no one short: the model's main run, whose founding week invests in the sellers of the four
+	// basics (SIM.switches.founding), with no person-day short in its founding
 	H10: {
 		model: PROOF.genesis.short === 0,
-		city: [holdsCount(TEST_CITY.founding.p1), tcN],
-		status: statusFrom((PROOF.genesis.short === 0 ? 1 : 0) + holdsCount(TEST_CITY.founding.p1), 1 + tcN)
+		status: statusOf([PROOF.genesis.short === 0])
 	},
 	// spread ownership (C4) pays the basics: the strict test under the economic model's two Aven defaults of round 1
 	H11: {
@@ -1799,15 +1508,15 @@ export const HYPOTHESES = {
 		held: [spreadTests.reduce((s, t) => s + t.strictSeeds, 0), spreadTests.length * UPGRADES.same.n],
 		status: statusFrom(spreadTests.reduce((s, t) => s + t.strictSeeds, 0), spreadTests.length * UPGRADES.same.n)
 	},
-	// treasuries pay out, so people own most MIND: the model's last ten years and the test city's two payout scenarios
-	H12: { held: payoutHeld, of: 1 + tcScen.payout.pass.length, status: statusFrom(payoutHeld, 1 + tcScen.payout.pass.length) },
+	// treasuries pay out, so people own most MIND: people's share of all MIND by value in the model's last ten years
+	H12: { people: DYN.people, status: statusOf([DYN.people > 0.5]) },
 	// the melt keeps money moving: the model assumes how much people spend
-	H13: { status: 'open', untested: 'spending' },
+	H13: { status: statusOf([]), untested: 'spending' },
 	// selection by where Avens invest improves governance
-	H14: { status: 'open', untested: 'governance' },
+	H14: { status: statusOf([]), untested: 'governance' },
 	// ground rent as a Law 5 sale lifts cityMIND and the owner-only people (ACCEPTED.groundRent): the economic model's
 	// run with rent as a sale (UPGRADES.notKept.rentLaw5), its two targets
 	H15: { held: [rentTargets.filter(Boolean).length, rentTargets.length], status: statusFrom(rentTargets.filter(Boolean).length, rentTargets.length) },
 	// either estate rule keeps the Gini bounded (ACCEPTED.estates): no rule is chosen or simulated yet
-	H16: { status: 'open', untested: 'estates' }
+	H16: { status: statusOf([]), untested: 'estates' }
 };
