@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 	import { asset } from '$lib/media/url';
+	import FounderCounter from '$lib/FounderCounter.svelte';
 	// the banner (a woman on a mountain top at sunrise) and Samuel's portrait, by hash
 	const BANNER = 'a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg';
 	const SAMUEL = 'dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg';
@@ -40,14 +41,17 @@
 				alt="A woman on a mountain top at sunrise, arms wide open over the sea."
 			/>
 			<!-- set like a magazine cover: a kicker, the headline in two weights, a rule, the deck beside a big number -->
-			<h1 class="story">
-				<span class="opening">This is the story</span>
-				<span class="founders"><span class="light">how</span> 1 million founders build their own <em>solarpunk</em> city,</span>
-				<span class="deck">
-					<span class="when">first in game,<br />then in real,</span>
-					<span class="years"><span class="just">in just</span><span class="number">16</span><span class="unit">years.</span></span>
-				</span>
-			</h1>
+			<div class="story">
+				<h1 class="cover">
+					<span class="opening">This is the story</span>
+					<span class="founders"><span class="light">how</span> 1 million founders build their own <em>solarpunk</em> city,</span>
+					<span class="deck">
+						<span class="when">first in game,<br />then in real,</span>
+						<span class="years"><span class="just">in just</span><span class="number">16</span><span class="unit">years.</span></span>
+					</span>
+				</h1>
+				<FounderCounter />
+			</div>
 		</header>
 	{/if}
 
@@ -179,12 +183,16 @@
 	.story {
 		position: relative;
 		z-index: 1;
-		display: grid;
 		width: 100%;
 		max-width: 1180px;
 		margin: 0 auto;
 		padding: 0 1.5rem clamp(2.5rem, 7vh, 4.5rem);
 		color: #fffaf0;
+	}
+
+	.cover {
+		display: grid;
+		margin: 0;
 	}
 
 	.opening {
