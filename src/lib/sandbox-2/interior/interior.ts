@@ -6,7 +6,8 @@
  *   large   70 m   the medium domes of the second ring
  *   grand  100 m   the large dome: a green middle, and on its north a sunken pond with a waterfall, the wall behind closed stone
  *   master 136 m   the master dome in the centre: a round theatre sunk into its floor,
- *                  and its ground ring given to the village's workshops
+ *                  and its ground ring given to the village's workshops (Things of the
+ *                  library, built in the asset box: ./things.js)
  *
  * The big domes have four doors, one to each point of the compass (the
  * glamping dome one), and every dome stands in a
@@ -24,7 +25,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
-import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, workshops, type Kit } from './spaces'
+import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { antHills, apiary, fishes, herd, TANK_FISH } from './animals'
 import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
@@ -41,6 +42,8 @@ import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-k
 import { createForest, type FloraDrawn, type Forest } from './flora.js'
 import { BIOMES, groundMaterial } from '$lib/biomes'
 import { createCover, type Cover } from './cover.js'
+import type { Drawn } from './drawn.js'
+import { standThings, workshopsOf } from './things.js'
 import { swapLegacy } from './legacy.js'
 import { pick as pickPlant, type Garden } from './sandbox5.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
@@ -522,6 +525,10 @@ export type InteriorOptions = {
 	 *  ./flora.js `INSIDE`), and its floor's cover by the host's renderer of the library (`drawn`, ./drawn.js
 	 *  `createDrawn`, every copy at its finest), both of which the host updates every frame */
 	flora?: { garden: Garden; seed: string; flora: FloraDrawn; drawn: Parameters<typeof createCover>[0]['drawn'] }
+	/** the host's renderer of the library's Things (./drawn.js `createDrawn`, every copy at its finest), which the host
+	 *  updates every frame: what of the dome is a Thing of the library (the master dome's workshops, ./things.js) is put
+	 *  down in it. Without one (standing alone) the dome draws them with a renderer of its own. */
+	library?: Drawn
 }
 /**
  * Building a dome into someone else's world (Sandbox 4's village): its scene,
@@ -758,6 +765,31 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 	const swapR = seeded(kind.length * 97 + 13)
 	const swap = (root: THREE.Object3D) => {
 		if (forest && opts.flora) swapLegacy(root, scene, forest, { warm: true, seed: opts.flora.seed, r: swapR })
+	}
+	/** what of the dome is a Thing of the library (./things.js), built in the asset box: drawn by the host's renderer of
+	 *  the library and put down there once the dome joins its world, or else by a renderer of the dome's own, in its
+	 *  own scene, made when it first has a Thing to put down */
+	let ownLibrary: Drawn | null = null
+	const library = async () => {
+		if (opts.library) return opts.library
+		if (!ownLibrary) {
+			const [{ createDrawn }, { LEVELS }] = await Promise.all([import('./drawn.js'), import('$lib/assets/render/lod.js')])
+			ownLibrary ??= createDrawn({ renderer, camera, scene, boxes: 1, levels: [LEVELS[0]!], force: 0 })
+		}
+		return ownLibrary
+	}
+	/** a renderer of the dome's own is drawn by the dome, every frame */
+	const drawOwnLibrary = () => ownLibrary?.update()
+	const thingsAt = opts.library && host ? [host.x, 0.03, host.z] : [0, 0, 0]
+	let things: ReturnType<typeof standThings> | null = null
+	drop.push(() => {
+		things?.dispose()
+		ownLibrary?.dispose()
+	})
+	// the master dome's workshops asked for at once, so the box builds them while the page builds the rest of the dome
+	if (kind === 'master') {
+		const lib = await library()
+		for (const t of workshopsOf(0)) lib.use(t.ref, true, false)
 	}
 	/** Sandbox 5's trees, to stand in the way by their trunks once grown */
 	const floraTreesAll: { c: { x: number; z: number; r: number }; kind: ReturnType<typeof pickPlant>; s: number }[] = []
@@ -2269,16 +2301,17 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		}
 
 		await slice()
-		/* in the master dome, the rest of the ring is the village's workshops */
-		if (kind === 'master')
-			for (const w of workshops(kit, (rIn + rWall) / 2 + 0.5)) {
-				await slice()
-				scene.add(await bakeIn(w.group))
-				colliders.push(...w.colliders)
+		/* in the master dome, the rest of the ring is the village's workshops: Things of the library (./things.js) */
+		if (kind === 'master') {
+			const ring = workshopsOf((rIn + rWall) / 2 + 0.5)
+			things = standThings(await library(), ring, { at: thingsAt, shown: !(opts.library && host) })
+			colliders.push(...things.colliders)
+			for (const w of ring) {
 				// working lights over every workshop
-				scene.add(box(1.2, 0.06, 0.4, glowMat, w.group.position.x, H - 0.52, w.group.position.z, w.group.rotation.y))
-				addLamp(w.group.position.x, H - 0.7, w.group.position.z, 18, 14)
+				scene.add(box(1.2, 0.06, 0.4, glowMat, w.x, H - 0.52, w.z, w.turn))
+				addLamp(w.x, H - 0.7, w.z, 18, 14)
 			}
+		}
 
 		await slice()
 		/* lamps for the night: pendants over the gallery walkway, lights in the ceiling of the
@@ -2400,6 +2433,10 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		for (const t of floraTreesAll) t.c.r = Math.min(0.6, (forest.shape(t.kind)?.foot ?? 0.3) * t.s) + 0.2
 	}
 
+	// the library's Things built (in the asset box), so the dome stands whole when it is first seen
+	await things?.ready()
+	stopIfCancelled()
+
 	// the lamps are all in place: set them for the hour
 	setSun(hourNow())
 
@@ -2414,6 +2451,8 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 			// the renderers its plants and its cover are drawn by are the host's: their copies handed back for the next dome
 			forest?.dispose()
 			floorCover?.dispose()
+			things?.dispose()
+			ownLibrary?.dispose()
 			scene.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
 		}
 		const embedded: EmbeddedDome = {
@@ -2435,12 +2474,14 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 			update: (t) => {
 				for (const a of animated) a(t)
 				keepDetail(camera.position.x - host.x, camera.position.z - host.z)
+				drawOwnLibrary()
 			},
 			setHour: (hour) => setSun(hour),
 			pickPlant: (o, d, far) => forest?.pick(o, d, far) ?? null,
 			show: (on) => {
 				forest?.show(on)
 				floorCover?.show(on)
+				things?.show(on)
 			},
 			dispose: disposeAll
 		}
@@ -2494,9 +2535,10 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 			})
 		}
 		host.scene.add(scene)
-		// its plants and its floor's cover with it
+		// its plants, its floor's cover and its Things with it
 		forest?.show(true)
 		floorCover?.show(true)
+		things?.show(true)
 		// about a quarter of a million vertices a frame: small pieces come in dozens, a big merged forest alone
 		let budget = 0
 		for (const p of pieces) {
@@ -2601,6 +2643,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		}
 		// the sun moves with the game clock: a game hour is two real minutes, so a look every second is plenty
 		sky!.tick(now)
+		drawOwnLibrary()
 		// the film camera draws the canvas itself while it holds it
 		if (!filmDraws()) renderer.render(scene, camera)
 		// keep it smooth; while a film is shot every frame is rendered at the resolution it asks for
@@ -2609,6 +2652,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 	}
 	walker.update(0)
 	walked()
+	drawOwnLibrary()
 	if (!filmDraws()) renderer.render(scene, camera)
 	onProgress?.('ready')
 	tick()
@@ -2634,6 +2678,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		advance: () => {
 			lightNearest()
 			keepDetail(camera.position.x, camera.position.z)
+			drawOwnLibrary()
 			// what the hour gives the lamps, before the shot's own changes
 			glowMat.emissive.set('#ffc070')
 			for (const p of pool) p.color.set('#ffc98a')
@@ -2676,6 +2721,8 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 			cancelAnimationFrame(frame)
 			forest?.dispose()
 			floorCover?.dispose()
+			things?.dispose()
+			ownLibrary?.dispose()
 			sound.dispose()
 			world.disconnect()
 			walker.dispose()

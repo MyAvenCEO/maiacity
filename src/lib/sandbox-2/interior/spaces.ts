@@ -5,7 +5,9 @@
  * outside the arcade, a ring of café squares where people eat in the open.
  *
  * Each space is drawn in its own frame: x runs along the ring, +z points out
- * toward the glass, and the space is placed on the ring by `place`.
+ * toward the glass, and the space is placed on the ring by `place`. The
+ * workshops are Things of the library ($lib/models/domerooms.js), and the
+ * master dome puts copies of them down on its ring (./things.js `workshopsOf`).
  */
 import * as THREE from 'three'
 import { berryBush, herb, seeded, shrub } from './plants'
@@ -413,25 +415,6 @@ function repair(k: Kit): Space {
 	for (let i = 0; i < 8; i++) g.add(k.box(0.24, 0.06, 0.3, glaze[i % glaze.length]!, 1.4 + (i % 4) * 0.52, 0.8, -0.8 + Math.floor(i / 4) * 0.4))
 	cs.push({ x: 2.2, z: -0.6, r: 1.2 })
 	return { group: g, colliders: cs }
-}
-
-/**
- * The workshops round the master dome's ground floor, between its doors, its
- * stair, its kitchen and its aquaponics.
- */
-export function workshops(k: Kit, rr: number): Space[] {
-	const at: [number, (k: Kit) => Space][] = [
-		[0.36, (k) => cowork(k, 1)],
-		[1.2, woodshop],
-		[1.95, (k) => studio(k, 10)],
-		[2.55, pottery],
-		[2.92, (k) => library(k, 5)],
-		[3.52, bakery],
-		[4.36, (k) => studio(k, 30)],
-		[5.1, repair],
-		[5.93, (k) => cowork(k, 2)]
-	]
-	return at.map(([a, make]) => place(make(k), rr, a))
 }
 
 /* ── outside: the café squares round the master dome ───────────────────── */

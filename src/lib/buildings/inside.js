@@ -149,9 +149,10 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 		place(handle.ghost);
 		onGhost?.(handle.ghost);
 		// a dome planted with our real plants grows the warm garden Sandbox 4 grows under its glass, drawn by the
-		// universal renderer at the distances Sandbox 4 draws it at under the glass
+		// universal renderer at the distances Sandbox 4 draws it at under the glass; and what of a dome is a Thing of the
+		// library (the master dome's workshops) is drawn by the renderer of the library its floor's cover is drawn by
 		let flora;
-		if (item.flora) {
+		if (item.flora || kind === 'master') {
 			const [{ SANDBOX_5 }, { createDrawn, createFlora }, { INSIDE }, { LEVELS }] = await Promise.all([
 				import('$lib/sandbox-2/interior/sandbox5.js'),
 				import('$lib/sandbox-2/interior/drawn.js'),
@@ -159,10 +160,10 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 				import('$lib/assets/render/lod.js')
 			]);
 			if (stopped) return null;
-			plants = createFlora({ renderer, camera, scene, reach: INSIDE });
-			// its floor's cover, every copy at its finest shape, as the cover always was
+			if (item.flora) plants = createFlora({ renderer, camera, scene, reach: INSIDE });
+			// its floor's cover and its Things, every copy at its finest shape, as the cover always was
 			laid = createDrawn({ renderer, camera, scene, boxes: 1, levels: [LEVELS[0]], force: 0 });
-			flora = { garden: SANDBOX_5.flora.inside, seed: SANDBOX_5.flora.seed, flora: plants, drawn: laid };
+			if (item.flora) flora = { garden: SANDBOX_5.flora.inside, seed: SANDBOX_5.flora.seed, flora: plants, drawn: laid };
 		}
 		if (stopped) return null;
 		const h = await interior
@@ -177,6 +178,7 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 					host: { scene, camera, renderer, x: 0, z: 0 },
 					cancelled: () => stopped,
 					hurry: () => true,
+					library: laid ?? undefined,
 					flora
 				}
 			)

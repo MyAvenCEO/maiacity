@@ -109,8 +109,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// its trees in full near you, coarser to 40 m, and beyond that each a picture of itself
 	const forest: Forest | null = plantsOut ? createForest({ flora: plantsOut }) : null
 	/** the library's assets the village puts down, each built in the asset box and drawn at its finest however far off,
-	 *  as the village always drew what it baked (./drawn.js): its playgrounds, Sandbox 5's coops and hutches, and Sandbox
-	 *  5's floor cover, outside and in the domes */
+	 *  as the village always drew what it baked (./drawn.js): its playgrounds, the master dome's workshops, Sandbox 5's
+	 *  coops and hutches, and Sandbox 5's floor cover, outside and in the domes */
 	const library = createDrawn({ renderer, camera, scene, boxes: 1, levels: [LEVELS[0]!], force: 0, shadows: staleShadows })
 	const swapR = seeded(707)
 	const swap = (root: THREE.Object3D) => {
@@ -1209,7 +1209,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const job = { i, cancelled: false }
 		building = job
 		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
+		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
 			.then((h) => {
 				if (building === job) building = null
 				if (job.cancelled || !h.embedded) return h.dispose()
