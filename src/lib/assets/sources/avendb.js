@@ -10,13 +10,20 @@
  * reads such a ref today, and this source refuses it with one error: avenDB storage is not switched on.
  *
  * Switching it on (C10 of the code architecture plan, the Maia City COOP's vault) is the one change here: `recipeAt`
- * reads the vault's `recipe` entry (`recipeEntryOf` below) for that group and id at that version, holds its source to
- * the hash its card names and its engine to ../engines.json, and hands back what ../recipes.js `recipeAt` hands back
- * for a repo recipe, `{ hash, code }`. The box, the checks after it and the device's cache stay as they are.
+ * reads the vault's `recipe` entry (`recipeEntryOf` below) for that group and id at that version, holds its file, the
+ * recipe's source, to the hash its card names and its engine to ../engines.json, and hands back what ../recipes.js
+ * `recipeAt` hands back for a repo recipe, `{ hash, code }`. The box, the checks after it and the device's cache stay
+ * as they are.
  */
+import { blake3 } from '@noble/hashes/blake3.js';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import ASSET from '../schemas/asset.v1.json';
 import { engineAt } from '../engines.js';
 import { paramsIn } from '../params.js';
+import { refOf } from '../refs.js';
+
+/** the BLAKE3 hash of a text, in hex, as ../recipes.js names a recipe by it @param {string} text */
+const hashText = (text) => bytesToHex(blake3(utf8ToBytes(text)));
 
 /** what a vault ref starts with */
 export const VAULT = 'vault:';
@@ -79,22 +86,41 @@ export const avendb = {
 /** the modules a recipe's code requires of its engine, as ../box/plugin.js reads them @param {string} code */
 export const libsOf = (code) => [...new Set([...code.matchAll(/\brequire\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]))];
 
+/** the media type of a recipe's file: a script, which a page never runs but the box does */
+export const RECIPE_MEDIA = 'text/javascript';
+
+/** the tags a recipe entry is found by: its asset's group, and the ref it is named by @param {string} group */
+export const groupTag = (group) => `group:${group}`;
+/** @param {string} ref a ref without values, `group/id@v[:variant]` */
+export const refTag = (ref) => `ref:${ref}`;
+
+/** a card's ref without the values it was built with: what its recipe is named by @param {any} card */
+export const labelOf = (card) => refOf(card.group, card.id, card.version, card.variant);
+
 /**
- * One of our recipes as avenDB's `recipe` entry (avenDB's `Recipe, v1`: a code entry, avendb/docs/ARCHITECTURE.md
- * section 9, with the asset's card beside it), the record the Maia City COOP writes for it once storage is switched
- * on. Nothing here writes it. Its source is the recipe file byte for byte, so its BLAKE3 hash is the recipe's name
- * (the card's `recipe`); its engine the frozen box engine the card names; its manifest the modules the recipe
- * requires of that engine; its params the declared ones a row can hold (a number or a whole number: a row's default is
- * a number, so a text parameter, a seed or a name, stays in the card and the recipe alone); its contract the box's
- * time limit and the checks a build passes before the page uses it: `hash` (the source hashes to the name its card
- * gives it), `card` (the card fits ../schemas/card.v1.json and names that recipe, ../load.js) and `budget` (what the
- * box hands back stays within ../box/rebuild.js BUDGET).
- * @param {{ code: string, card: any, ms?: number }} recipe its file, the card of a build of it (../card.js), the
- *   box's time limit for it (src/lib/sandbox/frame.js TIMEOUT)
+ * One of our recipes as the Maia City vault keeps it (V5 of the avenDB migration): a `recipe` entry of avenDB's
+ * `Recipe, v1` (a code entry, avendb/docs/ARCHITECTURE.md section 9, with the asset's card beside it), and its source,
+ * the recipe file byte for byte, as the entry's file: a code entry's `source` holds at most 200,000 characters, which
+ * the stand-in's head outgrows, and a file any size (Samuel 2026-10-17). Nothing here writes it. The file's BLAKE3 hash
+ * is the recipe's name, the one its card gives (`recipe`) and every build is named by, which a reader holds it to; the
+ * record's own `source` stays empty. Its engine is the frozen box engine the card names; its manifest the modules the
+ * recipe requires of that engine; its params the declared ones a row can hold (a number or a whole number: a row's
+ * default is a number, so a text parameter, a seed or a name, stays in the card and the recipe alone); its contract
+ * the box's time limit and the checks a build passes before the page uses it: `hash` (the source hashes to the name
+ * its card gives it), `card` (the card fits ../schemas/card.v1.json and names that recipe, ../load.js) and `budget`
+ * (what the box hands back stays within ../box/rebuild.js BUDGET); its card the card of a build at its own values
+ * (./cards.json). Tagged with its group and its ref (`group:plants`, `ref:plants/apple@2`); a kind's first variant
+ * also with the ref that names no variant (`ref:machines/pickup@1`), which names it where no variant is asked for, as
+ * the repo's index does (../recipes.js `hashOf`).
+ * @param {{ code: string, card: any, ms?: number, first?: boolean }} recipe its file, the card of a build of it
+ *   (./cards.json), the box's time limit for it (src/lib/sandbox/frame.js TIMEOUT), and whether it is its kind's first
+ *   variant
+ * @returns {{ type: 'recipe', tags: string[], value: any, file: { media: string, text: string } }}
  */
-export function recipeEntryOf({ code, card, ms = 20000 }) {
+export function recipeEntryOf({ code, card, ms = 20000, first = false }) {
 	const engine = engineAt(card.engine);
 	if (!engine) throw new Error(`${card.ref}: no engine ${card.engine}`);
+	if (hashText(code) !== card.recipe) throw new Error(`${card.ref}: its card names another recipe than this file`);
 	/** @type {import('../params.js').Param[]} */
 	const declared = card.params ?? [];
 	const params = declared
@@ -103,15 +129,18 @@ export function recipeEntryOf({ code, card, ms = 20000 }) {
 			const range = Object.fromEntries(Object.entries({ min: p.min, max: p.max, step: p.step }).filter(([, x]) => x !== undefined));
 			return { id: i + 1, name: p.id, kind: p.type, ...(Object.keys(range).length ? { range } : {}), default: Number(p.value) };
 		});
-	return {
+	const label = labelOf(card);
+	const tags = [groupTag(card.group), refTag(label), ...(first && card.variant ? [refTag(refOf(card.group, card.id, card.version))] : [])];
+	const value = {
 		kind: 'recipe',
 		title: card.label,
 		note: card.note ?? '',
-		source: code,
+		source: '',
 		engine: { host: 'box', version: engine.v, hash: engine.blake3 },
 		manifest: { libs: libsOf(code) },
 		params,
 		contract: { budgets: { ms }, invariants: ['hash', 'card', 'budget'] },
 		card
 	};
+	return { type: 'recipe', tags, value, file: { media: RECIPE_MEDIA, text: code } };
 }

@@ -2,7 +2,7 @@
 // Phase 10 of the asset pipeline: avenDB ready, not stored. A ref may name an asset kept in a vault
 // (`vault:<vault id>/<group>/<id>@<v>`, ./avendb.js); it is read strictly, and every loader refuses it with one error
 // while avenDB storage is not switched on. A recipe of ours maps onto avenDB's `recipe` entry (its code entry schema of
-// C4b, read from avendb/ and never changed there), and nothing here writes to avenDB.
+// C4b, read from avendb/ and never changed there), its source the entry's file (V5), and nothing here writes to avenDB.
 // Run: bun test src/lib/assets/sources
 import { expect, mock, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -23,14 +23,14 @@ const { StorageOff, VAULT_REF, avendb, parseVaultRef, recipeEntryOf } = await im
 const { readRef, repoRef, assetAt, objectAt, parseRef } = await import('../index.js');
 const { buildAt, hashOf, parseBuild, recipeAt } = await import('../recipes.js');
 const { canonical, keyOf, loadAsset } = await import('../load.js');
-const { cardOf } = await import('../card.js');
-const { metaOf } = await import('../recipe.js');
 const { ENGINES, recipeFile } = await import('../engines.js');
 const { check, checkCard } = await import('../schemas/index.js');
 const { TIMEOUT } = await import('../../sandbox/frame.js');
 const { parseCodeRef } = await import('../../../../game/code/index.js');
 
 const ROOT = new URL('../../../../', import.meta.url).pathname;
+// every recipe's card, as the box hands it back for a build at its own values (./cards.js)
+const CARDS = JSON.parse(readFileSync(new URL('./cards.json', import.meta.url), 'utf8')).cards;
 const V = 'ab12cd34ef56ab78';
 const HEX = 'c0ffee'.repeat(10) + 'c0de';
 
@@ -205,37 +205,58 @@ test("a recipe of ours is avenDB's recipe entry: its file the source, the card b
 	for (const label of SAMPLES) {
 		const hash = hashOf(label);
 		const { code } = await recipeAt(hash);
-		const at = await assetAt(label);
-		const card = cardOf(await objectAt(label), metaOf(at.group, at.item, at.version, parseRef(label).variant), { recipe: hash, engine: made.index.engine });
+		const card = CARDS[hash];
 		expect(checkCard(card).ok).toBe(true);
-		const entry = recipeEntryOf({ code, card, ms: TIMEOUT });
-		// it fits avenDB's schema: the source and the card are each held to what reads them below (our checker refuses
-		// any text naming a place to load from, and a recipe's code and a card's sources name addresses as text)
-		const fits = check(RECIPE, { ...entry, source: '', card: {} });
+		const { type, tags, value, file } = recipeEntryOf({ code, card, ms: TIMEOUT });
+		expect(type).toBe('recipe');
+		// it fits avenDB's schema; the card is held to what reads it, our checker against card.v1.json (which refuses any
+		// text naming a place to load from, as a card's sources do)
+		const fits = check(RECIPE, { ...value, card: {} });
 		expect(fits.ok ? [] : fits.errors).toEqual([]);
-		expect([...entry.source].length).toBeLessThanOrEqual(RECIPE.properties.source.maxLength);
-		// the source is the recipe byte for byte: its BLAKE3 hash is the name the card gives it and the box checks
-		expect(hashText(entry.source)).toBe(entry.card.recipe);
-		expect(entry.engine).toEqual({ host: 'box', version: made.index.engine, hash: ENGINES.find((e) => e.v === made.index.engine).blake3 });
-		expect(entry.manifest.libs.every((m) => ENGINES.at(-1).modules.includes(m))).toBe(true);
-		expect(entry.manifest.libs).toContain('three');
+		// the source is the entry's file, the recipe byte for byte: its BLAKE3 hash is the name the card gives it and
+		// the box checks; the record's own source is empty
+		expect(value.source).toBe('');
+		expect(file).toEqual({ media: 'text/javascript', text: code });
+		expect(hashText(file.text)).toBe(value.card.recipe);
+		expect(value.engine).toEqual({ host: 'box', version: made.index.engine, hash: ENGINES.find((e) => e.v === made.index.engine).blake3 });
+		expect(value.manifest.libs.every((m) => ENGINES.at(-1).modules.includes(m))).toBe(true);
+		expect(value.manifest.libs).toContain('three');
 		// a row for every parameter a number holds; the card keeps all of them, as the recipe declares them
 		const declared = (card.params ?? []).filter((p) => p.type !== 'string');
-		expect(entry.params.map((p) => p.name)).toEqual(declared.map((p) => p.id));
-		expect(entry.params.map((p) => p.default)).toEqual(declared.map((p) => p.value));
-		expect(entry.contract.budgets.ms).toBe(TIMEOUT);
+		expect(value.params.map((p) => p.name)).toEqual(declared.map((p) => p.id));
+		expect(value.params.map((p) => p.default)).toEqual(declared.map((p) => p.value));
+		expect(value.contract.budgets.ms).toBe(TIMEOUT);
+		// found by its group and its ref
+		expect(tags).toEqual([`group:${card.group}`, `ref:${card.group}/${card.id}@${card.version}${card.variant ? `:${card.variant}` : ''}`]);
 	}
-}, 300000);
+	// a file that is not the recipe its card names is no entry of it
+	const hash = hashOf('plants/apple@2');
+	const { code } = await recipeAt(hash);
+	expect(() => recipeEntryOf({ code: `${code} `, card: CARDS[hash] })).toThrow(/names another recipe/);
+});
 
-test("every recipe's file fits a recipe entry's source but the stand-in's (its head's measured mesh)", () => {
-	const max = recipeSchema().properties.source.maxLength;
-	const over = new Set();
-	for (const at of Object.values(made.index.recipes)) {
+test('every recipe of ours is a recipe entry, the stand-in too: its record fits Recipe, v1 and its file is the recipe', () => {
+	const RECIPE = recipeSchema();
+	const firsts = new Set(Object.entries(made.index.first).map(([at, variant]) => `${at}:${variant}`));
+	let over = 0;
+	const named = new Map();
+	for (const [hash, at] of Object.entries(made.index.recipes)) {
 		const code = recipeFile(made.libraries[`${at.group}/${at.id}`], at.id, at.v, at.variant);
-		if ([...code].length > max) over.add(`${at.group}/${at.id}`);
+		const { tags, value, file } = recipeEntryOf({ code, card: CARDS[hash], ms: TIMEOUT, first: firsts.has(at.label) });
+		const fits = check(RECIPE, { ...value, card: {} });
+		if (!fits.ok) throw new Error(`${at.label}: its record does not fit Recipe, v1: ${fits.errors.slice(0, 3).join('; ')}`);
+		expect(hashText(file.text)).toBe(hash);
+		if ([...file.text].length > RECIPE.properties.source.maxLength) over++;
+		for (const t of tags.filter((x) => x.startsWith('ref:'))) {
+			if (named.has(t)) throw new Error(`${t} names two recipes: ${named.get(t)} and ${at.label}`);
+			named.set(t, at.label);
+		}
 	}
-	// a known limit: the stand-in's recipe is longer than avenDB's 200,000 characters of source
-	expect([...over]).toEqual(['actors/stand-in']);
+	// the stand-in's eleven versions are longer than a code entry's 200,000 characters of source: their files hold them
+	expect(over).toBe(11);
+	// each recipe is found by its ref, and a kind's first variant by its ref without a variant as well
+	expect(named.size).toBe(Object.keys(made.index.recipes).length + Object.keys(made.index.first).length);
+	for (const [at, variant] of Object.entries(made.index.first)) expect(named.get(`ref:${at}`)).toBe(`${at}:${variant}`);
 });
 
 test('nothing here writes to avenDB: no module of the assets imports its client or calls its server', () => {
@@ -249,7 +270,7 @@ test('nothing here writes to avenDB: no module of the assets imports its client 
 		expect(text).not.toMatch(/avendb\.maia\.city|\/api\/avendb/i);
 	}
 	const source = readFileSync(`${lib}/sources/avendb.js`, 'utf8');
-	expect([...source.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort()).toEqual(['../engines.js', '../params.js', '../schemas/asset.v1.json']);
+	expect([...source.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort()).toEqual(['../engines.js', '../params.js', '../refs.js', '../schemas/asset.v1.json', '@noble/hashes/blake3.js', '@noble/hashes/utils.js']);
 	expect(source).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|WebSocket|indexedDB/);
 	expect(VAULT_REF.source.startsWith('^vault:')).toBe(true);
 });
