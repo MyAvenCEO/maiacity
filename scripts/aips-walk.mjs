@@ -3,8 +3,9 @@
  * /api/ request answered here (a founder who plays Sandbox 7 as its admin and sits at MaiaCity V1's seat A; two Sandbox
  * 7 MIPs and two V1 MIPs). It checks the stages, the game filter, a Sandbox 7 detail, a V1 detail with its signatures,
  * a new V1 proposal from a COOP's "Propose a payout" link, and that neither game shows a proposal on its own screen.
- * avenDB's public feed is answered too: the Maia City COOP vault publishes Sandbox 7 and MaiaCity V1 (A2), so the
- * Sandboxes list shows Sandbox 7 without Draft, and signed out, the Proposals app shows Sandbox 7's, read only.
+ * avenDB's public feed is answered too: the Maia City COOP vault shares Sandboxes 5 and 7 and MaiaCity V1 with
+ * everyone (A2), so the Sandboxes list shows Sandbox 5 without Draft; Sandbox 7 plays only in Samuel's tailnet and stays
+ * a draft whatever is shared, and signed out, its proposals stay closed.
  * Each step is screenshot, wide and on a phone.
  *
  *   BASE=http://localhost:5173 node scripts/aips-walk.mjs [--out dir]
@@ -59,7 +60,7 @@ let moves = [];
 let signedOut = false;
 // avenDB's public feed: the game entries everyone may read, those the Maia City COOP vault published
 const gameRow = (id) => ({ entry: id, vault: 'c'.repeat(64), name: 'Maia City', seed: 'Maia City', type: 'game', tags: ['game', `game:${id}`] });
-const feed = { entries: [gameRow('sandbox-7'), gameRow('maiacity-v1')] };
+const feed = { entries: [gameRow('sandbox-5'), gameRow('sandbox-7'), gameRow('maiacity-v1')] };
 
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
@@ -180,16 +181,17 @@ await shot('6-dashboard');
 // the Sandboxes: published by the Maia City COOP vault's Public share, as its feed lists them
 await page.goto(`${base}/app/games/`, { waitUntil: 'domcontentloaded' });
 const rowOf = (label) => page.evaluate((label) => [...document.querySelectorAll('.list li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim() ?? '').find((t) => t.startsWith(label)) ?? '', label);
-check('a published sandbox shows no Draft', await until(async () => { const r = await rowOf('Sandbox 7'); return r && !r.includes('Draft'); }), await rowOf('Sandbox 7'));
+check('a published sandbox shows no Draft', await until(async () => { const r = await rowOf('Sandbox 5'); return r && !r.includes('Draft'); }), await rowOf('Sandbox 5'));
 check('one the vault does not publish still shows Draft', (await rowOf('Sandbox 6')).includes('Draft'), await rowOf('Sandbox 6'));
+check('a tailnet sandbox stays a draft though shared', (await rowOf('Sandbox 7')).includes('Draft'), await rowOf('Sandbox 7'));
 await shot('7-sandboxes');
 
-// signed out: the Proposals app is open, read only, with the published Sandbox 7's proposals
+// signed out: the Proposals app opens, read only; a tailnet game's proposals stay closed
 signedOut = true;
 await page.goto(`${base}/app/aips/?game=sandbox-7&stage=proposed`, { waitUntil: 'domcontentloaded' });
-check('signed out, a published game’s proposals show', await until(async () => (await text()).includes('World 37')), await text());
-await click('World 37');
-check('signed out, nothing can be accepted or withdrawn', await until(async () => (await text()).includes('Keep World 36')) && !(await page.evaluate(() => [...document.querySelectorAll('button')].some((b) => ['Accept', 'Withdraw', 'Reject'].includes(b.textContent?.trim() ?? '')))));
+check('signed out, the Proposals app opens', await until(async () => (await text()).includes('Sign in to see the proposals')), await text());
+await sleep(1500);
+check('signed out, a tailnet game’s proposals stay closed', !(await text()).includes('World 37'));
 await shot('8-signed-out');
 await page.goto(`${base}/app/games/sandbox-8/`, { waitUntil: 'domcontentloaded' });
 check('signed out, the game itself still asks for a sign-in', await until(async () => (await page.evaluate(() => document.body.textContent ?? '')).includes('Sign in with your passkey')));

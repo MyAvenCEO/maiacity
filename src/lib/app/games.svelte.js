@@ -4,7 +4,7 @@
 // feed answers, or while it names no game at all (a vault without its Games area yet), each game keeps what places.ts
 // says (`release`). Publishing and withdrawing are the vault's own: whoever's device acts for Maia City shares the tag
 // with everyone, or revokes that share.
-import { GAMES, gameTag, loadPublished } from '../../../game/games.js';
+import { GAMES, gameTag, loadPublished, publishable } from '../../../game/games.js';
 import { EVERYONE, seeded } from '$lib/avendb/vaults.js';
 import { session } from '$lib/avendb/session.svelte.js';
 
@@ -37,7 +37,7 @@ export const shareOf = (world, city, id) =>
 export async function publish(id, on) {
 	const world = session.world;
 	const city = cityOf(world);
-	if (!city) return false;
+	if (!city || (on && !publishable(id))) return false;
 	const had = shareOf(world, city.id, id);
 	const done = on
 		? had ?? (await session.run(`Publishing ${labelOf(id)}`, { op: 'share', over: city.id, who: EVERYONE, level: 'Public', what: { tag: gameTag(id) }, as: city.id }))
