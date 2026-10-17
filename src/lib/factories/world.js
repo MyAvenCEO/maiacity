@@ -136,8 +136,9 @@ const FS = { fmt, rng, Kit: K }
       this.vis = new Map()
       this.edges = {}
       this.st = {}
-      // maiaCITY: a product stage drawn as one of our assets by its ref ({ ref: { geometry, material } }), and the
-      // one material of AirSup's product tokens (made here, since the shipping pallets are built before the tokens)
+      // maiaCITY: a product stage drawn as one of our assets by its ref ({ ref: { geometry, material } }), our Euro
+      // pallet's pieces (under K.PALLET), and the one material of AirSup's product tokens (made here, since the
+      // shipping pallets are built before the tokens)
       this.assets = opts.assets || {}
       this.tokMat = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.15 })
       this.build()
@@ -150,6 +151,12 @@ const FS = { fmt, rng, Kit: K }
         return { geo: a.geometry, mat: a.material }
       }
       return { geo: K.product(def), mat: this.tokMat }
+    }
+    /** our Euro pallet's pieces, as the page built them (maiaCITY) */
+    _pallet() {
+      const a = this.assets[K.PALLET]
+      if (!a) throw new Error(`${K.PALLET}: the page gave the world no Euro pallet`)
+      return a
     }
 
     build() {
@@ -378,7 +385,7 @@ const FS = { fmt, rng, Kit: K }
       const g = K.group(this.root)
       // a pallet of raw material at the start of the feeder (maiaCITY: our Euro pallet, the product stacked at its real size)
       const pal = K.group(g, p0.x - 0.8 * S.dir, 0, p0.z)
-      K.europallet(pal, 0, 0, 0)
+      K.europallet(pal, 0, 0, 0, this._pallet())
       const st = this.plan.byId[id]
       const def = this.plan.spec.stages && this.plan.spec.stages[st.input] || { shape: 'crate', color: '#c49a63' }
       const geo = K.product(def)
@@ -470,7 +477,7 @@ const FS = { fmt, rng, Kit: K }
       this.shipPallets = []
       for (let i = 0; i < 3; i++) {
         const p = K.group(ship, 0.4 * Math.sign(shipX - so.x || 1), 0, (i - 1) * 1.5)
-        K.europallet(p, 0, 0, 0) // maiaCITY: our Euro pallet
+        K.europallet(p, 0, 0, 0, this._pallet()) // maiaCITY: our Euro pallet
         this.shipPallets.push(p)
       }
       // maiaCITY: the finished product as the spec draws it (our own asset by its ref, at its real size, where it says so), stacked as a pallet of it is

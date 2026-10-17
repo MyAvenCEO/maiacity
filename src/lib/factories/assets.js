@@ -1,27 +1,40 @@
 /*
  * OUR ASSETS ON THE LINE — a product stage of a factory drawn as one of our own assets, by its ref ($lib/assets:
- * `stages.pack = { shape: 'asset', ref: 'machines/batterypack@9' }`). The asset is built with `objectAt`, at its real
- * size, and turned into what the world's token meshes need: one geometry in its rest pose and one material, so every
- * pack on the belts, in a tester and on the outgoing pallets is one instance of the real BatteryPack.
+ * `stages.pack = { shape: 'asset', ref: 'machines/batterypack@9' }`), and the Euro pallets its raw material and its
+ * product are stacked on (the Things' `euro-pallet`, ./pallet.js). Each is built as anyone's asset is, in the
+ * asset box or got from this device's cache ($lib/assets/load.js), at its real size, and turned into what the world
+ * needs: a stage's asset into one geometry in its rest pose and one material, so every pack on the belts, in a tester
+ * and on the outgoing pallets is one instance of the real BatteryPack; the pallet into its pieces, each painted in
+ * the kit's way.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { objectAt } from '$lib/assets';
+import { loadAsset } from '$lib/assets/load.js';
+import { buildAt, hashOf } from '$lib/assets/recipes.js';
+import { PALLET } from './pallet.js';
 
 /** @typedef {{ ref: string, geometry: THREE.BufferGeometry, material: THREE.Material, object: THREE.Object3D }} Token */
+/** @typedef {{ geometry: THREE.BufferGeometry, color: string }} Piece one piece of an asset, for the kit to paint */
 
 const KEEP = new Set(['position', 'normal', 'color', 'uv']);
+
+/** An asset built by its ref, in the box or from the cache; throws when there is no such asset or it was refused. @param {string} ref */
+async function built(ref) {
+	if (!hashOf(ref)) throw new Error(`${ref}: no such asset`);
+	const { obj } = await loadAsset(buildAt(ref));
+	obj.updateMatrixWorld(true);
+	return obj;
+}
 
 /**
  * An asset as a token: built by its ref, every visible mesh of it in its rest pose merged into one geometry with vertex
  * colours (a rigged machine is one skinned mesh already; its skin weights are dropped, the token never moves a part),
- * and its first material. Throws as `objectAt` does when there is no such asset or it is not built as one object.
+ * and its first material. Throws when there is no such asset or its build was refused.
  * @param {string} ref
  * @returns {Promise<Token>}
  */
 export async function tokenOf(ref) {
-	const object = await objectAt(ref);
-	object.updateMatrixWorld(true);
+	const object = await built(ref);
 	/** @type {THREE.BufferGeometry[]} */
 	const geos = [];
 	/** @type {THREE.Material | undefined} */
@@ -52,4 +65,40 @@ export async function tokenOf(ref) {
 	const token = /** @type {THREE.Material} */ (material.clone());
 	/** @type {any} */ (token).vertexColors = true;
 	return { ref, geometry, material: token, object };
+}
+
+/**
+ * An asset as pieces for the kit to paint: each visible mesh's geometry in its place and its material's colour (the
+ * Euro pallet: its boards and blocks, `K.europallet`).
+ * @param {string} ref
+ * @returns {Promise<Piece[]>}
+ */
+export async function piecesOf(ref) {
+	const object = await built(ref);
+	/** @type {Piece[]} */
+	const pieces = [];
+	object.traverse((o) => {
+		const m = /** @type {THREE.Mesh} */ (o);
+		if (!m.isMesh || !m.visible) return;
+		const mat = /** @type {THREE.MeshStandardMaterial} */ (Array.isArray(m.material) ? m.material[0] : m.material);
+		pieces.push({ geometry: m.geometry.clone().applyMatrix4(m.matrixWorld), color: `#${mat.color.getHexString()}` });
+	});
+	if (!pieces.length) throw new Error(`${ref}: no mesh to draw it by`);
+	return pieces;
+}
+
+/**
+ * Everything a factory's world draws of ours, by its ref, as the world takes it (`boot(spec, host, { assets })`): every
+ * stage drawn as an asset, as its token; the Euro pallet, as its pieces. Each built once.
+ * @param {{ stages?: Record<string, unknown> }} spec
+ * @returns {Promise<Record<string, Token | Piece[]>>}
+ */
+export async function assetsOf(spec) {
+	/** @type {Record<string, Token | Piece[]>} */
+	const assets = { [PALLET]: await piecesOf(PALLET) };
+	for (const def of Object.values(spec.stages ?? {})) {
+		const d = /** @type {{ shape: string, ref?: string }} */ (def);
+		if (d.shape === 'asset' && d.ref && !assets[d.ref]) assets[d.ref] = await tokenOf(d.ref);
+	}
+	return assets;
 }

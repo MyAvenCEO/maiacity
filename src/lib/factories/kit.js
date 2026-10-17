@@ -8,7 +8,7 @@
 // @ts-nocheck
 import { T } from './three.js'
 import { rng } from './des.js'
-import { euroPallet, PH as PALLET_H } from '$lib/actors/pallet.js'
+import { PALLET, PALLET_H } from './pallet.js'
 const FS = { rng }
 /** AirSup's kit: materials, parts, machines, products, people and vehicles, at real scale (1 unit = 1 m) */
 export const K = {}
@@ -1493,12 +1493,15 @@ export const K = {}
       for (let i = 0; i < 6; i++) add(B(0.006, 0.006, 0.006, 0.001), '#8b9196', 0.02 + i * 0.012, 0.0046, 0.02)
     }
   }
-  /** our Euro pallet (EPAL 1200 × 800 × 144 mm, $lib/actors/pallet.js, the Things' and the machines' own), lying
-   *  along x, standing at (x, y, z); in place of AirSup's K.pallet where product is stacked */
+  /** our Euro pallet (EPAL 1200 × 800 × 144 mm), the Things' own, by its ref (./pallet.js): the page builds it in the
+   *  asset box and hands its pieces in with the assets ($lib/factories/assets.js) */
+  K.PALLET = PALLET
   K.PALLET_H = PALLET_H
-  K.europallet = (p, x, y, z) => {
+  /** the Euro pallet from its `pieces` (each a geometry and its wood's colour), lying along x, standing at (x, y, z);
+   *  in place of AirSup's K.pallet where product is stacked */
+  K.europallet = (p, x, y, z, pieces) => {
     const g = K.group(p, x, y, z)
-    euroPallet((geo, color, bone, mat) => { if (!mat) K.mesh(g, geo, K.paint(color, 0.85), 0, 0, 0) }, [0, 0, 0], 0, 'x', { stack: 0 })
+    for (const { geometry, color } of pieces) K.mesh(g, geometry, K.paint(color, 0.85), 0, 0, 0)
     return g
   }
   /** how a product stacks on a pallet: `nx` by `nz` a layer at pitches `dx`, `dz`, `ny` layers `dy` apart, drawn at
