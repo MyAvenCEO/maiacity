@@ -1452,7 +1452,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				for (const i of set) if (pinned.size < KEEP - 1) pinned.add(i)
 			while (recent.length > KEEP) recent.shift()
 		},
-		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS }
+		// the library: the film's sets put their assets in it (src/lib/film/sets.js, the tired land's trucks)
+		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS, library }
 	})
 	// Sandbox 4's older name for it (the shot lists and the story producer's notes use it)
 	;(window as unknown as { __village: unknown }).__village = world

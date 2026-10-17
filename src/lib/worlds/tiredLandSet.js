@@ -3,31 +3,34 @@
 // horizon, a highway running north–south through them (x = −470), power lines beside it, dead trees, trucks on it.
 // Built once here, for two places: Sandbox 4's film set (src/lib/film/sets.js, `world.props: 'tired-land'`, Day 19)
 // and the tired land as a world of its own (./tired-land.ts, the Worlds grid). Its randomness is seeded: the same
-// fields every time; `drive(clock)` puts every truck where it is at that second. Who puts a truck down is the caller's
-// to say (`lorry`): the tired land's world puts the library's truck down by its ref, drawn by its renderer of assets
-// (./tired-land.ts); Sandbox 4's set (../film/sets.js) builds it here.
+// fields every time; `drive(clock)` puts every truck where it is at that second. Its trucks are the library's
+// (`machines/truck@1`, each in its colours), built in the asset box and drawn by the world's renderer of assets
+// (`libraryLorry`): the tired land's own (./assets.js), or Sandbox 4's library (../film/sets.js). Who puts a truck down
+// is the caller's to say (`lorry`).
 import * as THREE from 'three';
 import { seededRandom } from '../film/clock.js';
-import { truck } from '../models/furniture';
+import { withValues } from './assets.js';
 
-/** The world as it was: beyond the city's western edge (x ≈ −390), ploughed fields of one crop to the horizon, a
- *  highway running north–south through them (x = −470), power lines beside it, trucks on it. */
+/** the truck, by its ref in the library */
+export const TRUCK = 'machines/truck@1';
+
 /**
- * One truck of the fleet, built here and put in the set: how to move it (x, z, turned about the upright).
- * @param {string} cab @param {string} box @param {THREE.Group} set
- * @returns {(x: number, z: number, turn: number) => void}
+ * The fleet's trucks as copies of the library's truck, each in its colours, put down and moved by a world's renderer
+ * of assets ($lib/assets/render `createAssets`: its `place` and `move`); every copy it puts down is added to `copies`.
+ * @param {{ place: Function, move: Function }} assets @param {unknown[]} [copies]
+ * @returns {(cab: string, box: string) => (x: number, z: number, turn: number) => void}
  */
-const builtLorry = (cab, box, set) => {
-	const t = truck({ cab, box });
-	set.add(t);
-	return (x, z, turn) => {
-		t.position.set(x, 0, z);
-		t.rotation.y = turn;
-	};
+export const libraryLorry = (assets, copies = []) => (cab, box) => {
+	const copy = assets.place(withValues(TRUCK, { cab, box }), { x: 0, y: 0, z: 0, turn: 0 });
+	copies.push(copy);
+	return (x, z, turn) => assets.move(copy, { x, y: 0, z, turn });
 };
 
-/** @param {number} [seed] @param {(cab: string, box: string, set: THREE.Group) => (x: number, z: number, turn: number) => void} [lorry] */
-export function buildTiredLand(seed = 1, lorry = builtLorry) {
+/** The world as it was: beyond the city's western edge (x ≈ −390), ploughed fields of one crop to the horizon, a
+ *  highway running north–south through them (x = −470), power lines beside it, trucks on it.
+ * @param {number} seed @param {(cab: string, box: string, set: THREE.Group) => (x: number, z: number, turn: number) => void} lorry
+ *   one truck of the fleet put down (`libraryLorry`): how to move it (x, z, turned about the upright) */
+export function buildTiredLand(seed, lorry) {
 	const T = THREE;
 	const rand = seededRandom(seed);
 	const set = new T.Group();
@@ -119,7 +122,7 @@ export function buildTiredLand(seed = 1, lorry = builtLorry) {
 		set.add(tree);
 	}
 
-	// the trucks (the machine: machines/truck@1, built by src/lib/models/furniture.ts): each drives its lane at its speed, `z32` =
+	// the trucks (the machine: machines/truck@1, built in the asset box): each drives its lane at its speed, `z32` =
 	// where it is at 0:32 on the film
 	const fleet = [
 		{ dir: 1, speed: 22, z32: 5, cab: '#c8c4bc', box: '#dcdad4' }, // the one the camera rides beside (0:32)
