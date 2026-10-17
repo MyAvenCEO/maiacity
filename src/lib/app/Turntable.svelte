@@ -19,6 +19,10 @@
 	  - a phone on its side: the list down the left, the canvas, and the bar, the panel and the readout down the right.
 	`full` gives the canvas the whole screen (a walk inside a model, as a dome is walked): the list folds away and only the
 	bar stays, over it.
+
+	`inline` keeps it in its place on a page that has its own list and its own screen round it (the avenDB app's Assets,
+	$lib/assets/VaultAsset.svelte): no list, a block in the page's column, by the room the column gives it rather than the
+	screen's — the deck over the canvas where the column is wide, under it where it is not.
 -->
 <script>
 	import PickList from './PickList.svelte';
@@ -28,7 +32,8 @@
 	/**
 	 * @type {{
 	 *   name: string,
-	 *   picks: import('svelte').ComponentProps<typeof PickList>,
+	 *   picks?: import('svelte').ComponentProps<typeof PickList>,
+	 *   inline?: boolean,
 	 *   canvas?: HTMLDivElement,
 	 *   stage?: HTMLDivElement,
 	 *   full?: boolean,
@@ -38,7 +43,7 @@
 	 *   children?: import('svelte').Snippet
 	 * }}
 	 */
-	let { name, picks, canvas = $bindable(), stage = $bindable(), full = false, bar, panel, readout, children } = $props();
+	let { name, picks, inline = false, canvas = $bindable(), stage = $bindable(), full = false, bar, panel, readout, children } = $props();
 
 	/**
 	 * Which side the notch is on, a phone on its side: iOS keeps the same room on both sides then (its safe-area insets
@@ -57,8 +62,9 @@
 		screen.orientation?.addEventListener('change', turned);
 		window.addEventListener('orientationchange', turned);
 		window.addEventListener('resize', turned);
-		// full screen in the app: the nav pill over it, no strip kept for the status bar (the page keeps clear of the notch)
-		const leave = enter();
+		// full screen in the app: the nav pill over it, no strip kept for the status bar (the page keeps clear of the notch);
+		// in its place on a page, the page's own
+		const leave = inline ? () => {} : enter();
 		return () => {
 			screen.orientation?.removeEventListener('change', turned);
 			window.removeEventListener('orientationchange', turned);
@@ -68,8 +74,8 @@
 	});
 </script>
 
-<main class="turntable {name}" class:full class:notch-left={notch === 'left'} class:notch-right={notch === 'right'}>
-	{#if !full}<PickList {...picks} />{/if}
+<svelte:element this={inline ? 'div' : 'main'} class="turntable {name}" class:inline class:full class:notch-left={notch === 'left' && !inline} class:notch-right={notch === 'right' && !inline}>
+	{#if !full && picks}<PickList {...picks} />{/if}
 	<section class="view">
 		<div class="stage" bind:this={stage}>
 			<div class="canvas" bind:this={canvas}></div>
@@ -81,7 +87,7 @@
 			{#if readout && !full}<div class="card readout">{@render readout()}</div>{/if}
 		</div>
 	</section>
-</main>
+</svelte:element>
 
 <style>
 	.turntable {
@@ -235,6 +241,163 @@
 		opacity: 0.6;
 	}
 
+	/* inline: a block in its page's column, as tall as the column's screen allows; the deck under the canvas, the bar's
+	   chips in one row scrolling sideways, as on a phone — and over it, as on a desktop, where the column is wide */
+	.turntable.inline {
+		position: relative;
+		inset: auto;
+		display: block;
+		padding: 0;
+		border-radius: 14px;
+		overflow: hidden;
+		container-type: inline-size;
+	}
+
+	.turntable.inline .view {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.turntable.inline .stage {
+		position: relative;
+		inset: auto;
+		height: clamp(17rem, 52vh, 34rem);
+	}
+
+	.turntable.inline .deck {
+		position: relative;
+		inset: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 0.6rem;
+		border-top: 1px solid rgb(0 0 0 / 0.08);
+		pointer-events: auto;
+	}
+
+	.turntable.inline .card {
+		flex: none;
+		align-self: stretch;
+		width: auto;
+		max-width: none;
+		max-height: none;
+		overflow: visible;
+		padding: 0.6rem 0.8rem;
+		border: 0;
+		border-radius: 12px;
+		background: #fff;
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+	}
+
+	.turntable.inline .bar :global(.chips) {
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		scrollbar-width: none;
+		margin: -0.2rem -0.8rem;
+		padding: 0.2rem 0.8rem;
+	}
+
+	.turntable.inline .bar :global(.chips)::-webkit-scrollbar {
+		display: none;
+	}
+
+	.turntable.inline .bar :global(.chip) {
+		flex: none;
+	}
+
+	/* the shared look of a chip and a heading, held against the page's own (the avenDB app has a chip of its own) */
+	.turntable.inline :global(.chip) {
+		display: inline-block;
+		padding: 0.3rem 0.65rem;
+		border: 1px solid rgb(0 0 0 / 0.12);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.7);
+		font-size: inherit;
+		font-weight: 400;
+		line-height: normal;
+		color: inherit;
+		white-space: nowrap;
+	}
+
+	.turntable.inline :global(.chip.on) {
+		background: #1f2a23;
+		border-color: #1f2a23;
+		color: #fff;
+	}
+
+	.turntable.inline :global(.chip:disabled) {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	/* a column of a tablet's width: the bar across under the canvas, the readout and the panel side by side under it */
+	@container (min-width: 36rem) {
+		.turntable.inline .deck {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+			grid-template-rows: auto auto;
+			grid-template-areas:
+				'bar bar'
+				'readout panel';
+			gap: 0.5rem;
+		}
+
+		.turntable.inline .card {
+			align-self: start;
+		}
+	}
+
+	/* a column of a desktop's width: the deck over the canvas */
+	@container (min-width: 60rem) {
+		.turntable.inline .stage {
+			height: clamp(28rem, calc(100dvh - 11rem), 52rem);
+		}
+
+		.turntable.inline .deck {
+			position: absolute;
+			inset: 0;
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-rows: auto minmax(0, 1fr);
+			grid-template-areas:
+				'bar bar'
+				'readout panel';
+			gap: 0.75rem 1rem;
+			padding: 1rem;
+			border-top: 0;
+			pointer-events: none;
+		}
+
+		.turntable.inline .card {
+			background: rgb(255 255 255 / 0.8);
+			-webkit-backdrop-filter: blur(10px);
+			backdrop-filter: blur(10px);
+		}
+
+		.turntable.inline .panel {
+			align-self: start;
+			width: 15rem;
+			max-height: 100%;
+			overflow: auto;
+		}
+
+		.turntable.inline .readout {
+			align-self: end;
+			justify-self: start;
+			max-width: 32rem;
+			max-height: 100%;
+			overflow: auto;
+		}
+
+		.turntable.inline .bar :global(.chips) {
+			flex-wrap: wrap;
+			overflow-x: visible;
+			margin: 0;
+			padding: 0;
+		}
+	}
+
 	/* a phone upright: the list folded at the top, the canvas, and under it the deck, nothing over the thing */
 	@media (max-width: 720px) {
 		.turntable {
@@ -242,19 +405,19 @@
 			grid-template-rows: auto minmax(0, 1fr);
 		}
 
-		.turntable:not(.full) .view {
+		.turntable:not(.full, .inline) .view {
 			display: flex;
 			flex-direction: column;
 		}
 
-		.turntable:not(.full) .stage {
+		.turntable:not(.full, .inline) .stage {
 			position: relative;
 			inset: auto;
 			flex: 1 1 auto;
 			min-height: 38vh;
 		}
 
-		.turntable:not(.full) .deck {
+		.turntable:not(.full, .inline) .deck {
 			position: relative;
 			inset: auto;
 			flex: 0 1 auto;
@@ -269,7 +432,7 @@
 			pointer-events: auto;
 		}
 
-		.turntable:not(.full) .card {
+		.turntable:not(.full, .inline) .card {
 			flex: none;
 			align-self: stretch;
 			width: auto;
@@ -282,7 +445,7 @@
 		}
 
 		/* the bar's chips in one row, scrolling sideways */
-		.turntable:not(.full) .bar :global(.chips) {
+		.turntable:not(.full, .inline) .bar :global(.chips) {
 			flex-wrap: nowrap;
 			overflow-x: auto;
 			scrollbar-width: none;
@@ -290,15 +453,15 @@
 			padding: 0.2rem 0.8rem;
 		}
 
-		.turntable:not(.full) .bar :global(.chips)::-webkit-scrollbar {
+		.turntable:not(.full, .inline) .bar :global(.chips)::-webkit-scrollbar {
 			display: none;
 		}
 
-		.turntable:not(.full) .bar :global(.chip) {
+		.turntable:not(.full, .inline) .bar :global(.chip) {
 			flex: none;
 		}
 
-		.turntable.full .deck {
+		.turntable.full:not(.inline) .deck {
 			padding-top: 0.75rem;
 		}
 	}
@@ -306,19 +469,19 @@
 	/* a tablet upright: the list down the left still, but the deck under the canvas, as on a phone — the bar across, the
 	   readout and the panel side by side under it */
 	@media (min-width: 721px) and (max-width: 1100px) and (orientation: portrait) {
-		.turntable:not(.full) .view {
+		.turntable:not(.full, .inline) .view {
 			display: flex;
 			flex-direction: column;
 		}
 
-		.turntable:not(.full) .stage {
+		.turntable:not(.full, .inline) .stage {
 			position: relative;
 			inset: auto;
 			flex: 1 1 auto;
 			min-height: 45vh;
 		}
 
-		.turntable:not(.full) .deck {
+		.turntable:not(.full, .inline) .deck {
 			position: relative;
 			inset: auto;
 			flex: 0 1 auto;
@@ -332,7 +495,7 @@
 			pointer-events: auto;
 		}
 
-		.turntable:not(.full) .card {
+		.turntable:not(.full, .inline) .card {
 			align-self: start;
 			justify-self: stretch;
 			width: auto;
@@ -347,17 +510,17 @@
 
 	/* a phone on its side: the list down the left, the canvas, and the deck down the right */
 	@media (max-height: 500px) and (min-width: 721px) {
-		.turntable:not(.full) .view {
+		.turntable:not(.full, .inline) .view {
 			display: grid;
 			grid-template-columns: minmax(0, 1fr) 13.5rem;
 		}
 
-		.turntable:not(.full) .stage {
+		.turntable:not(.full, .inline) .stage {
 			position: relative;
 			inset: auto;
 		}
 
-		.turntable:not(.full) .deck {
+		.turntable:not(.full, .inline) .deck {
 			position: relative;
 			inset: auto;
 			display: flex;
@@ -371,7 +534,7 @@
 			pointer-events: auto;
 		}
 
-		.turntable:not(.full) .card {
+		.turntable:not(.full, .inline) .card {
 			flex: none;
 			align-self: stretch;
 			width: auto;
@@ -386,19 +549,19 @@
 		}
 
 		/* compact: small chips, the bar's in one row scrolling sideways */
-		.turntable:not(.full) .deck :global(.chips) {
+		.turntable:not(.full, .inline) .deck :global(.chips) {
 			gap: 0.25rem;
 		}
 
-		.turntable:not(.full) .deck :global(.chip) {
+		.turntable:not(.full, .inline) .deck :global(.chip) {
 			padding: 0.2rem 0.5rem;
 		}
 
-		.turntable:not(.full) .deck :global(.label) {
+		.turntable:not(.full, .inline) .deck :global(.label) {
 			font-size: 0.62rem;
 		}
 
-		.turntable:not(.full) .bar :global(.chips) {
+		.turntable:not(.full, .inline) .bar :global(.chips) {
 			flex-wrap: nowrap;
 			overflow-x: auto;
 			scrollbar-width: none;
@@ -406,11 +569,11 @@
 			padding: 0.2rem 0.55rem;
 		}
 
-		.turntable:not(.full) .bar :global(.chips)::-webkit-scrollbar {
+		.turntable:not(.full, .inline) .bar :global(.chips)::-webkit-scrollbar {
 			display: none;
 		}
 
-		.turntable:not(.full) .bar :global(.chip) {
+		.turntable:not(.full, .inline) .bar :global(.chip) {
 			flex: none;
 		}
 	}

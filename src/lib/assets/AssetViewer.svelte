@@ -33,6 +33,7 @@
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
 	import { walk } from './controls.js';
+	import { growth, stageAt } from './grow.js';
 	import { forStage, heroOf, runner, walkOf } from './hero.js';
 	import { boxOf, canonical, liveBoxOf, loadAsset } from './load.js';
 	import { INDEX, buildOf, hashOf, pageOf, recipeAt } from './vault.js';
@@ -129,8 +130,9 @@
 	let more = $state(false);
 	/** a plant's height above its soil and its roots' depth below (m), when it stands in soil */
 	let rise = $state.raw(null);
-	/** a staged asset (a plant) growing: each stage built in turn, held a moment once shown */
+	/** a staged asset (a plant) growing: on smoothly by the clock (./grow.js), built where it has grown to each time its last build is shown */
 	let growing = $state(false);
+	let grower = null;
 	/** a rig drawn apart by its own pose (the LifeTrac's `exploded`), and what it did before */
 	let drawnApart = $state(false);
 	let beforeApart = null;
@@ -292,6 +294,15 @@
 		};
 		/** the camera gliding to a new framing (a plant grown a stage), from where it was */
 		let glide = null;
+		/** the camera following a plant as it grows: where it aims and how far back it stands, the way it looks kept */
+		let follow = null;
+		/** where the camera stands from what it aims at, for each metre of an asset's reach */
+		const BACK = new THREE.Vector3(1.5, 0.7, 1.9);
+		/** a framing's aim: a little under its middle, clear of the readout at the foot; its reach, and how far back the camera stands */
+		const aimOf = ({ centre, size: s }) => {
+			const reach = Math.max(s.x, s.y, s.z, 0.01) * 1.15;
+			return { at: centre.clone().add(new THREE.Vector3(0, -0.12 * s.y, 0)), reach, back: reach * BACK.length() };
+		};
 		/**
 		 * The camera on the asset shown, as built: aimed a little under its middle, clear of the readout at the foot;
 		 * there at once, or `smooth`ly from where it is.
@@ -299,11 +310,10 @@
 		const frame = (smooth = false) => {
 			if (!framed) return;
 			Object.assign(apart, { now: 1, want: 1, since: 0 });
-			const s = framed.size;
-			const reach = Math.max(s.x, s.y, s.z, 0.01) * 1.15;
-			const at = framed.centre.clone().add(new THREE.Vector3(0, -0.12 * s.y, 0));
-			const to = new THREE.Vector3(at.x + reach * 1.5, at.y + reach * 0.7, at.z + reach * 1.9);
+			const { at, reach } = aimOf(framed);
+			const to = at.clone().addScaledVector(BACK, reach);
 			aim = null;
+			follow = null;
 			glide = smooth ? { t: 0, from: [camera.position.clone(), controls.target.clone()], to: [to, at] } : null;
 			if (!smooth) {
 				controls.target.copy(at);
@@ -403,7 +413,8 @@
 			error = '';
 			dropWorld();
 			try {
-				const got = await loadAsset(name);
+				// a plant growing is built where it has grown to, mostly between two of its stages: none of it kept
+				const got = await loadAsset(name, { cache: !growing });
 				if (mine !== asked) return void letGo(heroOf(got));
 				const c = canonical(name);
 				const textValues = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
@@ -417,7 +428,7 @@
 				// a plant stands in its soil; its fruit, shown on its own, on the floor
 				const soiled = earth && !(c.values?.fruit >= 1);
 				// a building on the round ground, the stage's floor a hair under it
-				const { centre, size: s } = stage.show(got.obj, { asset: h, ground: soiled ? -earth.fit(bounds) : grounds ? Math.min(bounds.min.y, 0) - 0.01 : undefined });
+				const { centre, size: s } = stage.show(got.obj, { asset: h, ground: soiled ? -earth.fit(bounds) : grounds ? Math.min(bounds.min.y, 0) - 0.01 : undefined, keep: shownHash === c.hash });
 				if (grounds) layGround(bounds);
 				await stage.compile();
 				if (mine !== asked) {
@@ -442,11 +453,13 @@
 				readValues();
 				readModes();
 				// framed on it as built when it is a new asset; the same one built anew keeps the camera where it is,
-				// unless it grew or shrank by much (a plant a stage on, its fruit alone): then the camera glides there
+				// unless it grew or shrank by much (a plant a stage on, its fruit alone): then the camera glides there;
+				// a plant growing, the camera follows it as it grows, looking from where it looks
 				const before = framed?.size, big = (v) => Math.max(v.x, v.y, v.z, 1e-6);
 				const grew = before ? big(s) / big(before) : 1;
 				framed = { centre, size: s };
 				if (reframe || shownHash !== c.hash) frame();
+				else if (growing) follow = aimOf(framed);
 				else if (grew > 1.25 || grew < 0.8) frame(true);
 				shownHash = c.hash;
 			} catch (e) {
@@ -516,7 +529,8 @@
 			shownWorld = `${chosen.id}@${version}`;
 			raiseWorld(chosen, version);
 		}
-		let raf = 0, last = performance.now(), slow = 0, grownAt = 0;
+		let raf = 0, last = performance.now(), slow = 0;
+		const look = new THREE.Vector3();
 		const tick = () => {
 			// the stage eases by the wall clock; so do the camera's own eases, however slow the frames
 			const now = performance.now(), wall = Math.min(1, (now - last) / 1000), dt = Math.min(0.05, wall);
@@ -531,6 +545,18 @@
 					camera.position.lerpVectors(glide.from[0], glide.to[0], e);
 					controls.target.lerpVectors(glide.from[1], glide.to[1], e);
 					if (k >= 1) glide = null;
+				}
+				if (follow) {
+					const k = 1 - Math.exp(-wall * 4);
+					look.copy(camera.position).sub(controls.target);
+					controls.target.lerp(follow.at, k);
+					const d = look.length();
+					look.setLength(d + (follow.back - d) * k);
+					camera.position.copy(controls.target).add(look);
+					camera.near = Math.min(camera.near, follow.reach / 300);
+					camera.far = Math.max(camera.far, follow.reach * 80);
+					camera.updateProjectionMatrix();
+					if (!growing && Math.abs(follow.back - d) < follow.back * 0.01 && controls.target.distanceTo(follow.at) < follow.reach * 0.01) follow = null;
 				}
 				if (aim) {
 					controls.target.lerp(aim, 0.12);
@@ -549,6 +575,15 @@
 				}
 				controls.update();
 			}
+			// growing on: built where it has grown to, each time its last build is shown
+			if (growing && grower && hero) {
+				grower.on(wall);
+				if (!building) {
+					const to = stageAt(grower.at);
+					if (to !== values.stage) setParam('stage', to);
+					else if (grower.done) growing = false;
+				}
+			}
 			if (world) world.draw();
 			else stage.render();
 			if (stage.state.labels > 0.01 || tags.length) tags = stage.labels(box.clientWidth, box.clientHeight, safeArea(box));
@@ -559,14 +594,6 @@
 					if (lab) reading = { ...lab.read };
 					builtNow = stage.builtNow();
 					running = !!hero.live;
-					// growing: the next stage once this one has stood a moment
-					if (building) grownAt = now;
-					else if (growing && now - grownAt > 1400) {
-						const at = Math.round(values.stage);
-						if (!staged || at >= staged.max) growing = false;
-						else setParam('stage', at + 1);
-						grownAt = now;
-					}
 					// the sliders a move sets follow it
 					if (stage.move !== 'run') readValues();
 				}
@@ -686,10 +713,14 @@
 		if (picked) lookAt?.(picked);
 	};
 	const setParam = (id, v) => (given = { ...given, [id]: String(v) });
-	/** grown from its first stage (or on from where it stands) to its last, or stopped */
+	/** grown from its first stage (or on from where it stands) to its last, smoothly; or stopped, at the stage nearest it */
 	const grow = () => {
-		if (growing || !staged) return void (growing = false);
-		if (Math.round(values.stage) >= staged.max) setParam('stage', staged.min);
+		if (!staged) return;
+		if (growing) {
+			growing = false;
+			return setParam('stage', Math.round(values.stage));
+		}
+		grower = growth(staged, values.stage);
 		growing = true;
 	};
 	/** a stage on or back (← →), grown (space): the keys a plant's page has always had */
@@ -991,7 +1022,7 @@
 		<div class="canvas-note error" role="alert">{missing}</div>
 	{:else if building && world}
 		<div class="canvas-note" role="status">{step || 'Opening the doors'}… <i class="steps"><i style:width="{Math.min(100, (steps / STEPS) * 100)}%"></i></i></div>
-	{:else if building}
+	{:else if building && !growing}
 		<div class="canvas-note" role="status">Building the {chosen.label}…</div>
 	{/if}
 	{#if walking}
