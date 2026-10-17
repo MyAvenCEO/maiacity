@@ -46,8 +46,8 @@
 					<span class="opening">This is the story</span>
 					<span class="founders"><span class="light">how</span> 1 million founders build their own <em>solarpunk</em> city,</span>
 					<span class="deck">
-						<span class="when">first in game,<br />then in real,</span>
-						<span class="years"><span class="just">in just</span><span class="number">16</span><span class="unit">years.</span></span>
+						<span class="when">first in game, then in real,</span>
+						<span class="years">in just <span class="number">16</span> years.</span>
 					</span>
 				</h1>
 				<FounderCounter />
@@ -231,54 +231,28 @@
 		color: var(--mustard);
 	}
 
-	/* the deck under a hairline: how it happens on the left, how long on the right */
+	/* the deck under a hairline, one line: how it happens on the left, how long on the right */
 	.deck {
 		display: flex;
-		align-items: flex-end;
+		flex-wrap: wrap;
+		align-items: baseline;
 		justify-content: space-between;
-		gap: 1.5rem;
-		margin-top: clamp(1.5rem, 3.5vh, 2.5rem);
-		padding-top: 1.1rem;
+		gap: 0.25rem 1.5rem;
+		margin-top: clamp(1.25rem, 3vh, 2rem);
+		padding-top: 0.8rem;
 		border-top: 1px solid rgb(255 250 240 / 0.55);
-	}
-
-	.when {
-		font-size: clamp(1.25rem, 2.4vw, 1.9rem);
+		font-size: clamp(1.15rem, 2.2vw, 1.7rem);
 		font-weight: 300;
 		line-height: 1.15;
 		letter-spacing: -0.015em;
 	}
 
-	.years {
-		display: grid;
-		grid-template-columns: auto auto;
-		align-items: end;
-		column-gap: 0.6rem;
-		line-height: 1;
-	}
-
-	.just {
-		grid-column: 1 / -1;
-		margin-bottom: 0.3rem;
-		font-family: var(--font-body);
-		font-size: 0.72rem;
-		font-weight: 500;
-		letter-spacing: 0.22em;
-		text-transform: uppercase;
-	}
-
 	.number {
-		font-size: clamp(3.6rem, 8vw, 6.5rem);
+		font-size: 1.9em;
 		font-weight: 600;
 		line-height: 0.8;
-		letter-spacing: -0.05em;
+		letter-spacing: -0.04em;
 		color: var(--mustard);
-	}
-
-	.unit {
-		padding-bottom: 0.15em;
-		font-size: clamp(1.25rem, 2.4vw, 1.9rem);
-		font-weight: 300;
 	}
 
 	.kicker {

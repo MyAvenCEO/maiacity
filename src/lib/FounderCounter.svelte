@@ -1,7 +1,7 @@
 <!--
 	How many founders are building Maia City, live: the count from the API (the same one /join shows), counted up
-	when it changes, and the Fibonacci ladder it climbs — 1, 2, 3, 5, 8 … to 1,346,269, a million and more — one
-	segment a milestone, the next one filling as founders join.
+	when it changes, and where it stands on the Fibonacci ladder — 1, 2, 3, 5, 8 … to 1,346,269, a million and
+	more — shown as the milestones round the next one, which sits in the middle, its line filling as founders join.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -43,76 +43,83 @@
 	const reached = $derived(MILESTONES.filter((m) => m <= count).length);
 	const next = $derived(MILESTONES[reached] ?? null);
 	const previous = $derived(MILESTONES[reached - 1] ?? 0);
-	// how far the next segment has filled on the way to its milestone
-	const part = $derived(next ? (count - previous) / (next - previous) : 0);
+	// how far the line into the next milestone has filled
+	const part = $derived(next ? (count - previous) / (next - previous) : 1);
+	// five milestones round the next one, which always sits in the middle (blanks before the first)
+	const around = $derived([-2, -1, 0, 1, 2].map((d) => ({ i: reached + d, m: MILESTONES[reached + d] ?? null })));
 	const fmt = (n) => Math.round(n).toLocaleString('en-US');
 </script>
 
 <div class="counter">
-	<p class="line">
-		<span class="live"><span class="dot"></span>Live</span>
-		<span class="count"><strong>{fmt(shown.current)}</strong> {count === 1 ? 'founder is' : 'founders are'} building Maia City</span>
-		{#if next}<span class="next">Next milestone <strong>{fmt(next)}</strong></span>{/if}
+	<p class="who">
+		<span class="dot" aria-hidden="true"></span>
+		<strong>{fmt(shown.current)}</strong>
+		{count === 1 ? 'founder is' : 'founders are'} building Maia City
 	</p>
-	<div
+	<ol
 		class="ladder"
 		role="progressbar"
 		aria-label="Founders on the Fibonacci ladder to 1,346,269"
 		aria-valuemin="0"
 		aria-valuemax={MILESTONES.length}
 		aria-valuenow={reached}
-		aria-valuetext="{fmt(count)} founders, milestone {reached} of {MILESTONES.length}"
+		aria-valuetext="{fmt(count)} founders, next milestone {next ? fmt(next) : 'none'}"
 	>
-		{#each MILESTONES as m, i}
-			<span
-				class="step"
-				class:done={i < reached}
-				class:filling={i === reached}
-				style:--fill={i === reached ? part : 0}
-				title={fmt(m)}
-			></span>
+		{#each around as slot, k}
+			{#if k > 0 && around[k - 1].m != null && slot.m != null}
+				<li
+					class="line"
+					aria-hidden="true"
+					style:--fill={slot.i < reached ? 1 : slot.i === reached ? part : 0}
+				></li>
+			{:else if k > 0}
+				<li class="line blank" aria-hidden="true"></li>
+			{/if}
+			<li class="mark" class:done={slot.i < reached} class:next={slot.i === reached} class:blank={slot.m == null}>
+				{#if slot.i === reached && slot.m != null}<span class="label">Next</span>{/if}
+				{slot.m == null ? '' : fmt(slot.m)}
+			</li>
 		{/each}
-	</div>
-	<p class="ends">
-		<span>1</span>
-		<span>Fibonacci milestone {reached} of {MILESTONES.length}</span>
-		<span>{fmt(MILESTONES.at(-1))}</span>
-	</p>
+	</ol>
 </div>
 
 <style>
+	/* one compact strip: who is building on the left, the ladder with the next milestone in its middle */
 	.counter {
-		margin-top: clamp(1.25rem, 3vh, 2rem);
-		padding: 1rem 1.15rem 0.85rem;
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		gap: 0.75rem 1.5rem;
+		margin-top: clamp(1rem, 2.5vh, 1.5rem);
+		padding: 1rem 1.4rem;
 		border: 1px solid rgb(255 250 240 / 0.22);
-		border-radius: var(--radius);
+		border-radius: 999px;
 		background: rgb(16 32 30 / 0.38);
 		backdrop-filter: blur(10px);
 		-webkit-backdrop-filter: blur(10px);
 		font-family: var(--font-body);
+		font-size: 0.9rem;
 	}
 
-	.line {
+	.who {
 		display: flex;
-		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.4rem 1.1rem;
-		margin: 0 0 0.8rem;
-		font-size: 0.95rem;
-		line-height: 1.3;
+		gap: 0.45rem;
+		margin: 0;
+		line-height: 1.2;
 	}
 
-	.live {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.45rem;
-		font-size: 0.68rem;
-		font-weight: 500;
-		letter-spacing: 0.22em;
-		text-transform: uppercase;
+	.who strong {
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--mustard);
 	}
 
 	.dot {
+		flex: none;
+		align-self: center;
 		width: 0.5rem;
 		height: 0.5rem;
 		border-radius: 50%;
@@ -127,82 +134,84 @@
 		}
 	}
 
-	.count strong {
-		font-family: var(--font-display);
-		font-size: 1.5rem;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
-		color: var(--mustard);
-	}
-
-	.next {
-		margin-left: auto;
-		font-size: 0.85rem;
-		opacity: 0.85;
-	}
-
-	.next strong {
-		font-weight: 600;
-	}
-
-	/* one segment a milestone: gold when reached, the next one filling */
 	.ladder {
 		display: grid;
-		grid-template-columns: repeat(30, 1fr);
-		gap: 3px;
+		grid-template-columns: 2.6rem 2rem 2.6rem 2rem 3.4rem 2rem 2.6rem 2rem 2.6rem;
+		align-items: center;
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 
-	.step {
+	.mark {
 		position: relative;
-		height: 8px;
-		overflow: hidden;
-		border-radius: 2px;
-		background: rgb(255 250 240 / 0.2);
+		text-align: center;
+		font-size: 0.8rem;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.55;
 	}
 
-	.step.done {
-		background: var(--mustard);
+	.mark.done {
+		color: var(--mustard);
+		opacity: 1;
 	}
 
-	.step.filling::after {
-		content: '';
+	/* the next milestone: the one thing to look at */
+	.mark.next {
+		padding: 0.2rem 0;
+		border: 1.5px solid var(--mustard);
+		border-radius: 999px;
+		font-family: var(--font-display);
+		font-size: 1.15rem;
+		font-weight: 600;
+		opacity: 1;
+	}
+
+	.label {
 		position: absolute;
-		inset: 0;
-		width: max(calc(var(--fill) * 100%), 2px);
-		background: var(--mustard);
-		animation: breathe 1.6s ease-in-out infinite alternate;
+		bottom: 100%;
+		left: 50%;
+		transform: translate(-50%, -0.2rem);
+		font-family: var(--font-body);
+		font-size: 0.55rem;
+		font-weight: 500;
+		letter-spacing: 0.2em;
+		text-transform: uppercase;
+		opacity: 0.8;
 	}
 
-	@keyframes breathe {
-		from {
-			opacity: 0.45;
-		}
+	.line {
+		height: 2px;
+		margin: 0 0.25rem;
+		border-radius: 1px;
+		background: linear-gradient(
+			to right,
+			var(--mustard) calc(var(--fill) * 100%),
+			rgb(255 250 240 / 0.25) calc(var(--fill) * 100%)
+		);
 	}
 
-	.ends {
-		display: flex;
-		justify-content: space-between;
-		gap: 1rem;
-		margin: 0.5rem 0 0;
-		font-size: 0.7rem;
-		letter-spacing: 0.06em;
-		opacity: 0.75;
+	.line.blank {
+		background: none;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.dot,
-		.step.filling::after {
+		.dot {
 			animation: none;
 		}
 	}
 
 	@media (max-width: 760px) {
-		.next {
-			margin-left: 0;
+		.counter {
+			grid-template-columns: 1fr;
+			justify-items: center;
+			padding: 0.7rem 1rem 0.8rem;
+			border-radius: var(--radius);
 		}
 
 		.ladder {
-			gap: 2px;
+			grid-template-columns: 2.2rem 1.2rem 2.2rem 1.2rem 3rem 1.2rem 2.2rem 1.2rem 2.2rem;
+			margin-top: 0.6rem;
 		}
 	}
 </style>
