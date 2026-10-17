@@ -155,7 +155,7 @@ export async function copying(p, vault, actor, tags) {
 			artifactOf(url, String(fm.originalTitle ?? fm.title ?? p.name), {
 				look,
 				note: src.note,
-				by: filled({ name: fm.author, url: fm.authorUrl }),
+				by: filled({ name: fm.author, url: fm.authorUrl, image: fm.authorImage }),
 				taken: fm.published ? String(fm.published) : undefined,
 				language: fm.language ? String(fm.language) : undefined,
 				transcript: rowsOf(src.words)

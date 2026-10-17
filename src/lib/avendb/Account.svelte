@@ -38,7 +38,7 @@
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { answer, refs } from './ops.js';
-	import { seeding, seedPieces, unseeded } from './seed.js';
+	import { seeding, seedPieces, touchingUp, unseeded } from './seed.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
@@ -388,6 +388,14 @@
 				for (const op of await seeding(p, city)) done.push(answer(await send(refs(op, done))));
 			} catch {
 				failed.push(p.name);
+			}
+		}
+		// the inspire-me sources it copied before, brought up to date as their report cards show them
+		for (const ops of await touchingUp(w, city)) {
+			try {
+				for (const op of ops) answer(await send(op));
+			} catch {
+				failed.push('an inspire-me source');
 			}
 		}
 		if (failed.length) throw new Error(`Maia City refused ${failed.length} of them: ${failed.join(', ')}`);

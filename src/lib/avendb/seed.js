@@ -17,6 +17,9 @@
 //   inspire    each inspire-me report: its source an artifact on a spark (./legacy.js), the story grown from the spark,
 //              the report as its delivery (`delivery:inspire`), and its post (channel Inspire me), on the day it was
 //              added
+//   inspire    (after the published share) one Public share of every inspire-me piece (`INSPIRE`), so the Universe lays
+//              an inspire post out as its report card; ./Account.svelte then brings each copied source up to date
+//              (`touchingUp`): its author's portrait, and the tag
 //   published  one Public share of the vault's published entries (`content:published`), as the content flow's
 //              published stage is public: the posts and their articles go on the stream
 //   pads       the journal's sources and each story's idea pad, sparks as ./legacy.js copies them
@@ -46,6 +49,10 @@ export const deliveryTag = (type) => `delivery:${type}`;
 
 /** The tag of the content flow's published stage, which everyone reads. */
 export const PUBLISHED = stageTag('content', 'published');
+
+/** The tag every inspire-me piece carries, its story, delivery, post, spark and source, which everyone reads: the
+ *  Universe lays an inspire post out as its report card from them all. */
+export const INSPIRE = 'inspire-me';
 
 /** The channel of the Maia Universe stream each delivery type's posts go out on. */
 export const CHANNEL = /** @type {Record<string, string>} */ ({ article: 'Journal', inspire: 'Inspire me' });
@@ -123,7 +130,7 @@ const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
  * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'template' | 'journal' | 'inspire' | 'pad' | 'published' |
- *   'game-schema' | 'game', name: string, mark: string, server?: string }} Piece
+ *   'inspire-share' | 'game-schema' | 'game', name: string, mark: string, server?: string }} Piece
  */
 
 /**
@@ -150,7 +157,10 @@ export function seedPieces(server = null) {
 	const pads = legacyPieces([])
 		.filter((p) => p.kind === 'journal' || p.kind === 'pad')
 		.map((p) => ({ key: p.key, kind: /** @type {const} */ ('pad'), name: p.name, mark: legacyTag(p.key) }));
-	const published = [{ key: 'published-share', kind: /** @type {const} */ ('published'), name: 'Everyone reads what it published', mark: '' }];
+	const published = [
+		{ key: 'published-share', kind: /** @type {const} */ ('published'), name: 'Everyone reads what it published', mark: '' },
+		{ key: 'inspire-share', kind: /** @type {const} */ ('inspire-share'), name: 'Everyone reads its inspire-me pieces', mark: '' }
+	];
 	const games = [
 		{ key: 'game-schema', kind: /** @type {const} */ ('game-schema'), name: GAME_SCHEMA, mark: '' },
 		...GAMES.map((g) => ({ key: `game/${g.id}`, kind: /** @type {const} */ ('game'), name: g.id, mark: gameTag(g.id) }))
@@ -183,6 +193,37 @@ export const publishedShared = (world, vault) =>
 	world.shares.some((c) => c.over === vault && c.who === EVERYONE && /** @type {any} */ (c).slice?.where?.tag === PUBLISHED);
 
 /**
+ * Whether vault `vault` gives everyone a Public share of its inspire-me pieces (`INSPIRE`).
+ * @param {import('./vaults.js').WorldView} world @param {string} vault
+ */
+export const inspireShared = (world, vault) =>
+	world.shares.some((c) => c.over === vault && c.who === EVERYONE && /** @type {any} */ (c).slice?.where?.tag === INSPIRE);
+
+/**
+ * The ops that bring each inspire-me source vault `vault` copied before it carried what its report card shows (its
+ * author's portrait, `by.image`) up to date, and tag it `INSPIRE`, last, so everyone reads it: one source of a report
+ * at a time, each an artifact that carries its report's `legacy:` tag and not `INSPIRE` yet.
+ * @param {import('./vaults.js').WorldView} world @param {string} vault
+ * @returns {Promise<object[][]>}
+ */
+export async function touchingUp(world, vault) {
+	const out = [];
+	for (const e of world.entries.filter((e) => e.vault === vault && !e.deleted && e.type === 'artifact')) {
+		const tags = e.tags ?? [];
+		const mark = tags.find((t) => t.startsWith('legacy:inspire-'));
+		if (!mark || tags.includes(INSPIRE)) continue;
+		const read = REPORTS[`/inspire-me/${mark.slice('legacy:inspire-'.length)}/README.md`];
+		const fm = read ? split(await read()).fm : {};
+		const by = filled({ name: str(fm.author), url: str(fm.authorUrl), image: str(fm.authorImage), platform: 'youtube' });
+		out.push([
+			...(Object.keys(by).length > 1 ? [{ op: 'set', entry: e.entry, path: ['by'], value: by, as: vault }] : []),
+			{ op: 'tag', entry: e.entry, add: [INSPIRE], as: vault }
+		]);
+	}
+	return out;
+}
+
+/**
  * The pieces among `all` vault `vault` holds no copy of yet: no entry of it carries the piece's tag (an entry's last
  * op makes it, so a piece cut short is written again whole).
  * @param {import('./vaults.js').WorldView} world @param {string} vault @param {Piece[]} all
@@ -194,6 +235,7 @@ export function unseeded(world, vault, all) {
 	return all.filter((p) =>
 		p.kind === 'keep' ? !serverKeeps(world, vault, p.server ?? '') :
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
+		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
 		p.kind === 'game-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === GAME_SCHEMA) :
 		p.kind === 'game' ? !games.has(p.mark) : !have.has(p.mark)
 	);
@@ -233,6 +275,7 @@ export async function seeding(p, vault) {
 	if (p.kind === 'keep') return [{ op: 'share', over: vault, who: { vault: p.server }, level: 'Backup', as }];
 	if (p.kind === 'share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CODE_TYPES }, as }];
 	if (p.kind === 'published') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: PUBLISHED }, as }];
+	if (p.kind === 'inspire-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: INSPIRE }, as }];
 	if (p.kind === 'game-schema') return [{ op: 'create', vault, type: 'schema', value: GAME_V1, as }];
 	if (p.kind === 'game') {
 		const g = GAMES.find((x) => x.id === p.name);
@@ -284,7 +327,7 @@ export async function seeding(p, vault) {
 	}
 	// an inspire-me report: its source an artifact on a spark, as ./legacy.js copies one, then its story and delivery
 	const legacy = legacyPieces([]).find((x) => x.kind === 'report' && x.name === p.name);
-	const spark = legacy ? await copying(legacy, vault, vault, { spark: [], artifact: [] }) : [];
+	const spark = legacy ? await copying(legacy, vault, vault, { spark: [], artifact: [INSPIRE] }) : [];
 	const { fm, body } = split(await REPORTS[`/inspire-me/${p.name}/README.md`]());
 	const title = str(fm.title) || p.name;
 	const at = spark.length;

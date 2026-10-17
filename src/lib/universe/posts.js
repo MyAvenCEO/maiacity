@@ -20,6 +20,9 @@ export { slug };
 // avenDB's server: its feed, the posts it keeps that everyone may read, newest first
 export const FEED = 'https://avendb.maia.city/feed/posts';
 
+// avenDB's server: the other entries it keeps that everyone may read, of the types a post's layout draws on
+export const ENTRIES = 'https://avendb.maia.city/feed/entries?type=article,story,spark,artifact';
+
 // avenDB's server: the pictures it keeps that everyone may read, each by its vault and the name an article gives it
 export const FILES = 'https://avendb.maia.city/feed/files';
 
@@ -84,6 +87,10 @@ export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictur
 		// none for a post that says no time (`created` 0, as before avenDB's devices set their clock)
 		ago: sentAt(p) > 0 ? Math.max(0, Math.round((now - sentAt(p)) / 60)) : null,
 		channel: p.channel || 'Devlog',
+		// the delivery it publishes, by its entry id (an inspire post's report: ./inspire.js)
+		about: p.about || '',
+		// the day it first went out, where it says one
+		published: p.published || '',
 		text: plain(p.text ?? ''),
 		// its Markdown as written, for its own page, which lays it out as the journal does
 		md: p.text ?? '',
