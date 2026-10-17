@@ -1817,8 +1817,8 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 12 since the last reset (2026-10-17), as Maia City holds only stories and the posts of a post type drawn
-from them, and comes back so from the repository's seed.
+it runs (`bucket::clear`). `FLOOR` is 13 since the last reset (2026-10-17), as the seed, the asset recipes with it, is written while the account
+is set up.
 
 ### Layout of one generation
 
