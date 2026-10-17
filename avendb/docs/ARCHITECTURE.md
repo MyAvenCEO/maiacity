@@ -1729,8 +1729,8 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 10 since the last reset, as a human owns at most one aven, which acts through
-agents in device vaults it owns, the server is a device vault avenCEO GmbH owns, and access requests are records.
+it runs (`bucket::clear`). `FLOOR` is 11 since the last reset (2026-10-17), to check that Maia City comes back from the
+repository's seed.
 
 ### Layout of one generation
 

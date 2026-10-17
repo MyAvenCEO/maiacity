@@ -134,8 +134,9 @@ fn listable(prefix: &str) -> bool {
 /// every hash of avenDB's own is BLAKE3 (edit version 10) and every shipped schema starts at v1; 9 since 2026-10-16, as
 /// the master recovery key is built in again, so every human vault is founded with it as a co-owner from the start;
 /// 10 since later that day, as a human owns at most one aven, which acts through agents in device vaults it owns, the
-/// server is a device vault avenCEO GmbH owns, and access requests are records.
-pub const FLOOR: u64 = 10;
+/// server is a device vault avenCEO GmbH owns, and access requests are records; 11 since 2026-10-17, as Maia City
+/// comes back from the repository's seed after a reset (Samuel chose "Reset now" to check it).
+pub const FLOOR: u64 = 11;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.
