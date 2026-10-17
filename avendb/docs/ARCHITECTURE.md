@@ -421,6 +421,17 @@ and tags alone (a link or a media file goes in as an artifact of its own): the `
 any change of its, into its person's own vault unless it names another, where its shares let it create; where they
 don't, it says which vaults they let it. A reset clears its folder as the app's, and it asks to join again.
 
+Each session of a harness starts its own `avendb-device agent`, yet one device is one node, one shelf and one iroh
+endpoint, never two of the same key at once. So of an agent's sessions on a desktop, one runs its device: the one that
+holds its lock file (`<app folder>-agents/<device>.lock`), which answers the others on its Unix socket beside it
+(`<device>.sock`); each of the others relays its harness's lines to it, keeping those not answered yet. When it goes
+away, one of the others takes the lock and its place, and asks it again whatever was left unanswered. A session's first
+line to it says its build (when its program was made): one of a newer build, as after the desktop app was rebuilt,
+takes over at once, and the older answers its harness through it from then on. It writes that it runs to a file of its
+device's own (`<device-name>.<key>.alive`), so another device of the agent, as an older build's after a reset, never
+stands in for it. While it belongs to no vault it asks the desktop's device for what it may hold, so a join it missed,
+as one made while it didn't run, still reaches it.
+
 ### Asking for access
 
 An access request is a record, not a message of its own, so it needs no fifth primitive: it is a record and two shares.
@@ -451,7 +462,8 @@ An access request is a record, not a message of its own, so it needs no fifth pr
 An agent device that is no vault's device yet can write no record, so its first request is a file it leaves for the
 desktop app (`<device>.request`): who asks, by its device's name and key, a level, why, the vaults it names, if any, and
 its offer. Once it is a device of its device vault, its MCP tool `avendb_request_access` asks for more as any vault
-does, a request its device vault writes to the aven over it, and leaves no file.
+does, a request its device vault writes to the aven over it, and leaves no file. So a file from a device the desktop
+already sees in a vault was left before its join reached it: the desktop takes it away rather than show it.
 
 The page shows both kinds on its one consent screen, and the person picks all their vaults or only some, a level each,
 and approves or denies; "All my vaults, now and later" gives a standing grant (above), to the aven and from the aven

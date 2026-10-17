@@ -384,7 +384,7 @@ impl Service {
                 Value::Null
             }
             "fileAgain" => self.file_again(number(0)?).await?.into(),
-            "agents" => self.agents(&d),
+            "agents" => self.agents(&d).await,
             "agentCommand" => {
                 let harness = a.get(0).as_str().unwrap_or(agent::CLAUDE);
                 agent::named(harness)?;
@@ -658,8 +658,10 @@ impl Service {
 
     /// The access requests the agents on this Mac left (`agent::asking`), each as it asks: its name, its kind, its
     /// device, its offer while it belongs to no vault, the level it asks for, why, and the vaults it names, and whether
-    /// it runs now (`online`); this device's own offer left for them as it is now.
-    fn agents(&self, d: &Device) -> Value {
+    /// it runs now (`online`); this device's own offer left for them as it is now. A request whose device is in a vault
+    /// already, by this device's view, its join hadn't reached when it asked: it is taken away, as the agent asks as a
+    /// record from then on (`grant`), and the join reaches it from this device (`agent`).
+    async fn agents(&self, d: &Device) -> Value {
         self.leave_offer(d);
         let dir = agent::agents(&self.config.dir);
         let mut asking = vec![];
@@ -670,10 +672,26 @@ impl Service {
                 continue;
             };
             if let Some(asked) = self.request(name) {
-                asking.push(asked);
+                asking.push((name.to_string(), asked));
             }
         }
-        Value::Array(asking)
+        let devices: Vec<Option<SignerId>> =
+            asking.iter().map(|(_, asked)| asked["device"].as_str().and_then(SignerId::from_hex)).collect();
+        let joined = d.node().read(move |lab, me| {
+            let st = lab.state(me);
+            let member = |d: SignerId| st.vaults().iter().any(|v| v.devices.contains(&d));
+            devices.into_iter().map(|d| d.is_some_and(member)).collect::<Vec<bool>>()
+        });
+        let joined = joined.await;
+        let mut open = vec![];
+        for ((name, asked), joined) in asking.into_iter().zip(joined) {
+            if joined {
+                std::fs::remove_file(agent::request(&self.config.dir, &name)).ok();
+            } else {
+                open.push(asked);
+            }
+        }
+        Value::Array(open)
     }
 
     /// Agent device `name`'s access request as it left it, checked: its device's key, its offer if any naming that
