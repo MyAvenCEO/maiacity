@@ -18,6 +18,7 @@
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, released } from '$lib/app/places';
 	import { loadGames } from '$lib/app/games.svelte.js';
+	import { loadCode } from '../../../game/code/index.js';
 
 	let { children } = $props();
 
@@ -28,8 +29,12 @@
 
 	onMount(async () => {
 		void loadGames();
+		// the views and logic modules from the Maia City vault (C10), loaded beside the sign-in check so the app's pages
+		// run them from the start; it never throws, and offline the repo's seed runs
+		const code = loadCode();
 		try {
 			founder = await me();
+			await code;
 			phase = 'ready';
 		} catch {
 			phase = 'signed-out';

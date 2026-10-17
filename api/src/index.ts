@@ -29,6 +29,8 @@ import { relayDecision } from "./liquid.js";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
 import { ViewError, deleteView, dropLandedDrafts, keepView, listViews, putView } from "./genui.js";
 import { published } from "./games";
+import { loadCode } from "../../game/code/index.js";
+import { feedOf } from "../../game/code/sources/avendb.js";
 import { EconomyError, addDays, catalogue, saveState, createMip, decideMip, landMips, deleteRun, editBrain, forgetBrains, getBrains, getConfig, getMip, getRun, linkMipPrs, setMipForget, listConfigs, listMips, listRuns, putBrains, startRun, withdrawMip } from "./economy.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -160,6 +162,17 @@ const publicFounder = (f: { id: string; number: number | bigint; name: string; c
 
 await migrate();
 useDb(fromBunSql(sql));
+// the views and logic modules from the Maia City vault (C10): read once before serving, then every minute, so a change
+// accepted in the vault runs here without a deploy. Read from avenDB's own feed inside the compose network
+// (AVENDB_FEED): avendb.maia.city takes only post-quantum key exchange. A failed read keeps what was loaded, else the seed.
+const CODE_FEED = feedOf(process.env.AVENDB_FEED || undefined);
+const loadVaultCode = () =>
+  loadCode({ url: CODE_FEED }).then(
+    (r: { error?: string }) => r.error && console.error("code from the Maia City vault:", r.error),
+    (e: unknown) => console.error("code from the Maia City vault:", e),
+  );
+await loadVaultCode();
+setInterval(loadVaultCode, 60_000);
 // what the last deploy brought from the repo: accepted MIPs that landed in code/, Generated UI drafts that were kept
 await landMips().catch((e) => console.error("landing MIPs:", e));
 await dropLandedDrafts().catch((e) => console.error("dropping landed drafts:", e));
