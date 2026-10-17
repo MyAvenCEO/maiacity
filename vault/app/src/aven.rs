@@ -197,6 +197,83 @@ pub async fn put_path(app: &AppHandle, op: Value, path: &Path, done: impl Fn(u64
     put_source(app, op, &Source::from(path), done).await
 }
 
+/// `put_path` by the key of studio worker `worker` (its device, in hex), which this Mac hosts (`avendb::worker`):
+/// the file at `path` brought in on the worker's own node, which reads it twice, once for its key and once to seal
+/// it, each pass hashed and the two compared; then read back from the worker's node and compared again, so that what
+/// a job made counts as in only once its bytes are known to be. The op's answer, with `blake3` added.
+async fn put_by(app: &AppHandle, worker: &str, mut op: Value, path: &Path) -> Result<Value, String> {
+    use avendb_net::{NoBytes, NoCeremony};
+    use futures_lite::Stream;
+    type Chunks = std::pin::Pin<Box<dyn Stream<Item = io::Result<bytes::Bytes>> + Send>>;
+    let node = crate::avendb::worker(app, worker).await?;
+    let len = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?.len();
+    op["len"] = json!(len);
+    if let Some(o) = op.as_object_mut() {
+        o.remove("as");
+    }
+    // each pass the node reads, hashed as it goes
+    let passes: Arc<Mutex<Vec<blake3::Hasher>>> = Arc::default();
+    let (from, sums) = (path.to_path_buf(), passes.clone());
+    let source = move || -> Chunks {
+        let pass = {
+            let mut sums = sums.lock().unwrap_or_else(|p| p.into_inner());
+            sums.push(blake3::Hasher::new());
+            sums.len() - 1
+        };
+        let (from, sums) = (from.clone(), sums.clone());
+        Box::pin(futures_lite::stream::unfold((None::<tokio::fs::File>, false), move |(file, done)| {
+            let (from, sums) = (from.clone(), sums.clone());
+            async move {
+                if done {
+                    return None;
+                }
+                let mut file = match file {
+                    Some(file) => file,
+                    None => match tokio::fs::File::open(&from).await {
+                        Ok(file) => file,
+                        Err(e) => return Some((Err(e), (None, true))),
+                    },
+                };
+                let mut buf = vec![0u8; CHUNK];
+                match tokio::io::AsyncReadExt::read(&mut file, &mut buf).await {
+                    Ok(0) => None,
+                    Ok(n) => {
+                        buf.truncate(n);
+                        sums.lock().unwrap_or_else(|p| p.into_inner())[pass].update(&buf);
+                        Some((Ok(bytes::Bytes::from(buf)), (Some(file), false)))
+                    }
+                    Err(e) => Some((Err(e), (None, true))),
+                }
+            }
+        }))
+    };
+    let (put, _) = node.run(op, Some(source), None::<&NoCeremony>).await.map_err(|e| format!("{e:#}"))?;
+    let mut put = answer(put)?;
+    let sums: Vec<_> = passes.lock().unwrap_or_else(|p| p.into_inner()).iter().map(blake3::Hasher::finalize).collect();
+    let sum = *sums.first().ok_or("the worker never read the file")?;
+    if sums.iter().any(|s| *s != sum) {
+        return Err(format!("{} changed while it came in", path.display()));
+    }
+    // read back: the worker's sealed bytes, opened again, must be the disk's
+    let (root, size) = (put["root"].as_str().unwrap_or_default().to_string(), put["size"].as_u64().unwrap_or(0));
+    let mut back = blake3::Hasher::new();
+    let mut at = 0;
+    while at < len {
+        let to = (at + WINDOW).min(len);
+        let op = json!({ "op": "read_file", "root": root, "size": size, "from": at, "to": to });
+        let (out, bytes) = node.run(op, None::<NoBytes>, None::<&NoCeremony>).await.map_err(|e| format!("{e:#}"))?;
+        answer(out)?;
+        let bytes = bytes.filter(|b| !b.is_empty()).ok_or("the worker's copy ends early")?;
+        back.update(&bytes);
+        at += bytes.len() as u64;
+    }
+    if back.finalize() != sum {
+        return Err(format!("the worker's copy of {} doesn't match the disk's: not counted", path.display()));
+    }
+    put["blake3"] = json!(sum.to_hex().to_string());
+    Ok(put)
+}
+
 /// `n` bytes of `src` from `at` (fewer at its end), read on a thread of the blocking pool (a legacy vault file is read
 /// in place, by waiting on its store).
 async fn chunk_of(src: &Source, at: u64, n: usize) -> Result<Vec<u8>, String> {
@@ -355,7 +432,8 @@ pub async fn studio_ingest(
 
 /// What a task of a rule the page's worker claimed reads and does (`studio_job`): the task itself, the entries its
 /// inputs name and, for an input another rule made, the files that task made, all as the device's world shows them
-/// (`EntryView`), by entry; and the vault the worker acts as in the task's vault, which what it makes is put as.
+/// (`EntryView`), by entry; and who puts what it makes: the studio worker the Mac hosts for the task's vault, by its
+/// own key (`worker`), or where the vault has none yet, the Mac's own device acting as `actor`.
 pub struct Job<'a> {
     app: &'a AppHandle,
     task: &'a Value,
@@ -363,6 +441,8 @@ pub struct Job<'a> {
     /// a cut's rules only: the studio's library items of avenDB's footage (src/lib/studio/aven.js `libraryOf`)
     library: &'a [Value],
     actor: &'a str,
+    /// the device of the vault's studio worker, in hex, which this Mac hosts
+    worker: Option<&'a str>,
     kind: crate::jobs::Kind,
     subject: String,
 }
@@ -425,12 +505,28 @@ impl Job<'_> {
     async fn put_file(&self, path: &Path, name: &str, media: &str, tags: &[&str]) -> Result<(String, File), String> {
         let len = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?.len();
         let op = json!({ "op": "put_file", "vault": self.vault()?, "name": name, "media": media, "tags": tags, "as": self.actor });
-        let put = put_path(self.app, op, path, |_| {}).await;
+        let put = match self.worker {
+            Some(worker) => put_by(self.app, worker, op, path).await,
+            None => put_path(self.app, op, path, |_| {}).await,
+        };
         std::fs::remove_file(path).ok();
         let put = put?;
         let entry = put["entry"].as_str().map(str::to_string).ok_or("the device named no entry")?;
         let file = File { root: put["root"].as_str().ok_or("the device named no root")?.to_string(), size: put["size"].as_u64().unwrap_or(0), len };
         Ok((entry, file))
+    }
+
+    /// Runs op `op` as the worker, or as `actor` where there is none: what it answered.
+    async fn run(&self, mut op: Value) -> Result<Value, String> {
+        let Some(worker) = self.worker else {
+            op["as"] = json!(self.actor);
+            return run(self.app, op).await;
+        };
+        // a worker acts as its own device vault, as its shares let it
+        if let Some(o) = op.as_object_mut() {
+            o.remove("as");
+        }
+        answer(crate::avendb::call(self.app, "run", vec![op, json!(worker)]).await?)
     }
 
     /// The task's vault.
@@ -462,8 +558,8 @@ impl Job<'_> {
                 continue;
             }
             for out in r["outputs"].as_array().into_iter().flatten().filter(|o| !gone(o)) {
-                let op = json!({ "op": "insert", "entry": out, "path": ["tags"], "value": DELETED, "as": self.actor });
-                if let Err(e) = run(self.app, op).await {
+                let op = json!({ "op": "insert", "entry": out, "path": ["tags"], "value": DELETED });
+                if let Err(e) = self.run(op).await {
                     tracing::warn!("a replaced file stays: {e}");
                 }
             }
@@ -570,10 +666,11 @@ fn stem(name: &str) -> String {
 }
 
 /// Does task `task` of a rule the page's worker claimed (src/lib/studio/jobs/executors.js `NATIVE`), with `entries`
-/// what it reads (`Job`), acting as `actor`: what it made, `{outputs, result}`, as the worker writes it back. It holds
+/// what it reads (`Job`), as the vault's studio worker `worker` where the Mac hosts one, else acting as `actor`: what
+/// it made, `{outputs, result}`, as the worker writes it back. It holds
 /// its rule's lane in the Mac's jobs while it runs, so the Processes tab shows it.
 #[tauri::command]
-pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<String, Value>, library: Option<Vec<Value>>, actor: String) -> Result<Value, String> {
+pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<String, Value>, library: Option<Vec<Value>>, actor: String, worker: Option<String>) -> Result<Value, String> {
     use crate::jobs::Kind;
     let rule = task["rule"].as_str().unwrap_or_default().to_string();
     let id = task["entry"].as_str().unwrap_or_default().to_string();
@@ -592,7 +689,7 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
         other => return Err(format!("no Rust executor for rule {other}")),
     };
     let library = library.unwrap_or_default();
-    let job = Job { app: &app, task: &task, entries: &entries, library: &library, actor: &actor, kind, subject: format!("aven:{id}") };
+    let job = Job { app: &app, task: &task, entries: &entries, library: &library, actor: &actor, worker: worker.as_deref(), kind, subject: format!("aven:{id}") };
     crate::jobs::queue(kind, &job.subject, &name);
     let turn = crate::jobs::turn(kind, &job.subject).await.map_err(|_| "cancelled".to_string())?;
     job.stage("starting", 0.0);

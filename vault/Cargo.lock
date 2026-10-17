@@ -3979,11 +3979,14 @@ name = "maiacity-studio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "avendb",
  "avendb-device",
+ "avendb-net",
  "axum",
  "base64 0.22.1",
  "blake3",
  "block2",
+ "bytes",
  "chrono",
  "futures-lite",
  "iroh",

@@ -39,7 +39,8 @@ export const EXECUTORS = {
 
 /**
  * A rule the Mac app's Rust does: the task, the entries its inputs name and the files the rules behind its made inputs
- * made, as this device's world shows them, by entry, handed to `studio_job` with the vault the worker acts as; it holds
+ * made, as this device's world shows them, by entry, handed to `studio_job` with the vault the worker acts as and the
+ * vault's studio worker, which puts what it makes where this Mac hosts one; it holds
  * the rule's lane while it runs and answers `{ outputs, result }`. A cut's rules (`render`, `frame`) hand it the
  * studio's library items of avenDB's footage too, which the cut's clips name (../aven.js `libraryOf`).
  * @param {string} rule @returns {import('./worker.js').Executor}
@@ -68,7 +69,7 @@ const native = (rule) => async (task, ctx) => {
 	if (!Object.keys(entries).length) throw new Error('its entry is not on this device');
 	const { command } = await import('$lib/native');
 	const library = rule === 'render' || rule === 'frame' ? (await import('../aven.js')).libraryOf(ctx.world) : null;
-	return command('studio_job', { task, entries, library, actor: ctx.as });
+	return command('studio_job', { task, entries, library, actor: ctx.as, worker: ctx.worker ?? null });
 };
 
 /**
