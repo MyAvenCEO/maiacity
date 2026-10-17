@@ -558,7 +558,7 @@
 	 * @param {import('./vaults.js').WorldView} w @param {string} city
 	 */
 	async function seed(w, city) {
-		const left = unseeded(w, city, seedPieces());
+		const left = unseeded(w, city, seedPieces(seeded(w)[2]?.[0]?.id ?? null));
 		/** @type {string[]} */
 		const failed = [];
 		for (const p of left) {
