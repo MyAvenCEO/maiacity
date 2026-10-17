@@ -543,15 +543,61 @@ export const isStanding = (name) => !!name?.startsWith(STANDING);
 export const plainName = (name) => (isStanding(name) ? (name ?? '').slice(STANDING.length) : name);
 
 /**
- * The ops of a standing grant at `level`, all of person `mine`'s vaults, now and later, to `agent`, a device vault of
- * their aven `aven`: their vault's to the aven, then the aven's, resting on it, to the agent (the `share` op's
- * `standing`). Every vault they own follows both now, and every vault they found later follows them as it is founded.
- * @param {string} mine @param {string} aven @param {string} agent @param {string} level
+ * The ops of a standing grant at `level`, all of the person's vaults in world `world`, now and later, to `agent`, a
+ * device vault of their aven `aven`: their vault's to the aven, then the aven's, resting on it, to the agent (the
+ * `share` op's `standing`). Every vault they own follows both now, and every vault they found later follows them as it
+ * is founded. A Suggester's brings an AIP author's share beside it over each vault of theirs it reaches now
+ * (`aipAuthorOps`); one they found later follows the Suggester's alone.
+ * @param {WorldView} world @param {string} aven @param {string} agent @param {string} level
  */
-export const standingOps = (mine, aven, agent, level) => [
-	{ op: 'share', over: mine, who: { vault: aven }, level, standing: true, as: mine },
-	{ op: 'share', over: mine, who: { vault: agent }, level, standing: true, as: aven }
+export const standingOps = (world, aven, agent, level) => [
+	{ op: 'share', over: world.mine, who: { vault: aven }, level, standing: true, as: world.mine },
+	{ op: 'share', over: world.mine, who: { vault: agent }, level, standing: true, as: aven },
+	...(level === SUGGESTS ? theirsNow(world).flatMap((v) => aipAuthorOps(world, v, aven, agent)) : [])
 ];
+
+/** The level whose agents also open AIPs: a Suggester writes only on proposals, and bundles its lines in an AIP. */
+export const SUGGESTS = 'Suggester';
+
+/**
+ * The group of its own an agent given Suggester over a vault gets there besides (avendb-device's `agent::aip_author`):
+ * it adds an entry and sets its fields, on the vault's AIPs alone (`AIPS`), so it opens AIPs over the proposal lines it
+ * wrote and promotes them as their author, while the vault alone reviews them.
+ */
+export const AIP_AUTHOR = { name: 'AIP author', ops: [{ op: 'create' }, { op: 'set', path: [] }] };
+
+/** What an AIP author's share is on: the vault's AIPs, its entries of type `aip`. */
+export const AIPS = { type: ['aip'] };
+
+/**
+ * The vaults of the person's a standing grant reaches now: their own, and each their vault owns, but those that act
+ * for their one owner alone (an aven, a device vault).
+ * @param {WorldView} world
+ */
+const theirsNow = (world) =>
+	world.vaults.filter((v) => (v.id === world.mine || v.via?.length) && !oneOwner(world, v.kind)).map((v) => v.id);
+
+/**
+ * The ops that give `agent`, a device vault of the person's aven `aven`, an AIP author's share over vault `over`, beside
+ * the Suggester's it gets there, as the Mac's grant does (avendb-device's `agent::pass_on_aips`): the aven's to the
+ * agent, acting as the aven, resting on one the aven holds there that gives all it gives (the `share` op rests a share
+ * on such a one first): an AIP author's, or an Editor's on the whole vault. Over a vault of the person's, `over` gives
+ * the aven its AIP author's share first where it holds neither, acting as itself; over the aven, the aven's own; over
+ * another, as a coop that hired the aven, none where the aven holds neither there. None where the agent holds one
+ * already.
+ * @param {WorldView} world @param {string} over @param {string} aven @param {string} agent
+ */
+export function aipAuthorOps(world, over, aven, agent) {
+	/** @param {CapView} c @param {string} who */
+	const author = (c, who) => c.over === over && c.who === who && c.slice?.name === AIP_AUTHOR.name;
+	if (world.shares.some((c) => author(c, agent))) return [];
+	/** @param {string} who @param {string} as */
+	const share = (who, as) => ({ op: 'share', over, who: { vault: who }, level: AIP_AUTHOR, what: AIPS, as });
+	const editor = (/** @type {CapView} */ c) => c.over === over && c.who === aven && c.wide && c.group === 'Editor';
+	if (over === aven || world.shares.some((c) => author(c, aven) || editor(c))) return [share(agent, aven)];
+	const theirs = over === world.mine || owns(world, world.mine, over);
+	return theirs ? [share(aven, over), share(agent, aven)] : [];
+}
 
 /**
  * A `where` of labels as the entries that pass every test of one of its conjunctions, for its words: `'all'` for the

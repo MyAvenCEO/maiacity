@@ -708,8 +708,10 @@ impl Service {
     /// a share over vault `over` at that level on to the agent's device vault, resting on one the aven holds there,
     /// acting as the aven, with no ceremony (`agent::pass_on`): over a vault their vault is or owns, one that vault
     /// gives the aven first, where it holds none at that level; over another, as a coop that hired the aven, the one it
-    /// gave. Each share is checked before anything is signed (`agent::passable`). `{aven, vault}`: the aven, and the
-    /// agent's device vault.
+    /// gave. Beside a Suggester's share, the aven passes on an AIP author's over the same vault, on its AIPs alone, so
+    /// the agent opens AIPs over its proposal lines (`agent::pass_on_aips`), where the aven holds or is given one to
+    /// rest it on. Each share is checked before anything is signed (`agent::passable`). `{aven, vault}`: the aven, and
+    /// the agent's device vault.
     async fn grant(
         self: &Arc<Self>,
         d: &Arc<Device>,
@@ -780,6 +782,10 @@ impl Service {
         let pass = move |lab: &mut Lab, me| -> Result<()> {
             for (over, level) in asks {
                 agent::pass_on(lab, me, mine, aven, vault, over, &level)?;
+                // a Suggester opens AIPs over its proposal lines too, where the aven may pass that on
+                if level == agent::SUGGESTS {
+                    agent::pass_on_aips(lab, me, mine, aven, vault, over)?;
+                }
             }
             Ok(())
         };

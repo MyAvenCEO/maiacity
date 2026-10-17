@@ -48,6 +48,7 @@
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
 	import { may } from './ops.js';
+	import { session } from './session.svelte.js';
 	import { acting, count, hue, initials, KINDS, list, nameOf, signerName } from './vaults.js';
 	import { wordsFilling } from './youtube.js';
 
@@ -71,8 +72,9 @@
 		drives = null
 	} = $props();
 
-	/** the vault the person looks at: their own until they pick another */
-	let picked = $state('');
+	/** the vault the person looks at: their own until they pick another, which every page of the tab shares (the
+	 *  session's `vault`), so a page that acts in avenDB elsewhere acts as the person does here */
+	const picked = $derived(session.vault);
 	let adding = $state(false);
 	/** whether the drawer that asks the vault looked at for access is open */
 	let asking = $state(false);
@@ -222,7 +224,7 @@
 				return context;
 			},
 			pick: (id) => {
-				picked = id;
+				session.vault = id;
 				if (route.entry) go(route.page);
 			},
 			add: { label: 'New vaults…', go: () => (adding = true) }
@@ -251,7 +253,7 @@
 	$effect(() => {
 		const entry = route.entry;
 		const of = entry ? world.entries.find((e) => e.entry === entry)?.vault : undefined;
-		if (of) picked = of;
+		if (of) session.vault = of;
 	});
 
 	/** Who owns vault `v`, as a line. @param {import('./vaults.js').VaultView} v */

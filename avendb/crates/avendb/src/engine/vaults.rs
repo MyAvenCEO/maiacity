@@ -601,9 +601,10 @@ fn what_of(o: &Map<String, Value>) -> Result<Selector, Refused> {
 /// consent), a device's place a device of it (`Sharing::Device`), both approved by the vault's owners: `{"edit": id}`.
 /// A keep level to a device is a keep share `as` issues; anything else a share of the group named, or of its own, on
 /// what `what` picks, resting where `as` isn't `over` on a share `as` holds that the rules let it rest on, an owner
-/// share or, to a vault `as` owns, one at its level or more (`world::parent`), approved by the owners where its level
-/// is owner: `{"share": id}`. With `"standing": true`, a grant below Owner on everything of the person's own vault to
-/// a vault is a standing grant (`standing`). The rules refuse whatever else.
+/// share or, to a vault `as` owns, one at its level or more (`world::parent`), one that gives all it gives first
+/// (`world::parent_giving`), approved by the owners where its level is owner: `{"share": id}`. With `"standing":
+/// true`, a grant below Owner on everything of the person's own vault to a vault is a standing grant (`standing`). The
+/// rules refuse whatever else.
 fn share(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let (over, whom, giving, select) = (vault_of(o, "over")?, whom(o)?, giving(o)?, what_of(o)?);
     let actor = actor_of(lab, me, o)?;
@@ -655,8 +656,7 @@ fn share(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
         Whom::Device(d) => Who::Device(d),
         _ => Who::Everyone,
     };
-    let level = rules::level_of(&ops);
-    let parent = world::parent(lab.state(me), actor, over, who, level, everything);
+    let parent = world::parent_giving(lab, me, actor, over, who, &ops, everything);
     issued(lab, me, NewShare { over, who, name, select, ops, parent, issuer: actor, keep: None })
 }
 

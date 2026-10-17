@@ -62,7 +62,7 @@ use avendb::id::{ShareId, SignerId, VaultId};
 use avendb::lab::{Lab, NewShare};
 use avendb::policy::{Issued, Kind, Level, Principal, State, Vault, Who};
 use avendb::rules;
-use avendb::slice::Selector;
+use avendb::slice::{Atom, Selector};
 use avendb::wire::FileHold;
 use avendb::world;
 use avendb_net::{NoBytes, NoCeremony, Node, Offer, Options, disk, server};
@@ -157,7 +157,7 @@ pub fn folder(host: &Path, name: &str) -> PathBuf {
 pub const LEVELS: [&str; 3] = ["Viewer", "Suggester", "Editor"];
 
 /// What an agent asks for until it asks for something else.
-const ASKS: &str = "Suggester";
+const ASKS: &str = SUGGESTS;
 
 /// Why, until it says why itself.
 const WHY: &str = "to work in your vaults as your agent";
@@ -316,6 +316,79 @@ pub fn pass_on(
     let (name, ops) = (group.name.to_string(), group.ops);
     let sub = NewShare { over, who, name, select, ops, parent, issuer: aven, keep: None };
     lab.issue(me, &[me], sub).map_err(|why| anyhow!("the agent's {level} share is refused: {why:?}"))
+}
+
+/// The level whose agents also open AIPs: a Suggester writes only on proposals, and bundles its lines in an AIP for its
+/// person to review (`pass_on_aips`).
+pub const SUGGESTS: &str = "Suggester";
+
+/// The name of the group of its own an agent given Suggester over a vault gets there besides (`aip_author`): it opens
+/// AIPs, Aven Improvement Proposals, over the proposal lines it wrote, and moves them on as their author.
+pub const AIP_AUTHOR: &str = "AIP author";
+
+/// The type of an AIP's entry (avendb's `engine::aips::AIP`).
+const AIP: &str = "aip";
+
+/// What an AIP author's share gives (`AIP_AUTHOR`): its ops, adding an entry and setting any of its fields, with a
+/// writer's read; and what it is on, the vault's AIPs alone. So an agent that may only suggest elsewhere in the vault
+/// opens an AIP over its own proposal lines (the ops engine's `aip_open`), promotes it and withdraws it as its author
+/// (`aip_promote`, `aip_withdraw`), and changes nothing else: the vault alone reviews it, and its acceptance merges the
+/// lines.
+pub fn aip_author() -> (Vec<rules::Op>, Selector) {
+    let ops = vec![rules::Op::Read, rules::Op::Create, rules::Op::Set { path: vec![], to: None, on: None }];
+    (ops, Selector::AnyOf(vec![vec![Atom::TypeIn(vec![AIP.into()])]]))
+}
+
+/// Aven `aven` passes an AIP author's share over vault `over` (`aip_author`) on to its agent's device vault `vault`,
+/// beside the Suggester's share `pass_on` passes on to it there, on device `me` of the person whose vault is `mine`,
+/// acting as the aven, with no ceremony, as `pass_on` passes a share on: resting on one the aven holds over `over` that
+/// gives all it gives and reaches the vault's AIPs, an AIP author's own or one on the whole vault, such as an Editor's
+/// (`world::gives`), so that taking that one back ends it too. Over a vault `mine` is or owns, `over` gives the aven an
+/// AIP author's share first where it holds none such, always; over the aven itself, the aven's own; over another, as a
+/// coop that hired the aven, only where the coop gave it such a share, and none where it didn't, as one gave it a
+/// Suggester's alone. One the aven passed on before stands for it. The share, or none where the aven may pass none on.
+pub fn pass_on_aips(
+    lab: &mut Lab,
+    me: SignerId,
+    mine: VaultId,
+    aven: VaultId,
+    vault: VaultId,
+    over: VaultId,
+) -> Result<Option<ShareId>> {
+    let (ops, select) = aip_author();
+    let st = lab.state(me);
+    let before = |cp: &&Issued| {
+        cp.share.over == over && cp.share.issuer == aven && st.live(cp.id)
+            && lab.slice(me, cp.id).is_some_and(|s| s.name == AIP_AUTHOR)
+    };
+    if let Some(cp) = st.shares_held(vault).find(before) {
+        return Ok(Some(cp.id));
+    }
+    let who = Who::Vault(vault);
+    // a share of the aven's that gives all it gives, on the vault's AIPs or on the whole vault
+    let rests = |lab: &Lab| {
+        let st = lab.state(me);
+        let reaches = |p: ShareId| {
+            st.share(p).is_some_and(|cp| cp.share.wide) || lab.slice(me, p).is_some_and(|s| s.select == select)
+        };
+        let held = world::parents(st, aven, over, who, rules::level_of(&ops), false);
+        held.into_iter().find(|&p| world::gives(lab, me, p, &ops) && reaches(p))
+    };
+    let parent = if over == aven {
+        None
+    } else if let Some(p) = rests(lab) {
+        Some(p)
+    } else if over == mine || lab.state(me).owns(mine, over) {
+        let (name, ops, select) = (AIP_AUTHOR.to_string(), ops.clone(), select.clone());
+        let given = NewShare { over, who: Who::Vault(aven), name, select, ops, parent: None, issuer: over, keep: None };
+        lab.issue(me, &[me], given).map_err(|why| anyhow!("the aven's AIP author share is refused: {why:?}"))?;
+        Some(rests(lab).context("the aven's AIP author share to pass on")?)
+    } else {
+        return Ok(None);
+    };
+    let sub = NewShare { over, who, name: AIP_AUTHOR.to_string(), select, ops, parent, issuer: aven, keep: None };
+    let sub = lab.issue(me, &[me], sub).map_err(|why| anyhow!("the agent's AIP author share is refused: {why:?}"))?;
+    Ok(Some(sub))
 }
 
 /// The file in the agents' folder beside the app's `host` folder where the Mac's device leaves its offer for them.
@@ -485,8 +558,10 @@ impl Agent {
              its person, write them on proposals, then bundle those lines in an AIP (an Aven Improvement Proposal) \
              with avendb_run: `aip_open` (`vault`, `title`, a `note` saying why and what changes, and `proposals`, \
              each `{{entry, line}}` of that vault; it makes an entry of type aip, so only where its shares let it \
-             create), then `aip_promote` (`entry`), which gives it the vault's next number, AIP-n. Only a promoted \
-             AIP reaches a person, who answers it whole in The OS app or at /app/aips/?aip=<entry>; an agent never \
+             create: a Suggester agent may, as its person's grant gives it an AIP author's share on the vault's AIPs \
+             beside its Suggester's, and an Editor may), then `aip_promote` (`entry`), which gives it the vault's next \
+             number, AIP-n. Only a promoted AIP reaches a person, who answers it whole in The OS app or at \
+             /app/aips/?aip=<entry>; an agent never \
              reviews one, since `aip_review` is the vault's own. Read them with avendb_ask, `aips` or `aip` (`entry`, \
              with its diff); after a revise, write again on the same lines and promote it again: it keeps its \
              number. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
