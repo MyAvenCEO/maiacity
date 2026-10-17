@@ -4,7 +4,7 @@
  *
  *   ./core.js     createRenderer, lowPower, topPixelRatio, adaptiveResolution, precompile, fitTo, disposeObject,
  *                 disposeRenderer, createControls, materials
- *   ./post.js     createPost: the one post stack
+ *   ./post.js     createPost: the one post stack; createComposer: the one EffectComposer (the Factories' too)
  *   ./world.js    createWorldRenderer (the sandbox kit's createStage), worldRenderer: worlds
  *   ./stage.js    createStageRenderer: asset viewers (the paper studio on top: ../assets/stage.js)
  *   ./preview.js  picture: one frame on demand, offscreen
