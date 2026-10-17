@@ -1002,13 +1002,55 @@ pub fn server_level(st: &State, mine: VaultId, avenceo: VaultId) -> Level {
 /// at `level` or more; and only one on the whole vault if the new share is (`wide`). An owner share first, then one on
 /// the whole vault, then the highest.
 pub fn parent(st: &State, issuer: VaultId, over: VaultId, who: Who, level: Level, wide: bool) -> Option<ShareId> {
+    parents(st, issuer, over, who, level, wide).first().copied()
+}
+
+/// Every share `parent` may pick, in the order it picks them: none if `issuer` is the vault itself.
+pub fn parents(st: &State, issuer: VaultId, over: VaultId, who: Who, level: Level, wide: bool) -> Vec<ShareId> {
     if issuer == over {
-        return None;
+        return vec![];
     }
     let probe = |cp: &Issued| Share { over, who, level, wide, select: vec![], parent: Some(cp.id), issuer, nonce: 0 };
     let mut held: Vec<&Issued> = st.shares_held(issuer).filter(|cp| st.share_parent_ok(&probe(cp))).collect();
     held.sort_by_key(|cp| (cp.share.level != Level::Owner, !cp.share.wide, std::cmp::Reverse(cp.share.level.rank())));
-    held.first().map(|cp| cp.id)
+    held.into_iter().map(|cp| cp.id).collect()
+}
+
+/// `parent`, for a new share that gives the ops `ops`: of the shares it may rest on, the first whose chain gives every
+/// one of them too, as device `me` reads it (`gives`), so that what the new share gives is in force; else the first,
+/// as `parent` picks it. So an aven passes on an AIP author's share resting on its own, rather than on a Suggester's
+/// share it holds beside it, which adds no entry. The rules check the share as any; this only picks among those they
+/// let it rest on.
+pub fn parent_giving(
+    lab: &Lab,
+    me: SignerId,
+    issuer: VaultId,
+    over: VaultId,
+    who: Who,
+    ops: &[rules::Op],
+    wide: bool,
+) -> Option<ShareId> {
+    let held = parents(lab.state(me), issuer, over, who, rules::level_of(ops), wide);
+    held.iter().copied().find(|&p| gives(lab, me, p, ops)).or(held.first().copied())
+}
+
+/// Whether share `share` gives every op of `ops`, by its slice as device `me` reads it: each share of its chain names
+/// each of them, or the op of its kind that reaches anything (any path, any line, any value, any tag), as an Editor's
+/// share does. False where `me` reads no slice of it.
+pub fn gives(lab: &Lab, me: SignerId, share: ShareId, ops: &[rules::Op]) -> bool {
+    use rules::Op;
+    let widest = |o: &Op| match o {
+        Op::Set { .. } => Op::Set { path: vec![], to: None, on: None },
+        Op::Insert { .. } => Op::Insert { path: vec![], on: None },
+        Op::Remove { .. } => Op::Remove { path: vec![], on: None },
+        Op::Move { .. } => Op::Move { path: vec![], on: None },
+        Op::Merge { .. } => Op::Merge { on: None, path: vec![] },
+        Op::Tag(_) => Op::Tag(None),
+        o => o.clone(),
+    };
+    let names = |grant: &[Op], o: &Op| grant.iter().any(|g| g == o || *g == widest(o));
+    lab.slice(me, share)
+        .is_some_and(|s| s.grants().iter().all(|g| ops.iter().all(|o| names(&g.ops, o))))
 }
 
 /// What the name of a standing grant starts with, the name of its group following it: a share on the whole of a

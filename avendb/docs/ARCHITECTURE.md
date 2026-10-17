@@ -395,7 +395,10 @@ and likewise Cursor, Grok and our own native aven.
 
 An agent holds sub caps: shares the aven passes on to it, each resting on one the aven holds, no stronger and no wider
 (Passing a right on, above). So no agent ever gets more than its aven, and a coop that revokes its share to the aven
-ends every agent's share resting on it. Each harness signs by its own key with no more than its aven gives it, and one
+ends every agent's share resting on it. An agent given Suggester over a vault gets a second sub cap there beside it, a
+group of its own, "AIP author" (`create` and `set`, on `{"type": ["aip"]}` alone), resting on one the aven holds that
+gives as much, so that it opens AIPs over its own proposal lines and promotes them as their author, while the vault
+alone reviews them (section 8, "AIPs"). Each harness signs by its own key with no more than its aven gives it, and one
 is taken out by removing its device or revoking its shares, leaving the others. The same harness on the person's second
 Mac is a second device of the same agent's device vault. A harness never names or picks an aven: the person's one aven
 is the parent, and the agent is added under it, the aven founded with the person's first agent.

@@ -35,7 +35,10 @@
 	and approving founds it. Then they pick the vaults it works in, a level each, Viewer, Suggester or Editor: every
 	vault they own, or only some, never an aven or a device vault, which act for their one owner alone (the kind table's
 	`most`); and each vault that shared with the aven, as a coop that hired it, up to the aven's own level there.
-	Approving an agent that has no device vault yet takes one touch of their passkey; a share needs none. "All my vaults,
+	Approving an agent that has no device vault yet takes one touch of their passkey; a share needs none. A Suggester
+	gets an AIP author's share beside each Suggester's, on that vault's AIPs alone (./vaults.js `aipAuthorOps`,
+	avendb-device's `pass_on_aips`), so it opens AIPs over its proposal lines for the person to review, as the sheet
+	says. "All my vaults,
 	now and later" is a standing grant (avendb's `world::STANDING`): their vault gives the aven one, which the aven
 	passes on to the agent, every vault they own follows it now, and every vault they found later follows it as it
 	follows their server setting, the aven's share first and the agent's resting on it. Each vault's Sharing page shows
@@ -50,7 +53,20 @@
 	import { fade, fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { ago, avenOf, KINDS, list, nameOf, oneOwner, order, owns, short as shortId, standingOps } from './vaults.js';
+	import {
+		ago,
+		aipAuthorOps,
+		avenOf,
+		KINDS,
+		list,
+		nameOf,
+		oneOwner,
+		order,
+		owns,
+		short as shortId,
+		standingOps,
+		SUGGESTS
+	} from './vaults.js';
 
 	/**
 	 * @typedef {import('./vaults.js').AccessRequestView} Request
@@ -180,13 +196,23 @@
 		return asks.filter((l) => can.has(l));
 	}
 	/**
+	 * The ops that give `q`'s asker `level` on vault `x` (`sharing`), and for an agent of the person's aven asking it to
+	 * be a Suggester, an AIP author's share beside it, on `x`'s AIPs alone, as the Mac's grant gives one
+	 * (./vaults.js `aipAuthorOps`).
+	 * @param {Asked} q @param {string} x @param {string} level
+	 */
+	const giving = (q, x, level) => [
+		...sharing(q, x, level),
+		...(agentAsks(q) && level === SUGGESTS ? aipAuthorOps(world, x, q.to, q.from) : [])
+	];
+	/**
 	 * The ops that give `q`'s asker `level` on vault `x`: a share as `x` itself where the vault asked is `x` or owns it;
 	 * for an agent asking its aven for the person's vault, the aven's share first where it holds none at `level` on
 	 * the whole of it, then the aven's to the agent; else the asked vault's, on the part of `x` its own share gives
 	 * where that isn't all of it.
 	 * @param {Asked} q @param {string} x @param {string} level
 	 */
-	function giving(q, x, level) {
+	function sharing(q, x, level) {
 		/** @param {string} who @param {string} as @param {import('./vaults.js').Where} [what] */
 		const share = (who, as, what) => ({ op: 'share', over: x, who: { vault: who }, level, as, ...(what ? { what } : {}) });
 		if (x === q.to || owns(world, q.to, x)) return [share(q.from, x)];
@@ -227,6 +253,9 @@
 	/** The level of the standing grant answer `a` gives, "All my vaults, now and later", or '' for none.
 	 *  @param {Answer} a */
 	const standing = (a) => (a.all ? a.level : '');
+
+	/** Whether answer `a` makes its agent a Suggester anywhere, which opens AIPs there too. @param {Answer} a */
+	const suggests = (a) => (a.all && a.level === SUGGESTS) || shares(a).some((g) => g.level === SUGGESTS);
 
 	/** The aven answer `a` joins, by its name: the person's one, else the new one they name. @param {Answer} a */
 	const avenName = (a) => (aven ? nameOf(aven) : a.naming.trim());
@@ -276,6 +305,11 @@
 	/** The shares answer `p` gives `q`'s asker, vault by vault. @param {Asked} q @param {Record<string, string>} p
 	 *  @returns {Grant[]} */
 	const given = (q, p) => offered(q).filter((x) => p[x]).map((x) => ({ over: x, level: p[x] }));
+	/** Whether answer `p` makes `q`'s asker, an agent of the person's aven, a Suggester anywhere, which opens AIPs
+	 *  there too. @param {Asked} q @param {Record<string, string>} p */
+	const suggestsTo = (q, p) =>
+		agentAsks(q) &&
+		((allOf(q) && alls[q.entry]?.level === SUGGESTS) || given(q, p).some((g) => g.level === SUGGESTS));
 
 	/** Request `q` asks for an owner add: to co-own the vault asked, or an invitation to co-own the one asking.
 	 *  @param {Asked} q */
@@ -294,7 +328,7 @@
 	/** Gives `q`'s asker the shares answer `p` picks, then writes "granted" into it, acting for the vault asked.
 	 *  @param {Asked} q @param {Record<string, string>} p */
 	async function give(q, p) {
-		const all = allOf(q) ? standingOps(world.mine, q.to, q.from, alls[q.entry].level) : [];
+		const all = allOf(q) ? standingOps(world, q.to, q.from, alls[q.entry].level) : [];
 		const ops = [...all, ...given(q, p).flatMap((g) => giving(q, g.over, g.level)), answering(q, 'granted')];
 		if (await api.runAll(`Granting ${vaultName(q.from)} access`, ops)) answered = [...answered, q.entry];
 	}
@@ -495,6 +529,9 @@
 			</section>
 		{/if}
 
+		{#if suggests(a)}
+			<p class="soft">As a Suggester, {r.name} can also open AIPs, bundles of its proposals, for you to review.</p>
+		{/if}
 		<p class="says">
 			{says(r, a)}
 			{#if !member}
@@ -634,6 +671,9 @@
 			</section>
 		{/if}
 
+		{#if suggestsTo(q, p)}
+			<p class="soft">As a Suggester, {from} can also open AIPs, bundles of its proposals, for you to review.</p>
+		{/if}
 		<p class="says">
 			{grants.length || allOf(q)
 				? `${gets(from, grants, allOf(q) ? alls[q.entry].level : '')}.`

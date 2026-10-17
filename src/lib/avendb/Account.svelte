@@ -3,8 +3,9 @@
 	which stays in the browser's authenticator, with the master recovery key as a way back while avenDB is young, and
 	this browser is one of its devices, its keys unmasked by the passkey at every unlock, what it holds kept on its
 	shelf in the browser's private file system (OPFS) so that it opens again in one ceremony, and kept open as long as
-	the tab lives (`kept`): leaving avenDB for another page of the site and coming back asks for no second unlock.
-	Every device of the vault
+	the tab lives, by the tab's one session ($lib/avendb/session.svelte.js), which every page of the site that reads
+	avenDB shares: leaving avenDB for another page and coming back, or opening one that reads it, asks for no second
+	unlock. Every device of the vault
 	shows by the name on its card, an entry of the vault the device writes itself, end-to-end encrypted like its notes
 	(avendb-browser's `Device::card`), and every vault by the name on its profile, an entry this browser writes into it
 	(`Device::profile`): the person's own by their maiaCITY name, the seed's by theirs. In the Mac app the device runs
@@ -28,49 +29,35 @@
 	it from the consent screen ($lib/avendb/AccessRequest.svelte). avenDB's server runs at avendb.maia.city: its
 	relay and its code are filled in, and in a dev build a test server’s can take their place (?relay=, ?server=).
 -->
-<script module>
-	/** This browser's device once unlocked, as long as the tab lives: what runs it again (its WebAssembly, its shelf,
-	 *  what opens it), taken up when the person comes back to avenDB from another page of the site, so one unlock lasts
-	 *  the tab. The device runs on meanwhile, syncing; forgetting the account here lets go of it. The Mac app's device
-	 *  runs in the app and opens again without a ceremony, so it is never kept here.
-	 *  @type {{ avendb: any, store: any, meta: any, device: any } | null} */
-	let kept = null;
-</script>
-
 <script>
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { me } from '$lib/auth/client';
 	import { native } from '$lib/native';
 	import AccessRequest from './AccessRequest.svelte';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
-	import { allowed, answer, reads, refs } from './ops.js';
+	import { answer } from './ops.js';
+	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
 	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
 
-	const STORE = 'avendb-browser';
 	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
 	 *  logs it at every start; the same as long as its shelf (g10, since the reset of #776) keeps its device's key */
 	const RELAY = 'https://avendb.maia.city';
 	const SERVER =
 		'AVENDB1MBCQX7N5J4CIMMOIBDPTTJZANSCFEE5IXOFZBSUAH7PVD7W6FV2WUYSUHQEVHFIJCZ452CQLVIJ4K3W5HBKEQ4SRAA7MGXXMBYPDJ7YBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 
-	/** @type {any} the device's WebAssembly */
-	let avendb = null;
-	/** @type {any} in the Mac app, its device beside it ($lib/avendb/native.js): null where the page runs the device */
-	let mac = null;
-	/** @type {any} the page's store, its device's shelf in OPFS (./device/store.js) */
-	let store = null;
-	/** @type {any} */
-	let device = $state(null);
-	/** @type {any} what opens this browser's device again, as its shelf keeps it (avendb-browser's `Meta`): kept as a
-	 *  plain object, as it comes */
-	let meta = $state.raw(null);
-	/** @type {'loading' | 'broken' | 'new' | 'closed' | 'open'} */
-	let phase = $state('loading');
-	let doing = $state('');
-	let error = $state('');
+	// the tab's device, as the session holds it (./session.svelte.js): what it is now, and what it shows of its world
+	const phase = $derived(session.phase);
+	const device = $derived(session.device);
+	const meta = $derived(session.meta);
+	const world = $derived(session.world);
+	/** in the Mac app, its device beside it ($lib/avendb/native.js): null where the page runs the device */
+	const mac = $derived(session.mac);
+	/** what the page is doing, and what went wrong: the session's, which its `attempt` and every op shows */
+	const doing = $derived(session.doing);
+	const error = $derived(session.error);
 	/**
 	 * @typedef {{ title: string, asks: string, plan: string[], own: import('./steps.js').Stage[],
 	 *  report: import('./steps.js').Report | null, began: number, t0: number, ended: number, error: string }} Start
@@ -84,7 +71,7 @@
 	/** Whether the vault founded here has avenDB's server keep its ciphertext: on unless the person turns it off. */
 	let backup = $state(true);
 	/** Whether this device keeps a full copy, every entry and every file, or a light one, every entry and a file as
-	 *  it is opened: its copy setting, which it writes once it has none (`refresh`). A full copy in the Mac app, a light
+	 *  it is opened: its copy setting, which it writes once it has none (`upkeep`). A full copy in the Mac app, a light
 	 *  one in any browser, whose storage the browser may clear: Safari does after a week unused. */
 	let full = $state(native());
 	let code = $state('');
@@ -94,8 +81,6 @@
 	let name = $state('');
 	/** the person's name at maiaCITY, which their account goes by */
 	let person = $state('');
-	/** what the device shows of its world (avendb-browser's `World::to_json`): kept whole, as it comes */
-	let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 	let qr = $state('');
 	let link = $state('');
 	/** in the Mac app, the UDP sockets its device's node bound, on which it reaches its peers directly */
@@ -116,14 +101,6 @@
 	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
 	let standardizing = false;
 	const standardized = new Set();
-
-	const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-	const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
-
-	/** Who asks for the passkey: the browser, or in the Mac app its sign-in sheet on maia.city ($lib/avendb/device/passkey.js). */
-	const asks = native() ? 'a sign-in sheet asks for your passkey' : 'your browser asks for your passkey';
-	/** This device, as the person sees it. */
-	const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
 
 	/** A name for this browser that tells it from the person's other devices: its browser, on its system; or the app. */
 	function deviceName() {
@@ -155,7 +132,10 @@
 		return system ? `${browser} on ${system}` : browser;
 	}
 
-	onMount(async () => {
+	// the tab's device, loaded once for every page of the site, or taken up again where this tab opened it already, so
+	// one unlock lasts the tab (./session.svelte.js); the session lets this page go as it closes, and what watched the
+	// device for it stops, while the device runs on, syncing
+	onMount(() => {
 		const q = new URLSearchParams(location.search);
 		// the built-in server, or, in a dev build alone, a test server's for this visit only: a link can't lead a
 		// person's page to another server
@@ -165,51 +145,30 @@
 		arrived = !!code;
 		name = deviceName();
 		me().then(
-			(f) => {
-				person = f.name;
-				refresh();
-			},
+			(f) => (person = f.name),
 			() => {}
 		);
-		if (native()) {
-			await openMac().catch((/** @type {Error} */ e) => {
-				error = `The Mac app's avenDB didn't start: ${e?.message ?? e}`;
-				phase = 'broken';
-			});
-			return;
-		}
-		if (kept) {
-			({ avendb, store, meta } = kept);
-			running(kept.device);
-			return;
-		}
-		try {
-			const pkg = await import('./device/avendb_browser.js');
-			await pkg.default();
-			avendb = pkg;
-			const stores = await import('./device/store.js');
-			store = await stores.open(STORE);
-			meta = (await avendb.storeMeta(store)) ?? null;
-			phase = meta ? 'closed' : 'new';
-		} catch (e) {
-			error = `This browser can't be a device: ${/** @type {Error} */ (e).message}`;
-			phase = 'new';
-		}
+		return session.boot();
 	});
 
-	// the Mac app's device runs on in the app, and the page lets go of it; this browser's runs on as long as the tab
-	// does (`kept`). Either way what watched it here stops (`watch`, `refresh`)
-	let gone = false;
-	onDestroy(() => {
-		gone = true;
-		if (mac) device?.close();
-		device = null;
+	// once it runs: the link and the QR code the person's next device links through, its own and the relay it reaches
+	// avenDB's server by; and in the Mac app, the sockets its node bound
+	$effect(() => {
+		const d = device;
+		const via = meta?.relay;
+		if (phase !== 'open' || !d || !via) return;
+		sockets = mac ? d.sockets() : null;
+		// a link the person's other devices open: the site's, as the app's own pages are the app's alone
+		const site = native() ? 'https://maia.city' : location.origin;
+		const shown = `${site}${location.pathname}?${new URLSearchParams({ link: d.offer(), relay: via })}`;
+		link = shown;
+		session.qr(shown, 240).then((svg) => link === shown && (qr = svg));
 	});
 
 	// while it is open: the access requests as records, looked for every few seconds as well as at each change, in the
 	// browser and the Mac app alike; and in the Mac app, the requests on this Mac, as an agent device leaves its request
 	// once its harness starts it, and again as it asks for more, and the drives plugged in and unplugged. The phase is
-	// read first, so that the effect runs again as it changes: `mac` isn't reactive, and is set before the device opens
+	// read first, so that the effect runs again as it changes
 	$effect(() => {
 		if (phase !== 'open') return;
 		const look = () => {
@@ -228,8 +187,9 @@
 
 	/** The access requests as records, as the device holds them now (the `requests` op): none where it doesn't say. */
 	const lookAsks = () =>
-		device &&
-		send({ op: 'requests' })
+		session.device &&
+		session
+			.ask({ op: 'requests' })
 			.then((/** @type {any} */ out) => {
 				if (out && 'ok' in out) records = out.ok;
 			})
@@ -237,53 +197,13 @@
 
 	/** In the Mac app: the volumes plugged in and the drives joined, as its device sees them now. */
 	const lookDrives = () =>
-		mac
+		session.mac
 			?.call('drives')
 			.then((/** @type {import('./native.js').Drives} */ seen) => (drives = seen))
 			.catch(() => {});
 
-	/** In the Mac app: its device beside it, open already, to unlock, or none yet. The app runs avenDB natively, and
-	 *  the page never runs a second device beside it. */
-	async function openMac() {
-		const bridge = await import('./native.js');
-		const held = await bridge.status();
-		mac = bridge;
-		meta = held.meta ?? null;
-		if (meta && held.device) running(new mac.NativeDevice(held.device));
-		else phase = meta ? 'closed' : 'new';
-	}
-
-	/** In the Mac app: its device runs from here on, its folder keeping what opens it again. @param {any} info */
-	async function macOpened(info) {
-		meta = (await mac.call('status')).meta;
-		running(new mac.NativeDevice(info));
-	}
-
-	/** A sign-in whose passkey roots no vault the other side holds: say which button sets one up. @param {Error} e */
-	const noAccount = (e) => {
-		if (!/no vault of this passkey/.test(e.message)) throw e;
-		throw new Error(
-			'This passkey has no account yet: set one up with “Use my maiaCITY passkey”, ' +
-				'or pick the passkey you set yours up with.'
-		);
-	};
-
-	/**
-	 * Runs `work`, showing what it does and what went wrong: whether it went through.
-	 * @param {string} what @param {() => Promise<unknown>} work
-	 */
-	async function run(what, work) {
-		[doing, error] = [what, ''];
-		try {
-			await work();
-			return true;
-		} catch (e) {
-			error = plain(/** @type {Error} */ (e).message ?? String(e));
-			return false;
-		} finally {
-			doing = '';
-		}
-	}
+	const run = session.attempt;
+	const act = session.change;
 
 	/** What each step of a start shows in the sheet. */
 	const words = stepWords(here);
@@ -305,7 +225,7 @@
 	 * function it shows its steps by with `device`, from when it starts on. Whether it went through; the sheet closes
 	 * by itself a little after a start that did.
 	 * @param {string} title @param {string[]} plan
-	 * @param {(at: { step: (step: string) => void, device: () => (report: any) => void }) => Promise<unknown>} work
+	 * @param {(at: import('./session.svelte.js').Steps) => Promise<unknown>} work
 	 */
 	async function signs(title, plan, work) {
 		const prompts = plan.filter((step) => words[step]?.prompt).length;
@@ -313,7 +233,8 @@
 		const asked = `${asks[0].toUpperCase()}${asks.slice(1)} ${times(prompts)}`;
 		signing = { title, asks: asked, plan, own: [], report: null, began, t0: began, ended: 0, error: '' };
 		const s = signing;
-		[doing, error, clock] = [title, '', began];
+		[session.doing, session.error] = [title, ''];
+		clock = began;
 		const tick = setInterval(() => (clock = performance.now()), 100);
 		/** The page's own step under way, if any, is over at `at`. @param {number} at */
 		const over = (at) => s.own.filter((o) => o.end == null).forEach((o) => (o.end = at));
@@ -335,157 +256,51 @@
 			return true;
 		} catch (e) {
 			over((s.ended = performance.now()));
-			error = s.error = plain(/** @type {Error} */ (e).message ?? String(e));
+			session.error = s.error = plain(/** @type {Error} */ (e).message ?? String(e));
 			return false;
 		} finally {
 			clearInterval(tick);
-			[doing, clock] = ['', performance.now()];
+			session.doing = '';
+			clock = performance.now();
 		}
-	}
-
-	/**
-	 * In the Mac app: calls `name` with `args` on its device, which starts it, showing the steps of its start by
-	 * `shows` as the device reports them (`steps`) while the call is under way, and once more as it ends.
-	 * @param {(report: any) => void} shows @param {string} name @param {...unknown} args
-	 */
-	async function watching(shows, name, ...args) {
-		let going = true;
-		const polling = (async () => {
-			while (going) {
-				const report = await mac.call('steps').catch(() => null);
-				// the last start's, over, until this one's begins
-				if (going && report && !report.over) shows(report);
-				await new Promise((r) => setTimeout(r, 150));
-			}
-		})();
-		try {
-			return await mac.call(name, ...args);
-		} finally {
-			going = false;
-			await polling;
-			const report = await mac.call('steps').catch(() => null);
-			if (report) shows(report);
-		}
-	}
-
-	async function ceremonies(/** @type {string | undefined} */ id) {
-		const passkey = await import('./device/passkey.js');
-		return { passkey, ...passkey.ceremonies(avendb, id) };
 	}
 
 	/** Founds the person's human vault with the passkey they signed up to maiaCITY with, or with one made here if
 	 *  `fresh`: the unlock, which is the passkey's pass for this new device, and one ceremony for the vault and this
 	 *  device in it, which also claims the server if nobody has yet; one ceremony more to make the passkey. The vault
 	 *  gives avenDB's server a backup cap, keeping its ciphertext, unless the person turned `backup` off: then a relay
-	 *  cap, which lets their devices through and keeps nothing. @param {boolean} fresh */
+	 *  cap, which lets their devices through and keeps nothing (the session's `found`). @param {boolean} fresh */
 	const found = (fresh) =>
-		signs('Setting up your account', plan('found', { mac: !!mac, make: fresh }), async ({ step, device }) => {
-			if (mac) {
-				await macOpened(await watching(device(), 'found', name.trim(), relay, server, backup));
-				return;
-			}
-			const { passkey, unlock, sign, held } = await ceremonies(undefined);
-			if (fresh) step('make');
-			const made = fresh ? await passkey.create(person || name) : null;
-			if (made) held.id = made.id;
-			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
-			const shows = device();
-			const d = await avendb.Device.found(name.trim(), relay, server, made?.spki, unlockNew, sign, backup, shows, store);
-			step('save');
-			await started(d, nonce, held.id);
-		});
+		signs('Setting up your account', plan('found', { mac: !!mac, make: fresh }), (at) =>
+			session.found(fresh, { name: name.trim(), relay, server, backup, person }, at)
+		);
 
 	/** Links this browser to the person's vault through `through`: the code another of their devices shows, or
 	 *  avenDB's server's, which hands over their vault for their passkey alone. One ceremony, the unlock, which is the
-	 *  passkey's pass for this new device and signs the edit that adds it to their vault too. @param {string} through
-	 *  @param {string} what */
+	 *  passkey's pass for this new device and signs the edit that adds it to their vault too (the session's `link`).
+	 *  @param {string} through @param {string} what */
 	const linkHere = (through, what = `Linking ${here}`) =>
-		signs(what, plan('link', { mac: !!mac }), async ({ step, device }) => {
-			if (mac) {
-				await macOpened(await watching(device(), 'link', name.trim(), relay, through.trim()).catch(noAccount));
-				return;
-			}
-			const { unlock, held } = await ceremonies(undefined);
-			const nonce = crypto.getRandomValues(new Uint8Array(32));
-			const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
-			const d = await avendb.Device.link(name.trim(), relay, through.trim(), unlockNew, device(), store)
-				.catch(noAccount);
-			step('save');
-			await started(d, nonce, held.id);
-		});
+		signs(what, plan('link', { mac: !!mac }), (at) =>
+			session.link(through.trim(), { name: name.trim(), relay }, at)
+		);
 
-	const unlockHere = () =>
-		signs('Unlocking your account', plan('open', { mac: !!mac }), async (at) => {
-			try {
-				await unlocking(at);
-			} catch (e) {
-				// a store of the device taken out of its vault, or kept before avenDB started fresh: it opens nothing, so
-				// it is put aside, never deleted, and this browser signs in or sets up again
-				if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
-				await (mac ? mac.call('forget') : store.aside());
-				[meta, phase] = [null, 'new'];
-				throw new Error(
-					`What ${here} kept holds no vault of yours: it was taken out of your vault, or kept before avenDB started fresh, so it is put aside. Sign in or set up your account again with your passkey.`
-				);
-			}
-		});
+	/** Opens the device this browser, or the app, holds, in the unlock alone; a store of the device taken out of its
+	 *  vault, or kept before avenDB started fresh, is put aside, and this browser signs in or sets up again (the
+	 *  session's `unlock`). */
+	const unlockHere = () => signs('Unlocking your account', plan('open', { mac: !!mac }), (at) => session.unlock(at));
 
-	/** Opens the device this browser, or the app, holds, in the unlock alone: the page marks its own steps with `step`
-	 *  and hands the device the function it shows its own by with `device`.
-	 *  @param {{ step: (step: string) => void, device: () => (report: any) => void }} at */
-	async function unlocking({ step, device }) {
-		if (mac) return macOpened(await watching(device(), 'open'));
-		const { unlock } = await ceremonies(meta.credential);
-		step('unlock');
-		const unlocked = await unlock(unhex(meta.nonce));
-		running(await avendb.Device.open(unlocked, device(), store));
-	}
+	// what the device shows of its world, each time it reads it again: what this page keeps up in it besides
+	$effect(() => {
+		const [w, who] = [world, person];
+		if (w) untrack(() => upkeep(w, who));
+	});
 
-	/** The device runs from here on, its shelf keeping what opens it again, even should that fail: it can still show
-	 *  its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
-	 *  @param {string} credential */
-	async function started(d, nonce, credential) {
-		meta = { name: name.trim(), relay };
-		running(d);
-		meta = await d.keep(hex(nonce), credential);
-		if (kept && kept.device === d) kept.meta = meta;
-	}
-
-	/** @param {any} d */
-	function running(d) {
-		// kept for the tab's next visit to avenDB, even where the person left before it opened
-		if (!mac) kept = { avendb, store, meta, device: d };
-		if (gone) return void (mac && d.close());
-		device = d;
-		phase = 'open';
-		sockets = mac ? d.sockets() : null;
-		// a link the person's other devices open: the site's, as the app's own pages are the app's alone
-		const site = native() ? 'https://maia.city' : location.origin;
-		link = `${site}${location.pathname}?${new URLSearchParams({ link: d.offer(), relay: meta.relay })}`;
-		if (mac) mac.call('qrSvg', link, 240).then((/** @type {string} */ svg) => (qr = svg));
-		else qr = avendb.qrSvg(link, 240);
-		watch(d).catch((/** @type {Error} */ e) => (error = `Showing what arrives failed: ${e.message}`));
-	}
-
-	/** Shows what `d` holds, then again each time it changes as its other devices sync with it, until it closes. @param {any} d */
-	async function watch(d) {
-		let [edits, keys] = await d.size();
-		await refresh();
-		while (device === d && (await d.changed(edits, keys))) {
-			[edits, keys] = await d.size();
-			await refresh();
-		}
-	}
-
-	async function refresh() {
-		const d = device;
-		if (!d) return;
-		/** @type {import('./vaults.js').WorldView | null} */
-		const w = answer(await send({ op: 'world' })) ?? null;
-		if (d !== device) return;
-		world = w;
-		if (!w) return;
+	/**
+	 * What this page keeps up as world `w` shows: the access requests as records; this device's card and copy setting;
+	 * the profiles of the person's vault, by their maiaCITY name `who`, and of the seed; avenCEO's standard schemas.
+	 * @param {import('./vaults.js').WorldView} w @param {string} who
+	 */
+	function upkeep(w, who) {
 		lookAsks();
 		const mine = w.vaults.find((v) => v.id === w.mine);
 		// its card, so the person's other devices show it by name: once it holds its vault's key, as a device just
@@ -493,31 +308,33 @@
 		const card = mine?.devices.find((x) => x.me);
 		if (card && card.name !== meta.name && !carding) {
 			carding = true;
-			send({ op: 'card', name: meta.name })
+			session
+				.ask({ op: 'card', name: meta.name })
 				.then(answer)
-				.catch((/** @type {Error} */ e) => (error = `Naming ${here} failed: ${e.message}`))
+				.catch((/** @type {Error} */ e) => (session.error = `Naming ${here} failed: ${e.message}`))
 				.finally(() => (carding = false));
 		}
 		// its copy setting, a full copy or a light one, as the person chose it here, where it has none yet
 		if (card && !card.copy && !copying) {
 			copying = true;
-			send({ op: 'copy', full })
+			session
+				.ask({ op: 'copy', full })
 				.then(answer)
-				.catch((/** @type {Error} */ e) => (error = `Setting what ${here} keeps failed: ${e.message}`))
+				.catch((/** @type {Error} */ e) => (session.error = `Setting what ${here} keeps failed: ${e.message}`))
 				.finally(() => (copying = false));
 		}
 		// the profiles of the person's vault, by their maiaCITY name, and of the seed their claim of the server
 		// founded, if it did: written once, by whichever of their devices comes first
 		/** @type {[string, string][]} */
 		const unnamed = [];
-		if (mine && !mine.name && person) unnamed.push([mine.id, person]);
+		if (mine && !mine.name && who) unnamed.push([mine.id, who]);
 		for (const [v, name] of seeded(w)) if (!v.name) unnamed.push([v.id, name]);
 		if (unnamed.length && !profiling) {
 			profiling = true;
 			(async () => {
-				for (const [v, name] of unnamed) answer(await send({ op: 'profile', vault: v, name }));
+				for (const [v, name] of unnamed) answer(await session.ask({ op: 'profile', vault: v, name }));
 			})()
-				.catch((/** @type {Error} */ e) => (error = `Naming your vaults failed: ${plain(e.message)}`))
+				.catch((/** @type {Error} */ e) => (session.error = `Naming your vaults failed: ${plain(e.message)}`))
 				.finally(() => (profiling = false));
 		}
 		// avenDB's standard schemas and lenses, each an entry of the seed's company, avenCEO GmbH, shared with everyone
@@ -528,7 +345,7 @@
 			standardizing = true;
 			standardize(w, company.id)
 				.then(() => standardized.add(company.id))
-				.catch((/** @type {Error} */ e) => (error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
+				.catch((/** @type {Error} */ e) => (session.error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
 				.finally(() => (standardizing = false));
 		}
 	}
@@ -542,6 +359,7 @@
 	 * @param {import('./vaults.js').WorldView} w @param {string} company
 	 */
 	async function standardize(w, company) {
+		const send = session.ask;
 		/** @type {import('./db.js').Db} */
 		const db = answer(await send({ op: 'database', vault: company }));
 		const held = new Set([...db.schemas, ...db.lenses].map((x) => x.id));
@@ -579,114 +397,12 @@
 	/** The types of avenCEO GmbH's entries every app reads, as it reads their schemas. */
 	const SHARED = [FLOW, FUNCTION];
 
-	/** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
-	 *  new vaults (avendb/docs/ARCHITECTURE.md §8). */
-	const APPROVED = ['share', 'revoke', 'settings', 'found'];
-
-	/**
-	 * Op `op` on the device: the one way the page reads or changes the database (./ops.js, avendb/docs/ARCHITECTURE.md
-	 * §8), on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device
-	 * runs only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device
-	 * says whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file`.
-	 * The device's answer: `{ ok }`, or `{ refused, why }`.
-	 * @param {any} op @param {(at: number, n: number) => Promise<Uint8Array>} [read]
-	 */
-	async function send(op, read) {
-		const d = device;
-		if (reads(op)) return d.run(op);
-		if (APPROVED.includes(op?.op) && doing) {
-			const [verdict] = (await d.run({ op: 'may', ops: [op] }))?.ok ?? [];
-			if (allowed(verdict) && verdict !== true) doing = `${doing}: ${asks} once`;
-		}
-		return d.run(op, mac ? undefined : (await ceremonies(meta.credential)).sign, read);
-	}
-
-	/**
-	 * Runs `work` as `what`, then shows what changed: whether it went through.
-	 * @param {string} what @param {() => Promise<unknown>} work
-	 */
-	const act = async (what, work) => {
-		const ok = await run(what, work);
-		if (ok) await refresh();
-		return ok;
-	};
-
-	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through. */
+	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through: the
+	 *  session's (./session.svelte.js), and what this page does besides. */
 	const api = {
-		/**
-		 * Runs change op `op` as `what` (./ops.js, avendb/docs/ARCHITECTURE.md §8): an entry's change, a share, a
-		 * revocation, a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or
-		 * `null` if it didn't go through, with why shown.
-		 * @param {string} what @param {object} op
-		 */
-		run: async (what, op) => {
-			let done = null;
-			const ok = await act(what, async () => (done = answer(await send(op))));
-			return ok ? done : null;
-		},
-		/**
-		 * Runs change ops `ops` one after another as `what`, each `"$n"` in one the entry op n created (./ops.js
-		 * `refs`), then shows what changed once: their answers, or `null` where one didn't go through, the rest not run.
-		 * @param {string} what @param {object[]} ops
-		 */
-		runAll: async (what, ops) => {
-			/** @type {any[]} */
-			const done = [];
-			const ok = await act(what, async () => {
-				for (const op of ops) done.push(answer(await send(refs(op, done))));
-			});
-			return ok ? done : null;
-		},
-		/**
-		 * Runs op `op` as it is, a read or a change, as the studio's console and the screens' reads do: the device's
-		 * answer, `{ ok }` or `{ refused, why }`.
-		 * @param {object} op
-		 */
-		ask: (op) => send(op),
-		/** Vault `vault`'s database as this device holds it, for the database studio. @param {string} vault */
-		database: async (vault) => answer(await send({ op: 'database', vault })),
-		/** The database's log: every signed edit this device holds, for the studio's History. */
-		log: async () => answer(await send({ op: 'log' })),
-		/** What the device does in the background, `{ running, ended }`, for the studio's Jobs. */
-		jobs: async () => answer(await send({ op: 'jobs' })),
-		/** A note's main line, its proposals and every edit of it, for its page. @param {string} entry */
-		note: async (entry) => answer(await send({ op: 'note', entry })),
-		/**
-		 * Brings file `file` into vault `vault`, tagged `tags`, acting for `actor`: sealed onto this device's shelf a
-		 * megabyte at a time, whatever its size, then an entry that brings it, which syncs as any edit does. What it
-		 * made, `{ entry, root, size }`, or `null`.
-		 * @param {string} actor @param {string} vault @param {File} file @param {string} media @param {string[]} tags
-		 */
-		putFile: async (actor, vault, file, media, tags) => {
-			const what = `Adding ${file.name}`;
-			/** @param {number} at @param {number} n */
-			const read = async (at, n) => {
-				if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
-				return new Uint8Array(await file.slice(at, at + n).arrayBuffer());
-			};
-			const op = { op: 'put_file', vault, name: file.name, media, tags, len: file.size, as: actor };
-			let done = null;
-			const ok = await act(what, async () => (done = answer(await send(op, read))));
-			return ok ? done : null;
-		},
-		/**
-		 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
-		 * store or fetched from a peer that may hand them over.
-		 * @param {string} root @param {number} size @param {number} from @param {number} to
-		 * @returns {Promise<Uint8Array>}
-		 */
-		readFile: async (root, size, from, to) => {
-			const out = await send({ op: 'read_file', root, size, from, to });
-			answer(out);
-			return out.bytes;
-		},
+		...session.api,
 		/** @param {string} name */
-		rename: (name) =>
-			act(`Renaming ${here}`, async () => {
-				if (!name || name === meta.name) return;
-				await (mac ? mac.call('rename', name) : device.rename(name));
-				meta = { ...meta, name };
-			}),
+		rename: (name) => act(`Renaming ${here}`, () => session.rename(name)),
 		forget: () => forget(),
 		/**
 		 * In the Mac app: grants agent device `name`'s access request, the one its device `device` left: it joins the
@@ -696,7 +412,7 @@
 		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault}`. With
 		 * `standing`, a level, it gets all the person's vaults, now and later, too: a standing grant of their vault to
 		 * the aven, and the aven's, resting on it, to the agent's device vault (the `share` op's `standing`), which every
-		 * vault they own follows now and every vault they found follows later.
+		 * vault they own follows now and every vault they found later follows.
 		 * @param {string} name @param {string} device @param {{ over: string, level: string }[]} shares
 		 * @param {string} avenName @param {string} [standing]
 		 */
@@ -704,8 +420,9 @@
 			act(`Granting ${name}`, async () => {
 				const joined = await mac.call('grant', name, device, shares, avenName);
 				requests = requests.filter((r) => r.device !== device);
-				if (!standing || !world) return;
-				for (const op of standingOps(world.mine, joined.aven, joined.vault, standing)) answer(await send(op));
+				const w = session.world;
+				if (!standing || !w) return;
+				for (const op of standingOps(w, joined.aven, joined.vault, standing)) answer(await session.ask(op));
 			}),
 		/** In the Mac app: denies agent device `name`'s access request, its device `device`'s. @param {string} name
 		 *  @param {string} device */
@@ -753,7 +470,7 @@
 
 	// on a dev server only: the walks (scripts/avendb-hitl.mjs) act as an aven through the page's own api, as its agent
 	// device would over MCP
-	if (import.meta.env.DEV) /** @type {any} */ (globalThis).avendb = { api, world: () => world };
+	if (import.meta.env.DEV) /** @type {any} */ (globalThis).avendb = { api, world: () => session.world };
 
 	const forget = () => {
 		const mine = world?.vaults.find((v) => v.id === world?.mine);
@@ -762,13 +479,9 @@
 				? `Forget your account on ${here}? Your vault and your other devices keep everything, and you can sign in here again.`
 				: `Forget your account on ${here}? Your vault stays yours: sign in with your passkey on any device, and avenDB’s server hands it back.`;
 		if (!confirm(ask)) return;
-		return run(`Forgetting ${here}`, async () => {
-			await device?.close();
-			kept = null;
-			// its shelf is put aside, never deleted, and a new one is in use: in the app's folder, or in OPFS
-			await (mac ? mac.call('forget') : store.aside());
-			[device, meta, world, phase] = [null, null, null, 'new'];
-		});
+		// the session lets go of the device on every page of the tab, and its shelf is put aside, never deleted, and a
+		// new one is in use: in the app's folder, or in OPFS
+		return run(`Forgetting ${here}`, () => session.forget());
 	};
 </script>
 

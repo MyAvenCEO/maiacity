@@ -19,8 +19,11 @@
 //! too, and no agent reads a file of a vault none of its shares reaches. An agent adds a spark to her own vault by
 //! its fields' plain names, as the page captures one, and her Mac reads it; one that may add a spark nowhere says so,
 //! and where it may. Her aven passes on no more than it holds of a coop that hired it, and the coop taking its share
-//! back ends its agent's. And Eve's photo drive (`drive`) joins her vault as a device of its own in one
-//! sheet, its key never on it in plain; the Mac it is plugged into hosts it, a full copy; unplugged, its node stops and
+//! back ends its agent's. A Suggester agent gets an AIP author's share beside its Suggester's, on her AIPs alone,
+//! resting on one her vault gives her aven: it opens an AIP over its proposal line and promotes it, which her vault
+//! accepts; a Viewer opens none, and over a coop that gave the aven a Suggester's alone it gets none. And Eve's photo
+//! drive (`drive`) joins her vault as a device of its own in one sheet, its key never on it in plain; the Mac it is
+//! plugged into hosts it, a full copy; unplugged, its node stops and
 //! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
 //! stays open, and plugged in again it is hosted with no sheet; her other Mac opens it in one; removed like a lost
 //! phone, her vault's peers refuse it. A studio worker (`worker`) she adds under her studio coop in one sheet is a
@@ -41,7 +44,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use avendb::cast::*;
 use avendb::id::{EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
-use avendb::lab::Lab;
+use avendb::lab::{Lab, NewShare};
 use avendb::policy::{Action, Kind, Level, Principal, Revoking, Sharing};
 use avendb::sealed::FileRoot;
 use avendb::slice::Selector;
@@ -1029,6 +1032,103 @@ fn her_aven_passes_on_no_more_than_a_coop_that_hired_it_gave_and_the_coop_taking
     w.lab.sync_all(12);
     assert!(!live(&w, claude, hired) && !live(&w, claude, sub), "the agent's ends with the aven's");
     assert!(live(&w, mac, own), "and its share over her vault stays");
+}
+
+/// What op `op` answered on device `d`, which it must have: `ok`.
+fn done(w: &mut World, d: SignerId, op: Value) -> Value {
+    let out = avendb::engine::run(&mut w.lab, d, &op);
+    assert!(out.get("ok").is_some(), "refused: {op} → {out}");
+    out["ok"].clone()
+}
+
+#[test]
+fn a_suggester_agent_opens_aips_over_its_proposals_which_her_vault_accepts_and_a_viewer_opens_none() {
+    let mut w = world();
+    let (alice, mac, passkey, bob, bob_mac, bob_key) = (w.alice, w.mac_a, w.passkey_a, w.bob, w.mac_b, w.passkey_b);
+    // Alice's aven, and agentClaude's and agentCodex's device vaults under it, each with its device, as her Mac's
+    // grant makes them
+    let found = |lab: &mut Lab, kind: Kind, owner: VaultId, nonce: u64| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+        VaultId::from(lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
+    };
+    let aven = found(&mut w.lab, Kind::Aven, alice, 1);
+    let agent_in = |lab: &mut Lab, name: &str, nonce: u64| {
+        let vault = found(lab, Kind::DeviceVault, aven, nonce);
+        let device = lab.device(name);
+        let add = Action::Share(Sharing::Device { vault, device, seal_to: None });
+        lab.submit(mac, &[passkey, device], add).expect("its device");
+        (vault, device)
+    };
+    let (claudes, claude) = agent_in(&mut w.lab, "agentClaude", 2);
+    let (codexes, codex) = agent_in(&mut w.lab, "agentCodex", 3);
+    // her grant: agentClaude a Suggester over her vault, and beside it an AIP author's share on her AIPs alone,
+    // resting on one her vault gives the aven first; agentCodex a Viewer
+    agent::pass_on(&mut w.lab, mac, alice, aven, claudes, alice, agent::SUGGESTS).expect("a Suggester's");
+    let aips = agent::pass_on_aips(&mut w.lab, mac, alice, aven, claudes, alice).expect("passed on");
+    let aips = aips.expect("over her own vault, always");
+    let st = w.lab.state(mac);
+    let parent = st.share(aips).and_then(|cp| cp.share.parent).expect("it rests on the aven's");
+    let given = st.share(parent).map(|cp| (cp.share.issuer, cp.share.who, cp.share.level, cp.share.wide));
+    assert_eq!(given, Some((alice, vault(aven), Level::Write, false)), "her vault's AIP author share to her aven");
+    let (ops, select) = agent::aip_author();
+    for share in [aips, parent] {
+        let slice = w.lab.slice(mac, share).expect("her Mac reads it");
+        assert_eq!((slice.name.as_str(), &slice.select, &slice.grant.ops), (agent::AIP_AUTHOR, &select, &ops));
+    }
+    let again = agent::pass_on_aips(&mut w.lab, mac, alice, aven, claudes, alice).expect("passed on");
+    assert_eq!(again, Some(aips), "one passed on before stands for it");
+    agent::pass_on(&mut w.lab, mac, alice, aven, codexes, alice, "Viewer").expect("a Viewer's");
+    // Bob's coop hires her aven as a Suggester: her agent may suggest there, and opens no AIP, which it gave the aven
+    // nothing to rest on
+    w.lab.share_contact(mac, bob_mac, aven);
+    let owners = vec![Principal::Vault(bob)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 4, seal_to: vec![] };
+    let coop = VaultId::from(w.lab.submit(bob_mac, &[bob_key], genesis).expect("Bob's coop"));
+    let suggests = NewShare {
+        name: "Suggester".into(),
+        ops: avendb::rules::groups().into_iter().find(|g| g.name == "Suggester").expect("the group").ops,
+        ..share(coop, vault(aven), Level::Write, Selector::All)
+    };
+    w.lab.issue(bob_mac, &[bob_mac], suggests).expect("the coop hires her aven");
+    w.lab.sync_all(12);
+    agent::pass_on(&mut w.lab, mac, alice, aven, claudes, coop, agent::SUGGESTS).expect("a Suggester's there");
+    let none = agent::pass_on_aips(&mut w.lab, mac, alice, aven, claudes, coop).expect("nothing refused");
+    assert_eq!(none, None, "no AIP author's share over a coop that gave the aven a Suggester's alone");
+    w.lab.sync_all(13);
+    // Alice writes a note; on its own device agentClaude proposes a change to it, opens an AIP over its line, as its
+    // device vault, and promotes it: AIP-1
+    let (a, c) = (alice.to_hex(), claudes.to_hex());
+    let block = json!({ "id": 1, "type": "paragraph", "text": "Plant in May." });
+    let note = json!({ "kind": "document", "title": "Corn", "blocks": [block] });
+    let n = done(&mut w, mac, json!({ "op": "create", "vault": a, "type": "note", "value": note }))["entry"].clone();
+    w.lab.sync_all(14);
+    let line = done(&mut w, claude, json!({ "op": "propose", "entry": n, "name": "Earlier", "as": c }))["line"].clone();
+    let title = json!({ "op": "set", "entry": n, "line": line, "path": ["title"], "value": "Corn first" });
+    done(&mut w, claude, json!({ "op": "batch", "as": c, "ops": [title] }));
+    let open = json!({ "op": "aip_open", "vault": a, "title": "Earlier corn", "note": "Why: it grows earlier.",
+        "proposals": [{ "entry": n, "line": line }], "as": c });
+    let aip = done(&mut w, claude, open)["entry"].clone();
+    let promoted = done(&mut w, claude, json!({ "op": "aip_promote", "entry": aip, "as": c }));
+    assert_eq!(promoted["number"], 1, "AIP-1");
+    // agentCodex, a Viewer, opens none over the same line
+    w.lab.sync_all(15);
+    let x = codexes.to_hex();
+    let by_codex = json!({ "op": "aip_open", "vault": a, "title": "Mine", "proposals": [{ "entry": n, "line": line }],
+        "as": x });
+    let refused = avendb::engine::run(&mut w.lab, codex, &by_codex);
+    assert!(refused.get("refused").is_some(), "a Viewer opens no AIP: {refused}");
+    // her vault accepts it, on her Mac: main holds the proposal, and the AIP reads applied
+    let review = json!({ "op": "aip_review", "entry": aip, "verdict": "accepted", "text": "Yes", "as": a });
+    done(&mut w, mac, review);
+    w.lab.sync_all(16);
+    for d in [mac, claude] {
+        let read = done(&mut w, d, json!({ "op": "aip", "entry": aip }));
+        let said = (&read["stage"], &read["outcome"], &read["label"], &read["author"]);
+        assert_eq!(said, (&json!("archived"), &json!("applied"), &json!("AIP-1"), &json!(c)), "on {d:?}");
+        let main = done(&mut w, d, json!({ "op": "get", "entry": n }));
+        assert_eq!(main["record"]["title"], "Corn first", "main holds the proposal on {d:?}");
+    }
 }
 
 /// Whether `holders`, an entry's or a file's `syncedTo`, has `device` holding any of it.
