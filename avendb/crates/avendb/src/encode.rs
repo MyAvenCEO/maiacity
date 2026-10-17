@@ -378,7 +378,13 @@ impl Encode for Op {
             Op::Relay => out.push(0),
             Op::Backup => out.push(1),
             Op::Read => out.push(2),
-            Op::Create => out.push(3),
+            // a creation with no line keeps the bytes it always had; one that names its lines is one more kind, so
+            // every grant made before drafts reads as it did
+            Op::Create { on: None } => out.push(3),
+            Op::Create { on: Some(on) } => {
+                out.push(13);
+                on.encode(out);
+            }
             Op::Set { path, to, on } => {
                 out.push(4);
                 path.encode(out);

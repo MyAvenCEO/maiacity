@@ -22,16 +22,17 @@
 //!   the device's queries read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`,
 //!   `creatable`, `taggable`, `requests` (the access requests its person answers, and those its vaults made);
 //!   `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
-//! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
-//!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `review`
-//!   (the vault's answer to a proposal, its accept with it: `review`), `restore`, `undo`, `variant`; the AIP ops,
-//!   `aip_open`, `aip_promote`, `aip_withdraw` and `aip_review`, the vault's answer over every line (`aips`); and
-//!   `batch`, whose record ops in a row on one entry's line make one write. Each acts for a vault (`"as"`, the device's
-//!   own by default), as every edit does, and the rules judge it as they judge any peer's. A write through a share
-//!   carries the proof that the ops of the shares of its chain allow what it touches and the tags it asks for, and is
-//!   refused (`NotAllowed`) where they don't, as is a merge into main through a share on top of no accept of the
-//!   vault's (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`). And the
-//!   changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
+//! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`), or
+//!   with `draft`, a draft that starts its own line, which its vault lands by merging it (`Lab::create_draft`), as a
+//!   Suggester proposes a new entry; the record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`;
+//!   `tag`; `propose`, `merge`, `review` (the vault's answer to a proposal, its accept with it: `review`), `restore`,
+//!   `undo`, `variant`; the AIP ops, `aip_open`, `aip_promote`, `aip_withdraw` and `aip_review`, the vault's answer
+//!   over every line (`aips`); and `batch`, whose record ops in a row on one entry's line make one write. Each acts for
+//!   a vault (`"as"`, the device's own by default), as every edit does, and the rules judge it as they judge any
+//!   peer's. A write through a share carries the proof that the ops of the shares of its chain allow what it touches
+//!   and the tags it asks for, and is refused (`NotAllowed`) where they don't, as is a merge into main through a share
+//!   on top of no accept of the vault's (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`).
+//!   And the changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
 //!   `back_up`, `mark`, `card`, `profile`, `follow`, `set_limits`, and `ask`, an access request: a record and a share.
 //!   One its vault's owners approve the device drafts for its person's passkey (`prepare`, `Prepared::Approve`):
 //!   without a ceremony it answers `approve` and makes nothing; with one, `approve` keeps it.
@@ -42,7 +43,9 @@
 //!
 //! Every op answers `{"ok": ...}` or `{"refused": name, "why": "..."}`: a rule of the edits or of a device
 //! (`policy::Refusal`, by its name), `BadOp` where the JSON says nothing the engine does or an op makes no sense of the
-//! record, `NoSchema` where no schema reads the record, `NoEntry` where the device shows no such entry or line.
+//! record, `NoSchema` where no schema reads the record, `NoEntry` where the device shows no such entry or line: a
+//! draft its vault hasn't landed has no main line yet, so every read and record op of its main line answers `NoEntry`
+//! (`Lab::landed`).
 
 mod aips;
 mod vaults;
@@ -54,7 +57,7 @@ use std::ops::Range;
 use serde_json::{json, Map, Value};
 
 use crate::data;
-use crate::doc::Item;
+use crate::doc::{Item, Version};
 use crate::history::{self, History, MAIN};
 use crate::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lab::Lab;
@@ -126,6 +129,7 @@ fn rule(r: &Refusal) -> String {
         Refusal::NotAccepted => {
             "the entry's vault hasn't accepted what this merges into main: one of its owners accepts it first"
         }
+        Refusal::NotLanded => "the entry is a draft its vault hasn't taken into main: only the vault lands a draft",
         Refusal::BadCap => "a share has a name, at least one op, and a selector and a chain within bounds",
         Refusal::NotActing => "the device doesn't act for that vault",
         Refusal::ReadOnly => "the entry opens read-only: no lens reaches every schema it was written under",
@@ -151,7 +155,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
         "groups" | "kinds" | "limits" | "requests" => &[],
-        "create" => &["vault", "type", "tags", "schema", "value", "as"],
+        "create" => &["vault", "type", "tags", "schema", "value", "draft", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
         }
@@ -162,7 +166,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "aip_open" => &["vault", "title", "note", "proposals", "tags", "as"],
         "aip_promote" => &["entry", "as"],
         "aip_withdraw" => &["entry", "why", "as"],
-        "aip_review" => &["entry", "verdict", "text", "as"],
+        "aip_review" => &["entry", "verdict", "text", "heads", "as"],
         "aips" => &["vault"],
         "aip" => &["entry"],
         "restore" => &["entry", "line", "at", "as"],
@@ -174,7 +178,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "database" => &["vault"],
         "note" => &["entry"],
         "read_file" => &["root", "size", "from", "to"],
-        "creatable" => &["vault", "type", "tags", "as"],
+        "creatable" => &["vault", "type", "tags", "draft", "as"],
         "taggable" => &["entry", "as"],
         "share" => &["over", "who", "level", "what", "standing", "request", "as"],
         "keep" => &["over", "mode", "what", "device", "as"],
@@ -790,19 +794,22 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
 
 /// What one write of an entry's history is, as `history` and the note page show it.
 pub struct Wrote {
-    /// `edit`; `propose`, the start of a proposal; `merge` of two lines, with the change, if any, that brings Loro's
-    /// merged item to the three-way merge of both; `accept`, the vault's accept of the proposal it is on (M2,
-    /// `policy::is_accept`); or `sealed`, a write the device can't open.
+    /// `edit`; `propose`, the start of a proposal; `draft`, a creation that starts its own line (`Lab::create_draft`);
+    /// `merge` of two lines, with the change, if any, that brings Loro's merged item to the three-way merge of both;
+    /// `accept`, the vault's accept of the proposal it is on (M2, `policy::is_accept`); or `sealed`, a write the device
+    /// can't open.
     pub kind: &'static str,
     /// The other line it builds on: for a merge, the line it brought in; for a proposal, the line it started from.
     pub from: Option<Line>,
     /// The version it changed: what it built on, or for a merge, its own line's version before it, so its changes are
     /// what it brought.
     pub base: Vec<EditId>,
-    /// Why its readers don't count it, if they don't: it builds on a write they don't count (`builds-on`); they can't
-    /// open it (`sealed`); it doesn't fit the schemas its entry was written under (`unfit`, S1 to S4); it merges into
-    /// main through a share on top of no accept of the vault's, or brings in more than it accepted (`policy`, M2); or
-    /// the ops of the shares it relies on don't allow what it touches or the tags it asks for (`ops`, C1 to C4).
+    /// Why its readers don't count it, if they don't: it builds on a write they don't count (`builds-on`); it writes
+    /// on main through a share of a draft its vault hadn't landed (`landing`, `History::lands`), which every reader
+    /// judges in the clear, whatever it holds; they can't open it (`sealed`); it doesn't fit the schemas its entry was
+    /// written under (`unfit`, S1 to S4); it merges into main through a share on top of no accept of the vault's, or
+    /// brings in more than it accepted (`policy`, M2); or the ops of the shares it relies on don't allow what it
+    /// touches or the tags it asks for (`ops`, C1 to C4).
     pub why: Option<&'static str>,
 }
 
@@ -812,6 +819,7 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
     let on = |d: &EditId| h.get(*d).map(|x| x.write.line());
     let from = w.deps.iter().filter_map(on).find(|l| *l != line);
     let kind = match &c.body {
+        _ if w.proposal == Proposal::New && w.first => "draft",
         _ if w.proposal == Proposal::New => "propose",
         None => "sealed",
         Some(_) if c.accept() => "accept",
@@ -825,6 +833,8 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
         None
     } else if builds_on() {
         Some("builds-on")
+    } else if !h.landed_for(w.edit) {
+        Some("landing")
     } else if c.body.is_none() {
         Some("sealed")
     } else if !c.fits {
@@ -870,7 +880,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
     let audit = data::Audit::new(lab, me);
     let edit = |(i, c): (usize, &history::Change)| {
         let (w, x) = (&c.write, wrote(h, c));
-        let changes = (i >= shown && matches!(x.kind, "edit" | "merge")).then(|| {
+        let changes = (i >= shown && matches!(x.kind, "edit" | "merge" | "draft")).then(|| {
             let after = h.item_at(&[w.edit], me, w.line()).record();
             let before = h.item_at(&x.base, me, w.line()).record();
             let empty = Record::new();
@@ -949,7 +959,8 @@ struct Act {
 }
 
 enum Step {
-    Create { vault: VaultId, ty: String, tags: Vec<String>, schema: Named, value: Value },
+    /// A new entry, or with `draft`, a draft that starts its own line (`Lab::create_draft`).
+    Create { vault: VaultId, ty: String, tags: Vec<String>, schema: Named, value: Value, draft: bool },
     /// A schema or lens entry holding `blob`, a schema or lens of type `ty` (`Lab::add_schema`).
     AddSchema { vault: VaultId, ty: String, blob: Vec<u8> },
     /// Record ops on one entry's line, through one schema: one write.
@@ -965,8 +976,9 @@ enum Step {
     AipPromote { entry: EntryId },
     /// AIP `entry` withdrawn, and why (`aip_withdraw`).
     AipWithdraw { entry: EntryId, why: Option<String> },
-    /// The vault's answer to AIP `entry`, over every line (`aip_review`).
-    AipReview { entry: EntryId, verdict: String, text: String },
+    /// The vault's answer to AIP `entry`, over every line (`aip_review`), at the version of its lines `heads` names,
+    /// if it names one.
+    AipReview { entry: EntryId, verdict: String, text: String, heads: Option<Vec<EditId>> },
     Restore { entry: EntryId, line: Line, at: Vec<EditId> },
     Undo { entry: EntryId, line: Line, edit: EditId },
     Variant { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<RecordOp> },
@@ -1017,6 +1029,11 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
             if let Some(k) = ["tags", "schema"].iter().find(|k| o.contains_key(**k)) {
                 return Err(bad(format!("a schema or lens entry takes no {k:?}: it holds its JSON and nothing else")));
             }
+            if draft_of(o)? {
+                let why = "a schema or lens is never a draft: it joins its vault's lane by the vault's own creation \
+                    on main, as a new type needs its schema there first";
+                return Err(bad(why));
+            }
             let blob = match o.get("value") {
                 Some(Value::String(text)) => text.as_bytes().to_vec(),
                 Some(v @ Value::Object(_)) => v.to_string().into_bytes(),
@@ -1026,8 +1043,8 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
         }
         "create" => {
             let value = o.get("value").filter(|v| v.is_object()).ok_or_else(|| bad("create takes a record: value"))?;
-            let (tags, schema) = (texts_of(o, "tags")?, named(o)?);
-            Step::Create { vault: vault_of(o, "vault")?, ty: text("type")?, tags, schema, value: value.clone() }
+            let (tags, schema, draft) = (texts_of(o, "tags")?, named(o)?, draft_of(o)?);
+            Step::Create { vault: vault_of(o, "vault")?, ty: text("type")?, tags, schema, value: value.clone(), draft }
         }
         "set" | "unset" | "insert" | "remove" | "move" => {
             let op = RecordOp::of_json(v).map_err(bad)?;
@@ -1092,7 +1109,8 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
                 return Err(bad("verdict is accepted, declined or revise"));
             }
             let text = optional_text(o, name, "text")?.unwrap_or_default();
-            Step::AipReview { entry: entry_of(o)?, verdict, text }
+            let heads = o.get("heads").filter(|v| !v.is_null()).map(|v| edits_of(v, "heads")).transpose()?;
+            Step::AipReview { entry: entry_of(o)?, verdict, text, heads }
         }
         "restore" => {
             let at = edits_of(o.get("at").ok_or_else(|| bad("restore takes the version it puts back: at"))?, "at")?;
@@ -1180,7 +1198,7 @@ pub fn verdict(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
 /// Step `s`, acting for `actor`, on device `me`.
 fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, Refused> {
     match s {
-        Step::Create { vault, ty, tags, schema, value } => {
+        Step::Create { vault, ty, tags, schema, value, draft } => {
             let lane = lane(lab, me, vault);
             let app = match schema {
                 Named::Own => own(&lane, &value),
@@ -1188,7 +1206,17 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
                 Named::Id(id) => lane.schema(id).cloned(),
             };
             let app = app.ok_or_else(|| unseen(&schema))?;
-            let item = Item::made(&View::plain(&app), &full(&app, &value)?, me).ok_or(Refusal::NotAView)?;
+            let (view, value) = (View::plain(&app), full(&app, &value)?);
+            if draft {
+                // written as the device's draft peer of the entry, whose id is drawn first (`doc::Peer::Draft`)
+                let content = |entry| {
+                    let mut item = Item::draft(me, entry);
+                    item.write(&view, &value).then(|| item.export(&Version::default()))
+                };
+                let (entry, line) = lab.create_draft(me, actor, vault, &ty, &strs(&tags), content)?;
+                return Ok(json!({ "entry": entry.to_hex(), "line": line.to_hex() }));
+            }
+            let item = Item::made(&view, &value, me).ok_or(Refusal::NotAView)?;
             let entry = lab.create(me, actor, vault, &ty, &strs(&tags), item)?;
             Ok(json!({ "entry": entry.to_hex() }))
         }
@@ -1207,14 +1235,27 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
         }
         Step::Edits { entry, line, schema, ops } => edits(lab, me, actor, (entry, line), &schema, &ops),
         Step::Tag { entry, add, remove } => {
+            landed(lab, me, entry, MAIN)?;
             let edit = lab.tag(me, actor, entry, &strs(&add), &strs(&remove))?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex() }))
         }
         Step::Propose { entry, from, name } => {
+            let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
+            // a draft its vault hasn't landed is on its own line alone: a proposal of it starts there, by default from
+            // that line's heads, and from no version that doesn't hold its creation
+            let draft = h.changes().iter().find(|c| c.write.first).filter(|_| !lab.landed(me, entry));
+            let start = draft.map(|c| Some(c.write.edit)).unwrap_or(MAIN);
             let from = match from {
                 Some(from) => from,
-                None => lab.history(me, entry).ok_or(Refused::NoEntry)?.heads(MAIN),
+                None => h.heads(start),
             };
+            if let Some(c) = draft
+                && !h.version(&from).iter().any(|x| x.write.edit == c.write.edit)
+            {
+                let why = "the entry is a draft its vault hasn't landed: a proposal of it starts from a version of its \
+                    line, which holds its creation";
+                return Err(bad(why));
+            }
             let edit = lab.propose(me, actor, entry, &from, &name)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": edit.to_hex() }))
         }
@@ -1228,12 +1269,16 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
         }
         Step::AipPromote { entry } => aips::promote(lab, me, actor, entry),
         Step::AipWithdraw { entry, why } => aips::withdraw(lab, me, actor, entry, why),
-        Step::AipReview { entry, verdict, text } => aips::review(lab, me, actor, entry, &verdict, text),
+        Step::AipReview { entry, verdict, text, heads } => {
+            aips::review(lab, me, actor, entry, &verdict, text, heads.as_deref())
+        }
         Step::Restore { entry, line, at } => {
+            landed(lab, me, entry, line)?;
             let edit = lab.restore(me, actor, entry, line, &at)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(line) }))
         }
         Step::Undo { entry, line, edit } => {
+            landed(lab, me, entry, line)?;
             let edit = lab.undo(me, actor, entry, line, edit)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(line) }))
         }
@@ -1306,7 +1351,7 @@ fn review(
         "text": text,
         "at": lab.now(),
     });
-    let create = Step::Create { vault, ty: "review".into(), tags: vec![], schema: Named::Own, value };
+    let create = Step::Create { vault, ty: "review".into(), tags: vec![], schema: Named::Own, value, draft: false };
     let made = step(lab, me, actor, create)?;
     Ok(json!({
         "entry": entry.to_hex(),
@@ -1314,6 +1359,25 @@ fn review(
         "review": made["entry"],
         "accept": accept.map(|a| a.to_hex()),
     }))
+}
+
+/// Whether `create` makes a draft (`draft`): false where it says nothing.
+fn draft_of(o: &Map<String, Value>) -> Result<bool, Refused> {
+    match o.get("draft") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(_) => Err(bad("draft is true or false")),
+    }
+}
+
+/// `NoEntry` for line `line` of entry `entry` where it is the main line of a draft its vault hasn't landed
+/// (`Lab::landed`), which holds nothing yet: a tag, a restore or an undo there would be a write on main that no reader
+/// counts but the vault's own, and none shows it.
+fn landed(lab: &Lab, me: SignerId, entry: EntryId, line: Line) -> Result<(), Refused> {
+    match line == MAIN && !lab.landed(me, entry) {
+        true => Err(Refused::NoEntry),
+        false => Ok(()),
+    }
 }
 
 /// Record ops `ops` run on what item `item` shows through `schema`: the record after them, each field they leave out

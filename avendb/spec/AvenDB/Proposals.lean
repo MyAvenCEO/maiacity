@@ -19,16 +19,8 @@ lost, and all the other line changed alone lands.
 
 namespace AvenDB
 
-/-- The writes of entry `e` among `ws` that are seeds (`s`), and every write of the entry those build on,
-    transitively, in the order of `ws`. Each write comes after what it builds on, so one pass from the end collects
-    them. -/
-def reach (ws : List Write) (e : EntryId) (s : Write → Bool) : List Write :=
-  ws.foldr (fun w acc =>
-    if w.entry == e && (s w || acc.any (·.deps.contains w.edit)) then w :: acc else acc) []
-
-/-- The history of line `l` of entry `e`: the line's own writes and everything they build on. -/
-def history (ws : List Write) (e : EntryId) (l : Option EditId) : List Write :=
-  reach ws e (·.line == l)
+-- a line's history (`history`) and the writes it reaches back to (`reach`) are in `State.lean`, where a draft's
+-- landing reads them
 
 /-- The writes of `h` that no write of `h` builds on. -/
 def tips (h : List Write) : List EditId :=

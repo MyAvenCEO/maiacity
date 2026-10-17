@@ -31,7 +31,7 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
 use avendb::lens::{DocV1, Lane, Schema, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{
-    keep_picks, mk_audience, order, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
+    is_accept, keep_picks, mk_audience, order, passes, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
     Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share,
     Sharing, State, Vault, Who, Write,
 };
@@ -443,7 +443,10 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
         1 => pick_from(rng, &starts).map_or(Proposal::Main, |&b| Proposal::On(b)),
         _ => Proposal::Main,
     };
-    let (entry, deps, via, create, body) = (en.id, vec![], vec![], None, vec![rng.next() as u8]);
+    // a write on the main line of a draft now and then builds on its creation: which lands it, where its vault writes
+    let lands = proposal == Proposal::Main && st.is_draft(en.id) && rng.below(2) == 0;
+    let deps = if lands { vec![en.creation] } else { vec![] };
+    let (entry, via, create, body) = (en.id, vec![], None, vec![rng.next() as u8]);
     let files = vec![];
     let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
     Some(Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Tags(some_tags(rng)) })
@@ -477,7 +480,7 @@ fn random_audience(rng: &mut Rng, st: &State, v: VaultId) -> Vec<ShareId> {
 /// A new entry of a random vault, under an id the log may have used already, of a random type, time and tags: made by
 /// the vault itself, in the audience its meaning asks for, the empty audience or a random one; or by a vault holding a
 /// live write share over it, in the share's intake audience, now and then in a random one. It takes the epoch its
-/// audience moves to if it brings the audience back into use.
+/// audience moves to if it brings the audience back into use. Now and then it is a draft, or claims a line.
 fn a_creation(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     let unborn: Vec<EntryId> = ENTRIES.into_iter().filter(|&e| !st.born(e)).collect();
     let entry = if unborn.is_empty() || rng.below(6) == 0 { rng.pick(&ENTRIES) } else { rng.pick(&unborn) };
@@ -504,7 +507,13 @@ fn a_creation(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     };
     let x = AudienceId::of(vault, &audience);
     let epoch = st.epoch(KeyFam::Audience(vault, x)) + u64::from(st.reenters(vault, x));
-    let (stay, deps, proposal, via, body) = (None, vec![], Proposal::Main, vec![], vec![rng.next() as u8]);
+    // now and then a draft, which starts a line of its own, or a creation on a line, which no rule lets in
+    let proposal = match rng.below(8) {
+        0 => Proposal::New,
+        1 => pick_from(rng, st.all_writes()).map_or(Proposal::Main, |w| Proposal::On(w.edit)),
+        _ => Proposal::Main,
+    };
+    let (stay, deps, via, body) = (None, vec![], vec![], vec![rng.next() as u8]);
     let (create, files) = (Some(audience), vec![]);
     let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
     Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Created(header, tags) }
@@ -1835,6 +1844,83 @@ fn t23_audiences_mean_what_shares_say() {
     // create, devices do sync under keep shares, and some entries wait for a steward to mark their wants
     assert!(meant > 0 && moving > 0 && admitted > 0, "{meant} in place, {moving} to move, {admitted} admitted");
     assert!(kept > 0 && rewanting > 0, "{kept} under keep shares, {rewanting} to mark with their wants");
+}
+
+#[test]
+fn d1_drafts_land_by_their_vault() {
+    // a write a step adds on the main line of a draft its readers count, while the draft hasn't landed, acts for the
+    // draft's vault (`D1_drafts_land_by_their_vault`): only the vault lands a draft, however its writes on main were
+    // made. And by its meaning a draft not yet landed is in no share to everyone, so no steward makes it public
+    // (`D3_drafts_not_public`)
+    let (mut drafts, mut landed, mut by_vault) = (0, 0, 0);
+    for (seed, h) in every_history() {
+        for (_, before, after) in steps(h.log.edits()) {
+            let new = |w: &&Write| before.write(w.edit).is_none() && w.proposal == Proposal::Main;
+            for w in after.all_writes().iter().filter(new) {
+                if before.landed(w.entry, &h.readings) || after.uncounted(w.entry, &h.readings).contains(&w.edit) {
+                    continue;
+                }
+                let en = after.entry(w.entry).expect("a write's entry");
+                assert_eq!(w.actor, en.vault, "seed {seed}: {w:?}");
+                by_vault += 1;
+            }
+        }
+        let st = replay(h.log.edits()).state;
+        for en in st.entries().iter().filter(|en| st.is_draft(en.id)) {
+            drafts += 1;
+            if st.landed(en.id, &h.readings) {
+                landed += 1;
+                continue;
+            }
+            let everyone = |c: &ShareId| st.share(*c).is_some_and(|cp| cp.share.who == Who::Everyone);
+            let m = st.meaning(en.id, &h.readings);
+            assert!(m.is_none_or(|m| !m.audience.iter().any(everyone)), "seed {seed}: {en:?}");
+        }
+    }
+    // and there are drafts, some of which their vaults landed, writing on main before they had
+    assert!(drafts > 0 && landed > 0 && by_vault > 0, "{drafts} drafts, {landed} landed, {by_vault} by their vaults");
+}
+
+/// The writes of entry `e` its readers didn't count before drafts, by what `r` holds: `State::uncounted` as it was,
+/// with no landing in it.
+fn uncounted_before_drafts(st: &State, e: EntryId, r: &Readings) -> Vec<EditId> {
+    let (mut out, mut accepts) = (vec![], HashSet::new());
+    let none = TagDelta::default();
+    let main = |d: &EditId| st.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
+    for w in st.entry_writes(e) {
+        let touches = r.touches.get(&w.edit).map(Vec::as_slice);
+        let asks = r.tags.get(&w.edit).unwrap_or(&none);
+        let lets = !r.unfit.contains(&w.edit)
+            && st.lets(w, r.proofs.get(&w.edit), touches, asks)
+            && passes(w, touches, |d| accepts.contains(d), main);
+        if w.deps.iter().any(|d| out.contains(d)) || !lets {
+            out.push(w.edit);
+        }
+        if is_accept(w, touches, asks) {
+            accepts.insert(w.edit);
+        }
+    }
+    out
+}
+
+#[test]
+fn plain_creations_count_as_before_drafts() {
+    // in every state along every history, each entry created on the main line, as every entry was before drafts, has
+    // landed, and its readers count exactly the writes they counted before (`uncounted_before_drafts`), drafts beside
+    // it or not: so a log of plain creations, as every log before drafts is, gives every verdict it gave
+    let (mut plain, mut uncounted) = (0, 0);
+    for (seed, h) in every_history() {
+        for st in states(h.log.edits()) {
+            for en in st.entries().iter().filter(|en| !st.is_draft(en.id)) {
+                assert!(st.landed(en.id, &h.readings), "seed {seed}: {en:?}");
+                let before = uncounted_before_drafts(&st, en.id, &h.readings);
+                assert_eq!(st.uncounted(en.id, &h.readings), before, "seed {seed}: {en:?}");
+                plain += 1;
+                uncounted += before.len();
+            }
+        }
+    }
+    assert!(plain > 0 && uncounted > 0, "{plain} plain entries, {uncounted} writes not counted");
 }
 
 /// A relay's twin of a history (T25): every edit as a peer that reads no selector, no type and no tag sees it, a share

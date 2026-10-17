@@ -1346,7 +1346,7 @@ theorem mem_counting {st : State} {ok : Bool} {i d : EditId} (hd : d ≠ i) :
 
 theorem inLane_iff {st : State} {v : VaultId} {en : Entry} :
     inLane st v en = true ↔ en.vault = v ∧ en.attrs.type ∈ schemaTypes ∧
-      ∃ w ∈ st.counted, w.entry = en.id ∧ w.first = true ∧ w.actor = v := by
+      ∃ w ∈ st.counted, w.entry = en.id ∧ w.first = true ∧ w.actor = v ∧ w.proposal = .main := by
   simp only [inLane, Bool.and_eq_true, beq_iff_eq, List.contains_eq_mem, decide_eq_true_eq, List.any_eq_true,
     and_assoc]
 
@@ -1479,17 +1479,17 @@ theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} (hf : 
       rw [hf] at hxf
       cases hxf
 
-/-- An accepted edit keeps what the lane reads, or creates an entry with its first write, whose author acted for its
-    actor, while readers keep not counting what they didn't. -/
+/-- An accepted edit keeps what the lane reads, or creates an entry with its first write, on the main line or as a draft
+    starting its own line, whose author acted for its actor, while readers keep not counting what they didn't. -/
 theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some post) :
     LaneKeeps st post ∨
-    ∃ v e actor epoch via x hdr tags proof touches fits,
-      edit.action = .write v e actor none epoch [] .main via (some (x, hdr)) tags proof touches fits ∧
-      actsVia st edit.author via actor = true ∧ st.entry? e = none ∧
+    ∃ v e actor epoch proposal via x hdr tags proof touches fits,
+      edit.action = .write v e actor none epoch [] proposal via (some (x, hdr)) tags proof touches fits ∧
+      proposal.isOn = false ∧ actsVia st edit.author via actor = true ∧ st.entry? e = none ∧
       (∃ en : Entry, en.id = e ∧ en.vault = v ∧ en.attrs.type = hdr.type ∧ en.blob = hdr.blob ∧
         post.entries = st.entries ++ [en]) ∧
-      post.writes = st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], .main, via, true, x⟩] ∧
-      post.uncounted = st.counting (creates st actor v x proof fits) edit.id := by
+      post.writes = st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], proposal, via, true, x⟩] ∧
+      post.uncounted = st.counting (creates st actor v x proof (proposal == .main) fits) edit.id := by
   unfold apply at h
   split at h
   case h_10 v e actor stay epoch deps proposal via create tags proof touches fits heq =>
@@ -1507,7 +1507,7 @@ theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some pos
       split at h
       · cases h
       cases h
-      -- a creation of an entry there wasn't, on the main line, building on nothing
+      -- a creation of an entry there wasn't, on the main line or a draft's own, building on nothing
       have hnone : st.entry? e = none := by
         cases hx : st.entry? e
         · rfl
@@ -1520,11 +1520,12 @@ theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some pos
         cases deps
         · rfl
         · simp at hnew
-      have hprop : proposal = .main := by
-        cases proposal
-        all_goals first | rfl | simp at hnew
-      subst hstay hdeps hprop
-      exact .inr ⟨v, e, actor, epoch, via, x, hdr, tags, proof, touches, fits, heq, hact, hnone,
+      have hprop : proposal.isOn = false := by
+        cases hp : proposal.isOn
+        · rfl
+        · simp [hp] at hnew
+      subst hstay hdeps
+      exact .inr ⟨v, e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, heq, hprop, hact, hnone,
         ⟨_, rfl, rfl, rfl, rfl, rfl⟩, rfl, rfl⟩
     · -- a write to an existing entry: it sets no type nor blob, and isn't a first write
       split at h
@@ -1988,8 +1989,8 @@ theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edi
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [laneOf_settle] at hb
-  rcases apply_lane hpost with hk | ⟨v', e, actor, epoch, via, x, hdr, tags, proof, touches, fits, hact, hacts, hnone,
-      ⟨en, hid, hv, ht, hbl, hes⟩, hws, hus⟩
+  rcases apply_lane hpost with hk | ⟨v', e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, hact, -,
+      hacts, hnone, ⟨en, hid, hv, ht, hbl, hes⟩, hws, hus⟩
   · exact .inl (hk.mem_lane hb)
   -- a creation: the blob is of an entry whose first write readers count
   obtain ⟨y, hy, hin, rfl⟩ := mem_laneOf.1 hb
@@ -2005,17 +2006,21 @@ theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edi
       obtain ⟨z', hz'⟩ := entry?_of_mem hz
       rw [hzid, hwe, hid, hnone] at hz'
       cases hz'
-  · -- the creation's own write, of the new entry, by `v`
+  · -- the creation's own write, of the new entry, by `v`, on the main line: a draft joins no lane
     have hwe : e = y.id := hwe
+    obtain ⟨hwa, hwm⟩ := hwa
     have hwa : actor = v := hwa
+    have hwm : proposal = .main := hwm
     rcases hy with hy | rfl
     · obtain ⟨z, hz⟩ := entry?_of_mem hy
       rw [← hwe, hnone] at hz
       cases hz
     · -- its readers count it, so it fits
-      have hc : creates st actor v' x proof fits = true := by
-        cases hcr : creates st actor v' x proof fits
-        · rw [hus, hcr] at hwu
+      subst hwm
+      have hc : creates st actor v' x proof true fits = true := by
+        cases hcr : creates st actor v' x proof true fits
+        · rw [hus] at hwu
+          simp only [beq_self_eq_true, hcr] at hwu
           exact absurd (by simp [State.counting]) hwu
         · rfl
       have hfits : fits = true := by

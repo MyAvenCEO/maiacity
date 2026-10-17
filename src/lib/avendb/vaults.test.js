@@ -1,9 +1,21 @@
 // @ts-nocheck — plain JS
 // The ops the page grants an agent by (./vaults.js): a standing grant, and the AIP author's shares a Suggester gets
-// beside its Suggester's, as the Mac's grant passes them on (avendb-device's `agent::pass_on_aips`).
+// beside its Suggester's, as the Mac's grant passes them on (avendb-device's `agent::pass_on_aips`); and how a
+// Suggester's share reads since drafts, one given before them told apart.
 // Run: bun test src/lib/avendb/vaults.test.js
 import { expect, test } from 'bun:test';
-import { AIP_AUTHOR, AIPS, aipAuthorOps, standingOps } from './vaults.js';
+import {
+	AIP_AUTHOR,
+	AIPS,
+	aipAuthorOps,
+	levelName,
+	OLD_SUGGESTER,
+	opsWords,
+	opWords,
+	rowHint,
+	rowLevel,
+	standingOps
+} from './vaults.js';
 
 const hex = (n) => n.toString(16).padStart(64, '0');
 const [MINE, COOP, AVEN, AGENT, HIRED] = [1, 2, 3, 4, 5].map(hex);
@@ -63,4 +75,31 @@ test('a standing Suggester brings AIP author shares over each vault of the perso
 		share(AGENT, COOP, AVEN)
 	]);
 	expect(standingOps(world(), AVEN, AGENT, 'Viewer')).toHaveLength(2);
+});
+
+test('a Suggester proposes new entries; one given before drafts is named apart and says it may not yet', () => {
+	const read = { op: 'read' };
+	const rest = [{ op: 'set', path: [], on: 'proposals' }, { op: 'propose' }, { op: 'merge', on: 'proposals' }];
+	const ops = [read, { op: 'create', on: 'proposals' }, ...rest];
+	expect(opsWords(ops)).toBe(
+		'read, propose new entries, change anything on a proposal, start proposals and bring the main line into a proposal'
+	);
+	expect(opsWords([read, ...rest])).not.toContain('new entries');
+	expect(opWords({ op: 'create' })).toBe('add new entries');
+	expect(opWords({ op: 'create', on: 'main' })).toBe('add new entries on the main line');
+
+	const hint = 'Reads it, suggests changes and new entries to merge';
+	const w = { ...world(), groups: [{ name: 'Suggester', hint, ops, everyone: false, level: 'write' }] };
+	const now = cap(MINE, AGENT, { wide: true, group: 'Suggester', drafts: true });
+	expect(levelName(now, w)).toBe('Suggester');
+	expect(levelName({ ...now, drafts: false }, w)).toBe(OLD_SUGGESTER);
+	expect(levelName({ ...now, drafts: null }, w)).toBe('Suggester');
+
+	const row = { kind: 'grant', level: 'write', group: 'Suggester', name: 'Suggester', drafts: true };
+	expect(rowLevel(row, w)).toBe('Suggester');
+	expect(rowHint(row, w)).toBe(hint);
+	expect(rowLevel({ ...row, drafts: false }, w)).toBe(OLD_SUGGESTER);
+	expect(rowHint({ ...row, drafts: false }, w)).toContain('may not propose new entries yet');
+	expect(rowHint({ ...row, group: null, name: 'Drafts only' }, w)).toBe('May propose new entries');
+	expect(rowHint({ ...row, group: null, name: 'Tick done', drafts: false }, w)).toBeUndefined();
 });

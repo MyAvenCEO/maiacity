@@ -18,7 +18,8 @@
 //! An op in JSON, as the docs write it:
 //!
 //! ```text
-//! {"op": "relay" | "backup" | "read" | "create" | "propose" | "share"}
+//! {"op": "relay" | "backup" | "read" | "propose" | "share"}
+//! {"op": "create", "on": On?}                                create entries; on proposals: drafts alone
 //! {"op": "set", "path": Pattern, "to": [v]?, "on": On?}     any change at or under the path; to: only to these values
 //! {"op": "insert" | "remove" | "move", "path": Pattern?, "on": On?}   rows of a list of records
 //! {"op": "tag", "tags": [tag]?}                              ask for these tags, added or removed; left out: any
@@ -90,7 +91,9 @@ pub enum Touch {
 }
 
 /// An op a share names, in the order shares list them (`normalize`): `Relay`, `Backup` and `Read` its slice's edits;
-/// `Create` entries; `Set` any change at or under `path` (only to the values `to`, if it lists them), `Insert`,
+/// `Create` entries, on the lines `on` names: on main a plain creation, on proposals a draft, which starts its own line
+/// and lands only as its vault merges it (`policy::Proposal::New`, `history::History::landed`); `Set` any change at or
+/// under `path` (only to the values `to`, if it lists them), `Insert`,
 /// `Remove` or `Move` the rows of a list, `Merge` another line whose changes since their base all lie at or under
 /// `path` (anywhere, for `[]`), each on the lines `on` names (either, if none); ask for the tags `Tag` lists (any, if
 /// none); `Propose`; and `Share`, issue shares resting on it. A share with `Share` is an
@@ -100,7 +103,7 @@ pub enum Op {
     Relay,
     Backup,
     Read,
-    Create,
+    Create { on: Option<On> },
     Set { path: Vec<Step>, to: Option<Vec<Scalar>>, on: Option<On> },
     Insert { path: Vec<Step>, on: Option<On> },
     Remove { path: Vec<Step>, on: Option<On> },
@@ -245,7 +248,7 @@ impl Op {
             Op::Relay => 0,
             Op::Backup => 1,
             Op::Read => 2,
-            Op::Create => 3,
+            Op::Create { .. } => 3,
             Op::Set { .. } => 4,
             Op::Insert { .. } => 5,
             Op::Remove { .. } => 6,
@@ -273,10 +276,10 @@ impl Op {
             | (Op::Insert { path, on }, Touch::Insert(f))
             | (Op::Remove { path, on }, Touch::Remove(f))
             | (Op::Move { path, on }, Touch::Move(f)) => on_line(main, *on) && reaches(path, &steps(f)),
-            (Op::Merge { on, .. }, Touch::Merge) => on_line(main, *on),
+            (Op::Merge { on, .. }, Touch::Merge) | (Op::Create { on }, Touch::Create) => on_line(main, *on),
             (Op::Merge { on, path }, Touch::Merged(l)) => on_line(main, *on) && reaches(path, &steps(l)),
             (Op::Tag(tags), Touch::Tag(t)) => tags.as_ref().is_none_or(|ts| ts.contains(t)),
-            (Op::Propose, Touch::Propose) | (Op::Create, Touch::Create) => true,
+            (Op::Propose, Touch::Propose) => true,
             _ => false,
         }
     }
@@ -303,11 +306,12 @@ impl Op {
             Op::Relay => return json!({ "op": "relay" }),
             Op::Backup => return json!({ "op": "backup" }),
             Op::Read => return json!({ "op": "read" }),
-            Op::Create => return json!({ "op": "create" }),
+            Op::Create { .. } => json!({ "op": "create" }),
             Op::Propose => return json!({ "op": "propose" }),
             Op::Share => return json!({ "op": "share" }),
         };
-        if let Op::Set { on: Some(on), .. }
+        if let Op::Create { on: Some(on) }
+        | Op::Set { on: Some(on), .. }
         | Op::Insert { on: Some(on), .. }
         | Op::Remove { on: Some(on), .. }
         | Op::Move { on: Some(on), .. }
@@ -330,7 +334,8 @@ impl Op {
             "insert" | "remove" | "move" => &["op", "path", "on"],
             "merge" => &["op", "on", "path"],
             "tag" => &["op", "tags"],
-            "relay" | "backup" | "read" | "create" | "propose" | "share" => &["op"],
+            "create" => &["op", "on"],
+            "relay" | "backup" | "read" | "propose" | "share" => &["op"],
             other => {
                 return Err(format!(
                     "a share names no op {other:?}: relay, backup, read, create, set, insert, remove, move, tag, \
@@ -386,7 +391,7 @@ impl Op {
             "relay" => Op::Relay,
             "backup" => Op::Backup,
             "read" => Op::Read,
-            "create" => Op::Create,
+            "create" => Op::Create { on },
             "propose" => Op::Propose,
             _ => Op::Share,
         })
@@ -435,25 +440,35 @@ pub fn name_ok(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The built-in groups, as `Rules.lean` has them (`groups`): a level's group for each level, Suggester (start
-/// proposals and write on them) and Public (everyone reads).
+/// The built-in groups, as `Rules.lean` has them (`groups`): a level's group for each level, Suggester (draft new
+/// entries, start proposals and write on them) and Public (everyone reads).
 pub fn groups() -> Vec<Group> {
-    let suggester = vec![
-        Op::Read,
-        Op::Set { path: vec![], to: None, on: Some(On::Proposals) },
-        Op::Propose,
-        Op::Merge { on: Some(On::Proposals), path: vec![] },
-    ];
+    // read, then a draft's creation, in the order shares list their ops
+    let mut suggester = suggester_before_drafts();
+    suggester.insert(1, Op::Create { on: Some(On::Proposals) });
     let g = |name, hint, ops, everyone| Group { name, hint, ops, everyone };
     let level = |r: Level, hint| g(r.group(), hint, r.ops(), false);
     vec![
         level(Level::Owner, "Reads, edits and shares it on"),
         level(Level::Write, "Reads and edits it"),
-        g("Suggester", "Reads it and suggests changes to merge", suggester, false),
+        g("Suggester", "Reads it, suggests changes and new entries to merge", suggester, false),
         level(Level::Read, "Reads it"),
         g("Public", "Everyone reads it", Level::Read.ops(), true),
         level(Level::Backup, "Keeps it encrypted, reads nothing"),
         level(Level::Relay, "Finds its devices, keeps nothing"),
+    ]
+}
+
+/// The ops a Suggester's share named before drafts, read, write on proposals, start them and merge between them: such a
+/// share still reads as a Suggester's (`world::group_of`), and still allows all it did, but drafts nothing, as it lacks
+/// `create` on proposals; a share is judged by its whole chain, so nothing resting on it drafts either. The Mac's agent
+/// grant passes its agents' and its aven's on in the new form (avendb-device's `agent::pass_on`).
+pub fn suggester_before_drafts() -> Vec<Op> {
+    vec![
+        Op::Read,
+        Op::Set { path: vec![], to: None, on: Some(On::Proposals) },
+        Op::Propose,
+        Op::Merge { on: Some(On::Proposals), path: vec![] },
     ]
 }
 
@@ -478,7 +493,7 @@ impl Level {
         let edit = || {
             vec![
                 Op::Read,
-                Op::Create,
+                Op::Create { on: None },
                 Op::Set { path: vec![], to: None, on: None },
                 Op::Tag(None),
                 Op::Propose,
@@ -633,6 +648,8 @@ mod tests {
             json!({ "op": "merge", "on": "main", "path": ["params", "*", "default"] }),
             json!({ "op": "propose" }),
             json!({ "op": "create" }),
+            json!({ "op": "create", "on": "proposals" }),
+            json!({ "op": "create", "on": "main" }),
             json!({ "op": "tag" }),
             json!({ "op": "tag", "tags": ["urgent", "work"] }),
             json!({ "op": "relay" }),
@@ -655,6 +672,8 @@ mod tests {
             json!({ "op": "set", "path": vec!["a"; MAX_STEPS + 1] }),
             json!({ "op": "tag", "tags": "urgent" }),
             json!({ "op": "read", "path": [] }),
+            json!({ "op": "create", "path": [] }),
+            json!({ "op": "create", "on": "drafts" }),
         ];
         for v in bad {
             assert!(Op::of_json(&v).is_err(), "{v}");
@@ -734,6 +753,7 @@ mod tests {
         assert!(!tune.allows(true, &touch(json!({ "set": ["params", { "id": 3 }, "default"] }))));
         assert_eq!(touch(json!({ "merged": ["source"] })).loc(), Some(Loc::field("source")));
         assert!(op(json!({ "op": "create" })).allows(true, &Touch::Create));
+        assert!(op(json!({ "op": "create" })).allows(false, &Touch::Create));
         assert!(!op(json!({ "op": "create" })).allows(true, &Touch::Propose));
         // tags: those it lists, or any
         let urgent = op(json!({ "op": "tag", "tags": ["urgent"] }));
@@ -832,5 +852,45 @@ mod tests {
         let fix = touch(json!({ "set": ["title"], "to": "x" }));
         assert!(allows_all(suggester, false, &[Touch::Propose, fix.clone(), Touch::Merge]));
         assert!(!allows_all(suggester, true, &[fix]) && !allows_all(suggester, true, &[Touch::Merge]));
+        // a Suggester drafts new entries: it creates on proposals, never on main
+        assert!(allows_all(suggester, false, &[Touch::Create]) && !allows_all(suggester, true, &[Touch::Create]));
+    }
+
+    #[test]
+    fn a_create_op_names_the_lines_it_creates_on() {
+        // no line named: either, as every grant made before drafts reads; on proposals, drafts alone; on main, plain
+        // creations alone
+        let any = Op::Create { on: None };
+        let drafts = op(json!({ "op": "create", "on": "proposals" }));
+        let plain = op(json!({ "op": "create", "on": "main" }));
+        assert_eq!(op(json!({ "op": "create" })), any);
+        assert_eq!(drafts, Op::Create { on: Some(On::Proposals) });
+        assert_eq!(plain, Op::Create { on: Some(On::Main) });
+        assert!(any.allows(true, &Touch::Create) && any.allows(false, &Touch::Create));
+        assert!(drafts.allows(false, &Touch::Create) && !drafts.allows(true, &Touch::Create));
+        assert!(plain.allows(true, &Touch::Create) && !plain.allows(false, &Touch::Create));
+        for o in [&any, &drafts, &plain] {
+            assert!(!o.allows(false, &Touch::Propose) && !o.allows(true, &Touch::Merge), "{o:?} creates and no more");
+            assert_eq!(Op::of_json(&o.to_json()).as_ref(), Ok(o), "{o:?} reads back from its JSON");
+            assert_eq!(o.level(), Level::Write);
+        }
+        // their bytes, each its own: no line keeps kind 3, a line is kind 13 (`wire`'s tests read them back)
+        let bytes = |o: &Op| {
+            let mut out = vec![];
+            crate::encode::Encode::encode(o, &mut out);
+            out
+        };
+        assert_eq!(bytes(&any), [3]);
+        assert_eq!((bytes(&drafts), bytes(&plain)), (vec![13, 1], vec![13, 0]));
+        let commitment = |o: &Op| Grant { ops: vec![Op::Read, o.clone()], salt: [7; 32] }.commitment();
+        assert!(commitment(&any) != commitment(&drafts) && commitment(&drafts) != commitment(&plain));
+        // the Suggester's group drafts; one of a Suggester's share made before drafts doesn't, and allows all it did
+        let now = groups().into_iter().find(|g| g.name == "Suggester").expect("Suggester").ops;
+        let before = suggester_before_drafts();
+        assert_eq!(normalize(now.clone()).as_ref(), Ok(&now));
+        assert_eq!(normalize(before.clone()).as_ref(), Ok(&before));
+        assert!(allows_all(&now, false, &[Touch::Create]) && !allows_all(&before, false, &[Touch::Create]));
+        assert!(before.iter().all(|o| now.contains(o)));
+        assert_eq!(level_of(&now), level_of(&before));
     }
 }

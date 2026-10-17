@@ -27,6 +27,12 @@
 //! off what it carries, on the history before it (`History::reading`). So a write that breaks its schema, or that no op
 //! of its shares allows, changes no line anyone shows, and nothing a device writes builds on it.
 //!
+//! A **draft** is an entry whose creation starts its own line (`Proposal::New`), as a Suggester proposes a new entry:
+//! its main line holds nothing until it **lands**, when a write its readers count on main builds on its creation, in
+//! practice its vault's merge of that line (`History::landed`). Only the entry's vault lands it: a write on main of an
+//! unlanded draft through a share counts for no reader (`History::lands`, `policy::State::uncounted`), so a device
+//! shows the entry on no main read until its vault takes it in.
+//!
 //! `History` is what a device holds of one entry, every accepted write with what it could open; the Lab builds one
 //! for each entry it shows. `Repo` keeps one locally, with no keys and no shares, for the tests and the property
 //! checks.
@@ -35,7 +41,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{Map, Value};
 
-use crate::doc::Item;
+use crate::doc::{Item, Peer};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, SignerId, VaultId};
 use crate::lens::Lane;
 use crate::merge::{self, Merged, Place};
@@ -164,10 +170,37 @@ impl History {
         std::iter::once(MAIN).chain(starts).collect()
     }
 
-    /// The name of the proposal `b` started, if the device could open it.
+    /// The name of the proposal `b` started, if the device could open it: none for a draft's line, whose start holds
+    /// the entry's first content, not a name.
     pub fn name(&self, b: EditId) -> Option<String> {
-        let c = self.get(b).filter(|c| c.write.proposal == Proposal::New)?;
+        let c = self.get(b).filter(|c| c.write.proposal == Proposal::New && !c.write.first)?;
         String::from_utf8(c.body.clone()?).ok()
+    }
+
+    /// The entry is a draft: its creation, which every peer reads in the clear, started its own line.
+    pub fn draft(&self) -> bool {
+        self.changes.iter().any(|c| c.write.first && c.write.proposal == Proposal::New)
+    }
+
+    /// The entry has landed (`State.lean`'s `landed`): it is no draft, or its creation is in the history of its main
+    /// line, of the writes its readers count. Every entry created on main has, from its creation on; a draft once a
+    /// counted write on main builds on its creation, in practice its vault's merge of its line.
+    pub fn landed(&self) -> bool {
+        landed_among(&self.changes)
+    }
+
+    /// Write `w` passes the landing rule on this history, which holds the writes before it (`State.lean`'s `counts`):
+    /// it acts for the entry's vault, so relies on no share, or is on a proposal, or the entry has landed. A write on
+    /// main of a draft not yet landed through a share counts for no reader: only the vault lands a draft.
+    pub fn lands(&self, w: &Write) -> bool {
+        w.shares.is_empty() || w.proposal != Proposal::Main || self.landed()
+    }
+
+    /// `lands`, of write `edit` this history holds, on the writes before it.
+    pub fn landed_for(&self, edit: EditId) -> bool {
+        let Some(at) = self.changes.iter().position(|c| c.write.edit == edit) else { return true };
+        let w = &self.changes[at].write;
+        w.shares.is_empty() || w.proposal != Proposal::Main || landed_among(&self.changes[..at])
     }
 
     /// The history of `line`: its own writes and everything they build on, oldest first, of the writes that count.
@@ -211,12 +244,12 @@ impl History {
     pub fn written_under(&self, edit: EditId, signer: SignerId) -> BTreeSet<BlobId> {
         let Some(c) = self.get(edit) else { return BTreeSet::new() };
         let w = &c.write;
-        let Some(update) = c.body.as_ref().filter(|u| w.proposal != Proposal::New && !u.is_empty()) else {
+        let Some(update) = c.body.as_ref().filter(|u| updates(w) && !u.is_empty()) else {
             return BTreeSet::new();
         };
         let mut item = self.item_at(&w.deps, signer, w.line());
         let since = item.version();
-        match item.import_on(update, w.author, w.line()) {
+        match item.import_as(update, Peer::of(w)) {
             Ok(()) => item.authored_since(&since),
             Err(_) => BTreeSet::new(),
         }
@@ -284,7 +317,7 @@ impl History {
         s.holds.insert(w.edit);
         s.tip = Some(w.edit);
         let since = s.item.version();
-        let Some(footprint) = s.item.footprint(update, w.author, w.line()) else {
+        let Some(footprint) = s.item.footprint_as(update, Peer::of(w)) else {
             // it may hold part of the update: made anew next time
             *at = None;
             return unread(out);
@@ -300,8 +333,10 @@ impl History {
     /// What merge `w` brings in, place by place (`Touch::Merged`), each place once: every place a write it builds on,
     /// that its line's history doesn't hold, changed, by what its readers read it touched (`Change::touches`), the
     /// place it set or the list whose rows it changed; the whole record for a write they couldn't read. A proposal's
-    /// start, a merge itself and a tag change no place, and the creation is on every line. So a merge's touches name
-    /// every place the line it merges in changed since their base, and a merge op's path judges them.
+    /// start, a merge itself and a tag change no place, and a creation on main is on every line; a draft's creation,
+    /// on its own line alone, brings the whole record, so a merge op limited to a path never carries a draft into
+    /// another line (M1). So a merge's touches name every place the line it merges in changed since their base, and a
+    /// merge op's path judges them.
     fn brought(&self, w: &Write) -> Vec<Touch> {
         let held: HashSet<EditId> = self.history(w.line()).iter().map(|c| c.write.edit).collect();
         let mut out = vec![];
@@ -310,8 +345,10 @@ impl History {
                 out.push(Touch::Merged(Loc::root()));
                 continue;
             };
+            let draft = c.write.proposal == Proposal::New;
             out.extend(ts.iter().filter_map(|t| match t {
                 Touch::Set(l, _) | Touch::Insert(l) | Touch::Remove(l) | Touch::Move(l) => Some(Touch::Merged(l.clone())),
+                Touch::Create if draft => Some(Touch::Merged(Loc::root())),
                 Touch::Merged(_) | Touch::Merge | Touch::Propose | Touch::Tag(_) | Touch::Create => None,
             }));
         }
@@ -430,16 +467,30 @@ fn build(changes: &[&Change], signer: SignerId, line: Line) -> Option<Item> {
     shown.then_some(item)
 }
 
-/// Import the update change `c` carries into `item`, checked against the Loro peer of its author on its own line:
-/// whether it did. A proposal's name, and a merge, change nothing.
+/// Import the update change `c` carries into `item`, checked against the Loro peer its write's ops carry
+/// (`doc::Peer::of`): whether it did. A proposal's name, and a merge, change nothing.
 fn import(item: &mut Item, c: &Change) -> bool {
     let w = &c.write;
     match &c.body {
-        Some(update) if w.proposal != Proposal::New && !update.is_empty() => {
-            item.import_on(update, w.author, w.line()).is_ok()
-        }
+        Some(update) if updates(w) && !update.is_empty() => item.import_as(update, Peer::of(w)).is_ok(),
         _ => false,
     }
+}
+
+/// What write `w` carries is an update of the record: anything but a proposal's start, whose body is its name; a
+/// draft's creation, which starts its own line, holds the entry's first content as every creation does.
+fn updates(w: &Write) -> bool {
+    w.proposal != Proposal::New || w.first
+}
+
+/// Whether the entry of `changes`, one entry's writes in replay order, has landed (`History::landed`): it is no draft,
+/// or a counted write on main holds its creation, the writes it builds on all counted as well.
+fn landed_among(changes: &[Change]) -> bool {
+    let Some(creation) = changes.iter().find(|c| c.write.first) else { return true };
+    if creation.write.proposal != Proposal::New {
+        return true;
+    }
+    policy::history(changes.iter().filter(|c| c.counted), MAIN).iter().any(|c| c.write.first)
 }
 
 /// The record `now` with the change from `before` to `after` taken back, and every change made since kept. Where `now`

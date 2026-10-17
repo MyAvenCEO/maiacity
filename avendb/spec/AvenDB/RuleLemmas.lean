@@ -142,8 +142,8 @@ theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (dep
 
 /-- C2, creations: whether readers count a creation reads no selector and no ops but those of the chain its proof
     names. -/
-theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (fits : Bool) :
-    creates (st.seen (proofShares st proof)) a v x proof fits = creates st a v x proof fits := by
+theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (main fits : Bool) :
+    creates (st.seen (proofShares st proof)) a v x proof main fits = creates st a v x proof main fits := by
   unfold creates
   rw [seen_shares, List.any_map]
   congr 2
@@ -204,12 +204,17 @@ theorem counted_merges_within {st : State} {a : VaultId} {en : Entry} {deps : Li
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
     (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true)
-    (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true) :
+    (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true)
+    (hland : main = true → landed st en = true) :
     counts st a en deps (some cp.id) main ts true = true := by
   unfold counts
   simp only [Bool.true_and, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true, Bool.not_eq_true', beq_iff_eq]
-  refine ⟨fun d hd' => ?_, .inr ⟨List.any_eq_true.2 ⟨cp, hcp, ?_⟩, ?_⟩⟩
+  refine ⟨⟨fun d hd' => ?_, ?_⟩, .inr ⟨List.any_eq_true.2 ⟨cp, hcp, ?_⟩, ?_⟩⟩
   · simpa using hd d hd'
+  · -- a write on main of a draft that has landed
+    cases main
+    · exact .inl rfl
+    · exact .inl (by simp [hland rfl])
   · simp [lets, ha, hh, hi]
   · cases main
     · exact .inl rfl
@@ -237,9 +242,9 @@ theorem owner_counts (st : State) (en : Entry) (deps : List EditId) (proof : Opt
     counts st en.vault en deps proof main ts fits = (fits && deps.all fun d => !st.uncounted.contains d) := by
   simp [counts]
 
-theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} (hcp : cp ∈ st.shares) (hv : cp.over = v)
-    (hh : holdsShare st a cp .write = true) (ha : chainAllows st cp true [.create] = true) :
-    creates st a v (intake st cp) (some cp.id) true = true := by
+theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} {main : Bool} (hcp : cp ∈ st.shares)
+    (hv : cp.over = v) (hh : holdsShare st a cp .write = true) (ha : chainAllows st cp main [.create] = true) :
+    creates st a v (intake st cp) (some cp.id) main true = true := by
   unfold creates
   simp only [Bool.true_and, Bool.or_eq_true, beq_iff_eq, List.any_eq_true, Bool.and_eq_true]
   exact .inr ⟨cp, hcp, ⟨⟨⟨hv, hh⟩, rfl⟩, by simp [lets, ha]⟩⟩
@@ -329,7 +334,7 @@ theorem apply_countsClosed {st post : State} {edit : Edit} (hcc : CausallyClosed
           exact ⟨x, hx, hxd⟩
         · rintro ⟨d, hd, hdu⟩
           simp only [counts, Bool.and_eq_false_iff, List.all_eq_false]
-          exact .inl (.inr ⟨d, hd, by simpa using hdu⟩)
+          exact .inl (.inl (.inr ⟨d, hd, by simpa using hdu⟩))
   all_goals (repeat' split at h) <;> (try cases h) <;>
     first
     | exact CountsClosed.mono hc (fun w hw => hw) rfl
@@ -376,5 +381,124 @@ theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st := b
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   exact CountsClosed.mono (apply_countsClosed hi.1 hi.2 hpost) (fun w hw => by rwa [Shares.settle_writes] at hw)
     (settle_uncounted _ _)
+
+/-! ## Drafts
+
+A draft is a creation that starts a line of its own (`Proposal.new`): its main line holds nothing until a counted write
+on main builds on its creation (`landed`). Only the entry's vault writes on main before then, so only the vault lands a
+draft (D1); a draft by anyone but the vault counts exactly where every share of its chain lets a creation on a proposal
+through (D2), and until it lands the stewards keep it out of every share to everyone (D3). -/
+
+/-- D1: a counted write on the main line of a draft that hasn't landed is the vault's own. -/
+theorem drafts_land_by_their_vault {st : State} {a : VaultId} {en : Entry} {deps : List EditId}
+    {proof : Option ShareId} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof true ts fits = true)
+    (hl : landed st en = false) : a = en.vault := by
+  unfold counts at hc
+  simp only [hl, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+  obtain ⟨⟨-, h⟩, -⟩ := hc
+  simpa using h
+
+/-- An op allows a creation on a proposal exactly when it is `create` on no line or on proposals. -/
+theorem allows_draft {r : Op} : r.allows false .create = true ↔ r = .create none ∨ r = .create (some .proposals) := by
+  cases r with
+  | create o =>
+    cases o with
+    | none => simp [Op.allows, onLine]
+    | some o => cases o <;> simp [Op.allows, onLine]
+  | _ => simp [Op.allows]
+
+/-- Ops allow a draft exactly when they name `create` on no line or on proposals. -/
+theorem allowsAll_draft {rs : List Op} :
+    allowsAll rs false [.create] = true ↔ Op.create none ∈ rs ∨ Op.create (some .proposals) ∈ rs := by
+  simp only [allowsAll, List.all_cons, List.all_nil, Bool.and_true, List.any_eq_true, allows_draft]
+  constructor
+  · rintro ⟨r, hr, rfl | rfl⟩
+    · exact .inl hr
+    · exact .inr hr
+  · rintro (h | h)
+    · exact ⟨_, h, .inl rfl⟩
+    · exact ⟨_, h, .inr rfl⟩
+
+/-- D2 (C3 and C4 for drafts): the readers of an entry count its creation as a draft by anyone but its vault exactly
+    when it fits and its proof names a share over the vault that its creator holds with write or more, in whose intake
+    audience it was created, every share of whose chain is the class of its ops and names `create` on no line or on
+    proposals. -/
+theorem draft_creations {st : State} {a v : VaultId} {x : Audience} {proof : Option ShareId} {fits : Bool}
+    (hv : a ≠ v) :
+    creates st a v x proof false fits = true ↔ fits = true ∧ ∃ cp ∈ st.shares, proof = some cp.id ∧ cp.over = v ∧
+      holdsShare st a cp .write = true ∧ intake st cp = x ∧ ∀ c ∈ chain st cp, c.level = levelOf c.ops ∧
+        (Op.create none ∈ c.ops ∨ Op.create (some .proposals) ∈ c.ops) := by
+  unfold creates lets chainAllows
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, hv, false_or, List.any_eq_true, List.all_eq_true,
+    allowsAll_draft]
+  constructor
+  · rintro ⟨hf, cp, hcp, ⟨⟨⟨ho, hh⟩, hx⟩, hp, hall⟩⟩
+    exact ⟨hf, cp, hcp, hp, ho, hh, hx, hall⟩
+  · rintro ⟨hf, cp, hcp, hp, ho, hh, hx, hall⟩
+    exact ⟨hf, cp, hcp, ⟨⟨⟨ho, hh⟩, hx⟩, hp, hall⟩⟩
+
+/-- An accepted creation, on the main line or a draft's own, records its first write on that line, building on
+    nothing, and its readers count it exactly as `creates` says of a creation on that line. -/
+theorem apply_creation {st post : State} {edit : Edit} (h : apply st edit = some post)
+    {v e actor stay epoch deps proposal via x hdr tags proof touches fits}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via (some (x, hdr)) tags proof touches fits) :
+    proposal.isOn = false ∧
+      post.writes = st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], proposal, via, true, x⟩] ∧
+      post.uncounted = st.counting (creates st actor v x proof (proposal == .main) fits) edit.id := by
+  unfold apply at h
+  rw [ha] at h
+  dsimp only at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  rename_i hnew
+  split at h
+  · cases h
+  cases h
+  refine ⟨?_, rfl, rfl⟩
+  cases hp : proposal.isOn
+  · rfl
+  · simp [hp] at hnew
+
+/-- D2, a step: a draft's creation is recorded as the start of its own line, and its readers count it exactly as
+    `creates` says of a creation on a proposal. -/
+theorem draft_step {st st' : State} {edit : Edit} (h : step st edit = some st')
+    {v e a epoch via x hdr tags proof touches fits}
+    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits) :
+    (⟨edit.id, edit.author, a, e, none, epoch, [], .new, via, true, x⟩ : Write) ∈ st'.writes ∧
+      st'.uncounted = st.counting (creates st a v x proof false fits) edit.id := by
+  unfold step at h
+  obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
+  obtain ⟨-, hw, hu⟩ := apply_creation hpost ha
+  rw [Shares.settle_writes, settle_uncounted, hw, hu]
+  exact ⟨List.mem_append_right _ (List.mem_singleton_self _), rfl⟩
+
+/-- D3: where the live part of an entry's audience is its semantic audience, as its stewards mark it, a draft that
+    hasn't landed is in no audience a share to everyone reaches, unless a live wide share to everyone is over its
+    vault: everyone opens no key of its audience. -/
+theorem drafts_not_public {st : State} (hr : Reachable st) {en : Entry}
+    (haud : liveAudience st en = semAudience st en) (hl : landed st en = false)
+    (hwide : ¬∃ cp ∈ st.shares, cp.over = en.vault ∧ cp.wide = true ∧ cp.who = .everyone ∧ st.live cp.id = true) :
+    publicKey st (.audience en.vault en.audience) = false := by
+  have hw := Shares.sharesWell_reachable hr
+  unfold publicKey
+  rw [Bool.eq_false_iff]
+  intro h
+  obtain ⟨cp, hcp, hc⟩ := List.any_eq_true.1 h
+  simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hc
+  obtain ⟨⟨⟨⟨hov, hlive⟩, -⟩, hwx⟩, hwho⟩ := hc
+  rcases hwx with hwd | hin
+  · exact hwide ⟨cp, hcp, hov, hwd, hwho, hlive⟩
+  · -- a live share of the entry's audience is in its semantic audience, which leaves every share to everyone out
+    have hmem : cp.id ∈ liveAudience st en := List.mem_filter.2 ⟨List.contains_iff_mem.1 hin, hlive⟩
+    rw [haud] at hmem
+    unfold semAudience at hmem
+    split at hmem
+    · simp only [mkAudience, List.mem_mergeSort, List.mem_eraseDups, List.mem_map, List.mem_filter] at hmem
+      obtain ⟨cp', ⟨hcp', hsel⟩, hid⟩ := hmem
+      obtain rfl := Shares.eq_of_id hw.1 hcp' hcp hid
+      simp [hl, hwho] at hsel
+    · simp at hmem
 
 end AvenDB.Ruling

@@ -31,12 +31,14 @@ use crate::world::levels;
 /// the device holds in all; the schemas and lenses the app ships (`lens::blobs`); its seed's epoch; the edits the
 /// device holds on it by kind; the schemas and lenses of its lane; each audience its entries are in, the first
 /// first, with the shares that reach it beside the vault's shares on the whole of it, its key's epoch and how many
-/// entries it holds; and every entry, cards and profiles too, in the order they were created (`row`).
+/// entries it holds; and every entry, cards and profiles too, in the order they were created (`row`). A draft the
+/// vault hasn't landed (`Lab::landed`) has no main line yet: it is in none of its tables, and `drafts` counts them.
 pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     let st = lab.state(me);
     let (edits, keys) = lab.size(me);
     let lane = lab.lane(me, vault);
-    let entries: Vec<&Entry> = st.entries().iter().filter(|en| en.vault == vault).collect();
+    let (entries, drafts): (Vec<&Entry>, Vec<&Entry>) =
+        st.entries().iter().filter(|en| en.vault == vault).partition(|en| lab.landed(me, en.id));
     let mut audiences: Vec<AudienceId> = vec![];
     for en in &entries {
         if !audiences.contains(&en.audience()) {
@@ -63,6 +65,7 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         "lenses": lane.lenses().map(lens).collect::<Vec<_>>(),
         "audiences": audiences.iter().map(audience).collect::<Vec<_>>(),
         "rows": entries.iter().map(|en| row(lab, me, en)).collect::<Vec<_>>(),
+        "drafts": drafts.len(),
     })
 }
 

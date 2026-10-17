@@ -163,13 +163,14 @@ fn door_retagged() -> Body {
     Body { header: None, tags, answers, content: vec![], proof: None, files: vec![] }
 }
 
-/// Alice's work todos as a narrower share shares them (`rules`): its own ops, to tick a todo done on the main line, add
-/// its items, merge proposals in and start them, under the ops of a share above it, which every kind of op, step and
-/// value appears in.
+/// Alice's work todos as a narrower share shares them (`rules`): its own ops, to draft a todo, tick one done on the
+/// main line, add its items, merge proposals in and start them, under the ops of a share above it, which every kind of
+/// op, step and value appears in.
 fn tick_todos() -> Slice {
     let (done, items) = (Step::Field("done".into()), Step::Field("items".into()));
     let ops = vec![
         Op::Read,
+        Op::Create { on: Some(On::Proposals) },
         Op::Set { path: vec![done], to: Some(vec![Scalar::Bool(true)]), on: Some(On::Main) },
         Op::Insert { path: vec![items.clone()], on: None },
         Op::Merge { on: Some(On::Proposals), path: vec![] },
@@ -183,7 +184,8 @@ fn tick_todos() -> Slice {
         Op::Move { path: vec![Step::Any], on: None },
         Op::Merge { on: None, path: vec![] },
         Op::Merge { on: Some(On::Main), path: vec![Step::Field("params".into()), Step::Any, Step::Row(2)] },
-        Op::Create,
+        Op::Create { on: None },
+        Op::Create { on: Some(On::Main) },
         Op::Tag(None),
         Op::Relay,
         Op::Backup,

@@ -17,8 +17,9 @@
 //!
 //! Each device edits as a Loro peer of its own on each line of an item's history, derived from its signer and the
 //! line, so an import can check that every op of a write is its signer's, and a device's edits on one line are one run
-//! of ops that the line's history holds whole (`history`). No clock goes into the updates: the same edits export the
-//! same bytes.
+//! of ops that the line's history holds whole (`history`). A draft's creation starts its own line, named by its own
+//! id, which hashes its content: so it is written as its signer's draft peer of the entry instead (`Peer`). No clock
+//! goes into the updates: the same edits export the same bytes.
 //!
 //! What a write touches (`rules::Touch`), which the ops of the shares it relies on judge, is read off its Loro ops once
 //! imported on the version it builds on (`Item::footprint`): each op by the place its container has in the record then.
@@ -32,11 +33,11 @@ use loro::{
 };
 use serde_json::Value;
 
-use crate::id::{BlobId, SignerId};
+use crate::id::{BlobId, EntryId, SignerId};
 use crate::lens::example::{self, DocV0, TodoV0};
 use crate::lens::{BlockV1, DocV1, Status, Stored, TodoV1, TypeV1, View};
 use crate::ops::{self, Loc, Record, Seg};
-use crate::policy::Line;
+use crate::policy::{Line, Proposal, Write};
 use crate::rules::{Scalar, Touch};
 
 /// Peer ids at the very top are Loro's: it refuses `PeerID::MAX` and marks things internally with a few below it.
@@ -105,6 +106,13 @@ impl Item {
     /// An empty item on `signer`'s device whose edits extend line `line` of its history.
     pub fn new_on(signer: SignerId, line: Line) -> Item {
         Item::on(LoroDoc::new(), peer(signer, line))
+    }
+
+    /// An empty item on `signer`'s device whose first edit is a draft's creation of entry `entry`: its edits carry the
+    /// signer's draft peer of the entry (`Peer::Draft`), as the creation starts a line its own id names, which isn't
+    /// known until it is written.
+    pub fn draft(signer: SignerId, entry: EntryId) -> Item {
+        Item::on(LoroDoc::new(), Peer::Draft(signer, entry).id())
     }
 
     /// `doc` edited as `peer`, with no timestamps in its changes.
@@ -352,11 +360,17 @@ impl Item {
     /// Not caught: a signer sending two different updates for the same ops of its own (a device keeps whichever it
     /// imports first), and ops naming others' ids (deleting or moving their text), which any writer may do.
     pub fn import_on(&mut self, update: &[u8], signer: SignerId, line: Line) -> Result<(), DocError> {
+        self.import_as(update, Peer::Line(signer, line))
+    }
+
+    /// Import an update whose ops must all carry the Loro peer `as_peer` (`import_on`): a write's, as `Peer::of` names
+    /// it.
+    pub fn import_as(&mut self, update: &[u8], as_peer: Peer) -> Result<(), DocError> {
         let meta = LoroDoc::decode_import_blob_meta(update, true).map_err(|_| DocError::Malformed)?;
         if meta.mode != EncodedBlobMode::Updates {
             return Err(DocError::Malformed);
         }
-        let peer = peer(signer, line);
+        let peer = as_peer.id();
         if meta.partial_end_vv.keys().any(|&p| p != peer) {
             return Err(DocError::WrongPeer);
         }
@@ -392,9 +406,14 @@ impl Item {
     /// With them, the record before and after it, which readers judge it by too (`lens::Lane::fits`). `None` where the
     /// update doesn't import, or imports only in part: it builds on ops the item doesn't hold.
     pub fn footprint(&mut self, update: &[u8], signer: SignerId, line: Line) -> Option<Footprint> {
+        self.footprint_as(update, Peer::Line(signer, line))
+    }
+
+    /// `footprint`, of an update whose ops carry the Loro peer `as_peer`: a write's, as `Peer::of` names it.
+    pub fn footprint_as(&mut self, update: &[u8], as_peer: Peer) -> Option<Footprint> {
         let (before, was) = (self.record(), self.doc.oplog_vv());
-        self.import_on(update, signer, line).ok()?;
-        let (after, now, p) = (self.record(), self.doc.oplog_vv(), peer(signer, line));
+        self.import_as(update, as_peer).ok()?;
+        let (after, now, p) = (self.record(), self.doc.oplog_vv(), as_peer.id());
         let others = |q: &PeerID| *q != p && now.get(q) != was.get(q);
         if !self.parked.is_empty() || now.keys().any(others) {
             return None;
@@ -487,11 +506,39 @@ impl Clone for Item {
 /// the proposal too, for a purpose that keeps a proposal's old name, branch, so every peer stays what it was. Two
 /// signers, or two lines, share a peer only by a 64-bit collision.
 fn peer(signer: SignerId, line: Line) -> PeerID {
-    let h = match line {
-        None => crate::hash::hash("loro peer", &signer.0),
-        Some(b) => crate::hash::hash("loro peer on a branch", &[signer.0, b.0].concat()),
-    };
-    usable(u64::from_be_bytes(*h.first_chunk().expect("32 bytes")))
+    Peer::Line(signer, line).id()
+}
+
+/// Whose Loro peer the ops of a write carry, one name for every write (`Peer::of`): its signer's on the line it
+/// extends (`Line`); or, for a draft's creation, which starts a line named by its own id, a hash of its content and so
+/// not known as it is written, its signer's draft peer of its entry (`Draft`), whose id the device draws before the
+/// write. A draft peer differs from every line's, so nothing its signer later writes on main, or on the draft's line,
+/// collides with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Peer {
+    Line(SignerId, Line),
+    Draft(SignerId, EntryId),
+}
+
+impl Peer {
+    /// The peer write `w`'s ops carry: the draft peer of its entry for a draft's creation, a creation that starts a
+    /// line of its own (`Proposal::New`), else its author's on its line.
+    pub fn of(w: &Write) -> Peer {
+        match w.first && w.proposal == Proposal::New {
+            true => Peer::Draft(w.author, w.entry),
+            false => Peer::Line(w.author, w.line()),
+        }
+    }
+
+    /// Its Loro peer id: the first 8 bytes of a hash of what names it, each kind for a purpose of its own.
+    pub fn id(self) -> PeerID {
+        let h = match self {
+            Peer::Line(signer, None) => crate::hash::hash("loro peer", &signer.0),
+            Peer::Line(signer, Some(b)) => crate::hash::hash("loro peer on a branch", &[signer.0, b.0].concat()),
+            Peer::Draft(signer, entry) => crate::hash::hash("loro peer of a draft", &[signer.0, entry.0].concat()),
+        };
+        usable(u64::from_be_bytes(*h.first_chunk().expect("32 bytes")))
+    }
 }
 
 /// The built-in view of a record's kind (`View::built_in`), or else a document's. Fields it doesn't know are stored by
@@ -1075,6 +1122,19 @@ mod tests {
         let meta = LoroDoc::decode_import_blob_meta(&doc.export(&Version::default()), true).unwrap();
         assert_eq!(meta.partial_end_vv.keys().collect::<Vec<_>>(), [&peer(ALICE, None)]);
         assert_eq!(doc.fork_as(BOB).doc.peer_id(), peer(BOB, None));
+        // a draft's creation is its signer's draft peer of its entry, no line's, and imports as that alone
+        let (e, f) = (EntryId::from_u64(1), EntryId::from_u64(2));
+        let draft = Peer::Draft(ALICE, e).id();
+        assert!(draft != peer(ALICE, None) && draft != peer(ALICE, b) && draft != Peer::Draft(BOB, e).id());
+        assert_ne!(draft, Peer::Draft(ALICE, f).id());
+        let mut made = Item::draft(ALICE, e);
+        made.set_record(View::document_v1(), &serde_json::json!({ "kind": "document", "title": "A draft" }));
+        let update = made.export(&Version::default());
+        assert_eq!(Item::new(BOB).import(&update, ALICE), Err(DocError::WrongPeer), "no line's peer");
+        let mut read = Item::new(BOB);
+        assert_eq!(read.import_as(&update, Peer::Draft(ALICE, f)), Err(DocError::WrongPeer), "nor another entry's");
+        read.import_as(&update, Peer::Draft(ALICE, e)).expect("its draft peer's");
+        assert_eq!(read.record(), made.record());
         // the ids Loro keeps for itself are never ours
         assert!([PeerID::MAX, PeerID::MAX - 2].iter().all(|&p| usable(p) <= PeerID::MAX - RESERVED));
         assert_eq!(usable(7), 7);

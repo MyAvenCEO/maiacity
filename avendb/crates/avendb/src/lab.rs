@@ -43,7 +43,10 @@
 //!
 //! A device shows each entry on every line of its history (`history`): it opens each write it can, and builds the item
 //! of each line from the updates of that line's history. Proposing, merging, promoting, restoring, undoing and making a
-//! variant are writes like any edit, encrypted under the entry's key and checked against the writer's shares.
+//! variant are writes like any edit, encrypted under the entry's key and checked against the writer's shares. A draft
+//! (`create_draft`) is a creation that starts its own line: the device shows it on that line alone until its vault
+//! lands it on main (`history::History::landed`), and its stewards keep it out of every audience everyone reads until
+//! then (`policy::State::meaning_landed`).
 //!
 //! A person's device derives its keys from their passkey at every unlock (`sign::Passkey::device`) and holds them only
 //! while it is unlocked: a locked device keeps its edits and their ciphertext, and no key, nor anything a key opened.
@@ -1491,7 +1494,8 @@ impl Lab {
     /// asks for, `asks`. `NotAView` if
     /// it doesn't fit the schemas the entry was written under, of the vault's lane and the built-in ones, and
     /// `NotAccepted` if it merges into main through a share on top of no accept of the vault's (`History::passes`, M2),
-    /// unless the device is a patched app's (`patched`).
+    /// and `NotLanded`, before anything else, if it writes on main through a share of a draft its vault hasn't landed
+    /// (`History::lands`), unless the device is a patched app's (`patched`).
     fn proven(
         &self,
         on: SignerId,
@@ -1500,6 +1504,9 @@ impl Lab {
         w: &Write,
         (content, asks): (&[u8], &TagDelta),
     ) -> Result<Option<Proof>, Refusal> {
+        if !(h.lands(w) || self.lawless) {
+            return Err(Refusal::NotLanded);
+        }
         let lane = Lane::with_built_ins(view.lane_of(vault, &self.held(on).readings));
         let read = h.reading(w, Some(content), on, &lane);
         let proof = self.prove(on, view, w, read.touches.as_deref(), asks)?;
@@ -1564,8 +1571,42 @@ impl Lab {
         let entry = self.new_entry_id();
         let header = Header { ty: Sym::new(ty), created: self.now };
         let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
-        let audience = self.intake(on, actor, vault, entry, &header, &tags)?;
+        let audience = self.intake(on, actor, vault, entry, &header, &tags, true)?;
         self.create_as(on, actor, vault, entry, audience, header, tags, item)
+    }
+
+    /// Draft an entry of vault `vault` of type `ty` with tags `tags`, on device `on`, acting for `actor`: a creation
+    /// that starts its own line, the draft's (`Proposal::New`), named by its own id, so its main line holds nothing
+    /// until the vault lands it, merging that line (`History::landed`). `content` makes its first content once its id
+    /// is drawn: a draft's creation is written as its author's draft peer of the entry (`doc::Peer::Draft`,
+    /// `doc::Item::draft`), as the line it starts isn't named until it is written; `None` where what it would hold
+    /// isn't a view of its schema. It goes in the audience `create` puts a new entry in, judged as a creation on a
+    /// proposal: through a share whose ops let it create on proposals (a Suggester's), and, where the vault drafts it
+    /// itself, among no share to everyone. Further edits are writes on its line, and an AIP names it as any proposal.
+    /// The entry and the line, the creation's own id. `NotAView` where `content` makes none, or for a schema or lens,
+    /// which joins its vault's lane by a creation on main alone, unless the device is a patched app's.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_draft(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        vault: VaultId,
+        ty: &str,
+        tags: &[&str],
+        content: impl FnOnce(EntryId) -> Option<Vec<u8>>,
+    ) -> Result<(EntryId, EditId), Refusal> {
+        self.unlocked(on)?;
+        let entry = self.new_entry_id();
+        let header = Header { ty: Sym::new(ty), created: self.now };
+        if header.ty.of_lane() && !self.lawless {
+            return Err(Refusal::NotAView);
+        }
+        let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
+        let audience = self.intake(on, actor, vault, entry, &header, &tags, false)?;
+        let content = content(entry).ok_or(Refusal::NotAView)?;
+        let at = (entry, audience);
+        let line = self.create_with(on, actor, vault, at, header, tags, content, Proposal::New)?;
+        Ok((entry, line))
     }
 
     /// `create` in the audience of the shares `audience`, whatever their slices say: what a device that ignores where
@@ -1602,13 +1643,15 @@ impl Lab {
         item: Item,
     ) -> Result<EntryId, Refusal> {
         let content = item.export(&Version::default());
-        self.create_with(on, actor, vault, (entry, audience), header, tags, content)
+        self.create_with(on, actor, vault, (entry, audience), header, tags, content, Proposal::Main)?;
+        Ok(entry)
     }
 
     /// The first write of entry `entry`, holding `content`, in the audience of the shares `audience`, under the epoch
-    /// the audience is at, or the one it moves to as the entry brings it back into use (`policy::State::reenters`). A
-    /// schema or lens entry's content is its schema or lens, and nothing else (`add_schema`): `NotAView` where it
-    /// isn't one, unless the device is a patched app's.
+    /// the audience is at, or the one it moves to as the entry brings it back into use (`policy::State::reenters`), on
+    /// the main line or, for a draft, starting its own (`proposal`). A schema or lens entry's content is its schema or
+    /// lens, and nothing else (`add_schema`): `NotAView` where it isn't one, unless the device is a patched app's. Its
+    /// id.
     #[allow(clippy::too_many_arguments)]
     fn create_with(
         &mut self,
@@ -1619,7 +1662,8 @@ impl Lab {
         header: Header,
         tags: Vec<Sym>,
         content: Vec<u8>,
-    ) -> Result<EntryId, Refusal> {
+        proposal: Proposal,
+    ) -> Result<EditId, Refusal> {
         let view = self.latest(on).clone();
         let x = AudienceId::of(vault, &audience);
         let epoch = view.epoch(KeyFam::Audience(vault, x)) + view.reenters(vault, x) as u64;
@@ -1630,7 +1674,7 @@ impl Lab {
             stay: None,
             epoch,
             deps: vec![],
-            proposal: Proposal::Main,
+            proposal,
             via: vec![],
             create: Some(audience),
             files: vec![],
@@ -1643,8 +1687,7 @@ impl Lab {
             true => self.prove(on, &view, &w, Some(&[Touch::Create]), &tags)?,
             false => self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags))?,
         };
-        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof, files: vec![] }, x)?;
-        Ok(entry)
+        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof, files: vec![] }, x)
     }
 
     /// Create a schema or lens entry of vault `vault` holding `blob`, on device `on`, acting for `actor`: of the type
@@ -1674,11 +1717,12 @@ impl Lab {
             true => self.schemas_share(on, vault)?,
             false => None,
         };
-        let audience = match self.intake(on, actor, vault, entry, &header, &[])? {
+        let audience = match self.intake(on, actor, vault, entry, &header, &[], true)? {
             x if x.is_empty() => shared.into_iter().collect(),
             x => x,
         };
-        self.create_with(on, actor, vault, (entry, audience), header, vec![], blob.to_vec())
+        self.create_with(on, actor, vault, (entry, audience), header, vec![], blob.to_vec(), Proposal::Main)?;
+        Ok(entry)
     }
 
     /// The share vault `vault` shares its schemas and lenses with everyone by, as device `on` holds it: a live one the
@@ -1704,7 +1748,9 @@ impl Lab {
         self.issue(on, &[on], share).map(Some)
     }
 
-    /// The audience a new entry goes in (`create`).
+    /// The audience a new entry goes in (`create`), created on the main line (`main`) or a draft (`create_draft`),
+    /// which no share to everyone reads until it lands (`policy::State::meaning_landed`).
+    #[allow(clippy::too_many_arguments)]
     fn intake(
         &self,
         on: SignerId,
@@ -1713,12 +1759,15 @@ impl Lab {
         entry: EntryId,
         header: &Header,
         tags: &[Sym],
+        main: bool,
     ) -> Result<Vec<ShareId>, Refusal> {
         let (store, st) = (self.held(on), self.latest(on));
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.to_vec() };
         if actor == vault {
             let complete = store.reads_shares(st, vault);
-            return Ok(if complete { semantic_audience(st, vault, &attrs, &store.readings) } else { vec![] });
+            let mut x = if complete { semantic_audience(st, vault, &attrs, &store.readings) } else { vec![] };
+            x.retain(|c| main || st.share(*c).is_none_or(|cp| cp.share.who != Who::Everyone));
+            return Ok(x);
         }
         let shares: Vec<&Issued> =
             st.shares_held(actor).filter(|cp| cp.share.over == vault && st.holds(actor, cp, Level::Write)).collect();
@@ -1727,7 +1776,7 @@ impl Lab {
         let holds = |cp: &&Issued| store.slices.get(&cp.id).map(|s| cp.share.wide || s.select.matches(&attrs));
         let creates = |cp: &Issued| {
             let proof = store.slices.get(&cp.id).map(|s| Proof { share: cp.id, grants: s.grants() });
-            st.lets_through(cp, proof.as_ref(), true, &[Touch::Create])
+            st.lets_through(cp, proof.as_ref(), main, &[Touch::Create])
         };
         let held: Vec<&Issued> = shares.iter().copied().filter(|cp| holds(cp) == Some(true)).collect();
         if let Some(cp) = held.iter().find(|cp| creates(cp)).or(held.first()) {
@@ -2008,7 +2057,9 @@ impl Lab {
         if !read || !store.reads_shares(st, v) {
             return Ok(None);
         }
-        let Some((caps, wants)) = st.meaning(entry, r).and_then(|m| m.mark) else { return Ok(None) };
+        let Some((caps, wants)) = st.meaning_landed(entry, r, landed_in(store, entry)).and_then(|m| m.mark) else {
+            return Ok(None);
+        };
         let wants = wants.filter(|_| store.reads_keeps(st, v));
         if caps.is_none() && wants.is_none() {
             return Ok(None);
@@ -2112,6 +2163,26 @@ impl Lab {
         self.held(d).shown.get(&entry)?.items.get(&line)
     }
 
+    /// Whether entry `e` has landed, as device `d` shows it (`History::landed`): it is no draft, or its vault took it
+    /// into main. Every main read leaves out one that hasn't (`world`, `data`, the feeds).
+    pub fn landed(&self, d: SignerId, e: EntryId) -> bool {
+        landed_in(self.held(d), e)
+    }
+
+    /// Whether entry `e` goes public once it lands, as device `d` reads the selectors of its vault's shares: a live
+    /// share to everyone over its vault picks it then, on the whole vault or by its slice, as its meaning would have it
+    /// had it landed (`policy::State::meaning_landed`). Advice, for whoever answers a draft: only its vault's stewards
+    /// read every selector, and they mark it so once it lands.
+    pub fn public_once_landed(&self, d: SignerId, e: EntryId) -> bool {
+        let store = self.held(d);
+        let (st, r) = (store.view(), &store.readings);
+        let Some(en) = st.entry(e) else { return false };
+        let everyone = |cp: &Issued| cp.share.who == Who::Everyone && st.live(cp.id) && !cp.share.level.is_keep();
+        let wide = st.shares_over(en.vault).any(|cp| cp.share.wide && everyone(cp));
+        let picks = |c: &ShareId| st.share(*c).is_some_and(everyone);
+        wide || st.meaning_landed(e, r, true).is_some_and(|m| m.audience.iter().any(picks))
+    }
+
     /// An entry's history as device `d` holds it: every write it counts, with what it could open, its lines and their
     /// heads, the proposals' names, and any version to open read-only (`History::item_at`). `None` if it counts no
     /// write of the entry.
@@ -2135,7 +2206,7 @@ impl Lab {
     /// tags now, its audience, and where a steward would move it. `None` if it doesn't read the entry's header.
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
         let store = self.held(d);
-        store.view().meaning(entry, &store.readings)
+        store.view().meaning_landed(entry, &store.readings, landed_in(store, entry))
     }
 
     /// The slice of share `share`, a keep share too, as device `d` reads it: `None` unless its selector is sealed to a
@@ -3118,7 +3189,7 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
             continue;
         }
-        let Some(m) = st.meaning(en.id, r) else { continue };
+        let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else { continue };
         let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
         let answered: HashSet<EditId> =
             ours.filter_map(|w| store.bodies.get(&w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
@@ -3216,6 +3287,26 @@ fn key_box(
     Some(KeyBox { to, bytes })
 }
 
+/// Whether entry `e` has landed as the device holding `store` shows it (`Lab::landed`): it is no draft, which every
+/// peer reads in the clear, or the history it shows lands it (`History::landed`). A device that opens none of a draft,
+/// as one that keeps its ciphertext for others, counts none of it: it reads, as a relay would, whether a write on main
+/// that acts for the vault itself, relying on no share, builds on its creation, as only the vault lands a draft; so it
+/// still lists what it holds once the vault took it in, sealed.
+fn landed_in(store: &Store, e: EntryId) -> bool {
+    let st = store.view();
+    if !st.is_draft(e) {
+        return true;
+    }
+    let shown = store.shown.get(&e).map(|s| &s.history);
+    if shown.is_some_and(History::landed) {
+        return true;
+    }
+    let opened = shown.is_some_and(|h| h.changes().iter().any(|c| c.body.is_some()));
+    let ours = |w: &&Write| w.shares.is_empty() || w.proposal != Proposal::Main;
+    let ws: Vec<&Write> = st.entry_writes(e).filter(ours).collect();
+    !opened && crate::policy::history(ws.iter(), MAIN).iter().any(|w| w.first)
+}
+
 /// Rebuild what device `d` shows of each entry whose writes, or what it opened of them, changed: its history, each
 /// write of its view with the content of its body where the device opened it, in replay order, and the item of each
 /// line.
@@ -3248,10 +3339,11 @@ fn show_items(d: SignerId, store: &mut Store) {
             continue;
         }
         // each write counted where what it builds on counts, it fits the schemas the entry was written under, its
-        // shares let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`), and a
-        // merge into main through a share builds on the vault's accept (`History::passes`, M2): the first two read
-        // off it on one scratch item (`History::reading_on`); but a schema or lens entry's creation holds the schema
-        // or the lens itself, no update, and fits where it is one of its type (`lane_fits`)
+        // shares let it through, by its proof, what it touches and the tags it asks for (`policy::State::lets`), a
+        // merge into main through a share builds on the vault's accept (`History::passes`, M2), and a write on main
+        // through a share is of an entry that landed (`History::lands`), as only the vault lands a draft: the first
+        // two read off it on one scratch item (`History::reading_on`); but a schema or lens entry's creation holds
+        // the schema or the lens itself, no update, and fits where it is one of its type (`lane_fits`)
         let lane = lane.get_or_insert_with(|| Lane::with_built_ins(blobs.iter().copied()));
         let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
         let (mut history, mut scratch) = (History::default(), None);
@@ -3266,14 +3358,21 @@ fn show_items(d: SignerId, store: &mut Store) {
             });
             let fits = read.as_ref().is_none_or(|r| r.fits);
             let counted = read.as_ref().is_some_and(|r| {
-                r.fits && st.lets(w, proof, r.touches.as_deref(), asks) && history.passes(w, r.touches.as_deref())
+                r.fits
+                    && st.lets(w, proof, r.touches.as_deref(), asks)
+                    && history.passes(w, r.touches.as_deref())
+                    && history.lands(w)
             });
             // what it touches and asks for, as a merge that brings it in reads it
             let touches = read.and_then(|r| r.touches).map(|ts| ts.into_iter().chain(rules::asked(asks)).collect());
             let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted };
             history.push(change).expect("the view's writes are causally closed");
         }
-        let items = history.lines().into_iter().filter_map(|l| Some((l, history.item(l, d)?))).collect();
+        // no item on main for a draft its vault hasn't landed: its main line holds nothing yet, whatever a write of
+        // the vault's own on main beside it holds
+        let landed = history.landed();
+        let lines = history.lines().into_iter().filter(|l| *l != MAIN || landed);
+        let items = lines.filter_map(|l| Some((l, history.item(l, d)?))).collect();
         shown.insert(en.id, Shown { history, items, print });
     }
     store.shown = shown;

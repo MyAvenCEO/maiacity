@@ -59,11 +59,13 @@ inductive Action where
       `stay` at epoch `epoch` of that stay's audience. `deps` are the entry's writes it builds on: a write that starts a
       proposal builds on the version the proposal starts from, and a merge also on the heads of the line it brings in.
       A write that creates its entry (`create`) names the audience it goes in and carries its header, and its stay is
-      the one its creation begins (`none`). Its tags (`tags`, encrypted with the rest of the body) count only when it
-      acts for the vault, except that a new entry's added tags are its first tags. Its body carries a proof (`proof`)
-      where it acts through a share: the share it relies on, whose chain's ops its readers then read; and its readers
-      read off its Loro update what it touches (`touches`, `Rules.lean`), besides the tags it asks for, and whether what
-      it makes of the record fits the schemas the entry was written under up to it (`fits`, `Schemas.lean`). -/
+      the one its creation begins (`none`); it is on the main line, or a draft's, which starts a line of its own
+      (`Proposal.new`) and leaves the main line empty until a write on main brings that line in (`landed`). Its tags
+      (`tags`, encrypted with the rest of the body) count only when it acts for the vault, except that a new entry's
+      added tags are its first tags. Its body carries a proof (`proof`) where it acts through a share: the share it
+      relies on, whose chain's ops its readers then read; and its readers read off its Loro update what it touches
+      (`touches`, `Rules.lean`), besides the tags it asks for, and whether what it makes of the record fits the schemas
+      the entry was written under up to it (`fits`, `Schemas.lean`). -/
   | write      (v : VaultId) (e : EntryId) (actor : VaultId) (stay : Option EditId) (epoch : Nat)
                (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
                (create : Option (Audience × Header) := none) (tags : TagDelta := {}) (proof : Option ShareId := none)
@@ -345,17 +347,18 @@ def apply (st : State) (edit : Edit) : Option State :=
     if st.writes.any (·.edit == edit.id) || !actsVia st edit.author via actor then none
     else match create with
     | some (x, hdr) =>
-      -- a new entry, with an id never used before, in an audience its actor may create in
+      -- a new entry, with an id never used before, in an audience its actor may create in, building on nothing, on
+      -- the main line or as a draft starting its own line (`.new`), never on a proposal that already is
       if (st.entry? e).isSome || st.born.contains e || (st.vault? v).isNone || stay.isSome || !deps.isEmpty ||
-          proposal != .main then none
+          proposal.isOn then none
       else if !audienceOk st v x || !mayCreate st actor v x then none
       else
         let attrs : Attrs := ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩
-        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof, hdr.blob⟩
-        -- its readers count it if it fits and the share it was created through lets a creation through
+        let en : Entry := ⟨e, v, [(none, x)], attrs, admits st actor v x attrs proof (proposal == .main), hdr.blob⟩
+        -- its readers count it if it fits and the share it was created through lets a creation on its line through
         some { st with entries := st.entries ++ [en], born := st.born ++ [e],
-                       writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], .main, via, true, x⟩],
-                       uncounted := st.counting (creates st actor v x proof fits) edit.id }
+                       writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], proposal, via, true, x⟩],
+                       uncounted := st.counting (creates st actor v x proof (proposal == .main) fits) edit.id }
     | none =>
       match st.entry? e with
       | none => none
