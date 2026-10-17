@@ -25,6 +25,8 @@ export const READS = [
 	'taggable',
 	'limits',
 	'requests',
+	'aips',
+	'aip',
 	'may'
 ];
 
@@ -42,6 +44,11 @@ const ACTING = [
 	'tag',
 	'propose',
 	'merge',
+	'review',
+	'aip_open',
+	'aip_promote',
+	'aip_withdraw',
+	'aip_review',
 	'restore',
 	'undo',
 	'variant',

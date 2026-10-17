@@ -35,7 +35,7 @@
 		thumbnail: ['Its title cards in layers, one per shape, each rendered into the Library.', 'M3'],
 		journey: ['From → to, the question it asks, and its beats with their tension.', 'M4'],
 		writing: ['Its article, with proposals and variants (a German one, a shorter one).', 'M5'],
-		movie: ['Its script: scenes on the journey’s beats, the lines they say and the shots they need, made from its article.', 'M6 · M7'],
+		movie: ['Its script: a scene for each of the journey’s beats, the lines they say and the shots they need, and its first cut for the studio.', 'M6 · M7'],
 		derivatives: ['Its master post, and every piece cut from it for each platform.', 'M8 · M9'],
 		scheduled: ['When each piece goes out, platform by platform, and again.', 'M10'],
 		published: ['Live on the Maia Universe and every platform, each with its link.', 'M11']

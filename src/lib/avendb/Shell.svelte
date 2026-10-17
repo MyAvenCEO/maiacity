@@ -396,7 +396,7 @@
 		{#if error}<p class="toast bad" role="alert">{error}</p>{/if}
 	</div>
 
-	<Hitl {world} {api} vault={context} {busy} onopen={open} oncounts={(c) => (waiting = c)} />
+	<Hitl {world} {api} vault={context} {busy} oncounts={(c) => (waiting = c)} />
 
 	{#if adding}<NewVaults {world} {api} {busy} onclose={() => (adding = false)} />{/if}
 	{#if asking && !here.via}

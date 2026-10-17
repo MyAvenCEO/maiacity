@@ -15,6 +15,7 @@ mod jobs;
 mod local;
 mod mcp;
 mod models;
+mod page;
 mod passkey;
 mod player;
 mod proxies;
@@ -597,6 +598,7 @@ fn main() {
             asks::asks_open,
             keep::stores_status,
             asks::ask_answer,
+            page::page_answer,
             vault_status,
             vault_list,
             vault_describe,

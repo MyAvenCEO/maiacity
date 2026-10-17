@@ -15,7 +15,8 @@
 //!   each hop opening only what the device reads. `get`: one entry on a line, or at a version. `history`: an entry's
 //!   lines and every write of it, each with the changes it made to the entry's stored record (`ops::diff`), as every
 //!   reader sees them alike. `schemas`: the schemas and lenses a vault's entries are read through. `groups`: the
-//!   built-in groups of ops a share names (`rules::groups`), which the page offers when it shares. `kinds`: the kind
+//!   built-in groups of ops a share names (`rules::groups`), which the page offers when it shares. `aips` and `aip`:
+//!   the AIPs the device holds, their stages, labels, reviews and what each line changes (`aips`). `kinds`: the kind
 //!   table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to say what each kind of vault
 //!   may own and hold, and never decides itself. `limits`: how deep
 //!   the device's queries read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`,
@@ -23,12 +24,13 @@
 //!   `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`); the
 //!   record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`; `tag`; `propose`, `merge`, `review`
-//!   (the vault's answer to a proposal, its accept with it: `review`), `restore`, `undo`, `variant`; and `batch`,
-//!   whose record ops in a row on one entry's line make one write. Each acts for a vault (`"as"`, the device's own by
-//!   default), as every edit does, and the rules judge it as they judge any peer's. A write through a share carries
-//!   the proof that the ops of the shares of its chain allow what it touches and the tags it asks for, and is refused
-//!   (`NotAllowed`) where they don't, as is a merge into main through a share on top of no accept of the vault's
-//!   (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`). And the
+//!   (the vault's answer to a proposal, its accept with it: `review`), `restore`, `undo`, `variant`; the AIP ops,
+//!   `aip_open`, `aip_promote`, `aip_withdraw` and `aip_review`, the vault's answer over every line (`aips`); and
+//!   `batch`, whose record ops in a row on one entry's line make one write. Each acts for a vault (`"as"`, the device's
+//!   own by default), as every edit does, and the rules judge it as they judge any peer's. A write through a share
+//!   carries the proof that the ops of the shares of its chain allow what it touches and the tags it asks for, and is
+//!   refused (`NotAllowed`) where they don't, as is a merge into main through a share on top of no accept of the
+//!   vault's (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`). And the
 //!   changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
 //!   `back_up`, `mark`, `card`, `profile`, `follow`, `set_limits`, and `ask`, an access request: a record and a share.
 //!   One its vault's owners approve the device drafts for its person's passkey (`prepare`, `Prepared::Approve`):
@@ -42,6 +44,7 @@
 //! (`policy::Refusal`, by its name), `BadOp` where the JSON says nothing the engine does or an op makes no sense of the
 //! record, `NoSchema` where no schema reads the record, `NoEntry` where the device shows no such entry or line.
 
+mod aips;
 mod vaults;
 
 use std::cmp::Ordering;
@@ -156,6 +159,12 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "propose" => &["entry", "from", "name", "as"],
         "merge" => &["entry", "from", "into", "take", "as"],
         "review" => &["entry", "line", "verdict", "text", "as"],
+        "aip_open" => &["vault", "title", "note", "proposals", "tags", "as"],
+        "aip_promote" => &["entry", "as"],
+        "aip_withdraw" => &["entry", "why", "as"],
+        "aip_review" => &["entry", "verdict", "text", "as"],
+        "aips" => &["vault"],
+        "aip" => &["entry"],
         "restore" => &["entry", "line", "at", "as"],
         "undo" => &["entry", "line", "edit", "as"],
         "variant" => &["entry", "line", "into", "schema", "ops", "as"],
@@ -186,11 +195,13 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 16] = [
+const READS: [&str; 18] = [
     "query",
     "get",
     "history",
     "schemas",
+    "aips",
+    "aip",
     "groups",
     "kinds",
     "world",
@@ -269,6 +280,8 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "get" => get(lab, me, o),
         "history" => history(lab, me, o),
         "schemas" => schemas(lab, me, o),
+        "aips" => aips::aips(lab, me, o),
+        "aip" => aips::one(lab, me, o),
         "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
         "kinds" => Ok(words::kinds_json()),
         "limits" => Ok(limits(lab.query_depth(me))),
@@ -383,6 +396,15 @@ fn texts_of(o: &Map<String, Value>, field: &str) -> Result<Vec<String>, Refused>
     xs.iter().map(text).collect()
 }
 
+/// Op `name`'s text `field`, if it gives one.
+fn optional_text(o: &Map<String, Value>, name: &str, field: &str) -> Result<Option<String>, Refused> {
+    match o.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(t)) => Ok(Some(t.clone())),
+        Some(_) => Err(bad(format!("{name} takes a text {field}"))),
+    }
+}
+
 fn count_of(o: &Map<String, Value>, field: &str) -> Result<Option<usize>, Refused> {
     let count = |v: &Value| v.as_u64().map(|n| n as usize).ok_or_else(|| bad(format!("{field} is a count")));
     o.get(field).map(count).transpose()
@@ -406,8 +428,8 @@ enum Named {
 
 fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
     let bad = || {
-        let kinds = "document, todo, article, flow, function, recipe, view, logic, review, bundle, policy, post, card, \
-            profile, file, story, spark, request, artifact or artwork";
+        let kinds = "document, todo, article, flow, function, recipe, view, logic, review, bundle, policy, aip, post, \
+            card, profile, file, story, spark, request, artifact or artwork";
         bad(format!("schema is a built-in kind ({kinds}), \"stored\" or a schema's id, 64 hex digits"))
     };
     Ok(match o.get("schema") {
@@ -420,11 +442,12 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "flow" => Named::Id(lens::FLOW_V1.id()),
             "function" => Named::Id(lens::FUNCTION_V2.id()),
             "recipe" => Named::Id(lens::RECIPE_V1.id()),
-            "view" => Named::Id(lens::VIEW_V1.id()),
+            "view" => Named::Id(lens::VIEW_V2.id()),
             "logic" => Named::Id(lens::LOGIC_V1.id()),
             "review" => Named::Id(lens::REVIEW_V1.id()),
             "bundle" => Named::Id(lens::BUNDLE_V1.id()),
             "policy" => Named::Id(lens::POLICY_V1.id()),
+            "aip" => Named::Id(lens::AIP_V1.id()),
             "post" => Named::Id(lens::POST_V2.id()),
             "card" => Named::Id(lens::CARD_V1.id()),
             "profile" => Named::Id(lens::PROFILE_V1.id()),
@@ -447,8 +470,9 @@ fn lane(lab: &Lab, me: SignerId, v: VaultId) -> Lane {
 }
 
 /// The schema a record's kind names: of those in the lane whose `kind` is that constant, the newest, the one no lens
-/// leads on from, and of several such the first by id.
-fn own(lane: &Lane, stored: &Value) -> Option<Schema> {
+/// leads on from, and of several such the first by id. What the feed reads the entries everyone may read through too
+/// (`world::public_entries`).
+pub(crate) fn own(lane: &Lane, stored: &Value) -> Option<Schema> {
     let kind = stored.get("kind")?.as_str()?;
     let of_kind: Vec<&Schema> = lane.schemas().filter(|s| s.kind() == Some(kind)).collect();
     let newer = |s: &Schema| lane.lenses().any(|l| l.from() == s.id() && of_kind.iter().any(|t| t.id() == l.to()));
@@ -935,6 +959,14 @@ enum Step {
     Merge { entry: EntryId, from: Line, into: Line, take: BTreeSet<Place> },
     /// The vault's answer to proposal `line` of `entry` (`review`).
     Review { entry: EntryId, line: EditId, verdict: String, text: String },
+    /// A new AIP in `vault`, an idea over the proposal lines `proposals` (`aip_open`).
+    AipOpen { vault: VaultId, title: String, note: String, proposals: Vec<(EntryId, EditId)>, tags: Vec<String> },
+    /// AIP `entry` proposed, with its number (`aip_promote`).
+    AipPromote { entry: EntryId },
+    /// AIP `entry` withdrawn, and why (`aip_withdraw`).
+    AipWithdraw { entry: EntryId, why: Option<String> },
+    /// The vault's answer to AIP `entry`, over every line (`aip_review`).
+    AipReview { entry: EntryId, verdict: String, text: String },
     Restore { entry: EntryId, line: Line, at: Vec<EditId> },
     Undo { entry: EntryId, line: Line, edit: EditId },
     Variant { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<RecordOp> },
@@ -1033,6 +1065,34 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
                 Some(_) => return Err(bad("review takes its words as a text: text")),
             };
             Step::Review { entry: entry_of(o)?, line, verdict, text }
+        }
+        "aip_open" => {
+            let note = optional_text(o, name, "note")?.unwrap_or_default();
+            let lines = match o.get("proposals") {
+                None | Some(Value::Null) => vec![],
+                Some(v) => {
+                    let why = "proposals is a list of lines, each {entry, line}";
+                    let xs = v.as_array().ok_or_else(|| bad(why))?;
+                    let one = |x: &Value| -> Result<(EntryId, EditId), Refused> {
+                        let x = x.as_object().filter(|x| x.keys().all(|k| k == "entry" || k == "line"));
+                        let x = x.ok_or_else(|| bad(why))?;
+                        Ok((entry_of(x)?, id_of(x.get("line"), "line", EditId::from_hex)?))
+                    };
+                    xs.iter().map(one).collect::<Result<_, _>>()?
+                }
+            };
+            let (vault, tags) = (vault_of(o, "vault")?, texts_of(o, "tags")?);
+            Step::AipOpen { vault, title: text("title")?, note, proposals: lines, tags }
+        }
+        "aip_promote" => Step::AipPromote { entry: entry_of(o)? },
+        "aip_withdraw" => Step::AipWithdraw { entry: entry_of(o)?, why: optional_text(o, name, "why")? },
+        "aip_review" => {
+            let verdict = text("verdict")?;
+            if !VERDICTS.contains(&verdict.as_str()) {
+                return Err(bad("verdict is accepted, declined or revise"));
+            }
+            let text = optional_text(o, name, "text")?.unwrap_or_default();
+            Step::AipReview { entry: entry_of(o)?, verdict, text }
         }
         "restore" => {
             let at = edits_of(o.get("at").ok_or_else(|| bad("restore takes the version it puts back: at"))?, "at")?;
@@ -1163,6 +1223,12 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(into) }))
         }
         Step::Review { entry, line, verdict, text } => review(lab, me, actor, (entry, line), &verdict, text),
+        Step::AipOpen { vault, title, note, proposals, tags } => {
+            aips::open(lab, me, actor, vault, (title, note), &proposals, tags)
+        }
+        Step::AipPromote { entry } => aips::promote(lab, me, actor, entry),
+        Step::AipWithdraw { entry, why } => aips::withdraw(lab, me, actor, entry, why),
+        Step::AipReview { entry, verdict, text } => aips::review(lab, me, actor, entry, &verdict, text),
         Step::Restore { entry, line, at } => {
             let edit = lab.restore(me, actor, entry, line, &at)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(line) }))

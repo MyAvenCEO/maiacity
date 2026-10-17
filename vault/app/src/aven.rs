@@ -771,6 +771,28 @@ pub async fn cuts(app: &AppHandle) -> Result<Vec<Value>, String> {
     Ok(world["entries"].as_array().into_iter().flatten().filter(|e| is_cut(e)).map(cut_json).collect())
 }
 
+/// The studio's tasks this Mac's device holds (plan J14, `src/lib/studio/jobs/tasks.js`), for the MCP's `jobs`: the
+/// open ones (queued, claimed, held, failed) first, then the done, newest first, at most `done` of those.
+pub async fn tasks(app: &AppHandle, done: usize) -> Result<Vec<Value>, String> {
+    let world = world(app).await?;
+    let mut all: Vec<Value> = world["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| e["type"] == "task" && e["record"]["kind"] == "task" && e["deleted"] != json!(true) && !e["tags"].as_array().is_some_and(|t| t.contains(&json!(DELETED))))
+        .map(|e| {
+            let r = &e["record"];
+            let inputs: Vec<Value> = r["inputs"].as_array().into_iter().flatten().map(|i| json!({ "name": i["name"], "entry": i["entry"] })).collect();
+            json!({ "id": format!("task:{}", e["entry"].as_str().unwrap_or_default()), "vault": e["vault"], "rule": r["rule"], "version": r["version"],
+                    "lane": r["lane"], "status": r["status"], "attempts": r["attempts"], "error": r["error"], "worker": r["worker"],
+                    "lease_until": r["lease_until"], "params": r["params"], "inputs": inputs, "outputs": r["outputs"], "at": r["at"] })
+        })
+        .collect();
+    all.sort_by_key(|t| std::cmp::Reverse(t["at"].as_u64().unwrap_or(0)));
+    let (open, finished): (Vec<Value>, Vec<Value>) = all.into_iter().partition(|t| t["status"] != "done");
+    Ok(open.into_iter().chain(finished.into_iter().take(done)).collect())
+}
+
 /// The cut entry an API path names, `/api/timelines/cut:<entry>` and anything under it: the rest of the path after
 /// `/api/timelines/`.
 pub fn cut_path(path: &str) -> Option<&str> {
@@ -779,12 +801,20 @@ pub fn cut_path(path: &str) -> Option<&str> {
 
 /// A timeline call of the API on a cut of avenDB (`cut_path`), for the MCP's timeline tools: `GET` the cut as a
 /// timeline, `PUT` a patch of it saved (its record's own fields set, the rest into its timeline's JSON), only over the
-/// version it was read at where the patch names one (`if_updated`). Renders and frames of a cut are the studio's to
-/// ask for, on its page.
+/// version it was read at where the patch names one (`if_updated`). Its renders and frames (plan J12, J13) are tasks
+/// of its rules, asked of the app's page, which asks them as the studio does (page.rs, `src/lib/studio/cuts.js`):
+/// `POST renders` a render (`delivery`), `POST frames` a hero frame (`t`, `shape`), `GET renders` its tasks as jobs.
 pub async fn cut_api(app: &AppHandle, method: &str, cut: &str, body: Option<Value>) -> Result<Value, String> {
     let (entry, rest) = cut.trim_start_matches("cut:").split_once('/').unwrap_or((cut.trim_start_matches("cut:"), ""));
     if !rest.is_empty() {
-        return Err(format!("a cut of avenDB is rendered and framed from the studio's page, not over the MCP yet ({rest})"));
+        let id = format!("cut:{entry}");
+        let body = body.unwrap_or_default();
+        return match (method, rest) {
+            ("POST", "renders") => crate::page::call(app, "renderCut", json!({ "id": id, "delivery": body["delivery"] })).await,
+            ("POST", "frames") => crate::page::call(app, "frameCut", json!({ "id": id, "t": body["t"], "shape": body["shape"] })).await,
+            ("GET", "renders") => crate::page::call(app, "cutJobs", json!({ "id": id })).await,
+            _ => Err(format!("a cut of avenDB takes POST renders, POST frames and GET renders, not {method} {rest}")),
+        };
     }
     let world = world(app).await?;
     let entries = world["entries"].as_array().cloned().unwrap_or_default();

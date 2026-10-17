@@ -7,6 +7,10 @@ RUN bun install --frozen-lockfile --production || bun install --production
 COPY api/src ./src
 COPY game /app/game
 COPY code /app/code
+# game/ imports packages too (game/code/sources/avendb.js: @noble/hashes) and reads the frozen engines the repo ships:
+# its modules resolve node_modules from /app upward, so the API's are linked there, and engines.json sits where the repo keeps it
+RUN ln -s /app/api/node_modules /app/node_modules
+COPY src/lib/sandbox/engines.json /app/src/lib/sandbox/engines.json
 ENV PORT=3000
 EXPOSE 3000
 CMD ["bun", "src/index.ts"]
