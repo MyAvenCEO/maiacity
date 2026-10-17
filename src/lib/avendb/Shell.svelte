@@ -29,6 +29,7 @@
 	import AccessRequest from './AccessRequest.svelte';
 	import Artifact from './Artifact.svelte';
 	import Artifacts from './Artifacts.svelte';
+	import Assets from './Assets.svelte';
 	import { retagging } from './artifacts.js';
 	import Ask from './Ask.svelte';
 	import Flows from './Flows.svelte';
@@ -92,6 +93,7 @@
 				['todos', 'Todos', 'todo'],
 				['stories', 'Stories', 'story'],
 				['library', 'Library', 'library'],
+				['assets', 'Assets', 'asset'],
 				['flows', 'Flows', 'flow'],
 				['functions', 'Functions', 'fn']
 			]
@@ -149,7 +151,14 @@
 		const hex = (/** @type {string | undefined} */ x) => /^[0-9a-f]{64}$/.test(x ?? '');
 		const opens = ['sparks', 'artifacts', 'stories'].includes(known) && hex(entry);
 		const editing = opens && known === 'stories' && edit === 'edit';
-		return { page: known, entry: opens ? entry : '', edit: editing, step: opens && known === 'stories' && !editing ? (edit ?? '') : '' };
+		return {
+			page: known,
+			entry: opens ? entry : '',
+			edit: editing,
+			step: opens && known === 'stories' && !editing ? (edit ?? '') : '',
+			// a recipe the Assets page shows (`#assets/` and its entry), in the page, not on the whole screen
+			asset: known === 'assets' && hex(entry) ? (entry ?? '') : ''
+		};
 	}
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
@@ -370,6 +379,8 @@
 			<Artifacts {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
 		{:else if tab === 'library'}
 			<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+		{:else if tab === 'assets'}
+			<Assets {world} vault={context} {actor} {api} entry={route.asset} />
 		{:else if tab === 'flows'}
 			<Flows {world} vault={context} {actor} />
 		{:else if tab === 'functions'}

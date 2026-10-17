@@ -330,6 +330,10 @@
 			{#if row.type === 'note'}
 				<button class="btn primary" onclick={() => onopen(row.entry)}>Open the note</button>
 			{/if}
+			<!-- a recipe's asset, built from this entry's own file on the Assets page (./Assets.svelte) -->
+			{#if row.type === 'recipe' && row.record?.kind === 'recipe'}
+				<a class="btn primary" href="#assets/{row.entry}"><Icon name="asset" /> View asset</a>
+			{/if}
 		{:else if row.record === null && (row.public || s.readable(row.entry))}
 			<p class="soft">This browser holds no key to it yet: its edits are ciphertext here.</p>
 		{:else}

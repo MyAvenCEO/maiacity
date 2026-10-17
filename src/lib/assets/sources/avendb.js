@@ -312,6 +312,13 @@ export function vaultRecipes(rows, { read }) {
 			return hash;
 		},
 		/**
+		 * The row a recipe of the index was read from, by its hash: its entry, its tags and its record (its card, title
+		 * and note), as a viewer of the vault shows it ($lib/avendb/Assets.svelte); undefined for a hash it doesn't hold.
+		 * Its file is read only by `recipeAt`.
+		 * @param {string} hash @returns {any}
+		 */
+		rowOf: (hash) => (typeof hash === 'string' && own(index.recipes, hash) ? rowOf.get(hash) : undefined),
+		/**
 		 * A recipe of the vault by its hash, `{ hash, code }`: its file, read once and checked.
 		 * @param {string} hash @returns {Promise<{ hash: string, code: string }>}
 		 */
