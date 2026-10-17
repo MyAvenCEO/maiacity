@@ -7,19 +7,14 @@
  * builder per type (`buildingModel`), the chimneys named so the view can puff them (`smoke`).
  */
 import * as THREE from 'three';
+import { materialCache } from '$lib/render/core.js';
 
 /** the owners' colours: yours, the two neighbours', and spares */
 export const TEAM = ['#2f6fb3', '#c8642a', '#3d8f5c', '#7a55a8', '#8a7f6e'];
 
-/** @type {Map<string, THREE.MeshStandardMaterial>} */
-const mats = new Map();
-/** one material per colour, shared by every model */
-export const mat = (/** @type {string} */ color, rough = 0.85) => {
-	const k = `${color}/${rough}`;
-	let m = mats.get(k);
-	if (!m) mats.set(k, (m = new THREE.MeshStandardMaterial({ color, roughness: rough, flatShading: true })));
-	return m;
-};
+/** one material per colour, shared by every model (the core's material cache) */
+const mats = materialCache();
+export const mat = (/** @type {string} */ color, rough = 0.85) => mats(`${color}/${rough}`, () => new THREE.MeshStandardMaterial({ color, roughness: rough, flatShading: true }));
 
 const WALL = '#ece2cc', TIMBER = '#6e4b30', STONE = '#9d978c', DARK = '#3d3a36';
 

@@ -3,7 +3,7 @@
  * WebGLRenderer, OrbitControls or EffectComposer itself (./lint.test.js).
  *
  *   ./core.js     createRenderer, lowPower, topPixelRatio, adaptiveResolution, precompile, fitTo, disposeObject,
- *                 disposeRenderer, createControls, materials
+ *                 disposeRenderer, createControls, materialCache
  *   ./post.js     createPost: the one post stack; createComposer: the one EffectComposer (the Factories' too)
  *   ./world.js    createWorldRenderer (the sandbox kit's createStage), worldRenderer: worlds
  *   ./stage.js    createStageRenderer: asset viewers (the paper studio on top: ../assets/stage.js)
