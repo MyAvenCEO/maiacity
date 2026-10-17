@@ -97,7 +97,8 @@ was adapted from (leave it out on a line of your own). The shot list is the dire
 
 - Find it: `avendb_run` `{ op: "query", where: { type: ["script"] } }`, the rows whose `story.entry` is the story's.
   None yet: the person draws the first from the story on the Movie tab (a scene per beat, saying what happens), and
-  may adapt its lines and shots from the article (`from` then names the article).
+  may adapt its lines and shots from the article (`from` then names the article). A script carries the entry tag
+  `delivery:script`, as the story's other deliveries carry `delivery:article` and `delivery:inspire`.
 - Write from the story's beats, not from the article: a scene for each beat, its lines carrying that beat's turn.
 - Propose, never change the main line: the `heads` from `{ op: "note", entry }`, then `{ op: "propose", entry, from,
   name: "Scenes: <angle>" }`, then one batch of `{ op: "set", entry, line, path: ["scenes", { id }, "action"], value }`,

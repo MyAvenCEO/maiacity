@@ -21,6 +21,8 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 
 export const SCRIPT = 'script';
+/** The tag a script carries as one of its story's deliveries, beside `delivery:article` and `delivery:inspire`. */
+export const DELIVERY = 'delivery:script';
 
 /** The shot sizes a shot list names, widest first, with their short names. */
 export const SIZES = /** @type {const} */ ([
