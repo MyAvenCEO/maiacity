@@ -63,6 +63,15 @@ const native = (rule) => async (task, ctx) => {
 		const journey = paramsOf(task)['probe.journey'];
 		if (kept && !journey?.override) return { outputs: [kept.entry], result: { profile: journey?.profile ?? null, legacy: true } };
 	}
+	// a world shot version whose proxy is here already (the old studio's, ../importer.js `bringProxies`), asked for
+	// before it came: taken, never rendered again (rendering one ran the heavy world a second time)
+	if (rule === 'world-proxy') {
+		const v = ctx.entry(task.inputs[0]?.entry ?? '');
+		const shot = v && `shot:${v.record?.shot || v.entry}`, version = v?.record?.version ?? 1;
+		const tag = `proxy:${shot}:${version}`;
+		const kept = v && ctx.world.entries.find((e) => e.vault === v.vault && !e.deleted && e.type === 'file' && (e.tags ?? []).includes('media:proxy') && (e.tags ?? []).includes(tag));
+		if (kept) return { outputs: [kept.entry], result: { shot, shotVersion: version, legacy: true } };
+	}
 	/** @type {Record<string, any>} */
 	const entries = {};
 	for (const i of task.inputs) {
