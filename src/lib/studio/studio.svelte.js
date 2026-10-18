@@ -1214,18 +1214,31 @@ export class Studio {
 		return res.arrayBuffer();
 	}
 	/**
-	 * A movie's sound as the Mac reads it in place (vault/app/src/proxies.rs `studio_sound`: its first sound track, mono,
+	 * A movie's sound as the Mac reads it in place (vault/app/src/proxies.rs `studio_sound`: its first sound track, mono 16-bit,
 	 * 48 kHz), as a buffer to play; null when it has none.
 	 * @param {MediaItem} m @returns {Promise<AudioBuffer | null>}
 	 */
 	async soundOnMac(m) {
+		// one at a time: a timeline of footage read all at once held every movie's sound twice over (the Mac's and the
+		// page's) and ran The OS out of memory
+		const turn = this.soundQueue.then(() => this.readSoundOnMac(m));
+		this.soundQueue = turn.catch(() => null);
+		return turn;
+	}
+	/** the Mac's sound reads, one after another (`soundOnMac`) */
+	soundQueue = /** @type {Promise<unknown>} */ (Promise.resolve());
+	/** @param {MediaItem} m @returns {Promise<AudioBuffer | null>} */
+	async readSoundOnMac(m) {
 		const rate = 48000;
 		const got = await command('studio_sound', { r: m.hash, name: m.original_name || m.title || 'movie.mov', rate });
 		const bytes = got instanceof ArrayBuffer ? got : new Uint8Array(/** @type {number[]} */ (got)).buffer;
-		const n = Math.floor(bytes.byteLength / 4);
+		const n = Math.floor(bytes.byteLength / 2);
 		if (!n) return null;
+		// 16-bit little-endian samples (the Mac's `studio_sound`), into the buffer's own floats
+		const pcm = new Int16Array(bytes, 0, n);
 		const buffer = new AudioBuffer({ numberOfChannels: 1, length: n, sampleRate: rate });
-		buffer.copyToChannel(new Float32Array(bytes, 0, n), 0);
+		const ch = buffer.getChannelData(0);
+		for (let i = 0; i < n; i++) ch[i] = pcm[i] / 32768;
 		return buffer;
 	}
 	/** what each movie's sound was last read from (its proxy's hash, else its own): a failed one is tried again only from something new */

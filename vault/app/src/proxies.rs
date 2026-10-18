@@ -91,9 +91,11 @@ pub async fn studio_sound(r: String, name: String, rate: u32) -> crate::Res<taur
         .map_err(|e| format!("{e}"))?
         .map_err(|e| format!("{e:#}"))?
         .unwrap_or_default();
-    let mut out = Vec::with_capacity(samples.len() * 4);
+    // 16-bit, half the bytes of the floats decoded (gone before the answer is copied over the bridge): a timeline of
+    // footage read as floats held gigabytes on both sides and ran The OS out of memory
+    let mut out = Vec::with_capacity(samples.len() * 2);
     for v in samples {
-        out.extend_from_slice(&v.to_le_bytes());
+        out.extend_from_slice(&((v.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
     }
     Ok(tauri::ipc::Response::new(out))
 }
