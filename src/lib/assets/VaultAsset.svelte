@@ -3,12 +3,17 @@
 	a recipe the Maia City vault keeps, its source its entry's file, read from the vault and held to its hash before
 	anything else (./sources/viewer.js `vaultBuild`), then this device's cache or the box, which runs it on the frozen
 	engine its entry names, checked either way, and shown on the asset stage (./stage.js, ./hero.js) as every asset
-	viewer shows a build, in the same turntable ($lib/app/Turntable.svelte, in its place in the page): the canvas, and
-	round it the bar (a plant's stages and its Plant | Fruit, the moves: Grow, Run, its own, an actor's clips, Assemble;
-	the views: Explode, Cut away, X-ray, Labels, Slow), the panel (what its recipe is built with, from the card in its
-	entry, changed here and built anew, its solver's sliders, and what the page says of its entry, `about`) and the
-	readout (its solver's reading, its name, its note, its measure, a plant's above and below its soil, the scale). A plant stands in its earth and grows smoothly
-	(./grow.js). Drag to turn round it, scroll to come closer; ← → a plant's stage, space to grow it.
+	viewer shows a build, in the same turntable ($lib/app/Turntable.svelte, in its place in the page): above the canvas,
+	staying at the top of the page's column, its name and the bar (a plant's stages and its Plant | Fruit, the moves:
+	Grow, Run, its own, an actor's clips, Assemble; the views: Explode, Cut away, X-ray, Labels, Slow); round the canvas
+	the panel (what its recipe is built with, from the card in its entry, changed here and built anew, its solver's
+	sliders, and what the page says of its entry, `about`) and the readout (its solver's reading, its note, its measure,
+	a plant's above and below its soil, the scale). A plant stands in its earth and grows smoothly (./grow.js). Drag to
+	turn round it, scroll to come closer; ← → a plant's stage, space to grow it.
+
+	Its parts are the page's to list (its card's catalog, `catalog`, as built): a part picked there or tapped on the
+	canvas (`picked`) is shown on its own, the rest of the asset not drawn (`solo`, else in its place, its edges bright),
+	and the camera glides to it; let go of, the whole asset comes back and the camera with it.
 
 	There is no repo fallback (Samuel 2026-10-17): nothing here reads the repo's index or its libraries (./recipes.js,
 	./load.js, AssetViewer). What the vault lacks, or holds otherwise, is said on the stage, naming its ref and why
@@ -29,11 +34,13 @@
 
 	/**
 	 * @type {{ source: ReturnType<typeof import('./sources/avendb.js').vaultRecipes>, hash: string, title?: string,
-	 *   note?: string, about?: import('svelte').Snippet }}
+	 *   note?: string, about?: import('svelte').Snippet, catalog?: any, picked?: string | null, solo?: boolean }}
 	 *   `source` the vault's recipes ($lib/avendb/assets.js `vaultSource`), `hash` the recipe shown, `title` and `note`
-	 *   what its entry calls it and says of it, `about` what the page says of its entry, at the foot of the panel
+	 *   what its entry calls it and says of it, `about` what the page says of its entry, at the foot of the panel;
+	 *   `catalog` its parts as built (null where it lists none), `picked` the part picked, `solo` whether it is shown on
+	 *   its own
 	 */
-	let { source, hash, title = '', note = '', about } = $props();
+	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true } = $props();
 
 	/** the stage's views, as the bar names them */
 	const VIEWS = /** @type {const} */ ([
@@ -110,6 +117,7 @@
 
 	let stage = null;
 	let show = null;
+	let focus = null;
 	let dispose = null;
 	/** whether the stage is up, and the build last asked of it */
 	let ready = $state(false);
@@ -138,6 +146,8 @@
 			return;
 		}
 		const { renderer, camera, controls } = view;
+		// for a test in a browser to read what is shown, as AssetViewer's `__viewer`
+		window.__vaultAsset = { stage, camera, controls, get hero() { return hero; }, get picked() { return picked; } };
 		// a plant's earth, as the plants page shows it: under a plant, never under its fruit on its own
 		const earth = soilOf();
 		earth.group.visible = false;
@@ -157,6 +167,8 @@
 		/** the camera gliding to a new framing (a plant a stage on), from where it was; or following a plant as it grows */
 		let glide = null;
 		let follow = null;
+		/** the part the camera was last brought to, if one */
+		let focused = null;
 		/** where the camera stands from what it aims at, for each metre of an asset's reach */
 		const BACK = new THREE.Vector3(1.5, 0.7, 1.9);
 		/** a framing's aim: a little under its middle; its reach, and how far back the camera stands */
@@ -164,10 +176,10 @@
 			const reach = Math.max(s.x, s.y, s.z, 0.01) * 1.15;
 			return { at: centre.clone().add(new THREE.Vector3(0, -0.12 * s.y, 0)), reach, back: reach * BACK.length() };
 		};
-		/** the camera on the asset shown, as built: there at once, or `smooth`ly from where it is */
-		const frame = (smooth = false) => {
-			if (!framed) return;
-			const { at, reach } = aimOf(framed);
+		/** the camera on the asset shown, as built (or on `on`, a part of it): there at once, or `smooth`ly from where it is */
+		const frame = (smooth = false, on = framed) => {
+			if (!on) return;
+			const { at, reach } = aimOf(on);
 			const to = at.clone().addScaledVector(BACK, reach);
 			follow = null;
 			glide = smooth ? { t: 0, from: [camera.position.clone(), controls.target.clone()], to: [to, at] } : null;
@@ -203,6 +215,10 @@
 				}
 				letGo(was);
 				hero = h;
+				catalog = h.catalog?.parts?.length ? h.catalog : null;
+				// a part picked stays picked in the same recipe built anew, where it still has it, and is looked at again
+				if (shownHash !== h0 || !catalog?.parts.some((p) => p.id === picked)) picked = null;
+				focused = null;
 				from = got.from;
 				size = [s.x, s.y, s.z];
 				earth.group.visible = soiled;
@@ -226,6 +242,7 @@
 				// nothing in its place: what failed is said, naming its ref
 				letGo(hero);
 				hero = null;
+				catalog = picked = null;
 				stage.clear();
 				earth.group.visible = false;
 				size = rise = null;
@@ -238,6 +255,28 @@
 			}
 			if (ask === mine) building = false;
 		};
+
+		/** the camera on part `id`, smoothly, all of it in view; or, none, back on the whole asset */
+		focus = (id) => {
+			if (id === focused || !hero) return;
+			focused = id;
+			if (!id) return frame(true);
+			const b = hero.boxOf?.(id);
+			const centre = b ? b.getCenter(new THREE.Vector3()) : stage.partCentre(id);
+			if (!centre || !framed) return;
+			// a part found by its bone alone: aimed at, the camera as far back as for the whole
+			frame(true, { centre, size: b ? b.getSize(new THREE.Vector3()) : framed.size });
+		};
+		/** @type {{ x: number, y: number } | null} */
+		let down = null;
+		renderer.domElement.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
+		renderer.domElement.addEventListener('pointerup', (e) => {
+			// a tap, not a drag round it, picks the part under it (or, on nothing, lets go and shows all of it)
+			if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || !catalog) return void (down = null);
+			down = null;
+			const r = renderer.domElement.getBoundingClientRect();
+			picked = stage.pick(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+		});
 
 		const resize = view.resize;
 		resize();
@@ -316,6 +355,17 @@
 		void hash;
 		untrack(() => (growing = false));
 	});
+	// a part picked, let go of, or shown otherwise: on the stage, and the camera brought to it; and again on each build
+	$effect(() => {
+		const [id, on, h] = [picked, solo, hero];
+		if (!h) return;
+		untrack(() => {
+			stage?.setPick(id, false, on);
+			focus?.(id);
+		});
+	});
+	/** the part picked, as its catalog has it */
+	const part = $derived(catalog && picked ? (catalog.parts.find((p) => p.id === picked) ?? null) : null);
 	// a new build asked for whenever the recipe shown or what it is built with changes
 	$effect(() => {
 		const w = wanted;
@@ -406,7 +456,8 @@
 <svelte:window onkeydown={key} />
 
 <Turntable name="vault-asset" inline bind:canvas={canvasBox}>
-	{#snippet bar()}
+	{#snippet head()}
+		<h2 class="name">{title || at?.label || 'An asset'}{#if stageName}<small>{` · ${stageName}`}</small>{/if}</h2>
 		{#if hero && !error}
 			<div class="chips">
 				{#each params.filter(tabbed) as p (p.id)}
@@ -488,7 +539,6 @@
 				<small>{reading.sub}</small>
 			</div>
 		{/if}
-		<b>{title || at?.label || 'An asset'}{#if stageName}{` · ${stageName}`}{/if}</b>
 		{#if said.length > 160}
 			<button class="note" class:more title={more ? 'Show less' : 'Show all of it'} onclick={() => (more = !more)}>{said}</button>
 		{:else if said}
@@ -500,8 +550,14 @@
 			<span>{#if rise}{measure(rise[0])} above the soil · {measure(rise[1])} below · {measure(Math.max(size[0], size[2]))} across{:else}{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high{/if}</span>
 		{/if}
 		{#if scale[0] > 0 && hero && !error}<span class="scale"><i style:width="{scale[0]}px"></i>{scale[1]}</span>{/if}
-		<small>Drag to turn round it · pinch or scroll to come closer</small>
+		<small>Drag to turn round it · pinch or scroll to come closer{catalog ? ' · tap a part to see it on its own' : ''}</small>
 	{/snippet}
+	{#if part && !error}
+		<div class="picked" role="status">
+			<span><b>{part.label}</b>{solo ? ' on its own' : ''}</span>
+			<button class="chip" onclick={() => (picked = null)}>Show all</button>
+		</div>
+	{/if}
 	{#if tags.length}
 		<svg class="tags" aria-hidden="true">
 			{#each tags as t, i (i)}
@@ -691,6 +747,43 @@
 
 	.missing {
 		color: #b3261e;
+	}
+
+	.name {
+		margin: 0;
+		font-size: 1.05rem;
+		line-height: 1.25;
+		overflow-wrap: anywhere;
+	}
+
+	.name small {
+		font-size: inherit;
+		font-weight: 500;
+		opacity: 0.6;
+	}
+
+	/* the part shown on its own, and the way back to all of it, at the canvas's top left */
+	.picked {
+		position: absolute;
+		top: 0.75rem;
+		left: 0.75rem;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		max-width: calc(100% - 1.5rem);
+		padding: 0.3rem 0.35rem 0.3rem 0.8rem;
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.9);
+		box-shadow: 0 4px 14px rgb(31 42 35 / 0.12);
+		font-size: 0.82rem;
+	}
+
+	.picked span {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	/* while a build is made and its shaders compiled, or when it was refused, or the graphics card gave the canvas up */
