@@ -1,7 +1,7 @@
 /**
  * The way back, the one in the nav pill ($lib/app/NavPill.svelte): no page has a back button of its own.
  *
- * By default it goes up a place: a world to the Worlds, a game asset's app to Game Assets, anything else (a game, an
+ * By default it goes up a place: a world to the Worlds, an asset viewer to avenDB's Assets, anything else (a game, an
  * app, avenDB's pages) to the dashboard, which shows them all. While a page has something
  * open over itself (a city on the planet, the inside of a dome, the island's sandbox), the way back closes that
  * first: the page calls `wayBack(label, go)` while it is open, and calls what it gets back once it has closed. The
@@ -9,7 +9,9 @@
  */
 import { base } from '$app/paths';
 import { untrack } from 'svelte';
-import { groupOf } from './places';
+
+/** the asset viewers, by address: each group's app and the engine's labs */
+const ASSET_APPS = /^\/app\/(factories|machines|actors|buildings|models|biomes|plants|assets)\//;
 
 /** @typedef {{ label: string, go: () => void }} Way */
 
@@ -37,7 +39,7 @@ export function wayBack(label, go) {
 }
 
 /**
- * The place above a page, by its path (without the base): a world's is the Worlds, a game asset's app's Game Assets,
+ * The place above a page, by its path (without the base): a world's is the Worlds, an asset viewer's avenDB's Assets,
  * everything else's the dashboard, and the dashboard has none.
  * @param {string} rel
  * @returns {{ href: string, label: string } | null}
@@ -46,8 +48,7 @@ export function upFrom(rel) {
 	if (/^\/app\/?$/.test(rel)) return null;
 	if (/^\/app\/worlds\/[^/]+\/?$/.test(rel)) return { href: `${base}/app/worlds/`, label: 'Back to the worlds' };
 	if (/^\/app\/stories\/story\/?$/.test(rel)) return { href: `${base}/app/stories/`, label: 'Back to the stories' };
-	// a game asset's app goes back to the Game Assets list
-	const group = groupOf(`${base}${rel.replace(/\/?$/, '/')}`);
-	if (group) return { href: group.href, label: `Back to ${group.label}` };
+	// an asset viewer goes back to the assets, which avenDB's Assets app lists (Samuel 2026-10-18)
+	if (ASSET_APPS.test(rel)) return { href: `${base}/app/avendb/#assets`, label: 'Back to the assets' };
 	return { href: `${base}/app/`, label: 'Back to the dashboard' };
 }

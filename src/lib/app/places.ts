@@ -68,33 +68,9 @@ export const CITY: Place[] = ([
 ] as Place[]).map((p) => ({ ...p, ...gameOf(p) }));
 
 
-/** the game's building blocks, one group on the dashboard (Game Assets, /app/assets/), listed with a picture each, in
- *  the asset producer's order (.claude/skills/asset-producer): the factories (whole production lines, live), the
- *  machines, the actors (people and animals), the worlds, the buildings, the things, the biomes and the plants, then
- *  the engine's two labs under them all (the asset box, the renderer). The things are the still models (src/lib/models; the address kept from when they were the Models) */
-export const GAME_ASSETS: Place[] = [
-	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', cap: 'media:admin', note: 'Whole production lines, run live by simulation: the BatteryPack line', cover: `${base}/app/covers/factories.jpg` },
-	{ href: `${base}/app/machines/`, label: 'Machines', icon: 'gear', cap: 'media:admin', note: 'Diggers, the pod, the LifeTrac, the cubes: every part its own', cover: `${base}/app/covers/machines.jpg` },
-	{ href: `${base}/app/actors/`, label: 'Actors', icon: 'user', cap: 'media:admin', note: 'People and animals, rigged to move', cover: `${base}/app/covers/actors.jpg` },
-	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', cap: 'media:admin', note: 'Real places as 3D worlds, to walk and film', cover: `${base}/app/covers/worlds.jpg` },
-	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', cap: 'media:admin', note: 'The tents, the domes and the containers, to walk inside', cover: `${base}/app/covers/buildings.jpg` },
-	{ href: `${base}/app/models/`, label: 'Things', icon: 'media', cap: 'media:admin', note: 'The still things the worlds are built from', cover: `${base}/app/covers/models.jpg` },
-	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', cap: 'media:admin', note: 'The floors the worlds stand on, in layers that mix', cover: `${base}/app/covers/biomes.jpg` },
-	{ href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', cap: 'media:admin', note: 'Grown from code, seed to fruit, roots and all', cover: `${base}/app/covers/plants.jpg` },
-	{ href: `${base}/app/assets/box/`, label: 'Asset box', icon: 'gear', cap: 'media:admin', note: 'The engine\'s safety lab: our assets built where an untrusted one would run', cover: `${base}/app/covers/box.jpg` },
-	{ href: `${base}/app/assets/render/`, label: 'Renderer lab', icon: 'gear', cap: 'media:admin', note: 'A thousand assets from the box, drawn by one renderer at the detail each needs', cover: `${base}/app/covers/render.jpg` }
-];
-
-/** the game's building blocks as one list (Game Assets, /app/assets/), an admin's tile among the dashboard's apps */
-export type Group = Place & { items: Place[] };
-export const ASSETS_GROUP: Group = { href: `${base}/app/assets/`, label: 'Game Assets', icon: 'media', cap: 'media:admin', note: 'Factories, machines, actors, worlds, buildings, things, biomes and plants', items: GAME_ASSETS };
-
 /** every game, on the dashboard's Game Worlds: MaiaCity V1 first, then the sandboxes, each published as the Maia City
  *  COOP vault says ($lib/app/games.svelte.js) */
 export const GAME_WORLDS: Place[] = [...CITY, ...PLAY];
-
-/** the group a place sits in, if any (a game asset's, Game Assets): its way back goes there */
-export const groupOf = (path: string) => (ASSETS_GROUP.items.some((p) => path.startsWith(p.href)) ? ASSETS_GROUP : undefined);
 
 export const holds = (founder: Founder | null, p: Place) => !p.cap || !!founder?.caps?.includes(p.cap);
 
