@@ -77,6 +77,27 @@ pub fn color_lut(profile: String) -> crate::Res<tauri::ipc::Response> {
     Ok(tauri::ipc::Response::new(out))
 }
 
+/// A movie's sound for the studio to play and draw (its first sound track, mixed to mono at `rate` Hz, as
+/// little-endian f32 samples; empty when it has none). AVFoundation reads it in place from avenDB, so the page never
+/// holds the movie itself to get at its sound: a 4K original is a gigabyte or more, and a timeline of footage read
+/// whole into the page for its sound ran the Mac out of memory.
+#[tauri::command]
+pub async fn studio_sound(r: String, name: String, rate: u32) -> crate::Res<tauri::ipc::Response> {
+    crate::gate()?;
+    let src = source_of(&r, &name)?;
+    let rate = rate.clamp(8_000, 96_000);
+    let samples = tauri::async_runtime::spawn_blocking(move || objc2::rc::autoreleasepool(|_| vault_media::audio::decode_mono(src, rate, &mut |_| {})))
+        .await
+        .map_err(|e| format!("{e}"))?
+        .map_err(|e| format!("{e:#}"))?
+        .unwrap_or_default();
+    let mut out = Vec::with_capacity(samples.len() * 4);
+    for v in samples {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    Ok(tauri::ipc::Response::new(out))
+}
+
 /// The studio's WebGL preview's cube: every colour tool of the stacks given (in order, a balance among them; masks and
 /// textures left out — they run on the Mac's frames), 33³ over ACEScct.
 #[tauri::command]

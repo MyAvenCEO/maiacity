@@ -20,17 +20,17 @@
 	const groups = $derived.by(() => {
 		/** @type {Map<string, Timeline[]>} */
 		const by = new Map();
-		for (const t of s.timelines) by.set(storyOf(t), [...(by.get(storyOf(t)) ?? []), t]);
+		for (const t of s.shownTimelines) by.set(storyOf(t), [...(by.get(storyOf(t)) ?? []), t]);
 		for (const l of by.values()) l.sort((a, b) => (a.variant ?? a.name).localeCompare(b.variant ?? b.name, undefined, { numeric: true }));
-		const known = s.stories.filter((x) => by.has(x.id) || s.films[x.title]).map((x) => ({ story: x, list: by.get(x.id) ?? [] }));
+		const known = s.shownStories.filter((x) => by.has(x.id) || s.films[x.title]).map((x) => ({ story: x, list: by.get(x.id) ?? [] }));
 		// a film whose story isn't read yet: its name, as its story will be called
 		const coming = Object.keys(s.films).filter((n) => !known.some((g) => g.story.title === n));
-		const rest = [...by.entries()].filter(([id]) => !s.stories.some((x) => x.id === id)).flatMap(([, l]) => l);
+		const rest = [...by.entries()].filter(([id]) => !s.shownStories.some((x) => x.id === id)).flatMap(([, l]) => l);
 		return { known, coming, rest };
 	});
 
 	/** whether a story's timelines are folded away: open unless folded, and always where the open timeline is */
-	const folded = (/** @type {string} */ id) => s.expanded.includes(`fold:${id}`) && !s.timelines.some((t) => t.id === s.current?.id && storyOf(t) === id);
+	const folded = (/** @type {string} */ id) => s.expanded.includes(`fold:${id}`) && !s.shownTimelines.some((t) => t.id === s.current?.id && storyOf(t) === id);
 
 	/** the chapter being renamed, and its name as typed */
 	let naming = $state(/** @type {number | null} */ (null));
@@ -129,7 +129,7 @@
 				<ul>{#each groups.rest as t (t.id)}{@render row(t)}{/each}</ul>
 			</section>
 		{/if}
-		{#if !s.timelines.length && !Object.keys(s.films).length}<p class="none">No timelines yet.</p>{/if}
+		{#if !s.shownTimelines.length && !Object.keys(s.films).length}<p class="none">No timelines yet.</p>{/if}
 	</div>
 	<button class="new" onclick={() => s.newTimeline()}>+ New timeline</button>
 </nav>

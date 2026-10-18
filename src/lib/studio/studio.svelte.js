@@ -10,6 +10,7 @@ import { sure } from '$lib/app/sure.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
+import { session } from '$lib/avendb/session.svelte.js';
 import { scriptOf } from './screenplay.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
 import { command, native } from '$lib/native';
@@ -121,6 +122,8 @@ export const thumb = (m) => raw(m.hash);
 export const itemName = (m) => m?.title || m?.original_name || m?.hash.slice(0, 10) || '';
 /** @param {RenderJob} r */
 export const running = (r) => r.status === 'queued' || r.status === 'rendering';
+/** the largest original whose sound the page decodes itself (bytes); a bigger one's sound comes from its proxy */
+const SOUND_FROM_ORIGINAL = 200 * 1024 * 1024;
 /** A sound's waveform: the loudest sample of each hundredth of a second (at most 8000 bars). @param {AudioBuffer} buffer */
 const peaksOf = (buffer) => {
 	const data = buffer.getChannelData(0), n = Math.min(8000, Math.ceil(buffer.duration * 100)), step = Math.floor(data.length / n);
@@ -149,6 +152,10 @@ export class Studio {
 	/** the stories this Mac holds, for the timelines that belong to one (a cut's `story` link): the aside (./StoryNav.svelte) */
 	/** @type {{ id: string, vault: string, title: string }[]} */
 	stories = $state([]);
+	/** the timelines of the vault the person looks at (avenDB's vault pill): the aside and the switcher list only these */
+	shownTimelines = $derived(this.timelines.filter((t) => !session.vault || /** @type {any} */ (t).vault === session.vault));
+	/** the stories of the vault the person looks at */
+	shownStories = $derived(this.stories.filter((x) => !session.vault || x.vault === session.vault));
 	/** @type {Timeline | null} */
 	current = $state(null);
 	/** @type {'saved' | 'saving' | 'unsaved'} */
@@ -1163,12 +1170,14 @@ export class Studio {
 		const p = (async () => {
 			this.soundState[hash] = 'loading';
 			try {
-				// the sound the movie carries: its proxy's (the proxy keeps it, on the original's clock), else the original's —
-				// read by hash straight from the vault, never copied out of it
-				const from = this.proxy(m).hash ?? hash;
-				const res = await fetch(raw(from));
-				if (!res.ok) throw new Error(`the vault did not give ${from.slice(0, 12)} (${res.status})`);
-				const buffer = await this.decode(await res.arrayBuffer());
+				// the sound the movie carries: its proxy's (the proxy keeps it, on the original's clock), else a small
+				// original's — read by hash straight from the vault, never copied out of it. A big original (4K footage: a
+				// gigabyte or more) is never read whole into the page for its sound: decoding it held the whole movie in
+				// memory, a dozen at once on a timeline of footage, and The OS ran the Mac out of memory. The Mac reads
+				// its sound track in place instead (`studio_sound`, mono); off the Mac it waits for its proxy.
+				const from = this.proxy(m).hash ?? (m.size && m.size <= SOUND_FROM_ORIGINAL ? hash : null);
+				const buffer = from ? await this.decode(await this.bytesOf(from)) : native() ? await this.soundOnMac(m) : null;
+				if (!buffer) return void (this.soundState[hash] = 'waiting');
 				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
 				this.soundState[hash] = 'ready';
 			} catch (e) {
@@ -1180,6 +1189,27 @@ export class Studio {
 		})();
 		this.pendingSound.set(hash, p);
 		return p;
+	}
+	/** A file's bytes, read by hash from the vault. @param {string} hash */
+	async bytesOf(hash) {
+		const res = await fetch(raw(hash));
+		if (!res.ok) throw new Error(`the vault did not give ${hash.slice(0, 12)} (${res.status})`);
+		return res.arrayBuffer();
+	}
+	/**
+	 * A movie's sound as the Mac reads it in place (vault/app/src/proxies.rs `studio_sound`: its first sound track, mono,
+	 * 48 kHz), as a buffer to play; null when it has none.
+	 * @param {MediaItem} m @returns {Promise<AudioBuffer | null>}
+	 */
+	async soundOnMac(m) {
+		const rate = 48000;
+		const got = await command('studio_sound', { r: m.hash, name: m.original_name || m.title || 'movie.mov', rate });
+		const bytes = got instanceof ArrayBuffer ? got : new Uint8Array(/** @type {number[]} */ (got)).buffer;
+		const n = Math.floor(bytes.byteLength / 4);
+		if (!n) return null;
+		const buffer = new AudioBuffer({ numberOfChannels: 1, length: n, sampleRate: rate });
+		buffer.copyToChannel(new Float32Array(bytes, 0, n), 0);
+		return buffer;
 	}
 	/** Every video sound on the sound tracks not decoded yet, tried again (its proxy may have come in). */
 	retrySounds() {
