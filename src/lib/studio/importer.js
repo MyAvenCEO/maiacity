@@ -21,14 +21,14 @@ import { CUT, createCut, device, homeOf, schemaIn, timelineOf, worldOf } from '.
 const HASH = /^[0-9a-f]{64}$/;
 
 /**
- * `p`, or why not once `ms` pass with no answer: the legacy studio's API runs in a container on the Mac
- * (localhost:3100), and where it is stopped a call waits for ever, so the import would never say anything.
+ * `p`, or why not once `ms` pass with no answer: the Mac app reaches the legacy studio's API (api.maia.city, through
+ * its own `api` command), and where that doesn't answer a call can wait for ever, so the import would never say anything.
  * @template T @param {Promise<T>} p @param {number} [ms]
  */
 export function legacyCall(p, ms = 20000) {
 	/** @type {ReturnType<typeof setTimeout> | undefined} */
 	let timer;
-	const late = new Promise((_, no) => (timer = setTimeout(() => no(new Error("the old studio's API doesn't answer (is OrbStack running on this Mac?)")), ms)));
+	const late = new Promise((_, no) => (timer = setTimeout(() => no(new Error("the old studio's API (api.maia.city) doesn't answer")), ms)));
 	return /** @type {Promise<T>} */ (Promise.race([p, late]).finally(() => clearTimeout(timer)));
 }
 
