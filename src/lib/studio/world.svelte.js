@@ -101,8 +101,10 @@ export class WorldViewer {
 	 */
 	async attach(iframe, url, wait = 20000, patience = 300000) {
 		if (this.iframe === iframe && this.url === url && this.state !== 'off') return;
-		// another world: its own page, and nothing the last one had ready
-		if (this.url !== url) {
+		// another world, or the same one in another iframe (each tab mounts its own monitor): its own page, and nothing
+		// the last one had ready — a prepare still waiting on a page that is gone held that page's whole world alive,
+		// and its shots counted as ready (or preparing for ever) in a world that had built none of them
+		if (this.url !== url || this.iframe !== iframe) {
 			this.film = null;
 			this.readyShots.clear();
 			this.preparing.clear();
