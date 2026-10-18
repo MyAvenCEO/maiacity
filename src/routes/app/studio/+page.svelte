@@ -168,18 +168,13 @@
 			</div>
 		</header>
 
-		{#if s.tab === '3d'}
-			<!-- the live world: only here — Edit, Grade and Render show each world shot's HD proxy; no library (Samuel
-			     2026-10-18): the stories aside picks the cut, the timeline is the world's own lanes -->
-			<div class="monitors">
-				<ProgramMonitor {s} label="3D · the live world" />
-			</div>
-			<Inspector {s} />
-		{:else if s.tab === 'edit'}
-			<!-- no library here (Samuel 2026-10-18): the cut's own clips; files and world shots are laid on in 3D -->
-			<div class="monitors" class:split={!!s.preview}>
-				<SourceMonitor {s} />
-				<ProgramMonitor {s} />
+		{#if s.tab === '3d' || s.tab === 'edit'}
+			<!-- 3D and Edit play the live world (no library, Samuel 2026-10-18: the stories aside picks the cut; in 3D the
+			     timeline is the world's own lanes, in Edit the cut's own clips). One program monitor for both: going from
+			     one to the other keeps its world, where a monitor of each loaded the whole world again -->
+			<div class="monitors" class:split={s.tab === 'edit' && !!s.preview}>
+				{#if s.tab === 'edit'}<SourceMonitor {s} />{/if}
+				<ProgramMonitor {s} label={s.tab === '3d' ? '3D · the live world' : 'Program'} />
 			</div>
 			<Inspector {s} />
 		{:else if s.tab === 'script'}

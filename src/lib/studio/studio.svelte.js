@@ -1495,7 +1495,8 @@ export class Studio {
 			const v = this.reelVideos[c.id];
 			if (!v) continue;
 			// the live world draws this shot: its proxy (hidden under it) waits, not decoding along
-			const live = c.id === this.picture?.id && isWorld(c) && liveTab(this.tab) && this.world.isReady(cached(c.shot, c.shotVersion)?.spec ?? /** @type {any} */ ({}));
+			const spec = isWorld(c) ? this.specOf(c) : null;
+			const live = c.id === this.picture?.id && !!spec && liveTab(this.tab) && this.world.isLive(spec);
 			if (c.id !== this.picture?.id || live) {
 				// waiting in the wings: paused on its first frame
 				if (!v.paused) v.pause();
@@ -1522,12 +1523,13 @@ export class Studio {
 		const c = this.picture;
 		if (this.world.state !== 'ready') return;
 		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
-		const specs = upcoming.map((w) => cached(w.shot, w.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
+		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		if (specs.length) void this.world.prepare(specs);
 		// while a move is flown by hand the world has its canvas and clock back (film mode's record): no frames asked
 		if (this.world.recording) return;
 		if (!c || !isWorld(c)) return;
-		const spec = cached(c.shot, c.shotVersion)?.spec;
+		// the shot as it is being edited (a draft) when it is: what the stand-in and the lanes show, the world draws too
+		const spec = this.specOf(c);
 		if (!spec) return;
 		// the view film mode draws through: the clip's grade (balance, its CDL, the film's look: the Mac's cube) and the output
 		const stacks = this.stacksOf(c);

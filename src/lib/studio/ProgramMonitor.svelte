@@ -29,7 +29,9 @@
 	const pic = $derived(s.picture);
 	const spec = $derived(isWorld(pic) ? s.specOf(pic) : null);
 	/** the live world is showing this frame */
-	const live = $derived(!!spec && s.world.state === 'ready' && s.world.isReady(spec));
+	const live = $derived(!!spec && s.world.isLive(spec));
+	/** the world is readied for this frame: its first frame is asked for at once (paused, nothing else would ask) */
+	const ready = $derived(!!spec && s.world.isReady(spec));
 	const worldVideo = $derived(isWorld(pic) && !live ? (s.reelVideos[pic?.id ?? ''] ?? null) : null);
 	/** the grading still on screen (Grade, paused, on stills) */
 	const still = $derived(s.showStill ? s.stillOf(pic) : null);
@@ -253,6 +255,7 @@
 		void s.tab;
 		void s.current?.grade;
 		void pic?.stacks;
+		void ready;
 		if (!s.playing) s.driveWorld();
 	});
 	// the stand-in, drawn at the shot's time (when neither the live world nor a proxy can show it)

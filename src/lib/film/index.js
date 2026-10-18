@@ -302,13 +302,14 @@ export function startFilm({ base = '' } = {}) {
 		 * Draw a frame on the page's canvas through the view transform. quality 'proxy' (default): no oversampling, no
 		 * shutter blur — the live world viewer; 'final': as the plate.
 		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final' }} ask
+		 * @returns {Promise<boolean>} whether the frame was drawn (not while the world is being staged for another shot)
 		 */
 		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy' }) {
 			const spec = normal(raw), to = shape ?? spec.aspect;
 			const v = await mounted();
 			// the world is being readied for another shot (a prepare): never draw this one with the walker elsewhere —
 			// the last frame stays up
-			if (staging && staging !== keyOf(spec)) return;
+			if (staging && staging !== keyOf(spec)) return false;
 			const ev = await exposureOf(spec);
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
 			if (staged !== keyOf(spec) || !v.film.holds(spec.world)) await one(() => stage(spec));
@@ -321,6 +322,7 @@ export function startFilm({ base = '' } = {}) {
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
 			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)
 			clock.leave();
+			return true;
 		},
 		/**
 		 * A still through the view (the storyboard): show() it, then the canvas as an image.
