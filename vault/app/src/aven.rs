@@ -578,7 +578,7 @@ pub struct Imported {
 }
 
 /// Brings the legacy vault's files `hashes` into vault `vault` (plan JI: by hand only, never by itself), acting as
-/// `actor`: each read in place from the legacy vault and put as an original, tagged `media:original` and
+/// `actor`: each read from the film seed on this Mac (`seeded_file`) and put as an original, tagged `media:original` and
 /// `legacy:<hash>`, its bytes read back and their BLAKE3 compared with the legacy hash (the BLAKE3 of the same bytes);
 /// its legacy transcript and analysis put beside it as the JSON files a task keeps a long value in
 /// (`<stem>.transcript.json`, tagged `media:transcript` and `legacy:<hash>`), which the rules take as they are instead
@@ -589,9 +589,7 @@ pub struct Imported {
 /// file brought before is then one tagged `legacy:<hash>` and the first of them.
 #[tauri::command]
 pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, actor: Option<String>, tags: Option<Vec<String>>) -> Result<Vec<Imported>, String> {
-    use tauri::Manager as _;
     use crate::jobs::Kind;
-    let legacy = app.state::<crate::App>().vault.clone();
     let world = world(&app).await?;
     let entries = world["entries"].as_array().cloned().unwrap_or_default();
     let tagged = |e: &Value, t: &str| e["tags"].as_array().is_some_and(|ts| ts.iter().any(|x| x == t));
@@ -606,30 +604,17 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
             continue;
         }
         let brought = async {
-            let h: iroh_blobs::Hash = hash.parse().map_err(|e| format!("{hash} is no vault hash: {e}"))?;
-            // the film seed on this Mac first (it outlives the legacy vault), else the legacy vault; either way the
-            // copy's BLAKE3 is checked against the hash below. Its name and type: the seed's record (or the record it
-            // wraps), else the legacy catalog's, else read off its first bytes, so a film never comes in as a nameless
-            // `.bin` the players can't open (2026-10-18: Day 1's camera files did)
-            let catalog = legacy.catalog.meta(h).await.ok().flatten();
-            let seeded = seeded_file(&hash).map(|(path, r)| (path, if r["record"].is_object() { r["record"].clone() } else { r }));
-            if seeded.is_none() && catalog.is_none() {
-                return Err("it is not in the film seed nor in the legacy vault's catalog".to_string());
+            // from the film seed on this Mac (the legacy vault is not read); the copy's BLAKE3 is checked against the
+            // hash below. Its name and type: the seed's record (or the record it wraps), else read off its first
+            // bytes, so a film never comes in as a nameless `.bin` the players can't open (2026-10-18: Day 1's did)
+            if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(format!("{hash} is no BLAKE3 hash"));
             }
-            let said = |k: &str| -> Option<String> {
-                let from_seed = seeded.as_ref().and_then(|(_, r)| r[k].as_str().map(str::to_string));
-                let from_catalog = catalog.as_ref().map(|m| match k {
-                    "original_name" => m.original_name.clone(),
-                    "title" => m.title.clone(),
-                    _ => m.mime.clone(),
-                });
-                [from_seed, from_catalog].into_iter().flatten().find(|v| !v.is_empty() && v != "application/octet-stream")
-            };
-            let meta = seeded.as_ref().map(|(_, r)| r["meta"].clone()).filter(|m| !m.is_null()).or_else(|| catalog.as_ref().map(|m| m.meta.clone())).unwrap_or(Value::Null);
-            let src = match &seeded {
-                Some((path, _)) => Source::from(path.as_path()),
-                None => crate::blob::source(&legacy, h, &format!("{hash}.bin")).await.map_err(|e| format!("{e:#}"))?,
-            };
+            let (path, record) = seeded_file(&hash).ok_or("it is not in the film seed")?;
+            let record = if record["record"].is_object() { record["record"].clone() } else { record };
+            let said = |k: &str| record[k].as_str().filter(|v| !v.is_empty() && *v != "application/octet-stream").map(str::to_string);
+            let meta = record["meta"].clone();
+            let src = Source::from(path.as_path());
             let mime = match said("mime") {
                 Some(m) => m,
                 None => sniff(&chunk_of(&src, 0, 16).await.unwrap_or_default()).to_string(),
@@ -638,10 +623,6 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
             let name = said("original_name").or_else(|| said("title")).unwrap_or_else(|| format!("{}.{ext}", &hash[..12]));
             // a name without its type's extension gets it (the players tell a movie by it)
             let name = if crate::blob::ext_of(&name) == "bin" && ext != "bin" { format!("{}.{ext}", stem(&name)) } else { name };
-            let src = match &seeded {
-                Some(_) => src,
-                None => crate::blob::source(&legacy, h, &name).await.map_err(|e| format!("{e:#}"))?,
-            };
             let subject = format!("aven:legacy:{hash}");
             crate::jobs::queue(Kind::Ingest, &subject, &name);
             let total = 3 * src.reader().and_then(|mut r| r.len()).unwrap_or(1).max(1);

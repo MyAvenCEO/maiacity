@@ -1,6 +1,9 @@
-//! The vault for this Mac's own tools (the film scripts: thumbnails, scores): plain HTTP beside the MCP server, on
-//! 127.0.0.1 only and behind the same token. List the catalog, read a file (with Range, streamed from the store), add
-//! a file (the three-hash check, like every ingest), describe one. Nothing here leaves the Mac.
+//! The legacy vault for this Mac's own tools (the film scripts: thumbnails, scores, scripts/film/vault.mjs): plain HTTP
+//! on 127.0.0.1:4545 only, behind the app's token (`~/Library/Application Support/city.maia.studio/mcp-token`). List the
+//! catalog, read a file (with Range, streamed from the store), add a file (the three-hash check, like every ingest),
+//! describe one. Nothing here leaves the Mac. The studio's own work is avenDB's (Studio 2): these routes stay only while
+//! the scripts still read the legacy vault, and go with it. (The MCP server that stood beside them went with the
+//! legacy studio; an agent reaches avenDB as an agent device of an aven.)
 //!
 //!   GET  /vault/files                    the catalog: every file's Meta, its transcript and analysis merged in (meta.transcript, meta.analysis …)
 //!   GET  /vault/files/<hash>             its bytes (Range)
@@ -12,8 +15,9 @@ use std::{io::SeekFrom, sync::Arc};
 use axum::{
     Json, Router,
     body::{Body, Bytes},
-    extract::{DefaultBodyLimit, Path, Query, State},
+    extract::{DefaultBodyLimit, Path, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -24,7 +28,46 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use vault_core::{Vault, Verdict, ingest};
 
-pub fn router(vault: Arc<Vault>) -> Router {
+pub const ADDR: &str = "127.0.0.1:4545";
+
+fn token_file() -> std::path::PathBuf {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+    home.join("Library/Application Support/city.maia.studio/mcp-token")
+}
+
+/// The token: made once, kept readable by this user only.
+fn token() -> std::io::Result<String> {
+    let file = token_file();
+    if let Ok(t) = std::fs::read_to_string(&file) {
+        return Ok(t.trim().to_string());
+    }
+    std::fs::create_dir_all(file.parent().unwrap())?;
+    // 32 random bytes (from the same generator as the node keys)
+    let bytes = iroh::SecretKey::generate().to_bytes();
+    let t: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    std::fs::write(&file, &t)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(t)
+}
+
+/// Serves the routes on `ADDR` behind the token, for as long as the app runs.
+pub async fn serve(vault: Arc<Vault>) -> anyhow::Result<()> {
+    let token = token()?;
+    let guard = move |req: Request, next: Next| {
+        let ok = req.headers().get("authorization").and_then(|v| v.to_str().ok()) == Some(format!("Bearer {token}").as_str());
+        async move { if ok { Ok::<Response, StatusCode>(next.run(req).await) } else { Err(StatusCode::UNAUTHORIZED) } }
+    };
+    let app = router(vault).layer(axum::middleware::from_fn(guard));
+    let listener = tokio::net::TcpListener::bind(ADDR).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+fn router(vault: Arc<Vault>) -> Router {
     Router::new()
         .route("/vault/files", get(list).post(add))
         .route("/vault/files/{hash}", get(file))

@@ -4,7 +4,7 @@
 //! Core Image and JPEG-encoded in memory. A frame every so many seconds, and every picture change on top (a cut, a
 //! light switched on), told by how much a small grey copy of each frame differs from the one before.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use vault_media::Source;
 use vault_render::{av::VideoReader, gpu::{Extent, Gpu}};
 
@@ -83,25 +83,6 @@ pub fn sample(src: Source, seconds: f64, every: f64, edge: u32, acescct: bool, t
     })
 }
 
-/// One frame as a JPEG, `edge` on its long side: a movie's at `at` seconds, or a still.
-pub fn one(src: Source, at: Option<f64>, edge: u32, acescct: bool) -> Result<Vec<u8>> {
-    objc2::rc::autoreleasepool(|_| {
-        let gpu = gpu(acescct)?;
-        let img = match at {
-            Some(t) => {
-                let mut r = VideoReader::open(src, t, t + 0.1)?;
-                let turn = r.info.transform;
-                let pb = r.at(t)?.context("no frame there")?;
-                gpu.orient(&gpu.frame(pb), turn)
-            }
-            None => gpu.still(src)?,
-        };
-        let e = img.ext();
-        let (w, h) = fit(e.size.width, e.size.height, edge);
-        gpu.jpeg_bytes(&*shown(&gpu, &img, w, h, acescct)?, w, h)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,7 +97,7 @@ mod tests {
     }
 
     /// The real thing on a synthetic ACEScct proxy: frames sampled with their times, the cut found, through the output
-    /// transform; one frame for a thumbnail. Skipped where ffmpeg (which only makes the test movie) is not.
+    /// transform. Skipped where ffmpeg (which only makes the test movie) is not.
     #[test]
     fn samples_frames_through_the_output_transform() {
         let dir = std::env::temp_dir().join(format!("vault-analyse-{}", std::process::id()));
@@ -141,8 +122,6 @@ mod tests {
         assert!(f.times.iter().any(|t| (t - 2.5).abs() < 0.05), "the cut is sampled: {:?}", f.times);
         assert!(last > 0.9);
         assert_eq!(&f.jpegs[0][..2], &[0xff, 0xd8]);
-        let thumb = one(Source::Path(movie.clone()), Some(3.0), plan::EDGE, true).unwrap();
-        assert!(thumb.len() > 1000 && thumb[..2] == [0xff, 0xd8]);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

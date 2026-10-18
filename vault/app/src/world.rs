@@ -1,6 +1,5 @@
-//! World shots' HD proxies, made here — no browser, no render worker. A world clip on a timeline is a shot of Sandbox 4
-//! kept as data; while the live world loads (or is not open at all) the studio plays the shot's proxy instead: the
-//! vault file whose meta names the shot and the version (`meta.shot`, `meta.shotVersion`, a video), in ACEScct.
+//! World shots rendered here — no browser, no render worker: a world clip's proxy (the `world-proxy` rule, aven.rs
+//! `world_proxy` through `proxy_into`) and the plates of a film's world clips (render.rs).
 //!
 //! How one is made: the app opens the studio's own world page (`/games/sandbox-4/?film`, the same build and origin as
 //! the studio) in a window of its own that nobody sees — on screen but fully transparent, under everything, not
@@ -9,21 +8,14 @@
 //! through film mode's own `__film.capture` (the plate's frames: shutter blur, oversampled, metered, ACEScct as 10-bit
 //! codes) and hands each to the app as raw bytes (`world_proxy_frame`); the app waits for the encoder to take a frame
 //! before it answers, so one frame is in flight at a time. The encoder is vault-media's `FrameWriter` (HEVC Main10 in
-//! hardware, the same file a movie's proxy is), on a thread of its own. The file goes into the vault as the shot's
-//! proxy: class proxy, in the story most of the timeline's files are in (else the inbox).
+//! hardware, the same file a movie's proxy is), on a thread of its own. The window is closed when nothing is left to
+//! render (and nobody keeps it open: `keep`).
 //!
-//! What is made: the version of every world clip on every timeline that has no proxy yet — looked for a minute after
-//! start and every minute after. It takes its turn with the files' proxies (the GPU lane, jobs.rs), after an ingest, and
-//! only while macOS says memory is normal; while it renders, the uploads wait (`hold: proxy`). The window is closed
-//! when nothing is left to render (and nobody keeps it open: `keep`).
-//!
-//! Plates, for the final render (render.rs): the same frames of a stretch of a shot (`Frames`: from, frames, fps),
-//! framed for a delivery shape at its render size (4K for 16:9), at a finer bit rate — a vault file like any other
-//! (meta `{ role: "plate", plate_key }`, the hash of everything it is made of; class proxy), synced by iroh to every
-//! store its story's rules name and read in place by hash. `shoot` renders any `Frames`; the caller holds the turn.
+//! Plates, for the final render: the same frames of a stretch of a shot (`Frames`: from, frames, fps), framed for a
+//! delivery shape at its render size (4K for 16:9), at a finer bit rate, kept in this Mac's plate cache by the hash of
+//! everything they are made of. `shoot` renders any `Frames`; the caller holds the turn.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
     ffi::c_void,
     path::Path,
     sync::{
@@ -35,16 +27,12 @@ use std::{
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use vault_core::{Vault, ingest::Batch};
-use vault_media::{FrameWriter, Proxy, proxy::WORKING};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use vault_media::{FrameWriter, Proxy};
 
 use crate::{
     Res,
-    auth::Auth,
     err,
-    jobs::{self, Kind},
-    proxies,
 };
 
 /// The unseen window the world renders in.
@@ -129,137 +117,6 @@ pub async fn world_proxy_end(webview: tauri::Webview, job: String, info: Option<
     send(tx, Msg::End(error.map_or_else(|| Ok(info.unwrap_or(Value::Null)), Err))).await
 }
 
-/// A shot version some timeline plays that has no proxy yet.
-struct Want {
-    shot: String,
-    version: u64,
-    name: String,
-    project: Option<String>,
-    spec: Value,
-    story: Option<String>,
-}
-
-impl Want {
-    /// its line in the studio's proxy list (`proxies_now`)
-    /// its job's subject (jobs.rs): the shot and its version
-    fn of(&self) -> String {
-        format!("{}:v{}", self.shot, self.version)
-    }
-    fn label(&self) -> String {
-        format!("{} · v{} · world", self.name, self.version)
-    }
-}
-
-fn version_of(v: &Value) -> Option<u64> {
-    v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-}
-
-/// Every world clip's shot version without its proxy, with the story its timeline's files are in.
-async fn wanted(auth: &Auth, vault: &Vault) -> Res<Vec<Want>> {
-    let timelines = auth.get_ok("GET", "/api/timelines", None).await?;
-    let files = vault.catalog.list().await.map_err(err)?;
-    let have: HashSet<(String, u64)> = files
-        .iter()
-        .filter(|m| m.kind == "video")
-        .filter_map(|m| Some((m.meta.get("shot")?.as_str()?.to_lowercase(), version_of(m.meta.get("shotVersion")?)?)))
-        .collect();
-    let story_of: HashMap<&str, &str> = files.iter().filter(|m| !m.story.is_empty()).map(|m| (m.hash.as_str(), m.story.as_str())).collect();
-    let mut want: BTreeMap<(String, u64), Option<String>> = BTreeMap::new();
-    for t in timelines.as_array().into_iter().flatten() {
-        let clips = t["clips"].as_array().map(Vec::as_slice).unwrap_or_default();
-        // the timeline's story: the one most of its files are in
-        let mut count: HashMap<&str, usize> = HashMap::new();
-        for s in clips.iter().filter_map(|c| story_of.get(c["hash"].as_str()?)) {
-            *count.entry(s).or_default() += 1;
-        }
-        let story = count.into_iter().max_by_key(|(s, n)| (*n, *s)).map(|(s, _)| s.to_string());
-        for c in clips.iter().filter(|c| c["kind"] == "world") {
-            let (Some(shot), Some(version)) = (c["shot"].as_str(), version_of(&c["shotVersion"])) else { continue };
-            // avenDB's shots get their proxies from its tasks (the `world-proxy` rule, aven.rs)
-            if shot.starts_with("shot:") {
-                continue;
-            }
-            let key = (shot.to_lowercase(), version);
-            if have.contains(&key) {
-                continue;
-            }
-            let slot = want.entry(key).or_default();
-            if slot.is_none() {
-                *slot = story.clone();
-            }
-        }
-    }
-    let mut out = Vec::new();
-    for ((shot, version), story) in want {
-        match auth.get_ok("GET", &format!("/api/shots/{shot}?version={version}"), None).await {
-            Ok(r) if r["spec"].is_object() => out.push(Want {
-                name: r["name"].as_str().unwrap_or("a world shot").to_string(),
-                project: r["project"].as_str().map(String::from),
-                spec: r["spec"].clone(),
-                shot,
-                version,
-                story,
-            }),
-            Ok(_) => tracing::warn!("world proxy: shot {shot} v{version} has no spec"),
-            Err(e) => tracing::warn!("world proxy: shot {shot} v{version}: {e}"),
-        }
-    }
-    Ok(out)
-}
-
-static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
-static RETRY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// A look now, the failed ones' tries forgotten (one made again by hand).
-pub fn wake() {
-    RETRY.store(true, std::sync::atomic::Ordering::Relaxed);
-    WAKE.notify_one();
-}
-
-/// Look for world shots without their proxy a minute after start, and every minute after; render them one by one.
-pub async fn sweep(handle: AppHandle, vault: std::sync::Arc<Vault>) {
-    // a shot version that failed this often waits for the app's next start (or a retry by hand)
-    let mut failed: HashMap<(String, u64), u64> = HashMap::new();
-    loop {
-        let _ = tokio::time::timeout(Duration::from_secs(60), WAKE.notified()).await;
-        if RETRY.swap(false, std::sync::atomic::Ordering::Relaxed) {
-            failed.clear();
-        }
-        if !crate::auth::signed_in() {
-            continue;
-        }
-        let auth = handle.state::<Auth>().inner().clone();
-        let list = match wanted(&auth, &vault).await {
-            Ok(list) => list.into_iter().filter(|w| failed.get(&(w.shot.clone(), w.version)).copied().unwrap_or(0) < proxies::TRIES).collect::<Vec<_>>(),
-            Err(e) => {
-                tracing::warn!("world proxies: {e}");
-                continue;
-            }
-        };
-        for w in &list {
-            jobs::queue(Kind::WorldProxy, &w.of(), &w.label());
-        }
-        for w in &list {
-            let made = render(&handle, &vault, w).await;
-            jobs::end(Kind::WorldProxy, &w.of(), made.as_ref().map(|_| ()).map_err(|e| e.clone()));
-            match made {
-                Ok(hash) => {
-                    tracing::info!("world proxy of {} v{}: {hash}", w.shot, w.version);
-                    handle.emit("vault-proxy", json!({ "of": w.of(), "shot": w.shot, "shotVersion": w.version, "proxy": hash })).ok();
-                }
-                Err(e) => {
-                    let tries = failed.entry((w.shot.clone(), w.version)).or_default();
-                    *tries += 1;
-                    tracing::warn!("world proxy of {} v{} (try {tries} of {}): {e}", w.shot, w.version, proxies::TRIES);
-                    // the page may be stuck: the next one starts in a fresh one
-                    close_if_idle(&handle);
-                }
-            }
-        }
-        close_if_idle(&handle);
-    }
-}
-
 /// Keep the Mac from napping the app while a proxy renders unseen (App Nap slows timers and the GPU's work).
 pub(crate) struct Awake(objc2::rc::Retained<objc2::runtime::AnyObject>);
 // SAFETY: an NSProcessInfo activity token is an immutable object; ending it from another thread is allowed.
@@ -299,45 +156,6 @@ fn frame_of(aspect: &str) -> (&'static str, u32, u32) {
         "4:5" => ("4:5", 1080, 1350),
         _ => ("16:9", 1920, 1080),
     }
-}
-
-/// One shot version's proxy, into the vault: its hash.
-async fn render(handle: &AppHandle, vault: &Vault, w: &Want) -> Res<String> {
-    let of = w.of();
-    let _turn = jobs::turn(Kind::WorldProxy, &of).await.map_err(|e| e.to_string())?;
-    // an ingest first, and only while the Mac has memory to spare (as for every proxy)
-    jobs::ready_to_run(vault, Kind::WorldProxy, &of).await;
-    let _held = vault.hold.take("proxy");
-    let _awake = Awake::begin("rendering a world shot's proxy");
-    jobs::stage(Kind::WorldProxy, &of, "opening the world", 0.0);
-
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-    let part = vault.ingest_dir().join(format!("{}-v{}-{stamp}.world.part.mp4", w.shot, w.version));
-    let of2 = of.clone();
-    let (proxy, info, shape, fps) = proxy_into(handle, &format!("{}-v{}", w.shot, w.version), &w.spec, &part, move |done| jobs::stage(Kind::WorldProxy, &of2, "making", done)).await?;
-
-    jobs::stage(Kind::WorldProxy, &of, "adding", 1.0);
-    let named = vault.ingest_dir().join(format!("shot-{}-v{}-proxy.mp4", &w.shot[..8.min(w.shot.len())], w.version));
-    std::fs::rename(&part, &named).map_err(err)?;
-    let batch = Batch {
-        session: format!("world proxy of shot {} v{}", w.shot, w.version),
-        tags: ["proxy", "world shot"].into_iter().map(String::from).chain(w.project.clone()).collect(),
-        title: Some(format!("{} · v{} · world proxy", w.name, w.version)),
-        description: Some(format!("HD proxy ({}×{}) of the world shot {}, version {}, in ACEScct — for editing", proxy.width, proxy.height, w.name, w.version)),
-        meta: json!({
-            "role": "proxy", "shot": w.shot, "shotVersion": w.version, "shape": shape,
-            "width": proxy.width, "height": proxy.height, "fps": fps, "duration_s": (proxy.seconds * 1000.0).round() / 1000.0,
-            "color": { "profile": WORKING, "from": "our own tag", "primaries": "bt709", "transfer": "bt709", "matrix": "bt709", "range": "tv", "bitDepth": 10,
-                "detectedFrom": format!("world shot {} v{}", w.shot, w.version) },
-            "world": info,
-        }),
-        story: w.story.clone(),
-        class: Some("proxy".into()),
-        ..Default::default()
-    };
-    let made = vault.ingest_file(&named, &batch).await.map_err(err);
-    std::fs::remove_file(&named).ok();
-    Ok(made?.hash)
 }
 
 /// A shot's whole HD proxy rendered into `out` from its `spec` (`label` names its run), the caller holding the GPU
@@ -439,8 +257,8 @@ pub async fn shoot(handle: &AppHandle, label: &str, ask: &Frames, out: &Path, pr
 
 /// What a plate's cache key covers besides its request: bump it when the world renders plates differently.
 const PLATE_FORMAT: u32 = 1;
-/// A plate for the render: the file (a vault file, read in place), its key, the shot's fingerprint, whether the vault
-/// had it already.
+/// A plate for the render: the file (read in place from this Mac's plate cache), its key, the shot's fingerprint,
+/// whether the cache had it already.
 pub struct Plate {
     pub file: vault_media::Source,
     pub key: String,
@@ -448,47 +266,10 @@ pub struct Plate {
     pub reused: bool,
 }
 
-/// The plate with this key in the vault (a live file, `meta.role: plate`).
-async fn plate_in_vault(vault: &Vault, key: &str) -> Res<Option<vault_core::Meta>> {
-    let all = vault.catalog.list().await.map_err(err)?;
-    Ok(all.into_iter().find(|m| m.meta.get("role").and_then(Value::as_str) == Some("plate") && m.meta.get("plate_key").and_then(Value::as_str) == Some(key)))
-}
-
-/// Plates from before they were vault files (`<vault>/plates/<key>.mp4`): each ingested as the vault file it is, then
-/// the folder is gone — nothing of the vault lives beside its store.
-pub async fn import_old_plates(vault: &Vault) {
-    let dir = vault.dir.join("plates");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return };
-    for e in entries.flatten() {
-        let path = e.path();
-        let name = e.file_name().to_string_lossy().into_owned();
-        let Some(key) = name.strip_suffix(".mp4").filter(|k| !k.contains(".part")).map(String::from) else {
-            std::fs::remove_file(&path).ok();
-            continue;
-        };
-        let known = plate_in_vault(vault, &key).await.ok().flatten().is_some();
-        if !known {
-            let batch = Batch {
-                session: format!("plate {key}"),
-                tags: vec!["plate".into()],
-                title: Some(format!("plate {}", &key[..key.len().min(12)])),
-                meta: json!({ "role": "plate", "plate_key": key }),
-                class: Some("proxy".into()),
-                ..Default::default()
-            };
-            match vault.ingest_file(&path, &batch).await {
-                Ok(o) => tracing::info!("plate {key} is a vault file now ({})", &o.hash[..12]),
-                Err(e) => {
-                    tracing::warn!("plate {key}: {e:#}");
-                    continue;
-                }
-            }
-        }
-        std::fs::remove_file(&path).ok();
-    }
-    if std::fs::remove_dir(&dir).is_ok() {
-        tracing::info!("the old plates folder is gone: every plate is a vault file");
-    }
+/// Where this Mac keeps the plates it rendered (`<key>.mp4`): a cache, each file named by everything it is made of, so
+/// it is rendered again whenever it is wanted and gone. (Plates were legacy vault files before Studio 2.)
+fn plates_dir() -> std::path::PathBuf {
+    std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default().join("Library/Caches/city.maia.studio/plates")
 }
 
 fn hex_of(bytes: &[u8]) -> String {
@@ -512,35 +293,23 @@ pub fn plate_bitrate(width: u32, height: u32, fps: f64) -> u32 {
     ((width as f64 * height as f64 * fps * 0.4) as u32).clamp(20_000_000, 150_000_000)
 }
 
-/// A plate: the vault's (read in place, from whoever holds it), or rendered now in the unseen world and ingested — it
-/// syncs like every file (the caller holds the GPU lane).
-pub async fn plate(handle: &AppHandle, vault: &Vault, label: &str, ask: &Frames, progress: impl FnMut(f64) + Send + 'static) -> Res<Plate> {
+/// A plate: this Mac's cached one, or rendered now in the unseen world into the cache (the caller holds the GPU lane).
+pub async fn plate(handle: &AppHandle, label: &str, ask: &Frames, progress: impl FnMut(f64) + Send + 'static) -> Res<Plate> {
     let (key, fingerprint) = plate_key(&ask.spec, ask);
-    if let Some(m) = plate_in_vault(vault, &key).await? {
-        let hash: iroh_blobs::Hash = m.hash.parse().map_err(err)?;
-        let file = crate::blob::source(vault, hash, &m.original_name).await.map_err(|e| format!("plate {key}: {e:#} — it comes over iroh"))?;
-        return Ok(Plate { file, key, fingerprint, reused: true });
+    let dir = plates_dir();
+    let path = dir.join(format!("{key}.mp4"));
+    if path.is_file() {
+        return Ok(Plate { file: vault_media::Source::from(path.as_path()), key, fingerprint, reused: true });
     }
-    std::fs::create_dir_all(vault.ingest_dir()).map_err(err)?;
-    // the encoder writes a file (AVAssetWriter); it goes into the vault, then the work file is gone
-    let work = vault.ingest_dir().join(format!("{key}.plate.mp4"));
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    // the encoder writes a file (AVAssetWriter); it counts once it is whole
+    let work = dir.join(format!(".{key}.part.mp4"));
     if let Err(e) = shoot(handle, label, ask, &work, progress).await {
         std::fs::remove_file(&work).ok();
         return Err(e);
     }
-    let batch = Batch {
-        session: format!("plate {key}"),
-        tags: vec!["plate".into()],
-        title: Some(format!("{label} · plate")),
-        meta: json!({ "role": "plate", "plate_key": key, "fingerprint": fingerprint, "shape": ask.shape, "width": ask.width, "height": ask.height, "fps": ask.fps, "from": ask.from, "frames": ask.frames }),
-        class: Some("proxy".into()),
-        ..Default::default()
-    };
-    let made = vault.ingest_file(&work, &batch).await.map_err(err);
-    std::fs::remove_file(&work).ok();
-    let hash: iroh_blobs::Hash = made?.hash.parse().map_err(err)?;
-    let file = crate::blob::source(vault, hash, &format!("{key}.mp4")).await.map_err(err)?;
-    Ok(Plate { file, key, fingerprint, reused: false })
+    std::fs::rename(&work, &path).map_err(err)?;
+    Ok(Plate { file: vault_media::Source::from(path.as_path()), key, fingerprint, reused: false })
 }
 
 /// The encoder's thread: frames in order into the movie until the page says the shot is through.

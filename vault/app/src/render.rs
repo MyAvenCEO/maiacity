@@ -1,45 +1,35 @@
-//! The render worker is this app. The studio (or an agent, over MCP) queues a job on the API's render queue
-//! (render_jobs: `POST /api/timelines/:id/renders`, `…/frames`); this Mac claims it with its own key, renders it
-//! natively with `vault-render` — Core Image on Metal, VideoToolbox, AVFoundation, Core Text; no bun, no ffmpeg, no
-//! Chrome — puts every file it makes into the vault, and hands the API the same report the old worker did
-//! (`PUT /api/renders/:id`: progress while it works, then `Render::job_result`), so the studio's Render tab, its
-//! deliveries and the calendar work as they did.
+//! Films and frames of a cut of avenDB, rendered on this Mac — the `render` and `frame` rules (aven.rs `studio_job`
+//! calls `render_cut` and `frame_cut`, and puts what they make into the cut's vault) — natively with `vault-render`:
+//! Core Image on Metal, VideoToolbox, AVFoundation, Core Text; no bun, no ffmpeg, no Chrome.
 //!
-//!   render  a timeline into every delivery (16:9 4K master + 1080 copy, 9:16, 1:1, 4:5), levelled to `LOUDNESS`;
-//!           with `params.delivery` "youtube-4k", the 16:9 4K master for YouTube alone.
-//!           World clips are rendered first as ACEScct plates at each shape's size, in the app's own unseen world
-//!           (world.rs, cached by what they are made of); every delivery goes into the vault as class delivery, in the
-//!           story most of the timeline's files are in (else the inbox), described by `Render::about`.
-//!   frame   of a media clip (`params.clip`, or the one on screen at `params.t`): its file's graded still — the grading
-//!           still through the clip's whole chain, 1920×1080, a JPEG — as the file's preview, replacing the one before.
-//!           Of a world clip or a gap: a hero frame at `params.t` in `params.shape`, a 16-bit PNG, replacing the one
-//!           before of that clip and shape.
-//!   proxy, lut  history: closed as failed, saying the Mac makes them now (as the old worker did).
+//!   render  a cut into every delivery (16:9 4K master + 1080 copy, 9:16, 1:1, 4:5), levelled to `LOUDNESS`; with
+//!           delivery "youtube-4k", the 16:9 4K master for YouTube alone. World clips are rendered first as ACEScct
+//!           plates at each shape's size, in the app's own unseen world (world.rs, cached on this Mac by what they
+//!           are made of).
+//!   frame   of a media clip (named, or the one on screen at `at`): its file's graded still — the grading still
+//!           through the clip's whole chain, 1920×1080, a JPEG. Of a world clip or a gap: a hero frame at `at` in a
+//!           shape, a 16-bit PNG.
 //!
-//! It shares the proxies' rules: one heavy GPU job at a time (`proxies::TURN` — proxies, world proxies and renders all
-//! take it; the job is only claimed once it is this Mac's turn), an ingest first, only while macOS says memory is
-//! normal, and while it renders the uploads wait (`hold: render`). How far it is shows beside the proxies
-//! (`proxies_now`, `of: "render:<job id>"`) and on the job itself. `vault_render::render` runs on one blocking
-//! thread: its GPU and AVFoundation objects are not `Send`, and one render runs at a time.
+//! Every file is read in place from avenDB (`Footage`); the legacy vault and the old API's render queue are not used.
+//! `vault_render::render` runs on one blocking thread: its GPU and AVFoundation objects are not `Send`. And the
+//! Audio tab's measures (`sound_measure`, `eq_response`).
 
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
-    time::Duration,
 };
 
 use anyhow::Context;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Manager};
-use vault_core::{Vault, Verdict, ingest::Batch};
+use tauri::AppHandle;
 use vault_render::{
     Library, Lut3d, Media, Options, Plate, Target,
     output::RENDER_LUT_SIZE,
     timeline::{Clip, FPS, Shape, Timeline, shapes_of},
 };
 
-use crate::{Res, auth::Auth, err, jobs, proxies, world};
+use crate::{Res, err, world};
 
 /// The loudness every film is levelled to: −14 LUFS integrated, the true peak at most −1 dBTP — what YouTube,
 /// Instagram and TikTok play at (and room for their AAC encoders). Change it here.
@@ -47,10 +37,6 @@ pub const LOUDNESS: Target = Target { lufs: -14.0, true_peak: -1.0 };
 
 /// The one delivery the studio renders for now: the 16:9 4K master for YouTube (HEVC 10-bit, 80 Mb/s, AAC 384 kb/s).
 pub const YOUTUBE_4K: &str = "youtube-4k";
-
-/// How often the queue is asked while it is empty, and how long an API that cannot be reached is waited out.
-const POLL: Duration = Duration::from_secs(3);
-const AWAY: Duration = Duration::from_secs(10);
 
 /// The output transform every render and hero frame takes: ACES 2.0 to Rec.709 (`vault_media::aces2`), baked once at
 /// 129³ (a few seconds, on the first render's thread).
@@ -62,278 +48,85 @@ pub(crate) fn odt() -> &'static Lut3d {
     })
 }
 
-/// Claim render jobs and render them, one at a time, for as long as the app runs.
-pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
-    // work a render that ended midway left behind (the app quit, the Mac froze)
-    for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
-        if e.file_name().to_string_lossy().starts_with("render-") {
-            tracing::info!("left from an earlier render, removed: {}", e.path().display());
-            std::fs::remove_dir_all(e.path()).ok();
-        }
-    }
-    tokio::time::sleep(Duration::from_secs(20)).await;
-    let mut refused: Option<u16> = None;
-    loop {
-        if !crate::auth::signed_in() {
-            tokio::time::sleep(AWAY).await;
-            continue;
-        }
-        let auth = handle.state::<Auth>().inner().clone();
-        // this Mac's turn first — after the proxies queued before, after an ingest, with memory to spare — and only
-        // then a job: one claimed here never waits behind other work
-        // memory first, then the lane: waiting for memory while holding the GPU lane held every other job too
-        vault.hold.free_of("ingest").await;
-        while proxies::short_of_memory() {
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
-        let turn = jobs::hidden_turn(jobs::Lane::Gpu, "render-queue").await;
-        let job = match auth.call("POST", "/api/renders/claim", None).await {
-            Ok((200..=299, job)) if job.is_object() => job,
-            Ok((status, _)) if status >= 400 => {
-                if refused != Some(status) {
-                    tracing::warn!("render queue: the API refused the claim ({status})");
-                    refused = Some(status);
-                }
-                drop(turn);
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                continue;
-            }
-            Ok(_) => {
-                // nothing queued
-                refused = None;
-                drop(turn);
-                tokio::time::sleep(POLL).await;
-                continue;
-            }
-            Err(_) => {
-                // the API away for a moment (restarted, rebuilt) is waited out
-                drop(turn);
-                tokio::time::sleep(AWAY).await;
-                continue;
-            }
-        };
-        refused = None;
-        run(&handle, &vault, &auth, job).await;
-        drop(turn);
-    }
-}
-
-/// A job's progress: on the API's job (throttled, always the latest) and in this Mac's jobs (jobs.rs).
-#[derive(Clone)]
-struct Progress {
-    tx: Arc<tokio::sync::watch::Sender<(f64, String)>>,
-    kind: jobs::Kind,
-    id: String,
-}
-
-impl Progress {
-    /// Start telling the API. The task ends once every copy of the `Progress` is dropped, after sending the last
-    /// value — await it before the job's last word, so no progress lands after it.
-    fn start(auth: &Auth, id: &str, kind: jobs::Kind, name: &str) -> (Self, tauri::async_runtime::JoinHandle<()>) {
-        let (tx, mut rx) = tokio::sync::watch::channel((0.0, "starting".to_string()));
-        let (auth, path) = (auth.clone(), format!("/api/renders/{id}"));
-        let task = tauri::async_runtime::spawn(async move {
-            while rx.changed().await.is_ok() {
-                let (progress, note) = rx.borrow_and_update().clone();
-                if let Err(e) = auth.call("PUT", &path, Some(json!({ "progress": progress, "note": note }))).await {
-                    tracing::warn!("render progress: {e}");
-                }
-                // at most one report every two seconds, always the latest
-                tokio::time::sleep(Duration::from_secs(2)).await;
-            }
-        });
-        let p = Self { tx: Arc::new(tx), kind, id: id.to_string() };
-        // the lane is the render queue's already (its poll holds the GPU): the job runs at once
-        jobs::queue(kind, id, name);
-        jobs::stage(kind, id, "starting", 0.0);
-        (p, task)
-    }
-
-    /// How far (0…1) and what is happening — "rendering 9:16" is "rendering" on the job, as the studio reads it.
-    fn set(&self, done: f64, what: &str) {
-        let note = if what.starts_with("rendering") && what != "rendering world plates" && what != "rendering the frame" { "rendering" } else { what };
-        self.tx.send_replace((done.clamp(0.0, 1.0), note.to_string()));
-        jobs::stage(self.kind, &self.id, what, done);
-    }
-
-    fn named(&self, name: &str) {
-        jobs::name(self.kind, &self.id, name);
-    }
-
-    /// The same, as a plain teller (`Told`).
-    fn told(&self) -> Told {
-        let p = self.clone();
-        Arc::new(move |x, what| p.set(x, what))
-    }
-}
-
-/// Whoever hears how far a render is (0…1) and what it is doing: an API job's `Progress`, or a task's stage in the
-/// Mac's jobs (aven.rs).
+/// Whoever hears how far a render is (0…1) and what it is doing: a task's stage in the Mac's jobs (aven.rs).
 pub(crate) type Told = Arc<dyn Fn(f64, &str) + Send + Sync>;
 
-/// One job, start to report.
-async fn run(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: Value) {
-    let id = job["id"].as_str().unwrap_or_default().to_string();
-    let kind = job["kind"].as_str().unwrap_or("render").to_string();
-    tracing::info!("render job {id}: {kind} {}", job["timeline_id"].as_str().unwrap_or(""));
-    let body = match kind.as_str() {
-        // from before: proxies and the viewer's LUTs are this app's own work, never jobs
-        "proxy" => json!({ "status": "failed", "note": "Proxies are made by the Mac app now — a world shot's too, when a timeline plays it." }),
-        "lut" => json!({ "status": "failed", "note": "The viewer's LUTs are baked by the Mac app now." }),
-        _ => {
-            let label = if kind == "frame" { "Frame" } else { "Render" };
-            let jk = if kind == "frame" { jobs::Kind::Frame } else { jobs::Kind::Render };
-            let (progress, told) = Progress::start(auth, &id, jk, label);
-            let result = {
-                let _held = vault.hold.take("render");
-                let _awake = world::Awake::begin("rendering a film");
-                let _kept = world::keep();
-                let work = Work::new(vault.ingest_dir().join(format!("render-{id}")));
-                match work {
-                    Ok(work) => {
-                        if kind == "frame" {
-                            frame_job(handle, vault, auth, &job, &work, &progress).await
-                        } else {
-                            render_job(handle, vault, auth, &job, &work, &progress).await
-                        }
-                    }
-                    Err(e) => Err(e),
-                }
-            };
-            world::close_if_idle(handle);
-            jobs::end(jk, &id, result.as_ref().map(|_| ()).map_err(|e| e.clone()));
-            // the last progress report is sent before the result, never after it
-            drop(progress);
-            told.await.ok();
-            match result {
-                Ok(body) => body,
-                Err(e) => json!({ "status": "failed", "note": e.chars().take(280).collect::<String>() }),
-            }
-        }
-    };
-    let status = body["status"].as_str().unwrap_or("").to_string();
-    match status.as_str() {
-        "done" => tracing::info!("render job {id}: done → {}", body["output_hash"].as_str().unwrap_or("")),
-        _ => tracing::warn!("render job {id}: {status} — {}", body["note"].as_str().unwrap_or("")),
-    }
-    report(auth, &id, body).await;
-    handle.emit("vault-render", json!({ "job": id, "status": status })).ok();
-}
+// ── avenDB's footage, as the render reads it ───────────────────────────────────────────────────────────────────
 
-/// The job's last word: tried again for a while — a finished render must not be lost to a moment without the API.
-async fn report(auth: &Auth, id: &str, body: Value) {
-    let body = match vault_render::api_accepts(&body) {
-        Ok(()) => body,
-        Err(e) => json!({ "status": "failed", "note": format!("the render's report is not one the API takes: {e}").chars().take(280).collect::<String>() }),
-    };
-    for wait in [0u64, 5, 15, 30, 60, 120] {
-        tokio::time::sleep(Duration::from_secs(wait)).await;
-        match auth.call("PUT", &format!("/api/renders/{id}"), Some(body.clone())).await {
-            Ok((s, _)) if s < 300 => return,
-            Ok((s, answer)) if (400..500).contains(&s) => {
-                tracing::warn!("render job {id}: the API refused the report ({s}): {answer}");
-                return;
-            }
-            Ok((s, _)) => tracing::warn!("render job {id}: the API answered {s} to the report — again"),
-            Err(e) => tracing::warn!("render job {id}: {e} — again"),
-        }
-    }
-}
-
-/// The job's own folder in the ingest area: the exported sources and the files it makes; gone when the job is.
-struct Work(PathBuf);
-
-impl Work {
-    fn new(dir: PathBuf) -> Res<Self> {
-        std::fs::remove_dir_all(&dir).ok();
-        std::fs::create_dir_all(&dir).map_err(err)?;
-        Ok(Self(dir))
-    }
-}
-
-impl Drop for Work {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).ok();
-    }
-}
-
-// ── the vault, as the render reads it ──────────────────────────────────────────────────────────────────────────────
-
-/// The vault's catalog when the job started, and its files exported to disk as the render asks for them — with
-/// their own extension (AVFoundation tells a movie by it), into the job's folder, removed with it.
-struct Vaulted {
-    vault: Arc<Vault>,
+/// The footage a cut plays: the studio's library items for it the page named (src/lib/studio/aven.js `libraryOf`),
+/// each by its avenDB reference (`aven:…`), and any other reference a clip names, told from the reference alone (its
+/// media type rides on it: src/lib/studio/avenref.js). Every file's bytes are read in place from avenDB's device
+/// (aven.rs); the legacy vault is not read.
+struct Footage {
     rt: tokio::runtime::Handle,
     media: HashMap<String, Media>,
     ext: HashMap<String, String>,
-    story: HashMap<String, String>,
     /// an original's proxy (its meta.proxy) → the original: conform finds it from either side
     originals: HashMap<String, String>,
-    /// each file as it is read: in place, from the vault's blob store (never copied out)
+    /// each file as it is read: in place, from avenDB's device (never copied out)
     files: Mutex<HashMap<String, vault_media::Source>>,
 }
 
-impl Vaulted {
-    async fn new(vault: &Arc<Vault>) -> Res<Self> {
-        let list = vault.catalog.list_view().await.map_err(err)?;
-        let mut media = HashMap::new();
-        let mut ext = HashMap::new();
-        let mut story = HashMap::new();
-        let mut originals = HashMap::new();
-        for m in list {
-            if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
-                originals.insert(p.to_string(), m.hash.clone());
-            }
-            ext.insert(m.hash.clone(), extension(&m));
-            story.insert(m.hash.clone(), m.story.clone());
-            media.insert(m.hash.clone(), Media { hash: m.hash, mime: m.mime, kind: m.kind, size: m.size, title: m.title, meta: m.meta });
-        }
-        Ok(Self { vault: vault.clone(), rt: tokio::runtime::Handle::current(), media, ext, story, originals, files: Mutex::new(HashMap::new()) })
-    }
-
-    /// avenDB's footage beside the vault's (Jobs and studio 2.0): the studio's library items for it the page named
-    /// (src/lib/studio/aven.js `libraryOf`), each by its reference (`aven:…`), its bytes read in place from avenDB's
-    /// device (aven.rs) — a cut may play both.
-    fn with_aven(mut self, items: &[Value]) -> Self {
+impl Footage {
+    fn new(items: &[Value], t: &Timeline) -> Self {
+        let mut lib = Self { rt: tokio::runtime::Handle::current(), media: HashMap::new(), ext: HashMap::new(), originals: HashMap::new(), files: Mutex::new(HashMap::new()) };
         for v in items {
             let Ok(m) = serde_json::from_value::<Media>(v.clone()) else { continue };
-            if crate::aven::file_of_ref(&m.hash).is_none() {
+            lib.add(m);
+        }
+        // a clip's file the page named no item for: what its reference says
+        for h in t.clips.iter().filter(|c| !c.is_world()).filter_map(|c| c.hash.as_deref()) {
+            if lib.media.contains_key(h) {
                 continue;
             }
-            if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
-                self.originals.insert(p.to_string(), m.hash.clone());
-            }
-            let about = vault_core::Meta { original_name: m.title.clone(), mime: m.mime.clone(), meta: m.meta.clone(), ..Default::default() };
-            self.ext.insert(m.hash.clone(), extension(&about));
-            self.media.insert(m.hash.clone(), m);
+            let Some(Ok(f)) = crate::aven::file_of_ref(h) else { continue };
+            let mime = h.splitn(5, ':').nth(4).map(percent_decode).unwrap_or_default();
+            let kind = mime.split('/').next().filter(|k| ["video", "audio", "image"].contains(k)).unwrap_or("other").to_string();
+            lib.add(Media { hash: h.to_string(), mime, kind, size: f.len, title: String::new(), meta: Value::Null });
         }
-        self
+        lib
     }
 
-    /// The story most of the timeline's files live in; None (the inbox) when most are in the inbox.
-    fn story_of(&self, t: &Timeline) -> Option<String> {
-        let mut hashes: Vec<&str> = t.clips.iter().filter(|c| !c.is_world()).filter_map(|c| c.hash.as_deref()).collect();
-        hashes.sort_unstable();
-        hashes.dedup();
-        let mut count: HashMap<&str, usize> = HashMap::new();
-        for h in hashes {
-            if let Some(s) = self.story.get(h) {
-                *count.entry(s.as_str()).or_default() += 1;
-            }
+    fn add(&mut self, m: Media) {
+        if crate::aven::file_of_ref(&m.hash).is_none() {
+            return;
         }
-        count.into_iter().max_by_key(|(s, n)| (*n, *s)).map(|(s, _)| s.to_string()).filter(|s| !s.is_empty())
+        if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
+            self.originals.insert(p.to_string(), m.hash.clone());
+        }
+        self.ext.insert(m.hash.clone(), extension(&m.title, &m.mime, &m.meta));
+        self.media.insert(m.hash.clone(), m);
     }
 }
 
-/// A file's extension on disk: the one it came in with, else its type's.
-fn extension(m: &vault_core::Meta) -> String {
-    if m.meta.get("sequence").and_then(Value::as_str) == Some("exr") {
+/// "%2F" and the like back to their bytes (a reference's media type is percent-encoded).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or("zz"), 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A file's extension on disk: the one its name has, else its type's.
+fn extension(name: &str, mime: &str, meta: &Value) -> String {
+    if meta.get("sequence").and_then(Value::as_str) == Some("exr") {
         return "tar".into();
     }
-    if let Some(e) = Path::new(&m.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).filter(|e| !e.is_empty() && e.len() <= 5) {
+    if let Some(e) = Path::new(name).extension().map(|e| e.to_string_lossy().to_lowercase()).filter(|e| !e.is_empty() && e.len() <= 5) {
         return e;
     }
-    match m.mime.as_str() {
+    match mime {
         "video/mp4" => "mp4",
         "video/quicktime" => "mov",
         "video/x-m4v" => "m4v",
@@ -352,7 +145,7 @@ fn extension(m: &vault_core::Meta) -> String {
     .into()
 }
 
-impl Library for Vaulted {
+impl Library for Footage {
     fn media(&self, hash: &str) -> Option<Media> {
         self.media.get(hash).cloned()
     }
@@ -361,13 +154,11 @@ impl Library for Vaulted {
         if let Some(s) = self.files.lock().unwrap().get(hash) {
             return Ok(s.clone());
         }
-        let m = self.media.get(hash).with_context(|| format!("{hash} is not in the vault's catalog"))?;
-        let name = if m.title.is_empty() { hash.to_string() } else { m.title.clone() };
+        let m = self.media.get(hash).with_context(|| format!("{hash} is no avenDB file the cut names"))?;
+        let name = if m.title.is_empty() { "file".to_string() } else { m.title.clone() };
         let ext = self.ext.get(hash).map(String::as_str).unwrap_or("bin");
-        let src = match crate::aven::file_of_ref(hash) {
-            Some(f) => crate::aven::source_on(&self.rt, f.map_err(anyhow::Error::msg)?, &format!("{name}.{ext}")).map_err(anyhow::Error::msg)?,
-            None => crate::blob::source_blocking(&self.vault, &self.rt, hash.parse()?, &format!("{name}.{ext}"))?,
-        };
+        let f = crate::aven::file_of_ref(hash).with_context(|| format!("{hash} is no avenDB file"))?.map_err(anyhow::Error::msg)?;
+        let src = crate::aven::source_on(&self.rt, f, &format!("{name}.{ext}")).map_err(anyhow::Error::msg)?;
         self.files.lock().unwrap().insert(hash.to_string(), src.clone());
         Ok(src)
     }
@@ -382,209 +173,12 @@ impl Library for Vaulted {
     }
 }
 
-/// What a V1 clip is called on the sheet: its script's label or description, else its file's title.
-fn clip_label(timeline: &Value, id: &str) -> String {
-    let c = timeline["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(id)));
-    let s = |k: &str| c.and_then(|c| c["script"][k].as_str()).filter(|s| !s.is_empty()).map(String::from);
-    let what = s("label").or_else(|| s("description")).unwrap_or_default();
-    let scene = s("scene").unwrap_or_default();
-    [scene, what].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")
-}
-
-/// The scope sheet of the clips named (the first is the reference), after their balances: each shot's picture with its
-/// skin box, its waveform, RGB parade and vectorscope with the skin line — the PNG's bytes (shown, never kept beside the
-/// vault) and what each row is.
-pub async fn scope_sheet(vault: &Arc<Vault>, timeline: &Value, ids: Vec<String>, regions: HashMap<String, vault_render::look::Regions>, with_looks: bool) -> Res<(Value, Vec<u8>)> {
-    let looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new(), with_looks).await?;
-    let mut rows = Vec::new();
-    let mut ok = Vec::new();
-    for (i, l) in looks.into_iter().enumerate() {
-        match l {
-            Ok(l) => {
-                let b = &l.json["balanced"];
-                let n = |p: &str| b.pointer(p).and_then(Value::as_f64).map(|v| format!("{v}")).unwrap_or_else(|| "–".into());
-                let skin = if b["skin"].is_null() { "no face".to_string() } else { format!("skin {} IRE {}° ({:+}°) sat {}", n("/skin/ire"), n("/skin/hue"), b["skin"]["off_skin_line"].as_f64().unwrap_or(0.0), n("/skin/chroma")) };
-                let text = format!(
-                    "{}{} · {} — blacks {} · mid {} · whites {} IRE · {} · clipped {}%",
-                    if i == 0 { "REFERENCE · " } else { "" },
-                    clip_label(timeline, &l.clip),
-                    &l.clip[..l.clip.len().min(8)],
-                    n("/levels/p1"),
-                    n("/levels/p50"),
-                    n("/levels/p99"),
-                    skin,
-                    n("/clipped_pct"),
-                );
-                rows.push(json!({ "clip": l.clip, "label": text, "balance": l.json["balance"], "from": l.json["from"] }));
-                ok.push((l, text));
-            }
-            Err(e) => rows.push(e),
-        }
-    }
-    if ok.is_empty() {
-        return Err(format!("no shot could be read: {}", json!(rows)));
-    }
-    let png = tauri::async_runtime::spawn_blocking(move || {
-        let refs: Vec<(&vault_render::look::Look, String)> = ok.iter().map(|(l, t)| (l, t.clone())).collect();
-        let (px, w, h) = vault_render::look::scopes(&refs).map_err(err)?;
-        let mut out = Vec::new();
-        let mut enc = png::Encoder::new(&mut out, w, h);
-        enc.set_color(png::ColorType::Rgb);
-        enc.set_depth(png::BitDepth::Eight);
-        enc.write_header().and_then(|mut wr| wr.write_image_data(&px)).map_err(err)?;
-        Ok::<_, String>(out)
-    })
-    .await
-    .map_err(err)??;
-    Ok((json!({ "rows": rows }), png))
-}
-
-/// The V1 picture clips named (in that order), else every one with a file, as the render reads them.
-fn picture_clips(t: &Timeline, ids: &Option<Vec<String>>) -> Res<Vec<Clip>> {
-    let v1: Vec<&Clip> = t.clips.iter().filter(|c| c.track == "V1" && c.hash.is_some() && !c.is_world()).collect();
-    let clips: Vec<Clip> = match ids {
-        Some(ids) => ids.iter().map(|id| v1.iter().find(|c| &c.id == id).map(|c| (*c).clone()).ok_or(format!("no picture clip {id} with a file on this timeline"))).collect::<Res<_>>()?,
-        None => v1.into_iter().cloned().collect(),
-    };
-    if clips.is_empty() {
-        return Err("no picture clip with a file to read".into());
-    }
-    Ok(clips)
-}
-
-/// Every clip named read for the base correction (vault_render `look`): its elements — blacks, whites, the middle, the
-/// skin Vision finds (or the regions named) — as shot and balanced, from its 4K grading still (else its original's
-/// frame; never a proxy), through the ACES 2.0 output. `balances` stand in for clips' own (a proposal read before it
-/// is written). A clip that can't be read comes back as its error.
-pub async fn look_clips(
-    vault: &Arc<Vault>,
-    timeline: &Value,
-    ids: Option<Vec<String>>,
-    regions: HashMap<String, vault_render::look::Regions>,
-    balances: HashMap<String, vault_render::grade::Balance>,
-    looks: bool,
-) -> Res<Vec<Result<vault_render::look::Look, Value>>> {
-    let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
-    let clips = picture_clips(&t, &ids)?;
-    let lib = Arc::new(Vaulted::new(vault).await?);
-    let out = tauri::async_runtime::spawn_blocking(move || {
-        clips
-            .iter()
-            .map(|c| {
-                let r = regions.get(&c.id).cloned().unwrap_or_default();
-                objc2::rc::autoreleasepool(|_| vault_render::look::look(&t, &*lib, c, odt(), &r, balances.get(&c.id), looks))
-                    .map_err(|e| json!({ "clip": c.id, "error": format!("{e:#}") }))
-            })
-            .collect::<Vec<_>>()
-    })
-    .await
-    .map_err(err)?;
-    Ok(out)
-}
-
-/// The base correction's balances (colorist `base-correction.md`), proposed from the shots' elements — written by the
-/// caller only when asked. `neutral`: each clip's own neutrals to grey, then `warmth` stops warmer (a scene master);
-/// else every clip levelled to `reference` as it is balanced now (the scene master), by the blacks, whites, middle and
-/// skin both have (less each clip's `skip`).
-#[allow(clippy::too_many_arguments)]
-pub async fn propose_balances(
-    vault: &Arc<Vault>,
-    timeline: &Value,
-    ids: Option<Vec<String>>,
-    reference: Option<String>,
-    neutral: bool,
-    warmth: f64,
-    regions: HashMap<String, vault_render::look::Regions>,
-    skip: HashMap<String, Vec<String>>,
-) -> Res<Value> {
-    use vault_render::look::{fit, neutral as to_neutral, predict, target};
-    let out = odt();
-    let r = |b: &vault_render::grade::Balance| serde_json::to_value(b).unwrap_or_default();
-    if neutral {
-        let looks = look_clips(vault, timeline, ids, regions, HashMap::new(), false).await?;
-        let shots: Vec<Value> = looks
-            .into_iter()
-            .map(|l| match l {
-                Ok(l) => {
-                    let now: vault_render::grade::Balance = serde_json::from_value(l.json["balance"].clone()).unwrap_or_default();
-                    let (b, used) = to_neutral(&l, out, &now, warmth);
-                    json!({ "clip": l.clip, "balance": r(&b), "neutral_by": used, "warmth": warmth, "as_shot": l.json["as_shot"], "now": l.json["balanced"], "predicted": predict(&l, out, &b) })
-                }
-                Err(e) => e,
-            })
-            .collect();
-        return Ok(json!({ "target": format!("neutral, then {warmth:+} stops warmer"), "shots": shots }));
-    }
-    let reference = reference.ok_or("name the scene's master as the reference: shots are matched to it, never to an average")?;
-    let mut ids = ids.unwrap_or_else(|| {
-        timeline["clips"].as_array().into_iter().flatten().filter(|c| c["track"] == "V1" && c["hash"].is_string() && c["kind"] != "world").filter_map(|c| c["id"].as_str().map(String::from)).collect()
-    });
-    ids.retain(|id| id != &reference);
-    ids.insert(0, reference.clone());
-    let mut looks = look_clips(vault, timeline, Some(ids), regions, HashMap::new(), false).await?.into_iter();
-    let master = looks.next().ok_or("the reference wasn't read")?.map_err(|e| format!("the reference can't be read: {e}"))?;
-    let master_balance: vault_render::grade::Balance = serde_json::from_value(master.json["balance"].clone()).unwrap_or_default();
-    let want = target(&master, out, &master_balance);
-    let shots: Vec<Value> = looks
-        .map(|l| match l {
-            Ok(l) => {
-                let (b, used) = fit(&l, &want, out, skip.get(&l.clip).map(Vec::as_slice).unwrap_or(&[]));
-                json!({ "clip": l.clip, "balance": r(&b), "matched_by": used, "as_shot": l.json["as_shot"], "predicted": predict(&l, out, &b) })
-            }
-            Err(e) => e,
-        })
-        .collect();
-    Ok(json!({ "target": format!("clip {reference} as it is balanced now"), "reference": { "clip": reference, "balance": r(&master_balance), "elements": predict(&master, out, &master_balance) }, "shots": shots }))
-}
-
 /// How each sound clip of a timeline sounds (vault_render `measure_sound`): loudness, true peak, a curve to draw, the
 /// music under each voice clip.
-pub async fn measure_sound(vault: &Arc<Vault>, timeline: &Value) -> Res<Value> {
+pub async fn measure_sound(timeline: &Value, library: &[Value]) -> Res<Value> {
     let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
-    let lib = Arc::new(Vaulted::new(vault).await?);
+    let lib = Arc::new(Footage::new(library, &t));
     let out = tauri::async_runtime::spawn_blocking(move || vault_render::measure_sound(&t, &*lib)).await.map_err(err)?.map_err(err);
-    out
-}
-
-/// The loudness each kind of sound is levelled to, before the render levels the whole mix to −14 LUFS: the voice
-/// clear on top, the music a bed under it (the render keys it down 6 dB more while the voice speaks), the sounds
-/// and ambience under both.
-pub const SOUND_TARGETS: [(&str, f64); 3] = [("A1", -18.0), ("A2", -26.0), ("A3", -30.0)];
-
-/// Every sound clip levelled to its track's target (or `targets`), its gain within −∞…+12 dB (vol ≤ 4), and fades so
-/// nothing clicks: a voice 0.05 s at least, the music 1 s in and 2.5 s out where the film starts or ends, a sound
-/// 0.3 s. Returns each clip's change; writes nothing.
-pub fn level_sound(measured: &Value, clips: &[Value], targets: &[(String, f64)], end: f64) -> Vec<Value> {
-    let target = |track: &str| targets.iter().find(|(t, _)| t == track).map(|(_, v)| *v).or_else(|| SOUND_TARGETS.iter().find(|(t, _)| *t == track).map(|(_, v)| *v));
-    let mut out = Vec::new();
-    for m in measured["clips"].as_array().into_iter().flatten().filter(|m| m.get("error").is_none()) {
-        let (Some(id), Some(track)) = (m["clip"].as_str(), m["track"].as_str()) else { continue };
-        let Some(c) = clips.iter().find(|c| c["id"].as_str() == Some(id)) else { continue };
-        let Some(goal) = target(track) else { continue };
-        let mut change = json!({ "clip": id, "track": track, "name": m["name"] });
-        if let Some(l) = m["lufs"].as_f64() {
-            // the gain that brings it to its target, never more than +12 dB (vol 4); the mix is float, and the render's
-            // master limiter holds the peaks
-            let g = goal - l;
-            let vol = (10f64.powf(g.min(12.0) / 20.0) * 1000.0).round() / 1000.0;
-            change["vol"] = json!(vol.clamp(0.0, 4.0));
-            change["lufs_before"] = json!(m["lufs_at_vol"]);
-            change["lufs_after"] = json!(((l + 20.0 * vol.max(1e-6).log10()) * 100.0).round() / 100.0);
-        } else {
-            change["note"] = json!("silent: left as it is");
-        }
-        let start = c["start"].as_f64().unwrap_or(0.0);
-        let dur = c["dur"].as_f64().unwrap_or(0.0);
-        let (fin, fout) = (c["fin"].as_f64().unwrap_or(0.0), c["fout"].as_f64().unwrap_or(0.0));
-        let (want_in, want_out) = match track {
-            "A1" => (0.05, 0.05),
-            "A2" => (if start < 0.5 { 1.0 } else { 0.3 }, if (start + dur - end).abs() < 0.5 { 2.5 } else { 0.5 }),
-            _ => (0.3, 0.3),
-        };
-        change["fin"] = json!(fin.max(want_in).min(dur / 2.0));
-        change["fout"] = json!(fout.max(want_out).min(dur / 2.0));
-        out.push(change);
-    }
     out
 }
 
@@ -606,32 +200,30 @@ pub fn eq_response(eq: Value, n: Option<usize>) -> Res<Value> {
     Ok(json!({ "bands": bands, "curve": curve }))
 }
 
-/// The Audio tab: how the timeline on screen sounds, clip by clip (to draw; it changes nothing).
+/// The Audio tab: how the timeline on screen sounds, clip by clip (to draw; it changes nothing). `library`: the studio's
+/// library items of its footage (src/lib/studio/aven.js `libraryOf`), else each clip's reference says what it is.
 #[tauri::command]
-pub async fn sound_measure(app: tauri::State<'_, crate::App>, timeline: Value) -> Res<Value> {
+pub async fn sound_measure(timeline: Value, library: Option<Vec<Value>>) -> Res<Value> {
     crate::gate()?;
-    measure_sound(&app.vault, &timeline).await
+    measure_sound(&timeline, library.as_deref().unwrap_or_default()).await
 }
 
 // ── world plates ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/// A world clip's shot record's spec (the version the clip names): avenDB's (`shot:<entry>`), or the API's.
-async fn spec_of(handle: &AppHandle, auth: &Auth, c: &Clip) -> Res<(String, Value)> {
+/// A world clip's shot record's spec, at the version the clip names: avenDB's (`shot:<entry>`, world.rs `aven_shot`).
+async fn spec_of(handle: &AppHandle, c: &Clip) -> Res<(String, Value)> {
     let shot = c.shot.clone().ok_or_else(|| format!("world clip {} names no shot", c.id))?;
-    if shot.starts_with("shot:") {
-        let version = c.shot_version.ok_or_else(|| format!("world clip {} names no version of its shot", c.id))?;
-        // named by its entry alone: the name goes into file and run labels
-        return Ok((shot.trim_start_matches("shot:").to_string(), world::aven_shot(handle, &shot, version as u64).await?.1));
+    if !shot.starts_with("shot:") {
+        return Err(format!("world clip {} names shot {shot} of the old API: a cut's world clips name avenDB's shots (shot:<entry>)", c.id));
     }
-    let q = c.shot_version.map(|v| format!("?version={v}")).unwrap_or_default();
-    let r = auth.get_ok("GET", &format!("/api/shots/{shot}{q}"), None).await.map_err(|e| format!("shot {shot}: {e}"))?;
-    let spec = r.get("spec").filter(|s| s.is_object()).cloned().ok_or_else(|| format!("shot {shot} v{} has no spec", c.shot_version.unwrap_or(0)))?;
-    Ok((shot, spec))
+    let version = c.shot_version.ok_or_else(|| format!("world clip {} names no version of its shot", c.id))?;
+    // named by its entry alone: the name goes into file and run labels
+    Ok((shot.trim_start_matches("shot:").to_string(), world::aven_shot(handle, &shot, version as u64).await?.1))
 }
 
 /// Every world clip's plate for every shape: `frames` of its stretch (clip.in … clip.in + dur, a frame over), at the
 /// shape's render size and the film's rate.
-async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline, shapes: &[Shape], told: &Told, span: (f64, f64)) -> Res<HashMap<(String, String), Plate>> {
+async fn plates_for(handle: &AppHandle, t: &Timeline, shapes: &[Shape], told: &Told, span: (f64, f64)) -> Res<HashMap<(String, String), Plate>> {
     let clips: Vec<&Clip> = t.clips.iter().filter(|c| c.is_world() && c.track == "V1").collect();
     let mut out = HashMap::new();
     if clips.is_empty() {
@@ -643,7 +235,7 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
     let mut done = 0.0;
     told(span.0, "rendering world plates");
     for c in clips {
-        let (shot, spec) = spec_of(handle, auth, c).await?;
+        let (shot, spec) = spec_of(handle, c).await?;
         let version = c.shot_version.unwrap_or(0);
         for s in shapes {
             let (width, height) = s.render_size();
@@ -652,7 +244,7 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
             let (p, base, of) = (told.clone(), done, frames as f64);
             let told = move |x: f64| p(span.0 + (span.1 - span.0) * (base + x * of) / total, "rendering world plates");
             let label = format!("plate-{}-v{version}-{}", &shot[..8.min(shot.len())], s.tag());
-            let made = world::plate(handle, vault, &label, &ask, told)
+            let made = world::plate(handle, &label, &ask, told)
                 .await
                 .map_err(|e| format!("world clip {} (shot {shot} v{version}), its {} plate: {e}", c.id, s.aspect))?;
             tracing::info!("plate of shot {shot} v{version} {}–{} s · {} {width}×{height}: {}", c.in_, c.in_ + c.dur, s.aspect, if made.reused { "from the cache" } else { "rendered" });
@@ -668,58 +260,12 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
 
 // ── the jobs ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-async fn timeline_of(auth: &Auth, job: &Value) -> Res<Timeline> {
-    let id = job["timeline_id"].as_str().ok_or("the job names no timeline")?;
-    let raw = auth.get_ok("GET", &format!("/api/timelines/{id}"), None).await.map_err(|e| format!("the timeline: {e}"))?;
-    serde_json::from_value(raw).map_err(|e| format!("the timeline: {e}"))
-}
-
-/// A timeline into every delivery, into the vault: the job's result.
-async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Value, work: &Work, progress: &Progress) -> Res<Value> {
-    let id = job["id"].as_str().unwrap_or_default();
-    let t = timeline_of(auth, job).await?;
-    progress.named(&format!("Render · {}", t.name));
-    progress.set(0.02, "fetching files");
-    let lib = Arc::new(Vaulted::new(vault).await?);
-    let story = lib.story_of(&t);
-    let made = render_into(handle, vault, auth, &t, lib, job["params"]["delivery"].as_str(), work.0.join("out"), &progress.told()).await?;
-
-    // each file into the vault, described — tagged by what it is (the name it came in as is only a fact)
-    progress.set(0.94, "into the vault");
-    let mut made = made;
-    for i in 0..made.deliveries.len() {
-        let about = made.about(&t, &made.deliveries[i]);
-        let file = made.deliveries[i].file.clone();
-        let batch = Batch {
-            session: format!("render {id}"),
-            tags: about.tags,
-            title: Some(about.title),
-            description: Some(about.description),
-            meta: about.meta,
-            story: story.clone(),
-            class: Some("delivery".into()),
-            ..Default::default()
-        };
-        let o = vault.ingest_file(&file, &batch).await.map_err(err)?;
-        if o.verdict == Verdict::Mismatch {
-            return Err(format!("{}: the copy in the vault is not what was rendered (hash mismatch)", made.deliveries[i].name));
-        }
-        std::fs::remove_file(&file).ok();
-        made.deliveries[i].hash = Some(o.hash);
-        progress.set(0.94 + 0.05 * (i + 1) as f64 / made.deliveries.len() as f64, "into the vault");
-    }
-    for w in &made.warnings {
-        tracing::warn!("render job {id}: {w}");
-    }
-    made.job_result(&t).map_err(err)
-}
-
 /// Timeline `t` rendered into `out` from library `lib`, every delivery, or with `delivery` "youtube-4k" the 16:9 4K
 /// master for YouTube alone: what it made, its files still on the disk (the caller puts them where they go).
-async fn render_into(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, t: &Timeline, lib: Arc<Vaulted>, delivery: Option<&str>, out: PathBuf, told: &Told) -> Res<vault_render::Render> {
+async fn render_into(handle: &AppHandle, t: &Timeline, lib: Arc<Footage>, delivery: Option<&str>, out: PathBuf, told: &Told) -> Res<vault_render::Render> {
     let youtube = delivery == Some(YOUTUBE_4K);
     let shapes: Vec<Shape> = shapes_of(t).into_iter().filter(|s| !youtube || s.aspect == "16:9").collect();
-    let plates = plates_for(handle, vault, auth, t, &shapes, told, (0.03, 0.3)).await?;
+    let plates = plates_for(handle, t, &shapes, told, (0.03, 0.3)).await?;
     let (from, span) = if plates.is_empty() { (0.03, 0.9) } else { (0.3, 0.63) };
 
     let (t2, p) = (t.clone(), told.clone());
@@ -747,55 +293,9 @@ pub(crate) enum Framed {
     Hero { file: PathBuf, rep: Value, at: f64, aspect: String, width: u32, height: u32 },
 }
 
-/// A `frame` job into the vault: the job's result. Of a media clip — named (`params.clip`, queued when a timeline
-/// save changed how its file looks) or on screen at `params.t` (an agent's ask) — it is that file's graded still,
-/// replacing the one before; of a world clip or a gap, a hero frame at `params.t` in `params.shape`, replacing the
-/// one before of the same clip and shape. Never a history of either.
-async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Value, work: &Work, progress: &Progress) -> Res<Value> {
-    let at = job["params"]["t"].as_f64().filter(|t| *t >= 0.0).unwrap_or(0.0);
-    let aspect = job["params"]["shape"].as_str().unwrap_or("16:9").to_string();
-    let t = timeline_of(auth, job).await?;
-    progress.named(&format!("Frame · {} · {at:.2} s", t.name));
-    progress.set(0.05, "fetching files");
-    let lib = Arc::new(Vaulted::new(vault).await?);
-    let story = lib.story_of(&t);
-    let (file, rep, w, h) = match frame_into(handle, auth, &t, lib, job["params"]["clip"].as_str(), at, &aspect, &work.0, &progress.told()).await? {
-        Framed::Graded { file, rep, clip } => {
-            progress.set(0.9, "into the vault");
-            return graded_still_in(vault, &t, clip, file, rep).await;
-        }
-        Framed::Hero { file, rep, width, height, .. } => (file, rep, width, height),
-    };
-    progress.set(0.9, "into the vault");
-    let what = rep["what"].as_str().unwrap_or("").to_string();
-    let batch = Batch {
-        session: format!("hero frame {}", job["id"].as_str().unwrap_or_default()),
-        tags: std::iter::once("role:frame".to_string()).chain(t.project.clone()).collect(),
-        title: Some(format!("{} · hero frame {at:.2} s · {aspect}", t.name)),
-        description: Some(format!("One frame at full precision ({w}×{h}, 16-bit) through the whole chain, without graphics — {what}")),
-        meta: json!({ "role": "frame", "timeline": t.id, "version": t.version.unwrap_or(1), "t": at, "shape": aspect, "width": w, "height": h, "clip": rep["clip"] }),
-        story,
-        ..Default::default()
-    };
-    let o = vault.ingest_file(&file, &batch).await.map_err(err)?;
-    if o.verdict == Verdict::Mismatch {
-        return Err("the hero frame's copy in the vault is not what was rendered (hash mismatch)".into());
-    }
-    // one hero frame per clip and shape: the one it replaces goes
-    let same = |m: &vault_core::Meta| {
-        is_frame(m) && m.meta["timeline"] == json!(t.id) && m.meta["clip"] == rep["clip"] && m.meta["shape"] == json!(aspect)
-    };
-    for m in vault.catalog.list().await.map_err(err)?.iter().filter(|m| same(m) && m.hash != o.hash) {
-        if let Ok(h) = m.hash.parse::<iroh_blobs::Hash>() {
-            vault.catalog.delete_file(h, "replaced by the clip's new hero frame").await.ok();
-        }
-    }
-    Ok(json!({ "status": "done", "progress": 1, "note": format!("hero frame ready · {at:.2} s · {aspect}"), "output_hash": o.hash, "report": rep }))
-}
-
 /// A frame of timeline `t` made into `work` from library `lib`: of media clip `clip`, or of the one on screen at `at`,
 /// its file's graded still; of a world clip or a gap, a hero frame at `at` in shape `aspect`.
-async fn frame_into(handle: &AppHandle, auth: &Auth, t: &Timeline, lib: Arc<Vaulted>, clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: &Told) -> Res<Framed> {
+async fn frame_into(handle: &AppHandle, t: &Timeline, lib: Arc<Footage>, clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: &Told) -> Res<Framed> {
     let s = Shape::of(aspect).ok_or_else(|| format!("no such shape: {aspect}"))?;
     // the clip on screen, as hero_frame picks it: a world clip gets a plate of that one frame
     let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(Value::is_object));
@@ -821,13 +321,12 @@ async fn frame_into(handle: &AppHandle, auth: &Auth, t: &Timeline, lib: Arc<Vaul
     let mut plates = HashMap::new();
     if let Some(c) = clip.filter(|c| c.is_world()) {
         told(0.1, "rendering world plates");
-        let vault = handle.state::<crate::App>().vault.clone();
-        let (shot, spec) = spec_of(handle, auth, c).await?;
+        let (shot, spec) = spec_of(handle, c).await?;
         let (width, height) = s.render_size();
         let fps = FPS as f64;
         let ask = world::Frames { spec, shape: s.aspect, width, height, fps, from: c.in_ + (at - c.start), frames: 1, bitrate: Some(world::plate_bitrate(width, height, fps)) };
         let label = format!("frame-{}-{}", &shot[..8.min(shot.len())], s.tag());
-        let made = world::plate(handle, &vault, &label, &ask, |_| {}).await.map_err(|e| format!("world clip {}: its frame: {e}", c.id))?;
+        let made = world::plate(handle, &label, &ask, |_| {}).await.map_err(|e| format!("world clip {}: its frame: {e}", c.id))?;
         plates.insert((c.id.clone(), aspect.to_string()), Plate { file: made.file, offset: at - c.start, key: Some(made.key), fingerprint: Some(made.fingerprint), reused: Some(made.reused) });
     }
     told(0.5, "rendering the frame");
@@ -846,25 +345,16 @@ async fn frame_into(handle: &AppHandle, auth: &Auth, t: &Timeline, lib: Arc<Vaul
 
 // ── cuts of avenDB (Jobs and studio 2.0, J12-J13: aven.rs `studio_job`) ────────────────────────────────────────
 
-/// The library a cut of avenDB reads: the legacy vault's catalog, and avenDB's footage the page named (`aven`).
-async fn cut_library(handle: &AppHandle, aven: &[Value]) -> Res<(Arc<Vault>, Auth, Arc<Vaulted>)> {
-    let vault = handle.state::<crate::App>().vault.clone();
-    let auth = handle.state::<Auth>().inner().clone();
-    let lib = Arc::new(Vaulted::new(&vault).await?.with_aven(aven));
-    Ok((vault, auth, lib))
-}
-
-/// Cut `t` of avenDB rendered into `out` (every delivery, or `delivery` "youtube-4k" alone), its files read from the
-/// legacy vault and avenDB (`aven`, the page's library items of its footage): what it made, its files still on the
-/// disk for aven.rs to put into the cut's vault. The uploads wait while it renders, as for a job of the API's.
+/// Cut `t` of avenDB rendered into `out` (every delivery, or `delivery` "youtube-4k" alone), its files read from avenDB
+/// (`aven`, the page's library items of its footage): what it made, its files still on the disk for aven.rs to put
+/// into the cut's vault.
 pub(crate) async fn render_cut(handle: &AppHandle, t: &Timeline, aven: &[Value], delivery: Option<&str>, out: PathBuf, told: Told) -> Res<vault_render::Render> {
     told(0.02, "fetching files");
-    let (vault, auth, lib) = cut_library(handle, aven).await?;
+    let lib = Arc::new(Footage::new(aven, t));
     let made = {
-        let _held = vault.hold.take("render");
         let _awake = world::Awake::begin("rendering a film");
         let _kept = world::keep();
-        render_into(handle, &vault, &auth, t, lib, delivery, out, &told).await
+        render_into(handle, t, lib, delivery, out, &told).await
     };
     world::close_if_idle(handle);
     made
@@ -873,62 +363,14 @@ pub(crate) async fn render_cut(handle: &AppHandle, t: &Timeline, aven: &[Value],
 /// A frame of cut `t` of avenDB made into `work` (`frame_into`), its files read as `render_cut` reads them.
 pub(crate) async fn frame_cut(handle: &AppHandle, t: &Timeline, aven: &[Value], clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: Told) -> Res<Framed> {
     told(0.05, "fetching files");
-    let (_, auth, lib) = cut_library(handle, aven).await?;
+    let lib = Arc::new(Footage::new(aven, t));
     let made = {
         let _awake = world::Awake::begin("rendering a frame");
         let _kept = world::keep();
-        frame_into(handle, &auth, t, lib, clip, at, aspect, work, &told).await
+        frame_into(handle, t, lib, clip, at, aspect, work, &told).await
     };
     world::close_if_idle(handle);
     made
-}
-
-/// A hero frame: a frame of a timeline the render worker made (`role: frame`, or the tag `role:frame` with the
-/// timeline it is of). The old library's story frames carry the tag too, without a timeline: they are art, not this.
-pub fn is_frame(m: &vault_core::Meta) -> bool {
-    m.meta.get("role").and_then(Value::as_str) == Some("frame")
-        || (m.tags.iter().any(|t| t == "role:frame") && m.meta.get("timeline").and_then(Value::as_str).is_some())
-}
-
-/// A file's graded still (`jpg`, made of clip `clip`) into the vault, as its preview (`meta.preview`): the one it
-/// replaces goes.
-async fn graded_still_in(vault: &Arc<Vault>, t: &Timeline, clip: String, jpg: PathBuf, rep: Value) -> Res<Value> {
-    let of = rep["of"].as_str().unwrap_or_default().to_string();
-    let hash: iroh_blobs::Hash = of.parse().map_err(err)?;
-    let original = vault.catalog.meta(hash).await.map_err(err)?.ok_or("the clip's file is not in the vault's catalog")?;
-    let stem = Path::new(&original.original_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| of[..12].to_string());
-    // named like every file made of an original: `<its name>.preview.jpg` (graded or not, it is the file's preview)
-    let named = jpg.with_file_name(format!("{stem}.preview.jpg"));
-    std::fs::rename(&jpg, &named).map_err(err)?;
-    let batch = Batch {
-        session: format!("graded still of {of}"),
-        tags: vec!["preview".into()],
-        title: Some(format!("{stem} · preview")),
-        meta: json!({ "role": "preview", "preview_of": of, "t": rep["t"], "width": rep["width"], "height": rep["height"], "shape": "16:9",
-            "graded": { "timeline": t.id, "version": t.version.unwrap_or(1), "clip": clip } }),
-        story: Some(original.story.clone()).filter(|s| !s.is_empty()),
-        class: Some("proxy".into()),
-        ..Default::default()
-    };
-    let o = vault.ingest_file(&named, &batch).await.map_err(err)?;
-    if o.verdict == Verdict::Mismatch {
-        return Err("the graded still's copy in the vault is not what was rendered (hash mismatch)".into());
-    }
-    // the same picture as before is the same file, still under the name it first came in as: named as it is now
-    if let Ok(h) = o.hash.parse::<iroh_blobs::Hash>() {
-        vault.catalog.describe(h, &json!({ "original_name": format!("{stem}.preview.jpg"), "title": format!("{stem} · preview") })).await.map_err(err)?;
-    }
-    vault.catalog.describe(hash, &json!({ "meta": { "preview": o.hash } })).await.map_err(err)?;
-    // one preview per file: the one it replaces goes
-    for m in vault.catalog.list().await.map_err(err)? {
-        if m.meta.get("preview_of").and_then(Value::as_str) == Some(&of)
-            && m.hash != o.hash
-            && let Ok(h) = m.hash.parse::<iroh_blobs::Hash>()
-        {
-            vault.catalog.delete_file(h, "replaced by the file's new graded still").await.ok();
-        }
-    }
-    Ok(json!({ "status": "done", "progress": 1, "note": format!("graded still ready · {stem}"), "output_hash": o.hash, "report": rep }))
 }
 
 #[cfg(test)]
@@ -942,11 +384,12 @@ mod tests {
 
     #[test]
     fn a_file_is_exported_with_its_own_extension() {
-        let m = |name: &str, mime: &str, meta: Value| vault_core::Meta { original_name: name.into(), mime: mime.into(), meta, ..Default::default() };
-        assert_eq!(extension(&m("A001.MOV", "video/quicktime", Value::Null)), "mov");
-        assert_eq!(extension(&m("", "video/mp4", Value::Null)), "mp4");
-        assert_eq!(extension(&m("shot_010", "application/x-tar", json!({ "sequence": "exr" }))), "tar");
-        assert_eq!(extension(&m("take.wav", "audio/wav", Value::Null)), "wav");
-        assert_eq!(extension(&m("", "application/octet-stream", Value::Null)), "bin");
+        let m = |name: &'static str, mime: &'static str, meta: Value| (name, mime, meta);
+        let extension = |(name, mime, meta): (&str, &str, Value)| extension(name, mime, &meta);
+        assert_eq!(extension(m("A001.MOV", "video/quicktime", Value::Null)), "mov");
+        assert_eq!(extension(m("", "video/mp4", Value::Null)), "mp4");
+        assert_eq!(extension(m("shot_010", "application/x-tar", json!({ "sequence": "exr" }))), "tar");
+        assert_eq!(extension(m("take.wav", "audio/wav", Value::Null)), "wav");
+        assert_eq!(extension(m("", "application/octet-stream", Value::Null)), "bin");
     }
 }
