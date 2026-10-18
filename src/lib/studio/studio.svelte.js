@@ -464,6 +464,8 @@ export class Studio {
 	worldProxy(c) {
 		return this.library.find((m) => m.meta?.shot === c.shot && Number(m.meta?.shotVersion) === c.shotVersion && m.kind === 'video') ?? null;
 	}
+	/** whether every world clip of the cut has its HD proxy: Edit then plays them and leaves the live world unloaded */
+	allWorldProxied = $derived(this.worldClips.length > 0 && this.worldClips.every((c) => !!this.worldProxy(c)));
 	/**
 	 * The profile the viewer takes a clip's picture in by.
 	 * @param {Clip | null | undefined} c @returns {string}
@@ -664,6 +666,9 @@ export class Studio {
 		if (lost.length) console.warn(`studio: ${lost.length} of ${this.worldClips.length} world clips have no shot on this Mac (${lost[0].shot}@${lost[0].shotVersion}…)`);
 		// asked again a few times: avenDB opens a moment after the studio, and its shots come with it
 		if (lost.length && tries < 6) setTimeout(() => void (this.current?.id === id && this.loadShots(tries + 1)), 2000 * (tries + 1));
+		// each world shot version without its HD proxy, asked for once (rendered by the Mac's jobs while the studio is idle
+		// and its live world let go): a heavy world (Sandbox 3) can't be staged live shot after shot on an 8 GB Mac
+		if (!tries && this.wantWorld && this.current) void import('./cuts.js').then((m) => m.askWorldProxies(/** @type {any} */ ($state.snapshot(this.current)))).catch(() => {});
 	}
 	/** the program monitor starts the world iframe when this is set */
 	wantWorld = $state(false);

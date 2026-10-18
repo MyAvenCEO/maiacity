@@ -53,7 +53,7 @@ export class Worker {
 	 * @param {{ send: (op: any, node?: string) => Promise<any>, executors: Record<string, Executor>,
 	 *   hosted?: () => Promise<{ device: string, vault: string, for?: string | null, hosted?: boolean }[]>,
 	 *   lanes?: import('./schemas.js').Lane[], vaults?: (world: any) => string[], ceo?: string | null,
-	 *   now?: () => number, log?: (line: string) => void, max?: number, held?: () => boolean }} o
+	 *   now?: () => number, log?: (line: string) => void, max?: number, held?: (t: import('./tasks.js').Task) => boolean }} o
 	 */
 	constructor(o) {
 		this.send = o.send;
@@ -70,7 +70,7 @@ export class Worker {
 		this.log = o.log ?? (() => {});
 		/** how many tasks may run at once (every lane its own, unless fewer are named) */
 		this.max = o.max ?? Infinity;
-		/** whether the device is busy with something that comes first (the studio playing): no task starts while it is */
+		/** whether task `t` waits for something that comes first (the studio playing, its live world open) */
 		this.held = o.held ?? (() => false);
 		/** @type {Map<string, { task: string, rule: string, done: number }>} the task each busy lane runs */
 		this.busy = new Map();
@@ -133,9 +133,9 @@ export class Worker {
 				.filter((t) => this.vaults(world).includes(t.vault) && this.executors[t.rule] && claimable(t, now))
 				.sort((a, b) => a.at - b.at);
 			for (const lane of this.lanes) {
-				if (this.busy.size >= this.max || this.held()) break;
+				if (this.busy.size >= this.max) break;
 				if (this.busy.has(lane)) continue;
-				const t = open.find((x) => x.lane === lane);
+				const t = open.find((x) => x.lane === lane && !this.held(x));
 				if (!t) continue;
 				const by = this.nodes.get(t.vault) ?? me;
 				try {

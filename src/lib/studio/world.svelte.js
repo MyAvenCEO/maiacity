@@ -149,6 +149,8 @@ export class WorldViewer {
 		this.iframe = iframe;
 		this.url = url;
 		this.state = 'loading';
+		// the Mac's jobs render no world proxy while this world is open (./jobs/mac.js)
+		void import('./jobs/mac.js').then((m) => m.studioWorld(true));
 		if (iframe.getAttribute('src') !== url) iframe.src = url;
 		const t0 = performance.now();
 		while (performance.now() - t0 < patience && this.iframe === iframe && this.url === url) {
@@ -266,6 +268,7 @@ export class WorldViewer {
 	}
 
 	detach() {
+		void import('./jobs/mac.js').then((m) => m.studioWorld(false));
 		this.film = null;
 		this.drawn = '';
 		this.metered.clear();
