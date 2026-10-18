@@ -34,6 +34,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { signUpName } from '$lib/app/entry.js';
 	import { native } from '$lib/native';
+	import { sure } from '$lib/app/sure.js';
 	import AccessRequest from './AccessRequest.svelte';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
@@ -560,13 +561,13 @@
 	// device would over MCP
 	if (import.meta.env.DEV) /** @type {any} */ (globalThis).avendb = { api, world: () => session.world };
 
-	const forget = () => {
+	const forget = async () => {
 		const mine = world?.vaults.find((v) => v.id === world?.mine);
 		const ask =
 			mine && mine.devices.length > 1
 				? `Forget your account on ${here}? Your vault and your other devices keep everything, and you can sign in here again.`
 				: `Forget your account on ${here}? Your vault stays yours: sign in with your passkey on any device, and avenDB’s server hands it back.`;
-		if (!confirm(ask)) return;
+		if (!(await sure(ask))) return;
 		// the session lets go of the device on every page of the tab, and its shelf is put aside, never deleted, and a
 		// new one is in use: in the app's folder, or in OPFS
 		return run(`Forgetting ${here}`, () => session.forget());

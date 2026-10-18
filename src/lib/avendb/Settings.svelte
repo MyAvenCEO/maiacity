@@ -21,6 +21,7 @@
 -->
 <script>
 	import { native } from '$lib/native';
+	import { sure } from '$lib/app/sure.js';
 	import Ask from './Ask.svelte';
 	import Mark from './Mark.svelte';
 	import { allowed, may, read } from './ops.js';
@@ -346,8 +347,8 @@
 	 * then on, and what the vault holds moves to keys it doesn't have. The vault's owners approve it.
 	 * @param {string} id @param {string} name @param {string} [of]
 	 */
-	const removeDevice = (id, name, of = vault) =>
-		confirm(`Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more, and what it holds stays on it as ciphertext.`) &&
+	const removeDevice = async (id, name, of = vault) =>
+		(await sure(`Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more, and what it holds stays on it as ciphertext.`)) &&
 		api.run(`Removing ${name}`, { op: 'revoke', vault: of, device: id });
 
 	/** the drives joined here, by their device: in the Mac app alone */

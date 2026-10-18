@@ -6,6 +6,7 @@ import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, prox
 import { avenLibrary, withGraded } from './aven.js';
 import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, saveCut } from './cuts.js';
 import { bringFilms } from './legacyfilms.js';
+import { sure } from '$lib/app/sure.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
@@ -667,22 +668,43 @@ export class Studio {
 	importing = $state('');
 
 	/**
+	 * Each legacy film coming in now or come with files missing, by its name: how far it is (./importer.js
+	 * `Progress`), what it is doing, and why it stopped; the stories aside shows them (./StoryNav.svelte).
+	 * @type {Record<string, { line: string, done: number, total: number, part: number, failed: { hash: string, error: string }[], error: string, coming: boolean }>}
+	 */
+	films = $state({});
+
+	/**
 	 * The two films of the legacy studio the Maia City vault lacks, brought into it (./legacyfilms.js), and the
-	 * timelines and the library read again once one came; the legacy ones stay as they are.
+	 * timelines, the stories and the library read again as each one comes; the legacy ones stay as they are.
 	 */
 	async bringFilms() {
 		if (this.importing) return;
 		this.importing = 'Starting…';
+		const blank = { line: '', done: 0, total: 0, part: 0, failed: [], error: '', coming: true };
+		const asked = new Set();
 		try {
-			const brought = await bringFilms((line) => (this.importing = line));
-			if (!brought.length) return;
-			const [media, tls, stories] = await Promise.all([allMedia(), listTimelines(), listStories().catch(() => this.stories)]);
-			this.library = media;
-			this.timelines = tls;
-			this.stories = stories;
-			this.notice = `Brought into the Maia City vault: ${brought.join(', ')}.`;
+			await bringFilms({
+				tell: (f, line, at) => {
+					this.films = { ...this.films, [f.name]: { ...blank, ...this.films[f.name], ...at, line, coming: true } };
+					this.importing = `${f.name}: ${line}`;
+					// its story shows in the aside at once, as it comes
+					if (!asked.has(f.name) && !this.stories.some((x) => x.title === f.name) && asked.add(f.name)) void listStories().then((st) => (this.stories = st)).catch(() => {});
+				},
+				arrived: async (f, failed, missing) => {
+					if (missing) return void (this.films = { ...this.films, [f.name]: { ...blank, ...this.films[f.name], error: missing, coming: false } });
+					const [media, tls, stories] = await Promise.all([allMedia(), listTimelines(), listStories().catch(() => this.stories)]);
+					[this.library, this.timelines, this.stories] = [media, tls, stories];
+					const { [f.name]: was, ...rest } = this.films;
+					this.films = failed.length ? { ...rest, [f.name]: { ...blank, ...was, failed, coming: false } } : rest;
+				}
+			});
 		} catch (e) {
-			this.error = `Bringing the films: ${/** @type {Error} */ (e).message}`;
+			const why = /** @type {Error} */ (e).message;
+			// the film coming now stopped, and those waiting after it with it
+			const stopped = Object.entries(this.films).filter(([, f]) => f.coming);
+			if (stopped.length) this.films = { ...this.films, ...Object.fromEntries(stopped.map(([n, f]) => [n, { ...f, error: why, coming: false }])) };
+			else this.error = `Bringing the films: ${why}`;
 		} finally {
 			this.importing = '';
 			// nothing was open while they came: the first timeline now, or a new one where there is none
@@ -696,7 +718,7 @@ export class Studio {
 
 	/** @param {Timeline} t */
 	async removeTimeline(t) {
-		if (!confirm(`Delete the timeline “${t.name}”? The files stay in the library.`)) return;
+		if (!(await sure(`Delete the timeline “${t.name}”? The files stay in the library.`))) return;
 		await deleteTimeline(t.id);
 		this.timelines = this.timelines.filter((x) => x.id !== t.id);
 		if (this.current?.id === t.id) {
@@ -1052,17 +1074,26 @@ export class Studio {
 			return Promise.resolve(s);
 		}
 		const p = (async () => {
+			// a file the library doesn't list yet (one just brought in): the library read again first, as a whole
+			// film fetched and decoded as sound would hold the page for minutes
+			if (!this.byHash.get(hash) && Date.now() - this.libraryAt > 10000) await this.reloadLibrary();
 			const m = this.byHash.get(hash);
+			if (!m) throw new Error(`${hash.slice(0, 12)}… is not in the library (yet).`);
+			if (m.kind === 'video') {
+				const s = (this.sources[hash] = { url: raw(hash), duration: Number(m.meta?.duration_s) || 3600, peaks: [] });
+				this.probeLength(hash);
+				return s;
+			}
 			const res = await fetch(raw(hash));
 			if (!res.ok) throw new Error(`Could not load ${itemName(m)} (${res.status}).`);
 			const bytes = await res.arrayBuffer();
-			const url = URL.createObjectURL(new Blob([bytes], { type: m?.mime }));
+			const url = URL.createObjectURL(new Blob([bytes], { type: m.mime }));
 			let duration = IMAGE_LEN;
 			/** @type {number[]} */
 			let peaks = [];
 			/** @type {AudioBuffer | undefined} */
 			let buffer;
-			if (m?.kind === 'audio' || !m) {
+			if (m.kind === 'audio') {
 				buffer = await this.decode(bytes.slice(0));
 				duration = buffer.duration;
 				peaks = peaksOf(buffer);
@@ -1119,7 +1150,10 @@ export class Studio {
 		for (const c of this.clips) if (onSoundTrack(c) && c.hash && this.soundState[c.hash] && this.soundState[c.hash] !== 'ready') void this.sound(c.hash);
 	}
 	/** The library read again (a proxy or a transcript came in), and the sounds waiting on it tried. */
+	/** when the library was last read again (`reloadLibrary`) */
+	libraryAt = 0;
 	async reloadLibrary() {
+		this.libraryAt = Date.now();
 		this.library = await allMedia().catch(() => this.library);
 		this.retrySounds();
 	}

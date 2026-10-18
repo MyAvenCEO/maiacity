@@ -16,6 +16,7 @@
 	import { mapFill } from './autoplay.js';
 	import Tree from './Tree.svelte';
 	import { stagesOf } from './tree.js';
+	import { sure } from '$lib/app/sure.js';
 
 	/** @type {HTMLDivElement | undefined} */
 	let stage = $state();
@@ -248,9 +249,9 @@
 		game?.sim.order(w, on ? 'both' : null);
 		refresh();
 	}
-	function newValley() {
+	async function newValley() {
 		toolsOpen = false;
-		if (!confirm('Start a new valley? This one will be gone.')) return;
+		if (!(await sure('Start a new valley? This one will be gone.'))) return;
 		game?.restart();
 		seenMsg = -1;
 		toasts = [];

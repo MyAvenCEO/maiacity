@@ -3,9 +3,9 @@
 	like DaVinci Resolve's pages — sharing one timeline:
 
 	  Edit    picture and sound, on HD log proxies seen through the view transform, and the live world for world clips
-	          (a shot as data, drawn by Sandbox 4's film mode on the timeline's clock). The library sits on the left;
-	          drag a file onto a track (or double-click it to drop it at the playhead); a click shows it in the source
-	          monitor, where I and O mark the part to use. Clips move by hand; a world clip opens its keyframe lanes.
+	          (a shot as data, drawn by Sandbox 4's film mode on the timeline's clock). The library is in the 3D
+	          tab: drag a file onto a track (or double-click it to drop it at the playhead); a click shows it in the
+	          source monitor, where I and O mark the part to use. Clips move by hand; a world clip opens its keyframe lanes.
 	          Space plays; the captions follow the voice clips word by word. "Lock the edit" ends the step.
 	  Grade   on the locked cut: conform status (originals, world plates per shape), the film's look and each clip's
 	          grade as ASC CDL in ACEScct, presets, scopes, and each delivery shape's framing. Grades are data.
@@ -168,7 +168,7 @@
 			</div>
 			<Inspector {s} />
 		{:else if s.tab === 'edit'}
-			<Bin {s} />
+			<!-- no library here (Samuel 2026-10-18): the cut's own clips; files and world shots are laid on in 3D -->
 			<div class="monitors" class:split={!!s.preview}>
 				<SourceMonitor {s} />
 				<ProgramMonitor {s} />
@@ -304,6 +304,17 @@
 
 	.studio.tab-render {
 		grid-template-columns: 11rem 19rem 1fr 19rem;
+	}
+
+	/* Edit: the stories, the monitors and the inspector; no library */
+	.studio.tab-edit {
+		grid-template-columns: 11rem 1fr 17rem;
+		grid-template-areas:
+			'bar bar bar'
+			'nav monitor inspector'
+			'nav transport transport'
+			'nav timeline timeline'
+			'tabs tabs tabs';
 	}
 
 	/* Script: the script (left half), the program (right half), the timeline full width under them */
