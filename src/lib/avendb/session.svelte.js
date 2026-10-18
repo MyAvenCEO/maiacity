@@ -350,8 +350,14 @@ function running(d) {
 	if (holders) watch();
 }
 
+/** How long a change waits at least before the page reads the world again, so the changes after it come along. */
+const SETTLE = 150;
+
 /** Shows what the device holds, then again each time it changes as its other devices sync with it, until it closes,
- *  another takes its place or no page holds the session any more. */
+ *  another takes its place or no page holds the session any more. A burst of changes, as the seed's hundreds of writes
+ *  after sign-up, shows once it settles: the page reads the world again only after waiting twice as long as its last
+ *  read and redraw took (at least `SETTLE`), so they never take more than a third of the page's time, where one read per
+ *  write froze the dashboard. The person's own changes show at once (`change`). */
 function watch() {
 	const d = device;
 	if (!d || (watching && watched === d)) return;
@@ -360,12 +366,23 @@ function watch() {
 	const on = () => watching === token && device === d;
 	(async () => {
 		let [edits, keys] = await d.size();
-		await refresh();
+		let took = await timed(refresh);
 		while (on() && (await d.changed(edits, keys)) && on()) {
+			await new Promise((r) => setTimeout(r, Math.max(SETTLE, 2 * took)));
+			if (!on()) break;
 			[edits, keys] = await d.size();
-			await refresh();
+			took = await timed(refresh);
 		}
 	})().catch((/** @type {Error} */ e) => (error = `Showing what arrives failed: ${e.message}`));
+}
+
+/** How long `work` took, in milliseconds, with the redraw it set off (a task later, after Svelte's own).
+ *  @param {() => Promise<unknown>} work */
+async function timed(work) {
+	const t = performance.now();
+	await work();
+	await new Promise((r) => setTimeout(r, 0));
+	return performance.now() - t;
 }
 
 /** Reads the device's world again, as it is now. */
