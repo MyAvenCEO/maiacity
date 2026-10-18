@@ -4,7 +4,6 @@
 //! Range, for <img> and <video>.
 
 mod analyse;
-mod analysis;
 mod asks;
 mod auth;
 mod aven;
@@ -13,7 +12,6 @@ mod blob;
 mod drives;
 mod jobs;
 mod local;
-mod mcp;
 mod models;
 mod page;
 mod passkey;
@@ -523,7 +521,6 @@ fn main() {
                 }
                 sync::keep_complete(handle, v).await;
             });
-            // the studio for agents: MCP on this Mac only, behind the app's token
             // every video original without its proxy: queued, now and every ten minutes
             tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
             // and every recording without its words: transcribed here, on-device (Phonon-2), now and every ten minutes
@@ -553,11 +550,11 @@ fn main() {
             tauri::async_runtime::spawn(render::sweep(app.handle().clone(), vault.clone()));
             // and every story on the Stories board past its idea, filed in the vault's bucket of its name (stories.rs)
             tauri::async_runtime::spawn(stories::file_sweep(app.handle().clone(), vault.clone()));
-            let (handle, v) = (app.handle().clone(), vault.clone());
-            let auth = app.state::<auth::Auth>().inner().clone();
+            // the legacy vault's routes for the film scripts while they still read it (local.rs)
+            let v = vault.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = mcp::serve(v, auth, handle).await {
-                    tracing::warn!("MCP server: {e:#}");
+                if let Err(e) = local::serve(v).await {
+                    tracing::warn!("the scripts' vault routes: {e:#}");
                 }
             });
             Ok(())
@@ -594,7 +591,6 @@ fn main() {
             aven::film_seed_keep,
             sync::vault_connect,
             sync::vault_copies,
-            mcp::mcp_info,
             asks::asks_open,
             keep::stores_status,
             asks::ask_answer,
