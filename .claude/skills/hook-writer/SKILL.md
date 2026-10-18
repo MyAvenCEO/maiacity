@@ -33,8 +33,9 @@ one job, and the next one only starts once the one before has done its own:
 - **The description does not hook.** It may repeat the hook as its first line (YouTube shows it), then it informs:
   what the film is, the pieces, the links. No second hook, no teaser that the body does not pay.
 - **On the board** (the Stories board's Hook step): the variants tried on the left, the one on the card chosen among
-  them, then the hook, the intro and the description as three fields. Written through MCP (`content_save`:
-  `hook`, `intro`, `description`, `hooks`) or in the fields; the YouTube preview shows the hook as the title.
+  them, then the hook, the intro and the description as three fields. Written on a proposal of the story
+  entry through the avendb MCP, as avenMAIA (`hook`, `intro`, `description`, `hooks`: "In avenDB" below), or in the
+  fields; the YouTube preview shows the hook as the title.
 
 ## The anatomy of a hook — every part, named
 
@@ -216,7 +217,9 @@ allow:
 - Propose, never change the main line: `avendb_ask` `{ op: "note", entry }` gives the main line's `heads`;
   `avendb_run` `{ op: "propose", entry, from: <heads>, name: "Hooks: <angle>" }` answers its `line`; then one
   `{ op: "batch", ops: [...] }` of `{ op: "insert", entry, line, path: ["hooks"], value: <row> }`, all ten at once,
-  each with its parts named. The person reads them on the Hook tab, merges the proposal and puts one on the card.
+  each with its parts named. Then put the line to the person in an AIP: `{ op: "aip_open", vault, title, note,
+  proposals: [{ entry, line }] }` and `{ op: "aip_promote", entry: <the aip> }` — only a promoted AIP reaches them.
+  They read the hooks on the Hook tab, accept the AIP and put one on the card.
 
 ## Copy work
 

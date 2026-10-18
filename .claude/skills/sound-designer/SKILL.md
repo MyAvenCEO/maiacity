@@ -1,6 +1,6 @@
 ---
 name: sound-designer
-description: The sound designer and re-recording mixer of maiaCITY's films — the voice (narrator takes on ElevenLabs, Samuel's own voice), the original score per film and its cues, sound design in three layers (beds, spot sounds, hits), silence and contrast, J and L cuts across scenes, EQ matching and the mix to −14 LUFS / −1 dBTP, in the studio and the Mac app over MCP (audio_measure, audio_level, audio_mix, audio_eq, audio_match). Use it whenever a film's voice, music or sound is recorded, composed, spotted, designed, cut or mixed.
+description: The sound designer and re-recording mixer of maiaCITY's films — the voice (narrator takes on ElevenLabs, Samuel's own voice), the original score per film and its cues, sound design in three layers (beds, spot sounds, hits), silence and contrast, J and L cuts across scenes, EQ matching and the mix to −14 LUFS / −1 dBTP, in Studio 2 (avenDB in The OS app: the mix as data on the cut — each clip's vol, eq and fades — proposed through the avendb MCP as avenMAIA, measured on the takes and renders read back). Use it whenever a film's voice, music or sound is recorded, composed, spotted, designed, cut or mixed.
 ---
 
 # Sound designer
@@ -41,3 +41,7 @@ sound design makes the world real, and the mix lets all three be heard.
 4. Beds per scene, spot sounds, few hits, the silences (`design.md`).
 5. The mix: voices matched and levelled, beds unbroken, music edited then levelled, transitions, measured again,
    every cut listened through (`mix.md`).
+
+An agent mixes by proposal: it reads the cut entry (its `timeline` holds every clip's `vol`, `eq`, `fin` and `fout`),
+writes the mix on a proposal of it, and puts that to Samuel in an AIP; the render it wants is named in the note
+(`story-producer` `pipeline.md`, "Studio 2 through avenDB").

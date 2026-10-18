@@ -26,20 +26,24 @@ top, never the other way round.**
   Secondaries and finishing are spatial, so the Mac shows them natively: in the Grade tab's stills and its playback,
   and in the render.
 
-## The tools (MCP, in the Mac app)
+## The tools (Studio 2, through avenDB)
 
-- **`look_reference { hashes }`** reads the moodboard's stills:
+The look is data on the cut, written as avenMAIA on a proposal of the cut entry and put to Samuel in an AIP
+(`story-producer` `pipeline.md`, "Studio 2 through avenDB"; `base-correction.md`, "The tools").
+
+- **References:** the moodboard's stills, read to this Mac (`avendb_read_file`) and measured by zone, on the pixels:
   - levels and contrast
   - **zones**: shadows, middle and highlights, each with its level, its cast (warm, green) and its hue and chroma
   - where the colour lies: warm, green and teal/blue shares
   - saturation and skin
-- **`grade_look { looks: true }`** and **`grade_scopes { looks: true }`** read the same things on the shots, through
-  their whole chain. Compare them zone by zone with the references.
-- **The grade is stacks of tools** (game/film/grade-tools.json, one registry; the maths in Rust only). **`grade_tools`**
-  lists every tool, its controls, their ranges and defaults. **`grade_stacks { id }`** shows a timeline's whole grade;
-  **`grade_stack { timeline, stack, clip?, scene?, set? }`** reads or sets one stack:
-  - `base` (a shot's base correct), `clip` (a shot's clip look), `scene` (a scene's look: by `scene`, or a `clip` of
-    it), `timeline` (the timeline's look, the finishing textures last on it). They apply in that order.
+- **The shots, through their whole chain:** their graded stills and hero frames (`frame` tasks of the cut), measured
+  the same way. Compare them zone by zone with the references. (The legacy studio's `look_reference`, `grade_look`
+  and `grade_scopes` did this; Studio 2 has no measuring tool for agents yet.)
+- **The grade is stacks of tools** (game/film/grade-tools.json, one registry, every tool's controls, ranges and
+  defaults; the maths in Rust only), held in the cut's `timeline`:
+  - `base` and `clip` in each clip's `stacks` (a shot's base correct, its clip look), `scene` in
+    `grade.scenes[<scene>]` (a scene's look), `timeline` in `grade.timeline` (the timeline's look, the finishing
+    textures last on it). They apply in that order.
   - A stack: `{ strength?, tools: [{ tool, on?, ...controls }] }`, the tools in the order they apply. Colour tools:
     `balance`, `cdl`, `contrast`, `split`, `hue` (hue/hue_sat/hue_lum curves and `sat`), `hi_sat`, `lut`. Textures:
     `pop`, `halation`, `bloom`, `grain`, `vignette`.
@@ -52,7 +56,8 @@ top, never the other way round.**
 - **A `lut` is ACEScct in and ACEScct out.** Never an Apple Log or Apple Log 2 → Rec.709 LUT, a LUT made for Apple Log
   (iPhone 15/16 Pro, Rec.2020) or another camera, or anything that outputs a display picture. On Apple Log 2 the first
   two are the wrong gamut; the last tone-maps twice.
-- **`render_frame`** makes a hero frame through everything.
+- **Hero frames** (a cut's `frame` task, `t` and `shape`) go through everything; the Studio asks them, so the AIP's
+  note names the frames to make.
 
 ## Teal and orange, without ruining skin
 
@@ -72,7 +77,7 @@ one cool tint (Melara).
    - Contrast brings the blacks and whites back after the tint. A look's `contrast` is gentle (0.1–0.2). A shot's
      own exposure stays in its balance.
    - Saturation last. If a shot needs much more, its balance is wrong.
-5. **Check every scene** with `grade_scopes { looks: true }`:
+5. **Check every scene** on its graded stills, through the whole chain:
    - Skin within about 5° of 123° and about 45–60 IRE.
    - Shadows cool, highlights warm, the blacks not crushed, the whites not clipped.
 
@@ -96,10 +101,10 @@ Kelly uses film effects at a fraction of their full strength: grain about 35 %, 
 ## The pass
 
 1. **Base correction done** (`base-correction.md`). Never look before balance.
-2. **References:** read the moodboard with `look_reference`. The scene or film to get close to names its zones:
+2. **References:** read the moodboard's stills by zone. The scene or film to get close to names its zones:
    where the shadows sit and their hue, the middle, the warm highlights, the warm and teal shares, the skin.
-3. **The film look first,** built against the references and checked on every scene's master with
-   `grade_scopes { looks: true }`.
+3. **The film look first,** built against the references and checked on every scene's master's graded
+   still.
 4. **Scene looks where the light needs one:** inside warmer, outside cooler, night bluer. Each one is small.
 5. **Secondaries only where a shot still needs one:** a face lift, a sky held.
 6. **Finishing last,** a kiss of each.
@@ -120,7 +125,7 @@ A look alone gave a flat, tinted picture: the colours moved but the image stayed
      - Blues and purples (320–345°, hoodies, jeans) towards teal (−10…−18°).
    - `hue_sat`: skin 1.2; blues and purples 0.6.
    - `hue_lum`: greens −0.7 stops, yellow-greens −0.35. Denser foliage, but not so much that the person pops off it.
-2. **Per-shot trim (a linear `balance` on the shot's clip look, `grade_stack { stack: "clip" }`): the low key.** About
+2. **Per-shot trim (a linear `balance` on the shot's clip look, `stacks.clip`): the low key.** About
    a stop down and a contrast of 0.3 around mid grey: `{ tool: "balance", linear: true, exposure: −1, contrast: 0.3 }`.
    The base balance stays the base correction; the mood lives here, per shot, so every shot can land on the same key.
    Day 01's trims were first one CDL each (slope k, offset 0.414·(1 − k) + stops / 17.52): the same picture above the
@@ -143,9 +148,9 @@ together. A reference with a flare, or a face far brighter than its surround, wa
 thirds, the sides, the ground and the face (level and RGB), for the reference and for a hero frame. Then judge the
 difference by eye before chasing it: a gap that comes from light the reference invented stays a gap.
 
-Judge it the way the person will see it: `render_frame` hero frames at 4K next to the reference, and zoomed crops of
-the face and hands. The scope sheet's 640 px picture hides halos, blotches and banding. Playback is checked with
-`player_frame`, which plays the very composition the Grade tab plays; 30 fps is real time.
+Judge it the way the person will see it: hero frames at 4K next to the reference, and zoomed crops of the face and
+hands. A scope sheet's small picture hides halos, blotches and banding. Playback is checked in the Grade tab, which
+plays the very composition the render renders; 30 fps is real time.
 
 ## Rolling the reference out to the whole timeline
 
@@ -153,8 +158,8 @@ the face and hands. The scope sheet's 640 px picture hides halos, blotches and b
    it.
 2. **Start every shot from its scene reference's trim.** Shots from one camera setup share one trim: two clips of
    one take, one grade.
-3. **Measure each shot against its reference through the whole chain** (`grade_look { looks: true }`): blacks (p5),
-   the middle (p50), the whites, the skin, clipping. Then look at the scope sheet. A white rug or a wide without
+3. **Measure each shot against its reference through the whole chain** (its graded still): blacks (p5),
+   the middle (p50), the whites, the skin, clipping. Then look at the scopes. A white rug or a wide without
    sky moves the numbers without being wrong.
 4. **Move only exposure and contrast per shot** (the trim). Skin within about 4 IRE of the reference's. Close-ups keep
    the red channel off the ceiling: lower the trim's saturation, not the look's.
@@ -194,7 +199,7 @@ Day 01's interior look, on both inside scenes:
 `split` shadows 290° @ 0.55, highlights 128° @ 0.2, balance 0; `sat` 0.95.
 
 Pink blotches on skin or a white rug in the Edit tab's preview were the 8-bit HD proxy's decoder, not the grade.
-Judge on the Mac's frames (native playback, `render_frame`) before chasing them.
+Judge on the Mac's frames (native playback, hero frames) before chasing them.
 
 ## Don't
 
