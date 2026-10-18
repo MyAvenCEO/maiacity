@@ -105,7 +105,8 @@
 	let bringing = false;
 	const seededInto = new Set();
 	const seedFailed = /** @type {Map<string, string>} */ (new Map());
-	/** how far the repo seed has come: the pieces written of those it is writing, while it writes them */
+	/** how far the repo seed has come, the pieces written of those it is writing, while it writes them in the
+	 *  background: a corner pill shows it, and nothing waits for it */
 	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
 
 	// the tab's device, loaded once for every page of the site, or taken up again where this tab opened it already, so
@@ -180,15 +181,9 @@
 
 	/** What each step of a start shows in the sheet. */
 	const words = stepWords(here);
-	/** The sheet's rows: the steps begun, by the page and the device, then those to come; the seed's with its count. */
-	const seedWords = $derived(
-		seedAt
-			? { ...words, seed: { ...words.seed, does: `${seedAt.done} of ${seedAt.of} written: code, stories, asset recipes` } }
-			: words
-	);
 	const shown = $derived(
 		signing
-			? rows([...signing.own, ...reported(signing.report, signing.t0)], signing.plan, seedWords, {
+			? rows([...signing.own, ...reported(signing.report, signing.t0)], signing.plan, words, {
 					now: clock,
 					ended: signing.ended,
 					failed: !!signing.error
@@ -251,36 +246,7 @@
 	const found = (fresh) =>
 		signs('Setting up your account', plan('found', { mac: !!mac, make: fresh }), async (at) => {
 			await session.found(fresh, { name: name.trim(), relay, server, backup, person }, at);
-			await seeds(at);
 		});
-
-	/**
-	 * The last step of a founding that claimed the server: the repo seed brought into the Maia City it founded, as
-	 * this page's upkeep writes it (`upkeep`, `seed`), so the setup is over only once the seed is there (Samuel
-	 * 2026-10-17: no seeding step of its own after the setup). It waits for the device's world to show the person's
-	 * vault; a founding whose world shows no Maia City of theirs, the server being someone else's, leaves the step out.
-	 * A seed that fails fails the setup, naming what Maia City refused; the next visit writes what is left.
-	 * @param {import('./session.svelte.js').Steps} at
-	 */
-	async function seeds(at) {
-		const s = signing;
-		const by = performance.now() + 60_000;
-		for (;;) {
-			const w = world;
-			const mine = w?.vaults.find((v) => v.id === w.mine);
-			if (w && mine) {
-				const city = seeded(w)[3]?.[0];
-				if (!city || mine.devices[0]?.me !== true) {
-					if (s) s.plan = s.plan.filter((step) => step !== 'seed');
-					return;
-				}
-				if (!s?.own.some((o) => o.step === 'seed')) at.step('seed');
-				if (seedFailed.has(city.id)) throw new Error(seedFailed.get(city.id));
-				if (seededInto.has(city.id)) return;
-			} else if (performance.now() > by) throw new Error('Your vault didn’t show on this device after a minute');
-			await new Promise((r) => setTimeout(r, 250));
-		}
-	}
 
 	/** Links this browser to the person's vault through `through`: the code another of their devices shows, or
 	 *  avenDB's server's, which hands over their vault for their passkey alone. One ceremony, the unlock, which is the
@@ -368,9 +334,8 @@
 		if (city && company && first && standardized.has(company.id) && !bringing && !tried) {
 			bringing = true;
 			const left = unseeded(w, city.id, seedPieces(seeded(w)[2]?.[0]?.id ?? null));
-			// after a setup at the app's way in, which founds the vault and leaves the seed to this page: the seed in the
-			// sheet, step and seconds, as a setup here shows it, while it has pieces to write
-			if (left.length && !signing) void signs('Bringing Maia City’s seed', ['seed'], seeds);
+			// a background job (Samuel 2026-10-18): nothing waits for it, the setup is over without it, and the corner
+			// shows how far it is while it has pieces to write
 			seed(w, city.id, left)
 				.then(() => seededInto.add(city.id))
 				.catch((/** @type {Error} */ e) => {
@@ -717,6 +682,13 @@
 	</div>
 {/if}
 
+{#if seedAt && seedAt.of}
+	<p class="seeding" role="status" title="Maia City’s seed: code, stories and asset recipes, written in the background">
+		<span class="spin" aria-hidden="true"></span>
+		Bringing Maia City’s seed · {seedAt.done} of {seedAt.of}
+	</p>
+{/if}
+
 {#if signing}
 	<Signing
 		title={signing.title}
@@ -730,6 +702,39 @@
 {/if}
 
 <style>
+	.seeding {
+		position: fixed;
+		right: 1rem;
+		bottom: 1rem;
+		z-index: 40;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0.45rem 0.8rem;
+		border-radius: 999px;
+		background: var(--surface, #fff);
+		box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
+		font-size: 0.8rem;
+		pointer-events: none;
+	}
+
+	.seeding .spin {
+		width: 0.8rem;
+		height: 0.8rem;
+		border: 2px solid currentColor;
+		border-right-color: transparent;
+		border-radius: 50%;
+		opacity: 0.6;
+		animation: seeding 0.9s linear infinite;
+	}
+
+	@keyframes seeding {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
 	.account {
 		max-width: 64rem;
 		margin: 0 auto;

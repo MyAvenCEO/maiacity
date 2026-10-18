@@ -50,19 +50,14 @@ export function stepWords(here) {
 		join: { title: `Adding ${here} to your vault`, does: 'Your pass signs the edit that adds it' },
 		check: { title: 'Opening your vault', does: `${Here} belongs to the vault its store holds` },
 		save: { title: `Saving on ${here}`, does: 'What opens it again, kept on its shelf in this browser' },
-		profile: { title: 'Naming your human vault', does: 'Its profile takes your name, which everyone reads' },
-		seed: {
-			title: 'Bringing Maia City’s seed',
-			does: 'avenCEO’s schemas, then the code, stories and asset recipes the repository holds, each recipe with its file'
-		}
+		profile: { title: 'Naming your human vault', does: 'Its profile takes your name, which everyone reads' }
 	};
 }
 
 /**
  * The steps each start takes, in order: those it may skip show until a later one begins. In the Mac app the app's
- * device keeps its own shelf, so the page saves nothing. A founding that claims the server ends by bringing the repo
- * seed into the Maia City it founded (`seed`), so the person's setup is over only once it is there; one that doesn't
- * leaves that step out as it ends.
+ * device keeps its own shelf, so the page saves nothing. The repo seed a founding that claims the server brings into
+ * the Maia City it founded is no step of it: it runs in the background after (Samuel 2026-10-18), ./Account.svelte.
  * @param {'found' | 'link' | 'open'} start @param {{ mac: boolean, make?: boolean }} how
  */
 export function plan(start, { mac, make = false }) {
@@ -71,8 +66,7 @@ export function plan(start, { mac, make = false }) {
 		return [
 			...(make ? ['make'] : []),
 			...['unlock', 'keys', 'node', 'relay', 'server', 'draft', 'sign', 'claim', 'settle'],
-			...own(['save']),
-			'seed'
+			...own(['save'])
 		];
 	if (start === 'link')
 		return ['unlock', 'keys', 'node', 'relay', 'server', 'pass', 'vault', 'join', ...own(['save'])];
