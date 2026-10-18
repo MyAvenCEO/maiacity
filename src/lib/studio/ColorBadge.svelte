@@ -1,10 +1,10 @@
 <!--
 	A picture's colour profile, as a small badge: what the ingest detected (meta.color.profile) or what was set by hand
-	(meta.color.override, underlined). A click opens the menu to set it — the API queues the proxy again from the new
-	one — or to have the worker make the proxy again as it is.
+	(meta.color.override, underlined). A click opens the menu to set it (an old studio file; an avenDB file's colour is
+	what its probe read) or to have the Mac make the proxy again, its avenDB proxy task asked again.
 -->
 <script>
-	import { remakeProxy } from '$lib/auth/client';
+	import { remakeProxy } from './cuts.js';
 	import { PROFILE_CHOICES, colorOf, isVideo, profileFor, profileInfo, short } from './color.js';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio, m: import('$lib/auth/client').MediaItem, compact?: boolean }} */
@@ -21,6 +21,8 @@
 	}
 	const p = $derived(profileFor(m));
 	const c = $derived(colorOf(m));
+	/** the avenDB entry of this file, where it is one */
+	const entry = $derived(/** @type {string | undefined} */ (/** @type {any} */ (m.meta)?.aven?.entry));
 	/** the picture seen is its ACEScct proxy (the Edit tab plays proxies): the source's colour → the working space */
 	const viaProxy = $derived(isVideo(m) && !!s.proxy(m).hash && p.profile !== 'acescct');
 	const title = $derived(
@@ -33,7 +35,8 @@
 	}
 	async function remake() {
 		open = false;
-		await remakeProxy(m.hash).catch((e) => (s.error = e.message));
+		if (!entry) return void (s.error = 'Only an avenDB file can have its proxy made again.');
+		await remakeProxy(entry).catch((e) => (s.error = e.message));
 		void s.refreshJobs();
 	}
 </script>
@@ -55,13 +58,14 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 		<div class="menu" role="menu" tabindex="-1" style:top="{at.top}px" style:left="{at.left}px" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>
 			<p>What this picture is</p>
-			{#each PROFILE_CHOICES as k (k)}
+			{#each entry ? [] : PROFILE_CHOICES as k (k)}
 				<button role="menuitemradio" aria-checked={p.profile === k} class:on={p.profile === k} onclick={() => choose(k === c?.profile ? null : k)}>
 					<b>{short(k)}</b> {profileInfo(k).label}{#if k === c?.profile}<i> · detected</i>{/if}
 				</button>
 			{/each}
 			{#if p.override}<button class="reset" onclick={() => choose(null)}>Back to the detected profile</button>{/if}
-			{#if isVideo(m)}<button class="reset" onclick={remake}>Make its proxy again</button>{/if}
+			{#if entry}<p class="said">{profileInfo(p.profile).label}, as its probe read it</p>{/if}
+			{#if isVideo(m) && entry}<button class="reset" onclick={remake}>Make its proxy again</button>{/if}
 		</div>
 	{/if}
 </span>
@@ -133,6 +137,12 @@
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
 		color: var(--dim, #7b857a);
+	}
+
+	.menu p.said {
+		font-weight: 400;
+		letter-spacing: 0;
+		text-transform: none;
 	}
 
 	.menu button {
