@@ -34,6 +34,9 @@ const MIDDLE_GREY = 0.18;
 const METER_WIDTH = 160;
 /** a time-lapse (meter: 'ramp') is metered every half second of the shot and eased between */
 const RAMP_EVERY = 0.5;
+/** where the live viewer keeps the exposures it metered (sessionStorage: this app's run, never a build before), and how many at most */
+const REMEMBERED = 'film:exposures';
+const REMEMBER_AT_MOST = 2000;
 /** the longest the live viewer waits on a shot's staging (the world built where it stands): after it, drawn as it is */
 const STAGE_LIMIT = 30000;
 
@@ -76,6 +79,30 @@ export function startFilm({ base = '' } = {}) {
 	const shows = (spec) => spec.world.sandbox === here.sandbox && (spec.world.area ?? null) === (here.area ?? null);
 	/** @type {Map<string, number | [number, number][]>} metered exposures by the shot's picture fingerprint */
 	const metered = new Map();
+	// the live viewer's exposures, as metered before in this run of the app: a world page loaded anew (the other seat, a
+	// reload) draws a shot metered once at its exposure at once, never metering it again at its cut. A plate always
+	// meters its own (`metered`).
+	/** @type {Record<string, number | [number, number][]>} */
+	const remembered = (() => {
+		try {
+			return JSON.parse(sessionStorage.getItem(REMEMBERED) ?? '{}') ?? {};
+		} catch {
+			return {};
+		}
+	})();
+	const rememberedKey = (/** @type {Spec} */ spec) => `${FILM_VERSION}:${build?.hash ?? 'dev'}:${printOf(spec)}`;
+	const remember = (/** @type {Spec} */ spec, /** @type {number | [number, number][]} */ ev) => {
+		remembered[rememberedKey(spec)] = ev;
+		const keys = Object.keys(remembered);
+		for (const k of keys.slice(0, Math.max(0, keys.length - REMEMBER_AT_MOST))) delete remembered[k];
+		try {
+			sessionStorage.setItem(REMEMBERED, JSON.stringify(remembered));
+		} catch {
+			/* no storage here (a private page): metered again next time */
+		}
+	};
+	/** the exposure the live viewer drew last (a shot not metered yet is drawn at it while the timeline plays) */
+	let lastEv = 0;
 	// the live viewer asks for a frame of the same shot object many times a second: its normal form and its fingerprint
 	// are worked out once per object (a spec is data: an edit is a new object)
 	/** @type {WeakMap<object, Spec>} */
@@ -99,6 +126,9 @@ export function startFilm({ base = '' } = {}) {
 	let staged = '';
 	/** the shot the walker is being moved for now (a stage under way), else '' */
 	let staging = '';
+	/** what has been staged and settled (loads done, shaders compiled) before: staged there again while the world
+	 * still holds it, nothing new is built, so nothing is compiled again (compiling the whole scene at every cut hitched) */
+	const settledFor = new Set();
 	/** @type {{ commit: string, hash: string, file?: string } | null} */
 	let build = null;
 	const buildKnown = fetch(`${base}/film-build.json`)
@@ -130,7 +160,9 @@ export function startFilm({ base = '' } = {}) {
 		if (!shows(spec)) throw new Error(`this shot is in ${spec.world.sandbox}${spec.world.area ? ` (${spec.world.area})` : ''}, and this page is ${here.sandbox}${here.area ? ` (${here.area})` : ''}: open ${filmPath(spec.world)}`);
 		const v = await mounted();
 		const key = keyOf(spec);
-		if (key === staged && v.film.holds(spec.world)) return;
+		const held = v.film.holds(spec.world);
+		if (key === staged && held) return;
+		const known = held && settledFor.has(key);
 		// the walker leaves the shot staged last: no frame of that shot is drawn until it stands there again
 		staged = '';
 		staging = key;
@@ -148,10 +180,13 @@ export function startFilm({ base = '' } = {}) {
 				} finally {
 					clearTimeout(slow);
 				}
-				const s0 = performance.now();
-				await settled(v);
-				const took = performance.now() - s0;
-				if (took > 300) console.warn(`film: ${spec.meta?.name ?? 'a shot'}: loads and shaders settled in ${Math.round(took)} ms`);
+				if (!known) {
+					const s0 = performance.now();
+					await settled(v);
+					const took = performance.now() - s0;
+					if (took > 300) console.warn(`film: ${spec.meta?.name ?? 'a shot'}: loads and shaders settled in ${Math.round(took)} ms`);
+				}
+				settledFor.add(key);
 			})();
 			const late = limit < Infinity && (await Promise.race([done.then(() => false), sleep(limit).then(() => true)]));
 			if (late) {
@@ -256,8 +291,15 @@ export function startFilm({ base = '' } = {}) {
 			out = Math.round(ev(Math.exp(logs.reduce((a, b) => a + b, 0) / logs.length)) * 1e4) / 1e4;
 		}
 		metered.set(key, out);
+		remember(spec, out);
 		return out;
 	}
+
+	/** The exposure the live viewer knows for a shot without metering it: its own, metered here, or remembered. */
+	const knownExposure = (/** @type {Spec} */ spec) => {
+		if (spec.exposure.ev !== undefined && spec.exposure.meter !== 'ramp') return spec.exposure.ev;
+		return metered.get(printOf(spec)) ?? remembered[rememberedKey(spec)];
+	};
 
 	const evAt = (/** @type {number | [number, number][]} */ ev, /** @type {number} */ t) => {
 		if (typeof ev === 'number') return ev;
@@ -297,21 +339,26 @@ export function startFilm({ base = '' } = {}) {
 				else await settled(v);
 			});
 		},
-		/** @param {any[]} specs @param {{ live?: boolean }} [opts] `live`: for the live viewer, each staging waited on at most STAGE_LIMIT */
-		prepare(specs, { live = false } = {}) {
+		/**
+		 * @param {any[]} specs @param {{ live?: boolean, meter?: boolean }} [opts] `live`: for the live viewer, each
+		 * staging waited on at most STAGE_LIMIT; `meter: false`: not metered now (while the timeline plays: metering
+		 * renders a shot at five moments, and the world, moved there and back, hitched the shot on screen)
+		 */
+		prepare(specs, { live = false, meter = true } = {}) {
 			return one(async () => {
 				const all = specs.map(normal).filter(shows);
 				const v = await mounted();
 				// everything these shots need, kept built whichever shot asks last
 				v.film.keep(all.map((s) => s.world));
 				for (const s of all) await stage(s, live ? STAGE_LIMIT : Infinity);
-				for (const s of all) await exposureOf(s);
+				if (meter) for (const s of all) if (!live || knownExposure(s) === undefined) await exposureOf(s);
 			});
 		},
-		/** @param {any} spec */
+		/** the live viewer's metering ahead: a shot it knows the exposure of is not metered again @param {any} spec */
 		meter(spec) {
 			return one(async () => {
-				const ev = await exposureOf(normalize(spec));
+				const n = normalize(spec);
+				const ev = knownExposure(n) ?? (await exposureOf(n));
 				return typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
 			});
 		},
@@ -341,17 +388,22 @@ export function startFilm({ base = '' } = {}) {
 		/**
 		 * Draw a frame on the page's canvas through the view transform. quality 'proxy' (default): no oversampling, no
 		 * shutter blur — the live world viewer; 'final': as the plate.
-		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final' }} ask
+		 * `meter: false` (the timeline playing): a shot not metered yet is drawn at the exposure drawn last, never metered
+		 * at its cut (five renders there and back hitched it); it is metered once the timeline stops.
+		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final', meter?: boolean }} ask
 		 * @returns {Promise<boolean>} whether the frame was drawn (not while the world is being staged for another shot)
 		 */
-		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy' }) {
+		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy', meter = true }) {
 			const spec = normal(raw), to = shape ?? spec.aspect;
 			const v = await mounted();
 			// the world is being readied for another shot (a prepare): never draw this one with the walker elsewhere —
 			// the last frame stays up
 			if (staging && staging !== keyOf(spec)) return false;
 			const t0 = performance.now();
-			const ev = await exposureOf(spec);
+			const live = quality !== 'final';
+			const known = live ? knownExposure(spec) : undefined;
+			const ev = known ?? (live && !meter ? lastEv : await exposureOf(spec));
+			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
 			const t1 = performance.now();
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
 			if (staged !== keyOf(spec) || !v.film.holds(spec.world)) await one(() => stage(spec, quality === 'final' ? Infinity : STAGE_LIMIT));

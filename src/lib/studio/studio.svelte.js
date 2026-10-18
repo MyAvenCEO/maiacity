@@ -1533,12 +1533,14 @@ export class Studio {
 		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		// while it plays, only the shots staged where the one on screen is: preparing one that stands elsewhere moved the
 		// world there under the playing shot (its frames held, then staged back, then again at the cut: no clean
-		// playback in a world of many stands, Sandbox 3's village); those are prepared before the play and at their cut
+		// playback in a world of many stands, Sandbox 3's village); those are prepared before the play and at their cut.
+		// Playing, they are staged only: metering one renders it at five moments (metered once stopped, below)
+		const still = !this.playing && !this.starting;
 		const here = this.playing && c && isWorld(c) ? this.specOf(c) : null;
 		const ready = here ? specs.filter((x) => stageKey(x) === stageKey(here)) : specs;
-		if (ready.length) void this.world.prepare(ready);
+		if (ready.length) void this.world.prepare(ready, { meter: still });
 		// stopped: every world shot from the playhead on metered ahead, so playing never stops at a cut to meter one
-		if (!this.playing && !this.starting) {
+		if (still) {
 			const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
 			void this.world.meterAhead(ahead.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s), () => !this.playing && !this.starting);
 		}
@@ -1551,7 +1553,7 @@ export class Studio {
 		// the view film mode draws through: the clip's grade (balance, its CDL, the film's look: the Mac's cube) and the output
 		const stacks = this.stacksOf(c);
 		const grade = stacks.length ? this.cubeFor(stacks) : null;
-		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) } });
+		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) }, meter: still });
 	}
 
 	/** each play and stop moves this on: a start still awaiting, or a frame of a playback before, does nothing */
@@ -1596,7 +1598,13 @@ export class Studio {
 		const ahead = all ? this.worldClips : this.worldClips.filter((c) => c.start + c.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
 		const specs = ahead.map((c) => cached(c.shot, c.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		this.preparing = true;
-		await Promise.race([this.world.prepare(specs), new Promise((r) => setTimeout(r, wait))]);
+		// and metered before it plays, while the start waits on them (metered while playing, a shot hitched at its cut);
+		// then the world stands where the play starts again (preparing the shots after it moved it on)
+		const ready = this.world
+			.prepare(specs)
+			.then(() => this.world.meterAhead(specs, () => this.starting))
+			.then(() => specs[0] && this.world.standAt(specs[0]));
+		await Promise.race([ready, new Promise((r) => setTimeout(r, wait))]);
 		this.preparing = false;
 	}
 

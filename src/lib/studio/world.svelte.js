@@ -16,12 +16,13 @@ import { filmPath } from '../../../game/film/worlds.js';
 /** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
 /** What film mode draws a frame through: the clip's grade and the output LUT, cubes the Mac bakes (RGB triples, red fastest). */
 /** @typedef {{ lut: { size: number, data: Float32Array } | null, grade: { size: number, data: Float32Array } | null }} FilmView */
-/** @typedef {{ spec: ShotSpec, t: number, shape: Shape, width: number, height: number, view: FilmView }} ShowArgs */
+/** `meter: false` while the timeline plays: a shot not metered yet is not metered at its cut (film mode draws it at the exposure drawn last) */
+/** @typedef {{ spec: ShotSpec, t: number, shape: Shape, width: number, height: number, view: FilmView, meter?: boolean }} ShowArgs */
 /**
  * The film-mode API of a sandbox (contract C3).
  * @typedef {{
  *   ready(): Promise<void>,
- *   prepare(specs: ShotSpec[], opts?: { live?: boolean }): Promise<void>,
+ *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void>,
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
@@ -288,10 +289,11 @@ export class WorldViewer {
 	holds = (spec) => !!this.url && (this.url.endsWith(pathOf(spec)) || !this.url.includes('/games/'));
 
 	/**
-	 * Loads and keeps everything these shots need (every dome, set and area); resolves when all are ready.
-	 * @param {ShotSpec[]} specs @returns {Promise<void>}
+	 * Loads and keeps everything these shots need (every dome, set and area); resolves when all are ready. `meter:
+	 * false` while the timeline plays: staged only, metered once it stops (`meterAhead`).
+	 * @param {ShotSpec[]} specs @param {{ meter?: boolean }} [opts] @returns {Promise<void>}
 	 */
-	prepare(specs) {
+	prepare(specs, { meter = true } = {}) {
 		const film = this.film;
 		if (!film) return Promise.resolve();
 		specs = specs.filter((s) => this.holds(s));
@@ -302,7 +304,7 @@ export class WorldViewer {
 			const t0 = performance.now();
 			const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
 			const p = film
-				.prepare([s], { live: true })
+				.prepare([s], { live: true, meter })
 				.then(() => void this.readyShots.add(k))
 				.catch((/** @type {Error} */ e) => {
 					this.error = `prepare: ${e?.message ?? e}`;
@@ -312,6 +314,12 @@ export class WorldViewer {
 			this.preparing.set(k, p);
 		}
 		return Promise.all(specs.map((s) => this.preparing.get(specKey(s)) ?? Promise.resolve())).then(() => {});
+	}
+
+	/** stands the world where this shot is staged, nothing metered @param {ShotSpec} spec @returns {Promise<void>} */
+	standAt(spec) {
+		if (!this.film || !this.holds(spec)) return Promise.resolve();
+		return this.film.prepare([spec], { live: true, meter: false }).catch(() => {});
 	}
 
 	/**
