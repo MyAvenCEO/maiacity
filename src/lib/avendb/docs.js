@@ -1,7 +1,7 @@
 // The documents the repository seeds into the Maia City vault (Samuel 2026-10-18: "each skill can become its own
 // story, and the theOS paper as well and the avenDB docs too", all owned by the Maia City COOP and published on the
-// website's Docs page): each a story, its full text the source of truth, and its doc post (`post:doc`, ./posttypes.js)
-// that the Docs page lists, where everyone reads it.
+// website's Docs page; since the same day in avenDB alone, as drafts): each a story, its full text the source of
+// truth, and its doc post (`post:doc`, ./posttypes.js), which avenDB's Docs view lists (./Docs.svelte).
 //
 //   skill   each skill of .claude/skills/<name>/: its SKILL.md first, then each other Markdown file of the skill
 //           (references, notes), each after a line that names its path (`FILE`), so the skill can be written back to

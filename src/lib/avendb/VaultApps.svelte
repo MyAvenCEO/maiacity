@@ -16,6 +16,7 @@
 				['artifacts', 'Artifacts', 'artifact'],
 				['todos', 'Todos', 'todo'],
 				['stories', 'Stories', 'story'],
+				['docs', 'Docs', 'article'],
 				['library', 'Library', 'library'],
 				['studio', 'Studio', 'studio'],
 				['assets', 'Assets', 'asset'],

@@ -25,8 +25,9 @@
 //   name       one Public share of the vault's profile, by type, so its posts on the stream go out under its name
 //              ("Maia City"), not a stand-in from its id
 //   docs       each document of ./docs.js (Samuel 2026-10-18): each skill of .claude/skills, the theOS paper and the
-//              avenDB architecture, a story with its full text, and its doc post (`post:doc`), published, which the
-//              Docs page lists
+//              avenDB architecture, a story with its full text, and its doc post (`post:doc`), both drafts (Samuel
+//              2026-10-18: docs live in avenDB alone, not on the public site), which avenDB's Docs view lists
+//              (./Docs.svelte); ./Account.svelte drafts those an earlier seed published (`drafting`)
 //   pads       the journal's sources and each story's idea pad, sparks as ./legacy.js copies them
 //   games      the Games area (game/games.js): the vault's own schema "Game, v1", then each game's entry, of type `game`,
 //              tagged `game` and `game:<id>`; a game the repo released (places.ts, no `release: 'draft'`) also gets
@@ -253,9 +254,10 @@ export async function touchingUp(world, vault) {
 }
 
 /**
- * The ops that draft each inspire post an earlier seed of vault `vault` published (Samuel 2026-10-18: every inspire-me
- * piece unpublished): each post of type inspire the seed made (its `legacy:inspire-me/…` tag) not drafted yet
- * (`DRAFTED`), moved from published to draft, and its story from published to writing, each one op.
+ * The ops that draft each inspire post and doc post an earlier seed of vault `vault` published (Samuel 2026-10-18:
+ * every inspire-me piece unpublished, and the docs kept in avenDB alone): each post of type inspire the seed made (its
+ * `legacy:inspire-me/…` tag), or of type doc, not drafted yet (`DRAFTED`), moved from published to draft, and its story
+ * from published to writing, each one op.
  * @param {import('./vaults.js').WorldView} world @param {string} vault
  * @returns {object[]}
  */
@@ -264,8 +266,9 @@ export function drafting(world, vault) {
 	const out = [];
 	for (const e of mine.filter((x) => x.type === 'post')) {
 		const tags = e.tags ?? [];
-		if (!tags.includes(postTag('inspire')) || tags.includes(DRAFTED)) continue;
-		if (!tags.some((t) => t.startsWith(legacyTag('inspire-me/')))) continue;
+		if (tags.includes(DRAFTED)) continue;
+		const inspire = tags.includes(postTag('inspire')) && tags.some((t) => t.startsWith(legacyTag('inspire-me/')));
+		if (!inspire && !tags.includes(postTag('doc'))) continue;
 		const remove = tags.includes(PUBLISHED) ? [PUBLISHED] : [];
 		out.push({ op: 'tag', entry: e.entry, add: [DRAFT, DRAFTED], remove, as: vault });
 		const s = mine.find((x) => x.entry === e.record?.story?.entry && x.type === 'story');
@@ -371,8 +374,8 @@ export async function seeding(p, vault) {
 		const own = { excerpt, language: 'en', section: d.section, slug: d.slug, page: d.page };
 		const shown = d.section === 'skill' ? readable(text) : text;
 		return [
-			{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'published'), 'doc'], value: story, as },
-			posting(vault, 'doc', title, shown, '$0', '', own, p.mark)
+			{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'writing'), 'doc'], value: story, as },
+			posting(vault, 'doc', title, shown, '$0', '', own, p.mark, [DRAFT, DRAFTED])
 		];
 	}
 	if (p.kind === 'journal') {

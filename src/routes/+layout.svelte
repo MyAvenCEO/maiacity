@@ -17,9 +17,9 @@
 
 	const links = [
 		{ href: base || '/', label: 'Home' },
-		{ href: `${base}/universe`, label: 'Universe' },
-		// the theOS paper lives under Docs, as one of its tiles
-		{ href: `${base}/docs`, label: 'Docs', also: [`${base}/theos`] }
+		{ href: `${base}/universe`, label: 'Universe' }
+		// the docs (the skills, the theOS paper, the avenDB architecture) live in avenDB alone, its Docs view
+		// ($lib/avendb/Docs.svelte), not on the public site (Samuel 2026-10-18)
 	];
 
 	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public
@@ -87,7 +87,7 @@
 			<ul class="pages" id="site-pages" class:open={menuOpen}>
 				{#each links as link (link.href)}
 					<li>
-						<a href={link.href} aria-current={isActive(link.href) || link.also?.some(isActive) ? 'page' : undefined}>{link.label}</a>
+						<a href={link.href} aria-current={isActive(link.href) ? 'page' : undefined}>{link.label}</a>
 					</li>
 				{/each}
 				<li>
