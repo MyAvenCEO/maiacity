@@ -291,18 +291,20 @@
 	}
 
 	/**
-	 * The vaults whose devices hold file `file`'s bytes, each once, with those devices and how much each holds; a device
-	 * of no vault this device knows by its own name. @param {import('./files.js').FileView | undefined} file
+	 * The vaults whose devices hold file `file`'s bytes, each once, with the names of those devices (Samuel 2026-10-18:
+	 * the vault and its devices, "Samuel: Mac app, Safari on iPhone") and, in words, how much each holds and when it
+	 * last said so; a device of no vault this device knows stands by its own name.
+	 * @param {import('./files.js').FileView | undefined} file
 	 */
 	function heldBy(file) {
-		/** @type {Map<string, { name: string, devices: string[] }>} */
+		/** @type {Map<string, { name: string, devices: string[], words: string[] }>} */
 		const out = new Map();
 		for (const h of file?.syncedTo ?? []) {
 			const v = world.vaults.find((x) => x.devices.some((d) => d.id === h.device));
 			const held = heldWords(h);
-			const device = `${signerName(world, h.device)}${held ? ` (${held})` : ''}`;
-			const at = out.get(v?.id ?? h.device) ?? { name: v ? nameOf(v) : signerName(world, h.device), devices: [] };
-			at.devices.push(device);
+			const at = out.get(v?.id ?? h.device) ?? { name: v ? nameOf(v) : signerName(world, h.device), devices: [], words: [] };
+			if (v) at.devices.push(v.devices.find((d) => d.id === h.device)?.name ?? (v.kind === 'device' && v.name ? v.name : 'a device'));
+			at.words.push(`${signerName(world, h.device)}${held ? ` (${held})` : ''}`);
 			out.set(v?.id ?? h.device, at);
 		}
 		return [...out.values()];
@@ -590,7 +592,7 @@
 											<td>
 												<span class="held">
 													{#each heldBy(file) as h (h.name)}
-														<span title={h.devices.join(', ')}>{h.name}</span>
+														<span title={h.words.join(', ')}><b>{h.name}</b>{#if h.devices.length}<small>{h.devices.join(', ')}</small>{/if}</span>
 													{:else}
 														<span class="soft">nowhere yet</span>
 													{/each}
@@ -808,6 +810,20 @@
 		background: #e9e4d9;
 		font-size: 0.74rem;
 		white-space: nowrap;
+	}
+
+	.held b {
+		font-weight: 600;
+	}
+
+	.held small {
+		margin-left: 0.3rem;
+		font-size: 0.7rem;
+		color: rgb(0 0 0 / 0.55);
+	}
+
+	.rows .held {
+		max-width: 24rem;
 	}
 
 	.rows {
