@@ -420,6 +420,7 @@ fn main() {
             player::player_play,
             player::player_pause,
             player::player_sync,
+            player::player_drawn,
             transcripts::vault_transcribe,
             render::sound_measure,
             render::eq_response,

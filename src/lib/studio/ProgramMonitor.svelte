@@ -69,20 +69,25 @@
 	/** @param {ArrayBuffer} buf */
 	const draw = async (buf) => {
 		const n = ++asked;
+		// the Mac sends a picture only while fewer than two are in hand (vault/app/src/player.rs `room`): each one said
+		// drawn or dropped, so a page that falls behind is sent fewer, never a backlog
+		const done = () => void mac('player_drawn', {});
 		try {
 			const bmp = await createImageBitmap(new Blob([buf], { type: 'image/jpeg' }));
 			// a frame decoded after a newer one is dropped
-			if (n < drawn || !playCanvas) return bmp.close();
+			if (n < drawn || !playCanvas) return void (bmp.close(), done());
 			drawn = n;
 			if (playCanvas.width !== bmp.width || playCanvas.height !== bmp.height) (playCanvas.width = bmp.width), (playCanvas.height = bmp.height);
 			playCanvas.getContext('2d')?.drawImage(bmp, 0, 0);
 			bmp.close();
+			done();
 			if (!layerUp && !handover && untrack(() => layerWanted)) {
 				layerUp = true;
 				// the still under it is let go: going back to it shows a new one
 				nativeUrl = null;
 			}
 		} catch (e) {
+			done();
 			console.warn('playback: a frame', e);
 		}
 	};
