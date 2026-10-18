@@ -10,6 +10,7 @@ mod aven;
 mod avendb;
 mod blob;
 mod jobs;
+mod legacy_cards;
 mod legacy_copy;
 mod local;
 mod models;

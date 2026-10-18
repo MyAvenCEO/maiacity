@@ -17,10 +17,12 @@
 //!   `legacy:public`    a file the legacy vault published (the journal's pictures, voice and films): Public by one share
 //!                      of Maia City on this tag, made before the first of them, so avenDB's server serves it to
 //!                      everyone at `/feed/legacy/<hash>` (avendb-server's feed; src/lib/media/url.ts).
-//! Its legacy tags without a `:` come along (a day's "Day 01"); everything else known about it (title, description,
+//! Its legacy tags without a `:` come along (a day's "Day 01"), and its `role:`, `shape:` and `idea:` tags (a rendered
+//! card's); everything else known about it (title, description,
 //! tags, meta: a hand-set colour profile, a voice take's words, …) goes into its "about", the JSON file entry beside it
 //! tagged `about:<entry>` (vault.mjs). A colour profile set by hand in the legacy studio is written into the copied
-//! original's probe once the probe is done (`settle`, as src/lib/studio/cuts.js `setProfile` does by hand).
+//! original's probe once the probe is done (`settle`, as src/lib/studio/cuts.js `setProfile` does by hand). After the
+//! files, the old content board's thumbnail cards become artworks of their stories (legacy_cards.rs).
 //!
 //! It runs by itself once per generation of avenDB's shelf on this Mac (`avendb::generation`) and Maia City vault,
 //! once avenDB's device is open here and reaches Maia City; again by hand (`legacy_copy`). Idempotent: a file a live
@@ -91,6 +93,8 @@ struct Summary {
     profiles: BTreeMap<String, String>,
     /// why the run stopped early, if it did
     stopped: Option<String>,
+    /// the old content board's thumbnail cards, made as artworks (legacy_cards.rs)
+    cards: crate::legacy_cards::Cards,
 }
 
 /// Starts the watch: every minute, a copy where one is due (`due`), and the colour profiles still waiting written.
@@ -248,15 +252,21 @@ async fn run(app: &AppHandle, city: &City, key: &str) -> Result<Summary, String>
             return Err(e);
         }
     };
-    let whole = summary.missing.is_empty() && summary.failed.is_empty() && summary.stopped.is_none();
+    let whole = summary.missing.is_empty() && summary.failed.is_empty() && summary.stopped.is_none() && summary.cards.waiting == 0;
+    let cards = &summary.cards;
     let line = format!(
-        "legacy copy into {}: {} files, {} copied, {} there already, {} missing here, {} failed{}",
+        "legacy copy into {}: {} files, {} copied, {} there already, {} missing here, {} failed; cards: {} made, {} there, {} waiting, {} without a story{}{}",
         city.vault,
         summary.total,
         summary.copied,
         summary.skipped,
         summary.missing.len(),
         summary.failed.len(),
+        cards.made,
+        cards.there,
+        cards.waiting,
+        cards.storyless.len(),
+        cards.unread.as_deref().map(|s| format!(" ({s})")).unwrap_or_default(),
         summary.stopped.as_deref().map(|s| format!(", stopped: {s}")).unwrap_or_default()
     );
     // the app logs warnings and up by default: a run's line must show
@@ -277,6 +287,7 @@ async fn run(app: &AppHandle, city: &City, key: &str) -> Result<Summary, String>
         r["failed"] = json!(summary.failed);
         r["stopped"] = json!(summary.stopped);
         r["profiles"] = json!(profiles);
+        r["cards"] = json!(summary.cards);
     });
     jobs::end(Kind::Keep, SUBJECT, if whole { Ok(()) } else { Err(line) });
     Ok(summary)
@@ -376,6 +387,11 @@ async fn copy(app: &AppHandle, city: &City, turn: &mut Option<jobs::Turn>) -> Re
         }
         tokio::time::sleep(PAUSE).await;
     }
+    // the thumbnail cards of the old content board, onto the pictures just copied
+    if s.stopped.is_none() {
+        jobs::stage(Kind::Keep, SUBJECT, "the old board's thumbnail cards", 1.0);
+        s.cards = crate::legacy_cards::export(app, &city.vault, &city.as_, &list).await;
+    }
     Ok(s)
 }
 
@@ -451,9 +467,10 @@ async fn one(app: &AppHandle, city: &City, vault: &Arc<Vault>, m: &Meta, hash: H
     if m.public {
         tags.push(PUBLIC.into());
     }
-    // its own tags without a namespace (a day's "Day 01"); one with a `:` might read as one of avenDB's, so it stays in
-    // the about alone
-    for t in m.tags.iter().filter(|t| !t.is_empty() && !t.contains(':')) {
+    // its own tags without a namespace (a day's "Day 01") and its role, shape and idea (a rendered card's `role:thumbnail`,
+    // `shape:16x9`, `idea:<title>`); any other with a `:` might read as one of avenDB's, so it stays in the about alone
+    let carried = |t: &&String| !t.is_empty() && (!t.contains(':') || ["role:", "shape:", "idea:"].iter().any(|p| t.starts_with(p)));
+    for t in m.tags.iter().filter(carried) {
         if !tags.contains(t) {
             tags.push(t.clone());
         }
