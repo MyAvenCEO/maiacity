@@ -1167,6 +1167,8 @@ export class Studio {
 		if (!hasSound(m)) return void (this.soundState[hash] = 'silent');
 		const waiting = this.pendingSound.get(hash);
 		if (waiting) return waiting;
+		// failed from this same file before: not read again on every play (only once its proxy comes in)
+		if (this.soundState[hash]?.startsWith('failed') && (this.proxy(m).hash ?? hash) === this.soundFrom[hash]) return;
 		const p = (async () => {
 			this.soundState[hash] = 'loading';
 			try {
@@ -1175,8 +1177,13 @@ export class Studio {
 				// gigabyte or more) is never read whole into the page for its sound: decoding it held the whole movie in
 				// memory, a dozen at once on a timeline of footage, and The OS ran the Mac out of memory. The Mac reads
 				// its sound track in place instead (`studio_sound`, mono); off the Mac it waits for its proxy.
-				const from = this.proxy(m).hash ?? (m.size && m.size <= SOUND_FROM_ORIGINAL ? hash : null);
-				const buffer = from ? await this.decode(await this.bytesOf(from)) : native() ? await this.soundOnMac(m) : null;
+				// On the Mac every movie's sound is read there, in place — its proxy's when it has one: a whole proxy fetched
+				// into the page came through avenDB's bridge copied several times over (and a long one cut short)
+				const proxy = this.proxy(m).hash;
+				this.soundFrom[hash] = proxy ?? hash;
+				const at = proxy ? (this.byHash.get(proxy) ?? m) : m;
+				const from = proxy ?? (m.size && m.size <= SOUND_FROM_ORIGINAL ? hash : null);
+				const buffer = native() ? await this.soundOnMac(at) : from ? await this.decode(await this.bytesOf(from)) : null;
 				if (!buffer) return void (this.soundState[hash] = 'waiting');
 				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
 				this.soundState[hash] = 'ready';
@@ -1211,9 +1218,21 @@ export class Studio {
 		buffer.copyToChannel(new Float32Array(bytes, 0, n), 0);
 		return buffer;
 	}
-	/** Every video sound on the sound tracks not decoded yet, tried again (its proxy may have come in). */
+	/** what each movie's sound was last read from (its proxy's hash, else its own): a failed one is tried again only from something new */
+	/** @type {Record<string, string>} */
+	soundFrom = {};
+	/**
+	 * Every video sound on the sound tracks not decoded yet, tried again: one waiting for its proxy, or one that failed
+	 * once its proxy has come in (a failure from the same file again was a load, on every play and every 20 s).
+	 */
 	retrySounds() {
-		for (const c of this.clips) if (onSoundTrack(c) && c.hash && this.soundState[c.hash] && this.soundState[c.hash] !== 'ready') void this.sound(c.hash);
+		for (const c of this.clips) {
+			const h = c.hash, st = h ? this.soundState[h] : undefined;
+			if (!onSoundTrack(c) || !h || !st || st === 'ready' || st === 'silent' || st === 'loading') continue;
+			const m = this.byHash.get(h);
+			if (st.startsWith('failed') && (this.proxy(m).hash ?? h) === this.soundFrom[h]) continue;
+			void this.sound(h);
+		}
 	}
 	/** The library read again (a proxy or a transcript came in), and the sounds waiting on it tried. */
 	/** when the library was last read again (`reloadLibrary`) */
@@ -1416,6 +1435,10 @@ export class Studio {
 		cancelAnimationFrame(this.frame);
 		this.poll(false);
 		if (this.vaultWatch) clearInterval(this.vaultWatch), (this.vaultWatch = null);
+		// left running, the timeline watch kept this whole studio alive after the page was left (its decoded sounds,
+		// its library, its world): one more on every visit
+		if (this.timelineWatch) clearInterval(this.timelineWatch), (this.timelineWatch = null);
+		this.world.detach();
 		this.silence();
 		clearInterval(this.listener);
 		if (this.deviceChange) navigator.mediaDevices?.removeEventListener('devicechange', this.deviceChange);
@@ -1424,6 +1447,7 @@ export class Studio {
 		void this.ctx?.close();
 		this.ctx = null;
 		for (const s of Object.values(this.sources)) if (s.url.startsWith('blob:')) URL.revokeObjectURL(s.url);
+		this.sources = {};
 	}
 
 	// ── playback ──────────────────────────────────────────────────────────────
