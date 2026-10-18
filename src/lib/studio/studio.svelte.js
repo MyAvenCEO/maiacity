@@ -1,10 +1,10 @@
 // The studio's one state: the library, the open timeline and its clips, the playhead and the sound, the colour
 // pipeline's LUTs, the world viewer, the renders — shared by the three working steps (Edit · Grade · Render) and every
 // panel in them. The panels only show it and call its methods; nothing here draws.
-import { fileUrl, describeMedia, may, me } from '$lib/auth/client';
+import { may, me } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
-import { avenLibrary, withGraded } from './aven.js';
-import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut } from './cuts.js';
+import { avenLibrary, avenUrl, isAven, withGraded } from './aven.js';
+import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut, setProfile, setTranscript } from './cuts.js';
 import { bringFilms } from './legacyfilms.js';
 import { sure } from '$lib/app/sure.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
@@ -95,8 +95,8 @@ export const clockText = (t) => {
 export const FPS = 30;
 /** A clip's link when its picture and sound were set apart on purpose (never linked again by itself). */
 export const UNLINKED = '-';
-/** A file's bytes, from this Mac's vault (with Range). @param {string} hash */
-export const raw = (hash) => fileUrl(hash);
+/** A file's bytes, from avenDB's device in the Mac app (with Range); nothing for a name that is not avenDB's. @param {string} hash */
+export const raw = (hash) => (isAven(hash) ? avenUrl(hash) : '');
 
 /**
  * The studio's timelines: the cuts in avenDB (./cuts.js, J9), each read and saved by its `cut:` id. The legacy
@@ -1903,16 +1903,17 @@ export class Studio {
 	// ── captions: the voice's words on screen ─────────────────────────────────────
 	// Every voice (A1) clip's captions come by themselves from its file's transcript (captionWordsOf, the render's
 	// `caption_words`) — the one truth. A word put right, or a phrase reworded, is written into the transcript itself
-	// (the Mac's `transcript_edit`: it syncs, and no sweep hears it again); the captions follow, everywhere.
+	// (its avenDB transcript task, ./cuts.js `setTranscript`: it syncs, and no sweep hears it again); the captions follow, everywhere.
 	/**
 	 * A file's transcript words set (each `{ word, start, end }` on the file's clock).
 	 * @param {string} hash @param {import('./transcript.js').CaptionWord[]} words
 	 */
 	async setCaptionWords(hash, words) {
+		const entry = /** @type {string | undefined} */ (/** @type {any} */ (this.byHash.get(hash)?.meta)?.aven?.entry);
 		try {
-			const { command } = await import('$lib/native');
-			const record = /** @type {any} */ (await command('transcript_edit', { hash, words }));
-			this.library = this.library.map((x) => (x.hash === hash ? { ...x, meta: { ...x.meta, transcript: record, words: undefined } } : x));
+			if (!entry) throw new Error('only an avenDB file’s words can be put right');
+			const record = await setTranscript(entry, words);
+			this.library = this.library.map((x) => (x.hash === hash ? { ...x, meta: { ...x.meta, transcript: record, transcript_file: undefined, words: undefined } } : x));
 			return true;
 		} catch (e) {
 			this.error = `Transcript: ${/** @type {Error} */ (e).message ?? e}`;
@@ -1988,16 +1989,19 @@ export class Studio {
 		this.vaultWatch ??= setInterval(() => void (this.waitingOnVault() && this.reloadLibrary()), 20000);
 	}
 
-	// ── colour: a file's profile, set by hand when detection got it wrong (re-queues its proxy, on the API side) ──
+	// ── colour: a file's profile, set by hand when detection got it wrong (on its avenDB probe: the Mac makes its proxy
+	// and still again through it, ./cuts.js `setProfile`) ──
 	/** @param {MediaItem} m @param {string | null} profile */
 	async setOverride(m, profile) {
+		const entry = /** @type {string | undefined} */ (/** @type {any} */ (m.meta)?.aven?.entry);
 		/** @type {Record<string, unknown>} */
-		const color = { .../** @type {object} */ (m.meta?.color ?? { profile: 'unknown', detectedFrom: 'set in the studio' }) };
+		const color = { .../** @type {object} */ (m.meta?.color ?? { profile: 'unknown', from: 'set in the studio' }) };
 		if (profile) color.override = profile;
 		else delete color.override;
 		const meta = { ...m.meta, color };
 		try {
-			await describeMedia(m.hash, { meta });
+			if (!entry) throw new Error('Only an avenDB file’s colour can be set.');
+			await setProfile(entry, profile);
 			this.library = this.library.map((x) => (x.hash === m.hash ? { ...x, meta } : x));
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;

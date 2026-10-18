@@ -77,7 +77,8 @@ export function libraryOf(world) {
 		/** @type {Record<string, unknown>} */
 		const meta = {
 			aven: { entry: e.entry, vault: e.vault },
-			...(probe?.journey ? { color: { profile: probe.journey.profile, from: probe.journey.from } } : {}),
+			// a profile set by hand rides on the probe's journey (./cuts.js `setProfile`), the detected one beside it
+			...(probe?.journey ? { color: { profile: probe.journey.detected ?? probe.journey.profile, from: probe.journey.from, ...(probe.journey.override ? { override: probe.journey.override } : {}) } } : {}),
 			...(probe ? { probe: { ...(probe.picture ?? {}), audio: probe.audio, timecode: probe.timecode, timecode_fps: probe.timecode_fps }, duration: probe.seconds, fps: probe.fps ?? probe.picture?.fps } : {}),
 			...(proxy ? { proxy: proxy.ref } : {}),
 			...(still ? { grade_still: still.ref, still_at: parse(stillTask?.result ?? '')?.t } : {}),
