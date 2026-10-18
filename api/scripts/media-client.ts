@@ -1,6 +1,6 @@
-// The terminal's side of the API: where it is, and the key this terminal was given. Files are not the API's: they
-// live in the vault (scripts/film/vault.mjs, the Mac app's local server). Shared by `bun media`, `bun voice`, the
-// render worker and the scripts.
+// The terminal's side of the API (the content board's routes): where it is, and the key this terminal was given. Files
+// are not the API's: they live in avenDB (scripts/film/vault.mjs, as the agent device agentScripts). Shared by
+// `bun media`, `bun voice`, `bun day`, Zernio and the scripts.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -36,7 +36,7 @@ export async function saveKey(key: string | null) {
 export async function keyFor(): Promise<string> {
   // MAIACITY_KEY: a key given outright (a test run, a worker started with its own key)
   const k = process.env.MAIACITY_KEY ?? (await readJson<Record<string, string>>(KEYS, {}))[API];
-  if (!k) throw new Error(`Not signed in to ${API}. Run: bun media login${local ? " --local" : ""}`);
+  if (!k) throw new Error(`Not signed in to ${API}: set MAIACITY_KEY, or keep the key in ${KEYS} (bun media login is gone with the legacy vault)`);
   return k;
 }
 

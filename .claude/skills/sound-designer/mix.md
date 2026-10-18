@@ -1,12 +1,14 @@
 # The mix: levels, tone, J and L cuts
 
-**Levels:** measure, don't guess. MCP `audio_measure` (BS.1770, the render's own meter) and `audio_level` bring
-every clip to its track's aim before the render levels the whole mix to −14 LUFS / −1 dBTP:
+**Levels:** measure, don't guess. Measure each clip's file (BS.1770: ffmpeg's `ebur128` on the take read back with
+`avendb_read_file`, or the render's own report) and set its gain so it plays at its track's aim before the render
+levels the whole mix to −14 LUFS / −1 dBTP:
 - voice (A1) −18 LUFS
 - music (A2) −26 LUFS, and the render ducks it 6 dB more under the voice; keep voice over music 12–18 LU
 - sounds and beds (A3) −30 LUFS
 
-Adjust single clips with `audio_mix` (gain in dB, up to +12), their tone with `audio_eq` / `audio_match` (below). Clips carry their own fades (`fin`, `fout`): a voice at
+A clip's gain is its `vol` in the cut's `timeline`, a linear gain (1 = as it came; +6 dB ≈ 2, +12 dB ≈ 4), its tone its `eq` (below), both written on a
+proposal of the cut entry (`story-producer` `pipeline.md`, "Studio 2 through avenDB"). Clips carry their own fades (`fin`, `fout`): a voice at
 least 0.05 s so it never clicks, the music 1 s in and 2.5 s out at the film's ends. The Audio tab shows it all on the
 clips themselves.
 
@@ -14,16 +16,18 @@ clips themselves.
 
 Every sound clip can carry an EQ: bands in order, each a biquad from the Audio EQ Cookbook (`highpass`, `lowshelf`,
 `peaking`, `notch`, `highshelf`, `lowpass`; `f` Hz, `gain` dB, `q`). The render's mix (Rust) and the studio's playback
-(Web Audio) make the same filters from the same data, so what you hear in the studio is what renders. It is driven
-through the MCP; the Audio tab only shows it on the clip (`EQ HP 90, +3 dB 4k`).
+(Web Audio) make the same filters from the same data, so what you hear in the studio is what renders. It is data on the
+clip (`eq`, the bands in order), written on a proposal of the cut; the Audio tab shows it on the clip (`EQ HP 90,
++3 dB 4k`). The legacy studio's `audio_measure`, `audio_eq` and `audio_match` have no Studio 2 tool for agents yet:
+measure the files read back, and write the EQ by hand.
 
-- **`audio_measure`** gives each clip's `spectrum`: octave bands 63 Hz–16 kHz, each one's share of the energy where it
-  speaks (dB), through its EQ. Compare two voices band by band, the way `grade_scopes` compares two shots.
-- **`audio_eq { clips | track, eq }`** sets an EQ by hand (replaces; `[]` takes it off).
-- **`audio_match { clips, reference }`** is the sound's `grade_match`: it builds the EQ that gives the clips the
-  reference's tone (`amount` 0.8, `limit` ±6 dB by default) and, with `level`, the gain that makes them play as loud.
-  It works in broad strokes: the differences are smoothed over neighbouring octaves, the bands are wide, and moves
-  under 1 dB are left out. Propose first (`apply: false`), read the residual, then decide.
+- **The spectrum:** each clip's octave bands 63 Hz–16 kHz, each one's share of the energy where it speaks (dB),
+  through its EQ (ffmpeg's band filters or a spectrum of the take). Compare two voices band by band, the way two
+  shots are compared on their stills.
+- **An EQ by hand:** the clip's `eq` replaced (`[]` takes it off).
+- **A match:** the EQ that gives the clips the reference's tone, at about 0.8 of the difference and never more than
+  ±6 dB, and the gain that makes them play as loud. Work in broad strokes: smooth the differences over neighbouring
+  octaves, keep the bands wide, leave out moves under 1 dB. Measure first, read the residual, then decide.
 - **One EQ per mic setup, not per clip.** Two clips cut from one take (a talking head split for a cutaway) get the
   same EQ and the same gain, or the cut between them jumps. Base it on the longer clip: a short one's spectrum is
   mostly its few words.
@@ -35,7 +39,7 @@ Rules for a voice:
   q 0.7–1); air above 8–10 kHz (a high shelf, 1–3 dB). Never more than about 6 dB on any band.
 - **One reference voice per film:** the cleanest recording (the lav, the voice-over). Match every other voice to it,
   so a cut from voice-over to a talking head doesn't change the room the voice is in.
-- **A camera's voice is further away:** more room, less presence, duller. `audio_match` against the lav or voice-over
+- **A camera's voice is further away:** more room, less presence, duller. A match against the lav or voice-over
   brings its tone back; it cannot take the room's echo out. Only a closer mic can do that, so record a lav on every
   talking head. Pros match dry to wet: they add the room to the lav rather than strip it off the camera (iZotope
   Dialogue Match only adds reverb). Take EQ match at a fraction, never 100 %.
@@ -44,8 +48,8 @@ Rules for a voice:
 - **Make a pocket for the voice in the music** instead of pushing the music down further: a wide cut of 2–3 dB at
   2–4 kHz on the music clip under a dense voice.
 
-The pass: `audio_measure` → choose the reference voice → `audio_match` the other voices (level on) → check each voice
-clip's `voice_over_music_lu` (12–18) → listen through the cuts in the studio. Nothing may jump in tone or loudness from
+The pass: measure → choose the reference voice → match the other voices (tone and level) → check voice over music on
+each voice clip (12–18 LU) → listen through the cuts in the studio. Nothing may jump in tone or loudness from
 one voice clip to the next.
 
 ## Mixing: how the pros finish a film
@@ -62,7 +66,7 @@ Byers). The numbers, from the research on Day 01 (AES, EBU R 128, iZotope, Produ
 
 **Music under the voice**
 - At least **10 LU** below the voice (Torcoli et al., AES). Ordinary viewers want about 4 LU more than engineers do,
-  so aim for **14–16 LU**. `audio_measure`'s `voice_over_music_lu` is the number.
+  so aim for **14–16 LU**. Voice over music, measured where they play together, is the number.
 - No lyrics and no busy percussion under speech. Heavy bass masks a voice more than anything else.
 - Let it breathe: up in pauses of 1.5 s or more, down again before the next word. The render's ducker does this per
   word (ratio 4, 120 ms attack, 900 ms release).
@@ -92,7 +96,7 @@ instead.
 2. Backgrounds under every scene, unbroken.
 3. Music: edit it first (where it starts and leaves, on the beats), then its level under the voice.
 4. Transitions: J/L cuts, pre-laps, crossfades.
-5. `audio_measure` again.
+5. Measure again (the render's report gives the whole mix's loudness).
 6. Listen through every cut in the studio.
 
 QC before the render: voice to music ≥ 12 LU everywhere, voices within ±1 LU, no clip without fades, nothing silent

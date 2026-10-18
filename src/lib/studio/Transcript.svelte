@@ -5,7 +5,7 @@
 	search finds a phrase (Enter: the next one). While there is none yet, it says where the transcript stands.
 -->
 <script>
-	import { command } from '$lib/native';
+	import { remake } from './cuts.js';
 	import { linesOf, timecodeAt, transcriptOf, transcriptState, wordsOf } from './transcript.js';
 
 	/**
@@ -23,10 +23,12 @@
 	const t = $derived(transcriptOf(m));
 	const st = $derived(transcriptState(m));
 	let asked = $state('');
-	/** a transcript that failed (or found nothing): made again, here on this Mac */
+	/** a transcript that failed (or found nothing): made again, its avenDB transcript task asked again from nothing */
 	async function again() {
 		asked = m.hash;
-		await command('vault_transcribe', { hash: m.hash }).catch((e) => (asked = `error: ${e}`));
+		const entry = /** @type {string | undefined} */ (/** @type {any} */ (m.meta)?.aven?.entry);
+		if (!entry) return void (asked = 'error: only an avenDB file is heard again');
+		await remake(entry, 'transcript').catch((e) => (asked = `error: ${e?.message ?? e}`));
 	}
 	// a clip shows only the lines it plays (and dims the words of them it leaves out)
 	const lines = $derived(linesOf(words, t?.utterances).filter((l) => !range || (l.e > range.from && l.s < range.to)));

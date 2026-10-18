@@ -50,11 +50,14 @@ The app's vault lives in `~/Library/Application Support/city.maia.vault`, or whe
 
 ## Agents (MCP)
 
-The Mac app serves the whole studio as MCP on `127.0.0.1:4545/mcp`, behind a token made once
-(`~/Library/Application Support/city.maia.studio/mcp-token`); the Devices & storage panel shows the
-`claude mcp add …` command. Tools: vault_status, library_list, library_copies, ingest, library_describe, media_probe,
-media_proxy, timelines_list, timeline_save, render_queue, renders_list, content_list, content_create, content_save,
-api_call — each the same function the studio's buttons call, acting with the app's key.
+Agents no longer reach the legacy vault: the Mac app's own MCP on `127.0.0.1:4545/mcp` and its `mcp-token` are
+retired for agents and scripts. An agent is a device of the coop's aven, avenMAIA, through the avendb MCP
+(`avendb-device agent <harness>`, `avendb/crates/avendb-device/src/agent.rs`; Claude Code's is
+`claude mcp add --scope user avendb -- <The OS app's avendb-device> agent claude`), approved once in The OS app, and
+acts with avenMAIA's rights: by default a Suggester on Maia City (proposals, drafts, AIPs). Its files are avenDB's
+Library — read with `avendb_read_file`, saved with `put_file` or a draft `create` with `file` — sealed and synced over
+iroh by avenDB's own store, not by this catalog. The scripts are the device agentScripts (`scripts/film/vault.mjs`).
+How cuts, renders and proxies are asked there: `story-producer` `pipeline.md`, "Studio 2 through avenDB".
 
 ## The catalog (iroh-docs namespace "maiaCITY vault")
 

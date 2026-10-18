@@ -5,8 +5,10 @@
 //   bun voice say "<the line>" --eleven George [--stability 0.4]      ElevenLabs v3, with each word's timing
 //
 // A voice is designed with MiniMax Voice Design and kept by name in studio/voices.json. A line is spoken with
-// MiniMax Speech 2.8 HD and put into the vault (described with its words, voice and settings), where the studio plays
-// it back. A shot list names the take by the hash it prints. Needs FAL_API_KEY in .env, and the Mac app running.
+// MiniMax Speech 2.8 HD and put into avenDB's Library (scripts/film/vault.mjs: described with its words, voice and
+// settings in its about), where the studio plays it back; where avenMAIA only suggests, as a draft in an AIP that Maia
+// City accepts. A shot list names the take by the BLAKE3 hash it prints. Needs FAL_API_KEY in .env, and agentScripts
+// approved once in The OS app (no login).
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readJson, ROOT, say } from "./media-client";
@@ -55,7 +57,7 @@ async function design() {
   voices[name] = { id: r.custom_voice_id, prompt, model: DESIGN, created: new Date().toISOString() };
   await writeFile(VOICES, JSON.stringify(voices, null, 2) + "\n");
   const d = await add(await download(r.audio.url), { name: `${name}-preview.mp3`, title: `${name} · voice preview`, description: preview, tags: ["role:voice-preview", `voice:${name}`] });
-  say(`voice "${name}" → ${r.custom_voice_id} (studio/voices.json); preview in the vault as ${d.hash}`);
+  say(`voice "${name}" → ${r.custom_voice_id} (studio/voices.json); preview in avenDB as ${d.hash}${d.aip ? ` (a draft: AIP ${d.aip})` : ""}`);
 }
 
 type Word = { word: string; start: number; end: number };
@@ -123,7 +125,7 @@ async function speak() {
   const slug = flag("name") ?? `${new Date().toISOString().slice(0, 10)}-${slugify(text)}`;
   meta.made = new Date().toISOString();
   const d = await add(bytes, { name: `${slug}.mp3`, title: slug, description: text, tags: ["role:voice", `take:${slug}`, `voice:${String(meta.voice ?? "")}`], meta });
-  say(`${(duration_ms / 1000).toFixed(1)} s · ${slug} · in the vault as ${d.hash}`);
+  say(`${(duration_ms / 1000).toFixed(1)} s · ${slug} · in avenDB as ${d.hash}${d.aip ? ` (a draft: AIP ${d.aip})` : ""}`);
 }
 
 const run = { design, say: speak }[positional[0] as "design"];

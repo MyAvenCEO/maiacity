@@ -47,7 +47,6 @@ export function wayBack(label, go) {
 export function upFrom(rel) {
 	if (/^\/app\/?$/.test(rel)) return null;
 	if (/^\/app\/worlds\/[^/]+\/?$/.test(rel)) return { href: `${base}/app/worlds/`, label: 'Back to the worlds' };
-	if (/^\/app\/stories\/story\/?$/.test(rel)) return { href: `${base}/app/stories/`, label: 'Back to the stories' };
 	// an asset viewer goes back to the assets, which avenDB's Assets app lists (Samuel 2026-10-18)
 	if (ASSET_APPS.test(rel)) return { href: `${base}/app/#assets`, label: 'Back to the assets' };
 	return { href: `${base}/app/`, label: 'Back to the dashboard' };

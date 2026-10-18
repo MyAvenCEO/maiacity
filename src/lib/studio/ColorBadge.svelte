@@ -1,7 +1,7 @@
 <!--
 	A picture's colour profile, as a small badge: what the ingest detected (meta.color.profile) or what was set by hand
-	(meta.color.override, underlined). A click opens the menu to set it (an old studio file; an avenDB file's colour is
-	what its probe read) or to have the Mac make the proxy again, its avenDB proxy task asked again.
+	(meta.color.override, underlined). A click opens the menu to set it (written onto its avenDB probe, so the Mac makes
+	its proxy and still again through it) or to have the Mac make the proxy again, its avenDB proxy task asked again.
 -->
 <script>
 	import { remakeProxy } from './cuts.js';
@@ -58,13 +58,13 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 		<div class="menu" role="menu" tabindex="-1" style:top="{at.top}px" style:left="{at.left}px" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()}>
 			<p>What this picture is</p>
-			{#each entry ? [] : PROFILE_CHOICES as k (k)}
+			{#each entry ? PROFILE_CHOICES : [] as k (k)}
 				<button role="menuitemradio" aria-checked={p.profile === k} class:on={p.profile === k} onclick={() => choose(k === c?.profile ? null : k)}>
 					<b>{short(k)}</b> {profileInfo(k).label}{#if k === c?.profile}<i> · detected</i>{/if}
 				</button>
 			{/each}
 			{#if p.override}<button class="reset" onclick={() => choose(null)}>Back to the detected profile</button>{/if}
-			{#if entry}<p class="said">{profileInfo(p.profile).label}, as its probe read it</p>{/if}
+			{#if !entry}<p class="said">Only an avenDB file's colour can be set</p>{/if}
 			{#if isVideo(m) && entry}<button class="reset" onclick={remake}>Make its proxy again</button>{/if}
 		</div>
 	{/if}

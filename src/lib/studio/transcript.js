@@ -218,3 +218,34 @@ export function rewordPhrase(old, text) {
 	const a = old[0].start, b = /** @type {CaptionWord} */ (old.at(-1)).end, step = (b - a) / tokens.length;
 	return tokens.map((word, i) => ({ word, start: Math.round((a + i * step) * 1000) / 1000, end: Math.round((a + (i + 1) * step) * 1000) / 1000 }));
 }
+
+/**
+ * A transcript with these words, as a hand writes them (a word put right, a phrase reworded): each word cleaned and in
+ * time order, its text and each sentence's written from them again, `edited` saying by whom and when, its progress
+ * fields gone (the Mac's `with_words`, vault/app/src/transcripts.rs, which wrote the legacy vault's).
+ * @param {Partial<Transcript> | null | undefined} record @param {(CaptionWord | Word)[]} words @param {string} by @param {string} at
+ * @returns {Transcript}
+ */
+export function withWords(record, words, by, at) {
+	const r3 = (/** @type {number} */ n) => Math.round(n * 1000) / 1000;
+	/** @type {Word[]} */
+	const clean = [];
+	for (const x of words) {
+		const w = /** @type {any} */ (x);
+		const text = String(w.w ?? w.word ?? '').trim();
+		const s = Number(w.s ?? w.start), e = Number(w.e ?? w.end);
+		if (!text || !Number.isFinite(s) || !Number.isFinite(e) || s < 0) continue;
+		/** @type {Word} */
+		const o = { w: text, s: r3(s), e: r3(Math.max(e, s)) };
+		if (Number.isFinite(w.c)) o.c = w.c;
+		if (w.sp != null) o.sp = w.sp;
+		clean.push(o);
+	}
+	clean.sort((a, b) => a.s - b.s);
+	const said = (/** @type {Word[]} */ ws) => ws.map((w) => w.w).join(' ');
+	const { stage: _s, progress: _p, tries: _t, updated: _u, ...rest } = /** @type {any} */ (record ?? { model: 'own words', language: 'en' });
+	const utterances = Array.isArray(rest.utterances)
+		? rest.utterances.map((/** @type {Utterance} */ u) => ({ ...u, text: said(clean.filter((w) => w.s >= u.s - 0.02 && w.s < u.e)) }))
+		: undefined;
+	return { ...rest, ...(utterances ? { utterances } : {}), text: said(clean), words: clean, state: 'done', edited: { by, at } };
+}

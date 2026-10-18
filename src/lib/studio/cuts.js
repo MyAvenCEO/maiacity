@@ -440,20 +440,104 @@ export async function renderQueue() {
 }
 
 /**
- * The proxy of the original at avenDB entry `entry` made again: its task asked again from nothing, or asked now.
- * @param {string} entry
+ * What rule `rule` made of the original at avenDB entry `entry` made again: its task asked again from nothing, or
+ * asked now (a proxy, a transcript that failed or found nothing).
+ * @param {string} entry @param {'proxy' | 'transcript'} [rule]
  */
-export async function remakeProxy(entry) {
+export async function remake(entry, rule = 'proxy') {
 	const call = await device();
-	if (!call) throw new Error('Proxies are made by the Mac app.');
+	if (!call) throw new Error('The Mac app makes these.');
 	const world = await worldOf(call);
 	const e = world.entries.find((x) => x.entry === entry);
 	if (!e) throw new Error('That file is not in avenDB.');
-	const known = tasksOf(world).find((t) => t.rule === 'proxy' && t.inputs[0]?.entry === entry);
-	if (!known) return void (await ask(call, world, e, 'proxy', {}));
+	const known = tasksOf(world)
+		.filter((t) => t.rule === rule && t.inputs[0]?.entry === entry)
+		.sort((a, b) => b.at - a.at)[0];
+	if (!known) return void (await ask(call, world, e, rule, {}));
 	answer(await call('run', retrying(known, asIn(world, e.vault))));
 	const { nudge } = await import('./jobs/mac.js');
 	nudge();
+}
+/** The proxy of the original at avenDB entry `entry` made again. @param {string} entry */
+export const remakeProxy = (entry) => remake(entry, 'proxy');
+
+/**
+ * A probe's colour journey with its profile set by hand to `profile` (`null`: back to what the probe detected): the
+ * profile the proxy and the still go through, the detected one kept beside it.
+ * @param {Record<string, any> | null | undefined} journey @param {string | null} profile
+ */
+export function journeyWith(journey, profile) {
+	const { override: _o, detected, ...rest } = journey ?? {};
+	const found = detected ?? rest.profile ?? 'unknown';
+	return profile && profile !== found ? { ...rest, profile, override: profile, detected: found } : { ...rest, profile: found };
+}
+
+/** The newest done task of rule `rule` made of entry `entry`. @param {import('../avendb/vaults.js').WorldView} world @param {string} rule @param {string} entry */
+const madeOf = (world, rule, entry) => madeIndex(tasksOf(world)).get(`${rule}:${entry}`);
+
+/**
+ * The colour profile of the original at avenDB entry `entry` set by hand (`null`: back to the detected one), written
+ * into its probe's journey on the file's own task: the proxy and the still pin that journey, so the Mac makes them
+ * again through it by themselves, and set back they are the ones already made.
+ * @param {string} entry @param {string | null} profile
+ */
+export async function setProfile(entry, profile) {
+	const call = await device();
+	if (!call) throw new Error('A file’s colour is set in the Mac app.');
+	const world = await worldOf(call);
+	const t = madeOf(world, 'probe', entry);
+	if (!t) throw new Error('This file isn’t probed yet: its colour comes once it is.');
+	const probe = parse(t.result) ?? {};
+	answer(await call('run', { op: 'set', entry: t.entry, path: ['result'], value: JSON.stringify({ ...probe, journey: journeyWith(probe.journey, profile) }), as: asIn(world, t.vault) }));
+	const { nudge } = await import('./jobs/mac.js');
+	nudge();
+}
+
+/** How long a value may be and still stay on its task (vault/app/src/aven.rs `SPILL`). */
+const SPILL = 16 * 1024;
+
+/**
+ * The transcript of the original at avenDB entry `entry` with its words put right by hand (`words`, the whole list):
+ * written onto its transcript task, a long one into a JSON file of its own as the Mac spills it. The transcript now.
+ * @param {string} entry @param {(import('./transcript.js').CaptionWord | import('./transcript.js').Word)[]} words
+ */
+export async function setTranscript(entry, words) {
+	const call = await device();
+	if (!call) throw new Error('A transcript is put right in the Mac app.');
+	const world = await worldOf(call);
+	const t = madeOf(world, 'transcript', entry);
+	if (!t) throw new Error('This file has no transcript yet.');
+	const { withWords } = await import('./transcript.js');
+	const { valueOfFile } = await import('./aven.js');
+	const held = parse(t.result);
+	const before = held?.file ? await valueOfFile(world, held.file) : held;
+	const next = withWords(before, words, 'hand', new Date().toISOString().replace(/\.\d+Z$/, 'Z'));
+	if (!next.words.length) throw new Error('No words to keep.');
+	const as = asIn(world, t.vault);
+	const text = JSON.stringify(next);
+	if (text.length <= SPILL) {
+		answer(await call('run', { op: 'set', entry: t.entry, path: ['result'], value: text, as }));
+		return next;
+	}
+	const bytes = new TextEncoder().encode(text);
+	const source = world.entries.find((x) => x.entry === entry);
+	const name = `${String(source?.title ?? 'transcript').replace(/\.[^.]+$/, '')}.transcript.json`;
+	const { NativeDevice } = await import('$lib/avendb/native.js');
+	const put = answer(
+		await new NativeDevice(/** @type {any} */ ({})).putFile({ op: 'put_file', vault: t.vault, name, media: 'application/json', tags: ['media:transcript'], len: bytes.length, as }, async (at, n) => bytes.subarray(at, at + n))
+	);
+	const small = { file: put.entry, state: 'done', ...(next.language ? { language: next.language } : {}), ...(held?.seconds != null ? { seconds: held.seconds } : {}) };
+	answer(
+		await call('run', {
+			op: 'batch',
+			ops: [
+				{ op: 'set', entry: t.entry, path: ['result'], value: JSON.stringify(small) },
+				{ op: 'set', entry: t.entry, path: ['outputs'], value: [...(t.outputs ?? []), put.entry] }
+			],
+			as
+		})
+	);
+	return next;
 }
 
 /** Cut `id` deleted (avenDB's deleted tag: it can come back). @param {string} id */
