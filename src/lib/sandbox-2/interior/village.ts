@@ -1443,13 +1443,19 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || built.has(dome)} shown ${dome === undefined || shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => built.has(i)).join(',') || 'none'}; building ${now}`)
 				await new Promise((r) => setTimeout(r, 100))
 			}
+			const t0 = performance.now()
 			// and every animal, built in the box (far and near), there before the shot is drawn
 			await actorsSettled()
+			const t1 = performance.now()
 			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
 			// one while a finer one is still being built
 			if (plantsOut) await Promise.all([plantsOut.assets.ready(undefined, true), plantsIn!.assets.ready(undefined, true)])
+			const t2 = performance.now()
 			await library.ready()
 			settle()
+			// a stage that cost a cut its time says where it went (the studio's log)
+			const t3 = performance.now()
+			if (t3 - t0 > 300) console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} staged: animals ${Math.round(t1 - t0)} ms, plants ${Math.round(t2 - t1)} ms, library ${Math.round(t3 - t2)} ms`)
 		},
 		holds: (w) => w.dome === undefined || shown.has(w.dome),
 		// keep the domes of the shots the film asked for last built while it needs them — never all of them: a pin
