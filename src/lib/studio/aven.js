@@ -106,6 +106,14 @@ export function libraryOf(world) {
 		const m = fileOf(t.outputs?.[0]);
 		if (m && v?.shot) out.push(itemOf(m, 'proxy', { role: 'proxy', shot: v.shot, shotVersion: v.shotVersion, shape: v.shape, width: v.width, height: v.height, fps: v.fps, duration_s: v.seconds, color: { profile: 'acescct', from: 'our own tag' } }, ['proxy', 'world shot']));
 	}
+	// each legacy world shot's proxy brought from the legacy vault (./importer.js `bringProxies`), by its tag
+	for (const e of world.entries) {
+		const tag = (e.tags ?? []).find((t) => t.startsWith('proxy:shot:'));
+		const m = tag && (e.tags ?? []).includes('media:proxy') ? fileOf(e.entry) : null;
+		if (!m || !tag) continue;
+		const [, shot, entry, version] = tag.split(':');
+		out.push(itemOf(m, 'proxy', { role: 'proxy', shot: `${shot}:${entry}`, shotVersion: Number(version), color: { profile: 'acescct', from: 'our own tag' } }, ['proxy', 'world shot']));
+	}
 	// what cuts made: their renders' deliveries, and their hero frames
 	for (const t of tasks) {
 		if (t.status !== 'done' || (t.rule !== 'render' && t.rule !== 'frame')) continue;

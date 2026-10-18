@@ -79,6 +79,11 @@ export async function bringFilms(on = {}) {
 	const city = cityOf(world);
 	if (!city) return [];
 	const wanted = FILMS.filter((f) => !heldOf(world, city.vault, f).cut);
+	// a film that came before the world proxies did: its world shots' proxies from the legacy vault now
+	if (FILMS.some((f) => heldOf(world, city.vault, f).cut)) {
+		const { bringProxies } = await import('./importer.js');
+		await bringProxies(city.vault, city.as).catch((e) => console.warn('world proxies:', e));
+	}
 	if (!wanted.length) return [];
 	// each shows in the aside at once, while the old studio is asked for them
 	for (const f of wanted) tell(f, 'Asking the old studio…');
