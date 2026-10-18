@@ -30,6 +30,12 @@
 //! entry whose writes bring files more than once, as an asset's versions and variants each do, lists each of those
 //! writes with the record at it (`brought`, `Lab::brought`), and any file a row lists is served by its root at `GET
 //! /feed/entry/<vault>/<entry>/file/<root>` (`OF_ROOT`).
+//!
+//! And the media the legacy media vault published, by the BLAKE3 hash the site has always named them by
+//! (`GET /feed/legacy/<hash>`, `LEGACY`): the public file entry tagged `legacy:<hash>`, as the Mac app's copy out of the
+//! legacy vault tags each file it brings (vault/app/src/legacy_copy.rs, Public by its `legacy:public` tag), served
+//! with its media type and by range, so a page's `<video>` and `<audio>` play it as the old gateway served it
+//! (src/lib/media/url.ts).
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -77,6 +83,16 @@ pub const OF_ENTRY: &str = "/file";
 /// `<vault>/<entry>` `OF_ROOT` `<root>`, its root in 64 hex digits (`source`): any of the files its row lists, as an
 /// asset's versions each bring their own (`brought`).
 pub const OF_ROOT: &str = "/file/";
+
+/// Where a file the legacy media vault published is served, at `LEGACY` `<hash>`: its BLAKE3 hash, 64 hex digits, and
+/// an extension after it if any (`legacy`).
+pub const LEGACY: &str = "/feed/legacy/";
+
+/// The tag before a file's legacy hash (`LEGACY`), as the Mac app's copy tags it.
+const LEGACY_TAG: &str = "legacy:";
+
+/// The most bytes one ranged answer of `LEGACY` carries: a player asks for the next range.
+const RANGE: u64 = 8 << 20;
 
 /// The most kinds one query names.
 const MOST_KINDS: usize = 16;
@@ -169,6 +185,10 @@ async fn answer(
     if let Some(at) = path.strip_prefix(FILES).filter(|_| reads) {
         return Ok(picture(at, &node).await);
     }
+    if let Some(at) = path.strip_prefix(LEGACY).filter(|_| reads) {
+        let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
+        return Ok(legacy(at, range.as_deref(), &node, &feeds.entries).await);
+    }
     let query = request.uri().query().unwrap_or_default();
     if let Some(at) = path.strip_prefix(ENTRY).and_then(|at| at.strip_suffix(OF_ENTRY)).filter(|_| reads) {
         return Ok(source(at, None, query, &node, &feeds.entries).await);
@@ -176,7 +196,7 @@ async fn answer(
     if let Some((at, root)) = path.strip_prefix(ENTRY).and_then(by_root).filter(|_| reads) {
         return Ok(source(at, Some(root), query, &node, &feeds.entries).await);
     }
-    let ours = [PATH, ENTRIES, CODE].contains(&path) || path.starts_with(FILES) || path.starts_with(ENTRY);
+    let ours = [PATH, ENTRIES, CODE].contains(&path) || [FILES, ENTRY, LEGACY].iter().any(|p| path.starts_with(p));
     let (status, body) = match path.strip_prefix(ENTRY) {
         Some(at) if reads => entry(at, query, &node, &feeds.entries).await,
         _ if reads && path == PATH => (StatusCode::OK, posts(&node, &feeds.posts).await),
@@ -457,6 +477,80 @@ async fn source(at: &str, root: Option<&str>, query: &str, node: &Node, kept: &K
     response
 }
 
+/// The answer to a GET or HEAD of `LEGACY` `at`, `<hash>` or `<hash>.<ext>`, with header `range` if any: the newest
+/// file of the file entry everyone may read that is tagged `legacy:<hash>` (`entries`, `legacy_row`), with the media
+/// type its record says; whole (at most `LARGEST` bytes, else its first `RANGE`), or the one range `range` asks for,
+/// at most `RANGE` bytes of it, as partial content. Not found for a hash that is none, or for no such public file;
+/// not satisfiable for a range past its end; and unavailable while the server can't read its bytes.
+async fn legacy(at: &str, range: Option<&str>, node: &Node, kept: &Kept<Listed>) -> Response<Full<Bytes>> {
+    let hash = at.split('.').next().unwrap_or_default().to_ascii_lowercase();
+    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) || at.contains('/') {
+        return plain(StatusCode::NOT_FOUND, "no such file");
+    }
+    let listed = entries(node, kept).await;
+    let Some(row) = legacy_row(&listed.rows, &hash) else { return plain(StatusCode::NOT_FOUND, "no such file") };
+    let file = row["files"].as_array().and_then(|fs| fs.last()).and_then(|f| {
+        Some((FileRoot { hash: BlobId::from_hex(f["root"].as_str()?)?.0, size: f["size"].as_u64()? }, f["len"].as_u64()?))
+    });
+    let Some((root, len)) = file else { return plain(StatusCode::NOT_FOUND, "no such file") };
+    let media = row["record"]["media"].as_str().filter(|m| !m.is_empty()).unwrap_or("application/octet-stream");
+    let media = HeaderValue::from_str(media).unwrap_or(HeaderValue::from_static("application/octet-stream"));
+    let (from, to, partial) = match range.map(|r| ranged(r, len)) {
+        None if len <= LARGEST => (0, len, false),
+        None => (0, RANGE.min(len), true),
+        Some(Some((from, to))) => (from, to.min(from + RANGE), true),
+        Some(None) => {
+            let mut response = plain(StatusCode::RANGE_NOT_SATISFIABLE, "no such range of this file");
+            let whole = HeaderValue::from_str(&format!("bytes */{len}")).expect("a header");
+            response.headers_mut().insert(header::CONTENT_RANGE, whole);
+            return response;
+        }
+    };
+    let bytes = match node.read_file(root, from..to).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::debug!("avenDB feed: the legacy file {hash}: {e:#}");
+            return plain(StatusCode::SERVICE_UNAVAILABLE, "the server can't read this file yet");
+        }
+    };
+    let mut response = Response::new(Full::new(Bytes::from(bytes)));
+    if partial {
+        *response.status_mut() = StatusCode::PARTIAL_CONTENT;
+        let at = format!("bytes {from}-{}/{len}", to.saturating_sub(1).max(from));
+        response.headers_mut().insert(header::CONTENT_RANGE, HeaderValue::from_str(&at).expect("a header"));
+    }
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, media);
+    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(KEPT));
+    response
+}
+
+/// The row of `rows` (`world::public_entries`) of the file entry tagged `legacy:<hash>`, `hash` in lower case, that
+/// brings a file the server opens: the newest such, where the copy brought one more than once.
+fn legacy_row<'a>(rows: &'a [Value], hash: &str) -> Option<&'a Value> {
+    let tag = format!("{LEGACY_TAG}{hash}");
+    let tagged = |row: &&Value| row["tags"].as_array().is_some_and(|ts| ts.iter().any(|t| t.as_str() == Some(&tag)));
+    let opened = |row: &&Value| row["files"].as_array().and_then(|fs| fs.last()).is_some_and(|f| f["len"].is_u64());
+    let rows = rows.iter().filter(|row| row["type"] == "file").filter(tagged).filter(opened);
+    rows.max_by_key(|row| row["created"].as_u64().unwrap_or(0))
+}
+
+/// The one range header `range` asks of a file of `len` bytes, `bytes=<from>-<to>`, `bytes=<from>-` or
+/// `bytes=-<last n>`: its start and its end, the end past its last byte; none for one past the file's end, or one this
+/// can't read.
+fn ranged(range: &str, len: u64) -> Option<(u64, u64)> {
+    let (a, b) = range.trim().strip_prefix("bytes=")?.split_once('-')?;
+    let (from, to) = match (a.trim(), b.trim()) {
+        ("", n) => (len.saturating_sub(n.parse().ok()?), len),
+        (f, "") => (f.parse().ok()?, len),
+        (f, t) => (f.parse().ok()?, t.parse::<u64>().ok()?.saturating_add(1).min(len)),
+    };
+    (from < to && from < len).then_some((from, to))
+}
+
 /// The newest file of row `row` (`world::public_entries`), as the feed serves it (`source`): the last of its `files`,
 /// its root and plaintext length, where it is at most `LARGEST` bytes.
 fn newest(row: &Value) -> Option<(FileRoot, u64)> {
@@ -518,6 +612,34 @@ mod tests {
         assert_eq!(newest(&json!({ "type": "recipe" })), None, "no files at all");
         let unopened = json!({ "files": [{ "root": a, "size": 100, "len": null }] });
         assert_eq!(newest(&unopened), None, "none the server opens");
+    }
+
+    /// A range header reads as the bytes it asks for, its end past its last byte, cut at the file's end; one past the
+    /// end, or one this can't read, is none.
+    #[test]
+    fn a_range_reads_as_the_bytes_it_asks_for() {
+        assert_eq!(ranged("bytes=0-99", 1000), Some((0, 100)));
+        assert_eq!(ranged("bytes=900-", 1000), Some((900, 1000)));
+        assert_eq!(ranged("bytes=-100", 1000), Some((900, 1000)));
+        assert_eq!(ranged("bytes=500-5000", 1000), Some((500, 1000)), "cut at its end");
+        assert_eq!(ranged("bytes=1000-", 1000), None, "past its end");
+        assert_eq!(ranged("bytes=9-3", 1000), None, "backwards");
+        assert_eq!(ranged("items=0-1", 1000), None, "not bytes");
+    }
+
+    /// A legacy hash names the newest public file entry tagged with it whose file the server opens, and no other.
+    #[test]
+    fn a_legacy_hash_names_the_newest_file_tagged_with_it() {
+        let (h, other) = ("ab".repeat(32), "cd".repeat(32));
+        let file = |tag: &str, created: u64, len: Value| {
+            json!({ "type": "file", "tags": [format!("legacy:{tag}")], "created": created,
+                "files": [{ "root": "ef".repeat(32), "size": 10, "len": len }] })
+        };
+        let rows = vec![file(&h, 1, json!(4)), file(&h, 3, json!(4)), file(&h, 5, Value::Null), file(&other, 9, json!(4))];
+        assert_eq!(legacy_row(&rows, &h).map(|r| r["created"].clone()), Some(json!(3)), "the newest it opens");
+        assert!(legacy_row(&rows, &"12".repeat(32)).is_none(), "none tagged so");
+        let note = json!({ "type": "note", "tags": [format!("legacy:{h}")], "files": [] });
+        assert!(legacy_row(&[note], &h).is_none(), "a file entry's alone");
     }
 
     /// A file of a row by its root is any its row lists, of its main line's or of a version it brought, and no other.

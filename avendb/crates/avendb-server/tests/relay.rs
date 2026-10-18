@@ -607,6 +607,95 @@ async fn the_server_serves_a_public_code_entrys_newest_file_whole_as_plain_text(
     started.shutdown().await.expect("the server stops");
 }
 
+/// What the server at `addr` answers a GET of `path` with a `Range` header of `range`: its head, in lower case, and its
+/// body.
+async fn http_range(addr: SocketAddr, path: &str, range: &str) -> (String, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr).await.expect("the feed's socket");
+    let request = format!("GET {path} HTTP/1.1\r\nHost: avendb.maia.city\r\nRange: {range}\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.expect("the request");
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).await.expect("the answer");
+    let (head, body) = answer.split_once("\r\n\r\n").expect("a head and a body");
+    (head.to_lowercase(), body.to_string())
+}
+
+/// A file the legacy media vault published, over HTTP, by the hash the site has always named it by: Maia City makes
+/// its `legacy:public` tag Public and brings two files out of the legacy vault, each tagged `legacy:<hash>`, one of
+/// them public. `/feed/legacy/<hash>` serves the public one with its media type, whole or by range, an extension after
+/// the hash or none; the private one, a hash nobody tagged and a hash that is none are not found.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_server_serves_a_published_legacy_file_by_its_hash() {
+    let dir = Folder::new("legacy");
+    let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
+    let (signup, bucket, cache) = (false, None, 0);
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
+    let (server, addr) = (&started.node, started.feed.addr());
+    let mut w = world();
+    let (mac_a, passkey) = (w.mac_a, w.passkey_a);
+    let opts = Options { relay: Some(started.relay.url()), ..Options::local() };
+    let mac = node(&mut w, mac_a, &[passkey], 1, opts).await;
+    mac.know(server.addr());
+    let avenceo = mac.claim(&started.offer, passkey).await.expect("Alice's vault claims the server");
+    let coop_of = move |lab: &Lab, me| match lab.state(me).vault(avenceo).map(|v| &v.owners[..]) {
+        Some(&[Principal::Vault(coop)]) => Some(coop),
+        _ => None,
+    };
+    let city = mac.read(coop_of).await.expect("Maia City, founded with the seed");
+    let backup = share(city, vault(avenceo), Level::Backup, Selector::All);
+    mac.act(move |lab, me| lab.issue(me, &[me], backup)).await.expect("it gives avenMAIA backup");
+    let public = json!({ "op": "share", "over": city.to_hex(), "who": "everyone", "level": "Public",
+        "what": { "tag": "legacy:public" }, "as": city.to_hex() });
+    ran(&mac, public).await;
+    let (published, private) = ("ab".repeat(32), "cd".repeat(32));
+    let (picture, kept) = ("a picture the journal showed\n", "a take nobody published\n");
+    let put = |hash: &str, tags: Value, name: &str, media: &str, text: &str| {
+        let mut all = vec![json!(format!("legacy:{hash}"))];
+        all.extend(tags.as_array().cloned().unwrap_or_default());
+        json!({ "op": "put_file", "vault": city.to_hex(), "name": name, "media": media, "tags": all,
+            "len": text.len(), "as": city.to_hex() })
+    };
+    brought(&mac, put(&published, json!(["legacy:public"]), "bench.jpg", "image/jpeg", picture), picture).await;
+    brought(&mac, put(&private, json!([]), "take.m4a", "audio/mp4", kept), kept).await;
+    let path = format!("/feed/legacy/{published}");
+    let served = || async { http(addr, "GET", &path).await.0.starts_with("http/1.1 200") };
+    until("the server serves the published file by its hash", served).await;
+    let (head, body) = http(addr, "GET", &path).await;
+    assert_eq!(body, picture);
+    for want in ["content-type: image/jpeg", "accept-ranges: bytes", "access-control-allow-origin: *",
+        &format!("content-length: {}", picture.len())]
+    {
+        assert!(head.contains(want), "{want}: {head}");
+    }
+    let (head, body) = http(addr, "GET", &format!("{path}.jpg")).await;
+    assert!(head.starts_with("http/1.1 200") && body == picture, "with its extension: {head}");
+    let (head, body) = http_range(addr, &path, "bytes=2-8").await;
+    assert!(head.starts_with("http/1.1 206"), "{head}");
+    assert!(head.contains(&format!("content-range: bytes 2-8/{}", picture.len())), "{head}");
+    assert_eq!(body, &picture[2..9]);
+    let (head, _) = http_range(addr, &path, "bytes=999-").await;
+    assert!(head.starts_with("http/1.1 416"), "past its end: {head}");
+    let (head, body) = http(addr, "HEAD", &path).await;
+    assert!(head.starts_with("http/1.1 200") && body.is_empty(), "{head}");
+    let (head, _) = http(addr, "OPTIONS", &path).await;
+    assert!(head.starts_with("http/1.1 204"), "a page may ask for it: {head}");
+    let none = [
+        (format!("/feed/legacy/{private}"), "a file nobody published"),
+        (format!("/feed/legacy/{}", "12".repeat(32)), "a hash nobody tagged"),
+        ("/feed/legacy/bench.jpg".to_string(), "no hash"),
+        (format!("/feed/legacy/{published}/more"), "no such route"),
+    ];
+    for (path, why) in none {
+        let (head, body) = http(addr, "GET", &path).await;
+        assert!(head.starts_with("http/1.1 404") && head.contains("access-control-allow-origin: *"), "{why}: {head}");
+        assert!(!body.contains("nobody published"), "{why}: {body}");
+    }
+    mac.shutdown().await.expect("Alice's Mac stops");
+    started.shutdown().await.expect("the server stops");
+}
+
 #[test]
 fn the_server_is_configured_by_its_environment() {
     let defaults = Config::from_vars(|_| None).expect("the defaults");
