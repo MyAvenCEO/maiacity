@@ -1,6 +1,7 @@
 <!--
-	What maiaCITY kept before avenDB, offered on the Sparks page (./Sparks.svelte) of a vault the acting vault may add
-	sparks and artifacts to, to copy in once (./legacy.js): the inspire-me reports with their sources, the journal's
+	What maiaCITY kept before avenDB, offered on the Sparks page (./Sparks.svelte) of the Maia City COOP alone, where the
+	acting vault may add sparks and artifacts to it (Samuel 2026-10-18: a person's own vault gets no sparks, artifacts or
+	the like from the seed; they all go into Maia City, as ./seed.js writes the rest), to copy in once (./legacy.js): the inspire-me reports with their sources, the journal's
 	sources and idea pads, and the admin's notebook where the person signed in to maia.city holds it. The originals stay
 	where they are. Each piece copies as its artifacts and then its spark, one after another; what is copied already is
 	left out, so it shows only while something is left. "Not now" hides it in this browser for this vault.
@@ -11,7 +12,7 @@
 	import { copying, pieces, uncopied } from './legacy.js';
 	import { creatable } from './ops.js';
 	import { SPARK } from './sparks.js';
-	import { count, nameOf } from './vaults.js';
+	import { count, nameOf, seeded } from './vaults.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean }} */
 	let { world, vault, actor, api, busy } = $props();
@@ -30,7 +31,9 @@
 		};
 	});
 
-	const left = $derived(uncopied(world, vault, pieces(ideas)));
+	/** whether this is the Maia City COOP of the person's seed: the one vault the copy goes into */
+	const city = $derived(seeded(world)[3]?.[0]?.id === vault);
+	const left = $derived(city ? uncopied(world, vault, pieces(ideas)) : []);
 	const by = $derived({
 		report: left.filter((p) => p.kind === 'report').length,
 		journal: left.filter((p) => p.kind === 'journal').length,
@@ -50,6 +53,10 @@
 	let tags = $state(/** @type {{ spark: string[], artifact: string[] } | null} */ (null));
 	$effect(() => {
 		let gone = false;
+		if (!city) {
+			tags = null;
+			return;
+		}
 		Promise.all([creatable(api, actor, vault, SPARK), creatable(api, actor, vault, ARTIFACT)]).then(
 			([spark, artifact]) => !gone && (tags = spark && artifact ? { spark, artifact } : null)
 		);
