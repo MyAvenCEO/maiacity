@@ -262,22 +262,22 @@
 			<p class="fine">{native() ? 'The sign-in sheet asks' : 'Your browser asks'} for your passkey twice.</p>
 		{:else}
 			<h1>Welcome back.</h1>
-			<p class="lede">
-				{phase === 'locked'
-					? `Unlock with your passkey: it opens the app and your avenDB on ${native() ? 'this Mac' : 'this browser'} together.`
-					: 'The city’s own rooms — the games, your avenDB, what we build with — open to its founders, with one passkey.'}
-			</p>
+			{#if phase !== 'locked'}
+				<p class="lede">The city’s own rooms — the games, your avenDB, what we build with — open to its founders, with one passkey.</p>
+			{/if}
 			{#if device}
 				<p class="lede">Your browser opened maia.city. Approve this Mac there with your passkey — the code is</p>
 				<p class="code">{device.user_code}</p>
 				<p class="fine">Waiting for your approval… <button class="quiet" onclick={() => command('auth_open', { url: device!.url })}>Open the page again</button></p>
 			{:else}
 				<button class="pill-btn" disabled={!!busy} onclick={enter}>{busy ? `${busy}…` : phase === 'locked' ? 'Unlock with your passkey' : 'Sign in with your passkey'}</button>
+				<a class="back" href="{base}/">← Back to the homepage</a>
 			{/if}
 		{/if}
 		{#if error}<p class="bad">{error}</p>{/if}
 		{#if phase === 'locked' && (stuck || naming) && !busy}<button class="quiet later" onclick={without}>Go on without avenDB for now</button>{/if}
-		{#if phase === 'signed-out' && !native()}<p class="fine">Not a founder yet? maiaCITY is invite only: an invite link from its admin <a href="{base}/join/">lets you join →</a></p>{/if}
+		<!-- for a newcomer, signed out or at a browser that holds someone's account, in the browser alone -->
+		{#if (phase === 'signed-out' || (phase === 'locked' && !naming)) && !native()}<p class="fine">New here? maiaCITY is invite only: an invite link from its admin <a href="{base}/join/">lets you join →</a></p>{/if}
 	</div>
 {:else}
 	{#if closed}
@@ -326,6 +326,11 @@
 	.bad {
 		max-width: 30rem;
 		color: var(--terracotta);
+	}
+
+	.back {
+		font-size: 0.9rem;
+		color: var(--muted);
 	}
 
 	.later {
