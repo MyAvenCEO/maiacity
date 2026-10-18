@@ -11,8 +11,8 @@ file has the same shape as every other sub skill.
 ## Where it lives
 
 - Listed in `src/lib/machines/index.js` (`MACHINES`): a kind in `LIST` (`{ id, label, note, from, variants }`) and
-  its versions in `HISTORY`, shown in `/app/machines` (admin) on the turntable it shares with the actors
-  (`src/lib/app/ActorsView.svelte`). A machine never also goes into the Things (`thing-skill`).
+  its versions in `HISTORY`, shown in avenDB's Assets (`/app/avendb/#assets`) on the turntable every asset
+  shares there (`src/lib/assets/VaultAsset.svelte`). A machine never also goes into the Things (`thing-skill`).
 - **A new machine, or a new version built from scratch:** `src/lib/machines/<machine>.js`, built at AirSup's realism
   with `$lib/assets`. Its variant's `make` hands the turntable `castOf(root)` (`$lib/assets/parts.js`), and the
   turntable shows it on the asset stage: its parts, its sliders and "How it is computed" in the panel, its hero number
@@ -120,7 +120,7 @@ How a machine moves and how it is looked at are kept apart, on the bar and in th
 
 ## From an AirSup page to our library
 
-A machine made with AirSup's skill is one HTML file. When the same machine must live in `/app/machines` or a game,
+A machine made with AirSup's skill is one HTML file. When the same machine must live in avenDB's Assets or a game,
 port it into `src/lib/machines/<machine>.js` with `$lib/assets`: its parts through `part(...)` with the same measures
 and cards, its solver and its lab as they were, its root at real size; then a kind in the machines' `LIST`, a frozen
 version, the size test, the versions test.

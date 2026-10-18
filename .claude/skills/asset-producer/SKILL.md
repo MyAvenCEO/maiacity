@@ -1,6 +1,6 @@
 ---
 name: asset-producer
-description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($lib/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test, where an asset is kept: recipes and schemas by hash, the box and the device cache, avenDB recipe entries later), the order of work, how we check (checking.md) and which sub skill to load, one per group in the dashboard's order — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
+description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($lib/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test, where an asset is kept: recipes and schemas by hash, the box and the device cache, avenDB recipe entries later), the order of work, how we check (checking.md) and which sub skill to load, one per asset group — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
 ---
 
 # Asset producer
@@ -144,18 +144,20 @@ version of the host.
 
 ## The workshop: one sub skill per asset group
 
-The asset groups are the dashboard's Game Assets (`src/lib/app/places.ts`), one sub skill each, in this order:
+The asset groups (`GROUPS` of `src/lib/assets/index.js`), one sub skill each, in this order. Machines, actors, things
+and plants are shown in avenDB's Assets (`/app/avendb/#assets`; their old addresses redirect there since #943);
+factories, worlds, buildings and biomes keep their own pages for now:
 
 | Group | Sub skill | Where it lives | Use it for |
 |---|---|---|---|
 | Factories | `factory-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/factories/<factory>.js` on the runtime ported into `src/lib/factories`; `/app/factories` | a whole production line as a live 3D miniature on a real discrete event simulation: sizing a line, its bottleneck, "can this line make N a day" |
-| Machines | `machine-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/machines/<machine>.js` with `$lib/assets`; the older ones rigged in `src/lib/actors`; `/app/machines` | what works by moving parts: an engine, a pump, a vehicle, the pod, the LifeTrac, the cubes, the BatteryPack; "show how X works" as a page or a film |
-| Actors | `actor-skill` | `src/lib/actors`, `/app/actors` | people and animals: the stand-in, its poses and its face, the animals of the worlds |
+| Machines | `machine-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/machines/<machine>.js` with `$lib/assets`; the older ones rigged in `src/lib/actors`; avenDB's Assets | what works by moving parts: an engine, a pump, a vehicle, the pod, the LifeTrac, the cubes, the BatteryPack; "show how X works" as a page or a film |
+| Actors | `actor-skill` | `src/lib/actors`, avenDB's Assets | people and animals: the stand-in, its poses and its face, the animals of the worlds |
 | Worlds | `world-skill` | `src/lib/worlds`, `src/lib/sandbox-*`, `/app/worlds` | a world, a sandbox, a real place or a village: the sky, the walker, the film camera, many things drawn cheaply |
 | Buildings | `building-skill` | `src/lib/buildings`, `/app/buildings` | a tent, a dome, a container, a tower: sized, engineered, walked inside |
-| Things | `thing-skill` | `src/lib/models`, `/app/models` | the still things: a prop, a tent, equipment or furniture, built, versioned, resized, pitched, taken apart, walked into |
+| Things | `thing-skill` | `src/lib/models`, avenDB's Assets | the still things: a prop, a tent, equipment or furniture, built, versioned, resized, pitched, taken apart, walked into |
 | Biomes | `biome-skill` | `src/lib/biomes`, `/app/biomes` | the floor a world stands on: surfaces, cover in colonies, streamed round the eye |
-| Plants | `plant-skill` | `src/lib/plants`, `/app/plants` | a plant, a tree, a crop, a herb or a fungus grown from its seed through its stages to fruit |
+| Plants | `plant-skill` | `src/lib/plants`, avenDB's Assets | a plant, a tree, a crop, a herb or a fungus grown from its seed through its stages to fruit |
 
 Every one of our sub skills has the same shape, so what one group learns is found in the same place in the next:
 **Where it lives**, **How it is built**, **Composable** (what goes into it, what it goes into), **Versions**,
@@ -198,7 +200,7 @@ Research before geometry, always.
 ## Where an AirSup page joins our assets
 
 `factory-skill` and `machine-skill` each write one self-contained HTML file. Kept as it is, it is a finished
-explainer or a film. When the same machine or line must live in our app (a machine in `/app/machines` or a game, a
+explainer or a film. When the same machine or line must live in our app (a machine in avenDB's Assets or a game, a
 thing, a world; a line in `/app/factories`), port it into a JS module with `$lib/assets`: its parts through `part(...)`
 with the same measures and cards, its solver and its lab as they were, its root at real size; a line as its spec on
 the runtime ported into `src/lib/factories`, its engine pure with the same equations. Then follow the laws above: a

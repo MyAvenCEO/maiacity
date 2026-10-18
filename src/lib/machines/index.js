@@ -1,11 +1,11 @@
 /*
- * THE MACHINES — everything we build that works by moving parts, as the Machines gallery (/app/machines/) lists it:
+ * THE MACHINES — everything we build that works by moving parts, as avenDB's Assets (/app/avendb/#assets) lists it:
  * the small and the large excavator, the pod and the forklift that loads it, Open Source Ecology's LifeTrac and Power Cube, and our own
  * ElectroCube, BatteryCube and BatteryPack — each kind with its variants and its versions. Most are rigged like the
  * people and animals (a bone and a card for every part, $lib/actors/rig.ts) and built beside them in $lib/actors, where
  * the games import them from; a machine built at AirSup's realism (real meshes in measured materials, its insides there
  * to cut open, a solver running it: $lib/assets) lives here in its own file, the Power Cube from v3 the first. This
- * list gathers them apart from the Actors (/app/actors/: people and animals).
+ * list gathers them apart from the Actors (people and animals, $lib/actors).
  */
 import { crawlerExcavator } from '$lib/actors/crawler-excavator.js';
 import { miniExcavator } from '$lib/actors/excavator.js';

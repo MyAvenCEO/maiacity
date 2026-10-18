@@ -173,8 +173,8 @@ film takes it from there. How to build it into the library is in `ours.md` besid
   (Run, its own `lab.moves`, Assemble, its break) apart from its views (Explode, Cut away, X-ray, Labels, Slow). The
   Power Cube (`src/lib/machines/powercube.js`, v3) is the worked example. Older machines are rigged meshes in
   `src/lib/actors/` and stay there, frozen.
-- **The library line:** a kind in `LIST` of `src/lib/machines/index.js`, its versions in `HISTORY` there; it shows in
-  `/app/machines` (admin), under Game Assets on the dashboard.
+- **The library line:** a kind in `LIST` of `src/lib/machines/index.js`, its versions in `HISTORY` there; once the seed
+  has written its recipe into the Maia City vault, it shows in avenDB's Assets (`/app/avendb/#assets`).
 - **Its size:** in `REAL_SIZES` (`src/lib/models/units.js`) and the `BUILD` map of `src/lib/models/sizes.test.js`.
 - **Its parts:** every part a mechanic would name is its own, with its card (what it is, what moves it, its numbers,
   where they come from).

@@ -25,12 +25,16 @@ every asset group.
 
 ## Pictures
 
-- **The real page as a mocked admin** (`/app/models`, `/app/machines`, `/app/actors`, `/app/plants`, `/app/biomes`,
-  `/app/buildings`): in dev the site asks `http://localhost:3100/api/me`, so a Playwright
-  `context.route('http://localhost:3100/**', …)` answers `/api/me` with `{ id, number, name, since, role: 'admin',
-  caps: ['media:admin'] }` and everything else with a 404, both with `access-control-allow-origin:
-  http://localhost:5199` and `access-control-allow-credentials: true`. With `caps: []` the same pages must say "Not
-  released yet".
+- **avenDB's Assets on the dev feed** (machines, actors, things, plants; `/app/avendb/#assets`). Since the one passkey
+  (#904) every `/app` page asks for a passkey first, which a headless browser cannot give, so a mocked `/api/me` no
+  longer opens them. Mount the view in a throwaway route instead (`src/routes/dev-assets-check/+page.svelte`, never
+  committed), with Vite started as `VITE_RECIPE_FEED=dev bunx vite dev --port 5199 --strictPort`: it reads
+  `/__recipe-feed/code?seed=1&type=recipe`, makes one entry per asset as the vault keeps it (the first version on main,
+  each later one a proposal merged into main, each variant a line), and renders `$lib/avendb/Assets.svelte` with
+  `{ world, vault, actor, api, entry, recipe }`, the last two read from the page's `#assets/<entry>/<recipe hash>`.
+  Its `api` needs `database(vault)` (the rows), `note(entry)` (the lines and edits) and `readFile(root, size, from,
+  to)` (the bytes from `/__recipe-feed/entry/<vault>/<entry>/file`). Factories, buildings, biomes and worlds keep their
+  own pages, behind the same passkey: shoot those with the throwaway shot route below.
 - Vite on a port of its own (`bunx vite dev --port 5199`, in the background); restart it after creating or deleting
   a route.
 - Playwright from `/opt/node-tools/node_modules/playwright/index.mjs`, Chromium at `/opt/pw-browsers/chromium` with
@@ -74,8 +78,9 @@ every asset group.
 - Labels placed beside the asset's centre ran over a long vehicle's body and under the panels: the stage puts them in
   columns outside the asset's outline, inside the room the panels leave (`stage.labels(w, h, safe)`), and hands them
   to the other side when one has no room. Check Labels on the longest asset and on one beside a panel.
-- A new asset app needs every place that names one: its route (`+page.js` prerendered, `+page.svelte`), a line in
-  `GAME_ASSETS` with a cover in `static/app/covers/` (force-added, the folder's jpgs are ignored), a tile in `gameAt`
-  and a title in `placeOf` (`src/lib/app/places.ts`), the full-screen list `immersive` in
-  `src/routes/app/+layout.svelte` (Machines first opened inside the page frame without it), and a group in `GROUPS`
-  of `src/lib/assets/index.js`.
+- A new asset app needs every place that names one: its route (`+page.js` prerendered, `+page.svelte`), a tile in
+  `gameAt` and a title in `placeOf` (`src/lib/app/places.ts`), its address in `ASSET_PAGES` (`src/lib/assets/vault.js`),
+  the full-screen list `immersive` in `src/routes/app/+layout.svelte` (Machines first opened inside the page frame
+  without it), and a group in `GROUPS` of `src/lib/assets/index.js`. No app has a dashboard tile or a cover since
+  #942, and a group avenDB's Assets shows (machines, actors, things, plants) needs no app at all: its recipes in the
+  Maia City vault are enough.

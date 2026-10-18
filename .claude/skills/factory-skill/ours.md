@@ -83,10 +83,10 @@ sub skill.
   `boot` and `tokenOf` lazily, builds every `asset` stage's token, boots into one `fixed; inset: 0` host; on leaving,
   `dispose()` (the rAF loop, the resize observer, the renderer, the composer, the DOM, `globalThis.factory`).
   AirSup's queries work as they did (`?select=load`, `?assemble=0`, `?film=1`, `?speed=`, `?ao=0`).
-- The new-app checklist of `asset-producer`'s `checking.md`: the tile first in `GAME_ASSETS` with its cover
-  (`static/app/covers/factories.jpg`, force-added, `*.jpg` under `static` is ignored), `FACTORIES_TILE` in `gameAt`
-  (draft: an admin's), `placeOf`, the `immersive` list of `src/routes/app/+layout.svelte`, the lede of
-  `/app/assets`, and the `factories` group first in `GROUPS` of `$lib/assets/index.js`.
+- The new-app checklist of `asset-producer`'s `checking.md`: `FACTORIES_TILE` in `gameAt` (draft: an admin's),
+  `placeOf`, the `immersive` list of `src/routes/app/+layout.svelte`, its address in `ASSET_PAGES`, and the
+  `factories` group first in `GROUPS` of `$lib/assets/index.js`. (Its Game Assets tile and cover went with the
+  dashboard's Game Assets, #942.)
 
 ## Composable
 
