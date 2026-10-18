@@ -414,6 +414,7 @@ fn main() {
             transcripts::transcript_edit,
             proxies::color_lut,
             proxies::color_grade,
+            proxies::studio_sound,
             proxies::color_frame,
             player::player_load,
             player::player_play,

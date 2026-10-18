@@ -11,9 +11,9 @@
 	let box = $state(null);
 	// one heading per project, its variants under it (A, B, …); timelines without a project last
 	const groups = $derived.by(() => {
-		/** @type {Map<string, typeof s.timelines>} */
+		/** @type {Map<string, typeof s.shownTimelines>} */
 		const map = new Map();
-		for (const t of s.timelines) map.set(t.project ?? '', [...(map.get(t.project ?? '') ?? []), t]);
+		for (const t of s.shownTimelines) map.set(t.project ?? '', [...(map.get(t.project ?? '') ?? []), t]);
 		for (const l of map.values()) l.sort((a, b) => (a.variant ?? '').localeCompare(b.variant ?? '', undefined, { numeric: true }));
 		return [...map.entries()].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, undefined, { numeric: true })));
 	});
