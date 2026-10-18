@@ -21,7 +21,10 @@
 //! and where it may. Her aven passes on no more than it holds of a coop that hired it, and the coop taking its share
 //! back ends its agent's. A Suggester agent gets an AIP author's share beside its Suggester's, on her AIPs alone,
 //! resting on one her vault gives her aven: it opens an AIP over its proposal line and promotes it, which her vault
-//! accepts; a Viewer opens none, and over a coop that gave the aven a Suggester's alone it gets none. And Eve's photo
+//! accepts; a Viewer opens none, and over a coop that gave the aven a Suggester's alone it gets none. A Suggester of
+//! her seed's coop, Maia City, finds it from its own view, which holds no avenCEO server, by where it stands and never
+//! by its name, and its sparks and artifacts go there, named no vault, as drafts, a picture a draft Library file of its
+//! own, which her Maia City lands by accepting the AIP the agent opens over them. And Eve's photo
 //! drive (`drive`) joins her vault as a device of its own in one sheet, its key never on it in plain; the Mac it is
 //! plugged into hosts it, a full copy; unplugged, its node stops and
 //! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
@@ -1312,6 +1315,128 @@ fn her_grant_passes_a_suggesters_share_made_before_drafts_on_again_in_its_new_fo
     assert_eq!(kept, there, "the coop gave the aven nothing a share in the new form rests on");
 }
 
+/// The entry `entry` as device `d`'s world shows it, if it does: never a draft its vault hasn't landed.
+fn in_world(w: &mut World, d: SignerId, entry: &Value) -> Option<Value> {
+    let world = done(w, d, json!({ "op": "world" }));
+    world["entries"].as_array().into_iter().flatten().find(|e| e["entry"] == *entry).cloned()
+}
+
+/// Her seed, as her claim of the server founded it: Maia Holding GmbH, avenCEO GmbH and avenCEO server, each owned
+/// alone by the one before; and a chain of coops of her own, her studio, a coop in it and one in that, which she calls
+/// Maia City. Her seed has no coop until Maia City is founded beside the server, as her claim founds it now: her own
+/// chain is never taken for it. agentClaude, a Suggester of Maia City and an AIP author there, and a Viewer of the coop
+/// she calls Maia City, finds her seed's coop from its own view, which holds no avenCEO server, by where it stands,
+/// never by its name, though walking up from a server, as her Mac finds her seed, it finds none: so its sparks and
+/// artifacts go there first, then in her own vault. It may only draft there, as it does what avendb_add_spark and
+/// avendb_add_artifact do: a spark, a Library file that brings her picture in its creation, as put_file, which makes
+/// one on main, may not, and an artifact that shows it; none of them shows before her Maia City accepts the AIP it
+/// opens over all three, and then each does, the file a Library file as put_file's, which the artifact shows.
+#[test]
+fn a_suggester_agent_finds_her_seed_coop_from_its_own_view_and_drafts_its_sparks_and_artifacts_there() {
+    let mut w = world();
+    let (alice, mac, passkey) = (w.alice, w.mac_a, w.passkey_a);
+    let found = |lab: &mut Lab, kind: Kind, owner: VaultId, nonce: u64| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+        VaultId::from(lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
+    };
+    // her seed, as her claim of the server founded it, Maia Holding GmbH, avenCEO GmbH and avenCEO server; a chain of
+    // coops of her own beside it, the last named as her seed's coop is, which isn't taken for it
+    let owner = |w: &World, v: VaultId| match w.lab.state(mac).vault(v).map(|v| &v.owners[..]) {
+        Some([Principal::Vault(owner)]) => *owner,
+        _ => panic!("owned alone by a vault"),
+    };
+    let (server, gmbh) = (w.avenceo, owner(&w, w.avenceo));
+    let holding = owner(&w, gmbh);
+    let studio = found(&mut w.lab, Kind::Coop, alice, 1);
+    let inner = found(&mut w.lab, Kind::Coop, studio, 2);
+    let named = found(&mut w.lab, Kind::Coop, inner, 3);
+    done(&mut w, mac, json!({ "op": "profile", "vault": named.to_hex(), "name": avendb::world::SEED_COOP }));
+    assert_eq!(avendb::world::seed_coop(w.lab.state(mac), alice), None, "a seed founded before Maia City was");
+    // Maia City beside avenCEO server, as her claim founds it now
+    let city = found(&mut w.lab, Kind::Coop, gmbh, 4);
+    // her aven, and agentClaude under it: a Suggester of Maia City, as its standing rule makes every agent there, and
+    // an AIP author there; and a Viewer of the coop she calls Maia City
+    let aven = found(&mut w.lab, Kind::Aven, alice, 5);
+    let claudes = found(&mut w.lab, Kind::DeviceVault, aven, 6);
+    let claude = w.lab.device("agentClaude");
+    let add = Action::Share(Sharing::Device { vault: claudes, device: claude, seal_to: None });
+    w.lab.submit(mac, &[passkey, claude], add).expect("its device");
+    agent::pass_on(&mut w.lab, mac, alice, aven, claudes, city, agent::SUGGESTS).expect("a Suggester of Maia City");
+    let aips = agent::pass_on_aips(&mut w.lab, mac, alice, aven, claudes, city).expect("passed on");
+    aips.expect("an AIP author's there, as she owns it");
+    agent::pass_on(&mut w.lab, mac, alice, aven, claudes, named, "Viewer").expect("a Viewer's");
+    w.lab.sync_all(31);
+    // from its own view: her seed's coop by where it stands, though walking up from a server it finds no seed
+    let st = w.lab.state(claude);
+    assert!(st.vault(named).is_some(), "it knows the coop she calls Maia City");
+    assert!(st.vault(server).is_none(), "and holds no avenCEO server");
+    assert_eq!(avendb::world::seed_coop(st, alice), Some(city), "her seed's coop, by where it stands");
+    assert!(avendb::world::seed_of(&w.lab, claude).is_empty(), "walking up from a server, none");
+    assert_eq!(agent::homes(st, claudes), [city, alice], "Maia City first, then her own vault");
+    assert_eq!(avendb::world::seed_coop(st, aven), None, "no seed under her aven");
+    let st = w.lab.state(mac);
+    assert_eq!(avendb::world::seed_of(&w.lab, mac), [holding, gmbh, server, city], "her Mac's walk up");
+    assert_eq!(avendb::world::seed_coop(st, alice), Some(city), "and down, the same");
+    // there it may only draft
+    let (c, m) = (claudes.to_hex(), city.to_hex());
+    for ty in ["spark", "artifact", "file"] {
+        let ask = |draft: bool| json!({ "op": "creatable", "vault": m, "type": ty, "draft": draft, "as": c });
+        let main = avendb::engine::run(&mut w.lab, claude, &ask(false));
+        assert_eq!(main["refused"], "NoCap", "no {ty} on main: {main}");
+        assert_eq!(done(&mut w, claude, ask(true)), json!({ "tags": [] }), "a {ty} as a draft");
+    }
+    // a spark, as avendb_add_spark drafts one
+    let title = "Tomatoes like the warm wall.";
+    let heading = json!({ "id": 1, "type": "heading", "level": 1, "text": title });
+    let spark = json!({ "kind": "spark", "title": title, "blocks": [heading] });
+    let spark = json!({ "op": "create", "vault": m, "type": "spark", "tags": [], "value": spark, "draft": true,
+        "as": c });
+    let spark = done(&mut w, claude, spark);
+    // her picture, a Library file that brings it in its creation, as avendb_add_artifact drafts one where put_file
+    // may make none; and the artifact that shows it
+    let put = json!({ "op": "put_file", "vault": m, "name": "Sunrise.jpg", "media": "image/jpeg", "len": 1, "as": c });
+    let put = done(&mut w, claude, json!({ "op": "may", "ops": [put] }));
+    assert_eq!(put[0]["refused"], "NotAllowed", "put_file makes no file entry on main: {put}");
+    let plain: Vec<u8> = (0..30_000u32).map(|i| (i * 31 % 251) as u8).collect();
+    let key = avendb::sealed::FileKey::from_bytes([7; 32]);
+    let root = avendb::hash::hash("a test file's root", &avendb::sealed::seal(&key, &plain));
+    let len = plain.len() as u64;
+    let value = json!({ "kind": "file", "title": "Sunrise.jpg", "media": "image/jpeg" });
+    let file = json!({ "len": len, "name": "Sunrise.jpg", "media": "image/jpeg" });
+    let file = json!({ "op": "create", "vault": m, "type": "file", "tags": [], "value": value, "draft": true,
+        "file": file, "as": c });
+    let file = avendb::engine::put_file(&mut w.lab, claude, &file, avendb::sealed::Brought::new(root, key, len));
+    let file = file.get("ok").cloned().unwrap_or_else(|| panic!("refused: {file}"));
+    let shows = json!([{ "vault": m, "entry": file["entry"] }]);
+    let artifact = json!({ "kind": "artifact", "look": "image", "title": "Sunrise.jpg", "files": shows });
+    let artifact = json!({ "op": "create", "vault": m, "type": "artifact", "tags": [], "value": artifact,
+        "draft": true, "as": c });
+    let artifact = done(&mut w, claude, artifact);
+    // one AIP over the three, which her Maia City accepts on her Mac; none shows before
+    let drafts = [&spark, &file, &artifact];
+    let proposals: Vec<Value> = drafts.iter().map(|d| json!({ "entry": d["entry"], "line": d["line"] })).collect();
+    let open = json!({ "op": "aip_open", "vault": m, "title": "Morning light", "note": "Why: a story of the light.",
+        "proposals": proposals, "as": c });
+    let aip = done(&mut w, claude, open)["entry"].clone();
+    done(&mut w, claude, json!({ "op": "aip_promote", "entry": aip, "as": c }));
+    w.lab.sync_all(32);
+    for d in drafts {
+        assert_eq!(in_world(&mut w, mac, &d["entry"]), None, "not landed yet: {d}");
+    }
+    done(&mut w, mac, json!({ "op": "aip_review", "entry": aip, "verdict": "accepted", "text": "Yes", "as": m }));
+    w.lab.sync_all(33);
+    for d in [mac, claude] {
+        let spark = in_world(&mut w, d, &spark["entry"]).expect("the spark landed");
+        assert_eq!((&spark["type"], &spark["vault"], &spark["title"]), (&json!("spark"), &json!(m), &json!(title)));
+        let file = in_world(&mut w, d, &file["entry"]).expect("the file landed");
+        let said = (&file["kind"], &file["title"], &file["media"], &file["files"][0]["len"]);
+        assert_eq!(said, (&json!("file"), &json!("Sunrise.jpg"), &json!("image/jpeg"), &json!(len)), "on {d:?}");
+        let shown = in_world(&mut w, d, &artifact["entry"]).expect("the artifact landed");
+        assert_eq!(shown["record"]["files"], shows, "it shows the file, on {d:?}");
+    }
+}
+
 /// Whether `holders`, an entry's or a file's `syncedTo`, has `device` holding any of it.
 fn holds_some(holders: &Value, device: &Value) -> bool {
     holders.as_array().into_iter().flatten().any(|h| h["device"] == *device)
@@ -1720,6 +1845,124 @@ async fn an_agent_adds_artifacts_by_link_and_by_file_and_puts_them_on_a_spark() 
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert_eq!(files(&world_of(&mut app).await), before, "no file saved");
     codex.quit().await;
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+/// A relay open to sign-up and, through it, a new server nobody has claimed, on a shelf in folder `dir`: the relay's
+/// URL, and the server's node. The first vault founded through it claims it, and founds its seed with it, Maia City
+/// among them (`Place::Seed`).
+async fn unclaimed(dir: &Path) -> (Relay, RelayUrl, Node) {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url = relay.url();
+    let opts = Options { relay: Some(url.clone()), admission: Some(admission), ..Options::local() };
+    let node = avendb_net::server::open(disk::open(dir).expect("its shelf"), opts).await.expect("the server's node");
+    (relay, url, node)
+}
+
+/// The seed's coop, Maia City, in world `world` as the page reads it, of vault `mine`: the coop owned alone by a coop
+/// owned alone by a coop owned alone by `mine`, as `world::seed_coop` finds it, never by its name.
+fn seed_coop_in(world: &Value, mine: &Value) -> Value {
+    let vaults = world["vaults"].as_array().expect("its vaults");
+    let under = |owner: &Value| -> Vec<Value> {
+        let alone = |v: &&Value| v["kind"] == "coop" && v["owners"] == json!([{ "vault": owner }]);
+        vaults.iter().filter(alone).map(|v| v["id"].clone()).collect()
+    };
+    let found: Vec<Value> = under(mine).iter().flat_map(&under).flat_map(|g| under(&g)).collect();
+    assert_eq!(found.len(), 1, "her seed's one coop: {found:?}");
+    found[0].clone()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_suggester_agent_drafts_sparks_and_artifacts_in_her_maia_city_which_lands_them_by_an_aip() {
+    let folder = Folder::new("agent-drafts");
+    let (_relay, url, server) = unclaimed(&folder.0.join("server")).await;
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    // Eve founds her vault through a server nobody has claimed: it claims it, and founds her seed, Maia City in it
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    app.asked();
+    let world = world_of(&mut app).await;
+    let (mine, city) = (world["mine"].clone(), seed_coop_in(&world, &world["mine"]));
+    // agentClaude joins under her aven avenEve, a Suggester of her Maia City, as its standing rule makes every agent
+    // there, and an AIP author there; nothing of her own vault
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let asked = requests(&mut app, 1).await;
+    let suggester = json!([{ "over": city, "level": "Suggester" }]);
+    app.call("grant", json!(["agentClaude", asked[0]["device"], suggester, "avenEve"])).await.expect("granted");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    // a thought, no vault named: into her Maia City, once its share reaches it, as a draft, which is all it may do
+    let thought = json!({ "text": "Tomatoes like the warm wall.", "tags": ["garden"] });
+    let mut made = (String::new(), true);
+    for _ in 0..100 {
+        made = claude.tool("avendb_add_spark", thought.clone()).await;
+        if !made.0.contains("waiting for its person") && !made.0.contains("may add no spark") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!made.1, "{made:?}");
+    let spark: Value = serde_json::from_str(&made.0).expect("JSON");
+    let said = (&spark["vault"], &spark["draft"], &spark["tags"]);
+    assert_eq!(said, (&city, &json!(true), &json!(["garden"])), "a draft in her Maia City: {spark}");
+    assert_ne!(spark["vault"], mine, "never her own vault");
+    assert!(spark["line"].is_string(), "{spark}");
+    assert_eq!(spark["proposals"], json!([{ "entry": spark["entry"], "line": spark["line"] }]));
+    assert!(spark["lands"].as_str().is_some_and(|l| l.contains("aip_open")), "{spark}");
+    // a picture of this Mac: a draft Library file that brings it in its creation, and a draft artifact that shows it,
+    // on no canvas, as the spark it names is a draft its vault hasn't landed
+    let path = folder.0.join("Sunrise.jpg");
+    let picture: Vec<u8> = (0..30_000u32).map(|i| (i * 31 % 251) as u8).collect();
+    std::fs::write(&path, &picture).expect("the picture");
+    let on = json!({ "path": path.to_string_lossy(), "spark": spark["entry"] });
+    let (made, error) = claude.tool("avendb_add_artifact", on).await;
+    assert!(!error, "{made}");
+    let artifact: Value = serde_json::from_str(&made).expect("JSON");
+    let said = (&artifact["vault"], &artifact["draft"], &artifact["look"]);
+    assert_eq!(said, (&city, &json!(true), &json!("image")), "{artifact}");
+    let why = artifact["spark"]["why"].as_str().unwrap_or_default();
+    assert!(artifact["spark"]["placed"] == false && why.contains("a draft its vault hasn't landed"), "{artifact}");
+    let lines = [(&artifact["entry"], &artifact["line"]), (&artifact["file"], &artifact["fileLine"])];
+    let both: Vec<Value> = lines.iter().map(|(entry, line)| json!({ "entry": entry, "line": line })).collect();
+    assert_eq!(artifact["proposals"], json!(both), "the artifact's line and its file's: {artifact}");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let world = world_of(&mut app).await;
+    let drafted = [&spark["entry"], &artifact["entry"], &artifact["file"]];
+    let shows = |e: &Value| world["entries"].as_array().into_iter().flatten().any(|x| x["entry"] == *e);
+    assert!(!drafted.iter().any(|e| shows(e)), "none shows on her Mac before her Maia City lands it");
+    // it puts all three to her in one AIP, which her Maia City accepts on her Mac
+    let proposals = [spark["proposals"].as_array(), artifact["proposals"].as_array()];
+    let proposals: Vec<&Value> = proposals.into_iter().flatten().flatten().collect();
+    let open = json!({ "op": "aip_open", "vault": city, "title": "Morning light", "note": "Why: the light at six.",
+        "proposals": proposals });
+    let (opened, error) = claude.tool("avendb_run", json!({ "op": open })).await;
+    assert!(!error, "{opened}");
+    let aip = serde_json::from_str::<Value>(&opened).expect("JSON")["ok"]["entry"].clone();
+    assert!(aip.is_string(), "{opened}");
+    let (promoted, error) = claude.tool("avendb_run", json!({ "op": { "op": "aip_promote", "entry": aip } })).await;
+    assert!(!error && promoted.contains("\"ok\""), "{promoted}");
+    let end = Instant::now() + Duration::from_secs(60);
+    while !run(&mut app, json!({ "op": "aip", "entry": aip })).await.is_ok_and(|r| r["label"] == "AIP-1") {
+        assert!(Instant::now() < end, "the AIP promoted, on her Mac, within 60 s");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let review = json!({ "op": "aip_review", "entry": aip, "verdict": "accepted", "text": "Yes", "as": city });
+    run(&mut app, review).await.expect("her Maia City accepts it");
+    let shown_spark = shown(&mut app, &spark["entry"], "the spark landed", |s| s["type"] == "spark").await;
+    assert_eq!((&shown_spark["vault"], &shown_spark["title"]), (&city, &json!("Tomatoes like the warm wall.")));
+    let file = shown(&mut app, &artifact["file"], "its file landed in the Library", |f| f["kind"] == "file").await;
+    let said = (&file["title"], &file["media"], &file["files"][0]["len"]);
+    assert_eq!(said, (&json!("Sunrise.jpg"), &json!("image/jpeg"), &json!(picture.len())), "{file}");
+    let art = shown(&mut app, &artifact["entry"], "the artifact landed", |a| a["type"] == "artifact").await;
+    assert_eq!(art["record"]["files"], json!([{ "vault": city, "entry": artifact["file"] }]), "it shows its file");
+    // and the agent reads its file back from the landed Library file, every byte
+    let back = folder.0.join("Sunrise back.jpg");
+    let read = json!({ "entry": artifact["file"], "path": back.to_string_lossy() });
+    let (read, error) = reads_file(&mut claude, read).await;
+    assert!(!error, "{read}");
+    assert_eq!(std::fs::read(&back).expect("written"), picture, "every byte");
     claude.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
