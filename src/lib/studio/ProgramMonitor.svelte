@@ -30,7 +30,7 @@
 	const pic = $derived(s.picture);
 	const spec = $derived(isWorld(pic) ? s.specOf(pic) : null);
 	/** the live world is showing this frame */
-	const live = $derived(!!spec && s.world.isLive(spec));
+	const live = $derived(!!spec && !s.onWorldProxy(pic) && s.world.isLive(spec));
 	/** the world is readied for this frame: its first frame is asked for at once (paused, nothing else would ask) */
 	const ready = $derived(!!spec && s.world.isReady(spec));
 	const worldVideo = $derived(isWorld(pic) && !live ? (s.reelVideos[pic?.id ?? ''] ?? null) : null);
