@@ -1,3 +1,4 @@
+// @ts-nocheck — plain JS
 // An asset's parts tree (./tree.js), as the viewers list it: its own parts by assembly, each whole asset it carries
 // apart, named as its host's catalog names it.
 // Run: bun test src/lib/assets/tree.test.js

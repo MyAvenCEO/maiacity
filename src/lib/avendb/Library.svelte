@@ -2,7 +2,8 @@
 	A vault's Library: every file of the vault the acting vault reads, as a media app lists them, in the layout every
 	avenDB view has (./Frame.svelte): on the left what narrows them, by kind (films, images, SVGs, PDFs, audio, other)
 	or a tag, each with how many there are, the deleted ones apart; in the middle each a tile with a preview where it
-	is a picture, its size, its kind and its tags. A click opens it in the middle, to save or delete there, its
+	is a picture or a film the Mac made a still of (the `still` rule's preview, $lib/studio/jobs/rules.js), its size, its
+	kind and its tags, or the same as a table (Samuel 2026-10-18), with every vault whose devices hold its bytes. A click opens it in the middle, to save or delete there, its
 	details on the right (its kind, size, who added it and when, its tags, where it is synced to, who it is shared
 	with and its hash): a film or a song plays as the browser's player asks for it, a range at a time, streamed from
 	the device through a service worker (./files.js), or read whole where none runs; a picture, an SVG or a PDF shows
@@ -16,12 +17,14 @@
 -->
 <script>
 	import { onDestroy } from 'svelte';
+	import { madeIndex, tasksOf } from '$lib/studio/jobs/tasks.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
 	import { allowed, creatable, deleting, may } from './ops.js';
 	import {
 		count,
+		heldWords,
 		list,
 		nameOf,
 		reads,
@@ -62,6 +65,23 @@
 	/** the files deleted: listed apart, each to open and bring back */
 	const deleted = $derived(files.filter((e) => e.deleted));
 	const hidden = $derived(entries.length - seen.length);
+
+	/**
+	 * Each film's preview, by its entry: the JPEG the Mac's `still` rule made of it at its hero frame
+	 * ($lib/studio/jobs/rules.js, vault/app/src/aven.rs), where it holds one this device can open.
+	 */
+	const previewOf = $derived.by(() => {
+		const made = madeIndex(tasksOf(world));
+		const byEntry = new Map(world.entries.map((e) => [e.entry, e]));
+		/** @type {Map<string, EntryView>} */
+		const out = new Map();
+		for (const e of files) {
+			if (kind(e) !== 'film') continue;
+			const p = byEntry.get(made.get(`still:${e.entry}`)?.outputs?.[1] ?? '');
+			if (p && !p.deleted && p.files?.[0]?.len != null) out.set(e.entry, p);
+		}
+		return out;
+	});
 
 	/** Entry `e`'s kind of file. @param {EntryView} e */
 	const kind = (e) => kindOf(e.media, e.title ?? '');
@@ -193,21 +213,74 @@
 		return k === 'svg' ? dataUrl(blob) : urlOf(blob);
 	}
 
-	/** Previews entry `e`'s picture once its tile shows. @param {HTMLElement} node @param {EntryView} e */
-	function previews(node, e) {
-		const file = fileOf(e);
-		if (!file || file.len === null || file.len > THUMB || (kind(e) !== 'image' && kind(e) !== 'svg')) return;
-		const seen = new IntersectionObserver(([x]) => {
-			if (!x.isIntersecting || thumbing.has(file.root)) return;
-			seen.disconnect();
-			thumbing.add(file.root);
-			picture(e)
-				.then((url) => (thumbs = { ...thumbs, [file.root]: url }))
-				.catch(() => {});
-		});
-		seen.observe(node);
-		return { destroy: () => seen.disconnect() };
+	/** Entry `e`'s preview as a URL: its picture, or of a film the JPEG still `still` the Mac made of it. @param {EntryView} e @param {EntryView} [still] */
+	async function thumbnail(e, still) {
+		const file = still && fileOf(still);
+		if (!file) return picture(e);
+		return urlOf(await whole(read, file, still.media ?? 'image/jpeg'));
 	}
+
+	/**
+	 * Previews entry `e` once its tile or row shows: a picture of its own, or a film's still (`still`), which may come
+	 * in later, as the Mac makes it. @param {HTMLElement} node @param {[EntryView, EntryView | undefined]} of
+	 */
+	function previews(node, of) {
+		/** @type {IntersectionObserver | null} */
+		let seen = null;
+		const watch = (/** @type {[EntryView, EntryView | undefined]} */ [e, still]) => {
+			seen?.disconnect();
+			const file = fileOf(e);
+			if (!file || file.len === null || thumbing.has(file.root)) return;
+			const own = (kind(e) === 'image' || kind(e) === 'svg') && file.len <= THUMB;
+			if (!own && !still) return;
+			seen = new IntersectionObserver(([x]) => {
+				if (!x.isIntersecting || thumbing.has(file.root)) return;
+				seen?.disconnect();
+				thumbing.add(file.root);
+				thumbnail(e, own ? undefined : still)
+					.then((url) => (thumbs = { ...thumbs, [file.root]: url }))
+					.catch(() => thumbing.delete(file.root));
+			});
+			seen.observe(node);
+		};
+		watch(of);
+		return { update: watch, destroy: () => seen?.disconnect() };
+	}
+
+	/** how the files are laid out, remembered on this device: tiles, or a table */
+	const LAYOUT = 'avendb:library:layout';
+	let layout = $state(/** @type {'grid' | 'table'} */ ('grid'));
+	try {
+		if (localStorage.getItem(LAYOUT) === 'table') layout = 'table';
+	} catch {}
+	/** @param {'grid' | 'table'} to */
+	function lay(to) {
+		layout = to;
+		try {
+			localStorage.setItem(LAYOUT, to);
+		} catch {}
+	}
+
+	/**
+	 * The vaults whose devices hold file `file`'s bytes, each once, with those devices and how much each holds; a device
+	 * of no vault this device knows by its own name. @param {import('./files.js').FileView | undefined} file
+	 */
+	function heldBy(file) {
+		/** @type {Map<string, { name: string, devices: string[] }>} */
+		const out = new Map();
+		for (const h of file?.syncedTo ?? []) {
+			const v = world.vaults.find((x) => x.devices.some((d) => d.id === h.device));
+			const held = heldWords(h);
+			const device = `${signerName(world, h.device)}${held ? ` (${held})` : ''}`;
+			const at = out.get(v?.id ?? h.device) ?? { name: v ? nameOf(v) : signerName(world, h.device), devices: [] };
+			at.devices.push(device);
+			out.set(v?.id ?? h.device, at);
+		}
+		return [...out.values()];
+	}
+
+	/** When entry `e` was added, short. @param {EntryView} e */
+	const day = (e) => (e.created ? new Date(e.created * 1000).toLocaleDateString('en-GB', { dateStyle: 'medium' }) : '');
 
 	/** the entry open in the main area */
 	let open = $state('');
@@ -438,15 +511,61 @@
 					</p>
 				</div>
 			{:else if shown.length}
+				<div class="layout" role="group" aria-label="Lay the files out">
+					<button aria-pressed={layout === 'grid'} onclick={() => lay('grid')}><Icon name="apps" /> Grid</button>
+					<button aria-pressed={layout === 'table'} onclick={() => lay('table')}><Icon name="table" /> Table</button>
+				</div>
+				{#if layout === 'table'}
+					<div class="rows">
+						<table>
+							<thead>
+								<tr><th><span class="hide">Preview</span></th><th>Name</th><th>Kind</th><th class="num">Size</th><th>Added</th><th>Tags</th><th>Synced to</th></tr>
+							</thead>
+							<tbody>
+								{#each shown as e (e.entry)}
+									{@const k = kind(e)}
+									{@const file = fileOf(e)}
+									{@const thumb = file ? thumbs[file.root] : undefined}
+									<tr class:deleted={e.deleted}>
+										<td class="mini">
+											<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
+												{#if thumb}
+													<img src={thumb} alt="" loading="lazy" />
+												{:else}
+													<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={16} />
+												{/if}
+											</span>
+										</td>
+										<td class="name"><button class="open" onclick={() => show(e)}>{e.title}</button></td>
+										<td>{KINDS.find(([x]) => x === k)?.[1]}</td>
+										<td class="num">{file?.len != null ? size(file.len) : 'sealed'}</td>
+										<td class="soft">{day(e)}{e.by !== vault ? `, by ${nameOf(byId.get(e.by))}` : ''}</td>
+										<td>{#if e.tags?.length}<span class="tags">{#each e.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>{/if}</td>
+										<td>
+											<span class="held">
+												{#each heldBy(file) as h (h.name)}
+													<span title={h.devices.join(', ')}>{h.name}</span>
+												{:else}
+													<span class="soft">nowhere yet</span>
+												{/each}
+											</span>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{:else}
 				<div class="grid">
 					{#each shown as e (e.entry)}
 						{@const k = kind(e)}
 						{@const file = fileOf(e)}
 						{@const thumb = file ? thumbs[file.root] : undefined}
 						<button class="tile" class:deleted={e.deleted} onclick={() => show(e)} aria-label="Open {e.title}">
-							<span class="thumb {k}" use:previews={e}>
+							<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
 								{#if thumb}
 									<img src={thumb} alt="" loading="lazy" />
+									{#if k === 'film'}<span class="play"><Icon name="play" size={22} /></span>{/if}
 								{:else}
 									<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={k === 'film' ? 28 : 34} />
 								{/if}
@@ -465,6 +584,7 @@
 						</button>
 					{/each}
 				</div>
+				{/if}
 			{:else}
 				<p class="soft">{binned ? 'Nothing deleted.' : `No file here${asked ? ' yet: drop some on this page.' : '.'}`}</p>
 			{/if}
@@ -500,7 +620,7 @@
 					<p class="note">Opening it: {Math.floor(loading * 100)} %</p>
 				{:else if k === 'film' && src}
 					<!-- svelte-ignore a11y_media_has_caption -->
-					<video src={src} controls autoplay playsinline></video>
+					<video src={src} poster={file ? thumbs[file.root] : undefined} controls autoplay playsinline></video>
 				{:else if k === 'audio' && src}
 					<div class="song"><Icon name="audio" size={64} /><audio src={src} controls autoplay></audio></div>
 				{:else if (k === 'image' || k === 'svg') && src}
@@ -600,6 +720,152 @@
 		gap: 1rem;
 	}
 
+	.layout {
+		display: flex;
+		width: fit-content;
+		margin: 0 0 0.8rem auto;
+		padding: 2px;
+		border: 1px solid var(--edge);
+		border-radius: 8px;
+		background: #fff;
+	}
+
+	.layout button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.3rem 0.7rem;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		font: inherit;
+		font-size: 0.8rem;
+		color: rgb(0 0 0 / 0.6);
+		cursor: pointer;
+	}
+
+	.layout button[aria-pressed='true'] {
+		background: #e9e4d9;
+		color: inherit;
+		font-weight: 600;
+	}
+
+	.held {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.held > span:not(.soft) {
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		background: #e9e4d9;
+		font-size: 0.74rem;
+		white-space: nowrap;
+	}
+
+	.rows {
+		overflow-x: auto;
+		border: 1px solid var(--edge);
+		border-radius: 10px;
+		background: #fff;
+	}
+
+	.rows table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.84rem;
+	}
+
+	.rows th {
+		padding: 0.5rem 0.65rem;
+		font-size: 0.72rem;
+		font-weight: 600;
+		text-align: left;
+		color: rgb(0 0 0 / 0.55);
+		white-space: nowrap;
+	}
+
+	.rows td {
+		padding: 0.4rem 0.65rem;
+		border-top: 1px solid var(--edge);
+		vertical-align: middle;
+	}
+
+	.rows tbody tr:hover td {
+		background: rgb(0 0 0 / 0.03);
+	}
+
+	.rows tr.deleted td {
+		opacity: 0.55;
+	}
+
+	.rows .num {
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	.rows .name {
+		max-width: 20rem;
+	}
+
+	.rows .open {
+		display: block;
+		overflow: hidden;
+		max-width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-weight: 600;
+		color: inherit;
+		text-align: left;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.rows .open:hover,
+	.rows .open:focus-visible {
+		color: var(--accent);
+	}
+
+	.rows .mini {
+		width: 4.2rem;
+	}
+
+	.rows .mini .thumb {
+		width: 4.2rem;
+		height: 2.4rem;
+		border: 0;
+		border-radius: 5px;
+	}
+
+	.rows .tags {
+		margin: 0;
+	}
+
+	.hide {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+	}
+
+	.thumb .play {
+		position: absolute;
+		inset: 0;
+		margin: auto;
+		display: grid;
+		place-items: center;
+		width: 2.6rem;
+		height: 2.6rem;
+		border-radius: 50%;
+		background: rgb(0 0 0 / 0.45);
+		color: #fff;
+	}
+
 	.tile {
 		display: flex;
 		flex-direction: column;
@@ -628,6 +894,7 @@
 	}
 
 	.thumb {
+		position: relative;
 		display: grid;
 		place-items: center;
 		height: 8.5rem;
