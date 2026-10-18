@@ -1,15 +1,19 @@
 <!--
-	What this device does in the background for the vault the page shows, live, as the studio's Processes shows its
-	jobs (vault/app's jobs.rs): what it works on now, each job with its kind, what it works on, how far it is and how
+	What this device does in the background for the vault the page shows, live: what it works on now, each job with its kind, what it works on, how far it is and how
 	long it has left; and what it did, each with where what it worked on is synced to now, or why it failed. Its jobs
 	(the device's `jobs` op): files brought into its store, sealed as their bytes come; files kept whole, their pieces
 	fetched from the peers that hold them; and the edits a peer holds for it, asked for page by page and taken. Each
 	job tells the vaults and entries it is about, and the page shows only those of its vault, a pull with only that
 	vault's edits. Beside them, what still syncs, by entry and by file, from where each is synced to: each device that
 	holds only some of what this one holds of the vault, with how much of it.
+	On the Mac app, under them, the studio's jobs (Samuel 2026-10-18: the studio has no Jobs tab of its own any more):
+	the rules of each vault this Mac works for and the tasks they want, each where it stands
+	($lib/studio/jobs/Tasks.svelte).
 -->
 <script>
 	import { onMount } from 'svelte';
+	import { native } from '$lib/native';
+	import Tasks from '$lib/studio/jobs/Tasks.svelte';
 	import { studio } from './db.js';
 	import { ago, count, short, size } from './vaults.js';
 
@@ -285,9 +289,35 @@
 			<p class="empty">Nothing yet.</p>
 		{/if}
 	</section>
+
+	{#if native()}
+		<section class="studio">
+			<h3>Studio</h3>
+			<p class="soft">What the studio’s rules want made of each vault’s footage and cuts (proxies, stills, transcripts, renders), and this Mac doing it.</p>
+			<Tasks />
+		</section>
+	{/if}
 </div>
 
 <style>
+	/* the studio's tasks list, in this page's colours */
+	.studio {
+		--dim: var(--muted, #8a8579);
+		--hover: #f1eee6;
+		--ok: #2f7a4a;
+		--accent: #b8742a;
+		--bad: #b23a22;
+	}
+
+	.studio :global(.ghost.small) {
+		padding: 0.2rem 0.6rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: #fff;
+		font-size: 0.74rem;
+		cursor: pointer;
+	}
+
 	.jobs {
 		display: flex;
 		flex-direction: column;

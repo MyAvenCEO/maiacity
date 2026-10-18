@@ -157,15 +157,20 @@ export async function getCut(id) {
 	return timelineOf(e);
 }
 
-/** A new cut of timeline `t` in the person's home vault (`homeOf`), its schema added first if the vault lacks it. @param {Partial<Timeline>} t */
-export async function createCut(t) {
+/**
+ * A new cut of timeline `t` in the person's home vault (`homeOf`), or in vault `at.vault` acting as `at.as`, tagged
+ * `at.tags`; its schema added first if the vault lacks it.
+ * @param {Partial<Timeline>} t @param {{ vault?: string, as?: string, tags?: string[] }} [at]
+ */
+export async function createCut(t, at = {}) {
 	const call = await device();
 	if (!call) throw new Error('avenDB is not open in this app.');
 	let world = await worldOf(call);
-	const home = homeOf(world);
+	const home = at.vault && at.as ? { vault: at.vault, as: at.as } : homeOf(world);
 	if (!home) throw new Error('No avenDB vault to keep the cut in.');
 	await schemaIn(call, world, home.vault, CUT_V1, home.as);
-	const made = answer(await call('run', { op: 'create', vault: home.vault, type: CUT, value: { kind: CUT, ...fieldsOf(t) }, as: home.as }));
+	const tags = at.tags?.length ? { tags: at.tags } : {};
+	const made = answer(await call('run', { op: 'create', vault: home.vault, type: CUT, ...tags, value: { kind: CUT, ...fieldsOf(t) }, as: home.as }));
 	world = await worldOf(call);
 	const e = world.entries.find((x) => x.entry === made.entry);
 	if (!e) throw new Error('The cut was made but this Mac does not show it yet.');

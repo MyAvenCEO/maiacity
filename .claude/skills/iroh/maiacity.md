@@ -158,7 +158,7 @@ clocks must be sane).
 
 ## Flows
 
-**Ingest (the studio's Ingest tab, Mac)**
+**Ingest (the studio's Ingest tab, Mac; legacy: the tab is gone since 2026-10-18, footage comes in through avenDB's Library, tagged `media:original`)**
 1. Detect the source (`/Volumes` watch): label, files, size, dates; skip OS junk.
 2. Copy into the store's `temp/` while hashing the bytes read from the card — the source hash. The card is read once.
 3. `add_path(ImportMode::Copy)` (APFS reflink) → iroh's destination hash, read uncached.

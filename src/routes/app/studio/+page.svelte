@@ -11,21 +11,20 @@
 	          grade as ASC CDL in ACEScct, presets, scopes, and each delivery shape's framing. Grades are data.
 	  Render  the render queue and the last render's deliveries per shape (QC, loudness), each viewable.
 
-	Every change is saved to the timeline a moment after it is made. The pieces live in src/lib/studio/.
+	Every change is saved to the timeline a moment after it is made. The pieces live in src/lib/studio/. The studio is
+	avenDB's (Samuel 2026-10-18): its timelines are cuts in avenDB, its files the vaults' Library (footage comes in
+	there), its jobs in avenDB's Jobs app; the legacy Data, Library and Jobs tabs are gone.
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import Bin from '$lib/studio/Bin.svelte';
 	import Deliveries from '$lib/studio/Deliveries.svelte';
-	import Ingest from '$lib/studio/Ingest.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
 	import CueCard from '$lib/studio/CueCard.svelte';
-	import Library from '$lib/studio/Library.svelte';
 	import Script from '$lib/studio/Script.svelte';
 	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
 	import DeliverablesTab from '$lib/studio/DeliverablesTab.svelte';
-	import Processes from '$lib/studio/Processes.svelte';
 	import GradeAside from '$lib/studio/GradeAside.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
@@ -44,7 +43,7 @@
 
 	// the timeline opens the first time a tab that shows it is opened
 	$effect(() => {
-		if (s.phase === 'ready' && s.tab !== 'ingest' && s.tab !== 'library') void s.openLater();
+		if (s.phase === 'ready') void s.openLater();
 	});
 
 	// if anything goes wrong on the way in, say what — a gate that only ever says "One moment…" hides it
@@ -52,9 +51,9 @@
 		inApp = native();
 		if (!inApp) return;
 		forwardConsole(window, 'studio');
-		// a link into one tab (?tab=library — the media library's address; ?tab=script&timeline=<id> — a story's film)
+		// a link into one tab (?tab=script&timeline=<id> — a story's film)
 		const tab = new URLSearchParams(location.search).get('tab');
-		if (tab === 'ingest' || tab === 'library' || tab === 'render' || tab === 'processes' || tab === 'script' || tab === 'edit') s.tab = tab;
+		if (tab === 'render' || tab === 'script' || tab === 'edit') s.tab = tab;
 		const report = (e: ErrorEvent | PromiseRejectionEvent) => {
 			s.failed = String('reason' in e ? (e.reason?.stack ?? e.reason) : `${e.message} (${e.filename}:${e.lineno})`);
 		};
@@ -74,10 +73,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'].includes(e.code)) {
 			e.preventDefault();
-			const t = (['processes', 'ingest', 'library', 'script', '3d', 'edit', 'audio', 'grade', 'render', 'deliverables'] as const)[Number(e.code.slice(-1))]!;
-			s.tab = t;
+			s.tab = (['script', '3d', 'edit', 'audio', 'grade', 'render', 'deliverables'] as const)[Number(e.code.slice(-1)) - 1]!;
 			return;
 		}
 		// inside the source player's own controls its keys are its own (Space plays it, arrows step through it)
@@ -118,7 +116,7 @@
 {#if inApp === false}
 	<main class="wrap gate">
 		<h1>Studio</h1>
-		<p>The studio — ingest, the library, edit, grade and render — lives in <strong>maiaCITY Studio</strong>, the Mac app. Open it there.</p>
+		<p>The studio — script, edit, grade and render — lives in <strong>maiaCITY Studio</strong>, the Mac app. Open it there.</p>
 	</main>
 {:else if s.phase !== 'ready'}
 	<main class="wrap gate">
@@ -140,7 +138,7 @@
 					<strong>Studio</strong>
 				</div>
 				<div class="title" data-tauri-drag-region>
-					{#if s.current && s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'processes'}
+					{#if s.current}
 						<h2>{s.current.name}</h2>
 						{#if s.current.description}<p title={s.current.description}>{s.current.description}</p>{/if}
 					{/if}
@@ -148,7 +146,7 @@
 				<div class="side end" data-tauri-drag-region>
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
-				{#if s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'processes'}<TimelinePicker {s} />{/if}
+				<TimelinePicker {s} />
 				{#if s.active && s.tab !== 'render'}
 					<button class="rpill" style:--p="{Math.round(s.active.progress * 100)}%" onclick={() => (s.tab = 'render')}>
 						{s.active.status === 'queued' ? 'Render waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`}
@@ -161,12 +159,6 @@
 
 		{#if s.tab === 'deliverables'}
 			<DeliverablesTab {s} />
-		{:else if s.tab === 'processes'}
-			<Processes />
-		{:else if s.tab === 'ingest'}
-			<Ingest />
-		{:else if s.tab === 'library'}
-			<Library />
 		{:else if s.tab === '3d'}
 			<!-- the live world: only here — Edit, Grade and Render show each world shot's HD proxy -->
 			<Bin {s} />
@@ -208,7 +200,7 @@
 			</div>
 			<Deliveries {s} />
 		{/if}
-		{#if s.tab !== 'ingest' && s.tab !== 'library' && s.tab !== 'deliverables' && s.tab !== 'processes'}
+		{#if s.tab !== 'deliverables'}
 			<Transport {s} />
 			<Timeline {s} />
 		{/if}
@@ -334,11 +326,8 @@
 			'tabs tabs';
 	}
 
-	/* Ingest and Library: one panel under the bar, no transport or timeline */
-	.studio.tab-ingest,
-	.studio.tab-library,
-	.studio.tab-deliverables,
-	.studio.tab-processes {
+	/* Deliverables: one panel under the bar, no transport or timeline */
+	.studio.tab-deliverables {
 		grid-template-columns: 1fr;
 		grid-template-rows: auto minmax(0, 1fr) auto;
 		grid-template-areas:

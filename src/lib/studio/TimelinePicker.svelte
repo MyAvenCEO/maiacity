@@ -47,11 +47,6 @@
 							<span class="nm">{t.name}</span>
 							<span class="tg">{t.description ?? `${t.aspect} · ${t.clips.length} clips`}</span>
 						</button>
-						{#if t.id.startsWith('cut:')}
-							<span class="av" title="A cut in avenDB">avenDB</span>
-						{:else if s.avenHere}
-							<button class="x" disabled={!!s.importing} onclick={() => s.importTimeline(t)} aria-label="Import {t.name} into avenDB" title="Import into avenDB: a copy, with exactly the footage it plays (the legacy one stays)">↧</button>
-						{/if}
 						<button class="x" onclick={() => s.removeTimeline(t)} aria-label="Delete {t.name}" title="Delete">×</button>
 					</div>
 				{/each}
@@ -108,16 +103,6 @@
 		font-weight: 600;
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
-		color: var(--dim);
-	}
-
-	.av {
-		flex: none;
-		padding: 0.05rem 0.4rem;
-		border-radius: 999px;
-		background: var(--hover);
-		font-size: 0.6rem;
-		font-weight: 600;
 		color: var(--dim);
 	}
 

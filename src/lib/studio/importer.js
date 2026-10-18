@@ -44,16 +44,20 @@ export function moved(t, refs, shots) {
 }
 
 /**
- * Legacy timeline `id` brought into avenDB as a cut (or the cut it was brought as before), `tell` hearing how far.
- * @param {string} id @param {(line: string) => void} [tell] @returns {Promise<Timeline>}
+ * Legacy timeline `id` brought into avenDB as a cut (or the cut it was brought as before), `tell` hearing how far:
+ * into vault `into.vault`, acting as `into.as` (else the person's home vault, `homeOf`), named `into.name` and
+ * `into.project` where given, linked to story `into.story` and tagged `into.tags` (./legacyfilms.js).
+ * @param {string} id @param {(line: string) => void} [tell]
+ * @param {{ vault?: string, as?: string, name?: string, project?: string, story?: { vault: string, entry: string }, tags?: string[] }} [into]
+ * @returns {Promise<Timeline>}
  */
-export async function importTimeline(id, tell = () => {}) {
+export async function importTimeline(id, tell = () => {}, into = {}) {
 	const call = await device();
 	if (!call) throw new Error('Importing into avenDB works in the Mac app, with avenDB open.');
 	let world = await worldOf(call);
-	const home = homeOf(world);
+	const home = into.vault && into.as ? { vault: into.vault, as: into.as } : homeOf(world);
 	if (!home) throw new Error('No avenDB vault to bring it into.');
-	const before = world.entries.find((e) => e.type === CUT && e.record?.legacy === id && !e.deleted && !(e.tags ?? []).includes('avendb:deleted'));
+	const before = world.entries.find((e) => e.vault === home.vault && e.type === CUT && e.record?.legacy === id && !e.deleted && !(e.tags ?? []).includes('avendb:deleted'));
 	if (before) return timelineOf(before);
 	const { getShot, getTimeline } = await import('$lib/auth/client');
 	const t = await getTimeline(id);
@@ -91,7 +95,8 @@ export async function importTimeline(id, tell = () => {}) {
 		shots.set(k, { shot: `shot:${made.entry}`, version: 1 });
 	}
 	tell('Making the cut…');
-	const cut = await createCut({ ...moved(t, refs, shots), legacy: id });
+	const named = Object.fromEntries(Object.entries({ name: into.name, project: into.project, story: into.story }).filter(([, v]) => v));
+	const cut = await createCut({ ...moved(t, refs, shots), ...named, legacy: id }, { ...home, tags: into.tags ?? [] });
 	const { nudge } = await import('./jobs/mac.js');
 	nudge();
 	return cut;

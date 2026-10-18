@@ -6,7 +6,7 @@
 	artifacts, text notes and other sparks, and the notes written before them), its artifacts (one source fact each: a
 	link, a picture, a clip, a YouTube video), its todos, its stories (each
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
-	songs, its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
+	songs, the Studio (the app's studio, which cuts the footage into films), its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
 	next; its database (the query console, the table editor, its schemas and lenses, its history, every signed edit, and
 	the device's jobs, what it syncs in the background); then its settings (About, Owners and devices, and Sharing, the
 	one place that says who it is shared with); and the page picked in the middle. Each page has an address of its own
@@ -24,6 +24,7 @@
 	form that asks it (./Ask.svelte) in a drawer.
 -->
 <script>
+	import { base } from '$app/paths';
 	import { enter } from '$lib/app/immersive.svelte';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import AccessRequest from './AccessRequest.svelte';
@@ -93,6 +94,7 @@
 				['todos', 'Todos', 'todo'],
 				['stories', 'Stories', 'story'],
 				['library', 'Library', 'library'],
+				['studio', 'Studio', 'studio'],
 				['assets', 'Assets', 'asset'],
 				['flows', 'Flows', 'flow'],
 				['functions', 'Functions', 'fn']
@@ -118,6 +120,9 @@
 			]
 		]
 	]);
+	/** the apps that open a page of the app's own, not one of the vault's: the studio, which cuts the vaults' footage
+	 *  into films (Samuel 2026-10-18) */
+	const OUT = /** @type {Record<string, string>} */ ({ studio: `${base}/app/studio/` });
 	/** each group's name on the home screen, where every group has one */
 	const HEADS = /** @type {Record<string, string>} */ ({ '': 'Workspace' });
 	/** each group's colour on the home screen: its apps' icons, on light tiles (Samuel 2026-10-18) */
@@ -147,7 +152,7 @@
 	function parse(hash) {
 		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
 		const page = MOVED[at] ?? at;
-		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page)?.[0] ?? 'home');
+		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page && !OUT[id])?.[0] ?? 'home');
 		const hex = (/** @type {string | undefined} */ x) => /^[0-9a-f]{64}$/.test(x ?? '');
 		const opens = ['sparks', 'artifacts', 'stories'].includes(known) && hex(entry);
 		const editing = opens && known === 'stories' && edit === 'edit';
@@ -299,7 +304,7 @@
 					<h2 class="group" id="apps-{TINTS[group]}">{HEADS[group] ?? group}</h2>
 					<div class="grid">
 						{#each items as [id, label, icon] (id)}
-							<a class="app" href="#{id}">
+							<a class="app" href={OUT[id] ?? `#${id}`}>
 								<span class="tile {TINTS[group]}"><Icon name={icon} size={34} /></span>
 								<span class="label">{label}</span>
 							</a>
@@ -332,7 +337,7 @@
 			{#each NAV as [group, items] (group)}
 				{#if group}<small class="group">{group}</small>{/if}
 				{#each items as [id, label, icon] (id)}
-					<a class="item" class:on={tab === id} href="#{id}" aria-current={tab === id ? 'page' : undefined}>
+					<a class="item" class:on={tab === id} href={OUT[id] ?? `#${id}`} aria-current={tab === id ? 'page' : undefined}>
 						<Icon name={icon} />
 						<span>{label}</span>
 					</a>
@@ -384,7 +389,7 @@
 				<Jobs {world} vault={context} {actor} {api} />
 			{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
 				<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} {asks} />
-			{:else}
+			{:else if tab !== 'studio'}
 				<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 			{/if}
 			{#snippet failed(e, reset)}
