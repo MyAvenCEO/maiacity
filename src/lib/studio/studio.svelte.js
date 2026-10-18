@@ -1,7 +1,7 @@
 // The studio's one state: the library, the open timeline and its clips, the playhead and the sound, the colour
 // pipeline's LUTs, the world viewer, the renders — shared by the three working steps (Edit · Grade · Render) and every
 // panel in them. The panels only show it and call its methods; nothing here draws.
-import { API, fileUrl, describeMedia, may, me } from '$lib/auth/client';
+import { fileUrl, describeMedia, may, me } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
 import { avenLibrary, withGraded } from './aven.js';
 import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut } from './cuts.js';

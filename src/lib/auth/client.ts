@@ -240,13 +240,6 @@ export type EqBand = import('../../../game/film/sound.js').EqBand;
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
 
-export type DeviceRequest = { scope: string[]; descriptions: string[]; label: string; approved_at: string | null; expires_at: string };
-
-export const deviceRequest = (code: string) => call<DeviceRequest>(`/api/device/${encodeURIComponent(code)}`);
-
-export const approveDevice = (code: string) =>
-	call<{ ok: true }>(`/api/device/${encodeURIComponent(code)}/approve`, { method: 'POST' });
-
 /** The OS approves its own key with `assertion`, a passkey ceremony over a sign-in's challenge that its sign-in sheet
  *  brought back to it alone (src/routes/app/avendb/sheet/): no browser session, no code to compare. */
 export const approveDeviceWithPasskey = (code: string, assertion: object) =>

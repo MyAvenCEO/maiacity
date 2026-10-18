@@ -27,8 +27,7 @@ const ALLOWED = {
 	'code/views/': "a view's own script, drawing on its own canvas in the view host's frame (plan 4.4: the view's own business; the C2/C4 thread)",
 	'code/index.js': 'the views of code/views, bundled (the C4 thread)',
 	'src/lib/sandbox/view/libs/': 'what the frozen view engine bundles (the C2 thread)',
-	'src/lib/studio/gl.js': "a raw WebGL2 context: the studio's video compositor, not three.js (the studio thread)",
-	'src/lib/admin/media/Video709.svelte': 'a raw WebGL2 context: Rec.709 video on a canvas, not three.js (the media admin)'
+	'src/lib/studio/gl.js': "a raw WebGL2 context: the studio's video compositor, not three.js (the studio thread)"
 };
 
 /**
