@@ -3,7 +3,9 @@
 	avenDB view has (./Frame.svelte): on the left what narrows them, by kind (films, images, SVGs, PDFs, audio, other)
 	or a tag, each with how many there are, the deleted ones apart; in the middle each a tile with a preview where it
 	is a picture or a film the Mac made a still of (the `still` rule's preview, $lib/studio/jobs/rules.js), its size, its
-	kind and its tags, or the same as a table (Samuel 2026-10-18), with every vault whose devices hold its bytes. A click opens it in the middle, to save or delete there, its
+	kind and its tags, or the same as a table (Samuel 2026-10-18), with every vault whose devices hold its bytes, and
+	right under each file what the Mac's rules made of it (its proxy, grading still, preview) and each step on it, done
+	or still to come, as the old studio's ingest table kept them (./made.js). A click opens it in the middle, to save or delete there, its
 	details on the right (its kind, size, who added it and when, its tags, where it is synced to, who it is shared
 	with and its hash): a film or a song plays as the browser's player asks for it, a range at a time, streamed from
 	the device through a service worker (./files.js), or read whole where none runs; a picture, an SVG or a PDF shows
@@ -17,10 +19,10 @@
 -->
 <script>
 	import { onDestroy } from 'svelte';
-	import { madeIndex, tasksOf } from '$lib/studio/jobs/tasks.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
+	import { familyOf, stateOf } from './made.js';
 	import { allowed, creatable, deleting, may } from './ops.js';
 	import {
 		count,
@@ -66,19 +68,50 @@
 	const deleted = $derived(files.filter((e) => e.deleted));
 	const hidden = $derived(entries.length - seen.length);
 
+	/** what the Mac's rules made of each file, and their steps on it (./made.js) */
+	const family = $derived(familyOf(world));
+	/** each made file's role (`Proxy · ACEScct` …), by its entry */
+	const roles = $derived(new Map([...family.made.values()].flat().map((m) => [m.entry.entry, m.role])));
+
 	/**
-	 * Each film's preview, by its entry: the JPEG the Mac's `still` rule made of it at its hero frame
-	 * ($lib/studio/jobs/rules.js, vault/app/src/aven.rs), where it holds one this device can open.
+	 * Each file's preview, by its entry: the JPEG the Mac's `still` rule made of it at its hero frame
+	 * ($lib/studio/jobs/rules.js, vault/app/src/aven.rs), or of its original, for a file made of one; where this device
+	 * can open it.
 	 */
 	const previewOf = $derived.by(() => {
-		const made = madeIndex(tasksOf(world));
-		const byEntry = new Map(world.entries.map((e) => [e.entry, e]));
 		/** @type {Map<string, EntryView>} */
 		const out = new Map();
-		for (const e of files) {
-			if (kind(e) !== 'film') continue;
-			const p = byEntry.get(made.get(`still:${e.entry}`)?.outputs?.[1] ?? '');
-			if (p && !p.deleted && p.files?.[0]?.len != null) out.set(e.entry, p);
+		for (const [from, made] of family.made) {
+			const p = made.find((m) => m.rule === 'still' && m.entry.tags?.includes('media:preview'))?.entry;
+			if (!p || p.files?.[0]?.len == null) continue;
+			out.set(from, p);
+			for (const m of made) if (m.entry !== p) out.set(m.entry.entry, p);
+		}
+		return out;
+	});
+
+	/**
+	 * @typedef {{ key: string, e: EntryView, of?: EntryView, role?: string }} FileRow a file, and its original if it is
+	 *   one a rule made of it
+	 * @typedef {{ key: string, coming: import('./made.js').Step, of: EntryView }} ComingRow a file a rule is still to make
+	 */
+	/**
+	 * The table's rows: each file, then right under it the files the rules made of it, and those still to come (a step
+	 * that makes files, not done yet); a made file whose original isn't listed stands alone.
+	 */
+	const rows = $derived.by(() => {
+		const listed = new Set(shown.map((e) => e.entry));
+		/** @type {(FileRow | ComingRow)[]} */
+		const out = [];
+		for (const e of shown) {
+			const of = family.of.get(e.entry);
+			if (of && listed.has(of)) continue;
+			out.push({ key: e.entry, e, role: roles.get(e.entry) });
+			if (binned) continue;
+			const made = family.made.get(e.entry) ?? [];
+			for (const m of made) if (reads(m.entry, actor)) out.push({ key: m.entry.entry, e: m.entry, of: e, role: m.role });
+			for (const s of family.steps.get(e.entry) ?? [])
+				if (s.makes && !s.done && !made.some((m) => m.rule === s.rule)) out.push({ key: `${e.entry}:${s.rule}`, coming: s, of: e });
 		}
 		return out;
 	});
@@ -519,38 +552,77 @@
 					<div class="rows">
 						<table>
 							<thead>
-								<tr><th><span class="hide">Preview</span></th><th>Name</th><th>Kind</th><th class="num">Size</th><th>Added</th><th>Tags</th><th>Synced to</th></tr>
+								<tr
+									><th><span class="hide">Preview</span></th><th>Name</th><th>Kind</th><th class="num">Size</th><th>Added</th><th>Tags</th><th
+										>Made by the Mac</th
+									><th>Synced to</th></tr
+								>
 							</thead>
 							<tbody>
-								{#each shown as e (e.entry)}
-									{@const k = kind(e)}
-									{@const file = fileOf(e)}
-									{@const thumb = file ? thumbs[file.root] : undefined}
-									<tr class:deleted={e.deleted}>
-										<td class="mini">
-											<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
-												{#if thumb}
-													<img src={thumb} alt="" loading="lazy" />
+								{#each rows as r (r.key)}
+									{#if 'coming' in r}
+										<tr class="made coming">
+											<td class="mini"><span class="thumb"><Icon name="sync" size={16} /></span></td>
+											<td class="name"><span class="sub">↳ {r.coming.name}</span></td>
+											<td class="soft when" title={r.coming.task.error || undefined}>{stateOf(r.coming.task)}</td>
+											<td></td>
+											<td></td>
+											<td></td>
+											<td></td>
+											<td></td>
+										</tr>
+									{:else}
+										{@const e = r.e}
+										{@const k = kind(e)}
+										{@const file = fileOf(e)}
+										{@const thumb = file ? thumbs[file.root] : undefined}
+										{@const steps = r.of ? [] : (family.steps.get(e.entry) ?? [])}
+										<tr class:deleted={e.deleted} class:made={!!r.of}>
+											<td class="mini">
+												<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
+													{#if thumb}
+														<img src={thumb} alt="" loading="lazy" />
+													{:else}
+														<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={16} />
+													{/if}
+												</span>
+											</td>
+											<td class="name"
+												><button class="open" class:sub={!!r.of} title={e.title} onclick={() => show(e)}>{r.of ? '↳ ' : ''}{e.title}</button></td
+											>
+											<td>
+												{#if r.role}
+													{@const [what, colour] = r.role.split(' · ')}
+													{what}{#if colour}<small class="colour">{colour}</small>{/if}
 												{:else}
-													<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={16} />
+													{KINDS.find(([x]) => x === k)?.[1]}
 												{/if}
-											</span>
-										</td>
-										<td class="name"><button class="open" onclick={() => show(e)}>{e.title}</button></td>
-										<td>{KINDS.find(([x]) => x === k)?.[1]}</td>
-										<td class="num">{file?.len != null ? size(file.len) : 'sealed'}</td>
-										<td class="soft">{day(e)}{e.by !== vault ? `, by ${nameOf(byId.get(e.by))}` : ''}</td>
-										<td>{#if e.tags?.length}<span class="tags">{#each e.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>{/if}</td>
-										<td>
-											<span class="held">
-												{#each heldBy(file) as h (h.name)}
-													<span title={h.devices.join(', ')}>{h.name}</span>
-												{:else}
-													<span class="soft">nowhere yet</span>
-												{/each}
-											</span>
-										</td>
-									</tr>
+											</td>
+											<td class="num">{file?.len != null ? size(file.len) : 'sealed'}</td>
+											<td class="soft when">{day(e)}{e.by !== vault ? `, by ${nameOf(byId.get(e.by))}` : ''}</td>
+											<td>
+												{#if !r.of && e.tags?.length}<span class="tags">{#each e.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>{/if}
+											</td>
+											<td>
+												<span class="steps">
+													{#each steps as st (st.rule)}
+														<span class:done={st.done} class:stuck={st.task.status === 'held' || st.task.status === 'failed'} title="{st.name}: {stateOf(st.task)}{st.task.error ? ` (${st.task.error})` : ''}"
+															>{st.done ? '✓' : st.task.status === 'claimed' ? '↻' : st.task.status === 'held' || st.task.status === 'failed' ? '!' : '…'} {st.name}</span
+														>
+													{/each}
+												</span>
+											</td>
+											<td>
+												<span class="held">
+													{#each heldBy(file) as h (h.name)}
+														<span title={h.devices.join(', ')}>{h.name}</span>
+													{:else}
+														<span class="soft">nowhere yet</span>
+													{/each}
+												</span>
+											</td>
+										</tr>
+									{/if}
 								{/each}
 							</tbody>
 						</table>
@@ -806,7 +878,7 @@
 	}
 
 	.rows .name {
-		max-width: 20rem;
+		max-width: 16rem;
 	}
 
 	.rows .open {
@@ -832,6 +904,62 @@
 
 	.rows .mini {
 		width: 4.2rem;
+	}
+
+	.rows tr.made td {
+		border-top: 1px dashed var(--edge);
+		background: #faf8f4;
+	}
+
+	.rows .when {
+		white-space: nowrap;
+	}
+
+	.rows .colour {
+		display: block;
+		font-size: 0.72rem;
+		color: rgb(0 0 0 / 0.5);
+	}
+
+	.rows tr.made .mini .thumb {
+		width: 3.2rem;
+		height: 1.8rem;
+		margin-left: 1rem;
+	}
+
+	.rows .sub {
+		padding-left: 0.6rem;
+		font-weight: 400;
+		color: rgb(0 0 0 / 0.7);
+	}
+
+	.rows tr.coming td {
+		color: rgb(0 0 0 / 0.5);
+	}
+
+	.steps {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.steps > span {
+		padding: 0.1rem 0.45rem;
+		border-radius: 999px;
+		background: #f1efe9;
+		font-size: 0.72rem;
+		color: rgb(0 0 0 / 0.55);
+		white-space: nowrap;
+	}
+
+	.steps > span.done {
+		background: #e3efe6;
+		color: #2f6b45;
+	}
+
+	.steps > span.stuck {
+		background: #f6e3dd;
+		color: #9a3b26;
 	}
 
 	.rows .mini .thumb {
