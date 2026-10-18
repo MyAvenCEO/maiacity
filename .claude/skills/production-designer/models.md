@@ -37,9 +37,10 @@ on its own in the 3D models viewer and placed in any world.
   each family paints its own with it (the tents' canvas, the seed packets' prints, the containers' stencils).
 - `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,
   and the function that makes it. A new model is a function in its family's file and a line here.
-- `/app/models` (admin; on the dashboard the Things) — the viewer: every model on a turntable on a grid of 10 cm squares, with its width × depth ×
-  height in centimetres. Check every new model there before placing it. A model with `userData.walk` can be walked
-  inside (the sandboxes' walker, Esc to walk out); one with `userData.roof` can have its roof lifted; one with
+- avenDB's Assets (`/app/avendb/#assets`, the Things) — the viewer: each model as the Maia City vault keeps it, on a
+  turntable with its measure and the scale, its parts to pick one by one. Check every new model there before placing
+  it. A model with `userData.walk` can be walked inside (the sandboxes' walker, Esc to walk out; not in the viewer
+  yet); one with `userData.roof` can have its roof lifted; one with
   `userData.tick(t)` (a rigged machine, the excavators) plays its work.
 
 ## The conventions every model keeps
@@ -60,7 +61,7 @@ on its own in the 3D models viewer and placed in any world.
 ## The actors: rigged to move (`src/lib/actors`)
 
 Whatever moves — the stand-in a shot is blocked with, and the animals — is an actor, not a model (the machines are
-rigged the same way and built here too, but listed apart: `src/lib/machines`, `/app/machines`): a skeleton of bones
+rigged the same way and built here too, but listed apart: `src/lib/machines`, the Machines in avenDB's Assets): a skeleton of bones
 under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts riding a bone each or a chain of bones
 (blended over a few centimetres either side of a joint, so an elbow, a knee or a neck bends smoothly).
 - `rig.ts` — the rig: `rig(bones, parts, materials)` builds it; `pose()` turns the bones (radians from the rest
@@ -90,10 +91,10 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
   eye (the walker, or the film camera) as rigged actors moving every bone (at most a dozen or two of a kind), the rest
   as instances of the same model at rest in coarser shapes, its smallest parts left off — a hundred a draw call.
   Which is which is asked each frame from the eye alone, so a shot draws the same frame every time.
-- `index.ts` — `FAMILIES`, the people and animals as `/app/actors` (admin) shows them: each on a turntable playing its
-  moves; the stand-in also holds its poses, any joint turned by hand, and copies the pose out as data. The machines
-  (the excavators, the pod, the forklift, the LifeTrac, the cubes, the BatteryPack) are `MACHINES` in
-  `src/lib/machines/index.js`, on the same turntable at `/app/machines` (admin).
+- `index.ts` — `FAMILIES`, the people and animals as avenDB's Assets shows them: each on its turntable playing its
+  clips and poses (the old Actors viewer also turned any joint by hand and copied the pose out as data; avenDB's
+  Assets does not yet). The machines (the excavators, the pod, the forklift, the LifeTrac, the cubes, the BatteryPack)
+  are `MACHINES` in `src/lib/machines/index.js`, shown there the same way.
 
 Pose a stand-in by turning bones: x forward is negative (a thigh forward, an arm forward), the left arm out is +z,
 the right −z; a forearm's y twists it about itself. Check a new pose in the viewer, or measure it: pose a rig, update
@@ -115,5 +116,5 @@ its matrices, read the bones' world positions (an elbow on a knee, a hand at the
 5. **Surfaces:** a canvas texture for anything with grain or pattern (seeded), roughness by material (oiled wood
    ~0.6, plaster ~0.93, cloth ~0.92 with sheen), a bump map for plaster. Repeat textures at their real size (the floor's
    boards are 18 cm wide).
-6. **Check in the viewer** (`/app/models`): its measure, its silhouette from every side, how it reads in the grid.
+6. **Check in the viewer** (avenDB's Assets on the dev feed, asset-producer's `checking.md`): its measure, its silhouette from every side, how it reads in the grid.
 7. **Place it in the world** with its rotation, and give it a solid box for the walker (`worlds.md`).

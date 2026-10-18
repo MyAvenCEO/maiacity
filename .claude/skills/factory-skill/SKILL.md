@@ -224,7 +224,8 @@ maiaCITY a factory is built from the assets we already have and is kept where ev
   the shots and the film go to `/mnt/project-files/factories/<factory>/`.
 - **In the app:** the Factories library, kept the way every group is: `src/lib/factories/<factory>.js` in JavaScript,
   a kind in `LIST` of `src/lib/factories/index.js` with its versions in `HISTORY` (`src/lib/app/versions.js`), the
-  page `/app/factories` and the first tile in Game Assets (`src/lib/app/places.ts`). The runtime is ported into
+  page `/app/factories` (opened by its address since Game Assets left the dashboard, #942; `FACTORIES_TILE` in
+  `src/lib/app/places.ts`). The runtime is ported into
   `src/lib/factories` (the engine pure, with the same equations, so the numbers stay what `check.mjs` showed; a test
   holds it to them). The first, the BatteryPack line (2026-10-15), and what it taught us: `ours.md` beside this file.
 - **Its versions:** every upgrade is a new version with a dated note; the old one stays frozen, and a group of its

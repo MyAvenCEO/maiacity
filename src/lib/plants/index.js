@@ -1,5 +1,5 @@
 /*
- * THE PLANTS — every plant grown from code, as the plants viewer (/app/plants/) lists it: its name, what it is, its
+ * THE PLANTS — every plant grown from code, as avenDB's Assets (/app/avendb/#assets) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
  * grows it at a stage from a seed id (./strawberry.js, ./cucumber.js, ./raspberry.js, ./tomato.js with its oxheart,
  * ./eggplant.js, ./coconut.js, ./grape.js, ./tropics.js (banana, red banana, pineapple, papaya, passion fruit),

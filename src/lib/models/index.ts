@@ -1,7 +1,7 @@
 /*
- * THE MODELS — every reusable still model, as the Things viewer (/app/models/) lists it (the containers and the wayside are the Buildings', $lib/buildings/built.js): its name, what it is, where
+ * THE MODELS — every reusable still model, as avenDB's Assets lists it among the Things (/app/avendb/#assets) (the containers and the wayside are the Buildings', $lib/buildings/built.js): its name, what it is, where
  * it is used, and the function that builds it (./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js,
- * ./belltent.js, ./wayside.js, ./pallet.js; a machine that works or has moving parts is a machine, $lib/machines (/app/machines/), and never listed here too). A world places
+ * ./belltent.js, ./wayside.js, ./pallet.js; a machine that works or has moving parts is a machine, $lib/machines, and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
