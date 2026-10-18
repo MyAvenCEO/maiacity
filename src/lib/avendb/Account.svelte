@@ -39,7 +39,7 @@
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { answer, refs } from './ops.js';
-	import { beside, retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
+	import { beside, drafting, retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
@@ -414,6 +414,14 @@
 				for (const op of ops) answer(await send(op));
 			} catch {
 				failed.push('an inspire-me source');
+			}
+		}
+		// the inspire posts an earlier seed published, drafted (Samuel 2026-10-18: every inspire-me piece unpublished)
+		for (const op of drafting(w, city)) {
+			try {
+				answer(await send(op));
+			} catch {
+				failed.push('an inspire-me post');
 			}
 		}
 		// and what the repo let go (Sandboxes 7 and 8), deleted

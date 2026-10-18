@@ -14,7 +14,9 @@
 //   journal    each journal day (blog/day-NN-…/post.md): a story, its source of truth, with its full text; and its
 //              journal post (`post:journal`) on the Maia Universe stream, on the day it was first published
 //   inspire    each inspire-me report: its source an artifact on a spark (./legacy.js), the story grown from the spark,
-//              with the report's text, and its inspire post (`post:inspire`), on the day it was added
+//              with the report's text, and its inspire post (`post:inspire`), on the day it was added, as a draft
+//              (Samuel 2026-10-18: every inspire-me piece unpublished, `DRAFTED`); ./Account.svelte drafts the posts an
+//              earlier seed published (`drafting`), once each, so one its owner publishes again stays published
 //   inspire    (after the published share) one Public share of every inspire-me piece (`INSPIRE`), so the Universe lays
 //              an inspire post out as its report card; ./Account.svelte then brings each copied source up to date
 //              (`touchingUp`): its author's portrait, and the tag
@@ -62,6 +64,13 @@ export const RECIPE_TYPES = ['recipe'];
 
 /** The tag of the content flow's published stage, which everyone reads. */
 export const PUBLISHED = stageTag('content', 'published');
+
+/** The tag of the content flow's draft stage, which only those its vault shares it with read. */
+export const DRAFT = stageTag('content', 'draft');
+
+/** The tag every inspire post the seed drafted carries (Samuel 2026-10-18: all inspire-me pieces unpublished), so a
+ *  post drafted once is never drafted again: one its owner publishes later stays published. */
+export const DRAFTED = 'seed:drafted';
 
 /** The tag every inspire-me piece carries, its story, post, spark and source, which everyone reads: the
  *  Universe lays an inspire post out as its report card from them all. */
@@ -234,6 +243,30 @@ export async function touchingUp(world, vault) {
 	return out;
 }
 
+/**
+ * The ops that draft each inspire post an earlier seed of vault `vault` published (Samuel 2026-10-18: every inspire-me
+ * piece unpublished): each post of type inspire the seed made (its `legacy:inspire-me/…` tag) not drafted yet
+ * (`DRAFTED`), moved from published to draft, and its story from published to writing, each one op.
+ * @param {import('./vaults.js').WorldView} world @param {string} vault
+ * @returns {object[]}
+ */
+export function drafting(world, vault) {
+	const mine = world.entries.filter((e) => e.vault === vault && !e.deleted);
+	const out = [];
+	for (const e of mine.filter((x) => x.type === 'post')) {
+		const tags = e.tags ?? [];
+		if (!tags.includes(postTag('inspire')) || tags.includes(DRAFTED)) continue;
+		if (!tags.some((t) => t.startsWith(legacyTag('inspire-me/')))) continue;
+		const remove = tags.includes(PUBLISHED) ? [PUBLISHED] : [];
+		out.push({ op: 'tag', entry: e.entry, add: [DRAFT, DRAFTED], remove, as: vault });
+		const s = mine.find((x) => x.entry === e.record?.story?.entry && x.type === 'story');
+		if (s?.tags?.includes(stageTag('story', 'published'))) {
+			out.push({ op: 'tag', entry: s.entry, add: [stageTag('story', 'writing')], remove: [stageTag('story', 'published')], as: vault });
+		}
+	}
+	return out;
+}
+
 /** The tags of what the vault let go (Samuel 2026-10-17: Sandboxes 7 and 8 deleted, with their proposals, worlds and
  * code): every entry carrying one is deleted (`retiring`). A tag ending in `/` names every tag it starts. */
 export const RETIRED = ['game:sandbox-7', 'game:sandbox-8', 'ref:logic/sandbox-7/', 'ref:views/view-wants'];
@@ -363,8 +396,8 @@ export async function seeding(p, vault) {
 	const words = { excerpt: str(fm.hook), language: str(fm.language) || 'en', quote };
 	return [
 		...spark,
-		{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'published'), INSPIRE], value: story, as },
-		posting(vault, 'inspire', title, body, `$${at}`, str(fm.added), words, p.mark)
+		{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'writing'), INSPIRE], value: story, as },
+		posting(vault, 'inspire', title, body, `$${at}`, str(fm.added), words, p.mark, [DRAFT, DRAFTED])
 	];
 }
 
@@ -484,12 +517,12 @@ export function beside(op) {
 /**
  * The op that posts story `story` as a post of type `type` (./posttypes.js), titled `title` with text `text` and its
  * type's own fields `own`, on the Maia Universe stream, as the content flow's Publish function does (./flows.js), on
- * day `published`: public with its stage's tag, its type's tag, and the piece's own tag `mark`, as its last op. The
- * stream's feed reads a post's story as its `about`.
+ * day `published`: with its stage's tags `stage` (public where published, the default), its type's tag, and the
+ * piece's own tag `mark`, as its last op. The stream's feed reads a post's story as its `about`.
  * @param {string} vault @param {string} type @param {string} title @param {string} text @param {string} story
- * @param {string} published @param {Record<string, any>} own @param {string} mark
+ * @param {string} published @param {Record<string, any>} own @param {string} mark @param {string[]} [stage]
  */
-function posting(vault, type, title, text, story, published, own, mark) {
+function posting(vault, type, title, text, story, published, own, mark, stage = [PUBLISHED]) {
 	const value = filled({
 		kind: postTag(type),
 		title,
@@ -500,5 +533,5 @@ function posting(vault, type, title, text, story, published, own, mark) {
 		...filled(own),
 		tags: []
 	});
-	return { op: 'create', vault, type: 'post', tags: [PUBLISHED, postTag(type), mark], value, as: vault };
+	return { op: 'create', vault, type: 'post', tags: [...stage, postTag(type), mark], value, as: vault };
 }
