@@ -145,7 +145,7 @@
 			<p class="rp-meta">Nothing waiting.</p>
 		{/if}
 	{:else}
-		<p class="rp-meta">This timeline's renders only (the API does not list the whole queue yet).</p>
+		<p class="rp-meta">This timeline's renders only: the Mac's queue can't be read here.</p>
 	{/if}
 	<button class="ghost small" onclick={() => (s.refreshRenders(), s.refreshJobs())}>↻ Refresh</button>
 </aside>

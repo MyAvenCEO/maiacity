@@ -11,8 +11,7 @@
 	import { clockText } from './studio.svelte.js';
 	import { transcriptOf } from './transcript.js';
 	import { PART, feelingsOf, pagesOf, sectionsOf, speakerOf } from './screenplay.js';
-	import { listContent } from '$lib/auth/client';
-	import { storyHref } from '$lib/stories/stories.js';
+	import { base } from '$app/paths';
 
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
@@ -24,18 +23,10 @@
 	const speaker = (l) => speakerOf(l, s.clips, s.byHash);
 	/** what a voice clip says: a line's words, or the recorded voice's captions @param {import('./studio.svelte.js').Clip} l */
 	const said = (l) => (l.kind === 'line' ? (l.text ?? '') : s.phrases.filter((p) => p.clip === l.id).map((p) => p.words.map((w) => w.word).join(' ')).join(' '));
-	// the story on the Stories board this script is the film of (made from it, or filed under its project): the same
-	// script is read there, in its Writing step
-	let items = $state(/** @type {import('$lib/auth/client').ContentItem[]} */ ([]));
-	$effect(() => {
-		listContent()
-			.then((r) => (items = r.items))
-			.catch(() => {});
-	});
+	// the avenDB story this cut is the film of (its `story` link), read in avenDB's Stories
 	const story = $derived.by(() => {
-		const t = s.current;
-		if (!t) return null;
-		return items.find((i) => i.timeline_id === t.id) ?? (t.project ? items.find((i) => i.project?.toLowerCase() === t.project?.toLowerCase()) : undefined) ?? null;
+		const id = /** @type {any} */ (s.current)?.story?.entry;
+		return id ? (s.stories.find((x) => x.id === id) ?? null) : null;
 	});
 	/** @param {string} scene */
 	const heading = (scene) => scene.toUpperCase();
@@ -114,7 +105,7 @@
 
 <aside class="script">
 	<header>
-		{#if story}<a class="story" href={storyHref(story.id, 'writing')} title="The same script, in the story's Writing step">{story.title} · Writing ›</a>{/if}
+		{#if story}<a class="story" href="{base}/app/avendb/#stories/{story.id}" title="The story this film tells, in avenDB">{story.title} ›</a>{/if}
 		<span class="by">Written by the agent through MCP · the timeline switcher is top right</span>
 	</header>
 
