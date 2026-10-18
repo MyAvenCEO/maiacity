@@ -91,18 +91,14 @@ export function hostOf(url) {
 
 /**
  * A spark as this app writes one, of avenDB's spark schema: titled `title`, its opening heading (block 1) the title
- * too and, where it has `text`, a paragraph (block 2) that reads it, as a note's page writes a note; on its canvas the
- * items `items`.
+ * too; on its canvas the items `items` and, where it has `text`, a note that reads it under them.
  * @param {string} title @param {string} text @param {any[]} [items]
  */
 export const sparkRecord = (title, text, items = []) => ({
 	kind: SPARK,
 	title,
-	blocks: [
-		{ id: 1, type: 'heading', level: 1, text: title },
-		...(text ? [{ id: 2, type: 'paragraph', text }] : [])
-	],
-	items
+	blocks: [{ id: 1, type: 'heading', level: 1, text: title }],
+	items: text ? [...items, textItem(items, text)] : items
 });
 
 /** The longest title a spark of one line takes from it, in letters. */
