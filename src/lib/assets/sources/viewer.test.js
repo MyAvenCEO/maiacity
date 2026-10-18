@@ -380,6 +380,6 @@ test("the viewer's modules reach nothing of the repo's recipes, cards or librari
 	const editor = readFileSync(resolve(ROOT, 'src/lib/avendb/TableEditor.svelte'), 'utf8');
 	expect(editor).toContain('href="#assets/{row.entry}"');
 	const shell = readFileSync(resolve(ROOT, 'src/lib/avendb/Shell.svelte'), 'utf8');
-	expect(shell).toContain("['assets', 'Assets', 'asset']");
+	expect(readFileSync(resolve(ROOT, 'src/lib/avendb/VaultApps.svelte'), 'utf8')).toContain("['assets', 'Assets', 'asset']");
 	expect(shell).toContain('<Assets {world} vault={context} {actor} {api} entry={route.asset} />');
 });

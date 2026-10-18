@@ -382,13 +382,13 @@ test("the dev server's stand-in serves the feed as avenDB's server does: the row
 	expect(new TextDecoder().decode(file.body)).toBe(FILES[LABEL['plants/apple@2']]);
 	expect((await ask(`/__recipe-feed/entry/${'ef'.repeat(32)}/${apple.entry}/file`)).statusCode).toBe(404);
 	expect((await ask('/__recipe-feed/entry/x/y/file')).statusCode).toBe(404);
-	expect(await ask('/app/plants/')).toEqual({ next: true });
+	expect(await ask('/app/buildings/')).toEqual({ next: true });
 });
 
 test('the app holds every page that builds assets until the recipes are in, and no other', () => {
-	for (const p of ['/app/actors/', '/app/machines', '/app/models/', '/app/plants/', '/app/buildings/', '/app/biomes/', '/app/factories/', '/app/maiacity-v1/', '/app/worlds/tired-land/', '/app/games/sandbox-4/', '/app/games/sandbox-5/', '/app/assets/box/', '/app/assets/render/', '/app/assets/render/levels/'])
+	for (const p of ['/app/buildings/', '/app/biomes/', '/app/factories/', '/app/maiacity-v1/', '/app/worlds/tired-land/', '/app/games/sandbox-4/', '/app/games/sandbox-5/', '/app/assets/box/', '/app/assets/render/', '/app/assets/render/levels/'])
 		expect([p, vault.ASSET_PAGES.test(p)]).toEqual([p, true]);
-	for (const p of ['/app/', '/app/avendb/', '/app/assets/', '/app/worlds/', '/app/games/', '/app/games/sandbox-2/', '/app/coops/', '/app/studio/', '/app/plantsx/', '/app/machines/x/y'])
+	for (const p of ['/app/', '/app/avendb/', '/app/assets/', '/app/worlds/', '/app/games/', '/app/games/sandbox-2/', '/app/coops/', '/app/studio/', '/app/plants/', '/app/machines/', '/app/plantsx/', '/app/buildings/x/y'])
 		expect([p, vault.ASSET_PAGES.test(p)]).toEqual([p, false]);
 });
 

@@ -86,15 +86,11 @@ export const released = (founder: Founder | null, p: Place) => published(p) || i
 /** The game (or world) a path is in, if any: a draft one is closed to whoever is no admin. */
 export const gameAt = (path: string) =>
 	[...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
-	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/models/`) ? MODELS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/actors/`) ? ACTORS_TILE : path.startsWith(`${base}/app/factories/`) ? FACTORIES_TILE : path.startsWith(`${base}/app/machines/`) ? MACHINES_TILE : path.startsWith(`${base}/app/plants/`) ? PLANTS_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : path.startsWith(`${base}/app/genui/`) ? GENUI_TILE : undefined);
-/** the Worlds grid, the Things, the Buildings, the Actors, the Factories, the Machines, the Plants, the Skills and avenDB: only an admin's */
+	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/factories/`) ? FACTORIES_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : path.startsWith(`${base}/app/genui/`) ? GENUI_TILE : undefined);
+/** the Worlds grid, the Buildings, the Factories, the Biomes, the Skills and avenDB: only an admin's */
 const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', release: 'draft' };
 const FACTORIES_TILE: Place = { href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', release: 'draft' };
-const MODELS_TILE: Place = { href: `${base}/app/models/`, label: 'Things', icon: 'media', release: 'draft' };
 const BUILDINGS_TILE: Place = { href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', release: 'draft' };
-const ACTORS_TILE: Place = { href: `${base}/app/actors/`, label: 'Actors', icon: 'user', release: 'draft' };
-const MACHINES_TILE: Place = { href: `${base}/app/machines/`, label: 'Machines', icon: 'gear', release: 'draft' };
-const PLANTS_TILE: Place = { href: `${base}/app/plants/`, label: 'Plants', icon: 'leaf', release: 'draft' };
 const BIOMES_TILE: Place = { href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', release: 'draft' };
 const SKILLS_TILE: Place = { href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', release: 'draft' };
 const AVENDB_TILE: Place = { href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', release: 'draft' };
