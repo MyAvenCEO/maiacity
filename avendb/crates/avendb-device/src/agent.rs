@@ -255,10 +255,10 @@ pub fn aven_named(name: &str) -> Result<String> {
     Ok(name.to_string())
 }
 
-/// The aven vault `mine` owns, by view `st`: a person's one aven, which their vault owns alone (`Kind::rules`).
+/// The aven a person whose vault is `mine` runs agents under, by view `st`: their seed coop's one aven, avenMAIA, which
+/// Maia City owns alone (`world::seed_coop`, `world::aven_of`; Samuel 2026-10-18: one aven per coop, none per person).
 pub fn aven_of(st: &State, mine: VaultId) -> Option<VaultId> {
-    let ours = |v: &&Vault| v.kind == Kind::Aven && v.owners == [Principal::Vault(mine)];
-    st.vaults().iter().find(ours).map(|v| v.id)
+    world::seed_coop(st, mine).and_then(|coop| world::aven_of(st, coop))
 }
 
 /// The device vault of agent `name` under aven `aven`, by device `me`'s view: one the aven owns alone whose profile
@@ -1871,13 +1871,11 @@ fn person_of(st: &State, vault: VaultId) -> Option<VaultId> {
 }
 
 /// The vaults a new spark or artifact of agent device vault `vault` goes in where it names none, by view `st`, in the
-/// order it tries them, the first its shares let it add one to or draft one in taking it (`Agent::adding`): its
-/// person's seed coop, Maia City, where all its person's sparks and artifacts are seeded, found from its person down
-/// as an agent's view holds no avenCEO server (`world::seed_coop`); then its person's own vault (`person_of`). None it
-/// doesn't know.
+/// order it tries them, the first its shares let it add one to or draft one in taking it (`Agent::adding`): the coop
+/// over its aven (`person_of`), Maia City, where all sparks and artifacts are seeded (Samuel 2026-10-18: one aven per
+/// coop, none per person, and no person's own vault gets them). None it doesn't know.
 pub fn homes(st: &State, vault: VaultId) -> Vec<VaultId> {
-    let Some(person) = person_of(st, vault) else { return vec![] };
-    world::seed_coop(st, person).into_iter().chain([person]).collect()
+    person_of(st, vault).into_iter().collect()
 }
 
 /// Vault `id` in words, by its name among `vaults`, as the world shows them, if it has one: `"Name" (id)`, else its id.

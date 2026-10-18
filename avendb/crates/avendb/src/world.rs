@@ -6,7 +6,7 @@
 //! its writes bring, each with where it is synced to (`SyncedTo`).
 //!
 //! Also the entries a device writes itself, by their types: its card in its person's vault (`CARD`), a vault's profile
-//! (`PROFILE`), a file it brings (`FILE`), an access request (`REQUEST`); and how avenCEO server, the device vault
+//! (`PROFILE`), a file it brings (`FILE`), an access request (`REQUEST`); and how avenMAIA, the device vault
 //! avenDB's server is a device of, keeps or relays a person's vaults (`avenceo`, `server_level`).
 
 use std::collections::BTreeMap;
@@ -127,9 +127,9 @@ pub struct World {
     pub mine: VaultId,
     /// The master recovery key it adds (`Lab::set_recovery`), if any.
     pub recovery: Option<SignerId>,
-    /// Its vault owns avenCEO server (`owns_server`).
+    /// Its vault owns avenMAIA (`owns_server`).
     pub owns_server: bool,
-    /// avenCEO server keeps a backup of its vault (`backs_up`).
+    /// avenMAIA keeps a backup of its vault (`backs_up`).
     pub backs_up: Option<bool>,
     pub vaults: Vec<VaultView>,
     pub shares: Vec<ShareView>,
@@ -276,7 +276,7 @@ impl World {
     /// (`kinds`, `words::kinds_json`); and the master recovery key it adds, `recovery`, `null` for none, which a
     /// vault's owners mark as such. As the device works it out, so the page keeps no rule:
     ///
-    /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenCEO server);
+    /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenMAIA);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
     /// - each share's `group`, the built-in group whose ops its ops are and whose `everyone` matches its who, or a
     ///   keep share's mode's (`Level::group`), `null` for one of its own or one whose slice the device doesn't read; a
@@ -1055,32 +1055,27 @@ fn files_everyone_reads(
     files
 }
 
-/// The vaults a person's claim of avenDB's server founds beside their human vault (`avendb_net`'s `Node::found_with`,
-/// `Node::claim_with`), each owned by the one before alone, the first by the human vault: Maia Holding GmbH and
-/// avenCEO GmbH, two coops, and avenCEO server, the device vault the server becomes a device of.
-pub const SEED: [Kind; 3] = [Kind::Coop, Kind::Coop, Kind::DeviceVault];
+/// The vaults a person's claim of avenDB's server founds under their human vault (`avendb_net`'s `Node::found_with`,
+/// `Node::claim_with`), each owned by the one before alone, the first by the human vault: Maia City, the one coop of the
+/// seed, where the content lives, and avenMAIA, its one aven, which lives on the server, its device (Samuel 2026-10-18:
+/// no holding, no company coop, and the server's vault and the coop's aven one vault).
+pub const SEED: [Kind; 2] = [Kind::Coop, Kind::Aven];
 
-/// The coop the same claim founds beside `SEED`'s chain, owned alone by the vault of the chain at this place,
-/// avenCEO GmbH: Maia City, where the content lives (Samuel 2026-10-15). Nothing names it in code but the seed.
-pub const SEED_COOP_OF: usize = 1;
+/// The names of the seed's vaults, in `SEED`'s order, which their profiles read from the start
+/// (`avendb_browser::Device::found`); the page names a seed that has none yet the same (vaults.js's `SEED`).
+pub const SEED_NAMES: [&str; 2] = ["Maia City", "avenMAIA"];
 
-/// The names of the seed's vaults, in `SEED`'s order and then the coop beside it (`SEED_COOP_OF`), which their
-/// profiles read from the start (`avendb_browser::Device::found`); the page names a seed that has none yet the same
-/// (vaults.js's `SEED`).
-pub const SEED_NAMES: [&str; 4] = ["Maia Holding GmbH", "avenCEO GmbH", "avenCEO server", "Maia City"];
-
-/// The seed's coop by its name in `SEED_NAMES`, after `SEED`'s chain: Maia City, whose code alone a page loads
+/// The seed's coop by its name in `SEED_NAMES`, the first of `SEED`'s chain: Maia City, whose code alone a page loads
 /// (`public_entries`' `seed`), whatever another vault calls itself.
-pub const SEED_COOP: &str = SEED_NAMES[SEED.len()];
+pub const SEED_COOP: &str = SEED_NAMES[0];
 
-/// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia Holding
-/// GmbH, avenCEO GmbH, avenCEO server (`seeded`) and Maia City, a coop avenCEO GmbH owns alone, where it founded one;
-/// for avenDB's server itself, a device of avenCEO server, the seed that ends in its vault (`seeder`). None if it
-/// founded none.
+/// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia City and
+/// avenMAIA, its aven, the server's vault (`seeded`); for avenDB's server itself, a device of avenMAIA, the seed that
+/// ends in its vault (`seeder`). None if it founded none.
 pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     let Some(mine) = lab.vault_of(me) else { return vec![] };
     let st = lab.state(me);
-    let servers = st.vaults().iter().filter(|v| v.kind == Kind::DeviceVault && !v.devices.is_empty());
+    let servers = st.vaults().iter().filter(|v| v.kind == Kind::Aven && !v.devices.is_empty());
     let ours = |server: VaultId| seeded(st, mine, server) || (server == mine && seeder(st, server).is_some());
     let Some(server) = servers.map(|v| v.id).find(|&server| ours(server)) else { return vec![] };
     let mut chain = vec![server];
@@ -1088,46 +1083,27 @@ pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
         let Some([Principal::Vault(owner)]) = st.vault(chain[0]).map(|v| &v.owners[..]) else { return vec![] };
         chain.insert(0, *owner);
     }
-    let of = chain[SEED_COOP_OF];
-    let coop = |v: &&Vault| v.kind == Kind::Coop && matches!(v.owners[..], [Principal::Vault(o)] if o == of);
-    chain.extend(st.vaults().iter().find(coop).map(|v| v.id));
     chain
 }
 
 /// Maia City, the coop of the seed that the claim of human vault `person` founded, by view `st`, found walking down
-/// from `person` rather than up from the server, as `seed_of` walks: so a view that holds no avenCEO server finds it,
-/// as an agent's holds none, though it holds the vaults over the one its share is on. A coop owned alone by the vault
-/// at `SEED_COOP_OF` of a chain of `SEED`'s kinds down from `person`, each owned alone by the one before, the first by
-/// `person`: Maia City, owned alone by avenCEO GmbH, owned alone by Maia Holding GmbH, owned alone by the human vault.
-/// Never by its name, which anyone may give a vault. Where the view holds a chain whole to its server (avenCEO server,
-/// a device vault avenCEO GmbH owns alone, `seeder`), as the person's own devices do, the coop of such a chain alone,
-/// none where it has none, as a seed founded before Maia City was: a chain of coops of the person's own beside it is
-/// never taken for it. Else, where more than one matches, as where the person founded such a chain too, the first the
-/// view holds, by the order the vaults were founded (`State::vaults`), as the seed is founded with the person's vault
-/// or as they claim a server, before a coop of their own. None where no chain of the seed's kinds goes down from
-/// `person` far enough.
+/// from `person` rather than up from the server, as `seed_of` walks: so a view that holds no server's device finds it,
+/// as an agent's holds none. A coop `person` owns alone: where the view holds one whose aven is a server (`seeder`), as
+/// the person's own devices do, that one; else the first the view holds, by the order the vaults were founded
+/// (`State::vaults`), as the seed is founded with the person's vault or as they claim a server, before a coop of their
+/// own. Never by its name, which anyone may give a vault. None where `person` owns no coop alone.
 pub fn seed_coop(st: &State, person: VaultId) -> Option<VaultId> {
-    let alone = |owner: VaultId, kind: Kind| -> Vec<VaultId> {
-        let owned = |v: &&Vault| v.kind == kind && v.owners == [Principal::Vault(owner)];
-        st.vaults().iter().filter(owned).map(|v| v.id).collect()
-    };
-    // every chain of `kinds` down from `person`, the person first, in the order the view holds its vaults
-    let chains = |kinds: &[Kind]| {
-        let mut chains = vec![vec![person]];
-        for &kind in kinds {
-            let longer = |chain: &Vec<VaultId>| {
-                let at = *chain.last().expect("the person first");
-                alone(at, kind).into_iter().map(|v| [&chain[..], &[v]].concat()).collect::<Vec<_>>()
-            };
-            chains = chains.iter().flat_map(longer).collect();
-        }
-        chains
-    };
-    let coop = |chain: &Vec<VaultId>| alone(chain[1 + SEED_COOP_OF], Kind::Coop).first().copied();
-    match chains(&SEED) {
-        whole if !whole.is_empty() => whole.iter().find_map(coop),
-        _ => chains(&SEED[..=SEED_COOP_OF]).iter().find_map(coop),
-    }
+    let owned = |v: &&Vault| v.kind == Kind::Coop && v.owners == [Principal::Vault(person)];
+    let coops: Vec<VaultId> = st.vaults().iter().filter(owned).map(|v| v.id).collect();
+    let serves = |&coop: &VaultId| aven_of(st, coop).is_some_and(|aven| seeder(st, aven) == Some(person));
+    coops.iter().copied().find(serves).or(coops.first().copied())
+}
+
+/// The aven of coop `coop`, by view `st`: the one aven it owns alone (`Kind::rules`), its agents' parent. None where
+/// it owns none.
+pub fn aven_of(st: &State, coop: VaultId) -> Option<VaultId> {
+    let ours = |v: &&Vault| v.kind == Kind::Aven && v.owners == [Principal::Vault(coop)];
+    st.vaults().iter().find(ours).map(|v| v.id)
 }
 
 /// Whether vault `server` ends a seed founded from vault `mine`, by view `st` (`seeder`).
@@ -1135,9 +1111,9 @@ pub fn seeded(st: &State, mine: VaultId, server: VaultId) -> bool {
     seeder(st, server) == Some(mine)
 }
 
-/// The human vault whose seed vault `server` ends, by view `st` (`SEED`): its kind, its owner's and its owner's
-/// owner's are the seed's, avenCEO server's, avenCEO GmbH's and Maia Holding GmbH's, each owned by the one before
-/// alone, the first by that human vault. None for any other vault.
+/// The human vault whose seed vault `server` ends, by view `st` (`SEED`): its kind and its owner's are the seed's,
+/// avenMAIA's and Maia City's, each owned by the one before alone, the first by that human vault. An aven is one to a
+/// coop, so no other vault ends such a chain. None for any other vault.
 pub fn seeder(st: &State, server: VaultId) -> Option<VaultId> {
     let mut at = server;
     for kind in SEED.iter().rev() {
@@ -1148,14 +1124,13 @@ pub fn seeder(st: &State, server: VaultId) -> Option<VaultId> {
     st.vault(at).is_some_and(|v| v.kind == Kind::Human).then_some(at)
 }
 
-/// A server's vault by view `st`, read from the seed: the device vault of a seed, avenCEO server, which avenCEO GmbH
-/// owns (`seeder`), with a device, the server. A device vault the shape of no seed's end is none, as a coop's drive's
-/// or an aven's agent's.
+/// A server's vault by view `st`, read from the seed: the aven of a seed, avenMAIA, which Maia City owns (`seeder`),
+/// with a device, the server. A device vault, a coop's drive's or an aven's agent's, is none.
 fn is_server(st: &State, v: &Vault) -> bool {
-    v.kind == Kind::DeviceVault && !v.devices.is_empty() && seeder(st, v.id).is_some()
+    v.kind == Kind::Aven && !v.devices.is_empty() && seeder(st, v.id).is_some()
 }
 
-/// Whether device `me`'s vault owns avenCEO server, directly or through owners of owners, by its view: a server's
+/// Whether device `me`'s vault owns avenMAIA, directly or through owners of owners, by its view: a server's
 /// vault (`is_server`), as once its person's vault claimed the server and founded its seed (`SEED`).
 pub fn owns_server(lab: &Lab, me: SignerId) -> bool {
     let Some(mine) = lab.vault_of(me) else { return false };
@@ -1163,15 +1138,15 @@ pub fn owns_server(lab: &Lab, me: SignerId) -> bool {
     st.vaults().iter().any(|v| is_server(st, v) && st.owns(mine, v.id))
 }
 
-/// Whether avenDB's server keeps a backup of device `me`'s person's vault: avenCEO server holds backup on the whole of
-/// it (`server_level`). `None` while it knows no avenCEO server.
+/// Whether avenDB's server keeps a backup of device `me`'s person's vault: avenMAIA holds backup on the whole of
+/// it (`server_level`). `None` while it knows no avenMAIA.
 pub fn backs_up(lab: &Lab, me: SignerId) -> Option<bool> {
     let mine = lab.vault_of(me)?;
     let st = lab.state(me);
     Some(server_level(st, mine, avenceo(st, mine)?) == Level::Backup)
 }
 
-/// avenCEO server by this view: a server's vault (`is_server`) that vault `mine` gives relay on the whole of it, as its
+/// avenMAIA by this view: a server's vault (`is_server`) that vault `mine` gives relay on the whole of it, as its
 /// person's first device did as it founded it.
 pub fn avenceo(st: &State, mine: VaultId) -> Option<VaultId> {
     st.vaults().iter().find(|v| is_server(st, v) && relays(st, mine, v.id)).map(|v| v.id)
@@ -1278,7 +1253,7 @@ pub struct Standing {
 
 /// The standing grants of vault `mine`, a person's, as device `me` reads them: each share in force on the whole of it
 /// to a vault that is named a standing grant (`STANDING`), as "all my vaults, now and later" on the consent screen
-/// gives one to their aven and the aven passes one on to its agent; and avenCEO server's, Backup or Relay, which is
+/// gives one to their aven and the aven passes one on to its agent; and avenMAIA's, Backup or Relay, which is
 /// the person's server setting (`server_level`), so every vault backs up or relays as theirs does. The strongest first,
 /// then in the order issued, so a share comes after the one it rests on. Each with its slice's name and ops, or, where
 /// the device doesn't read the slice, its level's group's. Of two the same vault issued to the same vault by the same

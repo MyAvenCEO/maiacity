@@ -40,7 +40,7 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 | Owner | A signer or a vault that owns a vault: it approves the vault's governance and acts for it. |
 | Device | A key in a human or device vault. It signs for its vault with all its rights, and governs nothing. |
 | Agent | A device vault an aven owns, whose device is one agent harness's key, as agentClaude. It holds sub caps. |
-| Seed | The vaults a claim of the server founds: Maia Holding GmbH, avenCEO GmbH, avenCEO server and Maia City. |
+| Seed | The vaults a claim of the server founds: Maia City and avenMAIA, its aven, the server's vault. |
 | Entry | One item of data in one vault: a Loro document with a type and tags. |
 | Edit | One signed change. Its id is the BLAKE3 hash of its bytes. Seven kinds. |
 | Log | The edits of one vault, one share, one audience or one entry. Each edit builds on its log's frontier. |
@@ -165,9 +165,9 @@ devices, and how many of the kind one owner may own.
 | Kind | Owned by | Owners | Holds devices | One owner may own | For example |
 |---|---|---|---|---|---|
 | Human | Signers: the person's passkeys and the master recovery key | Any, by threshold | Yes: the person's desktops, phones, browsers and drives | Any number | Samuel |
-| Coop | Human and coop vaults | Any, by threshold | No: it acts through its owners | Any number | Maia Holding GmbH, avenCEO GmbH, Maia City |
-| Aven | One human vault | Exactly one | No | One: one aven per human | avenSamuel |
-| Device vault | One human, coop or aven vault | Exactly one | Yes: the keys of one agent's harness, of the server or of a studio worker | Any number | agentClaude, agentCodex, avenCEO server, a studio's Render Mac |
+| Coop | Human and coop vaults | Any, by threshold | No: it acts through its owners | Any number | Maia City |
+| Aven | One coop | Exactly one | Yes: its server | One: one aven per coop, none per person | avenMAIA |
+| Device vault | One human, coop or aven vault | Exactly one | Yes: the keys of one agent's harness, of the server or of a studio worker | Any number | agentClaude, agentCodex, a studio's Render Mac |
 
 The owner rules, the device rules and the one-aven limit read this table, and nothing checks a kind anywhere else. The
 engine answers it to the page as it answers the built-in groups (the `kinds` op, and `kinds` in the world), so the page
@@ -294,7 +294,7 @@ directly. A share that rests on none is issued by the vault it is over. Every ca
 | A coop hires an aven | Maia City gives avenSamuel Editor on its articles | The vault it is over issues it, resting on none |
 | A person passes a coop's share on to their aven | Samuel's vault passes on a share Maia City gave it | Samuel's vault owns avenSamuel |
 | An aven gives an agent a sub cap | avenSamuel passes Maia City's share on to agentClaude, at Editor or less | avenSamuel owns agentClaude |
-| A vault backs up to the server | Each vault gives avenCEO server Backup, or Relay, on the whole of it | The vault it is over issues it, resting on none |
+| A vault backs up to the server | Each vault gives avenMAIA Backup, or Relay, on the whole of it | The vault it is over issues it, resting on none |
 | An Owner of a slice shares it on | Whoever holds Owner on the todos tagged garden shares them with Bob | Its parent is an Owner share |
 
 Why an owner may pass on what it holds: it governs the grantee. It added the grantee's devices and can remove them, so
@@ -319,10 +319,9 @@ needs no ceremony, as a share below Owner is no governance.
 
 | Case | Parent | Device | Shares | `Place` |
 |---|---|---|---|---|
-| A person's first agent | Their aven, founded in the same ceremony | The harness's key, such as Claude Code's on their Mac | Sub caps of the aven's shares | `UnderNew` |
-| Another agent | Their aven | The harness's key | Sub caps of the aven's shares | `Under` |
+| An agent | Their coop's aven, avenMAIA, founded with the seed | The harness's key, such as Claude Code's on their Mac | Sub caps of the aven's shares | `Under` |
 | The same harness on their other Mac | The agent's device vault there already | That Mac's harness key | Those the vault holds already | `Vault` |
-| The server | avenCEO GmbH, founded with the seed | The server's key | Each vault's Backup or Relay over itself | `Seed` |
+| The server | Its aven itself, avenMAIA, founded with the seed | The server's key | Each vault's Backup or Relay over itself | `Seed` |
 | A studio worker | The vault whose media it works on, the person's or a coop such as Maia City | A key the desktop app makes and hosts | That vault's Worker shares over itself, or resting on those it holds | `Under`, or `Vault` on their other Mac |
 
 Nothing in the flow is particular to an agent or the server: `Place::Under` takes any vault the person's vault owns, so
@@ -330,35 +329,33 @@ a studio worker goes under the coop whose media it works on the same way, and a 
 
 ### The seed and the server
 
-The server is the device of avenCEO server, a device vault that avenCEO GmbH owns. A new server belongs to no vault.
-The first person to found a human vault through it claims it in the same ceremony, by the flow above at `Place::Seed`,
-and founds the seed (`world::SEED`), each vault owned by one vault alone:
+The server is the device of avenMAIA, Maia City's aven: an aven lives on its server (Samuel 2026-10-18: the server's
+vault and the coop's aven are one vault). A new server belongs to no vault. The first person to found a human vault
+through it claims it in the same ceremony, by the flow above at `Place::Seed`, and founds the seed (`world::SEED`), each
+vault owned by one vault alone:
 
 | Vault | Kind | Owned by |
 |---|---|---|
-| Maia Holding GmbH | Coop | The person's human vault |
-| avenCEO GmbH | Coop | Maia Holding GmbH |
-| avenCEO server | Device vault | avenCEO GmbH; the server is its device |
-| Maia City | Coop | avenCEO GmbH; the city's content lives here |
+| Maia City | Coop | The person's human vault; the city's content lives here |
+| avenMAIA | Aven | Maia City; the server is its device, its agents run under it |
 
-So the server acts for avenCEO server on its own, and every edit it makes traces back through avenCEO GmbH and Maia
-Holding GmbH to the person's passkey. **The server is read from the seed** (`world::seeder`): a vault is the server's
-only if it is the device vault, with a device, at the end of that chain, owned alone by a coop owned alone by a coop
-owned alone by a human vault. No kind and no name makes a vault the server, so a coop's drive or an aven's agent, each a
-device vault too, passes for none. `ownsServer` is whether the person's vault owns such a vault; for a vault, avenCEO
+So the server acts for avenMAIA on its own, and every edit it makes traces back through Maia City to the person's
+passkey. **The server is read from the seed** (`world::seeder`): a vault is the server's only if it is an aven, with a
+device, owned alone by a coop owned alone by a human vault. No name makes a vault the server, so a coop's drive or
+worker, or an aven's agent, each a device vault, passes for none. `ownsServer` is whether the person's vault owns such a vault; for a vault, avenCEO
 server is such a vault that the vault gives relay or more on the whole of it (`world::avenceo`). The claim:
 
 1. The device takes the server's card (`Lab::card`). If it names no device vault the server belongs to, nobody has
    claimed the server, and the device asks it for its key to seal to (`Lab::claim_key`).
 2. The person's passkey signs, in one ceremony, their human vault's genesis, the edit that adds the device, the seed's
-   four geneses, and the edit that adds the server as avenCEO server's device, sealed to that key (`Lab::drafting`,
+   four geneses, and the edit that adds the server as avenMAIA's device, sealed to that key (`Lab::drafting`,
    `Lab::claim`). The passkey approves for each coop, as the root of the vault that owns it.
 3. The server checks that the edit adds itself and seals to its own key, every signature, and the rules, then signs it
    too and keeps it (`Lab::accept_claim`). Its answer lets the device box the device vault's key for it.
 
-After that, nobody can claim it again: whoever founds a vault later finds avenCEO server on the server's card
+After that, nobody can claim it again: whoever founds a vault later finds avenMAIA on the server's card
 (`Lab::server_vault_of`). A device of a vault founded before claims a new server the same way (`Node::claim`); one
-whose claim the server didn't take adds it to the avenCEO server that claim founded (`Lab::unclaimed_server`). The
+whose claim the server didn't take adds it to the avenMAIA that claim founded (`Lab::unclaimed_server`). The
 founding device writes each seed vault's profile with its name (`world::SEED_NAMES`) as it settles, before the page
 opens; the page names a seed that has none the same way.
 
@@ -369,7 +366,7 @@ vault, below Owner, that every vault founded under the person later gives too. I
 like any other whose name, sealed in its slice with its ops, is the reserved `avendb:standing:` and its group's name
 (`world::STANDING`; the group a share counts in is read from its ops, so the name is free to mark it). The `share` op
 with `"standing": true` makes one, and gives the same share on each vault the person owns now; `world::standing` lists
-them, the share of the person's vault to avenCEO server among them, Backup or Relay (section 5), whatever its name.
+them, the share of the person's vault to avenMAIA among them, Backup or Relay (section 5), whatever its name.
 
 Every vault founded under the person follows them (`engine::follow_standing`, the one helper): each vault `found`
 makes, each vault of the seed and each vault the flow below founds, an aven and an agent's device vault among them,
@@ -385,11 +382,12 @@ vault founded after follows it. The person's devices are often away, and the ser
 there: so what an aven or an agent writes, an access request among it, reaches the server, and through it whoever it
 is for.
 
-### Your aven and its agents
+### A coop's aven and its agents
 
-An aven is a person's one AI identity: an aven vault their human vault alone owns, one per human. Coops hire it by
-sharing with it. It holds no devices: the person acts as their aven from their own devices, as for any vault they own,
-and its agents work for it with the rights it passes on. Each agent is a device vault the aven owns, named after the
+An aven is a coop's one AI identity: an aven vault the coop alone owns, one per coop, and no person has one of their
+own (Samuel 2026-10-18): Maia City's is avenMAIA, founded with the seed. Other coops hire it by sharing with it. It
+lives on its server, its one device, which acts for it and governs nothing; the coop's owners act as its aven from
+their own devices, as for any vault they own, and its agents work for it with the rights it passes on. Each agent is a device vault the aven owns, named after the
 agent, with one agent device in it, a key of its own, never a token: Claude Code as agentClaude, Codex as agentCodex,
 and likewise Cursor, Grok and our own native aven.
 
@@ -446,7 +444,7 @@ An access request is a record, not a message of its own, so it needs no fifth pr
   `"granted"` or `"denied"`, and `part`, on the main line, and nothing else. A write through it that changes anything
   else counts for no reader (C3, Lab scenario 28).
 - **Delivery.** Sync carries the record as any other, over avenDB's own ALPN: straight to the devices that act for the
-  asked vault, through the relay where it must, or from any peer that keeps the asking vault, as avenCEO server does
+  asked vault, through the relay where it must, or from any peer that keeps the asking vault, as avenMAIA does
   while it backs that vault up. The answer comes back the same way. The server is one such peer, not a mailbox.
 - **The answer.** The `requests` op lists the requests a vault the device acts for was asked and hasn't answered
   (`asked`), and those such a vault made (`made`). Approving is the `share` the vault asked gives, then `set
@@ -604,7 +602,7 @@ A vault's owners and devices are rows in one list of shares, beside its grants a
 section 8). The page shows them under Owners and devices, and on its one Sharing page who has the vault: each vault it
 is shared with, and Everyone where it is public. Owners and devices also shows the vaults a vault owns, in one view for
 every parent: each vault wholly its own, an aven or a device vault, with its devices and the shares it holds, and the
-coops it owns in one line. So the person's vault shows their aven and its agents, an aven its agents, and avenCEO GmbH
+coops it owns in one line. So the person's vault shows their aven and its agents, an aven its agents, and Maia City
 its server (`src/lib/avendb/Owned.svelte`).
 
 - An **owner** is "Owner on Everything": a co-owner who approves governance. On the wire it is `Sharing::Owner`.
@@ -629,11 +627,11 @@ follow it by name (section 12, interest and follow).
 
 ### Servers: Relay or Backup
 
-A vault gives avenCEO server, the server's device vault, a wide Backup share at founding, so the server keeps the
+A vault gives avenMAIA, the server's device vault, a wide Backup share at founding, so the server keeps the
 ciphertext of all its entries and opens none. With backups off it gives Relay instead: the server learns the vault's
 devices from its log, to let them through its relay, and keeps nothing of its entries (T26). The person switches between
 the two with the `back_up` op, for their vault and the vaults it acts for at once (`world::server_level`). Every vault
-founded under a person gives avenCEO server the same level as the person's vault has: it is one of the person's
+founded under a person gives avenMAIA the same level as the person's vault has: it is one of the person's
 standing grants (`engine::follow_standing`, section 3). Each of these shares is issued by the vault it is over and
 rests on none.
 
@@ -1003,7 +1001,7 @@ threshold and root, and as which vault the person acts in it (`acting`); every s
 (`gets`) what it reaches, and who may revoke it; every audience (`audiences`) with its `epoch` and the devices that
 sync it; every entry with its type, tags, `audience`, `levels` by vault, readers, writers and sharers, and the files
 its writes bring, each with how many pieces it is in and where it is synced to (`syncedTo`, as for the entry);
-whether the person's vault owns avenCEO server (`ownsServer`) and whether avenCEO server backs it up (`backsUp`); the
+whether the person's vault owns avenMAIA (`ownsServer`) and whether avenMAIA backs it up (`backsUp`); the
 built-in groups of ops (`groups`) and the kind table (`kinds`), as the ops of those names answer them, so the page
 reads a kind's rules and never decides them. Its JSON names everything as the core does.
 
@@ -1031,10 +1029,10 @@ schema or a lens is created as an entry of its type (section 9).
 | `copy {device, full}` | The copy setting of one of the person's devices, this one unless named: a wide keep share their vault issues over itself, Whole when `full`, else Opened; the device's other copy shares are revoked. `{"share"}` | Never |
 | `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}`; with `"standing": true`, a standing grant on every vault it reached, `{"edits"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
-| `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenCEO server's share among them, and a profile on each. `{"vaults"}` | Always |
+| `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenMAIA's share among them, and a profile on each. `{"vaults"}` | Always |
 | `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}`. With `entry` in place of `vault` and `tags`, `put_file {entry, name, media, len, as}` brings them into that entry instead, landed on its main line, by one write there (`Lab::bring_into`), as a new default of a recipe's source; with `line`, on that line of it, a proposal or a variant, and with `value` (and `schema`), the write sets the whole record too: a version and its file in one write (`Lab::bring_on`), as each version and variant of an asset is. `{"entry", "line", "edit", "root", "size"}` | Never |
 | `ask {to, asks, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; or, `asks` `"owner"`, to co-own `to`, or `"invite"`, for `to` to co-own the acting vault, at Owner, as the kind table lets it; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
-| `back_up {on}` | avenCEO server's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
+| `back_up {on}` | avenMAIA's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
 | `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
 | `card {name}`, `profile {vault, name}` | The device's card in its person's vault; a vault's profile. `{"wrote"}` | Never |
 | `follow {vault, on}` | The vaults the device follows (section 12), kept in its shelf's meta. `{"follow"}` | Never |
@@ -1393,8 +1391,8 @@ their lists in turn (`in` inside `in`), so a shape that changes many lists down 
 does. A query translates only what it reads: each list of rows deeper than the query reads is emptied as stored
 before the lens translates anything, then taken out of what the app reads (`engine`'s `see_within`).
 
-**avenCEO GmbH holds them.** Every app knows avenDB's own schemas by heart, so each vault reads and writes them
-offline. Beside that, avenCEO GmbH holds each as an entry of its own, of the very same bytes and so of the same id,
+**Maia City holds them.** Every app knows avenDB's own schemas by heart, so each vault reads and writes them
+offline. Beside that, Maia City holds each as an entry of its own, of the very same bytes and so of the same id,
 shared with Everyone: the founder's page adds those it lacks once their seed is there. A vault's lane doesn't reach
 into another's, so any other vault's records still read through the copies every app ships.
 
@@ -1402,7 +1400,7 @@ into another's, so any other vault's records still read through the copies every
 and lenses beside the vault's lane (`Lane::with_built_ins`), so a vault founded before a version shipped, holding only
 what shipped then, takes records of it at once: `create` naming `view` writes a view of v2 there, and a view of v1
 written before opens in v2 and edits on. No schema entry is made on demand. The founder's page adds the new schema and
-its lens to avenCEO GmbH as it adds every built-in one it lacks (its `database` lists the app's own beside those the
+its lens to Maia City as it adds every built-in one it lacks (its `database` lists the app's own beside those the
 vault holds), the schema first, so the lens joins two it holds; the page's HITL queue adds the Review schema to a vault
 that answers a proposal the same way, for apps that shipped before it. A device whose app is older than the version
 counts no write made under it until it updates, as a write counts once its reader holds its schema (below).
@@ -1439,10 +1437,10 @@ the acting vault, on the entry's vault alone, a share among them only a Public o
 makes a `post` entry about the article that carries the stage's tag, so the same share makes it public. The story
 flow takes a story through idea, hook, thumbnail, journey, writing, movie, derivatives, scheduled and published, every
 stage private; a vault's Stories page is a board of its stories by stage. Every app knows both flows and the content
-flow's two functions; avenCEO GmbH holds them as entries, Public by their type, and a vault's own flows and functions,
-then avenCEO GmbH's, come before the app's, never anyone else's.
+flow's two functions; Maia City holds them as entries, Public by their type, and a vault's own flows and functions,
+then Maia City's, come before the app's, never anyone else's.
 
-**The Maia Universe's feed.** avenDB's server keeps the vaults that give avenCEO server backup, the seed's among them,
+**The Maia Universe's feed.** avenDB's server keeps the vaults that give avenMAIA backup, the seed's among them,
 and opens what everyone may read. Its feed (`GET avendb.maia.city/feed/posts`, `world::public_posts`) lists the `post`
 entries it opens that are public and not deleted, newest first, each with its vault's name and kind, its entry's tags
 and `published`, when its record says it was published (an ISO 8601 date or time, passed on as the record holds it, read
@@ -1465,8 +1463,8 @@ first: the files its main line brings that every reader counts as the entry's (`
 creation and of writes by its vault or by a share that may set its whole record, that the server opens, each its root
 in hex, its sealed size and its length. Anyone may found a vault and call it Maia City, so
 `seed` names a row's vault only where it stands in the server's seed (`world::seed_of`, `SEED_NAMES`), `null` for every
-other, and `?seed=1` keeps Maia City's alone, the coop avenCEO GmbH owns alone, none while the server knows no such
-coop: it knows it once Maia City gives avenCEO server backup or relay, as every vault founded under a person does by
+other, and `?seed=1` keeps Maia City's alone, the coop Maia City owns alone, none while the server knows no such
+coop: it knows it once Maia City gives avenMAIA backup or relay, as every vault founded under a person does by
 their server setting. `?vault=<64 hex>` keeps one vault's and `?bare=1` leaves the records out, a listing for when they
 grow big. `GET avendb.maia.city/feed/entry/<vault>/<entry>` serves any one of those rows on its own, and
 `{"error": ...}`, not found, for an entry that isn't public, that is deleted or that the server doesn't hold.
@@ -1631,7 +1629,7 @@ on the same stream. Every value has exactly one encoding, fuzzed and checked aga
 |---|---|---|
 | 0 | Request: haves per log, loose edits, wanted keys, the vaults it follows | A page of edits and the keys they name |
 | 1 | Announce: the sender's holdings | Nothing |
-| 2 | Card: the server's contact card | The vault logs of avenCEO server and its owners, up the chain |
+| 2 | Card: the server's contact card | The vault logs of avenMAIA and its owners, up the chain |
 | 3 | Link: a passkey's pass for this connection's device | The link card |
 | 4 | Join: the edit that adds the new device | Nothing, once taken |
 | 5 | Claim key | The key to seal to of a device that belongs to no vault yet: an unclaimed server's, or an agent device's |
@@ -1749,7 +1747,7 @@ The model defines these in `Logs.lean` (`Statement`, `Node.states`, `Node.statem
 ### The relay and linking
 
 The server runs iroh's relay beside its node (`crates/avendb-server`). It lets in only the devices the server knows:
-those of the vaults it relays or backs up, of avenCEO server's owners, and itself. A device it doesn't know yet comes in
+those of the vaults it relays or backs up, of avenMAIA's owners, and itself. A device it doesn't know yet comes in
 by its passkey's pass for ten minutes. While sign-up is open, or the server is unclaimed, any passkey's pass does. It
 forwards only encrypted QUIC.
 
@@ -1948,7 +1946,7 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | T18 | Retired with the checkpoints: every edit carries an SLH-DSA signature | |
 | T19 | Frontier sync loses nothing; one frontier per log tells whether to ask | `T19_frontier_sync`, `T19_frontiers_alone`, `T19_same_frontier` |
 | T20 | Linking hands out vault logs alone | `T20_link_shares_only_vault_logs`, `T20_stranger_gets_nothing` |
-| T21 | Vaults keep to their kind, by one kind table; one aven per human | `T21_vault_kinds`, `T21_owners_count`, `T21_aven_owner`, `T21_one_aven` |
+| T21 | Vaults keep to their kind, by one kind table; one aven per coop | `T21_vault_kinds`, `T21_owners_count`, `T21_aven_owner`, `T21_one_aven` |
 | T22 | A share grants no more than what it rests on, by one rule; no wide owner share | `T22_slices_narrow`, `T22_sub_cap_level`, `T22_wide_shares` |
 | T23 | Marks mean what the shares say: audiences and wants, from `mark_means` | `T23_marks_mean_shares`, `T23_creations` |
 | T24 | An entry's key reaches only its audience's readers | `T24_entry_keys`, `T24_entry_history` |

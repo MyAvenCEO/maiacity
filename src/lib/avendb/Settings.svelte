@@ -826,10 +826,10 @@
 					<article class="card">
 						<h3>Agents on {here}</h3>
 						<p class="soft">
-							Your aven is your one AI identity, a vault your vault owns. Each agent harness joins it as an agent of its
-							own, a device vault under it with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so
+							avenMAIA is Maia City's one AI identity, an aven the coop owns: one aven per coop, none per person. Each
+							agent harness joins it as an agent of its own, a device vault under it with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so
 							on. Once a harness runs its device, this page asks you which vaults it may work in, and it gets sub caps of
-							what your aven holds there. It reads your files from this Mac's one store, so nothing is kept twice.
+							what avenMAIA holds there. It reads your files from this Mac's one store, so nothing is kept twice.
 						</p>
 						<label class="harness">
 							<span>Harness</span>

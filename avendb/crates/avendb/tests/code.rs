@@ -85,8 +85,9 @@ fn change(kind: &str) -> Vec<Value> {
     ops
 }
 
-/// Alice's world with her aven, avenALICE, which her vault owns: Alice makes it an Editor of her code entries, and
-/// Bob a Viewer of them. Her Mac acts for both her vault and her aven; her phone and Bob's Mac read what they write.
+/// Alice's world with her aven, avenALICE, which a coop of hers owns, her vault its one owner: Alice makes it an Editor
+/// of her code entries, and Bob a Viewer of them. Her Mac acts for both her vault and her aven, the aven through the
+/// coop and her vault; her phone and Bob's Mac read what they write.
 struct Gate {
     w: World,
     alice: VaultId,
@@ -98,9 +99,13 @@ struct Gate {
 fn gate() -> Gate {
     let mut w = cast::world();
     let (alice, bob, mac, passkey) = (w.alice, w.bob, w.mac_a, w.passkey_a);
-    let owners = vec![Principal::Vault(alice)];
-    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 5, seal_to: vec![] };
-    let aven = VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("avenALICE"));
+    let found = |w: &mut World, kind: Kind, owner: VaultId| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 5, seal_to: vec![] };
+        VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
+    };
+    let coop = found(&mut w, Kind::Coop, alice);
+    let aven = found(&mut w, Kind::Aven, coop);
     let code = Selector::AnyOf(vec![vec![Atom::TypeIn(KINDS.iter().map(|&k| k.into()).collect())]]);
     w.lab.issue(mac, &[mac], cast::share(alice, cast::vault(aven), Level::Write, code.clone())).expect("an editor");
     w.lab.issue(mac, &[mac], cast::share(alice, cast::vault(bob), Level::Read, code)).expect("a viewer");

@@ -5,7 +5,7 @@
 // holds already is left out, and seeding again writes only what is new. The repository stays as it is: it is the seed
 // pages read offline, and what a reset brings back.
 //
-//   keep       a Backup share to avenCEO server's vault, where the vault gives it none yet: the server serves only what
+//   keep       a Backup share to avenMAIA's vault, where the vault gives it none yet: the server serves only what
 //              it keeps, so without it the feeds have nothing of the vault's to show
 //   code       each view and logic module of code/ (game/code/sources/avendb.js `recordOf`), found by its `ref:` tag,
 //              and one Public share of the vault's views and logic, so the server's code feed serves them
@@ -158,7 +158,7 @@ const folderOf = (path) => path.split('/').at(-2) ?? '';
  */
 
 /**
- * Every piece of the repo seed, each with the tag its copy carries (`mark`); with `server`, the id of avenCEO server's
+ * Every piece of the repo seed, each with the tag its copy carries (`mark`); with `server`, the id of avenMAIA's
  * vault, first the Backup share that makes it keep the vault.
  * @param {string | null} [server] @returns {Piece[]}
  */

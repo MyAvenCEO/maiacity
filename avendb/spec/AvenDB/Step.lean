@@ -142,7 +142,7 @@ def setEntry (st : State) (en : Entry) : State :=
 
 /-- Principal `p` may own a vault of kind `k`, as the kind's table says (`Kind.rules`): a signer where signers own the
     kind, an existing vault of a kind the table lists. So signers own human vaults alone, and never a vault directly
-    otherwise; an aven is owned by a human vault, and a device vault owns nothing. -/
+    otherwise; an aven is owned by a coop, and a device vault owns nothing. -/
 def ownerFits (st : State) (k : Kind) : Principal → Bool
   | .signer _ => k.rules.ownedBy.bySigners
   | .vault o  => (st.vault? o).any fun vt => k.rules.ownedBy.byKind vt.kind
@@ -157,8 +157,8 @@ def rootFits (kind : Kind) (sigs : List SignerId) : Option SignerId → Bool
   | none   => true
   | some r => kind == .human && sigs.contains r
 
-/-- A vault of the kind has devices, as the kind's table says: human and device vaults do; a coop acts only through its
-    owners, and an aven through its owner's devices and its agents. -/
+/-- A vault of the kind has devices, as the kind's table says: human, aven and device vaults do, an aven its server; a
+    coop acts only through its owners. -/
 def Kind.hasDevices (k : Kind) : Bool := k.rules.devices
 
 /-- Write `w` builds only on writes of its own entry among `ws`. -/
@@ -190,8 +190,8 @@ def dropUnseen (pre post : State) (keep : List EditId) : State :=
   let es := post.entries.filter fun en => ws.any fun w => w.entry == en.id && w.first
   { post with entries := es, writes := ws.filter fun w => es.any (·.id == w.entry) }
 
-/-- Share `c` goes from its issuer to its own: it names a vault its issuer owns directly, as an aven's share to one of
-    its agents, a coop's to its server, a person's to their aven. -/
+/-- Share `c` goes from its issuer to its own: it names a vault its issuer owns directly, as a coop's share to its
+    worker's device vault or to its aven, a person's to their coop. -/
 def toOwn (st : State) (c : Share) : Bool :=
   match c.who with
   | .vault g => ownerOf st c.issuer g

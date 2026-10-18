@@ -102,7 +102,7 @@
 		phase = 'ready';
 		if (session.phase !== 'open') return;
 		await session.refresh().catch(() => {});
-		if (founded && session.world && seeded(session.world)[3]?.[0]) await goto(`${base}/app/avendb/`);
+		if (founded && session.world && seeded(session.world)[0]?.[0]) await goto(`${base}/app/avendb/`);
 	}
 
 	const say = (what: string) => (busy = what);

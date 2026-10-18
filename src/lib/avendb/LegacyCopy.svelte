@@ -32,7 +32,7 @@
 	});
 
 	/** whether this is the Maia City COOP of the person's seed: the one vault the copy goes into */
-	const city = $derived(seeded(world)[3]?.[0]?.id === vault);
+	const city = $derived(seeded(world)[0]?.[0]?.id === vault);
 	const left = $derived(city ? uncopied(world, vault, pieces(ideas)) : []);
 	const by = $derived({
 		report: left.filter((p) => p.kind === 'report').length,

@@ -78,18 +78,18 @@ theorem device_cannot_govern {st : State} {v : VaultId} {vt : Vault} (h : st.vau
   Core.device_cannot_govern h hsig hth sigs hnone hroot
 
 /-- Devices don't govern any vault: signatures by signers that own no vault and are no vault's root approve for no
-    vault, as every vault's approval comes down to its root or its owner signers. So a server, a device of avenCEO,
-    governs neither avenCEO nor anything else. -/
+    vault, as every vault's approval comes down to its root or its owner signers. So a server, a device of its
+    coop's aven, governs neither the aven nor anything else. -/
 theorem devices_cannot_govern {st : State} {sigs : List SignerId}
     (hnone : ∀ s ∈ sigs, ∀ v vt, st.vault? v = some vt → Principal.signer s ∉ vt.owners ∧ vt.root ≠ some s)
     (hth : ∀ v vt, st.vault? v = some vt → 0 < vt.threshold) : ∀ n v, approvesN st sigs n (.vault v) = false :=
   Core.devices_cannot_govern hnone hth
 
 /-- T21 (vaults by kind): in every reachable state every vault keeps to its kind's table (`Kind.rules`): signers own
-    human vaults only; coops are owned by human and coop vaults, avens by human vaults, device vaults by human, coop
-    and aven vaults, so a device vault owns nothing; only human and device vaults have devices; and only a human vault
-    has a root. So an edit for a coop or an aven always goes through a human vault its device or passkey belongs to,
-    and so does an edit for a device vault that none of its own devices signs. -/
+    human vaults only; coops are owned by human and coop vaults, avens by coops, device vaults by human, coop and aven
+    vaults, so a device vault owns nothing; only human, aven and device vaults have devices, an aven's its server; and
+    only a human vault has a root. So an edit for a coop always goes through a human vault its device or passkey belongs
+    to, and so does an edit for an aven or a device vault that none of its own devices signs. -/
 theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st :=
   Core.T21_vault_kinds hr
 
@@ -98,12 +98,12 @@ theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st :=
 theorem T21_owners_count {st : State} (hr : Reachable st) : OwnersCount st :=
   Core.ownersCount_reachable hr
 
-/-- T21, an aven's owner: in every reachable state an aven has exactly one owner, and it is a human vault. -/
+/-- T21, an aven's owner: in every reachable state an aven has exactly one owner, and it is a coop. -/
 theorem T21_aven_owner {st : State} (hr : Reachable st) {v : VaultId} {vt : Vault} (hv : st.vault? v = some vt)
-    (hk : vt.kind = .aven) : ∃ h ht, vt.owners = [.vault h] ∧ st.vault? h = some ht ∧ ht.kind = .human :=
+    (hk : vt.kind = .aven) : ∃ h ht, vt.owners = [.vault h] ∧ st.vault? h = some ht ∧ ht.kind = .coop :=
   Core.aven_owner hr hv hk
 
-/-- T21, one aven per human: in every reachable state two avens with an owner in common are one, so a human vault owns
+/-- T21, one aven per coop: in every reachable state two avens with an owner in common are one, so a coop owns
     one aven at most; and so for any kind the table lets one owner own one of (`OneEach`). -/
 theorem T21_one_aven {st : State} (hr : Reachable st) {o x y : VaultId} {vx vy : Vault} (hx : st.vault? x = some vx)
     (hy : st.vault? y = some vy) (hkx : vx.kind = .aven) (hky : vy.kind = .aven)
@@ -141,8 +141,8 @@ theorem T22_slices_narrow {st : State} (hr : Reachable st) {c pc : Share} (hc : 
       (∀ a, effSelects st c a = true → effSelects st pc a = true) ∧ (c.wide = true → pc.wide = true) :=
   Shares.T22_slices_narrow hr hc hp hpc
 
-/-- T22, sub caps: in every reachable state a share resting on another, as an aven's sub cap to one of its agents
-    resting on a share a coop gave the aven, has a level no higher than that share's. -/
+/-- T22, sub caps: in every reachable state a share resting on another, as a coop's sub cap to its worker resting
+    on a share another coop gave it, has a level no higher than that share's. -/
 theorem T22_sub_cap_level {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares)
     (hp : c.parent = some pc.id) (hpc : pc ∈ st.shares) : c.level.rank ≤ pc.level.rank :=
   (Shares.T22_slices_narrow hr hc hp hpc).2.2.1

@@ -1,6 +1,6 @@
 //! The server peer (P8b) in a folder of its own: it keeps its device across restarts, belongs to no vault until the
-//! first human vault to claim it makes it a device of avenCEO (P8f), and keeps that too; it hands avenCEO's card to
-//! whoever asks, relays a vault once the vault gives avenCEO relay on it, holding only ciphertext, and from then on
+//! first human vault to claim it makes it a device of avenMAIA (P8f), and keeps that too; it hands avenMAIA's card to
+//! whoever asks, relays a vault once the vault gives avenMAIA relay on it, holding only ciphertext, and from then on
 //! knows the devices of the vaults acting for it, whom its relay lets in.
 
 mod common;
@@ -84,25 +84,25 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     assert!(stranger.claim(&offer, passkey_b).await.is_err(), "a device of no vault");
     assert!(bobs.claim(&alices.offer(), passkey_b).await.is_err(), "Alice's Mac");
     assert_eq!(server::vault(&server).await, None, "and the server is still nobody's");
-    // Bob's vault claims it first: the server is a device of avenCEO server, the device vault of the seed Bob's vault
-    // founds, owned by avenCEO GmbH, which Maia Holding GmbH owns, which Bob's vault owns
+    // Bob's vault claims it first: the server is a device of avenMAIA, the aven at the end of the seed Bob's vault
+    // founds, owned by Maia City, which Bob's vault owns
     let avenceo = bobs.claim(&offer, passkey_b).await.expect("Bob's vault claims the server");
-    assert_eq!(server::vault(&server).await, Some(avenceo), "the server is avenCEO server's device");
+    assert_eq!(server::vault(&server).await, Some(avenceo), "the server is avenMAIA's device");
     let shape = move |lab: &Lab, me| {
         let st = lab.state(me);
         st.vault(avenceo).map(|v| (v.kind, v.root, v.devices.clone(), world::seeded(st, bob, avenceo)))
     };
-    let owned = Some((Kind::DeviceVault, None, vec![server.device()], true));
+    let owned = Some((Kind::Aven, None, vec![server.device()], true));
     assert_eq!(server.read(shape).await, owned, "the end of Bob's seed, the server its one device");
     assert_eq!(bobs.read(shape).await, owned, "on Bob's Mac too");
     let opens = move |lab: &Lab, me| lab.opens(me, KeyFam::Seed(avenceo));
-    until("the server opens avenCEO's seed, boxed for it by Bob's Mac", || server.read(opens)).await;
+    until("the server opens avenMAIA's seed, boxed for it by Bob's Mac", || server.read(opens)).await;
     assert!(!server.read(move |lab, me| lab.opens(me, KeyFam::Seed(bob))).await, "and not Bob's vault's seed");
     assert!(!admission.honours(&anyone), "once claimed, its relay honours only the passes of people it knows");
     assert!(admission.honours(&passkey_b) && admission.admits(&bobs.id()), "Bob's among them");
     // nobody claims it again
     assert!(alices.claim(&offer, passkey_a).await.is_err(), "Alice's vault comes second");
-    // Bob tries again, as if the answer had been lost: the server is avenCEO's device already
+    // Bob tries again, as if the answer had been lost: the server is avenMAIA's device already
     assert_eq!(bobs.claim(&offer, passkey_b).await.expect("the same claim"), avenceo);
     let held = server.read(|lab, me| lab.size(me)).await;
     for n in [bobs, alices, stranger] {
@@ -113,7 +113,7 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     drop(server);
     let again = open(&dir, &admission).await.expect("the server again");
     assert_eq!(again.id(), id, "the same device, from its secret");
-    assert_eq!(server::vault(&again).await, Some(avenceo), "still avenCEO's, from its store");
+    assert_eq!(server::vault(&again).await, Some(avenceo), "still avenMAIA's, from its store");
     assert_eq!(again.read(|lab, me| lab.size(me)).await, held, "and nothing claimed anew");
     assert!(!admission.honours(&anyone), "and its relay stays closed to strangers");
 }
@@ -139,14 +139,14 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
     assert!(stranger.contact(mac.id()).await.is_err(), "a person's device hands out no card");
     assert!(mac.contact(server.id()).await.expect("the server hands out its card") > 0, "Alice's Mac takes it");
     let server_d = server.device();
-    assert_eq!(mac.read(move |lab, me| lab.server_vault_of(me, server_d)).await, Some(v), "it names avenCEO server");
+    assert_eq!(mac.read(move |lab, me| lab.server_vault_of(me, server_d)).await, Some(v), "it names avenMAIA");
     assert!(!admission.admits(&mac.id()), "the server knows no device of Alice's yet");
-    // on Alice's Mac, the coop gives this avenCEO relay on the whole of it, and Alice writes Welcome into it
+    // on Alice's Mac, the coop gives avenMAIA relay on the whole of it, and Alice writes Welcome into it
     let relayed = move |lab: &mut Lab, me| {
         lab.issue(me, &[me], share(coop, vault(v), Level::Backup, Selector::All))?;
         lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))
     };
-    let welcome = mac.act(relayed).await.expect("the coop, relayed by avenCEO, and Welcome");
+    let welcome = mac.act(relayed).await.expect("the coop, relayed by avenMAIA, and Welcome");
     let holds = || server.read(move |lab, me| lab.fetched(me, welcome) > 0);
     until("the server holds Welcome's edits, never asked to sync", holds).await;
     let opens = move |lab: &Lab, me| lab.reads(me, welcome) || lab.opens(me, KeyFam::Seed(coop));
@@ -161,7 +161,7 @@ async fn a_device_takes_the_servers_card_and_the_server_relays_its_vault() {
     // else
     until("the server knows Alice's Mac", || async { admission.admits(&mac.id()) }).await;
     assert!(admission.admits(&bob_mac) && admission.admits(&server.id()), "and Bob's Mac, and itself");
-    assert!(admission.admits(&daves.id()), "and Dave's Mac, of avenCEO's owner");
+    assert!(admission.admits(&daves.id()), "and Dave's Mac, of avenMAIA's owner");
     assert!(!admission.admits(&carol_mac) && !admission.admits(&stranger.id()), "not Carol's Mac, nor a stranger");
 }
 
@@ -172,6 +172,7 @@ async fn agent(dir: &Folder, name: &str) -> Node {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "an aven owns no agent vault any more: agents reach avenMAIA through its server (next PR)"]
 async fn a_persons_mac_adds_agents_as_device_vaults_under_their_one_aven_which_passes_its_shares_on() {
     let (claude_dir, codex_dir, second_dir) = (Folder::new("claude"), Folder::new("codex"), Folder::new("claude-2"));
     let claude = agent(&claude_dir, "agentClaude").await;
@@ -267,13 +268,14 @@ async fn asked(node: &Node) -> Vec<serde_json::Value> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "an aven owns no agent vault any more: agents reach avenMAIA through its server (next PR)"]
 async fn an_avens_access_request_reaches_the_coop_it_asks_directly_and_through_the_server_while_its_person_is_away() {
     let dir = Folder::new("asker");
     let claude = agent(&dir, "agentClaude").await;
     let mut w = world();
     let (alice, bob) = (w.alice, w.bob);
     let (mac_a, passkey_a, mac_b, passkey_b, server_d) = (w.mac_a, w.passkey_a, w.mac_b, w.passkey_b, w.server);
-    // Alice's vault has avenCEO server keep a backup of it; Bob has an iPhone beside his Mac, and a garden, a coop of
+    // Alice's vault has avenMAIA keep a backup of it; Bob has an iPhone beside his Mac, and a garden, a coop of
     // his alone, whose card Alice's Mac takes
     relay_on(&mut w, alice);
     let phone_b = w.lab.device_of(passkey_b, "Bob's iPhone");

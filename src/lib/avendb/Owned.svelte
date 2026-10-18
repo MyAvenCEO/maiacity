@@ -23,9 +23,9 @@
 	export function ownedTitle(world, vault) {
 		const v = world.vaults.find((x) => x.id === vault);
 		if (!v || (vault !== world.mine && v.kind !== 'aven' && !ownedBy(world, vault).length)) return '';
-		if (vault === world.mine) return 'Your aven and its agents';
+		if (vault === world.mine) return 'It owns';
 		if (v.kind === 'aven') return 'Agents';
-		return vault === seeded(world)[1]?.[0].id ? 'Server' : 'It owns';
+		return vault === seeded(world)[0]?.[0].id ? 'Its aven' : 'It owns';
 	}
 </script>
 

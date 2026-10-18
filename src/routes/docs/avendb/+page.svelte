@@ -258,23 +258,22 @@
 	const vaultKinds = [
 		['Human', 'Your passkeys and the master recovery key', 'Any, by threshold', 'Yes: your desktops, phones, browsers and drives', 'Any number'],
 		['COOP', 'Human and COOP vaults', 'Any, by threshold', 'No', 'Any number'],
-		['Aven', 'One human vault', 'Exactly one', 'No', 'One per person'],
+		['Aven', 'One COOP', 'Exactly one', 'Yes: its server', 'One per COOP, none per person'],
 		['Device vault', 'One human, COOP or aven vault', 'Exactly one', 'Yes: the keys of one agent or of the server', 'Any number']
 	];
 
 	// one flow adds every vault that acts by keys of its own
 	const addings = [
-		['Your first agent', 'Your aven, founded in the same prompt', 'The agent harness’s key on your Mac', 'Sub caps of your aven’s shares'],
-		['Another agent', 'Your aven', 'Its harness’s key', 'Sub caps of your aven’s shares'],
+		['An agent', 'Your COOP’s aven, avenMAIA, founded with the seed', 'The agent harness’s key on your Mac', 'Sub caps of the aven’s shares'],
 		['The same harness on your other Mac', 'That agent’s device vault', 'That Mac’s harness key', 'What the agent holds already'],
-		['The server', 'avenCEO GmbH, founded with the seed', 'The server’s key', 'Backup or Relay, from each vault over itself']
+		['The server', 'avenMAIA itself, founded with the seed: the server is its device', 'The server’s key', 'Backup or Relay, from each vault over itself']
 	];
 
 	// the one rule a share rests on another by, case by case
 	const passing = [
-		['A COOP hires your aven', 'Maia City gives avenSamuel Editor', 'Maia City gives a share over itself, resting on none'],
-		['Your aven gives an agent a sub cap', 'avenSamuel passes Maia City’s share on to agentClaude', 'avenSamuel owns agentClaude'],
-		['You pass a COOP’s share on to your aven', 'Your vault passes on a share Maia City gave it', 'Your vault owns your aven'],
+		['A COOP shares with its aven', 'Maia City gives avenMAIA Editor', 'Maia City gives a share over itself, resting on none'],
+		['The aven gives an agent a sub cap', 'avenMAIA passes Maia City’s share on to agentClaude', 'avenMAIA owns agentClaude'],
+		['A COOP passes a share on to its aven', 'Maia City passes on a share another COOP gave it', 'Maia City owns avenMAIA'],
 		['An Owner of a slice shares it on', 'Whoever holds Owner on the todos tagged garden shares them with Bob', 'It rests on an Owner share']
 	];
 
@@ -493,7 +492,7 @@
 		['Ask logs', 'A request for some logs alone, those whose heads it lacks', 'A page of edits'],
 		['Link', 'A passkey’s pass, for a new device', 'The vault logs of that passkey'],
 		['Join', 'The edit that adds the new device', 'Nothing, once taken'],
-		['Card', 'A request for the server’s contact card', 'The vault logs of avenCEO server and every vault that owns it'],
+		['Card', 'A request for the server’s contact card', 'The vault logs of avenMAIA and every vault that owns it'],
 		[
 			'Claim key, Claim',
 			'Asks a device that belongs to no vault yet, an unclaimed server or a new agent, for its key, then adds it to its device vault',
@@ -699,7 +698,7 @@
 			<p class="prose-col">
 				Every change happens on your device first: it is signed, encrypted, saved, and counts at once, online or not.
 				Devices then sync with each other, directly when they can and through the server when they can’t. The server is one
-				more peer: an always-online device of avenCEO server, a device vault, that relays, syncs and keeps an encrypted backup, under the
+				more peer: an always-online device of avenMAIA, a device vault, that relays, syncs and keeps an encrypted backup, under the
 				same rules as every other device and with no say over them.
 			</p>
 			<div class="table">
@@ -808,21 +807,22 @@
 					<h3>COOP vault</h3>
 					<p>
 						A company or a group, owned by human vaults and other COOP vaults. It has no devices of its own: its owners
-						act for it from their devices. A COOP hires an aven by sharing with it.
+						act for it from their devices. Each COOP has one aven of its own, and may hire another COOP’s by sharing
+						with it.
 					</p>
 				</div>
 				<div>
 					<h3>Aven vault</h3>
 					<p>
-						Your one AI identity. Only your human vault owns it, and you own one at most, so only you decide what it
-						passes on. It holds no devices: you act as it from your own devices, and its agents work for it with the
-						rights it passes on to them.
+						A COOP’s one AI identity, Maia City’s avenMAIA. Only its COOP owns it, one aven per COOP and none per
+						person, so only the COOP decides what it passes on. It lives on its server: the server is its device, which
+						acts for it and governs nothing. Its agents work for it with the rights it passes on to them.
 					</p>
 				</div>
 				<div>
 					<h3>Device vault</h3>
 					<p>
-						The keys of one agent or of the server, owned by exactly one human, COOP or aven vault. Its devices act for
+						The keys of one agent or of a studio worker, owned by exactly one human, COOP or aven vault. Its devices act for
 						it with all its rights and approve nothing. It owns nothing, and holds only what its owner gives it or passes
 						on to it.
 					</p>
@@ -831,47 +831,36 @@
 			<figure>
 				<div class="frame">
 					<svg class="fig" viewBox="0 0 960 520" role="img" aria-label="Samuel’s vaults: who owns which, and one share passed on">
-						<path class="own" d="M480 92 V121 M190 150 V121 H750 V150" />
-						<path class="own" d="M190 208 V244 M123 280 V244 H350 V280" />
-						<path class="own" d="M750 208 V280" />
-						<path class="own" d="M750 338 V374 M615 410 V374 H849 V410" />
-						<path class="cap" d="M849 468 V496 H470 V179 H332" />
-						<polygon class="bc" points="334,172 320,179 334,186" />
-						<path class="cap" d="M60 192 H40 V266" />
-						<polygon class="bc" points="33,266 40,280 47,266" />
+						<path class="own" d="M480 92 V150" />
+						<path class="own" d="M480 208 V244 H190 V280" />
+						<path class="own" d="M190 338 V374 H123 V410 M190 374 H350 V410" />
+						<path class="cap" d="M350 190 H30 V266" />
+						<polygon class="bc" points="23,266 30,280 37,266" />
+						<path class="cap" d="M70 338 V396" />
+						<polygon class="bc" points="63,396 70,410 77,396" />
 						<rect class="k-human" x="340" y="20" width="280" height="72" rx="10" />
 						<rect class="dev" x="596" y="30" width="10" height="10" rx="2" />
 						<text class="h" x="358" y="46">Samuel</text>
 						<text class="s" x="358" y="66">human vault · owned by his passkeys</text>
 						<text class="s" x="358" y="84">devices: Mac, phone, browsers</text>
-						<rect class="k-aven" x="60" y="150" width="260" height="58" rx="10" />
-						<text class="h" x="78" y="174">avenSamuel</text>
-						<text class="s" x="78" y="196">aven · one per person, no devices</text>
-						<rect class="k-coop" x="620" y="150" width="260" height="58" rx="10" />
-						<text class="h" x="638" y="174">Maia Holding GmbH</text>
-						<text class="s" x="638" y="196">COOP</text>
-						<rect class="k-device" x="16" y="280" width="214" height="58" rx="10" />
-						<rect class="dev" x="206" y="290" width="10" height="10" rx="2" />
-						<text class="h" x="34" y="304">agentClaude</text>
-						<text class="s" x="34" y="326">device vault · Claude Code</text>
-						<rect class="k-device" x="250" y="280" width="200" height="58" rx="10" />
-						<rect class="dev" x="426" y="290" width="10" height="10" rx="2" />
-						<text class="h" x="268" y="304">agentCodex</text>
-						<text class="s" x="268" y="326">device vault · Codex</text>
-						<rect class="k-coop" x="620" y="280" width="260" height="58" rx="10" />
-						<text class="h" x="638" y="304">avenCEO GmbH</text>
-						<text class="s" x="638" y="326">COOP</text>
-						<rect class="k-device" x="500" y="410" width="230" height="58" rx="10" />
-						<rect class="dev" x="706" y="420" width="10" height="10" rx="2" />
-						<text class="h" x="518" y="434">avenCEO server</text>
-						<text class="s" x="518" y="456">device vault · the server</text>
-						<rect class="k-coop" x="746" y="410" width="206" height="58" rx="10" />
-						<text class="h" x="764" y="434">Maia City</text>
-						<text class="s" x="764" y="456">COOP · the city’s content</text>
-						<text class="s" x="482" y="296">Editor: Maia City</text>
-						<text class="s" x="482" y="314">hires the aven</text>
-						<text class="s" x="48" y="236">sub cap</text>
-						<g transform="translate(20 410)">
+						<rect class="k-coop" x="350" y="150" width="260" height="58" rx="10" />
+						<text class="h" x="368" y="174">Maia City</text>
+						<text class="s" x="368" y="196">COOP · the city’s content</text>
+						<rect class="k-aven" x="60" y="280" width="260" height="58" rx="10" />
+						<rect class="dev" x="296" y="290" width="10" height="10" rx="2" />
+						<text class="h" x="78" y="304">avenMAIA</text>
+						<text class="s" x="78" y="326">aven · one per COOP, lives on the server</text>
+						<rect class="k-device" x="16" y="410" width="214" height="58" rx="10" />
+						<rect class="dev" x="206" y="420" width="10" height="10" rx="2" />
+						<text class="h" x="34" y="434">agentClaude</text>
+						<text class="s" x="34" y="456">device vault · Claude Code</text>
+						<rect class="k-device" x="250" y="410" width="200" height="58" rx="10" />
+						<rect class="dev" x="426" y="420" width="10" height="10" rx="2" />
+						<text class="h" x="268" y="434">agentCodex</text>
+						<text class="s" x="268" y="456">device vault · Codex</text>
+						<text class="s" x="40" y="236">Editor: Maia City shares with its aven</text>
+						<text class="s" x="78" y="372">sub cap</text>
+						<g transform="translate(560 410)">
 							<line class="own" x1="0" y1="10" x2="40" y2="10" />
 							<text class="s" x="52" y="14">owns: the owner decides for it</text>
 							<line class="cap" x1="0" y1="40" x2="40" y2="40" />
@@ -883,9 +872,9 @@
 				</div>
 				<figcaption>
 					Samuel’s vaults. A line runs from an owner down to each vault it owns. The dashed line is a share: Maia City
-					hires avenSamuel, and avenSamuel passes part of that share on to agentClaude as a sub cap. If Maia City revokes
-					its share, agentClaude’s share ends with it. On the right is the seed: avenCEO server is the server’s vault
-					because it ends that chain.
+					shares with avenMAIA, its one aven, and avenMAIA passes part of that share on to agentClaude as a sub cap. If
+					Maia City revokes its share, agentClaude’s share ends with it. avenMAIA lives on the server: the server is
+					its device.
 				</figcaption>
 			</figure>
 			<p class="prose-col">
@@ -919,34 +908,34 @@
 			</div>
 			<p class="prose-col">
 				One flow means one set of rules to check and one view to show it. The app lists the vaults each vault owns the
-				same way, each with its devices and the shares it holds: your aven and its agents on your vault, the agents on
-				your aven, and the server on avenCEO GmbH.
+				same way, each with its devices and the shares it holds: Maia City on your vault, its aven on Maia City, and the
+				aven’s server and agents on avenMAIA.
 			</p>
 			<h3>The seed and the server</h3>
 			<p class="prose-col">
 				A new server belongs to no vault. The first person to found a vault through it claims it, in the same prompt that
-				founds their vault. That prompt also founds the seed: Maia Holding GmbH, a COOP their vault owns; avenCEO GmbH, a
-				COOP Maia Holding GmbH owns; avenCEO server, a device vault avenCEO GmbH owns, with the server as its device; and
-				Maia City, a COOP avenCEO GmbH owns, where the city’s content lives. Each is named as it is founded. Every device
-				finds the server by this chain, not by a name or a kind: it is the device vault, with a device, at the end of the
-				chain, each vault owned by the one before it alone, the first by a human vault. So an agent or a drive in a device
-				vault never passes for the server.
+				founds their vault. That prompt also founds the seed: Maia City, a COOP their vault owns, where the city’s content
+				lives, and avenMAIA, Maia City’s one aven, with the server as its device: an aven lives on its server. Each is
+				named as it is founded. Every device finds the server by this chain, not by a name: it is the aven, with a device,
+				of a COOP owned alone by a human vault. So an agent, a drive or a worker in a device vault never passes for the
+				server.
 			</p>
 			<p class="prose-col">
-				Each vault gives avenCEO server a share on the whole of it: Backup, so the server keeps its ciphertext, or Relay,
+				Each vault gives avenMAIA a share on the whole of it: Backup, so the server keeps its ciphertext, or Relay,
 				with backups off. Every vault founded under you follows your setting, your aven and your agents’ device vaults
 				too: it is one of your standing grants, as “All my vaults, now and later” is, which every vault you found later
 				gives too. Your devices are often away, and the server is always there. So what your aven and its agents write,
 				a request among it, still reaches the people it is for.
 			</p>
-			<h3>Your aven and its agents</h3>
+			<h3>A COOP’s aven and its agents</h3>
 			<p class="prose-col">
-				Your aven is your one AI identity, and COOPs hire it by sharing with it. You act as your aven from your own
-				devices. Each agent harness is an agent of its own: a device vault your aven owns, named after it, with the
+				An aven is a COOP’s one AI identity, one per COOP and none per person: Maia City’s is avenMAIA, founded with the
+				seed. Its COOP’s owners act as it from their own devices. Each agent harness is an agent of its own: a device
+				vault the aven owns, named after it, with the
 				harness’s key as its device. The key is who it is, never a token. Claude Code is agentClaude, Codex is
 				agentCodex, and likewise Cursor, Grok and our own native aven. <code>avendb-device agent claude</code> is that
 				device on your desktop, which Claude Code starts as its MCP server. A harness never names or picks an aven: it
-				always joins your one aven, and the first agent you approve founds it.
+				always joins your COOP’s one aven.
 			</p>
 			<p class="prose-col">
 				Each agent holds sub caps: shares your aven passes on to it, each resting on one your aven holds, never stronger
@@ -970,7 +959,7 @@
 			<div class="codes">
 				<figure>
 					<pre><code>{ASK}</code></pre>
-					<figcaption>avenSamuel asks Maia City for Editor</figcaption>
+					<figcaption>avenMAIA asks Maia City for Editor</figcaption>
 				</figure>
 				<figure>
 					<pre><code>{REQUEST}</code></pre>
@@ -1327,7 +1316,7 @@
 			</p>
 			<h3>The server: Backup or Relay</h3>
 			<p class="prose-col">
-				Each vault gives avenCEO server, the server’s device vault, a Backup share on everything when it is founded: the
+				Each vault gives avenMAIA, the server’s device vault, a Backup share on everything when it is founded: the
 				server keeps the ciphertext of every entry, and opens none. With backups off it gives Relay instead: the server
 				learns the vault’s devices, to let them through its relay, and keeps nothing of its entries. Every vault founded
 				under you follows your setting, and one switch changes it for all of them.
@@ -1569,7 +1558,7 @@
 						<text class="s" x="410" y="300">its shelf is the bucket;</text>
 						<text class="s" x="410" y="322">its disk, a cache it can lose:</text>
 						<text class="s" x="410" y="344">parts read lately, blobs in transit</text>
-						<text class="m" x="410" y="380">a device of avenCEO server</text>
+						<text class="m" x="410" y="380">a device of avenMAIA</text>
 						<path class="bkt" d="M770 170 v210 a80 18 0 0 0 160 0 v-210" />
 						<ellipse class="bkt" cx="850" cy="170" rx="80" ry="18" />
 						<text class="h" x="850" y="214" text-anchor="middle">Object storage</text>

@@ -10,7 +10,7 @@
 //!
 //! A new server belongs to no vault (P8f). The first human vault to claim it owns it (`avendb_net::Node::claim`), as a
 //! person's first device founds their vault through it (`avendb_net::Node::found_with`): the server becomes a device of
-//! avenCEO server, the device vault avenCEO GmbH owns, of the seed that human vault founds in the same ceremony, and
+//! avenMAIA, the aven Maia City owns, of the seed that human vault founds in the same ceremony, and
 //! acts as it without ever governing it. Until then its relay honours a pass of any passkey, so that the claiming
 //! device may be a browser; once claimed, nobody claims it again.
 //!

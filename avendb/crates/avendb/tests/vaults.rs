@@ -291,7 +291,7 @@ fn a_vault_settles_before_the_coops_it_owns() {
     assert_eq!(Log::from_edits(without).view().vault(alice), st.vault(alice));
 }
 
-/// A device vault owned by Alice's vault, as avenCEO server is owned through its seed, with the server as its device.
+/// A device vault owned by Alice's vault, with a server as its device.
 fn server_of_alice(c: &mut Cast) -> VaultId {
     let owners = vec![Principal::Vault(c.alice)];
     let kind = Kind::DeviceVault;
@@ -307,9 +307,9 @@ fn founded(kind: Kind, owners: Vec<Principal>, nonce: u64) -> Action {
     Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] }
 }
 
-/// Four kinds of vault (Examples.lean): a device vault, as the relay server's avenCEO server, is owned by one human,
-/// coop or aven vault, never by a signer; its devices, its servers, act for it but never govern it; it owns no vault,
-/// and has no root; a coop has no devices.
+/// Four kinds of vault (Examples.lean): a device vault, as a coop's drive or a studio's worker, is owned by one human
+/// or coop vault, never by a signer; its devices act for it but never govern it; it owns no vault, and has no root;
+/// a coop has no devices.
 #[test]
 fn a_device_vaults_devices_act_for_it_but_never_govern_it() {
     let mut c = cast();
@@ -362,39 +362,46 @@ fn a_device_vaults_devices_act_for_it_but_never_govern_it() {
     assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B, NEW_DEVICE], device).err(), Some(Refusal::NoDevices));
 }
 
-/// An aven (Examples.lean): a person's own agent, owned by their human vault alone, one to a person. It holds no
-/// devices and acts through its owner's devices; it owns the device vaults its agents run in, whose devices act for
-/// them and not for the aven, and owns nothing else.
+/// An aven (Examples.lean's `sAven`): a coop's AI, owned by that coop alone, one to a coop. It holds devices, its
+/// server, which act for it and never govern it, and the devices of its coop's owners act for it through the coop; it
+/// owns nothing: no agent's device vault, no coop and no aven.
 #[test]
-fn an_aven_has_one_human_owner_and_owns_its_agents_device_vaults() {
+fn an_aven_has_one_coop_owner_holds_its_server_and_owns_nothing() {
     let mut c = cast();
     let coop = with_coop(&mut c);
     let (alice, bob) = (Principal::Vault(c.alice), Principal::Vault(c.bob));
-    let aven = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::Aven, vec![alice], 0)).unwrap());
-    // one to a person, owned by a human vault alone: no second for Alice, none of the coop's, none of two people
-    let second = founded(Kind::Aven, vec![alice], 1);
+    let hers = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::Coop, vec![alice], 0)).unwrap());
+    let aven = founded(Kind::Aven, vec![Principal::Vault(hers)], 0);
+    let aven = VaultId::from(c.log.append(PASSKEY_A, &[], aven).unwrap());
+    // one to a coop, owned by a coop alone: no second for Alice's coop, none of a person, of two coops or of a signer;
+    // no second owner joins it, a coop or a person
+    let second = founded(Kind::Aven, vec![Principal::Vault(hers)], 1);
     assert_eq!(c.log.check(PASSKEY_A, &[], second).err(), Some(Refusal::SecondAven));
-    let of_coop = founded(Kind::Aven, vec![Principal::Vault(coop)], 1);
-    assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], of_coop).err(), Some(Refusal::WrongOwnerKind));
-    let of_two = founded(Kind::Aven, vec![bob, Principal::Vault(c.carol)], 1);
-    assert_eq!(c.log.check(PASSKEY_B, &[PASSKEY_C], of_two).err(), Some(Refusal::OneOwner));
+    let of_person = founded(Kind::Aven, vec![bob], 1);
+    assert_eq!(c.log.check(PASSKEY_B, &[], of_person).err(), Some(Refusal::WrongOwnerKind));
+    let of_two = founded(Kind::Aven, vec![Principal::Vault(hers), Principal::Vault(coop)], 1);
+    assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], of_two).err(), Some(Refusal::OneOwner));
     let of_passkey = founded(Kind::Aven, vec![Principal::Signer(PASSKEY_B)], 1);
     assert_eq!(c.log.check(PASSKEY_B, &[], of_passkey).err(), Some(Refusal::WrongOwnerKind));
-    let joins = Action::Share(Sharing::Owner { vault: aven, owner: Principal::Vault(c.carol), seal_to: None });
-    assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_C], joins).err(), Some(Refusal::OneOwner));
-    assert!(c.log.check(PASSKEY_B, &[], founded(Kind::Aven, vec![bob], 1)).is_ok(), "Bob founds his own");
-    // it holds no devices; the device vault of one of its agents does
-    let add = |vault| Action::Share(Sharing::Device { vault, device: NEW_DEVICE, seal_to: None });
-    assert_eq!(c.log.check(PASSKEY_A, &[NEW_DEVICE], add(aven)).err(), Some(Refusal::NoDevices));
-    let agent = founded(Kind::DeviceVault, vec![Principal::Vault(aven)], 0);
-    let agent = VaultId::from(c.log.append(PASSKEY_A, &[], agent).unwrap());
-    c.log.append(PASSKEY_A, &[NEW_DEVICE], add(agent)).unwrap();
-    // Alice's devices act for the aven through her vault, and for the agent's vault through the aven; the agent acts
-    // for its own vault, not for the aven
+    let joins = |owner| Action::Share(Sharing::Owner { vault: aven, owner, seal_to: None });
+    assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_B], joins(Principal::Vault(coop))).err(), Some(Refusal::OneOwner));
+    let carol = joins(Principal::Vault(c.carol));
+    assert_eq!(c.log.check(PASSKEY_A, &[PASSKEY_C], carol).err(), Some(Refusal::WrongOwnerKind));
+    let of_coop = founded(Kind::Aven, vec![Principal::Vault(coop)], 1);
+    assert!(c.log.check(PASSKEY_A, &[PASSKEY_B], of_coop).is_ok(), "the two people's coop founds its own");
+    // it holds devices, its server
+    let add = |vault, device| Action::Share(Sharing::Device { vault, device, seal_to: None });
+    c.log.append(PASSKEY_A, &[SERVER], add(aven, SERVER)).expect("Alice's passkey adds its server, through her coop");
+    // the server acts for the aven as its device, Alice's devices through her coop and her vault; Bob's don't
     let st = c.log.view();
-    assert_eq!((st.via(MAC_A, aven), st.via(MAC_A, agent)), (Some(vec![c.alice]), Some(vec![aven, c.alice])));
-    assert_eq!((st.via(NEW_DEVICE, agent), st.via(NEW_DEVICE, aven)), (Some(vec![]), None));
-    // it owns device vaults only
+    assert_eq!((st.via(SERVER, aven), st.via(MAC_A, aven)), (Some(vec![]), Some(vec![hers, c.alice])));
+    assert_eq!(st.via(MAC_B, aven), None);
+    // the server governs nothing: it adds no device to the aven
+    let other = SignerId::from_u64(601);
+    assert_eq!(c.log.check(SERVER, &[other], add(aven, other)).err(), Some(Refusal::BelowThreshold));
+    // it owns nothing: no device vault, no coop, no aven
+    let device_of_aven = founded(Kind::DeviceVault, vec![Principal::Vault(aven)], 1);
+    assert_eq!(c.log.check(PASSKEY_A, &[], device_of_aven).err(), Some(Refusal::WrongOwnerKind));
     let coop_of_aven = founded(Kind::Coop, vec![Principal::Vault(aven)], 1);
     assert_eq!(c.log.check(PASSKEY_A, &[], coop_of_aven).err(), Some(Refusal::WrongOwnerKind));
     let aven_of_aven = founded(Kind::Aven, vec![Principal::Vault(aven)], 1);
@@ -474,7 +481,9 @@ fn every_vault_keeps_to_its_kind() {
     let owner = |vault, owner| Action::Share(Sharing::Owner { vault, owner, seal_to: None });
     let device = |vault, device| Action::Share(Sharing::Device { vault, device, seal_to: None });
     let root = Setting::Root { root: Some(PASSKEY_A), keep: vec![] };
-    let aven = founded(Kind::Aven, vec![Principal::Vault(c.alice)], 0);
+    let hers = founded(Kind::Coop, vec![Principal::Vault(c.alice)], 0);
+    let hers = VaultId::from(c.log.append(PASSKEY_A, &[], hers).unwrap());
+    let aven = founded(Kind::Aven, vec![Principal::Vault(hers)], 0);
     let aven = VaultId::from(c.log.append(PASSKEY_A, &[], aven).unwrap());
     let attempts = [
         (PASSKEY_A, vec![PASSKEY_B], owner(coop, signer(PASSKEY_A))),
@@ -482,12 +491,18 @@ fn every_vault_keeps_to_its_kind() {
         (PASSKEY_A, vec![NEW_DEVICE], owner(ceo, signer(NEW_DEVICE))),
         (PASSKEY_A, vec![PASSKEY_B], owner(ceo, Principal::Vault(c.bob))),
         (PASSKEY_A, vec![PASSKEY_B], owner(c.alice, by_coop)),
-        (PASSKEY_A, vec![], Action::Settings { vault: ceo, set: root }),
+        (PASSKEY_A, vec![], Action::Settings { vault: ceo, set: root.clone() }),
         (PASSKEY_A, vec![NEW_DEVICE], device(aven, NEW_DEVICE)),
+        (PASSKEY_A, vec![], Action::Settings { vault: aven, set: root }),
         (PASSKEY_A, vec![PASSKEY_B], owner(aven, Principal::Vault(c.bob))),
+        (PASSKEY_A, vec![PASSKEY_B], owner(aven, by_coop)),
         (PASSKEY_A, vec![], founded(Kind::Aven, vec![Principal::Vault(c.alice)], 1)),
+        (PASSKEY_A, vec![], founded(Kind::Aven, vec![Principal::Vault(hers)], 1)),
         (PASSKEY_A, vec![PASSKEY_B], founded(Kind::Aven, vec![by_coop], 1)),
+        (PASSKEY_A, vec![PASSKEY_B], founded(Kind::Aven, vec![by_coop], 2)),
         (PASSKEY_A, vec![], founded(Kind::Coop, vec![Principal::Vault(ceo)], 1)),
+        (PASSKEY_A, vec![], founded(Kind::Coop, vec![Principal::Vault(aven)], 1)),
+        (PASSKEY_A, vec![], founded(Kind::DeviceVault, vec![Principal::Vault(aven)], 1)),
     ];
     for (author, cosigners, action) in attempts {
         let _ = c.log.append(author, &cosigners, action);
@@ -507,7 +522,10 @@ fn every_vault_keeps_to_its_kind() {
         assert!(v.devices.is_empty() || v.kind.has_devices(), "{v:?}");
         assert!(v.root.is_none() || v.kind == Kind::Human, "{v:?}");
     }
-    let avens = st.vaults().iter().filter(|v| v.kind == Kind::Aven).count();
-    assert_eq!(avens, 1, "Alice's one aven");
+    // one aven to a coop: Alice's coop's, and the one the two people's coop founds
+    let avens: Vec<_> = st.vaults().iter().filter(|v| v.kind == Kind::Aven).map(|v| v.owners.clone()).collect();
+    assert_eq!(avens.len(), 2, "{avens:?}");
+    assert!(avens.contains(&vec![Principal::Vault(hers)]) && avens.contains(&vec![by_coop]), "{avens:?}");
+    assert_eq!(st.vault(aven).map(|v| v.devices.clone()), Some(vec![NEW_DEVICE]), "an aven holds its server");
     assert_eq!(st.vault(ceo).map(|v| (v.devices.clone(), v.root, v.owners.len())), Some((vec![SERVER], None, 1)));
 }

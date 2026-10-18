@@ -487,11 +487,10 @@
 			</p>
 		{:else}
 			<section>
-				<h3>Your aven</h3>
+				<h3>No aven yet</h3>
 				<p class="soft">
-					Your one AI identity, which every agent of yours joins and coops hire. You have none yet: approving founds it.
+					Agents join their coop's one aven, avenMAIA, which the seed founds with Maia City. This device sees none yet.
 				</p>
-				<input class="name" bind:value={a.naming} aria-label="Your aven's name" placeholder="Its name" />
 			</section>
 		{/if}
 

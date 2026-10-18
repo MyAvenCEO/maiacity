@@ -1335,7 +1335,7 @@ macro_rules! code_entry {
 
 pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
-    /// of its vault's lane. avenCEO GmbH, the seed's company, holds each as a schema entry of its own, shared with
+    /// of its vault's lane. Maia City, the seed's coop, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
     pub const SHIPPED: [&str; 27] = [
         DOCUMENT_V1,
@@ -1369,7 +1369,7 @@ pub mod blobs {
 
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
     /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
-    /// and avenCEO GmbH holds each as a lens entry beside its schemas.
+    /// and Maia City holds each as a lens entry beside its schemas.
     pub const LENSES: [&str; 6] = [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS, VIEW_LENS, POST_LENS, STORY_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with

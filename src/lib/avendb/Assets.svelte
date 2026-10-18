@@ -53,7 +53,7 @@
 	const here = $derived(world.vaults.find((v) => v.id === vault));
 	/** the Maia City vault, where the asset recipes are kept, as this person's world knows it: the seed's coop where
 	 *  they founded it, else a coop of that name */
-	const city = $derived(seeded(world)[3]?.[0] ?? world.vaults.find((v) => v.kind === 'coop' && v.name === 'Maia City'));
+	const city = $derived(seeded(world)[0]?.[0] ?? world.vaults.find((v) => v.kind === 'coop' && v.name === 'Maia City'));
 	const held = $derived(db?.vault === vault ? db : null);
 	/** the vault's recipes, read from its entries as the acting vault opens them, each file only when it is built */
 	const source = $derived(vaultSource(world, held, vault, actor, read));

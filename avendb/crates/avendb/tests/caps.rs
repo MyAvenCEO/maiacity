@@ -44,7 +44,7 @@ fn alices_library() -> Cast {
     c
 }
 
-/// A device vault owned by Alice's vault, as avenCEO server is owned through its seed, with the server as its device.
+/// A device vault owned by Alice's vault, with a server as its device.
 fn server_of_alice(c: &mut Cast) -> VaultId {
     let owners = vec![Principal::Vault(c.alice)];
     let kind = Kind::DeviceVault;
@@ -351,47 +351,47 @@ fn a_share_on_an_owner_share_grants_no_more_than_it() {
 }
 
 /// T22, sub caps (Examples.lean's `subCaps`): a share that isn't an owner share is passed on only to a vault its holder
-/// owns, as Alice's aven passes the coop's write share on to its agent's device vault, no higher and no wider than it.
-/// The agent writes what both select, and its share ends with the aven's.
+/// owns, as Alice's coop passes the two people's coop's write share on to its studio worker's device vault, no higher
+/// and no wider than it. The worker writes what both select, and its share ends with Alice's coop's.
 #[test]
-fn an_aven_passes_a_coops_share_on_to_its_agent_until_the_coop_revokes_it() {
+fn a_coop_passes_another_coops_share_on_to_its_worker_until_that_coop_revokes_it() {
     let mut c = cast();
     let coop = with_coop(&mut c);
     let founded = |kind, owner| {
         let owners = vec![Principal::Vault(owner)];
         Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 0, seal_to: vec![] }
     };
-    let aven = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::Aven, c.alice)).unwrap());
-    let agent = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::DeviceVault, aven)).unwrap());
-    let harness = Action::Share(Sharing::Device { vault: agent, device: NEW_DEVICE, seal_to: None });
+    let hers = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::Coop, c.alice)).unwrap());
+    let worker = VaultId::from(c.log.append(PASSKEY_A, &[], founded(Kind::DeviceVault, hers)).unwrap());
+    let harness = Action::Share(Sharing::Device { vault: worker, device: NEW_DEVICE, seal_to: None });
     c.log.append(PASSKEY_A, &[NEW_DEVICE], harness).unwrap();
     c.create(MAC_A, coop, DOOR, coop, &[], "todo", &["work"]).unwrap();
     c.create(MAC_A, coop, SEEDS, coop, &[], "todo", &["home"]).unwrap();
-    let to_aven = c.issue(MAC_A, &[], coop, vault(aven), Level::Write, of_type("todo")).unwrap();
+    let to_hers = c.issue(MAC_A, &[], coop, vault(hers), Level::Write, of_type("todo")).unwrap();
     let work = tagged("todo", "work");
-    let sub = c.issue_on(MAC_A, &[], coop, vault(agent), Level::Write, work, Some(to_aven), aven, 0).unwrap();
-    // no higher, no wider, to no vault the aven doesn't own; the agent's vault, which owns nothing, passes nothing on
+    let sub = c.issue_on(MAC_A, &[], coop, vault(worker), Level::Write, work, Some(to_hers), hers, 0).unwrap();
+    // no higher, no wider, to no vault her coop doesn't own; the worker's vault, which owns nothing, passes nothing on
     let on = |who, level, wide, parent, issuer| share_edit(coop, who, level, wide, Some(parent), issuer);
     let refused = |signer, share| c.log.check(signer, &[], share).err();
-    assert_eq!(refused(PASSKEY_A, on(agent, Level::Owner, false, to_aven, aven)), Some(Refusal::BadParent));
-    assert_eq!(refused(MAC_A, on(agent, Level::Read, true, to_aven, aven)), Some(Refusal::BadParent));
-    assert_eq!(refused(MAC_A, on(c.carol, Level::Read, false, to_aven, aven)), Some(Refusal::BadParent));
-    assert_eq!(refused(NEW_DEVICE, on(aven, Level::Read, false, sub, agent)), Some(Refusal::BadParent));
-    // a steward moves the work todo into the audience of both shares, the other into the aven's alone
+    assert_eq!(refused(PASSKEY_A, on(worker, Level::Owner, false, to_hers, hers)), Some(Refusal::BadParent));
+    assert_eq!(refused(MAC_A, on(worker, Level::Read, true, to_hers, hers)), Some(Refusal::BadParent));
+    assert_eq!(refused(MAC_A, on(c.carol, Level::Read, false, to_hers, hers)), Some(Refusal::BadParent));
+    assert_eq!(refused(NEW_DEVICE, on(hers, Level::Read, false, sub, worker)), Some(Refusal::BadParent));
+    // a steward moves the work todo into the audience of both shares, the other into her coop's alone
     c.tidy(MAC_A);
     let v = c.log.view();
-    assert_eq!([DOOR, SEEDS].map(|e| v.may_write(agent, e)), [true, false]);
-    assert_eq!([DOOR, SEEDS].map(|e| v.may_write(aven, e)), [true, true]);
-    c.log.append(NEW_DEVICE, &[], write_now(&c.log, DOOR, agent)).expect("the agent writes the work todo");
-    let beyond = c.log.append(NEW_DEVICE, &[], write_now(&c.log, SEEDS, agent)).err();
+    assert_eq!([DOOR, SEEDS].map(|e| v.may_write(worker, e)), [true, false]);
+    assert_eq!([DOOR, SEEDS].map(|e| v.may_write(hers, e)), [true, true]);
+    c.log.append(NEW_DEVICE, &[], write_now(&c.log, DOOR, worker)).expect("the worker writes the work todo");
+    let beyond = c.log.append(NEW_DEVICE, &[], write_now(&c.log, SEEDS, worker)).err();
     assert_eq!(beyond, Some(Refusal::NoCap), "and not the other");
-    // the coop revokes the aven's share, which ends the agent's
-    let revoke = Action::Revoke(Revoking::Grant { share: to_aven, actor: coop, keep: vec![], via: vec![] });
+    // the two people's coop revokes her coop's share, which ends the worker's
+    let revoke = Action::Revoke(Revoking::Grant { share: to_hers, actor: coop, keep: vec![], via: vec![] });
     c.log.append(MAC_A, &[], revoke).unwrap();
     let v = c.log.view();
-    assert!(!v.live(to_aven) && !v.live(sub));
-    let after = c.log.append(NEW_DEVICE, &[], write_now(&c.log, DOOR, agent)).err();
-    assert_eq!(after, Some(Refusal::NoCap), "the agent writes the work todo no more");
+    assert!(!v.live(to_hers) && !v.live(sub));
+    let after = c.log.append(NEW_DEVICE, &[], write_now(&c.log, DOOR, worker)).err();
+    assert_eq!(after, Some(Refusal::NoCap), "the worker writes the work todo no more");
 }
 
 /// Examples.lean's `wideShares`: Alice gives Dave, her backup, read on her whole vault, and avenCEO server, the

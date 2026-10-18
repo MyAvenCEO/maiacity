@@ -1740,7 +1740,7 @@ theorem T21_vault_kinds {st : State} (hr : Reachable st) : KindsFit st := by
 /-! ## Owners by the kind table
 
 Every vault keeps at least one owner and no more than its kind takes, and where the table lets one owner own one vault
-of a kind, none owns two: an aven has one owner, a human vault, and a human vault owns one aven at most. -/
+of a kind, none owns two: an aven has one owner, a coop, and a coop owns one aven at most. -/
 
 /-- Fewer owners than a kind takes are taken too. -/
 theorem takes_mono {r : KindRules} {m n : Nat} (hmn : m ≤ n) (h : r.takes n = true) : r.takes m = true := by
@@ -1857,9 +1857,9 @@ theorem oneEach_reachable {st : State} (hr : Reachable st) : OneEach st := by
   intro _ _ x _ vx _ _ hx
   simp [State.vault?] at hx
 
-/-- In every reachable state an aven has exactly one owner, and it is a human vault. -/
+/-- In every reachable state an aven has exactly one owner, and it is a coop. -/
 theorem aven_owner {st : State} (hr : Reachable st) {v : VaultId} {vt : Vault} (hv : st.vault? v = some vt)
-    (hk : vt.kind = .aven) : ∃ h ht, vt.owners = [.vault h] ∧ st.vault? h = some ht ∧ ht.kind = .human := by
+    (hk : vt.kind = .aven) : ∃ h ht, vt.owners = [.vault h] ∧ st.vault? h = some ht ∧ ht.kind = .coop := by
   obtain ⟨hne, ht⟩ := ownersCount_reachable hr v vt hv
   have hfit := (T21_vault_kinds hr v vt hv).1
   rw [hk] at ht hfit
@@ -1879,7 +1879,7 @@ theorem aven_owner {st : State} (hr : Reachable st) {v : VaultId} {vt : Vault} (
         exact ⟨h, ht', rfl, hh, hq⟩
   | _ :: _ :: _ => rw [ho] at ht; simp [KindRules.takes, Kind.rules] at ht
 
-/-- In every reachable state a human vault, or any vault, owns one aven at most. -/
+/-- In every reachable state a coop, or any vault, owns one aven at most. -/
 theorem one_aven {st : State} (hr : Reachable st) {o x y : VaultId} {vx vy : Vault} (hx : st.vault? x = some vx)
     (hy : st.vault? y = some vy) (hkx : vx.kind = .aven) (hky : vy.kind = .aven)
     (hox : Principal.vault o ∈ vx.owners) (hoy : Principal.vault o ∈ vy.owners) : x = y :=
