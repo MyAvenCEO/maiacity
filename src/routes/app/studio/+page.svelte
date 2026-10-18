@@ -566,7 +566,8 @@
 		grid-template-columns: minmax(0, 1fr);
 		gap: 1px;
 		min-width: 0;
-		min-height: 0;
+		/* the picture never squeezed below this, however many tracks the timeline shows (they scroll) */
+		min-height: 42vh;
 		background: var(--edge);
 	}
 
@@ -594,6 +595,11 @@
 	}
 
 	@media (max-width: 900px) {
+		/* a phone sets the monitor's row itself */
+		.monitors {
+			min-height: 0;
+		}
+
 		.studio,
 		.studio.tab-render {
 			grid-template-columns: 1fr;
