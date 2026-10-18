@@ -22,7 +22,7 @@ import { filmPath } from '../../../game/film/worlds.js';
  * @typedef {{
  *   ready(): Promise<void>,
  *   prepare(specs: ShotSpec[]): Promise<void>,
- *   show(o: ShowArgs): void | Promise<void>,
+ *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
  *   record: { start(): void, stop(): CameraKey[] | Promise<CameraKey[]> }
@@ -47,10 +47,16 @@ export const worldUrl = (base, world = {}) => {
 
 /** @type {WeakMap<object, string>} */
 const keys = new WeakMap();
-/** a shot's key, worked out once per spec object (asked for every frame; an edit is a new object) @param {ShotSpec} s */
+/**
+ * What a shot needs the world readied as: its world (where the walker stands, the dome, the set), worked out once per
+ * spec object (asked for every frame). Never the whole spec: a key moved, a lens or an hour changed while editing is
+ * the same world, drawn at once, not a shot to prepare again (keyed by the whole spec, every edit in 3D or Edit was
+ * "not ready" and showed the stand-in).
+ * @param {ShotSpec} s
+ */
 const specKey = (s) => {
 	let k = keys.get(s);
-	if (k === undefined) keys.set(s, (k = JSON.stringify(s)));
+	if (k === undefined) keys.set(s, (k = JSON.stringify(s.world ?? null)));
 	return k;
 };
 /** how often the GPU may drop the world before the viewer stops loading it again (the proxies play) */
@@ -92,6 +98,11 @@ export class WorldViewer {
 	px = 1920;
 	/** when the GPU dropped the world (its WebGL context lost), the last few times (ms) */
 	losses = /** @type {number[]} */ ([]);
+	/**
+	 * the world (`specKey`) whose frame is on the world's canvas now: until one is drawn there the canvas is empty, and
+	 * shown it was a black frame under "live world"
+	 */
+	drawn = $state('');
 
 	/**
 	 * Starts the world in its iframe and waits for film mode to answer. After `wait` ms without it the viewer says it is
@@ -106,6 +117,7 @@ export class WorldViewer {
 		// and its shots counted as ready (or preparing for ever) in a world that had built none of them
 		if (this.url !== url || this.iframe !== iframe) {
 			this.film = null;
+			this.drawn = '';
 			this.readyShots.clear();
 			this.preparing.clear();
 			this.queued = null;
@@ -176,6 +188,7 @@ export class WorldViewer {
 			this.error = `the GPU dropped the world (its WebGL context was lost)${again ? ': loading it again' : ` ${this.losses.length} times: the proxies play`}`;
 			console.warn(`world: ${this.error}`);
 			this.film = null;
+			this.drawn = '';
 			this.readyShots.clear();
 			this.preparing.clear();
 			this.queued = null;
@@ -216,6 +229,7 @@ export class WorldViewer {
 
 	detach() {
 		this.film = null;
+		this.drawn = '';
 		this.iframe = null;
 		this.url = '';
 		this.state = 'off';
@@ -225,6 +239,8 @@ export class WorldViewer {
 
 	/** @param {ShotSpec} spec */
 	isReady = (spec) => this.state === 'ready' && this.holds(spec) && this.readyShots.has(specKey(spec));
+	/** the live world shows this shot: ready, and a frame of it drawn on the canvas @param {ShotSpec} spec */
+	isLive = (spec) => this.isReady(spec) && this.drawn === specKey(spec);
 
 	/** whether the world in the iframe is the one this shot is in (only its shots are prepared and drawn there) @param {ShotSpec} spec */
 	holds = (spec) => !!this.url && (this.url.endsWith(pathOf(spec)) || !this.url.includes('/games/'));
@@ -237,7 +253,8 @@ export class WorldViewer {
 		const film = this.film;
 		if (!film) return Promise.resolve();
 		specs = specs.filter((s) => this.holds(s));
-		const todo = specs.filter((s) => !this.readyShots.has(specKey(s)) && !this.preparing.has(specKey(s)));
+		// one prepare per world staged (shots in the same place share it)
+		const todo = [...new Map(specs.map((s) => [specKey(s), s])).values()].filter((s) => !this.readyShots.has(specKey(s)) && !this.preparing.has(specKey(s)));
 		for (const s of todo) {
 			const k = specKey(s);
 			const t0 = performance.now();
@@ -268,6 +285,7 @@ export class WorldViewer {
 		const k = this.scale * Math.min(1, Math.max(320, this.px) / Math.max(o.width, o.height));
 		const w = Math.round(o.width * k), h = Math.round(o.height * k);
 		Promise.resolve(this.film.show({ ...o, width: w, height: h }))
+			.then((drew) => void (drew !== false && this.film && (this.drawn = specKey(o.spec))))
 			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
 			.finally(() => {
 				// the resolution steps (1, ¾, ½, ⅓) on the median of the last frames: each step reallocates the targets,
