@@ -1,0 +1,4104 @@
+{
+	"key": "the-first-village",
+	"name": "The first village",
+	"frozen": "2026-10-18T14:47:31.531Z",
+	"story": {
+		"title": "The first village",
+		"description": "G with the world on the timeline: 42 world shots (data, rendered at the end) · every sound as in G"
+	},
+	"timeline": {
+		"id": "722eb0b9-5cc5-4e84-a0da-3364be7b0507",
+		"name": "World",
+		"project": "233 settlers, how it starts",
+		"variant": "W",
+		"description": "G with the world on the timeline: 42 world shots (data, rendered at the end) · every sound as in G",
+		"aspect": "16:9",
+		"tags": [
+			"Day 19",
+			"film",
+			"world"
+		],
+		"clips": [
+			{
+				"id": "ghlnn0a1",
+				"in": 0,
+				"dur": 12.784000000000002,
+				"vol": 0,
+				"kind": "world",
+				"shot": "6b6bc29d-3008-4971-8298-2f98ce614d4f",
+				"start": 0,
+				"track": "V1",
+				"script": {
+					"scene": "hook"
+				},
+				"shotVersion": 2
+			},
+			{
+				"id": "8wid8cul",
+				"in": 0,
+				"dur": 4.2429999999999986,
+				"vol": 0,
+				"kind": "world",
+				"shot": "f95d7a83-6e7d-4eb9-8edf-923e43aed59a",
+				"start": 12.784000000000002,
+				"track": "V1",
+				"script": {
+					"scene": "sunrise"
+				},
+				"shotVersion": 2
+			},
+			{
+				"id": "ik213eut",
+				"in": 0,
+				"dur": 4.5000000000000036,
+				"vol": 0,
+				"kind": "world",
+				"shot": "b79eb9a3-4987-4225-9347-d6e051584975",
+				"start": 17.027,
+				"track": "V1",
+				"script": {
+					"scene": "sunrise"
+				},
+				"shotVersion": 3
+			},
+			{
+				"id": "lvj8qvbz",
+				"in": 0,
+				"dur": 4.759999999999998,
+				"vol": 0,
+				"kind": "world",
+				"shot": "dbbb9112-1454-4bdb-b510-096d6debdeeb",
+				"start": 21.527000000000005,
+				"track": "V1",
+				"script": {
+					"scene": "sunrise"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "zqv17tgm",
+				"in": 0,
+				"dur": 2.001999999999999,
+				"vol": 0,
+				"kind": "world",
+				"shot": "56793fd1-0830-4a50-b0c0-bc8c96289802",
+				"start": 26.287000000000003,
+				"track": "V1",
+				"script": {
+					"scene": "the dip"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "flzaaudk",
+				"in": 0,
+				"dur": 2.001999999999999,
+				"vol": 0,
+				"kind": "world",
+				"shot": "0ad195cd-27e0-4de9-b4fc-fb1ae8063d16",
+				"start": 28.289,
+				"track": "V1",
+				"script": {
+					"scene": "the dip"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "k44ocz40",
+				"in": 0,
+				"dur": 1.9220000000000077,
+				"vol": 0,
+				"kind": "world",
+				"shot": "ae026c20-fa26-438c-aca3-09a1ff1b78c2",
+				"start": 30.291,
+				"track": "V1",
+				"script": {
+					"scene": "the dip"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "bl4g9939",
+				"in": 0,
+				"dur": 1.2409999999999997,
+				"vol": 0,
+				"kind": "world",
+				"shot": "36fdda9b-0c6c-483a-bf1f-e18e31915bdc",
+				"start": 32.21300000000001,
+				"track": "V1",
+				"script": {
+					"scene": "the dip"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "4i9pmhl7",
+				"in": 0,
+				"dur": 4.388999999999996,
+				"vol": 0,
+				"kind": "world",
+				"shot": "fb0b8797-1b9b-429a-a5ac-3dd456a98480",
+				"start": 33.45400000000001,
+				"track": "V1",
+				"script": {
+					"scene": "the dip"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "e1fcreyy",
+				"in": 0,
+				"dur": 1.7899999999999991,
+				"vol": 0,
+				"kind": "world",
+				"shot": "3aa31d3e-7cbf-41fb-802e-213dfcce28ec",
+				"start": 37.843,
+				"track": "V1",
+				"script": {
+					"scene": "breakfast"
+				},
+				"shotVersion": 2
+			},
+			{
+				"id": "uycdoiao",
+				"in": 0,
+				"dur": 3.834000000000003,
+				"vol": 0,
+				"kind": "world",
+				"shot": "6e60073a-bb62-49bd-84ac-232327c398d4",
+				"start": 39.633,
+				"track": "V1",
+				"script": {
+					"scene": "breakfast"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "se5eptcy",
+				"in": 0,
+				"dur": 3.705999999999996,
+				"vol": 0,
+				"kind": "world",
+				"shot": "c6c3c2f4-3d79-4874-a7e1-70e1b9aba6c6",
+				"start": 43.467000000000006,
+				"track": "V1",
+				"script": {
+					"scene": "breakfast"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "v8y4jtt9",
+				"in": 0,
+				"dur": 5.907000000000004,
+				"vol": 0,
+				"kind": "world",
+				"shot": "b603bd30-d925-4925-a96b-a9fe5f8d6a02",
+				"start": 47.173,
+				"track": "V1",
+				"script": {
+					"scene": "breakfast"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "0bbkof18",
+				"in": 0,
+				"dur": 1.758000000000003,
+				"vol": 0,
+				"kind": "world",
+				"shot": "c586243f-7622-45a0-b985-649ab6f2cb62",
+				"start": 53.080000000000005,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "kbndwz5l",
+				"in": 0,
+				"dur": 0.9799999999999968,
+				"vol": 0,
+				"kind": "world",
+				"shot": "9a4753e6-91e0-44ac-81a8-2f762727a431",
+				"start": 54.83800000000001,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "538d6kn4",
+				"in": 0,
+				"dur": 0.980000000000004,
+				"vol": 0,
+				"kind": "world",
+				"shot": "6e25beb2-4f44-46af-9129-7c157bb1c0e6",
+				"start": 55.818000000000005,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "lm6bfypg",
+				"in": 0,
+				"dur": 4.68,
+				"vol": 0,
+				"kind": "world",
+				"shot": "df30e7c6-5521-499b-bb13-6b8d590031fb",
+				"start": 56.79800000000001,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "2z5eh3sq",
+				"in": 0,
+				"dur": 4.799999999999997,
+				"vol": 0,
+				"kind": "world",
+				"shot": "d8e7328c-3b26-4f34-b078-8bceb8c73a98",
+				"start": 61.47800000000001,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "sdqhokvq",
+				"in": 0,
+				"dur": 3.8400000000000034,
+				"vol": 0,
+				"kind": "world",
+				"shot": "c6cb9c1d-b649-4e0f-bdd9-986d42d7bbc3",
+				"start": 66.278,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "yh19kzli",
+				"in": 0,
+				"dur": 3.8079999999999927,
+				"vol": 0,
+				"kind": "world",
+				"shot": "7de32c1b-055e-4fcc-8da8-cf3cfbb2a7a1",
+				"start": 70.11800000000001,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "l3rgqg72",
+				"in": 0,
+				"dur": 3.1920000000000073,
+				"vol": 0,
+				"kind": "world",
+				"shot": "a0212197-675d-487d-aa46-bde5df9a9e01",
+				"start": 73.926,
+				"track": "V1",
+				"script": {
+					"scene": "under the glass"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "zvjbpc7h",
+				"in": 0,
+				"dur": 3.5109999999999957,
+				"vol": 0,
+				"kind": "world",
+				"shot": "d7bf75f4-a9ab-45fd-bba3-9c882d6ef202",
+				"start": 77.11800000000001,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "kvgcd8y0",
+				"in": 0,
+				"dur": 1.683000000000007,
+				"vol": 0,
+				"kind": "world",
+				"shot": "3b3679d0-22a2-484c-8a5b-b3c0bbd1f5b6",
+				"start": 80.629,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "ouc28fzl",
+				"in": 0,
+				"dur": 2.489999999999995,
+				"vol": 0,
+				"kind": "world",
+				"shot": "9ddbfb15-058b-410e-a3a2-52d7ba8173c1",
+				"start": 82.31200000000001,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "twecixqd",
+				"in": 0,
+				"dur": 2.1599999999999966,
+				"vol": 0,
+				"kind": "world",
+				"shot": "e792bd8d-f830-4eaa-8c32-f5d03b9b77af",
+				"start": 84.802,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "0zbzfwdy",
+				"in": 0,
+				"dur": 2.0400000000000063,
+				"vol": 0,
+				"kind": "world",
+				"shot": "d1b4e84b-c6f8-4bb9-8127-5bf726c35589",
+				"start": 86.962,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "k54g2esi",
+				"in": 0,
+				"dur": 3.1599999999999966,
+				"vol": 0,
+				"kind": "world",
+				"shot": "8252c3e0-8484-4945-af1c-94a6093f9dab",
+				"start": 89.00200000000001,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "jm9nnpg6",
+				"in": 0,
+				"dur": 4.709999999999994,
+				"vol": 0,
+				"kind": "world",
+				"shot": "65367dbd-4a2e-44fd-9cad-4d6fdbaa6576",
+				"start": 92.162,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "aaptkcko",
+				"in": 0,
+				"dur": 4.800000000000011,
+				"vol": 0,
+				"kind": "world",
+				"shot": "4af988f0-f698-44c1-91a2-748488ae39df",
+				"start": 96.872,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "bcc4cgjt",
+				"in": 0,
+				"dur": 6.719999999999999,
+				"vol": 0,
+				"kind": "world",
+				"shot": "fb675485-2ee3-41ce-aabf-ee6d9b88c2f8",
+				"start": 101.672,
+				"track": "V1",
+				"script": {
+					"scene": "food forest"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "5i0b80xi",
+				"in": 0,
+				"dur": 6.847999999999999,
+				"vol": 0,
+				"kind": "world",
+				"shot": "73ff3ac1-c5b1-4f4f-b89f-863c81975f5d",
+				"start": 108.392,
+				"track": "V1",
+				"script": {
+					"scene": "the ring"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "6d2eyypz",
+				"in": 0,
+				"dur": 2.312000000000012,
+				"vol": 0,
+				"kind": "world",
+				"shot": "9010e78c-1fab-43d6-89e8-ad8874e91316",
+				"start": 115.24,
+				"track": "V1",
+				"script": {
+					"scene": "the ring"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "yg4rh55y",
+				"in": 0,
+				"dur": 3.8100000000000023,
+				"vol": 0,
+				"kind": "world",
+				"shot": "abac0a47-8fbd-418a-9c49-17d4a05a307c",
+				"start": 117.55200000000002,
+				"track": "V1",
+				"script": {
+					"scene": "the commons"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "wu42etuz",
+				"in": 0,
+				"dur": 1.477000000000004,
+				"vol": 0,
+				"kind": "world",
+				"shot": "abff34ff-d29a-4de0-9a6a-59f74dc040d7",
+				"start": 121.36200000000002,
+				"track": "V1",
+				"script": {
+					"scene": "the commons"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "54d23vms",
+				"in": 0,
+				"dur": 3.032999999999987,
+				"vol": 0,
+				"kind": "world",
+				"shot": "11988c67-1a7c-492c-bf4f-2f417f0eae46",
+				"start": 122.83900000000004,
+				"track": "V1",
+				"script": {
+					"scene": "the commons"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "nidt2xxu",
+				"in": 0,
+				"dur": 5.000000000000028,
+				"vol": 0,
+				"kind": "world",
+				"shot": "13b89105-de57-4f96-9aa6-ca32460f2486",
+				"start": 125.872,
+				"track": "V1",
+				"script": {
+					"scene": "the commons"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "lz525s87",
+				"in": 0,
+				"dur": 3.042999999999978,
+				"vol": 0,
+				"kind": "world",
+				"shot": "ac6f8fd3-cc8d-425e-8ad0-81920b83c063",
+				"start": 130.87200000000004,
+				"track": "V1",
+				"script": {
+					"scene": "the commons"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "gxbdcqov",
+				"in": 0,
+				"dur": 7.387,
+				"vol": 0,
+				"kind": "world",
+				"shot": "2df4feb8-1fc2-4701-ab72-6e12a998fffe",
+				"start": 133.91500000000002,
+				"track": "V1",
+				"script": {
+					"scene": "the commons"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "843w337z",
+				"in": 0,
+				"dur": 3.881,
+				"vol": 0,
+				"kind": "world",
+				"shot": "2c281bca-a0f5-44a1-9450-315ef15067c0",
+				"start": 141.30200000000002,
+				"track": "V1",
+				"script": {
+					"scene": "night"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "8rod5fsh",
+				"in": 0,
+				"dur": 5.699999999999989,
+				"vol": 0,
+				"kind": "world",
+				"shot": "3999cfbf-5bd9-4b9c-8ce4-f7e815449ab8",
+				"start": 145.18300000000002,
+				"track": "V1",
+				"script": {
+					"scene": "night"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "ik2mupqz",
+				"in": 0,
+				"dur": 5.302999999999997,
+				"vol": 0,
+				"kind": "world",
+				"shot": "64981dac-175c-4900-8f5c-0765fd561164",
+				"start": 150.883,
+				"track": "V1",
+				"script": {
+					"scene": "night"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "oga2iovb",
+				"in": 0,
+				"dur": 13.13300000000001,
+				"vol": 0,
+				"kind": "world",
+				"shot": "677190d6-9cc2-4a23-9b28-e28eb97a0678",
+				"start": 156.186,
+				"track": "V1",
+				"script": {
+					"scene": "night"
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "thumbnail",
+				"in": 0,
+				"dur": 0.1,
+				"vol": 0,
+				"hash": "4513badb286397d0c94bb7fd5cc3cf54876284c078bb2696362d70ed18863b1b",
+				"start": 0,
+				"track": "V1"
+			},
+			{
+				"id": "ulsr6ajc",
+				"in": 0,
+				"dur": 22,
+				"fin": 1.5,
+				"vol": 0.3,
+				"fout": 0.02,
+				"hash": "f392c807c75f2fa38adabe086bc95701c10cfab88f05074a3b9e751ab8335895",
+				"start": 0,
+				"track": "A3"
+			},
+			{
+				"id": "425uplx3",
+				"in": 0,
+				"dur": 4.887000000000004,
+				"fin": 0.02,
+				"vol": 0.3,
+				"fout": 1.2,
+				"hash": "f392c807c75f2fa38adabe086bc95701c10cfab88f05074a3b9e751ab8335895",
+				"start": 22,
+				"track": "A3"
+			},
+			{
+				"id": "1o2cwe46",
+				"in": 0,
+				"dur": 12.156000000000002,
+				"fin": 1.2,
+				"vol": 0.34,
+				"fout": 0.03,
+				"hash": "b663781598745c432553f4bc544642724600b9677e301f7c0e7a5c8f038edfa9",
+				"start": 25.687,
+				"track": "A3"
+			},
+			{
+				"id": "r8jsoptg",
+				"in": 0,
+				"dur": 12.156000000000002,
+				"fin": 1.2,
+				"vol": 0.34,
+				"fout": 0.03,
+				"hash": "1914dca5b50a9f0cc55320ecc6c78c2a0d8c7e3602fc1cd4511b5b96f05cca68",
+				"start": 25.687,
+				"track": "A3"
+			},
+			{
+				"id": "7gaih4mk",
+				"in": 0,
+				"dur": 39.525,
+				"fin": 0.5,
+				"vol": 0.2,
+				"fout": 1.2,
+				"hash": "b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84",
+				"start": 38.193000000000005,
+				"track": "A3"
+			},
+			{
+				"id": "du8g9ai9",
+				"in": 0,
+				"dur": 41.634,
+				"fin": 1.2,
+				"vol": 0.17,
+				"fout": 1.2,
+				"hash": "f3ebbb41045f0a45d3a27d6782beb71973fa539e9640d1c7d1b9434b02351575",
+				"start": 76.51800000000001,
+				"track": "A3"
+			},
+			{
+				"id": "n8tpmhpp",
+				"in": 0,
+				"dur": 14.52000000000001,
+				"fin": 1.2,
+				"vol": 0.3,
+				"fout": 1.2,
+				"hash": "4d34f215c6e292bc385692aae02eeb8ed7917f51138b1059c2adf439fa535d97",
+				"start": 116.95200000000004,
+				"track": "A3"
+			},
+			{
+				"id": "w1h8mza6",
+				"in": 200,
+				"dur": 15.510999999999967,
+				"fin": 1.2,
+				"vol": 0.15,
+				"fout": 1.2,
+				"hash": "b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84",
+				"start": 130.27200000000005,
+				"track": "A3"
+			},
+			{
+				"id": "1vtj24vn",
+				"in": 0,
+				"dur": 22,
+				"fin": 1.2,
+				"vol": 0.26,
+				"fout": 0.02,
+				"hash": "46e638bd4b75170f5450ffe1ec7232d22bfb0da0b5edaf88674e2065066f8d18",
+				"start": 144.58300000000003,
+				"track": "A3"
+			},
+			{
+				"id": "x8t5bc0c",
+				"in": 0,
+				"dur": 2.73599999999999,
+				"fin": 0.02,
+				"vol": 0.26,
+				"fout": 1.2,
+				"hash": "46e638bd4b75170f5450ffe1ec7232d22bfb0da0b5edaf88674e2065066f8d18",
+				"start": 166.58300000000003,
+				"track": "A3"
+			},
+			{
+				"id": "8v5nfou7",
+				"in": 0,
+				"dur": 5.907000000000004,
+				"fin": 0.12,
+				"vol": 0.033,
+				"fout": 0.4,
+				"hash": "7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82",
+				"start": 47.173,
+				"track": "A3"
+			},
+			{
+				"id": "sz5n5pnz",
+				"in": 0,
+				"dur": 1.758000000000003,
+				"fin": 0.12,
+				"vol": 0.05280000000000001,
+				"fout": 0.4,
+				"hash": "7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82",
+				"start": 53.080000000000005,
+				"track": "A3"
+			},
+			{
+				"id": "cu70k85u",
+				"in": 0,
+				"dur": 2.1599999999999966,
+				"fin": 0.12,
+				"vol": 0.45,
+				"fout": 0.4,
+				"hash": "4ffa6fe2e7cbc5082a78a3eabed4706afde5d6cb3eaa9af8ba5b05ab1d3d5da7",
+				"start": 84.802,
+				"track": "A3"
+			},
+			{
+				"id": "c7jabhoy",
+				"in": 0,
+				"dur": 2.0400000000000063,
+				"fin": 0.12,
+				"vol": 0.48,
+				"fout": 0.4,
+				"hash": "646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f",
+				"start": 86.962,
+				"track": "A3"
+			},
+			{
+				"id": "rnnt8h2i",
+				"in": 0,
+				"dur": 2.0400000000000063,
+				"fin": 0.12,
+				"vol": 0.14,
+				"fout": 0.4,
+				"hash": "42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7",
+				"start": 86.962,
+				"track": "A3"
+			},
+			{
+				"id": "qvdzlf79",
+				"in": 0,
+				"dur": 3.1599999999999966,
+				"fin": 0.12,
+				"vol": 0.198,
+				"fout": 0.4,
+				"hash": "7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82",
+				"start": 89.00200000000001,
+				"track": "A3"
+			},
+			{
+				"id": "7wzfiefl",
+				"in": 0,
+				"dur": 4.709999999999994,
+				"fin": 0.12,
+				"vol": 0.45,
+				"fout": 0.4,
+				"hash": "0fa1e0014afb92607afdcb7f92e0f3e0f31e179024d3c2398b6d247b39517867",
+				"start": 92.162,
+				"track": "A3"
+			},
+			{
+				"id": "ay6ds8yu",
+				"in": 0,
+				"dur": 6.719999999999999,
+				"fin": 0.12,
+				"vol": 0.105,
+				"fout": 0.4,
+				"hash": "646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f",
+				"start": 101.672,
+				"track": "A3"
+			},
+			{
+				"id": "rge3r51u",
+				"in": 0,
+				"dur": 6.847999999999999,
+				"fin": 0.12,
+				"vol": 0.1,
+				"fout": 0.4,
+				"hash": "42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7",
+				"start": 108.392,
+				"track": "A3"
+			},
+			{
+				"id": "fcaff4cl",
+				"in": 0,
+				"dur": 2.312000000000012,
+				"fin": 0.12,
+				"vol": 0.32,
+				"fout": 0.4,
+				"hash": "42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7",
+				"start": 115.24,
+				"track": "A3"
+			},
+			{
+				"id": "vo0xiow9",
+				"in": 0,
+				"dur": 7.387,
+				"fin": 0.12,
+				"vol": 0.021,
+				"fout": 0.4,
+				"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+				"start": 133.91500000000002,
+				"track": "A3"
+			},
+			{
+				"id": "36a0acms",
+				"in": 0,
+				"dur": 3.881,
+				"fin": 0.12,
+				"vol": 0.042,
+				"fout": 0.4,
+				"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+				"start": 141.30200000000002,
+				"track": "A3"
+			},
+			{
+				"id": "itw1anfs",
+				"in": 0,
+				"dur": 5.699999999999989,
+				"fin": 0.12,
+				"vol": 0.049,
+				"fout": 0.4,
+				"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+				"start": 145.18300000000002,
+				"track": "A3"
+			},
+			{
+				"id": "9sem96zc",
+				"in": 0,
+				"dur": 13.13300000000001,
+				"fin": 0.12,
+				"vol": 0.027999999999999997,
+				"fout": 0.4,
+				"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+				"start": 156.186,
+				"track": "A3"
+			},
+			{
+				"id": "so6jfe5m",
+				"in": 0,
+				"dur": 6,
+				"fin": 0.01,
+				"vol": 0.6,
+				"fout": 0.3,
+				"hash": "ec63e7d66166fe119d76abb832ee1ff077f46eae2a2ad24ab5cc435feab3f8a7",
+				"start": 23.787000000000003,
+				"track": "A3"
+			},
+			{
+				"id": "bgd1wms4",
+				"in": 0,
+				"dur": 5,
+				"fin": 0.01,
+				"vol": 0.55,
+				"fout": 0.3,
+				"hash": "8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6",
+				"start": 31.91300000000001,
+				"track": "A3"
+			},
+			{
+				"id": "u67x5m6o",
+				"in": 0,
+				"dur": 5,
+				"fin": 0.01,
+				"vol": 0.42,
+				"fout": 0.3,
+				"hash": "8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6",
+				"start": 26.487,
+				"track": "A3"
+			},
+			{
+				"id": "4in2rwtp",
+				"in": 0,
+				"dur": 4,
+				"fin": 0.01,
+				"vol": 0.32,
+				"fout": 0.3,
+				"hash": "d4ae234054ed8d36b2c14a104b2c1c38992c38251570d2d056f90f545cd08669",
+				"start": 29.331,
+				"track": "A3"
+			},
+			{
+				"id": "jylshgkg",
+				"in": 0,
+				"dur": 6,
+				"fin": 0.01,
+				"vol": 0.42,
+				"fout": 0.3,
+				"hash": "044e58504895e10963eb13eef303b8c7684826f2e585ce0aeb06596678491328",
+				"start": 37.343,
+				"track": "A3"
+			},
+			{
+				"id": "m9piqu3b",
+				"in": 0,
+				"dur": 3,
+				"fin": 0.01,
+				"vol": 0.28,
+				"fout": 0.3,
+				"hash": "cda4f556c62f50acc13f221c098c7341d4a498cc0388a017a0554ec5b1a75121",
+				"start": 108.85200000000002,
+				"track": "A3"
+			},
+			{
+				"id": "wh0tlan8",
+				"in": 0,
+				"dur": 5,
+				"fin": 0.01,
+				"vol": 0.45,
+				"fout": 0.3,
+				"hash": "2cc8e24903d8c60a09a7d2a022741683831350aaa3e730c2f749e718fe9766c6",
+				"start": 164.179,
+				"track": "A3"
+			},
+			{
+				"id": "m4qavbq4",
+				"in": 0,
+				"dur": 9.52,
+				"vol": 1,
+				"hash": "2240cbbadefb4c89e9c50509df8f5c254f8c4f68a806d7775dfd31c083dc60dd",
+				"start": 3.364,
+				"track": "A1"
+			},
+			{
+				"id": "puua8sk8",
+				"in": 0,
+				"dur": 9.2,
+				"vol": 1,
+				"hash": "8eb8e81ca8f95c15996f61d8ceefe6cf4053a16c63cfd04ca82da6fcd91ae9a7",
+				"start": 15.007000000000003,
+				"track": "A1"
+			},
+			{
+				"id": "bvbiuu47",
+				"in": 0,
+				"dur": 9.76,
+				"vol": 1,
+				"hash": "399edf6dcd7558645c12c5c1ba5c5a2b07eda6d7d29ab99cc10bf47bfe457c1f",
+				"start": 26.203000000000003,
+				"track": "A1"
+			},
+			{
+				"id": "nsugwajw",
+				"in": 0,
+				"dur": 4.760000000000001,
+				"vol": 1,
+				"hash": "6084fb81fb65af1e9803caf651ccf0823fd9468a2f944621d9fcab4802f33b7c",
+				"start": 37.627,
+				"track": "A1"
+			},
+			{
+				"id": "dai7plwt",
+				"in": 0,
+				"dur": 8.08,
+				"vol": 1,
+				"hash": "c85216bcfc8815964d96827c1fae7dea0c015f989b3c00a505d599bf74cd7375",
+				"start": 43.32,
+				"track": "A1"
+			},
+			{
+				"id": "d5nevd13",
+				"in": 0,
+				"dur": 12.4,
+				"vol": 1,
+				"hash": "27cda35428451706559284c9f1ee7317fed9057316abebe768bb77226e1dd1b3",
+				"start": 52.998000000000005,
+				"track": "A1"
+			},
+			{
+				"id": "e206pd0q",
+				"in": 0,
+				"dur": 9.44,
+				"vol": 1,
+				"hash": "6bafb035b4b7010deea0aebe9e3d79f17c9bda0835b90b6a868d222c8a22f173",
+				"start": 66.39800000000001,
+				"track": "A1"
+			},
+			{
+				"id": "5rr8zebf",
+				"in": 0,
+				"dur": 14.64,
+				"vol": 1,
+				"hash": "7b112fdbbd08373be4b504ffa6abcd022a8878fe7d087df5683222a404bb9444",
+				"start": 76.84200000000001,
+				"track": "A1"
+			},
+			{
+				"id": "7g47wqiz",
+				"in": 0,
+				"dur": 13.36,
+				"vol": 1,
+				"hash": "22710421c8dd79bdc3d7e183db174284eab762a9a5d38db2577a7db485292a99",
+				"start": 91.752,
+				"track": "A1"
+			},
+			{
+				"id": "jt3yzsb4",
+				"in": 0,
+				"dur": 8.159999999999998,
+				"vol": 1,
+				"hash": "a602a1fc67af46b8b77266e25f7a895440d232eb66e2348e995a2850fcc16d7c",
+				"start": 108.512,
+				"track": "A1"
+			},
+			{
+				"id": "ky6k3m1l",
+				"in": 0,
+				"dur": 11.92,
+				"vol": 1,
+				"hash": "afe72d1358d21b744a354aa1465ca1513d28ae3af933d84fe93bfc450061fcd1",
+				"start": 117.67200000000004,
+				"track": "A1"
+			},
+			{
+				"id": "2s93d69p",
+				"in": 0,
+				"dur": 8.56,
+				"vol": 1,
+				"hash": "49592fba81affabc36dd564dbd095aea640250c23cc3732a7b2f0337e45427f9",
+				"start": 130.66200000000003,
+				"track": "A1"
+			},
+			{
+				"id": "7i7t6ig1",
+				"in": 0,
+				"dur": 7.120000000000001,
+				"vol": 1,
+				"hash": "373048a0beecf79a1c1041cd77b43ed8d28651546321d9056ecea0b21030d610",
+				"start": 141.28300000000002,
+				"track": "A1"
+			},
+			{
+				"id": "sx13zuvv",
+				"in": 0,
+				"dur": 13.92,
+				"vol": 1,
+				"hash": "a014f513f6a5e1369bf4ec733dac564e28f6b7faf343e78368cdfb08ef42ecca",
+				"start": 150.799,
+				"track": "A1"
+			},
+			{
+				"id": "kyr7xwq3",
+				"in": 0,
+				"dur": 26.457000000000004,
+				"fin": 0.5,
+				"vol": 0.6,
+				"fout": 0.3,
+				"hash": "58ef55fcb26fb51d526cbc497b5b7fdf8c68f54d86571a8017f26faf45d8baca",
+				"start": 0,
+				"track": "A2"
+			},
+			{
+				"id": "b82ovriv",
+				"in": 50.3,
+				"dur": 119.019,
+				"fin": 2.5,
+				"vol": 0.6,
+				"fout": 3,
+				"hash": "58ef55fcb26fb51d526cbc497b5b7fdf8c68f54d86571a8017f26faf45d8baca",
+				"start": 50.3,
+				"track": "A2"
+			},
+			{
+				"id": "9kgagcbu",
+				"in": 0,
+				"dur": 11.686,
+				"fin": 0.02,
+				"vol": 0.5,
+				"fout": 0.05,
+				"hash": "0351080bc48a35843bea1a1cba0d9d789a5443cd05d28e654af10c77bb1952a3",
+				"start": 26.157000000000004,
+				"track": "A2"
+			},
+			{
+				"id": "qz92mua4",
+				"in": 0,
+				"dur": 14.607,
+				"fin": 0.02,
+				"vol": 0.62,
+				"fout": 2.5,
+				"hash": "e26e51c1c6245692031e3790eb057fa88e4fdcc14e584f6fe55ef9a329507f48",
+				"start": 38.193000000000005,
+				"track": "A2"
+			}
+		],
+		"stage": "edit",
+		"version": 1,
+		"color": {
+			"output": "odt-rec709",
+			"working": "acescct"
+		},
+		"grade": {
+			"scenes": {
+				"the dip": {
+					"tools": [
+						{
+							"sat": 0.42,
+							"tool": "cdl",
+							"power": [
+								1.0383,
+								1.0183,
+								1.0183
+							],
+							"slope": [
+								0.94,
+								1,
+								1
+							],
+							"offset": [
+								-0.0213,
+								-0.0053,
+								-0.0033
+							]
+						}
+					]
+				}
+			}
+		},
+		"created": "2026-09-29T19:04:56.439Z",
+		"updated": "2026-10-02T12:35:47.140Z"
+	},
+	"shots": {
+		"6b6bc29d-3008-4971-8298-2f98ce614d4f@2": {
+			"name": "day-19-d · 01 the flight",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 40
+				},
+				"meta": {
+					"name": "the-flight",
+					"size": "EWS",
+					"scene": "hook",
+					"legacyExposure": 9
+				},
+				"time": {
+					"hour": 4.98,
+					"hourTo": 5.05
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"stand": [
+						-150,
+						60
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"keys": [
+						[
+							[
+								-205,
+								1.4,
+								36
+							],
+							[
+								-196,
+								1.9,
+								44
+							]
+						],
+						[
+							[
+								-209,
+								8,
+								38
+							],
+							[
+								-160,
+								13,
+								26
+							]
+						],
+						[
+							[
+								-232,
+								32,
+								32
+							],
+							[
+								-70,
+								16,
+								6
+							]
+						],
+						[
+							[
+								-266,
+								60,
+								2
+							],
+							[
+								0,
+								16,
+								0
+							]
+						],
+						[
+							[
+								-285,
+								80,
+								-40
+							],
+							[
+								0,
+								18,
+								0
+							]
+						]
+					],
+					"kind": "fly"
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 12.784000000000002,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"ev": 0.8,
+					"meter": "fixed",
+					"stops": 0
+				}
+			}
+		},
+		"f95d7a83-6e7d-4eb9-8edf-923e43aed59a@2": {
+			"name": "day-19-d · 02 the sun rises",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 52
+				},
+				"meta": {
+					"name": "the-sun-rises",
+					"size": "WS",
+					"scene": "sunrise",
+					"legacyExposure": 1.3
+				},
+				"time": {
+					"hour": 5.05,
+					"hourTo": 5.4
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 12.784000000000002,
+					"stand": [
+						150,
+						20
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						90,
+						27,
+						-30
+					],
+					"from": [
+						78,
+						26,
+						-30
+					],
+					"kind": "move",
+					"aimTo": [
+						400,
+						25,
+						-34
+					],
+					"aimFrom": [
+						400,
+						24,
+						-34
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.2429999999999986,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"ev": 0.8,
+					"meter": "fixed",
+					"stops": 0
+				}
+			}
+		},
+		"b79eb9a3-4987-4225-9347-d6e051584975@3": {
+			"name": "day-19-d · 03 the glass glows",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 40
+				},
+				"meta": {
+					"name": "the-glass-glows",
+					"size": "WS",
+					"scene": "sunrise",
+					"legacyExposure": 1.4
+				},
+				"time": {
+					"hour": 5.4,
+					"hourTo": 5.48
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 17.027,
+					"stand": [
+						190,
+						88
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						48,
+						24,
+						55
+					],
+					"from": [
+						34,
+						22,
+						50
+					],
+					"kind": "move",
+					"aimTo": [
+						130,
+						16,
+						75
+					],
+					"aimFrom": [
+						130,
+						14,
+						75
+					]
+				},
+				"lights": [
+					{
+						"id": "glass",
+						"color": "#ffb070",
+						"intensity": 4
+					}
+				],
+				"framing": {},
+				"seconds": 4.5000000000000036,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"ev": 0.8,
+					"meter": "fixed",
+					"stops": 0
+				}
+			}
+		},
+		"dbbb9112-1454-4bdb-b510-096d6debdeeb@1": {
+			"name": "day-19-d · 04 the city wakes",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 45
+				},
+				"meta": {
+					"name": "the-city-wakes",
+					"size": "MS",
+					"scene": "sunrise"
+				},
+				"time": {
+					"hour": 6.5
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 21.527000000000005,
+					"stand": [
+						158,
+						102
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						171.49853686436956,
+						7.2,
+						97.06516345093686
+					],
+					"from": [
+						172.4024048078213,
+						7.6,
+						101.49596321166024
+					],
+					"kind": "move",
+					"aimTo": [
+						156.4884277857678,
+						6.2,
+						89.08414688357672
+					],
+					"aimFrom": [
+						155.98076211353316,
+						6.2,
+						90
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.759999999999998,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0
+				}
+			}
+		},
+		"56793fd1-0830-4a50-b0c0-bc8c96289802@1": {
+			"name": "day-19-d · 05 the edge",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 44
+				},
+				"look": "dip",
+				"meta": {
+					"name": "the-edge",
+					"size": "WS",
+					"scene": "the dip"
+				},
+				"time": {
+					"hour": 7
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 26.287000000000003,
+					"props": "tired-land",
+					"stand": [
+						-360,
+						10
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						-404,
+						5,
+						10
+					],
+					"from": [
+						-366,
+						7,
+						12
+					],
+					"kind": "move",
+					"aimTo": [
+						-700,
+						0,
+						10
+					],
+					"aimFrom": [
+						-700,
+						0,
+						14
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 2.001999999999999,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.79
+				}
+			}
+		},
+		"0ad195cd-27e0-4de9-b4fc-fb1ae8063d16@1": {
+			"name": "day-19-d · 06 bought everything",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 50
+				},
+				"look": "dip",
+				"meta": {
+					"name": "bought-everything",
+					"size": "EWS",
+					"scene": "the dip"
+				},
+				"time": {
+					"hour": 7
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 28.289,
+					"props": "tired-land",
+					"stand": [
+						-360,
+						10
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						-412,
+						45,
+						-42
+					],
+					"from": [
+						-398,
+						46,
+						-50
+					],
+					"kind": "move",
+					"aimTo": [
+						-540,
+						0,
+						40
+					],
+					"aimFrom": [
+						-530,
+						0,
+						30
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 2.001999999999999,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.79
+				}
+			}
+		},
+		"ae026c20-fa26-438c-aca3-09a1ff1b78c2@1": {
+			"name": "day-19-d · 07 far away",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 9
+				},
+				"look": "dip",
+				"meta": {
+					"name": "far-away",
+					"size": "LS",
+					"scene": "the dip"
+				},
+				"time": {
+					"hour": 7
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 30.291,
+					"props": "tired-land",
+					"stand": [
+						-360,
+						10
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						-461,
+						1.8,
+						-290
+					],
+					"from": [
+						-461,
+						1.8,
+						-300
+					],
+					"kind": "move",
+					"aimTo": [
+						-471,
+						1.6,
+						510
+					],
+					"aimFrom": [
+						-471,
+						1.6,
+						500
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 1.9220000000000077,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.79
+				}
+			}
+		},
+		"36fdda9b-0c6c-483a-bf1f-e18e31915bdc@1": {
+			"name": "day-19-d · 08 the long road",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 58
+				},
+				"look": "dip",
+				"meta": {
+					"name": "the-long-road",
+					"size": "MS",
+					"scene": "the dip"
+				},
+				"time": {
+					"hour": 7
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 32.21300000000001,
+					"props": "tired-land",
+					"stand": [
+						-360,
+						10
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						-463.5,
+						3,
+						24
+					],
+					"from": [
+						-463.5,
+						3,
+						-5
+					],
+					"kind": "move",
+					"aimTo": [
+						-472,
+						2.4,
+						44
+					],
+					"aimFrom": [
+						-472,
+						2.4,
+						15
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 1.2409999999999997,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.79
+				}
+			}
+		},
+		"fb0b8797-1b9b-429a-a5ac-3dd456a98480@1": {
+			"name": "day-19-d · 09 a tired land",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 46
+				},
+				"look": "dip",
+				"meta": {
+					"name": "a-tired-land",
+					"size": "EWS",
+					"scene": "the dip"
+				},
+				"time": {
+					"hour": 7
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 33.45400000000001,
+					"props": "tired-land",
+					"stand": [
+						-360,
+						10
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						-456,
+						38,
+						84
+					],
+					"from": [
+						-452,
+						3,
+						62
+					],
+					"kind": "move",
+					"aimTo": [
+						-480,
+						0,
+						0
+					],
+					"aimFrom": [
+						-470,
+						0,
+						20
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.388999999999996,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.79
+				}
+			}
+		},
+		"3aa31d3e-7cbf-41fb-802e-213dfcce28ec@2": {
+			"name": "day-19-d · 10 the bed",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 50
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-bed",
+					"size": "MS",
+					"scene": "breakfast"
+				},
+				"time": {
+					"hour": 7.3
+				},
+				"world": {
+					"dome": 8,
+					"seed": 1,
+					"build": null,
+					"clock": 37.843,
+					"stand": [
+						200,
+						12
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						216.2,
+						5.6,
+						1.8
+					],
+					"from": [
+						215.6,
+						5.6,
+						1.6
+					],
+					"kind": "move",
+					"aimTo": [
+						224,
+						5.2,
+						3.2
+					],
+					"aimFrom": [
+						224,
+						5.2,
+						2.6
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 1.7899999999999991,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.25
+				}
+			}
+		},
+		"6e60073a-bb62-49bd-84ac-232327c398d4@1": {
+			"name": "day-19-d · 11 twenty paces",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 50
+				},
+				"look": "bright",
+				"meta": {
+					"name": "twenty-paces",
+					"size": "MS",
+					"scene": "breakfast"
+				},
+				"time": {
+					"hour": 7.6
+				},
+				"world": {
+					"dome": 8,
+					"seed": 1,
+					"build": null,
+					"clock": 39.633,
+					"stand": [
+						200,
+						12
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						211.6,
+						6.3,
+						1
+					],
+					"from": [
+						211.8,
+						6.2,
+						1
+					],
+					"kind": "move",
+					"aimTo": [
+						201,
+						0.2,
+						0
+					],
+					"aimFrom": [
+						200,
+						3.2,
+						0
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.834000000000003,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"c6c3c2f4-3d79-4874-a7e1-70e1b9aba6c6@1": {
+			"name": "day-19-d · 12 terrace from the air",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 40
+				},
+				"look": "bright",
+				"meta": {
+					"name": "terrace-from-the-air",
+					"size": "WS",
+					"scene": "breakfast"
+				},
+				"time": {
+					"hour": 8
+				},
+				"world": {
+					"dome": 1,
+					"seed": 1,
+					"build": null,
+					"clock": 43.467000000000006,
+					"stand": [
+						20,
+						196
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						28.168293767153447,
+						13,
+						202.97685557153562
+					],
+					"from": [
+						16.564418886561327,
+						16,
+						211.81925288250036
+					],
+					"kind": "move",
+					"aimTo": [
+						18.999999999999996,
+						5,
+						182.9089653438087
+					],
+					"aimFrom": [
+						14.235050549804656,
+						5,
+						185.23298647353792
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.705999999999996,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"b603bd30-d925-4925-a96b-a9fe5f8d6a02@1": {
+			"name": "day-19-d · 13 through the arch",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82",
+						"kind": "sound",
+						"level": 0.05
+					}
+				],
+				"lens": {
+					"fov": 46
+				},
+				"look": "bright",
+				"meta": {
+					"name": "through-the-arch",
+					"size": "MS",
+					"scene": "breakfast"
+				},
+				"time": {
+					"hour": 8.1
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 47.173,
+					"stand": [
+						150,
+						105
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						157.86000717874998,
+						6.7,
+						102.86000717874998
+					],
+					"from": [
+						156.30437226013956,
+						6.5,
+						101.30437226013957
+					],
+					"kind": "move",
+					"aimTo": [
+						210.44890717810875,
+						2.5,
+						150.01981960687482
+					],
+					"aimFrom": [
+						207.78174593052023,
+						4,
+						152.78174593052023
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 5.907000000000004,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"c586243f-7622-45a0-b985-649ab6f2cb62@1": {
+			"name": "day-19-d · 14 the layers",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82",
+						"kind": "sound",
+						"level": 0.08
+					}
+				],
+				"lens": {
+					"fov": 48
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-layers",
+					"size": "WS",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 9.2
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 53.080000000000005,
+					"stand": [
+						140,
+						88
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						145,
+						7.5,
+						85
+					],
+					"from": [
+						146,
+						0.5,
+						86
+					],
+					"kind": "move",
+					"aimTo": [
+						134,
+						10,
+						76
+					],
+					"aimFrom": [
+						138,
+						0.8,
+						80
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 1.7580000000000027,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"9a4753e6-91e0-44ac-81a8-2f762727a431@1": {
+			"name": "day-19-d · 15 mango",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 12
+				},
+				"look": "bright",
+				"meta": {
+					"name": "mango",
+					"size": "ECU",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 9.3
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 54.83800000000001,
+					"stand": [
+						140,
+						88
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						140.1,
+						1.52,
+						80.2
+					],
+					"from": [
+						140,
+						1.5,
+						80
+					],
+					"kind": "move",
+					"aimTo": [
+						148,
+						3.05,
+						84.2
+					],
+					"aimFrom": [
+						148,
+						3,
+						84
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 0.9799999999999969,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"6e25beb2-4f44-46af-9129-7c157bb1c0e6@1": {
+			"name": "day-19-d · 16 fig",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 12
+				},
+				"look": "bright",
+				"meta": {
+					"name": "fig",
+					"size": "ECU",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 9.3
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 55.818000000000005,
+					"stand": [
+						140,
+						88
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						147.2,
+						1.42,
+						72
+					],
+					"from": [
+						147,
+						1.4,
+						72
+					],
+					"kind": "move",
+					"aimTo": [
+						141,
+						3.3,
+						69.2
+					],
+					"aimFrom": [
+						141,
+						3.2,
+						69
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 0.980000000000004,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"df30e7c6-5521-499b-bb13-6b8d590031fb@1": {
+			"name": "day-19-d · 17 coffee and cacao",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 28
+				},
+				"look": "bright",
+				"meta": {
+					"name": "coffee-and-cacao",
+					"size": "CU",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 9.4
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 56.79800000000001,
+					"stand": [
+						140,
+						88
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						143,
+						1.2,
+						91
+					],
+					"from": [
+						143,
+						1.1,
+						91
+					],
+					"kind": "move",
+					"aimTo": [
+						139,
+						3.2,
+						93
+					],
+					"aimFrom": [
+						139,
+						1.3,
+						93
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.68,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"d8e7328c-3b26-4f34-b078-8bceb8c73a98@1": {
+			"name": "day-19-d · 18 the living soil",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 55
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-living-soil",
+					"size": "macro",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 9.5
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 61.47800000000001,
+					"stand": [
+						140,
+						88
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						137.6,
+						0.25,
+						82.6
+					],
+					"from": [
+						136,
+						0.25,
+						82
+					],
+					"kind": "move",
+					"aimTo": [
+						136,
+						0.05,
+						84.6
+					],
+					"aimFrom": [
+						134.5,
+						0.05,
+						84
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.799999999999997,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"c6cb9c1d-b649-4e0f-bdd9-986d42d7bbc3@1": {
+			"name": "day-19-d · 19 sun through the cells",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 35
+				},
+				"look": "bright",
+				"meta": {
+					"name": "sun-through-the-cells",
+					"size": "CU",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 12.5
+				},
+				"world": {
+					"dome": 0,
+					"seed": 1,
+					"build": null,
+					"clock": 66.278,
+					"stand": [
+						0,
+						34
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"at": [
+						0,
+						3,
+						20
+					],
+					"kind": "turn",
+					"yaw0": -0.13962634015954636,
+					"yaw1": 0.13962634015954636,
+					"pitch0": 1.0122909661567112,
+					"pitch1": 1.1519173063162575
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.8400000000000034,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"7de32c1b-055e-4fcc-8da8-cf3cfbb2a7a1@1": {
+			"name": "day-19-d · 20 every pane",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 18
+				},
+				"look": "bright",
+				"meta": {
+					"name": "every-pane",
+					"size": "WS",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 12.6
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 70.11800000000001,
+					"stand": [
+						60,
+						-150
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						64,
+						28.5,
+						-171
+					],
+					"from": [
+						60,
+						28,
+						-172
+					],
+					"kind": "move",
+					"aimTo": [
+						130,
+						15.5,
+						-75
+					],
+					"aimFrom": [
+						130,
+						15,
+						-75
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.8079999999999927,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"a0212197-675d-487d-aa46-bde5df9a9e01@1": {
+			"name": "day-19-d · 21 the gallery",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 45
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-gallery",
+					"size": "MS",
+					"scene": "under the glass"
+				},
+				"time": {
+					"hour": 12.8
+				},
+				"world": {
+					"dome": 0,
+					"seed": 1,
+					"build": null,
+					"clock": 73.926,
+					"stand": [
+						0,
+						40
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"out": 0.9,
+					"kind": "whip",
+					"path": {
+						"to": [
+							33.20986675452473,
+							7.8,
+							45.70946018218453
+						],
+						"from": [
+							28.249999999999996,
+							7.8,
+							48.93043531382079
+						],
+						"kind": "move",
+						"aimTo": [
+							0,
+							6,
+							0
+						],
+						"aimFrom": [
+							0,
+							6,
+							0
+						]
+					}
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.1920000000000073,
+				"shutter": {
+					"angle": 360,
+					"samples": 6
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"d7bf75f4-a9ab-45fd-bba3-9c882d6ef202@1": {
+			"name": "day-19-d · 22 the food forest",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 44
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-food-forest",
+					"size": "WS",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 77.11800000000001,
+					"stand": [
+						70,
+						120
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"into": 0.9,
+					"kind": "whip",
+					"path": {
+						"to": [
+							74,
+							11,
+							116
+						],
+						"from": [
+							36,
+							18,
+							152
+						],
+						"kind": "move",
+						"aimTo": [
+							104,
+							1,
+							88
+						],
+						"aimFrom": [
+							90,
+							2,
+							100
+						]
+					}
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.5109999999999957,
+				"shutter": {
+					"angle": 360,
+					"samples": 6
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"3b3679d0-22a2-484c-8a5b-b3c0bbd1f5b6@1": {
+			"name": "day-19-d · 23 fruit and nut trees",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 40
+				},
+				"look": "bright",
+				"meta": {
+					"name": "fruit-and-nut-trees",
+					"size": "MS",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15.1
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 80.629,
+					"stand": [
+						96,
+						22
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						92,
+						1.6,
+						26
+					],
+					"from": [
+						95,
+						1.6,
+						20
+					],
+					"kind": "move",
+					"aimTo": [
+						78,
+						2.5,
+						36
+					],
+					"aimFrom": [
+						80,
+						2.5,
+						30
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 1.683000000000007,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"9ddbfb15-058b-410e-a3a2-52d7ba8173c1@1": {
+			"name": "day-19-d · 24 berries and vegetables",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 30
+				},
+				"look": "bright",
+				"meta": {
+					"name": "berries-and-vegetables",
+					"size": "CU",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15.2
+				},
+				"world": {
+					"dome": 0,
+					"seed": 1,
+					"build": null,
+					"clock": 82.31200000000001,
+					"stand": [
+						0,
+						40
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						3,
+						1.4,
+						40
+					],
+					"from": [
+						2,
+						1.4,
+						40
+					],
+					"kind": "move",
+					"aimTo": [
+						8,
+						0.6,
+						37
+					],
+					"aimFrom": [
+						7,
+						0.6,
+						37
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 2.489999999999995,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"e792bd8d-f830-4eaa-8c32-f5d03b9b77af@1": {
+			"name": "day-19-d · 25 hens",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "4ffa6fe2e7cbc5082a78a3eabed4706afde5d6cb3eaa9af8ba5b05ab1d3d5da7",
+						"kind": "sound",
+						"level": 0.45
+					}
+				],
+				"lens": {
+					"fov": 30
+				},
+				"look": "bright",
+				"meta": {
+					"name": "hens",
+					"size": "CU",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15.3
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 84.802,
+					"stand": [
+						56,
+						86
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						54.6,
+						1,
+						83.4
+					],
+					"from": [
+						55,
+						1,
+						84
+					],
+					"kind": "move",
+					"aimTo": [
+						49,
+						0.4,
+						77
+					],
+					"aimFrom": [
+						49,
+						0.4,
+						77
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 2.1599999999999966,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"d1b4e84b-c6f8-4bb9-8127-5bf726c35589@1": {
+			"name": "day-19-d · 26 geese",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f",
+						"kind": "sound",
+						"level": 0.32
+					},
+					{
+						"at": 0,
+						"hash": "42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7",
+						"kind": "sound",
+						"level": 0.14
+					}
+				],
+				"lens": {
+					"fov": 32
+				},
+				"look": "bright",
+				"meta": {
+					"name": "geese",
+					"size": "MS",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15.4
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 86.962,
+					"stand": [
+						100,
+						300
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						100.5,
+						1,
+						300.6
+					],
+					"from": [
+						101,
+						1,
+						300
+					],
+					"kind": "move",
+					"aimTo": [
+						94,
+						0.4,
+						314
+					],
+					"aimFrom": [
+						94,
+						0.4,
+						314
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 2.0400000000000063,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"8252c3e0-8484-4945-af1c-94a6093f9dab@1": {
+			"name": "day-19-d · 27 bees",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82",
+						"kind": "sound",
+						"level": 0.3
+					}
+				],
+				"lens": {
+					"fov": 24
+				},
+				"look": "bright",
+				"meta": {
+					"name": "bees",
+					"size": "ECU",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 89.00200000000001,
+					"stand": [
+						62,
+						100
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						59.8,
+						1,
+						101.3
+					],
+					"from": [
+						60,
+						1,
+						101
+					],
+					"kind": "move",
+					"aimTo": [
+						57,
+						0.8,
+						104
+					],
+					"aimFrom": [
+						57,
+						0.8,
+						104
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.1599999999999966,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"65367dbd-4a2e-44fd-9cad-4d6fdbaa6576@1": {
+			"name": "day-19-d · 28 goats",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "0fa1e0014afb92607afdcb7f92e0f3e0f31e179024d3c2398b6d247b39517867",
+						"kind": "sound",
+						"level": 0.45
+					}
+				],
+				"lens": {
+					"fov": 35
+				},
+				"look": "bright",
+				"meta": {
+					"name": "goats",
+					"size": "MS",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15.7
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 92.162,
+					"stand": [
+						150,
+						136
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						140.6,
+						1.2,
+						125.8
+					],
+					"from": [
+						143,
+						1.2,
+						129.5
+					],
+					"kind": "move",
+					"aimTo": [
+						134,
+						0.5,
+						115
+					],
+					"aimFrom": [
+						134,
+						0.5,
+						115
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.709999999999994,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"4af988f0-f698-44c1-91a2-748488ae39df@1": {
+			"name": "day-19-d · 29 picked ripe",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 10
+				},
+				"look": "bright",
+				"meta": {
+					"name": "picked-ripe",
+					"size": "ECU",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 15.8
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 96.872,
+					"stand": [
+						172,
+						40
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						170.2,
+						1.62,
+						40.1
+					],
+					"from": [
+						170,
+						1.6,
+						40
+					],
+					"kind": "move",
+					"aimTo": [
+						163,
+						3.05,
+						37.1
+					],
+					"aimFrom": [
+						163,
+						3,
+						37
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.800000000000011,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"fb675485-2ee3-41ce-aabf-ee6d9b88c2f8@1": {
+			"name": "day-19-d · 30 a few minutes walk",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f",
+						"kind": "sound",
+						"level": 0.07
+					}
+				],
+				"lens": {
+					"fov": 42
+				},
+				"look": "bright",
+				"meta": {
+					"name": "a-few-minutes-walk",
+					"size": "WS",
+					"scene": "food forest"
+				},
+				"time": {
+					"hour": 16
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 101.67200000000001,
+					"stand": [
+						176,
+						36
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"d": 0.08,
+					"out": 0.9,
+					"kind": "whip",
+					"path": {
+						"to": [
+							196,
+							34,
+							22
+						],
+						"from": [
+							176,
+							1.6,
+							34
+						],
+						"kind": "move",
+						"aimTo": [
+							120,
+							4,
+							80
+						],
+						"aimFrom": [
+							162,
+							1,
+							24
+						]
+					}
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 6.719999999999999,
+				"shutter": {
+					"angle": 360,
+					"samples": 6
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"73ff3ac1-c5b1-4f4f-b89f-863c81975f5d@1": {
+			"name": "day-19-d · 31 the ring",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7",
+						"kind": "sound",
+						"level": 0.1
+					}
+				],
+				"lens": {
+					"fov": 40
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-ring",
+					"size": "EWS",
+					"scene": "the ring"
+				},
+				"time": {
+					"hour": 17.2
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 108.39200000000001,
+					"stand": [
+						40,
+						290
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"d": 0.08,
+					"into": 0.9,
+					"kind": "whip",
+					"path": {
+						"a0": 0.13962634015954636,
+						"a1": 0.5934119456780721,
+						"r0": 330,
+						"r1": 290,
+						"y0": 26,
+						"y1": 150,
+						"aim": [
+							0,
+							8,
+							0
+						],
+						"kind": "orbit",
+						"centre": [
+							0,
+							0
+						]
+					}
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 6.847999999999999,
+				"shutter": {
+					"angle": 360,
+					"samples": 6
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"9010e78c-1fab-43d6-89e8-ad8874e91316@1": {
+			"name": "day-19-d · 32 the stream",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7",
+						"kind": "sound",
+						"level": 0.32
+					}
+				],
+				"lens": {
+					"fov": 38
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-stream",
+					"size": "MS",
+					"scene": "the ring"
+				},
+				"time": {
+					"hour": 17.4
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 115.24000000000001,
+					"stand": [
+						100,
+						290
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						105,
+						12,
+						291
+					],
+					"from": [
+						104,
+						12,
+						290
+					],
+					"kind": "move",
+					"aimTo": [
+						109,
+						0,
+						304
+					],
+					"aimFrom": [
+						108,
+						0,
+						304
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 2.312000000000012,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"abac0a47-8fbd-418a-9c49-17d4a05a307c@1": {
+			"name": "day-19-d · 33 the commons",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 44
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-commons",
+					"size": "WS",
+					"scene": "the commons"
+				},
+				"time": {
+					"hour": 17.6
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 117.55200000000002,
+					"stand": [
+						0,
+						96
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						0,
+						3,
+						96
+					],
+					"from": [
+						0,
+						2,
+						102
+					],
+					"kind": "move",
+					"aimTo": [
+						0,
+						30,
+						0
+					],
+					"aimFrom": [
+						0,
+						26,
+						0
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.8100000000000023,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"abff34ff-d29a-4de0-9a6a-59f74dc040d7@1": {
+			"name": "day-19-d · 34 the workshops",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 46
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-workshops",
+					"size": "MS",
+					"scene": "the commons"
+				},
+				"time": {
+					"hour": 17.8
+				},
+				"world": {
+					"dome": 0,
+					"seed": 1,
+					"build": null,
+					"clock": 121.36200000000002,
+					"stand": [
+						0,
+						60
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						58.21774357655979,
+						1.7,
+						-14.515313735980067
+					],
+					"from": [
+						59.088465180732484,
+						1.7,
+						-10.418890660015819
+					],
+					"kind": "move",
+					"aimTo": [
+						53.144372643530964,
+						1.2,
+						-31.932360644423365
+					],
+					"aimFrom": [
+						54.74275075725348,
+						1.2,
+						-29.10723689272521
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 1.4770000000000039,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"11988c67-1a7c-492c-bf4f-2f417f0eae46@1": {
+			"name": "day-19-d · 35 young and old",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 30
+				},
+				"look": "bright",
+				"meta": {
+					"name": "young-and-old",
+					"size": "CU",
+					"scene": "the commons"
+				},
+				"time": {
+					"hour": 17.9
+				},
+				"world": {
+					"dome": 0,
+					"seed": 1,
+					"build": null,
+					"clock": 122.83900000000003,
+					"stand": [
+						0,
+						60
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						57.865736826678194,
+						1.5,
+						-19.924771052777974
+					],
+					"from": [
+						58.204658797263406,
+						1.5,
+						-18.91184005574678
+					],
+					"kind": "move",
+					"aimTo": [
+						58.41258283770761,
+						0.9,
+						-23.60021538520246
+					],
+					"aimFrom": [
+						58.81556686932371,
+						0.9,
+						-22.577180821353917
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.032999999999987,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"13b89105-de57-4f96-9aa6-ca32460f2486@1": {
+			"name": "day-19-d · 36 the stone theatre",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 46
+				},
+				"look": "bright",
+				"meta": {
+					"name": "the-stone-theatre",
+					"size": "WS",
+					"scene": "the commons"
+				},
+				"time": {
+					"hour": 18.2
+				},
+				"world": {
+					"dome": 0,
+					"seed": 1,
+					"build": null,
+					"clock": 125.87200000000001,
+					"stand": [
+						0,
+						34
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						21,
+						10,
+						15
+					],
+					"from": [
+						36,
+						19,
+						26
+					],
+					"kind": "move",
+					"aimTo": [
+						0,
+						-2.2,
+						0
+					],
+					"aimFrom": [
+						0,
+						-1.5,
+						0
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 5.000000000000028,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.31
+				}
+			}
+		},
+		"ac6f8fd3-cc8d-425e-8ad0-81920b83c063@1": {
+			"name": "day-19-d · 37 the node",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 20
+				},
+				"meta": {
+					"name": "the-node",
+					"size": "ECU",
+					"scene": "the commons"
+				},
+				"time": {
+					"hour": 19
+				},
+				"world": {
+					"dome": 1,
+					"seed": 1,
+					"build": null,
+					"clock": 130.87200000000004,
+					"stand": [
+						0,
+						160
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"at": [
+						0,
+						18,
+						150
+					],
+					"kind": "turn",
+					"yaw0": 0,
+					"yaw1": 0.24434609527920614,
+					"pitch0": 1.4660765716752369,
+					"pitch1": 1.5009831567151233
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.042999999999978,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0
+				}
+			}
+		},
+		"2df4feb8-1fc2-4701-ab72-6e12a998fffe@1": {
+			"name": "day-19-d · 38 raised by its people",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+						"kind": "sound",
+						"level": 0.06
+					}
+				],
+				"lens": {
+					"fov": 40
+				},
+				"meta": {
+					"name": "raised-by-its-people",
+					"size": "WS",
+					"scene": "the commons"
+				},
+				"time": {
+					"hour": 19.3
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 133.91500000000002,
+					"stand": [
+						0,
+						200
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						3,
+						1.2,
+						204
+					],
+					"from": [
+						4,
+						0.6,
+						208
+					],
+					"kind": "move",
+					"aimTo": [
+						0,
+						33,
+						150
+					],
+					"aimFrom": [
+						0,
+						30,
+						150
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 7.3870000000000005,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0
+				}
+			}
+		},
+		"2c281bca-a0f5-44a1-9450-315ef15067c0@1": {
+			"name": "day-19-d · 39 lanterns",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+						"kind": "sound",
+						"level": 0.12
+					}
+				],
+				"lens": {
+					"fov": 42
+				},
+				"meta": {
+					"name": "lanterns",
+					"size": "MS",
+					"scene": "night",
+					"legacyExposure": 1.5
+				},
+				"time": {
+					"hour": 19.6
+				},
+				"world": {
+					"dome": 1,
+					"seed": 1,
+					"build": null,
+					"clock": 141.30200000000002,
+					"stand": [
+						14,
+						196
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						18.027708010978206,
+						6.5,
+						183.9051875657828
+					],
+					"from": [
+						11.92805598287297,
+						6.5,
+						186.71078152899292
+					],
+					"kind": "move",
+					"aimTo": [
+						31.886608415481618,
+						5.6,
+						169.9249643351685
+					],
+					"aimFrom": [
+						27.047176492733282,
+						5.6,
+						176.1191547292583
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 3.8810000000000002,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.71
+				}
+			}
+		},
+		"3999cfbf-5bd9-4b9c-8ce4-f7e815449ab8@1": {
+			"name": "day-19-d · 40 the forest grows quiet",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+						"kind": "sound",
+						"level": 0.14
+					}
+				],
+				"lens": {
+					"fov": 40
+				},
+				"look": "night",
+				"meta": {
+					"name": "the-forest-grows-quiet",
+					"size": "WS",
+					"scene": "night",
+					"legacyExposure": 8
+				},
+				"time": {
+					"hour": 20
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 145.18300000000002,
+					"stand": [
+						40,
+						210
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						54.66982482573748,
+						13,
+						202.7940361548838
+					],
+					"from": [
+						51.42300877492314,
+						14,
+						211.28355544951825
+					],
+					"kind": "move",
+					"aimTo": [
+						0,
+						18,
+						150
+					],
+					"aimFrom": [
+						0,
+						16,
+						150
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 5.699999999999989,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -0.71
+				}
+			}
+		},
+		"64981dac-175c-4900-8f5c-0765fd561164@1": {
+			"name": "day-19-d · 41 path lights",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 44
+				},
+				"look": "night",
+				"meta": {
+					"name": "path-lights",
+					"size": "MS",
+					"scene": "night",
+					"legacyExposure": 6
+				},
+				"time": {
+					"hour": 20.4
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 150.883,
+					"stand": [
+						70,
+						200
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						50,
+						28,
+						246
+					],
+					"from": [
+						46,
+						26,
+						252
+					],
+					"kind": "move",
+					"aimTo": [
+						0,
+						12,
+						150
+					],
+					"aimFrom": [
+						0,
+						10,
+						150
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 5.302999999999997,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -1.4
+				}
+			}
+		},
+		"677190d6-9cc2-4a23-9b28-e28eb97a0678@1": {
+			"name": "day-19-d · 42 a better way to live",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [
+					{
+						"at": 0,
+						"hash": "1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+						"kind": "sound",
+						"level": 0.08
+					}
+				],
+				"lens": {
+					"fov": 44
+				},
+				"look": "night",
+				"meta": {
+					"name": "a-better-way-to-live",
+					"size": "EWS",
+					"scene": "night",
+					"legacyExposure": 7
+				},
+				"time": {
+					"hour": 20.3
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 156.186,
+					"stand": [
+						70,
+						200
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						62,
+						105,
+						300
+					],
+					"from": [
+						74,
+						30,
+						214
+					],
+					"kind": "move",
+					"aimTo": [
+						0,
+						14,
+						0
+					],
+					"curve": "landing",
+					"aimFrom": [
+						30,
+						6,
+						120
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 13.13300000000001,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": -1.4
+				}
+			}
+		}
+	},
+	"files": [
+		"4513badb286397d0c94bb7fd5cc3cf54876284c078bb2696362d70ed18863b1b",
+		"f392c807c75f2fa38adabe086bc95701c10cfab88f05074a3b9e751ab8335895",
+		"b663781598745c432553f4bc544642724600b9677e301f7c0e7a5c8f038edfa9",
+		"1914dca5b50a9f0cc55320ecc6c78c2a0d8c7e3602fc1cd4511b5b96f05cca68",
+		"b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84",
+		"f3ebbb41045f0a45d3a27d6782beb71973fa539e9640d1c7d1b9434b02351575",
+		"4d34f215c6e292bc385692aae02eeb8ed7917f51138b1059c2adf439fa535d97",
+		"46e638bd4b75170f5450ffe1ec7232d22bfb0da0b5edaf88674e2065066f8d18",
+		"7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82",
+		"4ffa6fe2e7cbc5082a78a3eabed4706afde5d6cb3eaa9af8ba5b05ab1d3d5da7",
+		"646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f",
+		"42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7",
+		"0fa1e0014afb92607afdcb7f92e0f3e0f31e179024d3c2398b6d247b39517867",
+		"1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84",
+		"ec63e7d66166fe119d76abb832ee1ff077f46eae2a2ad24ab5cc435feab3f8a7",
+		"8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6",
+		"d4ae234054ed8d36b2c14a104b2c1c38992c38251570d2d056f90f545cd08669",
+		"044e58504895e10963eb13eef303b8c7684826f2e585ce0aeb06596678491328",
+		"cda4f556c62f50acc13f221c098c7341d4a498cc0388a017a0554ec5b1a75121",
+		"2cc8e24903d8c60a09a7d2a022741683831350aaa3e730c2f749e718fe9766c6",
+		"2240cbbadefb4c89e9c50509df8f5c254f8c4f68a806d7775dfd31c083dc60dd",
+		"8eb8e81ca8f95c15996f61d8ceefe6cf4053a16c63cfd04ca82da6fcd91ae9a7",
+		"399edf6dcd7558645c12c5c1ba5c5a2b07eda6d7d29ab99cc10bf47bfe457c1f",
+		"6084fb81fb65af1e9803caf651ccf0823fd9468a2f944621d9fcab4802f33b7c",
+		"c85216bcfc8815964d96827c1fae7dea0c015f989b3c00a505d599bf74cd7375",
+		"27cda35428451706559284c9f1ee7317fed9057316abebe768bb77226e1dd1b3",
+		"6bafb035b4b7010deea0aebe9e3d79f17c9bda0835b90b6a868d222c8a22f173",
+		"7b112fdbbd08373be4b504ffa6abcd022a8878fe7d087df5683222a404bb9444",
+		"22710421c8dd79bdc3d7e183db174284eab762a9a5d38db2577a7db485292a99",
+		"a602a1fc67af46b8b77266e25f7a895440d232eb66e2348e995a2850fcc16d7c",
+		"afe72d1358d21b744a354aa1465ca1513d28ae3af933d84fe93bfc450061fcd1",
+		"49592fba81affabc36dd564dbd095aea640250c23cc3732a7b2f0337e45427f9",
+		"373048a0beecf79a1c1041cd77b43ed8d28651546321d9056ecea0b21030d610",
+		"a014f513f6a5e1369bf4ec733dac564e28f6b7faf343e78368cdfb08ef42ecca",
+		"58ef55fcb26fb51d526cbc497b5b7fdf8c68f54d86571a8017f26faf45d8baca",
+		"0351080bc48a35843bea1a1cba0d9d789a5443cd05d28e654af10c77bb1952a3",
+		"e26e51c1c6245692031e3790eb057fa88e4fdcc14e584f6fe55ef9a329507f48"
+	]
+}

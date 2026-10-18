@@ -1,0 +1,2497 @@
+{
+	"key": "1-million-decision",
+	"name": "1 million decision",
+	"frozen": "2026-10-18T14:47:29.197Z",
+	"story": {
+		"title": "1 million decision",
+		"description": "The beginning: in bed from the side as he speaks, rising from the front, his feet on the rug — \"Remember\" under it."
+	},
+	"timeline": {
+		"id": "8fc6c791-3bcc-45ce-abee-fea00a8ac0c7",
+		"name": "Day 01 · Opening",
+		"project": "The 1 million decision",
+		"variant": "opening",
+		"description": "The beginning: in bed from the side as he speaks, rising from the front, his feet on the rug — \"Remember\" under it.",
+		"aspect": "16:9",
+		"tags": [
+			"day-01"
+		],
+		"clips": [
+			{
+				"id": "494683d7-c83d-488a-b09e-faada2547f21",
+				"in": 8.233333333333334,
+				"dur": 5.933333333333334,
+				"vol": 0.2,
+				"hash": "0af22c4d6669a386efbf545bce623a775ee70e59781e0fbe8e2891607b73ee0b",
+				"kind": "media",
+				"start": 0,
+				"track": "V1",
+				"script": {
+					"size": "MS",
+					"scene": "INT. BEDROOM — MORNING",
+					"description": "In bed, from the side. He lies awake, speaking to himself."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0,
+								"tint": -0.1,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.35,
+								"contrast": 0,
+								"exposure": 0.6,
+								"highlights": 0
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.35,
+								"exposure": -0.891,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "d1a4aca6-9b00-4f66-969b-dcfd6dfc23b9",
+				"in": 0.4,
+				"dur": 5.15,
+				"vol": 0.2,
+				"hash": "318d01fe0e8967dd86cf0845876b4f42bba2d51458ab26e819eaab8f55072b6e",
+				"kind": "media",
+				"frame": {
+					"16:9": {
+						"x": -0.58,
+						"y": 0,
+						"zoom": 1
+					}
+				},
+				"start": 9.7,
+				"track": "V1",
+				"script": {
+					"size": "CU",
+					"scene": "INT. BEDROOM — MORNING",
+					"description": "His bare feet land on the sheepskin rug."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.05,
+								"tint": -0.04,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.35,
+								"contrast": 0.11,
+								"exposure": -0.03,
+								"highlights": 0
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.5,
+								"exposure": -1.135,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "9b84babf-a4be-4af9-9d94-d33d8d806e2a",
+				"in": 3.066666666666667,
+				"dur": 58.1,
+				"fin": 1,
+				"vol": 0.157,
+				"fout": 0.6,
+				"hash": "78ca1dd2bcaab4f71946bdbca962e3594c5eca3b67e8282ba0b2b293e5383e8c",
+				"keys": [
+					[
+						51.084,
+						0
+					],
+					[
+						53.084,
+						-1.5
+					],
+					[
+						54.584,
+						-4
+					],
+					[
+						55.784,
+						-8
+					],
+					[
+						56.784,
+						-14
+					],
+					[
+						57.484,
+						-21
+					],
+					[
+						58.1,
+						-30
+					]
+				],
+				"kind": "media",
+				"start": 0,
+				"track": "A2"
+			},
+			{
+				"id": "vywiyrbc",
+				"in": 11.0074025,
+				"dur": 3.7666666666666666,
+				"vol": 0,
+				"hash": "715adaa55672410ef943d0a44997f25a9aa6d2ee6f3abc48933ba274f4e4d5f1",
+				"link": "p77krg44",
+				"frame": {
+					"16:9": {
+						"x": 0.12,
+						"y": -0.56,
+						"zoom": 1.67
+					}
+				},
+				"start": 5.933333333333334,
+				"track": "V1",
+				"script": {
+					"size": "MS",
+					"scene": "INT. BEDROOM — MORNING",
+					"description": "From the front: he sits up, then rises."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.25,
+								"tint": -0.2,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.4,
+								"contrast": 0,
+								"exposure": 0.13,
+								"highlights": 0
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.4,
+								"exposure": -0.788,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "8w7zjd2t",
+				"in": 11.0074025,
+				"dur": 3.7666666666666666,
+				"fin": 0.3,
+				"vol": 3.981,
+				"fout": 0.3,
+				"hash": "715adaa55672410ef943d0a44997f25a9aa6d2ee6f3abc48933ba274f4e4d5f1",
+				"link": "p77krg44",
+				"start": 5.933333333333334,
+				"track": "A3"
+			},
+			{
+				"eq": [
+					{
+						"f": 70,
+						"q": 0.707,
+						"gain": 0,
+						"type": "highpass"
+					}
+				],
+				"id": "0fbb6653-81b0-4d4b-b006-2fda70db30c2",
+				"in": 1.8666666666666667,
+				"dur": 2.3333333333333335,
+				"fin": 0.05,
+				"vol": 3.981,
+				"fout": 0.05,
+				"hash": "3311d42d0b4fa82848fc0c41ae76fce0e44b3db6c9b095778c37d72c2213d6f2",
+				"kind": "media",
+				"start": 0.26666666666666666,
+				"track": "A1"
+			},
+			{
+				"eq": [
+					{
+						"f": 70,
+						"q": 0.707,
+						"gain": 0,
+						"type": "highpass"
+					}
+				],
+				"id": "5f66559e-8f3f-4659-a3c8-9cf79393fb7e",
+				"in": 14.6,
+				"dur": 10.9,
+				"fin": 0.05,
+				"vol": 3.981,
+				"fout": 0.05,
+				"hash": "3311d42d0b4fa82848fc0c41ae76fce0e44b3db6c9b095778c37d72c2213d6f2",
+				"kind": "media",
+				"start": 2.6666666666666665,
+				"track": "A1"
+			},
+			{
+				"eq": [
+					{
+						"f": 70,
+						"q": 0.707,
+						"gain": 0,
+						"type": "highpass"
+					}
+				],
+				"id": "2ae63b6d-36b1-4694-a1c7-cc0d17bf59ed",
+				"in": 1.05,
+				"dur": 9.55,
+				"fin": 0.05,
+				"vol": 2.323,
+				"fout": 0.05,
+				"hash": "ade7515966fa7eb480f9ec6ee1c23b2daf01b041445df47ae66b6cbdb720ad9a",
+				"kind": "media",
+				"start": 14.2,
+				"track": "A1"
+			},
+			{
+				"id": "7d8f63e5-e77e-4fe9-a35f-868deb386a75",
+				"in": 17,
+				"dur": 2.75,
+				"fin": 0.3,
+				"vol": 0.501,
+				"fout": 0.3,
+				"hash": "b8cac309f7c01f08d50d95273f3b4d7d76dae54b26aa7aedffeb590badc4e736",
+				"kind": "media",
+				"frame": {
+					"16:9": {
+						"x": 0,
+						"y": 0,
+						"zoom": 1.09
+					}
+				},
+				"start": 14.85,
+				"track": "V1",
+				"script": {
+					"size": "WS",
+					"scene": "EXT. GARDEN — MORNING",
+					"description": "He walks through the garden towards the old bench."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.53,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.6,
+								"contrast": 0.15,
+								"exposure": 0.35,
+								"highlights": 0
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.35,
+								"exposure": -0.743,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "c765990b-b586-460e-9cfd-4f7f103fb981",
+				"in": 8.25,
+				"dur": 3.633333333333333,
+				"fin": 0.3,
+				"vol": 0.501,
+				"fout": 0.3,
+				"hash": "4adb62ab84f21b6abae461f10a1b7aa4f444de7ff03c2e48ab44d285904f06f0",
+				"kind": "media",
+				"start": 20.2,
+				"track": "V1",
+				"script": {
+					"size": "MS",
+					"scene": "EXT. GARDEN — MORNING",
+					"description": "From the bench's right side: mid-sip, he lowers the mug and sets it down."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.85,
+								"tint": -0.2,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.6,
+								"contrast": 0.15,
+								"exposure": 1.3,
+								"highlights": -1
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.12,
+								"exposure": -0.804,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "8e7c7f1e-8f7a-488a-b478-36bda87a2128",
+				"in": 10.45,
+				"dur": 2.6,
+				"vol": 0,
+				"hash": "2d3c9f254ecf9eed6517251d00430f833eaaa005bda548f2970f2c3a45371a0d",
+				"kind": "media",
+				"link": "c132-0",
+				"start": 23.833333333333332,
+				"track": "V1",
+				"script": {
+					"size": "MS",
+					"scene": "EXT. GARDEN — MORNING",
+					"description": "On the bench, straight to camera."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.53,
+								"tint": -0.15,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.6,
+								"contrast": 0.06,
+								"exposure": 0.54,
+								"highlights": -0.48
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.3,
+								"exposure": -0.771,
+								"highlights": 0
+							},
+							{
+								"sat": 1.05,
+								"tool": "cdl",
+								"power": [
+									1.015,
+									1.015,
+									1.015
+								],
+								"slope": [
+									1,
+									1,
+									1
+								],
+								"offset": [
+									0,
+									0,
+									0
+								]
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "g5m4y1zk",
+				"in": 13.966666666666663,
+				"dur": 31.017,
+				"vol": 0,
+				"hash": "2d3c9f254ecf9eed6517251d00430f833eaaa005bda548f2970f2c3a45371a0d",
+				"kind": "media",
+				"link": "c132-1",
+				"start": 26.433333333333337,
+				"track": "V1",
+				"script": {
+					"size": "MS",
+					"scene": "EXT. GARDEN — MORNING",
+					"description": "On the bench, straight to camera."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.53,
+								"tint": -0.15,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.6,
+								"contrast": 0.06,
+								"exposure": 0.54,
+								"highlights": -0.48
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.3,
+								"exposure": -0.771,
+								"highlights": 0
+							},
+							{
+								"sat": 1.05,
+								"tool": "cdl",
+								"power": [
+									1.015,
+									1.015,
+									1.015
+								],
+								"slope": [
+									1,
+									1,
+									1
+								],
+								"offset": [
+									0,
+									0,
+									0
+								]
+							}
+						]
+					}
+				}
+			},
+			{
+				"eq": [
+					{
+						"f": 80,
+						"q": 0.707,
+						"gain": 0,
+						"type": "highpass"
+					},
+					{
+						"f": 300,
+						"q": 1,
+						"gain": -1.5,
+						"type": "peaking"
+					},
+					{
+						"f": 2500,
+						"q": 0.9,
+						"gain": 1.5,
+						"type": "peaking"
+					},
+					{
+						"f": 7000,
+						"q": 0.707,
+						"gain": 2.5,
+						"type": "highshelf"
+					}
+				],
+				"id": "81e23d24-44de-45ce-922e--0",
+				"in": 10.45,
+				"dur": 2.6,
+				"fin": 0.05,
+				"vol": 0.944,
+				"fout": 0.05,
+				"hash": "2d3c9f254ecf9eed6517251d00430f833eaaa005bda548f2970f2c3a45371a0d",
+				"kind": "media",
+				"link": "c132-0",
+				"start": 23.833333333333332,
+				"track": "A1"
+			},
+			{
+				"eq": [
+					{
+						"f": 80,
+						"q": 0.707,
+						"gain": 0,
+						"type": "highpass"
+					},
+					{
+						"f": 300,
+						"q": 1,
+						"gain": -1.5,
+						"type": "peaking"
+					},
+					{
+						"f": 2500,
+						"q": 0.9,
+						"gain": 1.5,
+						"type": "peaking"
+					},
+					{
+						"f": 7000,
+						"q": 0.707,
+						"gain": 2.5,
+						"type": "highshelf"
+					}
+				],
+				"id": "81e23d24-44de-45ce-922e--1",
+				"in": 13.966666666666663,
+				"dur": 31.267,
+				"fin": 0.05,
+				"vol": 0.77,
+				"fout": 0.35,
+				"hash": "2d3c9f254ecf9eed6517251d00430f833eaaa005bda548f2970f2c3a45371a0d",
+				"kind": "media",
+				"link": "c132-1",
+				"start": 26.433333333333337,
+				"track": "A1"
+			},
+			{
+				"id": "4ykh6em9",
+				"in": 3.812,
+				"dur": 23.349,
+				"vol": 0,
+				"hash": "b519e093f5f662eb21acda567a0da8c01458d4f11bfc20d6870d740f32769575",
+				"link": "1b9luqau",
+				"start": 57.45,
+				"track": "V1",
+				"script": {
+					"scene": "EXT. GARDEN — MORNING",
+					"description": "On the folding chair with the laptop: the plan, phase by phase."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.6,
+								"tint": -0.2,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.8,
+								"contrast": 0.25,
+								"exposure": -0.4,
+								"highlights": -0.8
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.15,
+								"exposure": -0.566,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"eq": [
+					{
+						"f": 80,
+						"q": 0.707,
+						"gain": 0,
+						"type": "highpass"
+					},
+					{
+						"f": 500,
+						"q": 1,
+						"gain": -1.5,
+						"type": "peaking"
+					},
+					{
+						"f": 4000,
+						"q": 1,
+						"gain": -1.5,
+						"type": "peaking"
+					},
+					{
+						"f": 7000,
+						"q": 0.707,
+						"gain": 2.5,
+						"type": "highshelf"
+					}
+				],
+				"id": "nir1wkrw",
+				"in": 3.812,
+				"dur": 23.349,
+				"fin": 0.05,
+				"vol": 0.9016,
+				"fout": 0.05,
+				"hash": "b519e093f5f662eb21acda567a0da8c01458d4f11bfc20d6870d740f32769575",
+				"keys": [
+					[
+						1.22,
+						0
+					],
+					[
+						1.27,
+						-20
+					],
+					[
+						1.72,
+						-20
+					],
+					[
+						1.78,
+						0
+					]
+				],
+				"link": "1b9luqau",
+				"start": 57.45,
+				"track": "A1"
+			},
+			{
+				"id": "oni9zmpn",
+				"in": 1.6488721666666666,
+				"dur": 58.051,
+				"vol": 0,
+				"hash": "2ee87776430d28c647b41c135765633a861b9c0fea228a051ca33bf6a7f9b096",
+				"link": "za906r08",
+				"start": 80.8,
+				"track": "V1",
+				"script": {
+					"scene": "EXT. GARDEN — MORNING",
+					"description": "In the bushes, to camera."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.6,
+								"tint": -0.15,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0.65,
+								"contrast": 0.15,
+								"exposure": 0.7,
+								"highlights": -1
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.05,
+								"exposure": -0.905,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"eq": [
+					{
+						"f": 80,
+						"q": 0.707,
+						"gain": 0,
+						"type": "highpass"
+					},
+					{
+						"f": 4000,
+						"q": 1,
+						"gain": -1.5,
+						"type": "peaking"
+					},
+					{
+						"f": 7000,
+						"q": 0.707,
+						"gain": 1.5,
+						"type": "highshelf"
+					}
+				],
+				"id": "cbuujlkx",
+				"in": 1.6488721666666666,
+				"dur": 66.07920113333334,
+				"fin": 0.05,
+				"vol": 0.4718,
+				"fout": 0.05,
+				"hash": "2ee87776430d28c647b41c135765633a861b9c0fea228a051ca33bf6a7f9b096",
+				"link": "za906r08",
+				"start": 80.8,
+				"track": "A1"
+			},
+			{
+				"id": "w125sipx",
+				"in": 13.25,
+				"dur": 2.6,
+				"fin": 0.3,
+				"vol": 0.708,
+				"fout": 0.3,
+				"hash": "cfe9ce221b539c47f91606ce3011a32d3f43a5cd852b6bbc22a370e1eefc08c4",
+				"kind": "media",
+				"frame": {
+					"16:9": {
+						"x": -0.84,
+						"y": 0,
+						"zoom": 1.27
+					}
+				},
+				"start": 17.6,
+				"track": "V1",
+				"script": {
+					"size": "WS",
+					"scene": "EXT. GARDEN — MORNING",
+					"description": "Wide, alone on the bench: he sits down and lifts the mug to drink."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.53,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": -0.6,
+								"contrast": 0.15,
+								"exposure": 0.35,
+								"highlights": 0
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.35,
+								"exposure": -1.113,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "mdr2lite",
+				"in": 0,
+				"dur": 91.899,
+				"fin": 3,
+				"vol": 0.233,
+				"fout": 3,
+				"hash": "2825b693ecda3abee414f08abdcadb2b0e92544ea122c7976117279b4a7c7f55",
+				"kind": "media",
+				"start": 54.98,
+				"track": "A2"
+			},
+			{
+				"id": "oni9zmpn-in",
+				"in": 59.7,
+				"dur": 8.028,
+				"vol": 0,
+				"hash": "2ee87776430d28c647b41c135765633a861b9c0fea228a051ca33bf6a7f9b096",
+				"start": 138.851,
+				"track": "V1",
+				"script": {
+					"scene": "INT. VERANDA — MORNING",
+					"description": "Under the veranda roof, to camera: the city and the game build themselves."
+				},
+				"stacks": {
+					"base": {
+						"tools": [
+							{
+								"sat": 0,
+								"temp": 0.6,
+								"tint": -0.15,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0.3,
+								"contrast": 0.15,
+								"exposure": 0.7,
+								"highlights": -1
+							}
+						]
+					},
+					"clip": {
+						"tools": [
+							{
+								"sat": 0.05,
+								"temp": 0,
+								"tint": 0,
+								"tool": "balance",
+								"linear": true,
+								"shadows": 0,
+								"contrast": 0.15,
+								"exposure": 0.26,
+								"highlights": 0
+							}
+						]
+					}
+				}
+			},
+			{
+				"id": "end-v1",
+				"in": 0.5,
+				"dur": 2.4,
+				"vol": 1,
+				"kind": "world",
+				"shot": "13f4065c-3d00-4d77-acd2-3ec21a783078",
+				"start": 146.88,
+				"track": "V1",
+				"script": {
+					"size": "WS",
+					"label": "Three months ago",
+					"notes": "To film: tripod high in the door corner, 0.5×. Light: the bulb on; the laptop's screen as his key (the CB60 in HSI, hue 215, sat 30 %, 8 % stands in for it in the twin).",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "Hard cut from the bright veranda to the room at night. He sits on the bed's edge, the laptop open on his knees, its cold glow on his face, the bulb warm above. (to film — the twin is its previs)"
+				},
+				"shotVersion": 4
+			},
+			{
+				"id": "end-v2",
+				"in": 0.5,
+				"dur": 2.4,
+				"vol": 1,
+				"kind": "world",
+				"shot": "14645868-bfe2-4bfc-a84e-54e079b871c2",
+				"start": 149.28,
+				"track": "V1",
+				"script": {
+					"size": "MCU",
+					"label": "Never posted",
+					"notes": "To film: tripod against the window wall, 1× at about 0.85 m. Light: the laptop's glow from below, the bulb as a rim.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "To the lens, quiet. No drama — a fact. (to film — the twin is its previs)"
+				},
+				"shotVersion": 4
+			},
+			{
+				"id": "end-v3",
+				"in": 0,
+				"dur": 3.2,
+				"vol": 0,
+				"kind": "slate",
+				"start": 151.68,
+				"track": "V1",
+				"script": {
+					"size": "Insert",
+					"label": "The button",
+					"notes": "To film: the screen itself, 1×, close; the cursor still. Record the screen if it reads better.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "The laptop screen: the film, ready to upload. The cursor rests on Publish."
+				}
+			},
+			{
+				"id": "end-v4",
+				"in": 0.5,
+				"dur": 1.6,
+				"vol": 1,
+				"kind": "world",
+				"shot": "61ace3f5-b381-491c-b5c4-63b21b308285",
+				"start": 154.88,
+				"track": "V1",
+				"script": {
+					"size": "WS",
+					"label": "He falls back",
+					"notes": "To film: tripod low (0.7 m) by the radiator, 0.5×, locked.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "Low from the bed's foot: he closes the laptop halfway and lets himself fall back across the bed. (to film — the twin is its previs)"
+				},
+				"shotVersion": 4
+			},
+			{
+				"id": "end-v5",
+				"in": 0.5,
+				"dur": 4.3,
+				"vol": 1,
+				"kind": "world",
+				"shot": "a86cd4f6-03eb-4032-9cab-092a635d6dac",
+				"start": 156.48,
+				"track": "V1",
+				"script": {
+					"size": "CU",
+					"label": "Not yet",
+					"notes": "To film: the phone over his face on a stand arm, or on the mattress at his head, 1×. Light: the bulb straight above — top light; no fill.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "From above his face as he lies there, looking up. (to film — the twin is its previs)"
+				},
+				"shotVersion": 5
+			},
+			{
+				"id": "end-v6",
+				"in": 0.5,
+				"dur": 2,
+				"vol": 1,
+				"kind": "world",
+				"shot": "0114a5e0-4909-434e-a06c-ecba26775700",
+				"start": 160.78,
+				"track": "V1",
+				"script": {
+					"size": "POV",
+					"label": "The ceiling",
+					"notes": "A world shot (the twin). No words, no music — the room's tone only.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "His view: the ceiling, the bulb on its cord. Silence."
+				},
+				"shotVersion": 2
+			},
+			{
+				"id": "end-v7",
+				"in": 0.5,
+				"dur": 5.4,
+				"vol": 1,
+				"kind": "world",
+				"shot": "3d76003d-8a25-4038-bd49-d306e6a7b97a",
+				"start": 162.78,
+				"track": "V1",
+				"script": {
+					"size": "MCU",
+					"label": "The turn",
+					"notes": "To film: tripod by the radiator, three-quarter, 1×. Light: still the laptop's glow.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "He sits up. Something has settled. To the lens. (to film — the twin is its previs)"
+				},
+				"shotVersion": 4
+			},
+			{
+				"id": "end-v8",
+				"in": 0,
+				"dur": 2,
+				"vol": 0,
+				"kind": "slate",
+				"start": 168.18,
+				"track": "V1",
+				"script": {
+					"size": "Insert",
+					"label": "The click",
+					"notes": "To film: the trackpad and the screen's edge, 1×, close. Sound: the click alone, in silence (A3).",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "His finger on the trackpad. A breath. Click. The upload bar starts to move."
+				}
+			},
+			{
+				"id": "end-v9",
+				"in": 0,
+				"dur": 5,
+				"vol": 1,
+				"kind": "world",
+				"shot": "b79eb9a3-4987-4225-9347-d6e051584975",
+				"start": 170.18,
+				"track": "V1",
+				"script": {
+					"size": "EWS",
+					"label": "What people build",
+					"notes": "A world shot (Day 19). The score comes back here — warm.",
+					"scene": "EXT. THE CITY — DAWN",
+					"description": "The city at dawn: the sun rises over the dome cell."
+				},
+				"shotVersion": 3
+			},
+			{
+				"id": "end-v10",
+				"in": 0,
+				"dur": 6,
+				"vol": 1,
+				"kind": "world",
+				"shot": "dbbb9112-1454-4bdb-b510-096d6debdeeb",
+				"start": 175.18,
+				"track": "V1",
+				"script": {
+					"size": "EWS",
+					"label": "Together",
+					"notes": "A world shot (Day 19).",
+					"scene": "EXT. THE CITY — DAWN",
+					"description": "The dome cell in the morning light, wide."
+				},
+				"shotVersion": 1
+			},
+			{
+				"id": "end-v11",
+				"in": 0.5,
+				"dur": 2.6,
+				"vol": 1,
+				"kind": "world",
+				"shot": "956859fd-f502-417e-b04b-c30d5f1560cb",
+				"start": 181.18,
+				"track": "V1",
+				"script": {
+					"size": "CU",
+					"label": "Nothing to lose",
+					"notes": "To film: tripod against the window wall, 2×. Light: the CB60 warm (2700 K) bounced at 22 %, the laptop closed.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "Back in the room, close, to the lens. A small smile. The light is warm now. (to film — the twin is its previs)"
+				},
+				"shotVersion": 4
+			},
+			{
+				"id": "end-v12",
+				"in": 0.5,
+				"dur": 3.4,
+				"vol": 1,
+				"kind": "world",
+				"shot": "9e178ec7-dcf5-4fbc-ae6e-5102377f458a",
+				"start": 183.78,
+				"track": "V1",
+				"script": {
+					"size": "WS",
+					"label": "The box",
+					"notes": "A world shot (the twin). Light: warm.",
+					"scene": "INT. THE ROOM — NIGHT",
+					"description": "The room from straight above: him on the bed's edge under the bulb — a box. Hold. Cut to black."
+				},
+				"shotVersion": 4
+			},
+			{
+				"id": "end-l1",
+				"in": 0,
+				"dur": 2.05,
+				"vol": 1,
+				"kind": "line",
+				"text": "That was three months ago.",
+				"start": 147.18,
+				"track": "A1"
+			},
+			{
+				"id": "end-l2",
+				"in": 0,
+				"dur": 2.38,
+				"vol": 1,
+				"kind": "line",
+				"text": "And then I didn't post it.",
+				"start": 149.48,
+				"track": "A1"
+			},
+			{
+				"id": "end-l3",
+				"in": 0,
+				"dur": 3.04,
+				"vol": 1,
+				"kind": "line",
+				"text": "It was ready. The button was right there.",
+				"start": 151.88,
+				"track": "A1"
+			},
+			{
+				"id": "end-l4",
+				"in": 0,
+				"dur": 4.03,
+				"vol": 1,
+				"kind": "line",
+				"text": "But it wasn't perfect. And I didn't know how. Not yet.",
+				"start": 156.68,
+				"track": "A1"
+			},
+			{
+				"id": "end-l5",
+				"in": 0,
+				"dur": 5.02,
+				"vol": 1,
+				"kind": "line",
+				"text": "Nobody knows the how at the start. You find the way by walking it.",
+				"start": 163.08,
+				"track": "A1"
+			},
+			{
+				"id": "end-l6",
+				"in": 0,
+				"dur": 7.66,
+				"vol": 1,
+				"kind": "line",
+				"text": "Egypt is raising a capital for six and a half million people. Eight years after the first stone, its government moved in.",
+				"start": 170.38,
+				"track": "A1"
+			},
+			{
+				"id": "end-l7",
+				"in": 0,
+				"dur": 3.7,
+				"vol": 1,
+				"kind": "line",
+				"text": "Imagine what a million of us can build — together.",
+				"start": 177.78,
+				"track": "A1"
+			},
+			{
+				"id": "end-l8",
+				"in": 0,
+				"dur": 2.38,
+				"vol": 1,
+				"kind": "line",
+				"text": "Nothing to lose. Everything to gain.",
+				"start": 181.38,
+				"track": "A1"
+			},
+			{
+				"id": "end-l9",
+				"in": 0,
+				"dur": 3.04,
+				"vol": 1,
+				"kind": "line",
+				"text": "Tomorrow: why it all starts in a box.",
+				"start": 183.98,
+				"track": "A1"
+			},
+			{
+				"id": "story-hook-0",
+				"in": 0,
+				"dur": 5.9,
+				"vol": 0,
+				"kind": "section",
+				"text": "He woke up knowing he had finally made the decision. Which one?",
+				"start": 0,
+				"track": "S1",
+				"section": "hook",
+				"tension": [
+					{
+						"t": 0,
+						"v": 0.35
+					},
+					{
+						"t": 0.5,
+						"v": 0.55
+					},
+					{
+						"t": 1,
+						"v": 0.75
+					}
+				]
+			},
+			{
+				"id": "story-act1-1",
+				"in": 0,
+				"dur": 8.9,
+				"vol": 0,
+				"kind": "section",
+				"text": "The setup: years of not daring; out of bed, feet on the ground",
+				"start": 5.9,
+				"track": "S1",
+				"section": "act1",
+				"tension": [
+					{
+						"t": 0,
+						"v": 0.5
+					},
+					{
+						"t": 0.4,
+						"v": 0.42
+					},
+					{
+						"t": 1,
+						"v": 0.62
+					}
+				]
+			},
+			{
+				"id": "story-act2-2",
+				"in": 0,
+				"dur": 9.05,
+				"vol": 0,
+				"kind": "section",
+				"text": "Alone and unsure — tomorrow we will see — but one thing is certain…",
+				"start": 14.8,
+				"track": "S1",
+				"section": "act2",
+				"tension": [
+					{
+						"t": 0,
+						"v": 0.55
+					},
+					{
+						"t": 0.5,
+						"v": 0.7
+					},
+					{
+						"t": 0.92,
+						"v": 0.92
+					},
+					{
+						"t": 1,
+						"v": 0.95
+					}
+				]
+			},
+			{
+				"id": "story-thumbnail-3",
+				"in": 0,
+				"dur": 0.1,
+				"vol": 0,
+				"kind": "section",
+				"text": "Him on the garden bench, straight to camera — the decision made",
+				"start": 26,
+				"track": "S1",
+				"section": "thumbnail"
+			},
+			{
+				"id": "story-act3-4",
+				"in": 0,
+				"dur": 159.93,
+				"vol": 0,
+				"kind": "section",
+				"text": "The vision on the bench — then the truth: this film was made three months ago and never posted. The fear (not perfect, no how), the turn (you find the way by walking it), the click — the decision he almost didn't dare to take — and what people build when they unite",
+				"start": 23.85,
+				"track": "S1",
+				"section": "act3",
+				"tension": [
+					{
+						"t": 0,
+						"v": 0.6
+					},
+					{
+						"t": 0.1539,
+						"v": 0.5
+					},
+					{
+						"t": 0.423,
+						"v": 0.72
+					},
+					{
+						"t": 0.6537,
+						"v": 0.65
+					},
+					{
+						"t": 0.7693,
+						"v": 0.85
+					},
+					{
+						"t": 0.773,
+						"v": 0.62
+					},
+					{
+						"t": 0.7874,
+						"v": 0.72
+					},
+					{
+						"t": 0.803,
+						"v": 0.78
+					},
+					{
+						"t": 0.8368,
+						"v": 0.9
+					},
+					{
+						"t": 0.8624,
+						"v": 0.84
+					},
+					{
+						"t": 0.8837,
+						"v": 0.6
+					},
+					{
+						"t": 0.91,
+						"v": 0.45
+					},
+					{
+						"t": 0.9243,
+						"v": 0.66
+					},
+					{
+						"t": 0.965,
+						"v": 0.76
+					},
+					{
+						"t": 1,
+						"v": 0.7
+					}
+				]
+			},
+			{
+				"id": "story-cliffhanger-5",
+				"in": 0,
+				"dur": 3.4,
+				"vol": 0,
+				"kind": "section",
+				"text": "One line: tomorrow, why it all starts in a box",
+				"start": 183.78,
+				"track": "S1",
+				"section": "cliffhanger",
+				"tension": [
+					{
+						"t": 0,
+						"v": 0.7
+					},
+					{
+						"t": 1,
+						"v": 0.85
+					}
+				]
+			}
+		],
+		"stage": "edit",
+		"version": 1,
+		"color": {
+			"output": "odt-rec709",
+			"working": "acescct"
+		},
+		"grade": {
+			"scenes": {
+				"EXT. GARDEN — MORNING": {
+					"tools": [
+						{
+							"tool": "contrast",
+							"pivot": 0.4135884,
+							"amount": -0.07
+						}
+					]
+				},
+				"INT. BEDROOM — MORNING": {
+					"tools": [
+						{
+							"tool": "split",
+							"pivot": 0.4135884,
+							"hi_hue": 128,
+							"sh_hue": 290,
+							"balance": 0,
+							"hi_amount": 0.2,
+							"sh_amount": 0.55
+						},
+						{
+							"hue": [
+								[
+									20,
+									-10
+								],
+								[
+									105,
+									0
+								],
+								[
+									123,
+									0
+								],
+								[
+									145,
+									0
+								],
+								[
+									160,
+									-12
+								],
+								[
+									200,
+									25
+								],
+								[
+									230,
+									20
+								],
+								[
+									330,
+									-20
+								],
+								[
+									350,
+									-15
+								]
+							],
+							"sat": 0.95,
+							"tool": "hue",
+							"hue_lum": [
+								[
+									285,
+									-0.15
+								]
+							],
+							"hue_sat": [
+								[
+									30,
+									0.65
+								],
+								[
+									61,
+									0.6
+								],
+								[
+									123,
+									1.1
+								],
+								[
+									140,
+									1.15
+								],
+								[
+									215,
+									0.75
+								],
+								[
+									285,
+									1.2
+								]
+							]
+						}
+					]
+				},
+				"INT. VERANDA — MORNING": {
+					"tools": [
+						{
+							"tool": "split",
+							"pivot": 0.4135884,
+							"hi_hue": 128,
+							"sh_hue": 290,
+							"balance": 0,
+							"hi_amount": 0.2,
+							"sh_amount": 0.55
+						},
+						{
+							"hue": [
+								[
+									20,
+									-10
+								],
+								[
+									105,
+									0
+								],
+								[
+									123,
+									0
+								],
+								[
+									145,
+									0
+								],
+								[
+									160,
+									-12
+								],
+								[
+									200,
+									25
+								],
+								[
+									230,
+									20
+								],
+								[
+									330,
+									-20
+								],
+								[
+									350,
+									-15
+								]
+							],
+							"sat": 0.95,
+							"tool": "hue",
+							"hue_lum": [
+								[
+									285,
+									-0.15
+								]
+							],
+							"hue_sat": [
+								[
+									30,
+									0.65
+								],
+								[
+									61,
+									0.6
+								],
+								[
+									123,
+									1.1
+								],
+								[
+									140,
+									1.15
+								],
+								[
+									215,
+									0.75
+								],
+								[
+									285,
+									1.2
+								]
+							]
+						}
+					]
+				}
+			},
+			"timeline": {
+				"tools": [
+					{
+						"tool": "split",
+						"pivot": 0.414,
+						"hi_hue": 138,
+						"sh_hue": 298,
+						"balance": -0.25,
+						"hi_amount": 0.5,
+						"sh_amount": 0.65
+					},
+					{
+						"hue": [
+							[
+								20,
+								-8
+							],
+							[
+								61,
+								18
+							],
+							[
+								85,
+								10
+							],
+							[
+								105,
+								5
+							],
+							[
+								123,
+								0
+							],
+							[
+								140,
+								3
+							],
+							[
+								165,
+								-12
+							],
+							[
+								185,
+								-3
+							],
+							[
+								215,
+								26
+							],
+							[
+								240,
+								32
+							],
+							[
+								265,
+								12
+							],
+							[
+								320,
+								-10
+							],
+							[
+								345,
+								-18
+							]
+						],
+						"sat": 1,
+						"tool": "hue",
+						"hue_lum": [
+							[
+								123,
+								0
+							],
+							[
+								165,
+								-0.35
+							],
+							[
+								200,
+								-0.7
+							],
+							[
+								235,
+								-0.75
+							],
+							[
+								270,
+								-0.4
+							],
+							[
+								345,
+								-0.1
+							]
+						],
+						"hue_sat": [
+							[
+								20,
+								0.7
+							],
+							[
+								61,
+								0.55
+							],
+							[
+								85,
+								0.8
+							],
+							[
+								123,
+								1.15
+							],
+							[
+								165,
+								0.95
+							],
+							[
+								215,
+								1
+							],
+							[
+								245,
+								0.85
+							],
+							[
+								320,
+								0.6
+							],
+							[
+								345,
+								0.6
+							]
+						]
+					},
+					{
+						"tool": "hi_sat",
+						"pivot": 0.414,
+						"amount": 0.35
+					},
+					{
+						"tool": "halation",
+						"amount": 0,
+						"radius": 14,
+						"threshold": 0.55
+					},
+					{
+						"size": 1.1,
+						"tool": "grain",
+						"amount": 0.12,
+						"chroma": 0
+					},
+					{
+						"size": 0.76,
+						"tool": "vignette",
+						"amount": 0.65,
+						"softness": 0.8,
+						"roundness": 0.6
+					}
+				]
+			}
+		},
+		"created": "2026-09-30T05:43:41.738Z",
+		"updated": "2026-10-03T11:03:24.385Z"
+	},
+	"shots": {
+		"13f4065c-3d00-4d77-acd2-3ec21a783078@4": {
+			"name": "day-01 · end 01 back in the box",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 62
+				},
+				"meta": {
+					"cast": "the rigged stand-in, 1.70 m, bald",
+					"name": "day-01-end-1",
+					"size": "WS",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"props": "stand-in sitting",
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						-1,
+						1.95,
+						1.75
+					],
+					"from": [
+						-1.15,
+						2,
+						2
+					],
+					"kind": "move",
+					"aimTo": [
+						0.4,
+						0.75,
+						-0.95
+					],
+					"aimFrom": [
+						0.4,
+						0.75,
+						-0.95
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					},
+					{
+						"id": "cb60",
+						"color": "#b8c9ee",
+						"intensity": 0.08
+					}
+				],
+				"framing": {},
+				"seconds": 3.4,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		},
+		"14645868-bfe2-4bfc-a84e-54e079b871c2@4": {
+			"name": "day-01 · end 02 the confession",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 45
+				},
+				"meta": {
+					"cast": "the rigged stand-in, 1.70 m, bald",
+					"name": "day-01-end-2",
+					"size": "MCU",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"props": "stand-in sitting",
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						1.44,
+						1.12,
+						-1
+					],
+					"from": [
+						1.45,
+						1.12,
+						-1.02
+					],
+					"kind": "move",
+					"aimTo": [
+						0.6,
+						1.1,
+						-0.95
+					],
+					"aimFrom": [
+						0.6,
+						1.1,
+						-0.95
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					},
+					{
+						"id": "cb60",
+						"color": "#b8c9ee",
+						"intensity": 0.08
+					}
+				],
+				"framing": {},
+				"seconds": 3.4,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		},
+		"61ace3f5-b381-491c-b5c4-63b21b308285@4": {
+			"name": "day-01 · end 03 he falls back",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 55
+				},
+				"meta": {
+					"cast": "the rigged stand-in, 1.70 m, bald",
+					"name": "day-01-end-3",
+					"size": "WS",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"props": "stand-in fallen",
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						1.28,
+						0.7,
+						0.36
+					],
+					"from": [
+						1.3,
+						0.7,
+						0.4
+					],
+					"kind": "move",
+					"aimTo": [
+						0.15,
+						0.55,
+						-1
+					],
+					"aimFrom": [
+						0.15,
+						0.55,
+						-1
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					},
+					{
+						"id": "cb60",
+						"color": "#b8c9ee",
+						"intensity": 0.08
+					}
+				],
+				"framing": {},
+				"seconds": 2.6,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		},
+		"a86cd4f6-03eb-4032-9cab-092a635d6dac@5": {
+			"name": "day-01 · end 04 looking up",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 45
+				},
+				"meta": {
+					"cast": "the rigged stand-in, 1.70 m, bald",
+					"name": "day-01-end-4",
+					"size": "CU",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"props": "stand-in fallen",
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						-0.54,
+						0.98,
+						-0.61
+					],
+					"from": [
+						-0.55,
+						0.98,
+						-0.6
+					],
+					"kind": "move",
+					"aimTo": [
+						-0.12,
+						0.64,
+						-0.95
+					],
+					"aimFrom": [
+						-0.12,
+						0.64,
+						-0.95
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					},
+					{
+						"id": "cb60",
+						"color": "#b8c9ee",
+						"intensity": 0.08
+					}
+				],
+				"framing": {},
+				"seconds": 5.3,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		},
+		"0114a5e0-4909-434e-a06c-ecba26775700@2": {
+			"name": "day-01 · end 05 what he sees",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 60
+				},
+				"meta": {
+					"name": "day-01-end-5",
+					"size": "POV",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						-0.1,
+						0.8,
+						-0.85
+					],
+					"from": [
+						-0.12,
+						0.72,
+						-0.95
+					],
+					"kind": "move",
+					"aimTo": [
+						0,
+						2.1,
+						0.3
+					],
+					"aimFrom": [
+						0,
+						2.15,
+						0.3
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					}
+				],
+				"framing": {},
+				"seconds": 3,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		},
+		"3d76003d-8a25-4038-bd49-d306e6a7b97a@4": {
+			"name": "day-01 · end 06 the reality check",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 40
+				},
+				"meta": {
+					"cast": "the rigged stand-in, 1.70 m, bald",
+					"name": "day-01-end-6",
+					"size": "MCU",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"props": "stand-in sitting",
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						1.29,
+						1.15,
+						-0.22
+					],
+					"from": [
+						1.3,
+						1.15,
+						-0.2
+					],
+					"kind": "move",
+					"aimTo": [
+						0.6,
+						1.1,
+						-0.95
+					],
+					"aimFrom": [
+						0.6,
+						1.1,
+						-0.95
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					},
+					{
+						"id": "cb60",
+						"color": "#b8c9ee",
+						"intensity": 0.08
+					}
+				],
+				"framing": {},
+				"seconds": 6.4,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		},
+		"b79eb9a3-4987-4225-9347-d6e051584975@3": {
+			"name": "day-19-d · 03 the glass glows",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 40
+				},
+				"meta": {
+					"name": "the-glass-glows",
+					"size": "WS",
+					"scene": "sunrise",
+					"legacyExposure": 1.4
+				},
+				"time": {
+					"hour": 5.4,
+					"hourTo": 5.48
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 17.027,
+					"stand": [
+						190,
+						88
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						48,
+						24,
+						55
+					],
+					"from": [
+						34,
+						22,
+						50
+					],
+					"kind": "move",
+					"aimTo": [
+						130,
+						16,
+						75
+					],
+					"aimFrom": [
+						130,
+						14,
+						75
+					]
+				},
+				"lights": [
+					{
+						"id": "glass",
+						"color": "#ffb070",
+						"intensity": 4
+					}
+				],
+				"framing": {},
+				"seconds": 4.5000000000000036,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"ev": 0.8,
+					"meter": "fixed",
+					"stops": 0
+				}
+			}
+		},
+		"dbbb9112-1454-4bdb-b510-096d6debdeeb@1": {
+			"name": "day-19-d · 04 the city wakes",
+			"project": "233 settlers, how it starts",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 45
+				},
+				"meta": {
+					"name": "the-city-wakes",
+					"size": "MS",
+					"scene": "sunrise"
+				},
+				"time": {
+					"hour": 6.5
+				},
+				"world": {
+					"dome": 2,
+					"seed": 1,
+					"build": null,
+					"clock": 21.527000000000005,
+					"stand": [
+						158,
+						102
+					],
+					"sandbox": "sandbox-4"
+				},
+				"aspect": "1:1",
+				"camera": {
+					"to": [
+						171.49853686436956,
+						7.2,
+						97.06516345093686
+					],
+					"from": [
+						172.4024048078213,
+						7.6,
+						101.49596321166024
+					],
+					"kind": "move",
+					"aimTo": [
+						156.4884277857678,
+						6.2,
+						89.08414688357672
+					],
+					"aimFrom": [
+						155.98076211353316,
+						6.2,
+						90
+					]
+				},
+				"lights": [],
+				"framing": {},
+				"seconds": 4.759999999999998,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0
+				}
+			}
+		},
+		"956859fd-f502-417e-b04b-c30d5f1560cb@4": {
+			"name": "day-01 · end 07 life's work",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 28
+				},
+				"meta": {
+					"cast": "the rigged stand-in, 1.70 m, bald",
+					"name": "day-01-end-7",
+					"size": "CU",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"props": "stand-in sitting",
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						1.45,
+						1.12,
+						-0.97
+					],
+					"from": [
+						1.45,
+						1.12,
+						-0.98
+					],
+					"kind": "move",
+					"aimTo": [
+						0.6,
+						1.12,
+						-0.95
+					],
+					"aimFrom": [
+						0.6,
+						1.12,
+						-0.95
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					},
+					{
+						"id": "cb60",
+						"color": "#ffad59",
+						"intensity": 0.22
+					}
+				],
+				"framing": {},
+				"seconds": 3.6,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		},
+		"9e178ec7-dcf5-4fbc-ae6e-5102377f458a@4": {
+			"name": "day-01 · end 08 the box, from above",
+			"project": "The 1 million decision",
+			"spec": {
+				"fps": 30,
+				"cues": [],
+				"lens": {
+					"fov": 62
+				},
+				"meta": {
+					"cast": "the rigged stand-in, 1.70 m, bald",
+					"name": "day-01-end-8",
+					"size": "WS",
+					"scene": "INT. THE ROOM — NIGHT"
+				},
+				"time": {
+					"hour": 21.5
+				},
+				"world": {
+					"seed": 1,
+					"build": null,
+					"clock": 0,
+					"props": "stand-in sitting",
+					"stand": [
+						0,
+						1
+					],
+					"sandbox": "room"
+				},
+				"aspect": "16:9",
+				"camera": {
+					"to": [
+						0.1,
+						2.38,
+						-0.4
+					],
+					"from": [
+						0.1,
+						2.46,
+						-0.4
+					],
+					"kind": "move",
+					"aimTo": [
+						0.6,
+						0,
+						-0.4
+					],
+					"aimFrom": [
+						0.6,
+						0,
+						-0.4
+					]
+				},
+				"lights": [
+					{
+						"id": "lamps",
+						"intensity": 1
+					},
+					{
+						"id": "cb60",
+						"color": "#ffad59",
+						"intensity": 0.22
+					}
+				],
+				"framing": {},
+				"seconds": 4.4,
+				"shutter": {
+					"angle": 180,
+					"samples": 1
+				},
+				"exposure": {
+					"meter": "lock",
+					"stops": 0.3
+				}
+			}
+		}
+	},
+	"files": [
+		"0af22c4d6669a386efbf545bce623a775ee70e59781e0fbe8e2891607b73ee0b",
+		"318d01fe0e8967dd86cf0845876b4f42bba2d51458ab26e819eaab8f55072b6e",
+		"78ca1dd2bcaab4f71946bdbca962e3594c5eca3b67e8282ba0b2b293e5383e8c",
+		"715adaa55672410ef943d0a44997f25a9aa6d2ee6f3abc48933ba274f4e4d5f1",
+		"3311d42d0b4fa82848fc0c41ae76fce0e44b3db6c9b095778c37d72c2213d6f2",
+		"ade7515966fa7eb480f9ec6ee1c23b2daf01b041445df47ae66b6cbdb720ad9a",
+		"b8cac309f7c01f08d50d95273f3b4d7d76dae54b26aa7aedffeb590badc4e736",
+		"4adb62ab84f21b6abae461f10a1b7aa4f444de7ff03c2e48ab44d285904f06f0",
+		"2d3c9f254ecf9eed6517251d00430f833eaaa005bda548f2970f2c3a45371a0d",
+		"b519e093f5f662eb21acda567a0da8c01458d4f11bfc20d6870d740f32769575",
+		"2ee87776430d28c647b41c135765633a861b9c0fea228a051ca33bf6a7f9b096",
+		"cfe9ce221b539c47f91606ce3011a32d3f43a5cd852b6bbc22a370e1eefc08c4",
+		"2825b693ecda3abee414f08abdcadb2b0e92544ea122c7976117279b4a7c7f55"
+	]
+}
