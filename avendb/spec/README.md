@@ -13,7 +13,8 @@ cd avendb/spec
 lake build
 ```
 
-It needs [elan](https://github.com/leanprover/elan); `lean-toolchain` pins Lean 4.34.0, and a build takes seconds. It
+It needs [elan](https://github.com/leanprover/elan); `lean-toolchain` pins the Lean version, the one place it is named,
+and elan fetches it on any machine. A build takes about a minute. It
 fails when a proof breaks, when a scenario check in `Examples.lean` (`#guard`) doesn't hold, or when a file in
 `vectors/` no longer holds what the model answers. No proof uses `sorry`: a phase merges only once its theorems are
 proven ([Phases](#phases)).
