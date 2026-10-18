@@ -1,7 +1,8 @@
 <!--
 	A vault's sparks, its scratchpads (./sparks.js): every spark of the vault the acting vault reads, each an open canvas
-	of artifacts, text notes and other sparks, and the notes written before sparks, as a list (./SparkRow.svelte),
-	narrowed to those a story grows from, the old notes or a tag, the deleted ones apart. Picking some offers to make a
+	of artifacts, text notes and other sparks, and the notes written before sparks, as a list (./SparkRow.svelte) in
+	the middle of the layout every avenDB view has (./Frame.svelte), narrowed on its left to those a story grows from,
+	the old notes or a tag, the deleted ones apart. Picking some offers to make a
 	story from them, an idea of the story flow that names them among its sparks, or a spark that holds them all on its
 	canvas. A click opens a spark as a note opens (Note), its canvas first. At the foot, docked just above the app's
 	nav pill, one row to capture: a line of thought a spark of its own; links and dropped files each an artifact
@@ -12,6 +13,7 @@
 <script>
 	import { addingArtifact, ARTIFACT, fromFile, fromLink } from './artifacts.js';
 	import { mediaOf } from './files.js';
+	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import LegacyCopy from './LegacyCopy.svelte';
 	import { allowed, creatable, may } from './ops.js';
@@ -43,6 +45,8 @@
 	let only = $state('');
 	let bin = $state(false);
 	const binned = $derived(bin && deleted.length > 0);
+	/** whether there is anything to narrow, and so a list on the left */
+	const listed = $derived(sparks.length > 0 || deleted.length > 0);
 	const shown = $derived.by(() => {
 		if (binned) return deleted;
 		if (only.startsWith('#')) return sparks.filter((e) => e.tags?.includes(only.slice(1)));
@@ -179,38 +183,42 @@
 	}
 </script>
 
-<LegacyCopy {world} {vault} {actor} {api} {busy} />
-
-{#if sparks.length || deleted.length}
-	<nav class="filter" aria-label="Narrow the sparks">
-		<button class="chip" class:on={!only && !binned} aria-pressed={!only && !binned} onclick={() => ([only, bin] = ['', false])}
-			>All {sparks.length}</button
+<!-- on the left, what the list is narrowed to: all of them, those in stories, the old notes, the deleted, or a tag -->
+{#snippet narrow()}
+	<h3 class="nav-group">Sparks</h3>
+	<button class="nav-item" class:on={!only && !binned} aria-pressed={!only && !binned} data-pick onclick={() => ([only, bin] = ['', false])}
+		><Icon name="spark" size={16} /><span>All</span><small>{sparks.length}</small></button
+	>
+	{#if storied.length}
+		{@const on = only === 'stories' && !binned}
+		<button class="nav-item" class:on aria-pressed={on} data-pick onclick={() => ([only, bin] = [on ? '' : 'stories', false])}
+			><Icon name="story" size={16} /><span>In stories</span><small>{storied.length}</small></button
 		>
-		{#if storied.length}
-			{@const on = only === 'stories' && !binned}
-			<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : 'stories', false])}
-				><Icon name="story" size={12} /> In stories <small>{storied.length}</small></button
-			>
-		{/if}
-		{#if notes.length}
-			{@const on = only === 'notes' && !binned}
-			<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : 'notes', false])}
-				><Icon name="note" size={12} /> Notes <small>{notes.length}</small></button
-			>
-		{/if}
+	{/if}
+	{#if notes.length}
+		{@const on = only === 'notes' && !binned}
+		<button class="nav-item" class:on aria-pressed={on} data-pick onclick={() => ([only, bin] = [on ? '' : 'notes', false])}
+			><Icon name="note" size={16} /><span>Notes</span><small>{notes.length}</small></button
+		>
+	{/if}
+	{#if deleted.length}
+		<button class="nav-item" class:on={binned} aria-pressed={binned} data-pick onclick={() => (bin = !binned)}
+			><Icon name="trash" size={16} /><span>Deleted</span><small>{deleted.length}</small></button
+		>
+	{/if}
+	{#if tags.length}
+		<h3 class="nav-group">Tags</h3>
 		{#each tags as t (t.tag)}
 			{@const on = only === `#${t.tag}` && !binned}
-			<button class="chip tag" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : `#${t.tag}`, false])}
-				>#{t.tag} <small>{t.uses}</small></button
+			<button class="nav-item" class:on aria-pressed={on} data-pick onclick={() => ([only, bin] = [on ? '' : `#${t.tag}`, false])}
+				><Icon name="tag" size={16} /><span>{t.tag}</span><small>{t.uses}</small></button
 			>
 		{/each}
-		{#if deleted.length}
-			<button class="chip bin" class:on={binned} aria-pressed={binned} onclick={() => (bin = !binned)}
-				><Icon name="trash" size={12} /> Deleted <small>{deleted.length}</small></button
-			>
-		{/if}
-	</nav>
-{/if}
+	{/if}
+{/snippet}
+
+<Frame nav={listed ? narrow : undefined} navLabel="Narrow the sparks" navIcon="spark">
+<LegacyCopy {world} {vault} {actor} {api} {busy} />
 
 {#if binned}
 	<p class="soft binned">Deleted sparks keep every edit. Open one to bring it back.</p>
@@ -244,10 +252,11 @@
 {#if hidden > 0 && seen.length}
 	<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
 {/if}
+</Frame>
 
 <!-- docked just above the app's nav pill: the sparks picked, or one row to capture -->
 {#if pickedNow.length}
-	<div class="dock picked" role="region" aria-label="The sparks picked">
+	<div class="dock picked" class:beside={listed} role="region" aria-label="The sparks picked">
 		<b>{pickedNow.length} picked</b>
 		<button
 			class="btn primary"
@@ -268,6 +277,7 @@
 {:else if asked}
 	<form
 		class="dock capture"
+		class:beside={listed}
 		class:over
 		aria-label="Capture a spark"
 		title={unadded ? `${nameOf(as)} can’t add a spark here: ${unadded}` : undefined}
@@ -331,7 +341,7 @@
 {/if}
 
 <style>
-	/* one row docked just above the app's nav pill (--nav-room, src/app.css), over the pages' column on a wider screen */
+	/* one row docked just above the app's nav pill (--nav-room, src/app.css), over the middle column on a wider screen */
 	.dock {
 		position: fixed;
 		left: 0.5rem;
@@ -351,8 +361,12 @@
 
 	@media (min-width: 761px) {
 		.dock {
-			left: calc(15.5rem + 1rem);
 			right: 1rem;
+			left: 1rem;
+		}
+
+		.dock.beside {
+			left: calc(15.5rem + 1rem);
 		}
 	}
 
@@ -479,41 +493,8 @@
 		gap: 0.3rem;
 	}
 
-	.filter {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-		margin: 0 0 1rem;
-	}
-
-	.filter button {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		border: 1px solid transparent;
-		font: inherit;
-		font-size: 0.78rem;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.filter button small {
-		color: var(--soft);
-	}
-
-	.filter button.on {
-		border-color: var(--accent);
-		background: #d6e8e4;
-		color: #1f4f47;
-	}
-
-	.filter .tag {
-		background: #e4e9f3;
-		color: #2b3f63;
-	}
-
 	.binned {
-		margin: -0.4rem 0 1rem;
+		margin: 0 0 1rem;
 		font-size: 0.82rem;
 	}
 

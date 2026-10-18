@@ -1,9 +1,9 @@
 <!--
-	What a spark's canvas (./SparkCanvas.svelte) can take, beside it on its page (Note): every artifact of its vault
-	(./artifacts.js), the newest first, and its other sparks, found by their words or by what they are. Each is dragged
-	onto the canvas, to land where it is let go, or put on it under the rest with its own button, where the hand has no
-	pointer to drag with. What the canvas holds already is left out. Each is one op on the canvas's line, for the
-	acting vault, as the device allows it (`may`).
+	What a spark's canvas (./SparkCanvas.svelte) can take, in the left side of its page (Note, ./Frame.svelte): every
+	artifact of its vault (./artifacts.js), the newest first, and its other sparks, found by their words or, in the rows
+	over them, by what they are. Each is dragged onto the canvas, to land where it is let go, or put on it under the rest
+	with its own button, where the hand has no pointer to drag with. What the canvas holds already is left out. Each is
+	one op on the canvas's line, for the acting vault, as the device allows it (`may`).
 -->
 <script>
 	import { entryOf, fromWords, isArtifact, LOOK_NAME, LOOKS, lookOf, youtubePicture } from './artifacts.js';
@@ -108,17 +108,21 @@
 
 	/** Look `l`'s icon. @param {string} l */
 	const iconOf = (l) => LOOKS.find(([k]) => k === l)?.[2] ?? 'artifact';
+	/** The icon of what it shows, `k`: the sparks, else every artifact or those of one look. @param {string} k */
+	const kindIcon = (k) => (k === 'sparks' ? 'spark' : iconOf(k));
 </script>
 
 <section class="shelf" aria-label="Artifacts and sparks to put on the canvas">
-	<input class="field" type="search" bind:value={find} placeholder="Find an artifact or a spark" aria-label="Find an artifact or a spark" />
-	<div class="kinds" role="group" aria-label="Which to show">
+	<input class="nav-search" type="search" bind:value={find} placeholder="Find an artifact or a spark" aria-label="Find an artifact or a spark" />
+	<h3 class="nav-group">Show</h3>
+	<div role="group" aria-label="Which to show">
 		{#each kinds as [k, name, n] (k)}
-			<button class="chip" class:on={only === k} aria-pressed={only === k} onclick={() => ((only = String(k)), (room = 60))}
-				>{name} <small>{n}</small></button
+			<button class="nav-item" class:on={only === k} aria-pressed={only === k} onclick={() => ((only = String(k)), (room = 60))}
+				><Icon name={kindIcon(String(k))} size={16} /><span>{name}</span><small>{n}</small></button
 			>
 		{/each}
 	</div>
+	<h3 class="nav-group">Not on the canvas yet</h3>
 	{#if edits}
 		<p class="hint soft">Drag one onto the canvas, or put it there with +.</p>
 	{/if}
@@ -169,46 +173,8 @@
 </section>
 
 <style>
-	.shelf {
-		display: flex;
-		flex-direction: column;
-		gap: 0.55rem;
-	}
-
-	.shelf .field {
-		box-sizing: border-box;
-		width: 100%;
-	}
-
-	.kinds {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-	}
-
-	.kinds .chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		border: 1px solid transparent;
-		color: inherit;
-		font: inherit;
-		font-size: 0.74rem;
-		cursor: pointer;
-	}
-
-	.kinds .chip small {
-		color: var(--soft);
-	}
-
-	.kinds .chip.on {
-		border-color: var(--accent);
-		background: #d6e8e4;
-		color: #1f4f47;
-	}
-
 	.hint {
-		margin: 0 0.2rem;
+		margin: 0 0.6rem 0.5rem;
 		font-size: 0.78rem;
 	}
 
@@ -328,6 +294,6 @@
 	}
 
 	.more {
-		align-self: flex-start;
+		margin-top: 0.5rem;
 	}
 </style>

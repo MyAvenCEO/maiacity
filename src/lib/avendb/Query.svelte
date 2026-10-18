@@ -1,12 +1,15 @@
 <!--
-	The studio's query console, as a database studio's SQL editor: any op of avenDB's ops engine as JSON (./ops.js,
-	avendb/docs/ARCHITECTURE.md §8), run on what this device holds, whatever the schema of the records it reads or
-	changes. A query shows its rows as a table, with the selector its labels picked them by before any entry was opened:
-	a share's selector, the very one a share over those entries would hold. A change acts as the acting vault, unless
-	the op names another (`as`), and the rules judge it as they judge any peer's edit. The examples fill it in for the
-	vault looked at.
+	The studio's query console, as a database studio's SQL editor, in the layout every avenDB view has (./Frame.svelte):
+	on the left the examples, the reads and the changes, each filling it in for the vault looked at; in the middle the
+	console, any op of avenDB's ops engine as JSON (./ops.js, avendb/docs/ARCHITECTURE.md §8), run on what this device
+	holds, whatever the schema of the records it reads or changes, and what it answered. A query shows its rows as a
+	table, with the selector its labels picked them by before any entry was opened: a share's selector, the very one a
+	share over those entries would hold. A change acts as the acting vault, unless the op names another (`as`), and the
+	rules judge it as they judge any peer's edit.
 -->
 <script>
+	import Frame from './Frame.svelte';
+	import Icon from './Icon.svelte';
 	import { cell } from './db.js';
 	import { acts } from './ops.js';
 	import { count, nameOf, short, whereWords } from './vaults.js';
@@ -20,11 +23,13 @@
 	const as = $derived(world.vaults.find((v) => v.id === actor));
 	const notes = $derived(world.entries.filter((e) => e.vault === vault && e.type === 'note'));
 
-	/** @typedef {{ name: string, op: object, change?: boolean }} Example */
-	/** The examples, for the vault looked at: each a name, its op, and whether it changes anything. */
+	/** @typedef {import('svelte').ComponentProps<typeof Icon>['name']} IconName */
+	/** @typedef {{ name: string, icon: IconName, op: object, change?: boolean }} Example */
+	/** The examples, for the vault looked at: each a name, its icon, its op, and whether it changes anything. */
 	const examples = $derived(/** @type {Example[]} */ ([
 		{
 			name: 'Notes',
+			icon: 'note',
 			op: {
 				op: 'query',
 				vault,
@@ -36,6 +41,7 @@
 		},
 		{
 			name: 'Notes that say “plan”',
+			icon: 'search',
 			op: {
 				op: 'query',
 				vault,
@@ -45,6 +51,7 @@
 		},
 		{
 			name: 'Todos left',
+			icon: 'todo',
 			op: {
 				op: 'query',
 				vault,
@@ -55,12 +62,14 @@
 		},
 		...notes.slice(0, 1).map((n) => ({
 			name: 'A note’s history',
+			icon: 'history',
 			op: { op: 'history', entry: n.entry, limit: 5 }
 		})),
-		{ name: 'Schemas', op: { op: 'schemas', vault } },
-		{ name: 'Its shares', op: { op: 'shares', over: vault } },
+		{ name: 'Schemas', icon: 'schema', op: { op: 'schemas', vault } },
+		{ name: 'Its shares', icon: 'share', op: { op: 'shares', over: vault } },
 		{
 			name: 'Add a todo',
+			icon: 'plus',
 			change: true,
 			op: { op: 'create', vault, type: 'todo', value: { kind: 'todo', title: 'Written from the console' } }
 		}
@@ -83,6 +92,13 @@
 
 	/** @param {object} op */
 	const fill = (op) => ([text, out, bad] = [JSON.stringify(op, null, 2), null, '']);
+	/** the examples on the left: the reads, then the changes */
+	const groups = $derived([
+		{ group: 'Reads', list: examples.filter((x) => !x.change) },
+		{ group: 'Changes', list: examples.filter((x) => x.change) }
+	]);
+	/** whether example `x` is what the console holds, as it filled it in @param {Example} x */
+	const filling = (x) => text === JSON.stringify(x.op, null, 2);
 
 	async function run() {
 		/** @type {any} */
@@ -127,76 +143,82 @@
 	const fields = $derived([...new Set((rows ?? []).flatMap((r) => Object.keys(r.record ?? {})))]);
 </script>
 
-<p class="lead soft">
-	Every read and change of avenDB is one op, whatever the schema of the records it touches: the same JSON this page
-	and the Mac app send. Reads run on what this device holds; a change acts as <b>{nameOf(as)}</b>, unless it names
-	another vault (<code>as</code>), and the rules judge it as they judge any device's.
-</p>
-
-<div class="examples row" aria-label="Examples">
-	{#each examples as x (x.name)}
-		<button class="chip pick" class:change={x.change} onclick={() => fill(x.op)}>
-			{x.name}{x.change ? ' · a change' : ''}
-		</button>
+<!-- the left: the examples, the reads, then the changes -->
+{#snippet presets()}
+	{#each groups as g (g.group)}
+		<h3 class="nav-group">{g.group}</h3>
+		{#each g.list as x (x.name)}
+			<button class="nav-item" class:on={filling(x)} aria-pressed={filling(x)} data-pick onclick={() => fill(x.op)}
+				><Icon name={x.icon} size={16} /><span>{x.name}</span></button
+			>
+		{/each}
 	{/each}
-</div>
+{/snippet}
 
-<div class="editor">
-	<textarea bind:value={text} onkeydown={keys} spellcheck="false" aria-label="The op, as JSON" rows="12"></textarea>
-	<div class="row">
-		<button class="btn primary" disabled={running} onclick={run}>{running ? 'Running…' : 'Run'}</button>
-		<small class="soft">Ctrl+Enter or ⌘Enter</small>
-		{#if out && !running}<small class="soft took">{ms} ms</small>{/if}
-	</div>
-</div>
-
-{#if bad}
-	<p class="error">{bad}</p>
-{:else if out && 'refused' in out}
-	<div class="refused">
-		<span class="chip bad">{out.refused}</span>
-		<span>{out.why}{batch(out)}</span>
-	</div>
-{:else if rows}
-	<p class="picked soft">
-		{count(out.ok.count, 'row')}{out.ok.count > rows.length ? `, ${rows.length} shown` : ''}. Picked by its labels
-		before any entry was opened, as a share selects: <b>{whereWords(out.ok.plan, world)}</b>
-		<code>{JSON.stringify(out.ok.plan)}</code>
+<Frame nav={presets} navLabel="Examples" navIcon="code">
+	<p class="lead soft">
+		Every read and change of avenDB is one op, whatever the schema of the records it touches: the same JSON this page
+		and the Mac app send. Reads run on what this device holds; a change acts as <b>{nameOf(as)}</b>, unless it names
+		another vault (<code>as</code>), and the rules judge it as they judge any device's.
 	</p>
-	{#if rows.length}
-		<div class="grid">
-			<table>
-				<thead>
-					<tr>
-						<th>entry</th>
-						<th>type</th>
-						<th title="Its tags now, outside its record: what shares select it by">entry_tags</th>
-						{#each fields as f (f)}<th>{f}</th>{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each rows as r (r.entry)}
-						<tr>
-							<td class="sys mono" title={r.entry}>
-								{#if r.type === 'note'}
-									<button class="open" onclick={() => onopen(r.entry)}>{short(r.entry)}</button>
-								{:else}{short(r.entry)}{/if}
-							</td>
-							<td class="sys">{r.type}</td>
-							<td class="sys">{r.tags.join(', ')}</td>
-							{#each fields as f (f)}
-								{@const v = cell(r.record?.[f])}
-								<td class={v.kind} title={whole(r.record?.[f])}>{v.text}</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+
+	<div class="editor">
+		<textarea bind:value={text} onkeydown={keys} spellcheck="false" aria-label="The op, as JSON" rows="12"></textarea>
+		<div class="row">
+			<button class="btn primary" disabled={running} onclick={run}>{running ? 'Running…' : 'Run'}</button>
+			<small class="soft">Ctrl+Enter or ⌘Enter</small>
+			{#if out && !running}<small class="soft took">{ms} ms</small>{/if}
 		</div>
+	</div>
+
+	{#if bad}
+		<p class="error">{bad}</p>
+	{:else if out && 'refused' in out}
+		<div class="refused">
+			<span class="chip bad">{out.refused}</span>
+			<span>{out.why}{batch(out)}</span>
+		</div>
+	{:else if rows}
+		<p class="picked soft">
+			{count(out.ok.count, 'row')}{out.ok.count > rows.length ? `, ${rows.length} shown` : ''}. Picked by its labels
+			before any entry was opened, as a share selects: <b>{whereWords(out.ok.plan, world)}</b>
+			<code>{JSON.stringify(out.ok.plan)}</code>
+		</p>
+		{#if rows.length}
+			<div class="grid">
+				<table>
+					<thead>
+						<tr>
+							<th>entry</th>
+							<th>type</th>
+							<th title="Its tags now, outside its record: what shares select it by">entry_tags</th>
+							{#each fields as f (f)}<th>{f}</th>{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each rows as r (r.entry)}
+							<tr>
+								<td class="sys mono" title={r.entry}>
+									{#if r.type === 'note'}
+										<button class="open" onclick={() => onopen(r.entry)}>{short(r.entry)}</button>
+									{:else}{short(r.entry)}{/if}
+								</td>
+								<td class="sys">{r.type}</td>
+								<td class="sys">{r.tags.join(', ')}</td>
+								{#each fields as f (f)}
+									{@const v = cell(r.record?.[f])}
+									<td class={v.kind} title={whole(r.record?.[f])}>{v.text}</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	{:else if out}
+		<pre class="json">{JSON.stringify(out.ok, null, 2)}</pre>
 	{/if}
-{:else if out}
-	<pre class="json">{JSON.stringify(out.ok, null, 2)}</pre>
-{/if}
+</Frame>
 
 <style>
 	.lead {
@@ -204,26 +226,6 @@
 		margin: 0 0 0.9rem;
 		font-size: 0.86rem;
 		line-height: 1.5;
-	}
-
-	.examples {
-		margin-bottom: 0.7rem;
-	}
-
-	.pick {
-		border: 1px solid transparent;
-		font: inherit;
-		font-size: 0.76rem;
-		cursor: pointer;
-	}
-
-	.pick:hover {
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
-	.pick.change {
-		background: #efe3c8;
 	}
 
 	.editor {

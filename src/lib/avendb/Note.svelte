@@ -1,22 +1,25 @@
 <!--
-	One note as a docs app shows a document, the whole screen: at the top its title, its vault, its tags, its edits, the
-	line being edited, who it is shared with and Share (this note alone, or a rule its tags match); on the left its main
-	line, its proposals and its variants, each a line of its own to switch to, and its copies, the notes made from it;
-	in the middle the note on the line picked, as a page, to edit there, and what a proposal changes since it started, to merge it
-	into main, as a pull request merges, or bring main's changes in: a merge keeps every change of both lines, and where
-	both changed the same words, main keeps its own unless the person takes the proposal's there; a conflict on a row
-	of a record that holds rows says where under it both changed it, at any depth ("the text of row 11 of its kids");
-	every edit of both stays in the history. On the right its history, every edit of that line, newest first, each
-	with what it changed, word by word, or for a record that is no document the places it changed, at any depth, who
-	made it, and the version it made, to view, restore, undo or propose from. A variant is a line that stays open
-	beside main and follows it: each merge into main brings main into it, and it keeps its own where both changed one
-	place; its numbers are its own ("Silkie v3"), and it says which main version it holds. A copy is a new note with
-	what a line reads now, whose first edit names that note and that version by the hashes of its edits (avendb's
-	`fork_mark`): its history goes on into the original's edits up to that version, for whoever reads both, and the
-	original lists its copies by the version each came from. Delete marks the note deleted, so Sparks lists it apart,
-	and its page offers to bring it back; every edit of it stays. All of it acts for the acting vault, whose caps the
-	device checks as any peer does: a note it only reads, it reads, every version of it; and a button offers what the
-	ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a vault that may only
+	One note as a docs app shows a document, the whole screen: at the top, in a bar of its own over the layout every
+	avenDB view has (./Frame.svelte, bare), its title, its vault, its tags, its edits, the line being edited, who it is
+	shared with and Share (this note alone, or a rule its tags match); on the left, on a spark, what its canvas can take
+	(./SparkShelf.svelte); in the middle the note on the line picked, as a page, to edit there (a spark's canvas, an
+	article as it is read), and what a proposal changes since it started, to merge it into main, as a pull request
+	merges, or bring main's changes in: a merge keeps every change of both lines, and where both changed the same words,
+	main keeps its own unless the person takes the proposal's there; a conflict on a row of a record that holds rows says
+	where under it both changed it, at any depth ("the text of row 11 of its kids"); every edit of both stays in the
+	history. On the right, in two tabs, its history, every edit of that line, newest first, each with what it changed,
+	word by word, or for a record that is no document the places it changed, at any depth, who made it, and the version
+	it made, to view, restore, undo or propose from; and its versions, its main line, its proposals and its variants,
+	each a line of its own to switch to, and its copies, the notes made from it. Narrower, the right side slides in from
+	the round button at the bottom right, and on a phone the left one from the bottom left. A variant is a line that
+	stays open beside main and follows it: each merge into main brings main into it, and it keeps its own where both
+	changed one place; its numbers are its own ("Silkie v3"), and it says which main version it holds. A copy is a new
+	note with what a line reads now, whose first edit names that note and that version by the hashes of its edits
+	(avendb's `fork_mark`): its history goes on into the original's edits up to that version, for whoever reads both,
+	and the original lists its copies by the version each came from. Delete marks the note deleted, so Sparks lists it
+	apart, and its page offers to bring it back; every edit of it stays. All of it acts for the acting vault, whose caps
+	the device checks as any peer does: a note it only reads, it reads, every version of it; and a button offers what
+	the ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a vault that may only
 	suggest changes proposes them, for one whose cap allows it to merge. An edit no rule allows, no reader counts, nor
 	anything built on it: the note says how many there are, and shows none of them.
 -->
@@ -25,6 +28,7 @@
 	import ArticleView from './ArticleView.svelte';
 	import { diff } from './diff.js';
 	import { flowsFor, stageOf } from './flows.js';
+	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import { allowed, blockText, deleting, may, read } from './ops.js';
@@ -98,9 +102,8 @@
 	let into = $state('');
 	let made = $state('');
 	let sharing = $state(false);
-	/** narrower, the side the lines and copies (left) or the history (right) slide in from, if open */
-	let drawer = $state(/** @type {'' | 'versions' | 'history'} */ (''));
-	/** on a spark, what its left side shows: what its canvas can take (./SparkShelf.svelte), or its lines and copies */
+	/** narrower, the side that slides in, if one does: a spark's shelf (`nav`) or the history and lines (`aside`) */
+	let open = $state(/** @type {'' | 'nav' | 'aside'} */ (''));
 	/** what the right side shows: the history, or the lines (main, the proposals, the variants) and the copies */
 	let side = $state(/** @type {'history' | 'lines'} */ ('history'));
 	/** the conflicts where the person takes the proposal's value, by place (`place`) */
@@ -395,7 +398,7 @@
 
 	/** Pick line `l` to show and edit. @param {string | null} l */
 	function pick(l) {
-		[line, viewing, naming, drawer] = [l, '', null, ''];
+		[line, viewing, naming, open] = [l, '', null, ''];
 	}
 
 	/** Name a new proposal from version `from`, `words` saying which. @param {string[]} from @param {string} words */
@@ -603,6 +606,263 @@
 			>{/if}{/each}
 {/snippet}
 
+<!-- on the left, on a spark’s latest: what its canvas can take (./SparkShelf.svelte) -->
+{#snippet shelfNav()}
+	{#if item && here}
+		<SparkShelf {world} {actor} {api} {busy} {entry} vault={item.vault} line={here.line} record={here.record} {writes} />
+	{/if}
+{/snippet}
+
+<!-- on the right: the line’s history, or its lines (main, the proposals, the variants) and its copies -->
+{#snippet historyAside()}
+	{#if here}
+		<div class="history">
+			<div class="sides" role="tablist" aria-label="What the side shows">
+				<button role="tab" class="side" class:on={side === 'history'} aria-selected={side === 'history'} onclick={() => (side = 'history')}
+					><Icon name="history" size={14} /> History</button
+				>
+				<button role="tab" class="side" class:on={side === 'lines'} aria-selected={side === 'lines'} onclick={() => (side = 'lines')}
+					><Icon name="proposal" size={14} /> Versions <small>{proposals.length + breeds.length + copies.length || ''}</small></button
+				>
+			</div>
+			{#if side === 'lines'}
+			<div class="lines">
+			<section>
+				<h4>Main</h4>
+				<button
+					class="line"
+					class:on={here.line === null}
+					aria-current={here.line === null ? 'true' : undefined}
+					onclick={() => pick(null)}
+				>
+					<i class="dot main"></i>
+					<span><b>Main</b><small>{count(main.history.length, 'edit')}</small></span>
+				</button>
+			</section>
+
+			<section>
+				<h4>Proposals <small>{proposals.length || ''}</small></h4>
+				{#each proposals as l (key(l.line))}
+					<button
+						class="line"
+						class:on={l.line === here.line}
+						style:--hue={hue(l.line ?? '')}
+						aria-current={l.line === here.line ? 'true' : undefined}
+						onclick={() => pick(l.line)}
+					>
+						<i class="dot"></i>
+						<span>
+							<b>{lineName(l)}</b>
+							<small>{(l.text ?? '') === (main.text ?? '') ? 'reads as main' : 'differs from main'} · {count(l.history.length, 'edit')}</small>
+						</span>
+					</button>
+				{:else}
+					<p class="hint soft">None yet. A proposal is a line of its own, to edit apart from main and then merge into it.</p>
+				{/each}
+				{#if writes}
+					{#if naming}
+						<div class="naming">
+							<label for="proposal-name">New {naming.kind === 'variant' ? 'variant' : 'proposal'}, from {naming.at}</label>
+							<input
+								id="proposal-name"
+								class="field"
+								placeholder="Its name"
+								bind:value={naming.name}
+								onkeydown={(e) => e.key === 'Enter' && propose()}
+							/>
+							<div class="row">
+								<button class="btn primary" disabled={busy || !naming.name.trim()} onclick={propose}
+									>{naming.kind === 'variant' ? 'Start it' : 'Propose'}</button
+								>
+								<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
+							</div>
+						</div>
+					{:else}
+						<button
+							class="btn add"
+							disabled={busy || !lets('propose')}
+							title={barred('propose')}
+							onclick={() => proposeFrom(here.heads, `the latest of ${at(here.line)}`)}
+						>
+							<Icon name="proposal" size={14} /> New proposal
+						</button>
+					{/if}
+				{/if}
+			</section>
+
+			<section>
+				<h4>Variants <small>{breeds.length || ''}</small></h4>
+				{#each breeds as l (key(l.line))}
+					<button
+						class="line"
+						class:on={l.line === here.line}
+						style:--hue={hue(l.line ?? '')}
+						aria-current={l.line === here.line ? 'true' : undefined}
+						onclick={() => pick(l.line)}
+					>
+						<i class="dot"></i>
+						<span>
+							<b>{lineName(l)}{l.version?.version ? ` v${l.version.version}` : ''}</b>
+							<small
+								>{l.behind ? 'main has changed since' : `holds main ${l.main ? versionWords(l.main) : ''}`} · {count(
+									l.history.length,
+									'edit'
+								)}</small
+							>
+						</span>
+					</button>
+				{:else}
+					<p class="hint soft">
+						None yet. A variant is a line that stays beside main, as breeds of one animal do: each merge into main comes
+						into it, and it keeps its own where both changed one place.
+					</p>
+				{/each}
+				{#if writes && !naming}
+					<button
+						class="btn add"
+						disabled={busy || !lets('variant')}
+						title={barred('variant')}
+						onclick={() => varyFrom(main.heads, `the latest of main`)}
+					>
+						<Icon name="variant" size={14} /> New variant
+					</button>
+				{/if}
+			</section>
+
+			<section class="variants">
+				<h4>Copies <small>{copies.length || ''}</small></h4>
+				{#if origin}
+					<a class="variant" href="#notes/{origin.entry}">
+						<Icon name="back" size={13} /> <span>Copy of <b>“{origin.title}”</b></span>
+					</a>
+				{:else if item?.forkOf}
+					<p class="hint soft">A copy of a note {nameOf(as)} doesn’t read.</p>
+				{/if}
+				{#each copies as v (v.entry)}
+					<a class="variant" href="#notes/{v.entry}">
+						<Icon name="variant" size={13} />
+						<span><b>“{v.title}”</b> <small>in {vaultName(v.vault)} {madeAt(v)}</small></span>
+					</a>
+				{/each}
+				{#if targets.length}
+					{#if targets.length > 1}
+						<select class="field" bind:value={into} aria-label="Make the copy in">
+							{#each targets as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
+						</select>
+					{/if}
+					<button class="btn add" disabled={busy} onclick={fork}>
+						<Icon name="variant" size={14} /> Make a copy
+					</button>
+					<p class="hint soft">
+						A new note{targets.length === 1 ? ` in ${nameOf(targets[0])}` : ''}, with its tags, of what {at(here.line)} reads
+						now. Its history goes on into this note's, up to this version.
+					</p>
+					{#if made}
+						<p class="made">Made a copy. <a href="#notes/{made}">Open it</a></p>
+					{/if}
+				{/if}
+			</section>
+			</div>
+			{:else}
+			<header>
+				<h4>History</h4>
+				<small class="soft">{count(history.length, 'edit')} of {at(here.line)}, newest first</small>
+			</header>
+			<ol>
+				{#each history as e (e.id)}
+					{@const wrote = e.kind === 'edit' || e.kind === 'merge'}
+					<li class={e.kind} class:on={e.id === viewing}>
+						<button
+							class="what"
+							disabled={e.kind === 'sealed' || e.text === null}
+							aria-pressed={e.id === viewing}
+							onclick={() => (viewing = viewing === e.id ? '' : e.id)}
+						>
+							<b>{what(e)}</b>
+							<span class="n mono">#{e.n}</span>
+							{#if e.version && (e.line === null || lineOf(e.line).variant)}<span
+									class="release chip"
+									title="Version {e.version} of {at(e.line)}">v{e.version}</span
+								>{/if}
+						</button>
+						<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
+						{#if wrote && e.text !== null && (e.before ?? '') !== e.text}
+							<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
+						{:else if wrote && changed[e.id]}
+							{@const said = changed[e.id]}
+							<ul class="changes">
+								{#each said.slice(0, 4) as w, i (i)}<li>{w}</li>{/each}
+								{#if said.length > 4}<li class="soft">and {count(said.length - 4, 'change')} more</li>{/if}
+							</ul>
+						{/if}
+						{#if e.id === viewing}
+							<ol class="chain" aria-label="Who stands behind it">
+								{#each chainSteps(world, e.chain) as step, i (i)}<li>{step.says}</li>{/each}
+							</ol>
+						{/if}
+						{#if e.id === viewing && writes}
+							<div class="row actions">
+								{#if e.text !== null && e.id !== latest}
+									<button
+										class="btn quiet"
+										disabled={busy || !lets('restore')}
+										title={barred('restore')}
+										onclick={() => restore(e.id)}>Restore</button
+									>
+								{/if}
+								{#if e.kind === 'edit' && e.deps.length}
+									<button
+										class="btn quiet"
+										disabled={busy || !lets('undo')}
+										title={barred('undo')}
+										onclick={() => undo(e.id)}>Undo</button
+									>
+								{/if}
+								<button
+									class="btn quiet"
+									disabled={busy || !lets('propose')}
+									title={barred('propose')}
+									onclick={() => proposeFrom([e.id], versionOf(e))}
+								>
+									Propose from here
+								</button>
+							</div>
+						{/if}
+					</li>
+				{/each}
+			</ol>
+			{#if item?.forkOf}
+				<section class="origin" aria-label="The history it goes on into">
+					{#if origin}
+						<p class="from">
+							<Icon name="variant" size={13} />
+							<span>
+								Made from <a href="#notes/{origin.entry}">“{origin.title}”</a>{inherited.length
+									? ` at edit #${inherited[0].n}`
+									: ''}: its history goes on there
+							</span>
+						</p>
+						<ol>
+							{#each inherited as e (e.id)}
+								<li class={e.kind}>
+									<span class="what"><b>{theirs(e)}</b> <span class="n mono">#{e.n}</span></span>
+									<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
+									{#if (e.kind === 'edit' || e.kind === 'merge') && e.text !== null && (e.before ?? '') !== e.text}
+										<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
+									{/if}
+								</li>
+							{/each}
+						</ol>
+					{:else}
+						<p class="hint soft">Made from a note {nameOf(as)} doesn’t read: its history goes on there.</p>
+					{/if}
+				</section>
+			{/if}
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
 <div class="doc">
 	<header class="top">
 		<a class="back" href={back} title={backTo} aria-label={backTo}><Icon name="back" size={20} /></a>
@@ -688,24 +948,6 @@
 		</div>
 	</header>
 
-	{#if here}
-		<!-- narrower: the sides' own buttons, either side of the nav pill -->
-		{#if shelf}
-			<button
-				class="drawer left"
-				aria-pressed={drawer === 'versions'}
-				aria-label="Artifacts"
-				onclick={() => (drawer = drawer === 'versions' ? '' : 'versions')}><Icon name="artifact" size={20} /></button
-			>
-		{/if}
-		<button
-			class="drawer right"
-			aria-pressed={drawer === 'history'}
-			aria-label="History and versions"
-			onclick={() => (drawer = drawer === 'history' ? '' : 'history')}><Icon name="history" size={20} /></button
-		>
-	{/if}
-
 	{#if item?.deleted}
 		<div class="gone" role="status">
 			<Icon name="trash" size={16} />
@@ -724,465 +966,218 @@
 		</div>
 	{/if}
 
-	{#if !item}
-		<p class="soft pad">This browser doesn’t know this note.</p>
-	{:else if !loaded}
-		<p class="soft pad">Opening the note…</p>
-	{:else if !note || !here}
-		<div class="empty pad">This browser holds no edit of this note {nameOf(as)} may read.</div>
-	{:else}
-		<div class="body" class:bare={!shelf}>
-			{#if drawer}
-				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-				<div class="scrim" onclick={() => (drawer = '')}></div>
-			{/if}
-			{#if shelf}
-				<aside class="versions" class:open={drawer === 'versions'} aria-label="Artifacts">
-					<button class="btn quiet shut" aria-label="Close" onclick={() => (drawer = '')}
-						><Icon name="close" size={16} /></button
-					>
-					{#if item}
-						<SparkShelf {world} {actor} {api} {busy} {entry} vault={item.vault} line={here.line} record={here.record} {writes} />
-					{/if}
-				</aside>
-			{/if}
-
-			<main class="canvas" class:sheet={article} class:spread={spark && !seen}>
-				{#if seen}
-					<div class="banner old">
-						<span class="chip warn">{versionOf(seen)}</span>
-						<span class="soft">as it was after: {what(seen)}</span>
-						<span class="actions">
-							{#if writes && seen.id !== latest}
-								<button
-									class="btn primary"
-									disabled={busy || !lets('restore')}
-									title={barred('restore')}
-									onclick={() => restore(seen.id)}>Restore this version</button
-								>
-							{/if}
-							{#if writes}
-								<button
-									class="btn"
-									disabled={busy || !lets('propose')}
-									title={barred('propose')}
-									onclick={() => proposeFrom([seen.id], versionOf(seen))}
-								>
-									Propose from here
-								</button>
-							{/if}
-							<button class="btn quiet" onclick={() => (viewing = '')}>Back to the latest</button>
-						</span>
-					</div>
-				{:else if here.variant}
-					<div class="banner proposal" style:--hue={hue(here.line ?? '')}>
-						<span>
-							<Icon name="variant" size={15} />
-							<span>
-								Variant <b>“{lineName(here)}”</b>{here.version ? ` · ${versionWords(here.version)}` : ''}{here.main
-									? `, holds main ${versionWords(here.main)}`
-									: ''}{here.behind ? '. Main has changed since' : ''}
-							</span>
-						</span>
-						{#if writes && here.behind}
-							<span class="actions">
-								<button
-									class="btn primary"
-									disabled={busy || !lets('update')}
-									title={barred('update') ?? 'Main’s changes come in; where both changed one place, the variant keeps its own'}
-									onclick={() => merge(null, here.line)}>Bring main in</button
-								>
-							</span>
-						{/if}
-					</div>
-				{:else if here.line !== null}
-					{@const start = numbered.find((e) => e.id === here.from?.[0])}
-					<div class="banner proposal" style:--hue={hue(here.line)}>
-						<span>
-							<Icon name="proposal" size={15} />
-							<span>Proposal <b>“{lineName(here)}”</b>{#if start}, from {versionOf(start)} of {at(start.line)}{/if}</span>
-						</span>
-						{#if writes}
-							<span class="actions">
-								<button
-									class="btn primary"
-									disabled={busy || !lets('merge')}
-									title={barred('merge')}
-									onclick={() => merge(here.line, null)}>Merge into main</button
-								>
-								<button
-									class="btn"
-									disabled={busy || !lets('update')}
-									title={barred('update')}
-									onclick={() => merge(null, here.line)}>Update from main</button
-								>
-							</span>
-						{/if}
-					</div>
-				{/if}
-
-				{#if article && item}
-					<!-- an article reads as it is read, and is edited where it stands (./ArticleView.svelte) -->
+	<div class="room">
+		<Frame
+			bare
+			flush
+			bind:open
+			nav={item && here && shelf ? shelfNav : undefined}
+			aside={item && here ? historyAside : undefined}
+			navLabel="Artifacts"
+			navIcon="artifact"
+			asideLabel="History and versions"
+			asideIcon="history"
+		>
+			{#if !item}
+				<p class="soft pad">This browser doesn’t know this note.</p>
+			{:else if !loaded}
+				<p class="soft pad">Opening the note…</p>
+			{:else if !note || !here}
+				<div class="empty pad">This browser holds no edit of this note {nameOf(as)} may read.</div>
+			{:else}
+				<main class="canvas" class:sheet={article} class:spread={spark && !seen}>
 					{#if seen}
-						<ArticleView {world} {api} {item} title={seen.title ?? ''} text={seen.text ?? ''} eyebrow={stage?.name ?? 'Article'} />
-					{:else}
-						<ArticleView
-							{world}
-							{api}
-							{item}
-							bind:title={() => titles[k] ?? '', (v) => (titles[k] = v)}
-							bind:text={() => drafts[k] ?? '', (v) => (drafts[k] = v)}
-							editable={writes && lets('write')}
-							renames={writes && lets('title')}
-							eyebrow={stage?.name ?? 'Article'}
-							onretitle={retitle}
-							onsave={save}
-						/>
-					{/if}
-				{:else}
-				<!-- a spark is its canvas, the artifacts, notes and sparks it holds, filling the middle; a note is its page -->
-				{#if spark && item && !seen}
-					<SparkCanvas
-						{world}
-						{actor}
-						{api}
-						{busy}
-						{entry}
-						vault={item.vault}
-						line={here.line}
-						record={here.record}
-						{writes}
-						words={here.text ?? ''}
-					/>
-				{:else}
-				<article class="paper" class:old={!!seen} class:short={spark}>
-					{#if seen}
-						<div class="text">{seen.text || '…'}</div>
-					{:else if writes && lets('write')}
-						<textarea
-							class="text"
-							use:grow={drafts[k]}
-							bind:value={drafts[k]}
-							onkeydown={keys}
-							placeholder="Start writing"
-							aria-label="The note’s text on {lineName(here)}"
-						></textarea>
-					{:else}
-						<div class="text">{here.text || '…'}</div>
-					{/if}
-				</article>
-				{/if}
-				{/if}
-
-				{#if seen && (seen.text ?? '') !== (here.text ?? '')}
-					<section class="against">
-						<h4>What {at(here.line)} has changed since</h4>
-						<p class="diff">{@render pieces(diff(seen.text ?? '', here.text ?? ''))}</p>
-					</section>
-				{:else if !seen && here.line !== null}
-					{@const base = here.base ?? main}
-					{@const conflicts = here.conflicts ?? []}
-					<section class="against">
-						<h4>What “{lineName(here)}” changes</h4>
-						{#if (base.text ?? '') === (here.text ?? '')}
-							<p class="soft">Nothing in its text since it started from main.</p>
-						{:else}
-							<p class="diff">{@render pieces(diff(base.text ?? '', here.text ?? ''))}</p>
-						{/if}
-						{#if (base.text ?? '') !== (main.text ?? '')}
-							<p class="hint soft">Main changed too since then. Merging keeps those changes.</p>
-						{/if}
-						{#if conflicts.length}
-							<div class="conflicts">
-								<h5>{count(conflicts.length, 'conflict')}: both changed the same place</h5>
-								{#each conflicts as c (place(c))}
-									<div class="conflict">
-										<b>{where(c)}</b>
-										{#each spots(c) as s (s.key)}
-											{#if s.words}<p class="spot">{s.words}</p>{/if}
-											<p><small class="soft">main</small> {holds(s.ours)}</p>
-											<p><small class="soft">“{lineName(here)}”</small> {holds(s.theirs)}</p>
-										{/each}
-										{#if writes}
-											<label>
-												<input type="checkbox" bind:checked={taking[place(c)]} />
-												Use “{lineName(here)}”’s here
-											</label>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-						<p class="hint soft">
-							Merging into main works as a pull request: main keeps every change it made, and all this proposal changed
-							comes in.{#if conflicts.length}
-								Where both changed the same words, main keeps its own unless you pick the proposal’s.{/if} Every edit of
-							both stays in the history.
-						</p>
-					</section>
-				{/if}
-			</main>
-
-			<aside class="history" class:open={drawer === 'history'} aria-label="History and versions">
-				<button class="btn quiet shut" aria-label="Close" onclick={() => (drawer = '')}
-					><Icon name="close" size={16} /></button
-				>
-				<div class="sides" role="tablist" aria-label="What the side shows">
-					<button role="tab" class="side" class:on={side === 'history'} aria-selected={side === 'history'} onclick={() => (side = 'history')}
-						><Icon name="history" size={14} /> History</button
-					>
-					<button role="tab" class="side" class:on={side === 'lines'} aria-selected={side === 'lines'} onclick={() => (side = 'lines')}
-						><Icon name="proposal" size={14} /> Versions <small>{proposals.length + breeds.length + copies.length || ''}</small></button
-					>
-				</div>
-				{#if side === 'lines'}
-				<div class="lines">
-				<section>
-					<h4>Main</h4>
-					<button
-						class="line"
-						class:on={here.line === null}
-						aria-current={here.line === null ? 'true' : undefined}
-						onclick={() => pick(null)}
-					>
-						<i class="dot main"></i>
-						<span><b>Main</b><small>{count(main.history.length, 'edit')}</small></span>
-					</button>
-				</section>
-
-				<section>
-					<h4>Proposals <small>{proposals.length || ''}</small></h4>
-					{#each proposals as l (key(l.line))}
-						<button
-							class="line"
-							class:on={l.line === here.line}
-							style:--hue={hue(l.line ?? '')}
-							aria-current={l.line === here.line ? 'true' : undefined}
-							onclick={() => pick(l.line)}
-						>
-							<i class="dot"></i>
-							<span>
-								<b>{lineName(l)}</b>
-								<small>{(l.text ?? '') === (main.text ?? '') ? 'reads as main' : 'differs from main'} · {count(l.history.length, 'edit')}</small>
-							</span>
-						</button>
-					{:else}
-						<p class="hint soft">None yet. A proposal is a line of its own, to edit apart from main and then merge into it.</p>
-					{/each}
-					{#if writes}
-						{#if naming}
-							<div class="naming">
-								<label for="proposal-name">New {naming.kind === 'variant' ? 'variant' : 'proposal'}, from {naming.at}</label>
-								<input
-									id="proposal-name"
-									class="field"
-									placeholder="Its name"
-									bind:value={naming.name}
-									onkeydown={(e) => e.key === 'Enter' && propose()}
-								/>
-								<div class="row">
-									<button class="btn primary" disabled={busy || !naming.name.trim()} onclick={propose}
-										>{naming.kind === 'variant' ? 'Start it' : 'Propose'}</button
-									>
-									<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
-								</div>
-							</div>
-						{:else}
-							<button
-								class="btn add"
-								disabled={busy || !lets('propose')}
-								title={barred('propose')}
-								onclick={() => proposeFrom(here.heads, `the latest of ${at(here.line)}`)}
-							>
-								<Icon name="proposal" size={14} /> New proposal
-							</button>
-						{/if}
-					{/if}
-				</section>
-
-				<section>
-					<h4>Variants <small>{breeds.length || ''}</small></h4>
-					{#each breeds as l (key(l.line))}
-						<button
-							class="line"
-							class:on={l.line === here.line}
-							style:--hue={hue(l.line ?? '')}
-							aria-current={l.line === here.line ? 'true' : undefined}
-							onclick={() => pick(l.line)}
-						>
-							<i class="dot"></i>
-							<span>
-								<b>{lineName(l)}{l.version?.version ? ` v${l.version.version}` : ''}</b>
-								<small
-									>{l.behind ? 'main has changed since' : `holds main ${l.main ? versionWords(l.main) : ''}`} · {count(
-										l.history.length,
-										'edit'
-									)}</small
-								>
-							</span>
-						</button>
-					{:else}
-						<p class="hint soft">
-							None yet. A variant is a line that stays beside main, as breeds of one animal do: each merge into main comes
-							into it, and it keeps its own where both changed one place.
-						</p>
-					{/each}
-					{#if writes && !naming}
-						<button
-							class="btn add"
-							disabled={busy || !lets('variant')}
-							title={barred('variant')}
-							onclick={() => varyFrom(main.heads, `the latest of main`)}
-						>
-							<Icon name="variant" size={14} /> New variant
-						</button>
-					{/if}
-				</section>
-
-				<section class="variants">
-					<h4>Copies <small>{copies.length || ''}</small></h4>
-					{#if origin}
-						<a class="variant" href="#notes/{origin.entry}">
-							<Icon name="back" size={13} /> <span>Copy of <b>“{origin.title}”</b></span>
-						</a>
-					{:else if item?.forkOf}
-						<p class="hint soft">A copy of a note {nameOf(as)} doesn’t read.</p>
-					{/if}
-					{#each copies as v (v.entry)}
-						<a class="variant" href="#notes/{v.entry}">
-							<Icon name="variant" size={13} />
-							<span><b>“{v.title}”</b> <small>in {vaultName(v.vault)} {madeAt(v)}</small></span>
-						</a>
-					{/each}
-					{#if targets.length}
-						{#if targets.length > 1}
-							<select class="field" bind:value={into} aria-label="Make the copy in">
-								{#each targets as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
-							</select>
-						{/if}
-						<button class="btn add" disabled={busy} onclick={fork}>
-							<Icon name="variant" size={14} /> Make a copy
-						</button>
-						<p class="hint soft">
-							A new note{targets.length === 1 ? ` in ${nameOf(targets[0])}` : ''}, with its tags, of what {at(here.line)} reads
-							now. Its history goes on into this note's, up to this version.
-						</p>
-						{#if made}
-							<p class="made">Made a copy. <a href="#notes/{made}">Open it</a></p>
-						{/if}
-					{/if}
-				</section>
-				</div>
-				{:else}
-				<header>
-					<h4>History</h4>
-					<small class="soft">{count(history.length, 'edit')} of {at(here.line)}, newest first</small>
-				</header>
-				<ol>
-					{#each history as e (e.id)}
-						{@const wrote = e.kind === 'edit' || e.kind === 'merge'}
-						<li class={e.kind} class:on={e.id === viewing}>
-							<button
-								class="what"
-								disabled={e.kind === 'sealed' || e.text === null}
-								aria-pressed={e.id === viewing}
-								onclick={() => (viewing = viewing === e.id ? '' : e.id)}
-							>
-								<b>{what(e)}</b>
-								<span class="n mono">#{e.n}</span>
-								{#if e.version && (e.line === null || lineOf(e.line).variant)}<span
-										class="release chip"
-										title="Version {e.version} of {at(e.line)}">v{e.version}</span
-									>{/if}
-							</button>
-							<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
-							{#if wrote && e.text !== null && (e.before ?? '') !== e.text}
-								<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
-							{:else if wrote && changed[e.id]}
-								{@const said = changed[e.id]}
-								<ul class="changes">
-									{#each said.slice(0, 4) as w, i (i)}<li>{w}</li>{/each}
-									{#if said.length > 4}<li class="soft">and {count(said.length - 4, 'change')} more</li>{/if}
-								</ul>
-							{/if}
-							{#if e.id === viewing}
-								<ol class="chain" aria-label="Who stands behind it">
-									{#each chainSteps(world, e.chain) as step, i (i)}<li>{step.says}</li>{/each}
-								</ol>
-							{/if}
-							{#if e.id === viewing && writes}
-								<div class="row actions">
-									{#if e.text !== null && e.id !== latest}
-										<button
-											class="btn quiet"
-											disabled={busy || !lets('restore')}
-											title={barred('restore')}
-											onclick={() => restore(e.id)}>Restore</button
-										>
-									{/if}
-									{#if e.kind === 'edit' && e.deps.length}
-										<button
-											class="btn quiet"
-											disabled={busy || !lets('undo')}
-											title={barred('undo')}
-											onclick={() => undo(e.id)}>Undo</button
-										>
-									{/if}
+						<div class="banner old">
+							<span class="chip warn">{versionOf(seen)}</span>
+							<span class="soft">as it was after: {what(seen)}</span>
+							<span class="actions">
+								{#if writes && seen.id !== latest}
 									<button
-										class="btn quiet"
+										class="btn primary"
+										disabled={busy || !lets('restore')}
+										title={barred('restore')}
+										onclick={() => restore(seen.id)}>Restore this version</button
+									>
+								{/if}
+								{#if writes}
+									<button
+										class="btn"
 										disabled={busy || !lets('propose')}
 										title={barred('propose')}
-										onclick={() => proposeFrom([e.id], versionOf(e))}
+										onclick={() => proposeFrom([seen.id], versionOf(seen))}
 									>
 										Propose from here
 									</button>
+								{/if}
+								<button class="btn quiet" onclick={() => (viewing = '')}>Back to the latest</button>
+							</span>
+						</div>
+					{:else if here.variant}
+						<div class="banner proposal" style:--hue={hue(here.line ?? '')}>
+							<span>
+								<Icon name="variant" size={15} />
+								<span>
+									Variant <b>“{lineName(here)}”</b>{here.version ? ` · ${versionWords(here.version)}` : ''}{here.main
+										? `, holds main ${versionWords(here.main)}`
+										: ''}{here.behind ? '. Main has changed since' : ''}
+								</span>
+							</span>
+							{#if writes && here.behind}
+								<span class="actions">
+									<button
+										class="btn primary"
+										disabled={busy || !lets('update')}
+										title={barred('update') ?? 'Main’s changes come in; where both changed one place, the variant keeps its own'}
+										onclick={() => merge(null, here.line)}>Bring main in</button
+									>
+								</span>
+							{/if}
+						</div>
+					{:else if here.line !== null}
+						{@const start = numbered.find((e) => e.id === here.from?.[0])}
+						<div class="banner proposal" style:--hue={hue(here.line)}>
+							<span>
+								<Icon name="proposal" size={15} />
+								<span>Proposal <b>“{lineName(here)}”</b>{#if start}, from {versionOf(start)} of {at(start.line)}{/if}</span>
+							</span>
+							{#if writes}
+								<span class="actions">
+									<button
+										class="btn primary"
+										disabled={busy || !lets('merge')}
+										title={barred('merge')}
+										onclick={() => merge(here.line, null)}>Merge into main</button
+									>
+									<button
+										class="btn"
+										disabled={busy || !lets('update')}
+										title={barred('update')}
+										onclick={() => merge(null, here.line)}>Update from main</button
+									>
+								</span>
+							{/if}
+						</div>
+					{/if}
+
+					{#if article && item}
+						<!-- an article reads as it is read, and is edited where it stands (./ArticleView.svelte) -->
+						{#if seen}
+							<ArticleView {world} {api} {item} title={seen.title ?? ''} text={seen.text ?? ''} eyebrow={stage?.name ?? 'Article'} />
+						{:else}
+							<ArticleView
+								{world}
+								{api}
+								{item}
+								bind:title={() => titles[k] ?? '', (v) => (titles[k] = v)}
+								bind:text={() => drafts[k] ?? '', (v) => (drafts[k] = v)}
+								editable={writes && lets('write')}
+								renames={writes && lets('title')}
+								eyebrow={stage?.name ?? 'Article'}
+								onretitle={retitle}
+								onsave={save}
+							/>
+						{/if}
+					{:else}
+					<!-- a spark is its canvas, the artifacts, notes and sparks it holds, filling the middle; a note is its page -->
+					{#if spark && item && !seen}
+						<SparkCanvas
+							{world}
+							{actor}
+							{api}
+							{busy}
+							{entry}
+							vault={item.vault}
+							line={here.line}
+							record={here.record}
+							{writes}
+							words={here.text ?? ''}
+						/>
+					{:else}
+					<article class="paper" class:old={!!seen} class:short={spark}>
+						{#if seen}
+							<div class="text">{seen.text || '…'}</div>
+						{:else if writes && lets('write')}
+							<textarea
+								class="text"
+								use:grow={drafts[k]}
+								bind:value={drafts[k]}
+								onkeydown={keys}
+								placeholder="Start writing"
+								aria-label="The note’s text on {lineName(here)}"
+							></textarea>
+						{:else}
+							<div class="text">{here.text || '…'}</div>
+						{/if}
+					</article>
+					{/if}
+					{/if}
+
+					{#if seen && (seen.text ?? '') !== (here.text ?? '')}
+						<section class="against">
+							<h4>What {at(here.line)} has changed since</h4>
+							<p class="diff">{@render pieces(diff(seen.text ?? '', here.text ?? ''))}</p>
+						</section>
+					{:else if !seen && here.line !== null}
+						{@const base = here.base ?? main}
+						{@const conflicts = here.conflicts ?? []}
+						<section class="against">
+							<h4>What “{lineName(here)}” changes</h4>
+							{#if (base.text ?? '') === (here.text ?? '')}
+								<p class="soft">Nothing in its text since it started from main.</p>
+							{:else}
+								<p class="diff">{@render pieces(diff(base.text ?? '', here.text ?? ''))}</p>
+							{/if}
+							{#if (base.text ?? '') !== (main.text ?? '')}
+								<p class="hint soft">Main changed too since then. Merging keeps those changes.</p>
+							{/if}
+							{#if conflicts.length}
+								<div class="conflicts">
+									<h5>{count(conflicts.length, 'conflict')}: both changed the same place</h5>
+									{#each conflicts as c (place(c))}
+										<div class="conflict">
+											<b>{where(c)}</b>
+											{#each spots(c) as s (s.key)}
+												{#if s.words}<p class="spot">{s.words}</p>{/if}
+												<p><small class="soft">main</small> {holds(s.ours)}</p>
+												<p><small class="soft">“{lineName(here)}”</small> {holds(s.theirs)}</p>
+											{/each}
+											{#if writes}
+												<label>
+													<input type="checkbox" bind:checked={taking[place(c)]} />
+													Use “{lineName(here)}”’s here
+												</label>
+											{/if}
+										</div>
+									{/each}
 								</div>
 							{/if}
-						</li>
-					{/each}
-				</ol>
-				{#if item?.forkOf}
-					<section class="origin" aria-label="The history it goes on into">
-						{#if origin}
-							<p class="from">
-								<Icon name="variant" size={13} />
-								<span>
-									Made from <a href="#notes/{origin.entry}">“{origin.title}”</a>{inherited.length
-										? ` at edit #${inherited[0].n}`
-										: ''}: its history goes on there
-								</span>
+							<p class="hint soft">
+								Merging into main works as a pull request: main keeps every change it made, and all this proposal changed
+								comes in.{#if conflicts.length}
+									Where both changed the same words, main keeps its own unless you pick the proposal’s.{/if} Every edit of
+								both stays in the history.
 							</p>
-							<ol>
-								{#each inherited as e (e.id)}
-									<li class={e.kind}>
-										<span class="what"><b>{theirs(e)}</b> <span class="n mono">#{e.n}</span></span>
-										<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
-										{#if (e.kind === 'edit' || e.kind === 'merge') && e.text !== null && (e.before ?? '') !== e.text}
-											<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
-										{/if}
-									</li>
-								{/each}
-							</ol>
-						{:else}
-							<p class="hint soft">Made from a note {nameOf(as)} doesn’t read: its history goes on there.</p>
-						{/if}
-					</section>
-				{/if}
-				{/if}
-			</aside>
-		</div>
-	{/if}
+						</section>
+					{/if}
+				</main>
+			{/if}
+		</Frame>
+	</div>
 </div>
 
 <style>
-	/* the whole screen, as a docs app's document: a bar on top, then three columns, each scrolling on its own */
+	/* the whole screen, as a docs app's document: a bar on top, then the three columns (./Frame.svelte) in the rest */
 	.doc {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		grid-template-rows: auto auto minmax(0, 1fr);
+		display: flex;
+		flex-direction: column;
 		height: 100%;
 		min-height: 0;
 		background: #ece8df;
+	}
+
+	.room {
+		flex: 1 1 0;
+		min-height: 0;
 	}
 
 	.top {
@@ -1312,38 +1307,11 @@
 		margin: 1.5rem;
 	}
 
-	.body {
-		display: grid;
-		grid-template-columns: 15rem minmax(0, 1fr) 21rem;
-		min-height: 0;
-	}
-
-	/* a note, an article or an older version: no artifacts beside it, the page and its history and versions */
-	.body.bare {
-		grid-template-columns: minmax(0, 1fr) 21rem;
-	}
-
 	.lines section + section {
 		margin-top: 1.3rem;
 	}
 
-	.versions,
-	.canvas,
-	.history {
-		min-height: 0;
-		box-sizing: border-box;
-		overflow-y: auto;
-		overscroll-behavior: contain;
-	}
-
-	/* left: a spark's artifacts, to drag onto its canvas */
-	.versions {
-		padding: 1rem 0.8rem 9rem;
-		border-right: 1px solid var(--edge);
-		background: #f3f0e9;
-	}
-
-	/* a spark's side: what its canvas can take, or its lines and copies */
+	/* the right side's two tabs: the history, or the lines and copies */
 	.sides {
 		display: flex;
 		gap: 0.25rem;
@@ -1509,6 +1477,8 @@
 
 	/* the middle: the note as a page */
 	.canvas {
+		min-height: 100%;
+		box-sizing: border-box;
 		padding: 1.4rem clamp(0.8rem, 3vw, 2.4rem) 10rem;
 	}
 
@@ -1706,12 +1676,6 @@
 	}
 
 	/* right: the line's history */
-	.history {
-		padding: 1rem 0.9rem 9rem;
-		border-left: 1px solid var(--edge);
-		background: #f7f5f0;
-	}
-
 	.history header {
 		margin: 0 0 0.8rem 0.35rem;
 	}
@@ -1768,7 +1732,7 @@
 		left: -0.42rem;
 		width: 0.62rem;
 		height: 0.62rem;
-		border: 2px solid #f7f5f0;
+		border: 2px solid #f7f4ee;
 		border-radius: 50%;
 		background: var(--accent);
 		content: '';
@@ -1863,112 +1827,6 @@
 		font-size: 0.76rem;
 	}
 
-	/* the drawers' toggles and close buttons show only where the sides slide in */
-	.drawer,
-	.body aside button.shut,
-	.scrim {
-		display: none;
-	}
-
-	/* narrower: the page alone, the lines and copies sliding in from the left and the history from the right */
-	@media (max-width: 1100px) {
-		.body {
-			display: block;
-			overflow-y: auto;
-			overscroll-behavior: contain;
-		}
-
-		.canvas {
-			overflow: visible;
-			padding-bottom: 8rem;
-		}
-
-		/* round, as tall as the nav pill and at its foot, one at each side of the screen */
-		.drawer {
-			display: grid;
-			place-items: center;
-			position: fixed;
-			bottom: var(--nav-foot, 14px);
-			z-index: 50;
-			box-sizing: border-box;
-			width: var(--nav-height, 52px);
-			height: var(--nav-height, 52px);
-			padding: 0;
-			border: 1px solid var(--line, var(--edge));
-			border-radius: 50%;
-			background: rgb(250 248 242 / 0.94);
-			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
-			backdrop-filter: blur(10px);
-			color: inherit;
-			cursor: pointer;
-		}
-
-		.drawer.left {
-			left: max(12px, env(safe-area-inset-left, 0px));
-		}
-
-		.drawer.right {
-			right: max(12px, env(safe-area-inset-right, 0px));
-		}
-
-		.drawer[aria-pressed='true'] {
-			border-color: var(--accent);
-			background: var(--accent);
-			color: #fff;
-		}
-
-		.scrim {
-			display: block;
-			position: fixed;
-			inset: 0;
-			z-index: 40;
-			background: rgb(20 28 24 / 0.28);
-		}
-
-		.versions,
-		.history {
-			position: fixed;
-			top: 0;
-			bottom: 0;
-			z-index: 41;
-			width: min(22rem, 86vw);
-			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
-			box-shadow: 0 0 40px rgb(0 0 0 / 0.18);
-			visibility: hidden;
-			transition:
-				transform 240ms ease,
-				visibility 0s linear 240ms;
-		}
-
-		.versions {
-			left: 0;
-			border-right: 0;
-			transform: translateX(-100%);
-		}
-
-		.history {
-			right: 0;
-			border-left: 0;
-			transform: translateX(100%);
-		}
-
-		.versions.open,
-		.history.open {
-			visibility: visible;
-			transform: none;
-			transition: transform 240ms ease;
-		}
-
-		.body aside button.shut {
-			display: grid;
-			place-items: center;
-			float: right;
-			width: 2rem;
-			height: 2rem;
-			padding: 0;
-		}
-	}
-
 	/* a phone: a compact head in one row, buttons by their icons */
 	@media (max-width: 640px) {
 		.top {
@@ -2034,13 +1892,6 @@
 
 		.person :global(.mark) {
 			transform: scale(0.85);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.versions,
-		.history {
-			transition: none;
 		}
 	}
 </style>
