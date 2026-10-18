@@ -1,27 +1,11 @@
 // The studio's one state: the library, the open timeline and its clips, the playhead and the sound, the colour
 // pipeline's LUTs, the world viewer, the renders — shared by the three working steps (Edit · Grade · Render) and every
 // panel in them. The panels only show it and call its methods; nothing here draws.
-import {
-	API,
-	fileUrl,
-	createTimeline as createLegacy,
-	deleteTimeline as deleteLegacy,
-	describeMedia,
-	getTimeline as getLegacy,
-	listContent,
-	listJobs,
-	listMedia,
-	listRenders as listRendersLegacy,
-	listTimelines as listLegacy,
-	may,
-	me,
-	missing,
-	queueRender as queueRenderLegacy,
-	saveTimeline as saveLegacy
-} from '$lib/auth/client';
+import { API, fileUrl, describeMedia, listContent, listJobs, may, me, missing } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
 import { avenLibrary, withGraded } from './aven.js';
 import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, renderCut, saveCut } from './cuts.js';
+import { bringFilms } from './legacyfilms.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
@@ -59,7 +43,7 @@ import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.j
  */
 /** A shot of the script: its clip, how far it is (words, a storyboard still, the footage, a world shot), what is said under it. @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
 /** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
-/** @typedef {'ingest' | 'library' | 'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render' | 'deliverables' | 'processes'} Tab */
+/** @typedef {'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render' | 'deliverables'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip
@@ -112,25 +96,22 @@ export const UNLINKED = '-';
 export const raw = (hash) => fileUrl(hash);
 
 /**
- * The studio's timelines: avenDB's cuts (./cuts.js, J9) and the legacy timelines in the API, side by side, each read and
- * saved where it lives (a cut by its `cut:` id); a new one is a cut wherever avenDB is open here.
+ * The studio's timelines: the cuts in avenDB (./cuts.js, J9), each read and saved by its `cut:` id. The legacy
+ * timelines in the API's Postgres are no longer the studio's (Samuel 2026-10-18): only the two films ./legacyfilms.js
+ * copies into the Maia City vault come over from them.
  */
-const listTimelines = () => Promise.all([listCuts().catch(() => []), listLegacy()]).then(([cuts, legacy]) => [...cuts, ...legacy]);
+const listTimelines = listCuts;
 /** @param {Partial<Timeline>} t */
-const createTimeline = async (t) => ((await cutsHere().catch(() => false)) ? createCut(t) : createLegacy(t));
-/** @param {string} id */
-const getTimeline = (id) => (isCut(id) ? getCut(id) : getLegacy(id));
-/** @param {string} id @param {Partial<Timeline> & { if_updated?: string }} t */
-const saveTimeline = (id, t) => (isCut(id) ? saveCut(id, t) : saveLegacy(id, t));
-/** @param {string} id */
-const deleteTimeline = (id) => (isCut(id) ? deleteCut(id) : deleteLegacy(id));
+const createTimeline = createCut;
+const getTimeline = getCut;
+const saveTimeline = saveCut;
+const deleteTimeline = deleteCut;
 
-/** The studio's library: the legacy vault's files and avenDB's footage (./aven.js), side by side. */
-const allMedia = () => Promise.all([listMedia(), avenLibrary().catch(() => [])]).then(([legacy, aven]) => asStudio(withGraded([...legacy, ...aven])));
-/** A timeline's renders: a cut's are its tasks in avenDB (./cuts.js), a legacy timeline's the API's jobs. @param {string} id */
-const listRenders = (id) => (isCut(id) ? cutJobs(id) : listRendersLegacy(id));
-/** @param {string} id @param {'youtube-4k'} [delivery] */
-const queueRender = (id, delivery) => (isCut(id) ? renderCut(id, delivery) : queueRenderLegacy(id, delivery));
+/** The studio's library: avenDB's footage (./aven.js), the files of every vault this Mac holds. */
+const allMedia = () => avenLibrary().then((aven) => asStudio(withGraded(aven)));
+/** A cut's renders: its tasks in avenDB (./cuts.js). */
+const listRenders = cutJobs;
+const queueRender = renderCut;
 /** @param {MediaItem} m */
 export const thumb = (m) => raw(m.hash);
 /** @param {MediaItem | undefined} m */
@@ -537,6 +518,7 @@ export class Studio {
 			this.library = media;
 			this.timelines = tls;
 			this.avenHere = here;
+			if (here) void this.bringFilms();
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;
 		}
@@ -563,7 +545,7 @@ export class Studio {
 		// a timeline loads its sound (decoded) and its world: only when it is looked at — Ingest and the library
 		// never need it, and on an 8 GB Mac it is a gigabyte and more
 		this.later = open ?? 'new';
-		if (this.tab !== 'ingest' && this.tab !== 'library') await this.openLater();
+		await this.openLater();
 	}
 
 	/** @type {Timeline | 'new' | null} the timeline to open once Edit, Grade or Render is shown */
@@ -666,28 +648,27 @@ export class Studio {
 		await this.openTimeline(t);
 	}
 
-	/** Whether new cuts go into avenDB on this Mac (and legacy timelines can be brought there, `importTimeline`). */
+	/** Whether new cuts go into avenDB on this Mac (and the two legacy films can be brought there, `bringFilms`). */
 	avenHere = $state(false);
-	/** What bringing a legacy timeline into avenDB is doing now; '' when nothing. */
+	/** What bringing the legacy films into avenDB is doing now; '' when nothing. */
 	importing = $state('');
 
 	/**
-	 * Legacy timeline `t` brought into avenDB as a cut, by hand (plan JI: ./importer.js), and opened; the legacy one
-	 * stays as it is.
-	 * @param {Timeline} t
+	 * The two films of the legacy studio the Maia City vault lacks, brought into it (./legacyfilms.js), and the
+	 * timelines and the library read again once one came; the legacy ones stay as they are.
 	 */
-	async importTimeline(t) {
-		if (this.importing || isCut(t.id)) return;
+	async bringFilms() {
+		if (this.importing) return;
 		this.importing = 'Starting…';
 		try {
-			const { importTimeline } = await import('./importer.js');
-			const cut = await importTimeline(t.id, (line) => (this.importing = line));
+			const brought = await bringFilms((line) => (this.importing = line));
+			if (!brought.length) return;
 			const [media, tls] = await Promise.all([allMedia(), listTimelines()]);
 			this.library = media;
 			this.timelines = tls;
-			await this.openTimeline(this.timelines.find((x) => x.id === cut.id) ?? cut);
+			this.notice = `Brought into the Maia City vault: ${brought.join(', ')}.`;
 		} catch (e) {
-			this.error = `Import: ${/** @type {Error} */ (e).message}`;
+			this.error = `Bringing the films: ${/** @type {Error} */ (e).message}`;
 		} finally {
 			this.importing = '';
 		}

@@ -1,5 +1,5 @@
 <!--
-	The working steps, as DaVinci Resolve's pages: Ingest and Library (the files), 3D (the world), Edit (picture and
+	The working steps, as DaVinci Resolve's pages: Script, 3D (the world), Edit (picture and
 	sound, on proxies), Grade (colour: every shot's balance, then the look), Render (the deliveries). No lock for now:
 	every step works on the cut as it stands.
 -->
@@ -10,16 +10,13 @@
 
 	/** @type {{ id: Tab, label: string, key: string }[]} */
 	const TABS = [
-		{ id: 'ingest', label: 'Data', key: '1' },
-		{ id: 'library', label: 'Library', key: '2' },
-		{ id: 'script', label: 'Script', key: '3' },
-		{ id: '3d', label: '3D', key: '4' },
-		{ id: 'edit', label: 'Edit', key: '5' },
-		{ id: 'audio', label: 'Audio', key: '6' },
-		{ id: 'grade', label: 'Grade', key: '7' },
-		{ id: 'render', label: 'Render', key: '8' },
-		{ id: 'deliverables', label: 'Deliverables', key: '9' },
-		{ id: 'processes', label: 'Jobs', key: '0' }
+		{ id: 'script', label: 'Script', key: '1' },
+		{ id: '3d', label: '3D', key: '2' },
+		{ id: 'edit', label: 'Edit', key: '3' },
+		{ id: 'audio', label: 'Audio', key: '4' },
+		{ id: 'grade', label: 'Grade', key: '5' },
+		{ id: 'render', label: 'Render', key: '6' },
+		{ id: 'deliverables', label: 'Deliverables', key: '7' }
 	];
 	/** @param {Tab} t */
 	function go(t) {

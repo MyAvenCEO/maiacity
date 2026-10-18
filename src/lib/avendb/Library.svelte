@@ -33,6 +33,9 @@
 	} from './vaults.js';
 	import { IN_SPARKS, IN_STORIES } from './artifacts.js';
 
+	/** the tag of footage, which the studio's rules make proxies, stills and words of */
+	const FOOTAGE = 'media:original';
+
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
 	 *   onaccess: () => void }}
@@ -118,12 +121,20 @@
 	});
 	const adds = $derived(!!asked && !unadded);
 
-	/** Files `picked`, into the vault one by one. @param {FileList | File[] | null | undefined} picked */
+	/**
+	 * Files `picked`, into the vault one by one. A film or a sound is footage (`media:original`), the studio's way in
+	 * (Samuel 2026-10-18): the Mac's rules make its proxy, its still and its words ($lib/studio/jobs/rules.js).
+	 * @param {FileList | File[] | null | undefined} picked
+	 */
 	async function add(picked) {
 		const all = [...(picked ?? [])];
 		if (!adds || !all.length) return;
 		const tags = [...typed, ...(asked ?? [])];
-		for (const f of all) if (!(await api.putFile(actor, vault, f, mediaOf(f), tags))) return;
+		for (const f of all) {
+			const media = mediaOf(f);
+			const footage = /^(video|audio)\//.test(media) && !tags.includes(FOOTAGE) ? [FOOTAGE] : [];
+			if (!(await api.putFile(actor, vault, f, media, [...tags, ...footage]))) return;
+		}
 		tagging = '';
 	}
 
