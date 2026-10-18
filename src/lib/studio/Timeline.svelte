@@ -768,8 +768,9 @@
 		display: grid;
 		grid-template-columns: 7rem 1fr;
 		min-height: 0;
-		/* at most half the window: more rows (the grade's open layers) scroll inside */
-		max-height: 50vh;
+		/* at most a third of the window: more rows (the 3D tab's lanes, the grade's open layers) scroll inside, and the
+		   program monitor keeps its height (Samuel 2026-10-18) */
+		max-height: 32vh;
 		overflow-y: auto;
 		background: var(--bg);
 	}

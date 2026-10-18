@@ -609,10 +609,12 @@
 		opacity: 1;
 	}
 
-	/* the world draws its own frame (view transform and grade in film mode): on top of the viewer when live */
+	/* the world draws its own frame (view transform and grade in film mode): on top of the viewer when live; till then
+	   painted under it, never see-through — WebKit holds back the frames of a page it takes for unseen, and a world that
+	   builds its domes and actors a little every frame never got ready (every world clip a stand-in) */
 	.frame iframe {
 		z-index: 0;
-		opacity: 0;
+		opacity: 1;
 		pointer-events: none;
 	}
 

@@ -38,6 +38,12 @@ const RAMP_EVERY = 0.5;
 const STAGE_LIMIT = 30000;
 
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
+/** the page's frames drawn so far: said when a shot takes long to stage, so a page whose frames are held back shows */
+let frames = 0;
+if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function count() {
+	frames++;
+	requestAnimationFrame(count);
+});
 
 /**
  * Install film mode: the clocks now, the camera once the world has handed itself over (`window.__world`). Call before
@@ -132,11 +138,16 @@ export function startFilm({ base = '' } = {}) {
 		if (spec.world.props && !w.__props) sets[/** @type {keyof typeof sets} */ (spec.world.props)]?.(spec.world.seed);
 		// the world stands where the shot needs it loaded, and resolves once everything the shot can see is built
 		try {
-			// the live viewer never waits for ever: an asset that never came (a load that hangs) held every shot after it in
-			// the line, and it showed stand-ins for good. Past the limit the shot is drawn as the world has it, the rest
-			// streaming in
+			// the live viewer never waits for ever: a world that never says it is staged (an asset that never came) held
+			// every shot after it in the line, and it showed stand-ins for good. Past the limit the shot is drawn as the
+			// world has it, the rest streaming in
 			const done = (async () => {
-				await v.film.stage({ ...spec.world, name: spec.meta?.name });
+				const slow = setTimeout(() => console.warn(`film: ${spec.meta?.name ?? 'a shot'} still being staged after ${LOAD_WAIT / 1000} s (frames drawn: ${frames})`), LOAD_WAIT);
+				try {
+					await v.film.stage({ ...spec.world, name: spec.meta?.name });
+				} finally {
+					clearTimeout(slow);
+				}
 				await settled(v);
 			})();
 			const late = limit < Infinity && (await Promise.race([done.then(() => false), sleep(limit).then(() => true)]));
@@ -154,10 +165,21 @@ export function startFilm({ base = '' } = {}) {
 
 	/** Nothing still streaming in: no loader busy, every shader compiled. */
 	async function settled(/** @type {any} */ v) {
-		const T = v.THREE;
-		while (T.DefaultLoadingManager.itemsLoaded < T.DefaultLoadingManager.itemsTotal) await sleep(100);
-		await v.renderer.compileAsync(v.scene, v.camera);
+		const T = v.THREE, m = T.DefaultLoadingManager, t0 = performance.now();
+		// a load that never ends (a file the page cannot read) holds no shot back for ever: after LOAD_WAIT it is said and
+		// the world goes on with what it has
+		while (m.itemsLoaded < m.itemsTotal) {
+			if (performance.now() - t0 > LOAD_WAIT) {
+				console.warn(`film: ${m.itemsTotal - m.itemsLoaded} of ${m.itemsTotal} loads still open after ${LOAD_WAIT / 1000} s: going on without them`);
+				break;
+			}
+			await sleep(100);
+		}
+		const compiled = v.renderer.compileAsync(v.scene, v.camera);
+		if ((await Promise.race([compiled.then(() => true), sleep(LOAD_WAIT).then(() => false)])) === false) console.warn(`film: the shaders still compiling after ${LOAD_WAIT / 1000} s: going on`);
 	}
+	/** how long a shot waits for the world's loads and shaders before it goes on without them (ms) */
+	const LOAD_WAIT = 20000;
 
 	/** the world camera's own nearest distance, for the shots whose lens names none @type {number | undefined} */
 	let baseNear;

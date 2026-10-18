@@ -32,3 +32,14 @@ test("a brought file's legacy words are found beside it, in its own vault only",
 	expect(legacyValue('analysis', o, world)).toBeUndefined();
 	expect(legacyValue('transcript', { ...o, tags: ['media:original'] }, world)).toBeUndefined();
 });
+
+test("a brought film's legacy proxy is taken by the proxy rule while its journey is the one found", async () => {
+	const { NATIVE } = await import('./jobs/executors.js');
+	const o = { entry: 'o', vault: 'V', type: 'file', tags: ['media:original', `legacy:${A}`] };
+	const p = { entry: 'p', vault: 'V', type: 'file', tags: ['media:proxy', `legacy:${A}`, `legacy:${B}`] };
+	const world = { entries: [o, p] };
+	expect(legacyValue('proxy', o, world)?.entry).toBe('p');
+	const task = { rule: 'proxy', inputs: [{ entry: 'o' }], params: JSON.stringify({ 'probe.journey': { profile: 'apple-log' } }) };
+	const ctx = { world, entry: (/** @type {string} */ id) => world.entries.find((e) => e.entry === id) };
+	expect(await NATIVE.proxy(task, ctx)).toEqual({ outputs: ['p'], result: { profile: 'apple-log', legacy: true } });
+});

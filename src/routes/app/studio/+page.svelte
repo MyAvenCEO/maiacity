@@ -277,9 +277,7 @@
 		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) var(--nav-room) env(safe-area-inset-left, 0px);
 		display: grid;
 		grid-template-columns: 11rem 19rem 1fr 17rem;
-		/* the picture always keeps a good height (Samuel 2026-10-18); the timeline takes what is left, up to a third of the
-		   window, and scrolls inside — many 3D lanes never squeeze the monitor */
-		grid-template-rows: auto minmax(min(50vh, 32rem), 1fr) auto fit-content(32vh) auto;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto) auto;
 		grid-template-areas:
 			'bar bar bar bar'
 			'nav bin monitor inspector'
@@ -296,7 +294,7 @@
 	/* Grade: the picture, the transport and the layers' lanes; beside them, the full height, the chosen layer's controls */
 	.studio.tab-grade {
 		grid-template-columns: 11rem minmax(0, 1fr) 22rem;
-		grid-template-rows: auto minmax(min(50vh, 32rem), 1fr) auto fit-content(32vh) auto;
+		grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 		grid-template-areas:
 			'bar bar bar'
 			'nav monitor aside'
@@ -335,7 +333,7 @@
 	/* Audio: the program and, beside it, the selected clip (its EQ) over the sound tracks, which carry the levels */
 	.studio.tab-audio {
 		grid-template-columns: 11rem 1fr 19rem;
-		grid-template-rows: auto minmax(min(46vh, 30rem), 1fr) auto fit-content(36vh) auto;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto) auto;
 		grid-template-areas:
 			'bar bar bar'
 			'nav monitor inspector'
@@ -568,7 +566,8 @@
 		grid-template-columns: minmax(0, 1fr);
 		gap: 1px;
 		min-width: 0;
-		min-height: 0;
+		/* the picture never squeezed below this, however many tracks the timeline shows (they scroll) */
+		min-height: 42vh;
 		background: var(--edge);
 	}
 
@@ -596,6 +595,11 @@
 	}
 
 	@media (max-width: 900px) {
+		/* a phone sets the monitor's row itself */
+		.monitors {
+			min-height: 0;
+		}
+
 		.studio,
 		.studio.tab-render {
 			grid-template-columns: 1fr;
