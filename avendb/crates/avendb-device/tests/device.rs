@@ -1458,7 +1458,7 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     assert_eq!(std::fs::read(&again).expect("read again"), harvest, "every byte, from her Mac");
     // agentCursor joins under the same aven, which passes on to it only a Suggester's share of her vault: a Suggester
     // creates no entry, whatever the aven holds, so it saves no file there, refused before it reads a byte, and a
-    // put_file has no proposal's line to go on
+    // put_file that makes a file entry has no proposal's line to go on (one into an entry does)
     let mut cursor = Harness::start(&dir, "cursor");
     let asked = requests(&mut app, 1).await;
     assert_eq!(asked[0]["name"], "agentCursor", "{asked}");
@@ -1484,7 +1484,8 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     on_line["line"] = json!("a proposal");
     let (no, error) = cursor.tool("avendb_run", json!({ "op": on_line, "path": at(&path) })).await;
     let no: Value = serde_json::from_str(&no).expect("JSON");
-    assert!(!error && no["why"] == "put_file takes no field \"line\"", "{no}");
+    let why = "a put_file that makes a file entry takes no \"line\": put_file into an entry does";
+    assert!(!error && no["why"] == why, "{no}");
     // a file of a vault no share of agentClaude's reaches, her studio's, it reads by neither its entry nor its name,
     // and writes nothing
     let studio = run(&mut app, json!({ "op": "found", "kind": "coop", "name": "Studio" })).await;
