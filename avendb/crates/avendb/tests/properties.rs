@@ -31,7 +31,7 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
 use avendb::lens::{DocV1, Lane, Schema, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{
-    is_accept, keep_picks, mk_audience, order, passes, removes, replay, trace, view, Action, Edit, Entry, Fact, Holder,
+    is_accept, keep_picks, mk_audience, order, passes, removes, replay, trace, view, Action, Creation, Edit, Entry, Fact, Holder,
     Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share,
     Sharing, State, Vault, Who, Write,
 };
@@ -514,7 +514,7 @@ fn a_creation(rng: &mut Rng, h: &History, st: &State) -> Attempt {
         _ => Proposal::Main,
     };
     let (stay, deps, via, body) = (None, vec![], vec![], vec![rng.next() as u8]);
-    let (create, files) = (Some(audience), vec![]);
+    let (create, files) = (Some(Creation { audience, nonce: [0; 32] }), vec![]);
     let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
     Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Created(header, tags) }
 }
@@ -2064,7 +2064,7 @@ impl Twin {
             Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, .. } => {
                 let header = create.is_some().then(|| Header { ty: Sym::new(""), created: 0 });
                 let body = Body { header, ..Body::default() }.to_wire();
-                let create = create.map(|x| self.new_audience(vault, &x));
+                let create = create.map(|c| Creation { audience: self.new_audience(vault, &c.audience), ..c });
                 let (stay, deps, proposal) = (stay.map(|s| self.edit(s)), self.edits(&deps), self.proposal(proposal));
                 let (vault, actor, via) = (self.vault(vault), self.vault(actor), self.vaults(&via));
                 Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }

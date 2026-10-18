@@ -7,7 +7,7 @@
 pub use avendb::cast::*;
 use avendb::id::{EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::policy::{
-    mk_audience, Action, Kind, Level, Log, Principal, Proposal, Readings, Refusal, Share, Sharing, Who,
+    mk_audience, Action, Creation, Kind, Level, Log, Principal, Proposal, Readings, Refusal, Share, Sharing, Who,
 };
 use avendb::slice::{Header, Selector, Sym, TagDelta};
 
@@ -78,9 +78,11 @@ fn syms(xs: &[&str]) -> Vec<Sym> {
 }
 
 /// A write that creates entry `entry` of vault `vault` for `actor`, in the audience of the shares `audience`; its
-/// header and tags travel in its body, which here is nothing anyone opens.
+/// header and tags travel in its body, which here is nothing anyone opens. The rules read no nonce: the id is the
+/// model's number, as only a signed creation's id is checked (`Signed::verify`).
 pub fn creation(vault: VaultId, entry: EntryId, actor: VaultId, audience: &[ShareId]) -> Action {
-    let (body, proposal, create) = (vec![0xc1, 0x9e, 0x47], Proposal::Main, Some(mk_audience(audience)));
+    let create = Some(Creation { audience: mk_audience(audience), nonce: [0; 32] });
+    let (body, proposal) = (vec![0xc1, 0x9e, 0x47], Proposal::Main);
     let (deps, via, files) = (vec![], vec![], vec![]);
     Action::Write { vault, entry, actor, stay: None, epoch: 0, deps, proposal, via, create, files, body }
 }

@@ -516,7 +516,7 @@
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
-	const LAYOUT = `g14/                one generation, 14 or later since the last reset; starting fresh makes g15
+	const LAYOUT = `g15/                one generation, 15 or later since the last reset; starting fresh makes g16
   meta/<n>          what opens the device again, its follow list and query limit too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
@@ -545,7 +545,7 @@
 		],
 		[
 			'Hashes',
-			'BLAKE3 for every hash of avenDB’s own: an edit’s or a blob’s id is the plain hash of its bytes, the name iroh gives them, and every other hash, a signer’s id among them, derives its own key for its purpose. An entry’s id is 32 random bytes.'
+			'BLAKE3 for every hash of avenDB’s own: an edit’s or a blob’s id is the plain hash of its bytes, the name iroh gives them, and every other hash, a signer’s id among them, derives its own key for its purpose. An entry’s id is the hash of its vault, the signer that created it and a nonce its creation carries, which every peer checks.'
 		],
 		['The bucket', 'Every object sealed again with a 256-bit key of the server’s, since the link to it is classical.']
 	];
@@ -1168,6 +1168,12 @@
 				numbers come from the history alone, so every device reads the same ones, and they never change. A version
 				between two merges reads as "v3 + 2 edits". Each variant counts its own: "Silkie v3". A link to one version stores only hashes, the entry's id and the
 				version's edits, and is labelled from avenDB: "Crawler excavator v4 · 01627d33…".
+			</p>
+			<p class="prose-col">
+				An asset is one entry with this history. Its first version is created together with its file. Each later version
+				is a proposal whose one write holds both the new record and its file, and the merge makes it main's next version.
+				Each variant, a goat breed say, is a line beside main: after main moves on, the variant writes its own record and
+				file. Readers find every version by the write that brought its file.
 			</p>
 			<figure>
 				<div class="frame">

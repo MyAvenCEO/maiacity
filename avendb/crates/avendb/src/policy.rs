@@ -22,7 +22,8 @@
 //!
 //! Edits reach this module already verified: an edit's author and cosigners are the signers whose signatures checked
 //! out (`sign::Signed::verify`). Where the core differs from the model: what an edit creates (a vault, a share) is
-//! named by that edit's id, where the model picks numbers; an audience is named by its id, and the shares of every
+//! named by that edit's id, and an entry by the hash of its vault, its creator and its creation's nonce, which
+//! `Signed::verify` checks, where the model picks numbers; an audience is named by its id, and the shares of every
 //! audience the state has met are kept beside (`audience_shares`); an entry's stays are kept oldest first, where the
 //! model puts the current one first; a refused edit says why, where the model only says no; and edits carry what the
 //! model leaves out, which no rule reads: the keys signers have keys sealed to, the boxes of a `Keys` edit, a share's
@@ -241,6 +242,14 @@ pub enum Proposal {
     On(EditId),
 }
 
+/// What a write that creates its entry says of it: the audience it goes in, its shares in canonical order, and the
+/// nonce its id is the hash of, with its vault and the write's author (`EntryId::of`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Creation {
+    pub audience: Vec<ShareId>,
+    pub nonce: [u8; 32],
+}
+
 /// A line of an entry's history: `None` is the main line, `Some(b)` the proposal write `b` started.
 pub type Line = Option<EditId>;
 
@@ -332,8 +341,8 @@ pub enum Action {
     /// receives (T12), so such a check would refuse there what every device of the vault accepts. Under an epoch its
     /// audience hasn't reached, nobody opens it until the audience does. `deps` are the entry's writes it builds on
     /// (its Loro frontier): a write that starts a proposal builds on the version the proposal starts from, and a merge
-    /// also on the heads of the line it brings in. A write that creates its entry names the audience it goes in
-    /// (`create`, its shares in canonical order), and its stay is the one its creation begins (`None`). Its `body` is
+    /// also on the heads of the line it brings in. A write that creates its entry names the audience it goes in and
+    /// the nonce its id is the hash of (`create`), and its stay is the one its creation begins (`None`). Its `body` is
     /// the update, the header of a new entry and the tags it adds and removes, encrypted: the tags count only when it
     /// acts for the vault, except that a new entry's added tags are its first tags. The files it brings (`sealed`) are
     /// named in the clear by their roots, smallest first, so whoever may receive it keeps them; their keys are in its
@@ -347,7 +356,7 @@ pub enum Action {
         deps: Vec<EditId>,
         proposal: Proposal,
         via: Vec<VaultId>,
-        create: Option<Vec<ShareId>>,
+        create: Option<Creation>,
         files: Vec<FileRoot>,
         body: Vec<u8>,
     },
@@ -688,6 +697,9 @@ pub enum Refusal {
     Revoked,
     /// An entry id is created once: this one exists, or existed and fell.
     Reborn,
+    /// A write that creates its entry names an id that isn't the hash of its vault, its author and its nonce
+    /// (`EntryId::of`).
+    NotItsId,
     /// A write that creates its entry names no stay, builds on nothing, and is on the main line or starts its own (a
     /// draft): it is on no proposal another write started.
     NotFirst,
@@ -2138,7 +2150,7 @@ impl State {
                     return Err(Refusal::NotActing);
                 }
                 match create {
-                    Some(x) => {
+                    Some(Creation { audience: x, .. }) => {
                         // a new entry, with an id never used before, in an audience its actor may create in, under
                         // the epoch it names
                         if self.entry(e).is_some() || self.born.contains(&e) {

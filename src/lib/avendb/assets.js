@@ -1,7 +1,8 @@
 // A vault's assets as this browser's device holds them, for the Assets page (./Assets.svelte): the vault's `recipe`
-// entries as the database op hands them out (./db.js, avendb's `data::database`), each recipe's source the newest file
-// its entry brings (the world's `files`, oldest first), read whole from the device a window at a time as the Library
-// reads a file (./files.js `whole`), and the two read as the Maia City vault's recipes are read, with no repo fallback
+// entries as the database op hands them out (./db.js, avendb's `data::database`), an asset's entry one row for each of
+// its versions and variants, each recipe's source the newest file its entry brings (the world's `files`, oldest
+// first) or its own version's, read whole from the device a window at a time as the Library reads a file
+// (./files.js `whole`), and the two read as the Maia City vault's recipes are read, with no repo fallback
 // ($lib/assets/sources/avendb.js `vaultRecipes`): what the vault lacks, or holds otherwise, fails, naming the ref.
 
 import { RECIPE_MEDIA, vaultRecipes } from '$lib/assets/sources/avendb.js';
@@ -25,23 +26,24 @@ export const recipeRows = (db, vault, opens = () => true) =>
 	db?.vault === vault
 		? db.rows
 				.filter((r) => r.type === RECIPE && r.record !== null && r.record !== undefined && opens(r))
-				.map((r) => ({ vault, entry: r.entry, type: r.type, tags: r.tags, record: r.record }))
+				.map((r) => ({ vault, entry: r.entry, type: r.type, tags: r.tags, record: r.record, brought: r.brought }))
 		: [];
 
 /** The newest file entry `e` brings, as the device's world lists them, oldest first. @param {import('./vaults.js').EntryView | undefined} e */
 export const newestFile = (e) => e?.files?.at(-1);
 
 /**
- * How the reader reads a recipe row's file: the newest file its entry brings, as world `world` lists it, read whole
+ * How the reader reads a recipe row's file: the newest file its entry brings, as world `world` lists it, or for one
+ * version of an asset's entry, the file of its own write ($lib/assets/sources/avendb.js `versionsOf`), read whole
  * through `read` (the device's `readFile`), as bytes; refused, saying why, where its entry brings none, this browser
  * holds no key to it yet, or it is larger than a recipe may be.
  * @param {import('./vaults.js').WorldView} world @param {import('./files.js').Read} read
- * @returns {(row: { entry: string }) => Promise<Uint8Array>}
+ * @returns {(row: { entry: string, edit?: string, files?: any[] }) => Promise<Uint8Array>}
  */
 export function fileReader(world, read) {
 	const byEntry = new Map(world.entries.map((e) => [e.entry, e]));
 	return async (row) => {
-		const file = newestFile(byEntry.get(row?.entry));
+		const file = row?.edit && Array.isArray(row.files) ? row.files.at(-1) : newestFile(byEntry.get(row?.entry));
 		if (!file) throw new Error('its entry brings no file');
 		if (file.len === null || file.len === undefined) throw new Error('this browser holds no key to its file yet');
 		if (file.len > MOST) throw new Error(`its file is ${size(file.len)}, larger than a recipe may be (${size(MOST)} at most)`);

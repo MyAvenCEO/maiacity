@@ -38,7 +38,7 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::{example, View};
 use avendb::policy::{
-    history, mk_audience, replay, tips, Action, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
+    history, mk_audience, replay, tips, Action, Creation, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
     Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who,
 };
 use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
@@ -403,7 +403,8 @@ impl Names {
                 deps: self.edits(&x["deps"]),
                 proposal: self.proposal(&x["proposal"]),
                 via: self.via(&x["via"]),
-                create: (!x["create"].is_null()).then(|| self.audience(&x["create"]["audience"])),
+                create: (!x["create"].is_null())
+                    .then(|| Creation { audience: self.audience(&x["create"]["audience"]), nonce: [0; 32] }),
                 files: vec![],
                 body: serde_json::to_vec(&json!({"create": x["create"], "tags": x["tags"]})).unwrap(),
             },

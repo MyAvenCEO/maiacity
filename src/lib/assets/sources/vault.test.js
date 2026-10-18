@@ -22,7 +22,7 @@ mock.module('$app/paths', () => ({ base: '' }));
 mock.module('virtual:asset-recipes', () => ({ default: made.index }));
 mock.module('virtual:asset-recipes/libraries', () => ({ default: Object.fromEntries(Object.entries(made.libraries).map(([k, text]) => [k, async () => ({ default: text })])) }));
 
-const { NotInVault, StorageOff, recipeEntryOf, vaultRecipes } = await import('./avendb.js');
+const { NotInVault, StorageOff, recipeEntryOf, vaultRecipes, versionsOf } = await import('./avendb.js');
 const { hashOf } = await import('../recipes.js');
 const { ENGINES, recipeFile } = await import('../engines.js');
 const { parseRef } = await import('../refs.js');
@@ -276,6 +276,63 @@ test('a ref two entries claim as two recipes names neither, and a kind with two 
 	expect(() => w.hashOf(at3)).toThrow(NotInVault);
 	expect(w.hashOf(`${at3}:${first}`)).toBe(made.index.labels[`${at3}:${first}`]);
 	expect(w.hashOf(another)).toBe(made.index.labels[another]);
+});
+
+/**
+ * Our recipes as the seed writes them (Samuel 2026-10-18): one entry for each asset, as avenDB's feed lists it, its
+ * versions and variants each a write it brought (`brought`): its main line's, each version's first variant, then each
+ * other variant's own line; the entry tagged with every recipe's tags.
+ */
+function assetRows() {
+	const assets = new Map();
+	for (const { row, bytes } of HELD) {
+		const card = row.record.card;
+		const asset = `${card.group}/${card.id}`;
+		if (!assets.has(asset)) assets.set(asset, []);
+		assets.get(asset).push({ row, bytes, card });
+	}
+	const files = new Map();
+	const rows = [...assets].map(([asset, held], i) => {
+		const first = (x) => !x.card.variant || made.index.first[`${asset}@${x.card.version}`] === x.card.variant;
+		const brought = held.map((x, j) => {
+			const edit = `w${String(i).padStart(4, '0')}${String(j).padStart(4, '0')}`;
+			files.set(edit, x.bytes);
+			const line = first(x) ? null : `line-${x.card.variant}`;
+			return { edit, line, version: x.card.version, files: [{ root: edit, size: x.bytes.length, len: x.bytes.length }], record: x.row.record };
+		});
+		const tags = [...new Set(held.flatMap((x) => x.row.tags))];
+		return { vault: VAULT, entry: `asset-${asset}`, type: 'recipe', tags, heads: [], record: held.at(-1).row.record, files: [], brought };
+	});
+	return { rows, files };
+}
+
+test('an asset is one entry: each version and variant it brought is a recipe of the index, its file its own', async () => {
+	const { rows, files } = assetRows();
+	expect(rows.length).toBe(192);
+	const reads = [];
+	const v = vaultRecipes(rows, {
+		read: async (row) => {
+			reads.push(row.edit);
+			return files.get(row.edit);
+		}
+	});
+	expect(v.refused).toEqual([]);
+	expect(v.index).toEqual(made.index);
+	for (const label of ['plants/apple@1', 'plants/apple@2', 'actors/goat@2:goat-boer', 'actors/goat@2']) {
+		const hash = v.hashOf(label);
+		expect(hash).toBe(hashOf(label));
+		expect(await v.recipeAt(hash)).toEqual({ hash, code: FILES[hash] });
+		expect(v.rowOf(hash).entry).toBe(`asset-${label.split('@')[0]}`);
+	}
+	expect(reads.length).toBe(4);
+	// a row that brought nothing more than once stands for itself
+	expect(versionsOf(ROWS[0])).toEqual([ROWS[0]]);
+	// a variant on its own line is never its kind's first, whatever its tags say
+	const goat = rows.find((r) => r.entry === 'asset-actors/goat');
+	const moved = { ...goat, brought: goat.brought.map((b) => (b.line === null && b.record.card.variant ? { ...b, line: 'line-x' } : b)) };
+	const w = vaultRecipes(rows.map((r) => (r === goat ? moved : r)), { read: async () => undefined });
+	expect(w.index.first['actors/goat@2']).toBeUndefined();
+	expect(w.hashOf('actors/goat@2:goat-boer')).toBe(hashOf('actors/goat@2:goat-boer'));
 });
 
 test("a vault's ref is still refused: avenDB storage is not switched on", () => {

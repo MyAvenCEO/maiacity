@@ -92,7 +92,7 @@ use crate::lens::{self, Lane, Lens, Schema};
 use crate::merge;
 use crate::ops::Loc;
 use crate::policy::{
-    mk_audience, replay, Action, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
+    mk_audience, replay, Action, Creation, Edit, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal,
     Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
 };
 use crate::recovery::RecoveryKey;
@@ -1550,11 +1550,12 @@ impl Lab {
         out
     }
 
-    /// A new entry's id: 32 random bytes.
-    fn new_entry_id(&mut self) -> EntryId {
-        let mut id = [0u8; 32];
-        self.rng.fill_bytes(&mut id);
-        EntryId(id)
+    /// The id of a new entry of vault `vault` that device `on` creates, and the nonce of 32 random bytes it is the
+    /// hash of (`EntryId::of`).
+    fn new_entry_id(&mut self, on: SignerId, vault: VaultId) -> (EntryId, [u8; 32]) {
+        let mut nonce = [0u8; 32];
+        self.rng.fill_bytes(&mut nonce);
+        (EntryId::of(vault, on, &nonce), nonce)
     }
 
     /// Create an entry of vault `vault` of type `ty` with tags `tags` holding `item`, on device `on`, acting for
@@ -1590,12 +1591,13 @@ impl Lab {
         files: Vec<Brought>,
     ) -> Result<EntryId, Refusal> {
         self.unlocked(on)?;
-        let entry = self.new_entry_id();
+        let (entry, nonce) = self.new_entry_id(on, vault);
         let header = Header { ty: Sym::new(ty), created: self.now };
         let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
         let audience = self.intake(on, actor, vault, entry, &header, &tags, true)?;
         let content = item.export(&Version::default());
-        self.create_with(on, actor, vault, (entry, audience), header, tags, (content, files), Proposal::Main)?;
+        let at = (entry, Creation { audience, nonce });
+        self.create_with(on, actor, vault, at, header, tags, (content, files), Proposal::Main)?;
         Ok(entry)
     }
 
@@ -1637,7 +1639,7 @@ impl Lab {
         files: Vec<Brought>,
     ) -> Result<(EntryId, EditId), Refusal> {
         self.unlocked(on)?;
-        let entry = self.new_entry_id();
+        let (entry, nonce) = self.new_entry_id(on, vault);
         let header = Header { ty: Sym::new(ty), created: self.now };
         if header.ty.of_lane() && !self.lawless {
             return Err(Refusal::NotAView);
@@ -1645,7 +1647,7 @@ impl Lab {
         let tags: Vec<Sym> = tags.iter().map(|&t| Sym::new(t)).collect();
         let audience = self.intake(on, actor, vault, entry, &header, &tags, false)?;
         let content = content(entry).ok_or(Refusal::NotAView)?;
-        let at = (entry, audience);
+        let at = (entry, Creation { audience, nonce });
         let line = self.create_with(on, actor, vault, at, header, tags, (content, files), Proposal::New)?;
         Ok((entry, line))
     }
@@ -1664,32 +1666,17 @@ impl Lab {
         item: Item,
     ) -> Result<EntryId, Refusal> {
         self.unlocked(on)?;
-        let entry = self.new_entry_id();
+        let (entry, nonce) = self.new_entry_id(on, vault);
         let header = Header { ty: Sym::new(ty), created: self.now };
         let tags = tags.iter().map(|&t| Sym::new(t)).collect();
-        self.create_as(on, actor, vault, entry, audience, header, tags, item)
-    }
-
-    /// The first write of entry `entry`, holding `item` (`create_with`).
-    #[allow(clippy::too_many_arguments)]
-    fn create_as(
-        &mut self,
-        on: SignerId,
-        actor: VaultId,
-        vault: VaultId,
-        entry: EntryId,
-        audience: Vec<ShareId>,
-        header: Header,
-        tags: Vec<Sym>,
-        item: Item,
-    ) -> Result<EntryId, Refusal> {
         let content = item.export(&Version::default());
-        self.create_with(on, actor, vault, (entry, audience), header, tags, (content, vec![]), Proposal::Main)?;
+        let at = (entry, Creation { audience, nonce });
+        self.create_with(on, actor, vault, at, header, tags, (content, vec![]), Proposal::Main)?;
         Ok(entry)
     }
 
     /// The first write of entry `entry`, holding `content` and bringing the files `files` (`make_bringing`), in the
-    /// audience of the shares `audience`, under the epoch the audience is at, or the one it moves to as the entry
+    /// audience of the shares its creation names, with the nonce its id is the hash of, under the epoch the audience is at, or the one it moves to as the entry
     /// brings it back into use (`policy::State::reenters`), on the main line or, for a draft, starting its own
     /// (`proposal`). A schema or lens entry's content is its schema or lens, and nothing else (`add_schema`):
     /// `NotAView` where it isn't one, unless the device is a patched app's. Its id.
@@ -1699,7 +1686,7 @@ impl Lab {
         on: SignerId,
         actor: VaultId,
         vault: VaultId,
-        (entry, audience): (EntryId, Vec<ShareId>),
+        (entry, create): (EntryId, Creation),
         header: Header,
         tags: Vec<Sym>,
         (content, mut files): (Vec<u8>, Vec<Brought>),
@@ -1709,7 +1696,7 @@ impl Lab {
         files.dedup_by_key(|f| f.root);
         let roots = files.iter().map(|f| f.root).collect();
         let view = self.latest(on).clone();
-        let x = AudienceId::of(vault, &audience);
+        let x = AudienceId::of(vault, &create.audience);
         let epoch = view.epoch(KeyFam::Audience(vault, x)) + view.reenters(vault, x) as u64;
         let action = Action::Write {
             vault,
@@ -1720,7 +1707,7 @@ impl Lab {
             deps: vec![],
             proposal,
             via: vec![],
-            create: Some(audience),
+            create: Some(create),
             files: roots,
             body: vec![],
         };
@@ -1755,7 +1742,7 @@ impl Lab {
             (None, None) if self.lawless => SCHEMA_TYPE,
             (None, None) => return Err(Refusal::NotAView),
         };
-        let entry = self.new_entry_id();
+        let (entry, nonce) = self.new_entry_id(on, vault);
         let header = Header { ty: Sym::new(ty), created: self.now };
         let shared = match actor == vault {
             true => self.schemas_share(on, vault)?,
@@ -1765,8 +1752,8 @@ impl Lab {
             x if x.is_empty() => shared.into_iter().collect(),
             x => x,
         };
-        let content = (blob.to_vec(), vec![]);
-        self.create_with(on, actor, vault, (entry, audience), header, vec![], content, Proposal::Main)?;
+        let (content, at) = ((blob.to_vec(), vec![]), (entry, Creation { audience, nonce }));
+        self.create_with(on, actor, vault, at, header, vec![], content, Proposal::Main)?;
         Ok(entry)
     }
 
@@ -1889,8 +1876,26 @@ impl Lab {
         entry: EntryId,
         files: Vec<Brought>,
     ) -> Result<EditId, Refusal> {
+        self.bring_on(on, actor, entry, MAIN, files, |_| {})
+    }
+
+    /// Bring the files `files` into an entry on line `line` of its history, on device `on`, acting for `actor`, as one
+    /// who may set its whole record there: one write on that line that carries what `change` does to the item as the
+    /// device shows it there (a new version of its record, or nothing), made only where the write acts for the entry's
+    /// vault or a share it relies on lets it set the record at its root on that line (`NotAllowed` else), as the
+    /// entry's readers count a file of a line as its own (`line_files`). So a version and its file are one write, on
+    /// main or on a proposal that a merge takes into main.
+    pub fn bring_on(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        entry: EntryId,
+        line: Line,
+        files: Vec<Brought>,
+        change: impl FnOnce(&mut Item),
+    ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, entry).edit(MAIN, on, |_| {});
+        let draft = self.shown(on, entry).edit(line, on, change);
         self.make_bringing(on, actor, entry, draft, TagDelta::default(), (files, &[whole()]))
     }
 
@@ -2796,6 +2801,30 @@ impl Lab {
     /// its line's, and its main line's once its vault lands it. What avenDB's server's feed lists of an entry, and of
     /// which it serves the newest (`world::public_entries`).
     pub fn line_files(&self, d: SignerId, entry: EntryId, line: Line) -> Vec<(FileRoot, Option<u64>)> {
+        let mut seen = BTreeSet::new();
+        let files = self.bringing(d, entry, line).into_iter().flat_map(|(_, files)| files);
+        files.filter(|f| seen.insert(*f)).map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
+    }
+
+    /// The writes of entry `entry` that bring files device `d` counts as the entry's (`line_files`), on its main line
+    /// and on each of its variants, each once, in the order the lines' histories hold them, main's first: each with the
+    /// line it is in the history of (main for a proposal's that a merge took into main), and the files it brings, with
+    /// their plaintext lengths where `d` opens them (`file`). An asset's versions, as the seed writes them, each a
+    /// record and its file in one write (`bring_on`), which avenDB's server's feed lists of an entry, with the record
+    /// each holds (`world::public_entries`).
+    pub fn brought(&self, d: SignerId, entry: EntryId) -> Vec<(EditId, Line, Vec<(FileRoot, Option<u64>)>)> {
+        let Some(h) = self.history(d, entry) else { return vec![] };
+        let lines = std::iter::once(MAIN).chain(h.variants().into_iter().map(Some));
+        let mut seen = BTreeSet::new();
+        let writes = lines.flat_map(|line| self.bringing(d, entry, line).into_iter().map(move |w| (line, w)));
+        let fresh = writes.filter(|(_, (edit, _))| seen.insert(*edit));
+        let opened = |files: Vec<FileRoot>| files.into_iter().map(|f| (f, self.file(d, &f).map(|b| b.len))).collect();
+        fresh.map(|(line, (edit, files))| (edit, line, opened(files))).collect()
+    }
+
+    /// The writes on line `line` of entry `entry`'s history, oldest first, that bring files device `d` counts as the
+    /// entry's (`line_files`), each with the files it brings, by their roots.
+    fn bringing(&self, d: SignerId, entry: EntryId, line: Line) -> Vec<(EditId, Vec<FileRoot>)> {
         let Some(h) = self.history(d, entry) else { return vec![] };
         let store = self.held(d);
         let (st, need) = (store.view(), [whole()]);
@@ -2804,10 +2833,9 @@ impl Lab {
             let lets = |c: &ShareId| st.share(*c).is_some_and(|cp| st.lets_through(cp, proof, main, &need));
             w.first || w.shares.is_empty() || w.shares.iter().any(lets)
         };
-        let mut seen = BTreeSet::new();
         let writes = h.history(line).into_iter().map(|c| &c.write).filter(may);
-        let files = writes.filter_map(|w| store.signed.get(&w.edit)).flat_map(|s| s.edit.files().iter().copied());
-        files.filter(|f| seen.insert(*f)).map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
+        let files = |w: &Write| Some((w.edit, store.signed.get(&w.edit)?.edit.files().to_vec()));
+        writes.filter_map(files).filter(|(_, fs)| !fs.is_empty()).collect()
     }
 
     /// The key and length of file `root`, from a write device `d` opened that brings it, if any: what it opens the file

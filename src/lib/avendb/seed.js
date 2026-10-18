@@ -29,10 +29,13 @@
 //              later is never published again by a seed
 //   retire     every entry of a game the repo let go (`RETIRED`: Sandboxes 7 and 8), deleted
 //   recipes    last, as their files are most of the seed's bytes (V5 of the avenDB migration): one Public share of the
-//              vault's recipes, by type, so the server's feed serves them and their files; then each recipe of the
-//              asset box (src/lib/assets/box/plugin.js), every kept version and variant, a `recipe` entry of its own
-//              (src/lib/assets/sources/avendb.js `recipeEntryOf`, its card from src/lib/assets/sources/cards.json)
-//              created with its file, the recipe byte for byte, in one write (`beside`), found by its `ref:` tag
+//              vault's recipes, by type, so the server's feed serves them and their files; then each asset of the
+//              asset box (src/lib/assets/box/plugin.js) one `recipe` entry with its history (Samuel 2026-10-18): its
+//              first version created with its file, the recipe byte for byte, in one write (`beside`), each later one
+//              a proposal whose one write is its record and its file, merged into main, and each variant a line
+//              beside main that follows it, its own record and file written after each version (`assetOps`), each
+//              record src/lib/assets/sources/avendb.js `recipeEntryOf`'s, its card from
+//              src/lib/assets/sources/cards.json; found by the `ref:` tag of its newest version, its last op's
 //
 // There are only stories and their posts (Samuel 2026-10-17): the story is the source of truth, and each post one way
 // it goes out, of a post type, linking it (`story`). No articles, no notes, no templates of their own. The notebook's ideas live on maia.city's server,
@@ -168,10 +171,9 @@ export function seedPieces(server = null) {
 		{ key: 'game-schema', kind: /** @type {const} */ ('game-schema'), name: GAME_SCHEMA, mark: '' },
 		...GAMES.map((g) => ({ key: `game/${g.id}`, kind: /** @type {const} */ ('game'), name: g.id, mark: gameTag(g.id) }))
 	];
-	const recipes = Object.values(INDEX.recipes)
-		.map((/** @type {any} */ r) => /** @type {string} */ (r.label))
-		.sort()
-		.map((label) => ({ key: label, kind: /** @type {const} */ ('recipe'), name: label, mark: refTag(label) }));
+	const recipes = Object.entries(assetsOf())
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([asset, versions]) => ({ key: asset, kind: /** @type {const} */ ('recipe'), name: asset, mark: refTag(versions[versions.length - 1][0]) }));
 	const recipeShare = recipes.length ? [{ key: 'recipe-share', kind: /** @type {const} */ ('recipe-share'), name: 'Everyone reads its recipes', mark: '' }] : [];
 	return [...keep, ...code, ...share, ...types, ...published, ...games, ...journal, ...inspire, ...pads, ...recipeShare, ...recipes];
 }
@@ -296,7 +298,7 @@ export async function seeding(p, vault) {
 	if (p.kind === 'keep') return [{ op: 'share', over: vault, who: { vault: p.server }, level: 'Backup', as }];
 	if (p.kind === 'share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CODE_TYPES }, as }];
 	if (p.kind === 'recipe-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: RECIPE_TYPES }, as }];
-	if (p.kind === 'recipe') return [await recipeCreate(p.name, vault)];
+	if (p.kind === 'recipe') return assetOps(p.name, vault, p.mark);
 	if (p.kind === 'published') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: PUBLISHED }, as }];
 	if (p.kind === 'inspire-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: INSPIRE }, as }];
 	if (p.kind === 'name-share') return [nameShare(vault)];
@@ -367,35 +369,116 @@ export async function seeding(p, vault) {
 }
 
 /**
- * The create that writes recipe `label` of the asset box into vault `vault`, acting for it: a `recipe` entry
- * (src/lib/assets/sources/avendb.js `recipeEntryOf`) with its card from the repo's (src/lib/assets/sources/cards.json)
- * and its file the recipe byte for byte, as src/lib/assets/recipes.js hands it out checked against its hash; the
- * file's text in `file.text`, which goes beside the op, never in it (`beside`). A kind's first variant is tagged with
- * the ref that names no variant too, as the repo's index names it.
- * @param {string} label @param {string} vault
+ * The repo's assets, each by `group/id`, with its versions oldest first, each a list of the labels of its recipes, its
+ * kind's first variant first (the one its ref names where it names no variant, src/lib/assets/recipes.js `INDEX`), then
+ * the others by name: `{ 'machines/lamp': [['machines/lamp@1:brass', 'machines/lamp@1:iron'], ...] }`.
+ * @returns {Record<string, string[][]>}
  */
-async function recipeCreate(label, vault) {
-	const hash = INDEX.labels[label];
-	const at = INDEX.recipes[hash];
-	if (!at) throw new Error(`${label}: no recipe of the repo's`);
-	const [{ code }, { cards }] = await Promise.all([recipeAt(hash), CARDS['/src/lib/assets/sources/cards.json']()]);
-	const card = cards[hash];
-	if (!card) throw new Error(`${label}: src/lib/assets/sources/cards.json has no card of it (bun scripts/recipe-cards.mjs)`);
-	const first = !!at.variant && INDEX.first[`${at.group}/${at.id}@${at.v}`] === at.variant;
-	const { type, tags, value, file } = recipeEntryOf({ code, card, first });
-	return { op: 'create', vault, type, tags, schema: type, value, file: { name: `${label}.js`, media: file.media, text: file.text }, as: vault };
+export function assetsOf() {
+	/** @type {Record<string, Map<number, any[]>>} */
+	const by = {};
+	for (const r of Object.values(INDEX.recipes)) {
+		const at = /** @type {any} */ (r);
+		const versions = (by[`${at.group}/${at.id}`] ??= new Map());
+		versions.set(at.v, [...(versions.get(at.v) ?? []), at]);
+	}
+	/** @param {any[]} rs @param {number} v */
+	const ordered = (rs, v) => {
+		const first = rs[0] ? INDEX.first[`${rs[0].group}/${rs[0].id}@${v}`] : undefined;
+		const rank = (/** @type {any} */ r) => (r.variant === first || !r.variant ? 0 : 1);
+		return [...rs].sort((a, b) => rank(a) - rank(b) || String(a.variant ?? '').localeCompare(String(b.variant ?? ''))).map((r) => /** @type {string} */ (r.label));
+	};
+	return Object.fromEntries(
+		Object.entries(by).map(([asset, versions]) => [asset, [...versions.entries()].sort(([a], [b]) => a - b).map(([v, rs]) => ordered(rs, v))])
+	);
 }
 
 /**
- * Op `op` of a piece as the device takes it, and the file it brings beside it, if any: a recipe's create carries its
- * file's text in `file.text` (`seeding`), which goes beside the op as its bytes (./ops.js `brings`, the session's
- * `bring`), never in it.
+ * Recipe `label` of the asset box as vault `vault`'s `recipe` entry holds one of its versions: its type, tags, record
+ * and file (src/lib/assets/sources/avendb.js `recipeEntryOf`), its card from the repo's
+ * (src/lib/assets/sources/cards.json) and its file the recipe byte for byte, as src/lib/assets/recipes.js hands it out
+ * checked against its hash. A kind's first variant is tagged with the ref that names no variant too, as the repo's
+ * index names it.
+ * @param {string} label @param {Record<string, any>} cards
+ */
+async function recipeOf(label, cards) {
+	const hash = INDEX.labels[label];
+	const at = INDEX.recipes[hash];
+	if (!at) throw new Error(`${label}: no recipe of the repo's`);
+	const { code } = await recipeAt(hash);
+	const card = cards[hash];
+	if (!card) throw new Error(`${label}: src/lib/assets/sources/cards.json has no card of it (bun scripts/recipe-cards.mjs)`);
+	const first = !!at.variant && INDEX.first[`${at.group}/${at.id}@${at.v}`] === at.variant;
+	return recipeEntryOf({ code, card, first });
+}
+
+/**
+ * The ops that write asset `asset` of the asset box (`group/id`, `assetsOf`) into vault `vault`, acting for it, as one
+ * `recipe` entry with its history: its first version's main recipe created with its file, in one write; each later
+ * version a proposal (`propose`) whose one write is its record and its file (`put_file` with its `line` and `value`),
+ * merged into main (`merge`), which every variant follows; each variant a line beside main (`variant`), started from
+ * the main version it first appears in, whose own write after each version is its record and file. Each file's text
+ * in `file.text`, which goes beside the op, never in it (`beside`). The entry carries the tags of every recipe it holds
+ * (its group, each ref), all but `mark`, its newest version's, which its last op adds: a piece cut short is written
+ * again whole (`unseeded`).
+ * @param {string} asset @param {string} vault @param {string} mark
+ */
+async function assetOps(asset, vault, mark) {
+	const versions = assetsOf()[asset];
+	if (!versions?.length) throw new Error(`${asset}: no asset of the repo's`);
+	const { cards } = await CARDS['/src/lib/assets/sources/cards.json']();
+	const as = vault;
+	/** @type {any[]} */
+	const ops = [];
+	/** @param {string} label @param {any} entry */
+	const fileOf = (label, entry) => ({ name: `${label}.js`, media: entry.file.media, text: entry.file.text });
+	/** @param {string} line @param {string} label @param {any} entry */
+	const write = (line, label, entry) =>
+		ops.push({ op: 'put_file', entry: '$0', line, value: entry.value, schema: entry.type, file: fileOf(label, entry), as });
+	/** each variant's line, by its name: the `"$n.line"` of the op that started it @type {Map<string, string>} */
+	const lines = new Map();
+	const tags = new Set();
+	for (const [n, labels] of versions.entries()) {
+		const entries = await Promise.all(labels.map((label) => recipeOf(label, cards)));
+		for (const e of entries) for (const t of e.tags) tags.add(t);
+		const [main, ...others] = labels;
+		if (n === 0) {
+			const { type, value, file } = entries[0];
+			ops.push({ op: 'create', vault, type, tags: [], schema: type, value, file: { name: `${main}.js`, media: file.media, text: file.text }, as });
+		} else {
+			const proposal = `$${ops.length}.line`;
+			ops.push({ op: 'propose', entry: '$0', name: `v${INDEX.recipes[INDEX.labels[main]].v}`, as });
+			write(proposal, main, entries[0]);
+			ops.push({ op: 'merge', entry: '$0', from: proposal, into: null, as });
+		}
+		for (const [i, label] of others.entries()) {
+			const name = INDEX.recipes[INDEX.labels[label]].variant;
+			if (!lines.has(name)) {
+				lines.set(name, `$${ops.length}.line`);
+				ops.push({ op: 'variant', entry: '$0', name, as });
+			}
+			write(/** @type {string} */ (lines.get(name)), label, entries[i + 1]);
+		}
+	}
+	tags.delete(mark);
+	ops[0].tags = [...tags].sort();
+	ops.push({ op: 'tag', entry: '$0', add: [mark], as });
+	return ops;
+}
+
+/**
+ * Op `op` of a piece as the device takes it, and the file it brings beside it, if any: a recipe's create or put_file
+ * carries its file's text in `file.text` (`seeding`), which goes beside the op as its bytes (./ops.js `brings`, the
+ * session's `bring`), never in it; a put_file names the file's name and media type itself, not in a `file`.
  * @param {any} op @returns {{ op: any, file: Blob | null }}
  */
 export function beside(op) {
 	if (!brings(op) || typeof op.file?.text !== 'string') return { op, file: null };
 	const { text, ...file } = op.file;
-	return { op: { ...op, file }, file: new Blob([text], { type: file.media ?? '' }) };
+	const bytes = new Blob([text], { type: file.media ?? '' });
+	if (op.op !== 'put_file') return { op: { ...op, file }, file: bytes };
+	const { file: _, ...put } = op;
+	return { op: { ...put, ...file }, file: bytes };
 }
 
 /**

@@ -1,6 +1,6 @@
 //! The repo seed of the Maia City vault (the page's `src/lib/avendb/seed.js`) through the ops engine: every op the page
 //! would write into a vault that holds none of it yet, piece by piece, each `"$n"` naming the entry op n of its piece
-//! made, as the page's `refs` resolves it. Every create must fit its schema; each article links its story, which reads
+//! made (and `"$n.line"` the line it started), as the page's `refs` resolves it. Every create must fit its schema; each article links its story, which reads
 //! back; and each code entry reads back with its `ref:` tag. The ops come from the repository as it is
 //! (`node scripts/seed-ops.mjs <vault> <out.json>`), so the test runs where they are given, by the path in `SEED_OPS`:
 //!
@@ -12,11 +12,14 @@ use avendb::cast;
 use avendb::engine;
 use serde_json::{Value, json};
 
-/// Op `op` with each `"$n"` the entry the op n before it made, of `done`, as the page's `refs` has it.
+/// Op `op` with each `"$n"` the entry the op n before it made, of `done`, and each `"$n.line"` the line it started,
+/// as the page's `refs` has it.
 fn refs(op: &Value, done: &[Value]) -> Value {
+    let at = |s: &str| s.strip_prefix('$').and_then(|n| n.parse::<usize>().ok());
     match op {
-        Value::String(s) if s.starts_with('$') && s[1..].parse::<usize>().is_ok() => {
-            done[s[1..].parse::<usize>().unwrap()]["entry"].clone()
+        Value::String(s) if at(s).is_some() => done[at(s).unwrap()]["entry"].clone(),
+        Value::String(s) if s.strip_suffix(".line").and_then(at).is_some() => {
+            done[s.strip_suffix(".line").and_then(at).unwrap()]["line"].clone()
         }
         Value::Array(xs) => Value::Array(xs.iter().map(|x| refs(x, done)).collect()),
         Value::Object(o) => Value::Object(o.iter().map(|(k, v)| (k.clone(), refs(v, done))).collect()),
@@ -49,6 +52,14 @@ fn the_repo_seed_fits_its_schemas() {
                 continue;
             }
             op.as_object_mut().unwrap().remove("as");
+            // a version of an asset brings its file beside its op, which a node takes: here its record alone, as a set
+            // of the whole record on its line
+            if op["op"] == "put_file" {
+                let keep = ["entry", "line", "value", "schema"];
+                op.as_object_mut().unwrap().retain(|k, _| keep.contains(&k.as_str()));
+                op["op"] = json!("set");
+                op["path"] = json!([]);
+            }
             let answer = engine::run(&mut w.lab, mac, &op);
             let Some(ok) = answer.get("ok") else {
                 refused.push(format!("{}: {} refused: {answer}", p["key"], op["type"]));

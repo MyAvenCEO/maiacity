@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value, json};
 
-use super::{Refused, bad, count_of, entry_of, id_of, limits, strs, texts_of, vault_of};
+use super::{Refused, bad, count_of, entry_of, id_of, lane, limits, line_of, named, ran, strs, texts_of, vault_of};
 use crate::cast;
 use crate::data;
 use crate::doc::Item;
@@ -24,6 +24,7 @@ use crate::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::{Lab, NewShare, Unsigned};
 use crate::lens::View;
+use crate::ops::RecordOp;
 use crate::policy::{Action, Issued, KeepMode, Kind, Level, Principal, Refusal, Revoking, Setting, Sharing, Who};
 use crate::rules::{self, Op, Touch};
 use crate::sealed::{Brought, FileRoot};
@@ -903,6 +904,9 @@ pub fn put_file(
     if o.contains_key("entry") {
         return bring_file(lab, me, o, brought);
     }
+    if let Some(k) = ["line", "value", "schema"].iter().find(|k| o.contains_key(**k)) {
+        return Err(bad(format!("a put_file that makes a file entry takes no {k:?}: put_file into an entry does")));
+    }
     let (actor, vault, name) = (actor_of(lab, me, o)?, vault_of(o, "vault")?, name_of(o, "name", "a file")?);
     let media = match o.get("media") {
         None => "application/octet-stream",
@@ -917,14 +921,16 @@ pub fn put_file(
     Ok(json!({ "entry": entry.to_hex(), "root": hex(&root.hash), "size": root.size }))
 }
 
-/// `{"op": "put_file", "entry", "len", "name"?, "media"?, "as"?}` and the file's bytes, `brought` into the node's
-/// store: entry `entry`, which the device shows on its main line, brings the file, by one write on that line that
-/// changes nothing of its record (`Lab::bring_into`), acting for `as`, made where that vault may set the entry's whole
-/// record, as its readers count a file as the entry's (`Lab::line_files`); its newest file is the one avenDB's server
-/// serves of it where everyone reads it (avendb-server's `feed`). `name` and `media` say what the file is to the node
-/// bringing it, as its job shows it, never to the entry, whose record says what its files are. `{"entry", "edit",
-/// "root", "size"}`. Without the bytes, as `may` asks, the write checked and not made: `{"entry"}`. A schema or lens
-/// entry, which holds its JSON alone, brings none.
+/// `{"op": "put_file", "entry", "len", "line"?, "value"?, "schema"?, "name"?, "media"?, "as"?}` and the file's bytes,
+/// `brought` into the node's store: entry `entry` brings the file, by one write on its line `line` (main, left out)
+/// as the device shows it there (`Lab::bring_on`), acting for `as`, made where that vault may set the entry's whole
+/// record on that line, as its readers count a file as the entry's (`Lab::line_files`). With `value`, the write sets
+/// the record to it through `schema` too, as a `put` does: a new version and its file in one write, which a merge of
+/// the line takes into main; without, it changes nothing of the record. The entry's newest file on main is the one
+/// avenDB's server serves of it where everyone reads it (avendb-server's `feed`). `name` and `media` say what the file
+/// is to the node bringing it, as its job shows it, never to the entry, whose record says what its files are.
+/// `{"entry", "line", "edit", "root", "size"}`. Without the bytes, as `may` asks, the write checked and not made:
+/// `{"entry"}`. A schema or lens entry, which holds its JSON alone, brings none.
 fn bring_file(lab: &mut Lab, me: SignerId, o: &Map<String, Value>, brought: Option<Brought>) -> Result<Value, Refused> {
     if let Some(k) = ["vault", "tags"].iter().find(|k| o.contains_key(**k)) {
         return Err(bad(format!("put_file into an entry takes no {k:?}: the entry has its vault and its tags")));
@@ -935,17 +941,38 @@ fn bring_file(lab: &mut Lab, me: SignerId, o: &Map<String, Value>, brought: Opti
         }
     }
     file_len(o)?;
-    let (actor, entry) = (actor_of(lab, me, o)?, entry_of(o)?);
+    let (actor, entry, line) = (actor_of(lab, me, o)?, entry_of(o)?, line_of(o, "line")?);
     if lab.meaning(me, entry).is_some_and(|m| m.attrs.ty.of_lane()) {
         return Err(bad("a schema or lens entry holds its JSON and nothing else: it brings no file"));
     }
     if lab.item(me, entry).is_none() || !lab.landed(me, entry) {
         return Err(Refused::NoEntry);
     }
+    if !lab.history(me, entry).is_some_and(|h| h.lines().contains(&line)) {
+        return Err(Refused::NoEntry);
+    }
+    let put = match o.get("value") {
+        None => None,
+        Some(Value::Object(r)) => {
+            let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
+            let item = lab.item_on(me, entry, line).ok_or(Refused::NoEntry)?;
+            Some(ran(&lane(lab, me, vault), item, &named(o)?, &[RecordOp::Put(r.clone())])?)
+        }
+        Some(_) => return Err(bad("put_file into an entry takes its new record as value, an object")),
+    };
+    if put.is_none() && o.contains_key("schema") {
+        return Err(bad("put_file takes a schema beside a value alone: the schema it sets the record through"));
+    }
     let root = brought.as_ref().map(|b| b.root);
-    let edit = lab.bring_into(me, actor, entry, brought.into_iter().collect())?;
+    let change = |item: &mut Item| {
+        if let Some((new, view)) = &put {
+            item.write(view, new);
+        }
+    };
+    let edit = lab.bring_on(me, actor, entry, line, brought.into_iter().collect(), change)?;
     let Some(root) = root else { return Ok(json!({ "entry": entry.to_hex() })) };
-    Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "root": hex(&root.hash), "size": root.size }))
+    let (line, edit) = (super::line_json(line), edit.to_hex());
+    Ok(json!({ "entry": entry.to_hex(), "line": line, "edit": edit, "root": hex(&root.hash), "size": root.size }))
 }
 
 /// How many bytes put_file op `o` brings: its `len`.

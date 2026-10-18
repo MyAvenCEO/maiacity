@@ -1,7 +1,7 @@
 # avenDB architecture
 
 avenDB is the user-owned, end-to-end encrypted, local-first database under maiaCITY. This file describes it as it
-ships with edit format version 10, from first principles. It is the one reference for the design.
+ships with edit format version 11, from first principles. It is the one reference for the design.
 
 Three things keep it honest. The Lean model in `avendb/spec` states what must always hold and proves it. The Rust
 crates in `avendb/crates` build it. Shared test vectors (`avendb/spec/vectors`) hold the two to the same answers, edit
@@ -790,8 +790,13 @@ open X's current key. That breaks T24 and T15. A new stay at each mark keeps the
 
 ## 7. Entries, writes and history
 
-**An entry** belongs to one vault and is named by 32 random bytes its creator draws. Its first write creates it and
-carries its header, which never changes: its type and when it was created. Its author is the vault the creating write
+**An entry** belongs to one vault and is named by a hash: the BLAKE3 of its vault, the signer that creates it and 32
+random bytes, its nonce, which the creating write carries in the clear (`policy::Creation`, `EntryId::of`). Every peer
+checks it as it verifies the creating write's signatures (`Signed::verify`), so an entry's id says which vault it is of
+and who made it, and nobody creates an entry under the id of another signer's, in any vault, to take its place on a
+peer that hasn't seen it yet. It can't be the hash of the creating write itself: that write's body is sealed under the
+entry's key, which its id names. Its first write creates it and carries its header, which never changes: its type and
+when it was created. Its author is the vault the creating write
 acted for. Its tags are a set of symbols that writes change by deltas. Header, tags and content all travel in the
 write's encrypted body (`slice::Body`): `{header, tags, answers, content, proof, files}`. No relay sees a type or a tag.
 
@@ -1027,7 +1032,7 @@ schema or a lens is created as an entry of its type (section 9).
 | `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}`; with `"standing": true`, a standing grant on every vault it reached, `{"edits"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
 | `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenCEO server's share among them, and a profile on each. `{"vaults"}` | Always |
-| `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}`. With `entry` in place of `vault` and `tags`, `put_file {entry, name, media, len, as}` brings them into that entry instead, landed on its main line, by one write there (`Lab::bring_into`), as a new default of a recipe's source. `{"entry", "edit", "root", "size"}` | Never |
+| `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}`. With `entry` in place of `vault` and `tags`, `put_file {entry, name, media, len, as}` brings them into that entry instead, landed on its main line, by one write there (`Lab::bring_into`), as a new default of a recipe's source; with `line`, on that line of it, a proposal or a variant, and with `value` (and `schema`), the write sets the whole record too: a version and its file in one write (`Lab::bring_on`), as each version and variant of an asset is. `{"entry", "line", "edit", "root", "size"}` | Never |
 | `ask {to, asks, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; or, `asks` `"owner"`, to co-own `to`, or `"invite"`, for `to` to co-own the acting vault, at Owner, as the kind table lets it; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
 | `back_up {on}` | avenCEO server's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
 | `mark {entry}` | The steward's mark of the entry, now. `{"edit"}`, `null` where the marks are right already | Never |
@@ -1037,8 +1042,9 @@ schema or a lens is created as an entry of its type (section 9).
 
 **Who may.** `share` and `revoke` through a share need the `share` op in the chain the acting vault holds. `put_file`
 and a schema's creation are creations, under the `create` and `set` ops, and a create's file comes with its creation.
-`put_file` into an entry is a `set` of its whole record, so a Suggester's empty write, which every reader counts, never
-gives an entry a file (`Lab::line_files`). `read_file` needs read reach (T27). `mark`,
+`put_file` into an entry is a `set` of its whole record on its line, so a Suggester's empty write on main, which every
+reader counts, never gives an entry a file (`Lab::line_files`), and a Suggester's version with its file on a proposal
+is the entry's once its vault merges it into main. `read_file` needs read reach (T27). `mark`,
 `settings`, `found`, `keep`, `copy`, `back_up`, `card` and `profile` are only for devices acting for the vault itself,
 never through a share. `follow` and `set_limits` need nothing: any device follows any vault, and sets its own
 limits. An agent device runs neither (section 3).
@@ -1464,9 +1470,14 @@ coop: it knows it once Maia City gives avenCEO server backup or relay, as every 
 their server setting. `?vault=<64 hex>` keeps one vault's and `?bare=1` leaves the records out, a listing for when they
 grow big. `GET avendb.maia.city/feed/entry/<vault>/<entry>` serves any one of those rows on its own, and
 `{"error": ...}`, not found, for an entry that isn't public, that is deleted or that the server doesn't hold.
+An entry whose writes bring files more than once, as an asset does, one write for each of its versions and variants,
+also lists each such write (`brought`, `Lab::brought`), on its main line and on each of its variants, main's first:
+`{edit, line, version, files, record}`, the line whose history holds it (`null` for main's), the version of main it
+belongs to (`engine::main_version`), the files it brings and the record at it, read as the row's own is.
 `GET avendb.maia.city/feed/entry/<vault>/<entry>/file` serves the newest of a code row's `files` whole, a recipe's
 source, say, up to 32 MiB (`LARGEST`), as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`, so no
-page runs it as a script; not found, as text, for any other entry, or one that brings no file. The three take the same
+page runs it as a script; not found, as text, for any other entry, or one that brings no file;
+`<…>/file/<root>` serves any file the row lists by its root, of its `files` or of a version it brought. The three take the same
 `?vault=`, `?seed=1` and `?bare=1`, the file's `?vault=` and `?seed=1`; the server works the whole list out at most
 every 5 s and serves each from it. A loader checks what it takes with its own checker before a sandboxed host runs it:
 the server vouches for nothing but what everyone may read. Every route of the feed answers any page
@@ -1769,6 +1780,10 @@ A file enters avenDB with a write of the entry it belongs to. A file in a vault'
 a record of the `file` schema with the file's name and media type, made by one write and brought by the next (the
 `put_file` op). Shares, sync and deletion work on it as on a note. An entry of any other kind brings one in its
 creation's own write (a `create` with a `file`), or by one write on its main line later (`put_file` with `entry`).
+An asset is one entry whose history holds every version and variant of it: its first version a creation with its
+file, each later one a proposal whose one write sets its record and brings its file, merged into main, and each variant
+a line beside main that follows it, its own record and file written after each version (`put_file` with `line` and
+`value`). Readers find each version by its write (`Lab::brought`), its file by its root.
 
 **Sealed blob, version 2** (`crates/avendb/src/sealed.rs`, its bytes pinned by vectors):
 
@@ -1840,8 +1855,9 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 14 since the last reset (2026-10-18), as one passkey signs a person in to maiaCITY and opens their avenDB
-together, and a person's profile lives in their human vault alone, public by default.
+it runs (`bucket::clear`). `FLOOR` is 15 since the last reset (2026-10-18), as an entry's id is the hash of its vault,
+its creator and its creation's nonce (edit format 11), and each asset is one entry whose versions and variants are its
+history.
 
 ### Layout of one generation
 

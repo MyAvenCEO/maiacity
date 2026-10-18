@@ -40,7 +40,7 @@ use slh_dsa::signature::Keypair as _;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use crate::hash::{self, Hasher};
-use crate::id::{EditId, SignerId};
+use crate::id::{EditId, EntryId, SignerId};
 use crate::keys::Secret;
 use crate::policy::{Action, Edit, Principal, Refusal, Sharing};
 
@@ -186,8 +186,14 @@ pub struct Signed {
 }
 
 impl Signed {
-    /// The edit, if each signer it names signed it.
+    /// The edit, if each signer it names signed it. A write that creates its entry must name the entry by its own id,
+    /// the hash of its vault, its author and its nonce (`EntryId::of`), else `NotItsId`.
     pub fn verify(&self) -> Result<&Edit, Refusal> {
+        if let Action::Write { vault, entry, create: Some(c), .. } = &self.edit.action
+            && *entry != EntryId::of(*vault, self.edit.author, &c.nonce)
+        {
+            return Err(Refusal::NotItsId);
+        }
         let signers: Vec<SignerId> = self.edit.sigs().collect();
         let id = self.edit.id();
         let joins = match self.edit.action {
@@ -858,7 +864,7 @@ impl Passkey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id::{EntryId, VaultId};
+    use crate::id::VaultId;
     use crate::policy::{Kind, Level, Principal, Revoking, Setting, Share, Who};
 
     fn edit(author: SignerId, cosigners: Vec<SignerId>) -> Edit {
@@ -980,6 +986,31 @@ mod tests {
             Signed { edit: both.clone(), sigs: vec![key.sign(both.id())] }.verify().err(),
             Some(Refusal::BadSignature)
         );
+    }
+
+    #[test]
+    fn a_creation_names_its_entry_by_its_own_id() {
+        let (key, other) = (DeviceKey::from_secret([7; 32]), DeviceKey::from_secret([8; 32]));
+        let (v, nonce) = (VaultId::from_u64(1), [5; 32]);
+        let creation = |author: SignerId, entry: EntryId| {
+            let mut e = write(author);
+            if let Action::Write { entry: x, create, .. } = &mut e.action {
+                (*x, *create) = (entry, Some(crate::policy::Creation { audience: vec![], nonce }));
+            }
+            e
+        };
+        let signed = |key: &DeviceKey, e: Edit| Signed { sigs: vec![key.sign(e.id())], edit: e };
+        let ours = creation(key.id(), EntryId::of(v, key.id(), &nonce));
+        assert!(signed(&key, ours).verify().is_ok());
+        // another signer's id, another vault's, another nonce's or a number: refused, however well signed
+        for entry in [EntryId::of(v, other.id(), &nonce), EntryId::of(VaultId::from_u64(2), key.id(), &nonce)] {
+            assert_eq!(signed(&key, creation(key.id(), entry)).verify().err(), Some(Refusal::NotItsId));
+        }
+        for entry in [EntryId::of(v, key.id(), &[6; 32]), EntryId::from_u64(1)] {
+            assert_eq!(signed(&key, creation(key.id(), entry)).verify().err(), Some(Refusal::NotItsId));
+        }
+        // a later write names its entry by any id: the creation's check made it
+        assert!(signed(&key, write(key.id())).verify().is_ok());
     }
 
     #[test]

@@ -13,13 +13,14 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use serde_json::{Map, Value, json};
 
 use crate::doc::Item;
-use crate::engine::{SHOWN, Wrote, described, line_name, numbered, releases, wrote};
+use crate::engine::{SHOWN, Wrote, described, line_name, main_version, numbered, releases, wrote};
 use crate::history::{Change, History, MAIN};
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, Recipient};
 use crate::lab::Lab;
 use crate::lens::{self, DocV1, Lens, Schema};
 use crate::merge::Conflict;
+use crate::sealed::FileRoot;
 use crate::policy::{Action, Edit, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Vault, Who};
 use crate::sign::{Signature, SignerKeys, WebAuthn};
 use crate::slice::LENS_TYPE;
@@ -103,7 +104,7 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     let authored: Vec<String> = item.map(|i| i.authored().iter().map(|b| b.to_hex()).collect()).unwrap_or_default();
     let (v, x) = (en.vault, en.audience());
     let levels: Map<String, Value> = levels(st, v, x).iter().map(|(v, r)| (hex(&v.0), level_name(*r).into())).collect();
-    json!({
+    let mut row = json!({
         "entry": hex(&entry.0),
         "type": ty,
         "tags": meaning.as_ref().map(|m| m.attrs.tags.iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>()),
@@ -123,7 +124,26 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
         "actor": hex(&en.creator.0),
         "public": st.public_key(KeyFam::Audience(v, x)),
         "levels": levels,
-    })
+    });
+    // an entry whose writes bring files more than once, as an asset's versions and variants do: each, with the record
+    // at it, as avenDB's server's feed lists them (`world::public_entries`)
+    let brought = lab.brought(me, entry);
+    if let (Some(h), true) = (history, brought.len() > 1) {
+        let version = |(edit, line, files): (EditId, Line, Vec<(FileRoot, Option<u64>)>)| {
+            let file = |(root, len): (FileRoot, Option<u64>)| {
+                json!({ "root": hex(&root.hash), "size": root.size, "len": len })
+            };
+            json!({
+                "edit": hex(&edit.0),
+                "line": line.map(|b| hex(&b.0)),
+                "version": main_version(h, edit, line),
+                "files": files.into_iter().map(file).collect::<Vec<_>>(),
+                "record": h.item_at(&[edit], me, line).record(),
+            })
+        };
+        row["brought"] = brought.into_iter().map(version).collect();
+    }
+    row
 }
 
 /// The edits device `me` holds on vault `vault`, by kind: its founding, the writes and moves (marks that take an entry
@@ -303,7 +323,8 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                     "line": line.map(|b| hex(&b.0)),
                     "starts": *proposal == Proposal::New,
                     "via": vias(via),
-                    "create": create.as_deref().map(share_ids),
+                    "create": create.as_ref().map(|c| share_ids(&c.audience)),
+                    "nonce": create.as_ref().map(|c| hex(&c.nonce)),
                     "files": files.iter().map(|f| json!({ "root": hex(&f.hash), "size": f.size })).collect::<Vec<_>>(),
                     "sealed": body.len(),
                 }),
