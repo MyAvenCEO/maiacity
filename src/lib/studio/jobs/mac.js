@@ -15,6 +15,11 @@ let worker = null;
 /** @type {string[]} the worker's last lines, newest first */
 export const lines = [];
 
+/** whether the studio is playing: the worker starts nothing then (`held`) */
+let playing = false;
+/** The studio says when it plays and stops. @param {boolean} on */
+export const studioPlaying = (on) => void (playing = on);
+
 /** The app's device, or `null` off the Mac app or while it isn't open. */
 async function device() {
 	if (!native()) return null;
@@ -34,6 +39,10 @@ export async function macWorker() {
 		// every vault the person reaches but a device's: the Maia City vault's footage as much as their own
 		vaults: (w) => (w.vaults ?? []).filter((/** @type {any} */ v) => v.kind !== 'device' && v.acting?.reaches).map((/** @type {any} */ v) => v.id),
 		executors: { ...EXECUTORS, ...NATIVE },
+		// one task at a time, none while the studio plays (Samuel's Mac, 8 GB: a proxy, the speech model and an analysis
+		// at once, beside the app's own pages, ran it out of memory before the studio was even open)
+		max: 1,
+		held: () => playing,
 		log: (line) => {
 			lines.unshift(`${new Date().toLocaleTimeString()} ${line}`);
 			lines.length = Math.min(lines.length, 50);
