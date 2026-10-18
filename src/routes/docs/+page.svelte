@@ -5,6 +5,8 @@
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 
+	// its link is rel="external", so the prerender doesn't look for an element `docs` on /app/avendb/, which only the
+	// page's own script draws
 	const to = `${base}/app/avendb/#docs`;
 	onMount(() => location.replace(to));
 </script>
@@ -15,5 +17,5 @@
 </svelte:head>
 
 <main class="wrap">
-	<p>The docs are in avenDB now: <a href={to}>open them there</a>.</p>
+	<p>The docs are in avenDB now: <a href={to} rel="external">open them there</a>.</p>
 </main>
