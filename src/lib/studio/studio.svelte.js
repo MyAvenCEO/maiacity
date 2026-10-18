@@ -74,6 +74,8 @@ const DUCK = 0.5;
 export const isWorld = (c) => c?.kind === 'world';
 /** Whether tab `tab` plays world clips in the live world (the rest play their HD proxies). @param {string} tab */
 export const liveTab = (tab) => tab === '3d' || tab === 'edit';
+/** where a shot has its world staged (src/lib/film `keyOf`): its stand, dome and set @param {ShotSpec} s */
+const stageKey = (s) => JSON.stringify([s.world?.stand ?? null, s.world?.dome ?? null, s.world?.props ?? null]);
 /** @param {string} shape */
 export const ratio = (shape) => {
 	const [w, h] = shape.split(':').map(Number);
@@ -1529,7 +1531,12 @@ export class Studio {
 		if (this.world.state !== 'ready') return;
 		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
 		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
-		if (specs.length) void this.world.prepare(specs);
+		// while it plays, only the shots staged where the one on screen is: preparing one that stands elsewhere moved the
+		// world there under the playing shot (its frames held, then staged back, then again at the cut: no clean
+		// playback in a world of many stands, Sandbox 3's village); those are prepared before the play and at their cut
+		const here = this.playing && c && isWorld(c) ? this.specOf(c) : null;
+		const ready = here ? specs.filter((x) => stageKey(x) === stageKey(here)) : specs;
+		if (ready.length) void this.world.prepare(ready);
 		// stopped: every world shot from the playhead on metered ahead, so playing never stops at a cut to meter one
 		if (!this.playing && !this.starting) {
 			const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
