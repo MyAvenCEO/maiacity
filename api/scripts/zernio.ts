@@ -39,7 +39,7 @@ for (const f of files) {
   if (!d) throw new Error(`the vault does not describe ${f.hash}`);
   docs.set(f.hash, d);
 }
-// a public address for a file: the vault's gateway when the file is public; else it is uploaded to Zernio first
+// a public address for a file: the legacy gateway only for a file still marked public; an avenDB file is uploaded to Zernio first
 const GATEWAY = "https://api.maia.city/vault/files";
 const urlOf = (ref: string) => {
   const hash = ref.replace(/\.[a-z0-9]+$/, "");

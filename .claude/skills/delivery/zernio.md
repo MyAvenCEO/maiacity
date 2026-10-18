@@ -20,7 +20,7 @@ these requests from a day's derivatives: `bun api/scripts/zernio.ts blog/day-NN-
 | Way | How | Limit |
 |---|---|---|
 | Presigned upload | `POST /v1/media/presign {filename, contentType, size}` → `{uploadUrl, publicUrl, key, expiresIn}`; one `PUT` of the file to `uploadUrl` (same `Content-Type`, within 3,600 s); then `publicUrl` in the post | ≤ **5 GB**, one PUT, no multipart. Types: jpeg, png, webp, gif, mp4, mpeg, quicktime, avi, webm, x-m4v, pdf, audio |
-| A public URL | Our own HTTPS URL straight in `mediaItems[].url` (the vault gateway `https://api.maia.city/vault/files/<hash>` for public files); Zernio fetches it | Not documented; the way past 5 GB |
+| A public URL | Our own HTTPS URL straight in `mediaItems[].url` (the legacy vault gateway `https://api.maia.city/vault/files/<hash>` for its public files; an avenDB file is uploaded first); Zernio fetches it | Not documented; the way past 5 GB |
 | Direct upload | `POST /v1/media/upload-direct` multipart `file` | ≤ 25 MB, deleted after 7 days (inbox attachments) |
 
 Uploads wait 7 days in Zernio's temporary storage for a post to use them.

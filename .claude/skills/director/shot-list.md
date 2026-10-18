@@ -1,6 +1,6 @@
 # The shot list: a film as data
 
-A world film is written as a shot list (`scripts/film/<film>.mjs`) before anything is rendered; the studio then holds each shot as a record (`/api/shots`) a timeline plays live.
+A world film is written as a shot list (`scripts/film/<film>.mjs`) before anything is rendered; Studio 2 then holds each shot as a `shot` entry in avenDB (every version an entry of its own, `src/lib/studio/avenshots.js`) that a cut plays live.
 
 ## Shot list anatomy (`day-19-d.mjs`, `shoot.mjs`)
 

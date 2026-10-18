@@ -3,7 +3,7 @@
 //
 //   node scripts/film/thumbnail.mjs blog/day-NN-<slug>/thumbnail.json
 //
-// Each card and hook layer goes into the vault (described; the Mac app must be running): the cards public, tagged
+// Each card and hook layer goes into avenDB's Library (described; ./vault.mjs, a draft in an AIP where avenMAIA only suggests), tagged
 // with the story they belong to ("idea:233 settlers, how it starts"), "role:thumbnail", "shape:16x9" …; the hook layers "role:hook". A new one takes its place from the one
 // before (which is kept, superseded). Their hashes are written back into thumbnail.json ("cards", "hooks"), where the
 // article and the day's posts take them from.

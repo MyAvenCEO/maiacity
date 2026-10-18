@@ -741,8 +741,19 @@ impl Agent {
              let it add or draft one there. Where it may only suggest, \
              as a Suggester, which an agent is on {coop}, it is a draft, its file a draft Library file of its own: \
              the answer says `draft: true`, and gives its `line` and the `proposals` to name in `aip_open`, then \
-             `aip_promote`; the vault's owners land it by accepting the AIP. For access it lacks, ask its person \
-             with avendb_request_access, saying why: they answer in The OS app.",
+             `aip_promote`; the vault's owners land it by accepting the AIP. Studio 2, the film studio, keeps its \
+             cuts as entries of type cut in {coop}: a cut's record holds its name, project, variant, stage and \
+             version, and its whole timeline as one JSON text, `timeline` (its clips by track, each picture clip's \
+             grade `stacks`, the scenes' looks in `grade`, each sound clip's `vol`, `eq` and fades). Read cuts with \
+             avendb_ask, `world`; propose a timeline edit as any other: `propose` on the cut, then `set` \
+             `[\"timeline\"]` with the whole timeline changed and `[\"at\"]` with the time on its `line`, and an AIP; a \
+             new cut is a draft `create` of type cut. Renders, hero frames, graded stills and proxies are entries of \
+             type task the studio's rules make for the Mac's worker: `render` and `frame` of a cut, `world-proxy` of \
+             a shot version, asked in the studio, and `probe`, `proxy`, `still`, `transcript` and `analysis` of every \
+             file tagged media:original, by themselves; where it may only suggest, its AIP's note names what to \
+             make once it lands, and the person asks it. A done task's `outputs` are file entries, read with \
+             avendb_read_file. For access it lacks, ask its person with avendb_request_access, saying why: they \
+             answer in The OS app.",
             name = self.name,
             coop = world::SEED_COOP,
         )

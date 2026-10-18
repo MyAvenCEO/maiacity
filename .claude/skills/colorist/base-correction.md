@@ -19,8 +19,8 @@ the camera got wrong from shot to shot, so the cut stops jumping.
 3. **One scene at a time.** A scene is one place in one light (the V1 clips' `script.scene`). Level the shots inside
    a scene first, then scene to scene.
 4. **One scene master.** Take the wide shot that shows the scene's light (the WS, or the widest MS). Balance it
-   first. Match every other shot of the scene **to it**, never to the shots' average: `grade_match` without a
-   reference averages, so don't use it that way. When the master shows no face, the scene's closest face shot is
+   first. Match every other shot of the scene **to it**, never to the shots' average: an automatic match without a
+   reference averages, so don't use one that way. When the master shows no face, the scene's closest face shot is
    matched to the master first and then becomes the skin reference for the rest of the scene.
 5. **Ask before every scene:** a warmer, neutral or cooler base, and how much. Samuel decides the warmth. It is set
    on the master's white balance and written down with the scene (see "The pass" below). A touch is about 0.25 stop
@@ -88,7 +88,7 @@ Rules of thumb on the Rec.709 display (through the ACES 2.0 output, 0–100 IRE)
 
 **Exposure and white balance in linear light.** A balance's `linear` switch sets white balance and exposure as gains
 in linear light, the way Cullen Kelly sets them; contrast, highlights, lows and saturation stay in the log. Every new
-balance starts with it on, and `grade_match` proposes it on. Above ACEScct 0.155 (about 4.5 stops under grey) a gain
+balance starts with it on. Above ACEScct 0.155 (about 4.5 stops under grey) a gain
 and a log offset are the same thing, so the numbers mean what they always meant. On the Rec.709 display that line is
 about 8 IRE: only what lies under it changes. There, the log offset of a balance without `linear` lifts and tints the
 deepest blacks; with `linear` on, black stays black and neutral. A balance saved without the switch keeps working the
@@ -96,38 +96,37 @@ old way until it is switched on (Day 01's were switched on on 2026-10-03).
 
 ## The tools
 
-All of them run natively in the Mac app (maiaCITY Studio, over MCP). The grade's maths lives only in Rust
-(vault-render `grade`, the same maths in Metal for the render). The studio's viewer samples a cube that Rust bakes,
-so it never computes the grade itself.
+The grade is data on the cut, in Studio 2 (avenDB, in The OS app). Its maths lives only in Rust (vault-render
+`grade`, the same maths in Metal for the render); the Grade tab samples a cube Rust bakes and never computes the grade
+itself. An agent works through the avendb MCP as avenMAIA, a Suggester on Maia City (`story-producer` `pipeline.md`,
+"Studio 2 through avenDB"):
 
-- **`grade_scopes`** `{ timeline, clips: [master, …], regions? }`: the scope sheet, one row per shot with the master
-  first. Each row has the picture after its balance (the skin box drawn in magenta), its waveform (5/10/50/90/100
-  IRE), RGB parade, and vectorscope with the skin line, drawn from the 4K grading stills. It comes back as the picture
-  itself, shown inline (never a file). **Look at it** before every decision and after every write.
-- **`grade_look`** `{ timeline, clips?, regions? }`: the elements in numbers, as shot and balanced:
+- **Read the grade:** the cut entry's `timeline` JSON (`avendb_ask` `world`). A shot's balance is a `balance` tool in
+  its clip's `stacks.base.tools` (**linear**, temp, tint, exposure, contrast, highlights, shadows, **sat**; all 0 = as
+  shot), its clip look `stacks.clip`, the scene's look `grade.scenes[<script.scene>]`, the timeline's `grade.timeline`.
+- **Write it:** on a proposal of the cut (`propose`, then `set` `["timeline"]` with the whole timeline on its `line`),
+  every shot of a scene in one proposal, put to Samuel in an AIP whose note gives each shot's numbers before and
+  after. Always `linear: true` on a balance.
+- **The 4K grading stills:** each `media:original` video's `still` task makes one (ACEScct, `media:still`) and its
+  preview through the output (`media:preview`); a cut's `frame` task with `clip` makes that shot's graded still
+  through its grade, as its file's preview. Find them in the world (entries of type `task`, `record.inputs[0].entry`
+  the file or the cut, `outputs` the files), read them with `avendb_read_file` to this Mac, and **look at them**
+  before every decision. A graded still is made again when the Studio saves a change to a shot's look; a proposal
+  lands without it, so the AIP's note names the stills to make again.
+- **What to read on a still** (the legacy studio's `grade_look` read these; Studio 2 has no measuring tool for agents
+  yet, so measure on the files you read back — ffmpeg's `signalstats` and waveform, or by eye — and in the Grade tab's
+  scopes):
   - the levels p1 … p99 in IRE, contrast, clipped %, saturation
   - the **blacks**, the **whites** (unclipped, not strongly coloured) and the **mids**: each one's level and cast
     (warm = R − B, green = G − (R + B) / 2, in IRE)
-  - the **skin** of the face Apple Vision finds (cheeks and forehead): its level, hue, `off_skin_line` in degrees,
-    and chroma
-  - any **regions** named by hand
-- **`regions`** `{ <clip>: { white, grey, black, skin } }`, each a box [x0, y0, x1, y1] from the frame's top left
-  (0…1). Use them when the eye knows better than the finder: a white wall known to be neutral, a real black, the key
-  side of a face Vision misses.
-- **`grade_match`**:
-  - **The master:** `{ clips: [master], neutral: true, warmth }`. Its neutrals go to grey (the white or grey named,
-    else its whites and mids), then it gets `warmth` stops warmer. Its exposure and the rest stay as they are, and
-    are set by hand.
-  - **The others:** `{ reference: master, clips: [the scene's shots], skip?, regions? }`. Each shot is fitted to the
-    master by the blacks, whites, mids and skin that both have. Blacks count only when the shot has real ones
-    (under 15 IRE), and whites only above 50 IRE. `skip: { <clip>: ["blacks"] }` leaves out what a shot has only
-    by content.
-  - Run **`apply: false`** first. The answer gives each shot's balance, `matched_by`, and `predicted`: its elements
-    after that balance.
-- **`grade_stack { stack: "base", clip, set: { tools: [{ tool: "balance", linear: true, ... }] } }`**: one shot's
-  balance by hand (**linear**, temp, tint, exposure, contrast, highlights, shadows, **sat**; all 0 = as shot).
-  Always with `linear: true`.
-- **`render_frame`**: a hero frame through the whole chain, for checking either side of a cut.
+  - the **skin** (cheeks and forehead): its level, hue, how far off the skin line in degrees, and chroma
+  - any **regions** named by hand: a box [x0, y0, x1, y1] from the frame's top left (0…1) — a white wall known to be
+    neutral, a real black, the key side of a face.
+- **Matching** a shot to the master is done by those numbers: fit the blacks, whites, mids and skin that both have.
+  Blacks count only when the shot has real ones (under 15 IRE), whites only above 50 IRE; leave out what a shot has
+  only by content.
+- **Hero frames** either side of a cut: a `frame` task with `t` and `shape`, asked in the Studio (Hero frame) — name
+  them in the AIP's note.
 
 ## The pass, scene by scene
 
@@ -135,17 +134,17 @@ so it never computes the grade itself.
    scenes and pick each scene's master (rule 4). Note the motivated light, the clipped skies and the faces.
 2. **Ask** Samuel per scene: warmer, neutral or cooler, and how much (rule 5). Nothing is written before the answer.
 3. **The master:**
-   - Set exposure on the key side of the face (or on the middle when there is no face), with a `balance` tool on its base stack (`grade_stack`).
+   - Set exposure on the key side of the face (or on the middle when there is no face), with a `balance` tool on its
+     base stack (`stacks.base`).
    - Put the blacks and whites where they belong.
-   - Run `grade_match` with `neutral: true, warmth` so the neutrals are neutral and the agreed warmth sits on top.
+   - Take its neutrals to grey (the white or grey named, else its whites and mids), then the agreed warmth on top.
    - Use contrast only if the shot is flat or harsh.
-   - Check it on `grade_scopes`.
+   - Check it on its grading still.
 4. **The other shots of the scene:**
-   - Run `grade_match` with `reference: <master>` and `apply: false`.
-   - Read `predicted` against the master, then look at `grade_scopes` with the master's row first.
+   - Start from the master's balance, and fit it by the numbers both shots have, the master's still beside it.
    - Correct by the table above (blacks, whites, contrast, colour, saturation, then skin): name regions, skip what
-     is content, or set a shot by hand (a `balance` tool on its base stack, `grade_stack`).
-   - Write the result, then look at the scope sheet again.
+     is content, or set a shot by hand (a `balance` tool on its base stack).
+   - Write the scene on one proposal; once the AIP lands and the graded stills are made again, look again.
 5. **Across every cut:** make hero frames either side and flick between them, then play the scene. Nothing may jump.
 6. **Scene to scene:** compare the masters with each other. Allow a change only where the light really changes
    (inside to outside, morning to noon), never a jump without a reason.
@@ -174,9 +173,10 @@ so it never computes the grade itself.
   balance, then move only what its own light needs.
 - **Face and feet aren't the same level.** Feet on a bright rug read 68 IRE against the face's 49. Match the feet's
   colour, not their level (`skip: { <clip>: ["skin.level"] }`).
-- **The quickest loop:** `grade_stack` (the base's balance), then `grade_look` with the same regions, 15–20 s per step, reading the
-  skin, the named neutrals and the blacks against the reference. `grade_match` gives the starting point and
-  `grade_scopes` the check.
+- **The quickest loop** (Day 01, on the legacy studio's tools): set the base's balance, then read the same regions
+  again, 15–20 s per step, the skin, the named neutrals and the blacks against the reference; an automatic match gave
+  the starting point and the scope sheet the check. In Studio 2 the loop is the Grade tab's, live, in The OS app; an
+  agent's loop is a proposal, its graded stills, and the next proposal.
 - **Where Day 01 landed:**
   - All faces 47.5–49 IRE, within 5° of the skin line.
   - Blacks 5–10 IRE, mid-tones 40–50 IRE.

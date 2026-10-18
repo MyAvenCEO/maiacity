@@ -1,6 +1,6 @@
 ---
 name: colorist
-description: The colorist of maiaCITY's films, in the ACES pipeline over MCP (the Mac app's grade tools — the maths only in Rust and Metal). First the base correction (each scene levelled to its master by blacks, whites, contrast, colour, saturation and skin, judged on the 4K grading stills through the ACES 2.0 output), then the look (film and scene looks, teal and orange without ruining skin, secondaries, finishing), colour that follows the story's arc, and rendered 3D-world shots made to sit with iPhone footage. Use it whenever a timeline is balanced, graded or given a look, or when shots don't match.
+description: The colorist of maiaCITY's films, in the ACES pipeline in Studio 2 (avenDB in The OS app: the grade as data on the cut, proposed through the avendb MCP as avenMAIA; the maths only in Rust and Metal). First the base correction (each scene levelled to its master by blacks, whites, contrast, colour, saturation and skin, judged on the 4K grading stills through the ACES 2.0 output), then the look (film and scene looks, teal and orange without ruining skin, secondaries, finishing), colour that follows the story's arc, and rendered 3D-world shots made to sit with iPhone footage. Use it whenever a timeline is balanced, graded or given a look, or when shots don't match.
 ---
 
 # Colorist
@@ -39,7 +39,7 @@ post house: balance first, the look on top, never the other way round.
 
 | File | The skill | Use it for |
 |---|---|---|
-| `base-correction.md` | the balance pass | scene masters, the warmth asked per scene, blacks, whites, contrast, colour, skin; the tools (`grade_scopes`, `grade_look`, `grade_match`, `grade_stack`); Day 01's lessons |
+| `base-correction.md` | the balance pass | scene masters, the warmth asked per scene, blacks, whites, contrast, colour, skin; the tools (the cut's stacks, a proposal, the grading stills and what to read on them); Day 01's lessons |
 | `look.md` | the creative grade | the stack order, teal and orange without ruining skin, interiors that read real, finishing as a kiss, rolling a reference out to the timeline |
 | `color-story.md` | colour across the film | a colour arc for the story, harmony and contrast, film-like density and roll-off, CG beside camera footage, judging on phones |
 
@@ -56,3 +56,7 @@ to add, the capture checklist — is `APPLE-LOG-2-RESEARCH.md` at the repository
 5. The film look against the references, then scene looks, then trims, then secondaries only where still needed,
    finishing last (`look.md`).
 6. Hero frames at 4K either side of every cut; play it in the Grade tab; nothing may jump.
+
+An agent grades by proposal: it reads the cut entry (its `timeline` holds every stack), writes a scene's balance or a
+look on a proposal of it, and puts that to Samuel in an AIP whose note gives the numbers and the stills and frames to
+make again (`story-producer` `pipeline.md`, "Studio 2 through avenDB").

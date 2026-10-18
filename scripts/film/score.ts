@@ -8,7 +8,7 @@
 // piece. The sound effects are the film's own (dawn chorus, cold wind, …), each made from its line in SFX below.
 // Everything goes into the vault (described) and the shot list names it by hash: a new score or cue takes the old
 // one's place there (the old one is kept, superseded); a new sound effect's hash is printed, for the shot list.
-// Needs FAL_API_KEY, and the Mac app running (its vault).
+// Needs FAL_API_KEY, and agentScripts approved in The OS app (avenDB, ./vault.mjs).
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
