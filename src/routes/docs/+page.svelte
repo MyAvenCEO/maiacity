@@ -7,7 +7,7 @@
 
 	// its link is rel="external", so the prerender doesn't look for an element `docs` on /app/avendb/, which only the
 	// page's own script draws
-	const to = `${base}/app/avendb/#docs`;
+	const to = `${base}/app/#docs`;
 	onMount(() => location.replace(to));
 </script>
 

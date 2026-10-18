@@ -52,7 +52,7 @@
 		<p>
 			{Here} holds no account of yours. Set one up, or sign in with your passkey, on avenDB's page{said ? `, then come back${said}` : ''}.
 		</p>
-		<a class="go" href="{base}/app/avendb/">Set up or sign in</a>
+		<a class="go" href="{base}/app/">Set up or sign in</a>
 		{#if session.error}<p class="why" role="alert">{session.error}</p>{/if}
 	</article>
 {:else if session.phase === 'broken'}

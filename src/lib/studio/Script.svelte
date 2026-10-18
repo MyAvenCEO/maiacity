@@ -105,7 +105,7 @@
 
 <aside class="script">
 	<header>
-		{#if story}<a class="story" href="{base}/app/avendb/#stories/{story.id}" title="The story this film tells, in avenDB">{story.title} ›</a>{/if}
+		{#if story}<a class="story" href="{base}/app/#stories/{story.id}" title="The story this film tells, in avenDB">{story.title} ›</a>{/if}
 		<span class="by">Written by the agent through MCP · the timeline switcher is top right</span>
 	</header>
 

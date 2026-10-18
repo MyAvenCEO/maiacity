@@ -127,7 +127,7 @@
 				</ol>
 				<p class="about">{st?.note}</p>
 				{#if card.picked.stage < card.stages.length - 1}<p class="next">Next: {card.stages[card.picked.stage + 1]!.name}</p>{/if}
-				<a class="open" href="{base}/app/avendb/#assets">Grow it in the assets →</a>
+				<a class="open" href="{base}/app/#assets">Grow it in the assets →</a>
 			</div>
 		</aside>
 	{/if}
