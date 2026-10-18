@@ -4,7 +4,7 @@
 import { API, fileUrl, describeMedia, may, me } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
 import { avenLibrary, withGraded } from './aven.js';
-import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut } from './cuts.js';
+import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut, shootable } from './cuts.js';
 import { bringFilms } from './legacyfilms.js';
 import { sure } from '$lib/app/sure.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
@@ -642,8 +642,9 @@ export class Studio {
 		await Promise.all(this.worldClips.map((c) => (c.shot ? shotAt(c.shot, c.shotVersion) : null)));
 		this.shotRev++;
 		for (const q of this.cueClips) if (q.hash) void this.source(q.hash).catch(() => null);
-		// the world: started as soon as the timeline has world clips
-		if (this.worldClips.length) this.wantWorld = true;
+		// the world: started as soon as the timeline has a world clip in a world it can be shot in, and let go (its
+		// WebGL and memory with it) for a timeline with none — its world clips (if any) play from their proxies
+		this.wantWorld = this.worldClips.some((c) => shootable(cached(c.shot, c.shotVersion)?.spec));
 	}
 	/** the program monitor starts the world iframe when this is set */
 	wantWorld = $state(false);
