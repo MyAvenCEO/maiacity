@@ -284,6 +284,8 @@ export class Studio {
 
 	// ── derived ──────────────────────────────────────────────────────────────
 	byHash = $derived(new Map(this.library.map((m) => [m.hash, m])));
+	/** each original brought from the legacy studio, by its legacy hash (its `legacy:<hash>` tag): what a shot's sound cue still names */
+	byLegacy = $derived(new Map(this.library.flatMap((m) => m.tags.filter((t) => t.startsWith('legacy:')).map((t) => /** @type {[string, string]} */ ([t.slice(7), m.hash])))));
 	aspect = $derived(this.current?.aspect ?? '1:1');
 	/** @type {TimelineStage} */
 	stage = $derived(this.current?.stage ?? 'edit');
@@ -330,9 +332,11 @@ export class Studio {
 			const spec = cached(c.shot, c.shotVersion)?.spec;
 			for (const [i, q] of (spec?.cues ?? []).entries()) {
 				if (q.kind !== 'sound' || q.at < c.in || q.at >= c.in + c.dur) continue;
-				const len = this.sources[q.hash]?.duration ?? 2;
+				// a cue cut in the legacy studio names its sound by the legacy hash: the avenDB file brought from it plays
+				const hash = this.byLegacy.get(q.hash) ?? q.hash;
+				const len = this.sources[hash]?.duration ?? 2;
 				const start = c.start + (q.at - c.in);
-				out.push({ id: `${c.id}:cue${i}`, hash: q.hash, track: 'A3', start, in: 0, dur: Math.min(len, c.start + c.dur - start + 2), vol: q.level ?? 1, cue: true, from: c.id });
+				out.push({ id: `${c.id}:cue${i}`, hash, track: 'A3', start, in: 0, dur: Math.min(len, c.start + c.dur - start + 2), vol: q.level ?? 1, cue: true, from: c.id });
 			}
 		}
 		return out;
