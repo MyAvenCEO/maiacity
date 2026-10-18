@@ -1,7 +1,8 @@
 <!--
 	The program monitor: the timeline as it plays, in the frame of the shape being viewed. Media clips play from their
-	proxies (Edit) or originals (Grade), through the viewer's colour path; the videos themselves stay loaded, three at a
-	time (the one on screen and the next two), so a cut never waits. A world clip is the live world (film mode, in an
+	proxies (Edit) or originals (Grade), through the viewer's colour path; the videos themselves stay mounted, three at a
+	time (the one on screen and the next two): the one on screen loads, the next two only their metadata
+	(each of them loading whole, a 4K original among them, held the memory of the 8 GB Mac). A world clip is the live world (film mode, in an
 	iframe driven by the timeline's clock); while its world is not ready its HD proxy plays, else a drawn stand-in.
 	Captions are HTML over the picture — graphics, never graded.
 -->
@@ -314,7 +315,7 @@
 				bind:this={s.reelVideos[c.id]}
 				src={s.playUrl(c)}
 				crossorigin="anonymous"
-				preload="auto"
+				preload={pic?.id === c.id && !(isWorld(c) && live) ? 'auto' : 'metadata'}
 				playsinline
 				muted
 				onloadeddata={() => s.syncVideo()}

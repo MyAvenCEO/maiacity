@@ -42,7 +42,7 @@
 	const spec = $derived(wc ? s.specOf(wc) : null);
 	/** its lanes (./lanes.js): the camera, the hour, the exposure, every light, each of its world's moving parts, the cues */
 	const lanes = $derived(spec ? lanesOf(spec) : []);
-	const laneRows = $derived(lanes.map((l) => (l.kind === 'curve' && threeD ? '2.2rem' : '1.45rem')).join(' '));
+	const laneRows = $derived(lanes.map((l) => (l.kind === 'curve' && threeD ? '1.8rem' : '1.45rem')).join(' '));
 	// the Audio tab: the sound tracks only, taller, each clip with its level on it
 	const audio = $derived(s.tab === 'audio');
 	// the Script tab: the story's structure (its sections and their tension) over the captions

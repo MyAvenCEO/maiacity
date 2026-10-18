@@ -345,13 +345,11 @@ export class Studio {
 	 * The reel: the video on screen and the next two, so a cut never waits for a file to load (no black frame). A world
 	 * clip joins it with its HD proxy, which plays whenever the live world is not ready.
 	 */
-	reel = $derived.by(() => {
-		const v1 = this.clips
-			.filter((c) => c.track === 'V1' && !!this.playUrl(c))
-			.sort((a, b) => a.start - b.start);
-		const i = v1.findIndex((c) => c.start + c.dur > this.time);
-		return i < 0 ? [] : v1.slice(i, i + 3);
-	});
+	/** the V1 clips that play from a file, in order (not read again every frame: only as the clips or files change) */
+	reelClips = $derived(this.clips.filter((c) => c.track === 'V1' && !!this.playUrl(c)).sort((a, b) => a.start - b.start));
+	/** where the reel starts: the clip under the playhead or the next (a number, so the reel moves only at a cut) */
+	reelAt = $derived(this.reelClips.findIndex((c) => c.start + c.dur > this.time));
+	reel = $derived(this.reelAt < 0 ? [] : this.reelClips.slice(this.reelAt, this.reelAt + 3));
 	// captions: every voice clip's words (its file's transcript — the render reads the same), placed where the clip puts them
 	captionWords = $derived.by(() => {
 		/** @type {CaptionWord[]} */
@@ -877,6 +875,8 @@ export class Studio {
 		this.baseline = this.snapshotNow();
 		if (linked) this.changed();
 		if (this.playing) this.schedule();
+		// a world clip moved to another shot version elsewhere: its shot read, or it would stay a stand-in, never prepared
+		if (this.worldClips.some((c) => c.shot && !cached(c.shot, c.shotVersion))) void this.loadShots();
 	}
 	/** @param {Partial<Timeline>} patch */
 	setMeta(patch) {
@@ -1525,6 +1525,11 @@ export class Studio {
 		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
 		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		if (specs.length) void this.world.prepare(specs);
+		// stopped: every world shot from the playhead on metered ahead, so playing never stops at a cut to meter one
+		if (!this.playing && !this.starting) {
+			const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
+			void this.world.meterAhead(ahead.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s), () => !this.playing && !this.starting);
+		}
 		// while a move is flown by hand the world has its canvas and clock back (film mode's record): no frames asked
 		if (this.world.recording) return;
 		if (!c || !isWorld(c)) return;
@@ -1542,9 +1547,23 @@ export class Studio {
 	/** a play that is still loading its sound and world (the button stops it too) */
 	starting = $state(false);
 
+	/**
+	 * The audio clock's time as this frame is drawn: the moment being heard (its output timestamp) carried on by the
+	 * page's own clock since, so the picture moves on every frame. `currentTime` alone moves on in the audio's chunks,
+	 * and a world drawn by it stuttered.
+	 * @param {AudioContext} ac
+	 */
+	clockNow(ac) {
+		const o = ac.getOutputTimestamp?.();
+		if (!o?.contextTime || !o.performanceTime) return ac.currentTime;
+		const now = o.contextTime + (performance.now() - o.performanceTime) / 1000;
+		// never far from the context's own (a stale stamp as the clock starts or resumes)
+		return Math.abs(now - ac.currentTime) < 0.25 ? now : ac.currentTime;
+	}
+
 	tick = () => {
 		if (!this.ctx || !this.playing) return;
-		this.time = this.timeStart + Math.max(0, this.ctx.currentTime - this.ctxStart);
+		this.time = this.timeStart + Math.max(0, this.clockNow(this.ctx) - this.ctxStart);
 		if (this.time >= this.end) {
 			this.time = this.end;
 			return this.stop();
